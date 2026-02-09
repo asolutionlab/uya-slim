@@ -1,0 +1,11 @@
+// 简单测试 &const T 语法
+
+fn main() i32 {
+    var x: i32 = 42;
+    var ptr: & const i32 = &x;  // 注意：& 和 const 之间需要空格
+    if ptr[0] != 42 {
+        return 1;
+    }
+    return 0;
+}
+
