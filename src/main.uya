@@ -1057,7 +1057,7 @@ fn compile_files(
 }
 
 // 程序入口（由 bridge.c 调用，重命名为 uya_main）
-fn uya_main() i32 {
+fn main() i32 {
     
     var input_file_indices: [i32: 64] = [];
     var input_file_count: i32 = 0;

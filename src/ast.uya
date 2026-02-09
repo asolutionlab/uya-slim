@@ -341,6 +341,7 @@ struct ASTNode {
     // type_pointer
     type_pointer_pointed_type: &ASTNode,
     type_pointer_is_ffi_pointer: i32,
+    type_pointer_is_const: i32,  // 是否为只读指针（1 表示 &const T 或 *const T，0 表示 &T 或 *T）
     // type_array
     type_array_element_type: &ASTNode,
     type_array_size_expr: &ASTNode,
@@ -530,8 +531,9 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.type_named_name = null;
     node.type_named_type_args = null;
     node.type_named_type_arg_count = 0;
-    node.type_pointer_pointed_type = null;
-    node.type_pointer_is_ffi_pointer = 0;
+        node.type_pointer_pointed_type = null;
+        node.type_pointer_is_ffi_pointer = 0;
+        node.type_pointer_is_const = 0;
     node.type_array_element_type = null;
     node.type_array_size_expr = null;
     node.type_slice_element_type = null;

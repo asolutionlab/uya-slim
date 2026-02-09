@@ -1,0 +1,9 @@
+// 最简单的测试：只测试 *const byte 类型
+fn test_const_byte_ptr() i32 {
+    return 0;
+}
+
+fn main() i32 {
+    return test_const_byte_ptr();
+}
+

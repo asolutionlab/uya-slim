@@ -1,0 +1,8 @@
+// 测试 &const T 语法解析
+fn check(s: &const byte) i32 {
+    return 0;
+}
+
+fn main() i32 {
+    return 0;
+}

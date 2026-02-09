@@ -314,7 +314,15 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
         }
     } else if type_node.type == ASTNodeType.AST_TYPE_POINTER {
         const pointed_type: &ASTNode = type_node.type_pointer_pointed_type;
-        const pointee_type: &byte = c99_type_to_c(codegen, pointed_type);
+        const pointee_type_raw: &byte = c99_type_to_c(codegen, pointed_type);
+        // 使用 c99_arena_strdup 复制结果，避免缓冲区被覆盖
+        const pointee_type: &byte = c99_arena_strdup(codegen.arena, pointee_type_raw);
+        if pointee_type == null {
+            return ("void*" as *byte) as &byte;
+        }
+        
+        // 检查是否是只读指针（&const T 或 *const T）
+        const is_const: i32 = type_node.type_pointer_is_const;
         
         // 检查是否是 FFI 指针指向 byte（即 *byte）
         var is_ffi_byte_ptr: i32 = 0;
@@ -326,10 +334,12 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
         
         // 分配缓冲区（在 Arena 中）
         var extra_len: i32 = 3;  // " *" + null
-        if is_ffi_byte_ptr != 0 {
-            extra_len = 10;  // " const *" + null
+        if is_const != 0 {
+            extra_len = 15;  // "const " (6) + " *" (2) + null (1) = 9，增加更多安全边距，设为 15
         }
-        const str_len: i32 = strlen(pointee_type as *byte) + extra_len;
+        // 确保缓冲区足够大：pointee_type + "const " (6) + " *" (2) + null (1)
+        // 增加额外的安全边距，确保不会截断
+        const str_len: i32 = strlen(pointee_type as *byte) + extra_len + 8;  // 额外 8 字节安全边距
         const result: &byte = arena_alloc(codegen.arena, str_len) as &byte;
         if result == null {
             return ("void*" as *byte) as &byte;
@@ -343,10 +353,17 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
             const dims: *byte = bracket;
             const dims_len: i32 = strlen(dims);
             // 重新分配更大的缓冲区
-            const total_len: i32 = base_len + dims_len + 8; // " (*)" + null
+            var total_len: i32 = base_len + dims_len + 8; // " (*)" + null
+            if is_const != 0 {
+                total_len = base_len + dims_len + 15; // " const (*)" + null
+            }
             const arr_ptr: &byte = arena_alloc(codegen.arena, total_len) as &byte;
             if arr_ptr == null {
-                snprintf(result as *byte, str_len, "%s *" as *byte, pointee_type as *byte);
+                if is_const != 0 {
+                    snprintf(result as *byte, str_len, "const %s *" as *byte, pointee_type as *byte);
+                } else {
+                    snprintf(result as *byte, str_len, "%s *" as *byte, pointee_type as *byte);
+                }
                 return result;
             }
             // 提取 base_type（[ 之前的部分），生成 T (*)[N] 而非 T[N] (*)[N]
@@ -354,18 +371,38 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
             if base_len < 128 {
                 memcpy(&base_buf[0] as *void, pointee_type as *void, base_len);
                 base_buf[base_len] = 0;
-                snprintf(arr_ptr as *byte, total_len, "%s (*)%s" as *byte, &base_buf[0] as *byte, dims);
+                if is_const != 0 {
+                    snprintf(arr_ptr as *byte, total_len, "const %s (*)%s" as *byte, &base_buf[0] as *byte, dims);
+                } else {
+                    snprintf(arr_ptr as *byte, total_len, "%s (*)%s" as *byte, &base_buf[0] as *byte, dims);
+                }
             } else {
-                snprintf(arr_ptr as *byte, total_len, "%s *" as *byte, pointee_type as *byte);
+                if is_const != 0 {
+                    snprintf(arr_ptr as *byte, total_len, "const %s *" as *byte, pointee_type as *byte);
+                } else {
+                    snprintf(arr_ptr as *byte, total_len, "%s *" as *byte, pointee_type as *byte);
+                }
             }
             return arr_ptr;
         }
         
-        // *byte 类型生成为 const uint8_t * （兼容字符串字面量）
-        if is_ffi_byte_ptr != 0 {
+        // 生成指针类型：*byte 或 *const void 等
+        if is_const != 0 {
             snprintf(result as *byte, str_len, "const %s *" as *byte, pointee_type as *byte);
+            // 使用 c99_arena_strdup 复制结果，避免缓冲区被覆盖
+            const copied: &byte = c99_arena_strdup(codegen.arena, result);
+            if copied != null {
+                return copied;
+            }
         } else {
+            // *byte 类型根据 is_const 标志决定是否添加 const
+            // 非 const 的 *byte 生成非 const 指针（如 fmt: *byte -> uint8_t *）
             snprintf(result as *byte, str_len, "%s *" as *byte, pointee_type as *byte);
+            // 使用 c99_arena_strdup 复制结果，避免缓冲区被覆盖
+            const copied: &byte = c99_arena_strdup(codegen.arena, result);
+            if copied != null {
+                return copied;
+            }
         }
         return result;
     } else if type_node.type == ASTNodeType.AST_TYPE_ATOMIC {

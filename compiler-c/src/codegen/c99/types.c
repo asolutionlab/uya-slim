@@ -327,16 +327,7 @@ const char *c99_type_to_c(C99CodeGenerator *codegen, ASTNode *type_node) {
             // 检查是否是只读指针（&const T 或 *const T）
             int is_const = type_node->data.type_pointer.is_const;
             
-            // 检查是否是 FFI 指针指向 byte（即 *byte）
-            int is_ffi_byte_ptr = type_node->data.type_pointer.is_ffi_pointer &&
-                                   pointed_type &&
-                                   pointed_type->type == AST_TYPE_NAMED &&
-                                   pointed_type->data.type_named.name &&
-                                   strcmp(pointed_type->data.type_named.name, "byte") == 0;
-            
             // 分配缓冲区（在 Arena 中）
-            // 如果是指向 byte 的 FFI 指针，使用 "const char *" 或 "char *"
-            // 否则使用 "const T *" 或 "T *"
             size_t len = strlen(pointee_type) + (is_const ? 10 : 3);  // 类型 + " const *" / " *" + null
             char *result = arena_alloc(codegen->arena, len);
             if (!result) {
@@ -361,10 +352,9 @@ const char *c99_type_to_c(C99CodeGenerator *codegen, ASTNode *type_node) {
             }
             
             // 根据 is_const 标志生成 const T* 或 T*
+            // *byte 类型根据 is_const 标志决定是否添加 const
+            // 非 const 的 *byte 生成非 const 指针（如 fmt: *byte -> uint8_t *）
             if (is_const) {
-                snprintf(result, len, "const %s *", pointee_type);
-            } else if (is_ffi_byte_ptr) {
-                // *byte 类型生成为 const uint8_t * （兼容字符串字面量，但这不是 is_const 的情况）
                 snprintf(result, len, "const %s *", pointee_type);
             } else {
                 snprintf(result, len, "%s *", pointee_type);

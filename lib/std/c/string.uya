@@ -218,7 +218,7 @@ export fn strstr(haystack: &const byte, needle: &const byte) &byte {
     
     const needle_len: usize = strlen(needle);
     if needle_len == 0 {
-        return haystack;
+        return haystack as &byte;
     }
     
     var i: usize = 0;

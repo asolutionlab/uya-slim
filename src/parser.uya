@@ -357,7 +357,14 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
             return slice_type;
         }
         
-        // 普通指针类型 &Type
+        // 检查是否是 &const T（只读指针）
+        var is_const: i32 = 0;
+        if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_CONST {
+            parser_consume(parser);  // 消费 'const'
+            is_const = 1;
+        }
+        
+        // 普通指针类型 &Type 或 &const Type
         const pointed_type: &ASTNode = parser_parse_type(parser);
         if pointed_type == null {
             return null;
@@ -372,11 +379,19 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
         
         pointer_type.type_pointer_pointed_type = pointed_type;
         pointer_type.type_pointer_is_ffi_pointer = 0;  // 普通指针
+        pointer_type.type_pointer_is_const = is_const;
         
         return pointer_type;
     } else if parser.current_token.type == TokenType.TOKEN_ASTERISK {
-        // FFI 指针类型 *Type（仅用于 extern 函数）
+        // FFI 指针类型 *Type 或 *const Type（仅用于 extern 函数）
         parser_consume(parser);  // 消费 '*'
+        
+        // 检查是否是 *const T（只读 FFI 指针）
+        var is_const: i32 = 0;
+        if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_CONST {
+            parser_consume(parser);  // 消费 'const'
+            is_const = 1;
+        }
         
         // 递归解析指向的类型
         const pointed_type: &ASTNode = parser_parse_type(parser);
@@ -392,6 +407,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
         
         pointer_type.type_pointer_pointed_type = pointed_type;
         pointer_type.type_pointer_is_ffi_pointer = 1;  // FFI 指针
+        pointer_type.type_pointer_is_const = is_const;
         
         return pointer_type;
     } else if parser.current_token.type == TokenType.TOKEN_LEFT_BRACKET {
