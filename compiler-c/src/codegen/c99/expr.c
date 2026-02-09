@@ -1262,9 +1262,30 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                 }
                 break;
             }
-            fputc('(', codegen->output);
-            fprintf(codegen->output, "%s)", type_c);
-            gen_expr(codegen, src_expr);
+            // 特殊处理：null as * *byte -> (char **)NULL（用于 strtol/strtod 的第二个参数）
+            int is_null_to_byte_ptr_ptr = 0;
+            if (src_expr && src_expr->type == AST_IDENTIFIER && src_expr->data.identifier.name &&
+                strcmp(src_expr->data.identifier.name, "null") == 0) {
+                // 检查目标类型是否是 * *byte
+                if (target_type && target_type->type == AST_TYPE_POINTER) {
+                    ASTNode *inner_type = target_type->data.type_pointer.pointed_type;
+                    if (inner_type && inner_type->type == AST_TYPE_POINTER) {
+                        ASTNode *inner_inner_type = inner_type->data.type_pointer.pointed_type;
+                        if (inner_inner_type && inner_inner_type->type == AST_TYPE_NAMED &&
+                            inner_inner_type->data.type_named.name &&
+                            strcmp(inner_inner_type->data.type_named.name, "byte") == 0) {
+                            is_null_to_byte_ptr_ptr = 1;
+                        }
+                    }
+                }
+            }
+            if (is_null_to_byte_ptr_ptr) {
+                fputs("(char **)NULL", codegen->output);
+            } else {
+                fputc('(', codegen->output);
+                fprintf(codegen->output, "%s)", type_c);
+                gen_expr(codegen, src_expr);
+            }
             break;
         }
         case AST_IDENTIFIER: {

@@ -347,9 +347,22 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
             
             // 对于标准库函数，将 uint8_t * 转换为 const char * 或 char *
             // 对于 memset/memcpy，第一个参数应该是 void * 而不是 const char *
+            // 对于 strtol/strtod，第二个参数（双层指针）需要转换为 char **
             if is_stdlib != 0 && param_type.type == ASTNodeType.AST_TYPE_POINTER {
                 const pointed_type: &ASTNode = param_type.type_pointer_pointed_type;
-                if pointed_type != null && pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
+                // 检查是否是双层指针（* *byte）
+                if pointed_type != null && pointed_type.type == ASTNodeType.AST_TYPE_POINTER {
+                    const inner_pointed_type: &ASTNode = pointed_type.type_pointer_pointed_type;
+                    if inner_pointed_type != null && inner_pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
+                        const inner_pointed_name: &byte = inner_pointed_type.type_named_name;
+                        // strtol 和 strtod 的第二个参数（endptr）应该是 char ** 而不是 uint8_t **
+                        if inner_pointed_name != null && strcmp(inner_pointed_name as *byte, "byte" as *byte) == 0 &&
+                           ((strcmp(func_name as *byte, "strtol" as *byte) == 0 && i == 1) ||
+                            (strcmp(func_name as *byte, "strtod" as *byte) == 0 && i == 1)) {
+                            param_type_c = ("char **" as *byte) as &byte;
+                        }
+                    }
+                } else if pointed_type != null && pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
                     const pointed_name: &byte = pointed_type.type_named_name;
                     if pointed_name != null && strcmp(pointed_name as *byte, "byte" as *byte) == 0 {
                         // 检查是否是 memset 或 memcpy（第一个参数应该是 void *）

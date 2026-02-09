@@ -4698,8 +4698,8 @@ fn parser_parse_struct(parser: &Parser) &ASTNode {
                     }
                 }
                 
-                const expect_gt: i32 = parser_expect(parser, TokenType.TOKEN_GREATER);
-                if expect_gt == 0 {
+                const expect_gt: &Token = parser_expect(parser, TokenType.TOKEN_GREATER);
+                if expect_gt == null {
                     return null;  // 错误：期望 '>'
                 }
                 

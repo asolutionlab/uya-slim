@@ -1444,9 +1444,45 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 fputs("; _uya_asbang; })" as *byte, codegen.output as *void);
             }
         } else {
-            fputc(40, codegen.output as *void);  // '('
-            fprintf(codegen.output as *void, "%s)" as *byte, type_c as *byte);
-            gen_expr(codegen, src_expr);
+            // 特殊处理：null as * *byte -> (char **)NULL（用于 strtol/strtod 的第二个参数）
+            var is_null_to_byte_ptr_ptr: i32 = 0;
+            if src_expr != null && src_expr.type == ASTNodeType.AST_IDENTIFIER && src_expr.identifier_name != null && strcmp(src_expr.identifier_name as *byte, "null" as *byte) == 0 {
+                // 检查目标类型是否是 * *byte（优先检查 AST 结构，然后检查类型字符串）
+                if target_type != null && target_type.type == ASTNodeType.AST_TYPE_POINTER {
+                    const inner_type: &ASTNode = target_type.type_pointer_pointed_type;
+                    if inner_type != null && inner_type.type == ASTNodeType.AST_TYPE_POINTER {
+                        const inner_inner_type: &ASTNode = inner_type.type_pointer_pointed_type;
+                        if inner_inner_type != null && inner_inner_type.type == ASTNodeType.AST_TYPE_NAMED && inner_inner_type.type_named_name != null && strcmp(inner_inner_type.type_named_name as *byte, "byte" as *byte) == 0 {
+                            is_null_to_byte_ptr_ptr = 1;
+                        }
+                    }
+                }
+                // 如果 AST 结构检查没有匹配，再检查类型字符串
+                if is_null_to_byte_ptr_ptr == 0 && type_c != null {
+                    if strcmp(type_c as *byte, "uint8_t **" as *byte) == 0 {
+                        is_null_to_byte_ptr_ptr = 1;
+                    } else {
+                        var has_uint8: i32 = 0;
+                        var has_double_star: i32 = 0;
+                        if strstr(type_c as *byte, "uint8_t" as *byte) != null {
+                            has_uint8 = 1;
+                        }
+                        if strstr(type_c as *byte, "**" as *byte) != null {
+                            has_double_star = 1;
+                        }
+                        if has_uint8 != 0 && has_double_star != 0 {
+                            is_null_to_byte_ptr_ptr = 1;
+                        }
+                    }
+                }
+            }
+            if is_null_to_byte_ptr_ptr != 0 {
+                fputs("(char **)NULL" as *byte, codegen.output as *void);
+            } else {
+                fputc(40, codegen.output as *void);  // '('
+                fprintf(codegen.output as *void, "%s)" as *byte, type_c as *byte);
+                gen_expr(codegen, src_expr);
+            }
         }
     } else if expr.type == ASTNodeType.AST_IDENTIFIER {
         const name: &byte = expr.identifier_name;
@@ -1849,6 +1885,39 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     }
                 }
             }
+            // 检查是否是 strtol 或 strtod 的第二个参数（endptr），需要转换为 char **
+            var is_strtol_strtod_endptr: i32 = 0;
+            var is_strtol_strtod_null: i32 = 0;
+            if callee_name != null && i == 1 &&
+               (strcmp(callee_name as *byte, "strtol" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strtod" as *byte) == 0) {
+                // 检查参数是否是 null as * *byte 类型
+                if expr.call_expr_args[i] != null {
+                    const arg: &ASTNode = expr.call_expr_args[i];
+                    if arg.type == ASTNodeType.AST_CAST_EXPR {
+                        const cast_type: &ASTNode = arg.cast_expr_target_type;
+                        const src_expr: &ASTNode = arg.cast_expr_expr;
+                        if cast_type != null && cast_type.type == ASTNodeType.AST_TYPE_POINTER {
+                            const inner_type: &ASTNode = cast_type.type_pointer_pointed_type;
+                            if inner_type != null && inner_type.type == ASTNodeType.AST_TYPE_POINTER {
+                                const inner_inner_type: &ASTNode = inner_type.type_pointer_pointed_type;
+                                if inner_inner_type != null && inner_inner_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                                   inner_inner_type.type_named_name != null &&
+                                   strcmp(inner_inner_type.type_named_name as *byte, "byte" as *byte) == 0 {
+                                    is_strtol_strtod_endptr = 1;
+                                    // 检查源表达式是否是 null（null 被解析为 AST_IDENTIFIER）
+                                    if src_expr != null && src_expr.type == ASTNodeType.AST_IDENTIFIER &&
+                                       src_expr.identifier_name != null &&
+                                       strcmp(src_expr.identifier_name as *byte, "null" as *byte) == 0 {
+                                        is_strtol_strtod_null = 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
             if is_string_arg != 0 || is_byte_ptr_arg != 0 {
                 // 检查是否是标准库函数，如果是则使用 (const char *) 而不是 (uint8_t *)
                 const is_stdlib: i32 = is_stdlib_function_for_string_arg(callee_name);
@@ -1939,7 +2008,12 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 }
             }
             if did_box == 0 {
-            gen_expr(codegen, expr.call_expr_args[i]);
+                if is_strtol_strtod_null != 0 {
+                    // strtol 和 strtod 的第二个参数如果是 null as * *byte，直接生成 (char **)NULL
+                    fputs("(char **)NULL" as *byte, codegen.output as *void);
+                } else {
+                    gen_expr(codegen, expr.call_expr_args[i]);
+                }
             }
             }
             if i < arg_count - 1 {
