@@ -231,13 +231,10 @@ uint8_t *get_argv(int32_t index) {
 }
 
 // 获取标准错误流指针
-// 在 --nostdlib 模式下，stderr 不可用，使用标准错误文件描述符（2）
+// 返回标准错误流 FILE* 指针
 void *get_stderr(void) {
-    // 在 --nostdlib 模式下，stderr 符号不可用
-    // 返回标准错误文件描述符的指针（STDERR_FILENO = 2）
-    // 注意：在 Uya 的 stdio 实现中，FILE* 实际上是文件描述符的指针
-    static int64_t stderr_fd = 2;  // STDERR_FILENO = 2
-    return (void *)&stderr_fd;
+    // 返回实际的 stderr FILE* 指针（标准库已链接）
+    return (void *)stderr;
 }
 
 // 计算两个指针之间的字节偏移量（ptr1 - ptr2）

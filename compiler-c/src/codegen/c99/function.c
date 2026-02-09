@@ -257,7 +257,25 @@ int is_stdlib_function(const char *func_name) {
         strcmp(func_name, "strncat") == 0 ||
         strcmp(func_name, "strstr") == 0 ||
         strcmp(func_name, "strdup") == 0 ||
-        strcmp(func_name, "strndup") == 0) {
+        strcmp(func_name, "strndup") == 0 ||
+        strcmp(func_name, "strcmp") == 0 ||
+        strcmp(func_name, "strncmp") == 0 ||
+        strcmp(func_name, "strchr") == 0 ||
+        strcmp(func_name, "strrchr") == 0 ||
+        strcmp(func_name, "strncpy") == 0 ||
+        strcmp(func_name, "strcpy") == 0) {
+        return 1;
+    }
+    // 内存函数（需要返回 void * 而不是 const uint8_t *）
+    if (strcmp(func_name, "memset") == 0 ||
+        strcmp(func_name, "memcpy") == 0 ||
+        strcmp(func_name, "memmove") == 0 ||
+        strcmp(func_name, "memcmp") == 0 ||
+        strcmp(func_name, "memchr") == 0) {
+        return 1;
+    }
+    // 字符串处理函数（std.c.string）
+    if (strcmp(func_name, "strcat") == 0) {
         return 1;
     }
     // 文件 I/O 函数
@@ -270,6 +288,18 @@ int is_stdlib_function(const char *func_name) {
         strcmp(func_name, "fgets") == 0 ||
         strcmp(func_name, "fputs") == 0 ||
         strcmp(func_name, "fflush") == 0) {
+        return 1;
+    }
+    // std.c.stdlib 函数（允许使用 FFI 指针类型）
+    if (strcmp(func_name, "malloc") == 0 ||
+        strcmp(func_name, "free") == 0 ||
+        strcmp(func_name, "calloc") == 0 ||
+        strcmp(func_name, "realloc") == 0 ||
+        strcmp(func_name, "exit") == 0 ||
+        strcmp(func_name, "abort") == 0 ||
+        strcmp(func_name, "atoi") == 0 ||
+        strcmp(func_name, "atol") == 0 ||
+        strcmp(func_name, "atof") == 0) {
         return 1;
     }
     return 0;

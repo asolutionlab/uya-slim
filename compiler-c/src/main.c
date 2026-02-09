@@ -1051,9 +1051,12 @@ int main(int argc, char *argv[]) {
         if (bridge_check) {
             fclose(bridge_check);
             bridge_file = bridge_c_path;
-        } else if (fopen("../tests/bridge.c", "r")) {
-            fclose(fopen("../tests/bridge.c", "r"));
-            bridge_file = "../tests/bridge.c";
+        } else {
+            bridge_check = fopen("../tests/bridge.c", "r");
+            if (bridge_check) {
+                fclose(bridge_check);
+                bridge_file = "../tests/bridge.c";
+            }
         }
 
         char cmd[2048];
