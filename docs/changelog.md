@@ -4,6 +4,39 @@
 
 ---
 
+## 0.42 版本变更（相对于 0.41）
+
+### 0.42 只读指针类型和函数导出规则
+
+- **引入只读指针类型 `&const T` 和 `*const T`**：
+  - **语法**：新增 `&const T` (Uya 内部只读引用) 和 `*const T` (FFI 只读指针) 语法
+  - **语义**：在类型系统中明确区分可变和只读指针，提升类型安全和 C 互操作性
+  - **C 映射**：`&const T` 和 `*const T` 均映射为 `const T*`
+  - **字符串字面量**：`"..."` 的类型现在为 `&const byte`
+  - **FFI 函数签名**：C 标准库中接受 `const char *` 的函数，在 `extern` 声明中应使用 `*const byte`
+  - **类型转换规则**：
+    - `&T` 可以隐式转换为 `&const T`（放宽约束，安全）
+    - `&const T` 不能隐式转换为 `&T`（收紧约束，需要显式转换）
+    - `&T` 可以通过 `as *const T` 显式转换为 `*const T`
+    - `&const T` 可以通过 `as *const T` 显式转换为 `*const T`
+  - **设计目的**：减少 `-Wdiscarded-qualifiers` 警告，提升 C 互操作性，在语言层面表达只读指针语义
+
+- **函数导出规则完善**：
+  - **函数可见性规则**：
+    - `fn foo() void` → `static void foo(void)`（内部函数，不导出）
+    - `export fn foo() void` → `void foo(void)`（导出函数，供其他模块使用）
+    - `extern fn foo() void` → `extern void foo(void);`（外部 C 函数声明）
+    - `export extern fn foo() void` 或 `extern export fn foo() void` → `extern void foo(void);`（导出外部 C 函数，FFI，两种顺序等价）
+  - **设计目的**：明确函数可见性，避免符号冲突，符合 C 语言惯例
+
+**参考文档**：
+- [uya.md](uya.md) §0.42 - 规范变更说明
+- [uya.md](uya.md) §2.1.1 - 指针类型说明
+- [uya.md](uya.md) §5.1 - 函数定义语法
+- [uya.md](uya.md) §5.2 - 外部 C 函数（FFI）
+
+---
+
 ## 0.41 版本变更（相对于 0.40）
 
 ### 0.41 宏系统规范细化（新增第 25 章）

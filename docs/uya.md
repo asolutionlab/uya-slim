@@ -1,4 +1,4 @@
-# Uya 语言规范 0.41（完整版 · 2026-02-04）
+# Uya 语言规范 0.42（完整版 · 2026-02-04）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -50,6 +50,50 @@
 ---
 
 ## 规范变更
+
+### 0.42（2026-02-04）
+
+- **只读指针类型 `&const T`**（新增）：
+  - 语法：`&const T` 表示只读指针，指向类型 `T` 的值，但不能通过该指针修改值
+  - **C 代码生成**：`&const T` → `const T *`（C 的 const 指针）
+  - **使用场景**：
+    - 函数参数：只读字符串参数应使用 `&const byte` 而不是 `&byte`
+    - 标准库函数：`strcmp`, `strlen`, `strstr` 等函数的只读参数应使用 `&const byte`
+    - 类型安全：编译期检查，防止通过只读指针修改值
+  - **与 `&T` 的区别**：
+    - `&T`：可变指针，可以修改指向的值（C 代码生成：`T *`）
+    - `&const T`：只读指针，不能修改指向的值（C 代码生成：`const T *`）
+  - **类型转换规则**：
+    - `&T` 可以隐式转换为 `&const T`（放宽约束，安全）
+    - `&const T` 不能转换为 `&T`（收紧约束，需要显式转换）
+  - **示例**：
+    ```uya
+    // 标准库函数定义
+    export fn strcmp(s1: &const byte, s2: &const byte) i32 { ... }
+    export fn strlen(s: &const byte) usize { ... }
+    
+    // 函数参数
+    fn process_string(s: &const byte) void {
+        // s 是只读的，不能修改 *s
+    }
+    ```
+  - **FFI 指针类型**：
+    - `*const T`：FFI 只读指针（C 代码生成：`const T *`）
+    - `*T`：FFI 可变指针（C 代码生成：`T *`）
+  - **设计目的**：
+    - 类型系统更精确，编译期捕获 const 限定符错误
+    - 生成的 C 代码更符合 C 标准，减少 `-Wdiscarded-qualifiers` 警告
+    - 减少代码生成器的特殊处理逻辑
+
+- **函数导出规则完善**：
+  - **`fn`**：内部函数，生成的 C 代码添加 `static` 关键字（`static void foo(void)`）
+  - **`export fn`**：导出函数，生成的 C 代码不添加 `static`（`void foo(void)`）
+  - **`extern fn`**：外部 C 函数声明，生成的 C 代码为 `extern void foo(void);`
+  - **`export extern fn`** 或 **`extern export fn`**：导出外部 C 函数（FFI），生成的 C 代码为 `extern void foo(void);`，两种顺序等价
+  - **设计目的**：
+    - 明确函数可见性：内部函数使用 `static`，避免符号冲突
+    - 符合 C 语言惯例：只有导出的函数才在全局命名空间
+    - 提升代码质量：减少不必要的全局符号
 
 ### 0.40（2026-02-04）
 
@@ -336,7 +380,7 @@ Uya的"坚如磐石"设计哲学带来以下不可动摇的收益：
 - 使用 `export` 关键字标记可导出的项
 - 语法：`export fn`, `export struct`, `export interface`, `export const`, `export error`
 - **FFI 导出**：
-  - `export extern` 用于导出 C FFI 函数：`export extern printf(fmt: *byte, ...) i32;`
+  - `export extern` 或 `extern export` 用于导出 C FFI 函数：`export extern printf(fmt: *byte, ...) i32;` 或 `extern export printf(fmt: *byte, ...) i32;`（两种顺序等价）
   - `export struct` 用于导出结构体：`export struct MyStruct { field1: i32, field2: f64 }`
   - **统一标准**：
     - 所有结构体统一使用 C 内存布局，支持所有类型（包括切片、interface 等）
@@ -468,7 +512,8 @@ Uya的"坚如磐石"设计哲学带来以下不可动摇的收益：
 | `byte`          | 1 B       | 无符号字节，对齐 1 B，用于字节数组 |
 | `void`          | 0 B       | 仅用于函数返回类型       |
 | `*byte`         | 4/8 B（平台相关） | FFI 指针类型 `*T` 的一个实例（T=byte），用于 FFI 函数参数和返回值，指向 C 字符串；32位平台=4B，64位平台=8B；可与 `null` 比较（空指针）；FFI 指针类型 `*T` 支持所有 C 兼容类型（见第 5.2 章）|
-| `&T`            | 4/8 B（平台相关） | 无 lifetime 符号，见下方说明；32位平台=4B，64位平台=8B |
+| `&T`            | 4/8 B（平台相关） | 可变指针，无 lifetime 符号，见下方说明；32位平台=4B，64位平台=8B |
+| `&const T`      | 4/8 B（平台相关） | 只读指针（0.42 新增），无 lifetime 符号；32位平台=4B，64位平台=8B |
 | `&atomic T`  | 4/8 B（平台相关） | 原子指针，关键字驱动，[见第 13 章](#13-原子操作012-终极简洁)；32位平台=4B，64位平台=8B |
 | `atomic T`      | sizeof(T) | 语言级原子类型，[见第 13 章](#13-原子操作012-终极简洁) |
 | `[T: N]`        | N·sizeof(T) | N 为编译期正整数，对齐 = T 的对齐 |
@@ -529,13 +574,34 @@ Uya的"坚如磐石"设计哲学带来以下不可动摇的收益：
     - ❌ 不能用于普通变量声明（编译错误）
     - ❌ 不能进行普通指针算术（只能用于 FFI 上下文）
   - 详见 [第 5.2 章](#52-外部-c-函数ffi) 和 [第 5.3 章](#53-外部-c-结构体ffi)
-- `&T`：普通指针类型，4/8 字节（平台相关），无 lifetime 符号
-  - 用于指向类型 `T` 的值
+- `&T`：普通指针类型（可变指针），4/8 字节（平台相关），无 lifetime 符号
+  - 用于指向类型 `T` 的值，可以通过该指针修改值
   - 32位平台=4字节，64位平台=8字节
+  - C 代码生成：`T *`（可变指针）
   - 空指针检查：`if ptr == null { ... }`（需要显式检查，编译期证明超时则自动插入运行时检查）
   - 支持异步编程（见第 18 章）
   - **`&void` 类型**：通用指针类型，可以转换为任何指针类型（`&void` → `&T`），用于实现类型擦除和通用指针操作
     - 示例：`var ptr: &void = &buffer as &void; var byte_ptr: &byte = ptr as &byte;`
+- `&const T`：只读指针类型（0.42 新增），4/8 字节（平台相关），无 lifetime 符号
+  - 用于指向类型 `T` 的值，但不能通过该指针修改值
+  - 32位平台=4字节，64位平台=8字节
+  - C 代码生成：`const T *`（只读指针）
+  - **类型转换规则**：
+    - `&T` 可以隐式转换为 `&const T`（放宽约束，安全）
+    - `&const T` 不能隐式转换为 `&T`（收紧约束，需要显式转换）
+  - **使用场景**：
+    - 函数参数：只读字符串参数应使用 `&const byte` 而不是 `&byte`
+    - 标准库函数：`strcmp`, `strlen`, `strstr` 等函数的只读参数应使用 `&const byte`
+    - 类型安全：编译期检查，防止通过只读指针修改值
+  - **示例**：
+    ```uya
+    // 只读字符串参数
+    export fn strcmp(s1: &const byte, s2: &const byte) i32 { ... }
+    
+    // 可变指针可以隐式转换为只读指针
+    var s: &byte = ...;
+    const result = strcmp(s, "hello");  // &byte 隐式转换为 &const byte
+    ```
 - `&atomic T`：原子指针类型，4/8 字节（平台相关），关键字驱动
   - 用于指向原子类型 `atomic T` 的指针
   - [见第 13 章原子操作](#13-原子操作012-终极简洁)
@@ -1947,6 +2013,24 @@ Uya 联合体设计完全符合「坚如磐石」哲学：
 
 [examples/add.uya](./examples/add.uya)
 
+- **函数定义语法**：
+  - `fn name(...) type { ... }`：内部函数，生成的 C 代码添加 `static` 关键字
+  - `export fn name(...) type { ... }`：导出函数，生成的 C 代码不添加 `static`
+  - `extern fn name(...) type;`：外部 C 函数声明（无函数体）
+  - `export extern fn name(...) type { ... }` 或 `extern export fn name(...) type { ... }`：导出外部 C 函数（FFI），两种顺序等价
+- **函数可见性规则**（0.42 新增）：
+  - **`fn`**：内部函数，生成的 C 代码为 `static void foo(void) { ... }`
+    - 仅在当前编译单元可见，不导出到全局符号表
+    - 避免符号冲突，提升代码质量
+  - **`export fn`**：导出函数，生成的 C 代码为 `void foo(void) { ... }`
+    - 导出到全局符号表，供其他模块使用
+    - 用于库函数、公共 API
+  - **`extern fn`**：外部 C 函数声明，生成的 C 代码为 `extern void foo(void);`
+    - 声明外部 C 函数，供 Uya 代码调用
+    - 无函数体，仅声明
+  - **`export extern fn`** 或 **`extern export fn`**：导出外部 C 函数（FFI），生成的 C 代码为 `extern void foo(void);`，两种顺序等价
+    - 导出外部 C 函数，供 C 代码调用
+    - 用于 FFI 互操作
 - **函数调用语法**：`func_name(arg1, arg2, ...)`
 - 参数按值传递（`memcpy`）。
 - **返回值处理规则**：
@@ -2353,11 +2437,21 @@ Uya支持两种`main`函数签名：
 
 **重要语法规则**：
 - extern 函数声明必须使用 Uya 的函数参数语法：`param_name: type`
-- **FFI 指针类型 `*T`**：支持所有 C 兼容类型
-  - 整数类型：`*i8`, `*i16`, `*i32`, `*i64`, `*u8`, `*u16`, `*u32`, `*u64`
-  - 浮点类型：`*f32`, `*f64`
-  - 特殊类型：`*bool`, `*byte`（C 字符串），`*void`（通用指针）
-  - C 结构体：`*CStruct`（指向外部 C 结构体的指针）
+- **FFI 指针类型 `*T` 和 `*const T`**（0.42 新增 `*const T`）：支持所有 C 兼容类型
+  - **可变指针 `*T`**：
+    - 整数类型：`*i8`, `*i16`, `*i32`, `*i64`, `*u8`, `*u16`, `*u32`, `*u64`
+    - 浮点类型：`*f32`, `*f64`
+    - 特殊类型：`*bool`, `*byte`（C 字符串），`*void`（通用指针）
+    - C 结构体：`*CStruct`（指向外部 C 结构体的指针）
+    - C 代码生成：`T *`（可变指针）
+  - **只读指针 `*const T`**（0.42 新增）：
+    - 整数类型：`*const i8`, `*const i16`, `*const i32`, `*const i64`, `*const u8`, `*const u16`, `*const u32`, `*const u64`
+    - 浮点类型：`*const f32`, `*const f64`
+    - 特殊类型：`*const bool`, `*const byte`（只读 C 字符串），`*const void`（只读通用指针）
+    - C 结构体：`*const CStruct`（指向外部 C 结构体的只读指针）
+    - C 代码生成：`const T *`（只读指针）
+    - **使用场景**：标准库函数的只读参数，如 `strlen`, `strcmp` 等
+    - **示例**：`extern fn strlen(s: *const byte) usize;`
 - 指针类型参数使用 `*T` 语法（如 `*byte` 表示指向 `byte` 的指针，`*u16` 表示指向 `u16` 的指针）
 - **Uya 指针传递给 FFI 函数**：
   - ✅ **Uya 普通指针 `&T` 可以通过显式转换传递给 FFI 函数的指针类型参数 `*T`**
@@ -3311,19 +3405,40 @@ Uya 提供两种类型转换语法：
 | `f32` | `i64` | ❌ | ✅ | 截断，可能损失 |
 | `&T` | `*T` | ✅ | ✅ | 同类型指针互相转换，无精度损失 |
 | `*T` | `&T` | ✅ | ✅ | 同类型指针互相转换，无精度损失 |
+| `&const T` | `*const T` | ✅ | ✅ | 只读指针转换为 FFI 只读指针，无精度损失 |
+| `*const T` | `&const T` | ✅ | ✅ | FFI 只读指针转换为只读指针，无精度损失 |
+| `&T` | `&const T` | ✅ | ✅ | 可变指针隐式转换为只读指针（放宽约束，安全） |
+| `&T` | `*const T` | ✅ | ✅ | 可变指针转换为 FFI 只读指针（放宽约束，安全） |
 | `&void` | `&T` | ✅ | ✅ | 通用指针转换为具体指针类型（类型擦除恢复） |
 | `&T` | `&void` | ✅ | ✅ | 具体指针转换为通用指针类型（类型擦除） |
+| `&const void` | `&const T` | ✅ | ✅ | 通用只读指针转换为具体只读指针类型（类型擦除恢复） |
+| `&const T` | `&const void` | ✅ | ✅ | 具体只读指针转换为通用只读指针类型（类型擦除） |
 
-**指针类型转换说明**：
-- **`&T as *T`**：Uya 普通指针转换为 FFI 指针类型
+**指针类型转换说明**（0.42 更新）：
+- **`&T as *T`**：Uya 可变指针转换为 FFI 可变指针类型
   - ✅ 使用 `as` 进行安全转换（无精度损失，编译期检查）
   - 仅在 FFI 函数调用时使用
   - 示例：`extern write(fd: i32, buf: *byte, count: i32) i32;` 调用时使用 `&buffer[0] as *byte`
+- **`&const T as *const T`**：Uya 只读指针转换为 FFI 只读指针类型（0.42 新增）
+  - ✅ 使用 `as` 进行安全转换（无精度损失，编译期检查）
+  - 用于标准库函数的只读参数
+  - 示例：`extern strlen(s: *const byte) usize;` 调用时使用 `str as *const byte`
+- **`&T` → `&const T`**：可变指针隐式转换为只读指针（0.42 新增）
+  - ✅ 隐式转换（放宽约束，安全）
+  - 无需 `as` 关键字，编译器自动转换
+  - 示例：`var s: &byte = ...; const len = strlen(s);`（`&byte` 自动转换为 `&const byte`）
+- **`&T` → `*const T`**：可变指针转换为 FFI 只读指针（0.42 新增）
+  - ✅ 使用 `as` 进行安全转换（放宽约束，安全）
+  - 示例：`var s: &byte = ...; const len = strlen(s as *const byte);`
 - **`&T` ↔ `*T`**：同类型指针可通过 `as` 互相转换，无精度损失
+- **`&const T` ↔ `*const T`**：同类型只读指针可通过 `as` 互相转换，无精度损失（0.42 新增）
 - **`&void ↔ &T`**：通用指针类型与具体指针类型之间的转换
   - ✅ `&void as &T`：通用指针转换为具体指针类型（类型擦除恢复）
   - ✅ `&T as &void`：具体指针转换为通用指针类型（类型擦除）
   - 示例：`var ptr: &void = &buffer as &void; var byte_ptr: &byte = ptr as &byte;`
+- **`&const void ↔ &const T`**：通用只读指针类型与具体只读指针类型之间的转换（0.42 新增）
+  - ✅ `&const void as &const T`：通用只读指针转换为具体只读指针类型（类型擦除恢复）
+  - ✅ `&const T as &const void`：具体只读指针转换为通用只读指针类型（类型擦除）
 
 **精度说明**：
 - `f32` 可以精确表示的整数范围：-2^24 到 2^24（-16,777,216 到 16,777,216）

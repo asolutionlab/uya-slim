@@ -24,7 +24,7 @@ declaration    = fn_decl | struct_decl | struct_method_block | union_decl | unio
 ### 函数声明
 
 ```
-fn_decl        = 'fn' ID [ '<' type_param_list '>' ] '(' [ param_list ] ')' type '{' statements '}'
+fn_decl        = [ ( 'export' 'extern' | 'extern' 'export' | 'export' | 'extern' ) ] 'fn' ID [ '<' type_param_list '>' ] '(' [ param_list ] ')' type [ '{' statements '}' | ';' ]
 param_list     = param { ',' param }
 param          = ID ':' type
 type_param_list = type_param { ',' type_param }
@@ -33,7 +33,12 @@ constraint_list = ID { '+' ID }
 ```
 
 **说明**：
-- 泛型函数语法：`fn max<T: Ord>(a: T, b: T) T { ... }`
+- **函数可见性**（0.42 新增）：
+  - `fn name(...) type { ... }`：内部函数，生成的 C 代码添加 `static`
+  - `export fn name(...) type { ... }`：导出函数，生成的 C 代码不添加 `static`
+  - `extern fn name(...) type;`：外部 C 函数声明（无函数体，分号结尾）
+  - `export extern fn name(...) type { ... }` 或 `extern export fn name(...) type { ... }`：导出外部 C 函数（FFI），两种顺序等价
+- **泛型函数语法**：`fn max<T: Ord>(a: T, b: T) T { ... }`
 - 类型参数列表可选，使用尖括号 `<T>` 或 `<T: Constraint>`
 - 多约束使用 `+` 连接：`<T: Ord + Clone + Default>`
 
@@ -124,7 +129,7 @@ type           = base_type | pointer_type | array_type | slice_type
 
 base_type      = 'i8' | 'i16' | 'i32' | 'i64' | 'u8' | 'u16' | 'u32' | 'u64'
                | 'f32' | 'f64' | 'bool' | 'byte' | 'void' | 'usize'
-pointer_type   = '&' type | '*' type
+pointer_type   = '&' [ 'const' ] type | '*' [ 'const' ] type  # 0.42 新增 &const T 和 *const T
 array_type     = '[' type ':' NUM ']'
 slice_type     = '&[' type ']' | '&[' type ';' NUM ']'
 struct_type    = ID [ '<' type_arg_list '>' ]

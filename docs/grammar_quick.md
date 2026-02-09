@@ -45,7 +45,7 @@ var y: i32 = 10;
 | **布尔** | `bool` | `const flag: bool = true;` | 布尔值 |
 | **数组** | `[T: N]` | `const arr: [i32: 5] = [1,2,3,4,5];`<br>`var buf: [i32: 100] = [];` | 固定长度数组，`[]` 表示未初始化 |
 | **切片** | `&[T]` `&[T: N]` | `const slice: &[i32] = &arr[2:5];` | 动态/已知长度切片 |
-| **指针** | `&T` `*T` | `const ptr: &i32 = &x;` | Uya指针/FFI指针 |
+| **指针** | `&T` `&const T` `*T` `*const T` | `const ptr: &i32 = &x;`<br>`const read_only: &const byte = "hello";` | Uya指针/只读指针/FFI指针（0.42新增&const T） |
 | **结构体** | `StructName`<br>`StructName<T>` | `const p: Point = Point{x: 1.0, y: 2.0};`<br>`const vec: Vec<i32> = ...;` | 结构体类型，支持泛型参数 |
 | **联合体** | `UnionName` | `const v: IntOrFloat = IntOrFloat.i(42);` | 标签联合体，编译期证明安全 |
 | **接口** | `InterfaceName`<br>`InterfaceName<T>` | `const writer: IWriter = ...;`<br>`const iter: Iterator<String> = ...;` | 接口类型，支持泛型参数 |
@@ -167,10 +167,28 @@ const x = may_fail() catch |err| {
 ### 函数定义模板
 
 ```uya
-// 普通函数
+// 内部函数（生成的 C 代码添加 static）
 fn name(param: Type) ReturnType {
     // 函数体
     return value;
+}
+
+// 导出函数（生成的 C 代码不添加 static）
+export fn public_function(param: Type) ReturnType {
+    // 函数体
+    return value;
+}
+
+// 外部 C 函数声明
+extern fn c_function(param: *byte) i32;
+
+// 导出外部 C 函数（FFI），两种顺序等价
+export extern fn ffi_function(param: *byte) i32 {
+    // 函数体
+}
+// 或
+extern export fn ffi_function(param: *byte) i32 {
+    // 函数体
 }
 
 // 可能失败的函数
