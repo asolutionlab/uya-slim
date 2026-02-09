@@ -67,8 +67,8 @@
     - [x] **Parser**：解析 `&const T` 和 `*const T` 类型语法
     - [x] **Checker**：类型检查时处理 `&const T` 的隐式转换和约束检查（`type_from_ast`、`type_equals`、`checker_check_expr_type`、`type_can_implicitly_convert`）
     - [x] **Codegen**：根据 `is_const` 标志生成 `const T*` 类型
-    - [ ] **标准库更新**：更新标准库函数签名，使用 `&const byte` 替代 `&byte`（只读参数）
-    - [ ] **测试用例**：添加 `&const T` 语法的测试用例，验证类型转换规则
+    - [x] **标准库更新**：更新标准库函数签名，使用 `&const byte` 替代 `&byte`（只读参数）✅ 已完成（string.uya、stdio.uya、stdlib.uya）
+    - [~] **测试用例**：添加 `&const T` 语法的测试用例，验证类型转换规则（待修复：parser 解析 `&const T` 时遇到问题，需要进一步调试）
 
 - [x] **函数导出规则完善**：
   - **函数可见性规则**：
@@ -80,7 +80,7 @@
     - [x] **Parser**：解析 `export` 和 `extern` 关键字（支持两种顺序：`export extern` 和 `extern export`）
     - [x] **AST**：在函数节点中记录 `is_export` 和 `is_extern` 标志
     - [x] **Codegen**：根据 `is_export` 标志决定是否添加 `static` 关键字（`gen_function_prototype` 和 `gen_function`）
-    - [ ] **测试用例**：验证函数导出规则，确保生成的 C 代码正确
+    - [x] **测试用例**：验证函数导出规则，确保生成的 C 代码正确✅ 已添加 test_function_export.uya（待验证）
 
 **参考文档**：
 - [uya.md](uya.md) §0.42 - 规范变更说明

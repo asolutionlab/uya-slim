@@ -133,7 +133,7 @@ export fn abort() void {
 
 // atoi - 将字符串转换为 i32
 // 返回：转换后的整数，失败返回 0
-export fn atoi(s: &byte) i32 {
+export fn atoi(s: &const byte) i32 {
     if s == null {
         return 0;
     }
@@ -171,7 +171,7 @@ export fn atoi(s: &byte) i32 {
 
 // atol - 将字符串转换为 i64
 // 返回：转换后的长整数，失败返回 0
-export fn atol(s: &byte) i64 {
+export fn atol(s: &const byte) i64 {
     if s == null {
         return 0;
     }
@@ -210,7 +210,7 @@ export fn atol(s: &byte) i64 {
 // atof - 将字符串转换为 f64（简化实现）
 // 返回：转换后的浮点数，失败返回 0.0
 // 注意：这是一个简化实现，只支持基本格式
-export fn atof(s: &byte) f64 {
+export fn atof(s: &const byte) f64 {
     if s == null {
         return 0.0;
     }
@@ -265,7 +265,7 @@ export fn atof(s: &byte) f64 {
 // strtod - 将字符串转换为 f64（C 标准库兼容）
 // 返回：转换后的浮点数，失败返回 0.0
 // 注意：endptr 用于返回转换结束的位置
-export fn strtod(nptr: &byte, endptr: & &byte) f64 {
+export fn strtod(nptr: &const byte, endptr: & &byte) f64 {
     if nptr == null {
         if endptr != null {
             endptr[0] = null;
@@ -328,7 +328,7 @@ export fn strtod(nptr: &byte, endptr: & &byte) f64 {
 // strtol - 将字符串转换为 i64（C 标准库兼容）
 // 返回：转换后的长整数，失败返回 0
 // 注意：endptr 用于返回转换结束的位置，base 用于指定进制（2-36）
-export fn strtol(nptr: &byte, endptr: & &byte, base: i32) i64 {
+export fn strtol(nptr: &const byte, endptr: & &byte, base: i32) i64 {
     if nptr == null {
         if endptr != null {
             endptr[0] = null;
@@ -442,7 +442,7 @@ struct DIR {
 
 // stat - 获取文件状态（C 标准库兼容）
 // 返回：0 成功，-1 失败
-export fn stat(path: &byte, buf: &Stat) i32 {
+export fn stat(path: &const byte, buf: &Stat) i32 {
     if path == null || buf == null {
         return 0 - 1;
     }
@@ -462,7 +462,7 @@ export fn stat(path: &byte, buf: &Stat) i32 {
 
 // readlink - 读取符号链接（C 标准库兼容）
 // 返回：读取的字节数，失败返回 -1
-export fn readlink(path: &byte, buf: &byte, bufsiz: usize) i32 {
+export fn readlink(path: &const byte, buf: &byte, bufsiz: usize) i32 {
     if path == null || buf == null || bufsiz == 0 {
         return 0 - 1;
     }
@@ -483,7 +483,7 @@ export fn readlink(path: &byte, buf: &byte, bufsiz: usize) i32 {
 // getenv - 获取环境变量（简化实现）
 // 返回：环境变量值的指针，未找到返回 null
 // 注意：这是一个简化实现，实际应该从 environ 变量读取
-export fn getenv(name: &byte) &byte {
+export fn getenv(name: &const byte) &byte {
     if name == null {
         return null;
     }
@@ -511,7 +511,7 @@ var opendir_fd_storage: [i64: 64] = [];
 
 // opendir - 打开目录（C 标准库兼容）
 // 返回：DIR*，失败返回 null
-export fn opendir(name: &byte) &DIR {
+export fn opendir(name: &const byte) &DIR {
     if name == null {
         return null;
     }

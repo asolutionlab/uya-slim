@@ -48,7 +48,7 @@ export fn put_char_fd(c: i32, fd: i64) i32 {
 
 // write_bytes - 向标准输出写入 n 个字节
 // 返回：写入的字节数，失败返回 -1
-export fn write_bytes(buf: &byte, n: usize) i64 {
+export fn write_bytes(buf: &const byte, n: usize) i64 {
     const result: !i64 = @syscall(SYS_write, STDOUT, buf as i64, n as i64);
     const written: i64 = result catch {
         return 0 - 1;
@@ -58,7 +58,7 @@ export fn write_bytes(buf: &byte, n: usize) i64 {
 
 // write_bytes_fd - 向指定文件描述符写入 n 个字节
 // 返回：写入的字节数，失败返回 -1
-export fn write_bytes_fd(buf: &byte, n: usize, fd: i64) i64 {
+export fn write_bytes_fd(buf: &const byte, n: usize, fd: i64) i64 {
     const result: !i64 = @syscall(SYS_write, fd, buf as i64, n as i64);
     const written: i64 = result catch {
         return 0 - 1;
@@ -68,7 +68,7 @@ export fn write_bytes_fd(buf: &byte, n: usize, fd: i64) i64 {
 
 // put_str_len - 向标准输出写入指定长度的字符串并换行
 // 返回：0 成功，-1 失败
-export fn put_str_len(s: &byte, len: usize) i32 {
+export fn put_str_len(s: &const byte, len: usize) i32 {
     // 写入字符串内容
     const result: !i64 = @syscall(SYS_write, STDOUT, s as i64, len as i64);
     _ = result catch {
@@ -257,7 +257,7 @@ var fopen_fd_storage: [i64: 64] = [];
 // fopen - 打开文件（C 标准库兼容）
 // 注意：在 --nostdlib 模式下，FILE* 实际上就是文件描述符（转换为指针）
 // 返回：FILE*（实际上是文件描述符的指针），失败返回 null
-export fn fopen(filename: &byte, mode: &byte) &void {
+export fn fopen(filename: &const byte, mode: &const byte) &void {
     if filename == null || mode == null {
         return null;
     }
@@ -397,7 +397,7 @@ export fn fgetc(stream: &void) i32 {
 
 // fprintf - 格式化输出到文件流（简化版本，只支持 %s 和 %d）
 // 返回：写入的字符数，失败返回负数
-export fn fprintf(stream: &void, format: &byte, ...) i32 {
+export fn fprintf(stream: &void, format: &const byte, ...) i32 {
     if stream == null || format == null {
         return 0 - 1;
     }
@@ -525,7 +525,7 @@ export fn fputc(c: i32, stream: &void) i32 {
 
 // fputs - 向文件流写入字符串（C 标准库兼容）
 // 返回：非负值成功，EOF (-1) 失败
-export fn fputs(s: &byte, stream: &void) i32 {
+export fn fputs(s: &const byte, stream: &void) i32 {
     if s == null || stream == null {
         return 0 - 1;  // EOF
     }
@@ -546,7 +546,7 @@ export fn fputs(s: &byte, stream: &void) i32 {
 
 // sprintf - 格式化字符串（简化版本，只支持 %s 和 %d）
 // 返回：写入的字符数（不包括 null 终止符），失败返回负数
-export fn sprintf(buf: &byte, format: &byte, ...) i32 {
+export fn sprintf(buf: &byte, format: &const byte, ...) i32 {
     if buf == null || format == null {
         return 0 - 1;
     }
@@ -598,7 +598,7 @@ export fn sprintf(buf: &byte, format: &byte, ...) i32 {
 
 // snprintf - 格式化字符串（带长度限制，简化版本，只支持 %s 和 %d）
 // 返回：写入的字符数（不包括 null 终止符），失败返回负数
-export fn snprintf(buf: &byte, n: usize, format: &byte, ...) i32 {
+export fn snprintf(buf: &byte, n: usize, format: &const byte, ...) i32 {
     if buf == null || format == null || n == 0 {
         return 0 - 1;
     }

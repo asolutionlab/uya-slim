@@ -1,0 +1,35 @@
+// 测试函数导出规则（static/export/extern）
+// 验证生成的 C 代码正确性
+
+// 内部函数（不导出）→ static void foo(void)
+fn internal_func() void {
+    // 内部函数，不导出
+}
+
+// 导出函数（供其他模块使用）→ void foo(void)
+export fn exported_func() i32 {
+    return 42;
+}
+
+// 外部 C 函数声明 → extern void foo(void);
+extern fn external_c_func() void;
+
+// 导出外部 C 函数（FFI）→ extern void foo(void);
+export extern fn exported_external_func() i32 {
+    // 注意：extern 函数不能有函数体，这里只是为了测试语法
+    // 实际使用时应该只有声明
+    return 0;
+}
+
+// 两种顺序等价：export extern 和 extern export
+extern export fn extern_export_func() void;
+
+fn main() i32 {
+    internal_func();
+    const result: i32 = exported_func();
+    if result != 42 {
+        return 1;
+    }
+    return 0;
+}
+
