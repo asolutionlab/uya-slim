@@ -488,11 +488,25 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             export UYA_ROOT="$REPO_ROOT/lib/"
             
             # 构建包含标准库的编译命令
+            # 注意：标准库文件使用 use 语句导入模块，需要按依赖顺序传递
+            # 依赖顺序：syscall -> string -> stdio -> stdlib
+            # 编译器需要能够解析模块路径，所以需要设置 UYA_ROOT
+            # 如果 INPUT_PATH 为空（手动模式），使用 MAIN_FILE
+            REBUILD_INPUT="$INPUT_PATH"
+            if [ -z "$REBUILD_INPUT" ]; then
+                REBUILD_INPUT="$MAIN_FILE"
+            fi
+            # 如果还是为空，使用 FULL_PATHS 的第一个文件
+            if [ -z "$REBUILD_INPUT" ] && [ ${#FULL_PATHS[@]} -gt 0 ]; then
+                REBUILD_INPUT="${FULL_PATHS[0]}"
+            fi
+            # 构建编译命令：主文件 + 标准库文件
             if [ "$USE_AUTO_DEPS" = true ]; then
-                # 使用自动依赖收集模式：传递主文件和标准库文件
-                REBUILD_CMD=("$COMPILER" "$INPUT_PATH" "${VALID_STD_LIB_FILES[@]}" -o "$OUTPUT_FILE")
+                # 自动依赖收集模式：只传递主文件，让编译器自动收集依赖
+                # 但标准库不会被自动收集（主文件没有 use），所以需要显式传递
+                REBUILD_CMD=("$COMPILER" "$REBUILD_INPUT" "${VALID_STD_LIB_FILES[@]}" -o "$OUTPUT_FILE")
             else
-                # 使用手动文件列表模式：传递所有文件包括标准库
+                # 手动模式：传递所有文件包括标准库
                 REBUILD_CMD=("$COMPILER" "${FULL_PATHS[@]}" "${VALID_STD_LIB_FILES[@]}" -o "$OUTPUT_FILE")
             fi
             if [ "$USE_C99" = true ]; then
@@ -509,7 +523,8 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             
             # 重新编译
             REBUILD_LOG=$(mktemp)
-            if "${REBUILD_CMD[@]}" >"$REBUILD_LOG" 2>&1; then
+            # 在重新编译时，确保 UYA_ROOT 环境变量被传递
+            if env UYA_ROOT="$UYA_ROOT" "${REBUILD_CMD[@]}" >"$REBUILD_LOG" 2>&1; then
                 if [ "$VERBOSE" = true ]; then
                     echo -e "${GREEN}✓ 主程序（含标准库）编译完成${NC}"
                 fi
@@ -519,9 +534,13 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                 if [ "$VERBOSE" = true ]; then
                     echo "编译输出:"
                     cat "$REBUILD_LOG" | tail -20
+                else
+                    echo "编译错误（使用 VERBOSE=true 查看详细信息）:"
+                    cat "$REBUILD_LOG" | grep -E "错误|error" | head -10
                 fi
                 rm -f "$REBUILD_LOG"
-                # 继续使用原来的输出文件
+                # 继续使用原来的输出文件（但会缺少标准库函数）
+                echo -e "${YELLOW}注意: 将使用未包含标准库的版本，链接可能失败${NC}"
             fi
         fi
     fi
