@@ -155,9 +155,12 @@ fn is_stdlib_function(func_name: &byte) i32 {
         strcmp(func_name as *byte, "fgetc" as *byte) == 0 ||
         strcmp(func_name as *byte, "fputc" as *byte) == 0 ||
         strcmp(func_name as *byte, "fgets" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fputs" as *byte) == 0 ||
         strcmp(func_name as *byte, "fflush" as *byte) == 0 ||
         strcmp(func_name as *byte, "fprintf" as *byte) == 0 {
+        return 1;
+    }
+    // fputs 需要特殊处理，避免与标准库冲突
+    if strcmp(func_name as *byte, "fputs" as *byte) == 0 {
         return 1;
     }
     // std.c.stdlib 函数（允许使用 FFI 指针类型）
@@ -166,13 +169,13 @@ fn is_stdlib_function(func_name: &byte) i32 {
         strcmp(func_name as *byte, "calloc" as *byte) == 0 ||
         strcmp(func_name as *byte, "realloc" as *byte) == 0 ||
         strcmp(func_name as *byte, "exit" as *byte) == 0 ||
-        strcmp(func_name as *byte, "abort" as *byte) == 0 ||
         strcmp(func_name as *byte, "atoi" as *byte) == 0 ||
         strcmp(func_name as *byte, "atol" as *byte) == 0 ||
         strcmp(func_name as *byte, "atof" as *byte) == 0 ||
         strcmp(func_name as *byte, "strtod" as *byte) == 0 ||
         strcmp(func_name as *byte, "strtol" as *byte) == 0 ||
-        strcmp(func_name as *byte, "getenv" as *byte) == 0 {
+        strcmp(func_name as *byte, "getenv" as *byte) == 0 ||
+        strcmp(func_name as *byte, "abort" as *byte) == 0 {
         return 1;
     }
     // std.c.stdio 函数（Uya 标准库）
@@ -247,6 +250,41 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         // 标准库函数应该包含相应的头文件（如 <stdio.h>），不生成 extern 声明
         // 这样可以避免与标准库的声明冲突
         return;
+    }
+    
+    // 对于标准库 stdlib 函数（strtod, strtol, getenv, abort, exit, atoi, atol, atof 等），不生成函数声明
+    // 避免与 C 标准库的声明冲突（我们总是包含 <stdlib.h>）
+    if is_stdlib != 0 {
+        const orig_name: &byte = fn_decl.fn_decl_name;
+        if orig_name != null && (strcmp(orig_name as *byte, "strtod" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strtol" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "getenv" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "abort" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "exit" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "atoi" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "atol" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "atof" as *byte) == 0) {
+            // 这些函数已经在 <stdlib.h> 中声明，不生成重复声明
+            return;
+        }
+    }
+    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, sprintf, snprintf 等），不生成函数声明
+    // 避免与 C 标准库的声明冲突（我们总是包含 <stdio.h>）
+    if is_stdlib != 0 {
+        const orig_name: &byte = fn_decl.fn_decl_name;
+        if orig_name != null && (strcmp(orig_name as *byte, "fputs" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fputc" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fwrite" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fprintf" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fgetc" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fread" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fopen" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fclose" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "sprintf" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "snprintf" as *byte) == 0) {
+            // 这些函数已经在 <stdio.h> 中声明，不生成重复声明
+            return;
+        }
     }
     
     // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数声明
@@ -472,6 +510,43 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     // 检查是否是标准库函数
     const orig_name: &byte = fn_decl.fn_decl_name;
     const is_stdlib: i32 = is_stdlib_function(func_name);
+    
+    // 对于标准库 stdlib 函数（strtod, strtol, getenv, abort, exit, atoi, atol, atof 等），不生成函数定义
+    // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
+    // 注意：我们总是包含 <stdlib.h>，所以需要检查这些函数
+    if is_stdlib != 0 {
+        if orig_name != null && (strcmp(orig_name as *byte, "strtod" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strtol" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "getenv" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "abort" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "exit" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "atoi" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "atol" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "atof" as *byte) == 0) {
+            // 这些函数已经在 <stdlib.h> 中声明，应该链接到 C 标准库的实现
+            // 不生成 Uya 标准库的实现，避免类型冲突
+            return;
+        }
+    }
+    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, sprintf, snprintf 等），不生成函数定义
+    // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
+    // 注意：我们总是包含 <stdio.h>，所以需要检查这些函数
+    if is_stdlib != 0 {
+        if orig_name != null && (strcmp(orig_name as *byte, "fputs" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fputc" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fwrite" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fprintf" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fgetc" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fread" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fopen" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "fclose" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "sprintf" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "snprintf" as *byte) == 0) {
+            // 这些函数已经在 <stdio.h> 中声明，应该链接到 C 标准库的实现
+            // 不生成 Uya 标准库的实现，避免类型冲突
+            return;
+        }
+    }
     
     // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数定义
     // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现

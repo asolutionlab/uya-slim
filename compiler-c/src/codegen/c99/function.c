@@ -393,13 +393,34 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         }
     }
     
-    // 对于标准库 stdlib 函数（strtod, strtol, getenv 等），不生成函数声明
+    // 对于标准库 stdlib 函数（strtod, strtol, getenv, abort, exit, atoi, atol, atof 等），不生成函数声明
     // 避免与 C 标准库的声明冲突（我们总是包含 <stdlib.h>）
     if (is_stdlib && orig_name && (
         strcmp(orig_name, "strtod") == 0 ||
         strcmp(orig_name, "strtol") == 0 ||
-        strcmp(orig_name, "getenv") == 0)) {
+        strcmp(orig_name, "getenv") == 0 ||
+        strcmp(orig_name, "abort") == 0 ||
+        strcmp(orig_name, "exit") == 0 ||
+        strcmp(orig_name, "atoi") == 0 ||
+        strcmp(orig_name, "atol") == 0 ||
+        strcmp(orig_name, "atof") == 0)) {
         // 这些函数已经在 <stdlib.h> 中声明，不生成重复声明
+        return;
+    }
+    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, sprintf, snprintf 等），不生成函数声明
+    // 避免与 C 标准库的声明冲突（我们总是包含 <stdio.h>）
+    if (is_stdlib && orig_name && (
+        strcmp(orig_name, "fputs") == 0 ||
+        strcmp(orig_name, "fputc") == 0 ||
+        strcmp(orig_name, "fwrite") == 0 ||
+        strcmp(orig_name, "fprintf") == 0 ||
+        strcmp(orig_name, "fgetc") == 0 ||
+        strcmp(orig_name, "fread") == 0 ||
+        strcmp(orig_name, "fopen") == 0 ||
+        strcmp(orig_name, "fclose") == 0 ||
+        strcmp(orig_name, "sprintf") == 0 ||
+        strcmp(orig_name, "snprintf") == 0)) {
+        // 这些函数已经在 <stdio.h> 中声明，不生成重复声明
         return;
     }
     
@@ -542,14 +563,37 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         }
     }
     
-    // 对于标准库 stdlib 函数（strtod, strtol, getenv 等），不生成函数定义
+    // 对于标准库 stdlib 函数（strtod, strtol, getenv, abort, exit, atoi, atol, atof 等），不生成函数定义
     // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
     // 注意：我们总是包含 <stdlib.h>，所以需要检查这些函数
     if (is_stdlib && orig_name && (
         strcmp(orig_name, "strtod") == 0 ||
         strcmp(orig_name, "strtol") == 0 ||
-        strcmp(orig_name, "getenv") == 0)) {
+        strcmp(orig_name, "getenv") == 0 ||
+        strcmp(orig_name, "abort") == 0 ||
+        strcmp(orig_name, "exit") == 0 ||
+        strcmp(orig_name, "atoi") == 0 ||
+        strcmp(orig_name, "atol") == 0 ||
+        strcmp(orig_name, "atof") == 0)) {
         // 这些函数已经在 <stdlib.h> 中声明，应该链接到 C 标准库的实现
+        // 不生成 Uya 标准库的实现，避免类型冲突
+        return;
+    }
+    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, sprintf, snprintf 等），不生成函数定义
+    // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
+    // 注意：我们总是包含 <stdio.h>，所以需要检查这些函数
+    if (is_stdlib && orig_name && (
+        strcmp(orig_name, "fputs") == 0 ||
+        strcmp(orig_name, "fputc") == 0 ||
+        strcmp(orig_name, "fwrite") == 0 ||
+        strcmp(orig_name, "fprintf") == 0 ||
+        strcmp(orig_name, "fgetc") == 0 ||
+        strcmp(orig_name, "fread") == 0 ||
+        strcmp(orig_name, "fopen") == 0 ||
+        strcmp(orig_name, "fclose") == 0 ||
+        strcmp(orig_name, "sprintf") == 0 ||
+        strcmp(orig_name, "snprintf") == 0)) {
+        // 这些函数已经在 <stdio.h> 中声明，应该链接到 C 标准库的实现
         // 不生成 Uya 标准库的实现，避免类型冲突
         return;
     }
