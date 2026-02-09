@@ -169,7 +169,10 @@ fn is_stdlib_function(func_name: &byte) i32 {
         strcmp(func_name as *byte, "abort" as *byte) == 0 ||
         strcmp(func_name as *byte, "atoi" as *byte) == 0 ||
         strcmp(func_name as *byte, "atol" as *byte) == 0 ||
-        strcmp(func_name as *byte, "atof" as *byte) == 0 {
+        strcmp(func_name as *byte, "atof" as *byte) == 0 ||
+        strcmp(func_name as *byte, "strtod" as *byte) == 0 ||
+        strcmp(func_name as *byte, "strtol" as *byte) == 0 ||
+        strcmp(func_name as *byte, "getenv" as *byte) == 0 {
         return 1;
     }
     // std.c.stdio 函数（Uya 标准库）

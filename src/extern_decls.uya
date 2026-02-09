@@ -22,6 +22,7 @@ extern fn fflush(stream: *void) i32;
 
 // ===== C 标准库 - 字符串与数值 =====
 extern fn strtod(nptr: *byte, endptr: * *byte) f64;
+extern fn strtol(nptr: *byte, endptr: * *byte, base: i32) i64;
 extern fn strlen(s: *byte) usize;
 // 注意：strcmp 在 lib/std/c/string.uya 中有实际实现，不需要 extern 声明
 // 注意：strchr 和 strrchr 的签名与 musl 一致：char *strchr(const char *s, int c)
