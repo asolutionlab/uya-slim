@@ -246,6 +246,33 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         return;
     }
     
+    // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数声明
+    // 避免与 C 标准库的声明冲突
+    if is_stdlib != 0 && codegen.needs_string_h != 0 {
+        const orig_name: &byte = fn_decl.fn_decl_name;
+        // 检查是否是字符串函数（这些函数在 <string.h> 中已声明）
+        if orig_name != null && (strcmp(orig_name as *byte, "strlen" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strcmp" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strncmp" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strcpy" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strncpy" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strcat" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strncat" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strchr" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strrchr" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strstr" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strdup" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strndup" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "memcpy" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "memmove" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "memset" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "memcmp" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "memchr" as *byte) == 0) {
+            // 这些函数已经在 <string.h> 中声明，不生成重复声明
+            return;
+        }
+    }
+    
     // 特殊处理：main 函数需要重命名为 uya_main（符合 Uya 规范：main 函数无参数）
     // 注意：Uya Mini 不支持三元运算符，使用 if-else 代替
     var is_main: i32 = 0;
@@ -426,6 +453,37 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
     const body: &ASTNode = fn_decl.fn_decl_body;
     
+    // 检查是否是标准库函数
+    const orig_name: &byte = fn_decl.fn_decl_name;
+    const is_stdlib: i32 = is_stdlib_function(func_name);
+    
+    // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数定义
+    // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
+    if is_stdlib != 0 && codegen.needs_string_h != 0 {
+        // 检查是否是字符串函数（这些函数在 <string.h> 中已声明，应该链接到标准库实现）
+        if orig_name != null && (strcmp(orig_name as *byte, "strlen" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strcmp" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strncmp" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strcpy" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strncpy" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strcat" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strncat" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strchr" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strrchr" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strstr" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strdup" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "strndup" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "memcpy" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "memmove" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "memset" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "memcmp" as *byte) == 0 ||
+            strcmp(orig_name as *byte, "memchr" as *byte) == 0) {
+            // 这些函数已经在 <string.h> 中声明，应该链接到 C 标准库的实现
+            // 不生成 Uya 标准库的实现，避免类型冲突
+            return;
+        }
+    }
+    
     // 如果没有函数体（外部函数），则不生成定义
     if body == null {
         return;
@@ -473,9 +531,6 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "copy_type" as *byte) == 0 {
             is_copy_type = 1;
         }
-        
-        // 检查是否是标准库函数
-        const is_stdlib: i32 = is_stdlib_function(func_name);
         
         // 参数列表
         i = 0;

@@ -363,6 +363,33 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         return;
     }
     
+    // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数声明
+    // 避免与 C 标准库的声明冲突
+    if (is_stdlib && codegen->needs_string_h) {
+        // 检查是否是字符串函数（这些函数在 <string.h> 中已声明）
+        if (orig_name && (
+            strcmp(orig_name, "strlen") == 0 ||
+            strcmp(orig_name, "strcmp") == 0 ||
+            strcmp(orig_name, "strncmp") == 0 ||
+            strcmp(orig_name, "strcpy") == 0 ||
+            strcmp(orig_name, "strncpy") == 0 ||
+            strcmp(orig_name, "strcat") == 0 ||
+            strcmp(orig_name, "strncat") == 0 ||
+            strcmp(orig_name, "strchr") == 0 ||
+            strcmp(orig_name, "strrchr") == 0 ||
+            strcmp(orig_name, "strstr") == 0 ||
+            strcmp(orig_name, "strdup") == 0 ||
+            strcmp(orig_name, "strndup") == 0 ||
+            strcmp(orig_name, "memcpy") == 0 ||
+            strcmp(orig_name, "memmove") == 0 ||
+            strcmp(orig_name, "memset") == 0 ||
+            strcmp(orig_name, "memcmp") == 0 ||
+            strcmp(orig_name, "memchr") == 0)) {
+            // 这些函数已经在 <string.h> 中声明，不生成重复声明
+            return;
+        }
+    }
+    
     // 对于与系统头文件冲突的函数，仍然生成前向声明（避免隐式声明）
     // 但使用非 extern 形式，因为它们是实际定义的函数
     // 注意：这些函数在标准库中有实现，需要前向声明以避免隐式声明冲突
@@ -470,11 +497,42 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     int is_varargs = fn_decl->data.fn_decl.is_varargs;
     ASTNode *body = fn_decl->data.fn_decl.body;
     
+    // 检查是否是标准库函数
+    const char *orig_name = fn_decl->data.fn_decl.name;
+    int is_stdlib = is_stdlib_function(func_name);
+    
+    // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数定义
+    // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
+    if (is_stdlib && codegen->needs_string_h) {
+        // 检查是否是字符串函数（这些函数在 <string.h> 中已声明，应该链接到标准库实现）
+        if (orig_name && (
+            strcmp(orig_name, "strlen") == 0 ||
+            strcmp(orig_name, "strcmp") == 0 ||
+            strcmp(orig_name, "strncmp") == 0 ||
+            strcmp(orig_name, "strcpy") == 0 ||
+            strcmp(orig_name, "strncpy") == 0 ||
+            strcmp(orig_name, "strcat") == 0 ||
+            strcmp(orig_name, "strncat") == 0 ||
+            strcmp(orig_name, "strchr") == 0 ||
+            strcmp(orig_name, "strrchr") == 0 ||
+            strcmp(orig_name, "strstr") == 0 ||
+            strcmp(orig_name, "strdup") == 0 ||
+            strcmp(orig_name, "strndup") == 0 ||
+            strcmp(orig_name, "memcpy") == 0 ||
+            strcmp(orig_name, "memmove") == 0 ||
+            strcmp(orig_name, "memset") == 0 ||
+            strcmp(orig_name, "memcmp") == 0 ||
+            strcmp(orig_name, "memchr") == 0)) {
+            // 这些函数已经在 <string.h> 中声明，应该链接到 C 标准库的实现
+            // 不生成 Uya 标准库的实现，避免类型冲突
+            return;
+        }
+    }
+    
     // 如果没有函数体（外部函数），则不生成定义
     if (!body) return;
     
     // 检查是否为 copy_type 函数（需要 const 限定符）
-    const char *orig_name = fn_decl->data.fn_decl.name;
     int is_copy_type = (orig_name && strcmp(orig_name, "copy_type") == 0) ? 1 : 0;
     
     // 生成 #line 指令，指向函数定义的位置
