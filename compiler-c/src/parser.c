@@ -313,7 +313,14 @@ static ASTNode *parser_parse_type(Parser *parser) {
             return slice_type;
         }
         
-        // 普通指针类型 &Type
+        // 检查是否是 &const T（只读指针）
+        int is_const = 0;
+        if (parser->current_token != NULL && parser->current_token->type == TOKEN_CONST) {
+            parser_consume(parser);  // 消费 'const'
+            is_const = 1;
+        }
+        
+        // 普通指针类型 &Type 或 &const Type
         ASTNode *pointed_type = parser_parse_type(parser);
         if (pointed_type == NULL) {
             return NULL;
@@ -327,11 +334,19 @@ static ASTNode *parser_parse_type(Parser *parser) {
         
         pointer_type->data.type_pointer.pointed_type = pointed_type;
         pointer_type->data.type_pointer.is_ffi_pointer = 0;  // 普通指针
+        pointer_type->data.type_pointer.is_const = is_const;
         
         return pointer_type;
     } else if (parser->current_token->type == TOKEN_ASTERISK) {
-        // FFI 指针类型 *Type（仅用于 extern 函数）
+        // FFI 指针类型 *Type 或 *const Type（仅用于 extern 函数）
         parser_consume(parser);  // 消费 '*'
+        
+        // 检查是否是 *const T（只读 FFI 指针）
+        int is_const = 0;
+        if (parser->current_token != NULL && parser->current_token->type == TOKEN_CONST) {
+            parser_consume(parser);  // 消费 'const'
+            is_const = 1;
+        }
         
         // 递归解析指向的类型
         ASTNode *pointed_type = parser_parse_type(parser);
@@ -347,6 +362,7 @@ static ASTNode *parser_parse_type(Parser *parser) {
         
         pointer_type->data.type_pointer.pointed_type = pointed_type;
         pointer_type->data.type_pointer.is_ffi_pointer = 1;  // FFI 指针
+        pointer_type->data.type_pointer.is_const = is_const;
         
         return pointer_type;
     } else if (parser->current_token->type == TOKEN_LEFT_BRACKET) {
@@ -2503,11 +2519,27 @@ ASTNode *parser_parse_declaration(Parser *parser) {
         return parser_parse_statement(parser);  // test 语句在 parser_parse_statement 中处理
     }
     
-    // 检查 export 关键字
+    // 检查 export 和 extern 关键字（支持两种顺序：export extern 或 extern export）
     int is_export = 0;
+    int is_extern = 0;
+    
+    // 检查第一个关键字
     if (parser_match(parser, TOKEN_EXPORT)) {
         is_export = 1;
         parser_consume(parser);
+        // 检查是否还有 extern
+        if (parser_match(parser, TOKEN_EXTERN)) {
+            is_extern = 1;
+            parser_consume(parser);
+        }
+    } else if (parser_match(parser, TOKEN_EXTERN)) {
+        is_extern = 1;
+        parser_consume(parser);
+        // 检查是否还有 export
+        if (parser_match(parser, TOKEN_EXPORT)) {
+            is_export = 1;
+            parser_consume(parser);
+        }
     }
     
     // 检查 @async_fn 函数属性
@@ -2524,30 +2556,29 @@ ASTNode *parser_parse_declaration(Parser *parser) {
     }
     
     // 根据第一个 Token 判断声明类型
-    if (parser_match(parser, TOKEN_EXTERN)) {
+    if (is_extern) {
         if (is_async) {
             fprintf(stderr, "错误: extern 函数不能使用 @async_fn 属性\n");
             return NULL;
         }
-        parser_consume(parser);
         ASTNode *decl = parser_parse_extern_decl(parser);
-        if (decl != NULL && is_export) {
-            // 设置 export 标记（extern 函数/结构体）
+        if (decl != NULL) {
+            // 设置 export 和 extern 标记
             if (decl->type == AST_FN_DECL) {
-                decl->data.fn_decl.is_export = 1;
+                decl->data.fn_decl.is_export = is_export;
+                decl->data.fn_decl.is_extern = 1;
             } else if (decl->type == AST_STRUCT_DECL) {
-                decl->data.struct_decl.is_export = 1;
+                decl->data.struct_decl.is_export = is_export;
             } else if (decl->type == AST_UNION_DECL) {
-                decl->data.union_decl.is_export = 1;
+                decl->data.union_decl.is_export = is_export;
             }
         }
         return decl;
     } else if (parser_match(parser, TOKEN_FN)) {
         ASTNode *decl = parser_parse_function(parser);
         if (decl != NULL) {
-            if (is_export) {
-                decl->data.fn_decl.is_export = 1;
-            }
+            decl->data.fn_decl.is_export = is_export;
+            decl->data.fn_decl.is_extern = 0;  // 普通函数不是 extern
             if (is_async) {
                 decl->data.fn_decl.is_async = 1;
             }

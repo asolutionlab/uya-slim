@@ -329,11 +329,17 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         return;
     }
     
-    // 检查是否为extern函数（body为NULL表示extern函数）
+    // 检查是否为extern函数（body为NULL表示extern函数，或从AST节点读取）
     int is_extern = (body == NULL) ? 1 : 0;
+    if (fn_decl->data.fn_decl.is_extern) {
+        is_extern = 1;
+    }
     
     // 检查是否是标准库函数
     int is_stdlib = is_stdlib_function(func_name);
+    
+    // 读取 is_export 标志
+    int is_export = fn_decl->data.fn_decl.is_export;
     
     // 检查是否是与系统头文件冲突的函数（这些函数在 stdio.uya 中定义，但名称与系统头文件冲突）
     // 对于这些函数，不生成函数声明，只生成函数定义（避免与 <stdio.h> 冲突）
@@ -367,6 +373,12 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         // 对于extern函数，添加extern关键字
         fprintf(codegen->output, "extern %s %s(", return_c, func_name);
     } else {
+        // 非 extern 函数：根据 is_export 决定是否添加 static
+        // fn foo() void → static void foo(void)（内部函数，不导出）
+        // export fn foo() void → void foo(void)（导出函数，供其他模块使用）
+        if (!is_export) {
+            fprintf(codegen->output, "static ");
+        }
         fprintf(codegen->output, "%s %s(", return_c, func_name);
     }
     
@@ -474,10 +486,20 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     // 返回类型（如果是数组类型，转换为指针类型）
     const char *return_c = convert_array_return_type(codegen, return_type);
     
+    // 根据 is_export 标志决定是否添加 static 关键字
+    // fn foo() void → static void foo(void)（内部函数，不导出）
+    // export fn foo() void → void foo(void)（导出函数，供其他模块使用）
+    int is_export = fn_decl->data.fn_decl.is_export;
+    int is_extern = fn_decl->data.fn_decl.is_extern;
+    
     if (is_main) {
         // main 函数重命名为 uya_main（符合 Uya 规范：main 函数无参数）
         fprintf(codegen->output, "%s uya_main(void)", return_c);
     } else {
+        // 非 extern 函数：根据 is_export 决定是否添加 static
+        if (!is_extern && !is_export) {
+            fprintf(codegen->output, "static ");
+        }
         fprintf(codegen->output, "%s %s(", return_c, func_name);
         
         // 参数列表

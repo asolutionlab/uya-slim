@@ -41,8 +41,8 @@
 | 27 | **接口组合** | [x]（C 实现与 uya-src 已同步，v0.2.30 已完成） |
 | 28 | **源代码位置内置函数** | [x]（@src_name/@src_path/@src_line/@src_col/@func_name，v0.2.31 已完成） |
 | 29 | **数字字面量增强** | [x]（十六进制/八进制/二进制、下划线分隔符，v0.2.32 已完成） |
-| 30 | **只读指针类型 `&const T` 和 `*const T`** | [ ] **规范 0.42 新增** |
-| 31 | **函数导出规则完善（static/export/extern）** | [ ] **规范 0.42 新增** |
+| 30 | **只读指针类型 `&const T` 和 `*const T`** | [~] **规范 0.42 新增**（主要实现已完成，待标准库更新和测试用例） |
+| 31 | **函数导出规则完善（static/export/extern）** | [~] **规范 0.42 新增**（主要实现已完成，待测试用例） |
 
 ---
 
@@ -50,36 +50,36 @@
 
 ### 0.42 只读指针类型和函数导出规则（新增）
 
-- [ ] **只读指针类型 `&const T` 和 `*const T`**：
+- [x] **只读指针类型 `&const T` 和 `*const T`**：
   - **语法**：新增 `&const T` (Uya 内部只读引用) 和 `*const T` (FFI 只读指针) 语法
   - **语义**：在类型系统中明确区分可变和只读指针，提升类型安全和 C 互操作性
   - **C 映射**：`&const T` 和 `*const T` 均映射为 `const T*`
-  - **字符串字面量**：`"..."` 的类型现在为 `&const byte`
+  - **字符串字面量**：`"..."` 的类型现在为 `&const byte`（待实现）
   - **FFI 函数签名**：C 标准库中接受 `const char *` 的函数，在 `extern` 声明中应使用 `*const byte`
   - **类型转换规则**：
-    - `&T` 可以隐式转换为 `&const T`（放宽约束，安全）
-    - `&const T` 不能隐式转换为 `&T`（收紧约束，需要显式转换）
-    - `&T` 可以通过 `as *const T` 显式转换为 `*const T`
-    - `&const T` 可以通过 `as *const T` 显式转换为 `*const T`
+    - `&T` 可以隐式转换为 `&const T`（放宽约束，安全）✅ 已实现
+    - `&const T` 不能隐式转换为 `&T`（收紧约束，需要显式转换）✅ 已实现
+    - `&T` 可以通过 `as *const T` 显式转换为 `*const T`（待实现）
+    - `&const T` 可以通过 `as *const T` 显式转换为 `*const T`（待实现）
   - **实现待办**：
-    - [ ] **Lexer**：识别 `&const` 和 `*const` 关键字
-    - [ ] **AST**：扩展 `AST_TYPE_POINTER` 节点，添加 `is_const` 标志
-    - [ ] **Parser**：解析 `&const T` 和 `*const T` 类型语法
-    - [ ] **Checker**：类型检查时处理 `&const T` 的隐式转换和约束检查
-    - [ ] **Codegen**：根据 `is_const` 标志生成 `const T*` 类型
+    - [x] **Lexer**：识别 `&const` 和 `*const` 关键字（通过 `TOKEN_CONST` 识别）
+    - [x] **AST**：扩展 `AST_TYPE_POINTER` 节点，添加 `is_const` 标志
+    - [x] **Parser**：解析 `&const T` 和 `*const T` 类型语法
+    - [x] **Checker**：类型检查时处理 `&const T` 的隐式转换和约束检查（`type_from_ast`、`type_equals`、`checker_check_expr_type`、`type_can_implicitly_convert`）
+    - [x] **Codegen**：根据 `is_const` 标志生成 `const T*` 类型
     - [ ] **标准库更新**：更新标准库函数签名，使用 `&const byte` 替代 `&byte`（只读参数）
     - [ ] **测试用例**：添加 `&const T` 语法的测试用例，验证类型转换规则
 
-- [ ] **函数导出规则完善**：
+- [x] **函数导出规则完善**：
   - **函数可见性规则**：
-    - `fn foo() void` → `static void foo(void)`（内部函数，不导出）
-    - `export fn foo() void` → `void foo(void)`（导出函数，供其他模块使用）
-    - `extern fn foo() void` → `extern void foo(void);`（外部 C 函数声明）
-    - `export extern fn foo() void` 或 `extern export fn foo() void` → `extern void foo(void);`（导出外部 C 函数，FFI，两种顺序等价）
+    - `fn foo() void` → `static void foo(void)`（内部函数，不导出）✅ 已实现
+    - `export fn foo() void` → `void foo(void)`（导出函数，供其他模块使用）✅ 已实现
+    - `extern fn foo() void` → `extern void foo(void);`（外部 C 函数声明）✅ 已实现
+    - `export extern fn foo() void` 或 `extern export fn foo() void` → `extern void foo(void);`（导出外部 C 函数，FFI，两种顺序等价）✅ 已实现
   - **实现待办**：
-    - [ ] **Parser**：解析 `export` 和 `extern` 关键字（支持两种顺序）
-    - [ ] **AST**：在函数节点中记录 `is_export` 和 `is_extern` 标志
-    - [ ] **Codegen**：根据 `is_export` 标志决定是否添加 `static` 关键字
+    - [x] **Parser**：解析 `export` 和 `extern` 关键字（支持两种顺序：`export extern` 和 `extern export`）
+    - [x] **AST**：在函数节点中记录 `is_export` 和 `is_extern` 标志
+    - [x] **Codegen**：根据 `is_export` 标志决定是否添加 `static` 关键字（`gen_function_prototype` 和 `gen_function`）
     - [ ] **测试用例**：验证函数导出规则，确保生成的 C 代码正确
 
 **参考文档**：

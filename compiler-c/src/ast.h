@@ -215,6 +215,7 @@ struct ASTNode {
             struct ASTNode *body;            // 函数体（AST_BLOCK 节点）
             int is_varargs;           // 是否为可变参数函数（1 表示是，0 表示否）
             int is_export;            // 1 表示 export fn，0 表示私有
+            int is_extern;            // 1 表示 extern fn，0 表示普通函数
             int is_async;             // 1 表示 @async_fn 异步函数，0 表示普通函数
         } fn_decl;
         
@@ -506,6 +507,7 @@ struct ASTNode {
         struct {
             struct ASTNode *pointed_type;  // 指向的类型节点（从 Arena 分配）
             int is_ffi_pointer;            // 是否为 FFI 指针（1 表示 *T，0 表示 &T）
+            int is_const;                  // 是否为只读指针（1 表示 &const T 或 *const T，0 表示 &T 或 *T）
         } type_pointer;
         
         // 数组类型节点（[T: N]）

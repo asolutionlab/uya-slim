@@ -53,6 +53,7 @@ typedef struct Type {
         struct {
             struct Type *pointer_to;  // 指向的类型（仅当 kind == TYPE_POINTER 时有效，从 Arena 分配）
             int is_ffi_pointer;       // 是否为 FFI 指针（1 表示 *T，0 表示 &T，仅当 kind == TYPE_POINTER 时有效）
+            int is_const;              // 是否为只读指针（1 表示 &const T 或 *const T，0 表示 &T 或 *T，仅当 kind == TYPE_POINTER 时有效）
         } pointer;
         struct {
             struct Type *element_type; // 元素类型（仅当 kind == TYPE_ARRAY 时有效，从 Arena 分配）

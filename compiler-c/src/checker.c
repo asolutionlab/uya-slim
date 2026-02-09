@@ -705,6 +705,21 @@ static int type_can_implicitly_convert(Type from, Type to) {
         return 1;
     }
     
+    // &T 可以隐式转换为 &const T（放宽约束，安全）
+    // *T 可以隐式转换为 *const T（放宽约束，安全）
+    if (from.kind == TYPE_POINTER && to.kind == TYPE_POINTER &&
+        from.data.pointer.is_ffi_pointer == to.data.pointer.is_ffi_pointer &&
+        !from.data.pointer.is_const && to.data.pointer.is_const) {
+        // 检查指向的类型是否相同
+        if (from.data.pointer.pointer_to == NULL && to.data.pointer.pointer_to == NULL) {
+            return 1;  // 都是 &void 或 *void
+        }
+        if (from.data.pointer.pointer_to != NULL && to.data.pointer.pointer_to != NULL &&
+            type_equals(*from.data.pointer.pointer_to, *to.data.pointer.pointer_to)) {
+            return 1;  // 指向的类型相同，允许隐式转换
+        }
+    }
+    
     return 0;
 }
 
@@ -757,10 +772,14 @@ static int type_equals(Type t1, Type t2) {
         return strcmp(t1.data.interface_name, t2.data.interface_name) == 0;
     }
     
-    // 对于指针类型，需要比较指向的类型和是否FFI指针
+    // 对于指针类型，需要比较指向的类型、是否FFI指针和是否只读
+    // 注意：&T 和 &const T 在类型相等性检查中视为不同（但允许隐式转换）
     if (t1.kind == TYPE_POINTER) {
         if (t1.data.pointer.is_ffi_pointer != t2.data.pointer.is_ffi_pointer) {
             return 0;
+        }
+        if (t1.data.pointer.is_const != t2.data.pointer.is_const) {
+            return 0;  // &T 和 &const T 视为不同类型
         }
         if (t1.data.pointer.pointer_to == NULL && t2.data.pointer.pointer_to == NULL) {
             return 1;
@@ -874,6 +893,7 @@ static Type type_from_ast(TypeChecker *checker, ASTNode *type_node) {
                     result.kind = TYPE_POINTER;
                     result.data.pointer.pointer_to = NULL;  // NULL 表示指向 void
                     result.data.pointer.is_ffi_pointer = type_node->data.type_pointer.is_ffi_pointer;
+                    result.data.pointer.is_const = type_node->data.type_pointer.is_const;
                     return result;
                 }
             }
@@ -897,6 +917,7 @@ static Type type_from_ast(TypeChecker *checker, ASTNode *type_node) {
         result.kind = TYPE_POINTER;
         result.data.pointer.pointer_to = pointed_type_ptr;
         result.data.pointer.is_ffi_pointer = type_node->data.type_pointer.is_ffi_pointer;
+        result.data.pointer.is_const = type_node->data.type_pointer.is_const;
         
         return result;
     } else if (type_node->type == AST_TYPE_ARRAY) {
@@ -3014,18 +3035,32 @@ static uint32_t get_or_add_error_id(TypeChecker *checker, const char *name, ASTN
     return h;
 }
 
-// 检查表达式类型是否匹配预期类型
-// 参数：checker - TypeChecker 指针，expr - 表达式节点，expected_type - 预期类型
-// 返回：1 表示类型匹配，0 表示类型不匹配
-static int checker_check_expr_type(TypeChecker *checker, ASTNode *expr, Type expected_type) {
-    if (checker == NULL || expr == NULL) {
-        return 0;
-    }
-    
-    Type actual_type = checker_infer_type(checker, expr);
-    if (type_equals(actual_type, expected_type)) {
-        return 1;
-    }
+    // 检查表达式类型是否匹配预期类型
+    // 参数：checker - TypeChecker 指针，expr - 表达式节点，expected_type - 预期类型
+    // 返回：1 表示类型匹配，0 表示类型不匹配
+    static int checker_check_expr_type(TypeChecker *checker, ASTNode *expr, Type expected_type) {
+        if (checker == NULL || expr == NULL) {
+            return 0;
+        }
+        
+        Type actual_type = checker_infer_type(checker, expr);
+        if (type_equals(actual_type, expected_type)) {
+            return 1;
+        }
+        
+        // 允许 &T 隐式转换为 &const T（放宽约束，安全）
+        if (actual_type.kind == TYPE_POINTER && expected_type.kind == TYPE_POINTER &&
+            actual_type.data.pointer.is_ffi_pointer == expected_type.data.pointer.is_ffi_pointer &&
+            !actual_type.data.pointer.is_const && expected_type.data.pointer.is_const) {
+            // 检查指向的类型是否相同
+            if (actual_type.data.pointer.pointer_to == NULL && expected_type.data.pointer.pointer_to == NULL) {
+                return 1;  // 都是 &void 或 *void
+            }
+            if (actual_type.data.pointer.pointer_to != NULL && expected_type.data.pointer.pointer_to != NULL &&
+                type_equals(*actual_type.data.pointer.pointer_to, *expected_type.data.pointer.pointer_to)) {
+                return 1;  // 指向的类型相同，允许隐式转换
+            }
+        }
     // 结构体实现接口时，可装箱为接口类型（赋值/传参）
     if (actual_type.kind == TYPE_STRUCT && expected_type.kind == TYPE_INTERFACE &&
         struct_implements_interface(checker, actual_type.data.struct_type.name, expected_type.data.interface_name)) {

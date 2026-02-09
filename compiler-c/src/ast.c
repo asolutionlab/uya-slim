@@ -81,6 +81,9 @@ ASTNode *ast_new_node(ASTNodeType type, int line, int column, Arena *arena, cons
             node->data.fn_decl.return_type = NULL;
             node->data.fn_decl.body = NULL;
             node->data.fn_decl.is_varargs = 0;
+            node->data.fn_decl.is_export = 0;
+            node->data.fn_decl.is_extern = 0;
+            node->data.fn_decl.is_async = 0;
             break;
         case AST_MACRO_DECL:
             node->data.macro_decl.name = NULL;
@@ -314,6 +317,7 @@ ASTNode *ast_new_node(ASTNodeType type, int line, int column, Arena *arena, cons
         case AST_TYPE_POINTER:
             node->data.type_pointer.pointed_type = NULL;
             node->data.type_pointer.is_ffi_pointer = 0;
+            node->data.type_pointer.is_const = 0;
             break;
         case AST_TYPE_ARRAY:
             node->data.type_array.element_type = NULL;
