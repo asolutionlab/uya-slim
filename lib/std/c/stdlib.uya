@@ -264,8 +264,8 @@ export fn atof(s: &const byte) f64 {
 
 // strtod - 将字符串转换为 f64（C 标准库兼容）
 // 返回：转换后的浮点数，失败返回 0.0
-// 注意：endptr 用于返回转换结束的位置
-export fn strtod(nptr: &const byte, endptr: & &byte) f64 {
+// 注意：endptr 用于返回转换结束的位置（使用 &const byte 以避免 const 限定符警告）
+export fn strtod(nptr: &const byte, endptr: & &const byte) f64 {
     if nptr == null {
         if endptr != null {
             endptr[0] = null;
@@ -327,8 +327,8 @@ export fn strtod(nptr: &const byte, endptr: & &byte) f64 {
 
 // strtol - 将字符串转换为 i64（C 标准库兼容）
 // 返回：转换后的长整数，失败返回 0
-// 注意：endptr 用于返回转换结束的位置，base 用于指定进制（2-36）
-export fn strtol(nptr: &const byte, endptr: & &byte, base: i32) i64 {
+// 注意：endptr 用于返回转换结束的位置（使用 &const byte 以避免 const 限定符警告），base 用于指定进制（2-36）
+export fn strtol(nptr: &const byte, endptr: & &const byte, base: i32) i64 {
     if nptr == null {
         if endptr != null {
             endptr[0] = null;

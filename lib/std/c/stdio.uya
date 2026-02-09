@@ -468,7 +468,8 @@ export fn fprintf(stream: &void, format: &const byte, ...) i32 {
 
 // fwrite - 向文件流写入数据（C 标准库兼容）
 // 返回：写入的元素数
-export fn fwrite(ptr: &byte, size: usize, nmemb: usize, stream: &void) usize {
+// 注意：ptr 使用 &const byte 以避免 const 限定符警告（与 C 标准库一致）
+export fn fwrite(ptr: &const byte, size: usize, nmemb: usize, stream: &void) usize {
     if ptr == null || stream == null || size == 0 || nmemb == 0 {
         return 0;
     }

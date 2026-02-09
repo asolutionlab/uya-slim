@@ -965,6 +965,20 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                     // 普通初始化（@params 已在上方单独处理）
                     fputs(" = ", codegen->output);
                     
+                    // 检查是否是字符串常量（@func_name、@src_name、@src_path）赋值给指针类型
+                    // 字符串常量是 const char * 类型，但变量可能是 uint8_t * const，需要类型转换
+                    int needs_cast = 0;
+                    if (var_type && var_type->type == AST_TYPE_POINTER &&
+                        (init_expr->type == AST_FUNC_NAME || 
+                         init_expr->type == AST_SRC_NAME || 
+                         init_expr->type == AST_SRC_PATH)) {
+                        needs_cast = 1;
+                    }
+                    
+                    if (needs_cast) {
+                        fputs("(uint8_t *)", codegen->output);
+                    }
+                    
                     // 对于泛型结构体实例化的结构体初始化，使用变量类型的 C 类型名称
                     if (init_expr->type == AST_STRUCT_INIT && 
                         var_type && var_type->type == AST_TYPE_NAMED && 

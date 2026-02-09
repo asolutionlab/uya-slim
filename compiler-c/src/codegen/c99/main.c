@@ -3,6 +3,85 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+/* 递归收集字符串函数调用和 memset 使用，设置 needs_string_h 标志 */
+static void collect_string_functions_from_node(C99CodeGenerator *codegen, ASTNode *node) {
+    if (!codegen || !node) return;
+    
+    if (node->type == AST_CALL_EXPR) {
+        ASTNode *callee = node->data.call_expr.callee;
+        if (callee && callee->type == AST_IDENTIFIER) {
+            const char *callee_name = callee->data.identifier.name;
+            if (callee_name && (strcmp(callee_name, "strcmp") == 0 ||
+                strcmp(callee_name, "strncmp") == 0 ||
+                strcmp(callee_name, "strlen") == 0 ||
+                strcmp(callee_name, "strcpy") == 0 ||
+                strcmp(callee_name, "strncpy") == 0 ||
+                strcmp(callee_name, "strcat") == 0 ||
+                strcmp(callee_name, "strncat") == 0 ||
+                strcmp(callee_name, "strchr") == 0 ||
+                strcmp(callee_name, "strrchr") == 0 ||
+                strcmp(callee_name, "strstr") == 0 ||
+                strcmp(callee_name, "strdup") == 0 ||
+                strcmp(callee_name, "strndup") == 0)) {
+                codegen->needs_string_h = 1;
+            }
+        }
+    }
+    
+    // 检查是否有空结构体或数组字段（会使用 memset）
+    if (node->type == AST_STRUCT_DECL) {
+        if (node->data.struct_decl.field_count == 0) {
+            // 空结构体：会使用 memset
+            codegen->needs_string_h = 1;
+        } else if (node->data.struct_decl.fields) {
+            // 检查是否有数组字段
+            for (int i = 0; i < node->data.struct_decl.field_count; i++) {
+                ASTNode *field = node->data.struct_decl.fields[i];
+                if (field && field->type == AST_VAR_DECL && field->data.var_decl.type &&
+                    field->data.var_decl.type->type == AST_TYPE_ARRAY) {
+                    codegen->needs_string_h = 1;
+                    break;
+                }
+            }
+        }
+    }
+    
+    // 检查变量声明中的数组类型（会使用 memset）
+    if (node->type == AST_VAR_DECL && node->data.var_decl.type) {
+        if (node->data.var_decl.type->type == AST_TYPE_ARRAY) {
+            codegen->needs_string_h = 1;
+        }
+    }
+    
+    // 递归处理子节点
+    if (node->type == AST_BLOCK && node->data.block.stmts) {
+        for (int i = 0; i < node->data.block.stmt_count; i++) {
+            collect_string_functions_from_node(codegen, node->data.block.stmts[i]);
+        }
+    } else if (node->type == AST_IF_STMT) {
+        if (node->data.if_stmt.then_branch) {
+            collect_string_functions_from_node(codegen, node->data.if_stmt.then_branch);
+        }
+        if (node->data.if_stmt.else_branch) {
+            collect_string_functions_from_node(codegen, node->data.if_stmt.else_branch);
+        }
+    } else if (node->type == AST_WHILE_STMT && node->data.while_stmt.body) {
+        collect_string_functions_from_node(codegen, node->data.while_stmt.body);
+    } else if (node->type == AST_FOR_STMT && node->data.for_stmt.body) {
+        collect_string_functions_from_node(codegen, node->data.for_stmt.body);
+    } else if (node->type == AST_VAR_DECL && node->data.var_decl.init) {
+        collect_string_functions_from_node(codegen, node->data.var_decl.init);
+    } else if (node->type == AST_RETURN_STMT && node->data.return_stmt.expr) {
+        collect_string_functions_from_node(codegen, node->data.return_stmt.expr);
+    } else if (node->type == AST_ASSIGN && node->data.assign.src) {
+        collect_string_functions_from_node(codegen, node->data.assign.src);
+    } else if (node->type == AST_CALL_EXPR && node->data.call_expr.args) {
+        for (int i = 0; i < node->data.call_expr.arg_count; i++) {
+            collect_string_functions_from_node(codegen, node->data.call_expr.args[i]);
+        }
+    }
+}
+
 /* 递归收集所有测试语句（使用固定大小数组，最多 1000 个测试） */
 #define MAX_TESTS 1000
 static void collect_tests_from_node(C99CodeGenerator *codegen, ASTNode *node, ASTNode **tests, int *test_count) {
@@ -269,21 +348,34 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
     fputs("// 使用 -std=c99 编译\n", codegen->output);
     fputs("//\n", codegen->output);
     
-    // 先检查是否定义了与标准库冲突的函数
+    // 先检查是否定义了与标准库冲突的函数，并预扫描 AST 收集 needs_string_h
     ASTNode **decls = ast->data.program.decls;
     int decl_count = ast->data.program.decl_count;
     for (int i = 0; i < decl_count; i++) {
         ASTNode *decl = decls[i];
-        if (!decl || decl->type != AST_FN_DECL) continue;
-        const char *fn_name = decl->data.fn_decl.name;
-        if (fn_name && (
-            strcmp(fn_name, "fopen") == 0 ||
-            strcmp(fn_name, "fclose") == 0 ||
-            strcmp(fn_name, "fread") == 0 ||
-            strcmp(fn_name, "fgetc") == 0 ||
-            strcmp(fn_name, "fprintf") == 0)) {
-            codegen->has_stdio_conflicts = 1;
-            break;
+        if (!decl) continue;
+        
+        // 检查是否定义了与标准库冲突的函数
+        if (decl->type == AST_FN_DECL) {
+            const char *fn_name = decl->data.fn_decl.name;
+            if (fn_name && (
+                strcmp(fn_name, "fopen") == 0 ||
+                strcmp(fn_name, "fclose") == 0 ||
+                strcmp(fn_name, "fread") == 0 ||
+                strcmp(fn_name, "fgetc") == 0 ||
+                strcmp(fn_name, "fprintf") == 0)) {
+                codegen->has_stdio_conflicts = 1;
+            }
+        }
+        
+        // 预扫描结构体声明，检测空结构体或数组字段（会使用 memset）
+        if (decl->type == AST_STRUCT_DECL) {
+            collect_string_functions_from_node(codegen, decl);
+        }
+        
+        // 预扫描函数体，检测字符串函数调用
+        if (decl->type == AST_FN_DECL && decl->data.fn_decl.body) {
+            collect_string_functions_from_node(codegen, decl->data.fn_decl.body);
         }
     }
     
