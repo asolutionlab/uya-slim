@@ -257,7 +257,7 @@ var fopen_fd_storage: [i64: 64] = [];
 // fopen - 打开文件（C 标准库兼容）
 // 注意：在 --nostdlib 模式下，FILE* 实际上就是文件描述符（转换为指针）
 // 返回：FILE*（实际上是文件描述符的指针），失败返回 null
-export fn fopen(filename: *byte, mode: *byte) *void {
+export fn fopen(filename: &byte, mode: &byte) &void {
     if filename == null || mode == null {
         return null;
     }
@@ -303,7 +303,7 @@ export fn fopen(filename: *byte, mode: *byte) *void {
         // 查找空闲槽位（fd <= 0 表示未使用）
         if fopen_fd_storage[j] <= 0 {
             fopen_fd_storage[j] = fd;
-            return &fopen_fd_storage[j] as *void;
+            return &fopen_fd_storage[j] as &void;
         }
         j = j + 1;
     }
@@ -315,7 +315,7 @@ export fn fopen(filename: *byte, mode: *byte) *void {
 
 // fclose - 关闭文件（C 标准库兼容）
 // 返回：0 成功，EOF (-1) 失败
-export fn fclose(stream: *void) i32 {
+export fn fclose(stream: &void) i32 {
     if stream == null {
         return 0 - 1;  // EOF
     }
@@ -340,7 +340,7 @@ export fn fclose(stream: *void) i32 {
 
 // fread - 从文件读取（C 标准库兼容）
 // 返回：读取的元素数
-export fn fread(ptr: *byte, size: usize, nmemb: usize, stream: *void) usize {
+export fn fread(ptr: &byte, size: usize, nmemb: usize, stream: &void) usize {
     if ptr == null || stream == null || size == 0 || nmemb == 0 {
         return 0;
     }
@@ -369,7 +369,7 @@ export fn fread(ptr: *byte, size: usize, nmemb: usize, stream: *void) usize {
 
 // fgetc - 从文件读取一个字符（C 标准库兼容）
 // 返回：读取的字符，EOF (-1) 表示错误或文件结束
-export fn fgetc(stream: *void) i32 {
+export fn fgetc(stream: &void) i32 {
     if stream == null {
         return 0 - 1;  // EOF
     }
@@ -397,7 +397,7 @@ export fn fgetc(stream: *void) i32 {
 
 // fprintf - 格式化输出到文件流（简化版本，只支持 %s 和 %d）
 // 返回：写入的字符数，失败返回负数
-export fn fprintf(stream: *void, format: *byte, ...) i32 {
+export fn fprintf(stream: &void, format: &byte, ...) i32 {
     if stream == null || format == null {
         return 0 - 1;
     }
@@ -468,7 +468,7 @@ export fn fprintf(stream: *void, format: *byte, ...) i32 {
 
 // fwrite - 向文件流写入数据（C 标准库兼容）
 // 返回：写入的元素数
-export fn fwrite(ptr: &byte, size: usize, nmemb: usize, stream: *void) usize {
+export fn fwrite(ptr: &byte, size: usize, nmemb: usize, stream: &void) usize {
     if ptr == null || stream == null || size == 0 || nmemb == 0 {
         return 0;
     }
@@ -497,7 +497,7 @@ export fn fwrite(ptr: &byte, size: usize, nmemb: usize, stream: *void) usize {
 
 // fputc - 向文件流写入一个字符（C 标准库兼容）
 // 返回：写入的字符，EOF (-1) 表示错误
-export fn fputc(c: i32, stream: *void) i32 {
+export fn fputc(c: i32, stream: &void) i32 {
     if stream == null {
         return 0 - 1;  // EOF
     }
@@ -525,7 +525,7 @@ export fn fputc(c: i32, stream: *void) i32 {
 
 // fputs - 向文件流写入字符串（C 标准库兼容）
 // 返回：非负值成功，EOF (-1) 失败
-export fn fputs(s: &byte, stream: *void) i32 {
+export fn fputs(s: &byte, stream: &void) i32 {
     if s == null || stream == null {
         return 0 - 1;  // EOF
     }
@@ -546,7 +546,7 @@ export fn fputs(s: &byte, stream: *void) i32 {
 
 // sprintf - 格式化字符串（简化版本，只支持 %s 和 %d）
 // 返回：写入的字符数（不包括 null 终止符），失败返回负数
-export fn sprintf(buf: &byte, format: *byte, ...) i32 {
+export fn sprintf(buf: &byte, format: &byte, ...) i32 {
     if buf == null || format == null {
         return 0 - 1;
     }
@@ -598,7 +598,7 @@ export fn sprintf(buf: &byte, format: *byte, ...) i32 {
 
 // snprintf - 格式化字符串（带长度限制，简化版本，只支持 %s 和 %d）
 // 返回：写入的字符数（不包括 null 终止符），失败返回负数
-export fn snprintf(buf: &byte, n: usize, format: *byte, ...) i32 {
+export fn snprintf(buf: &byte, n: usize, format: &byte, ...) i32 {
     if buf == null || format == null || n == 0 {
         return 0 - 1;
     }

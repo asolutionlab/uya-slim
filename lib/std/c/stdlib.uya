@@ -265,7 +265,7 @@ export fn atof(s: &byte) f64 {
 // strtod - 将字符串转换为 f64（C 标准库兼容）
 // 返回：转换后的浮点数，失败返回 0.0
 // 注意：endptr 用于返回转换结束的位置
-export fn strtod(nptr: *byte, endptr: * *byte) f64 {
+export fn strtod(nptr: &byte, endptr: & &byte) f64 {
     if nptr == null {
         if endptr != null {
             endptr[0] = null;
@@ -319,7 +319,7 @@ export fn strtod(nptr: *byte, endptr: * *byte) f64 {
     
     // 设置 endptr
     if endptr != null {
-        endptr[0] = (nptr as i64 + i as i64) as *byte;
+        endptr[0] = &nptr[i];
     }
     
     return result;
@@ -328,7 +328,7 @@ export fn strtod(nptr: *byte, endptr: * *byte) f64 {
 // strtol - 将字符串转换为 i64（C 标准库兼容）
 // 返回：转换后的长整数，失败返回 0
 // 注意：endptr 用于返回转换结束的位置，base 用于指定进制（2-36）
-export fn strtol(nptr: *byte, endptr: * *byte, base: i32) i64 {
+export fn strtol(nptr: &byte, endptr: & &byte, base: i32) i64 {
     if nptr == null {
         if endptr != null {
             endptr[0] = null;
@@ -404,7 +404,7 @@ export fn strtol(nptr: *byte, endptr: * *byte, base: i32) i64 {
     
     // 设置 endptr
     if endptr != null {
-        endptr[0] = (nptr as i64 + i as i64) as *byte;
+        endptr[0] = &nptr[i];
     }
     
     return result;
@@ -421,9 +421,28 @@ use std.c.string.strlen;
 use std.c.string.strcmp;
 use std.c.string.strncpy;
 
+// ============================================================
+// 类型定义（用于 C 编译器代码生成）
+// ============================================================
+
+// stat 结构体（Linux x86_64 上为 144 字节）
+struct Stat {
+    _data: [byte: 144],  // 144 字节，匹配 C 的 struct stat
+}
+
+// 目录操作相关类型
+struct Dirent {
+    d_name: &byte,
+    d_type: u8,  // DT_REG = 8, DT_DIR = 4
+}
+
+struct DIR {
+    // 不透明类型
+}
+
 // stat - 获取文件状态（C 标准库兼容）
 // 返回：0 成功，-1 失败
-export fn stat(path: *byte, buf: &Stat) i32 {
+export fn stat(path: &byte, buf: &Stat) i32 {
     if path == null || buf == null {
         return 0 - 1;
     }
@@ -443,7 +462,7 @@ export fn stat(path: *byte, buf: &Stat) i32 {
 
 // readlink - 读取符号链接（C 标准库兼容）
 // 返回：读取的字节数，失败返回 -1
-export fn readlink(path: *byte, buf: *byte, bufsiz: usize) i32 {
+export fn readlink(path: &byte, buf: &byte, bufsiz: usize) i32 {
     if path == null || buf == null || bufsiz == 0 {
         return 0 - 1;
     }
@@ -464,7 +483,7 @@ export fn readlink(path: *byte, buf: *byte, bufsiz: usize) i32 {
 // getenv - 获取环境变量（简化实现）
 // 返回：环境变量值的指针，未找到返回 null
 // 注意：这是一个简化实现，实际应该从 environ 变量读取
-export fn getenv(name: *byte) *byte {
+export fn getenv(name: &byte) &byte {
     if name == null {
         return null;
     }
@@ -492,7 +511,7 @@ var opendir_fd_storage: [i64: 64] = [];
 
 // opendir - 打开目录（C 标准库兼容）
 // 返回：DIR*，失败返回 null
-export fn opendir(name: *byte) *DIR {
+export fn opendir(name: &byte) &DIR {
     if name == null {
         return null;
     }
@@ -513,7 +532,7 @@ export fn opendir(name: *byte) *DIR {
         // 查找空闲槽位（fd <= 0 表示未使用）
         if opendir_fd_storage[j] <= 0 {
             opendir_fd_storage[j] = fd;
-            return &opendir_fd_storage[j] as *DIR;
+            return &opendir_fd_storage[j] as &DIR;
         }
         j = j + 1;
     }
@@ -526,7 +545,7 @@ export fn opendir(name: *byte) *DIR {
 // readdir - 读取目录项（简化实现）
 // 返回：Dirent*，失败或结束返回 null
 // 注意：这是一个简化实现，实际应该使用 getdents64 系统调用
-export fn readdir(dirp: *DIR) *Dirent {
+export fn readdir(dirp: &DIR) &Dirent {
     if dirp == null {
         return null;
     }
@@ -546,7 +565,7 @@ export fn readdir(dirp: *DIR) *Dirent {
 
 // closedir - 关闭目录（C 标准库兼容）
 // 返回：0 成功，-1 失败
-export fn closedir(dirp: *DIR) i32 {
+export fn closedir(dirp: &DIR) i32 {
     if dirp == null {
         return 0 - 1;
     }
