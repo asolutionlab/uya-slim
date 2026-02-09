@@ -1,0 +1,84 @@
+// 测试 Uya 函数导出给 C 调用（完整示例）
+// 演示如何使用 export fn 让 C 代码可以调用 Uya 函数
+
+// ============================================================
+// 方式 1：导出简单函数给 C 调用
+// ============================================================
+
+// 生成的 C 代码：int uya_add(int a, int b) { ... }（没有 static）
+// C 代码可以这样调用：int result = uya_add(10, 20);
+export fn uya_add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+// 生成的 C 代码：int uya_multiply(int a, int b) { ... }（没有 static）
+export fn uya_multiply(a: i32, b: i32) i32 {
+    return a * b;
+}
+
+// ============================================================
+// 方式 2：导出带字符串的函数
+// ============================================================
+
+// 注意：字符串参数应使用 &const byte（只读）或 *const byte（FFI 只读）
+// 生成的 C 代码：int uya_strlen(const char *s) { ... }（没有 static）
+export fn uya_strlen(s: &const byte) i32 {
+    var len: i32 = 0;
+    while s[len] != 0 as byte {
+        len = len + 1;
+    }
+    return len;
+}
+
+// ============================================================
+// 方式 3：导出 void 函数
+// ============================================================
+
+// 生成的 C 代码：void uya_print_answer(void) { ... }（没有 static）
+export fn uya_print_answer() void {
+    // 这里可以调用标准库函数或执行其他操作
+    // 注意：实际使用时需要链接 Uya 标准库
+}
+
+// ============================================================
+// 对比：内部函数（C 无法调用）
+// ============================================================
+
+// 生成的 C 代码：static int internal_func(int x) { ... }（有 static）
+// C 代码无法调用这个函数，因为它是 static 的
+fn internal_func(x: i32) i32 {
+    return x * 2;
+}
+
+// ============================================================
+// 主函数（测试）
+// ============================================================
+
+fn main() i32 {
+    // 测试导出函数
+    const result1: i32 = uya_add(10, 20);
+    if result1 != 30 {
+        return 1;
+    }
+    
+    const result2: i32 = uya_multiply(5, 6);
+    if result2 != 30 {
+        return 2;
+    }
+    
+    // 测试字符串函数
+    const test_str: [byte: 6] = [72, 101, 108, 108, 111, 0];  // "Hello\0"
+    const len: i32 = uya_strlen(&test_str[0] as &byte);
+    if len != 5 {
+        return 3;
+    }
+    
+    // 测试内部函数（仅当前模块可用）
+    const result3: i32 = internal_func(21);
+    if result3 != 42 {
+        return 4;
+    }
+    
+    return 0;
+}
+

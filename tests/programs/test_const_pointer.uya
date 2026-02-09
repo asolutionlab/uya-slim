@@ -38,12 +38,13 @@ fn test_const_pointer_usage() i32 {
     return 0;
 }
 
+// 辅助函数：读取只读指针值
+fn read_value(ptr: & const i32) i32 {
+    return ptr[0];
+}
+
 fn test_const_pointer_function_param() i32 {
     // 测试函数参数使用 &const T
-    fn read_value(ptr: & const i32) i32 {
-        return ptr[0];
-    }
-    
     var x: i32 = 200;
     const result: i32 = read_value(&x);
     if result != 200 {
@@ -56,10 +57,6 @@ fn test_const_pointer_with_mutable() i32 {
     // 测试可变指针可以传递给只读参数
     var x: i32 = 300;
     var ptr: &i32 = &x;
-    
-    fn read_value(ptr: & const i32) i32 {
-        return ptr[0];
-    }
     
     const result: i32 = read_value(ptr);  // &T 隐式转换为 &const T
     if result != 300 {

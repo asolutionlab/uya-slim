@@ -12,10 +12,15 @@ export fn exported_func() i32 {
 }
 
 // 外部 C 函数声明 → extern void foo(void);
+// 注意：extern 函数不能有函数体，只有声明
+// 用途：声明外部 C 函数（如 C 标准库函数），让当前模块可以调用
 extern fn external_c_func() void;
 
 // 导出外部 C 函数（FFI）→ extern void foo(void);
 // 注意：extern 函数不能有函数体，只有声明
+// 用途：在一个模块中声明外部 C 函数，然后导出这个声明
+//       让其他模块可以通过 use 导入并使用，而不需要每个模块都重新声明
+// 示例：在 std.c 模块中声明 printf，其他模块可以 use std.c.printf;
 export extern fn exported_external_func() i32;
 
 fn main() i32 {
