@@ -6,6 +6,114 @@
 // 注意：gen_function_prototype 和 gen_function 在 function.uya 中定义，
 //       由于 function.uya 在 main.uya 之前编译，函数已经可见
 
+// 递归收集标准库函数调用，设置相应的标志
+fn collect_stdlib_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
+    if codegen == null || node == null {
+        return;
+    }
+    
+    if node.type == ASTNodeType.AST_CALL_EXPR {
+        const callee: &ASTNode = node.call_expr_callee;
+        if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER {
+            const callee_name: &byte = callee.identifier_name;
+            if callee_name != null {
+                // 检测 stdio 函数
+                if strcmp(callee_name as *byte, "fprintf" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "printf" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "snprintf" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "sprintf" as *byte) == 0 {
+                    codegen.needs_stdio_h = 1;
+                }
+                // 检测 stdlib 函数
+                if strcmp(callee_name as *byte, "exit" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "atoi" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "atol" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "atof" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "malloc" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "free" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "calloc" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "realloc" as *byte) == 0 {
+                    codegen.needs_stdlib_h = 1;
+                }
+                // 检测字符串函数
+                if strcmp(callee_name as *byte, "strcmp" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strncmp" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strlen" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strcpy" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strncpy" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strcat" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strncat" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strchr" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strrchr" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strstr" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strdup" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strndup" as *byte) == 0 {
+                    codegen.needs_string_h = 1;
+                }
+            }
+        }
+    }
+    
+    // 检查是否有空结构体或数组字段（会使用 memset）
+    if node.type == ASTNodeType.AST_STRUCT_DECL {
+        if node.struct_decl_field_count == 0 {
+            // 空结构体：会使用 memset
+            codegen.needs_string_h = 1;
+        } else if node.struct_decl_fields != null {
+            // 检查是否有数组字段
+            var i: i32 = 0;
+            while i < node.struct_decl_field_count {
+                const field: &ASTNode = node.struct_decl_fields[i];
+                if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null &&
+                    field.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY {
+                    codegen.needs_string_h = 1;
+                    break;
+                }
+                i = i + 1;
+            }
+        }
+    }
+    
+    // 检查变量声明中的数组类型（会使用 memset）
+    if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_type != null {
+        if node.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY {
+            codegen.needs_string_h = 1;
+        }
+    }
+    
+    // 递归处理子节点
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            collect_stdlib_functions_from_node(codegen, node.block_stmts[i]);
+            i = i + 1;
+        }
+    } else if node.type == ASTNodeType.AST_IF_STMT {
+        if node.if_stmt_then_branch != null {
+            collect_stdlib_functions_from_node(codegen, node.if_stmt_then_branch);
+        }
+        if node.if_stmt_else_branch != null {
+            collect_stdlib_functions_from_node(codegen, node.if_stmt_else_branch);
+        }
+    } else if node.type == ASTNodeType.AST_WHILE_STMT && node.while_stmt_body != null {
+        collect_stdlib_functions_from_node(codegen, node.while_stmt_body);
+    } else if node.type == ASTNodeType.AST_FOR_STMT && node.for_stmt_body != null {
+        collect_stdlib_functions_from_node(codegen, node.for_stmt_body);
+    } else if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
+        collect_stdlib_functions_from_node(codegen, node.var_decl_init);
+    } else if node.type == ASTNodeType.AST_RETURN_STMT && node.return_stmt_expr != null {
+        collect_stdlib_functions_from_node(codegen, node.return_stmt_expr);
+    } else if node.type == ASTNodeType.AST_ASSIGN && node.assign_src != null {
+        collect_stdlib_functions_from_node(codegen, node.assign_src);
+    } else if node.type == ASTNodeType.AST_CALL_EXPR && node.call_expr_args != null {
+        var i: i32 = 0;
+        while i < node.call_expr_arg_count {
+            collect_stdlib_functions_from_node(codegen, node.call_expr_args[i]);
+            i = i + 1;
+        }
+    }
+}
+
 // 递归收集字符串函数调用和 memset 使用，设置 needs_string_h 标志
 fn collect_string_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if codegen == null || node == null {
@@ -481,12 +589,12 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             
             // 预扫描结构体声明，检测空结构体或数组字段（会使用 memset）
             if check_decl.type == ASTNodeType.AST_STRUCT_DECL {
-                collect_string_functions_from_node(codegen, check_decl);
+                collect_stdlib_functions_from_node(codegen, check_decl);
             }
             
-            // 预扫描函数体，检测字符串函数调用
+            // 预扫描函数体，检测标准库函数调用
             if check_decl.type == ASTNodeType.AST_FN_DECL && check_decl.fn_decl_body != null {
-                collect_string_functions_from_node(codegen, check_decl.fn_decl_body);
+                collect_stdlib_functions_from_node(codegen, check_decl.fn_decl_body);
             }
             
             check_i = check_i + 1;
@@ -496,10 +604,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("#include <stdbool.h>\n" as *byte, codegen.output as *void);
         fputs("#include <stddef.h>\n" as *byte, codegen.output as *void);
         fputs("#include <stdarg.h>\n" as *byte, codegen.output as *void);  // for va_list (variadic forward)
-        // 只有在没有定义冲突函数时才包含 <stdio.h>
-        if codegen.has_stdio_conflicts == 0 {
-            fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);  // for standard I/O functions (printf, puts, etc.)
-        }
+        // 总是包含 <stdio.h> 和 <stdlib.h>（标准库代码可能使用 fprintf, exit 等函数）
+        // 如果用户定义了冲突的函数，会在链接时报错，但编译时仍需要声明
+        fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);  // for standard I/O functions (printf, puts, etc.)
+        fputs("#include <stdlib.h>\n" as *byte, codegen.output as *void);  // for stdlib functions (exit, atoi, malloc, etc.)
         // 如果使用了 memcpy 或 memset，添加 <string.h>
         if codegen.needs_string_h != 0 {
             fputs("#include <string.h>\n" as *byte, codegen.output as *void);

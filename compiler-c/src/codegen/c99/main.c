@@ -383,10 +383,10 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
     fputs("#include <stdbool.h>\n", codegen->output);
     fputs("#include <stddef.h>\n", codegen->output);
     fputs("#include <stdarg.h>\n", codegen->output);  // for va_list (variadic forward)
-    // 只有在没有定义冲突函数时才包含 <stdio.h>
-    if (!codegen->has_stdio_conflicts) {
-        fputs("#include <stdio.h>\n", codegen->output);  // for standard I/O functions (printf, puts, etc.)
-    }
+    // 总是包含 <stdio.h> 和 <stdlib.h>（标准库代码可能使用 fprintf, exit 等函数）
+    // 如果用户定义了冲突的函数，会在链接时报错，但编译时仍需要声明
+    fputs("#include <stdio.h>\n", codegen->output);  // for standard I/O functions (printf, puts, etc.)
+    fputs("#include <stdlib.h>\n", codegen->output);  // for stdlib functions (exit, atoi, malloc, etc.)
     // 如果使用了 memcpy 或 memset，添加 <string.h>
     if (codegen->needs_string_h) {
         fputs("#include <string.h>\n", codegen->output);
