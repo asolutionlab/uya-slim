@@ -327,8 +327,9 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                         } else if strcmp(func_name as *byte, "fread" as *byte) == 0 && i == 0 {
                             // fread 的第一个参数（ptr）应该是 void * 而不是 const char *
                             param_type_c = ("void *" as *byte) as &byte;
-                        } else if strcmp(func_name as *byte, "snprintf" as *byte) == 0 && i == 0 {
-                            // snprintf 的第一个参数（buf）应该是 char * 而不是 const char *
+                        } else if (strcmp(func_name as *byte, "sprintf" as *byte) == 0 || 
+                                   strcmp(func_name as *byte, "snprintf" as *byte) == 0) && i == 0 {
+                            // sprintf 和 snprintf 的第一个参数（buf）应该是 char * 而不是 const char *
                             param_type_c = ("char *" as *byte) as &byte;
                         } else if strcmp(func_name as *byte, "strcpy" as *byte) == 0 && i == 0 {
                             // strcpy 的第一个参数（dest）应该是 char * 而不是 const char *
@@ -486,8 +487,9 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                             } else if strcmp(func_name as *byte, "fread" as *byte) == 0 && i == 0 {
                                 // fread 的第一个参数（ptr）应该是 void * 而不是 const char *
                                 param_type_c = ("void *" as *byte) as &byte;
-                            } else if strcmp(func_name as *byte, "snprintf" as *byte) == 0 && i == 0 {
-                                // snprintf 的第一个参数（buf）应该是 char * 而不是 const char *
+                            } else if (strcmp(func_name as *byte, "sprintf" as *byte) == 0 || 
+                                       strcmp(func_name as *byte, "snprintf" as *byte) == 0) && i == 0 {
+                                // sprintf 和 snprintf 的第一个参数（buf）应该是 char * 而不是 const char *
                                 param_type_c = ("char *" as *byte) as &byte;
                             } else if strcmp(func_name as *byte, "strcpy" as *byte) == 0 && i == 0 {
                                 // strcpy 的第一个参数（dest）应该是 char * 而不是 const char *

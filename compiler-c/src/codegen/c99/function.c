@@ -398,6 +398,7 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         }
         
         // 对于标准库函数，只对 strlen 添加 const（与 gen_function 保持一致）
+        // sprintf 和 snprintf 的 buf 参数需要可修改，不添加 const
         // 其他函数保持原样（不添加 const），以匹配 Uya 标准库的定义
         if (is_stdlib && param_type->type == AST_TYPE_POINTER) {
             ASTNode *pointed_type = param_type->data.type_pointer.pointed_type;
@@ -407,6 +408,11 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
                     // 只对 strlen 使用 const uint8_t *
                     if (orig_name && strcmp(orig_name, "strlen") == 0) {
                         param_type_c = "const uint8_t *";
+                    } else if (orig_name && (strcmp(orig_name, "sprintf") == 0 || strcmp(orig_name, "snprintf") == 0)) {
+                        // sprintf 和 snprintf 的第一个参数（buf）需要可修改，确保不是 const
+                        if (i == 0) {
+                            param_type_c = "uint8_t *";
+                        }
                     }
                     // 其他函数保持原样（uint8_t *），不添加 const
                 }
@@ -489,14 +495,19 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
             }
             
             // 对于 strlen 函数，将 uint8_t * 转换为 const uint8_t *
+            // sprintf 和 snprintf 的 buf 参数需要可修改，不添加 const
             int is_stdlib = is_stdlib_function(orig_name);
-            if (is_stdlib && orig_name && strcmp(orig_name, "strlen") == 0 && 
-                param_type->type == AST_TYPE_POINTER) {
+            if (is_stdlib && orig_name && param_type->type == AST_TYPE_POINTER) {
                 ASTNode *pointed_type = param_type->data.type_pointer.pointed_type;
                 if (pointed_type && pointed_type->type == AST_TYPE_NAMED) {
                     const char *pointed_name = pointed_type->data.type_named.name;
                     if (pointed_name && strcmp(pointed_name, "byte") == 0) {
-                        param_type_c = "const uint8_t *";
+                        if (strcmp(orig_name, "strlen") == 0) {
+                            param_type_c = "const uint8_t *";
+                        } else if ((strcmp(orig_name, "sprintf") == 0 || strcmp(orig_name, "snprintf") == 0) && i == 0) {
+                            // sprintf 和 snprintf 的第一个参数（buf）需要可修改，确保不是 const
+                            param_type_c = "uint8_t *";
+                        }
                     }
                 }
             }
