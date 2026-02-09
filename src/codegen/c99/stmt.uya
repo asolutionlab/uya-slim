@@ -1047,6 +1047,21 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             } else {
                 // 普通初始化
                 fputs(" = " as *byte, codegen.output as *void);
+                
+                // 检查是否是字符串常量（@func_name、@src_name、@src_path）赋值给指针类型
+                // 字符串常量是 const char * 类型，但变量可能是 uint8_t * const，需要类型转换
+                var needs_cast: i32 = 0;
+                if var_type != null && var_type.type == ASTNodeType.AST_TYPE_POINTER &&
+                    (init_expr.type == ASTNodeType.AST_FUNC_NAME || 
+                     init_expr.type == ASTNodeType.AST_SRC_NAME || 
+                     init_expr.type == ASTNodeType.AST_SRC_PATH) {
+                    needs_cast = 1;
+                }
+                
+                if needs_cast != 0 {
+                    fputs("(uint8_t *)" as *byte, codegen.output as *void);
+                }
+                
                 gen_expr(codegen, init_expr);
                 fputs(";\n" as *byte, codegen.output as *void);
             }

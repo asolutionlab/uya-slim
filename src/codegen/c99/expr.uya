@@ -1471,6 +1471,24 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER {
             callee_name = callee.identifier_name;
         }
+        
+        // 检测字符串函数，设置 needs_string_h 标志
+        if callee_name != null {
+            if strcmp(callee_name as *byte, "strcmp" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strncmp" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strlen" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strcpy" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strncpy" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strcat" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strncat" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strchr" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strrchr" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strstr" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strdup" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strndup" as *byte) == 0 {
+                codegen.needs_string_h = 1;
+            }
+        }
 
         // 插值仅作 printf/fprintf 格式参数时：脱糖为单次 printf(fmt, ...)，无中间缓冲
         if callee_name != null && args != null && has_ellipsis == 0 {
@@ -1515,6 +1533,21 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         var fn_decl: &ASTNode = null;
         if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER {
             fn_decl = find_function_decl_c99(codegen, callee_name);
+            // 如果是字符串函数（无论是普通函数还是 extern 函数），都需要设置 needs_string_h
+            if callee_name != null && (strcmp(callee_name as *byte, "strcmp" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strncmp" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strlen" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strcpy" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strncpy" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strcat" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strncat" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strchr" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strrchr" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strstr" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strdup" as *byte) == 0 ||
+                strcmp(callee_name as *byte, "strndup" as *byte) == 0) {
+                codegen.needs_string_h = 1;
+            }
         }
         
         // 无 ... 转发的调用不生成 va_list（零开销转发）
