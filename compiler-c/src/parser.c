@@ -3374,6 +3374,76 @@ static ASTNode *parser_parse_primary_expr(Parser *parser) {
         return sizeof_node;
     }
     
+    // 解析 @ptr_from_usize 表达式：@ptr_from_usize(value)
+    if (parser->current_token->type == TOKEN_AT_IDENTIFIER && parser->current_token->value != NULL &&
+        strcmp(parser->current_token->value, "ptr_from_usize") == 0) {
+        parser_consume(parser);  // 消费 'ptr_from_usize'
+        
+        // 期望 '('
+        if (!parser_expect(parser, TOKEN_LEFT_PAREN)) {
+            return NULL;
+        }
+        
+        ASTNode *ptr_node = ast_new_node(AST_PTR_FROM_USIZE, line, column, parser->arena, parser->lexer ? parser->lexer->filename : NULL);
+        if (ptr_node == NULL) {
+            return NULL;
+        }
+        
+        // 解析 usize 值表达式
+        ASTNode *value = parser_parse_expression(parser);
+        if (value == NULL) {
+            fprintf(stderr, "%s:%d:%d 错误: @ptr_from_usize 需要 usize 值作为参数\n",
+                    parser->lexer ? parser->lexer->filename : "unknown",
+                    parser->current_token ? parser->current_token->line : 0,
+                    parser->current_token ? parser->current_token->column : 0);
+            return NULL;
+        }
+        
+        ptr_node->data.ptr_from_usize_expr.value = value;
+        
+        // 期望 ')'
+        if (!parser_expect(parser, TOKEN_RIGHT_PAREN)) {
+            return NULL;
+        }
+        
+        return ptr_node;
+    }
+    
+    // 解析 @usize_from_ptr 表达式：@usize_from_ptr(ptr)
+    if (parser->current_token->type == TOKEN_AT_IDENTIFIER && parser->current_token->value != NULL &&
+        strcmp(parser->current_token->value, "usize_from_ptr") == 0) {
+        parser_consume(parser);  // 消费 'usize_from_ptr'
+        
+        // 期望 '('
+        if (!parser_expect(parser, TOKEN_LEFT_PAREN)) {
+            return NULL;
+        }
+        
+        ASTNode *usize_node = ast_new_node(AST_USIZE_FROM_PTR, line, column, parser->arena, parser->lexer ? parser->lexer->filename : NULL);
+        if (usize_node == NULL) {
+            return NULL;
+        }
+        
+        // 解析指针表达式
+        ASTNode *ptr = parser_parse_expression(parser);
+        if (ptr == NULL) {
+            fprintf(stderr, "%s:%d:%d 错误: @usize_from_ptr 需要指针表达式作为参数\n",
+                    parser->lexer ? parser->lexer->filename : "unknown",
+                    parser->current_token ? parser->current_token->line : 0,
+                    parser->current_token ? parser->current_token->column : 0);
+            return NULL;
+        }
+        
+        usize_node->data.usize_from_ptr_expr.ptr = ptr;
+        
+        // 期望 ')'
+        if (!parser_expect(parser, TOKEN_RIGHT_PAREN)) {
+            return NULL;
+        }
+        
+        return usize_node;
+    }
+    
     // 解析 @align_of 表达式：@align_of(Type) 或 @align_of(expr)
     if (parser->current_token->type == TOKEN_AT_IDENTIFIER && parser->current_token->value != NULL &&
         strcmp(parser->current_token->value, "align_of") == 0) {

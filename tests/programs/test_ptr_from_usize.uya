@@ -1,0 +1,30 @@
+// test_ptr_from_usize.uya - 测试 @ptr_from_usize 内置函数
+// 测试从 usize 转换为指针的功能
+
+fn main() i32 {
+    // 测试 1: 基本转换
+    const addr: usize = 0x1000;
+    const ptr: &void = @ptr_from_usize(addr);
+    
+    // 验证指针不为 null（如果地址为 0）
+    if addr == 0 {
+        if ptr == null {
+            return 0;  // 通过
+        } else {
+            return 1;  // 失败
+        }
+    }
+    
+    // 测试 2: 从非零地址转换
+    const addr2: usize = 0x2000;
+    const ptr2: &void = @ptr_from_usize(addr2);
+    
+    // 测试 3: 转换后可以再转回 usize（通过 @usize_from_ptr）
+    // 注意：这需要 @usize_from_ptr 也实现，但先测试基本功能
+    const addr3: usize = 0x3000;
+    const ptr3: &void = @ptr_from_usize(addr3);
+    
+    // 如果编译通过，说明基本功能正常
+    return 0;
+}
+

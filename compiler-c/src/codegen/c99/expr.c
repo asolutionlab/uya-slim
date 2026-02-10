@@ -1055,6 +1055,20 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
             fputc(')', codegen->output);
             break;
         }
+        case AST_PTR_FROM_USIZE: {
+            // @ptr_from_usize(value) 生成 (void *)(uintptr_t)value
+            fputs("(void *)(uintptr_t)(", codegen->output);
+            gen_expr(codegen, expr->data.ptr_from_usize_expr.value);
+            fputc(')', codegen->output);
+            break;
+        }
+        case AST_USIZE_FROM_PTR: {
+            // @usize_from_ptr(ptr) 生成 (uintptr_t)ptr
+            fputs("(uintptr_t)(", codegen->output);
+            gen_expr(codegen, expr->data.usize_from_ptr_expr.ptr);
+            fputc(')', codegen->output);
+            break;
+        }
         case AST_LEN: {
             ASTNode *array = expr->data.len_expr.array;
             if (array->type == AST_SLICE_EXPR) {

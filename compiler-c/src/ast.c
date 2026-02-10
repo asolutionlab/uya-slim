@@ -252,6 +252,14 @@ ASTNode *ast_new_node(ASTNodeType type, int line, int column, Arena *arena, cons
             node->data.syscall.args = NULL;
             node->data.syscall.arg_count = 0;
             break;
+        case AST_PTR_FROM_USIZE:
+            // 指针转换节点，字段由 Parser 填充
+            node->data.ptr_from_usize_expr.value = NULL;
+            break;
+        case AST_USIZE_FROM_PTR:
+            // 指针转换节点，字段由 Parser 填充
+            node->data.usize_from_ptr_expr.ptr = NULL;
+            break;
         case AST_STRING:
             node->data.string_literal.value = NULL;
             break;

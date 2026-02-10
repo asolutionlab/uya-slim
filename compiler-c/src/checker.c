@@ -2116,6 +2116,19 @@ static Type checker_infer_type(TypeChecker *checker, ASTNode *expr) {
             result.kind = TYPE_I32;
             return result;
         }
+        case AST_PTR_FROM_USIZE: {
+            // @ptr_from_usize 表达式：返回 &void 类型
+            result.kind = TYPE_POINTER;
+            result.data.pointer.pointer_to = NULL;  // void 类型
+            result.data.pointer.is_ffi_pointer = 0;  // &void，不是 *void
+            result.data.pointer.is_const = 0;
+            return result;
+        }
+        case AST_USIZE_FROM_PTR: {
+            // @usize_from_ptr 表达式：返回 usize 类型
+            result.kind = TYPE_USIZE;
+            return result;
+        }
         
         case AST_LEN: {
             // len 表达式：返回 i32 类型（元素个数）
@@ -5937,6 +5950,30 @@ static int checker_check_node(TypeChecker *checker, ASTNode *node) {
             
         case AST_ALIGNOF:
             checker_check_alignof(checker, node);
+            return 1;
+            
+        case AST_PTR_FROM_USIZE:
+            // 检查 @ptr_from_usize 的参数类型
+            if (node->data.ptr_from_usize_expr.value != NULL) {
+                checker_check_node(checker, node->data.ptr_from_usize_expr.value);
+                Type value_type = checker_infer_type(checker, node->data.ptr_from_usize_expr.value);
+                if (value_type.kind != TYPE_USIZE) {
+                    checker_report_error(checker, node->data.ptr_from_usize_expr.value,
+                        "@ptr_from_usize 的参数必须是 usize 类型");
+                }
+            }
+            return 1;
+            
+        case AST_USIZE_FROM_PTR:
+            // 检查 @usize_from_ptr 的参数类型
+            if (node->data.usize_from_ptr_expr.ptr != NULL) {
+                checker_check_node(checker, node->data.usize_from_ptr_expr.ptr);
+                Type ptr_type = checker_infer_type(checker, node->data.usize_from_ptr_expr.ptr);
+                if (ptr_type.kind != TYPE_POINTER) {
+                    checker_report_error(checker, node->data.usize_from_ptr_expr.ptr,
+                        "@usize_from_ptr 的参数必须是指针类型");
+                }
+            }
             return 1;
             
         case AST_LEN:

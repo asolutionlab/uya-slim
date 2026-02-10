@@ -107,6 +107,8 @@ typedef enum {
     AST_SRC_COL,        // @src_col - 源文件列号
     AST_FUNC_NAME,      // @func_name - 当前函数名
     AST_SYSCALL,        // @syscall(nr, arg1, ..., arg6) - 系统调用
+    AST_PTR_FROM_USIZE, // @ptr_from_usize(value) - 从 usize 转换为指针
+    AST_USIZE_FROM_PTR, // @usize_from_ptr(ptr) - 从指针转换为 usize
 
     
     // 类型节点
@@ -544,6 +546,16 @@ struct ASTNode {
             struct ASTNode **args;            // 参数数组（0-6 个）
             int arg_count;                    // 参数个数
         } syscall;
+
+        // 指针转换内置函数（@ptr_from_usize(value)）
+        struct {
+            struct ASTNode *value;            // usize 值表达式
+        } ptr_from_usize_expr;
+
+        // 指针转换内置函数（@usize_from_ptr(ptr)）
+        struct {
+            struct ASTNode *ptr;              // 指针表达式
+        } usize_from_ptr_expr;
 
         // match 表达式
         struct {
