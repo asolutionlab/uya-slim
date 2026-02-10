@@ -1,56 +1,59 @@
 // extern_decls.uya - C 标准库与 bridge 外部函数声明
 // 供 codegen/c99、main 等模块使用
 // 注意：*T 为 FFI 指针类型，仅用于 extern 函数参数/返回值
+// 
+// 注意：此文件正在迁移到 std.* 标准库
+// 已迁移的函数使用 use 语句导入，未迁移的仍使用 extern 声明
 
-// ===== bridge.c 提供的函数（程序入口与命令行参数）=====
-extern fn get_argc() i32;
-extern fn get_argv(index: i32) *byte;
-extern fn get_stderr() *void;
-// 指针差（bridge.c 提供，用于 Uya 中不支持的 ptr1 - ptr2）
-// 注意：使用 *byte 而不是 &byte，因为 bridge.c 中的函数签名是 uint8_t *
-extern fn ptr_diff(ptr1: *byte, ptr2: *byte) i32;
+// ===== 运行时支持（std.runtime）=====
+use std.runtime.get_argc;
+use std.runtime.get_argv;
+use std.runtime.get_stderr;
+use std.runtime.ptr_diff;
 
-// ===== C 标准库 - 文件 I/O =====
-// 注意：fopen, fread, fclose 在 lib/std/c/stdio.uya 中有实际实现，不需要 extern 声明
-extern fn fclose(stream: *void) i32;
-extern fn fgetc(stream: *void) i32;
-extern fn fputs(s: *byte, stream: *void) i32;
-extern fn fprintf(stream: *void, format: *byte, ...) i32;
-// fflush 使用 FILE* 类型，但在 Uya 中我们用 *void 表示，需要类型转换
-// 注意：实际调用时 stream 应该是 FILE*，但 Uya 类型系统用 *void 表示
-extern fn fflush(stream: *void) i32;
+// ===== 文件 I/O（std.io）=====
+use std.io.fopen;
+use std.io.fclose;
+use std.io.fread;
+use std.io.fwrite;
+use std.io.fgetc;
+use std.io.fputs;
+use std.io.fprintf;
+use std.io.fflush;
 
-// ===== C 标准库 - 字符串与数值 =====
-extern fn strtod(nptr: *byte, endptr: * *byte) f64;
-extern fn strtol(nptr: *byte, endptr: * *byte, base: i32) i64;
-extern fn strlen(s: *byte) usize;
-// 注意：strcmp 在 lib/std/c/string.uya 中有实际实现，不需要 extern 声明
-// 注意：strchr 和 strrchr 的签名与 musl 一致：char *strchr(const char *s, int c)
-extern fn strrchr(s: *byte, c: i32) *byte;
-extern fn strchr(s: *byte, c: i32) *byte;
-extern fn strstr(haystack: *byte, needle: *byte) *byte;
-extern fn strncmp(s1: *byte, s2: *byte, n: usize) i32;
-extern fn strcpy(dest: *byte, src: *byte) *byte;
-extern fn snprintf(buf: *byte, n: usize, format: *byte, ...) i32;
-extern fn sprintf(buf: *byte, format: *byte, ...) i32;
+// ===== 字符串操作（std.string）=====
+use std.string.strlen;
+use std.string.strcmp;
+use std.string.strncmp;
+use std.string.strcpy;
+use std.string.strchr;
+use std.string.strrchr;
+use std.string.strstr;
 
-// ===== C 标准库 - 内存 =====
-// 注意：memcpy 和 memset 的返回类型应该是 *void，而不是 *byte
-extern fn memcpy(dest: *void, src: *void, n: usize) *void;
-extern fn memset(s: *void, c: i32, n: usize) *void;
+// ===== 数值转换（std.c，暂时保留，后续迁移到 std.conv）=====
+use std.c.strtod;
+use std.c.strtol;
 
-// ===== C 标准库 - 进程 =====
-extern fn exit(code: i32) void;
-extern fn getenv(name: *byte) *byte;
+// ===== 格式化（std.c，暂时保留，后续迁移到 std.fmt）=====
+use std.c.sprintf;
+use std.c.snprintf;
 
-// ===== C 标准库 - 文件系统 =====
+// ===== 内存操作（std.mem）=====
+use std.mem.memcpy;
+use std.mem.memset;
+
+// ===== 进程控制（std.c，暂时保留，后续迁移到 std.process）=====
+use std.c.exit;
+use std.c.getenv;
+
+// ===== 文件系统（std.c，暂时保留，后续迁移到 std.fs）=====
 // stat 结构体（Linux x86_64 上为 144 字节）
 // 使用字节数组来匹配 C 的 struct stat 大小
 // st_mode 在偏移 24 字节处
 struct Stat {
     _data: [byte: 144],  // 144 字节，匹配 C 的 struct stat
 }
-extern fn stat(path: &const byte, buf: &Stat) i32;
+use std.c.stat;
 // S_ISDIR 和 S_ISREG 是宏，在 Uya 中需要手动实现
 // S_ISDIR(mode) = ((mode) & S_IFMT) == S_IFDIR
 // S_ISREG(mode) = ((mode) & S_IFMT) == S_IFREG
@@ -58,7 +61,7 @@ const S_IFMT: u32 = 61440;  // 0xF000
 const S_IFDIR: u32 = 16384;  // 0x4000
 const S_IFREG: u32 = 32768;  // 0x8000
 
-// ===== C 标准库 - 目录操作 =====
+// ===== 目录操作（std.c，暂时保留，后续迁移到 std.fs）=====
 struct Dirent {
     d_name: *byte,
     d_type: u8,  // DT_REG = 8, DT_DIR = 4
@@ -66,11 +69,11 @@ struct Dirent {
 struct DIR {
     // 不透明类型
 }
-extern fn opendir(name: &const byte) *DIR;
-extern fn readdir(dirp: *DIR) *Dirent;
-extern fn closedir(dirp: *DIR) i32;
+use std.c.opendir;
+use std.c.readdir;
+use std.c.closedir;
 const DT_REG: u8 = 8;  // 普通文件
 const DT_DIR: u8 = 4;  // 目录
 
-// ===== Linux 特定 - 符号链接 =====
-extern fn readlink(path: &const byte, buf: *byte, bufsiz: usize) i32;
+// ===== 符号链接（std.c，暂时保留，后续迁移到 std.fs）=====
+use std.c.readlink;

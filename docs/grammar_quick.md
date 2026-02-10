@@ -356,6 +356,12 @@ use std.io as io_module;
 use math_macros.square;
 ```
 
+**同目录文件合并规则**：
+- 同一目录下的所有 `.uya` 文件都属于同一个模块
+- 模块路径由目录路径决定，不包含文件名
+- 例如：`std/io/file.uya` 和 `std/io/stream.uya` 都属于 `std.io` 模块
+- 使用：`use std.io.fopen;` 或 `use std.io.fgetc;`（不需要 `std.io.file.fopen`）
+
 ---
 
 ## 八、FFI（外部函数接口）速查

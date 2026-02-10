@@ -168,7 +168,7 @@ export struct File {
 }
 
 // main.uya
-use std.io.file.File;
+use std.io.File;
 
 fn main() i32 {
     var f: File = // ...
