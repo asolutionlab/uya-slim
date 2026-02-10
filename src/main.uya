@@ -231,12 +231,14 @@ fn get_uya_root(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
     return result;
 }
 
-// 打印使用说明（program_name 用 &byte，传给 fprintf 时转为 *byte）
+// 打印使用说明（program_name 用 &byte，传给 fprintf 时转为 *byte；若为 null 则用默认名避免 %s 段错误）
 fn print_usage(program_name: &byte) void {
     const stderr: *void = get_stderr();
-    fprintf(stderr, "用法: %s [输入文件...] -o <输出文件> [选项]\n" as *byte, program_name as *byte);
-    fprintf(stderr, "示例: %s program.uya -o program\n" as *byte, program_name as *byte);
-    fprintf(stderr, "示例: %s program.uya -o program.c --c99  # 生成 C99 代码\n" as *byte, program_name as *byte);
+    var name: &byte = program_name;
+    if name == null { name = "uya" as *byte; }
+    fprintf(stderr, "用法: %s [输入文件...] -o <输出文件> [选项]\n" as *byte, name as *byte);
+    fprintf(stderr, "示例: %s program.uya -o program\n" as *byte, name as *byte);
+    fprintf(stderr, "示例: %s program.uya -o program.c --c99  # 生成 C99 代码\n" as *byte, name as *byte);
     fprintf(stderr, "\n选项:\n" as *byte);
     fprintf(stderr, "  --c99                使用 C99 后端生成 C 代码\n" as *byte);
     fprintf(stderr, "  --line-directives    启用 #line 指令生成（C99 后端）\n" as *byte);

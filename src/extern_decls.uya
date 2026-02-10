@@ -5,10 +5,12 @@
 // 注意：此文件正在迁移到 std.* 标准库
 // 已迁移的函数使用 use 语句导入，未迁移的仍使用 extern 声明
 
-// ===== 运行时支持（std.runtime）=====
-use std.runtime.get_argc;
-use std.runtime.get_argv;
-use std.runtime.get_stderr;
+// ===== 运行时支持（std.runtime / bridge.c）=====
+// 显式 extern 声明，确保 C 代码生成器输出正确原型（返回值 64 位指针/i32），
+// 否则未声明时会被当作返回 int，导致 get_argv 等指针被截断引发段错误
+extern fn get_argc() i32;
+extern fn get_argv(index: i32) &byte;
+extern fn get_stderr() *void;
 use std.runtime.ptr_diff;
 
 // ===== 文件 I/O（std.io）=====
