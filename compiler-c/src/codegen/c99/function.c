@@ -537,8 +537,10 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     
     // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数定义
     // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
-    if (is_stdlib && codegen->needs_string_h) {
+    // 但是，如果函数有函数体（body != NULL），说明这是 Uya 标准库的实现，应该生成
+    if (is_stdlib && codegen->needs_string_h && !body) {
         // 检查是否是字符串函数（这些函数在 <string.h> 中已声明，应该链接到标准库实现）
+        // 注意：只有 extern 函数（没有函数体）才跳过，有函数体的函数应该生成
         if (orig_name && (
             strcmp(orig_name, "strlen") == 0 ||
             strcmp(orig_name, "strcmp") == 0 ||
@@ -557,7 +559,7 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
             strcmp(orig_name, "memset") == 0 ||
             strcmp(orig_name, "memcmp") == 0 ||
             strcmp(orig_name, "memchr") == 0)) {
-            // 这些函数已经在 <string.h> 中声明，应该链接到 C 标准库的实现
+            // 这些函数已经在 <string.h> 中声明，且没有函数体（extern），应该链接到 C 标准库的实现
             // 不生成 Uya 标准库的实现，避免类型冲突
             return;
         }
