@@ -37,11 +37,16 @@ fn is_stdlib_function_for_string_arg(func_name: &byte) i32 {
         strcmp(func_name as *byte, "sprintf" as *byte) == 0 ||
         strcmp(func_name as *byte, "fprintf" as *byte) == 0 ||
         strcmp(func_name as *byte, "snprintf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fputs" as *byte) == 0 {
+        strcmp(func_name as *byte, "fputs" as *byte) == 0 ||
+        strcmp(func_name as *byte, "fopen" as *byte) == 0 {
         return 1;
     }
-    // 字符串处理函数（仅保留未被 Uya 标准库替换的函数）
-    if strcmp(func_name as *byte, "strstr" as *byte) == 0 {
+    // 字符串/路径相关（C 库要求 const char *，避免 -Wpointer-sign）
+    if strcmp(func_name as *byte, "strstr" as *byte) == 0 ||
+        strcmp(func_name as *byte, "strcmp" as *byte) == 0 ||
+        strcmp(func_name as *byte, "strrchr" as *byte) == 0 ||
+        strcmp(func_name as *byte, "stat" as *byte) == 0 ||
+        strcmp(func_name as *byte, "readlink" as *byte) == 0 {
         return 1;
     }
     return 0;
@@ -1973,6 +1978,33 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 } else {
                     fputs("(uint8_t *)" as *byte, codegen.output as *void);
                 }
+            } else if callee_name != null && (
+                (strcmp(callee_name as *byte, "fopen" as *byte) == 0 && (i == 0 || i == 1)) ||
+                (strcmp(callee_name as *byte, "strcmp" as *byte) == 0 && (i == 0 || i == 1)) ||
+                (strcmp(callee_name as *byte, "strrchr" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "stat" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "readlink" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "strtol" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "strtod" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "getenv" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "strcpy" as *byte) == 0 && i == 1) ||
+                (strcmp(callee_name as *byte, "fputs" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "strstr" as *byte) == 0 && (i == 0 || i == 1)) ||
+                (strcmp(callee_name as *byte, "strchr" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "sprintf" as *byte) == 0 && i == 1) ||
+                (strcmp(callee_name as *byte, "atoi" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "strcat" as *byte) == 0 && i == 1) ||
+                (strcmp(callee_name as *byte, "strncmp" as *byte) == 0 && (i == 0 || i == 1)) ||
+                (strcmp(callee_name as *byte, "strlen" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "opendir" as *byte) == 0 && i == 0)) {
+                fputs("(const char *)" as *byte, codegen.output as *void);
+            } else if callee_name != null && (
+                (strcmp(callee_name as *byte, "snprintf" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "sprintf" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "strcpy" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "strcat" as *byte) == 0 && i == 0) ||
+                (strcmp(callee_name as *byte, "readlink" as *byte) == 0 && i == 1)) {
+                fputs("(char *)" as *byte, codegen.output as *void);
             }
             
             // 检查是否是大结构体参数且函数期望指针

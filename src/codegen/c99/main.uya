@@ -637,7 +637,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         // 内置 memcpy/memcmp 实现（避免与用户定义的 memcpy/memcmp 冲突）
         fputs("static inline void *__uya_memcpy(void *dest, const void *src, size_t n) {\n" as *byte, codegen.output as *void);
         fputs("    char *d = (char *)dest; const char *s = (const char *)src;\n" as *byte, codegen.output as *void);
-        fputs("    for (size_t i = 0; i < n; i++) d[i] = s[i]; return dest;\n" as *byte, codegen.output as *void);
+        fputs("    for (size_t i = 0; i < n; i++) d[i] = s[i];\n" as *byte, codegen.output as *void);
+        fputs("    return dest;\n" as *byte, codegen.output as *void);
         fputs("}\n" as *byte, codegen.output as *void);
         fputs("static inline int __uya_memcmp(const void *s1, const void *s2, size_t n) {\n" as *byte, codegen.output as *void);
         fputs("    const unsigned char *a = (const unsigned char *)s1, *b = (const unsigned char *)s2;\n" as *byte, codegen.output as *void);

@@ -22,11 +22,16 @@ static int is_stdlib_function_for_string_arg(const char *func_name) {
         strcmp(func_name, "sprintf") == 0 ||
         strcmp(func_name, "fprintf") == 0 ||
         strcmp(func_name, "snprintf") == 0 ||
-        strcmp(func_name, "fputs") == 0) {
+        strcmp(func_name, "fputs") == 0 ||
+        strcmp(func_name, "fopen") == 0) {
         return 1;
     }
-    /* 字符串处理函数（仅保留未被 Uya 标准库替换的函数） */
-    if (strcmp(func_name, "strstr") == 0) {
+    /* 字符串/路径相关（C 库要求 const char *，避免 -Wpointer-sign） */
+    if (strcmp(func_name, "strstr") == 0 ||
+        strcmp(func_name, "strcmp") == 0 ||
+        strcmp(func_name, "strrchr") == 0 ||
+        strcmp(func_name, "stat") == 0 ||
+        strcmp(func_name, "readlink") == 0) {
         return 1;
     }
     return 0;
@@ -1830,6 +1835,35 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                     // 检查是否是标准库函数，如果是则使用 (const char *) 而不是 (uint8_t *)
                     int is_stdlib = is_stdlib_function_for_string_arg(callee_name);
                     fputs(is_stdlib ? "(const char *)" : "(uint8_t *)", codegen->output);
+                } else if (callee_name && (
+                    (strcmp(callee_name, "fopen") == 0 && (i == 0 || i == 1)) ||
+                    (strcmp(callee_name, "strcmp") == 0 && (i == 0 || i == 1)) ||
+                    (strcmp(callee_name, "strrchr") == 0 && i == 0) ||
+                    (strcmp(callee_name, "stat") == 0 && i == 0) ||
+                    (strcmp(callee_name, "readlink") == 0 && i == 0) ||
+                    (strcmp(callee_name, "strtol") == 0 && i == 0) ||
+                    (strcmp(callee_name, "strtod") == 0 && i == 0) ||
+                    (strcmp(callee_name, "getenv") == 0 && i == 0) ||
+                    (strcmp(callee_name, "strcpy") == 0 && i == 1) ||
+                    (strcmp(callee_name, "fputs") == 0 && i == 0) ||
+                    (strcmp(callee_name, "strstr") == 0 && (i == 0 || i == 1)) ||
+                    (strcmp(callee_name, "strchr") == 0 && i == 0) ||
+                    (strcmp(callee_name, "sprintf") == 0 && i == 1) ||
+                    (strcmp(callee_name, "atoi") == 0 && i == 0) ||
+                    (strcmp(callee_name, "strcat") == 0 && i == 1) ||
+                    (strcmp(callee_name, "strncmp") == 0 && (i == 0 || i == 1)) ||
+                    (strcmp(callee_name, "strlen") == 0 && i == 0) ||
+                    (strcmp(callee_name, "opendir") == 0 && i == 0))) {
+                    /* C 库这些参数为 const char * / char *，强制转换以消除 -Wpointer-sign */
+                    fputs("(const char *)", codegen->output);
+                } else if (callee_name && (
+                    (strcmp(callee_name, "snprintf") == 0 && i == 0) ||
+                    (strcmp(callee_name, "sprintf") == 0 && i == 0) ||
+                    (strcmp(callee_name, "strcpy") == 0 && i == 0) ||
+                    (strcmp(callee_name, "strcat") == 0 && i == 0) ||
+                    (strcmp(callee_name, "readlink") == 0 && i == 1))) {
+                    /* 写缓冲参数为 char *，需 (char *) 消除 -Wpointer-sign */
+                    fputs("(char *)", codegen->output);
                 }
                 
                 // 检查是否是大结构体参数且函数期望指针
