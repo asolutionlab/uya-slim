@@ -319,9 +319,9 @@ void emit_string_constants(C99CodeGenerator *codegen) {
         return;
     }
     
-    fputs("\n// 字符串常量\n", codegen->output);
+    fputs("\n// 字符串常量（char 类型以满足 -Wformat= 对 fprintf/snprintf 格式参数的要求）\n", codegen->output);
     for (int i = 0; i < codegen->string_constant_count; i++) {
-        fprintf(codegen->output, "static const uint8_t %s[] = \"", codegen->string_constants[i].name);
+        fprintf(codegen->output, "static const char %s[] = \"", codegen->string_constants[i].name);
         escape_string_for_c(codegen->output, codegen->string_constants[i].value);
         fputs("\";\n", codegen->output);
     }

@@ -1767,6 +1767,42 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                     fputs(codegen->interp_arg_temp_names[i], codegen->output);
                     continue;
                 }
+                /* stat 的第二参数需转为 struct stat *，与 POSIX 声明一致 */
+                int is_stat_second = (callee_name && strcmp(callee_name, "stat") == 0 && i == 1);
+                if (is_stat_second) {
+                    fputs("(struct stat *)", codegen->output);
+                }
+                /* fprintf 的格式参数为第 2 个 (i==1)，snprintf 的格式参数为第 3 个 (i==2)；强制 (const char *) 消除 -Wformat= 警告 */
+                int is_format_arg = (callee_name && ((strcmp(callee_name, "fprintf") == 0 && i == 1) ||
+                    (strcmp(callee_name, "snprintf") == 0 && i == 2)));
+                if (is_format_arg && args[i]) {
+                    ASTNode *fmt = args[i];
+                    if (fmt->type == AST_STRING) {
+                        const char *name = add_string_constant(codegen, fmt->data.string_literal.value);
+                        if (name) {
+                            fprintf(codegen->output, "(const char *)%s", name);
+                        } else {
+                            /* 常量表满时内联输出格式串，避免 (const char *)"" 导致 -Wformat-zero-length */
+                            fputs("(const char *)\"", codegen->output);
+                            escape_string_for_c(codegen->output, fmt->data.string_literal.value);
+                            fputc('"', codegen->output);
+                        }
+                    } else if (fmt->type == AST_CAST_EXPR && fmt->data.cast_expr.expr &&
+                            fmt->data.cast_expr.expr->type == AST_STRING) {
+                        const char *name = add_string_constant(codegen, fmt->data.cast_expr.expr->data.string_literal.value);
+                        if (name) {
+                            fprintf(codegen->output, "(const char *)%s", name);
+                        } else {
+                            fputs("(const char *)\"", codegen->output);
+                            escape_string_for_c(codegen->output, fmt->data.cast_expr.expr->data.string_literal.value);
+                            fputc('"', codegen->output);
+                        }
+                    } else {
+                        fputs("(const char *)", codegen->output);
+                        gen_expr(codegen, args[i]);
+                    }
+                    continue;
+                }
                 // 检查参数是否是字符串常量或 *byte 类型，如果是则添加类型转换以消除 const 警告
                 int is_string_arg = (args[i] && args[i]->type == AST_STRING);
                 // 检查参数是否是 *byte 类型的标识符或字符串常量

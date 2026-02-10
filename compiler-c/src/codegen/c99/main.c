@@ -347,6 +347,9 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
     fputs("// C99 代码由 Uya Mini 编译器生成\n", codegen->output);
     fputs("// 使用 -std=c99 编译\n", codegen->output);
     fputs("//\n", codegen->output);
+    /* 必须在首个 #include 之前定义，以便 unistd.h 声明 readlink 等 POSIX 函数 */
+    fputs("#ifndef _POSIX_C_SOURCE\n#define _POSIX_C_SOURCE 200809L\n#endif\n", codegen->output);
+    fputs("\n", codegen->output);
     
     // 先检查是否定义了与标准库冲突的函数，并预扫描 AST 收集 needs_string_h
     ASTNode **decls = ast->data.program.decls;
@@ -464,6 +467,12 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
         // 定义了这些函数，不包含 <string.h>，避免冲突
         // 如果需要其他字符串函数，可以单独声明
     }
+    /* stat/readlink 由自举代码使用；opendir/readdir/closedir 仅声明（不包含 dirent.h，避免与生成的 struct DIR/struct Dirent 冲突） */
+    fputs("#include <sys/stat.h>\n", codegen->output);
+    fputs("#include <unistd.h>\n", codegen->output);
+    fputs("extern void *opendir(const char *);\n", codegen->output);
+    fputs("extern void *readdir(void *);\n", codegen->output);
+    fputs("extern int closedir(void *);\n", codegen->output);
     fputs("\n", codegen->output);
     // C99 兼容的 alignof 宏（使用 offsetof 技巧）
     fputs("// C99 兼容的 alignof 实现\n", codegen->output);

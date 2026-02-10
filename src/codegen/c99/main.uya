@@ -606,6 +606,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             check_i = check_i + 1;
         }
         
+        // 必须在首个 #include 之前定义，以便 unistd.h 声明 readlink 等 POSIX 函数
+        fputs("#ifndef _POSIX_C_SOURCE\n#define _POSIX_C_SOURCE 200809L\n#endif\n" as *byte, codegen.output as *void);
+        fputs("\n" as *byte, codegen.output as *void);
         fputs("#include <stdint.h>\n" as *byte, codegen.output as *void);
         fputs("#include <stdbool.h>\n" as *byte, codegen.output as *void);
         fputs("#include <stddef.h>\n" as *byte, codegen.output as *void);
@@ -620,6 +623,12 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         if codegen.needs_string_h != 0 {
             fputs("#include <string.h>\n" as *byte, codegen.output as *void);
         }
+        // stat/readlink 由自举代码使用；opendir/readdir/closedir 仅声明（不包含 dirent.h，避免与生成的 struct DIR/struct Dirent 冲突）
+        fputs("#include <sys/stat.h>\n" as *byte, codegen.output as *void);
+        fputs("#include <unistd.h>\n" as *byte, codegen.output as *void);
+        fputs("extern void *opendir(const char *);\n" as *byte, codegen.output as *void);
+        fputs("extern void *readdir(void *);\n" as *byte, codegen.output as *void);
+        fputs("extern int closedir(void *);\n" as *byte, codegen.output as *void);
         fputs("\n" as *byte, codegen.output as *void);
         // C99 兼容的 alignof 宏（使用 offsetof 技巧）
         fputs("// C99 兼容的 alignof 实现\n" as *byte, codegen.output as *void);

@@ -1871,6 +1871,40 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 }
                 fputs(codegen.interp_arg_temp_names[i] as *byte, codegen.output as *void);
             } else {
+            // stat 的第二参数需转为 struct stat *，与 POSIX 声明一致
+            if callee_name != null && strcmp(callee_name as *byte, "stat" as *byte) == 0 && i == 1 {
+                fputs("(struct stat *)" as *byte, codegen.output as *void);
+            }
+            // fprintf 的格式参数为第 2 个 (i==1)，snprintf 的格式参数为第 3 个 (i==2)；强制 (const char *) 消除 -Wformat= 警告
+            var is_format_arg: i32 = 0;
+            if callee_name != null && ((strcmp(callee_name as *byte, "fprintf" as *byte) == 0 && i == 1) || (strcmp(callee_name as *byte, "snprintf" as *byte) == 0 && i == 2)) {
+                is_format_arg = 1;
+            }
+            if is_format_arg != 0 && expr.call_expr_args[i] != null {
+                const fmt: &ASTNode = expr.call_expr_args[i];
+                if fmt.type == ASTNodeType.AST_STRING {
+                    const name: &byte = add_string_constant(codegen, fmt.string_literal_value);
+                    if name != null {
+                        fprintf(codegen.output as *void, "(const char *)%s" as *byte, name as *byte);
+                    } else {
+                        fputs("(const char *)\"" as *byte, codegen.output as *void);
+                        escape_string_for_c(codegen.output, fmt.string_literal_value);
+                        fputc(34, codegen.output as *void);
+                    }
+                } else if fmt.type == ASTNodeType.AST_CAST_EXPR && fmt.cast_expr_expr != null && fmt.cast_expr_expr.type == ASTNodeType.AST_STRING {
+                    const name: &byte = add_string_constant(codegen, fmt.cast_expr_expr.string_literal_value);
+                    if name != null {
+                        fprintf(codegen.output as *void, "(const char *)%s" as *byte, name as *byte);
+                    } else {
+                        fputs("(const char *)\"" as *byte, codegen.output as *void);
+                        escape_string_for_c(codegen.output, fmt.cast_expr_expr.string_literal_value);
+                        fputc(34, codegen.output as *void);
+                    }
+                } else {
+                    fputs("(const char *)" as *byte, codegen.output as *void);
+                    gen_expr(codegen, fmt);
+                }
+            } else {
             // 检查参数是否是字符串常量或 *byte 类型，如果是则添加类型转换以消除 const 警告
             var is_string_arg: i32 = 0;
             if expr.call_expr_args[i] != null && expr.call_expr_args[i].type == ASTNodeType.AST_STRING {
@@ -2029,6 +2063,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 }
             }
             }
+            }  // is_format_arg == 0 的 else 结束
             if i < arg_count - 1 {
                 fputs(", " as *byte, codegen.output as *void);
             }
