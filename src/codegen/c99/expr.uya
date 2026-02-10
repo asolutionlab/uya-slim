@@ -1142,7 +1142,8 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
     } else if expr.type == ASTNodeType.AST_SIZEOF {
         const target: &ASTNode = expr.sizeof_expr_target;
         const is_type: i32 = expr.sizeof_expr_is_type;
-        fputs("sizeof(" as *byte, codegen.output as *void);
+        // @size_of 返回 i32，需要显式转换为 int32_t 避免无符号算术警告
+        fputs("(int32_t)sizeof(" as *byte, codegen.output as *void);
         if is_type != 0 {
             // 显式检查是否是结构体类型（即使在 c99_type_to_c 中查找失败）
             if target.type == ASTNodeType.AST_TYPE_NAMED {
@@ -1405,24 +1406,26 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 memcpy(elem_type as *void, type_c as *void, elem_len);
                 elem_type[elem_len] = 0;
                 // 移除可能的 const 限定符（如果存在）
+                // @align_of 返回 i32，需要显式转换为 int32_t 避免无符号算术警告
                 if strncmp(elem_type as *byte, "const " as *byte, 6) == 0 {
-                    fputs("uya_alignof(" as *byte, codegen.output as *void);
+                    fputs("(int32_t)uya_alignof(" as *byte, codegen.output as *void);
                     fprintf(codegen.output as *void, "%s" as *byte, &elem_type[6] as *byte);
                     fputc(41, codegen.output as *void);  // ')'
                 } else {
-                    fputs("uya_alignof(" as *byte, codegen.output as *void);
+                    fputs("(int32_t)uya_alignof(" as *byte, codegen.output as *void);
                     fprintf(codegen.output as *void, "%s" as *byte, elem_type as *byte);
                     fputc(41, codegen.output as *void);  // ')'
                 }
             } else {
                 // 分配失败，回退到原始类型（会失败，但至少不会崩溃）
-                fputs("uya_alignof(" as *byte, codegen.output as *void);
+                fputs("(int32_t)uya_alignof(" as *byte, codegen.output as *void);
                 fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
                 fputc(41, codegen.output as *void);  // ')'
             }
         } else {
             // 非数组类型：直接使用
-            fputs("uya_alignof(" as *byte, codegen.output as *void);
+            // @align_of 返回 i32，需要显式转换为 int32_t 避免无符号算术警告
+            fputs("(int32_t)uya_alignof(" as *byte, codegen.output as *void);
             fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
             fputc(41, codegen.output as *void);  // ')'
         }

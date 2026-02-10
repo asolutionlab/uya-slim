@@ -952,7 +952,8 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
         case AST_SIZEOF: {
             ASTNode *target = expr->data.sizeof_expr.target;
             int is_type = expr->data.sizeof_expr.is_type;
-            fputs("sizeof(", codegen->output);
+            // @size_of 返回 i32，需要显式转换为 int32_t 避免无符号算术警告
+            fputs("(int32_t)sizeof(", codegen->output);
             if (is_type) {
                 // 显式检查是否是结构体类型（即使在 c99_type_to_c 中查找失败）
                 if (target->type == AST_TYPE_NAMED) {
@@ -1201,7 +1202,8 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                     // 对于复杂表达式，我们需要使用 typeof，但 C99 不支持
                     // 所以这里我们尝试使用变量的类型
                     // 如果失败，将生成错误的代码，但这是 C99 的限制
-                    fputs("uya_alignof(", codegen->output);
+                    // @align_of 返回 i32，需要显式转换为 int32_t 避免无符号算术警告
+                    fputs("(int32_t)uya_alignof(", codegen->output);
                     gen_expr(codegen, target);
                     fputc(')', codegen->output);
                     break;
@@ -1228,24 +1230,26 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                     memcpy(elem_type, type_c, elem_len);
                     elem_type[elem_len] = '\0';
                     // 移除可能的 const 限定符（如果存在）
+                    // @align_of 返回 i32，需要显式转换为 int32_t 避免无符号算术警告
                     if (strncmp(elem_type, "const ", 6) == 0) {
-                        fputs("uya_alignof(", codegen->output);
+                        fputs("(int32_t)uya_alignof(", codegen->output);
                         fprintf(codegen->output, "%s", elem_type + 6);
                         fputc(')', codegen->output);
                     } else {
-                        fputs("uya_alignof(", codegen->output);
+                        fputs("(int32_t)uya_alignof(", codegen->output);
                         fprintf(codegen->output, "%s", elem_type);
                         fputc(')', codegen->output);
                     }
                 } else {
                     // 分配失败，回退到原始类型（会失败，但至少不会崩溃）
-                    fputs("uya_alignof(", codegen->output);
+                    fputs("(int32_t)uya_alignof(", codegen->output);
                     fprintf(codegen->output, "%s", type_c);
                     fputc(')', codegen->output);
                 }
             } else {
                 // 非数组类型：直接使用
-                fputs("uya_alignof(", codegen->output);
+                // @align_of 返回 i32，需要显式转换为 int32_t 避免无符号算术警告
+                fputs("(int32_t)uya_alignof(", codegen->output);
                 fprintf(codegen->output, "%s", type_c);
                 fputc(')', codegen->output);
             }
