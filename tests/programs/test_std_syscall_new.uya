@@ -1,0 +1,31 @@
+// test_std_syscall_new.uya - 测试新的 std.syscall 模块
+// 测试系统调用封装函数
+
+use std.syscall.linux.sys_write;
+use std.syscall.linux.sys_getpid;
+use std.syscall.linux.STDOUT_FILENO;
+
+fn main() i32 {
+    // 测试 1: sys_write - 写入标准输出
+    const msg: &const byte = "Hello from std.syscall!\n" as &const byte;
+    const msg_len: usize = 24;
+    const result1: !i64 = sys_write(STDOUT_FILENO, msg as i64, msg_len as i64);
+    const written1: i64 = result1 catch {
+        return 1;  // 写入失败
+    };
+    if written1 != msg_len as i64 {
+        return 2;  // 写入字节数不匹配
+    }
+    
+    // 测试 2: sys_getpid - 获取进程 ID
+    const pid: i64 = sys_getpid();
+    if pid <= 0 {
+        return 3;  // 进程 ID 应该大于 0
+    }
+    
+    // 测试 3: sys_exit - 退出进程（这里不实际调用，只测试函数存在）
+    // sys_exit 是 noreturn，不能在这里测试
+    
+    return 0;
+}
+

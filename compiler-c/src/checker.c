@@ -7363,9 +7363,78 @@ static const char *extract_module_path_allocated(TypeChecker *checker, const cha
         return NULL;
     }
     
-    // 特殊处理：检查是否是标准库文件（lib/std/c/...）
+    // 特殊处理：检查是否是标准库文件（lib/std/...）
     // 例如：lib/std/c/string.uya -> std.c.string
     //      lib/std/c/syscall/syscall.uya -> std.c.syscall
+    //      lib/std/runtime/runtime.uya -> std.runtime.runtime
+    //      lib/std/syscall/linux.uya -> std.syscall.linux
+    const char *lib_std = strstr(filename, "/lib/std/");
+    if (lib_std == NULL) {
+        lib_std = strstr(filename, "\\lib\\std\\");
+    }
+    if (lib_std != NULL) {
+        // 找到 lib/std/ 位置，提取后面的路径
+        const char *relative_path = lib_std + 9; // 跳过 "/lib/std/"
+        size_t rel_len = strlen(relative_path);
+        
+        // 去掉 .uya 后缀
+        size_t base_len = rel_len;
+        if (rel_len > 4 && strcmp(relative_path + rel_len - 4, ".uya") == 0) {
+            base_len = rel_len - 4;
+        }
+        
+        // 检查是否需要去重：如果文件名与父目录同名（如 syscall/syscall），
+        // 则去掉最后一级
+        const char *last_slash_uya = NULL;
+        for (size_t i = base_len; i > 0; i--) {
+            if (relative_path[i - 1] == '/' || relative_path[i - 1] == '\\') {
+                last_slash_uya = relative_path + i - 1;
+                break;
+            }
+        }
+        
+        size_t module_len = base_len;
+        if (last_slash_uya != NULL) {
+            // 父目录名
+            const char *prev_slash = NULL;
+            for (const char *p = relative_path; p < last_slash_uya; p++) {
+                if (*p == '/' || *p == '\\') {
+                    prev_slash = p;
+                }
+            }
+            const char *dir_name_start = (prev_slash != NULL) ? prev_slash + 1 : relative_path;
+            size_t dir_name_len = last_slash_uya - dir_name_start;
+            // 文件名（去掉 .uya）
+            const char *file_name_start = last_slash_uya + 1;
+            size_t file_name_len = (relative_path + base_len) - file_name_start;
+            // 如果文件名与父目录同名，去掉文件名部分
+            if (dir_name_len == file_name_len &&
+                strncmp(dir_name_start, file_name_start, dir_name_len) == 0) {
+                module_len = last_slash_uya - relative_path;
+            }
+        }
+        
+        if (module_len > 0) {
+            // 构建模块路径：std.xxx
+            size_t total_len = 4 + module_len; // "std." + 路径长度
+            char *module_name = (char *)arena_alloc(checker->arena, total_len + 1);
+            if (module_name == NULL) {
+                return NULL;
+            }
+            strcpy(module_name, "std.");
+            memcpy(module_name + 4, relative_path, module_len);
+            module_name[4 + module_len] = '\0';
+            // 将 '/' 替换为 '.'
+            for (size_t i = 4; i < 4 + module_len; i++) {
+                if (module_name[i] == '/' || module_name[i] == '\\') {
+                    module_name[i] = '.';
+                }
+            }
+            return module_name;
+        }
+    }
+    
+    // 保持向后兼容：特殊处理 lib/std/c/（旧代码路径）
     const char *lib_std_c = strstr(filename, "/lib/std/c/");
     if (lib_std_c == NULL) {
         lib_std_c = strstr(filename, "\\lib\\std\\c\\");

@@ -44,6 +44,8 @@
 | 30 | **只读指针类型 `&const T` 和 `*const T`** | [x] **规范 0.42 新增**（C 实现与 uya-src 已同步，标准库已更新，测试用例已通过） |
 | 31 | **函数导出规则完善（static/export/extern）** | [x] **规范 0.42 新增**（C 实现与 uya-src 已同步，测试用例已通过） |
 | 32 | **指针转换内置函数（@ptr_from_usize/@usize_from_ptr）** | [x] **TDD 完成**（C 实现与 uya-src 已同步，测试用例通过） |
+| 33 | **新标准库系统调用层（std.syscall）** | [x] **已完成**（lib/std/syscall/linux.uya，测试用例通过） |
+| 34 | **新标准库运行时支持（std.runtime）** | [~] **部分完成**（lib/std/runtime/runtime.uya 已实现，编译通过，但链接时与 bridge.c 冲突，待移除 bridge.c 后验证） |
 
 ---
 
