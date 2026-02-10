@@ -48,6 +48,7 @@
 | 34 | **新标准库运行时支持（std.runtime）** | [x] **已完成**（lib/std/runtime/runtime.uya 已实现，编译和类型检查通过，链接时与 bridge.c 冲突是预期的，待移除 bridge.c 后验证） |
 | 35 | **新标准库内存操作（std.mem）** | [x] **已完成**（lib/std/mem/mem.uya 已实现，包含 memcpy, memset, memmove, memcmp, memchr，测试用例通过） |
 | 36 | **新标准库字符串操作（std.string）** | [x] **已完成**（lib/std/string/string.uya 已实现，包含 strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr, strstr，测试用例通过） |
+| 37 | **新标准库文件 I/O（std.io）** | [x] **已完成**（lib/std/io/file.uya 和 lib/std/io/stream.uya 已实现，包含 fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush，测试用例通过） |
 
 ---
 

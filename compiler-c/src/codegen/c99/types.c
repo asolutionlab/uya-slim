@@ -1168,7 +1168,20 @@ const char *get_c_type_of_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                 // 递归调用 AST_MEMBER_ACCESS 的处理逻辑来获取方法返回类型
                 return get_c_type_of_expr(codegen, callee);
             }
-            // 普通函数调用：无法推断返回类型，返回默认类型
+            // 普通函数调用：查找函数声明并获取返回类型
+            if (callee && callee->type == AST_IDENTIFIER) {
+                const char *func_name = callee->data.identifier.name;
+                if (func_name) {
+                    ASTNode *fn_decl = find_function_decl_c99(codegen, func_name);
+                    if (fn_decl && fn_decl->type == AST_FN_DECL) {
+                        ASTNode *return_type = fn_decl->data.fn_decl.return_type;
+                        if (return_type) {
+                            return c99_type_to_c(codegen, return_type);
+                        }
+                    }
+                }
+            }
+            // 无法推断返回类型，返回默认类型
             return "int32_t";
         }
         default:

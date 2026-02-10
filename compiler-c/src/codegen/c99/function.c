@@ -366,9 +366,9 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         return;
     }
     
-    // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数声明
-    // 避免与 C 标准库的声明冲突
-    if (is_stdlib && codegen->needs_string_h) {
+    // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，且函数没有 body（extern），不生成函数声明
+    // 如果函数有 body（实际定义），则生成前向声明（因为我们已经不包含 <string.h> 或已经 #undef 了这些函数）
+    if (is_stdlib && codegen->needs_string_h && !body) {
         // 检查是否是字符串函数（这些函数在 <string.h> 中已声明）
         if (orig_name && (
             strcmp(orig_name, "strlen") == 0 ||
@@ -388,7 +388,7 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
             strcmp(orig_name, "memset") == 0 ||
             strcmp(orig_name, "memcmp") == 0 ||
             strcmp(orig_name, "memchr") == 0)) {
-            // 这些函数已经在 <string.h> 中声明，不生成重复声明
+            // 这些函数已经在 <string.h> 中声明，且没有 body（extern），不生成重复声明
             return;
         }
     }
@@ -407,9 +407,10 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         // 这些函数已经在 <stdlib.h> 中声明，不生成重复声明
         return;
     }
-    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, sprintf, snprintf 等），不生成函数声明
-    // 避免与 C 标准库的声明冲突（我们总是包含 <stdio.h>）
-    if (is_stdlib && orig_name && (
+    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, sprintf, snprintf 等）
+    // 如果函数没有 body（extern），不生成函数声明（应该链接到 C 标准库的实现）
+    // 如果函数有 body（实际定义），则生成前向声明（因为我们已经 #undef 了这些函数）
+    if (is_stdlib && orig_name && !body && (
         strcmp(orig_name, "fputs") == 0 ||
         strcmp(orig_name, "fputc") == 0 ||
         strcmp(orig_name, "fwrite") == 0 ||
@@ -418,9 +419,10 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         strcmp(orig_name, "fread") == 0 ||
         strcmp(orig_name, "fopen") == 0 ||
         strcmp(orig_name, "fclose") == 0 ||
+        strcmp(orig_name, "fflush") == 0 ||
         strcmp(orig_name, "sprintf") == 0 ||
         strcmp(orig_name, "snprintf") == 0)) {
-        // 这些函数已经在 <stdio.h> 中声明，不生成重复声明
+        // 这些函数已经在 <stdio.h> 中声明，且没有 body（extern），不生成重复声明
         return;
     }
     
@@ -581,9 +583,10 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         // 不生成 Uya 标准库的实现，避免类型冲突
         return;
     }
-    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, sprintf, snprintf 等），不生成函数定义
-    // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
-    // 注意：我们总是包含 <stdio.h>，所以需要检查这些函数
+    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, sprintf, snprintf 等）
+    // 如果函数有 body（不是 extern），则生成函数定义（因为我们已经 #undef 了这些函数）
+    // 如果没有 body（extern），则不生成函数定义（应该链接到 C 标准库的实现）
+    // 注意：我们总是包含 <stdio.h>，但如果用户定义了这些函数，我们会在包含之前 #undef 它们
     if (is_stdlib && orig_name && (
         strcmp(orig_name, "fputs") == 0 ||
         strcmp(orig_name, "fputc") == 0 ||
@@ -595,9 +598,11 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         strcmp(orig_name, "fclose") == 0 ||
         strcmp(orig_name, "sprintf") == 0 ||
         strcmp(orig_name, "snprintf") == 0)) {
-        // 这些函数已经在 <stdio.h> 中声明，应该链接到 C 标准库的实现
-        // 不生成 Uya 标准库的实现，避免类型冲突
-        return;
+        // 如果函数没有 body（extern），不生成函数定义（应该链接到 C 标准库的实现）
+        if (!body) {
+            return;
+        }
+        // 如果函数有 body，继续生成函数定义（因为我们已经 #undef 了这些函数）
     }
     
     // 如果没有函数体（外部函数），则不生成定义

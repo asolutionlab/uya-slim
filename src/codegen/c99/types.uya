@@ -846,7 +846,20 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
             // 递归调用 AST_MEMBER_ACCESS 的处理逻辑来获取方法返回类型
             return get_c_type_of_expr(codegen, callee);
         }
-        // 普通函数调用：无法推断返回类型，返回默认类型
+        // 普通函数调用：查找函数声明并获取返回类型
+        if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER {
+            const func_name: &byte = callee.identifier_name;
+            if func_name != null {
+                const fn_decl: &ASTNode = find_function_decl_c99(codegen, func_name);
+                if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL {
+                    const return_type: &ASTNode = fn_decl.fn_decl_return_type;
+                    if return_type != null {
+                        return c99_type_to_c(codegen, return_type);
+                    }
+                }
+            }
+        }
+        // 无法推断返回类型，返回默认类型
         return ("int32_t" as *byte) as &byte;
     } else {
         return ("int32_t" as *byte) as &byte;

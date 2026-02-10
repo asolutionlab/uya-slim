@@ -383,9 +383,35 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
     fputs("#include <stdbool.h>\n", codegen->output);
     fputs("#include <stddef.h>\n", codegen->output);
     fputs("#include <stdarg.h>\n", codegen->output);  // for va_list (variadic forward)
-    // 总是包含 <stdio.h> 和 <stdlib.h>（标准库代码可能使用 fprintf, exit 等函数）
-    // 如果用户定义了冲突的函数，会在链接时报错，但编译时仍需要声明
-    fputs("#include <stdio.h>\n", codegen->output);  // for standard I/O functions (printf, puts, etc.)
+    // 检查是否有文件 I/O 函数定义（fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush）
+    // 如果有，在包含 <stdio.h> 之前 #undef 这些函数，避免与标准库声明冲突
+    int has_io_functions = 0;
+    for (int i = 0; i < decl_count; i++) {
+        ASTNode *decl = decls[i];
+        if (!decl || decl->type != AST_FN_DECL) continue;
+        const char *fn_name = decl->data.fn_decl.name;
+        ASTNode *body = decl->data.fn_decl.body;
+        if (fn_name && body && (
+            strcmp(fn_name, "fopen") == 0 ||
+            strcmp(fn_name, "fclose") == 0 ||
+            strcmp(fn_name, "fread") == 0 ||
+            strcmp(fn_name, "fwrite") == 0 ||
+            strcmp(fn_name, "fgetc") == 0 ||
+            strcmp(fn_name, "fputc") == 0 ||
+            strcmp(fn_name, "fputs") == 0 ||
+            strcmp(fn_name, "fprintf") == 0 ||
+            strcmp(fn_name, "fflush") == 0)) {
+            has_io_functions = 1;
+            break;
+        }
+    }
+    
+    // 如果定义了文件 I/O 函数，不包含 <stdio.h>，避免与标准库声明冲突
+    // 如果只使用了这些函数但没有定义，则包含 <stdio.h>
+    // 注意：这可能会导致其他 stdio 函数（如 printf）不可用，但这是零依赖标准库的要求
+    if (!has_io_functions) {
+        fputs("#include <stdio.h>\n", codegen->output);  // for standard I/O functions (printf, puts, etc.)
+    }
     fputs("#include <stdlib.h>\n", codegen->output);  // for stdlib functions (exit, atoi, malloc, etc.)
     
     // 检查是否有内存函数定义（memcpy, memset, memmove, memcmp, memchr）
@@ -407,9 +433,36 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
         }
     }
     
-    // 如果使用了 memcpy 或 memset，且没有定义这些函数，添加 <string.h>
-    if (codegen->needs_string_h && !has_mem_functions) {
+    // 如果使用了字符串函数（strlen, strcmp, strchr 等），且没有定义这些函数，添加 <string.h>
+    // 如果定义了这些函数，先 #undef 它们，然后包含 <string.h>
+    int has_string_functions = 0;
+    for (int i = 0; i < decl_count; i++) {
+        ASTNode *decl = decls[i];
+        if (!decl || decl->type != AST_FN_DECL) continue;
+        const char *fn_name = decl->data.fn_decl.name;
+        ASTNode *body = decl->data.fn_decl.body;
+        if (fn_name && body && (
+            strcmp(fn_name, "strlen") == 0 ||
+            strcmp(fn_name, "strcmp") == 0 ||
+            strcmp(fn_name, "strncmp") == 0 ||
+            strcmp(fn_name, "strcpy") == 0 ||
+            strcmp(fn_name, "strncpy") == 0 ||
+            strcmp(fn_name, "strcat") == 0 ||
+            strcmp(fn_name, "strchr") == 0 ||
+            strcmp(fn_name, "strrchr") == 0 ||
+            strcmp(fn_name, "strstr") == 0)) {
+            has_string_functions = 1;
+            break;
+        }
+    }
+    
+    // 如果定义了字符串或内存函数，不包含 <string.h>，避免与标准库声明冲突
+    // 如果只使用了这些函数但没有定义，则包含 <string.h>
+    if (codegen->needs_string_h && !has_string_functions && !has_mem_functions) {
         fputs("#include <string.h>\n", codegen->output);
+    } else if (has_string_functions || has_mem_functions) {
+        // 定义了这些函数，不包含 <string.h>，避免冲突
+        // 如果需要其他字符串函数，可以单独声明
     }
     fputs("\n", codegen->output);
     // C99 兼容的 alignof 宏（使用 offsetof 技巧）
