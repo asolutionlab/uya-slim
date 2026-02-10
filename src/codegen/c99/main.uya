@@ -577,12 +577,18 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             // 检查是否定义了与标准库冲突的函数
             if check_decl.type == ASTNodeType.AST_FN_DECL {
                 const fn_name: &byte = check_decl.fn_decl_name;
-                if fn_name != null && (
+                const fn_body: &ASTNode = check_decl.fn_decl_body;
+                // 只有定义了函数体（不是 extern）才认为是冲突
+                if fn_name != null && fn_body != null && (
                     strcmp(fn_name as *byte, ("fopen" as *byte) as &byte) == 0 ||
                     strcmp(fn_name as *byte, ("fclose" as *byte) as &byte) == 0 ||
                     strcmp(fn_name as *byte, ("fread" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("fwrite" as *byte) as &byte) == 0 ||
                     strcmp(fn_name as *byte, ("fgetc" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fprintf" as *byte) as &byte) == 0) {
+                    strcmp(fn_name as *byte, ("fputc" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("fputs" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("fprintf" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("fflush" as *byte) as &byte) == 0) {
                     codegen.has_stdio_conflicts = 1;
                 }
             }
@@ -604,9 +610,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("#include <stdbool.h>\n" as *byte, codegen.output as *void);
         fputs("#include <stddef.h>\n" as *byte, codegen.output as *void);
         fputs("#include <stdarg.h>\n" as *byte, codegen.output as *void);  // for va_list (variadic forward)
-        // 总是包含 <stdio.h> 和 <stdlib.h>（标准库代码可能使用 fprintf, exit 等函数）
-        // 如果用户定义了冲突的函数，会在链接时报错，但编译时仍需要声明
-        fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);  // for standard I/O functions (printf, puts, etc.)
+        // 如果定义了文件 I/O 函数（fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush），不包含 <stdio.h>
+        // 避免与标准库声明冲突
+        if codegen.has_stdio_conflicts == 0 {
+            fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);  // for standard I/O functions (printf, puts, etc.)
+        }
         fputs("#include <stdlib.h>\n" as *byte, codegen.output as *void);  // for stdlib functions (exit, atoi, malloc, etc.)
         // 如果使用了 memcpy 或 memset，添加 <string.h>
         if codegen.needs_string_h != 0 {

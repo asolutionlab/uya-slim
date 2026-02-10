@@ -3,8 +3,8 @@
 // 说明：基于 std.io.file 实现流操作（纯 Uya 实现，零外部依赖）
 // 模块路径：lib/std/io/stream.uya → use std.io.stream;
 
-use std.io.file.fread;
-use std.io.file.fwrite;
+use std.io.fread;
+use std.io.fwrite;
 use std.string.strlen;
 use std.string.strcpy;
 use std.string.strchr;

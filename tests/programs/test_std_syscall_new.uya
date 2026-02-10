@@ -1,9 +1,9 @@
 // test_std_syscall_new.uya - 测试新的 std.syscall 模块
 // 测试系统调用封装函数
 
-use std.syscall.linux.sys_write;
-use std.syscall.linux.sys_getpid;
-use std.syscall.linux.STDOUT_FILENO;
+use std.syscall.sys_write;
+use std.syscall.sys_getpid;
+use std.syscall.STDOUT_FILENO;
 
 fn main() i32 {
     // 测试 1: sys_write - 写入标准输出

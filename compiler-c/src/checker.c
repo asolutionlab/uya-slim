@@ -7368,13 +7368,49 @@ static const char *extract_module_path_allocated(TypeChecker *checker, const cha
     //      lib/std/c/syscall/syscall.uya -> std.c.syscall
     //      lib/std/runtime/runtime.uya -> std.runtime.runtime
     //      lib/std/syscall/linux.uya -> std.syscall.linux
+    // 注意：需要处理路径中的双斜杠（lib//std/ 或 /lib//std/）
     const char *lib_std = strstr(filename, "/lib/std/");
+    if (lib_std == NULL) {
+        lib_std = strstr(filename, "/lib//std/");
+    }
+    if (lib_std == NULL) {
+        lib_std = strstr(filename, "lib/std/");
+    }
+    if (lib_std == NULL) {
+        lib_std = strstr(filename, "lib//std/");
+    }
     if (lib_std == NULL) {
         lib_std = strstr(filename, "\\lib\\std\\");
     }
+    if (lib_std == NULL) {
+        lib_std = strstr(filename, "\\lib\\\\std\\");
+    }
     if (lib_std != NULL) {
         // 找到 lib/std/ 位置，提取后面的路径
-        const char *relative_path = lib_std + 9; // 跳过 "/lib/std/"
+        // 需要跳过 "/lib/std/" 或 "lib/std/" 或 "/lib//std/" 或 "lib//std/"
+        const char *relative_path = lib_std;
+        // 跳过开头的 "/" 或 "//"（如果有）
+        if (*relative_path == '/') {
+            relative_path++;
+            if (*relative_path == '/') {
+                relative_path++;  // 跳过双斜杠
+            }
+        }
+        // 跳过 "lib/std/" 或 "lib//std/"
+        if (strncmp(relative_path, "lib/", 4) == 0 || strncmp(relative_path, "lib//", 5) == 0) {
+            if (strncmp(relative_path, "lib//", 5) == 0) {
+                relative_path += 5;  // 跳过 "lib//"
+            } else {
+                relative_path += 4;  // 跳过 "lib/"
+            }
+            if (strncmp(relative_path, "std/", 4) == 0 || strncmp(relative_path, "std//", 5) == 0) {
+                if (strncmp(relative_path, "std//", 5) == 0) {
+                    relative_path += 5;  // 跳过 "std//"
+                } else {
+                    relative_path += 4;  // 跳过 "std/"
+                }
+            }
+        }
         size_t rel_len = strlen(relative_path);
         
         // 去掉 .uya 后缀
@@ -7383,8 +7419,7 @@ static const char *extract_module_path_allocated(TypeChecker *checker, const cha
             base_len = rel_len - 4;
         }
         
-        // 检查是否需要去重：如果文件名与父目录同名（如 syscall/syscall），
-        // 则去掉最后一级
+        // 同级目录下的文件应该使用同一个模块，所以只取目录路径，不包含文件名
         const char *last_slash_uya = NULL;
         for (size_t i = base_len; i > 0; i--) {
             if (relative_path[i - 1] == '/' || relative_path[i - 1] == '\\') {
@@ -7395,23 +7430,8 @@ static const char *extract_module_path_allocated(TypeChecker *checker, const cha
         
         size_t module_len = base_len;
         if (last_slash_uya != NULL) {
-            // 父目录名
-            const char *prev_slash = NULL;
-            for (const char *p = relative_path; p < last_slash_uya; p++) {
-                if (*p == '/' || *p == '\\') {
-                    prev_slash = p;
-                }
-            }
-            const char *dir_name_start = (prev_slash != NULL) ? prev_slash + 1 : relative_path;
-            size_t dir_name_len = last_slash_uya - dir_name_start;
-            // 文件名（去掉 .uya）
-            const char *file_name_start = last_slash_uya + 1;
-            size_t file_name_len = (relative_path + base_len) - file_name_start;
-            // 如果文件名与父目录同名，去掉文件名部分
-            if (dir_name_len == file_name_len &&
-                strncmp(dir_name_start, file_name_start, dir_name_len) == 0) {
-                module_len = last_slash_uya - relative_path;
-            }
+            // 只取目录路径，不包含文件名
+            module_len = last_slash_uya - relative_path;
         }
         
         if (module_len > 0) {
@@ -7435,9 +7455,22 @@ static const char *extract_module_path_allocated(TypeChecker *checker, const cha
     }
     
     // 保持向后兼容：特殊处理 lib/std/c/（旧代码路径）
+    // 注意：需要处理路径中的双斜杠（lib//std/c/ 或 /lib//std/c/）
     const char *lib_std_c = strstr(filename, "/lib/std/c/");
     if (lib_std_c == NULL) {
+        lib_std_c = strstr(filename, "/lib//std/c/");
+    }
+    if (lib_std_c == NULL) {
+        lib_std_c = strstr(filename, "lib/std/c/");
+    }
+    if (lib_std_c == NULL) {
+        lib_std_c = strstr(filename, "lib//std/c/");
+    }
+    if (lib_std_c == NULL) {
         lib_std_c = strstr(filename, "\\lib\\std\\c\\");
+    }
+    if (lib_std_c == NULL) {
+        lib_std_c = strstr(filename, "\\lib\\\\std\\c\\");
     }
     if (lib_std_c != NULL) {
         // 找到 lib/std/c/ 位置，提取后面的路径
@@ -7450,8 +7483,7 @@ static const char *extract_module_path_allocated(TypeChecker *checker, const cha
             base_len = rel_len - 4;
         }
         
-        // 检查是否需要去重：如果文件名与父目录同名（如 syscall/syscall），
-        // 则去掉最后一级
+        // 同级目录下的文件应该使用同一个模块，所以只取目录路径，不包含文件名
         const char *last_slash_uya = NULL;
         for (size_t i = base_len; i > 0; i--) {
             if (relative_path[i - 1] == '/' || relative_path[i - 1] == '\\') {
@@ -7462,23 +7494,8 @@ static const char *extract_module_path_allocated(TypeChecker *checker, const cha
         
         size_t module_len = base_len;
         if (last_slash_uya != NULL) {
-            // 父目录名
-            const char *prev_slash = NULL;
-            for (const char *p = relative_path; p < last_slash_uya; p++) {
-                if (*p == '/' || *p == '\\') {
-                    prev_slash = p;
-                }
-            }
-            const char *dir_name_start = (prev_slash != NULL) ? prev_slash + 1 : relative_path;
-            size_t dir_name_len = last_slash_uya - dir_name_start;
-            // 文件名（去掉 .uya）
-            const char *file_name_start = last_slash_uya + 1;
-            size_t file_name_len = (relative_path + base_len) - file_name_start;
-            // 如果文件名与父目录同名，去掉文件名部分
-            if (dir_name_len == file_name_len &&
-                strncmp(dir_name_start, file_name_start, dir_name_len) == 0) {
-                module_len = last_slash_uya - relative_path;
-            }
+            // 只取目录路径，不包含文件名
+            module_len = last_slash_uya - relative_path;
         }
         
         if (module_len > 0) {
@@ -7646,8 +7663,7 @@ static const char *extract_module_path_allocated(TypeChecker *checker, const cha
                 base_len = rel_len - 4;
             }
             
-            // 检查是否需要去重：如果文件名与父目录同名（如 syscall/syscall），
-            // 则去掉最后一级
+            // 同级目录下的文件应该使用同一个模块，所以只取目录路径，不包含文件名
             const char *last_slash_uya = NULL;
             for (size_t i = base_len; i > 0; i--) {
                 if (relative_path[i - 1] == '/' || relative_path[i - 1] == '\\') {
@@ -7658,23 +7674,8 @@ static const char *extract_module_path_allocated(TypeChecker *checker, const cha
             
             size_t module_len = base_len;
             if (last_slash_uya != NULL) {
-                // 父目录名
-                const char *prev_slash = NULL;
-                for (const char *p = relative_path; p < last_slash_uya; p++) {
-                    if (*p == '/' || *p == '\\') {
-                        prev_slash = p;
-                    }
-                }
-                const char *dir_name_start = (prev_slash != NULL) ? prev_slash + 1 : relative_path;
-                size_t dir_name_len = last_slash_uya - dir_name_start;
-                // 文件名（去掉 .uya）
-                const char *file_name_start = last_slash_uya + 1;
-                size_t file_name_len = (relative_path + base_len) - file_name_start;
-                // 如果文件名与父目录同名，去掉文件名部分
-                if (dir_name_len == file_name_len &&
-                    strncmp(dir_name_start, file_name_start, dir_name_len) == 0) {
-                    module_len = last_slash_uya - relative_path;
-                }
+                // 只取目录路径，不包含文件名
+                module_len = last_slash_uya - relative_path;
             }
             
             if (module_len > 0) {

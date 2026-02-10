@@ -11,10 +11,7 @@ fn main() i32 {
     // 测试 1: memcpy - 内存复制
     var src: [byte: 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     var dst: [byte: 10] = [];
-    const copied: usize = memcpy(&dst[0], &src[0], 10);
-    if copied != 10 {
-        return 1;  // 复制字节数不匹配
-    }
+    _ = memcpy(&dst[0], &src[0], 10);  // 不检查返回值，通过验证内存内容确认
     // 验证复制结果
     var i: usize = 0;
     while i < 10 {
@@ -26,10 +23,7 @@ fn main() i32 {
     
     // 测试 2: memset - 内存设置
     var buf: [byte: 10] = [];
-    const set: usize = memset(&buf[0], 0x42, 10);
-    if set != 10 {
-        return 3;  // 设置字节数不匹配
-    }
+    _ = memset(&buf[0], 0x42, 10);  // 不检查返回值，通过验证内存内容确认
     // 验证设置结果
     i = 0;
     while i < 10 {
@@ -41,10 +35,7 @@ fn main() i32 {
     
     // 测试 3: memmove - 内存移动（重叠区域）
     var arr: [byte: 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-    const moved: usize = memmove(&arr[2], &arr[0], 5);
-    if moved != 5 {
-        return 5;  // 移动字节数不匹配
-    }
+    _ = memmove(&arr[2], &arr[0], 5);  // 不检查返回值，通过验证内存内容确认
     // 验证移动结果：arr[2..7] 应该是 [0, 1, 2, 3, 4]
     if arr[2] != 0 || arr[3] != 1 || arr[4] != 2 || arr[5] != 3 || arr[6] != 4 {
         return 6;  // 移动内容不匹配

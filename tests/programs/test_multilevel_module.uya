@@ -1,16 +1,19 @@
 // test_multilevel_module.uya - 测试多级模块路径（std.io）
 
-use std.io.read_file;
-use std.io.File;
+use std.io.fopen;
+use std.io.fclose;
 
 fn main() i32 {
-    const result: i32 = read_file();
-    if (result != 100) {
+    // 测试多级模块路径：std.io
+    // 使用实际存在的导出项进行测试
+    const path: &const byte = "/dev/null" as &const byte;
+    const handle: &void = fopen(path, 0, 0);
+    if handle == null {
         return 1;
     }
     
-    const f: File = File{ handle: 42 };
-    if (f.handle != 42) {
+    const result: i32 = fclose(handle);
+    if result != 0 {
         return 1;
     }
     

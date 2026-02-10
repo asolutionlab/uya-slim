@@ -6,8 +6,8 @@
 use std.c.syscall.sys_exit;
 use std.c.syscall.sys_getpid;
 use std.c.syscall.SYS_brk;
-use std.c.string.memset;
-use std.c.string.strlen;
+use std.c.memset;
+use std.c.strlen;
 
 // ============================================================
 // mmap 标志常量（Linux）
@@ -417,9 +417,9 @@ export fn strtol(nptr: &const byte, endptr: & &const byte, base: i32) i64 {
 
 use std.c.syscall.SYS_stat;
 use std.c.syscall.SYS_readlink;
-use std.c.string.strlen;
-use std.c.string.strcmp;
-use std.c.string.strncpy;
+use std.c.strlen;
+use std.c.strcmp;
+use std.c.strncpy;
 
 // ============================================================
 // 类型定义（用于 C 编译器代码生成）

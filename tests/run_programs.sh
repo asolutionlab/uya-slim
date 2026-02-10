@@ -188,10 +188,34 @@ process_multifile_test() {
         FAILED=$((FAILED + 1))
         return
     fi
-    # 链接：编译 .c 文件为可执行文件（需要链接 bridge.c 提供运行时支持）
+    # 链接：编译 .c 文件为可执行文件
     link_succeeded=false
     BRIDGE_C="$SCRIPT_DIR/bridge.c"
-    if [ -f "$BRIDGE_C" ]; then
+    BRIDGE_MINIMAL_C="$SCRIPT_DIR/bridge_minimal.c"
+    
+    # 检查是否使用了 std.runtime 模块（如果使用了，不应该链接 bridge.c）
+    uses_std_runtime=false
+    for uya_file in "${file_list[@]}"; do
+        if grep -q "use.*std\.runtime" "$uya_file" 2>/dev/null; then
+            uses_std_runtime=true
+            break
+        fi
+    done
+    
+    if [ "$uses_std_runtime" = true ]; then
+        # 使用 std.runtime，链接 bridge_minimal.c（只提供 main 函数）
+        if [ -f "$BRIDGE_MINIMAL_C" ]; then
+            if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$build_subdir/$test_name" "$output_file" "$BRIDGE_MINIMAL_C"; then
+                link_succeeded=true
+            fi
+        else
+            # 如果没有 bridge_minimal.c，尝试不链接（可能会失败）
+            if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$build_subdir/$test_name" "$output_file"; then
+                link_succeeded=true
+            fi
+        fi
+    elif [ -f "$BRIDGE_C" ]; then
+        # 需要链接 bridge.c 提供运行时支持
         if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$build_subdir/$test_name" "$output_file" "$BRIDGE_C"; then
             link_succeeded=true
         fi
@@ -334,41 +358,67 @@ _collect_module_files_recursive() {
         # 尝试多个可能的文件位置
         local found_file=""
         
-        # 1. 在测试文件同目录下查找
+        # 1. 在测试文件同目录下查找（收集目录下的所有 .uya 文件）
         if [ -d "$test_dir/$file_path" ]; then
             for f in "$test_dir/$file_path"/*.uya; do
                 if [ -f "$f" ]; then
-                    found_file="$f"
-                    break
+                    # 检查是否已经在列表中
+                    local already_added=false
+                    for existing in "${file_list_ref[@]}"; do
+                        if [ "$existing" = "$f" ]; then
+                            already_added=true
+                            break
+                        fi
+                    done
+                    if [ "$already_added" = false ]; then
+                        file_list_ref+=("$f")
+                        # 递归处理找到的文件（传递原始变量名，避免循环引用）
+                        _collect_module_files_recursive "$f" "$file_list_var" "$processed_var"
+                    fi
                 fi
             done
         fi
         
-        # 2. 在 TEST_DIR 下查找
-        if [ -z "$found_file" ] && [ -d "$TEST_DIR/$file_path" ]; then
+        # 2. 在 TEST_DIR 下查找（收集目录下的所有 .uya 文件）
+        if [ -d "$TEST_DIR/$file_path" ]; then
             for f in "$TEST_DIR/$file_path"/*.uya; do
                 if [ -f "$f" ]; then
-                    found_file="$f"
-                    break
+                    # 检查是否已经在列表中
+                    local already_added=false
+                    for existing in "${file_list_ref[@]}"; do
+                        if [ "$existing" = "$f" ]; then
+                            already_added=true
+                            break
+                        fi
+                    done
+                    if [ "$already_added" = false ]; then
+                        file_list_ref+=("$f")
+                        # 递归处理找到的文件（传递原始变量名，避免循环引用）
+                        _collect_module_files_recursive "$f" "$file_list_var" "$processed_var"
+                    fi
                 fi
             done
         fi
         
-        # 如果找到文件，添加到列表并递归处理
-        if [ -n "$found_file" ]; then
-            # 检查是否已经在列表中
-            local already_added=false
-            for existing in "${file_list_ref[@]}"; do
-                if [ "$existing" = "$found_file" ]; then
-                    already_added=true
-                    break
+        # 3. 在 UYA_ROOT (lib/) 下查找（收集目录下的所有 .uya 文件）
+        if [ -n "$UYA_ROOT" ] && [ -d "$UYA_ROOT/$file_path" ]; then
+            for f in "$UYA_ROOT/$file_path"/*.uya; do
+                if [ -f "$f" ]; then
+                    # 检查是否已经在列表中
+                    local already_added=false
+                    for existing in "${file_list_ref[@]}"; do
+                        if [ "$existing" = "$f" ]; then
+                            already_added=true
+                            break
+                        fi
+                    done
+                    if [ "$already_added" = false ]; then
+                        file_list_ref+=("$f")
+                        # 递归处理找到的文件（传递原始变量名，避免循环引用）
+                        _collect_module_files_recursive "$f" "$file_list_var" "$processed_var"
+                    fi
                 fi
             done
-            if [ "$already_added" = false ]; then
-                file_list_ref+=("$found_file")
-                # 递归处理找到的文件（传递原始变量名，避免循环引用）
-                _collect_module_files_recursive "$found_file" "$file_list_var" "$processed_var"
-            fi
         fi
     done <<< "$use_modules"
 }
@@ -454,6 +504,13 @@ process_single_test() {
     # 链接：编译 .c 文件为可执行文件（对于需要外部函数的测试，需链接实现）
     link_succeeded=false
     BRIDGE_C="$SCRIPT_DIR/bridge.c"
+    
+    # 检查是否使用了 std.runtime 模块（如果使用了，不应该链接 bridge.c，因为 std.runtime 提供了这些函数）
+    uses_std_runtime=false
+    if grep -q "use.*std\.runtime" "$uya_file" 2>/dev/null; then
+        uses_std_runtime=true
+    fi
+    
     if [ "$base_name" = "extern_function" ]; then
             # 编译主程序和外部函数实现（需要链接 bridge.c）
             if [ -f "$BRIDGE_C" ]; then
@@ -488,8 +545,24 @@ process_single_test() {
                 fi
             fi
     else
-            # 普通 C99 编译（需要链接 bridge.c 提供运行时支持）
-            if [ -f "$BRIDGE_C" ]; then
+            # 普通 C99 编译
+            # 如果使用了 std.runtime 模块，链接 bridge_minimal.c（只提供 main 函数）
+            # 因为 std.runtime 已经提供了其他运行时函数，但还需要 main 作为入口点
+            BRIDGE_MINIMAL_C="$SCRIPT_DIR/bridge_minimal.c"
+            if [ "$uses_std_runtime" = true ]; then
+                # 使用 std.runtime，链接 bridge_minimal.c（只提供 main 函数）
+                if [ -f "$BRIDGE_MINIMAL_C" ]; then
+                    if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_MINIMAL_C"; then
+                        link_succeeded=true
+                    fi
+                else
+                    # 如果没有 bridge_minimal.c，尝试不链接（可能会失败）
+                    if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file"; then
+                        link_succeeded=true
+                    fi
+                fi
+            elif [ -f "$BRIDGE_C" ]; then
+                # 需要链接 bridge.c 提供运行时支持
                 if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_C"; then
                     link_succeeded=true
                 fi

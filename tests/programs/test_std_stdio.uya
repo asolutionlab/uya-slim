@@ -1,9 +1,9 @@
 // test_std_stdio.uya
 // 测试 lib/std/c/stdio 标准库模块（通过 use 导入）
 
-use std.c.stdio;
-use std.c.stdio.write_bytes;
-use std.c.stdio.i32_to_str;
+use std.c.write_bytes;
+use std.c.i32_to_str;
+use std.c.put_char;
 
 // ============================================================
 // 测试函数
@@ -68,13 +68,13 @@ fn test_i32_to_str() i32 {
 
 fn test_put_char() i32 {
     // 测试 1：写入单个字符 'A' (65)
-    const result: i32 = stdio.put_char(65);
+    const result: i32 = put_char(65);
     if result != 65 {
         return 1;
     }
 
     // 测试 2：写入换行符
-    const result2: i32 = stdio.put_char(10);
+    const result2: i32 = put_char(10);
     if result2 != 10 {
         return 2;
     }

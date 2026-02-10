@@ -1,20 +1,20 @@
 // test_std_io.uya - 测试新的 std.io 模块
 // 测试文件 I/O 函数
 
-use std.io.file.fopen;
-use std.io.file.fclose;
-use std.io.file.fread;
-use std.io.file.fwrite;
-use std.io.stream.fgetc;
-use std.io.stream.fputc;
-use std.io.stream.fputs;
-use std.io.stream.fprintf;
-use std.io.stream.fflush;
-use std.syscall.linux.O_RDONLY;
-use std.syscall.linux.O_WRONLY;
-use std.syscall.linux.O_CREAT;
-use std.syscall.linux.O_TRUNC;
-use std.syscall.linux.S_IRWXU;
+use std.io.fopen;
+use std.io.fclose;
+use std.io.fread;
+use std.io.fwrite;
+use std.io.fgetc;
+use std.io.fputc;
+use std.io.fputs;
+use std.io.fprintf;
+use std.io.fflush;
+use std.syscall.O_RDONLY;
+use std.syscall.O_WRONLY;
+use std.syscall.O_CREAT;
+use std.syscall.O_TRUNC;
+use std.syscall.S_IRWXU;
 
 fn main() i32 {
     // 测试 1: fopen/fclose - 打开和关闭文件

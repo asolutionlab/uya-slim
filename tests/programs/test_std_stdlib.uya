@@ -1,16 +1,16 @@
 // 测试 std.c.stdlib 模块
 // 测试：内存分配、进程控制、字符串转换
 
-use std.c.stdlib.malloc;
-use std.c.stdlib.free;
-use std.c.stdlib.calloc;
-use std.c.stdlib.realloc;
-use std.c.stdlib.atoi;
-use std.c.stdlib.atol;
-use std.c.stdlib.atof;
-use std.c.string.memset;
-use std.c.string.memcmp;
-use std.c.string.strcmp;
+use std.c.malloc;
+use std.c.free;
+use std.c.calloc;
+use std.c.realloc;
+use std.c.atoi;
+use std.c.atol;
+use std.c.atof;
+use std.c.memset;
+use std.c.memcmp;
+use std.c.strcmp;
 
 fn main() i32 {
     // ============================================================

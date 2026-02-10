@@ -1,9 +1,9 @@
 // 测试 std.c.stdlib 模块（只测试 malloc 和 calloc，不测试 free）
 // 测试：内存分配函数
 
-use std.c.stdlib.malloc;
-use std.c.stdlib.calloc;
-use std.c.string.memcmp;
+use std.c.malloc;
+use std.c.calloc;
+use std.c.memcmp;
 
 fn main() i32 {
     // ============================================================
