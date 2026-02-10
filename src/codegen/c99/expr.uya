@@ -1129,6 +1129,16 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 fputc(125, codegen.output as *void);  // '}'
             }
         }
+    } else if expr.type == ASTNodeType.AST_PTR_FROM_USIZE {
+        // @ptr_from_usize(value) 生成 (void *)(uintptr_t)(value)
+        fputs("(void *)(uintptr_t)(" as *byte, codegen.output as *void);
+        gen_expr(codegen, expr.ptr_from_usize_value);
+        fputc(41, codegen.output as *void);  // ')'
+    } else if expr.type == ASTNodeType.AST_USIZE_FROM_PTR {
+        // @usize_from_ptr(ptr) 生成 (uintptr_t)(ptr)
+        fputs("(uintptr_t)(" as *byte, codegen.output as *void);
+        gen_expr(codegen, expr.usize_from_ptr_ptr);
+        fputc(41, codegen.output as *void);  // ')'
     } else if expr.type == ASTNodeType.AST_SIZEOF {
         const target: &ASTNode = expr.sizeof_expr_target;
         const is_type: i32 = expr.sizeof_expr_is_type;

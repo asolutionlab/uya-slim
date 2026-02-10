@@ -109,6 +109,8 @@ enum ASTNodeType {
     AST_SRC_COL,        // @src_col - 源文件列号
     AST_FUNC_NAME,      // @func_name - 当前函数名
     AST_SYSCALL,        // @syscall(nr, arg1, ..., arg6) - 系统调用
+    AST_PTR_FROM_USIZE, // @ptr_from_usize(value) - 从 usize 转换为指针
+    AST_USIZE_FROM_PTR, // @usize_from_ptr(ptr) - 从指针转换为 usize
     AST_TYPE_NAMED,
     AST_TYPE_POINTER,
     AST_TYPE_ARRAY,
@@ -357,6 +359,10 @@ struct ASTNode {
     syscall_number: &ASTNode,    // 系统调用号（必须）
     syscall_args: & & ASTNode,   // 参数数组（0-6 个）
     syscall_arg_count: i32,      // 参数个数
+    // ptr_from_usize_expr
+    ptr_from_usize_value: &ASTNode,  // usize 值表达式
+    // usize_from_ptr_expr
+    usize_from_ptr_ptr: &ASTNode,    // 指针表达式
     // type_atomic（atomic T）
     type_atomic_inner_type: &ASTNode,
 }
@@ -544,6 +550,8 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.syscall_number = null;
     node.syscall_args = null;
     node.syscall_arg_count = 0;
+    node.ptr_from_usize_value = null;
+    node.usize_from_ptr_ptr = null;
     return node;
 }
 
