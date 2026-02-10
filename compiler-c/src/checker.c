@@ -7474,7 +7474,22 @@ static const char *extract_module_path_allocated(TypeChecker *checker, const cha
     }
     if (lib_std_c != NULL) {
         // 找到 lib/std/c/ 位置，提取后面的路径
-        const char *relative_path = lib_std_c + 11; // 跳过 "/lib/std/c/"
+        // 确定正确的偏移量（使用 strncmp 避免指针类型比较警告）
+        size_t offset = 0;
+        if (strncmp(lib_std_c, "/lib/std/c/", 11) == 0) {
+            offset = 11;  // 跳过 "/lib/std/c/"
+        } else if (strncmp(lib_std_c, "/lib//std/c/", 12) == 0) {
+            offset = 12;  // 跳过 "/lib//std/c/"
+        } else if (strncmp(lib_std_c, "lib/std/c/", 10) == 0) {
+            offset = 10;  // 跳过 "lib/std/c/"
+        } else if (strncmp(lib_std_c, "lib//std/c/", 11) == 0) {
+            offset = 11;  // 跳过 "lib//std/c/"
+        } else if (strncmp(lib_std_c, "\\lib\\std\\c\\", 12) == 0) {
+            offset = 12;  // 跳过 "\\lib\\std\\c\\"
+        } else if (strncmp(lib_std_c, "\\lib\\\\std\\c\\", 13) == 0) {
+            offset = 13;  // 跳过 "\\lib\\\\std\\c\\"
+        }
+        const char *relative_path = lib_std_c + offset;
         size_t rel_len = strlen(relative_path);
         
         // 去掉 .uya 后缀
