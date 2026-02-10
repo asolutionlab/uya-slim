@@ -248,7 +248,7 @@ use std.c.syscall.O_APPEND;
 use std.c.syscall.S_IRWXU;
 use std.c.syscall.STDOUT_FILENO;
 use std.c.syscall.STDERR_FILENO;
-use std.c.strlen;
+use std.string.strlen;
 use std.c.strcmp;
 
 // 全局文件描述符存储（用于 fopen/fclose，最多 64 个文件）

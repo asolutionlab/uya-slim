@@ -2,6 +2,9 @@
 // 版本：v0.3.1
 // 说明：纯 Uya 实现的字符串和内存操作函数（零外部依赖）
 // 注意：函数名与 C 标准库一致（memcpy, strlen, strcmp 等）
+// 注意：strlen 等字符串函数已迁移到 std.string，这里不再重复定义
+
+use std.string.strlen;
 
 // ============================================================
 // 内存操作函数
@@ -91,15 +94,7 @@ export fn memchr(s: *const void, c: i32, n: usize) *void {
 // 字符串操作函数
 // ============================================================
 
-// strlen - 计算以 null 结尾的字符串长度
-// 返回：字符串长度（不含 null 终止符）
-export fn strlen(s: &const byte) usize {
-    var len: usize = 0;
-    while s[len] != 0 as byte {
-        len = len + 1;
-    }
-    return len;
-}
+// strlen 已迁移到 std.string，通过 use 语句导入
 
 // strcmp - 比较两个以 null 结尾的字符串
 // 返回：0 相等，<0 s1<s2，>0 s1>s2

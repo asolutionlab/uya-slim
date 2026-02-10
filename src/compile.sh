@@ -398,6 +398,10 @@ fi
 echo "=========================================="
 echo ""
 
+# 设置 UYA_ROOT 环境变量，指向 lib 目录
+# 这样编译器可以找到标准库文件（lib/std/...）
+export UYA_ROOT="$REPO_ROOT/lib/"
+
 # 执行编译
 if [ "$USE_AUTO_DEPS" = true ]; then
     # 使用自动依赖收集模式：只传递主文件
@@ -419,6 +423,7 @@ fi
 
 if [ "$VERBOSE" = true ]; then
     echo "开始多文件编译..."
+    echo "UYA_ROOT: $UYA_ROOT"
     echo "命令: ${COMPILER_CMD[*]}"
     echo ""
 fi
@@ -432,13 +437,14 @@ TEMP_ERRORS=$(mktemp)
 trap "rm -f '$TEMP_OUTPUT' '$TEMP_ERRORS'" EXIT
 
 # 执行编译，捕获所有输出
+# 注意：确保 UYA_ROOT 环境变量被传递给编译器
 if [ "$VERBOSE" = true ] || [ "$DEBUG" = true ]; then
     # 详细模式：显示所有输出
-    "${COMPILER_CMD[@]}" 2>&1 | tee "$TEMP_OUTPUT"
+    env UYA_ROOT="$UYA_ROOT" "${COMPILER_CMD[@]}" 2>&1 | tee "$TEMP_OUTPUT"
     COMPILER_EXIT=${PIPESTATUS[0]}
 else
     # 普通模式：只显示关键信息，过滤调试输出
-    "${COMPILER_CMD[@]}" > "$TEMP_OUTPUT" 2>&1
+    env UYA_ROOT="$UYA_ROOT" "${COMPILER_CMD[@]}" > "$TEMP_OUTPUT" 2>&1
     COMPILER_EXIT=$?
     
     # 提取关键信息：阶段标题、进度、错误、警告

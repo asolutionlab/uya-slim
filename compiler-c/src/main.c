@@ -552,34 +552,110 @@ static int collect_module_dependencies(
             continue;
         }
         
-        // 查找模块文件
-        char module_file[PATH_MAX];
-        if (find_module_file(modules[i], project_root, uya_root, module_file, sizeof(module_file)) == 0) {
-            // 检查是否已在列表中（使用路径比较函数）
-            int already_added = 0;
-            for (int j = 0; j < file_list_size; j++) {
-                if (file_list[j] != NULL && paths_equal(file_list[j], module_file)) {
-                    already_added = 1;
+        // 首先尝试将模块路径作为目录查找（整体模块导入）
+        char module_dir_path[PATH_MAX];
+        char file_path[PATH_MAX];
+        strcpy(file_path, modules[i]);
+        for (size_t k = 0; k < strlen(file_path); k++) {
+            if (file_path[k] == '.') {
+                file_path[k] = '/';
+            }
+        }
+        
+        // 尝试在 project_root 和 uya_root 中查找目录
+        const char *roots[] = { project_root, uya_root };
+        int found_dir = 0;
+        for (int ri = 0; ri < 2; ri++) {
+            const char *root = roots[ri];
+            if (root == NULL || root[0] == '\0') continue;
+            int len = snprintf(module_dir_path, sizeof(module_dir_path), "%s%s", root, file_path);
+            if (len > 0 && len < (int)sizeof(module_dir_path)) {
+                if (is_directory(module_dir_path)) {
+                    found_dir = 1;
                     break;
                 }
             }
-            if (!already_added && file_list_size < max_files) {
-                // 使用 Arena 分配文件路径
-                size_t path_len = strlen(module_file);
-                char *path_copy = (char *)arena_alloc(arena, path_len + 1);
-                if (path_copy != NULL) {
-                    strcpy(path_copy, module_file);
-                    file_list[file_list_size] = path_copy;
-                    file_list_size++;
-                    // 递归处理依赖（使用 Arena 分配的 path_copy，而不是栈上的 module_file）
-                    // 注意：这里需要递归处理，因为新文件可能有自己的依赖
-                    file_list_size = collect_module_dependencies(
-                        path_copy, file_list, file_list_size, max_files,
-                        processed_files, processed_count, max_processed,
-                        project_root, uya_root, arena
-                    );
-                    if (file_list_size < 0) {
-                        return -1;
+        }
+        
+        if (found_dir) {
+            // 目录模块：收集目录下的所有 .uya 文件
+            char *dir_path = module_dir_path;
+                // 目录模块：收集目录下的所有 .uya 文件
+                DIR *dir = opendir(dir_path);
+                if (dir != NULL) {
+                    struct dirent *entry;
+                    while ((entry = readdir(dir)) != NULL && file_list_size < max_files) {
+                        if (entry->d_type == DT_REG) {
+                            const char *name = entry->d_name;
+                            size_t name_len = strlen(name);
+                            if (name_len > 4 && strcmp(name + name_len - 4, ".uya") == 0) {
+                                // 构建完整路径
+                                char full_path[PATH_MAX];
+                                int len = snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, name);
+                                if (len > 0 && len < (int)sizeof(full_path)) {
+                                    // 检查是否已在列表中
+                                    int already_added = 0;
+                                    for (int j = 0; j < file_list_size; j++) {
+                                        if (file_list[j] != NULL && paths_equal(file_list[j], full_path)) {
+                                            already_added = 1;
+                                            break;
+                                        }
+                                    }
+                                    if (!already_added) {
+                                        // 使用 Arena 分配文件路径
+                                        size_t path_len = strlen(full_path);
+                                        char *path_copy = (char *)arena_alloc(arena, path_len + 1);
+                                        if (path_copy != NULL) {
+                                            strcpy(path_copy, full_path);
+                                            file_list[file_list_size] = path_copy;
+                                            file_list_size++;
+                                            // 递归处理依赖
+                                            file_list_size = collect_module_dependencies(
+                                                path_copy, file_list, file_list_size, max_files,
+                                                processed_files, processed_count, max_processed,
+                                                project_root, uya_root, arena
+                                            );
+                                            if (file_list_size < 0) {
+                                                closedir(dir);
+                                                return -1;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    closedir(dir);
+                }
+        } else {
+            // 单个文件模块：使用 find_module_file 查找
+            char module_path[PATH_MAX];
+            if (find_module_file(modules[i], project_root, uya_root, module_path, sizeof(module_path)) == 0) {
+                // 检查是否已在列表中
+                int already_added = 0;
+                for (int j = 0; j < file_list_size; j++) {
+                    if (file_list[j] != NULL && paths_equal(file_list[j], module_path)) {
+                        already_added = 1;
+                        break;
+                    }
+                }
+                if (!already_added && file_list_size < max_files) {
+                    // 使用 Arena 分配文件路径
+                    size_t path_len = strlen(module_path);
+                    char *path_copy = (char *)arena_alloc(arena, path_len + 1);
+                    if (path_copy != NULL) {
+                        strcpy(path_copy, module_path);
+                        file_list[file_list_size] = path_copy;
+                        file_list_size++;
+                        // 递归处理依赖
+                        file_list_size = collect_module_dependencies(
+                            path_copy, file_list, file_list_size, max_files,
+                            processed_files, processed_count, max_processed,
+                            project_root, uya_root, arena
+                        );
+                        if (file_list_size < 0) {
+                            return -1;
+                        }
                     }
                 }
             }
@@ -835,11 +911,9 @@ static int compile_files(const char *input_files[], int input_file_count, const 
         }
     }
     
-    // 只对包含 main 的文件进行依赖收集
-    // 注意：在手动文件列表模式下，所有文件（包括 main.uya）已经在 all_files 中
-    // 因此不需要进行依赖收集，避免重复解析导致重复定义错误
-    // 只有在自动依赖收集模式下（只传递了单个入口文件），才需要进行依赖收集
-    // 判断是否为手动文件列表模式：如果 resolved_count > 1，说明是手动文件列表模式
+    // 依赖收集策略：
+    // 1. 自动依赖收集模式（resolved_count == 1）：只传递了单个文件，需要收集所有依赖
+    // 2. 手动文件列表模式（resolved_count > 1）：已传递的文件不需要重复解析，但需要收集标准库依赖
     if (resolved_count == 1) {
         // 自动依赖收集模式：只传递了单个文件，需要进行依赖收集
         for (int i = 0; i < main_file_count; i++) {
@@ -861,8 +935,73 @@ static int compile_files(const char *input_files[], int input_file_count, const 
             }
             all_file_count = new_count;
         }
+    } else {
+        // 手动文件列表模式：已传递的文件已经在列表中，但需要收集标准库依赖
+        // 遍历所有已传递的文件，收集它们的 use 语句引用的标准库模块
+        // 注意：只收集不在已传递文件列表中的模块（避免重复解析）
+        for (int i = 0; i < all_file_count; i++) {
+            const char *file = all_files[i];
+            if (file == NULL) continue;
+            
+            // 解析文件以提取 use 语句
+            int file_size = read_file_content(file, file_buffer, FILE_BUFFER_SIZE);
+            if (file_size < 0) continue;  // 跳过无法读取的文件
+            
+            Lexer lexer;
+            if (lexer_init(&lexer, file_buffer, (size_t)file_size, file, &temp_arena) != 0) {
+                continue;  // 跳过无法初始化的文件
+            }
+            
+            Parser parser;
+            if (parser_init(&parser, &lexer, &temp_arena) != 0) {
+                continue;  // 跳过无法初始化的文件
+            }
+            
+            ASTNode *ast = parser_parse(&parser);
+            if (ast == NULL || ast->type != AST_PROGRAM) {
+                continue;  // 跳过无法解析的文件
+            }
+            
+            // 提取 use 语句中的模块路径
+            const char *modules[MAX_INPUT_FILES];
+            int module_count = 0;
+            if (extract_use_modules(ast, modules, MAX_INPUT_FILES, &module_count, project_root, uya_root, &temp_arena) != 0) {
+                continue;  // 跳过无法提取模块的文件
+            }
+            
+            // 对于每个模块，查找文件并添加到列表（如果不在列表中）
+            for (int j = 0; j < module_count; j++) {
+                if (modules[j] == NULL) continue;
+                
+                // 跳过 main 模块
+                if (strcmp(modules[j], "main") == 0) continue;
+                
+                // 查找模块文件
+                char module_file[PATH_MAX];
+                if (find_module_file(modules[j], project_root, uya_root, module_file, sizeof(module_file)) == 0) {
+                    // 检查是否已在列表中
+                    int already_added = 0;
+                    for (int k = 0; k < all_file_count; k++) {
+                        if (all_files[k] != NULL && paths_equal(all_files[k], module_file)) {
+                            already_added = 1;
+                            break;
+                        }
+                    }
+                    
+                    if (!already_added && all_file_count < MAX_INPUT_FILES) {
+                        // 使用 Arena 分配文件路径
+                        size_t path_len = strlen(module_file);
+                        char *path_copy = (char *)arena_alloc(&temp_arena, path_len + 1);
+                        if (path_copy != NULL) {
+                            strcpy(path_copy, module_file);
+                            all_files[all_file_count] = path_copy;
+                            all_file_count++;
+                        }
+                    }
+                }
+            }
+        }
     }
-    // 手动文件列表模式：所有文件已经在列表中，不需要进行依赖收集
     
     fprintf(stderr, "=== 开始编译 ===\n");
     fprintf(stderr, "=== 词法/语法分析 ===\n");

@@ -8,6 +8,20 @@
 extern fn atoi(s: &byte) i32;
 extern fn strlen(s: *byte) usize;
 
+// 文件系统相关（用于检查目录是否存在）
+struct Stat {
+    _data: [byte: 144],  // 144 字节，匹配 C 的 struct stat
+}
+use std.c.stat;
+use std.runtime.ptr_diff;
+use std.string.strcat;
+use std.string.strcpy;
+use std.string.strrchr;
+use std.mem.memcpy;
+const S_IFMT: u32 = 61440;  // 0xF000
+const S_IFDIR: u32 = 16384;  // 0x4000
+const PATH_MAX: usize = 4096;
+
 // 插值格式说明符对应类型的最大输出宽度（用于计算 [i8: N] 的 N）
 fn checker_interp_format_max_width(t: Type, spec: &byte) i32 {
     if t.kind == TypeKind.TYPE_I32 || t.kind == TypeKind.TYPE_U32 {
@@ -7258,27 +7272,125 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
         }
         
         if full_path != null {
-            // 在 module_table 中查找全路径
-            const fh: i32 = hash_string(full_path);
-            var fi: i32 = fh & (MODULE_TABLE_SIZE - 1);
-            var full_mod: &ModuleInfo = null;
-            i = 0;
-            while i < MODULE_TABLE_SIZE {
-                const slot: i32 = (fi + i) & (MODULE_TABLE_SIZE - 1);
-                const m: &ModuleInfo = checker.module_table.slots[slot];
-                if m != null && str_equals(m.module_name, full_path) != 0 {
-                    full_mod = m;
-                    break;
+            // 首先检查目录是否存在（目录模块）
+            // 将模块路径转换为目录路径（将 '.' 替换为 '/'）
+            var file_path_buf: [byte: PATH_MAX] = [];
+            const full_path_len: usize = strlen(full_path as *byte);
+            if full_path_len < PATH_MAX {
+                strcpy(&file_path_buf[0], full_path as *byte);
+                var idx: usize = 0;
+                while idx < full_path_len {
+                    if file_path_buf[idx] == 46 {
+                        file_path_buf[idx] = 47;
+                    }
+                    idx = idx + 1;
                 }
-                if m == null { break; }
-                i = i + 1;
-            }
-            
-            if full_mod != null && full_mod.export_count > 0 {
-                // 全路径是有效模块 → 整体导入
-                module_name = full_path;
-                is_whole_module_import = 1;
-            } else {
+                
+                // 检查目录是否存在（使用 stat 检查）
+                // 首先从 node.filename 提取项目根目录
+                var found_dir: i32 = 0;
+                var project_root_from_file: &byte = null;
+                if node.filename != null {
+                    var last_slash: &byte = strrchr(node.filename as *byte, 47 as byte);  // '/'
+                    if last_slash == null {
+                        last_slash = strrchr(node.filename as *byte, 92 as byte);  // '\'
+                    }
+                    if last_slash != null {
+                        const dir_len: usize = ptr_diff(last_slash, node.filename as *byte) as usize + 1;
+                        if dir_len < PATH_MAX {
+                            project_root_from_file = arena_alloc(checker.arena, dir_len + 1) as &byte;
+                            if project_root_from_file != null {
+                                memcpy(project_root_from_file as *void, node.filename as *void, dir_len);
+                                project_root_from_file[dir_len] = 0;
+                            }
+                        }
+                    }
+                }
+                
+                // 尝试在项目根目录中查找
+                if project_root_from_file != null {
+                    var dir_path: [byte: PATH_MAX] = [];
+                    const root_len: usize = strlen(project_root_from_file as *byte);
+                    const file_path_len: usize = strlen(&file_path_buf[0] as *byte);
+                    if root_len + file_path_len < PATH_MAX {
+                        strcpy(&dir_path[0], project_root_from_file as *byte);
+                        strcat(&dir_path[0] as *byte, &file_path_buf[0] as *byte);
+                        // 使用 stat 检查目录
+                        var st: Stat = Stat { _data: [0: 144] };
+                        if stat(&dir_path[0] as *byte, &st as &Stat) == 0 {
+                            const mode_ptr: &u32 = &st._data[24] as &u32;
+                            const mode: u32 = mode_ptr[0];
+                            if (mode & S_IFMT) == S_IFDIR {
+                                found_dir = 1;
+                            }
+                        }
+                    }
+                }
+                // 如果项目根目录未设置或未找到，尝试 checker.project_root_dir
+                if found_dir == 0 && checker.project_root_dir != null {
+                    var dir_path: [byte: PATH_MAX] = [];
+                    const root_len: usize = strlen(checker.project_root_dir as *byte);
+                    const file_path_len: usize = strlen(&file_path_buf[0] as *byte);
+                    if root_len + file_path_len < PATH_MAX {
+                        strcpy(&dir_path[0], checker.project_root_dir as *byte);
+                        strcat(&dir_path[0] as *byte, &file_path_buf[0] as *byte);
+                        // 使用 stat 检查目录
+                        var st: Stat = Stat { _data: [0: 144] };
+                        if stat(&dir_path[0] as *byte, &st as &Stat) == 0 {
+                            const mode_ptr: &u32 = &st._data[24] as &u32;
+                            const mode: u32 = mode_ptr[0];
+                            if (mode & S_IFMT) == S_IFDIR {
+                                found_dir = 1;
+                            }
+                        }
+                    }
+                }
+                // 最后尝试 UYA_ROOT
+                if found_dir == 0 && checker.uya_root_dir != null {
+                    var dir_path: [byte: PATH_MAX] = [];
+                    const root_len: usize = strlen(checker.uya_root_dir as *byte);
+                    const file_path_len: usize = strlen(&file_path_buf[0] as *byte);
+                    if root_len + file_path_len < PATH_MAX {
+                        strcpy(&dir_path[0], checker.uya_root_dir as *byte);
+                        strcat(&dir_path[0] as *byte, &file_path_buf[0] as *byte);
+                        // 使用 stat 检查目录
+                        var st: Stat = Stat { _data: [0: 144] };
+                        if stat(&dir_path[0] as *byte, &st as &Stat) == 0 {
+                            const mode_ptr: &u32 = &st._data[24] as &u32;
+                            const mode: u32 = mode_ptr[0];
+                            if (mode & S_IFMT) == S_IFDIR {
+                                found_dir = 1;
+                            }
+                        }
+                    }
+                }
+                
+                if found_dir != 0 {
+                    // 目录存在 → 整体导入目录模块
+                    module_name = full_path;
+                    is_whole_module_import = 1;
+                } else {
+                // 在 module_table 中查找全路径
+                const fh: i32 = hash_string(full_path);
+                var fi: i32 = fh & (MODULE_TABLE_SIZE - 1);
+                var full_mod: &ModuleInfo = null;
+                i = 0;
+                while i < MODULE_TABLE_SIZE {
+                    const slot: i32 = (fi + i) & (MODULE_TABLE_SIZE - 1);
+                    const m: &ModuleInfo = checker.module_table.slots[slot];
+                    if m != null && str_equals(m.module_name, full_path) != 0 {
+                        full_mod = m;
+                        break;
+                    }
+                    if m == null { break; }
+                    i = i + 1;
+                }
+                
+                if full_mod != null && full_mod.export_count > 0 {
+                    // 全路径是有效模块 → 整体导入
+                    module_name = full_path;
+                    is_whole_module_import = 1;
+                } else {
                 // 全路径不是模块 → 最后一个 segment 是项名
                 item_name = segs[seg_count - 1];
                 const strip_count: i32 = seg_count - 1;

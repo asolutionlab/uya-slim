@@ -3,6 +3,12 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
+#include <limits.h>
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 // 哈希函数（djb2算法，用于字符串哈希）
 static unsigned int hash_string(const char *str) {
@@ -4155,13 +4161,13 @@ static Type checker_check_call_expr(TypeChecker *checker, ASTNode *node) {
     } else if (sig->is_varargs) {
         // 可变参数函数：参数个数必须 >= 固定参数数量
         if (node->data.call_expr.arg_count < sig->param_count) {
-            checker_report_error(checker, node, "类型检查错误");
+            checker_report_error(checker, node, "可变参数函数调用参数个数不足");
             return result;
         }
     } else {
         // 普通函数：参数个数必须 == 固定参数数量
         if (node->data.call_expr.arg_count != sig->param_count) {
-            checker_report_error(checker, node, "类型检查错误");
+            checker_report_error(checker, node, "函数调用参数个数不匹配");
             return result;
         }
     }
@@ -4170,9 +4176,17 @@ static Type checker_check_call_expr(TypeChecker *checker, ASTNode *node) {
     int check_count = (sig->is_varargs) ? sig->param_count : node->data.call_expr.arg_count;
     for (int i = 0; i < check_count; i++) {
         ASTNode *arg = node->data.call_expr.args[i];
-        if (arg != NULL && !checker_check_expr_type(checker, arg, sig->param_types[i])) {
-            // 参数类型不匹配
-            return result;
+        if (arg != NULL) {
+            if (sig->param_types == NULL) {
+                // 参数类型数组未初始化，可能是函数签名注册问题
+                checker_report_error(checker, node, "函数参数类型未初始化");
+                return result;
+            }
+            if (!checker_check_expr_type(checker, arg, sig->param_types[i])) {
+                // 参数类型不匹配
+                checker_report_error(checker, node, "函数调用参数类型不匹配");
+                return result;
+            }
         }
     }
     
@@ -8028,28 +8042,98 @@ static int process_use_stmt(TypeChecker *checker, ASTNode *node) {
         JOIN_SEGS(segs, seg_count, full_path);
         
         if (full_path != NULL) {
-            // 检查全路径是否是已知模块（在 module_table 中有导出项）
-            unsigned int h = hash_string(full_path);
-            unsigned int idx = h & (MODULE_TABLE_SIZE - 1);
-            ModuleInfo *full_mod = NULL;
-            for (int i = 0; i < MODULE_TABLE_SIZE; i++) {
-                unsigned int slot = (idx + i) & (MODULE_TABLE_SIZE - 1);
-                ModuleInfo *m = checker->module_table.slots[slot];
-                if (m != NULL && strcmp(m->module_name, full_path) == 0) {
-                    full_mod = m;
-                    break;
+            // 首先检查目录是否存在（目录模块）
+            // 将模块路径转换为目录路径（将 '.' 替换为 '/'）
+            char file_path[PATH_MAX];
+            strcpy(file_path, full_path);
+            for (size_t k = 0; k < strlen(file_path); k++) {
+                if (file_path[k] == '.') {
+                    file_path[k] = '/';
                 }
-                if (m == NULL) break;
             }
             
-            if (full_mod != NULL && full_mod->export_count > 0) {
-                // 全路径是有效模块 → 整体导入
+            // 检查目录是否存在（使用 stat 检查）
+            int found_dir = 0;
+            // 首先从 node->filename 提取项目根目录
+            const char *project_root_from_file = NULL;
+            if (node->filename != NULL) {
+                const char *last_slash = strrchr(node->filename, '/');
+                if (last_slash == NULL) {
+                    last_slash = strrchr(node->filename, '\\');
+                }
+                if (last_slash != NULL) {
+                    size_t dir_len = last_slash - node->filename + 1;
+                    char *root_dir = (char *)arena_alloc(checker->arena, dir_len + 1);
+                    if (root_dir != NULL) {
+                        memcpy(root_dir, node->filename, dir_len);
+                        root_dir[dir_len] = '\0';
+                        project_root_from_file = root_dir;
+                    }
+                }
+            }
+            
+            // 尝试在项目根目录中查找
+            if (project_root_from_file != NULL) {
+                char dir_path[PATH_MAX];
+                int len = snprintf(dir_path, sizeof(dir_path), "%s%s", project_root_from_file, file_path);
+                if (len > 0 && len < (int)sizeof(dir_path)) {
+                    struct stat st;
+                    if (stat(dir_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+                        found_dir = 1;
+                    }
+                }
+            }
+            // 如果项目根目录未设置或未找到，尝试 checker->project_root_dir
+            if (!found_dir && checker->project_root_dir != NULL) {
+                char dir_path[PATH_MAX];
+                int len = snprintf(dir_path, sizeof(dir_path), "%s%s", checker->project_root_dir, file_path);
+                if (len > 0 && len < (int)sizeof(dir_path)) {
+                    struct stat st;
+                    if (stat(dir_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+                        found_dir = 1;
+                    }
+                }
+            }
+            // 最后尝试 UYA_ROOT
+            if (!found_dir && checker->uya_root_dir != NULL) {
+                char dir_path[PATH_MAX];
+                int len = snprintf(dir_path, sizeof(dir_path), "%s%s", checker->uya_root_dir, file_path);
+                if (len > 0 && len < (int)sizeof(dir_path)) {
+                    struct stat st;
+                    if (stat(dir_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+                        found_dir = 1;
+                    }
+                }
+            }
+            
+            if (found_dir) {
+                // 目录存在 → 整体导入目录模块
                 module_name = full_path;
                 is_whole_module_import = 1;
             } else {
-                // 全路径不是模块 → 最后一个 segment 是项名
-                item_name = segs[seg_count - 1];
-                JOIN_SEGS(segs, seg_count - 1, module_name);
+                // 检查全路径是否是已知模块（在 module_table 中有导出项）
+                unsigned int h = hash_string(full_path);
+                unsigned int idx = h & (MODULE_TABLE_SIZE - 1);
+                ModuleInfo *full_mod = NULL;
+                for (int i = 0; i < MODULE_TABLE_SIZE; i++) {
+                    unsigned int slot = (idx + i) & (MODULE_TABLE_SIZE - 1);
+                    ModuleInfo *m = checker->module_table.slots[slot];
+                    if (m != NULL && strcmp(m->module_name, full_path) == 0) {
+                        full_mod = m;
+                        break;
+                    }
+                    if (m == NULL) break;
+                }
+                
+                if (full_mod != NULL && full_mod->export_count > 0) {
+                    // 全路径是有效模块 → 整体导入
+                    module_name = full_path;
+                    is_whole_module_import = 1;
+                } else {
+                    // 全路径不是模块 → 最后一个 segment 是项名
+                    item_name = segs[seg_count - 1];
+                    JOIN_SEGS(segs, seg_count - 1, module_name);
+                }
             }
         }
     } else if (seg_count == 1) {
