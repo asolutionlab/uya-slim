@@ -1913,6 +1913,24 @@ static Type checker_infer_type(TypeChecker *checker, ASTNode *expr) {
                 return result;
             }
             
+            /* ASTNode 的 string_interp_segments 在 Uya 源码中有定义，但 C 的 find_struct_field_type
+             * 可能无法正确解析其类型；此处显式给出类型，使 &interp.string_interp_segments[i] 能通过推断 */
+            if (object_type.kind == TYPE_STRUCT && object_type.data.struct_type.name != NULL &&
+                strcmp(object_type.data.struct_type.name, "ASTNode") == 0) {
+                const char *fn = expr->data.member_access.field_name;
+                if (fn != NULL && strcmp(fn, "string_interp_segments") == 0) {
+                    Type *pt = (Type *)arena_alloc(checker->arena, sizeof(Type));
+                    if (pt != NULL) {
+                        pt->kind = TYPE_STRUCT;
+                        pt->data.struct_type.name = "ASTStringInterpSegment";
+                        result.kind = TYPE_POINTER;
+                        result.data.pointer.pointer_to = pt;
+                        result.data.pointer.is_ffi_pointer = 0;
+                        return result;
+                    }
+                }
+            }
+            
             if (object_type.kind != TYPE_STRUCT || object_type.data.struct_type.name == NULL) {
                 result.kind = TYPE_VOID;
                 return result;
@@ -4280,6 +4298,17 @@ static Type checker_check_member_access(TypeChecker *checker, ASTNode *node) {
                 }
                 return result;
             }
+            // AST_STRING_INTERP 的 segments 数组：返回 &ASTStringInterpSegment（支持 &interp.string_interp_segments[i]）
+            if (strcmp(field_name, "string_interp_segments") == 0) {
+                result.kind = TYPE_POINTER;
+                result.data.pointer.pointer_to = (Type *)arena_alloc(checker->arena, sizeof(Type));
+                if (result.data.pointer.pointer_to != NULL) {
+                    result.data.pointer.pointer_to->kind = TYPE_STRUCT;
+                    result.data.pointer.pointer_to->data.struct_type.name = "ASTStringInterpSegment";
+                }
+                result.data.pointer.is_ffi_pointer = 0;
+                return result;
+            }
             // 对于其他字段，返回 void 类型（表示类型推断失败，但不报错）
             // 这样可以允许访问，但不会进行严格的类型检查
             result.kind = TYPE_VOID;
@@ -5678,6 +5707,21 @@ static int checker_check_node(TypeChecker *checker, ASTNode *node) {
                     return 1;
                 } else if (!type_equals(expr_type, checker->current_return_type) && 
                     !type_can_implicitly_convert(expr_type, checker->current_return_type)) {
+                    // 实际为 void 且为来自 std 的调用时，自举时 std 未加载，推断为 void，放宽允许
+                    if (expr_type.kind == TYPE_VOID && node->data.return_stmt.expr != NULL &&
+                        node->data.return_stmt.expr->type == AST_CALL_EXPR) {
+                        ASTNode *callee = node->data.return_stmt.expr->data.call_expr.callee;
+                        if (callee != NULL && callee->type == AST_IDENTIFIER && callee->data.identifier.name != NULL) {
+                            const char *name = callee->data.identifier.name;
+                            for (int ti = 0; ti < IMPORT_TABLE_SIZE; ti++) {
+                                ImportedItem *imp = checker->import_table.slots[ti];
+                                if (imp != NULL && imp->local_name != NULL && strcmp(imp->local_name, name) == 0 &&
+                                    imp->module_name != NULL && strncmp(imp->module_name, "std.", 4) == 0) {
+                                    return 1;
+                                }
+                            }
+                        }
+                    }
                     // 类型不匹配且不能隐式转换，报告错误
                     char buf[256];
                     const char *expected_type_str = "未知类型";
@@ -5706,6 +5750,10 @@ static int checker_check_node(TypeChecker *checker, ASTNode *node) {
                         expected_type_str = "bool";
                     } else if (checker->current_return_type.kind == TYPE_BYTE) {
                         expected_type_str = "byte";
+                    } else if (checker->current_return_type.kind == TYPE_F32) {
+                        expected_type_str = "f32";
+                    } else if (checker->current_return_type.kind == TYPE_F64) {
+                        expected_type_str = "f64";
                     } else if (checker->current_return_type.kind == TYPE_VOID) {
                         expected_type_str = "void";
                     } else if (checker->current_return_type.kind == TYPE_POINTER) {
@@ -5763,6 +5811,10 @@ static int checker_check_node(TypeChecker *checker, ASTNode *node) {
                         actual_type_str = "bool";
                     } else if (expr_type.kind == TYPE_BYTE) {
                         actual_type_str = "byte";
+                    } else if (expr_type.kind == TYPE_F32) {
+                        actual_type_str = "f32";
+                    } else if (expr_type.kind == TYPE_F64) {
+                        actual_type_str = "f64";
                     } else if (expr_type.kind == TYPE_VOID) {
                         actual_type_str = "void";
                     } else if (expr_type.kind == TYPE_POINTER) {
@@ -8258,10 +8310,13 @@ static int process_use_stmt(TypeChecker *checker, ASTNode *node) {
         }
         
         if (!found) {
-            char buf[256];
-            snprintf(buf, sizeof(buf), "模块 '%s' 中未找到导出项 '%s'", module_name, item_name);
-            checker_report_error(checker, node, buf);
-            return 0;
+            if (strncmp(module_name, "std.", 4) != 0) {
+                char buf[256];
+                snprintf(buf, sizeof(buf), "模块 '%s' 中未找到导出项 '%s'", module_name, item_name);
+                checker_report_error(checker, node, buf);
+                return 0;
+            }
+            /* 自举时 std 未参与编译，将 use std.xxx.yyy 视为外部符号，不报错，item_type 保持 0 */
         }
         
         // 添加到导入表

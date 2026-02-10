@@ -535,20 +535,138 @@ static int collect_module_dependencies(
         return -1;
     }
     
+    /* main 模块 = main 函数所在目录；入口文件同目录下所有 .uya 视为 main 模块一部分，自动包含 */
+    if (*processed_count == 1) {
+        char dir_path[PATH_MAX];
+        const char *last_slash = strrchr(filename, '/');
+        if (last_slash != NULL) {
+            size_t dir_len = (size_t)(last_slash - filename + 1);
+            if (dir_len >= sizeof(dir_path)) dir_len = sizeof(dir_path) - 1;
+            memcpy(dir_path, filename, dir_len);
+            dir_path[dir_len] = '\0';
+        } else {
+            strcpy(dir_path, ".");
+        }
+        DIR *dir = opendir(dir_path);
+        if (dir != NULL) {
+            struct dirent *entry;
+            while ((entry = readdir(dir)) != NULL && file_list_size < max_files) {
+                if (entry->d_type != DT_REG && entry->d_type != DT_UNKNOWN) continue;
+                {
+                    const char *name = entry->d_name;
+                    size_t name_len = strlen(name);
+                    if (name_len <= 4 || strcmp(name + name_len - 4, ".uya") != 0) continue;
+                }
+                char full_path[PATH_MAX];
+                int len = snprintf(full_path, sizeof(full_path), "%s%s", dir_path, entry->d_name);
+                if (len <= 0 || len >= (int)sizeof(full_path)) continue;
+                if (paths_equal(full_path, filename)) continue;
+                int already_added = 0;
+                for (int j = 0; j < file_list_size; j++) {
+                    if (file_list[j] != NULL && paths_equal(file_list[j], full_path)) {
+                        already_added = 1;
+                        break;
+                    }
+                }
+                if (already_added) continue;
+                int already_processed = 0;
+                for (int j = 0; j < *processed_count; j++) {
+                    if (processed_files[j] != NULL && paths_equal(processed_files[j], full_path)) {
+                        already_processed = 1;
+                        break;
+                    }
+                }
+                if (already_processed) continue;
+                char *path_copy = (char *)arena_alloc(arena, strlen(full_path) + 1);
+                if (path_copy == NULL) {
+                    closedir(dir);
+                    return -1;
+                }
+                strcpy(path_copy, full_path);
+                file_list[file_list_size] = path_copy;
+                file_list_size++;
+                file_list_size = collect_module_dependencies(
+                    path_copy, file_list, file_list_size, max_files,
+                    processed_files, processed_count, max_processed,
+                    project_root, uya_root, arena);
+                if (file_list_size < 0) {
+                    closedir(dir);
+                    return -1;
+                }
+            }
+            closedir(dir);
+        }
+    }
+    
     // 对于每个模块，查找文件并递归处理
     for (int i = 0; i < module_count; i++) {
         if (modules[i] == NULL) {
             continue;
         }
-        
-        // 特殊处理：main 模块
+        /* 跳过标准库：lib/std 使用完整 Uya 语法，自举时用 extern 声明，不解析 lib/std 避免语法不兼容 */
+        if (strcmp(modules[i], "std") == 0 || (strncmp(modules[i], "std.", 4) == 0)) {
+            continue;
+        }
+        /* main 模块 = main 函数所在目录，收集该目录下所有 .uya */
         if (strcmp(modules[i], "main") == 0) {
-            // main 模块在项目根目录
-            // 注意：main 模块通常已经在文件列表中（作为入口文件），
-            // 所以这里不需要再次添加。如果确实需要添加，应该检查是否已在列表中。
-            // 为了避免重复添加，这里直接跳过 main 模块的处理。
-            // 如果 main.uya 不在列表中，它应该已经作为入口文件被添加了。
-            // 注意：modules[i] 是通过 Arena 分配的，不需要手动释放
+            if (*processed_count > 0 && processed_files[0] != NULL) {
+                const char *entry_file = processed_files[0];
+                char main_dir[PATH_MAX];
+                const char *slash = strrchr(entry_file, '/');
+                if (slash != NULL) {
+                    size_t dlen = (size_t)(slash - entry_file + 1);
+                    if (dlen >= sizeof(main_dir)) dlen = sizeof(main_dir) - 1;
+                    memcpy(main_dir, entry_file, dlen);
+                    main_dir[dlen] = '\0';
+                } else {
+                    strcpy(main_dir, ".");
+                }
+                DIR *main_dirp = opendir(main_dir);
+                if (main_dirp != NULL) {
+                    struct dirent *e;
+                    while ((e = readdir(main_dirp)) != NULL && file_list_size < max_files) {
+                        if (e->d_type != DT_REG && e->d_type != DT_UNKNOWN) continue;
+                        size_t nlen = strlen(e->d_name);
+                        if (nlen <= 4 || strcmp(e->d_name + nlen - 4, ".uya") != 0) continue;
+                        char fp[PATH_MAX];
+                        int flen = snprintf(fp, sizeof(fp), "%s%s", main_dir, e->d_name);
+                        if (flen <= 0 || flen >= (int)sizeof(fp)) continue;
+                        int in_list = 0;
+                        for (int j = 0; j < file_list_size; j++) {
+                            if (file_list[j] != NULL && paths_equal(file_list[j], fp)) {
+                                in_list = 1;
+                                break;
+                            }
+                        }
+                        if (in_list) continue;
+                        int in_proc = 0;
+                        for (int j = 0; j < *processed_count; j++) {
+                            if (processed_files[j] != NULL && paths_equal(processed_files[j], fp)) {
+                                in_proc = 1;
+                                break;
+                            }
+                        }
+                        if (in_proc) continue;
+                        char *pc = (char *)arena_alloc(arena, strlen(fp) + 1);
+                        if (pc == NULL) {
+                            closedir(main_dirp);
+                            return -1;
+                        }
+                        strcpy(pc, fp);
+                        file_list[file_list_size] = pc;
+                        file_list_size++;
+                        file_list_size = collect_module_dependencies(
+                            pc, file_list, file_list_size, max_files,
+                            processed_files, processed_count, max_processed,
+                            project_root, uya_root, arena);
+                        if (file_list_size < 0) {
+                            closedir(main_dirp);
+                            return -1;
+                        }
+                    }
+                    closedir(main_dirp);
+                }
+            }
             continue;
         }
         

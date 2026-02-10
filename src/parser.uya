@@ -710,7 +710,7 @@ fn parse_float_literal(str: &byte, arena: &Arena) f64 {
     if cleaned == null {
         return 0.0;
     }
-    return strtod(cleaned as *byte, null as * *byte);
+    return strtod(cleaned as *byte, null as * *byte) as f64;
 }
 
 // 解析基础表达式

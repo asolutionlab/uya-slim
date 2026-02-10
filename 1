@@ -1,0 +1,1398 @@
+compiler-c/build/uya-src/uya.c:1986:23: error: static declaration of 'lexer_next_token' follows non-static declaration
+ 1986 | static struct Token * lexer_next_token(struct Lexer * lexer, struct Arena * arena);
+      |                       ^~~~~~~~~~~~~~~~
+compiler-c/build/uya-src/uya.c:1924:23: note: previous declaration of 'lexer_next_token' with type 'struct Token *(struct Lexer *, struct Arena *)'
+ 1924 | extern struct Token * lexer_next_token(struct Lexer * lexer, struct Arena * arena);
+      |                       ^~~~~~~~~~~~~~~~
+compiler-c/build/uya-src/uya.c:1987:16: error: static declaration of 'lexer_init' follows non-static declaration
+ 1987 | static int32_t lexer_init(struct Lexer * lexer, uint8_t * source, size_t source_len, uint8_t * filename, struct Arena * arena);
+      |                ^~~~~~~~~~
+compiler-c/build/uya-src/uya.c:1925:16: note: previous declaration of 'lexer_init' with type 'int32_t(struct Lexer *, uint8_t *, size_t,  uint8_t *, struct Arena *)' {aka 'int(struct Lexer *, unsigned char *, long unsigned int,  unsigned char *, struct Arena *)'}
+ 1925 | extern int32_t lexer_init(struct Lexer * lexer, uint8_t * source, size_t source_len, uint8_t * filename, struct Arena * arena);
+      |                ^~~~~~~~~~
+compiler-c/build/uya-src/uya.c: In function 'paths_equal':
+compiler-c/build/uya-src/uya.c:2330:11: warning: implicit declaration of function 'stat'; did you mean 'strcat'? [-Wimplicit-function-declaration]
+ 2330 |     if (((stat((uint8_t *)path1, (&st1)) == 0) && (stat((uint8_t *)path2, (&st2)) == 0))) {
+      |           ^~~~
+      |           strcat
+compiler-c/build/uya-src/uya.c: In function 'get_compiler_dir':
+compiler-c/build/uya-src/uya.c:2392:36: warning: implicit declaration of function 'ptr_diff' [-Wimplicit-function-declaration]
+ 2392 |             const size_t dir_len = ptr_diff(last_slash, (uint8_t *)argv0);
+      |                                    ^~~~~~~~
+compiler-c/build/uya-src/uya.c:2403:25: warning: implicit declaration of function 'readlink' [-Wimplicit-function-declaration]
+ 2403 |     const int32_t len = readlink((uint8_t *)(uint8_t *)str1, (&resolved_path[0]), (PATH_MAX - 1));
+      |                         ^~~~~~~~
+compiler-c/build/uya-src/uya.c: In function 'print_usage':
+compiler-c/build/uya-src/uya.c:2456:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 2456 |     fprintf(stderr, (uint8_t *)(uint8_t *)str3, (uint8_t *)program_name);
+      |                                           ^~~~
+compiler-c/build/uya-src/uya.c:2457:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 2457 |     fprintf(stderr, (uint8_t *)(uint8_t *)str4, (uint8_t *)program_name);
+      |                                           ^~~~
+compiler-c/build/uya-src/uya.c:2458:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 2458 |     fprintf(stderr, (uint8_t *)(uint8_t *)str5, (uint8_t *)program_name);
+      |                                           ^~~~
+compiler-c/build/uya-src/uya.c:2459:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 2459 |     fprintf(stderr, (uint8_t *)(uint8_t *)str6);
+      |                                           ^~~~
+compiler-c/build/uya-src/uya.c:2460:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 2460 |     fprintf(stderr, (uint8_t *)(uint8_t *)str7);
+      |                                           ^~~~
+compiler-c/build/uya-src/uya.c:2461:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 2461 |     fprintf(stderr, (uint8_t *)(uint8_t *)str8);
+      |                                           ^~~~
+compiler-c/build/uya-src/uya.c:2462:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 2462 |     fprintf(stderr, (uint8_t *)(uint8_t *)str9);
+      |                                           ^~~~
+compiler-c/build/uya-src/uya.c:2463:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 2463 |     fprintf(stderr, (uint8_t *)(uint8_t *)str10);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c:2464:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 2464 |     fprintf(stderr, (uint8_t *)(uint8_t *)str11);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c:2465:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 2465 |     fprintf(stderr, (uint8_t *)(uint8_t *)str12);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c:2466:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 2466 |     fprintf(stderr, (uint8_t *)(uint8_t *)str13);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c: In function 'find_main_files_in_dir':
+compiler-c/build/uya-src/uya.c:2511:30: warning: implicit declaration of function 'opendir' [-Wimplicit-function-declaration]
+ 2511 |     struct DIR * const dir = opendir((uint8_t *)dir_path);
+      |                              ^~~~~~~
+compiler-c/build/uya-src/uya.c:2511:30: warning: initialization of 'struct DIR * const' from 'int' makes pointer from integer without a cast [-Wint-conversion]
+compiler-c/build/uya-src/uya.c:2516:29: warning: implicit declaration of function 'readdir' [-Wimplicit-function-declaration]
+ 2516 |     struct Dirent * entry = readdir(dir);
+      |                             ^~~~~~~
+compiler-c/build/uya-src/uya.c:2516:29: warning: initialization of 'struct Dirent *' from 'int' makes pointer from integer without a cast [-Wint-conversion]
+compiler-c/build/uya-src/uya.c:2524:122: warning: format string is not an array of type 'char' [-Wformat=]
+ 2524 |                     const int32_t len = snprintf((&file_paths_buffer[file_count[0]][0]), PATH_MAX, (uint8_t *)(uint8_t *)str16, (uint8_t *)dir_path, name);
+      |                                                                                                                          ^~~~~
+compiler-c/build/uya-src/uya.c:2534:15: warning: assignment to 'struct Dirent *' from 'int' makes pointer from integer without a cast [-Wint-conversion]
+ 2534 |         entry = readdir(dir);
+      |               ^
+compiler-c/build/uya-src/uya.c:2536:5: warning: implicit declaration of function 'closedir' [-Wimplicit-function-declaration]
+ 2536 |     closedir(dir);
+      |     ^~~~~~~~
+compiler-c/build/uya-src/uya.c: In function 'find_module_file':
+compiler-c/build/uya-src/uya.c:2574:87: warning: format string is not an array of type 'char' [-Wformat=]
+ 2574 |         const int32_t len = snprintf((&full_path[0]), PATH_MAX, (uint8_t *)(uint8_t *)str17, (uint8_t *)root, (&file_path[0]));
+      |                                                                                       ^~~~~
+compiler-c/build/uya-src/uya.c:2579:38: warning: initialization of 'struct DIR * const' from 'int' makes pointer from integer without a cast [-Wint-conversion]
+ 2579 |             struct DIR * const dir = opendir((&full_path[0]));
+      |                                      ^~~~~~~
+compiler-c/build/uya-src/uya.c:2581:41: warning: initialization of 'struct Dirent *' from 'int' makes pointer from integer without a cast [-Wint-conversion]
+ 2581 |                 struct Dirent * entry = readdir(dir);
+      |                                         ^~~~~~~
+compiler-c/build/uya-src/uya.c:2590:123: warning: format string is not an array of type 'char' [-Wformat=]
+ 2590 |                                 const int32_t result_len = snprintf((uint8_t *)buffer, buffer_size, (uint8_t *)(uint8_t *)str18, (uint8_t *)root, (&file_path[0]), name);
+      |                                                                                                                           ^~~~~
+compiler-c/build/uya-src/uya.c:2598:27: warning: assignment to 'struct Dirent *' from 'int' makes pointer from integer without a cast [-Wint-conversion]
+ 2598 |                     entry = readdir(dir);
+      |                           ^
+compiler-c/build/uya-src/uya.c:2604:87: warning: format string is not an array of type 'char' [-Wformat=]
+ 2604 |         const int32_t ulen = snprintf((&uya_path[0]), PATH_MAX, (uint8_t *)(uint8_t *)str19, (uint8_t *)root, (&file_path[0]));
+      |                                                                                       ^~~~~
+compiler-c/build/uya-src/uya.c: In function 'parse_args':
+compiler-c/build/uya-src/uya.c:2804:26: warning: implicit declaration of function 'get_argc' [-Wimplicit-function-declaration]
+ 2804 |     const int32_t argc = get_argc();
+      |                          ^~~~~~~~
+compiler-c/build/uya-src/uya.c:2806:40: warning: implicit declaration of function 'get_argv' [-Wimplicit-function-declaration]
+ 2806 |         uint8_t * const program_name = get_argv(0);
+      |                                        ^~~~~~~~
+compiler-c/build/uya-src/uya.c:2806:40: warning: initialization of 'uint8_t * const' {aka 'unsigned char * const'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+compiler-c/build/uya-src/uya.c:2819:31: warning: initialization of 'uint8_t * const' {aka 'unsigned char * const'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+ 2819 |         uint8_t * const arg = get_argv(i);
+      |                               ^~~~~~~~
+compiler-c/build/uya-src/uya.c:2821:57: warning: format string is not an array of type 'char' [-Wformat=]
+ 2821 |             fprintf(get_stderr(), (uint8_t *)(uint8_t *)str22, i);
+      |                                                         ^~~~~
+compiler-c/build/uya-src/uya.c:2830:61: warning: format string is not an array of type 'char' [-Wformat=]
+ 2830 |                 fprintf(get_stderr(), (uint8_t *)(uint8_t *)str24);
+      |                                                             ^~~~~
+compiler-c/build/uya-src/uya.c:2847:77: warning: format string is not an array of type 'char' [-Wformat=]
+ 2847 |                                 fprintf(get_stderr(), (uint8_t *)(uint8_t *)str28, MAX_INPUT_FILES);
+      |                                                                             ^~~~~
+compiler-c/build/uya-src/uya.c:2862:53: warning: format string is not an array of type 'char' [-Wformat=]
+ 2862 |         fprintf(get_stderr(), (uint8_t *)(uint8_t *)str29);
+      |                                                     ^~~~~
+compiler-c/build/uya-src/uya.c:2863:40: warning: initialization of 'uint8_t * const' {aka 'unsigned char * const'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+ 2863 |         uint8_t * const program_name = get_argv(0);
+      |                                        ^~~~~~~~
+compiler-c/build/uya-src/uya.c:2871:53: warning: format string is not an array of type 'char' [-Wformat=]
+ 2871 |         fprintf(get_stderr(), (uint8_t *)(uint8_t *)str30);
+      |                                                     ^~~~~
+compiler-c/build/uya-src/uya.c:2872:40: warning: initialization of 'uint8_t * const' {aka 'unsigned char * const'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+ 2872 |         uint8_t * const program_name = get_argv(0);
+      |                                        ^~~~~~~~
+compiler-c/build/uya-src/uya.c:2880:32: warning: initialization of 'uint8_t * const' {aka 'unsigned char * const'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+ 2880 |     uint8_t * const out_path = get_argv(out_idx);
+      |                                ^~~~~~~~
+compiler-c/build/uya-src/uya.c:2882:53: warning: format string is not an array of type 'char' [-Wformat=]
+ 2882 |         fprintf(get_stderr(), (uint8_t *)(uint8_t *)str31, out_idx);
+      |                                                     ^~~~~
+compiler-c/build/uya-src/uya.c: In function 'compile_files':
+compiler-c/build/uya-src/uya.c:2900:29: warning: initialization of 'uint8_t * const' {aka 'unsigned char * const'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+ 2900 |     uint8_t * const argv0 = get_argv(0);
+      |                             ^~~~~~~~
+compiler-c/build/uya-src/uya.c:2902:53: warning: format string is not an array of type 'char' [-Wformat=]
+ 2902 |         fprintf(get_stderr(), (uint8_t *)(uint8_t *)str33);
+      |                                                     ^~~~~
+compiler-c/build/uya-src/uya.c:2907:53: warning: format string is not an array of type 'char' [-Wformat=]
+ 2907 |         fprintf(get_stderr(), (uint8_t *)(uint8_t *)str34);
+      |                                                     ^~~~~
+compiler-c/build/uya-src/uya.c:2919:38: warning: initialization of 'uint8_t * const' {aka 'unsigned char * const'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+ 2919 |         uint8_t * const input_path = get_argv(idx_i);
+      |                                      ^~~~~~~~
+compiler-c/build/uya-src/uya.c:2921:57: warning: format string is not an array of type 'char' [-Wformat=]
+ 2921 |             fprintf(get_stderr(), (uint8_t *)(uint8_t *)str35, idx_i);
+      |                                                         ^~~~~
+compiler-c/build/uya-src/uya.c:2931:61: warning: format string is not an array of type 'char' [-Wformat=]
+ 2931 |                 fprintf(get_stderr(), (uint8_t *)(uint8_t *)str36, input_path);
+      |                                                             ^~~~~
+compiler-c/build/uya-src/uya.c:2936:61: warning: format string is not an array of type 'char' [-Wformat=]
+ 2936 |                 fprintf(get_stderr(), (uint8_t *)(uint8_t *)str37, input_path);
+      |                                                             ^~~~~
+compiler-c/build/uya-src/uya.c:2941:61: warning: format string is not an array of type 'char' [-Wformat=]
+ 2941 |                 fprintf(get_stderr(), (uint8_t *)(uint8_t *)str38, input_path);
+      |                                                             ^~~~~
+compiler-c/build/uya-src/uya.c:2944:65: warning: format string is not an array of type 'char' [-Wformat=]
+ 2944 |                     fprintf(get_stderr(), (uint8_t *)(uint8_t *)str39, (uint8_t *)main_files[j]);
+      |                                                                 ^~~~~
+compiler-c/build/uya-src/uya.c:3002:69: warning: format string is not an array of type 'char' [-Wformat=]
+ 3002 |                         fprintf(get_stderr(), (uint8_t *)(uint8_t *)str41, input_path);
+      |                                                                     ^~~~~
+compiler-c/build/uya-src/uya.c:3010:61: warning: format string is not an array of type 'char' [-Wformat=]
+ 3010 |                 fprintf(get_stderr(), (uint8_t *)(uint8_t *)str42, input_path);
+      |                                                             ^~~~~
+compiler-c/build/uya-src/uya.c:3018:53: warning: format string is not an array of type 'char' [-Wformat=]
+ 3018 |         fprintf(get_stderr(), (uint8_t *)(uint8_t *)str43);
+      |                                                     ^~~~~
+compiler-c/build/uya-src/uya.c:3045:57: warning: format string is not an array of type 'char' [-Wformat=]
+ 3045 |             fprintf(get_stderr(), (uint8_t *)(uint8_t *)str44, (uint8_t *)main_files[i]);
+      |                                                         ^~~~~
+compiler-c/build/uya-src/uya.c:3053:49: warning: format string is not an array of type 'char' [-Wformat=]
+ 3053 |     fprintf(get_stderr(), (uint8_t *)(uint8_t *)str45);
+      |                                                 ^~~~~
+compiler-c/build/uya-src/uya.c:3054:49: warning: format string is not an array of type 'char' [-Wformat=]
+ 3054 |     fprintf(get_stderr(), (uint8_t *)(uint8_t *)str46, all_file_count);
+      |                                                 ^~~~~
+compiler-c/build/uya-src/uya.c:3057:53: warning: format string is not an array of type 'char' [-Wformat=]
+ 3057 |         fprintf(get_stderr(), (uint8_t *)(uint8_t *)str47, i, (uint8_t *)all_files[i]);
+      |                                                     ^~~~~
+compiler-c/build/uya-src/uya.c:3060:35: warning: initialization of 'uint8_t * const' {aka 'unsigned char * const'} from 'int' makes pointer from integer without a cast [-Wint-conversion]
+ 3060 |     uint8_t * const output_file = get_argv(output_file_index);
+      |                                   ^~~~~~~~
+compiler-c/build/uya-src/uya.c:3061:49: warning: format string is not an array of type 'char' [-Wformat=]
+ 3061 |     fprintf(get_stderr(), (uint8_t *)(uint8_t *)str48, output_file);
+      |                                                 ^~~~~
+compiler-c/build/uya-src/uya.c:3063:53: warning: format string is not an array of type 'char' [-Wformat=]
+ 3063 |         fprintf(get_stderr(), (uint8_t *)(uint8_t *)str49, (uint8_t *)project_root);
+      |                                                     ^~~~~
+compiler-c/build/uya-src/uya.c:3065:49: warning: format string is not an array of type 'char' [-Wformat=]
+ 3065 |     fprintf(get_stderr(), (uint8_t *)(uint8_t *)str50, (&uya_root_buffer[0]));
+      |                                                 ^~~~~
+compiler-c/build/uya-src/uya.c:3066:49: warning: format string is not an array of type 'char' [-Wformat=]
+ 3066 |     fprintf(get_stderr(), (uint8_t *)(uint8_t *)str51);
+      |                                                 ^~~~~
+compiler-c/build/uya-src/uya.c:3071:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 3071 |     fprintf(stderr, (uint8_t *)(uint8_t *)str54, (const char *)backend_str);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c:3080:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 3080 |             fprintf(stderr, (uint8_t *)(uint8_t *)str55, input_path);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:3087:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 3087 |             fprintf(stderr, (uint8_t *)(uint8_t *)str56, input_path);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:3093:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 3093 |             fprintf(stderr, (uint8_t *)(uint8_t *)str57, input_path);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:3099:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 3099 |             fprintf(stderr, (uint8_t *)(uint8_t *)str58, input_path);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:3104:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 3104 |             fprintf(stderr, (uint8_t *)(uint8_t *)str59, input_path);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:3109:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 3109 |             fprintf(stderr, (uint8_t *)(uint8_t *)str58, input_path);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:3114:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 3114 |         fprintf(stderr, (uint8_t *)(uint8_t *)str60, input_path);
+      |                                               ^~~~~
+compiler-c/build/uya-src/uya.c:3117:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 3117 |     fprintf(stderr, (uint8_t *)(uint8_t *)str61, all_file_count);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c:3118:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 3118 |     fprintf(stderr, (uint8_t *)(uint8_t *)str62);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c:3121:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 3121 |         fprintf(stderr, (uint8_t *)(uint8_t *)str63);
+      |                                               ^~~~~
+compiler-c/build/uya-src/uya.c:3125:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 3125 |     fprintf(stderr, (uint8_t *)(uint8_t *)str64, merged_ast->program_decl_count);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c:3126:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 3126 |     fprintf(stderr, (uint8_t *)(uint8_t *)str65);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c:3134:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 3134 |         fprintf(stderr, (uint8_t *)(uint8_t *)str67);
+      |                                               ^~~~~
+compiler-c/build/uya-src/uya.c:3140:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 3140 |         fprintf(stderr, (uint8_t *)(uint8_t *)str68, checker_get_error_count((&checker)));
+      |                                               ^~~~~
+compiler-c/build/uya-src/uya.c:3143:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 3143 |             fprintf(stderr, (uint8_t *)(uint8_t *)str69, (uint8_t *)err_msg);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:3149:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 3149 |         fprintf(stderr, (uint8_t *)(uint8_t *)str68, checker_get_error_count((&checker)));
+      |                                               ^~~~~
+compiler-c/build/uya-src/uya.c:3152:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 3152 |             fprintf(stderr, (uint8_t *)(uint8_t *)str69, (uint8_t *)err_msg);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:3157:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 3157 |     fprintf(stderr, (uint8_t *)(uint8_t *)str70);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c:3158:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 3158 |     fprintf(stderr, (uint8_t *)(uint8_t *)str71);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c:3163:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 3163 |     fprintf(stderr, (uint8_t *)(uint8_t *)str72, (const char *)module_name);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c:3166:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 3166 |         fprintf(stderr, (uint8_t *)(uint8_t *)str74, output_file);
+      |                                               ^~~~~
+compiler-c/build/uya-src/uya.c:3229:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 3229 |         fprintf(stderr, (uint8_t *)(uint8_t *)str75);
+      |                                               ^~~~~
+compiler-c/build/uya-src/uya.c:3236:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 3236 |         fprintf(stderr, (uint8_t *)(uint8_t *)str76);
+      |                                               ^~~~~
+compiler-c/build/uya-src/uya.c:3244:43: warning: format string is not an array of type 'char' [-Wformat=]
+ 3244 |     fprintf(stderr, (uint8_t *)(uint8_t *)str77, output_file);
+      |                                           ^~~~~
+compiler-c/build/uya-src/uya.c: In function 'parser_parse_primary_expr':
+compiler-c/build/uya-src/uya.c:3941:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 3941 |             fprintf(stderr, (uint8_t *)(uint8_t *)str79);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:3947:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 3947 |             fprintf(stderr, (uint8_t *)(uint8_t *)str80);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:4436:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 4436 |             fprintf(stderr, (uint8_t *)(uint8_t *)str92);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:4447:55: warning: format string is not an array of type 'char' [-Wformat=]
+ 4447 |                 fprintf(stderr, (uint8_t *)(uint8_t *)str93);
+      |                                                       ^~~~~
+compiler-c/build/uya-src/uya.c:4454:55: warning: format string is not an array of type 'char' [-Wformat=]
+ 4454 |                 fprintf(stderr, (uint8_t *)(uint8_t *)str94);
+      |                                                       ^~~~~
+compiler-c/build/uya-src/uya.c:4484:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 4484 |             fprintf(stderr, (uint8_t *)(uint8_t *)str96);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:4510:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 4510 |             fprintf(stderr, (uint8_t *)(uint8_t *)str98);
+      |                                                   ^~~~~
+compiler-c/build/uya-src/uya.c:4823:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 4823 |             fprintf(stderr, (uint8_t *)(uint8_t *)str117);
+      |                                                   ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'parser_parse_statement':
+compiler-c/build/uya-src/uya.c:6532:57: warning: format string is not an array of type 'char' [-Wformat=]
+ 6532 |             fprintf(get_stderr(), (uint8_t *)(uint8_t *)str118, parser->current_token->line, parser->current_token->column);
+      |                                                         ^~~~~~
+compiler-c/build/uya-src/uya.c:6539:57: warning: format string is not an array of type 'char' [-Wformat=]
+ 6539 |             fprintf(get_stderr(), (uint8_t *)(uint8_t *)str119, parser->current_token->line, parser->current_token->column);
+      |                                                         ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'parser_parse_method_block':
+compiler-c/build/uya-src/uya.c:7335:59: warning: format string is not an array of type 'char' [-Wformat=]
+ 7335 |                     fprintf(stderr, (uint8_t *)(uint8_t *)str120);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'parser_parse_struct':
+compiler-c/build/uya-src/uya.c:7552:104: warning: format string is not an array of type 'char' [-Wformat=]
+ 7552 |                 pos = (pos + snprintf(((uint8_t *)full_name + pos), (512 - pos), (uint8_t *)(uint8_t *)str121, (uint8_t *)iface_base_name));
+      |                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:7557:112: warning: format string is not an array of type 'char' [-Wformat=]
+ 7557 |                         pos = (pos + snprintf(((uint8_t *)full_name + pos), (512 - pos), (uint8_t *)(uint8_t *)str122));
+      |                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:7561:112: warning: format string is not an array of type 'char' [-Wformat=]
+ 7561 |                         pos = (pos + snprintf(((uint8_t *)full_name + pos), (512 - pos), (uint8_t *)(uint8_t *)str123, (uint8_t *)parser->current_token->value));
+      |                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:7577:104: warning: format string is not an array of type 'char' [-Wformat=]
+ 7577 |                 pos = (pos + snprintf(((uint8_t *)full_name + pos), (512 - pos), (uint8_t *)(uint8_t *)str78));
+      |                                                                                                        ^~~~~
+compiler-c/build/uya-src/uya.c: In function 'parser_parse_type_alias':
+compiler-c/build/uya-src/uya.c:7870:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 7870 |         fprintf(stderr, (uint8_t *)(uint8_t *)str124);
+      |                                               ^~~~~~
+compiler-c/build/uya-src/uya.c:7887:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 7887 |         fprintf(stderr, (uint8_t *)(uint8_t *)str125);
+      |                                               ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'parser_parse_macro':
+compiler-c/build/uya-src/uya.c:7921:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 7921 |         fprintf(stderr, (uint8_t *)(uint8_t *)str126);
+      |                                               ^~~~~~
+compiler-c/build/uya-src/uya.c:7958:59: warning: format string is not an array of type 'char' [-Wformat=]
+ 7958 |                     fprintf(stderr, (uint8_t *)(uint8_t *)str127);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c:7980:59: warning: format string is not an array of type 'char' [-Wformat=]
+ 7980 |                     fprintf(stderr, (uint8_t *)(uint8_t *)str128);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c:7991:55: warning: format string is not an array of type 'char' [-Wformat=]
+ 7991 |                 fprintf(stderr, (uint8_t *)(uint8_t *)str128);
+      |                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:8002:59: warning: format string is not an array of type 'char' [-Wformat=]
+ 8002 |                     fprintf(stderr, (uint8_t *)(uint8_t *)str133);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c:8030:59: warning: format string is not an array of type 'char' [-Wformat=]
+ 8030 |                     fprintf(stderr, (uint8_t *)(uint8_t *)str134);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'parser_parse_use_stmt':
+compiler-c/build/uya-src/uya.c:8668:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 8668 |         fprintf(stderr, (uint8_t *)(uint8_t *)str135, (const char *)filename, line, column);
+      |                                               ^~~~~~
+compiler-c/build/uya-src/uya.c:8725:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 8725 |             fprintf(stderr, (uint8_t *)(uint8_t *)str136, (const char *)filename, parser->current_token->line, parser->current_token->column);
+      |                                                   ^~~~~~
+compiler-c/build/uya-src/uya.c:8744:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 8744 |             fprintf(stderr, (uint8_t *)(uint8_t *)str137, (const char *)filename, parser->current_token->line, parser->current_token->column);
+      |                                                   ^~~~~~
+compiler-c/build/uya-src/uya.c:8761:47: warning: format string is not an array of type 'char' [-Wformat=]
+ 8761 |         fprintf(stderr, (uint8_t *)(uint8_t *)str138, (const char *)filename, parser->current_token->line, parser->current_token->column);
+      |                                               ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'parser_parse_declaration':
+compiler-c/build/uya-src/uya.c:8793:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 8793 |             fprintf(stderr, (uint8_t *)(uint8_t *)str140);
+      |                                                   ^~~~~~
+compiler-c/build/uya-src/uya.c:8801:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 8801 |             fprintf(stderr, (uint8_t *)(uint8_t *)str141);
+      |                                                   ^~~~~~
+compiler-c/build/uya-src/uya.c:8909:83: warning: format string is not an array of type 'char' [-Wformat=]
+ 8909 |                                             fprintf(stderr, (uint8_t *)(uint8_t *)str142, (const char *)filename, parser->current_token->line, parser->current_token->column, name);
+      |                                                                                   ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'parser_parse':
+compiler-c/build/uya-src/uya.c:8962:55: warning: format string is not an array of type 'char' [-Wformat=]
+ 8962 |                 fprintf(stderr, (uint8_t *)(uint8_t *)str143, (const char *)filename, parser->current_token->line, parser->current_token->column);
+      |                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:8964:59: warning: format string is not an array of type 'char' [-Wformat=]
+ 8964 |                     fprintf(stderr, (uint8_t *)(uint8_t *)str144, parser->current_token->value);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c:8966:55: warning: format string is not an array of type 'char' [-Wformat=]
+ 8966 |                 fprintf(stderr, (uint8_t *)(uint8_t *)str145);
+      |                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:8975:55: warning: format string is not an array of type 'char' [-Wformat=]
+ 8975 |                 fprintf(stderr, (uint8_t *)(uint8_t *)str146, (const char *)filename);
+      |                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'skip_whitespace_and_comments':
+compiler-c/build/uya-src/uya.c:9328:63: warning: format string is not an array of type 'char' [-Wformat=]
+ 9328 |                         fprintf(stderr, (uint8_t *)(uint8_t *)str147, start_line, start_column);
+      |                                                               ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'read_number':
+compiler-c/build/uya-src/uya.c:9649:55: warning: format string is not an array of type 'char' [-Wformat=]
+ 9649 |                 fprintf(stderr, (uint8_t *)(uint8_t *)str178);
+      |                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:9671:59: warning: format string is not an array of type 'char' [-Wformat=]
+ 9671 |                     fprintf(stderr, (uint8_t *)(uint8_t *)str179);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c:9693:51: warning: format string is not an array of type 'char' [-Wformat=]
+ 9693 |             fprintf(stderr, (uint8_t *)(uint8_t *)str180);
+      |                                                   ^~~~~~
+compiler-c/build/uya-src/uya.c:9704:59: warning: format string is not an array of type 'char' [-Wformat=]
+ 9704 |                     fprintf(stderr, (uint8_t *)(uint8_t *)str179);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'lexer_next_token':
+compiler-c/build/uya-src/uya.c:10404:55: warning: format string is not an array of type 'char' [-Wformat=]
+10404 |                 fprintf(stderr, (uint8_t *)(uint8_t *)str225, value);
+      |                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:10420:51: warning: format string is not an array of type 'char' [-Wformat=]
+10420 |             fprintf(stderr, (uint8_t *)(uint8_t *)str226);
+      |                                                   ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'type_to_string':
+compiler-c/build/uya-src/uya.c:11162:63: warning: format string is not an array of type 'char' [-Wformat=]
+11162 |                 sprintf((uint8_t *)buf, (uint8_t *)(uint8_t *)str278, (uint8_t *)inner);
+      |                                                               ^~~~~~
+compiler-c/build/uya-src/uya.c:11164:63: warning: format string is not an array of type 'char' [-Wformat=]
+11164 |                 sprintf((uint8_t *)buf, (uint8_t *)(uint8_t *)str279, (uint8_t *)inner);
+      |                                                               ^~~~~~
+compiler-c/build/uya-src/uya.c:11180:59: warning: format string is not an array of type 'char' [-Wformat=]
+11180 |             sprintf((uint8_t *)buf, (uint8_t *)(uint8_t *)str281, (uint8_t *)inner, type.array_size);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c:11195:59: warning: format string is not an array of type 'char' [-Wformat=]
+11195 |             sprintf((uint8_t *)buf, (uint8_t *)(uint8_t *)str283, (uint8_t *)inner);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c:11210:59: warning: format string is not an array of type 'char' [-Wformat=]
+11210 |             sprintf((uint8_t *)buf, (uint8_t *)(uint8_t *)str285, (uint8_t *)inner);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c:11237:59: warning: format string is not an array of type 'char' [-Wformat=]
+11237 |             sprintf((uint8_t *)buf, (uint8_t *)(uint8_t *)str289, (uint8_t *)inner);
+      |                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'check_type_param_constraints':
+compiler-c/build/uya-src/uya.c:11377:65: warning: format string is not an array of type 'char' [-Wformat=]
+11377 |             snprintf((uint8_t *)buf, 512, (uint8_t *)(uint8_t *)str296, (uint8_t *)type_name, (const char *)param_name, constraint);
+      |                                                                 ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'checker_report_error':
+compiler-c/build/uya-src/uya.c:12636:55: warning: format string is not an array of type 'char' [-Wformat=]
+12636 |                 fprintf(stderr, (uint8_t *)(uint8_t *)str308, (const char *)filename, node->line, node->column, (uint8_t *)message);
+      |                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:12638:55: warning: format string is not an array of type 'char' [-Wformat=]
+12638 |                 fprintf(stderr, (uint8_t *)(uint8_t *)str309, (const char *)filename, (uint8_t *)message);
+      |                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'get_type_name_from_ast':
+compiler-c/build/uya-src/uya.c:17497:71: warning: format string is not an array of type 'char' [-Wformat=]
+17497 |                         sprintf((uint8_t *)buf, (uint8_t *)(uint8_t *)str476, inner);
+      |                                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'arena_alloc':
+compiler-c/build/uya-src/uya.c:18591:53: warning: format string is not an array of type 'char' [-Wformat=]
+18591 |         fprintf(get_stderr(), (uint8_t *)(uint8_t *)str478);
+      |                                                     ^~~~~~
+compiler-c/build/uya-src/uya.c:18597:53: warning: format string is not an array of type 'char' [-Wformat=]
+18597 |         fprintf(get_stderr(), (uint8_t *)(uint8_t *)str479, aligned_size);
+      |                                                     ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'format_param_type':
+compiler-c/build/uya-src/uya.c:18663:47: warning: format string is not an array of type 'char' [-Wformat=]
+18663 |         fprintf(output, (uint8_t *)(uint8_t *)str484, (uint8_t *)(&temp_buf[0]), (uint8_t *)param_name, after_paren);
+      |                                               ^~~~~~
+compiler-c/build/uya-src/uya.c:18675:51: warning: format string is not an array of type 'char' [-Wformat=]
+18675 |             fprintf(output, (uint8_t *)(uint8_t *)str485, (uint8_t *)(&temp_buf[0]), (uint8_t *)param_name, bracket);
+      |                                                   ^~~~~~
+compiler-c/build/uya-src/uya.c:18678:55: warning: format string is not an array of type 'char' [-Wformat=]
+18678 |                 fprintf(output, (uint8_t *)(uint8_t *)str486, (uint8_t *)param_name);
+      |                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:18680:55: warning: format string is not an array of type 'char' [-Wformat=]
+18680 |                 fprintf(output, (uint8_t *)(uint8_t *)str487, (uint8_t *)type_c, (uint8_t *)param_name);
+      |                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_function_prototype':
+compiler-c/build/uya-src/uya.c:18788:56: warning: format string is not an array of type 'char' [-Wformat=]
+18788 |         fprintf(codegen->output, (uint8_t *)(uint8_t *)str511, (uint8_t *)return_c);
+      |                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:18793:56: warning: format string is not an array of type 'char' [-Wformat=]
+18793 |         fprintf(codegen->output, (uint8_t *)(uint8_t *)str512, (uint8_t *)return_c, (uint8_t *)func_name);
+      |                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:18796:60: warning: format string is not an array of type 'char' [-Wformat=]
+18796 |             fprintf(codegen->output, (uint8_t *)(uint8_t *)str513);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:18798:56: warning: format string is not an array of type 'char' [-Wformat=]
+18798 |         fprintf(codegen->output, (uint8_t *)(uint8_t *)str514, (uint8_t *)return_c, (uint8_t *)func_name);
+      |                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:18822:68: warning: format string is not an array of type 'char' [-Wformat=]
+18822 |                     fprintf(codegen->output, (uint8_t *)(uint8_t *)str515, (uint8_t *)param_type_c, (uint8_t *)param_name);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:18895:68: warning: format string is not an array of type 'char' [-Wformat=]
+18895 |                     fprintf(codegen->output, (uint8_t *)(uint8_t *)str520, (uint8_t *)(&temp_buf[0]), (uint8_t *)param_name, bracket);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:18897:68: warning: format string is not an array of type 'char' [-Wformat=]
+18897 |                     fprintf(codegen->output, (uint8_t *)(uint8_t *)str521, (uint8_t *)param_type_c, (uint8_t *)param_name);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:18901:68: warning: format string is not an array of type 'char' [-Wformat=]
+18901 |                     fprintf(codegen->output, (uint8_t *)(uint8_t *)str515, (uint8_t *)param_type_c, (uint8_t *)param_name);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:18904:72: warning: format string is not an array of type 'char' [-Wformat=]
+18904 |                         fprintf(codegen->output, (uint8_t *)(uint8_t *)str486, (uint8_t *)param_name);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_function':
+compiler-c/build/uya-src/uya.c:18970:56: warning: format string is not an array of type 'char' [-Wformat=]
+18970 |         fprintf(codegen->output, (uint8_t *)(uint8_t *)str523, (uint8_t *)return_c);
+      |                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:18973:60: warning: format string is not an array of type 'char' [-Wformat=]
+18973 |             fprintf(codegen->output, (uint8_t *)(uint8_t *)str513);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:18975:56: warning: format string is not an array of type 'char' [-Wformat=]
+18975 |         fprintf(codegen->output, (uint8_t *)(uint8_t *)str514, (uint8_t *)return_c, (uint8_t *)func_name);
+      |                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:19045:72: warning: format string is not an array of type 'char' [-Wformat=]
+19045 |                         fprintf(codegen->output, (uint8_t *)(uint8_t *)str520, (uint8_t *)(&temp_buf[0]), (uint8_t *)param_name, bracket);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:19047:72: warning: format string is not an array of type 'char' [-Wformat=]
+19047 |                         fprintf(codegen->output, (uint8_t *)(uint8_t *)str521, (uint8_t *)param_type_c, (uint8_t *)param_name);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:19051:72: warning: format string is not an array of type 'char' [-Wformat=]
+19051 |                         fprintf(codegen->output, (uint8_t *)(uint8_t *)str515, (uint8_t *)param_type_c, (uint8_t *)param_name);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:19054:76: warning: format string is not an array of type 'char' [-Wformat=]
+19054 |                             fprintf(codegen->output, (uint8_t *)(uint8_t *)str486, (uint8_t *)param_name);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:19109:68: warning: format string is not an array of type 'char' [-Wformat=]
+19109 |                     fprintf(codegen->output, (uint8_t *)(uint8_t *)str528, (uint8_t *)(&temp_buf[0]), (uint8_t *)param_name, bracket);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:19112:68: warning: format string is not an array of type 'char' [-Wformat=]
+19112 |                     fprintf(codegen->output, (uint8_t *)(uint8_t *)str529, (uint8_t *)array_type_c, (uint8_t *)param_name);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:19116:64: warning: format string is not an array of type 'char' [-Wformat=]
+19116 |                 fprintf(codegen->output, (uint8_t *)(uint8_t *)str530, (uint8_t *)param_name, (uint8_t *)param_name, (uint8_t *)param_name);
+      |                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:19181:68: warning: format string is not an array of type 'char' [-Wformat=]
+19181 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str531, (uint8_t *)return_c);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_method_prototype':
+compiler-c/build/uya-src/uya.c:19214:60: warning: format string is not an array of type 'char' [-Wformat=]
+19214 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str514, (uint8_t *)return_c, (uint8_t *)c_name);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_method_function':
+compiler-c/build/uya-src/uya.c:19250:60: warning: format string is not an array of type 'char' [-Wformat=]
+19250 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str514, (uint8_t *)return_c, (uint8_t *)c_name);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:19325:76: warning: format string is not an array of type 'char' [-Wformat=]
+19325 |                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str533, (uint8_t *)drop_c, (uint8_t *)self_safe, (uint8_t *)field_safe);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:19362:68: warning: format string is not an array of type 'char' [-Wformat=]
+19362 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str531, (uint8_t *)return_c);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'get_mono_function_name':
+compiler-c/build/uya-src/uya.c:19441:68: warning: format string is not an array of type 'char' [-Wformat=]
+19441 |     snprintf((uint8_t *)mono_name, name_len, (uint8_t *)(uint8_t *)str535, (uint8_t *)safe_name, (uint8_t *)(&suffix[0]));
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_mono_function_prototype':
+compiler-c/build/uya-src/uya.c:19527:60: warning: format string is not an array of type 'char' [-Wformat=]
+19527 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str514, (uint8_t *)return_c, (uint8_t *)mono_name);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_mono_function':
+compiler-c/build/uya-src/uya.c:19581:60: warning: format string is not an array of type 'char' [-Wformat=]
+19581 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str514, (uint8_t *)return_c, (uint8_t *)mono_name);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'emit_line_directive':
+compiler-c/build/uya-src/uya.c:19780:64: warning: format string is not an array of type 'char' [-Wformat=]
+19780 |         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str536, line);
+      |                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:19791:64: warning: format string is not an array of type 'char' [-Wformat=]
+19791 |         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str538, line);
+      |                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'get_safe_c_identifier':
+compiler-c/build/uya-src/uya.c:19859:71: warning: format string is not an array of type 'char' [-Wformat=]
+19859 |             snprintf((uint8_t *)(&buf[0]), 128, (uint8_t *)(uint8_t *)str564, (uint8_t *)name);
+      |                                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:19862:75: warning: format string is not an array of type 'char' [-Wformat=]
+19862 |                 snprintf((uint8_t *)(&buf[0]), 128, (uint8_t *)(uint8_t *)str565, (uint8_t *)name);
+      |                                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c:19864:75: warning: format string is not an array of type 'char' [-Wformat=]
+19864 |                 snprintf((uint8_t *)(&buf[0]), 128, (uint8_t *)(uint8_t *)str566, (uint8_t *)name);
+      |                                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'add_string_constant':
+compiler-c/build/uya-src/uya.c:19891:67: warning: format string is not an array of type 'char' [-Wformat=]
+19891 |     snprintf((uint8_t *)(&name_buf[0]), 32, (uint8_t *)(uint8_t *)str567, codegen->string_constant_count);
+      |                                                                   ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'emit_string_constants':
+compiler-c/build/uya-src/uya.c:19954:64: warning: format string is not an array of type 'char' [-Wformat=]
+19954 |         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str574, (uint8_t *)codegen->string_constants[i].name);
+      |                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'c99_emit_string_interp_fill':
+compiler-c/build/uya-src/uya.c:20694:60: warning: format string is not an array of type 'char' [-Wformat=]
+20694 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str602, fill_id);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:20706:72: warning: format string is not an array of type 'char' [-Wformat=]
+20706 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str603, (uint8_t *)buf_name, fill_id, (uint8_t *)cn, len);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:20708:72: warning: format string is not an array of type 'char' [-Wformat=]
+20708 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str604, fill_id, len);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:20730:72: warning: format string is not an array of type 'char' [-Wformat=]
+20730 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str605, fill_id, (uint8_t *)buf_name, fill_id, (uint8_t *)fmt_const);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:20738:60: warning: format string is not an array of type 'char' [-Wformat=]
+20738 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str606, (uint8_t *)buf_name, fill_id);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_expr':
+compiler-c/build/uya-src/uya.c:20748:68: warning: format string is not an array of type 'char' [-Wformat=]
+20748 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str607, expr->number_value);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:20750:68: warning: format string is not an array of type 'char' [-Wformat=]
+20750 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str608, expr->number_value);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:20755:68: warning: format string is not an array of type 'char' [-Wformat=]
+20755 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str609, val);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:20785:84: warning: format string is not an array of type 'char' [-Wformat=]
+20785 |                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)str_const);
+      |                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:20800:88: warning: format string is not an array of type 'char' [-Wformat=]
+20800 |                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)str_const);
+      |                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:20806:88: warning: format string is not an array of type 'char' [-Wformat=]
+20806 |                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str608, expr->line);
+      |                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:20809:92: warning: format string is not an array of type 'char' [-Wformat=]
+20809 |                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str608, expr->column);
+      |                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:20818:100: warning: format string is not an array of type 'char' [-Wformat=]
+20818 |                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)str_const);
+      |                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:20826:100: warning: format string is not an array of type 'char' [-Wformat=]
+20826 |                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str613, expr->syscall_arg_count);
+      |                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:20848:108: warning: format string is not an array of type 'char' [-Wformat=]
+20848 |                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str624, (uint8_t *)str_const);
+      |                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:20865:112: warning: format string is not an array of type 'char' [-Wformat=]
+20865 |                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str627, id);
+      |                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:20882:124: warning: format string is not an array of type 'char' [-Wformat=]
+20882 |                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str629, (uint8_t *)union_c);
+      |                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:20891:116: warning: format string is not an array of type 'char' [-Wformat=]
+20891 |                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str629, (uint8_t *)operand_union_c);
+      |                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:20893:116: warning: format string is not an array of type 'char' [-Wformat=]
+20893 |                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str631, (uint8_t *)ret_union_c);
+      |                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:20964:128: warning: format string is not an array of type 'char' [-Wformat=]
+20964 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str636, (uint8_t *)union_c);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:20966:128: warning: format string is not an array of type 'char' [-Wformat=]
+20966 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str637, (uint8_t *)payload_c, (uint8_t *)union_c);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:20974:128: warning: format string is not an array of type 'char' [-Wformat=]
+20974 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str639, (uint8_t *)union_c, (uint8_t *)safe);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21012:144: warning: format string is not an array of type 'char' [-Wformat=]
+21012 |                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str643, (uint8_t *)safe, id);
+      |                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21014:144: warning: format string is not an array of type 'char' [-Wformat=]
+21014 |                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str644, (uint8_t *)safe, id);
+      |                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21025:144: warning: format string is not an array of type 'char' [-Wformat=]
+21025 |                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str645, id, (uint8_t *)safe);
+      |                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21027:144: warning: format string is not an array of type 'char' [-Wformat=]
+21027 |                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str646, id, (uint8_t *)safe);
+      |                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21150:148: warning: format string is not an array of type 'char' [-Wformat=]
+21150 |                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str663, (uint8_t *)safe_struct_name);
+      |                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:21187:140: warning: format string is not an array of type 'char' [-Wformat=]
+21187 |                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str667, (uint8_t *)base_type);
+      |                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21190:140: warning: format string is not an array of type 'char' [-Wformat=]
+21190 |                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str668, (uint8_t *)base_type);
+      |                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21193:140: warning: format string is not an array of type 'char' [-Wformat=]
+21193 |                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str669, (uint8_t *)base_type);
+      |                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21200:148: warning: format string is not an array of type 'char' [-Wformat=]
+21200 |                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str672, (uint8_t *)base_type);
+      |                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:21214:140: warning: format string is not an array of type 'char' [-Wformat=]
+21214 |                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str677, (uint8_t *)type_c, (uint8_t *)ut);
+      |                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21225:140: warning: format string is not an array of type 'char' [-Wformat=]
+21225 |                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str681, (uint8_t *)ut);
+      |                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21350:140: warning: format string is not an array of type 'char' [-Wformat=]
+21350 |                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)safe_name);
+      |                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21361:152: warning: format string is not an array of type 'char' [-Wformat=]
+21361 |                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)safe_variant_name);
+      |                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:21372:140: warning: format string is not an array of type 'char' [-Wformat=]
+21372 |                                                                                         snprintf((uint8_t *)buf, 16, (uint8_t *)(uint8_t *)str700, idx);
+      |                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21413:144: warning: format string is not an array of type 'char' [-Wformat=]
+21413 |                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str702, (uint8_t *)safe_struct);
+      |                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21421:140: warning: format string is not an array of type 'char' [-Wformat=]
+21421 |                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str703, (uint8_t *)safe_field_name);
+      |                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21423:140: warning: format string is not an array of type 'char' [-Wformat=]
+21423 |                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str704, (uint8_t *)safe_field_name);
+      |                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21435:140: warning: format string is not an array of type 'char' [-Wformat=]
+21435 |                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str706, (uint8_t *)slice_type_str);
+      |                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21527:148: warning: format string is not an array of type 'char' [-Wformat=]
+21527 |                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str712, (uint8_t *)struct_name);
+      |                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:21552:156: warning: format string is not an array of type 'char' [-Wformat=]
+21552 |                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str713, (uint8_t *)safe_field_name);
+      |                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21569:156: warning: format string is not an array of type 'char' [-Wformat=]
+21569 |                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str713, (uint8_t *)safe_field_name);
+      |                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21630:201: warning: format string is not an array of type 'char' [-Wformat=]
+21630 |                                                                                                             off = (off + snprintf(((uint8_t *)type_buf + off), (total_len - off), (uint8_t *)(uint8_t *)str715));
+      |                                                                                                                                                                                                         ^~~~~~
+compiler-c/build/uya-src/uya.c:21638:205: warning: format string is not an array of type 'char' [-Wformat=]
+21638 |                                                                                                                 off = (off + snprintf(((uint8_t *)type_buf + off), (total_len - off), (uint8_t *)(uint8_t *)str716, (uint8_t *)et_str, i));
+      |                                                                                                                                                                                                             ^~~~~~
+compiler-c/build/uya-src/uya.c:21641:188: warning: format string is not an array of type 'char' [-Wformat=]
+21641 |                                                                                                             snprintf(((uint8_t *)type_buf + off), (total_len - off), (uint8_t *)(uint8_t *)str216);
+      |                                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21642:164: warning: format string is not an array of type 'char' [-Wformat=]
+21642 |                                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str717, (uint8_t *)type_buf);
+      |                                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:21645:168: warning: format string is not an array of type 'char' [-Wformat=]
+21645 |                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str718, i);
+      |                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:21677:205: warning: format string is not an array of type 'char' [-Wformat=]
+21677 |                                                                                                                 off = (off + snprintf(((uint8_t *)type_buf + off), (total_len - off), (uint8_t *)(uint8_t *)str715));
+      |                                                                                                                                                                                                             ^~~~~~
+compiler-c/build/uya-src/uya.c:21688:209: warning: format string is not an array of type 'char' [-Wformat=]
+21688 |                                                                                                                     off = (off + snprintf(((uint8_t *)type_buf + off), (total_len - off), (uint8_t *)(uint8_t *)str716, (uint8_t *)et, i));
+      |                                                                                                                                                                                                                 ^~~~~~
+compiler-c/build/uya-src/uya.c:21691:192: warning: format string is not an array of type 'char' [-Wformat=]
+21691 |                                                                                                                 snprintf(((uint8_t *)type_buf + off), (total_len - off), (uint8_t *)(uint8_t *)str216);
+      |                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21692:168: warning: format string is not an array of type 'char' [-Wformat=]
+21692 |                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str717, (uint8_t *)type_buf);
+      |                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:21695:172: warning: format string is not an array of type 'char' [-Wformat=]
+21695 |                                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str718, i);
+      |                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21699:176: warning: format string is not an array of type 'char' [-Wformat=]
+21699 |                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)pname);
+      |                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21732:188: warning: format string is not an array of type 'char' [-Wformat=]
+21732 |                                                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str722, (uint8_t *)safe_name);
+      |                                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21745:208: warning: format string is not an array of type 'char' [-Wformat=]
+21745 |                                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str722, (uint8_t *)safe_name);
+      |                                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21755:196: warning: format string is not an array of type 'char' [-Wformat=]
+21755 |                                                                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)type_c);
+      |                                                                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:21759:192: warning: format string is not an array of type 'char' [-Wformat=]
+21759 |                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)type_c);
+      |                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21764:184: warning: format string is not an array of type 'char' [-Wformat=]
+21764 |                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)type_c);
+      |                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:21789:192: warning: format string is not an array of type 'char' [-Wformat=]
+21789 |                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str723, (uint8_t *)(&temp_buf[0]));
+      |                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21796:192: warning: format string is not an array of type 'char' [-Wformat=]
+21796 |                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)(&temp_buf[0]));
+      |                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21798:192: warning: format string is not an array of type 'char' [-Wformat=]
+21798 |                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)type_c);
+      |                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21801:188: warning: format string is not an array of type 'char' [-Wformat=]
+21801 |                                                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)type_c);
+      |                                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21804:184: warning: format string is not an array of type 'char' [-Wformat=]
+21804 |                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)type_c);
+      |                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:21818:188: warning: format string is not an array of type 'char' [-Wformat=]
+21818 |                                                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str722, (uint8_t *)safe_name);
+      |                                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21825:192: warning: format string is not an array of type 'char' [-Wformat=]
+21825 |                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str724, (uint8_t *)safe_name);
+      |                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21884:208: warning: format string is not an array of type 'char' [-Wformat=]
+21884 |                                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str608, array_size);
+      |                                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21921:201: warning: format string is not an array of type 'char' [-Wformat=]
+21921 |                                                                                                                                                 snprintf((uint8_t *)buf, str_len, (uint8_t *)(uint8_t *)str722, (uint8_t *)safe_name);
+      |                                                                                                                                                                                                         ^~~~~~
+compiler-c/build/uya-src/uya.c:21953:192: warning: format string is not an array of type 'char' [-Wformat=]
+21953 |                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)(&elem_type[6]));
+      |                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21957:192: warning: format string is not an array of type 'char' [-Wformat=]
+21957 |                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)elem_type);
+      |                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:21962:188: warning: format string is not an array of type 'char' [-Wformat=]
+21962 |                                                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)type_c);
+      |                                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21967:184: warning: format string is not an array of type 'char' [-Wformat=]
+21967 |                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)type_c);
+      |                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:21987:188: warning: format string is not an array of type 'char' [-Wformat=]
+21987 |                                                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str732, (uint8_t *)union_c);
+      |                                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:21989:192: warning: format string is not an array of type 'char' [-Wformat=]
+21989 |                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str733, (uint8_t *)type_c);
+      |                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:22031:192: warning: format string is not an array of type 'char' [-Wformat=]
+22031 |                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str740, (uint8_t *)type_c);
+      |                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:22044:196: warning: format string is not an array of type 'char' [-Wformat=]
+22044 |                                                                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str743, (uint8_t *)safe_name);
+      |                                                                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:22046:196: warning: format string is not an array of type 'char' [-Wformat=]
+22046 |                                                                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)safe_name);
+      |                                                                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:22068:200: warning: format string is not an array of type 'char' [-Wformat=]
+22068 |                                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str744, (uint8_t *)safe);
+      |                                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22085:204: warning: format string is not an array of type 'char' [-Wformat=]
+22085 |                                                                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str744, (uint8_t *)safe);
+      |                                                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:22134:207: warning: format string is not an array of type 'char' [-Wformat=]
+22134 |                                                                                                                                                 snprintf((uint8_t *)(&name_buf[0]), 64, (uint8_t *)(uint8_t *)str745, codegen->interp_temp_counter);
+      |                                                                                                                                                                                                               ^~~~~~
+compiler-c/build/uya-src/uya.c:22140:204: warning: format string is not an array of type 'char' [-Wformat=]
+22140 |                                                                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str746, (uint8_t *)temp_name, arg->string_interp_computed_size);
+      |                                                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:22149:196: warning: format string is not an array of type 'char' [-Wformat=]
+22149 |                                                                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str744, (uint8_t *)func_name);
+      |                                                                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:22176:216: warning: format string is not an array of type 'char' [-Wformat=]
+22176 |                                                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str748, (uint8_t *)uname, (uint8_t *)vname_c);
+      |                                                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22180:216: warning: format string is not an array of type 'char' [-Wformat=]
+22180 |                                                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str750, (uint8_t *)uname, idx, (uint8_t *)uname, (uint8_t *)vname_c);
+      |                                                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22194:200: warning: format string is not an array of type 'char' [-Wformat=]
+22194 |                                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str753, (uint8_t *)iface_start);
+      |                                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22196:200: warning: format string is not an array of type 'char' [-Wformat=]
+22196 |                                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str754, (uint8_t *)safe_method);
+      |                                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22254:228: warning: format string is not an array of type 'char' [-Wformat=]
+22254 |                                                                                                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str757, (uint8_t *)cname, (const char *)prefix);
+      |                                                                                                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:22285:228: warning: format string is not an array of type 'char' [-Wformat=]
+22285 |                                                                                                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str757, (uint8_t *)cname, (const char *)prefix);
+      |                                                                                                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:22320:200: warning: format string is not an array of type 'char' [-Wformat=]
+22320 |                                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str760, (uint8_t *)last_safe);
+      |                                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22321:200: warning: format string is not an array of type 'char' [-Wformat=]
+22321 |                                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str761, (codegen->indent_level * 4), (uint8_t *)(uint8_t *)str756, (uint8_t *)vname);
+      |                                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22360:204: warning: format string is not an array of type 'char' [-Wformat=]
+22360 |                                                                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str744, (uint8_t *)safe_name);
+      |                                                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:22498:224: warning: format string is not an array of type 'char' [-Wformat=]
+22498 |                                                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str771, (uint8_t *)safe_iface, (uint8_t *)safe_iface, (uint8_t *)safe_struct);
+      |                                                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:22550:200: warning: format string is not an array of type 'char' [-Wformat=]
+22550 |                                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str774, (uint8_t *)m_type);
+      |                                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22553:200: warning: format string is not an array of type 'char' [-Wformat=]
+22553 |                                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str776, (uint8_t *)res_type);
+      |                                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22565:216: warning: format string is not an array of type 'char' [-Wformat=]
+22565 |                                                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str778, (uint8_t *)prefix);
+      |                                                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22567:216: warning: format string is not an array of type 'char' [-Wformat=]
+22567 |                                                                                                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str779, (uint8_t *)prefix);
+      |                                                                                                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22570:212: warning: format string is not an array of type 'char' [-Wformat=]
+22570 |                                                                                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str780, (uint8_t *)prefix, expr->match_expr_arms[i].literal_int_value);
+      |                                                                                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:22592:224: warning: format string is not an array of type 'char' [-Wformat=]
+22592 |                                                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str781, (uint8_t *)prefix, idx, (uint8_t *)vtype, (uint8_t *)bind, (uint8_t *)vname);
+      |                                                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:22594:224: warning: format string is not an array of type 'char' [-Wformat=]
+22594 |                                                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str782, (uint8_t *)prefix, idx);
+      |                                                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:22612:220: warning: format string is not an array of type 'char' [-Wformat=]
+22612 |                                                                                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str780, (uint8_t *)prefix, ev);
+      |                                                                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:22614:220: warning: format string is not an array of type 'char' [-Wformat=]
+22614 |                                                                                                                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str784, (uint8_t *)prefix);
+      |                                                                                                                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:22622:224: warning: format string is not an array of type 'char' [-Wformat=]
+22622 |                                                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str785, (uint8_t *)prefix, (uint8_t *)m_type, (uint8_t *)v);
+      |                                                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:22632:224: warning: format string is not an array of type 'char' [-Wformat=]
+22632 |                                                                                                                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str786, (uint8_t *)prefix);
+      |                                                                                                                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:22641:228: warning: format string is not an array of type 'char' [-Wformat=]
+22641 |                                                                                                                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str787, (uint8_t *)prefix, (uint32_t)id);
+      |                                                                                                                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_union_definition':
+compiler-c/build/uya-src/uya.c:22968:60: warning: format string is not an array of type 'char' [-Wformat=]
+22968 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str790, (uint8_t *)union_name);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:22978:72: warning: format string is not an array of type 'char' [-Wformat=]
+22978 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str529, (uint8_t *)vtype, (uint8_t *)vname);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:22987:64: warning: format string is not an array of type 'char' [-Wformat=]
+22987 |         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str792, (uint8_t *)union_name, (uint8_t *)union_name);
+      |                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'get_method_c_name':
+compiler-c/build/uya-src/uya.c:23213:57: warning: format string is not an array of type 'char' [-Wformat=]
+23213 |     snprintf((uint8_t *)buf, len, (uint8_t *)(uint8_t *)str793, (uint8_t *)safe_s, (uint8_t *)safe_m);
+      |                                                         ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'emit_interface_structs_and_vtables':
+compiler-c/build/uya-src/uya.c:23347:64: warning: format string is not an array of type 'char' [-Wformat=]
+23347 |         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str794, (uint8_t *)safe_iface);
+      |                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:23348:64: warning: format string is not an array of type 'char' [-Wformat=]
+23348 |         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str795, (uint8_t *)safe_iface);
+      |                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:23363:68: warning: format string is not an array of type 'char' [-Wformat=]
+23363 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str796, (uint8_t *)ret_c, (uint8_t *)mname);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:23372:72: warning: format string is not an array of type 'char' [-Wformat=]
+23372 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str797, (uint8_t *)pt_c);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'emit_vtable_constants':
+compiler-c/build/uya-src/uya.c:23419:68: warning: format string is not an array of type 'char' [-Wformat=]
+23419 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str798, (uint8_t *)safe_iface, (uint8_t *)safe_iface, (uint8_t *)safe_struct);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:23436:76: warning: format string is not an array of type 'char' [-Wformat=]
+23436 |                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str799, (uint8_t *)ret_c);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:23441:84: warning: format string is not an array of type 'char' [-Wformat=]
+23441 |                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str797, (uint8_t *)c99_type_to_c(codegen, pk->var_decl_type));
+      |                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:23445:76: warning: format string is not an array of type 'char' [-Wformat=]
+23445 |                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str800, (uint8_t *)cname);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_struct_definition':
+compiler-c/build/uya-src/uya.c:23494:60: warning: format string is not an array of type 'char' [-Wformat=]
+23494 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str802, (uint8_t *)struct_name);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:23528:72: warning: format string is not an array of type 'char' [-Wformat=]
+23528 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str804, (uint8_t *)elem_type_c, (uint8_t *)field_name, array_size);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:23532:72: warning: format string is not an array of type 'char' [-Wformat=]
+23532 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str529, (uint8_t *)field_type_c, (uint8_t *)field_name);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'get_mono_struct_name':
+compiler-c/build/uya-src/uya.c:23681:68: warning: format string is not an array of type 'char' [-Wformat=]
+23681 |     snprintf((uint8_t *)mono_name, name_len, (uint8_t *)(uint8_t *)str535, (uint8_t *)safe_name, (uint8_t *)suffix);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_mono_struct_definition':
+compiler-c/build/uya-src/uya.c:23781:60: warning: format string is not an array of type 'char' [-Wformat=]
+23781 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str802, (uint8_t *)mono_name);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:23812:68: warning: format string is not an array of type 'char' [-Wformat=]
+23812 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str529, (uint8_t *)field_type_c, (uint8_t *)field_name);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_global_init_expr':
+compiler-c/build/uya-src/uya.c:23837:68: warning: format string is not an array of type 'char' [-Wformat=]
+23837 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str713, (uint8_t *)safe_field_name);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_global_var':
+compiler-c/build/uya-src/uya.c:23907:76: warning: format string is not an array of type 'char' [-Wformat=]
+23907 |                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str805, (uint8_t *)base_type, (uint8_t *)var_name, dimensions);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:23909:76: warning: format string is not an array of type 'char' [-Wformat=]
+23909 |                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str485, (uint8_t *)base_type, (uint8_t *)var_name, dimensions);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:23915:76: warning: format string is not an array of type 'char' [-Wformat=]
+23915 |                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str806, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:23917:76: warning: format string is not an array of type 'char' [-Wformat=]
+23917 |                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str487, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:23923:72: warning: format string is not an array of type 'char' [-Wformat=]
+23923 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str806, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:23925:72: warning: format string is not an array of type 'char' [-Wformat=]
+23925 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str487, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:23931:71: warning: format string is not an array of type 'char' [-Wformat=]
+23931 |             fprintf((void *)codegen->output, (const char *)(uint8_t *)str806, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:23933:71: warning: format string is not an array of type 'char' [-Wformat=]
+23933 |             fprintf((void *)codegen->output, (const char *)(uint8_t *)str487, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'emit_current_block_drops':
+compiler-c/build/uya-src/uya.c:23963:68: warning: format string is not an array of type 'char' [-Wformat=]
+23963 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str809, (uint8_t *)drop_c, (uint8_t *)var_safe);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'emit_drop_cleanup':
+compiler-c/build/uya-src/uya.c:23998:68: warning: format string is not an array of type 'char' [-Wformat=]
+23998 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str809, (uint8_t *)drop_c, (uint8_t *)var_safe);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_stmt':
+compiler-c/build/uya-src/uya.c:24220:80: warning: format string is not an array of type 'char' [-Wformat=]
+24220 |                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str819, (uint8_t *)ret_c, id);
+      |                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:24223:80: warning: format string is not an array of type 'char' [-Wformat=]
+24223 |                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str820, (uint8_t *)ret_c, id);
+      |                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:24254:80: warning: format string is not an array of type 'char' [-Wformat=]
+24254 |                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str822, (uint8_t *)ret_c, (uint8_t *)struct_name);
+      |                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:24293:80: warning: format string is not an array of type 'char' [-Wformat=]
+24293 |                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str823, (uint8_t *)ret_c);
+      |                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:24329:84: warning: format string is not an array of type 'char' [-Wformat=]
+24329 |                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str823, (uint8_t *)ret_c);
+      |                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:24335:88: warning: format string is not an array of type 'char' [-Wformat=]
+24335 |                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str825, (uint8_t *)ret_c, (uint8_t *)ret_c);
+      |                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24338:88: warning: format string is not an array of type 'char' [-Wformat=]
+24338 |                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str826, (uint8_t *)ret_c, (uint8_t *)ret_c);
+      |                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24346:84: warning: format string is not an array of type 'char' [-Wformat=]
+24346 |                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str823, (uint8_t *)ret_c);
+      |                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:24351:84: warning: format string is not an array of type 'char' [-Wformat=]
+24351 |                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str827, (uint8_t *)ret_c);
+      |                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:24444:108: warning: format string is not an array of type 'char' [-Wformat=]
+24444 |                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str829, (uint8_t *)elem_type_c, (uint8_t *)safe_name);
+      |                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:24446:108: warning: format string is not an array of type 'char' [-Wformat=]
+24446 |                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str829, (uint8_t *)elem_type_c, (uint8_t *)safe_name);
+      |                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:24449:104: warning: format string is not an array of type 'char' [-Wformat=]
+24449 |                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str830, i);
+      |                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24456:117: warning: format string is not an array of type 'char' [-Wformat=]
+24456 |                                                             snprintf((uint8_t *)buf, str_len, (uint8_t *)(uint8_t *)str831, (uint8_t *)elem_type_c);
+      |                                                                                                                     ^~~~~~
+compiler-c/build/uya-src/uya.c:24489:126: warning: format string is not an array of type 'char' [-Wformat=]
+24489 |                                                     snprintf((uint8_t *)stored_type_c, (type_len + 7), (uint8_t *)(uint8_t *)str831, (uint8_t *)type_c);
+      |                                                                                                                              ^~~~~~
+compiler-c/build/uya-src/uya.c:24504:108: warning: format string is not an array of type 'char' [-Wformat=]
+24504 |                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str805, (uint8_t *)base_type, (uint8_t *)var_name, dimensions);
+      |                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:24506:108: warning: format string is not an array of type 'char' [-Wformat=]
+24506 |                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str485, (uint8_t *)base_type, (uint8_t *)var_name, dimensions);
+      |                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:24514:104: warning: format string is not an array of type 'char' [-Wformat=]
+24514 |                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str806, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24517:104: warning: format string is not an array of type 'char' [-Wformat=]
+24517 |                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str487, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24559:116: warning: format string is not an array of type 'char' [-Wformat=]
+24559 |                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str832, (uint8_t *)union_c);
+      |                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:24566:120: warning: format string is not an array of type 'char' [-Wformat=]
+24566 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str639, (uint8_t *)union_c, (uint8_t *)safe);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24605:108: warning: format string is not an array of type 'char' [-Wformat=]
+24605 |                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str834, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name, bracket);
+      |                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:24616:137: warning: format string is not an array of type 'char' [-Wformat=]
+24616 |                                                         snprintf((uint8_t *)stored_type_c_for_pointer, total_len, (uint8_t *)(uint8_t *)str835, (uint8_t *)(&temp_buf2[0]), bracket);
+      |                                                                                                                                         ^~~~~~
+compiler-c/build/uya-src/uya.c:24620:108: warning: format string is not an array of type 'char' [-Wformat=]
+24620 |                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str836, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:24624:135: warning: format string is not an array of type 'char' [-Wformat=]
+24624 |                                                         snprintf((uint8_t *)stored_type_c_for_pointer, str_len, (uint8_t *)(uint8_t *)str837, (uint8_t *)type_c);
+      |                                                                                                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:24629:104: warning: format string is not an array of type 'char' [-Wformat=]
+24629 |                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str836, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24633:132: warning: format string is not an array of type 'char' [-Wformat=]
+24633 |                                                     snprintf((uint8_t *)stored_type_c_for_pointer, str_len2, (uint8_t *)(uint8_t *)str837, (uint8_t *)type_c);
+      |                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:24640:108: warning: format string is not an array of type 'char' [-Wformat=]
+24640 |                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str487, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:24642:108: warning: format string is not an array of type 'char' [-Wformat=]
+24642 |                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str806, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:24646:136: warning: format string is not an array of type 'char' [-Wformat=]
+24646 |                                                         snprintf((uint8_t *)stored_type_c_for_pointer, str_len4, (uint8_t *)(uint8_t *)str831, (uint8_t *)type_c);
+      |                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24651:104: warning: format string is not an array of type 'char' [-Wformat=]
+24651 |                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str487, (uint8_t *)type_c, (uint8_t *)var_name);
+      |                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24666:118: warning: format string is not an array of type 'char' [-Wformat=]
+24666 |                                                     snprintf((uint8_t *)manual_type, str_len4, (uint8_t *)(uint8_t *)str837, (uint8_t *)type_c);
+      |                                                                                                                      ^~~~~~
+compiler-c/build/uya-src/uya.c:24697:104: warning: format string is not an array of type 'char' [-Wformat=]
+24697 |                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str718, i);
+      |                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24701:108: warning: format string is not an array of type 'char' [-Wformat=]
+24701 |                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)pname);
+      |                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:24723:112: warning: format string is not an array of type 'char' [-Wformat=]
+24723 |                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str718, i);
+      |                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:24795:128: warning: format string is not an array of type 'char' [-Wformat=]
+24795 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str840, (uint8_t *)var_name, (uint8_t *)field_name2);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:24801:132: warning: format string is not an array of type 'char' [-Wformat=]
+24801 |                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str841, (uint8_t *)var_name, (uint8_t *)field_name2);
+      |                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:24806:136: warning: format string is not an array of type 'char' [-Wformat=]
+24806 |                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str842, (uint8_t *)var_name, (uint8_t *)field_name2, (uint8_t *)var_name, (uint8_t *)field_name2);
+      |                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24809:136: warning: format string is not an array of type 'char' [-Wformat=]
+24809 |                                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str843, (uint8_t *)var_name, (uint8_t *)field_name2);
+      |                                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24820:112: warning: format string is not an array of type 'char' [-Wformat=]
+24820 |                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str844, (uint8_t *)var_name, (uint8_t *)var_name);
+      |                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:24826:112: warning: format string is not an array of type 'char' [-Wformat=]
+24826 |                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str845, (uint8_t *)var_name);
+      |                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:24830:112: warning: format string is not an array of type 'char' [-Wformat=]
+24830 |                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)var_name);
+      |                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:24836:116: warning: format string is not an array of type 'char' [-Wformat=]
+24836 |                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str845, (uint8_t *)var_name);
+      |                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:24840:116: warning: format string is not an array of type 'char' [-Wformat=]
+24840 |                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)var_name);
+      |                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:24852:124: warning: format string is not an array of type 'char' [-Wformat=]
+24852 |                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str712, (uint8_t *)struct_name3);
+      |                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:24858:128: warning: format string is not an array of type 'char' [-Wformat=]
+24858 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str713, (uint8_t *)safe_field_name);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:24878:132: warning: format string is not an array of type 'char' [-Wformat=]
+24878 |                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str848, (uint8_t *)var_name, (uint8_t *)safe_field_name2);
+      |                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:24880:132: warning: format string is not an array of type 'char' [-Wformat=]
+24880 |                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str849, (uint8_t *)var_name, (uint8_t *)safe_field_name2);
+      |                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:24964:104: warning: format string is not an array of type 'char' [-Wformat=]
+24964 |                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str774, (uint8_t *)m_type);
+      |                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24979:120: warning: format string is not an array of type 'char' [-Wformat=]
+24979 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str854, (uint8_t *)prefix);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24981:120: warning: format string is not an array of type 'char' [-Wformat=]
+24981 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str855, (uint8_t *)prefix);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:24984:116: warning: format string is not an array of type 'char' [-Wformat=]
+24984 |                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str856, (uint8_t *)prefix, stmt->match_expr_arms[i].literal_int_value);
+      |                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:25015:128: warning: format string is not an array of type 'char' [-Wformat=]
+25015 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str857, (uint8_t *)prefix, idx);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:25018:128: warning: format string is not an array of type 'char' [-Wformat=]
+25018 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str858, (uint8_t *)vtype, (uint8_t *)bind, (uint8_t *)vname);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:25021:128: warning: format string is not an array of type 'char' [-Wformat=]
+25021 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str859, (uint8_t *)prefix, idx);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:25052:124: warning: format string is not an array of type 'char' [-Wformat=]
+25052 |                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str856, (uint8_t *)prefix, ev);
+      |                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:25054:124: warning: format string is not an array of type 'char' [-Wformat=]
+25054 |                                                                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str860, (uint8_t *)prefix);
+      |                                                                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:25071:128: warning: format string is not an array of type 'char' [-Wformat=]
+25071 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str861, (uint8_t *)prefix, (uint8_t *)m_type, (uint8_t *)v);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:25073:128: warning: format string is not an array of type 'char' [-Wformat=]
+25073 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str862, (uint8_t *)prefix);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:25087:128: warning: format string is not an array of type 'char' [-Wformat=]
+25087 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str862, (uint8_t *)prefix);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:25104:132: warning: format string is not an array of type 'char' [-Wformat=]
+25104 |                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str863, (uint8_t *)prefix, (uint32_t)id);
+      |                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:25144:120: warning: format string is not an array of type 'char' [-Wformat=]
+25144 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str829, (uint8_t *)range_type_c, (uint8_t *)var_name_range);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:25148:120: warning: format string is not an array of type 'char' [-Wformat=]
+25148 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str865, (uint8_t *)range_type_c);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:25152:120: warning: format string is not an array of type 'char' [-Wformat=]
+25152 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str866, (uint8_t *)var_name_range, (uint8_t *)var_name_range);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:25155:120: warning: format string is not an array of type 'char' [-Wformat=]
+25155 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str867, (uint8_t *)range_type_c);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:25159:120: warning: format string is not an array of type 'char' [-Wformat=]
+25159 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str868, (uint8_t *)range_type_c);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:25163:120: warning: format string is not an array of type 'char' [-Wformat=]
+25163 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str869, (uint8_t *)range_type_c);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:25168:116: warning: format string is not an array of type 'char' [-Wformat=]
+25168 |                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str829, (uint8_t *)range_type_c, (uint8_t *)vname);
+      |                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:25222:128: warning: format string is not an array of type 'char' [-Wformat=]
+25222 |                                                                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str872, (uint8_t *)iter_type_c);
+      |                                                                                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c:25231:132: warning: format string is not an array of type 'char' [-Wformat=]
+25231 |                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str873, (uint8_t *)next_cname);
+      |                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:25244:132: warning: format string is not an array of type 'char' [-Wformat=]
+25244 |                                                                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str876, (uint8_t *)value_type_c, (uint8_t *)var_name2, (uint8_t *)value_cname);
+      |                                                                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:25285:120: warning: format string is not an array of type 'char' [-Wformat=]
+25285 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str882, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name2);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:25290:120: warning: format string is not an array of type 'char' [-Wformat=]
+25290 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str882, (uint8_t *)elem_type_c, (uint8_t *)var_name2);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:25306:120: warning: format string is not an array of type 'char' [-Wformat=]
+25306 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str884, (uint8_t *)(&temp_buf2[0]), (uint8_t *)var_name2, bracket2);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:25308:120: warning: format string is not an array of type 'char' [-Wformat=]
+25308 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str885, (uint8_t *)var_name2);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:25310:120: warning: format string is not an array of type 'char' [-Wformat=]
+25310 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str886, (uint8_t *)var_name2);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:25313:120: warning: format string is not an array of type 'char' [-Wformat=]
+25313 |                                                                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str829, (uint8_t *)elem_type_c, (uint8_t *)var_name2);
+      |                                                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'get_test_function_name':
+compiler-c/build/uya-src/uya.c:25751:56: warning: format string is not an array of type 'char' [-Wformat=]
+25751 |     snprintf((uint8_t *)buf, 64, (uint8_t *)(uint8_t *)str889, hash);
+      |                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_test_function':
+compiler-c/build/uya-src/uya.c:25773:60: warning: format string is not an array of type 'char' [-Wformat=]
+25773 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str890, (uint8_t *)func_name);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_test_runner':
+compiler-c/build/uya-src/uya.c:25790:72: warning: format string is not an array of type 'char' [-Wformat=]
+25790 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str892, (uint8_t *)func_name);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'c99_codegen_generate':
+compiler-c/build/uya-src/uya.c:25976:68: warning: format string is not an array of type 'char' [-Wformat=]
+25976 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str939, (uint8_t *)codegen->struct_definitions[i].name);
+      |                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:26025:72: warning: format string is not an array of type 'char' [-Wformat=]
+26025 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str940, (uint8_t *)base_type_c, (uint8_t *)alias_name);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:26028:76: warning: format string is not an array of type 'char' [-Wformat=]
+26028 |                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str941, dims[d]);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:26034:72: warning: format string is not an array of type 'char' [-Wformat=]
+26034 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str942, (uint8_t *)target_type_c, (uint8_t *)alias_name);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:26305:76: warning: format string is not an array of type 'char' [-Wformat=]
+26305 |                     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str983, (uint8_t *)func_name);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:26477:72: warning: format string is not an array of type 'char' [-Wformat=]
+26477 |                 fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str985, (uint8_t *)return_c);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'c99_type_to_c_with_self_opt':
+compiler-c/build/uya-src/uya.c:26531:77: warning: format string is not an array of type 'char' [-Wformat=]
+26531 |                         snprintf((uint8_t *)buf, len, (uint8_t *)(uint8_t *)str987, (uint8_t *)safe);
+      |                                                                             ^~~~~~
+compiler-c/build/uya-src/uya.c:26533:77: warning: format string is not an array of type 'char' [-Wformat=]
+26533 |                         snprintf((uint8_t *)buf, len, (uint8_t *)(uint8_t *)str988, (uint8_t *)safe);
+      |                                                                             ^~~~~~
+compiler-c/build/uya-src/uya.c:26537:77: warning: format string is not an array of type 'char' [-Wformat=]
+26537 |                         snprintf((uint8_t *)buf, len, (uint8_t *)(uint8_t *)str989, (uint8_t *)safe);
+      |                                                                             ^~~~~~
+compiler-c/build/uya-src/uya.c:26539:77: warning: format string is not an array of type 'char' [-Wformat=]
+26539 |                         snprintf((uint8_t *)buf, len, (uint8_t *)(uint8_t *)str990, (uint8_t *)safe);
+      |                                                                             ^~~~~~
+compiler-c/build/uya-src/uya.c:26556:73: warning: format string is not an array of type 'char' [-Wformat=]
+26556 |                     snprintf((uint8_t *)buf, len, (uint8_t *)(uint8_t *)str991, (uint8_t *)safe);
+      |                                                                         ^~~~~~
+compiler-c/build/uya-src/uya.c:26558:73: warning: format string is not an array of type 'char' [-Wformat=]
+26558 |                     snprintf((uint8_t *)buf, len, (uint8_t *)(uint8_t *)str722, (uint8_t *)safe);
+      |                                                                         ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'c99_type_to_c':
+compiler-c/build/uya-src/uya.c:26603:85: warning: format string is not an array of type 'char' [-Wformat=]
+26603 |                                 snprintf((uint8_t *)buf, len, (uint8_t *)(uint8_t *)str992, (uint8_t *)inner_c);
+      |                                                                                     ^~~~~~
+compiler-c/build/uya-src/uya.c:26625:72: warning: format string is not an array of type 'char' [-Wformat=]
+26625 |                 snprintf((uint8_t *)buf, mn_len, (uint8_t *)(uint8_t *)str722, (uint8_t *)mono_name);
+      |                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:26702:141: warning: format string is not an array of type 'char' [-Wformat=]
+26702 |                                                                                         snprintf((uint8_t *)buf, len, (uint8_t *)(uint8_t *)str996, (uint8_t *)safe_name);
+      |                                                                                                                                             ^~~~~~
+compiler-c/build/uya-src/uya.c:26720:137: warning: format string is not an array of type 'char' [-Wformat=]
+26720 |                                                                             snprintf((uint8_t *)buf_ext, len_ext, (uint8_t *)(uint8_t *)str997, (uint8_t *)safe_name);
+      |                                                                                                                                         ^~~~~~
+compiler-c/build/uya-src/uya.c:26728:133: warning: format string is not an array of type 'char' [-Wformat=]
+26728 |                                                                             snprintf((uint8_t *)buf_u, len_u, (uint8_t *)(uint8_t *)str991, (uint8_t *)safe_name);
+      |                                                                                                                                     ^~~~~~
+compiler-c/build/uya-src/uya.c:26740:129: warning: format string is not an array of type 'char' [-Wformat=]
+26740 |                                                                         snprintf((uint8_t *)buf, str_len, (uint8_t *)(uint8_t *)str722, (uint8_t *)safe_name);
+      |                                                                                                                                 ^~~~~~
+compiler-c/build/uya-src/uya.c:26760:143: warning: format string is not an array of type 'char' [-Wformat=]
+26760 |                                                                                         snprintf((uint8_t *)buf2, len2, (uint8_t *)(uint8_t *)str722, (uint8_t *)safe_name);
+      |                                                                                                                                               ^~~~~~
+compiler-c/build/uya-src/uya.c:26776:127: warning: format string is not an array of type 'char' [-Wformat=]
+26776 |                                                                         snprintf((uint8_t *)buf3, len3, (uint8_t *)(uint8_t *)str724, (uint8_t *)safe_name);
+      |                                                                                                                               ^~~~~~
+compiler-c/build/uya-src/uya.c:26796:143: warning: format string is not an array of type 'char' [-Wformat=]
+26796 |                                                                                         snprintf((uint8_t *)buf4, len4, (uint8_t *)(uint8_t *)str724, (uint8_t *)safe_name);
+      |                                                                                                                                               ^~~~~~
+compiler-c/build/uya-src/uya.c:26860:84: warning: format string is not an array of type 'char' [-Wformat=]
+26860 |                         snprintf((uint8_t *)result, str_len, (uint8_t *)(uint8_t *)str999, (uint8_t *)pointee_type);
+      |                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:26862:84: warning: format string is not an array of type 'char' [-Wformat=]
+26862 |                         snprintf((uint8_t *)result, str_len, (uint8_t *)(uint8_t *)str992, (uint8_t *)pointee_type);
+      |                                                                                    ^~~~~~
+compiler-c/build/uya-src/uya.c:26872:87: warning: format string is not an array of type 'char' [-Wformat=]
+26872 |                         snprintf((uint8_t *)arr_ptr, total_len, (uint8_t *)(uint8_t *)str1000, (uint8_t *)(&base_buf[0]), dims);
+      |                                                                                       ^~~~~~~
+compiler-c/build/uya-src/uya.c:26874:87: warning: format string is not an array of type 'char' [-Wformat=]
+26874 |                         snprintf((uint8_t *)arr_ptr, total_len, (uint8_t *)(uint8_t *)str1001, (uint8_t *)(&base_buf[0]), dims);
+      |                                                                                       ^~~~~~~
+compiler-c/build/uya-src/uya.c:26878:87: warning: format string is not an array of type 'char' [-Wformat=]
+26878 |                         snprintf((uint8_t *)arr_ptr, total_len, (uint8_t *)(uint8_t *)str999, (uint8_t *)pointee_type);
+      |                                                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:26880:87: warning: format string is not an array of type 'char' [-Wformat=]
+26880 |                         snprintf((uint8_t *)arr_ptr, total_len, (uint8_t *)(uint8_t *)str992, (uint8_t *)pointee_type);
+      |                                                                                       ^~~~~~
+compiler-c/build/uya-src/uya.c:26887:76: warning: format string is not an array of type 'char' [-Wformat=]
+26887 |                 snprintf((uint8_t *)result, str_len, (uint8_t *)(uint8_t *)str999, (uint8_t *)pointee_type);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:26894:76: warning: format string is not an array of type 'char' [-Wformat=]
+26894 |                 snprintf((uint8_t *)result, str_len, (uint8_t *)(uint8_t *)str992, (uint8_t *)pointee_type);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:26918:72: warning: format string is not an array of type 'char' [-Wformat=]
+26918 |                 snprintf((uint8_t *)result, len, (uint8_t *)(uint8_t *)str1002, (uint8_t *)inner_c);
+      |                                                                        ^~~~~~~
+compiler-c/build/uya-src/uya.c:26935:95: warning: format string is not an array of type 'char' [-Wformat=]
+26935 |                         snprintf((uint8_t *)(&struct_name_buf[0]), 128, (uint8_t *)(uint8_t *)str1003);
+      |                                                                                               ^~~~~~~
+compiler-c/build/uya-src/uya.c:26950:99: warning: format string is not an array of type 'char' [-Wformat=]
+26950 |                             snprintf((uint8_t *)(&struct_name_buf[0]), 128, (uint8_t *)(uint8_t *)str1004, (uint8_t *)(&safe[0]));
+      |                                                                                                   ^~~~~~~
+compiler-c/build/uya-src/uya.c:26952:99: warning: format string is not an array of type 'char' [-Wformat=]
+26952 |                             snprintf((uint8_t *)(&struct_name_buf[0]), 128, (uint8_t *)(uint8_t *)str1005);
+      |                                                                                                   ^~~~~~~
+compiler-c/build/uya-src/uya.c:26962:80: warning: format string is not an array of type 'char' [-Wformat=]
+26962 |                         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str1006, (uint8_t *)name_copy);
+      |                                                                                ^~~~~~~
+compiler-c/build/uya-src/uya.c:26964:84: warning: format string is not an array of type 'char' [-Wformat=]
+26964 |                             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str1007, (uint8_t *)payload_c);
+      |                                                                                    ^~~~~~~
+compiler-c/build/uya-src/uya.c:26975:76: warning: format string is not an array of type 'char' [-Wformat=]
+26975 |                     snprintf((uint8_t *)result, len, (uint8_t *)(uint8_t *)str722, (uint8_t *)name_copy);
+      |                                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:27020:94: warning: format string is not an array of type 'char' [-Wformat=]
+27020 |                                 snprintf((uint8_t *)(&dim_str[0]), 16, (uint8_t *)(uint8_t *)str941, dims[i]);
+      |                                                                                              ^~~~~~
+compiler-c/build/uya-src/uya.c:27034:88: warning: format string is not an array of type 'char' [-Wformat=]
+27034 |                             snprintf((uint8_t *)result, buf_len, (uint8_t *)(uint8_t *)str1008, (uint8_t *)element_c, array_size);
+      |                                                                                        ^~~~~~~
+compiler-c/build/uya-src/uya.c:27090:92: warning: format string is not an array of type 'char' [-Wformat=]
+27090 |                             snprintf((uint8_t *)(&name_buf[0]), 128, (uint8_t *)(uint8_t *)str1010, (uint8_t *)elem_clean);
+      |                                                                                            ^~~~~~~
+compiler-c/build/uya-src/uya.c:27103:88: warning: format string is not an array of type 'char' [-Wformat=]
+27103 |                                 snprintf((uint8_t *)result, len, (uint8_t *)(uint8_t *)str722, (uint8_t *)safe);
+      |                                                                                        ^~~~~~
+compiler-c/build/uya-src/uya.c:27128:86: warning: format string is not an array of type 'char' [-Wformat=]
+27128 |                             snprintf((uint8_t *)result2, len2, (uint8_t *)(uint8_t *)str722, (uint8_t *)safe);
+      |                                                                                      ^~~~~~
+compiler-c/build/uya-src/uya.c:27152:123: warning: format string is not an array of type 'char' [-Wformat=]
+27152 |                                 off = (off + snprintf(((uint8_t *)result + off), (total_len - off), (uint8_t *)(uint8_t *)str715));
+      |                                                                                                                           ^~~~~~
+compiler-c/build/uya-src/uya.c:27160:127: warning: format string is not an array of type 'char' [-Wformat=]
+27160 |                                     off = (off + snprintf(((uint8_t *)result + off), (total_len - off), (uint8_t *)(uint8_t *)str716, (uint8_t *)et_str, i));
+      |                                                                                                                               ^~~~~~
+compiler-c/build/uya-src/uya.c:27163:110: warning: format string is not an array of type 'char' [-Wformat=]
+27163 |                                 snprintf(((uint8_t *)result + off), (total_len - off), (uint8_t *)(uint8_t *)str216);
+      |                                                                                                              ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'emit_pending_slice_structs':
+compiler-c/build/uya-src/uya.c:27199:64: warning: format string is not an array of type 'char' [-Wformat=]
+27199 |         fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str1011, (uint8_t *)name, (uint8_t *)elem_c);
+      |                                                                ^~~~~~~
+compiler-c/build/uya-src/uya.c: In function 'get_slice_struct_type_c':
+compiler-c/build/uya-src/uya.c:27235:72: warning: format string is not an array of type 'char' [-Wformat=]
+27235 |         snprintf((uint8_t *)(&name_buf[0]), 128, (uint8_t *)(uint8_t *)str1010, (uint8_t *)elem_simple);
+      |                                                                        ^~~~~~~
+compiler-c/build/uya-src/uya.c:27247:64: warning: format string is not an array of type 'char' [-Wformat=]
+27247 |         snprintf((uint8_t *)result, len, (uint8_t *)(uint8_t *)str722, (uint8_t *)safe);
+      |                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'get_array_wrapper_struct_name':
+compiler-c/build/uya-src/uya.c:27969:79: warning: format string is not an array of type 'char' [-Wformat=]
+27969 |                 snprintf((uint8_t *)(&size_str[0]), 32, (uint8_t *)(uint8_t *)str1015, size);
+      |                                                                               ^~~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_array_wrapper_struct':
+compiler-c/build/uya-src/uya.c:27996:60: warning: format string is not an array of type 'char' [-Wformat=]
+27996 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str802, (uint8_t *)struct_name);
+      |                                                            ^~~~~~
+compiler-c/build/uya-src/uya.c:28009:60: warning: format string is not an array of type 'char' [-Wformat=]
+28009 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str1016, (uint8_t *)elem_type_c, array_size);
+      |                                                            ^~~~~~~
+compiler-c/build/uya-src/uya.c: In function 'convert_array_return_type':
+compiler-c/build/uya-src/uya.c:28038:64: warning: format string is not an array of type 'char' [-Wformat=]
+28038 |     snprintf((uint8_t *)result, str_len, (uint8_t *)(uint8_t *)str722, (uint8_t *)struct_name);
+      |                                                                ^~~~~~
+compiler-c/build/uya-src/uya.c: In function 'gen_enum_definition':
+compiler-c/build/uya-src/uya.c:28308:60: warning: format string is not an array of type 'char' [-Wformat=]
+28308 |     fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str1017, (uint8_t *)enum_name);
+      |                                                            ^~~~~~~
+compiler-c/build/uya-src/uya.c:28324:68: warning: format string is not an array of type 'char' [-Wformat=]
+28324 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str1018, (uint8_t *)safe_variant_name, current_value);
+      |                                                                    ^~~~~~~
+compiler-c/build/uya-src/uya.c:28328:68: warning: format string is not an array of type 'char' [-Wformat=]
+28328 |             fprintf((void *)codegen->output, (uint8_t *)(uint8_t *)str123, (uint8_t *)safe_variant_name2);
+      |                                                                    ^~~~~~

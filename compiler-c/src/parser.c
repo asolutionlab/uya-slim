@@ -5928,6 +5928,12 @@ ASTNode *parser_parse_statement(Parser *parser) {
         return stmt;
     }
     
+    /* 块内结构体定义（与顶层一致，允许函数体内 struct Name { ... }） */
+    if (parser_match(parser, TOKEN_STRUCT)) {
+        ASTNode *decl = parser_parse_struct(parser);
+        return decl;
+    }
+    
     if (parser_match(parser, TOKEN_CONST) || parser_match(parser, TOKEN_VAR)) {
         // 解析变量声明或解构声明
         int is_const = parser_match(parser, TOKEN_CONST);

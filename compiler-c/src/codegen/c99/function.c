@@ -436,10 +436,20 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         // 对于extern函数，添加extern关键字
         fprintf(codegen->output, "extern %s %s(", return_c, func_name);
     } else {
-        // 非 extern 函数：根据 is_export 决定是否添加 static
-        // fn foo() void → static void foo(void)（内部函数，不导出）
-        // export fn foo() void → void foo(void)（导出函数，供其他模块使用）
-        if (!is_export) {
+        // 非 extern 函数：根据 is_export 决定是否添加 static；若程序中已有同名 extern 声明则不 static
+        int has_extern_same = 0;
+        if (orig_name && codegen->program_node && codegen->program_node->type == AST_PROGRAM) {
+            int n = codegen->program_node->data.program.decl_count;
+            ASTNode **decls = codegen->program_node->data.program.decls;
+            for (int i = 0; i < n; i++) {
+                ASTNode *d = decls[i];
+                if (d && d != fn_decl && d->type == AST_FN_DECL && d->data.fn_decl.name && strcmp(d->data.fn_decl.name, orig_name) == 0 && d->data.fn_decl.body == NULL) {
+                    has_extern_same = 1;
+                    break;
+                }
+            }
+        }
+        if (!is_export && !has_extern_same) {
             fprintf(codegen->output, "static ");
         }
         fprintf(codegen->output, "%s %s(", return_c, func_name);
@@ -626,12 +636,26 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     int is_export = fn_decl->data.fn_decl.is_export;
     int is_extern = fn_decl->data.fn_decl.is_extern;
     
+    /* 若同一程序中存在同名 extern 声明（如 parser 的 extern fn lexer_next_token），则定义处不能加 static，否则与已输出的 extern 冲突 */
+    int has_extern_decl_same_name = 0;
+    if (!is_extern && orig_name && codegen->program_node && codegen->program_node->type == AST_PROGRAM) {
+        int n = codegen->program_node->data.program.decl_count;
+        ASTNode **decls = codegen->program_node->data.program.decls;
+        for (int i = 0; i < n; i++) {
+            ASTNode *d = decls[i];
+            if (d && d->type == AST_FN_DECL && d->data.fn_decl.name && strcmp(d->data.fn_decl.name, orig_name) == 0 && d->data.fn_decl.body == NULL) {
+                has_extern_decl_same_name = 1;
+                break;
+            }
+        }
+    }
+    
     if (is_main) {
         // main 函数重命名为 uya_main（符合 Uya 规范：main 函数无参数）
         fprintf(codegen->output, "%s uya_main(void)", return_c);
     } else {
-        // 非 extern 函数：根据 is_export 决定是否添加 static
-        if (!is_extern && !is_export) {
+        // 非 extern 函数：根据 is_export 决定是否添加 static；若已有同名 extern 声明则不 static
+        if (!is_extern && !is_export && !has_extern_decl_same_name) {
             fprintf(codegen->output, "static ");
         }
         fprintf(codegen->output, "%s %s(", return_c, func_name);
