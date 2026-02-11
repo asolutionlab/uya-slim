@@ -482,7 +482,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 if id == 0 {
                     id = 1;
                 }
-                const safe: &byte = get_safe_c_identifier(codegen, left.identifier_name);
+                const safe: &byte = get_c_name_for_identifier_ref(codegen, left.identifier_name);
                 if op == TokenType.TOKEN_NOT_EQUAL {
                     fprintf(codegen.output as *void, "(%s.error_id != %dU)" as *byte, safe as *byte, id);
                 } else {
@@ -495,7 +495,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 if id == 0 {
                     id = 1;
                 }
-                const safe: &byte = get_safe_c_identifier(codegen, right.identifier_name);
+                const safe: &byte = get_c_name_for_identifier_ref(codegen, right.identifier_name);
                 if op == TokenType.TOKEN_NOT_EQUAL {
                     fprintf(codegen.output as *void, "(%dU != %s.error_id)" as *byte, id, safe as *byte);
                 } else {
@@ -1408,8 +1408,8 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             type_c = buf;
                         }
                     } else {
-                        // 对于变量名，需要获取变量的类型（从局部/全局变量表查找）
-                        type_c = get_identifier_type_c(codegen, safe_name);
+                        // 对于变量名，需要获取变量的类型（从局部/全局变量表查找，按原名）
+                        type_c = get_identifier_type_c(codegen, name);
                         if type_c == null {
                             // 如果找不到，可能是类型名（如 alignof(usize)）
                             type_c = c99_type_to_c(codegen, target);
@@ -1540,13 +1540,13 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         if name != null && strcmp(name as *byte, "null" as *byte) == 0 {
             fputs("NULL" as *byte, codegen.output as *void);
         } else {
-            const safe_name: &byte = get_safe_c_identifier(codegen, name);
+            const ref_name: &byte = get_c_name_for_identifier_ref(codegen, name);
             const type_c: &byte = get_identifier_type_c(codegen, name);
             // 如果是原子类型，生成原子 load
             if type_c != null && strstr(type_c as *byte, "_Atomic" as *byte) != null {
-                fprintf(codegen.output as *void, "__atomic_load_n(&%s, __ATOMIC_SEQ_CST)" as *byte, safe_name as *byte);
+                fprintf(codegen.output as *void, "__atomic_load_n(&%s, __ATOMIC_SEQ_CST)" as *byte, ref_name as *byte);
             } else {
-                fprintf(codegen.output as *void, "%s" as *byte, safe_name as *byte);
+                fprintf(codegen.output as *void, "%s" as *byte, ref_name as *byte);
             }
         }
     } else if expr.type == ASTNodeType.AST_CALL_EXPR {
@@ -1689,7 +1689,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 if ai > 0 {
                     fputs(", " as *byte, codegen.output as *void);
                 }
-                if (strcmp(mod_callee as *byte, "fopen" as *byte) == 0 && (ai == 0 || ai == 1)) ||
+                if (strcmp(mod_callee as *byte, "fopen" as *byte) == 0 && ai == 0) ||
                     (strcmp(mod_callee as *byte, "strcmp" as *byte) == 0 && (ai == 0 || ai == 1)) ||
                     (strcmp(mod_callee as *byte, "strncmp" as *byte) == 0 && (ai == 0 || ai == 1)) ||
                     (strcmp(mod_callee as *byte, "strrchr" as *byte) == 0 && ai == 0) ||
@@ -1912,12 +1912,10 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             // 生成被调用函数名
             if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER {
                 const func_name: &byte = callee.identifier_name;
-                var safe_name: &byte = get_safe_c_identifier(codegen, func_name);
-                
-                // 检查是否是泛型函数调用
+                var safe_name: &byte = get_c_name_for_global_function(codegen, func_name, 0);
                 if expr.call_expr_type_arg_count > 0 && expr.call_expr_type_args != null {
-                    // 使用单态化函数名
-                    safe_name = get_mono_function_name(codegen, func_name, expr.call_expr_type_args, expr.call_expr_type_arg_count);
+                    const mono_name: &byte = get_mono_function_name(codegen, func_name, expr.call_expr_type_args, expr.call_expr_type_arg_count);
+                    safe_name = get_safe_c_identifier(codegen, mono_name);
                 }
                 if callee_name != null && (
                     strcmp(callee_name as *byte, "strrchr" as *byte) == 0 ||
@@ -2053,7 +2051,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     fputs("(uint8_t *)" as *byte, codegen.output as *void);
                 }
             } else if callee_name != null && (
-                (strcmp(callee_name as *byte, "fopen" as *byte) == 0 && (i == 0 || i == 1)) ||
+                (strcmp(callee_name as *byte, "fopen" as *byte) == 0 && i == 0) ||
                 (strcmp(callee_name as *byte, "strcmp" as *byte) == 0 && (i == 0 || i == 1)) ||
                 (strcmp(callee_name as *byte, "strrchr" as *byte) == 0 && i == 0) ||
                 (strcmp(callee_name as *byte, "stat" as *byte) == 0 && i == 0) ||

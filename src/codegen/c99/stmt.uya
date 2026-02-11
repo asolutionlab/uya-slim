@@ -137,7 +137,7 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             if is_array_assign == 0 {
                 i = 0;
                 while i < codegen.global_variable_count {
-                    if strcmp(codegen.global_variables[i].name as *byte, var_name as *byte) == 0 {
+                    if global_var_name_matches(codegen, i, var_name) != 0 {
                         const type_c2: &byte = codegen.global_variables[i].type_c;
                         if type_c2 != null && strchr(type_c2 as *byte, 91) != null {  // '['
                             is_array_assign = 1;

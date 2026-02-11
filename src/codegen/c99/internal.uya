@@ -70,7 +70,8 @@ struct FunctionDeclaration {
 
 // 全局变量表项
 struct GlobalVariable {
-    name: &byte,  // 变量名称
+    name: &byte,  // C 中使用的名称（与系统宏冲突时带 uya_ 前缀）
+    original_name: &byte,  // Uya 源码中的名称，用于按原名查找
     type_c: &byte,  // C 类型字符串
     is_const: i32  // 是否为 const
 }

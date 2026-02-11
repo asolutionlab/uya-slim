@@ -626,9 +626,36 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         // stat/readlink 由自举代码使用；opendir/readdir/closedir 仅声明（不包含 dirent.h，避免与生成的 struct DIR/struct Dirent 冲突）
         fputs("#include <sys/stat.h>\n" as *byte, codegen.output as *void);
         fputs("#include <unistd.h>\n" as *byte, codegen.output as *void);
-        fputs("extern void *opendir(const char *);\n" as *byte, codegen.output as *void);
-        fputs("extern void *readdir(void *);\n" as *byte, codegen.output as *void);
-        fputs("extern int closedir(void *);\n" as *byte, codegen.output as *void);
+        // 若本程序定义了 opendir/readdir/closedir（如 stdlib），不声明系统符号，避免与生成的 uya_opendir 等冲突
+        var has_own_opendir: i32 = 0;
+        var has_own_readdir: i32 = 0;
+        var has_own_closedir: i32 = 0;
+        var di: i32 = 0;
+        while di < check_decl_count {
+            const d: &ASTNode = ast.program_decls[di];
+            if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_body != null {
+                const n: &byte = d.fn_decl_name;
+                if n != null {
+                    if strcmp(n as *byte, "opendir" as *byte) == 0 {
+                        has_own_opendir = 1;
+                    } else if strcmp(n as *byte, "readdir" as *byte) == 0 {
+                        has_own_readdir = 1;
+                    } else if strcmp(n as *byte, "closedir" as *byte) == 0 {
+                        has_own_closedir = 1;
+                    }
+                }
+            }
+            di = di + 1;
+        }
+        if has_own_opendir == 0 {
+            fputs("extern void *opendir(const char *);\n" as *byte, codegen.output as *void);
+        }
+        if has_own_readdir == 0 {
+            fputs("extern void *readdir(void *);\n" as *byte, codegen.output as *void);
+        }
+        if has_own_closedir == 0 {
+            fputs("extern int closedir(void *);\n" as *byte, codegen.output as *void);
+        }
         fputs("\n" as *byte, codegen.output as *void);
         // C99 兼容的 alignof 宏（使用 offsetof 技巧）
         fputs("// C99 兼容的 alignof 实现\n" as *byte, codegen.output as *void);

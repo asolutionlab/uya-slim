@@ -8195,6 +8195,8 @@ static int process_use_stmt(TypeChecker *checker, ASTNode *node) {
         }
     } else if (seg_count == 1) {
         module_name = segs[0];
+        /* 单段 use（如 use main;）视为整体模块导入，供依赖收集使用 */
+        is_whole_module_import = 1;
     }
     
     #undef JOIN_SEGS

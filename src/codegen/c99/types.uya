@@ -918,7 +918,7 @@ fn is_member_access_pointer_type(codegen: &C99CodeGenerator, member_access: &AST
         if var_type_c == null {
             i = 0;
             while i < codegen.global_variable_count {
-                if codegen.global_variables[i].name != null && strcmp(codegen.global_variables[i].name as *byte, var_name as *byte) == 0 {
+                if global_var_name_matches(codegen, i, var_name) != 0 {
                     var_type_c = codegen.global_variables[i].type_c;
                     break;
                 }
@@ -1004,7 +1004,7 @@ fn is_member_access_pointer_type(codegen: &C99CodeGenerator, member_access: &AST
             if var_type_c2 == null {
                 i2 = 0;
                 while i2 < codegen.global_variable_count {
-                    if codegen.global_variables[i2].name != null && strcmp(codegen.global_variables[i2].name as *byte, var_name2 as *byte) == 0 {
+                    if global_var_name_matches(codegen, i2, var_name2) != 0 {
                         var_type_c2 = codegen.global_variables[i2].type_c;
                         break;
                     }
@@ -1094,7 +1094,7 @@ fn is_identifier_pointer_type(codegen: &C99CodeGenerator, name: &byte) i32 {
     // 检查全局变量
     i = 0;
     while i < codegen.global_variable_count {
-        if codegen.global_variables[i].name != null && strcmp(codegen.global_variables[i].name as *byte, name as *byte) == 0 {
+        if global_var_name_matches(codegen, i, name) != 0 {
             const type_c2: &byte = codegen.global_variables[i].type_c;
             if type_c2 == null {
                 return 0;
@@ -1134,7 +1134,7 @@ fn is_identifier_pointer_to_array_type(codegen: &C99CodeGenerator, name: &byte) 
     if type_c == null {
         i = 0;
         while i < codegen.global_variable_count {
-            if strcmp(codegen.global_variables[i].name as *byte, name as *byte) == 0 {
+            if global_var_name_matches(codegen, i, name) != 0 {
                 type_c = codegen.global_variables[i].type_c;
                 break;
             }
@@ -1190,7 +1190,7 @@ fn is_array_access_pointer_type(codegen: &C99CodeGenerator, array_access: &ASTNo
         if array_type_c == null {
             i = 0;
             while i < codegen.global_variable_count {
-                if codegen.global_variables[i].name != null && strcmp(codegen.global_variables[i].name as *byte, array_name as *byte) == 0 {
+                if global_var_name_matches(codegen, i, array_name) != 0 {
                     array_type_c = codegen.global_variables[i].type_c;
                     break;
                 }
@@ -1260,7 +1260,7 @@ fn is_array_access_pointer_type(codegen: &C99CodeGenerator, array_access: &ASTNo
             if var_type_c == null {
                 i = 0;
                 while i < codegen.global_variable_count {
-                    if codegen.global_variables[i].name != null && strcmp(codegen.global_variables[i].name as *byte, var_name as *byte) == 0 {
+                    if global_var_name_matches(codegen, i, var_name) != 0 {
                         var_type_c = codegen.global_variables[i].type_c;
                         break;
                     }
@@ -1374,7 +1374,7 @@ fn is_identifier_struct_type(codegen: &C99CodeGenerator, name: &byte) i32 {
     // 检查全局变量
     i = 0;
     while i < codegen.global_variable_count {
-        if strcmp(codegen.global_variables[i].name as *byte, name as *byte) == 0 {
+        if global_var_name_matches(codegen, i, name) != 0 {
             const type_c2: &byte = codegen.global_variables[i].type_c;
             if type_c2 == null {
                 return 0;
@@ -1406,7 +1406,7 @@ fn get_identifier_type_c(codegen: &C99CodeGenerator, name: &byte) &byte {
     }
     i = 0;
     while i < codegen.global_variable_count {
-        if strcmp(codegen.global_variables[i].name as *byte, name as *byte) == 0 {
+        if global_var_name_matches(codegen, i, name) != 0 {
             return codegen.global_variables[i].type_c;
         }
         i = i + 1;
@@ -1635,7 +1635,7 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
         // 检查全局变量
         i = 0;
         while i < codegen.global_variable_count {
-            if strcmp(codegen.global_variables[i].name as *byte, var_name as *byte) == 0 {
+            if global_var_name_matches(codegen, i, var_name) != 0 {
                 const type_c2: &byte = codegen.global_variables[i].type_c;
                 if type_c2 == null {
                     return null;

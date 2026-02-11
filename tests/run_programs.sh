@@ -358,67 +358,51 @@ _collect_module_files_recursive() {
         # 尝试多个可能的文件位置
         local found_file=""
         
-        # 1. 在测试文件同目录下查找（收集目录下的所有 .uya 文件）
+        # 辅助：若文件未在列表中则加入并递归
+        _add_and_recurse() {
+            local f="$1"
+            local already_added=false
+            for existing in "${file_list_ref[@]}"; do
+                if [ "$existing" = "$f" ]; then
+                    already_added=true
+                    break
+                fi
+            done
+            if [ "$already_added" = false ]; then
+                file_list_ref+=("$f")
+                _collect_module_files_recursive "$f" "$file_list_var" "$processed_var"
+            fi
+        }
+        
+        # 1. 在测试文件同目录下查找（目录或单文件 std/syscall/linux -> dir/*.uya 或 file.uya）
         if [ -d "$test_dir/$file_path" ]; then
             for f in "$test_dir/$file_path"/*.uya; do
-                if [ -f "$f" ]; then
-                    # 检查是否已经在列表中
-                    local already_added=false
-                    for existing in "${file_list_ref[@]}"; do
-                        if [ "$existing" = "$f" ]; then
-                            already_added=true
-                            break
-                        fi
-                    done
-                    if [ "$already_added" = false ]; then
-                        file_list_ref+=("$f")
-                        # 递归处理找到的文件（传递原始变量名，避免循环引用）
-                        _collect_module_files_recursive "$f" "$file_list_var" "$processed_var"
-                    fi
-                fi
+                [ -f "$f" ] && _add_and_recurse "$f"
             done
+        elif [ -f "$test_dir/${file_path}.uya" ]; then
+            _add_and_recurse "$test_dir/${file_path}.uya"
         fi
         
-        # 2. 在 TEST_DIR 下查找（收集目录下的所有 .uya 文件）
+        # 2. 在 TEST_DIR 下查找
         if [ -d "$TEST_DIR/$file_path" ]; then
             for f in "$TEST_DIR/$file_path"/*.uya; do
-                if [ -f "$f" ]; then
-                    # 检查是否已经在列表中
-                    local already_added=false
-                    for existing in "${file_list_ref[@]}"; do
-                        if [ "$existing" = "$f" ]; then
-                            already_added=true
-                            break
-                        fi
-                    done
-                    if [ "$already_added" = false ]; then
-                        file_list_ref+=("$f")
-                        # 递归处理找到的文件（传递原始变量名，避免循环引用）
-                        _collect_module_files_recursive "$f" "$file_list_var" "$processed_var"
-                    fi
-                fi
+                [ -f "$f" ] && _add_and_recurse "$f"
             done
+        elif [ -f "$TEST_DIR/${file_path}.uya" ]; then
+            _add_and_recurse "$TEST_DIR/${file_path}.uya"
         fi
         
-        # 3. 在 UYA_ROOT (lib/) 下查找（收集目录下的所有 .uya 文件）
-        if [ -n "$UYA_ROOT" ] && [ -d "$UYA_ROOT/$file_path" ]; then
-            for f in "$UYA_ROOT/$file_path"/*.uya; do
-                if [ -f "$f" ]; then
-                    # 检查是否已经在列表中
-                    local already_added=false
-                    for existing in "${file_list_ref[@]}"; do
-                        if [ "$existing" = "$f" ]; then
-                            already_added=true
-                            break
-                        fi
-                    done
-                    if [ "$already_added" = false ]; then
-                        file_list_ref+=("$f")
-                        # 递归处理找到的文件（传递原始变量名，避免循环引用）
-                        _collect_module_files_recursive "$f" "$file_list_var" "$processed_var"
-                    fi
-                fi
-            done
+        # 3. 在 UYA_ROOT (lib/) 下查找；支持单文件模块如 std.syscall.linux -> lib/std/syscall/linux.uya
+        # 使用 ${UYA_ROOT%/} 去掉末尾斜杠，避免 .../lib/ + /std/io 产生 lib//std
+        local uya_lib="${UYA_ROOT%/}"
+        if [ -n "$UYA_ROOT" ]; then
+            if [ -d "$uya_lib/$file_path" ]; then
+                for f in "$uya_lib/$file_path"/*.uya; do
+                    [ -f "$f" ] && _add_and_recurse "$f"
+                done
+            elif [ -f "$uya_lib/${file_path}.uya" ]; then
+                _add_and_recurse "$uya_lib/${file_path}.uya"
+            fi
         fi
     done <<< "$use_modules"
 }

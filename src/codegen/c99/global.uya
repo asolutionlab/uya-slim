@@ -70,7 +70,8 @@ fn gen_global_var(codegen: &C99CodeGenerator, var_decl: &ASTNode) void {
         return;
     }
     
-    const var_name: &byte = get_safe_c_identifier(codegen, var_decl.var_decl_name);
+    const orig_name: &byte = var_decl.var_decl_name;
+    const var_name: &byte = get_c_name_for_global_constant(codegen, orig_name);
     const var_type: &ASTNode = var_decl.var_decl_type;
     const init_expr: &ASTNode = var_decl.var_decl_init;
     const is_const: i32 = var_decl.var_decl_is_const;
@@ -146,9 +147,39 @@ fn gen_global_var(codegen: &C99CodeGenerator, var_decl: &ASTNode) void {
     // 添加到全局变量表（可选，用于后续引用）
     if codegen.global_variable_count < C99_MAX_GLOBAL_VARS {
         codegen.global_variables[codegen.global_variable_count].name = var_name;
+        codegen.global_variables[codegen.global_variable_count].original_name = orig_name;
         codegen.global_variables[codegen.global_variable_count].type_c = type_c;
         codegen.global_variables[codegen.global_variable_count].is_const = is_const;
         codegen.global_variable_count = codegen.global_variable_count + 1;
     }
 }
 
+// 按 Uya 名称匹配全局变量（比较 original_name 或 name）
+fn global_var_name_matches(codegen: &C99CodeGenerator, i: i32, name: &byte) i32 {
+    if codegen == null || i < 0 || i >= codegen.global_variable_count || name == null {
+        return 0;
+    }
+    var key: &byte = codegen.global_variables[i].original_name;
+    if key == null {
+        key = codegen.global_variables[i].name;
+    }
+    if key != null && strcmp(key as *byte, name as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+// 引用标识符时使用的 C 名称（全局常量与系统宏冲突时返回 uya_ 前缀名）
+fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte {
+    if codegen == null || name == null {
+        return get_safe_c_identifier(codegen, name);
+    }
+    var i: i32 = 0;
+    while i < codegen.global_variable_count {
+        if global_var_name_matches(codegen, i, name) != 0 {
+            return codegen.global_variables[i].name;
+        }
+        i = i + 1;
+    }
+    return get_safe_c_identifier(codegen, name);
+}

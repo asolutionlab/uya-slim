@@ -3,9 +3,9 @@
 // 注意：入口为 uya_main()，由 bridge.c 调用；命令行参数通过 get_argc/get_argv 获取
 
 // ===== 模块导入（按依赖顺序）=====
-// 注意：同目录下的文件（arena, extern_decls, ast, lexer, parser, checker）不需要 use 语句
-// 编译器会自动包含同目录下的所有文件
-
+// use main：收集主文件所在目录下所有 .uya（arena, extern_decls, ast, lexer, parser, checker, str_utils）
+// 否则单文件依赖收集不会自动包含同目录文件，生成的 C 会缺少 ASTNode/Arena 等类型定义导致链接失败。
+use main;
 // C99 代码生成（子目录，整体导入该目录模块）
 use codegen.c99;
 

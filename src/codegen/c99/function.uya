@@ -30,6 +30,84 @@ fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode
     return null;
 }
 
+// 与 <unistd.h>/<sys/stat.h> 中符号冲突的函数名，本程序定义时在 C 中改为 uya_ 前缀
+fn is_system_conflicting_func_name(name: &byte) i32 {
+    if name == null {
+        return 0;
+    }
+    if strcmp(name as *byte, "opendir" as *byte) == 0 ||
+        strcmp(name as *byte, "readdir" as *byte) == 0 ||
+        strcmp(name as *byte, "closedir" as *byte) == 0 ||
+        strcmp(name as *byte, "stat" as *byte) == 0 ||
+        strcmp(name as *byte, "readlink" as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+// 与系统头冲突的全局函数在 C 中的名称；for_definition 1=定义/原型 0=调用（仅本程序有定义时用前缀）
+fn get_c_name_for_global_function(codegen: &C99CodeGenerator, name: &byte, for_definition: i32) &byte {
+    if name == null {
+        return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
+    }
+    if is_system_conflicting_func_name(name) == 0 {
+        return get_safe_c_identifier(codegen, name);
+    }
+    if for_definition != 0 {
+        var uya_buf: [byte: 64] = [];
+        snprintf(&uya_buf[0] as *byte, 64, "uya_%s" as *byte, name as *byte);
+        const prefixed: &byte = c99_arena_strdup(codegen.arena, &uya_buf[0] as &byte);
+        if prefixed != null {
+            return get_safe_c_identifier(codegen, prefixed);
+        }
+    } else {
+        const decl: &ASTNode = find_function_decl_c99(codegen, name);
+        if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_body != null {
+            var uya_buf: [byte: 64] = [];
+            snprintf(&uya_buf[0] as *byte, 64, "uya_%s" as *byte, name as *byte);
+            const prefixed: &byte = c99_arena_strdup(codegen.arena, &uya_buf[0] as &byte);
+            if prefixed != null {
+                return get_safe_c_identifier(codegen, prefixed);
+            }
+        }
+    }
+    return get_safe_c_identifier(codegen, name);
+}
+
+// 与 <sys/stat.h>/<unistd.h> 中宏同名的全局常量，在 C 中改为 uya_ 前缀
+fn is_system_conflicting_const_name(name: &byte) i32 {
+    if name == null {
+        return 0;
+    }
+    if strcmp(name as *byte, "S_IRWXU" as *byte) == 0 || strcmp(name as *byte, "S_IRUSR" as *byte) == 0 ||
+        strcmp(name as *byte, "S_IWUSR" as *byte) == 0 || strcmp(name as *byte, "S_IXUSR" as *byte) == 0 ||
+        strcmp(name as *byte, "S_IRWXG" as *byte) == 0 || strcmp(name as *byte, "S_IRGRP" as *byte) == 0 ||
+        strcmp(name as *byte, "S_IWGRP" as *byte) == 0 || strcmp(name as *byte, "S_IXGRP" as *byte) == 0 ||
+        strcmp(name as *byte, "S_IRWXO" as *byte) == 0 || strcmp(name as *byte, "S_IROTH" as *byte) == 0 ||
+        strcmp(name as *byte, "S_IWOTH" as *byte) == 0 || strcmp(name as *byte, "S_IXOTH" as *byte) == 0 ||
+        strcmp(name as *byte, "STDIN_FILENO" as *byte) == 0 || strcmp(name as *byte, "STDOUT_FILENO" as *byte) == 0 ||
+        strcmp(name as *byte, "STDERR_FILENO" as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn get_c_name_for_global_constant(codegen: &C99CodeGenerator, name: &byte) &byte {
+    if name == null {
+        return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
+    }
+    if is_system_conflicting_const_name(name) == 0 {
+        return get_safe_c_identifier(codegen, name);
+    }
+    var uya_buf: [byte: 64] = [];
+    snprintf(&uya_buf[0] as *byte, 64, "uya_%s" as *byte, name as *byte);
+    const prefixed: &byte = c99_arena_strdup(codegen.arena, &uya_buf[0] as &byte);
+    if prefixed != null {
+        return get_safe_c_identifier(codegen, prefixed);
+    }
+    return get_safe_c_identifier(codegen, name);
+}
+
 fn format_param_type(codegen: &C99CodeGenerator, type_c: &byte, param_name: &byte, output: &void) void {
     // codegen 参数未使用，但保留以保持接口一致性
     if type_c == null || param_name == null {
@@ -207,7 +285,7 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     const saved_current_function_decl: &ASTNode = codegen.current_function_decl;
     codegen.current_function_decl = fn_decl;
     
-    const func_name: &byte = get_safe_c_identifier(codegen, fn_decl.fn_decl_name);
+    const func_name: &byte = get_c_name_for_global_function(codegen, fn_decl.fn_decl_name, 1);
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
@@ -219,8 +297,8 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         is_extern = 1;
     }
     
-    // 检查是否是标准库函数
-    const is_stdlib: i32 = is_stdlib_function(func_name);
+    // 检查是否是标准库函数（用原名判断，func_name 可能已是 uya_ 前缀）
+    const is_stdlib: i32 = is_stdlib_function(fn_decl.fn_decl_name);
     
     // 返回类型（如果是数组类型，转换为指针类型）
     var return_c: &byte = convert_array_return_type(codegen, return_type);
@@ -506,15 +584,15 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         return;
     }
     
-    const func_name: &byte = get_safe_c_identifier(codegen, fn_decl.fn_decl_name);
+    const orig_name: &byte = fn_decl.fn_decl_name;
+    const func_name: &byte = get_c_name_for_global_function(codegen, orig_name, 1);
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
     const body: &ASTNode = fn_decl.fn_decl_body;
     
     // 检查是否是标准库函数
-    const orig_name: &byte = fn_decl.fn_decl_name;
-    const is_stdlib: i32 = is_stdlib_function(func_name);
+    const is_stdlib: i32 = is_stdlib_function(orig_name);
     
     // 对于标准库 stdlib 函数（strtod, strtol, getenv, abort, exit, atoi, atol, atof 等），不生成函数定义
     // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现

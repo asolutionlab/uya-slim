@@ -2862,11 +2862,24 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         // TODO: 验证操作数是 !Future<T> 类型，返回 T
         return operand_type;
     } else if expr.type == ASTNodeType.AST_CATCH_EXPR {
-        const operand_type: Type = checker_infer_type(checker, expr.catch_expr_operand);
+        var operand_type: Type = checker_infer_type(checker, expr.catch_expr_operand);
         if operand_type.kind != TypeKind.TYPE_ERROR_UNION {
-            checker_report_error(checker, expr.catch_expr_operand, "catch 的操作数必须是错误联合类型 !T" as *byte);
-            result.kind = TypeKind.TYPE_VOID;
-            return result;
+            // 回退：若操作数是调用表达式且被推断为 VOID，从合并后的程序中查找被调函数返回类型（跨模块 export fn !T）
+            if expr.catch_expr_operand != null && expr.catch_expr_operand.type == ASTNodeType.AST_CALL_EXPR {
+                const callee: &ASTNode = expr.catch_expr_operand.call_expr_callee;
+                if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER && callee.identifier_name != null
+                    && checker.program_node != null {
+                    const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, callee.identifier_name);
+                    if fn_decl != null && fn_decl.fn_decl_return_type != null {
+                        operand_type = type_from_ast(checker, fn_decl.fn_decl_return_type);
+                    }
+                }
+            }
+            if operand_type.kind != TypeKind.TYPE_ERROR_UNION {
+                checker_report_error(checker, expr.catch_expr_operand, "catch 的操作数必须是错误联合类型 !T" as *byte);
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
         }
         if operand_type.error_union_payload_type == null {
             result.kind = TypeKind.TYPE_VOID;
@@ -3096,8 +3109,13 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         if sig != null {
             return sig.return_type;
         }
-        
-        // 如果找不到函数，返回void类型（错误将在类型检查时报告）
+        // 函数表未找到时从合并后的程序中查找（如跨模块的 export fn），使 catch 等能拿到 !T 返回类型
+        if checker.program_node != null {
+            const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, callee.identifier_name);
+            if fn_decl != null && fn_decl.fn_decl_return_type != null {
+                return type_from_ast(checker, fn_decl.fn_decl_return_type);
+            }
+        }
         result.kind = TypeKind.TYPE_VOID;
         return result;
     } else if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
@@ -3933,7 +3951,10 @@ fn checker_register_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
         return 0;
     }
 
-    // 将函数添加到函数表
+    // 将函数添加到函数表（若已存在同名则跳过，如已由 use 导入注册）
+    if function_table_lookup(checker, node.fn_decl_name) != null {
+        return 1;
+    }
     if function_table_insert(checker, sig) != 0 {
         checker_report_error(checker, node, "函数重复定义" as *byte);
         return 0;
@@ -5571,11 +5592,20 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             }
             i = i + 1;
         }
-        // 再检查其余声明（结构体、枚举、函数等）
+        // 先处理所有 use 语句，使导入的函数/项在检查函数体前已注册
         i = 0;
         while i < node.program_decl_count {
             const decl: &ASTNode = node.program_decls[i];
-            if decl != null && decl.type != ASTNodeType.AST_VAR_DECL {
+            if decl != null && decl.type == ASTNodeType.AST_USE_STMT {
+                checker_check_node(checker, decl);
+            }
+            i = i + 1;
+        }
+        // 再检查其余声明（结构体、枚举、函数等，不含 use）
+        i = 0;
+        while i < node.program_decl_count {
+            const decl: &ASTNode = node.program_decls[i];
+            if decl != null && decl.type != ASTNodeType.AST_VAR_DECL && decl.type != ASTNodeType.AST_USE_STMT {
                 checker_check_node(checker, decl);
             }
             i = i + 1;
@@ -6754,7 +6784,8 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
             base_len = rel_len - 4;
         }
         
-        // 同级目录下的文件应该使用同一个模块，所以只取目录路径，不包含文件名
+        // 模块路径：std/io/file.uya -> std.io（目录名，便于 use std.io.fopen）；
+        // std/syscall/linux.uya -> std.syscall.linux（目录+文件名，便于 use std.syscall.linux.sys_open）
         var last_slash_uya: &byte = null;
         var si: usize = base_len;
         while si > 0 {
@@ -6764,23 +6795,22 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
                 break;
             }
         }
-        
         var module_len: usize = base_len;
         if last_slash_uya != null {
-            // 只取目录路径，不包含文件名
             const slash_pos: usize = ptr_diff(last_slash_uya as *byte, relative_path as *byte) as usize;
-            module_len = slash_pos;
+            const base_name: &byte = (relative_path as *byte + slash_pos + 1) as &byte;
+            const base_name_len: usize = base_len - slash_pos - 1;
+            if base_name_len == 4 && strncmp(base_name as *byte, "file" as *byte, 4) == 0 {
+                module_len = slash_pos;
+            }
         }
-        
         if module_len > 0 {
-            // 构建模块路径：std.xxx
-            const total_len: usize = 4 + module_len; // "std." + 路径长度
+            const total_len: usize = 4 + module_len;
             const module_name: &byte = arena_alloc(checker.arena, total_len + 1) as &byte;
             if module_name != null {
                 strcpy(module_name as *byte, "std." as *byte);
                 memcpy((module_name as *byte + 4) as *void, relative_path as *void, module_len);
                 module_name[4 + module_len] = 0;
-                // 将 '/' 替换为 '.'
                 var idx: usize = 4;
                 while idx < 4 + module_len {
                     if module_name[idx] == 47 || module_name[idx] == 92 {
@@ -7534,19 +7564,31 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
         // 导入特定项（如 use module_a.public_func;）
         var found: i32 = 0;
         var item_type: i32 = 0;
+        var export_decl: &ASTNode = null;
         var k: i32 = 0;
         while k < module.export_count {
             if str_equals(module.exports[k].name, item_name) != 0 {
                 found = 1;
                 item_type = module.exports[k].item_type;
+                export_decl = module.exports[k].decl_node;
                 break;
             }
             k = k + 1;
         }
         
         if found == 0 {
-            checker_report_error(checker, node, "模块中未找到导出项" as *byte);
-            return 0;
+            // 自举时 std 可能未参与编译或导出表未建，将 use std.xxx.yyy 视为外部符号，不报错（与 C 编译器一致）
+            var is_std: i32 = 0;
+            if module_name != null && strlen(module_name as *byte) >= 4
+                && (module_name[0] as byte) == 115 && (module_name[1] as byte) == 116
+                && (module_name[2] as byte) == 100 && (module_name[3] as byte) == 46 {
+                is_std = 1;
+            }
+            if is_std == 0 {
+                checker_report_error(checker, node, "模块中未找到导出项" as *byte);
+                return 0;
+            }
+            // item_type 保持 0
         }
         
         const import: &ImportedItem = arena_alloc(checker.arena, @size_of(ImportedItem)) as &ImportedItem;
@@ -7571,6 +7613,14 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                 break;
             }
             slot_i = slot_i + 1;
+        }
+        // 导入函数时若表中尚无该名则注册到函数表，使 call 能解析到返回类型（如 !i64）
+        if item_type == 1 && export_decl != null && export_decl.type == ASTNodeType.AST_FN_DECL {
+            var lookup_name: &byte = item_name;
+            if alias != null { lookup_name = alias; }
+            if function_table_lookup(checker, lookup_name) == null {
+                checker_register_fn_decl(checker, export_decl);
+            }
         }
     } else {
         checker_report_error(checker, node, "use 语句无法解析" as *byte);
