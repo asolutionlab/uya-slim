@@ -470,9 +470,23 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
     /* stat/readlink 由自举代码使用；opendir/readdir/closedir 仅声明（不包含 dirent.h，避免与生成的 struct DIR/struct Dirent 冲突） */
     fputs("#include <sys/stat.h>\n", codegen->output);
     fputs("#include <unistd.h>\n", codegen->output);
-    fputs("extern void *opendir(const char *);\n", codegen->output);
-    fputs("extern void *readdir(void *);\n", codegen->output);
-    fputs("extern int closedir(void *);\n", codegen->output);
+    /* 若本程序定义了 opendir/readdir/closedir（如 stdlib.uya），不声明系统符号，避免与生成的 uya_opendir 等冲突 */
+    {
+        int has_own_opendir = 0, has_own_readdir = 0, has_own_closedir = 0;
+        for (int i = 0; i < decl_count; i++) {
+            ASTNode *d = decls[i];
+            if (!d || d->type != AST_FN_DECL || !d->data.fn_decl.body) continue;
+            const char *n = d->data.fn_decl.name;
+            if (n) {
+                if (strcmp(n, "opendir") == 0) has_own_opendir = 1;
+                else if (strcmp(n, "readdir") == 0) has_own_readdir = 1;
+                else if (strcmp(n, "closedir") == 0) has_own_closedir = 1;
+            }
+        }
+        if (!has_own_opendir) fputs("extern void *opendir(const char *);\n", codegen->output);
+        if (!has_own_readdir) fputs("extern void *readdir(void *);\n", codegen->output);
+        if (!has_own_closedir) fputs("extern int closedir(void *);\n", codegen->output);
+    }
     fputs("\n", codegen->output);
     // C99 兼容的 alignof 宏（使用 offsetof 技巧）
     fputs("// C99 兼容的 alignof 实现\n", codegen->output);

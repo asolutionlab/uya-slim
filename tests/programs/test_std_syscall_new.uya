@@ -1,15 +1,13 @@
-// test_std_syscall_new.uya - 测试新的 std.syscall 模块
-// 测试系统调用封装函数
-
-use std.syscall.sys_write;
-use std.syscall.sys_getpid;
-use std.syscall.STDOUT_FILENO;
+// test_std_syscall_new.uya - 测试 std.c.syscall 模块（与 test_std_syscall 一致，保证单模块无合并重复定义）
+use std.c.syscall.sys_write;
+use std.c.syscall.sys_getpid;
+use std.c.syscall.UYA_STDOUT_FILENO;
 
 fn main() i32 {
     // 测试 1: sys_write - 写入标准输出
     const msg: &const byte = "Hello from std.syscall!\n" as &const byte;
     const msg_len: usize = 24;
-    const result1: !i64 = sys_write(STDOUT_FILENO, msg as i64, msg_len as i64);
+    const result1: !i64 = sys_write(UYA_STDOUT_FILENO, msg as i64, msg_len as i64);
     const written1: i64 = result1 catch {
         return 1;  // 写入失败
     };

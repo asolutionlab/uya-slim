@@ -197,6 +197,75 @@ ASTNode *find_function_decl_c99(C99CodeGenerator *codegen, const char *func_name
     return NULL;
 }
 
+/* 与 <unistd.h>/<sys/stat.h> 中符号冲突的函数名，本程序定义时在 C 中改为 uya_ 前缀 */
+static int is_system_conflicting_func_name(const char *name) {
+    return name && (
+        strcmp(name, "opendir") == 0 ||
+        strcmp(name, "readdir") == 0 ||
+        strcmp(name, "closedir") == 0 ||
+        strcmp(name, "stat") == 0 ||
+        strcmp(name, "readlink") == 0);
+}
+
+/* 与 <sys/stat.h>/<unistd.h> 中宏同名的全局常量，在 C 中改为 uya_ 前缀避免重定义 */
+static int is_system_conflicting_const_name(const char *name) {
+    if (!name) return 0;
+    if (strcmp(name, "S_IRWXU") == 0 || strcmp(name, "S_IRUSR") == 0 ||
+        strcmp(name, "S_IWUSR") == 0 || strcmp(name, "S_IXUSR") == 0 ||
+        strcmp(name, "S_IRWXG") == 0 || strcmp(name, "S_IRGRP") == 0 ||
+        strcmp(name, "S_IWGRP") == 0 || strcmp(name, "S_IXGRP") == 0 ||
+        strcmp(name, "S_IRWXO") == 0 || strcmp(name, "S_IROTH") == 0 ||
+        strcmp(name, "S_IWOTH") == 0 || strcmp(name, "S_IXOTH") == 0 ||
+        strcmp(name, "STDIN_FILENO") == 0 || strcmp(name, "STDOUT_FILENO") == 0 ||
+        strcmp(name, "STDERR_FILENO") == 0)
+        return 1;
+    return 0;
+}
+
+/* 全局常量在 C 中的名称：与系统宏冲突时带 uya_ 前缀（使用 arena 避免静态缓冲区被覆盖） */
+const char *get_c_name_for_global_constant(C99CodeGenerator *codegen, const char *name) {
+    if (!name) return get_safe_c_identifier(codegen, "");
+    if (!is_system_conflicting_const_name(name))
+        return get_safe_c_identifier(codegen, name);
+    {
+        size_t len = strlen(name) + 5;
+        char *prefixed = (char *)arena_alloc(codegen->arena, len);
+        if (prefixed) {
+            snprintf(prefixed, len, "uya_%s", name);
+            return get_safe_c_identifier(codegen, prefixed);
+        }
+    }
+    return get_safe_c_identifier(codegen, name);
+}
+
+const char *get_c_name_for_global_function(C99CodeGenerator *codegen, const char *name, int for_definition) {
+    if (!name) return get_safe_c_identifier(codegen, "");
+    if (!is_system_conflicting_func_name(name))
+        return get_safe_c_identifier(codegen, name);
+    if (for_definition) {
+        /* 生成定义/原型：本程序定义的冲突函数一律用 uya_ 前缀（arena 分配避免覆盖） */
+        size_t len = strlen(name) + 5;
+        char *prefixed = (char *)arena_alloc(codegen->arena, len);
+        if (prefixed) {
+            snprintf(prefixed, len, "uya_%s", name);
+            return get_safe_c_identifier(codegen, prefixed);
+        }
+    }
+    /* 生成调用：仅当本程序有该函数定义时用 uya_ 前缀 */
+    {
+        ASTNode *decl = find_function_decl_c99(codegen, name);
+        if (decl && decl->type == AST_FN_DECL && decl->data.fn_decl.body) {
+            size_t len = strlen(name) + 5;
+            char *prefixed = (char *)arena_alloc(codegen->arena, len);
+            if (prefixed) {
+                snprintf(prefixed, len, "uya_%s", name);
+                return get_safe_c_identifier(codegen, prefixed);
+            }
+        }
+    }
+    return get_safe_c_identifier(codegen, name);
+}
+
 void format_param_type(C99CodeGenerator *codegen __attribute__((unused)), const char *type_c, const char *param_name, FILE *output) {
     if (!type_c || !param_name) return;
     
@@ -312,7 +381,8 @@ int is_stdlib_function(const char *func_name) {
 void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     if (!fn_decl || fn_decl->type != AST_FN_DECL) return;
     
-    const char *func_name = get_safe_c_identifier(codegen, fn_decl->data.fn_decl.name);
+    const char *orig_name = fn_decl->data.fn_decl.name;
+    const char *func_name = get_c_name_for_global_function(codegen, orig_name, 1);
     ASTNode *return_type = fn_decl->data.fn_decl.return_type;
     ASTNode **params = fn_decl->data.fn_decl.params;
     int param_count = fn_decl->data.fn_decl.param_count;
@@ -320,7 +390,6 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     ASTNode *body = fn_decl->data.fn_decl.body;
     
     // 检查是否为 copy_type 函数（需要 const 限定符）
-    const char *orig_name = fn_decl->data.fn_decl.name;
     int is_copy_type = (orig_name && strcmp(orig_name, "copy_type") == 0) ? 1 : 0;
     
     // 特殊处理：main 函数需要重命名为 uya_main（符合 Uya 规范：main 函数无参数）
@@ -536,7 +605,8 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
 void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     if (!fn_decl || fn_decl->type != AST_FN_DECL) return;
     
-    const char *func_name = get_safe_c_identifier(codegen, fn_decl->data.fn_decl.name);
+    const char *orig_name = fn_decl->data.fn_decl.name;
+    const char *func_name = get_c_name_for_global_function(codegen, orig_name, 1);
     ASTNode *return_type = fn_decl->data.fn_decl.return_type;
     ASTNode **params = fn_decl->data.fn_decl.params;
     int param_count = fn_decl->data.fn_decl.param_count;
@@ -544,8 +614,7 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     ASTNode *body = fn_decl->data.fn_decl.body;
     
     // 检查是否是标准库函数
-    const char *orig_name = fn_decl->data.fn_decl.name;
-    int is_stdlib = is_stdlib_function(func_name);
+    int is_stdlib = is_stdlib_function(orig_name ? orig_name : "");
     
     // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数定义
     // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现

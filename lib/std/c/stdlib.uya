@@ -418,8 +418,8 @@ export fn strtol(nptr: &const byte, endptr: & &const byte, base: i32) i64 {
 use std.c.syscall.SYS_stat;
 use std.c.syscall.SYS_readlink;
 use std.string.strlen;
-use std.c.strcmp;
-use std.c.strncpy;
+use std.string.strcmp;
+use std.string.strncpy;
 
 // ============================================================
 // 类型定义（用于 C 编译器代码生成）

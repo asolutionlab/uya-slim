@@ -333,7 +333,7 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                 if (left->type == AST_IDENTIFIER && right->type == AST_ERROR_VALUE) {
                     unsigned id = right->data.error_value.name ? get_or_add_error_id(codegen, right->data.error_value.name) : 0;
                     if (id == 0) id = 1;
-                    const char *safe = get_safe_c_identifier(codegen, left->data.identifier.name);
+                    const char *safe = get_c_name_for_identifier_ref(codegen, left->data.identifier.name);
                     if (op == TOKEN_NOT_EQUAL)
                         fprintf(codegen->output, "(%s.error_id != %uU)", safe, id);
                     else
@@ -343,7 +343,7 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                 if (left->type == AST_ERROR_VALUE && right->type == AST_IDENTIFIER) {
                     unsigned id = left->data.error_value.name ? get_or_add_error_id(codegen, left->data.error_value.name) : 0;
                     if (id == 0) id = 1;
-                    const char *safe = get_safe_c_identifier(codegen, right->data.identifier.name);
+                    const char *safe = get_c_name_for_identifier_ref(codegen, right->data.identifier.name);
                     if (op == TOKEN_NOT_EQUAL)
                         fprintf(codegen->output, "(%uU != %s.error_id)", id, safe);
                     else
@@ -1204,10 +1204,10 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                                 }
                             }
                             
-                            // 如果局部变量表中找不到，查找全局变量表
+                            // 如果局部变量表中找不到，查找全局变量表（按 Uya 原名匹配）
                             if (!type_c) {
                                 for (int i = 0; i < codegen->global_variable_count; i++) {
-                                    if (strcmp(codegen->global_variables[i].name, safe_name) == 0) {
+                                    if (global_var_name_matches(codegen, i, name)) {
                                         type_c = codegen->global_variables[i].type_c;
                                         break;
                                     }
@@ -1336,13 +1336,13 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
             if (name && strcmp(name, "null") == 0) {
                 fputs("NULL", codegen->output);
             } else {
-                const char *safe_name = get_safe_c_identifier(codegen, name);
+                const char *ref_name = get_c_name_for_identifier_ref(codegen, name);
                 const char *type_c = get_identifier_type_c(codegen, name);
                 // 如果是原子类型，生成原子 load
                 if (type_c && strstr(type_c, "_Atomic") != NULL) {
-                    fprintf(codegen->output, "__atomic_load_n(&%s, __ATOMIC_SEQ_CST)", safe_name);
+                    fprintf(codegen->output, "__atomic_load_n(&%s, __ATOMIC_SEQ_CST)", ref_name);
                 } else {
-                    fprintf(codegen->output, "%s", safe_name);
+                    fprintf(codegen->output, "%s", ref_name);
                 }
             }
             break;
@@ -1566,7 +1566,7 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                         fputs(is_stdlib ? "(const char *)" : "(uint8_t *)", codegen->output);
                         fputs(codegen->interp_arg_temp_names[i], codegen->output);
                     } else {
-                        if (callee_name && ((strcmp(callee_name, "fopen") == 0 && (i == 0 || i == 1)) ||
+                        if (callee_name && ((strcmp(callee_name, "fopen") == 0 && i == 0) ||
                             (strcmp(callee_name, "strcmp") == 0 && (i == 0 || i == 1)) ||
                             (strcmp(callee_name, "strncmp") == 0 && (i == 0 || i == 1)) ||
                             (strcmp(callee_name, "strrchr") == 0 && i == 0) || (strcmp(callee_name, "stat") == 0 && i == 0) ||
@@ -1795,7 +1795,9 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                     output_name = get_mono_function_name(codegen, func_name, call_type_args, call_type_arg_count);
                 }
                 
-                const char *safe_name = get_safe_c_identifier(codegen, output_name);
+                const char *safe_name = (call_type_args && call_type_arg_count > 0)
+                    ? get_safe_c_identifier(codegen, output_name)
+                    : get_c_name_for_global_function(codegen, output_name, 0);
                 /* C 库中返回 char* 的函数，生成时整体包 (uint8_t *) 以消除赋值给 uint8_t* 的 -Wpointer-sign；readdir 返回赋给 struct Dirent* 故用 (struct Dirent *) */
                 if (callee_name && (strcmp(callee_name, "strrchr") == 0 || strcmp(callee_name, "strchr") == 0 ||
                     strcmp(callee_name, "getenv") == 0 || strcmp(callee_name, "strstr") == 0)) {
@@ -1885,7 +1887,7 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                     int is_stdlib = is_stdlib_function_for_string_arg(callee_name);
                     fputs(is_stdlib ? "(const char *)" : "(uint8_t *)", codegen->output);
                 } else if (callee_name && (
-                    (strcmp(callee_name, "fopen") == 0 && (i == 0 || i == 1)) ||
+                    (strcmp(callee_name, "fopen") == 0 && i == 0) ||
                     (strcmp(callee_name, "strcmp") == 0 && (i == 0 || i == 1)) ||
                     (strcmp(callee_name, "strrchr") == 0 && i == 0) ||
                     (strcmp(callee_name, "stat") == 0 && i == 0) ||

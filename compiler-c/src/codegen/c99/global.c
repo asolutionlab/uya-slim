@@ -57,7 +57,8 @@ void gen_global_init_expr(C99CodeGenerator *codegen, ASTNode *expr) {
 void gen_global_var(C99CodeGenerator *codegen, ASTNode *var_decl) {
     if (!var_decl || var_decl->type != AST_VAR_DECL) return;
     
-    const char *var_name = get_safe_c_identifier(codegen, var_decl->data.var_decl.name);
+    const char *orig_name = var_decl->data.var_decl.name;
+    const char *var_name = get_c_name_for_global_constant(codegen, orig_name);
     ASTNode *var_type = var_decl->data.var_decl.type;
     ASTNode *init_expr = var_decl->data.var_decl.init;
     int is_const = var_decl->data.var_decl.is_const;
@@ -131,8 +132,26 @@ void gen_global_var(C99CodeGenerator *codegen, ASTNode *var_decl) {
     // 添加到全局变量表（可选，用于后续引用）
     if (codegen->global_variable_count < C99_MAX_GLOBAL_VARS) {
         codegen->global_variables[codegen->global_variable_count].name = var_name;
+        codegen->global_variables[codegen->global_variable_count].original_name = orig_name;
         codegen->global_variables[codegen->global_variable_count].type_c = type_c;
         codegen->global_variables[codegen->global_variable_count].is_const = is_const;
         codegen->global_variable_count++;
     }
+}
+
+const char *get_c_name_for_identifier_ref(C99CodeGenerator *codegen, const char *name) {
+    if (!codegen || !name) return get_safe_c_identifier(codegen, name ? name : "");
+    for (int i = 0; i < codegen->global_variable_count; i++) {
+        if (global_var_name_matches(codegen, i, name))
+            return codegen->global_variables[i].name;
+    }
+    return get_safe_c_identifier(codegen, name);
+}
+
+int global_var_name_matches(C99CodeGenerator *codegen, int i, const char *name) {
+    if (!codegen || i < 0 || i >= codegen->global_variable_count || !name) return 0;
+    const char *key = codegen->global_variables[i].original_name
+        ? codegen->global_variables[i].original_name
+        : codegen->global_variables[i].name;
+    return key && strcmp(key, name) == 0;
 }

@@ -28,3 +28,4 @@ compiler-c/build/
 bin/
 tests/programs/build/
 lib/build/
+test_std_io.txt

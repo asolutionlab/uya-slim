@@ -103,7 +103,7 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                 // 检查全局变量
                 if (!is_array_assign) {
                     for (int i = 0; i < codegen->global_variable_count; i++) {
-                        if (strcmp(codegen->global_variables[i].name, var_name) == 0) {
+                        if (global_var_name_matches(codegen, i, var_name)) {
                             const char *type_c = codegen->global_variables[i].type_c;
                             if (type_c && strchr(type_c, '[') != NULL) {
                                 is_array_assign = 1;

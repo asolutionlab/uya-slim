@@ -93,6 +93,12 @@ int gen_enum_definition(C99CodeGenerator *codegen, ASTNode *enum_decl);
 
 // 函数查找（function.c）
 ASTNode *find_function_decl_c99(C99CodeGenerator *codegen, const char *func_name);
+/* 与系统头冲突的全局函数在 C 中改用 uya_ 前缀；for_definition: 1=正在生成定义/原型用前缀，0=生成调用时若为本程序定义则用前缀 */
+const char *get_c_name_for_global_function(C99CodeGenerator *codegen, const char *name, int for_definition);
+/* 与系统宏冲突的全局常量在 C 中改用 uya_ 前缀 */
+const char *get_c_name_for_global_constant(C99CodeGenerator *codegen, const char *name);
+/* 与系统宏冲突的全局常量在 C 中改用 uya_ 前缀 */
+const char *get_c_name_for_global_constant(C99CodeGenerator *codegen, const char *name);
 ASTNode *find_method_block_for_struct_c99(C99CodeGenerator *codegen, const char *struct_name);
 ASTNode *find_method_block_for_union_c99(C99CodeGenerator *codegen, const char *union_name);
 ASTNode *find_method_in_block(ASTNode *method_block, const char *method_name);
@@ -132,6 +138,12 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt);
 // 全局变量生成（global.c）
 void gen_global_init_expr(C99CodeGenerator *codegen, ASTNode *expr);
 void gen_global_var(C99CodeGenerator *codegen, ASTNode *var_decl);
+/* 引用标识符时使用的 C 名称（全局常量与系统宏冲突时返回 uya_ 前缀名） */
+const char *get_c_name_for_identifier_ref(C99CodeGenerator *codegen, const char *name);
+/* 按 Uya 名称匹配全局变量（比较 original_name 或 name） */
+int global_var_name_matches(C99CodeGenerator *codegen, int i, const char *name);
+/* 引用标识符时使用的 C 名（全局常量与系统宏冲突时用 uya_ 前缀） */
+const char *get_c_name_for_identifier_ref(C99CodeGenerator *codegen, const char *name);
 
 #endif // CODEGEN_C99_INTERNAL_H
 

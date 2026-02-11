@@ -7,10 +7,10 @@
 // 内存操作函数
 // ============================================================
 
-// memcpy - 从 src 复制 n 个字节到 dst
+// mem_copy - 从 src 复制 n 个字节到 dst（与 std.c.memcpy 区分，避免合并时重复定义）
 // 返回：复制的字节数（通常等于 n）
 // 注意：src 和 dst 不能重叠，如果重叠应使用 memmove
-export fn memcpy(dst: &byte, src: &const byte, n: usize) usize {
+export fn mem_copy(dst: &byte, src: &const byte, n: usize) usize {
     if dst == null || src == null || n == 0 {
         return 0;
     }
@@ -24,9 +24,9 @@ export fn memcpy(dst: &byte, src: &const byte, n: usize) usize {
     return n;
 }
 
-// memset - 将 dst 的前 n 个字节设置为 value
+// mem_set - 将 dst 的前 n 个字节设置为 value（与 std.c 的 memset 区分）
 // 返回：设置的字节数（通常等于 n）
-export fn memset(dst: &byte, value: byte, n: usize) usize {
+export fn mem_set(dst: &byte, value: byte, n: usize) usize {
     if dst == null || n == 0 {
         return 0;
     }
@@ -40,10 +40,9 @@ export fn memset(dst: &byte, value: byte, n: usize) usize {
     return n;
 }
 
-// memmove - 从 src 移动 n 个字节到 dst（支持重叠区域）
+// mem_move - 从 src 移动 n 个字节到 dst（支持重叠区域，与 std.c 的 memmove 区分）
 // 返回：移动的字节数（通常等于 n）
-// 注意：与 memcpy 不同，memmove 正确处理重叠区域
-export fn memmove(dst: &byte, src: &const byte, n: usize) usize {
+export fn mem_move(dst: &byte, src: &const byte, n: usize) usize {
     if dst == null || src == null || n == 0 {
         return 0;
     }
@@ -72,9 +71,9 @@ export fn memmove(dst: &byte, src: &const byte, n: usize) usize {
     return n;
 }
 
-// memcmp - 比较 s1 和 s2 的前 n 个字节
+// mem_cmp - 比较 s1 和 s2 的前 n 个字节（与 std.c 的 memcmp 区分）
 // 返回：如果 s1 < s2 返回负数，s1 == s2 返回 0，s1 > s2 返回正数
-export fn memcmp(s1: &const byte, s2: &const byte, n: usize) i32 {
+export fn mem_cmp(s1: &const byte, s2: &const byte, n: usize) i32 {
     if s1 == null || s2 == null || n == 0 {
         return 0;
     }
@@ -94,9 +93,9 @@ export fn memcmp(s1: &const byte, s2: &const byte, n: usize) i32 {
     return 0;
 }
 
-// memchr - 在 s 的前 n 个字节中查找字符 c
+// mem_chr - 在 s 的前 n 个字节中查找字符 c（与 std.c 的 memchr 区分）
 // 返回：找到时返回指向该字符的指针，否则返回 null
-export fn memchr(s: &const byte, c: byte, n: usize) &byte {
+export fn mem_chr(s: &const byte, c: byte, n: usize) &byte {
     if s == null || n == 0 {
         return null;
     }

@@ -3,27 +3,27 @@
 // 说明：基于 std.syscall.linux 实现文件操作（纯 Uya 实现，零外部依赖）
 // 模块路径：lib/std/io/file.uya → use std.io.file;
 
-use std.syscall.sys_open;
-use std.syscall.sys_close;
-use std.syscall.sys_read;
-use std.syscall.sys_write;
-use std.syscall.sys_lseek;
-use std.syscall.O_RDONLY;
-use std.syscall.O_WRONLY;
-use std.syscall.O_RDWR;
-use std.syscall.O_CREAT;
-use std.syscall.O_TRUNC;
-use std.syscall.O_APPEND;
-use std.syscall.UYA_SEEK_SET;
-use std.syscall.UYA_SEEK_CUR;
-use std.syscall.UYA_SEEK_END;
-use std.syscall.S_IRWXU;
-use std.syscall.S_IRUSR;
-use std.syscall.S_IWUSR;
-use std.syscall.S_IRGRP;
-use std.syscall.S_IWGRP;
-use std.syscall.S_IROTH;
-use std.syscall.S_IWOTH;
+use std.syscall.linux.sys_open;
+use std.syscall.linux.sys_close;
+use std.syscall.linux.sys_read;
+use std.syscall.linux.sys_write;
+use std.syscall.linux.sys_lseek;
+use std.syscall.linux.O_RDONLY;
+use std.syscall.linux.O_WRONLY;
+use std.syscall.linux.O_RDWR;
+use std.syscall.linux.O_CREAT;
+use std.syscall.linux.O_TRUNC;
+use std.syscall.linux.O_APPEND;
+use std.syscall.linux.UYA_SEEK_SET;
+use std.syscall.linux.UYA_SEEK_CUR;
+use std.syscall.linux.UYA_SEEK_END;
+use std.syscall.linux.S_IRWXU;
+use std.syscall.linux.S_IRUSR;
+use std.syscall.linux.S_IWUSR;
+use std.syscall.linux.S_IRGRP;
+use std.syscall.linux.S_IWGRP;
+use std.syscall.linux.S_IROTH;
+use std.syscall.linux.S_IWOTH;
 
 // 重新导出文件操作标志和权限模式（从系统调用层）
 // 注意：这些常量已经在 std.syscall.linux 中定义，这里只是重新导出以便使用

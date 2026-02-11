@@ -59,7 +59,8 @@ typedef struct C99CodeGenerator {
     
     // 全局变量表
     struct GlobalVariable {
-        const char *name;           // 变量名称
+        const char *name;           // C 中使用的名称（与系统宏冲突时带 uya_ 前缀）
+        const char *original_name;  // Uya 源码中的名称，用于按原名查找
         const char *type_c;         // C 类型字符串
         int is_const;               // 是否为 const
     } global_variables[C99_MAX_GLOBAL_VARS];

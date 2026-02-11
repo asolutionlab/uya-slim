@@ -3,8 +3,8 @@
 // 说明：纯 Uya 实现的字符串操作函数，零外部依赖
 // 模块路径：lib/std/string/string.uya → use std.string.string;
 
-use std.mem.memcpy;
-use std.mem.memchr;
+use std.mem.mem_copy;
+use std.mem.mem_chr;
 
 // ============================================================
 // 字符串操作函数

@@ -642,7 +642,7 @@ int is_member_access_pointer_type(C99CodeGenerator *codegen, ASTNode *member_acc
         }
         if (!var_type_c) {
             for (int i = 0; i < codegen->global_variable_count; i++) {
-                if (strcmp(codegen->global_variables[i].name, var_name) == 0) {
+                if (global_var_name_matches(codegen, i, var_name)) {
                     var_type_c = codegen->global_variables[i].type_c;
                     break;
                 }
@@ -715,7 +715,7 @@ int is_member_access_pointer_type(C99CodeGenerator *codegen, ASTNode *member_acc
             }
             if (!var_type_c) {
                 for (int i = 0; i < codegen->global_variable_count; i++) {
-                    if (strcmp(codegen->global_variables[i].name, var_name) == 0) {
+                    if (global_var_name_matches(codegen, i, var_name)) {
                         var_type_c = codegen->global_variables[i].type_c;
                         break;
                     }
@@ -788,7 +788,7 @@ int is_identifier_pointer_type(C99CodeGenerator *codegen, const char *name) {
     
     // 检查全局变量
     for (int i = 0; i < codegen->global_variable_count; i++) {
-        if (codegen->global_variables[i].name && strcmp(codegen->global_variables[i].name, name) == 0) {
+        if (global_var_name_matches(codegen, i, name)) {
             const char *type_c = codegen->global_variables[i].type_c;
             if (!type_c) return 0;
             // 检查类型是否包含'*'（即是指针）
@@ -820,7 +820,7 @@ int is_identifier_pointer_to_array_type(C99CodeGenerator *codegen, const char *n
     // 如果局部变量中没找到，检查全局变量
     if (!type_c) {
         for (int i = 0; i < codegen->global_variable_count; i++) {
-            if (strcmp(codegen->global_variables[i].name, name) == 0) {
+            if (global_var_name_matches(codegen, i, name)) {
                 type_c = codegen->global_variables[i].type_c;
                 break;
             }
@@ -866,7 +866,7 @@ int is_array_access_pointer_type(C99CodeGenerator *codegen, ASTNode *array_acces
         }
         if (!array_type_c) {
             for (int i = 0; i < codegen->global_variable_count; i++) {
-                if (codegen->global_variables[i].name && strcmp(codegen->global_variables[i].name, array_name) == 0) {
+                if (global_var_name_matches(codegen, i, array_name)) {
                     array_type_c = codegen->global_variables[i].type_c;
                     break;
                 }
@@ -922,7 +922,7 @@ int is_array_access_pointer_type(C99CodeGenerator *codegen, ASTNode *array_acces
             }
             if (!var_type_c) {
                 for (int i = 0; i < codegen->global_variable_count; i++) {
-                    if (codegen->global_variables[i].name && strcmp(codegen->global_variables[i].name, var_name) == 0) {
+                    if (global_var_name_matches(codegen, i, var_name)) {
                         var_type_c = codegen->global_variables[i].type_c;
                         break;
                     }
@@ -1008,7 +1008,7 @@ int is_identifier_struct_type(C99CodeGenerator *codegen, const char *name) {
     
     // 检查全局变量
     for (int i = 0; i < codegen->global_variable_count; i++) {
-        if (strcmp(codegen->global_variables[i].name, name) == 0) {
+        if (global_var_name_matches(codegen, i, name)) {
             const char *type_c = codegen->global_variables[i].type_c;
             if (!type_c) return 0;
             // 检查类型是否包含"struct "且不包含'*'（即不是指针）
@@ -1029,7 +1029,7 @@ const char *get_identifier_type_c(C99CodeGenerator *codegen, const char *name) {
         }
     }
     for (int i = 0; i < codegen->global_variable_count; i++) {
-        if (strcmp(codegen->global_variables[i].name, name) == 0) {
+        if (global_var_name_matches(codegen, i, name)) {
             return codegen->global_variables[i].type_c;
         }
     }
@@ -1392,7 +1392,7 @@ const char *get_array_element_type(C99CodeGenerator *codegen, ASTNode *array_exp
         
         // 检查全局变量
         for (int i = 0; i < codegen->global_variable_count; i++) {
-            if (strcmp(codegen->global_variables[i].name, var_name) == 0) {
+            if (global_var_name_matches(codegen, i, var_name)) {
                 const char *type_c = codegen->global_variables[i].type_c;
                 if (!type_c) return NULL;
                 

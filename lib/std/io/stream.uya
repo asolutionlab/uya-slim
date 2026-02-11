@@ -8,7 +8,7 @@ use std.io.fwrite;
 use std.string.strlen;
 use std.string.strcpy;
 use std.string.strchr;
-use std.mem.memcpy;
+use std.mem.mem_copy;
 
 // 从文件读取一个字符
 // 参数：
@@ -90,7 +90,7 @@ export fn fprintf(handle: &void, format: &const byte, arg: i32) i32 {
     const prefix_len: usize = @usize_from_ptr(percent_pos as &void) - @usize_from_ptr(format as &void);
     if prefix_len > 0 {
         var prefix_buf: [byte: 256] = [];
-        memcpy(&prefix_buf[0], format, prefix_len);
+        mem_copy(&prefix_buf[0], format, prefix_len);
         const prefix_write: i32 = fputs(&prefix_buf[0], handle);
         if prefix_write < 0 {
             return 0 - 1;
@@ -148,7 +148,7 @@ export fn fprintf(handle: &void, format: &const byte, arg: i32) i32 {
     const suffix_len: usize = strlen(suffix_start);
     if suffix_len > 0 {
         var suffix_buf: [byte: 256] = [];
-        memcpy(&suffix_buf[0], suffix_start, suffix_len);
+        mem_copy(&suffix_buf[0], suffix_start, suffix_len);
         const suffix_write: i32 = fputs(&suffix_buf[0], handle);
         if suffix_write < 0 {
             return 0 - 1;

@@ -10,15 +10,15 @@ use std.io.fputc;
 use std.io.fputs;
 use std.io.fprintf;
 use std.io.fflush;
-use std.syscall.O_RDONLY;
-use std.syscall.O_WRONLY;
-use std.syscall.O_CREAT;
-use std.syscall.O_TRUNC;
-use std.syscall.S_IRWXU;
+use std.syscall.linux.O_RDONLY;
+use std.syscall.linux.O_WRONLY;
+use std.syscall.linux.O_CREAT;
+use std.syscall.linux.O_TRUNC;
+use std.syscall.linux.S_IRWXU;
 
 fn main() i32 {
-    // 测试 1: fopen/fclose - 打开和关闭文件
-    const test_file: &const byte = "/tmp/test_std_io.txt\0" as &const byte;
+    // 测试 1: fopen/fclose - 打开和关闭文件（用当前目录避免 /tmp 不可写的环境）
+    const test_file: &const byte = "./test_std_io.txt\0" as &const byte;
     const file1: &void = fopen(test_file, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU);
     if file1 == null {
         return 1;  // 打开文件失败

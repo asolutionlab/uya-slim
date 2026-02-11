@@ -245,11 +245,11 @@ use std.c.syscall.O_RDWR;
 use std.c.syscall.O_CREAT;
 use std.c.syscall.O_TRUNC;
 use std.c.syscall.O_APPEND;
-use std.c.syscall.S_IRWXU;
-use std.c.syscall.STDOUT_FILENO;
-use std.c.syscall.STDERR_FILENO;
+use std.c.syscall.UYA_S_IRWXU;
+use std.c.syscall.UYA_STDOUT_FILENO;
+use std.c.syscall.UYA_STDERR_FILENO;
 use std.string.strlen;
-use std.c.strcmp;
+use std.string.strcmp;
 
 // 全局文件描述符存储（用于 fopen/fclose，最多 64 个文件）
 var fopen_fd_storage: [i64: 64] = [];
@@ -274,10 +274,10 @@ export fn fopen(filename: &const byte, mode: &const byte) &void {
             flags = O_RDONLY;
         } else if c == 119 {  // 'w'
             flags = O_WRONLY | O_CREAT | O_TRUNC;
-            create_mode = S_IRWXU;
+            create_mode = UYA_S_IRWXU;
         } else if c == 97 {  // 'a'
             flags = O_WRONLY | O_CREAT | O_APPEND;
-            create_mode = S_IRWXU;
+            create_mode = UYA_S_IRWXU;
         } else if c == 43 {  // '+'
             // 读写模式
             if flags == O_RDONLY {

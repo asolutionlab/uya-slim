@@ -46,23 +46,23 @@ export const O_TRUNC: i64 = 512;
 export const O_APPEND: i64 = 1024;
 
 // ============================================================
-// 文件权限模式
+// 文件权限模式（UYA_ 前缀避免与 sys/stat.h 等系统宏冲突）
 // ============================================================
 
-export const S_IRWXU: i64 = 448;  // 0700 用户读写执行
-export const S_IRUSR: i64 = 256;  // 0400 用户读
-export const S_IWUSR: i64 = 128;  // 0200 用户写
-export const S_IXUSR: i64 = 64;   // 0100 用户执行
+export const UYA_S_IRWXU: i64 = 448;  // 0700 用户读写执行
+export const UYA_S_IRUSR: i64 = 256;  // 0400 用户读
+export const UYA_S_IWUSR: i64 = 128;  // 0200 用户写
+export const UYA_S_IXUSR: i64 = 64;   // 0100 用户执行
 
-export const S_IRWXG: i64 = 56;   // 0070 组读写执行
-export const S_IRGRP: i64 = 32;   // 0040 组读
-export const S_IWGRP: i64 = 16;   // 0020 组写
-export const S_IXGRP: i64 = 8;    // 0010 组执行
+export const UYA_S_IRWXG: i64 = 56;   // 0070 组读写执行
+export const UYA_S_IRGRP: i64 = 32;   // 0040 组读
+export const UYA_S_IWGRP: i64 = 16;   // 0020 组写
+export const UYA_S_IXGRP: i64 = 8;    // 0010 组执行
 
-export const S_IRWXO: i64 = 7;    // 0007 其他读写执行
-export const S_IROTH: i64 = 4;    // 0004 其他读
-export const S_IWOTH: i64 = 2;    // 0002 其他写
-export const S_IXOTH: i64 = 1;    // 0001 其他执行
+export const UYA_S_IRWXO: i64 = 7;    // 0007 其他读写执行
+export const UYA_S_IROTH: i64 = 4;    // 0004 其他读
+export const UYA_S_IWOTH: i64 = 2;    // 0002 其他写
+export const UYA_S_IXOTH: i64 = 1;    // 0001 其他执行
 
 // ============================================================
 // SEEK 标志（lseek）
@@ -73,12 +73,12 @@ export const UYA_SEEK_CUR: i64 = 1;
 export const UYA_SEEK_END: i64 = 2;
 
 // ============================================================
-// 标准文件描述符
+// 标准文件描述符（UYA_ 前缀避免与 unistd.h 等系统宏冲突）
 // ============================================================
 
-export const STDIN_FILENO: i64 = 0;
-export const STDOUT_FILENO: i64 = 1;
-export const STDERR_FILENO: i64 = 2;
+export const UYA_STDIN_FILENO: i64 = 0;
+export const UYA_STDOUT_FILENO: i64 = 1;
+export const UYA_STDERR_FILENO: i64 = 2;
 
 // ============================================================
 // 错误码常量（Linux errno）

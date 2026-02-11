@@ -535,69 +535,9 @@ static int collect_module_dependencies(
         return -1;
     }
     
-    /* main 模块 = main 函数所在目录；入口文件同目录下所有 .uya 视为 main 模块一部分，自动包含 */
-    if (*processed_count == 1) {
-        char dir_path[PATH_MAX];
-        const char *last_slash = strrchr(filename, '/');
-        if (last_slash != NULL) {
-            size_t dir_len = (size_t)(last_slash - filename + 1);
-            if (dir_len >= sizeof(dir_path)) dir_len = sizeof(dir_path) - 1;
-            memcpy(dir_path, filename, dir_len);
-            dir_path[dir_len] = '\0';
-        } else {
-            strcpy(dir_path, ".");
-        }
-        DIR *dir = opendir(dir_path);
-        if (dir != NULL) {
-            struct dirent *entry;
-            while ((entry = readdir(dir)) != NULL && file_list_size < max_files) {
-                if (entry->d_type != DT_REG && entry->d_type != DT_UNKNOWN) continue;
-                {
-                    const char *name = entry->d_name;
-                    size_t name_len = strlen(name);
-                    if (name_len <= 4 || strcmp(name + name_len - 4, ".uya") != 0) continue;
-                }
-                char full_path[PATH_MAX];
-                int len = snprintf(full_path, sizeof(full_path), "%s%s", dir_path, entry->d_name);
-                if (len <= 0 || len >= (int)sizeof(full_path)) continue;
-                if (paths_equal(full_path, filename)) continue;
-                int already_added = 0;
-                for (int j = 0; j < file_list_size; j++) {
-                    if (file_list[j] != NULL && paths_equal(file_list[j], full_path)) {
-                        already_added = 1;
-                        break;
-                    }
-                }
-                if (already_added) continue;
-                int already_processed = 0;
-                for (int j = 0; j < *processed_count; j++) {
-                    if (processed_files[j] != NULL && paths_equal(processed_files[j], full_path)) {
-                        already_processed = 1;
-                        break;
-                    }
-                }
-                if (already_processed) continue;
-                char *path_copy = (char *)arena_alloc(arena, strlen(full_path) + 1);
-                if (path_copy == NULL) {
-                    closedir(dir);
-                    return -1;
-                }
-                strcpy(path_copy, full_path);
-                file_list[file_list_size] = path_copy;
-                file_list_size++;
-                file_list_size = collect_module_dependencies(
-                    path_copy, file_list, file_list_size, max_files,
-                    processed_files, processed_count, max_processed,
-                    project_root, uya_root, arena);
-                if (file_list_size < 0) {
-                    closedir(dir);
-                    return -1;
-                }
-            }
-            closedir(dir);
-        }
-    }
-    
+    // 单文件编译时不再自动包含同目录下所有 .uya，避免测试目录中多个独立 main 被一起编译导致重复定义。
+    // 仅通过显式 use 语句（含 use main）收集依赖；use main 时由下方模块循环处理。
+
     // 对于每个模块，查找文件并递归处理
     for (int i = 0; i < module_count; i++) {
         if (modules[i] == NULL) {

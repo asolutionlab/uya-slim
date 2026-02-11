@@ -1423,6 +1423,7 @@ static Type checker_infer_type(TypeChecker *checker, ASTNode *expr) {
             result.kind = TYPE_POINTER;
             result.data.pointer.pointer_to = pointed_type_ptr;
             result.data.pointer.is_ffi_pointer = 1;  // FFI 指针类型
+            result.data.pointer.is_const = 0;
             return result;
         }
         
@@ -1646,6 +1647,7 @@ static Type checker_infer_type(TypeChecker *checker, ASTNode *expr) {
                 result.kind = TYPE_POINTER;
                 result.data.pointer.pointer_to = pointed_type_ptr;
                 result.data.pointer.is_ffi_pointer = 0;  // 普通指针
+                result.data.pointer.is_const = 0;
                 return result;
             } else if (op == TOKEN_ASTERISK) {
                 // 解引用（*expr）：操作数必须是指针类型，返回指针指向的类型
@@ -1926,6 +1928,7 @@ static Type checker_infer_type(TypeChecker *checker, ASTNode *expr) {
                         result.kind = TYPE_POINTER;
                         result.data.pointer.pointer_to = pt;
                         result.data.pointer.is_ffi_pointer = 0;
+                        result.data.pointer.is_const = 0;
                         return result;
                     }
                 }
@@ -4307,6 +4310,7 @@ static Type checker_check_member_access(TypeChecker *checker, ASTNode *node) {
                     result.data.pointer.pointer_to->data.struct_type.name = "ASTStringInterpSegment";
                 }
                 result.data.pointer.is_ffi_pointer = 0;
+                result.data.pointer.is_const = 0;
                 return result;
             }
             // 对于其他字段，返回 void 类型（表示类型推断失败，但不报错）
@@ -4902,6 +4906,7 @@ static Type checker_check_unary_expr(TypeChecker *checker, ASTNode *node) {
         result.kind = TYPE_POINTER;
         result.data.pointer.pointer_to = pointed_type_ptr;
         result.data.pointer.is_ffi_pointer = 0;
+        result.data.pointer.is_const = 0;
         return result;
     } else if (op == TOKEN_ASTERISK) {
         // 解引用（*expr）：操作数必须是指针类型
