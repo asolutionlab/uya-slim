@@ -35,6 +35,8 @@ const char *convert_array_return_type(C99CodeGenerator *codegen, ASTNode *return
 const char *get_array_element_type(C99CodeGenerator *codegen, ASTNode *array_expr);
 const char *get_array_wrapper_struct_name(C99CodeGenerator *codegen, ASTNode *array_type);
 void gen_array_wrapper_struct(C99CodeGenerator *codegen, ASTNode *array_type, const char *struct_name);
+/* 数组元素是否为聚合（结构体/数组），用于决定结构体初始化用 {0} 还是 {{0}}，避免 -Wbraces / -Wmissing-braces */
+int array_element_is_aggregate_c99(C99CodeGenerator *codegen, ASTNode *array_type);
 
 // 类型检查（types.c）
 int is_identifier_pointer_type(C99CodeGenerator *codegen, const char *name);

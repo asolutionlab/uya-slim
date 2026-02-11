@@ -505,8 +505,7 @@ fn pregenerate_error_union_structs_for_interface(codegen: &C99CodeGenerator, ifa
             const ret_type: &ASTNode = msig.fn_decl_return_type;
             if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
                 // 预先生成错误联合类型结构体定义（通过调用 c99_type_to_c）
-                const ret_c: &byte = c99_type_to_c(codegen, ret_type);
-                // 避免未使用变量警告（Uya 不支持 (void) 转换，直接忽略）
+                c99_type_to_c(codegen, ret_type);
             }
             
             // 检查参数类型
@@ -518,8 +517,7 @@ fn pregenerate_error_union_structs_for_interface(codegen: &C99CodeGenerator, ifa
                         const pt: &ASTNode = p.var_decl_type;
                         if pt != null && pt.type == ASTNodeType.AST_TYPE_ERROR_UNION {
                             // 预先生成错误联合类型结构体定义
-                            const pt_c: &byte = c99_type_to_c(codegen, pt);
-                            // 避免未使用变量警告
+                            c99_type_to_c(codegen, pt);
                         }
                     }
                     k = k + 1;
@@ -731,7 +729,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                 if k > 0 {
                     fputs(", " as *byte, codegen.output as *void);
                 }
-                if cname != null {
+                if impl != null && cname != null {
                     const ret_c: &byte = convert_array_return_type(codegen, msig.fn_decl_return_type);
                     const pc: i32 = msig.fn_decl_param_count;
                     fprintf(codegen.output as *void, "(%s (*)(void *self" as *byte, ret_c as *byte);

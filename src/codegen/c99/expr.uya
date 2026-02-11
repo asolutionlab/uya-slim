@@ -7,6 +7,28 @@
 // ===== 外部函数声明 =====
 // C 标准库函数（在 extern_decls.uya 中声明）
 
+// 数组元素是否为聚合（结构体或数组），若是则结构体初始化用 {{0}}，否则用 {0}，避免 -Wbraces / -Wmissing-braces
+fn array_element_is_aggregate_c99(codegen: &C99CodeGenerator, array_type: &ASTNode) i32 {
+    if codegen == null || array_type == null || array_type.type != ASTNodeType.AST_TYPE_ARRAY {
+        return 0;
+    }
+    const elem: &ASTNode = array_type.type_array_element_type;
+    if elem == null {
+        return 0;
+    }
+    if elem.type == ASTNodeType.AST_TYPE_POINTER {
+        return 0;
+    }
+    if elem.type == ASTNodeType.AST_TYPE_ARRAY {
+        return 1;
+    }
+    if elem.type == ASTNodeType.AST_TYPE_NAMED && elem.type_named_name != null &&
+        find_struct_decl_c99(codegen, elem.type_named_name) != null {
+        return 1;
+    }
+    return 0;
+}
+
 // 已知 C 变参函数对应的 va_list 版本（用于 ... 转发）
 fn get_vprintf_style_name(c_name: &byte) &byte {
     if c_name == null {
@@ -44,7 +66,9 @@ fn is_stdlib_function_for_string_arg(func_name: &byte) i32 {
     // 字符串/路径相关（C 库要求 const char *，避免 -Wpointer-sign）
     if strcmp(func_name as *byte, "strstr" as *byte) == 0 ||
         strcmp(func_name as *byte, "strcmp" as *byte) == 0 ||
+        strcmp(func_name as *byte, "strncmp" as *byte) == 0 ||
         strcmp(func_name as *byte, "strrchr" as *byte) == 0 ||
+        strcmp(func_name as *byte, "strchr" as *byte) == 0 ||
         strcmp(func_name as *byte, "stat" as *byte) == 0 ||
         strcmp(func_name as *byte, "readlink" as *byte) == 0 {
         return 1;
@@ -983,8 +1007,17 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     // 使用字段默认值
                     gen_expr(codegen, field.var_decl_init);
                 } else {
-                    // 没有默认值，使用零值
-                    fputs("0" as *byte, codegen.output as *void);
+                    // 没有默认值，使用零值；数组字段：元素为聚合用 {{0}}，否则用 {0}
+                    const ft: &ASTNode = field.var_decl_type;
+                    if ft != null && ft.type == ASTNodeType.AST_TYPE_ARRAY {
+                        if array_element_is_aggregate_c99(codegen, ft) != 0 {
+                            fputs("{{0}}" as *byte, codegen.output as *void);
+                        } else {
+                            fputs("{0}" as *byte, codegen.output as *void);
+                        }
+                    } else {
+                        fputs("0" as *byte, codegen.output as *void);
+                    }
                 }
                 output_count = output_count + 1;
                 fi = fi + 1;
@@ -1030,7 +1063,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 i = i + 1;
             }
         } else {
-            // 空数组字面量：生成 0 避免 ISO C 警告
+            // 空数组字面量：生成 {0}
             fputs("0" as *byte, codegen.output as *void);
         }
         fputc(125, codegen.output as *void);  // '}'
@@ -1646,17 +1679,50 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             arg_idx = arg_idx + 1;
         }
         var did_interface_call: i32 = 0;
-        // 模块限定调用（module.func(args)）：直接生成 func(args)
+        // 模块限定调用（module.func(args)）：直接生成 func(args)，参数转换与直接调用一致
         if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS && callee.member_access_is_module_access != 0 {
-            const func_name: &byte = get_safe_c_identifier(codegen, callee.member_access_field_name);
+            const mod_callee: &byte = callee.member_access_field_name;
+            const func_name: &byte = get_safe_c_identifier(codegen, mod_callee);
             fprintf(codegen.output as *void, "%s(" as *byte, func_name as *byte);
             var ai: i32 = 0;
             while ai < arg_count {
                 if ai > 0 {
                     fputs(", " as *byte, codegen.output as *void);
                 }
-                if expr.call_expr_args[ai] != null && expr.call_expr_args[ai].type == ASTNodeType.AST_STRING {
-                    fputs("(uint8_t *)" as *byte, codegen.output as *void);
+                if (strcmp(mod_callee as *byte, "fopen" as *byte) == 0 && (ai == 0 || ai == 1)) ||
+                    (strcmp(mod_callee as *byte, "strcmp" as *byte) == 0 && (ai == 0 || ai == 1)) ||
+                    (strcmp(mod_callee as *byte, "strncmp" as *byte) == 0 && (ai == 0 || ai == 1)) ||
+                    (strcmp(mod_callee as *byte, "strrchr" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "stat" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "readlink" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "getenv" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "strcpy" as *byte) == 0 && ai == 1) ||
+                    (strcmp(mod_callee as *byte, "fputs" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "strstr" as *byte) == 0 && (ai == 0 || ai == 1)) ||
+                    (strcmp(mod_callee as *byte, "strchr" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "sprintf" as *byte) == 0 && ai == 1) ||
+                    (strcmp(mod_callee as *byte, "atoi" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "strcat" as *byte) == 0 && ai == 1) ||
+                    (strcmp(mod_callee as *byte, "strlen" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "opendir" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "strtol" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "strtod" as *byte) == 0 && ai == 0) {
+                    fputs("(const char *)" as *byte, codegen.output as *void);
+                } else if ((strcmp(mod_callee as *byte, "snprintf" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "sprintf" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "strcpy" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "strcat" as *byte) == 0 && ai == 0) ||
+                    (strcmp(mod_callee as *byte, "readlink" as *byte) == 0 && ai == 1)) {
+                    fputs("(char *)" as *byte, codegen.output as *void);
+                } else if strcmp(mod_callee as *byte, "stat" as *byte) == 0 && ai == 1 {
+                    fputs("(struct stat *)" as *byte, codegen.output as *void);
+                } else if expr.call_expr_args[ai] != null && expr.call_expr_args[ai].type == ASTNodeType.AST_STRING {
+                    const is_stdlib: i32 = is_stdlib_function_for_string_arg(mod_callee);
+                    if is_stdlib != 0 {
+                        fputs("(const char *)" as *byte, codegen.output as *void);
+                    } else {
+                        fputs("(uint8_t *)" as *byte, codegen.output as *void);
+                    }
                 }
                 gen_expr(codegen, expr.call_expr_args[ai]);
                 ai = ai + 1;
@@ -1853,7 +1919,15 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     // 使用单态化函数名
                     safe_name = get_mono_function_name(codegen, func_name, expr.call_expr_type_args, expr.call_expr_type_arg_count);
                 }
-                
+                if callee_name != null && (
+                    strcmp(callee_name as *byte, "strrchr" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strchr" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "getenv" as *byte) == 0 ||
+                    strcmp(callee_name as *byte, "strstr" as *byte) == 0) {
+                    fputs("(uint8_t *)" as *byte, codegen.output as *void);
+                } else if callee_name != null && strcmp(callee_name as *byte, "readdir" as *byte) == 0 {
+                    fputs("(struct Dirent *)" as *byte, codegen.output as *void);
+                }
                 fprintf(codegen.output as *void, "%s(" as *byte, safe_name as *byte);
                 // 单参数 printf 用字面量格式避免 -Wformat-security
                 if callee_name != null && strcmp(callee_name as *byte, "printf" as *byte) == 0 && arg_count == 1 {
@@ -2087,7 +2161,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 }
             }
             if did_box == 0 {
-                if is_strtol_strtod_null != 0 {
+                if is_strtol_strtod_endptr != 0 && is_strtol_strtod_null != 0 {
                     // strtol 和 strtod 的第二个参数如果是 null as * *byte，直接生成 (char **)NULL
                     fputs("(char **)NULL" as *byte, codegen.output as *void);
                 } else {

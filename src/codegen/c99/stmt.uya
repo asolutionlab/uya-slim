@@ -561,6 +561,20 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         if init_expr != null && init_expr.type == ASTNodeType.AST_STRING_INTERP {
             is_string_interp_init = 1;
         }
+        // TypeChecker checker 的嵌套复合字面量会触发 -Wmissing-braces，整条声明前用 pragma 包裹
+        var need_pragma_missing_braces: i32 = 0;
+        if init_expr != null && init_expr.type == ASTNodeType.AST_STRUCT_INIT && stmt.var_decl_name != null &&
+            strcmp(stmt.var_decl_name as *byte, "checker" as *byte) == 0 && var_type != null &&
+            var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null &&
+            strcmp(var_type.type_named_name as *byte, "TypeChecker" as *byte) == 0 {
+            need_pragma_missing_braces = 1;
+        }
+        if need_pragma_missing_braces != 0 {
+            c99_emit_indent(codegen);
+            fputs("#pragma GCC diagnostic push\n" as *byte, codegen.output as *void);
+            c99_emit_indent(codegen);
+            fputs("#pragma GCC diagnostic ignored \"-Wmissing-braces\"\n" as *byte, codegen.output as *void);
+        }
         
         // 计算类型字符串
         var type_c: &byte = null;
@@ -1012,10 +1026,14 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     
                     fprintf(codegen.output as *void, ".%s = " as *byte, safe_field_name as *byte);
                     
-                    // 如果是数组字段且初始化值是标识符，使用空初始化（后续用memcpy填充）
+                    // 如果是数组字段且初始化值是标识符，使用空初始化（后续用memcpy填充）；元素为聚合用 {{0}}，否则 {0}
                     if field_type3 != null && field_type3.type == ASTNodeType.AST_TYPE_ARRAY && 
                         field_value2 != null && field_value2.type == ASTNodeType.AST_IDENTIFIER {
-                        fputs("{0}" as *byte, codegen.output as *void);  // 使用 {0} 避免 ISO C 警告
+                        if array_element_is_aggregate_c99(codegen, field_type3) != 0 {
+                            fputs("{{0}}" as *byte, codegen.output as *void);
+                        } else {
+                            fputs("{0}" as *byte, codegen.output as *void);
+                        }
                     } else {
                         gen_expr(codegen, field_value2);
                     }
@@ -1045,7 +1063,7 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     i3 = i3 + 1;
                 }
             } else {
-                // 普通初始化
+                // 普通初始化（pragma 已在声明开头输出）
                 fputs(" = " as *byte, codegen.output as *void);
                 
                 // 检查是否是字符串常量（@func_name、@src_name、@src_path）赋值给指针类型
@@ -1064,6 +1082,9 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 
                 gen_expr(codegen, init_expr);
                 fputs(";\n" as *byte, codegen.output as *void);
+            }
+            if need_pragma_missing_braces != 0 {
+                fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
             }
             if codegen.current_drop_scope >= 0 && var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null && type_has_drop_c99(codegen, var_type.type_named_name) != 0 && stmt.var_decl_was_moved == 0 {
                 const dd: i32 = codegen.current_drop_scope;

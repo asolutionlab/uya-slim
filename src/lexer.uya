@@ -512,8 +512,8 @@ fn read_number(lexer: &Lexer, arena: &Arena) &Token {
         }
     }
     
-    const n: usize = lexer.position - start_index;
-    const start_ptr: &byte = &lexer.buffer[start_index] as &byte;
+    const n: usize = lexer.position - num_start_index;
+    const start_ptr: &byte = &lexer.buffer[num_start_index] as &byte;
     const value: &byte = arena_copy_str(arena, start_ptr, n);
     if value == null {
         return null;

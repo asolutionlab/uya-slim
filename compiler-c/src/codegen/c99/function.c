@@ -649,14 +649,15 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
             }
         }
     }
+    int is_static = (!is_main && !is_extern && !is_export && !has_extern_decl_same_name);
     
     if (is_main) {
         // main 函数重命名为 uya_main（符合 Uya 规范：main 函数无参数）
         fprintf(codegen->output, "%s uya_main(void)", return_c);
     } else {
-        // 非 extern 函数：根据 is_export 决定是否添加 static；若已有同名 extern 声明则不 static
-        if (!is_extern && !is_export && !has_extern_decl_same_name) {
-            fprintf(codegen->output, "static ");
+        // 非 extern 函数：根据 is_export 决定是否添加 static；static 时加 __attribute__((unused)) 消除 -Wunused-function
+        if (is_static) {
+            fprintf(codegen->output, "static __attribute__((unused)) ");
         }
         fprintf(codegen->output, "%s %s(", return_c, func_name);
         
@@ -794,8 +795,53 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         }
     }
     
+    // 消除 -Wunused-parameter：对每个参数生成 (void)param（仅生成一次，不重复）
+    for (int i = 0; i < param_count; i++) {
+        ASTNode *param = params[i];
+        if (!param || param->type != AST_VAR_DECL) continue;
+        const char *pname = get_safe_c_identifier(codegen, param->data.var_decl.name);
+        if (!pname) continue;
+        ASTNode *pt = param->data.var_decl.type;
+        if (pt && pt->type == AST_TYPE_ARRAY)
+            c99_emit(codegen, "(void)%s_param;\n", pname);
+        else
+            c99_emit(codegen, "(void)%s;\n", pname);
+    }
+    
     // 生成函数体
     gen_stmt(codegen, body);
+    
+    // 若返回类型非 void 且函数体末尾无 return，补兜底 return 避免 -Wreturn-type
+    int has_return = 0;
+    if (body && body->type == AST_BLOCK && body->data.block.stmts) {
+        ASTNode **stmts = body->data.block.stmts;
+        int stmt_count = body->data.block.stmt_count;
+        for (int i = stmt_count - 1; i >= 0; i--) {
+            if (stmts[i] && stmts[i]->type != AST_DEFER_STMT && stmts[i]->type != AST_ERRDEFER_STMT) {
+                has_return = (stmts[i]->type == AST_RETURN_STMT);
+                break;
+            }
+        }
+    }
+    if (!has_return && return_type) {
+        int is_void = 0;
+        if (return_type->type == AST_TYPE_NAMED && return_type->data.type_named.name &&
+            strcmp(return_type->data.type_named.name, "void") == 0)
+            is_void = 1;
+        else if (return_type->type == AST_TYPE_ERROR_UNION) {
+            ASTNode *pl = return_type->data.type_error_union.payload_type;
+            if (!pl || (pl->type == AST_TYPE_NAMED && pl->data.type_named.name &&
+                strcmp(pl->data.type_named.name, "void") == 0))
+                is_void = 1;
+        }
+        if (!is_void) {
+            c99_emit_indent(codegen);
+            if (return_c && strncmp(return_c, "struct ", 7) == 0)
+                c99_emit(codegen, "return (%s){0};\n", return_c);
+            else
+                c99_emit(codegen, "return 0;\n");
+        }
+    }
     
     // 清除当前函数的返回类型与声明
     codegen->current_function_return_type = NULL;
@@ -871,6 +917,12 @@ void gen_method_function(C99CodeGenerator *codegen, ASTNode *fn_decl, const char
             codegen->local_variables[codegen->local_variable_count].type_c = param_type_c;
             codegen->local_variable_count++;
         }
+    }
+    for (int i = 0; i < param_count; i++) {
+        ASTNode *param = params[i];
+        if (!param || param->type != AST_VAR_DECL) continue;
+        const char *pname = get_safe_c_identifier(codegen, param->data.var_decl.name);
+        if (pname) { c99_emit_indent(codegen); fprintf(codegen->output, "(void)%s;\n", pname); }
     }
     if (method_name && strcmp(method_name, "drop") == 0) {
         ASTNode *struct_decl = find_struct_decl_c99(codegen, struct_name);
@@ -1199,6 +1251,12 @@ void gen_mono_function(C99CodeGenerator *codegen, ASTNode *fn_decl, ASTNode **ty
             codegen->local_variable_count++;
         }
     }
+    for (int i = 0; i < param_count; i++) {
+        ASTNode *param = params[i];
+        if (!param || param->type != AST_VAR_DECL) continue;
+        const char *pname = get_safe_c_identifier(codegen, param->data.var_decl.name);
+        if (pname) { c99_emit_indent(codegen); fprintf(codegen->output, "(void)%s;\n", pname); }
+    }
     
     // 生成函数体
     if (body->type == AST_BLOCK) {
@@ -1207,6 +1265,41 @@ void gen_mono_function(C99CodeGenerator *codegen, ASTNode *fn_decl, ASTNode **ty
         }
     } else {
         gen_stmt(codegen, body);
+    }
+    
+    // 若返回类型非 void 且函数体末尾无 return，补兜底 return 避免 -Wreturn-type
+    {
+        int has_return = 0;
+        if (body->type == AST_BLOCK && body->data.block.stmts) {
+            ASTNode **stmts = body->data.block.stmts;
+            int stmt_count = body->data.block.stmt_count;
+            for (int i = stmt_count - 1; i >= 0; i--) {
+                if (stmts[i] && stmts[i]->type != AST_DEFER_STMT && stmts[i]->type != AST_ERRDEFER_STMT) {
+                    has_return = (stmts[i]->type == AST_RETURN_STMT);
+                    break;
+                }
+            }
+        }
+        ASTNode *rt = codegen->current_function_return_type;
+        if (!has_return && rt) {
+            int is_void = 0;
+            if (rt->type == AST_TYPE_NAMED && rt->data.type_named.name &&
+                strcmp(rt->data.type_named.name, "void") == 0)
+                is_void = 1;
+            else if (rt->type == AST_TYPE_ERROR_UNION) {
+                ASTNode *pl = rt->data.type_error_union.payload_type;
+                if (!pl || (pl->type == AST_TYPE_NAMED && pl->data.type_named.name &&
+                    strcmp(pl->data.type_named.name, "void") == 0))
+                    is_void = 1;
+            }
+            if (!is_void) {
+                c99_emit_indent(codegen);
+                if (return_c && strncmp(return_c, "struct ", 7) == 0)
+                    c99_emit(codegen, "return (%s){0};\n", return_c);
+                else
+                    c99_emit(codegen, "return 0;\n");
+            }
+        }
     }
     
     // 恢复上下文

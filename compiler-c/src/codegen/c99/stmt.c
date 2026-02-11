@@ -506,6 +506,17 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
             int is_string_interp_init = (init_expr != NULL && init_expr->type == AST_STRING_INTERP);
             /* 字符串插值初始化需先写入缓冲区，const 数组在 C 中改为非 const 声明 */
             int emit_const = is_const && !is_string_interp_init;
+            /* TypeChecker checker 的嵌套复合字面量会触发 -Wmissing-braces，整条声明前用 pragma 包裹 */
+            int need_pragma_missing_braces = (init_expr && init_expr->type == AST_STRUCT_INIT &&
+                stmt->data.var_decl.name && strcmp(stmt->data.var_decl.name, "checker") == 0 &&
+                var_type && var_type->type == AST_TYPE_NAMED && var_type->data.type_named.name &&
+                strcmp(var_type->data.type_named.name, "TypeChecker") == 0);
+            if (need_pragma_missing_braces) {
+                c99_emit_indent(codegen);
+                fputs("#pragma GCC diagnostic push\n", codegen->output);
+                c99_emit_indent(codegen);
+                fputs("#pragma GCC diagnostic ignored \"-Wmissing-braces\"\n", codegen->output);
+            }
             
             // 计算类型字符串
             const char *type_c = NULL;
@@ -917,10 +928,10 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                         
                         fprintf(codegen->output, ".%s = ", safe_field_name);
                         
-                        // 如果是数组字段且初始化值是标识符，使用空初始化（后续用memcpy填充）
+                        // 如果是数组字段且初始化值是标识符，使用空初始化（后续用memcpy填充）；元素为聚合用 {{0}}，否则 {0}
                         if (field_type && field_type->type == AST_TYPE_ARRAY && 
                             field_value && field_value->type == AST_IDENTIFIER) {
-                            fputs("{0}", codegen->output);  /* 使用 {0} 避免 ISO C 警告 */
+                            fputs(array_element_is_aggregate_c99(codegen, field_type) ? "{{0}}" : "{0}", codegen->output);
                         } else {
                             gen_expr(codegen, field_value);
                         }
@@ -1018,6 +1029,9 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                 }
             } else {
                 fputs(";\n", codegen->output);
+            }
+            if (need_pragma_missing_braces) {
+                fputs("#pragma GCC diagnostic pop\n", codegen->output);
             }
             if (codegen->current_drop_scope >= 0 && var_type && var_type->type == AST_TYPE_NAMED &&
                 var_type->data.type_named.name && type_has_drop_c99(codegen, var_type->data.type_named.name) &&

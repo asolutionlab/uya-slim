@@ -4,6 +4,19 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+/* 数组元素是否为聚合（结构体或数组），若是则结构体初始化用 {{0}}，否则用 {0}，避免 -Wbraces / -Wmissing-braces */
+int array_element_is_aggregate_c99(C99CodeGenerator *codegen, ASTNode *array_type) {
+    if (!codegen || !array_type || array_type->type != AST_TYPE_ARRAY) return 0;
+    ASTNode *elem = array_type->data.type_array.element_type;
+    if (!elem) return 0;
+    if (elem->type == AST_TYPE_POINTER) return 0;  /* 指针为标量，用 {0} */
+    if (elem->type == AST_TYPE_ARRAY) return 1;     /* 数组的数组用 {{0}} */
+    if (elem->type == AST_TYPE_NAMED && elem->data.type_named.name &&
+        find_struct_decl_c99(codegen, elem->data.type_named.name) != NULL)
+        return 1;  /* 结构体用 {{0}} */
+    return 0;  /* 标量类型用 {0} */
+}
+
 /* 已知 C 变参函数对应的 va_list 版本（用于 ... 转发） */
 static const char *get_vprintf_style_name(const char *c_name) {
     if (!c_name) return NULL;
@@ -29,7 +42,9 @@ static int is_stdlib_function_for_string_arg(const char *func_name) {
     /* 字符串/路径相关（C 库要求 const char *，避免 -Wpointer-sign） */
     if (strcmp(func_name, "strstr") == 0 ||
         strcmp(func_name, "strcmp") == 0 ||
+        strcmp(func_name, "strncmp") == 0 ||
         strcmp(func_name, "strrchr") == 0 ||
+        strcmp(func_name, "strchr") == 0 ||
         strcmp(func_name, "stat") == 0 ||
         strcmp(func_name, "readlink") == 0) {
         return 1;
@@ -833,8 +848,13 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                         // 使用字段默认值
                         gen_expr(codegen, field->data.var_decl.init);
                     } else {
-                        // 没有默认值，使用零值
-                        fputs("0", codegen->output);
+                        // 没有默认值，使用零值；数组字段：元素为聚合用 {{0}}，否则用 {0}
+                        ASTNode *ft = field->data.var_decl.type;
+                        if (ft && ft->type == AST_TYPE_ARRAY) {
+                            fputs(array_element_is_aggregate_c99(codegen, ft) ? "{{0}}" : "{0}", codegen->output);
+                        } else {
+                            fputs("0", codegen->output);
+                        }
                     }
                     output_count++;
                 }
@@ -869,7 +889,7 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                     if (i < element_count - 1) fputs(", ", codegen->output);
                 }
             } else {
-                /* 空数组字面量：生成 {0} 避免 ISO C 警告 */
+                /* 空数组字面量：生成 {0} */
                 fputs("0", codegen->output);
             }
             fputc('}', codegen->output);
@@ -1534,7 +1554,7 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                 c99_emit_string_interp_fill(codegen, args[i], temp_name);
             }
             
-            /* 模块限定调用（module.func(args)）：直接生成 func(args) */
+            /* 模块限定调用（module.func(args)）：直接生成 func(args)，参数转换与直接调用一致 */
             if (callee && callee->type == AST_MEMBER_ACCESS && callee->data.member_access.is_module_access) {
                 const char *func_name = get_safe_c_identifier(codegen, callee->data.member_access.field_name);
                 callee_name = callee->data.member_access.field_name;
@@ -1542,10 +1562,32 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                 for (int i = 0; i < arg_count; i++) {
                     if (i > 0) fputs(", ", codegen->output);
                     if (codegen->interp_arg_temp_names[i]) {
-                        fputs("(uint8_t *)", codegen->output);
+                        int is_stdlib = is_stdlib_function_for_string_arg(callee_name);
+                        fputs(is_stdlib ? "(const char *)" : "(uint8_t *)", codegen->output);
                         fputs(codegen->interp_arg_temp_names[i], codegen->output);
                     } else {
-                        if (args[i] && args[i]->type == AST_STRING) fputs("(uint8_t *)", codegen->output);
+                        if (callee_name && ((strcmp(callee_name, "fopen") == 0 && (i == 0 || i == 1)) ||
+                            (strcmp(callee_name, "strcmp") == 0 && (i == 0 || i == 1)) ||
+                            (strcmp(callee_name, "strncmp") == 0 && (i == 0 || i == 1)) ||
+                            (strcmp(callee_name, "strrchr") == 0 && i == 0) || (strcmp(callee_name, "stat") == 0 && i == 0) ||
+                            (strcmp(callee_name, "readlink") == 0 && i == 0) || (strcmp(callee_name, "getenv") == 0 && i == 0) ||
+                            (strcmp(callee_name, "strcpy") == 0 && i == 1) || (strcmp(callee_name, "fputs") == 0 && i == 0) ||
+                            (strcmp(callee_name, "strstr") == 0 && (i == 0 || i == 1)) || (strcmp(callee_name, "strchr") == 0 && i == 0) ||
+                            (strcmp(callee_name, "sprintf") == 0 && i == 1) || (strcmp(callee_name, "atoi") == 0 && i == 0) ||
+                            (strcmp(callee_name, "strcat") == 0 && i == 1) || (strcmp(callee_name, "strlen") == 0 && i == 0) ||
+                            (strcmp(callee_name, "opendir") == 0 && i == 0) || (strcmp(callee_name, "strtol") == 0 && i == 0) ||
+                            (strcmp(callee_name, "strtod") == 0 && i == 0)))
+                            fputs("(const char *)", codegen->output);
+                        else if (callee_name && ((strcmp(callee_name, "snprintf") == 0 && i == 0) ||
+                            (strcmp(callee_name, "sprintf") == 0 && i == 0) || (strcmp(callee_name, "strcpy") == 0 && i == 0) ||
+                            (strcmp(callee_name, "strcat") == 0 && i == 0) || (strcmp(callee_name, "readlink") == 0 && i == 1)))
+                            fputs("(char *)", codegen->output);
+                        else if (callee_name && strcmp(callee_name, "stat") == 0 && i == 1)
+                            fputs("(struct stat *)", codegen->output);
+                        else if (args[i] && args[i]->type == AST_STRING) {
+                            int is_stdlib = is_stdlib_function_for_string_arg(callee_name);
+                            fputs(is_stdlib ? "(const char *)" : "(uint8_t *)", codegen->output);
+                        }
                         gen_expr(codegen, args[i]);
                     }
                 }
@@ -1754,6 +1796,13 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                 }
                 
                 const char *safe_name = get_safe_c_identifier(codegen, output_name);
+                /* C 库中返回 char* 的函数，生成时整体包 (uint8_t *) 以消除赋值给 uint8_t* 的 -Wpointer-sign；readdir 返回赋给 struct Dirent* 故用 (struct Dirent *) */
+                if (callee_name && (strcmp(callee_name, "strrchr") == 0 || strcmp(callee_name, "strchr") == 0 ||
+                    strcmp(callee_name, "getenv") == 0 || strcmp(callee_name, "strstr") == 0)) {
+                    fputs("(uint8_t *)", codegen->output);
+                } else if (callee_name && strcmp(callee_name, "readdir") == 0) {
+                    fputs("(struct Dirent *)", codegen->output);
+                }
                 fprintf(codegen->output, "%s(", safe_name);
                 if (printf_one_fmt) {
                     fputs("\"%s\", ", codegen->output);  /* 单参数 printf 用字面量格式避免 -Wformat-security */

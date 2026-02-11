@@ -324,14 +324,6 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
         // 检查是否是只读指针（&const T 或 *const T）
         const is_const: i32 = type_node.type_pointer_is_const;
         
-        // 检查是否是 FFI 指针指向 byte（即 *byte）
-        var is_ffi_byte_ptr: i32 = 0;
-        if type_node.type_pointer_is_ffi_pointer != 0 && pointed_type != null &&
-            pointed_type.type == ASTNodeType.AST_TYPE_NAMED && pointed_type.type_named_name != null &&
-            strcmp(pointed_type.type_named_name as *byte, "byte" as *byte) == 0 {
-            is_ffi_byte_ptr = 1;
-        }
-        
         // 分配缓冲区（在 Arena 中）
         var extra_len: i32 = 3;  // " *" + null
         if is_const != 0 {
