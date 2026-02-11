@@ -587,36 +587,22 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             # 对于 C99 后端，尝试自动链接
             if [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ]; then
                 if [ -f "$BRIDGE_C" ]; then
-                    # 尝试检测 LLVM 路径
-                    LLVM_INCLUDE=""
-                    LLVM_LIBDIR=""
-                    LLVM_LIBS="-lLLVM-17"
-                    
-                    if [ -d "/usr/include/llvm-c" ]; then
-                        LLVM_INCLUDE="-I/usr/include/llvm-c"
-                    fi
-                    if [ -d "/usr/lib/llvm-17/lib" ]; then
-                        LLVM_LIBDIR="-L/usr/lib/llvm-17/lib"
-                    elif [ -d "/usr/lib/llvm-17" ]; then
-                        LLVM_LIBDIR="-L/usr/lib/llvm-17"
-                    fi
-                    
-                    # 构建链接命令（直接链接 .c 文件，不需要 objcopy 重命名）
-                    # 注意：标准库已经编译到 OUTPUT_FILE 中了，不需要单独链接
+                    # --nostdlib + 静态链接：不依赖动态库，显式链接 crt 与 libc/libgcc
                     if [ "$USE_NOSTDLIB" = true ]; then
-                        # 使用 -nostdlib 时，不链接标准库，但需要链接 gcc 运行时库
-                        # 标准库已经编译到 OUTPUT_FILE 中了
+                        CRT1="$(gcc -print-file-name=crt1.o)"
+                        CRTI="$(gcc -print-file-name=crti.o)"
+                        CRTN="$(gcc -print-file-name=crtn.o)"
                         if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                            LINK_CMD="gcc --std=c99 -no-pie -nostdlib $LLVM_INCLUDE $LLVM_LIBDIR \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"${EXECUTABLE_FILE}.exe\" $LLVM_LIBS -lstdc++ -lgcc"
+                            LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$OUTPUT_FILE\" \"$BRIDGE_C\" -lc \"$CRTN\" -lgcc"
                         else
-                            LINK_CMD="gcc --std=c99 -no-pie -nostdlib $LLVM_INCLUDE $LLVM_LIBDIR \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"$EXECUTABLE_FILE\" $LLVM_LIBS -lstdc++ -lgcc"
+                            LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$OUTPUT_FILE\" \"$BRIDGE_C\" -lc \"$CRTN\" -lgcc"
                         fi
                     else
-                        # 正常链接，使用标准库
+                        # 0 依赖：纯静态链接，不链接 LLVM（C99 自举编译器不需要）
                         if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                            LINK_CMD="gcc --std=c99 -no-pie $LLVM_INCLUDE $LLVM_LIBDIR \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"${EXECUTABLE_FILE}.exe\" $LLVM_LIBS -lstdc++ -lm -ldl -lpthread"
+                            LINK_CMD="gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"${EXECUTABLE_FILE}.exe\""
                         else
-                            LINK_CMD="gcc --std=c99 -no-pie $LLVM_INCLUDE $LLVM_LIBDIR \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"$EXECUTABLE_FILE\" $LLVM_LIBS -lstdc++ -lm -ldl -lpthread"
+                            LINK_CMD="gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"$EXECUTABLE_FILE\""
                         fi
                     fi
                     
