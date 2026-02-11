@@ -18,8 +18,8 @@ enum BackendType {
 // 文件读取缓冲区大小（与 Lexer 一致）
 const FILE_BUFFER_SIZE: i32 = 1024 * 1024;
 
-// Arena 缓冲区大小（增加以支持自举编译 + 泛型结构体方法单态化 + 代码生成）
-const ARENA_BUFFER_SIZE: i32 = 256 * 1024 * 1024;  // 256MB
+// Arena 缓冲区大小（自举生成的 C 与手写 C 分配顺序略异，需 384MB 以保证 make b 通过）
+const ARENA_BUFFER_SIZE: i32 = 384 * 1024 * 1024;  // 384MB
 
 // 最大输入文件数
 const MAX_INPUT_FILES: i32 = 64;
@@ -29,7 +29,8 @@ var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
 var file_buffer: [byte: FILE_BUFFER_SIZE] = [];
 // 临时 Arena 缓冲区（用于依赖收集，全局变量避免栈溢出）
 // 需要足够大以支持递归解析多个文件的 AST
-var temp_arena_buffer: [byte: 32 * 1024 * 1024] = [];
+// 自举时依赖收集阶段由自举生成的 C 执行，单次解析占用略高于 C 版，需 192MB 以保证 make b 通过
+var temp_arena_buffer: [byte: 192 * 1024 * 1024] = [];
 // 大数组移到全局变量避免栈溢出（main_file_paths 是 64 * 4096 = 262KB）
 var main_file_paths_global: [[byte: PATH_MAX]: MAX_INPUT_FILES] = [];
 // 将 resolved_files 也移到全局变量，避免栈溢出
@@ -509,6 +510,23 @@ fn extract_use_modules(
     return 0;
 }
 
+// 对路径指针数组按字符串排序（与 C 编译器 qsort 一致，保证自举比对顺序）
+fn sort_paths(paths: &(&byte), count: i32) void {
+    var i: i32 = 0;
+    while i < count - 1 {
+        var j: i32 = i + 1;
+        while j < count {
+            if strcmp(paths[i] as *byte, paths[j] as *byte) > 0 {
+                const tmp: &byte = paths[i];
+                paths[i] = paths[j];
+                paths[j] = tmp;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
 // 递归收集模块依赖
 // 返回：成功返回新的文件列表大小，失败返回-1
 fn collect_module_dependencies(
@@ -575,29 +593,184 @@ fn collect_module_dependencies(
         return -1;
     }
     
-    // 对于每个模块，查找文件并递归处理
+    // 对于每个模块，查找文件并递归处理（与 C 编译器行为一致，保证自举比对 make b 通过）
     i = 0;
     while i < module_count {
         if modules[i] == null {
             i = i + 1;
             continue;
         }
-        
-        // 特殊处理：main 模块
-        if strcmp(modules[i] as *byte, "main" as *byte) == 0 {
-            // main 模块在项目根目录
-            // 注意：main 模块通常已经在文件列表中（作为入口文件），
-            // 所以这里不需要再次添加。如果确实需要添加，应该检查是否已在列表中。
-            // 为了避免重复添加，这里直接跳过 main 模块的处理。
-            // 如果 main.uya 不在列表中，它应该已经作为入口文件被添加了。
+        // 跳过标准库：与 C 编译器一致，自举时不解析 lib/std
+        if strcmp(modules[i] as *byte, "std" as *byte) == 0 || strncmp(modules[i] as *byte, "std." as *byte, 4) == 0 {
             i = i + 1;
             continue;
         }
-        
-        // 查找模块文件
+        // use main：收集入口文件所在目录下所有 .uya，排序后加入（与 C 编译器一致）
+        if strcmp(modules[i] as *byte, "main" as *byte) == 0 {
+            if processed_count[0] > 0 && processed_files[0] != null {
+                const entry_file: &byte = processed_files[0];
+                var main_dir: [byte: PATH_MAX] = [];
+                const slash: *byte = strrchr(entry_file as *byte, 47);
+                if slash != null {
+                    const dlen: usize = (slash as i64 - entry_file as i64 + 1) as usize;
+                    if dlen < PATH_MAX as usize {
+                        memcpy(&main_dir[0] as *void, entry_file as *void, dlen);
+                        main_dir[dlen] = 0 as byte;
+                    } else {
+                        strcpy(&main_dir[0], "." as *byte);
+                    }
+                } else {
+                    strcpy(&main_dir[0], "." as *byte);
+                }
+                const dir: *DIR = opendir(&main_dir[0]);
+                if dir != null {
+                    var pending: [&byte: MAX_INPUT_FILES] = [];
+                    var pending_count: i32 = 0;
+                    var entry: *Dirent = readdir(dir);
+                    while entry != null && pending_count < max_files {
+                        if dirent_get_type(entry as &byte) == 8 as byte {
+                            const name: *byte = dirent_get_name(entry as &byte) as *byte;
+                            const name_len: usize = strlen(name);
+                            if name_len > 4 && strcmp(name + (name_len - 4), ".uya" as *byte) == 0 {
+                                var fp: [byte: PATH_MAX] = [];
+                                const flen: i32 = snprintf(&fp[0], PATH_MAX, "%s%s" as *byte, &main_dir[0], name);
+                                if flen > 0 && flen < PATH_MAX as i32 {
+                                    var in_list: i32 = 0;
+                                    var j: i32 = 0;
+                                    while j < current_size {
+                                        if file_list[j] != null && paths_equal(file_list[j], &fp[0] as &byte) != 0 {
+                                            in_list = 1;
+                                            break;
+                                        }
+                                        j = j + 1;
+                                    }
+                                    if in_list == 0 {
+                                        var in_proc: i32 = 0;
+                                        j = 0;
+                                        while j < processed_count[0] {
+                                            if processed_files[j] != null && paths_equal(processed_files[j], &fp[0] as &byte) != 0 {
+                                                in_proc = 1;
+                                                break;
+                                            }
+                                            j = j + 1;
+                                        }
+                                        if in_proc == 0 {
+                                            const path_copy: &byte = arena_alloc(arena, strlen(&fp[0]) + 1) as &byte;
+                                            if path_copy != null {
+                                                strcpy(path_copy as *byte, &fp[0]);
+                                                pending[pending_count] = path_copy;
+                                                pending_count = pending_count + 1;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        entry = readdir(dir);
+                    }
+                    closedir(dir);
+                    if pending_count > 0 {
+                        sort_paths(&pending[0] as &(&byte), pending_count);
+                        var idx: i32 = 0;
+                        while idx < pending_count {
+                            const pc: &byte = pending[idx];
+                            file_list[current_size] = pc;
+                            current_size = current_size + 1;
+                            current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                            if current_size < 0 { return -1; }
+                            idx = idx + 1;
+                        }
+                    }
+                }
+            }
+            i = i + 1;
+            continue;
+        }
+        // 目录模块：将模块路径转为目录路径，若存在则收集该目录下所有 .uya（与 C 一致）
+        var file_path: [byte: PATH_MAX] = [];
+        const path_len: usize = strlen(modules[i] as *byte);
+        if path_len >= PATH_MAX as usize {
+            i = i + 1;
+            continue;
+        }
+        strcpy(&file_path[0], modules[i] as *byte);
+        var k: usize = 0;
+        while k < path_len {
+            if file_path[k] == 46 as byte { file_path[k] = 47 as byte; }
+            k = k + 1;
+        }
+        var found_dir: i32 = 0;
+        var module_dir_path: [byte: PATH_MAX] = [];
+        var ri: i32 = 0;
+        while ri < 2 {
+            var root: &byte = null;
+            if ri == 0 { root = project_root; }
+            if ri == 1 { root = uya_root; }
+            ri = ri + 1;
+            if root == null || root[0] == 0 { continue; }
+            const len: i32 = snprintf(&module_dir_path[0], PATH_MAX, "%s%s" as *byte, root as *byte, &file_path[0]);
+            if len > 0 && len < PATH_MAX as i32 && is_directory(&module_dir_path[0] as &byte) != 0 {
+                found_dir = 1;
+                break;
+            }
+        }
+        if found_dir != 0 {
+            const dir_path: &byte = &module_dir_path[0] as &byte;
+            const dir: *DIR = opendir(&module_dir_path[0]);
+            if dir != null {
+                var pending: [&byte: MAX_INPUT_FILES] = [];
+                var pending_count: i32 = 0;
+                var entry: *Dirent = readdir(dir);
+                while entry != null && pending_count < max_files {
+                    if dirent_get_type(entry as &byte) == 8 as byte {
+                        const name: *byte = dirent_get_name(entry as &byte) as *byte;
+                        const name_len: usize = strlen(name);
+                        if name_len > 4 && strcmp(name + (name_len - 4), ".uya" as *byte) == 0 {
+                            var full_path: [byte: PATH_MAX] = [];
+                            const flen: i32 = snprintf(&full_path[0], PATH_MAX, "%s/%s" as *byte, dir_path as *byte, name);
+                            if flen > 0 && flen < PATH_MAX as i32 {
+                                var already_added: i32 = 0;
+                                var j: i32 = 0;
+                                while j < current_size {
+                                    if file_list[j] != null && paths_equal(file_list[j], &full_path[0] as &byte) != 0 {
+                                        already_added = 1;
+                                        break;
+                                    }
+                                    j = j + 1;
+                                }
+                                if already_added == 0 {
+                                    const path_copy: &byte = arena_alloc(arena, strlen(&full_path[0]) + 1) as &byte;
+                                    if path_copy != null {
+                                        strcpy(path_copy as *byte, &full_path[0]);
+                                        pending[pending_count] = path_copy;
+                                        pending_count = pending_count + 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    entry = readdir(dir);
+                }
+                closedir(dir);
+                if pending_count > 0 {
+                    sort_paths(&pending[0] as &(&byte), pending_count);
+                    var idx: i32 = 0;
+                    while idx < pending_count {
+                        const path_copy: &byte = pending[idx];
+                        file_list[current_size] = path_copy;
+                        current_size = current_size + 1;
+                        current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                        if current_size < 0 { return -1; }
+                        idx = idx + 1;
+                    }
+                }
+            }
+            i = i + 1;
+            continue;
+        }
+        // 单文件模块：find_module_file
         var module_file: [byte: PATH_MAX] = [];
         if find_module_file(modules[i], project_root, uya_root, &module_file[0] as &byte, PATH_MAX) == 0 {
-            // 检查是否已在列表中（使用路径比较函数）
             var already_added: i32 = 0;
             var j: i32 = 0;
             while j < current_size {
@@ -608,29 +781,13 @@ fn collect_module_dependencies(
                 j = j + 1;
             }
             if already_added == 0 && current_size < max_files {
-                // 使用 Arena 分配文件路径
-                const path_len: usize = strlen(&module_file[0]);
-                const path_copy: &byte = arena_alloc(arena, path_len + 1) as &byte;
+                const path_copy: &byte = arena_alloc(arena, strlen(&module_file[0]) + 1) as &byte;
                 if path_copy != null {
                     strcpy(path_copy as *byte, &module_file[0]);
                     file_list[current_size] = path_copy;
                     current_size = current_size + 1;
-                    // 递归处理
-                    current_size = collect_module_dependencies(
-                        path_copy,
-                        file_list,
-                        current_size,
-                        max_files,
-                        processed_files,
-                        processed_count,
-                        max_processed,
-                        project_root,
-                        uya_root,
-                        arena
-                    );
-                    if current_size < 0 {
-                        return -1;
-                    }
+                    current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                    if current_size < 0 { return -1; }
                 }
             }
         }
@@ -742,7 +899,7 @@ fn compile_files(
     
     // 初始化临时 Arena（用于依赖收集，使用全局缓冲区避免栈溢出）
     var temp_arena: Arena = Arena { buffer: null, size: 0 as usize, offset: 0 as usize };
-    arena_init(&temp_arena, &temp_arena_buffer[0], 32 * 1024 * 1024);
+    arena_init(&temp_arena, &temp_arena_buffer[0], 192 * 1024 * 1024);
     
     // 获取 UYA_ROOT 和编译器目录
     var uya_root_buffer: [byte: PATH_MAX] = [];

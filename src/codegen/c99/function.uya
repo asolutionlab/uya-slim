@@ -410,17 +410,25 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         return;
     }
     
-    // 读取 is_export 标志
+    // 读取 is_export 标志；若有同名 extern 声明则不能加 static
     const is_export: i32 = fn_decl.fn_decl_is_export;
-    
-    // 对于extern函数，添加extern关键字
+    var has_extern_same: i32 = 0;
+    if is_extern == 0 && fn_decl.fn_decl_name != null && codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
+        var di: i32 = 0;
+        while di < codegen.program_node.program_decl_count {
+            const d: &ASTNode = codegen.program_node.program_decls[di];
+            if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
+               strcmp(d.fn_decl_name as *byte, fn_decl.fn_decl_name as *byte) == 0 && d.fn_decl_body == null {
+                has_extern_same = 1;
+                break;
+            }
+            di = di + 1;
+        }
+    }
     if is_extern != 0 {
         fprintf(codegen.output, "extern %s %s(" as *byte, return_c as *byte, func_name as *byte);
     } else {
-        // 非 extern 函数：根据 is_export 决定是否添加 static
-        // fn foo() void → static void foo(void)（内部函数，不导出）
-        // export fn foo() void → void foo(void)（导出函数，供其他模块使用）
-        if is_export == 0 {
+        if is_export == 0 && has_extern_same == 0 {
             fprintf(codegen.output, "static " as *byte);
         }
         fprintf(codegen.output, "%s %s(" as *byte, return_c as *byte, func_name as *byte);
@@ -690,8 +698,22 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     
     // 读取 is_export 标志
     const is_export: i32 = fn_decl.fn_decl_is_export;
+    // 若程序中存在同名 extern 声明（如 parser 的 extern fn lexer_next_token），定义处不能加 static
+    var has_extern_decl_same_name: i32 = 0;
+    if is_extern == 0 && fn_decl.fn_decl_name != null && codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
+        var di: i32 = 0;
+        while di < codegen.program_node.program_decl_count {
+            const d: &ASTNode = codegen.program_node.program_decls[di];
+            if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
+               strcmp(d.fn_decl_name as *byte, fn_decl.fn_decl_name as *byte) == 0 && d.fn_decl_body == null {
+                has_extern_decl_same_name = 1;
+                break;
+            }
+            di = di + 1;
+        }
+    }
     var is_static: i32 = 0;
-    if is_main == 0 && is_extern == 0 && is_export == 0 {
+    if is_main == 0 && is_extern == 0 && is_export == 0 && has_extern_decl_same_name == 0 {
         is_static = 1;
     }
     
@@ -971,12 +993,14 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
             is_void_payload = 1;
         }
         if is_void_payload != 0 {
-            // !void 类型：返回成功的错误联合
+            // !void 类型：返回成功的错误联合（缩进与 C 编译器一致）
+            codegen.indent_level = codegen.indent_level + 1;
             c99_emit_indent(codegen);
             fprintf(codegen.output as *void, "return (%s){ .error_id = 0 };\n" as *byte, return_c as *byte);
+            codegen.indent_level = codegen.indent_level - 1;
         }
     }
-    // 若返回类型非 void 且函数体末尾无 return，补兜底 return 避免 -Wreturn-type
+    // 若返回类型非 void 且函数体末尾无 return，补兜底 return 避免 -Wreturn-type（缩进与 C 编译器一致）
     if has_return == 0 && return_type != null {
         var is_void: i32 = 0;
         if return_type.type == ASTNodeType.AST_TYPE_NAMED && return_type.type_named_name != null &&
@@ -992,12 +1016,14 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
             }
         }
         if is_void == 0 {
+            codegen.indent_level = codegen.indent_level + 1;
             c99_emit_indent(codegen);
             if return_c != null && strncmp(return_c as *byte, "struct " as *byte, 7) == 0 {
                 fprintf(codegen.output as *void, "return (%s){0};\n" as *byte, return_c as *byte);
             } else {
                 fputs("return 0;\n" as *byte, codegen.output as *void);
             }
+            codegen.indent_level = codegen.indent_level - 1;
         }
     }
     
@@ -1183,9 +1209,11 @@ fn gen_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_nam
             is_void_payload = 1;
         }
         if is_void_payload != 0 {
-            // !void 类型：返回成功的错误联合
+            // !void 类型：返回成功的错误联合（缩进与 C 编译器一致）
+            codegen.indent_level = codegen.indent_level + 1;
             c99_emit_indent(codegen);
             fprintf(codegen.output as *void, "return (%s){ .error_id = 0 };\n" as *byte, return_c as *byte);
+            codegen.indent_level = codegen.indent_level - 1;
         }
     }
     
@@ -1553,12 +1581,14 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
             }
         }
         if is_void_mono == 0 {
+            codegen.indent_level = codegen.indent_level + 1;
             c99_emit_indent(codegen);
             if return_c != null && strncmp(return_c as *byte, "struct " as *byte, 7) == 0 {
                 fprintf(codegen.output as *void, "return (%s){0};\n" as *byte, return_c as *byte);
             } else {
                 fputs("return 0;\n" as *byte, codegen.output as *void);
             }
+            codegen.indent_level = codegen.indent_level - 1;
         }
     }
     

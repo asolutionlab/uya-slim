@@ -472,6 +472,11 @@ static int find_main_files_in_dir(const char *dir_path, const char *main_files[]
 //       project_root - 项目根目录
 //       uya_root - UYA_ROOT 目录
 //       arena - Arena 分配器（用于临时分配）
+// 用于 qsort 的路径比较（保证与 Uya 自举依赖顺序一致）
+static int compare_paths(const void *a, const void *b) {
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
 // 返回：成功返回新的文件列表大小，失败返回-1
 static int collect_module_dependencies(
     const char *filename,
@@ -547,7 +552,7 @@ static int collect_module_dependencies(
         if (strcmp(modules[i], "std") == 0 || (strncmp(modules[i], "std.", 4) == 0)) {
             continue;
         }
-        /* main 模块 = main 函数所在目录，收集该目录下所有 .uya */
+        /* main 模块 = main 函数所在目录，收集该目录下所有 .uya（排序以保证与 Uya 自举顺序一致） */
         if (strcmp(modules[i], "main") == 0) {
             if (*processed_count > 0 && processed_files[0] != NULL) {
                 const char *entry_file = processed_files[0];
@@ -563,8 +568,10 @@ static int collect_module_dependencies(
                 }
                 DIR *main_dirp = opendir(main_dir);
                 if (main_dirp != NULL) {
+                    char *pending[MAX_INPUT_FILES];
+                    int pending_count = 0;
                     struct dirent *e;
-                    while ((e = readdir(main_dirp)) != NULL && file_list_size < max_files) {
+                    while ((e = readdir(main_dirp)) != NULL && pending_count < max_files) {
                         if (e->d_type != DT_REG && e->d_type != DT_UNKNOWN) continue;
                         size_t nlen = strlen(e->d_name);
                         if (nlen <= 4 || strcmp(e->d_name + nlen - 4, ".uya") != 0) continue;
@@ -593,18 +600,22 @@ static int collect_module_dependencies(
                             return -1;
                         }
                         strcpy(pc, fp);
-                        file_list[file_list_size] = pc;
-                        file_list_size++;
-                        file_list_size = collect_module_dependencies(
-                            pc, file_list, file_list_size, max_files,
-                            processed_files, processed_count, max_processed,
-                            project_root, uya_root, arena);
-                        if (file_list_size < 0) {
-                            closedir(main_dirp);
-                            return -1;
-                        }
+                        pending[pending_count++] = pc;
                     }
                     closedir(main_dirp);
+                    if (pending_count > 0) {
+                        qsort(pending, (size_t)pending_count, sizeof(char *), compare_paths);
+                        for (int idx = 0; idx < pending_count; idx++) {
+                            char *pc = pending[idx];
+                            file_list[file_list_size] = pc;
+                            file_list_size++;
+                            file_list_size = collect_module_dependencies(
+                                pc, file_list, file_list_size, max_files,
+                                processed_files, processed_count, max_processed,
+                                project_root, uya_root, arena);
+                            if (file_list_size < 0) return -1;
+                        }
+                    }
                 }
             }
             continue;
@@ -636,55 +647,56 @@ static int collect_module_dependencies(
         }
         
         if (found_dir) {
-            // 目录模块：收集目录下的所有 .uya 文件
+            /* 目录模块：收集目录下所有 .uya，排序后依次加入（与 Uya 自举顺序一致） */
             char *dir_path = module_dir_path;
-                // 目录模块：收集目录下的所有 .uya 文件
-                DIR *dir = opendir(dir_path);
-                if (dir != NULL) {
-                    struct dirent *entry;
-                    while ((entry = readdir(dir)) != NULL && file_list_size < max_files) {
-                        if (entry->d_type == DT_REG) {
-                            const char *name = entry->d_name;
-                            size_t name_len = strlen(name);
-                            if (name_len > 4 && strcmp(name + name_len - 4, ".uya") == 0) {
-                                // 构建完整路径
-                                char full_path[PATH_MAX];
-                                int len = snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, name);
-                                if (len > 0 && len < (int)sizeof(full_path)) {
-                                    // 检查是否已在列表中
-                                    int already_added = 0;
-                                    for (int j = 0; j < file_list_size; j++) {
-                                        if (file_list[j] != NULL && paths_equal(file_list[j], full_path)) {
-                                            already_added = 1;
-                                            break;
-                                        }
+            DIR *dir = opendir(dir_path);
+            if (dir != NULL) {
+                char *pending[MAX_INPUT_FILES];
+                int pending_count = 0;
+                struct dirent *entry;
+                while ((entry = readdir(dir)) != NULL && pending_count < max_files) {
+                    if (entry->d_type == DT_REG) {
+                        const char *name = entry->d_name;
+                        size_t name_len = strlen(name);
+                        if (name_len > 4 && strcmp(name + name_len - 4, ".uya") == 0) {
+                            char full_path[PATH_MAX];
+                            int len = snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, name);
+                            if (len > 0 && len < (int)sizeof(full_path)) {
+                                int already_added = 0;
+                                for (int j = 0; j < file_list_size; j++) {
+                                    if (file_list[j] != NULL && paths_equal(file_list[j], full_path)) {
+                                        already_added = 1;
+                                        break;
                                     }
-                                    if (!already_added) {
-                                        // 使用 Arena 分配文件路径
-                                        size_t path_len = strlen(full_path);
-                                        char *path_copy = (char *)arena_alloc(arena, path_len + 1);
-                                        if (path_copy != NULL) {
-                                            strcpy(path_copy, full_path);
-                                            file_list[file_list_size] = path_copy;
-                                            file_list_size++;
-                                            // 递归处理依赖
-                                            file_list_size = collect_module_dependencies(
-                                                path_copy, file_list, file_list_size, max_files,
-                                                processed_files, processed_count, max_processed,
-                                                project_root, uya_root, arena
-                                            );
-                                            if (file_list_size < 0) {
-                                                closedir(dir);
-                                                return -1;
-                                            }
-                                        }
+                                }
+                                if (!already_added) {
+                                    size_t path_len = strlen(full_path);
+                                    char *path_copy = (char *)arena_alloc(arena, path_len + 1);
+                                    if (path_copy != NULL) {
+                                        strcpy(path_copy, full_path);
+                                        pending[pending_count++] = path_copy;
                                     }
                                 }
                             }
                         }
                     }
-                    closedir(dir);
                 }
+                closedir(dir);
+                if (pending_count > 0) {
+                    qsort(pending, (size_t)pending_count, sizeof(char *), compare_paths);
+                    for (int idx = 0; idx < pending_count; idx++) {
+                        char *path_copy = pending[idx];
+                        file_list[file_list_size] = path_copy;
+                        file_list_size++;
+                        file_list_size = collect_module_dependencies(
+                            path_copy, file_list, file_list_size, max_files,
+                            processed_files, processed_count, max_processed,
+                            project_root, uya_root, arena
+                        );
+                        if (file_list_size < 0) return -1;
+                    }
+                }
+            }
         } else {
             // 单个文件模块：使用 find_module_file 查找
             char module_path[PATH_MAX];
