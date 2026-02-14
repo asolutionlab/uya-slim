@@ -121,6 +121,7 @@ export fn public_function(param1: Type1, param2: Type2) ReturnType {
     statements
     return value;
 }
+// 生成的 C 函数名：模块前缀_函数名（如 std_io_public_function）
 
 // 外部 C 函数声明
 extern fn c_function(param: *byte) i32;
@@ -144,6 +145,12 @@ export extern fn strcmp(s1: &const byte, s2: &const byte) i32 {
 }
 // 生成的 C 代码：int strcmp(const char *s1, const char *s2) { ... }
 // 注意：不带 uya_ 前缀
+
+// 模块前缀规则（生成 C 代码时）
+// - fn（私有）：uya_函数名（如 uya_foo）
+// - export fn：模块前缀_函数名（如 std_io_fopen, main_my_func）
+// - extern fn：裸函数名，无前缀（如 malloc, my_wrapper）
+// 模块前缀提取：模块路径的 . 替换为 _（std.io → std_io, main → main）
 
 // void函数
 fn void_func() void {
@@ -627,6 +634,7 @@ export struct Point { x: f32, y: f32 }
 use std.io;                    // 导入整个模块
 use std.io.read_file;          // 导入特定项
 use std.io as io;              // 使用别名
+// 不支持通配符：use std.io.*; ❌
 
 // 使用
 std.io.read_file(...);         // 模块前缀
@@ -639,6 +647,7 @@ io.read_file(...);             // 别名前缀
 - 项目根目录（包含main的目录）是`main`模块
 - 路径映射：`std/io/` → `std.io`
 - **同目录文件合并**：同一目录下的所有 `.uya` 文件都属于同一个模块，模块路径由目录路径决定，不包含文件名（如 `std/io/file.uya` 和 `std/io/stream.uya` 都属于 `std.io` 模块）
+- 子目录可引用 `main` 模块，但编译器检测循环依赖并报错
 - 所有结构体使用C内存布局，可直接互操作
 
 ### 可变参数
