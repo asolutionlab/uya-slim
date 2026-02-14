@@ -4,6 +4,33 @@
 
 ---
 
+## 0.45 版本变更（相对于 0.44）
+
+### 0.45 extern 变量/常量支持
+
+- **导入 C 全局变量**：
+  - `extern const name: type;` - 导入只读 C 变量，生成 `extern const type name;`
+  - `extern var name: type;` - 导入可变 C 变量，生成 `extern type name;`
+  - 用途：访问 C 标准库全局变量（如 `errno`, `stdout`）
+
+- **导出 Uya 全局变量给 C**：
+  - `export const name: type = value;` - 导出只读常量，生成 `const type name = value;`
+  - `export var name: type = value;` - 导出可变变量，生成 `type name = value;`
+  - 用途：导出 Uya 全局状态给 C
+
+- **`export extern "libc" fn` 语法**：
+  - 支持用 Uya 实现替代 C 标准库函数
+  - 生成裸函数名（无模块前缀），与 C 标准库链接
+
+### 0.45 Scheme C 双入口架构
+
+- **`export fn main()`**：生成 `main_main()`（应用入口）
+- **`export extern fn main(argc, argv)`**：生成 `main()`（C 入口）
+- **`fn main()`**：生成 `uya_main()`（旧架构兼容）
+- 新增 `lib/std/runtime/entry/` 模块
+
+---
+
 ## 0.44 版本变更（相对于 0.43）
 
 ### 0.44 @va_start / @va_end / @va_arg 内置函数
