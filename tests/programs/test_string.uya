@@ -1,0 +1,200 @@
+// test_string.uya - string 模块测试
+// TDD: 先写测试，再实现
+
+use libc.strlen;
+use libc.strcmp;
+use libc.strncmp;
+use libc.strcasecmp;
+use libc.strncasecmp;
+use libc.strdup;
+use libc.strcpy;
+use libc.strcat;
+use libc.strncat;
+use libc.strchr;
+use libc.strrchr;
+use libc.strstr;
+use libc.strcspn;
+use libc.strspn;
+use libc.strpbrk;
+use libc.strtok;
+use libc.free;
+use libc.fprintf;
+use libc.stdout;
+
+// ============================================================
+// strlen 测试
+// ============================================================
+
+fn test_strlen() void {
+    fprintf(stdout, "test strlen: ");
+    var passed: i32 = 1;
+    
+    if strlen("hello\0" as *const byte) != 5 { passed = 0; }
+    if strlen("\0" as *const byte) != 0 { passed = 0; }
+    if strlen("a\0" as *const byte) != 1 { passed = 0; }
+    
+    if passed != 0 {
+        fprintf(stdout, "PASS\n");
+    } else {
+        fprintf(stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// strcmp/strncmp 测试
+// ============================================================
+
+fn test_strcmp() void {
+    fprintf(stdout, "test strcmp: ");
+    var passed: i32 = 1;
+    
+    if strcmp("abc\0" as *const byte, "abc\0" as *const byte) != 0 { passed = 0; }
+    if strcmp("abc\0" as *const byte, "abd\0" as *const byte) >= 0 { passed = 0; }
+    if strcmp("abd\0" as *const byte, "abc\0" as *const byte) <= 0 { passed = 0; }
+    if strcmp("ab\0" as *const byte, "abc\0" as *const byte) >= 0 { passed = 0; }
+    
+    if strncmp("abcd\0" as *const byte, "abce\0" as *const byte, 3) != 0 { passed = 0; }
+    if strncmp("abcd\0" as *const byte, "abce\0" as *const byte, 4) >= 0 { passed = 0; }
+    
+    if passed != 0 {
+        fprintf(stdout, "PASS\n");
+    } else {
+        fprintf(stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// strcasecmp 测试
+// ============================================================
+
+fn test_strcasecmp() void {
+    fprintf(stdout, "test strcasecmp: ");
+    var passed: i32 = 1;
+    
+    if strcasecmp("ABC\0" as *const byte, "abc\0" as *const byte) != 0 { passed = 0; }
+    if strcasecmp("AbC\0" as *const byte, "aBc\0" as *const byte) != 0 { passed = 0; }
+    if strcasecmp("abc\0" as *const byte, "abd\0" as *const byte) >= 0 { passed = 0; }
+    if strcasecmp("ABD\0" as *const byte, "abc\0" as *const byte) <= 0 { passed = 0; }
+    
+    if strncasecmp("ABCD\0" as *const byte, "abce\0" as *const byte, 3) != 0 { passed = 0; }
+    if strncasecmp("ABCD\0" as *const byte, "abce\0" as *const byte, 4) >= 0 { passed = 0; }
+    
+    if passed != 0 {
+        fprintf(stdout, "PASS\n");
+    } else {
+        fprintf(stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// strdup 测试
+// ============================================================
+
+fn test_strdup() void {
+    fprintf(stdout, "test strdup: ");
+    var passed: i32 = 1;
+    
+    const dup: *byte = strdup("hello\0" as *const byte);
+    if dup == null as *byte { passed = 0; }
+    if passed != 0 {
+        if strcmp(dup, "hello\0" as *const byte) != 0 { passed = 0; }
+        free(dup);
+    }
+    
+    if passed != 0 {
+        fprintf(stdout, "PASS\n");
+    } else {
+        fprintf(stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// strcpy/strcat 测试
+// ============================================================
+
+fn test_strcpy_strcat() void {
+    fprintf(stdout, "test strcpy/strcat: ");
+    var passed: i32 = 1;
+    
+    var buf: [byte: 32] = [];
+    strcpy(&buf[0] as *byte, "hello\0" as *const byte);
+    if strcmp(&buf[0] as *const byte, "hello\0" as *const byte) != 0 { passed = 0; }
+    
+    strcat(&buf[0] as *byte, " world\0" as *const byte);
+    if strcmp(&buf[0] as *const byte, "hello world\0" as *const byte) != 0 { passed = 0; }
+    
+    if passed != 0 {
+        fprintf(stdout, "PASS\n");
+    } else {
+        fprintf(stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// strchr/strrchr/strstr 测试
+// ============================================================
+
+fn test_strchr() void {
+    fprintf(stdout, "test strchr/strrchr/strstr: ");
+    var passed: i32 = 1;
+    
+    const s: *const byte = "hello world\0" as *const byte;
+    
+    const p1: *byte = strchr(s, 119);  // 'w'
+    if p1 == null as *byte { passed = 0; }
+    
+    const p2: *byte = strrchr(s, 108);  // 'l'
+    if p2 == null as *byte { passed = 0; }
+    
+    const p3: *byte = strstr(s, "world\0" as *const byte);
+    if p3 == null as *byte { passed = 0; }
+    
+    const p4: *byte = strstr(s, "xyz\0" as *const byte);
+    if p4 != null as *byte { passed = 0; }
+    
+    if passed != 0 {
+        fprintf(stdout, "PASS\n");
+    } else {
+        fprintf(stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// strcspn/strspn 测试
+// ============================================================
+
+fn test_strcspn_strspn() void {
+    fprintf(stdout, "test strcspn/strspn: ");
+    var passed: i32 = 1;
+    
+    const s1: usize = strcspn("hello world\0" as *const byte, " \0" as *const byte);
+    if s1 != 5 { passed = 0; }
+    
+    const s2: usize = strspn("   hello\0" as *const byte, " \0" as *const byte);
+    if s2 != 3 { passed = 0; }
+    
+    if passed != 0 {
+        fprintf(stdout, "PASS\n");
+    } else {
+        fprintf(stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// 主函数
+// ============================================================
+
+fn main() i32 {
+    fprintf(stdout, "=== libc.string tests ===\n");
+    
+    test_strlen();
+    test_strcmp();
+    test_strcasecmp();
+    test_strdup();
+    test_strcpy_strcat();
+    test_strchr();
+    test_strcspn_strspn();
+    
+    fprintf(stdout, "=== done ===\n");
+    return 0;
+}
