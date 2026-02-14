@@ -48,7 +48,7 @@ b: uya
 	@echo ""
 	@echo "✓ 自举比对完成"
 
-# 运行测试：支持参数传递
+# 运行测试：支持参数传递（默认并行编译）
 # 用法: make tests [c|uya] [-e] [其他参数]
 # 示例: make tests c -e
 #       make tests uya -e
@@ -65,17 +65,17 @@ tests:
 		echo "--- 测试 C 编译器 (uya-c) ---"; \
 		$(MAKE) uya-c >/dev/null 2>&1; \
 		if [ "$$HAS_E" = "yes" ]; then \
-			./tests/run_programs.sh --c99 -e $$OTHER_ARGS; \
+			./tests/run_programs_parallel.sh --c99 -e $$OTHER_ARGS; \
 		else \
-			./tests/run_programs.sh --c99 $$OTHER_ARGS; \
+			./tests/run_programs_parallel.sh --c99 $$OTHER_ARGS; \
 		fi; \
 		echo ""; \
 		echo "--- 测试自举编译器 (uya) ---"; \
 		$(MAKE) uya >/dev/null 2>&1; \
 		if [ "$$HAS_E" = "yes" ]; then \
-			./tests/run_programs.sh --uya --c99 -e $$OTHER_ARGS; \
+			./tests/run_programs_parallel.sh --uya --c99 -e $$OTHER_ARGS; \
 		else \
-			./tests/run_programs.sh --uya --c99 $$OTHER_ARGS; \
+			./tests/run_programs_parallel.sh --uya --c99 $$OTHER_ARGS; \
 		fi; \
 		echo ""; \
 		echo "✓ 所有测试完成"; \
@@ -85,9 +85,9 @@ tests:
 		echo "=========================================="; \
 		$(MAKE) uya-c >/dev/null 2>&1; \
 		if [ "$$HAS_E" = "yes" ]; then \
-			./tests/run_programs.sh --c99 -e $$OTHER_ARGS; \
+			./tests/run_programs_parallel.sh --c99 -e $$OTHER_ARGS; \
 		else \
-			./tests/run_programs.sh --c99 $$OTHER_ARGS; \
+			./tests/run_programs_parallel.sh --c99 $$OTHER_ARGS; \
 		fi; \
 		echo ""; \
 		echo "✓ C 编译器测试完成"; \
@@ -97,15 +97,15 @@ tests:
 		echo "=========================================="; \
 		$(MAKE) uya >/dev/null 2>&1; \
 		if [ "$$HAS_E" = "yes" ]; then \
-			./tests/run_programs.sh --uya --c99 -e $$OTHER_ARGS; \
+			./tests/run_programs_parallel.sh --uya --c99 -e $$OTHER_ARGS; \
 		else \
-			./tests/run_programs.sh --uya --c99 $$OTHER_ARGS; \
+			./tests/run_programs_parallel.sh --uya --c99 $$OTHER_ARGS; \
 		fi; \
 		echo ""; \
 		echo "✓ 自举编译器测试完成"; \
 	fi
 
-# 快捷目标：测试 C 编译器（支持 e 参数）
+# 快捷目标：测试 C 编译器（支持 e 参数，并行编译）
 tests-c:
 	@HAS_E=$$(echo "$(MAKECMDGOALS)" | grep -qE '\be\b' && echo "yes" || echo "no"); \
 	$(MAKE) uya-c >/dev/null 2>&1; \
@@ -113,12 +113,12 @@ tests-c:
 	echo "测试 C 编译器 (uya-c)"; \
 	echo "=========================================="; \
 	if [ "$$HAS_E" = "yes" ]; then \
-		./tests/run_programs.sh --c99 -e; \
+		./tests/run_programs_parallel.sh --c99 -e; \
 	else \
-		./tests/run_programs.sh --c99; \
+		./tests/run_programs_parallel.sh --c99; \
 	fi
 
-# 快捷目标：测试自举编译器（支持 e 参数）
+# 快捷目标：测试自举编译器（支持 e 参数，并行编译）
 tests-uya:
 	@HAS_E=$$(echo "$(MAKECMDGOALS)" | grep -qE '\be\b' && echo "yes" || echo "no"); \
 	$(MAKE) uya >/dev/null 2>&1; \
@@ -126,9 +126,9 @@ tests-uya:
 	echo "测试自举编译器 (uya)"; \
 	echo "=========================================="; \
 	if [ "$$HAS_E" = "yes" ]; then \
-		./tests/run_programs.sh --uya --c99 -e; \
+		./tests/run_programs_parallel.sh --uya --c99 -e; \
 	else \
-		./tests/run_programs.sh --uya --c99; \
+		./tests/run_programs_parallel.sh --uya --c99; \
 	fi
 
 # 输出标准库为 C 代码（使用自举编译器）
