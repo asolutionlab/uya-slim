@@ -1,0 +1,281 @@
+// test_ctype.uya - 字符分类函数测试
+// TDD: 先写测试，再实现
+
+use libc.ctype;
+use libc.stdio;
+
+// ============================================================
+// isalpha 测试
+// ============================================================
+
+fn test_isalpha() void {
+    // 小写字母
+    libc.fprintf(libc.stdout, "test isalpha: ");
+    var passed: i32 = 1;
+    
+    // 小写字母应该返回真
+    if isalpha(97) == 0 { passed = 0; }   // 'a'
+    if isalpha(122) == 0 { passed = 0; }  // 'z'
+    if isalpha(110) == 0 { passed = 0; }  // 'n'
+    
+    // 大写字母应该返回真
+    if isalpha(65) == 0 { passed = 0; }   // 'A'
+    if isalpha(90) == 0 { passed = 0; }   // 'Z'
+    if isalpha(78) == 0 { passed = 0; }   // 'N'
+    
+    // 非字母应该返回假
+    if isalpha(48) != 0 { passed = 0; }   // '0'
+    if isalpha(57) != 0 { passed = 0; }   // '9'
+    if isalpha(32) != 0 { passed = 0; }   // ' '
+    if isalpha(64) != 0 { passed = 0; }   // '@'
+    if isalpha(123) != 0 { passed = 0; }  // '{'
+    
+    if passed != 0 {
+        libc.fprintf(libc.stdout, "PASS\n");
+    } else {
+        libc.fprintf(libc.stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// isdigit 测试
+// ============================================================
+
+fn test_isdigit() void {
+    libc.fprintf(libc.stdout, "test isdigit: ");
+    var passed: i32 = 1;
+    
+    // 数字应该返回真
+    if isdigit(48) == 0 { passed = 0; }   // '0'
+    if isdigit(57) == 0 { passed = 0; }   // '9'
+    if isdigit(53) == 0 { passed = 0; }   // '5'
+    
+    // 非数字应该返回假
+    if isdigit(47) != 0 { passed = 0; }   // '/'
+    if isdigit(58) != 0 { passed = 0; }   // ':'
+    if isdigit(65) != 0 { passed = 0; }   // 'A'
+    if isdigit(97) != 0 { passed = 0; }   // 'a'
+    
+    if passed != 0 {
+        libc.fprintf(libc.stdout, "PASS\n");
+    } else {
+        libc.fprintf(libc.stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// isalnum 测试
+// ============================================================
+
+fn test_isalnum() void {
+    libc.fprintf(libc.stdout, "test isalnum: ");
+    var passed: i32 = 1;
+    
+    // 字母和数字应该返回真
+    if isalnum(48) == 0 { passed = 0; }   // '0'
+    if isalnum(57) == 0 { passed = 0; }   // '9'
+    if isalnum(65) == 0 { passed = 0; }   // 'A'
+    if isalnum(90) == 0 { passed = 0; }   // 'Z'
+    if isalnum(97) == 0 { passed = 0; }   // 'a'
+    if isalnum(122) == 0 { passed = 0; }  // 'z'
+    
+    // 非字母数字应该返回假
+    if isalnum(32) != 0 { passed = 0; }   // ' '
+    if isalnum(64) != 0 { passed = 0; }   // '@'
+    if isalnum(123) != 0 { passed = 0; }  // '{'
+    
+    if passed != 0 {
+        libc.fprintf(libc.stdout, "PASS\n");
+    } else {
+        libc.fprintf(libc.stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// isspace 测试
+// ============================================================
+
+fn test_isspace() void {
+    libc.fprintf(libc.stdout, "test isspace: ");
+    var passed: i32 = 1;
+    
+    // 空白字符应该返回真
+    if isspace(32) == 0 { passed = 0; }   // ' '
+    if isspace(9) == 0 { passed = 0; }    // '\t'
+    if isspace(10) == 0 { passed = 0; }   // '\n'
+    if isspace(11) == 0 { passed = 0; }   // '\v'
+    if isspace(12) == 0 { passed = 0; }   // '\f'
+    if isspace(13) == 0 { passed = 0; }   // '\r'
+    
+    // 非空白字符应该返回假
+    if isspace(65) != 0 { passed = 0; }   // 'A'
+    if isspace(48) != 0 { passed = 0; }   // '0'
+    
+    if passed != 0 {
+        libc.fprintf(libc.stdout, "PASS\n");
+    } else {
+        libc.fprintf(libc.stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// isupper/islower 测试
+// ============================================================
+
+fn test_isupper() void {
+    libc.fprintf(libc.stdout, "test isupper: ");
+    var passed: i32 = 1;
+    
+    if isupper(65) == 0 { passed = 0; }   // 'A'
+    if isupper(90) == 0 { passed = 0; }   // 'Z'
+    if isupper(97) != 0 { passed = 0; }   // 'a'
+    if isupper(48) != 0 { passed = 0; }   // '0'
+    
+    if passed != 0 {
+        libc.fprintf(libc.stdout, "PASS\n");
+    } else {
+        libc.fprintf(libc.stdout, "FAIL\n");
+    }
+}
+
+fn test_islower() void {
+    libc.fprintf(libc.stdout, "test islower: ");
+    var passed: i32 = 1;
+    
+    if islower(97) == 0 { passed = 0; }   // 'a'
+    if islower(122) == 0 { passed = 0; }  // 'z'
+    if islower(65) != 0 { passed = 0; }   // 'A'
+    if islower(48) != 0 { passed = 0; }   // '0'
+    
+    if passed != 0 {
+        libc.fprintf(libc.stdout, "PASS\n");
+    } else {
+        libc.fprintf(libc.stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// toupper/tolower 测试
+// ============================================================
+
+fn test_toupper() void {
+    libc.fprintf(libc.stdout, "test toupper: ");
+    var passed: i32 = 1;
+    
+    // 小写转大写
+    if toupper(97) != 65 { passed = 0; }  // 'a' -> 'A'
+    if toupper(122) != 90 { passed = 0; } // 'z' -> 'Z'
+    if toupper(110) != 78 { passed = 0; } // 'n' -> 'N'
+    
+    // 大写保持不变
+    if toupper(65) != 65 { passed = 0; }  // 'A' -> 'A'
+    if toupper(90) != 90 { passed = 0; }  // 'Z' -> 'Z'
+    
+    // 非字母保持不变
+    if toupper(48) != 48 { passed = 0; }  // '0' -> '0'
+    if toupper(32) != 32 { passed = 0; }  // ' ' -> ' '
+    
+    if passed != 0 {
+        libc.fprintf(libc.stdout, "PASS\n");
+    } else {
+        libc.fprintf(libc.stdout, "FAIL\n");
+    }
+}
+
+fn test_tolower() void {
+    libc.fprintf(libc.stdout, "test tolower: ");
+    var passed: i32 = 1;
+    
+    // 大写转小写
+    if tolower(65) != 97 { passed = 0; }  // 'A' -> 'a'
+    if tolower(90) != 122 { passed = 0; } // 'Z' -> 'z'
+    if tolower(78) != 110 { passed = 0; } // 'N' -> 'n'
+    
+    // 小写保持不变
+    if tolower(97) != 97 { passed = 0; }  // 'a' -> 'a'
+    if tolower(122) != 122 { passed = 0; } // 'z' -> 'z'
+    
+    // 非字母保持不变
+    if tolower(48) != 48 { passed = 0; }  // '0' -> '0'
+    if tolower(32) != 32 { passed = 0; }  // ' ' -> ' '
+    
+    if passed != 0 {
+        libc.fprintf(libc.stdout, "PASS\n");
+    } else {
+        libc.fprintf(libc.stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// isxdigit 测试
+// ============================================================
+
+fn test_isxdigit() void {
+    libc.fprintf(libc.stdout, "test isxdigit: ");
+    var passed: i32 = 1;
+    
+    // 十六进制数字
+    if isxdigit(48) == 0 { passed = 0; }  // '0'
+    if isxdigit(57) == 0 { passed = 0; }  // '9'
+    if isxdigit(97) == 0 { passed = 0; }  // 'a'
+    if isxdigit(102) == 0 { passed = 0; } // 'f'
+    if isxdigit(65) == 0 { passed = 0; }  // 'A'
+    if isxdigit(70) == 0 { passed = 0; }  // 'F'
+    
+    // 非十六进制数字
+    if isxdigit(103) != 0 { passed = 0; } // 'g'
+    if isxdigit(71) != 0 { passed = 0; }  // 'G'
+    if isxdigit(32) != 0 { passed = 0; }  // ' '
+    
+    if passed != 0 {
+        libc.fprintf(libc.stdout, "PASS\n");
+    } else {
+        libc.fprintf(libc.stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// isprint 测试
+// ============================================================
+
+fn test_isprint() void {
+    libc.fprintf(libc.stdout, "test isprint: ");
+    var passed: i32 = 1;
+    
+    // 可打印字符 (0x20-0x7E)
+    if isprint(32) == 0 { passed = 0; }   // ' '
+    if isprint(126) == 0 { passed = 0; }  // '~'
+    if isprint(65) == 0 { passed = 0; }   // 'A'
+    
+    // 非可打印字符
+    if isprint(31) != 0 { passed = 0; }   // 控制字符
+    if isprint(127) != 0 { passed = 0; }  // DEL
+    
+    if passed != 0 {
+        libc.fprintf(libc.stdout, "PASS\n");
+    } else {
+        libc.fprintf(libc.stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// 主函数
+// ============================================================
+
+export fn main() i32 {
+    libc.fprintf(libc.stdout, "=== libc.ctype tests ===\n");
+    
+    test_isalpha();
+    test_isdigit();
+    test_isalnum();
+    test_isspace();
+    test_isupper();
+    test_islower();
+    test_toupper();
+    test_tolower();
+    test_isxdigit();
+    test_isprint();
+    
+    libc.fprintf(libc.stdout, "=== done ===\n");
+    return 0;
+}
