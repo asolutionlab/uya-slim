@@ -1,8 +1,18 @@
 // test_ctype.uya - 字符分类函数测试
 // TDD: 先写测试，再实现
 
-use libc.ctype;
-use libc.stdio;
+use libc.isalpha;
+use libc.isdigit;
+use libc.isalnum;
+use libc.isspace;
+use libc.isupper;
+use libc.islower;
+use libc.isxdigit;
+use libc.isprint;
+use libc.toupper;
+use libc.tolower;
+use libc.fprintf;
+use libc.stdout;
 
 // ============================================================
 // isalpha 测试
@@ -10,7 +20,7 @@ use libc.stdio;
 
 fn test_isalpha() void {
     // 小写字母
-    libc.fprintf(libc.stdout, "test isalpha: ");
+    fprintf(stdout, "test isalpha: ");
     var passed: i32 = 1;
     
     // 小写字母应该返回真
@@ -31,9 +41,9 @@ fn test_isalpha() void {
     if isalpha(123) != 0 { passed = 0; }  // '{'
     
     if passed != 0 {
-        libc.fprintf(libc.stdout, "PASS\n");
+        fprintf(stdout, "PASS\n");
     } else {
-        libc.fprintf(libc.stdout, "FAIL\n");
+        fprintf(stdout, "FAIL\n");
     }
 }
 
@@ -42,7 +52,7 @@ fn test_isalpha() void {
 // ============================================================
 
 fn test_isdigit() void {
-    libc.fprintf(libc.stdout, "test isdigit: ");
+    fprintf(stdout, "test isdigit: ");
     var passed: i32 = 1;
     
     // 数字应该返回真
@@ -57,9 +67,9 @@ fn test_isdigit() void {
     if isdigit(97) != 0 { passed = 0; }   // 'a'
     
     if passed != 0 {
-        libc.fprintf(libc.stdout, "PASS\n");
+        fprintf(stdout, "PASS\n");
     } else {
-        libc.fprintf(libc.stdout, "FAIL\n");
+        fprintf(stdout, "FAIL\n");
     }
 }
 
@@ -68,7 +78,7 @@ fn test_isdigit() void {
 // ============================================================
 
 fn test_isalnum() void {
-    libc.fprintf(libc.stdout, "test isalnum: ");
+    fprintf(stdout, "test isalnum: ");
     var passed: i32 = 1;
     
     // 字母和数字应该返回真
@@ -85,9 +95,9 @@ fn test_isalnum() void {
     if isalnum(123) != 0 { passed = 0; }  // '{'
     
     if passed != 0 {
-        libc.fprintf(libc.stdout, "PASS\n");
+        fprintf(stdout, "PASS\n");
     } else {
-        libc.fprintf(libc.stdout, "FAIL\n");
+        fprintf(stdout, "FAIL\n");
     }
 }
 
@@ -96,7 +106,7 @@ fn test_isalnum() void {
 // ============================================================
 
 fn test_isspace() void {
-    libc.fprintf(libc.stdout, "test isspace: ");
+    fprintf(stdout, "test isspace: ");
     var passed: i32 = 1;
     
     // 空白字符应该返回真
@@ -112,9 +122,9 @@ fn test_isspace() void {
     if isspace(48) != 0 { passed = 0; }   // '0'
     
     if passed != 0 {
-        libc.fprintf(libc.stdout, "PASS\n");
+        fprintf(stdout, "PASS\n");
     } else {
-        libc.fprintf(libc.stdout, "FAIL\n");
+        fprintf(stdout, "FAIL\n");
     }
 }
 
@@ -123,7 +133,7 @@ fn test_isspace() void {
 // ============================================================
 
 fn test_isupper() void {
-    libc.fprintf(libc.stdout, "test isupper: ");
+    fprintf(stdout, "test isupper: ");
     var passed: i32 = 1;
     
     if isupper(65) == 0 { passed = 0; }   // 'A'
@@ -132,14 +142,14 @@ fn test_isupper() void {
     if isupper(48) != 0 { passed = 0; }   // '0'
     
     if passed != 0 {
-        libc.fprintf(libc.stdout, "PASS\n");
+        fprintf(stdout, "PASS\n");
     } else {
-        libc.fprintf(libc.stdout, "FAIL\n");
+        fprintf(stdout, "FAIL\n");
     }
 }
 
 fn test_islower() void {
-    libc.fprintf(libc.stdout, "test islower: ");
+    fprintf(stdout, "test islower: ");
     var passed: i32 = 1;
     
     if islower(97) == 0 { passed = 0; }   // 'a'
@@ -148,9 +158,9 @@ fn test_islower() void {
     if islower(48) != 0 { passed = 0; }   // '0'
     
     if passed != 0 {
-        libc.fprintf(libc.stdout, "PASS\n");
+        fprintf(stdout, "PASS\n");
     } else {
-        libc.fprintf(libc.stdout, "FAIL\n");
+        fprintf(stdout, "FAIL\n");
     }
 }
 
@@ -159,7 +169,7 @@ fn test_islower() void {
 // ============================================================
 
 fn test_toupper() void {
-    libc.fprintf(libc.stdout, "test toupper: ");
+    fprintf(stdout, "test toupper: ");
     var passed: i32 = 1;
     
     // 小写转大写
@@ -176,14 +186,14 @@ fn test_toupper() void {
     if toupper(32) != 32 { passed = 0; }  // ' ' -> ' '
     
     if passed != 0 {
-        libc.fprintf(libc.stdout, "PASS\n");
+        fprintf(stdout, "PASS\n");
     } else {
-        libc.fprintf(libc.stdout, "FAIL\n");
+        fprintf(stdout, "FAIL\n");
     }
 }
 
 fn test_tolower() void {
-    libc.fprintf(libc.stdout, "test tolower: ");
+    fprintf(stdout, "test tolower: ");
     var passed: i32 = 1;
     
     // 大写转小写
@@ -200,9 +210,9 @@ fn test_tolower() void {
     if tolower(32) != 32 { passed = 0; }  // ' ' -> ' '
     
     if passed != 0 {
-        libc.fprintf(libc.stdout, "PASS\n");
+        fprintf(stdout, "PASS\n");
     } else {
-        libc.fprintf(libc.stdout, "FAIL\n");
+        fprintf(stdout, "FAIL\n");
     }
 }
 
@@ -211,7 +221,7 @@ fn test_tolower() void {
 // ============================================================
 
 fn test_isxdigit() void {
-    libc.fprintf(libc.stdout, "test isxdigit: ");
+    fprintf(stdout, "test isxdigit: ");
     var passed: i32 = 1;
     
     // 十六进制数字
@@ -228,9 +238,9 @@ fn test_isxdigit() void {
     if isxdigit(32) != 0 { passed = 0; }  // ' '
     
     if passed != 0 {
-        libc.fprintf(libc.stdout, "PASS\n");
+        fprintf(stdout, "PASS\n");
     } else {
-        libc.fprintf(libc.stdout, "FAIL\n");
+        fprintf(stdout, "FAIL\n");
     }
 }
 
@@ -239,7 +249,7 @@ fn test_isxdigit() void {
 // ============================================================
 
 fn test_isprint() void {
-    libc.fprintf(libc.stdout, "test isprint: ");
+    fprintf(stdout, "test isprint: ");
     var passed: i32 = 1;
     
     // 可打印字符 (0x20-0x7E)
@@ -252,9 +262,9 @@ fn test_isprint() void {
     if isprint(127) != 0 { passed = 0; }  // DEL
     
     if passed != 0 {
-        libc.fprintf(libc.stdout, "PASS\n");
+        fprintf(stdout, "PASS\n");
     } else {
-        libc.fprintf(libc.stdout, "FAIL\n");
+        fprintf(stdout, "FAIL\n");
     }
 }
 
@@ -262,8 +272,8 @@ fn test_isprint() void {
 // 主函数
 // ============================================================
 
-export fn main() i32 {
-    libc.fprintf(libc.stdout, "=== libc.ctype tests ===\n");
+fn main() i32 {
+    fprintf(stdout, "=== libc.ctype tests ===\n");
     
     test_isalpha();
     test_isdigit();
@@ -276,6 +286,6 @@ export fn main() i32 {
     test_isxdigit();
     test_isprint();
     
-    libc.fprintf(libc.stdout, "=== done ===\n");
+    fprintf(stdout, "=== done ===\n");
     return 0;
 }
