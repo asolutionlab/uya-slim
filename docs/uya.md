@@ -1,4 +1,4 @@
-# Uya 语言规范 0.44（完整版 · 2026-02-14）
+# Uya 语言规范 0.45（完整版 · 2026-02-15）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -50,6 +50,19 @@
 ---
 
 ## 规范变更
+
+### 0.45（2026-02-15）
+
+- **Scheme C 双入口架构**（新增）：
+  - `export fn main()` → 生成 `main_main()`（应用入口）
+  - `export extern fn main(argc: i32, argv: &&byte)` → 生成 `main()`（C 入口，供 C 调用）
+  - `fn main()` → 生成 `uya_main()`（旧架构兼容）
+  - 新增 `lib/std/runtime/entry/` 模块提供 C 入口函数
+  - **用途**：支持标准 C main 签名，与 C 生态无缝集成
+
+- **libc 标准库增强**：
+  - `fprintf`/`sprintf`/`snprintf` 新增格式支持：`%g`、`%.17g`、`%zu`、`%*s`、`%u`
+  - `readdir` 使用 `sys_getdents64` 实现
 
 ### 0.44（2026-02-14）
 
