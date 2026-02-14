@@ -1,0 +1,234 @@
+// libc.unistd - POSIX 系统调用封装
+// 版本：v0.4.0
+// 说明：基于 syscall 的 POSIX 标准函数
+
+use libc.SYS_read;
+use libc.SYS_write;
+use libc.SYS_close;
+use libc.SYS_lseek;
+use libc.SYS_getpid;
+use libc.SYS_getppid;
+use libc.SYS_fork;
+use libc.SYS_execve;
+use libc.SYS_exit;
+use libc.SYS_access;
+use libc.SYS_unlink;
+use libc.SYS_mkdir;
+use libc.SYS_rmdir;
+use libc.SYS_chdir;
+use libc.SYS_getcwd;
+use libc.SYS_dup;
+use libc.SYS_dup2;
+use libc.errno;
+
+// ============================================================
+// 标准文件描述符常量
+// ============================================================
+
+export const STDIN_FILENO: i32 = 0;
+export const STDOUT_FILENO: i32 = 1;
+export const STDERR_FILENO: i32 = 2;
+
+// ============================================================
+// 文件操作函数
+// ============================================================
+
+// read - 从文件描述符读取数据
+export extern "libc" fn read(fd: i32, buf: &byte, count: usize) i64 {
+    const result: !i64 = @syscall(SYS_read, fd as i64, buf as i64, count as i64);
+    const ret: i64 = result catch {
+        errno = ENOENT; // 简化错误处理
+        return 0 - 1;
+    };
+    return ret;
+}
+
+// write - 向文件描述符写入数据
+export extern "libc" fn write(fd: i32, buf: &const byte, count: usize) i64 {
+    const result: !i64 = @syscall(SYS_write, fd as i64, buf as i64, count as i64);
+    const ret: i64 = result catch {
+        errno = ENOENT;
+        return 0 - 1;
+    };
+    return ret;
+}
+
+// close - 关闭文件描述符
+export extern "libc" fn close(fd: i32) i32 {
+    const result: !i64 = @syscall(SYS_close, fd as i64);
+    result catch {
+        errno = EBADF;
+        return 0 - 1;
+    };
+    return 0;
+}
+
+// lseek - 移动文件指针
+// whence: SEEK_SET=0, SEEK_CUR=1, SEEK_END=2
+export const SEEK_SET: i32 = 0;
+export const SEEK_CUR: i32 = 1;
+export const SEEK_END: i32 = 2;
+
+export extern "libc" fn lseek(fd: i32, offset: i64, whence: i32) i64 {
+    const result: !i64 = @syscall(SYS_lseek, fd as i64, offset, whence as i64);
+    const ret: i64 = result catch {
+        errno = EBADF;
+        return 0 - 1;
+    };
+    return ret;
+}
+
+// ============================================================
+// 进程控制函数
+// ============================================================
+
+// getpid - 获取进程 ID
+export extern "libc" fn getpid() i32 {
+    const result: !i64 = @syscall(SYS_getpid);
+    const ret: i64 = result catch {
+        return 0;
+    };
+    return ret as i32;
+}
+
+// getppid - 获取父进程 ID
+export extern "libc" fn getppid() i32 {
+    const result: !i64 = @syscall(SYS_getppid);
+    const ret: i64 = result catch {
+        return 0;
+    };
+    return ret as i32;
+}
+
+// fork - 创建子进程
+export extern "libc" fn fork() i32 {
+    const result: !i64 = @syscall(SYS_fork);
+    const ret: i64 = result catch {
+        errno = ENOMEM;
+        return 0 - 1;
+    };
+    return ret as i32;
+}
+
+// execve - 执行程序
+export extern "libc" fn execve(pathname: &const byte, argv: & &byte, envp: & &byte) i32 {
+    const result: !i64 = @syscall(SYS_execve, pathname as i64, argv as i64, envp as i64);
+    result catch {
+        errno = ENOENT;
+    };
+    return 0 - 1; // 执行成功不会返回
+}
+
+// _exit - 立即退出进程
+export extern "libc" fn _exit(status: i32) void {
+    @syscall(SYS_exit, status as i64) catch {};
+    // 不会执行到这里
+}
+
+// ============================================================
+// 文件系统函数
+// ============================================================
+
+// access - 检查文件权限
+export const F_OK: i32 = 0;  // 文件存在
+export const R_OK: i32 = 4;  // 可读
+export const W_OK: i32 = 2;  // 可写
+export const X_OK: i32 = 1;  // 可执行
+
+export extern "libc" fn access(pathname: &const byte, mode: i32) i32 {
+    const result: !i64 = @syscall(SYS_access, pathname as i64, mode as i64);
+    result catch {
+        errno = ENOENT;
+        return 0 - 1;
+    };
+    return 0;
+}
+
+// unlink - 删除文件
+export extern "libc" fn unlink(pathname: &const byte) i32 {
+    const result: !i64 = @syscall(SYS_unlink, pathname as i64);
+    result catch {
+        errno = ENOENT;
+        return 0 - 1;
+    };
+    return 0;
+}
+
+// mkdir - 创建目录
+export extern "libc" fn mkdir(pathname: &const byte, mode: i32) i32 {
+    const result: !i64 = @syscall(SYS_mkdir, pathname as i64, mode as i64);
+    result catch {
+        errno = ENOENT;
+        return 0 - 1;
+    };
+    return 0;
+}
+
+// rmdir - 删除目录
+export extern "libc" fn rmdir(pathname: &const byte) i32 {
+    const result: !i64 = @syscall(SYS_rmdir, pathname as i64);
+    result catch {
+        errno = ENOENT;
+        return 0 - 1;
+    };
+    return 0;
+}
+
+// chdir - 切换目录
+export extern "libc" fn chdir(path: &const byte) i32 {
+    const result: !i64 = @syscall(SYS_chdir, path as i64);
+    result catch {
+        errno = ENOENT;
+        return 0 - 1;
+    };
+    return 0;
+}
+
+// getcwd - 获取当前目录
+// 注意：需要调用者提供足够大的 buffer（至少 PATH_MAX = 4096 字节）
+export const PATH_MAX: usize = 4096;
+
+export extern "libc" fn getcwd(buf: &byte, size: usize) &byte {
+    const result: !i64 = @syscall(SYS_getcwd, buf as i64, size as i64);
+    result catch {
+        errno = ENOENT;
+        return null as &byte;
+    };
+    return buf;
+}
+
+// ============================================================
+// 文件描述符操作
+// ============================================================
+
+// dup - 复制文件描述符
+export extern "libc" fn dup(oldfd: i32) i32 {
+    const result: !i64 = @syscall(SYS_dup, oldfd as i64);
+    const ret: i64 = result catch {
+        errno = EBADF;
+        return 0 - 1;
+    };
+    return ret as i32;
+}
+
+// dup2 - 复制文件描述符到指定位置
+export extern "libc" fn dup2(oldfd: i32, newfd: i32) i32 {
+    const result: !i64 = @syscall(SYS_dup2, oldfd as i64, newfd as i64);
+    const ret: i64 = result catch {
+        errno = EBADF;
+        return 0 - 1;
+    };
+    return ret as i32;
+}
+
+// ============================================================
+// 睡眠函数（简化实现）
+// ============================================================
+
+// sleep - 秒级休眠（简化实现，使用忙等待）
+export extern "libc" fn sleep(seconds: i32) i32 {
+    // 简化实现：使用 nanosleep 系统调用
+    // 这里暂时返回 0（实际应该调用 nanosleep）
+    // TODO: 实现真正的 sleep
+    return 0;
+}

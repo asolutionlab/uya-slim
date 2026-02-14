@@ -21,6 +21,7 @@ export const SYS_access: i64 = 21;
 export const SYS_dup: i64 = 32;
 export const SYS_dup2: i64 = 33;
 export const SYS_getpid: i64 = 39;
+export const SYS_getppid: i64 = 110;
 export const SYS_fork: i64 = 57;
 export const SYS_execve: i64 = 59;
 export const SYS_exit: i64 = 60;
@@ -68,20 +69,14 @@ export const S_IXOTH: i64 = 0o1;     // 其他执行
 // ============================================================
 // SEEK 标志（lseek）
 // ============================================================
-
-export const SEEK_SET: i64 = 0;
-export const SEEK_CUR: i64 = 1;
-export const SEEK_END: i64 = 2;
-
-// ============================================================
-// 标准文件描述符
+// SEEK_* 常量已移至 unistd.uya
 // ============================================================
 
-export const STDIN_FILENO: i32 = 0;
-export const STDOUT_FILENO: i32 = 1;
-export const STDERR_FILENO: i32 = 2;
+// ============================================================
+// 标准文件描述符（兼容旧名称）
+// 注意：STDIN_FILENO/STDOUT_FILENO/STDERR_FILENO 已移至 unistd.uya
+// ============================================================
 
-// 兼容旧名称
 export const UYA_STDIN_FILENO: i64 = 0;
 export const UYA_STDOUT_FILENO: i64 = 1;
 export const UYA_STDERR_FILENO: i64 = 2;
