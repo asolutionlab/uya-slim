@@ -1670,6 +1670,7 @@ ASTNode *parser_parse_function(Parser *parser) {
     fn_decl->data.fn_decl.is_varargs = 0;
     fn_decl->data.fn_decl.is_export = 0;
     fn_decl->data.fn_decl.is_async = 0;
+    fn_decl->data.fn_decl.extern_lib_name = NULL;
     
     // 解析泛型参数列表（可选）：<T> 或 <T: Ord> 或 <T: Ord + Clone>
     if (parser_match(parser, TOKEN_LESS)) {
@@ -2202,11 +2203,11 @@ ASTNode *parser_parse_macro(Parser *parser) {
 }
 
 // 前向声明：解析 extern fn（extern 已消费）
-static ASTNode *parser_parse_extern_function_after_extern(Parser *parser);
+static ASTNode *parser_parse_extern_function_after_extern(Parser *parser, const char *extern_lib_name);
 
-// 解析 extern 声明：extern 已由调用方消费，当前为 'fn' 或 'union'
+// 解析 extern 声明：extern 已由调用方消费，当前为 'fn' 或 'union' 或字符串字面量
 // 若为 'union' 则解析 extern union；否则解析 extern fn
-static ASTNode *parser_parse_extern_decl(Parser *parser) {
+static ASTNode *parser_parse_extern_decl(Parser *parser, const char *extern_lib_name) {
     if (parser == NULL || parser->current_token == NULL) return NULL;
     if (parser_match(parser, TOKEN_UNION)) {
         int line = parser->current_token->line;
@@ -2214,12 +2215,12 @@ static ASTNode *parser_parse_extern_decl(Parser *parser) {
         parser_consume(parser);
         return parser_parse_union_body(parser, line, column, 1);
     }
-    return parser_parse_extern_function_after_extern(parser);
+    return parser_parse_extern_function_after_extern(parser, extern_lib_name);
 }
 
 // 解析 extern 函数声明（extern 已消费，当前为 'fn'）
-// 'extern' 'fn' ID '(' [ param_list ] ')' type ';'
-static ASTNode *parser_parse_extern_function_after_extern(Parser *parser) {
+// 'extern' ['"libname"'] 'fn' ID '(' [ param_list ] ')' type [';' | '{' body '}']
+static ASTNode *parser_parse_extern_function_after_extern(Parser *parser, const char *extern_lib_name) {
     if (parser == NULL || parser->current_token == NULL) return NULL;
     int line = parser->current_token->line;
     int column = parser->current_token->column;
@@ -2241,10 +2242,12 @@ static ASTNode *parser_parse_extern_function_after_extern(Parser *parser) {
     fn_decl->data.fn_decl.params = NULL;
     fn_decl->data.fn_decl.param_count = 0;
     fn_decl->data.fn_decl.return_type = NULL;
-    fn_decl->data.fn_decl.body = NULL;  // extern 函数没有函数体
-    fn_decl->data.fn_decl.is_varargs = 0;  // 默认不是可变参数函数
+    fn_decl->data.fn_decl.body = NULL;
+    fn_decl->data.fn_decl.is_varargs = 0;
     fn_decl->data.fn_decl.is_export = 0;
     fn_decl->data.fn_decl.is_async = 0;
+    fn_decl->data.fn_decl.extern_lib_name = NULL;
+    fn_decl->data.fn_decl.extern_lib_name = extern_lib_name;
     
     // 期望 '('
     if (!parser_expect(parser, TOKEN_LEFT_PAREN)) {
@@ -2356,16 +2359,23 @@ static ASTNode *parser_parse_extern_function_after_extern(Parser *parser) {
         return NULL;
     }
     
-    // extern 函数以分号结尾，没有函数体
-    if (!parser_expect(parser, TOKEN_SEMICOLON)) {
-        return NULL;
-    }
-    
     fn_decl->data.fn_decl.params = params;
     fn_decl->data.fn_decl.param_count = param_count;
     fn_decl->data.fn_decl.return_type = return_type;
-    fn_decl->data.fn_decl.body = NULL;  // extern 函数没有函数体
     fn_decl->data.fn_decl.is_varargs = is_varargs;
+    
+    // 检查是否有函数体（extern fn 可能有函数体，如 export extern "libc" fn strlen() { ... }）
+    if (parser_match(parser, TOKEN_LEFT_BRACE)) {
+        ASTNode *body = parser_parse_block(parser);
+        if (body == NULL) {
+            return NULL;
+        }
+        fn_decl->data.fn_decl.body = body;
+    } else if (!parser_expect(parser, TOKEN_SEMICOLON)) {
+        // 没有函数体，期望分号
+        return NULL;
+    }
+    
     return fn_decl;
 }
 
@@ -2375,7 +2385,14 @@ ASTNode *parser_parse_extern_function(Parser *parser) {
         return NULL;
     }
     parser_consume(parser);
-    return parser_parse_extern_function_after_extern(parser);
+    // 检查是否有字符串字面量（extern "libc" fn）
+    const char *extern_lib_name = NULL;
+    if (parser_match(parser, TOKEN_STRING)) {
+        extern_lib_name = arena_strdup(parser->arena, parser->current_token->value);
+        if (extern_lib_name == NULL) return NULL;
+        parser_consume(parser);
+    }
+    return parser_parse_extern_function_after_extern(parser, extern_lib_name);
 }
 
 // 解析 use 语句（use path; 或 use path.item; 或 use path as alias;）
@@ -2561,7 +2578,14 @@ ASTNode *parser_parse_declaration(Parser *parser) {
             fprintf(stderr, "错误: extern 函数不能使用 @async_fn 属性\n");
             return NULL;
         }
-        ASTNode *decl = parser_parse_extern_decl(parser);
+        // 检查是否有字符串字面量（extern "libc" fn）
+        const char *extern_lib_name = NULL;
+        if (parser_match(parser, TOKEN_STRING)) {
+            extern_lib_name = arena_strdup(parser->arena, parser->current_token->value);
+            if (extern_lib_name == NULL) return NULL;
+            parser_consume(parser);
+        }
+        ASTNode *decl = parser_parse_extern_decl(parser, extern_lib_name);
         if (decl != NULL) {
             // 设置 export 和 extern 标记
             if (decl->type == AST_FN_DECL) {

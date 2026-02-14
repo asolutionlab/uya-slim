@@ -401,10 +401,20 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         return;
     }
     
+    // 检查是否有 extern_lib_name（extern "libc" fn）
+    const char *extern_lib_name = fn_decl->data.fn_decl.extern_lib_name;
+    
     // 检查是否为extern函数（body为NULL表示extern函数，或从AST节点读取）
     int is_extern = (body == NULL) ? 1 : 0;
-    if (fn_decl->data.fn_decl.is_extern) {
+    if (fn_decl->data.fn_decl.is_extern && extern_lib_name == NULL) {
+        // 只有当没有 extern_lib_name 时才标记为 is_extern
+        // extern "libc" fn 带函数体时，is_extern 应该为 0
         is_extern = 1;
+    }
+    
+    // extern "libc" fn 无函数体：不生成声明，链接到系统 libc
+    if (extern_lib_name != NULL && body == NULL) {
+        return;
     }
     
     // 检查是否是标准库函数
@@ -699,11 +709,19 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     // 返回类型（如果是数组类型，转换为指针类型）
     const char *return_c = convert_array_return_type(codegen, return_type);
     
+    // 检查是否有 extern_lib_name（extern "libc" fn）
+    const char *extern_lib_name = fn_decl->data.fn_decl.extern_lib_name;
+    
     // 根据 is_export 标志决定是否添加 static 关键字
     // fn foo() void → static void foo(void)（内部函数，不导出）
     // export fn foo() void → void foo(void)（导出函数，供其他模块使用）
     int is_export = fn_decl->data.fn_decl.is_export;
     int is_extern = fn_decl->data.fn_decl.is_extern;
+    
+    // extern "libc" fn 带函数体时，is_extern 应该为 0（生成普通函数定义）
+    if (extern_lib_name != NULL && body != NULL) {
+        is_extern = 0;
+    }
     
     /* 若同一程序中存在同名 extern 声明（如 parser 的 extern fn lexer_next_token），则定义处不能加 static，否则与已输出的 extern 冲突 */
     int has_extern_decl_same_name = 0;
@@ -718,7 +736,8 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
             }
         }
     }
-    int is_static = (!is_main && !is_extern && !is_export && !has_extern_decl_same_name);
+    // extern "libc" fn 带函数体时，不使用 static，不使用模块前缀
+    int is_static = (!is_main && !is_extern && !is_export && !has_extern_decl_same_name && extern_lib_name == NULL);
     
     if (is_main) {
         // main 函数重命名为 uya_main（符合 Uya 规范：main 函数无参数）

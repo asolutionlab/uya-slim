@@ -214,11 +214,12 @@ struct ASTNode {
             struct ASTNode **params;         // 参数数组（参数是 AST_VAR_DECL 节点）
             int param_count;          // 参数数量
             struct ASTNode *return_type;     // 返回类型（类型节点）
-            struct ASTNode *body;            // 函数体（AST_BLOCK 节点）
+            struct ASTNode *body;            // 函数体（AST_BLOCK 节点，extern fn 可能有函数体）
             int is_varargs;           // 是否为可变参数函数（1 表示是，0 表示否）
             int is_export;            // 1 表示 export fn，0 表示私有
             int is_extern;            // 1 表示 extern fn，0 表示普通函数
             int is_async;             // 1 表示 @async_fn 异步函数，0 表示普通函数
+            const char *extern_lib_name; // extern "libc" fn 中的库名（如 "libc"），NULL 表示普通 extern fn
         } fn_decl;
         
         // 宏声明（mc ID(param_list) return_tag { statements }）

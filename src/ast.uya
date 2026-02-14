@@ -189,6 +189,7 @@ struct ASTNode {
     fn_decl_is_varargs: i32,
     fn_decl_is_export: i32,  // 1 表示 export fn，0 表示私有
     fn_decl_is_async: i32,   // 1 表示 @async_fn，0 表示普通函数
+    fn_decl_extern_lib_name: &byte,  // extern "libc" fn 中的库名（如 "libc"），null 表示普通函数
     // macro_decl（宏声明）
     macro_decl_name: &byte,
     macro_decl_params: & & ASTNode,

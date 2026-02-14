@@ -1,0 +1,133 @@
+// libc.syscall - 系统调用常量和封装
+// 版本：v0.43
+// 说明：Linux x86-64 系统调用，零外部依赖
+
+// ============================================================
+// 系统调用号（Linux x86-64）
+// ============================================================
+
+export const SYS_read: i64 = 0;
+export const SYS_write: i64 = 1;
+export const SYS_open: i64 = 2;
+export const SYS_close: i64 = 3;
+export const SYS_stat: i64 = 4;
+export const SYS_mmap: i64 = 9;
+export const SYS_munmap: i64 = 11;
+export const SYS_exit: i64 = 60;
+export const SYS_getpid: i64 = 39;
+export const SYS_kill: i64 = 62;
+export const SYS_readlink: i64 = 89;
+export const SYS_getdents64: i64 = 217;
+
+// ============================================================
+// 文件常量
+// ============================================================
+
+export const STDIN_FILENO: i32 = 0;
+export const STDOUT_FILENO: i32 = 1;
+export const STDERR_FILENO: i32 = 2;
+
+// ============================================================
+// open() 标志
+// ============================================================
+
+export const O_RDONLY: i32 = 0;
+export const O_WRONLY: i32 = 1;
+export const O_RDWR: i32 = 2;
+export const O_CREAT: i32 = 64;
+export const O_TRUNC: i32 = 512;
+export const O_APPEND: i32 = 1024;
+export const O_DIRECTORY: i32 = 65536;
+
+// ============================================================
+// mmap() 标志
+// ============================================================
+
+export const MAP_PRIVATE: i32 = 2;
+export const MAP_ANONYMOUS: i32 = 32;
+export const PROT_READ: i32 = 1;
+export const PROT_WRITE: i32 = 2;
+
+// ============================================================
+// stat 结构体
+// ============================================================
+
+export struct Stat {
+    st_dev: i64,
+    st_ino: i64,
+    st_mode: i32,
+    st_nlink: i32,
+    st_uid: i32,
+    st_gid: i32,
+    st_rdev: i64,
+    st_size: i64,
+    st_blksize: i64,
+    st_blocks: i64,
+    st_atime: i64,
+    st_mtime: i64,
+    st_ctime: i64,
+}
+
+// ============================================================
+// dirent 结构体
+// ============================================================
+
+export struct Dirent {
+    d_ino: i64,
+    d_off: i64,
+    d_reclen: i16,
+    d_type: i8,
+    d_name: [byte: 256],
+}
+
+// ============================================================
+// 系统调用封装
+// ============================================================
+
+export extern "libc" fn sys_read(fd: i32, buf: *byte, count: usize) !isize {
+    return @syscall(SYS_read, fd as i64, buf as i64, count as i64);
+}
+
+export extern "libc" fn sys_write(fd: i32, buf: *const byte, count: usize) !isize {
+    return @syscall(SYS_write, fd as i64, buf as i64, count as i64);
+}
+
+export extern "libc" fn sys_open(pathname: *const byte, flags: i32, mode: i32) !i32 {
+    return @syscall(SYS_open, pathname as i64, flags as i64, mode as i64);
+}
+
+export extern "libc" fn sys_close(fd: i32) !i32 {
+    return @syscall(SYS_close, fd as i64);
+}
+
+export extern "libc" fn sys_exit(status: i32) void {
+    _ = @syscall(SYS_exit, status as i64);
+}
+
+export extern "libc" fn sys_mmap(addr: *void, length: usize, prot: i32, flags: i32, fd: i32, offset: i64) !*void {
+    return @syscall(SYS_mmap, addr as i64, length as i64, prot as i64, flags as i64, fd as i64, offset as i64);
+}
+
+export extern "libc" fn sys_munmap(addr: *void, length: usize) !i32 {
+    return @syscall(SYS_munmap, addr as i64, length as i64);
+}
+
+export extern "libc" fn sys_stat(pathname: *const byte, statbuf: &Stat) !i32 {
+    return @syscall(SYS_stat, pathname as i64, statbuf as i64);
+}
+
+export extern "libc" fn sys_getpid() !i64 {
+    return @syscall(SYS_getpid);
+}
+
+export extern "libc" fn sys_kill(pid: i64, sig: i32) !i32 {
+    return @syscall(SYS_kill, pid, sig as i64);
+}
+
+export extern "libc" fn sys_readlink(pathname: *const byte, buf: *byte, bufsiz: usize) !isize {
+    return @syscall(SYS_readlink, pathname as i64, buf as i64, bufsiz as i64);
+}
+
+export extern "libc" fn sys_getdents64(fd: i32, dirp: *void, count: usize) !isize {
+    return @syscall(SYS_getdents64, fd as i64, dirp as i64, count as i64);
+}

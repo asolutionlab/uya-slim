@@ -3929,7 +3929,12 @@ fn checker_register_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
 
                 // 检查是否为 FFI 指针类型（*T）：普通函数仅在可变参数包装等场景下允许 *byte 等 FFI 指针形参（如 printf(fmt, ...)）
                 // 标准库函数（如 malloc, memcpy 等）允许使用 FFI 指针类型
-                if sig.is_extern == 0 && param_type.kind == TypeKind.TYPE_POINTER && param_type.is_ffi_pointer != 0 &&
+                // extern "libc" fn 带函数体也允许使用 FFI 指针类型
+                var is_extern_libc: i32 = 0;
+                if node.fn_decl_extern_lib_name != null {
+                    is_extern_libc = 1;
+                }
+                if sig.is_extern == 0 && is_extern_libc == 0 && param_type.kind == TypeKind.TYPE_POINTER && param_type.is_ffi_pointer != 0 &&
                     node.fn_decl_is_varargs == 0 && is_stdlib_function_for_ffi(sig.name) == 0 {
                     checker_report_error(checker, node, "普通函数不能使用 FFI 指针类型作为参数" as *byte);
                     return 0;
@@ -3945,7 +3950,12 @@ fn checker_register_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     }
 
     // 检查返回类型是否为 FFI 指针类型（如果是普通函数则不允许，但标准库函数允许）
-    if sig.is_extern == 0 && return_type.kind == TypeKind.TYPE_POINTER && return_type.is_ffi_pointer != 0 &&
+    // extern "libc" fn 带函数体也允许使用 FFI 指针类型
+    var is_extern_libc_ret: i32 = 0;
+    if node.fn_decl_extern_lib_name != null {
+        is_extern_libc_ret = 1;
+    }
+    if sig.is_extern == 0 && is_extern_libc_ret == 0 && return_type.kind == TypeKind.TYPE_POINTER && return_type.is_ffi_pointer != 0 &&
         is_stdlib_function_for_ffi(sig.name) == 0 {
         checker_report_error(checker, node, "普通函数不能使用 FFI 指针类型作为返回类型" as *byte);
         return 0;

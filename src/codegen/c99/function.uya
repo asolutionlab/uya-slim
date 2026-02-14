@@ -290,11 +290,19 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
     const body: &ASTNode = fn_decl.fn_decl_body;
+    const extern_lib_name: &byte = fn_decl.fn_decl_extern_lib_name;  // extern "libc" fn 的库名
     
     // 检查是否为extern函数（body为NULL表示extern函数）
     var is_extern: i32 = 0;
-    if body == null {
+    if body == null && extern_lib_name == null {
+        // 只有当没有 extern_lib_name 时才标记为 is_extern
+        // extern "libc" fn 带函数体时，is_extern 应该为 0
         is_extern = 1;
+    }
+    
+    // extern "libc" fn 无函数体：不生成声明，链接到系统 libc
+    if extern_lib_name != null && body == null {
+        return;
     }
     
     // 检查是否是标准库函数（用原名判断，func_name 可能已是 uya_ 前缀）
@@ -598,6 +606,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
     const body: &ASTNode = fn_decl.fn_decl_body;
+    const extern_lib_name: &byte = fn_decl.fn_decl_extern_lib_name;  // extern "libc" fn 的库名
     
     // 检查是否是标准库函数
     const is_stdlib: i32 = is_stdlib_function(orig_name);
@@ -692,7 +701,9 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     
     // 检查是否为extern函数（body为NULL表示extern函数）
     var is_extern: i32 = 0;
-    if body == null {
+    if body == null && extern_lib_name == null {
+        // 只有当没有 extern_lib_name 时才标记为 is_extern
+        // extern "libc" fn 带函数体时，is_extern 应该为 0
         is_extern = 1;
     }
     
@@ -712,8 +723,9 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
             di = di + 1;
         }
     }
+    // extern "libc" fn 带函数体时，不使用 static，不使用模块前缀
     var is_static: i32 = 0;
-    if is_main == 0 && is_extern == 0 && is_export == 0 && has_extern_decl_same_name == 0 {
+    if is_main == 0 && is_extern == 0 && is_export == 0 && has_extern_decl_same_name == 0 && extern_lib_name == null {
         is_static = 1;
     }
     
