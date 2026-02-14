@@ -70,6 +70,7 @@ use libc.opendir;
 use libc.readdir;
 use libc.closedir;
 const DT_REG: u8 = 8;  // 普通文件
+const DT_UNKNOWN: u8 = 0;  // 未知（部分文件系统如 NFS 返回此值，需按普通文件处理）
 const DT_DIR: u8 = 4;  // 目录
 
 // ===== 符号链接（libc）=====

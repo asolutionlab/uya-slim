@@ -476,8 +476,19 @@ export fn getenv(name: &const byte) &byte {
 // 目录句柄不透明类型（与 POSIX DIR* 对应）
 export struct DIR {}
 
-// 目录流结构（简化实现）
-var opendir_fd_storage: [i64: 64] = [];
+// 目录流内部状态（fd + getdents64 缓冲区）
+struct DirState {
+    fd: i64,
+    buf: [byte: 8192],
+    buf_pos: usize,
+    buf_len: isize,
+}
+// buf_len: 0=需读取, >0=有效字节数, <0=EOF/错误
+
+const READDIR_BUF_SIZE: usize = 8192;
+
+var opendir_storage: [DirState: 64] = [];
+var readdir_result: Dirent = Dirent { d_ino: 0, d_off: 0, d_reclen: 0, d_type: 0, d_name: [] };
 
 // opendir - 打开目录（C 标准库兼容）
 // 返回：DIR*，失败返回 null
@@ -486,7 +497,6 @@ export fn opendir(name: &const byte) &DIR {
         return null;
     }
     
-    // 打开目录文件描述符
     const result: !i32 = sys_open(name, O_RDONLY as i32, 0);
     const fd: i32 = result catch {
         return null;
@@ -496,38 +506,79 @@ export fn opendir(name: &const byte) &DIR {
         return null;
     }
     
-    // 使用全局数组存储文件描述符（简化实现，最多支持 64 个打开的目录）
     var j: usize = 0;
     while j < 64 {
-        // 查找空闲槽位（fd <= 0 表示未使用）
-        if opendir_fd_storage[j] <= 0 {
-            opendir_fd_storage[j] = fd;
-            return &opendir_fd_storage[j] as &DIR;
+        if opendir_storage[j].fd <= 0 {
+            opendir_storage[j].fd = fd as i64;
+            opendir_storage[j].buf_pos = 0;
+            opendir_storage[j].buf_len = 0;
+            return &opendir_storage[j] as &DIR;
         }
         j = j + 1;
     }
     
-    // 如果数组满了，关闭文件描述符并返回 null
     _ = sys_close(fd);
     return null;
 }
 
-// readdir - 读取目录项（简化实现）
+// readdir - 读取目录项（使用 getdents64 实现）
 // 返回：Dirent*，失败或结束返回 null
+// Linux linux_dirent64 布局：d_ino(8) d_off(8) d_reclen(2) d_type(1) d_name[]
 export fn readdir(dirp: &DIR) &Dirent {
     if dirp == null {
         return null;
     }
     
-    // 从指针中获取文件描述符
-    const fd_ptr: &i64 = dirp as &i64;
-    const fd: i64 = fd_ptr[0];
-    
-    if fd < 0 {
+    const state: &DirState = dirp as &DirState;
+    if state.fd < 0 {
         return null;
     }
     
-    // 简化实现：返回 null（实际应该使用 getdents64 读取目录项）
+    while 1 != 0 {
+        if state.buf_len == 0 as isize {
+            const getdents_result: !isize = sys_getdents64(state.fd as i32, &state.buf[0] as *void, READDIR_BUF_SIZE);
+            state.buf_len = getdents_result catch {
+                return null;
+            };
+            if state.buf_len <= 0 as isize {
+                return null;
+            }
+            state.buf_pos = 0;
+        }
+        const bl: usize = state.buf_len as usize;
+        if state.buf_pos >= bl {
+            state.buf_len = 0 as isize;
+            continue;
+        }
+        
+        const base: &byte = &state.buf[state.buf_pos];
+        const reclen_lo: usize = base[16] as usize;
+        const reclen_hi: usize = base[17] as usize;
+        const reclen: usize = reclen_lo | (reclen_hi * 256);
+        
+        if reclen == 0 {
+            return null;
+        }
+        
+        memcpy(&readdir_result as *byte, base as *const byte, 19);
+        var name_len: usize = 0;
+        if reclen > 19 {
+            name_len = reclen - 19;
+        }
+        var copy_len: usize = name_len;
+        if copy_len > 255 {
+            copy_len = 255;
+        }
+        var k: usize = 0;
+        while k < copy_len {
+            readdir_result.d_name[k] = base[19 + k];
+            k = k + 1;
+        }
+        readdir_result.d_name[copy_len] = 0 as byte;
+        
+        state.buf_pos = state.buf_pos + reclen;
+        return &readdir_result;
+    }
     return null;
 }
 
@@ -538,9 +589,8 @@ export fn closedir(dirp: &DIR) i32 {
         return 0 - 1;
     }
     
-    // 从指针中获取文件描述符
-    const fd_ptr: &i64 = dirp as &i64;
-    const fd: i64 = fd_ptr[0];
+    const state: &DirState = dirp as &DirState;
+    const fd: i64 = state.fd;
     
     if fd < 0 {
         return 0 - 1;
@@ -551,7 +601,6 @@ export fn closedir(dirp: &DIR) i32 {
         return 0 - 1;
     };
     
-    // 标记为已关闭
-    fd_ptr[0] = 0 - 1;
+    state.fd = 0 - 1;
     return 0;
 }
