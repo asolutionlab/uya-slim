@@ -457,11 +457,37 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
                 
                 if expr_is_error_union != 0 {
-                    // 表达式本身已是错误联合类型，直接返回
-                    c99_emit_indent(codegen);
-                    fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
-                    gen_expr(codegen, expr);
-                    fputs(";\n" as *byte, codegen.output as *void);
+                    // 与 C 版一致：当 expr payload 与 return payload 类型不同时，使用 _uya_tmp 中间变量
+                    var expr_payload_c: &byte = null;
+                    const expr_union_c: &byte = get_c_type_of_expr(codegen, expr);
+                    if expr_union_c != null {
+                        if strcmp(expr_union_c as *byte, "struct err_union_int64_t" as *byte) == 0 { expr_payload_c = "int64_t" as &byte;
+                        } else if strcmp(expr_union_c as *byte, "struct err_union_intptr_t" as *byte) == 0 { expr_payload_c = "intptr_t" as &byte;
+                        } else if strcmp(expr_union_c as *byte, "struct err_union_int32_t" as *byte) == 0 { expr_payload_c = "int32_t" as &byte;
+                        } else if strcmp(expr_union_c as *byte, "struct err_union_void" as *byte) == 0 { expr_payload_c = "void" as &byte;
+                        } else { expr_payload_c = "int32_t" as &byte; }
+                    }
+                    var ret_payload_c: &byte = null;
+                    if payload_node != null {
+                        ret_payload_c = c99_type_to_c(codegen, payload_node);
+                    }
+                    var needs_conversion: i32 = 0;
+                    if expr_payload_c != null && ret_payload_c != null && strcmp(expr_payload_c as *byte, ret_payload_c as *byte) != 0 {
+                        needs_conversion = 1;
+                    }
+                    if needs_conversion != 0 && payload_void == 0 {
+                        c99_emit_indent(codegen);
+                        fprintf(codegen.output as *void, "struct err_union_%s _uya_tmp = " as *byte, expr_payload_c as *byte);
+                        gen_expr(codegen, expr);
+                        fputs(";\n" as *byte, codegen.output as *void);
+                        c99_emit_indent(codegen);
+                        fprintf(codegen.output as *void, "%s _uya_ret = (_uya_tmp.error_id == 0) ? (%s){ .error_id = 0, .value = (%s)_uya_tmp.value } : (%s){ .error_id = _uya_tmp.error_id };\n" as *byte, ret_c as *byte, ret_c as *byte, ret_payload_c as *byte, ret_c as *byte);
+                    } else {
+                        c99_emit_indent(codegen);
+                        fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
+                        gen_expr(codegen, expr);
+                        fputs(";\n" as *byte, codegen.output as *void);
+                    }
                 } else if payload_void != 0 {
                     c99_emit_indent(codegen);
                     fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0 };\n" as *byte, ret_c as *byte, ret_c as *byte);

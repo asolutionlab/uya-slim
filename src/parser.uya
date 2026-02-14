@@ -6041,6 +6041,7 @@ fn parser_parse_extern_function_after_extern(parser: &Parser, extern_lib_name: &
     fn_decl.fn_decl_return_type = null;
     fn_decl.fn_decl_body = null;
     fn_decl.fn_decl_is_varargs = 0;  // 默认不是可变参数函数
+    fn_decl.fn_decl_is_extern = 1;  // extern fn（含 export extern fn main）
     fn_decl.fn_decl_extern_lib_name = extern_lib_name;  // extern "libc" fn 的库名
     
     // 期望 '('

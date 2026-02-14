@@ -284,19 +284,41 @@ fn is_c_keyword(name: &byte) i32 {
     return 0;
 }
 
-// 获取安全的C标识符（如果需要则添加下划线前缀）
+// C 标准库保留名称（stat 等字段可能与宏冲突，需添加 uya_ 前缀）
+fn is_c_reserved_name(name: &byte) i32 {
+    if name == null {
+        return 0;
+    }
+    const reserved: [&byte: 3] = [
+        "st_atime" as &byte,
+        "st_mtime" as &byte,
+        "st_ctime" as &byte
+    ];
+    var i: i32 = 0;
+    while i < 3 {
+        if strcmp(name as *byte, reserved[i] as *byte) == 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// 获取安全的C标识符（关键字或保留名则添加 uya_ 前缀）
 fn get_safe_c_identifier(codegen: &C99CodeGenerator, name: &byte) &byte {
     if name == null {
         return null;
     }
     
-    // 如果不是关键字，直接返回原名称
-    if is_c_keyword(name) == 0 {
+    if is_c_keyword(name) == 0 && is_c_reserved_name(name) == 0 {
         return name;
     }
     
-    // 如果是关键字，添加前缀（最多尝试几次以避免重复）
     var buf: [byte: 128] = [];
+    if is_c_reserved_name(name) != 0 {
+        snprintf(&buf[0] as *byte, 128, "uya_%s" as *byte, name as *byte);
+        return c99_arena_strdup(codegen.arena, &buf[0] as &byte);
+    }
     var prefix: i32 = 1;
     while prefix <= 3 {
         if prefix == 1 {

@@ -623,6 +623,7 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                         const char *dimensions = type_c + base_len;
                         
                         // 生成数组声明：const base_type var_name dimensions（字符串插值初始化时不加 const 以便填充）
+                        c99_emit_indent(codegen);
                         if (emit_const) {
                             fprintf(codegen->output, "const %s %s%s", base_type, var_name, dimensions);
                         } else {
@@ -753,6 +754,7 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                             // 需要生成：T (* const var_name)[N]
                             size_t prefix_len = open_paren - type_c;
                             size_t suffix_len = strlen(bracket);
+                            c99_emit_indent(codegen);
                             fprintf(codegen->output, "%.*s(* const %s)%.*s", 
                                     (int)prefix_len, type_c, var_name, (int)suffix_len, bracket);
                             // 存储类型字符串：T (* const)[N]（用于变量表）

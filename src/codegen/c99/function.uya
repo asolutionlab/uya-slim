@@ -44,10 +44,127 @@ fn is_extern_libc_function(codegen: &C99CodeGenerator, func_name: &byte) i32 {
     return 0;
 }
 
-// 全局函数在 C 中的名称
+// 从文件名提取模块前缀（lib/libc/ -> libc_, lib/std/io/ -> std_io_）
+fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) &byte {
+    if codegen == null || filename == null || codegen.arena == null {
+        return ("" as *byte) as &byte;
+    }
+    if strstr(filename as *byte, "/lib/libc/" as *byte) != null || strstr(filename as *byte, "lib/libc/" as *byte) != null {
+        return ("libc_" as *byte) as &byte;
+    }
+    var lib_std: *byte = strstr(filename as *byte, "/lib/std/" as *byte);
+    if lib_std == null {
+        lib_std = strstr(filename as *byte, "lib/std/" as *byte);
+    }
+    if lib_std != null {
+        var rel: &byte = lib_std as &byte;
+        if rel[0] == 47 { rel = &rel[1]; }
+        if strncmp(rel as *byte, "lib/std/" as *byte, 8) == 0 {
+            rel = &rel[8];
+        }
+        const rel_len: usize = strlen(rel as *byte);
+        var base_len: usize = rel_len;
+        if rel_len > 4 && strcmp((rel as *byte + (rel_len - 4)) as *byte, ".uya" as *byte) == 0 {
+            base_len = rel_len - 4;
+        }
+        var si: usize = base_len;
+        var last_slash: &byte = null;
+        while si > 0 {
+            si = si - 1;
+            if rel[si] == 47 || rel[si] == 92 {
+                last_slash = &rel[si];
+                break;
+            }
+        }
+        if last_slash != null {
+            const slash_pos: usize = ptr_diff(last_slash as *byte, rel as *byte) as usize;
+            const total_len: usize = 4 + slash_pos + 2;
+            const prefix: &byte = arena_alloc(codegen.arena, total_len) as &byte;
+            if prefix != null {
+                strcpy(prefix as *byte, "std_" as *byte);
+                memcpy((prefix as *byte + 4) as *void, rel as *void, slash_pos);
+                prefix[4 + slash_pos] = 95 as byte;
+                prefix[4 + slash_pos + 1] = 0 as byte;
+                var idx: usize = 4;
+                while idx < 4 + slash_pos {
+                    if prefix[idx] == 47 || prefix[idx] == 92 {
+                        prefix[idx] = 95 as byte;
+                    }
+                    idx = idx + 1;
+                }
+                return prefix;
+            }
+        }
+        return ("std_" as *byte) as &byte;
+    }
+    // 检查是否是 src/ 文件（应用程序主文件）
+    var src_path: *byte = strstr(filename as *byte, "/src/" as *byte);
+    if src_path == null {
+        src_path = strstr(filename as *byte, "src/" as *byte);
+    }
+    if src_path == null {
+        src_path = strstr(filename as *byte, "\\src\\" as *byte);
+    }
+    if src_path != null {
+        var rel: &byte = src_path as &byte;
+        if rel[0] == 47 { rel = &rel[1]; }
+        if strncmp(rel as *byte, "src/" as *byte, 4) == 0 {
+            rel = &rel[4];
+        } else if strncmp(rel as *byte, "src\\" as *byte, 4) == 0 {
+            rel = &rel[4];
+        }
+        const rel_len: usize = strlen(rel as *byte);
+        var base_len: usize = rel_len;
+        if rel_len > 4 && strcmp((rel as *byte + (rel_len - 4)) as *byte, ".uya" as *byte) == 0 {
+            base_len = rel_len - 4;
+        }
+        const prefix: &byte = arena_alloc(codegen.arena, base_len + 2) as &byte;
+        if prefix != null {
+            memcpy(prefix as *void, rel as *void, base_len);
+            prefix[base_len] = 95 as byte;
+            prefix[base_len + 1] = 0 as byte;
+            return prefix;
+        }
+    }
+    return ("" as *byte) as &byte;
+}
+
+fn get_export_function_c_name(codegen: &C99CodeGenerator, name: &byte, filename: &byte) &byte {
+    if name == null {
+        return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
+    }
+    const prefix: &byte = get_module_prefix_from_filename(codegen, filename);
+    if prefix == null || prefix[0] == 0 {
+        return get_safe_c_identifier(codegen, name);
+    }
+    const safe_name: &byte = get_safe_c_identifier(codegen, name);
+    const prefix_len: usize = strlen(prefix as *byte);
+    const name_len: usize = strlen(safe_name as *byte);
+    const result: &byte = arena_alloc(codegen.arena, prefix_len + name_len + 1) as &byte;
+    if result == null {
+        return safe_name;
+    }
+    strcpy(result as *byte, prefix as *byte);
+    strcpy((result as *byte + prefix_len) as *byte, safe_name as *byte);
+    return result;
+}
+
+// 全局函数在 C 中的名称（export 函数带模块前缀）
 fn get_c_name_for_global_function(codegen: &C99CodeGenerator, name: &byte, for_definition: i32) &byte {
     if name == null {
         return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
+    }
+    if for_definition == 0 && codegen != null && codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
+        var di: i32 = 0;
+        while di < codegen.program_node.program_decl_count {
+            const d: &ASTNode = codegen.program_node.program_decls[di];
+            if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
+               strcmp(d.fn_decl_name as *byte, name as *byte) == 0 &&
+               d.fn_decl_is_export != 0 && d.filename != null {
+                return get_export_function_c_name(codegen, name, d.filename);
+            }
+            di = di + 1;
+        }
     }
     return get_safe_c_identifier(codegen, name);
 }
@@ -139,7 +256,10 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     const saved_current_function_decl: &ASTNode = codegen.current_function_decl;
     codegen.current_function_decl = fn_decl;
     
-    const func_name: &byte = get_c_name_for_global_function(codegen, fn_decl.fn_decl_name, 1);
+    var func_name: &byte = get_c_name_for_global_function(codegen, fn_decl.fn_decl_name, 1);
+    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null {
+        func_name = get_export_function_c_name(codegen, fn_decl.fn_decl_name, fn_decl.filename);
+    }
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
@@ -171,13 +291,34 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
 
     // 检查是否为标准 C main 函数（export extern fn main）
     var is_c_main: i32 = 0;
-    if is_main != 0 && extern_lib_name != null && fn_decl.fn_decl_is_export != 0 {
+    if is_main != 0 && fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_is_extern != 0 {
         is_c_main = 1;
     }
 
-    if is_main != 0 && is_c_main == 0 {
-        // main 函数生成 uya_main 的前向声明（使用外层的 return_c）
-        // 但 export extern "libc" fn main 除外
+    // export extern fn main：生成裸名 main 的前向声明，不带模块前缀
+    if is_c_main != 0 {
+        var j: i32 = 0;
+        fprintf(codegen.output, "extern %s main(" as *byte, return_c as *byte);
+        while j < param_count {
+            const param: &ASTNode = fn_decl.fn_decl_params[j];
+            if param != null && param.type == ASTNodeType.AST_VAR_DECL {
+                const param_name: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
+                const param_type: &ASTNode = param.var_decl_type;
+                const param_type_c: &byte = c99_type_to_c(codegen, param_type);
+                format_param_type(codegen, param_type_c, param_name, codegen.output as *void);
+                if j < param_count - 1 {
+                    fputs(", " as *byte, codegen.output);
+                }
+            }
+            j = j + 1;
+        }
+        fputs(");\n" as *byte, codegen.output);
+        codegen.current_function_decl = saved_current_function_decl;
+        return;
+    }
+
+    // 仅 fn main（非 export）提前返回生成 uya_main(void)；export fn main 走通用路径生成 main_main()
+    if is_main != 0 && is_c_main == 0 && fn_decl.fn_decl_is_export == 0 {
         fprintf(codegen.output, "%s uya_main(void);\n" as *byte, return_c as *byte);
         return;
     }
@@ -268,60 +409,20 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                 }
             }
             
-            // 对于标准库函数，将 uint8_t * 转换为 const char * 或 char *
-            // 对于 memset/memcpy，第一个参数应该是 void * 而不是 const char *
-            // 对于 strtol/strtod，第二个参数（双层指针）需要转换为 char **
-            if is_stdlib != 0 && param_type.type == ASTNodeType.AST_TYPE_POINTER {
+            // 对于 extern "libc" fn 的 byte 指针，仅 strlen 使用 const；sprintf/snprintf 第一参可修改
+            // 与 C 版一致：其他保持 c99_type_to_c 的默认输出（uint8_t *）
+            var is_libc: i32 = is_extern_libc_function(codegen, fn_decl.fn_decl_name);
+            if is_libc != 0 && param_type.type == ASTNodeType.AST_TYPE_POINTER {
                 const pointed_type: &ASTNode = param_type.type_pointer_pointed_type;
-                // 检查是否是双层指针（* *byte）
-                if pointed_type != null && pointed_type.type == ASTNodeType.AST_TYPE_POINTER {
-                    const inner_pointed_type: &ASTNode = pointed_type.type_pointer_pointed_type;
-                    if inner_pointed_type != null && inner_pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
-                        const inner_pointed_name: &byte = inner_pointed_type.type_named_name;
-                        // strtol 和 strtod 的第二个参数（endptr）：libc 使用 const uint8_t **
-                        if inner_pointed_name != null && strcmp(inner_pointed_name as *byte, "byte" as *byte) == 0 &&
-                           ((strcmp(func_name as *byte, "strtol" as *byte) == 0 && i == 1) ||
-                            (strcmp(func_name as *byte, "strtod" as *byte) == 0 && i == 1)) {
-                            param_type_c = ("const uint8_t **" as *byte) as &byte;
-                        }
-                    }
-                } else if pointed_type != null && pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
+                if pointed_type != null && pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
                     const pointed_name: &byte = pointed_type.type_named_name;
                     if pointed_name != null && strcmp(pointed_name as *byte, "byte" as *byte) == 0 {
-                        // 检查是否是 memset 或 memcpy（第一个参数应该是 void *）
-                        if (strcmp(func_name as *byte, "memset" as *byte) == 0 ||
-                            strcmp(func_name as *byte, "memcpy" as *byte) == 0) && i == 0 {
-                            // memset/memcpy 的第一个参数（dest）应该是 void * 而不是 const char *
-                            param_type_c = ("void *" as *byte) as &byte;
-                        } else if strcmp(func_name as *byte, "memcpy" as *byte) == 0 && i == 1 {
-                            // memcpy 的第二个参数（src）应该是 const void *
-                            param_type_c = ("const void *" as *byte) as &byte;
-                        } else if strcmp(func_name as *byte, "fread" as *byte) == 0 && i == 0 {
-                            // fread 的第一个参数（ptr）应该是 void * 而不是 const char *
-                            param_type_c = ("void *" as *byte) as &byte;
-                        } else if (strcmp(func_name as *byte, "sprintf" as *byte) == 0 || 
-                                   strcmp(func_name as *byte, "snprintf" as *byte) == 0) && i == 0 {
-                            // sprintf 和 snprintf 的第一个参数（buf）应该是 char * 而不是 const char *
-                            param_type_c = ("char *" as *byte) as &byte;
-                        } else if strcmp(func_name as *byte, "strcpy" as *byte) == 0 && i == 0 {
-                            // strcpy 的第一个参数（dest）应该是 char * 而不是 const char *
-                            param_type_c = ("char *" as *byte) as &byte;
-                        } else if strcmp(func_name as *byte, "strncpy" as *byte) == 0 && i == 0 {
-                            // strncpy 的第一个参数（dest）应该是 char * 而不是 const char *
-                            param_type_c = ("char *" as *byte) as &byte;
-                        } else if strcmp(func_name as *byte, "strcat" as *byte) == 0 && i == 0 {
-                            // strcat 的第一个参数（dest）应该是 char * 而不是 const char *
-                            param_type_c = ("char *" as *byte) as &byte;
-                        } else if (strcmp(func_name as *byte, "i32_to_str" as *byte) == 0 ||
-                                   strcmp(func_name as *byte, "i64_to_str" as *byte) == 0) && i == 1 {
-                            // i32_to_str 和 i64_to_str 的第二个参数（buf）应该是 char * 而不是 const char *（需要写入）
-                            param_type_c = ("char *" as *byte) as &byte;
-                        } else {
-                            // 其他标准库函数的字符串参数：将 uint8_t * 替换为 const char *
-                            param_type_c = ("const char *" as *byte) as &byte;
+                        if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "strlen" as *byte) == 0 {
+                            param_type_c = ("const uint8_t *" as *byte) as &byte;
+                        } else if fn_decl.fn_decl_name != null && ((strcmp(fn_decl.fn_decl_name as *byte, "sprintf" as *byte) == 0 ||
+                                   strcmp(fn_decl.fn_decl_name as *byte, "snprintf" as *byte) == 0) && i == 0) {
+                            param_type_c = ("uint8_t *" as *byte) as &byte;
                         }
-                    } else if pointed_name != null && strcmp(pointed_name as *byte, "void" as *byte) == 0 {
-                        // *void 类型已经是 void *，不需要修改
                     }
                 }
             }
@@ -384,7 +485,10 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     }
     
     const orig_name: &byte = fn_decl.fn_decl_name;
-    const func_name: &byte = get_c_name_for_global_function(codegen, orig_name, 1);
+    var func_name: &byte = get_c_name_for_global_function(codegen, orig_name, 1);
+    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null {
+        func_name = get_export_function_c_name(codegen, orig_name, fn_decl.filename);
+    }
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
@@ -443,16 +547,18 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     }
 
     // 检查是否为标准 C main 函数（export extern fn main）
-    // 如果是 extern "libc" fn main，保持 main 原名，不重命名为 uya_main
     var is_c_main: i32 = 0;
-    if is_main != 0 && extern_lib_name != null && is_export != 0 {
+    if is_main != 0 && fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_is_extern != 0 {
         is_c_main = 1;
     }
 
     if is_main != 0 && is_c_main == 0 {
-        // main 函数重命名为 uya_main（符合 Uya 规范：main 函数无参数）
-        // 但 export extern "libc" fn main 除外（保持 main 原名）
-        fprintf(codegen.output, "%s uya_main(void)" as *byte, return_c as *byte);
+        // export fn main → main_main，fn main → uya_main
+        var main_def_name: &byte = "uya_main" as *byte;
+        if fn_decl.fn_decl_is_export != 0 {
+            main_def_name = "main_main" as *byte;
+        }
+        fprintf(codegen.output, "%s %s(void)" as *byte, return_c as *byte, main_def_name as *byte);
     } else {
         // 非 extern 函数：根据 is_export 决定是否添加 static
         // fn foo() void → static void foo(void)（内部函数，不导出）
@@ -466,12 +572,6 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         var is_copy_type: i32 = 0;
         if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "copy_type" as *byte) == 0 {
             is_copy_type = 1;
-        }
-
-        // 检查是否为标准库函数（extern "libc" fn）
-        var is_stdlib: i32 = 0;
-        if extern_lib_name != null {
-            is_stdlib = 1;
         }
 
         // 参数列表
@@ -490,47 +590,19 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                     param_type_c = ("const struct Type *" as *byte) as &byte;
                 }
                 
-                // 对于标准库函数，将 uint8_t * 转换为 const char * 或 char *
-                // 对于 memset/memcpy，第一个参数应该是 void * 而不是 const char *
-                if is_stdlib != 0 && param_type.type == ASTNodeType.AST_TYPE_POINTER {
+                // 对于 extern "libc" fn 的 byte 指针，仅 strlen 使用 const；sprintf/snprintf 第一参可修改
+                var is_libc_def: i32 = is_extern_libc_function(codegen, orig_name);
+                if is_libc_def != 0 && param_type.type == ASTNodeType.AST_TYPE_POINTER {
                     const pointed_type: &ASTNode = param_type.type_pointer_pointed_type;
                     if pointed_type != null && pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
                         const pointed_name: &byte = pointed_type.type_named_name;
                         if pointed_name != null && strcmp(pointed_name as *byte, "byte" as *byte) == 0 {
-                            // 检查是否是 memset 或 memcpy（第一个参数应该是 void *）
-                            if (strcmp(func_name as *byte, "memset" as *byte) == 0 ||
-                                strcmp(func_name as *byte, "memcpy" as *byte) == 0) && i == 0 {
-                                // memset/memcpy 的第一个参数（dest）应该是 void * 而不是 const char *
-                                param_type_c = ("void *" as *byte) as &byte;
-                            } else if strcmp(func_name as *byte, "memcpy" as *byte) == 0 && i == 1 {
-                                // memcpy 的第二个参数（src）应该是 const void *
-                                param_type_c = ("const void *" as *byte) as &byte;
-                            } else if strcmp(func_name as *byte, "fread" as *byte) == 0 && i == 0 {
-                                // fread 的第一个参数（ptr）应该是 void * 而不是 const char *
-                                param_type_c = ("void *" as *byte) as &byte;
-                            } else if (strcmp(func_name as *byte, "sprintf" as *byte) == 0 || 
-                                       strcmp(func_name as *byte, "snprintf" as *byte) == 0) && i == 0 {
-                                // sprintf 和 snprintf 的第一个参数（buf）应该是 char * 而不是 const char *
-                                param_type_c = ("char *" as *byte) as &byte;
-                            } else if strcmp(func_name as *byte, "strcpy" as *byte) == 0 && i == 0 {
-                                // strcpy 的第一个参数（dest）应该是 char * 而不是 const char *
-                                param_type_c = ("char *" as *byte) as &byte;
-                            } else if strcmp(func_name as *byte, "strncpy" as *byte) == 0 && i == 0 {
-                                // strncpy 的第一个参数（dest）应该是 char * 而不是 const char *
-                                param_type_c = ("char *" as *byte) as &byte;
-                            } else if strcmp(func_name as *byte, "strcat" as *byte) == 0 && i == 0 {
-                                // strcat 的第一个参数（dest）应该是 char * 而不是 const char *
-                                param_type_c = ("char *" as *byte) as &byte;
-                            } else if (strcmp(func_name as *byte, "i32_to_str" as *byte) == 0 ||
-                                       strcmp(func_name as *byte, "i64_to_str" as *byte) == 0) && i == 1 {
-                                // i32_to_str 和 i64_to_str 的第二个参数（buf）应该是 char * 而不是 const char *（需要写入）
-                                param_type_c = ("char *" as *byte) as &byte;
-                            } else {
-                                // 其他标准库函数的字符串参数：将 uint8_t * 替换为 const char *
-                                param_type_c = ("const char *" as *byte) as &byte;
+                            if orig_name != null && strcmp(orig_name as *byte, "strlen" as *byte) == 0 {
+                                param_type_c = ("const uint8_t *" as *byte) as &byte;
+                            } else if orig_name != null && ((strcmp(orig_name as *byte, "sprintf" as *byte) == 0 ||
+                                       strcmp(orig_name as *byte, "snprintf" as *byte) == 0) && i == 0) {
+                                param_type_c = ("uint8_t *" as *byte) as &byte;
                             }
-                        } else if pointed_name != null && strcmp(pointed_name as *byte, "void" as *byte) == 0 {
-                            // *void 类型已经是 void *，不需要修改
                         }
                     }
                 }

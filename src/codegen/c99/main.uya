@@ -1211,6 +1211,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("\n" as *byte, codegen.output as *void);
     }
     
+    // 前向声明：stdin/stdout/stderr 的存储（&_stdin 等）在 export 变量初始化中引用
+    fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, codegen.output as *void);
+    
     // 第九步 a：先生成所有常量（确保在函数之前定义）
     i = 0;
     while i < decl_count {
@@ -1239,7 +1242,18 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         i = i + 1;
     }
     
-    // 第九步 b：生成所有声明（非常量全局变量、函数定义）
+    // 第九步 b0：先生成非常量、非 export 的全局变量（保证被 export 变量初始器引用的符号先定义）
+    i = 0;
+    while i < decl_count {
+        const decl: &ASTNode = ast.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_VAR_DECL && decl.var_decl_is_const == 0 && decl.var_decl_is_export == 0 {
+            gen_global_var(codegen, decl);
+            fputs("\n" as *byte, codegen.output as *void);
+        }
+        i = i + 1;
+    }
+    
+    // 第九步 b：生成所有声明（export 非常量全局变量、函数定义）
     i = 0;
     while i < decl_count {
         const decl: &ASTNode = ast.program_decls[i];
@@ -1327,8 +1341,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             } else if decl.type == ASTNodeType.AST_ENUM_DECL {
                 // 已在前面生成
             } else if decl.type == ASTNodeType.AST_VAR_DECL {
-                // 常量已在第九步 a 生成，这里只生成非常量变量
-                if decl.var_decl_is_const == 0 {
+                // 常量已在第九步 a 生成；非常量非 export 已在第九步 b0 生成，这里只生成 export 非常量变量
+                if decl.var_decl_is_const == 0 && decl.var_decl_is_export != 0 {
                     gen_global_var(codegen, decl);
                     fputs("\n" as *byte, codegen.output as *void);
                 }
@@ -1406,17 +1420,52 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
             const func_name: &byte = decl.fn_decl_name;
             if func_name != null && strcmp(func_name as *byte, "main" as *byte) == 0 && decl.fn_decl_body != null {
-                // 生成 main 函数（重命名为 uya_main）
+                const is_export: i32 = decl.fn_decl_is_export;
+                const is_extern_keyword: i32 = decl.fn_decl_is_extern;  // extern 关键字（含 export extern fn main）
+                var is_c_main: i32 = 0;
+                if is_export != 0 && is_extern_keyword != 0 {
+                    is_c_main = 1;
+                }
+                var is_app_main: i32 = 0;
+                if is_export != 0 && is_extern_keyword == 0 {
+                    is_app_main = 1;
+                }
                 emit_line_directive(codegen, decl.line, decl.filename);
                 const return_c: &byte = convert_array_return_type(codegen, decl.fn_decl_return_type);
-                fprintf(codegen.output as *void, "%s uya_main(void) {\n" as *byte, return_c as *byte);
+                var main_c_name: &byte = "uya_main" as *byte;
+                if is_app_main != 0 {
+                    main_c_name = "main_main" as *byte;
+                } else if is_c_main == 0 {
+                    main_c_name = "uya_main" as *byte;
+                }
+                if is_c_main != 0 {
+                    fprintf(codegen.output as *void, "%s main(" as *byte, return_c as *byte);
+                    var pj: i32 = 0;
+                    const pcount: i32 = decl.fn_decl_param_count;
+                    while pj < pcount {
+                        const p: &ASTNode = decl.fn_decl_params[pj];
+                        if p != null && p.type == ASTNodeType.AST_VAR_DECL {
+                            const pname: &byte = get_safe_c_identifier(codegen, p.var_decl_name);
+                            const ptype: &ASTNode = p.var_decl_type;
+                            const ptype_c: &byte = c99_type_to_c(codegen, ptype);
+                            format_param_type(codegen, ptype_c, pname, codegen.output as *void);
+                            if pj < pcount - 1 {
+                                fputs(", " as *byte, codegen.output);
+                            }
+                        }
+                        pj = pj + 1;
+                    }
+                    fputs(") {\n" as *byte, codegen.output);
+                } else {
+                    fprintf(codegen.output as *void, "%s %s(void) {\n" as *byte, return_c as *byte, main_c_name as *byte);
+                }
                 
                 // 保存并设置当前函数的返回类型
                 const saved_return_type: &ASTNode = codegen.current_function_return_type;
                 codegen.current_function_return_type = decl.fn_decl_return_type;
                 
-                // 如果有测试，在函数体开始处调用测试运行器
-                if test_count > 0 {
+                // 如果有测试，在函数体开始处调用测试运行器（仅 uya_main）
+                if test_count > 0 && is_app_main == 0 && is_c_main == 0 {
                     fputs("    uya_run_tests();\n" as *byte, codegen.output as *void);
                 }
                 
@@ -1436,7 +1485,6 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 codegen.current_function_return_type = saved_return_type;
                 
                 fputs("}\n" as *byte, codegen.output as *void);
-                break;
             }
         }
         i = i + 1;
