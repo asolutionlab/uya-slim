@@ -282,6 +282,40 @@ export fn strtod(nptr: &const byte, endptr: & &const byte) f64 {
         result = result + frac;
     }
     
+    // 转换指数部分（e/E [+-] digits）
+    if (nptr[i] == 101 as byte || nptr[i] == 69 as byte) {
+        i = i + 1;
+        var exp_neg: i32 = 0;
+        if nptr[i] == 45 as byte {
+            exp_neg = 1;
+            i = i + 1;
+        } else if nptr[i] == 43 as byte {
+            i = i + 1;
+        }
+        var exp_val: i32 = 0;
+        while nptr[i] >= 48 as byte && nptr[i] <= 57 as byte {
+            exp_val = exp_val * 10 + (nptr[i] as i32 - 48);
+            i = i + 1;
+        }
+        if exp_neg != 0 {
+            exp_val = 0 - exp_val;
+        }
+        var scale: f64 = 1.0;
+        var k: i32 = 0;
+        if exp_val > 0 {
+            while k < exp_val {
+                scale = scale * 10.0;
+                k = k + 1;
+            }
+        } else {
+            while k > exp_val {
+                scale = scale / 10.0;
+                k = k - 1;
+            }
+        }
+        result = result * scale;
+    }
+    
     if is_neg {
         result = 0.0 - result;
     }

@@ -667,9 +667,14 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     type_c = null; // 已处理，避免后续重复输出
                     // 数组声明后必须立即输出初始化，否则会与下一条语句拼接（常见于 var ap_buf; var ap; 连续声明）
                     if init_expr != null {
-                        fputs(" = " as *byte, codegen.output as *void);
-                        gen_expr(codegen, init_expr);
-                        fputs(";\n" as *byte, codegen.output as *void);
+                        if init_expr.type == ASTNodeType.AST_STRING_INTERP {
+                            fputs(";\n" as *byte, codegen.output as *void);
+                            c99_emit_string_interp_fill(codegen, init_expr, var_name);
+                        } else {
+                            fputs(" = " as *byte, codegen.output as *void);
+                            gen_expr(codegen, init_expr);
+                            fputs(";\n" as *byte, codegen.output as *void);
+                        }
                         if need_pragma_missing_braces != 0 {
                             fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
                         }
