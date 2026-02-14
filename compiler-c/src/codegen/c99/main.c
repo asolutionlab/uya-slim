@@ -1086,25 +1086,55 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
         fputs("\n", codegen->output);
     }
     
-    // 第九步：生成 main 函数（uya_main），在开始时调用测试运行器
+    // 第九步：生成 main 函数
+    // 根据架构设计：
+    // - export extern fn main(argc, argv) → 生成裸名 main（C 入口）
+    // - export fn main() → 生成 main_main（应用入口，被 C 入口调用）
+    // - fn main() → 生成 uya_main（旧架构，向后兼容）
     // 查找 main 函数并生成
     for (int i = 0; i < decl_count; i++) {
         ASTNode *decl = decls[i];
         if (!decl || decl->type != AST_FN_DECL) continue;
         const char *func_name = decl->data.fn_decl.name;
         if (func_name && strcmp(func_name, "main") == 0 && decl->data.fn_decl.body) {
-            // 生成 main 函数（重命名为 uya_main）
+            int is_export = decl->data.fn_decl.is_export;
+            int is_extern = decl->data.fn_decl.is_extern;
+            int is_c_main = (is_export && is_extern) ? 1 : 0;  // C 入口：export extern fn main
+            int is_app_main = (is_export && !is_extern) ? 1 : 0;  // 应用入口：export fn main
+            
+            // 生成 main 函数
             emit_line_directive(codegen, decl->line, decl->filename);
             const char *return_c = convert_array_return_type(codegen, decl->data.fn_decl.return_type);
-            fprintf(codegen->output, "%s uya_main(void) {\n", return_c);
             
             // 保存并设置当前函数的返回类型（用于生成返回语句）
             ASTNode *saved_return_type = codegen->current_function_return_type;
             codegen->current_function_return_type = decl->data.fn_decl.return_type;
             
-            // 如果有测试，在函数体开始处调用测试运行器
-            if (test_count > 0) {
-                fprintf(codegen->output, "    uya_run_tests();\n");
+            if (is_c_main) {
+                // C 入口：export extern fn main(argc, argv) → 生成裸名 main
+                ASTNode **params = decl->data.fn_decl.params;
+                int param_count = decl->data.fn_decl.param_count;
+                fprintf(codegen->output, "%s main(", return_c);
+                for (int j = 0; j < param_count; j++) {
+                    ASTNode *param = params[j];
+                    if (!param || param->type != AST_VAR_DECL) continue;
+                    const char *param_name = get_safe_c_identifier(codegen, param->data.var_decl.name);
+                    ASTNode *param_type = param->data.var_decl.type;
+                    const char *param_type_c = c99_type_to_c(codegen, param_type);
+                    format_param_type(codegen, param_type_c, param_name, codegen->output);
+                    if (j < param_count - 1) fprintf(codegen->output, ", ");
+                }
+                fprintf(codegen->output, ") {\n");
+            } else if (is_app_main) {
+                // 应用入口：export fn main() → 生成 main_main
+                fprintf(codegen->output, "%s main_main(void) {\n", return_c);
+            } else {
+                // 普通 main：fn main() → 生成 uya_main（旧架构）
+                fprintf(codegen->output, "%s uya_main(void) {\n", return_c);
+                // 如果有测试，在函数体开始处调用测试运行器
+                if (test_count > 0) {
+                    fprintf(codegen->output, "    uya_run_tests();\n");
+                }
             }
             
             // 生成原始函数体
@@ -1121,7 +1151,7 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
             codegen->current_function_return_type = saved_return_type;
             
             fprintf(codegen->output, "}\n");
-            break;
+            // 不 break，继续处理其他 main 函数（如 entry.uya 的 export extern fn main）
         }
     }
     

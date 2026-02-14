@@ -5,14 +5,13 @@
 // 注意：Uya 不支持指针运算，ptr + i 必须转换为 &ptr[i]
 // 注意：Uya 不支持函数前向声明，函数必须在使用前定义
 
-extern fn atoi(s: &byte) i32;
-extern fn strlen(s: *byte) usize;
+use libc.atoi;
+use std.string.strlen;
+use std.runtime.get_stderr;
 
 // 文件系统相关（用于检查目录是否存在）
-struct Stat {
-    _data: [byte: 144],  // 144 字节，匹配 C 的 struct stat
-}
-use libc.stdlib.stat;
+use libc.Stat;
+use libc.stat;
 use std.runtime.ptr_diff;
 use std.string.strcat;
 use std.string.strcpy;
@@ -2282,7 +2281,6 @@ fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
 }
 
 // 报告类型检查错误（需要 extern 与 main 等模块一致）
-extern fn get_stderr() *void;
 extern fn fprintf(stream: *void, format: *byte, ...) i32;
 
 // 保存最后一条错误消息供 main 打印
@@ -7363,11 +7361,9 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                         strcpy(&dir_path[0], project_root_from_file as *byte);
                         strcat(&dir_path[0] as *byte, &file_path_buf[0] as *byte);
                         // 使用 stat 检查目录
-                        var st: Stat = Stat { _data: [0: 144] };
+                        var st: Stat = Stat { st_dev: 0, st_ino: 0, st_mode: 0, st_nlink: 0, st_uid: 0, st_gid: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_mtime: 0, st_ctime: 0 };
                         if stat(&dir_path[0] as *byte, &st as &Stat) == 0 {
-                            const mode_ptr: &u32 = &st._data[24] as &u32;
-                            const mode: u32 = mode_ptr[0];
-                            if (mode & S_IFMT) == S_IFDIR {
+                            if (st.st_mode & S_IFMT) == S_IFDIR {
                                 found_dir = 1;
                             }
                         }
@@ -7382,11 +7378,9 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                         strcpy(&dir_path[0], checker.project_root_dir as *byte);
                         strcat(&dir_path[0] as *byte, &file_path_buf[0] as *byte);
                         // 使用 stat 检查目录
-                        var st: Stat = Stat { _data: [0: 144] };
+                        var st: Stat = Stat { st_dev: 0, st_ino: 0, st_mode: 0, st_nlink: 0, st_uid: 0, st_gid: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_mtime: 0, st_ctime: 0 };
                         if stat(&dir_path[0] as *byte, &st as &Stat) == 0 {
-                            const mode_ptr: &u32 = &st._data[24] as &u32;
-                            const mode: u32 = mode_ptr[0];
-                            if (mode & S_IFMT) == S_IFDIR {
+                            if (st.st_mode & S_IFMT) == S_IFDIR {
                                 found_dir = 1;
                             }
                         }
@@ -7401,11 +7395,9 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                         strcpy(&dir_path[0], checker.uya_root_dir as *byte);
                         strcat(&dir_path[0] as *byte, &file_path_buf[0] as *byte);
                         // 使用 stat 检查目录
-                        var st: Stat = Stat { _data: [0: 144] };
+                        var st: Stat = Stat { st_dev: 0, st_ino: 0, st_mode: 0, st_nlink: 0, st_uid: 0, st_gid: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_mtime: 0, st_ctime: 0 };
                         if stat(&dir_path[0] as *byte, &st as &Stat) == 0 {
-                            const mode_ptr: &u32 = &st._data[24] as &u32;
-                            const mode: u32 = mode_ptr[0];
-                            if (mode & S_IFMT) == S_IFDIR {
+                            if (st.st_mode & S_IFMT) == S_IFDIR {
                                 found_dir = 1;
                             }
                         }

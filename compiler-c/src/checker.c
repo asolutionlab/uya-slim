@@ -473,6 +473,12 @@ static int function_table_insert(TypeChecker *checker, FunctionSignature *sig) {
                 }
             } else if (!existing->is_extern && !sig->is_extern) {
                 // 都是定义
+                // 特殊处理：fn main() 和 export extern fn main 可以共存
+                // fn main() 编译为 uya_main()，export extern fn main 编译为 main()
+                if (strcmp(existing->name, "main") == 0 && existing->is_export != sig->is_export) {
+                    // 一个是 export 的 main，一个是普通的 main，允许共存
+                    continue;
+                }
                 // 如果都是 export 函数且来自不同模块，允许共存（生成不同的 C 函数名）
                 if (existing->is_export && sig->is_export &&
                     existing->module_name != NULL && sig->module_name != NULL &&

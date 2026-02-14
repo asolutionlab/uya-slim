@@ -1127,97 +1127,27 @@ static int compile_files(const char *input_files[], int input_file_count, const 
     }
     
     // 依赖收集策略：
-    // 1. 自动依赖收集模式（resolved_count == 1）：只传递了单个文件，需要收集所有依赖
-    // 2. 手动文件列表模式（resolved_count > 1）：已传递的文件不需要重复解析，但需要收集标准库依赖
-    if (resolved_count == 1) {
-        // 自动依赖收集模式：只传递了单个文件，需要进行依赖收集
-        for (int i = 0; i < main_file_count; i++) {
-            int new_count = collect_module_dependencies(
-                main_files[i],
-                all_files,
-                all_file_count,
-                MAX_INPUT_FILES,
-                processed_files,
-                &processed_count,
-                MAX_INPUT_FILES,
-                project_root,
-                uya_root,
-                &temp_arena
-            );
-            if (new_count < 0) {
-                fprintf(stderr, "错误: 收集模块依赖失败: %s\n", main_files[i]);
-                return 1;
-            }
-            all_file_count = new_count;
+    // 对所有输入文件进行依赖收集（无论单文件还是多文件）
+    for (int i = 0; i < all_file_count; i++) {
+        int new_count = collect_module_dependencies(
+            all_files[i],
+            all_files,
+            all_file_count,
+            MAX_INPUT_FILES,
+            processed_files,
+            &processed_count,
+            MAX_INPUT_FILES,
+            project_root,
+            uya_root,
+            &temp_arena
+        );
+        if (new_count < 0) {
+            fprintf(stderr, "错误: 收集模块依赖失败: %s\n", all_files[i]);
+            return 1;
         }
-    } else {
-        // 手动文件列表模式：已传递的文件已经在列表中，但需要收集标准库依赖
-        // 遍历所有已传递的文件，收集它们的 use 语句引用的标准库模块
-        // 注意：只收集不在已传递文件列表中的模块（避免重复解析）
-        for (int i = 0; i < all_file_count; i++) {
-            const char *file = all_files[i];
-            if (file == NULL) continue;
-            
-            // 解析文件以提取 use 语句
-            int file_size = read_file_content(file, file_buffer, FILE_BUFFER_SIZE);
-            if (file_size < 0) continue;  // 跳过无法读取的文件
-            
-            Lexer lexer;
-            if (lexer_init(&lexer, file_buffer, (size_t)file_size, file, &temp_arena) != 0) {
-                continue;  // 跳过无法初始化的文件
-            }
-            
-            Parser parser;
-            if (parser_init(&parser, &lexer, &temp_arena) != 0) {
-                continue;  // 跳过无法初始化的文件
-            }
-            
-            ASTNode *ast = parser_parse(&parser);
-            if (ast == NULL || ast->type != AST_PROGRAM) {
-                continue;  // 跳过无法解析的文件
-            }
-            
-            // 提取 use 语句中的模块路径
-            const char *modules[MAX_INPUT_FILES];
-            int module_count = 0;
-            if (extract_use_modules(ast, modules, MAX_INPUT_FILES, &module_count, project_root, uya_root, &temp_arena) != 0) {
-                continue;  // 跳过无法提取模块的文件
-            }
-            
-            // 对于每个模块，查找文件并添加到列表（如果不在列表中）
-            for (int j = 0; j < module_count; j++) {
-                if (modules[j] == NULL) continue;
-                
-                // 跳过 main 模块
-                if (strcmp(modules[j], "main") == 0) continue;
-                
-                // 查找模块文件
-                char module_file[PATH_MAX];
-                if (find_module_file(modules[j], project_root, uya_root, module_file, sizeof(module_file)) == 0) {
-                    // 检查是否已在列表中
-                    int already_added = 0;
-                    for (int k = 0; k < all_file_count; k++) {
-                        if (all_files[k] != NULL && paths_equal(all_files[k], module_file)) {
-                            already_added = 1;
-                            break;
-                        }
-                    }
-                    
-                    if (!already_added && all_file_count < MAX_INPUT_FILES) {
-                        // 使用 Arena 分配文件路径
-                        size_t path_len = strlen(module_file);
-                        char *path_copy = (char *)arena_alloc(&temp_arena, path_len + 1);
-                        if (path_copy != NULL) {
-                            strcpy(path_copy, module_file);
-                            all_files[all_file_count] = path_copy;
-                            all_file_count++;
-                        }
-                    }
-                }
-            }
-        }
+        all_file_count = new_count;
     }
-    
+
     fprintf(stderr, "=== 开始编译 ===\n");
     fprintf(stderr, "=== 词法/语法分析 ===\n");
 

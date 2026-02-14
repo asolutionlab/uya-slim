@@ -1,6 +1,7 @@
 // main.uya - 编译器主程序
 // 从 compiler-c/src/main.c 覆盖式翻译
-// 注意：入口为 uya_main()，由 bridge.c 调用；命令行参数通过 get_argc/get_argv 获取
+// 架构：export fn main 编译为 main_main，由 std.runtime.entry 的 C main 调用
+// 命令行参数通过 get_argc/get_argv 获取
 
 // ===== 模块导入（按依赖顺序）=====
 // use main：收集主文件所在目录下所有 .uya（arena, extern_decls, ast, lexer, parser, checker, str_utils）
@@ -8,6 +9,8 @@
 use main;
 // C99 代码生成（子目录，整体导入该目录模块）
 use codegen.c99;
+// C 程序入口（提供 export extern fn main 调用 main_main）
+use std.runtime.entry;
 
 // 后端类型
 enum BackendType {
@@ -96,22 +99,11 @@ fn paths_equal(path1: &byte, path2: &byte) i32 {
     }
     
     // 文件名相同，使用 stat 检查是否是同一个文件
-    // 在 Linux x86_64 上，struct stat 的布局：
-    // st_dev 在偏移 0 处（dev_t，8 字节）
-    // st_ino 在偏移 8 处（ino_t，8 字节）
-    var st1: Stat = Stat { _data: [0: 144] };
-    var st2: Stat = Stat { _data: [0: 144] };
+    var st1: Stat = Stat { st_dev: 0, st_ino: 0, st_mode: 0, st_nlink: 0, st_uid: 0, st_gid: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_mtime: 0, st_ctime: 0 };
+    var st2: Stat = Stat { st_dev: 0, st_ino: 0, st_mode: 0, st_nlink: 0, st_uid: 0, st_gid: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_mtime: 0, st_ctime: 0 };
     if stat(path1 as *byte, &st1) == 0 && stat(path2 as *byte, &st2) == 0 {
         // 检查是否是同一个文件（相同的设备和 inode）
-        const dev1_ptr: &u64 = &st1._data[0] as &u64;
-        const dev2_ptr: &u64 = &st2._data[0] as &u64;
-        const ino1_ptr: &u64 = &st1._data[8] as &u64;
-        const ino2_ptr: &u64 = &st2._data[8] as &u64;
-        const dev1: u64 = dev1_ptr[0];
-        const dev2: u64 = dev2_ptr[0];
-        const ino1: u64 = ino1_ptr[0];
-        const ino2: u64 = ino2_ptr[0];
-        if dev1 == dev2 && ino1 == ino2 {
+        if st1.st_dev == st2.st_dev && st1.st_ino == st2.st_ino {
             return 1;
         }
     }
@@ -127,12 +119,9 @@ fn is_directory(path: &byte) i32 {
     if path == null {
         return 0;
     }
-    var st: Stat = Stat { _data: [0: 144] };
+    var st: Stat = Stat { st_dev: 0, st_ino: 0, st_mode: 0, st_nlink: 0, st_uid: 0, st_gid: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_mtime: 0, st_ctime: 0 };
     if stat(path as *byte, &st) == 0 {
-        // st_mode 在偏移 24 字节处，使用指针访问
-        const mode_ptr: &u32 = &st._data[24] as &u32;
-        const mode: u32 = mode_ptr[0];
-        if (mode & S_IFMT) == S_IFDIR {
+        if (st.st_mode & S_IFMT) == S_IFDIR {
             return 1;
         }
     }
@@ -144,12 +133,9 @@ fn is_file(path: &byte) i32 {
     if path == null {
         return 0;
     }
-    var st: Stat = Stat { _data: [0: 144] };
+    var st: Stat = Stat { st_dev: 0, st_ino: 0, st_mode: 0, st_nlink: 0, st_uid: 0, st_gid: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_mtime: 0, st_ctime: 0 };
     if stat(path as *byte, &st) == 0 {
-        // st_mode 在偏移 24 字节处，使用指针访问
-        const mode_ptr: &u32 = &st._data[24] as &u32;
-        const mode: u32 = mode_ptr[0];
-        if (mode & S_IFMT) == S_IFREG {
+        if (st.st_mode & S_IFMT) == S_IFREG {
             return 1;
         }
     }
@@ -1240,8 +1226,8 @@ fn compile_files(
     return 0;
 }
 
-// 程序入口（由 bridge.c 调用，重命名为 uya_main）
-fn main() i32 {
+// 程序入口（export fn main 编译为 main_main，由 std.runtime.entry 的 C main 调用）
+export fn main() i32 {
     
     var input_file_indices: [i32: 64] = [];
     var input_file_count: i32 = 0;

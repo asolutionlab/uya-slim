@@ -1,84 +1,23 @@
-// std.runtime.runtime - 运行时支持函数
-// 版本：v0.2.0
-// 说明：替代 bridge.c 的功能，提供命令行参数访问、标准错误流、指针差计算等
-// 模块路径：lib/std/runtime/runtime.uya → use std.runtime.runtime;
+// std.runtime - 运行时支持函数
+// 版本：v0.3.1
+// 说明：提供命令行参数访问、指针运算等运行时支持
+// 模块路径：lib/std/runtime/runtime.uya → use std.runtime;
+//
+// 架构说明（方案 C - 双入口）：
+// 1. 用户代码 fn main() → 编译为 uya_main()
+// 2. std.runtime.entry 提供 export extern fn main(argc, argv) 作为 C 入口
+// 3. C main 保存参数后调用 uya_main()
+// 4. 用户通过 get_argc/get_argv 访问参数
 
-use libc.sys_read;
-use libc.sys_open;
-use libc.sys_close;
-use libc.O_RDONLY;
-use libc.STDERR_FILENO;
+
 
 // ============================================================
-// 命令行参数缓存（从 /proc/self/cmdline 读取）
+// 命令行参数缓存
 // ============================================================
 
-// 全局变量：缓存的命令行参数
-var cached_argc: i32 = 0 - 1;  // -1 表示未初始化
-var cached_argv: & & byte = null;
-var cached_argv_buffer: &byte = null;
-
-// 初始化命令行参数（从 /proc/self/cmdline 读取）
-fn init_argv() void {
-    if cached_argc >= 0 {
-        return;  // 已经初始化
-    }
-    
-    // 打开 /proc/self/cmdline
-    const cmdline_path: &const byte = "/proc/self/cmdline\0" as &const byte;
-    const result: !i32 = sys_open(cmdline_path, O_RDONLY as i32, 0);
-    const fd: i32 = result catch {
-        // 如果无法打开，设置默认值
-        cached_argc = 1;
-        return;
-    };
-    
-    // 读取命令行数据（最多 4096 字节）
-    var buffer: [byte: 4096] = [];
-    const read_result: !isize = sys_read(fd, &buffer[0], 4096);
-    _ = sys_close(fd);
-    
-    const bytes_read: isize = read_result catch {
-        cached_argc = 1;
-        return;
-    };
-    
-    if bytes_read <= 0 as isize {
-        cached_argc = 1;
-        return;
-    }
-    
-    // 解析命令行参数（null 分隔）
-    // 简化实现：只计算参数数量，不实际存储参数指针
-    // 注意：完整实现需要动态分配内存，这里使用简化版本
-    var count: i32 = 0;
-    var i: usize = 0;
-    var in_arg: i32 = 0;
-    
-    while i < bytes_read as usize && i < 4096 {
-        if buffer[i] == 0 {
-            if in_arg != 0 {
-                count = count + 1;
-                in_arg = 0;
-            }
-        } else {
-            if in_arg == 0 {
-                in_arg = 1;
-            }
-        }
-        i = i + 1;
-    }
-    
-    if in_arg != 0 {
-        count = count + 1;
-    }
-    
-    if count == 0 {
-        count = 1;  // 至少有一个参数（程序名）
-    }
-    
-    cached_argc = count;
-}
+// 全局变量：保存命令行参数（export 供 std.runtime.entry 使用）
+export var saved_argc: i32 = 0;
+export var saved_argv: & &byte = null;
 
 // ============================================================
 // 运行时支持函数
@@ -87,54 +26,47 @@ fn init_argv() void {
 // get_argc - 获取命令行参数数量
 // 返回：参数数量（至少为 1，包含程序名）
 export fn get_argc() i32 {
-    init_argv();
-    if cached_argc < 1 {
-        return 1;  // 默认至少返回 1
-    }
-    return cached_argc;
+    return saved_argc;
 }
 
 // get_argv - 获取第 index 个命令行参数
 // 返回：参数字符串指针，失败返回 null
-// 注意：返回 &byte 而不是 *byte，因为普通函数不能返回 FFI 指针
-// 注意：简化实现，实际应该从 /proc/self/cmdline 解析并缓存
 export fn get_argv(index: i32) &byte {
-    init_argv();
-    if index < 0 || index >= cached_argc {
+    if index < 0 || index >= saved_argc {
         return null;
     }
-    
-    // 简化实现：返回 null（完整实现需要解析并缓存参数）
-    // TODO: 完整实现需要动态分配内存存储参数指针数组
-    return null;
+    if saved_argv == null {
+        return null;
+    }
+    return saved_argv[index];
 }
 
-// get_stderr - 获取标准错误流指针
-// 返回：标准错误流的文件描述符（作为指针返回）
-// 注意：在零依赖环境中，返回文件描述符的指针
-// 注意：使用全局变量存储文件描述符，返回其地址
-var stderr_fd_storage: i64 = STDERR_FILENO;
+// get_stderr - 获取标准错误流的文件描述符
+// 返回：文件描述符指针（用于 fprintf 等）
+var stderr_fd_storage: i64 = 2;  // STDERR_FILENO
 
 export fn get_stderr() &void {
-    // 返回文件描述符存储的地址（作为 &void）
-    // 注意：调用者需要知道这是文件描述符的地址，不是 FILE*
+    // 返回文件描述符的地址
+    // 注意：fprintf 需要的是 FILE* 或 fd，这里返回 fd 的地址
+    // 实际使用时需要特殊处理
     return &stderr_fd_storage as &void;
 }
 
 // ptr_diff - 计算两个指针之间的字节偏移量（ptr1 - ptr2）
-// 返回：字节偏移量（i32）
-// 注意：参数使用 &byte 而不是 *byte，因为普通函数不能接受 FFI 指针
+// 返回：字节偏移量
 export fn ptr_diff(ptr1: &byte, ptr2: &byte) i32 {
     if ptr1 == null || ptr2 == null {
         return 0;
     }
-    
+
     // 使用 @usize_from_ptr 实现指针差计算
     const addr1: usize = @usize_from_ptr(ptr1 as &void);
     const addr2: usize = @usize_from_ptr(ptr2 as &void);
-    const diff: usize = addr1 - addr2;
-    
-    // 转换为 i32（注意：可能溢出，但简化实现）
-    return diff as i32;
-}
 
+    // 处理可能的溢出
+    if addr1 >= addr2 {
+        return (addr1 - addr2) as i32;
+    } else {
+        return 0 - ((addr2 - addr1) as i32);
+    }
+}

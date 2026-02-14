@@ -337,7 +337,40 @@ static const char *get_module_prefix_from_filename(C99CodeGenerator *codegen, co
         return prefix;
     }
     
-    // 非 lib 目录，无前缀
+    // 检查是否是 src/ 文件（应用程序主文件）
+    const char *src_path = strstr(filename, "/src/");
+    if (src_path == NULL) src_path = strstr(filename, "src/");
+    if (src_path == NULL) src_path = strstr(filename, "\\src\\");
+    
+    if (src_path != NULL) {
+        const char *relative_path = src_path;
+        if (*relative_path == '/') {
+            relative_path++;
+        }
+        
+        // 跳过 "src/"
+        if (strncmp(relative_path, "src/", 4) == 0) relative_path += 4;
+        else if (strncmp(relative_path, "src\\", 4) == 0) relative_path += 4;
+        
+        size_t rel_len = strlen(relative_path);
+        size_t base_len = rel_len;
+        if (rel_len > 4 && strcmp(relative_path + rel_len - 4, ".uya") == 0) {
+            base_len = rel_len - 4;
+        }
+        
+        // src/ 目录下的文件使用文件名作为模块前缀
+        // src/main.uya -> "main_"
+        // src/foo.uya -> "foo_"
+        char *prefix = (char *)arena_alloc(codegen->arena, base_len + 2);  // name + "_" + "\0"
+        if (!prefix) return "";
+        
+        memcpy(prefix, relative_path, base_len);
+        prefix[base_len] = '_';
+        prefix[base_len + 1] = '\0';
+        return prefix;
+    }
+    
+    // 其他目录，无前缀
     return "";
 }
 
@@ -462,18 +495,46 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     
     // 检查是否为 copy_type 函数（需要 const 限定符）
     int is_copy_type = (orig_name && strcmp(orig_name, "copy_type") == 0) ? 1 : 0;
-    
-    // 特殊处理：main 函数需要重命名为 uya_main（符合 Uya 规范：main 函数无参数）
+
+    // 检查是否有 extern_lib_name（extern "libc" fn）
+    const char *extern_lib_name = fn_decl->data.fn_decl.extern_lib_name;
+
+    // 特殊处理：main 函数
+    // - export extern fn main(argc, argv) → 生成裸名 main（C 入口）
+    // - 其他 fn main() → 重命名为 uya_main
     int is_main = (orig_name && strcmp(orig_name, "main") == 0) ? 1 : 0;
-    if (is_main) {
-        // main 函数生成 uya_main 的前向声明
+    int is_extern_keyword = fn_decl->data.fn_decl.is_extern;  // 是否有 extern 关键字
+
+    // export extern fn main 是 C 入口，生成裸名 main
+    int is_c_main = (is_main && is_export && is_extern_keyword) ? 1 : 0;
+
+    if (is_main && !is_export) {
+        // 普通 main 函数（fn main）生成 uya_main 的前向声明
         const char *return_c = convert_array_return_type(codegen, return_type);
         fprintf(codegen->output, "%s uya_main(void);\n", return_c);
         return;
     }
-    
-    // 检查是否有 extern_lib_name（extern "libc" fn）
-    const char *extern_lib_name = fn_decl->data.fn_decl.extern_lib_name;
+
+    // export fn main 生成 main_main 的前向声明（由下面的通用代码处理）
+
+    if (is_c_main) {
+        // C 入口函数 main：生成前向声明（使用裸名，带参数）
+        const char *return_c = convert_array_return_type(codegen, return_type);
+        fprintf(codegen->output, "extern %s main(", return_c);
+        // 参数列表
+        for (int i = 0; i < param_count; i++) {
+            ASTNode *param = params[i];
+            if (param && param->type == AST_VAR_DECL) {
+                ASTNode *param_type = param->data.var_decl.type;
+                const char *param_type_c = c99_type_to_c(codegen, param_type);
+                const char *param_name = get_safe_c_identifier(codegen, param->data.var_decl.name);
+                format_param_type(codegen, param_type_c, param_name, codegen->output);
+                if (i < param_count - 1) fprintf(codegen->output, ", ");
+            }
+        }
+        fprintf(codegen->output, ");\n");
+        return;
+    }
     
     // 检查是否为extern函数（body为NULL表示extern函数，或从AST节点读取）
     int is_extern = (body == NULL) ? 1 : 0;
@@ -621,23 +682,28 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     
     // 生成 #line 指令，指向函数定义的位置
     emit_line_directive(codegen, fn_decl->line, fn_decl->filename);
-    
-    // 特殊处理：main 函数需要重命名为 uya_main（符合 Uya 规范：main 函数无参数）
+
+    // 特殊处理：main 函数
+    // - export extern fn main(argc, argv) → 生成裸名 main（C 入口）
+    // - 其他 fn main() → 重命名为 uya_main
     int is_main = (orig_name && strcmp(orig_name, "main") == 0) ? 1 : 0;
-    
+    int is_extern_keyword = fn_decl->data.fn_decl.is_extern;  // 是否有 extern 关键字
+    int is_c_main = (is_main && is_export && is_extern_keyword) ? 1 : 0;
+
     // 返回类型（如果是数组类型，转换为指针类型）
     const char *return_c = convert_array_return_type(codegen, return_type);
-    
+
     // 检查是否有 extern_lib_name（extern "libc" fn）
     const char *extern_lib_name = fn_decl->data.fn_decl.extern_lib_name;
-    
+
     int is_extern = fn_decl->data.fn_decl.is_extern;
-    
-    // extern "libc" fn 带函数体时，is_extern 应该为 0（生成普通函数定义）
-    if (extern_lib_name != NULL && body != NULL) {
+
+    // extern fn 带函数体时，is_extern 应该为 0（生成普通函数定义）
+    // 这包括 extern "libc" fn 和普通 extern fn（如 export extern fn main）
+    if (is_extern && body != NULL) {
         is_extern = 0;
     }
-    
+
     /* 若同一程序中存在同名 extern 声明（如 parser 的 extern fn lexer_next_token），则定义处不能加 static，否则与已输出的 extern 冲突 */
     int has_extern_decl_same_name = 0;
     if (!is_extern && orig_name && codegen->program_node && codegen->program_node->type == AST_PROGRAM) {
@@ -653,9 +719,25 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     }
     // extern "libc" fn 带函数体时，不使用 static，不使用模块前缀
     int is_static = (!is_main && !is_extern && !is_export && !has_extern_decl_same_name && extern_lib_name == NULL);
-    
-    if (is_main) {
-        // main 函数重命名为 uya_main（符合 Uya 规范：main 函数无参数）
+
+    if (is_c_main) {
+        // C 入口函数 main（export extern fn main）：生成裸名 main（带参数）
+        fprintf(codegen->output, "%s main(", return_c);
+        // 打印参数
+        for (int i = 0; i < param_count; i++) {
+            ASTNode *param = params[i];
+            if (!param || param->type != AST_VAR_DECL) continue;
+            
+            const char *param_name = get_safe_c_identifier(codegen, param->data.var_decl.name);
+            ASTNode *param_type = param->data.var_decl.type;
+            const char *param_type_c = c99_type_to_c(codegen, param_type);
+            
+            format_param_type(codegen, param_type_c, param_name, codegen->output);
+            if (i < param_count - 1) fputs(", ", codegen->output);
+        }
+        fputs(")", codegen->output);
+    } else if (is_main && !is_export) {
+        // 普通 main 函数（fn main）：重命名为 uya_main（无参数）
         fprintf(codegen->output, "%s uya_main(void)", return_c);
     } else {
         // 非 extern 函数：根据 is_export 决定是否添加 static；static 时加 __attribute__((unused)) 消除 -Wunused-function

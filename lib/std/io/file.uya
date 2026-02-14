@@ -108,11 +108,10 @@ export fn fread(buf: &byte, size: usize, count: usize, handle: &void) usize {
         return 0;
     }
     const total_size: usize = size * count;
-    const buf_addr: i64 = @usize_from_ptr(buf as &void) as i64;
-    const bytes_read: i64 = sys_read(fd, buf_addr, total_size as i64) catch {
+    const bytes_read: isize = sys_read(fd as i32, buf, total_size) catch {
         return 0;
     };
-    if bytes_read < 0 {
+    if bytes_read < 0 as isize {
         return 0;
     }
     // 计算实际读取的元素数量
@@ -136,11 +135,10 @@ export fn fwrite(buf: &const byte, size: usize, count: usize, handle: &void) usi
         return 0;
     }
     const total_size: usize = size * count;
-    const buf_addr: i64 = @usize_from_ptr(buf as &void) as i64;
-    const bytes_written: i64 = sys_write(fd, buf_addr, total_size as i64) catch {
+    const bytes_written: isize = sys_write(fd as i32, buf, total_size) catch {
         return 0;
     };
-    if bytes_written < 0 {
+    if bytes_written < 0 as isize {
         return 0;
     }
     // 计算实际写入的元素数量

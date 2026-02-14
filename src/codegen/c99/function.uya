@@ -161,16 +161,23 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     
     // 返回类型（如果是数组类型，转换为指针类型）
     var return_c: &byte = convert_array_return_type(codegen, return_type);
-    
+
     // 特殊处理：main 函数需要重命名为 uya_main（符合 Uya 规范：main 函数无参数）
     // 注意：Uya Mini 不支持三元运算符，使用 if-else 代替
     var is_main: i32 = 0;
     if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "main" as *byte) == 0 {
         is_main = 1;
     }
-    
-    if is_main != 0 {
+
+    // 检查是否为标准 C main 函数（export extern fn main）
+    var is_c_main: i32 = 0;
+    if is_main != 0 && extern_lib_name != null && fn_decl.fn_decl_is_export != 0 {
+        is_c_main = 1;
+    }
+
+    if is_main != 0 && is_c_main == 0 {
         // main 函数生成 uya_main 的前向声明（使用外层的 return_c）
+        // 但 export extern "libc" fn main 除外
         fprintf(codegen.output, "%s uya_main(void);\n" as *byte, return_c as *byte);
         return;
     }
@@ -204,7 +211,13 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "copy_type" as *byte) == 0 {
         is_copy_type = 1;
     }
-    
+
+    // 检查是否为标准库函数（extern "libc" fn）
+    var is_stdlib: i32 = 0;
+    if extern_lib_name != null {
+        is_stdlib = 1;
+    }
+
     // 参数列表
     var i: i32 = 0;
     while i < param_count {
@@ -415,9 +428,17 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     if is_main == 0 && is_extern == 0 && is_export == 0 && has_extern_decl_same_name == 0 && extern_lib_name == null {
         is_static = 1;
     }
-    
-    if is_main != 0 {
+
+    // 检查是否为标准 C main 函数（export extern fn main）
+    // 如果是 extern "libc" fn main，保持 main 原名，不重命名为 uya_main
+    var is_c_main: i32 = 0;
+    if is_main != 0 && extern_lib_name != null && is_export != 0 {
+        is_c_main = 1;
+    }
+
+    if is_main != 0 && is_c_main == 0 {
         // main 函数重命名为 uya_main（符合 Uya 规范：main 函数无参数）
+        // 但 export extern "libc" fn main 除外（保持 main 原名）
         fprintf(codegen.output, "%s uya_main(void)" as *byte, return_c as *byte);
     } else {
         // 非 extern 函数：根据 is_export 决定是否添加 static
@@ -433,7 +454,13 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "copy_type" as *byte) == 0 {
             is_copy_type = 1;
         }
-        
+
+        // 检查是否为标准库函数（extern "libc" fn）
+        var is_stdlib: i32 = 0;
+        if extern_lib_name != null {
+            is_stdlib = 1;
+        }
+
         // 参数列表
         i = 0;
         while i < param_count {

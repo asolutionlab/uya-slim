@@ -4,8 +4,8 @@
 // 注意：Uya 不支持指针运算，ptr + i 必须转换为 &ptr[i]
 // 注意：对齐计算使用算术代替位运算（Uya Mini 位运算受限时）
 
-// 分配失败时报错退出（需与 extern_decls 中的声明一致，或由编译脚本合并）
-extern fn get_stderr() *void;
+// 标准库函数
+use std.runtime.get_stderr;
 extern fn fprintf(stream: *void, format: *byte, ...) i32;
 extern fn exit(code: i32) void;
 

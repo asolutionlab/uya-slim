@@ -1,0 +1,33 @@
+// std.runtime.entry - C 程序入口
+// 版本：v0.1.1
+// 说明：提供 export extern fn main 作为 C 入口，应用程序需要 use 此模块
+// 模块路径：lib/std/runtime/entry/entry.uya → use std.runtime.entry;
+//
+// 架构说明：
+// 1. 本模块提供 export extern fn main(argc, argv) 作为 C 入口
+// 2. C main 保存参数到 std.runtime.saved_argc/saved_argv 后调用 main_main()
+//    （用户的 fn main() 在 main.uya 模块中，编译为 main_main()）
+// 3. 用户通过 std.runtime.get_argc/get_argv 访问参数
+// 4. 编译器不需要此模块，只有应用程序才需要
+
+// 导入 std.runtime 的全局变量
+use std.runtime.saved_argc;
+use std.runtime.saved_argv;
+
+// ============================================================
+// C main 入口（由 C 运行时调用）
+// ============================================================
+
+// 声明应用程序主入口（由编译器从 main.uya 的 fn main() 生成为 main_main）
+extern fn main_main() i32;
+
+// C main 函数：保存参数并调用应用程序主程序
+// export extern fn 生成裸函数名（无模块前缀），作为程序入口
+export extern fn main(argc: i32, argv: & &byte) i32 {
+    // 保存命令行参数到 std.runtime 的全局变量
+    saved_argc = argc;
+    saved_argv = argv;
+
+    // 调用应用程序主程序（main.uya 的 fn main() → main_main()）
+    return main_main();
+}

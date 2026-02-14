@@ -9,13 +9,11 @@
 // 导入 libc 模块以解析所有 lib/libc/ 下的文件
 use libc;
 
-// ===== 运行时支持（std.runtime / bridge.c）=====
-// 显式 extern 声明，确保 C 代码生成器输出正确原型（返回值 64 位指针/i32），
-// 否则未声明时会被当作返回 int，导致 get_argv 等指针被截断引发段错误
-extern fn get_argc() i32;
-extern fn get_argv(index: i32) &byte;
-extern fn get_stderr() *void;
-extern fn ptr_diff(ptr1: *byte, ptr2: *byte) i32;
+// ===== 运行时支持（std.runtime）=====
+use std.runtime.get_argc;
+use std.runtime.get_argv;
+use std.runtime.get_stderr;
+use std.runtime.ptr_diff;
 
 // ===== 文件 I/O（std.io）=====
 use std.io.fopen;
@@ -36,30 +34,26 @@ use std.string.strchr;
 use std.string.strrchr;
 use std.string.strstr;
 
-// ===== 数值转换（libc.stdlib）=====
-use libc.stdlib.strtod;
-use libc.stdlib.strtol;
+// ===== 数值转换（libc）=====
+use libc.strtod;
+use libc.strtol;
 
-// ===== 格式化（libc.stdio）=====
-use libc.stdio.sprintf;
-use libc.stdio.snprintf;
+// ===== 格式化（libc）=====
+use libc.sprintf;
+use libc.snprintf;
 
 // ===== 内存操作（std.mem）=====
 use std.mem.memcpy;
 use std.mem.memset;
 
-// ===== 进程控制（libc.stdlib）=====
-use libc.stdlib.exit;
-use libc.stdlib.getenv;
+// ===== 进程控制（libc）=====
+use libc.exit;
+use libc.getenv;
 
 // ===== 文件系统（std.c，暂时保留，后续迁移到 std.fs）=====
-// stat 结构体（Linux x86_64 上为 144 字节）
-// 使用字节数组来匹配 C 的 struct stat 大小
-// st_mode 在偏移 24 字节处
-struct Stat {
-    _data: [byte: 144],  // 144 字节，匹配 C 的 struct stat
-}
-use libc.stdlib.stat;
+// 使用 libc 的 Stat 结构体
+use libc.Stat;
+use libc.stat;
 // S_ISDIR 和 S_ISREG 是宏，在 Uya 中需要手动实现
 // S_ISDIR(mode) = ((mode) & S_IFMT) == S_IFDIR
 // S_ISREG(mode) = ((mode) & S_IFMT) == S_IFREG
@@ -67,7 +61,7 @@ const S_IFMT: u32 = 61440;  // 0xF000
 const S_IFDIR: u32 = 16384;  // 0x4000
 const S_IFREG: u32 = 32768;  // 0x8000
 
-// ===== 目录操作（libc.stdlib）=====
+// ===== 目录操作（libc）=====
 struct Dirent {
     d_name: *byte,
     d_type: u8,  // DT_REG = 8, DT_DIR = 4
@@ -75,11 +69,11 @@ struct Dirent {
 struct DIR {
     // 不透明类型
 }
-use libc.stdlib.opendir;
-use libc.stdlib.readdir;
-use libc.stdlib.closedir;
+use libc.opendir;
+use libc.readdir;
+use libc.closedir;
 const DT_REG: u8 = 8;  // 普通文件
 const DT_DIR: u8 = 4;  // 目录
 
-// ===== 符号链接（libc.stdlib）=====
-use libc.stdlib.readlink;
+// ===== 符号链接（libc）=====
+use libc.readlink;

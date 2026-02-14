@@ -172,100 +172,6 @@ fi
 # 创建输出目录
 mkdir -p "$BUILD_DIR"
 
-# 检查并创建 bridge.c 文件（如果不存在）
-BRIDGE_C="$BUILD_DIR/bridge.c"
-if [ ! -f "$BRIDGE_C" ]; then
-    if [ "$VERBOSE" = true ]; then
-        echo -e "${YELLOW}创建 bridge.c 文件...${NC}"
-    fi
-    cat > "$BRIDGE_C" << 'BRIDGE_EOF'
-// bridge.c - 提供运行时桥接函数
-// 这个文件提供了 Uya 程序需要的运行时函数，包括：
-// 1. 真正的 C main 函数（程序入口点）
-// 2. 命令行参数访问函数（get_argc, get_argv）
-// 3. 标准错误流访问函数（get_stderr）
-// 4. 指针运算辅助函数（ptr_diff）
-// 5. LLVM 初始化函数（通过包含头文件提供内联实现）
-// 注意：Uya 的 main 函数被重命名为 uya_main，由 bridge.c 的 main 函数调用
-
-#include <stdio.h>
-#include <stdint.h>
-#include <stddef.h>
-
-// 注意：LLVM 初始化函数需要链接 LLVM 库
-// 这里不包含 LLVM 头文件，而是提供简单的包装函数
-// 实际的 LLVM 初始化由链接的 LLVM 库提供
-
-// 全局变量：保存命令行参数
-static int saved_argc = 0;
-static char **saved_argv = NULL;
-
-// 初始化函数：由 bridge.c 的 main 函数调用，保存命令行参数
-void bridge_init(int argc, char **argv) {
-    saved_argc = argc;
-    saved_argv = argv;
-}
-
-// Uya 程序的 main 函数（被重命名为 uya_main）
-extern int32_t uya_main(void);
-
-// 真正的 C main 函数（程序入口点）
-int main(int argc, char **argv) {
-    // 初始化命令行参数
-    bridge_init(argc, argv);
-    // 调用 Uya 的 main 函数
-    return (int)uya_main();
-}
-
-// 获取命令行参数数量
-int32_t get_argc(void) {
-    return (int32_t)saved_argc;
-}
-
-// 获取第 index 个命令行参数
-uint8_t *get_argv(int32_t index) {
-    if (index < 0 || index >= saved_argc || saved_argv == NULL) {
-        return NULL;
-    }
-    return (uint8_t *)saved_argv[index];
-}
-
-// 获取标准错误流指针
-// 返回标准错误流 FILE* 指针
-void *get_stderr(void) {
-    // 返回实际的 stderr FILE* 指针（标准库已链接）
-    return (void *)stderr;
-}
-
-// 计算两个指针之间的字节偏移量（ptr1 - ptr2）
-// 用于替代 Uya Mini 中不支持的指针到整数直接转换
-int32_t ptr_diff(uint8_t *ptr1, uint8_t *ptr2) {
-    if (ptr1 == NULL || ptr2 == NULL) {
-        return 0;
-    }
-    return (int32_t)(ptr1 - ptr2);
-}
-
-// LLVM 初始化函数的弱符号实现
-// 如果 LLVM 库提供了这些函数，链接器会使用库中的版本
-// 否则使用这里的空实现（对于不使用 LLVM 后端的程序）
-__attribute__((weak)) void LLVMInitializeNativeTarget(void) {
-    // 空实现：如果链接了 LLVM 库，库中的实现会被使用
-}
-
-__attribute__((weak)) void LLVMInitializeNativeAsmPrinter(void) {
-    // 空实现
-}
-
-__attribute__((weak)) void LLVMInitializeNativeAsmParser(void) {
-    // 空实现
-}
-BRIDGE_EOF
-    if [ "$VERBOSE" = true ]; then
-        echo -e "${GREEN}✓ bridge.c 已创建${NC}"
-    fi
-fi
-
 # 输出文件路径
 OUTPUT_FILE="$BUILD_DIR/$OUTPUT_NAME"
 
@@ -404,8 +310,9 @@ export UYA_ROOT="$REPO_ROOT/lib/"
 
 # 执行编译
 if [ "$USE_AUTO_DEPS" = true ]; then
-    # 使用自动依赖收集模式：只传递主文件
-    COMPILER_CMD=("$COMPILER" "$INPUT_PATH" -o "$OUTPUT_FILE")
+    # 使用自动依赖收集模式：传递主文件和 C 入口模块
+    ENTRY_FILE="$REPO_ROOT/lib/std/runtime/entry/entry.uya"
+    COMPILER_CMD=("$COMPILER" "$INPUT_PATH" "$ENTRY_FILE" -o "$OUTPUT_FILE")
 else
     # 使用手动文件列表模式：传递所有文件
     COMPILER_CMD=("$COMPILER" "${FULL_PATHS[@]}" -o "$OUTPUT_FILE")
@@ -492,74 +399,56 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                 echo ""
                 echo -e "${YELLOW}C 源文件已更新，重新链接可执行文件...${NC}"
             fi
-            
-            # 检查是否存在 bridge.c
-            BRIDGE_C="$BUILD_DIR/bridge.c"
-            
+
             # 对于 C99 后端，尝试自动链接
+            # 方案 C：双入口，不再需要 bridge.c
+            # std.runtime 提供 export extern fn main(argc, argv) 作为 C 入口
+            # 用户 fn main() 被编译为 uya_main()
             if [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ]; then
-                if [ -f "$BRIDGE_C" ]; then
-                    # --nostdlib + 静态链接：不依赖动态库，显式链接 crt 与 libc/libgcc
-                    # 注意：需要先将 .c 文件编译成 .o 文件，因为 -nostdlib 会影响编译阶段
-                    if [ "$USE_NOSTDLIB" = true ]; then
-                        # 先编译 .c 文件为 .o 文件
-                        UYA_O="$BUILD_DIR/uya.o"
-                        BRIDGE_O="$BUILD_DIR/bridge.o"
-                        
-                        if [ "$VERBOSE" = true ]; then
-                            echo "编译 $OUTPUT_FILE -> $UYA_O"
-                        fi
-                        
-                        if ! gcc --std=c99 -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
-                            echo -e "${RED}✗ 编译 uya.c 失败${NC}"
-                            exit 1
-                        fi
-                        
-                        if [ "$VERBOSE" = true ]; then
-                            echo "编译 $BRIDGE_C -> $BRIDGE_O"
-                        fi
-                        
-                        if ! gcc --std=c99 -c "$BRIDGE_C" -o "$BRIDGE_O" 2>&1; then
-                            echo -e "${RED}✗ 编译 bridge.c 失败${NC}"
-                            exit 1
-                        fi
-                        
-                        # 获取 crt 文件路径
-                        CRT1="$(gcc -print-file-name=crt1.o)"
-                        CRTI="$(gcc -print-file-name=crti.o)"
-                        CRTN="$(gcc -print-file-name=crtn.o)"
-                        
-                        # 链接（需要 -lgcc_eh 用于异常处理支持）
-                        if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                            LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$BRIDGE_O\" -lc \"$CRTN\" -lgcc -lgcc_eh"
-                        else
-                            LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$BRIDGE_O\" -lc \"$CRTN\" -lgcc -lgcc_eh"
-                        fi
-                    else
-                        # 0 依赖：纯静态链接，不链接 LLVM（C99 自举编译器不需要）
-                        if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                            LINK_CMD="gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"${EXECUTABLE_FILE}.exe\""
-                        else
-                            LINK_CMD="gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"$EXECUTABLE_FILE\""
-                        fi
-                    fi
-                    
+                if [ "$USE_NOSTDLIB" = true ]; then
+                    # --nostdlib 模式：编译 .c 为 .o 后链接
+                    UYA_O="$BUILD_DIR/uya.o"
+
                     if [ "$VERBOSE" = true ]; then
-                        echo "执行链接命令: $LINK_CMD"
+                        echo "编译 $OUTPUT_FILE -> $UYA_O"
                     fi
-                    
-                    if eval "$LINK_CMD" 2>&1; then
-                        echo -e "${GREEN}✓ C99 可执行文件已生成: $EXECUTABLE_FILE${NC}"
-                    else
-                        echo -e "${RED}✗ 链接失败${NC}"
-                        echo ""
-                        echo "可以尝试手动链接："
-                        echo "  $LINK_CMD"
+
+                    if ! gcc --std=c99 -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
+                        echo -e "${RED}✗ 编译 uya.c 失败${NC}"
                         exit 1
                     fi
+
+                    # 获取 crt 文件路径
+                    CRT1="$(gcc -print-file-name=crt1.o)"
+                    CRTI="$(gcc -print-file-name=crti.o)"
+                    CRTN="$(gcc -print-file-name=crtn.o)"
+
+                    # 链接
+                    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+                        LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" -lc \"$CRTN\" -lgcc -lgcc_eh"
+                    else
+                        LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" -lc \"$CRTN\" -lgcc -lgcc_eh"
+                    fi
                 else
-                    echo -e "${RED}✗ bridge.c 文件不存在${NC}"
-                    echo "预期路径: $BRIDGE_C"
+                    # 普通模式：直接编译链接
+                    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+                        LINK_CMD="gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\""
+                    else
+                        LINK_CMD="gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\""
+                    fi
+                fi
+
+                if [ "$VERBOSE" = true ]; then
+                    echo "执行链接命令: $LINK_CMD"
+                fi
+
+                if eval "$LINK_CMD" 2>&1; then
+                    echo -e "${GREEN}✓ C99 可执行文件已生成: $EXECUTABLE_FILE${NC}"
+                else
+                    echo -e "${RED}✗ 链接失败${NC}"
+                    echo ""
+                    echo "可以尝试手动链接："
+                    echo "  $LINK_CMD"
                     exit 1
                 fi
             else
@@ -574,20 +463,10 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                     echo "  2. 链接器执行失败（检查编译输出中的错误信息）"
                     echo ""
                     echo "可以尝试手动链接："
-                    if [ -f "$BRIDGE_C" ]; then
-                        # LLVM 后端
-                        if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                            echo "  gcc -no-pie \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"${EXECUTABLE_FILE}.exe\" -L/usr/lib/llvm-17/lib -lLLVM-17 -lstdc++ -lm -ldl -lpthread"
-                        else
-                            echo "  gcc -no-pie \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"$EXECUTABLE_FILE\" -L/usr/lib/llvm-17/lib -lLLVM-17 -lstdc++ -lm -ldl -lpthread"
-                        fi
+                    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+                        echo "  gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\""
                     else
-                        # 没有 bridge.c，使用简单链接
-                        if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                            echo "  gcc -no-pie \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\""
-                        else
-                            echo "  gcc -no-pie \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\""
-                        fi
+                        echo "  gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\""
                     fi
                 fi
                 exit 1
@@ -683,40 +562,10 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             echo "提示: 如果要生成可执行文件，使用 -e 或 --exec 选项："
             echo "  $0 -e"
             echo "或者手动链接："
-            # 检查是否存在 bridge.c
-            BRIDGE_C="$BUILD_DIR/bridge.c"
-            if [ -f "$BRIDGE_C" ]; then
-                    # 对于 C99 后端，需要链接 bridge.c
-                    if [ "$USE_C99" = true ]; then
-                        if [ "$USE_NOSTDLIB" = true ]; then
-                            # 标准库已经编译到 OUTPUT_FILE 中了
-                            if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                                echo "  gcc --std=c99 -no-pie -nostdlib \"$OUTPUT_FILE\" \"$BRIDGE_C\"$STD_LIB_ARG -o \"${OUTPUT_FILE%.o}.exe\" -I/usr/include/llvm-c -L/usr/lib/llvm-17/lib -lLLVM-17 -lstdc++ -lgcc"
-                            else
-                                echo "  gcc --std=c99 -no-pie -nostdlib \"$OUTPUT_FILE\" \"$BRIDGE_C\"$STD_LIB_ARG -o \"${OUTPUT_FILE%.o}\" -I/usr/include/llvm-c -L/usr/lib/llvm-17/lib -lLLVM-17 -lstdc++ -lgcc"
-                            fi
-                        else
-                            if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                                echo "  gcc --std=c99 -no-pie \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"${OUTPUT_FILE%.o}.exe\" -I/usr/include/llvm-c -L/usr/lib/llvm-17/lib -lLLVM-17 -lstdc++ -lm -ldl -lpthread"
-                            else
-                                echo "  gcc --std=c99 -no-pie \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"${OUTPUT_FILE%.o}\" -I/usr/include/llvm-c -L/usr/lib/llvm-17/lib -lLLVM-17 -lstdc++ -lm -ldl -lpthread"
-                            fi
-                        fi
-                else
-                    # LLVM 后端
-                    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        echo "  gcc -no-pie \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"${OUTPUT_FILE%.o}.exe\" -L/usr/lib/llvm-17/lib -lLLVM-17 -lstdc++ -lm -ldl -lpthread"
-                    else
-                        echo "  gcc -no-pie \"$OUTPUT_FILE\" \"$BRIDGE_C\" -o \"${OUTPUT_FILE%.o}\" -L/usr/lib/llvm-17/lib -lLLVM-17 -lstdc++ -lm -ldl -lpthread"
-                    fi
-                fi
+            if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+                echo "  gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"${OUTPUT_FILE%.o}.exe\""
             else
-                # 没有 bridge.c，使用简单链接
-                if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                    echo "  gcc -no-pie \"$OUTPUT_FILE\" -o \"${OUTPUT_FILE%.o}.exe\""
-                else
-                    echo "  gcc -no-pie \"$OUTPUT_FILE\" -o \"${OUTPUT_FILE%.o}\""
-                fi
+                echo "  gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"${OUTPUT_FILE%.o}\""
             fi
         fi
     else
