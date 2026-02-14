@@ -9,8 +9,7 @@
 extern fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token;
 extern fn lexer_init(lexer: &Lexer, source: &byte, source_len: usize, filename: &byte, arena: &Arena) i32;
 // 标准库函数（用于错误报告）
-use std.runtime.get_stderr;
-extern fn fprintf(stream: *void, format: *byte, ...) i32;
+use libc;
 
 // 解析上下文类型
 enum ParserContext {
@@ -789,15 +788,13 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
         // 解析插值内的表达式（通常是标识符，但也可以是复杂表达式）
         const operand: &ASTNode = parser_parse_expression(parser);
         if operand == null {
-            const stderr: *void = get_stderr();
-            fprintf(stderr, "错误: 宏插值内缺少表达式\n" as *byte);
+            fprintf(libc.stderr, "错误: 宏插值内缺少表达式\n" as *byte);
             return null;
         }
         
         // 期望 } 结束插值
         if parser_expect(parser, TokenType.TOKEN_RIGHT_BRACE) == null {
-            const stderr: *void = get_stderr();
-            fprintf(stderr, "错误: 宏插值缺少闭合\n" as *byte);
+            fprintf(libc.stderr, "错误: 宏插值缺少闭合\n" as *byte);
             return null;
         }
         
@@ -1258,8 +1255,7 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
         // 解析系统调用号（第一个参数，必须）
         const syscall_number: &ASTNode = parser_parse_or_expr(parser);
         if syscall_number == null {
-            const stderr: *void = get_stderr();
-            fprintf(stderr, "错误: @syscall 需要系统调用号作为第一个参数\n" as *byte);
+            fprintf(libc.stderr, "错误: @syscall 需要系统调用号作为第一个参数\n" as *byte);
             return null;
         }
         syscall_node.syscall_number = syscall_number;
@@ -1272,15 +1268,13 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
             parser_consume(parser);  // 消费逗号
             
             if arg_count >= 6 {
-                const stderr: *void = get_stderr();
-                fprintf(stderr, "错误: @syscall 最多支持 6 个参数\n" as *byte);
+                fprintf(libc.stderr, "错误: @syscall 最多支持 6 个参数\n" as *byte);
                 return null;
             }
             
             const arg: &ASTNode = parser_parse_or_expr(parser);
             if arg == null {
-                const stderr: *void = get_stderr();
-                fprintf(stderr, "错误: @syscall 参数解析失败\n" as *byte);
+                fprintf(libc.stderr, "错误: @syscall 参数解析失败\n" as *byte);
                 return null;
             }
             args[arg_count] = arg;
@@ -1316,8 +1310,7 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
         // 解析 usize 值表达式
         const value: &ASTNode = parser_parse_expression(parser);
         if value == null {
-            const stderr: *void = get_stderr();
-            fprintf(stderr, "错误: @ptr_from_usize 需要 usize 值作为参数\n" as *byte);
+            fprintf(libc.stderr, "错误: @ptr_from_usize 需要 usize 值作为参数\n" as *byte);
             return null;
         }
         
@@ -1349,8 +1342,7 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
         // 解析指针表达式
         const ptr: &ASTNode = parser_parse_expression(parser);
         if ptr == null {
-            const stderr: *void = get_stderr();
-            fprintf(stderr, "错误: @usize_from_ptr 需要指针表达式作为参数\n" as *byte);
+            fprintf(libc.stderr, "错误: @usize_from_ptr 需要指针表达式作为参数\n" as *byte);
             return null;
         }
         
@@ -1710,8 +1702,7 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
         // 解析被 await 的表达式
         const operand: &ASTNode = parser_parse_unary_expr(parser);
         if operand == null {
-            const stderr: *void = get_stderr();
-            fprintf(stderr, "错误: @await 后缺少表达式\n" as *byte);
+            fprintf(libc.stderr, "错误: @await 后缺少表达式\n" as *byte);
             return null;
         }
         
@@ -3657,7 +3648,7 @@ fn parser_parse_statement(parser: &Parser) &ASTNode {
         
         // 解析测试说明字符串
         if parser_match(parser, TokenType.TOKEN_STRING) == 0 {
-            fprintf(get_stderr(), "错误: 期望测试说明字符串，在第 %d 行第 %d 列\n" as *byte, parser.current_token.line, parser.current_token.column);
+            fprintf(libc.stderr, "错误: 期望测试说明字符串，在第 %d 行第 %d 列\n" as *byte, parser.current_token.line, parser.current_token.column);
             return null;
         }
         stmt.test_stmt_description = parser.current_token.value;
@@ -3665,7 +3656,7 @@ fn parser_parse_statement(parser: &Parser) &ASTNode {
         
         // 解析测试体（必须是块）
         if parser_match(parser, TokenType.TOKEN_LEFT_BRACE) == 0 {
-            fprintf(get_stderr(), "错误: 期望 '{'，在第 %d 行第 %d 列\n" as *byte, parser.current_token.line, parser.current_token.column);
+            fprintf(libc.stderr, "错误: 期望 '{'，在第 %d 行第 %d 列\n" as *byte, parser.current_token.line, parser.current_token.column);
             return null;
         }
         stmt.test_stmt_body = parser_parse_block(parser);
@@ -4481,8 +4472,7 @@ fn parser_parse_method_block(parser: &Parser, struct_name: &byte) &ASTNode {
                 call.call_expr_arg_count = arg_count;
                 item = call;
             } else {
-                const stderr: *void = get_stderr();
-                fprintf(stderr, "错误: 方法块内期望 'fn' 或宏调用\n" as *byte);
+                fprintf(libc.stderr, "错误: 方法块内期望 'fn' 或宏调用\n" as *byte);
                 return null;
             }
         } else {
@@ -5088,8 +5078,7 @@ fn parser_parse_type_alias(parser: &Parser) &ASTNode {
     parser_consume(parser);
     
     if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
-        const stderr: *void = get_stderr();
-        fprintf(stderr, "错误: type 后期望标识符\n" as *byte);
+        fprintf(libc.stderr, "错误: type 后期望标识符\n" as *byte);
         return null;
     }
     
@@ -5105,8 +5094,7 @@ fn parser_parse_type_alias(parser: &Parser) &ASTNode {
     
     const target_type: &ASTNode = parser_parse_type(parser);
     if target_type == null {
-        const stderr: *void = get_stderr();
-        fprintf(stderr, "错误: type 别名需要目标类型\n" as *byte);
+        fprintf(libc.stderr, "错误: type 别名需要目标类型\n" as *byte);
         return null;
     }
     
@@ -5142,8 +5130,7 @@ fn parser_parse_macro(parser: &Parser) &ASTNode {
     parser_consume(parser);
     
     if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
-        const stderr: *void = get_stderr();
-        fprintf(stderr, "错误: 'mc' 后期望宏名称\n" as *byte);
+        fprintf(libc.stderr, "错误: 'mc' 后期望宏名称\n" as *byte);
         return null;
     }
     
@@ -5188,8 +5175,7 @@ fn parser_parse_macro(parser: &Parser) &ASTNode {
             } else if parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
                 param_name = arena_strdup(parser.arena, parser.current_token.value);
             } else {
-                const stderr: *void = get_stderr();
-                fprintf(stderr, "错误: 宏参数列表中期望参数名称\n" as *byte);
+                fprintf(libc.stderr, "错误: 宏参数列表中期望参数名称\n" as *byte);
                 return null;
             }
             if param_name == null {
@@ -5211,8 +5197,7 @@ fn parser_parse_macro(parser: &Parser) &ASTNode {
             } else if parser_match(parser, TokenType.TOKEN_TYPE) != 0 {
                 param_type_str = arena_strdup(parser.arena, "type" as &byte);
             } else {
-                const stderr: *void = get_stderr();
-                fprintf(stderr, "错误: 宏参数类型必须是 'expr', 'stmt', 'type', 'pattern' 或 'ident'\n" as *byte);
+                fprintf(libc.stderr, "错误: 宏参数类型必须是 'expr', 'stmt', 'type', 'pattern' 或 'ident'\n" as *byte);
                 return null;
             }
             if param_type_str == null {
@@ -5225,8 +5210,7 @@ fn parser_parse_macro(parser: &Parser) &ASTNode {
                strcmp(param_type_str as *byte, "type" as *byte) != 0 && 
                strcmp(param_type_str as *byte, "pattern" as *byte) != 0 &&
                strcmp(param_type_str as *byte, "ident" as *byte) != 0 {
-                const stderr: *void = get_stderr();
-                fprintf(stderr, "错误: 宏参数类型必须是 'expr', 'stmt', 'type', 'pattern' 或 'ident'\n" as *byte);
+                fprintf(libc.stderr, "错误: 宏参数类型必须是 'expr', 'stmt', 'type', 'pattern' 或 'ident'\n" as *byte);
                 return null;
             }
             
@@ -5238,8 +5222,7 @@ fn parser_parse_macro(parser: &Parser) &ASTNode {
                 parser_consume(parser);
                 default_value = parser_parse_expression(parser);
                 if default_value == null {
-                    const stderr: *void = get_stderr();
-                    fprintf(stderr, "错误: 宏参数默认值解析失败\n" as *byte);
+                    fprintf(libc.stderr, "错误: 宏参数默认值解析失败\n" as *byte);
                     return null;
                 }
             }
@@ -5270,8 +5253,7 @@ fn parser_parse_macro(parser: &Parser) &ASTNode {
                 }
                 const new_params: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
                 if new_params == null {
-                    const stderr: *void = get_stderr();
-                    fprintf(stderr, "错误: Arena 内存不足，无法分配宏参数数组\n" as *byte);
+                    fprintf(libc.stderr, "错误: Arena 内存不足，无法分配宏参数数组\n" as *byte);
                     return null;
                 }
                 
@@ -5823,7 +5805,7 @@ fn parser_parse_extern_var_decl(parser: &Parser, extern_lib_name: &byte, is_cons
     
     // 期望标识符
     if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
-        fprintf(get_stderr(), "错误: extern 变量声明期望标识符\n" as *byte);
+        fprintf(libc.stderr, "错误: extern 变量声明期望标识符\n" as *byte);
         return null;
     }
     const name: &byte = arena_strdup(parser.arena, parser.current_token.value);
@@ -5877,7 +5859,7 @@ fn parser_parse_export_var_decl(parser: &Parser, is_const: i32, is_export: i32) 
     
     // 期望标识符
     if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
-        fprintf(get_stderr(), "错误: export 变量声明期望标识符\n" as *byte);
+        fprintf(libc.stderr, "错误: export 变量声明期望标识符\n" as *byte);
         return null;
     }
     const name: &byte = arena_strdup(parser.arena, parser.current_token.value);
@@ -6177,12 +6159,11 @@ fn parser_parse_use_stmt(parser: &Parser) &ASTNode {
     
     // 至少需要一个标识符
     if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
-        const stderr: *void = get_stderr();
         var filename: &byte = "(unknown)" as *byte;
         if parser.lexer != null && parser.lexer.filename != null {
             filename = parser.lexer.filename;
         }
-        fprintf(stderr, "错误: 语法分析失败 (%s:%d:%d): 'use' 后期望模块路径（标识符）\n" as *byte,
+        fprintf(libc.stderr, "错误: 语法分析失败 (%s:%d:%d): 'use' 后期望模块路径（标识符）\n" as *byte,
                 filename, line, column);
         return null;
     }
@@ -6245,12 +6226,11 @@ fn parser_parse_use_stmt(parser: &Parser) &ASTNode {
     if parser_match(parser, TokenType.TOKEN_DOT) != 0 {
         parser_consume(parser);
         if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
-            const stderr: *void = get_stderr();
             var filename: &byte = "(unknown)" as *byte;
             if parser.lexer != null && parser.lexer.filename != null {
                 filename = parser.lexer.filename;
             }
-            fprintf(stderr, "错误: 语法分析失败 (%s:%d:%d): '.' 后期望项名称（标识符）\n" as *byte,
+            fprintf(libc.stderr, "错误: 语法分析失败 (%s:%d:%d): '.' 后期望项名称（标识符）\n" as *byte,
                     filename, parser.current_token.line, parser.current_token.column);
             return null;
         }
@@ -6265,12 +6245,11 @@ fn parser_parse_use_stmt(parser: &Parser) &ASTNode {
     if parser_match(parser, TokenType.TOKEN_AS) != 0 {
         parser_consume(parser);
         if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
-            const stderr: *void = get_stderr();
             var filename: &byte = "(unknown)" as *byte;
             if parser.lexer != null && parser.lexer.filename != null {
                 filename = parser.lexer.filename;
             }
-            fprintf(stderr, "错误: 语法分析失败 (%s:%d:%d): 'as' 后期望别名（标识符）\n" as *byte,
+            fprintf(libc.stderr, "错误: 语法分析失败 (%s:%d:%d): 'as' 后期望别名（标识符）\n" as *byte,
                     filename, parser.current_token.line, parser.current_token.column);
             return null;
         }
@@ -6283,12 +6262,11 @@ fn parser_parse_use_stmt(parser: &Parser) &ASTNode {
     
     // 期望 ';'
     if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
-        const stderr: *void = get_stderr();
         var filename: &byte = "(unknown)" as *byte;
         if parser.lexer != null && parser.lexer.filename != null {
             filename = parser.lexer.filename;
         }
-        fprintf(stderr, "错误: 语法分析失败 (%s:%d:%d): 'use' 语句后期望 ';'\n" as *byte,
+        fprintf(libc.stderr, "错误: 语法分析失败 (%s:%d:%d): 'use' 语句后期望 ';'\n" as *byte,
                 filename, parser.current_token.line, parser.current_token.column);
         return null;
     }
@@ -6327,8 +6305,7 @@ fn parser_parse_declaration(parser: &Parser) &ASTNode {
         parser_consume(parser);  // 消费 @async_fn
         // @async_fn 后必须跟着 fn
         if parser_match(parser, TokenType.TOKEN_FN) == 0 {
-            const stderr: *void = get_stderr();
-            fprintf(stderr, "错误: @async_fn 后必须跟着 fn 关键字\n" as *byte);
+            fprintf(libc.stderr, "错误: @async_fn 后必须跟着 fn 关键字\n" as *byte);
             return null;
         }
     }
@@ -6336,8 +6313,7 @@ fn parser_parse_declaration(parser: &Parser) &ASTNode {
     // 根据第一个 Token 判断声明类型
     if parser_match(parser, TokenType.TOKEN_EXTERN) != 0 {
         if is_async != 0 {
-            const stderr: *void = get_stderr();
-            fprintf(stderr, "错误: extern 函数不能使用 @async_fn 属性\n" as *byte);
+            fprintf(libc.stderr, "错误: extern 函数不能使用 @async_fn 属性\n" as *byte);
             return null;
         }
         parser_consume(parser);
@@ -6426,12 +6402,11 @@ const name: &byte = arena_strdup(parser.arena, parser.current_token.value);
             parser_consume(parser);
             return parser_parse_method_block(parser, name);
         }
-        const stderr: *void = get_stderr();
         var filename: &byte = "(unknown)" as *byte;
         if parser.lexer != null && parser.lexer.filename != null {
             filename = parser.lexer.filename;
         }
-        fprintf(stderr, "错误: 语法分析失败 (%s:%d:%d): 顶层标识符 '%s' 后期望 '{'（方法块）\n" as *byte,
+        fprintf(libc.stderr, "错误: 语法分析失败 (%s:%d:%d): 顶层标识符 '%s' 后期望 '{'（方法块）\n" as *byte,
                 filename, parser.current_token.line, parser.current_token.column, name);
         return null;
     } else if parser_match(parser, TokenType.TOKEN_CONST) != 0 || parser_match(parser, TokenType.TOKEN_VAR) != 0 {
@@ -6480,7 +6455,6 @@ fn parser_parse(parser: &Parser) &ASTNode {
     var decls: & & ASTNode = null;
     var decl_count: i32 = 0;
     var decl_capacity: i32 = 0;
-    const stderr: *void = get_stderr();
     
     while parser.current_token != null && parser_match(parser, TokenType.TOKEN_EOF) == 0 {
         const decl: &ASTNode = parser_parse_declaration(parser);
@@ -6493,11 +6467,11 @@ fn parser_parse(parser: &Parser) &ASTNode {
                 if parser.lexer != null && parser.lexer.filename != null {
                     filename = parser.lexer.filename;
                 }
-                fprintf(stderr, "错误: 语法分析失败 (%s:%d:%d): 意外的 token" as *byte, filename, parser.current_token.line, parser.current_token.column);
+                fprintf(libc.stderr, "错误: 语法分析失败 (%s:%d:%d): 意外的 token" as *byte, filename, parser.current_token.line, parser.current_token.column);
                 if parser.current_token.value != null {
-                    fprintf(stderr, " '%s'" as *byte, parser.current_token.value);
+                    fprintf(libc.stderr, " '%s'" as *byte, parser.current_token.value);
                 }
-                fprintf(stderr, "\n" as *byte);
+                fprintf(libc.stderr, "\n" as *byte);
                 return null;
             }
             if parser.current_token == null {
@@ -6506,7 +6480,7 @@ fn parser_parse(parser: &Parser) &ASTNode {
                 if parser.lexer != null && parser.lexer.filename != null {
                     filename = parser.lexer.filename;
                 }
-                fprintf(stderr, "错误: 语法分析失败 (%s): 当前 token 为 null\n" as *byte, filename);
+                fprintf(libc.stderr, "错误: 语法分析失败 (%s): 当前 token 为 null\n" as *byte, filename);
                 return null;
             }
             // 到达文件末尾，正常退出循环

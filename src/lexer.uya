@@ -5,6 +5,8 @@
 // 注意：Uya 不支持指针运算，ptr + i 转换为 &ptr[i]
 // 注意：isalpha/isdigit 等用字符比较实现
 
+use libc;
+
 // Token 类型枚举（与 C 版本 lexer.h 一致）
 enum TokenType {
     TOKEN_EOF,
@@ -195,8 +197,7 @@ fn skip_whitespace_and_comments(lexer: &Lexer) void {
                 }
             }
             if depth > 0 {
-                const stderr: *void = get_stderr();
-                fprintf(stderr, "错误: 块注释未闭合，开始于第 %d 行第 %d 列\n" as *byte, start_line, start_column);
+                fprintf(libc.stderr, "错误: 块注释未闭合，开始于第 %d 行第 %d 列\n" as *byte, start_line, start_column);
                 lexer.has_error = 1;
             }
         } else {
@@ -442,8 +443,7 @@ fn read_number(lexer: &Lexer, arena: &Arena) &Token {
             advance_char(lexer);
             const next_c: byte = peek_char(lexer, 0);
             if is_valid_digit_for_base(next_c, base) == 0 || next_c == 95 {
-                const stderr: *void = get_stderr();
-                fprintf(stderr, "错误: 非法的数字下划线分隔符位置\n" as *byte);
+                fprintf(libc.stderr, "错误: 非法的数字下划线分隔符位置\n" as *byte);
                 return null;
             }
         } else {
@@ -465,8 +465,7 @@ fn read_number(lexer: &Lexer, arena: &Arena) &Token {
                 advance_char(lexer);
                 const next_c: byte = peek_char(lexer, 0);
                 if next_c < 48 || next_c > 57 || next_c == 95 {
-                    const stderr: *void = get_stderr();
-                    fprintf(stderr, "错误: 非法的浮点数下划线分隔符位置\n" as *byte);
+                    fprintf(libc.stderr, "错误: 非法的浮点数下划线分隔符位置\n" as *byte);
                     return null;
                 }
             } else {
@@ -488,8 +487,7 @@ fn read_number(lexer: &Lexer, arena: &Arena) &Token {
             advance_char(lexer);
         }
         if peek_char(lexer, 0) < 48 || peek_char(lexer, 0) > 57 {
-            const stderr: *void = get_stderr();
-            fprintf(stderr, "错误: 浮点数字面量指数部分缺少数字\n" as *byte);
+            fprintf(libc.stderr, "错误: 浮点数字面量指数部分缺少数字\n" as *byte);
             return null;
         }
         while lexer.position < lexer.buffer_size {
@@ -498,8 +496,7 @@ fn read_number(lexer: &Lexer, arena: &Arena) &Token {
                 advance_char(lexer);
                 const next_c: byte = peek_char(lexer, 0);
                 if next_c < 48 || next_c > 57 || next_c == 95 {
-                    const stderr: *void = get_stderr();
-                    fprintf(stderr, "错误: 非法的浮点数下划线分隔符位置\n" as *byte);
+                    fprintf(libc.stderr, "错误: 非法的浮点数下划线分隔符位置\n" as *byte);
                     return null;
                 }
             } else {
@@ -1063,8 +1060,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
             }
             
             // 未知的内置函数
-            const stderr: *void = get_stderr();
-            fprintf(stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@async_fn、@await、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@syscall、@ptr_from_usize、@usize_from_ptr\n" as *byte, value);
+            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@async_fn、@await、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@syscall、@ptr_from_usize、@usize_from_ptr\n" as *byte, value);
             return null;
         }
         return null;
@@ -1080,8 +1076,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
             return make_token(arena, TokenType.TOKEN_INTERP_OPEN, null, line, column);
         }
         // 单独的 $ 是非法的
-        const stderr: *void = get_stderr();
-        fprintf(stderr, "错误: '$' 必须后跟 '{' 形成宏插值\n" as *byte);
+        fprintf(libc.stderr, "错误: '$' 必须后跟 '{' 形成宏插值\n" as *byte);
         advance_char(lexer);
         return make_token(arena, TokenType.TOKEN_EOF, null, line, column);
     }

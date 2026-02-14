@@ -920,6 +920,9 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
     }
 
     // 第八步 a：先生成所有常量（确保在函数之前定义）
+    /* 前向声明：stdin/stdout/stderr 的存储（&_stdin 等）在 export 变量初始化中引用 */
+    fputs("extern struct FILE _stdin, _stdout, _stderr;\n", codegen->output);
+
     for (int i = 0; i < decl_count; i++) {
         ASTNode *decl = decls[i];
         if (!decl) continue;
@@ -939,7 +942,18 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
         }
     }
     
-    // 第八步 b：生成所有声明（非常量全局变量、函数定义）
+    // 第八步 b0：先生成非常量、非 export 的全局变量（保证被 export 变量初始器引用的符号先定义）
+    for (int i = 0; i < decl_count; i++) {
+        ASTNode *decl = decls[i];
+        if (!decl) continue;
+        if (decl->type != AST_VAR_DECL) continue;
+        if (decl->data.var_decl.is_const) continue;
+        if (decl->data.var_decl.is_export) continue;
+        gen_global_var(codegen, decl);
+        fputs("\n", codegen->output);
+    }
+
+    // 第八步 b：生成所有声明（export 非常量全局变量、函数定义等）
     for (int i = 0; i < decl_count; i++) {
         ASTNode *decl = decls[i];
         if (!decl) continue;
@@ -1018,8 +1032,8 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
                 // 已在前面生成
                 break;
             case AST_VAR_DECL:
-                // 常量已在第八步 a 生成，这里只生成非常量变量
-                if (!decl->data.var_decl.is_const) {
+                // 常量已在第八步 a 生成；非常量非 export 已在第八步 b0 生成，这里只生成 export 非常量变量
+                if (!decl->data.var_decl.is_const && decl->data.var_decl.is_export) {
                     gen_global_var(codegen, decl);
                     fputs("\n", codegen->output);
                 }

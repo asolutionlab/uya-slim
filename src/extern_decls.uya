@@ -12,18 +12,17 @@ use libc;
 // ===== 运行时支持（std.runtime）=====
 use std.runtime.get_argc;
 use std.runtime.get_argv;
-use std.runtime.get_stderr;
 use std.runtime.ptr_diff;
 
-// ===== 文件 I/O（std.io）=====
+// ===== 文件 I/O（std.io 与 libc 混用：可变参数 fprintf 用 libc 以兼容 FILE*）=====
 use std.io.fopen;
 use std.io.fclose;
 use std.io.fread;
 use std.io.fwrite;
 use std.io.fgetc;
 use std.io.fputs;
-use std.io.fprintf;
 use std.io.fflush;
+use libc.fprintf;
 
 // ===== 字符串操作（std.string）=====
 use std.string.strlen;

@@ -11,6 +11,7 @@ use main;
 use codegen.c99;
 // C 程序入口（提供 export extern fn main 调用 main_main）
 use std.runtime.entry;
+use libc;
 
 // 后端类型
 enum BackendType {
@@ -220,20 +221,19 @@ fn get_uya_root(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
 
 // 打印使用说明（program_name 用 &byte，传给 fprintf 时转为 *byte；若为 null 则用默认名避免 %s 段错误）
 fn print_usage(program_name: &byte) void {
-    const stderr: *void = get_stderr();
     var name: &byte = program_name;
     if name == null { name = "uya" as *byte; }
-    fprintf(stderr, "用法: %s [输入文件...] -o <输出文件> [选项]\n" as *byte, name as *byte);
-    fprintf(stderr, "示例: %s program.uya -o program\n" as *byte, name as *byte);
-    fprintf(stderr, "示例: %s program.uya -o program.c --c99  # 生成 C99 代码\n" as *byte, name as *byte);
-    fprintf(stderr, "\n选项:\n" as *byte);
-    fprintf(stderr, "  --c99                使用 C99 后端生成 C 代码\n" as *byte);
-    fprintf(stderr, "  --line-directives    启用 #line 指令生成（C99 后端）\n" as *byte);
-    fprintf(stderr, "  --no-line-directives 禁用 #line 指令生成\n" as *byte);
-    fprintf(stderr, "\n说明:\n" as *byte);
-    fprintf(stderr, "  - 可以指定单个文件或目录，编译器会自动解析模块依赖\n" as *byte);
-    fprintf(stderr, "  - 如果指定目录，目录中必须只有一个文件包含 main 函数\n" as *byte);
-    fprintf(stderr, "  - 使用 UYA_ROOT 环境变量指定标准库位置（默认在编译器所在目录）\n" as *byte);
+    fprintf(libc.stderr, "用法: %s [输入文件...] -o <输出文件> [选项]\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "示例: %s program.uya -o program\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "示例: %s program.uya -o program.c --c99  # 生成 C99 代码\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "\n选项:\n" as *byte);
+    fprintf(libc.stderr, "  --c99                使用 C99 后端生成 C 代码\n" as *byte);
+    fprintf(libc.stderr, "  --line-directives    启用 #line 指令生成（C99 后端）\n" as *byte);
+    fprintf(libc.stderr, "  --no-line-directives 禁用 #line 指令生成\n" as *byte);
+    fprintf(libc.stderr, "\n说明:\n" as *byte);
+    fprintf(libc.stderr, "  - 可以指定单个文件或目录，编译器会自动解析模块依赖\n" as *byte);
+    fprintf(libc.stderr, "  - 如果指定目录，目录中必须只有一个文件包含 main 函数\n" as *byte);
+    fprintf(libc.stderr, "  - 使用 UYA_ROOT 环境变量指定标准库位置（默认在编译器所在目录）\n" as *byte);
 }
 
 // 检测文件是否包含 main 函数
@@ -811,7 +811,7 @@ fn parse_args(
     while i < argc {
         const arg: *byte = get_argv(i);
         if arg == null {
-            fprintf(get_stderr(), "错误: 无法获取命令行参数（索引 %d）\n" as *byte, i);
+            fprintf(libc.stderr, "错误: 无法获取命令行参数（索引 %d）\n" as *byte, i);
             return -1;
         }
         if strcmp(arg, "-o" as *byte) == 0 {
@@ -819,7 +819,7 @@ fn parse_args(
                 output_file_index[0] = i + 1;
                 i = i + 1;
             } else {
-                fprintf(get_stderr(), "错误: -o 选项需要指定输出文件名\n" as *byte);
+                fprintf(libc.stderr, "错误: -o 选项需要指定输出文件名\n" as *byte);
                 return -1;
             }
         } else if strcmp(arg, "--c99" as *byte) == 0 {
@@ -832,7 +832,7 @@ fn parse_args(
             const c: byte = arg[0];
             if c != 45 {
                 if input_file_count[0] >= MAX_INPUT_FILES {
-                    fprintf(get_stderr(), "错误: 输入文件数量超过最大限制 (%d)\n" as *byte, MAX_INPUT_FILES);
+                    fprintf(libc.stderr, "错误: 输入文件数量超过最大限制 (%d)\n" as *byte, MAX_INPUT_FILES);
                     return -1;
                 }
                 const idx: i32 = input_file_count[0];
@@ -844,7 +844,7 @@ fn parse_args(
     }
 
     if input_file_count[0] == 0 {
-        fprintf(get_stderr(), "错误: 未指定输入文件\n" as *byte);
+        fprintf(libc.stderr, "错误: 未指定输入文件\n" as *byte);
         const program_name: *byte = get_argv(0);
         if program_name != null {
             print_usage(program_name as &byte);
@@ -852,7 +852,7 @@ fn parse_args(
         return -1;
     }
     if output_file_index[0] < 0 {
-        fprintf(get_stderr(), "错误: 未指定输出文件（使用 -o 选项）\n" as *byte);
+        fprintf(libc.stderr, "错误: 未指定输出文件（使用 -o 选项）\n" as *byte);
         const program_name: *byte = get_argv(0);
         if program_name != null {
             print_usage(program_name as &byte);
@@ -862,7 +862,7 @@ fn parse_args(
     const out_idx: i32 = output_file_index[0];
     const out_path: *byte = get_argv(out_idx);
     if out_path == null {
-        fprintf(get_stderr(), "错误: 无法获取输出文件路径（索引 %d）\n" as *byte, out_idx);
+        fprintf(libc.stderr, "错误: 无法获取输出文件路径（索引 %d）\n" as *byte, out_idx);
         return -1;
     }
     if backend_type[0] == BackendType.BACKEND_LLVM {
@@ -892,11 +892,11 @@ fn compile_files(
     var uya_root_base: [byte: PATH_MAX] = [];
     const argv0: *byte = get_argv(0);
     if argv0 == null {
-        fprintf(get_stderr(), "错误: 无法获取程序路径\n" as *byte);
+        fprintf(libc.stderr, "错误: 无法获取程序路径\n" as *byte);
         return 1;
     }
     if get_uya_root(argv0 as &byte, &uya_root_base[0] as &byte, PATH_MAX) != 0 {
-        fprintf(get_stderr(), "错误: 无法获取 UYA_ROOT 目录\n" as *byte);
+        fprintf(libc.stderr, "错误: 无法获取 UYA_ROOT 目录\n" as *byte);
         return 1;
     }
     
@@ -916,7 +916,7 @@ fn compile_files(
     var uya_root_buffer: [byte: PATH_MAX] = [];
     const lib_len: i32 = snprintf(&uya_root_buffer[0] as &byte, PATH_MAX, "%s/lib/" as *byte, &uya_root_base[0] as &byte);
     if lib_len <= 0 || lib_len >= PATH_MAX {
-        fprintf(get_stderr(), "错误: UYA_ROOT 路径过长\n" as *byte);
+        fprintf(libc.stderr, "错误: UYA_ROOT 路径过长\n" as *byte);
         return 1;
     }
     
@@ -934,7 +934,7 @@ fn compile_files(
         const idx_i: i32 = input_file_indices[i];
         const input_path: *byte = get_argv(idx_i);
         if input_path == null {
-            fprintf(get_stderr(), "错误: 无法获取输入文件路径（索引 %d）\n" as *byte, idx_i);
+            fprintf(libc.stderr, "错误: 无法获取输入文件路径（索引 %d）\n" as *byte, idx_i);
             return 1;
         }
         const input: &byte = input_path as &byte;
@@ -945,18 +945,18 @@ fn compile_files(
             var main_files: [&byte: MAX_INPUT_FILES] = [];
             var main_count: i32 = 0;
             if find_main_files_in_dir(input, &main_files[0], &main_file_paths_global[0], MAX_INPUT_FILES, &main_count) != 0 {
-                fprintf(get_stderr(), "错误: 无法读取目录 '%s'\n" as *byte, input_path);
+                fprintf(libc.stderr, "错误: 无法读取目录 '%s'\n" as *byte, input_path);
                 return 1;
             }
             if main_count == 0 {
-                fprintf(get_stderr(), "错误: 目录 '%s' 中未找到包含 main 函数的文件\n" as *byte, input_path);
+                fprintf(libc.stderr, "错误: 目录 '%s' 中未找到包含 main 函数的文件\n" as *byte, input_path);
                 return 1;
             }
             if main_count > 1 {
-                fprintf(get_stderr(), "错误: 目录 '%s' 中有多个文件包含 main 函数:\n" as *byte, input_path);
+                fprintf(libc.stderr, "错误: 目录 '%s' 中有多个文件包含 main 函数:\n" as *byte, input_path);
                 var j: i32 = 0;
                 while j < main_count {
-                    fprintf(get_stderr(), "  %s\n" as *byte, main_files[j] as *byte);
+                    fprintf(libc.stderr, "  %s\n" as *byte, main_files[j] as *byte);
                     j = j + 1;
                 }
                 return 1;
@@ -1019,7 +1019,7 @@ fn compile_files(
                 // 多文件模式下，允许某些文件不包含 main（它们是库文件）
                 // 但如果这是唯一输入文件，则必须包含 main
                 if input_file_count == 1 {
-                    fprintf(get_stderr(), "错误: 文件 '%s' 不包含 main 函数\n" as *byte, input_path);
+                    fprintf(libc.stderr, "错误: 文件 '%s' 不包含 main 函数\n" as *byte, input_path);
                     return 1;
                 }
                 // 多文件模式：将不包含 main 的文件也加入列表（作为库文件）
@@ -1027,14 +1027,14 @@ fn compile_files(
                 resolved_count = resolved_count + 1;
             }
         } else {
-            fprintf(get_stderr(), "错误: '%s' 既不是文件也不是目录\n" as *byte, input_path);
+            fprintf(libc.stderr, "错误: '%s' 既不是文件也不是目录\n" as *byte, input_path);
             return 1;
         }
         i = i + 1;
     }
     
     if resolved_count == 0 {
-        fprintf(get_stderr(), "错误: 未找到包含 main 函数的文件\n" as *byte);
+        fprintf(libc.stderr, "错误: 未找到包含 main 函数的文件\n" as *byte);
         return 1;
     }
     
@@ -1080,33 +1080,32 @@ fn compile_files(
             &temp_arena
         );
         if new_count < 0 {
-            fprintf(get_stderr(), "错误: 收集模块依赖失败: %s\n" as *byte, main_files[i] as *byte);
+            fprintf(libc.stderr, "错误: 收集模块依赖失败: %s\n" as *byte, main_files[i] as *byte);
             return 1;
         }
         all_file_count = new_count;
         i = i + 1;
     }
     
-    const stderr: *void = get_stderr();
-    fprintf(get_stderr(), "=== 开始编译 ===\n" as *byte);
-    fprintf(get_stderr(), "输入文件数量: %d (包含依赖)\n" as *byte, all_file_count);
+    fprintf(libc.stderr, "=== 开始编译 ===\n" as *byte);
+    fprintf(libc.stderr, "输入文件数量: %d (包含依赖)\n" as *byte, all_file_count);
     i = 0;
     while i < all_file_count {
-        fprintf(get_stderr(), "  %d: %s\n" as *byte, i, all_files[i] as *byte);
+        fprintf(libc.stderr, "  %d: %s\n" as *byte, i, all_files[i] as *byte);
         i = i + 1;
     }
     const output_file: *byte = get_argv(output_file_index);
-    fprintf(get_stderr(), "输出文件: %s\n" as *byte, output_file);
+    fprintf(libc.stderr, "输出文件: %s\n" as *byte, output_file);
     if project_root != null {
-        fprintf(get_stderr(), "项目根目录: %s\n" as *byte, project_root as *byte);
+        fprintf(libc.stderr, "项目根目录: %s\n" as *byte, project_root as *byte);
     }
-    fprintf(get_stderr(), "UYA_ROOT: %s\n" as *byte, &uya_root_buffer[0]);
-    fprintf(get_stderr(), "=== 词法/语法分析 ===\n" as *byte);
+    fprintf(libc.stderr, "UYA_ROOT: %s\n" as *byte, &uya_root_buffer[0]);
+    fprintf(libc.stderr, "=== 词法/语法分析 ===\n" as *byte);
     var backend_str: *byte = "LLVM" as *byte;
     if backend == BackendType.BACKEND_C99 {
         backend_str = "C99" as *byte;
     }
-    fprintf(stderr, "后端类型: %s\n" as *byte, backend_str);
+    fprintf(libc.stderr, "后端类型: %s\n" as *byte, backend_str);
 
     var arena: Arena = Arena { buffer: null, size: 0 as usize, offset: 0 as usize };
     arena_init(&arena, &arena_buffer[0], ARENA_BUFFER_SIZE as usize);
@@ -1118,49 +1117,49 @@ fn compile_files(
         const input_path: *byte = all_files[i] as *byte;
         const file_size: i32 = read_file_content(input_path as &byte, &file_buffer[0], FILE_BUFFER_SIZE as usize);
         if file_size < 0 {
-            fprintf(stderr, "错误: 无法读取文件 '%s' (可能文件太大或不存在)\n" as *byte, input_path);
+            fprintf(libc.stderr, "错误: 无法读取文件 '%s' (可能文件太大或不存在)\n" as *byte, input_path);
             return 1;
         }
         var lexer: Lexer = Lexer { buffer: [], buffer_size: 0 as usize, position: 0 as usize, line: 0, column: 0, filename: null, has_error: 0 };
         const input_path_ref: &byte = input_path as &byte;
         if lexer_init(&lexer, &file_buffer[0], file_size as usize, input_path_ref, &arena) != 0 {
-            fprintf(stderr, "错误: Lexer 初始化失败: %s\n" as *byte, input_path);
+            fprintf(libc.stderr, "错误: Lexer 初始化失败: %s\n" as *byte, input_path);
             return 1;
         }
         var parser: Parser = Parser { lexer: null, current_token: null, arena: null, context: ParserContext.PARSER_CONTEXT_NORMAL };
         if parser_init(&parser, &lexer, &arena) != 0 {
-            fprintf(stderr, "错误: Parser 初始化失败: %s\n" as *byte, input_path);
+            fprintf(libc.stderr, "错误: Parser 初始化失败: %s\n" as *byte, input_path);
             return 1;
         }
         const ast: &ASTNode = parser_parse(&parser);
         if ast == null {
-            fprintf(stderr, "错误: 语法分析失败: %s\n" as *byte, input_path);
+            fprintf(libc.stderr, "错误: 语法分析失败: %s\n" as *byte, input_path);
             return 1;
         }
         if ast.type != ASTNodeType.AST_PROGRAM {
-            fprintf(stderr, "错误: 解析结果不是程序节点: %s\n" as *byte, input_path);
+            fprintf(libc.stderr, "错误: 解析结果不是程序节点: %s\n" as *byte, input_path);
             return 1;
         }
         // 检查词法分析错误（如未闭合块注释）
         if lexer.has_error != 0 {
-            fprintf(stderr, "错误: 语法分析失败: %s\n" as *byte, input_path);
+            fprintf(libc.stderr, "错误: 语法分析失败: %s\n" as *byte, input_path);
             return 1;
         }
         programs[i] = ast;
-        fprintf(stderr, "  解析完成: %s\n" as *byte, input_path);
+        fprintf(libc.stderr, "  解析完成: %s\n" as *byte, input_path);
         i = i + 1;
     }
-    fprintf(stderr, "=== 词法/语法分析完成，共 %d 个文件 ===\n" as *byte, all_file_count);
+    fprintf(libc.stderr, "=== 词法/语法分析完成，共 %d 个文件 ===\n" as *byte, all_file_count);
 
-    fprintf(stderr, "=== AST 合并阶段 ===\n" as *byte);
+    fprintf(libc.stderr, "=== AST 合并阶段 ===\n" as *byte);
     const merged_ast: &ASTNode = ast_merge_programs(programs, all_file_count, &arena);
     if merged_ast == null {
-        fprintf(stderr, "错误: AST 合并失败\n" as *byte);
+        fprintf(libc.stderr, "错误: AST 合并失败\n" as *byte);
         return 1;
     }
-    fprintf(stderr, "AST 合并完成，共 %d 个声明\n" as *byte, merged_ast.program_decl_count);
+    fprintf(libc.stderr, "AST 合并完成，共 %d 个声明\n" as *byte, merged_ast.program_decl_count);
 
-    fprintf(stderr, "=== 类型检查阶段 ===\n" as *byte);
+    fprintf(libc.stderr, "=== 类型检查阶段 ===\n" as *byte);
     const void_type: Type = Type { kind: TypeKind.TYPE_VOID, enum_name: null, struct_name: null, pointer_to: null, is_ffi_pointer: 0, element_type: null, array_size: 0 };
     var checker: TypeChecker = TypeChecker { arena: null, symbol_table: SymbolTable { slots: [], count: 0 }, function_table: FunctionTable { slots: [], count: 0 }, scope_level: 0, loop_depth: 0, program_node: null, error_count: 0, default_filename: null, current_return_type: void_type, in_function: 0, in_defer_or_errdefer: 0 };
     var default_filename: *byte = "(unknown)" as *byte;
@@ -1168,60 +1167,60 @@ fn compile_files(
         default_filename = all_files[0] as *byte;
     }
     if checker_init(&checker, &arena, default_filename as &byte) != 0 {
-        fprintf(stderr, "错误: TypeChecker 初始化失败\n" as *byte);
+        fprintf(libc.stderr, "错误: TypeChecker 初始化失败\n" as *byte);
         return 1;
     }
     // 设置 UYA_ROOT 目录，供 checker 识别标准库模块
     checker.uya_root_dir = &uya_root_buffer[0] as &byte;
     
     if checker_check(&checker, merged_ast) != 0 {
-        fprintf(stderr, "错误: 类型检查失败（错误数量: %d）\n" as *byte, checker_get_error_count(&checker));
+        fprintf(libc.stderr, "错误: 类型检查失败（错误数量: %d）\n" as *byte, checker_get_error_count(&checker));
         const err_msg: &byte = get_last_checker_error();
         if err_msg != null {
-            fprintf(stderr, "最后错误: %s\n" as *byte, err_msg as *byte);
+            fprintf(libc.stderr, "最后错误: %s\n" as *byte, err_msg as *byte);
         }
         return 1;
     }
     if checker_get_error_count(&checker) > 0 {
-        fprintf(stderr, "错误: 类型检查失败（错误数量: %d）\n" as *byte, checker_get_error_count(&checker));
+        fprintf(libc.stderr, "错误: 类型检查失败（错误数量: %d）\n" as *byte, checker_get_error_count(&checker));
         const err_msg: &byte = get_last_checker_error();
         if err_msg != null {
-            fprintf(stderr, "最后错误: %s\n" as *byte, err_msg as *byte);
+            fprintf(libc.stderr, "最后错误: %s\n" as *byte, err_msg as *byte);
         }
         return 1;
     }
-    fprintf(stderr, "类型检查通过\n" as *byte);
+    fprintf(libc.stderr, "类型检查通过\n" as *byte);
 
-    fprintf(stderr, "=== 代码生成阶段 ===\n" as *byte);
+    fprintf(libc.stderr, "=== 代码生成阶段 ===\n" as *byte);
     var module_name: *byte = "(unknown)" as *byte;
     if all_file_count > 0 {
         module_name = all_files[0] as *byte;
     }
-    fprintf(stderr, "模块名: %s\n" as *byte, module_name);
+    fprintf(libc.stderr, "模块名: %s\n" as *byte, module_name);
 
     // C99 后端：生成 C 源代码（与 C 版本保持一致，直接使用 C99 后端）
     const out_file: *void = fopen(output_file, "w" as *byte);
     if out_file == null {
-        fprintf(stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, output_file);
+        fprintf(libc.stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, output_file);
         return 1;
     }
     var c99_codegen: C99CodeGenerator = C99CodeGenerator { };
     if c99_codegen_new(&c99_codegen, &arena, out_file, module_name as &byte, emit_line_directives) != 0 {
-        fprintf(stderr, "错误: C99CodeGenerator 初始化失败\n" as *byte);
+        fprintf(libc.stderr, "错误: C99CodeGenerator 初始化失败\n" as *byte);
         fclose(out_file);
         return 1;
     }
     // 设置单态化实例（从 TypeChecker 传入）
     c99_codegen_set_mono_instances(&c99_codegen, &checker);
     if c99_codegen_generate(&c99_codegen, merged_ast, output_file as &byte) != 0 {
-        fprintf(stderr, "错误: C99 代码生成失败\n" as *byte);
+        fprintf(libc.stderr, "错误: C99 代码生成失败\n" as *byte);
         c99_codegen_free(&c99_codegen);
         fclose(out_file);
         return 1;
     }
     c99_codegen_free(&c99_codegen);
     fclose(out_file);
-    fprintf(stderr, "代码生成完成: %s\n" as *byte, output_file);
+    fprintf(libc.stderr, "代码生成完成: %s\n" as *byte, output_file);
 
     return 0;
 }

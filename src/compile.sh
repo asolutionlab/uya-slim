@@ -323,10 +323,8 @@ fi
 if [ "$USE_LINE_DIRECTIVES" = true ]; then
     COMPILER_CMD+=(--line-directives)
 fi
-# 在 --nostdlib 模式下，不传递 -exec 给编译器，改为手动链接
-if [ "$GENERATE_EXEC" = true ] && [ "$USE_NOSTDLIB" != true ]; then
-    COMPILER_CMD+=(-exec)
-fi
+# 不传递 -exec 给编译器：自举编译器使用 std.runtime 提供 main()，若用 -exec 会链接 bridge.c 导致重复 main 和 uya_main 未定义。
+# 可执行文件由本脚本在编译成功后统一链接生成（见下方 LINK_CMD）。
 
 if [ "$VERBOSE" = true ]; then
     echo "开始多文件编译..."
@@ -430,7 +428,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                         LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" -lc \"$CRTN\" -lgcc -lgcc_eh"
                     fi
                 else
-                    # 普通模式：直接编译链接
+                    # 普通模式：直接编译链接（stderr 使用 libc.stderr，无需 get_stderr 桥接）
                     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
                         LINK_CMD="gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\""
                     else

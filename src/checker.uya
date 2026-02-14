@@ -7,7 +7,6 @@
 
 use libc.atoi;
 use std.string.strlen;
-use std.runtime.get_stderr;
 
 // 文件系统相关（用于检查目录是否存在）
 use libc.Stat;
@@ -2371,8 +2370,7 @@ fn checker_report_error(checker: &TypeChecker, node: &ASTNode, message: &byte) v
     if checker != null {
         last_checker_error_message = message;
         checker.error_count = checker.error_count + 1;
-        const stderr: *void = get_stderr();
-        if stderr != null && message != null {
+        if libc.stderr != null && message != null {
             var filename: &byte = "(unknown)" as *byte;
             if node != null && node.filename != null {
                 filename = node.filename;
@@ -2380,9 +2378,9 @@ fn checker_report_error(checker: &TypeChecker, node: &ASTNode, message: &byte) v
                 filename = checker.default_filename;
             }
             if node != null {
-                fprintf(stderr, "%s:(%d:%d): 错误: %s\n" as *byte, filename, node.line, node.column, message as *byte);
+                fprintf(libc.stderr, "%s:(%d:%d): 错误: %s\n" as *byte, filename, node.line, node.column, message as *byte);
             } else {
-                fprintf(stderr, "%s: 错误: %s\n" as *byte, filename, message as *byte);
+                fprintf(libc.stderr, "%s: 错误: %s\n" as *byte, filename, message as *byte);
             }
         }
     }

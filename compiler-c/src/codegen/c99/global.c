@@ -121,6 +121,37 @@ void gen_global_var(C99CodeGenerator *codegen, ASTNode *var_decl) {
         }
     }
     
+    /* export 变量若初始化为 &其他全局量，先输出该全局量的前向声明，避免未定义引用 */
+    if (init_expr && var_decl->data.var_decl.is_export) {
+        ASTNode *op = init_expr;
+        if (op->type == AST_UNARY_EXPR && op->data.unary_expr.op == TOKEN_AMPERSAND) {
+            ASTNode *operand = op->data.unary_expr.operand;
+            if (operand && operand->type == AST_IDENTIFIER) {
+                const char *ref_name = operand->data.identifier.name;
+                const char *ref_c = get_c_name_for_identifier_ref(codegen, ref_name);
+                const char *ref_type = NULL;
+                for (int i = 0; i < codegen->global_variable_count; i++) {
+                    if (global_var_name_matches(codegen, i, ref_name)) {
+                        ref_type = codegen->global_variables[i].type_c;
+                        break;
+                    }
+                }
+                /* 若表中尚无（尚未在 8b0 中输出），从当前变量类型推导：var 为 &T 则 id 为 T */
+                if (!ref_type && var_type->type == AST_TYPE_POINTER) {
+                    ASTNode *pointed = var_type->data.type_pointer.pointed_type;
+                    if (pointed) ref_type = c99_type_to_c(codegen, pointed);
+                }
+                /* 常见 libc 流存储名硬编码，避免依赖类型推导 */
+                if (!ref_type && ref_name &&
+                    (strcmp(ref_name, "_stdin") == 0 || strcmp(ref_name, "_stdout") == 0 || strcmp(ref_name, "_stderr") == 0))
+                    ref_type = "struct FILE";
+                if (ref_type) {
+                    fprintf(codegen->output, "extern %s %s;\n", ref_type, ref_c);
+                }
+            }
+        }
+    }
+    
     // 初始化表达式（使用全局作用域兼容的生成方式）
     if (init_expr) {
         fputs(" = ", codegen->output);

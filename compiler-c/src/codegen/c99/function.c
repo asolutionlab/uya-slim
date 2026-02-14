@@ -413,12 +413,12 @@ const char *get_c_name_for_global_function(C99CodeGenerator *codegen, const char
             
             const char *decl_name = decl->data.fn_decl.name;
             if (decl_name && strcmp(decl_name, name) == 0) {
-                // 找到函数声明
+                // 优先使用 export 且带 filename 的实现（如 std.io.fprintf -> std_io_fprintf），
+                // 避免 extern 声明先被匹配导致生成无前缀名并错误链接到 C 库
                 if (decl->data.fn_decl.is_export && decl->filename) {
-                    // 是 export 函数，返回带模块前缀的名称
                     return get_export_function_c_name(codegen, name, decl->filename);
                 }
-                break;
+                /* 不 break：继续查找是否有同名 export 函数 */
             }
         }
     }
