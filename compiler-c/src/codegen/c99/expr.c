@@ -620,6 +620,12 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                 }
             } else {
                 safe_field_name = get_safe_c_identifier(codegen, field_name);
+                /* struct Type 的 pointer_to 字段：若误为 pointed_type 则修正（与 checker.h 的 data.pointer.pointer_to 对应，但 Uya 扁平化为 pointer_to） */
+                if (safe_field_name && strcmp(safe_field_name, "pointed_type") == 0) {
+                    const char *obj_type = get_c_type_of_expr(codegen, object);
+                    if (obj_type && strstr(obj_type, "struct Type") != NULL)
+                        safe_field_name = "pointer_to";
+                }
             }
             
             // 检查对象是否是指针类型（需要自动解引用）
@@ -1473,7 +1479,7 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                     codegen->needs_string_h = 1;
                 }
             }
-
+            
             /* 插值仅作 printf/fprintf 格式参数时：脱糖为单次 printf(fmt, ...)，无中间缓冲 */
             if (callee_name && args && !has_ellipsis) {
                 if (strcmp(callee_name, "printf") == 0 && arg_count == 1 && args[0] && args[0]->type == AST_STRING_INTERP) {
@@ -1547,8 +1553,7 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                             (strcmp(callee_name, "sprintf") == 0 && i == 0) || (strcmp(callee_name, "strcpy") == 0 && i == 0) ||
                             (strcmp(callee_name, "strcat") == 0 && i == 0) || (strcmp(callee_name, "readlink") == 0 && i == 1)))
                             fputs("(char *)", codegen->output);
-                        else if (callee_name && strcmp(callee_name, "stat") == 0 && i == 1)
-                            fputs("(struct stat *)", codegen->output);
+                        /* libc.stat 使用 struct Stat *，不转为 struct stat * */
                         else if (args[i] && args[i]->type == AST_STRING) {
                             int is_libc = is_extern_libc_function(codegen, callee_name);
                             fputs(is_libc ? "(const char *)" : "(uint8_t *)", codegen->output);
@@ -1788,11 +1793,7 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                     fputs(codegen->interp_arg_temp_names[i], codegen->output);
                     continue;
                 }
-                /* stat 的第二参数需转为 struct stat *，与 POSIX 声明一致 */
-                int is_stat_second = (callee_name && strcmp(callee_name, "stat") == 0 && i == 1);
-                if (is_stat_second) {
-                    fputs("(struct stat *)", codegen->output);
-                }
+                /* libc.stat 使用 struct Stat *，不转为 struct stat * */
                 /* fprintf 的格式参数为第 2 个 (i==1)，snprintf 的格式参数为第 3 个 (i==2)；强制 (const char *) 消除 -Wformat= 警告 */
                 int is_format_arg = (callee_name && ((strcmp(callee_name, "fprintf") == 0 && i == 1) ||
                     (strcmp(callee_name, "snprintf") == 0 && i == 2)));
