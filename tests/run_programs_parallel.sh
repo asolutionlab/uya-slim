@@ -197,7 +197,9 @@ else
 fi
 
 # 单个测试执行函数（用于并行）
+# 子进程内关闭 set -e，避免 gcc 失败、测试退出非零等导致未写结果文件而漏计
 run_single_test() {
+    set +e
     local uya_file="$1"
     local result_file="$2"
     local base_name=$(basename "$uya_file" .uya)
@@ -222,7 +224,8 @@ run_single_test() {
         if [ "$is_expected_fail" = true ]; then
             echo "PASS:$base_name:预期编译失败" > "$result_file"
         else
-            echo "FAIL:$base_name:编译失败:$(echo "$compiler_output" | grep -v "^调试:" | grep -E "(错误|错误:|失败)" | head -1)" > "$result_file"
+            # 不嵌入 compiler_output，避免 null 字节等导致结果文件污染、并行统计漏计
+            echo "FAIL:$base_name:编译失败(退出码:$compiler_exit)" > "$result_file"
         fi
         return
     fi
@@ -245,39 +248,41 @@ run_single_test() {
     BRIDGE_MINIMAL_C="$SCRIPT_DIR/bridge_minimal.c"
     
     uses_std_runtime=false
-    if grep -q "use.*std\.runtime" "$uya_file" 2>/dev/null; then
-        uses_std_runtime=true
-    fi
+    grep -q "use.*std\.runtime" "$uya_file" 2>/dev/null && uses_std_runtime=true || true
     
+    GCC_OPTS="-std=c99 -no-pie"
+    EXTRA_C_EXTERN="$SCRIPT_DIR/programs/extern_function_impl.c"
+    EXTRA_C_FFI="$SCRIPT_DIR/external_functions.c"
+    EXTRA_C_ABI="$SCRIPT_DIR/programs/test_abi_helpers.c"
     if [ "$base_name" = "extern_function" ]; then
         if [ -f "$BRIDGE_C" ]; then
-            gcc -std=c99 -o "$BUILD_DIR/$base_name" "$output_file" tests/programs/extern_function_impl.c "$BRIDGE_C" 2>/dev/null && link_succeeded=true
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" "$BRIDGE_C" 2>/dev/null && link_succeeded=true
         else
-            gcc -std=c99 -o "$BUILD_DIR/$base_name" "$output_file" tests/programs/extern_function_impl.c 2>/dev/null && link_succeeded=true
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" 2>/dev/null && link_succeeded=true
         fi
     elif [ "$base_name" = "test_comprehensive_cast" ] || [ "$base_name" = "test_ffi_cast" ] || [ "$base_name" = "test_pointer_cast" ] || [ "$base_name" = "test_simple_cast" ] || [ "$base_name" = "test_extern_union" ]; then
         if [ -f "$BRIDGE_C" ]; then
-            gcc -std=c99 -o "$BUILD_DIR/$base_name" "$output_file" tests/external_functions.c "$BRIDGE_C" 2>/dev/null && link_succeeded=true
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" "$BRIDGE_C" 2>/dev/null && link_succeeded=true
         else
-            gcc -std=c99 -o "$BUILD_DIR/$base_name" "$output_file" tests/external_functions.c 2>/dev/null && link_succeeded=true
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" 2>/dev/null && link_succeeded=true
         fi
     elif [ "$base_name" = "test_abi_calling_convention" ]; then
         if [ -f "$BRIDGE_C" ]; then
-            gcc -std=c99 -o "$BUILD_DIR/$base_name" "$output_file" tests/programs/test_abi_helpers.c "$BRIDGE_C" 2>/dev/null && link_succeeded=true
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" "$BRIDGE_C" 2>/dev/null && link_succeeded=true
         else
-            gcc -std=c99 -o "$BUILD_DIR/$base_name" "$output_file" tests/programs/test_abi_helpers.c 2>/dev/null && link_succeeded=true
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" 2>/dev/null && link_succeeded=true
         fi
     else
         if [ "$uses_std_runtime" = true ]; then
             if [ -f "$BRIDGE_MINIMAL_C" ]; then
-                gcc -std=c99 -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_MINIMAL_C" 2>/dev/null && link_succeeded=true
+                gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_MINIMAL_C" 2>/dev/null && link_succeeded=true
             else
-                gcc -std=c99 -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
+                gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
             fi
         elif [ -f "$BRIDGE_C" ]; then
-            gcc -std=c99 -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_C" 2>/dev/null && link_succeeded=true
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_C" 2>/dev/null && link_succeeded=true
         else
-            gcc -std=c99 -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
         fi
     fi
     
@@ -286,9 +291,9 @@ run_single_test() {
         return
     fi
     
-    # 运行
-    "$BUILD_DIR/$base_name" > /dev/null 2>&1
-    exit_code=$?
+    # 运行（不依赖 set -e，显式捕获退出码）
+    exit_code=0
+    "$BUILD_DIR/$base_name" > /dev/null 2>&1 || exit_code=$?
     
     if [ $exit_code -eq 0 ]; then
         echo "PASS:$base_name:测试通过" > "$result_file"
@@ -395,9 +400,9 @@ if [ ${#single_tests[@]} -gt 0 ]; then
         base_name=$(basename "$test_item" .uya)
         result_file="$BUILD_DIR/parallel_results/${base_name}.result"
         
-        # 读取结果
+        # 读取结果（去掉可能的 null 字节，避免命令替换警告和漏计）
         if [ -f "$result_file" ] && [ -s "$result_file" ]; then
-            result=$(cat "$result_file")
+            result=$(tr -d '\0' < "$result_file")
             status="${result%%:*}"
             
             if [ "$status" = "PASS" ]; then
@@ -422,13 +427,15 @@ if [ ${#single_tests[@]} -gt 0 ]; then
     fi
 fi
 
-# 统计结果
+# 统计结果（总计以任务数为准，避免漏计导致总数不对）
 if [ "$ERRORS_ONLY" = false ] || [ $FAILED -gt 0 ]; then
     echo ""
     echo "================================"
-    echo "总计: $((PASSED + FAILED)) 个测试"
+    echo "总计: $TOTAL_TESTS 个测试"
     echo "通过: $PASSED"
     echo "失败: $FAILED"
+    NOT_COUNTED=$((TOTAL_TESTS - PASSED - FAILED))
+    [ "$NOT_COUNTED" -gt 0 ] && echo "未计入: $NOT_COUNTED"
     echo "================================"
 fi
 

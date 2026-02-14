@@ -48,8 +48,8 @@ b: uya
 	@echo ""
 	@echo "✓ 自举比对完成"
 
-# 运行测试：支持参数传递（默认并行编译）
-# 用法: make tests [c|uya] [-e] [其他参数]
+# 运行测试：默认使用 tests/run_programs_parallel.sh 并行测试（可 -j N 控制线程数）
+# 用法: make tests [c|uya] [e] [其他参数]
 # 示例: make tests c -e
 #       make tests uya -e
 #       make tests c test_file.uya
@@ -105,7 +105,7 @@ tests:
 		echo "✓ 自举编译器测试完成"; \
 	fi
 
-# 快捷目标：测试 C 编译器（支持 e 参数，并行编译）
+# 快捷目标：测试 C 编译器（默认 tests/run_programs_parallel.sh 并行）
 tests-c:
 	@HAS_E=$$(echo "$(MAKECMDGOALS)" | grep -qE '\be\b' && echo "yes" || echo "no"); \
 	$(MAKE) uya-c >/dev/null 2>&1; \
@@ -118,7 +118,7 @@ tests-c:
 		./tests/run_programs_parallel.sh --c99; \
 	fi
 
-# 快捷目标：测试自举编译器（支持 e 参数，并行编译）
+# 快捷目标：测试自举编译器（默认 tests/run_programs_parallel.sh 并行）
 tests-uya:
 	@HAS_E=$$(echo "$(MAKECMDGOALS)" | grep -qE '\be\b' && echo "yes" || echo "no"); \
 	$(MAKE) uya >/dev/null 2>&1; \
@@ -189,7 +189,7 @@ help:
 	@echo "  make uya           - 构建自举编译器 (bin/uya)，需要先构建 uya-c"
 	@echo "  make uya-nostdlib  - 构建自举编译器（--nostdlib 版本，不链接标准库）"
 	@echo "  make b             - 自举比对：验证 C 编译器与自举编译器输出一致性"
-	@echo "  make tests          - 运行测试套件（同时测试 C 编译器和自举编译器）"
+	@echo "  make tests          - 运行测试套件（默认 tests/run_programs_parallel.sh 并行）"
 	@echo "  make tests e        - 运行所有测试，只显示失败的测试"
 	@echo "  make tests c        - 只测试 C 编译器"
 	@echo "  make tests uya      - 只测试自举编译器"
