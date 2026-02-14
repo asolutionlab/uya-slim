@@ -4,6 +4,31 @@
 
 ---
 
+## 0.43 版本变更（相对于 0.42）
+
+### 0.43 extern "libc" 语法支持
+
+- **新增字符字面量**（0.43 新增）：
+  - **语法**：`'a'`、`'x'`、`'\n'`、`'\t'`
+  - **类型**：`byte`（对应 C 的 char）
+  - **支持转义序列**：`\n`（换行）、`\t`（制表）、`\\`（反斜杠）、`\'`（单引号）、`\0`（空字符）
+  - **用途**：表示单个字符的 ASCII 码值
+
+- **byte 类型映射简化**（0.43 变更）：
+  - `byte` 现在直接对应 C 的 `char`（之前是 `uint8_t`）
+  - 这简化了 FFI，使 `byte` 与 C 字符串完全兼容
+
+- **新增 `extern "libc" fn` 语法**：
+  - **语法**：`extern "libc" fn name(...) type;`
+  - **用途**：显式声明 C 标准库函数（与 `extern fn` 等价，明确意图）
+  - **设计目的**：使 FFI 代码意图更清晰
+- **编译器修改**：
+  - AST 新增 `fn_decl_extern_type` 字段
+  - Parser 支持解析 `extern "libc" fn` 语法
+  - Codegen 将 `byte` 映射为 `char`
+
+---
+
 ## 0.42 版本变更（相对于 0.41）
 
 ### 0.42 只读指针类型和函数导出规则
@@ -23,11 +48,26 @@
 
 - **函数导出规则完善**：
   - **函数可见性规则**：
-    - `fn foo() void` → `static void foo(void)`（内部函数，不导出）
-    - `export fn foo() void` → `void foo(void)`（导出函数，供其他模块使用）
-    - `extern fn foo() void` → `extern void foo(void);`（外部 C 函数声明）
-    - `export extern fn foo() void` 或 `extern export fn foo() void` → `extern void foo(void);`（导出外部 C 函数，FFI，两种顺序等价）
-  - **设计目的**：明确函数可见性，避免符号冲突，符合 C 语言惯例
+    - `fn foo() void` → `static void foo(void)`（内部函数，不导出，带 `uya_` 前缀）
+    - `export fn foo() void` → `void module_prefix_foo(void)`（导出函数，供其他模块使用，带模块前缀）
+      - 模块前缀规则：
+        - **同目录文件合并规则**：同一目录下的所有 `.uya` 文件都属于同一个模块（模块路径由目录路径决定，不包含文件名）
+        - `lib/std/io/file.uya` 和 `lib/std/io/stream.uya` 都属于 `std.io` 模块 → 模块前缀 `std_io`
+        - `lib/std/io/file.uya` 中的 `export fn fopen(...)` → `std_io_fopen(...)`
+        - `lib/std/io/stream.uya` 中的 `export fn fgetc(...)` → `std_io_fgetc(...)`
+        - `lib/std/mem/mem.uya` 属于 `std.mem` 模块 → 模块前缀 `std_mem`
+        - `lib/std/mem/mem.uya` 中的 `export fn mem_copy(...)` → `std_mem_mem_copy(...)`
+        - 主模块 `main.uya` 中的 `export fn my_func(...)` → `main_my_func(...)`
+    - `extern fn foo() void` → `extern void foo(void);`（外部 C 函数声明，裸名）
+    - `extern fn foo() void { ... }` → `void foo(void) { ... }`（Uya 实现，以裸函数名导出）
+    - `export extern fn foo() void;`（无函数体）→ 不生成代码，链接到 C 标准库（裸名）
+    - `export extern fn foo() void { ... }`（有函数体）→ `void foo(void) { ... }`（Uya 实现，以裸函数名导出）
+  - **设计目的**：
+    - 明确函数可见性：内部函数使用 `static`，避免符号冲突
+    - 模块前缀避免不同模块的同名函数冲突
+    - extern 函数使用裸名，便于与 C 标准库互操作
+    - 符合 C 语言惯例：只有导出的函数才在全局命名空间
+    - 支持标准库实现：Uya 标准库中的函数可以以裸 C 名称导出
 
 **参考文档**：
 - [uya.md](uya.md) §0.42 - 规范变更说明

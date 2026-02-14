@@ -173,7 +173,7 @@ fn name(param: Type) ReturnType {
     return value;
 }
 
-// 导出函数（生成的 C 代码不添加 static）
+// 导出函数（生成的 C 代码不添加 static，带 uya_ 前缀）
 export fn public_function(param: Type) ReturnType {
     // 函数体
     return value;
@@ -182,14 +182,26 @@ export fn public_function(param: Type) ReturnType {
 // 外部 C 函数声明
 extern fn c_function(param: *byte) i32;
 
-// 导出外部 C 函数（FFI），两种顺序等价
-export extern fn ffi_function(param: *byte) i32 {
-    // 函数体
+// 外部 C 函数实现（Uya 实现，以裸函数名导出，不带 uya_ 前缀）
+extern fn my_wrapper(param: *byte) i32 {
+    // Uya 实现代码
+    return 0;
 }
-// 或
-extern export fn ffi_function(param: *byte) i32 {
-    // 函数体
+
+// 导出外部 C 函数声明（无函数体）→ 链接到 C 标准库
+export extern fn malloc(size: usize) *void;
+
+// 导出外部 C 函数实现（有函数体）→ Uya 实现，以裸函数名导出
+export extern fn strcmp(s1: &const byte, s2: &const byte) i32 {
+    // Uya 实现代码
+    return 0;
 }
+
+// extern "libc" 语法（0.43 新增）：显式声明 C 标准库函数
+// byte 直接对应 C 的 char，与 C 字符串兼容
+extern "libc" fn strlen(s: &byte) usize;
+extern "libc" fn atoi(s: &byte) i32;
+extern "libc" fn printf(fmt: &byte, ...) i32;
 
 // 可能失败的函数
 fn name(param: Type) !ReturnType {
@@ -306,24 +318,9 @@ enum HttpStatus : u16 {
 
 ---
 
-## 六、运算符优先级表（从高到低）
+## 六、运算符优先级
 
-| 优先级 | 运算符 | 说明 |
-|--------|--------|------|
-| 1 (最高) | `.` `[]` `()` `[start:len]` `catch` | 成员访问、调用、切片、错误捕获 |
-| 2 | `!` `-` `~` `&` `*` `try` | 一元运算 |
-| 3 | `as` `as!` | 类型转换 |
-| 4 | `*` `/` `%` `*|` `*%` | 乘除模、饱和乘、包装乘 |
-| 5 | `+` `-` `+|` `-|` `+%` `-%` | 加减、饱和加减、包装加减 |
-| 6 | `<<` `>>` | 位移 |
-| 7 | `<` `>` `<=` `>=` | 关系比较 |
-| 8 | `==` `!=` | 相等比较 |
-| 9 | `&` | 按位与 |
-| 10 | `^` | 按位异或 |
-| 11 | `\|` | 按位或 |
-| 12 | `&&` | 逻辑与 |
-| 13 | `\|\|` | 逻辑或 |
-| 14 (最低) | `=` `+=` `-=` `*=` `/=` `%=` | 赋值 |
+> 完整说明：详见 [uya.md](./uya.md#运算符)
 
 ---
 

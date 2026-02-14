@@ -15,7 +15,10 @@ export use mc
 ```
 
 **内置函数**（以 `@` 开头）：
-- 运行时：`@size_of`、`@align_of`、`@len`、`@max`、`@min`
+- 类型反射：`@size_of`、`@align_of`、`@len`、`@max`、`@min`
+- 源代码位置：`@src_name`、`@src_path`、`@src_line`、`@src_col`、`@func_name`
+- 可变参数：`@params`
+- 异步编程：`@async_fn`（函数属性）、`@await`（挂起点）
 - 编译时（宏内）：`@mc_eval`、`@mc_type`、`@mc_ast`、`@mc_code`、`@mc_error`、`@mc_get_env`
 
 ## 类型系统
@@ -49,8 +52,7 @@ export use mc
 | `fn(...) type` | 4/8 B（平台相关） | 函数指针类型，用于FFI回调 |
 | `!T` | max(sizeof(T), sizeof(错误标记)) | 错误联合类型，T\|Error |
 
-**内置函数**（以 `@` 开头）：
-- `@max`/`@min`：访问整数类型极值常量（编译期推断类型）
+**错误联合类型 `!T` 内存布局**：大小 = `max(sizeof(T), 4)` 字节（错误标记占 4 字节），对齐 = `max(alignof(T), 4)` 字节  
 - 无隐式转换，类型必须完全一致
 
 ## 基本语法
@@ -95,6 +97,10 @@ const sci: f64 = 1.0e-10;         // 支持科学计数法
 - ✅ 可以作为 FFI 函数参数（如果函数接受 `*byte`）：`some_function(null);`
 - ❌ 不支持将 `null` 赋值给 `*byte` 类型的变量（未来可能支持）
 
+**字符字面量**：`'a'`, `'x'`, `'\n'`, `'\t'`（0.43 新增）
+- 类型为 `byte`（无符号 8 位整数）
+- 示例：`const c: byte = 'A';` → 值为 65
+
 **数组字面量**：
 ```uya
 const arr: [i32: 3] = [1, 2, 3];       // 列表式
@@ -119,16 +125,25 @@ export fn public_function(param1: Type1, param2: Type2) ReturnType {
 // 外部 C 函数声明
 extern fn c_function(param: *byte) i32;
 
-// 导出外部 C 函数（FFI），两种顺序等价
-export extern fn ffi_function(param: *byte) i32 {
-    statements
-    return value;
+// 外部 C 函数声明（Uya 实现，以裸函数名导出）
+extern fn my_wrapper(param: *byte) i32 {
+    // Uya 实现代码
+    return 0;
 }
-// 或
-extern export fn ffi_function(param: *byte) i32 {
-    statements
-    return value;
+// 生成的 C 代码：int my_wrapper(char *param) { ... }
+// 注意：不带 uya_ 前缀
+
+// 导出外部 C 函数声明（无函数体）→ 链接到 C 标准库
+export extern fn malloc(size: usize) *void;
+// 不生成代码，链接到 C 标准库的 malloc
+
+// 导出外部 C 函数实现（有函数体）→ Uya 实现，以裸函数名导出
+export extern fn strcmp(s1: &const byte, s2: &const byte) i32 {
+    // Uya 实现代码
+    return 0;
 }
+// 生成的 C 代码：int strcmp(const char *s1, const char *s2) { ... }
+// 注意：不带 uya_ 前缀
 
 // void函数
 fn void_func() void {
@@ -626,12 +641,15 @@ io.read_file(...);             // 别名前缀
 - **同目录文件合并**：同一目录下的所有 `.uya` 文件都属于同一个模块，模块路径由目录路径决定，不包含文件名（如 `std/io/file.uya` 和 `std/io/stream.uya` 都属于 `std.io` 模块）
 - 所有结构体使用C内存布局，可直接互操作
 
-### 可变参数与 @params（uya.md §5.4）
+### 可变参数
 
-- **声明**：沿用 C 的 `...` 语法：`fn printf(fmt: *byte, ...) i32;`、`fn sum(...) i32`
-- **@params**：内置变量，函数体内包含所有参数（固定+可变）的元组视图；`const args = @params;` 可用 `.0`/`.1`、遍历、解构
-- **参数转发**：`printf(fmt, ...)` 将可变参数转发给其他可变参数函数
-- **编译器优化**：未使用 `@params` 时零开销直接转发；使用 `@params` 时生成元组打包代码
+- **声明**：沿用 C 的 `...` 语法：`fn printf(fmt: *byte, ...) i32;`
+- **@params**：内置变量，函数体内包含所有参数（固定+可变）的元组视图，可用 `.0`/`.1`、遍历、解构
+
+### 异步编程
+
+- 函数属性 `@async_fn` 标记异步函数，必须返回 `!Future<T>`
+- `@await` 在 `@async_fn` 函数内等待异步操作，配合 `try` 处理错误
 
 ### FFI（外部C函数）
 
@@ -649,6 +667,11 @@ extern fn compare(a: *void, b: *void) i32 {
     // Uya代码
     return 0;
 }
+
+// 链接到 libc（0.43 新增）
+extern "libc" fn strlen(s: *const byte) usize;
+// 不生成代码，直接链接到 C 标准库的 strlen
+// byte 映射规则：在 extern "libc" 中，byte 映射为 C 的 char 类型
 ```
 
 **FFI指针类型 `*T`**：
@@ -784,18 +807,7 @@ const msg3: [i8: 64] = "pi=${pi:.2e}\n";  // 科学计数法
 
 ### 内置函数（以 @ 开头）
 
-```uya
-// 内置函数（以 @ 开头，无需导入，自动可用）
-@len(arr)           // 返回数组元素个数（编译期常量）
-// 对于空数组字面量 []，@len 返回数组声明时的大小，而不是 0
-var buffer: [i32: 100] = [];
-const len_val: i32 = @len(buffer);  // 100（从声明中获取）
-
-@size_of(T)          // 返回类型大小（编译期常量）
-@align_of(T)         // 返回类型对齐（编译期常量）
-@max               // 整数类型最大值（类型从上下文推断）
-@min               // 整数类型最小值（类型从上下文推断）
-```
+见上文"关键字"章节的内置函数列表。所有内置函数以 `@` 开头，无需导入，自动可用，编译期展开。
 
 ## 完整示例
 
@@ -888,34 +900,19 @@ fn main() !i32 {
 ### 宏定义语法
 
 ```uya
-mc macro_name(param1: expr, param2: type) return_tag {
-    // 宏体：编译时执行的代码
-    const value = @mc_eval(param1)  // 编译时求值
-    const type_info = @mc_type(param2)  // 类型反射
+mc macro_name(param1: expr, param2: type) expr {
+    const value = @mc_eval(param1)
+    const type_info = @mc_type(param2)
     @mc_code(@mc_ast( /* 生成的代码 */ ))
 }
 ```
 
-**参数类型**：
-- `expr`：表达式参数
-- `stmt`：语句参数
-- `type`：类型参数
-- `pattern`：模式参数
-
-**返回标签**：
-- `expr`：返回表达式
-- `stmt`：返回语句
-- `struct`：返回结构体成员
-- `type`：返回类型标识符
+**参数类型**：`expr`、`stmt`、`type`、`pattern`  
+**返回标签**：`expr`、`stmt`、`struct`、`type`
 
 ### 编译时内置函数（宏内使用）
 
-- `@mc_eval(expr)`：编译时求值常量表达式
-- `@mc_type(expr)`：获取类型信息，返回 `TypeInfo` 结构体
-- `@mc_ast(expr)`：将代码转换为抽象语法树
-- `@mc_code(ast)`：将 AST 转换回代码
-- `@mc_error(msg)`：报告编译时错误并终止编译
-- `@mc_get_env(name)`：读取编译时环境变量
+见上文"关键字"章节的内置函数列表。
 
 ### 宏调用
 
@@ -941,43 +938,15 @@ const sum: i32 = add(10, 20);  // 30
 ### 示例
 
 ```uya
-// 编译时断言宏
 mc assert(cond) stmt {
     const val = @mc_eval(cond)
     if !val { @mc_error("断言失败") }
     @mc_code(@mc_ast({}))
 }
-
-// 类型驱动代码生成
-mc define_getter(field: expr) struct {
-    const field_ast = @mc_ast(field)
-    @mc_code(@mc_ast({
-        fn get_${field_ast}(self: &Self) i32 {
-            return self.${field_ast}
-        }
-    }))
-}
 ```
-
-## 重要设计原则
-
-1. **泛型语法**：使用尖括号 `<T>`，约束紧邻参数 `<T: Ord>`，多约束连接 `<T: Ord + Clone + Default>`
-   - 函数泛型：`fn max<T: Ord>(a: T, b: T) T { ... }`
-   - 结构体泛型：`struct Vec<T: Default> { ... }`
-   - 接口泛型：`interface Iterator<T> { ... }`
-   - 类型参数使用：`Vec<i32>`, `Iterator<String>`
-2. **宏系统**：编译时元编程，支持类型反射、代码生成、环境变量访问
-   - 宏定义：`mc name(params) return_tag { ... }`
-   - 编译时内置函数：`@mc_eval`、`@mc_type`、`@mc_ast`、`@mc_code`、`@mc_error`、`@mc_get_env`
-   - 跨模块宏：`export mc` 导出，`use module.macro_name;` 导入
-   - 零运行时开销，编译期确定性
-3. **编译期证明**：在当前函数内验证安全性，证明超时自动插入运行时检查
-4. **显式控制**：所有类型注解显式，无隐式转换
-5. **C兼容性**：所有结构体使用C内存布局，100% C互操作
-6. **零运行时开销**：编译期完成所有可以静态确定的工作
 
 ---
 
-**版本**：Uya 0.41  
-**更新日期**：2026-02-05
+**版本**：Uya 0.43
+**更新日期**：2026-02-14
 
