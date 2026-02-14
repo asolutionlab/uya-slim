@@ -4,6 +4,26 @@
 
 ---
 
+## 0.44 版本变更（相对于 0.43）
+
+### 0.44 @va_start / @va_end / @va_arg 内置函数
+
+- **新增 `@va_start` / `@va_end` 内置函数**：
+  - **语法**：`@va_start(ap, last)`、`@va_end(ap)`
+  - **用途**：在可变参数函数内初始化/结束 va_list，用于将可变参数传递给 vprintf/vfprintf 等 C 函数
+  - **约束**：仅可在形参含 `...` 的可变参数函数内使用；`@va_start` 与 `@va_end` 必须成对调用
+  - **实现**：编译时展开为 C 的 `va_start`/`va_end` 宏
+  - **设计目的**：支持纯 Uya 实现 libc.stdarg，无需依赖 extern "libc"
+
+- **新增 `@va_arg` 内置函数**：
+  - **语法**：`@va_arg(ap, Type)`，如 `@va_arg(ap, i32)`、`@va_arg(ap, *byte)`
+  - **用途**：从 va_list 按类型提取下一个参数，用于遍历可变参数
+  - **支持类型**：i32、i64、*byte、*void、f64 等
+  - **实现**：编译时展开为 C 的 `va_arg(ap, type)` 宏
+  - **设计目的**：支持纯 Uya 实现 vprintf 等格式化函数
+
+---
+
 ## 0.43 版本变更（相对于 0.42）
 
 ### 0.43 extern "libc" 语法支持

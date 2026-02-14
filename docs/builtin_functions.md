@@ -1,8 +1,8 @@
 # Uya 内置函数使用文档
 
-> 版本：v0.43（2026-02-14）  
+> 版本：v0.44（2026-02-14）  
 > 此文档为 uya.md 的详细补充说明  
-> 语言规范：0.42  
+> 语言规范：0.44  
 > 所有内置函数均以 `@` 开头，编译期展开，零运行时开销，无需导入或声明
 
 ---
@@ -24,6 +24,9 @@
   - [@func_name](#func_name)
 - [4. 可变参数函数](#4-可变参数函数)
   - [@params](#params)
+  - [@va_start](#va_start)
+  - [@va_end](#va_end)
+  - [@va_arg](#va_arg)
 - [5. 宏编译时函数](#5-宏编译时函数)
   - [@mc_eval](#mc_eval)
   - [@mc_type](#mc_type)
@@ -593,8 +596,190 @@ fn main() i32 {
 
 **注意事项**：
 - 仅在声明为 `...` 的可变参数函数内有效
-- 需要配合 C 的 `va_*` 函数使用
+- 需要配合 `@va_start`、`@va_end` 或 C 的 `va_*` 函数使用
 - 类型安全需要手动保证（与 C 可变参数相同）
+
+---
+
+#### @va_* 声明汇总
+
+| 内置 | 声明 | C 等价 | 说明 |
+|------|------|--------|------|
+| `@va_start` | `@va_start(ap, last)` | `va_start(ap, last)` | 初始化 va_list，`last` 为最后一个命名参数 |
+| `@va_end` | `@va_end(ap)` | `va_end(ap)` | 结束 va_list 访问，必须与 `@va_start` 成对 |
+| `@va_arg` | `@va_arg(ap, Type)` | `va_arg(ap, type)` | 按类型获取下一个参数，如 `@va_arg(ap, i32)` |
+
+**完整用法示例**（纯 Uya 实现 vprintf 包装）：
+```uya
+extern "libc" fn vfprintf(stream: *void, format: *const byte, ap: *void) i32;
+
+fn my_fprintf(stream: &FILE, fmt: &const byte, ...) i32 {
+    var ap: [byte: 32] = [];
+    @va_start(&ap[0] as &void, fmt);
+    const ret: i32 = vfprintf(stream as *void, fmt, &ap[0] as &void);
+    @va_end(&ap[0] as &void);
+    return ret;
+}
+```
+
+**遍历可变参数示例**（使用 @va_arg）：
+```uya
+fn sum_n(n: i32, ...) i32 {
+    var ap: [byte: 32] = [];
+    @va_start(&ap[0] as &void, n);
+    var s: i32 = 0;
+    var i: i32 = 0;
+    while i < n {
+        s = s + @va_arg(&ap[0] as &void, i32);
+        i = i + 1;
+    }
+    @va_end(&ap[0] as &void);
+    return s;
+}
+// 调用: sum_n(3, 10, 20, 30) → 60
+```
+
+---
+
+### @va_start
+
+**声明**：`@va_start(ap, last)`  
+**函数签名**：
+```uya
+@va_start(ap: &void, last: &void) void
+```
+
+**功能描述**：
+在可变参数函数内初始化 va_list，用于后续将可变参数传递给 vprintf/vfprintf 等 C 函数。编译时展开为 C 的 `va_start(ap, last)` 宏。
+
+**使用场景**：
+- 实现类似 printf 的可变参数包装
+- 将可变参数传递给 vfprintf、vsnprintf 等接受 va_list 的 C 函数
+
+**使用示例**：
+```uya
+extern "libc" fn vfprintf(stream: *void, format: *const byte, ap: *void) i32;
+
+fn my_vfprintf(stream: &FILE, format: &const byte, ...) i32 {
+    var ap_buf: [byte: 32] = [];
+    var ap: &void = &ap_buf[0] as &void;
+    @va_start(ap, format);
+    const ret: i32 = vfprintf(stream as *void, format, ap);
+    @va_end(ap);
+    return ret;
+}
+```
+
+**注意事项**：
+- 仅在可变参数函数（形参含 `...`）内有效
+- `ap` 需指向足以存放 va_list 的缓冲区
+- `last` 必须为最后一个命名参数的引用（如 format）
+- 与 `@va_end` 成对使用，确保每个 `@va_start` 都有对应 `@va_end`
+
+---
+
+### @va_end
+
+**声明**：`@va_end(ap)`  
+**函数签名**：
+```uya
+@va_end(ap: &void) void
+```
+
+**功能描述**：
+结束对 va_list 的访问，清理可变参数栈状态。编译时展开为 C 的 `va_end(ap)` 宏。必须与 `@va_start` 成对调用。
+
+**使用示例**：
+```uya
+fn process_varargs(fmt: &const byte, ...) void {
+    var ap: [byte: 32] = [];
+    @va_start(&ap[0] as &void, fmt);
+    // 使用 va_list 传递给 vprintf 等...
+    @va_end(&ap[0] as &void);
+}
+```
+
+**注意事项**：
+- 每个 `@va_start` 必须有对应的 `@va_end`
+- 在函数返回前必须调用 `@va_end`，包括所有返回路径
+
+---
+
+### @va_arg
+
+**声明**：`@va_arg(ap, Type)`，如 `@va_arg(ap, i32)`、`@va_arg(ap, *byte)`  
+**函数签名**：
+```uya
+@va_arg(ap: &void, Type) T
+```
+
+**功能描述**：
+从 va_list 获取下一个参数，类型由第二个参数指定。编译时展开为 C 的 `va_arg(ap, type)` 宏。必须在 `@va_start` 与 `@va_end` 之间调用。
+
+**参数**：
+- `ap`：由 `@va_start` 初始化的 va_list（指针）
+- `Type`：期望的参数类型（如 `i32`、`i64`、`*byte`、`f64` 等）
+
+**返回值**：
+- 类型与 `Type` 一致
+- 每次调用会推进 va_list 到下一个参数
+
+**使用示例**：
+```uya
+fn sum_ints(count: i32, ...) i32 {
+    var ap: [byte: 32] = [];
+    @va_start(&ap[0] as &void, count);
+    var total: i32 = 0;
+    var i: i32 = 0;
+    while i < count {
+        const val: i32 = @va_arg(&ap[0] as &void, i32);
+        total = total + val;
+        i = i + 1;
+    }
+    @va_end(&ap[0] as &void);
+    return total;
+}
+```
+
+**支持的类型**：
+- `i32`、`i64`：整数类型（C 中 int、long 等会提升）
+- `*byte`、`*void`、`&byte`：指针类型（字符串、对象指针）
+- `f64`：双精度浮点（C 可变参数中 float 提升为 double）
+
+**混合类型示例**（%d、%s、%ld 等格式）：
+```uya
+fn log_msg(fmt: &const byte, ...) void {
+    var ap: [byte: 32] = [];
+    @va_start(&ap[0] as &void, fmt);
+    // 根据格式串解析，此处简化：依次取 i32、*byte、i64
+    const n: i32 = @va_arg(&ap[0] as &void, i32);
+    const s: *byte = @va_arg(&ap[0] as &void, *byte);
+    const x: i64 = @va_arg(&ap[0] as &void, i64);
+    @va_end(&ap[0] as &void);
+    // 使用 n, s, x 进行格式化输出...
+}
+```
+
+**错误示例**：
+```uya
+fn bad_usage() void {
+    var ap: [byte: 32] = [];
+    @va_start(&ap[0] as &void, ap);  // ❌ 错误：非可变参数函数（无 ...）内不能使用 @va_start
+}
+
+fn bad_order(fmt: &const byte, ...) void {
+    var ap: [byte: 32] = [];
+    const x = @va_arg(&ap[0] as &void, i32);  // ❌ 错误：未调用 @va_start
+    @va_start(&ap[0] as &void, fmt);
+    @va_end(&ap[0] as &void);
+    const y = @va_arg(&ap[0] as &void, i32);  // ❌ 错误：@va_end 之后不能再调用 @va_arg
+}
+```
+
+**注意事项**：
+- 仅在 `@va_start` 与 `@va_end` 之间有效
+- 类型必须与实际传入参数一致，否则未定义行为（与 C 相同）
+- 可变参数默认提升：`char`/`short` → `int`，`float` → `double`
 
 ---
 
@@ -837,6 +1022,9 @@ try @await future_expr
 | | `@src_col` | ✓ | - | ✅ 已实现 |
 | | `@func_name` | ✓ | - | ✅ 已实现 |
 | **可变参数** | `@params` | - | ✓ | ✅ 已实现 |
+| | `@va_start` | ✓ | - | 📋 规范支持 |
+| | `@va_end` | ✓ | - | 📋 规范支持 |
+| | `@va_arg` | ✓ | - | 📋 规范支持 |
 | **宏系统** | `@mc_eval` | ✓ | - | 🚧 语法解析完成 |
 | | `@mc_type` | ✓ | - | 🚧 语法解析完成 |
 | | `@mc_ast` | ✓ | - | 🚧 语法解析完成 |
@@ -857,6 +1045,7 @@ Uya 内置函数遵循以下命名惯例：
 
 2. **复合概念**：使用 snake_case（下划线分隔）
    - `@size_of`, `@align_of`, `@async_fn`
+   - `@va_start`, `@va_end`, `@va_arg`（可变参数栈访问）
    - `@src_name`, `@src_path`, `@src_line`, `@src_col`, `@func_name`
    - `@mc_eval`, `@mc_type`, `@mc_ast`, `@mc_code`, `@mc_error`, `@mc_get_env`
 
@@ -872,10 +1061,10 @@ Uya 内置函数遵循以下命名惯例：
 
 | 类别 | 性能保证 |
 |------|----------|
-| **编译期展开** | `@size_of`, `@align_of`, `@len(数组)`, `@max`, `@min`, `@src_*`, `@func_name` |
-| **零运行时开销** | 上述函数在编译时完全求值，生成常量 |
+| **编译期展开** | `@size_of`, `@align_of`, `@len(数组)`, `@max`, `@min`, `@src_*`, `@func_name`, `@va_start`, `@va_end`, `@va_arg` |
+| **零运行时开销** | 上述函数在编译时完全求值或展开为 C 宏 |
 | **运行时访问** | `@len(切片)` → 访问切片的 `.len` 字段（一次内存访问） |
-| **可变参数** | `@params` → 零抽象开销，直接映射到 C `va_list` |
+| **可变参数** | `@params` → 零抽象开销，直接映射到 C va_list；`@va_start`/`@va_end`/`@va_arg` → 展开为 C 宏 |
 
 ---
 

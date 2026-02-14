@@ -531,6 +531,8 @@ param          = ID ':' type
     - `...` 必须是参数列表的最后一个元素
     - 可变参数函数的调用必须提供至少等于固定参数数量的参数
     - **@params**：函数体内可用 `@params` 访问参数元组（固定参数部分；可变参数仅支持通过 `...` 转发）
+    - **@va_start / @va_end**：可变参数函数内初始化/结束 va_list，编译时展开为 C 的 va_start/va_end 宏
+    - **@va_arg**：从 va_list 按类型提取下一个参数，`@va_arg(ap, Type)` 编译时展开为 C 的 `va_arg(ap, type)` 宏，支持 i32、i64、*byte、f64 等类型
     - **参数转发**：在可变参数函数体内可用 `callee(fixed_args, ...)` 将可变参数转发给另一可变参数函数（仅支持转发给已知的 C 变参函数如 printf→vprintf）
     - 示例：`extern printf(fmt: *byte, ...) i32;`、`fn wrap(fmt: *byte, ...) i32 { return printf(fmt, ...); }`
   - 示例：
@@ -674,12 +676,15 @@ add_expr       = mul_expr { ('+' | '-') mul_expr }
 mul_expr       = cast_expr { ('*' | '/' | '%') cast_expr }
 cast_expr      = unary_expr [ 'as' type ]
 unary_expr     = ('!' | '-' | '~' | '&' | '*') unary_expr | primary_expr
-primary_expr   = ID | NUM | FLOAT | 'true' | 'false' | 'null' | STRING | params_expr | struct_literal | array_literal | member_access | array_access | slice_expr | call_expr | sizeof_expr | alignof_expr | len_expr | int_limit_expr | match_expr | '(' expr ')'
+primary_expr   = ID | NUM | FLOAT | 'true' | 'false' | 'null' | STRING | params_expr | va_start_expr | va_end_expr | va_arg_expr | struct_literal | array_literal | member_access | array_access | slice_expr | call_expr | sizeof_expr | alignof_expr | len_expr | int_limit_expr | match_expr | '(' expr ')'
 
 match_expr     = 'match' expr '{' pattern_list '}'
 pattern_list   = pattern '=>' expr { ',' pattern '=>' expr } [ ',' 'else' '=>' expr ]
 pattern        = NUM | 'true' | 'false' | ID '.' ID | 'error' '.' ID | ID | '_'
 params_expr    = '@params'   // 仅函数体内有效，类型为参数元组（可变参数时仅含固定参数）
+va_start_expr  = '@va_start' '(' expr ',' expr ')'     // 可变参数函数内初始化 va_list
+va_end_expr    = '@va_end' '(' expr ')'                // 可变参数函数内结束 va_list 访问
+va_arg_expr    = '@va_arg' '(' expr ',' type ')'       // 从 va_list 按类型获取下一个参数
 sizeof_expr    = '@size_of' '(' (type | expr) ')' 
 alignof_expr   = '@align_of' '(' (type | expr) ')'
 len_expr       = '@len' '(' expr ')'
