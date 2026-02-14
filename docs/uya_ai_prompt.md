@@ -183,11 +183,23 @@ export fn strcmp(s1: &const byte, s2: &const byte) i32 {
 }
 ```
 
-**程序入口**：
+**程序入口（0.45 Scheme C 双入口架构）**：
 ```uya
-fn main() i32 { ... }      // 简单签名，必须用catch处理错误
-fn main() !i32 { ... }     // 完整签名，可用try传播错误（推荐）
+// 应用入口（生成 main_main）
+export fn main() i32 { ... }
+export fn main() !i32 { ... }  // 推荐
+
+// C 入口（生成 main，供 C 调用）
+export extern fn main(argc: i32, argv: &&byte) i32 { ... }
+
+// 旧架构兼容（生成 uya_main）
+fn main() i32 { ... }
 ```
+
+**说明**：
+- `export fn main()` 生成 `main_main()`，由 `std.runtime.entry` 模块提供 C 入口
+- `export extern fn main(argc, argv)` 生成标准 C `main()` 签名
+- `fn main()` 生成 `uya_main()`，向后兼容
 
 ### 联合体
 ```uya
@@ -991,6 +1003,6 @@ mc assert(cond) stmt {
 
 ---
 
-**版本**：Uya 0.43
-**更新日期**：2026-02-14
+**版本**：Uya 0.45
+**更新日期**：2026-02-15
 
