@@ -1466,7 +1466,12 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const is_force_cast: i32 = expr.cast_expr_is_force_cast;
         const type_c: &byte = c99_type_to_c(codegen, target_type);
         if is_force_cast != 0 {
-            // as! 强转：返回 !T，包装为 { .error_id = 0, .value = (T)(expr) }
+            // as! 强转：返回 !T。当源为 !i64 等错误联合时，需解包再包装
+            const src_union_c: &byte = get_c_type_of_expr(codegen, src_expr);
+            var src_is_err_union: i32 = 0;
+            if src_union_c != null && strstr(src_union_c as *byte, "err_union_" as *byte) != null {
+                src_is_err_union = 1;
+            }
             const tmp: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, 0, 0, codegen.arena, null);
             var union_c: &byte = "void" as &byte;
             if tmp != null {
@@ -1477,18 +1482,34 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             if target_type != null && target_type.type == ASTNodeType.AST_TYPE_NAMED && target_type.type_named_name != null && strcmp(target_type.type_named_name as *byte, "void" as *byte) == 0 {
                 is_void = 1;
             }
-            fprintf(codegen.output as *void, "({ %s _uya_asbang = { .error_id = 0" as *byte, union_c as *byte);
-            if is_void == 0 {
-                fprintf(codegen.output as *void, ", .value = (%s)(" as *byte, type_c as *byte);
+            if src_is_err_union != 0 && is_void == 0 {
+                fprintf(codegen.output as *void, "({ %s _uya_asbang_src = " as *byte, src_union_c as *byte);
                 gen_expr(codegen, src_expr);
-                fputs(") }; _uya_asbang; })" as *byte, codegen.output as *void);
+                fprintf(codegen.output as *void, "; %s _uya_asbang; " as *byte, union_c as *byte);
+                fputs("if (_uya_asbang_src.error_id != 0) { " as *byte, codegen.output as *void);
+                fputs("_uya_asbang.error_id = _uya_asbang_src.error_id; _uya_asbang.value = 0; " as *byte, codegen.output as *void);
+                fputs("} else { _uya_asbang.error_id = 0; " as *byte, codegen.output as *void);
+                fprintf(codegen.output as *void, "_uya_asbang.value = (%s)(_uya_asbang_src.value); " as *byte, type_c as *byte);
+                fputs("} _uya_asbang; })" as *byte, codegen.output as *void);
+            } else if src_is_err_union != 0 && is_void != 0 {
+                fprintf(codegen.output as *void, "({ %s _uya_asbang_src = " as *byte, src_union_c as *byte);
+                gen_expr(codegen, src_expr);
+                fprintf(codegen.output as *void, "; %s _uya_asbang; " as *byte, union_c as *byte);
+                fputs("_uya_asbang.error_id = _uya_asbang_src.error_id; _uya_asbang; })" as *byte, codegen.output as *void);
             } else {
-                fputs(" }; " as *byte, codegen.output as *void);
-                gen_expr(codegen, src_expr);
-                fputs("; _uya_asbang; })" as *byte, codegen.output as *void);
+                fprintf(codegen.output as *void, "({ %s _uya_asbang = { .error_id = 0" as *byte, union_c as *byte);
+                if is_void == 0 {
+                    fprintf(codegen.output as *void, ", .value = (%s)(" as *byte, type_c as *byte);
+                    gen_expr(codegen, src_expr);
+                    fputs(") }; _uya_asbang; })" as *byte, codegen.output as *void);
+                } else {
+                    fputs(" }; " as *byte, codegen.output as *void);
+                    gen_expr(codegen, src_expr);
+                    fputs("; _uya_asbang; })" as *byte, codegen.output as *void);
+                }
             }
         } else {
-            // 特殊处理：null as * *byte -> (char **)NULL（用于 strtol/strtod 的第二个参数）
+            // 特殊处理：null as * *byte -> (const uint8_t **)NULL（用于 strtol/strtod，匹配 libc 签名）
             var is_null_to_byte_ptr_ptr: i32 = 0;
             if src_expr != null && src_expr.type == ASTNodeType.AST_IDENTIFIER && src_expr.identifier_name != null && strcmp(src_expr.identifier_name as *byte, "null" as *byte) == 0 {
                 // 检查目标类型是否是 * *byte（优先检查 AST 结构，然后检查类型字符串）
@@ -1521,7 +1542,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 }
             }
             if is_null_to_byte_ptr_ptr != 0 {
-                fputs("(char **)NULL" as *byte, codegen.output as *void);
+                fputs("(const uint8_t **)NULL" as *byte, codegen.output as *void);
             } else {
                 fputc(40, codegen.output as *void);  // '('
                 fprintf(codegen.output as *void, "%s)" as *byte, type_c as *byte);
@@ -1707,6 +1728,8 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     (strcmp(mod_callee as *byte, "strcat" as *byte) == 0 && ai == 0) ||
                     (strcmp(mod_callee as *byte, "readlink" as *byte) == 0 && ai == 1)) {
                     fputs("(char *)" as *byte, codegen.output as *void);
+                } else if strcmp(mod_callee as *byte, "sys_read" as *byte) == 0 && ai == 1 {
+                    fputs("(uint8_t *)" as *byte, codegen.output as *void);
                 } else if strcmp(mod_callee as *byte, "stat" as *byte) == 0 && ai == 1 {
                     fputs("(struct stat *)" as *byte, codegen.output as *void);
                 } else if expr.call_expr_args[ai] != null && expr.call_expr_args[ai].type == ASTNodeType.AST_STRING {
@@ -2037,8 +2060,11 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             
             if is_string_arg != 0 || is_byte_ptr_arg != 0 {
                 // 检查是否是 extern "libc" fn，如果是则使用 (const char *) 而不是 (uint8_t *)
+                // sys_read 的 buf 参数（i==1）为写入目标，必须用 (uint8_t *) 避免 -Wdiscarded-qualifiers
                 const is_libc: i32 = is_extern_libc_function(codegen, callee_name);
-                if is_libc != 0 {
+                if callee_name != null && strcmp(callee_name as *byte, "sys_read" as *byte) == 0 && i == 1 {
+                    fputs("(uint8_t *)" as *byte, codegen.output as *void);
+                } else if is_libc != 0 {
                     fputs("(const char *)" as *byte, codegen.output as *void);
                 } else {
                     fputs("(uint8_t *)" as *byte, codegen.output as *void);
@@ -2136,8 +2162,8 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             }
             if did_box == 0 {
                 if is_strtol_strtod_endptr != 0 && is_strtol_strtod_null != 0 {
-                    // strtol 和 strtod 的第二个参数如果是 null as * *byte，直接生成 (char **)NULL
-                    fputs("(char **)NULL" as *byte, codegen.output as *void);
+                    // strtol 和 strtod 的第二个参数如果是 null as * *byte，生成 (const uint8_t **)NULL 匹配 libc 签名
+                    fputs("(const uint8_t **)NULL" as *byte, codegen.output as *void);
                 } else {
                     gen_expr(codegen, expr.call_expr_args[i]);
                 }

@@ -2195,6 +2195,8 @@ fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
             result.kind = TypeKind.TYPE_U32;
         } else if str_equals(type_name, "usize" as *byte) != 0 {
             result.kind = TypeKind.TYPE_USIZE;
+        } else if str_equals(type_name, "isize" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_I64;  // 64 位平台上 isize = i64
         } else if str_equals(type_name, "u64" as *byte) != 0 {
             result.kind = TypeKind.TYPE_U64;
         } else if str_equals(type_name, "bool" as *byte) != 0 {

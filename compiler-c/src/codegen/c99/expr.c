@@ -1288,26 +1288,49 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
             int is_force_cast = expr->data.cast_expr.is_force_cast;
             const char *type_c = c99_type_to_c(codegen, target_type);
             if (is_force_cast) {
-                /* as! 强转：返回 !T，包装为 { .error_id = 0, .value = (T)(expr) } */
+                /* as! 强转：返回 !T。当源为 !i64 等错误联合时，需解包再包装 */
+                const char *src_union_c = get_c_type_of_expr(codegen, src_expr);
+                int src_is_err_union = (src_union_c && strstr(src_union_c, "err_union_") != NULL);
                 ASTNode tmp = {0};
                 tmp.type = AST_TYPE_ERROR_UNION;
                 tmp.data.type_error_union.payload_type = target_type;
                 const char *union_c = c99_type_to_c(codegen, &tmp);
                 int is_void = (target_type->type == AST_TYPE_NAMED && target_type->data.type_named.name &&
                     strcmp(target_type->data.type_named.name, "void") == 0);
-                fprintf(codegen->output, "({ %s _uya_asbang = { .error_id = 0", union_c);
-                if (!is_void) {
-                    fprintf(codegen->output, ", .value = (%s)(", type_c);
+                if (src_is_err_union && !is_void) {
+                    /* 源为 !i64（如 @syscall）：先解包，转 payload，再包装 */
+                    fprintf(codegen->output, "({ %s _uya_asbang_src = ", src_union_c);
                     gen_expr(codegen, src_expr);
-                    fputs(") }; _uya_asbang; })", codegen->output);
+                    fprintf(codegen->output, "; %s _uya_asbang; ", union_c);
+                    fputs("if (_uya_asbang_src.error_id != 0) { ", codegen->output);
+                    fputs("_uya_asbang.error_id = _uya_asbang_src.error_id; ", codegen->output);
+                    fputs("_uya_asbang.value = 0; ", codegen->output);
+                    fputs("} else { ", codegen->output);
+                    fputs("_uya_asbang.error_id = 0; ", codegen->output);
+                    fprintf(codegen->output, "_uya_asbang.value = (%s)(_uya_asbang_src.value); ", type_c);
+                    fputs("} _uya_asbang; })", codegen->output);
+                } else if (src_is_err_union && is_void) {
+                    fprintf(codegen->output, "({ %s _uya_asbang_src = ", src_union_c);
+                    gen_expr(codegen, src_expr);
+                    fprintf(codegen->output, "; %s _uya_asbang; ", union_c);
+                    fputs("_uya_asbang.error_id = _uya_asbang_src.error_id; ", codegen->output);
+                    fputs("_uya_asbang; })", codegen->output);
                 } else {
-                    fputs(" }; ", codegen->output);
-                    gen_expr(codegen, src_expr);
-                    fputs("; _uya_asbang; })", codegen->output);
+                    /* 源为普通值：直接包装 */
+                    fprintf(codegen->output, "({ %s _uya_asbang = { .error_id = 0", union_c);
+                    if (!is_void) {
+                        fprintf(codegen->output, ", .value = (%s)(", type_c);
+                        gen_expr(codegen, src_expr);
+                        fputs(") }; _uya_asbang; })", codegen->output);
+                    } else {
+                        fputs(" }; ", codegen->output);
+                        gen_expr(codegen, src_expr);
+                        fputs("; _uya_asbang; })", codegen->output);
+                    }
                 }
                 break;
             }
-            // 特殊处理：null as * *byte -> (char **)NULL（用于 strtol/strtod 的第二个参数）
+            // 特殊处理：null as * *byte -> (const uint8_t **)NULL（用于 strtol/strtod，匹配 libc 签名）
             int is_null_to_byte_ptr_ptr = 0;
             if (src_expr && src_expr->type == AST_IDENTIFIER && src_expr->data.identifier.name &&
                 strcmp(src_expr->data.identifier.name, "null") == 0) {
@@ -1325,7 +1348,7 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                 }
             }
             if (is_null_to_byte_ptr_ptr) {
-                fputs("(char **)NULL", codegen->output);
+                fputs("(const uint8_t **)NULL", codegen->output);
             } else {
                 fputc('(', codegen->output);
                 fprintf(codegen->output, "%s)", type_c);
@@ -1568,7 +1591,9 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                         fputs(is_libc ? "(const char *)" : "(uint8_t *)", codegen->output);
                         fputs(codegen->interp_arg_temp_names[i], codegen->output);
                     } else {
-                        if (callee_name && is_extern_libc_function(codegen, callee_name))
+                        if (callee_name && strcmp(callee_name, "sys_read") == 0 && i == 1)
+                            fputs("(uint8_t *)", codegen->output);
+                        else if (callee_name && is_extern_libc_function(codegen, callee_name))
                             fputs("(const char *)", codegen->output);
                         else if (callee_name && ((strcmp(callee_name, "snprintf") == 0 && i == 0) ||
                             (strcmp(callee_name, "sprintf") == 0 && i == 0) || (strcmp(callee_name, "strcpy") == 0 && i == 0) ||
@@ -1870,9 +1895,13 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                     }
                 }
                 if (is_string_arg || is_byte_ptr_arg) {
-                    // 检查是否是 extern "libc" fn，如果是则使用 (const char *) 而不是 (uint8_t *)
-                    int is_libc = is_extern_libc_function(codegen, callee_name);
-                    fputs(is_libc ? "(const char *)" : "(uint8_t *)", codegen->output);
+                    // sys_read 的 buf 参数（i==1）为写入目标，必须用 (uint8_t *) 避免 -Wdiscarded-qualifiers
+                    if (callee_name && strcmp(callee_name, "sys_read") == 0 && i == 1)
+                        fputs("(uint8_t *)", codegen->output);
+                    else {
+                        int is_libc = is_extern_libc_function(codegen, callee_name);
+                        fputs(is_libc ? "(const char *)" : "(uint8_t *)", codegen->output);
+                    }
                 } else if (callee_name && (
                     (strcmp(callee_name, "snprintf") == 0 && i == 0) ||
                     (strcmp(callee_name, "sprintf") == 0 && i == 0) ||

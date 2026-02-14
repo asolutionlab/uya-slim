@@ -670,6 +670,19 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         if init_expr.type == ASTNodeType.AST_STRING_INTERP {
                             fputs(";\n" as *byte, codegen.output as *void);
                             c99_emit_string_interp_fill(codegen, init_expr, var_name);
+                        } else if init_expr.type == ASTNodeType.AST_IDENTIFIER {
+                            fputs(";\n" as *byte, codegen.output as *void);
+                            c99_emit_indent(codegen);
+                            fprintf(codegen.output as *void, "__uya_memcpy(%s, " as *byte, var_name as *byte);
+                            gen_expr(codegen, init_expr);
+                            fprintf(codegen.output as *void, ", sizeof(%s));\n" as *byte, var_name as *byte);
+                        } else if init_expr.type == ASTNodeType.AST_CALL_EXPR {
+                            fputs(";\n" as *byte, codegen.output as *void);
+                            c99_emit_indent(codegen);
+                            fprintf(codegen.output as *void, "__uya_memcpy(%s, " as *byte, var_name as *byte);
+                            gen_expr(codegen, init_expr);
+                            fputs(".data, sizeof(" as *byte, codegen.output as *void);
+                            fprintf(codegen.output as *void, "%s));\n" as *byte, var_name as *byte);
                         } else {
                             fputs(" = " as *byte, codegen.output as *void);
                             gen_expr(codegen, init_expr);
@@ -1064,10 +1077,9 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                                     c99_emit_indent(codegen);
                                     fprintf(codegen.output as *void, "%s.%s = NULL;\n" as *byte, var_name as *byte, field_name2 as *byte);
                                 } else if field_type2.type == ASTNodeType.AST_TYPE_ARRAY {
-                                    // 数组类型：使用 memset 清零
-                                    codegen.needs_string_h = 1;
+                                    // 数组类型：使用 __builtin_memset 清零（避免与 libc memset 冲突，无需 string.h）
                                     c99_emit_indent(codegen);
-                                    fprintf(codegen.output as *void, "memset(%s.%s, 0, sizeof(%s.%s));\n" as *byte, var_name as *byte, field_name2 as *byte, var_name as *byte, field_name2 as *byte);
+                                    fprintf(codegen.output as *void, "__builtin_memset(%s.%s, 0, sizeof(%s.%s));\n" as *byte, var_name as *byte, field_name2 as *byte, var_name as *byte, field_name2 as *byte);
                                 } else {
                                     // 其他类型（整数、浮点数等）：初始化为 0
                                     c99_emit_indent(codegen);
@@ -1079,10 +1091,9 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     i2 = i2 + 1;
                 }
                 } else {
-                    // 空结构体（AST 无字段）：与 C 编译器一致，整体零初始化（cast 避免 const 警告）
-                    codegen.needs_string_h = 1;
+                    // 空结构体（AST 无字段）：使用 __builtin_memset 零初始化（避免与 libc memset 冲突）
                     c99_emit_indent(codegen);
-                    fprintf(codegen.output as *void, "memset((void *)&%s, 0, sizeof(%s));\n" as *byte, var_name as *byte, var_name as *byte);
+                    fprintf(codegen.output as *void, "__builtin_memset((void *)&%s, 0, sizeof(%s));\n" as *byte, var_name as *byte, var_name as *byte);
                 }
             } else if is_array_from_function != 0 {
                 // 从函数调用接收数组：需要从包装结构体中提取

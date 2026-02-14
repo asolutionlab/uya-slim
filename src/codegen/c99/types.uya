@@ -164,6 +164,8 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
             return ("uint32_t" as *byte) as &byte;
         } else if strcmp(name as *byte, "usize" as *byte) == 0 {
             return ("size_t" as *byte) as &byte;
+        } else if strcmp(name as *byte, "isize" as *byte) == 0 {
+            return ("intptr_t" as *byte) as &byte;
         } else if strcmp(name as *byte, "u64" as *byte) == 0 {
             return ("uint64_t" as *byte) as &byte;
         } else if strcmp(name as *byte, "bool" as *byte) == 0 {
@@ -815,6 +817,8 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
             return buf;
         }
         return ("int32_t" as *byte) as &byte;
+    } else if expr.type == ASTNodeType.AST_SYSCALL {
+        return ("struct err_union_int64_t" as *byte) as &byte;
     } else if expr.type == ASTNodeType.AST_CAST_EXPR {
         const target_type: &ASTNode = expr.cast_expr_target_type;
         if target_type == null {

@@ -65,9 +65,7 @@ struct Dirent {
     d_name: *byte,
     d_type: u8,  // DT_REG = 8, DT_DIR = 4
 }
-struct DIR {
-    // 不透明类型
-}
+use libc.DIR;
 use libc.opendir;
 use libc.readdir;
 use libc.closedir;

@@ -1149,6 +1149,8 @@ const char *get_c_type_of_expr(C99CodeGenerator *codegen, ASTNode *expr) {
             }
             return "int32_t";
         }
+        case AST_SYSCALL:
+            return "struct err_union_int64_t";
         case AST_CAST_EXPR: {
             ASTNode *target_type = expr->data.cast_expr.target_type;
             if (!target_type) return "int32_t";

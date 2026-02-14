@@ -473,12 +473,15 @@ export fn getenv(name: &const byte) &byte {
 // 目录操作函数（C 标准库兼容）
 // ============================================================
 
+// 目录句柄不透明类型（与 POSIX DIR* 对应）
+export struct DIR {}
+
 // 目录流结构（简化实现）
 var opendir_fd_storage: [i64: 64] = [];
 
 // opendir - 打开目录（C 标准库兼容）
 // 返回：DIR*，失败返回 null
-export fn opendir(name: &const byte) &Dirent {
+export fn opendir(name: &const byte) &DIR {
     if name == null {
         return null;
     }
@@ -499,7 +502,7 @@ export fn opendir(name: &const byte) &Dirent {
         // 查找空闲槽位（fd <= 0 表示未使用）
         if opendir_fd_storage[j] <= 0 {
             opendir_fd_storage[j] = fd;
-            return &opendir_fd_storage[j] as &Dirent;
+            return &opendir_fd_storage[j] as &DIR;
         }
         j = j + 1;
     }
@@ -511,7 +514,7 @@ export fn opendir(name: &const byte) &Dirent {
 
 // readdir - 读取目录项（简化实现）
 // 返回：Dirent*，失败或结束返回 null
-export fn readdir(dirp: &Dirent) &Dirent {
+export fn readdir(dirp: &DIR) &Dirent {
     if dirp == null {
         return null;
     }
@@ -530,7 +533,7 @@ export fn readdir(dirp: &Dirent) &Dirent {
 
 // closedir - 关闭目录（C 标准库兼容）
 // 返回：0 成功，-1 失败
-export fn closedir(dirp: &Dirent) i32 {
+export fn closedir(dirp: &DIR) i32 {
     if dirp == null {
         return 0 - 1;
     }

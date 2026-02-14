@@ -168,22 +168,22 @@ export struct Dirent {
 
 // sys_write - 写入文件描述符
 export extern "libc" fn sys_write(fd: i32, buf: *const byte, count: usize) !isize {
-    return @syscall(SYS_write, fd as i64, buf as i64, count as i64);
+    return @syscall(SYS_write, fd as i64, buf as i64, count as i64) as! isize;
 }
 
 // sys_read - 从文件描述符读取
 export extern "libc" fn sys_read(fd: i32, buf: *byte, count: usize) !isize {
-    return @syscall(SYS_read, fd as i64, buf as i64, count as i64);
+    return @syscall(SYS_read, fd as i64, buf as i64, count as i64) as! isize;
 }
 
 // sys_open - 打开文件
 export extern "libc" fn sys_open(pathname: *const byte, flags: i32, mode: i32) !i32 {
-    return @syscall(SYS_open, pathname as i64, flags as i64, mode as i64);
+    return @syscall(SYS_open, pathname as i64, flags as i64, mode as i64) as! i32;
 }
 
 // sys_close - 关闭文件描述符
 export extern "libc" fn sys_close(fd: i32) !i32 {
-    return @syscall(SYS_close, fd as i64);
+    return @syscall(SYS_close, fd as i64) as! i32;
 }
 
 // sys_exit - 退出进程
@@ -203,60 +203,60 @@ export extern "libc" fn sys_lseek(fd: i32, offset: i64, whence: i32) !i64 {
 
 // sys_access - 检查文件访问权限
 export extern "libc" fn sys_access(pathname: *const byte, mode: i32) !i32 {
-    return @syscall(SYS_access, pathname as i64, mode as i64);
+    return @syscall(SYS_access, pathname as i64, mode as i64) as! i32;
 }
 
 // sys_unlink - 删除文件
 export extern "libc" fn sys_unlink(pathname: *const byte) !i32 {
-    return @syscall(SYS_unlink, pathname as i64);
+    return @syscall(SYS_unlink, pathname as i64) as! i32;
 }
 
 // sys_mkdir - 创建目录
 export extern "libc" fn sys_mkdir(pathname: *const byte, mode: i32) !i32 {
-    return @syscall(SYS_mkdir, pathname as i64, mode as i64);
+    return @syscall(SYS_mkdir, pathname as i64, mode as i64) as! i32;
 }
 
 // sys_rmdir - 删除目录
 export extern "libc" fn sys_rmdir(pathname: *const byte) !i32 {
-    return @syscall(SYS_rmdir, pathname as i64);
+    return @syscall(SYS_rmdir, pathname as i64) as! i32;
 }
 
 // sys_chdir - 切换当前工作目录
 export extern "libc" fn sys_chdir(path: *const byte) !i32 {
-    return @syscall(SYS_chdir, path as i64);
+    return @syscall(SYS_chdir, path as i64) as! i32;
 }
 
 // sys_getcwd - 获取当前工作目录
 export extern "libc" fn sys_getcwd(buf: *byte, size: usize) !isize {
-    return @syscall(SYS_getcwd, buf as i64, size as i64);
+    return @syscall(SYS_getcwd, buf as i64, size as i64) as! isize;
 }
 
 // sys_mmap - 内存映射
 export extern "libc" fn sys_mmap(addr: *void, length: usize, prot: i32, flags: i32, fd: i32, offset: i64) !*void {
-    return @syscall(SYS_mmap, addr as i64, length as i64, prot as i64, flags as i64, fd as i64, offset as i64);
+    return @syscall(SYS_mmap, addr as i64, length as i64, prot as i64, flags as i64, fd as i64, offset as i64) as! *void;
 }
 
 // sys_munmap - 解除内存映射
 export extern "libc" fn sys_munmap(addr: *void, length: usize) !i32 {
-    return @syscall(SYS_munmap, addr as i64, length as i64);
+    return @syscall(SYS_munmap, addr as i64, length as i64) as! i32;
 }
 
 // sys_stat - 获取文件状态
 export extern "libc" fn sys_stat(pathname: *const byte, statbuf: &Stat) !i32 {
-    return @syscall(SYS_stat, pathname as i64, statbuf as i64);
+    return @syscall(SYS_stat, pathname as i64, statbuf as i64) as! i32;
 }
 
 // sys_kill - 发送信号
 export extern "libc" fn sys_kill(pid: i64, sig: i32) !i32 {
-    return @syscall(SYS_kill, pid, sig as i64);
+    return @syscall(SYS_kill, pid, sig as i64) as! i32;
 }
 
 // sys_readlink - 读取符号链接
 export extern "libc" fn sys_readlink(pathname: *const byte, buf: *byte, bufsiz: usize) !isize {
-    return @syscall(SYS_readlink, pathname as i64, buf as i64, bufsiz as i64);
+    return @syscall(SYS_readlink, pathname as i64, buf as i64, bufsiz as i64) as! isize;
 }
 
 // sys_getdents64 - 读取目录项
 export extern "libc" fn sys_getdents64(fd: i32, dirp: *void, count: usize) !isize {
-    return @syscall(SYS_getdents64, fd as i64, dirp as i64, count as i64);
+    return @syscall(SYS_getdents64, fd as i64, dirp as i64, count as i64) as! isize;
 }

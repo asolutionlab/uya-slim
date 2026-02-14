@@ -364,16 +364,30 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                     // 检查 expr 的类型是否已经是错误联合类型
                     // 情况1：变量引用且变量名包含 result（启发式）
                     // 情况2：@syscall 表达式（已经返回错误联合）
-                    // 情况3：函数调用且函数返回错误联合类型
+                    // 情况3：as! 转换（如 @syscall(...) as! i32）
+                    // 情况4：函数调用且函数返回错误联合类型
                     int expr_is_error_union = 0;
                     const char *expr_payload_c = NULL;  // 表达式的 payload C 类型
-                    if (expr->type == AST_IDENTIFIER) {
+                    const char *expr_union_c = get_c_type_of_expr(codegen, expr);
+                    if (expr_union_c && strstr(expr_union_c, "err_union_") != NULL) {
+                        expr_is_error_union = 1;
+                        if (strcmp(expr_union_c, "struct err_union_int64_t") == 0) {
+                            expr_payload_c = "int64_t";
+                        } else if (strcmp(expr_union_c, "struct err_union_intptr_t") == 0) {
+                            expr_payload_c = "intptr_t";
+                        } else if (strcmp(expr_union_c, "struct err_union_int32_t") == 0) {
+                            expr_payload_c = "int32_t";
+                        } else if (strcmp(expr_union_c, "struct err_union_void") == 0) {
+                            expr_payload_c = "void";
+                        } else {
+                            expr_payload_c = "int32_t";
+                        }
+                    } else if (expr->type == AST_IDENTIFIER) {
                         const char *var_name = expr->data.identifier.name;
                         if (var_name && strstr(var_name, "result")) {
                             expr_is_error_union = 1;
                         }
                     } else if (expr->type == AST_SYSCALL) {
-                        // @syscall 已经返回错误联合类型，payload 是 i64
                         expr_is_error_union = 1;
                         expr_payload_c = "int64_t";
                     }
@@ -937,9 +951,8 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                                     // 指针类型：初始化为 NULL
                                     c99_emit(codegen, "%s.%s = NULL;\n", var_name, field_name);
                                 } else if (field_type->type == AST_TYPE_ARRAY) {
-                                    // 数组类型：使用 memset 清零
-                                    codegen->needs_string_h = 1;
-                                    c99_emit(codegen, "memset(%s.%s, 0, sizeof(%s.%s));\n", 
+                                    // 数组类型：使用 __builtin_memset 清零（避免与 libc memset 冲突）
+                                    c99_emit(codegen, "__builtin_memset(%s.%s, 0, sizeof(%s.%s));\n", 
                                             var_name, field_name, var_name, field_name);
                                 } else {
                                     // 其他类型（整数、浮点数等）：初始化为 0
@@ -948,9 +961,8 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                             }
                         }
                     } else {
-                        // 空结构体（AST 无字段）：C 端有 char _empty 占位，整体零初始化（cast 避免 const 警告）
-                        codegen->needs_string_h = 1;
-                        c99_emit(codegen, "memset((void *)&%s, 0, sizeof(%s));\n", var_name, var_name);
+                        // 空结构体（AST 无字段）：使用 __builtin_memset 零初始化（避免与 libc memset 冲突）
+                        c99_emit(codegen, "__builtin_memset((void *)&%s, 0, sizeof(%s));\n", var_name, var_name);
                     }
                 } else if (is_array_from_function) {
                     // 从函数调用接收数组：需要从包装结构体中提取
