@@ -121,10 +121,25 @@ run_test() {
         return
     fi
     
-    # 链接
-    local link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/bridge.c 2>/dev/null"
-    if grep -q "use.*std\.runtime" "$test_file" 2>/dev/null; then
+    # 链接 - 根据测试文件内容选择正确的链接方式
+    local link_cmd=""
+    
+    # 检查是否有 extern fn 声明（非 extern "libc"），需要链接 external_functions.c
+    if grep -qE "^extern fn [a-z_]+\(" "$test_file" 2>/dev/null; then
+        # 特殊处理 test_abi_calling_convention
+        if [ "$base_name" = "test_abi_calling_convention" ]; then
+            link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/programs/test_abi_helpers.c $SCRIPT_DIR/bridge.c 2>/dev/null"
+        elif [ -f "$SCRIPT_DIR/external_functions.c" ]; then
+            link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/external_functions.c $SCRIPT_DIR/bridge.c 2>/dev/null"
+        else
+            link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/bridge.c 2>/dev/null"
+        fi
+    elif grep -q "use.*std\.runtime" "$test_file" 2>/dev/null; then
+        # 使用 std.runtime，链接 bridge_minimal.c
         link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/bridge_minimal.c 2>/dev/null"
+    else
+        # 默认链接 bridge.c
+        link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/bridge.c 2>/dev/null"
     fi
     
     if ! eval "$link_cmd"; then

@@ -1,5 +1,10 @@
 #include <stdio.h>
 
+// 为 extern_function.uya 提供的外部函数实现
+int add(int a, int b) {
+    return a + b;
+}
+
 // 为 test_comprehensive_cast.uya 提供的外部函数实现
 int tn(void* node) {
     return 1;  // 简单返回 1
