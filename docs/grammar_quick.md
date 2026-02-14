@@ -203,6 +203,19 @@ extern "libc" fn strlen(s: &byte) usize;
 extern "libc" fn atoi(s: &byte) i32;
 extern "libc" fn printf(fmt: &byte, ...) i32;
 
+// extern 变量支持（0.43 新增）：导入/导出 C 全局变量
+// 导入 C 标准库全局变量
+extern const errno: i32;           // 只读：extern const int errno;
+extern var optind: i32;            // 可变：extern int optind;
+extern const stdout: *void;        // C: extern FILE *stdout;
+
+// 导出 Uya 变量给 C
+export const VERSION: &byte = "1.0.0";  // C: const char *VERSION = "1.0.0";
+export var debug_mode: i32 = 0;         // C: int debug_mode = 0;
+
+// 链接到 C 库定义的变量（不生成代码）
+export extern const ENOENT: i32;
+
 // 可能失败的函数
 fn name(param: Type) !ReturnType {
     if error_condition {

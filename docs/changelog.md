@@ -19,13 +19,27 @@
   - 这简化了 FFI，使 `byte` 与 C 字符串完全兼容
 
 - **新增 `extern "libc" fn` 语法**：
-  - **语法**：`extern "libc" fn name(...) type;`
-  - **用途**：显式声明 C 标准库函数（与 `extern fn` 等价，明确意图）
-  - **设计目的**：使 FFI 代码意图更清晰
+  - **语法**：`extern "libc" fn name(...) type;` 或 `export extern "libc" fn name(...) type { }`
+  - **用途**：显式声明 C 标准库函数，或用 Uya 实现替代 C 标准库函数
+  - **设计目的**：使 FFI 代码意图更清晰，支持无 libc 依赖的编译
+  - **byte 映射**：在 `extern "libc"` 上下文中，`byte` 映射为 C 的 `char`
+
+- **新增 `extern` 变量支持**：
+  - **导入 C 全局变量**：
+    - `extern const name: type;` - 导入只读 C 变量，生成 `extern const type name;`
+    - `extern var name: type;` - 导入可变 C 变量，生成 `extern type name;`
+  - **导出 Uya 变量给 C**：
+    - `export const name: type = value;` - 导出只读常量，生成 `const type name = value;`
+    - `export var name: type = value;` - 导出可变变量，生成 `type name = value;`
+    - `export extern const name: type;` - 链接到 C 库定义，不生成代码
+  - **用途**：访问 C 标准库全局变量（如 `errno`, `stdout`），或导出 Uya 全局状态给 C
+  - **类型限制**：仅支持 C 兼容类型（基本类型、指针、extern struct）
+
 - **编译器修改**：
-  - AST 新增 `fn_decl_extern_type` 字段
-  - Parser 支持解析 `extern "libc" fn` 语法
-  - Codegen 将 `byte` 映射为 `char`
+  - AST 新增 `fn_decl_extern_lib_name` 字段
+  - Parser 支持解析 `extern "libc" fn` 和 `extern const/var` 语法
+  - Checker 允许 `extern "libc" fn` 使用 FFI 指针类型
+  - Codegen 为 `extern "libc" fn` 生成裸函数名（无模块前缀）
 
 ---
 

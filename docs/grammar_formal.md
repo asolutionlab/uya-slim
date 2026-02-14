@@ -284,15 +284,20 @@ module_path    = ID { '.' ID }
 ```
 extern_decl    = 'extern' [ STRING ] 'fn' ID '(' [ param_list ] ')' type (';' | '{' statements '}')
                | 'extern' 'union' ID '{' field_list '}'  # 外部 C 联合体声明
+               | 'extern' ( 'const' | 'var' ) ID ':' type ';'  # 外部 C 变量声明（0.43 新增）
 ```
 
-**说明**（0.43 新增 `extern "libc"`）：
+**说明**（0.43 新增 `extern "libc"` 和 `extern` 变量）：
 - `extern fn name(...) type;` - 声明外部 C 函数（导入，供 Uya 调用）
 - `extern "libc" fn name(...) type;` - 声明 C 标准库函数（与 `extern fn` 等价）
 - `extern fn name(...) type { ... }` - 导出 Uya 函数为 C 函数（导出，供 C 调用）
   - 导出的函数可以使用 `&name` 获取函数指针，传递给需要函数指针的 C 函数
   - 函数必须使用 C 兼容的类型（FFI 指针类型 `*T`、基本类型等）
 - **byte 类型映射规则**（0.43 新增）：`byte` → `char`（C 字符类型，与 C 标准库兼容）
+- **extern 变量支持**（0.43 新增）：
+  - `extern const name: type;` - 导入只读 C 全局变量，生成 `extern const type name;`
+  - `extern var name: type;` - 导入可变 C 全局变量，生成 `extern type name;`
+  - 示例：`extern const errno: i32;` `extern var optind: i32;` `extern const stdout: *void;`
 - 所有 `struct` 统一使用 C 内存布局，无需 `extern` 关键字
 - 结构体可以包含所有类型（包括切片、interface 等），编译器自动生成对应的 C 兼容布局
 
