@@ -1,0 +1,25 @@
+// 测试 @va_start、@va_end、@va_arg 内置函数
+// 在可变参数函数内正确使用
+// 使用 &void 变量作为 va_list（编译器会生成 C 的 va_list 类型）
+
+fn sum_n(n: i32, ...) i32 {
+    var ap_buf: [byte: 32] = [];
+    var ap: &void = &ap_buf[0] as &void;  // ap 作为 @va_start 第一个参数，生成 va_list
+    @va_start(ap, n);
+    var s: i32 = 0;
+    var i: i32 = 0;
+    while i < n {
+        s = s + @va_arg(ap, i32);
+        i = i + 1;
+    }
+    @va_end(ap);
+    return s;
+}
+
+fn main() i32 {
+    const r: i32 = sum_n(3, 10, 20, 30);
+    if r != 60 {
+        return 1;
+    }
+    return 0;
+}

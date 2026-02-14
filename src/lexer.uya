@@ -1033,6 +1033,9 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
             if str_equals_lexer(value, "max" as &byte) != 0 { is_builtin = 1; }
             if str_equals_lexer(value, "min" as &byte) != 0 { is_builtin = 1; }
             if str_equals_lexer(value, "params" as &byte) != 0 { is_builtin = 1; }
+            if str_equals_lexer(value, "va_start" as &byte) != 0 { is_builtin = 1; }
+            if str_equals_lexer(value, "va_end" as &byte) != 0 { is_builtin = 1; }
+            if str_equals_lexer(value, "va_arg" as &byte) != 0 { is_builtin = 1; }
             // 源代码位置内置函数
             if str_equals_lexer(value, "src_name" as &byte) != 0 { is_builtin = 1; }
             if str_equals_lexer(value, "src_path" as &byte) != 0 { is_builtin = 1; }
@@ -1060,7 +1063,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
             }
             
             // 未知的内置函数
-            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@async_fn、@await、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@syscall、@ptr_from_usize、@usize_from_ptr\n" as *byte, value);
+            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@async_fn、@await、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@syscall、@ptr_from_usize、@usize_from_ptr\n" as *byte, value);
             return null;
         }
         return null;

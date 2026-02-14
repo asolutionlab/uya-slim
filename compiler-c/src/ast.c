@@ -269,6 +269,17 @@ ASTNode *ast_new_node(ASTNodeType type, int line, int column, Arena *arena, cons
             // 指针转换节点，字段由 Parser 填充
             node->data.usize_from_ptr_expr.ptr = NULL;
             break;
+        case AST_VA_START:
+            node->data.va_start_expr.ap = NULL;
+            node->data.va_start_expr.last_param = NULL;
+            break;
+        case AST_VA_END:
+            node->data.va_end_expr.ap = NULL;
+            break;
+        case AST_VA_ARG:
+            node->data.va_arg_expr.ap = NULL;
+            node->data.va_arg_expr.arg_type = NULL;
+            break;
         case AST_STRING:
             node->data.string_literal.value = NULL;
             break;

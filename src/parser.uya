@@ -1292,6 +1292,66 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
         return syscall_node;
     }
     
+    // 解析 @va_start 表达式：@va_start(ap, last)
+    if parser.current_token.type == TokenType.TOKEN_AT_IDENTIFIER && parser.current_token.value != null &&
+        str_equals_lexer(parser.current_token.value, "va_start" as &byte) != 0 {
+        parser_consume(parser);
+        if parser_expect(parser, TokenType.TOKEN_LEFT_PAREN) == null { return null; }
+        const node: &ASTNode = ast_new_node(ASTNodeType.AST_VA_START, line, column, parser.arena, parser_get_filename(parser));
+        if node == null { return null; }
+        node.va_start_ap = parser_parse_or_expr(parser);
+        if node.va_start_ap == null {
+            fprintf(libc.stderr, "错误: @va_start 需要 ap 作为第一个参数\n" as *byte);
+            return null;
+        }
+        if parser_expect(parser, TokenType.TOKEN_COMMA) == null { return null; }
+        node.va_start_last_param = parser_parse_or_expr(parser);
+        if node.va_start_last_param == null {
+            fprintf(libc.stderr, "错误: @va_start 需要 last 作为第二个参数\n" as *byte);
+            return null;
+        }
+        if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null { return null; }
+        return node;
+    }
+    
+    // 解析 @va_end 表达式：@va_end(ap)
+    if parser.current_token.type == TokenType.TOKEN_AT_IDENTIFIER && parser.current_token.value != null &&
+        str_equals_lexer(parser.current_token.value, "va_end" as &byte) != 0 {
+        parser_consume(parser);
+        if parser_expect(parser, TokenType.TOKEN_LEFT_PAREN) == null { return null; }
+        const node: &ASTNode = ast_new_node(ASTNodeType.AST_VA_END, line, column, parser.arena, parser_get_filename(parser));
+        if node == null { return null; }
+        node.va_end_ap = parser_parse_or_expr(parser);
+        if node.va_end_ap == null {
+            fprintf(libc.stderr, "错误: @va_end 需要 ap 参数\n" as *byte);
+            return null;
+        }
+        if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null { return null; }
+        return node;
+    }
+    
+    // 解析 @va_arg 表达式：@va_arg(ap, Type)
+    if parser.current_token.type == TokenType.TOKEN_AT_IDENTIFIER && parser.current_token.value != null &&
+        str_equals_lexer(parser.current_token.value, "va_arg" as &byte) != 0 {
+        parser_consume(parser);
+        if parser_expect(parser, TokenType.TOKEN_LEFT_PAREN) == null { return null; }
+        const node: &ASTNode = ast_new_node(ASTNodeType.AST_VA_ARG, line, column, parser.arena, parser_get_filename(parser));
+        if node == null { return null; }
+        node.va_arg_ap = parser_parse_or_expr(parser);
+        if node.va_arg_ap == null {
+            fprintf(libc.stderr, "错误: @va_arg 需要 ap 作为第一个参数\n" as *byte);
+            return null;
+        }
+        if parser_expect(parser, TokenType.TOKEN_COMMA) == null { return null; }
+        node.va_arg_arg_type = parser_parse_type(parser);
+        if node.va_arg_arg_type == null {
+            fprintf(libc.stderr, "错误: @va_arg 需要类型作为第二个参数，如 @va_arg(ap, i32)\n" as *byte);
+            return null;
+        }
+        if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null { return null; }
+        return node;
+    }
+    
     // 解析 @ptr_from_usize 表达式：@ptr_from_usize(value)
     if parser.current_token.type == TokenType.TOKEN_AT_IDENTIFIER && parser.current_token.value != null &&
         str_equals_lexer(parser.current_token.value, "ptr_from_usize" as &byte) != 0 {

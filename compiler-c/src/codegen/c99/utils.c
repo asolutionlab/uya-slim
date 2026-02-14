@@ -657,6 +657,23 @@ void collect_string_constants_from_expr(C99CodeGenerator *codegen, ASTNode *expr
             }
             break;
         }
+        case AST_VA_START: {
+            if (expr->data.va_start_expr.ap)
+                collect_string_constants_from_expr(codegen, expr->data.va_start_expr.ap);
+            if (expr->data.va_start_expr.last_param)
+                collect_string_constants_from_expr(codegen, expr->data.va_start_expr.last_param);
+            break;
+        }
+        case AST_VA_END: {
+            if (expr->data.va_end_expr.ap)
+                collect_string_constants_from_expr(codegen, expr->data.va_end_expr.ap);
+            break;
+        }
+        case AST_VA_ARG: {
+            if (expr->data.va_arg_expr.ap)
+                collect_string_constants_from_expr(codegen, expr->data.va_arg_expr.ap);
+            break;
+        }
         default:
             // 其他表达式类型（标识符、数字、布尔值）不包含字符串
             break;

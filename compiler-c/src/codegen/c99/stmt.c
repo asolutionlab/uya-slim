@@ -3,6 +3,36 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+/* 收集作为 @va_start 第一个参数的标识符名称（用于生成 va_list 而非 void*） */
+static int is_va_list_var_name(C99CodeGenerator *codegen, ASTNode *block, const char *var_name) {
+    if (!codegen || !block || !var_name || !codegen->current_function_decl ||
+        !codegen->current_function_decl->data.fn_decl.is_varargs)
+        return 0;
+    if (block->type != AST_BLOCK || !block->data.block.stmts) return 0;
+    for (int i = 0; i < block->data.block.stmt_count; i++) {
+        ASTNode *s = block->data.block.stmts[i];
+        if (!s) continue;
+        if (s->type == AST_VA_START && s->data.va_start_expr.ap &&
+            s->data.va_start_expr.ap->type == AST_IDENTIFIER &&
+            s->data.va_start_expr.ap->data.identifier.name &&
+            strcmp(s->data.va_start_expr.ap->data.identifier.name, var_name) == 0)
+            return 1;
+        if (s->type == AST_BLOCK && is_va_list_var_name(codegen, s, var_name))
+            return 1;
+        if (s->type == AST_IF_STMT) {
+            if (s->data.if_stmt.then_branch && is_va_list_var_name(codegen, s->data.if_stmt.then_branch, var_name))
+                return 1;
+            if (s->data.if_stmt.else_branch && is_va_list_var_name(codegen, s->data.if_stmt.else_branch, var_name))
+                return 1;
+        }
+        if (s->type == AST_WHILE_STMT && s->data.while_stmt.body && is_va_list_var_name(codegen, s->data.while_stmt.body, var_name))
+            return 1;
+        if (s->type == AST_FOR_STMT && s->data.for_stmt.body && is_va_list_var_name(codegen, s->data.for_stmt.body, var_name))
+            return 1;
+    }
+    return 0;
+}
+
 /* 在 return/break/continue 前对当前块已声明的变量逆序调用 drop（规范 §12）。 */
 static void emit_current_block_drops(C99CodeGenerator *codegen) {
     if (!codegen || codegen->current_drop_scope < 0) return;
@@ -599,6 +629,37 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
             } else {
                 // 非数组类型
                 type_c = c99_type_to_c(codegen, var_type);
+                /* 可变参数函数内：作为 @va_start 第一个参数的 &void 变量需生成 va_list，不初始化（va_start 会初始化） */
+                int use_va_list = 0;
+                if (codegen->current_function_decl && codegen->current_function_decl->data.fn_decl.is_varargs &&
+                    var_type && (var_type->type == AST_TYPE_POINTER || 
+                        (var_type->type == AST_TYPE_NAMED && var_type->data.type_named.name &&
+                         (strcmp(var_type->data.type_named.name, "void") == 0 || strcmp(var_type->data.type_named.name, "VaList") == 0))) &&
+                    stmt->data.var_decl.name && codegen->current_function_decl->data.fn_decl.body &&
+                    is_va_list_var_name(codegen, codegen->current_function_decl->data.fn_decl.body, stmt->data.var_decl.name)) {
+                    int is_ptr_to_void = 0;
+                    if (var_type->type == AST_TYPE_POINTER && var_type->data.type_pointer.pointed_type &&
+                        var_type->data.type_pointer.pointed_type->type == AST_TYPE_NAMED &&
+                        var_type->data.type_pointer.pointed_type->data.type_named.name &&
+                        strcmp(var_type->data.type_pointer.pointed_type->data.type_named.name, "void") == 0)
+                        is_ptr_to_void = 1;
+                    if (var_type->type == AST_TYPE_NAMED && var_type->data.type_named.name &&
+                        (strcmp(var_type->data.type_named.name, "VaList") == 0 || strcmp(var_type->data.type_named.name, "void") == 0))
+                        is_ptr_to_void = 1;  /* VaList=*void 或部分编译器用 void 表示指针 */
+                    if (type_c && (strstr(type_c, "void") != NULL || strstr(type_c, "VaList") != NULL))
+                        is_ptr_to_void = 1;
+                    if (is_ptr_to_void)
+                        use_va_list = 1;
+                }
+                if (use_va_list) {
+                    c99_emit(codegen, "va_list %s;\n", var_name);
+                    if (codegen->local_variable_count < C99_MAX_LOCAL_VARS) {
+                        codegen->local_variables[codegen->local_variable_count].name = stmt->data.var_decl.name;
+                        codegen->local_variables[codegen->local_variable_count].type_c = "va_list";
+                        codegen->local_variable_count++;
+                    }
+                    break;
+                }
                 // 检查是否是 void 类型
                 int is_void_type = 0;
                 if (var_type->type == AST_TYPE_NAMED) {
@@ -1407,8 +1468,8 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
             c99_emit(codegen, "continue;\n");
             break;
         default:
-            // 检查是否为表达式节点（包括 @syscall 等内置函数）
-            if (stmt->type >= AST_BINARY_EXPR && stmt->type <= AST_SYSCALL) {
+            // 检查是否为表达式节点（包括 @syscall、@va_start、@va_end、@va_arg 等内置函数）
+            if (stmt->type >= AST_BINARY_EXPR && stmt->type <= AST_VA_ARG) {
                 c99_emit(codegen, "");
                 gen_expr(codegen, stmt);
                 fputs(";\n", codegen->output);

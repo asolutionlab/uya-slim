@@ -7,6 +7,49 @@
 // ===== 外部函数声明 =====
 // C 标准库函数（在 extern_decls.uya 中声明）
 
+// 收集作为 @va_start 第一个参数的标识符名称（用于生成 va_list 而非 void*）
+fn is_va_list_var_name(codegen: &C99CodeGenerator, block: &ASTNode, var_name: &byte) i32 {
+    if codegen == null || block == null || var_name == null || codegen.current_function_decl == null {
+        return 0;
+    }
+    if codegen.current_function_decl.fn_decl_is_varargs == 0 {
+        return 0;
+    }
+    if block.type != ASTNodeType.AST_BLOCK || block.block_stmts == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < block.block_stmt_count {
+        const s: &ASTNode = block.block_stmts[i];
+        if s != null && s.type == ASTNodeType.AST_VA_START && s.va_start_ap != null &&
+            s.va_start_ap.type == ASTNodeType.AST_IDENTIFIER && s.va_start_ap.identifier_name != null &&
+            strcmp(s.va_start_ap.identifier_name as *byte, var_name as *byte) == 0 {
+            return 1;
+        }
+        if s != null && s.type == ASTNodeType.AST_BLOCK && is_va_list_var_name(codegen, s, var_name) != 0 {
+            return 1;
+        }
+        if s != null && s.type == ASTNodeType.AST_IF_STMT {
+            if s.if_stmt_then_branch != null && is_va_list_var_name(codegen, s.if_stmt_then_branch, var_name) != 0 {
+                return 1;
+            }
+            if s.if_stmt_else_branch != null && is_va_list_var_name(codegen, s.if_stmt_else_branch, var_name) != 0 {
+                return 1;
+            }
+        }
+        if s != null && s.type == ASTNodeType.AST_WHILE_STMT && s.while_stmt_body != null &&
+            is_va_list_var_name(codegen, s.while_stmt_body, var_name) != 0 {
+            return 1;
+        }
+        if s != null && s.type == ASTNodeType.AST_FOR_STMT && s.for_stmt_body != null &&
+            is_va_list_var_name(codegen, s.for_stmt_body, var_name) != 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
 // 在 return/break/continue 前对当前块已声明的变量逆序调用 drop（规范 §12）。
 fn emit_current_block_drops(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.current_drop_scope < 0 {
@@ -615,12 +658,28 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     const dimensions: *byte = type_c as *byte + base_len;
                     
                     // 生成数组声明：const base_type var_name dimensions（字符串插值初始化时不使用 const）
+                    c99_emit_indent(codegen);
                     if is_const != 0 && is_string_interp_init == 0 {
                         fprintf(codegen.output as *void, "const %s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
                     } else {
                         fprintf(codegen.output as *void, "%s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
                     }
                     type_c = null; // 已处理，避免后续重复输出
+                    // 数组声明后必须立即输出初始化，否则会与下一条语句拼接（常见于 var ap_buf; var ap; 连续声明）
+                    if init_expr != null {
+                        fputs(" = " as *byte, codegen.output as *void);
+                        gen_expr(codegen, init_expr);
+                        fputs(";\n" as *byte, codegen.output as *void);
+                        if need_pragma_missing_braces != 0 {
+                            fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
+                        }
+                        if stored_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                            codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
+                            codegen.local_variables[codegen.local_variable_count].type_c = stored_type_c;
+                            codegen.local_variable_count = codegen.local_variable_count + 1;
+                        }
+                        return;
+                    }
                 }
             }
             
@@ -637,6 +696,43 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         } else {
             // 非数组类型
             type_c = c99_type_to_c(codegen, var_type);
+            // 可变参数函数内：作为 @va_start 第一个参数的 &void 变量需生成 va_list，不初始化（va_start 会初始化）
+            var use_va_list: i32 = 0;
+            if codegen.current_function_decl != null && codegen.current_function_decl.fn_decl_is_varargs != 0 &&
+                stmt.var_decl_name != null && codegen.current_function_decl.fn_decl_body != null &&
+                is_va_list_var_name(codegen, codegen.current_function_decl.fn_decl_body, stmt.var_decl_name) != 0 {
+                var is_ptr_to_void: i32 = 0;
+                if var_type != null && var_type.type == ASTNodeType.AST_TYPE_POINTER && var_type.type_pointer_pointed_type != null &&
+                    var_type.type_pointer_pointed_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                    var_type.type_pointer_pointed_type.type_named_name != null &&
+                    strcmp(var_type.type_pointer_pointed_type.type_named_name as *byte, "void" as *byte) == 0 {
+                    is_ptr_to_void = 1;
+                }
+                if var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null &&
+                    (strcmp(var_type.type_named_name as *byte, "VaList" as *byte) == 0 || strcmp(var_type.type_named_name as *byte, "void" as *byte) == 0) {
+                    is_ptr_to_void = 1;
+                }
+                if type_c != null && (strstr(type_c as *byte, "void" as *byte) != null || strstr(type_c as *byte, "VaList" as *byte) != null) {
+                    is_ptr_to_void = 1;
+                }
+                if is_ptr_to_void != 0 {
+                    use_va_list = 1;
+                }
+            }
+            if use_va_list != 0 {
+                c99_emit_indent(codegen);
+                fprintf(codegen.output as *void, "va_list %s;\n" as *byte, var_name as *byte);
+                if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                    codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
+                    codegen.local_variables[codegen.local_variable_count].type_c = "va_list" as *byte;
+                    codegen.local_variable_count = codegen.local_variable_count + 1;
+                }
+                // va_list 变量不由初始化表达式初始化，va_start 会初始化，必须提前返回
+                if need_pragma_missing_braces != 0 {
+                    fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
+                }
+                return;
+            } else {
             // 检查是否是 void 类型
             var is_void_type: i32 = 0;
             if var_type.type == ASTNodeType.AST_TYPE_NAMED {
@@ -1107,6 +1203,7 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
             }
         }
+            }
     } else if stmt.type == ASTNodeType.AST_IF_STMT {
         const condition: &ASTNode = stmt.if_stmt_condition;
         const then_branch: &ASTNode = stmt.if_stmt_then_branch;
@@ -1546,8 +1643,9 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         emit_defer_cleanup(codegen, 0);
         c99_emit(codegen, "continue;\n" as *byte);
     } else {
-        // 检查是否为表达式节点（包括 @syscall 等内置函数）
-        if (stmt.type >= ASTNodeType.AST_BINARY_EXPR && stmt.type <= ASTNodeType.AST_STRING) || stmt.type == ASTNodeType.AST_SYSCALL {
+        // 检查是否为表达式节点（包括 @syscall、@va_start、@va_end、@va_arg 等内置函数）
+        if (stmt.type >= ASTNodeType.AST_BINARY_EXPR && stmt.type <= ASTNodeType.AST_STRING) || stmt.type == ASTNodeType.AST_SYSCALL ||
+            stmt.type == ASTNodeType.AST_VA_START || stmt.type == ASTNodeType.AST_VA_END || stmt.type == ASTNodeType.AST_VA_ARG {
             c99_emit(codegen, "" as *byte);
             gen_expr(codegen, stmt);
             fputs(";\n" as *byte, codegen.output as *void);

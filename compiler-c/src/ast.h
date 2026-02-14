@@ -110,6 +110,9 @@ typedef enum {
     AST_SYSCALL,        // @syscall(nr, arg1, ..., arg6) - 系统调用
     AST_PTR_FROM_USIZE, // @ptr_from_usize(value) - 从 usize 转换为指针
     AST_USIZE_FROM_PTR, // @usize_from_ptr(ptr) - 从指针转换为 usize
+    AST_VA_START,       // @va_start(ap, last) - 可变参数函数内初始化 va_list
+    AST_VA_END,         // @va_end(ap) - 结束 va_list 访问
+    AST_VA_ARG,         // @va_arg(ap, Type) - 从 va_list 按类型获取下一个参数
 
     
     // 类型节点
@@ -569,6 +572,19 @@ struct ASTNode {
         struct {
             struct ASTNode *ptr;              // 指针表达式
         } usize_from_ptr_expr;
+
+        // 可变参数函数内 va_list 内置函数
+        struct {
+            struct ASTNode *ap;               // va_list 表达式（ap）
+            struct ASTNode *last_param;       // 最后一个命名参数（va_start 专用）
+        } va_start_expr;
+        struct {
+            struct ASTNode *ap;               // va_list 表达式（ap）
+        } va_end_expr;
+        struct {
+            struct ASTNode *ap;               // va_list 表达式（ap）
+            struct ASTNode *arg_type;         // 期望的参数类型节点（Type）
+        } va_arg_expr;
 
         // match 表达式
         struct {

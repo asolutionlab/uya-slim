@@ -1389,6 +1389,53 @@ static Type checker_infer_type(TypeChecker *checker, ASTNode *expr) {
             
             return result;
         }
+        
+        case AST_VA_START:
+        case AST_VA_END: {
+            if (!checker->in_function || checker->current_function_decl == NULL) {
+                checker_report_error(checker, expr, expr->type == AST_VA_START ?
+                    "@va_start 只能在可变参数函数内使用" : "@va_end 只能在可变参数函数内使用");
+                result.kind = TYPE_VOID;
+                return result;
+            }
+            if (!checker->current_function_decl->data.fn_decl.is_varargs) {
+                checker_report_error(checker, expr, expr->type == AST_VA_START ?
+                    "@va_start 只能在可变参数函数内使用" : "@va_end 只能在可变参数函数内使用");
+                result.kind = TYPE_VOID;
+                return result;
+            }
+            if (expr->type == AST_VA_START) {
+                if (expr->data.va_start_expr.ap)
+                    (void)checker_infer_type(checker, expr->data.va_start_expr.ap);
+                if (expr->data.va_start_expr.last_param)
+                    (void)checker_infer_type(checker, expr->data.va_start_expr.last_param);
+            } else {
+                if (expr->data.va_end_expr.ap)
+                    (void)checker_infer_type(checker, expr->data.va_end_expr.ap);
+            }
+            result.kind = TYPE_VOID;
+            return result;
+        }
+        
+        case AST_VA_ARG: {
+            if (!checker->in_function || checker->current_function_decl == NULL) {
+                checker_report_error(checker, expr, "@va_arg 只能在可变参数函数内使用");
+                result.kind = TYPE_VOID;
+                return result;
+            }
+            if (!checker->current_function_decl->data.fn_decl.is_varargs) {
+                checker_report_error(checker, expr, "@va_arg 只能在可变参数函数内使用");
+                result.kind = TYPE_VOID;
+                return result;
+            }
+            if (expr->data.va_arg_expr.ap)
+                (void)checker_infer_type(checker, expr->data.va_arg_expr.ap);
+            if (expr->data.va_arg_expr.arg_type)
+                result = type_from_ast(checker, expr->data.va_arg_expr.arg_type);
+            else
+                result.kind = TYPE_VOID;
+            return result;
+        }
             
         case AST_STRING: {
             // 字符串字面量类型为 *byte（FFI 指针类型）
@@ -6148,6 +6195,12 @@ static int checker_check_node(TypeChecker *checker, ASTNode *node) {
             
         case AST_PARAMS:
             // @params 类型在 checker_infer_type 中已推断并校验（仅函数体内）
+            return 1;
+        case AST_VA_START:
+        case AST_VA_END:
+        case AST_VA_ARG:
+            // 必须调用 checker_infer_type 以触发可变参数函数内校验
+            (void)checker_infer_type(checker, node);
             return 1;
         case AST_TRY_EXPR:
             if (node->data.try_expr.operand != NULL) {

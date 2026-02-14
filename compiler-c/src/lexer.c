@@ -926,6 +926,7 @@ top_of_token:
                 if (strcmp(value, "size_of") == 0 || strcmp(value, "align_of") == 0 ||
                     strcmp(value, "len") == 0 || strcmp(value, "max") == 0 || strcmp(value, "min") == 0 ||
                     strcmp(value, "params") == 0 ||
+                    strcmp(value, "va_start") == 0 || strcmp(value, "va_end") == 0 || strcmp(value, "va_arg") == 0 ||
                     strcmp(value, "src_name") == 0 || strcmp(value, "src_path") == 0 ||
                     strcmp(value, "src_line") == 0 || strcmp(value, "src_col") == 0 ||
                     strcmp(value, "func_name") == 0 ||
@@ -945,7 +946,7 @@ top_of_token:
                         return make_token(arena, TOKEN_AT_IDENTIFIER, value, line, column);
                     }
                 }
-                fprintf(stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@src_name、@src_path、@src_line、@src_col、@func_name、@syscall、@async_fn、@await、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@ptr_from_usize、@usize_from_ptr\n", value);
+                fprintf(stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@src_name、@src_path、@src_line、@src_col、@func_name、@syscall、@async_fn、@await、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@ptr_from_usize、@usize_from_ptr\n", value);
                 return NULL;
             }
             fprintf(stderr, "错误: @ 后必须是标识符\n");

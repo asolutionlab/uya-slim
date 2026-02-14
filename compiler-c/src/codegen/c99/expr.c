@@ -279,6 +279,27 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
             fputs("})", codegen->output);
             break;
         }
+        case AST_VA_START: {
+            fputs("va_start(", codegen->output);
+            gen_expr(codegen, expr->data.va_start_expr.ap);
+            fputs(", ", codegen->output);
+            gen_expr(codegen, expr->data.va_start_expr.last_param);
+            fputc(')', codegen->output);
+            break;
+        }
+        case AST_VA_END: {
+            fputs("va_end(", codegen->output);
+            gen_expr(codegen, expr->data.va_end_expr.ap);
+            fputc(')', codegen->output);
+            break;
+        }
+        case AST_VA_ARG: {
+            const char *type_c = c99_type_to_c(codegen, expr->data.va_arg_expr.arg_type);
+            fputs("va_arg(", codegen->output);
+            gen_expr(codegen, expr->data.va_arg_expr.ap);
+            fprintf(codegen->output, ", %s)", type_c ? type_c : "int");
+            break;
+        }
         case AST_STRING: {
             const char *str_const = add_string_constant(codegen, expr->data.string_literal.value);
             if (str_const) {

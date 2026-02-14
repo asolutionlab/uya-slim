@@ -3450,6 +3450,82 @@ static ASTNode *parser_parse_primary_expr(Parser *parser) {
         return syscall_node;
     }
     
+    // 解析 @va_start 表达式：@va_start(ap, last)
+    if (parser->current_token->type == TOKEN_AT_IDENTIFIER && parser->current_token->value != NULL &&
+        strcmp(parser->current_token->value, "va_start") == 0) {
+        parser_consume(parser);
+        if (!parser_expect(parser, TOKEN_LEFT_PAREN)) return NULL;
+        ASTNode *node = ast_new_node(AST_VA_START, line, column, parser->arena, parser->lexer ? parser->lexer->filename : NULL);
+        if (!node) return NULL;
+        node->data.va_start_expr.ap = parser_parse_or_expr(parser);
+        if (!node->data.va_start_expr.ap) {
+            fprintf(stderr, "%s:%d:%d 错误: @va_start 需要 ap 作为第一个参数\n",
+                    parser->lexer ? parser->lexer->filename : "unknown",
+                    parser->current_token ? parser->current_token->line : 0,
+                    parser->current_token ? parser->current_token->column : 0);
+            return NULL;
+        }
+        if (!parser_expect(parser, TOKEN_COMMA)) return NULL;
+        node->data.va_start_expr.last_param = parser_parse_or_expr(parser);
+        if (!node->data.va_start_expr.last_param) {
+            fprintf(stderr, "%s:%d:%d 错误: @va_start 需要 last 作为第二个参数\n",
+                    parser->lexer ? parser->lexer->filename : "unknown",
+                    parser->current_token ? parser->current_token->line : 0,
+                    parser->current_token ? parser->current_token->column : 0);
+            return NULL;
+        }
+        if (!parser_expect(parser, TOKEN_RIGHT_PAREN)) return NULL;
+        return node;
+    }
+    
+    // 解析 @va_end 表达式：@va_end(ap)
+    if (parser->current_token->type == TOKEN_AT_IDENTIFIER && parser->current_token->value != NULL &&
+        strcmp(parser->current_token->value, "va_end") == 0) {
+        parser_consume(parser);
+        if (!parser_expect(parser, TOKEN_LEFT_PAREN)) return NULL;
+        ASTNode *node = ast_new_node(AST_VA_END, line, column, parser->arena, parser->lexer ? parser->lexer->filename : NULL);
+        if (!node) return NULL;
+        node->data.va_end_expr.ap = parser_parse_or_expr(parser);
+        if (!node->data.va_end_expr.ap) {
+            fprintf(stderr, "%s:%d:%d 错误: @va_end 需要 ap 参数\n",
+                    parser->lexer ? parser->lexer->filename : "unknown",
+                    parser->current_token ? parser->current_token->line : 0,
+                    parser->current_token ? parser->current_token->column : 0);
+            return NULL;
+        }
+        if (!parser_expect(parser, TOKEN_RIGHT_PAREN)) return NULL;
+        return node;
+    }
+    
+    // 解析 @va_arg 表达式：@va_arg(ap, Type)
+    if (parser->current_token->type == TOKEN_AT_IDENTIFIER && parser->current_token->value != NULL &&
+        strcmp(parser->current_token->value, "va_arg") == 0) {
+        parser_consume(parser);
+        if (!parser_expect(parser, TOKEN_LEFT_PAREN)) return NULL;
+        ASTNode *node = ast_new_node(AST_VA_ARG, line, column, parser->arena, parser->lexer ? parser->lexer->filename : NULL);
+        if (!node) return NULL;
+        node->data.va_arg_expr.ap = parser_parse_or_expr(parser);
+        if (!node->data.va_arg_expr.ap) {
+            fprintf(stderr, "%s:%d:%d 错误: @va_arg 需要 ap 作为第一个参数\n",
+                    parser->lexer ? parser->lexer->filename : "unknown",
+                    parser->current_token ? parser->current_token->line : 0,
+                    parser->current_token ? parser->current_token->column : 0);
+            return NULL;
+        }
+        if (!parser_expect(parser, TOKEN_COMMA)) return NULL;
+        // 第二个参数必须是类型，使用与 @size_of 类似的逻辑
+        node->data.va_arg_expr.arg_type = parser_parse_type(parser);
+        if (!node->data.va_arg_expr.arg_type) {
+            fprintf(stderr, "%s:%d:%d 错误: @va_arg 需要类型作为第二个参数，如 @va_arg(ap, i32)\n",
+                    parser->lexer ? parser->lexer->filename : "unknown",
+                    parser->current_token ? parser->current_token->line : 0,
+                    parser->current_token ? parser->current_token->column : 0);
+            return NULL;
+        }
+        if (!parser_expect(parser, TOKEN_RIGHT_PAREN)) return NULL;
+        return node;
+    }
+    
     // 解析 @size_of 表达式：@size_of(Type) 或 @size_of(expr)
     if (parser->current_token->type == TOKEN_AT_IDENTIFIER && parser->current_token->value != NULL &&
         strcmp(parser->current_token->value, "size_of") == 0) {
