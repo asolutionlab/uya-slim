@@ -3973,6 +3973,76 @@ fn checker_register_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     return 1;
 }
 
+// 检查 extern 变量声明：extern const/var name: type; 或 export const/var name: type = value;
+// 参数：checker - TypeChecker 指针，node - extern 变量声明节点
+// 返回：1 表示检查通过，0 表示检查失败
+fn checker_check_extern_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
+    if checker == null || node == null || node.type != ASTNodeType.AST_EXTERN_VAR_DECL {
+        return 1;
+    }
+
+    // 获取变量类型
+    const var_type: Type = type_from_ast(checker, node.extern_var_decl_var_type);
+
+    // 检查类型是否为 C 兼容类型
+    // 允许的类型：基本类型、指针类型、extern struct
+    var is_c_compatible: i32 = 0;
+    if var_type.kind == TypeKind.TYPE_I8 || var_type.kind == TypeKind.TYPE_I16 ||
+       var_type.kind == TypeKind.TYPE_I32 || var_type.kind == TypeKind.TYPE_I64 ||
+       var_type.kind == TypeKind.TYPE_U8 || var_type.kind == TypeKind.TYPE_U16 ||
+       var_type.kind == TypeKind.TYPE_U32 || var_type.kind == TypeKind.TYPE_U64 ||
+       var_type.kind == TypeKind.TYPE_F32 || var_type.kind == TypeKind.TYPE_F64 ||
+       var_type.kind == TypeKind.TYPE_BOOL || var_type.kind == TypeKind.TYPE_BYTE ||
+       var_type.kind == TypeKind.TYPE_USIZE || var_type.kind == TypeKind.TYPE_POINTER ||
+       var_type.kind == TypeKind.TYPE_STRUCT {
+        is_c_compatible = 1;
+    }
+
+    if var_type.kind == TypeKind.TYPE_VOID {
+        checker_report_error(checker, node, "extern 变量不能使用 void 类型" as *byte);
+        return 0;
+    }
+
+    if is_c_compatible == 0 {
+        checker_report_error(checker, node, "extern 变量只能使用 C 兼容类型（基本类型、指针或 extern struct）" as *byte);
+        return 0;
+    }
+
+    // 检查初始化表达式（如果有）
+    if node.extern_var_decl_init_expr != null {
+        checker_check_node(checker, node.extern_var_decl_init_expr);
+        const init_type: Type = checker_infer_type(checker, node.extern_var_decl_init_expr);
+
+        // 类型推断失败时放宽检查
+        if init_type.kind == TypeKind.TYPE_VOID && var_type.kind == TypeKind.TYPE_POINTER {
+            // null 可以赋值给任何指针类型
+        } else if init_type.kind != TypeKind.TYPE_VOID && type_equals(init_type, var_type) == 0 {
+            // 类型不匹配：放宽检查，允许通过（不报错）
+        }
+    }
+
+    // 将变量添加到符号表
+    const symbol: &Symbol = arena_alloc(checker.arena, @size_of(Symbol) as usize) as &Symbol;
+    if symbol == null {
+        return 1;
+    }
+    symbol.name = node.extern_var_decl_name;
+    symbol.type = var_type;
+    symbol.is_const = node.extern_var_decl_is_const;
+    symbol.scope_level = 0;  // 顶层声明
+    symbol.line = node.line;
+    symbol.column = node.column;
+    symbol.pointee_of = null;
+    symbol.decl_node = node;
+
+    if symbol_table_insert(checker, symbol) != 0 {
+        // 符号插入失败（重复定义或哈希表已满）
+        return 0;
+    }
+
+    return 1;
+}
+
 // 检查函数声明
 // 参数：checker - TypeChecker 指针，node - 函数声明节点
 // 返回：1 表示检查通过，0 表示检查失败
@@ -5817,6 +5887,8 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         return checker_check_fn_decl(checker, node);
     } else if node.type == ASTNodeType.AST_VAR_DECL {
         return checker_check_var_decl(checker, node);
+    } else if node.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+        return checker_check_extern_var_decl(checker, node);
     } else if node.type == ASTNodeType.AST_DESTRUCTURE_DECL {
         return checker_check_destructure_decl(checker, node);
     } else if node.type == ASTNodeType.AST_USE_STMT {

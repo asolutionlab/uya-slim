@@ -1203,6 +1203,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 gen_global_var(codegen, decl);
                 fputs("\n" as *byte, codegen.output as *void);
             }
+            // 生成 extern 变量声明
+            if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+                gen_extern_var_decl(codegen, decl);
+            }
         }
         i = i + 1;
     }
@@ -1300,6 +1304,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     gen_global_var(codegen, decl);
                     fputs("\n" as *byte, codegen.output as *void);
                 }
+            } else if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+                // extern 变量已在第九步 a 生成声明，这里不重复生成
             } else if decl.type == ASTNodeType.AST_FN_DECL {
                 // 特殊处理：main 函数在后面生成（需要添加测试运行器调用）
                 const func_name: &byte = decl.fn_decl_name;

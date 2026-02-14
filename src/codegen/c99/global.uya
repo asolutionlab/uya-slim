@@ -183,3 +183,72 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
     }
     return get_safe_c_identifier(codegen, name);
 }
+
+// 生成 extern 变量声明
+// extern const name: type;           -> extern const type name;
+// extern var name: type;             -> extern type name;
+// export const name: type = value;   -> const type name = value;
+// export var name: type = value;     -> type name = value;
+// export extern const name: type;    -> (不生成，链接到 C 库)
+fn gen_extern_var_decl(codegen: &C99CodeGenerator, node: &ASTNode) void {
+    if node == null || node.type != ASTNodeType.AST_EXTERN_VAR_DECL {
+        return;
+    }
+
+    const name: &byte = node.extern_var_decl_name;
+    const var_type: &ASTNode = node.extern_var_decl_var_type;
+    const init_expr: &ASTNode = node.extern_var_decl_init_expr;
+    const is_const: i32 = node.extern_var_decl_is_const;
+    const is_extern: i32 = node.extern_var_decl_is_extern;
+    const is_export: i32 = node.extern_var_decl_is_export;
+    const extern_lib_name: &byte = node.extern_var_decl_extern_lib_name;
+
+    if name == null || var_type == null {
+        return;
+    }
+
+    // export extern const/var name: type; -> 不生成代码，链接到 C 库
+    if is_export != 0 && is_extern != 0 && init_expr == null && extern_lib_name == null {
+        return;
+    }
+
+    // extern "libc" const/var name: type; -> 不生成代码，链接到 C 库
+    if extern_lib_name != null && init_expr == null {
+        return;
+    }
+
+    const type_c: &byte = c99_type_to_c(codegen, var_type);
+
+    // 生成声明
+    if is_extern != 0 && init_expr == null {
+        // extern 声明（无初始化）
+        if is_const != 0 {
+            fprintf(codegen.output as *void, "extern const %s %s;\n" as *byte, type_c as *byte, name as *byte);
+        } else {
+            fprintf(codegen.output as *void, "extern %s %s;\n" as *byte, type_c as *byte, name as *byte);
+        }
+    } else {
+        // 变量定义（有初始化）
+        if is_const != 0 {
+            fprintf(codegen.output as *void, "const %s %s" as *byte, type_c as *byte, name as *byte);
+        } else {
+            fprintf(codegen.output as *void, "%s %s" as *byte, type_c as *byte, name as *byte);
+        }
+
+        if init_expr != null {
+            fputs(" = " as *byte, codegen.output as *void);
+            gen_global_init_expr(codegen, init_expr);
+        }
+
+        fputs(";\n" as *byte, codegen.output as *void);
+
+        // 添加到全局变量表
+        if codegen.global_variable_count < C99_MAX_GLOBAL_VARS {
+            codegen.global_variables[codegen.global_variable_count].name = name;
+            codegen.global_variables[codegen.global_variable_count].original_name = name;
+            codegen.global_variables[codegen.global_variable_count].type_c = type_c;
+            codegen.global_variables[codegen.global_variable_count].is_const = is_const;
+            codegen.global_variable_count = codegen.global_variable_count + 1;
+        }
+    }
+}

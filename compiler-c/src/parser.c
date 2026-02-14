@@ -2779,11 +2779,19 @@ ASTNode *parser_parse_declaration(Parser *parser) {
                 parser->current_token ? parser->current_token->column : 0, name);
         return NULL;
     } else if (parser_match(parser, TOKEN_CONST) || parser_match(parser, TOKEN_VAR)) {
-        // 变量声明：export const/var name: type = value;
-        int is_const = parser_match(parser, TOKEN_CONST) ? 1 : 0;
-        parser_consume(parser);
-        ASTNode *decl = parser_parse_export_var_decl(parser, is_const, is_export);
-        return decl;
+        // 变量声明
+        // 注意：export const/var 使用 AST_EXTERN_VAR_DECL，普通 const/var 使用 AST_VAR_DECL
+        if (is_export) {
+            // export const/var name: type = value;
+            int is_const = parser_match(parser, TOKEN_CONST) ? 1 : 0;
+            parser_consume(parser);
+            ASTNode *decl = parser_parse_export_var_decl(parser, is_const, is_export);
+            return decl;
+        } else {
+            // 普通 const/var
+            ASTNode *decl = parser_parse_statement(parser);
+            return decl;
+        }
     } else {
         // 无法识别的声明类型
         return NULL;
