@@ -207,7 +207,8 @@ run_single_test() {
     # 编译
     output_file="$BUILD_DIR/${base_name}.c"
     if [ "$USE_UYA" = true ]; then
-        compiler_output=$("$COMPILER" --c99 --nostdlib "$uya_file" -o "$output_file" 2>&1)
+        # 自举编译器递归较深，需增大栈限制避免段错误（依赖较多的用例如 libc）
+        compiler_output=$((ulimit -s 131072 2>/dev/null; "$COMPILER" --c99 --nostdlib "$uya_file" -o "$output_file") 2>&1)
     else
         compiler_output=$("$COMPILER" --c99 --nostdlib "$uya_file" -o "$output_file" 2>&1)
     fi
