@@ -56,6 +56,7 @@ enum ASTNodeType {
     AST_MACRO_DECL,    // 宏声明（mc ID(param_list) return_tag { statements }）
     AST_TYPE_ALIAS,    // 类型别名（type Name = Type）
     AST_VAR_DECL,
+    AST_EXTERN_VAR_DECL,  // extern 变量声明（extern const/var name: type; 或 export const/var name: type = val;）
     AST_DESTRUCTURE_DECL,  // 解构声明（const (x, y) = expr）
     AST_USE_STMT,         // use 语句（use path; 或 use path.item; 或 use path as alias;）
     AST_IF_STMT,
@@ -215,6 +216,14 @@ struct ASTNode {
     var_decl_is_const: i32,
     var_decl_was_moved: i32,   // 移动语义：1 表示该绑定曾被移动，离开作用域时不调用 drop
     var_decl_is_export: i32,  // 1 表示 export const，0 表示私有（仅顶层 const 声明使用）
+    // extern_var_decl（顶层：extern const/var name: type; 或 export const/var name: type = val;）
+    extern_var_decl_name: &byte,           // 变量名
+    extern_var_decl_var_type: &ASTNode,    // 类型节点
+    extern_var_decl_init_expr: &ASTNode,   // 初始化表达式（可为 null，extern 声明无初始化）
+    extern_var_decl_is_const: i32,         // 1 = const, 0 = var
+    extern_var_decl_is_extern: i32,        // 1 = extern 声明，0 = 有初始化
+    extern_var_decl_is_export: i32,        // 1 = export，0 = 私有
+    extern_var_decl_extern_lib_name: &byte, // extern "libc" 的库名（如 "libc"），null 表示普通 extern
     // destructure_decl（const (x, y) = expr）
     destructure_decl_names: & & byte,
     destructure_decl_name_count: i32,

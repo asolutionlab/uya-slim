@@ -105,6 +105,15 @@ ASTNode *ast_new_node(ASTNodeType type, int line, int column, Arena *arena, cons
             node->data.var_decl.is_const = 0;
             node->data.var_decl.was_moved = 0;
             break;
+        case AST_EXTERN_VAR_DECL:
+            node->data.extern_var_decl.name = NULL;
+            node->data.extern_var_decl.var_type = NULL;
+            node->data.extern_var_decl.init_expr = NULL;
+            node->data.extern_var_decl.is_const = 0;
+            node->data.extern_var_decl.is_extern = 0;
+            node->data.extern_var_decl.is_export = 0;
+            node->data.extern_var_decl.extern_lib_name = NULL;
+            break;
         case AST_DESTRUCTURE_DECL:
             node->data.destructure_decl.names = NULL;
             node->data.destructure_decl.name_count = 0;

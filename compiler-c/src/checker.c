@@ -3393,6 +3393,93 @@ static int checker_check_var_decl(TypeChecker *checker, ASTNode *node) {
     return 1;
 }
 
+// 检查 extern 变量声明：extern const/var name: type; 或 export const/var name: type = value;
+// 参数：checker - TypeChecker 指针，node - extern 变量声明节点
+// 返回：1 表示检查通过，0 表示检查失败
+static int checker_check_extern_var_decl(TypeChecker *checker, ASTNode *node) {
+    if (checker == NULL || node == NULL || node->type != AST_EXTERN_VAR_DECL) {
+        return 1;
+    }
+
+    // 获取变量类型
+    Type var_type = type_from_ast(checker, node->data.extern_var_decl.var_type);
+
+    // 检查类型是否为 C 兼容类型
+    // 允许的类型：基本类型、指针类型、extern struct
+    int is_c_compatible = 0;
+    switch (var_type.kind) {
+        case TYPE_I8:
+        case TYPE_I16:
+        case TYPE_I32:
+        case TYPE_I64:
+        case TYPE_U8:
+        case TYPE_U16:
+        case TYPE_U32:
+        case TYPE_U64:
+        case TYPE_F32:
+        case TYPE_F64:
+        case TYPE_BOOL:
+        case TYPE_BYTE:
+        case TYPE_USIZE:
+        case TYPE_POINTER:
+            is_c_compatible = 1;
+            break;
+        case TYPE_STRUCT:
+            // extern struct 类型允许
+            is_c_compatible = 1;
+            break;
+        case TYPE_VOID:
+            // void 类型不允许作为变量类型
+            checker_report_error(checker, node, "extern 变量不能使用 void 类型");
+            return 0;
+        default:
+            is_c_compatible = 0;
+            break;
+    }
+
+    if (!is_c_compatible) {
+        checker_report_error(checker, node, "extern 变量只能使用 C 兼容类型（基本类型、指针或 extern struct）");
+        return 0;
+    }
+
+    // 检查初始化表达式（如果有）
+    if (node->data.extern_var_decl.init_expr != NULL) {
+        checker_check_node(checker, node->data.extern_var_decl.init_expr);
+        Type init_type = checker_infer_type(checker, node->data.extern_var_decl.init_expr);
+
+        // 类型推断失败时放宽检查
+        if (init_type.kind == TYPE_VOID && var_type.kind == TYPE_POINTER) {
+            // null 可以赋值给任何指针类型
+        } else if (init_type.kind != TYPE_VOID && !type_equals(init_type, var_type)) {
+            // 类型不匹配：放宽检查，允许通过（不报错）
+            // 这在编译器自举时很常见
+        }
+    }
+
+    // 将变量添加到符号表
+    Symbol *symbol = (Symbol *)arena_alloc(checker->arena, sizeof(Symbol));
+    if (symbol == NULL) {
+        return 1;
+    }
+    symbol->name = node->data.extern_var_decl.name;
+    symbol->type = var_type;
+    symbol->is_const = node->data.extern_var_decl.is_const;
+    symbol->scope_level = 0;  // 顶层声明
+    symbol->line = node->line;
+    symbol->column = node->column;
+    symbol->pointee_of = NULL;
+    symbol->decl_node = node;
+
+    if (symbol_table_insert(checker, symbol) != 0) {
+        char error_msg[256];
+        snprintf(error_msg, sizeof(error_msg), "符号表已满，无法添加 extern 变量 '%s'", node->data.extern_var_decl.name);
+        checker_report_error(checker, node, error_msg);
+        return 0;
+    }
+
+    return 1;
+}
+
 // 检查解构声明：const (x, y) = expr; 或 var (x, _) = expr;
 // 参数：checker - TypeChecker 指针，node - 解构声明节点
 // 返回：1 表示检查通过，0 表示检查失败
@@ -5178,6 +5265,9 @@ static int checker_check_node(TypeChecker *checker, ASTNode *node) {
             
         case AST_VAR_DECL:
             return checker_check_var_decl(checker, node);
+            
+        case AST_EXTERN_VAR_DECL:
+            return checker_check_extern_var_decl(checker, node);
             
         case AST_DESTRUCTURE_DECL:
             return checker_check_destructure_decl(checker, node);

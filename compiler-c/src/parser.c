@@ -2205,16 +2205,130 @@ ASTNode *parser_parse_macro(Parser *parser) {
 // 前向声明：解析 extern fn（extern 已消费）
 static ASTNode *parser_parse_extern_function_after_extern(Parser *parser, const char *extern_lib_name);
 
-// 解析 extern 声明：extern 已由调用方消费，当前为 'fn' 或 'union' 或字符串字面量
-// 若为 'union' 则解析 extern union；否则解析 extern fn
-static ASTNode *parser_parse_extern_decl(Parser *parser, const char *extern_lib_name) {
+// 解析 extern 变量声明：extern const/var name: type;
+// extern 和 const/var 关键字已由调用方消费
+static ASTNode *parser_parse_extern_var_decl(Parser *parser, const char *extern_lib_name, int is_const, int is_export) {
     if (parser == NULL || parser->current_token == NULL) return NULL;
+    
+    int line = parser->current_token->line;
+    int column = parser->current_token->column;
+    
+    // 期望标识符
+    if (!parser_match(parser, TOKEN_IDENTIFIER)) {
+        const char *filename = parser->lexer && parser->lexer->filename ? parser->lexer->filename : "<unknown>";
+        fprintf(stderr, "错误: 语法分析失败 (%s:%d:%d): extern 变量声明期望标识符\n",
+                filename, line, column);
+        return NULL;
+    }
+    const char *name = arena_strdup(parser->arena, parser->current_token->value);
+    if (name == NULL) return NULL;
+    parser_consume(parser);
+    
+    // 期望冒号
+    if (!parser_expect(parser, TOKEN_COLON)) return NULL;
+    
+    // 解析类型
+    ASTNode *var_type = parser_parse_type(parser);
+    if (var_type == NULL) return NULL;
+    
+    // extern 变量声明以分号结尾
+    if (!parser_expect(parser, TOKEN_SEMICOLON)) return NULL;
+    
+    // 创建 extern 变量声明节点
+    ASTNode *node = ast_new_node(AST_EXTERN_VAR_DECL, line, column, parser->arena, parser->lexer ? parser->lexer->filename : NULL);
+    if (node == NULL) return NULL;
+    
+    node->data.extern_var_decl.name = name;
+    node->data.extern_var_decl.var_type = var_type;
+    node->data.extern_var_decl.init_expr = NULL;
+    node->data.extern_var_decl.is_const = is_const;
+    node->data.extern_var_decl.is_extern = 1;
+    node->data.extern_var_decl.is_export = is_export;
+    node->data.extern_var_decl.extern_lib_name = extern_lib_name;
+    
+    return node;
+}
+
+// 解析 export 变量声明：export const/var name: type = value;
+// export 和 const/var 关键字已由调用方消费
+static ASTNode *parser_parse_export_var_decl(Parser *parser, int is_const, int is_export) {
+    if (parser == NULL || parser->current_token == NULL) return NULL;
+    
+    int line = parser->current_token->line;
+    int column = parser->current_token->column;
+    
+    // 期望标识符
+    if (!parser_match(parser, TOKEN_IDENTIFIER)) {
+        const char *filename = parser->lexer && parser->lexer->filename ? parser->lexer->filename : "<unknown>";
+        fprintf(stderr, "错误: 语法分析失败 (%s:%d:%d): export 变量声明期望标识符\n",
+                filename, line, column);
+        return NULL;
+    }
+    const char *name = arena_strdup(parser->arena, parser->current_token->value);
+    if (name == NULL) return NULL;
+    parser_consume(parser);
+    
+    // 期望冒号
+    if (!parser_expect(parser, TOKEN_COLON)) return NULL;
+    
+    // 解析类型
+    ASTNode *var_type = parser_parse_type(parser);
+    if (var_type == NULL) return NULL;
+    
+    // 期望等号和初始化表达式
+    ASTNode *init_expr = NULL;
+    if (parser_match(parser, TOKEN_ASSIGN)) {
+        parser_consume(parser);
+        init_expr = parser_parse_expression(parser);
+        if (init_expr == NULL) return NULL;
+    }
+    
+    // 以分号结尾
+    if (!parser_expect(parser, TOKEN_SEMICOLON)) return NULL;
+    
+    // 创建 extern 变量声明节点
+    ASTNode *node = ast_new_node(AST_EXTERN_VAR_DECL, line, column, parser->arena, parser->lexer ? parser->lexer->filename : NULL);
+    if (node == NULL) return NULL;
+    
+    node->data.extern_var_decl.name = name;
+    node->data.extern_var_decl.var_type = var_type;
+    node->data.extern_var_decl.init_expr = init_expr;
+    node->data.extern_var_decl.is_const = is_const;
+    node->data.extern_var_decl.is_extern = (init_expr == NULL) ? 1 : 0;  // 无初始化表达式则为 extern
+    node->data.extern_var_decl.is_export = is_export;
+    node->data.extern_var_decl.extern_lib_name = NULL;
+    
+    return node;
+}
+
+// 解析 extern 声明：extern 已由调用方消费，当前为 'fn' 或 'union' 或 'const'/'var' 或字符串字面量
+// 若为 'union' 则解析 extern union；若为 const/var 则解析 extern 变量；否则解析 extern fn
+static ASTNode *parser_parse_extern_decl(Parser *parser, const char *extern_lib_name, int is_export) {
+    if (parser == NULL || parser->current_token == NULL) return NULL;
+    
+    // extern union
     if (parser_match(parser, TOKEN_UNION)) {
         int line = parser->current_token->line;
         int column = parser->current_token->column;
         parser_consume(parser);
-        return parser_parse_union_body(parser, line, column, 1);
+        ASTNode *node = parser_parse_union_body(parser, line, column, 1);
+        if (node != NULL && is_export) {
+            node->data.union_decl.is_export = 1;
+        }
+        return node;
     }
+    
+    // extern const/var
+    if (parser_match(parser, TOKEN_CONST)) {
+        parser_consume(parser);
+        return parser_parse_extern_var_decl(parser, extern_lib_name, 1, is_export);
+    }
+    if (parser_match(parser, TOKEN_VAR)) {
+        parser_consume(parser);
+        return parser_parse_extern_var_decl(parser, extern_lib_name, 0, is_export);
+    }
+    
+    // extern fn
     return parser_parse_extern_function_after_extern(parser, extern_lib_name);
 }
 
@@ -2585,9 +2699,9 @@ ASTNode *parser_parse_declaration(Parser *parser) {
             if (extern_lib_name == NULL) return NULL;
             parser_consume(parser);
         }
-        ASTNode *decl = parser_parse_extern_decl(parser, extern_lib_name);
+        ASTNode *decl = parser_parse_extern_decl(parser, extern_lib_name, is_export);
         if (decl != NULL) {
-            // 设置 export 和 extern 标记
+            // 设置 export 和 extern 标记（仅对 fn 和 struct）
             if (decl->type == AST_FN_DECL) {
                 decl->data.fn_decl.is_export = is_export;
                 decl->data.fn_decl.is_extern = 1;
@@ -2596,6 +2710,7 @@ ASTNode *parser_parse_declaration(Parser *parser) {
             } else if (decl->type == AST_UNION_DECL) {
                 decl->data.union_decl.is_export = is_export;
             }
+            // AST_EXTERN_VAR_DECL 的标记在 parser_parse_extern_decl 中已设置
         }
         return decl;
     } else if (parser_match(parser, TOKEN_FN)) {
@@ -2664,11 +2779,10 @@ ASTNode *parser_parse_declaration(Parser *parser) {
                 parser->current_token ? parser->current_token->column : 0, name);
         return NULL;
     } else if (parser_match(parser, TOKEN_CONST) || parser_match(parser, TOKEN_VAR)) {
-        // 变量声明
-        ASTNode *decl = parser_parse_statement(parser);
-        if (decl != NULL && is_export && decl->type == AST_VAR_DECL) {
-            decl->data.var_decl.is_export = 1;
-        }
+        // 变量声明：export const/var name: type = value;
+        int is_const = parser_match(parser, TOKEN_CONST) ? 1 : 0;
+        parser_consume(parser);
+        ASTNode *decl = parser_parse_export_var_decl(parser, is_const, is_export);
         return decl;
     } else {
         // 无法识别的声明类型

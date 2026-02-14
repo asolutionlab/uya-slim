@@ -1,0 +1,29 @@
+// 测试 extern 变量功能
+
+// 导入 C 标准库变量
+extern const errno: i32;
+extern var optind: i32;
+extern const stdout: *void;
+
+// 导出 Uya 变量给 C
+export const VERSION: &byte = "1.0.0";
+export var debug_mode: i32 = 0;
+
+// 链接到 C 库定义（不生成代码）
+export extern const ENOENT: i32;
+
+fn main() i32 {
+    // 读取外部变量
+    const err: i32 = errno;
+    
+    // 写入外部变量（仅 var）
+    optind = 1;
+    
+    // 读取导出变量
+    const v: &byte = VERSION;
+    
+    // 写入导出变量
+    debug_mode = 1;
+    
+    return 0;
+}

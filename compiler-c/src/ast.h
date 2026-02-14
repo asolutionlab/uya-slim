@@ -49,6 +49,7 @@ typedef enum {
     AST_MACRO_DECL,     // 宏声明（mc ID(param_list) return_tag { statements }）
     AST_TYPE_ALIAS,     // 类型别名（type Name = Type）
     AST_VAR_DECL,       // 变量声明（const/var）
+    AST_EXTERN_VAR_DECL, // extern 变量声明（extern const/var name: type; 或 export const/var name: type = val;）
     AST_DESTRUCTURE_DECL, // 解构声明（const (x, y) = expr）
     AST_USE_STMT,         // use 语句（use path; 或 use path.item; 或 use path as alias;）
     
@@ -248,6 +249,17 @@ struct ASTNode {
             int was_moved;            // 移动语义：1 表示该绑定曾被移动，离开作用域时不调用 drop
             int is_export;            // 1 表示 export const，0 表示私有（仅顶层 const 声明使用）
         } var_decl;
+        
+        // extern 变量声明（顶层：extern const/var name: type; 或 export const/var name: type = val;）
+        struct {
+            const char *name;           // 变量名
+            struct ASTNode *var_type;   // 类型节点
+            struct ASTNode *init_expr;  // 初始化表达式（可为 NULL，extern 声明无初始化）
+            int is_const;               // 1 = const, 0 = var
+            int is_extern;              // 1 = extern 声明（无初始化），0 = 有初始化
+            int is_export;              // 1 = export，0 = 私有
+            const char *extern_lib_name; // extern "libc" 的库名（如 "libc"），NULL 表示普通 extern
+        } extern_var_decl;
         
         // 解构声明（const (x, y) = expr 或 var (x, y) = expr）
         struct {

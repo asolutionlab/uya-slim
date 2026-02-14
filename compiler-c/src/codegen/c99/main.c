@@ -926,6 +926,10 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
             gen_global_var(codegen, decl);
             fputs("\n", codegen->output);
         }
+        // 生成 extern 变量声明
+        if (decl->type == AST_EXTERN_VAR_DECL) {
+            gen_extern_var_decl(codegen, decl);
+        }
     }
     
     // 第八步 b：生成所有声明（非常量全局变量、函数定义）
@@ -1012,6 +1016,9 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
                     gen_global_var(codegen, decl);
                     fputs("\n", codegen->output);
                 }
+                break;
+            case AST_EXTERN_VAR_DECL:
+                // extern 变量已在第八步 a 生成声明，这里不重复生成
                 break;
             case AST_FN_DECL: {
                 // 特殊处理：main 函数在第九步生成（需要添加测试运行器调用）

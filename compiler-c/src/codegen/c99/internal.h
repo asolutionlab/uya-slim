@@ -138,6 +138,7 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt);
 // 全局变量生成（global.c）
 void gen_global_init_expr(C99CodeGenerator *codegen, ASTNode *expr);
 void gen_global_var(C99CodeGenerator *codegen, ASTNode *var_decl);
+void gen_extern_var_decl(C99CodeGenerator *codegen, ASTNode *node);
 /* 引用标识符时使用的 C 名称（全局常量与系统宏冲突时返回 uya_ 前缀名） */
 const char *get_c_name_for_identifier_ref(C99CodeGenerator *codegen, const char *name);
 /* 按 Uya 名称匹配全局变量（比较 original_name 或 name） */

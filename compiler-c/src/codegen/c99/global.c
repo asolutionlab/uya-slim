@@ -155,3 +155,68 @@ int global_var_name_matches(C99CodeGenerator *codegen, int i, const char *name) 
         : codegen->global_variables[i].name;
     return key && strcmp(key, name) == 0;
 }
+
+// 生成 extern 变量声明
+// extern const name: type;           -> extern const type name;
+// extern var name: type;             -> extern type name;
+// export const name: type = value;   -> const type name = value;
+// export var name: type = value;     -> type name = value;
+// export extern const name: type;    -> (不生成，链接到 C 库)
+void gen_extern_var_decl(C99CodeGenerator *codegen, ASTNode *node) {
+    if (!node || node->type != AST_EXTERN_VAR_DECL) return;
+
+    const char *name = node->data.extern_var_decl.name;
+    ASTNode *var_type = node->data.extern_var_decl.var_type;
+    ASTNode *init_expr = node->data.extern_var_decl.init_expr;
+    int is_const = node->data.extern_var_decl.is_const;
+    int is_extern = node->data.extern_var_decl.is_extern;
+    int is_export = node->data.extern_var_decl.is_export;
+    const char *extern_lib_name = node->data.extern_var_decl.extern_lib_name;
+
+    if (!name || !var_type) return;
+
+    // export extern const/var name: type; -> 不生成代码，链接到 C 库
+    if (is_export && is_extern && init_expr == NULL && extern_lib_name == NULL) {
+        return;
+    }
+
+    // extern "libc" const/var name: type; -> 不生成代码，链接到 C 库
+    if (extern_lib_name != NULL && init_expr == NULL) {
+        return;
+    }
+
+    const char *type_c = c99_type_to_c(codegen, var_type);
+
+    // 生成声明
+    if (is_extern && init_expr == NULL) {
+        // extern 声明（无初始化）
+        if (is_const) {
+            fprintf(codegen->output, "extern const %s %s;\n", type_c, name);
+        } else {
+            fprintf(codegen->output, "extern %s %s;\n", type_c, name);
+        }
+    } else {
+        // 变量定义（有初始化）
+        if (is_const) {
+            fprintf(codegen->output, "const %s %s", type_c, name);
+        } else {
+            fprintf(codegen->output, "%s %s", type_c, name);
+        }
+
+        if (init_expr) {
+            fputs(" = ", codegen->output);
+            gen_global_init_expr(codegen, init_expr);
+        }
+
+        fputs(";\n", codegen->output);
+
+        // 添加到全局变量表
+        if (codegen->global_variable_count < C99_MAX_GLOBAL_VARS) {
+            codegen->global_variables[codegen->global_variable_count].name = name;
+            codegen->global_variables[codegen->global_variable_count].original_name = name;
+            codegen->global_variables[codegen->global_variable_count].type_c = type_c;
+            codegen->global_variables[codegen->global_variable_count].is_const = is_const;
+            codegen->global_variable_count++;
+        }
+    }
+}
