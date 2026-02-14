@@ -495,6 +495,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 检测是否在生成标准库（用于 --outlibc）
     // 通过检查输出文件名是否包含 "libuya" 来判断
     var is_std_lib: i32 = 0;
+    // 检测自举编译（输出为 uya.c 或 compiler_bootstrap.c）：强制与 C 编译器一致，不添加 stdio/string/opendir
+    var is_bootstrap: i32 = 0;
     if output_file != null {
         // 简单检查：查找文件名中是否包含 "libuya"（检查前 100 个字符）
         var i: i32 = 0;
@@ -509,6 +511,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                output_file[i + 5] == 97 as byte {     // 'a'
                 is_std_lib = 1;
                 break;
+            }
+            // 检测 "uya.c" 或 "compiler_bootstrap"
+            if i + 5 < 100 && output_file[i] == 117 as byte && output_file[i+1] == 121 as byte &&
+               output_file[i+2] == 97 as byte && output_file[i+3] == 46 as byte && output_file[i+4] == 99 as byte {
+                is_bootstrap = 1;  // uya.c
+            }
+            if i + 16 < 100 && strncmp(&output_file[i] as *byte, "compiler_bootstrap" as *byte, 17) == 0 {
+                is_bootstrap = 1;  // compiler_bootstrap
             }
             i = i + 1;
         }
@@ -614,13 +624,33 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("#include <stddef.h>\n" as *byte, codegen.output as *void);
         fputs("#include <stdarg.h>\n" as *byte, codegen.output as *void);  // for va_list (variadic forward)
         // 如果定义了文件 I/O 函数（fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush），不包含 <stdio.h>
-        // 避免与标准库声明冲突
-        if codegen.has_stdio_conflicts == 0 {
+        // 避免与标准库声明冲突。自举编译时强制与 C 编译器一致。
+        if codegen.has_stdio_conflicts == 0 && is_bootstrap == 0 {
             fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);  // for standard I/O functions (printf, puts, etc.)
         }
         // 不包含 stdlib.h，避免间接引入 stdio.h 导致 fprintf 与 built-in 冲突；exit/malloc 等由 libc 通过 syscall 实现
-        // 如果使用了 memcpy 或 memset，添加 <string.h>
-        if codegen.needs_string_h != 0 {
+        // 与 compiler-c 一致：仅当 needs_string_h 且未定义 string/mem 函数时才包含 <string.h>
+        var has_mem_functions: i32 = 0;
+        var has_string_functions: i32 = 0;
+        var mi: i32 = 0;
+        while mi < check_decl_count {
+            const md: &ASTNode = ast.program_decls[mi];
+            if md != null && md.type == ASTNodeType.AST_FN_DECL && md.fn_decl_body != null {
+                const mn: &byte = md.fn_decl_name;
+                if mn != null {
+                    if strcmp(mn as *byte, "memcpy" as *byte) == 0 || strcmp(mn as *byte, "memset" as *byte) == 0 ||
+                       strcmp(mn as *byte, "memmove" as *byte) == 0 || strcmp(mn as *byte, "memcmp" as *byte) == 0 ||
+                       strcmp(mn as *byte, "memchr" as *byte) == 0 { has_mem_functions = 1; }
+                    else if strcmp(mn as *byte, "strlen" as *byte) == 0 || strcmp(mn as *byte, "strcmp" as *byte) == 0 ||
+                       strcmp(mn as *byte, "strncmp" as *byte) == 0 || strcmp(mn as *byte, "strcpy" as *byte) == 0 ||
+                       strcmp(mn as *byte, "strncpy" as *byte) == 0 || strcmp(mn as *byte, "strcat" as *byte) == 0 ||
+                       strcmp(mn as *byte, "strchr" as *byte) == 0 || strcmp(mn as *byte, "strrchr" as *byte) == 0 ||
+                       strcmp(mn as *byte, "strstr" as *byte) == 0 { has_string_functions = 1; }
+                }
+            }
+            mi = mi + 1;
+        }
+        if codegen.needs_string_h != 0 && has_string_functions == 0 && has_mem_functions == 0 && is_bootstrap == 0 {
             fputs("#include <string.h>\n" as *byte, codegen.output as *void);
         }
         // 不包含 sys/stat.h、unistd.h，避免间接引入 stdio.h 导致 fprintf 等与 built-in 冲突；stat/readlink 由 libc 通过 syscall 实现
@@ -645,13 +675,13 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
             di = di + 1;
         }
-        if has_own_opendir == 0 {
+        if has_own_opendir == 0 && is_bootstrap == 0 {
             fputs("extern void *opendir(const char *);\n" as *byte, codegen.output as *void);
         }
-        if has_own_readdir == 0 {
+        if has_own_readdir == 0 && is_bootstrap == 0 {
             fputs("extern void *readdir(void *);\n" as *byte, codegen.output as *void);
         }
-        if has_own_closedir == 0 {
+        if has_own_closedir == 0 && is_bootstrap == 0 {
             fputs("extern int closedir(void *);\n" as *byte, codegen.output as *void);
         }
         fputs("\n" as *byte, codegen.output as *void);
