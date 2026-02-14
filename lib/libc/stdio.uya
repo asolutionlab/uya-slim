@@ -273,8 +273,8 @@ export fn fopen(filename: &const byte, mode: &const byte) &void {
     }
     
     // 打开文件
-    const result: !i64 = sys_open(filename as i64, flags, create_mode);
-    const fd: i64 = result catch {
+    const result: !i32 = sys_open(filename, flags as i32, create_mode as i32);
+    const fd: i32 = result catch {
         return null;
     };
     
@@ -283,7 +283,7 @@ export fn fopen(filename: &const byte, mode: &const byte) &void {
     while j < 64 {
         // 查找空闲槽位（fd <= 0 表示未使用）
         if fopen_fd_storage[j] <= 0 {
-            fopen_fd_storage[j] = fd;
+            fopen_fd_storage[j] = fd as i64;
             return &fopen_fd_storage[j] as &void;
         }
         j = j + 1;
@@ -309,7 +309,7 @@ export fn fclose(stream: &void) i32 {
         return 0 - 1;  // EOF
     }
     
-    const result: !i64 = sys_close(fd);
+    const result: !i32 = sys_close(fd as i32);
     _ = result catch {
         return 0 - 1;  // EOF
     };
@@ -335,15 +335,15 @@ export fn fread(ptr: &byte, size: usize, nmemb: usize, stream: &void) usize {
     }
     
     const total_size: usize = size * nmemb;
-    const result: !i64 = sys_read(fd, ptr as i64, total_size as i64);
-    const bytes_read: i64 = result catch {
+    const result: !isize = sys_read(fd as i32, ptr, total_size);
+    const bytes_read: isize = result catch {
         return 0;
     };
     
-    if bytes_read < 0 {
+    if bytes_read < 0 as isize {
         return 0;
     }
-    
+
     // 返回读取的元素数（向下取整）
     return (bytes_read as usize) / size;
 }
@@ -364,12 +364,12 @@ export fn fgetc(stream: &void) i32 {
     }
     
     var ch: byte = 0 as byte;
-    const result: !i64 = sys_read(fd, &ch as i64, 1);
-    const bytes_read: i64 = result catch {
+    const result: !isize = sys_read(fd as i32, &ch, 1);
+    const bytes_read: isize = result catch {
         return 0 - 1;  // EOF
     };
     
-    if bytes_read == 1 {
+    if bytes_read == 1 as isize {
         return ch as i32;
     }
     
@@ -432,8 +432,8 @@ export fn fprintf(stream: &void, format: &const byte, ...) i32 {
     buf[buf_pos] = 0 as byte;
     
     // 写入到文件流
-    const result: !i64 = sys_write(fd, &buf[0] as i64, buf_pos as i64);
-    const written: i64 = result catch {
+    const result: !isize = sys_write(fd as i32, &buf[0], buf_pos);
+    const written: isize = result catch {
         return 0 - 1;
     };
     
@@ -456,12 +456,12 @@ export fn fwrite(ptr: &const byte, size: usize, nmemb: usize, stream: &void) usi
     }
     
     const total_size: usize = size * nmemb;
-    const result: !i64 = sys_write(fd, ptr as i64, total_size as i64);
-    const bytes_written: i64 = result catch {
+    const result: !isize = sys_write(fd as i32, ptr, total_size);
+    const bytes_written: isize = result catch {
         return 0;
     };
     
-    if bytes_written < 0 {
+    if bytes_written < 0 as isize {
         return 0;
     }
     
@@ -485,12 +485,12 @@ export fn fputc(c: i32, stream: &void) i32 {
     }
     
     var ch: byte = c as byte;
-    const result: !i64 = sys_write(fd, &ch as i64, 1);
-    const bytes_written: i64 = result catch {
+    const result: !isize = sys_write(fd as i32, &ch, 1);
+    const bytes_written: isize = result catch {
         return 0 - 1;  // EOF
     };
     
-    if bytes_written == 1 {
+    if bytes_written == 1 as isize {
         return c;
     }
     
@@ -516,6 +516,17 @@ export fn fputs(s: &const byte, stream: &void) i32 {
     }
     
     return 0 - 1;  // EOF
+}
+
+// fflush - 刷新文件流缓冲区
+// 注意：由于我们使用低级 I/O（直接 write 系统调用），数据已经写入内核
+// 返回：0 成功，EOF (-1) 失败
+export fn fflush(stream: &void) i32 {
+    if stream == null {
+        return 0 - 1;  // EOF
+    }
+    // 低级 I/O 没有缓冲区，直接返回成功
+    return 0;
 }
 
 // sprintf - 格式化字符串（简化版本，只支持 %s 和 %d）

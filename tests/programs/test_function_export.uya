@@ -20,7 +20,7 @@ extern fn external_c_func() void;
 // 注意：extern 函数不能有函数体，只有声明
 // 用途：在一个模块中声明外部 C 函数，然后导出这个声明
 //       让其他模块可以通过 use 导入并使用，而不需要每个模块都重新声明
-// 示例：在 std.c 模块中声明 printf，其他模块可以 use std.c.printf;
+// 示例：在 std.c 模块中声明 printf，其他模块可以 use libc.printf;
 export extern fn exported_external_func() i32;
 
 fn main() i32 {

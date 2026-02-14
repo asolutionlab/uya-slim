@@ -1,9 +1,9 @@
 // 测试 std.c.stdlib 模块（简化版，只测试字符串转换函数）
 // 测试：字符串转数字函数
 
-use std.c.atoi;
-use std.c.atol;
-use std.c.atof;
+use libc.atoi;
+use libc.atol;
+use libc.atof;
 
 fn main() i32 {
     // ============================================================

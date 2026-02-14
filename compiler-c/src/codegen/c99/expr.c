@@ -1851,9 +1851,6 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                     // 检查是否是 extern "libc" fn，如果是则使用 (const char *) 而不是 (uint8_t *)
                     int is_libc = is_extern_libc_function(codegen, callee_name);
                     fputs(is_libc ? "(const char *)" : "(uint8_t *)", codegen->output);
-                } else if (callee_name && is_extern_libc_function(codegen, callee_name)) {
-                    /* extern "libc" fn 的字符串参数使用 const char * */
-                    fputs("(const char *)", codegen->output);
                 } else if (callee_name && (
                     (strcmp(callee_name, "snprintf") == 0 && i == 0) ||
                     (strcmp(callee_name, "sprintf") == 0 && i == 0) ||

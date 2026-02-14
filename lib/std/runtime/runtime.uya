@@ -26,8 +26,8 @@ fn init_argv() void {
     
     // 打开 /proc/self/cmdline
     const cmdline_path: &const byte = "/proc/self/cmdline\0" as &const byte;
-    const result: !i64 = sys_open(cmdline_path as i64, O_RDONLY, 0);
-    const fd: i64 = result catch {
+    const result: !i32 = sys_open(cmdline_path, O_RDONLY as i32, 0);
+    const fd: i32 = result catch {
         // 如果无法打开，设置默认值
         cached_argc = 1;
         return;
@@ -35,15 +35,15 @@ fn init_argv() void {
     
     // 读取命令行数据（最多 4096 字节）
     var buffer: [byte: 4096] = [];
-    const read_result: !i64 = sys_read(fd, &buffer[0] as i64, 4096);
+    const read_result: !isize = sys_read(fd, &buffer[0], 4096);
     _ = sys_close(fd);
     
-    const bytes_read: i64 = read_result catch {
+    const bytes_read: isize = read_result catch {
         cached_argc = 1;
         return;
     };
     
-    if bytes_read <= 0 {
+    if bytes_read <= 0 as isize {
         cached_argc = 1;
         return;
     }

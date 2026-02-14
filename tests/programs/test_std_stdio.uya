@@ -1,9 +1,9 @@
 // test_std_stdio.uya
-// 测试 lib/std/c/stdio 标准库模块（通过 use 导入）
+// 测试 lib/libc 标准库模块（通过 use 导入）
 
-use std.c.write_bytes;
-use std.c.i32_to_str;
-use std.c.put_char;
+use libc.write_bytes;
+use libc.i32_to_str;
+use libc.put_char;
 
 // ============================================================
 // 测试函数

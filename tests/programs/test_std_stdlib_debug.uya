@@ -1,9 +1,9 @@
 // 测试 std.c.stdlib 模块（调试版本）
 // 测试：内存分配函数，添加调试输出
 
-use std.c.malloc;
-use std.c.write_bytes;
-use std.c.strlen;
+use libc.malloc;
+use libc.write_bytes;
+use libc.strlen;
 
 fn main() i32 {
     // 测试 malloc

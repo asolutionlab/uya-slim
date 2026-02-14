@@ -470,6 +470,13 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
     /* stat/readlink 由自举代码使用；opendir/readdir/closedir 仅声明（不包含 dirent.h，避免与生成的 struct DIR/struct Dirent 冲突） */
     fputs("#include <sys/stat.h>\n", codegen->output);
     fputs("#include <unistd.h>\n", codegen->output);
+    /* 取消 sys/stat.h 和 unistd.h 中定义的宏，避免与 uya 定义的常量冲突 */
+    fputs("#undef S_IRWXU\n#undef S_IRUSR\n#undef S_IWUSR\n#undef S_IXUSR\n", codegen->output);
+    fputs("#undef S_IRWXG\n#undef S_IRGRP\n#undef S_IWGRP\n#undef S_IXGRP\n", codegen->output);
+    fputs("#undef S_IRWXO\n#undef S_IROTH\n#undef S_IWOTH\n#undef S_IXOTH\n", codegen->output);
+    fputs("#undef S_ISUID\n#undef S_ISGID\n#undef S_ISVTX\n", codegen->output);
+    fputs("#undef SEEK_SET\n#undef SEEK_CUR\n#undef SEEK_END\n", codegen->output);
+    fputs("#undef STDIN_FILENO\n#undef STDOUT_FILENO\n#undef STDERR_FILENO\n", codegen->output);
     /* 若本程序定义了 opendir/readdir/closedir（如 stdlib.uya），不声明系统符号，避免与生成的 uya_opendir 等冲突 */
     {
         int has_own_opendir = 0, has_own_readdir = 0, has_own_closedir = 0;

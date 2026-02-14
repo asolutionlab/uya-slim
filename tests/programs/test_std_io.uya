@@ -1,25 +1,28 @@
-// test_std_io.uya - 测试新的 std.io 模块
-// 测试文件 I/O 函数
+// test_std_io.uya - 测试 std.io 模块
+// 测试文件 I/O 函数（使用 libc 的 FILE* 流）
 
-use std.io.fopen;
-use std.io.fclose;
-use std.io.fread;
-use std.io.fwrite;
-use std.io.fgetc;
-use std.io.fputc;
-use std.io.fputs;
-use std.io.fprintf;
-use std.io.fflush;
-use std.syscall.linux.O_RDONLY;
-use std.syscall.linux.O_WRONLY;
-use std.syscall.linux.O_CREAT;
-use std.syscall.linux.O_TRUNC;
-use std.syscall.linux.S_IRWXU;
+use libc.fopen;
+use libc.fclose;
+use libc.fread;
+use libc.fwrite;
+use libc.fgetc;
+use libc.fputc;
+use libc.fputs;
+use libc.fprintf;
+use libc.fflush;
+use libc.O_RDONLY;
+use libc.O_WRONLY;
+use libc.O_CREAT;
+use libc.O_TRUNC;
+use libc.S_IRWXU;
 
 fn main() i32 {
-    // 测试 1: fopen/fclose - 打开和关闭文件（用当前目录避免 /tmp 不可写的环境）
+    // 测试 1: fopen/fclose - 打开和关闭文件
     const test_file: &const byte = "./test_std_io.txt\0" as &const byte;
-    const file1: &void = fopen(test_file, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU);
+    const mode_w: &const byte = "w\0" as &const byte;
+    const mode_r: &const byte = "r\0" as &const byte;
+    
+    const file1: &void = fopen(test_file, mode_w);
     if file1 == null {
         return 1;  // 打开文件失败
     }
@@ -29,7 +32,7 @@ fn main() i32 {
     }
     
     // 测试 2: fwrite/fread - 写入和读取文件
-    const file2: &void = fopen(test_file, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU);
+    const file2: &void = fopen(test_file, mode_w);
     if file2 == null {
         return 3;  // 打开文件失败
     }
@@ -43,7 +46,7 @@ fn main() i32 {
     _ = fclose(file2);
     
     // 读取文件
-    const file3: &void = fopen(test_file, O_RDONLY, 0);
+    const file3: &void = fopen(test_file, mode_r);
     if file3 == null {
         return 5;  // 打开文件失败
     }
@@ -61,7 +64,7 @@ fn main() i32 {
     _ = fclose(file3);
     
     // 测试 3: fputc/fgetc - 字符写入和读取
-    const file4: &void = fopen(test_file, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU);
+    const file4: &void = fopen(test_file, mode_w);
     if file4 == null {
         return 8;  // 打开文件失败
     }
@@ -72,7 +75,7 @@ fn main() i32 {
     }
     _ = fclose(file4);
     
-    const file5: &void = fopen(test_file, O_RDONLY, 0);
+    const file5: &void = fopen(test_file, mode_r);
     if file5 == null {
         return 10;  // 打开文件失败
     }
@@ -84,7 +87,7 @@ fn main() i32 {
     _ = fclose(file5);
     
     // 测试 4: fputs - 写入字符串
-    const file6: &void = fopen(test_file, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU);
+    const file6: &void = fopen(test_file, mode_w);
     if file6 == null {
         return 12;  // 打开文件失败
     }
@@ -97,7 +100,7 @@ fn main() i32 {
     _ = fclose(file6);
     
     // 测试 5: fprintf - 格式化输出（简化测试）
-    const file7: &void = fopen(test_file, O_WRONLY | O_CREAT | O_TRUNC, S_IRWXU);
+    const file7: &void = fopen(test_file, mode_w);
     if file7 == null {
         return 14;  // 打开文件失败
     }
@@ -111,9 +114,5 @@ fn main() i32 {
     _ = fflush(file7);
     _ = fclose(file7);
     
-    // 清理测试文件
-    // 注意：这里不删除文件，因为需要额外的系统调用
-    
     return 0;
 }
-

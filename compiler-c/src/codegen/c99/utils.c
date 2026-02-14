@@ -201,6 +201,39 @@ static const char *c99_keywords[] = {
     NULL
 };
 
+// C 标准库保留名称（宏/类型/字段名，可能导致冲突）
+static const char *c_reserved_names[] = {
+    // sys/stat.h 文件权限宏
+    "S_IRWXU", "S_IRUSR", "S_IWUSR", "S_IXUSR",
+    "S_IRWXG", "S_IRGRP", "S_IWGRP", "S_IXGRP",
+    "S_IRWXO", "S_IROTH", "S_IWOTH", "S_IXOTH",
+    "S_ISUID", "S_ISGID", "S_ISVTX",
+    // stat 结构体字段（可能与宏冲突）
+    "st_atime", "st_mtime", "st_ctime", "st_atim", "st_mtim", "st_ctim",
+    // errno.h 错误码宏
+    "EPERM", "ENOENT", "ESRCH", "EINTR", "EIO", "ENXIO", "E2BIG", "ENOEXEC",
+    "EBADF", "ECHILD", "EAGAIN", "ENOMEM", "EACCES", "EFAULT", "ENOTBLK", "EBUSY",
+    "EEXIST", "EXDEV", "ENODEV", "ENOTDIR", "EISDIR", "EINVAL", "ENFILE", "EMFILE",
+    "ENOTTY", "ETXTBSY", "EFBIG", "ENOSPC", "ESPIPE", "EROFS", "EMLINK", "EPIPE",
+    "EDOM", "ERANGE", "EDEADLK", "ENAMETOOLONG", "ENOLCK", "ENOSYS", "ENOTEMPTY",
+    // fcntl.h 标志
+    "O_RDONLY", "O_WRONLY", "O_RDWR", "O_CREAT", "O_EXCL", "O_TRUNC", "O_APPEND",
+    "O_NONBLOCK", "O_SYNC", "O_DSYNC", "O_RSYNC", "O_NOCTTY", "O_DIRECTORY", "O_NOFOLLOW",
+    // unistd.h
+    "STDIN_FILENO", "STDOUT_FILENO", "STDERR_FILENO",
+    "SEEK_SET", "SEEK_CUR", "SEEK_END",
+    // mmap 标志
+    "MAP_PRIVATE", "MAP_SHARED", "MAP_ANONYMOUS", "MAP_FIXED", "MAP_ANON",
+    "PROT_READ", "PROT_WRITE", "PROT_EXEC", "PROT_NONE",
+    // signal.h
+    "SIGINT", "SIGTERM", "SIGKILL", "SIGHUP", "SIGQUIT", "SIGILL", "SIGABRT",
+    "SIGFPE", "SIGSEGV", "SIGPIPE", "SIGALRM", "SIGUSR1", "SIGUSR2", "SIGCHLD",
+    "SIGCONT", "SIGSTOP", "SIGTSTP", "SIGTTIN", "SIGTTOU",
+    // 注意：不要在保留列表中添加 printf, malloc 等标准 C 库函数名
+    // 因为这些函数应该直接调用 C 标准库，不需要添加前缀
+    NULL
+};
+
 // 检查标识符是否为C关键字
 int is_c_keyword(const char *name) {
     if (!name) return 0;
@@ -212,34 +245,47 @@ int is_c_keyword(const char *name) {
     return 0;
 }
 
-// 获取安全的C标识符（如果需要则添加下划线前缀）
+// 检查标识符是否为 C 标准库保留名称
+static int is_c_reserved_name(const char *name) {
+    if (!name) return 0;
+    for (int i = 0; c_reserved_names[i]; i++) {
+        if (strcmp(name, c_reserved_names[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// 获取安全的C标识符（如果需要则添加前缀）
 const char *get_safe_c_identifier(C99CodeGenerator *codegen, const char *name) {
     if (!name) return NULL;
     
-    // 如果不是关键字，直接返回原名称
-    if (!is_c_keyword(name)) {
+    // 如果不是关键字也不是保留名称，直接返回原名称
+    if (!is_c_keyword(name) && !is_c_reserved_name(name)) {
         return name;
     }
     
-    // 如果是关键字，添加前缀（最多尝试几次以避免重复）
+    // 如果是关键字或保留名称，添加前缀（最多尝试几次以避免重复）
     for (int prefix = 1; prefix <= 3; prefix++) {
         char buf[128];
         if (prefix == 1) {
-            snprintf(buf, sizeof(buf), "_%s", name);
-        } else if (prefix == 2) {
-            snprintf(buf, sizeof(buf), "_%s_", name);
-        } else {
             snprintf(buf, sizeof(buf), "uya_%s", name);
+        } else if (prefix == 2) {
+            snprintf(buf, sizeof(buf), "_%s", name);
+        } else {
+            snprintf(buf, sizeof(buf), "uya_%s_", name);
         }
         
-        // 检查这个名称是否已经用作关键字（理论上应该不会冲突）
-        if (!is_c_keyword(buf)) {
+        // 检查这个名称是否已经用作关键字或保留名称
+        if (!is_c_keyword(buf) && !is_c_reserved_name(buf)) {
             return arena_strdup(codegen->arena, buf);
         }
     }
     
-    // 如果仍然冲突，返回原名称（虽然可能导致编译错误）
-    return name;
+    // 如果仍然冲突，返回带 uya_ 前缀的名称
+    char buf[128];
+    snprintf(buf, sizeof(buf), "uya_%s", name);
+    return arena_strdup(codegen->arena, buf);
 }
 
 // 添加字符串常量

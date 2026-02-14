@@ -450,8 +450,8 @@ export fn opendir(name: &const byte) &Dirent {
     }
     
     // 打开目录文件描述符
-    const result: !i64 = sys_open(name as i64, O_RDONLY, 0);
-    const fd: i64 = result catch {
+    const result: !i32 = sys_open(name, O_RDONLY as i32, 0);
+    const fd: i32 = result catch {
         return null;
     };
     
@@ -509,7 +509,7 @@ export fn closedir(dirp: &Dirent) i32 {
         return 0 - 1;
     }
     
-    const result: !i64 = sys_close(fd);
+    const result: !i32 = sys_close(fd as i32);
     _ = result catch {
         return 0 - 1;
     };
