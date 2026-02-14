@@ -18,6 +18,9 @@
 
 set -e
 
+# 自举编译器递归较深，需增大栈限制避免段错误
+ulimit -s unlimited 2>/dev/null || ulimit -s 524288 2>/dev/null || true
+
 # 获取脚本所在目录的绝对路径，然后推导各路径
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -207,8 +210,8 @@ run_single_test() {
     # 编译
     output_file="$BUILD_DIR/${base_name}.c"
     if [ "$USE_UYA" = true ]; then
-        # 自举编译器递归较深，需增大栈限制避免段错误（依赖较多的用例如 libc）
-        compiler_output=$((ulimit -s 131072 2>/dev/null; "$COMPILER" --c99 --nostdlib "$uya_file" -o "$output_file") 2>&1)
+        # 自举编译器递归较深，已在脚本开头增大栈限制
+        compiler_output=$("$COMPILER" --c99 --nostdlib "$uya_file" -o "$output_file" 2>&1)
     else
         compiler_output=$("$COMPILER" --c99 --nostdlib "$uya_file" -o "$output_file" 2>&1)
     fi
