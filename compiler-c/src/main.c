@@ -1117,7 +1117,7 @@ static int compile_files(const char *input_files[], int input_file_count, const 
     const char *processed_files[MAX_INPUT_FILES];
     int processed_count = 0;
     
-    // 找出包含 main 的文件（入口文件）
+    // 找出包含 main 的文件（入口文件，目前仅用于检测，结果暂未使用）
     int main_file_count = 0;
     const char *main_files[MAX_INPUT_FILES];
     for (int i = 0; i < resolved_count; i++) {
@@ -1125,7 +1125,9 @@ static int compile_files(const char *input_files[], int input_file_count, const 
             main_files[main_file_count++] = resolved_files[i];
         }
     }
-    
+    (void)main_files;
+    (void)main_file_count;
+
     // 依赖收集策略：
     // 对所有输入文件进行依赖收集（无论单文件还是多文件）
     for (int i = 0; i < all_file_count; i++) {

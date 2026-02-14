@@ -553,6 +553,18 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     const char *return_c = convert_array_return_type(codegen, return_type);
     
     // 对于extern函数，添加extern关键字
+    // 若程序中已有同名函数定义（如 libc 实现），跳过 extern 声明，避免与 GCC built-in 冲突
+    if (is_extern && orig_name && codegen->program_node && codegen->program_node->type == AST_PROGRAM) {
+        int n = codegen->program_node->data.program.decl_count;
+        ASTNode **decls = codegen->program_node->data.program.decls;
+        for (int i = 0; i < n; i++) {
+            ASTNode *d = decls[i];
+            if (d && d != fn_decl && d->type == AST_FN_DECL && d->data.fn_decl.name &&
+                strcmp(d->data.fn_decl.name, orig_name) == 0 && d->data.fn_decl.body != NULL) {
+                return;
+            }
+        }
+    }
     if (is_extern) {
         // 对于extern函数，添加extern关键字
         fprintf(codegen->output, "extern %s %s(", return_c, func_name);

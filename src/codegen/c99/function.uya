@@ -197,6 +197,19 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
             di = di + 1;
         }
     }
+    // 若程序中已有同名函数定义（如 libc 实现），跳过 extern 声明，避免与 GCC built-in 冲突
+    if is_extern != 0 && fn_decl.fn_decl_name != null && codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
+        var di: i32 = 0;
+        while di < codegen.program_node.program_decl_count {
+            const d: &ASTNode = codegen.program_node.program_decls[di];
+            if d != null && d != fn_decl && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
+               strcmp(d.fn_decl_name as *byte, fn_decl.fn_decl_name as *byte) == 0 && d.fn_decl_body != null {
+                codegen.current_function_decl = saved_current_function_decl;
+                return;
+            }
+            di = di + 1;
+        }
+    }
     if is_extern != 0 {
         fprintf(codegen.output, "extern %s %s(" as *byte, return_c as *byte, func_name as *byte);
     } else {

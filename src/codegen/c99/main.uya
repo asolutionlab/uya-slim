@@ -618,14 +618,12 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         if codegen.has_stdio_conflicts == 0 {
             fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);  // for standard I/O functions (printf, puts, etc.)
         }
-        fputs("#include <stdlib.h>\n" as *byte, codegen.output as *void);  // for stdlib functions (exit, atoi, malloc, etc.)
+        // 不包含 stdlib.h，避免间接引入 stdio.h 导致 fprintf 与 built-in 冲突；exit/malloc 等由 libc 通过 syscall 实现
         // 如果使用了 memcpy 或 memset，添加 <string.h>
         if codegen.needs_string_h != 0 {
             fputs("#include <string.h>\n" as *byte, codegen.output as *void);
         }
-        // stat/readlink 由自举代码使用；opendir/readdir/closedir 仅声明（不包含 dirent.h，避免与生成的 struct DIR/struct Dirent 冲突）
-        fputs("#include <sys/stat.h>\n" as *byte, codegen.output as *void);
-        fputs("#include <unistd.h>\n" as *byte, codegen.output as *void);
+        // 不包含 sys/stat.h、unistd.h，避免间接引入 stdio.h 导致 fprintf 等与 built-in 冲突；stat/readlink 由 libc 通过 syscall 实现
         // 若本程序定义了 opendir/readdir/closedir（如 stdlib），不声明系统符号，避免与生成的 uya_opendir 等冲突
         var has_own_opendir: i32 = 0;
         var has_own_readdir: i32 = 0;
