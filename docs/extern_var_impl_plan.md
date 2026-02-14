@@ -228,19 +228,18 @@ int symbol_table_add_extern_var(SymbolTable *table, ASTNode *node);
 
 | 文件 | 修改内容 | 状态 |
 |------|----------|------|
-| `compiler-c/src/ast.h` | AST 节点类型和字段 | ⏳ |
-| `compiler-c/src/parser.h` | 函数声明 | ⏳ |
-| `compiler-c/src/parser.c` | 解析逻辑 | ⏳ |
-| `compiler-c/src/checker.h` | 函数声明 | ⏳ |
-| `compiler-c/src/checker.c` | 类型检查 | ⏳ |
-| `compiler-c/src/codegen/c99/` | 代码生成 | ⏳ |
-| `compiler-c/src/symbol_table.h` | 函数声明 | ⏳ |
-| `compiler-c/src/symbol_table.c` | 符号注册 | ⏳ |
-| `src/ast.uya` | AST 节点类型和字段 | ⏳ |
-| `src/parser.uya` | 解析逻辑 | ⏳ |
-| `src/checker.uya` | 类型检查 | ⏳ |
-| `src/codegen/c99/` | 代码生成 | ⏳ |
-| `src/symbol_table.uya` | 符号注册 | ⏳ |
+| `compiler-c/src/ast.h` | AST 节点类型和字段 | ✅ |
+| `compiler-c/src/ast.c` | 节点初始化 | ✅ |
+| `compiler-c/src/parser.c` | 解析逻辑 | ✅ |
+| `compiler-c/src/checker.c` | 类型检查 | ✅ |
+| `compiler-c/src/codegen/c99/global.c` | 代码生成 | ✅ |
+| `compiler-c/src/codegen/c99/internal.h` | 函数声明 | ✅ |
+| `compiler-c/src/codegen/c99/main.c` | 集成调用 | ✅ |
+| `src/ast.uya` | AST 节点类型和字段 | ✅ |
+| `src/parser.uya` | 解析逻辑 | ✅ |
+| `src/checker.uya` | 类型检查 | ✅ |
+| `src/codegen/c99/global.uya` | 代码生成 | ✅ |
+| `src/codegen/c99/main.uya` | 集成调用 | ✅ |
 
 ---
 
@@ -285,9 +284,9 @@ fn main() i32 {
 
 ### 集成测试
 
-- [ ] 编译生成 C 代码，验证语法正确
-- [ ] 使用 GCC 编译生成的 C 代码
-- [ ] 运行可执行文件验证功能
+- [x] 编译生成 C 代码，验证语法正确
+- [x] 使用 GCC 编译生成的 C 代码
+- [x] 运行可执行文件验证功能
 
 ---
 
