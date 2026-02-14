@@ -49,33 +49,6 @@ fn get_vprintf_style_name(c_name: &byte) &byte {
     return null;
 }
 
-// 检查是否是标准库函数（需要 const char * 而不是 uint8_t *）
-fn is_stdlib_function_for_string_arg(func_name: &byte) i32 {
-    if func_name == null {
-        return 0;
-    }
-    // I/O 函数
-    if strcmp(func_name as *byte, "printf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "sprintf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fprintf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "snprintf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fputs" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fopen" as *byte) == 0 {
-        return 1;
-    }
-    // 字符串/路径相关（C 库要求 const char *，避免 -Wpointer-sign）
-    if strcmp(func_name as *byte, "strstr" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strcmp" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strncmp" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strrchr" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strchr" as *byte) == 0 ||
-        strcmp(func_name as *byte, "stat" as *byte) == 0 ||
-        strcmp(func_name as *byte, "readlink" as *byte) == 0 {
-        return 1;
-    }
-    return 0;
-}
-
 // 根据 C 类型字符串返回无符号类型（用于包装运算）
 fn unsigned_type_for_wrapping(type_c: &byte) &byte {
     if type_c == null { return "unsigned" as &byte; }
@@ -1717,8 +1690,8 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 } else if strcmp(mod_callee as *byte, "stat" as *byte) == 0 && ai == 1 {
                     fputs("(struct stat *)" as *byte, codegen.output as *void);
                 } else if expr.call_expr_args[ai] != null && expr.call_expr_args[ai].type == ASTNodeType.AST_STRING {
-                    const is_stdlib: i32 = is_stdlib_function_for_string_arg(mod_callee);
-                    if is_stdlib != 0 {
+                    const is_libc: i32 = is_extern_libc_function(codegen, mod_callee);
+                    if is_libc != 0 {
                         fputs("(const char *)" as *byte, codegen.output as *void);
                     } else {
                         fputs("(uint8_t *)" as *byte, codegen.output as *void);
@@ -1881,9 +1854,9 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     fputs(", " as *byte, codegen.output as *void);
                 }
                 if codegen.interp_arg_temp_names[i] != null {
-                    // 检查是否是标准库函数，如果是则使用 (const char *) 而不是 (uint8_t *)
-                    const is_stdlib: i32 = is_stdlib_function_for_string_arg(callee_name);
-                    if is_stdlib != 0 {
+                    // 检查是否是 extern "libc" fn，如果是则使用 (const char *) 而不是 (uint8_t *)
+                    const is_libc: i32 = is_extern_libc_function(codegen, callee_name);
+                    if is_libc != 0 {
                         fputs("(const char *)" as *byte, codegen.output as *void);
                     } else {
                         fputs("(uint8_t *)" as *byte, codegen.output as *void);
@@ -1891,9 +1864,9 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     fputs(codegen.interp_arg_temp_names[i] as *byte, codegen.output as *void);
                 } else {
                     if expr.call_expr_args[i] != null && expr.call_expr_args[i].type == ASTNodeType.AST_STRING {
-                        // 检查是否是标准库函数，如果是则使用 (const char *) 而不是 (uint8_t *)
-                        const is_stdlib: i32 = is_stdlib_function_for_string_arg(callee_name);
-                        if is_stdlib != 0 {
+                        // 检查是否是 extern "libc" fn，如果是则使用 (const char *) 而不是 (uint8_t *)
+                        const is_libc: i32 = is_extern_libc_function(codegen, callee_name);
+                        if is_libc != 0 {
                             fputs("(const char *)" as *byte, codegen.output as *void);
                         } else {
                             fputs("(uint8_t *)" as *byte, codegen.output as *void);
@@ -1939,9 +1912,9 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             var i: i32 = 0;
             while i < arg_count {
             if codegen.interp_arg_temp_names[i] != null {
-                // 检查是否是标准库函数，如果是则使用 (const char *) 而不是 (uint8_t *)
-                const is_stdlib: i32 = is_stdlib_function_for_string_arg(callee_name);
-                if is_stdlib != 0 {
+                // 检查是否是 extern "libc" fn，如果是则使用 (const char *) 而不是 (uint8_t *)
+                const is_libc: i32 = is_extern_libc_function(codegen, callee_name);
+                if is_libc != 0 {
                     fputs("(const char *)" as *byte, codegen.output as *void);
                 } else {
                     fputs("(uint8_t *)" as *byte, codegen.output as *void);
@@ -2043,32 +2016,15 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             }
             
             if is_string_arg != 0 || is_byte_ptr_arg != 0 {
-                // 检查是否是标准库函数，如果是则使用 (const char *) 而不是 (uint8_t *)
-                const is_stdlib: i32 = is_stdlib_function_for_string_arg(callee_name);
-                if is_stdlib != 0 {
+                // 检查是否是 extern "libc" fn，如果是则使用 (const char *) 而不是 (uint8_t *)
+                const is_libc: i32 = is_extern_libc_function(codegen, callee_name);
+                if is_libc != 0 {
                     fputs("(const char *)" as *byte, codegen.output as *void);
                 } else {
                     fputs("(uint8_t *)" as *byte, codegen.output as *void);
                 }
-            } else if callee_name != null && (
-                (strcmp(callee_name as *byte, "fopen" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "strcmp" as *byte) == 0 && (i == 0 || i == 1)) ||
-                (strcmp(callee_name as *byte, "strrchr" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "stat" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "readlink" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "strtol" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "strtod" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "getenv" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "strcpy" as *byte) == 0 && i == 1) ||
-                (strcmp(callee_name as *byte, "fputs" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "strstr" as *byte) == 0 && (i == 0 || i == 1)) ||
-                (strcmp(callee_name as *byte, "strchr" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "sprintf" as *byte) == 0 && i == 1) ||
-                (strcmp(callee_name as *byte, "atoi" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "strcat" as *byte) == 0 && i == 1) ||
-                (strcmp(callee_name as *byte, "strncmp" as *byte) == 0 && (i == 0 || i == 1)) ||
-                (strcmp(callee_name as *byte, "strlen" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "opendir" as *byte) == 0 && i == 0)) {
+            } else if callee_name != null && is_extern_libc_function(codegen, callee_name) != 0 {
+                // extern "libc" fn 的字符串参数使用 const char *
                 fputs("(const char *)" as *byte, codegen.output as *void);
             } else if callee_name != null && (
                 (strcmp(callee_name as *byte, "snprintf" as *byte) == 0 && i == 0) ||

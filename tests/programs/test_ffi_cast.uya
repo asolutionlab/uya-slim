@@ -8,7 +8,7 @@ struct Point {
 
 // 声明外部函数，用于测试 FFI 指针
 extern fn test_ffi_ptr(ptr: *Point) i32;
-extern fn puts(s: *byte) i32;
+extern "libc" fn puts(s: *byte) i32;
 
 fn main() i32 {
     // 创建一个结构体实例

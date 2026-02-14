@@ -117,7 +117,7 @@ mc get_type_size(T: type) expr {
 // 测试入口
 // ====================
 
-extern fn printf(fmt: *u8, ...) i32;
+extern "libc" fn printf(fmt: *u8, ...) i32;
 
 fn main() i32 {
     // 1. 测试 expr 语法糖基础

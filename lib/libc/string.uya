@@ -96,11 +96,11 @@ export extern "libc" fn strchr(s: *const byte, c: i32) *byte {
     var i: usize = 0;
     while s[i] != 0 {
         if s[i] == val {
-            return s as *byte + i;
+            return @ptr_from_usize(@usize_from_ptr(s) + i) as *byte;
         }
         i = i + 1;
     }
-    if val == 0 { return s as *byte + i; }
+    if val == 0 { return @ptr_from_usize(@usize_from_ptr(s) + i) as *byte; }
     return null;
 }
 
@@ -112,11 +112,11 @@ export extern "libc" fn strrchr(s: *const byte, c: i32) *byte {
     var i: usize = 0;
     while s[i] != 0 {
         if s[i] == val {
-            last = s as *byte + i;
+            last = @ptr_from_usize(@usize_from_ptr(s) + i) as *byte;
         }
         i = i + 1;
     }
-    if val == 0 { return s as *byte + i; }
+    if val == 0 { return @ptr_from_usize(@usize_from_ptr(s) + i) as *byte; }
     return last;
 }
 
@@ -142,7 +142,7 @@ export extern "libc" fn strstr(haystack: *const byte, needle: *const byte) *byte
             j = j + 1;
         }
         if found != 0 {
-            return haystack as *byte + i;
+            return @ptr_from_usize(@usize_from_ptr(haystack) + i) as *byte;
         }
         i = i + 1;
     }

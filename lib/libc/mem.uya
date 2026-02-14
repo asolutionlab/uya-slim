@@ -82,7 +82,7 @@ export extern "libc" fn memchr(s: *const byte, c: i32, n: usize) *byte {
     var i: usize = 0;
     while i < n {
         if s[i] == val {
-            return s as *byte + i;
+            return @ptr_from_usize(@usize_from_ptr(s) + i) as *byte;
         }
         i = i + 1;
     }

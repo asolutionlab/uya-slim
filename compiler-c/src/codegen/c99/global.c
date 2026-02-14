@@ -56,7 +56,7 @@ void gen_global_init_expr(C99CodeGenerator *codegen, ASTNode *expr) {
 // 生成全局变量定义
 void gen_global_var(C99CodeGenerator *codegen, ASTNode *var_decl) {
     if (!var_decl || var_decl->type != AST_VAR_DECL) return;
-    
+
     const char *orig_name = var_decl->data.var_decl.name;
     const char *var_name = get_c_name_for_global_constant(codegen, orig_name);
     ASTNode *var_type = var_decl->data.var_decl.type;

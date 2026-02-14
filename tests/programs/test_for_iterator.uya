@@ -1,7 +1,7 @@
 // 测试 for 循环的迭代器支持
 // 预期：main 返回 0（测试通过）
 
-extern fn printf(fmt: *byte, ...) i32;
+extern "libc" fn printf(fmt: *byte, ...) i32;
 
 // 预定义错误
 error IterEnd;

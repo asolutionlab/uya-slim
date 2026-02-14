@@ -336,21 +336,43 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                     // 情况2：@syscall 表达式（已经返回错误联合）
                     // 情况3：函数调用且函数返回错误联合类型
                     int expr_is_error_union = 0;
+                    const char *expr_payload_c = NULL;  // 表达式的 payload C 类型
                     if (expr->type == AST_IDENTIFIER) {
                         const char *var_name = expr->data.identifier.name;
                         if (var_name && strstr(var_name, "result")) {
                             expr_is_error_union = 1;
                         }
                     } else if (expr->type == AST_SYSCALL) {
-                        // @syscall 已经返回错误联合类型
+                        // @syscall 已经返回错误联合类型，payload 是 i64
                         expr_is_error_union = 1;
+                        expr_payload_c = "int64_t";
+                    }
+                    
+                    // 获取返回类型的 payload C 类型
+                    const char *ret_payload_c = NULL;
+                    if (payload_node) {
+                        ret_payload_c = c99_type_to_c(codegen, payload_node);
                     }
                     
                     if (expr_is_error_union) {
-                        // 如果表达式本身就是错误联合类型，直接返回
-                        c99_emit(codegen, "%s _uya_ret = ", ret_c);
-                        gen_expr(codegen, expr);
-                        fputs(";\n", codegen->output);
+                        // 检查是否需要类型转换（payload 类型不同）
+                        int needs_conversion = 0;
+                        if (expr_payload_c && ret_payload_c && strcmp(expr_payload_c, ret_payload_c) != 0) {
+                            needs_conversion = 1;
+                        }
+                        
+                        if (needs_conversion && !payload_void) {
+                            // 需要转换：先生成临时变量，再转换
+                            c99_emit(codegen, "struct err_union_%s _uya_tmp = ", expr_payload_c);
+                            gen_expr(codegen, expr);
+                            fputs(";\n", codegen->output);
+                            c99_emit(codegen, "%s _uya_ret = (_uya_tmp.error_id == 0) ? (%s){ .error_id = 0, .value = (%s)_uya_tmp.value } : (%s){ .error_id = _uya_tmp.error_id };\n", ret_c, ret_c, ret_payload_c, ret_c);
+                        } else {
+                            // 直接返回
+                            c99_emit(codegen, "%s _uya_ret = ", ret_c);
+                            gen_expr(codegen, expr);
+                            fputs(";\n", codegen->output);
+                        }
                     } else if (payload_void) {
                         c99_emit(codegen, "%s _uya_ret = (%s){ .error_id = 0 };\n", ret_c, ret_c);
                     } else {

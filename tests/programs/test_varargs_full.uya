@@ -2,7 +2,7 @@
 // 覆盖：extern/fn 形参 ...、printf(fmt, ...) 转发、@params 元组、@params.0/.1、const p = @params
 // 说明：单元素元组 (i32) 当前解析为括号类型，故单参函数用 return n 而非 @params
 
-extern fn printf(fmt: *byte, ...) i32;
+extern "libc" fn printf(fmt: *byte, ...) i32;
 
 // 1. 可变参数转发（零开销）
 fn wrap_printf(fmt: *byte, ...) i32 {

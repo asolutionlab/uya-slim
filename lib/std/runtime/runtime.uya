@@ -1,13 +1,13 @@
 // std.runtime.runtime - 运行时支持函数
-// 版本：v0.1.0
+// 版本：v0.2.0
 // 说明：替代 bridge.c 的功能，提供命令行参数访问、标准错误流、指针差计算等
 // 模块路径：lib/std/runtime/runtime.uya → use std.runtime.runtime;
 
-use std.syscall.linux.sys_read;
-use std.syscall.linux.sys_open;
-use std.syscall.linux.sys_close;
-use std.syscall.linux.O_RDONLY;
-use std.syscall.linux.STDERR_FILENO;
+use libc.sys_read;
+use libc.sys_open;
+use libc.sys_close;
+use libc.O_RDONLY;
+use libc.STDERR_FILENO;
 
 // ============================================================
 // 命令行参数缓存（从 /proc/self/cmdline 读取）

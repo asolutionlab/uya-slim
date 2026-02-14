@@ -1,5 +1,0 @@
-// std.syscall.syscall - 系统调用模块（转发到 linux.uya）
-// 版本：v0.1.0
-// 说明：合并时与 linux 同编会产生重复定义，故不在此重导出；请直接 use std.syscall.linux.XXX
-
-use std.syscall.linux;

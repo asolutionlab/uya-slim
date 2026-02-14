@@ -459,97 +459,9 @@ grep -E "错误:" "$TEMP_OUTPUT" > "$TEMP_ERRORS" || true
 
 # 检查编译结果
 if [ $COMPILER_EXIT -eq 0 ]; then
-    # 在 --nostdlib 模式下，需要重新编译主程序以包含标准库
-    if [ "$USE_NOSTDLIB" = true ] && [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ]; then
-        STD_LIB_DIR="$REPO_ROOT/lib/std/c"
-        
-        if [ "$VERBOSE" = true ]; then
-            echo -e "${YELLOW}重新编译主程序（包含标准库，--nostdlib 模式）...${NC}"
-        fi
-        
-        # 收集所有标准库文件（按依赖顺序）
-        STD_LIB_FILES=(
-            "$STD_LIB_DIR/syscall/syscall.uya"
-            "$STD_LIB_DIR/string.uya"
-            "$STD_LIB_DIR/stdio.uya"
-            "$STD_LIB_DIR/stdlib.uya"
-        )
-        
-        # 检查文件是否存在并添加到列表
-        VALID_STD_LIB_FILES=()
-        for std_file in "${STD_LIB_FILES[@]}"; do
-            if [ -f "$std_file" ]; then
-                VALID_STD_LIB_FILES+=("$std_file")
-                if [ "$VERBOSE" = true ]; then
-                    echo "  包含标准库: $std_file"
-                fi
-            fi
-        done
-        
-        # 重新编译主程序，包含标准库文件
-        if [ ${#VALID_STD_LIB_FILES[@]} -gt 0 ]; then
-            # 设置 UYA_ROOT 环境变量，指向 lib 目录
-            # 这样 lib/std/c/string.uya 在 UYA_ROOT 下的相对路径是 std/c/string.uya
-            # 转换为模块路径就是 std.c.string
-            export UYA_ROOT="$REPO_ROOT/lib/"
-            
-            # 构建包含标准库的编译命令
-            # 注意：标准库文件使用 use 语句导入模块，需要按依赖顺序传递
-            # 依赖顺序：syscall -> string -> stdio -> stdlib
-            # 编译器需要能够解析模块路径，所以需要设置 UYA_ROOT
-            # 如果 INPUT_PATH 为空（手动模式），使用 MAIN_FILE
-            REBUILD_INPUT="$INPUT_PATH"
-            if [ -z "$REBUILD_INPUT" ]; then
-                REBUILD_INPUT="$MAIN_FILE"
-            fi
-            # 如果还是为空，使用 FULL_PATHS 的第一个文件
-            if [ -z "$REBUILD_INPUT" ] && [ ${#FULL_PATHS[@]} -gt 0 ]; then
-                REBUILD_INPUT="${FULL_PATHS[0]}"
-            fi
-            # 构建编译命令：主文件 + 标准库文件
-            if [ "$USE_AUTO_DEPS" = true ]; then
-                # 自动依赖收集模式：只传递主文件，让编译器自动收集依赖
-                # 但标准库不会被自动收集（主文件没有 use），所以需要显式传递
-                REBUILD_CMD=("$COMPILER" "$REBUILD_INPUT" "${VALID_STD_LIB_FILES[@]}" -o "$OUTPUT_FILE")
-            else
-                # 手动模式：传递所有文件包括标准库
-                REBUILD_CMD=("$COMPILER" "${FULL_PATHS[@]}" "${VALID_STD_LIB_FILES[@]}" -o "$OUTPUT_FILE")
-            fi
-            if [ "$USE_C99" = true ]; then
-                REBUILD_CMD+=(--c99)
-            fi
-            if [ "$USE_LINE_DIRECTIVES" = true ]; then
-                REBUILD_CMD+=(--line-directives)
-            fi
-            
-            if [ "$VERBOSE" = true ]; then
-                echo "  设置 UYA_ROOT=$UYA_ROOT"
-                echo "  重新编译命令: ${REBUILD_CMD[*]}"
-            fi
-            
-            # 重新编译
-            REBUILD_LOG=$(mktemp)
-            # 在重新编译时，确保 UYA_ROOT 环境变量被传递
-            if env UYA_ROOT="$UYA_ROOT" "${REBUILD_CMD[@]}" >"$REBUILD_LOG" 2>&1; then
-                if [ "$VERBOSE" = true ]; then
-                    echo -e "${GREEN}✓ 主程序（含标准库）编译完成${NC}"
-                fi
-                rm -f "$REBUILD_LOG"
-            else
-                echo -e "${RED}警告: 重新编译主程序（含标准库）失败${NC}"
-                if [ "$VERBOSE" = true ]; then
-                    echo "编译输出:"
-                    cat "$REBUILD_LOG" | tail -20
-                else
-                    echo "编译错误（使用 VERBOSE=true 查看详细信息）:"
-                    cat "$REBUILD_LOG" | grep -E "错误|error" | head -10
-                fi
-                rm -f "$REBUILD_LOG"
-                # 继续使用原来的输出文件（但会缺少标准库函数）
-                echo -e "${YELLOW}注意: 将使用未包含标准库的版本，链接可能失败${NC}"
-            fi
-        fi
-    fi
+    # 注意：--nostdlib 模式暂不重新编译标准库
+    # 当前编译器源代码已通过 use 语句导入了 std.* 标准库
+    # 这些标准库函数已经在编译器源代码中声明，不需要额外重新编译
     
     echo ""
     echo -e "${GREEN}✓ 编译成功！${NC}"
@@ -588,14 +500,40 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             if [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ]; then
                 if [ -f "$BRIDGE_C" ]; then
                     # --nostdlib + 静态链接：不依赖动态库，显式链接 crt 与 libc/libgcc
+                    # 注意：需要先将 .c 文件编译成 .o 文件，因为 -nostdlib 会影响编译阶段
                     if [ "$USE_NOSTDLIB" = true ]; then
+                        # 先编译 .c 文件为 .o 文件
+                        UYA_O="$BUILD_DIR/uya.o"
+                        BRIDGE_O="$BUILD_DIR/bridge.o"
+                        
+                        if [ "$VERBOSE" = true ]; then
+                            echo "编译 $OUTPUT_FILE -> $UYA_O"
+                        fi
+                        
+                        if ! gcc --std=c99 -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
+                            echo -e "${RED}✗ 编译 uya.c 失败${NC}"
+                            exit 1
+                        fi
+                        
+                        if [ "$VERBOSE" = true ]; then
+                            echo "编译 $BRIDGE_C -> $BRIDGE_O"
+                        fi
+                        
+                        if ! gcc --std=c99 -c "$BRIDGE_C" -o "$BRIDGE_O" 2>&1; then
+                            echo -e "${RED}✗ 编译 bridge.c 失败${NC}"
+                            exit 1
+                        fi
+                        
+                        # 获取 crt 文件路径
                         CRT1="$(gcc -print-file-name=crt1.o)"
                         CRTI="$(gcc -print-file-name=crti.o)"
                         CRTN="$(gcc -print-file-name=crtn.o)"
+                        
+                        # 链接（需要 -lgcc_eh 用于异常处理支持）
                         if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                            LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$OUTPUT_FILE\" \"$BRIDGE_C\" -lc \"$CRTN\" -lgcc"
+                            LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$BRIDGE_O\" -lc \"$CRTN\" -lgcc -lgcc_eh"
                         else
-                            LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$OUTPUT_FILE\" \"$BRIDGE_C\" -lc \"$CRTN\" -lgcc"
+                            LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$BRIDGE_O\" -lc \"$CRTN\" -lgcc -lgcc_eh"
                         fi
                     else
                         # 0 依赖：纯静态链接，不链接 LLVM（C99 自举编译器不需要）

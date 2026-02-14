@@ -1,22 +1,8 @@
-// c.stdlib - 标准库函数（内存分配、进程控制、字符串转换）
-// 版本：v0.3.0
+// libc.stdlib - 标准库函数（内存分配、进程控制、字符串转换）
+// 版本：v0.4.0
 // 说明：基于系统调用的标准库函数（零外部依赖）
 // 注意：函数名与 C 标准库一致（malloc, free, exit, atoi 等）
-
-use std.c.syscall.sys_exit;
-use std.c.syscall.sys_getpid;
-use std.c.syscall.SYS_brk;
-use std.c.memset;
 use std.string.strlen;
-
-// ============================================================
-// mmap 标志常量（Linux）
-// ============================================================
-
-const MAP_PRIVATE: i64 = 2;
-const MAP_ANONYMOUS: i64 = 32;
-const PROT_READ: i64 = 1;
-const PROT_WRITE: i64 = 2;
 
 // ============================================================
 // 内存分配函数（基于 mmap）
@@ -33,7 +19,7 @@ export fn malloc(size: usize) &void {
     // 使用 mmap 分配内存
     // mmap(addr=0, length=size, prot=PROT_READ|PROT_WRITE, flags=MAP_PRIVATE|MAP_ANONYMOUS, fd=-1, offset=0)
     // 注意：SYS_mmap = 9 (Linux x86-64)
-    const result: !i64 = @syscall(9, 0, size as i64, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0 - 1, 0);
+    const result: !i64 = @syscall(SYS_mmap, 0, size as i64, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, 0 - 1, 0);
     const ptr: i64 = result catch {
         return null;
     };
@@ -53,15 +39,9 @@ export fn free(ptr: &void) void {
         return;
     }
     
-    // 注意：munmap 需要知道内存大小，但标准 free 接口没有大小参数
-    // 简化实现：使用一个固定大小的内存块（实际应用中需要维护分配表）
-    // 这里使用一个简单的实现：假设每次分配至少 4096 字节（一页）
-    // 实际应用中应该维护一个分配表来记录每个指针的大小
-    
     // 简化：munmap(ptr, 4096) - 假设最小分配为一页
-    // 注意：这是一个简化实现，实际应该维护分配表
     // 注意：SYS_munmap = 11 (Linux x86-64)
-    _ = @syscall(11, ptr as i64, 4096);
+    _ = @syscall(SYS_munmap, ptr as i64, 4096);
 }
 
 // calloc - 分配并清零 nmemb * size 字节的内存
@@ -80,7 +60,6 @@ export fn calloc(nmemb: usize, size: usize) &void {
 
 // realloc - 重新分配内存（扩展或缩小）
 // 返回：新的内存指针，失败返回 null
-// 注意：简化实现，实际应该复制旧数据
 export fn realloc(ptr: &void, size: usize) &void {
     if ptr == null {
         return malloc(size);
@@ -92,15 +71,10 @@ export fn realloc(ptr: &void, size: usize) &void {
     }
     
     // 简化实现：分配新内存（实际应该复制旧数据并释放旧内存）
-    // 注意：这是一个简化实现，实际应该维护分配表并复制数据
     const new_ptr: &void = malloc(size);
     if new_ptr == null {
         return null;
     }
-    
-    // 注意：无法知道旧内存的大小，这里假设至少复制 size 字节
-    // 实际应用中应该维护分配表
-    // 这里简化：只分配新内存，不复制旧数据（调用者需要自己处理）
     
     return new_ptr;
 }
@@ -110,19 +84,20 @@ export fn realloc(ptr: &void, size: usize) &void {
 // ============================================================
 
 // exit - 正常退出进程
-// 注意：noreturn 函数
 export fn exit(status: i32) void {
     sys_exit(status as i64);
 }
 
 // abort - 异常终止进程（发送 SIGABRT）
-// 注意：noreturn 函数
 export fn abort() void {
-    // 注意：SYS_getpid = 39, SYS_kill = 62 (Linux x86-64)
-    // 使用 sys_getpid 函数（已封装错误处理）
-    const pid: i64 = sys_getpid();
+    // 使用 sys_getpid 函数
+    const pid_result: !i64 = sys_getpid();
+    const pid: i64 = pid_result catch {
+        sys_exit(1);
+        return;
+    };
     // 发送 SIGABRT (6) 给自己
-    _ = @syscall(62, pid, 6);
+    _ = @syscall(SYS_kill, pid, 6);
     // 如果 kill 失败，直接退出
     sys_exit(1);
 }
@@ -132,7 +107,6 @@ export fn abort() void {
 // ============================================================
 
 // atoi - 将字符串转换为 i32
-// 返回：转换后的整数，失败返回 0
 export fn atoi(s: &const byte) i32 {
     if s == null {
         return 0;
@@ -170,7 +144,6 @@ export fn atoi(s: &const byte) i32 {
 }
 
 // atol - 将字符串转换为 i64
-// 返回：转换后的长整数，失败返回 0
 export fn atol(s: &const byte) i64 {
     if s == null {
         return 0;
@@ -208,8 +181,6 @@ export fn atol(s: &const byte) i64 {
 }
 
 // atof - 将字符串转换为 f64（简化实现）
-// 返回：转换后的浮点数，失败返回 0.0
-// 注意：这是一个简化实现，只支持基本格式
 export fn atof(s: &const byte) f64 {
     if s == null {
         return 0.0;
@@ -263,8 +234,6 @@ export fn atof(s: &const byte) f64 {
 }
 
 // strtod - 将字符串转换为 f64（C 标准库兼容）
-// 返回：转换后的浮点数，失败返回 0.0
-// 注意：endptr 用于返回转换结束的位置（使用 &const byte 以避免 const 限定符警告）
 export fn strtod(nptr: &const byte, endptr: & &const byte) f64 {
     if nptr == null {
         if endptr != null {
@@ -326,8 +295,6 @@ export fn strtod(nptr: &const byte, endptr: & &const byte) f64 {
 }
 
 // strtol - 将字符串转换为 i64（C 标准库兼容）
-// 返回：转换后的长整数，失败返回 0
-// 注意：endptr 用于返回转换结束的位置（使用 &const byte 以避免 const 限定符警告），base 用于指定进制（2-36）
 export fn strtol(nptr: &const byte, endptr: & &const byte, base: i32) i64 {
     if nptr == null {
         if endptr != null {
@@ -410,35 +377,12 @@ export fn strtol(nptr: &const byte, endptr: & &const byte, base: i32) i64 {
     return result;
 }
 
-
 // ============================================================
 // 系统函数（C 标准库兼容）
 // ============================================================
 
-use std.c.syscall.SYS_stat;
-use std.c.syscall.SYS_readlink;
-use std.string.strlen;
 use std.string.strcmp;
 use std.string.strncpy;
-
-// ============================================================
-// 类型定义（用于 C 编译器代码生成）
-// ============================================================
-
-// stat 结构体（Linux x86_64 上为 144 字节）
-struct Stat {
-    _data: [byte: 144],  // 144 字节，匹配 C 的 struct stat
-}
-
-// 目录操作相关类型
-struct Dirent {
-    d_name: &byte,
-    d_type: u8,  // DT_REG = 8, DT_DIR = 4
-}
-
-struct DIR {
-    // 不透明类型
-}
 
 // stat - 获取文件状态（C 标准库兼容）
 // 返回：0 成功，-1 失败
@@ -482,15 +426,12 @@ export fn readlink(path: &const byte, buf: &byte, bufsiz: usize) i32 {
 
 // getenv - 获取环境变量（简化实现）
 // 返回：环境变量值的指针，未找到返回 null
-// 注意：这是一个简化实现，实际应该从 environ 变量读取
 export fn getenv(name: &const byte) &byte {
     if name == null {
         return null;
     }
     
     // 简化实现：返回 null（实际应该从 environ 读取）
-    // 注意：在 --nostdlib 模式下，environ 变量可能不可用
-    // 这里提供一个占位实现，实际使用时需要访问 environ
     return null;
 }
 
@@ -498,20 +439,12 @@ export fn getenv(name: &const byte) &byte {
 // 目录操作函数（C 标准库兼容）
 // ============================================================
 
-use std.c.syscall.sys_open;
-use std.c.syscall.sys_close;
-use std.c.syscall.sys_read;
-use std.c.syscall.O_RDONLY;
-use std.c.syscall.SYS_getdents64;
-
 // 目录流结构（简化实现）
-// 注意：DIR 结构体在 extern_decls.uya 中声明为不透明类型
-// 这里我们使用文件描述符作为 DIR 的底层实现
 var opendir_fd_storage: [i64: 64] = [];
 
 // opendir - 打开目录（C 标准库兼容）
 // 返回：DIR*，失败返回 null
-export fn opendir(name: &const byte) &DIR {
+export fn opendir(name: &const byte) &Dirent {
     if name == null {
         return null;
     }
@@ -532,7 +465,7 @@ export fn opendir(name: &const byte) &DIR {
         // 查找空闲槽位（fd <= 0 表示未使用）
         if opendir_fd_storage[j] <= 0 {
             opendir_fd_storage[j] = fd;
-            return &opendir_fd_storage[j] as &DIR;
+            return &opendir_fd_storage[j] as &Dirent;
         }
         j = j + 1;
     }
@@ -544,8 +477,7 @@ export fn opendir(name: &const byte) &DIR {
 
 // readdir - 读取目录项（简化实现）
 // 返回：Dirent*，失败或结束返回 null
-// 注意：这是一个简化实现，实际应该使用 getdents64 系统调用
-export fn readdir(dirp: &DIR) &Dirent {
+export fn readdir(dirp: &Dirent) &Dirent {
     if dirp == null {
         return null;
     }
@@ -559,13 +491,12 @@ export fn readdir(dirp: &DIR) &Dirent {
     }
     
     // 简化实现：返回 null（实际应该使用 getdents64 读取目录项）
-    // 注意：getdents64 系统调用较复杂，这里提供占位实现
     return null;
 }
 
 // closedir - 关闭目录（C 标准库兼容）
 // 返回：0 成功，-1 失败
-export fn closedir(dirp: &DIR) i32 {
+export fn closedir(dirp: &Dirent) i32 {
     if dirp == null {
         return 0 - 1;
     }

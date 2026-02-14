@@ -5,6 +5,10 @@
 // 注意：此文件正在迁移到 std.* 标准库
 // 已迁移的函数使用 use 语句导入，未迁移的仍使用 extern 声明
 
+// ===== libc 模块（系统调用封装）=====
+// 导入 libc 模块以解析所有 lib/libc/ 下的文件
+use libc;
+
 // ===== 运行时支持（std.runtime / bridge.c）=====
 // 显式 extern 声明，确保 C 代码生成器输出正确原型（返回值 64 位指针/i32），
 // 否则未声明时会被当作返回 int，导致 get_argv 等指针被截断引发段错误
@@ -32,21 +36,21 @@ use std.string.strchr;
 use std.string.strrchr;
 use std.string.strstr;
 
-// ===== 数值转换（std.c，暂时保留，后续迁移到 std.conv）=====
-use std.c.strtod;
-use std.c.strtol;
+// ===== 数值转换（libc.stdlib）=====
+use libc.stdlib.strtod;
+use libc.stdlib.strtol;
 
-// ===== 格式化（std.c，暂时保留，后续迁移到 std.fmt）=====
-use std.c.sprintf;
-use std.c.snprintf;
+// ===== 格式化（libc.stdio）=====
+use libc.stdio.sprintf;
+use libc.stdio.snprintf;
 
 // ===== 内存操作（std.mem）=====
 use std.mem.memcpy;
 use std.mem.memset;
 
-// ===== 进程控制（std.c，暂时保留，后续迁移到 std.process）=====
-use std.c.exit;
-use std.c.getenv;
+// ===== 进程控制（libc.stdlib）=====
+use libc.stdlib.exit;
+use libc.stdlib.getenv;
 
 // ===== 文件系统（std.c，暂时保留，后续迁移到 std.fs）=====
 // stat 结构体（Linux x86_64 上为 144 字节）
@@ -55,7 +59,7 @@ use std.c.getenv;
 struct Stat {
     _data: [byte: 144],  // 144 字节，匹配 C 的 struct stat
 }
-use std.c.stat;
+use libc.stdlib.stat;
 // S_ISDIR 和 S_ISREG 是宏，在 Uya 中需要手动实现
 // S_ISDIR(mode) = ((mode) & S_IFMT) == S_IFDIR
 // S_ISREG(mode) = ((mode) & S_IFMT) == S_IFREG
@@ -63,7 +67,7 @@ const S_IFMT: u32 = 61440;  // 0xF000
 const S_IFDIR: u32 = 16384;  // 0x4000
 const S_IFREG: u32 = 32768;  // 0x8000
 
-// ===== 目录操作（std.c，暂时保留，后续迁移到 std.fs）=====
+// ===== 目录操作（libc.stdlib）=====
 struct Dirent {
     d_name: *byte,
     d_type: u8,  // DT_REG = 8, DT_DIR = 4
@@ -71,11 +75,11 @@ struct Dirent {
 struct DIR {
     // 不透明类型
 }
-use std.c.opendir;
-use std.c.readdir;
-use std.c.closedir;
+use libc.stdlib.opendir;
+use libc.stdlib.readdir;
+use libc.stdlib.closedir;
 const DT_REG: u8 = 8;  // 普通文件
 const DT_DIR: u8 = 4;  // 目录
 
-// ===== 符号链接（std.c，暂时保留，后续迁移到 std.fs）=====
-use std.c.readlink;
+// ===== 符号链接（libc.stdlib）=====
+use libc.stdlib.readlink;

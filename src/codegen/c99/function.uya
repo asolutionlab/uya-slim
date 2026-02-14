@@ -30,80 +30,32 @@ fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode
     return null;
 }
 
-// 与 <unistd.h>/<sys/stat.h> 中符号冲突的函数名，本程序定义时在 C 中改为 uya_ 前缀
-fn is_system_conflicting_func_name(name: &byte) i32 {
-    if name == null {
+// 检查函数是否是 extern "libc" fn（用于决定字符串参数类型）
+fn is_extern_libc_function(codegen: &C99CodeGenerator, func_name: &byte) i32 {
+    if codegen == null || func_name == null {
         return 0;
     }
-    if strcmp(name as *byte, "opendir" as *byte) == 0 ||
-        strcmp(name as *byte, "readdir" as *byte) == 0 ||
-        strcmp(name as *byte, "closedir" as *byte) == 0 ||
-        strcmp(name as *byte, "stat" as *byte) == 0 ||
-        strcmp(name as *byte, "readlink" as *byte) == 0 {
-        return 1;
+    const fn_decl: &ASTNode = find_function_decl_c99(codegen, func_name);
+    if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL {
+        if fn_decl.fn_decl_extern_lib_name != null {
+            return 1;
+        }
     }
     return 0;
 }
 
-// 与系统头冲突的全局函数在 C 中的名称；for_definition 1=定义/原型 0=调用（仅本程序有定义时用前缀）
+// 全局函数在 C 中的名称
 fn get_c_name_for_global_function(codegen: &C99CodeGenerator, name: &byte, for_definition: i32) &byte {
     if name == null {
         return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
     }
-    if is_system_conflicting_func_name(name) == 0 {
-        return get_safe_c_identifier(codegen, name);
-    }
-    if for_definition != 0 {
-        var uya_buf: [byte: 64] = [];
-        snprintf(&uya_buf[0] as *byte, 64, "uya_%s" as *byte, name as *byte);
-        const prefixed: &byte = c99_arena_strdup(codegen.arena, &uya_buf[0] as &byte);
-        if prefixed != null {
-            return get_safe_c_identifier(codegen, prefixed);
-        }
-    } else {
-        const decl: &ASTNode = find_function_decl_c99(codegen, name);
-        if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_body != null {
-            var uya_buf: [byte: 64] = [];
-            snprintf(&uya_buf[0] as *byte, 64, "uya_%s" as *byte, name as *byte);
-            const prefixed: &byte = c99_arena_strdup(codegen.arena, &uya_buf[0] as &byte);
-            if prefixed != null {
-                return get_safe_c_identifier(codegen, prefixed);
-            }
-        }
-    }
     return get_safe_c_identifier(codegen, name);
 }
 
-// 与 <sys/stat.h>/<unistd.h> 中宏同名的全局常量，在 C 中改为 uya_ 前缀
-fn is_system_conflicting_const_name(name: &byte) i32 {
-    if name == null {
-        return 0;
-    }
-    if strcmp(name as *byte, "S_IRWXU" as *byte) == 0 || strcmp(name as *byte, "S_IRUSR" as *byte) == 0 ||
-        strcmp(name as *byte, "S_IWUSR" as *byte) == 0 || strcmp(name as *byte, "S_IXUSR" as *byte) == 0 ||
-        strcmp(name as *byte, "S_IRWXG" as *byte) == 0 || strcmp(name as *byte, "S_IRGRP" as *byte) == 0 ||
-        strcmp(name as *byte, "S_IWGRP" as *byte) == 0 || strcmp(name as *byte, "S_IXGRP" as *byte) == 0 ||
-        strcmp(name as *byte, "S_IRWXO" as *byte) == 0 || strcmp(name as *byte, "S_IROTH" as *byte) == 0 ||
-        strcmp(name as *byte, "S_IWOTH" as *byte) == 0 || strcmp(name as *byte, "S_IXOTH" as *byte) == 0 ||
-        strcmp(name as *byte, "STDIN_FILENO" as *byte) == 0 || strcmp(name as *byte, "STDOUT_FILENO" as *byte) == 0 ||
-        strcmp(name as *byte, "STDERR_FILENO" as *byte) == 0 {
-        return 1;
-    }
-    return 0;
-}
-
+// 全局常量在 C 中的名称
 fn get_c_name_for_global_constant(codegen: &C99CodeGenerator, name: &byte) &byte {
     if name == null {
         return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
-    }
-    if is_system_conflicting_const_name(name) == 0 {
-        return get_safe_c_identifier(codegen, name);
-    }
-    var uya_buf: [byte: 64] = [];
-    snprintf(&uya_buf[0] as *byte, 64, "uya_%s" as *byte, name as *byte);
-    const prefixed: &byte = c99_arena_strdup(codegen.arena, &uya_buf[0] as &byte);
-    if prefixed != null {
-        return get_safe_c_identifier(codegen, prefixed);
     }
     return get_safe_c_identifier(codegen, name);
 }
@@ -176,104 +128,6 @@ fn format_param_type(codegen: &C99CodeGenerator, type_c: &byte, param_name: &byt
     }
 }
 
-// 检查是否是标准库函数（需要特殊处理参数类型）
-fn is_stdlib_function(func_name: &byte) i32 {
-    if func_name == null {
-        return 0;
-    }
-    // 标准库函数列表：这些函数的字符串参数应该是 const char * 而不是 uint8_t *
-    // 或者需要特殊处理（如 memset/memcpy 返回 void *）
-    // I/O 函数
-    if strcmp(func_name as *byte, "printf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "sprintf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fprintf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "snprintf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "scanf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fscanf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "sscanf" as *byte) == 0 ||
-        strcmp(func_name as *byte, "puts" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fputs" as *byte) == 0 ||
-        strcmp(func_name as *byte, "putchar" as *byte) == 0 ||
-        strcmp(func_name as *byte, "getchar" as *byte) == 0 ||
-        strcmp(func_name as *byte, "gets" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fgets" as *byte) == 0 {
-        return 1;
-    }
-    // 字符串处理函数（仅保留未被 Uya 标准库替换的函数）
-    if strcmp(func_name as *byte, "strncat" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strstr" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strdup" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strndup" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strlen" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strcmp" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strncmp" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strchr" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strrchr" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strncpy" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strcpy" as *byte) == 0 {
-        return 1;
-    }
-    // 内存函数（需要返回 void * 而不是 const uint8_t *）
-    if strcmp(func_name as *byte, "memset" as *byte) == 0 ||
-        strcmp(func_name as *byte, "memcpy" as *byte) == 0 ||
-        strcmp(func_name as *byte, "memmove" as *byte) == 0 ||
-        strcmp(func_name as *byte, "memcmp" as *byte) == 0 ||
-        strcmp(func_name as *byte, "memchr" as *byte) == 0 {
-        return 1;
-    }
-    // 字符串处理函数（std.c.string）
-    if strcmp(func_name as *byte, "strcat" as *byte) == 0 {
-        return 1;
-    }
-    // 文件 I/O 函数
-    if strcmp(func_name as *byte, "fopen" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fread" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fwrite" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fclose" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fgetc" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fputc" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fgets" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fflush" as *byte) == 0 ||
-        strcmp(func_name as *byte, "fprintf" as *byte) == 0 {
-        return 1;
-    }
-    // fputs 需要特殊处理，避免与标准库冲突
-    if strcmp(func_name as *byte, "fputs" as *byte) == 0 {
-        return 1;
-    }
-    // std.c.stdlib 函数（允许使用 FFI 指针类型）
-    if strcmp(func_name as *byte, "malloc" as *byte) == 0 ||
-        strcmp(func_name as *byte, "free" as *byte) == 0 ||
-        strcmp(func_name as *byte, "calloc" as *byte) == 0 ||
-        strcmp(func_name as *byte, "realloc" as *byte) == 0 ||
-        strcmp(func_name as *byte, "exit" as *byte) == 0 ||
-        strcmp(func_name as *byte, "atoi" as *byte) == 0 ||
-        strcmp(func_name as *byte, "atol" as *byte) == 0 ||
-        strcmp(func_name as *byte, "atof" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strtod" as *byte) == 0 ||
-        strcmp(func_name as *byte, "strtol" as *byte) == 0 ||
-        strcmp(func_name as *byte, "getenv" as *byte) == 0 ||
-        strcmp(func_name as *byte, "abort" as *byte) == 0 {
-        return 1;
-    }
-    // std.c.stdio 函数（Uya 标准库）
-    if strcmp(func_name as *byte, "put_char" as *byte) == 0 ||
-        strcmp(func_name as *byte, "put_char_fd" as *byte) == 0 ||
-        strcmp(func_name as *byte, "write_bytes" as *byte) == 0 ||
-        strcmp(func_name as *byte, "write_bytes_fd" as *byte) == 0 ||
-        strcmp(func_name as *byte, "put_str_len" as *byte) == 0 ||
-        strcmp(func_name as *byte, "get_char" as *byte) == 0 ||
-        strcmp(func_name as *byte, "read_bytes" as *byte) == 0 ||
-        strcmp(func_name as *byte, "read_bytes_fd" as *byte) == 0 ||
-        strcmp(func_name as *byte, "i32_to_str" as *byte) == 0 ||
-        strcmp(func_name as *byte, "i64_to_str" as *byte) == 0 ||
-        strcmp(func_name as *byte, "print_i32" as *byte) == 0 ||
-        strcmp(func_name as *byte, "print_i64" as *byte) == 0 {
-        return 1;
-    }
-    return 0;
-}
-
 // 生成函数原型（前向声明）
 // 注意：此函数在 main.uya 中被调用，但由于 function.uya 在 main.uya 之前编译，函数已经可见
 fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
@@ -305,105 +159,8 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         return;
     }
     
-    // 检查是否是标准库函数（用原名判断，func_name 可能已是 uya_ 前缀）
-    const is_stdlib: i32 = is_stdlib_function(fn_decl.fn_decl_name);
-    
     // 返回类型（如果是数组类型，转换为指针类型）
     var return_c: &byte = convert_array_return_type(codegen, return_type);
-    
-    // 特殊处理：memset 和 memcpy 应该返回 void * 而不是 *byte
-    if is_extern != 0 && return_type != null && return_type.type == ASTNodeType.AST_TYPE_POINTER {
-        const pointed_type: &ASTNode = return_type.type_pointer_pointed_type;
-        if pointed_type != null && pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
-            const pointed_name: &byte = pointed_type.type_named_name;
-            if pointed_name != null {
-                if strcmp(pointed_name as *byte, "byte" as *byte) == 0 {
-                    // 检查是否是 memset 或 memcpy
-                    if strcmp(func_name as *byte, "memset" as *byte) == 0 ||
-                        strcmp(func_name as *byte, "memcpy" as *byte) == 0 {
-                        // 这些函数应该返回 void * 而不是 const uint8_t *
-                        return_c = ("void *" as *byte) as &byte;
-                    }
-                } else if strcmp(pointed_name as *byte, "void" as *byte) == 0 {
-                    // *void 类型已经是 void *，不需要修改
-                }
-            }
-        }
-    }
-    
-    // 对于标准库函数，不生成 extern 声明（应该包含相应的头文件）
-    if is_extern != 0 && is_stdlib != 0 {
-        // 标准库函数应该包含相应的头文件（如 <stdio.h>），不生成 extern 声明
-        // 这样可以避免与标准库的声明冲突
-        return;
-    }
-    
-    // 对于标准库 stdlib 函数（strtod, strtol, getenv, abort, exit, atoi, atol, atof 等），不生成函数声明
-    // 避免与 C 标准库的声明冲突（我们总是包含 <stdlib.h>）
-    if is_stdlib != 0 {
-        const orig_name: &byte = fn_decl.fn_decl_name;
-        if orig_name != null && (strcmp(orig_name as *byte, "strtod" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strtol" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "getenv" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "abort" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "exit" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "atoi" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "atol" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "atof" as *byte) == 0) {
-            // 这些函数已经在 <stdlib.h> 中声明，不生成重复声明
-            return;
-        }
-    }
-    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, fflush, sprintf, snprintf 等）
-    // 如果函数没有 body（extern），不生成函数声明（应该链接到 C 标准库的实现）
-    // 如果函数有 body（实际定义），则生成前向声明（因为我们已经不包含 <stdio.h> 了）
-    if is_stdlib != 0 {
-        const orig_name: &byte = fn_decl.fn_decl_name;
-        if orig_name != null && (strcmp(orig_name as *byte, "fputs" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fputc" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fwrite" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fprintf" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fgetc" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fread" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fopen" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fclose" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fflush" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "sprintf" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "snprintf" as *byte) == 0) {
-            // 如果函数没有 body（extern），不生成函数声明（应该链接到 C 标准库的实现）
-            if body == null {
-                return;
-            }
-            // 如果函数有 body，继续生成前向声明（因为我们已经不包含 <stdio.h> 了）
-        }
-    }
-    
-    // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数声明
-    // 避免与 C 标准库的声明冲突
-    if is_stdlib != 0 && codegen.needs_string_h != 0 {
-        const orig_name: &byte = fn_decl.fn_decl_name;
-        // 检查是否是字符串函数（这些函数在 <string.h> 中已声明）
-        if orig_name != null && (strcmp(orig_name as *byte, "strlen" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strcmp" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strncmp" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strcpy" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strncpy" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strcat" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strncat" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strchr" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strrchr" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strstr" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strdup" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strndup" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "memcpy" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "memmove" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "memset" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "memcmp" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "memchr" as *byte) == 0) {
-            // 这些函数已经在 <string.h> 中声明，不生成重复声明
-            return;
-        }
-    }
     
     // 特殊处理：main 函数需要重命名为 uya_main（符合 Uya 规范：main 函数无参数）
     // 注意：Uya Mini 不支持三元运算符，使用 if-else 代替
@@ -607,76 +364,6 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
     const body: &ASTNode = fn_decl.fn_decl_body;
     const extern_lib_name: &byte = fn_decl.fn_decl_extern_lib_name;  // extern "libc" fn 的库名
-    
-    // 检查是否是标准库函数
-    const is_stdlib: i32 = is_stdlib_function(orig_name);
-    
-    // 对于标准库 stdlib 函数（strtod, strtol, getenv, abort, exit, atoi, atol, atof 等），不生成函数定义
-    // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
-    // 注意：我们总是包含 <stdlib.h>，所以需要检查这些函数
-    if is_stdlib != 0 {
-        if orig_name != null && (strcmp(orig_name as *byte, "strtod" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strtol" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "getenv" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "abort" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "exit" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "atoi" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "atol" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "atof" as *byte) == 0) {
-            // 这些函数已经在 <stdlib.h> 中声明，应该链接到 C 标准库的实现
-            // 不生成 Uya 标准库的实现，避免类型冲突
-            return;
-        }
-    }
-    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, fflush, sprintf, snprintf 等）
-    // 如果函数没有 body（extern），则不生成函数定义（应该链接到 C 标准库的实现）
-    // 如果函数有 body，则生成函数定义（因为我们已经不包含 <stdio.h> 了）
-    if is_stdlib != 0 {
-        if orig_name != null && (strcmp(orig_name as *byte, "fputs" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fputc" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fwrite" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fprintf" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fgetc" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fread" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fopen" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fclose" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "fflush" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "sprintf" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "snprintf" as *byte) == 0) {
-            // 如果函数没有 body（extern），不生成函数定义（应该链接到 C 标准库的实现）
-            if body == null {
-                return;
-            }
-            // 如果函数有 body，继续生成函数定义（因为我们已经不包含 <stdio.h> 了）
-        }
-    }
-    
-    // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数定义
-    // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
-    if is_stdlib != 0 && codegen.needs_string_h != 0 {
-        // 检查是否是字符串函数（这些函数在 <string.h> 中已声明，应该链接到标准库实现）
-        if orig_name != null && (strcmp(orig_name as *byte, "strlen" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strcmp" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strncmp" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strcpy" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strncpy" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strcat" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strncat" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strchr" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strrchr" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strstr" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strdup" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "strndup" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "memcpy" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "memmove" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "memset" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "memcmp" as *byte) == 0 ||
-            strcmp(orig_name as *byte, "memchr" as *byte) == 0) {
-            // 这些函数已经在 <string.h> 中声明，应该链接到 C 标准库的实现
-            // 不生成 Uya 标准库的实现，避免类型冲突
-            return;
-        }
-    }
     
     // 如果没有函数体（外部函数），则不生成定义
     if body == null {

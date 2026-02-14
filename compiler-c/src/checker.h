@@ -102,6 +102,8 @@ typedef struct FunctionSignature {
     Type return_type;           // 返回类型
     int is_extern;              // 是否为 extern 函数
     int is_varargs;             // 是否为可变参数函数（1 表示是，0 表示否，仅用于 extern 函数）
+    int is_export;              // 是否为 export 函数（1 表示是，0 表示否）
+    const char *module_name;    // 所属模块名（用于区分不同模块的同名 export 函数）
     int line;                   // 行号
     int column;                 // 列号
 } FunctionSignature;

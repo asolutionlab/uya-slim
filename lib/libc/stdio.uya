@@ -1,10 +1,7 @@
-// c.stdio - 标准 I/O 操作
-// 版本：v0.3.0
+// libc.stdio - 标准 I/O 操作
+// 版本：v0.4.0
 // 说明：基于系统调用的标准 I/O 函数（零外部依赖）
 // 注意：函数名使用下划线分隔风格，避免与 C 标准库冲突
-
-use std.c.syscall.SYS_read;
-use std.c.syscall.SYS_write;
 
 // ============================================================
 // 标准文件描述符
@@ -235,22 +232,6 @@ export fn print_i64(value: i64) usize {
 // C 标准库兼容函数（用于 --nostdlib 模式）
 // ============================================================
 
-use std.c.syscall.sys_open;
-use std.c.syscall.sys_close;
-use std.c.syscall.sys_read;
-use std.c.syscall.sys_write;
-use std.c.syscall.O_RDONLY;
-use std.c.syscall.O_WRONLY;
-use std.c.syscall.O_RDWR;
-use std.c.syscall.O_CREAT;
-use std.c.syscall.O_TRUNC;
-use std.c.syscall.O_APPEND;
-use std.c.syscall.UYA_S_IRWXU;
-use std.c.syscall.UYA_STDOUT_FILENO;
-use std.c.syscall.UYA_STDERR_FILENO;
-use std.string.strlen;
-use std.string.strcmp;
-
 // 全局文件描述符存储（用于 fopen/fclose，最多 64 个文件）
 var fopen_fd_storage: [i64: 64] = [];
 
@@ -274,10 +255,10 @@ export fn fopen(filename: &const byte, mode: &const byte) &void {
             flags = O_RDONLY;
         } else if c == 119 {  // 'w'
             flags = O_WRONLY | O_CREAT | O_TRUNC;
-            create_mode = UYA_S_IRWXU;
+            create_mode = S_IRWXU;
         } else if c == 97 {  // 'a'
             flags = O_WRONLY | O_CREAT | O_APPEND;
-            create_mode = UYA_S_IRWXU;
+            create_mode = S_IRWXU;
         } else if c == 43 {  // '+'
             // 读写模式
             if flags == O_RDONLY {
@@ -411,15 +392,10 @@ export fn fprintf(stream: &void, format: &const byte, ...) i32 {
     }
     
     // 简化实现：只支持 %s 和 %d
-    // 注意：可变参数在 Uya 中需要特殊处理，这里使用简化实现
     var buf: [byte: 4096] = [];
     var buf_pos: usize = 0;
     var format_pos: usize = 0;
     const format_len: usize = strlen(format);
-    
-    // 获取可变参数（简化：假设最多 10 个参数）
-    // 注意：Uya 的可变参数处理较复杂，这里使用简化实现
-    // 实际使用时，需要根据格式字符串解析参数
     
     while format_pos < format_len && buf_pos < 4095 {
         const c: byte = format[format_pos];
@@ -428,11 +404,9 @@ export fn fprintf(stream: &void, format: &const byte, ...) i32 {
             if format_pos < format_len {
                 const spec: byte = format[format_pos];
                 if spec == 115 {  // 's' - 字符串
-                    // 简化：跳过字符串参数（需要 va_list 支持）
                     buf[buf_pos] = 63 as byte;  // '?'
                     buf_pos = buf_pos + 1;
                 } else if spec == 100 {  // 'd' - 整数
-                    // 简化：跳过整数参数（需要 va_list 支持）
                     buf[buf_pos] = 48 as byte;  // '0'
                     buf_pos = buf_pos + 1;
                 } else if spec == 37 {  // '%%' - 转义的 %
@@ -468,7 +442,6 @@ export fn fprintf(stream: &void, format: &const byte, ...) i32 {
 
 // fwrite - 向文件流写入数据（C 标准库兼容）
 // 返回：写入的元素数
-// 注意：ptr 使用 &const byte 以避免 const 限定符警告（与 C 标准库一致）
 export fn fwrite(ptr: &const byte, size: usize, nmemb: usize, stream: &void) usize {
     if ptr == null || stream == null || size == 0 || nmemb == 0 {
         return 0;
@@ -552,12 +525,10 @@ export fn sprintf(buf: &byte, format: &const byte, ...) i32 {
         return 0 - 1;
     }
     
-    // 简化实现：只支持 %s 和 %d
-    // 注意：可变参数在 Uya 中需要特殊处理，这里使用简化实现
     var buf_pos: usize = 0;
     var format_pos: usize = 0;
     const format_len: usize = strlen(format);
-    const max_buf: usize = 4096;  // 最大缓冲区大小
+    const max_buf: usize = 4096;
     
     while format_pos < format_len && buf_pos < max_buf - 1 {
         const c: byte = format[format_pos];
@@ -566,18 +537,15 @@ export fn sprintf(buf: &byte, format: &const byte, ...) i32 {
             if format_pos < format_len {
                 const spec: byte = format[format_pos];
                 if spec == 115 {  // 's' - 字符串
-                    // 简化：跳过字符串参数（需要 va_list 支持）
                     buf[buf_pos] = 63 as byte;  // '?'
                     buf_pos = buf_pos + 1;
                 } else if spec == 100 {  // 'd' - 整数
-                    // 简化：跳过整数参数（需要 va_list 支持）
                     buf[buf_pos] = 48 as byte;  // '0'
                     buf_pos = buf_pos + 1;
                 } else if spec == 37 {  // '%%' - 转义的 %
                     buf[buf_pos] = 37 as byte;  // '%'
                     buf_pos = buf_pos + 1;
                 } else {
-                    // 未知格式说明符，原样输出
                     buf[buf_pos] = 37 as byte;  // '%'
                     buf_pos = buf_pos + 1;
                     if buf_pos < max_buf - 1 {
@@ -597,15 +565,13 @@ export fn sprintf(buf: &byte, format: &const byte, ...) i32 {
     return buf_pos as i32;
 }
 
-// snprintf - 格式化字符串（带长度限制，简化版本，只支持 %s 和 %d）
+// snprintf - 格式化字符串（带长度限制）
 // 返回：写入的字符数（不包括 null 终止符），失败返回负数
 export fn snprintf(buf: &byte, n: usize, format: &const byte, ...) i32 {
     if buf == null || format == null || n == 0 {
         return 0 - 1;
     }
     
-    // 简化实现：只支持 %s 和 %d
-    // 注意：可变参数在 Uya 中需要特殊处理，这里使用简化实现
     var buf_pos: usize = 0;
     var format_pos: usize = 0;
     const format_len: usize = strlen(format);
@@ -621,13 +587,11 @@ export fn snprintf(buf: &byte, n: usize, format: &const byte, ...) i32 {
             if format_pos < format_len {
                 const spec: byte = format[format_pos];
                 if spec == 115 {  // 's' - 字符串
-                    // 简化：跳过字符串参数（需要 va_list 支持）
                     if buf_pos < max_buf {
                         buf[buf_pos] = 63 as byte;  // '?'
                         buf_pos = buf_pos + 1;
                     }
                 } else if spec == 100 {  // 'd' - 整数
-                    // 简化：跳过整数参数（需要 va_list 支持）
                     if buf_pos < max_buf {
                         buf[buf_pos] = 48 as byte;  // '0'
                         buf_pos = buf_pos + 1;
@@ -638,7 +602,6 @@ export fn snprintf(buf: &byte, n: usize, format: &const byte, ...) i32 {
                         buf_pos = buf_pos + 1;
                     }
                 } else {
-                    // 未知格式说明符，原样输出
                     if buf_pos < max_buf {
                         buf[buf_pos] = 37 as byte;  // '%'
                         buf_pos = buf_pos + 1;

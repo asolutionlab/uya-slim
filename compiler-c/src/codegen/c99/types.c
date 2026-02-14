@@ -132,6 +132,8 @@ const char *c99_type_to_c(C99CodeGenerator *codegen, ASTNode *type_node) {
                 return "int32_t";
             } else if (strcmp(name, "i64") == 0) {
                 return "int64_t";
+            } else if (strcmp(name, "isize") == 0) {
+                return "intptr_t";
             } else if (strcmp(name, "u8") == 0) {
                 return "uint8_t";
             } else if (strcmp(name, "u16") == 0) {

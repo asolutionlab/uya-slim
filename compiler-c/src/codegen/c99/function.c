@@ -197,72 +197,199 @@ ASTNode *find_function_decl_c99(C99CodeGenerator *codegen, const char *func_name
     return NULL;
 }
 
-/* 与 <unistd.h>/<sys/stat.h> 中符号冲突的函数名，本程序定义时在 C 中改为 uya_ 前缀 */
-static int is_system_conflicting_func_name(const char *name) {
-    return name && (
-        strcmp(name, "opendir") == 0 ||
-        strcmp(name, "readdir") == 0 ||
-        strcmp(name, "closedir") == 0 ||
-        strcmp(name, "stat") == 0 ||
-        strcmp(name, "readlink") == 0);
-}
-
-/* 与 <sys/stat.h>/<unistd.h> 中宏同名的全局常量，在 C 中改为 uya_ 前缀避免重定义 */
-static int is_system_conflicting_const_name(const char *name) {
-    if (!name) return 0;
-    if (strcmp(name, "S_IRWXU") == 0 || strcmp(name, "S_IRUSR") == 0 ||
-        strcmp(name, "S_IWUSR") == 0 || strcmp(name, "S_IXUSR") == 0 ||
-        strcmp(name, "S_IRWXG") == 0 || strcmp(name, "S_IRGRP") == 0 ||
-        strcmp(name, "S_IWGRP") == 0 || strcmp(name, "S_IXGRP") == 0 ||
-        strcmp(name, "S_IRWXO") == 0 || strcmp(name, "S_IROTH") == 0 ||
-        strcmp(name, "S_IWOTH") == 0 || strcmp(name, "S_IXOTH") == 0 ||
-        strcmp(name, "STDIN_FILENO") == 0 || strcmp(name, "STDOUT_FILENO") == 0 ||
-        strcmp(name, "STDERR_FILENO") == 0)
-        return 1;
-    return 0;
-}
-
-/* 全局常量在 C 中的名称：与系统宏冲突时带 uya_ 前缀（使用 arena 避免静态缓冲区被覆盖） */
+/* 全局常量在 C 中的名称 */
 const char *get_c_name_for_global_constant(C99CodeGenerator *codegen, const char *name) {
     if (!name) return get_safe_c_identifier(codegen, "");
-    if (!is_system_conflicting_const_name(name))
-        return get_safe_c_identifier(codegen, name);
-    {
-        size_t len = strlen(name) + 5;
-        char *prefixed = (char *)arena_alloc(codegen->arena, len);
-        if (prefixed) {
-            snprintf(prefixed, len, "uya_%s", name);
-            return get_safe_c_identifier(codegen, prefixed);
-        }
-    }
     return get_safe_c_identifier(codegen, name);
 }
 
-const char *get_c_name_for_global_function(C99CodeGenerator *codegen, const char *name, int for_definition) {
-    if (!name) return get_safe_c_identifier(codegen, "");
-    if (!is_system_conflicting_func_name(name))
-        return get_safe_c_identifier(codegen, name);
-    if (for_definition) {
-        /* 生成定义/原型：本程序定义的冲突函数一律用 uya_ 前缀（arena 分配避免覆盖） */
-        size_t len = strlen(name) + 5;
-        char *prefixed = (char *)arena_alloc(codegen->arena, len);
-        if (prefixed) {
-            snprintf(prefixed, len, "uya_%s", name);
-            return get_safe_c_identifier(codegen, prefixed);
+/* 从文件名提取模块前缀（用于 export fn 生成带模块前缀的 C 函数名）
+ * 例如：
+ *   lib/libc/stdio.uya -> "libc_"
+ *   lib/libc/subdir/file.uya -> "libc_subdir_"
+ *   lib/std/io/file.uya -> "std_io_"
+ *   lib/std/runtime/runtime.uya -> "std_runtime_"
+ *   tests/programs/test.uya -> ""（非 lib 目录，无前缀）
+ * 返回：模块前缀字符串（包含结尾的 '_'），非 lib 目录返回空字符串
+ */
+static const char *get_module_prefix_from_filename(C99CodeGenerator *codegen, const char *filename) {
+    if (!filename || !codegen || !codegen->arena) return "";
+    
+    // 检查是否是 lib/libc/ 文件
+    const char *lib_libc = strstr(filename, "/lib/libc/");
+    if (lib_libc == NULL) lib_libc = strstr(filename, "lib/libc/");
+    if (lib_libc == NULL) lib_libc = strstr(filename, "\\lib\\libc\\");
+    
+    if (lib_libc != NULL) {
+        const char *relative_path = lib_libc;
+        if (*relative_path == '/') relative_path++;
+        
+        // 跳过 "lib/libc/"
+        if (strncmp(relative_path, "lib/libc/", 9) == 0) relative_path += 9;
+        else if (strncmp(relative_path, "lib\\libc\\", 9) == 0) relative_path += 9;
+        
+        size_t rel_len = strlen(relative_path);
+        size_t base_len = rel_len;
+        if (rel_len > 4 && strcmp(relative_path + rel_len - 4, ".uya") == 0) {
+            base_len = rel_len - 4;
         }
+        
+        // 找到最后一个 '/'，只保留目录部分
+        const char *last_slash = NULL;
+        for (size_t i = base_len; i > 0; i--) {
+            if (relative_path[i - 1] == '/' || relative_path[i - 1] == '\\') {
+                last_slash = relative_path + i - 1;
+                break;
+            }
+        }
+        
+        size_t prefix_len;
+        const char *module_part;
+        
+        if (last_slash != NULL) {
+            // 有子目录：lib/libc/subdir/file.uya -> "libc_subdir_"
+            prefix_len = 5 + (last_slash - relative_path) + 1;  // "libc_" + subdir + "_"
+            module_part = relative_path;
+        } else {
+            // 无子目录：lib/libc/file.uya -> "libc_"
+            prefix_len = 5;  // "libc_"
+            module_part = NULL;
+        }
+        
+        char *prefix = (char *)arena_alloc(codegen->arena, prefix_len + 1);
+        if (!prefix) return "";
+        
+        if (last_slash != NULL && module_part != NULL) {
+            strcpy(prefix, "libc_");
+            size_t subdir_len = last_slash - relative_path;
+            memcpy(prefix + 5, module_part, subdir_len);
+            prefix[5 + subdir_len] = '_';
+            prefix[5 + subdir_len + 1] = '\0';
+            // 将 '/' 替换为 '_'
+            for (size_t i = 5; i < 5 + subdir_len; i++) {
+                if (prefix[i] == '/' || prefix[i] == '\\') prefix[i] = '_';
+            }
+        } else {
+            strcpy(prefix, "libc_");
+        }
+        return prefix;
     }
-    /* 生成调用：仅当本程序有该函数定义时用 uya_ 前缀 */
-    {
-        ASTNode *decl = find_function_decl_c99(codegen, name);
-        if (decl && decl->type == AST_FN_DECL && decl->data.fn_decl.body) {
-            size_t len = strlen(name) + 5;
-            char *prefixed = (char *)arena_alloc(codegen->arena, len);
-            if (prefixed) {
-                snprintf(prefixed, len, "uya_%s", name);
-                return get_safe_c_identifier(codegen, prefixed);
+    
+    // 检查是否是 lib/std/ 文件
+    const char *lib_std = strstr(filename, "/lib/std/");
+    if (lib_std == NULL) lib_std = strstr(filename, "/lib//std/");
+    if (lib_std == NULL) lib_std = strstr(filename, "lib/std/");
+    if (lib_std == NULL) lib_std = strstr(filename, "lib//std/");
+    if (lib_std == NULL) lib_std = strstr(filename, "\\lib\\std\\");
+    
+    if (lib_std != NULL) {
+        const char *relative_path = lib_std;
+        if (*relative_path == '/') {
+            relative_path++;
+            if (*relative_path == '/') relative_path++;
+        }
+        
+        // 跳过 "lib/std/" 或 "lib//std/"
+        if (strncmp(relative_path, "lib/std/", 8) == 0) relative_path += 8;
+        else if (strncmp(relative_path, "lib//std/", 9) == 0) relative_path += 9;
+        else if (strncmp(relative_path, "lib\\std\\", 8) == 0) relative_path += 8;
+        
+        size_t rel_len = strlen(relative_path);
+        size_t base_len = rel_len;
+        if (rel_len > 4 && strcmp(relative_path + rel_len - 4, ".uya") == 0) {
+            base_len = rel_len - 4;
+        }
+        
+        // 找到最后一个 '/'，只保留目录部分
+        const char *last_slash = NULL;
+        for (size_t i = base_len; i > 0; i--) {
+            if (relative_path[i - 1] == '/' || relative_path[i - 1] == '\\') {
+                last_slash = relative_path + i - 1;
+                break;
+            }
+        }
+        
+        size_t prefix_len;
+        if (last_slash != NULL) {
+            // 有子目录：lib/std/io/file.uya -> "std_io_"
+            prefix_len = 5 + (last_slash - relative_path) + 1;  // "std_" + io + "_"
+        } else {
+            // 无子目录：lib/std/file.uya -> "std_"
+            prefix_len = 5;  // "std_"
+        }
+        
+        char *prefix = (char *)arena_alloc(codegen->arena, prefix_len + 1);
+        if (!prefix) return "";
+        
+        if (last_slash != NULL) {
+            strcpy(prefix, "std_");
+            size_t subdir_len = last_slash - relative_path;
+            memcpy(prefix + 4, relative_path, subdir_len);
+            prefix[4 + subdir_len] = '_';
+            prefix[4 + subdir_len + 1] = '\0';
+            // 将 '/' 替换为 '_'
+            for (size_t i = 4; i < 4 + subdir_len; i++) {
+                if (prefix[i] == '/' || prefix[i] == '\\') prefix[i] = '_';
+            }
+        } else {
+            strcpy(prefix, "std_");
+        }
+        return prefix;
+    }
+    
+    // 非 lib 目录，无前缀
+    return "";
+}
+
+/* 获取 export 函数的带模块前缀的 C 函数名 */
+static const char *get_export_function_c_name(C99CodeGenerator *codegen, const char *name, const char *filename) {
+    if (!name) return get_safe_c_identifier(codegen, "");
+    
+    const char *prefix = get_module_prefix_from_filename(codegen, filename);
+    const char *safe_name = get_safe_c_identifier(codegen, name);
+    
+    if (prefix[0] == '\0') {
+        // 无前缀，直接返回原名
+        return safe_name;
+    }
+    
+    // 组合前缀和函数名
+    size_t prefix_len = strlen(prefix);
+    size_t name_len = strlen(safe_name);
+    char *result = (char *)arena_alloc(codegen->arena, prefix_len + name_len + 1);
+    if (!result) return safe_name;
+    
+    strcpy(result, prefix);
+    strcpy(result + prefix_len, safe_name);
+    return result;
+}
+
+/* 全局函数在 C 中的名称（支持 export 函数添加模块前缀） */
+const char *get_c_name_for_global_function(C99CodeGenerator *codegen, const char *name, int for_definition __attribute__((unused))) {
+    if (!name) return get_safe_c_identifier(codegen, "");
+    
+    // 对于调用（for_definition == 0），检查是否是 export 函数，如果是则添加模块前缀
+    // 这样可以确保调用 import 的 export 函数时使用正确的带前缀名称
+    if (!for_definition && codegen && codegen->program_node && codegen->program_node->type == AST_PROGRAM) {
+        ASTNode **decls = codegen->program_node->data.program.decls;
+        int decl_count = codegen->program_node->data.program.decl_count;
+        
+        for (int i = 0; i < decl_count; i++) {
+            ASTNode *decl = decls[i];
+            if (!decl || decl->type != AST_FN_DECL) continue;
+            
+            const char *decl_name = decl->data.fn_decl.name;
+            if (decl_name && strcmp(decl_name, name) == 0) {
+                // 找到函数声明
+                if (decl->data.fn_decl.is_export && decl->filename) {
+                    // 是 export 函数，返回带模块前缀的名称
+                    return get_export_function_c_name(codegen, name, decl->filename);
+                }
+                break;
             }
         }
     }
+    
     return get_safe_c_identifier(codegen, name);
 }
 
@@ -301,78 +428,14 @@ void format_param_type(C99CodeGenerator *codegen __attribute__((unused)), const 
     }
 }
 
-// 检查是否是标准库函数（需要特殊处理参数类型）
-int is_stdlib_function(const char *func_name) {
-    if (!func_name) return 0;
-    // 标准库函数列表：这些函数的字符串参数应该是 const char * 而不是 uint8_t *
-    // I/O 函数
-    if (strcmp(func_name, "printf") == 0 ||
-        strcmp(func_name, "sprintf") == 0 ||
-        strcmp(func_name, "fprintf") == 0 ||
-        strcmp(func_name, "snprintf") == 0 ||
-        strcmp(func_name, "scanf") == 0 ||
-        strcmp(func_name, "fscanf") == 0 ||
-        strcmp(func_name, "sscanf") == 0 ||
-        strcmp(func_name, "puts") == 0 ||
-        strcmp(func_name, "fputs") == 0 ||
-        strcmp(func_name, "putchar") == 0 ||
-        strcmp(func_name, "getchar") == 0 ||
-        strcmp(func_name, "gets") == 0 ||
-        strcmp(func_name, "fgets") == 0) {
-        return 1;
-    }
-    // 字符串处理函数（仅保留未被 Uya 标准库替换的函数）
-    if (strcmp(func_name, "strlen") == 0 ||
-        strcmp(func_name, "strncat") == 0 ||
-        strcmp(func_name, "strstr") == 0 ||
-        strcmp(func_name, "strdup") == 0 ||
-        strcmp(func_name, "strndup") == 0 ||
-        strcmp(func_name, "strcmp") == 0 ||
-        strcmp(func_name, "strncmp") == 0 ||
-        strcmp(func_name, "strchr") == 0 ||
-        strcmp(func_name, "strrchr") == 0 ||
-        strcmp(func_name, "strncpy") == 0 ||
-        strcmp(func_name, "strcpy") == 0) {
-        return 1;
-    }
-    // 内存函数（需要返回 void * 而不是 const uint8_t *）
-    if (strcmp(func_name, "memset") == 0 ||
-        strcmp(func_name, "memcpy") == 0 ||
-        strcmp(func_name, "memmove") == 0 ||
-        strcmp(func_name, "memcmp") == 0 ||
-        strcmp(func_name, "memchr") == 0) {
-        return 1;
-    }
-    // 字符串处理函数（std.c.string）
-    if (strcmp(func_name, "strcat") == 0) {
-        return 1;
-    }
-    // 文件 I/O 函数
-    if (strcmp(func_name, "fopen") == 0 ||
-        strcmp(func_name, "fread") == 0 ||
-        strcmp(func_name, "fwrite") == 0 ||
-        strcmp(func_name, "fclose") == 0 ||
-        strcmp(func_name, "fgetc") == 0 ||
-        strcmp(func_name, "fputc") == 0 ||
-        strcmp(func_name, "fgets") == 0 ||
-        strcmp(func_name, "fputs") == 0 ||
-        strcmp(func_name, "fflush") == 0) {
-        return 1;
-    }
-    // std.c.stdlib 函数（允许使用 FFI 指针类型）
-    if (strcmp(func_name, "malloc") == 0 ||
-        strcmp(func_name, "free") == 0 ||
-        strcmp(func_name, "calloc") == 0 ||
-        strcmp(func_name, "realloc") == 0 ||
-        strcmp(func_name, "exit") == 0 ||
-        strcmp(func_name, "abort") == 0 ||
-        strcmp(func_name, "atoi") == 0 ||
-        strcmp(func_name, "atol") == 0 ||
-        strcmp(func_name, "atof") == 0 ||
-        strcmp(func_name, "strtod") == 0 ||
-        strcmp(func_name, "strtol") == 0 ||
-        strcmp(func_name, "getenv") == 0) {
-        return 1;
+// 检查函数是否是 extern "libc" fn（用于决定字符串参数类型）
+int is_extern_libc_function(C99CodeGenerator *codegen, const char *func_name) {
+    if (!codegen || !func_name) return 0;
+    ASTNode *fn_decl = find_function_decl_c99(codegen, func_name);
+    if (fn_decl && fn_decl->type == AST_FN_DECL) {
+        if (fn_decl->data.fn_decl.extern_lib_name != NULL) {
+            return 1;
+        }
     }
     return 0;
 }
@@ -388,6 +451,14 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     int param_count = fn_decl->data.fn_decl.param_count;
     int is_varargs = fn_decl->data.fn_decl.is_varargs;
     ASTNode *body = fn_decl->data.fn_decl.body;
+    
+    // 读取 is_export 标志
+    int is_export = fn_decl->data.fn_decl.is_export;
+    
+    // export 函数使用带模块前缀的函数名（避免与其他模块的同名函数冲突）
+    if (is_export && fn_decl->filename) {
+        func_name = get_export_function_c_name(codegen, orig_name, fn_decl->filename);
+    }
     
     // 检查是否为 copy_type 函数（需要 const 限定符）
     int is_copy_type = (orig_name && strcmp(orig_name, "copy_type") == 0) ? 1 : 0;
@@ -417,101 +488,11 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
         return;
     }
     
-    // 检查是否是标准库函数
-    int is_stdlib = is_stdlib_function(func_name);
-    
-    // 读取 is_export 标志
-    int is_export = fn_decl->data.fn_decl.is_export;
-    
-    // 检查是否是与系统头文件冲突的函数（这些函数在 stdio.uya 中定义，但名称与系统头文件冲突）
-    // 对于这些函数，不生成函数声明，只生成函数定义（避免与 <stdio.h> 冲突）
-    int is_conflicting_stdio_func = 0;
-    if (orig_name && (
-        strcmp(orig_name, "fopen") == 0 ||
-        strcmp(orig_name, "fclose") == 0 ||
-        strcmp(orig_name, "fread") == 0 ||
-        strcmp(orig_name, "fgetc") == 0 ||
-        strcmp(orig_name, "fprintf") == 0)) {
-        is_conflicting_stdio_func = 1;
-    }
-    
     // 返回类型（如果是数组类型，转换为指针类型）
     const char *return_c = convert_array_return_type(codegen, return_type);
     
-    // 对于标准库函数，不生成 extern 声明（应该包含相应的头文件）
-    if (is_extern && is_stdlib) {
-        // 标准库函数应该包含相应的头文件（如 <stdio.h>），不生成 extern 声明
-        // 这样可以避免与标准库的声明冲突
-        return;
-    }
-    
-    // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，且函数没有 body（extern），不生成函数声明
-    // 如果函数有 body（实际定义），则生成前向声明（因为我们已经不包含 <string.h> 或已经 #undef 了这些函数）
-    if (is_stdlib && codegen->needs_string_h && !body) {
-        // 检查是否是字符串函数（这些函数在 <string.h> 中已声明）
-        if (orig_name && (
-            strcmp(orig_name, "strlen") == 0 ||
-            strcmp(orig_name, "strcmp") == 0 ||
-            strcmp(orig_name, "strncmp") == 0 ||
-            strcmp(orig_name, "strcpy") == 0 ||
-            strcmp(orig_name, "strncpy") == 0 ||
-            strcmp(orig_name, "strcat") == 0 ||
-            strcmp(orig_name, "strncat") == 0 ||
-            strcmp(orig_name, "strchr") == 0 ||
-            strcmp(orig_name, "strrchr") == 0 ||
-            strcmp(orig_name, "strstr") == 0 ||
-            strcmp(orig_name, "strdup") == 0 ||
-            strcmp(orig_name, "strndup") == 0 ||
-            strcmp(orig_name, "memcpy") == 0 ||
-            strcmp(orig_name, "memmove") == 0 ||
-            strcmp(orig_name, "memset") == 0 ||
-            strcmp(orig_name, "memcmp") == 0 ||
-            strcmp(orig_name, "memchr") == 0)) {
-            // 这些函数已经在 <string.h> 中声明，且没有 body（extern），不生成重复声明
-            return;
-        }
-    }
-    
-    // 对于标准库 stdlib 函数（strtod, strtol, getenv, abort, exit, atoi, atol, atof 等），不生成函数声明
-    // 避免与 C 标准库的声明冲突（我们总是包含 <stdlib.h>）
-    if (is_stdlib && orig_name && (
-        strcmp(orig_name, "strtod") == 0 ||
-        strcmp(orig_name, "strtol") == 0 ||
-        strcmp(orig_name, "getenv") == 0 ||
-        strcmp(orig_name, "abort") == 0 ||
-        strcmp(orig_name, "exit") == 0 ||
-        strcmp(orig_name, "atoi") == 0 ||
-        strcmp(orig_name, "atol") == 0 ||
-        strcmp(orig_name, "atof") == 0)) {
-        // 这些函数已经在 <stdlib.h> 中声明，不生成重复声明
-        return;
-    }
-    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, sprintf, snprintf 等）
-    // 如果函数没有 body（extern），不生成函数声明（应该链接到 C 标准库的实现）
-    // 如果函数有 body（实际定义），则生成前向声明（因为我们已经 #undef 了这些函数）
-    if (is_stdlib && orig_name && !body && (
-        strcmp(orig_name, "fputs") == 0 ||
-        strcmp(orig_name, "fputc") == 0 ||
-        strcmp(orig_name, "fwrite") == 0 ||
-        strcmp(orig_name, "fprintf") == 0 ||
-        strcmp(orig_name, "fgetc") == 0 ||
-        strcmp(orig_name, "fread") == 0 ||
-        strcmp(orig_name, "fopen") == 0 ||
-        strcmp(orig_name, "fclose") == 0 ||
-        strcmp(orig_name, "fflush") == 0 ||
-        strcmp(orig_name, "sprintf") == 0 ||
-        strcmp(orig_name, "snprintf") == 0)) {
-        // 这些函数已经在 <stdio.h> 中声明，且没有 body（extern），不生成重复声明
-        return;
-    }
-    
-    // 对于与系统头文件冲突的函数，仍然生成前向声明（避免隐式声明）
-    // 但使用非 extern 形式，因为它们是实际定义的函数
-    // 注意：这些函数在标准库中有实现，需要前向声明以避免隐式声明冲突
-    if (is_conflicting_stdio_func) {
-        // 生成前向声明（非 extern），因为函数有实际定义
-        fprintf(codegen->output, "%s %s(", return_c, func_name);
-    } else if (is_extern) {
+    // 对于extern函数，添加extern关键字
+    if (is_extern) {
         // 对于extern函数，添加extern关键字
         fprintf(codegen->output, "extern %s %s(", return_c, func_name);
     } else {
@@ -561,10 +542,10 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
             }
         }
         
-        // 对于标准库函数，只对 strlen 添加 const（与 gen_function 保持一致）
+        // 对于 extern "libc" fn 的 strlen 函数，添加 const
         // sprintf 和 snprintf 的 buf 参数需要可修改，不添加 const
-        // 其他函数保持原样（不添加 const），以匹配 Uya 标准库的定义
-        if (is_stdlib && param_type->type == AST_TYPE_POINTER) {
+        int is_libc = is_extern_libc_function(codegen, orig_name);
+        if (is_libc && param_type->type == AST_TYPE_POINTER) {
             ASTNode *pointed_type = param_type->data.type_pointer.pointed_type;
             if (pointed_type && pointed_type->type == AST_TYPE_NAMED) {
                 const char *pointed_name = pointed_type->data.type_named.name;
@@ -578,7 +559,6 @@ void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl) {
                             param_type_c = "uint8_t *";
                         }
                     }
-                    // 其他函数保持原样（uint8_t *），不添加 const
                 }
             }
         }
@@ -623,79 +603,18 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     int is_varargs = fn_decl->data.fn_decl.is_varargs;
     ASTNode *body = fn_decl->data.fn_decl.body;
     
-    // 检查是否是标准库函数
-    int is_stdlib = is_stdlib_function(orig_name ? orig_name : "");
-    
-    // 对于标准库字符串函数（strlen, strcmp 等），如果已经包含了 <string.h>，不生成函数定义
-    // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
-    // 但是，如果函数有函数体（body != NULL），说明这是 Uya 标准库的实现，应该生成
-    if (is_stdlib && codegen->needs_string_h && !body) {
-        // 检查是否是字符串函数（这些函数在 <string.h> 中已声明，应该链接到标准库实现）
-        // 注意：只有 extern 函数（没有函数体）才跳过，有函数体的函数应该生成
-        if (orig_name && (
-            strcmp(orig_name, "strlen") == 0 ||
-            strcmp(orig_name, "strcmp") == 0 ||
-            strcmp(orig_name, "strncmp") == 0 ||
-            strcmp(orig_name, "strcpy") == 0 ||
-            strcmp(orig_name, "strncpy") == 0 ||
-            strcmp(orig_name, "strcat") == 0 ||
-            strcmp(orig_name, "strncat") == 0 ||
-            strcmp(orig_name, "strchr") == 0 ||
-            strcmp(orig_name, "strrchr") == 0 ||
-            strcmp(orig_name, "strstr") == 0 ||
-            strcmp(orig_name, "strdup") == 0 ||
-            strcmp(orig_name, "strndup") == 0 ||
-            strcmp(orig_name, "memcpy") == 0 ||
-            strcmp(orig_name, "memmove") == 0 ||
-            strcmp(orig_name, "memset") == 0 ||
-            strcmp(orig_name, "memcmp") == 0 ||
-            strcmp(orig_name, "memchr") == 0)) {
-            // 这些函数已经在 <string.h> 中声明，且没有函数体（extern），应该链接到 C 标准库的实现
-            // 不生成 Uya 标准库的实现，避免类型冲突
-            return;
-        }
-    }
-    
-    // 对于标准库 stdlib 函数（strtod, strtol, getenv, abort, exit, atoi, atol, atof 等），不生成函数定义
-    // 这些函数应该链接到 C 标准库的实现，而不是生成 Uya 标准库的实现
-    // 注意：我们总是包含 <stdlib.h>，所以需要检查这些函数
-    if (is_stdlib && orig_name && (
-        strcmp(orig_name, "strtod") == 0 ||
-        strcmp(orig_name, "strtol") == 0 ||
-        strcmp(orig_name, "getenv") == 0 ||
-        strcmp(orig_name, "abort") == 0 ||
-        strcmp(orig_name, "exit") == 0 ||
-        strcmp(orig_name, "atoi") == 0 ||
-        strcmp(orig_name, "atol") == 0 ||
-        strcmp(orig_name, "atof") == 0)) {
-        // 这些函数已经在 <stdlib.h> 中声明，应该链接到 C 标准库的实现
-        // 不生成 Uya 标准库的实现，避免类型冲突
-        return;
-    }
-    // 对于标准库 stdio 函数（fputs, fputc, fwrite, fprintf, fgetc, fread, fopen, fclose, sprintf, snprintf 等）
-    // 如果函数有 body（不是 extern），则生成函数定义（因为我们已经 #undef 了这些函数）
-    // 如果没有 body（extern），则不生成函数定义（应该链接到 C 标准库的实现）
-    // 注意：我们总是包含 <stdio.h>，但如果用户定义了这些函数，我们会在包含之前 #undef 它们
-    if (is_stdlib && orig_name && (
-        strcmp(orig_name, "fputs") == 0 ||
-        strcmp(orig_name, "fputc") == 0 ||
-        strcmp(orig_name, "fwrite") == 0 ||
-        strcmp(orig_name, "fprintf") == 0 ||
-        strcmp(orig_name, "fgetc") == 0 ||
-        strcmp(orig_name, "fread") == 0 ||
-        strcmp(orig_name, "fopen") == 0 ||
-        strcmp(orig_name, "fclose") == 0 ||
-        strcmp(orig_name, "sprintf") == 0 ||
-        strcmp(orig_name, "snprintf") == 0)) {
-        // 如果函数没有 body（extern），不生成函数定义（应该链接到 C 标准库的实现）
-        if (!body) {
-            return;
-        }
-        // 如果函数有 body，继续生成函数定义（因为我们已经 #undef 了这些函数）
-    }
-    
     // 如果没有函数体（外部函数），则不生成定义
     if (!body) return;
+    
+    // 根据 is_export 标志决定是否添加 static 关键字
+    // fn foo() void → static void foo(void)（内部函数，不导出）
+    // export fn foo() void → void foo(void)（导出函数，供其他模块使用）
+    int is_export = fn_decl->data.fn_decl.is_export;
+    
+    // export 函数使用带模块前缀的函数名（避免与其他模块的同名函数冲突）
+    if (is_export && fn_decl->filename) {
+        func_name = get_export_function_c_name(codegen, orig_name, fn_decl->filename);
+    }
     
     // 检查是否为 copy_type 函数（需要 const 限定符）
     int is_copy_type = (orig_name && strcmp(orig_name, "copy_type") == 0) ? 1 : 0;
@@ -712,10 +631,6 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
     // 检查是否有 extern_lib_name（extern "libc" fn）
     const char *extern_lib_name = fn_decl->data.fn_decl.extern_lib_name;
     
-    // 根据 is_export 标志决定是否添加 static 关键字
-    // fn foo() void → static void foo(void)（内部函数，不导出）
-    // export fn foo() void → void foo(void)（导出函数，供其他模块使用）
-    int is_export = fn_decl->data.fn_decl.is_export;
     int is_extern = fn_decl->data.fn_decl.is_extern;
     
     // extern "libc" fn 带函数体时，is_extern 应该为 0（生成普通函数定义）
@@ -763,10 +678,10 @@ void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl) {
                 param_type_c = "const struct Type *";
             }
             
-            // 对于 strlen 函数，将 uint8_t * 转换为 const uint8_t *
+            // 对于 extern "libc" fn 的 strlen 函数，将 uint8_t * 转换为 const uint8_t *
             // sprintf 和 snprintf 的 buf 参数需要可修改，不添加 const
-            int is_stdlib = is_stdlib_function(orig_name);
-            if (is_stdlib && orig_name && param_type->type == AST_TYPE_POINTER) {
+            int is_libc = is_extern_libc_function(codegen, orig_name);
+            if (is_libc && orig_name && param_type->type == AST_TYPE_POINTER) {
                 ASTNode *pointed_type = param_type->data.type_pointer.pointed_type;
                 if (pointed_type && pointed_type->type == AST_TYPE_NAMED) {
                     const char *pointed_name = pointed_type->data.type_named.name;

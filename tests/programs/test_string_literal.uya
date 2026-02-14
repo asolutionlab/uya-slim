@@ -2,7 +2,7 @@
 // 验证解析、类型检查、代码生成是否正确处理字符串字面量
 
 // 声明外部 C 函数用于测试字符串字面量
-extern fn strcmp(s1: *byte, s2: *byte) i32;
+extern "libc" fn strcmp(s1: *byte, s2: *byte) i32;
 
 // 测试函数：使用字符串字面量作为 extern 函数参数
 fn main() i32 {

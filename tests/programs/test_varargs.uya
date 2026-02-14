@@ -1,7 +1,7 @@
 // 可变参数与 @params 测试
 // 测试：fn 形参 ...、printf(fmt, ...) 转发、@params 元组访问
 
-extern fn printf(fmt: *byte, ...) i32;
+extern "libc" fn printf(fmt: *byte, ...) i32;
 
 fn wrap_printf(fmt: *byte, ...) i32 {
     return printf(fmt, ...);

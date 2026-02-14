@@ -605,6 +605,7 @@ fn collect_module_dependencies(
             i = i + 1;
             continue;
         }
+        // libc 模块需要解析以获取导出项（用于类型检查），不跳过
         // use main：收集入口文件所在目录下所有 .uya，排序后加入（与 C 编译器一致）
         if strcmp(modules[i] as *byte, "main" as *byte) == 0 {
             if processed_count[0] > 0 && processed_files[0] != null {
@@ -902,14 +903,34 @@ fn compile_files(
     arena_init(&temp_arena, &temp_arena_buffer[0], 192 * 1024 * 1024);
     
     // 获取 UYA_ROOT 和编译器目录
-    var uya_root_buffer: [byte: PATH_MAX] = [];
+    var uya_root_base: [byte: PATH_MAX] = [];
     const argv0: *byte = get_argv(0);
     if argv0 == null {
         fprintf(get_stderr(), "错误: 无法获取程序路径\n" as *byte);
         return 1;
     }
-    if get_uya_root(argv0 as &byte, &uya_root_buffer[0] as &byte, PATH_MAX) != 0 {
+    if get_uya_root(argv0 as &byte, &uya_root_base[0] as &byte, PATH_MAX) != 0 {
         fprintf(get_stderr(), "错误: 无法获取 UYA_ROOT 目录\n" as *byte);
+        return 1;
+    }
+    
+    // 标准库在编译器所在目录的上一级目录的 lib/ 下
+    // 例如：编译器在 /path/bin/uya，标准库在 /path/lib/
+    var base_len: usize = strlen(&uya_root_base[0]);
+    if base_len > 1 && uya_root_base[base_len - 1] == 47 {  // '/'
+        uya_root_base[base_len - 1] = 0;
+        base_len = base_len - 1;
+    }
+    // 去掉最后的目录组件（如 bin/）
+    const last_slash: *byte = strrchr(&uya_root_base[0], 47);
+    if last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {
+        var slash_idx: usize = (last_slash as i64 - &uya_root_base[0] as i64) as usize;
+        uya_root_base[slash_idx] = 0;
+    }
+    var uya_root_buffer: [byte: PATH_MAX] = [];
+    const lib_len: i32 = snprintf(&uya_root_buffer[0] as &byte, PATH_MAX, "%s/lib/" as *byte, &uya_root_base[0] as &byte);
+    if lib_len <= 0 || lib_len >= PATH_MAX {
+        fprintf(get_stderr(), "错误: UYA_ROOT 路径过长\n" as *byte);
         return 1;
     }
     
@@ -992,9 +1013,9 @@ fn compile_files(
                 resolved_count = resolved_count + 1;
                 // 设置项目根目录（文件所在目录）
                 if project_root == null {
-                    const last_slash: *byte = strrchr(input_path, 47);
-                    if last_slash != null {
-                        const dir_len: usize = ptr_diff(last_slash, input) + 1;
+                    const input_last_slash: *byte = strrchr(input_path, 47);
+                    if input_last_slash != null {
+                        const dir_len: usize = ptr_diff(input_last_slash, input) + 1;
                         if dir_len < PATH_MAX {
                             memcpy(&project_root_buffer[0], input_path, dir_len);
                             project_root_buffer[dir_len] = 0 as byte;

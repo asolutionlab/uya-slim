@@ -552,6 +552,65 @@ static int collect_module_dependencies(
         if (strcmp(modules[i], "std") == 0 || (strncmp(modules[i], "std.", 4) == 0)) {
             continue;
         }
+        /* libc 模块：收集 lib/libc/ 目录下所有 .uya 文件（同目录文件属于同一模块） */
+        if (strcmp(modules[i], "libc") == 0 && uya_root != NULL && uya_root[0] != '\0') {
+            char libc_dir[PATH_MAX];
+            int dlen = snprintf(libc_dir, sizeof(libc_dir), "%slibc/", uya_root);
+            if (dlen > 0 && dlen < (int)sizeof(libc_dir) && is_directory(libc_dir)) {
+                DIR *libc_dirp = opendir(libc_dir);
+                if (libc_dirp != NULL) {
+                    char *pending[MAX_INPUT_FILES];
+                    int pending_count = 0;
+                    struct dirent *e;
+                    while ((e = readdir(libc_dirp)) != NULL && pending_count < max_files) {
+                        if (e->d_type != DT_REG && e->d_type != DT_UNKNOWN) continue;
+                        size_t nlen = strlen(e->d_name);
+                        if (nlen <= 4 || strcmp(e->d_name + nlen - 4, ".uya") != 0) continue;
+                        char fp[PATH_MAX];
+                        int flen = snprintf(fp, sizeof(fp), "%s%s", libc_dir, e->d_name);
+                        if (flen <= 0 || flen >= (int)sizeof(fp)) continue;
+                        int in_list = 0;
+                        for (int j = 0; j < file_list_size; j++) {
+                            if (file_list[j] != NULL && paths_equal(file_list[j], fp)) {
+                                in_list = 1;
+                                break;
+                            }
+                        }
+                        if (in_list) continue;
+                        int in_proc = 0;
+                        for (int j = 0; j < *processed_count; j++) {
+                            if (processed_files[j] != NULL && paths_equal(processed_files[j], fp)) {
+                                in_proc = 1;
+                                break;
+                            }
+                        }
+                        if (in_proc) continue;
+                        char *pc = (char *)arena_alloc(arena, strlen(fp) + 1);
+                        if (pc == NULL) {
+                            closedir(libc_dirp);
+                            return -1;
+                        }
+                        strcpy(pc, fp);
+                        pending[pending_count++] = pc;
+                    }
+                    closedir(libc_dirp);
+                    if (pending_count > 0) {
+                        qsort(pending, (size_t)pending_count, sizeof(char *), compare_paths);
+                        for (int idx = 0; idx < pending_count; idx++) {
+                            char *pc = pending[idx];
+                            file_list[file_list_size] = pc;
+                            file_list_size++;
+                            file_list_size = collect_module_dependencies(
+                                pc, file_list, file_list_size, max_files,
+                                processed_files, processed_count, max_processed,
+                                project_root, uya_root, arena);
+                            if (file_list_size < 0) return -1;
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         /* main 模块 = main 函数所在目录，收集该目录下所有 .uya（排序以保证与 Uya 自举顺序一致） */
         if (strcmp(modules[i], "main") == 0) {
             if (*processed_count > 0 && processed_files[0] != NULL) {
@@ -841,9 +900,29 @@ static int compile_files(const char *input_files[], int input_file_count, const 
     arena_init(&temp_arena, temp_arena_buffer, sizeof(temp_arena_buffer));
     
     // 获取 UYA_ROOT 和编译器目录
-    char uya_root[PATH_MAX];
-    if (get_uya_root(argv0, uya_root, sizeof(uya_root)) != 0) {
+    char uya_root_base[PATH_MAX];
+    if (get_uya_root(argv0, uya_root_base, sizeof(uya_root_base)) != 0) {
         fprintf(stderr, "错误: 无法获取 UYA_ROOT 目录\n");
+        return 1;
+    }
+    
+    // 标准库在编译器所在目录的上一级目录的 lib/ 下
+    // 例如：编译器在 /path/bin/uya-c，标准库在 /path/lib/
+    char uya_root[PATH_MAX];
+    // 先去掉末尾的 /
+    size_t base_len = strlen(uya_root_base);
+    if (base_len > 1 && uya_root_base[base_len - 1] == '/') {
+        uya_root_base[base_len - 1] = '\0';
+        base_len--;
+    }
+    // 去掉最后的目录组件（如 bin/）
+    char *last_slash = strrchr(uya_root_base, '/');
+    if (last_slash != NULL && strcmp(last_slash, "/bin") == 0) {
+        *last_slash = '\0';
+    }
+    int lib_len = snprintf(uya_root, sizeof(uya_root), "%s/lib/", uya_root_base);
+    if (lib_len <= 0 || lib_len >= (int)sizeof(uya_root)) {
+        fprintf(stderr, "错误: UYA_ROOT 路径过长\n");
         return 1;
     }
     

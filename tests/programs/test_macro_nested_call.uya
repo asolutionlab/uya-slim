@@ -2,7 +2,7 @@
 // 1. 宏调用普通函数
 // 2. 宏调用宏
 
-extern fn printf(fmt: *u8, ...) i32;
+extern "libc" fn printf(fmt: *u8, ...) i32;
 
 // ====================
 // 1. 宏调用普通函数

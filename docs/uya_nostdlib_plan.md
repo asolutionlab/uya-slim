@@ -18,7 +18,7 @@
   - `checker.c/checker.uya`：允许 `extern "libc" fn` 使用 FFI 指针类型
   - `codegen/function.c/function.uya`：生成裸函数名（无模块前缀）
 
-#### 2. `extern` 变量支持 ✅（文档已更新，编译器待实现）
+#### 2. `extern` 变量支持 ✅
 
 - **语法**：
   - `extern const name: type;` - 导入只读 C 变量
@@ -26,6 +26,7 @@
   - `export const name: type = value;` - 导出只读常量
   - `export var name: type = value;` - 导出可变变量
 - **文档**：`docs/uya.md` 5.2.3 章节、`docs/changelog.md`、`docs/grammar_formal.md`、`docs/grammar_quick.md`
+- **编译器实现**：C 编译器和 Uya 自举编译器均已完成（详见 `docs/extern_var_impl_plan.md`）
 
 #### 3. `lib/libc/` 模块创建 ✅
 
@@ -110,48 +111,52 @@
 
 ## 待办事项
 
-### 编译器实现
+### 编译器实现（已完成）
 
-- [ ] **AST 修改**
-  - [ ] `compiler-c/src/ast.h`：添加 `AST_EXTERN_VAR_DECL` 节点类型
-  - [ ] `src/ast.uya`：添加相应字段
+- [x] **AST 修改**
+  - [x] `compiler-c/src/ast.h`：添加 `AST_EXTERN_VAR_DECL` 节点类型
+  - [x] `src/ast.uya`：添加相应字段
 
-- [ ] **Parser 修改**
-  - [ ] `compiler-c/src/parser.c`：解析 `extern const/var` 和 `export const/var`
-  - [ ] `src/parser.uya`：同上
+- [x] **Parser 修改**
+  - [x] `compiler-c/src/parser.c`：解析 `extern const/var` 和 `export const/var`
+  - [x] `src/parser.uya`：同上
 
-- [ ] **Checker 修改**
-  - [ ] `compiler-c/src/checker.c`：类型检查（确保 C 兼容类型）
-  - [ ] `src/checker.uya`：同上
+- [x] **Checker 修改**
+  - [x] `compiler-c/src/checker.c`：类型检查（确保 C 兼容类型）
+  - [x] `src/checker.uya`：同上
 
-- [ ] **Codegen 修改**
-  - [ ] `compiler-c/src/codegen/c99/`：生成 `extern type name;` 等
-  - [ ] `src/codegen/c99/`：同上
+- [x] **Codegen 修改**
+  - [x] `compiler-c/src/codegen/c99/`：生成 `extern type name;` 等
+  - [x] `src/codegen/c99/`：同上
 
-### lib/libc 完善
+### lib/libc 完善（已完成，通过 lib/std/c/ 实现）
 
-- [ ] 添加更多标准函数
-  - [ ] `stdio`：printf, scanf, fopen, fclose, fread, fwrite 等
-  - [ ] `stdlib`：malloc, free, exit, atoi, itoa 等
-  - [ ] `unistd`：read, write, open, close 等
-  - [ ] `string`：strcat, strdup, strncmp 等
+**说明**：libc 函数已在 `lib/std/c/` 中完整实现，编译器通过 `use std.c.*` 导入使用。
 
-- [ ] 系统调用封装
-  - [ ] Linux x86_64 syscall 封装
-  - [ ] 文件操作
-  - [ ] 内存映射
+**已实现的功能**：
+
+- [x] `stdio`（`lib/std/c/stdio.uya`）：fopen, fclose, fread, fwrite, fprintf, fputs, sprintf, snprintf, fgetc, fputc 等
+- [x] `stdlib`（`lib/std/c/stdlib.uya`）：malloc, free, calloc, realloc, exit, abort, atoi, atol, atof, strtod, strtol, stat, readlink, opendir, readdir, closedir, getenv 等
+- [x] `syscall`（`lib/std/c/syscall/syscall.uya`）：sys_read, sys_write, sys_open, sys_close, sys_exit, sys_getpid, sys_lseek, sys_access, sys_unlink, sys_mkdir, sys_rmdir, sys_chdir, sys_getcwd 等
+- [x] `string`（`lib/std/c/string.uya` + `lib/std/string.uya`）：memcpy, memmove, memset, memcmp, memchr, strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr, strstr 等
+
+**lib/libc/ 保留用途**：
+- `lib/libc/syscall.uya`：底层系统调用常量和 `extern "libc" fn` 封装
+- `lib/libc/mem.uya`：内存操作函数（使用 `extern "libc" fn` 语法）
+- `lib/libc/string.uya`：字符串操作函数（使用 `extern "libc" fn` 语法）
 
 ### Makefile 修改
 
-- [ ] 添加 `lib/libc.a` 目标
-- [ ] 添加 `uya-nostdlib` 目标
-- [ ] 添加 `-nostdlib -nostartfiles` 链接选项
+- [x] 添加 `lib/libc.a` 目标（暂不需要，使用 lib/std/c/）
+- [x] 添加 `uya-nostdlib` 目标
+- [x] 添加 `-nostdlib -static -lgcc -lgcc_eh` 链接选项
 
 ### 测试
 
-- [ ] 单元测试：`extern "libc" fn` 语法
-- [ ] 单元测试：`extern const/var` 语法
-- [ ] 集成测试：无 libc 环境运行编译器
+- [x] 单元测试：`extern "libc" fn` 语法
+- [x] 单元测试：`extern const/var` 语法
+- [x] 集成测试：`make uya-nostdlib` 构建成功
+- [x] 集成测试：静态链接可执行文件正常运行
 
 ## 文件结构
 
@@ -182,10 +187,10 @@ uya/
 |------|------|------|
 | 1 | `extern "libc" fn` 语法支持 | ✅ 已完成 |
 | 2 | 文档更新 | ✅ 已完成 |
-| 3 | `extern` 变量编译器实现 | 🔄 进行中 |
-| 4 | `lib/libc` 完善 | ⏳ 待开始 |
-| 5 | Makefile 和 nostdlib 构建 | ⏳ 待开始 |
-| 6 | 测试和验证 | ⏳ 待开始 |
+| 3 | `extern` 变量编译器实现 | ✅ 已完成 |
+| 4 | `lib/libc` 完善 | ✅ 已完成 |
+| 5 | Makefile 和 nostdlib 构建 | ✅ 已完成 |
+| 6 | 测试和验证 | ✅ 已完成 |
 
 ---
 

@@ -1,6 +1,6 @@
 // 测试字符串字面量转义字符支持
 
-extern fn printf(fmt: *byte, ...) i32;
+extern "libc" fn printf(fmt: *byte, ...) i32;
 
 fn main() i32 {
     // 测试各种转义序列

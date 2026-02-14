@@ -108,7 +108,7 @@ const char *get_method_c_name(C99CodeGenerator *codegen, const char *struct_name
 int type_has_drop_c99(C99CodeGenerator *codegen, const char *struct_name);
 void gen_method_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl, const char *struct_name);
 void gen_method_function(C99CodeGenerator *codegen, ASTNode *fn_decl, const char *struct_name);
-int is_stdlib_function(const char *func_name);
+int is_extern_libc_function(C99CodeGenerator *codegen, const char *func_name);
 void format_param_type(C99CodeGenerator *codegen, const char *type_c, const char *param_name, FILE *output);
 void gen_function_prototype(C99CodeGenerator *codegen, ASTNode *fn_decl);
 void gen_function(C99CodeGenerator *codegen, ASTNode *fn_decl);

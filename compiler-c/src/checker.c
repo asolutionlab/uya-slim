@@ -65,38 +65,7 @@ static ASTNode *find_macro_decl_from_program(ASTNode *program_node, const char *
 static ASTNode *find_macro_decl_with_imports(TypeChecker *checker, const char *macro_name);
 static void expand_macros_in_node(TypeChecker *checker, ASTNode **node_ptr);
 static void checker_report_error(TypeChecker *checker, ASTNode *node, const char *message);
-// 检查函数名是否在标准库函数白名单中（允许使用 FFI 指针类型）
-static int is_stdlib_function(const char *fn_name) {
-    if (fn_name == NULL) return 0;
-    
-    // 标准库函数白名单（std.c.string, std.c.stdlib, std.c.stdio 等）
-    const char *stdlib_fns[] = {
-        // std.c.string
-        "memcpy", "memmove", "memset", "memcmp", "memchr",
-        "strlen", "strcmp", "strncmp", "strcpy", "strncpy", "strcat",
-        "strchr", "strrchr", "strstr",
-        // std.c.stdlib
-        "malloc", "free", "calloc", "realloc",
-        "exit", "abort",
-        "atoi", "atol", "atof", "strtod", "strtol",
-        "stat", "readlink", "getenv", "opendir", "readdir", "closedir",
-        // std.c.stdio
-        "fopen", "fclose", "fread", "fgetc", "fprintf",
-        "fwrite", "fputc", "fputs", "sprintf", "snprintf",
-        "put_char", "put_char_fd", "write_bytes", "write_bytes_fd", "put_str_len",
-        "get_char", "read_bytes", "read_bytes_fd",
-        "i32_to_str", "i64_to_str", "print_i32", "print_i64",
-        NULL
-    };
-    
-    for (int i = 0; stdlib_fns[i] != NULL; i++) {
-        if (strcmp(fn_name, stdlib_fns[i]) == 0) {
-            return 1;
-        }
-    }
-    
-    return 0;
-}
+
 // 将 Type 转换为字符串表示
 static const char *type_to_string(Arena *arena, Type type) {
     if (arena == NULL) return "unknown";
@@ -320,6 +289,8 @@ static Type find_struct_field_type(TypeChecker *checker, ASTNode *struct_decl, c
 static Type find_struct_field_type_with_substitution(TypeChecker *checker, ASTNode *struct_decl, 
                                                      const char *field_name, Type *type_args, int type_arg_count);
 static int checker_register_fn_decl(TypeChecker *checker, ASTNode *node);
+/* 从文件名提取模块路径（如 lib/libc/stdio.uya -> "libc"）*/
+static const char *extract_module_path_allocated(TypeChecker *checker, const char *filename);
 /* 评估编译时常量表达式，返回整数值；-1 表示无法评估或非常量 */
 static int checker_eval_const_expr(TypeChecker *checker, ASTNode *expr);
 /* 结构体是否实现某接口（用于装箱） */
@@ -501,7 +472,15 @@ static int function_table_insert(TypeChecker *checker, FunctionSignature *sig) {
                     return -1;
                 }
             } else if (!existing->is_extern && !sig->is_extern) {
-                // 都是定义，不允许重复定义
+                // 都是定义
+                // 如果都是 export 函数且来自不同模块，允许共存（生成不同的 C 函数名）
+                if (existing->is_export && sig->is_export &&
+                    existing->module_name != NULL && sig->module_name != NULL &&
+                    strcmp(existing->module_name, sig->module_name) != 0) {
+                    // 不同模块的同名 export 函数，继续查找空槽位
+                    continue;
+                }
+                // 否则不允许重复定义
                 return -1;
             } else {
                 // 一个是 extern，一个是定义，允许（extern 声明可以与定义共存）
@@ -3576,6 +3555,14 @@ static int checker_register_fn_decl(TypeChecker *checker, ASTNode *node) {
     sig->return_type = return_type;
     sig->is_extern = (node->data.fn_decl.body == NULL) ? 1 : 0;  // 如果 body 为 NULL，则是 extern 函数
     sig->is_varargs = node->data.fn_decl.is_varargs;  // 是否为可变参数函数
+    sig->is_export = node->data.fn_decl.is_export;    // 是否为 export 函数
+    sig->module_name = NULL;  // 稍后从 node->filename 提取
+    
+    // 提取模块名（用于区分不同模块的同名 export 函数）
+    if (node->filename != NULL) {
+        sig->module_name = extract_module_path_allocated(checker, node->filename);
+    }
+    
     sig->line = node->line;
     sig->column = node->column;
     
@@ -3592,12 +3579,11 @@ static int checker_register_fn_decl(TypeChecker *checker, ASTNode *node) {
             if (param != NULL && param->type == AST_VAR_DECL) {
                 Type param_type = type_from_ast(checker, param->data.var_decl.type);
 
-                // 检查是否为 FFI 指针类型（*T）：普通函数仅在可变参数包装等场景下允许 *byte 等 FFI 指针形参（如 printf(fmt, ...)）
-                // 标准库函数（如 malloc, memcpy 等）允许使用 FFI 指针类型
-                // extern "libc" fn 带函数体也允许使用 FFI 指针类型
+                // 检查是否为 FFI 指针类型（*T）：普通函数不允许 *byte 等 FFI 指针形参
+                // extern "libc" fn 允许使用 FFI 指针类型
                 int is_extern_libc = (node->data.fn_decl.extern_lib_name != NULL);
                 if (!sig->is_extern && !is_extern_libc && param_type.kind == TYPE_POINTER && param_type.data.pointer.is_ffi_pointer
-                    && !node->data.fn_decl.is_varargs && !is_stdlib_function(sig->name)) {
+                    && !node->data.fn_decl.is_varargs) {
                     checker_report_error(checker, node, "普通函数不能使用 FFI 指针类型作为参数");
                     checker->current_type_params = saved_type_params;
                     checker->current_type_param_count = saved_type_param_count;
@@ -3611,11 +3597,10 @@ static int checker_register_fn_decl(TypeChecker *checker, ASTNode *node) {
         sig->param_types = NULL;
     }
 
-    // 检查返回类型是否为 FFI 指针类型（如果是普通函数则不允许，但标准库函数允许）
-    // extern "libc" fn 带函数体也允许使用 FFI 指针类型
+    // 检查返回类型是否为 FFI 指针类型（如果是普通函数则不允许）
+    // extern "libc" fn 允许使用 FFI 指针类型
     int is_extern_libc = (node->data.fn_decl.extern_lib_name != NULL);
-    if (!sig->is_extern && !is_extern_libc && return_type.kind == TYPE_POINTER && return_type.data.pointer.is_ffi_pointer
-        && !is_stdlib_function(sig->name)) {
+    if (!sig->is_extern && !is_extern_libc && return_type.kind == TYPE_POINTER && return_type.data.pointer.is_ffi_pointer) {
         // 普通函数不能使用 FFI 指针类型作为返回类型
         char buf[256];
         snprintf(buf, sizeof(buf), "普通函数 '%s' 不能使用 FFI 指针类型作为返回类型", sig->name ? sig->name : "(unknown)");
@@ -5804,6 +5789,16 @@ static int checker_check_node(TypeChecker *checker, ASTNode *node) {
                     type_equals(expr_type, *checker->current_return_type.data.error_union.payload_type)) {
                     // 返回成功值：表达式类型与 !T 的载荷 T 一致
                     return 1;
+                } else if (checker->current_return_type.kind == TYPE_ERROR_UNION &&
+                    expr_type.kind == TYPE_ERROR_UNION) {
+                    // 两个错误联合类型：检查 payload 类型是否兼容
+                    // 例如：!i64 可以返回给 !isize 或 !i32（如果 i64 可转换为 isize/i32）
+                    Type *expected_payload = checker->current_return_type.data.error_union.payload_type;
+                    Type *actual_payload = expr_type.data.error_union.payload_type;
+                    if (expected_payload != NULL && actual_payload != NULL &&
+                        type_can_implicitly_convert(*actual_payload, *expected_payload)) {
+                        return 1;
+                    }
                 } else if (!type_equals(expr_type, checker->current_return_type) && 
                     !type_can_implicitly_convert(expr_type, checker->current_return_type)) {
                     // 实际为 void 且为来自 std 的调用时，自举时 std 未加载，推断为 void，放宽允许
@@ -7550,6 +7545,81 @@ static const char *extract_module_path_allocated(TypeChecker *checker, const cha
     if (lib_std == NULL) {
         lib_std = strstr(filename, "\\lib\\\\std\\");
     }
+    
+    // 特殊处理：检查是否是 libc 库文件（lib/libc/...）
+    // 例如：lib/libc/syscall.uya -> libc.syscall
+    //      lib/libc/stdio.uya -> libc.stdio
+    const char *lib_libc = strstr(filename, "/lib/libc/");
+    if (lib_libc == NULL) {
+        lib_libc = strstr(filename, "lib/libc/");
+    }
+    if (lib_libc == NULL) {
+        lib_libc = strstr(filename, "\\lib\\libc\\");
+    }
+    
+    // 优先处理 lib/libc/（因为我们需要先检查它是否匹配）
+    if (lib_libc != NULL) {
+        const char *relative_path = lib_libc;
+        if (*relative_path == '/') {
+            relative_path++;
+        }
+        // 跳过 "lib/libc/"
+        if (strncmp(relative_path, "lib/libc/", 9) == 0) {
+            relative_path += 9;
+        } else if (strncmp(relative_path, "lib\\libc\\", 9) == 0) {
+            relative_path += 9;
+        }
+        
+        size_t rel_len = strlen(relative_path);
+        
+        // 去掉 .uya 后缀
+        size_t base_len = rel_len;
+        if (rel_len > 4 && strcmp(relative_path + rel_len - 4, ".uya") == 0) {
+            base_len = rel_len - 4;
+        }
+        
+        // 同级目录下的文件应该使用同一个模块，所以只取目录路径，不包含文件名
+        // 例如：lib/libc/syscall.uya -> 模块 libc
+        //      lib/libc/stdlib.uya -> 模块 libc
+        //      lib/libc/subdir/file.uya -> 模块 libc.subdir
+        // 这样同一目录下的所有文件都属于同一个模块
+        const char *last_slash_libc = NULL;
+        for (size_t i = base_len; i > 0; i--) {
+            if (relative_path[i - 1] == '/' || relative_path[i - 1] == '\\') {
+                last_slash_libc = relative_path + i - 1;
+                break;
+            }
+        }
+        
+        if (last_slash_libc != NULL) {
+            // 有子目录，构建模块路径：libc.xxx
+            size_t module_len = last_slash_libc - relative_path;
+            size_t total_len = 5 + module_len; // "libc." + 路径长度
+            char *module_name = (char *)arena_alloc(checker->arena, total_len + 1);
+            if (module_name == NULL) {
+                return NULL;
+            }
+            strcpy(module_name, "libc.");
+            memcpy(module_name + 5, relative_path, module_len);
+            module_name[5 + module_len] = '\0';
+            // 将 '/' 替换为 '.'
+            for (size_t i = 5; i < 5 + module_len; i++) {
+                if (module_name[i] == '/' || module_name[i] == '\\') {
+                    module_name[i] = '.';
+                }
+            }
+            return module_name;
+        } else {
+            // 文件直接在 lib/libc/ 目录下（没有子目录），模块名为 "libc"
+            char *module_name = (char *)arena_alloc(checker->arena, 5);
+            if (module_name == NULL) {
+                return NULL;
+            }
+            strcpy(module_name, "libc");
+            return module_name;
+        }
+    }
+    
     if (lib_std != NULL) {
         // 找到 lib/std/ 位置，提取后面的路径
         // 需要跳过 "/lib/std/" 或 "lib/std/" 或 "/lib//std/" 或 "lib//std/"
@@ -8118,6 +8188,11 @@ static void build_module_exports(TypeChecker *checker, ASTNode *program) {
                 is_export = decl->data.var_decl.is_export;
                 item_name = decl->data.var_decl.name;
                 item_type = 10;  // 变量/常量
+                break;
+            case AST_EXTERN_VAR_DECL:
+                is_export = decl->data.extern_var_decl.is_export;
+                item_name = decl->data.extern_var_decl.name;
+                item_type = 10;  // 变量/常量（extern 变量也作为常量导出）
                 break;
             default:
                 break;

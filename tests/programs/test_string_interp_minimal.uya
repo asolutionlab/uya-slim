@@ -1,4 +1,4 @@
-extern fn printf(fmt: *byte, ...) i32;
+extern "libc" fn printf(fmt: *byte, ...) i32;
 
 fn main() i32 {
   const n: i32 = 42;

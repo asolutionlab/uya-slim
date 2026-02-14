@@ -1,29 +1,29 @@
 // std.io.file - 文件 I/O 操作
-// 版本：v0.1.0
-// 说明：基于 std.syscall.linux 实现文件操作（纯 Uya 实现，零外部依赖）
+// 版本：v0.2.0
+// 说明：基于 libc.syscall 实现文件操作（纯 Uya 实现，零外部依赖）
 // 模块路径：lib/std/io/file.uya → use std.io.file;
 
-use std.syscall.linux.sys_open;
-use std.syscall.linux.sys_close;
-use std.syscall.linux.sys_read;
-use std.syscall.linux.sys_write;
-use std.syscall.linux.sys_lseek;
-use std.syscall.linux.O_RDONLY;
-use std.syscall.linux.O_WRONLY;
-use std.syscall.linux.O_RDWR;
-use std.syscall.linux.O_CREAT;
-use std.syscall.linux.O_TRUNC;
-use std.syscall.linux.O_APPEND;
-use std.syscall.linux.UYA_SEEK_SET;
-use std.syscall.linux.UYA_SEEK_CUR;
-use std.syscall.linux.UYA_SEEK_END;
-use std.syscall.linux.S_IRWXU;
-use std.syscall.linux.S_IRUSR;
-use std.syscall.linux.S_IWUSR;
-use std.syscall.linux.S_IRGRP;
-use std.syscall.linux.S_IWGRP;
-use std.syscall.linux.S_IROTH;
-use std.syscall.linux.S_IWOTH;
+use libc.sys_open;
+use libc.sys_close;
+use libc.sys_read;
+use libc.sys_write;
+use libc.sys_lseek;
+use libc.O_RDONLY;
+use libc.O_WRONLY;
+use libc.O_RDWR;
+use libc.O_CREAT;
+use libc.O_TRUNC;
+use libc.O_APPEND;
+use libc.SEEK_SET;
+use libc.SEEK_CUR;
+use libc.SEEK_END;
+use libc.S_IRWXU;
+use libc.S_IRUSR;
+use libc.S_IWUSR;
+use libc.S_IRGRP;
+use libc.S_IWGRP;
+use libc.S_IROTH;
+use libc.S_IWOTH;
 
 // 重新导出文件操作标志和权限模式（从系统调用层）
 // 注意：这些常量已经在 std.syscall.linux 中定义，这里只是重新导出以便使用

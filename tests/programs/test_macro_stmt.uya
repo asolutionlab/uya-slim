@@ -1,7 +1,7 @@
 // 测试 stmt 返回标签的宏（使用语法糖）
 // stmt 宏的最后一条语句会被自动输出
 
-extern fn printf(fmt: *u8, ...) i32;
+extern "libc" fn printf(fmt: *u8, ...) i32;
 
 // 宏：返回一个简单的 if 语句（使用语法糖）
 // 宏体最后一条语句会被直接返回
