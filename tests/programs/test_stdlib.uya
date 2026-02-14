@@ -1,0 +1,70 @@
+// test_stdlib.uya - stdlib 模块测试
+// TDD: 先写测试，再实现
+
+use libc.malloc;
+use libc.free;
+use libc.abs;
+use libc.labs;
+use libc.strtoul;
+use libc.fprintf;
+use libc.stdout;
+
+// ============================================================
+// abs/labs 测试
+// ============================================================
+
+fn test_abs() void {
+    fprintf(stdout, "test abs/labs: ");
+    var passed: i32 = 1;
+    
+    if abs(42) != 42 { passed = 0; }
+    if abs(0 - 42) != 42 { passed = 0; }
+    if abs(0) != 0 { passed = 0; }
+    
+    if labs(123456789) != 123456789 { passed = 0; }
+    if labs(0 - 123456789) != 123456789 { passed = 0; }
+    
+    if passed != 0 {
+        fprintf(stdout, "PASS\n");
+    } else {
+        fprintf(stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// strtoul 测试
+// ============================================================
+
+fn test_strtoul() void {
+    fprintf(stdout, "test strtoul: ");
+    var passed: i32 = 1;
+    
+    const v1: u64 = strtoul("12345\0" as &const byte, null as & &const byte, 10);
+    if v1 != 12345 { passed = 0; }
+    
+    const v2: u64 = strtoul("ff\0" as &const byte, null as & &const byte, 16);
+    if v2 != 255 { passed = 0; }
+    
+    const v3: u64 = strtoul("777\0" as &const byte, null as & &const byte, 8);
+    if v3 != 511 { passed = 0; }
+    
+    if passed != 0 {
+        fprintf(stdout, "PASS\n");
+    } else {
+        fprintf(stdout, "FAIL\n");
+    }
+}
+
+// ============================================================
+// 主函数
+// ============================================================
+
+fn main() i32 {
+    fprintf(stdout, "=== libc.stdlib tests ===\n");
+    
+    test_abs();
+    test_strtoul();
+    
+    fprintf(stdout, "=== done ===\n");
+    return 0;
+}

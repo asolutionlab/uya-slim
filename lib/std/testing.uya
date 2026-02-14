@@ -1,0 +1,270 @@
+// lib/std/testing.uya - Uya 测试框架核心
+// 版本：v1.0.0
+// 设计：充分利用 Uya 的 error 类型系统
+
+extern "libc" fn printf(fmt: *byte, ...) i32;
+extern "libc" fn fprintf(stream: *byte, fmt: *byte, ...) i32;
+
+// 标准流
+extern var stdout: *byte;
+extern var stderr: *byte;
+
+// ============================================================
+// 测试框架错误定义
+// ============================================================
+
+error TestFailed;           // 通用测试失败
+error AssertionFailed;      // 断言失败
+error TestPanic;            // 测试 panic
+error TestSkipped;          // 测试跳过
+
+// ============================================================
+// 测试结果结构
+// ============================================================
+
+struct TestResult {
+    passed: i32,            // 通过数量
+    failed: i32,            // 失败数量
+    skipped: i32,           // 跳过数量
+    current_test: &const byte,    // 当前测试名
+}
+
+// 全局测试结果
+var _test_result: TestResult = TestResult{
+    passed: 0,
+    failed: 0,
+    skipped: 0,
+    current_test: "" as &const byte,
+};
+
+// ============================================================
+// 断言函数 - 返回 !void，利用 error 类型系统
+// ============================================================
+
+// 基本断言：条件为真
+fn assert(condition: bool, message: &const byte) !void {
+    if !condition {
+        printf("  ASSERT FAILED: %s\n", message);
+        return error.AssertionFailed;
+    }
+}
+
+// 相等断言：i32
+fn assert_eq_i32(actual: i32, expected: i32, message: &const byte) !void {
+    if actual != expected {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected: %d\n", expected);
+        printf("    Actual:   %d\n", actual);
+        return error.AssertionFailed;
+    }
+}
+
+// 相等断言：u32
+fn assert_eq_u32(actual: u32, expected: u32, message: &const byte) !void {
+    if actual != expected {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected: %u\n", expected);
+        printf("    Actual:   %u\n", actual);
+        return error.AssertionFailed;
+    }
+}
+
+// 相等断言：i64
+fn assert_eq_i64(actual: i64, expected: i64, message: &const byte) !void {
+    if actual != expected {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected: %ld\n", expected);
+        printf("    Actual:   %ld\n", actual);
+        return error.AssertionFailed;
+    }
+}
+
+// 相等断言：u64
+fn assert_eq_u64(actual: u64, expected: u64, message: &const byte) !void {
+    if actual != expected {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected: %lu\n", expected);
+        printf("    Actual:   %lu\n", actual);
+        return error.AssertionFailed;
+    }
+}
+
+// 相等断言：bool
+fn assert_eq_bool(actual: bool, expected: bool, message: &const byte) !void {
+    if actual != expected {
+        printf("  ASSERT FAILED: %s\n", message);
+        if expected {
+            printf("    Expected: true\n");
+        } else {
+            printf("    Expected: false\n");
+        }
+        if actual {
+            printf("    Actual:   true\n");
+        } else {
+            printf("    Actual:   false\n");
+        }
+        return error.AssertionFailed;
+    }
+}
+
+// 不相等断言：i32
+fn assert_ne_i32(actual: i32, expected: i32, message: &const byte) !void {
+    if actual == expected {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected NOT: %d\n", expected);
+        printf("    Actual:       %d\n", actual);
+        return error.AssertionFailed;
+    }
+}
+
+// 大于断言：i32
+fn assert_gt_i32(actual: i32, expected: i32, message: &const byte) !void {
+    if actual <= expected {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected: > %d\n", expected);
+        printf("    Actual:   %d\n", actual);
+        return error.AssertionFailed;
+    }
+}
+
+// 小于断言：i32
+fn assert_lt_i32(actual: i32, expected: i32, message: &const byte) !void {
+    if actual >= expected {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected: < %d\n", expected);
+        printf("    Actual:   %d\n", actual);
+        return error.AssertionFailed;
+    }
+}
+
+// 大于等于断言：i32
+fn assert_ge_i32(actual: i32, expected: i32, message: &const byte) !void {
+    if actual < expected {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected: >= %d\n", expected);
+        printf("    Actual:   %d\n", actual);
+        return error.AssertionFailed;
+    }
+}
+
+// 小于等于断言：i32
+fn assert_le_i32(actual: i32, expected: i32, message: &const byte) !void {
+    if actual > expected {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected: <= %d\n", expected);
+        printf("    Actual:   %d\n", actual);
+        return error.AssertionFailed;
+    }
+}
+
+// 空指针断言
+fn assert_null(ptr: *byte, message: &const byte) !void {
+    if ptr != null as *byte {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected: null\n");
+        printf("    Actual:   non-null\n");
+        return error.AssertionFailed;
+    }
+}
+
+// 非空指针断言
+fn assert_not_null(ptr: *byte, message: &const byte) !void {
+    if ptr == null as *byte {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected: non-null\n");
+        printf("    Actual:   null\n");
+        return error.AssertionFailed;
+    }
+}
+
+// 指针相等断言
+fn assert_ptr_eq(actual: *byte, expected: *byte, message: &const byte) !void {
+    if actual != expected {
+        printf("  ASSERT FAILED: %s\n", message);
+        printf("    Expected: %p\n", expected);
+        printf("    Actual:   %p\n", actual);
+        return error.AssertionFailed;
+    }
+}
+
+// ============================================================
+// 测试组织
+// ============================================================
+
+// 测试函数签名: fn test_fn() !void
+
+// 运行单个测试
+fn run_test(name: &const byte, test_fn: fn() !void) void {
+    _test_result.current_test = name;
+    printf("  TEST: %s ... ", name);
+    
+    const result: void = test_fn() catch |err| {
+        printf("FAILED\n");
+        if err != error.AssertionFailed {
+            printf("    Error: error code %d\n", err as i32);
+        }
+        _test_result.failed = _test_result.failed + 1;
+        return;
+    };
+    
+    printf("OK\n");
+    _test_result.passed = _test_result.passed + 1;
+}
+
+// 开始测试套件
+fn test_suite_begin(name: &const byte) void {
+    printf("\n=== Test Suite: %s ===\n", name);
+    _test_result.passed = 0;
+    _test_result.failed = 0;
+    _test_result.skipped = 0;
+}
+
+// 结束测试套件，返回失败数
+fn test_suite_end() i32 {
+    printf("\n=== Results ===\n");
+    printf("  Passed:  %d\n", _test_result.passed);
+    printf("  Failed:  %d\n", _test_result.failed);
+    printf("  Skipped: %d\n", _test_result.skipped);
+    printf("==================\n");
+    
+    // 返回失败数（0 表示全部通过）
+    return _test_result.failed;
+}
+
+// 跳过测试
+fn skip_test(name: &const byte, reason: &const byte) void {
+    printf("  TEST: %s ... SKIPPED (%s)\n", name, reason);
+    _test_result.skipped = _test_result.skipped + 1;
+}
+
+// ============================================================
+// 简写断言（无消息版本）
+// ============================================================
+
+fn expect(condition: bool) !void {
+    try assert(condition, "expect condition to be true");
+}
+
+fn expect_eq(actual: i32, expected: i32) !void {
+    try assert_eq_i32(actual, expected, "expect values to be equal");
+}
+
+fn expect_ne(actual: i32, expected: i32) !void {
+    try assert_ne_i32(actual, expected, "expect values to be not equal");
+}
+
+fn expect_true(value: bool) !void {
+    try assert_eq_bool(value, true, "expect true");
+}
+
+fn expect_false(value: bool) !void {
+    try assert_eq_bool(value, false, "expect false");
+}
+
+fn expect_null(ptr: *byte) !void {
+    try assert_null(ptr, "expect null pointer");
+}
+
+fn expect_not_null(ptr: *byte) !void {
+    try assert_not_null(ptr, "expect non-null pointer");
+}

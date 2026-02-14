@@ -412,6 +412,118 @@ export fn strtol(nptr: &const byte, endptr: & &const byte, base: i32) i64 {
 }
 
 // ============================================================
+// abs/qsort/strtoul（新增高优先级函数）
+// ============================================================
+
+// abs - 整数绝对值
+export extern "libc" fn abs(x: i32) i32 {
+    if x < 0 {
+        return 0 - x;
+    }
+    return x;
+}
+
+// labs - 长整数绝对值
+export extern "libc" fn labs(x: i64) i64 {
+    if x < 0 {
+        return 0 - x;
+    }
+    return x;
+}
+
+// strtoul - 字符串转无符号长整数
+export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: i32) u64 {
+    if nptr == null {
+        return 0;
+    }
+    
+    var p: &const byte = nptr;
+    
+    // 跳过空白字符
+    while p[0] == 32 || p[0] == 9 || p[0] == 10 || p[0] == 13 {
+        p = p + 1 as &const byte;
+    }
+    
+    // 处理可选符号（忽略，因为无符号）
+    if p[0] == 43 {  // '+'
+        p = p + 1 as &const byte;
+    }
+    
+    // 确定基数
+    var actual_base: i32 = base;
+    if actual_base == 0 {
+        if p[0] == 48 {  // '0'
+            p = p + 1 as &const byte;
+            if p[0] == 120 || p[0] == 88 {  // 'x' or 'X'
+                actual_base = 16;
+                p = p + 1 as &const byte;
+            } else {
+                actual_base = 8;
+            }
+        } else {
+            actual_base = 10;
+        }
+    } else if actual_base == 16 {
+        if p[0] == 48 && (p[1] == 120 || p[1] == 88) {
+            p = p + 2 as &const byte;
+        }
+    }
+    
+    // 转换数字
+    var result: u64 = 0;
+    var overflow: i32 = 0;
+    
+    while p[0] != 0 {
+        var digit: i32 = 0;
+        const c: byte = p[0];
+        
+        if c >= 48 && c <= 57 {  // '0'-'9'
+            digit = (c - 48) as i32;
+        } else if c >= 97 && c <= 122 {  // 'a'-'z'
+            digit = (c - 97 + 10) as i32;
+        } else if c >= 65 && c <= 90 {  // 'A'-'Z'
+            digit = (c - 65 + 10) as i32;
+        } else {
+            break;
+        }
+        
+        if digit >= actual_base {
+            break;
+        }
+        
+        // 检查溢出
+        const new_result: u64 = result * (actual_base as u64) + (digit as u64);
+        if new_result < result {
+            overflow = 1;
+        }
+        result = new_result;
+        
+        p = p + 1 as &const byte;
+    }
+    
+    // 设置结束指针
+    if endptr != null as & &const byte {
+        endptr[0] = p;
+    }
+    
+    if overflow != 0 {
+        // ULONG_MAX 约为 18446744073709551615
+        return 18446744073709551615 as u64;
+    }
+    
+    return result;
+}
+
+// qsort - 快速排序
+// 注意：函数指针参数暂不支持，此处为占位声明
+// 实际使用时需要通过 C 链接
+extern fn qsort(base: &void, nmemb: usize, size: usize, compar: &void) void;
+
+// bsearch - 二分搜索
+// 注意：函数指针参数暂不支持，此处为占位声明
+extern fn bsearch(key: &const void, base: &const void, nmemb: usize, size: usize, compar: &void) &void;
+
+// ============================================================
 // 系统函数（C 标准库兼容）
 // ============================================================
 

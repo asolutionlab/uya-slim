@@ -18,7 +18,7 @@ use libc.stdout;
 // isalpha 测试
 // ============================================================
 
-fn test_isalpha() void {
+fn test_isalpha() i32 {
     // 小写字母
     fprintf(stdout, "test isalpha: ");
     var passed: i32 = 1;
@@ -42,8 +42,10 @@ fn test_isalpha() void {
     
     if passed != 0 {
         fprintf(stdout, "PASS\n");
+        return 0;
     } else {
         fprintf(stdout, "FAIL\n");
+        return 1;
     }
 }
 
@@ -51,7 +53,7 @@ fn test_isalpha() void {
 // isdigit 测试
 // ============================================================
 
-fn test_isdigit() void {
+fn test_isdigit() i32 {
     fprintf(stdout, "test isdigit: ");
     var passed: i32 = 1;
     
@@ -68,8 +70,10 @@ fn test_isdigit() void {
     
     if passed != 0 {
         fprintf(stdout, "PASS\n");
+        return 0;
     } else {
         fprintf(stdout, "FAIL\n");
+        return 1;
     }
 }
 
@@ -77,7 +81,7 @@ fn test_isdigit() void {
 // isalnum 测试
 // ============================================================
 
-fn test_isalnum() void {
+fn test_isalnum() i32 {
     fprintf(stdout, "test isalnum: ");
     var passed: i32 = 1;
     
@@ -96,8 +100,10 @@ fn test_isalnum() void {
     
     if passed != 0 {
         fprintf(stdout, "PASS\n");
+        return 0;
     } else {
         fprintf(stdout, "FAIL\n");
+        return 1;
     }
 }
 
@@ -105,7 +111,7 @@ fn test_isalnum() void {
 // isspace 测试
 // ============================================================
 
-fn test_isspace() void {
+fn test_isspace() i32 {
     fprintf(stdout, "test isspace: ");
     var passed: i32 = 1;
     
@@ -123,8 +129,10 @@ fn test_isspace() void {
     
     if passed != 0 {
         fprintf(stdout, "PASS\n");
+        return 0;
     } else {
         fprintf(stdout, "FAIL\n");
+        return 1;
     }
 }
 
@@ -132,7 +140,7 @@ fn test_isspace() void {
 // isupper/islower 测试
 // ============================================================
 
-fn test_isupper() void {
+fn test_isupper() i32 {
     fprintf(stdout, "test isupper: ");
     var passed: i32 = 1;
     
@@ -143,12 +151,14 @@ fn test_isupper() void {
     
     if passed != 0 {
         fprintf(stdout, "PASS\n");
+        return 0;
     } else {
         fprintf(stdout, "FAIL\n");
+        return 1;
     }
 }
 
-fn test_islower() void {
+fn test_islower() i32 {
     fprintf(stdout, "test islower: ");
     var passed: i32 = 1;
     
@@ -159,8 +169,10 @@ fn test_islower() void {
     
     if passed != 0 {
         fprintf(stdout, "PASS\n");
+        return 0;
     } else {
         fprintf(stdout, "FAIL\n");
+        return 1;
     }
 }
 
@@ -168,7 +180,7 @@ fn test_islower() void {
 // toupper/tolower 测试
 // ============================================================
 
-fn test_toupper() void {
+fn test_toupper() i32 {
     fprintf(stdout, "test toupper: ");
     var passed: i32 = 1;
     
@@ -187,12 +199,14 @@ fn test_toupper() void {
     
     if passed != 0 {
         fprintf(stdout, "PASS\n");
+        return 0;
     } else {
         fprintf(stdout, "FAIL\n");
+        return 1;
     }
 }
 
-fn test_tolower() void {
+fn test_tolower() i32 {
     fprintf(stdout, "test tolower: ");
     var passed: i32 = 1;
     
@@ -211,8 +225,10 @@ fn test_tolower() void {
     
     if passed != 0 {
         fprintf(stdout, "PASS\n");
+        return 0;
     } else {
         fprintf(stdout, "FAIL\n");
+        return 1;
     }
 }
 
@@ -220,7 +236,7 @@ fn test_tolower() void {
 // isxdigit 测试
 // ============================================================
 
-fn test_isxdigit() void {
+fn test_isxdigit() i32 {
     fprintf(stdout, "test isxdigit: ");
     var passed: i32 = 1;
     
@@ -239,8 +255,10 @@ fn test_isxdigit() void {
     
     if passed != 0 {
         fprintf(stdout, "PASS\n");
+        return 0;
     } else {
         fprintf(stdout, "FAIL\n");
+        return 1;
     }
 }
 
