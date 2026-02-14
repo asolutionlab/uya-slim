@@ -96,31 +96,8 @@ export const PROT_READ: i32 = 1;
 export const PROT_WRITE: i32 = 2;
 
 // ============================================================
-// 错误码常量（Linux errno）
+// 错误码常量已移至 lib/libc/errno.uya
 // ============================================================
-
-export const EPERM: i32 = 1;
-export const ENOENT: i32 = 2;
-export const ESRCH: i32 = 3;
-export const EINTR: i32 = 4;
-export const EIO: i32 = 5;
-export const ENXIO: i32 = 6;
-export const E2BIG: i32 = 7;
-export const ENOEXEC: i32 = 8;
-export const EBADF: i32 = 9;
-export const ECHILD: i32 = 10;
-export const EAGAIN: i32 = 11;
-export const ENOMEM: i32 = 12;
-export const EACCES: i32 = 13;
-export const EFAULT: i32 = 14;
-export const ENOTBLK: i32 = 15;
-export const EBUSY: i32 = 16;
-export const EEXIST: i32 = 17;
-export const EXDEV: i32 = 18;
-export const ENODEV: i32 = 19;
-export const ENOTDIR: i32 = 20;
-export const EISDIR: i32 = 21;
-export const EINVAL: i32 = 22;
 
 // ============================================================
 // stat 结构体（Linux x86_64，与内核 stat 系统调用布局完全一致）
