@@ -681,7 +681,42 @@ extern fn compare(a: *void, b: *void) i32 {
 extern "libc" fn strlen(s: *const byte) usize;
 // 不生成代码，直接链接到 C 标准库的 strlen
 // byte 映射规则：在 extern "libc" 中，byte 映射为 C 的 char 类型
+
+// 用 Uya 实现 C 标准库函数（0.43 新增）
+export extern "libc" fn my_strlen(s: *const byte) usize {
+    if s == null { return 0; }
+    var len: usize = 0;
+    while s[len] != 0 { len = len + 1; }
+    return len;
+}
+// 生成的 C 代码：size_t my_strlen(const char *s) { ... }
+// 注意：裸函数名，无模块前缀
 ```
+
+**extern 变量支持**（0.43 新增）：
+```uya
+// 导入 C 全局变量
+extern const errno: i32;           // 只读：extern const int errno;
+extern var optind: i32;            // 可变：extern int optind;
+extern const stdout: *void;        // C: extern FILE *stdout;
+
+// 导出 Uya 变量给 C
+export const VERSION: &byte = "1.0.0";  // C: const char *VERSION = "1.0.0";
+export var debug_mode: i32 = 0;         // C: int debug_mode = 0;
+
+// 链接到 C 库定义的变量
+export extern const ENOENT: i32;        // 不生成定义，链接到 C 库
+```
+
+**extern 变量语法规则**：
+
+| 语法 | 用途 | C 代码生成 |
+|------|------|-----------|
+| `extern const name: type;` | 导入只读 C 变量 | `extern const type name;` |
+| `extern var name: type;` | 导入可变 C 变量 | `extern type name;` |
+| `export const name: type = val;` | 导出只读常量 | `const type name = val;` |
+| `export var name: type = val;` | 导出可变变量 | `type name = val;` |
+| `export extern const name: type;` | 链接到 C 库定义 | 不生成，链接到 C 库 |
 
 **FFI指针类型 `*T`**：
 - 仅用于FFI函数声明/调用

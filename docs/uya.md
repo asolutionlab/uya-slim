@@ -51,6 +51,50 @@
 
 ## 规范变更
 
+### 0.43（2026-02-14）
+
+- **`extern "libc" fn` 语法**（新增）：
+  - 语法：`extern "libc" fn name(...) type;` 或 `export extern "libc" fn name(...) type { }`
+  - 显式声明 C 标准库函数，明确 FFI 意图
+  - `byte` 映射为 `char`（与 C 标准库兼容）
+  - 生成的 C 代码：裸函数名（无模块前缀）
+  - **示例**：
+    ```uya
+    // 链接到 C 标准库
+    extern "libc" fn strlen(s: *const byte) usize;
+    
+    // 用 Uya 实现 C 标准库函数
+    export extern "libc" fn my_strlen(s: *const byte) usize {
+        if s == null { return 0; }
+        var len: usize = 0;
+        while s[len] != 0 { len = len + 1; }
+        return len;
+    }
+    ```
+
+- **`extern` 变量支持**（新增）：
+  - **导入 C 全局变量**：
+    - `extern const name: type;` - 导入只读 C 变量
+    - `extern var name: type;` - 导入可变 C 变量
+  - **导出 Uya 变量给 C**：
+    - `export const name: type = value;` - 导出只读常量
+    - `export var name: type = value;` - 导出可变变量
+    - `export extern const name: type;` - 链接到 C 库定义
+  - **示例**：
+    ```uya
+    // 导入 C 标准库变量
+    extern const errno: i32;
+    extern const stdout: *void;
+    
+    // 导出给 C 使用
+    export const VERSION: &byte = "1.0.0";
+    export var debug_mode: i32 = 0;
+    ```
+  - **设计目的**：
+    - 允许 Uya 代码访问 C 库的全局状态
+    - `const`/`var` 明确区分只读和可变
+    - 类型检查确保 C 兼容性
+
 ### 0.42（2026-02-04）
 
 - **只读指针类型 `&const T`**（新增）：
@@ -2576,6 +2620,79 @@ fn main() i32 {
 - 支持类型别名：`type FuncAlias = fn(...) type;`
 - `&function_name` 的类型是函数指针类型（不是 `*void`）
 - 仅在 FFI 上下文中使用，用于与 C 函数指针互操作
+
+#### 5.2.3 导入/导出 C 变量
+
+Uya 支持 `extern` 导入和导出 C 全局变量/常量，用于与 C 代码共享全局状态。
+
+**导入 C 全局变量**：
+
+- 语法：`extern const name: type;`（只读变量）或 `extern var name: type;`（可变变量）
+- 用于声明外部 C 全局变量，供 Uya 代码访问
+- 生成的 C 代码：`extern type name;`
+
+**示例**：
+```uya
+// 导入 C 标准库全局变量
+extern const errno: i32;           // C: extern int errno;
+extern var optind: i32;            // C: extern int optind;
+extern const stdout: *void;        // C: extern FILE *stdout;
+extern const stderr: *void;        // C: extern FILE *stderr;
+
+fn main() i32 {
+    // 读取外部变量
+    const err: i32 = errno;
+    
+    // 写入外部变量（仅 var 声明）
+    optind = 1;
+    
+    return 0;
+}
+```
+
+**导出 Uya 变量给 C**：
+
+- 语法：`export const name: type = value;` 或 `export var name: type = value;`
+- 用于将 Uya 全局变量导出为 C 全局变量，供 C 代码访问
+- 生成的 C 代码：`type name = value;`（不带 `static`）
+
+**示例**：
+```uya
+// 导出全局常量给 C
+export const VERSION: &byte = "1.0.0";  // C: const char *VERSION = "1.0.0";
+
+// 导出全局变量给 C
+export var debug_mode: i32 = 0;         // C: int debug_mode = 0;
+
+// 导出 extern 变量（链接到 C 库定义）
+export extern const ENOENT: i32;        // 不生成定义，链接到 C 库
+```
+
+**语法规则**：
+
+| 语法 | 用途 | C 代码生成 |
+|------|------|-----------|
+| `extern const name: type;` | 导入只读 C 变量 | `extern const type name;` |
+| `extern var name: type;` | 导入可变 C 变量 | `extern type name;` |
+| `export const name: type = val;` | 导出只读 Uya 常量 | `const type name = val;` |
+| `export var name: type = val;` | 导出可变 Uya 变量 | `type name = val;` |
+| `export extern const name: type;` | 链接到 C 库定义的常量 | 不生成，链接到 C 库 |
+| `export extern var name: type;` | 链接到 C 库定义的变量 | 不生成，链接到 C 库 |
+
+**类型限制**：
+
+- 必须使用 C 兼容类型：
+  - 基本类型：`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f64`, `bool`, `byte`
+  - 指针类型：`*T`, `*const T`, `&T`, `&const T`
+  - C 结构体：extern struct 类型
+- 不支持 Uya 特有类型（如切片、错误联合等）
+
+**设计目的**：
+
+1. **互操作性**：允许 Uya 代码访问 C 库的全局状态（如 `errno`, `stdout`）
+2. **可控性**：`const` 和 `var` 明确区分只读和可变
+3. **安全性**：类型检查确保 C 兼容性
+4. **简洁性**：语法与 `extern fn` 保持一致
 
 **FFI 指针使用示例**：
 
