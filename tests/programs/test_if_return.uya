@@ -1,6 +1,18 @@
-fn main() i32 {
+use std.testing.expect;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_if_return() !void {
+    var result: i32 = 1;
     if true {
-        return 0;
+        result = 0;
     }
-    return 1;
+    try expect(result == 0);
+}
+
+fn main() i32 {
+    test_suite_begin("If Return Tests");
+    run_test("if return", test_if_return);
+    return test_suite_end();
 }

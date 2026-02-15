@@ -1,27 +1,33 @@
 // 测试泛型结构体 - 包含指针字段
 
-// 泛型结构体：包含指向 T 的指针
+use std.testing.assert_eq_i32;
+use std.testing.expect;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 struct PtrBox<T> {
     ptr: &T,
 }
 
-fn main() i32 {
-    // 测试 PtrBox<i32>
+fn test_ptr_box() !void {
     var value: i32 = 42;
     const pb: PtrBox<i32> = PtrBox<i32>{ ptr: &value };
-    
-    // 通过指针字段访问值（先存储到变量）
     const deref_val: i32 = *pb.ptr;
-    if deref_val != 42 {
-        return 1;
-    }
-    
-    // 修改原值，验证指针有效
+    try assert_eq_i32(deref_val, 42);
+}
+
+fn test_ptr_valid() !void {
+    var value: i32 = 42;
+    const pb: PtrBox<i32> = PtrBox<i32>{ ptr: &value };
     value = 100;
     const new_val: i32 = *pb.ptr;
-    if new_val != 100 {
-        return 2;
-    }
-    
-    return 0;
+    try assert_eq_i32(new_val, 100);
+}
+
+fn main() i32 {
+    test_suite_begin("Generic Struct Ptr Field Tests");
+    run_test("ptr box", test_ptr_box);
+    run_test("ptr valid", test_ptr_valid);
+    return test_suite_end();
 }

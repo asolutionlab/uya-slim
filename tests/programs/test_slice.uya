@@ -1,42 +1,49 @@
-// 切片类型与语法测试：&[T]、&[T: N]、base[start:len]、@len(slice)、slice[i]
-// 返回 0 表示通过
+// 切片类型与语法测试
 
-fn main() i32 {
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_dynamic_len_slice() !void {
     var arr: [i32: 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-
-    // 动态长度切片
     const s: &[i32] = arr[0:5];
-    if @len(s) != 5 {
-        return 1;
-    }
-    if s[0] != 1 || s[4] != 5 {
-        return 2;
-    }
+    try assert_eq_i32(@len(s), 5);
+    try assert_eq_i32(s[0], 1);
+    try assert_eq_i32(s[4], 5);
+}
 
-    // 已知长度切片
+fn test_known_len_slice() !void {
+    var arr: [i32: 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     const t: &[i32: 3] = arr[2:3];
-    if @len(t) != 3 {
-        return 3;
-    }
-    if t[0] != 3 || t[2] != 5 {
-        return 4;
-    }
+    try assert_eq_i32(@len(t), 3);
+    try assert_eq_i32(t[0], 3);
+    try assert_eq_i32(t[2], 5);
+}
 
-    // 切片索引与修改（通过原数组）
+fn test_slice_modify() !void {
+    var arr: [i32: 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     arr[3] = 99;
     const u: &[i32] = arr[1:4];
-    if u[0] != 2 || u[2] != 99 {
-        return 5;
-    }
+    try assert_eq_i32(u[0], 2);
+    try assert_eq_i32(u[2], 99);
+}
 
-    // 从切片再切片
+fn test_slice_of_slice() !void {
+    var arr: [i32: 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const s: &[i32] = arr[0:5];
     const v: &[i32] = s[1:2];
-    if @len(v) != 2 {
-        return 6;
-    }
-    if v[0] != 2 || v[1] != 3 {
-        return 7;
-    }
+    try assert_eq_i32(@len(v), 2);
+    try assert_eq_i32(v[0], 2);
+    try assert_eq_i32(v[1], 3);
+}
 
-    return 0;
+fn main() i32 {
+    test_suite_begin("Slice Tests");
+    run_test("dynamic len slice", test_dynamic_len_slice);
+    run_test("known len slice", test_known_len_slice);
+    run_test("slice modify", test_slice_modify);
+    run_test("slice of slice", test_slice_of_slice);
+    return test_suite_end();
 }

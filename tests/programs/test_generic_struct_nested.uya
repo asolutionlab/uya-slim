@@ -1,36 +1,36 @@
 // 测试泛型结构体 - 嵌套使用
 
-// 基本泛型结构体
+use std.testing.assert_eq_i32;
+use std.testing.expect;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 struct Box<T> {
     data: T,
 }
 
-// 使用 Box<T> 作为字段的泛型结构体
 struct DoubleBox<T> {
     inner: Box<T>,
     extra: i32,
 }
 
-fn main() i32 {
-    // 测试 Box<i32>
+fn test_box() !void {
     const b1: Box<i32> = Box<i32>{ data: 42 };
-    if b1.data != 42 {
-        return 1;
-    }
-    
-    // 测试嵌套：DoubleBox<i32> 包含 Box<i32>
+    try assert_eq_i32(b1.data, 42);
+}
+
+fn test_nested_box() !void {
     const inner_box: Box<i32> = Box<i32>{ data: 100 };
     const db: DoubleBox<i32> = DoubleBox<i32>{ inner: inner_box, extra: 999 };
-    
-    // 注意：嵌套字段访问的类型比较需要先存储到变量
     const inner_data: i32 = db.inner.data;
-    if inner_data != 100 {
-        return 2;
-    }
-    
-    if db.extra != 999 {
-        return 3;
-    }
-    
-    return 0;
+    try assert_eq_i32(inner_data, 100);
+    try assert_eq_i32(db.extra, 999);
+}
+
+fn main() i32 {
+    test_suite_begin("Generic Struct Nested Tests");
+    run_test("box", test_box);
+    run_test("nested box", test_nested_box);
+    return test_suite_end();
 }
