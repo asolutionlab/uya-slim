@@ -7363,8 +7363,10 @@ static void expand_macros_in_node(TypeChecker *checker, ASTNode **node_ptr) {
             expand_macros_in_node(checker, &node->data.binary_expr.right);
             break;
         case AST_UNARY_EXPR:
-        case AST_TRY_EXPR:
             expand_macros_in_node(checker, &node->data.unary_expr.operand);
+            break;
+        case AST_TRY_EXPR:
+            expand_macros_in_node(checker, &node->data.try_expr.operand);
             break;
         case AST_AWAIT_EXPR:
             expand_macros_in_node(checker, &node->data.await_expr.operand);
