@@ -1,10 +1,14 @@
 // match 表达式测试：常量模式、变量绑定、else 分支
-// 返回 0 表示通过
+
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
 
 enum Color { Red = 1, Green, Blue }
 
-fn main() i32 {
-    // 整数常量匹配
+fn test_int_constant_match() !void {
     const x: i32 = 1;
     const r1: i32 = match x {
         0 => 10,
@@ -12,23 +16,26 @@ fn main() i32 {
         2 => 30,
         else => 40,
     };
-    if r1 != 20 { return 1; }
+    try assert_eq_i32(r1, 20);
+}
 
-    // 变量绑定
+fn test_variable_binding() !void {
     const r2: i32 = match 42 {
         v => v,
     };
-    if r2 != 42 { return 2; }
+    try assert_eq_i32(r2, 42);
+}
 
-    // else 分支
+fn test_else_branch() !void {
     const r3: i32 = match 99 {
         0 => 0,
         1 => 1,
         else => 99,
     };
-    if r3 != 99 { return 3; }
+    try assert_eq_i32(r3, 99);
+}
 
-    // 枚举匹配
+fn test_enum_match() !void {
     const c: Color = Color.Green;
     const r4: i32 = match c {
         Color.Red => 1,
@@ -36,25 +43,36 @@ fn main() i32 {
         Color.Blue => 3,
         else => 0,
     };
-    if r4 != 2 { return 4; }
+    try assert_eq_i32(r4, 2);
+}
 
-    // bool 常量匹配
+fn test_bool_match() !void {
     const b: bool = true;
     const r5: i32 = match b {
         true => 1,
         false => 0,
         else => 0,
     };
-    if r5 != 1 { return 5; }
+    try assert_eq_i32(r5, 1);
+}
 
-    // match 作为语句（void 分支）
+fn test_match_as_statement() !void {
     var n: i32 = 0;
     match 1 {
         0 => { n = 10; },
         1 => { n = 20; },
         else => { n = 30; },
     };
-    if n != 20 { return 6; }
+    try assert_eq_i32(n, 20);
+}
 
-    return 0;
+fn main() i32 {
+    test_suite_begin("Match Expression Tests");
+    run_test("int constant match", test_int_constant_match);
+    run_test("variable binding", test_variable_binding);
+    run_test("else branch", test_else_branch);
+    run_test("enum match", test_enum_match);
+    run_test("bool match", test_bool_match);
+    run_test("match as statement", test_match_as_statement);
+    return test_suite_end();
 }
