@@ -1,12 +1,28 @@
-// 显式验证：return 时 defer 在 return 前执行（非 return 后死代码）
-// 通过子函数 + 全局变量验证 defer 在函数返回前已执行
+// defer 在 return 前执行
+
+use std.testing.expect;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 var defer_ran: i32 = 0;
+
 fn f() i32 {
     defer { defer_ran = 1; }
     return 0;
 }
-fn main() i32 {
+
+fn test_defer_before_return() !void {
+    defer_ran = 0;
     const r: i32 = f();
-    if (defer_ran != 1) { return 1; }  // defer 应在 return 前执行，否则为 0
-    return r;
+    try expect(defer_ran == 1);  // defer 应在 return 前执行
+    try expect(r == 0);
+}
+
+fn main() i32 {
+    test_suite_begin("Defer Return Order Tests");
+    
+    run_test("defer before return", test_defer_before_return);
+    
+    return test_suite_end();
 }
