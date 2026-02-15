@@ -764,6 +764,48 @@ Location (被依赖) → ProgramData (依赖 Location) → NodeData (依赖 Prog
 - 352 个测试全部通过
 - 自举验证通过
 
+---
+
+## 方案验证（2026-02-15 续）
+
+### ✅ ASTNode Union 方案可行
+
+测试文件 `tests/programs/test_astnode_union.uya` 验证了核心结构：
+
+```uya
+// 数据结构体
+struct MockProgramData { decls: &i32, decl_count: i32 }
+struct MockBinaryExprData { left: &i32, right: &i32, op: i32 }
+struct MockNumberData { value: i32 }
+
+// Union
+union MockASTData {
+    program: MockProgramData,
+    binary_expr: MockBinaryExprData,
+    number: MockNumberData,
+}
+
+// 最终结构
+struct MockASTNode {
+    type_id: MockASTType,
+    line: i32,
+    column: i32,
+    data: MockASTData,
+}
+```
+
+**验证结果**：
+- C 代码生成顺序正确
+- 353 个测试全部通过
+- 通过 match 表达式访问 union 变体
+
+### 下一步：渐进式迁移
+
+1. **定义所有数据结构体**：约 60 个 AST*Data 结构体
+2. **定义 ASTNodeData union**
+3. **修改 ASTNode**：保留旧字段作为兼容层，添加 union
+4. **逐步迁移**：按模块迁移访问代码
+
 ### 注意事项
 
 1. **循环依赖**：数据结构体依赖 ASTNode，不能放在单独文件
