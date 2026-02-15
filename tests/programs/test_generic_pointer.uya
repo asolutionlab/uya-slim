@@ -1,53 +1,56 @@
 // 测试泛型函数 - 与指针类型结合
 
-// 泛型函数：返回指针所指向的值
+use std.testing.assert_eq_i32;
+use std.testing.expect;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 fn deref<T>(ptr: &T) T {
     return *ptr;
 }
 
-// 泛型函数：设置指针所指向的值
 fn set_value<T>(ptr: &T, value: T) void {
     *ptr = value;
 }
 
-// 泛型函数：交换两个指针所指向的值
 fn swap<T>(a: &T, b: &T) void {
     const temp: T = *a;
     *a = *b;
     *b = temp;
 }
 
-fn main() i32 {
-    // 测试 deref<i32>
+fn test_deref() !void {
     var x: i32 = 42;
     const val: i32 = deref<i32>(&x);
-    if val != 42 {
-        return 1;
-    }
-    
-    // 测试 set_value<i32>
+    try assert_eq_i32(val, 42);
+}
+
+fn test_set_value() !void {
     var y: i32 = 0;
     set_value<i32>(&y, 100);
-    if y != 100 {
-        return 2;
-    }
-    
-    // 测试 swap<i32>
+    try assert_eq_i32(y, 100);
+}
+
+fn test_swap() !void {
     var a: i32 = 10;
     var b: i32 = 20;
     swap<i32>(&a, &b);
-    if a != 20 {
-        return 3;
-    }
-    if b != 10 {
-        return 4;
-    }
-    
-    // 测试 f64 类型
-    var f: f64 = 3.14;
-    const fval: f64 = deref<f64>(&f);
-    // 浮点比较暂时跳过
-    
-    return 0;
+    try assert_eq_i32(a, 20);
+    try assert_eq_i32(b, 10);
 }
 
+fn test_f64_type() !void {
+    var f: f64 = 3.14;
+    const fval: f64 = deref<f64>(&f);
+    try expect(fval == 3.14);
+}
+
+fn main() i32 {
+    test_suite_begin("Generic Pointer Tests");
+    run_test("deref", test_deref);
+    run_test("set value", test_set_value);
+    run_test("swap", test_swap);
+    run_test("f64 type", test_f64_type);
+    return test_suite_end();
+}

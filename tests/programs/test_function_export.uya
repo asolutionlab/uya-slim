@@ -1,34 +1,29 @@
-// 测试函数导出规则（static/export/extern）
-// 验证生成的 C 代码正确性
+// 测试函数导出规则
 
-// 内部函数（不导出）→ static void foo(void)
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 fn internal_func() void {
-    // 内部函数，不导出
 }
 
-// 导出函数（供其他模块使用）→ void foo(void)
 export fn exported_func() i32 {
     return 42;
 }
 
-// 外部 C 函数声明 → extern void foo(void);
-// 注意：extern 函数不能有函数体，只有声明
-// 用途：声明外部 C 函数（如 C 标准库函数），让当前模块可以调用
 extern fn external_c_func() void;
 
-// 导出外部 C 函数（FFI）→ extern void foo(void);
-// 注意：extern 函数不能有函数体，只有声明
-// 用途：在一个模块中声明外部 C 函数，然后导出这个声明
-//       让其他模块可以通过 use 导入并使用，而不需要每个模块都重新声明
-// 示例：在 std.c 模块中声明 printf，其他模块可以 use libc.printf;
 export extern fn exported_external_func() i32;
 
-fn main() i32 {
+fn test_exported_func() !void {
     internal_func();
     const result: i32 = exported_func();
-    if result != 42 {
-        return 1;
-    }
-    return 0;
+    try assert_eq_i32(result, 42);
 }
 
+fn main() i32 {
+    test_suite_begin("Function Export Tests");
+    run_test("exported func", test_exported_func);
+    return test_suite_end();
+}
