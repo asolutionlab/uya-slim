@@ -9092,6 +9092,26 @@ fn expand_macros_in_node_simple(checker: &TypeChecker, node_ptr: & & ASTNode) vo
         expand_macros_in_node_simple(checker, &node.sizeof_expr_target);
     } else if node.type == ASTNodeType.AST_LEN {
         expand_macros_in_node_simple(checker, &node.len_expr_array);
+    } else if node.type == ASTNodeType.AST_TEST_STMT {
+        // 测试语句：展开测试体中的宏
+        expand_macros_in_node_simple(checker, &node.test_stmt_body);
+    } else if node.type == ASTNodeType.AST_CATCH_EXPR {
+        // catch 表达式：展开操作数和 catch 块中的宏
+        expand_macros_in_node_simple(checker, &node.catch_expr_operand);
+        expand_macros_in_node_simple(checker, &node.catch_expr_catch_block);
+    } else if node.type == ASTNodeType.AST_TRY_EXPR {
+        // try 表达式：展开操作数中的宏
+        expand_macros_in_node_simple(checker, &node.try_expr_operand);
+    } else if node.type == ASTNodeType.AST_MATCH_EXPR {
+        // match 表达式：展开匹配表达式和各个分支
+        expand_macros_in_node_simple(checker, &node.match_expr_expr);
+        if node.match_expr_arms != null {
+            var i: i32 = 0;
+            while i < node.match_expr_arm_count {
+                expand_macros_in_node_simple(checker, &node.match_expr_arms[i].result_expr);
+                i = i + 1;
+            }
+        }
     }
     // 其他节点类型暂不处理
 }

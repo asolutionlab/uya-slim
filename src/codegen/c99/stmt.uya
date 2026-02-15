@@ -465,14 +465,18 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         } else if strcmp(expr_union_c as *byte, "struct err_union_intptr_t" as *byte) == 0 { expr_payload_c = "intptr_t" as &byte;
                         } else if strcmp(expr_union_c as *byte, "struct err_union_int32_t" as *byte) == 0 { expr_payload_c = "int32_t" as &byte;
                         } else if strcmp(expr_union_c as *byte, "struct err_union_void" as *byte) == 0 { expr_payload_c = "void" as &byte;
+                        } else if strncmp(expr_union_c as *byte, "struct err_union_" as *byte, 16) == 0 {
+                            // 从结构体名称中提取 payload 类型（如 err_union_voidptr -> voidptr）
+                            expr_payload_c = &expr_union_c[16];
                         } else { expr_payload_c = "int32_t" as &byte; }
                     }
                     var ret_payload_c: &byte = null;
                     if payload_node != null {
                         ret_payload_c = c99_type_to_c(codegen, payload_node);
                     }
+                    // 检查是否需要类型转换：直接比较表达式类型和返回类型
                     var needs_conversion: i32 = 0;
-                    if expr_payload_c != null && ret_payload_c != null && strcmp(expr_payload_c as *byte, ret_payload_c as *byte) != 0 {
+                    if expr_union_c != null && ret_c != null && strcmp(expr_union_c as *byte, ret_c as *byte) != 0 {
                         needs_conversion = 1;
                     }
                     if needs_conversion != 0 && payload_void == 0 {

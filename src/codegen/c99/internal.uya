@@ -40,6 +40,7 @@ const C99_MAX_DEFER_STACK: i32 = 32;
 const C99_MAX_DEFERS_PER_BLOCK: i32 = 64;
 const C99_MAX_DROP_VARS_PER_BLOCK: i32 = 64;
 const C99_MAX_SLICE_STRUCTS: i32 = 32;
+const C99_MAX_ERR_UNION_STRUCTS: i32 = 64;
 const C99_MAX_MONO_INSTANCES: i32 = 512;
 
 // ===== 类型定义 =====
@@ -166,6 +167,11 @@ struct C99CodeGenerator {
     slice_struct_names: [&byte: C99_MAX_SLICE_STRUCTS],
     slice_struct_element_types: [&ASTNode: C99_MAX_SLICE_STRUCTS],
     slice_struct_count: i32,
+    
+    // 待输出的错误联合结构体（!T -> struct err_union_X { uint32_t error_id; T value; }）
+    err_union_struct_names: [&byte: C99_MAX_ERR_UNION_STRUCTS],
+    err_union_payload_types: [&ASTNode: C99_MAX_ERR_UNION_STRUCTS],
+    err_union_struct_count: i32,
     
     // 泛型单态化实例（从 TypeChecker 传入）
     mono_instances: [MonoInstanceCodegen: C99_MAX_MONO_INSTANCES],

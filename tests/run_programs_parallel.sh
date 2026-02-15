@@ -203,6 +203,8 @@ fi
 # 子进程内关闭 set -e，避免 gcc 失败、测试退出非零等导致未写结果文件而漏计
 run_single_test() {
     set +e
+    # 自举编译器递归较深，增大栈限制
+    ulimit -s unlimited 2>/dev/null || ulimit -s 524288 2>/dev/null || true
     local uya_file="$1"
     local result_file="$2"
     local base_name=$(basename "$uya_file" .uya)
