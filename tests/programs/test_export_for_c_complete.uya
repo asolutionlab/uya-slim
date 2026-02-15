@@ -29,15 +29,13 @@ fn internal_func(x: i32) i32 {
     return x * 2;
 }
 
-@test
-fn test_export_functions() void {
+test "test_export_functions" {
     testing.assert_eq(uya_add(10, 20), 30);
     testing.assert_eq(uya_multiply(5, 6), 30);
     testing.assert_eq(internal_func(21), 42);
 }
 
-@test
-fn test_strlen() void {
+test "test_strlen" {
     const test_str: [byte: 6] = [72, 101, 108, 108, 111, 0];  // "Hello\0"
     const len: i32 = uya_strlen(&test_str[0] as &byte);
     testing.assert_eq(len, 5);

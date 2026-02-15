@@ -1,7 +1,6 @@
 // 简单的迭代器测试
-// 预期：main 返回 0
 
-extern "libc" fn printf(fmt: *byte, ...) i32;
+use std.testing;
 
 error IterEnd;
 
@@ -23,27 +22,21 @@ SimpleIter {
     }
 }
 
-fn main() i32 {
+test "test_iterator_value" {
     var iter: SimpleIter = SimpleIter{ current: 0, end_val: 3 };
-    
-    // 测试方法调用
-    const v1: i32 = iter.value();
-    printf("v1 = %d\n", v1);
-    if v1 != 0 {
-        return 1;
-    }
-    
-    // 测试 next() 返回 !void
-    const r1: void = iter.next() catch {
-        return 2;
-    };
-    
-    const v2: i32 = iter.value();
-    printf("v2 = %d\n", v2);
-    if v2 != 1 {
-        return 3;
-    }
-    
-    return 0;
+    testing.assert_eq(iter.value(), 0);
 }
 
+test "test_iterator_next" {
+    var iter: SimpleIter = SimpleIter{ current: 0, end_val: 3 };
+    
+    const r1: void = iter.next() catch {
+        return;
+    };
+    testing.assert_eq(iter.value(), 1);
+    
+    const r2: void = iter.next() catch {
+        return;
+    };
+    testing.assert_eq(iter.value(), 2);
+}

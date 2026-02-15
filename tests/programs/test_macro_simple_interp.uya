@@ -6,8 +6,7 @@ mc test_add(a: expr, b: expr) expr {
     @mc_code(@mc_ast(${a} + ${b}));
 }
 
-@test
-fn test_macro_interp() void {
+test "test_macro_interp" {
     const result: i32 = test_add(3, 5);
     testing.assert_eq(result, 8);
 }

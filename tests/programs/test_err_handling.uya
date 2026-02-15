@@ -12,20 +12,17 @@ fn divide(a: i32, b: i32) !i32 {
     return a / b;
 }
 
-@test
-fn test_try() void {
+test "test_try" {
     const x: i32 = try divide(10, 2);
     testing.assert_eq(x, 5);
 }
 
-@test
-fn test_catch_default() void {
+test "test_catch_default" {
     const y: i32 = divide(10, 0) catch { 0; };
     testing.assert_eq(y, 0);
 }
 
-@test
-fn test_catch_with_error() void {
+test "test_catch_with_error" {
     const z: i32 = divide(8, 4) catch |e| {
         if (e == error.DivisionByZero) {
             return 1;

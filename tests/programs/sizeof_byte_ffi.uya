@@ -2,25 +2,21 @@
 
 use std.testing;
 
-@test
-fn test_size_of_byte() void {
+test "test_size_of_byte" {
     testing.assert_eq(@size_of(byte), 1);
 }
 
-@test
-fn test_size_of_ffi_ptr() void {
+test "test_size_of_ffi_ptr" {
     testing.assert_eq(@size_of(*byte), 8);  // 64位平台
 }
 
-@test
-fn test_size_of_byte_array() void {
+test "test_size_of_byte_array" {
     testing.assert_eq(@size_of([byte: 10]), 10);
     testing.assert_eq(@size_of([byte: 5]), 5);
     testing.assert_eq(@size_of([byte: 100]), 100);
 }
 
-@test
-fn test_size_of_byte_var() void {
+test "test_size_of_byte_var" {
     var byte_var: byte = 42;
     testing.assert_eq(@size_of(byte_var), 1);
     
@@ -28,23 +24,19 @@ fn test_size_of_byte_var() void {
     testing.assert_eq(@size_of(byte_arr), 10);
 }
 
-@test
-fn test_size_of_slice() void {
+test "test_size_of_slice" {
     testing.assert_eq(@size_of(&[byte: 10]), 16);  // 胖指针 64位
 }
 
-@test
-fn test_ptr_sizes_equal() void {
+test "test_ptr_sizes_equal" {
     testing.assert_eq(@size_of(*byte), @size_of(&byte));
 }
 
-@test
-fn test_size_in_expression() void {
+test "test_size_in_expression" {
     testing.assert_eq(@size_of(byte) * 10, 10);
     testing.assert_eq(@size_of(*byte) * 5, 40);
 }
 
-@test
-fn test_slice_ne_array() void {
+test "test_slice_ne_array" {
     testing.assert_eq(@size_of(&[byte: 10]) == @size_of([byte: 10]), false);
 }

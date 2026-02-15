@@ -8,8 +8,7 @@ fn f() !i32 {
     return error.X;
 }
 
-@test
-fn test_return_error() void {
+test "test_return_error" {
     const v: i32 = f() catch { 0; };
     testing.assert_eq(v, 0);
 }

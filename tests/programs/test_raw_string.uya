@@ -1,14 +1,23 @@
 // 测试原始字符串字面量（反引号语法）
 
-extern "libc" fn printf(fmt: *byte, ...) i32;
+use std.testing;
 
-fn main() i32 {
-    // 测试原始字符串：无转义序列，所有字符按字面量处理
-    printf(`C:\Users\name\n`);        // 反斜杠不会被转义
-    printf(`path\to\file\n`);        // 制表符不会被转义
-    printf(`say "hello"\n`);         // 双引号不会被转义
-    printf(`backslash\\test\n`);    // 反斜杠按字面量处理
-    
-    return 0;
+test "test_raw_string_backslash" {
+    // 原始字符串：反斜杠不会被转义
+    const s1: [byte: 15] = `C:\Users\name\n`;
+    testing.assert_eq(s1[2] == 92, true);  // \ 字符
+    testing.assert_eq(s1[3] == 85, true);  // U 字符
 }
 
+test "test_raw_string_no_escape" {
+    // 制表符不会被转义
+    const s2: [byte: 14] = `path\to\file\n`;
+    testing.assert_eq(s2[4] == 92, true);  // \ 字符
+    testing.assert_eq(s2[5] == 116, true); // t 字符（不是制表符）
+}
+
+test "test_raw_string_quotes" {
+    // 双引号不会被转义
+    const s3: [byte: 13] = `say "hello"\n`;
+    testing.assert_eq(s3[4] == 34, true);  // " 字符
+}

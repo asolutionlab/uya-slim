@@ -1,19 +1,24 @@
 // 测试字符串字面量转义字符支持
 
-extern "libc" fn printf(fmt: *byte, ...) i32;
+use std.testing;
 
-fn main() i32 {
-    // 测试各种转义序列
-    printf("hello\n");           // 换行符
-    printf("tab\ttest\n");       // 制表符
-    printf("backslash\\test\n"); // 反斜杠
-    printf("quote\"test\n");    // 双引号
-    printf("null\0test\n");     // 空字符
+test "test_escape_sequences" {
+    // 测试各种转义序列 - 验证编译器正确处理
+    const newline: [byte: 7] = "hello\n";
+    const tab: [byte: 9] = "tab\ttest\n";
+    const backslash: [byte: 15] = "backslash\\test\n";
+    const quote: [byte: 12] = "quote\"test\n";
     
-    // 组合使用
-    printf("line1\nline2\ttabbed\n");
-    printf("path\\to\\file\n");
-    printf("say \"hello\"\n");
-    
-    return 0;
+    // 验证转义字符位置
+    testing.assert_eq(newline[5] == 10, true);  // \n = 10
+    testing.assert_eq(tab[3] == 9, true);       // \t = 9
+    testing.assert_eq(backslash[9] == 92, true); // \\ = 92
+    testing.assert_eq(quote[5] == 34, true);    // \" = 34
+}
+
+test "test_combined_escapes" {
+    const combined: [byte: 18] = "line1\nline2\tend\n";
+    testing.assert_eq(combined[5] == 10, true);  // \n
+    testing.assert_eq(combined[11] == 9, true);  // \t
+    testing.assert_eq(combined[15] == 10, true); // \n
 }

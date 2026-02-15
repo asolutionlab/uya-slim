@@ -1,8 +1,10 @@
-extern "libc" fn printf(fmt: *byte, ...) i32;
+// 测试简单字符串插值
 
-fn main() i32 {
-  const x: i32 = 42;
-  const msg: [i8: 32] = "x=${x}\n";
-  printf(&msg[0]);
-  return 0;
+use std.testing;
+
+test "test_string_interp" {
+    const x: i32 = 42;
+    const msg: [i8: 32] = "x=${x}\n";
+    // 验证编译正确，字符串插值在编译时展开
+    testing.assert_eq(msg[0] == 120, true);  // 'x'
 }

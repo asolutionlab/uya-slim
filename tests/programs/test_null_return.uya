@@ -37,20 +37,17 @@ fn multiple_return_null(flag: i32) &Node {
     return null;
 }
 
-@test
-fn test_null_i32() void {
+test "test_null_i32" {
     var ptr: &i32 = return_null_i32();
     testing.assert_eq(ptr == null, true);
 }
 
-@test
-fn test_null_void() void {
+test "test_null_void" {
     var ptr: &void = return_null_void();
     testing.assert_eq(ptr == null, true);
 }
 
-@test
-fn test_null_struct() void {
+test "test_null_struct" {
     var node_ptr: &Node = return_null_node();
     testing.assert_eq(node_ptr == null, true);
     
@@ -58,15 +55,13 @@ fn test_null_struct() void {
     testing.assert_eq(point_ptr == null, true);
 }
 
-@test
-fn test_null_basic_types() void {
+test "test_null_basic_types" {
     testing.assert_eq(return_null_usize() == null, true);
     testing.assert_eq(return_null_bool() == null, true);
     testing.assert_eq(return_null_byte() == null, true);
 }
 
-@test
-fn test_conditional_return() void {
+test "test_conditional_return" {
     var ptr1: &i32 = conditional_return_null(true);
     testing.assert_eq(ptr1 == null, true);
     
@@ -75,8 +70,7 @@ fn test_conditional_return() void {
     testing.assert_eq(*ptr2, 42);
 }
 
-@test
-fn test_multiple_return_null() void {
+test "test_multiple_return_null" {
     testing.assert_eq(multiple_return_null(0) == null, true);
     testing.assert_eq(multiple_return_null(1) == null, true);
     testing.assert_eq(multiple_return_null(2) == null, true);

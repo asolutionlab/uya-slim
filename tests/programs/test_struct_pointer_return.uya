@@ -82,8 +82,7 @@ fn get_x(p: &Point) i32 { return p.x; }
 fn get_point_x_from_ptr(p: &Point) i32 { return p.x; }
 fn get_value_from_ptr(p: &i32) i32 { return *p; }
 
-@test
-fn test_global_struct_pointer() void {
+test "test_global_struct_pointer" {
     global_point.x = 100;
     global_point.y = 200;
     var ptr: &Point = get_global_point();
@@ -96,8 +95,7 @@ fn test_global_struct_pointer() void {
     testing.assert_eq(global_point.y, 400);
 }
 
-@test
-fn test_local_struct_pointer() void {
+test "test_local_struct_pointer" {
     var local_point: Point = Point{ x: 10, y: 20 };
     var ptr: &Point = get_point_pointer(&local_point);
     testing.assert_eq(ptr.x, 10);
@@ -109,8 +107,7 @@ fn test_local_struct_pointer() void {
     testing.assert_eq(local_point.y, 60);
 }
 
-@test
-fn test_nested_struct_pointer() void {
+test "test_nested_struct_pointer" {
     var outer: Outer = Outer{ inner: Inner{ data: 500 }, count: 10 };
     var outer_ptr: &Outer = get_outer_pointer(&outer);
     testing.assert_eq(outer_ptr.inner.data, 500);
@@ -120,8 +117,7 @@ fn test_nested_struct_pointer() void {
     testing.assert_eq(inner_ptr.data, 500);
 }
 
-@test
-fn test_field_pointer() void {
+test "test_field_pointer" {
     var point: Point = Point{ x: 1000, y: 2000 };
     var x_ptr: &i32 = get_point_x_pointer(&point);
     var y_ptr: &i32 = get_point_y_pointer(&point);
@@ -135,8 +131,7 @@ fn test_field_pointer() void {
     testing.assert_eq(point.y, 4000);
 }
 
-@test
-fn test_array_first_element() void {
+test "test_array_first_element" {
     var arr_ptr: &i32 = get_array_first_element();
     testing.assert_eq(*arr_ptr, 10);
     
@@ -144,8 +139,7 @@ fn test_array_first_element() void {
     testing.assert_eq(*arr_ptr, 999);
 }
 
-@test
-fn test_struct_array_first_element() void {
+test "test_struct_array_first_element" {
     var ptr: &Point = get_struct_array_first_element();
     testing.assert_eq(ptr.x, 100);
     testing.assert_eq(ptr.y, 200);
@@ -156,21 +150,18 @@ fn test_struct_array_first_element() void {
     testing.assert_eq(ptr.y, 888);
 }
 
-@test
-fn test_array_element_by_index() void {
+test "test_array_element_by_index" {
     var elem_ptr: &i32 = get_array_element_by_index(2);
     testing.assert_eq(*elem_ptr, 30);
 }
 
-@test
-fn test_struct_array_by_index() void {
+test "test_struct_array_by_index" {
     var ptr: &Point = get_struct_array_element_by_index(2);
     testing.assert_eq(ptr.x, 5);
     testing.assert_eq(ptr.y, 6);
 }
 
-@test
-fn test_pointer_comparison() void {
+test "test_pointer_comparison" {
     global_point.x = 300;
     global_point.y = 400;
     
@@ -185,8 +176,7 @@ fn test_pointer_comparison() void {
     testing.assert_eq(ptr3 == ptr4, false);
 }
 
-@test
-fn test_pointer_deref() void {
+test "test_pointer_deref" {
     var point: Point = Point{ x: 999, y: 888 };
     var ptr: &Point = get_point_pointer(&point);
     var point_copy: Point = *ptr;

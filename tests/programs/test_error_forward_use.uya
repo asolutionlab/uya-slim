@@ -7,8 +7,7 @@ fn f() !i32 {
 }
 error LateDeclared;  // 后声明
 
-@test
-fn test_forward_use() void {
+test "test_forward_use" {
     const r: i32 = f() catch { 42; };
     testing.assert_eq(r, 42);
 }

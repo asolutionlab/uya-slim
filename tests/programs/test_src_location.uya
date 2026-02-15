@@ -6,24 +6,21 @@
 
 use std.testing;
 
-@test
-fn test_src_line_col() void {
+test "test_src_line_col" {
     const line: i32 = @src_line;
     const col: i32 = @src_col;
     testing.assert_eq(line > 0, true);
     testing.assert_eq(col > 0, true);
 }
 
-@test
-fn test_src_name_path() void {
+test "test_src_name_path" {
     const name: *byte = @src_name;
     const path: *byte = @src_path;
     testing.assert_eq(name != null, true);
     testing.assert_eq(path != null, true);
 }
 
-@test
-fn test_func_name() void {
+test "test_func_name" {
     const func: *byte = @func_name;
     testing.assert_eq(func != null, true);
 }
@@ -34,7 +31,6 @@ fn helper_src_location() i32 {
     return line2 - line1;
 }
 
-@test
-fn test_line_increment() void {
+test "test_line_increment" {
     testing.assert_eq(helper_src_location(), 1);
 }

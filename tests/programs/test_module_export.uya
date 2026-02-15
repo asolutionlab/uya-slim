@@ -22,8 +22,7 @@ struct PrivateStruct {
     x: i32,
 }
 
-@test
-fn test_export_func() void {
+test "test_export_func" {
     testing.assert_eq(public_func(), 42);
     testing.assert_eq(private_func(), 0);
 }

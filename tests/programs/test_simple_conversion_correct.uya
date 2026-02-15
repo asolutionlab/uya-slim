@@ -6,8 +6,7 @@ struct Node {
     id: i32,
 }
 
-@test
-fn test_ptr_conversion() void {
+test "test_ptr_conversion" {
     var node: Node = Node{ id: 1 };
     var node_ptr: &Node = &node;
     var ffi_ptr: *Node = node_ptr as *Node;

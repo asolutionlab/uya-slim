@@ -6,8 +6,7 @@ fn f() !i32 {
     return error.NoDeclaration;  // 无 error NoDeclaration; 声明
 }
 
-@test
-fn test_runtime_error() void {
+test "test_runtime_error" {
     const r: i32 = f() catch { 99; };
     testing.assert_eq(r, 99);
 }

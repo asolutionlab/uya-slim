@@ -11,8 +11,7 @@ fn do_nothing() void {
     return;  // 显式返回（无返回值）
 }
 
-@test
-fn test_void_functions() void {
+test "test_void_functions" {
     do_something(10);
     do_nothing();
 }

@@ -1,18 +1,14 @@
 // 测试 for 循环的迭代器支持
-// 预期：main 返回 0（测试通过）
 
-extern "libc" fn printf(fmt: *byte, ...) i32;
+use std.testing;
 
-// 预定义错误
 error IterEnd;
 
-// i32 迭代器接口
 interface IIteratorI32 {
     fn next(self: &Self) !void;
     fn value(self: &Self) i32;
 }
 
-// 简单的范围迭代器
 struct RangeIterator : IIteratorI32 {
     current: i32,
     end_val: i32,
@@ -22,7 +18,6 @@ struct RangeIterator : IIteratorI32 {
 RangeIterator {
     fn next(self: &Self) !void {
         if self.started == 0 {
-            // 第一次调用，不递增
             self.started = 1;
         } else {
             self.current = self.current + 1;
@@ -37,17 +32,14 @@ RangeIterator {
     }
 }
 
-// 创建范围迭代器的辅助函数
 fn make_range(start: i32, end_val: i32) RangeIterator {
     return RangeIterator{ current: start, end_val: end_val, started: 0 };
 }
 
-fn main() i32 {
-    // 测试 1：使用迭代器手动迭代
+test "test_manual_iteration" {
     var iter: RangeIterator = make_range(0, 5);
     var sum: i32 = 0;
     
-    // 手动迭代（验证迭代器工作）
     while true {
         const result: void = iter.next() catch {
             break;
@@ -56,25 +48,16 @@ fn main() i32 {
         sum = sum + v;
     }
     
-    // sum 应该是 0+1+2+3+4 = 10
-    if sum != 10 {
-        printf("Test 1 failed: sum = %d, expected 10\n", sum);
-        return 1;
+    testing.assert_eq(sum, 10);  // 0+1+2+3+4 = 10
+}
+
+test "test_for_loop_iteration" {
+    var iter: RangeIterator = make_range(0, 5);
+    var sum: i32 = 0;
+    
+    for iter |v| {
+        sum = sum + v;
     }
     
-    // 测试 2：使用 for 循环和迭代器（for obj |v| 语法）
-    var iter2: RangeIterator = make_range(0, 5);
-    var sum2: i32 = 0;
-    
-    for iter2 |v| {
-        sum2 = sum2 + v;
-    }
-    
-    if sum2 != 10 {
-        printf("Test 2 failed: sum2 = %d, expected 10\n", sum2);
-        return 2;
-    }
-    
-    printf("All tests passed!\n");
-    return 0;
+    testing.assert_eq(sum, 10);
 }

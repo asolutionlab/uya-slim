@@ -6,8 +6,7 @@ fn helper() i32 {
     return 10;
 }
 
-@test
-fn test_use_simple() void {
+test "test_use_simple" {
     const result: i32 = helper();
     testing.assert_eq(result, 10);
 }

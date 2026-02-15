@@ -4,8 +4,7 @@ use std.testing;
 
 fn foo() !i32 { return 0; }
 
-@test
-fn test_try_only() void {
+test "test_try_only" {
     const x: i32 = try foo();
     testing.assert_eq(x, 0);
 }

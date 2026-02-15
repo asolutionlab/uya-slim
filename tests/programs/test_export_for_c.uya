@@ -20,8 +20,7 @@ fn internal_func(x: i32) i32 {
     return x * 2;
 }
 
-@test
-fn test_export_func() void {
+test "test_export_func" {
     testing.assert_eq(uya_add(10, 20), 30);
     testing.assert_eq(uya_get_answer(), 42);
     testing.assert_eq(internal_func(21), 42);

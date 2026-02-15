@@ -3,8 +3,7 @@
 
 use std.testing;
 
-@test
-fn test_deep_nested_true_path() void {
+test "test_deep_nested_true_path" {
     var value: i32 = 0;
     const a: i32 = 1;
     const b: i32 = 2;
@@ -37,8 +36,7 @@ fn test_deep_nested_true_path() void {
     testing.assert_eq(value, 1000);
 }
 
-@test
-fn test_deep_nested_else_path() void {
+test "test_deep_nested_else_path" {
     var value: i32 = 0;
     const a: i32 = 1;
     const b: i32 = 2;

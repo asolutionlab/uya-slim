@@ -1,17 +1,20 @@
 // 测试字符串字面量支持
-// 验证解析、类型检查、代码生成是否正确处理字符串字面量
 
-// 声明外部 C 函数用于测试字符串字面量
-extern "libc" fn strcmp(s1: *byte, s2: *byte) i32;
+use std.testing;
 
-// 测试函数：使用字符串字面量作为 extern 函数参数
-fn main() i32 {
-    // 字符串字面量作为 extern 函数参数
-    // 注意：字符串字面量类型为 *byte（FFI 指针类型）
-    const result: i32 = strcmp("hello", "world");
+test "test_string_literal" {
+    // 字符串字面量类型为 *byte（FFI 指针类型）
+    const s1: *byte = "hello";
+    const s2: *byte = "world";
     
-    // 如果能够成功编译并调用函数，说明字符串字面量支持已实现
-    // 返回 0 表示测试通过（无论 strcmp 返回值是什么）
-    return 0;
+    // 验证字符串字面量可以创建
+    testing.assert_eq(s1 != null, true);
+    testing.assert_eq(s2 != null, true);
 }
 
+test "test_string_literal_array" {
+    // 字符串作为数组
+    const arr: [byte: 6] = "hello";
+    testing.assert_eq(arr[0], 104);  // 'h'
+    testing.assert_eq(arr[4], 111);  // 'o'
+}

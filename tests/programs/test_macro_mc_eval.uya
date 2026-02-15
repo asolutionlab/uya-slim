@@ -7,8 +7,7 @@ mc computed_const() expr {
     @mc_code(@mc_ast(@mc_eval(10 + 20)));
 }
 
-@test
-fn test_mc_eval() void {
+test "test_mc_eval" {
     const x: i32 = computed_const();
     testing.assert_eq(x, 30);
 }

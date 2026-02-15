@@ -3,14 +3,12 @@
 
 use std.testing;
 
-@test
-fn test_unary_minus() void {
+test "test_unary_minus" {
     const x: i32 = 10;
     testing.assert_eq(-x, -10);
 }
 
-@test
-fn test_logical_not() void {
+test "test_logical_not" {
     testing.assert_eq(!true, false);
     testing.assert_eq(!false, true);
 }

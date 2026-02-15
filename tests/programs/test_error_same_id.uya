@@ -7,8 +7,7 @@ error SameName;
 fn ret_a() !i32 { return error.SameName; }
 fn ret_b() !i32 { return error.SameName; }
 
-@test
-fn test_same_error_id() void {
+test "test_same_error_id" {
     const a: i32 = ret_a() catch { 1; };
     const b: i32 = ret_b() catch { 2; };
     const c: i32 = ret_a() catch |e| {

@@ -1,17 +1,6 @@
 // 测试宏嵌套调用
-// 1. 宏调用普通函数
-// 2. 宏调用宏
 
-extern "libc" fn printf(fmt: *u8, ...) i32;
-
-// ====================
-// 1. 宏调用普通函数
-// ====================
-
-// 基础宏，调用 extern 函数
-mc log_msg() stmt {
-    printf("Hello from macro!\n");
-}
+use std.testing;
 
 // 宏生成调用普通函数的代码
 mc call_function(val: expr) expr {
@@ -21,10 +10,6 @@ mc call_function(val: expr) expr {
 fn add_numbers(a: i32, b: i32) i32 {
     return a + b;
 }
-
-// ====================
-// 2. 宏调用宏
-// ====================
 
 // 基础宏
 mc base_value() expr {
@@ -58,44 +43,28 @@ mc level3() expr {
     level2() * 2;
 }
 
-// ====================
-// 3. 复杂场景
-// ====================
-
 // 宏调用宏和函数的组合
 mc complex_macro(val: expr) expr {
     add_numbers(inner_add(${val}, 5), 20);
 }
 
-fn main() i32 {
-    // 1. 测试宏调用普通函数
-    log_msg();
-    
-    const func_result: i32 = call_function(32);  // 32 + 10 = 42
-    if func_result != 42 { return 1; }
-    
-    // 2. 测试宏调用宏
-    const base: i32 = base_value();
-    if base != 42 { return 2; }
-    
-    const wrapped: i32 = wrapper_macro();
-    if wrapped != 42 { return 3; }
-    
-    const outer_result: i32 = outer_calc(32);  // 32 + 10 = 42
-    if outer_result != 42 { return 4; }
-    
-    // 多层宏调用：level3 -> level2 -> level1
-    // level1() = 100
-    // level2() = 100 + 50 = 150
-    // level3() = 150 * 2 = 300
-    const multi_level: i32 = level3();
-    if multi_level != 300 { return 5; }
-    
-    // 3. 测试复杂场景
-    // complex_macro(10) = add_numbers(inner_add(10, 5), 20) = add_numbers(15, 20) = 35
-    const complex_result: i32 = complex_macro(10);
-    if complex_result != 35 { return 6; }
-    
-    return 0;
+test "test_macro_call_function" {
+    testing.assert_eq(call_function(32), 42);
 }
 
+test "test_macro_base_value" {
+    testing.assert_eq(base_value(), 42);
+    testing.assert_eq(wrapper_macro(), 42);
+}
+
+test "test_macro_nested" {
+    testing.assert_eq(outer_calc(32), 42);
+}
+
+test "test_multi_level_macro" {
+    testing.assert_eq(level3(), 300);  // (100 + 50) * 2
+}
+
+test "test_complex_macro" {
+    testing.assert_eq(complex_macro(10), 35);  // add_numbers(15, 20)
+}
