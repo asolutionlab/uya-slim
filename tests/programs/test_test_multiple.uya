@@ -1,26 +1,29 @@
 // 多个测试单元
-test "测试1" {
+
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_1() !void {
     const x: i32 = 1;
-    if x != 1 {
-        return;
-    }
+    try assert_eq_i32(x, 1);
 }
 
-test "测试2" {
+fn test_2() !void {
     const y: i32 = 2;
-    if y != 2 {
-        return;
-    }
+    try assert_eq_i32(y, 2);
 }
 
-test "测试3" {
+fn test_3() !void {
     const z: i32 = 3;
-    if z != 3 {
-        return;
-    }
+    try assert_eq_i32(z, 3);
 }
 
 fn main() i32 {
-    return 0;
+    test_suite_begin("Test Multiple Tests");
+    run_test("test 1", test_1);
+    run_test("test 2", test_2);
+    run_test("test 3", test_3);
+    return test_suite_end();
 }
-

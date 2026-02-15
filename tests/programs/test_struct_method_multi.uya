@@ -1,5 +1,10 @@
 // 结构体多个方法
-// 预期：main 返回 0
+
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
 
 struct Calc {
   acc: i32
@@ -14,13 +19,16 @@ Calc {
   }
 }
 
-fn main() i32 {
+fn test_multi_methods() !void {
   var c: Calc = Calc{ acc: 0 };
   c.add(10);
   c.add(20);
   const n: i32 = c.get();
-  if n != 30 {
-    return 1;
-  }
-  return 0;
+  try assert_eq_i32(n, 30);
+}
+
+fn main() i32 {
+  test_suite_begin("Struct Method Multi Tests");
+  run_test("multi methods", test_multi_methods);
+  return test_suite_end();
 }

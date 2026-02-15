@@ -1,5 +1,10 @@
 // 结构体内定义方法 + 实现接口
-// 预期：main 返回 0
+
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
 
 interface IDouble {
   fn double(self: &Self) i32;
@@ -19,16 +24,18 @@ fn use_iface(x: IDouble) i32 {
   return x.double();
 }
 
-fn main() i32 {
+fn test_interface_method() !void {
   const n: Num = Num{ val: 5 };
   const d: i32 = n.double();
   const t: i32 = n.triple();
-  if d != 10 || t != 15 {
-    return 1;
-  }
+  try assert_eq_i32(d, 10);
+  try assert_eq_i32(t, 15);
   const di: i32 = use_iface(n);
-  if di != 10 {
-    return 1;
-  }
-  return 0;
+  try assert_eq_i32(di, 10);
+}
+
+fn main() i32 {
+  test_suite_begin("Struct Inner Method With Interface Tests");
+  run_test("interface method", test_interface_method);
+  return test_suite_end();
 }

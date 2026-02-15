@@ -1,21 +1,23 @@
 // 嵌套块中的测试单元
-fn main() i32 {
-    test "函数内的测试单元" {
-        const x: i32 = 42;
-        if x != 42 {
-            return;  // 测试失败
-        }
-    }
-    
-    {
-        test "嵌套块中的测试单元" {
-            const y: i32 = 100;
-            if y != 100 {
-                return;  // 测试失败
-            }
-        }
-    }
-    
-    return 0;
+
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_in_function() !void {
+    const x: i32 = 42;
+    try assert_eq_i32(x, 42);
 }
 
+fn test_in_nested_block() !void {
+    const y: i32 = 100;
+    try assert_eq_i32(y, 100);
+}
+
+fn main() i32 {
+    test_suite_begin("Test Nested Tests");
+    run_test("in function", test_in_function);
+    run_test("in nested block", test_in_nested_block);
+    return test_suite_end();
+}

@@ -1,5 +1,10 @@
 // 结构体方法返回 void：inc 自增
-// 预期：main 返回 0
+
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
 
 struct Counter {
   value: i32
@@ -11,12 +16,15 @@ Counter {
   }
 }
 
-fn main() i32 {
+fn test_void_method() !void {
   var c: Counter = Counter{ value: 5 };
   c.inc();
   c.inc();
-  if c.value != 7 {
-    return 1;
-  }
-  return 0;
+  try assert_eq_i32(c.value, 7);
+}
+
+fn main() i32 {
+  test_suite_begin("Struct Method Void Tests");
+  run_test("void method", test_void_method);
+  return test_suite_end();
 }

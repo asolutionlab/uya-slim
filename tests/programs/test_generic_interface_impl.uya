@@ -1,11 +1,15 @@
 // 测试结构体实现泛型接口
 
-// 泛型接口：获取器
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 interface Getter<T> {
     fn get(self: &Self) T;
 }
 
-// 结构体实现泛型接口（i32 版本）
 struct IntHolder : Getter<i32> {
     value: i32,
 }
@@ -16,7 +20,6 @@ IntHolder {
     }
 }
 
-// 结构体实现泛型接口（f64 版本）
 struct FloatHolder : Getter<f64> {
     value: f64,
 }
@@ -27,21 +30,21 @@ FloatHolder {
     }
 }
 
-fn main() i32 {
-    // 测试 IntHolder
+fn test_int_holder() !void {
     const ih: IntHolder = IntHolder{ value: 42 };
     const r1: i32 = ih.get();
-    if r1 != 42 {
-        return 1;
-    }
-    
-    // 测试 FloatHolder
-    const fh: FloatHolder = FloatHolder{ value: 3.14 };
-    const r2: f64 = fh.get();
-    if r2 != 3.14 {
-        return 2;
-    }
-    
-    return 0;
+    try assert_eq_i32(r1, 42);
 }
 
+fn test_float_holder() !void {
+    const fh: FloatHolder = FloatHolder{ value: 3.14 };
+    const r2: f64 = fh.get();
+    try expect(r2 == 3.14);
+}
+
+fn main() i32 {
+    test_suite_begin("Generic Interface Impl Tests");
+    run_test("int holder", test_int_holder);
+    run_test("float holder", test_float_holder);
+    return test_suite_end();
+}

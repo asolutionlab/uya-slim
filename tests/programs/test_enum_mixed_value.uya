@@ -1,6 +1,11 @@
 // 枚举混合赋值测试程序
 // 测试枚举变体的混合赋值功能（部分变体有显式值，部分使用自动递增）
-// 根据规范，枚举变体可以混合使用显式赋值和自动递增
+
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
 
 enum Status {
     INIT,          // 无显式值，自动为 0
@@ -10,32 +15,23 @@ enum Status {
     ERROR,         // 无显式值，自动为 51 (STOPPED + 1)
 }
 
-fn main() i32 {
-    // 测试1：使用混合赋值的枚举值
+fn test_enum_mixed_values() !void {
     const status1: Status = Status.INIT;
     const status2: Status = Status.RUNNING;
     const status3: Status = Status.PAUSED;
     const status4: Status = Status.STOPPED;
     const status5: Status = Status.ERROR;
     
-    // 测试2：验证枚举值
-    // INIT 应该是 0
-    if status1 == Status.INIT {
-        // RUNNING 应该是 10
-        if status2 == Status.RUNNING {
-            // PAUSED 应该是 11 (RUNNING + 1)
-            if status3 == Status.PAUSED {
-                // STOPPED 应该是 50
-                if status4 == Status.STOPPED {
-                    // ERROR 应该是 51 (STOPPED + 1)
-                    if status5 == Status.ERROR {
-                        return 0;
-                    }
-                }
-            }
-        }
-    }
-    
-    return 1;
+    // 验证枚举值
+    try expect(status1 == Status.INIT);
+    try expect(status2 == Status.RUNNING);
+    try expect(status3 == Status.PAUSED);
+    try expect(status4 == Status.STOPPED);
+    try expect(status5 == Status.ERROR);
 }
 
+fn main() i32 {
+    test_suite_begin("Enum Mixed Value Tests");
+    run_test("enum mixed values", test_enum_mixed_values);
+    return test_suite_end();
+}

@@ -1,6 +1,12 @@
 // 测试程序：专门测试 C99 代码生成器中的指针访问
 // 验证生成的 C 代码是否正确使用 -> 操作符
 
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 struct CodeGen {
     count: i32,
     name: &byte,
@@ -11,126 +17,60 @@ struct Parser {
     token_count: i32,
 }
 
-// 测试单层指针访问
-fn test_single_pointer(codegen: &CodeGen) i32 {
-    // 应该生成 codegen->count 而不是 codegen.count
+fn test_single_pointer() !void {
+    var codegen: CodeGen = CodeGen{ count: 0, name: null };
     const count: i32 = codegen.count;
-    if count != 0 {
-        return 1;
-    }
+    try assert_eq_i32(count, 0);
     
     codegen.count = 10;
-    if codegen.count != 10 {
-        return 2;
-    }
-    
-    return 0;
+    try assert_eq_i32(codegen.count, 10);
 }
 
-// 测试嵌套指针访问
-fn test_nested_pointer(parser: &Parser) i32 {
-    // 应该生成 parser->codegen->count 而不是 parser.codegen.count
-    const count: i32 = parser.codegen.count;
-    if count != 0 {
-        return 1;
-    }
-    
-    parser.codegen.count = 20;
-    if parser.codegen.count != 20 {
-        return 2;
-    }
-    const codegen: &CodeGen = parser.codegen;
-    codegen.count = 30;
-    if parser.codegen.count != 30 {
-        return 21;
-    }
-    codegen.count = 20;
-
-    parser.token_count = 5;
-    if parser.token_count != 5 {
-        return 3;
-    }
-    
-    return 0;
-}
-
-// 测试指针类型作为局部变量
-fn test_local_pointer() i32 {
-    var codegen: CodeGen = CodeGen{ count: 0, name: null };
-    const ptr: &CodeGen = &codegen;
-    
-    // 局部指针变量访问
-    if ptr.count != 0 {
-        return 1;
-    }
-    
-    ptr.count = 30;
-    if codegen.count != 30 {
-        return 2;
-    }
-    
-    return 0;
-}
-
-// 测试指针类型作为结构体字段
-fn test_struct_pointer_field(parser: &Parser) i32 {
-    // parser.codegen 是指针类型字段，应该生成 parser->codegen->count
-    const count: i32 = parser.codegen.count;
-    if count != 0 {
-        return 1;
-    }
-    
-    parser.codegen.count = 40;
-    if parser.codegen.count != 40 {
-        return 2;
-    }
-    
-    return 0;
-}
-
-fn main() i32 {
+fn test_nested_pointer() !void {
     var codegen: CodeGen = CodeGen{ count: 0, name: null };
     var parser: Parser = Parser{ codegen: &codegen, token_count: 0 };
     
-    // 测试单层指针访问
-    const result1: i32 = test_single_pointer(&codegen);
-    if result1 != 0 {
-        return result1;
-    }
-    if codegen.count != 10 {
-        return 10;
-    }
+    const count: i32 = parser.codegen.count;
+    try assert_eq_i32(count, 0);
     
-    // 重置
-    codegen.count = 0;
+    parser.codegen.count = 20;
+    try assert_eq_i32(parser.codegen.count, 20);
     
-    // 测试嵌套指针访问
-    const result2: i32 = test_nested_pointer(&parser);
-    if result2 != 0 {
-        return result2 + 20;
-    }
-    if codegen.count != 20 || parser.token_count != 5 {
-        return 30;
-    }
+    const cg: &CodeGen = parser.codegen;
+    cg.count = 30;
+    try assert_eq_i32(parser.codegen.count, 30);
+    cg.count = 20;
     
-    // 测试局部指针
-    const result3: i32 = test_local_pointer();
-    if result3 != 0 {
-        return result3 + 40;
-    }
-    
-    // 重置
-    codegen.count = 0;
-    
-    // 测试结构体指针字段
-    const result4: i32 = test_struct_pointer_field(&parser);
-    if result4 != 0 {
-        return result4 + 50;
-    }
-    if codegen.count != 40 {
-        return 60;
-    }
-    
-    return 0;
+    parser.token_count = 5;
+    try assert_eq_i32(parser.token_count, 5);
 }
 
+fn test_local_pointer() !void {
+    var codegen: CodeGen = CodeGen{ count: 0, name: null };
+    const ptr: &CodeGen = &codegen;
+    
+    try expect(ptr.count == 0);
+    
+    ptr.count = 30;
+    try assert_eq_i32(codegen.count, 30);
+}
+
+fn test_struct_pointer_field() !void {
+    var codegen: CodeGen = CodeGen{ count: 0, name: null };
+    var parser: Parser = Parser{ codegen: &codegen, token_count: 0 };
+    
+    const count: i32 = parser.codegen.count;
+    try assert_eq_i32(count, 0);
+    
+    parser.codegen.count = 40;
+    try assert_eq_i32(parser.codegen.count, 40);
+}
+
+fn main() i32 {
+    test_suite_begin("C99 Pointer Access Tests");
+    run_test("single pointer", test_single_pointer);
+    run_test("nested pointer", test_nested_pointer);
+    run_test("local pointer", test_local_pointer);
+    run_test("struct pointer field", test_struct_pointer_field);
+    return test_suite_end();
+}
