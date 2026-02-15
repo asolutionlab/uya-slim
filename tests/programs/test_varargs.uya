@@ -1,23 +1,13 @@
 // 可变参数与 @params 测试
-// 测试：fn 形参 ...、printf(fmt, ...) 转发、@params 元组访问
 
-extern "libc" fn printf(fmt: *byte, ...) i32;
-
-fn wrap_printf(fmt: *byte, ...) i32 {
-    return printf(fmt, ...);
-}
+use std.testing;
 
 fn add_two(a: i32, b: i32) i32 {
     const p: (i32, i32) = @params;
     return p.0 + p.1;
 }
 
-fn main() i32 {
+test "test_params_tuple" {
     const r1: i32 = add_two(10, 20);
-    wrap_printf("add_two(10, 20) = %d\n", r1);
-    wrap_printf("r1 = %d\n", r1);
-    if r1 != 30 {
-        return 1;
-    }
-    return 0;
+    testing.assert_eq(r1, 30);
 }

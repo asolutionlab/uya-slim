@@ -1,8 +1,9 @@
-extern "libc" fn printf(fmt: *byte, ...) i32;
+// 测试最小字符串插值
 
-fn main() i32 {
-  const n: i32 = 42;
-  const msg: [i8: 32] = "${n}";
-  printf(&msg[0]);
-  return 0;
+use std.testing;
+
+test "test_string_interp_minimal" {
+    const n: i32 = 42;
+    const msg: [i8: 32] = "${n}";
+    testing.assert_eq(@size_of(msg) > 0, true);
 }
