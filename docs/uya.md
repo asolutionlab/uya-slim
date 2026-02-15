@@ -1,4 +1,4 @@
-# Uya 语言规范 0.45（完整版 · 2026-02-15）
+# Uya 语言规范 0.46（完整版 · 2026-02-15）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -11,6 +11,7 @@
 - [设计哲学](#设计哲学)
 - [语法规范](./grammar_formal.md) - 完整BNF语法规范（编译器实现参考）
 - [语法速查](./grammar_quick.md) - 语法速查手册（日常开发参考）
+- [测试规范](./testing_guide.md) - 测试编写规范与最佳实践
 - [1. 文件与词法](#1-文件与词法)
 - [1.5. 模块系统](#15-模块系统)
 - [2. 类型系统](#2-类型系统)
@@ -50,6 +51,14 @@
 ---
 
 ## 规范变更
+
+### 0.46（2026-02-15）
+
+- **应用程序入口规范化**：
+  - 应用程序 main 函数必须使用 `export fn main() i32` 或 `export fn main() !i32`
+  - `export fn main()` 编译为 `main_main()`，由 `lib/std/runtime/entry/entry.uya` 调用
+  - 测试程序同样使用 `export fn main() i32`，实现零依赖（无需 bridge.c）
+  - **用途**：统一应用程序入口规范，支持纯 Uya 运行时
 
 ### 0.45（2026-02-15）
 
@@ -2454,8 +2463,8 @@ fn process() !LargeResult {
   - 支持类型别名：`type ComparFunc = fn(*void, *void) i32;`
   - 详见 [5.2 外部 C 函数（FFI）](#52-外部-c-函数ffi)
 - **变参函数调用**：参数数量必须与 C 函数声明匹配（编译期检查有限）
-- **程序入口点**：必须定义 `fn main() i32` 或 `fn main() !i32`（程序退出码）
-  - 不支持命令行参数（未来支持 `main(argc: i32, argv: *byte)`）
+- **程序入口点**：必须定义 `export fn main() i32` 或 `export fn main() !i32`
+  - 编译为 `main_main()`，由 `lib/std/runtime/entry/entry.uya` 调用
   - 详见 [5.1.1 main函数签名](#511-main函数签名)
 - **`return` 语句**：
   - `return expr;` 用于有返回值的函数
@@ -2466,20 +2475,40 @@ fn process() !LargeResult {
 
 #### 5.1.1 main函数签名
 
-Uya支持两种`main`函数签名：
+Uya 应用程序入口函数必须使用 `export` 修饰符：
 
-1. **简单签名**：`fn main() i32`
+| 声明方式 | 编译结果 | 用途 |
+|----------|----------|------|
+| `export fn main() i32` | `main_main()` | 应用程序入口（推荐） |
+| `export fn main() !i32` | `main_main()` | 带错误处理的应用程序入口 |
+| `export extern fn main(argc, argv)` | `main()` | C 入口（供 C 调用，如 entry.uya） |
+| `fn main()` | `uya_main()` | 旧架构兼容（不推荐） |
+
+**入口机制**：
+```
+C Runtime → entry.uya::main() → main_main()
+                              └─ 用户应用代码
+```
+
+编译时需包含入口模块：
+```bash
+bin/uya-c --c99 app.uya lib/std/runtime/entry/entry.uya -o app.c
+```
+
+**签名选择**：
+
+1. **简单签名**：`export fn main() i32`
    - 用于简单程序，无错误处理需求
    - 不能使用`try`关键字（编译错误）
    - 必须使用`catch`处理所有可能的错误
 
-2. **完整签名**：`fn main() !i32`（推荐）
+2. **完整签名**：`export fn main() !i32`（推荐）
    - 用于需要错误处理的程序
    - 可以使用`try`关键字传播错误
    - 程序成功时返回0，错误时返回非0退出码
    - 编译器自动处理错误到退出码的转换
 
-**推荐使用`fn main() !i32`**，以符合Uya的"显式控制"和"编译期证明"哲学。
+**推荐使用 `export fn main() !i32`**，以符合Uya的"显式控制"和"编译期证明"哲学。
 
 - **切片参数**：函数可以直接接受切片类型作为参数
   - **语法**：`fn func_name(param: &[T]) ReturnType` 或 `fn func_name(param: &[T: N]) ReturnType`

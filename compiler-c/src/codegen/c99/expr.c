@@ -1390,13 +1390,31 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
             /* 操作数类型（如 !f32），可能与函数返回类型（如 !i32）不同 */
             const char *operand_union_c = get_c_type_of_expr(codegen, operand);
             int operand_is_err_union = (operand_union_c && strstr(operand_union_c, "err_union_") != NULL);
+            
+            /* 检查返回类型是否是 !void */
+            int ret_is_void = 0;
+            if (ret_type && ret_type->type == AST_TYPE_ERROR_UNION && ret_type->data.type_error_union.payload_type) {
+                ASTNode *payload = ret_type->data.type_error_union.payload_type;
+                if (payload->type == AST_TYPE_NAMED && payload->data.type_named.name &&
+                    strcmp(payload->data.type_named.name, "void") == 0) {
+                    ret_is_void = 1;
+                }
+            }
+            
+            /* 检查操作数类型是否是 !void */
+            int operand_is_void = (operand_union_c && strcmp(operand_union_c, "struct err_union_void") == 0);
+            
             if (!operand_is_err_union || !ret_type || ret_type->type != AST_TYPE_ERROR_UNION) {
                 /* 回退：操作数非 !T 或不在 !T 函数内 */
                 if (ret_type && ret_type->type == AST_TYPE_ERROR_UNION) {
                     const char *union_c = c99_type_to_c(codegen, ret_type);
                     fprintf(codegen->output, "({ %s _uya_try_tmp = ", union_c);
                     gen_expr(codegen, operand);
-                    fprintf(codegen->output, "; if (_uya_try_tmp.error_id != 0) return _uya_try_tmp; _uya_try_tmp.value; })");
+                    if (ret_is_void) {
+                        fprintf(codegen->output, "; if (_uya_try_tmp.error_id != 0) return _uya_try_tmp; })");
+                    } else {
+                        fprintf(codegen->output, "; if (_uya_try_tmp.error_id != 0) return _uya_try_tmp; _uya_try_tmp.value; })");
+                    }
                 } else {
                     fputs("0", codegen->output);
                 }
@@ -1406,7 +1424,14 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
             fprintf(codegen->output, "({ %s _uya_try_tmp = ", operand_union_c);
             gen_expr(codegen, operand);
             /* 错误传播时需转换为函数返回类型 */
-            fprintf(codegen->output, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id, .value = 0 }; _uya_try_tmp.value; })", ret_union_c);
+            if (ret_is_void) {
+                fprintf(codegen->output, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id }; })", ret_union_c);
+            } else if (operand_is_void) {
+                /* 操作数是 !void，返回类型非 !void，需要填充默认值 */
+                fprintf(codegen->output, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id, .value = 0 }; })", ret_union_c);
+            } else {
+                fprintf(codegen->output, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id, .value = 0 }; _uya_try_tmp.value; })", ret_union_c);
+            }
             break;
         }
         case AST_AWAIT_EXPR: {

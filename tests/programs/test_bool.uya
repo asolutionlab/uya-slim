@@ -1,10 +1,58 @@
-// 测试布尔值处理
+// test_bool.uya - 布尔类型测试
+// 使用 lib/std/testing.uya 测试框架
 
-fn main() i32 {
+use std.testing.assert;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+// ============================================================
+// 测试用例
+// ============================================================
+
+fn test_bool_true() !void {
     const b: bool = true;
+    try assert(b, "true should be true");
+}
+
+fn test_bool_false() !void {
+    const b: bool = false;
+    try assert(b == false, "false should be false");
+}
+
+fn test_bool_not() !void {
+    const t: bool = true;
+    const f: bool = false;
+    try assert(!t == false, "!true should be false");
+    try assert(!f == true, "!false should be true");
+}
+
+fn test_bool_and() !void {
+    try assert(true && true, "true && true should be true");
+    try assert((true && false) == false, "true && false should be false");
+    try assert((false && true) == false, "false && true should be false");
+    try assert((false && false) == false, "false && false should be false");
+}
+
+fn test_bool_or() !void {
+    try assert(true || true, "true || true should be true");
+    try assert(true || false, "true || false should be true");
+    try assert(false || true, "false || true should be true");
+    try assert((false || false) == false, "false || false should be false");
+}
+
+// ============================================================
+// 主函数
+// ============================================================
+
+export fn main() i32 {
+    test_suite_begin("Boolean Tests");
     
-    if b {
-        return 0;
-    }
-    return 1;
+    run_test("bool_true", test_bool_true);
+    run_test("bool_false", test_bool_false);
+    run_test("bool_not", test_bool_not);
+    run_test("bool_and", test_bool_and);
+    run_test("bool_or", test_bool_or);
+    
+    return test_suite_end();
 }

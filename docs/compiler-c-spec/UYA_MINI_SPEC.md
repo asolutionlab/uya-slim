@@ -1191,7 +1191,9 @@ for arr |item| {
 
 ### 5.4 函数规则
 
-- **main 函数**：程序必须有一个 `main` 函数，签名必须是 `fn main() i32`
+- **main 函数**：应用程序必须有一个 `export fn main() i32` 或 `export fn main() !i32`
+  - `export fn main()` 编译为 `main_main()`，由 `lib/std/runtime/entry/entry.uya` 调用
+  - 测试程序同样使用此规范，实现零依赖
 - **返回值**：非 `void` 函数必须返回对应类型的值
 - **void 函数**：可以省略 `return` 语句，或使用 `return;`
 - **函数调用约定**：Uya Mini 遵循目标平台的 C 调用约定（C ABI），详见下方 5.5 节

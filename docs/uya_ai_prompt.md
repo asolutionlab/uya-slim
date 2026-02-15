@@ -183,7 +183,7 @@ export fn strcmp(s1: &const byte, s2: &const byte) i32 {
 }
 ```
 
-**程序入口（0.45 Scheme C 双入口架构）**：
+**程序入口（0.46 应用入口规范化）**：
 ```uya
 // 应用入口（生成 main_main）
 export fn main() i32 { ... }
@@ -1003,6 +1003,6 @@ mc assert(cond) stmt {
 
 ---
 
-**版本**：Uya 0.45
+**版本**：Uya 0.46
 **更新日期**：2026-02-15
 

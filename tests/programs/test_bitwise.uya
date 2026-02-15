@@ -1,124 +1,85 @@
-// 位运算符测试：& | ^ ~ << >>
-// 返回 0 表示通过
+// test_bitwise.uya - 位运算符测试
+// 使用 lib/std/testing.uya 测试框架
 
-fn test_bit_and() i32 {
+use std.testing.assert;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+// ============================================================
+// 测试用例
+// ============================================================
+
+fn test_bit_and() !void {
     const a: i32 = 240;
     const b: i32 = 15;
-    if ((a & b) != 0) {
-        return 1;
-    }
-    if ((a & a) != 240) {
-        return 2;
-    }
-    return 0;
+    try assert((a & b) == 0, "240 & 15 should be 0");
+    try assert((a & a) == 240, "240 & 240 should be 240");
 }
 
-fn test_bit_or() i32 {
+fn test_bit_or() !void {
     const a: i32 = 240;
     const b: i32 = 15;
-    if ((a | b) != 255) {
-        return 1;
-    }
-    return 0;
+    try assert((a | b) == 255, "240 | 15 should be 255");
 }
 
-fn test_bit_xor() i32 {
+fn test_bit_xor() !void {
     const a: i32 = 255;
     const b: i32 = 240;
-    if ((a ^ b) != 15) {
-        return 1;
-    }
-    if ((a ^ a) != 0) {
-        return 2;
-    }
-    return 0;
+    try assert((a ^ b) == 15, "255 ^ 240 should be 15");
+    try assert((a ^ a) == 0, "255 ^ 255 should be 0");
 }
 
-fn test_bit_not() i32 {
+fn test_bit_not() !void {
     const a: i32 = 0;
-    if ((~a) != -1) {
-        return 1;
-    }
+    try assert((~a) == -1, "~0 should be -1");
     const b: i32 = -1;
-    if ((~b) != 0) {
-        return 2;
-    }
+    try assert((~b) == 0, "~-1 should be 0");
     const c: i32 = 305419896;
-    if ((~c) != -305419897) {
-        return 3;
-    }
-    return 0;
+    try assert((~c) == -305419897, "~305419896 should be -305419897");
 }
 
-fn test_shift_left() i32 {
+fn test_shift_left() !void {
     const a: i32 = 1;
-    if ((a << 0) != 1) {
-        return 1;
-    }
-    if ((a << 4) != 16) {
-        return 2;
-    }
+    try assert((a << 0) == 1, "1 << 0 should be 1");
+    try assert((a << 4) == 16, "1 << 4 should be 16");
     const b: i32 = 2147483647;
-    if ((b << 1) != -2) {
-        return 3;
-    }
-    return 0;
+    try assert((b << 1) == -2, "2147483647 << 1 should be -2");
 }
 
-fn test_shift_right() i32 {
+fn test_shift_right() !void {
     const a: i32 = 16;
-    if ((a >> 4) != 1) {
-        return 1;
-    }
+    try assert((a >> 4) == 1, "16 >> 4 should be 1");
     const b: i32 = -1;
-    if ((b >> 8) != -1) {
-        return 2;
-    }
+    try assert((b >> 8) == -1, "-1 >> 8 should be -1");
     const c: i32 = -16;
-    if ((c >> 2) != -4) {
-        return 3;
-    }
-    return 0;
+    try assert((c >> 2) == -4, "-16 >> 2 should be -4");
 }
 
-fn test_precedence() i32 {
+fn test_precedence() !void {
     // 1 | 2 & 4 = 1 | (2 & 4) = 1 | 0 = 1
-    if ((1 | 2 & 4) != 1) {
-        return 1;
-    }
+    try assert((1 | 2 & 4) == 1, "1 | 2 & 4 should be 1");
     // (1 | 2) & 4 = 3 & 4 = 0
     const a: i32 = (1 | 2) & 4;
-    if (a != 0) {
-        return 2;
-    }
+    try assert(a == 0, "(1 | 2) & 4 should be 0");
     // 1 << 2 + 1 = 1 << 3 = 8（+ 优先于 <<）
-    if ((1 << 2 + 1) != 8) {
-        return 3;
-    }
-    return 0;
+    try assert((1 << 2 + 1) == 8, "1 << 2 + 1 should be 8");
 }
 
+// ============================================================
+// 主函数
+// ============================================================
+
 fn main() i32 {
-    if (test_bit_and() != 0) {
-        return 10;
-    }
-    if (test_bit_or() != 0) {
-        return 20;
-    }
-    if (test_bit_xor() != 0) {
-        return 30;
-    }
-    if (test_bit_not() != 0) {
-        return 40;
-    }
-    if (test_shift_left() != 0) {
-        return 50;
-    }
-    if (test_shift_right() != 0) {
-        return 60;
-    }
-    if (test_precedence() != 0) {
-        return 70;
-    }
-    return 0;
+    test_suite_begin("Bitwise Operations");
+    
+    run_test("bit_and", test_bit_and);
+    run_test("bit_or", test_bit_or);
+    run_test("bit_xor", test_bit_xor);
+    run_test("bit_not", test_bit_not);
+    run_test("shift_left", test_shift_left);
+    run_test("shift_right", test_shift_right);
+    run_test("precedence", test_precedence);
+    
+    return test_suite_end();
 }

@@ -1,6 +1,6 @@
 # Uya 测试规范
 
-**版本**: v1.0.0  
+**版本**: v1.1.0  
 **日期**: 2026-02-15
 
 ---
@@ -15,6 +15,7 @@
 - **自动传播**：使用 `try` 自动传播断言失败
 - **资源安全**：使用 `errdefer` 确保错误时资源清理
 - **统一报告**：框架自动统计并输出测试结果
+- **零依赖**：测试程序完全使用 libc，不依赖 bridge.c
 
 ---
 
@@ -34,12 +35,12 @@ use std.testing.run_test;  // 宏
 
 ### 2.2 核心组件
 
-| 组件 | 说明 |
-|------|------|
-| `test_suite_begin(name)` | 开始测试套件 |
-| `run_test(name, test_fn)` | 运行单个测试 |
-| `test_suite_end()` | 结束套件，返回失败数 |
-| `skip_test(name, reason)` | 跳过测试 |
+|| 组件 | 说明 |
+||------|------|
+|| `test_suite_begin(name)` | 开始测试套件 |
+|| `run_test(name, test_fn)` | 运行单个测试 |
+|| `test_suite_end()` | 结束套件，返回失败数 |
+|| `skip_test(name, reason)` | 跳过测试 |
 
 ### 2.3 断言函数
 
@@ -80,7 +81,6 @@ try expect_not_null(ptr);
 
 ```
 tests/programs/test_<module>.uya      # 模块测试
-tests/programs/test_<module>_v2.uya  # 新框架版本（迁移期间）
 ```
 
 ### 3.2 标准模板
@@ -88,6 +88,7 @@ tests/programs/test_<module>_v2.uya  # 新框架版本（迁移期间）
 ```uya
 // test_<module>.uya - <模块描述>
 // 使用 lib/std/testing.uya 测试框架
+// 编译时需包含 entry.uya 入口模块
 
 use libc.function1;
 use libc.function2;
@@ -119,10 +120,10 @@ fn test_function2_with_resource() !void {
 }
 
 // ============================================================
-// 主函数
+// 主函数（export 生成 main_main，被 entry.uya 调用）
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("<Module> Tests");
     
     run_test("function1", test_function1);
@@ -132,16 +133,43 @@ fn main() i32 {
 }
 ```
 
+### 3.3 入口机制
+
+测试程序使用 `lib/std/runtime/entry/entry.uya` 作为 C 入口：
+
+```
+C Runtime → entry.uya::main() → main_main()
+                              └─ 用户测试代码
+```
+
+|| 声明方式 | 编译结果 | 说明 |
+||----------|----------|------|
+|| `export fn main()` | `main_main()` | 被 entry.uya 调用 |
+|| `export extern fn main()` (entry.uya) | C `main()` | 真正的程序入口 |
+
+### 3.4 编译命令
+
+```bash
+# 编译 Uya 测试文件（需包含 entry.uya 入口）
+bin/uya-c --c99 tests/programs/test_xxx.uya lib/std/runtime/entry/entry.uya -o /tmp/test_xxx.c
+
+# 编译 C 代码（无需 bridge.c）
+gcc -std=c99 -no-pie /tmp/test_xxx.c -o /tmp/test_xxx -lm
+
+# 运行测试
+/tmp/test_xxx
+```
+
 ---
 
 ## 4. 返回码约定
 
 遵循 Unix 惯例：
 
-| 返回值 | 含义 |
-|--------|------|
-| `0` | 所有测试通过 |
-| `非零` | 失败的测试数量 |
+|| 返回值 | 含义 |
+||--------|------|
+|| `0` | 所有测试通过 |
+|| `非零` | 失败的测试数量 |
 
 ### 4.1 CI/CD 集成
 
@@ -288,11 +316,11 @@ fn test_table_driven() !void {
 ### 7.1 编译命令
 
 ```bash
-# 编译 Uya 测试文件
-bin/uya-c --c99 tests/programs/test_xxx.uya -o /tmp/test_xxx.c
+# 编译 Uya 测试文件（需包含 entry.uya 入口）
+bin/uya-c --c99 tests/programs/test_xxx.uya lib/std/runtime/entry/entry.uya -o /tmp/test_xxx.c
 
-# 编译 C 代码
-gcc -std=c99 -no-pie -o /tmp/test_xxx /tmp/test_xxx.c tests/bridge.c -lm
+# 编译 C 代码（无需 bridge.c）
+gcc -std=c99 -no-pie /tmp/test_xxx.c -o /tmp/test_xxx -lm
 ```
 
 ### 7.2 运行测试
@@ -311,21 +339,35 @@ echo $?
 
 ### 8.1 旧模式 vs 新模式
 
-| 旧模式 | 新模式 |
-|--------|--------|
-| `fn test_xxx() i32` | `fn test_xxx() !void` |
-| `if x != 5 { return 1; }` | `try assert_eq_i32(x, 5, "msg");` |
-| `return 0;` | `return test_suite_end();` |
-| `var passed = 1; ...` | `try expect(...);` |
-| 手动计数失败 | 框架自动统计 |
+|| 旧模式 | 新模式 |
+||--------|--------|
+|| `fn test_xxx() i32` | `fn test_xxx() !void` |
+|| `if x != 5 { return 1; }` | `try assert_eq_i32(x, 5, "msg");` |
+|| `return 0;` | `return test_suite_end();` |
+|| `var passed = 1; ...` | `try expect(...);` |
+|| 手动计数失败 | 框架自动统计 |
+|| `fn main()` + bridge.c | `export fn main()` + entry.uya |
 
 ### 8.2 迁移步骤
 
 1. 添加 `use std.testing.*;`
 2. 修改测试函数签名为 `!void`
 3. 替换手动断言为框架断言
-4. 修改 `main()` 使用测试套件 API
-5. 删除冗余代码（passed 变量、手动输出等）
+4. 修改 `main()` 为 `export fn main() i32`
+5. 编译时添加 `lib/std/runtime/entry/entry.uya`
+6. 删除冗余代码（passed 变量、手动输出等）
+
+### 8.3 从 bridge.c 迁移
+
+```bash
+# 旧方式（依赖 bridge.c）
+bin/uya-c --c99 test.uya -o test.c
+gcc -std=c99 -no-pie test.c tests/bridge.c -o test -lm
+
+# 新方式（使用 entry.uya）
+bin/uya-c --c99 test.uya lib/std/runtime/entry/entry.uya -o test.c
+gcc -std=c99 -no-pie test.c -o test -lm
+```
 
 ---
 
@@ -384,6 +426,7 @@ fn test_boundary() !void {
 ```uya
 // tests/programs/test_example.uya
 // 描述：示例测试文件
+// 编译：bin/uya-c --c99 test_example.uya lib/std/runtime/entry/entry.uya -o test_example.c
 
 use libc.malloc;
 use libc.free;
@@ -427,10 +470,10 @@ fn test_error_propagation() !void {
 }
 
 // ============================================================
-// 主函数
+// 主函数（export 生成 main_main，被 entry.uya 调用）
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Example Tests");
     
     run_test("strlen basic", test_strlen_basic);
@@ -443,26 +486,26 @@ fn main() i32 {
 
 ### 10.2 断言函数完整列表
 
-| 函数 | 类型 | 说明 |
-|------|------|------|
-| `assert(cond, msg)` | bool | 基本断言 |
-| `assert_eq_i32(a, e, msg)` | i32 | 相等 |
-| `assert_eq_u32(a, e, msg)` | u32 | 相等 |
-| `assert_eq_i64(a, e, msg)` | i64 | 相等 |
-| `assert_eq_u64(a, e, msg)` | u64 | 相等 |
-| `assert_eq_bool(a, e, msg)` | bool | 相等 |
-| `assert_ne_i32(a, e, msg)` | i32 | 不等 |
-| `assert_gt_i32(a, e, msg)` | i32 | 大于 |
-| `assert_lt_i32(a, e, msg)` | i32 | 小于 |
-| `assert_ge_i32(a, e, msg)` | i32 | 大于等于 |
-| `assert_le_i32(a, e, msg)` | i32 | 小于等于 |
-| `assert_null(p, msg)` | *byte | 空指针 |
-| `assert_not_null(p, msg)` | *byte | 非空指针 |
-| `assert_ptr_eq(a, e, msg)` | *byte | 指针相等 |
-| `expect(cond)` | bool | 简写断言 |
-| `expect_eq(a, e)` | i32 | 简写相等 |
-| `expect_ne(a, e)` | i32 | 简写不等 |
-| `expect_true(v)` | bool | 期望 true |
-| `expect_false(v)` | bool | 期望 false |
-| `expect_null(p)` | *byte | 简写空指针 |
-| `expect_not_null(p)` | *byte | 简写非空 |
+|| 函数 | 类型 | 说明 |
+||------|------|------|
+|| `assert(cond, msg)` | bool | 基本断言 |
+|| `assert_eq_i32(a, e, msg)` | i32 | 相等 |
+|| `assert_eq_u32(a, e, msg)` | u32 | 相等 |
+|| `assert_eq_i64(a, e, msg)` | i64 | 相等 |
+|| `assert_eq_u64(a, e, msg)` | u64 | 相等 |
+|| `assert_eq_bool(a, e, msg)` | bool | 相等 |
+|| `assert_ne_i32(a, e, msg)` | i32 | 不等 |
+|| `assert_gt_i32(a, e, msg)` | i32 | 大于 |
+|| `assert_lt_i32(a, e, msg)` | i32 | 小于 |
+|| `assert_ge_i32(a, e, msg)` | i32 | 大于等于 |
+|| `assert_le_i32(a, e, msg)` | i32 | 小于等于 |
+|| `assert_null(p, msg)` | *byte | 空指针 |
+|| `assert_not_null(p, msg)` | *byte | 非空指针 |
+|| `assert_ptr_eq(a, e, msg)` | *byte | 指针相等 |
+|| `expect(cond)` | bool | 简写断言 |
+|| `expect_eq(a, e)` | i32 | 简写相等 |
+|| `expect_ne(a, e)` | i32 | 简写不等 |
+|| `expect_true(v)` | bool | 期望 true |
+|| `expect_false(v)` | bool | 期望 false |
+|| `expect_null(p)` | *byte | 简写空指针 |
+|| `expect_not_null(p)` | *byte | 简写非空 |
