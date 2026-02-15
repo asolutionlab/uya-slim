@@ -1,18 +1,18 @@
-// 测试程序：验证指针类型数组访问（&byte 类型的数组访问）
-// 测试 buffer_ptr[index] 表达式
+// 测试程序：验证指针类型数组访问
 
-fn test_pointer_array_access() byte {
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_pointer_array_access() !void {
     var buffer: [byte: 100] = [];
     const buffer_ptr: &byte = &buffer[0] as &byte;
-    
-    // 测试：直接使用 buffer_ptr 进行数组访问
     const temp: byte = buffer_ptr[0];
-    
-    return temp;
+    // 编译通过即测试通过
 }
 
 fn main() i32 {
-    const result: byte = test_pointer_array_access();
-    return 0;
+    test_suite_begin("Pointer Array Access Tests");
+    run_test("pointer array access", test_pointer_array_access);
+    return test_suite_end();
 }
-
