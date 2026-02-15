@@ -191,7 +191,7 @@ static void gen_test_runner(C99CodeGenerator *codegen, ASTNode **tests, int test
 static void collect_slice_types_from_node(C99CodeGenerator *codegen, ASTNode *node) {
     if (!codegen || !node) return;
     if (node->type == AST_VAR_DECL && node->data.var_decl.type) {
-        if (node->data.var_decl.type->type == AST_TYPE_SLICE) {
+        if (node->data.var_decl.type->type == AST_TYPE_SLICE || node->data.var_decl.type->type == AST_TYPE_ERROR_UNION) {
             (void)c99_type_to_c(codegen, node->data.var_decl.type);
         }
         collect_slice_types_from_node(codegen, node->data.var_decl.type);
@@ -201,7 +201,7 @@ static void collect_slice_types_from_node(C99CodeGenerator *codegen, ASTNode *no
     }
     if (node->type == AST_FN_DECL) {
         if (node->data.fn_decl.return_type) {
-            if (node->data.fn_decl.return_type->type == AST_TYPE_SLICE)
+            if (node->data.fn_decl.return_type->type == AST_TYPE_SLICE || node->data.fn_decl.return_type->type == AST_TYPE_ERROR_UNION)
                 (void)c99_type_to_c(codegen, node->data.fn_decl.return_type);
             collect_slice_types_from_node(codegen, node->data.fn_decl.return_type);
         }
@@ -266,7 +266,7 @@ static void collect_slice_types_from_node(C99CodeGenerator *codegen, ASTNode *no
         for (int i = 0; i < node->data.struct_decl.field_count; i++) {
             ASTNode *field = node->data.struct_decl.fields[i];
             if (field && field->type == AST_VAR_DECL && field->data.var_decl.type) {
-                if (field->data.var_decl.type->type == AST_TYPE_SLICE) {
+                if (field->data.var_decl.type->type == AST_TYPE_SLICE || field->data.var_decl.type->type == AST_TYPE_ERROR_UNION) {
                     (void)c99_type_to_c(codegen, field->data.var_decl.type);
                 }
                 collect_slice_types_from_node(codegen, field->data.var_decl.type);
@@ -329,6 +329,30 @@ static void collect_slice_types_from_node(C99CodeGenerator *codegen, ASTNode *no
             // 测试语句体中可能使用切片类型
             if (node->data.test_stmt.body) {
                 collect_slice_types_from_node(codegen, node->data.test_stmt.body);
+            }
+            break;
+        case AST_METHOD_BLOCK:
+            // 方法块：遍历所有方法
+            for (int i = 0; i < node->data.method_block.method_count; i++) {
+                ASTNode *m = node->data.method_block.methods[i];
+                if (m && m->type == AST_FN_DECL) {
+                    // 收集返回类型
+                    if (m->data.fn_decl.return_type) {
+                        if (m->data.fn_decl.return_type->type == AST_TYPE_SLICE || m->data.fn_decl.return_type->type == AST_TYPE_ERROR_UNION) {
+                            (void)c99_type_to_c(codegen, m->data.fn_decl.return_type);
+                        }
+                        collect_slice_types_from_node(codegen, m->data.fn_decl.return_type);
+                    }
+                    // 收集参数类型
+                    for (int j = 0; j < m->data.fn_decl.param_count && m->data.fn_decl.params; j++) {
+                        ASTNode *p = m->data.fn_decl.params[j];
+                        if (p) collect_slice_types_from_node(codegen, p);
+                    }
+                    // 收集函数体中的类型
+                    if (m->data.fn_decl.body) {
+                        collect_slice_types_from_node(codegen, m->data.fn_decl.body);
+                    }
+                }
             }
             break;
         default:
