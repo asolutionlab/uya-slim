@@ -7465,6 +7465,12 @@ static void expand_macros_in_node(TypeChecker *checker, ASTNode **node_ptr) {
         case AST_ERRDEFER_STMT:
             expand_macros_in_node(checker, &node->data.defer_stmt.body);
             break;
+        case AST_TEST_STMT:
+            // 展开测试语句体中的宏调用
+            if (node->data.test_stmt.body) {
+                expand_macros_in_node(checker, &node->data.test_stmt.body);
+            }
+            break;
         case AST_ASSIGN:
             expand_macros_in_node(checker, &node->data.assign.dest);
             expand_macros_in_node(checker, &node->data.assign.src);
