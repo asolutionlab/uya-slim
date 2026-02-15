@@ -1,6 +1,6 @@
 ---
 name: ASTNode 内存优化
-overview: ASTNode 当前使用 flat struct（约 1432 字节），而 C 版本使用 union（约 72 字节），大小比约 20x。本计划通过节点类型分离或 tag + payload 模式，将内存占用降低到接近 C 版本水平。
+overview: ASTNode 当前使用 flat struct（约 1432 字节），而 C 版本使用 union（约 72 字节），大小比约 20x。本计划使用 Uya 原生 union 类型重构 ASTNode，将内存占用降低到接近 C 版本水平。
 todos: []
 isProject: false
 ---
@@ -34,291 +34,346 @@ typedef struct ASTNode {
 } ASTNode;
 ```
 
-**Uya 版本（flat struct）**：
+**当前 Uya 版本（flat struct）**：
 ```uya
+// ast.uya 注释错误：Uya 实际上有 union！
 struct ASTNode {
     type: ASTNodeType,
     line: i32,
     column: i32,
     filename: &byte,
-    // 所有节点类型的字段平铺
-    // 约 150 个指针字段
-    // 约 50 个 int 字段
-    // 1 个 double 字段
+    // 所有节点类型的字段平铺 → 约 150 个字段！
 }
 ```
 
 ### 内存影响估算
 
-编译器自举时约有多少 ASTNode：
-
-| 阶段 | 节点数（估算） | C 版本内存 | Uya 版本内存 |
-|------|---------------|------------|--------------|
+| 阶段 | 节点数（估算） | C 版本内存 | 当前 Uya 内存 |
+|------|---------------|------------|---------------|
 | 单文件解析 | ~50,000 | ~3.5 MB | ~70 MB |
 | 32 文件自举 | ~1,600,000 | ~110 MB | ~2.2 GB |
 
-**关键洞察**：flat struct 是内存占用大的根本原因，arena 回滚优化只是缓解了累积问题。
-
 ---
 
-## 优化策略
+## 优化策略：使用 Uya 原生 union
 
-### 策略 1：节点类型分离（推荐）
-
-为每种 AST 节点定义独立结构体，使用类型标记和指针转换。
-
-#### 设计
+**关键发现**：Uya 语言规范 §4.5 支持编译期类型安全的联合体（union）：
 
 ```uya
-// 基础节点头（所有节点共享）
-struct ASTNodeBase {
-    type: ASTNodeType,
-    line: i32,
-    column: i32,
-    filename: &byte,
+union IntOrFloat {
+    i: i32,
+    f: f64
 }
-
-// 程序节点
-struct ASTProgramNode {
-    base: ASTNodeBase,
-    decls: &&ASTNode,
-    decl_count: i32,
-}
-
-// 二元表达式
-struct ASTBinaryExprNode {
-    base: ASTNodeBase,
-    left: &ASTNode,
-    op: i32,
-    right: &ASTNode,
-}
-
-// 函数调用
-struct ASTCallExprNode {
-    base: ASTNodeBase,
-    callee: &ASTNode,
-    args: &&ASTNode,
-    arg_count: i32,
-}
-
-// If 语句
-struct ASTIfStmtNode {
-    base: ASTNodeBase,
-    condition: &ASTNode,
-    then_branch: &ASTNode,
-    else_branch: &ASTNode,
-}
-
-// ... 为每种节点类型定义独立结构体
-
-// 通用节点指针（用于链表、数组等）
-// 使用 ASTNodeBase* 并向上转型
 ```
 
-#### 内存对比
+这是 **tagged union**，与 C union 内存布局兼容，可以完美解决 ASTNode 问题！
 
-| 节点类型 | 当前 flat | 分离后 | 减少 |
-|----------|-----------|--------|------|
-| ASTProgramNode | 1432 字节 | ~32 字节 | 98% |
-| ASTBinaryExprNode | 1432 字节 | ~32 字节 | 98% |
-| ASTCallExprNode | 1432 字节 | ~40 字节 | 97% |
-| ASTIfStmtNode | 1432 字节 | ~32 字节 | 98% |
-| **平均** | **1432 字节** | **~40 字节** | **~97%** |
-
-#### 预期效果
-
-- 单文件解析：70 MB → ~2 MB
-- 32 文件自举：2.2 GB → ~60 MB
-- arena_buffer：256 MB → ~32 MB（接近 C 版本）
-
----
-
-### 策略 2：Tag + Payload 模式
-
-使用类型标记 + void* payload，运行时根据类型转换。
-
-#### 设计
+### 设计方案
 
 ```uya
+// 声明节点联合体（声明类节点）
+union ASTDeclData {
+    program: ASTProgramDecl,
+    enum_decl: ASTEnumDecl,
+    error_decl: ASTErrorDecl,
+    interface_decl: ASTInterfaceDecl,
+    struct_decl: ASTStructDecl,
+    union_decl: ASTUnionDeclDecl,
+    method_block: ASTMethodBlock,
+    fn_decl: ASTFnDecl,
+    macro_decl: ASTMacroDecl,
+    type_alias: ASTTypeAlias,
+    var_decl: ASTVarDecl,
+    extern_var_decl: ASTExternVarDecl,
+    destructure_decl: ASTDestructureDecl,
+    use_stmt: ASTUseStmt,
+}
+
+// 表达式节点联合体
+union ASTExprData {
+    binary: ASTBinaryExpr,
+    unary: ASTUnaryExpr,
+    call: ASTCallExpr,
+    member_access: ASTMemberAccess,
+    array_access: ASTArrayAccess,
+    slice: ASTSliceExpr,
+    struct_init: ASTStructInit,
+    array_literal: ASTArrayLiteral,
+    tuple_literal: ASTTupleLiteral,
+    cast: ASTCastExpr,
+    identifier: ASTIdentifier,
+    number: ASTNumber,
+    float_literal: ASTFloatLiteral,
+    bool_literal: ASTBoolLiteral,
+    string_literal: ASTStringLiteral,
+    string_interp: ASTStringInterp,
+    try_expr: ASTTryExpr,
+    catch_expr: ASTCatchExpr,
+    error_value: ASTErrorValue,
+    match_expr: ASTMatchExpr,
+    await_expr: ASTAwaitExpr,
+    // ... 其他表达式
+}
+
+// 语句节点联合体
+union ASTStmtData {
+    if_stmt: ASTIfStmt,
+    while_stmt: ASTWhileStmt,
+    for_stmt: ASTForStmt,
+    break_stmt: ASTBreakStmt,
+    continue_stmt: ASTContinueStmt,
+    return_stmt: ASTReturnStmt,
+    defer_stmt: ASTDeferStmt,
+    errdefer_stmt: ASTErrdeferStmt,
+    test_stmt: ASTTestStmt,
+    assign: ASTAssign,
+    block: ASTBlock,
+    expr_stmt: ASTExprStmt,
+}
+
+// 类型节点联合体
+union ASTTypeData {
+    named: ASTTypeNamed,
+    pointer: ASTTypePointer,
+    array: ASTTypeArray,
+    slice: ASTTypeSlice,
+    tuple: ASTTypeTuple,
+    error_union: ASTTypeErrorUnion,
+    atomic: ASTTypeAtomic,
+}
+
+// 内置函数联合体
+union ASTBuiltinData {
+    sizeof_expr: ASTSizeofExpr,
+    len_expr: ASTLenExpr,
+    alignof_expr: ASTAlignofExpr,
+    syscall: ASTSyscall,
+    va_start: ASTVaStart,
+    va_end: ASTVaEnd,
+    va_arg: ASTVaArg,
+    mc_eval: ASTMcEval,
+    mc_code: ASTMcCode,
+    mc_ast: ASTMcAst,
+    mc_error: ASTMcError,
+    mc_interp: ASTMcInterp,
+    mc_type: ASTMcType,
+    src_info: ASTSrcInfo,
+    ptr_conv: ASTPtrConv,
+}
+
+// 顶层节点联合体
+union ASTNodeData {
+    decl: ASTDeclData,
+    expr: ASTExprData,
+    stmt: ASTStmtData,
+    type_node: ASTTypeData,
+    builtin: ASTBuiltinData,
+}
+
+// 最终 ASTNode 结构
 struct ASTNode {
     type: ASTNodeType,
     line: i32,
     column: i32,
     filename: &byte,
-    payload: &byte,  // 指向具体节点数据
-}
-
-// 节点数据结构
-struct BinaryExprData {
-    left: &ASTNode,
-    op: i32,
-    right: &ASTNode,
-}
-
-struct CallExprData {
-    callee: &ASTNode,
-    args: &&ASTNode,
-    arg_count: i32,
-}
-
-// 使用时转换
-fn get_binary_expr(node: &ASTNode) &BinaryExprData {
-    return node.payload as &BinaryExprData;
+    data: ASTNodeData,  // union，大小 = 最大变体大小
 }
 ```
 
-#### 优缺点
+### 内存对比
 
-| 方面 | 优点 | 缺点 |
-|------|------|------|
-| 类型安全 | ❌ 需要 unsafe 转换 | - |
-| 实现难度 | ✅ 改动较小 | - |
-| 内存效率 | ✅ 接近策略 1 | - |
+| 方面 | 当前 flat struct | 使用 union 后 | 减少 |
+|------|------------------|---------------|------|
+| ASTNode 大小 | ~1432 字节 | ~72 字节 | **95%** |
+| 单文件内存 | ~70 MB | ~3.5 MB | **95%** |
+| 自举内存 | ~2.2 GB | ~110 MB | **95%** |
+| arena_buffer | 256 MB | ~32 MB | **87%** |
 
----
+### 预期效果
 
-### 策略 3：混合模式（base 嵌入 + 变长尾部）
-
-将常用字段嵌入 base，罕见字段使用额外分配。
-
-#### 设计
-
-```uya
-// 小节点（大多数）
-struct ASTNodeSmall {
-    type: ASTNodeType,
-    line: i32,
-    column: i32,
-    filename: &byte,
-    // 常用字段
-    left: &ASTNode,
-    right: &ASTNode,
-    value_int: i64,
-    value_str: &byte,
-}
-
-// 大节点（少数，如 Program、Struct）
-struct ASTNodeLarge {
-    small: ASTNodeSmall,
-    // 额外字段
-    decls: &&ASTNode,
-    decl_count: i32,
-    // ...
-}
-```
+- **内存减少 95%**：与 C 版本持平
+- **arena_buffer**：可从 256 MB 降到 32 MB
+- **总内存**：320 MB → ~64 MB（与 C 版本一致）
+- **编译速度**：更快（缓存友好）
 
 ---
 
 ## 实现计划
 
-### 阶段 1：准备（低风险）
+### 阶段 1：设计 union 结构（1-2 天）
 
-1. **审计 ASTNode 定义**
-   - 统计所有字段及其使用频率
-   - 按节点类型分组字段
-   - 确定每种节点的最小字段集
+1. **定义节点分类**
+   - 声明节点（Decl）：program, enum, error, interface, struct, union, fn, var, etc.
+   - 表达式节点（Expr）：binary, unary, call, identifier, literal, etc.
+   - 语句节点（Stmt）：if, while, for, return, defer, etc.
+   - 类型节点（Type）：named, pointer, array, slice, etc.
+   - 内置函数（Builtin）：sizeof, len, syscall, va_*, mc_*, etc.
 
-2. **创建节点类型枚举到结构体的映射表**
+2. **设计 union 层次结构**
    ```uya
-   // 节点类型 -> 对应结构体
-   // AST_PROGRAM -> ASTProgramNode
-   // AST_BINARY_EXPR -> ASTBinaryExprNode
-   // ...
-   ```
-
-### 阶段 2：渐进式迁移（中风险）
-
-1. **选择 3-5 个简单节点类型试点**
-   - 建议从 AST_INT_LITERAL、AST_BOOL_LITERAL、AST_IDENTIFIER 开始
-   - 这些节点字段少、使用简单
-
-2. **修改 parser 创建节点**
-   ```uya
-   // 原来
-   var node: ASTNode = arena_alloc(arena, sizeof(ASTNode));
-   node.type = AST_INT_LITERAL;
-   node.value_int = value;
-   
-   // 改为
-   var node: &ASTIntLiteralNode = arena_alloc(arena, sizeof(ASTIntLiteralNode));
-   node.base.type = AST_INT_LITERAL;
-   node.value = value;
-   ```
-
-3. **修改 checker/codegen 访问节点**
-   ```uya
-   // 原来
-   if node.type == AST_INT_LITERAL {
-       result = node.value_int;
-   }
-   
-   // 改为
-   if node.base.type == AST_INT_LITERAL {
-       var int_node: &ASTIntLiteralNode = node as &ASTIntLiteralNode;
-       result = int_node.value;
+   union ASTNodeData {
+       decl: ASTDeclData,
+       expr: ASTExprData,
+       stmt: ASTStmtData,
+       type_node: ASTTypeData,
+       builtin: ASTBuiltinData,
    }
    ```
 
-4. **验证自举对比**
-   - 每迁移一批节点，运行 `make b`
-   - 确保输出一致
+3. **验证 union 语法**
+   - 确保 Uya 编译器支持 union 嵌套
+   - 测试 match 表达式访问
 
-### 阶段 3：全面迁移（高风险）
+### 阶段 2：定义结构体和 union（2-3 天）
 
-1. **迁移所有节点类型**
-   - 按复杂度排序，从简单到复杂
-   - 每迁移一批，完整验证
+1. **创建每个变体结构体**
+   ```uya
+   // 表达式变体
+   struct ASTBinaryExpr {
+       left: &ASTNode,
+       op: i32,
+       right: &ASTNode,
+   }
+   struct ASTCallExpr {
+       callee: &ASTNode,
+       args: &&ASTNode,
+       arg_count: i32,
+       // ...
+   }
+   // ... 其他变体
+   ```
 
-2. **优化访问模式**
-   - 提取辅助函数减少重复代码
-   - 考虑宏或代码生成
+2. **创建 union 声明**
+   ```uya
+   union ASTExprData {
+       binary: ASTBinaryExpr,
+       call: ASTCallExpr,
+       // ... 所有表达式变体
+   }
+   ```
 
-3. **内存验证**
-   - 测量实际内存使用
-   - 调整 arena_buffer 大小
+3. **重构 ASTNode**
+   ```uya
+   struct ASTNode {
+       type: ASTNodeType,
+       line: i32,
+       column: i32,
+       filename: &byte,
+       data: ASTNodeData,
+   }
+   ```
+
+### 阶段 3：迁移 Parser（3-4 天）
+
+1. **修改 ast_new_node**
+   - 创建节点后初始化 data 联合体
+   - 根据节点类型设置正确的变体
+
+2. **修改每个 parse_* 函数**
+   ```uya
+   // 原来
+   node.binary_expr_left = left;
+   node.binary_expr_op = op;
+   node.binary_expr_right = right;
+   
+   // 改为
+   node.data.expr.binary.left = left;
+   node.data.expr.binary.op = op;
+   node.data.expr.binary.right = right;
+   ```
+
+3. **验证**
+   - 编译通过
+   - 测试通过
+
+### 阶段 4：迁移 Checker 和 Codegen（4-5 天）
+
+1. **修改所有节点访问**
+   ```uya
+   // 原来
+   if node.type == AST_BINARY_EXPR {
+       left = node.binary_expr_left;
+   }
+   
+   // 改为
+   if node.type == AST_BINARY_EXPR {
+       left = node.data.expr.binary.left;
+   }
+   ```
+
+2. **或使用 match 表达式（更优雅）**
+   ```uya
+   match node.data {
+       .expr(e) => {
+           match e {
+               .binary(b) => {
+                   left = b.left;
+               },
+               .call(c) => {
+                   // ...
+               },
+               // ...
+           }
+       },
+       .decl(d) => { /* ... */ },
+       // ...
+   }
+   ```
+
+3. **验证自举对比**
+   - `make b` 通过
+   - `make tests-uya` 通过
+
+### 阶段 5：内存验证与调优（1-2 天）
+
+1. **缩减 arena_buffer**
+   - 从 256 MB 逐步降到 32 MB
+   - 验证自举通过
+
+2. **性能测试**
+   - 编译时间
+   - 内存峰值
 
 ---
 
 ## 关键文件
 
-| 文件 | 影响范围 |
-|------|----------|
-| `src/ast.uya` | ASTNode 定义、所有节点结构体 |
-| `src/parser.uya` | 创建 AST 节点 |
-| `src/checker.uya` | 类型检查、访问 AST 节点 |
-| `src/codegen.uya` | 代码生成、访问 AST 节点 |
-| `src/main.uya` | ARENA_BUFFER_SIZE 常量 |
+| 文件 | 改动量 | 说明 |
+|------|--------|------|
+| `src/ast.uya` | 大 | 定义 union 和所有变体结构体 |
+| `src/parser.uya` | 大 | 修改所有 parse_* 函数 |
+| `src/checker.uya` | 大 | 修改所有节点访问 |
+| `src/codegen/*.uya` | 大 | 修改所有节点访问 |
+| `src/main.uya` | 小 | 缩减 ARENA_BUFFER_SIZE |
 
 ---
 
 ## 风险与缓解
 
-### 风险 1：自举对比失败
+### 风险 1：union 嵌套支持
 
-**原因**：节点字段顺序变化可能影响 C 输出顺序
+**问题**：Uya 编译器是否支持 union 嵌套？
+
+**缓解**：
+- 先验证 union 嵌套语法
+- 如不支持，可将所有变体平铺到单一 union
+
+### 风险 2：match 表达式复杂度
+
+**问题**：使用 match 访问节点可能导致代码冗长
+
+**缓解**：
+- 创建辅助函数简化常见访问
+- 如 `get_binary_left(node)` 等
+
+### 风险 3：自举对比失败
+
+**问题**：节点字段顺序变化可能影响 C 输出
 
 **缓解**：
 - 保持字段名称不变
 - 输出 C 时按字段名排序
 - 每批迁移后验证 `make b`
-
-### 风险 2：类型安全丧失
-
-**原因**：void* 转换或基类指针转换
-
-**缓解**：
-- 在 debug 模式添加类型检查
-- 使用辅助函数封装转换逻辑
-- 编译时检查类型标记
-
-### 风险 3：代码量大幅增加
-
-**原因**：每种节点类型需要独立处理
-
-**缓解**：
-- 使用宏减少重复
-- 代码生成工具
-- 渐进式迁移
 
 ---
 
@@ -326,46 +381,29 @@ struct ASTNodeLarge {
 
 | 指标 | 优化前 | 优化后 | 改善 |
 |------|--------|--------|------|
-| ASTNode 平均大小 | 1432 字节 | ~40 字节 | **97%** |
+| ASTNode 大小 | 1432 字节 | ~72 字节 | **95%** |
 | arena_buffer | 256 MB | ~32 MB | **87%** |
-| 总内存占用 | 320 MB | ~100 MB | **69%** |
-| 编译速度 | 基准 | 可能更快 | 缓存友好 |
-
----
-
-## 依赖关系
-
-- **前置**：无（可独立进行）
-- **后续**：
-  - 进一步优化 arena 分配策略
-  - 考虑 AST 序列化/反序列化
-  - 增量编译支持
+| temp_arena_buffer | 64 MB | ~32 MB | **50%** |
+| **总内存** | **320 MB** | **~64 MB** | **80%** |
+| 编译速度 | 基准 | 更快 | 缓存友好 |
 
 ---
 
 ## 时间估算
 
-| 阶段 | 工作量 | 时间 |
-|------|--------|------|
-| 阶段 1：准备 | 审计、设计 | 1-2 天 |
-| 阶段 2：试点 | 3-5 个节点类型 | 2-3 天 |
-| 阶段 3：全面迁移 | 剩余节点类型 | 5-7 天 |
-| 验证与调优 | 测试、性能测量 | 2-3 天 |
-| **总计** | | **10-15 天** |
+| 阶段 | 时间 |
+|------|------|
+| 阶段 1：设计 union 结构 | 1-2 天 |
+| 阶段 2：定义结构体和 union | 2-3 天 |
+| 阶段 3：迁移 Parser | 3-4 天 |
+| 阶段 4：迁移 Checker/Codegen | 4-5 天 |
+| 阶段 5：内存验证与调优 | 1-2 天 |
+| **总计** | **11-16 天** |
 
 ---
 
-## 建议优先级
+## 下一步
 
-1. **高优先级**：策略 1（节点类型分离）
-   - 最大内存收益
-   - 类型安全
-   - 代码清晰
-
-2. **中优先级**：策略 2（Tag + Payload）
-   - 改动较小
-   - 类型安全较弱
-
-3. **低优先级**：策略 3（混合模式）
-   - 复杂度高
-   - 收益不确定
+1. 验证 Uya 编译器对 union 嵌套的支持
+2. 创建简单的原型测试
+3. 开始阶段 1 设计
