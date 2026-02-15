@@ -510,12 +510,13 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             # 使用相同的输入方式，让自举编译器也自动收集依赖（或使用相同的文件列表）
             # 注意：移除 exec，直接调用可执行文件，避免可能的错误处理问题
             # 如果自举编译器段错误，可能是程序本身的问题，暂时跳过自举对比
+            # 注意：Lexer 结构体包含 1MB 缓冲区，递归调用需要大栈空间
             if [ "$USE_AUTO_DEPS" = true ]; then
                 # 与主编译一致：传递 main.uya 和 entry.uya，确保依赖收集顺序相同
                 ENTRY_FILE="$REPO_ROOT/lib/std/runtime/entry/entry.uya"
-                (ulimit -s 32768 2>/dev/null || true; "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_C" --c99) >"$BOOTSTRAP_LOG" 2>&1
+                (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_C" --c99) >"$BOOTSTRAP_LOG" 2>&1
             else
-                (ulimit -s 32768 2>/dev/null || true; "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_C" --c99) >"$BOOTSTRAP_LOG" 2>&1
+                (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_C" --c99) >"$BOOTSTRAP_LOG" 2>&1
             fi
             BOOTSTRAP_EXIT=$?
             if [ "$BOOTSTRAP_EXIT" -ne 0 ]; then

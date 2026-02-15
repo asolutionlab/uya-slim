@@ -1686,8 +1686,8 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         c99_emit(codegen, "continue;\n" as *byte);
     } else {
         // 检查是否为表达式节点（包括 @syscall、@va_start、@va_end、@va_arg 等内置函数）
-        if (stmt.type >= ASTNodeType.AST_BINARY_EXPR && stmt.type <= ASTNodeType.AST_STRING) || stmt.type == ASTNodeType.AST_SYSCALL ||
-            stmt.type == ASTNodeType.AST_VA_START || stmt.type == ASTNodeType.AST_VA_END || stmt.type == ASTNodeType.AST_VA_ARG {
+        // 注意：AST_VA_ARG 是最后一个表达式类型，AST_BINARY_EXPR 是第一个
+        if stmt.type >= ASTNodeType.AST_BINARY_EXPR && stmt.type <= ASTNodeType.AST_VA_ARG {
             c99_emit(codegen, "" as *byte);
             gen_expr(codegen, stmt);
             fputs(";\n" as *byte, codegen.output as *void);

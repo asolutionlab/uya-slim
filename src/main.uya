@@ -33,8 +33,8 @@ var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
 var file_buffer: [byte: FILE_BUFFER_SIZE] = [];
 // 临时 Arena 缓冲区（用于依赖收集，全局变量避免栈溢出）
 // 需要足够大以支持递归解析多个文件的 AST
-// 自举时依赖收集阶段由自举生成的 C 执行，单次解析占用略高于 C 版，需 192MB 以保证 make b 通过
-var temp_arena_buffer: [byte: 192 * 1024 * 1024] = [];
+// 自举时依赖收集阶段由自举生成的 C 执行，单次解析占用略高于 C 版，需 384MB 以保证 make b 通过
+var temp_arena_buffer: [byte: 384 * 1024 * 1024] = [];
 // 大数组移到全局变量避免栈溢出（main_file_paths 是 64 * 4096 = 262KB）
 var main_file_paths_global: [[byte: PATH_MAX]: MAX_INPUT_FILES] = [];
 // 将 resolved_files 也移到全局变量，避免栈溢出
@@ -1012,7 +1012,7 @@ fn compile_files(
     
     // 初始化临时 Arena（用于依赖收集，使用全局缓冲区避免栈溢出）
     var temp_arena: Arena = Arena { buffer: null, size: 0 as usize, offset: 0 as usize };
-    arena_init(&temp_arena, &temp_arena_buffer[0], 192 * 1024 * 1024);
+    arena_init(&temp_arena, &temp_arena_buffer[0], 384 * 1024 * 1024);
     
     // 获取 UYA_ROOT 和编译器目录
     var uya_root_base: [byte: PATH_MAX] = [];
