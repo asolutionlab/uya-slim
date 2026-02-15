@@ -6055,8 +6055,14 @@ static int checker_check_node(TypeChecker *checker, ASTNode *node) {
                 }
             } else {
                 // 无返回值的 return 语句（return;）
-                // 检查函数返回类型是否为 void
-                if (checker->current_return_type.kind != TYPE_VOID) {
+                // 检查函数返回类型是否为 void 或 !void（错误联合类型，payload 是 void）
+                Type *rt = &checker->current_return_type;
+                int is_void = (rt->kind == TYPE_VOID);
+                int is_error_void = 0;
+                if (rt->kind == TYPE_ERROR_UNION && rt->data.error_union.payload_type != NULL) {
+                    is_error_void = (rt->data.error_union.payload_type->kind == TYPE_VOID);
+                }
+                if (!is_void && !is_error_void) {
                     char buf[256];
                     snprintf(buf, sizeof(buf), "函数必须返回值，但 return 语句没有返回值");
                     checker_report_error(checker, node, buf);
