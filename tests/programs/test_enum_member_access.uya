@@ -1,5 +1,9 @@
-// 枚举访问方式测试：Uya 只支持 T.member 方式访问枚举（T 为枚举类型名）
-// 合法：Color.RED；非法：c.RED（c 为枚举类型变量）
+// 枚举访问方式测试：Uya 只支持 T.member 方式访问枚举
+
+use std.testing.expect;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
 
 enum Color {
     RED,
@@ -7,14 +11,16 @@ enum Color {
     BLUE,
 }
 
-fn main() i32 {
+fn test_enum_member_access() !void {
     const c: Color = Color.RED;
-    // 合法：类型名.member
-    if c == Color.GREEN {
-        return 1;
-    }
-    if c != Color.RED {
-        return 2;
-    }
-    return 0;
+    try expect(c != Color.GREEN);
+    try expect(c == Color.RED);
+}
+
+fn main() i32 {
+    test_suite_begin("Enum Member Access Tests");
+    
+    run_test("enum member access", test_enum_member_access);
+    
+    return test_suite_end();
 }
