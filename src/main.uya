@@ -237,6 +237,7 @@ fn print_usage(program_name: &byte) void {
 }
 
 // 检测文件是否包含 main 函数
+// 返回值：0=无main，1=fn main，2=export fn main
 fn detect_main_function(filename: &byte) i32 {
     if filename == null {
         return 0;
@@ -245,12 +246,34 @@ fn detect_main_function(filename: &byte) i32 {
     if file_size < 0 {
         return 0;
     }
-    // 简单的字符串搜索（查找 "fn main("）
+    // 检测 "export fn main" (返回 2，表示需要自动包含 entry.uya)
     var i: usize = 0;
     while i < file_size as usize {
-        if i + 8 <= file_size as usize {
-            if strncmp(&file_buffer[i], "fn main(" as *byte, 8) == 0 {
-                return 1;
+        if i + 15 <= file_size as usize {
+            if strncmp(&file_buffer[i], "export fn main" as *byte, 14) == 0 {
+                const next_char: byte = file_buffer[i + 14];
+                if next_char == 40 || next_char == 32 || next_char == 10 || next_char == 9 || next_char == 13 {
+                    return 2;
+                }
+            }
+        }
+        i = i + 1;
+    }
+    // 检测 "fn main" (返回 1，普通 main)
+    i = 0;
+    while i < file_size as usize {
+        if i + 7 <= file_size as usize {
+            if strncmp(&file_buffer[i], "fn main" as *byte, 7) == 0 {
+                var is_export: i32 = 0;
+                if i >= 7 {
+                    if strncmp(&file_buffer[i - 7], "export " as *byte, 7) == 0 {
+                        is_export = 1;
+                    }
+                }
+                const next_char: byte = file_buffer[i + 7];
+                if is_export == 0 && (next_char == 40 || next_char == 32 || next_char == 10 || next_char == 9 || next_char == 13) {
+                    return 1;
+                }
             }
         }
         i = i + 1;
@@ -593,6 +616,21 @@ fn collect_module_dependencies(
                 dlen = snprintf(&std_dir[0], PATH_MAX, "%sstd/" as *byte, uya_root as *byte);
             } else {
                 dlen = snprintf(&std_dir[0], PATH_MAX, "%sstd/%s/" as *byte, uya_root as *byte, modules[i] as *byte + 4);
+            }
+            // 如果目录不存在，尝试去掉最后一段（可能是 item_name 被错误地当作模块路径）
+            if dlen <= 0 || dlen >= PATH_MAX || is_directory(&std_dir[0] as &byte) == 0 {
+                // 查找最后一个斜杠，截断路径
+                var last_slash: i32 = dlen - 1;
+                while last_slash > 0 {
+                    if std_dir[last_slash] == 47 {  // '/'
+                        break;
+                    }
+                    last_slash = last_slash - 1;
+                }
+                if last_slash > 0 {
+                    std_dir[last_slash + 1] = 0;  // 截断到最后一个斜杠后
+                    dlen = last_slash + 1;
+                }
             }
             if dlen > 0 && dlen < PATH_MAX && is_directory(&std_dir[0] as &byte) != 0 {
                 const dir: *DIR = opendir(&std_dir[0]);
@@ -1171,6 +1209,45 @@ fn compile_files(
     if resolved_count == 0 {
         fprintf(libc.stderr, "错误: 未找到包含 main 函数的文件\n" as *byte);
         return 1;
+    }
+    
+    // 检测是否有 export fn main，如果有则自动添加 entry.uya
+    var has_export_main: i32 = 0;
+    i = 0;
+    while i < resolved_count {
+        const main_type: i32 = detect_main_function(resolved_files[i]);
+        if main_type == 2 {
+            has_export_main = 1;
+            break;
+        }
+        i = i + 1;
+    }
+    
+    // 如果有 export fn main，自动添加 std.runtime.entry
+    if has_export_main != 0 {
+        var entry_path: [byte: PATH_MAX] = [];
+        const entry_len: i32 = snprintf(&entry_path[0], PATH_MAX, "%sstd/runtime/entry/entry.uya" as *byte, &uya_root_buffer[0] as *byte);
+        if entry_len > 0 && entry_len < PATH_MAX {
+            if is_file(&entry_path[0] as &byte) != 0 {
+                var already_in_list: i32 = 0;
+                var j: i32 = 0;
+                while j < resolved_count {
+                    if resolved_files[j] != null && paths_equal(resolved_files[j], &entry_path[0] as &byte) != 0 {
+                        already_in_list = 1;
+                        break;
+                    }
+                    j = j + 1;
+                }
+                if already_in_list == 0 && resolved_count < MAX_INPUT_FILES {
+                    const entry_copy: &byte = arena_alloc(&temp_arena, entry_len + 1) as &byte;
+                    if entry_copy != null {
+                        strcpy(entry_copy as *byte, &entry_path[0]);
+                        resolved_files[resolved_count] = entry_copy;
+                        resolved_count = resolved_count + 1;
+                    }
+                }
+            }
+        }
     }
     
     // 自动收集模块依赖

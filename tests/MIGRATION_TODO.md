@@ -191,27 +191,59 @@ fn main() i32 {
 
 ## 0依赖目标
 
-### 当前状态
-- 编译器生成 `uya_main` 函数
-- 需要 `bridge.c` 提供 `main()` 入口和运行时函数
+### ✅ 已实现（方案C）
+编译器已支持自动检测 `export fn main` 并自动包含 `std.runtime.entry`：
 
-### 目标状态
-- 编译器直接生成 `main()` 函数（可选）
-- 或者：标准库提供 `std.runtime.main` 入口
-- 测试文件无需 bridge.c 即可运行
+1. **编译器修改** (`src/main.uya`)：
+   - `detect_main_function()` 返回值：0=无main，1=fn main，2=export fn main
+   - 检测到 `export fn main` 时自动添加 `lib/std/runtime/entry/entry.uya`
+   - 在依赖收集之前添加，确保 entry.uya 的依赖也被收集
 
-### 实现路径
-1. **方案 A**: 编译器增加 `--standalone` 选项，生成完整 main()
-2. **方案 B**: std.testing 内联生成 main 入口代码
-3. **方案 C**: 使用 `export fn main() i32` 替代当前模式
+2. **使用方式**：
+   ```uya
+   // 测试文件
+   use std.testing.expect;
+   use std.testing.test_suite_begin;
+   use std.testing.test_suite_end;
+   use std.testing.run_test;
+   
+   fn test_xxx() !void {
+       try expect(condition);
+   }
+   
+   // 使用 export fn main，编译器自动包含 entry.uya
+   export fn main() i32 {
+       test_suite_begin("Tests");
+       run_test("test", test_xxx);
+       return test_suite_end();
+   }
+   ```
 
-### 运行时依赖清单
-当前 bridge.c 提供的函数：
-- `main()` - 程序入口
-- `get_argc()` - 获取参数数量
-- `get_argv()` - 获取参数值
-- `get_stderr()` - 获取标准错误流
-- `ptr_diff()` - 指针差值计算
+3. **编译运行**：
+   ```bash
+   # 编译（自动包含 entry.uya 和依赖）
+   ./bin/uya test.uya -o test
+   
+   # 直接用 gcc 编译，无需 bridge.c
+   gcc -x c -o test_bin test -std=c99 -lm
+   ./test_bin
+   ```
+
+### 架构说明
+```
+应用程序：
+  export fn main() i32 { ... }  → 编译为 main_main()
+  
+std.runtime.entry：
+  export extern fn main(argc, argv) → 真正的 C 入口
+  extern fn main_main() i32        → 调用应用程序的 main
+  
+std.runtime：
+  export var saved_argc: i32
+  export var saved_argv: & &byte
+  export fn get_argc() i32
+  export fn get_argv(index) &byte
+```
 
 ---
 
