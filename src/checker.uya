@@ -8,6 +8,9 @@
 use libc.atoi;
 use std.string.strlen;
 
+// 常量定义
+const MAX_ERROR_NAMES: i32 = 256;  // 最大错误名数量
+
 // 文件系统相关（用于检查目录是否存在）
 use libc.Stat;
 use libc.stat;
@@ -248,8 +251,8 @@ struct TypeChecker {
     in_function: i32,            // 是否在函数中（1 表示是，0 表示否）
     in_defer_or_errdefer: i32,   // 是否在 defer/errdefer 块中（1 表示是，禁止 return/break/continue）
     current_function_decl: &ASTNode,  // 当前正在检查的函数声明（用于 @params 类型推断，可为 null）
-    error_names: [&byte: 128],   // 错误名称（Arena 存储）
-    error_hashes: [u32: 128],    // 对应 error_id（hash 值，0 保留表示无错误）
+    error_names: [&byte: 256],   // 错误名称（Arena 存储）
+    error_hashes: [u32: 256],    // 对应 error_id（hash 值，0 保留表示无错误）
     error_name_count: i32,       // 已注册错误数量
     // 移动语义（规范 uya.md §12.5）：当前函数内已移动的变量名，移动后不能再次使用
     moved_names: [&byte: 128],
@@ -331,6 +334,14 @@ fn checker_init(checker: &TypeChecker, arena: &Arena, default_filename: &byte) i
     checker.in_defer_or_errdefer = 0;
     checker.current_function_decl = null;
     checker.error_name_count = 0;
+    
+    // 初始化错误集（所有槽位设为null）
+    i = 0;
+    while i < MAX_ERROR_NAMES {
+        checker.error_names[i] = null;
+        i = i + 1;
+    }
+    
     checker.moved_count = 0;
     checker.project_root_dir = null;
     checker.uya_root_dir = null;
@@ -806,7 +817,7 @@ fn get_or_add_error_id(checker: &TypeChecker, name: &byte, node: &ASTNode) u32 {
         }
         i = i + 1;
     }
-    if checker.error_name_count >= 128 {
+    if checker.error_name_count >= MAX_ERROR_NAMES {
         return 0;
     }
     const copy: &byte = checker_arena_strdup(checker.arena, name);
@@ -6018,12 +6029,22 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         return 1;
     } else if node.type == ASTNodeType.AST_TEST_STMT {
         if node.test_stmt_body != null {
-            // 测试语句体中的 return 应该被允许（测试函数是 void 类型）
-            // 临时设置 in_function = 1 和 current_return_type = void
+            // 测试语句体：返回类型为 !void，支持 try 表达式
             const prev_return_type: Type = checker.current_return_type;
             const prev_in_function: i32 = checker.in_function;
-            checker.current_return_type = Type{ kind: TypeKind.TYPE_VOID };
+            const prev_function_decl: &ASTNode = checker.current_function_decl;
+            
+            // 构造 !void 类型
+            var error_void_type: Type = Type{ kind: TypeKind.TYPE_ERROR_UNION };
+            const void_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+            if void_type != null {
+                void_type.kind = TypeKind.TYPE_VOID;
+                error_void_type.error_union_payload_type = void_type;
+            }
+            
+            checker.current_return_type = error_void_type;
             checker.in_function = 1;
+            checker.current_function_decl = node;  // 支持 @func_name
             
             // 检查测试体中的语句
             const ret: i32 = checker_check_node(checker, node.test_stmt_body);
@@ -6031,6 +6052,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             // 恢复之前的状态
             checker.current_return_type = prev_return_type;
             checker.in_function = prev_in_function;
+            checker.current_function_decl = prev_function_decl;
             
             return ret;
         }
@@ -6097,10 +6119,19 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             }
         } else {
             // 无返回值的 return 语句（return;）
-            // 检查函数返回类型是否为 void
-            if checker.current_return_type.kind != TypeKind.TYPE_VOID {
+            // 允许在 void 或 !void 函数中使用
+            if checker.current_return_type.kind != TypeKind.TYPE_VOID &&
+                checker.current_return_type.kind != TypeKind.TYPE_ERROR_UNION {
                 checker_report_error(checker, node, "函数必须返回值，但 return 语句没有返回值" as *byte);
                 return 0;
+            }
+            // 如果是 !void，检查 payload 是否为 void
+            if checker.current_return_type.kind == TypeKind.TYPE_ERROR_UNION {
+                if checker.current_return_type.error_union_payload_type != null &&
+                    checker.current_return_type.error_union_payload_type[0].kind != TypeKind.TYPE_VOID {
+                    checker_report_error(checker, node, "函数必须返回值，但 return 语句没有返回值" as *byte);
+                    return 0;
+                }
             }
         }
         return 1;
@@ -8536,6 +8567,9 @@ fn deep_copy_ast_with_params(node: &ASTNode, ctx: &MacroExpandContext, filename:
                 }
             }
         }
+    } else if node.type == ASTNodeType.AST_ERROR_VALUE {
+        // 错误值（error.Name）
+        copy.error_value_name = node.error_value_name;
     }
     // 其他类型暂时只复制基本信息
     

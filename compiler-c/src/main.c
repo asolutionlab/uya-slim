@@ -562,8 +562,18 @@ static int collect_module_dependencies(
             if (strcmp(modules[i], "std") == 0) {
                 dlen = snprintf(std_dir, sizeof(std_dir), "%sstd/", uya_root);
             } else {
-                // std.xxx 模块 -> lib/std/xxx/
-                dlen = snprintf(std_dir, sizeof(std_dir), "%sstd/%s/", uya_root, modules[i] + 4);
+                // std.xxx.yyy 模块 -> lib/std/xxx/yyy/
+                // 需要将点号替换为斜杠
+                char path_suffix[PATH_MAX];
+                const char *suffix = modules[i] + 4;  // 跳过 "std."
+                size_t suffix_len = strlen(suffix);
+                if (suffix_len >= sizeof(path_suffix)) suffix_len = sizeof(path_suffix) - 1;
+                for (size_t k = 0; k < suffix_len; k++) {
+                    path_suffix[k] = (suffix[k] == '.') ? '/' : suffix[k];
+                }
+                path_suffix[suffix_len] = '/';
+                path_suffix[suffix_len + 1] = '\0';
+                dlen = snprintf(std_dir, sizeof(std_dir), "%sstd/%s", uya_root, path_suffix);
             }
             if (dlen > 0 && dlen < (int)sizeof(std_dir) && is_directory(std_dir)) {
                 DIR *std_dirp = opendir(std_dir);

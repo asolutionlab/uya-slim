@@ -251,8 +251,15 @@ run_single_test() {
     BRIDGE_C="$SCRIPT_DIR/bridge.c"
     BRIDGE_MINIMAL_C="$SCRIPT_DIR/bridge_minimal.c"
     
+    # 检测是否使用 std.runtime.entry（自己提供 main 函数，不需要 bridge）
+    uses_std_runtime_entry=false
+    grep -q "use.*std\.runtime\.entry" "$uya_file" 2>/dev/null && uses_std_runtime_entry=true || true
+    
+    # 检测是否使用其他 std.runtime 模块（需要 bridge_minimal.c）
     uses_std_runtime=false
-    grep -q "use.*std\.runtime" "$uya_file" 2>/dev/null && uses_std_runtime=true || true
+    if [ "$uses_std_runtime_entry" = false ]; then
+        grep -q "use.*std\.runtime" "$uya_file" 2>/dev/null && uses_std_runtime=true || true
+    fi
     
     GCC_OPTS="-std=c99 -no-pie"
     EXTRA_C_EXTERN="$SCRIPT_DIR/programs/extern_function_impl.c"
@@ -277,7 +284,10 @@ run_single_test() {
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" 2>/dev/null && link_succeeded=true
         fi
     else
-        if [ "$uses_std_runtime" = true ]; then
+        # std.runtime.entry 自己提供 main 函数，不需要任何 bridge
+        if [ "$uses_std_runtime_entry" = true ]; then
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
+        elif [ "$uses_std_runtime" = true ]; then
             if [ -f "$BRIDGE_MINIMAL_C" ]; then
                 gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_MINIMAL_C" 2>/dev/null && link_succeeded=true
             else

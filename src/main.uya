@@ -629,7 +629,22 @@ fn collect_module_dependencies(
             if strcmp(modules[i] as *byte, "std" as *byte) == 0 {
                 dlen = snprintf(&std_dir[0], PATH_MAX, "%sstd/" as *byte, uya_root as *byte);
             } else {
-                dlen = snprintf(&std_dir[0], PATH_MAX, "%sstd/%s/" as *byte, uya_root as *byte, modules[i] as *byte + 4);
+                // std.xxx.yyy 模块 -> lib/std/xxx/yyy/
+                // 需要将点号替换为斜杠
+                var path_suffix: [byte: PATH_MAX] = [];
+                const suffix: &byte = modules[i] as *byte + 4;  // 跳过 "std."
+                var k: usize = 0;
+                while suffix[k] != 0 && k < PATH_MAX - 2 {
+                    if suffix[k] == 46 {  // '.'
+                        path_suffix[k] = 47;  // '/'
+                    } else {
+                        path_suffix[k] = suffix[k];
+                    }
+                    k = k + 1;
+                }
+                path_suffix[k] = 47;  // 添加末尾斜杠
+                path_suffix[k + 1] = 0;
+                dlen = snprintf(&std_dir[0], PATH_MAX, "%sstd/%s" as *byte, uya_root as *byte, &path_suffix[0]);
             }
             // 如果目录不存在，尝试去掉最后一段（可能是 item_name 被错误地当作模块路径）
             if dlen <= 0 || dlen >= PATH_MAX || is_directory(&std_dir[0] as &byte) == 0 {

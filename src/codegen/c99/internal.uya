@@ -148,8 +148,8 @@ struct C99CodeGenerator {
     interp_temp_counter: i32,
     interp_fill_counter: i32,
     test_count: i32,  // 测试语句数量（用于判断是否生成 uya_run_tests 调用）
-    error_names: [&byte: 128],   // 错误集
-    error_hashes: [u32: 128],    // 对应 error_id（hash 值）
+    error_names: [&byte: 256],   // 错误集
+    error_hashes: [u32: 256],    // 对应 error_id（hash 值）
     error_count: i32,
     // defer/errdefer 栈：扁平化为 [depth * C99_MAX_DEFERS_PER_BLOCK + index]
     defer_stack: [&ASTNode: C99_MAX_DEFER_STACK * C99_MAX_DEFERS_PER_BLOCK],

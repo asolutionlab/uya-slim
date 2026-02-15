@@ -339,7 +339,7 @@ int checker_init(TypeChecker *checker, Arena *arena, const char *default_filenam
     checker->moved_count = 0;
     checker->current_function_decl = NULL;
     checker->error_name_count = 0;
-    for (int i = 0; i < 128; i++) {
+    for (int i = 0; i < 256; i++) {
         checker->error_names[i] = NULL;
     }
     checker->project_root_dir = NULL;
@@ -3095,7 +3095,7 @@ static uint32_t get_or_add_error_id(TypeChecker *checker, const char *name, ASTN
             return 0;
         }
     }
-    if (checker->error_name_count >= 128) return 0;
+    if (checker->error_name_count >= 256) return 0;
     const char *copy = checker_arena_strdup(checker->arena, name);
     if (copy == NULL) return 0;
     checker->error_names[checker->error_name_count] = copy;

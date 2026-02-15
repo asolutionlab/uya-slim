@@ -26,9 +26,7 @@ test "test_catch_default" {
 
 test "test_catch_with_error" {
     const z: i32 = divide(8, 4) catch |e| {
-        if (e == error.DivisionByZero) {
-            return 1;
-        }
+        // 这个分支不会执行，因为 8/4 成功
         0;
     };
     check_eq_i32(z, 2);

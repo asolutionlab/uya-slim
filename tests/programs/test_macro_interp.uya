@@ -7,6 +7,10 @@ use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
 use std.testing.run_test;
 
+// 错误声明
+error OutOfRange;
+error NotPositive;
+
 // ==================== 基础测试 ====================
 
 // 简单插值：直接引用参数
@@ -59,7 +63,7 @@ mc both_positive(a: expr, b: expr) expr {
 // 条件表达式内使用插值（返回语句）
 mc check_range(val: expr, min: expr, max: expr) stmt {
     if ${val} < ${min} || ${val} > ${max} {
-        return 1;
+        return error.OutOfRange;
     }
 }
 
@@ -104,7 +108,7 @@ mc select_by_flag(flag: expr, a: expr, b: expr) expr {
 // 生成带条件检查的 stmt（使用语法糖）
 mc assert_positive(val: expr) stmt {
     if ${val} <= 0 {
-        return 100;
+        return error.NotPositive;
     }
 }
 

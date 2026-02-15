@@ -121,7 +121,7 @@ fn c99_get_or_add_error_id(codegen: &C99CodeGenerator, name: &byte) i32 {
         }
         i = i + 1;
     }
-    if codegen.error_count >= 128 {
+    if codegen.error_count >= 256 {
         return 0;
     }
     const copy: &byte = c99_arena_strdup(codegen.arena, name);

@@ -709,6 +709,14 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             gen_expr(codegen, init_expr);
                             fputs(".data, sizeof(" as *byte, codegen.output as *void);
                             fprintf(codegen.output as *void, "%s));\n" as *byte, var_name as *byte);
+                        } else if init_expr.type == ASTNodeType.AST_STRING {
+                            // 数组用字符串字面量初始化：直接输出字符串字面量
+                            fputs(" = \"" as *byte, codegen.output as *void);
+                            const str_val: &byte = init_expr.string_literal_value;
+                            if str_val != null {
+                                escape_string_for_c(codegen.output, str_val);
+                            }
+                            fputs("\";\n" as *byte, codegen.output as *void);
                         } else {
                             fputs(" = " as *byte, codegen.output as *void);
                             gen_expr(codegen, init_expr);
