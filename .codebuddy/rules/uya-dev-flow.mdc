@@ -1,0 +1,54 @@
+---
+description: 
+alwaysApply: true
+enabled: true
+updatedAt: 2026-02-15T07:20:14.956Z
+provider: 
+---
+
+# Uya 开发流程规则
+
+## 开发前验证
+
+在开始任何代码修改前，必须验证当前状态：
+
+```bash
+# 检查编译器是否存在
+if [ ! -f bin/uya ]; then
+    make from-c  # 从 C99 代码构建
+fi
+
+# 验证测试通过
+make tests-uya  # 应该 348/348 通过
+```
+
+## 开发后验证
+
+任何代码修改后，必须执行：
+
+```bash
+make uya        # 构建 + 更新 bin/uya.c
+make b          # 自举验证
+make tests-uya  # 测试验证
+```
+
+## 关键文件
+
+| 文件 | 说明 |
+|------|------|
+| `src/*.uya` | 编译器源代码（唯一维护源） |
+| `bin/uya.c` | 自举 C99 代码（种子文件） |
+| `tests/programs/*.uya` | 测试文件 |
+
+## 禁止操作
+
+- ❌ 不要修改 `compiler-c/` 目录（已退役）
+- ❌ 不要跳过自举验证（`make b`）
+- ❌ 不要在测试失败时提交代码
+
+## 自举验证失败处理
+
+如果 `make b` 失败：
+1. 检查修改是否影响代码生成顺序
+2. 排序相关的输出必须稳定
+3. 确保 err_union 等类型按名称排序
