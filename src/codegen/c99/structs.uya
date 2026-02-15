@@ -257,6 +257,127 @@ fn gen_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode) i32 {
     return 0;
 }
 
+// 收集联合体变体中引用的结构体类型（用于确定定义顺序）
+// 参数：codegen, union_decl - 联合体声明, out_names - 输出结构体名称数组, out_count - 输出计数
+// 返回：收集到的结构体数量
+// 注意：只收集非指针的结构体类型（指针类型可以使用前向声明）
+fn collect_struct_types_in_union(codegen: &C99CodeGenerator, union_decl: &ASTNode, out_names: & & byte, max_count: i32, out_count: &i32) i32 {
+    if codegen == null || union_decl == null || union_decl.type != ASTNodeType.AST_UNION_DECL {
+        return 0;
+    }
+    if out_count == null {
+        return 0;
+    }
+    out_count[0] = 0;
+    
+    const n: i32 = union_decl.union_decl_variant_count;
+    const variants: & & ASTNode = union_decl.union_decl_variants;
+    if n <= 0 || variants == null {
+        return 0;
+    }
+    
+    var i: i32 = 0;
+    while i < n {
+        const v: &ASTNode = variants[i];
+        if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_type != null {
+            const type_node: &ASTNode = v.var_decl_type;
+            // 检查是否是命名类型（结构体类型）
+            if type_node.type == ASTNodeType.AST_TYPE_NAMED && type_node.type_named_name != null {
+                // 检查是否是指针类型（外层）
+                var is_pointer: i32 = 0;
+                // 需要检查父节点是否是 AST_TYPE_POINTER
+                // 这里简化处理：查找结构体声明，如果存在且不是指针则添加
+                
+                // 先检查类型名是否是基本类型
+                const type_name: &byte = type_node.type_named_name;
+                if strcmp(type_name as *byte, "i8" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "i16" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "i32" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "i64" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "u8" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "u16" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "u32" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "u64" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "f32" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "f64" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "bool" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "byte" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "void" as *byte) != 0 &&
+                   strcmp(type_name as *byte, "usize" as *byte) != 0 {
+                    // 查找结构体声明
+                    const struct_decl: &ASTNode = find_struct_decl_c99(codegen, type_name);
+                    if struct_decl != null {
+                        // 添加到输出列表（去重）
+                        var already_added: i32 = 0;
+                        var j: i32 = 0;
+                        while j < out_count[0] {
+                            if out_names[j] != null && strcmp(out_names[j] as *byte, type_name as *byte) == 0 {
+                                already_added = 1;
+                                break;
+                            }
+                            j = j + 1;
+                        }
+                        if already_added == 0 && out_count[0] < max_count {
+                            out_names[out_count[0]] = type_name;
+                            out_count[0] = out_count[0] + 1;
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    
+    return out_count[0];
+}
+
+// 生成联合体所依赖的结构体定义
+// 参数：codegen, union_decl - 联合体声明
+// 返回：生成的结构体数量
+fn emit_struct_deps_for_union(codegen: &C99CodeGenerator, union_decl: &ASTNode) i32 {
+    if codegen == null || union_decl == null {
+        return 0;
+    }
+    
+    // 收集依赖的结构体名称
+    var struct_names: [&byte: 64] = [];
+    var struct_count: i32 = 0;
+    
+    // 需要一个可变的数组来存储指针
+    var name_ptrs: [&byte: 64] = [];
+    var i: i32 = 0;
+    while i < 64 {
+        name_ptrs[i] = &struct_names[i];
+        i = i + 1;
+    }
+    
+    collect_struct_types_in_union(codegen, union_decl, &name_ptrs[0], 64, &struct_count);
+    
+    if struct_count <= 0 {
+        return 0;
+    }
+    
+    var generated: i32 = 0;
+    i = 0;
+    while i < struct_count {
+        const struct_name: &byte = name_ptrs[i];
+        if struct_name != null {
+            // 检查是否已定义
+            if is_struct_defined(codegen, struct_name) == 0 {
+                const struct_decl: &ASTNode = find_struct_decl_c99(codegen, struct_name);
+                if struct_decl != null && struct_decl.type == ASTNodeType.AST_STRUCT_DECL {
+                    gen_struct_definition(codegen, struct_decl);
+                    fputs("\n" as *byte, codegen.output as *void);
+                    generated = generated + 1;
+                }
+            }
+        }
+        i = i + 1;
+    }
+    
+    return generated;
+}
+
 // 从 C 类型字符串（如 "struct Data"）中提取结构体名并查找声明
 fn find_struct_decl_from_type_c(codegen: &C99CodeGenerator, type_c: &byte) &ASTNode {
     if codegen == null || type_c == null || codegen.program_node == null {

@@ -2530,6 +2530,8 @@ static struct ASTNode * find_union_decl_by_tagged_c99(struct C99CodeGenerator * 
 static struct ASTNode * find_union_decl_by_variant_c99(struct C99CodeGenerator * codegen, uint8_t * variant_name);
 static int32_t find_union_variant_index(struct ASTNode * union_decl, uint8_t * variant_name);
 static int32_t gen_union_definition(struct C99CodeGenerator * codegen, struct ASTNode * union_decl);
+static int32_t collect_struct_types_in_union(struct C99CodeGenerator * codegen, struct ASTNode * union_decl, uint8_t * * out_names, int32_t max_count, int32_t * out_count);
+static int32_t emit_struct_deps_for_union(struct C99CodeGenerator * codegen, struct ASTNode * union_decl);
 static struct ASTNode * find_struct_decl_from_type_c(struct C99CodeGenerator * codegen, uint8_t * type_c);
 static int32_t struct_implements_interface_c99(struct C99CodeGenerator * codegen, uint8_t * struct_name, uint8_t * interface_name);
 static struct ASTNode * find_interface_decl_c99(struct C99CodeGenerator * codegen, uint8_t * interface_name);
@@ -29303,6 +29305,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
     while ((i < decl_count)) {
         struct ASTNode * const decl = ast->program_decls[i];
         if (((decl != NULL) && (decl->type == AST_UNION_DECL))) {
+            emit_struct_deps_for_union(codegen, decl);
             gen_union_definition(codegen, decl);
             libc_fputs((uint8_t *)(uint8_t *)str166, (void *)codegen->output);
         }
@@ -31692,6 +31695,101 @@ static __attribute__((unused)) int32_t gen_union_definition(struct C99CodeGenera
         libc_fprintf((void *)codegen->output, (const char *)str1095, (uint8_t *)union_name, (uint8_t *)union_name);
     }
     int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t collect_struct_types_in_union(struct C99CodeGenerator * codegen, struct ASTNode * union_decl, uint8_t * * out_names, int32_t max_count, int32_t * out_count) {
+    (void)codegen;
+    (void)union_decl;
+    (void)out_names;
+    (void)max_count;
+    (void)out_count;
+    if ((((codegen == NULL) || (union_decl == NULL)) || (union_decl->type != AST_UNION_DECL))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    if ((out_count == NULL)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    out_count[0] = 0;
+    const int32_t n = union_decl->union_decl_variant_count;
+    struct ASTNode * * const variants = union_decl->union_decl_variants;
+    if (((n <= 0) || (variants == NULL))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    int32_t i = 0;
+    while ((i < n)) {
+        struct ASTNode * const v = variants[i];
+        if ((((v != NULL) && (v->type == AST_VAR_DECL)) && (v->var_decl_type != NULL))) {
+            struct ASTNode * const type_node = v->var_decl_type;
+            if (((type_node->type == AST_TYPE_NAMED) && (type_node->type_named_name != NULL))) {
+                int32_t is_pointer = 0;
+                uint8_t * const type_name = type_node->type_named_name;
+                if (((((((((((((((std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str172) != 0) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str173) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str174) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str175) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str176) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str177) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str178) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str179) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str182) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str183) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str184) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str181) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str185) != 0)) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str180) != 0))) {
+                    struct ASTNode * const struct_decl = find_struct_decl_c99(codegen, type_name);
+                    if ((struct_decl != NULL)) {
+                        int32_t already_added = 0;
+                        int32_t j = 0;
+                        while ((j < out_count[0])) {
+                            if (((out_names[j] != NULL) && (std_string_strcmp((uint8_t *)out_names[j], (uint8_t *)type_name) == 0))) {
+                                already_added = 1;
+                                break;
+                            }
+                            j = (j + 1);
+                        }
+                        if (((already_added == 0) && (out_count[0] < max_count))) {
+                            out_names[out_count[0]] = type_name;
+                            out_count[0] = (out_count[0] + 1);
+                        }
+                    }
+                }
+            }
+        }
+        i = (i + 1);
+    }
+    int32_t _uya_ret = out_count[0];
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t emit_struct_deps_for_union(struct C99CodeGenerator * codegen, struct ASTNode * union_decl) {
+    (void)codegen;
+    (void)union_decl;
+    if (((codegen == NULL) || (union_decl == NULL))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    uint8_t * struct_names[64] = {0};
+    int32_t struct_count = 0;
+    uint8_t * name_ptrs[64] = {0};
+    int32_t i = 0;
+    while ((i < 64)) {
+        name_ptrs[i] = (&struct_names[i]);
+        i = (i + 1);
+    }
+    collect_struct_types_in_union(codegen, union_decl, (&name_ptrs[0]), 64, (&struct_count));
+    if ((struct_count <= 0)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    int32_t generated = 0;
+    i = 0;
+    while ((i < struct_count)) {
+        uint8_t * const struct_name = name_ptrs[i];
+        if ((struct_name != NULL)) {
+            if ((is_struct_defined(codegen, struct_name) == 0)) {
+                struct ASTNode * const struct_decl = find_struct_decl_c99(codegen, struct_name);
+                if (((struct_decl != NULL) && (struct_decl->type == AST_STRUCT_DECL))) {
+                    gen_struct_definition(codegen, struct_decl);
+                    libc_fputs((uint8_t *)(uint8_t *)str166, (void *)codegen->output);
+                    generated = (generated + 1);
+                }
+            }
+        }
+        i = (i + 1);
+    }
+    int32_t _uya_ret = generated;
     return _uya_ret;
 }
 
