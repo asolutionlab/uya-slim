@@ -1,12 +1,14 @@
 // 测试 @mc_eval 编译时求值
 // 规范 25.4.1：@mc_eval 用于对常量表达式进行编译时求值
 
+use std.testing;
+
 mc computed_const() expr {
     @mc_code(@mc_ast(@mc_eval(10 + 20)));
 }
 
-fn main() i32 {
+@test
+fn test_mc_eval() void {
     const x: i32 = computed_const();
-    if x != 30 { return 1; }
-    return 0;
+    testing.assert_eq(x, 30);
 }

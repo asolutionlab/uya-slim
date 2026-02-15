@@ -1,6 +1,11 @@
 // 嵌套控制流和结构体混合测试
 // 测试在嵌套控制流中使用结构体
 
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 struct Counter {
     value: i32,
     step: i32,
@@ -10,7 +15,7 @@ fn increment(c: Counter) Counter {
     return Counter{ value: c.value + c.step, step: c.step };
 }
 
-fn main() i32 {
+fn test_struct_in_nested_loop() !void {
     var counter: Counter = Counter{ value: 0, step: 1 };
     var i: i32 = 0;
     
@@ -27,14 +32,10 @@ fn main() i32 {
         i = i + 1;
     }
     
-    // i=0: counter.value += 1 = 1
-    // i=1: j=0,1: counter.value += 2 = 3
-    // i=2: j=0,1: counter.value += 2 = 5
-    if counter.value != 5 {
-        return 1;
-    }
-    
-    // 测试嵌套if中使用结构体字段
+    try assert_eq_i32(counter.value, 5);
+}
+
+fn test_struct_in_nested_if() !void {
     const p1: Counter = Counter{ value: 10, step: 2 };
     const p2: Counter = Counter{ value: 20, step: 3 };
     var result: i32 = 0;
@@ -49,12 +50,12 @@ fn main() i32 {
         result = 0;
     }
     
-    // p1.value(10) < p2.value(20) && p1.step(2) < p2.step(3)
-    // result = 10 + 20 = 30
-    if result != 30 {
-        return 2;
-    }
-    
-    return 0;
+    try assert_eq_i32(result, 30);
 }
 
+fn main() i32 {
+    test_suite_begin("Nested With Structs Tests");
+    run_test("struct in nested loop", test_struct_in_nested_loop);
+    run_test("struct in nested if", test_struct_in_nested_if);
+    return test_suite_end();
+}

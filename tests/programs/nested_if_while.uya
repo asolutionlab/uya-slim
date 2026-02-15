@@ -1,7 +1,12 @@
 // 嵌套if和while混合测试
 // 测试if和while的混合嵌套
 
-fn main() i32 {
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_if_in_while() !void {
     var count: i32 = 0;
     var i: i32 = 0;
     
@@ -26,17 +31,11 @@ fn main() i32 {
         i = i + 1;
     }
     
-    // i=0: even, count += (1+2) = 3
-    // i=1: odd, count += 5 = 5
-    // i=2: even, count += (1+2) = 3
-    // i=3: odd, count += 10 = 10
-    // i=4: even, count += (1+2) = 3
     // 总计: 3 + 5 + 3 + 10 + 3 = 24
-    if count != 24 {
-        return 1;
-    }
-    
-    // 测试while内部嵌套if，if内部嵌套while
+    try assert_eq_i32(count, 24);
+}
+
+fn test_while_in_if_in_while() !void {
     var sum: i32 = 0;
     var x: i32 = 0;
     
@@ -51,14 +50,13 @@ fn main() i32 {
         x = x + 1;
     }
     
-    // x=0: skip
-    // x=1: y=0, sum += 0 = 0
-    // x=2: y=0,1, sum += (0+1) = 1
     // 总计: 0 + 0 + 1 = 1
-    if sum != 1 {
-        return 2;
-    }
-    
-    return 0;
+    try assert_eq_i32(sum, 1);
 }
 
+fn main() i32 {
+    test_suite_begin("Nested If While Tests");
+    run_test("if in while", test_if_in_while);
+    run_test("while in if in while", test_while_in_if_in_while);
+    return test_suite_end();
+}

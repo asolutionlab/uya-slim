@@ -1,7 +1,12 @@
 // 嵌套控制流测试
 // 测试嵌套的if/while语句
 
-fn main() i32 {
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_nested_if_while() !void {
     var sum: i32 = 0;
     var i: i32 = 0;
     
@@ -22,9 +27,11 @@ fn main() i32 {
     // i=1: j=0时sum+1, j=1时sum+2 → sum += 3
     // i=2: j=0时sum+1, j=1时sum+1 → sum += 2
     // 总共: 4 + 3 + 2 = 9
-    if sum == 9 {
-        return 0;
-    }
-    return 1;
+    try assert_eq_i32(sum, 9);
 }
 
+fn main() i32 {
+    test_suite_begin("Nested Control Tests");
+    run_test("nested if while", test_nested_if_while);
+    return test_suite_end();
+}

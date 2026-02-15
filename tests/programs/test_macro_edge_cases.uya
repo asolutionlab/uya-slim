@@ -1,5 +1,11 @@
 // 测试宏：边界情况
 
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 // 单个数字（最简单情况）
 mc single_digit() expr {
     @mc_code(@mc_ast(1));
@@ -95,39 +101,49 @@ mc ne_expr() expr {
     @mc_code(@mc_ast(42 != 0));
 }
 
-fn main() i32 {
-    // 基本测试
-    if single_digit() != 1 { return 1; }
-    if !single_true() { return 2; }
-    if deep_parens() != 42 { return 3; }
-    
-    // 单目运算
-    if unary_minus() != -42 { return 4; }
-    if !unary_not() { return 5; }
-    if unary_bitnot() != -1 { return 6; }  // ~0 = -1 (补码)
-    
-    // 双目运算
-    if add_expr() != 3 { return 10; }
-    if sub_expr() != 7 { return 11; }
-    if mul_expr() != 42 { return 12; }
-    if div_expr() != 10 { return 13; }
-    if mod_expr() != 2 { return 14; }
-    
-    // 位运算
-    if bit_and() != 240 { return 20; }  // 255 & 240 = 240
-    if bit_or() != 255 { return 21; }   // 15 | 240 = 255
-    if bit_xor() != 240 { return 22; }  // 255 ^ 15 = 240
-    if bit_lshift() != 16 { return 23; }
-    if bit_rshift() != 16 { return 24; }
-    
-    // 比较运算
-    if !lt_expr() { return 30; }
-    if !gt_expr() { return 31; }
-    if !le_expr() { return 32; }
-    if !ge_expr() { return 33; }
-    if !eq_expr() { return 34; }
-    if !ne_expr() { return 35; }
-    
-    return 0;
+fn test_basic() !void {
+    try assert_eq_i32(single_digit(), 1);
+    try expect(single_true());
+    try assert_eq_i32(deep_parens(), 42);
 }
 
+fn test_unary() !void {
+    try assert_eq_i32(unary_minus(), -42);
+    try expect(unary_not());
+    try assert_eq_i32(unary_bitnot(), -1);  // ~0 = -1 (补码)
+}
+
+fn test_binary() !void {
+    try assert_eq_i32(add_expr(), 3);
+    try assert_eq_i32(sub_expr(), 7);
+    try assert_eq_i32(mul_expr(), 42);
+    try assert_eq_i32(div_expr(), 10);
+    try assert_eq_i32(mod_expr(), 2);
+}
+
+fn test_bitwise() !void {
+    try assert_eq_i32(bit_and(), 240);  // 255 & 240 = 240
+    try assert_eq_i32(bit_or(), 255);   // 15 | 240 = 255
+    try assert_eq_i32(bit_xor(), 240);  // 255 ^ 15 = 240
+    try assert_eq_i32(bit_lshift(), 16);
+    try assert_eq_i32(bit_rshift(), 16);
+}
+
+fn test_comparison() !void {
+    try expect(lt_expr());
+    try expect(gt_expr());
+    try expect(le_expr());
+    try expect(ge_expr());
+    try expect(eq_expr());
+    try expect(ne_expr());
+}
+
+fn main() i32 {
+    test_suite_begin("Macro Edge Cases Tests");
+    run_test("basic", test_basic);
+    run_test("unary", test_unary);
+    run_test("binary", test_binary);
+    run_test("bitwise", test_bitwise);
+    run_test("comparison", test_comparison);
+    return test_suite_end();
+}

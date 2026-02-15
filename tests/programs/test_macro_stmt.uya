@@ -1,7 +1,10 @@
 // 测试 stmt 返回标签的宏（使用语法糖）
 // stmt 宏的最后一条语句会被自动输出
 
-extern "libc" fn printf(fmt: *u8, ...) i32;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
 
 // 宏：返回一个简单的 if 语句（使用语法糖）
 // 宏体最后一条语句会被直接返回
@@ -11,10 +14,15 @@ mc check_always_true() stmt {
     }
 }
 
-fn main() i32 {
+fn test_stmt_macro() !void {
     // 调用返回语句的宏
     check_always_true();
     
     // 如果执行到这里说明正常
-    return 0;
+}
+
+fn main() i32 {
+    test_suite_begin("Macro Stmt Tests");
+    run_test("stmt macro", test_stmt_macro);
+    return test_suite_end();
 }

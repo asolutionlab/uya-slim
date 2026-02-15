@@ -1,7 +1,12 @@
 // 深层嵌套while循环测试
 // 测试3层嵌套的while循环
 
-fn main() i32 {
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_triple_nested_loop() !void {
     var sum: i32 = 0;
     var i: i32 = 0;
     
@@ -19,11 +24,10 @@ fn main() i32 {
     }
     
     // 2 * 2 * 2 = 8
-    if sum != 8 {
-        return 1;
-    }
-    
-    // 测试带条件的嵌套循环
+    try assert_eq_i32(sum, 8);
+}
+
+fn test_nested_loop_with_multiply() !void {
     var product: i32 = 1;
     var x: i32 = 1;
     
@@ -42,10 +46,12 @@ fn main() i32 {
     
     // 3 * 2 * 2 = 12 次循环，每次乘以2
     // 2^12 = 4096
-    if product != 4096 {
-        return 2;
-    }
-    
-    return 0;
+    try assert_eq_i32(product, 4096);
 }
 
+fn main() i32 {
+    test_suite_begin("Deep Nested While Tests");
+    run_test("triple nested loop", test_triple_nested_loop);
+    run_test("nested loop with multiply", test_nested_loop_with_multiply);
+    return test_suite_end();
+}

@@ -1,5 +1,11 @@
 // 测试宏：与其他语言特性的集成
 
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 // 基础常量宏
 mc ARRAY_SIZE() expr {
     @mc_code(@mc_ast(10));
@@ -24,63 +30,54 @@ struct Point {
 }
 
 // 测试宏用于数组大小（编译期常量）
-fn test_array_size() i32 {
+fn test_array_size() !void {
     var arr: [i32: 10] = [0: 10];
     arr[0] = INIT_VALUE();
-    if arr[0] != 42 { return 1; }
-    return 0;
+    try assert_eq_i32(arr[0], 42);
 }
 
 // 测试宏用于初始化
-fn test_init_value() i32 {
+fn test_init_value() !void {
     const val: i32 = INIT_VALUE();
-    if val != 42 { return 1; }
+    try assert_eq_i32(val, 42);
     
     var mutable: i32 = INIT_VALUE();
     mutable = mutable + 1;
-    if mutable != 43 { return 2; }
-    
-    return 0;
+    try assert_eq_i32(mutable, 43);
 }
 
 // 测试宏用于循环
-fn test_loop() i32 {
+fn test_loop() !void {
     var sum: i32 = 0;
     var i: i32 = 0;
     while i < LOOP_COUNT() {
         sum = sum + 1;
         i = i + 1;
     }
-    if sum != 5 { return 1; }
-    return 0;
+    try assert_eq_i32(sum, 5);
 }
 
 // 测试宏用于条件判断
-fn test_condition() i32 {
+fn test_condition() !void {
     const val: i32 = 50;
-    if val < THRESHOLD() {
-        return 0;  // 50 < 100，应该进入这里
-    }
-    return 1;
+    try expect(val < THRESHOLD());
 }
 
 // 测试宏用于 for 循环范围
-fn test_for_range() i32 {
+fn test_for_range() !void {
     var sum: i32 = 0;
     for 0..LOOP_COUNT() |i| {
         sum = sum + i;
     }
     // 0+1+2+3+4 = 10
-    if sum != 10 { return 1; }
-    return 0;
+    try assert_eq_i32(sum, 10);
 }
 
 // 测试宏用于结构体初始化
-fn test_struct_init() i32 {
+fn test_struct_init() !void {
     var p: Point = Point { x: INIT_VALUE(), y: INIT_VALUE() };
-    if p.x != 42 { return 1; }
-    if p.y != 42 { return 2; }
-    return 0;
+    try assert_eq_i32(p.x, 42);
+    try assert_eq_i32(p.y, 42);
 }
 
 // 测试宏用于函数参数
@@ -88,62 +85,38 @@ fn add(a: i32, b: i32) i32 {
     return a + b;
 }
 
-fn test_function_call() i32 {
+fn test_function_call() !void {
     const result: i32 = add(INIT_VALUE(), LOOP_COUNT());
-    if result != 47 { return 1; }  // 42 + 5 = 47
-    return 0;
+    try assert_eq_i32(result, 47);  // 42 + 5 = 47
 }
 
 // 测试宏用于赋值
-fn test_assignment() i32 {
+fn test_assignment() !void {
     var x: i32 = 0;
     x = INIT_VALUE();
-    if x != 42 { return 1; }
+    try assert_eq_i32(x, 42);
     
     x = x + LOOP_COUNT();
-    if x != 47 { return 2; }
-    
-    return 0;
+    try assert_eq_i32(x, 47);
 }
 
 // 测试宏用于数组索引
-fn test_array_index() i32 {
+fn test_array_index() !void {
     var arr: [i32: 50] = [0: 50];
     arr[INIT_VALUE()] = 100;
-    if arr[42] != 100 { return 1; }
-    return 0;
+    try assert_eq_i32(arr[42], 100);
 }
 
 fn main() i32 {
-    var result: i32 = 0;
-    
-    result = test_array_size();
-    if result != 0 { return result + 10; }
-    
-    result = test_init_value();
-    if result != 0 { return result + 20; }
-    
-    result = test_loop();
-    if result != 0 { return result + 30; }
-    
-    result = test_condition();
-    if result != 0 { return result + 40; }
-    
-    result = test_for_range();
-    if result != 0 { return result + 50; }
-    
-    result = test_struct_init();
-    if result != 0 { return result + 60; }
-    
-    result = test_function_call();
-    if result != 0 { return result + 70; }
-    
-    result = test_assignment();
-    if result != 0 { return result + 80; }
-    
-    result = test_array_index();
-    if result != 0 { return result + 90; }
-    
-    return 0;
+    test_suite_begin("Macro Integration Tests");
+    run_test("array size", test_array_size);
+    run_test("init value", test_init_value);
+    run_test("loop", test_loop);
+    run_test("condition", test_condition);
+    run_test("for range", test_for_range);
+    run_test("struct init", test_struct_init);
+    run_test("function call", test_function_call);
+    run_test("assignment", test_assignment);
+    run_test("array index", test_array_index);
+    return test_suite_end();
 }
-

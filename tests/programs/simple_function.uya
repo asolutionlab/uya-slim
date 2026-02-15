@@ -1,15 +1,34 @@
 // 简单函数测试
 // 测试函数声明、调用和返回值
 
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 fn add(a: i32, b: i32) i32 {
     return a + b;
 }
 
-fn main() i32 {
+fn test_add() !void {
     const result: i32 = add(10, 20);
-    if result == 30 {
-        return 0;  // 测试通过
-    }
-    return 1;  // 测试失败
+    try assert_eq_i32(result, 30);
 }
 
+fn test_add_zero() !void {
+    const result: i32 = add(0, 0);
+    try assert_eq_i32(result, 0);
+}
+
+fn test_add_negative() !void {
+    const result: i32 = add(-5, 10);
+    try assert_eq_i32(result, 5);
+}
+
+fn main() i32 {
+    test_suite_begin("Simple Function Tests");
+    run_test("add", test_add);
+    run_test("add zero", test_add_zero);
+    run_test("add negative", test_add_negative);
+    return test_suite_end();
+}

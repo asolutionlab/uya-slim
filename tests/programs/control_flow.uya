@@ -1,7 +1,33 @@
 // 控制流测试
 // 测试 if/else 和 while 语句
 
-fn main() i32 {
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_if_else() !void {
+    var x: i32 = 0;
+    
+    if true {
+        x = 10;
+    } else {
+        x = 20;
+    }
+    
+    try assert_eq_i32(x, 10);
+}
+
+fn test_while_loop() !void {
+    var count: i32 = 0;
+    while count < 5 {
+        count = count + 1;
+    }
+    try assert_eq_i32(count, 5);
+}
+
+fn test_combined() !void {
     var x: i32 = 0;
     
     if true {
@@ -15,9 +41,13 @@ fn main() i32 {
         count = count + 1;
     }
     
-    if x == 10 && count == 5 {
-        return 0;
-    }
-    return 1;
+    try expect(x == 10 && count == 5);
 }
 
+fn main() i32 {
+    test_suite_begin("Control Flow Tests");
+    run_test("if else", test_if_else);
+    run_test("while loop", test_while_loop);
+    run_test("combined", test_combined);
+    return test_suite_end();
+}

@@ -1,41 +1,63 @@
 // 运算符优先级测试
 // 测试复杂表达式中的运算符优先级
 
-fn main() i32 {
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_arithmetic_precedence() !void {
     const a: i32 = 2;
     const b: i32 = 3;
     const c: i32 = 4;
     
     // 测试算术运算符优先级：* 优先于 +
-    const result1: i32 = a + b * c;  // 应该是 2 + (3 * 4) = 14
-    if result1 != 14 {
-        return 1;
-    }
-    
-    // 测试一元运算符优先级：- 优先于 *
-    const result2: i32 = -a * b;  // 应该是 (-2) * 3 = -6
-    if result2 != -6 {
-        return 1;
-    }
-    
-    // 测试比较运算符优先级：< 优先于 &&
-    const result3: bool = a < b && b < c;  // 应该是 (2 < 3) && (3 < 4) = true
-    if result3 != true {
-        return 1;
-    }
-    
-    // 测试逻辑运算符优先级：&& 优先于 ||
-    const result4: bool = false && true || true;  // 应该是 (false && true) || true = true
-    if result4 != true {
-        return 1;
-    }
-    
-    // 测试括号改变优先级
-    const result5: i32 = (a + b) * c;  // 应该是 (2 + 3) * 4 = 20
-    if result5 != 20 {
-        return 1;
-    }
-    
-    return 0;
+    const result: i32 = a + b * c;  // 应该是 2 + (3 * 4) = 14
+    try assert_eq_i32(result, 14);
 }
 
+fn test_unary_precedence() !void {
+    const a: i32 = 2;
+    const b: i32 = 3;
+    
+    // 测试一元运算符优先级：- 优先于 *
+    const result: i32 = -a * b;  // 应该是 (-2) * 3 = -6
+    try assert_eq_i32(result, -6);
+}
+
+fn test_comparison_precedence() !void {
+    const a: i32 = 2;
+    const b: i32 = 3;
+    const c: i32 = 4;
+    
+    // 测试比较运算符优先级：< 优先于 &&
+    const result: bool = a < b && b < c;
+    try expect(result);
+}
+
+fn test_logical_precedence() !void {
+    // 测试逻辑运算符优先级：&& 优先于 ||
+    const result: bool = false && true || true;
+    try expect(result);
+}
+
+fn test_parentheses() !void {
+    const a: i32 = 2;
+    const b: i32 = 3;
+    const c: i32 = 4;
+    
+    // 测试括号改变优先级
+    const result: i32 = (a + b) * c;  // 应该是 (2 + 3) * 4 = 20
+    try assert_eq_i32(result, 20);
+}
+
+fn main() i32 {
+    test_suite_begin("Operator Precedence Tests");
+    run_test("arithmetic precedence", test_arithmetic_precedence);
+    run_test("unary precedence", test_unary_precedence);
+    run_test("comparison precedence", test_comparison_precedence);
+    run_test("logical precedence", test_logical_precedence);
+    run_test("parentheses", test_parentheses);
+    return test_suite_end();
+}

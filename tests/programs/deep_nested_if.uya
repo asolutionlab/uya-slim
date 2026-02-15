@@ -1,7 +1,12 @@
 // 深层嵌套if语句测试
 // 测试4层嵌套的if-else语句
 
-fn main() i32 {
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_deep_nested_if() !void {
     var result: i32 = 0;
     const a: i32 = 1;
     const b: i32 = 2;
@@ -26,13 +31,14 @@ fn main() i32 {
         result = 500;
     }
     
-    // 应该执行 result = 100
-    if result != 100 {
-        return 1;
-    }
-    
-    // 测试else分支
+    try assert_eq_i32(result, 100);
+}
+
+fn test_nested_else() !void {
     const e: i32 = 0;
+    const a: i32 = 1;
+    const b: i32 = 2;
+    const c: i32 = 3;
     var result2: i32 = 0;
     
     if e > 0 {
@@ -53,11 +59,12 @@ fn main() i32 {
         }
     }
     
-    // 应该执行 result2 = 20
-    if result2 != 20 {
-        return 2;
-    }
-    
-    return 0;
+    try assert_eq_i32(result2, 20);
 }
 
+fn main() i32 {
+    test_suite_begin("Deep Nested If Tests");
+    run_test("deep nested if", test_deep_nested_if);
+    run_test("nested else", test_nested_else);
+    return test_suite_end();
+}
