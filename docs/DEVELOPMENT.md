@@ -29,6 +29,115 @@ bin/uya.c (新生成的 C99 代码)
 
 ---
 
+## TDD 开发流程
+
+新功能开发推荐使用测试驱动开发（Test-Driven Development）：
+
+### 红绿重构循环
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    TDD 循环                          │
+│                                                     │
+│   1. 🔴 红：写失败的测试                              │
+│      └─ 明确需求，先写测试文件                        │
+│                                                     │
+│   2. 🟢 绿：写最小代码使测试通过                       │
+│      └─ 不追求完美，只求通过                          │
+│                                                     │
+│   3. 🔵 重构：优化代码，确保测试仍通过                  │
+│      └─ 消除重复，改善设计                            │
+│                                                     │
+│   重复...                                           │
+└─────────────────────────────────────────────────────┘
+```
+
+### TDD 工作流
+
+```bash
+# 1. 创建测试文件（测试先行）
+vim tests/programs/test_new_feature.uya
+
+# 2. 运行测试，确认失败（红）
+make tests-uya
+# 输出: test_new_feature ... FAILED (预期行为)
+
+# 3. 实现功能代码
+vim src/related_module.uya
+
+# 4. 运行测试，确认通过（绿）
+make uya && make tests-uya
+
+# 5. 重构代码
+# ... 改善代码结构 ...
+
+# 6. 确保重构后测试仍通过
+make tests-uya
+
+# 7. 最终验证：自举
+make b
+```
+
+### 测试编写规范
+
+测试文件命名和结构遵循 `docs/testing_guide.md`：
+
+```uya
+// tests/programs/test_feature.uya
+use std.testing.*;
+
+fn test_feature_case() !void {
+    const result: i32 = my_function(input);
+    try assert_eq_i32(result, expected, "description");
+}
+
+fn main() i32 {
+    test_suite_begin("Feature Tests");
+    run_test("feature case", test_feature_case);
+    return test_suite_end();
+}
+```
+
+### TDD 核心原则
+
+| 原则 | 说明 |
+|------|------|
+| 测试先行 | 任何新功能必须有对应测试 |
+| 小步迭代 | 每次只添加一个小功能点 |
+| 快速反馈 | 测试应该快速执行 |
+| 覆盖边界 | 测试边界条件和异常情况 |
+
+---
+
+## 开发前准备
+
+### 学习开发技能
+
+每次开发前，应阅读技能文档了解开发经验：
+
+```bash
+# 阅读 Uya 开发技能文档
+cat .codebuddy/skills/uya-development.md
+```
+
+技能文档包含：
+- Uya 语法规则和常见陷阱
+- 编译器架构理解
+- 开发最佳实践
+- 常见问题解决方案
+
+### 遵循 Uya 语法规则
+
+开发时**必须符合 Uya 语法规则**，不要瞎编乱造：
+
+| 规则 | 说明 |
+|------|------|
+| `str_equals(a, b) != 0` | 字符串相等（返回 1 表示相等） |
+| Union 变体限制 | 不能包含引用 `&T` 或切片 `&[T]` |
+| 参考现有代码 | 查看 `tests/programs/` 学习语法 |
+
+---
+
 ## 从零开始构建
 
 ### 首次克隆仓库
@@ -159,6 +268,21 @@ git push origin main --tags
 
 - **compiler-c/**：C 语言实现的编译器，自 v0.3.4 起不再维护
 - **make tests-c**：已废弃，仅保留 `make tests-uya`
+
+### 禁止操作
+
+- ❌ 不要修改 `compiler-c/` 目录（已退役）
+- ❌ 不要跳过自举验证（`make b`）
+- ❌ 不要在测试失败时提交代码
+- ❌ 不要删除有意义的测试（测试是回归保护）
+- ❌ 不要瞎编乱造语法（参考现有代码和测试）
+
+### 开发经验积累
+
+每次开发获得的有用经验，应更新到技能文档 `.codebuddy/skills/uya-development.md`，包括：
+- 新发现的语法规则
+- 常见陷阱和解决方案
+- 代码模式最佳实践
 
 ### bin/uya.c 必须提交
 

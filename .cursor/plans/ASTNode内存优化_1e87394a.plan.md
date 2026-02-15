@@ -451,4 +451,191 @@ struct ASTNode {
 - [x] Uya 支持 union 类型
 - [x] Union 可以包含指针类型
 - [x] Union 可以嵌套（通过指针）
-- [ ] Union 嵌套结构体的代码生成 bug（待修复）
+- [x] Union 嵌套结构体的代码生成 bug（已修复）
+  - 添加 `emit_struct_deps_for_union` 函数
+  - 在生成 union 前先生成其依赖的结构体
+
+## 新发现问题（2026-02-15）
+
+### Union 变体类型限制
+
+根据语言规范 §4.5.12：
+> 变体类型限制：变体类型不能包含引用（`&T`）或切片（`&[T]`），防止生命周期问题
+
+这意味着方案 B（指针变体）不可行！Union 变体不能是指针类型。
+
+### 验证结果
+
+✅ **Union match 表达式工作正常**：
+- 当 union 变体是结构体类型时，match 绑定变量的类型推断正确
+- 字段访问 `pt.x` 的类型推断正确
+- 通配符 `_` 处理正确
+
+✅ **Union 嵌套结构体的代码生成已修复**：
+- `emit_struct_deps_for_union` 函数确保结构体在 union 之前生成
+
+### 实施方案更新
+
+由于 union 变体不能是指针，需要采用**方案 A：扁平 union**：
+
+```uya
+// 所有变体字段平铺到单一 union
+union ASTNodeData {
+    // 声明类字段
+    program_decls: &&ASTNode,
+    enum_decl_name: &byte,
+    // ... 所有字段平铺
+}
+
+struct ASTNode {
+    type: ASTNodeType,
+    line: i32,
+    column: i32,
+    filename: &byte,
+    data: ASTNodeData,  // union 共享内存
+}
+```
+
+**优点**：
+- 改动相对较小
+- 不涉及指针变体的限制
+- Union 大小 = 最大字段大小（而不是所有字段之和）
+
+**缺点**：
+- Union 仍然较大（所有字段的并集）
+- 需要仔细处理每个字段类型
+
+### 下一步
+
+1. 分析当前 ASTNode 中哪些字段可以放入 union
+2. 注意：`&&ASTNode`、`&byte` 等指针类型可以作为 union 变体（因为是指针，不是引用）
+3. 创建测试验证 union 大小优化效果
+
+## 验证完成（2026-02-15 续）
+
+### ✅ Union 支持指针类型和混合类型
+
+测试文件 `tests/programs/test_union_fields.uya` 验证：
+
+```uya
+// union 包含指针和整数（混合类型）
+union MixedUnion {
+    ptr_val: &i32,   // 8 字节
+    int_val: i32,    // 4 字节
+}
+```
+
+编译通过，测试运行正常。
+
+### 方案 A 实施分析
+
+**问题**：方案 A 将每个字段作为独立 union 变体，但 ASTNode 节点需要同时访问多个字段。
+
+例如 `AST_PROGRAM` 节点需要：
+- `program_decls: &&ASTNode`
+- `program_decl_count: i32`
+
+这两个字段必须同时存在，不能共享 union 内存。
+
+**解决方案**：需要按节点类型分组字段，而不是简单平铺。
+
+### 方案 A'（修订版）：按类型分组
+
+将每种 AST 节点类型的字段作为一个变体结构体：
+
+```uya
+// 每种节点类型的数据结构体
+struct ASTProgramData {
+    decls: &&ASTNode,
+    decl_count: i32,
+}
+
+struct ASTBinaryExprData {
+    left: &ASTNode,
+    op: i32,
+    right: &ASTNode,
+}
+
+// Union 变体是结构体（值类型）
+union ASTNodeData {
+    program: ASTProgramData,
+    binary_expr: ASTBinaryExprData,
+    // ...
+}
+```
+
+**问题**：Union 变体不能包含引用 `&T`，但可以包含结构体（结构体可以包含指针）。
+
+### 下一步：验证 union 嵌套结构体
+
+需要验证 union 变体是否可以包含内嵌结构体类型（之前已修复代码生成 bug）。
+
+## 验证完成（2026-02-15 续）
+
+### ✅ Union 支持结构体变体
+
+测试文件 `tests/programs/test_union_struct_variant.uya` 验证：
+
+```uya
+struct Point { x: i32, y: i32 }
+struct Size { width: i32, height: i32 }
+
+union Shape {
+    point: Point,
+    size: Size,
+}
+```
+
+编译通过，测试运行正常。这验证了方案 A' 的可行性。
+
+### 方案 A' 设计
+
+将每种 AST 节点类型的数据字段封装为独立结构体：
+
+```uya
+// 每种节点类型的数据结构体
+struct ASTProgramData {
+    decls: &&ASTNode,
+    decl_count: i32,
+}
+
+struct ASTBinaryExprData {
+    left: &ASTNode,
+    op: i32,
+    right: &ASTNode,
+}
+
+// ... 约 60 种节点数据结构体
+
+// Union 变体是结构体
+union ASTNodeData {
+    program: ASTProgramData,
+    binary_expr: ASTBinaryExprData,
+    call_expr: ASTCallExprData,
+    // ... 所有节点类型
+}
+
+// 最终 ASTNode
+struct ASTNode {
+    type: ASTNodeType,
+    line: i32,
+    column: i32,
+    filename: &byte,
+    data: ASTNodeData,  // union，大小 = 最大结构体大小
+}
+```
+
+### 内存效果预估
+
+| 指标 | 当前 flat struct | 方案 A' 后 |
+|------|------------------|-----------|
+| ASTNode 大小 | ~1432 字节 | ~200 字节（估计） |
+| 减少比例 | - | ~86% |
+
+### 实施步骤
+
+1. **定义数据结构体**：为每种 ASTNodeType 定义对应的数据结构体
+2. **定义 ASTNodeData union**：包含所有数据结构体变体
+3. **修改 ASTNode**：将所有字段移入 union
+4. **迁移访问代码**：`node.field` → `node.data.variant.field`
+5. **验证**：`make b` + `make tests-uya`
