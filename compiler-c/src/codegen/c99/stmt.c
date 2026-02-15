@@ -379,6 +379,9 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                             expr_payload_c = "int32_t";
                         } else if (strcmp(expr_union_c, "struct err_union_void") == 0) {
                             expr_payload_c = "void";
+                        } else if (strncmp(expr_union_c, "struct err_union_", 17) == 0) {
+                            // 从结构体名称中提取 payload 类型（如 err_union_voidptr -> voidptr）
+                            expr_payload_c = expr_union_c + 17;
                         } else {
                             expr_payload_c = "int32_t";
                         }
@@ -399,9 +402,9 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                     }
                     
                     if (expr_is_error_union) {
-                        // 检查是否需要类型转换（payload 类型不同）
+                        // 检查是否需要类型转换：直接比较表达式类型和返回类型
                         int needs_conversion = 0;
-                        if (expr_payload_c && ret_payload_c && strcmp(expr_payload_c, ret_payload_c) != 0) {
+                        if (expr_union_c && ret_c && strcmp(expr_union_c, ret_c) != 0) {
                             needs_conversion = 1;
                         }
                         

@@ -451,9 +451,15 @@ const char *c99_type_to_c(C99CodeGenerator *codegen, ASTNode *type_node) {
             } else {
                 char safe[64];
                 size_t j = 0;
-                for (const char *p = payload_c; *p && j < sizeof(safe) - 1; p++) {
-                    if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_')
+                for (const char *p = payload_c; *p && j < sizeof(safe) - 3; p++) {
+                    if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_') {
                         safe[j++] = *p;
+                    } else if (*p == '*') {
+                        // * 替换为 ptr
+                        safe[j++] = 'p';
+                        safe[j++] = 't';
+                        safe[j++] = 'r';
+                    }
                 }
                 safe[j] = '\0';
                 snprintf(struct_name_buf, sizeof(struct_name_buf), "err_union_%s", safe[0] ? safe : "T");
@@ -461,13 +467,14 @@ const char *c99_type_to_c(C99CodeGenerator *codegen, ASTNode *type_node) {
             const char *name_copy = (const char *)arena_strdup(codegen->arena, struct_name_buf);
             if (!name_copy) return "void";
             if (!is_struct_defined(codegen, name_copy)) {
+                // 添加到结构体定义表（标记为已注册，但不输出定义）
                 add_struct_definition(codegen, name_copy);
-                fprintf(codegen->output, "struct %s { uint32_t error_id;", name_copy);
-                if (!is_void) {
-                    fprintf(codegen->output, " %s value;", payload_c);
+                // 添加到待输出列表
+                if (codegen->err_union_struct_count < C99_MAX_ERR_UNION_STRUCTS) {
+                    codegen->err_union_struct_names[codegen->err_union_struct_count] = name_copy;
+                    codegen->err_union_payload_types[codegen->err_union_struct_count] = payload_node;
+                    codegen->err_union_struct_count++;
                 }
-                fprintf(codegen->output, " };\n");
-                mark_struct_defined(codegen, name_copy);
             }
             size_t len = strlen(name_copy) + 9;
             char *result = arena_alloc(codegen->arena, len);
@@ -1476,4 +1483,66 @@ const char *get_array_element_type(C99CodeGenerator *codegen, ASTNode *array_exp
     }
     
     return NULL;
+}
+
+// 用于排序的结构体
+typedef struct {
+    const char *name;
+    ASTNode *payload_node;
+} ErrUnionEntry;
+
+// 用于 qsort 的比较函数
+static int compare_err_union_entries(const void *a, const void *b) {
+    const ErrUnionEntry *ea = (const ErrUnionEntry *)a;
+    const ErrUnionEntry *eb = (const ErrUnionEntry *)b;
+    if (!ea->name && !eb->name) return 0;
+    if (!ea->name) return 1;
+    if (!eb->name) return -1;
+    return strcmp(ea->name, eb->name);
+}
+
+// 输出待输出的错误联合结构体定义
+void emit_pending_err_union_structs(C99CodeGenerator *codegen) {
+    if (!codegen) return;
+    if (codegen->err_union_struct_count == 0) return;
+    
+    // 创建临时数组用于排序
+    ErrUnionEntry entries[C99_MAX_ERR_UNION_STRUCTS];
+    int count = 0;
+    for (int i = 0; i < codegen->err_union_struct_count; i++) {
+        if (codegen->err_union_struct_names[i] && codegen->err_union_payload_types[i]) {
+            entries[count].name = codegen->err_union_struct_names[i];
+            entries[count].payload_node = codegen->err_union_payload_types[i];
+            count++;
+        }
+    }
+    
+    // 排序
+    qsort(entries, count, sizeof(ErrUnionEntry), compare_err_union_entries);
+    
+    // 输出
+    for (int i = 0; i < count; i++) {
+        const char *name = entries[i].name;
+        ASTNode *payload_node = entries[i].payload_node;
+        
+        // 检查是否已定义（可能已被其他路径输出）
+        if (is_struct_defined(codegen, name)) continue;
+        
+        // 检查是否是 void payload
+        int is_void = 0;
+        if (payload_node->type == AST_TYPE_NAMED && payload_node->data.type_named.name &&
+            strcmp(payload_node->data.type_named.name, "void") == 0) {
+            is_void = 1;
+        }
+        
+        const char *payload_c = c99_type_to_c(codegen, payload_node);
+        if (!payload_c) continue;
+        
+        fprintf(codegen->output, "struct %s { uint32_t error_id;", name);
+        if (!is_void) {
+            fprintf(codegen->output, " %s value;", payload_c);
+        }
+        fprintf(codegen->output, " };\n");
+        mark_struct_defined(codegen, name);
+    }
 }

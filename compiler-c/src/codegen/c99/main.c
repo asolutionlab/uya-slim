@@ -628,6 +628,11 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
     if (codegen->slice_struct_count > 0) {
         fputs("\n", codegen->output);
     }
+    // 第六步 b1：生成错误联合结构体（!T -> struct err_union_X），必须在用户结构体之前
+    emit_pending_err_union_structs(codegen);
+    if (codegen->err_union_struct_count > 0) {
+        fputs("\n", codegen->output);
+    }
     // 第六步 b2：生成接口结构体与 vtable 结构体（vtable 常量在函数前向声明之后生成）
     emit_interface_structs_and_vtables(codegen);
     fputs("\n", codegen->output);

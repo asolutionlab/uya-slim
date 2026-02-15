@@ -20,6 +20,7 @@
 #define C99_MAX_DEFERS_PER_BLOCK    64
 #define C99_MAX_DROP_VARS_PER_BLOCK 64
 #define C99_MAX_SLICE_STRUCTS       32
+#define C99_MAX_ERR_UNION_STRUCTS   64
 #define C99_MAX_MONO_INSTANCES      512
 
 // C99 代码生成器结构体
@@ -121,6 +122,11 @@ typedef struct C99CodeGenerator {
     const char *slice_struct_names[C99_MAX_SLICE_STRUCTS];
     ASTNode *slice_struct_element_types[C99_MAX_SLICE_STRUCTS];
     int slice_struct_count;
+    
+    // 待输出的错误联合结构体（!T -> struct err_union_X { uint32_t error_id; T value; }）
+    const char *err_union_struct_names[C99_MAX_ERR_UNION_STRUCTS];
+    ASTNode *err_union_payload_types[C99_MAX_ERR_UNION_STRUCTS];
+    int err_union_struct_count;
     
     // 泛型单态化实例（从 TypeChecker 传入）
     struct MonoInstance {
