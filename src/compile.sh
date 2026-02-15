@@ -38,7 +38,7 @@ usage() {
   -n, --name NAME     指定输出文件名（默认: $OUTPUT_NAME）
   -c, --clean         清理输出目录后再编译
   -e, --exec          生成可执行文件（自动链接）
-  -b, --bootstrap-compare  自举对比：用自举编译器再编译自身，与 C 编译器输出的 C 文件对比（需 --c99，建议与 -e 同用）
+  -b, --bootstrap-compare  自举验证：用编译器再编译自身，对比两次 C 输出是否一致（需 --c99，建议与 -e 同用）
   --c99               使用 C99 后端生成 C 代码（输出文件后缀为 .c 时自动启用）
   --line-directives    启用 #line 指令生成（C99 后端，默认禁用）
   --nostdlib          链接时不使用标准库（仅在使用 -e 时有效）

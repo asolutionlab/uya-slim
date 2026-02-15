@@ -58,14 +58,14 @@ uya-nostdlib: uya-c
 	@echo ""
 	@echo "✓ 自举编译器（--nostdlib）构建完成: bin/uya"
 
-# 自举比对：用自举编译器编译自身，与 C 编译器输出对比
+# 自举验证：用自举编译器编译自身，验证输出一致性
 b: uya
 	@echo "=========================================="
-	@echo "自举比对：验证 C 编译器与自举编译器输出一致性"
+	@echo "自举验证：编译器编译自身，验证输出一致性"
 	@echo "=========================================="
 	@cd src && ./compile.sh --c99 -e -b
 	@echo ""
-	@echo "✓ 自举比对完成"
+	@echo "✓ 自举验证完成"
 
 # 运行测试：默认使用 tests/run_programs_parallel.sh 并行测试（可 -j N 控制线程数）
 # 用法: make tests [c|uya] [e] [其他参数]
@@ -208,7 +208,7 @@ help:
 	@echo "  make uya-c         - 构建 C 编译器 (bin/uya-c)"
 	@echo "  make uya           - 构建自举编译器 (bin/uya)，自动更新 bin/uya.c"
 	@echo "  make uya-nostdlib  - 构建自举编译器（--nostdlib 版本，不链接标准库）"
-	@echo "  make b             - 自举比对：验证自举编译器输出一致性"
+	@echo "  make b             - 自举验证：编译器编译自身，验证输出一致性"
 	@echo "  make tests          - 运行测试套件（默认 tests/run_programs_parallel.sh 并行）"
 	@echo "  make tests e        - 运行所有测试，只显示失败的测试"
 	@echo "  make tests c        - 只测试 C 编译器"

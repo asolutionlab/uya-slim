@@ -73,7 +73,7 @@ git add -A && git commit -m "fix: 描述修复内容"
 | `make from-c` | 从 bin/uya.c 构建 bin/uya（零依赖，首次克隆后使用） |
 | `make uya-c` | 构建 C 编译器 bin/uya-c（用于编译 src/*.uya） |
 | `make uya` | 使用 bin/uya-c 编译 src/*.uya → bin/uya.c，然后构建 bin/uya |
-| `make b` | 自举验证：新编译器编译自身，对比输出 |
+| `make b` | 自举验证：编译器编译自身，验证输出一致性 |
 | `make tests-uya` | 运行自举编译器测试 |
 | `make tests-c` | （已废弃）运行 C 编译器测试 |
 | `make clean` | 清理构建产物 |
@@ -117,7 +117,7 @@ bin/uya --c99 src/*.uya -o bin/uya_bootstrap.c
 # 2. 对比新旧 C99 代码
 diff bin/uya.c bin/uya_bootstrap.c
 
-# 3. 一致则通过
+# 3. 一致则通过（验证自举能力）
 ```
 
 ### 验证失败处理
