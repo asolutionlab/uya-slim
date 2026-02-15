@@ -1,3 +1,15 @@
+// 简单返回测试
+
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_return_zero() !void {
+    // 编译通过即测试通过
+}
+
 fn main() i32 {
-    return 0;
+    test_suite_begin("Return Tests");
+    run_test("return zero", test_return_zero);
+    return test_suite_end();
 }

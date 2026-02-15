@@ -1,8 +1,12 @@
-// test_ptr_arithmetic.uya - 测试使用指针转换函数实现指针算术
-// 这个测试用例验证 @ptr_from_usize 和 @usize_from_ptr 的配合使用
+// 测试指针转换函数实现指针算术
 
-fn main() i32 {
-    // 创建一个数组
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_ptr_arithmetic() !void {
     var arr: [i32: 5] = [];
     arr[0] = 10;
     arr[1] = 20;
@@ -10,44 +14,42 @@ fn main() i32 {
     arr[3] = 40;
     arr[4] = 50;
     
-    // 获取数组首地址
     const base_ptr: &i32 = &arr[0];
     const base_addr: usize = @usize_from_ptr(base_ptr as &void);
     
-    // 计算第二个元素的地址（偏移一个 i32 的大小）
     const i32_size: usize = @size_of(i32);
     const second_addr: usize = base_addr + i32_size;
     const second_ptr: &void = @ptr_from_usize(second_addr);
     
-    // 转换回 i32 指针并访问
     const second_value_ptr: &i32 = second_ptr as &i32;
     const second_value: i32 = second_value_ptr[0];
     
-    if second_value != 20 {
-        return 1;  // 失败：应该访问到第二个元素
-    }
+    try assert_eq_i32(second_value, 20);
     
-    // 测试第三个元素
     const third_addr: usize = base_addr + i32_size * 2;
     const third_ptr: &i32 = @ptr_from_usize(third_addr) as &i32;
     const third_value: i32 = third_ptr[0];
     
-    if third_value != 30 {
-        return 2;  // 失败：应该访问到第三个元素
-    }
+    try assert_eq_i32(third_value, 30);
+}
+
+fn test_ptr_diff() !void {
+    var arr: [i32: 5] = [10, 20, 30, 40, 50];
     
-    // 测试指针差计算（模拟 ptr_diff 函数）
     const ptr1: &i32 = &arr[0];
     const ptr2: &i32 = &arr[2];
     const addr1: usize = @usize_from_ptr(ptr1 as &void);
     const addr2: usize = @usize_from_ptr(ptr2 as &void);
     const diff: usize = addr2 - addr1;
+    const i32_size: usize = @size_of(i32);
     const expected_diff: usize = i32_size * 2;
     
-    if diff != expected_diff {
-        return 3;  // 失败：指针差计算错误
-    }
-    
-    return 0;
+    try expect(diff == expected_diff);
 }
 
+fn main() i32 {
+    test_suite_begin("Pointer Arithmetic Tests");
+    run_test("ptr arithmetic", test_ptr_arithmetic);
+    run_test("ptr diff", test_ptr_diff);
+    return test_suite_end();
+}
