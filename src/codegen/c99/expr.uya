@@ -134,13 +134,17 @@ fn c99_emit_string_interp_fill(codegen: &C99CodeGenerator, expr: &ASTNode, buf_n
             if seg.text != null {
                 len = strlen(seg.text as *byte);
             }
-            const cn: &byte = add_string_constant(codegen, seg.text);
-            if cn != null {
-                c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "__uya_memcpy(%s + _off_%d, %s, %zu);\n" as *byte, buf_name as *byte, fill_id, cn as *byte, len);
-                c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "_off_%d += %zu;\n" as *byte, fill_id, len);
+            // 直接内联输出字符串字面量，不使用常量表
+            c99_emit_indent(codegen);
+            fprintf(codegen.output as *void, "__uya_memcpy(%s + _off_%d, " as *byte, buf_name as *byte, fill_id);
+            fputs("(const uint8_t *)\"" as *byte, codegen.output as *void);
+            if seg.text != null {
+                escape_string_for_c(codegen.output as *void, seg.text);
             }
+            fputs("\", " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%zu);\n" as *byte, len);
+            c99_emit_indent(codegen);
+            fprintf(codegen.output as *void, "_off_%d += %zu;\n" as *byte, fill_id, len);
         } else {
             var fmt_buf: [byte: 64] = [];
             fmt_buf[0] = 37;
@@ -157,14 +161,11 @@ fn c99_emit_string_interp_fill(codegen: &C99CodeGenerator, expr: &ASTNode, buf_n
                 j = 2;
             }
             fmt_buf[j] = 0;
-            const fmt_in_arena: &byte = c99_arena_strdup(codegen.arena, &fmt_buf[0] as &byte);
-            const fmt_const: &byte = add_string_constant(codegen, fmt_in_arena);
-            if fmt_const != null && fmt_in_arena != null {
-                c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "_off_%d += sprintf(%s + _off_%d, %s, " as *byte, fill_id, buf_name as *byte, fill_id, fmt_const as *byte);
-                gen_expr(codegen, seg.expr);
-                fputs(");\n" as *byte, codegen.output as *void);
-            }
+            // 直接内联输出格式字符串
+            c99_emit_indent(codegen);
+            fprintf(codegen.output as *void, "_off_%d += sprintf(%s + _off_%d, \"%s\", " as *byte, fill_id, buf_name as *byte, fill_id, &fmt_buf[0] as *byte);
+            gen_expr(codegen, seg.expr);
+            fputs(");\n" as *byte, codegen.output as *void);
         }
         i = i + 1;
     }

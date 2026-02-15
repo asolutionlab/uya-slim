@@ -5835,12 +5835,24 @@ static int checker_check_node(TypeChecker *checker, ASTNode *node) {
         
         case AST_TEST_STMT: {
             if (node->data.test_stmt.body != NULL) {
-                // 测试语句体中的 return 应该被允许（测试函数是 void 类型）
-                // 临时设置 in_function = 1 和 current_return_type = void
+                // 测试语句返回 !void 类型，允许使用 try
+                // 临时设置 in_function = 1 和 current_return_type = !void
                 Type prev_return_type = checker->current_return_type;
                 int prev_in_function = checker->in_function;
-                checker->current_return_type = (Type){.kind = TYPE_VOID};
+                ASTNode *prev_fn_decl = checker->current_function_decl;
+                
+                // 构造 !void 类型（错误联合类型，payload 是 void）
+                Type *void_type = (Type *)arena_alloc(checker->arena, sizeof(Type));
+                if (void_type) {
+                    void_type->kind = TYPE_VOID;
+                }
+                Type error_void_type = {.kind = TYPE_ERROR_UNION};
+                error_void_type.data.error_union.payload_type = void_type;
+                
+                checker->current_return_type = error_void_type;
                 checker->in_function = 1;
+                // 设置临时函数声明（test 语句本身），以便 @func_name 能正确工作
+                checker->current_function_decl = node;
                 
                 // 检查测试体中的语句
                 int ret = checker_check_node(checker, node->data.test_stmt.body);
@@ -5848,6 +5860,7 @@ static int checker_check_node(TypeChecker *checker, ASTNode *node) {
                 // 恢复之前的状态
                 checker->current_return_type = prev_return_type;
                 checker->in_function = prev_in_function;
+                checker->current_function_decl = prev_fn_decl;
                 
                 if (ret != 0) return ret;
             }

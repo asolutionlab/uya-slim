@@ -784,6 +784,14 @@ void collect_string_constants_from_decl(C99CodeGenerator *codegen, ASTNode *decl
             codegen->current_function_decl = old_fn;
             break;
         }
+        case AST_TEST_STMT: {
+            // 收集测试语句体中的字符串常量
+            ASTNode *body = decl->data.test_stmt.body;
+            if (body) {
+                collect_string_constants_from_stmt(codegen, body);
+            }
+            break;
+        }
         default:
             break;
     }

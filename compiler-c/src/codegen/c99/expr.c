@@ -115,13 +115,15 @@ void c99_emit_string_interp_fill(C99CodeGenerator *codegen, ASTNode *expr, const
         ASTStringInterpSegment *seg = &expr->data.string_interp.segments[i];
         if (seg->is_text) {
             size_t len = seg->text ? strlen(seg->text) : 0;
-            const char *cn = add_string_constant(codegen, seg->text ? seg->text : "");
-            if (cn) {
-                c99_emit_indent(codegen);
-                fprintf(codegen->output, "__uya_memcpy(%s + _off_%d, %s, %zu);\n", buf_name, fill_id, cn, len);
-                c99_emit_indent(codegen);
-                fprintf(codegen->output, "_off_%d += %zu;\n", fill_id, len);
-            }
+            // 直接内联输出字符串字面量，不使用常量表
+            c99_emit_indent(codegen);
+            fprintf(codegen->output, "__uya_memcpy(%s + _off_%d, ", buf_name, fill_id);
+            fputs("(const uint8_t *)\"", codegen->output);
+            escape_string_for_c(codegen->output, seg->text ? seg->text : "");
+            fputs("\", ", codegen->output);
+            fprintf(codegen->output, "%zu);\n", len);
+            c99_emit_indent(codegen);
+            fprintf(codegen->output, "_off_%d += %zu;\n", fill_id, len);
             continue;
         }
         {
@@ -131,10 +133,9 @@ void c99_emit_string_interp_fill(C99CodeGenerator *codegen, ASTNode *expr, const
             } else {
                 strcpy(fmt_buf, "%d");
             }
-            const char *fmt_const = add_string_constant(codegen, fmt_buf);
-            if (!fmt_const) continue;
+            // 直接内联输出格式字符串
             c99_emit_indent(codegen);
-            fprintf(codegen->output, "_off_%d += sprintf(%s + _off_%d, %s, ", fill_id, buf_name, fill_id, fmt_const);
+            fprintf(codegen->output, "_off_%d += sprintf(%s + _off_%d, \"%s\", ", fill_id, buf_name, fill_id, fmt_buf);
             gen_expr(codegen, seg->expr);
             fputs(");\n", codegen->output);
         }

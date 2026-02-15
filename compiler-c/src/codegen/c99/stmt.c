@@ -888,6 +888,12 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                     needs_memcpy = 1;
                 }
                 
+                // 检查是否是数组类型且初始化表达式是字符串字面量
+                int is_string_literal_init = 0;
+                if (var_type->type == AST_TYPE_ARRAY && init_expr->type == AST_STRING) {
+                    is_string_literal_init = 1;
+                }
+                
                 // 字符串插值初始化：先声明变量，再填充
                 int is_string_interp_init = (init_expr->type == AST_STRING_INTERP);
                 
@@ -981,6 +987,14 @@ void gen_stmt(C99CodeGenerator *codegen, ASTNode *stmt) {
                 } else if (is_string_interp_init) {
                     fputs(";\n", codegen->output);
                     c99_emit_string_interp_fill(codegen, init_expr, var_name);
+                } else if (is_string_literal_init) {
+                    // 数组用字符串字面量初始化：直接输出字符串字面量
+                    fputs(" = \"", codegen->output);
+                    const char *str_val = init_expr->data.string_literal.value;
+                    if (str_val) {
+                        escape_string_for_c(codegen->output, str_val);
+                    }
+                    fputs("\";\n", codegen->output);
                 } else if (needs_memcpy) {
                     // 数组初始化：使用__uya_memcpy
                     fputs(";\n", codegen->output);
