@@ -1,5 +1,11 @@
+// 测试 try 语法
+
+use std.testing;
+
 fn foo() !i32 { return 0; }
-fn main() !i32 {
+
+@test
+fn test_try_only() void {
     const x: i32 = try foo();
-    return x;
+    testing.assert_eq(x, 0);
 }

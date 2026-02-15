@@ -1,16 +1,21 @@
 // 相同错误名在任意位置得到相同 error_id
+
+use std.testing;
+
 error SameName;
+
 fn ret_a() !i32 { return error.SameName; }
 fn ret_b() !i32 { return error.SameName; }
-fn main() !i32 {
+
+@test
+fn test_same_error_id() void {
     const a: i32 = ret_a() catch { 1; };
     const b: i32 = ret_b() catch { 2; };
     const c: i32 = ret_a() catch |e| {
         if (e == error.SameName) { return 3; }
         0;
     };
-    if (a != 1) return 1;
-    if (b != 2) return 2;
-    if (c != 3) return 4;
-    return 0;
+    testing.assert_eq(a, 1);
+    testing.assert_eq(b, 2);
+    testing.assert_eq(c, 3);
 }

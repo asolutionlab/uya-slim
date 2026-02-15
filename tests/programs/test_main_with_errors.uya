@@ -1,19 +1,36 @@
+// 测试 main 函数中的错误处理
+
+use std.testing;
+
 error DivisionByZero;
 error NotFound;
+
 fn divide(a: i32, b: i32) !i32 {
     if (b == 0) {
         return error.DivisionByZero;
     }
     return a / b;
 }
-fn main() !i32 {
+
+@test
+fn test_try_divide() void {
     const x: i32 = try divide(10, 2);
+    testing.assert_eq(x, 5);
+}
+
+@test
+fn test_catch_divide() void {
     const y: i32 = divide(10, 0) catch { 0; };
+    testing.assert_eq(y, 0);
+}
+
+@test
+fn test_catch_with_error() void {
     const z: i32 = divide(8, 4) catch |e| {
         if (e == error.DivisionByZero) {
             return 1;
         }
         0;
     };
-    return x;
+    testing.assert_eq(z, 2);
 }

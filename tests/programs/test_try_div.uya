@@ -1,8 +1,15 @@
+// 测试 try 除法
+
+use std.testing;
+
 error DivisionByZero;
+
 fn divide(a: i32, b: i32) !i32 {
     return a / b;
 }
-fn main() !i32 {
+
+@test
+fn test_try_divide() void {
     const x: i32 = try divide(10, 2);
-    return x;
+    testing.assert_eq(x, 5);
 }
