@@ -73,9 +73,30 @@ make tests-uya  # 应该 348/348 通过
 任何代码修改后，必须执行：
 
 ```bash
-make uya        # 构建 + 更新 bin/uya.c
+make uya        # 构建 + 更新 bin/uya.c（自动备份到 backup/uya.c.zip）
 make b          # 自举验证
 make tests-uya  # 测试验证
+```
+
+## uya.c 备份机制
+
+`bin/uya.c` 是自举编译器的种子文件，会被 `make clean` 删除。
+
+### 自动备份
+
+- `make uya` 完成后自动备份到 `backup/uya.c.zip`
+- 压缩率约 91%（2.1MB → 185KB）
+
+### 自动恢复
+
+- `make from-c` 时如果 `bin/uya.c` 不存在，自动从备份恢复
+
+### 手动操作
+
+```bash
+make backup     # 手动备份 bin/uya.c
+make restore    # 手动从备份恢复
+make clean && make from-c  # 清理后从备份恢复构建
 ```
 
 ## 关键文件

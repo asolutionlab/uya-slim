@@ -290,6 +290,28 @@ git push origin main --tags
 - 每次 `make uya` 后，如自举验证通过，应提交新的 bin/uya.c
 - 确保提交的 bin/uya.c 能通过 `make tests-uya`
 
+### uya.c 备份机制
+
+`bin/uya.c` 是自举编译器的种子文件，会被 `make clean` 删除。备份机制确保安全：
+
+```bash
+# 自动备份（make uya 完成后）
+make uya        # 自动备份 bin/uya.c → backup/uya.c.zip
+
+# 自动恢复（make from-c 时 bin/uya.c 不存在）
+make from-c     # 自动从 backup/uya.c.zip 恢复
+
+# 手动操作
+make backup     # 手动备份
+make restore    # 手动恢复
+```
+
+| 操作 | 说明 |
+|------|------|
+| `make backup` | 备份 `bin/uya.c` 到 `backup/uya.c.zip` |
+| `make restore` | 从备份恢复 `bin/uya.c` |
+| `make clean && make from-c` | 清理后从备份恢复构建 |
+
 ---
 
 ## 相关文档

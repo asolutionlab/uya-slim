@@ -1,7 +1,7 @@
 # Uya 项目根目录 Makefile
 # 提供统一的构建和测试入口
 
-.PHONY: all from-c uya-c uya uya-nostdlib b tests tests-c tests-uya outlibc c e clean help
+.PHONY: all from-c uya-c uya uya-nostdlib b tests tests-c tests-uya outlibc c e clean backup restore help
 
 # 默认目标
 all: help
@@ -26,8 +26,14 @@ from-c:
 	@echo "从 C99 代码构建编译器 (from-c)"
 	@echo "=========================================="
 	@if [ ! -f bin/uya.c ]; then \
-		echo "错误: bin/uya.c 不存在"; \
-		exit 1; \
+		if [ -f backup/uya.c.zip ]; then \
+			echo "bin/uya.c 不存在，从备份恢复..."; \
+			mkdir -p bin; \
+			unzip -o backup/uya.c.zip -d bin/; \
+		else \
+			echo "错误: bin/uya.c 和 backup/uya.c.zip 都不存在"; \
+			exit 1; \
+		fi \
 	fi
 	@echo "编译 bin/uya.c ..."
 	@gcc -std=c99 -O2 bin/uya.c -o bin/uya -lm
@@ -47,6 +53,11 @@ uya: uya-c
 	@echo "✓ bin/uya.c 已更新"
 	@echo ""
 	@echo "✓ 自举编译器构建完成: bin/uya"
+	@echo ""
+	@echo "备份 bin/uya.c 到 backup/uya.c.zip ..."
+	@mkdir -p backup
+	@cd bin && zip -u ../backup/uya.c.zip uya.c
+	@echo "✓ 备份完成: backup/uya.c.zip"
 
 # 构建自举编译器（--nostdlib 版本）
 uya-nostdlib: uya-c
@@ -199,6 +210,30 @@ clean:
 	@rm -rf lib/build
 	@echo "✓ 清理完成"
 
+# 备份 bin/uya.c
+backup:
+	@echo "备份 bin/uya.c ..."
+	@if [ ! -f bin/uya.c ]; then \
+		echo "错误: bin/uya.c 不存在"; \
+		exit 1; \
+	fi
+	@mkdir -p backup
+	@cd bin && zip -u ../backup/uya.c.zip uya.c
+	@echo "✓ 备份完成: backup/uya.c.zip"
+	@ls -la backup/uya.c.zip
+
+# 从备份恢复 bin/uya.c
+restore:
+	@echo "从备份恢复 bin/uya.c ..."
+	@if [ ! -f backup/uya.c.zip ]; then \
+		echo "错误: backup/uya.c.zip 不存在"; \
+		exit 1; \
+	fi
+	@mkdir -p bin
+	@unzip -o backup/uya.c.zip -d bin/
+	@echo "✓ 恢复完成: bin/uya.c"
+	@ls -la bin/uya.c
+
 # 显示帮助信息
 help:
 	@echo "Uya 项目 Makefile"
@@ -220,6 +255,8 @@ help:
 	@echo "  make tests-uya       - 快捷方式：测试自举编译器"
 	@echo "  make tests-uya e     - 快捷方式：测试自举编译器，只显示失败的测试"
 	@echo "  make outlibc         - 输出标准库为 C 代码（使用自举编译器）"
+	@echo "  make backup          - 备份 bin/uya.c 到 backup/uya.c.zip"
+	@echo "  make restore         - 从 backup/uya.c.zip 恢复 bin/uya.c"
 	@echo "  make clean           - 清理所有构建产物"
 	@echo "  make help            - 显示此帮助信息"
 	@echo ""
@@ -228,4 +265,5 @@ help:
 	@echo "  make uya && make b && make tests-uya # 完整构建和自举验证"
 	@echo "  make tests                           # 运行所有测试"
 	@echo "  make tests e                         # 运行所有测试，只显示错误"
+	@echo "  make clean && make from-c            # 清理后从备份恢复并构建"
 
