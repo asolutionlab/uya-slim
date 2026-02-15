@@ -120,10 +120,11 @@ fn test_function2_with_resource() !void {
 }
 
 // ============================================================
-// 主函数（export 生成 main_main，被 entry.uya 调用）
+// 主函数（当前使用 fn main() 兼容 bridge.c）
+// 未来测试脚本升级后可改为 export fn main() 配合 entry.uya
 // ============================================================
 
-export fn main() i32 {
+fn main() i32 {
     test_suite_begin("<Module> Tests");
     
     run_test("function1", test_function1);
@@ -135,26 +136,33 @@ export fn main() i32 {
 
 ### 3.3 入口机制
 
-测试程序使用 `lib/std/runtime/entry/entry.uya` 作为 C 入口：
+**当前状态**（兼容 bridge.c）：
+```
+C Runtime → bridge.c::main() → main_main()
+                              └─ 用户测试代码
+```
 
+测试文件使用 `fn main()` 兼容测试脚本的 bridge.c 链接方式。
+
+**未来规划**（使用 entry.uya）：
 ```
 C Runtime → entry.uya::main() → main_main()
                               └─ 用户测试代码
 ```
 
-|| 声明方式 | 编译结果 | 说明 |
+|| 声明方式 | 编译结果 | 用途 |
 ||----------|----------|------|
-|| `export fn main()` | `main_main()` | 被 entry.uya 调用 |
-|| `export extern fn main()` (entry.uya) | C `main()` | 真正的程序入口 |
+|| `fn main()` | `main_main()` | 测试文件（兼容 bridge.c） |
+|| `export fn main()` | `main_main()` | 应用程序入口（配合 entry.uya） |
 
 ### 3.4 编译命令
 
 ```bash
-# 编译 Uya 测试文件（需包含 entry.uya 入口）
-bin/uya-c --c99 tests/programs/test_xxx.uya lib/std/runtime/entry/entry.uya -o /tmp/test_xxx.c
+# 编译 Uya 测试文件（当前方式，兼容 bridge.c）
+bin/uya-c --c99 tests/programs/test_xxx.uya -o /tmp/test_xxx.c
 
-# 编译 C 代码（无需 bridge.c）
-gcc -std=c99 -no-pie /tmp/test_xxx.c -o /tmp/test_xxx -lm
+# 编译 C 代码
+gcc -std=c99 -no-pie /tmp/test_xxx.c tests/bridge_minimal.c -o /tmp/test_xxx -lm
 
 # 运行测试
 /tmp/test_xxx
@@ -316,11 +324,11 @@ fn test_table_driven() !void {
 ### 7.1 编译命令
 
 ```bash
-# 编译 Uya 测试文件（需包含 entry.uya 入口）
-bin/uya-c --c99 tests/programs/test_xxx.uya lib/std/runtime/entry/entry.uya -o /tmp/test_xxx.c
+# 编译 Uya 测试文件（兼容 bridge.c）
+bin/uya-c --c99 tests/programs/test_xxx.uya -o /tmp/test_xxx.c
 
-# 编译 C 代码（无需 bridge.c）
-gcc -std=c99 -no-pie /tmp/test_xxx.c -o /tmp/test_xxx -lm
+# 编译 C 代码
+gcc -std=c99 -no-pie /tmp/test_xxx.c tests/bridge_minimal.c -o /tmp/test_xxx -lm
 ```
 
 ### 7.2 运行测试
@@ -342,31 +350,26 @@ echo $?
 || 旧模式 | 新模式 |
 ||--------|--------|
 || `fn test_xxx() i32` | `fn test_xxx() !void` |
-|| `if x != 5 { return 1; }` | `try assert_eq_i32(x, 5, "msg");` |
+|| `if x != 5 { return 1; }` | `try expect(x == 5);` |
 || `return 0;` | `return test_suite_end();` |
 || `var passed = 1; ...` | `try expect(...);` |
 || 手动计数失败 | 框架自动统计 |
-|| `fn main()` + bridge.c | `export fn main()` + entry.uya |
+|| `fn main()` | `fn main()` + test_suite_* |
 
 ### 8.2 迁移步骤
 
 1. 添加 `use std.testing.*;`
 2. 修改测试函数签名为 `!void`
 3. 替换手动断言为框架断言
-4. 修改 `main()` 为 `export fn main() i32`
-5. 编译时添加 `lib/std/runtime/entry/entry.uya`
-6. 删除冗余代码（passed 变量、手动输出等）
+4. 修改 `main()` 使用 test_suite_* API
+5. 删除冗余代码（passed 变量、手动输出等）
 
-### 8.3 从 bridge.c 迁移
+### 8.3 编译方式
 
 ```bash
-# 旧方式（依赖 bridge.c）
+# 编译测试文件（兼容 bridge.c）
 bin/uya-c --c99 test.uya -o test.c
-gcc -std=c99 -no-pie test.c tests/bridge.c -o test -lm
-
-# 新方式（使用 entry.uya）
-bin/uya-c --c99 test.uya lib/std/runtime/entry/entry.uya -o test.c
-gcc -std=c99 -no-pie test.c -o test -lm
+gcc -std=c99 -no-pie test.c tests/bridge_minimal.c -o test -lm
 ```
 
 ---
@@ -426,7 +429,7 @@ fn test_boundary() !void {
 ```uya
 // tests/programs/test_example.uya
 // 描述：示例测试文件
-// 编译：bin/uya-c --c99 test_example.uya lib/std/runtime/entry/entry.uya -o test_example.c
+// 编译：bin/uya-c --c99 test_example.uya -o test_example.c
 
 use libc.malloc;
 use libc.free;
@@ -438,48 +441,48 @@ use std.testing.*;
 // ============================================================
 
 fn test_strlen_basic() !void {
-    try assert_eq_u64(strlen("hello"), 5, "strlen of 'hello'");
-    try assert_eq_u64(strlen(""), 0, "strlen of empty string");
+    try expect_eq(strlen("hello"), 5);
+    try expect_eq(strlen(""), 0);
 }
 
 fn test_malloc_free() !void {
     const ptr: *byte = malloc(100);
-    try assert_not_null(ptr, "malloc should return non-null");
-    
+    try expect_not_null(ptr);
+
     defer {
         free(ptr);
     }
-    
+
     // 使用内存...
 }
 
 fn test_error_propagation() !void {
     const ptr: *byte = malloc(0);
-    
+
     // malloc(0) 可能返回 null 或有效指针
     if ptr == null as *byte {
         skip_test("malloc(0) returned null", "platform specific");
         return;
     }
-    
+
     defer {
         free(ptr);
     }
-    
+
     try expect_not_null(ptr);
 }
 
 // ============================================================
-// 主函数（export 生成 main_main，被 entry.uya 调用）
+// 主函数（当前使用 fn main() 兼容 bridge.c）
 // ============================================================
 
-export fn main() i32 {
+fn main() i32 {
     test_suite_begin("Example Tests");
-    
+
     run_test("strlen basic", test_strlen_basic);
     run_test("malloc/free", test_malloc_free);
     run_test("error propagation", test_error_propagation);
-    
+
     return test_suite_end();
 }
 ```
