@@ -54,10 +54,7 @@ uya: uya-c
 	@echo ""
 	@echo "✓ 自举编译器构建完成: bin/uya"
 	@echo ""
-	@echo "备份 bin/uya.c 到 backup/uya.c.zip ..."
-	@mkdir -p backup
-	@cd bin && zip -u ../backup/uya.c.zip uya.c
-	@echo "✓ 备份完成: backup/uya.c.zip"
+	@echo "提示: 运行 'make b' 验证自举，通过后会自动备份"
 
 # 构建自举编译器（--nostdlib 版本）
 uya-nostdlib: uya-c
@@ -210,9 +207,14 @@ clean:
 	@rm -rf lib/build
 	@echo "✓ 清理完成"
 
-# 备份 bin/uya.c
-backup:
-	@echo "备份 bin/uya.c ..."
+# 备份 bin/uya.c（依赖自举验证和测试通过）
+backup: b
+	@echo "=========================================="
+	@echo "运行测试验证..."
+	@echo "=========================================="
+	@./tests/run_programs_parallel.sh --uya --c99 2>&1 | tail -5
+	@echo ""
+	@echo "备份 bin/uya.c 到 backup/uya.c.zip ..."
 	@if [ ! -f bin/uya.c ]; then \
 		echo "错误: bin/uya.c 不存在"; \
 		exit 1; \

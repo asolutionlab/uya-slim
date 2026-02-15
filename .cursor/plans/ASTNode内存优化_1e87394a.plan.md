@@ -725,6 +725,45 @@ Uya 编译器代码生成器的输出顺序问题：
 2. 确保在生成 union 定义之前，先检查并生成依赖的结构体
 3. 或者在第四步（收集结构体）时，将 `AST*Data` 结构体标记为需要在 union 之前生成
 
+### 解决方案（2026-02-15）
+
+#### 问题根因
+
+`collect_struct_types_in_union` 函数只收集 union 变体的直接类型，**没有递归处理嵌套依赖**。
+
+例如：
+```uya
+struct Location { line: i32, column: i32 }
+struct ProgramData { location: Location, ... }
+union NodeData { program: ProgramData }
+```
+
+旧代码只收集 `ProgramData`，但 `ProgramData` 包含 `Location` 字段，导致：
+- `ProgramData` 定义在 `Location` 之前
+- C 编译错误：`field 'location' has incomplete type`
+
+#### 实施修复
+
+修改 `src/codegen/c99/structs.uya`：
+
+1. 新增 `is_primitive_type_name` - 检查类型名是否是基本类型
+2. 新增 `collect_struct_field_deps_recursive` - 递归收集结构体字段的值类型依赖
+3. 新增 `collect_value_struct_deps_from_type` - 从类型节点收集值类型结构体依赖
+4. 重构 `collect_struct_types_in_union` - 使用上述函数递归收集
+
+关键逻辑：**拓扑排序** - 被依赖的结构体先输出
+
+```
+Location (被依赖) → ProgramData (依赖 Location) → NodeData (依赖 ProgramData)
+```
+
+#### 验证结果
+
+- 测试文件：`tests/programs/test_union_nested_deps.uya`
+- 生成的 C 代码顺序正确：`Location` → `ProgramData` → `NodeData`
+- 352 个测试全部通过
+- 自举验证通过
+
 ### 注意事项
 
 1. **循环依赖**：数据结构体依赖 ASTNode，不能放在单独文件

@@ -167,6 +167,9 @@ make b  # 必须通过！
 
 # 3. 运行测试
 make tests-uya  # 必须全部通过
+
+# 4. 验证通过后备份（可选但推荐）
+make backup  # 只有自举和测试都通过才会执行备份
 ```
 
 ### 3.3 自举失败处理
@@ -205,6 +208,27 @@ make tests-uya  # 必须全部通过
 **问题**：union 嵌套结构体时生成顺序错误
 
 **解决**：使用 `emit_struct_deps_for_union` 确保依赖先生成
+
+**深入理解**（2026-02-15 修复）：
+
+union 变体是值类型结构体时，需要**递归收集嵌套依赖**：
+
+```uya
+// 示例：Location 被 ProgramData 依赖
+struct Location { line: i32, column: i32 }
+struct ProgramData { location: Location, ... }
+union NodeData { program: ProgramData }
+```
+
+**拓扑排序**：被依赖的结构体先输出
+
+```
+Location → ProgramData → NodeData
+```
+
+**关键函数**：`collect_value_struct_deps_from_type`
+- 递归处理结构体字段的值类型依赖
+- 自动过滤指针类型（指针可用前向声明）
 
 ### 4.4 自举对比差异
 
