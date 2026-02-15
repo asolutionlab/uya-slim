@@ -7,6 +7,54 @@ isProject: false
 
 # ASTNode 内存优化计划
 
+## 验证结果（2026-02-15）
+
+### ✅ Uya 支持 union
+
+经测试验证，Uya 语言规范 §4.5 的 union 完全可用：
+
+```uya
+union IntOrFloat {
+    i: i32,
+    f: f64
+}
+
+// 创建
+const v: IntOrFloat = IntOrFloat.i(42);
+
+// 访问（match）
+match v {
+    .i(x) => printf("int: %d\n", x),
+    .f(x) => printf("float: %f\n", x)
+}
+```
+
+### ✅ Union 可以包含指针类型
+
+```uya
+union ValuePtr {
+    int_val: i32,
+    float_val: f64,
+    point: &Point,       // 指针变体
+    other: &IntOrFloat   // 嵌套 union（通过指针）
+}
+```
+
+### ⚠️ 限制：Union 嵌套结构体有代码生成 bug
+
+当 union 直接包含结构体（非指针）时，C 代码生成的顺序有问题：
+
+```uya
+union Value {
+    point: Point,  // 结构体（非指针）
+}
+// 生成 C 时，union Value 在 struct Point 之前定义 → 编译错误
+```
+
+**解决方案**：使用指针变体，或修复代码生成顺序。
+
+---
+
 ## 问题分析
 
 ### 当前状态
@@ -198,141 +246,138 @@ struct ASTNode {
 
 ---
 
-## 实现计划
+## 实现方案
 
-### 阶段 1：设计 union 结构（1-2 天）
+### 方案 A：扁平 union（推荐，简单可行）
 
-1. **定义节点分类**
-   - 声明节点（Decl）：program, enum, error, interface, struct, union, fn, var, etc.
-   - 表达式节点（Expr）：binary, unary, call, identifier, literal, etc.
-   - 语句节点（Stmt）：if, while, for, return, defer, etc.
-   - 类型节点（Type）：named, pointer, array, slice, etc.
-   - 内置函数（Builtin）：sizeof, len, syscall, va_*, mc_*, etc.
+由于 union 嵌套结构体有代码生成 bug，采用扁平设计：
 
-2. **设计 union 层次结构**
+```uya
+// 所有变体字段平铺到单一 union
+union ASTNodeData {
+    // 声明类字段
+    program_decls: &&ASTNode,
+    program_decl_count: i32,
+    enum_decl_name: &byte,
+    enum_decl_variants: &EnumVariant,
+    // ... 所有字段平铺
+    // 但使用 union 共享内存
+}
+
+struct ASTNode {
+    type: ASTNodeType,
+    line: i32,
+    column: i32,
+    filename: &byte,
+    data: ASTNodeData,  // union
+}
+```
+
+**优点**：改动最小，不依赖嵌套 union
+**缺点**：union 仍然较大（所有字段的并集）
+
+### 方案 B：指针变体（推荐，最优内存）
+
+使用指针变体，避免嵌套结构体问题：
+
+```uya
+// 每种节点类型的独立结构体
+struct ASTProgramDecl {
+    decls: &&ASTNode,
+    decl_count: i32,
+}
+
+struct ASTBinaryExpr {
+    left: &ASTNode,
+    op: i32,
+    right: &ASTNode,
+}
+
+// union 包含指针
+union ASTNodeData {
+    program: &ASTProgramDecl,
+    binary: &ASTBinaryExpr,
+    call: &ASTCallExpr,
+    // ... 所有变体都是指针
+}
+
+struct ASTNode {
+    type: ASTNodeType,
+    line: i32,
+    column: i32,
+    filename: &byte,
+    data: ASTNodeData,  // union（指针大小）
+}
+```
+
+**优点**：ASTNode 大小最小（~32 字节）
+**缺点**：需要额外内存分配变体数据
+
+### 方案 C：修复代码生成（长期）
+
+修复 union 嵌套结构体的代码生成顺序问题，然后使用完整的嵌套 union 设计。
+
+---
+
+## 实现计划（方案 B）
+
+### 阶段 1：设计变体结构体（1-2 天）
+
+1. **定义每种节点类型的结构体**
+   ```uya
+   struct ASTProgramDecl { decls: &&ASTNode, decl_count: i32 }
+   struct ASTBinaryExpr { left: &ASTNode, op: i32, right: &ASTNode }
+   struct ASTCallExpr { callee: &ASTNode, args: &&ASTNode, arg_count: i32, ... }
+   // ... 约 60 种节点类型
+   ```
+
+2. **定义 union**
    ```uya
    union ASTNodeData {
-       decl: ASTDeclData,
-       expr: ASTExprData,
-       stmt: ASTStmtData,
-       type_node: ASTTypeData,
-       builtin: ASTBuiltinData,
+       program: &ASTProgramDecl,
+       binary: &ASTBinaryExpr,
+       call: &ASTCallExpr,
+       // ... 所有变体
    }
    ```
 
-3. **验证 union 语法**
-   - 确保 Uya 编译器支持 union 嵌套
-   - 测试 match 表达式访问
+### 阶段 2：迁移 Parser（3-4 天）
 
-### 阶段 2：定义结构体和 union（2-3 天）
-
-1. **创建每个变体结构体**
-   ```uya
-   // 表达式变体
-   struct ASTBinaryExpr {
-       left: &ASTNode,
-       op: i32,
-       right: &ASTNode,
-   }
-   struct ASTCallExpr {
-       callee: &ASTNode,
-       args: &&ASTNode,
-       arg_count: i32,
-       // ...
-   }
-   // ... 其他变体
-   ```
-
-2. **创建 union 声明**
-   ```uya
-   union ASTExprData {
-       binary: ASTBinaryExpr,
-       call: ASTCallExpr,
-       // ... 所有表达式变体
-   }
-   ```
-
-3. **重构 ASTNode**
-   ```uya
-   struct ASTNode {
-       type: ASTNodeType,
-       line: i32,
-       column: i32,
-       filename: &byte,
-       data: ASTNodeData,
-   }
-   ```
-
-### 阶段 3：迁移 Parser（3-4 天）
-
-1. **修改 ast_new_node**
-   - 创建节点后初始化 data 联合体
-   - 根据节点类型设置正确的变体
-
-2. **修改每个 parse_* 函数**
+1. **修改节点创建**
    ```uya
    // 原来
    node.binary_expr_left = left;
    node.binary_expr_op = op;
    node.binary_expr_right = right;
-   
+
    // 改为
-   node.data.expr.binary.left = left;
-   node.data.expr.binary.op = op;
-   node.data.expr.binary.right = right;
+   var data: &ASTBinaryExpr = arena_alloc(arena, sizeof(ASTBinaryExpr));
+   data.left = left;
+   data.op = op;
+   data.right = right;
+   node.data.binary = data;
    ```
 
-3. **验证**
-   - 编译通过
-   - 测试通过
+### 阶段 3：迁移 Checker/Codegen（4-5 天）
 
-### 阶段 4：迁移 Checker 和 Codegen（4-5 天）
-
-1. **修改所有节点访问**
+1. **修改节点访问**
    ```uya
    // 原来
    if node.type == AST_BINARY_EXPR {
        left = node.binary_expr_left;
    }
-   
+
    // 改为
    if node.type == AST_BINARY_EXPR {
-       left = node.data.expr.binary.left;
+       left = node.data.binary.left;
    }
    ```
 
-2. **或使用 match 表达式（更优雅）**
-   ```uya
-   match node.data {
-       .expr(e) => {
-           match e {
-               .binary(b) => {
-                   left = b.left;
-               },
-               .call(c) => {
-                   // ...
-               },
-               // ...
-           }
-       },
-       .decl(d) => { /* ... */ },
-       // ...
-   }
-   ```
+### 阶段 4：验证与调优（1-2 天）
 
-3. **验证自举对比**
-   - `make b` 通过
-   - `make tests-uya` 通过
-
-### 阶段 5：内存验证与调优（1-2 天）
-
-1. **缩减 arena_buffer**
-   - 从 256 MB 逐步降到 32 MB
-   - 验证自举通过
-
-2. **性能测试**
-   - 编译时间
-   - 内存峰值
+1. 验证 `make b` 通过
+2. 验证 `make tests-uya` 通过
+3. 缩减 arena_buffer
 
 ---
 
@@ -350,13 +395,13 @@ struct ASTNode {
 
 ## 风险与缓解
 
-### 风险 1：union 嵌套支持
+### 风险 1：代码生成顺序 bug
 
-**问题**：Uya 编译器是否支持 union 嵌套？
+**问题**：union 嵌套结构体时，C 代码生成顺序错误
 
 **缓解**：
-- 先验证 union 嵌套语法
-- 如不支持，可将所有变体平铺到单一 union
+- 使用方案 B（指针变体）
+- 或修复代码生成顺序
 
 ### 风险 2：match 表达式复杂度
 
@@ -393,17 +438,17 @@ struct ASTNode {
 
 | 阶段 | 时间 |
 |------|------|
-| 阶段 1：设计 union 结构 | 1-2 天 |
-| 阶段 2：定义结构体和 union | 2-3 天 |
-| 阶段 3：迁移 Parser | 3-4 天 |
-| 阶段 4：迁移 Checker/Codegen | 4-5 天 |
-| 阶段 5：内存验证与调优 | 1-2 天 |
-| **总计** | **11-16 天** |
+| 阶段 1：设计变体结构体 | 1-2 天 |
+| 阶段 2：迁移 Parser | 3-4 天 |
+| 阶段 3：迁移 Checker/Codegen | 4-5 天 |
+| 阶段 4：验证与调优 | 1-2 天 |
+| **总计** | **9-13 天** |
 
 ---
 
-## 下一步
+## 验证完成
 
-1. 验证 Uya 编译器对 union 嵌套的支持
-2. 创建简单的原型测试
-3. 开始阶段 1 设计
+- [x] Uya 支持 union 类型
+- [x] Union 可以包含指针类型
+- [x] Union 可以嵌套（通过指针）
+- [ ] Union 嵌套结构体的代码生成 bug（待修复）
