@@ -22,8 +22,9 @@ enum BackendType {
 // 文件读取缓冲区大小（与 Lexer 一致）
 const FILE_BUFFER_SIZE: i32 = 1024 * 1024;
 
-// Arena 缓冲区大小（自举生成的 C 与手写 C 分配顺序略异，需 384MB 以保证 make b 通过）
-const ARENA_BUFFER_SIZE: i32 = 384 * 1024 * 1024;  // 384MB
+// Arena 缓冲区大小（优化后：temp_arena 回滚，主 arena 需求降低）
+// 从 384MB 优化到 256MB
+const ARENA_BUFFER_SIZE: i32 = 256 * 1024 * 1024;  // 256MB
 
 // 最大输入文件数
 const MAX_INPUT_FILES: i32 = 64;
@@ -32,9 +33,9 @@ const MAX_INPUT_FILES: i32 = 64;
 var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
 var file_buffer: [byte: FILE_BUFFER_SIZE] = [];
 // 临时 Arena 缓冲区（用于依赖收集，全局变量避免栈溢出）
-// 需要足够大以支持递归解析多个文件的 AST
-// 自举时依赖收集阶段由自举生成的 C 执行，单次解析占用略高于 C 版，需 384MB 以保证 make b 通过
-var temp_arena_buffer: [byte: 384 * 1024 * 1024] = [];
+// 优化后：依赖收集阶段每个文件解析后回滚 arena，只需单文件 AST 大小
+// 从 384MB 优化到 64MB
+var temp_arena_buffer: [byte: 64 * 1024 * 1024] = [];
 // 大数组移到全局变量避免栈溢出（main_file_paths 是 64 * 4096 = 262KB）
 var main_file_paths_global: [[byte: PATH_MAX]: MAX_INPUT_FILES] = [];
 // 将 resolved_files 也移到全局变量，避免栈溢出
@@ -587,52 +588,79 @@ fn collect_module_dependencies(
     }
     processed_files[processed_count[0]] = filename;
     processed_count[0] = processed_count[0] + 1;
-    
+
+    // 保存 arena 偏移量，用于解析后回滚释放 AST 内存
+    const arena_save_offset: usize = arena_save(arena);
+
     // 读取文件并解析 AST
     const file_size: i32 = read_file_content(filename, &file_buffer[0], FILE_BUFFER_SIZE as usize);
     if file_size < 0 {
+        arena_restore(arena, arena_save_offset);
         return -1;
     }
-    
+
     var lexer: Lexer = Lexer { buffer: [], buffer_size: 0 as usize, position: 0 as usize, line: 1, column: 1, filename: null, string_mode: 0, interp_depth: 0, pending_interp_open: 0, reading_spec: 0, string_text_len: 0 };
     if lexer_init(&lexer, &file_buffer[0], file_size as usize, filename, arena) != 0 {
+        arena_restore(arena, arena_save_offset);
         return -1;
     }
-    
+
     var parser: Parser = Parser { lexer: null, current_token: null, arena: null, context: ParserContext.PARSER_CONTEXT_NORMAL };
     if parser_init(&parser, &lexer, arena) != 0 {
+        arena_restore(arena, arena_save_offset);
         return -1;
     }
-    
+
     const ast: &ASTNode = parser_parse(&parser);
     if ast == null || ast.type != ASTNodeType.AST_PROGRAM {
+        arena_restore(arena, arena_save_offset);
         return -1;
     }
-    
+
     // 提取 use 语句中的模块路径
     var modules: [&byte: MAX_INPUT_FILES] = [];
     var module_count: i32 = 0;
     if extract_use_modules(ast, &modules[0], MAX_INPUT_FILES, &module_count, project_root, uya_root, arena) != 0 {
+        arena_restore(arena, arena_save_offset);
         return -1;
     }
-    // 对于每个模块，查找文件并递归处理（与 C 编译器行为一致，保证自举比对 make b 通过）
+
+    // 将模块名复制到栈上（arena 回滚后 modules 指针会失效）
+    var module_names_stack: [[byte: 256]: MAX_INPUT_FILES] = [];
+    var mi: i32 = 0;
+    while mi < module_count {
+        if modules[mi] != null {
+            var si: usize = 0;
+            while si < 255 && modules[mi][si] != 0 {
+                module_names_stack[mi][si] = modules[mi][si];
+                si = si + 1;
+            }
+            module_names_stack[mi][si] = 0 as byte;
+        }
+        mi = mi + 1;
+    }
+
+    // 回滚 arena，释放 AST 内存（依赖收集阶段不需要保留 AST）
+    arena_restore(arena, arena_save_offset);
+
+    // 对于每个模块，查找文件并递归处理
     i = 0;
     while i < module_count {
-        if modules[i] == null {
+        if module_names_stack[i][0] == 0 {
             i = i + 1;
             continue;
         }
         // std 模块：收集 lib/std/ 目录下所有 .uya 文件（与 C 编译器一致）
-        if (strcmp(modules[i] as *byte, "std" as *byte) == 0 || strncmp(modules[i] as *byte, "std." as *byte, 4) == 0) && uya_root != null && uya_root[0] != 0 {
+        if (strcmp(&module_names_stack[i][0] as *byte, "std" as *byte) == 0 || strncmp(&module_names_stack[i][0] as *byte, "std." as *byte, 4) == 0) && uya_root != null && uya_root[0] != 0 {
             var std_dir: [byte: PATH_MAX] = [];
             var dlen: i32 = 0;
-            if strcmp(modules[i] as *byte, "std" as *byte) == 0 {
+            if strcmp(&module_names_stack[i][0] as *byte, "std" as *byte) == 0 {
                 dlen = snprintf(&std_dir[0], PATH_MAX, "%sstd/" as *byte, uya_root as *byte);
             } else {
                 // std.xxx.yyy 模块 -> lib/std/xxx/yyy/
                 // 需要将点号替换为斜杠
                 var path_suffix: [byte: PATH_MAX] = [];
-                const suffix: &byte = modules[i] as *byte + 4;  // 跳过 "std."
+                const suffix: &byte = &module_names_stack[i][0] as *byte + 4;  // 跳过 "std."
                 var k: usize = 0;
                 while suffix[k] != 0 && k < PATH_MAX - 2 {
                     if suffix[k] == 46 {  // '.'
@@ -716,7 +744,7 @@ fn collect_module_dependencies(
             continue;
         }
         // libc 模块：收集 lib/libc/ 目录下所有 .uya 文件（与 C 编译器一致）
-        if strcmp(modules[i] as *byte, "libc" as *byte) == 0 && uya_root != null && uya_root[0] != 0 {
+        if strcmp(&module_names_stack[i][0] as *byte, "libc" as *byte) == 0 && uya_root != null && uya_root[0] != 0 {
             var libc_dir: [byte: PATH_MAX] = [];
             const dlen: i32 = snprintf(&libc_dir[0], PATH_MAX, "%slibc/" as *byte, uya_root as *byte);
             if dlen > 0 && dlen < PATH_MAX && is_directory(&libc_dir[0] as &byte) != 0 {
@@ -785,7 +813,7 @@ fn collect_module_dependencies(
             continue;
         }
         // use main：收集入口文件所在目录下所有 .uya，排序后加入（与 C 编译器一致）
-        if strcmp(modules[i] as *byte, "main" as *byte) == 0 {
+        if strcmp(&module_names_stack[i][0] as *byte, "main" as *byte) == 0 {
             var proc_cnt: i32 = processed_count[0];
             if processed_count[0] > 0 && processed_files[0] != null {
                 const entry_file: &byte = processed_files[0];
@@ -868,12 +896,12 @@ fn collect_module_dependencies(
         }
         // 目录模块：将模块路径转为目录路径，若存在则收集该目录下所有 .uya（与 C 一致）
         var file_path: [byte: PATH_MAX] = [];
-        const path_len: usize = strlen(modules[i] as *byte);
+        const path_len: usize = strlen(&module_names_stack[i][0] as *byte);
         if path_len >= PATH_MAX as usize {
             i = i + 1;
             continue;
         }
-        strcpy(&file_path[0], modules[i] as *byte);
+        strcpy(&file_path[0], &module_names_stack[i][0] as *byte);
         var k: usize = 0;
         while k < path_len {
             if file_path[k] == 46 as byte { file_path[k] = 47 as byte; }
@@ -950,7 +978,7 @@ fn collect_module_dependencies(
         }
         // 单文件模块：find_module_file
         var module_file: [byte: PATH_MAX] = [];
-        if find_module_file(modules[i], project_root, uya_root, &module_file[0] as &byte, PATH_MAX) == 0 {
+        if find_module_file(&module_names_stack[i][0] as &byte, project_root, uya_root, &module_file[0] as &byte, PATH_MAX) == 0 {
             var already_added: i32 = 0;
             var j: i32 = 0;
             while j < current_size {
@@ -1079,7 +1107,7 @@ fn compile_files(
     
     // 初始化临时 Arena（用于依赖收集，使用全局缓冲区避免栈溢出）
     var temp_arena: Arena = Arena { buffer: null, size: 0 as usize, offset: 0 as usize };
-    arena_init(&temp_arena, &temp_arena_buffer[0], 384 * 1024 * 1024);
+    arena_init(&temp_arena, &temp_arena_buffer[0], 64 * 1024 * 1024);
     
     // 获取 UYA_ROOT 和编译器目录
     var uya_root_base: [byte: PATH_MAX] = [];

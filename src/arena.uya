@@ -68,3 +68,28 @@ fn arena_reset(arena: &Arena) void {
     }
     arena.offset = 0;
 }
+
+// 保存 Arena 当前偏移量
+// 参数：arena - Arena 分配器指针
+// 返回：当前偏移量
+// 用途：配合 arena_restore 实现临时内存释放
+fn arena_save(arena: &Arena) usize {
+    if arena == null {
+        return 0;
+    }
+    return arena.offset;
+}
+
+// 恢复 Arena 到指定偏移量
+// 参数：arena - Arena 分配器指针，offset - 之前保存的偏移量
+// 用途：释放从 offset 到当前偏移量之间的内存
+// 注意：确保没有指向该区域的有效指针
+fn arena_restore(arena: &Arena, offset: usize) void {
+    if arena == null {
+        return;
+    }
+    if offset > arena.size {
+        return;
+    }
+    arena.offset = offset;
+}

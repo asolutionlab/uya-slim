@@ -2150,6 +2150,8 @@ static size_t align_size(size_t size, size_t align);
 static void arena_init(struct Arena * arena, uint8_t * buffer, size_t size);
 uint8_t * arena_alloc(struct Arena * arena, size_t size);
 static void arena_reset(struct Arena * arena);
+static size_t arena_save(struct Arena * arena);
+static void arena_restore(struct Arena * arena, size_t offset);
 int32_t libc_isalpha(int32_t c);
 int32_t libc_isdigit(int32_t c);
 int32_t libc_isalnum(int32_t c);
@@ -2596,7 +2598,7 @@ static void collect_string_constants_from_decl(struct C99CodeGenerator * codegen
 extern struct FILE _stdin, _stdout, _stderr;
 const int32_t FILE_BUFFER_SIZE = (1024 * 1024);
 
-const int32_t ARENA_BUFFER_SIZE = ((384 * 1024) * 1024);
+const int32_t ARENA_BUFFER_SIZE = ((256 * 1024) * 1024);
 
 const int32_t MAX_INPUT_FILES = 64;
 
@@ -2810,11 +2812,11 @@ const int32_t C99_MAX_MONO_INSTANCES = 512;
 
 const int32_t MAX_TESTS = 1000;
 
-uint8_t arena_buffer[402653184] = {0};
+uint8_t arena_buffer[268435456] = {0};
 
 uint8_t file_buffer[1048576] = {0};
 
-uint8_t temp_arena_buffer[402653184] = {0};
+uint8_t temp_arena_buffer[67108864] = {0};
 
 uint8_t main_file_paths_global[64][4096] = {0};
 
@@ -3386,46 +3388,66 @@ static __attribute__((unused)) int32_t collect_module_dependencies(uint8_t * fil
     }
     processed_files[processed_count[0]] = filename;
     processed_count[0] = (processed_count[0] + 1);
+    const size_t arena_save_offset = arena_save(arena);
     const int32_t file_size = read_file_content((uint8_t *)filename, (&file_buffer[0]), (size_t)FILE_BUFFER_SIZE);
     if ((file_size < 0)) {
+        arena_restore(arena, arena_save_offset);
         int32_t _uya_ret = (-1);
         return _uya_ret;
     }
     struct Lexer lexer = (struct Lexer){.buffer = {0}, .buffer_size = (size_t)0, .position = (size_t)0, .line = 1, .column = 1, .filename = NULL, .has_error = 0, .string_mode = 0, .raw_string_mode = 0, .interp_depth = 0, .pending_interp_open = 0, .reading_spec = 0, .has_seen_interp_in_string = 0, .string_text_buffer = {0}, .string_text_len = 0};
     if ((lexer_init((&lexer), (&file_buffer[0]), (size_t)file_size, (uint8_t *)filename, arena) != 0)) {
+        arena_restore(arena, arena_save_offset);
         int32_t _uya_ret = (-1);
         return _uya_ret;
     }
     struct Parser parser = (struct Parser){.lexer = NULL, .current_token = NULL, .arena = NULL, .context = PARSER_CONTEXT_NORMAL, .pending_greater_token = 0};
     if ((parser_init((&parser), (&lexer), arena) != 0)) {
+        arena_restore(arena, arena_save_offset);
         int32_t _uya_ret = (-1);
         return _uya_ret;
     }
     struct ASTNode * const ast = parser_parse((&parser));
     if (((ast == NULL) || (ast->type != AST_PROGRAM))) {
+        arena_restore(arena, arena_save_offset);
         int32_t _uya_ret = (-1);
         return _uya_ret;
     }
     uint8_t * modules[64] = {0};
     int32_t module_count = 0;
     if ((extract_use_modules(ast, (&modules[0]), MAX_INPUT_FILES, (&module_count), (uint8_t *)project_root, (uint8_t *)uya_root, arena) != 0)) {
+        arena_restore(arena, arena_save_offset);
         int32_t _uya_ret = (-1);
         return _uya_ret;
     }
+    uint8_t module_names_stack[64][256] = {0};
+    int32_t mi = 0;
+    while ((mi < module_count)) {
+        if ((modules[mi] != NULL)) {
+            size_t si = 0;
+            while (((si < 255) && (modules[mi][si] != 0))) {
+                module_names_stack[mi][si] = modules[mi][si];
+                si = (si + 1);
+            }
+            module_names_stack[mi][si] = (uint8_t)0;
+        }
+        mi = (mi + 1);
+    }
+    arena_restore(arena, arena_save_offset);
     i = 0;
     while ((i < module_count)) {
-        if ((modules[i] == NULL)) {
+        if ((module_names_stack[i][0] == 0)) {
             i = (i + 1);
             continue;
         }
-        if (((((std_string_strcmp((uint8_t *)modules[i], (uint8_t *)(uint8_t *)str25) == 0) || (std_string_strncmp((uint8_t *)modules[i], (uint8_t *)(uint8_t *)str26, 4) == 0)) && (uya_root != NULL)) && (uya_root[0] != 0))) {
+        if (((((std_string_strcmp((uint8_t *)(&module_names_stack[i][0]), (uint8_t *)(uint8_t *)str25) == 0) || (std_string_strncmp((uint8_t *)(&module_names_stack[i][0]), (uint8_t *)(uint8_t *)str26, 4) == 0)) && (uya_root != NULL)) && (uya_root[0] != 0))) {
             uint8_t std_dir[4096] = {0};
             int32_t dlen = 0;
-            if ((std_string_strcmp((uint8_t *)modules[i], (uint8_t *)(uint8_t *)str25) == 0)) {
+            if ((std_string_strcmp((uint8_t *)(&module_names_stack[i][0]), (uint8_t *)(uint8_t *)str25) == 0)) {
                 dlen = libc_snprintf((char *)(&std_dir[0]), PATH_MAX, (const char *)str27, (uint8_t *)uya_root);
             } else {
                 uint8_t path_suffix[4096] = {0};
-                uint8_t * const suffix = ((uint8_t *)modules[i] + 4);
+                uint8_t * const suffix = ((uint8_t *)(&module_names_stack[i][0]) + 4);
                 size_t k = 0;
                 while (((suffix[k] != 0) && (k < (PATH_MAX - 2)))) {
                     if ((suffix[k] == 46)) {
@@ -3509,7 +3531,7 @@ static __attribute__((unused)) int32_t collect_module_dependencies(uint8_t * fil
             i = (i + 1);
             continue;
         }
-        if ((((std_string_strcmp((uint8_t *)modules[i], (uint8_t *)(uint8_t *)str29) == 0) && (uya_root != NULL)) && (uya_root[0] != 0))) {
+        if ((((std_string_strcmp((uint8_t *)(&module_names_stack[i][0]), (uint8_t *)(uint8_t *)str29) == 0) && (uya_root != NULL)) && (uya_root[0] != 0))) {
             uint8_t libc_dir[4096] = {0};
             const int32_t dlen = libc_snprintf((char *)(&libc_dir[0]), PATH_MAX, (const char *)str30, (uint8_t *)uya_root);
             if ((((dlen > 0) && (dlen < PATH_MAX)) && (is_directory((uint8_t *)(&libc_dir[0])) != 0))) {
@@ -3580,7 +3602,7 @@ static __attribute__((unused)) int32_t collect_module_dependencies(uint8_t * fil
             i = (i + 1);
             continue;
         }
-        if ((std_string_strcmp((uint8_t *)modules[i], (uint8_t *)(uint8_t *)str31) == 0)) {
+        if ((std_string_strcmp((uint8_t *)(&module_names_stack[i][0]), (uint8_t *)(uint8_t *)str31) == 0)) {
             int32_t proc_cnt = processed_count[0];
             if (((processed_count[0] > 0) && (processed_files[0] != NULL))) {
                 uint8_t * const entry_file = processed_files[0];
@@ -3665,12 +3687,12 @@ static __attribute__((unused)) int32_t collect_module_dependencies(uint8_t * fil
             continue;
         }
         uint8_t file_path[4096] = {0};
-        const size_t path_len = std_string_strlen((uint8_t *)modules[i]);
+        const size_t path_len = std_string_strlen((uint8_t *)(&module_names_stack[i][0]));
         if ((path_len >= (size_t)PATH_MAX)) {
             i = (i + 1);
             continue;
         }
-        std_string_strcpy((char *)(&file_path[0]), (uint8_t *)modules[i]);
+        std_string_strcpy((char *)(&file_path[0]), (uint8_t *)(&module_names_stack[i][0]));
         size_t k = 0;
         while ((k < path_len)) {
             if ((file_path[k] == (uint8_t)46)) {
@@ -3757,7 +3779,7 @@ static __attribute__((unused)) int32_t collect_module_dependencies(uint8_t * fil
             continue;
         }
         uint8_t module_file[4096] = {0};
-        if ((find_module_file(modules[i], (uint8_t *)project_root, (uint8_t *)uya_root, (uint8_t *)(&module_file[0]), PATH_MAX) == 0)) {
+        if ((find_module_file((uint8_t *)(&module_names_stack[i][0]), (uint8_t *)project_root, (uint8_t *)uya_root, (uint8_t *)(&module_file[0]), PATH_MAX) == 0)) {
             int32_t already_added = 0;
             int32_t j = 0;
             while ((j < current_size)) {
@@ -3892,7 +3914,7 @@ static __attribute__((unused)) int32_t compile_files(int32_t * input_file_indice
     (void)backend;
     (void)emit_line_directives;
     struct Arena temp_arena = (struct Arena){.buffer = NULL, .size = (size_t)0, .offset = (size_t)0};
-    arena_init((&temp_arena), (&temp_arena_buffer[0]), ((384 * 1024) * 1024));
+    arena_init((&temp_arena), (&temp_arena_buffer[0]), ((64 * 1024) * 1024));
     uint8_t uya_root_base[4096] = {0};
     uint8_t * const argv0 = std_runtime_get_argv(0);
     if ((argv0 == NULL)) {
@@ -4355,6 +4377,28 @@ static __attribute__((unused)) void arena_reset(struct Arena * arena) {
         return;
     }
     arena->offset = 0;
+}
+
+static __attribute__((unused)) size_t arena_save(struct Arena * arena) {
+    (void)arena;
+    if ((arena == NULL)) {
+        size_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    size_t _uya_ret = arena->offset;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) void arena_restore(struct Arena * arena, size_t offset) {
+    (void)arena;
+    (void)offset;
+    if ((arena == NULL)) {
+        return;
+    }
+    if ((offset > arena->size)) {
+        return;
+    }
+    arena->offset = offset;
 }
 
 int32_t libc_isalpha(int32_t c) {
