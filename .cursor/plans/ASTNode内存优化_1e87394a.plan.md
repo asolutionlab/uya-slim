@@ -639,3 +639,64 @@ struct ASTNode {
 3. **修改 ASTNode**：将所有字段移入 union
 4. **迁移访问代码**：`node.field` → `node.data.variant.field`
 5. **验证**：`make b` + `make tests-uya`
+
+---
+
+## 实施进度（2026-02-15）
+
+### 已完成
+
+- [x] 验证 union 支持指针类型
+- [x] 验证 union 支持混合类型
+- [x] 验证 union 支持结构体变体
+- [x] 修复 union 嵌套结构体代码生成 bug
+- [x] 设计数据结构体（约 60 个）
+
+### 数据结构体设计
+
+已设计的数据结构体（见下方列表），每个结构体对应一种 ASTNodeType：
+
+**声明类（14 个）**：
+- ASTProgramData, ASTEnumDeclData, ASTErrorDeclData, ASTInterfaceDeclData
+- ASTStructDeclData, ASTUnionDeclData, ASTMethodBlockData, ASTFnDeclData
+- ASTMacroDeclData, ASTTypeAliasData, ASTVarDeclData, ASTExternVarDeclData
+- ASTDestructureDeclData, ASTUseStmtData
+
+**表达式类（22 个）**：
+- ASTBinaryExprData, ASTUnaryExprData, ASTCallExprData, ASTMemberAccessData
+- ASTArrayAccessData, ASTSliceExprData, ASTStructInitData, ASTArrayLiteralData
+- ASTTupleLiteralData, ASTCastExprData, ASTIdentifierData, ASTNumberData
+- ASTFloatData, ASTBoolData, ASTIntLimitData, ASTStringData
+- ASTStringInterpData, ASTTryExprData, ASTCatchExprData, ASTAwaitExprData
+- ASTErrorValueData, ASTMatchExprData
+
+**语句类（10 个）**：
+- ASTIfStmtData, ASTWhileStmtData, ASTForStmtData, ASTReturnStmtData
+- ASTDeferStmtData, ASTErrdeferStmtData, ASTTestStmtData, ASTAssignData
+- ASTBlockData
+
+**类型类（7 个）**：
+- ASTTypeNamedData, ASTTypePointerData, ASTTypeArrayData, ASTTypeSliceData
+- ASTTypeTupleData, ASTTypeErrorUnionData, ASTTypeAtomicData
+
+**内置函数类（15 个）**：
+- ASTSizeofData, ASTLenData, ASTAlignofData, ASTSyscallData
+- ASTPtrFromUsizeData, ASTUsizeFromPtrData, ASTVaStartData, ASTVaEndData
+- ASTVaArgData, ASTMcEvalData, ASTMcCodeData, ASTMcAstData
+- ASTMcErrorData, ASTMcInterpData, ASTMcTypeData
+
+### 待实施
+
+- [ ] 在 ast.uya 中添加数据结构体定义
+- [ ] 定义 ASTNodeData union
+- [ ] 修改 ASTNode 结构
+- [ ] 迁移 parser.uya 节点创建代码
+- [ ] 迁移 checker.uya 节点访问代码
+- [ ] 迁移 codegen/*.uya 节点访问代码
+- [ ] 验证自举和测试
+
+### 注意事项
+
+1. **循环依赖**：数据结构体依赖 ASTNode，不能放在单独文件
+2. **编译顺序**：需要在 ast.uya 中定义数据结构体，然后定义 union，最后更新 ASTNode
+3. **渐进迁移**：可以先保留旧的 flat struct，逐步迁移到 union
