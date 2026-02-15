@@ -398,12 +398,13 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const ret_union_c: &byte = c99_type_to_c(codegen, ret_type);
         fprintf(codegen.output as *void, "({ %s _uya_try_tmp = " as *byte, operand_union_c as *byte);
         gen_expr(codegen, operand);
-        if ret_is_void != 0 {
+        // 错误传播时需转换为函数返回类型
+        if operand_is_void != 0 {
+            // 操作数是 !void，没有值可解包
             fprintf(codegen.output as *void, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id }; })" as *byte, ret_union_c as *byte);
-        } else if operand_is_void != 0 {
-            fprintf(codegen.output as *void, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id, .value = 0 }; })" as *byte, ret_union_c as *byte);
         } else {
-            fprintf(codegen.output as *void, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id, .value = 0 }; _uya_try_tmp.value; })" as *byte, ret_union_c as *byte);
+            // 操作数有值，需要解包。即使函数返回 !void，try 表达式本身也需要返回解包的值
+            fprintf(codegen.output as *void, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id }; _uya_try_tmp.value; })" as *byte, ret_union_c as *byte);
         }
     } else if expr.type == ASTNodeType.AST_AWAIT_EXPR {
         // @await 表达式 - 暂时直接生成操作数代码
