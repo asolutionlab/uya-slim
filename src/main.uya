@@ -23,7 +23,7 @@ enum BackendType {
 const FILE_BUFFER_SIZE: i32 = 1024 * 1024;
 
 // Arena 缓冲区大小（优化后：temp_arena 回滚，主 arena 需求降低）
-// 从 384MB 优化到 256MB
+// 从 384MB 优化到 256MB（再低会导致自举失败）
 const ARENA_BUFFER_SIZE: i32 = 256 * 1024 * 1024;  // 256MB
 
 // 最大输入文件数
