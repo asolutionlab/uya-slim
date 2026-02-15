@@ -1414,12 +1414,15 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     }
     
     // 第十一步：生成 main 函数（uya_main）
+    // 如果没有 main 函数但有 test 语句，生成 uya_main 调用测试运行器
+    var has_main: i32 = 0;  // 跟踪是否找到 main 函数
     i = 0;
     while i < decl_count {
         const decl: &ASTNode = ast.program_decls[i];
         if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
             const func_name: &byte = decl.fn_decl_name;
             if func_name != null && strcmp(func_name as *byte, "main" as *byte) == 0 && decl.fn_decl_body != null {
+                has_main = 1;  // 标记找到 main 函数
                 const is_export: i32 = decl.fn_decl_is_export;
                 const is_extern_keyword: i32 = decl.fn_decl_is_extern;  // extern 关键字（含 export extern fn main）
                 var is_c_main: i32 = 0;
@@ -1488,6 +1491,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
         }
         i = i + 1;
+    }
+    
+    // 如果没有 main 函数但有 test 语句，生成 uya_main 调用测试运行器
+    if has_main == 0 && test_count > 0 {
+        fputs("int32_t uya_main(void) {\n" as *byte, codegen.output as *void);
+        fputs("    uya_run_tests();\n" as *byte, codegen.output as *void);
+        fputs("    return 0;\n" as *byte, codegen.output as *void);
+        fputs("}\n" as *byte, codegen.output as *void);
     }
     
     return 0;

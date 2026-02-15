@@ -1,6 +1,8 @@
 // 测试字符串字面量支持
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 test "test_string_literal" {
     // 字符串字面量类型为 *byte（FFI 指针类型）
@@ -8,13 +10,13 @@ test "test_string_literal" {
     const s2: *byte = "world";
     
     // 验证字符串字面量可以创建
-    testing.assert_eq(s1 != null, true);
-    testing.assert_eq(s2 != null, true);
+    check_eq_i32(s1 != null, true);
+    check_eq_i32(s2 != null, true);
 }
 
 test "test_string_literal_array" {
     // 字符串作为数组
     const arr: [byte: 6] = "hello";
-    testing.assert_eq(arr[0], 104);  // 'h'
-    testing.assert_eq(arr[4], 111);  // 'o'
+    check_eq_i32(arr[0], 104);  // 'h'
+    check_eq_i32(arr[4], 111);  // 'o'
 }

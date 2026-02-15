@@ -1,9 +1,11 @@
 // 调试逻辑与运算符
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 test "test_logical_and_op" {
     const a: i32 = 10;
     const b: i32 = 20;
-    testing.assert_eq(a == 10 && b == 20, true);
+    check_eq_i32(a == 10 && b == 20, true);
 }

@@ -1,9 +1,11 @@
 // 测试最小字符串插值
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 test "test_string_interp_minimal" {
     const n: i32 = 42;
     const msg: [i8: 32] = "${n}";
-    testing.assert_eq(@size_of(msg) > 0, true);
+    check_eq_i32(@size_of(msg) > 0, true);
 }

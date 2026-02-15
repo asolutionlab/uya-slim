@@ -408,10 +408,16 @@ static int detect_main_function(const char *filename) {
         return 0;
     }
     
-    // 简单的字符串搜索（查找 "fn main("）
+    // 简单的字符串搜索（查找 "fn main(" 或 "test "）
+    // test 语句也会生成可执行代码（测试运行器）
     const char *p = file_buffer;
     while (*p != '\0') {
         if (strncmp(p, "fn main(", 8) == 0) {
+            return 1;
+        }
+        // 检测顶层 test 语句（前面是换行或文件开头，后面是引号）
+        if ((p == file_buffer || *(p-1) == '\n') && 
+            strncmp(p, "test \"", 6) == 0) {
             return 1;
         }
         p++;

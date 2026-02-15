@@ -1,6 +1,8 @@
 // 测试字符串字面量转义字符支持
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 test "test_escape_sequences" {
     // 测试各种转义序列 - 验证编译器正确处理
@@ -10,15 +12,15 @@ test "test_escape_sequences" {
     const quote: [byte: 12] = "quote\"test\n";
     
     // 验证转义字符位置
-    testing.assert_eq(newline[5] == 10, true);  // \n = 10
-    testing.assert_eq(tab[3] == 9, true);       // \t = 9
-    testing.assert_eq(backslash[9] == 92, true); // \\ = 92
-    testing.assert_eq(quote[5] == 34, true);    // \" = 34
+    check_eq_i32(newline[5] == 10, true);  // \n = 10
+    check_eq_i32(tab[3] == 9, true);       // \t = 9
+    check_eq_i32(backslash[9] == 92, true); // \\ = 92
+    check_eq_i32(quote[5] == 34, true);    // \" = 34
 }
 
 test "test_combined_escapes" {
     const combined: [byte: 18] = "line1\nline2\tend\n";
-    testing.assert_eq(combined[5] == 10, true);  // \n
-    testing.assert_eq(combined[11] == 9, true);  // \t
-    testing.assert_eq(combined[15] == 10, true); // \n
+    check_eq_i32(combined[5] == 10, true);  // \n
+    check_eq_i32(combined[11] == 9, true);  // \t
+    check_eq_i32(combined[15] == 10, true); // \n
 }

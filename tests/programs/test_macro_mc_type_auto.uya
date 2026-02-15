@@ -1,7 +1,9 @@
 // 测试 @mc_type 自动生成 TypeInfo 结构体
 // 不需要手动定义 TypeInfo，编译器会自动生成
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 // 宏：获取类型信息
 mc get_type_info(T: type) expr {
@@ -22,28 +24,28 @@ mc is_int(T: type) expr {
 
 test "test_i32_type" {
     const i32_info: TypeInfo = get_type_info(i32);
-    testing.assert_eq(i32_info.size, 4);
-    testing.assert_eq(i32_info.is_integer, true);
+    check_eq_i32(i32_info.size, 4);
+    check_eq_i32(i32_info.is_integer, true);
 }
 
 test "test_sizes" {
-    testing.assert_eq(get_size(i64), 8);
-    testing.assert_eq(get_size(i8), 1);
+    check_eq_i32(get_size(i64), 8);
+    check_eq_i32(get_size(i8), 1);
 }
 
 test "test_is_int" {
-    testing.assert_eq(is_int(i32), true);
+    check_eq_i32(is_int(i32), true);
 }
 
 test "test_f64_type" {
     const f64_info: TypeInfo = get_type_info(f64);
-    testing.assert_eq(f64_info.size, 8);
-    testing.assert_eq(f64_info.is_float, true);
-    testing.assert_eq(f64_info.is_integer, false);
+    check_eq_i32(f64_info.size, 8);
+    check_eq_i32(f64_info.is_float, true);
+    check_eq_i32(f64_info.is_integer, false);
 }
 
 test "test_bool_type" {
     const bool_info: TypeInfo = get_type_info(bool);
-    testing.assert_eq(bool_info.size, 1);
-    testing.assert_eq(bool_info.is_bool, true);
+    check_eq_i32(bool_info.size, 1);
+    check_eq_i32(bool_info.is_bool, true);
 }

@@ -4,25 +4,27 @@
 // @src_col: 返回当前列号
 // @func_name: 返回当前函数名
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 test "test_src_line_col" {
     const line: i32 = @src_line;
     const col: i32 = @src_col;
-    testing.assert_eq(line > 0, true);
-    testing.assert_eq(col > 0, true);
+    check_eq_i32(line > 0, true);
+    check_eq_i32(col > 0, true);
 }
 
 test "test_src_name_path" {
     const name: *byte = @src_name;
     const path: *byte = @src_path;
-    testing.assert_eq(name != null, true);
-    testing.assert_eq(path != null, true);
+    check_eq_i32(name != null, true);
+    check_eq_i32(path != null, true);
 }
 
 test "test_func_name" {
     const func: *byte = @func_name;
-    testing.assert_eq(func != null, true);
+    check_eq_i32(func != null, true);
 }
 
 fn helper_src_location() i32 {
@@ -32,5 +34,5 @@ fn helper_src_location() i32 {
 }
 
 test "test_line_increment" {
-    testing.assert_eq(helper_src_location(), 1);
+    check_eq_i32(helper_src_location(), 1);
 }

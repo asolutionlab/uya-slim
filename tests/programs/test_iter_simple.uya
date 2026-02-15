@@ -1,6 +1,8 @@
 // 简单的迭代器测试
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 error IterEnd;
 
@@ -24,7 +26,7 @@ SimpleIter {
 
 test "test_iterator_value" {
     var iter: SimpleIter = SimpleIter{ current: 0, end_val: 3 };
-    testing.assert_eq(iter.value(), 0);
+    check_eq_i32(iter.value(), 0);
 }
 
 test "test_iterator_next" {
@@ -33,10 +35,10 @@ test "test_iterator_next" {
     const r1: void = iter.next() catch {
         return;
     };
-    testing.assert_eq(iter.value(), 1);
+    check_eq_i32(iter.value(), 1);
     
     const r2: void = iter.next() catch {
         return;
     };
-    testing.assert_eq(iter.value(), 2);
+    check_eq_i32(iter.value(), 2);
 }

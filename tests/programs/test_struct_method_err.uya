@@ -1,6 +1,8 @@
 // 测试结构体方法返回错误联合类型
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 error TestError;
 
@@ -24,6 +26,6 @@ test "test_struct_method_error" {
     const v1: i32 = c.try_inc() catch {
         return;
     };
-    testing.assert_eq(v1, 6);
-    testing.assert_eq(c.value, 6);
+    check_eq_i32(v1, 6);
+    check_eq_i32(c.value, 6);
 }

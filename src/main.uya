@@ -278,6 +278,20 @@ fn detect_main_function(filename: &byte) i32 {
         }
         i = i + 1;
     }
+    // 检测 "test \"" (返回 1，表示有测试代码)
+    i = 0;
+    while i < file_size as usize {
+        if i + 6 <= file_size as usize {
+            // 检测顶层 test 语句（前面是换行或文件开头）
+            if strncmp(&file_buffer[i], "test \"" as *byte, 6) == 0 {
+                // 检查前面是否是文件开头或换行
+                if i == 0 || file_buffer[i - 1] == 10 {  // 10 = '\n'
+                    return 1;
+                }
+            }
+        }
+        i = i + 1;
+    }
     return 0;
 }
 

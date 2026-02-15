@@ -1,6 +1,8 @@
 // 相同错误名在任意位置得到相同 error_id
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 error SameName;
 
@@ -14,7 +16,7 @@ test "test_same_error_id" {
         if (e == error.SameName) { return 3; }
         0;
     };
-    testing.assert_eq(a, 1);
-    testing.assert_eq(b, 2);
-    testing.assert_eq(c, 3);
+    check_eq_i32(a, 1);
+    check_eq_i32(b, 2);
+    check_eq_i32(c, 3);
 }

@@ -1,6 +1,8 @@
 // 测试 @mc_get_env 编译时环境变量读取
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 // 宏：检查环境变量是否存在（非空）
 mc check_env_exists(name: expr) expr {
@@ -10,5 +12,5 @@ mc check_env_exists(name: expr) expr {
 
 test "test_mc_get_env" {
     const exists: i32 = check_env_exists("PWD");
-    testing.assert_eq(exists, 1);
+    check_eq_i32(exists, 1);
 }

@@ -1,14 +1,16 @@
 // 一元表达式测试
 // 测试一元运算符（!, -）
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 test "test_unary_minus" {
     const x: i32 = 10;
-    testing.assert_eq(-x, -10);
+    check_eq_i32(-x, -10);
 }
 
 test "test_logical_not" {
-    testing.assert_eq(!true, false);
-    testing.assert_eq(!false, true);
+    check_eq_i32(!true, false);
+    check_eq_i32(!false, true);
 }

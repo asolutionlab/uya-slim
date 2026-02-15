@@ -1,6 +1,8 @@
 // 测试 for 循环的迭代器支持
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 error IterEnd;
 
@@ -48,7 +50,7 @@ test "test_manual_iteration" {
         sum = sum + v;
     }
     
-    testing.assert_eq(sum, 10);  // 0+1+2+3+4 = 10
+    check_eq_i32(sum, 10);  // 0+1+2+3+4 = 10
 }
 
 test "test_for_loop_iteration" {
@@ -59,5 +61,5 @@ test "test_for_loop_iteration" {
         sum = sum + v;
     }
     
-    testing.assert_eq(sum, 10);
+    check_eq_i32(sum, 10);
 }

@@ -1,6 +1,8 @@
 // 测试 try 除法
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 error DivisionByZero;
 
@@ -10,5 +12,5 @@ fn divide(a: i32, b: i32) !i32 {
 
 test "test_try_divide" {
     const x: i32 = try divide(10, 2);
-    testing.assert_eq(x, 5);
+    check_eq_i32(x, 5);
 }

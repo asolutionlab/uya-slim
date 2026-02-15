@@ -1,6 +1,8 @@
 // 错误名全局唯一：多处函数引用同一 error，行为一致
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 error GlobalErr;
 
@@ -15,7 +17,7 @@ test "test_error_global" {
     const x: i32 = fail() catch { 1; };
     const y: i32 = check(1) catch { 2; };
     const z: i32 = check(0) catch { 0; };
-    testing.assert_eq(x, 1);
-    testing.assert_eq(y, 2);
-    testing.assert_eq(z, 0);
+    check_eq_i32(x, 1);
+    check_eq_i32(y, 2);
+    check_eq_i32(z, 0);
 }

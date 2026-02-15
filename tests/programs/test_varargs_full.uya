@@ -1,6 +1,8 @@
 // 可变参数与 @params 全面测试
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 fn add_two(a: i32, b: i32) i32 {
     const p: (i32, i32) = @params;
@@ -21,17 +23,17 @@ fn sum_three(a: i32, b: i32, c: i32) i32 {
 }
 
 test "test_add_two" {
-    testing.assert_eq(add_two(10, 20), 30);
+    check_eq_i32(add_two(10, 20), 30);
 }
 
 test "test_mul_two" {
-    testing.assert_eq(mul_two(5, 6), 30);
+    check_eq_i32(mul_two(5, 6), 30);
 }
 
 test "test_identity_one" {
-    testing.assert_eq(identity_one(42), 42);
+    check_eq_i32(identity_one(42), 42);
 }
 
 test "test_sum_three" {
-    testing.assert_eq(sum_three(1, 2, 3), 6);
+    check_eq_i32(sum_three(1, 2, 3), 6);
 }

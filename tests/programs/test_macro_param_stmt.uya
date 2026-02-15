@@ -1,7 +1,9 @@
 // 测试宏 stmt 参数类型
 // stmt 参数使用块语法传递
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 // 测试 1: 简单 stmt 参数 - 执行传入的语句
 mc execute_stmt(s: stmt) stmt {
@@ -38,29 +40,29 @@ mc conditional_stmt(cond: expr, s: stmt) stmt {
 test "test_basic_stmt" {
     var x: i32 = 0;
     execute_stmt({ x = 42; });
-    testing.assert_eq(x, 42);
+    check_eq_i32(x, 42);
 }
 
 test "test_stmt_then_assign" {
     var y: i32 = 0;
     var result: i32 = 0;
     stmt_then_assign({ y = 10; }, result, y + 5);
-    testing.assert_eq(result, 15);
+    check_eq_i32(result, 15);
 }
 
 test "test_two_stmts" {
     var a: i32 = 0;
     var b: i32 = 0;
     execute_two_stmts({ a = 100; }, { b = 200; });
-    testing.assert_eq(a, 100);
-    testing.assert_eq(b, 200);
+    check_eq_i32(a, 100);
+    check_eq_i32(b, 200);
 }
 
 test "test_conditional_stmt" {
     var z: i32 = 0;
     conditional_stmt(1 == 1, { z = 999; });
-    testing.assert_eq(z, 999);
+    check_eq_i32(z, 999);
     
     conditional_stmt(1 == 0, { z = 0; });
-    testing.assert_eq(z, 999);
+    check_eq_i32(z, 999);
 }

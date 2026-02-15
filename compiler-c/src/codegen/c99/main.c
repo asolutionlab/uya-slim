@@ -1096,12 +1096,15 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
     // - export extern fn main(argc, argv) → 生成裸名 main（C 入口）
     // - export fn main() → 生成 main_main（应用入口，被 C 入口调用）
     // - fn main() → 生成 uya_main（旧架构，向后兼容）
+    // - 只有 test 语句没有 main → 生成 uya_main 调用 uya_run_tests()
     // 查找 main 函数并生成
+    int has_main = 0;  // 跟踪是否找到 main 函数
     for (int i = 0; i < decl_count; i++) {
         ASTNode *decl = decls[i];
         if (!decl || decl->type != AST_FN_DECL) continue;
         const char *func_name = decl->data.fn_decl.name;
         if (func_name && strcmp(func_name, "main") == 0 && decl->data.fn_decl.body) {
+            has_main = 1;  // 标记找到 main 函数
             int is_export = decl->data.fn_decl.is_export;
             int is_extern = decl->data.fn_decl.is_extern;
             int is_c_main = (is_export && is_extern) ? 1 : 0;  // C 入口：export extern fn main
@@ -1160,7 +1163,13 @@ int c99_codegen_generate(C99CodeGenerator *codegen, ASTNode *ast, const char *ou
         }
     }
     
-    // 如果没有 main 函数，则不生成 uya_main（由测试时的 bridge.c 提供 main() 并调用 uya_main()）
+    // 如果没有 main 函数但有 test 语句，生成 uya_main 调用测试运行器
+    if (!has_main && test_count > 0) {
+        fprintf(codegen->output, "int32_t uya_main(void) {\n");
+        fprintf(codegen->output, "    uya_run_tests();\n");
+        fprintf(codegen->output, "    return 0;\n");
+        fprintf(codegen->output, "}\n");
+    }
     
     return 0;
 }

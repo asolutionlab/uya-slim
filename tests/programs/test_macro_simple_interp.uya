@@ -1,6 +1,8 @@
 // 测试宏内简单插值
 
-use std.testing;
+use std.testing.check_eq_i32;
+use std.testing.check_eq_bool;
+use std.testing.check_true;
 
 mc test_add(a: expr, b: expr) expr {
     @mc_code(@mc_ast(${a} + ${b}));
@@ -8,5 +10,5 @@ mc test_add(a: expr, b: expr) expr {
 
 test "test_macro_interp" {
     const result: i32 = test_add(3, 5);
-    testing.assert_eq(result, 8);
+    check_eq_i32(result, 8);
 }
