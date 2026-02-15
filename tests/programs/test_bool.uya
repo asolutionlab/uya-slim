@@ -45,7 +45,7 @@ fn test_bool_or() !void {
 // 主函数
 // ============================================================
 
-export fn main() i32 {
+fn main() i32 {
     test_suite_begin("Boolean Tests");
     
     run_test("bool_true", test_bool_true);
