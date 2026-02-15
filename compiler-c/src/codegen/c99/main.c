@@ -325,6 +325,12 @@ static void collect_slice_types_from_node(C99CodeGenerator *codegen, ASTNode *no
                 collect_slice_types_from_node(codegen, node->data.sizeof_expr.target);
             }
             break;
+        case AST_TEST_STMT:
+            // 测试语句体中可能使用切片类型
+            if (node->data.test_stmt.body) {
+                collect_slice_types_from_node(codegen, node->data.test_stmt.body);
+            }
+            break;
         default:
             break;
     }

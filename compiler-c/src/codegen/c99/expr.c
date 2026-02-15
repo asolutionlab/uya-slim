@@ -1447,13 +1447,12 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
             fprintf(codegen->output, "({ %s _uya_try_tmp = ", operand_union_c);
             gen_expr(codegen, operand);
             /* 错误传播时需转换为函数返回类型 */
-            if (ret_is_void) {
+            if (operand_is_void) {
+                /* 操作数是 !void，没有值可解包 */
                 fprintf(codegen->output, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id }; })", ret_union_c);
-            } else if (operand_is_void) {
-                /* 操作数是 !void，返回类型非 !void，需要填充默认值 */
-                fprintf(codegen->output, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id, .value = 0 }; })", ret_union_c);
             } else {
-                fprintf(codegen->output, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id, .value = 0 }; _uya_try_tmp.value; })", ret_union_c);
+                /* 操作数有值，需要解包。即使函数返回 !void，try 表达式本身也需要返回解包的值 */
+                fprintf(codegen->output, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id }; _uya_try_tmp.value; })", ret_union_c);
             }
             break;
         }
