@@ -357,6 +357,7 @@ struct ASTNode {
             struct ASTNode *object;          // 对象表达式
             const char *field_name;   // 字段名称
             int is_module_access;     // 1 = 模块限定访问（module.item），由 checker 设置
+            const char *module_name;  // 模块名（如 "std.testing"，由 checker 设置）
         } member_access;
         
         // 数组访问（arr[index]）

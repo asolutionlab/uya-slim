@@ -1727,10 +1727,11 @@ static Type checker_infer_type(TypeChecker *checker, ASTNode *expr) {
                         unsigned int sl = (ii + i2) & (IMPORT_TABLE_SIZE - 1);
                         ImportedItem *imp = checker->import_table.slots[sl];
                         if (imp == NULL) break;
-                        if (imp->item_type == -1 && strcmp(imp->local_name, obj_name) == 0) {
-                            // 模块限定调用：标记并查找函数返回类型
-                            callee->data.member_access.is_module_access = 1;
-                            const char *func_name = callee->data.member_access.field_name;
+                if (imp->item_type == -1 && strcmp(imp->local_name, obj_name) == 0) {
+                    // 模块限定调用：标记并查找函数返回类型
+                    callee->data.member_access.is_module_access = 1;
+                    callee->data.member_access.module_name = imp->module_name;  // 保存模块名
+                    const char *func_name = callee->data.member_access.field_name;
                             if (func_name != NULL) {
                                 // 查找函数声明获取返回类型
                                 ASTNode *fn = find_fn_decl_from_program(checker->program_node, func_name);
@@ -2497,7 +2498,6 @@ static int register_mono_instance(TypeChecker *checker, const char *generic_name
     // 跳过包含未解析泛型参数的实例
     for (int i = 0; i < type_arg_count; i++) {
         if (has_unresolved_type_param(checker, type_arg_nodes[i])) {
-            fprintf(stderr, "[DEBUG] Skipping mono instance: %s (unresolved type param in arg %d)\n", generic_name, i);
             return 0;  // 跳过，不注册（不是错误）
         }
     }
@@ -2542,10 +2542,6 @@ static int register_mono_instance(TypeChecker *checker, const char *generic_name
         checker->mono_instances[idx].type_args[i] = type_from_ast(checker, type_arg_nodes[i]);
         checker->mono_instances[idx].type_arg_nodes[i] = type_arg_nodes[i];
     }
-    fprintf(stderr, "[DEBUG] Registered mono instance #%d: %s<%s> (is_fn=%d) type_arg_nodes[0]=%p\n",
-        idx, generic_name,
-        type_arg_count > 0 && type_arg_nodes[0] && type_arg_nodes[0]->type == AST_TYPE_NAMED && type_arg_nodes[0]->data.type_named.name ? type_arg_nodes[0]->data.type_named.name : "?",
-        is_function, (void*)(type_arg_count > 0 ? type_arg_nodes[0] : NULL));
     
     // 注册传递性依赖：泛型函数的返回类型和参数类型中引用的泛型结构体
     if (is_function && checker->program_node != NULL) {
@@ -3698,6 +3694,7 @@ static int checker_check_fn_decl(TypeChecker *checker, ASTNode *node) {
     if (checker == NULL || node == NULL || node->type != AST_FN_DECL) {
         return 0;
     }
+    
     /* drop 只能在结构体内部或方法块中定义，禁止顶层 fn drop(self: T) void */
     if (node->data.fn_decl.name && strcmp(node->data.fn_decl.name, "drop") == 0 &&
         node->data.fn_decl.param_count == 1 && node->data.fn_decl.params && node->data.fn_decl.params[0]) {
@@ -3976,8 +3973,54 @@ static Type checker_check_call_expr(TypeChecker *checker, ASTNode *node) {
         return result;
     }
     
+    // 处理模块限定调用（module.func(args)）
     if (callee->type == AST_MEMBER_ACCESS) {
         ASTNode *object = callee->data.member_access.object;
+        const char *field_name = callee->data.member_access.field_name;
+        
+        // 检查是否是模块限定调用
+        if (object->type == AST_IDENTIFIER && object->data.identifier.name != NULL) {
+            const char *obj_name = object->data.identifier.name;
+            unsigned int ih = hash_string(obj_name);
+            unsigned int ii = ih & (IMPORT_TABLE_SIZE - 1);
+            for (int i2 = 0; i2 < IMPORT_TABLE_SIZE; i2++) {
+                unsigned int sl = (ii + i2) & (IMPORT_TABLE_SIZE - 1);
+                ImportedItem *imp = checker->import_table.slots[sl];
+                if (imp == NULL) break;
+                if (imp->item_type == -1 && strcmp(imp->local_name, obj_name) == 0) {
+                    // 模块限定调用：查找模块中的函数
+                    callee->data.member_access.is_module_access = 1;
+                    callee->data.member_access.module_name = imp->module_name;  // 保存模块名
+                    
+                    // 在模块导出表中查找函数
+                    const char *module_name = imp->module_name;
+                    unsigned int mh = hash_string(module_name);
+                    unsigned int mi = mh & (MODULE_TABLE_SIZE - 1);
+                    for (int i3 = 0; i3 < MODULE_TABLE_SIZE; i3++) {
+                        unsigned int ml = (mi + i3) & (MODULE_TABLE_SIZE - 1);
+                        ModuleInfo *mod = checker->module_table.slots[ml];
+                        if (mod == NULL) break;
+                        if (strcmp(mod->module_name, module_name) == 0) {
+                            // 在模块导出项中查找函数
+                            for (int ei = 0; ei < mod->export_count; ei++) {
+                                if (mod->exports[ei].name != NULL && 
+                                    strcmp(mod->exports[ei].name, field_name) == 0) {
+                                    // 找到函数，从声明节点获取返回类型
+                                    ASTNode *fn_decl = mod->exports[ei].decl_node;
+                                    if (fn_decl != NULL && fn_decl->type == AST_FN_DECL) {
+                                        result = type_from_ast(checker, fn_decl->data.fn_decl.return_type);
+                                    }
+                                    return result;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        
         Type object_type = checker_infer_type(checker, object);
         const char *method_name = callee->data.member_access.field_name;
         if (object->type == AST_IDENTIFIER && object->data.identifier.name != NULL && checker->program_node != NULL) {

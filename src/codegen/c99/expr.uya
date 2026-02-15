@@ -792,10 +792,39 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             return;
         }
         
-        // 模块限定访问（module.item）：直接输出项名
+        // 模块限定访问（module.item）：输出模块前缀项名
         if expr.member_access_is_module_access != 0 {
-            const safe_name: &byte = get_safe_c_identifier(codegen, field_name);
-            fprintf(codegen.output as *void, "%s" as *byte, safe_name as *byte);
+            const module_name: &byte = expr.member_access_module_name;
+            if module_name != null && field_name != null {
+                // 生成模块前缀名称（module_name.item_name -> module_name_item_name）
+                var prefixed_name: [i8: 256] = [];
+                var pi: i32 = 0;
+                var p: &i8 = module_name as &i8;
+                while p[0] != 0 && pi < 200 {
+                    if p[0] == 46 {  // '.'
+                        prefixed_name[pi] = 95;  // '_'
+                    } else {
+                        prefixed_name[pi] = p[0];
+                    }
+                    pi = pi + 1;
+                    p = p + 1;
+                }
+                prefixed_name[pi] = 95;  // '_'
+                pi = pi + 1;
+                p = field_name as &i8;
+                while p[0] != 0 && pi < 250 {
+                    prefixed_name[pi] = p[0];
+                    pi = pi + 1;
+                    p = p + 1;
+                }
+                prefixed_name[pi] = 0;
+                
+                const safe_name: &byte = get_safe_c_identifier(codegen, &prefixed_name[0]);
+                fprintf(codegen.output as *void, "%s" as *byte, safe_name as *byte);
+            } else {
+                const safe_name: &byte = get_safe_c_identifier(codegen, field_name);
+                fprintf(codegen.output as *void, "%s" as *byte, safe_name as *byte);
+            }
             return;
         }
         
@@ -1745,11 +1774,41 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             arg_idx = arg_idx + 1;
         }
         var did_interface_call: i32 = 0;
-        // 模块限定调用（module.func(args)）：直接生成 func(args)，参数转换与直接调用一致
+        // 模块限定调用（module.func(args)）：生成 module_func(args)
         if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS && callee.member_access_is_module_access != 0 {
+            const module_name: &byte = callee.member_access_module_name;
             const mod_callee: &byte = callee.member_access_field_name;
-            const func_name: &byte = get_safe_c_identifier(codegen, mod_callee);
-            fprintf(codegen.output as *void, "%s(" as *byte, func_name as *byte);
+            
+            // 生成模块前缀函数名
+            if module_name != null && mod_callee != null {
+                var prefixed_name: [i8: 256] = [];
+                var pi: i32 = 0;
+                var p: &i8 = module_name as &i8;
+                while p[0] != 0 && pi < 200 {
+                    if p[0] == 46 {  // '.'
+                        prefixed_name[pi] = 95;  // '_'
+                    } else {
+                        prefixed_name[pi] = p[0];
+                    }
+                    pi = pi + 1;
+                    p = p + 1;
+                }
+                prefixed_name[pi] = 95;  // '_'
+                pi = pi + 1;
+                p = mod_callee as &i8;
+                while p[0] != 0 && pi < 250 {
+                    prefixed_name[pi] = p[0];
+                    pi = pi + 1;
+                    p = p + 1;
+                }
+                prefixed_name[pi] = 0;
+                
+                const func_name: &byte = get_safe_c_identifier(codegen, &prefixed_name[0]);
+                fprintf(codegen.output as *void, "%s(" as *byte, func_name as *byte);
+            } else {
+                const func_name: &byte = get_safe_c_identifier(codegen, mod_callee);
+                fprintf(codegen.output as *void, "%s(" as *byte, func_name as *byte);
+            }
             var ai: i32 = 0;
             while ai < arg_count {
                 if ai > 0 {

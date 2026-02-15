@@ -3016,6 +3016,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
                     if imp.item_type == (0 - 1) && str_equals(imp.local_name, obj_name) != 0 {
                         // 模块限定调用
                         callee.member_access_is_module_access = 1;
+                        callee.member_access_module_name = imp.module_name;  // 保存模块名
                         const func_name: &byte = callee.member_access_field_name;
                         if func_name != null {
                             const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, func_name);
@@ -3155,6 +3156,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
                             if imp.item_type == (0 - 1) && str_equals(imp.local_name, enum_name) != 0 {
                                 // 找到模块导入！标记为模块限定访问
                                 expr.member_access_is_module_access = 1;
+                                expr.member_access_module_name = imp.module_name;  // 保存模块名
                                 result.kind = TypeKind.TYPE_VOID;
                                 return result;
                             }
@@ -4316,6 +4318,59 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
     }
     
     const callee: &ASTNode = node.call_expr_callee;
+    
+    // 处理模块限定调用（module.func(args)）
+    if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS {
+        const object: &ASTNode = callee.member_access_object;
+        const field_name: &byte = callee.member_access_field_name;
+        
+        // 检查是否是模块限定调用
+        if object != null && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null {
+            const obj_name: &byte = object.identifier_name;
+            var ih: u32 = hash_string(obj_name);
+            var ii: i32 = (ih as i32) & (IMPORT_TABLE_SIZE - 1);
+            var i2: i32 = 0;
+            while i2 < IMPORT_TABLE_SIZE {
+                const sl: i32 = (ii + i2) & (IMPORT_TABLE_SIZE - 1);
+                const imp: &ImportedItem = checker.import_table.slots[sl];
+                if imp == null { break; }
+                if imp.item_type == (0 - 1) && str_equals(imp.local_name, obj_name) != 0 {
+                    // 模块限定调用
+                    callee.member_access_is_module_access = 1;
+                    callee.member_access_module_name = imp.module_name;  // 保存模块名
+                    // 在模块导出表中查找函数
+                    const module_name: &byte = imp.module_name;
+                    var mh: u32 = hash_string(module_name);
+                    var mi: i32 = (mh as i32) & (MODULE_TABLE_SIZE - 1);
+                    var i3: i32 = 0;
+                    while i3 < MODULE_TABLE_SIZE {
+                        const ml: i32 = (mi + i3) & (MODULE_TABLE_SIZE - 1);
+                        const mod: &ModuleInfo = checker.module_table.slots[ml];
+                        if mod == null { break; }
+                        if str_equals(mod.module_name, module_name) != 0 {
+                            // 在模块导出项中查找函数
+                            var ei: i32 = 0;
+                            while ei < mod.export_count {
+                                if mod.exports[ei].name != null && str_equals(mod.exports[ei].name, field_name) != 0 {
+                                    // 找到函数，从声明节点获取返回类型
+                                    const fn_decl: &ASTNode = mod.exports[ei].decl_node;
+                                    if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL {
+                                        return type_from_ast(checker, fn_decl.fn_decl_return_type);
+                                    }
+                                }
+                                ei = ei + 1;
+                            }
+                            break;
+                        }
+                        i3 = i3 + 1;
+                    }
+                    break;
+                }
+                i2 = i2 + 1;
+            }
+        }
+    }
+    
     // 联合体变体构造、接口方法调用或结构体方法调用：callee 为 obj.method 或 UnionName.variant
     if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS {
         const object: &ASTNode = callee.member_access_object;
@@ -8324,6 +8379,7 @@ fn deep_copy_ast_with_params(node: &ASTNode, ctx: &MacroExpandContext, filename:
         copy.member_access_object = deep_copy_ast_with_params(node.member_access_object, ctx, filename);
         copy.member_access_field_name = node.member_access_field_name;
         copy.member_access_is_module_access = node.member_access_is_module_access;
+        copy.member_access_module_name = node.member_access_module_name;
     } else if node.type == ASTNodeType.AST_ARRAY_ACCESS {
         copy.array_access_array = deep_copy_ast_with_params(node.array_access_array, ctx, filename);
         copy.array_access_index = deep_copy_ast_with_params(node.array_access_index, ctx, filename);

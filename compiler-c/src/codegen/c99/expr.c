@@ -602,10 +602,32 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                 break;
             }
             
-            // 模块限定访问（module.item）：直接输出项名
+            // 模块限定访问（module.item）：输出模块前缀项名
             if (expr->data.member_access.is_module_access) {
-                const char *safe_name = get_safe_c_identifier(codegen, field_name);
-                fprintf(codegen->output, "%s", safe_name);
+                const char *module_name = expr->data.member_access.module_name;
+                if (module_name && field_name) {
+                    // 生成模块前缀名称（module_name.item_name -> module_name_item_name）
+                    char prefixed_name[256];
+                    int pi = 0;
+                    for (const char *p = module_name; *p && pi < 200; p++) {
+                        if (*p == '.') {
+                            prefixed_name[pi++] = '_';
+                        } else {
+                            prefixed_name[pi++] = *p;
+                        }
+                    }
+                    prefixed_name[pi++] = '_';
+                    for (const char *p = field_name; *p && pi < 250; p++) {
+                        prefixed_name[pi++] = *p;
+                    }
+                    prefixed_name[pi] = '\0';
+                    
+                    const char *safe_name = get_safe_c_identifier(codegen, prefixed_name);
+                    fprintf(codegen->output, "%s", safe_name);
+                } else {
+                    const char *safe_name = get_safe_c_identifier(codegen, field_name);
+                    fprintf(codegen->output, "%s", safe_name);
+                }
                 break;
             }
             
@@ -1606,11 +1628,36 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
                 c99_emit_string_interp_fill(codegen, args[i], temp_name);
             }
             
-            /* 模块限定调用（module.func(args)）：直接生成 func(args)，参数转换与直接调用一致 */
+            /* 模块限定调用（module.func(args)）：生成 module_func(args) */
             if (callee && callee->type == AST_MEMBER_ACCESS && callee->data.member_access.is_module_access) {
-                const char *func_name = get_safe_c_identifier(codegen, callee->data.member_access.field_name);
-                callee_name = callee->data.member_access.field_name;
-                fprintf(codegen->output, "%s(", func_name);
+                const char *module_name = callee->data.member_access.module_name;
+                const char *func_name = callee->data.member_access.field_name;
+                callee_name = func_name;
+                
+                // 生成模块前缀函数名（module_name.func_name -> module_name_func_name）
+                if (module_name && func_name) {
+                    // 将模块名中的 '.' 替换为 '_'
+                    char prefixed_name[256];
+                    int pi = 0;
+                    for (const char *p = module_name; *p && pi < 200; p++) {
+                        if (*p == '.') {
+                            prefixed_name[pi++] = '_';
+                        } else {
+                            prefixed_name[pi++] = *p;
+                        }
+                    }
+                    prefixed_name[pi++] = '_';
+                    for (const char *p = func_name; *p && pi < 250; p++) {
+                        prefixed_name[pi++] = *p;
+                    }
+                    prefixed_name[pi] = '\0';
+                    
+                    const char *safe_name = get_safe_c_identifier(codegen, prefixed_name);
+                    fprintf(codegen->output, "%s(", safe_name);
+                } else {
+                    const char *safe_name = get_safe_c_identifier(codegen, func_name);
+                    fprintf(codegen->output, "%s(", safe_name);
+                }
                 for (int i = 0; i < arg_count; i++) {
                     if (i > 0) fputs(", ", codegen->output);
                     if (codegen->interp_arg_temp_names[i]) {
