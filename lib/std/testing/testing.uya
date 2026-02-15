@@ -1,0 +1,113 @@
+// lib/std/testing/testing.uya - Uya 测试框架核心
+// 版本：v1.0.0
+// 极简设计，避免字符串常量过多
+
+extern "libc" fn printf(fmt: *byte, ...) i32;
+
+// ============================================================
+// 测试框架错误定义
+// ============================================================
+
+error AssertionFailed;
+
+// ============================================================
+// 全局测试计数器
+// ============================================================
+
+export var _test_passed: i32 = 0;
+export var _test_failed: i32 = 0;
+
+// ============================================================
+// 极简断言 - 无消息，只返回 error
+// ============================================================
+
+// 通用断言（带消息）
+export fn assert(condition: bool, message: &const byte) !void {
+    if !condition {
+        return error.AssertionFailed;
+    }
+}
+
+export fn assert_true(condition: bool) !void {
+    if !condition {
+        return error.AssertionFailed;
+    }
+}
+
+// 简写断言（无消息）
+export fn expect(condition: bool) !void {
+    if !condition {
+        return error.AssertionFailed;
+    }
+}
+
+export fn assert_eq_i32(actual: i32, expected: i32) !void {
+    if actual != expected {
+        return error.AssertionFailed;
+    }
+}
+
+export fn assert_eq_i64(actual: i64, expected: i64) !void {
+    if actual != expected {
+        return error.AssertionFailed;
+    }
+}
+
+export fn assert_eq_u64(actual: u64, expected: u64) !void {
+    if actual != expected {
+        return error.AssertionFailed;
+    }
+}
+
+export fn expect_not_null(ptr: &byte) !void {
+    if ptr == null as &byte {
+        return error.AssertionFailed;
+    }
+}
+
+export fn expect_null(ptr: &byte) !void {
+    if ptr != null as &byte {
+        return error.AssertionFailed;
+    }
+}
+
+// ============================================================
+// 测试组织
+// ============================================================
+
+export fn test_suite_begin(name: &const byte) void {
+    printf("\n=== Test Suite: %s ===\n", name);
+    _test_passed = 0;
+    _test_failed = 0;
+}
+
+export fn test_pass(name: &const byte) void {
+    printf("  TEST: %s ... OK\n", name);
+    _test_passed = _test_passed + 1;
+}
+
+export fn test_fail(name: &const byte) void {
+    printf("  TEST: %s ... FAILED\n", name);
+    _test_failed = _test_failed + 1;
+}
+
+export fn test_suite_end() i32 {
+    printf("\n=== Results ===\n");
+    printf("  Passed:  %d\n", _test_passed);
+    printf("  Failed:  %d\n", _test_failed);
+    printf("==================\n");
+    return _test_failed;
+}
+
+// ============================================================
+// run_test 宏 - 运行测试并统计结果
+// 用法: run_test("测试名", test_function)
+// ============================================================
+
+export mc run_test(name: expr, test_fn: expr) stmt {
+    const _result: void = test_fn() catch {
+        test_fail(name);
+        return;
+    };
+    test_pass(name);
+}

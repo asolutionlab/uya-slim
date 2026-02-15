@@ -441,22 +441,22 @@ export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: 
     
     // 跳过空白字符
     while p[0] == 32 || p[0] == 9 || p[0] == 10 || p[0] == 13 {
-        p = p + 1 as &const byte;
+        p = &p[1];
     }
     
     // 处理可选符号（忽略，因为无符号）
     if p[0] == 43 {  // '+'
-        p = p + 1 as &const byte;
+        p = &p[1];
     }
     
     // 确定基数
     var actual_base: i32 = base;
     if actual_base == 0 {
         if p[0] == 48 {  // '0'
-            p = p + 1 as &const byte;
+            p = &p[1];
             if p[0] == 120 || p[0] == 88 {  // 'x' or 'X'
                 actual_base = 16;
-                p = p + 1 as &const byte;
+                p = &p[1];
             } else {
                 actual_base = 8;
             }
@@ -465,7 +465,7 @@ export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: 
         }
     } else if actual_base == 16 {
         if p[0] == 48 && (p[1] == 120 || p[1] == 88) {
-            p = p + 2 as &const byte;
+            p = &p[2];
         }
     }
     
@@ -498,7 +498,7 @@ export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: 
         }
         result = new_result;
         
-        p = p + 1 as &const byte;
+        p = &p[1];
     }
     
     // 设置结束指针

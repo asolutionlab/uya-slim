@@ -421,18 +421,19 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                     CRTI="$(gcc -print-file-name=crti.o)"
                     CRTN="$(gcc -print-file-name=crtn.o)"
 
-                    # 链接
+                    # 链接（不使用 libc 和 libgcc，完全自包含）
                     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" -lc \"$CRTN\" -lgcc -lgcc_eh"
+                        LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\""
                     else
-                        LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" -lc \"$CRTN\" -lgcc -lgcc_eh"
+                        LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\""
                     fi
                 else
                     # 普通模式：直接编译链接（stderr 使用 libc.stderr，无需 get_stderr 桥接）
+                    # 注意：不使用 -static，避免 errno TLS 冲突
                     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        LINK_CMD="gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\""
+                        LINK_CMD="gcc --std=c99 -no-pie \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\" -lm"
                     else
-                        LINK_CMD="gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\""
+                        LINK_CMD="gcc --std=c99 -no-pie \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\" -lm"
                     fi
                 fi
 

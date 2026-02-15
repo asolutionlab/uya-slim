@@ -160,7 +160,7 @@ struct FunctionSignature {
 }
 
 // 符号表（固定大小哈希表，使用开放寻址）
-const SYMBOL_TABLE_SIZE: i32 = 256;   // 固定大小（必须是2的幂）
+const SYMBOL_TABLE_SIZE: i32 = 16384;   // 固定大小（必须是2的幂）- 增加到 16384 以支持大型项目
 
 struct SymbolTable {
     slots: [&Symbol: SYMBOL_TABLE_SIZE],  // 符号槽位数组（固定大小）
@@ -4017,7 +4017,13 @@ fn checker_check_extern_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     symbol.decl_node = node;
 
     if symbol_table_insert(checker, symbol) != 0 {
-        // 符号插入失败（重复定义或哈希表已满）
+        // 检查是否是因为符号已存在（这是允许的，多模块编译时同名符号可能被多次注册）
+        const existing: &Symbol = symbol_table_lookup(checker, node.extern_var_decl_name);
+        if existing != null {
+            // 符号已存在，对于 extern 变量，允许重复声明
+            return 1;  // 成功（符号已存在）
+        }
+        // 真正的失败（符号表满或其他错误）
         return 0;
     }
 

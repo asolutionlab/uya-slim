@@ -1,57 +1,72 @@
 // test_stdlib.uya - stdlib 模块测试
-// TDD: 先写测试，再实现
+// 使用 lib/std/testing.uya 测试框架
 
 use libc.malloc;
 use libc.free;
 use libc.abs;
 use libc.labs;
 use libc.strtoul;
-use libc.fprintf;
-use libc.stdout;
+
+// 导入测试框架
+use std.testing.assert_eq_i32;
+use std.testing.assert_eq_i64;
+use std.testing.assert_eq_u64;
+use std.testing.expect_not_null;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
 
 // ============================================================
 // abs/labs 测试
 // ============================================================
 
-fn test_abs() void {
-    fprintf(stdout, "test abs/labs: ");
-    var passed: i32 = 1;
-    
-    if abs(42) != 42 { passed = 0; }
-    if abs(0 - 42) != 42 { passed = 0; }
-    if abs(0) != 0 { passed = 0; }
-    
-    if labs(123456789) != 123456789 { passed = 0; }
-    if labs(0 - 123456789) != 123456789 { passed = 0; }
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-    } else {
-        fprintf(stdout, "FAIL\n");
-    }
+fn test_abs() !void {
+    try assert_eq_i32(abs(42), 42);
+    try assert_eq_i32(abs(0 - 42), 42);
+    try assert_eq_i32(abs(0), 0);
+    try assert_eq_i32(abs(2147483647), 2147483647);
+}
+
+fn test_labs() !void {
+    try assert_eq_i64(labs(123456789), 123456789);
+    try assert_eq_i64(labs(0 - 123456789), 123456789);
+    try assert_eq_i64(labs(0), 0);
 }
 
 // ============================================================
 // strtoul 测试
 // ============================================================
 
-fn test_strtoul() void {
-    fprintf(stdout, "test strtoul: ");
-    var passed: i32 = 1;
+fn test_strtoul_decimal() !void {
+    const v: u64 = strtoul("12345\0" as &const byte, null as & &const byte, 10);
+    try assert_eq_u64(v, 12345);
+}
+
+fn test_strtoul_hex() !void {
+    const v: u64 = strtoul("ff\0" as &const byte, null as & &const byte, 16);
+    try assert_eq_u64(v, 255);
+}
+
+fn test_strtoul_octal() !void {
+    const v: u64 = strtoul("777\0" as &const byte, null as & &const byte, 8);
+    try assert_eq_u64(v, 511);
+}
+
+fn test_strtoul_zero() !void {
+    const v: u64 = strtoul("0\0" as &const byte, null as & &const byte, 10);
+    try assert_eq_u64(v, 0);
+}
+
+// ============================================================
+// malloc/free 测试
+// ============================================================
+
+fn test_malloc_free() !void {
+    const ptr: *byte = malloc(100);
+    try expect_not_null(ptr as &byte);
     
-    const v1: u64 = strtoul("12345\0" as &const byte, null as & &const byte, 10);
-    if v1 != 12345 { passed = 0; }
-    
-    const v2: u64 = strtoul("ff\0" as &const byte, null as & &const byte, 16);
-    if v2 != 255 { passed = 0; }
-    
-    const v3: u64 = strtoul("777\0" as &const byte, null as & &const byte, 8);
-    if v3 != 511 { passed = 0; }
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-    } else {
-        fprintf(stdout, "FAIL\n");
+    defer {
+        free(ptr);
     }
 }
 
@@ -60,11 +75,15 @@ fn test_strtoul() void {
 // ============================================================
 
 fn main() i32 {
-    fprintf(stdout, "=== libc.stdlib tests ===\n");
-    
-    test_abs();
-    test_strtoul();
-    
-    fprintf(stdout, "=== done ===\n");
-    return 0;
+    test_suite_begin("libc.stdlib");
+
+    run_test("abs", test_abs);
+    run_test("labs", test_labs);
+    run_test("strtoul decimal", test_strtoul_decimal);
+    run_test("strtoul hex", test_strtoul_hex);
+    run_test("strtoul octal", test_strtoul_octal);
+    run_test("strtoul zero", test_strtoul_zero);
+    run_test("malloc/free", test_malloc_free);
+
+    return test_suite_end();
 }

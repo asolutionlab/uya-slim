@@ -374,6 +374,7 @@ static int symbol_table_insert(TypeChecker *checker, Symbol *symbol) {
     // 首先检查是否已存在相同名称和相同作用域级别的符号
     Symbol *existing = symbol_table_lookup(checker, symbol->name);
     if (existing != NULL && existing->scope_level == symbol->scope_level) {
+        // 符号已存在（相同作用域级别）- 这不是错误，只是跳过插入
         return -1;  // 符号已存在（相同作用域级别）
     }
     
@@ -3503,8 +3504,17 @@ static int checker_check_extern_var_decl(TypeChecker *checker, ASTNode *node) {
     symbol->decl_node = node;
 
     if (symbol_table_insert(checker, symbol) != 0) {
+        // 检查是否是因为符号已存在（这是允许的，多模块编译时同名符号可能被多次注册）
+        Symbol *existing = symbol_table_lookup(checker, node->data.extern_var_decl.name);
+        if (existing != NULL) {
+            // 符号已存在，检查是否兼容（同名、同类型、同作用域）
+            // 对于 extern 变量，允许重复声明
+            return 1;  // 成功（符号已存在）
+        }
+        // 真正的失败（符号表满或其他错误）
         char error_msg[256];
-        snprintf(error_msg, sizeof(error_msg), "符号表已满，无法添加 extern 变量 '%s'", node->data.extern_var_decl.name);
+        snprintf(error_msg, sizeof(error_msg), "符号表已满，无法添加 extern 变量 '%s' (count=%d, size=%d)", 
+                 node->data.extern_var_decl.name, checker->symbol_table.count, SYMBOL_TABLE_SIZE);
         checker_report_error(checker, node, error_msg);
         return 0;
     }

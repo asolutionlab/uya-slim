@@ -257,102 +257,31 @@
 4. **实现函数**: 根据测试失败情况实现函数
 5. **回归测试**: 确保新实现不破坏现有功能
 
-### 测试框架设计
+### 测试框架
 
-#### 设计理念
+详细测试规范参见 [测试规范文档](testing_guide.md)。
 
-充分利用 Uya 的 error 类型系统：
+#### 核心特性
 
-1. **`!T` 错误联合类型**：测试函数返回 `!void`，失败时返回 error
-2. **`try` 自动传播**：断言失败自动传播，无需手动检查
-3. **`errdefer` 资源清理**：错误时自动清理资源
-4. **统一错误码约定**：返回失败数（0=全部通过）
+- **错误驱动**：测试函数返回 `!void`，失败时返回 `error`
+- **自动传播**：使用 `try` 自动传播断言失败
+- **资源安全**：使用 `errdefer` 确保错误时资源清理
+- **统一报告**：框架自动统计并输出测试结果
 
-#### 测试框架核心 (`lib/std/testing.uya`)
+#### 快速示例
 
 ```uya
 use std.testing.*;
 
-// 测试函数签名：返回 !void
 fn test_feature() !void {
-    const result: i32 = compute(2, 3);
-    try assert_eq_i32(result, 5, "2 + 3 should equal 5");
+    try assert_eq_i32(2 + 3, 5, "addition");
 }
 
-fn test_with_resource() !void {
-    var resource: Resource = try create_resource();
-    
-    // 错误时自动清理
-    errdefer {
-        cleanup_on_error(resource);
-    }
-    
-    // 正常时也清理
-    defer {
-        cleanup(resource);
-    }
-    
-    try assert_not_null(resource.data, "resource should have data");
-}
-
-// 主函数：运行测试套件
 fn main() i32 {
-    test_suite_begin("Feature Tests");
-    
-    run_test("basic feature", test_feature);
-    run_test("with resource", test_with_resource);
-    
-    return test_suite_end();  // 返回失败数
+    test_suite_begin("My Tests");
+    run_test("feature", test_feature);
+    return test_suite_end();  // 0=全部通过，非零=失败数
 }
-```
-
-#### 断言函数列表
-
-| 函数 | 说明 |
-|------|------|
-| `assert(condition, message)` | 基本断言 |
-| `assert_eq_i32(actual, expected, msg)` | i32 相等 |
-| `assert_eq_bool(actual, expected, msg)` | bool 相等 |
-| `assert_ne_i32(actual, expected, msg)` | i32 不等 |
-| `assert_gt_i32(actual, expected, msg)` | i32 大于 |
-| `assert_lt_i32(actual, expected, msg)` | i32 小于 |
-| `assert_null(ptr, msg)` | 空指针 |
-| `assert_not_null(ptr, msg)` | 非空指针 |
-| `expect(condition)` | 简写断言 |
-| `expect_eq(actual, expected)` | 简写相等 |
-| `expect_true(value)` | 期望 true |
-| `expect_false(value)` | 期望 false |
-
-#### 测试输出格式
-
-```
-=== Test Suite: libc.string ===
-  TEST: strlen ... OK
-  TEST: strcmp ... FAILED
-    ASSERT FAILED: strcmp should return 0 for equal strings
-      Expected: 0
-      Actual:   1
-  TEST: strcpy ... OK
-
-=== Results ===
-  Passed:  2
-  Failed:  1
-  Skipped: 0
-==================
-```
-
-#### 编译运行
-
-```bash
-# 编译
-bin/uya-c --c99 tests/programs/test_xxx.uya -o /tmp/test_xxx.c
-
-# 构建
-gcc -std=c99 -no-pie -o /tmp/test_xxx /tmp/test_xxx.c tests/bridge.c -lm
-
-# 运行
-/tmp/test_xxx
-echo $?  # 0=全部通过，非零=失败数
 ```
 
 ---

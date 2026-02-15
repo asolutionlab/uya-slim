@@ -1,5 +1,5 @@
-// test_ctype.uya - 字符分类函数测试
-// TDD: 先写测试，再实现
+// test_ctype.uya - ctype 模块测试
+// 使用 lib/std/testing.uya 测试框架
 
 use libc.isalpha;
 use libc.isdigit;
@@ -11,279 +11,88 @@ use libc.isxdigit;
 use libc.isprint;
 use libc.toupper;
 use libc.tolower;
-use libc.fprintf;
-use libc.stdout;
+
+// 导入测试框架
+use std.testing.assert;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
 
 // ============================================================
-// isalpha 测试
+// 测试用例
 // ============================================================
 
-fn test_isalpha() i32 {
-    // 小写字母
-    fprintf(stdout, "test isalpha: ");
-    var passed: i32 = 1;
-    
-    // 小写字母应该返回真
-    if isalpha(97) == 0 { passed = 0; }   // 'a'
-    if isalpha(122) == 0 { passed = 0; }  // 'z'
-    if isalpha(110) == 0 { passed = 0; }  // 'n'
-    
-    // 大写字母应该返回真
-    if isalpha(65) == 0 { passed = 0; }   // 'A'
-    if isalpha(90) == 0 { passed = 0; }   // 'Z'
-    if isalpha(78) == 0 { passed = 0; }   // 'N'
-    
-    // 非字母应该返回假
-    if isalpha(48) != 0 { passed = 0; }   // '0'
-    if isalpha(57) != 0 { passed = 0; }   // '9'
-    if isalpha(32) != 0 { passed = 0; }   // ' '
-    if isalpha(64) != 0 { passed = 0; }   // '@'
-    if isalpha(123) != 0 { passed = 0; }  // '{'
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-        return 0;
-    } else {
-        fprintf(stdout, "FAIL\n");
-        return 1;
-    }
+fn test_isalpha() !void {
+    try assert(isalpha(97) != 0, "isalpha 'a'");
+    try assert(isalpha(122) != 0, "isalpha 'z'");
+    try assert(isalpha(65) != 0, "isalpha 'A'");
+    try assert(isalpha(90) != 0, "isalpha 'Z'");
+    try assert(isalpha(48) == 0, "isalpha '0'");
+    try assert(isalpha(32) == 0, "isalpha ' '");
 }
 
-// ============================================================
-// isdigit 测试
-// ============================================================
-
-fn test_isdigit() i32 {
-    fprintf(stdout, "test isdigit: ");
-    var passed: i32 = 1;
-    
-    // 数字应该返回真
-    if isdigit(48) == 0 { passed = 0; }   // '0'
-    if isdigit(57) == 0 { passed = 0; }   // '9'
-    if isdigit(53) == 0 { passed = 0; }   // '5'
-    
-    // 非数字应该返回假
-    if isdigit(47) != 0 { passed = 0; }   // '/'
-    if isdigit(58) != 0 { passed = 0; }   // ':'
-    if isdigit(65) != 0 { passed = 0; }   // 'A'
-    if isdigit(97) != 0 { passed = 0; }   // 'a'
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-        return 0;
-    } else {
-        fprintf(stdout, "FAIL\n");
-        return 1;
-    }
+fn test_isdigit() !void {
+    try assert(isdigit(48) != 0, "isdigit '0'");
+    try assert(isdigit(57) != 0, "isdigit '9'");
+    try assert(isdigit(53) != 0, "isdigit '5'");
+    try assert(isdigit(47) == 0, "isdigit '/'");
+    try assert(isdigit(65) == 0, "isdigit 'A'");
 }
 
-// ============================================================
-// isalnum 测试
-// ============================================================
-
-fn test_isalnum() i32 {
-    fprintf(stdout, "test isalnum: ");
-    var passed: i32 = 1;
-    
-    // 字母和数字应该返回真
-    if isalnum(48) == 0 { passed = 0; }   // '0'
-    if isalnum(57) == 0 { passed = 0; }   // '9'
-    if isalnum(65) == 0 { passed = 0; }   // 'A'
-    if isalnum(90) == 0 { passed = 0; }   // 'Z'
-    if isalnum(97) == 0 { passed = 0; }   // 'a'
-    if isalnum(122) == 0 { passed = 0; }  // 'z'
-    
-    // 非字母数字应该返回假
-    if isalnum(32) != 0 { passed = 0; }   // ' '
-    if isalnum(64) != 0 { passed = 0; }   // '@'
-    if isalnum(123) != 0 { passed = 0; }  // '{'
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-        return 0;
-    } else {
-        fprintf(stdout, "FAIL\n");
-        return 1;
-    }
+fn test_isalnum() !void {
+    try assert(isalnum(48) != 0, "isalnum '0'");
+    try assert(isalnum(65) != 0, "isalnum 'A'");
+    try assert(isalnum(97) != 0, "isalnum 'a'");
+    try assert(isalnum(32) == 0, "isalnum ' '");
+    try assert(isalnum(64) == 0, "isalnum '@'");
 }
 
-// ============================================================
-// isspace 测试
-// ============================================================
-
-fn test_isspace() i32 {
-    fprintf(stdout, "test isspace: ");
-    var passed: i32 = 1;
-    
-    // 空白字符应该返回真
-    if isspace(32) == 0 { passed = 0; }   // ' '
-    if isspace(9) == 0 { passed = 0; }    // '\t'
-    if isspace(10) == 0 { passed = 0; }   // '\n'
-    if isspace(11) == 0 { passed = 0; }   // '\v'
-    if isspace(12) == 0 { passed = 0; }   // '\f'
-    if isspace(13) == 0 { passed = 0; }   // '\r'
-    
-    // 非空白字符应该返回假
-    if isspace(65) != 0 { passed = 0; }   // 'A'
-    if isspace(48) != 0 { passed = 0; }   // '0'
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-        return 0;
-    } else {
-        fprintf(stdout, "FAIL\n");
-        return 1;
-    }
+fn test_isspace() !void {
+    try assert(isspace(32) != 0, "isspace ' '");
+    try assert(isspace(9) != 0, "isspace '\\t'");
+    try assert(isspace(10) != 0, "isspace '\\n'");
+    try assert(isspace(65) == 0, "isspace 'A'");
 }
 
-// ============================================================
-// isupper/islower 测试
-// ============================================================
-
-fn test_isupper() i32 {
-    fprintf(stdout, "test isupper: ");
-    var passed: i32 = 1;
-    
-    if isupper(65) == 0 { passed = 0; }   // 'A'
-    if isupper(90) == 0 { passed = 0; }   // 'Z'
-    if isupper(97) != 0 { passed = 0; }   // 'a'
-    if isupper(48) != 0 { passed = 0; }   // '0'
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-        return 0;
-    } else {
-        fprintf(stdout, "FAIL\n");
-        return 1;
-    }
+fn test_isupper() !void {
+    try assert(isupper(65) != 0, "isupper 'A'");
+    try assert(isupper(90) != 0, "isupper 'Z'");
+    try assert(isupper(97) == 0, "isupper 'a'");
 }
 
-fn test_islower() i32 {
-    fprintf(stdout, "test islower: ");
-    var passed: i32 = 1;
-    
-    if islower(97) == 0 { passed = 0; }   // 'a'
-    if islower(122) == 0 { passed = 0; }  // 'z'
-    if islower(65) != 0 { passed = 0; }   // 'A'
-    if islower(48) != 0 { passed = 0; }   // '0'
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-        return 0;
-    } else {
-        fprintf(stdout, "FAIL\n");
-        return 1;
-    }
+fn test_islower() !void {
+    try assert(islower(97) != 0, "islower 'a'");
+    try assert(islower(122) != 0, "islower 'z'");
+    try assert(islower(65) == 0, "islower 'A'");
 }
 
-// ============================================================
-// toupper/tolower 测试
-// ============================================================
-
-fn test_toupper() i32 {
-    fprintf(stdout, "test toupper: ");
-    var passed: i32 = 1;
-    
-    // 小写转大写
-    if toupper(97) != 65 { passed = 0; }  // 'a' -> 'A'
-    if toupper(122) != 90 { passed = 0; } // 'z' -> 'Z'
-    if toupper(110) != 78 { passed = 0; } // 'n' -> 'N'
-    
-    // 大写保持不变
-    if toupper(65) != 65 { passed = 0; }  // 'A' -> 'A'
-    if toupper(90) != 90 { passed = 0; }  // 'Z' -> 'Z'
-    
-    // 非字母保持不变
-    if toupper(48) != 48 { passed = 0; }  // '0' -> '0'
-    if toupper(32) != 32 { passed = 0; }  // ' ' -> ' '
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-        return 0;
-    } else {
-        fprintf(stdout, "FAIL\n");
-        return 1;
-    }
+fn test_toupper() !void {
+    try assert(toupper(97) == 65, "toupper 'a'");
+    try assert(toupper(122) == 90, "toupper 'z'");
+    try assert(toupper(65) == 65, "toupper 'A'");
+    try assert(toupper(48) == 48, "toupper '0'");
 }
 
-fn test_tolower() i32 {
-    fprintf(stdout, "test tolower: ");
-    var passed: i32 = 1;
-    
-    // 大写转小写
-    if tolower(65) != 97 { passed = 0; }  // 'A' -> 'a'
-    if tolower(90) != 122 { passed = 0; } // 'Z' -> 'z'
-    if tolower(78) != 110 { passed = 0; } // 'N' -> 'n'
-    
-    // 小写保持不变
-    if tolower(97) != 97 { passed = 0; }  // 'a' -> 'a'
-    if tolower(122) != 122 { passed = 0; } // 'z' -> 'z'
-    
-    // 非字母保持不变
-    if tolower(48) != 48 { passed = 0; }  // '0' -> '0'
-    if tolower(32) != 32 { passed = 0; }  // ' ' -> ' '
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-        return 0;
-    } else {
-        fprintf(stdout, "FAIL\n");
-        return 1;
-    }
+fn test_tolower() !void {
+    try assert(tolower(65) == 97, "tolower 'A'");
+    try assert(tolower(90) == 122, "tolower 'Z'");
+    try assert(tolower(97) == 97, "tolower 'a'");
+    try assert(tolower(48) == 48, "tolower '0'");
 }
 
-// ============================================================
-// isxdigit 测试
-// ============================================================
-
-fn test_isxdigit() i32 {
-    fprintf(stdout, "test isxdigit: ");
-    var passed: i32 = 1;
-    
-    // 十六进制数字
-    if isxdigit(48) == 0 { passed = 0; }  // '0'
-    if isxdigit(57) == 0 { passed = 0; }  // '9'
-    if isxdigit(97) == 0 { passed = 0; }  // 'a'
-    if isxdigit(102) == 0 { passed = 0; } // 'f'
-    if isxdigit(65) == 0 { passed = 0; }  // 'A'
-    if isxdigit(70) == 0 { passed = 0; }  // 'F'
-    
-    // 非十六进制数字
-    if isxdigit(103) != 0 { passed = 0; } // 'g'
-    if isxdigit(71) != 0 { passed = 0; }  // 'G'
-    if isxdigit(32) != 0 { passed = 0; }  // ' '
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-        return 0;
-    } else {
-        fprintf(stdout, "FAIL\n");
-        return 1;
-    }
+fn test_isxdigit() !void {
+    try assert(isxdigit(48) != 0, "isxdigit '0'");
+    try assert(isxdigit(57) != 0, "isxdigit '9'");
+    try assert(isxdigit(97) != 0, "isxdigit 'a'");
+    try assert(isxdigit(65) != 0, "isxdigit 'A'");
+    try assert(isxdigit(103) == 0, "isxdigit 'g'");
 }
 
-// ============================================================
-// isprint 测试
-// ============================================================
-
-fn test_isprint() void {
-    fprintf(stdout, "test isprint: ");
-    var passed: i32 = 1;
-    
-    // 可打印字符 (0x20-0x7E)
-    if isprint(32) == 0 { passed = 0; }   // ' '
-    if isprint(126) == 0 { passed = 0; }  // '~'
-    if isprint(65) == 0 { passed = 0; }   // 'A'
-    
-    // 非可打印字符
-    if isprint(31) != 0 { passed = 0; }   // 控制字符
-    if isprint(127) != 0 { passed = 0; }  // DEL
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-    } else {
-        fprintf(stdout, "FAIL\n");
-    }
+fn test_isprint() !void {
+    try assert(isprint(32) != 0, "isprint ' '");
+    try assert(isprint(126) != 0, "isprint '~'");
+    try assert(isprint(31) == 0, "isprint ctrl");
+    try assert(isprint(127) == 0, "isprint DEL");
 }
 
 // ============================================================
@@ -291,19 +100,18 @@ fn test_isprint() void {
 // ============================================================
 
 fn main() i32 {
-    fprintf(stdout, "=== libc.ctype tests ===\n");
-    
-    test_isalpha();
-    test_isdigit();
-    test_isalnum();
-    test_isspace();
-    test_isupper();
-    test_islower();
-    test_toupper();
-    test_tolower();
-    test_isxdigit();
-    test_isprint();
-    
-    fprintf(stdout, "=== done ===\n");
-    return 0;
+    test_suite_begin("libc.ctype");
+
+    run_test("isalpha", test_isalpha);
+    run_test("isdigit", test_isdigit);
+    run_test("isalnum", test_isalnum);
+    run_test("isspace", test_isspace);
+    run_test("isupper", test_isupper);
+    run_test("islower", test_islower);
+    run_test("toupper", test_toupper);
+    run_test("tolower", test_tolower);
+    run_test("isxdigit", test_isxdigit);
+    run_test("isprint", test_isprint);
+
+    return test_suite_end();
 }

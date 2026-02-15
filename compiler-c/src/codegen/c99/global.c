@@ -206,6 +206,14 @@ void gen_extern_var_decl(C99CodeGenerator *codegen, ASTNode *node) {
 
     if (!name || !var_type) return;
 
+    // 检查变量是否已经生成过（避免重复定义）
+    for (int i = 0; i < codegen->global_variable_count; i++) {
+        if (codegen->global_variables[i].name && 
+            strcmp(codegen->global_variables[i].name, name) == 0) {
+            return;  // 已生成，跳过
+        }
+    }
+
     // export extern const/var name: type; -> 不生成代码，链接到 C 库
     if (is_export && is_extern && init_expr == NULL && extern_lib_name == NULL) {
         return;

@@ -301,12 +301,14 @@ void gen_expr(C99CodeGenerator *codegen, ASTNode *expr) {
             break;
         }
         case AST_STRING: {
-            const char *str_const = add_string_constant(codegen, expr->data.string_literal.value);
+            // 字符串常量在收集阶段已添加，生成阶段只查找
+            const char *str_const = find_string_constant(codegen, expr->data.string_literal.value);
             if (str_const) {
                 // 字符串常量声明为 static const uint8_t[]，用 (uint8_t *) 转换
                 // 避免赋给非 const 指针字段时的 -Wdiscarded-qualifiers 警告
                 fprintf(codegen->output, "(uint8_t *)%s", str_const);
             } else {
+                // 如果找不到（不应该发生），输出空字符串作为后备
                 fputs("(uint8_t *)\"\"", codegen->output);
             }
             break;

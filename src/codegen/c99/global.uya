@@ -207,6 +207,15 @@ fn gen_extern_var_decl(codegen: &C99CodeGenerator, node: &ASTNode) void {
         return;
     }
 
+    // 检查变量是否已经生成过（避免重复定义）
+    var i: i32 = 0;
+    while i < codegen.global_variable_count {
+        if codegen.global_variables[i].name != null && str_equals(codegen.global_variables[i].name, name) != 0 {
+            return;  // 已生成，跳过
+        }
+        i = i + 1;
+    }
+
     // export extern const/var name: type; -> 不生成代码，链接到 C 库
     if is_export != 0 && is_extern != 0 && init_expr == null && extern_lib_name == null {
         return;

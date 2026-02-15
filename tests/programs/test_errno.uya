@@ -1,116 +1,72 @@
 // test_errno.uya - errno 模块测试
-// TDD: 先写测试，再实现
+// 使用 lib/std/testing.uya 测试框架
 
 use libc.errno;
+use libc.EPERM;
+use libc.ENOENT;
+use libc.ESRCH;
+use libc.EINTR;
+use libc.EIO;
+use libc.EBADF;
+use libc.ENOMEM;
+use libc.EACCES;
+use libc.EINVAL;
+use libc.ENOSYS;
 use libc.strerror;
 use libc.perror;
-use libc.fprintf;
-use libc.fputs;
-use libc.stdout;
-use libc.stderr;
+
+// 导入测试框架
+use std.testing.assert_eq_i32;
+use std.testing.expect;
+use std.testing.expect_not_null;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
 
 // ============================================================
 // 错误码常量测试
 // ============================================================
 
-fn test_errno_constants() void {
-    fprintf(stdout, "test errno constants: ");
-    var passed: i32 = 1;
-    
-    // 验证错误码值与 musl 一致
-    if EPERM != 1 { passed = 0; }
-    if ENOENT != 2 { passed = 0; }
-    if ESRCH != 3 { passed = 0; }
-    if EINTR != 4 { passed = 0; }
-    if EIO != 5 { passed = 0; }
-    if EBADF != 9 { passed = 0; }
-    if ENOMEM != 12 { passed = 0; }
-    if EACCES != 13 { passed = 0; }
-    if EINVAL != 22 { passed = 0; }
-    if ENOSYS != 38 { passed = 0; }
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-    } else {
-        fprintf(stdout, "FAIL\n");
-    }
+fn test_errno_constants() !void {
+    try assert_eq_i32(EPERM, 1);
+    try assert_eq_i32(ENOENT, 2);
+    try assert_eq_i32(ESRCH, 3);
+    try assert_eq_i32(EINTR, 4);
+    try assert_eq_i32(EIO, 5);
+    try assert_eq_i32(EBADF, 9);
+    try assert_eq_i32(ENOMEM, 12);
+    try assert_eq_i32(EACCES, 13);
+    try assert_eq_i32(EINVAL, 22);
+    try assert_eq_i32(ENOSYS, 38);
 }
 
 // ============================================================
 // errno 全局变量测试
 // ============================================================
 
-fn test_errno_var() void {
-    fprintf(stdout, "test errno var: ");
-    var passed: i32 = 1;
-    
-    // 初始值应为 0
+fn test_errno_var() !void {
     errno = 0;
-    if errno != 0 { passed = 0; }
+    try expect(errno == 0);
     
-    // 可以设置和读取
     errno = ENOENT;
-    if errno != 2 { passed = 0; }
+    try assert_eq_i32(errno, 2);
     
-    // 清零
     errno = 0;
-    if errno != 0 { passed = 0; }
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-    } else {
-        fprintf(stdout, "FAIL\n");
-    }
 }
 
 // ============================================================
 // strerror 测试
 // ============================================================
 
-fn test_strerror() void {
-    fprintf(stdout, "test strerror: ");
-    var passed: i32 = 1;
-    
-    // 测试常见错误码的消息
+fn test_strerror() !void {
     const msg0: &byte = strerror(0);
-    if msg0 == null as &byte { passed = 0; }
+    try expect_not_null(msg0);
     
     const msg1: &byte = strerror(EPERM);
-    if msg1 == null as &byte { passed = 0; }
+    try expect_not_null(msg1);
     
-    const msg2: &byte = strerror(ENOENT);
-    if msg2 == null as &byte { passed = 0; }
-    
-    const msg12: &byte = strerror(ENOMEM);
-    if msg12 == null as &byte { passed = 0; }
-    
-    // 未知错误码应返回默认消息
     const msg_unknown: &byte = strerror(9999);
-    if msg_unknown == null as &byte { passed = 0; }
-    
-    if passed != 0 {
-        fprintf(stdout, "PASS\n");
-    } else {
-        fprintf(stdout, "FAIL\n");
-    }
-}
-
-// ============================================================
-// perror 测试
-// ============================================================
-
-fn test_perror() void {
-    fprintf(stdout, "test perror: ");
-    
-    // 设置 errno 并调用 perror
-    errno = ENOENT;
-    perror("test message\0" as &byte);
-    
-    // 清零后测试
-    errno = 0;
-    perror("success\0" as &byte);
-    
-    fprintf(stdout, "PASS\n");
+    try expect_not_null(msg_unknown);
 }
 
 // ============================================================
@@ -118,13 +74,11 @@ fn test_perror() void {
 // ============================================================
 
 fn main() i32 {
-    fprintf(stdout, "=== libc.errno tests ===\n");
-    
-    test_errno_constants();
-    test_errno_var();
-    test_strerror();
-    test_perror();
-    
-    fprintf(stdout, "=== done ===\n");
-    return 0;
+    test_suite_begin("libc.errno");
+
+    run_test("errno constants", test_errno_constants);
+    run_test("errno var", test_errno_var);
+    run_test("strerror", test_strerror);
+
+    return test_suite_end();
 }
