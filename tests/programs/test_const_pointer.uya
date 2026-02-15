@@ -1,86 +1,48 @@
 // 测试 &const T 和 *const T 只读指针类型
-// 验证类型转换规则和类型安全
 
-fn test_implicit_conversion() i32 {
-    // &T 可以隐式转换为 &const T（放宽约束，安全）
-    var x: i32 = 42;
-    var ptr: &i32 = &x;
-    var const_ptr: & const i32 = ptr;  // 隐式转换（注意：& 和 const 之间需要空格）
-    if const_ptr[0] != 42 {
-        return 1;
-    }
-    return 0;
-}
+use std.testing.expect;
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
 
-fn test_no_implicit_conversion_back() i32 {
-    // &const T 不能隐式转换为 &T（收紧约束，需要显式转换）
-    var x: i32 = 42;
-    var const_ptr: & const i32 = &x;
-    // 注意：这里我们只是测试类型系统，不实际进行转换
-    // 因为 &const T 不能隐式转换为 &T，所以下面的代码应该编译失败
-    // var ptr: &i32 = const_ptr;  // 这应该编译失败
-    return 0;
-}
-
-fn test_const_pointer_usage() i32 {
-    // 测试 &const T 的使用
-    var x: i32 = 100;
-    var const_ptr: & const i32 = &x;
-    
-    // 可以读取
-    if const_ptr[0] != 100 {
-        return 1;
-    }
-    
-    // 不能写入（应该编译失败，但这里我们只测试读取）
-    // const_ptr[0] = 200;  // 这应该编译失败
-    
-    return 0;
-}
-
-// 辅助函数：读取只读指针值
 fn read_value(ptr: & const i32) i32 {
     return ptr[0];
 }
 
-fn test_const_pointer_function_param() i32 {
-    // 测试函数参数使用 &const T
-    var x: i32 = 200;
-    const result: i32 = read_value(&x);
-    if result != 200 {
-        return 1;
-    }
-    return 0;
+fn test_implicit_conversion() !void {
+    var x: i32 = 42;
+    var ptr: &i32 = &x;
+    var const_ptr: & const i32 = ptr;
+    try expect(const_ptr[0] == 42);
 }
 
-fn test_const_pointer_with_mutable() i32 {
-    // 测试可变指针可以传递给只读参数
+fn test_const_pointer_usage() !void {
+    var x: i32 = 100;
+    var const_ptr: & const i32 = &x;
+    try expect(const_ptr[0] == 100);
+}
+
+fn test_const_pointer_function_param() !void {
+    var x: i32 = 200;
+    const result: i32 = read_value(&x);
+    try assert_eq_i32(result, 200);
+}
+
+fn test_const_pointer_with_mutable() !void {
     var x: i32 = 300;
     var ptr: &i32 = &x;
-    
-    const result: i32 = read_value(ptr);  // &T 隐式转换为 &const T
-    if result != 300 {
-        return 1;
-    }
-    return 0;
+    const result: i32 = read_value(ptr);
+    try assert_eq_i32(result, 300);
 }
 
 fn main() i32 {
-    if test_implicit_conversion() != 0 {
-        return 1;
-    }
-    if test_no_implicit_conversion_back() != 0 {
-        return 2;
-    }
-    if test_const_pointer_usage() != 0 {
-        return 3;
-    }
-    if test_const_pointer_function_param() != 0 {
-        return 4;
-    }
-    if test_const_pointer_with_mutable() != 0 {
-        return 5;
-    }
-    return 0;
+    test_suite_begin("Const Pointer Tests");
+    
+    run_test("implicit conversion", test_implicit_conversion);
+    run_test("const pointer usage", test_const_pointer_usage);
+    run_test("const pointer function param", test_const_pointer_function_param);
+    run_test("const pointer with mutable", test_const_pointer_with_mutable);
+    
+    return test_suite_end();
 }
-

@@ -1,40 +1,48 @@
 // 原子类型复合赋值操作测试，规范 uya.md §13
-// 测试所有支持的原子复合赋值操作（+=、-=、*=、/=、%=）
-// 返回 0 表示通过
 
-fn main() i32 {
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_atomic_add() !void {
     var counter: atomic i32 = 10;
-    
-    // += 操作（硬件支持）
     counter += 5;
-    if counter != 15 {
-        return 1;
-    }
-    
-    // -= 操作（硬件支持）
-    counter -= 3;
-    if counter != 12 {
-        return 2;
-    }
-    
-    // *= 操作（软件实现，使用 compare-and-swap）
-    counter *= 2;
-    if counter != 24 {
-        return 3;
-    }
-    
-    // /= 操作（软件实现，使用 compare-and-swap）
-    counter /= 4;
-    if counter != 6 {
-        return 4;
-    }
-    
-    // %= 操作（软件实现，使用 compare-and-swap）
-    counter %= 4;
-    if counter != 2 {
-        return 5;
-    }
-    
-    return 0;
+    try assert_eq_i32(counter, 15);
 }
 
+fn test_atomic_sub() !void {
+    var counter: atomic i32 = 15;
+    counter -= 3;
+    try assert_eq_i32(counter, 12);
+}
+
+fn test_atomic_mul() !void {
+    var counter: atomic i32 = 12;
+    counter *= 2;
+    try assert_eq_i32(counter, 24);
+}
+
+fn test_atomic_div() !void {
+    var counter: atomic i32 = 24;
+    counter /= 4;
+    try assert_eq_i32(counter, 6);
+}
+
+fn test_atomic_mod() !void {
+    var counter: atomic i32 = 6;
+    counter %= 4;
+    try assert_eq_i32(counter, 2);
+}
+
+fn main() i32 {
+    test_suite_begin("Atomic Ops Tests");
+    
+    run_test("atomic add", test_atomic_add);
+    run_test("atomic sub", test_atomic_sub);
+    run_test("atomic mul", test_atomic_mul);
+    run_test("atomic div", test_atomic_div);
+    run_test("atomic mod", test_atomic_mod);
+    
+    return test_suite_end();
+}

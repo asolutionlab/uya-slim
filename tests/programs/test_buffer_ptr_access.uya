@@ -1,21 +1,24 @@
 // 测试程序：验证 &byte 类型指针的数组访问
-// 模拟 arena.uya 中的 buffer_ptr[0] 场景
 
-fn test_buffer_ptr_access() byte {
-    // 创建一个缓冲区
+use std.testing.expect;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_buffer_ptr_access() !void {
     var buffer: [byte: 100] = [];
+    buffer[0] = 42;
     
-    // 获取缓冲区指针（&byte 类型）
     const buffer_ptr: &byte = &buffer[0] as &byte;
-    
-    // 测试：直接使用 buffer_ptr 进行数组访问
     const temp: byte = buffer_ptr[0];
     
-    return temp;
+    try expect(temp == 42);
 }
 
 fn main() i32 {
-    const result: byte = test_buffer_ptr_access();
-    return 0;
+    test_suite_begin("Buffer Ptr Access Tests");
+    
+    run_test("buffer ptr access", test_buffer_ptr_access);
+    
+    return test_suite_end();
 }
-
