@@ -31762,21 +31762,15 @@ static __attribute__((unused)) int32_t emit_struct_deps_for_union(struct C99Code
     }
     uint8_t * struct_names[64] = {0};
     int32_t struct_count = 0;
-    uint8_t * name_ptrs[64] = {0};
-    int32_t i = 0;
-    while ((i < 64)) {
-        name_ptrs[i] = (&struct_names[i]);
-        i = (i + 1);
-    }
-    collect_struct_types_in_union(codegen, union_decl, (&name_ptrs[0]), 64, (&struct_count));
+    collect_struct_types_in_union(codegen, union_decl, (&struct_names[0]), 64, (&struct_count));
     if ((struct_count <= 0)) {
         int32_t _uya_ret = 0;
         return _uya_ret;
     }
     int32_t generated = 0;
-    i = 0;
+    int32_t i = 0;
     while ((i < struct_count)) {
-        uint8_t * const struct_name = name_ptrs[i];
+        uint8_t * const struct_name = struct_names[i];
         if ((struct_name != NULL)) {
             if ((is_struct_defined(codegen, struct_name) == 0)) {
                 struct ASTNode * const struct_decl = find_struct_decl_c99(codegen, struct_name);

@@ -343,24 +343,17 @@ fn emit_struct_deps_for_union(codegen: &C99CodeGenerator, union_decl: &ASTNode) 
     var struct_names: [&byte: 64] = [];
     var struct_count: i32 = 0;
     
-    // 需要一个可变的数组来存储指针
-    var name_ptrs: [&byte: 64] = [];
-    var i: i32 = 0;
-    while i < 64 {
-        name_ptrs[i] = &struct_names[i];
-        i = i + 1;
-    }
-    
-    collect_struct_types_in_union(codegen, union_decl, &name_ptrs[0], 64, &struct_count);
+    // struct_names 是 &byte 数组，直接传递数组首元素地址
+    collect_struct_types_in_union(codegen, union_decl, &struct_names[0], 64, &struct_count);
     
     if struct_count <= 0 {
         return 0;
     }
     
     var generated: i32 = 0;
-    i = 0;
+    var i: i32 = 0;
     while i < struct_count {
-        const struct_name: &byte = name_ptrs[i];
+        const struct_name: &byte = struct_names[i];
         if struct_name != null {
             // 检查是否已定义
             if is_struct_defined(codegen, struct_name) == 0 {
