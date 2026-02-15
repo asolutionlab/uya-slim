@@ -1,7 +1,7 @@
 # Uya 项目根目录 Makefile
 # 提供统一的构建和测试入口
 
-.PHONY: all uya-c uya uya-nostdlib b tests tests-c tests-uya outlibc c e clean help
+.PHONY: all from-c uya-c uya uya-nostdlib b tests tests-c tests-uya outlibc c e clean help
 
 # 默认目标
 all: help
@@ -20,12 +20,31 @@ uya-c:
 	@echo ""
 	@echo "✓ C 编译器构建完成: bin/uya-c"
 
-# 构建自举编译器（src）
+# 从 bin/uya.c 构建（零依赖，不需要 uya-c）
+from-c:
+	@echo "=========================================="
+	@echo "从 C99 代码构建编译器 (from-c)"
+	@echo "=========================================="
+	@if [ ! -f bin/uya.c ]; then \
+		echo "错误: bin/uya.c 不存在"; \
+		exit 1; \
+	fi
+	@echo "编译 bin/uya.c ..."
+	@gcc -std=c99 -O2 bin/uya.c -o bin/uya -lm
+	@echo ""
+	@echo "✓ 编译器构建完成: bin/uya"
+	@ls -la bin/uya
+
+# 构建自举编译器（src），并更新 bin/uya.c
 uya: uya-c
 	@echo "=========================================="
 	@echo "构建自举编译器 (uya)"
 	@echo "=========================================="
 	@cd src && ./compile.sh --c99 -e
+	@echo ""
+	@echo "更新 bin/uya.c ..."
+	@cp compiler-c/build/uya-src/uya.c bin/uya.c
+	@echo "✓ bin/uya.c 已更新"
 	@echo ""
 	@echo "✓ 自举编译器构建完成: bin/uya"
 
@@ -185,10 +204,11 @@ help:
 	@echo "Uya 项目 Makefile"
 	@echo ""
 	@echo "可用目标:"
+	@echo "  make from-c        - 从 bin/uya.c 构建（零依赖，不需要 uya-c）"
 	@echo "  make uya-c         - 构建 C 编译器 (bin/uya-c)"
-	@echo "  make uya           - 构建自举编译器 (bin/uya)，需要先构建 uya-c"
+	@echo "  make uya           - 构建自举编译器 (bin/uya)，自动更新 bin/uya.c"
 	@echo "  make uya-nostdlib  - 构建自举编译器（--nostdlib 版本，不链接标准库）"
-	@echo "  make b             - 自举比对：验证 C 编译器与自举编译器输出一致性"
+	@echo "  make b             - 自举比对：验证自举编译器输出一致性"
 	@echo "  make tests          - 运行测试套件（默认 tests/run_programs_parallel.sh 并行）"
 	@echo "  make tests e        - 运行所有测试，只显示失败的测试"
 	@echo "  make tests c        - 只测试 C 编译器"
@@ -204,11 +224,8 @@ help:
 	@echo "  make help            - 显示此帮助信息"
 	@echo ""
 	@echo "示例:"
-	@echo "  make uya-c && make uya && make b    # 完整构建和自举比对"
+	@echo "  make from-c                          # 从 C99 代码构建（首次克隆后）"
+	@echo "  make uya && make b && make tests-uya # 完整构建和自举验证"
 	@echo "  make tests                           # 运行所有测试"
 	@echo "  make tests e                         # 运行所有测试，只显示错误"
-	@echo "  make tests c e                       # 只测试 C 编译器，只显示错误"
-	@echo "  make tests uya e                     # 只测试自举编译器，只显示错误"
-	@echo "  make tests-c e                       # 快捷方式：测试 C 编译器，只显示错误"
-	@echo "  make tests-uya e                     # 快捷方式：测试自举编译器，只显示错误"
 
