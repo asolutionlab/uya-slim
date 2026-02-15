@@ -1,34 +1,40 @@
-// 测试 for 整数范围：for start..end |v|、for start..end { }（丢弃形式）
+// 测试 for 整数范围
 
-fn main() i32 {
-    // for start..end |v|：迭代 [start, end)，v 从 start 到 end-1
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+fn test_for_range_sum() !void {
     var sum: i32 = 0;
     for 0..5 |i| {
         sum = sum + i;
     }
-    // sum = 0+1+2+3+4 = 10
-    if sum != 10 {
-        return 1;
-    }
+    try assert_eq_i32(sum, 10);  // 0+1+2+3+4 = 10
+}
 
-    // 丢弃形式：for start..end { }，不绑定变量，只执行 (end - start) 次
+fn test_for_range_discard() !void {
     var count: i32 = 0;
     for 0..3 {
         count = count + 1;
     }
-    if count != 3 {
-        return 2;
-    }
+    try assert_eq_i32(count, 3);
+}
 
-    // 带变量，使用循环变量参与计算
+fn test_for_range_prod() !void {
     var prod: i32 = 1;
     for 1..4 |k| {
         prod = prod * k;
     }
-    // prod = 1*1*2*3 = 6
-    if prod != 6 {
-        return 3;
-    }
+    try assert_eq_i32(prod, 6);  // 1*1*2*3 = 6
+}
 
-    return 0;
+fn main() i32 {
+    test_suite_begin("For Range Tests");
+    
+    run_test("for range sum", test_for_range_sum);
+    run_test("for range discard", test_for_range_discard);
+    run_test("for range prod", test_for_range_prod);
+    
+    return test_suite_end();
 }

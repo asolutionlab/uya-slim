@@ -1,17 +1,25 @@
 // 全局变量测试程序
-// 测试全局变量的基本功能：声明、初始化和读取
 
-// 全局变量声明和初始化
+use std.testing.assert_eq_i32;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 var global_value: i32 = 100;
 
-// 测试：通过函数读取全局变量
 fn read_global() i32 {
     return global_value;
 }
 
-fn main() i32 {
-    // 读取全局变量的值
+fn test_global_read() !void {
     const value: i32 = read_global();
-    // 如果值正确（100），返回 0
-    return value - 100;
+    try assert_eq_i32(value, 100);
+}
+
+fn main() i32 {
+    test_suite_begin("Global Var Tests");
+    
+    run_test("global read", test_global_read);
+    
+    return test_suite_end();
 }

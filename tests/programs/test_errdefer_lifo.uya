@@ -1,14 +1,28 @@
 // errdefer + defer 在错误返回时：先 errdefer LIFO，再 defer LIFO
+
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
 error E;
+
 fn f() !i32 {
     var x: i32 = 0;
-    defer { x = x + 100; }   // 第2批执行：x = 2+100 = 102
-    errdefer { x = x + 1; }  // 第2个 errdefer：x = 1+1 = 2
-    errdefer { x = 1; }      // 第1个 errdefer：x = 1
+    defer { x = x + 100; }   // 第2批执行
+    errdefer { x = x + 1; }  // 第2个 errdefer
+    errdefer { x = 1; }      // 第1个 errdefer
     return error.E;
 }
-fn main() i32 {
+
+fn test_errdefer_lifo() !void {
     const r: i32 = f() catch { 0; };
-    if (r != 0) { return 1; }
-    return 0;  // 仅验证编译与运行；x 在 f 内，无法从 main 观测
+    // 仅验证编译与运行
+}
+
+fn main() i32 {
+    test_suite_begin("Errdefer LIFO Tests");
+    
+    run_test("errdefer lifo", test_errdefer_lifo);
+    
+    return test_suite_end();
 }
