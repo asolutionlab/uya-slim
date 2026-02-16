@@ -266,6 +266,20 @@ struct Vec<T: Default> {
     len: i32,
     cap: i32
 }
+
+// 泛型方法（0.47 新增）
+struct Container<T> {
+    value: T,
+    
+    // 泛型方法：独立类型参数 U
+    fn as_type<U>(self: &Self) U {
+        return self.value as U;
+    }
+}
+
+// 调用泛型方法
+const c: Container<i32> = Container<i32>{ value: 42 };
+const v: i64 = c.as_type<i64>();  // 显式指定类型参数
 ```
 
 ### 联合体定义模板

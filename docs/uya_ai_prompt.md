@@ -248,6 +248,25 @@ struct Vec<T: Default> {
 // 使用泛型结构体
 const vec: Vec<i32> = Vec<i32>{ data: ..., len: 0, cap: 0 };
 
+// 泛型方法（0.47 新增）
+struct Container<T> {
+    value: T,
+    
+    // 泛型方法：将 T 转换为 U（独立类型参数）
+    fn as_type<U>(self: &Self) U {
+        return self.value as U;
+    }
+    
+    // 非泛型方法
+    fn get(self: &Self) T {
+        return self.value;
+    }
+}
+
+// 调用泛型方法
+const c: Container<i32> = Container<i32>{ value: 42 };
+const v: i64 = c.as_type<i64>();  // 显式指定 U = i64
+
 // 结构体字面量
 const p: Point = Point{ x: 1.0, y: 2.0 };
 

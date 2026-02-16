@@ -365,6 +365,14 @@ TEXT           = [^${}]+
 - **函数泛型示例**：`fn max<T: Ord>(a: T, b: T) T { ... }`
 - **结构体泛型示例**：`struct Vec<T: Default> { ... }`
 - **接口泛型示例**：`interface Iterator<T> { ... }`
+- **方法泛型示例**（0.47 新增）：
+  ```uya
+  struct Container<T> {
+      value: T,
+      fn as_type<U>(self: &Self) U { return self.value as U; }
+  }
+  // 调用：c.as_type<i64>()
+  ```
 - **类型参数使用示例**：`Vec<i32>`, `Iterator<String>`
 
 **显式宏语法（可选特性）**：

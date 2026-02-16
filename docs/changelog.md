@@ -4,6 +4,37 @@
 
 ---
 
+## 0.47 版本变更（相对于 0.46）
+
+### 0.47 泛型方法支持
+
+- **泛型方法定义**：
+  - 结构体/联合体方法支持独立的泛型参数：`fn method<T>(self: &Self) ReturnType`
+  - 方法类型参数与结构体类型参数分离，形成二级查找
+  - `Self` 类型在方法内自动替换为当前结构体的单态化类型
+
+- **泛型方法调用**：
+  - 方法调用支持显式类型参数：`obj.method<ConcreteType>()`
+  - 单态化生成专门函数，零运行时开销
+  - 示例：
+    ```uya
+    struct Container<T> {
+        value: T,
+        fn as_type<U>(self: &Self) U {
+            return self.value as U;
+        }
+    }
+    const c: Container<i32> = Container<i32>{ value: 42 };
+    const v: i64 = c.as_type<i64>();  // 显式指定 U = i64
+    ```
+
+- **用途**：
+  - 简化 Union 类型安全访问
+  - 实现类型转换方法
+  - 支持泛型工厂方法
+
+---
+
 ## 0.45 版本变更（相对于 0.44）
 
 ### 0.45 extern 变量/常量支持
