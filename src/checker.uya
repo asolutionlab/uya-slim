@@ -8961,7 +8961,7 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
                 stmt.type == ASTNodeType.AST_BINARY_EXPR || stmt.type == ASTNodeType.AST_UNARY_EXPR ||
                 stmt.type == ASTNodeType.AST_CALL_EXPR || stmt.type == ASTNodeType.AST_MEMBER_ACCESS ||
                 stmt.type == ASTNodeType.AST_ARRAY_ACCESS || stmt.type == ASTNodeType.AST_STRUCT_INIT ||
-                stmt.type == ASTNodeType.AST_ARRAY_LITERAL {
+                stmt.type == ASTNodeType.AST_ARRAY_LITERAL || stmt.type == ASTNodeType.AST_MC_INTERP {
                 return deep_copy_ast_with_params(stmt, &merged_ctx, filename);
             }
         }

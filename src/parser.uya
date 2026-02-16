@@ -540,6 +540,31 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
         }
         type_node.type_named_name = union_type_name;
         return type_node;
+    } else if parser.current_token.type == TokenType.TOKEN_INTERP_OPEN {
+        // 宏插值作为类型参数：Vec<${TypeArg}>
+        // 这允许宏参数作为类型使用
+        parser_consume(parser);  // 消费 ${
+        
+        // 解析插值内的表达式（通常是标识符）
+        const operand: &ASTNode = parser_parse_expression(parser);
+        if operand == null {
+            fprintf(libc.stderr, "错误: 宏插值内缺少表达式\n" as *byte);
+            return null;
+        }
+        
+        // 期望 } 结束插值
+        if parser_expect(parser, TokenType.TOKEN_RIGHT_BRACE) == null {
+            fprintf(libc.stderr, "错误: 宏插值缺少闭合\n" as *byte);
+            return null;
+        }
+        
+        // 创建宏插值节点（作为类型使用）
+        const interp_node: &ASTNode = ast_new_node(ASTNodeType.AST_MC_INTERP, line, column, parser.arena, parser_get_filename(parser));
+        if interp_node == null {
+            return null;
+        }
+        interp_node.mc_interp_operand = operand;
+        return interp_node;
     } else if parser.current_token.type == TokenType.TOKEN_IDENTIFIER {
         // 命名类型（i32, bool, void, 或结构体名称）或类型宏调用 macro_name()
         
@@ -858,6 +883,7 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
     
     // 解析宏插值 ${expr}（用于 @mc_ast 内部引用参数/变量）
     // 与字符串插值区分：字符串插值以 TOKEN_INTERP_TEXT 开始，而宏插值直接以 TOKEN_INTERP_OPEN 开始
+    // 支持函数名位置：${func_name}() 和泛型参数位置：Vec<${TypeArg}>
     if parser.current_token.type == TokenType.TOKEN_INTERP_OPEN {
         parser_consume(parser);  // 消费 ${
         
@@ -880,6 +906,196 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
             return null;
         }
         interp_node.mc_interp_operand = operand;
+        
+        // 检查是否是函数调用位置：${func_name}() 或 ${func_name}<T>()
+        // 需要检查后面是否有泛型参数 <...> 或函数调用 (...)
+        var call_type_args: & & ASTNode = null;
+        var call_type_arg_count: i32 = 0;
+        
+        if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_LESS {
+            // 泛型函数调用：${func_name}<Type1, Type2>(...)
+            // 使用与标识符相同的 peek 逻辑判断是否是泛型参数
+            const lexer: &Lexer = parser.lexer;
+            const saved_position: usize = lexer.position;
+            const saved_line: i32 = lexer.line;
+            const saved_column: i32 = lexer.column;
+            
+            // Peek '<' 后面的 token
+            const after_less: &Token = lexer_next_token(lexer, parser.arena);
+            
+            // 判断是否是泛型参数（而非比较运算符）
+            var is_generic: i32 = 1;  // 宏插值后的 < 更可能是泛型参数
+            if after_less != null {
+                const t: TokenType = after_less.type;
+                // 如果 '<' 后面是表达式的开始，则 '<' 可能是比较运算符
+                if t == TokenType.TOKEN_NUMBER || t == TokenType.TOKEN_FLOAT || t == TokenType.TOKEN_STRING ||
+                   t == TokenType.TOKEN_MINUS || t == TokenType.TOKEN_EXCLAMATION || t == TokenType.TOKEN_TILDE ||
+                   t == TokenType.TOKEN_TRUE || t == TokenType.TOKEN_FALSE || t == TokenType.TOKEN_NULL ||
+                   t == TokenType.TOKEN_LEFT_PAREN || t == TokenType.TOKEN_INTERP_OPEN {
+                    is_generic = 0;
+                }
+            }
+            
+            // 恢复 lexer 状态
+            lexer.position = saved_position;
+            lexer.line = saved_line;
+            lexer.column = saved_column;
+            
+            if is_generic != 0 {
+                // 解析泛型参数列表
+                parser_consume(parser);  // 消费 '<'
+                
+                var call_type_arg_capacity: i32 = 0;
+                
+                if parser_match(parser, TokenType.TOKEN_GREATER) == 0 && parser_match(parser, TokenType.TOKEN_RSHIFT) == 0 {
+                    while parser.current_token != null &&
+                          parser_match(parser, TokenType.TOKEN_GREATER) == 0 &&
+                          parser_match(parser, TokenType.TOKEN_RSHIFT) == 0 &&
+                          parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+                        
+                        // 解析类型参数（支持宏插值作为类型参数）
+                        const type_arg: &ASTNode = parser_parse_type(parser);
+                        if type_arg == null {
+                            return null;
+                        }
+                        
+                        if call_type_arg_count >= call_type_arg_capacity {
+                            var new_cap: i32 = 4;
+                            if call_type_arg_capacity != 0 {
+                                new_cap = call_type_arg_capacity * 2;
+                            }
+                            const new_type_args: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                            if new_type_args == null {
+                                return null;
+                            }
+                            var i: i32 = 0;
+                            while i < call_type_arg_count {
+                                new_type_args[i] = call_type_args[i];
+                                i = i + 1;
+                            }
+                            call_type_args = new_type_args;
+                            call_type_arg_capacity = new_cap;
+                        }
+                        
+                        call_type_args[call_type_arg_count] = type_arg;
+                        call_type_arg_count = call_type_arg_count + 1;
+                        
+                        if parser_match(parser, TokenType.TOKEN_COMMA) == 0 {
+                            break;
+                        }
+                        parser_consume(parser);  // 消费 ','
+                    }
+                }
+                
+                // 处理 >> 的情况
+                if parser_match(parser, TokenType.TOKEN_RSHIFT) != 0 {
+                    const rshift_token: &Token = parser.current_token;
+                    parser_consume(parser);
+                    
+                    const fake_greater: &Token = arena_alloc(parser.arena, @size_of(Token)) as &Token;
+                    if fake_greater != null {
+                        fake_greater.type = TokenType.TOKEN_GREATER;
+                        fake_greater.value = ">" as *byte;
+                        fake_greater.line = rshift_token.line;
+                        fake_greater.column = rshift_token.column + 1;
+                        parser.pending_greater_token = fake_greater;
+                    }
+                } else {
+                    const expect_gt: &Token = parser_expect(parser, TokenType.TOKEN_GREATER);
+                    if expect_gt == null {
+                        return null;
+                    }
+                }
+            }
+        }
+        
+        // 检查是否是函数调用
+        if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_LEFT_PAREN {
+            // 函数调用：${func_name}<T>(...) 或 ${func_name}(...)
+            const call: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line, column, parser.arena, parser_get_filename(parser));
+            if call == null {
+                return null;
+            }
+            
+            // 使用宏插值节点作为 callee
+            call.call_expr_callee = interp_node;
+            call.call_expr_has_ellipsis_forward = 0;
+            call.call_expr_type_args = call_type_args;
+            call.call_expr_type_arg_count = call_type_arg_count;
+            
+            // 消费 '('
+            parser_consume(parser);
+            
+            // 解析参数列表
+            var args: & & ASTNode = null;
+            var arg_count: i32 = 0;
+            var arg_capacity: i32 = 0;
+            
+            if parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) == 0 {
+                while parser.current_token != null && 
+                      parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) == 0 && 
+                      parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+                    
+                    // 检查是否为末尾的 ...（转发可变参数）
+                    if parser_match(parser, TokenType.TOKEN_ELLIPSIS) != 0 {
+                        parser_consume(parser);
+                        call.call_expr_has_ellipsis_forward = 1;
+                        break;
+                    }
+                    
+                    const arg: &ASTNode = parser_parse_expression(parser);
+                    if arg == null {
+                        return null;
+                    }
+                    
+                    if arg_count >= arg_capacity {
+                        var new_capacity: i32 = 0;
+                        if arg_capacity == 0 {
+                            new_capacity = 4;
+                        } else {
+                            new_capacity = arg_capacity * 2;
+                        }
+                        const new_args: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+                        if new_args == null {
+                            return null;
+                        }
+                        
+                        var i: i32 = 0;
+                        while i < arg_count {
+                            new_args[i] = args[i];
+                            i = i + 1;
+                        }
+                        args = new_args;
+                        arg_capacity = new_capacity;
+                    }
+                    
+                    args[arg_count] = arg;
+                    arg_count = arg_count + 1;
+                    
+                    if parser_match(parser, TokenType.TOKEN_COMMA) == 0 {
+                        break;
+                    }
+                    parser_consume(parser);
+                }
+            }
+            
+            // 期望 ')'
+            if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null {
+                return null;
+            }
+            
+            call.call_expr_args = args;
+            call.call_expr_arg_count = arg_count;
+            return call;
+        }
+        
+        // 如果有泛型参数但没有函数调用，这是错误情况
+        // 例如：${Type}<i32> 单独使用是没有意义的
+        if call_type_arg_count > 0 {
+            fprintf(libc.stderr, "错误: 宏插值作为泛型类型必须紧跟函数调用\n" as *byte);
+            return null;
+        }
+        
         return interp_node;
     }
     
