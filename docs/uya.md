@@ -1,4 +1,4 @@
-# Uya 语言规范 0.46（完整版 · 2026-02-15）
+# Uya 语言规范 0.47（完整版 · 2026-02-16）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -51,6 +51,18 @@
 ---
 
 ## 规范变更
+
+### 0.47（2026-02-16）
+
+- **泛型方法支持**（新增）：
+  - 结构体/联合体方法支持泛型参数：`fn method<T>(self: &Self) ReturnType`
+  - 方法调用支持显式类型参数：`obj.method<ConcreteType>()`
+  - 单态化生成专门函数，零运行时开销
+  - **用途**：简化 Union 类型安全访问，实现类型转换方法
+
+- **语法更新**：
+  - 更新附录 B.1 泛型语法，添加方法泛型章节（B.1.4）
+  - 文档标注泛型函数、结构体泛型、接口泛型、方法泛型的完整语法
 
 ### 0.46（2026-02-15）
 
@@ -6178,38 +6190,80 @@ for循环、切片语法、多维数组的完整示例请参考对应章节。
 
 ### B.1 泛型语法
 
-**语法确定**（当前未实现）：
+**语法规范**：
 
 - **使用尖括号**：`<T>`
 - **约束紧邻参数**：`<T: Ord>`
 - **多约束连接**：`<T: Ord + Clone + Default>`
 
-**函数泛型示例**：
+#### B.1.1 函数泛型
+
 ```uya
 fn max<T: Ord>(a: T, b: T) T {
     if a > b { return a; }
     return b;
 }
+
+// 调用
+const result: i32 = max<i32>(10, 20);
 ```
 
-**结构体泛型示例**：
+#### B.1.2 结构体泛型
+
 ```uya
 struct Vec<T: Default> {
     data: &T,
     len: i32,
     cap: i32
 }
+
+// 实例化
+const v: Vec<i32> = Vec<i32>{ data: null, len: 0, cap: 0 };
 ```
 
-**接口泛型示例**：
+#### B.1.3 接口泛型
+
 ```uya
 interface Iterator<T> {
     fn next(self: &Self) union Option<T>;
 }
 ```
 
+#### B.1.4 方法泛型（v0.47 新增）
+
+结构体/联合体方法支持独立的泛型参数，与结构体泛型参数分离：
+
+```uya
+// 泛型结构体 + 泛型方法
+struct Container<T> {
+    value: T,
+    
+    // 泛型方法：将 T 转换为 U
+    fn as_type<U>(self: &Self) U {
+        return self.value as U;
+    }
+    
+    // 非泛型方法
+    fn get(self: &Self) T {
+        return self.value;
+    }
+    
+    // 多类型参数方法
+    fn wrap<U>(self: &Self, other: U) Pair<T, U> {
+        return Pair<T, U>{ first: self.value, second: other };
+    }
+}
+
+// 调用泛型方法
+const c: Container<i32> = Container<i32>{ value: 42 };
+const v: i64 = c.as_type<i64>();  // 显式指定 U = i64
+const p: Pair<i32, i32> = c.wrap<i32>(100);  // U = i32
+```
+
 **设计说明**：
-- 泛型实现将遵循 Uya 的"显式控制"和"编译期证明"设计哲学
+- 泛型方法通过单态化实现，编译时生成专门函数
+- 方法类型参数与结构体类型参数独立，形成二级查找
+- `Self` 类型在方法内自动替换为当前结构体的单态化类型
 
 ---
 
