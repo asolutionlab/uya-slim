@@ -2333,8 +2333,9 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         }
         var res_type: &byte = "int32_t" as &byte;
         if expr.match_expr_arm_count > 0 {
+            // 尝试从 result_expr 获取类型
             const t: &byte = get_c_type_of_expr(codegen, expr.match_expr_arms[0].result_expr);
-            if t != null {
+            if t != null && strcmp(t as *byte, "int32_t" as *byte) != 0 {
                 res_type = t;
             }
         }

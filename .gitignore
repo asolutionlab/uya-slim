@@ -25,7 +25,7 @@ compiler-mini/build/
 compiler-mini/tests/programs/build/
 .comate/
 compiler-c/build/
-bin/*
+bin/
 tests/programs/build/
 lib/build/
 test_std_io.txt

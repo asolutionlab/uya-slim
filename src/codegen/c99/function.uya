@@ -1172,6 +1172,21 @@ fn substitute_type_arg(codegen: &C99CodeGenerator, type_node: &ASTNode) &ASTNode
         }
     }
     
+    // 递归处理错误联合类型 !T（payload 可能包含类型参数）
+    if type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION && type_node.type_error_union_payload_type != null {
+        const payload_substituted: &ASTNode = substitute_type_arg(codegen, type_node.type_error_union_payload_type);
+        if payload_substituted != type_node.type_error_union_payload_type {
+            const new_node: &ASTNode = arena_alloc(codegen.arena, @size_of(ASTNode)) as &ASTNode;
+            if new_node != null {
+                new_node.type = ASTNodeType.AST_TYPE_ERROR_UNION;
+                new_node.line = type_node.line;
+                new_node.column = type_node.column;
+                new_node.type_error_union_payload_type = payload_substituted;
+                return new_node;
+            }
+        }
+    }
+    
     return type_node;
 }
 

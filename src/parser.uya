@@ -2933,9 +2933,12 @@ fn parser_parse_unary_expr(parser: &Parser) &ASTNode {
     const column: i32 = parser.current_token.column;
     
     // try expr（错误传播）
+    // 注意：try 后面可以是包含泛型方法调用的表达式，如 try obj.method<T>()
+    // 泛型方法调用 <T>() 在 parser_parse_rel_expr 中处理（作为比较表达式的一部分）
+    // 因此需要调用 parser_parse_rel_expr 而不是 parser_parse_unary_expr
     if parser_match(parser, TokenType.TOKEN_TRY) != 0 {
         parser_consume(parser);
-        const operand: &ASTNode = parser_parse_unary_expr(parser);
+        const operand: &ASTNode = parser_parse_rel_expr(parser);
         if operand == null {
             return null;
         }

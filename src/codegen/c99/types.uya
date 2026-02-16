@@ -468,7 +468,8 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
         if payload_node == null {
             return ("void" as *byte) as &byte;
         }
-        const payload_c: &byte = c99_type_to_c(codegen, payload_node);
+        // 使用 c99_mono_type_to_c 来处理单态化上下文中的类型参数
+        const payload_c: &byte = c99_mono_type_to_c(codegen, payload_node);
         var is_void: i32 = 0;
         if payload_node.type == ASTNodeType.AST_TYPE_NAMED && payload_node.type_named_name != null && strcmp(payload_node.type_named_name as *byte, "void" as *byte) == 0 {
             is_void = 1;
@@ -785,6 +786,32 @@ fn emit_pending_err_union_structs(codegen: &C99CodeGenerator) void {
             i = i + 1;
             continue;
         }
+        // 跳过泛型类型参数（未知类型名称），它们会在单态化时被正确处理
+        // 检查 payload_c 是否以已知前缀开头，如果不是则跳过
+        if is_void == 0 {
+            var is_known_type: i32 = 0;
+            // 已知 C 类型前缀
+            if strncmp(payload_c as *byte, "int" as *byte, 3) == 0 ||
+               strncmp(payload_c as *byte, "uint" as *byte, 4) == 0 ||
+               strncmp(payload_c as *byte, "float" as *byte, 5) == 0 ||
+               strncmp(payload_c as *byte, "double" as *byte, 6) == 0 ||
+               strncmp(payload_c as *byte, "char" as *byte, 4) == 0 ||
+               strncmp(payload_c as *byte, "void" as *byte, 4) == 0 ||
+               strncmp(payload_c as *byte, "bool" as *byte, 4) == 0 ||
+               strncmp(payload_c as *byte, "struct" as *byte, 6) == 0 ||
+               strncmp(payload_c as *byte, "enum" as *byte, 4) == 0 ||
+               strncmp(payload_c as *byte, "intptr_t" as *byte, 8) == 0 ||
+               strncmp(payload_c as *byte, "uintptr_t" as *byte, 9) == 0 ||
+               strncmp(payload_c as *byte, "size_t" as *byte, 6) == 0 ||
+               strncmp(payload_c as *byte, "ssize_t" as *byte, 7) == 0 {
+                is_known_type = 1;
+            }
+            // 如果不是已知类型，跳过（很可能是泛型类型参数）
+            if is_known_type == 0 {
+                i = i + 1;
+                continue;
+            }
+        }
         fprintf(codegen.output as *void, "struct %s { uint32_t error_id;" as *byte, name as *byte);
         if is_void == 0 {
             fprintf(codegen.output as *void, " %s value;" as *byte, payload_c as *byte);
@@ -936,6 +963,66 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
     } else if expr.type == ASTNodeType.AST_CALL_EXPR {
         // 方法调用：callee 为 obj.method，需要推断方法返回类型
         const callee: &ASTNode = expr.call_expr_callee;
+        const type_args: & & ASTNode = expr.call_expr_type_args;
+        const type_arg_count: i32 = expr.call_expr_type_arg_count;
+        
+        // 泛型方法调用：有类型参数
+        if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS && type_args != null && type_arg_count > 0 {
+            const obj: &ASTNode = callee.member_access_object;
+            const method_name: &byte = callee.member_access_field_name;
+            if obj != null && method_name != null {
+                // 获取对象的 C 类型
+                const obj_type_c: &byte = get_c_type_of_expr(codegen, obj);
+                if obj_type_c != null {
+                    // 提取结构体名称（从 "struct Node" 或 "Node" 中提取）
+                    var struct_name_buf: [byte: 128] = [];
+                    var struct_name_src: &byte = obj_type_c;
+                    // 检查是否以 "struct " 开头
+                    if strncmp(obj_type_c as *byte, "struct " as *byte, 7) == 0 {
+                        struct_name_src = &obj_type_c[7];  // 跳过 "struct "
+                    }
+                    const safe_obj_type: &byte = get_safe_c_identifier(codegen, struct_name_src);
+                    if safe_obj_type != null {
+                        snprintf(&struct_name_buf[0] as *byte, 128, "%s" as *byte, safe_obj_type as *byte);
+                    }
+                    // 查找方法声明
+                    const method_fn: &ASTNode = find_method_in_struct_c99(codegen, &struct_name_buf[0], method_name);
+                    if method_fn != null && method_fn.type == ASTNodeType.AST_FN_DECL {
+                        const return_type: &ASTNode = method_fn.fn_decl_return_type;
+                        if return_type != null {
+                            // 在单态化上下文中替换类型参数
+                            if codegen.current_type_params != null && codegen.current_type_param_count > 0 {
+                                // 已在单态化上下文中，使用现有的替换
+                                return c99_mono_type_to_c(codegen, return_type);
+                            } else {
+                                // 需要临时设置单态化上下文
+                                const saved_type_params: &TypeParam = codegen.current_type_params;
+                                const saved_type_param_count: i32 = codegen.current_type_param_count;
+                                const saved_type_args: & & ASTNode = codegen.current_type_args;
+                                const saved_type_arg_count: i32 = codegen.current_type_arg_count;
+                                
+                                codegen.current_type_params = method_fn.fn_decl_type_params;
+                                codegen.current_type_param_count = method_fn.fn_decl_type_param_count;
+                                codegen.current_type_args = type_args;
+                                codegen.current_type_arg_count = type_arg_count;
+                                
+                                const result: &byte = c99_mono_type_to_c(codegen, return_type);
+                                
+                                codegen.current_type_params = saved_type_params;
+                                codegen.current_type_param_count = saved_type_param_count;
+                                codegen.current_type_args = saved_type_args;
+                                codegen.current_type_arg_count = saved_type_arg_count;
+                                
+                                return result;
+                            }
+                        }
+                    }
+                }
+            }
+            // 无法推断，返回默认类型
+            return ("int32_t" as *byte) as &byte;
+        }
+        
         if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS {
             // 递归调用 AST_MEMBER_ACCESS 的处理逻辑来获取方法返回类型
             return get_c_type_of_expr(codegen, callee);
@@ -944,6 +1031,35 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER {
             const func_name: &byte = callee.identifier_name;
             if func_name != null {
+                // 泛型函数调用：有类型参数
+                if type_args != null && type_arg_count > 0 {
+                    const fn_decl: &ASTNode = find_function_decl_c99(codegen, func_name);
+                    if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL {
+                        const return_type: &ASTNode = fn_decl.fn_decl_return_type;
+                        if return_type != null {
+                            // 临时设置单态化上下文
+                            const saved_type_params: &TypeParam = codegen.current_type_params;
+                            const saved_type_param_count: i32 = codegen.current_type_param_count;
+                            const saved_type_args: & & ASTNode = codegen.current_type_args;
+                            const saved_type_arg_count: i32 = codegen.current_type_arg_count;
+                            
+                            codegen.current_type_params = fn_decl.fn_decl_type_params;
+                            codegen.current_type_param_count = fn_decl.fn_decl_type_param_count;
+                            codegen.current_type_args = type_args;
+                            codegen.current_type_arg_count = type_arg_count;
+                            
+                            const result: &byte = c99_mono_type_to_c(codegen, return_type);
+                            
+                            codegen.current_type_params = saved_type_params;
+                            codegen.current_type_param_count = saved_type_param_count;
+                            codegen.current_type_args = saved_type_args;
+                            codegen.current_type_arg_count = saved_type_arg_count;
+                            
+                            return result;
+                        }
+                    }
+                }
+                // 非泛型函数调用
                 const fn_decl: &ASTNode = find_function_decl_c99(codegen, func_name);
                 if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL {
                     const return_type: &ASTNode = fn_decl.fn_decl_return_type;

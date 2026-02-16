@@ -449,15 +449,18 @@ fn emit_struct_deps_for_union(codegen: &C99CodeGenerator, union_decl: &ASTNode) 
     return generated;
 }
 
-// 从 C 类型字符串（如 "struct Data"）中提取结构体名并查找声明
+// 从 C 类型字符串（如 "struct Data"、"const struct Data *"、"struct Data *"）中提取结构体名并查找声明
 fn find_struct_decl_from_type_c(codegen: &C99CodeGenerator, type_c: &byte) &ASTNode {
     if codegen == null || type_c == null || codegen.program_node == null {
         return null;
     }
-    if strstr(type_c as *byte, "struct " as *byte) == null {
+    // 查找 "struct " 子串
+    const struct_pos: *byte = strstr(type_c as *byte, "struct " as *byte);
+    if struct_pos == null {
         return null;
     }
-    const p: &byte = &type_c[7] as &byte;
+    // 跳过 "struct " 前缀
+    const p: &byte = &struct_pos[7] as &byte;
     var name_len: i32 = 0;
     while p[name_len] != 0 && p[name_len] != 32 && p[name_len] != 42 {
         name_len = name_len + 1;
@@ -469,7 +472,7 @@ fn find_struct_decl_from_type_c(codegen: &C99CodeGenerator, type_c: &byte) &ASTN
         name_len = 127;
     }
     var name_buf: [byte: 128] = [];
-    memcpy(&name_buf[0] as *void, p as *void, name_len);
+    memcpy(&name_buf[0] as *void, p as *void, name_len as usize);
     name_buf[name_len] = 0;
     return find_struct_decl_c99(codegen, &name_buf[0] as &byte);
 }
