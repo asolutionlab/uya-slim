@@ -1,0 +1,10 @@
+// 测试泛型函数调用（非方法）
+
+fn identity<T>(x: T) T {
+    return x;
+}
+
+fn main() i32 {
+    const v: i32 = identity<i32>(42);
+    return 0;
+}
