@@ -39,13 +39,15 @@ var file_handle_count: usize = 0;
 
 // 分配文件句柄
 fn alloc_file_handle(fd: i64) &void {
-    if file_handle_count >= 1024 {
-        return null;
+    // 转换为 i32 以支持约束系统
+    const count: i32 = file_handle_count as i32;
+    if count >= 0 && count < 1024 {
+        file_handles[count] = fd;
+        const handle: &void = &file_handles[count] as &void;
+        file_handle_count = file_handle_count + 1;
+        return handle;
     }
-    file_handles[file_handle_count] = fd;
-    const handle: &void = &file_handles[file_handle_count] as &void;
-    file_handle_count = file_handle_count + 1;
-    return handle;
+    return null;
 }
 
 // 从文件句柄获取文件描述符

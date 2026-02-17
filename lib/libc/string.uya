@@ -103,12 +103,12 @@ export extern "libc" fn strncasecmp(s1: *const byte, s2: *const byte, n: usize) 
 // ============================================================
 
 // strdup - 复制字符串（动态分配内存）
-extern fn malloc(size: usize) *byte;
+extern fn malloc(size: usize) &void;
 
 export extern "libc" fn strdup(s: *const byte) *byte {
     if s == null { return null; }
     const len: usize = strlen(s);
-    const dup: *byte = malloc(len + 1);
+    const dup: *byte = malloc(len + 1) as *byte;
     if dup == null { return null; }
     var i: usize = 0;
     while i < len {
@@ -125,7 +125,7 @@ export extern "libc" fn strndup(s: *const byte, n: usize) *byte {
     const len: usize = strlen(s);
     var copy_len: usize = len;
     if n < len { copy_len = n; }
-    const dup: *byte = malloc(copy_len + 1);
+    const dup: *byte = malloc(copy_len + 1) as *byte;
     if dup == null { return null; }
     var i: usize = 0;
     while i < copy_len {

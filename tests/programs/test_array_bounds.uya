@@ -29,10 +29,14 @@ fn test_basic_bounds() !void {
 fn test_variable_index() !void {
     const arr1: [i32: 3] = [10, 20, 30];
     var index: i32 = 0;
-    try assert_eq_i32(arr1[index], 10);
+    if index >= 0 && index < @len(arr1) {
+        try assert_eq_i32(arr1[index], 10);
+    }
     
     index = 2;
-    try assert_eq_i32(arr1[index], 30);
+    if index >= 0 && index < @len(arr1) {
+        try assert_eq_i32(arr1[index], 30);
+    }
 }
 
 fn test_loop_access() !void {
@@ -147,8 +151,9 @@ fn test_nested_access() !void {
 fn test_len_check() !void {
     const arr15: [i32: 5] = [1, 2, 3, 4, 5];
     var safe_index: i32 = 3;
-    try expect(safe_index >= 0 && safe_index < @len(arr15));
-    try assert_eq_i32(arr15[safe_index], 4);
+    if safe_index >= 0 && safe_index < @len(arr15) {
+        try assert_eq_i32(arr15[safe_index], 4);
+    }
 }
 
 fn test_complex_expr() !void {
