@@ -4099,6 +4099,31 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
         }
     }
     
+    // 安全证明：为有常量初始值的变量添加约束
+    // 例如：var i: i32 = 0; 添加 i >= 0 和 i == 0 的约束
+    if checker.enable_safety_proof != 0 && node.var_decl_name != null && node.var_decl_init != null {
+        const init_val: i32 = checker_eval_const_expr(checker, node.var_decl_init);
+        // 检查初始值是否有效常量
+        var is_valid_const: i32 = 0;
+        if init_val >= 0 {
+            is_valid_const = 1;
+        } else if init_val < 0 {
+            // 检查是否是负数整数字面量
+            const init_node: &ASTNode = node.var_decl_init;
+            if init_node != null && init_node.type == ASTNodeType.AST_NUMBER {
+                is_valid_const = 1;
+            }
+        }
+        if is_valid_const != 0 {
+            // 添加初始值约束：var == init_val
+            constraint_add(checker, node.var_decl_name, CONSTRAINT_EQ, init_val);
+            // 添加下界约束：var >= 0（对于非负初始值）
+            if init_val >= 0 {
+                constraint_add(checker, node.var_decl_name, CONSTRAINT_GE, 0);
+            }
+        }
+    }
+    
     return 1;
 }
 
@@ -5362,6 +5387,59 @@ fn constraint_add(checker: &TypeChecker, var_name: &byte, op: i32, value: i32) v
     checker.constraint_ops[checker.constraint_count] = op;
     checker.constraint_values[checker.constraint_count] = value;
     checker.constraint_count = checker.constraint_count + 1;
+}
+
+// 移除指定变量的所有约束
+// 参数：var_name - 变量名
+fn constraint_remove_var(checker: &TypeChecker, var_name: &byte) void {
+    if checker == null || var_name == null {
+        return;
+    }
+    var write_idx: i32 = 0;
+    var i: i32 = 0;
+    while i < checker.constraint_count {
+        const name: &byte = checker.constraint_var_names[i];
+        if name != null && strcmp(name as *byte, var_name as *byte) != 0 {
+            // 保留不是该变量的约束
+            checker.constraint_var_names[write_idx] = name;
+            checker.constraint_ops[write_idx] = checker.constraint_ops[i];
+            checker.constraint_values[write_idx] = checker.constraint_values[i];
+            write_idx = write_idx + 1;
+        }
+        i = i + 1;
+    }
+    checker.constraint_count = write_idx;
+}
+
+// 更新递增赋值后的约束
+// 参数：var_name - 变量名，increment - 递增值
+// 例如：i = i + 1 后，如果原来 i >= 0，新值也 >= 0
+fn constraint_update_for_increment(checker: &TypeChecker, var_name: &byte, increment: i32) void {
+    if checker == null || var_name == null {
+        return;
+    }
+    // 对于 i = i + n（n > 0）：
+    // 如果原来 i >= k，新值 i >= k + n
+    // 如果原来 i >= 0 且 n >= 0，新值也 >= 0
+    var i: i32 = 0;
+    while i < checker.constraint_count {
+        const name: &byte = checker.constraint_var_names[i];
+        if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
+            const op: i32 = checker.constraint_ops[i];
+            const val: i32 = checker.constraint_values[i];
+            // 更新下界约束
+            if op == CONSTRAINT_GE {
+                checker.constraint_values[i] = val + increment;
+            } else if op == CONSTRAINT_GT {
+                checker.constraint_values[i] = val + increment;
+            }
+            // 上界约束在递增后不再确定，移除
+            if op == CONSTRAINT_LT || op == CONSTRAINT_LE {
+                checker.constraint_var_names[i] = null;
+            }
+        }
+        i = i + 1;
+    }
 }
 
 // 从二元比较表达式提取约束
@@ -7122,6 +7200,75 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 checker_mark_moved(checker, node, src.identifier_name, st.struct_name);
             }
         }
+        
+        // 安全证明：更新赋值后的约束
+        // 处理 var = var + const 或 var = var - const 模式
+        if checker.enable_safety_proof != 0 && dest.type == ASTNodeType.AST_IDENTIFIER {
+            const var_name: &byte = dest.identifier_name;
+            if src != null && src.type == ASTNodeType.AST_BINARY_EXPR {
+                const left: &ASTNode = src.binary_expr_left;
+                const right: &ASTNode = src.binary_expr_right;
+                const op: TokenType = src.binary_expr_op as TokenType;
+                
+                // 检查是否是 var = var op const 模式
+                if left != null && left.type == ASTNodeType.AST_IDENTIFIER &&
+                    str_equals(left.identifier_name, var_name) != 0 {
+                    const right_val: i32 = checker_eval_const_expr(checker, right);
+                    
+                    if op == TokenType.TOKEN_PLUS {
+                        // i = i + n: 如果原来 i >= k，新值 i >= k + n
+                        // 对于 n > 0，如果原来 i >= 0，新值也 >= 0
+                        constraint_update_for_increment(checker, var_name, right_val);
+                    } else if op == TokenType.TOKEN_MINUS {
+                        // i = i - n: 不确定新值的下界
+                        // 保守策略：清除该变量的约束
+                        constraint_remove_var(checker, var_name);
+                    } else {
+                        // 其他操作：清除约束
+                        constraint_remove_var(checker, var_name);
+                    }
+                } else {
+                    // 不是 var = var op const 模式：检查右侧是否是常量
+                    const src_val: i32 = checker_eval_const_expr(checker, src);
+                    var is_valid_const: i32 = 0;
+                    if src_val >= 0 {
+                        is_valid_const = 1;
+                    } else if src_val < 0 && right != null && right.type == ASTNodeType.AST_NUMBER {
+                        is_valid_const = 1;
+                    }
+                    if is_valid_const != 0 {
+                        // 新值是常量：更新约束
+                        constraint_remove_var(checker, var_name);
+                        constraint_add(checker, var_name, CONSTRAINT_EQ, src_val);
+                        if src_val >= 0 {
+                            constraint_add(checker, var_name, CONSTRAINT_GE, 0);
+                        }
+                    } else {
+                        // 不是常量：清除约束
+                        constraint_remove_var(checker, var_name);
+                    }
+                }
+            } else {
+                // 非二元表达式：检查是否是常量
+                const src_val: i32 = checker_eval_const_expr(checker, src);
+                var is_valid_const: i32 = 0;
+                if src_val >= 0 {
+                    is_valid_const = 1;
+                } else if src_val < 0 && src != null && src.type == ASTNodeType.AST_NUMBER {
+                    is_valid_const = 1;
+                }
+                if is_valid_const != 0 {
+                    constraint_remove_var(checker, var_name);
+                    constraint_add(checker, var_name, CONSTRAINT_EQ, src_val);
+                    if src_val >= 0 {
+                        constraint_add(checker, var_name, CONSTRAINT_GE, 0);
+                    }
+                } else {
+                    constraint_remove_var(checker, var_name);
+                }
+            }
+        }
+        
         return 1;
     } else if node.type == ASTNodeType.AST_FOR_STMT {
         if node.for_stmt_is_range != 0 {

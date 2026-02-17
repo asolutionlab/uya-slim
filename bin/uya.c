@@ -2405,6 +2405,8 @@ static struct Type checker_check_call_expr(struct TypeChecker * checker, struct 
 static struct Type checker_check_member_access(struct TypeChecker * checker, struct ASTNode * node);
 static void constraint_clear(struct TypeChecker * checker);
 static void constraint_add(struct TypeChecker * checker, uint8_t * var_name, int32_t op, int32_t value);
+static void constraint_remove_var(struct TypeChecker * checker, uint8_t * var_name);
+static void constraint_update_for_increment(struct TypeChecker * checker, uint8_t * var_name, int32_t increment);
 static void constraint_extract_from_binary(struct TypeChecker * checker, struct ASTNode * expr, int32_t is_positive);
 static int32_t constraint_verify_bounds(struct TypeChecker * checker, uint8_t * var_name, int32_t array_size);
 static struct Type checker_check_array_access(struct TypeChecker * checker, struct ASTNode * node);
@@ -12029,6 +12031,26 @@ static __attribute__((unused)) int32_t checker_check_var_decl(struct TypeChecker
             }
         }
     }
+    if ((((checker->enable_safety_proof != 0) && (node->var_decl_name != NULL)) && (node->var_decl_init != NULL))) {
+        const int32_t init_val = checker_eval_const_expr(checker, node->var_decl_init);
+        int32_t is_valid_const = 0;
+        if ((init_val >= 0)) {
+            is_valid_const = 1;
+        } else {
+            if ((init_val < 0)) {
+                struct ASTNode * const init_node = node->var_decl_init;
+                if (((init_node != NULL) && (init_node->type == AST_NUMBER))) {
+                    is_valid_const = 1;
+                }
+            }
+        }
+        if ((is_valid_const != 0)) {
+            constraint_add(checker, node->var_decl_name, CONSTRAINT_EQ, init_val);
+            if ((init_val >= 0)) {
+                constraint_add(checker, node->var_decl_name, CONSTRAINT_GE, 0);
+            }
+        }
+    }
     int32_t _uya_ret = 1;
     return _uya_ret;
 }
@@ -13146,6 +13168,55 @@ static __attribute__((unused)) void constraint_add(struct TypeChecker * checker,
     checker->constraint_ops[checker->constraint_count] = op;
     checker->constraint_values[checker->constraint_count] = value;
     checker->constraint_count = (checker->constraint_count + 1);
+}
+
+static __attribute__((unused)) void constraint_remove_var(struct TypeChecker * checker, uint8_t * var_name) {
+    (void)checker;
+    (void)var_name;
+    if (((checker == NULL) || (var_name == NULL))) {
+        return;
+    }
+    int32_t write_idx = 0;
+    int32_t i = 0;
+    while ((i < checker->constraint_count)) {
+        uint8_t * const name = checker->constraint_var_names[i];
+        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) != 0))) {
+            checker->constraint_var_names[write_idx] = name;
+            checker->constraint_ops[write_idx] = checker->constraint_ops[i];
+            checker->constraint_values[write_idx] = checker->constraint_values[i];
+            write_idx = (write_idx + 1);
+        }
+        i = (i + 1);
+    }
+    checker->constraint_count = write_idx;
+}
+
+static __attribute__((unused)) void constraint_update_for_increment(struct TypeChecker * checker, uint8_t * var_name, int32_t increment) {
+    (void)checker;
+    (void)var_name;
+    (void)increment;
+    if (((checker == NULL) || (var_name == NULL))) {
+        return;
+    }
+    int32_t i = 0;
+    while ((i < checker->constraint_count)) {
+        uint8_t * const name = checker->constraint_var_names[i];
+        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
+            const int32_t op = checker->constraint_ops[i];
+            const int32_t val = checker->constraint_values[i];
+            if ((op == CONSTRAINT_GE)) {
+                checker->constraint_values[i] = (val + increment);
+            } else {
+                if ((op == CONSTRAINT_GT)) {
+                    checker->constraint_values[i] = (val + increment);
+                }
+            }
+            if (((op == CONSTRAINT_LT) || (op == CONSTRAINT_LE))) {
+                checker->constraint_var_names[i] = NULL;
+            }
+        }
+        i = (i + 1);
+    }
 }
 
 static __attribute__((unused)) void constraint_extract_from_binary(struct TypeChecker * checker, struct ASTNode * expr, int32_t is_positive) {
@@ -14724,6 +14795,64 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                                                                                                                                         struct Type st = checker_infer_type(checker, src);
                                                                                                                                                                         if (((st.kind == TYPE_STRUCT) && (st.struct_name != NULL))) {
                                                                                                                                                                             checker_mark_moved(checker, node, src->identifier_name, st.struct_name);
+                                                                                                                                                                        }
+                                                                                                                                                                    }
+                                                                                                                                                                    if (((checker->enable_safety_proof != 0) && (dest->type == AST_IDENTIFIER))) {
+                                                                                                                                                                        uint8_t * const var_name = dest->identifier_name;
+                                                                                                                                                                        if (((src != NULL) && (src->type == AST_BINARY_EXPR))) {
+                                                                                                                                                                            struct ASTNode * const left = src->binary_expr_left;
+                                                                                                                                                                            struct ASTNode * const right = src->binary_expr_right;
+                                                                                                                                                                            const enum TokenType op = (enum TokenType)src->binary_expr_op;
+                                                                                                                                                                            if ((((left != NULL) && (left->type == AST_IDENTIFIER)) && (str_equals(left->identifier_name, var_name) != 0))) {
+                                                                                                                                                                                const int32_t right_val = checker_eval_const_expr(checker, right);
+                                                                                                                                                                                if ((op == TOKEN_PLUS)) {
+                                                                                                                                                                                    constraint_update_for_increment(checker, var_name, right_val);
+                                                                                                                                                                                } else {
+                                                                                                                                                                                    if ((op == TOKEN_MINUS)) {
+                                                                                                                                                                                        constraint_remove_var(checker, var_name);
+                                                                                                                                                                                    } else {
+                                                                                                                                                                                        constraint_remove_var(checker, var_name);
+                                                                                                                                                                                    }
+                                                                                                                                                                                }
+                                                                                                                                                                            } else {
+                                                                                                                                                                                const int32_t src_val = checker_eval_const_expr(checker, src);
+                                                                                                                                                                                int32_t is_valid_const = 0;
+                                                                                                                                                                                if ((src_val >= 0)) {
+                                                                                                                                                                                    is_valid_const = 1;
+                                                                                                                                                                                } else {
+                                                                                                                                                                                    if ((((src_val < 0) && (right != NULL)) && (right->type == AST_NUMBER))) {
+                                                                                                                                                                                        is_valid_const = 1;
+                                                                                                                                                                                    }
+                                                                                                                                                                                }
+                                                                                                                                                                                if ((is_valid_const != 0)) {
+                                                                                                                                                                                    constraint_remove_var(checker, var_name);
+                                                                                                                                                                                    constraint_add(checker, var_name, CONSTRAINT_EQ, src_val);
+                                                                                                                                                                                    if ((src_val >= 0)) {
+                                                                                                                                                                                        constraint_add(checker, var_name, CONSTRAINT_GE, 0);
+                                                                                                                                                                                    }
+                                                                                                                                                                                } else {
+                                                                                                                                                                                    constraint_remove_var(checker, var_name);
+                                                                                                                                                                                }
+                                                                                                                                                                            }
+                                                                                                                                                                        } else {
+                                                                                                                                                                            const int32_t src_val = checker_eval_const_expr(checker, src);
+                                                                                                                                                                            int32_t is_valid_const = 0;
+                                                                                                                                                                            if ((src_val >= 0)) {
+                                                                                                                                                                                is_valid_const = 1;
+                                                                                                                                                                            } else {
+                                                                                                                                                                                if ((((src_val < 0) && (src != NULL)) && (src->type == AST_NUMBER))) {
+                                                                                                                                                                                    is_valid_const = 1;
+                                                                                                                                                                                }
+                                                                                                                                                                            }
+                                                                                                                                                                            if ((is_valid_const != 0)) {
+                                                                                                                                                                                constraint_remove_var(checker, var_name);
+                                                                                                                                                                                constraint_add(checker, var_name, CONSTRAINT_EQ, src_val);
+                                                                                                                                                                                if ((src_val >= 0)) {
+                                                                                                                                                                                    constraint_add(checker, var_name, CONSTRAINT_GE, 0);
+                                                                                                                                                                                }
+                                                                                                                                                                            } else {
+                                                                                                                                                                                constraint_remove_var(checker, var_name);
+                                                                                                                                                                            }
                                                                                                                                                                         }
                                                                                                                                                                     }
                                                                                                                                                                     int32_t _uya_ret = 1;
