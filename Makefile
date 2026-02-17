@@ -1,7 +1,7 @@
 # Uya 项目根目录 Makefile
 # 提供统一的构建和测试入口
 
-.PHONY: all from-c uya-c uya uya-nostdlib b tests tests-c tests-uya outlibc c e clean backup restore help
+.PHONY: all from-c uya-c uya uya-nostdlib b tests tests-c tests-uya outlibc c e clean check backup restore help
 
 # 默认目标
 all: help
@@ -215,7 +215,7 @@ clean:
 	@echo "✓ 清理完成"
 
 # 备份 bin/uya.c（依赖自举验证和测试通过）
-backup: b
+check: b
 	@echo "=========================================="
 	@echo "运行测试验证..."
 	@echo "=========================================="
@@ -227,8 +227,10 @@ backup: b
 		exit 1; \
 	fi
 	@echo ""
-	@echo "✓ 测试通过"
-	# 注意：memory-safety-proof 分支不更新 backup/uya.c，保持使用 main 分支的编译器
+	@echo "✓ 验证通过（自举 + 测试）"
+
+# 备份（依赖 check 通过）
+backup: check
 
 # 从备份恢复 bin/uya.c
 restore:
@@ -263,7 +265,8 @@ help:
 	@echo "  make tests-uya       - 快捷方式：测试自举编译器"
 	@echo "  make tests-uya e     - 快捷方式：测试自举编译器，只显示失败的测试"
 	@echo "  make outlibc         - 输出标准库为 C 代码（使用自举编译器）"
-	@echo "  make backup          - 备份 bin/uya.c 到 backup/uya.c"
+	@echo "  make check           - 验证（自举 + 测试），不备份"
+	@echo "  make backup          - 验证 + 备份 bin/uya.c"
 	@echo "  make restore         - 从 backup/uya.c 恢复 bin/uya.c"
 	@echo "  make clean           - 清理所有构建产物"
 	@echo "  make help            - 显示此帮助信息"
