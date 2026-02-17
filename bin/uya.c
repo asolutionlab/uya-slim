@@ -1917,6 +1917,10 @@ struct TypeChecker {
     int32_t current_type_param_count;
     struct MonoInstance mono_instances[512];
     int32_t mono_instance_count;
+    uint8_t * constraint_var_names[64];
+    int32_t constraint_ops[64];
+    int32_t constraint_values[64];
+    int32_t constraint_count;
 };
 
 struct VisitState {
@@ -2392,6 +2396,10 @@ static int32_t checker_check_fn_decl(struct TypeChecker * checker, struct ASTNod
 static int32_t checker_check_struct_decl(struct TypeChecker * checker, struct ASTNode * node);
 static struct Type checker_check_call_expr(struct TypeChecker * checker, struct ASTNode * node);
 static struct Type checker_check_member_access(struct TypeChecker * checker, struct ASTNode * node);
+static void constraint_clear(struct TypeChecker * checker);
+static void constraint_add(struct TypeChecker * checker, uint8_t * var_name, int32_t op, int32_t value);
+static void constraint_extract_from_binary(struct TypeChecker * checker, struct ASTNode * expr, int32_t is_positive);
+static int32_t constraint_verify_bounds(struct TypeChecker * checker, uint8_t * var_name, int32_t array_size);
 static struct Type checker_check_array_access(struct TypeChecker * checker, struct ASTNode * node);
 static struct Type checker_check_alignof(struct TypeChecker * checker, struct ASTNode * node);
 static struct Type checker_check_len(struct TypeChecker * checker, struct ASTNode * node);
@@ -2803,6 +2811,18 @@ const int32_t IMPORT_TABLE_SIZE = 512;
 const int32_t I32_MAX = 2147483647;
 
 const int32_t I32_MIN = ((-2147483647) - 1);
+
+const int32_t CONSTRAINT_LT = 0;
+
+const int32_t CONSTRAINT_LE = 1;
+
+const int32_t CONSTRAINT_GT = 2;
+
+const int32_t CONSTRAINT_GE = 3;
+
+const int32_t CONSTRAINT_EQ = 4;
+
+const int32_t CONSTRAINT_NE = 5;
 
 const int32_t MAX_MODULES = 64;
 
@@ -4248,7 +4268,7 @@ static __attribute__((unused)) int32_t compile_files(int32_t * input_file_indice
     struct Type void_type = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wmissing-braces"
-    struct TypeChecker checker = (struct TypeChecker){.arena = NULL, .symbol_table = (struct SymbolTable){.slots = {0}, .count = 0}, .function_table = (struct FunctionTable){.slots = {0}, .count = 0}, .module_table = 0, .import_table = 0, .scope_level = 0, .loop_depth = 0, .program_node = NULL, .error_count = 0, .default_filename = NULL, .current_return_type = void_type, .in_function = 0, .in_defer_or_errdefer = 0, .current_function_decl = 0, .error_names = {0}, .error_hashes = {0}, .error_name_count = 0, .moved_names = {0}, .moved_count = 0, .project_root_dir = 0, .uya_root_dir = 0, .current_type_params = 0, .current_type_param_count = 0, .mono_instances = {{0}}, .mono_instance_count = 0};
+    struct TypeChecker checker = (struct TypeChecker){.arena = NULL, .symbol_table = (struct SymbolTable){.slots = {0}, .count = 0}, .function_table = (struct FunctionTable){.slots = {0}, .count = 0}, .module_table = 0, .import_table = 0, .scope_level = 0, .loop_depth = 0, .program_node = NULL, .error_count = 0, .default_filename = NULL, .current_return_type = void_type, .in_function = 0, .in_defer_or_errdefer = 0, .current_function_decl = 0, .error_names = {0}, .error_hashes = {0}, .error_name_count = 0, .moved_names = {0}, .moved_count = 0, .project_root_dir = 0, .uya_root_dir = 0, .current_type_params = 0, .current_type_param_count = 0, .mono_instances = {{0}}, .mono_instance_count = 0, .constraint_var_names = {0}, .constraint_ops = {0}, .constraint_values = {0}, .constraint_count = 0};
 #pragma GCC diagnostic pop
     uint8_t * default_filename = (uint8_t *)(uint8_t *)str83;
     if ((all_file_count > 0)) {
@@ -8287,6 +8307,14 @@ static __attribute__((unused)) int32_t checker_init(struct TypeChecker * checker
     checker->current_type_params = NULL;
     checker->current_type_param_count = 0;
     checker->mono_instance_count = 0;
+    i = 0;
+    while ((i < 64)) {
+        checker->constraint_var_names[i] = NULL;
+        checker->constraint_ops[i] = 0;
+        checker->constraint_values[i] = 0;
+        i = (i + 1);
+    }
+    checker->constraint_count = 0;
     int32_t _uya_ret = 0;
     return _uya_ret;
 }
@@ -13031,6 +13059,159 @@ static __attribute__((unused)) struct Type checker_check_member_access(struct Ty
     return _uya_ret;
 }
 
+static __attribute__((unused)) void constraint_clear(struct TypeChecker * checker) {
+    (void)checker;
+    if ((checker == NULL)) {
+        return;
+    }
+    int32_t i = 0;
+    while ((i < checker->constraint_count)) {
+        checker->constraint_var_names[i] = NULL;
+        checker->constraint_ops[i] = 0;
+        checker->constraint_values[i] = 0;
+        i = (i + 1);
+    }
+    checker->constraint_count = 0;
+}
+
+static __attribute__((unused)) void constraint_add(struct TypeChecker * checker, uint8_t * var_name, int32_t op, int32_t value) {
+    (void)checker;
+    (void)var_name;
+    (void)op;
+    (void)value;
+    if (((checker == NULL) || (var_name == NULL))) {
+        return;
+    }
+    if ((checker->constraint_count >= 64)) {
+        return;
+    }
+    checker->constraint_var_names[checker->constraint_count] = var_name;
+    checker->constraint_ops[checker->constraint_count] = op;
+    checker->constraint_values[checker->constraint_count] = value;
+    checker->constraint_count = (checker->constraint_count + 1);
+}
+
+static __attribute__((unused)) void constraint_extract_from_binary(struct TypeChecker * checker, struct ASTNode * expr, int32_t is_positive) {
+    (void)checker;
+    (void)expr;
+    (void)is_positive;
+    if (((checker == NULL) || (expr == NULL))) {
+        return;
+    }
+    if ((expr->type != AST_BINARY_EXPR)) {
+        return;
+    }
+    const int32_t op = expr->binary_expr_op;
+    if (((((((op != 50) && (op != 51)) && (op != 52)) && (op != 53)) && (op != 54)) && (op != 55))) {
+        return;
+    }
+    struct ASTNode * const left = expr->binary_expr_left;
+    struct ASTNode * const right = expr->binary_expr_right;
+    if (((left == NULL) || (right == NULL))) {
+        return;
+    }
+    if ((left->type != AST_IDENTIFIER)) {
+        return;
+    }
+    const int32_t right_val = checker_eval_const_expr(checker, right);
+    if ((right_val < 0)) {
+        return;
+    }
+    uint8_t * const var_name = left->identifier_name;
+    int32_t constraint_op = 0;
+    if ((is_positive != 0)) {
+        if ((op == 52)) {
+            constraint_op = CONSTRAINT_LT;
+        } else {
+            if ((op == 53)) {
+                constraint_op = CONSTRAINT_GT;
+            } else {
+                if ((op == 54)) {
+                    constraint_op = CONSTRAINT_LE;
+                } else {
+                    if ((op == 55)) {
+                        constraint_op = CONSTRAINT_GE;
+                    } else {
+                        if ((op == 50)) {
+                            constraint_op = CONSTRAINT_EQ;
+                        } else {
+                            if ((op == 51)) {
+                                constraint_op = CONSTRAINT_NE;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        if ((op == 52)) {
+            constraint_op = CONSTRAINT_GE;
+        } else {
+            if ((op == 53)) {
+                constraint_op = CONSTRAINT_LE;
+            } else {
+                if ((op == 54)) {
+                    constraint_op = CONSTRAINT_GT;
+                } else {
+                    if ((op == 55)) {
+                        constraint_op = CONSTRAINT_LT;
+                    } else {
+                        if ((op == 50)) {
+                            constraint_op = CONSTRAINT_NE;
+                        } else {
+                            if ((op == 51)) {
+                                constraint_op = CONSTRAINT_EQ;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    constraint_add(checker, var_name, constraint_op, right_val);
+}
+
+static __attribute__((unused)) int32_t constraint_verify_bounds(struct TypeChecker * checker, uint8_t * var_name, int32_t array_size) {
+    (void)checker;
+    (void)var_name;
+    (void)array_size;
+    if (((checker == NULL) || (var_name == NULL))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    int32_t has_lower_bound = 0;
+    int32_t has_upper_bound = 0;
+    int32_t i = 0;
+    while ((i < checker->constraint_count)) {
+        uint8_t * const name = checker->constraint_var_names[i];
+        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
+            const int32_t op = checker->constraint_ops[i];
+            const int32_t val = checker->constraint_values[i];
+            if (((op == CONSTRAINT_GE) && (val == 0))) {
+                has_lower_bound = 1;
+            } else {
+                if (((op == CONSTRAINT_GT) && (val == (-1)))) {
+                    has_lower_bound = 1;
+                }
+            }
+            if (((op == CONSTRAINT_LT) && (val == array_size))) {
+                has_upper_bound = 1;
+            } else {
+                if (((op == CONSTRAINT_LE) && (val == (array_size - 1)))) {
+                    has_upper_bound = 1;
+                }
+            }
+        }
+        i = (i + 1);
+    }
+    if (((has_lower_bound != 0) && (has_upper_bound != 0))) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
 static __attribute__((unused)) struct Type checker_check_array_access(struct TypeChecker * checker, struct ASTNode * node) {
     (void)checker;
     (void)node;
@@ -13063,6 +13244,14 @@ static __attribute__((unused)) struct Type checker_check_array_access(struct Typ
                 }
                 if ((index_val < 0)) {
                     checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str333);
+                }
+            } else {
+                struct ASTNode * const index_expr = node->array_access_index;
+                if (((index_expr != NULL) && (index_expr->type == AST_IDENTIFIER))) {
+                    uint8_t * const index_var = index_expr->identifier_name;
+                    const int32_t array_size = array_type.array_size;
+                    if ((constraint_verify_bounds(checker, index_var, array_size) == 0)) {
+                    }
                 }
             }
             struct Type _uya_ret = array_type.element_type[0];
@@ -13933,12 +14122,21 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                             if (((cond_type.kind != TYPE_BOOL) && (cond_type.kind != TYPE_VOID))) {
                                                                 checker_report_error(checker, node, (uint8_t *)(uint8_t *)str359);
                                                             }
+                                                            const int32_t saved_constraint_count = checker->constraint_count;
+                                                            if ((node->if_stmt_condition != NULL)) {
+                                                                constraint_extract_from_binary(checker, node->if_stmt_condition, 1);
+                                                            }
                                                             if ((node->if_stmt_then_branch != NULL)) {
                                                                 checker_check_node(checker, node->if_stmt_then_branch);
                                                             }
+                                                            checker->constraint_count = saved_constraint_count;
                                                             if ((node->if_stmt_else_branch != NULL)) {
+                                                                if ((node->if_stmt_condition != NULL)) {
+                                                                    constraint_extract_from_binary(checker, node->if_stmt_condition, 0);
+                                                                }
                                                                 checker_check_node(checker, node->if_stmt_else_branch);
                                                             }
+                                                            checker->constraint_count = saved_constraint_count;
                                                             int32_t _uya_ret = 1;
                                                             return _uya_ret;
                                                         } else {
