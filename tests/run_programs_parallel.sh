@@ -211,11 +211,18 @@ run_single_test() {
     
     # 编译
     output_file="$BUILD_DIR/${base_name}.c"
+    # 检查是否需要 --safety-proof 参数
+    local safety_proof_arg=""
+    if [[ "$base_name" == "error_bounds_need_proof" ]] || \
+       [[ "$base_name" == "error_path_while_need_proof" ]] || \
+       [[ "$base_name" == "error_path_for_need_proof" ]]; then
+        safety_proof_arg="--safety-proof"
+    fi
     if [ "$USE_UYA" = true ]; then
         # 自举编译器递归较深，已在脚本开头增大栈限制
-        compiler_output=$("$COMPILER" --c99 --nostdlib "$uya_file" -o "$output_file" 2>&1)
+        compiler_output=$("$COMPILER" --c99 --nostdlib $safety_proof_arg "$uya_file" -o "$output_file" 2>&1)
     else
-        compiler_output=$("$COMPILER" --c99 --nostdlib "$uya_file" -o "$output_file" 2>&1)
+        compiler_output=$("$COMPILER" --c99 --nostdlib $safety_proof_arg "$uya_file" -o "$output_file" 2>&1)
     fi
     compiler_exit=$?
     
