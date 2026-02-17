@@ -352,3 +352,75 @@ checker.mono_instances[idx].generic_name = name_copy;
 - `src/codegen/c99/types.uya`：`c99_type_to_c`（二级类型参数查找）
 - `src/codegen/c99/structs.uya`：`get_mono_struct_name`、`append_type_arg_suffix`
 - `tests/programs/test_generic_method_call.uya`：测试用例
+
+---
+
+## 8. 内存安全证明系统
+
+### 8.1 区间算术（Interval Arithmetic）
+
+用于处理非线性表达式的边界检查：
+
+```uya
+// 区间结构
+struct Interval {
+    min: i32,        // 最小值
+    max: i32,        // 最大值
+    is_valid: i32,   // 是否有效
+}
+
+// 区间运算函数
+fn interval_add(a: Interval, b: Interval) Interval;
+fn interval_sub(a: Interval, b: Interval) Interval;
+fn interval_mul(a: Interval, b: Interval) Interval;
+fn interval_div(a: Interval, b: Interval) Interval;
+fn interval_shl(a: Interval, b: Interval) Interval;  // 左移
+fn interval_shr(a: Interval, b: Interval) Interval;  // 右移
+```
+
+**应用场景**：当索引表达式包含乘法、除法、移位运算时，使用区间分析估计表达式的值范围，判断是否在数组边界内。
+
+### 8.2 无符号类型约束
+
+无符号类型（`u8`, `u16`, `u32`, `u64`, `usize`, `byte`）的变量自动获得 `>= 0` 约束：
+
+```uya
+// 自动约束
+var i: usize = get_value();
+// i 自动满足 i >= 0
+
+// 类型转换表达式支持
+var base: i32 = 3;
+arr[(base + 3) as usize] = 42;  // 可以正确处理类型转换
+```
+
+### 8.3 Token 类型名称
+
+在 `checker.uya` 中引用 Token 类型时，使用正确的枚举名称：
+
+- `TOKEN_PLUS`（加法 `+`）
+- `TOKEN_MINUS`（减法 `-`）
+- `TOKEN_ASTERISK`（乘法 `*`，不是 `TOKEN_STAR`）
+- `TOKEN_SLASH`（除法 `/`）
+- `TOKEN_LSHIFT`（左移 `<<`，不是 `TOKEN_SHL`）
+- `TOKEN_RSHIFT`（右移 `>>`，不是 `TOKEN_SHR`）
+
+### 8.4 边界检查流程
+
+```
+1. 常量索引 → 直接检查是否越界
+2. 变量索引（线性表达式）→ 使用约束系统验证
+3. 变量索引（非线性表达式）→ 使用区间分析验证
+4. 无法验证 → 报告编译错误
+```
+
+### 8.5 相关文件
+
+- `src/checker.uya`：
+  - `Interval` 结构和区间运算函数
+  - `extract_linear_expr`：提取线性表达式（支持类型转换）
+  - `eval_expr_interval`：表达式区间求值
+  - `verify_expr_bounds_interval`：区间边界验证
+  - `is_unsigned_type`：判断无符号类型
+- `tests/programs/test_usize_constraints.uya`：usize 约束测试
+- `tests/programs/test_nonlinear_bounds.uya`：非线性表达式测试

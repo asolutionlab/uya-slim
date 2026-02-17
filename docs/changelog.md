@@ -4,6 +4,80 @@
 
 ---
 
+## 0.51 版本变更（相对于 0.50）
+
+**发布日期：** 2026年2月17日
+
+### 0.51 内存安全证明增强
+
+本版本增强了内存安全证明系统的类型支持和表达式分析能力。
+
+#### 新增功能
+
+1. **无符号类型约束支持**
+   - 新增 `is_unsigned_type()` 函数判断无符号整数类型
+   - 自动为 `usize`, `u8`, `u16`, `u32`, `u64`, `byte` 类型变量添加 `>= 0` 约束
+   - 类型转换表达式支持：`extract_linear_expr` 和 `checker_eval_const_expr` 现在支持 `as` 类型转换
+
+2. **区间算术（Interval Arithmetic）**
+   - 新增 `Interval` 结构表示值范围 `[min, max]`
+   - 实现区间运算函数：`interval_add`, `interval_sub`, `interval_mul`, `interval_div`, `interval_shl`, `interval_shr`
+   - 支持从约束系统推导变量区间：`get_var_interval()`
+   - 表达式区间求值：`eval_expr_interval()`
+   - 区间边界验证：`verify_expr_bounds_interval()`
+
+3. **非线性表达式边界检查**
+   - 支持乘法表达式边界检查：`arr[i * 2]`
+   - 支持除法表达式边界检查：`arr[i / 2]`
+   - 支持移位表达式边界检查：`arr[i << 1]`, `arr[i >> 1]`
+
+#### 使用示例
+
+```uya
+// 非线性表达式边界检查
+fn test_mul() void {
+    var arr: [i32: 20] = [...];
+    var i: i32 = 3;
+
+    if i == 3 {
+        arr[i * 2] = 42;  // i * 2 == 6 < 20, 安全
+    }
+}
+
+// 移位运算边界检查
+fn test_shift() void {
+    var arr: [i32: 100] = [...];
+    var i: i32 = 5;
+
+    if i == 5 {
+        arr[i << 1] = 42;  // i << 1 == 10 < 100, 安全
+    }
+}
+
+// usize 类型自动约束
+fn test_usize() void {
+    var arr: [i32: 10] = [...];
+    var i: usize = get_index();
+
+    if i < 10 {
+        arr[i] = 42;  // usize 天然满足 i >= 0，只需检查上界
+    }
+}
+```
+
+#### 新增测试
+
+- `test_usize_constraints.uya`：usize 类型约束测试
+- `test_nonlinear_bounds.uya`：非线性表达式边界检查测试
+
+#### 技术细节
+
+- Token 类型名称修正：`TOKEN_ASTERISK`（乘法）、`TOKEN_LSHIFT`（左移）、`TOKEN_RSHIFT`（右移）
+- 区间乘法需要考虑所有极值组合
+- 区间除法需要处理除以零情况
+
+---
+
 ## 0.50 版本变更（相对于 0.48）
 
 **发布日期：** 2026年2月17日（农历春节）

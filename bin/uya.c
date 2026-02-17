@@ -1263,6 +1263,7 @@ struct ImportTable;
 struct MonoInstance;
 struct TypeChecker;
 struct LinearExpr;
+struct Interval;
 struct VisitState;
 struct MacroParamBinding;
 struct MacroExpandContext;
@@ -1946,6 +1947,12 @@ struct LinearExpr {
     int32_t is_valid;
 };
 
+struct Interval {
+    int32_t min;
+    int32_t max;
+    int32_t is_valid;
+};
+
 struct VisitState {
     uint8_t * module_name;
     int32_t state;
@@ -2372,6 +2379,7 @@ static uint32_t get_or_add_error_id(struct TypeChecker * checker, uint8_t * name
 static uint8_t * type_to_string(struct Arena * arena, struct Type type);
 static int32_t is_integer_type(enum TypeKind k);
 static int32_t is_float_type(enum TypeKind k);
+static int32_t is_unsigned_type(enum TypeKind k);
 static int32_t is_numeric_type(enum TypeKind k);
 static int32_t type_satisfies_builtin_constraint(struct Type type, uint8_t * constraint_name);
 static int32_t type_satisfies_constraint(struct TypeChecker * checker, struct Type type, uint8_t * constraint_name);
@@ -2434,8 +2442,22 @@ static void constraint_remove_var(struct TypeChecker * checker, uint8_t * var_na
 static void constraint_update_for_increment(struct TypeChecker * checker, uint8_t * var_name, int32_t increment);
 static void constraint_extract_from_binary(struct TypeChecker * checker, struct ASTNode * expr, int32_t is_positive);
 static int32_t constraint_verify_bounds(struct TypeChecker * checker, uint8_t * var_name, int32_t array_size);
+static struct Interval interval_const(int32_t val);
+static struct Interval interval_range(int32_t min_val, int32_t max_val);
+static struct Interval interval_invalid();
+static struct Interval interval_add(struct Interval a, struct Interval b);
+static struct Interval interval_sub(struct Interval a, struct Interval b);
+static struct Interval interval_mul(struct Interval a, struct Interval b);
+static struct Interval interval_div(struct Interval a, struct Interval b);
+static struct Interval interval_shl(struct Interval a, struct Interval b);
+static struct Interval interval_shr(struct Interval a, struct Interval b);
+static int32_t interval_within_bounds(struct Interval interval, int32_t lower, int32_t upper);
 static struct LinearExpr extract_linear_expr(struct TypeChecker * checker, struct ASTNode * expr);
+static struct Interval get_var_interval(struct TypeChecker * checker, uint8_t * var_name);
+static struct Interval eval_expr_interval(struct TypeChecker * checker, struct ASTNode * expr);
+static int32_t verify_expr_bounds_interval(struct TypeChecker * checker, struct ASTNode * expr, int32_t array_size);
 static int32_t verify_linear_expr_bounds(struct TypeChecker * checker, struct LinearExpr * linear_expr, int32_t array_size, struct ASTNode * node);
+static int32_t verify_linear_expr_bounds_ex(struct TypeChecker * checker, struct LinearExpr * linear_expr, int32_t array_size, struct ASTNode * node, int32_t is_unsigned);
 static struct Type checker_check_array_access(struct TypeChecker * checker, struct ASTNode * node);
 static struct Type checker_check_alignof(struct TypeChecker * checker, struct ASTNode * node);
 static struct Type checker_check_len(struct TypeChecker * checker, struct ASTNode * node);
@@ -9073,6 +9095,20 @@ static __attribute__((unused)) int32_t is_float_type(enum TypeKind k) {
     return _uya_ret;
 }
 
+static __attribute__((unused)) int32_t is_unsigned_type(enum TypeKind k) {
+    (void)k;
+    if ((((((k == TYPE_U8) || (k == TYPE_U16)) || (k == TYPE_U32)) || (k == TYPE_USIZE)) || (k == TYPE_U64))) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    if ((k == TYPE_BYTE)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
 static __attribute__((unused)) int32_t is_numeric_type(enum TypeKind k) {
     (void)k;
     if (((is_integer_type(k) != 0) || (is_float_type(k) != 0))) {
@@ -10621,8 +10657,18 @@ static __attribute__((unused)) int32_t checker_eval_const_expr(struct TypeChecke
                         int32_t _uya_ret = (-1);
                         return _uya_ret;
                     } else {
-                        int32_t _uya_ret = (-1);
-                        return _uya_ret;
+                        if ((expr->type == AST_CAST_EXPR)) {
+                            struct ASTNode * const inner_expr = expr->cast_expr_expr;
+                            if ((inner_expr == NULL)) {
+                                int32_t _uya_ret = (-1);
+                                return _uya_ret;
+                            }
+                            int32_t _uya_ret = checker_eval_const_expr(checker, inner_expr);
+                            return _uya_ret;
+                        } else {
+                            int32_t _uya_ret = (-1);
+                            return _uya_ret;
+                        }
                     }
                 }
             }
@@ -12193,6 +12239,11 @@ static __attribute__((unused)) int32_t checker_check_var_decl(struct TypeChecker
             }
         }
     }
+    if (((checker->enable_safety_proof != 0) && (node->var_decl_name != NULL))) {
+        if ((is_unsigned_type(var_type.kind) != 0)) {
+            constraint_add(checker, node->var_decl_name, CONSTRAINT_GE, 0);
+        }
+    }
     if ((((checker->enable_safety_proof != 0) && (node->var_decl_name != NULL)) && (var_type.kind == TYPE_POINTER))) {
         int32_t is_null_init = 0;
         if (((node->var_decl_init != NULL) && (node->var_decl_init->type == AST_IDENTIFIER))) {
@@ -13669,6 +13720,168 @@ static __attribute__((unused)) int32_t constraint_verify_bounds(struct TypeCheck
     return _uya_ret;
 }
 
+static __attribute__((unused)) struct Interval interval_const(int32_t val) {
+    (void)val;
+    struct Interval _uya_ret = (struct Interval){.min = val, .max = val, .is_valid = 1};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Interval interval_range(int32_t min_val, int32_t max_val) {
+    (void)min_val;
+    (void)max_val;
+    struct Interval _uya_ret = (struct Interval){.min = min_val, .max = max_val, .is_valid = 1};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Interval interval_invalid() {
+    struct Interval _uya_ret = (struct Interval){.min = 0, .max = 0, .is_valid = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Interval interval_add(struct Interval a, struct Interval b) {
+    (void)a;
+    (void)b;
+    if (((a.is_valid == 0) || (b.is_valid == 0))) {
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    struct Interval _uya_ret = interval_range((a.min + b.min), (a.max + b.max));
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Interval interval_sub(struct Interval a, struct Interval b) {
+    (void)a;
+    (void)b;
+    if (((a.is_valid == 0) || (b.is_valid == 0))) {
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    struct Interval _uya_ret = interval_range((a.min - b.max), (a.max - b.min));
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Interval interval_mul(struct Interval a, struct Interval b) {
+    (void)a;
+    (void)b;
+    if (((a.is_valid == 0) || (b.is_valid == 0))) {
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    const int32_t p1 = (a.min * b.min);
+    const int32_t p2 = (a.min * b.max);
+    const int32_t p3 = (a.max * b.min);
+    const int32_t p4 = (a.max * b.max);
+    int32_t min_val = p1;
+    int32_t max_val = p1;
+    if ((p2 < min_val)) {
+        min_val = p2;
+    }
+    if ((p3 < min_val)) {
+        min_val = p3;
+    }
+    if ((p4 < min_val)) {
+        min_val = p4;
+    }
+    if ((p2 > max_val)) {
+        max_val = p2;
+    }
+    if ((p3 > max_val)) {
+        max_val = p3;
+    }
+    if ((p4 > max_val)) {
+        max_val = p4;
+    }
+    struct Interval _uya_ret = interval_range(min_val, max_val);
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Interval interval_div(struct Interval a, struct Interval b) {
+    (void)a;
+    (void)b;
+    if (((a.is_valid == 0) || (b.is_valid == 0))) {
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    if (((b.min <= 0) && (b.max >= 0))) {
+        struct Interval _uya_ret = interval_range((-2147483647), 2147483647);
+        return _uya_ret;
+    }
+    const int32_t q1 = (a.min / b.min);
+    const int32_t q2 = (a.min / b.max);
+    const int32_t q3 = (a.max / b.min);
+    const int32_t q4 = (a.max / b.max);
+    int32_t min_val = q1;
+    int32_t max_val = q1;
+    if ((q2 < min_val)) {
+        min_val = q2;
+    }
+    if ((q3 < min_val)) {
+        min_val = q3;
+    }
+    if ((q4 < min_val)) {
+        min_val = q4;
+    }
+    if ((q2 > max_val)) {
+        max_val = q2;
+    }
+    if ((q3 > max_val)) {
+        max_val = q3;
+    }
+    if ((q4 > max_val)) {
+        max_val = q4;
+    }
+    struct Interval _uya_ret = interval_range(min_val, max_val);
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Interval interval_shl(struct Interval a, struct Interval b) {
+    (void)a;
+    (void)b;
+    if (((a.is_valid == 0) || (b.is_valid == 0))) {
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    if ((((b.min == b.max) && (b.min >= 0)) && (b.min < 31))) {
+        const int32_t factor = (1 << b.min);
+        struct Interval _uya_ret = interval_mul(a, interval_const(factor));
+        return _uya_ret;
+    }
+    struct Interval _uya_ret = interval_mul(a, interval_range(1, 1073741824));
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Interval interval_shr(struct Interval a, struct Interval b) {
+    (void)a;
+    (void)b;
+    if (((a.is_valid == 0) || (b.is_valid == 0))) {
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    if ((((b.min == b.max) && (b.min >= 0)) && (b.min < 31))) {
+        const int32_t factor = (1 << b.min);
+        struct Interval _uya_ret = interval_div(a, interval_const(factor));
+        return _uya_ret;
+    }
+    struct Interval _uya_ret = interval_div(a, interval_range(1, 1073741824));
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t interval_within_bounds(struct Interval interval, int32_t lower, int32_t upper) {
+    (void)interval;
+    (void)lower;
+    (void)upper;
+    if ((interval.is_valid == 0)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    if (((interval.min >= lower) && (interval.max < upper))) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
 static __attribute__((unused)) struct LinearExpr extract_linear_expr(struct TypeChecker * checker, struct ASTNode * expr) {
     (void)checker;
     (void)expr;
@@ -13687,6 +13900,15 @@ static __attribute__((unused)) struct LinearExpr extract_linear_expr(struct Type
         result.var_name = expr->identifier_name;
         result.offset = 0;
         result.is_valid = 1;
+        struct LinearExpr _uya_ret = result;
+        return _uya_ret;
+    }
+    if ((expr->type == AST_CAST_EXPR)) {
+        struct ASTNode * const inner_expr = expr->cast_expr_expr;
+        if ((inner_expr != NULL)) {
+            struct LinearExpr _uya_ret = extract_linear_expr(checker, inner_expr);
+            return _uya_ret;
+        }
         struct LinearExpr _uya_ret = result;
         return _uya_ret;
     }
@@ -13726,6 +13948,152 @@ static __attribute__((unused)) struct LinearExpr extract_linear_expr(struct Type
     return _uya_ret;
 }
 
+static __attribute__((unused)) struct Interval get_var_interval(struct TypeChecker * checker, uint8_t * var_name) {
+    (void)checker;
+    (void)var_name;
+    if (((checker == NULL) || (var_name == NULL))) {
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    int32_t min_val = (-2147483647);
+    int32_t max_val = 2147483647;
+    int32_t i = 0;
+    while ((i < checker->constraint_count)) {
+        uint8_t * const name = checker->constraint_var_names[i];
+        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
+            const int32_t op = checker->constraint_ops[i];
+            const int32_t val = checker->constraint_values[i];
+            if ((op == CONSTRAINT_EQ)) {
+                min_val = val;
+                max_val = val;
+            } else {
+                if ((op == CONSTRAINT_GE)) {
+                    if ((val > min_val)) {
+                        min_val = val;
+                    }
+                } else {
+                    if ((op == CONSTRAINT_GT)) {
+                        if (((val + 1) > min_val)) {
+                            min_val = (val + 1);
+                        }
+                    } else {
+                        if ((op == CONSTRAINT_LE)) {
+                            if ((val < max_val)) {
+                                max_val = val;
+                            }
+                        } else {
+                            if ((op == CONSTRAINT_LT)) {
+                                if (((val - 1) < max_val)) {
+                                    max_val = (val - 1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = (i + 1);
+    }
+    if ((min_val > max_val)) {
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    struct Interval _uya_ret = interval_range(min_val, max_val);
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Interval eval_expr_interval(struct TypeChecker * checker, struct ASTNode * expr) {
+    (void)checker;
+    (void)expr;
+    if (((checker == NULL) || (expr == NULL))) {
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    if ((expr->type == AST_NUMBER)) {
+        struct Interval _uya_ret = interval_const(expr->number_value);
+        return _uya_ret;
+    }
+    if ((expr->type == AST_IDENTIFIER)) {
+        uint8_t * const var_name = expr->identifier_name;
+        if ((var_name != NULL)) {
+            struct Interval _uya_ret = get_var_interval(checker, var_name);
+            return _uya_ret;
+        }
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    if ((expr->type == AST_CAST_EXPR)) {
+        struct ASTNode * const inner_expr = expr->cast_expr_expr;
+        if ((inner_expr != NULL)) {
+            struct Interval _uya_ret = eval_expr_interval(checker, inner_expr);
+            return _uya_ret;
+        }
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    if ((expr->type == AST_BINARY_EXPR)) {
+        const enum TokenType op = (enum TokenType)expr->binary_expr_op;
+        struct ASTNode * const left = expr->binary_expr_left;
+        struct ASTNode * const right = expr->binary_expr_right;
+        struct Interval left_interval = eval_expr_interval(checker, left);
+        struct Interval right_interval = eval_expr_interval(checker, right);
+        if (((left_interval.is_valid == 0) || (right_interval.is_valid == 0))) {
+            struct Interval _uya_ret = interval_invalid();
+            return _uya_ret;
+        }
+        if ((op == TOKEN_PLUS)) {
+            struct Interval _uya_ret = interval_add(left_interval, right_interval);
+            return _uya_ret;
+        } else {
+            if ((op == TOKEN_MINUS)) {
+                struct Interval _uya_ret = interval_sub(left_interval, right_interval);
+                return _uya_ret;
+            } else {
+                if ((op == TOKEN_ASTERISK)) {
+                    struct Interval _uya_ret = interval_mul(left_interval, right_interval);
+                    return _uya_ret;
+                } else {
+                    if ((op == TOKEN_SLASH)) {
+                        struct Interval _uya_ret = interval_div(left_interval, right_interval);
+                        return _uya_ret;
+                    } else {
+                        if ((op == TOKEN_LSHIFT)) {
+                            struct Interval _uya_ret = interval_shl(left_interval, right_interval);
+                            return _uya_ret;
+                        } else {
+                            if ((op == TOKEN_RSHIFT)) {
+                                struct Interval _uya_ret = interval_shr(left_interval, right_interval);
+                                return _uya_ret;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        struct Interval _uya_ret = interval_invalid();
+        return _uya_ret;
+    }
+    struct Interval _uya_ret = interval_invalid();
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t verify_expr_bounds_interval(struct TypeChecker * checker, struct ASTNode * expr, int32_t array_size) {
+    (void)checker;
+    (void)expr;
+    (void)array_size;
+    if (((checker == NULL) || (expr == NULL))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    struct Interval index_interval = eval_expr_interval(checker, expr);
+    if ((index_interval.is_valid == 0)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = interval_within_bounds(index_interval, 0, array_size);
+    return _uya_ret;
+}
+
 static __attribute__((unused)) int32_t verify_linear_expr_bounds(struct TypeChecker * checker, struct LinearExpr * linear_expr, int32_t array_size, struct ASTNode * node) {
     (void)checker;
     (void)linear_expr;
@@ -13751,6 +14119,71 @@ static __attribute__((unused)) int32_t verify_linear_expr_bounds(struct TypeChec
     uint8_t * const var_name = linear_expr->var_name;
     int32_t has_lower_bound = 0;
     int32_t has_upper_bound = 0;
+    const int32_t need_lower = (-offset);
+    const int32_t need_upper = (array_size - offset);
+    int32_t i = 0;
+    while ((i < checker->constraint_count)) {
+        uint8_t * const name = checker->constraint_var_names[i];
+        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
+            const int32_t op = checker->constraint_ops[i];
+            const int32_t val = checker->constraint_values[i];
+            if (((op == CONSTRAINT_GE) && (val >= need_lower))) {
+                has_lower_bound = 1;
+            } else {
+                if (((op == CONSTRAINT_GT) && (val > need_lower))) {
+                    has_lower_bound = 1;
+                }
+            }
+            if (((op == CONSTRAINT_LT) && (val <= need_upper))) {
+                has_upper_bound = 1;
+            } else {
+                if (((op == CONSTRAINT_LE) && (val < need_upper))) {
+                    has_upper_bound = 1;
+                }
+            }
+        }
+        i = (i + 1);
+    }
+    if (((has_lower_bound != 0) && (has_upper_bound != 0))) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t verify_linear_expr_bounds_ex(struct TypeChecker * checker, struct LinearExpr * linear_expr, int32_t array_size, struct ASTNode * node, int32_t is_unsigned) {
+    (void)checker;
+    (void)linear_expr;
+    (void)array_size;
+    (void)node;
+    (void)is_unsigned;
+    if ((((checker == NULL) || (linear_expr == NULL)) || (linear_expr->is_valid == 0))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    if ((checker_proof_step(checker, node) == 0)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    if ((linear_expr->var_name == NULL)) {
+        if (((linear_expr->offset >= 0) && (linear_expr->offset < array_size))) {
+            int32_t _uya_ret = 1;
+            return _uya_ret;
+        }
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    const int32_t offset = linear_expr->offset;
+    uint8_t * const var_name = linear_expr->var_name;
+    int32_t has_lower_bound = 0;
+    int32_t has_upper_bound = 0;
+    if ((is_unsigned != 0)) {
+        if ((offset >= 0)) {
+            has_lower_bound = 1;
+        } else {
+        }
+    }
     const int32_t need_lower = (-offset);
     const int32_t need_upper = (array_size - offset);
     int32_t i = 0;
@@ -13831,7 +14264,9 @@ static __attribute__((unused)) struct Type checker_check_array_access(struct Typ
                             }
                         }
                     } else {
-                        checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str342);
+                        if ((verify_expr_bounds_interval(checker, index_expr, array_size) == 0)) {
+                            checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str342);
+                        }
                     }
                 }
             }
