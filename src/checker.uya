@@ -281,6 +281,15 @@ struct TypeChecker {
     constraint_values: [i32: 64],           // 约束值（常量）
     constraint_count: i32,                   // 当前约束数量
     
+    // 指针空值状态跟踪（路径敏感分析）
+    // 指针非空状态：1=已知非空，0=未知
+    pointer_nonnull_names: [&byte: 32],     // 已知非空的指针变量名
+    pointer_nonnull_count: i32,              // 非空指针数量
+    
+    // 可能为空的指针变量名（被初始化为 null 的指针）
+    pointer_nullable_names: [&byte: 32],     // 可能为空的指针变量名
+    pointer_nullable_count: i32,              // 可能为空的指针数量
+    
     // 内存安全证明开关（0=关闭，1=开启）
     // 关闭时跳过数组边界检查等证明要求
     enable_safety_proof: i32,
@@ -371,6 +380,18 @@ fn checker_init(checker: &TypeChecker, arena: &Arena, default_filename: &byte) i
         checker.constraint_values[i] = 0;
     }
     checker.constraint_count = 0;
+    
+    // 初始化指针非空状态跟踪
+    for 0..32 |i| {
+        checker.pointer_nonnull_names[i] = null;
+    }
+    checker.pointer_nonnull_count = 0;
+    
+    // 初始化可能为空的指针跟踪
+    for 0..32 |i| {
+        checker.pointer_nullable_names[i] = null;
+    }
+    checker.pointer_nullable_count = 0;
     
     // 默认关闭内存安全证明（自举编译时关闭，测试时开启）
     checker.enable_safety_proof = 0;
@@ -3500,6 +3521,22 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         } else if array_type.kind == TypeKind.TYPE_POINTER && array_type.pointer_to != null {
             // 指针类型：检查指针指向的类型
             // 注意：Uya 不支持指针解引用，需要使用数组访问
+            
+            // 空指针检测（仅当开启安全证明时）
+            // 只检测被初始化为 null 且未通过 if ptr != null 检查的指针
+            if checker.enable_safety_proof != 0 {
+                const array_expr: &ASTNode = expr.array_access_array;
+                if array_expr != null && array_expr.type == ASTNodeType.AST_IDENTIFIER {
+                    const ptr_name: &byte = array_expr.identifier_name;
+                    // 只有当指针被初始化为 null 且未被标记为非空时才报错
+                    if pointer_is_nullable(checker, ptr_name) != 0 && pointer_is_known_nonnull(checker, ptr_name) == 0 {
+                        // 无法证明指针非空，报告编译错误
+                        checker_report_error(checker, expr.array_access_array, 
+                            "指针可能为空：请添加空指针检查 (如 if ptr != null)" as &byte);
+                    }
+                }
+            }
+            
             const pointed_type: Type = array_type.pointer_to[0];
             if pointed_type.kind == TypeKind.TYPE_ARRAY && pointed_type.element_type != null {
                 // 指向数组的指针（如 &[i32: 3]）：返回数组的元素类型
@@ -4135,6 +4172,25 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
         }
     }
     
+    // 指针空值状态跟踪：如果指针初始化为非 null 值，标记为已知非空
+    // 如果初始化为 null，则标记为可能为空
+    if checker.enable_safety_proof != 0 && node.var_decl_name != null && var_type.kind == TypeKind.TYPE_POINTER {
+        // 检查初始化值是否为 null
+        var is_null_init: i32 = 0;
+        if node.var_decl_init != null && node.var_decl_init.type == ASTNodeType.AST_IDENTIFIER {
+            if node.var_decl_init.identifier_name != null && str_equals(node.var_decl_init.identifier_name, "null" as &byte) != 0 {
+                is_null_init = 1;
+            }
+        }
+        // 如果是 null 初始化，则标记为可能为空
+        if is_null_init != 0 {
+            pointer_nullable_add(checker, node.var_decl_name);
+        } else if node.var_decl_init != null {
+            // 如果不是 null 初始化，则标记为已知非空
+            pointer_nonnull_add(checker, node.var_decl_name);
+        }
+    }
+    
     return 1;
 }
 
@@ -4419,6 +4475,10 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                     param_symbol.pointee_of = null;
                     param_symbol.decl_node = param;
                     symbol_table_insert(checker, param_symbol);
+                    // 函数参数如果是指针类型，假设为非空（调用者负责传递有效指针）
+                    if checker.enable_safety_proof != 0 && param_type.kind == TypeKind.TYPE_POINTER {
+                        pointer_nonnull_add(checker, param.var_decl_name);
+                    }
                 }
             }
             i = i + 1;
@@ -5375,6 +5435,120 @@ const CONSTRAINT_GE: i32 = 3;   // >=
 const CONSTRAINT_EQ: i32 = 4;   // ==
 const CONSTRAINT_NE: i32 = 5;   // !=
 
+// 指针非空状态管理
+
+// 添加指针非空状态
+// 参数：ptr_name - 指针变量名
+fn pointer_nonnull_add(checker: &TypeChecker, ptr_name: &byte) void {
+    if checker == null || ptr_name == null {
+        return;
+    }
+    if checker.pointer_nonnull_count >= 32 {
+        return;  // 已满
+    }
+    // 检查是否已存在
+    var i: i32 = 0;
+    while i < checker.pointer_nonnull_count {
+        const name: &byte = checker.pointer_nonnull_names[i];
+        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+            return;  // 已存在
+        }
+        i = i + 1;
+    }
+    checker.pointer_nonnull_names[checker.pointer_nonnull_count] = ptr_name;
+    checker.pointer_nonnull_count = checker.pointer_nonnull_count + 1;
+}
+
+// 移除指针非空状态
+// 参数：ptr_name - 指针变量名
+fn pointer_nonnull_remove(checker: &TypeChecker, ptr_name: &byte) void {
+    if checker == null || ptr_name == null {
+        return;
+    }
+    var write_idx: i32 = 0;
+    var i: i32 = 0;
+    while i < checker.pointer_nonnull_count {
+        const name: &byte = checker.pointer_nonnull_names[i];
+        if name != null && strcmp(name as *byte, ptr_name as *byte) != 0 {
+            checker.pointer_nonnull_names[write_idx] = name;
+            write_idx = write_idx + 1;
+        }
+        i = i + 1;
+    }
+    checker.pointer_nonnull_count = write_idx;
+}
+
+// 检查指针是否已知非空
+// 参数：ptr_name - 指针变量名
+// 返回：1 表示已知非空，0 表示未知
+fn pointer_is_known_nonnull(checker: &TypeChecker, ptr_name: &byte) i32 {
+    if checker == null || ptr_name == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < checker.pointer_nonnull_count {
+        const name: &byte = checker.pointer_nonnull_names[i];
+        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// 清除所有指针非空状态
+fn pointer_nonnull_clear(checker: &TypeChecker) void {
+    if checker == null {
+        return;
+    }
+    for 0..32 |i| {
+        checker.pointer_nonnull_names[i] = null;
+    }
+    checker.pointer_nonnull_count = 0;
+}
+
+// 可能为空的指针管理
+
+// 添加可能为空的指针
+// 参数：ptr_name - 指针变量名
+fn pointer_nullable_add(checker: &TypeChecker, ptr_name: &byte) void {
+    if checker == null || ptr_name == null {
+        return;
+    }
+    if checker.pointer_nullable_count >= 32 {
+        return;  // 已满
+    }
+    // 检查是否已存在
+    var i: i32 = 0;
+    while i < checker.pointer_nullable_count {
+        const name: &byte = checker.pointer_nullable_names[i];
+        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+            return;  // 已存在
+        }
+        i = i + 1;
+    }
+    checker.pointer_nullable_names[checker.pointer_nullable_count] = ptr_name;
+    checker.pointer_nullable_count = checker.pointer_nullable_count + 1;
+}
+
+// 检查指针是否可能为空（被初始化为 null）
+// 参数：ptr_name - 指针变量名
+// 返回：1 表示可能为空，0 表示不可能为空
+fn pointer_is_nullable(checker: &TypeChecker, ptr_name: &byte) i32 {
+    if checker == null || ptr_name == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < checker.pointer_nullable_count {
+        const name: &byte = checker.pointer_nullable_names[i];
+        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
 // 清除所有约束
 fn constraint_clear(checker: &TypeChecker) void {
     if checker == null {
@@ -5461,6 +5635,7 @@ fn constraint_update_for_increment(checker: &TypeChecker, var_name: &byte, incre
 // 参数：expr - 二元表达式，is_positive - 是否取正条件
 // 例如：i < 10 提取为 (i, LT, 10)
 //       is_positive = false 时，i < 10 提取为 (i, GE, 10)
+// 特殊处理：ptr == null / ptr != null 用于空指针检测
 fn constraint_extract_from_binary(checker: &TypeChecker, expr: &ASTNode, is_positive: i32) void {
     if checker == null || expr == null {
         return;
@@ -5513,13 +5688,61 @@ fn constraint_extract_from_binary(checker: &TypeChecker, expr: &ASTNode, is_posi
         return;
     }
     
+    const var_name: &byte = left.identifier_name;
+    
+    // 检查是否是指针与 null 的比较（用于空指针检测）
+    // TOKEN_EQUAL = 50, TOKEN_NOT_EQUAL = 51
+    if op == 50 || op == 51 {
+        var is_null_compare: i32 = 0;
+        var ptr_name: &byte = null;
+        
+        // 检查 ptr == null 或 ptr != null
+        if right.type == ASTNodeType.AST_IDENTIFIER && right.identifier_name != null {
+            if str_equals(right.identifier_name, "null" as &byte) != 0 {
+                is_null_compare = 1;
+                ptr_name = var_name;
+            }
+        }
+        // 检查 null == ptr 或 null != ptr
+        if left.identifier_name != null && str_equals(left.identifier_name, "null" as &byte) != 0 {
+            if right.type == ASTNodeType.AST_IDENTIFIER && right.identifier_name != null {
+                is_null_compare = 1;
+                ptr_name = right.identifier_name;
+            }
+        }
+        
+        if is_null_compare != 0 && ptr_name != null {
+            // 指针与 null 的比较
+            // op == 50 (==): ptr == null
+            // op == 51 (!=): ptr != null
+            if op == 51 {
+                // ptr != null
+                if is_positive != 0 {
+                    // then 分支：ptr 非空
+                    pointer_nonnull_add(checker, ptr_name);
+                } else {
+                    // else 分支：ptr 为空（移除非空状态）
+                    pointer_nonnull_remove(checker, ptr_name);
+                }
+            } else {
+                // ptr == null
+                if is_positive != 0 {
+                    // then 分支：ptr 为空（移除非空状态）
+                    pointer_nonnull_remove(checker, ptr_name);
+                } else {
+                    // else 分支：ptr 非空
+                    pointer_nonnull_add(checker, ptr_name);
+                }
+            }
+            return;
+        }
+    }
+    
     // 右操作数必须是常量
     const right_val: i32 = checker_eval_const_expr(checker, right);
     if right_val < 0 {
         return;  // 不是常量
     }
-    
-    const var_name: &byte = left.identifier_name;
     
     // 映射操作符
     // 正条件：直接映射
@@ -5686,6 +5909,22 @@ fn checker_check_array_access(checker: &TypeChecker, node: &ASTNode) Type {
     } else if array_type.kind == TypeKind.TYPE_POINTER && array_type.pointer_to != null {
         // 指针类型：检查指针指向的类型
         // 注意：Uya 不支持指针解引用，需要使用数组访问
+        
+        // 空指针检测（仅当开启安全证明时）
+        // 只检测被初始化为 null 且未通过 if ptr != null 检查的指针
+        if checker.enable_safety_proof != 0 {
+            const array_expr: &ASTNode = node.array_access_array;
+            if array_expr != null && array_expr.type == ASTNodeType.AST_IDENTIFIER {
+                const ptr_name: &byte = array_expr.identifier_name;
+                // 只有当指针被初始化为 null 且未被标记为非空时才报错
+                if pointer_is_nullable(checker, ptr_name) != 0 && pointer_is_known_nonnull(checker, ptr_name) == 0 {
+                    // 无法证明指针非空，报告编译错误
+                    checker_report_error(checker, node.array_access_array, 
+                        "指针可能为空：请添加空指针检查 (如 if ptr != null)" as &byte);
+                }
+            }
+        }
+        
         const pointed_type: Type = array_type.pointer_to[0];
         if pointed_type.kind == TypeKind.TYPE_ARRAY && pointed_type.element_type != null {
             // 指向数组的指针（如 &[i32: 3]）：返回数组的元素类型
@@ -6671,8 +6910,13 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             checker_report_error(checker, node, "if 语句的条件表达式必须是 bool 类型" as *byte);
         }
         
-        // 路径敏感分析：保存当前约束状态
+        // 路径敏感分析：保存当前约束状态和指针非空状态
         const saved_constraint_count: i32 = checker.constraint_count;
+        const saved_nonnull_count: i32 = checker.pointer_nonnull_count;
+        var saved_nonnull_names: [&byte: 32] = [];
+        for 0..saved_nonnull_count |i| {
+            saved_nonnull_names[i] = checker.pointer_nonnull_names[i];
+        }
         
         // 从条件提取约束（正条件，用于 then 分支）
         if node.if_stmt_condition != null {
@@ -6684,8 +6928,12 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             checker_check_node(checker, node.if_stmt_then_branch);
         }
         
-        // 恢复约束状态，然后为 else 分支提取负条件约束
+        // 恢复约束状态和指针非空状态，然后为 else 分支提取负条件约束
         checker.constraint_count = saved_constraint_count;
+        checker.pointer_nonnull_count = saved_nonnull_count;
+        for 0..saved_nonnull_count |i| {
+            checker.pointer_nonnull_names[i] = saved_nonnull_names[i];
+        }
         
         // 检查else分支
         if node.if_stmt_else_branch != null {
@@ -6696,8 +6944,12 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             checker_check_node(checker, node.if_stmt_else_branch);
         }
         
-        // if 语句结束后，清除所有约束（简化处理：不跨语句传播约束）
+        // if 语句结束后，恢复约束状态和指针非空状态（简化处理：不跨语句传播）
         checker.constraint_count = saved_constraint_count;
+        checker.pointer_nonnull_count = saved_nonnull_count;
+        for 0..saved_nonnull_count |i| {
+            checker.pointer_nonnull_names[i] = saved_nonnull_names[i];
+        }
         
         return 1;
     } else if node.type == ASTNodeType.AST_WHILE_STMT {
