@@ -143,6 +143,7 @@ struct Symbol {
     name: &byte,           // 符号名称（存储在 Arena 中）
     type: Type,            // 符号类型
     is_const: i32,         // 1 表示 const，0 表示 var
+    is_initialized: i32,   // 1 表示已初始化，0 表示未初始化（用于未初始化使用检测）
     scope_level: i32,      // 作用域级别
     line: i32,             // 行号
     column: i32,           // 列号
@@ -3088,6 +3089,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
                 sym.name = expr.catch_expr_err_name;
                 sym.type = err_type;
                 sym.is_const = 1;
+                sym.is_initialized = 1;  // catch 错误变量已初始化
                 sym.scope_level = checker.scope_level;
                 sym.line = expr.line;
                 sym.column = expr.column;
@@ -3134,6 +3136,10 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         // 标识符类型需要从符号表中查找
         const symbol: &Symbol = symbol_table_lookup(checker, expr.identifier_name);
         if symbol != null {
+            // 未初始化使用检测（仅当开启安全证明时）
+            if checker.enable_safety_proof != 0 && symbol.is_initialized == 0 {
+                checker_report_error(checker, expr, "变量在初始化前被使用：请确保变量在使用前已赋值" as *byte);
+            }
             return symbol.type;
         }
         // 找不到符号时，仅当该名是程序中某枚举的变体名时才报“裸枚举常量”（Uya 只支持 T.member）
@@ -3731,6 +3737,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
                                 sym.name = arm.var_name;
                                 sym.type = copy_type(&variant_type);
                                 sym.is_const = 1;
+                                sym.is_initialized = 1;  // match 绑定变量已初始化
                                 sym.scope_level = checker.scope_level;
                                 sym.line = expr.line;
                                 sym.column = expr.column;
@@ -3939,6 +3946,7 @@ fn checker_check_destructure_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             symbol.name = name;
             symbol.type = element_types[i];
             symbol.is_const = is_const;
+            symbol.is_initialized = 1;  // 解构声明已初始化
             symbol.scope_level = checker.scope_level;
             symbol.line = node.line;
             symbol.column = node.column;
@@ -4072,6 +4080,9 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             symbol.name = node.var_decl_name;
             symbol.type = copy_type(&var_type);
             symbol.is_const = node.var_decl_is_const;
+            // 初始化状态：默认已初始化（保守策略，避免误报）
+            // 以后可以扩展为精确检测未初始化变量
+            symbol.is_initialized = 1;
             symbol.scope_level = checker.scope_level;
             symbol.line = node.line;
             symbol.column = node.column;
@@ -4156,6 +4167,8 @@ fn checker_register_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     symbol.name = node.var_decl_name;
     symbol.type = copy_type(&var_type);
     symbol.is_const = node.var_decl_is_const;
+    // 顶层变量注册：假设已初始化（实际检查在 checker_check_var_decl 中）
+    symbol.is_initialized = 1;
     symbol.scope_level = 0;
     symbol.line = node.line;
     symbol.column = node.column;
@@ -4321,6 +4334,7 @@ fn checker_check_extern_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     symbol.name = node.extern_var_decl_name;
     symbol.type = var_type;
     symbol.is_const = node.extern_var_decl_is_const;
+    symbol.is_initialized = 1;  // extern 变量假设已初始化
     symbol.scope_level = 0;  // 顶层声明
     symbol.line = node.line;
     symbol.column = node.column;
@@ -4398,6 +4412,7 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                     param_symbol.name = param.var_decl_name;
                     param_symbol.type = copy_type(&param_type);
                     param_symbol.is_const = 1;  // 参数是只读的
+                    param_symbol.is_initialized = 1;  // 参数已初始化
                     param_symbol.scope_level = checker.scope_level;
                     param_symbol.line = param.line;
                     param_symbol.column = param.column;
@@ -6969,6 +6984,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     sym.name = arm.var_name;
                     sym.type = copy_type(&expr_type);
                     sym.is_const = 1;
+                    sym.is_initialized = 1;  // match 绑定变量已初始化
                     sym.scope_level = checker.scope_level;
                     sym.line = node.line;
                     sym.column = node.column;
@@ -7008,6 +7024,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                             sym.name = arm.var_name;
                             sym.type = copy_type(&variant_type);
                             sym.is_const = 1;
+                            sym.is_initialized = 1;  // match 联合体绑定变量已初始化
                             sym.scope_level = checker.scope_level;
                             sym.line = node.line;
                             sym.column = node.column;
@@ -7129,6 +7146,8 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     return 0;
                 }
                 
+                // 标记变量为已初始化
+                symbol.is_initialized = 1;
                 dest_type = symbol.type;
             }
         } else if dest.type == ASTNodeType.AST_MEMBER_ACCESS {
@@ -7293,6 +7312,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     loop_var.name = node.for_stmt_var_name;
                     loop_var.type = start_type;
                     loop_var.is_const = 0;
+                    loop_var.is_initialized = 1;  // for 循环变量已初始化
                     loop_var.scope_level = checker.scope_level;
                     loop_var.line = node.line;
                     loop_var.column = node.column;
@@ -7378,6 +7398,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                                 loop_var.name = node.for_stmt_var_name;
                                 loop_var.type = var_type;
                                 loop_var.is_const = 0;
+                                loop_var.is_initialized = 1;  // for 循环变量已初始化
                                 loop_var.scope_level = checker.scope_level;
                                 loop_var.line = node.line;
                                 loop_var.column = node.column;
@@ -7540,6 +7561,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 loop_var.name = node.for_stmt_var_name;
                 loop_var.type = copy_type(&var_type);
                 loop_var.is_const = 0;  // for 循环变量是可修改的（即使是值迭代形式，在循环体内也可以使用）
+                loop_var.is_initialized = 1;  // for 循环变量已初始化
                 loop_var.scope_level = checker.scope_level;
                 loop_var.line = node.line;
                 loop_var.column = node.column;
