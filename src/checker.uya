@@ -3515,6 +3515,39 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         if array_type.kind == TypeKind.TYPE_ARRAY && array_type.element_type != null {
             // 数组类型：返回数组的元素类型
             // 注意：Uya 不支持指针解引用，需要使用数组访问
+            
+            // 边界检查（仅当开启安全证明时）
+            // 这里进行符号执行的边界检查
+            if checker.enable_safety_proof != 0 {
+                const index_expr: &ASTNode = expr.array_access_index;
+                const array_size: i32 = array_type.array_size;
+                
+                // 检查索引是否是常量
+                const index_val: i32 = checker_eval_const_expr(checker, index_expr);
+                if index_val >= 0 {
+                    // 常量索引：直接检查越界
+                    if index_val >= array_size {
+                        checker_report_error(checker, index_expr, "数组索引越界：常量索引超出数组边界" as *byte);
+                    }
+                } else {
+                    // 非常量索引：尝试提取线性表达式进行符号执行
+                    const linear_expr: LinearExpr = extract_linear_expr(checker, index_expr);
+                    
+                    if linear_expr.is_valid != 0 {
+                        // 使用符号执行验证边界
+                        if verify_linear_expr_bounds(checker, &linear_expr, array_size) == 0 {
+                            // 无法证明安全，报告编译错误
+                            if linear_expr.var_name != null {
+                                checker_report_error_ex(checker, index_expr, 
+                                    "数组索引安全证明失败" as *byte,
+                                    linear_expr.var_name,
+                                    array_size);
+                            }
+                        }
+                    }
+                }
+            }
+            
             return array_type.element_type[0];
         } else if array_type.kind == TypeKind.TYPE_SLICE && array_type.slice_element_type != null {
             return array_type.slice_element_type[0];
@@ -5825,6 +5858,145 @@ fn constraint_verify_bounds(checker: &TypeChecker, var_name: &byte, array_size: 
     return 0;  // 无法证明
 }
 
+// 线性表达式结构（用于符号执行）
+// 表示 var + offset 或 var - offset 的形式
+struct LinearExpr {
+    var_name: &byte,      // 基础变量名（null 表示纯常量）
+    offset: i32,          // 偏移量（正数表示加，负数表示减）
+    is_valid: i32,        // 是否是有效的线性表达式
+}
+
+// 从表达式中提取线性表达式
+// 支持：标识符、常量、标识符+常量、标识符-常量
+// 返回 LinearExpr 结构
+fn extract_linear_expr(checker: &TypeChecker, expr: &ASTNode) LinearExpr {
+    var result: LinearExpr = LinearExpr {
+        var_name: null,
+        offset: 0,
+        is_valid: 0,
+    };
+    
+    if checker == null || expr == null {
+        return result;
+    }
+    
+    if expr.type == ASTNodeType.AST_NUMBER {
+        // 纯常量
+        result.offset = expr.number_value;
+        result.is_valid = 1;
+        return result;
+    }
+    
+    if expr.type == ASTNodeType.AST_IDENTIFIER {
+        // 纯变量
+        result.var_name = expr.identifier_name;
+        result.offset = 0;
+        result.is_valid = 1;
+        return result;
+    }
+    
+    if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        const op: TokenType = expr.binary_expr_op as TokenType;
+        const left: &ASTNode = expr.binary_expr_left;
+        const right: &ASTNode = expr.binary_expr_right;
+        
+        // 只支持 + 和 - 运算
+        if op != TokenType.TOKEN_PLUS && op != TokenType.TOKEN_MINUS {
+            return result;
+        }
+        
+        // 提取左边和右边
+        const left_expr: LinearExpr = extract_linear_expr(checker, left);
+        const right_expr: LinearExpr = extract_linear_expr(checker, right);
+        
+        // 检查是否可以组合
+        // 情况1: var + const 或 var - const
+        // 情况2: const + var 或 const - var
+        if left_expr.is_valid != 0 && right_expr.is_valid != 0 {
+            if left_expr.var_name != null && right_expr.var_name == null {
+                // var + const 或 var - const
+                result.var_name = left_expr.var_name;
+                if op == TokenType.TOKEN_PLUS {
+                    result.offset = left_expr.offset + right_expr.offset;
+                } else {
+                    result.offset = left_expr.offset - right_expr.offset;
+                }
+                result.is_valid = 1;
+                return result;
+            } else if left_expr.var_name == null && right_expr.var_name != null && op == TokenType.TOKEN_PLUS {
+                // const + var（只有加法支持交换律）
+                result.var_name = right_expr.var_name;
+                result.offset = left_expr.offset + right_expr.offset;
+                result.is_valid = 1;
+                return result;
+            }
+        }
+    }
+    
+    return result;  // 无法识别的线性表达式
+}
+
+// 验证线性表达式的数组访问边界
+// 对于 expr = var + offset，验证 var >= -offset && var < size - offset
+// 参数：linear_expr - 线性表达式，array_size - 数组大小
+// 返回：1 表示证明安全，0 表示无法证明
+fn verify_linear_expr_bounds(checker: &TypeChecker, linear_expr: &LinearExpr, array_size: i32) i32 {
+    if checker == null || linear_expr == null || linear_expr.is_valid == 0 {
+        return 0;
+    }
+    
+    // 纯常量：直接检查
+    if linear_expr.var_name == null {
+        if linear_expr.offset >= 0 && linear_expr.offset < array_size {
+            return 1;
+        }
+        return 0;
+    }
+    
+    // 变量 + 偏移量：需要检查调整后的边界
+    // arr[i + offset] 安全需要: i >= -offset 且 i < size - offset
+    const offset: i32 = linear_expr.offset;
+    const var_name: &byte = linear_expr.var_name;
+    
+    var has_lower_bound: i32 = 0;
+    var has_upper_bound: i32 = 0;
+    
+    // 计算需要的下界和上界
+    const need_lower: i32 = -offset;  // i >= -offset
+    const need_upper: i32 = array_size - offset;  // i < size - offset
+    
+    var i: i32 = 0;
+    while i < checker.constraint_count {
+        const name: &byte = checker.constraint_var_names[i];
+        if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
+            const op: i32 = checker.constraint_ops[i];
+            const val: i32 = checker.constraint_values[i];
+            
+            // 检查下界：需要 i >= need_lower
+            // 如果约束是 i >= val，需要 val >= need_lower（val 更强）
+            if op == CONSTRAINT_GE && val >= need_lower {
+                has_lower_bound = 1;
+            } else if op == CONSTRAINT_GT && val > need_lower {
+                has_lower_bound = 1;
+            }
+            
+            // 检查上界：需要 i < need_upper
+            // 如果约束是 i < val，需要 val <= need_upper（val 更强）
+            if op == CONSTRAINT_LT && val <= need_upper {
+                has_upper_bound = 1;
+            } else if op == CONSTRAINT_LE && val < need_upper {
+                has_upper_bound = 1;
+            }
+        }
+        i = i + 1;
+    }
+    
+    if has_lower_bound != 0 && has_upper_bound != 0 {
+        return 1;
+    }
+    return 0;
+}
+
 // 检查数组访问
 // 参数：checker - TypeChecker 指针，node - 数组访问节点
 // 返回：元素类型（如果检查失败返回TYPE_VOID）
@@ -5884,19 +6056,28 @@ fn checker_check_array_access(checker: &TypeChecker, node: &ASTNode) Type {
             // 变量索引：使用约束系统验证边界（仅当开启安全证明时）
             if checker.enable_safety_proof != 0 {
                 const index_expr: &ASTNode = node.array_access_index;
-                if index_expr != null && index_expr.type == ASTNodeType.AST_IDENTIFIER {
-                    const index_var: &byte = index_expr.identifier_name;
-                    const array_size: i32 = array_type.array_size;
-                    if constraint_verify_bounds(checker, index_var, array_size) == 0 {
+                const array_size: i32 = array_type.array_size;
+                
+                // 尝试提取线性表达式
+                const linear_expr: LinearExpr = extract_linear_expr(checker, index_expr);
+                
+                if linear_expr.is_valid != 0 {
+                    // 使用符号执行验证边界
+                    if verify_linear_expr_bounds(checker, &linear_expr, array_size) == 0 {
                         // 无法证明安全，报告编译错误
-                        // 详细错误消息：包含变量名、数组大小和修复建议
-                        checker_report_error_ex(checker, node.array_access_index, 
-                            "数组索引安全证明失败" as *byte,
-                            index_var,
-                            array_size);
+                        if linear_expr.var_name != null {
+                            checker_report_error_ex(checker, node.array_access_index, 
+                                "数组索引安全证明失败" as *byte,
+                                linear_expr.var_name,
+                                array_size);
+                        } else {
+                            // 纯常量越界（理论上不会到这里，因为常量已经在前面检查过）
+                            checker_report_error(checker, node.array_access_index, 
+                                "数组索引越界：常量索引超出数组边界" as *byte);
+                        }
                     }
                 } else {
-                    // 非标识符索引：暂不支持，需要边界检查
+                    // 非线性表达式：暂不支持，需要边界检查
                     checker_report_error(checker, node.array_access_index, 
                         "数组索引需要安全证明：复杂表达式暂不支持，请使用简单变量或添加边界检查" as *byte);
                 }
