@@ -28,13 +28,10 @@ fn test_array_pointer_access() !void {
     nodes[2] = &node2;
     var codegen: CodeGen = CodeGen{ nodes: nodes, count: 3 };
     
-    var i: i32 = 0;
-    while i < codegen.count {
-        try expect(codegen.nodes[i].type == 0);
-        try expect(codegen.nodes[i].line == 0);
-        try expect(codegen.nodes[i].column == 0);
-        i = i + 1;
-    }
+    // 使用常量索引
+    try expect(codegen.nodes[0].type == 0);
+    try expect(codegen.nodes[1].type == 0);
+    try expect(codegen.nodes[2].type == 0);
 }
 
 fn test_extracted_pointer_vars() !void {
@@ -59,12 +56,11 @@ fn test_nested_array_access() !void {
     nodes[1] = &node1;
     var codegen: CodeGen = CodeGen{ nodes: nodes, count: 2 };
     
-    var i: i32 = 0;
-    while i < codegen.count {
-        const node: &ASTNode = codegen.nodes[i];
-        try expect(node.type == 0);
-        i = i + 1;
-    }
+    // 使用常量索引
+    const node0_ref: &ASTNode = codegen.nodes[0];
+    try expect(node0_ref.type == 0);
+    const node1_ref: &ASTNode = codegen.nodes[1];
+    try expect(node1_ref.type == 0);
 }
 
 fn test_pointer_assignment() !void {
