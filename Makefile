@@ -219,7 +219,13 @@ backup: b
 	@echo "=========================================="
 	@echo "运行测试验证..."
 	@echo "=========================================="
-	@./tests/run_programs_parallel.sh --uya --c99 2>&1 | tail -5
+	@./tests/run_programs_parallel.sh --uya --c99; \
+	TEST_EXIT=$$?; \
+	if [ $$TEST_EXIT -ne 0 ]; then \
+		echo ""; \
+		echo "✗ 测试失败，不执行备份"; \
+		exit 1; \
+	fi
 	@echo ""
 	@echo "备份 bin/uya.c 到 backup/uya.c ..."
 	@if [ ! -f bin/uya.c ]; then \
