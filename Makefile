@@ -219,17 +219,16 @@ backup: b
 	@echo "=========================================="
 	@echo "运行测试验证..."
 	@echo "=========================================="
-	@./tests/run_programs_parallel.sh --uya --c99 2>&1 | tail -5
-	@echo ""
-	@echo "备份 bin/uya.c 到 backup/uya.c ..."
-	@if [ ! -f bin/uya.c ]; then \
-		echo "错误: bin/uya.c 不存在"; \
+	@./tests/run_programs_parallel.sh --uya --c99; \
+	TEST_EXIT=$$?; \
+	if [ $$TEST_EXIT -ne 0 ]; then \
+		echo ""; \
+		echo "✗ 测试失败"; \
 		exit 1; \
 	fi
-	@mkdir -p backup
-	@cp bin/uya.c backup/uya.c
-	@echo "✓ 备份完成: backup/uya.c"
-	@ls -la backup/uya.c
+	@echo ""
+	@echo "✓ 测试通过"
+	# 注意：memory-safety-proof 分支不更新 backup/uya.c，保持使用 main 分支的编译器
 
 # 从备份恢复 bin/uya.c
 restore:

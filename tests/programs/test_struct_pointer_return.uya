@@ -71,8 +71,18 @@ fn get_point_from_node(n: &Node) &Point {
 fn get_array_first_element() &i32 { return &global_array[0]; }
 fn get_byte_array_first_element() &byte { return &global_byte_array[0]; }
 fn get_struct_array_first_element() &Point { return &global_point_array[0]; }
-fn get_array_element_by_index(index: i32) &i32 { return &global_array[index]; }
-fn get_struct_array_element_by_index(index: i32) &Point { return &global_point_array2[index]; }
+fn get_array_element_by_index(index: i32) &i32 { 
+    if index >= 0 && index < 5 {
+        return &global_array[index]; 
+    }
+    return null;
+}
+fn get_struct_array_element_by_index(index: i32) &Point { 
+    if index >= 0 && index < 5 {
+        return &global_point_array2[index]; 
+    }
+    return null;
+}
 fn get_nested_struct_array_first_element() &Outer { return &global_outer_array[0]; }
 fn get_node_array_first_element() &Node { return &global_node_array[0]; }
 fn get_struct_array_element_and_modify() &Point {

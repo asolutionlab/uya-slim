@@ -211,11 +211,13 @@ run_single_test() {
     
     # 编译
     output_file="$BUILD_DIR/${base_name}.c"
+    # 默认对所有测试启用 --safety-proof
+    local safety_proof_arg="--safety-proof"
     if [ "$USE_UYA" = true ]; then
         # 自举编译器递归较深，已在脚本开头增大栈限制
-        compiler_output=$("$COMPILER" --c99 --nostdlib "$uya_file" -o "$output_file" 2>&1)
+        compiler_output=$("$COMPILER" --c99 --nostdlib $safety_proof_arg "$uya_file" -o "$output_file" 2>&1)
     else
-        compiler_output=$("$COMPILER" --c99 --nostdlib "$uya_file" -o "$output_file" 2>&1)
+        compiler_output=$("$COMPILER" --c99 --nostdlib $safety_proof_arg "$uya_file" -o "$output_file" 2>&1)
     fi
     compiler_exit=$?
     

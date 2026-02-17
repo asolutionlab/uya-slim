@@ -143,6 +143,7 @@ struct Symbol {
     name: &byte,           // 符号名称（存储在 Arena 中）
     type: Type,            // 符号类型
     is_const: i32,         // 1 表示 const，0 表示 var
+    is_initialized: i32,   // 1 表示已初始化，0 表示未初始化（用于未初始化使用检测）
     scope_level: i32,      // 作用域级别
     line: i32,             // 行号
     column: i32,           // 列号
@@ -269,6 +270,33 @@ struct TypeChecker {
     // 单态化实例收集
     mono_instances: [MonoInstance: 512],
     mono_instance_count: i32,
+    
+    // 约束系统（路径敏感分析）
+    // 使用常量定义约束操作符，避免枚举引用问题
+    // CONSTRAINT_LT = 0 (<), CONSTRAINT_LE = 1 (<=)
+    // CONSTRAINT_GT = 2 (>), CONSTRAINT_GE = 3 (>=)
+    // CONSTRAINT_EQ = 4 (==), CONSTRAINT_NE = 5 (!=)
+    constraint_var_names: [&byte: 64],      // 约束变量名（Arena 存储）
+    constraint_ops: [i32: 64],              // 约束操作符
+    constraint_values: [i32: 64],           // 约束值（常量）
+    constraint_count: i32,                   // 当前约束数量
+    
+    // 指针空值状态跟踪（路径敏感分析）
+    // 指针非空状态：1=已知非空，0=未知
+    pointer_nonnull_names: [&byte: 32],     // 已知非空的指针变量名
+    pointer_nonnull_count: i32,              // 非空指针数量
+    
+    // 可能为空的指针变量名（被初始化为 null 的指针）
+    pointer_nullable_names: [&byte: 32],     // 可能为空的指针变量名
+    pointer_nullable_count: i32,              // 可能为空的指针数量
+    
+    // 内存安全证明开关（0=关闭，1=开启）
+    // 关闭时跳过数组边界检查等证明要求
+    enable_safety_proof: i32,
+    
+    // 证明超时机制
+    proof_step_limit: i32,    // 证明步数限制（默认 1000）
+    proof_step_count: i32,    // 当前证明步数计数
 }
 
 // 哈希函数（djb2算法，用于字符串哈希）
@@ -336,10 +364,8 @@ fn checker_init(checker: &TypeChecker, arena: &Arena, default_filename: &byte) i
     checker.error_name_count = 0;
     
     // 初始化错误集（所有槽位设为null）
-    i = 0;
-    while i < MAX_ERROR_NAMES {
+    for 0..256 |i| {
         checker.error_names[i] = null;
-        i = i + 1;
     }
     
     checker.moved_count = 0;
@@ -350,6 +376,33 @@ fn checker_init(checker: &TypeChecker, arena: &Arena, default_filename: &byte) i
     checker.current_type_params = null;
     checker.current_type_param_count = 0;
     checker.mono_instance_count = 0;
+    
+    // 初始化约束系统
+    for 0..64 |i| {
+        checker.constraint_var_names[i] = null;
+        checker.constraint_ops[i] = 0;
+        checker.constraint_values[i] = 0;
+    }
+    checker.constraint_count = 0;
+    
+    // 初始化指针非空状态跟踪
+    for 0..32 |i| {
+        checker.pointer_nonnull_names[i] = null;
+    }
+    checker.pointer_nonnull_count = 0;
+    
+    // 初始化可能为空的指针跟踪
+    for 0..32 |i| {
+        checker.pointer_nullable_names[i] = null;
+    }
+    checker.pointer_nullable_count = 0;
+    
+    // 默认关闭内存安全证明（自举编译时关闭，测试时开启）
+    checker.enable_safety_proof = 0;
+    
+    // 证明超时机制：默认限制 1000 步
+    checker.proof_step_limit = 1000;
+    checker.proof_step_count = 0;
     
     return 0;
 }
@@ -2318,7 +2371,113 @@ fn get_last_checker_error() &byte {
     return last_checker_error_message;
 }
 
+// i32 溢出检测常量
+// 注意：使用计算方式定义 I32_MIN，避免字面量解析问题
+const I32_MAX: i32 = 2147483647;
+const I32_MIN: i32 = -2147483647 - 1;
+
+// 检测 i32 加法溢出（安全方法，不依赖溢出行为）
+// 返回 1 表示溢出，0 表示安全
+fn check_i32_add_overflow(left: i32, right: i32) i32 {
+    // 正溢出：left > 0 && right > 0 && left > I32_MAX - right
+    // 等价于：left + right > I32_MAX，但避免实际加法
+    if left > 0 && right > 0 {
+        if left > I32_MAX - right {
+            return 1;
+        }
+    }
+    // 负溢出：left < 0 && right < 0 && left < I32_MIN - right
+    // 等价于：left + right < I32_MIN，但避免实际加法
+    if left < 0 && right < 0 {
+        if left < I32_MIN - right {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// 检测 i32 减法溢出（安全方法，不依赖溢出行为）
+// 返回 1 表示溢出，0 表示安全
+fn check_i32_sub_overflow(left: i32, right: i32) i32 {
+    // 正溢出：left >= 0 && right < 0 && left > I32_MAX + right
+    // 等价于：left - right > I32_MAX，但避免实际减法
+    if left >= 0 && right < 0 {
+        // right 是负数，I32_MAX + right 是安全的
+        if left > I32_MAX + right {
+            return 1;
+        }
+    }
+    // 负溢出：left < 0 && right > 0 && left < I32_MIN + right
+    // 等价于：left - right < I32_MIN，但避免实际减法
+    if left < 0 && right > 0 {
+        // right 是正数，I32_MIN + right 是安全的
+        if left < I32_MIN + right {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// 检测 i32 乘法溢出（安全方法，不依赖溢出行为）
+// 返回 1 表示溢出，0 表示安全
+fn check_i32_mul_overflow(left: i32, right: i32) i32 {
+    // 特殊情况：乘以 0 不会溢出
+    if left == 0 || right == 0 {
+        return 0;
+    }
+    // 特殊情况：I32_MIN * -1 会溢出
+    if left == I32_MIN && right == -1 {
+        return 1;
+    }
+    if right == I32_MIN && left == -1 {
+        return 1;
+    }
+    
+    // 正数 * 正数：检查 left > I32_MAX / right
+    if left > 0 && right > 0 {
+        if left > I32_MAX / right {
+            return 1;
+        }
+    }
+    // 负数 * 负数：检查 left < I32_MAX / right（注意除法截断）
+    if left < 0 && right < 0 {
+        // 两个负数相乘得正数，检查是否超过 I32_MAX
+        // |left| * |right| <= I32_MAX
+        // -left * -right <= I32_MAX
+        // 由于 left 和 right 都是负数，-left 和 -right 是正数
+        if -left > I32_MAX / -right {
+            return 1;
+        }
+    }
+    // 正数 * 负数：检查 left > I32_MIN / right
+    if left > 0 && right < 0 {
+        // 正数乘负数得负数，检查是否小于 I32_MIN
+        if right < I32_MIN / left {
+            return 1;
+        }
+    }
+    // 负数 * 正数：检查 left < I32_MIN / right
+    if left < 0 && right > 0 {
+        // 负数乘正数得负数，检查是否小于 I32_MIN
+        if left < I32_MIN / right {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// 检测 i32 一元负溢出
+// 返回 1 表示溢出，0 表示安全
+fn check_i32_neg_overflow(val: i32) i32 {
+    // I32_MIN 取负会溢出
+    if val == I32_MIN {
+        return 1;
+    }
+    return 0;
+}
+
 // 评估编译时常量表达式（用于 [value: N] 的 N 等），返回整数值；-1 表示无法评估
+// 增强版：检测溢出和除零，错误时调用 checker_report_error
 fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
     if expr == null || checker == null {
         return -1;
@@ -2357,18 +2516,37 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
         }
         const op: TokenType = expr.binary_expr_op as TokenType;
         if op == TokenType.TOKEN_PLUS {
+            // 溢出检测
+            if check_i32_add_overflow(left_val, right_val) != 0 {
+                checker_report_error(checker, expr, "常量表达式溢出: 加法结果超出 i32 范围" as *byte);
+                return -1;
+            }
             return left_val + right_val;
         } else if op == TokenType.TOKEN_MINUS {
+            // 溢出检测
+            if check_i32_sub_overflow(left_val, right_val) != 0 {
+                checker_report_error(checker, expr, "常量表达式溢出: 减法结果超出 i32 范围" as *byte);
+                return -1;
+            }
             return left_val - right_val;
         } else if op == TokenType.TOKEN_ASTERISK {
+            // 溢出检测
+            if check_i32_mul_overflow(left_val, right_val) != 0 {
+                checker_report_error(checker, expr, "常量表达式溢出: 乘法结果超出 i32 范围" as *byte);
+                return -1;
+            }
             return left_val * right_val;
         } else if op == TokenType.TOKEN_SLASH {
+            // 除零检测
             if right_val == 0 {
+                checker_report_error(checker, expr, "常量表达式除零错误" as *byte);
                 return -1;
             }
             return left_val / right_val;
         } else if op == TokenType.TOKEN_PERCENT {
+            // 除零检测
             if right_val == 0 {
+                checker_report_error(checker, expr, "常量表达式模零错误" as *byte);
                 return -1;
             }
             return left_val % right_val;
@@ -2384,10 +2562,28 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
         if op == TokenType.TOKEN_PLUS {
             return operand_val;
         } else if op == TokenType.TOKEN_MINUS {
+            // 溢出检测：I32_MIN 取负会溢出
+            if check_i32_neg_overflow(operand_val) != 0 {
+                checker_report_error(checker, expr, "常量表达式溢出: 一元负运算超出 i32 范围" as *byte);
+                return -1;
+            }
             return -operand_val;
         } else {
             return -1;
         }
+    } else if expr.type == ASTNodeType.AST_LEN {
+        // @len 表达式：返回数组长度
+        const array_expr: &ASTNode = expr.len_expr_array;
+        if array_expr == null {
+            return -1;
+        }
+        // 获取数组类型
+        const array_type: Type = checker_infer_type(checker, array_expr);
+        if array_type.kind == TypeKind.TYPE_ARRAY {
+            return array_type.array_size;
+        }
+        // 对于切片，无法在编译时确定长度
+        return -1;
     } else {
         return -1;
     }
@@ -2412,6 +2608,70 @@ fn checker_report_error(checker: &TypeChecker, node: &ASTNode, message: &byte) v
                 fprintf(libc.stderr, "%s: 错误: %s\n" as *byte, filename, message as *byte);
             }
         }
+    }
+}
+
+// 报告证明失败错误（扩展版本，包含详细上下文）
+// 参数：checker - TypeChecker 指针，node - AST 节点，error_type - 错误类型，var_name - 变量名，size - 数组大小
+fn checker_report_error_ex(checker: &TypeChecker, node: &ASTNode, error_type: &byte, var_name: &byte, size: i32) void {
+    if checker != null {
+        checker.error_count = checker.error_count + 1;
+        if libc.stderr != null {
+            var filename: &byte = "(unknown)" as *byte;
+            if node != null && node.filename != null {
+                filename = node.filename;
+            } else if checker.default_filename != null {
+                filename = checker.default_filename;
+            }
+            // 输出错误位置和类型
+            if node != null {
+                fprintf(libc.stderr, "%s:(%d:%d): 错误: %s\n" as *byte, filename, node.line, node.column, error_type as *byte);
+            } else {
+                fprintf(libc.stderr, "%s: 错误: %s\n" as *byte, filename, error_type as *byte);
+            }
+            // 输出详细信息
+            if var_name != null {
+                fprintf(libc.stderr, "  变量: %s, 数组大小: %d\n" as *byte, var_name as *byte, size);
+            }
+            // 输出修复建议
+            fprintf(libc.stderr, "  建议: 添加边界检查 (如 if %s >= 0 && %s < %d)\n" as *byte, 
+                var_name as *byte, var_name as *byte, size);
+        }
+        // 设置最后错误消息
+        last_checker_error_message = error_type;
+    }
+}
+
+// 证明步数递增和超限检查
+// 返回：1 表示继续，0 表示超限（已报告错误）
+fn checker_proof_step(checker: &TypeChecker, node: &ASTNode) i32 {
+    if checker == null {
+        return 0;
+    }
+    checker.proof_step_count = checker.proof_step_count + 1;
+    if checker.proof_step_count > checker.proof_step_limit {
+        checker_report_error(checker, node, "证明超时：证明步数超过限制，请简化代码或添加显式检查" as *byte);
+        return 0;
+    }
+    return 1;
+}
+
+// 重置证明步数计数器（在每个函数开始时调用）
+fn checker_reset_proof_steps(checker: &TypeChecker) void {
+    if checker != null {
+        checker.proof_step_count = 0;
+        // 同时重置约束系统（每个函数独立）
+        for 0..64 |i| {
+            checker.constraint_var_names[i] = null;
+            checker.constraint_ops[i] = 0;
+            checker.constraint_values[i] = 0;
+        }
+        checker.constraint_count = 0;
+        // 重置指针非空状态
+        for 0..32 |i| {
+            checker.pointer_nonnull_names[i] = null;
+        }
+        checker.pointer_nonnull_count = 0;
     }
 }
 
@@ -2904,6 +3164,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
                 sym.name = expr.catch_expr_err_name;
                 sym.type = err_type;
                 sym.is_const = 1;
+                sym.is_initialized = 1;  // catch 错误变量已初始化
                 sym.scope_level = checker.scope_level;
                 sym.line = expr.line;
                 sym.column = expr.column;
@@ -2950,6 +3211,10 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         // 标识符类型需要从符号表中查找
         const symbol: &Symbol = symbol_table_lookup(checker, expr.identifier_name);
         if symbol != null {
+            // 未初始化使用检测（仅当开启安全证明时）
+            if checker.enable_safety_proof != 0 && symbol.is_initialized == 0 {
+                checker_report_error(checker, expr, "变量在初始化前被使用：请确保变量在使用前已赋值" as *byte);
+            }
             return symbol.type;
         }
         // 找不到符号时，仅当该名是程序中某枚举的变体名时才报“裸枚举常量”（Uya 只支持 T.member）
@@ -3304,12 +3569,61 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         if array_type.kind == TypeKind.TYPE_ARRAY && array_type.element_type != null {
             // 数组类型：返回数组的元素类型
             // 注意：Uya 不支持指针解引用，需要使用数组访问
+            
+            // 边界检查（仅当开启安全证明时）
+            // 这里进行符号执行的边界检查
+            if checker.enable_safety_proof != 0 {
+                const index_expr: &ASTNode = expr.array_access_index;
+                const array_size: i32 = array_type.array_size;
+                
+                // 检查索引是否是常量
+                const index_val: i32 = checker_eval_const_expr(checker, index_expr);
+                if index_val >= 0 {
+                    // 常量索引：直接检查越界
+                    if index_val >= array_size {
+                        checker_report_error(checker, index_expr, "数组索引越界：常量索引超出数组边界" as *byte);
+                    }
+                } else {
+                    // 非常量索引：尝试提取线性表达式进行符号执行
+                    const linear_expr: LinearExpr = extract_linear_expr(checker, index_expr);
+                    
+                    if linear_expr.is_valid != 0 {
+                        // 使用符号执行验证边界
+                        if verify_linear_expr_bounds(checker, &linear_expr, array_size, index_expr) == 0 {
+                            // 无法证明安全，报告编译错误
+                            if linear_expr.var_name != null {
+                                checker_report_error_ex(checker, index_expr, 
+                                    "数组索引安全证明失败" as *byte,
+                                    linear_expr.var_name,
+                                    array_size);
+                            }
+                        }
+                    }
+                }
+            }
+            
             return array_type.element_type[0];
         } else if array_type.kind == TypeKind.TYPE_SLICE && array_type.slice_element_type != null {
             return array_type.slice_element_type[0];
         } else if array_type.kind == TypeKind.TYPE_POINTER && array_type.pointer_to != null {
             // 指针类型：检查指针指向的类型
             // 注意：Uya 不支持指针解引用，需要使用数组访问
+            
+            // 空指针检测（仅当开启安全证明时）
+            // 只检测被初始化为 null 且未通过 if ptr != null 检查的指针
+            if checker.enable_safety_proof != 0 {
+                const array_expr: &ASTNode = expr.array_access_array;
+                if array_expr != null && array_expr.type == ASTNodeType.AST_IDENTIFIER {
+                    const ptr_name: &byte = array_expr.identifier_name;
+                    // 只有当指针被初始化为 null 且未被标记为非空时才报错
+                    if pointer_is_nullable(checker, ptr_name) != 0 && pointer_is_known_nonnull(checker, ptr_name) == 0 {
+                        // 无法证明指针非空，报告编译错误
+                        checker_report_error(checker, expr.array_access_array, 
+                            "指针可能为空：请添加空指针检查 (如 if ptr != null)" as &byte);
+                    }
+                }
+            }
+            
             const pointed_type: Type = array_type.pointer_to[0];
             if pointed_type.kind == TypeKind.TYPE_ARRAY && pointed_type.element_type != null {
                 // 指向数组的指针（如 &[i32: 3]）：返回数组的元素类型
@@ -3547,6 +3861,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
                                 sym.name = arm.var_name;
                                 sym.type = copy_type(&variant_type);
                                 sym.is_const = 1;
+                                sym.is_initialized = 1;  // match 绑定变量已初始化
                                 sym.scope_level = checker.scope_level;
                                 sym.line = expr.line;
                                 sym.column = expr.column;
@@ -3755,6 +4070,7 @@ fn checker_check_destructure_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             symbol.name = name;
             symbol.type = element_types[i];
             symbol.is_const = is_const;
+            symbol.is_initialized = 1;  // 解构声明已初始化
             symbol.scope_level = checker.scope_level;
             symbol.line = node.line;
             symbol.column = node.column;
@@ -3814,6 +4130,13 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     
     // 检查初始化表达式类型
     if node.var_decl_init != null {
+        // 对于 const 变量，先尝试常量求值（检测溢出、除零等错误）
+        if node.var_decl_is_const != 0 {
+            const const_val: i32 = checker_eval_const_expr(checker, node.var_decl_init);
+            // 如果返回 -1 且有错误，继续（错误已报告）
+            // 否则常量求值成功，值被忽略（仅用于错误检测）
+        }
+        
         // 特殊处理空数组字面量：如果变量类型是数组类型，空数组字面量表示未初始化
         if node.var_decl_init.type == ASTNodeType.AST_ARRAY_LITERAL &&
             node.var_decl_init.array_literal_element_count == 0 &&
@@ -3881,6 +4204,9 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             symbol.name = node.var_decl_name;
             symbol.type = copy_type(&var_type);
             symbol.is_const = node.var_decl_is_const;
+            // 初始化状态：默认已初始化（保守策略，避免误报）
+            // 以后可以扩展为精确检测未初始化变量
+            symbol.is_initialized = 1;
             symbol.scope_level = checker.scope_level;
             symbol.line = node.line;
             symbol.column = node.column;
@@ -3905,6 +4231,50 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                 var_type.kind == TypeKind.TYPE_STRUCT && var_type.struct_name != null {
                 checker_mark_moved(checker, node, node.var_decl_init.identifier_name, var_type.struct_name);
             }
+        }
+    }
+    
+    // 安全证明：为有常量初始值的变量添加约束
+    // 例如：var i: i32 = 0; 添加 i >= 0 和 i == 0 的约束
+    if checker.enable_safety_proof != 0 && node.var_decl_name != null && node.var_decl_init != null {
+        const init_val: i32 = checker_eval_const_expr(checker, node.var_decl_init);
+        // 检查初始值是否有效常量
+        var is_valid_const: i32 = 0;
+        if init_val >= 0 {
+            is_valid_const = 1;
+        } else if init_val < 0 {
+            // 检查是否是负数整数字面量
+            const init_node: &ASTNode = node.var_decl_init;
+            if init_node != null && init_node.type == ASTNodeType.AST_NUMBER {
+                is_valid_const = 1;
+            }
+        }
+        if is_valid_const != 0 {
+            // 添加初始值约束：var == init_val
+            constraint_add(checker, node.var_decl_name, CONSTRAINT_EQ, init_val);
+            // 添加下界约束：var >= 0（对于非负初始值）
+            if init_val >= 0 {
+                constraint_add(checker, node.var_decl_name, CONSTRAINT_GE, 0);
+            }
+        }
+    }
+    
+    // 指针空值状态跟踪：如果指针初始化为非 null 值，标记为已知非空
+    // 如果初始化为 null，则标记为可能为空
+    if checker.enable_safety_proof != 0 && node.var_decl_name != null && var_type.kind == TypeKind.TYPE_POINTER {
+        // 检查初始化值是否为 null
+        var is_null_init: i32 = 0;
+        if node.var_decl_init != null && node.var_decl_init.type == ASTNodeType.AST_IDENTIFIER {
+            if node.var_decl_init.identifier_name != null && str_equals(node.var_decl_init.identifier_name, "null" as &byte) != 0 {
+                is_null_init = 1;
+            }
+        }
+        // 如果是 null 初始化，则标记为可能为空
+        if is_null_init != 0 {
+            pointer_nullable_add(checker, node.var_decl_name);
+        } else if node.var_decl_init != null {
+            // 如果不是 null 初始化，则标记为已知非空
+            pointer_nonnull_add(checker, node.var_decl_name);
         }
     }
     
@@ -3940,6 +4310,8 @@ fn checker_register_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     symbol.name = node.var_decl_name;
     symbol.type = copy_type(&var_type);
     symbol.is_const = node.var_decl_is_const;
+    // 顶层变量注册：假设已初始化（实际检查在 checker_check_var_decl 中）
+    symbol.is_initialized = 1;
     symbol.scope_level = 0;
     symbol.line = node.line;
     symbol.column = node.column;
@@ -4105,6 +4477,7 @@ fn checker_check_extern_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     symbol.name = node.extern_var_decl_name;
     symbol.type = var_type;
     symbol.is_const = node.extern_var_decl_is_const;
+    symbol.is_initialized = 1;  // extern 变量假设已初始化
     symbol.scope_level = 0;  // 顶层声明
     symbol.line = node.line;
     symbol.column = node.column;
@@ -4161,6 +4534,9 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     checker.in_function = 1;
     checker.current_function_decl = node;
     
+    // 重置证明步数计数器（每个函数独立计数）
+    checker_reset_proof_steps(checker);
+    
     // 检查函数体（如果有）
     if node.fn_decl_body != null {
         checker_enter_scope(checker);
@@ -4182,12 +4558,17 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                     param_symbol.name = param.var_decl_name;
                     param_symbol.type = copy_type(&param_type);
                     param_symbol.is_const = 1;  // 参数是只读的
+                    param_symbol.is_initialized = 1;  // 参数已初始化
                     param_symbol.scope_level = checker.scope_level;
                     param_symbol.line = param.line;
                     param_symbol.column = param.column;
                     param_symbol.pointee_of = null;
                     param_symbol.decl_node = param;
                     symbol_table_insert(checker, param_symbol);
+                    // 函数参数如果是指针类型，假设为非空（调用者负责传递有效指针）
+                    if checker.enable_safety_proof != 0 && param_type.kind == TypeKind.TYPE_POINTER {
+                        pointer_nonnull_add(checker, param.var_decl_name);
+                    }
                 }
             }
             i = i + 1;
@@ -5132,6 +5513,555 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
     return result;
 }
 
+// ============================================
+// 约束系统（路径敏感分析）
+// ============================================
+
+// 约束操作符常量
+const CONSTRAINT_LT: i32 = 0;   // <
+const CONSTRAINT_LE: i32 = 1;   // <=
+const CONSTRAINT_GT: i32 = 2;   // >
+const CONSTRAINT_GE: i32 = 3;   // >=
+const CONSTRAINT_EQ: i32 = 4;   // ==
+const CONSTRAINT_NE: i32 = 5;   // !=
+
+// 指针非空状态管理
+
+// 添加指针非空状态
+// 参数：ptr_name - 指针变量名
+fn pointer_nonnull_add(checker: &TypeChecker, ptr_name: &byte) void {
+    if checker == null || ptr_name == null {
+        return;
+    }
+    if checker.pointer_nonnull_count >= 32 {
+        return;  // 已满
+    }
+    // 检查是否已存在
+    var i: i32 = 0;
+    while i < checker.pointer_nonnull_count {
+        const name: &byte = checker.pointer_nonnull_names[i];
+        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+            return;  // 已存在
+        }
+        i = i + 1;
+    }
+    checker.pointer_nonnull_names[checker.pointer_nonnull_count] = ptr_name;
+    checker.pointer_nonnull_count = checker.pointer_nonnull_count + 1;
+}
+
+// 移除指针非空状态
+// 参数：ptr_name - 指针变量名
+fn pointer_nonnull_remove(checker: &TypeChecker, ptr_name: &byte) void {
+    if checker == null || ptr_name == null {
+        return;
+    }
+    var write_idx: i32 = 0;
+    var i: i32 = 0;
+    while i < checker.pointer_nonnull_count {
+        const name: &byte = checker.pointer_nonnull_names[i];
+        if name != null && strcmp(name as *byte, ptr_name as *byte) != 0 {
+            checker.pointer_nonnull_names[write_idx] = name;
+            write_idx = write_idx + 1;
+        }
+        i = i + 1;
+    }
+    checker.pointer_nonnull_count = write_idx;
+}
+
+// 检查指针是否已知非空
+// 参数：ptr_name - 指针变量名
+// 返回：1 表示已知非空，0 表示未知
+fn pointer_is_known_nonnull(checker: &TypeChecker, ptr_name: &byte) i32 {
+    if checker == null || ptr_name == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < checker.pointer_nonnull_count {
+        const name: &byte = checker.pointer_nonnull_names[i];
+        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// 清除所有指针非空状态
+fn pointer_nonnull_clear(checker: &TypeChecker) void {
+    if checker == null {
+        return;
+    }
+    for 0..32 |i| {
+        checker.pointer_nonnull_names[i] = null;
+    }
+    checker.pointer_nonnull_count = 0;
+}
+
+// 可能为空的指针管理
+
+// 添加可能为空的指针
+// 参数：ptr_name - 指针变量名
+fn pointer_nullable_add(checker: &TypeChecker, ptr_name: &byte) void {
+    if checker == null || ptr_name == null {
+        return;
+    }
+    if checker.pointer_nullable_count >= 32 {
+        return;  // 已满
+    }
+    // 检查是否已存在
+    var i: i32 = 0;
+    while i < checker.pointer_nullable_count {
+        const name: &byte = checker.pointer_nullable_names[i];
+        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+            return;  // 已存在
+        }
+        i = i + 1;
+    }
+    checker.pointer_nullable_names[checker.pointer_nullable_count] = ptr_name;
+    checker.pointer_nullable_count = checker.pointer_nullable_count + 1;
+}
+
+// 检查指针是否可能为空（被初始化为 null）
+// 参数：ptr_name - 指针变量名
+// 返回：1 表示可能为空，0 表示不可能为空
+fn pointer_is_nullable(checker: &TypeChecker, ptr_name: &byte) i32 {
+    if checker == null || ptr_name == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < checker.pointer_nullable_count {
+        const name: &byte = checker.pointer_nullable_names[i];
+        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// 清除所有约束
+fn constraint_clear(checker: &TypeChecker) void {
+    if checker == null {
+        return;
+    }
+    const count: i32 = checker.constraint_count;
+    for 0..count |i| {
+        checker.constraint_var_names[i] = null;
+        checker.constraint_ops[i] = 0;
+        checker.constraint_values[i] = 0;
+    }
+    checker.constraint_count = 0;
+}
+
+// 添加约束
+// 参数：var_name - 变量名，op - 操作符，value - 常量值
+fn constraint_add(checker: &TypeChecker, var_name: &byte, op: i32, value: i32) void {
+    if checker == null || var_name == null {
+        return;
+    }
+    if checker.constraint_count >= 64 {
+        return;  // 约束集已满
+    }
+    checker.constraint_var_names[checker.constraint_count] = var_name;
+    checker.constraint_ops[checker.constraint_count] = op;
+    checker.constraint_values[checker.constraint_count] = value;
+    checker.constraint_count = checker.constraint_count + 1;
+}
+
+// 移除指定变量的所有约束
+// 参数：var_name - 变量名
+fn constraint_remove_var(checker: &TypeChecker, var_name: &byte) void {
+    if checker == null || var_name == null {
+        return;
+    }
+    var write_idx: i32 = 0;
+    var i: i32 = 0;
+    while i < checker.constraint_count {
+        const name: &byte = checker.constraint_var_names[i];
+        if name != null && strcmp(name as *byte, var_name as *byte) != 0 {
+            // 保留不是该变量的约束
+            checker.constraint_var_names[write_idx] = name;
+            checker.constraint_ops[write_idx] = checker.constraint_ops[i];
+            checker.constraint_values[write_idx] = checker.constraint_values[i];
+            write_idx = write_idx + 1;
+        }
+        i = i + 1;
+    }
+    checker.constraint_count = write_idx;
+}
+
+// 更新递增赋值后的约束
+// 参数：var_name - 变量名，increment - 递增值
+// 例如：i = i + 1 后，如果原来 i >= 0，新值也 >= 0
+fn constraint_update_for_increment(checker: &TypeChecker, var_name: &byte, increment: i32) void {
+    if checker == null || var_name == null {
+        return;
+    }
+    // 对于 i = i + n（n > 0）：
+    // 如果原来 i >= k，新值 i >= k + n
+    // 如果原来 i >= 0 且 n >= 0，新值也 >= 0
+    var i: i32 = 0;
+    while i < checker.constraint_count {
+        const name: &byte = checker.constraint_var_names[i];
+        if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
+            const op: i32 = checker.constraint_ops[i];
+            const val: i32 = checker.constraint_values[i];
+            // 更新下界约束
+            if op == CONSTRAINT_GE {
+                checker.constraint_values[i] = val + increment;
+            } else if op == CONSTRAINT_GT {
+                checker.constraint_values[i] = val + increment;
+            }
+            // 在循环中，上界约束不移除（循环条件会在下次迭代检查）
+            // 只在非循环上下文中移除上界约束
+            if checker.loop_depth == 0 {
+                if op == CONSTRAINT_LT || op == CONSTRAINT_LE {
+                    checker.constraint_var_names[i] = null;
+                }
+            }
+        }
+        i = i + 1;
+    }
+}
+
+// 从二元比较表达式提取约束
+// 参数：expr - 二元表达式，is_positive - 是否取正条件
+// 例如：i < 10 提取为 (i, LT, 10)
+//       is_positive = false 时，i < 10 提取为 (i, GE, 10)
+// 特殊处理：ptr == null / ptr != null 用于空指针检测
+fn constraint_extract_from_binary(checker: &TypeChecker, expr: &ASTNode, is_positive: i32) void {
+    if checker == null || expr == null {
+        return;
+    }
+    if expr.type != ASTNodeType.AST_BINARY_EXPR {
+        return;
+    }
+    
+    const op: i32 = expr.binary_expr_op;
+    
+    // 处理逻辑与（&&）：递归提取左右子表达式的约束
+    // TOKEN_LOGICAL_AND = 56
+    if op == 56 {
+        const left_expr: &ASTNode = expr.binary_expr_left;
+        const right_expr: &ASTNode = expr.binary_expr_right;
+        if left_expr != null {
+            constraint_extract_from_binary(checker, left_expr, is_positive);
+        }
+        if right_expr != null {
+            constraint_extract_from_binary(checker, right_expr, is_positive);
+        }
+        return;
+    }
+    
+    // 处理逻辑或（||）：暂不支持（需要更复杂的约束合并）
+    // TOKEN_LOGICAL_OR = 57
+    if op == 57 {
+        return;  // 逻辑或的约束提取较复杂，暂不支持
+    }
+    
+    // 只处理比较运算符
+    // 正确的 TokenType 值：
+    // TOKEN_EQUAL = 50, TOKEN_NOT_EQUAL = 51
+    // TOKEN_LESS = 52, TOKEN_GREATER = 53
+    // TOKEN_LESS_EQUAL = 54, TOKEN_GREATER_EQUAL = 55
+    if op != 50 && op != 51 && op != 52 && op != 53 && op != 54 && op != 55 {
+        return;
+    }
+    
+    // 获取左操作数（必须是标识符）
+    const left: &ASTNode = expr.binary_expr_left;
+    const right: &ASTNode = expr.binary_expr_right;
+    
+    if left == null || right == null {
+        return;
+    }
+    
+    // 左操作数必须是标识符
+    if left.type != ASTNodeType.AST_IDENTIFIER {
+        return;
+    }
+    
+    const var_name: &byte = left.identifier_name;
+    
+    // 检查是否是指针与 null 的比较（用于空指针检测）
+    // TOKEN_EQUAL = 50, TOKEN_NOT_EQUAL = 51
+    if op == 50 || op == 51 {
+        var is_null_compare: i32 = 0;
+        var ptr_name: &byte = null;
+        
+        // 检查 ptr == null 或 ptr != null
+        if right.type == ASTNodeType.AST_IDENTIFIER && right.identifier_name != null {
+            if str_equals(right.identifier_name, "null" as &byte) != 0 {
+                is_null_compare = 1;
+                ptr_name = var_name;
+            }
+        }
+        // 检查 null == ptr 或 null != ptr
+        if left.identifier_name != null && str_equals(left.identifier_name, "null" as &byte) != 0 {
+            if right.type == ASTNodeType.AST_IDENTIFIER && right.identifier_name != null {
+                is_null_compare = 1;
+                ptr_name = right.identifier_name;
+            }
+        }
+        
+        if is_null_compare != 0 && ptr_name != null {
+            // 指针与 null 的比较
+            // op == 50 (==): ptr == null
+            // op == 51 (!=): ptr != null
+            if op == 51 {
+                // ptr != null
+                if is_positive != 0 {
+                    // then 分支：ptr 非空
+                    pointer_nonnull_add(checker, ptr_name);
+                } else {
+                    // else 分支：ptr 为空（移除非空状态）
+                    pointer_nonnull_remove(checker, ptr_name);
+                }
+            } else {
+                // ptr == null
+                if is_positive != 0 {
+                    // then 分支：ptr 为空（移除非空状态）
+                    pointer_nonnull_remove(checker, ptr_name);
+                } else {
+                    // else 分支：ptr 非空
+                    pointer_nonnull_add(checker, ptr_name);
+                }
+            }
+            return;
+        }
+    }
+    
+    // 右操作数必须是常量
+    const right_val: i32 = checker_eval_const_expr(checker, right);
+    if right_val < 0 {
+        return;  // 不是常量
+    }
+    
+    // 映射操作符
+    // 正条件：直接映射
+    // 负条件：取反（LT <-> GE, GT <-> LE, EQ <-> NE）
+    var constraint_op: i32 = 0;
+    
+    if is_positive != 0 {
+        // 正条件
+        if op == 52 {        // TOKEN_LESS -> CONSTRAINT_LT
+            constraint_op = CONSTRAINT_LT;
+        } else if op == 53 { // TOKEN_GREATER -> CONSTRAINT_GT
+            constraint_op = CONSTRAINT_GT;
+        } else if op == 54 { // TOKEN_LESS_EQUAL -> CONSTRAINT_LE
+            constraint_op = CONSTRAINT_LE;
+        } else if op == 55 { // TOKEN_GREATER_EQUAL -> CONSTRAINT_GE
+            constraint_op = CONSTRAINT_GE;
+        } else if op == 50 { // TOKEN_EQUAL -> CONSTRAINT_EQ
+            constraint_op = CONSTRAINT_EQ;
+        } else if op == 51 { // TOKEN_NOT_EQUAL -> CONSTRAINT_NE
+            constraint_op = CONSTRAINT_NE;
+        }
+    } else {
+        // 负条件（取反）
+        if op == 52 {        // !(a < b) -> a >= b
+            constraint_op = CONSTRAINT_GE;
+        } else if op == 53 { // !(a > b) -> a <= b
+            constraint_op = CONSTRAINT_LE;
+        } else if op == 54 { // !(a <= b) -> a > b
+            constraint_op = CONSTRAINT_GT;
+        } else if op == 55 { // !(a >= b) -> a < b
+            constraint_op = CONSTRAINT_LT;
+        } else if op == 50 { // !(a == b) -> a != b
+            constraint_op = CONSTRAINT_NE;
+        } else if op == 51 { // !(a != b) -> a == b
+            constraint_op = CONSTRAINT_EQ;
+        }
+    }
+    
+    constraint_add(checker, var_name, constraint_op, right_val);
+}
+
+// 验证数组访问边界
+// 参数：var_name - 索引变量名，array_size - 数组大小
+// 返回：1 表示证明安全，0 表示无法证明
+fn constraint_verify_bounds(checker: &TypeChecker, var_name: &byte, array_size: i32) i32 {
+    if checker == null || var_name == null {
+        return 0;
+    }
+    
+    var has_lower_bound: i32 = 0;  // var >= 0
+    var has_upper_bound: i32 = 0;  // var < size
+    
+    var i: i32 = 0;
+    while i < checker.constraint_count {
+        const name: &byte = checker.constraint_var_names[i];
+        if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
+            const op: i32 = checker.constraint_ops[i];
+            const val: i32 = checker.constraint_values[i];
+            
+            // 检查下界：var >= 0 或 var > -1
+            if op == CONSTRAINT_GE && val == 0 {
+                has_lower_bound = 1;
+            } else if op == CONSTRAINT_GT && val == -1 {
+                has_lower_bound = 1;
+            }
+            
+            // 检查上界：var < size 或 var <= size-1
+            if op == CONSTRAINT_LT && val == array_size {
+                has_upper_bound = 1;
+            } else if op == CONSTRAINT_LE && val == array_size - 1 {
+                has_upper_bound = 1;
+            }
+        }
+        i = i + 1;
+    }
+    
+    if has_lower_bound != 0 && has_upper_bound != 0 {
+        return 1;  // 证明安全
+    }
+    return 0;  // 无法证明
+}
+
+// 线性表达式结构（用于符号执行）
+// 表示 var + offset 或 var - offset 的形式
+struct LinearExpr {
+    var_name: &byte,      // 基础变量名（null 表示纯常量）
+    offset: i32,          // 偏移量（正数表示加，负数表示减）
+    is_valid: i32,        // 是否是有效的线性表达式
+}
+
+// 从表达式中提取线性表达式
+// 支持：标识符、常量、标识符+常量、标识符-常量
+// 返回 LinearExpr 结构
+fn extract_linear_expr(checker: &TypeChecker, expr: &ASTNode) LinearExpr {
+    var result: LinearExpr = LinearExpr {
+        var_name: null,
+        offset: 0,
+        is_valid: 0,
+    };
+    
+    if checker == null || expr == null {
+        return result;
+    }
+    
+    if expr.type == ASTNodeType.AST_NUMBER {
+        // 纯常量
+        result.offset = expr.number_value;
+        result.is_valid = 1;
+        return result;
+    }
+    
+    if expr.type == ASTNodeType.AST_IDENTIFIER {
+        // 纯变量
+        result.var_name = expr.identifier_name;
+        result.offset = 0;
+        result.is_valid = 1;
+        return result;
+    }
+    
+    if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        const op: TokenType = expr.binary_expr_op as TokenType;
+        const left: &ASTNode = expr.binary_expr_left;
+        const right: &ASTNode = expr.binary_expr_right;
+        
+        // 只支持 + 和 - 运算
+        if op != TokenType.TOKEN_PLUS && op != TokenType.TOKEN_MINUS {
+            return result;
+        }
+        
+        // 提取左边和右边
+        const left_expr: LinearExpr = extract_linear_expr(checker, left);
+        const right_expr: LinearExpr = extract_linear_expr(checker, right);
+        
+        // 检查是否可以组合
+        // 情况1: var + const 或 var - const
+        // 情况2: const + var 或 const - var
+        if left_expr.is_valid != 0 && right_expr.is_valid != 0 {
+            if left_expr.var_name != null && right_expr.var_name == null {
+                // var + const 或 var - const
+                result.var_name = left_expr.var_name;
+                if op == TokenType.TOKEN_PLUS {
+                    result.offset = left_expr.offset + right_expr.offset;
+                } else {
+                    result.offset = left_expr.offset - right_expr.offset;
+                }
+                result.is_valid = 1;
+                return result;
+            } else if left_expr.var_name == null && right_expr.var_name != null && op == TokenType.TOKEN_PLUS {
+                // const + var（只有加法支持交换律）
+                result.var_name = right_expr.var_name;
+                result.offset = left_expr.offset + right_expr.offset;
+                result.is_valid = 1;
+                return result;
+            }
+        }
+    }
+    
+    return result;  // 无法识别的线性表达式
+}
+
+// 验证线性表达式的数组访问边界
+// 对于 expr = var + offset，验证 var >= -offset && var < size - offset
+// 参数：linear_expr - 线性表达式，array_size - 数组大小，node - AST节点（用于错误报告）
+// 返回：1 表示证明安全，0 表示无法证明
+fn verify_linear_expr_bounds(checker: &TypeChecker, linear_expr: &LinearExpr, array_size: i32, node: &ASTNode) i32 {
+    if checker == null || linear_expr == null || linear_expr.is_valid == 0 {
+        return 0;
+    }
+    
+    // 证明步数检查
+    if checker_proof_step(checker, node) == 0 {
+        return 1;  // 超限，已报告错误，返回1避免重复报告
+    }
+    
+    // 纯常量：直接检查
+    if linear_expr.var_name == null {
+        if linear_expr.offset >= 0 && linear_expr.offset < array_size {
+            return 1;
+        }
+        return 0;
+    }
+    
+    // 变量 + 偏移量：需要检查调整后的边界
+    // arr[i + offset] 安全需要: i >= -offset 且 i < size - offset
+    const offset: i32 = linear_expr.offset;
+    const var_name: &byte = linear_expr.var_name;
+    
+    var has_lower_bound: i32 = 0;
+    var has_upper_bound: i32 = 0;
+    
+    // 计算需要的下界和上界
+    const need_lower: i32 = -offset;  // i >= -offset
+    const need_upper: i32 = array_size - offset;  // i < size - offset
+    
+    var i: i32 = 0;
+    while i < checker.constraint_count {
+        const name: &byte = checker.constraint_var_names[i];
+        if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
+            const op: i32 = checker.constraint_ops[i];
+            const val: i32 = checker.constraint_values[i];
+            
+            // 检查下界：需要 i >= need_lower
+            // 如果约束是 i >= val，需要 val >= need_lower（val 更强）
+            if op == CONSTRAINT_GE && val >= need_lower {
+                has_lower_bound = 1;
+            } else if op == CONSTRAINT_GT && val > need_lower {
+                has_lower_bound = 1;
+            }
+            
+            // 检查上界：需要 i < need_upper
+            // 如果约束是 i < val，需要 val <= need_upper（val 更强）
+            if op == CONSTRAINT_LT && val <= need_upper {
+                has_upper_bound = 1;
+            } else if op == CONSTRAINT_LE && val < need_upper {
+                has_upper_bound = 1;
+            }
+        }
+        i = i + 1;
+    }
+    
+    if has_lower_bound != 0 && has_upper_bound != 0 {
+        return 1;
+    }
+    return 0;
+}
+
 // 检查数组访问
 // 参数：checker - TypeChecker 指针，node - 数组访问节点
 // 返回：元素类型（如果检查失败返回TYPE_VOID）
@@ -5176,12 +6106,71 @@ fn checker_check_array_access(checker: &TypeChecker, node: &ASTNode) Type {
             return array_type.element_type[0];
         }
         
+        // 常量索引越界检测
+        const index_val: i32 = checker_eval_const_expr(checker, node.array_access_index);
+        if index_val >= 0 {
+            // 索引是常量，检查是否越界
+            const array_size: i32 = array_type.array_size;
+            if index_val >= array_size {
+                checker_report_error(checker, node.array_access_index, "数组索引越界：常量索引超出数组边界" as *byte);
+            }
+            if index_val < 0 {
+                checker_report_error(checker, node.array_access_index, "数组索引越界：索引不能为负数" as *byte);
+            }
+        } else {
+            // 变量索引：使用约束系统验证边界（仅当开启安全证明时）
+            if checker.enable_safety_proof != 0 {
+                const index_expr: &ASTNode = node.array_access_index;
+                const array_size: i32 = array_type.array_size;
+                
+                // 尝试提取线性表达式
+                const linear_expr: LinearExpr = extract_linear_expr(checker, index_expr);
+                
+                if linear_expr.is_valid != 0 {
+                    // 使用符号执行验证边界
+                    if verify_linear_expr_bounds(checker, &linear_expr, array_size, node.array_access_index) == 0 {
+                        // 无法证明安全，报告编译错误
+                        if linear_expr.var_name != null {
+                            checker_report_error_ex(checker, node.array_access_index, 
+                                "数组索引安全证明失败" as *byte,
+                                linear_expr.var_name,
+                                array_size);
+                        } else {
+                            // 纯常量越界（理论上不会到这里，因为常量已经在前面检查过）
+                            checker_report_error(checker, node.array_access_index, 
+                                "数组索引越界：常量索引超出数组边界" as *byte);
+                        }
+                    }
+                } else {
+                    // 非线性表达式：暂不支持，需要边界检查
+                    checker_report_error(checker, node.array_access_index, 
+                        "数组索引需要安全证明：复杂表达式暂不支持，请使用简单变量或添加边界检查" as *byte);
+                }
+            }
+        }
+        
         // 返回数组的元素类型
         // 注意：Uya 不支持指针解引用，需要使用数组访问
         return array_type.element_type[0];
     } else if array_type.kind == TypeKind.TYPE_POINTER && array_type.pointer_to != null {
         // 指针类型：检查指针指向的类型
         // 注意：Uya 不支持指针解引用，需要使用数组访问
+        
+        // 空指针检测（仅当开启安全证明时）
+        // 只检测被初始化为 null 且未通过 if ptr != null 检查的指针
+        if checker.enable_safety_proof != 0 {
+            const array_expr: &ASTNode = node.array_access_array;
+            if array_expr != null && array_expr.type == ASTNodeType.AST_IDENTIFIER {
+                const ptr_name: &byte = array_expr.identifier_name;
+                // 只有当指针被初始化为 null 且未被标记为非空时才报错
+                if pointer_is_nullable(checker, ptr_name) != 0 && pointer_is_known_nonnull(checker, ptr_name) == 0 {
+                    // 无法证明指针非空，报告编译错误
+                    checker_report_error(checker, node.array_access_array, 
+                        "指针可能为空：请添加空指针检查 (如 if ptr != null)" as &byte);
+                }
+            }
+        }
+        
         const pointed_type: Type = array_type.pointer_to[0];
         if pointed_type.kind == TypeKind.TYPE_ARRAY && pointed_type.element_type != null {
             // 指向数组的指针（如 &[i32: 3]）：返回数组的元素类型
@@ -6166,21 +7155,68 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         if cond_type.kind != TypeKind.TYPE_BOOL && cond_type.kind != TypeKind.TYPE_VOID {
             checker_report_error(checker, node, "if 语句的条件表达式必须是 bool 类型" as *byte);
         }
+        
+        // 路径敏感分析：保存当前约束状态和指针非空状态
+        const saved_constraint_count: i32 = checker.constraint_count;
+        const saved_nonnull_count: i32 = checker.pointer_nonnull_count;
+        var saved_nonnull_names: [&byte: 32] = [];
+        for 0..saved_nonnull_count |i| {
+            saved_nonnull_names[i] = checker.pointer_nonnull_names[i];
+        }
+        
+        // 从条件提取约束（正条件，用于 then 分支）
+        if node.if_stmt_condition != null {
+            constraint_extract_from_binary(checker, node.if_stmt_condition, 1);
+        }
+        
         // 检查then分支
         if node.if_stmt_then_branch != null {
             checker_check_node(checker, node.if_stmt_then_branch);
         }
+        
+        // 恢复约束状态和指针非空状态，然后为 else 分支提取负条件约束
+        checker.constraint_count = saved_constraint_count;
+        checker.pointer_nonnull_count = saved_nonnull_count;
+        for 0..saved_nonnull_count |i| {
+            checker.pointer_nonnull_names[i] = saved_nonnull_names[i];
+        }
+        
         // 检查else分支
         if node.if_stmt_else_branch != null {
+            // 从条件提取约束（负条件，用于 else 分支）
+            if node.if_stmt_condition != null {
+                constraint_extract_from_binary(checker, node.if_stmt_condition, 0);
+            }
             checker_check_node(checker, node.if_stmt_else_branch);
         }
+        
+        // if 语句结束后，恢复约束状态和指针非空状态（简化处理：不跨语句传播）
+        checker.constraint_count = saved_constraint_count;
+        checker.pointer_nonnull_count = saved_nonnull_count;
+        for 0..saved_nonnull_count |i| {
+            checker.pointer_nonnull_names[i] = saved_nonnull_names[i];
+        }
+        
         return 1;
     } else if node.type == ASTNodeType.AST_WHILE_STMT {
+        // 检查条件表达式
+        if node.while_stmt_condition != null {
+            checker_check_node(checker, node.while_stmt_condition);
+        }
         // 检查条件类型（必须是bool）
         const cond_type: Type = checker_infer_type(checker, node.while_stmt_condition);
         if cond_type.kind != TypeKind.TYPE_BOOL {
             checker_report_error(checker, node, "类型检查错误" as *byte);
         }
+        
+        // 路径敏感分析：保存当前约束状态
+        const saved_constraint_count: i32 = checker.constraint_count;
+        
+        // 从循环条件提取约束（正条件，用于循环体）
+        if node.while_stmt_condition != null {
+            constraint_extract_from_binary(checker, node.while_stmt_condition, 1);
+        }
+        
         // 进入循环（增加循环深度）
         checker.loop_depth = checker.loop_depth + 1;
         // 检查循环体
@@ -6189,6 +7225,10 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         }
         // 退出循环（减少循环深度）
         checker.loop_depth = checker.loop_depth - 1;
+        
+        // 循环结束后，恢复约束状态（循环可能不执行）
+        checker.constraint_count = saved_constraint_count;
+        
         return 1;
     } else if node.type == ASTNodeType.AST_DEFER_STMT {
         if node.defer_stmt_body != null {
@@ -6230,6 +7270,9 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             checker.current_return_type = error_void_type;
             checker.in_function = 1;
             checker.current_function_decl = node;  // 支持 @func_name
+            
+            // 重置证明步数计数器（每个测试块独立计数）
+            checker_reset_proof_steps(checker);
             
             // 检查测试体中的语句
             const ret: i32 = checker_check_node(checker, node.test_stmt_body);
@@ -6442,6 +7485,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     sym.name = arm.var_name;
                     sym.type = copy_type(&expr_type);
                     sym.is_const = 1;
+                    sym.is_initialized = 1;  // match 绑定变量已初始化
                     sym.scope_level = checker.scope_level;
                     sym.line = node.line;
                     sym.column = node.column;
@@ -6481,6 +7525,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                             sym.name = arm.var_name;
                             sym.type = copy_type(&variant_type);
                             sym.is_const = 1;
+                            sym.is_initialized = 1;  // match 联合体绑定变量已初始化
                             sym.scope_level = checker.scope_level;
                             sym.line = node.line;
                             sym.column = node.column;
@@ -6602,6 +7647,8 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     return 0;
                 }
                 
+                // 标记变量为已初始化
+                symbol.is_initialized = 1;
                 dest_type = symbol.type;
             }
         } else if dest.type == ASTNodeType.AST_MEMBER_ACCESS {
@@ -6673,6 +7720,75 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 checker_mark_moved(checker, node, src.identifier_name, st.struct_name);
             }
         }
+        
+        // 安全证明：更新赋值后的约束
+        // 处理 var = var + const 或 var = var - const 模式
+        if checker.enable_safety_proof != 0 && dest.type == ASTNodeType.AST_IDENTIFIER {
+            const var_name: &byte = dest.identifier_name;
+            if src != null && src.type == ASTNodeType.AST_BINARY_EXPR {
+                const left: &ASTNode = src.binary_expr_left;
+                const right: &ASTNode = src.binary_expr_right;
+                const op: TokenType = src.binary_expr_op as TokenType;
+                
+                // 检查是否是 var = var op const 模式
+                if left != null && left.type == ASTNodeType.AST_IDENTIFIER &&
+                    str_equals(left.identifier_name, var_name) != 0 {
+                    const right_val: i32 = checker_eval_const_expr(checker, right);
+                    
+                    if op == TokenType.TOKEN_PLUS {
+                        // i = i + n: 如果原来 i >= k，新值 i >= k + n
+                        // 对于 n > 0，如果原来 i >= 0，新值也 >= 0
+                        constraint_update_for_increment(checker, var_name, right_val);
+                    } else if op == TokenType.TOKEN_MINUS {
+                        // i = i - n: 不确定新值的下界
+                        // 保守策略：清除该变量的约束
+                        constraint_remove_var(checker, var_name);
+                    } else {
+                        // 其他操作：清除约束
+                        constraint_remove_var(checker, var_name);
+                    }
+                } else {
+                    // 不是 var = var op const 模式：检查右侧是否是常量
+                    const src_val: i32 = checker_eval_const_expr(checker, src);
+                    var is_valid_const: i32 = 0;
+                    if src_val >= 0 {
+                        is_valid_const = 1;
+                    } else if src_val < 0 && right != null && right.type == ASTNodeType.AST_NUMBER {
+                        is_valid_const = 1;
+                    }
+                    if is_valid_const != 0 {
+                        // 新值是常量：更新约束
+                        constraint_remove_var(checker, var_name);
+                        constraint_add(checker, var_name, CONSTRAINT_EQ, src_val);
+                        if src_val >= 0 {
+                            constraint_add(checker, var_name, CONSTRAINT_GE, 0);
+                        }
+                    } else {
+                        // 不是常量：清除约束
+                        constraint_remove_var(checker, var_name);
+                    }
+                }
+            } else {
+                // 非二元表达式：检查是否是常量
+                const src_val: i32 = checker_eval_const_expr(checker, src);
+                var is_valid_const: i32 = 0;
+                if src_val >= 0 {
+                    is_valid_const = 1;
+                } else if src_val < 0 && src != null && src.type == ASTNodeType.AST_NUMBER {
+                    is_valid_const = 1;
+                }
+                if is_valid_const != 0 {
+                    constraint_remove_var(checker, var_name);
+                    constraint_add(checker, var_name, CONSTRAINT_EQ, src_val);
+                    if src_val >= 0 {
+                        constraint_add(checker, var_name, CONSTRAINT_GE, 0);
+                    }
+                } else {
+                    constraint_remove_var(checker, var_name);
+                }
+            }
+        }
+        
         return 1;
     } else if node.type == ASTNodeType.AST_FOR_STMT {
         if node.for_stmt_is_range != 0 {
@@ -6697,6 +7813,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     loop_var.name = node.for_stmt_var_name;
                     loop_var.type = start_type;
                     loop_var.is_const = 0;
+                    loop_var.is_initialized = 1;  // for 循环变量已初始化
                     loop_var.scope_level = checker.scope_level;
                     loop_var.line = node.line;
                     loop_var.column = node.column;
@@ -6704,9 +7821,34 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     symbol_table_insert(checker, loop_var);
                 }
             }
+            
+            // 路径敏感分析：保存当前约束状态
+            const saved_constraint_count: i32 = checker.constraint_count;
+            
+            // 从范围提取约束
+            // for start..end |i| 意味着 start <= i && i < end
+            if node.for_stmt_var_name != null {
+                // 从起始值提取约束：i >= start
+                const start_val: i32 = checker_eval_const_expr(checker, node.for_stmt_range_start);
+                if start_val >= 0 {
+                    constraint_add(checker, node.for_stmt_var_name, CONSTRAINT_GE, start_val);
+                }
+                // 从结束值提取约束：i < end
+                if node.for_stmt_range_end != null {
+                    const end_val: i32 = checker_eval_const_expr(checker, node.for_stmt_range_end);
+                    if end_val >= 0 {
+                        constraint_add(checker, node.for_stmt_var_name, CONSTRAINT_LT, end_val);
+                    }
+                }
+            }
+            
             if node.for_stmt_body != null {
                 checker_check_node(checker, node.for_stmt_body);
             }
+            
+            // 恢复约束状态
+            checker.constraint_count = saved_constraint_count;
+            
             checker.loop_depth = checker.loop_depth - 1;
             checker_exit_scope(checker);
             return 1;
@@ -6757,6 +7899,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                                 loop_var.name = node.for_stmt_var_name;
                                 loop_var.type = var_type;
                                 loop_var.is_const = 0;
+                                loop_var.is_initialized = 1;  // for 循环变量已初始化
                                 loop_var.scope_level = checker.scope_level;
                                 loop_var.line = node.line;
                                 loop_var.column = node.column;
@@ -6919,6 +8062,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 loop_var.name = node.for_stmt_var_name;
                 loop_var.type = copy_type(&var_type);
                 loop_var.is_const = 0;  // for 循环变量是可修改的（即使是值迭代形式，在循环体内也可以使用）
+                loop_var.is_initialized = 1;  // for 循环变量已初始化
                 loop_var.scope_level = checker.scope_level;
                 loop_var.line = node.line;
                 loop_var.column = node.column;

@@ -734,7 +734,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
 // 字符串转整数/浮点辅助函数
 use libc.atoi;
 // strtod 和 strtol 在 extern_decls.uya 中声明
-extern fn malloc(size: usize) *void;
+extern fn malloc(size: usize) &void;
 extern fn free(ptr: *void) void;
 
 // 辅助函数：移除字符串中的下划线

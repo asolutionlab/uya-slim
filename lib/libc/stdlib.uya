@@ -618,13 +618,14 @@ export fn opendir(name: &const byte) &DIR {
         return null;
     }
     
-    var j: usize = 0;
+    var j: i32 = 0;
     while j < 64 {
-        if opendir_storage[j].fd <= 0 {
-            opendir_storage[j].fd = fd as i64;
-            opendir_storage[j].buf_pos = 0;
-            opendir_storage[j].buf_len = 0;
-            return &opendir_storage[j] as &DIR;
+        const slot: &DirState = &opendir_storage[j];
+        if slot.fd <= 0 {
+            slot.fd = fd as i64;
+            slot.buf_pos = 0;
+            slot.buf_len = 0;
+            return slot as &DIR;
         }
         j = j + 1;
     }
