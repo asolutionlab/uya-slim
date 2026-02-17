@@ -181,9 +181,9 @@ outlibc: uya
 	fi; \
 	echo "使用编译器: $$COMPILER"; \
 	echo ""; \
-	LIB_FILES=$$(find lib/std/c -name "*.uya" -type f | sort); \
+	LIB_FILES=$$(find lib/libc/ -name "*.uya" -type f | sort); \
 	if [ -z "$$LIB_FILES" ]; then \
-		echo "错误: 未找到标准库文件 (lib/std/c/*.uya)"; \
+		echo "错误: 未找到标准库文件 (lib/libc/*.uya)"; \
 		exit 1; \
 	fi; \
 	echo "找到的标准库文件:"; \
