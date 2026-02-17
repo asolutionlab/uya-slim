@@ -223,19 +223,12 @@ backup: b
 	TEST_EXIT=$$?; \
 	if [ $$TEST_EXIT -ne 0 ]; then \
 		echo ""; \
-		echo "✗ 测试失败，不执行备份"; \
+		echo "✗ 测试失败"; \
 		exit 1; \
 	fi
 	@echo ""
-	@echo "备份 bin/uya.c 到 backup/uya.c ..."
-	@if [ ! -f bin/uya.c ]; then \
-		echo "错误: bin/uya.c 不存在"; \
-		exit 1; \
-	fi
-	@mkdir -p backup
-	@cp bin/uya.c backup/uya.c
-	@echo "✓ 备份完成: backup/uya.c"
-	@ls -la backup/uya.c
+	@echo "✓ 测试通过"
+	# 注意：memory-safety-proof 分支不更新 backup/uya.c，保持使用 main 分支的编译器
 
 # 从备份恢复 bin/uya.c
 restore:
