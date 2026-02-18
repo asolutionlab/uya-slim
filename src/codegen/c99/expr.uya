@@ -1777,36 +1777,46 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         }
         var did_interface_call: i32 = 0;
         // 模块限定调用（module.func(args)）：生成 module_func(args)
+        // 注意：extern "libc" fn 不添加模块前缀
         if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS && callee.member_access_is_module_access != 0 {
             const module_name: &byte = callee.member_access_module_name;
             const mod_callee: &byte = callee.member_access_field_name;
             
-            // 生成模块前缀函数名
+            // 检查是否是 extern "libc" fn
+            const is_libc_fn: i32 = is_extern_libc_function(codegen, mod_callee);
+            
+            // 生成模块前缀函数名（extern "libc" fn 除外）
             if module_name != null && mod_callee != null {
-                var prefixed_name: [i8: 256] = [];
-                var pi: i32 = 0;
-                var p: &i8 = module_name as &i8;
-                while p[0] != 0 && pi < 200 {
-                    if p[0] == 46 {  // '.'
-                        prefixed_name[pi] = 95;  // '_'
-                    } else {
-                        prefixed_name[pi] = p[0];
+                if is_libc_fn != 0 {
+                    // extern "libc" fn 直接使用原始函数名
+                    const func_name: &byte = get_safe_c_identifier(codegen, mod_callee);
+                    fprintf(codegen.output as *void, "%s(" as *byte, func_name as *byte);
+                } else {
+                    var prefixed_name: [i8: 256] = [];
+                    var pi: i32 = 0;
+                    var p: &i8 = module_name as &i8;
+                    while p[0] != 0 && pi < 200 {
+                        if p[0] == 46 {  // '.'
+                            prefixed_name[pi] = 95;  // '_'
+                        } else {
+                            prefixed_name[pi] = p[0];
+                        }
+                        pi = pi + 1;
+                        p = p + 1;
                     }
+                    prefixed_name[pi] = 95;  // '_'
                     pi = pi + 1;
-                    p = p + 1;
+                    p = mod_callee as &i8;
+                    while p[0] != 0 && pi < 250 {
+                        prefixed_name[pi] = p[0];
+                        pi = pi + 1;
+                        p = p + 1;
+                    }
+                    prefixed_name[pi] = 0;
+                    
+                    const func_name: &byte = get_safe_c_identifier(codegen, &prefixed_name[0]);
+                    fprintf(codegen.output as *void, "%s(" as *byte, func_name as *byte);
                 }
-                prefixed_name[pi] = 95;  // '_'
-                pi = pi + 1;
-                p = mod_callee as &i8;
-                while p[0] != 0 && pi < 250 {
-                    prefixed_name[pi] = p[0];
-                    pi = pi + 1;
-                    p = p + 1;
-                }
-                prefixed_name[pi] = 0;
-                
-                const func_name: &byte = get_safe_c_identifier(codegen, &prefixed_name[0]);
-                fprintf(codegen.output as *void, "%s(" as *byte, func_name as *byte);
             } else {
                 const func_name: &byte = get_safe_c_identifier(codegen, mod_callee);
                 fprintf(codegen.output as *void, "%s(" as *byte, func_name as *byte);

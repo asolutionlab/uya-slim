@@ -149,7 +149,7 @@ fn get_export_function_c_name(codegen: &C99CodeGenerator, name: &byte, filename:
     return result;
 }
 
-// 全局函数在 C 中的名称（export 函数带模块前缀）
+// 全局函数在 C 中的名称（export 函数带模块前缀，但 extern "libc" fn 除外）
 fn get_c_name_for_global_function(codegen: &C99CodeGenerator, name: &byte, for_definition: i32) &byte {
     if name == null {
         return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
@@ -161,6 +161,10 @@ fn get_c_name_for_global_function(codegen: &C99CodeGenerator, name: &byte, for_d
             if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
                strcmp(d.fn_decl_name as *byte, name as *byte) == 0 &&
                d.fn_decl_is_export != 0 && d.filename != null {
+                // extern "libc" fn 不添加模块前缀
+                if d.fn_decl_extern_lib_name != null {
+                    return get_safe_c_identifier(codegen, name);
+                }
                 return get_export_function_c_name(codegen, name, d.filename);
             }
             di = di + 1;
@@ -256,15 +260,17 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     const saved_current_function_decl: &ASTNode = codegen.current_function_decl;
     codegen.current_function_decl = fn_decl;
     
+    const extern_lib_name: &byte = fn_decl.fn_decl_extern_lib_name;  // extern "libc" fn 的库名
+    
+    // extern "libc" fn 不添加模块前缀，直接使用原始函数名
     var func_name: &byte = get_c_name_for_global_function(codegen, fn_decl.fn_decl_name, 1);
-    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null {
+    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null && extern_lib_name == null {
         func_name = get_export_function_c_name(codegen, fn_decl.fn_decl_name, fn_decl.filename);
     }
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
     const body: &ASTNode = fn_decl.fn_decl_body;
-    const extern_lib_name: &byte = fn_decl.fn_decl_extern_lib_name;  // extern "libc" fn 的库名
     
     // 检查是否为extern函数（body为NULL表示extern函数）
     var is_extern: i32 = 0;
@@ -485,15 +491,17 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     }
     
     const orig_name: &byte = fn_decl.fn_decl_name;
+    const extern_lib_name: &byte = fn_decl.fn_decl_extern_lib_name;  // extern "libc" fn 的库名
+    
+    // extern "libc" fn 不添加模块前缀，直接使用原始函数名
     var func_name: &byte = get_c_name_for_global_function(codegen, orig_name, 1);
-    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null {
+    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null && extern_lib_name == null {
         func_name = get_export_function_c_name(codegen, orig_name, fn_decl.filename);
     }
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const is_varargs: i32 = fn_decl.fn_decl_is_varargs;
     const body: &ASTNode = fn_decl.fn_decl_body;
-    const extern_lib_name: &byte = fn_decl.fn_decl_extern_lib_name;  // extern "libc" fn 的库名
     
     // 如果没有函数体（外部函数），则不生成定义
     if body == null {

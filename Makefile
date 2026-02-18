@@ -36,7 +36,7 @@ from-c:
 		fi \
 	fi
 	@echo "编译 bin/uya.c ..."
-	@gcc -std=c99 -O2 bin/uya.c -o bin/uya -lm
+	@gcc -std=c99 -O1 bin/uya.c -o bin/uya -lm
 	@echo ""
 	@echo "✓ 编译器构建完成: bin/uya"
 	@ls -la bin/uya
@@ -57,7 +57,7 @@ uya:
 	@cp src/build/uya.c bin/uya.c
 	@echo "✓ bin/uya.c 已更新"
 	@echo "重新编译 bin/uya ..."
-	@gcc -std=c99 -O2 bin/uya.c -o bin/uya -lm
+	@gcc -std=c99 -O1 bin/uya.c -o bin/uya -lm
 	@echo ""
 	@echo "✓ 自举编译器构建完成: bin/uya"
 	@echo ""
@@ -207,7 +207,7 @@ outlibc: uya
 clean:
 	@echo "清理构建产物..."
 	@cd compiler-c && $(MAKE) clean
-	@rm -rf bin/uya-c bin/uya
+	@rm -rf bin
 	@rm -rf compiler-c/build
 	@rm -rf src/build
 	@rm -rf tests/programs/build
@@ -231,7 +231,10 @@ check: b
 
 # 备份（依赖 check 通过）
 backup: check
-
+	@echo "备份 bin/uya.c ..."
+	@mkdir -p backup
+	@cp bin/uya.c backup/uya.c
+	@echo "✓ 备份完成: backup/uya.c"
 # 从备份恢复 bin/uya.c
 restore:
 	@echo "从备份恢复 bin/uya.c ..."
