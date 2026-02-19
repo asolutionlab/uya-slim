@@ -1,4 +1,5 @@
 // 混合嵌套测试
+use std.runtime.entry;
 // 测试控制流、函数调用和结构体访问的混合嵌套
 
 use std.testing.assert_eq_i32;
@@ -82,7 +83,7 @@ fn test_deep_mixed() !void {
     try assert_eq_i32(count, 9);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Mixed Nesting Tests");
     run_test("if nested call", test_if_nested_call);
     run_test("process point", test_process_point);

@@ -1,4 +1,5 @@
 // 测试忽略标识符 _：显式忽略返回值、解构忽略
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -32,7 +33,7 @@ fn test_destructure_ignore_last() !void {
     try assert_eq_i32(m, 7);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Underscore Tests");
     run_test("ignore return", test_ignore_return);
     run_test("destructure ignore", test_destructure_ignore);

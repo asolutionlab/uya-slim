@@ -1,9 +1,10 @@
 // test_std_runtime_simple.uya - 简化测试 std.runtime 模块
+use std.runtime.entry;
 // 只测试 ptr_diff 函数
 
 use std.runtime.ptr_diff;
 
-fn main() i32 {
+export fn main() i32 {
     // 测试 ptr_diff - 指针差计算
     var arr: [i32: 10] = [];
     const ptr1: &i32 = &arr[0];

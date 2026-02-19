@@ -1,4 +1,5 @@
 // test_symbolic_expr.uya - 符号表达式索引测试
+use std.runtime.entry;
 // 
 // 功能：验证编译器能够处理 var + constant 形式的数组索引
 
@@ -59,7 +60,7 @@ fn test_for_with_offset() !void {
     try assert_eq_i32(arr[9], 17);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Symbolic Expression Tests");
     run_test("var plus const", test_var_plus_const);
     run_test("var minus const", test_var_minus_const);

@@ -1,4 +1,5 @@
 // 结构体数组字段测试程序
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -101,7 +102,7 @@ fn test_nested_array_field() !void {
     try assert_eq_i32(outer.inner.items[0], 100);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Struct Array Field Tests");
     run_test("basic array field", test_basic_array_field);
     run_test("modify array field", test_modify_array_field);

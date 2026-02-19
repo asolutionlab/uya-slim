@@ -1,4 +1,5 @@
 // 测试泛型函数 - 多类型参数
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -28,7 +29,7 @@ fn test_same_type_params() !void {
     try assert_eq_i32(r3, 0);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Multi Type Param Tests");
     run_test("two type params", test_two_type_params);
     run_test("three type params", test_three_type_params);

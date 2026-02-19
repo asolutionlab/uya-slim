@@ -1,4 +1,5 @@
 // null 字面量测试程序
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -54,7 +55,7 @@ fn test_null_byte_ptr() !void {
     try expect(byte_ptr == null);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Null Literal Tests");
     run_test("null i32 ptr", test_null_i32_ptr);
     run_test("null struct ptr", test_null_struct_ptr);

@@ -1,4 +1,5 @@
 // break 和 continue 在 for 循环中的测试程序
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -128,7 +129,7 @@ fn test_break_last() !void {
     try assert_eq_i32(sum7, 10);  // 1 + 2 + 3 + 4 = 10
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Break Continue For Tests");
     
     run_test("break in for value", test_break_in_for_value);

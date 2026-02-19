@@ -1,4 +1,5 @@
 // 逻辑表达式测试2
+use std.runtime.entry;
 // 测试简单的逻辑与表达式（使用布尔变量）
 
 use std.testing.expect;
@@ -16,7 +17,7 @@ fn test_bool_vars_and() !void {
     try expect(cond1 && cond2);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Logical Expr2 Tests");
     run_test("bool vars and", test_bool_vars_and);
     return test_suite_end();

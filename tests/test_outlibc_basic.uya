@@ -1,4 +1,5 @@
 // test_outlibc_basic.uya - 测试 --outlibc 功能
+use std.runtime.entry;
 // 此测试验证编译器能够生成独立的 libc 库文件
 // 
 // 测试步骤：
@@ -8,7 +9,7 @@
 //
 // 注意：这是一个编译测试，实际生成验证由测试脚本完成
 
-fn main() i32 {
+export fn main() i32 {
     // 这个测试文件本身只是验证编译器能正常工作
     // 真正的 --outlibc 功能测试在 shell 脚本中
     return 0;

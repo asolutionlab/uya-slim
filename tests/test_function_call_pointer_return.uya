@@ -1,4 +1,5 @@
 // 函数调用返回指针类型测试程序
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -36,7 +37,7 @@ fn test_as_var_init() !void {
     try expect(node_ptr2 == null);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Function Call Pointer Return Tests");
     run_test("return null ptr", test_return_null_ptr);
     run_test("return valid ptr", test_return_valid_ptr);

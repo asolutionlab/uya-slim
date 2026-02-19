@@ -1,4 +1,5 @@
 // 一元运算符完整测试程序
+use std.runtime.entry;
 // 测试所有一元运算符：!（逻辑非）、-（负号）、&（取地址）、*（解引用）
 
 use std.testing.expect;
@@ -134,7 +135,7 @@ fn test_combo_address_and_deref() !void {
     try assert_eq_i32(value3, 70);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Unary Operators Tests");
     run_test("logical not", test_logical_not);
     run_test("logical not in conditional", test_logical_not_in_conditional);

@@ -1,4 +1,5 @@
 // 嵌套结构体字段访问测试程序
+use std.runtime.entry;
 // 测试嵌套结构体的字段访问、自动解引用、字段赋值
 
 use std.testing.expect;
@@ -154,7 +155,7 @@ fn test_nested_comparison() !void {
     try expect(outer4 != outer6);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Nested Struct Access Tests");
     run_test("basic nested access", test_basic_nested_access);
     run_test("pointer field access", test_pointer_field_access);

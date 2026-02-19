@@ -1,4 +1,5 @@
 // 指针解引用赋值测试程序
+use std.runtime.entry;
 // 测试指针解引用赋值功能：*p = value
 
 use std.testing.assert_eq_i32;
@@ -48,7 +49,7 @@ fn test_pointer_direct_assign() !void {
     try assert_eq_i32(x, 200);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Pointer Deref Assign Tests");
     run_test("pointer deref read", test_pointer_deref_read);
     run_test("pointer func modify", test_pointer_func_modify);

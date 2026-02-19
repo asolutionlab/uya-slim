@@ -1,4 +1,5 @@
 // 测试多约束泛型语法 <T: Ord + Clone>
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -46,7 +47,7 @@ fn test_multi_constraint_struct() !void {
     try assert_eq_i32(c.value, 42);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Multi Constraint Tests");
     run_test("multi constraint fn", test_multi_constraint_fn);
     run_test("single constraint fn", test_single_constraint_fn);

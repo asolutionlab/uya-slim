@@ -1,4 +1,5 @@
 // 数组边界测试程序
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -262,7 +263,7 @@ fn test_multi_access() !void {
     }
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Array Bounds Tests");
     
     run_test("basic bounds", test_basic_bounds);

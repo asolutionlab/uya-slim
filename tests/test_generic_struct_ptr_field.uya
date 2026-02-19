@@ -1,4 +1,5 @@
 // 测试泛型结构体 - 包含指针字段
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.expect;
@@ -25,7 +26,7 @@ fn test_ptr_valid() !void {
     try assert_eq_i32(new_val, 100);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Struct Ptr Field Tests");
     run_test("ptr box", test_ptr_box);
     run_test("ptr valid", test_ptr_valid);

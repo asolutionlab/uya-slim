@@ -1,4 +1,5 @@
 // 测试非泛型结构体的泛型方法单态化（支持 !T 返回类型）
+use std.runtime.entry;
 // 验证泛型方法在非泛型结构体中能正确生成
 
 use std.testing.assert_eq_i32;
@@ -33,7 +34,7 @@ fn test_convert_i32() !void {
     try assert_eq_i32(v, 42);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Non-Generic Struct Generic Method !T Tests");
     run_test("convert i32", test_convert_i32);
     return test_suite_end();

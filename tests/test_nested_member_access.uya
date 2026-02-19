@@ -1,4 +1,5 @@
 // 嵌套字段访问测试程序
+use std.runtime.entry;
 // 测试 parser.current_token.type 这样的嵌套字段访问
 
 use std.testing.expect;
@@ -51,7 +52,7 @@ fn test_nested_syntax() !void {
     // 实际运行时需要外部提供有效的指针
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Nested Member Access Tests");
     run_test("nested syntax", test_nested_syntax);
     return test_suite_end();

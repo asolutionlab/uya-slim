@@ -1,4 +1,5 @@
 // 测试 type 返回标签的宏调用
+use std.runtime.entry;
 // 宏作为类型注解使用
 
 use std.testing.assert_eq_i32;
@@ -29,7 +30,7 @@ fn test_bool_type_macro() !void {
     try expect(flag);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Type Return Tests");
     run_test("int type macro", test_int_type_macro);
     run_test("bool type macro", test_bool_type_macro);

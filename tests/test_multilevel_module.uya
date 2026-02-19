@@ -1,9 +1,10 @@
 // test_multilevel_module.uya - 测试多级模块路径（std.io）
+use std.runtime.entry;
 
 use std.io.fopen;
 use std.io.fclose;
 
-fn main() i32 {
+export fn main() i32 {
     // 测试多级模块路径：std.io
     // 使用实际存在的导出项进行测试
     const path: &const byte = "/dev/null" as &const byte;

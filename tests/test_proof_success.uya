@@ -1,4 +1,5 @@
 // test_proof_success.uya - 测试证明成功的各种场景
+use std.runtime.entry;
 // 
 // 功能：验证编译器能够成功证明数组访问安全的场景。
 
@@ -58,7 +59,7 @@ fn test_for_range_bounds() !void {
     try assert_eq_i32(arr[7], 8);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Proof Success Tests");
     run_test("const index", test_const_index);
     run_test("if bounds check", test_if_bounds_check);

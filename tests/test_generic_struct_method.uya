@@ -1,4 +1,5 @@
 // 测试泛型结构体 - 带方法
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.expect;
@@ -29,7 +30,7 @@ fn test_f64_container() !void {
     try expect(vf == 3.14);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Struct Method Tests");
     run_test("i32 container", test_i32_container);
     run_test("f64 container", test_f64_container);

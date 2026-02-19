@@ -1,4 +1,5 @@
 // 测试宏：返回整数表达式
+use std.runtime.entry;
 // 测试各种整数字面量和表达式
 
 use std.testing.assert_eq_i32;
@@ -89,7 +90,7 @@ fn test_large_negative() !void {
     try assert_eq_i32(v8, -1000000);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Expr Int Tests");
     run_test("positive int", test_positive_int);
     run_test("zero", test_zero);

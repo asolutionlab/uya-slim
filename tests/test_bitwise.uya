@@ -1,4 +1,5 @@
 // test_bitwise.uya - 位运算符测试
+use std.runtime.entry;
 // 使用 lib/std/testing.uya 测试框架
 
 use std.testing.assert;
@@ -70,7 +71,7 @@ fn test_precedence() !void {
 // 主函数
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Bitwise Operations");
     
     run_test("bit_and", test_bit_and);

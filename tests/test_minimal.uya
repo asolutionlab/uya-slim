@@ -1,4 +1,5 @@
 // 最小测试程序
+use std.runtime.entry;
 
 use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
@@ -8,7 +9,7 @@ fn test_minimal() !void {
     // 空测试，仅验证编译和运行
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Minimal Test");
     run_test("minimal", test_minimal);
     return test_suite_end();

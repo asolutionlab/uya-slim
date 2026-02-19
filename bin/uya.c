@@ -2408,7 +2408,7 @@ static int32_t compile_files(int32_t * input_file_indices, int32_t input_file_co
 int32_t main_main();
 static int32_t generate_libc(uint8_t * output_dir);
 extern int32_t main_main();
-extern int32_t main(int32_t argc, uint8_t * * argv);
+int32_t main(int32_t argc, uint8_t * * argv);
 static size_t align_size(size_t size, size_t align);
 static void arena_init(struct Arena * arena, uint8_t * buffer, size_t size);
 uint8_t * arena_alloc(struct Arena * arena, size_t size);
@@ -30396,7 +30396,7 @@ static __attribute__((unused)) void gen_function_prototype(struct C99CodeGenerat
         is_main = 1;
     }
     int32_t is_c_main = 0;
-    if ((((is_main != 0) && (fn_decl->fn_decl_is_export != 0)) && (fn_decl->fn_decl_is_extern != 0))) {
+    if (((((is_main != 0) && (fn_decl->fn_decl_is_export != 0)) && (fn_decl->fn_decl_is_extern != 0)) && (extern_lib_name == NULL))) {
         is_c_main = 1;
     }
     if ((is_c_main != 0)) {

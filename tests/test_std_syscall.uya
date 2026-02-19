@@ -1,4 +1,5 @@
 // test_std_syscall.uya
+use std.runtime.entry;
 // 测试 lib/libc 标准库模块（通过 use 导入）
 
 use libc.sys_write;
@@ -11,7 +12,7 @@ use libc.O_WRONLY;
 use libc.O_TRUNC;
 use libc.S_IRWXU;
 
-fn main() i32 {
+export fn main() i32 {
     const msg1: *byte = "Hello from syscall wrappers!\n";
     const len1: usize = 30;
     _ = sys_write(STDOUT_FILENO as i32, msg1, len1) catch {

@@ -1,4 +1,5 @@
 // 嵌套函数调用测试
+use std.runtime.entry;
 // 测试函数调用的嵌套和链式调用
 
 use std.testing.assert_eq_i32;
@@ -60,7 +61,7 @@ fn test_deep_nested() !void {
     try assert_eq_i32(result, 28);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Nested Function Calls Tests");
     run_test("nested add", test_nested_add);
     run_test("chain multiply", test_chain_multiply);

@@ -1,4 +1,5 @@
 // 切片类型与语法测试
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -39,7 +40,7 @@ fn test_slice_of_slice() !void {
     try assert_eq_i32(v[1], 3);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Slice Tests");
     run_test("dynamic len slice", test_dynamic_len_slice);
     run_test("known len slice", test_known_len_slice);

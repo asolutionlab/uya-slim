@@ -1,4 +1,5 @@
 // defer 同作用域内 LIFO：后声明的先执行
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -14,7 +15,7 @@ fn test_defer_lifo() !void {
     try expect(x == 11);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Defer LIFO Tests");
     
     run_test("defer lifo order", test_defer_lifo);

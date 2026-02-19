@@ -1,4 +1,5 @@
 // 混合类型算术运算测试程序
+use std.runtime.entry;
 // 测试 i32 和 usize 混合运算
 
 use std.testing.expect;
@@ -119,7 +120,7 @@ fn test_sizeof_usize() !void {
     try expect(usize_size == ptr_size);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Mixed Type Arithmetic Tests");
     run_test("i32 + usize", test_i32_plus_usize);
     run_test("usize + i32", test_usize_plus_i32);

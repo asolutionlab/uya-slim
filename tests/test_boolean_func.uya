@@ -1,4 +1,5 @@
 // 测试布尔函数返回值
+use std.runtime.entry;
 
 use std.testing.assert;
 use std.testing.test_suite_begin;
@@ -37,7 +38,7 @@ fn test_bool_combination() !void {
 // 主函数
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Boolean Function Tests");
     
     run_test("true_return", test_true_return);

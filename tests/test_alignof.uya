@@ -1,4 +1,5 @@
 // alignof 测试程序
+use std.runtime.entry;
 // 测试 @align_of 内置函数（基础类型、指针类型、结构体类型、数组类型）
 
 use std.testing.expect;
@@ -97,7 +98,7 @@ fn test_alignof_vs_sizeof() !void {
 // 主函数
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Alignof Tests");
     
     run_test("basic_types", test_basic_types);

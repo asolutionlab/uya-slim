@@ -1,4 +1,5 @@
 // defer 绑定到当前作用域；嵌套块内层 defer 先于外层执行
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -17,7 +18,7 @@ fn test_defer_nested_scope() !void {
     // 返回时 a 会被设为 1
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Defer Scope Tests");
     
     run_test("defer nested scope", test_defer_nested_scope);

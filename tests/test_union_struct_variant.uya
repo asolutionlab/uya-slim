@@ -1,4 +1,5 @@
 // 测试 union 包含结构体变体
+use std.runtime.entry;
 // 验证方案 A' 可行性：union 变体可以是结构体类型
 
 use std.testing.expect;
@@ -42,7 +43,7 @@ fn test_union_struct_variant_size() !void {
     try assert_eq_i32(result, 5000);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Union Struct Variant Tests");
     run_test("union struct variant", test_union_struct_variant);
     run_test("union struct variant size", test_union_struct_variant_size);

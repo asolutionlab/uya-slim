@@ -1,4 +1,5 @@
 // 测试宏：边界情况
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -138,7 +139,7 @@ fn test_comparison() !void {
     try expect(ne_expr());
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Edge Cases Tests");
     run_test("basic", test_basic);
     run_test("unary", test_unary);

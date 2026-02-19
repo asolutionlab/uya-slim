@@ -1,4 +1,5 @@
 // 测试泛型 - 多实例化
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.expect;
@@ -34,7 +35,7 @@ fn test_generic_struct_multi_instance() !void {
     try expect(w3.value == true);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Multi Instance Tests");
     run_test("generic fn multi instance", test_generic_fn_multi_instance);
     run_test("generic struct multi instance", test_generic_struct_multi_instance);

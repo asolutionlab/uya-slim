@@ -1,4 +1,5 @@
 // 测试空数组字面量
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -18,7 +19,7 @@ fn test_empty_array_sizeof() !void {
     try assert_eq_i32(size_val, 400);  // 100 * 4 字节
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Empty Array Tests");
     
     run_test("empty array len", test_empty_array_len);

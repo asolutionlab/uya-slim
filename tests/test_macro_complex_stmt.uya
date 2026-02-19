@@ -1,4 +1,5 @@
 // 测试 @mc_ast 复杂语句支持
+use std.runtime.entry;
 // 验证 @mc_ast 是否能解析块语句、if 语句、while 循环等
 
 use std.testing.test_suite_begin;
@@ -74,7 +75,7 @@ fn test_macro_complex_stmt() i32 {
     return 0;
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Complex Stmt Tests");
     run_test("macro complex stmt", test_macro_complex_stmt);
     return test_suite_end();

@@ -1,4 +1,5 @@
 // errdefer 绑定到当前作用域；嵌套块内 errdefer 仅在该块错误退出时执行
+use std.runtime.entry;
 
 use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
@@ -20,7 +21,7 @@ fn test_errdefer_scope() !void {
     const r: i32 = f() catch { 0; };
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Errdefer Scope Tests");
     
     run_test("errdefer scope", test_errdefer_scope);

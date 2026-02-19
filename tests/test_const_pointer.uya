@@ -1,4 +1,5 @@
 // 测试 &const T 和 *const T 只读指针类型
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -36,7 +37,7 @@ fn test_const_pointer_with_mutable() !void {
     try assert_eq_i32(result, 300);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Const Pointer Tests");
     
     run_test("implicit conversion", test_implicit_conversion);

@@ -1,4 +1,5 @@
 // f32 和 f64 浮点类型测试程序
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -56,7 +57,7 @@ fn test_float_literal() !void {
     try expect(lit > 14.99 && lit < 15.01);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Float Tests");
     
     run_test("f32 basic", test_f32_basic);

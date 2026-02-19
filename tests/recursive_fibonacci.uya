@@ -1,4 +1,5 @@
 // 递归函数测试 - 斐波那契数列
+use std.runtime.entry;
 // 测试多重递归调用
 
 use std.testing.assert_eq_i32;
@@ -38,7 +39,7 @@ fn test_fibonacci_7() !void {
     try assert_eq_i32(fibonacci(7), 13);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Recursive Fibonacci Tests");
     run_test("fibonacci 0", test_fibonacci_0);
     run_test("fibonacci 1", test_fibonacci_1);

@@ -1,4 +1,5 @@
 // 测试泛型函数 - 返回泛型结构体
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.expect;
@@ -36,7 +37,7 @@ fn test_ok_bool() !void {
     try expect(r3.value == true);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Return Struct Tests");
     run_test("ok i32", test_ok_i32);
     run_test("err i32", test_err_i32);

@@ -1,4 +1,5 @@
 // test_byte.uya - byte 类型测试
+use std.runtime.entry;
 // 使用 lib/std/testing.uya 测试框架
 
 use std.testing.assert;
@@ -77,7 +78,7 @@ fn test_pointer_compare() !void {
 // 主函数
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Byte Type Tests");
     
     run_test("byte_const", test_byte_const);

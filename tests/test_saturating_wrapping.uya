@@ -1,4 +1,5 @@
 // 饱和运算 +| -| *| 与包装运算 +% -% *% 测试，规范 uya.md §10、§16
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -83,7 +84,7 @@ fn test_wrapping_mul() !void {
     try assert_eq_i32(wrap_mul, 0);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Saturating Wrapping Tests");
     run_test("saturating add", test_saturating_add);
     run_test("saturating sub", test_saturating_sub);

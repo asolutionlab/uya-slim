@@ -1,4 +1,5 @@
 // test_stdio.uya - stdio 模块测试
+use std.runtime.entry;
 // TDD: 先写测试，再实现
 
 use libc.printf;
@@ -95,7 +96,7 @@ fn test_fgets() void {
 // 主函数
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     fprintf(stdout, "=== libc.stdio tests ===\n");
     
     test_printf();

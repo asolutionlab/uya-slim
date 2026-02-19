@@ -1,4 +1,5 @@
 // 测试结构体比较（== 和 !=）
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -38,7 +39,7 @@ fn test_eq_returns_false() !void {
     try expect(!(p1 == p3));
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Struct Comparison Tests");
     run_test("struct equal", test_struct_equal);
     run_test("struct not equal", test_struct_not_equal);

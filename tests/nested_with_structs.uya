@@ -1,4 +1,5 @@
 // 嵌套控制流和结构体混合测试
+use std.runtime.entry;
 // 测试在嵌套控制流中使用结构体
 
 use std.testing.assert_eq_i32;
@@ -53,7 +54,7 @@ fn test_struct_in_nested_if() !void {
     try assert_eq_i32(result, 30);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Nested With Structs Tests");
     run_test("struct in nested loop", test_struct_in_nested_loop);
     run_test("struct in nested if", test_struct_in_nested_if);

@@ -1,4 +1,5 @@
 // 测试 FFI 指针转换功能
+use std.runtime.entry;
 // 验证 &T as *T 的转换是否正常工作
 
 struct Point {
@@ -10,7 +11,7 @@ struct Point {
 extern fn test_ffi_ptr(ptr: *Point) i32;
 extern "libc" fn puts(s: *byte) i32;
 
-fn main() i32 {
+export fn main() i32 {
     // 创建一个结构体实例
     var p: Point = Point{ x: 10, y: 20 };
     

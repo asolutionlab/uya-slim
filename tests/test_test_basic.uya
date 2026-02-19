@@ -1,4 +1,5 @@
 // 基本测试单元语法
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -22,7 +23,7 @@ fn test_function_call() !void {
     try assert_eq_i32(result, 8);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Test Basic Tests");
     run_test("basic arithmetic", test_basic_arithmetic);
     run_test("function call", test_function_call);

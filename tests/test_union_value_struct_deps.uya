@@ -1,4 +1,5 @@
 // 测试 union 包含值类型结构体变体的代码生成顺序
+use std.runtime.entry;
 // 模拟 ASTNodeData 的情况：union 变体是结构体，结构体包含指针字段
 
 use std.testing.expect;
@@ -50,7 +51,7 @@ fn test_union_value_struct_deps() !void {
     try assert_eq_i32(result, 42);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Union Value Struct Deps Tests");
     run_test("union value struct deps", test_union_value_struct_deps);
     return test_suite_end();

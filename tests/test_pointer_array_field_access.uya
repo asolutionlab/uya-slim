@@ -1,4 +1,5 @@
 // 测试程序：验证指针类型数组访问后访问字段
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -36,7 +37,7 @@ fn test_pointer_array_field_access() !void {
     try assert_eq_i32(arr[2].value, 120);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Pointer Array Field Access Tests");
     run_test("pointer array field access", test_pointer_array_field_access);
     return test_suite_end();

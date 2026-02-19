@@ -1,4 +1,5 @@
 // 测试泛型 - 在控制流语句中使用
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -66,7 +67,7 @@ fn test_in_loop_body() !void {
     try assert_eq_i32(total, 4);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic In Control Flow Tests");
     run_test("in if", test_in_if);
     run_test("in if else", test_in_if_else);

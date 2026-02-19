@@ -1,4 +1,5 @@
 // 测试泛型方法调用语法 obj.method<T>()
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.expect;
@@ -92,7 +93,7 @@ fn test_member_compare() !void {
     }
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Method Call Tests");
     
     run_test("non generic method", test_non_generic_method);

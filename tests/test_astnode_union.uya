@@ -1,4 +1,5 @@
 // 测试 ASTNode 使用 union 优化内存的可行性
+use std.runtime.entry;
 // 验证：数据结构体 + union + 公共字段的结构是否可行
 
 use std.testing.expect;
@@ -103,7 +104,7 @@ fn test_astnode_number() !void {
     try assert_eq_i32(result, 999);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("ASTNode Union Tests");
     run_test("astnode program", test_astnode_program);
     run_test("astnode binary", test_astnode_binary);

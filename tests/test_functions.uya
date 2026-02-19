@@ -1,4 +1,5 @@
 // 测试is_positive和is_even函数
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -25,7 +26,7 @@ fn test_is_even() !void {
     try expect(even);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Functions Tests");
     
     run_test("is positive", test_is_positive);

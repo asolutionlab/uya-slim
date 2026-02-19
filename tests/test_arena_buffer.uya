@@ -1,4 +1,5 @@
 // 测试程序：验证 arena.buffer[index] 场景
+use std.runtime.entry;
 // 模拟 arena.uya 中的实际使用场景
 
 use std.testing.expect;
@@ -27,7 +28,7 @@ fn test_arena_buffer() !void {
     try expect(temp == 0);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Arena Buffer Tests");
     run_test("arena buffer access", test_arena_buffer);
     return test_suite_end();

@@ -1,4 +1,5 @@
 // 运算符优先级完整测试程序
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -112,7 +113,7 @@ fn test_complex_expr() !void {
     try expect(result3);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Operator Precedence Tests");
     run_test("unary priority", test_unary_priority);
     run_test("cast priority", test_cast_priority);

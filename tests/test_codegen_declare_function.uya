@@ -1,4 +1,5 @@
 // 测试 codegen_declare_function 函数声明功能
+use std.runtime.entry;
 // 这个测试程序用于验证函数声明的代码生成是否正确
 // 
 // 注意：这个测试程序主要用于验证 codegen_declare_function 中修复的
@@ -35,9 +36,12 @@ fn test_params_access_like_codegen(node: &SimpleNode) i32 {
     while i < param_count {
         // 正确访问：使用 node.params[i]（修复了原来的 params[i] 错误）
         // 这是 codegen_declare_function 中修复的关键代码
-        const param: i32 = node.params[i];
-        if param < 0 {
-            return -1;
+        // 边界安全：i < param_count 且 param_count <= 10，所以 i < 10
+        if i >= 0 && i < 10 {
+            const param: i32 = node.params[i];
+            if param < 0 {
+                return -1;
+            }
         }
         i = i + 1;
     }
@@ -45,7 +49,7 @@ fn test_params_access_like_codegen(node: &SimpleNode) i32 {
     return 0;
 }
 
-fn main() i32 {
+export fn main() i32 {
     // 测试参数访问（模拟 codegen_declare_function 的修复）
     // 使用空数组初始化，然后通过函数测试逻辑
     var node: SimpleNode = SimpleNode{ param_count: 0, params: [] };

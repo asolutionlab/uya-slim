@@ -1,7 +1,8 @@
 // 测试 @syscall 错误处理
+use std.runtime.entry;
 // 功能：尝试打开不存在的文件，验证错误处理
 
-fn main() i32 {
+export fn main() i32 {
     const SYS_write: i64 = 1;
     const SYS_open: i64 = 2;
     

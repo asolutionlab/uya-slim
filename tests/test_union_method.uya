@@ -1,4 +1,5 @@
 // 联合体方法（外部方法块）：IntOrFloat 有 as_f64、is_int 方法
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -49,7 +50,7 @@ fn test_union_is_float() !void {
     try expect(!is_int2);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Union Method Tests");
     run_test("union as_f64 int", test_union_as_f64_int);
     run_test("union is_int", test_union_is_int);

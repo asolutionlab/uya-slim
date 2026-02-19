@@ -1,4 +1,5 @@
 // 嵌套块中的测试单元
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -15,7 +16,7 @@ fn test_in_nested_block() !void {
     try assert_eq_i32(y, 100);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Test Nested Tests");
     run_test("in function", test_in_function);
     run_test("in nested block", test_in_nested_block);

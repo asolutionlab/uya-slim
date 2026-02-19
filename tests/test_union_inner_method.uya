@@ -1,4 +1,5 @@
 // 联合体内部方法：方法定义在 union { } 内
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -40,7 +41,7 @@ fn test_inner_as_f64_float() !void {
     try expect(as_float2 >= 3.13 && as_float2 <= 3.15);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Union Inner Method Tests");
     run_test("inner as_f64 int", test_inner_as_f64_int);
     run_test("inner is_int", test_inner_is_int);

@@ -1,4 +1,5 @@
 // 结构体比较完整测试程序
+use std.runtime.entry;
 // 测试结构体的 == 和 != 比较运算符（逐字段比较）
 
 use std.testing.expect;
@@ -139,7 +140,7 @@ fn test_empty_struct_compare() !void {
     try expect(e1 == e2);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Struct Comparison Tests");
     run_test("struct equal", test_struct_equal);
     run_test("struct not equal", test_struct_not_equal);

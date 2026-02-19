@@ -1,4 +1,5 @@
 // 结构体方法带参数：scale(self, factor)
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -22,7 +23,7 @@ fn test_method_with_args() !void {
   try expect(s >= 29.9 && s <= 30.1);
 }
 
-fn main() i32 {
+export fn main() i32 {
   test_suite_begin("Struct Method Args Tests");
   run_test("method with args", test_method_with_args);
   return test_suite_end();

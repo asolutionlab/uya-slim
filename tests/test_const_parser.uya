@@ -1,4 +1,5 @@
 // 测试 &const T 语法解析
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -14,7 +15,7 @@ fn test_const_pointer_param() !void {
     try expect(result == 0);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Const Parser Tests");
     
     run_test("const pointer param", test_const_pointer_param);

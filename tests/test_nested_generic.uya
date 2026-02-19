@@ -1,4 +1,5 @@
 // 测试嵌套泛型
+use std.runtime.entry;
 // 已知问题：>> 被解析为右移运算符
 
 use std.testing.expect;
@@ -29,7 +30,7 @@ fn test_nested_generic() !void {
     try assert_eq_i32(b2.value.second, 20);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Nested Generic Tests");
     run_test("simple generic", test_simple_generic);
     run_test("nested generic", test_nested_generic);

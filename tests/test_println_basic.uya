@@ -1,7 +1,8 @@
 // test_println_basic.uya - @println 内置函数基础测试
+use std.runtime.entry;
 // 测试 @println（换行）功能
 
-fn main() i32 {
+export fn main() i32 {
     // 测试 i32 类型
     @println(42);
     @println(-100);

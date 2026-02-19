@@ -1,4 +1,5 @@
 // 测试宏：综合测试用例
+use std.runtime.entry;
 // 覆盖多个宏定义、不同类型返回值、各种使用场景
 
 use std.testing.expect;
@@ -200,7 +201,7 @@ fn test_macro_in_expressions() !void {
     try assert_eq_i32(flags, 258);  // (1 << 8) | 2 = 256 | 2 = 258
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Comprehensive Tests");
     run_test("math constants", test_math_constants);
     run_test("config constants", test_config_constants);

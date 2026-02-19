@@ -1,4 +1,5 @@
 // 测试程序：验证 &byte 类型指针的数组访问
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -15,7 +16,7 @@ fn test_buffer_ptr_access() !void {
     try expect(temp == 42);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Buffer Ptr Access Tests");
     
     run_test("buffer ptr access", test_buffer_ptr_access);

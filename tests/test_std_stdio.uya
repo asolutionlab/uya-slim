@@ -1,4 +1,5 @@
 // test_std_stdio.uya
+use std.runtime.entry;
 // 测试 lib/libc 标准库模块（通过 use 导入）
 
 use libc.write_bytes;
@@ -100,7 +101,7 @@ fn test_write_bytes() i32 {
 // 主测试入口
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     var result: i32 = 0;
 
     result = test_i32_to_str();

@@ -1,4 +1,5 @@
 // 测试程序：测试数组元素为指针类型时的成员访问
+use std.runtime.entry;
 // 验证生成的 C 代码是否正确使用 -> 操作符
 
 use std.testing.expect;
@@ -81,7 +82,7 @@ fn test_pointer_assignment() !void {
     try assert_eq_i32(codegen.nodes[0].column, 30);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Array Pointer Access Tests");
     run_test("array pointer access", test_array_pointer_access);
     run_test("extracted pointer vars", test_extracted_pointer_vars);

@@ -1,4 +1,5 @@
 // 枚举访问方式测试：Uya 只支持 T.member 方式访问枚举
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -17,7 +18,7 @@ fn test_enum_member_access() !void {
     try expect(c == Color.RED);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Enum Member Access Tests");
     
     run_test("enum member access", test_enum_member_access);

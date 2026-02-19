@@ -1,4 +1,5 @@
 // 复杂表达式测试
+use std.runtime.entry;
 // 测试嵌套的复杂表达式
 
 use std.testing.expect;
@@ -50,7 +51,7 @@ fn test_unary_arithmetic() !void {
     try assert_eq_i32(result4, 15);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Complex Expr Tests");
     run_test("nested expr", test_nested_expr);
     run_test("func arithmetic", test_func_arithmetic);

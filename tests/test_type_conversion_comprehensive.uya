@@ -1,4 +1,5 @@
 // 类型转换完整测试程序
+use std.runtime.entry;
 // 测试所有支持的类型转换：i32↔byte、i32↔bool、i32↔usize、&void↔&T
 
 use std.testing.expect;
@@ -119,7 +120,7 @@ fn test_conversion_priority() !void {
     try assert_eq_i32(result2, 20);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Type Conversion Comprehensive Tests");
     run_test("i32 to byte", test_i32_to_byte);
     run_test("byte to i32", test_byte_to_i32);

@@ -1,4 +1,5 @@
 // null 字面量综合测试程序
+use std.runtime.entry;
 // 测试 null 字面量的所有使用场景
 
 use std.testing.expect;
@@ -124,7 +125,7 @@ fn test_null_assign_chain() !void {
     try expect(ptr_c == null);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Null Comprehensive Tests");
     run_test("null init", test_null_init);
     run_test("null assign", test_null_assign);

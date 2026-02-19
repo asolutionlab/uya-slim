@@ -1,4 +1,5 @@
 // 递归函数测试 - 阶乘
+use std.runtime.entry;
 // 测试递归函数调用和返回值
 
 use std.testing.assert_eq_i32;
@@ -30,7 +31,7 @@ fn test_factorial_6() !void {
     try assert_eq_i32(factorial(6), 720);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Recursive Factorial Tests");
     run_test("factorial 0", test_factorial_0);
     run_test("factorial 1", test_factorial_1);

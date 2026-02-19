@@ -1,10 +1,11 @@
 // test_nonlinear_bounds.uya - 非线性表达式边界检查测试
+use std.runtime.entry;
 //
 // 功能：验证非线性表达式（乘法、移位等）的边界检查
 //
 // 预期：编译成功，运行输出 OK
 
-fn main() i32 {
+export fn main() i32 {
     test_mul_const();
     test_shift_left();
     test_mul_div();

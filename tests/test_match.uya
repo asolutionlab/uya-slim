@@ -1,4 +1,5 @@
 // match 表达式测试：常量模式、变量绑定、else 分支
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -66,7 +67,7 @@ fn test_match_as_statement() !void {
     try assert_eq_i32(n, 20);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Match Expression Tests");
     run_test("int constant match", test_int_constant_match);
     run_test("variable binding", test_variable_binding);

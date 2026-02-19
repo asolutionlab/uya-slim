@@ -1,4 +1,5 @@
 // 测试 drop/RAII：drop 在结构体外（方法块）定义（规范 §12）
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -25,7 +26,7 @@ fn test_drop_external() !void {
   try expect(drop_count == 1);
 }
 
-fn main() i32 {
+export fn main() i32 {
   test_suite_begin("Drop External Tests");
   run_test("drop external method", test_drop_external);
   return test_suite_end();

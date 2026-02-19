@@ -1,4 +1,5 @@
 // 简单测试 &const T 语法
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -26,7 +27,7 @@ fn test_const_pointer_read() !void {
 // 主函数
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Const Pointer Simple Tests");
     
     run_test("const_pointer_basic", test_const_pointer_basic);

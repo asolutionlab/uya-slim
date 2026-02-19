@@ -1,4 +1,5 @@
 // 测试 std.c.stdlib 模块
+use std.runtime.entry;
 // 测试：内存分配、进程控制、字符串转换
 
 use libc.malloc;
@@ -12,7 +13,7 @@ use libc.memset;
 use libc.memcmp;
 use libc.strcmp;
 
-fn main() i32 {
+export fn main() i32 {
     // ============================================================
     // 测试 1: malloc（暂时不测试 free，因为需要维护分配表）
     // ============================================================

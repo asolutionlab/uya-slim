@@ -1,4 +1,5 @@
 // 测试泛型结构体 - 基本语法和单态化
+use std.runtime.entry;
 
 use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
@@ -19,7 +20,7 @@ fn test_generic_struct() !void {
     const box_i32: Box<i32> = Box<i32>{ data: 42 };
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Struct Tests");
     run_test("generic struct", test_generic_struct);
     return test_suite_end();

@@ -1,4 +1,5 @@
 // 结构体方法 + 指针 receiver：通过 &T 调用
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -23,7 +24,7 @@ fn test_ptr_receiver() !void {
   try assert_eq_i32(n, 42);
 }
 
-fn main() i32 {
+export fn main() i32 {
   test_suite_begin("Struct Method Ptr Tests");
   run_test("ptr receiver", test_ptr_receiver);
   return test_suite_end();

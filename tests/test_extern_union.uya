@@ -1,4 +1,5 @@
 // 测试 extern union：声明、作为类型、创建、传参/返回值
+use std.runtime.entry;
 // 返回 0 表示通过
 
 extern union CValue {
@@ -10,7 +11,7 @@ extern fn take_c_value(v: union CValue) void;
 extern fn make_c_value_i(x: i32) union CValue;
 extern fn make_c_value_f(x: f64) union CValue;
 
-fn main() i32 {
+export fn main() i32 {
     const vi: union CValue = CValue.i(42);
     take_c_value(vi);
 

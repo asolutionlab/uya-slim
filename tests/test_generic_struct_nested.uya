@@ -1,4 +1,5 @@
 // 测试泛型结构体 - 嵌套使用
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.expect;
@@ -28,7 +29,7 @@ fn test_nested_box() !void {
     try assert_eq_i32(db.extra, 999);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Struct Nested Tests");
     run_test("box", test_box);
     run_test("nested box", test_nested_box);

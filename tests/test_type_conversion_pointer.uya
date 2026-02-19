@@ -1,4 +1,5 @@
 // 测试程序：验证类型转换和指针类型
+use std.runtime.entry;
 // 测试指针类型转换、类型推断等
 
 use std.testing.expect;
@@ -64,7 +65,7 @@ fn test_pointer_type_inference() !void {
     try assert_eq_i32(data.value, 20);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Type Conversion Pointer Tests");
     run_test("pointer cast", test_pointer_cast);
     run_test("null pointer", test_null_pointer);

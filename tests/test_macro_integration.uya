@@ -1,4 +1,5 @@
 // 测试宏：与其他语言特性的集成
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -107,7 +108,7 @@ fn test_array_index() !void {
     try assert_eq_i32(arr[42], 100);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Integration Tests");
     run_test("array size", test_array_size);
     run_test("init value", test_init_value);

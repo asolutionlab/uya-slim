@@ -1,4 +1,5 @@
 use std.testing.expect;
+use std.runtime.entry;
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
@@ -60,7 +61,7 @@ fn test_len_in_conditional() !void {
     try expect(@len(arr8) == 2);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Len Comprehensive Tests");
     run_test("basic array len", test_basic_array_len);
     run_test("different types", test_different_types);

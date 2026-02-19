@@ -1,4 +1,5 @@
 // 测试 union 值类型结构体变体的嵌套依赖
+use std.runtime.entry;
 // 模拟 ASTNodeData 的复杂情况：结构体包含其他结构体字段
 
 use std.testing.expect;
@@ -46,7 +47,7 @@ fn test_union_nested_deps() !void {
     try assert_eq_i32(result, 35);  // 10 + 20 + 5
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Union Nested Deps Tests");
     run_test("union nested deps", test_union_nested_deps);
     return test_suite_end();

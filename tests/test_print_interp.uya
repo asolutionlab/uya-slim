@@ -1,7 +1,8 @@
 // test_print_interp.uya - @print/@println 字符串插值测试
+use std.runtime.entry;
 // 测试 @print/@println 与字符串插值的结合
 
-fn main() i32 {
+export fn main() i32 {
     // 基础整数插值
     const a: i32 = 42;
     const b: i32 = 100;

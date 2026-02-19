@@ -1,4 +1,5 @@
 // 测试各种类型转换，包括 FFI 指针转换
+use std.runtime.entry;
 struct Node {
     id: i32,
 }
@@ -7,7 +8,7 @@ struct Node {
 extern fn tn(node: *Node) i32;
 extern fn pt(s: *byte) i32;
 
-fn main() i32 {
+export fn main() i32 {
     // 基础类型转换测试
     const num: i32 = 256;
     const byte_val: byte = num as byte;  // i32 as byte

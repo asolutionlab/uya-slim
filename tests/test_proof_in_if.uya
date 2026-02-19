@@ -1,4 +1,5 @@
 // test_proof_in_if.uya - 在 if 内部的数组访问证明测试
+use std.runtime.entry;
 // 
 // 功能：验证在 if 检查内部的数组访问可以被证明安全
 
@@ -17,7 +18,7 @@ fn test_proof_in_if() !void {
     }
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Proof In If");
     run_test("proof_in_if", test_proof_in_if);
     return test_suite_end();

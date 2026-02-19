@@ -1,4 +1,5 @@
 // 测试泛型 - 在表达式中使用
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -37,7 +38,7 @@ fn test_compound_expr() !void {
     try assert_eq_i32(b, 13);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic In Expr Tests");
     run_test("in var init", test_in_var_init);
     run_test("in conditional", test_in_conditional);

@@ -1,4 +1,5 @@
 // 作用域规则测试程序
+use std.runtime.entry;
 // 根据 UYA_MINI_SPEC.md 5.1 节的作用域规则进行测试
 // 测试全局作用域、局部作用域、块作用域和作用域嵌套
 
@@ -168,7 +169,7 @@ fn test_deep_nesting() !void {
     }
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Scope Rules Tests");
     run_test("scope nesting", test_scope_nesting);
     run_test("param scope", test_param_scope);

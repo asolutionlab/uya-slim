@@ -1,11 +1,12 @@
 // 测试 std.c.stdlib 模块（调试版本）
+use std.runtime.entry;
 // 测试：内存分配函数，添加调试输出
 
 use libc.malloc;
 use libc.write_bytes;
 use libc.strlen;
 
-fn main() i32 {
+export fn main() i32 {
     // 测试 malloc
     const ptr1: &void = malloc(100);
     if ptr1 == null {

@@ -1,4 +1,5 @@
 // 测试 for 循环引用迭代
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -15,7 +16,7 @@ fn test_for_ref_modify() !void {
     try expect(arr[0] == 2 && arr[1] == 4 && arr[2] == 6);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("For Ref Tests");
     
     run_test("for ref modify", test_for_ref_modify);

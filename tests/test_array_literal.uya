@@ -1,4 +1,5 @@
 use std.testing.expect;
+use std.runtime.entry;
 use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
 use std.testing.run_test;
@@ -10,7 +11,7 @@ fn test_array_literal() !void {
     try expect(nums[2] == 3);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Array Literal Tests");
     run_test("array literal", test_array_literal);
     return test_suite_end();

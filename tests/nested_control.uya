@@ -1,4 +1,5 @@
 // 嵌套控制流测试
+use std.runtime.entry;
 // 测试嵌套的if/while语句
 
 use std.testing.assert_eq_i32;
@@ -30,7 +31,7 @@ fn test_nested_if_while() !void {
     try assert_eq_i32(sum, 9);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Nested Control Tests");
     run_test("nested if while", test_nested_if_while);
     return test_suite_end();

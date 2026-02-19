@@ -1,4 +1,5 @@
 // 运算符优先级测试
+use std.runtime.entry;
 // 测试复杂表达式中的运算符优先级
 
 use std.testing.expect;
@@ -52,7 +53,7 @@ fn test_parentheses() !void {
     try assert_eq_i32(result, 20);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Operator Precedence Tests");
     run_test("arithmetic precedence", test_arithmetic_precedence);
     run_test("unary precedence", test_unary_precedence);

@@ -1,4 +1,5 @@
 // 复杂表达式完整测试程序
+use std.runtime.entry;
 // 测试复杂表达式的组合：字段访问、数组访问、函数调用、类型转换等
 
 use std.testing.expect;
@@ -158,7 +159,7 @@ fn test_len_in_loop() !void {
     try assert_eq_i32(sum, 15);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Complex Expressions Tests");
     run_test("complex arithmetic", test_complex_arithmetic);
     run_test("field and array access", test_field_and_array_access);

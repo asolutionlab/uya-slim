@@ -1,4 +1,5 @@
 // test_stdlib.uya - stdlib 模块测试
+use std.runtime.entry;
 // 使用 lib/std/testing.uya 测试框架
 
 use libc.malloc;
@@ -74,7 +75,7 @@ fn test_malloc_free() !void {
 // 主函数
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("libc.stdlib");
 
     run_test("abs", test_abs);

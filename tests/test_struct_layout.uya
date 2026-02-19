@@ -1,4 +1,5 @@
 // 结构体内存布局验证测试
+use std.runtime.entry;
 // 根据 UYA_MINI_SPEC.md 2.3 节的结构体内存布局详细规则进行验证
 
 use std.testing.expect;
@@ -134,7 +135,7 @@ fn test_field_access() !void {
     try assert_eq_i32(outer.b, 2);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Struct Layout Tests");
     run_test("basic align", test_basic_align);
     run_test("padding struct", test_padding_struct);

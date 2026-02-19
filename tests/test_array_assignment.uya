@@ -1,4 +1,5 @@
 // 数组赋值测试程序
+use std.runtime.entry;
 // 测试数组的按值复制赋值
 
 use std.testing.expect;
@@ -95,7 +96,7 @@ fn test_multidim_array_copy() !void {
     try expect(arr14[0][0] == 1);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Array Assignment Tests");
     
     run_test("i32 array copy", test_i32_array_copy);

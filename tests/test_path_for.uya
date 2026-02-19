@@ -1,4 +1,5 @@
 // test_path_for.uya - 测试 for 循环的路径敏感分析
+use std.runtime.entry;
 // 
 // 功能：验证 for 循环中的约束能够传播到循环体内，
 //       编译器能够证明数组访问安全。
@@ -48,7 +49,7 @@ fn test_nested_for_bounds() !void {
     try assert_eq_i32(total, 21);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Path Sensitive For Tests");
     run_test("for range bounds", test_for_range_bounds);
     run_test("for ref bounds", test_for_ref_bounds);

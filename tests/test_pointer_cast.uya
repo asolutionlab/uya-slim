@@ -1,4 +1,5 @@
 // 专门测试指针类型转换功能
+use std.runtime.entry;
 // 验证 &T as *T 的转换
 
 struct Data {
@@ -9,7 +10,7 @@ struct Data {
 extern fn process_data(data: *Data) i32;
 extern fn print_int(n: i32) i32;
 
-fn main() i32 {
+export fn main() i32 {
     // 创建结构体实例
     var d: Data = Data{ value: 42 };
     

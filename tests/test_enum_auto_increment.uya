@@ -1,4 +1,5 @@
 // 枚举自动递增测试程序
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -32,7 +33,7 @@ fn test_enum_equality() !void {
     try expect(level2 == Level.TWO);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Enum Auto Increment Tests");
     
     run_test("enum order", test_enum_order);

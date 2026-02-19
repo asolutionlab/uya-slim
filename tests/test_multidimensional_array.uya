@@ -1,4 +1,5 @@
 // 多维数组测试程序
+use std.runtime.entry;
 // 测试多维数组的定义、初始化、访问、sizeof、len
 
 use std.testing.expect;
@@ -159,7 +160,7 @@ fn test_2d_align() !void {
     try assert_eq_i32(arr2d_align, 4);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Multidimensional Array Tests");
     run_test("2d init", test_2d_init);
     run_test("2d modify", test_2d_modify);

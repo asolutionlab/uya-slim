@@ -1,4 +1,5 @@
 // 算术运算测试
+use std.runtime.entry;
 // 测试所有算术运算符（+ - * / %）
 
 use std.testing.assert_eq_i32;
@@ -41,7 +42,7 @@ fn test_modulo() !void {
     try assert_eq_i32(mod, 0);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Arithmetic Tests");
     run_test("addition", test_addition);
     run_test("subtraction", test_subtraction);

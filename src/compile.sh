@@ -435,8 +435,8 @@ if [ $COMPILER_EXIT -eq 0 ]; then
 
             # 对于 C99 后端，尝试自动链接
             # 方案 C：双入口，不再需要 bridge.c
-            # std.runtime 提供 export extern fn main(argc, argv) 作为 C 入口
-            # 用户 fn main() 被编译为 uya_main()
+            # std.runtime 提供 export extern "libc" fn main(argc, argv) 作为 C 入口
+            # 用户 export fn main() 被编译为 main_main()
             if [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ]; then
                 if [ "$USE_NOSTDLIB" = true ]; then
                     # --nostdlib 模式：将 _start 内联汇编嵌入生成的 C 代码

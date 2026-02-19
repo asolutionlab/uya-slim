@@ -1,4 +1,5 @@
 // 测试泛型函数类型推断
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -29,7 +30,7 @@ fn test_explicit_type() !void {
     try assert_eq_i32(result3, 200);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Inference Tests");
     run_test("inference i32", test_inference_i32);
     run_test("inference f64", test_inference_f64);

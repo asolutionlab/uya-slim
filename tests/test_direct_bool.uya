@@ -1,4 +1,5 @@
 // 测试直接使用布尔字面量作为条件
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -21,7 +22,7 @@ fn test_false_literal() !void {
     try expect(!executed);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Direct Bool Tests");
     
     run_test("true literal", test_true_literal);

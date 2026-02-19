@@ -1,4 +1,5 @@
 // 递归函数测试 - 累加
+use std.runtime.entry;
 // 测试递归累加函数
 
 use std.testing.assert_eq_i32;
@@ -30,7 +31,7 @@ fn test_sum_twenty() !void {
     try assert_eq_i32(sum_recursive(20), 210);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Recursive Sum Tests");
     run_test("sum zero", test_sum_zero);
     run_test("sum one", test_sum_one);

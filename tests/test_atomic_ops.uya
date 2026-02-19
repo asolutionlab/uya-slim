@@ -1,4 +1,5 @@
 // 原子类型复合赋值操作测试，规范 uya.md §13
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -35,7 +36,7 @@ fn test_atomic_mod() !void {
     try assert_eq_i32(counter, 2);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Atomic Ops Tests");
     
     run_test("atomic add", test_atomic_add);

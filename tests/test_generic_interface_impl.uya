@@ -1,4 +1,5 @@
 // 测试结构体实现泛型接口
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -42,7 +43,7 @@ fn test_float_holder() !void {
     try expect(r2 == 3.14);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Interface Impl Tests");
     run_test("int holder", test_int_holder);
     run_test("float holder", test_float_holder);

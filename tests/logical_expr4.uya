@@ -1,4 +1,5 @@
 // 逻辑表达式测试4
+use std.runtime.entry;
 // 测试长的逻辑与表达式链
 
 use std.testing.expect;
@@ -14,7 +15,7 @@ fn test_long_and_chain() !void {
     try expect(a < b && b > a && a <= c && b >= a && a == c && a != b);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Logical Expr4 Tests");
     run_test("long and chain", test_long_and_chain);
     return test_suite_end();

@@ -1,4 +1,5 @@
 use std.testing.assert_eq_i32;
+use std.runtime.entry;
 use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
 use std.testing.run_test;
@@ -9,7 +10,7 @@ fn test_len_simple() !void {
     try assert_eq_i32(len_val, 3);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Len Simple Tests");
     run_test("len simple", test_len_simple);
     return test_suite_end();

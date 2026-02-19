@@ -1,4 +1,5 @@
 // 测试空结构体初始化
+use std.runtime.entry;
 
 use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
@@ -13,7 +14,7 @@ fn test_empty_init() !void {
     var s: TestStruct = TestStruct{};
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Empty Struct Init Tests");
     
     run_test("empty init", test_empty_init);

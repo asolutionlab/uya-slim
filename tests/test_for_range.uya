@@ -1,4 +1,5 @@
 // 测试 for 整数范围
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -29,7 +30,7 @@ fn test_for_range_prod() !void {
     try assert_eq_i32(prod, 6);  // 1*1*2*3 = 6
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("For Range Tests");
     
     run_test("for range sum", test_for_range_sum);

@@ -301,7 +301,7 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
 
     // 检查是否为标准 C main 函数（export extern fn main）
     var is_c_main: i32 = 0;
-    if is_main != 0 && fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_is_extern != 0 {
+    if is_main != 0 && fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_is_extern != 0 && extern_lib_name == null {
         is_c_main = 1;
     }
 

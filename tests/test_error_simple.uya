@@ -1,4 +1,5 @@
 // 测试简单的错误处理
+use std.runtime.entry;
 
 use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
@@ -8,7 +9,7 @@ fn test_error_simple() !void {
     // 简单的错误处理测试
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Error Simple Tests");
     
     run_test("error simple", test_error_simple);

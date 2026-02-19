@@ -1,4 +1,5 @@
 // 移动语义：结构体赋值/传参/返回为移动，移动后仅目标可用
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -27,7 +28,7 @@ fn test_move_to_function() !void {
     try assert_eq_i32(x, 42);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Move Semantics Tests");
     run_test("move assign", test_move_assign);
     run_test("move to function", test_move_to_function);

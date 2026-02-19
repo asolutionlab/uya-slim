@@ -1,4 +1,5 @@
 // 测试类型别名功能
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -146,7 +147,7 @@ fn test_macro_type_alias() !void {
     try expect(f64_info.is_float);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Type Alias Tests");
     run_test("basic type alias", test_basic_type_alias);
     run_test("pointer type alias", test_pointer_type_alias);

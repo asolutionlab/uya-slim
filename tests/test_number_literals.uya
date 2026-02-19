@@ -1,4 +1,5 @@
 // 测试不同进制的整数字面量和下划线分隔符
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -58,7 +59,7 @@ fn test_float_underscore() !void {
     try expect(float3 > 1.0e9);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Number Literals Tests");
     run_test("decimal", test_decimal);
     run_test("hexadecimal", test_hexadecimal);

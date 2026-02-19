@@ -1,4 +1,5 @@
 // 测试比较运算符
+use std.runtime.entry;
 
 use std.testing.assert;
 use std.testing.test_suite_begin;
@@ -28,7 +29,7 @@ fn test_combined() !void {
 // 主函数
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Compare Simple Tests");
     
     run_test("greater_than", test_greater_than);

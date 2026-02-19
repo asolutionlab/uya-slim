@@ -1,4 +1,5 @@
 // defer 在 return 前执行
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -19,7 +20,7 @@ fn test_defer_before_return() !void {
     try expect(r == 0);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Defer Return Order Tests");
     
     run_test("defer before return", test_defer_before_return);

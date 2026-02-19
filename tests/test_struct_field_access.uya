@@ -1,4 +1,5 @@
 // 测试结构体字段访问
+use std.runtime.entry;
 // 验证结构体字段访问和赋值
 
 struct Point {
@@ -28,7 +29,7 @@ fn test_struct_field() i32 {
     return 0;
 }
 
-fn main() i32 {
+export fn main() i32 {
     return test_struct_field();
 }
 

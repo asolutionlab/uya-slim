@@ -121,25 +121,42 @@ run_test() {
         return
     fi
     
-    # 链接 - 根据测试文件内容选择正确的链接方式
+    # 链接：根据文件内容选择正确的链接方式
     local link_cmd=""
+    BRIDGE_TEST="$SCRIPT_DIR/bridge_test.c"
+    
+    # 检测是否使用 std.runtime.entry（有 main 入口）
+    uses_std_runtime_entry=false
+    grep -q "use.*std\.runtime\.entry" "$test_file" 2>/dev/null && uses_std_runtime_entry=true || true
     
     # 检查是否有 extern fn 声明（非 extern "libc"），需要链接 external_functions.c
     if grep -qE "^extern fn [a-z_]+\(" "$test_file" 2>/dev/null; then
         # 特殊处理 test_abi_calling_convention
         if [ "$base_name" = "test_abi_calling_convention" ]; then
-            link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/programs/test_abi_helpers.c $SCRIPT_DIR/bridge.c 2>/dev/null"
+            if [ "$uses_std_runtime_entry" = true ]; then
+                link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/test_abi_helpers.c 2>/dev/null"
+            else
+                link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/test_abi_helpers.c $BRIDGE_TEST 2>/dev/null"
+            fi
         elif [ -f "$SCRIPT_DIR/external_functions.c" ]; then
-            link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/external_functions.c $SCRIPT_DIR/bridge.c 2>/dev/null"
+            if [ "$uses_std_runtime_entry" = true ]; then
+                link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/external_functions.c 2>/dev/null"
+            else
+                link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/external_functions.c $BRIDGE_TEST 2>/dev/null"
+            fi
         else
-            link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/bridge.c 2>/dev/null"
+            if [ "$uses_std_runtime_entry" = true ]; then
+                link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file 2>/dev/null"
+            else
+                link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $BRIDGE_TEST 2>/dev/null"
+            fi
         fi
-    elif grep -q "use.*std\.runtime" "$test_file" 2>/dev/null; then
-        # 使用 std.runtime，链接 bridge_minimal.c
-        link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/bridge_minimal.c 2>/dev/null"
     else
-        # 默认链接 bridge.c
-        link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $SCRIPT_DIR/bridge.c 2>/dev/null"
+        if [ "$uses_std_runtime_entry" = true ]; then
+            link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file 2>/dev/null"
+        else
+            link_cmd="gcc -std=c99 -o $BUILD_DIR/$base_name $output_file $BRIDGE_TEST 2>/dev/null"
+        fi
     fi
     
     if ! eval "$link_cmd"; then

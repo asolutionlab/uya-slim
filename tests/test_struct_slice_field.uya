@@ -1,4 +1,5 @@
 // 测试结构体含 &[T] 切片字段
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -50,7 +51,7 @@ fn test_fat_pointer() !void {
     try expect(@align_of(&[i32]) == @align_of(usize));
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Struct Slice Field Tests");
     run_test("slice field init", test_slice_field_init);
     run_test("slice field modify", test_slice_field_modify);

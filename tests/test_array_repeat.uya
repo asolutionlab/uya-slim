@@ -1,4 +1,5 @@
 // 重复数组字面量 [value: N]
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -17,7 +18,7 @@ fn test_value_repeat() !void {
     try assert_eq_i32(arr[4], 42);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Array Repeat Tests");
     
     run_test("zero repeat", test_zero_repeat);

@@ -1,4 +1,5 @@
 // test_syscall_module.uya
+use std.runtime.entry;
 // 测试多个使用 @syscall 的函数（确保不会重复定义 err_union 结构体）
 
 const SYS_write: i64 = 1;
@@ -14,7 +15,7 @@ fn sys_getpid() !i64 {
     return result;
 }
 
-fn main() i32 {
+export fn main() i32 {
     const msg: *byte = "Test!\n";
     _ = sys_write(1, msg as i64, 6) catch {
         return 1;

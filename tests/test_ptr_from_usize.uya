@@ -1,4 +1,5 @@
 // 测试 @ptr_from_usize 内置函数
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -24,7 +25,7 @@ fn test_ptr_from_usize_roundtrip() !void {
     try expect(addr_back == addr3);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Ptr From Usize Tests");
     run_test("ptr from usize zero", test_ptr_from_usize_zero);
     run_test("ptr from usize nonzero", test_ptr_from_usize_nonzero);

@@ -1,4 +1,5 @@
 // 测试 stmt 返回标签的宏（使用语法糖）
+use std.runtime.entry;
 // stmt 宏的最后一条语句会被自动输出
 
 use std.testing.assert_eq_i32;
@@ -24,7 +25,7 @@ fn test_stmt_macro() !void {
     // 如果执行到这里说明正常
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Stmt Tests");
     run_test("stmt macro", test_stmt_macro);
     return test_suite_end();

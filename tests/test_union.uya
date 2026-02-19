@@ -1,4 +1,5 @@
 // 联合体（union）测试：定义、创建、match 访问
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -45,7 +46,7 @@ fn test_union_match_stmt() !void {
     try assert_eq_i32(n, 42);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Union Tests");
     run_test("union create", test_union_create);
     run_test("union match extract", test_union_match_extract);

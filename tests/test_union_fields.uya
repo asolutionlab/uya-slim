@@ -1,4 +1,5 @@
 // 测试 union 包含各种指针类型字段
+use std.runtime.entry;
 // 验证方案 A 可行性：union 变体可以是指针类型
 
 use std.testing.expect;
@@ -37,7 +38,7 @@ fn test_union_mixed() !void {
     try assert_eq_i32(r1, 100);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Union Fields Tests");
     run_test("union same type", test_union_same_type);
     run_test("union mixed", test_union_mixed);

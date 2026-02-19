@@ -1,4 +1,5 @@
 // alignof 综合测试程序
+use std.runtime.entry;
 // 按照 TDD 方式，全面测试 alignof 内置函数的所有场景
 
 use std.testing.expect;
@@ -187,7 +188,7 @@ fn test_array_align_equals_elem() !void {
     try assert_eq_i32(elem_align, arr_type_align);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Alignof Comprehensive Tests");
     run_test("basic type align", test_basic_type_align);
     run_test("expr align", test_expr_align);

@@ -1,4 +1,5 @@
 // test_usize_from_ptr.uya - 测试 @usize_from_ptr 内置函数
+use std.runtime.entry;
 // 测试从指针转换为 usize 的功能
 
 use std.testing.expect;
@@ -39,7 +40,7 @@ fn test_ptr_arithmetic() !void {
     try expect(verify_addr == next_addr);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Usize From Ptr Tests");
     run_test("null ptr conversion", test_null_ptr_conversion);
     run_test("var addr conversion", test_var_addr_conversion);

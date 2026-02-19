@@ -1,4 +1,5 @@
 // 测试宏插值 ${} 语法
+use std.runtime.entry;
 // 在 @mc_ast 内部使用 ${var} 引用宏参数
 
 use std.testing.expect;
@@ -288,7 +289,7 @@ fn test_even_odd() !void {
     try expect(!is_odd(10));
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Interp Tests");
     run_test("basic interp", test_basic_interp);
     run_test("multi param", test_multi_param);

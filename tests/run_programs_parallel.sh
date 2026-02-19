@@ -250,57 +250,46 @@ run_single_test() {
         return
     fi
     
-    # 链接
+    # 链接：根据文件内容选择正确的链接方式
+    # 1. 使用 std.runtime.entry 的文件：有 main() 入口，不需要 bridge
+    # 2. 使用 test "..." 语法的文件：有 uya_main()，需要 bridge_test.c
     link_succeeded=false
-    BRIDGE_C="$SCRIPT_DIR/bridge.c"
-    BRIDGE_MINIMAL_C="$SCRIPT_DIR/bridge_minimal.c"
+    BRIDGE_TEST="$SCRIPT_DIR/bridge_test.c"
     
-    # 检测是否使用 std.runtime.entry（自己提供 main 函数，不需要 bridge）
+    GCC_OPTS="-std=c99 -no-pie"
+    EXTRA_C_EXTERN="$SCRIPT_DIR/extern_function_impl.c"
+    EXTRA_C_FFI="$SCRIPT_DIR/external_functions.c"
+    EXTRA_C_ABI="$SCRIPT_DIR/test_abi_helpers.c"
+    
+    # 检测是否使用 std.runtime.entry（有 main 入口）
     uses_std_runtime_entry=false
     grep -q "use.*std\.runtime\.entry" "$uya_file" 2>/dev/null && uses_std_runtime_entry=true || true
     
-    # 检测是否使用其他 std.runtime 模块（需要 bridge_minimal.c）
-    uses_std_runtime=false
-    if [ "$uses_std_runtime_entry" = false ]; then
-        grep -q "use.*std\.runtime" "$uya_file" 2>/dev/null && uses_std_runtime=true || true
-    fi
-    
-    GCC_OPTS="-std=c99 -no-pie"
-    EXTRA_C_EXTERN="$SCRIPT_DIR/programs/extern_function_impl.c"
-    EXTRA_C_FFI="$SCRIPT_DIR/external_functions.c"
-    EXTRA_C_ABI="$SCRIPT_DIR/programs/test_abi_helpers.c"
     if [ "$base_name" = "extern_function" ]; then
-        if [ -f "$BRIDGE_C" ]; then
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" "$BRIDGE_C" 2>/dev/null && link_succeeded=true
-        else
+        if [ "$uses_std_runtime_entry" = true ]; then
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" 2>/dev/null && link_succeeded=true
+        else
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
         fi
     elif [ "$base_name" = "test_comprehensive_cast" ] || [ "$base_name" = "test_ffi_cast" ] || [ "$base_name" = "test_pointer_cast" ] || [ "$base_name" = "test_simple_cast" ] || [ "$base_name" = "test_extern_union" ]; then
-        if [ -f "$BRIDGE_C" ]; then
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" "$BRIDGE_C" 2>/dev/null && link_succeeded=true
-        else
+        if [ "$uses_std_runtime_entry" = true ]; then
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" 2>/dev/null && link_succeeded=true
+        else
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
         fi
     elif [ "$base_name" = "test_abi_calling_convention" ]; then
-        if [ -f "$BRIDGE_C" ]; then
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" "$BRIDGE_C" 2>/dev/null && link_succeeded=true
-        else
+        if [ "$uses_std_runtime_entry" = true ]; then
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" 2>/dev/null && link_succeeded=true
+        else
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
         fi
     else
-        # std.runtime.entry 自己提供 main 函数，不需要任何 bridge
         if [ "$uses_std_runtime_entry" = true ]; then
+            # 有 main 入口，直接链接
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
-        elif [ "$uses_std_runtime" = true ]; then
-            if [ -f "$BRIDGE_MINIMAL_C" ]; then
-                gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_MINIMAL_C" 2>/dev/null && link_succeeded=true
-            else
-                gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
-            fi
-        elif [ -f "$BRIDGE_C" ]; then
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_C" 2>/dev/null && link_succeeded=true
         else
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
+            # 没有 main 入口，需要 bridge_test.c
+            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
         fi
     fi
     

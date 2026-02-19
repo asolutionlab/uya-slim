@@ -1,4 +1,5 @@
 // 移动语义 + drop：被移动的变量离开作用域时不调用 drop
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -23,7 +24,7 @@ fn test_drop_after_move() !void {
   try assert_eq_i32(drop_count, 1);
 }
 
-fn main() i32 {
+export fn main() i32 {
   test_suite_begin("Drop After Move Tests");
   
   run_test("drop after move", test_drop_after_move);

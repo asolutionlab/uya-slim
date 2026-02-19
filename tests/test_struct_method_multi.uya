@@ -1,4 +1,5 @@
 // 结构体多个方法
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -27,7 +28,7 @@ fn test_multi_methods() !void {
   try assert_eq_i32(n, 30);
 }
 
-fn main() i32 {
+export fn main() i32 {
   test_suite_begin("Struct Method Multi Tests");
   run_test("multi methods", test_multi_methods);
   return test_suite_end();

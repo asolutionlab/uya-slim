@@ -1,7 +1,8 @@
 // 测试 @syscall 内置函数 - SYS_write
+use std.runtime.entry;
 // 功能：向标准输出写入字符串
 
-fn main() i32 {
+export fn main() i32 {
     // Linux x86-64 系统调用号
     const SYS_write: i64 = 1;
     

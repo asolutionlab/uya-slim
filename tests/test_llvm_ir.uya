@@ -1,4 +1,5 @@
 // 测试LLVM IR生成
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -14,7 +15,7 @@ fn test_llvm_ir() !void {
     try expect(b);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("LLVM IR Tests");
     run_test("llvm ir", test_llvm_ir);
     return test_suite_end();

@@ -1,4 +1,5 @@
 // 测试 @va_start、@va_end、@va_arg 内置函数
+use std.runtime.entry;
 // 在可变参数函数内正确使用
 
 use std.testing.expect;
@@ -26,7 +27,7 @@ fn test_va_builtin() !void {
     try assert_eq_i32(r, 60);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("VA Builtin Tests");
     run_test("va builtin", test_va_builtin);
     return test_suite_end();

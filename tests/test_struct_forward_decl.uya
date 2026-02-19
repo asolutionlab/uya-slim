@@ -1,4 +1,5 @@
 // test_struct_forward_decl.uya - 测试结构体前置声明
+use std.runtime.entry;
 // 验证：结构体字段使用其他结构体指针时，C代码生成器应自动生成前置声明
 
 use std.testing.assert_true;
@@ -27,7 +28,7 @@ fn test_forward_decl() void {
     printf("  forward decl: OK\n");
 }
 
-fn main() i32 {
+export fn main() i32 {
     printf("=== Struct Forward Declaration Tests ===\n");
     test_forward_decl();
     printf("=== All tests passed ===\n");

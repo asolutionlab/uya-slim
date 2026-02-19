@@ -1,4 +1,5 @@
 // 测试优化后的 ASTNode 大小
+use std.runtime.entry;
 // 目标：从 1416 字节减少到 100-150 字节
 
 use std.testing.assert_true;
@@ -182,7 +183,7 @@ fn test_individual_struct_sizes() !void {
     printf("  NumberData: %zu bytes\n", @size_of(NumberData));
 }
 
-fn main() i32 {
+export fn main() i32 {
     printf("=== ASTNode Optimization Size Test ===\n");
     printf("Original ASTNode: 1416 bytes\n\n");
 

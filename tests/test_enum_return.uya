@@ -1,4 +1,5 @@
 // 枚举类型作为返回值测试程序
+use std.runtime.entry;
 // 测试枚举类型作为函数返回类型的功能
 
 use std.testing.expect;
@@ -91,7 +92,7 @@ fn test_return_and_compare() !void {
     try expect(check_color_match(Color.GREEN) == false);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Enum Return Tests");
     run_test("return enum values", test_return_enum_values);
     run_test("conditional return", test_conditional_return);

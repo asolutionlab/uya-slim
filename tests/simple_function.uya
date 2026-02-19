@@ -1,4 +1,5 @@
 // 简单函数测试
+use std.runtime.entry;
 // 测试函数声明、调用和返回值
 
 use std.testing.assert_eq_i32;
@@ -25,7 +26,7 @@ fn test_add_negative() !void {
     try assert_eq_i32(result, 5);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Simple Function Tests");
     run_test("add", test_add);
     run_test("add zero", test_add_zero);

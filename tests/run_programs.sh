@@ -189,38 +189,27 @@ process_multifile_test() {
         return
     fi
     # 链接：编译 .c 文件为可执行文件
+    # 根据文件内容选择正确的链接方式
     link_succeeded=false
-    BRIDGE_C="$SCRIPT_DIR/bridge.c"
-    BRIDGE_MINIMAL_C="$SCRIPT_DIR/bridge_minimal.c"
+    BRIDGE_TEST="$SCRIPT_DIR/bridge_test.c"
     
-    # 检查是否使用了 std.runtime 模块（如果使用了，不应该链接 bridge.c）
-    uses_std_runtime=false
+    # 检测是否使用 std.runtime.entry（有 main 入口）
+    uses_std_runtime_entry=false
     for uya_file in "${file_list[@]}"; do
-        if grep -q "use.*std\.runtime" "$uya_file" 2>/dev/null; then
-            uses_std_runtime=true
+        if grep -q "use.*std\.runtime\.entry" "$uya_file" 2>/dev/null; then
+            uses_std_runtime_entry=true
             break
         fi
     done
     
-    if [ "$uses_std_runtime" = true ]; then
-        # 使用 std.runtime，链接 bridge_minimal.c（只提供 main 函数）
-        if [ -f "$BRIDGE_MINIMAL_C" ]; then
-            if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$build_subdir/$test_name" "$output_file" "$BRIDGE_MINIMAL_C"; then
-                link_succeeded=true
-            fi
-        else
-            # 如果没有 bridge_minimal.c，尝试不链接（可能会失败）
-            if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$build_subdir/$test_name" "$output_file"; then
-                link_succeeded=true
-            fi
-        fi
-    elif [ -f "$BRIDGE_C" ]; then
-        # 需要链接 bridge.c 提供运行时支持
-        if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$build_subdir/$test_name" "$output_file" "$BRIDGE_C"; then
+    if [ "$uses_std_runtime_entry" = true ]; then
+        # 有 main 入口，直接链接
+        if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$build_subdir/$test_name" "$output_file"; then
             link_succeeded=true
         fi
     else
-        if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$build_subdir/$test_name" "$output_file"; then
+        # 没有 main 入口，需要 bridge_test.c
+        if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$build_subdir/$test_name" "$output_file" "$BRIDGE_TEST"; then
             link_succeeded=true
         fi
     fi
@@ -485,77 +474,40 @@ process_single_test() {
         return
     fi
     
-    # 链接：编译 .c 文件为可执行文件（对于需要外部函数的测试，需链接实现）
+    # 链接：编译 .c 文件为可执行文件
+    # 根据文件内容选择正确的链接方式
     link_succeeded=false
-    BRIDGE_C="$SCRIPT_DIR/bridge.c"
+    BRIDGE_TEST="$SCRIPT_DIR/bridge_test.c"
     
-    # 检查是否使用了 std.runtime 模块（如果使用了，不应该链接 bridge.c，因为 std.runtime 提供了这些函数）
-    uses_std_runtime=false
-    if grep -q "use.*std\.runtime" "$uya_file" 2>/dev/null; then
-        uses_std_runtime=true
-    fi
+    # 检测是否使用 std.runtime.entry（有 main 入口）
+    uses_std_runtime_entry=false
+    grep -q "use.*std\.runtime\.entry" "$uya_file" 2>/dev/null && uses_std_runtime_entry=true || true
     
     if [ "$base_name" = "extern_function" ]; then
-            # 编译主程序和外部函数实现（需要链接 bridge.c）
-            if [ -f "$BRIDGE_C" ]; then
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/extern_function_impl.c "$BRIDGE_C"; then
-                    link_succeeded=true
-                fi
-            else
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/extern_function_impl.c; then
-                    link_succeeded=true
-                fi
-            fi
-    elif [ "$base_name" = "test_comprehensive_cast" ] || [ "$base_name" = "test_ffi_cast" ] || [ "$base_name" = "test_pointer_cast" ] || [ "$base_name" = "test_simple_cast" ] || [ "$base_name" = "test_extern_union" ]; then
-            # 编译主程序和通用外部函数实现（需要链接 bridge.c）
-            if [ -f "$BRIDGE_C" ]; then
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/external_functions.c "$BRIDGE_C"; then
-                    link_succeeded=true
-                fi
-            else
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/external_functions.c; then
-                    link_succeeded=true
-                fi
-            fi
-    elif [ "$base_name" = "test_abi_calling_convention" ]; then
-            # 编译主程序和 ABI 辅助函数（需要链接 bridge.c）
-            if [ -f "$BRIDGE_C" ]; then
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/test_abi_helpers.c "$BRIDGE_C"; then
-                    link_succeeded=true
-                fi
-            else
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/test_abi_helpers.c; then
-                    link_succeeded=true
-                fi
-            fi
-    else
-            # 普通 C99 编译
-            # 如果使用了 std.runtime 模块，链接 bridge_minimal.c（只提供 main 函数）
-            # 因为 std.runtime 已经提供了其他运行时函数，但还需要 main 作为入口点
-            BRIDGE_MINIMAL_C="$SCRIPT_DIR/bridge_minimal.c"
-            if [ "$uses_std_runtime" = true ]; then
-                # 使用 std.runtime，链接 bridge_minimal.c（只提供 main 函数）
-                if [ -f "$BRIDGE_MINIMAL_C" ]; then
-                    if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_MINIMAL_C"; then
-                        link_succeeded=true
-                    fi
-                else
-                    # 如果没有 bridge_minimal.c，尝试不链接（可能会失败）
-                    if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file"; then
-                        link_succeeded=true
-                    fi
-                fi
-            elif [ -f "$BRIDGE_C" ]; then
-                # 需要链接 bridge.c 提供运行时支持
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_C"; then
-                    link_succeeded=true
-                fi
-            else
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file"; then
-                    link_succeeded=true
-                fi
-            fi
+        if [ "$uses_std_runtime_entry" = true ]; then
+            gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/extern_function_impl.c" 2>/dev/null && link_succeeded=true
+        else
+            gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/extern_function_impl.c" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
         fi
+    elif [ "$base_name" = "test_comprehensive_cast" ] || [ "$base_name" = "test_ffi_cast" ] || [ "$base_name" = "test_pointer_cast" ] || [ "$base_name" = "test_simple_cast" ] || [ "$base_name" = "test_extern_union" ]; then
+        if [ "$uses_std_runtime_entry" = true ]; then
+            gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/external_functions.c" 2>/dev/null && link_succeeded=true
+        else
+            gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/external_functions.c" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
+        fi
+    elif [ "$base_name" = "test_abi_calling_convention" ]; then
+        if [ "$uses_std_runtime_entry" = true ]; then
+            gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/test_abi_helpers.c" 2>/dev/null && link_succeeded=true
+        else
+            gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/test_abi_helpers.c" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
+        fi
+    else
+        if [ "$uses_std_runtime_entry" = true ]; then
+            gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
+        else
+            gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
+        fi
+    fi
     
     if [ "$link_succeeded" = false ]; then
         if [ "$ERRORS_ONLY" = true ]; then

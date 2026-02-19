@@ -1,4 +1,5 @@
 // 测试逻辑与返回值
+use std.runtime.entry;
 
 use std.testing.assert;
 use std.testing.test_suite_begin;
@@ -30,7 +31,7 @@ fn test_and_short_circuit() !void {
 // 主函数
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("And Return Tests");
     
     run_test("and_true", test_and_true);

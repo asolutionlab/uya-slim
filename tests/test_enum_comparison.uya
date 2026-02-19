@@ -1,4 +1,5 @@
 // 枚举类型比较运算符测试程序
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -64,7 +65,7 @@ fn test_enum_auto_increment_compare() !void {
     try expect(s3 > s2);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Enum Comparison Tests");
     
     run_test("enum eq", test_enum_eq);

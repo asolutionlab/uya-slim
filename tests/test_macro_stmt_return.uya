@@ -1,4 +1,5 @@
 // 测试 stmt 返回类型的宏
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -17,7 +18,7 @@ fn test_stmt_macro() !void {
     try assert_eq_i32(global_counter, before + 1);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Stmt Return Tests");
     run_test("stmt macro", test_stmt_macro);
     return test_suite_end();

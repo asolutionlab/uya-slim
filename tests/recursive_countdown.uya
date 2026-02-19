@@ -1,4 +1,5 @@
 // 递归函数测试 - 倒计时
+use std.runtime.entry;
 // 测试递归函数的控制流
 
 use std.testing.assert_eq_i32;
@@ -26,7 +27,7 @@ fn test_countdown_ten() !void {
     try assert_eq_i32(countdown(10), 10);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Recursive Countdown Tests");
     run_test("countdown zero", test_countdown_zero);
     run_test("countdown five", test_countdown_five);

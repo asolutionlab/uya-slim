@@ -1,4 +1,5 @@
 // 测试：不带泛型的方法调用是否正常
+use std.runtime.entry;
 
 struct Container {
     value: i32,
@@ -10,7 +11,7 @@ Container {
     }
 }
 
-fn main() i32 {
+export fn main() i32 {
     var c: Container = Container{ value: 42 };
     const v: i32 = c.get();
     return 0;

@@ -1,9 +1,10 @@
 // test_std_syscall_new.uya - 测试 libc 模块
+use std.runtime.entry;
 use libc.sys_write;
 use libc.sys_getpid;
 use libc.UYA_STDOUT_FILENO;
 
-fn main() i32 {
+export fn main() i32 {
     // 测试 1: sys_write - 写入标准输出
     const msg: &const byte = "Hello from std.syscall!\n" as &const byte;
     const msg_len: usize = 24;

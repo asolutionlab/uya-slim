@@ -1,4 +1,5 @@
 // 赋值测试
+use std.runtime.entry;
 // 测试变量赋值（var 变量）
 
 use std.testing.assert_eq_i32;
@@ -23,7 +24,7 @@ fn test_assignment_with_expr() !void {
     try assert_eq_i32(x, 15);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Assignment Tests");
     run_test("basic assignment", test_basic_assignment);
     run_test("reassignment", test_reassignment);

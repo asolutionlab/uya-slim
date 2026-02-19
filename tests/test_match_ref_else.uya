@@ -1,4 +1,5 @@
 // test_match_ref_else.uya - 测试 match 引用类型时 else 分支的类型推断
+use std.runtime.entry;
 // Bug: 当 match 的被匹配表达式是引用类型 &T 时，else 分支的类型推断失败
 // 原因: checker_infer_type 和 checker_check_node 没有对指针类型自动解引用
 
@@ -43,7 +44,7 @@ fn test_match_ref_multi(u: &MultiVariant) i32 {
     };
 }
 
-fn main() i32 {
+export fn main() i32 {
     printf("=== Match Ref Else Tests ===\n");
     
     // 测试1: 引用类型参数 + else

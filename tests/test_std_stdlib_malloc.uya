@@ -1,11 +1,12 @@
 // 测试 std.c.stdlib 模块（只测试 malloc 和 calloc，不测试 free）
+use std.runtime.entry;
 // 测试：内存分配函数
 
 use libc.malloc;
 use libc.calloc;
 use libc.memcmp;
 
-fn main() i32 {
+export fn main() i32 {
     // ============================================================
     // 测试 1: malloc
     // ============================================================

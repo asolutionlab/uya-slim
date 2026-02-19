@@ -1,4 +1,5 @@
 // &void 通用指针类型测试程序
+use std.runtime.entry;
 // 测试 &void 类型的功能：类型擦除、类型恢复、指针转换
 
 use std.testing.expect;
@@ -99,7 +100,7 @@ fn test_void_deref_via_convert() !void {
     try assert_eq_i32(*z_ptr, 200);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Void Pointer Tests");
     run_test("void ptr null", test_void_ptr_null);
     run_test("type erase", test_type_erase);

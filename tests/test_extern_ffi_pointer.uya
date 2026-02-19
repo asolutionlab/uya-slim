@@ -1,4 +1,5 @@
 // 测试 extern 函数 FFI 指针类型参数支持
+use std.runtime.entry;
 // 验证解析、类型检查、代码生成是否正确处理 *T 类型参数
 
 // 测试1：基础 FFI 指针类型参数（*byte, *i32）
@@ -20,7 +21,7 @@ extern fn test_mixed_params(value: i32, ptr: *byte, count: i32) i32;
 extern fn test_pointer_to_pointer(pp: **byte) i32;
 
 // 测试函数调用（虽然实际无法链接，但可以验证代码生成）
-fn main() i32 {
+export fn main() i32 {
     // 注意：这些调用在实际运行时需要链接真实的C函数
     // 这里仅测试编译器能否正确解析、类型检查和生成代码
     

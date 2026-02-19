@@ -1,4 +1,5 @@
 // 测试 union + 泛型基础
+use std.runtime.entry;
 
 struct IdentifierData {
     name: &[byte],
@@ -30,7 +31,7 @@ fn get_identifier_name(node: &Node) &[byte] {
     }
 }
 
-fn main() i32 {
+export fn main() i32 {
     var node: Node = Node{
         data: NodeData.identifier(IdentifierData{ name: "foo" }),
     };

@@ -1,4 +1,5 @@
 // 测试程序：验证指针类型的成员访问
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -82,7 +83,7 @@ fn test_struct_with_pointer_field_wrapper() !void {
     try assert_eq_i32(g_container_point.x, 50);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Pointer Member Access Tests");
     
     run_test("pointer param", test_pointer_param_wrapper);

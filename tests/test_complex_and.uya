@@ -1,4 +1,5 @@
 // 测试复杂的逻辑与运算符
+use std.runtime.entry;
 
 use std.testing.assert;
 use std.testing.test_suite_begin;
@@ -36,7 +37,7 @@ fn test_and_with_negation() !void {
 // 主函数
 // ============================================================
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Complex And Tests");
     
     run_test("triple_and", test_triple_and);

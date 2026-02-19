@@ -1,4 +1,5 @@
 // 深层嵌套while循环测试
+use std.runtime.entry;
 // 测试3层嵌套的while循环
 
 use std.testing.assert_eq_i32;
@@ -49,7 +50,7 @@ fn test_nested_loop_with_multiply() !void {
     try assert_eq_i32(product, 4096);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Deep Nested While Tests");
     run_test("triple nested loop", test_triple_nested_loop);
     run_test("nested loop with multiply", test_nested_loop_with_multiply);

@@ -1,4 +1,5 @@
 // 测试泛型 - 边界情况
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -64,7 +65,7 @@ fn test_mixed_field_struct() !void {
     try expect(m.flag == true);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Edge Cases Tests");
     run_test("single letter params", test_single_letter_params);
     run_test("long param names", test_long_param_names);

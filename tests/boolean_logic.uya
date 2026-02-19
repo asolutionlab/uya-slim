@@ -1,4 +1,5 @@
 // 布尔逻辑测试
+use std.runtime.entry;
 // 测试布尔类型、逻辑运算符（&&, ||, !）和比较运算符
 
 use std.testing.expect;
@@ -41,7 +42,7 @@ fn test_logical_not() !void {
     try expect(!!true);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Boolean Logic Tests");
     run_test("is positive", test_is_positive);
     run_test("is even", test_is_even);

@@ -1,4 +1,5 @@
 // 嵌套结构体访问测试
+use std.runtime.entry;
 // 测试深层嵌套的结构体字段访问
 
 use std.testing.assert_eq_i32;
@@ -70,7 +71,7 @@ fn test_func_nested_access() !void {
     try assert_eq_i32(x, 10);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Nested Struct Access Tests");
     run_test("nested access", test_nested_access);
     run_test("struct assignment access", test_struct_assignment_access);

@@ -1,4 +1,5 @@
 // 混合类型组合场景测试程序
+use std.runtime.entry;
 // 测试枚举、结构体、数组、指针等类型的复杂组合场景
 
 use std.testing.expect;
@@ -263,7 +264,7 @@ fn test_complex_combination() !void {
     try expect(rects[2].bottom_right.x == 30);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Mixed Types Tests");
     run_test("enum + struct", test_enum_struct);
     run_test("enum + array", test_enum_array);

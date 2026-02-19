@@ -1,4 +1,5 @@
 // 测试 drop/RAII：结构体定义 fn drop(self: T) void
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -22,7 +23,7 @@ fn test_drop_simple() !void {
   try assert_eq_i32(drop_count, 1);
 }
 
-fn main() i32 {
+export fn main() i32 {
   test_suite_begin("Drop Simple Tests");
   
   run_test("drop simple", test_drop_simple);

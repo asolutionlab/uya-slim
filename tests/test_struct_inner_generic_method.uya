@@ -1,4 +1,5 @@
 // 测试结构体内部定义泛型方法（非方法块语法）
+use std.runtime.entry;
 // 验证非泛型结构体内部定义的泛型方法能正确单态化
 
 // 非泛型结构体，内部定义泛型方法
@@ -11,7 +12,7 @@ struct Container {
     }
 }
 
-fn main() i32 {
+export fn main() i32 {
     var c: Container = Container{ value: 42 };
     
     // 泛型方法调用

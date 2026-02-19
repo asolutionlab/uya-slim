@@ -1,4 +1,5 @@
 // test_usize_constraints.uya - usize 类型约束测试
+use std.runtime.entry;
 //
 // 功能：验证 usize 类型变量能够正确参与约束系统，
 //       自动获得 >= 0 的下界约束（无符号语义）。
@@ -85,7 +86,7 @@ fn test_usize_increment() !void {
     try assert_eq_i32(arr[9], 18);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Usize Constraints Tests");
     run_test("usize upper bound only", test_usize_upper_bound_only);
     run_test("usize loop index", test_usize_loop_index);

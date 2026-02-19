@@ -1,7 +1,8 @@
 // 测试 @syscall 内置函数 - SYS_exit
+use std.runtime.entry;
 // 功能：正常退出程序
 
-fn main() i32 {
+export fn main() i32 {
     // Linux x86-64 系统调用号
     const SYS_exit: i64 = 60;
     

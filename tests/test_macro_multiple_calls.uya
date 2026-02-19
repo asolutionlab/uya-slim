@@ -1,4 +1,5 @@
 // 测试宏：多次调用同一个宏
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -89,7 +90,7 @@ fn test_nested_calls() !void {
     }
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Multiple Calls Tests");
     run_test("same expr", test_same_expr);
     run_test("same function", test_same_function);

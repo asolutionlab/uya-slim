@@ -1,11 +1,12 @@
 // test_std_runtime.uya - 测试新的 std.runtime 模块
+use std.runtime.entry;
 // 测试运行时支持函数（替代 bridge.c）
 
 use std.runtime.get_argc;
 use std.runtime.get_argv;
 use std.runtime.ptr_diff;
 
-fn main() i32 {
+export fn main() i32 {
     // 测试 1: get_argc - 获取命令行参数数量
     const argc: i32 = get_argc();
     if argc < 1 {

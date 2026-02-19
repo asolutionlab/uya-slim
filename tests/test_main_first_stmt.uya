@@ -1,4 +1,5 @@
 // 测试 main 函数首语句可以是 try 表达式
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -15,7 +16,7 @@ fn test_main_first_stmt_try() !void {
     try assert_eq_i32(x, 5);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Main First Stmt Tests");
     run_test("main first stmt try", test_main_first_stmt_try);
     return test_suite_end();

@@ -1,4 +1,5 @@
 // test_std_mem.uya - 测试新的 std.mem 模块
+use std.runtime.entry;
 // 测试内存操作函数
 
 use std.mem.memcpy;
@@ -7,7 +8,7 @@ use std.mem.memmove;
 use std.mem.memcmp;
 use std.mem.memchr;
 
-fn main() i32 {
+export fn main() i32 {
     // 测试 1: memcpy - 内存复制
     var src: [byte: 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     var dst: [byte: 10] = [];

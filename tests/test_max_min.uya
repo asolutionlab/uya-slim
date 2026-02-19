@@ -1,4 +1,5 @@
 // 测试 max/min 关键字：类型极值（编译期常量，从上下文推断类型）
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
@@ -25,7 +26,7 @@ fn test_min_in_expression() !void {
     try expect(@min + 1 < 0);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Max/Min Builtin Tests");
     run_test("max value", test_max_value);
     run_test("min value", test_min_value);

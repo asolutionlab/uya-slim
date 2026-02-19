@@ -1,4 +1,5 @@
 // 测试 struct 返回标签的宏
+use std.runtime.entry;
 // 在方法块中调用宏生成方法
 
 use std.testing.assert_eq_i32;
@@ -69,7 +70,7 @@ fn test_sum() !void {
     try assert_eq_i32(sum_result, 30);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Struct Return Tests");
     run_test("get x", test_get_x);
     run_test("get y", test_get_y);

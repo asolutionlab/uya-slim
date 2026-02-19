@@ -1,4 +1,5 @@
 // 测试泛型函数 - 嵌套调用
+use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
 use std.testing.test_suite_begin;
@@ -28,7 +29,7 @@ fn test_deep_nesting() !void {
     try assert_eq_i32(z, 100);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Generic Nested Call Tests");
     run_test("nested generic call", test_nested_generic_call);
     run_test("generic with normal", test_generic_with_normal);

@@ -1,4 +1,5 @@
 // 原子类型支持多种整数类型测试，规范 uya.md §13
+use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.test_suite_begin;
@@ -29,7 +30,7 @@ fn test_atomic_u64() !void {
     try expect(u64_val == 3000);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Atomic Types Tests");
     
     run_test("atomic i32", test_atomic_i32);

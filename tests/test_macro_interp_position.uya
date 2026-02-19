@@ -1,4 +1,5 @@
 // 测试函数调用位置和泛型参数位置的宏插值
+use std.runtime.entry;
 // 验证 ${func_name}() 和 Vec<${TypeArg}> 语法
 
 use std.testing.test_suite_begin;
@@ -37,7 +38,7 @@ fn test_expr_param() !void {
     try assert_eq_i32(a, 6);
 }
 
-fn main() i32 {
+export fn main() i32 {
     test_suite_begin("Macro Interp Position Tests");
     run_test("func_name_with_mc", test_func_name_with_mc);
     run_test("expr_param", test_expr_param);
