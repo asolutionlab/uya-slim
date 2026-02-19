@@ -180,6 +180,128 @@ fn unsafe_access() void {
 
 ---
 
+## 调试输出
+
+Uya 提供 `@print` 和 `@println` 内置函数用于调试输出，无需导入任何模块。
+
+### 基本用法
+
+```uya
+fn main() i32 {
+    // 打印整数
+    @println(42);           // 输出: 42
+
+    // 打印字符串
+    @println("Hello");      // 输出: Hello
+
+    // 打印变量
+    const x: i32 = 100;
+    @println(x);            // 输出: 100
+
+    // 打印表达式
+    @println(x + 50);       // 输出: 150
+
+    // 打印浮点数
+    @println(3.14159);      // 输出: 3.14159
+
+    // 打印布尔值
+    @println(true);         // 输出: 1
+
+    return 0;
+}
+```
+
+### @print 与 @println
+
+- `@print(expr)` - 打印但不换行
+- `@println(expr)` - 打印并换行
+
+```uya
+fn main() i32 {
+    @print("Name: ");
+    @print("Uya");
+    @println("");           // 手动换行
+    // 输出: Name: Uya
+
+    @println("One line");   // 自动换行
+    return 0;
+}
+```
+
+### 字符串插值
+
+支持在字符串中嵌入表达式：
+
+```uya
+fn main() i32 {
+    const name: &byte = "World";
+    const count: i32 = 42;
+
+    @println("Hello, ${name}!");       // 输出: Hello, World!
+    @println("Count: ${count}");       // 输出: Count: 42
+    @println("Sum: ${count + 8}");     // 输出: Sum: 50
+    return 0;
+}
+```
+
+### 格式化输出
+
+支持十六进制、八进制和浮点精度格式：
+
+```uya
+fn main() i32 {
+    const num: i32 = 255;
+    const pi: f64 = 3.14159;
+
+    // 十六进制
+    @println("hex: ${num:#x}");        // 输出: hex: ff
+    @println("HEX: ${num:#X}");        // 输出: HEX: FF
+
+    // 八进制
+    @println("octal: ${num:#o}");      // 输出: octal: 377
+
+    // 浮点精度
+    @println("pi: ${pi:.2f}");         // 输出: pi: 3.14
+    @println("pi: ${pi:.4f}");         // 输出: pi: 3.1416
+
+    return 0;
+}
+```
+
+### 返回值
+
+`@print` 和 `@println` 返回 `i32` 类型（printf 的返回值），可用于检测输出错误：
+
+```uya
+fn main() i32 {
+    const result: i32 = @println("Hello");
+    if result < 0 {
+        // 输出错误
+        return 1;
+    }
+    return 0;
+}
+```
+
+### 不支持的类型
+
+自定义结构体和联合体不能直接打印：
+
+```uya
+struct Point { x: i32, y: i32 }
+
+fn main() i32 {
+    const p: Point = Point { x: 1, y: 2 };
+    // @println(p);  // ❌ 编译错误：该类型不支持 @print/@println
+
+    // 手动打印字段
+    @println("Point(${p.x}, ${p.y})");  // ✓ 正确
+    return 0;
+}
+```
+
+---
+
 ## 开发流程
 
 ### TDD 开发流程

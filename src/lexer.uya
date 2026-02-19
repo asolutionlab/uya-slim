@@ -749,7 +749,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
                         }
                         advance_char(lexer);
                         lexer.string_mode = 0;
-    lexer.raw_string_mode = 0;
+                        lexer.raw_string_mode = 0;
                         return make_token(arena, TokenType.TOKEN_STRING, value, lexer.line, lexer.column);
                     }
                     if lexer.string_text_len > 0 {
@@ -763,7 +763,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
                     }
                     advance_char(lexer);
                     lexer.string_mode = 0;
-    lexer.raw_string_mode = 0;
+                    lexer.raw_string_mode = 0;
                     lexer.has_seen_interp_in_string = 0;
                     return make_token(arena, TokenType.TOKEN_INTERP_END, null, lexer.line, lexer.column);
                 }
@@ -1057,13 +1057,16 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
             // 指针转换内置函数
             if str_equals_lexer(value, "ptr_from_usize" as &byte) != 0 { is_builtin = 1; }
             if str_equals_lexer(value, "usize_from_ptr" as &byte) != 0 { is_builtin = 1; }
+            // 打印内置函数（规范 §20）
+            if str_equals_lexer(value, "print" as &byte) != 0 { is_builtin = 1; }
+            if str_equals_lexer(value, "println" as &byte) != 0 { is_builtin = 1; }
             
             if is_builtin != 0 {
                 return make_token(arena, TokenType.TOKEN_AT_IDENTIFIER, value, line, column);
             }
             
             // 未知的内置函数
-            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@async_fn、@await、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@syscall、@ptr_from_usize、@usize_from_ptr\n" as *byte, value);
+            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@async_fn、@await、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@syscall、@ptr_from_usize、@usize_from_ptr、@print、@println\n" as *byte, value);
             return null;
         }
         return null;

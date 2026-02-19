@@ -115,6 +115,8 @@ enum ASTNodeType {
     AST_VA_START,       // @va_start(ap, last) - 可变参数函数内初始化 va_list
     AST_VA_END,        // @va_end(ap) - 结束 va_list 访问
     AST_VA_ARG,        // @va_arg(ap, Type) - 从 va_list 按类型获取下一个参数
+    AST_PRINT,          // @print(expr) - 打印表达式（不换行）
+    AST_PRINTLN,        // @println(expr) - 打印表达式并换行
     AST_TYPE_NAMED,
     AST_TYPE_POINTER,
     AST_TYPE_ARRAY,
@@ -386,6 +388,8 @@ struct ASTNode {
     // va_arg_expr
     va_arg_ap: &ASTNode,
     va_arg_arg_type: &ASTNode,
+    // print/println（@print/@println）
+    print_expr: &ASTNode,    // 要打印的表达式
     // type_atomic（atomic T）
     type_atomic_inner_type: &ASTNode,
 }
@@ -583,6 +587,7 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.va_end_ap = null;
     node.va_arg_ap = null;
     node.va_arg_arg_type = null;
+    node.print_expr = null;
     node.extern_var_decl_name = null;
     node.extern_var_decl_var_type = null;
     node.extern_var_decl_init_expr = null;
