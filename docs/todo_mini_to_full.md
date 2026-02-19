@@ -36,7 +36,7 @@
 | 22 | **类型别名（type）** | [x] 规范 §5.2、§24.6.2（v0.2.31 已完成，C 实现与 uya-src 已同步） |
 | 23 | **多维数组** | [x]（C 实现与 uya-src 已同步） |
 | 24 | **块注释** | [x]（C 实现与 uya-src 已同步，支持嵌套） |
-| 25 | **内存安全证明** | [x] 规范 §14（v0.48 已完成：约束系统+符号执行+区间分析+空指针检测+未初始化检测） |
+| 25 | **内存安全证明** | [x] 规范 §14（v0.48 已完成：约束系统+符号执行+区间分析+空指针检测+未初始化检测；v0.49 增强：交换律+线性表达式+const识别+错误去重） |
 | 26 | **并发安全** | [ ] 规范 §15（依赖原子类型） |
 | 27 | **接口组合** | [x]（C 实现与 uya-src 已同步，v0.2.30 已完成） |
 | 28 | **源代码位置内置函数** | [x]（@src_name/@src_path/@src_line/@src_col/@func_name，v0.2.31 已完成） |
@@ -1773,12 +1773,23 @@ struct Matrix { data: [[f32: 4]: 4] }
   - [x] 未初始化使用检测（is_initialized 字段）
   - [x] 空指针解引用检测（pointer_nullable_add, pointer_is_known_nonnull）
   - [x] 证明超时机制（proof_step_limit, proof_step_count）
+  - [x] 约束系统增强（v0.49）：
+    - [x] 交换律支持：`10 > i` → `i < 10`
+    - [x] 线性表达式支持：`i + offset < n` → `i < n - offset`
+    - [x] const 变量识别：`const N = 10; if i < N { ... }`
+    - [x] 错误去重：同一 `(变量名, 数组大小)` 只报告一次
 - [x] **测试验证**：
   - [x] error_null_deref.uya - 空指针解引用检测
   - [x] error_uninitialized_var.uya - 未初始化变量检测
   - [x] test_array_bounds.uya - 数组边界测试
   - [x] test_null_comprehensive.uya - null 处理测试
-|- [x] **Codegen**：不需要实现
+  - [x] test_array_bounds.uya 新增测试（v0.49）：
+    - [x] test_swapped_comparison - 交换律测试
+    - [x] test_linear_expr - 线性表达式测试
+    - [x] test_else_branch - else 分支约束测试
+    - [x] test_const_bounds - const 变量边界测试
+    - [x] test_multi_access - 多次访问合并证明测试
+- [x] **Codegen**：不需要实现
   - Uya 编译期证明失败直接报错，不生成运行时检查，无冗余检查需消除
 - [ ] **uya-src 同步**
 
