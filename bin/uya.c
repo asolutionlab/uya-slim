@@ -4597,6 +4597,7 @@ static __attribute__((unused)) int32_t compile_files(int32_t * input_file_indice
 }
 
 
+
 static __attribute__((unused)) size_t align_size(size_t size, size_t align) {
     (void)size;
     (void)align;
@@ -10599,6 +10600,7 @@ static __attribute__((unused)) struct Type type_from_ast(struct TypeChecker * ch
     struct Type _uya_ret = result;
     return _uya_ret;
 }
+
 
 static __attribute__((unused)) int32_t was_error_reported(uint8_t * var_name, int32_t array_size) {
     (void)var_name;
@@ -20978,6 +20980,8 @@ static __attribute__((unused)) struct ASTNode * parser_parse_type(struct Parser 
     struct ASTNode * _uya_ret = NULL;
     return _uya_ret;
 }
+
+
 
 static __attribute__((unused)) uint8_t * remove_underscores(uint8_t * str, struct Arena * arena) {
     (void)str;

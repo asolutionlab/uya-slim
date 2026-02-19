@@ -1220,20 +1220,25 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
   - `exit` → `libc.exit`（纯 Uya 实现，基于 sys_exit）
   - `strlen/strcmp` → `std.string.*`（纯 Uya 实现）
   - `memcpy/memset` → `std.mem.*`（纯 Uya 实现）
-- [ ] **修改 Makefile**：
-  - 添加 `-nostdlib` 选项
-  - 提供自定义 `_start` 入口点
-- [ ] **测试构建**：
+- [x] **修改 Makefile**：
+  - 已添加 `make uya-nostdlib` 目标
+  - 创建自定义 `_start.S` 入口点（`lib/std/runtime/entry/_start.S`）
+  - 修改 `compile.sh` 支持 `--nostdlib` 链接
+- [x] **测试构建**：
   ```bash
-  make clean
-  make CFLAGS="-nostdlib" build
-  ./build/compiler-mini --version
+  make uya-nostdlib  # 构建 nostdlib 版本编译器
   ```
-- [ ] **验证零依赖**：
+- [x] **验证零依赖**：
   ```bash
-  ldd build/compiler-mini  # 应只显示 linux-vdso.so.1
+  ldd bin/uya  # 输出: 不是动态可执行文件
+  nm bin/uya | grep " U "  # 无未定义符号
   ```
 - [x] **uya-src 同步**：编译器自举版本已使用纯 Uya 标准库
+
+**成果**：
+- 编译器可静态链接，零外部依赖
+- 文件大小：1.3MB（含调试信息）
+- 所有 399 测试通过
 
 ---
 

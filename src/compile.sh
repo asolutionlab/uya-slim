@@ -441,6 +441,8 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                 if [ "$USE_NOSTDLIB" = true ]; then
                     # --nostdlib 模式：编译 .c 为 .o 后链接
                     UYA_O="$BUILD_DIR/uya.o"
+                    START_S="$REPO_ROOT/lib/std/runtime/entry/_start.S"
+                    START_O="$BUILD_DIR/_start.o"
 
                     if [ "$VERBOSE" = true ]; then
                         echo "编译 $OUTPUT_FILE -> $UYA_O"
@@ -451,16 +453,29 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                         exit 1
                     fi
 
-                    # 获取 crt 文件路径
-                    CRT1="$(gcc -print-file-name=crt1.o)"
+                    # 编译自定义启动代码
+                    if [ -f "$START_S" ]; then
+                        if [ "$VERBOSE" = true ]; then
+                            echo "编译 $START_S -> $START_O"
+                        fi
+                        if ! gcc -c "$START_S" -o "$START_O" 2>&1; then
+                            echo -e "${RED}✗ 编译 _start.S 失败${NC}"
+                            exit 1
+                        fi
+                    else
+                        echo -e "${RED}✗ 找不到启动代码: $START_S${NC}"
+                        exit 1
+                    fi
+
+                    # 获取 crt 文件路径（仅 crti.o 和 crtn.o，不使用 crt1.o）
                     CRTI="$(gcc -print-file-name=crti.o)"
                     CRTN="$(gcc -print-file-name=crtn.o)"
 
-                    # 链接（不使用 libc 和 libgcc，完全自包含）
+                    # 链接（不使用 libc 和 libgcc，使用自定义 _start）
                     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
+                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRTI\" \"$START_O\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
                     else
-                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
+                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRTI\" \"$START_O\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
                     fi
                 else
                     # 普通模式：直接编译链接（stderr 使用 libc.stderr，无需 get_stderr 桥接）
