@@ -79,8 +79,12 @@ lib/
 │   ├── string/                   # 字符串操作（Sprint 8）
 │   │   └── string.uya            # 安全字符串函数
 │   │
-│   ├── mem/                      # 内存操作
-│   │   └── mem.uya               # copy, set, cmp
+│   ├── mem/                      # 内存操作（Sprint 6）
+│   │   ├── mem.uya               # copy, set, cmp
+│   │   ├── allocator.uya         # IAllocator 接口
+│   │   ├── heap.uya              # HeapAllocator
+│   │   ├── arena.uya             # ArenaAllocator
+│   │   └── fixed_buf.uya         # FixedBufferAllocator
 │   │
 │   ├── collections/              # 泛型容器（Sprint 9）
 │   │   ├── vec.uya               # Vec<T>
@@ -198,6 +202,318 @@ interface Hash {
 // Display - 格式化显示
 interface Display {
     fn fmt(self: &Self, writer: &Writer) !void;
+}
+```
+
+### 6.5 std.mem.allocator - Zig 风格 IAllocator ⭐⭐⭐⭐⭐
+
+**设计理念**：借鉴 Zig 的分配器设计，提供可插拔、类型安全的内存分配接口。
+
+**核心原则**：
+1. **显式传递分配器**：避免全局状态，分配器作为参数传递
+2. **错误联合返回**：使用 `!T` 处理分配失败
+3. **多种分配器实现**：支持不同场景（堆、Arena、固定缓冲区）
+4. **零抽象开销**：接口编译为直接调用，无虚表开销
+
+```uya
+// std/mem/allocator.uya
+
+/// 分配错误类型
+union AllocError {
+    None,
+    OutOfMemory,           // 内存不足
+    InvalidAlignment,      // 无效对齐要求
+    InvalidPointer,        // 无效指针（释放/调整大小时）
+}
+
+/// Zig 风格分配器接口
+interface IAllocator {
+    /// 分配 size 字节内存，失败返回错误
+    fn alloc(self: &Self, size: usize) !&void;
+    
+    /// 分配并清零
+    fn alloc_zeroed(self: &Self, size: usize) !&void;
+    
+    /// 释放内存
+    fn free(self: &Self, ptr: &void) void;
+    
+    /// 调整内存大小（可选实现）
+    fn resize(self: &Self, ptr: &void, old_size: usize, new_size: usize) !&void;
+    
+    /// 创建单个对象
+    fn create<T>(self: &Self) !&T;
+    
+    /// 销毁单个对象
+    fn destroy<T>(self: &Self, ptr: &T) void;
+}
+```
+
+### 6.6 std.mem.heap - HeapAllocator
+
+```uya
+// std/mem/heap.uya
+
+/// 全局堆分配器 - 基于 mmap/munmap 系统调用
+struct HeapAllocator : IAllocator {
+    fn alloc(self: &Self, size: usize) !&void {
+        // 调用 syscall.mmap
+        const ptr: !&void = syscall.mmap(
+            null,                           // addr: 让内核选择
+            size + @size_of(usize),         // 额外存储大小
+            syscall.PROT_READ | syscall.PROT_WRITE,
+            syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS,
+            -1,                             // fd
+            0                               // offset
+        );
+        if ptr is error { return AllocError.OutOfMemory; }
+        
+        // 在块头存储大小（用于 free）
+        const header: &usize = ptr as &usize;
+        *header = size + @size_of(usize);
+        return (ptr as &usize + 1) as &void;  // 跳过头部
+    }
+    
+    fn free(self: &Self, ptr: &void) void {
+        // 从头部获取实际起始地址和大小
+        const header: &usize = (ptr as &usize - 1) as &usize;
+        const actual_size: usize = *header;
+        syscall.munmap(header as &void, actual_size);
+    }
+    
+    fn create<T>(self: &Self) !&T {
+        const ptr: !&void = self.alloc(@size_of(T));
+        if ptr is error { return error; }
+        return ptr as &T;
+    }
+    
+    fn destroy<T>(self: &Self, ptr: &T) void {
+        self.free(ptr as &void);
+    }
+}
+
+/// 全局堆分配器实例
+const heap_allocator: HeapAllocator = HeapAllocator{};
+
+/// 便捷函数（使用全局堆分配器）
+export fn alloc(size: usize) !&void { return heap_allocator.alloc(size); }
+export fn alloc_zeroed(size: usize) !&void { return heap_allocator.alloc_zeroed(size); }
+export fn free(ptr: &void) void { heap_allocator.free(ptr); }
+export fn create<T>() !&T { return heap_allocator.create<T>(); }
+export fn destroy<T>(ptr: &T) void { heap_allocator.destroy<T>(ptr); }
+```
+
+### 6.7 std.mem.arena - ArenaAllocator
+
+```uya
+// std/mem/arena.uya
+
+/// Arena 分配器 - 线性分配，批量释放
+/// 适用于：临时计算、解析器、编译器中间数据
+struct ArenaAllocator : IAllocator {
+    buffer: &[u8],
+    offset: usize,
+    
+    fn init(buf: &[u8]) ArenaAllocator {
+        return ArenaAllocator{ buffer: buf, offset: 0 };
+    }
+    
+    fn alloc(self: &Self, size: usize) !&void {
+        // 对齐到 8 字节
+        const aligned_size: usize = (size + 7) & ~7;
+        
+        if self.offset + aligned_size > self.buffer.len {
+            return AllocError.OutOfMemory;
+        }
+        
+        const ptr: &void = &self.buffer[self.offset] as &void;
+        self.offset += aligned_size;
+        return ptr;
+    }
+    
+    fn alloc_zeroed(self: &Self, size: usize) !&void {
+        const ptr: !&void = self.alloc(size);
+        if ptr is error { return error; }
+        std.mem.set(ptr as &byte, 0, size);
+        return ptr;
+    }
+    
+    fn free(self: &Self, ptr: &void) void {
+        // Arena 不支持单独释放 - 使用 reset 批量释放
+    }
+    
+    /// 重置 arena（释放所有分配）
+    fn reset(self: &Self) void {
+        self.offset = 0;
+    }
+    
+    /// 获取已使用字节数
+    fn used(self: &Self) usize {
+        return self.offset;
+    }
+    
+    /// 获取剩余字节数
+    fn remaining(self: &Self) usize {
+        return self.buffer.len - self.offset;
+    }
+}
+```
+
+### 6.8 std.mem.fixed_buf - FixedBufferAllocator
+
+```uya
+// std/mem/fixed_buf.uya
+
+/// 固定缓冲区分配器 - 栈上分配，零堆开销
+/// 适用于：嵌入式系统、实时系统、避免动态分配
+struct FixedBufferAllocator : IAllocator {
+    buffer: &[u8],
+    offset: usize,
+    
+    fn init(buf: &[u8]) FixedBufferAllocator {
+        return FixedBufferAllocator{ buffer: buf, offset: 0 };
+    }
+    
+    fn alloc(self: &Self, size: usize) !&void {
+        const aligned_size: usize = (size + 7) & ~7;
+        
+        if self.offset + aligned_size > self.buffer.len {
+            return AllocError.OutOfMemory;
+        }
+        
+        const ptr: &void = &self.buffer[self.offset] as &void;
+        self.offset += aligned_size;
+        return ptr;
+    }
+    
+    fn free(self: &Self, ptr: &void) void {
+        // 固定缓冲区不支持单独释放
+    }
+    
+    /// 重置缓冲区
+    fn reset(self: &Self) void {
+        self.offset = 0;
+    }
+}
+
+/// 栈上分配示例
+fn stack_example() void {
+    var buf: [4096]u8;
+    var arena: ArenaAllocator = ArenaAllocator.init(buf[0..]);
+    
+    // 使用 arena 分配临时数据
+    const temp: !&byte = arena.alloc(100);
+    
+    // ... 使用 temp ...
+    
+    // 函数返回时 buf 在栈上自动释放，无需手动 free
+}
+```
+
+### 6.9 std.mem.logging - LoggingAllocator
+
+```uya
+// std/mem/logging.uya
+
+/// 日志分配器 - 包装器，记录所有分配操作（调试用）
+struct LoggingAllocator : IAllocator {
+    child: &IAllocator,
+    name: &const byte,
+    alloc_count: usize,
+    free_count: usize,
+    total_bytes: usize,
+    
+    fn init(child: &IAllocator, name: &const byte) LoggingAllocator {
+        return LoggingAllocator{
+            child: child,
+            name: name,
+            alloc_count: 0,
+            free_count: 0,
+            total_bytes: 0
+        };
+    }
+    
+    fn alloc(self: &Self, size: usize) !&void {
+        @print("[");
+        @print(self.name);
+        @print("] alloc ");
+        @println(size);
+        
+        const ptr: !&void = self.child.alloc(size);
+        if ptr is not error {
+            self.alloc_count += 1;
+            self.total_bytes += size;
+        }
+        return ptr;
+    }
+    
+    fn free(self: &Self, ptr: &void) void {
+        @print("[");
+        @print(self.name);
+        @print("] free\n");
+        
+        self.free_count += 1;
+        self.child.free(ptr);
+    }
+    
+    /// 打印统计信息
+    fn print_stats(self: &Self) void {
+        @print("[");
+        @print(self.name);
+        @print("] stats: allocs=");
+        @print(self.alloc_count);
+        @print(" frees=");
+        @print(self.free_count);
+        @print(" bytes=");
+        @println(self.total_bytes);
+    }
+}
+```
+
+### 6.10 分配器使用模式
+
+```uya
+// 1. 显式传递分配器（推荐）
+fn Vec<T>.with_capacity(alloc: &IAllocator, cap: usize) !Vec<T> {
+    return Vec<T>{
+        data: alloc.alloc(cap * @size_of(T)) as &T,
+        len: 0,
+        cap: cap,
+        allocator: alloc
+    };
+}
+
+// 2. 使用 arena 进行临时分配
+fn parse_expression(arena: &ArenaAllocator, tokens: &[Token]) !Expr {
+    // 所有临时数据都在 arena 上分配
+    const temp: &byte = arena.alloc(1024)!;
+    // ...
+    // 不需要手动释放，调用者会 reset arena
+}
+
+// 3. 混合使用多个分配器
+fn process_file(path: &const byte) !void {
+    // 临时数据用 arena
+    var arena_buf: [65536]u8;
+    var arena: ArenaAllocator = ArenaAllocator.init(arena_buf[0..]);
+    
+    // 长期数据用堆
+    const result: !&Result = heap_allocator.create<Result>();
+    
+    // 处理...
+    parse_with_arena(&arena, path);
+    
+    // arena 自动释放，result 需要手动释放
+    heap_allocator.destroy(result);
+}
+
+// 4. 嵌入式系统（无堆）
+fn embedded_main() void {
+    // 只使用固定缓冲区，无动态分配
+    var buf: [8192]u8;
+    var alloc: FixedBufferAllocator = FixedBufferAllocator.init(buf[0..]);
+    
+    const data: !&Config = alloc.create<Config>();
+    // ...
 }
 ```
 

@@ -1126,6 +1126,143 @@ lib/
   }
   ```
 
+- [ ] **std.mem.allocator** - Zig 风格 IAllocator 接口（v0.6.0 重点）⭐⭐⭐⭐⭐
+  
+  **设计理念**：借鉴 Zig 的分配器设计，提供可插拔、类型安全的内存分配接口。
+  
+  ```uya
+  // std/mem/allocator.uya
+  
+  /// 分配错误类型
+  union AllocError {
+      None,
+      OutOfMemory,           // 内存不足
+      InvalidAlignment,      // 无效对齐要求
+      InvalidPointer,        // 无效指针（释放/调整大小时）
+  }
+  
+  /// Zig 风格分配器接口
+  /// 设计原则：显式传递分配器，避免全局状态
+  interface IAllocator {
+      /// 分配 size 字节内存，返回 null 表示失败
+      /// 对齐：默认按 usize 大小对齐
+      fn alloc(self: &Self, size: usize) !&void;
+      
+      /// 分配并清零
+      fn alloc_zeroed(self: &Self, size: usize) !&void;
+      
+      /// 释放内存
+      fn free(self: &Self, ptr: &void) void;
+      
+      /// 调整内存大小（可选，返回 null 表示需要手动 alloc+copy+free）
+      fn resize(self: &Self, ptr: &void, old_size: usize, new_size: usize) !&void;
+      
+      /// 创建单个对象（分配 + 构造）
+      fn create<T>(self: &Self) !&T;
+      
+      /// 销毁单个对象（析构 + 释放）
+      fn destroy<T>(self: &Self, ptr: &T) void;
+  }
+  
+  /// 全局堆分配器（默认实现）
+  struct HeapAllocator : IAllocator {
+      fn alloc(self: &Self, size: usize) !&void {
+          // 调用 syscall.mmap
+      }
+      fn free(self: &Self, ptr: &void) void {
+          // 调用 syscall.munmap
+      }
+  }
+  
+  /// 全局分配器实例
+  const heap_allocator: HeapAllocator = HeapAllocator{};
+  
+  /// 便捷函数（使用全局分配器）
+  fn alloc(size: usize) !&void { return heap_allocator.alloc(size); }
+  fn free(ptr: &void) void { heap_allocator.free(ptr); }
+  ```
+  
+  **内置分配器实现**：
+  
+  ```uya
+  /// Arena 分配器 - 线性分配，批量释放
+  struct ArenaAllocator : IAllocator {
+      buffer: &[u8],
+      offset: usize,
+      
+      fn alloc(self: &Self, size: usize) !&void {
+          if self.offset + size > self.buffer.len {
+              return AllocError.OutOfMemory;
+          }
+          const ptr: &void = self.buffer[self.offset] as &void;
+          self.offset += size;
+          return ptr;
+      }
+      
+      /// 重置 arena（释放所有分配）
+      fn reset(self: &Self) void {
+          self.offset = 0;
+      }
+      
+      /// Arena 不支持单独 free
+      fn free(self: &Self, ptr: &void) void { /* no-op */ }
+  }
+  
+  /// 固定缓冲区分配器 - 栈上分配，零堆开销
+  struct FixedBufferAllocator : IAllocator {
+      buffer: &[u8],
+      offset: usize,
+      
+      fn init(buf: &[u8]) FixedBufferAllocator {
+          return FixedBufferAllocator{ buffer: buf, offset: 0 };
+      }
+  }
+  
+  /// 日志分配器 - 包装器，记录所有分配操作
+  struct LoggingAllocator : IAllocator {
+      child: &IAllocator,
+      name: &const byte,
+      
+      fn alloc(self: &Self, size: usize) !&void {
+          @print("alloc: ");
+          @print(self.name);
+          @print(" size=");
+          @println(size);
+          return self.child.alloc(size);
+      }
+  }
+  ```
+  
+  **使用示例**：
+  
+  ```uya
+  // 显式传递分配器
+  fn Vec<T>.with_capacity(alloc: &IAllocator, cap: usize) !Vec<T> {
+      return Vec<T>{
+          data: alloc.alloc(cap * @size_of(T)) as &T,
+          len: 0,
+          cap: cap,
+          allocator: alloc
+      };
+  }
+  
+  // 使用 arena 进行临时分配
+  fn process_data(arena: &ArenaAllocator) !void {
+      const temp: &byte = arena.alloc(1024);
+      // ... 使用 temp ...
+      arena.reset();  // 批量释放
+  }
+  
+  // 栈上分配
+  fn stack_example() void {
+      var buf: [4096]u8;
+      var arena: ArenaAllocator = ArenaAllocator.init(buf[0..]);
+      // 使用 arena 分配临时数据
+      const temp: &byte = arena.alloc(100)!;
+      // 函数返回时 buf 在栈上自动释放
+  }
+  ```
+
 ### 19.0.3 Sprint 7: std.io I/O 抽象层（1 周）⭐⭐⭐⭐
 
 **目标**：使用 interface 定义 I/O 抽象
@@ -1550,6 +1687,9 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 | 6 | `std.core.option` | Option<T> 类型 | [ ] |
 | 6 | `std.core.result` | Result<T, E> 类型 | [ ] |
 | 6 | `std.core.traits` | Clone/Eq/Ord/Hash/Display | [ ] |
+| 6 | `std.mem.allocator` | Zig 风格 IAllocator 接口 ⭐ | [ ] |
+| 6 | `std.mem.arena` | ArenaAllocator | [ ] |
+| 6 | `std.mem.fixed_buf` | FixedBufferAllocator | [ ] |
 | 7 | `std.io.writer` | Writer 接口 | [ ] |
 | 7 | `std.io.reader` | Reader 接口 | [ ] |
 | 7 | `std.io.file` | File 实现（重构） | [ ] |
