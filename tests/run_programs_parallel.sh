@@ -261,30 +261,33 @@ run_single_test() {
     EXTRA_C_FFI="$SCRIPT_DIR/external_functions.c"
     EXTRA_C_ABI="$SCRIPT_DIR/test_abi_helpers.c"
     
-    # 检测是否使用 std.runtime.entry（有 main 入口）
-    uses_std_runtime_entry=false
-    grep -q "use.*std\.runtime\.entry" "$uya_file" 2>/dev/null && uses_std_runtime_entry=true || true
+    # 检测生成的 C 代码是否包含 main 函数
+    # 编译器已自动处理 test "..." 和 export fn main 的检测
+    has_main=false
+    if grep -q "int main(" "$output_file" 2>/dev/null || grep -q "int32_t main(" "$output_file" 2>/dev/null; then
+        has_main=true
+    fi
     
     if [ "$base_name" = "extern_function" ]; then
-        if [ "$uses_std_runtime_entry" = true ]; then
+        if [ "$has_main" = true ]; then
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" 2>/dev/null && link_succeeded=true
         else
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
         fi
     elif [ "$base_name" = "test_comprehensive_cast" ] || [ "$base_name" = "test_ffi_cast" ] || [ "$base_name" = "test_pointer_cast" ] || [ "$base_name" = "test_simple_cast" ] || [ "$base_name" = "test_extern_union" ]; then
-        if [ "$uses_std_runtime_entry" = true ]; then
+        if [ "$has_main" = true ]; then
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" 2>/dev/null && link_succeeded=true
         else
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
         fi
     elif [ "$base_name" = "test_abi_calling_convention" ]; then
-        if [ "$uses_std_runtime_entry" = true ]; then
+        if [ "$has_main" = true ]; then
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" 2>/dev/null && link_succeeded=true
         else
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
         fi
     else
-        if [ "$uses_std_runtime_entry" = true ]; then
+        if [ "$has_main" = true ]; then
             # 有 main 入口，直接链接
             gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
         else

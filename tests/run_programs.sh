@@ -193,16 +193,14 @@ process_multifile_test() {
     link_succeeded=false
     BRIDGE_TEST="$SCRIPT_DIR/bridge_test.c"
     
-    # 检测是否使用 std.runtime.entry（有 main 入口）
-    uses_std_runtime_entry=false
-    for uya_file in "${file_list[@]}"; do
-        if grep -q "use.*std\.runtime\.entry" "$uya_file" 2>/dev/null; then
-            uses_std_runtime_entry=true
-            break
-        fi
-    done
+    # 检测生成的 C 代码是否包含 main 函数
+    # 编译器已自动处理 test "..." 和 export fn main 的检测
+    has_main=false
+    if grep -q "int main(" "$output_file" 2>/dev/null || grep -q "int32_t main(" "$output_file" 2>/dev/null; then
+        has_main=true
+    fi
     
-    if [ "$uses_std_runtime_entry" = true ]; then
+    if [ "$has_main" = true ]; then
         # 有 main 入口，直接链接
         if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$build_subdir/$test_name" "$output_file"; then
             link_succeeded=true
@@ -479,30 +477,33 @@ process_single_test() {
     link_succeeded=false
     BRIDGE_TEST="$SCRIPT_DIR/bridge_test.c"
     
-    # 检测是否使用 std.runtime.entry（有 main 入口）
-    uses_std_runtime_entry=false
-    grep -q "use.*std\.runtime\.entry" "$uya_file" 2>/dev/null && uses_std_runtime_entry=true || true
+    # 检测生成的 C 代码是否包含 main 函数
+    # 编译器已自动处理 test "..." 和 export fn main 的检测
+    has_main=false
+    if grep -q "int main(" "$output_file" 2>/dev/null || grep -q "int32_t main(" "$output_file" 2>/dev/null; then
+        has_main=true
+    fi
     
     if [ "$base_name" = "extern_function" ]; then
-        if [ "$uses_std_runtime_entry" = true ]; then
+        if [ "$has_main" = true ]; then
             gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/extern_function_impl.c" 2>/dev/null && link_succeeded=true
         else
             gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/extern_function_impl.c" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
         fi
     elif [ "$base_name" = "test_comprehensive_cast" ] || [ "$base_name" = "test_ffi_cast" ] || [ "$base_name" = "test_pointer_cast" ] || [ "$base_name" = "test_simple_cast" ] || [ "$base_name" = "test_extern_union" ]; then
-        if [ "$uses_std_runtime_entry" = true ]; then
+        if [ "$has_main" = true ]; then
             gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/external_functions.c" 2>/dev/null && link_succeeded=true
         else
             gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/external_functions.c" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
         fi
     elif [ "$base_name" = "test_abi_calling_convention" ]; then
-        if [ "$uses_std_runtime_entry" = true ]; then
+        if [ "$has_main" = true ]; then
             gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/test_abi_helpers.c" 2>/dev/null && link_succeeded=true
         else
             gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$TEST_DIR/test_abi_helpers.c" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
         fi
     else
-        if [ "$uses_std_runtime_entry" = true ]; then
+        if [ "$has_main" = true ]; then
             gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
         else
             gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true

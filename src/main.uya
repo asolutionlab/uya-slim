@@ -1356,20 +1356,24 @@ fn compile_files(
         return 1;
     }
     
-    // 检测是否有 export fn main，如果有则自动添加 entry.uya
+    // 检测是否有 export fn main 或 test 语句，如果有则自动添加 entry.uya
+    // 返回值：0=无main/test，1=fn main 或 test，2=export fn main
     var has_export_main: i32 = 0;
+    var has_test_stmt: i32 = 0;
     i = 0;
     while i < resolved_count {
         const main_type: i32 = detect_main_function(resolved_files[i]);
         if main_type == 2 {
             has_export_main = 1;
-            break;
+        } else if main_type == 1 {
+            has_test_stmt = 1;
         }
         i = i + 1;
     }
     
-    // 如果有 export fn main，自动添加 std.runtime.entry
-    if has_export_main != 0 {
+    // 如果有 export fn main 或 test 语句（但没有 export fn main），自动添加 std.runtime.entry
+    // test 模式下需要 entry.uya 来提供 C main 入口
+    if has_export_main != 0 || has_test_stmt != 0 {
         var entry_path: [byte: PATH_MAX] = [];
         const entry_len: i32 = snprintf(&entry_path[0], PATH_MAX, "%sstd/runtime/entry/entry.uya" as *byte, &uya_root_buffer[0] as *byte);
         if entry_len > 0 && entry_len < PATH_MAX {

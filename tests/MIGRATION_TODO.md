@@ -56,9 +56,9 @@ uya test tests.uya -v
 |------|------|------|
 | Phase 0 | 设计规划 | ✅ 完成 |
 | Phase 1 | 编译器子命令支持 (`build`/`run`/`test`) | ✅ 完成 |
-| Phase 2 | 自动生成 main 函数 (test 模式) | 📋 待开始 |
+| Phase 2 | 自动生成 main 函数 (test 模式) | ✅ 完成 |
 | Phase 3 | 测试文件迁移到 `test "xxx" {}` 格式 | 📋 待开始 |
-| Phase 4 | 移除手动 `use std.runtime.entry` | 📋 待开始 |
+| Phase 4 | 移除手动 `use std.runtime.entry` | ✅ 完成 |
 | Phase 5 | 验证与清理 | 📋 待开始 |
 
 ## 当前进度（旧格式迁移）
@@ -431,3 +431,9 @@ std.runtime：
 - 2026-02-19: 添加新测试框架设计（`--test` 模式），Phase 0 进行中
 - 2026-02-19: 更新进度（302/391，77%）
 - 2026-02-15: 创建文档，已迁移 159 个文件
+
+- 2026-02-19: Phase 2 & 4 完成
+  - 编译器自动检测 `test "..."` 和 `export fn main`
+  - 自动添加 `std.runtime.entry`（无需手动 use）
+  - 测试脚本改为检测生成的 C 代码中的 main 函数
+  - `test "name" {}` 块自动生成 `main_main()` 调用测试运行器

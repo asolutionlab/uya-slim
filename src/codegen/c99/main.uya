@@ -1759,15 +1759,15 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     }
     
     // 第十一步：生成 main 函数（uya_main）
-    // 如果没有 main 函数但有 test 语句，生成 uya_main 调用测试运行器
-    var has_main: i32 = 0;  // 跟踪是否找到 main 函数
+    // 如果没有用户 main 函数但有 test 语句，生成 main_main 调用测试运行器
+    // 注意：has_main 只计算用户提供的 main（非 export extern），不包括 std.runtime.entry 的 C main
+    var has_user_main: i32 = 0;  // 跟踪是否找到用户 main 函数
     i = 0;
     while i < decl_count {
         const decl: &ASTNode = ast.program_decls[i];
         if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
             const func_name: &byte = decl.fn_decl_name;
             if func_name != null && strcmp(func_name as *byte, "main" as *byte) == 0 && decl.fn_decl_body != null {
-                has_main = 1;  // 标记找到 main 函数
                 const is_export: i32 = decl.fn_decl_is_export;
                 const is_extern_keyword: i32 = decl.fn_decl_is_extern;  // extern 关键字（含 export extern fn main）
                 var is_c_main: i32 = 0;
@@ -1777,6 +1777,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 var is_app_main: i32 = 0;
                 if is_export != 0 && is_extern_keyword == 0 {
                     is_app_main = 1;
+                }
+                // 只有用户 main 才计入 has_user_main（排除 C main）
+                if is_c_main == 0 {
+                    has_user_main = 1;
                 }
                 emit_line_directive(codegen, decl.line, decl.filename);
                 const return_c: &byte = convert_array_return_type(codegen, decl.fn_decl_return_type);
@@ -1838,9 +1842,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         i = i + 1;
     }
     
-    // 如果没有 main 函数但有 test 语句，生成 uya_main 调用测试运行器
-    if has_main == 0 && test_count > 0 {
-        fputs("int32_t uya_main(void) {\n" as *byte, codegen.output as *void);
+    // 如果没有用户 main 函数但有 test 语句，生成 main_main 调用测试运行器
+    // std.runtime.entry 的 main 会调用 main_main()
+    if has_user_main == 0 && test_count > 0 {
+        fputs("int32_t main_main(void) {\n" as *byte, codegen.output as *void);
         fputs("    uya_run_tests();\n" as *byte, codegen.output as *void);
         fputs("    return 0;\n" as *byte, codegen.output as *void);
         fputs("}\n" as *byte, codegen.output as *void);
