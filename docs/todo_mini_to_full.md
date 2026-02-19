@@ -1242,41 +1242,23 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 
 ---
 
-#### Sprint 5: --outlibc 功能（1 周）⭐⭐⭐
+#### Sprint 5: --outlibc 功能（1 周）⭐⭐⭐ ✅ 已完成
 
 **任务清单**：
-- [ ] **编译器选项**：
+- [x] **编译器选项**：
   - 新增 `--outlibc <path>` 命令行参数
   - 解析参数，设置输出路径
-- [ ] **代码生成逻辑**：
-  - 收集所有 `std/c/*.uya` 模块
+- [x] **代码生成逻辑**：
   - 生成 `libuya.h`（头文件）：
-    - 零依赖类型定义（`typedef signed char int8_t;`）
-    - 所有导出函数声明
+    - 零依赖类型定义（int8_t, uint8_t, int16_t, uint16_t, int32_t, uint32_t, int64_t, uint64_t, size_t, ssize_t）
+    - syscall 内联函数（x86-64）
+    - 所有导出函数声明（string/mem/stdio/stdlib/unistd 模块）
   - 生成 `libuya.c`（实现文件）：
     - `#include "libuya.h"`
     - 所有模块的函数实现
     - 按模块分段注释
-- [ ] **测试脚本**：
-  - `test_outlibc_basic.sh`（生成 libuya.c/h）
-  - `test_outlibc_compile.sh`（编译库）
-    ```bash
-    ./compiler-mini --outlibc /tmp/libuya std/c
-    gcc -c /tmp/libuya.c -o /tmp/libuya.o
-    ```
-  - `test_outlibc_usage.c`（C 项目使用示例）
-    ```c
-    #include "libuya.h"
-    int main() {
-        puts("Hello from libuya!");
-        return 0;
-    }
-    ```
-  - `test_outlibc_freestanding.sh`（freestanding 模式）
-    ```bash
-    gcc -nostdlib -ffreestanding test_usage.c libuya.c -lgcc -o test
-    ./test
-    ```
+- [x] **测试脚本**：
+  - `tests/test_outlibc.sh`（生成 libuya.c/h、编译验证、freestanding 测试）
 
 ---
 
@@ -1288,6 +1270,7 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 - [x] `std.c.string` - 字符串和内存操作（v0.3.0，位于 `lib/std/c/string/string.uya`）
 - [x] `std.c.stdio` - 标准 I/O（v0.3.0，位于 `lib/std/c/stdio/stdio.uya`）
 - [~] `std.c.stdlib` - 内存分配、进程控制（v0.3.x，已实现但需修复编译器 FFI 指针限制）
+- [x] `--outlibc` 功能 - 生成独立 libc（v0.3.0 Sprint 5 已完成）
 - [ ] `std.c.math` - 数学函数（纯 Uya，v0.3.x）
 - [ ] `std.io` - 同步 I/O 抽象层（Writer/Reader 接口，v0.4.0）
 - [ ] `std.fmt` - 格式化库（纯 Uya，v0.4.0）
@@ -2122,11 +2105,11 @@ interface IReadWriter {
   - ✅ 编译器状态报告（compiler_status.md）
 - ✅ 回归测试全部通过（393 个测试）
 
-### v0.3.0（进行中）- 标准库里程碑
+### v0.3.0（✅ 已完成）- 标准库里程碑
 - ✅ 标准库基础设施（Sprint 1-3：@syscall + std.c.{syscall,string,stdio}）
-|- ✅ @print/@println 内置函数（v0.5.7 已完成）
-- 🎯 编译器零外部依赖（-nostdlib 构建）
-- 🎯 --outlibc 生成独立 libc
+- ✅ @print/@println 内置函数（v0.5.7 已完成）
+- ✅ 编译器零外部依赖（-nostdlib 构建，Sprint 4 已完成）
+- ✅ --outlibc 生成独立 libc（Sprint 5 已完成）
 
 ### v0.4.0（目标：2026 Q2）- 异步里程碑
 |- ✅ 内存安全证明（v0.48 已完成：编译期证明+运行时检查可选）

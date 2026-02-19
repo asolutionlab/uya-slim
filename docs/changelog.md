@@ -8,6 +8,48 @@
 
 **发布日期：** 2026年2月19日
 
+### v0.5.9 - --outlibc 生成独立 libc
+
+本版本实现 `--outlibc` 功能，可生成零外部依赖的 libuya.c 和 libuya.h。
+
+#### 主要变更
+
+1. **--outlibc 命令**
+   - `uya --outlibc <目录>` 生成独立 C 库
+   - 生成 `libuya.h`（头文件）：类型定义、函数声明
+   - 生成 `libuya.c`（实现文件）：所有函数实现
+
+2. **零依赖类型定义**
+   - int8_t, uint8_t, int16_t, uint16_t, int32_t, uint32_t
+   - int64_t, uint64_t, size_t, ssize_t
+
+3. **包含的模块**
+   - syscall: uya_syscall0-6（x86-64 内联汇编）
+   - string: strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr
+   - mem: memcpy, memmove, memset, memcmp, memchr
+   - stdio: putchar, puts
+   - stdlib: exit, atoi, atol
+   - unistd: write, read, close
+
+#### 使用方法
+
+```bash
+# 生成 libuya 库
+uya --outlibc /tmp/libuya
+
+# 编译库
+gcc -c libuya.c -o libuya.o
+
+# freestanding 模式使用
+gcc -nostdlib -ffreestanding your_program.c libuya.o -o your_program -lgcc
+```
+
+#### 测试状态
+
+- 自举验证：✓ 通过
+- 单元测试：399/399 通过
+- Freestanding 测试：✓ 通过
+
 ### v0.5.8 - 编译器零依赖构建 & 约束证明增强
 
 本版本实现编译器完全静态链接（零外部依赖），并增强约束证明系统。
