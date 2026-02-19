@@ -6,20 +6,20 @@
 #   ./run_programs.sh                    # 运行所有测试
 #   ./run_programs.sh <文件或目录>        # 运行指定的测试文件或目录
 #   ./run_programs.sh test_file.uya      # 运行单个测试文件
-#   ./run_programs.sh tests/programs     # 运行指定目录下的所有测试
-#   ./run_programs.sh tests/programs/multifile  # 运行指定子目录的测试
+#   ./run_programs.sh tests              # 运行指定目录下的所有测试
+#   ./run_programs.sh tests/multifile    # 运行指定子目录的测试
 #
 # 快速验证单个测试（在项目根目录下执行）:
 #   ./tests/run_programs.sh --uya -e test_global_var.uya
-#   ./tests/run_programs.sh --uya tests/programs/test_global_var.uya
-#   仅传文件名时会在 tests/programs/ 下查找，例如 test_global_var.uya
+#   ./tests/run_programs.sh --uya tests/test_global_var.uya
+#   仅传文件名时会在 tests/ 下查找，例如 test_global_var.uya
 
 # 获取脚本所在目录的绝对路径，然后推导各路径
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 COMPILER="$REPO_ROOT/bin/uya-c"
-TEST_DIR="$SCRIPT_DIR/programs"
+TEST_DIR="$SCRIPT_DIR"
 BUILD_DIR="$TEST_DIR/build"
 PASSED=0
 FAILED=0
@@ -50,12 +50,12 @@ show_usage() {
     echo "  $0 -e                                 # 只显示失败的测试"
     echo "  $0 --c99                             # 使用 C99 后端运行所有测试"
     echo "  $0 --uya                              # 使用 src 编译的编译器运行所有测试"
-    echo "  # 指定单个文件可加快验证（文件名或相对 tests/programs 的路径均可）:"
-    echo "  $0 test_global_var.uya               # 运行单个测试（在 tests/programs 下查找）"
+    echo "  # 指定单个文件可加快验证（文件名或相对 tests 的路径均可）:"
+    echo "  $0 test_global_var.uya               # 运行单个测试（在 tests 下查找）"
     echo "  $0 --uya -e test_global_var.uya      # 用 uya 编译器只测该文件并仅显示失败信息"
-    echo "  $0 tests/programs/test_global_var.uya # 或写完整相对路径"
-    echo "  $0 tests/programs                     # 运行指定目录下的所有测试"
-    echo "  $0 tests/programs/multifile          # 运行指定子目录的测试"
+    echo "  $0 tests/test_global_var.uya         # 或写完整相对路径"
+    echo "  $0 tests                             # 运行指定目录下的所有测试"
+    echo "  $0 tests/multifile                   # 运行指定子目录的测试"
 }
 
 # 检查测试目录是否存在
@@ -498,11 +498,11 @@ process_single_test() {
     if [ "$base_name" = "extern_function" ]; then
             # 编译主程序和外部函数实现（需要链接 bridge.c）
             if [ -f "$BRIDGE_C" ]; then
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/programs/extern_function_impl.c "$BRIDGE_C"; then
+                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/extern_function_impl.c "$BRIDGE_C"; then
                     link_succeeded=true
                 fi
             else
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/programs/extern_function_impl.c; then
+                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/extern_function_impl.c; then
                     link_succeeded=true
                 fi
             fi
@@ -520,11 +520,11 @@ process_single_test() {
     elif [ "$base_name" = "test_abi_calling_convention" ]; then
             # 编译主程序和 ABI 辅助函数（需要链接 bridge.c）
             if [ -f "$BRIDGE_C" ]; then
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/programs/test_abi_helpers.c "$BRIDGE_C"; then
+                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/test_abi_helpers.c "$BRIDGE_C"; then
                     link_succeeded=true
                 fi
             else
-                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/programs/test_abi_helpers.c; then
+                if gcc -std=c99 -fno-builtin -o "$BUILD_DIR/$base_name" "$output_file" tests/test_abi_helpers.c; then
                     link_succeeded=true
                 fi
             fi
@@ -641,7 +641,7 @@ process_path() {
 
 # 如果指定了目标路径，只处理该路径
 if [ -n "$TARGET_PATH" ]; then
-    # 转换为绝对路径或相对于当前目录的路径；支持裸文件名（在 tests/programs 下查找）
+    # 转换为绝对路径或相对于当前目录的路径；支持裸文件名（在 tests 下查找）
     if [[ "$TARGET_PATH" != /* ]]; then
         if [ -f "$TARGET_PATH" ] || [ -d "$TARGET_PATH" ]; then
             TARGET_PATH=$(realpath "$TARGET_PATH" 2>/dev/null || echo "$TARGET_PATH")

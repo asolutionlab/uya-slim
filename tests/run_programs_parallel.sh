@@ -26,7 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 COMPILER="$REPO_ROOT/bin/uya-c"
-TEST_DIR="$SCRIPT_DIR/programs"
+TEST_DIR="$SCRIPT_DIR"
 BUILD_DIR="$TEST_DIR/build"
 ERRORS_ONLY=false
 USE_C99=true

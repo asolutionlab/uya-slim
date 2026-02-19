@@ -2,7 +2,7 @@
 # 对比 C 编译器与 Uya 编译器对同一 .uya 文件生成的 C 输出
 # 用法: ./tests/compare_compiler_output.sh [测试文件或目录]
 # 示例: ./tests/compare_compiler_output.sh test_struct_comparison.uya
-#       ./tests/compare_compiler_output.sh tests/programs
+#       ./tests/compare_compiler_output.sh tests
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,7 +11,7 @@ cd "$REPO_ROOT"
 
 C_COMPILER="$REPO_ROOT/bin/uya-c"
 UYA_COMPILER="$REPO_ROOT/bin/uya"
-TEST_DIR="$SCRIPT_DIR/programs"
+TEST_DIR="$SCRIPT_DIR"
 TMP_DIR="${TMPDIR:-/tmp}/uya_compare_$$"
 mkdir -p "$TMP_DIR"
 trap "rm -rf '$TMP_DIR'" EXIT

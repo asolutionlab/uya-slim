@@ -4,7 +4,7 @@
 set +e  # 不立即退出，继续处理所有文件
 
 SCRIPT_DIR="$(dirname "$0")"
-PROGRAMS_DIR="$SCRIPT_DIR/../tests/programs"
+PROGRAMS_DIR="$SCRIPT_DIR/../tests"
 SPEC_FILE="$SCRIPT_DIR/spec/UYA_MINI_SPEC.md"
 
 echo "========================================="

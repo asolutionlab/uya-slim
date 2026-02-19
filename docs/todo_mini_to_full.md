@@ -2,7 +2,7 @@
 
 基于 [compiler-c-spec/UYA_MINI_SPEC.md](compiler-c-spec/UYA_MINI_SPEC.md) 第 9 节「与完整 Uya 的区别」与项目根目录 [uya.md](uya.md) 完整规范对照。实现时按「建议实现顺序」执行，每项需同步更新 C 实现与 `uya-src/`，测试需同时通过 `--c99` 与 `--uya --c99`。
 
-**实现约定**：在编写编译器代码前，先在 `tests/programs/` 添加测试用例（如 `test_xxx.uya` 或预期编译失败的 `error_xxx.uya`），覆盖目标场景；实现后再跑 `--c99` 与 `--uya --c99` 验证，二者都通过才算通过。
+**实现约定**：在编写编译器代码前，先在 `tests/` 添加测试用例（如 `test_xxx.uya` 或预期编译失败的 `error_xxx.uya`），覆盖目标场景；实现后再跑 `--c99` 与 `--uya --c99` 验证，二者都通过才算通过。
 
 ---
 
@@ -125,10 +125,10 @@
 - [x] **Parser**：解析 `@size_of(...)`、`@align_of(...)` 调用形式
 - [x] **Checker**：识别并校验 `@size_of`、`@align_of` 的语义
 - [x] **Codegen**：生成与现有一致的 C 代码（输出不变，仅函数名变更）
-- [x] **测试用例迁移**：将 `tests/programs/` 中所有用例从 `@sizeof`、`@alignof` 改为 `@size_of`、`@align_of`
+- [x] **测试用例迁移**：将 `tests/` 中所有用例从 `@sizeof`、`@alignof` 改为 `@size_of`、`@align_of`
 - [x] **C 实现与 uya-src 同步**：`src/` 与 `uya-src/` 两套实现同步修改；`--c99` 与 `--uya --c99` 均通过，`--c99 -b` 自举对比一致
 
-**涉及**：`lexer.c`/`lexer.uya`、`ast.c`/`ast.uya`、`parser.c`/`parser.uya`、`checker.c`/`checker.uya`、`codegen/c99/expr.c`/`expr.uya` 等；`tests/programs/*.uya` 中引用内置的用例。
+**涉及**：`lexer.c`/`lexer.uya`、`ast.c`/`ast.uya`、`parser.c`/`parser.uya`、`checker.c`/`checker.uya`、`codegen/c99/expr.c`/`expr.uya` 等；`tests/*.uya` 中引用内置的用例。
 
 **参考文档**：
 - [changelog.md](changelog.md) §0.40.1 - 内置函数命名统一
@@ -160,10 +160,10 @@
 - [x] **Parser**：`primary_expr` 支持 `@max`、`@min`（无参）；支持 `@size_of(...)`、`@align_of(...)`、`@len(...)` 调用形式
 - [x] **Checker**：识别并校验 `@size_of`、`@align_of`、`@len`、`@max`、`@min` 的语义
 - [x] **Codegen**：生成与现有一致的 C 代码（输出不变）
-- [x] **测试用例迁移**：将 `tests/programs/` 中所有用例改为 `@size_of`、`@align_of`、`@len`、`@max`、`@min`
+- [x] **测试用例迁移**：将 `tests/` 中所有用例改为 `@size_of`、`@align_of`、`@len`、`@max`、`@min`
 - [x] **C 实现与 uya-src 同步**：`src/` 与 `uya-src/` 两套实现同步修改；`--c99` 与 `--uya --c99` 均通过，`--c99 -b` 自举对比一致
 
-**涉及**：`lexer.c`/`lexer.uya`、`ast.c`/`ast.uya`、`parser.c`/`parser.uya`、`checker.c`/`checker.uya`、`codegen/c99/expr.c`/`expr.uya` 等；`tests/programs/*.uya` 中引用内置的用例。
+**涉及**：`lexer.c`/`lexer.uya`、`ast.c`/`ast.uya`、`parser.c`/`parser.uya`、`checker.c`/`checker.uya`、`codegen/c99/expr.c`/`expr.uya` 等；`tests/*.uya` 中引用内置的用例。
 
 ---
 
@@ -302,17 +302,17 @@
 ## 9. 模块系统
 
 - [x] **目录即模块**：项目根=main，路径如 std.io，规范 uya.md §1.5（需要多文件支持）
-  **C 实现（已完成）**：`extract_module_path_allocated` 从文件路径提取模块路径，基于目录结构。目录下的所有 `.uya` 文件属于同一模块。当前支持单级目录模块（如 `module_a/` → `module_a`），多级路径（如 `std/io/` → `std.io`）待扩展。测试用例已调整为目录结构：`tests/programs/module_a/module_a.uya` 属于 `module_a` 模块。**测试验证通过**：所有测试用例已验证，包括基本模块导入、错误检测、单文件 export 测试等。
+  **C 实现（已完成）**：`extract_module_path_allocated` 从文件路径提取模块路径，基于目录结构。目录下的所有 `.uya` 文件属于同一模块。当前支持单级目录模块（如 `module_a/` → `module_a`），多级路径（如 `std/io/` → `std.io`）待扩展。测试用例已调整为目录结构：`tests/module_a/module_a.uya` 属于 `module_a` 模块。**测试验证通过**：所有测试用例已验证，包括基本模块导入、错误检测、单文件 export 测试等。
 - [x] **export（语法解析与基本支持）**：`export fn/struct/interface/const/error`、`export extern`，规范 uya.md §1.5.3
   **C 实现（已完成）**：Lexer（TOKEN_EXPORT）、AST（所有声明节点添加 is_export 字段）、Parser（parser_parse_declaration 支持 export 前缀，所有解析函数设置 is_export）、Checker（基本检查，单文件场景下 export 标记记录但不影响可见性）、Codegen（跳过 use 语句，正常生成 export 标记的声明）。测试 test_module_export.uya 通过编译并运行（返回 42）。
 - [x] **use（语法解析与基本支持）**：`use path;`、`use path.item;`、别名 `as`，无通配符，规范 uya.md §1.5.4
   **C 实现（已完成）**：Lexer（TOKEN_USE）、AST（AST_USE_STMT 节点，path_segments/item_name/alias 字段）、Parser（parser_parse_use_stmt 解析 use 语句，支持路径段、特定项、别名）、Checker（基本语法检查，单文件场景下 use 语句暂时不进行实际模块解析）、Codegen（跳过 use 语句，不生成代码）。语法解析和代码生成通过。
 - [x] **模块可见性与路径解析（多文件）**：Checker 中处理 export 可见性、use 路径解析、模块查找（需要多文件支持）
-  **C 实现（已完成）**：TypeChecker 中添加 ModuleTable 和 ImportTable；`build_module_exports` 遍历所有声明，根据文件路径提取模块路径，收集 export 标记的项；`process_use_stmt` 处理 use 语句，查找模块并验证导出项是否存在；`extract_module_path_allocated` 从文件路径提取模块路径（基于目录结构，如 `tests/programs/module_a/file.uya` → `module_a`）。**目录即模块**：支持目录即模块，目录下的所有 `.uya` 文件属于同一模块。**测试验证**：所有测试用例已验证通过，包括 `tests/programs/module_a/` 和 `tests/programs/module_test/`、`tests/programs/multifile/module_test/` 等。module_a 目录下的文件属于 `module_a` 模块，module_b.uya 使用 `use module_a.public_func;` 导入并调用，error_use_private.uya 正确检测到使用未导出项的错误。**编译警告已修复**：删除了未使用的变量和函数声明。
+  **C 实现（已完成）**：TypeChecker 中添加 ModuleTable 和 ImportTable；`build_module_exports` 遍历所有声明，根据文件路径提取模块路径，收集 export 标记的项；`process_use_stmt` 处理 use 语句，查找模块并验证导出项是否存在；`extract_module_path_allocated` 从文件路径提取模块路径（基于目录结构，如 `tests/module_a/file.uya` → `module_a`）。**目录即模块**：支持目录即模块，目录下的所有 `.uya` 文件属于同一模块。**测试验证**：所有测试用例已验证通过，包括 `tests/module_a/` 和 `tests/module_test/`、`tests/multifile/module_test/` 等。module_a 目录下的文件属于 `module_a` 模块，module_b.uya 使用 `use module_a.public_func;` 导入并调用，error_use_private.uya 正确检测到使用未导出项的错误。**编译警告已修复**：删除了未使用的变量和函数声明。
 - [x] **循环依赖**：编译期检测并报错，规范 uya.md §1.5.7（需要多文件支持）
   **C 实现（已完成）**：在 `ModuleInfo` 中添加 `dependencies` 字段记录模块依赖；在 `process_use_stmt` 中记录当前模块对目标模块的依赖关系；添加 `detect_circular_dependencies` 函数使用 DFS 算法检测强连通分量（循环依赖）；在所有 use 语句处理完后调用循环检测。测试用例 `error_circular_dependency.uya` 正确检测到循环依赖并报错。
 - [x] **多级模块路径**：支持多级路径（如 `std/io/` → `std.io`），当前仅支持单级目录模块（如 `module_a/` → `module_a`）
-  **C 实现（已完成）**：修改 `extract_module_path_allocated` 提取从第一个目录到最后一个目录的所有目录名，用 `.` 连接（临时跳过 `tests/programs/` 前缀以匹配测试用例）；修改 `process_use_stmt` 支持多级路径解析，处理 parser 将 `use std.io.read_file;` 解析为 `path_segments = ["std", "io", "read_file"]` 的情况（最后一个 segment 作为项名）。测试用例 `test_multilevel_module.uya` 通过 `--c99`。
+  **C 实现（已完成）**：修改 `extract_module_path_allocated` 提取从第一个目录到最后一个目录的所有目录名，用 `.` 连接（临时跳过 `tests/` 前缀以匹配测试用例）；修改 `process_use_stmt` 支持多级路径解析，处理 parser 将 `use std.io.read_file;` 解析为 `path_segments = ["std", "io", "read_file"]` 的情况（最后一个 segment 作为项名）。测试用例 `test_multilevel_module.uya` 通过 `--c99`。
 - [x] **多文件模块系统**：实现目录即模块、模块路径解析、多文件编译（当前已支持多文件编译和单级模块路径）
 - [x] **自动模块依赖解析**：编译器自动解析模块依赖，用户只需指定包含 main 函数的文件或目录
   **C 实现（已完成）**：
@@ -432,7 +432,7 @@
   - **已同步到 C 实现**：在 `expr.c` 中添加了相同的 `is_stdlib_function_for_string_arg` 函数和类型转换逻辑
   - **剩余问题**：字符串常量（如 `str0`）在生成的 C 代码中是 `const char *` 类型，但在函数调用时仍被转换为 `(uint8_t *)`，导致警告
   - **说明**：这是 Uya 类型系统的设计问题。Uya 中字符串类型为 `&[i8]`（即 `uint8_t *`），而 C 标准库函数期望 `const char *`。完全消除这些警告需要修改 Uya 的字符串类型设计，超出本阶段范围。
-- [x] **测试程序验证**：确保所有测试程序（`tests/programs/*.uya`）编译生成的 C 代码无警告
+- [x] **测试程序验证**：确保所有测试程序（`tests/*.uya`）编译生成的 C 代码无警告
   - **已验证**：测试程序编译生成的 C 代码无警告（已验证 test_atomic_basic.uya 等）
   - **说明**：虽然自举编译器生成的代码仍有字符串常量类型转换警告，但这是类型系统设计问题，不影响测试程序的编译
 
@@ -928,9 +928,9 @@ test "函数调用测试" {
 
 ## 文档与测试约定
 
-- **先添加测试用例**：在编写编译器代码前，先在 `tests/programs/` 添加测试用例（如 `test_xxx.uya` 或预期编译失败的 `error_xxx.uya`），覆盖目标场景。
+- **先添加测试用例**：在编写编译器代码前，先在 `tests/` 添加测试用例（如 `test_xxx.uya` 或预期编译失败的 `error_xxx.uya`），覆盖目标场景。
 - 新特性先在 [compiler-c-spec/UYA_MINI_SPEC.md](compiler-c-spec/UYA_MINI_SPEC.md)（或完整版 spec）中定义类型、BNF、语义、C99 映射。
-- 测试放在 `tests/programs/`，需同时通过 `--c99` 与 `--uya --c99`。
+- 测试放在 `tests/`，需同时通过 `--c99` 与 `--uya --c99`。
 - **测试用例 100% 覆盖**：新特性需添加多场景用例（含成功路径与预期失败用例 `error_*.uya`），覆盖主要分支与边界情况。
 - 实现顺序：Lexer → AST → Parser → Checker → Codegen；C 实现与 `uya-src/` 同步。
 
@@ -977,7 +977,7 @@ test "函数调用测试" {
   - 测试失败应返回非 0（退出码表示错误类型）
   - 测试脚本通过 `bridge.c` 提供 `main` 函数，调用 `uya_main()`（Uya 的 `main` 函数被重命名为 `uya_main`）
 - **多文件测试**：
-  - 多文件测试放在 `tests/programs/multifile/` 或 `tests/programs/cross_deps/` 目录下
+  - 多文件测试放在 `tests/multifile/` 或 `tests/cross_deps/` 目录下
   - 测试脚本会自动收集目录下所有 `.uya` 文件一起编译
 - **语法约定**：
   - `use` 语句只能在顶层使用，不能在函数体内
@@ -1004,7 +1004,7 @@ test "函数调用测试" {
 ./tests/run_programs.sh --uya test_generic_simple.uya
 
 # 运行指定目录的测试
-./tests/run_programs.sh tests/programs/multifile
+./tests/run_programs.sh tests/multifile
 
 # 快速验证（并行执行）
 ./tests/run_programs_parallel.sh
