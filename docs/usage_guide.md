@@ -108,6 +108,25 @@ uya/
 
 ## Make 命令速查
 
+### 编译选项
+
+可通过环境变量覆盖默认编译选项：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `CFLAGS` | `-std=c99 -O0 -g -fno-builtin` | C 编译选项（默认调试模式） |
+| `LDFLAGS` | （空） | 链接选项 |
+
+```bash
+# 使用自定义编译选项
+CFLAGS='-std=c99 -O2' make from-c
+
+# 构建发布版本（自动使用 -O3 优化）
+make release
+```
+
+### 常用命令
+
 | 命令 | 说明 |
 |------|------|
 | `make check` | 验证（自举 + 测试）**推荐** |
@@ -116,7 +135,7 @@ uya/
 | `make tests-uya` | 运行测试 |
 | `make from-c` | 从备份恢复并构建 |
 | `make backup` | 验证 + 备份 |
-| `make release` | 构建发布版本 |
+| `make release` | 构建发布版本（-O3 优化） |
 | `make clean` | 清理构建产物 |
 
 ---

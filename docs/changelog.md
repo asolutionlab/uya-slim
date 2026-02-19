@@ -8,6 +8,38 @@
 
 **发布日期：** 2026年2月19日
 
+### v0.5.6 - 编译选项可配置化
+
+本版本将硬编码的编译选项改为可通过环境变量配置。
+
+#### 主要变更
+
+1. **CFLAGS/LDFLAGS 环境变量支持**
+   - 新增 `CFLAGS` 环境变量控制编译选项
+   - 新增 `LDFLAGS` 环境变量控制链接选项
+   - 默认使用调试模式：`-std=c99 -O0 -g -fno-builtin`
+
+2. **Makefile 更新**
+   - 所有编译命令使用 `$(CFLAGS)` 和 `$(LDFLAGS)`
+   - `make release` 使用固定 `-O3 -DNDEBUG` 优化选项
+
+3. **compile.sh 更新**
+   - 支持从环境变量读取 `CFLAGS` 和 `LDFLAGS`
+   - 所有 gcc 命令统一使用变量
+
+#### 使用示例
+
+```bash
+# 默认调试模式构建
+make from-c
+
+# 使用自定义优化级别
+CFLAGS='-std=c99 -O2' make uya
+
+# 构建发布版本（自动 -O3 优化 + strip）
+make release
+```
+
 ### v0.5.5 - 代码规范化与编译优化
 
 本版本进行了代码规范化工作，并优化了编译选项。

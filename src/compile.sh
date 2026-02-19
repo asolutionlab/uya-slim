@@ -4,6 +4,10 @@
 
 # 注意：不使用 set -e，因为我们需要捕获编译器的退出码并处理错误
 
+# 编译选项（可通过环境变量覆盖）
+CFLAGS="${CFLAGS:--std=c99 -O0 -g -fno-builtin}"
+LDFLAGS="${LDFLAGS:-}"
+
 # 脚本目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 项目根目录
@@ -162,7 +166,8 @@ if [ ! -f "$COMPILER" ]; then
         cp "$REPO_ROOT/backup/uya.c" "$REPO_ROOT/bin/uya.c"
         if [ -f "$REPO_ROOT/bin/uya.c" ]; then
             echo "编译 bin/uya.c ..."
-            gcc -std=c99 -O3 -fno-builtin "$REPO_ROOT/bin/uya.c" -o "$COMPILER"
+            echo "CFLAGS: $CFLAGS"
+            gcc $CFLAGS "$REPO_ROOT/bin/uya.c" -o "$COMPILER" $LDFLAGS
             if [ $? -eq 0 ]; then
                 echo -e "${GREEN}✓ 编译器已从备份恢复: $COMPILER${NC}"
             else
@@ -441,7 +446,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                         echo "编译 $OUTPUT_FILE -> $UYA_O"
                     fi
 
-                    if ! gcc --std=c99 -O3 -fno-builtin -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
+                    if ! gcc $CFLAGS -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
                         echo -e "${RED}✗ 编译 uya.c 失败${NC}"
                         exit 1
                     fi
@@ -453,17 +458,17 @@ if [ $COMPILER_EXIT -eq 0 ]; then
 
                     # 链接（不使用 libc 和 libgcc，完全自包含）
                     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        LINK_CMD="gcc --std=c99 -O3 -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\""
+                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
                     else
-                        LINK_CMD="gcc --std=c99 -O3 -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\""
+                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
                     fi
                 else
                     # 普通模式：直接编译链接（stderr 使用 libc.stderr，无需 get_stderr 桥接）
                     # 注意：不使用 -static，避免 errno TLS 冲突
                     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        LINK_CMD="gcc --std=c99 -O3 -fno-builtin \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\""
+                        LINK_CMD="gcc $CFLAGS \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\" $LDFLAGS"
                     else
-                        LINK_CMD="gcc --std=c99 -O3 -fno-builtin \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\""
+                        LINK_CMD="gcc $CFLAGS \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\" $LDFLAGS"
                     fi
                 fi
 
@@ -493,9 +498,9 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                     echo ""
                     echo "可以尝试手动链接："
                     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        echo "  gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\""
+                        echo "  gcc $CFLAGS -no-pie -static \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\" $LDFLAGS"
                     else
-                        echo "  gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\""
+                        echo "  gcc $CFLAGS -no-pie -static \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\" $LDFLAGS"
                     fi
                 fi
                 exit 1
@@ -595,9 +600,9 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             echo "  $0 -e"
             echo "或者手动链接："
             if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                echo "  gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"${OUTPUT_FILE%.o}.exe\""
+                echo "  gcc $CFLAGS -no-pie -static \"$OUTPUT_FILE\" -o \"${OUTPUT_FILE%.o}.exe\" $LDFLAGS"
             else
-                echo "  gcc --std=c99 -no-pie -static \"$OUTPUT_FILE\" -o \"${OUTPUT_FILE%.o}\""
+                echo "  gcc $CFLAGS -no-pie -static \"$OUTPUT_FILE\" -o \"${OUTPUT_FILE%.o}\" $LDFLAGS"
             fi
         fi
     else

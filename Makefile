@@ -3,6 +3,10 @@
 
 .PHONY: all from-c uya-c uya uya-nostdlib b tests tests-c tests-uya outlibc c e clean check backup restore release help
 
+# 编译选项（可通过环境变量覆盖）
+CFLAGS ?= -std=c99 -O0 -g -fno-builtin
+LDFLAGS ?=
+
 # 默认目标
 all: help
 
@@ -36,7 +40,8 @@ from-c:
 		fi \
 	fi
 	@echo "编译 bin/uya.c ..."
-	@gcc -std=c99 -O3 -fno-builtin bin/uya.c -o bin/uya
+	@echo "CFLAGS: $(CFLAGS)"
+	@gcc $(CFLAGS) bin/uya.c -o bin/uya $(LDFLAGS)
 	@echo ""
 	@echo "✓ 编译器构建完成: bin/uya"
 	@ls -la bin/uya
@@ -51,13 +56,14 @@ uya:
 		$(MAKE) from-c; \
 	fi
 	@echo "使用 bin/uya 编译 src/ ..."
-	@cd src && ./compile.sh --c99 -e
+	@CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" cd src && ./compile.sh --c99 -e
 	@echo ""
 	@echo "更新 bin/uya.c ..."
 	@cp src/build/uya.c bin/uya.c
 	@echo "✓ bin/uya.c 已更新"
 	@echo "重新编译 bin/uya ..."
-	@gcc -std=c99 -O3 -fno-builtin bin/uya.c -o bin/uya
+	@echo "CFLAGS: $(CFLAGS)"
+	@gcc $(CFLAGS) bin/uya.c -o bin/uya $(LDFLAGS)
 	@echo ""
 	@echo "✓ 自举编译器构建完成: bin/uya"
 	@echo ""
@@ -256,7 +262,7 @@ release: backup
 	@echo "构建发布版本 (release)"
 	@echo "=========================================="
 	@echo "编译优化版本 bin/uya ..."
-	@gcc -std=c99 -O3 -fno-builtin -DNDEBUG bin/uya.c -o bin/uya
+	@gcc -std=c99 -O3 -fno-builtin -DNDEBUG bin/uya.c -o bin/uya $(LDFLAGS)
 	@strip bin/uya
 	@echo ""
 	@echo "✓ 发布版本构建完成: bin/uya"
@@ -279,6 +285,14 @@ restore:
 # 显示帮助信息
 help:
 	@echo "Uya 项目 Makefile"
+	@echo ""
+	@echo "编译选项（可通过环境变量覆盖）:"
+	@echo "  CFLAGS   = $(CFLAGS)"
+	@echo "  LDFLAGS  = $(LDFLAGS)"
+	@echo ""
+	@echo "用法示例:"
+	@echo "  CFLAGS='-std=c99 -O0 -g' make from-c    # 使用调试选项构建"
+	@echo "  CFLAGS='-std=c99 -O2' make uya          # 使用 O2 优化构建"
 	@echo ""
 	@echo "可用目标:"
 	@echo "  make from-c        - 从 bin/uya.c 构建（零依赖，不需要 uya-c）"
