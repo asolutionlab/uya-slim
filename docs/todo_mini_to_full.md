@@ -1778,8 +1778,8 @@ struct Matrix { data: [[f32: 4]: 4] }
   - [x] error_uninitialized_var.uya - 未初始化变量检测
   - [x] test_array_bounds.uya - 数组边界测试
   - [x] test_null_comprehensive.uya - null 处理测试
-- [ ] **Codegen**：（可选，用于运行时检查插入）
-  - [x] 消除已证明安全的冗余检查（TODO: 待实现）
+|- [x] **Codegen**：不需要实现
+  - Uya 编译期证明失败直接报错，不生成运行时检查，无冗余检查需消除
 - [ ] **uya-src 同步**
 
 **测试用例**：
