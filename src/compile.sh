@@ -441,8 +441,8 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                 if [ "$USE_NOSTDLIB" = true ]; then
                     # --nostdlib 模式：编译 .c 为 .o 后链接
                     UYA_O="$BUILD_DIR/uya.o"
-                    START_S="$REPO_ROOT/lib/std/runtime/entry/_start.S"
-                    START_O="$BUILD_DIR/_start.o"
+                    START_C="$REPO_ROOT/lib/std/runtime/entry/start.c"
+                    START_O="$BUILD_DIR/start.o"
 
                     if [ "$VERBOSE" = true ]; then
                         echo "编译 $OUTPUT_FILE -> $UYA_O"
@@ -453,17 +453,17 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                         exit 1
                     fi
 
-                    # 编译自定义启动代码
-                    if [ -f "$START_S" ]; then
+                    # 编译自定义启动代码（C 内联汇编）
+                    if [ -f "$START_C" ]; then
                         if [ "$VERBOSE" = true ]; then
-                            echo "编译 $START_S -> $START_O"
+                            echo "编译 $START_C -> $START_O"
                         fi
-                        if ! gcc -c "$START_S" -o "$START_O" 2>&1; then
-                            echo -e "${RED}✗ 编译 _start.S 失败${NC}"
+                        if ! gcc $CFLAGS -c "$START_C" -o "$START_O" 2>&1; then
+                            echo -e "${RED}✗ 编译 start.c 失败${NC}"
                             exit 1
                         fi
                     else
-                        echo -e "${RED}✗ 找不到启动代码: $START_S${NC}"
+                        echo -e "${RED}✗ 找不到启动代码: $START_C${NC}"
                         exit 1
                     fi
 
