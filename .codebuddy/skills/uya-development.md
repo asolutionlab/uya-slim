@@ -424,3 +424,81 @@ arr[(base + 3) as usize] = 42;  // 可以正确处理类型转换
   - `is_unsigned_type`：判断无符号类型
 - `tests/programs/test_usize_constraints.uya`：usize 约束测试
 - `tests/programs/test_nonlinear_bounds.uya`：非线性表达式测试
+
+### 8.6 const 变量在安全证明中的识别（2026-02-19 修复）
+
+**问题**：编译器无法识别 `const limit = C99_MAX_MONO_INSTANCES` 与字面量是同一个值
+
+**根本原因**：
+1. `extract_linear_expr` 不识别 `const` 变量
+2. `checker_eval_const_expr` 只检查全局 `const` 变量，不检查局部 `const` 变量
+
+**修复**：
+```uya
+// extract_linear_expr: 识别 const 变量
+if expr.type == ASTNodeType.AST_IDENTIFIER {
+    const symbol: &Symbol = symbol_table_lookup(checker, expr.identifier_name);
+    if symbol != null && symbol.is_const != 0 {
+        const const_val: i32 = checker_eval_const_expr(checker, expr);
+        if const_val != -1 {
+            // 作为常量处理
+            result.var_name = null;
+            result.offset = const_val;
+            result.is_valid = 1;
+            return result;
+        }
+    }
+    // 否则作为变量处理
+    ...
+}
+
+// checker_eval_const_expr: 检查符号表中的局部 const 变量
+const symbol: &Symbol = symbol_table_lookup(checker, expr.identifier_name);
+if symbol != null && symbol.is_const != 0 && symbol.decl_node != null {
+    const decl: &ASTNode = symbol.decl_node;
+    if decl.type == ASTNodeType.AST_VAR_DECL && decl.var_decl_init != null {
+        return checker_eval_const_expr(checker, decl.var_decl_init);
+    }
+}
+```
+
+**效果**：`while i < LIMIT`（其中 `const LIMIT = 10`）现在可以正确识别约束 `i < 10`
+
+### 8.7 安全证明错误提示改进（2026-02-19 修复）
+
+**问题**：安全证明错误只显示 "数组索引安全证明失败"，没有给出具体修复指导
+
+**改进后的错误提示**：
+```
+/tmp/test.uya:(5:9): 错误: 数组索引安全证明失败
+  变量: i, 数组大小: 10
+  已知下界: i >= 0
+  缺少上界: 需要 i < 10
+  建议: 在数组访问前添加边界检查
+    if i >= 0 && i < 10 { arr[i] ... }
+```
+
+**实现要点**：
+- 在 `checker_report_error_ex` 中分析并显示当前约束状态
+- 区分"已知约束"和"缺少约束"
+- 提供具体的修复代码示例
+
+### 8.8 数组边界与循环上限匹配（2026-02-19 修复）
+
+**问题**：`checker.mono_instances` 数组大小是 512，但循环使用 `C99_MAX_MONO_INSTANCES = 1024`
+
+**教训**：
+- 循环上限必须使用被访问数组的实际大小
+- 字面量常量比命名常量更容易被安全证明系统识别
+- 两个模块中的同名常量可能有不同的值
+
+**正确写法**：
+```uya
+// checker.mono_instances 大小是 512
+while i < 512 {
+    if i < checker.mono_instance_count {
+        // 访问 checker.mono_instances[i] 是安全的
+    }
+    i = i + 1;
+}
+```

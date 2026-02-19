@@ -82,24 +82,24 @@ fn c99_codegen_set_mono_instances(codegen: &C99CodeGenerator, checker: &TypeChec
     if codegen == null || checker == null {
         return -1;
     }
-    
+
     codegen.mono_instance_count = 0;
-    
-    var i: i32 = 0;
+
     const count: i32 = checker.mono_instance_count;
-    while i < count && i < C99_MAX_MONO_INSTANCES {
-        const idx: i32 = i;
-        if idx >= 0 && idx < C99_MAX_MONO_INSTANCES {
-            codegen.mono_instances[idx].generic_name = checker.mono_instances[idx].generic_name;
-            codegen.mono_instances[idx].is_function = checker.mono_instances[idx].is_function;
-            codegen.mono_instances[idx].type_arg_count = checker.mono_instances[idx].type_arg_count;
-            codegen.mono_instances[idx].type_args = checker.mono_instances[idx].type_arg_nodes;
+    var i: i32 = 0;
+    // 使用 C99_CHECKER_MAX_MONO_INSTANCES 作为循环上限
+    // 这样安全证明系统能证明 checker.mono_instances[i] 访问安全
+    while i < C99_CHECKER_MAX_MONO_INSTANCES {
+        if i < count {
+            codegen.mono_instances[i].generic_name = checker.mono_instances[i].generic_name;
+            codegen.mono_instances[i].is_function = checker.mono_instances[i].is_function;
+            codegen.mono_instances[i].type_arg_count = checker.mono_instances[i].type_arg_count;
+            codegen.mono_instances[i].type_args = checker.mono_instances[i].type_arg_nodes;
+            codegen.mono_instance_count = codegen.mono_instance_count + 1;
         }
-        
-        codegen.mono_instance_count = codegen.mono_instance_count + 1;
         i = i + 1;
     }
-    
+
     return 0;
 }
 

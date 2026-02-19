@@ -2426,6 +2426,42 @@ extern fn fprintf(stream: *void, format: *byte, ...) i32;
 // 保存最后一条错误消息供 main 打印
 var last_checker_error_message: &byte = null;
 
+// 已报告的安全证明错误缓存（避免重复报告）
+var reported_error_vars: [&byte: 32] = [];
+var reported_error_sizes: [i32: 32] = [];
+var reported_error_count: i32 = 0;
+
+// 检查是否已报告过相同的错误
+fn was_error_reported(var_name: &byte, array_size: i32) i32 {
+    var i: i32 = 0;
+    while i < reported_error_count {
+        if i < 32 {
+            if reported_error_vars[i] != null && var_name != null {
+                if strcmp(reported_error_vars[i] as *byte, var_name as *byte) == 0 {
+                    if reported_error_sizes[i] == array_size {
+                        return 1;  // 已报告过
+                    }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return 0;  // 未报告过
+}
+
+// 记录已报告的错误
+fn mark_error_reported(var_name: &byte, array_size: i32) void {
+    if reported_error_count >= 32 {
+        return;  // 缓存已满
+    }
+    if was_error_reported(var_name, array_size) != 0 {
+        return;  // 已存在
+    }
+    reported_error_vars[reported_error_count] = var_name;
+    reported_error_sizes[reported_error_count] = array_size;
+    reported_error_count = reported_error_count + 1;
+}
+
 fn get_last_checker_error() &byte {
     return last_checker_error_message;
 }
@@ -2544,6 +2580,16 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
     if expr.type == ASTNodeType.AST_NUMBER {
         return expr.number_value as i32;
     } else if expr.type == ASTNodeType.AST_IDENTIFIER {
+        // 先检查符号表中的局部 const 变量
+        const symbol: &Symbol = symbol_table_lookup(checker, expr.identifier_name);
+        if symbol != null && symbol.is_const != 0 && symbol.decl_node != null {
+            const decl: &ASTNode = symbol.decl_node;
+            if decl.type == ASTNodeType.AST_VAR_DECL && decl.var_decl_init != null {
+                return checker_eval_const_expr(checker, decl.var_decl_init);
+            }
+        }
+        
+        // 再检查全局 const 变量
         if checker.program_node == null {
             return -1;
         }
@@ -2682,6 +2728,11 @@ fn checker_report_error(checker: &TypeChecker, node: &ASTNode, message: &byte) v
 // 参数：checker - TypeChecker 指针，node - AST 节点，error_type - 错误类型，var_name - 变量名，size - 数组大小
 fn checker_report_error_ex(checker: &TypeChecker, node: &ASTNode, error_type: &byte, var_name: &byte, size: i32) void {
     if checker != null {
+        // 检查是否已报告过相同的错误
+        if was_error_reported(var_name, size) != 0 {
+            return;  // 已报告过，跳过
+        }
+        
         checker.error_count = checker.error_count + 1;
         if libc.stderr != null {
             var filename: &byte = "(unknown)" as *byte;
@@ -2704,6 +2755,8 @@ fn checker_report_error_ex(checker: &TypeChecker, node: &ASTNode, error_type: &b
             fprintf(libc.stderr, "  建议: 添加边界检查 (如 if %s >= 0 && %s < %d)\n" as *byte, 
                 var_name as *byte, var_name as *byte, size);
         }
+        // 标记已报告
+        mark_error_reported(var_name, size);
         // 设置最后错误消息
         last_checker_error_message = error_type;
     }
@@ -5907,11 +5960,10 @@ fn constraint_extract_from_binary(checker: &TypeChecker, expr: &ASTNode, is_posi
         return;
     }
     
-    const op: i32 = expr.binary_expr_op;
+    const op: TokenType = expr.binary_expr_op as TokenType;
     
     // 处理逻辑与（&&）：递归提取左右子表达式的约束
-    // TOKEN_LOGICAL_AND = 56
-    if op == 56 {
+    if op == TokenType.TOKEN_LOGICAL_AND {
         const left_expr: &ASTNode = expr.binary_expr_left;
         const right_expr: &ASTNode = expr.binary_expr_right;
         if left_expr != null {
@@ -5924,38 +5976,66 @@ fn constraint_extract_from_binary(checker: &TypeChecker, expr: &ASTNode, is_posi
     }
     
     // 处理逻辑或（||）：暂不支持（需要更复杂的约束合并）
-    // TOKEN_LOGICAL_OR = 57
-    if op == 57 {
+    if op == TokenType.TOKEN_LOGICAL_OR {
         return;  // 逻辑或的约束提取较复杂，暂不支持
     }
     
     // 只处理比较运算符
-    // 正确的 TokenType 值：
-    // TOKEN_EQUAL = 50, TOKEN_NOT_EQUAL = 51
-    // TOKEN_LESS = 52, TOKEN_GREATER = 53
-    // TOKEN_LESS_EQUAL = 54, TOKEN_GREATER_EQUAL = 55
-    if op != 50 && op != 51 && op != 52 && op != 53 && op != 54 && op != 55 {
+    if op != TokenType.TOKEN_EQUAL && op != TokenType.TOKEN_NOT_EQUAL &&
+       op != TokenType.TOKEN_LESS && op != TokenType.TOKEN_GREATER &&
+       op != TokenType.TOKEN_LESS_EQUAL && op != TokenType.TOKEN_GREATER_EQUAL {
         return;
     }
     
-    // 获取左操作数（必须是标识符）
-    const left: &ASTNode = expr.binary_expr_left;
-    const right: &ASTNode = expr.binary_expr_right;
-    
+    // 获取左右操作数
+    var left: &ASTNode = expr.binary_expr_left;
+    var right: &ASTNode = expr.binary_expr_right;
+    var effective_op: TokenType = op;  // 有效操作符（可能因交换律而改变）
+
     if left == null || right == null {
         return;
     }
-    
-    // 左操作数必须是标识符
-    if left.type != ASTNodeType.AST_IDENTIFIER {
+
+    // 尝试标准化：将 "常量 op 变量" 转换为 "变量 op' 常量"
+    // 例如：10 > i => i < 10
+    var swapped: i32 = 0;
+    if left.type != ASTNodeType.AST_IDENTIFIER && right.type == ASTNodeType.AST_IDENTIFIER {
+        // 左边不是标识符，右边是标识符：交换并翻转操作符
+        const tmp: &ASTNode = left;
+        left = right;
+        right = tmp;
+        swapped = 1;
+        // 翻转比较操作符
+        if op == TokenType.TOKEN_LESS {             // < -> >
+            effective_op = TokenType.TOKEN_GREATER;
+        } else if op == TokenType.TOKEN_GREATER {   // > -> <
+            effective_op = TokenType.TOKEN_LESS;
+        } else if op == TokenType.TOKEN_LESS_EQUAL {    // <= -> >=
+            effective_op = TokenType.TOKEN_GREATER_EQUAL;
+        } else if op == TokenType.TOKEN_GREATER_EQUAL { // >= -> <=
+            effective_op = TokenType.TOKEN_LESS_EQUAL;
+        }
+        // == 和 != 不需要翻转
+    }
+
+    // 左操作数必须是标识符或线性表达式（var + const 或 var - const）
+    // 使用 extract_linear_expr 提取线性表达式
+    const left_linear: LinearExpr = extract_linear_expr(checker, left);
+    if left_linear.is_valid == 0 {
         return;
     }
     
-    const var_name: &byte = left.identifier_name;
+    // 必须有变量名（纯常量不需要约束）
+    if left_linear.var_name == null {
+        return;
+    }
+    
+    const var_name: &byte = left_linear.var_name;
+    const var_offset: i32 = left_linear.offset;  // 变量的偏移量
     
     // 检查是否是指针与 null 的比较（用于空指针检测）
-    // TOKEN_EQUAL = 50, TOKEN_NOT_EQUAL = 51
-    if op == 50 || op == 51 {
+    // 注意：指针比较不支持偏移量
+    if (op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL) && var_offset == 0 {
         var is_null_compare: i32 = 0;
         var ptr_name: &byte = null;
         
@@ -5967,7 +6047,7 @@ fn constraint_extract_from_binary(checker: &TypeChecker, expr: &ASTNode, is_posi
             }
         }
         // 检查 null == ptr 或 null != ptr
-        if left.identifier_name != null && str_equals(left.identifier_name, "null" as &byte) != 0 {
+        if left.type == ASTNodeType.AST_IDENTIFIER && left.identifier_name != null && str_equals(left.identifier_name, "null" as &byte) != 0 {
             if right.type == ASTNodeType.AST_IDENTIFIER && right.identifier_name != null {
                 is_null_compare = 1;
                 ptr_name = right.identifier_name;
@@ -5976,9 +6056,7 @@ fn constraint_extract_from_binary(checker: &TypeChecker, expr: &ASTNode, is_posi
         
         if is_null_compare != 0 && ptr_name != null {
             // 指针与 null 的比较
-            // op == 50 (==): ptr == null
-            // op == 51 (!=): ptr != null
-            if op == 51 {
+            if op == TokenType.TOKEN_NOT_EQUAL {
                 // ptr != null
                 if is_positive != 0 {
                     // then 分支：ptr 非空
@@ -6011,40 +6089,45 @@ fn constraint_extract_from_binary(checker: &TypeChecker, expr: &ASTNode, is_posi
     // 正条件：直接映射
     // 负条件：取反（LT <-> GE, GT <-> LE, EQ <-> NE）
     var constraint_op: i32 = 0;
-    
+
     if is_positive != 0 {
         // 正条件
-        if op == 52 {        // TOKEN_LESS -> CONSTRAINT_LT
+        if effective_op == TokenType.TOKEN_LESS {
             constraint_op = CONSTRAINT_LT;
-        } else if op == 53 { // TOKEN_GREATER -> CONSTRAINT_GT
+        } else if effective_op == TokenType.TOKEN_GREATER {
             constraint_op = CONSTRAINT_GT;
-        } else if op == 54 { // TOKEN_LESS_EQUAL -> CONSTRAINT_LE
+        } else if effective_op == TokenType.TOKEN_LESS_EQUAL {
             constraint_op = CONSTRAINT_LE;
-        } else if op == 55 { // TOKEN_GREATER_EQUAL -> CONSTRAINT_GE
+        } else if effective_op == TokenType.TOKEN_GREATER_EQUAL {
             constraint_op = CONSTRAINT_GE;
-        } else if op == 50 { // TOKEN_EQUAL -> CONSTRAINT_EQ
+        } else if effective_op == TokenType.TOKEN_EQUAL {
             constraint_op = CONSTRAINT_EQ;
-        } else if op == 51 { // TOKEN_NOT_EQUAL -> CONSTRAINT_NE
+        } else if effective_op == TokenType.TOKEN_NOT_EQUAL {
             constraint_op = CONSTRAINT_NE;
         }
     } else {
         // 负条件（取反）
-        if op == 52 {        // !(a < b) -> a >= b
+        if effective_op == TokenType.TOKEN_LESS {           // !(a < b) -> a >= b
             constraint_op = CONSTRAINT_GE;
-        } else if op == 53 { // !(a > b) -> a <= b
+        } else if effective_op == TokenType.TOKEN_GREATER { // !(a > b) -> a <= b
             constraint_op = CONSTRAINT_LE;
-        } else if op == 54 { // !(a <= b) -> a > b
+        } else if effective_op == TokenType.TOKEN_LESS_EQUAL {    // !(a <= b) -> a > b
             constraint_op = CONSTRAINT_GT;
-        } else if op == 55 { // !(a >= b) -> a < b
+        } else if effective_op == TokenType.TOKEN_GREATER_EQUAL { // !(a >= b) -> a < b
             constraint_op = CONSTRAINT_LT;
-        } else if op == 50 { // !(a == b) -> a != b
+        } else if effective_op == TokenType.TOKEN_EQUAL {    // !(a == b) -> a != b
             constraint_op = CONSTRAINT_NE;
-        } else if op == 51 { // !(a != b) -> a == b
+        } else if effective_op == TokenType.TOKEN_NOT_EQUAL { // !(a != b) -> a == b
             constraint_op = CONSTRAINT_EQ;
         }
     }
     
-    constraint_add(checker, var_name, constraint_op, right_val);
+    // 计算调整后的约束值
+    // 例如：i + 1 < 10 应该转换为 i < 9
+    // 公式：var + offset op n => var op (n - offset)
+    var adjusted_val: i32 = right_val - var_offset;
+    
+    constraint_add(checker, var_name, constraint_op, adjusted_val);
 }
 
 // 验证数组访问边界
@@ -6269,7 +6352,20 @@ fn extract_linear_expr(checker: &TypeChecker, expr: &ASTNode) LinearExpr {
     }
     
     if expr.type == ASTNodeType.AST_IDENTIFIER {
-        // 纯变量
+        // 检查是否是 const 变量，如果是则尝试获取其常量值
+        const symbol: &Symbol = symbol_table_lookup(checker, expr.identifier_name);
+        if symbol != null && symbol.is_const != 0 {
+            // const 变量：尝试获取其常量值
+            const const_val: i32 = checker_eval_const_expr(checker, expr);
+            if const_val != -1 {
+                // 成功获取常量值，作为纯常量处理
+                result.var_name = null;
+                result.offset = const_val;
+                result.is_valid = 1;
+                return result;
+            }
+        }
+        // 非 const 变量或无法求值：作为纯变量处理
         result.var_name = expr.identifier_name;
         result.offset = 0;
         result.is_valid = 1;
