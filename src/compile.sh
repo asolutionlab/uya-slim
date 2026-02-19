@@ -156,7 +156,7 @@ if [ ! -f "$COMPILER" ]; then
         cp "$REPO_ROOT/backup/uya.c" "$REPO_ROOT/bin/uya.c"
         if [ -f "$REPO_ROOT/bin/uya.c" ]; then
             echo "编译 bin/uya.c ..."
-            gcc -std=c99 -O2 -fno-builtin "$REPO_ROOT/bin/uya.c" -o "$COMPILER"
+            gcc -std=c99 -O3 -fwrapv -fno-builtin "$REPO_ROOT/bin/uya.c" -o "$COMPILER"
             if [ $? -eq 0 ]; then
                 echo -e "${GREEN}✓ 编译器已从备份恢复: $COMPILER${NC}"
             else
@@ -432,7 +432,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                         echo "编译 $OUTPUT_FILE -> $UYA_O"
                     fi
 
-                    if ! gcc --std=c99 -fno-builtin -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
+                    if ! gcc --std=c99 -O3 -fwrapv -fno-builtin -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
                         echo -e "${RED}✗ 编译 uya.c 失败${NC}"
                         exit 1
                     fi
@@ -444,17 +444,17 @@ if [ $COMPILER_EXIT -eq 0 ]; then
 
                     # 链接（不使用 libc 和 libgcc，完全自包含）
                     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\""
+                        LINK_CMD="gcc --std=c99 -O3 -fwrapv -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\""
                     else
-                        LINK_CMD="gcc --std=c99 -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\""
+                        LINK_CMD="gcc --std=c99 -O3 -fwrapv -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRT1\" \"$CRTI\" \"$UYA_O\" \"$CRTN\""
                     fi
                 else
                     # 普通模式：直接编译链接（stderr 使用 libc.stderr，无需 get_stderr 桥接）
                     # 注意：不使用 -static，避免 errno TLS 冲突
                     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        LINK_CMD="gcc --std=c99 -fno-builtin \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\""
+                        LINK_CMD="gcc --std=c99 -O3 -fwrapv -fno-builtin \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\""
                     else
-                        LINK_CMD="gcc --std=c99 -fno-builtin \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\""
+                        LINK_CMD="gcc --std=c99 -O3 -fwrapv -fno-builtin \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\""
                     fi
                 fi
 
