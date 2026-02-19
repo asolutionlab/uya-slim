@@ -2420,10 +2420,8 @@ fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
     return result;
 }
 
-// 报告类型检查错误（需要 extern 与 main 等模块一致）
-extern fn fprintf(stream: *void, format: *byte, ...) i32;
-
 // 保存最后一条错误消息供 main 打印
+// fprintf 从 extern_decls.uya 导入（use libc.fprintf）
 var last_checker_error_message: &byte = null;
 
 // 已报告的安全证明错误缓存（避免重复报告）

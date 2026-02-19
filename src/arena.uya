@@ -6,7 +6,6 @@
 
 // 标准库函数
 use libc;
-extern fn exit(code: i32) void;
 
 // Arena 分配器结构体
 // 使用静态缓冲区 + bump pointer 实现无堆分配的内存管理

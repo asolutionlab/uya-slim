@@ -1207,18 +1207,22 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 #### Sprint 4: 编译器自举（1 周）⭐⭐⭐⭐
 
 **任务清单**：
-- [ ] **审计编译器代码**：查找所有 C 标准库调用
-  ```bash
-  grep -r "printf\|malloc\|free\|memcpy\|strlen" src/
-  ```
-- [ ] **替换 C 库调用**：
-  - `printf` → `std.c.stdio.puts` 或 `@println`
-  - `malloc/free` → `std.c.stdlib.malloc/free`（或暂时保留）
-  - `memcpy/memset` → `std.c.string.*`
-  - `strlen/strcmp` → `std.c.string.*`
+- [x] **审计编译器代码**：查找所有 C 标准库调用
+  - 已完成：编译器不再直接调用 C 标准库函数
+  - 仅依赖 C 运行时启动代码 `__libc_start_main`
+- [x] **清理冗余 extern fn 声明**：
+  - 删除 `checker.uya` 中的 `extern fn fprintf`
+  - 删除 `parser.uya` 中未使用的 `extern fn malloc/free`
+  - 删除 `arena.uya` 中的 `extern fn exit`
+  - 所有标准库函数通过 `use libc.*` 导入
+- [x] **替换 C 库调用**：
+  - `fprintf` → `libc.fprintf`（纯 Uya 实现，基于 @syscall）
+  - `exit` → `libc.exit`（纯 Uya 实现，基于 sys_exit）
+  - `strlen/strcmp` → `std.string.*`（纯 Uya 实现）
+  - `memcpy/memset` → `std.mem.*`（纯 Uya 实现）
 - [ ] **修改 Makefile**：
   - 添加 `-nostdlib` 选项
-  - 链接 `std/c/*.uya` 模块
+  - 提供自定义 `_start` 入口点
 - [ ] **测试构建**：
   ```bash
   make clean
@@ -1229,7 +1233,7 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
   ```bash
   ldd build/compiler-mini  # 应只显示 linux-vdso.so.1
   ```
-- [ ] **uya-src 同步**：将 std.c 集成到自举编译器
+- [x] **uya-src 同步**：编译器自举版本已使用纯 Uya 标准库
 
 ---
 
