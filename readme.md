@@ -255,15 +255,17 @@ fn increment(counter: *Counter) void {
 }
 ```
 
-## 当前状态（v0.3.4）
+## 当前状态（v0.5.5）
 
-- **自举编译器**：已完成自举，348 个测试全部通过。编译器能编译自身，输出 C99 代码。
+- **自举编译器**：已完成自举，393 个测试全部通过。编译器能编译自身，输出 C99 代码。
 - **开发模式**：仅维护 `src/` 目录的自举编译器，`compiler-c/` 已退役（仅供参考）。
-- **快速构建**：`gcc -std=c99 -O2 bin/uya.c -o bin/uya -lm` 即可从 C99 代码构建编译器。
+- **快速构建**：`gcc -std=c99 -O3 -fno-builtin bin/uya.c -o bin/uya` 即可从 C99 代码构建编译器。
+- **内存验证**：Valgrind 验证通过，无内存泄漏，无内存错误。
 - **语言规范**：完整版见 [docs/uya.md](./docs/uya.md)。
 
 ## 文档
 
+- **[docs/usage_guide.md](./docs/usage_guide.md)** - 编译器使用指南
 - **[docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)** - 开发指导说明
 - **[docs/TESTING.md](./docs/TESTING.md)** - 回归测试说明
 - **[docs/uya.md](./docs/uya.md)** - 完整语言规范（Markdown）
@@ -288,7 +290,7 @@ fn increment(counter: *Counter) void {
 
 ---
 
-**注意**：语言规范为完整版（0.46）；**v0.3.4** 发布的自举编译器已完全自举。完整特性与未来计划见 [docs/uya.md](./docs/uya.md)。
+**注意**：语言规范为完整版（0.46）；**v0.5.5** 发布的自举编译器已完全自举。完整特性与未来计划见 [docs/uya.md](./docs/uya.md)。
 
 **许可证**：本项目采用 [MIT 许可证](./LICENSE)。Copyright (c) 2025-2026 Uya 语言项目
 
