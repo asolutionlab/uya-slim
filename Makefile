@@ -1,7 +1,7 @@
 # Uya 项目根目录 Makefile
 # 提供统一的构建和测试入口
 
-.PHONY: all from-c uya-c uya uya-nostdlib b tests tests-c tests-uya outlibc c e clean check backup restore help
+.PHONY: all from-c uya-c uya uya-nostdlib b tests tests-c tests-uya outlibc c e clean check backup restore release help
 
 # 默认目标
 all: help
@@ -235,6 +235,21 @@ backup: check
 	@mkdir -p backup
 	@cp bin/uya.c backup/uya.c
 	@echo "✓ 备份完成: backup/uya.c"
+
+# 发布版本：验证 + 备份 + 构建优化版本
+release: backup
+	@echo "=========================================="
+	@echo "构建发布版本 (release)"
+	@echo "=========================================="
+	@echo "编译优化版本 bin/uya ..."
+	@gcc -std=c99 -O3 -fwrapv -fno-builtin -DNDEBUG bin/uya.c -o bin/uya
+	@strip bin/uya
+	@echo ""
+	@echo "✓ 发布版本构建完成: bin/uya"
+	@ls -la bin/uya
+	@echo ""
+	@echo "优化选项: -O3 -fwrapv -fno-builtin -DNDEBUG"
+	@echo "已剥离调试符号 (strip)"
 # 从备份恢复 bin/uya.c
 restore:
 	@echo "从备份恢复 bin/uya.c ..."
@@ -270,6 +285,7 @@ help:
 	@echo "  make outlibc         - 输出标准库为 C 代码（使用自举编译器）"
 	@echo "  make check           - 验证（自举 + 测试），不备份"
 	@echo "  make backup          - 验证 + 备份 bin/uya.c"
+	@echo "  make release         - 发布版本：验证 + 备份 + -O3 优化构建 + strip"
 	@echo "  make restore         - 从 backup/uya.c 恢复 bin/uya.c"
 	@echo "  make clean           - 清理所有构建产物"
 	@echo "  make help            - 显示此帮助信息"
