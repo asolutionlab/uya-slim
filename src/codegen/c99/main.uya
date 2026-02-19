@@ -539,11 +539,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 检测自举编译（输出为 uya.c 或 compiler_bootstrap.c）：强制与 C 编译器一致，不添加 stdio/string/opendir
     var is_bootstrap: i32 = 0;
     if output_file != null {
-        // 简单检查：查找文件名中是否包含 "libuya"（检查前 100 个字符）
+        // 简单检查：查找文件名中是否包含 "libuya"（检查前 C99_OUTPUT_FILENAME_BUF_SIZE 个字符）
         var i: i32 = 0;
-        while i < 100 && output_file[i] != 0 as byte {
+        while i < C99_OUTPUT_FILENAME_BUF_SIZE && output_file[i] != 0 as byte {
             // 检查 "libuya"（6个字符：l-i-b-u-y-a）
-            if i + 5 < 100 &&
+            if i + 5 < C99_OUTPUT_FILENAME_BUF_SIZE &&
                output_file[i] == 108 as byte &&      // 'l'
                output_file[i + 1] == 105 as byte &&  // 'i'
                output_file[i + 2] == 98 as byte &&    // 'b'
@@ -554,11 +554,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 break;
             }
             // 检测 "uya.c" 或 "compiler_bootstrap"
-            if i + 5 < 100 && output_file[i] == 117 as byte && output_file[i+1] == 121 as byte &&
+            if i + 5 < C99_OUTPUT_FILENAME_BUF_SIZE && output_file[i] == 117 as byte && output_file[i+1] == 121 as byte &&
                output_file[i+2] == 97 as byte && output_file[i+3] == 46 as byte && output_file[i+4] == 99 as byte {
                 is_bootstrap = 1;  // uya.c
             }
-            if i + 16 < 100 && strncmp(&output_file[i] as *byte, "compiler_bootstrap" as *byte, 17) == 0 {
+            if i + 16 < C99_OUTPUT_FILENAME_BUF_SIZE && strncmp(&output_file[i] as *byte, "compiler_bootstrap" as *byte, 17) == 0 {
                 is_bootstrap = 1;  // compiler_bootstrap
             }
             i = i + 1;
@@ -1208,8 +1208,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                     const m: &ASTNode = decl.method_block_methods[mi];
                                     if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_name != null && m.fn_decl_type_param_count > 0 {
                                         // 检查单态化实例名称是否匹配 "TypeName_method_name" 格式
-                                        var expected_prefix: [byte: 256] = [];
-                                        var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, 256, "%s_%s" as *byte, type_name as *byte, m.fn_decl_name as *byte);
+                                        var expected_prefix: [byte: NAME_BUF_SIZE] = [];
+                                        var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s" as *byte, type_name as *byte, m.fn_decl_name as *byte);
                                         if strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 && (gn[prefix_len] == 95 || gn[prefix_len] == 0) {
                                             // 找到匹配的方法
                                             if m.fn_decl_return_type != null {
@@ -1247,8 +1247,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                     const m: &ASTNode = decl.struct_decl_methods[mi];
                                     if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_name != null && m.fn_decl_type_param_count > 0 {
                                         // 检查单态化实例名称是否匹配 "StructName_method_name" 格式
-                                        var expected_prefix: [byte: 256] = [];
-                                        var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, 256, "%s_%s" as *byte, struct_name as *byte, m.fn_decl_name as *byte);
+                                        var expected_prefix: [byte: NAME_BUF_SIZE] = [];
+                                        var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s" as *byte, struct_name as *byte, m.fn_decl_name as *byte);
                                         if strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 && (gn[prefix_len] == 95 || gn[prefix_len] == 0) {
                                             // 找到匹配的方法
                                             if m.fn_decl_return_type != null {
@@ -1332,8 +1332,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                             while k < codegen.mono_instance_count {
                                 if codegen.mono_instances[k].generic_name != null && codegen.mono_instances[k].is_function != 0 {
                                     // 检查单态化实例名称是否匹配 "TypeName_method_name" 格式
-                                    var expected_prefix: [byte: 256] = [];
-                                    var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, 256, "%s_%s_" as *byte, type_name as *byte, m.fn_decl_name as *byte);
+                                    var expected_prefix: [byte: NAME_BUF_SIZE] = [];
+                                    var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, type_name as *byte, m.fn_decl_name as *byte);
                                     
                                     const gn: &byte = codegen.mono_instances[k].generic_name;
                                     if gn != null && strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 {
@@ -1391,8 +1391,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                         while mi < codegen.mono_instance_count {
                                             if codegen.mono_instances[mi].generic_name != null && codegen.mono_instances[mi].is_function != 0 {
                                                 // 检查单态化实例名称是否匹配 "StructName_method_name" 格式
-                                                var expected_prefix: [byte: 256] = [];
-                                                var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, 256, "%s_%s_" as *byte, mono_name as *byte, m.fn_decl_name as *byte);
+                                                var expected_prefix: [byte: NAME_BUF_SIZE] = [];
+                                                var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, mono_name as *byte, m.fn_decl_name as *byte);
                                                 
                                                 const gn: &byte = codegen.mono_instances[mi].generic_name;
                                                 if gn != null && strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 {
@@ -1428,8 +1428,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                         // 检查是否是泛型方法
                         if m.fn_decl_type_param_count > 0 {
                             // 泛型方法：为每个单态化实例生成原型
-                            var expected_prefix: [byte: 256] = [];
-                            const prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, 256, "%s_%s_" as *byte, struct_name as *byte, m.fn_decl_name as *byte);
+                            var expected_prefix: [byte: NAME_BUF_SIZE] = [];
+                            const prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, struct_name as *byte, m.fn_decl_name as *byte);
                             var k: i32 = 0;
                             while k < codegen.mono_instance_count {
                                 if codegen.mono_instances[k].generic_name != null && codegen.mono_instances[k].is_function != 0 {
@@ -1582,8 +1582,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                             while mi < codegen.mono_instance_count {
                                                 if codegen.mono_instances[mi].generic_name != null && codegen.mono_instances[mi].is_function != 0 {
                                                     // 检查单态化实例名称是否匹配 "StructName_method_name" 格式
-                                                    var expected_prefix: [byte: 256] = [];
-                                                    var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, 256, "%s_%s_" as *byte, mono_name as *byte, m.fn_decl_name as *byte);
+                                                    var expected_prefix: [byte: NAME_BUF_SIZE] = [];
+                                                    var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, mono_name as *byte, m.fn_decl_name as *byte);
                                                     
                                                     const gn: &byte = codegen.mono_instances[mi].generic_name;
                                                     if gn != null && strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 {
@@ -1625,8 +1625,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                 while k < codegen.mono_instance_count {
                                     if codegen.mono_instances[k].generic_name != null && codegen.mono_instances[k].is_function != 0 {
                                         // 检查单态化实例名称是否匹配 "StructName_method_name" 格式
-                                        var expected_prefix: [byte: 256] = [];
-                                        var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, 256, "%s_%s_" as *byte, struct_name as *byte, m.fn_decl_name as *byte);
+                                        var expected_prefix: [byte: NAME_BUF_SIZE] = [];
+                                        var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, struct_name as *byte, m.fn_decl_name as *byte);
                                         
                                         const gn: &byte = codegen.mono_instances[k].generic_name;
                                         if gn != null && strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 {
@@ -1715,8 +1715,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                 while k < codegen.mono_instance_count {
                                     if codegen.mono_instances[k].generic_name != null && codegen.mono_instances[k].is_function != 0 {
                                         // 检查单态化实例名称是否匹配 "TypeName_method_name" 格式
-                                        var expected_prefix: [byte: 256] = [];
-                                        var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, 256, "%s_%s_" as *byte, type_name as *byte, m.fn_decl_name as *byte);
+                                        var expected_prefix: [byte: NAME_BUF_SIZE] = [];
+                                        var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, type_name as *byte, m.fn_decl_name as *byte);
                                         
                                         // 检查 generic_name 是否以 expected_prefix 开头
                                         const gn: &byte = codegen.mono_instances[k].generic_name;

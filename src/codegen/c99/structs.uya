@@ -430,16 +430,20 @@ fn emit_struct_deps_for_union(codegen: &C99CodeGenerator, union_decl: &ASTNode) 
     
     var generated: i32 = 0;
     var i: i32 = 0;
-    while i < struct_count {
-        const struct_name: &byte = struct_names[i];
-        if struct_name != null {
-            // 检查是否已定义
-            if is_struct_defined(codegen, struct_name) == 0 {
-                const struct_decl: &ASTNode = find_struct_decl_c99(codegen, struct_name);
-                if struct_decl != null && struct_decl.type == ASTNodeType.AST_STRUCT_DECL {
-                    gen_struct_definition(codegen, struct_decl);
-                    fputs("\n" as *byte, codegen.output as *void);
-                    generated = generated + 1;
+    const scount: i32 = struct_count;
+    while i < scount {
+        const idx: i32 = i;
+        if idx >= 0 && idx < scount {
+            const struct_name: &byte = struct_names[idx];
+            if struct_name != null {
+                // 检查是否已定义
+                if is_struct_defined(codegen, struct_name) == 0 {
+                    const struct_decl: &ASTNode = find_struct_decl_c99(codegen, struct_name);
+                    if struct_decl != null && struct_decl.type == ASTNodeType.AST_STRUCT_DECL {
+                        gen_struct_definition(codegen, struct_decl);
+                        fputs("\n" as *byte, codegen.output as *void);
+                        generated = generated + 1;
+                    }
                 }
             }
         }
@@ -468,12 +472,14 @@ fn find_struct_decl_from_type_c(codegen: &C99CodeGenerator, type_c: &byte) &ASTN
     if name_len <= 0 {
         return null;
     }
-    if name_len >= 128 {
-        name_len = 127;
+    if name_len >= C99_GENERIC_NAME_BUF_SIZE {
+        name_len = C99_GENERIC_NAME_BUF_SIZE - 1;
     }
-    var name_buf: [byte: 128] = [];
+    var name_buf: [byte: C99_GENERIC_NAME_BUF_SIZE] = [];
     memcpy(&name_buf[0] as *void, p as *void, name_len as usize);
-    name_buf[name_len] = 0;
+    if name_len >= 0 && name_len < C99_GENERIC_NAME_BUF_SIZE {
+        name_buf[name_len] = 0;
+    }
     return find_struct_decl_c99(codegen, &name_buf[0] as &byte);
 }
 
@@ -553,7 +559,7 @@ fn find_method_in_block(method_block: &ASTNode, method_name: &byte) &ASTNode {
 
 // 查找结构体方法（同时检查外部方法块和内部定义的方法）
 // 全局静态缓冲区用于从单态化名称提取泛型名称（避免 arena 分配）
-var g_generic_name_buf: [byte: 128] = [];
+var g_generic_name_buf: [byte: C99_GENERIC_NAME_BUF_SIZE] = [];
 
 // 内部辅助函数：从单态化名称提取泛型名称并存储到全局缓冲区
 // 返回 1 表示成功提取（结果在 g_generic_name_buf 中），0 表示非单态化名称
@@ -588,15 +594,17 @@ fn extract_generic_name_inline(mono_name: &byte) i32 {
         return 0;
     }
     const len: i32 = ptr_diff(underscore, mono_name as *byte);
-    if len >= 128 || len <= 0 {
+    if len >= C99_GENERIC_NAME_BUF_SIZE || len <= 0 {
         return 0;
     }
     var i: i32 = 0;
-    while i < len {
+    while i < len && i < C99_GENERIC_NAME_BUF_SIZE {
         g_generic_name_buf[i] = mono_name[i];
         i = i + 1;
     }
-    g_generic_name_buf[len] = 0;
+    if len >= 0 && len < C99_GENERIC_NAME_BUF_SIZE {
+        g_generic_name_buf[len] = 0;
+    }
     return 1;
 }
 
@@ -834,11 +842,11 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
         codegen.indent_level = codegen.indent_level + 1;
         
         // 使用 collect_interface_method_sigs 收集所有方法（包括组合接口的方法）
-        var all_sigs: [&ASTNode: 128] = [];
-        const sig_count: i32 = collect_interface_method_sigs(codegen, iface_name, &all_sigs[0], 128);
-        
+        var all_sigs: [&ASTNode: C99_MAX_INTERFACE_METHODS] = [];
+        const sig_count: i32 = collect_interface_method_sigs(codegen, iface_name, &all_sigs[0], C99_MAX_INTERFACE_METHODS);
+
         var j: i32 = 0;
-        while j < sig_count {
+        while j < sig_count && j < C99_MAX_INTERFACE_METHODS {
             const msig: &ASTNode = all_sigs[j];
             if msig == null || msig.type != ASTNodeType.AST_FN_DECL {
                 j = j + 1;
@@ -911,7 +919,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
             fprintf(codegen.output as *void, "static const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
                     safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
             var k: i32 = 0;
-            while k < sig_count2 {
+            while k < sig_count2 && k < C99_MAX_INTERFACE_METHODS {
                 const msig: &ASTNode = all_sigs2[k];
                 if msig == null || msig.type != ASTNodeType.AST_FN_DECL {
                     k = k + 1;
@@ -1211,19 +1219,23 @@ fn get_mono_struct_name(codegen: &C99CodeGenerator, generic_name: &byte, type_ar
     }
     
     // 构建后缀
-    var suffix: [byte: 512] = [0: 512];
+    var suffix: [byte: C99_SUFFIX_BUF_SIZE] = [0: C99_SUFFIX_BUF_SIZE];
     var suffix_len: i32 = 0;
-    
+
     var i: i32 = 0;
     while i < type_arg_count {
-        if i > 0 && suffix_len < 511 {
-            suffix[suffix_len] = 95 as byte;  // '_'
+        if i > 0 {
+            if suffix_len >= 0 && suffix_len < C99_SUFFIX_BUF_SIZE {
+                suffix[suffix_len] = 95 as byte;  // '_'
+            }
             suffix_len = suffix_len + 1;
         }
-        suffix_len = append_type_arg_suffix(codegen, type_args[i], &suffix[0], suffix_len, 512);
+        suffix_len = append_type_arg_suffix(codegen, type_args[i], &suffix[0], suffix_len, C99_SUFFIX_BUF_SIZE);
         i = i + 1;
     }
-    suffix[suffix_len] = 0;
+    if suffix_len >= 0 && suffix_len < C99_SUFFIX_BUF_SIZE {
+        suffix[suffix_len] = 0;
+    }
     
     // 分配并构建完整名称
     const safe_name: &byte = get_safe_c_identifier(codegen, generic_name);

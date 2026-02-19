@@ -86,11 +86,15 @@ fn c99_codegen_set_mono_instances(codegen: &C99CodeGenerator, checker: &TypeChec
     codegen.mono_instance_count = 0;
     
     var i: i32 = 0;
-    while i < checker.mono_instance_count && i < C99_MAX_MONO_INSTANCES {
-        codegen.mono_instances[i].generic_name = checker.mono_instances[i].generic_name;
-        codegen.mono_instances[i].is_function = checker.mono_instances[i].is_function;
-        codegen.mono_instances[i].type_arg_count = checker.mono_instances[i].type_arg_count;
-        codegen.mono_instances[i].type_args = checker.mono_instances[i].type_arg_nodes;
+    const count: i32 = checker.mono_instance_count;
+    while i < count && i < C99_MAX_MONO_INSTANCES {
+        const idx: i32 = i;
+        if idx >= 0 && idx < C99_MAX_MONO_INSTANCES {
+            codegen.mono_instances[idx].generic_name = checker.mono_instances[idx].generic_name;
+            codegen.mono_instances[idx].is_function = checker.mono_instances[idx].is_function;
+            codegen.mono_instances[idx].type_arg_count = checker.mono_instances[idx].type_arg_count;
+            codegen.mono_instances[idx].type_args = checker.mono_instances[idx].type_arg_nodes;
+        }
         
         codegen.mono_instance_count = codegen.mono_instance_count + 1;
         i = i + 1;
@@ -119,21 +123,27 @@ fn c99_get_or_add_error_id(codegen: &C99CodeGenerator, name: &byte) i32 {
     }
     const h: u32 = c99_hash_error_name(name);
     var i: i32 = 0;
-    while i < codegen.error_count {
-        if codegen.error_names[i] != null && strcmp(codegen.error_names[i] as *byte, name as *byte) == 0 {
-            return codegen.error_hashes[i] as i32;
+    const ecount: i32 = codegen.error_count;
+    while i < ecount {
+        if i >= 0 && i < C99_MAX_ERROR_IDS {
+            if codegen.error_names[i] != null && strcmp(codegen.error_names[i] as *byte, name as *byte) == 0 {
+                return codegen.error_hashes[i] as i32;
+            }
         }
         i = i + 1;
     }
-    if codegen.error_count >= 256 {
+    if codegen.error_count >= C99_MAX_ERROR_IDS {
         return 0;
     }
     const copy: &byte = c99_arena_strdup(codegen.arena, name);
     if copy == null {
         return 0;
     }
-    codegen.error_names[codegen.error_count] = copy;
-    codegen.error_hashes[codegen.error_count] = h;
+    const err_idx: i32 = codegen.error_count;
+    if err_idx >= 0 && err_idx < C99_MAX_ERROR_IDS {
+        codegen.error_names[err_idx] = copy;
+        codegen.error_hashes[err_idx] = h;
+    }
     codegen.error_count = codegen.error_count + 1;
     return h as i32;
 }
@@ -318,19 +328,19 @@ fn get_safe_c_identifier(codegen: &C99CodeGenerator, name: &byte) &byte {
         return name;
     }
     
-    var buf: [byte: 128] = [];
+    var buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
     if is_c_reserved_name(name) != 0 {
-        snprintf(&buf[0] as *byte, 128, "uya_%s" as *byte, name as *byte);
+        snprintf(&buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "uya_%s" as *byte, name as *byte);
         return c99_arena_strdup(codegen.arena, &buf[0] as &byte);
     }
     var prefix: i32 = 1;
     while prefix <= 3 {
         if prefix == 1 {
-            snprintf(&buf[0] as *byte, 128, "_%s" as *byte, name as *byte);
+            snprintf(&buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "_%s" as *byte, name as *byte);
         } else if prefix == 2 {
-            snprintf(&buf[0] as *byte, 128, "_%s_" as *byte, name as *byte);
+            snprintf(&buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "_%s_" as *byte, name as *byte);
         } else {
-            snprintf(&buf[0] as *byte, 128, "uya_%s" as *byte, name as *byte);
+            snprintf(&buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "uya_%s" as *byte, name as *byte);
         }
         
         // 检查这个名称是否已经用作关键字（理论上应该不会冲突）
@@ -361,8 +371,8 @@ fn add_string_constant(codegen: &C99CodeGenerator, value: &byte) &byte {
     }
     
     // 生成常量名称（如 str0）
-    var name_buf: [byte: 32] = [];
-    snprintf(&name_buf[0] as *byte, 32, "str%d" as *byte, codegen.string_constant_count);
+    var name_buf: [byte: NUM_BUF_SIZE] = [];
+    snprintf(&name_buf[0] as *byte, NUM_BUF_SIZE, "str%d" as *byte, codegen.string_constant_count);
     
     // 存储到表中
     codegen.string_constants[codegen.string_constant_count].name = c99_arena_strdup(codegen.arena, &name_buf[0] as &byte);
@@ -538,14 +548,14 @@ fn build_and_add_printf_fmt_from_interp(codegen: &C99CodeGenerator, interp: &AST
     }
     const n: i32 = interp.string_interp_segment_count;
     if n <= 0 { return null; }
-    var buf: [byte: 2048] = [];
+    var buf: [byte: C99_STRING_INTERP_BUF_SIZE] = [];
     var off: i32 = 0;
     var i: i32 = 0;
-    while i < n && off < 2016 {
+    while i < n && off < C99_STRING_INTERP_BUF_SIZE - 32 {
         const seg: &ASTStringInterpSegment = &interp.string_interp_segments[i];
         if seg.is_text != 0 && seg.text != null {
             var p: i32 = 0;
-            while seg.text[p] != 0 && off < 2012 {
+            while seg.text[p] != 0 && off < C99_STRING_INTERP_BUF_SIZE - 36 {
                 if seg.text[p] == 37 {
                     buf[off] = 37;
                     off = off + 1;
@@ -562,7 +572,7 @@ fn build_and_add_printf_fmt_from_interp(codegen: &C99CodeGenerator, interp: &AST
             off = off + 1;
             if seg.format_spec != null && seg.format_spec[0] != 0 {
                 var k: i32 = 0;
-                while seg.format_spec[k] != 0 && off < 2046 {
+                while seg.format_spec[k] != 0 && off < C99_STRING_INTERP_LIMIT {
                     buf[off] = seg.format_spec[k];
                     off = off + 1;
                     k = k + 1;
@@ -574,7 +584,9 @@ fn build_and_add_printf_fmt_from_interp(codegen: &C99CodeGenerator, interp: &AST
         }
         i = i + 1;
     }
-    buf[off] = 0;
+    if off >= 0 && off < C99_STRING_INTERP_BUF_SIZE {
+        buf[off] = 0;
+    }
     return add_string_constant(codegen, &buf[0] as &byte);
 }
 
@@ -585,14 +597,14 @@ fn emit_printf_fmt_inline(codegen: &C99CodeGenerator, interp: &ASTNode) void {
     }
     const n: i32 = interp.string_interp_segment_count;
     if n <= 0 { return; }
-    var buf: [byte: 2048] = [];
+    var buf: [byte: C99_STRING_INTERP_BUF_SIZE] = [];
     var off: i32 = 0;
     var i: i32 = 0;
-    while i < n && off < 2016 {
+    while i < n && off < C99_STRING_INTERP_BUF_SIZE - 32 {
         const seg: &ASTStringInterpSegment = &interp.string_interp_segments[i];
         if seg.is_text != 0 && seg.text != null {
             var p: i32 = 0;
-            while seg.text[p] != 0 && off < 2012 {
+            while seg.text[p] != 0 && off < C99_STRING_INTERP_BUF_SIZE - 36 {
                 if seg.text[p] == 37 {
                     buf[off] = 37;
                     off = off + 1;
@@ -609,7 +621,7 @@ fn emit_printf_fmt_inline(codegen: &C99CodeGenerator, interp: &ASTNode) void {
             off = off + 1;
             if seg.format_spec != null && seg.format_spec[0] != 0 {
                 var k: i32 = 0;
-                while seg.format_spec[k] != 0 && off < 2046 {
+                while seg.format_spec[k] != 0 && off < C99_STRING_INTERP_LIMIT {
                     buf[off] = seg.format_spec[k];
                     off = off + 1;
                     k = k + 1;
@@ -621,7 +633,9 @@ fn emit_printf_fmt_inline(codegen: &C99CodeGenerator, interp: &ASTNode) void {
         }
         i = i + 1;
     }
-    buf[off] = 0;
+    if off >= 0 && off < C99_STRING_INTERP_BUF_SIZE {
+        buf[off] = 0;
+    }
     fputc(34, codegen.output as *void);
     escape_string_for_c(codegen.output, &buf[0] as &byte);
     fputc(34, codegen.output as *void);
@@ -679,12 +693,12 @@ fn collect_string_constants_from_expr(codegen: &C99CodeGenerator, expr: &ASTNode
             if seg.is_text != 0 && seg.text != null {
                 add_string_constant(codegen, seg.text);
             } else {
-                var fmt_buf: [byte: 64] = [];
+                var fmt_buf: [byte: FMT_BUF_SIZE] = [];
                 fmt_buf[0] = 37;
                 var j: i32 = 1;
                 if seg.format_spec != null && seg.format_spec[0] != 0 {
                     var k: i32 = 0;
-                    while seg.format_spec[k] != 0 && j < 62 {
+                    while seg.format_spec[k] != 0 && j < FMT_BUF_SIZE - 2 {
                         fmt_buf[j] = seg.format_spec[k];
                         j = j + 1;
                         k = k + 1;
@@ -693,7 +707,9 @@ fn collect_string_constants_from_expr(codegen: &C99CodeGenerator, expr: &ASTNode
                     fmt_buf[1] = 100;
                     j = 2;
                 }
-                fmt_buf[j] = 0;
+                if j >= 0 && j < FMT_BUF_SIZE {
+                    fmt_buf[j] = 0;
+                }
                 const fmt_in_arena: &byte = c99_arena_strdup(codegen.arena, &fmt_buf[0] as &byte);
                 if fmt_in_arena != null {
                     add_string_constant(codegen, fmt_in_arena);

@@ -10,6 +10,16 @@ use std.string.strlen;
 
 // 常量定义
 const MAX_ERROR_NAMES: i32 = 256;  // 最大错误名数量
+const MAX_MOVED_NAMES: i32 = 128;  // 最大已移动变量名数量
+const MAX_MONO_INSTANCES: i32 = 512;  // 最大单态化实例数量
+const MAX_UNION_VARIANTS: i32 = 32;  // 最大联合体变体数量
+const MAX_INTERFACE_METHODS: i32 = 128;  // 最大接口方法数量
+const MAX_INTERFACE_STACK: i32 = 64;  // 最大接口栈深度
+const MAX_BASE_NAME_LEN: i32 = 256;  // 最大基础名称长度
+const MAX_MONO_NAME_LEN: i32 = 256;  // 最大单态化名称长度
+const MAX_MONO_NAME_LIMIT: i32 = 250;  // 单态化名称长度限制
+const MAX_POINTER_NAMES: i32 = 32;  // 最大指针名数量
+const MAX_CONSTRAINTS: i32 = 64;  // 最大约束数量
 
 // 文件系统相关（用于检查目录是否存在）
 use libc.Stat;
@@ -732,9 +742,13 @@ fn moved_set_contains(checker: &TypeChecker, name: &byte) i32 {
         return 0;
     }
     var i: i32 = 0;
-    while i < checker.moved_count {
-        if checker.moved_names[i] != null && str_equals(checker.moved_names[i], name) != 0 {
-            return 1;
+    const count: i32 = checker.moved_count;
+    while i < count {
+        if i < MAX_MOVED_NAMES {
+            const name_ptr: &byte = checker.moved_names[i];
+            if name_ptr != null && str_equals(name_ptr, name) != 0 {
+                return 1;
+            }
         }
         i = i + 1;
     }
@@ -772,13 +786,16 @@ fn checker_mark_moved(checker: &TypeChecker, node: &ASTNode, var_name: &byte, st
         checker_report_error(checker, err_node, "循环中的变量不能移动" as *byte);
         return;
     }
-    if checker.moved_count >= 128 {
+    if checker.moved_count >= MAX_MOVED_NAMES {
         return;
     }
+    const idx: i32 = checker.moved_count;
     const copy: &byte = checker_arena_strdup(checker.arena, var_name);
     if copy != null {
-        checker.moved_names[checker.moved_count] = copy;
-        checker.moved_count = checker.moved_count + 1;
+        if idx >= 0 && idx < MAX_MOVED_NAMES {
+            checker.moved_names[idx] = copy;
+        }
+        checker.moved_count = idx + 1;
     }
     // 写回 VAR_DECL 的 was_moved，供 codegen 生成 drop 时跳过已移动变量
     const sym: &Symbol = symbol_table_lookup(checker, var_name);
@@ -860,27 +877,35 @@ fn get_or_add_error_id(checker: &TypeChecker, name: &byte, node: &ASTNode) u32 {
     }
     const h: u32 = hash_error_name(name);
     var i: i32 = 0;
-    while i < checker.error_name_count {
-        if checker.error_names[i] != null && str_equals(checker.error_names[i], name) != 0 {
-            return checker.error_hashes[i];
-        }
-        if checker.error_hashes[i] == h && checker.error_names[i] != null && str_equals(checker.error_names[i], name) == 0 {
-            // 同 hash 不同名 -> 冲突
-            checker_report_error(checker, node, "error_id 冲突: 请重命名其一" as *byte);
-            return 0;
+    const count: i32 = checker.error_name_count;
+    while i < count {
+        if i < MAX_ERROR_NAMES {
+            const err_name: &byte = checker.error_names[i];
+            const err_hash: u32 = checker.error_hashes[i];
+            if err_name != null && str_equals(err_name, name) != 0 {
+                return err_hash;
+            }
+            if err_hash == h && err_name != null && str_equals(err_name, name) == 0 {
+                // 同 hash 不同名 -> 冲突
+                checker_report_error(checker, node, "error_id 冲突: 请重命名其一" as *byte);
+                return 0;
+            }
         }
         i = i + 1;
     }
     if checker.error_name_count >= MAX_ERROR_NAMES {
         return 0;
     }
+    const idx: i32 = checker.error_name_count;
     const copy: &byte = checker_arena_strdup(checker.arena, name);
     if copy == null {
         return 0;
     }
-    checker.error_names[checker.error_name_count] = copy;
-    checker.error_hashes[checker.error_name_count] = h;
-    checker.error_name_count = checker.error_name_count + 1;
+    if idx >= 0 && idx < MAX_ERROR_NAMES {
+        checker.error_names[idx] = copy;
+        checker.error_hashes[idx] = h;
+    }
+    checker.error_name_count = idx + 1;
     return h;
 }
 
@@ -1160,9 +1185,9 @@ fn check_type_param_constraints(checker: &TypeChecker, type: Type,
     while i < type_param.constraint_count {
         const constraint: *byte = type_param.constraints[i];
         if constraint != null && type_satisfies_constraint(checker, type, constraint) == 0 {
-            var buf: [byte: 512] = [];
+            var buf: [byte: MAX_BASE_NAME_LEN * 2] = [];
             const type_name: &byte = type_to_string(checker.arena, copy_type(&type));
-            snprintf(buf as *byte, 512, 
+            snprintf(buf as *byte, MAX_BASE_NAME_LEN * 2, 
                      "类型 '%s' 不满足泛型参数 '%s' 的约束 '%s'" as *byte,
                      type_name as *byte,
                      param_name,
@@ -1854,29 +1879,33 @@ fn struct_implements_interface(checker: &TypeChecker, struct_name: &byte, interf
 fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
                           type_arg_nodes: & & ASTNode, type_arg_count: i32,
                           is_function: i32) i32 {
-    if checker == null || generic_name == null || checker.mono_instance_count >= 512 {
+    if checker == null || generic_name == null || checker.mono_instance_count >= MAX_MONO_INSTANCES {
         return -1;
     }
     
     // 检查是否已存在相同实例
     var i: i32 = 0;
-    while i < checker.mono_instance_count {
-        if checker.mono_instances[i].generic_name != null &&
-            str_equals(checker.mono_instances[i].generic_name, generic_name) != 0 &&
-            checker.mono_instances[i].is_function == is_function &&
-            checker.mono_instances[i].type_arg_count == type_arg_count {
-            // 比较类型实参
-            var is_match: i32 = 1;
-            var j: i32 = 0;
-            while j < type_arg_count && is_match != 0 {
-                const arg_type: Type = type_from_ast(checker, type_arg_nodes[j]);
-                if type_equals(copy_type(&checker.mono_instances[i].type_args[j]), copy_type(&arg_type)) == 0 {
-                    is_match = 0;
+    const inst_count: i32 = checker.mono_instance_count;
+    while i < inst_count {
+        if i < MAX_MONO_INSTANCES {
+            const inst: &MonoInstance = &checker.mono_instances[i];
+            if inst.generic_name != null &&
+                str_equals(inst.generic_name, generic_name) != 0 &&
+                inst.is_function == is_function &&
+                inst.type_arg_count == type_arg_count {
+                // 比较类型实参
+                var is_match: i32 = 1;
+                var j: i32 = 0;
+                while j < type_arg_count && is_match != 0 {
+                    const arg_type: Type = type_from_ast(checker, type_arg_nodes[j]);
+                    if inst.type_args != null && type_equals(copy_type(&inst.type_args[j]), copy_type(&arg_type)) == 0 {
+                        is_match = 0;
+                    }
+                    j = j + 1;
                 }
-                j = j + 1;
-            }
-            if is_match != 0 {
-                return 0;  // 已存在相同实例
+                if is_match != 0 {
+                    return 0;  // 已存在相同实例
+                }
             }
         }
         i = i + 1;
@@ -1884,7 +1913,7 @@ fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
     
     // 注册新实例
     const idx: i32 = checker.mono_instance_count;
-    checker.mono_instance_count = checker.mono_instance_count + 1;
+    checker.mono_instance_count = idx + 1;
     
     // 复制 generic_name 到 Arena（因为传入的可能是局部数组）
     var name_len: i32 = 0;
@@ -1893,7 +1922,7 @@ fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
     }
     const name_copy: &byte = arena_alloc(checker.arena, (name_len + 1) as usize) as &byte;
     if name_copy == null {
-        checker.mono_instance_count = checker.mono_instance_count - 1;
+        checker.mono_instance_count = idx;
         return -1;
     }
     var ni: i32 = 0;
@@ -1901,21 +1930,30 @@ fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
         name_copy[ni] = generic_name[ni];
         ni = ni + 1;
     }
-    checker.mono_instances[idx].generic_name = name_copy;
-    checker.mono_instances[idx].is_function = is_function;
-    checker.mono_instances[idx].type_arg_count = type_arg_count;
+    if idx >= 0 && idx < MAX_MONO_INSTANCES {
+        const inst: &MonoInstance = &checker.mono_instances[idx];
+        inst.generic_name = name_copy;
+        inst.is_function = is_function;
+        inst.type_arg_count = type_arg_count;
+    }
     
     // 分配类型实参数组
-    checker.mono_instances[idx].type_args = arena_alloc(checker.arena, (@size_of(Type)) * (type_arg_count as usize)) as &Type;
-    if checker.mono_instances[idx].type_args == null {
-        checker.mono_instance_count = checker.mono_instance_count - 1;
+    const type_args_mem: &Type = arena_alloc(checker.arena, (@size_of(Type)) * (type_arg_count as usize)) as &Type;
+    if idx >= 0 && idx < MAX_MONO_INSTANCES {
+        checker.mono_instances[idx].type_args = type_args_mem;
+    }
+    if type_args_mem == null {
+        checker.mono_instance_count = idx;
         return -1;
     }
     
     // 保存 AST 节点数组
-    checker.mono_instances[idx].type_arg_nodes = arena_alloc(checker.arena, (@size_of(&ASTNode)) * (type_arg_count as usize)) as & & ASTNode;
-    if checker.mono_instances[idx].type_arg_nodes == null {
-        checker.mono_instance_count = checker.mono_instance_count - 1;
+    const type_arg_nodes_mem: & & ASTNode = arena_alloc(checker.arena, (@size_of(&ASTNode)) * (type_arg_count as usize)) as & & ASTNode;
+    if idx >= 0 && idx < MAX_MONO_INSTANCES {
+        checker.mono_instances[idx].type_arg_nodes = type_arg_nodes_mem;
+    }
+    if type_arg_nodes_mem == null {
+        checker.mono_instance_count = idx;
         return -1;
     }
     
@@ -1923,8 +1961,13 @@ fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
     var k: i32 = 0;
     while k < type_arg_count {
         const arg_type: Type = type_from_ast(checker, type_arg_nodes[k]);
-        checker.mono_instances[idx].type_args[k] = copy_type(&arg_type);
-        checker.mono_instances[idx].type_arg_nodes[k] = type_arg_nodes[k];
+        if idx >= 0 && idx < MAX_MONO_INSTANCES {
+            const inst: &MonoInstance = &checker.mono_instances[idx];
+            if inst.type_args != null {
+                inst.type_args[k] = copy_type(&arg_type);
+                inst.type_arg_nodes[k] = type_arg_nodes[k];
+            }
+        }
         k = k + 1;
     }
     
@@ -3680,7 +3723,10 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             result.kind = TypeKind.TYPE_VOID;
             return result;
         }
-        element_type_ptr[0] = elem[0];
+        const elem_type: &Type = element_type_ptr;  // 为安全证明建立非空引用
+        if elem != null {
+            elem_type[0] = elem[0];
+        }
         result.kind = TypeKind.TYPE_SLICE;
         result.slice_element_type = element_type_ptr;
         result.slice_len = -1;
@@ -3923,11 +3969,11 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         if expr_type.kind == TypeKind.TYPE_UNION && expr_type.union_name != null && checker.program_node != null {
             const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, expr_type.union_name);
             if union_decl != null && union_decl.union_decl_variant_count > 0 && has_catch_all == 0 {
-                var covered: [i32: 32] = [];
+                var covered: [i32: MAX_UNION_VARIANTS] = [];
                 var nv: i32 = union_decl.union_decl_variant_count;
-                if nv > 32 { nv = 32; }
+                if nv > MAX_UNION_VARIANTS { nv = MAX_UNION_VARIANTS; }
                 var k: i32 = 0;
-                while k < nv {
+                while k < nv && k < MAX_UNION_VARIANTS {
                     covered[k] = 0;
                     k = k + 1;
                 }
@@ -3936,7 +3982,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
                     const arm: ASTMatchArm = expr.match_expr_arms[j];
                     if arm.kind == MatchPatternKind.MATCH_PAT_UNION && arm.variant_name != null {
                         var kk: i32 = 0;
-                        while kk < nv {
+                        while kk < nv && kk < MAX_UNION_VARIANTS {
                             const v: &ASTNode = union_decl.union_decl_variants[kk];
                             if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
                                 str_equals(v.var_decl_name, arm.variant_name) != 0 {
@@ -3949,7 +3995,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
                     j = j + 1;
                 }
                 k = 0;
-                while k < nv {
+                while k < nv && k < MAX_UNION_VARIANTS {
                     if covered[k] == 0 {
                         checker_report_error(checker, expr, "match 联合体必须处理所有变体" as *byte);
                         break;
@@ -4700,11 +4746,11 @@ fn checker_check_struct_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             if iface_name != null {
                 // 对于泛型接口（如 Getter<i32>），提取基本名称
                 var base_iface_name: &byte = iface_name;
-                var base_name_buf: [byte: 256] = [];
+                var base_name_buf: [byte: MAX_BASE_NAME_LEN] = [];
                 const angle: &byte = strchr(iface_name as *byte, 60 as i32) as &byte;  // '<' = 60
                 if angle != null {
                     const base_len: i32 = (angle as i64 - iface_name as i64) as i32;
-                    if base_len > 0 && base_len < 256 {
+                    if base_len > 0 && base_len < MAX_BASE_NAME_LEN {
                         memcpy(&base_name_buf[0] as *void, iface_name as *void, base_len as usize);
                         base_name_buf[base_len] = 0;
                         base_iface_name = &base_name_buf[0];
@@ -4718,12 +4764,14 @@ fn checker_check_struct_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                 }
                 
                 // 收集接口的所有方法签名（包括组合接口的方法）- 使用栈式遍历
-                var method_sigs: [&ASTNode: 128] = [];
+                var method_sigs: [&ASTNode: MAX_INTERFACE_METHODS] = [];
                 var sig_count: i32 = 0;
-                var iface_stack: [&ASTNode: 64] = [];
+                var iface_stack: [&ASTNode: MAX_INTERFACE_STACK] = [];
                 var stack_top: i32 = 0;
-                iface_stack[stack_top] = iface_decl;
-                stack_top = stack_top + 1;
+                if stack_top < MAX_INTERFACE_STACK {
+                    iface_stack[stack_top] = iface_decl;
+                    stack_top = stack_top + 1;
+                }
                 
                 while stack_top > 0 {
                     stack_top = stack_top - 1;
@@ -4735,7 +4783,7 @@ fn checker_check_struct_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                     // 添加组合接口到栈
                     if cur_iface.interface_decl_composed_interfaces != null {
                         var ci: i32 = 0;
-                        while ci < cur_iface.interface_decl_composed_count && stack_top < 64 {
+                        while ci < cur_iface.interface_decl_composed_count && stack_top < MAX_INTERFACE_STACK {
                             const composed_name: &byte = cur_iface.interface_decl_composed_interfaces[ci];
                             if composed_name != null {
                                 const composed_iface: &ASTNode = find_interface_decl_from_program(checker.program_node, composed_name);
@@ -4751,21 +4799,22 @@ fn checker_check_struct_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                     // 收集当前接口的方法签名
                     if cur_iface.interface_decl_method_sigs != null {
                         var mi: i32 = 0;
-                        while mi < cur_iface.interface_decl_method_sig_count && sig_count < 128 {
+                        while mi < cur_iface.interface_decl_method_sig_count && sig_count < MAX_INTERFACE_METHODS {
                             const msig: &ASTNode = cur_iface.interface_decl_method_sigs[mi];
                             if msig != null && msig.type == ASTNodeType.AST_FN_DECL && msig.fn_decl_name != null {
                                 // 检查是否已存在
                                 var exists: i32 = 0;
                                 var sj: i32 = 0;
-                                while sj < sig_count {
-                                    if method_sigs[sj] != null && method_sigs[sj].fn_decl_name != null &&
-                                        str_equals(method_sigs[sj].fn_decl_name, msig.fn_decl_name) != 0 {
+                                while sj < sig_count && sj < MAX_INTERFACE_METHODS {
+                                    const existing_sig: &ASTNode = method_sigs[sj];
+                                    if existing_sig != null && existing_sig.fn_decl_name != null &&
+                                        str_equals(existing_sig.fn_decl_name, msig.fn_decl_name) != 0 {
                                         exists = 1;
                                         break;
                                     }
                                     sj = sj + 1;
                                 }
-                                if exists == 0 {
+                                if exists == 0 && sig_count < MAX_INTERFACE_METHODS {
                                     method_sigs[sig_count] = msig;
                                     sig_count = sig_count + 1;
                                 }
@@ -4777,7 +4826,7 @@ fn checker_check_struct_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                 
                 // 检查结构体是否实现了所有方法
                 var mii: i32 = 0;
-                while mii < sig_count {
+                while mii < sig_count && mii < MAX_INTERFACE_METHODS {
                     const msig2: &ASTNode = method_sigs[mii];
                     if msig2 != null && msig2.fn_decl_name != null {
                         const method_name2: &byte = msig2.fn_decl_name;
@@ -4985,26 +5034,26 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                     
                     // 构建完整的单态化名称
                     // 格式：StructName_TypeArg1_..._MethodName_TypeArg1_...
-                    var mono_name: [byte: 256] = [];
+                    var mono_name: [byte: MAX_MONO_NAME_LEN] = [];
                     var pos: i32 = 0;
-                    
+
                     // 如果结构体是泛型的，添加结构体类型参数后缀
                     if object_type.struct_type_args != null && object_type.struct_type_arg_count > 0 {
-                        pos = pos + snprintf(mono_name as *byte, 256, "%s" as *byte, object_type.struct_name as *byte);
+                        pos = pos + snprintf(mono_name as *byte, MAX_MONO_NAME_LEN, "%s" as *byte, object_type.struct_name as *byte);
                         var sti: i32 = 0;
-                        while sti < object_type.struct_type_arg_count && pos < 250 {
+                        while sti < object_type.struct_type_arg_count && pos < MAX_MONO_NAME_LIMIT {
                             const st_type: Type = object_type.struct_type_args[sti];
                             // 从 Type 获取名称
                             if st_type.kind == TypeKind.TYPE_STRUCT && st_type.struct_name != null {
-                                pos = pos + snprintf(&mono_name[pos] as *byte, 256 - pos, "_%s" as *byte, st_type.struct_name as *byte);
+                                pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_%s" as *byte, st_type.struct_name as *byte);
                             } else if st_type.kind == TypeKind.TYPE_I32 {
-                                pos = pos + snprintf(&mono_name[pos] as *byte, 256 - pos, "_i32" as *byte);
+                                pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_i32" as *byte);
                             } else if st_type.kind == TypeKind.TYPE_I64 {
-                                pos = pos + snprintf(&mono_name[pos] as *byte, 256 - pos, "_i64" as *byte);
+                                pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_i64" as *byte);
                             } else if st_type.kind == TypeKind.TYPE_F64 {
-                                pos = pos + snprintf(&mono_name[pos] as *byte, 256 - pos, "_f64" as *byte);
+                                pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_f64" as *byte);
                             } else if st_type.kind == TypeKind.TYPE_BOOL {
-                                pos = pos + snprintf(&mono_name[pos] as *byte, 256 - pos, "_bool" as *byte);
+                                pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_bool" as *byte);
                             }
                             sti = sti + 1;
                         }
@@ -5013,14 +5062,14 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                     }
                     
                     // 添加方法名
-                    pos = pos + snprintf(&mono_name[pos] as *byte, 256 - pos, "_%s" as *byte, method_name as *byte);
+                    pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_%s" as *byte, method_name as *byte);
                     
                     // 添加方法的类型参数后缀
                     var mi: i32 = 0;
-                    while mi < type_arg_count && pos < 250 {
+                    while mi < type_arg_count && pos < MAX_MONO_NAME_LIMIT {
                         const m_type_arg: &ASTNode = type_args[mi];
                         if m_type_arg != null && m_type_arg.type == ASTNodeType.AST_TYPE_NAMED && m_type_arg.type_named_name != null {
-                            pos = pos + snprintf(&mono_name[pos] as *byte, 256 - pos, "_%s" as *byte, m_type_arg.type_named_name as *byte);
+                            pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_%s" as *byte, m_type_arg.type_named_name as *byte);
                         }
                         mi = mi + 1;
                     }
@@ -5562,20 +5611,26 @@ fn pointer_nonnull_add(checker: &TypeChecker, ptr_name: &byte) void {
     if checker == null || ptr_name == null {
         return;
     }
-    if checker.pointer_nonnull_count >= 32 {
+    if checker.pointer_nonnull_count >= MAX_POINTER_NAMES {
         return;  // 已满
     }
     // 检查是否已存在
     var i: i32 = 0;
-    while i < checker.pointer_nonnull_count {
-        const name: &byte = checker.pointer_nonnull_names[i];
-        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
-            return;  // 已存在
+    const count: i32 = checker.pointer_nonnull_count;
+    while i < count {
+        if i < MAX_POINTER_NAMES {
+            const name: &byte = checker.pointer_nonnull_names[i];
+            if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+                return;  // 已存在
+            }
         }
         i = i + 1;
     }
-    checker.pointer_nonnull_names[checker.pointer_nonnull_count] = ptr_name;
-    checker.pointer_nonnull_count = checker.pointer_nonnull_count + 1;
+    const idx: i32 = checker.pointer_nonnull_count;
+    if idx >= 0 && idx < MAX_POINTER_NAMES {
+        checker.pointer_nonnull_names[idx] = ptr_name;
+        checker.pointer_nonnull_count = idx + 1;
+    }
 }
 
 // 移除指针非空状态
@@ -5586,11 +5641,16 @@ fn pointer_nonnull_remove(checker: &TypeChecker, ptr_name: &byte) void {
     }
     var write_idx: i32 = 0;
     var i: i32 = 0;
-    while i < checker.pointer_nonnull_count {
-        const name: &byte = checker.pointer_nonnull_names[i];
-        if name != null && strcmp(name as *byte, ptr_name as *byte) != 0 {
-            checker.pointer_nonnull_names[write_idx] = name;
-            write_idx = write_idx + 1;
+    const count: i32 = checker.pointer_nonnull_count;
+    while i < count {
+        if i < MAX_POINTER_NAMES {
+            const name: &byte = checker.pointer_nonnull_names[i];
+            if name != null && strcmp(name as *byte, ptr_name as *byte) != 0 {
+                if write_idx < MAX_POINTER_NAMES {
+                    checker.pointer_nonnull_names[write_idx] = name;
+                }
+                write_idx = write_idx + 1;
+            }
         }
         i = i + 1;
     }
@@ -5605,10 +5665,13 @@ fn pointer_is_known_nonnull(checker: &TypeChecker, ptr_name: &byte) i32 {
         return 0;
     }
     var i: i32 = 0;
-    while i < checker.pointer_nonnull_count {
-        const name: &byte = checker.pointer_nonnull_names[i];
-        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
-            return 1;
+    const count: i32 = checker.pointer_nonnull_count;
+    while i < count {
+        if i < MAX_POINTER_NAMES {
+            const name: &byte = checker.pointer_nonnull_names[i];
+            if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+                return 1;
+            }
         }
         i = i + 1;
     }
@@ -5620,8 +5683,10 @@ fn pointer_nonnull_clear(checker: &TypeChecker) void {
     if checker == null {
         return;
     }
-    for 0..32 |i| {
+    var i: i32 = 0;
+    while i < MAX_POINTER_NAMES {
         checker.pointer_nonnull_names[i] = null;
+        i = i + 1;
     }
     checker.pointer_nonnull_count = 0;
 }
@@ -5634,20 +5699,26 @@ fn pointer_nullable_add(checker: &TypeChecker, ptr_name: &byte) void {
     if checker == null || ptr_name == null {
         return;
     }
-    if checker.pointer_nullable_count >= 32 {
+    if checker.pointer_nullable_count >= MAX_POINTER_NAMES {
         return;  // 已满
     }
     // 检查是否已存在
     var i: i32 = 0;
-    while i < checker.pointer_nullable_count {
-        const name: &byte = checker.pointer_nullable_names[i];
-        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
-            return;  // 已存在
+    const count: i32 = checker.pointer_nullable_count;
+    while i < count {
+        if i < MAX_POINTER_NAMES {
+            const name: &byte = checker.pointer_nullable_names[i];
+            if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+                return;  // 已存在
+            }
         }
         i = i + 1;
     }
-    checker.pointer_nullable_names[checker.pointer_nullable_count] = ptr_name;
-    checker.pointer_nullable_count = checker.pointer_nullable_count + 1;
+    const idx: i32 = checker.pointer_nullable_count;
+    if idx >= 0 && idx < MAX_POINTER_NAMES {
+        checker.pointer_nullable_names[idx] = ptr_name;
+        checker.pointer_nullable_count = idx + 1;
+    }
 }
 
 // 检查指针是否可能为空（被初始化为 null）
@@ -5658,10 +5729,13 @@ fn pointer_is_nullable(checker: &TypeChecker, ptr_name: &byte) i32 {
         return 0;
     }
     var i: i32 = 0;
-    while i < checker.pointer_nullable_count {
-        const name: &byte = checker.pointer_nullable_names[i];
-        if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
-            return 1;
+    const count: i32 = checker.pointer_nullable_count;
+    while i < count {
+        if i < MAX_POINTER_NAMES {
+            const name: &byte = checker.pointer_nullable_names[i];
+            if name != null && strcmp(name as *byte, ptr_name as *byte) == 0 {
+                return 1;
+            }
         }
         i = i + 1;
     }
@@ -5673,11 +5747,13 @@ fn constraint_clear(checker: &TypeChecker) void {
     if checker == null {
         return;
     }
+    var i: i32 = 0;
     const count: i32 = checker.constraint_count;
-    for 0..count |i| {
+    while i < count && i < MAX_CONSTRAINTS {
         checker.constraint_var_names[i] = null;
         checker.constraint_ops[i] = 0;
         checker.constraint_values[i] = 0;
+        i = i + 1;
     }
     checker.constraint_count = 0;
 }
@@ -5688,13 +5764,16 @@ fn constraint_add(checker: &TypeChecker, var_name: &byte, op: i32, value: i32) v
     if checker == null || var_name == null {
         return;
     }
-    if checker.constraint_count >= 64 {
+    if checker.constraint_count >= MAX_CONSTRAINTS {
         return;  // 约束集已满
     }
-    checker.constraint_var_names[checker.constraint_count] = var_name;
-    checker.constraint_ops[checker.constraint_count] = op;
-    checker.constraint_values[checker.constraint_count] = value;
-    checker.constraint_count = checker.constraint_count + 1;
+    const idx: i32 = checker.constraint_count;
+    if idx >= 0 && idx < MAX_CONSTRAINTS {
+        checker.constraint_var_names[idx] = var_name;
+        checker.constraint_ops[idx] = op;
+        checker.constraint_values[idx] = value;
+        checker.constraint_count = idx + 1;
+    }
 }
 
 // 移除指定变量的所有约束
@@ -5705,14 +5784,19 @@ fn constraint_remove_var(checker: &TypeChecker, var_name: &byte) void {
     }
     var write_idx: i32 = 0;
     var i: i32 = 0;
-    while i < checker.constraint_count {
-        const name: &byte = checker.constraint_var_names[i];
-        if name != null && strcmp(name as *byte, var_name as *byte) != 0 {
-            // 保留不是该变量的约束
-            checker.constraint_var_names[write_idx] = name;
-            checker.constraint_ops[write_idx] = checker.constraint_ops[i];
-            checker.constraint_values[write_idx] = checker.constraint_values[i];
-            write_idx = write_idx + 1;
+    const count: i32 = checker.constraint_count;
+    while i < count {
+        if i < MAX_CONSTRAINTS {
+            const name: &byte = checker.constraint_var_names[i];
+            if name != null && strcmp(name as *byte, var_name as *byte) != 0 {
+                // 保留不是该变量的约束
+                if write_idx < MAX_CONSTRAINTS {
+                    checker.constraint_var_names[write_idx] = name;
+                    checker.constraint_ops[write_idx] = checker.constraint_ops[i];
+                    checker.constraint_values[write_idx] = checker.constraint_values[i];
+                }
+                write_idx = write_idx + 1;
+            }
         }
         i = i + 1;
     }
@@ -5730,22 +5814,25 @@ fn constraint_update_for_increment(checker: &TypeChecker, var_name: &byte, incre
     // 如果原来 i >= k，新值 i >= k + n
     // 如果原来 i >= 0 且 n >= 0，新值也 >= 0
     var i: i32 = 0;
-    while i < checker.constraint_count {
-        const name: &byte = checker.constraint_var_names[i];
-        if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
-            const op: i32 = checker.constraint_ops[i];
-            const val: i32 = checker.constraint_values[i];
-            // 更新下界约束
-            if op == CONSTRAINT_GE {
-                checker.constraint_values[i] = val + increment;
-            } else if op == CONSTRAINT_GT {
-                checker.constraint_values[i] = val + increment;
-            }
-            // 在循环中，上界约束不移除（循环条件会在下次迭代检查）
-            // 只在非循环上下文中移除上界约束
-            if checker.loop_depth == 0 {
-                if op == CONSTRAINT_LT || op == CONSTRAINT_LE {
-                    checker.constraint_var_names[i] = null;
+    const count: i32 = checker.constraint_count;
+    while i < count {
+        if i < MAX_CONSTRAINTS {
+            const name: &byte = checker.constraint_var_names[i];
+            if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
+                const op: i32 = checker.constraint_ops[i];
+                const val: i32 = checker.constraint_values[i];
+                // 更新下界约束
+                if op == CONSTRAINT_GE {
+                    checker.constraint_values[i] = val + increment;
+                } else if op == CONSTRAINT_GT {
+                    checker.constraint_values[i] = val + increment;
+                }
+                // 在循环中，上界约束不移除（循环条件会在下次迭代检查）
+                // 只在非循环上下文中移除上界约束
+                if checker.loop_depth == 0 {
+                    if op == CONSTRAINT_LT || op == CONSTRAINT_LE {
+                        checker.constraint_var_names[i] = null;
+                    }
                 }
             }
         }
@@ -5918,24 +6005,27 @@ fn constraint_verify_bounds(checker: &TypeChecker, var_name: &byte, array_size: 
     var has_upper_bound: i32 = 0;  // var < size
     
     var i: i32 = 0;
-    while i < checker.constraint_count {
-        const name: &byte = checker.constraint_var_names[i];
-        if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
-            const op: i32 = checker.constraint_ops[i];
-            const val: i32 = checker.constraint_values[i];
-            
-            // 检查下界：var >= 0 或 var > -1
-            if op == CONSTRAINT_GE && val == 0 {
-                has_lower_bound = 1;
-            } else if op == CONSTRAINT_GT && val == -1 {
-                has_lower_bound = 1;
-            }
-            
-            // 检查上界：var < size 或 var <= size-1
-            if op == CONSTRAINT_LT && val == array_size {
-                has_upper_bound = 1;
-            } else if op == CONSTRAINT_LE && val == array_size - 1 {
-                has_upper_bound = 1;
+    const count: i32 = checker.constraint_count;
+    while i < count {
+        if i < MAX_CONSTRAINTS {
+            const name: &byte = checker.constraint_var_names[i];
+            if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
+                const op: i32 = checker.constraint_ops[i];
+                const val: i32 = checker.constraint_values[i];
+                
+                // 检查下界：var >= 0 或 var > -1
+                if op == CONSTRAINT_GE && val == 0 {
+                    has_lower_bound = 1;
+                } else if op == CONSTRAINT_GT && val == -1 {
+                    has_lower_bound = 1;
+                }
+                
+                // 检查上界：var < size 或 var <= size-1
+                if op == CONSTRAINT_LT && val == array_size {
+                    has_upper_bound = 1;
+                } else if op == CONSTRAINT_LE && val == array_size - 1 {
+                    has_upper_bound = 1;
+                }
             }
         }
         i = i + 1;
@@ -6196,36 +6286,39 @@ fn get_var_interval(checker: &TypeChecker, var_name: &byte) Interval {
     var max_val: i32 = 2147483647;
     
     var i: i32 = 0;
-    while i < checker.constraint_count {
-        const name: &byte = checker.constraint_var_names[i];
-        if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
-            const op: i32 = checker.constraint_ops[i];
-            const val: i32 = checker.constraint_values[i];
-            
-            // 根据约束类型更新区间
-            if op == CONSTRAINT_EQ {
-                // 精确值约束：区间收缩为单点
-                min_val = val;
-                max_val = val;
-            } else if op == CONSTRAINT_GE {
-                // >= val：更新下界
-                if val > min_val {
+    const count: i32 = checker.constraint_count;
+    while i < count {
+        if i < MAX_CONSTRAINTS {
+            const name: &byte = checker.constraint_var_names[i];
+            if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
+                const op: i32 = checker.constraint_ops[i];
+                const val: i32 = checker.constraint_values[i];
+                
+                // 根据约束类型更新区间
+                if op == CONSTRAINT_EQ {
+                    // 精确值约束：区间收缩为单点
                     min_val = val;
-                }
-            } else if op == CONSTRAINT_GT {
-                // > val：更新下界（至少 val + 1）
-                if val + 1 > min_val {
-                    min_val = val + 1;
-                }
-            } else if op == CONSTRAINT_LE {
-                // <= val：更新上界
-                if val < max_val {
                     max_val = val;
-                }
-            } else if op == CONSTRAINT_LT {
-                // < val：更新上界（最多 val - 1）
-                if val - 1 < max_val {
-                    max_val = val - 1;
+                } else if op == CONSTRAINT_GE {
+                    // >= val：更新下界
+                    if val > min_val {
+                        min_val = val;
+                    }
+                } else if op == CONSTRAINT_GT {
+                    // > val：更新下界（至少 val + 1）
+                    if val + 1 > min_val {
+                        min_val = val + 1;
+                    }
+                } else if op == CONSTRAINT_LE {
+                    // <= val：更新上界
+                    if val < max_val {
+                        max_val = val;
+                    }
+                } else if op == CONSTRAINT_LT {
+                    // < val：更新上界（最多 val - 1）
+                    if val - 1 < max_val {
+                        max_val = val - 1;
+                    }
                 }
             }
         }
@@ -6361,26 +6454,29 @@ fn verify_linear_expr_bounds(checker: &TypeChecker, linear_expr: &LinearExpr, ar
     const need_upper: i32 = array_size - offset;  // i < size - offset
     
     var i: i32 = 0;
-    while i < checker.constraint_count {
-        const name: &byte = checker.constraint_var_names[i];
-        if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
-            const op: i32 = checker.constraint_ops[i];
-            const val: i32 = checker.constraint_values[i];
-            
-            // 检查下界：需要 i >= need_lower
-            // 如果约束是 i >= val，需要 val >= need_lower（val 更强）
-            if op == CONSTRAINT_GE && val >= need_lower {
-                has_lower_bound = 1;
-            } else if op == CONSTRAINT_GT && val > need_lower {
-                has_lower_bound = 1;
-            }
-            
-            // 检查上界：需要 i < need_upper
-            // 如果约束是 i < val，需要 val <= need_upper（val 更强）
-            if op == CONSTRAINT_LT && val <= need_upper {
-                has_upper_bound = 1;
-            } else if op == CONSTRAINT_LE && val < need_upper {
-                has_upper_bound = 1;
+    const count: i32 = checker.constraint_count;
+    while i < count {
+        if i < MAX_CONSTRAINTS {
+            const name: &byte = checker.constraint_var_names[i];
+            if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
+                const op: i32 = checker.constraint_ops[i];
+                const val: i32 = checker.constraint_values[i];
+                
+                // 检查下界：需要 i >= need_lower
+                // 如果约束是 i >= val，需要 val >= need_lower（val 更强）
+                if op == CONSTRAINT_GE && val >= need_lower {
+                    has_lower_bound = 1;
+                } else if op == CONSTRAINT_GT && val > need_lower {
+                    has_lower_bound = 1;
+                }
+                
+                // 检查上界：需要 i < need_upper
+                // 如果约束是 i < val，需要 val <= need_upper（val 更强）
+                if op == CONSTRAINT_LT && val <= need_upper {
+                    has_upper_bound = 1;
+                } else if op == CONSTRAINT_LE && val < need_upper {
+                    has_upper_bound = 1;
+                }
             }
         }
         i = i + 1;
@@ -6440,26 +6536,29 @@ fn verify_linear_expr_bounds_ex(checker: &TypeChecker, linear_expr: &LinearExpr,
     const need_upper: i32 = array_size - offset;  // i < size - offset
     
     var i: i32 = 0;
-    while i < checker.constraint_count {
-        const name: &byte = checker.constraint_var_names[i];
-        if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
-            const op: i32 = checker.constraint_ops[i];
-            const val: i32 = checker.constraint_values[i];
-            
-            // 检查下界：需要 i >= need_lower
-            // 如果约束是 i >= val，需要 val >= need_lower（val 更强）
-            if op == CONSTRAINT_GE && val >= need_lower {
-                has_lower_bound = 1;
-            } else if op == CONSTRAINT_GT && val > need_lower {
-                has_lower_bound = 1;
-            }
-            
-            // 检查上界：需要 i < need_upper
-            // 如果约束是 i < val，需要 val <= need_upper（val 更强）
-            if op == CONSTRAINT_LT && val <= need_upper {
-                has_upper_bound = 1;
-            } else if op == CONSTRAINT_LE && val < need_upper {
-                has_upper_bound = 1;
+    const count: i32 = checker.constraint_count;
+    while i < count {
+        if i < MAX_CONSTRAINTS {
+            const name: &byte = checker.constraint_var_names[i];
+            if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
+                const op: i32 = checker.constraint_ops[i];
+                const val: i32 = checker.constraint_values[i];
+                
+                // 检查下界：需要 i >= need_lower
+                // 如果约束是 i >= val，需要 val >= need_lower（val 更强）
+                if op == CONSTRAINT_GE && val >= need_lower {
+                    has_lower_bound = 1;
+                } else if op == CONSTRAINT_GT && val > need_lower {
+                    has_lower_bound = 1;
+                }
+                
+                // 检查上界：需要 i < need_upper
+                // 如果约束是 i < val，需要 val <= need_upper（val 更强）
+                if op == CONSTRAINT_LT && val <= need_upper {
+                    has_upper_bound = 1;
+                } else if op == CONSTRAINT_LE && val < need_upper {
+                    has_upper_bound = 1;
+                }
             }
         }
         i = i + 1;
@@ -7576,8 +7675,10 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         const saved_constraint_count: i32 = checker.constraint_count;
         const saved_nonnull_count: i32 = checker.pointer_nonnull_count;
         var saved_nonnull_names: [&byte: 32] = [];
-        for 0..saved_nonnull_count |i| {
-            saved_nonnull_names[i] = checker.pointer_nonnull_names[i];
+        var sni: i32 = 0;
+        while sni < saved_nonnull_count && sni < MAX_POINTER_NAMES {
+            saved_nonnull_names[sni] = checker.pointer_nonnull_names[sni];
+            sni = sni + 1;
         }
         
         // 从条件提取约束（正条件，用于 then 分支）
@@ -7593,8 +7694,10 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         // 恢复约束状态和指针非空状态，然后为 else 分支提取负条件约束
         checker.constraint_count = saved_constraint_count;
         checker.pointer_nonnull_count = saved_nonnull_count;
-        for 0..saved_nonnull_count |i| {
-            checker.pointer_nonnull_names[i] = saved_nonnull_names[i];
+        var rni: i32 = 0;
+        while rni < saved_nonnull_count && rni < MAX_POINTER_NAMES {
+            checker.pointer_nonnull_names[rni] = saved_nonnull_names[rni];
+            rni = rni + 1;
         }
         
         // 检查else分支
@@ -7609,8 +7712,10 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         // if 语句结束后，恢复约束状态和指针非空状态（简化处理：不跨语句传播）
         checker.constraint_count = saved_constraint_count;
         checker.pointer_nonnull_count = saved_nonnull_count;
-        for 0..saved_nonnull_count |i| {
-            checker.pointer_nonnull_names[i] = saved_nonnull_names[i];
+        var fini: i32 = 0;
+        while fini < saved_nonnull_count && fini < MAX_POINTER_NAMES {
+            checker.pointer_nonnull_names[fini] = saved_nonnull_names[fini];
+            fini = fini + 1;
         }
         
         return 1;
@@ -7961,9 +8066,9 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             if union_decl != null && union_decl.union_decl_variant_count > 0 {
                 var covered: [i32: 32] = [];
                 var nv: i32 = union_decl.union_decl_variant_count;
-                if nv > 32 { nv = 32; }
+                if nv > MAX_UNION_VARIANTS { nv = MAX_UNION_VARIANTS; }
                 var k: i32 = 0;
-                while k < nv {
+                while k < nv && k < MAX_UNION_VARIANTS {
                     covered[k] = 0;
                     k = k + 1;
                 }
@@ -7976,7 +8081,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     }
                     if arm.kind == MatchPatternKind.MATCH_PAT_UNION && arm.variant_name != null {
                         var kk: i32 = 0;
-                        while kk < nv {
+                        while kk < nv && kk < MAX_UNION_VARIANTS {
                             const v: &ASTNode = union_decl.union_decl_variants[kk];
                             if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
                                 str_equals(v.var_decl_name, arm.variant_name) != 0 {
@@ -7990,7 +8095,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 }
                 if has_catch_all == 0 {
                     k = 0;
-                    while k < nv {
+                    while k < nv && k < MAX_UNION_VARIANTS {
                         if covered[k] == 0 {
                             checker_report_error(checker, node, "match 联合体必须处理所有变体" as *byte);
                             break;
@@ -10436,6 +10541,7 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
     
     // 创建合并的上下文（包含宏参数和局部变量）
     var merged_ctx: MacroExpandContext = *ctx;
+    const MAX_LOCAL_BINDINGS: i32 = 64;
     if local_binding_count > 0 {
         const total_bindings: i32 = ctx.binding_count + local_binding_count;
         const all_bindings: &MacroParamBinding = arena_alloc(ctx.arena, @size_of(MacroParamBinding) * total_bindings) as &MacroParamBinding;
@@ -10446,9 +10552,16 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
                 k = k + 1;
             }
             k = 0;
-            while k < local_binding_count {
-                all_bindings[ctx.binding_count + k] = local_bindings[k];
-                k = k + 1;
+            for 0..local_binding_count |kidx| {
+                if kidx < MAX_LOCAL_BINDINGS {
+                    const src_idx: i32 = kidx;
+                    const dst_idx: i32 = ctx.binding_count + kidx;
+                    // 动态分配的数组，运行时边界检查
+                    const total: i32 = total_bindings;
+                    if dst_idx >= 0 && dst_idx < total && src_idx >= 0 && src_idx < MAX_LOCAL_BINDINGS {
+                        all_bindings[dst_idx] = local_bindings[src_idx];
+                    }
+                }
             }
             merged_ctx.bindings = all_bindings;
             merged_ctx.binding_count = total_bindings;

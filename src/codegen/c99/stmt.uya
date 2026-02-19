@@ -877,25 +877,29 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         const prefix_len: i32 = ptr_diff(open_paren, type_c as *byte);
                         const suffix_len: i32 = strlen(bracket);
                         // 注意：Uya Mini 不支持 %.*s，需要手动处理
-                        var temp_buf: [byte: 256] = [];
+                        var temp_buf: [byte: TEMP_BUF_SIZE] = [];
                         var j: i32 = 0;
-                        while j < prefix_len && j < 255 {
+                        while j < prefix_len && j < TEMP_BUF_LIMIT {
                             temp_buf[j] = type_c[j];
                             j = j + 1;
                         }
-                        temp_buf[j] = 0;
+                        if j >= 0 && j < TEMP_BUF_SIZE {
+                            temp_buf[j] = 0;
+                        }
                         fprintf(codegen.output as *void, "%s(* const %s)%s" as *byte, &temp_buf[0] as *byte, var_name as *byte, bracket);
                         // 存储类型字符串：T (* const)[N]（用于变量表）
                         const total_len: i32 = prefix_len + suffix_len + 10; // "(* const)" + null
                         stored_type_c_for_pointer = arena_alloc(codegen.arena, total_len) as &byte;
                         if stored_type_c_for_pointer != null {
-                            var temp_buf2: [byte: 256] = [];
+                            var temp_buf2: [byte: TEMP_BUF_SIZE] = [];
                             j = 0;
-                            while j < prefix_len && j < 255 {
+                            while j < prefix_len && j < TEMP_BUF_LIMIT {
                                 temp_buf2[j] = type_c[j];
                                 j = j + 1;
                             }
-                            temp_buf2[j] = 0;
+                            if j >= 0 && j < TEMP_BUF_SIZE {
+                                temp_buf2[j] = 0;
+                            }
                             snprintf(stored_type_c_for_pointer as *byte, total_len, "%s(* const)%s" as *byte, &temp_buf2[0] as *byte, bracket);
                         }
                     } else {
@@ -1532,15 +1536,17 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 
                 if is_struct != 0 {
                     // 提取结构体名称（去除 "struct " 前缀）
-                    var struct_name_buf: [byte: 256] = [];
+                    var struct_name_buf: [byte: TEMP_BUF_SIZE] = [];
                     var j: i32 = 7;  // 跳过 "struct "
                     var k: i32 = 0;
-                    while expr_type_c[j] != 0 && expr_type_c[j] != 32 && k < 255 {  // 32 = ' '
+                    while expr_type_c[j] != 0 && expr_type_c[j] != 32 && k < TEMP_BUF_LIMIT {  // 32 = ' '
                         struct_name_buf[k] = expr_type_c[j];
                         j = j + 1;
                         k = k + 1;
                     }
-                    struct_name_buf[k] = 0;
+                    if k >= 0 && k < TEMP_BUF_SIZE {
+                        struct_name_buf[k] = 0;
+                    }
                     
                     const next_method: &ASTNode = find_method_in_struct_c99(codegen, &struct_name_buf[0], "next" as *byte);
                     const value_method: &ASTNode = find_method_in_struct_c99(codegen, &struct_name_buf[0], "value" as *byte);
@@ -1634,13 +1640,15 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 // 数组类型：分离基类型和维度
                 const base_len: i32 = ptr_diff(bracket, elem_type_c as *byte);
                 // 注意：Uya Mini 不支持 %.*s，需要手动处理
-                var temp_buf: [byte: 256] = [];
+                var temp_buf: [byte: TEMP_BUF_SIZE] = [];
                 var j: i32 = 0;
-                while j < base_len && j < 255 {
+                while j < base_len && j < TEMP_BUF_LIMIT {
                     temp_buf[j] = elem_type_c[j];
                     j = j + 1;
                 }
-                temp_buf[j] = 0;
+                if j >= 0 && j < TEMP_BUF_SIZE {
+                    temp_buf[j] = 0;
+                }
                 c99_emit_indent(codegen);
                 fprintf(codegen.output as *void, "%s *%s = &" as *byte, &temp_buf[0] as *byte, var_name2 as *byte);
                 gen_expr(codegen, array);
@@ -1661,13 +1669,15 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 // 转换为 C 数组声明格式 "base_type var_name[dims]"
                 const base_len2: i32 = ptr_diff(bracket2, elem_type_c as *byte);
                 // 注意：Uya Mini 不支持 %.*s，需要手动处理
-                var temp_buf2: [byte: 256] = [];
+                var temp_buf2: [byte: TEMP_BUF_SIZE] = [];
                 var j2: i32 = 0;
-                while j2 < base_len2 && j2 < 255 {
+                while j2 < base_len2 && j2 < TEMP_BUF_LIMIT {
                     temp_buf2[j2] = elem_type_c[j2];
                     j2 = j2 + 1;
                 }
-                temp_buf2[j2] = 0;
+                if j2 >= 0 && j2 < TEMP_BUF_SIZE {
+                    temp_buf2[j2] = 0;
+                }
                 c99_emit_indent(codegen);
                 fprintf(codegen.output as *void, "%s %s%s;\n" as *byte, &temp_buf2[0] as *byte, var_name2 as *byte, bracket2);
                 c99_emit_indent(codegen);

@@ -73,6 +73,20 @@ uya-nostdlib: uya-c
 	@echo ""
 	@echo "✓ 自举编译器（--nostdlib）构建完成: bin/uya"
 
+# 构建自举编译器（启用内存安全检查）
+uya-safety:
+	@echo "=========================================="
+	@echo "构建自举编译器 (uya-safety)"
+	@echo "启用内存安全检查 (--safety-proof)"
+	@echo "=========================================="
+	@if [ ! -f bin/uya ]; then \
+		echo "bin/uya 不存在，从备份构建..."; \
+		$(MAKE) from-c; \
+	fi
+	@cd src && ./compile.sh --c99 -e --safety-proof
+	@echo ""
+	@echo "✓ 自举编译器（内存安全版）构建完成: bin/uya"
+
 # 自举验证：用自举编译器编译自身，验证输出一致性
 b: uya
 	@echo "=========================================="
@@ -271,6 +285,7 @@ help:
 	@echo "  make uya-c         - 构建 C 编译器 (bin/uya-c)"
 	@echo "  make uya           - 构建自举编译器 (bin/uya)，自动更新 bin/uya.c"
 	@echo "  make uya-nostdlib  - 构建自举编译器（--nostdlib 版本，不链接标准库）"
+	@echo "  make uya-safety    - 构建自举编译器（启用内存安全检查）"
 	@echo "  make b             - 自举验证：编译器编译自身，验证输出一致性"
 	@echo "  make tests          - 运行测试套件（默认 tests/run_programs_parallel.sh 并行）"
 	@echo "  make tests e        - 运行所有测试，只显示失败的测试"

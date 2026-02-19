@@ -408,8 +408,8 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
                 return result;
             }
             // 提取 base_type（[ 之前的部分），生成 T (*)[N] 而非 T[N] (*)[N]
-            var base_buf: [byte: 128] = [];
-            if base_len < 128 {
+            var base_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
+            if base_len >= 0 && base_len < STRUCT_NAME_BUF_SIZE {
                 memcpy(&base_buf[0] as *void, pointee_type as *void, base_len);
                 base_buf[base_len] = 0;
                 if is_const != 0 {
@@ -474,16 +474,16 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
         if payload_node.type == ASTNodeType.AST_TYPE_NAMED && payload_node.type_named_name != null && strcmp(payload_node.type_named_name as *byte, "void" as *byte) == 0 {
             is_void = 1;
         }
-        var struct_name_buf: [byte: 128] = [];
+        var struct_name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
         if is_void != 0 {
-            snprintf(&struct_name_buf[0] as *byte, 128, "err_union_void" as *byte);
+            snprintf(&struct_name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "err_union_void" as *byte);
         } else {
             // 从 payload_c 生成名称，但需要特殊处理 void* 等类型
             // payload_c 可能是 "void *"、"int32_t *" 等
-            var safe: [byte: 64] = [];
+            var safe: [byte: SHORT_NAME_BUF_SIZE] = [];
             var j: i32 = 0;
             var p: &byte = payload_c;
-            while p[0] != 0 && j < 63 {
+            while p[0] != 0 && j < SHORT_NAME_BUF_SIZE - 1 {
                 const c: i32 = p[0] as i32;
                 // 保留字母、数字、下划线和星号（用于指针类型）
                 if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95 {
@@ -491,7 +491,7 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
                     j = j + 1;
                 } else if c == 42 {
                     // * 替换为 ptr
-                    if j < 60 {
+                    if j < SHORT_NAME_BUF_SIZE - 4 {
                         safe[j] = 112;  // 'p'
                         safe[j + 1] = 116;  // 't'
                         safe[j + 2] = 114;  // 'r'
@@ -500,11 +500,13 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
                 }
                 p = p + 1;
             }
-            safe[j] = 0;
+            if j >= 0 && j < SHORT_NAME_BUF_SIZE {
+                safe[j] = 0;
+            }
             if j > 0 {
-                snprintf(&struct_name_buf[0] as *byte, 128, "err_union_%s" as *byte, &safe[0] as *byte);
+                snprintf(&struct_name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "err_union_%s" as *byte, &safe[0] as *byte);
             } else {
-                snprintf(&struct_name_buf[0] as *byte, 128, "err_union_T" as *byte);
+                snprintf(&struct_name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "err_union_T" as *byte);
             }
         }
         const name_copy: &byte = c99_arena_strdup(codegen.arena, &struct_name_buf[0]);
@@ -586,7 +588,7 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
             strcpy(result as *byte, base_type as *byte);
             var i: i32 = 0;
             while i < dim_count {
-                var dim_str: [byte: 16] = [];
+                var dim_str: [byte: NUM_BUF_SIZE] = [];
                 snprintf(&dim_str[0] as *byte, 16, "[%d]" as *byte, dims[i]);
                 strcat(result as *byte, &dim_str[0] as *byte);
                 i = i + 1;
@@ -640,8 +642,8 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
                     end = end - 1;
                 }
                 // 创建临时缓冲区存储去除 "*" 后的名称
-                var temp_buf: [byte: 128] = [];
-                if end < 128 {
+                var temp_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
+                if end < STRUCT_NAME_BUF_SIZE {
                     var j: usize = 0;
                     while j < end {
                         const char_ptr: *byte = elem_ptr + j;
@@ -656,8 +658,8 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
                 }
             }
         }
-        var name_buf: [byte: 128] = [];
-        snprintf(&name_buf[0] as *byte, 128, "uya_slice_%s" as *byte, elem_clean as *byte);
+        var name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
+        snprintf(&name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "uya_slice_%s" as *byte, elem_clean as *byte);
         const safe: &byte = c99_arena_strdup(codegen.arena, &name_buf[0]);
         if safe == null {
             return ("void" as *byte) as &byte;
@@ -846,8 +848,8 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
         } else if strncmp(elem_c as *byte, "enum " as *byte, 5) == 0 {
             elem_simple = &elem_c[5];
         }
-        var name_buf: [byte: 128] = [];
-        snprintf(&name_buf[0] as *byte, 128, "uya_slice_%s" as *byte, elem_simple as *byte);
+        var name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
+        snprintf(&name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "uya_slice_%s" as *byte, elem_simple as *byte);
         const safe: &byte = get_safe_c_identifier(codegen, &name_buf[0]);
         if safe == null {
             return ("struct uya_slice_int32_t" as *byte) as &byte;
@@ -975,7 +977,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                 const obj_type_c: &byte = get_c_type_of_expr(codegen, obj);
                 if obj_type_c != null {
                     // 提取结构体名称（从 "struct Node" 或 "Node" 中提取）
-                    var struct_name_buf: [byte: 128] = [];
+                    var struct_name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
                     var struct_name_src: &byte = obj_type_c;
                     // 检查是否以 "struct " 开头
                     if strncmp(obj_type_c as *byte, "struct " as *byte, 7) == 0 {
@@ -983,7 +985,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                     }
                     const safe_obj_type: &byte = get_safe_c_identifier(codegen, struct_name_src);
                     if safe_obj_type != null {
-                        snprintf(&struct_name_buf[0] as *byte, 128, "%s" as *byte, safe_obj_type as *byte);
+                        snprintf(&struct_name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "%s" as *byte, safe_obj_type as *byte);
                     }
                     // 查找方法声明
                     const method_fn: &ASTNode = find_method_in_struct_c99(codegen, &struct_name_buf[0], method_name);
@@ -1640,7 +1642,7 @@ fn get_array_wrapper_struct_name(codegen: &C99CodeGenerator, array_type: &ASTNod
     }
     
     // 构建结构体名称
-    var name_buf: [byte: 256] = [];
+    var name_buf: [byte: NAME_BUF_SIZE] = [];
     strcpy(&name_buf[0] as *byte, "uya_array_" as *byte);
     var pos: i32 = strlen(&name_buf[0] as *byte);
     
@@ -1679,14 +1681,16 @@ fn get_array_wrapper_struct_name(codegen: &C99CodeGenerator, array_type: &ASTNod
         }
         
         if first == 0 {
-            name_buf[pos] = 95;  // '_'
+            if pos >= 0 && pos < NAME_BUF_SIZE {
+                name_buf[pos] = 95;  // '_'
+            }
             pos = pos + 1;
         }
         first = 0;
         
         // 添加元素类型名称
         const name_len: i32 = strlen(elem_name as *byte);
-        if pos + name_len < 255 {
+        if pos + name_len < TEMP_BUF_LIMIT {
             memcpy(&name_buf[pos] as *void, elem_name as *void, name_len);
             pos = pos + name_len;
         }
@@ -1695,10 +1699,10 @@ fn get_array_wrapper_struct_name(codegen: &C99CodeGenerator, array_type: &ASTNod
         if size_expr != null {
             const size: i32 = eval_const_expr(codegen, size_expr);
             if size > 0 {
-                var size_str: [byte: 32] = [];
+                var size_str: [byte: NUM_BUF_SIZE] = [];
                 snprintf(&size_str[0] as *byte, 32, "_%d" as *byte, size);
                 const size_len: i32 = strlen(&size_str[0] as *byte);
-                if pos + size_len < 255 {
+                if pos + size_len < TEMP_BUF_LIMIT {
                     memcpy(&name_buf[pos] as *void, &size_str[0] as *void, size_len);
                     pos = pos + size_len;
                 }
@@ -1708,7 +1712,9 @@ fn get_array_wrapper_struct_name(codegen: &C99CodeGenerator, array_type: &ASTNod
         current = element_type;
     }
     
-    name_buf[pos] = 0;
+    if pos >= 0 && pos < NAME_BUF_SIZE {
+        name_buf[pos] = 0;
+    }
     return c99_arena_strdup(codegen.arena, &name_buf[0] as &byte);
 }
 

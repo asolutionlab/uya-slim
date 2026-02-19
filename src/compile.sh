@@ -42,6 +42,7 @@ usage() {
   --c99               使用 C99 后端生成 C 代码（输出文件后缀为 .c 时自动启用）
   --line-directives    启用 #line 指令生成（C99 后端，默认禁用）
   --nostdlib          链接时不使用标准库（仅在使用 -e 时有效）
+  --safety-proof      启用内存安全检查
   --compiler PATH     指定编译器路径（默认: $COMPILER）
 
 示例:
@@ -69,6 +70,7 @@ BOOTSTRAP_COMPARE=false
 USE_C99=false
 USE_LINE_DIRECTIVES=false
 USE_NOSTDLIB=false
+USE_SAFETY_PROOF=false
 
 # 解析命令行选项
 while [[ $# -gt 0 ]]; do
@@ -106,6 +108,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --nostdlib)
             USE_NOSTDLIB=true
+            shift
+            ;;
+        --safety-proof)
+            USE_SAFETY_PROOF=true
             shift
             ;;
         -o|--output)
@@ -341,6 +347,9 @@ if [ "$USE_C99" = true ]; then
 fi
 if [ "$USE_LINE_DIRECTIVES" = true ]; then
     COMPILER_CMD+=(--line-directives)
+fi
+if [ "$USE_SAFETY_PROOF" = true ]; then
+    COMPILER_CMD+=(--safety-proof)
 fi
 # 不传递 -exec 给编译器：自举编译器使用 std.runtime 提供 main()，若用 -exec 会链接 bridge.c 导致重复 main 和 uya_main 未定义。
 # 可执行文件由本脚本在编译成功后统一链接生成（见下方 LINK_CMD）。

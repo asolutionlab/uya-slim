@@ -391,7 +391,9 @@ fn find_module_file(
         if ri == 0 { root = project_root; }
         if ri == 1 { root = uya_root; }
         ri = ri + 1;
-        if root == null || root[0] == 0 { continue; }
+        if root == null { continue; }
+        const root_nonnull: &byte = root;  // 为安全证明建立非空引用
+        if root_nonnull[0] == 0 { continue; }
         
         var full_path: [byte: PATH_MAX] = [];
         const len: i32 = snprintf(&full_path[0], PATH_MAX, "%s%s" as *byte, root as *byte, &file_path[0]);
@@ -915,7 +917,9 @@ fn collect_module_dependencies(
             if ri == 0 { root = project_root; }
             if ri == 1 { root = uya_root; }
             ri = ri + 1;
-            if root == null || root[0] == 0 { continue; }
+            if root == null { continue; }
+            const root_nonnull: &byte = root;  // 为安全证明建立非空引用
+            if root_nonnull[0] == 0 { continue; }
             const len: i32 = snprintf(&module_dir_path[0], PATH_MAX, "%s%s" as *byte, root as *byte, &file_path[0]);
             if len > 0 && len < PATH_MAX as i32 && is_directory(&module_dir_path[0] as &byte) != 0 {
                 found_dir = 1;

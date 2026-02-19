@@ -210,13 +210,15 @@ fn format_param_type(codegen: &C99CodeGenerator, type_c: &byte, param_name: &byt
         const before_paren: i32 = ptr_diff(paren_star, type_c as *byte);
         const after_paren: *byte = paren_star + 3;  // 跳过 "(*)"
         // 输出：base_type (*param_name)[dims]
-        var temp_buf: [byte: 256] = [];
+        var temp_buf: [byte: TEMP_BUF_SIZE] = [];
         var i: i32 = 0;
-        while i < before_paren && i < 255 {
+        while i < before_paren && i < TEMP_BUF_LIMIT {
             temp_buf[i] = type_c[i];
             i = i + 1;
         }
-        temp_buf[i] = 0;
+        if i >= 0 && i < TEMP_BUF_SIZE {
+            temp_buf[i] = 0;
+        }
         fprintf(output, "%s (*%s)%s" as *byte, &temp_buf[0] as *byte, param_name as *byte, after_paren);
     } else {
         // 检查是否是数组类型（包含 [数字]）
@@ -226,13 +228,15 @@ fn format_param_type(codegen: &C99CodeGenerator, type_c: &byte, param_name: &byt
             const str_len: i32 = ptr_diff(bracket, type_c as *byte);
             // 注意：Uya Mini 不支持 %.*s，需要手动处理
             // 简化处理：使用临时缓冲区
-            var temp_buf: [byte: 256] = [];
+            var temp_buf: [byte: TEMP_BUF_SIZE] = [];
             var i: i32 = 0;
-            while i < str_len && i < 255 {
+            while i < str_len && i < TEMP_BUF_LIMIT {
                 temp_buf[i] = type_c[i];
                 i = i + 1;
             }
-            temp_buf[i] = 0;
+            if i >= 0 && i < TEMP_BUF_SIZE {
+                temp_buf[i] = 0;
+            }
             fprintf(output, "%s %s%s" as *byte, &temp_buf[0] as *byte, param_name as *byte, bracket);
         } else {
             // 非数组类型
@@ -440,13 +444,15 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                 if bracket != null {
                     const str_len: i32 = ptr_diff(bracket, param_type_c as *byte);
                     // 注意：Uya Mini 不支持 %.*s，需要手动处理
-                    var temp_buf: [byte: 256] = [];
+                    var temp_buf: [byte: TEMP_BUF_SIZE] = [];
                     var j: i32 = 0;
-                    while j < str_len && j < 255 {
+                    while j < str_len && j < TEMP_BUF_LIMIT {
                         temp_buf[j] = param_type_c[j];
                         j = j + 1;
                     }
-                    temp_buf[j] = 0;
+                    if j >= 0 && j < TEMP_BUF_SIZE {
+                        temp_buf[j] = 0;
+                    }
                     fprintf(codegen.output, "%s %s_param%s" as *byte, &temp_buf[0] as *byte, param_name as *byte, bracket);
                 } else {
                     fprintf(codegen.output, "%s %s_param" as *byte, param_type_c as *byte, param_name as *byte);
@@ -622,13 +628,15 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                     if bracket != null {
                         const str_len: i32 = ptr_diff(bracket, param_type_c as *byte);
                         // 注意：Uya Mini 不支持 %.*s，需要手动处理
-                        var temp_buf: [byte: 256] = [];
+                        var temp_buf: [byte: TEMP_BUF_SIZE] = [];
                         var j: i32 = 0;
-                        while j < str_len && j < 255 {
+                        while j < str_len && j < TEMP_BUF_LIMIT {
                             temp_buf[j] = param_type_c[j];
                             j = j + 1;
                         }
-                        temp_buf[j] = 0;
+                        if j >= 0 && j < TEMP_BUF_SIZE {
+                            temp_buf[j] = 0;
+                        }
                         fprintf(codegen.output, "%s %s_param%s" as *byte, &temp_buf[0] as *byte, param_name as *byte, bracket);
                     } else {
                         fprintf(codegen.output, "%s %s_param" as *byte, param_type_c as *byte, param_name as *byte);
@@ -708,13 +716,15 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                 if bracket != null {
                     const str_len: i32 = ptr_diff(bracket, array_type_c as *byte);
                     // 注意：Uya Mini 不支持 %.*s，需要手动处理
-                    var temp_buf: [byte: 256] = [];
+                    var temp_buf: [byte: TEMP_BUF_SIZE] = [];
                     var j: i32 = 0;
-                    while j < str_len && j < 255 {
+                    while j < str_len && j < TEMP_BUF_LIMIT {
                         temp_buf[j] = array_type_c[j];
                         j = j + 1;
                     }
-                    temp_buf[j] = 0;
+                    if j >= 0 && j < TEMP_BUF_SIZE {
+                        temp_buf[j] = 0;
+                    }
                     fprintf(codegen.output, "    %s %s%s;\n" as *byte, &temp_buf[0] as *byte, param_name as *byte, bracket);
                 } else {
                     c99_emit_indent(codegen);
@@ -1065,13 +1075,15 @@ fn get_mono_function_name(codegen: &C99CodeGenerator, generic_name: &byte, type_
     }
     
     // 构建后缀
-    var suffix: [byte: 256] = [0: 256];
+    var suffix: [byte: TEMP_BUF_SIZE] = [0: TEMP_BUF_SIZE];
     var suffix_len: i32 = 0;
     
     var i: i32 = 0;
     while i < type_arg_count {
-        if i > 0 && suffix_len < 255 {
-            suffix[suffix_len] = 95 as byte;  // '_' = 95
+        if i > 0 {
+            if suffix_len >= 0 && suffix_len < TEMP_BUF_LIMIT {
+                suffix[suffix_len] = 95 as byte;  // '_' = 95
+            }
             suffix_len = suffix_len + 1;
         }
         
@@ -1079,8 +1091,10 @@ fn get_mono_function_name(codegen: &C99CodeGenerator, generic_name: &byte, type_
         if type_arg != null && type_arg.type == ASTNodeType.AST_TYPE_NAMED && type_arg.type_named_name != null {
             const type_name: &byte = type_arg.type_named_name;
             var j: i32 = 0;
-            while type_name[j] != 0 && suffix_len < 255 {
-                suffix[suffix_len] = type_name[j];
+            while type_name[j] != 0 && suffix_len < TEMP_BUF_LIMIT {
+                if suffix_len >= 0 && suffix_len < TEMP_BUF_SIZE {
+                    suffix[suffix_len] = type_name[j];
+                }
                 suffix_len = suffix_len + 1;
                 j = j + 1;
             }
@@ -1088,8 +1102,10 @@ fn get_mono_function_name(codegen: &C99CodeGenerator, generic_name: &byte, type_
             // 指针类型：ptr_T
             const ptr_prefix: &byte = "ptr_";
             var k: i32 = 0;
-            while ptr_prefix[k] != 0 && suffix_len < 255 {
-                suffix[suffix_len] = ptr_prefix[k];
+            while ptr_prefix[k] != 0 && suffix_len < TEMP_BUF_LIMIT {
+                if suffix_len >= 0 && suffix_len < TEMP_BUF_SIZE {
+                    suffix[suffix_len] = ptr_prefix[k];
+                }
                 suffix_len = suffix_len + 1;
                 k = k + 1;
             }
@@ -1097,8 +1113,10 @@ fn get_mono_function_name(codegen: &C99CodeGenerator, generic_name: &byte, type_
             if pointed != null && pointed.type == ASTNodeType.AST_TYPE_NAMED && pointed.type_named_name != null {
                 const type_name: &byte = pointed.type_named_name;
                 var m: i32 = 0;
-                while type_name[m] != 0 && suffix_len < 255 {
-                    suffix[suffix_len] = type_name[m];
+                while type_name[m] != 0 && suffix_len < TEMP_BUF_LIMIT {
+                    if suffix_len >= 0 && suffix_len < TEMP_BUF_SIZE {
+                        suffix[suffix_len] = type_name[m];
+                    }
                     suffix_len = suffix_len + 1;
                     m = m + 1;
                 }
@@ -1106,7 +1124,9 @@ fn get_mono_function_name(codegen: &C99CodeGenerator, generic_name: &byte, type_
         }
         i = i + 1;
     }
-    suffix[suffix_len] = 0;
+    if suffix_len >= 0 && suffix_len < TEMP_BUF_SIZE {
+        suffix[suffix_len] = 0;
+    }
     
     // 分配并构建完整名称
     const safe_name: &byte = get_safe_c_identifier(codegen, generic_name);
@@ -1451,14 +1471,14 @@ fn gen_mono_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, stru
     const method_name: &byte = fn_decl.fn_decl_name;
     
     // 构建单态化方法名
-    var mono_name_buf: [byte: 256] = [];
-    var pos: i32 = snprintf(&mono_name_buf[0] as *byte, 256, "%s_%s" as *byte, struct_name as *byte, method_name as *byte);
+    var mono_name_buf: [byte: C99_TYPE_ARG_BUF_SIZE] = [];
+    var pos: i32 = snprintf(&mono_name_buf[0] as *byte, C99_TYPE_ARG_BUF_SIZE, "%s_%s" as *byte, struct_name as *byte, method_name as *byte);
     var ti: i32 = 0;
-    while ti < type_arg_count && pos < 250 {
-        pos = pos + snprintf(&mono_name_buf[pos] as *byte, 256 - pos, "_" as *byte);
+    while ti < type_arg_count && pos < C99_TYPE_ARG_BUF_LIMIT {
+        pos = pos + snprintf(&mono_name_buf[pos] as *byte, C99_TYPE_ARG_BUF_SIZE - pos, "_" as *byte);
         const type_arg: &ASTNode = type_args[ti];
         if type_arg != null && type_arg.type == ASTNodeType.AST_TYPE_NAMED && type_arg.type_named_name != null {
-            pos = pos + snprintf(&mono_name_buf[pos] as *byte, 256 - pos, "%s" as *byte, type_arg.type_named_name as *byte);
+            pos = pos + snprintf(&mono_name_buf[pos] as *byte, C99_TYPE_ARG_BUF_SIZE - pos, "%s" as *byte, type_arg.type_named_name as *byte);
         }
         ti = ti + 1;
     }
@@ -1519,14 +1539,14 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
     const method_name: &byte = fn_decl.fn_decl_name;
     
     // 构建单态化方法名
-    var mono_name_buf: [byte: 256] = [];
-    var pos: i32 = snprintf(&mono_name_buf[0] as *byte, 256, "%s_%s" as *byte, struct_name as *byte, method_name as *byte);
+    var mono_name_buf: [byte: C99_TYPE_ARG_BUF_SIZE] = [];
+    var pos: i32 = snprintf(&mono_name_buf[0] as *byte, C99_TYPE_ARG_BUF_SIZE, "%s_%s" as *byte, struct_name as *byte, method_name as *byte);
     var ti: i32 = 0;
-    while ti < type_arg_count && pos < 250 {
-        pos = pos + snprintf(&mono_name_buf[pos] as *byte, 256 - pos, "_" as *byte);
+    while ti < type_arg_count && pos < C99_TYPE_ARG_BUF_LIMIT {
+        pos = pos + snprintf(&mono_name_buf[pos] as *byte, C99_TYPE_ARG_BUF_SIZE - pos, "_" as *byte);
         const type_arg: &ASTNode = type_args[ti];
         if type_arg != null && type_arg.type == ASTNodeType.AST_TYPE_NAMED && type_arg.type_named_name != null {
-            pos = pos + snprintf(&mono_name_buf[pos] as *byte, 256 - pos, "%s" as *byte, type_arg.type_named_name as *byte);
+            pos = pos + snprintf(&mono_name_buf[pos] as *byte, C99_TYPE_ARG_BUF_SIZE - pos, "%s" as *byte, type_arg.type_named_name as *byte);
         }
         ti = ti + 1;
     }
