@@ -215,9 +215,9 @@ run_single_test() {
     local safety_proof_arg="--safety-proof"
     if [ "$USE_UYA" = true ]; then
         # 自举编译器递归较深，已在脚本开头增大栈限制
-        compiler_output=$("$COMPILER" --c99 --nostdlib $safety_proof_arg "$uya_file" -o "$output_file" 2>&1)
+        compiler_output=$("$COMPILER" --c99 $safety_proof_arg "$uya_file" -o "$output_file" 2>&1)
     else
-        compiler_output=$("$COMPILER" --c99 --nostdlib $safety_proof_arg "$uya_file" -o "$output_file" 2>&1)
+        compiler_output=$("$COMPILER" --c99 $safety_proof_arg "$uya_file" -o "$output_file" 2>&1)
     fi
     compiler_exit=$?
     
@@ -250,11 +250,8 @@ run_single_test() {
         return
     fi
     
-    # 链接：根据文件内容选择正确的链接方式
-    # 1. 使用 std.runtime.entry 的文件：有 main() 入口，不需要 bridge
-    # 2. 使用 test "..." 语法的文件：有 uya_main()，需要 bridge_test.c
+    # 链接：编译器已自动为 test "..." 和 export fn main 生成 main 函数
     link_succeeded=false
-    BRIDGE_TEST="$SCRIPT_DIR/bridge_test.c"
     
     GCC_OPTS="-std=c99 -no-pie"
     EXTRA_C_EXTERN="$SCRIPT_DIR/extern_function_impl.c"
@@ -269,31 +266,14 @@ run_single_test() {
     fi
     
     if [ "$base_name" = "extern_function" ]; then
-        if [ "$has_main" = true ]; then
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" 2>/dev/null && link_succeeded=true
-        else
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
-        fi
+        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" 2>/dev/null && link_succeeded=true
     elif [ "$base_name" = "test_comprehensive_cast" ] || [ "$base_name" = "test_ffi_cast" ] || [ "$base_name" = "test_pointer_cast" ] || [ "$base_name" = "test_simple_cast" ] || [ "$base_name" = "test_extern_union" ]; then
-        if [ "$has_main" = true ]; then
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" 2>/dev/null && link_succeeded=true
-        else
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
-        fi
+        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" 2>/dev/null && link_succeeded=true
     elif [ "$base_name" = "test_abi_calling_convention" ]; then
-        if [ "$has_main" = true ]; then
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" 2>/dev/null && link_succeeded=true
-        else
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
-        fi
+        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" 2>/dev/null && link_succeeded=true
     else
-        if [ "$has_main" = true ]; then
-            # 有 main 入口，直接链接
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
-        else
-            # 没有 main 入口，需要 bridge_test.c
-            gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$BRIDGE_TEST" 2>/dev/null && link_succeeded=true
-        fi
+        # 编译器已自动生成 main，直接链接
+        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
     fi
     
     if [ "$link_succeeded" = false ]; then

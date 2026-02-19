@@ -61,31 +61,15 @@ elif [ $$is_expected -eq 1 ]; then echo "FAIL: $$base_name (应失败但通过�
 elif [ ! -f "$$output_file" ]; then echo "FAIL: $$base_name (未生成输出)"; echo FAIL > "$$result_file"; \
 else \
     link_ok=0; \
-    uses_std_runtime_entry=0; grep -q "use.*std\.runtime\.entry" "$1" 2>/dev/null && uses_std_runtime_entry=1 || true; \
+    has_main=0; grep -q "int main(" "$$output_file" 2>/dev/null && has_main=1 || grep -q "int32_t main(" "$$output_file" 2>/dev/null && has_main=1 || true; \
     if [ "$$base_name" = "extern_function" ]; then \
-        if [ $$uses_std_runtime_entry -eq 1 ]; then \
-            gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/extern_function_impl.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        else \
-            gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/extern_function_impl.c bridge_test.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        fi; \
+        gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/extern_function_impl.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
     elif [ "$$base_name" = "test_comprehensive_cast" ] || [ "$$base_name" = "test_ffi_cast" ] || [ "$$base_name" = "test_pointer_cast" ] || [ "$$base_name" = "test_simple_cast" ] || [ "$$base_name" = "test_extern_union" ]; then \
-        if [ $$uses_std_runtime_entry -eq 1 ]; then \
-            gcc --std=c99 -no-pie "$$output_file" external_functions.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        else \
-            gcc --std=c99 -no-pie "$$output_file" external_functions.c bridge_test.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        fi; \
+        gcc --std=c99 -no-pie "$$output_file" external_functions.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
     elif [ "$$base_name" = "test_abi_calling_convention" ]; then \
-        if [ $$uses_std_runtime_entry -eq 1 ]; then \
-            gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/test_abi_helpers.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        else \
-            gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/test_abi_helpers.c bridge_test.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        fi; \
+        gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/test_abi_helpers.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
     else \
-        if [ $$uses_std_runtime_entry -eq 1 ]; then \
-            gcc --std=c99 -no-pie "$$output_file" -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        else \
-            gcc --std=c99 -no-pie "$$output_file" bridge_test.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        fi; \
+        gcc --std=c99 -no-pie "$$output_file" -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
     fi; \
     if [ $$link_ok -eq 1 ]; then \
         if "$(BUILD_DIR)/$$base_name" >/dev/null 2>&1; then echo "PASS: $$base_name"; echo PASS > "$$result_file"; \
@@ -109,31 +93,15 @@ elif [ $$is_expected -eq 1 ]; then echo "FAIL: $$base_name (应失败但通过�
 elif [ ! -f "$$output_file" ]; then echo "FAIL: $$base_name (未生成输出)"; echo FAIL > "$$result_file"; \
 else \
     link_ok=0; \
-    uses_std_runtime_entry=0; grep -q "use.*std\.runtime\.entry" "$1" 2>/dev/null && uses_std_runtime_entry=1 || true; \
+    has_main=0; grep -q "int main(" "$$output_file" 2>/dev/null && has_main=1 || grep -q "int32_t main(" "$$output_file" 2>/dev/null && has_main=1 || true; \
     if [ "$$base_name" = "extern_function" ]; then \
-        if [ $$uses_std_runtime_entry -eq 1 ]; then \
-            gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/extern_function_impl.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        else \
-            gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/extern_function_impl.c bridge_test.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        fi; \
+        gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/extern_function_impl.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
     elif [ "$$base_name" = "test_comprehensive_cast" ] || [ "$$base_name" = "test_ffi_cast" ] || [ "$$base_name" = "test_pointer_cast" ] || [ "$$base_name" = "test_simple_cast" ] || [ "$$base_name" = "test_extern_union" ]; then \
-        if [ $$uses_std_runtime_entry -eq 1 ]; then \
-            gcc --std=c99 -no-pie "$$output_file" external_functions.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        else \
-            gcc --std=c99 -no-pie "$$output_file" external_functions.c bridge_test.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        fi; \
+        gcc --std=c99 -no-pie "$$output_file" external_functions.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
     elif [ "$$base_name" = "test_abi_calling_convention" ]; then \
-        if [ $$uses_std_runtime_entry -eq 1 ]; then \
-            gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/test_abi_helpers.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        else \
-            gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/test_abi_helpers.c bridge_test.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        fi; \
+        gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/test_abi_helpers.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
     else \
-        if [ $$uses_std_runtime_entry -eq 1 ]; then \
-            gcc --std=c99 -no-pie "$$output_file" -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        else \
-            gcc --std=c99 -no-pie "$$output_file" bridge_test.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
-        fi; \
+        gcc --std=c99 -no-pie "$$output_file" -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
     fi; \
     if [ $$link_ok -eq 1 ]; then \
         if "$(BUILD_DIR)/$$base_name" >/dev/null 2>&1; then echo "PASS: $$base_name"; echo PASS > "$$result_file"; \
@@ -158,7 +126,7 @@ run-multifile-c: $(MULTIFILE_TESTS)
 	$(COMPILER_C) --c99 --nostdlib $(MULTIFILE_TESTS) -o "$$out_c" 2>/dev/null; ex=$$?; \
 	if [ $$ex -ne 0 ]; then echo "FAIL: multifile (编译失败 $$ex)"; echo FAIL > "$(RESULT_DIR)/multifile.result"; exit 1; fi; \
 	if [ ! -f "$$out_c" ]; then echo "FAIL: multifile (未生成输出)"; echo FAIL > "$(RESULT_DIR)/multifile.result"; exit 1; fi; \
-	gcc --std=c99 -no-pie "$$out_c" bridge_test.c -o "$$out_exe" 2>/dev/null || { echo "FAIL: multifile (链接失败)"; echo FAIL > "$(RESULT_DIR)/multifile.result"; exit 1; }; \
+	gcc --std=c99 -no-pie "$$out_c" -o "$$out_exe" 2>/dev/null || { echo "FAIL: multifile (链接失败)"; echo FAIL > "$(RESULT_DIR)/multifile.result"; exit 1; }; \
 	"$$out_exe" >/dev/null 2>&1; ex=$$?; \
 	if [ $$ex -eq 0 ]; then echo "PASS: multifile"; echo PASS > "$(RESULT_DIR)/multifile.result"; else echo "FAIL: multifile (运行退出 $$ex)"; echo FAIL > "$(RESULT_DIR)/multifile.result"; exit 1; fi
 
@@ -169,7 +137,7 @@ run-multifile-uya: $(MULTIFILE_TESTS)
 	$(COMPILER_UYA) --c99 --nostdlib $(MULTIFILE_TESTS) -o "$$out_c" 2>/dev/null; ex=$$?; \
 	if [ $$ex -ne 0 ]; then echo "FAIL: multifile (编译失败 $$ex)"; echo FAIL > "$(RESULT_DIR)/multifile.result"; exit 1; fi; \
 	if [ ! -f "$$out_c" ]; then echo "FAIL: multifile (未生成输出)"; echo FAIL > "$(RESULT_DIR)/multifile.result"; exit 1; fi; \
-	gcc --std=c99 -no-pie "$$out_c" bridge_test.c -o "$$out_exe" 2>/dev/null || { echo "FAIL: multifile (链接失败)"; echo FAIL > "$(RESULT_DIR)/multifile.result"; exit 1; }; \
+	gcc --std=c99 -no-pie "$$out_c" -o "$$out_exe" 2>/dev/null || { echo "FAIL: multifile (链接失败)"; echo FAIL > "$(RESULT_DIR)/multifile.result"; exit 1; }; \
 	"$$out_exe" >/dev/null 2>&1; ex=$$?; \
 	if [ $$ex -eq 0 ]; then echo "PASS: multifile"; echo PASS > "$(RESULT_DIR)/multifile.result"; else echo "FAIL: multifile (运行退出 $$ex)"; echo FAIL > "$(RESULT_DIR)/multifile.result"; exit 1; fi
 
@@ -180,7 +148,7 @@ run-cross-deps-c: $(CROSS_DEPS_TESTS)
 	$(COMPILER_C) --c99 --nostdlib $(CROSS_DEPS_TESTS) -o "$$out_c" 2>/dev/null; ex=$$?; \
 	if [ $$ex -ne 0 ]; then echo "FAIL: cross_deps (编译失败 $$ex)"; echo FAIL > "$(RESULT_DIR)/cross_deps.result"; exit 1; fi; \
 	if [ ! -f "$$out_c" ]; then echo "FAIL: cross_deps (未生成输出)"; echo FAIL > "$(RESULT_DIR)/cross_deps.result"; exit 1; fi; \
-	gcc --std=c99 -no-pie "$$out_c" bridge_test.c -o "$$out_exe" 2>/dev/null || { echo "FAIL: cross_deps (链接失败)"; echo FAIL > "$(RESULT_DIR)/cross_deps.result"; exit 1; }; \
+	gcc --std=c99 -no-pie "$$out_c" -o "$$out_exe" 2>/dev/null || { echo "FAIL: cross_deps (链接失败)"; echo FAIL > "$(RESULT_DIR)/cross_deps.result"; exit 1; }; \
 	"$$out_exe" >/dev/null 2>&1; ex=$$?; \
 	if [ $$ex -eq 0 ]; then echo "PASS: cross_deps"; echo PASS > "$(RESULT_DIR)/cross_deps.result"; else echo "FAIL: cross_deps (运行退出 $$ex)"; echo FAIL > "$(RESULT_DIR)/cross_deps.result"; exit 1; fi
 
@@ -191,7 +159,7 @@ run-cross-deps-uya: $(CROSS_DEPS_TESTS)
 	$(COMPILER_UYA) --c99 --nostdlib $(CROSS_DEPS_TESTS) -o "$$out_c" 2>/dev/null; ex=$$?; \
 	if [ $$ex -ne 0 ]; then echo "FAIL: cross_deps (编译失败 $$ex)"; echo FAIL > "$(RESULT_DIR)/cross_deps.result"; exit 1; fi; \
 	if [ ! -f "$$out_c" ]; then echo "FAIL: cross_deps (未生成输出)"; echo FAIL > "$(RESULT_DIR)/cross_deps.result"; exit 1; fi; \
-	gcc --std=c99 -no-pie "$$out_c" bridge_test.c -o "$$out_exe" 2>/dev/null || { echo "FAIL: cross_deps (链接失败)"; echo FAIL > "$(RESULT_DIR)/cross_deps.result"; exit 1; }; \
+	gcc --std=c99 -no-pie "$$out_c" -o "$$out_exe" 2>/dev/null || { echo "FAIL: cross_deps (链接失败)"; echo FAIL > "$(RESULT_DIR)/cross_deps.result"; exit 1; }; \
 	"$$out_exe" >/dev/null 2>&1; ex=$$?; \
 	if [ $$ex -eq 0 ]; then echo "PASS: cross_deps"; echo PASS > "$(RESULT_DIR)/cross_deps.result"; else echo "FAIL: cross_deps (运行退出 $$ex)"; echo FAIL > "$(RESULT_DIR)/cross_deps.result"; exit 1; fi
 

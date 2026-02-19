@@ -1,8 +1,8 @@
 // 测试宏返回值语法糖
 
-use std.testing.check_eq_i32;
-use std.testing.check_eq_bool;
-use std.testing.check_true;
+use std.testing.assert_eq_i32;
+use std.testing.assert_eq_bool;
+use std.testing.assert_true;
 
 struct TypeInfo {
     name: *i8,
@@ -79,32 +79,32 @@ mc get_type_size(T: type) expr {
 }
 
 test "test_expr_sugar" {
-    check_eq_i32(double_it(), 42);
-    check_eq_i32(add(10, 32), 42);
-    check_eq_i32(calc(5, 8, 2), 42);
+    try assert_eq_i32(double_it(), 42);
+    try assert_eq_i32(add(10, 32), 42);
+    try assert_eq_i32(calc(5, 8, 2), 42);
 }
 
 test "test_local_var_sugar" {
-    check_eq_i32(compute_with_local(), 42);
-    check_eq_i32(multi_local(), 47);
+    try assert_eq_i32(compute_with_local(), 42);
+    try assert_eq_i32(multi_local(), 47);
 }
 
 test "test_type_sugar" {
     const x: int_type() = 100;
-    check_eq_i32(x, 100);
+    try assert_eq_i32(x, 100);
     
     const flag: bool_type() = true;
-    check_eq_i32(flag, true);
+    try assert_eq_i32(flag, true);
 }
 
 test "test_struct_sugar" {
     const ts: TestStruct = TestStruct { val: 42 };
-    check_eq_i32(ts.get_val(), 42);
+    try assert_eq_i32(ts.get_val(), 42);
 }
 
 test "test_mc_type_sugar" {
     const info: TypeInfo = get_type_info(i32);
-    check_eq_i32(info.size, 4);
+    try assert_eq_i32(info.size, 4);
     
-    check_eq_i32(get_type_size(i64), 8);
+    try assert_eq_i32(get_type_size(i64), 8);
 }

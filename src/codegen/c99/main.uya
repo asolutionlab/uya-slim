@@ -471,24 +471,32 @@ fn gen_test_function(codegen: &C99CodeGenerator, test_stmt: &ASTNode) void {
         return;
     }
     
-    // 创建 void 类型节点（用于设置 current_function_return_type）
+    // 创建 !void 类型节点（用于设置 current_function_return_type）
+    // test "name" {} 函数返回 !void，这样 try 表达式可以正常工作
     const void_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, test_stmt.line, test_stmt.column, codegen.arena, test_stmt.filename);
     if void_type != null {
         void_type.type_named_name = "void" as *byte;
+    }
+    const err_union_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, test_stmt.line, test_stmt.column, codegen.arena, test_stmt.filename);
+    if err_union_type != null {
+        err_union_type.type_error_union_payload_type = void_type;
     }
     
     // 保存之前的返回类型
     const saved_return_type: &ASTNode = codegen.current_function_return_type;
     
-    // 设置当前函数的返回类型为 void
-    codegen.current_function_return_type = void_type;
+    // 设置当前函数的返回类型为 !void
+    codegen.current_function_return_type = err_union_type;
     
-    // 生成函数定义
+    // 生成函数定义：返回 struct err_union_void
     emit_line_directive(codegen, test_stmt.line, test_stmt.filename);
-    fprintf(codegen.output as *void, "static void %s(void) {\n" as *byte, func_name as *byte);
+    fprintf(codegen.output as *void, "static struct err_union_void %s(void) {\n" as *byte, func_name as *byte);
     
     // 生成函数体
     gen_stmt(codegen, body);
+    
+    // 函数结尾返回成功（空的 err_union_void）
+    fputs("    return (struct err_union_void){ .error_id = 0 };\n" as *byte, codegen.output as *void);
     
     // 恢复之前的返回类型
     codegen.current_function_return_type = saved_return_type;
@@ -515,9 +523,11 @@ fn gen_test_runner(codegen: &C99CodeGenerator, tests: & & ASTNode, test_count: i
                 fprintf(codegen.output as *void, "    printf(\"  TEST: %s ... \");\n" as *byte, description as *byte);
                 // 记录测试前的计数
                 fputs("    { int _before = _test_passed + _test_failed;\n" as *byte, codegen.output as *void);
-                fprintf(codegen.output as *void, "      %s();\n" as *byte, func_name as *byte);
+                fputs("      struct err_union_void _test_result = " as *byte, codegen.output as *void);
+                fprintf(codegen.output as *void, "%s();\n" as *byte, func_name as *byte);
                 fputs("      int _after = _test_passed + _test_failed;\n" as *byte, codegen.output as *void);
-                fputs("      if (_after > _before) printf(\"OK\\n\"); else printf(\"FAILED\\n\"); }\n" as *byte, codegen.output as *void);
+                fputs("      if (_test_result.error_id != 0) printf(\"ERROR\\n\");\n" as *byte, codegen.output as *void);
+                fputs("      else if (_after > _before) printf(\"OK\\n\"); else printf(\"FAILED\\n\"); }\n" as *byte, codegen.output as *void);
             }
         }
         i = i + 1;
@@ -768,6 +778,24 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("static inline int __uya_memcmp(const void *s1, const void *s2, size_t n) {\n" as *byte, codegen.output as *void);
         fputs("    const unsigned char *a = (const unsigned char *)s1, *b = (const unsigned char *)s2;\n" as *byte, codegen.output as *void);
         fputs("    for (size_t i = 0; i < n; i++) { if (a[i] != b[i]) return a[i] - b[i]; } return 0;\n" as *byte, codegen.output as *void);
+        fputs("}\n\n" as *byte, codegen.output as *void);
+    }
+    
+    // --nostdlib 模式：生成 _start 入口（内联汇编）
+    if codegen.is_nostdlib != 0 {
+        fputs("// _start - 自定义程序入口（无 C 标准库，内联汇编实现）\n" as *byte, codegen.output as *void);
+        fputs("extern int main(int argc, uint8_t **argv);\n" as *byte, codegen.output as *void);
+        fputs("__attribute__((naked)) void _start(void) {\n" as *byte, codegen.output as *void);
+        fputs("    __asm__ volatile (\n" as *byte, codegen.output as *void);
+        fputs("        \"movq (%%rsp), %%rdi\\n\\t\"    /* argc */\n" as *byte, codegen.output as *void);
+        fputs("        \"leaq 8(%%rsp), %%rsi\\n\\t\"   /* argv */\n" as *byte, codegen.output as *void);
+        fputs("        \"call main\\n\\t\"\n" as *byte, codegen.output as *void);
+        fputs("        \"movq %%rax, %%rdi\\n\\t\"\n" as *byte, codegen.output as *void);
+        fputs("        \"movq $60, %%rax\\n\\t\"        /* syscall exit */\n" as *byte, codegen.output as *void);
+        fputs("        \"syscall\\n\\t\"\n" as *byte, codegen.output as *void);
+        fputs("        \"hlt\\n\\t\"\n" as *byte, codegen.output as *void);
+        fputs("        : : : \"memory\"\n" as *byte, codegen.output as *void);
+        fputs("    );\n" as *byte, codegen.output as *void);
         fputs("}\n\n" as *byte, codegen.output as *void);
     }
     
@@ -1484,7 +1512,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             if test_node != null && test_node.type == ASTNodeType.AST_TEST_STMT {
                 const func_name: &byte = get_test_function_name(codegen, test_node.test_stmt_description);
                 if func_name != null {
-                    fprintf(codegen.output as *void, "static void %s(void);\n" as *byte, func_name as *byte);
+                    fprintf(codegen.output as *void, "static struct err_union_void %s(void);\n" as *byte, func_name as *byte);
                 }
             }
             i = i + 1;
@@ -1495,11 +1523,6 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     
     // 前向声明：stdin/stdout/stderr 的存储（&_stdin 等）在 export 变量初始化中引用
     fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, codegen.output as *void);
-    
-    // 测试函数需要 _uya_exit（用于 void 函数中的 try 表达式）
-    if test_count > 0 {
-        fputs("extern void std_runtime__uya_exit(int);\n" as *byte, codegen.output as *void);
-    }
     
     // 第九步 a：先生成所有常量（确保在函数之前定义）
     i = 0;

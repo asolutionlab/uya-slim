@@ -1,9 +1,9 @@
 // 非常深的嵌套测试
 // 测试5层嵌套的if语句
 
-use std.testing.check_eq_i32;
-use std.testing.check_eq_bool;
-use std.testing.check_true;
+use std.testing.assert_eq_i32;
+use std.testing.assert_eq_bool;
+use std.testing.assert_true;
 
 test "test_deep_nested_true_path" {
     var value: i32 = 0;
@@ -35,7 +35,7 @@ test "test_deep_nested_true_path" {
         value = 6000;
     }
     
-    check_eq_i32(value, 1000);
+    try assert_eq_i32(value, 1000);
 }
 
 test "test_deep_nested_else_path" {
@@ -68,5 +68,5 @@ test "test_deep_nested_else_path" {
         value = 6000;
     }
     
-    check_eq_i32(value, 2000);
+    try assert_eq_i32(value, 2000);
 }

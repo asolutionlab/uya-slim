@@ -65,31 +65,6 @@ export fn assert_eq_bool(actual: bool, expected: bool) !void {
     }
 }
 
-// 不返回 error 的断言版本（用于 test "name" {} 块）
-export fn check_eq_i32(actual: i32, expected: i32) void {
-    if actual != expected {
-        _test_failed = _test_failed + 1;
-    } else {
-        _test_passed = _test_passed + 1;
-    }
-}
-
-export fn check_eq_bool(actual: bool, expected: bool) void {
-    if actual != expected {
-        _test_failed = _test_failed + 1;
-    } else {
-        _test_passed = _test_passed + 1;
-    }
-}
-
-export fn check_true(condition: bool) void {
-    if !condition {
-        _test_failed = _test_failed + 1;
-    } else {
-        _test_passed = _test_passed + 1;
-    }
-}
-
 export fn expect_not_null(ptr: &byte) !void {
     if ptr == null as &byte {
         return error.AssertionFailed;

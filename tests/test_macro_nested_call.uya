@@ -1,8 +1,8 @@
 // 测试宏嵌套调用
 
-use std.testing.check_eq_i32;
-use std.testing.check_eq_bool;
-use std.testing.check_true;
+use std.testing.assert_eq_i32;
+use std.testing.assert_eq_bool;
+use std.testing.assert_true;
 
 // 宏生成调用普通函数的代码
 mc call_function(val: expr) expr {
@@ -51,22 +51,22 @@ mc complex_macro(val: expr) expr {
 }
 
 test "test_macro_call_function" {
-    check_eq_i32(call_function(32), 42);
+    try assert_eq_i32(call_function(32), 42);
 }
 
 test "test_macro_base_value" {
-    check_eq_i32(base_value(), 42);
-    check_eq_i32(wrapper_macro(), 42);
+    try assert_eq_i32(base_value(), 42);
+    try assert_eq_i32(wrapper_macro(), 42);
 }
 
 test "test_macro_nested" {
-    check_eq_i32(outer_calc(32), 42);
+    try assert_eq_i32(outer_calc(32), 42);
 }
 
 test "test_multi_level_macro" {
-    check_eq_i32(level3(), 300);  // (100 + 50) * 2
+    try assert_eq_i32(level3(), 300);  // (100 + 50) * 2
 }
 
 test "test_complex_macro" {
-    check_eq_i32(complex_macro(10), 35);  // add_numbers(15, 20)
+    try assert_eq_i32(complex_macro(10), 35);  // add_numbers(15, 20)
 }

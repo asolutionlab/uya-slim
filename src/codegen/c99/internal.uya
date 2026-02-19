@@ -205,6 +205,9 @@ struct C99CodeGenerator {
     needs_stdlib_h: i32,                 // 1 表示需要 #include <stdlib.h>
     // 跟踪是否定义了与标准库冲突的函数（fopen, fclose, fread, fgetc, fprintf）
     has_stdio_conflicts: i32,             // 1 表示定义了与 stdio.h 冲突的函数
+    
+    // --nostdlib 模式：生成 _start 入口
+    is_nostdlib: i32                     // 1 表示生成 _start 内联汇编
 }
 
 // ===== 函数声明 =====

@@ -8,7 +8,7 @@
 // C 标准库函数（在 extern_decls.uya 中声明）
 
 // 创建 C99 代码生成器
-fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, module_name: &byte, emit_line_directives: i32) i32 {
+fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, module_name: &byte, emit_line_directives: i32, is_nostdlib: i32) i32 {
     if codegen == null || arena == null || output == null || module_name == null {
         return -1;
     }
@@ -73,6 +73,8 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.needs_stdlib_h = 0;
     // 初始化 has_stdio_conflicts 标志
     codegen.has_stdio_conflicts = 0;
+    // 初始化 is_nostdlib
+    codegen.is_nostdlib = is_nostdlib;
     
     return 0;
 }

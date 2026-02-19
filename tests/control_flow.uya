@@ -1,8 +1,8 @@
 // 控制流测试
 // 测试 if/else 和 while 语句
 
-use std.testing.check_eq_i32;
-use std.testing.check_true;
+use std.testing.expect;
+use std.testing.assert_eq_i32;
 
 test "test_if_else" {
     var x: i32 = 0;
@@ -13,7 +13,7 @@ test "test_if_else" {
         x = 20;
     }
     
-    check_eq_i32(x, 10);
+    try assert_eq_i32(x, 10);
 }
 
 test "test_while_loop" {
@@ -21,7 +21,7 @@ test "test_while_loop" {
     while count < 5 {
         count = count + 1;
     }
-    check_eq_i32(count, 5);
+    try assert_eq_i32(count, 5);
 }
 
 test "test_combined" {
@@ -38,5 +38,5 @@ test "test_combined" {
         count = count + 1;
     }
     
-    check_true(x == 10 && count == 5);
+    try expect(x == 10 && count == 5);
 }

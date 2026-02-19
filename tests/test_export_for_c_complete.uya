@@ -1,8 +1,8 @@
 // 测试 Uya 函数导出给 C 调用（完整示例）
 
-use std.testing.check_eq_i32;
-use std.testing.check_eq_bool;
-use std.testing.check_true;
+use std.testing.assert_eq_i32;
+use std.testing.assert_eq_bool;
+use std.testing.assert_true;
 
 // 导出简单函数给 C 调用
 export fn uya_add(a: i32, b: i32) i32 {
@@ -32,13 +32,13 @@ fn internal_func(x: i32) i32 {
 }
 
 test "test_export_functions" {
-    check_eq_i32(uya_add(10, 20), 30);
-    check_eq_i32(uya_multiply(5, 6), 30);
-    check_eq_i32(internal_func(21), 42);
+    try assert_eq_i32(uya_add(10, 20), 30);
+    try assert_eq_i32(uya_multiply(5, 6), 30);
+    try assert_eq_i32(internal_func(21), 42);
 }
 
 test "test_strlen" {
     const test_str: [byte: 6] = [72, 101, 108, 108, 111, 0];  // "Hello\0"
     const len: i32 = uya_strlen(&test_str[0] as &byte);
-    check_eq_i32(len, 5);
+    try assert_eq_i32(len, 5);
 }

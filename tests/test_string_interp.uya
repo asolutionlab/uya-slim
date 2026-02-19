@@ -1,44 +1,44 @@
 // 测试字符串插值功能
 
-use std.testing.check_eq_i32;
-use std.testing.check_eq_bool;
-use std.testing.check_true;
+use std.testing.assert_eq_i32;
+use std.testing.assert_eq_bool;
+use std.testing.assert_true;
 
 test "test_single_interp" {
     const x: u32 = 255;
     const msg: [i8: 64] = "hex=${x:#06x}\n";
-    check_eq_i32(msg[0] == 104, true);  // 'h'
+    try assert_eq_i32(msg[0] == 104, true);  // 'h'
 }
 
 test "test_multi_interp" {
     const x: u32 = 255;
     const pi: f64 = 3.1415926;
     const msg: [i8: 64] = "x=${x}, pi=${pi:.2f}\n";
-    check_eq_i32(msg[0] == 120, true);  // 'x'
+    try assert_eq_i32(msg[0] == 120, true);  // 'x'
 }
 
 test "test_only_interp" {
     const n: i32 = -42;
     const only_interp: [i8: 32] = "${n}";
-    check_eq_i32(@size_of(only_interp) > 0, true);
+    try assert_eq_i32(@size_of(only_interp) > 0, true);
 }
 
 test "test_plain_text" {
     const plain: [i8: 8] = "plain\n";
-    check_eq_i32(plain[0] == 112, true);  // 'p'
+    try assert_eq_i32(plain[0] == 112, true);  // 'p'
 }
 
 test "test_var_interp" {
     var w: i32 = 99;
     const msg: [i8: 16] = "w=${w}\n";
-    check_eq_i32(@size_of(msg) > 0, true);
+    try assert_eq_i32(@size_of(msg) > 0, true);
 }
 
 test "test_continuous_interp" {
     const x: u32 = 255;
     const n: i32 = -42;
     const ab: [i8: 64] = "a=${x}${n}b\n";
-    check_eq_i32(ab[0] == 97, true);  // 'a'
+    try assert_eq_i32(ab[0] == 97, true);  // 'a'
 }
 
 test "test_three_segment" {
@@ -46,12 +46,12 @@ test "test_three_segment" {
     const b: i32 = 2;
     const c: i32 = 3;
     const three: [i8: 64] = "1=${a} 2=${b} 3=${c}\n";
-    check_eq_i32(three[0] == 49, true);  // '1'
+    try assert_eq_i32(three[0] == 49, true);  // '1'
 }
 
 test "test_expression_interp" {
     const a: i32 = 1;
     const b: i32 = 2;
     const sum: [i8: 32] = "sum=${a+b}\n";
-    check_eq_i32(sum[0] == 115, true);  // 's'
+    try assert_eq_i32(sum[0] == 115, true);  // 's'
 }

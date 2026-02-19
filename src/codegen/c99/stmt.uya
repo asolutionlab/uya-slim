@@ -507,8 +507,20 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 gen_expr(codegen, expr);
                 fputs(";\n" as *byte, codegen.output as *void);
             } else {
+                // 检查是否是 !void 返回类型
+                var is_err_union_void: i32 = 0;
+                if return_type != null && return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                    const payload_node: &ASTNode = return_type.type_error_union_payload_type;
+                    if payload_node == null || (payload_node.type == ASTNodeType.AST_TYPE_NAMED && payload_node.type_named_name != null && strcmp(payload_node.type_named_name as *byte, "void" as *byte) == 0) {
+                        is_err_union_void = 1;
+                    }
+                }
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s _uya_ret = 0;\n" as *byte, ret_c as *byte);
+                if is_err_union_void != 0 {
+                    fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0 };\n" as *byte, ret_c as *byte, ret_c as *byte);
+                } else {
+                    fprintf(codegen.output as *void, "%s _uya_ret = 0;\n" as *byte, ret_c as *byte);
+                }
             }
         }
         emit_current_block_drops(codegen);
