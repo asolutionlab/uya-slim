@@ -2898,6 +2898,26 @@ const int32_t MAX_MERGE_PROGRAMS = 64;
 
 const int32_t MAX_ERROR_NAMES = 256;
 
+const int32_t MAX_MOVED_NAMES = 128;
+
+const int32_t MAX_MONO_INSTANCES = 512;
+
+const int32_t MAX_UNION_VARIANTS = 32;
+
+const int32_t MAX_INTERFACE_METHODS = 128;
+
+const int32_t MAX_INTERFACE_STACK = 64;
+
+const int32_t MAX_BASE_NAME_LEN = 256;
+
+const int32_t MAX_MONO_NAME_LEN = 256;
+
+const int32_t MAX_MONO_NAME_LIMIT = 250;
+
+const int32_t MAX_POINTER_NAMES = 32;
+
+const int32_t MAX_CONSTRAINTS = 64;
+
 const int32_t SYMBOL_TABLE_SIZE = 32768;
 
 const int32_t FUNCTION_TABLE_SIZE = 2048;
@@ -2942,6 +2962,24 @@ const int32_t LEXER_BUFFER_SIZE = (1024 * 1024);
 
 const int32_t LEXER_STRING_INTERP_BUFFER_SIZE = 4096;
 
+const int32_t MAX_INTERP_SEGMENTS = 64;
+
+const int32_t MAX_GENERIC_NAME_BUF = 512;
+
+const int32_t FMT_BUF_SIZE = 64;
+
+const int32_t NAME_BUF_SIZE = 256;
+
+const int32_t TEMP_BUF_SIZE = 256;
+
+const int32_t TEMP_BUF_LIMIT = 255;
+
+const int32_t NUM_BUF_SIZE = 32;
+
+const int32_t STRUCT_NAME_BUF_SIZE = 128;
+
+const int32_t SHORT_NAME_BUF_SIZE = 64;
+
 const int32_t C99_MAX_STRING_CONSTANTS = 4096;
 
 const int32_t C99_MAX_STRUCT_DEFINITIONS = 512;
@@ -2969,6 +3007,24 @@ const int32_t C99_MAX_SLICE_STRUCTS = 128;
 const int32_t C99_MAX_ERR_UNION_STRUCTS = 256;
 
 const int32_t C99_MAX_MONO_INSTANCES = 1024;
+
+const int32_t C99_MAX_ERROR_IDS = 256;
+
+const int32_t C99_GENERIC_NAME_BUF_SIZE = 128;
+
+const int32_t C99_MAX_INTERFACE_METHODS = 128;
+
+const int32_t C99_TYPE_ARG_BUF_SIZE = 256;
+
+const int32_t C99_TYPE_ARG_BUF_LIMIT = 250;
+
+const int32_t C99_OUTPUT_FILENAME_BUF_SIZE = 100;
+
+const int32_t C99_STRING_INTERP_BUF_SIZE = 2048;
+
+const int32_t C99_STRING_INTERP_LIMIT = 2046;
+
+const int32_t C99_SUFFIX_BUF_SIZE = 512;
 
 const int32_t MAX_TESTS = 1000;
 
@@ -3345,7 +3401,11 @@ static __attribute__((unused)) int32_t find_module_file(uint8_t * module_path, u
             root = uya_root;
         }
         ri = (ri + 1);
-        if (((root == NULL) || (root[0] == 0))) {
+        if ((root == NULL)) {
+            continue;
+        }
+        uint8_t * const root_nonnull = root;
+        if ((root_nonnull[0] == 0)) {
             continue;
         }
         uint8_t full_path[4096] = {0};
@@ -3872,7 +3932,11 @@ static __attribute__((unused)) int32_t collect_module_dependencies(uint8_t * fil
                 root = uya_root;
             }
             ri = (ri + 1);
-            if (((root == NULL) || (root[0] == 0))) {
+            if ((root == NULL)) {
+                continue;
+            }
+            uint8_t * const root_nonnull = root;
+            if ((root_nonnull[0] == 0)) {
                 continue;
             }
             const int32_t len = libc_snprintf((char *)(&module_dir_path[0]), PATH_MAX, (const char *)str21, (uint8_t *)root, (&file_path[0]));
@@ -8743,10 +8807,14 @@ static __attribute__((unused)) int32_t moved_set_contains(struct TypeChecker * c
         return _uya_ret;
     }
     int32_t i = 0;
-    while ((i < checker->moved_count)) {
-        if (((checker->moved_names[i] != NULL) && (str_equals(checker->moved_names[i], (uint8_t *)name) != 0))) {
-            int32_t _uya_ret = 1;
-            return _uya_ret;
+    const int32_t count = checker->moved_count;
+    while ((i < count)) {
+        if ((i < MAX_MOVED_NAMES)) {
+            uint8_t * const name_ptr = checker->moved_names[i];
+            if (((name_ptr != NULL) && (str_equals(name_ptr, (uint8_t *)name) != 0))) {
+                int32_t _uya_ret = 1;
+                return _uya_ret;
+            }
         }
         i = (i + 1);
     }
@@ -8794,13 +8862,16 @@ static __attribute__((unused)) void checker_mark_moved(struct TypeChecker * chec
         checker_report_error(checker, err_node, (uint8_t *)(uint8_t *)str170);
         return;
     }
-    if ((checker->moved_count >= 128)) {
+    if ((checker->moved_count >= MAX_MOVED_NAMES)) {
         return;
     }
+    const int32_t idx = checker->moved_count;
     uint8_t * const copy = checker_arena_strdup(checker->arena, (uint8_t *)var_name);
     if ((copy != NULL)) {
-        checker->moved_names[checker->moved_count] = copy;
-        checker->moved_count = (checker->moved_count + 1);
+        if (((idx >= 0) && (idx < MAX_MOVED_NAMES))) {
+            checker->moved_names[idx] = copy;
+        }
+        checker->moved_count = (idx + 1);
     }
     struct Symbol * const sym = symbol_table_lookup(checker, (uint8_t *)var_name);
     if ((((sym != NULL) && (sym->decl_node != NULL)) && (sym->decl_node->type == AST_VAR_DECL))) {
@@ -8889,15 +8960,20 @@ static __attribute__((unused)) uint32_t get_or_add_error_id(struct TypeChecker *
     }
     const uint32_t h = hash_error_name((uint8_t *)name);
     int32_t i = 0;
-    while ((i < checker->error_name_count)) {
-        if (((checker->error_names[i] != NULL) && (str_equals(checker->error_names[i], (uint8_t *)name) != 0))) {
-            uint32_t _uya_ret = checker->error_hashes[i];
-            return _uya_ret;
-        }
-        if ((((checker->error_hashes[i] == h) && (checker->error_names[i] != NULL)) && (str_equals(checker->error_names[i], (uint8_t *)name) == 0))) {
-            checker_report_error(checker, node, (uint8_t *)(uint8_t *)str171);
-            uint32_t _uya_ret = 0;
-            return _uya_ret;
+    const int32_t count = checker->error_name_count;
+    while ((i < count)) {
+        if ((i < MAX_ERROR_NAMES)) {
+            uint8_t * const err_name = checker->error_names[i];
+            const uint32_t err_hash = checker->error_hashes[i];
+            if (((err_name != NULL) && (str_equals(err_name, (uint8_t *)name) != 0))) {
+                uint32_t _uya_ret = err_hash;
+                return _uya_ret;
+            }
+            if ((((err_hash == h) && (err_name != NULL)) && (str_equals(err_name, (uint8_t *)name) == 0))) {
+                checker_report_error(checker, node, (uint8_t *)(uint8_t *)str171);
+                uint32_t _uya_ret = 0;
+                return _uya_ret;
+            }
         }
         i = (i + 1);
     }
@@ -8905,14 +8981,17 @@ static __attribute__((unused)) uint32_t get_or_add_error_id(struct TypeChecker *
         uint32_t _uya_ret = 0;
         return _uya_ret;
     }
+    const int32_t idx = checker->error_name_count;
     uint8_t * const copy = checker_arena_strdup(checker->arena, (uint8_t *)name);
     if ((copy == NULL)) {
         uint32_t _uya_ret = 0;
         return _uya_ret;
     }
-    checker->error_names[checker->error_name_count] = copy;
-    checker->error_hashes[checker->error_name_count] = h;
-    checker->error_name_count = (checker->error_name_count + 1);
+    if (((idx >= 0) && (idx < MAX_ERROR_NAMES))) {
+        checker->error_names[idx] = copy;
+        checker->error_hashes[idx] = h;
+    }
+    checker->error_name_count = (idx + 1);
     uint32_t _uya_ret = h;
     return _uya_ret;
 }
@@ -9263,7 +9342,7 @@ static __attribute__((unused)) int32_t check_type_param_constraints(struct TypeC
         if (((constraint != NULL) && (type_satisfies_constraint(checker, type, constraint) == 0))) {
             uint8_t buf[512] = {0};
             uint8_t * const type_name = type_to_string(checker->arena, copy_type((&type)));
-            libc_snprintf((char *)(uint8_t *)buf, 512, (const char *)str211, (uint8_t *)type_name, (uint8_t *)param_name, constraint);
+            libc_snprintf((char *)(uint8_t *)buf, (MAX_BASE_NAME_LEN * 2), (const char *)str211, (uint8_t *)type_name, (uint8_t *)param_name, constraint);
             checker_report_error(checker, node, (uint8_t *)buf);
             int32_t _uya_ret = 0;
             return _uya_ret;
@@ -10006,38 +10085,42 @@ static __attribute__((unused)) int32_t register_mono_instance(struct TypeChecker
     (void)type_arg_nodes;
     (void)type_arg_count;
     (void)is_function;
-    if ((((checker == NULL) || (generic_name == NULL)) || (checker->mono_instance_count >= 512))) {
+    if ((((checker == NULL) || (generic_name == NULL)) || (checker->mono_instance_count >= MAX_MONO_INSTANCES))) {
         int32_t _uya_ret = (-1);
         return _uya_ret;
     }
     int32_t i = 0;
-    while ((i < checker->mono_instance_count)) {
-        if (((((checker->mono_instances[i].generic_name != NULL) && (str_equals(checker->mono_instances[i].generic_name, (uint8_t *)generic_name) != 0)) && (checker->mono_instances[i].is_function == is_function)) && (checker->mono_instances[i].type_arg_count == type_arg_count))) {
-            int32_t is_match = 1;
-            int32_t j = 0;
-            while (((j < type_arg_count) && (is_match != 0))) {
-                struct Type arg_type = type_from_ast(checker, type_arg_nodes[j]);
-                if ((type_equals(copy_type((&checker->mono_instances[i].type_args[j])), copy_type((&arg_type))) == 0)) {
-                    is_match = 0;
+    const int32_t inst_count = checker->mono_instance_count;
+    while ((i < inst_count)) {
+        if ((i < MAX_MONO_INSTANCES)) {
+            struct MonoInstance * const inst = (&checker->mono_instances[i]);
+            if (((((inst->generic_name != NULL) && (str_equals(inst->generic_name, (uint8_t *)generic_name) != 0)) && (inst->is_function == is_function)) && (inst->type_arg_count == type_arg_count))) {
+                int32_t is_match = 1;
+                int32_t j = 0;
+                while (((j < type_arg_count) && (is_match != 0))) {
+                    struct Type arg_type = type_from_ast(checker, type_arg_nodes[j]);
+                    if (((inst->type_args != NULL) && (type_equals(copy_type((&inst->type_args[j])), copy_type((&arg_type))) == 0))) {
+                        is_match = 0;
+                    }
+                    j = (j + 1);
                 }
-                j = (j + 1);
-            }
-            if ((is_match != 0)) {
-                int32_t _uya_ret = 0;
-                return _uya_ret;
+                if ((is_match != 0)) {
+                    int32_t _uya_ret = 0;
+                    return _uya_ret;
+                }
             }
         }
         i = (i + 1);
     }
     const int32_t idx = checker->mono_instance_count;
-    checker->mono_instance_count = (checker->mono_instance_count + 1);
+    checker->mono_instance_count = (idx + 1);
     int32_t name_len = 0;
     while ((generic_name[name_len] != 0)) {
         name_len = (name_len + 1);
     }
     uint8_t * const name_copy = (uint8_t *)arena_alloc(checker->arena, (size_t)(name_len + 1));
     if ((name_copy == NULL)) {
-        checker->mono_instance_count = (checker->mono_instance_count - 1);
+        checker->mono_instance_count = idx;
         int32_t _uya_ret = (-1);
         return _uya_ret;
     }
@@ -10046,26 +10129,40 @@ static __attribute__((unused)) int32_t register_mono_instance(struct TypeChecker
         name_copy[ni] = generic_name[ni];
         ni = (ni + 1);
     }
-    checker->mono_instances[idx].generic_name = name_copy;
-    checker->mono_instances[idx].is_function = is_function;
-    checker->mono_instances[idx].type_arg_count = type_arg_count;
-    checker->mono_instances[idx].type_args = (struct Type *)arena_alloc(checker->arena, ((int32_t)sizeof(struct Type) * (size_t)type_arg_count));
-    if ((checker->mono_instances[idx].type_args == NULL)) {
-        checker->mono_instance_count = (checker->mono_instance_count - 1);
+    if (((idx >= 0) && (idx < MAX_MONO_INSTANCES))) {
+        struct MonoInstance * const inst = (&checker->mono_instances[idx]);
+        inst->generic_name = name_copy;
+        inst->is_function = is_function;
+        inst->type_arg_count = type_arg_count;
+    }
+    struct Type * const type_args_mem = (struct Type *)arena_alloc(checker->arena, ((int32_t)sizeof(struct Type) * (size_t)type_arg_count));
+    if (((idx >= 0) && (idx < MAX_MONO_INSTANCES))) {
+        checker->mono_instances[idx].type_args = type_args_mem;
+    }
+    if ((type_args_mem == NULL)) {
+        checker->mono_instance_count = idx;
         int32_t _uya_ret = (-1);
         return _uya_ret;
     }
-    checker->mono_instances[idx].type_arg_nodes = (struct ASTNode * *)arena_alloc(checker->arena, ((int32_t)sizeof(struct ASTNode *) * (size_t)type_arg_count));
-    if ((checker->mono_instances[idx].type_arg_nodes == NULL)) {
-        checker->mono_instance_count = (checker->mono_instance_count - 1);
+    struct ASTNode * * const type_arg_nodes_mem = (struct ASTNode * *)arena_alloc(checker->arena, ((int32_t)sizeof(struct ASTNode *) * (size_t)type_arg_count));
+    if (((idx >= 0) && (idx < MAX_MONO_INSTANCES))) {
+        checker->mono_instances[idx].type_arg_nodes = type_arg_nodes_mem;
+    }
+    if ((type_arg_nodes_mem == NULL)) {
+        checker->mono_instance_count = idx;
         int32_t _uya_ret = (-1);
         return _uya_ret;
     }
     int32_t k = 0;
     while ((k < type_arg_count)) {
         struct Type arg_type = type_from_ast(checker, type_arg_nodes[k]);
-        checker->mono_instances[idx].type_args[k] = copy_type((&arg_type));
-        checker->mono_instances[idx].type_arg_nodes[k] = type_arg_nodes[k];
+        if (((idx >= 0) && (idx < MAX_MONO_INSTANCES))) {
+            struct MonoInstance * const inst = (&checker->mono_instances[idx]);
+            if ((inst->type_args != NULL)) {
+                inst->type_args[k] = copy_type((&arg_type));
+                inst->type_arg_nodes[k] = type_arg_nodes[k];
+            }
+        }
         k = (k + 1);
     }
     int32_t _uya_ret = 0;
@@ -11720,7 +11817,10 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                     struct Type _uya_ret = result;
                                                                                                                     return _uya_ret;
                                                                                                                 }
-                                                                                                                element_type_ptr[0] = elem[0];
+                                                                                                                struct Type * const elem_type = element_type_ptr;
+                                                                                                                if ((elem != NULL)) {
+                                                                                                                    elem_type[0] = elem[0];
+                                                                                                                }
                                                                                                                 result.kind = TYPE_SLICE;
                                                                                                                 result.slice_element_type = element_type_ptr;
                                                                                                                 result.slice_len = (-1);
@@ -11948,11 +12048,11 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                                         if ((((union_decl != NULL) && (union_decl->union_decl_variant_count > 0)) && (has_catch_all == 0))) {
                                                                                                                                                             int32_t covered[32] = {0};
                                                                                                                                                             int32_t nv = union_decl->union_decl_variant_count;
-                                                                                                                                                            if ((nv > 32)) {
-                                                                                                                                                                nv = 32;
+                                                                                                                                                            if ((nv > MAX_UNION_VARIANTS)) {
+                                                                                                                                                                nv = MAX_UNION_VARIANTS;
                                                                                                                                                             }
                                                                                                                                                             int32_t k = 0;
-                                                                                                                                                            while ((k < nv)) {
+                                                                                                                                                            while (((k < nv) && (k < MAX_UNION_VARIANTS))) {
                                                                                                                                                                 covered[k] = 0;
                                                                                                                                                                 k = (k + 1);
                                                                                                                                                             }
@@ -11961,7 +12061,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                                                 struct ASTMatchArm arm = expr->match_expr_arms[j];
                                                                                                                                                                 if (((arm.kind == MATCH_PAT_UNION) && (arm.variant_name != NULL))) {
                                                                                                                                                                     int32_t kk = 0;
-                                                                                                                                                                    while ((kk < nv)) {
+                                                                                                                                                                    while (((kk < nv) && (kk < MAX_UNION_VARIANTS))) {
                                                                                                                                                                         struct ASTNode * const v = union_decl->union_decl_variants[kk];
                                                                                                                                                                         if (((((v != NULL) && (v->type == AST_VAR_DECL)) && (v->var_decl_name != NULL)) && (str_equals(v->var_decl_name, arm.variant_name) != 0))) {
                                                                                                                                                                             covered[kk] = 1;
@@ -11973,7 +12073,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                                                 j = (j + 1);
                                                                                                                                                             }
                                                                                                                                                             k = 0;
-                                                                                                                                                            while ((k < nv)) {
+                                                                                                                                                            while (((k < nv) && (k < MAX_UNION_VARIANTS))) {
                                                                                                                                                                 if ((covered[k] == 0)) {
                                                                                                                                                                     checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str271);
                                                                                                                                                                     break;
@@ -12639,7 +12739,7 @@ static __attribute__((unused)) int32_t checker_check_struct_decl(struct TypeChec
                 uint8_t * const angle = (uint8_t *)(uint8_t *)std_string_strchr((uint8_t *)iface_name, (int32_t)60);
                 if ((angle != NULL)) {
                     const int32_t base_len = (int32_t)((int64_t)angle - (int64_t)iface_name);
-                    if (((base_len > 0) && (base_len < 256))) {
+                    if (((base_len > 0) && (base_len < MAX_BASE_NAME_LEN))) {
                         memcpy((void *)(&base_name_buf[0]), (void *)iface_name, (size_t)base_len);
                         base_name_buf[base_len] = 0;
                         base_iface_name = (&base_name_buf[0]);
@@ -12655,8 +12755,10 @@ static __attribute__((unused)) int32_t checker_check_struct_decl(struct TypeChec
                 int32_t sig_count = 0;
                 struct ASTNode * iface_stack[64] = {0};
                 int32_t stack_top = 0;
-                iface_stack[stack_top] = iface_decl;
-                stack_top = (stack_top + 1);
+                if ((stack_top < MAX_INTERFACE_STACK)) {
+                    iface_stack[stack_top] = iface_decl;
+                    stack_top = (stack_top + 1);
+                }
                 while ((stack_top > 0)) {
                     stack_top = (stack_top - 1);
                     struct ASTNode * const cur_iface = iface_stack[stack_top];
@@ -12665,7 +12767,7 @@ static __attribute__((unused)) int32_t checker_check_struct_decl(struct TypeChec
                     }
                     if ((cur_iface->interface_decl_composed_interfaces != NULL)) {
                         int32_t ci = 0;
-                        while (((ci < cur_iface->interface_decl_composed_count) && (stack_top < 64))) {
+                        while (((ci < cur_iface->interface_decl_composed_count) && (stack_top < MAX_INTERFACE_STACK))) {
                             uint8_t * const composed_name = cur_iface->interface_decl_composed_interfaces[ci];
                             if ((composed_name != NULL)) {
                                 struct ASTNode * const composed_iface = find_interface_decl_from_program(checker->program_node, composed_name);
@@ -12679,19 +12781,20 @@ static __attribute__((unused)) int32_t checker_check_struct_decl(struct TypeChec
                     }
                     if ((cur_iface->interface_decl_method_sigs != NULL)) {
                         int32_t mi = 0;
-                        while (((mi < cur_iface->interface_decl_method_sig_count) && (sig_count < 128))) {
+                        while (((mi < cur_iface->interface_decl_method_sig_count) && (sig_count < MAX_INTERFACE_METHODS))) {
                             struct ASTNode * const msig = cur_iface->interface_decl_method_sigs[mi];
                             if ((((msig != NULL) && (msig->type == AST_FN_DECL)) && (msig->fn_decl_name != NULL))) {
                                 int32_t exists = 0;
                                 int32_t sj = 0;
-                                while ((sj < sig_count)) {
-                                    if ((((method_sigs[sj] != NULL) && (method_sigs[sj]->fn_decl_name != NULL)) && (str_equals(method_sigs[sj]->fn_decl_name, msig->fn_decl_name) != 0))) {
+                                while (((sj < sig_count) && (sj < MAX_INTERFACE_METHODS))) {
+                                    struct ASTNode * const existing_sig = method_sigs[sj];
+                                    if ((((existing_sig != NULL) && (existing_sig->fn_decl_name != NULL)) && (str_equals(existing_sig->fn_decl_name, msig->fn_decl_name) != 0))) {
                                         exists = 1;
                                         break;
                                     }
                                     sj = (sj + 1);
                                 }
-                                if ((exists == 0)) {
+                                if (((exists == 0) && (sig_count < MAX_INTERFACE_METHODS))) {
                                     method_sigs[sig_count] = msig;
                                     sig_count = (sig_count + 1);
                                 }
@@ -12701,7 +12804,7 @@ static __attribute__((unused)) int32_t checker_check_struct_decl(struct TypeChec
                     }
                 }
                 int32_t mii = 0;
-                while ((mii < sig_count)) {
+                while (((mii < sig_count) && (mii < MAX_INTERFACE_METHODS))) {
                     struct ASTNode * const msig2 = method_sigs[mii];
                     if (((msig2 != NULL) && (msig2->fn_decl_name != NULL))) {
                         uint8_t * const method_name2 = msig2->fn_decl_name;
@@ -12899,24 +13002,24 @@ static __attribute__((unused)) struct Type checker_check_call_expr(struct TypeCh
                     uint8_t mono_name[256] = {0};
                     int32_t pos = 0;
                     if (((object_type.struct_type_args != NULL) && (object_type.struct_type_arg_count > 0))) {
-                        pos = (pos + libc_snprintf((char *)(uint8_t *)mono_name, 256, (const char *)str309, (uint8_t *)object_type.struct_name));
+                        pos = (pos + libc_snprintf((char *)(uint8_t *)mono_name, MAX_MONO_NAME_LEN, (const char *)str309, (uint8_t *)object_type.struct_name));
                         int32_t sti = 0;
-                        while (((sti < object_type.struct_type_arg_count) && (pos < 250))) {
+                        while (((sti < object_type.struct_type_arg_count) && (pos < MAX_MONO_NAME_LIMIT))) {
                             struct Type st_type = object_type.struct_type_args[sti];
                             if (((st_type.kind == TYPE_STRUCT) && (st_type.struct_name != NULL))) {
-                                pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (256 - pos), (const char *)str310, (uint8_t *)st_type.struct_name));
+                                pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (MAX_MONO_NAME_LEN - pos), (const char *)str310, (uint8_t *)st_type.struct_name));
                             } else {
                                 if ((st_type.kind == TYPE_I32)) {
-                                    pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (256 - pos), (const char *)str311));
+                                    pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (MAX_MONO_NAME_LEN - pos), (const char *)str311));
                                 } else {
                                     if ((st_type.kind == TYPE_I64)) {
-                                        pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (256 - pos), (const char *)str312));
+                                        pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (MAX_MONO_NAME_LEN - pos), (const char *)str312));
                                     } else {
                                         if ((st_type.kind == TYPE_F64)) {
-                                            pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (256 - pos), (const char *)str313));
+                                            pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (MAX_MONO_NAME_LEN - pos), (const char *)str313));
                                         } else {
                                             if ((st_type.kind == TYPE_BOOL)) {
-                                                pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (256 - pos), (const char *)str314));
+                                                pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (MAX_MONO_NAME_LEN - pos), (const char *)str314));
                                             }
                                         }
                                     }
@@ -12927,12 +13030,12 @@ static __attribute__((unused)) struct Type checker_check_call_expr(struct TypeCh
                     } else {
                         pos = (pos + libc_snprintf((char *)(uint8_t *)mono_name, 256, (const char *)str309, (uint8_t *)object_type.struct_name));
                     }
-                    pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (256 - pos), (const char *)str310, (uint8_t *)method_name));
+                    pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (MAX_MONO_NAME_LEN - pos), (const char *)str310, (uint8_t *)method_name));
                     int32_t mi = 0;
-                    while (((mi < type_arg_count) && (pos < 250))) {
+                    while (((mi < type_arg_count) && (pos < MAX_MONO_NAME_LIMIT))) {
                         struct ASTNode * const m_type_arg = type_args[mi];
                         if ((((m_type_arg != NULL) && (m_type_arg->type == AST_TYPE_NAMED)) && (m_type_arg->type_named_name != NULL))) {
-                            pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (256 - pos), (const char *)str310, (uint8_t *)m_type_arg->type_named_name));
+                            pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (MAX_MONO_NAME_LEN - pos), (const char *)str310, (uint8_t *)m_type_arg->type_named_name));
                         }
                         mi = (mi + 1);
                     }
@@ -13403,19 +13506,25 @@ static __attribute__((unused)) void pointer_nonnull_add(struct TypeChecker * che
     if (((checker == NULL) || (ptr_name == NULL))) {
         return;
     }
-    if ((checker->pointer_nonnull_count >= 32)) {
+    if ((checker->pointer_nonnull_count >= MAX_POINTER_NAMES)) {
         return;
     }
     int32_t i = 0;
-    while ((i < checker->pointer_nonnull_count)) {
-        uint8_t * const name = checker->pointer_nonnull_names[i];
-        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)ptr_name) == 0))) {
-            return;
+    const int32_t count = checker->pointer_nonnull_count;
+    while ((i < count)) {
+        if ((i < MAX_POINTER_NAMES)) {
+            uint8_t * const name = checker->pointer_nonnull_names[i];
+            if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)ptr_name) == 0))) {
+                return;
+            }
         }
         i = (i + 1);
     }
-    checker->pointer_nonnull_names[checker->pointer_nonnull_count] = ptr_name;
-    checker->pointer_nonnull_count = (checker->pointer_nonnull_count + 1);
+    const int32_t idx = checker->pointer_nonnull_count;
+    if (((idx >= 0) && (idx < MAX_POINTER_NAMES))) {
+        checker->pointer_nonnull_names[idx] = ptr_name;
+        checker->pointer_nonnull_count = (idx + 1);
+    }
 }
 
 static __attribute__((unused)) void pointer_nonnull_remove(struct TypeChecker * checker, uint8_t * ptr_name) {
@@ -13426,11 +13535,16 @@ static __attribute__((unused)) void pointer_nonnull_remove(struct TypeChecker * 
     }
     int32_t write_idx = 0;
     int32_t i = 0;
-    while ((i < checker->pointer_nonnull_count)) {
-        uint8_t * const name = checker->pointer_nonnull_names[i];
-        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)ptr_name) != 0))) {
-            checker->pointer_nonnull_names[write_idx] = name;
-            write_idx = (write_idx + 1);
+    const int32_t count = checker->pointer_nonnull_count;
+    while ((i < count)) {
+        if ((i < MAX_POINTER_NAMES)) {
+            uint8_t * const name = checker->pointer_nonnull_names[i];
+            if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)ptr_name) != 0))) {
+                if ((write_idx < MAX_POINTER_NAMES)) {
+                    checker->pointer_nonnull_names[write_idx] = name;
+                }
+                write_idx = (write_idx + 1);
+            }
         }
         i = (i + 1);
     }
@@ -13445,11 +13559,14 @@ static __attribute__((unused)) int32_t pointer_is_known_nonnull(struct TypeCheck
         return _uya_ret;
     }
     int32_t i = 0;
-    while ((i < checker->pointer_nonnull_count)) {
-        uint8_t * const name = checker->pointer_nonnull_names[i];
-        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)ptr_name) == 0))) {
-            int32_t _uya_ret = 1;
-            return _uya_ret;
+    const int32_t count = checker->pointer_nonnull_count;
+    while ((i < count)) {
+        if ((i < MAX_POINTER_NAMES)) {
+            uint8_t * const name = checker->pointer_nonnull_names[i];
+            if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)ptr_name) == 0))) {
+                int32_t _uya_ret = 1;
+                return _uya_ret;
+            }
         }
         i = (i + 1);
     }
@@ -13462,13 +13579,10 @@ static __attribute__((unused)) void pointer_nonnull_clear(struct TypeChecker * c
     if ((checker == NULL)) {
         return;
     }
-    {
-        // for range
-        int32_t i = 0;
-        int32_t _uya_end = 32;
-        for (; i < _uya_end; i++) {
-            checker->pointer_nonnull_names[i] = NULL;
-        }
+    int32_t i = 0;
+    while ((i < MAX_POINTER_NAMES)) {
+        checker->pointer_nonnull_names[i] = NULL;
+        i = (i + 1);
     }
     checker->pointer_nonnull_count = 0;
 }
@@ -13479,19 +13593,25 @@ static __attribute__((unused)) void pointer_nullable_add(struct TypeChecker * ch
     if (((checker == NULL) || (ptr_name == NULL))) {
         return;
     }
-    if ((checker->pointer_nullable_count >= 32)) {
+    if ((checker->pointer_nullable_count >= MAX_POINTER_NAMES)) {
         return;
     }
     int32_t i = 0;
-    while ((i < checker->pointer_nullable_count)) {
-        uint8_t * const name = checker->pointer_nullable_names[i];
-        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)ptr_name) == 0))) {
-            return;
+    const int32_t count = checker->pointer_nullable_count;
+    while ((i < count)) {
+        if ((i < MAX_POINTER_NAMES)) {
+            uint8_t * const name = checker->pointer_nullable_names[i];
+            if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)ptr_name) == 0))) {
+                return;
+            }
         }
         i = (i + 1);
     }
-    checker->pointer_nullable_names[checker->pointer_nullable_count] = ptr_name;
-    checker->pointer_nullable_count = (checker->pointer_nullable_count + 1);
+    const int32_t idx = checker->pointer_nullable_count;
+    if (((idx >= 0) && (idx < MAX_POINTER_NAMES))) {
+        checker->pointer_nullable_names[idx] = ptr_name;
+        checker->pointer_nullable_count = (idx + 1);
+    }
 }
 
 static __attribute__((unused)) int32_t pointer_is_nullable(struct TypeChecker * checker, uint8_t * ptr_name) {
@@ -13502,11 +13622,14 @@ static __attribute__((unused)) int32_t pointer_is_nullable(struct TypeChecker * 
         return _uya_ret;
     }
     int32_t i = 0;
-    while ((i < checker->pointer_nullable_count)) {
-        uint8_t * const name = checker->pointer_nullable_names[i];
-        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)ptr_name) == 0))) {
-            int32_t _uya_ret = 1;
-            return _uya_ret;
+    const int32_t count = checker->pointer_nullable_count;
+    while ((i < count)) {
+        if ((i < MAX_POINTER_NAMES)) {
+            uint8_t * const name = checker->pointer_nullable_names[i];
+            if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)ptr_name) == 0))) {
+                int32_t _uya_ret = 1;
+                return _uya_ret;
+            }
         }
         i = (i + 1);
     }
@@ -13519,16 +13642,13 @@ static __attribute__((unused)) void constraint_clear(struct TypeChecker * checke
     if ((checker == NULL)) {
         return;
     }
+    int32_t i = 0;
     const int32_t count = checker->constraint_count;
-    {
-        // for range
-        int32_t i = 0;
-        int32_t _uya_end = count;
-        for (; i < _uya_end; i++) {
-            checker->constraint_var_names[i] = NULL;
-            checker->constraint_ops[i] = 0;
-            checker->constraint_values[i] = 0;
-        }
+    while (((i < count) && (i < MAX_CONSTRAINTS))) {
+        checker->constraint_var_names[i] = NULL;
+        checker->constraint_ops[i] = 0;
+        checker->constraint_values[i] = 0;
+        i = (i + 1);
     }
     checker->constraint_count = 0;
 }
@@ -13541,13 +13661,16 @@ static __attribute__((unused)) void constraint_add(struct TypeChecker * checker,
     if (((checker == NULL) || (var_name == NULL))) {
         return;
     }
-    if ((checker->constraint_count >= 64)) {
+    if ((checker->constraint_count >= MAX_CONSTRAINTS)) {
         return;
     }
-    checker->constraint_var_names[checker->constraint_count] = var_name;
-    checker->constraint_ops[checker->constraint_count] = op;
-    checker->constraint_values[checker->constraint_count] = value;
-    checker->constraint_count = (checker->constraint_count + 1);
+    const int32_t idx = checker->constraint_count;
+    if (((idx >= 0) && (idx < MAX_CONSTRAINTS))) {
+        checker->constraint_var_names[idx] = var_name;
+        checker->constraint_ops[idx] = op;
+        checker->constraint_values[idx] = value;
+        checker->constraint_count = (idx + 1);
+    }
 }
 
 static __attribute__((unused)) void constraint_remove_var(struct TypeChecker * checker, uint8_t * var_name) {
@@ -13558,13 +13681,18 @@ static __attribute__((unused)) void constraint_remove_var(struct TypeChecker * c
     }
     int32_t write_idx = 0;
     int32_t i = 0;
-    while ((i < checker->constraint_count)) {
-        uint8_t * const name = checker->constraint_var_names[i];
-        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) != 0))) {
-            checker->constraint_var_names[write_idx] = name;
-            checker->constraint_ops[write_idx] = checker->constraint_ops[i];
-            checker->constraint_values[write_idx] = checker->constraint_values[i];
-            write_idx = (write_idx + 1);
+    const int32_t count = checker->constraint_count;
+    while ((i < count)) {
+        if ((i < MAX_CONSTRAINTS)) {
+            uint8_t * const name = checker->constraint_var_names[i];
+            if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) != 0))) {
+                if ((write_idx < MAX_CONSTRAINTS)) {
+                    checker->constraint_var_names[write_idx] = name;
+                    checker->constraint_ops[write_idx] = checker->constraint_ops[i];
+                    checker->constraint_values[write_idx] = checker->constraint_values[i];
+                }
+                write_idx = (write_idx + 1);
+            }
         }
         i = (i + 1);
     }
@@ -13579,21 +13707,24 @@ static __attribute__((unused)) void constraint_update_for_increment(struct TypeC
         return;
     }
     int32_t i = 0;
-    while ((i < checker->constraint_count)) {
-        uint8_t * const name = checker->constraint_var_names[i];
-        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
-            const int32_t op = checker->constraint_ops[i];
-            const int32_t val = checker->constraint_values[i];
-            if ((op == CONSTRAINT_GE)) {
-                checker->constraint_values[i] = (val + increment);
-            } else {
-                if ((op == CONSTRAINT_GT)) {
+    const int32_t count = checker->constraint_count;
+    while ((i < count)) {
+        if ((i < MAX_CONSTRAINTS)) {
+            uint8_t * const name = checker->constraint_var_names[i];
+            if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
+                const int32_t op = checker->constraint_ops[i];
+                const int32_t val = checker->constraint_values[i];
+                if ((op == CONSTRAINT_GE)) {
                     checker->constraint_values[i] = (val + increment);
+                } else {
+                    if ((op == CONSTRAINT_GT)) {
+                        checker->constraint_values[i] = (val + increment);
+                    }
                 }
-            }
-            if ((checker->loop_depth == 0)) {
-                if (((op == CONSTRAINT_LT) || (op == CONSTRAINT_LE))) {
-                    checker->constraint_var_names[i] = NULL;
+                if ((checker->loop_depth == 0)) {
+                    if (((op == CONSTRAINT_LT) || (op == CONSTRAINT_LE))) {
+                        checker->constraint_var_names[i] = NULL;
+                    }
                 }
             }
         }
@@ -13738,23 +13869,26 @@ static __attribute__((unused)) int32_t constraint_verify_bounds(struct TypeCheck
     int32_t has_lower_bound = 0;
     int32_t has_upper_bound = 0;
     int32_t i = 0;
-    while ((i < checker->constraint_count)) {
-        uint8_t * const name = checker->constraint_var_names[i];
-        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
-            const int32_t op = checker->constraint_ops[i];
-            const int32_t val = checker->constraint_values[i];
-            if (((op == CONSTRAINT_GE) && (val == 0))) {
-                has_lower_bound = 1;
-            } else {
-                if (((op == CONSTRAINT_GT) && (val == (-1)))) {
+    const int32_t count = checker->constraint_count;
+    while ((i < count)) {
+        if ((i < MAX_CONSTRAINTS)) {
+            uint8_t * const name = checker->constraint_var_names[i];
+            if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
+                const int32_t op = checker->constraint_ops[i];
+                const int32_t val = checker->constraint_values[i];
+                if (((op == CONSTRAINT_GE) && (val == 0))) {
                     has_lower_bound = 1;
+                } else {
+                    if (((op == CONSTRAINT_GT) && (val == (-1)))) {
+                        has_lower_bound = 1;
+                    }
                 }
-            }
-            if (((op == CONSTRAINT_LT) && (val == array_size))) {
-                has_upper_bound = 1;
-            } else {
-                if (((op == CONSTRAINT_LE) && (val == (array_size - 1)))) {
+                if (((op == CONSTRAINT_LT) && (val == array_size))) {
                     has_upper_bound = 1;
+                } else {
+                    if (((op == CONSTRAINT_LE) && (val == (array_size - 1)))) {
+                        has_upper_bound = 1;
+                    }
                 }
             }
         }
@@ -14006,33 +14140,36 @@ static __attribute__((unused)) struct Interval get_var_interval(struct TypeCheck
     int32_t min_val = (-2147483647);
     int32_t max_val = 2147483647;
     int32_t i = 0;
-    while ((i < checker->constraint_count)) {
-        uint8_t * const name = checker->constraint_var_names[i];
-        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
-            const int32_t op = checker->constraint_ops[i];
-            const int32_t val = checker->constraint_values[i];
-            if ((op == CONSTRAINT_EQ)) {
-                min_val = val;
-                max_val = val;
-            } else {
-                if ((op == CONSTRAINT_GE)) {
-                    if ((val > min_val)) {
-                        min_val = val;
-                    }
+    const int32_t count = checker->constraint_count;
+    while ((i < count)) {
+        if ((i < MAX_CONSTRAINTS)) {
+            uint8_t * const name = checker->constraint_var_names[i];
+            if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
+                const int32_t op = checker->constraint_ops[i];
+                const int32_t val = checker->constraint_values[i];
+                if ((op == CONSTRAINT_EQ)) {
+                    min_val = val;
+                    max_val = val;
                 } else {
-                    if ((op == CONSTRAINT_GT)) {
-                        if (((val + 1) > min_val)) {
-                            min_val = (val + 1);
+                    if ((op == CONSTRAINT_GE)) {
+                        if ((val > min_val)) {
+                            min_val = val;
                         }
                     } else {
-                        if ((op == CONSTRAINT_LE)) {
-                            if ((val < max_val)) {
-                                max_val = val;
+                        if ((op == CONSTRAINT_GT)) {
+                            if (((val + 1) > min_val)) {
+                                min_val = (val + 1);
                             }
                         } else {
-                            if ((op == CONSTRAINT_LT)) {
-                                if (((val - 1) < max_val)) {
-                                    max_val = (val - 1);
+                            if ((op == CONSTRAINT_LE)) {
+                                if ((val < max_val)) {
+                                    max_val = val;
+                                }
+                            } else {
+                                if ((op == CONSTRAINT_LT)) {
+                                    if (((val - 1) < max_val)) {
+                                        max_val = (val - 1);
+                                    }
                                 }
                             }
                         }
@@ -14170,23 +14307,26 @@ static __attribute__((unused)) int32_t verify_linear_expr_bounds(struct TypeChec
     const int32_t need_lower = (-offset);
     const int32_t need_upper = (array_size - offset);
     int32_t i = 0;
-    while ((i < checker->constraint_count)) {
-        uint8_t * const name = checker->constraint_var_names[i];
-        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
-            const int32_t op = checker->constraint_ops[i];
-            const int32_t val = checker->constraint_values[i];
-            if (((op == CONSTRAINT_GE) && (val >= need_lower))) {
-                has_lower_bound = 1;
-            } else {
-                if (((op == CONSTRAINT_GT) && (val > need_lower))) {
+    const int32_t count = checker->constraint_count;
+    while ((i < count)) {
+        if ((i < MAX_CONSTRAINTS)) {
+            uint8_t * const name = checker->constraint_var_names[i];
+            if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
+                const int32_t op = checker->constraint_ops[i];
+                const int32_t val = checker->constraint_values[i];
+                if (((op == CONSTRAINT_GE) && (val >= need_lower))) {
                     has_lower_bound = 1;
+                } else {
+                    if (((op == CONSTRAINT_GT) && (val > need_lower))) {
+                        has_lower_bound = 1;
+                    }
                 }
-            }
-            if (((op == CONSTRAINT_LT) && (val <= need_upper))) {
-                has_upper_bound = 1;
-            } else {
-                if (((op == CONSTRAINT_LE) && (val < need_upper))) {
+                if (((op == CONSTRAINT_LT) && (val <= need_upper))) {
                     has_upper_bound = 1;
+                } else {
+                    if (((op == CONSTRAINT_LE) && (val < need_upper))) {
+                        has_upper_bound = 1;
+                    }
                 }
             }
         }
@@ -14235,23 +14375,26 @@ static __attribute__((unused)) int32_t verify_linear_expr_bounds_ex(struct TypeC
     const int32_t need_lower = (-offset);
     const int32_t need_upper = (array_size - offset);
     int32_t i = 0;
-    while ((i < checker->constraint_count)) {
-        uint8_t * const name = checker->constraint_var_names[i];
-        if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
-            const int32_t op = checker->constraint_ops[i];
-            const int32_t val = checker->constraint_values[i];
-            if (((op == CONSTRAINT_GE) && (val >= need_lower))) {
-                has_lower_bound = 1;
-            } else {
-                if (((op == CONSTRAINT_GT) && (val > need_lower))) {
+    const int32_t count = checker->constraint_count;
+    while ((i < count)) {
+        if ((i < MAX_CONSTRAINTS)) {
+            uint8_t * const name = checker->constraint_var_names[i];
+            if (((name != NULL) && (std_string_strcmp((uint8_t *)name, (uint8_t *)var_name) == 0))) {
+                const int32_t op = checker->constraint_ops[i];
+                const int32_t val = checker->constraint_values[i];
+                if (((op == CONSTRAINT_GE) && (val >= need_lower))) {
                     has_lower_bound = 1;
+                } else {
+                    if (((op == CONSTRAINT_GT) && (val > need_lower))) {
+                        has_lower_bound = 1;
+                    }
                 }
-            }
-            if (((op == CONSTRAINT_LT) && (val <= need_upper))) {
-                has_upper_bound = 1;
-            } else {
-                if (((op == CONSTRAINT_LE) && (val < need_upper))) {
+                if (((op == CONSTRAINT_LT) && (val <= need_upper))) {
                     has_upper_bound = 1;
+                } else {
+                    if (((op == CONSTRAINT_LE) && (val < need_upper))) {
+                        has_upper_bound = 1;
+                    }
                 }
             }
         }
@@ -15198,13 +15341,10 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                             const int32_t saved_constraint_count = checker->constraint_count;
                                                             const int32_t saved_nonnull_count = checker->pointer_nonnull_count;
                                                             uint8_t * saved_nonnull_names[32] = {0};
-                                                            {
-                                                                // for range
-                                                                int32_t i = 0;
-                                                                int32_t _uya_end = saved_nonnull_count;
-                                                                for (; i < _uya_end; i++) {
-                                                                    saved_nonnull_names[i] = checker->pointer_nonnull_names[i];
-                                                                }
+                                                            int32_t sni = 0;
+                                                            while (((sni < saved_nonnull_count) && (sni < MAX_POINTER_NAMES))) {
+                                                                saved_nonnull_names[sni] = checker->pointer_nonnull_names[sni];
+                                                                sni = (sni + 1);
                                                             }
                                                             if ((node->if_stmt_condition != NULL)) {
                                                                 constraint_extract_from_binary(checker, node->if_stmt_condition, 1);
@@ -15214,13 +15354,10 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                             }
                                                             checker->constraint_count = saved_constraint_count;
                                                             checker->pointer_nonnull_count = saved_nonnull_count;
-                                                            {
-                                                                // for range
-                                                                int32_t i = 0;
-                                                                int32_t _uya_end = saved_nonnull_count;
-                                                                for (; i < _uya_end; i++) {
-                                                                    checker->pointer_nonnull_names[i] = saved_nonnull_names[i];
-                                                                }
+                                                            int32_t rni = 0;
+                                                            while (((rni < saved_nonnull_count) && (rni < MAX_POINTER_NAMES))) {
+                                                                checker->pointer_nonnull_names[rni] = saved_nonnull_names[rni];
+                                                                rni = (rni + 1);
                                                             }
                                                             if ((node->if_stmt_else_branch != NULL)) {
                                                                 if ((node->if_stmt_condition != NULL)) {
@@ -15230,13 +15367,10 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                             }
                                                             checker->constraint_count = saved_constraint_count;
                                                             checker->pointer_nonnull_count = saved_nonnull_count;
-                                                            {
-                                                                // for range
-                                                                int32_t i = 0;
-                                                                int32_t _uya_end = saved_nonnull_count;
-                                                                for (; i < _uya_end; i++) {
-                                                                    checker->pointer_nonnull_names[i] = saved_nonnull_names[i];
-                                                                }
+                                                            int32_t fini = 0;
+                                                            while (((fini < saved_nonnull_count) && (fini < MAX_POINTER_NAMES))) {
+                                                                checker->pointer_nonnull_names[fini] = saved_nonnull_names[fini];
+                                                                fini = (fini + 1);
                                                             }
                                                             int32_t _uya_ret = 1;
                                                             return _uya_ret;
@@ -15602,11 +15736,11 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                                                                                                                                 if (((union_decl != NULL) && (union_decl->union_decl_variant_count > 0))) {
                                                                                                                                                                     int32_t covered[32] = {0};
                                                                                                                                                                     int32_t nv = union_decl->union_decl_variant_count;
-                                                                                                                                                                    if ((nv > 32)) {
-                                                                                                                                                                        nv = 32;
+                                                                                                                                                                    if ((nv > MAX_UNION_VARIANTS)) {
+                                                                                                                                                                        nv = MAX_UNION_VARIANTS;
                                                                                                                                                                     }
                                                                                                                                                                     int32_t k = 0;
-                                                                                                                                                                    while ((k < nv)) {
+                                                                                                                                                                    while (((k < nv) && (k < MAX_UNION_VARIANTS))) {
                                                                                                                                                                         covered[k] = 0;
                                                                                                                                                                         k = (k + 1);
                                                                                                                                                                     }
@@ -15619,7 +15753,7 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                                                                                                                                         }
                                                                                                                                                                         if (((arm.kind == MATCH_PAT_UNION) && (arm.variant_name != NULL))) {
                                                                                                                                                                             int32_t kk = 0;
-                                                                                                                                                                            while ((kk < nv)) {
+                                                                                                                                                                            while (((kk < nv) && (kk < MAX_UNION_VARIANTS))) {
                                                                                                                                                                                 struct ASTNode * const v = union_decl->union_decl_variants[kk];
                                                                                                                                                                                 if (((((v != NULL) && (v->type == AST_VAR_DECL)) && (v->var_decl_name != NULL)) && (str_equals(v->var_decl_name, arm.variant_name) != 0))) {
                                                                                                                                                                                     covered[kk] = 1;
@@ -15632,7 +15766,7 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                                                                                                                                     }
                                                                                                                                                                     if ((has_catch_all == 0)) {
                                                                                                                                                                         k = 0;
-                                                                                                                                                                        while ((k < nv)) {
+                                                                                                                                                                        while (((k < nv) && (k < MAX_UNION_VARIANTS))) {
                                                                                                                                                                             if ((covered[k] == 0)) {
                                                                                                                                                                                 checker_report_error(checker, node, (uint8_t *)(uint8_t *)str271);
                                                                                                                                                                                 break;
@@ -18005,6 +18139,7 @@ static __attribute__((unused)) struct ASTNode * extract_macro_output_with_params
         j = (j + 1);
     }
     struct MacroExpandContext merged_ctx = (*ctx);
+    const int32_t MAX_LOCAL_BINDINGS = 64;
     if ((local_binding_count > 0)) {
         const int32_t total_bindings = (ctx->binding_count + local_binding_count);
         struct MacroParamBinding * const all_bindings = (struct MacroParamBinding *)arena_alloc(ctx->arena, ((int32_t)sizeof(struct MacroParamBinding) * total_bindings));
@@ -18015,9 +18150,20 @@ static __attribute__((unused)) struct ASTNode * extract_macro_output_with_params
                 k = (k + 1);
             }
             k = 0;
-            while ((k < local_binding_count)) {
-                all_bindings[(ctx->binding_count + k)] = local_bindings[k];
-                k = (k + 1);
+            {
+                // for range
+                int32_t kidx = 0;
+                int32_t _uya_end = local_binding_count;
+                for (; kidx < _uya_end; kidx++) {
+                    if ((kidx < MAX_LOCAL_BINDINGS)) {
+                        const int32_t src_idx = kidx;
+                        const int32_t dst_idx = (ctx->binding_count + kidx);
+                        const int32_t total = total_bindings;
+                        if (((((dst_idx >= 0) && (dst_idx < total)) && (src_idx >= 0)) && (src_idx < MAX_LOCAL_BINDINGS))) {
+                            all_bindings[dst_idx] = local_bindings[src_idx];
+                        }
+                    }
+                }
             }
             merged_ctx.bindings = all_bindings;
             merged_ctx.binding_count = total_bindings;
@@ -20523,14 +20669,18 @@ static __attribute__((unused)) struct ASTNode * parser_parse_type(struct Parser 
                                             return _uya_ret;
                                         }
                                         int32_t i = 0;
-                                        while ((i < type_arg_count)) {
-                                            new_type_args[i] = type_args[i];
+                                        while (((i < type_arg_count) && (i < new_cap))) {
+                                            if ((type_args != NULL)) {
+                                                new_type_args[i] = type_args[i];
+                                            }
                                             i = (i + 1);
                                         }
                                         type_args = new_type_args;
                                         type_arg_cap = new_cap;
                                     }
-                                    type_args[type_arg_count] = type_arg;
+                                    if ((((type_args != NULL) && (type_arg_count >= 0)) && (type_arg_count < type_arg_cap))) {
+                                        type_args[type_arg_count] = type_arg;
+                                    }
                                     type_arg_count = (type_arg_count + 1);
                                     if ((parser_match(parser, TOKEN_COMMA) != 0)) {
                                         parser_consume(parser);
@@ -20602,14 +20752,18 @@ static __attribute__((unused)) struct ASTNode * parser_parse_type(struct Parser 
                                             return _uya_ret;
                                         }
                                         int32_t i = 0;
-                                        while ((i < arg_count)) {
-                                            new_args[i] = args[i];
+                                        while (((i < arg_count) && (i < new_cap))) {
+                                            if ((args != NULL)) {
+                                                new_args[i] = args[i];
+                                            }
                                             i = (i + 1);
                                         }
                                         args = new_args;
                                         arg_cap = new_cap;
                                     }
-                                    args[arg_count] = arg;
+                                    if ((((args != NULL) && (arg_count >= 0)) && (arg_count < arg_cap))) {
+                                        args[arg_count] = arg;
+                                    }
                                     arg_count = (arg_count + 1);
                                     if ((parser_match(parser, TOKEN_COMMA) != 0)) {
                                         parser_consume(parser);
@@ -20850,14 +21004,18 @@ static __attribute__((unused)) struct ASTNode * parser_parse_primary_expr(struct
                                 return _uya_ret;
                             }
                             int32_t i = 0;
-                            while ((i < call_type_arg_count)) {
-                                new_type_args[i] = call_type_args[i];
+                            while (((i < call_type_arg_count) && (i < new_cap))) {
+                                if ((call_type_args != NULL)) {
+                                    new_type_args[i] = call_type_args[i];
+                                }
                                 i = (i + 1);
                             }
                             call_type_args = new_type_args;
                             call_type_arg_capacity = new_cap;
                         }
-                        call_type_args[call_type_arg_count] = type_arg;
+                        if ((((call_type_args != NULL) && (call_type_arg_count >= 0)) && (call_type_arg_count < call_type_arg_capacity))) {
+                            call_type_args[call_type_arg_count] = type_arg;
+                        }
                         call_type_arg_count = (call_type_arg_count + 1);
                         if ((parser_match(parser, TOKEN_COMMA) == 0)) {
                             break;
@@ -20924,14 +21082,18 @@ static __attribute__((unused)) struct ASTNode * parser_parse_primary_expr(struct
                             return _uya_ret;
                         }
                         int32_t i = 0;
-                        while ((i < arg_count)) {
-                            new_args[i] = args[i];
+                        while (((i < arg_count) && (i < new_capacity))) {
+                            if ((args != NULL)) {
+                                new_args[i] = args[i];
+                            }
                             i = (i + 1);
                         }
                         args = new_args;
                         arg_capacity = new_capacity;
                     }
-                    args[arg_count] = arg;
+                    if ((((args != NULL) && (arg_count >= 0)) && (arg_count < arg_capacity))) {
+                        args[arg_count] = arg;
+                    }
                     arg_count = (arg_count + 1);
                     if ((parser_match(parser, TOKEN_COMMA) == 0)) {
                         break;
@@ -20957,7 +21119,6 @@ static __attribute__((unused)) struct ASTNode * parser_parse_primary_expr(struct
         return _uya_ret;
     }
     if ((parser->current_token->type == TOKEN_INTERP_TEXT)) {
-        const int32_t MAX_INTERP_SEGMENTS = 64;
         int32_t seg_is_text[64] = {0};
         uint8_t * seg_text[64] = {0};
         struct ASTNode * seg_expr[64] = {0};
@@ -20966,10 +21127,12 @@ static __attribute__((unused)) struct ASTNode * parser_parse_primary_expr(struct
         int32_t saw_end = 0;
         while (((seg_count < MAX_INTERP_SEGMENTS) && (parser->current_token != NULL))) {
             if ((parser->current_token->type == TOKEN_INTERP_TEXT)) {
-                seg_is_text[seg_count] = 1;
-                seg_text[seg_count] = parser->current_token->value;
-                seg_expr[seg_count] = NULL;
-                seg_format_spec[seg_count] = NULL;
+                if ((seg_count >= 0)) {
+                    seg_is_text[seg_count] = 1;
+                    seg_text[seg_count] = parser->current_token->value;
+                    seg_expr[seg_count] = NULL;
+                    seg_format_spec[seg_count] = NULL;
+                }
                 seg_count = (seg_count + 1);
                 parser_consume(parser);
             } else {
@@ -20991,10 +21154,12 @@ static __attribute__((unused)) struct ASTNode * parser_parse_primary_expr(struct
                         }
                         parser_consume(parser);
                     }
-                    seg_is_text[seg_count] = 0;
-                    seg_text[seg_count] = NULL;
-                    seg_expr[seg_count] = expr;
-                    seg_format_spec[seg_count] = spec;
+                    if ((seg_count >= 0)) {
+                        seg_is_text[seg_count] = 0;
+                        seg_text[seg_count] = NULL;
+                        seg_expr[seg_count] = expr;
+                        seg_format_spec[seg_count] = spec;
+                    }
                     seg_count = (seg_count + 1);
                 } else {
                     if ((parser->current_token->type == TOKEN_INTERP_END)) {
@@ -21002,9 +21167,22 @@ static __attribute__((unused)) struct ASTNode * parser_parse_primary_expr(struct
                         saw_end = 1;
                         break;
                     } else {
-                        if ((((((parser->current_token->type == TOKEN_INTERP_SPEC) && (seg_count > 0)) && (seg_is_text[(seg_count - 1)] == 0)) && (seg_expr[(seg_count - 1)] != NULL)) && (seg_format_spec[(seg_count - 1)] == NULL))) {
-                            seg_format_spec[(seg_count - 1)] = parser->current_token->value;
-                            parser_consume(parser);
+                        if (((parser->current_token->type == TOKEN_INTERP_SPEC) && (seg_count > 0))) {
+                            if ((seg_count < MAX_INTERP_SEGMENTS)) {
+                                const int32_t prev_idx = (seg_count - 1);
+                                if ((prev_idx >= 0)) {
+                                    if ((((seg_is_text[prev_idx] == 0) && (seg_expr[prev_idx] != NULL)) && (seg_format_spec[prev_idx] == NULL))) {
+                                        seg_format_spec[prev_idx] = parser->current_token->value;
+                                        parser_consume(parser);
+                                    } else {
+                                        struct ASTNode * _uya_ret = NULL;
+                                        return _uya_ret;
+                                    }
+                                }
+                            } else {
+                                struct ASTNode * _uya_ret = NULL;
+                                return _uya_ret;
+                            }
                         } else {
                             struct ASTNode * _uya_ret = NULL;
                             return _uya_ret;
@@ -21027,13 +21205,18 @@ static __attribute__((unused)) struct ASTNode * parser_parse_primary_expr(struct
             struct ASTNode * _uya_ret = NULL;
             return _uya_ret;
         }
-        int32_t i = 0;
-        while ((i < seg_count)) {
-            segs[i].is_text = seg_is_text[i];
-            segs[i].text = seg_text[i];
-            segs[i].expr = seg_expr[i];
-            segs[i].format_spec = seg_format_spec[i];
-            i = (i + 1);
+        {
+            // for range
+            int32_t j = 0;
+            int32_t _uya_end = MAX_INTERP_SEGMENTS;
+            for (; j < _uya_end; j++) {
+                if ((j < seg_count)) {
+                    segs[j].is_text = seg_is_text[j];
+                    segs[j].text = seg_text[j];
+                    segs[j].expr = seg_expr[j];
+                    segs[j].format_spec = seg_format_spec[j];
+                }
+            }
         }
         node->string_interp_segments = segs;
         node->string_interp_segment_count = seg_count;
@@ -21987,15 +22170,19 @@ static __attribute__((unused)) struct ASTNode * parser_parse_primary_expr(struct
                             }
                             if ((call_type_args != NULL)) {
                                 int32_t i = 0;
-                                while ((i < call_type_arg_count)) {
-                                    new_type_args[i] = call_type_args[i];
+                                while (((i < call_type_arg_count) && (i < new_capacity))) {
+                                    if ((call_type_args != NULL)) {
+                                        new_type_args[i] = call_type_args[i];
+                                    }
                                     i = (i + 1);
                                 }
                             }
                             call_type_args = new_type_args;
                             call_type_arg_capacity = new_capacity;
                         }
-                        call_type_args[call_type_arg_count] = type_arg;
+                        if ((((call_type_args != NULL) && (call_type_arg_count >= 0)) && (call_type_arg_count < call_type_arg_capacity))) {
+                            call_type_args[call_type_arg_count] = type_arg;
+                        }
                         call_type_arg_count = (call_type_arg_count + 1);
                         if ((parser_match(parser, TOKEN_COMMA) == 0)) {
                             break;
@@ -22077,7 +22264,9 @@ static __attribute__((unused)) struct ASTNode * parser_parse_primary_expr(struct
                         args = new_args;
                         arg_capacity = new_capacity;
                     }
-                    args[arg_count] = arg;
+                    if ((((args != NULL) && (arg_count >= 0)) && (arg_count < arg_capacity))) {
+                        args[arg_count] = arg;
+                    }
                     arg_count = (arg_count + 1);
                     if ((parser_match(parser, TOKEN_COMMA) != 0)) {
                         parser_consume(parser);
@@ -22525,14 +22714,18 @@ static __attribute__((unused)) struct ASTNode * parser_parse_primary_expr(struct
                                             return _uya_ret;
                                         }
                                         int32_t i = 0;
-                                        while ((i < arg_count)) {
-                                            new_a[i] = args[i];
+                                        while (((i < arg_count) && (i < new_cap))) {
+                                            if ((args != NULL)) {
+                                                new_a[i] = args[i];
+                                            }
                                             i = (i + 1);
                                         }
                                         args = new_a;
                                         arg_cap = new_cap;
                                     }
-                                    args[arg_count] = arg;
+                                    if ((((args != NULL) && (arg_count >= 0)) && (arg_count < arg_cap))) {
+                                        args[arg_count] = arg;
+                                    }
                                     arg_count = (arg_count + 1);
                                     if ((parser_match(parser, TOKEN_COMMA) == 0)) {
                                         break;
@@ -23229,7 +23422,9 @@ static __attribute__((unused)) struct ASTNode * parser_parse_rel_expr(struct Par
                             type_args = new_type_args;
                             type_arg_capacity = new_capacity;
                         }
-                        type_args[type_arg_count] = type_arg;
+                        if ((((type_args != NULL) && (type_arg_count >= 0)) && (type_arg_count < type_arg_capacity))) {
+                            type_args[type_arg_count] = type_arg;
+                        }
                         type_arg_count = (type_arg_count + 1);
                         if ((parser_match(parser, TOKEN_COMMA) == 0)) {
                             break;
@@ -23292,7 +23487,9 @@ static __attribute__((unused)) struct ASTNode * parser_parse_rel_expr(struct Par
                             args = new_args;
                             arg_capacity = new_capacity;
                         }
-                        args[arg_count] = arg;
+                        if ((((args != NULL) && (arg_count >= 0)) && (arg_count < arg_capacity))) {
+                            args[arg_count] = arg;
+                        }
                         arg_count = (arg_count + 1);
                         if ((parser_match(parser, TOKEN_COMMA) == 0)) {
                             break;
@@ -24590,14 +24787,18 @@ static __attribute__((unused)) struct ASTNode * parser_parse_method_block(struct
                                 return _uya_ret;
                             }
                             int32_t j = 0;
-                            while ((j < arg_count)) {
-                                new_args[j] = args[j];
+                            while (((j < arg_count) && (j < new_cap))) {
+                                if ((args != NULL)) {
+                                    new_args[j] = args[j];
+                                }
                                 j = (j + 1);
                             }
                             args = new_args;
                             arg_cap = new_cap;
                         }
-                        args[arg_count] = arg;
+                        if ((((args != NULL) && (arg_count >= 0)) && (arg_count < arg_cap))) {
+                            args[arg_count] = arg;
+                        }
                         arg_count = (arg_count + 1);
                         if ((parser_match(parser, TOKEN_COMMA) != 0)) {
                             parser_consume(parser);
@@ -24833,16 +25034,16 @@ static __attribute__((unused)) struct ASTNode * parser_parse_struct(struct Parse
             if ((parser_match(parser, TOKEN_LESS) != 0)) {
                 uint8_t full_name[512] = {0};
                 int32_t pos = 0;
-                pos = (pos + libc_snprintf((char *)((uint8_t *)full_name + pos), (512 - pos), (const char *)str545, (uint8_t *)iface_base_name));
+                pos = (pos + libc_snprintf((char *)((uint8_t *)full_name + pos), (MAX_GENERIC_NAME_BUF - pos), (const char *)str545, (uint8_t *)iface_base_name));
                 parser_consume(parser);
                 int32_t first_type_arg = 1;
                 while ((((parser->current_token != NULL) && (parser_match(parser, TOKEN_GREATER) == 0)) && (parser_match(parser, TOKEN_EOF) == 0))) {
                     if ((first_type_arg == 0)) {
-                        pos = (pos + libc_snprintf((char *)((uint8_t *)full_name + pos), (512 - pos), (const char *)str546));
+                        pos = (pos + libc_snprintf((char *)((uint8_t *)full_name + pos), (MAX_GENERIC_NAME_BUF - pos), (const char *)str546));
                     }
                     first_type_arg = 0;
                     if ((parser_match(parser, TOKEN_IDENTIFIER) != 0)) {
-                        pos = (pos + libc_snprintf((char *)((uint8_t *)full_name + pos), (512 - pos), (const char *)str309, (uint8_t *)parser->current_token->value));
+                        pos = (pos + libc_snprintf((char *)((uint8_t *)full_name + pos), (MAX_GENERIC_NAME_BUF - pos), (const char *)str309, (uint8_t *)parser->current_token->value));
                         parser_consume(parser);
                     } else {
                         parser_consume(parser);
@@ -24858,7 +25059,7 @@ static __attribute__((unused)) struct ASTNode * parser_parse_struct(struct Parse
                     struct ASTNode * _uya_ret = NULL;
                     return _uya_ret;
                 }
-                pos = (pos + libc_snprintf((char *)((uint8_t *)full_name + pos), (512 - pos), (const char *)str483));
+                pos = (pos + libc_snprintf((char *)((uint8_t *)full_name + pos), (MAX_GENERIC_NAME_BUF - pos), (const char *)str483));
                 ifaces[iface_count] = arena_strdup(parser->arena, (uint8_t *)full_name);
             } else {
                 ifaces[iface_count] = iface_base_name;
@@ -26895,7 +27096,7 @@ static __attribute__((unused)) void c99_emit_string_interp_fill(struct C99CodeGe
             int32_t j = 1;
             if (((seg->format_spec != NULL) && (seg->format_spec[0] != 0))) {
                 int32_t k = 0;
-                while (((seg->format_spec[k] != 0) && (j < 62))) {
+                while (((seg->format_spec[k] != 0) && (j < (FMT_BUF_SIZE - 2)))) {
                     fmt_buf[j] = seg->format_spec[k];
                     j = (j + 1);
                     k = (k + 1);
@@ -26904,7 +27105,9 @@ static __attribute__((unused)) void c99_emit_string_interp_fill(struct C99CodeGe
                 fmt_buf[1] = 100;
                 j = 2;
             }
-            fmt_buf[j] = 0;
+            if (((j >= 0) && (j < FMT_BUF_SIZE))) {
+                fmt_buf[j] = 0;
+            }
             c99_emit_indent(codegen);
             libc_fprintf((void *)codegen->output, (const char *)str608, fill_id, (uint8_t *)buf_name, fill_id, (uint8_t *)(&fmt_buf[0]));
             gen_expr(codegen, seg->expr);
@@ -27585,7 +27788,7 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                     int8_t prefixed_name[256] = {0};
                                                                                                     int32_t pi = 0;
                                                                                                     int8_t * p = (int8_t *)module_name;
-                                                                                                    while (((p[0] != 0) && (pi < 200))) {
+                                                                                                    while (((p[0] != 0) && (pi < (NAME_BUF_SIZE / 2)))) {
                                                                                                         if ((p[0] == 46)) {
                                                                                                             prefixed_name[pi] = 95;
                                                                                                         } else {
@@ -27594,15 +27797,19 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                         pi = (pi + 1);
                                                                                                         p = (p + 1);
                                                                                                     }
-                                                                                                    prefixed_name[pi] = 95;
+                                                                                                    if (((pi >= 0) && (pi < NAME_BUF_SIZE))) {
+                                                                                                        prefixed_name[pi] = 95;
+                                                                                                    }
                                                                                                     pi = (pi + 1);
                                                                                                     p = (int8_t *)field_name;
-                                                                                                    while (((p[0] != 0) && (pi < 250))) {
+                                                                                                    while (((p[0] != 0) && (pi < (NAME_BUF_SIZE - 6)))) {
                                                                                                         prefixed_name[pi] = p[0];
                                                                                                         pi = (pi + 1);
                                                                                                         p = (p + 1);
                                                                                                     }
-                                                                                                    prefixed_name[pi] = 0;
+                                                                                                    if (((pi >= 0) && (pi < NAME_BUF_SIZE))) {
+                                                                                                        prefixed_name[pi] = 0;
+                                                                                                    }
                                                                                                     uint8_t * const safe_name = get_safe_c_identifier(codegen, (&prefixed_name[0]));
                                                                                                     libc_fprintf((void *)codegen->output, (const char *)str309, (uint8_t *)safe_name);
                                                                                                 } else {
@@ -28059,18 +28266,22 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                                                                     const int32_t array_spec_len = (std_runtime_ptr_diff(close_bracket, bracket) + 1);
                                                                                                                                                     uint8_t temp_buf[256] = {0};
                                                                                                                                                     int32_t j = 0;
-                                                                                                                                                    while (((j < base_len) && (j < 255))) {
+                                                                                                                                                    while (((j < base_len) && (j < (TEMP_BUF_SIZE - 1)))) {
                                                                                                                                                         temp_buf[j] = type_c[j];
                                                                                                                                                         j = (j + 1);
                                                                                                                                                     }
-                                                                                                                                                    temp_buf[j] = 0;
+                                                                                                                                                    if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
+                                                                                                                                                        temp_buf[j] = 0;
+                                                                                                                                                    }
                                                                                                                                                     libc_fprintf((void *)codegen->output, (const char *)str739, (uint8_t *)(&temp_buf[0]));
                                                                                                                                                     j = 0;
-                                                                                                                                                    while (((j < array_spec_len) && (j < 255))) {
+                                                                                                                                                    while (((j < array_spec_len) && (j < (TEMP_BUF_SIZE - 1)))) {
                                                                                                                                                         temp_buf[j] = bracket[j];
                                                                                                                                                         j = (j + 1);
                                                                                                                                                     }
-                                                                                                                                                    temp_buf[j] = 0;
+                                                                                                                                                    if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
+                                                                                                                                                        temp_buf[j] = 0;
+                                                                                                                                                    }
                                                                                                                                                     libc_fprintf((void *)codegen->output, (const char *)str309, (uint8_t *)(&temp_buf[0]));
                                                                                                                                                 } else {
                                                                                                                                                     libc_fprintf((void *)codegen->output, (const char *)str309, (uint8_t *)type_c);
@@ -28154,7 +28365,7 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                                                                         if ((close_bracket != NULL)) {
                                                                                                                                                             const int32_t num_len = (std_runtime_ptr_diff(close_bracket, bracket) - 1);
                                                                                                                                                             uint8_t num_buf[32] = {0};
-                                                                                                                                                            if (((num_len < 32) && (num_len > 0))) {
+                                                                                                                                                            if (((num_len < NUM_BUF_SIZE) && (num_len > 0))) {
                                                                                                                                                                 memcpy((void *)(&num_buf[0]), (void *)(&type_c[(bracket_offset + 1)]), num_len);
                                                                                                                                                                 num_buf[num_len] = 0;
                                                                                                                                                                 array_size = libc_atoi((uint8_t *)(&num_buf[0]));
@@ -28432,7 +28643,7 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                                                                         struct ASTNode * const arg = expr->call_expr_args[arg_idx];
                                                                                                                                                         if ((((arg != NULL) && (arg->type == AST_STRING_INTERP)) && (arg->string_interp_computed_size > 0))) {
                                                                                                                                                             uint8_t name_buf[64] = {0};
-                                                                                                                                                            libc_snprintf((char *)(uint8_t *)(&name_buf[0]), 64, (const char *)str781, codegen->interp_temp_counter);
+                                                                                                                                                            libc_snprintf((char *)(uint8_t *)(&name_buf[0]), SHORT_NAME_BUF_SIZE, (const char *)str781, codegen->interp_temp_counter);
                                                                                                                                                             codegen->interp_temp_counter = (codegen->interp_temp_counter + 1);
                                                                                                                                                             uint8_t * const temp_name = c99_arena_strdup(codegen->arena, (uint8_t *)(&name_buf[0]));
                                                                                                                                                             if ((temp_name != NULL)) {
@@ -28457,7 +28668,7 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                                                                                 int8_t prefixed_name[256] = {0};
                                                                                                                                                                 int32_t pi = 0;
                                                                                                                                                                 int8_t * p = (int8_t *)module_name;
-                                                                                                                                                                while (((p[0] != 0) && (pi < 200))) {
+                                                                                                                                                                while (((p[0] != 0) && (pi < (NAME_BUF_SIZE / 2)))) {
                                                                                                                                                                     if ((p[0] == 46)) {
                                                                                                                                                                         prefixed_name[pi] = 95;
                                                                                                                                                                     } else {
@@ -28466,15 +28677,19 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                                                                                     pi = (pi + 1);
                                                                                                                                                                     p = (p + 1);
                                                                                                                                                                 }
-                                                                                                                                                                prefixed_name[pi] = 95;
+                                                                                                                                                                if (((pi >= 0) && (pi < NAME_BUF_SIZE))) {
+                                                                                                                                                                    prefixed_name[pi] = 95;
+                                                                                                                                                                }
                                                                                                                                                                 pi = (pi + 1);
                                                                                                                                                                 p = (int8_t *)mod_callee;
-                                                                                                                                                                while (((p[0] != 0) && (pi < 250))) {
+                                                                                                                                                                while (((p[0] != 0) && (pi < (NAME_BUF_SIZE - 6)))) {
                                                                                                                                                                     prefixed_name[pi] = p[0];
                                                                                                                                                                     pi = (pi + 1);
                                                                                                                                                                     p = (p + 1);
                                                                                                                                                                 }
-                                                                                                                                                                prefixed_name[pi] = 0;
+                                                                                                                                                                if (((pi >= 0) && (pi < NAME_BUF_SIZE))) {
+                                                                                                                                                                    prefixed_name[pi] = 0;
+                                                                                                                                                                }
                                                                                                                                                                 uint8_t * const func_name = get_safe_c_identifier(codegen, (&prefixed_name[0]));
                                                                                                                                                                 libc_fprintf((void *)codegen->output, (const char *)str780, (uint8_t *)func_name);
                                                                                                                                                             }
@@ -28586,7 +28801,7 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                                                                                     if ((end > start)) {
                                                                                                                                                                         uint8_t struct_name_buf[128] = {0};
                                                                                                                                                                         const int32_t slen = (int32_t)(end - start);
-                                                                                                                                                                        if (((slen > 0) && (slen < 128))) {
+                                                                                                                                                                        if (((slen > 0) && (slen < STRUCT_NAME_BUF_SIZE))) {
                                                                                                                                                                             int32_t k = 0;
                                                                                                                                                                             while ((k < slen)) {
                                                                                                                                                                                 struct_name_buf[k] = start[k];
@@ -28632,13 +28847,13 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                                                                                                     if ((((expr->call_expr_type_arg_count > 0) && (expr->call_expr_type_args != NULL)) && (method_fn->fn_decl_type_param_count > 0))) {
                                                                                                                                                                                         uint8_t mono_method_name[256] = {0};
                                                                                                                                                                                         int32_t pos = 0;
-                                                                                                                                                                                        pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_method_name[0]), 256, (const char *)str806, (uint8_t *)(&struct_name_buf[0]), (uint8_t *)method_name));
+                                                                                                                                                                                        pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_method_name[0]), NAME_BUF_SIZE, (const char *)str806, (uint8_t *)(&struct_name_buf[0]), (uint8_t *)method_name));
                                                                                                                                                                                         int32_t ti = 0;
-                                                                                                                                                                                        while (((ti < expr->call_expr_type_arg_count) && (pos < 250))) {
-                                                                                                                                                                                            pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_method_name[pos]), (256 - pos), (const char *)str269));
+                                                                                                                                                                                        while (((ti < expr->call_expr_type_arg_count) && (pos < (NAME_BUF_SIZE - 6)))) {
+                                                                                                                                                                                            pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_method_name[pos]), (NAME_BUF_SIZE - pos), (const char *)str269));
                                                                                                                                                                                             struct ASTNode * const type_arg = expr->call_expr_type_args[ti];
                                                                                                                                                                                             if ((((type_arg != NULL) && (type_arg->type == AST_TYPE_NAMED)) && (type_arg->type_named_name != NULL))) {
-                                                                                                                                                                                                pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_method_name[pos]), (256 - pos), (const char *)str309, (uint8_t *)type_arg->type_named_name));
+                                                                                                                                                                                                pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_method_name[pos]), (NAME_BUF_SIZE - pos), (const char *)str309, (uint8_t *)type_arg->type_named_name));
                                                                                                                                                                                             }
                                                                                                                                                                                             ti = (ti + 1);
                                                                                                                                                                                         }
@@ -28893,7 +29108,7 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                                                                                                                 uint8_t snbuf[64] = {0};
                                                                                                                                                                                                 uint8_t * const start = (uint8_t *)(&atc[7]);
                                                                                                                                                                                                 int32_t pos = 0;
-                                                                                                                                                                                                while (((((start[pos] != 0) && (start[pos] != 32)) && (start[pos] != 42)) && (pos < 63))) {
+                                                                                                                                                                                                while (((((start[pos] != 0) && (start[pos] != 32)) && (start[pos] != 42)) && (pos < (SHORT_NAME_BUF_SIZE - 1)))) {
                                                                                                                                                                                                     snbuf[pos] = start[pos];
                                                                                                                                                                                                     pos = (pos + 1);
                                                                                                                                                                                                 }
@@ -29396,11 +29611,13 @@ static __attribute__((unused)) void format_param_type(struct C99CodeGenerator * 
         uint8_t * const after_paren = (paren_star + 3);
         uint8_t temp_buf[256] = {0};
         int32_t i = 0;
-        while (((i < before_paren) && (i < 255))) {
+        while (((i < before_paren) && (i < TEMP_BUF_LIMIT))) {
             temp_buf[i] = type_c[i];
             i = (i + 1);
         }
-        temp_buf[i] = 0;
+        if (((i >= 0) && (i < TEMP_BUF_SIZE))) {
+            temp_buf[i] = 0;
+        }
         libc_fprintf(output, (const char *)str859, (uint8_t *)(&temp_buf[0]), (uint8_t *)param_name, after_paren);
     } else {
         uint8_t * const bracket = (uint8_t *)std_string_strchr((uint8_t *)type_c, 91);
@@ -29408,11 +29625,13 @@ static __attribute__((unused)) void format_param_type(struct C99CodeGenerator * 
             const int32_t str_len = std_runtime_ptr_diff(bracket, (uint8_t *)type_c);
             uint8_t temp_buf[256] = {0};
             int32_t i = 0;
-            while (((i < str_len) && (i < 255))) {
+            while (((i < str_len) && (i < TEMP_BUF_LIMIT))) {
                 temp_buf[i] = type_c[i];
                 i = (i + 1);
             }
-            temp_buf[i] = 0;
+            if (((i >= 0) && (i < TEMP_BUF_SIZE))) {
+                temp_buf[i] = 0;
+            }
             libc_fprintf(output, (const char *)str860, (uint8_t *)(&temp_buf[0]), (uint8_t *)param_name, bracket);
         } else {
             if ((is_copy_type_param != 0)) {
@@ -29569,11 +29788,13 @@ static __attribute__((unused)) void gen_function_prototype(struct C99CodeGenerat
                     const int32_t str_len = std_runtime_ptr_diff(bracket, (uint8_t *)param_type_c);
                     uint8_t temp_buf[256] = {0};
                     int32_t j = 0;
-                    while (((j < str_len) && (j < 255))) {
+                    while (((j < str_len) && (j < TEMP_BUF_LIMIT))) {
                         temp_buf[j] = param_type_c[j];
                         j = (j + 1);
                     }
-                    temp_buf[j] = 0;
+                    if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
+                        temp_buf[j] = 0;
+                    }
                     libc_fprintf(codegen->output, (const char *)str870, (uint8_t *)(&temp_buf[0]), (uint8_t *)param_name, bracket);
                 } else {
                     libc_fprintf(codegen->output, (const char *)str871, (uint8_t *)param_type_c, (uint8_t *)param_name);
@@ -29703,11 +29924,13 @@ static __attribute__((unused)) void gen_function(struct C99CodeGenerator * codeg
                         const int32_t str_len = std_runtime_ptr_diff(bracket, (uint8_t *)param_type_c);
                         uint8_t temp_buf[256] = {0};
                         int32_t j = 0;
-                        while (((j < str_len) && (j < 255))) {
+                        while (((j < str_len) && (j < TEMP_BUF_LIMIT))) {
                             temp_buf[j] = param_type_c[j];
                             j = (j + 1);
                         }
-                        temp_buf[j] = 0;
+                        if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
+                            temp_buf[j] = 0;
+                        }
                         libc_fprintf(codegen->output, (const char *)str870, (uint8_t *)(&temp_buf[0]), (uint8_t *)param_name, bracket);
                     } else {
                         libc_fprintf(codegen->output, (const char *)str871, (uint8_t *)param_type_c, (uint8_t *)param_name);
@@ -29767,11 +29990,13 @@ static __attribute__((unused)) void gen_function(struct C99CodeGenerator * codeg
                     const int32_t str_len = std_runtime_ptr_diff(bracket, (uint8_t *)array_type_c);
                     uint8_t temp_buf[256] = {0};
                     int32_t j = 0;
-                    while (((j < str_len) && (j < 255))) {
+                    while (((j < str_len) && (j < TEMP_BUF_LIMIT))) {
                         temp_buf[j] = array_type_c[j];
                         j = (j + 1);
                     }
-                    temp_buf[j] = 0;
+                    if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
+                        temp_buf[j] = 0;
+                    }
                     libc_fprintf(codegen->output, (const char *)str880, (uint8_t *)(&temp_buf[0]), (uint8_t *)param_name, bracket);
                 } else {
                     c99_emit_indent(codegen);
@@ -30120,16 +30345,20 @@ static __attribute__((unused)) uint8_t * get_mono_function_name(struct C99CodeGe
     int32_t suffix_len = 0;
     int32_t i = 0;
     while ((i < type_arg_count)) {
-        if (((i > 0) && (suffix_len < 255))) {
-            suffix[suffix_len] = (uint8_t)95;
+        if ((i > 0)) {
+            if (((suffix_len >= 0) && (suffix_len < TEMP_BUF_LIMIT))) {
+                suffix[suffix_len] = (uint8_t)95;
+            }
             suffix_len = (suffix_len + 1);
         }
         struct ASTNode * const type_arg = type_args[i];
         if ((((type_arg != NULL) && (type_arg->type == AST_TYPE_NAMED)) && (type_arg->type_named_name != NULL))) {
             uint8_t * const type_name = type_arg->type_named_name;
             int32_t j = 0;
-            while (((type_name[j] != 0) && (suffix_len < 255))) {
-                suffix[suffix_len] = type_name[j];
+            while (((type_name[j] != 0) && (suffix_len < TEMP_BUF_LIMIT))) {
+                if (((suffix_len >= 0) && (suffix_len < TEMP_BUF_SIZE))) {
+                    suffix[suffix_len] = type_name[j];
+                }
                 suffix_len = (suffix_len + 1);
                 j = (j + 1);
             }
@@ -30137,8 +30366,10 @@ static __attribute__((unused)) uint8_t * get_mono_function_name(struct C99CodeGe
             if (((type_arg != NULL) && (type_arg->type == AST_TYPE_POINTER))) {
                 uint8_t * const ptr_prefix = (uint8_t *)str890;
                 int32_t k = 0;
-                while (((ptr_prefix[k] != 0) && (suffix_len < 255))) {
-                    suffix[suffix_len] = ptr_prefix[k];
+                while (((ptr_prefix[k] != 0) && (suffix_len < TEMP_BUF_LIMIT))) {
+                    if (((suffix_len >= 0) && (suffix_len < TEMP_BUF_SIZE))) {
+                        suffix[suffix_len] = ptr_prefix[k];
+                    }
                     suffix_len = (suffix_len + 1);
                     k = (k + 1);
                 }
@@ -30146,8 +30377,10 @@ static __attribute__((unused)) uint8_t * get_mono_function_name(struct C99CodeGe
                 if ((((pointed != NULL) && (pointed->type == AST_TYPE_NAMED)) && (pointed->type_named_name != NULL))) {
                     uint8_t * const type_name = pointed->type_named_name;
                     int32_t m = 0;
-                    while (((type_name[m] != 0) && (suffix_len < 255))) {
-                        suffix[suffix_len] = type_name[m];
+                    while (((type_name[m] != 0) && (suffix_len < TEMP_BUF_LIMIT))) {
+                        if (((suffix_len >= 0) && (suffix_len < TEMP_BUF_SIZE))) {
+                            suffix[suffix_len] = type_name[m];
+                        }
                         suffix_len = (suffix_len + 1);
                         m = (m + 1);
                     }
@@ -30156,7 +30389,9 @@ static __attribute__((unused)) uint8_t * get_mono_function_name(struct C99CodeGe
         }
         i = (i + 1);
     }
-    suffix[suffix_len] = 0;
+    if (((suffix_len >= 0) && (suffix_len < TEMP_BUF_SIZE))) {
+        suffix[suffix_len] = 0;
+    }
     uint8_t * const safe_name = get_safe_c_identifier(codegen, (uint8_t *)generic_name);
     const size_t name_len = ((((size_t)std_string_strlen((uint8_t *)safe_name) + 1) + (size_t)suffix_len) + 1);
     uint8_t * const mono_name = (uint8_t *)arena_alloc(codegen->arena, name_len);
@@ -30458,13 +30693,13 @@ static __attribute__((unused)) void gen_mono_method_prototype(struct C99CodeGene
     }
     uint8_t * const method_name = fn_decl->fn_decl_name;
     uint8_t mono_name_buf[256] = {0};
-    int32_t pos = libc_snprintf((char *)(uint8_t *)(&mono_name_buf[0]), 256, (const char *)str806, (uint8_t *)struct_name, (uint8_t *)method_name);
+    int32_t pos = libc_snprintf((char *)(uint8_t *)(&mono_name_buf[0]), C99_TYPE_ARG_BUF_SIZE, (const char *)str806, (uint8_t *)struct_name, (uint8_t *)method_name);
     int32_t ti = 0;
-    while (((ti < type_arg_count) && (pos < 250))) {
-        pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name_buf[pos]), (256 - pos), (const char *)str269));
+    while (((ti < type_arg_count) && (pos < C99_TYPE_ARG_BUF_LIMIT))) {
+        pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name_buf[pos]), (C99_TYPE_ARG_BUF_SIZE - pos), (const char *)str269));
         struct ASTNode * const type_arg = type_args[ti];
         if ((((type_arg != NULL) && (type_arg->type == AST_TYPE_NAMED)) && (type_arg->type_named_name != NULL))) {
-            pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name_buf[pos]), (256 - pos), (const char *)str309, (uint8_t *)type_arg->type_named_name));
+            pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name_buf[pos]), (C99_TYPE_ARG_BUF_SIZE - pos), (const char *)str309, (uint8_t *)type_arg->type_named_name));
         }
         ti = (ti + 1);
     }
@@ -30514,13 +30749,13 @@ static __attribute__((unused)) void gen_mono_method_function(struct C99CodeGener
     }
     uint8_t * const method_name = fn_decl->fn_decl_name;
     uint8_t mono_name_buf[256] = {0};
-    int32_t pos = libc_snprintf((char *)(uint8_t *)(&mono_name_buf[0]), 256, (const char *)str806, (uint8_t *)struct_name, (uint8_t *)method_name);
+    int32_t pos = libc_snprintf((char *)(uint8_t *)(&mono_name_buf[0]), C99_TYPE_ARG_BUF_SIZE, (const char *)str806, (uint8_t *)struct_name, (uint8_t *)method_name);
     int32_t ti = 0;
-    while (((ti < type_arg_count) && (pos < 250))) {
-        pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name_buf[pos]), (256 - pos), (const char *)str269));
+    while (((ti < type_arg_count) && (pos < C99_TYPE_ARG_BUF_LIMIT))) {
+        pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name_buf[pos]), (C99_TYPE_ARG_BUF_SIZE - pos), (const char *)str269));
         struct ASTNode * const type_arg = type_args[ti];
         if ((((type_arg != NULL) && (type_arg->type == AST_TYPE_NAMED)) && (type_arg->type_named_name != NULL))) {
-            pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name_buf[pos]), (256 - pos), (const char *)str309, (uint8_t *)type_arg->type_named_name));
+            pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name_buf[pos]), (C99_TYPE_ARG_BUF_SIZE - pos), (const char *)str309, (uint8_t *)type_arg->type_named_name));
         }
         ti = (ti + 1);
     }
@@ -31388,15 +31623,15 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
     int32_t is_bootstrap = 0;
     if ((output_file != NULL)) {
         int32_t i = 0;
-        while (((i < 100) && (output_file[i] != (uint8_t)0))) {
-            if (((((((((i + 5) < 100) && (output_file[i] == (uint8_t)108)) && (output_file[(i + 1)] == (uint8_t)105)) && (output_file[(i + 2)] == (uint8_t)98)) && (output_file[(i + 3)] == (uint8_t)117)) && (output_file[(i + 4)] == (uint8_t)121)) && (output_file[(i + 5)] == (uint8_t)97))) {
+        while (((i < C99_OUTPUT_FILENAME_BUF_SIZE) && (output_file[i] != (uint8_t)0))) {
+            if (((((((((i + 5) < C99_OUTPUT_FILENAME_BUF_SIZE) && (output_file[i] == (uint8_t)108)) && (output_file[(i + 1)] == (uint8_t)105)) && (output_file[(i + 2)] == (uint8_t)98)) && (output_file[(i + 3)] == (uint8_t)117)) && (output_file[(i + 4)] == (uint8_t)121)) && (output_file[(i + 5)] == (uint8_t)97))) {
                 is_std_lib = 1;
                 break;
             }
-            if ((((((((i + 5) < 100) && (output_file[i] == (uint8_t)117)) && (output_file[(i + 1)] == (uint8_t)121)) && (output_file[(i + 2)] == (uint8_t)97)) && (output_file[(i + 3)] == (uint8_t)46)) && (output_file[(i + 4)] == (uint8_t)99))) {
+            if ((((((((i + 5) < C99_OUTPUT_FILENAME_BUF_SIZE) && (output_file[i] == (uint8_t)117)) && (output_file[(i + 1)] == (uint8_t)121)) && (output_file[(i + 2)] == (uint8_t)97)) && (output_file[(i + 3)] == (uint8_t)46)) && (output_file[(i + 4)] == (uint8_t)99))) {
                 is_bootstrap = 1;
             }
-            if ((((i + 16) < 100) && (std_string_strncmp((uint8_t *)(&output_file[i]), (uint8_t *)(uint8_t *)str908, 17) == 0))) {
+            if ((((i + 16) < C99_OUTPUT_FILENAME_BUF_SIZE) && (std_string_strncmp((uint8_t *)(&output_file[i]), (uint8_t *)(uint8_t *)str908, 17) == 0))) {
                 is_bootstrap = 1;
             }
             i = (i + 1);
@@ -31911,7 +32146,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                 struct ASTNode * const m = decl->method_block_methods[mi];
                                 if (((((m != NULL) && (m->type == AST_FN_DECL)) && (m->fn_decl_name != NULL)) && (m->fn_decl_type_param_count > 0))) {
                                     uint8_t expected_prefix[256] = {0};
-                                    int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), 256, (const char *)str806, (uint8_t *)type_name, (uint8_t *)m->fn_decl_name);
+                                    int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str806, (uint8_t *)type_name, (uint8_t *)m->fn_decl_name);
                                     if (((std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0) && ((gn[prefix_len] == 95) || (gn[prefix_len] == 0)))) {
                                         if ((m->fn_decl_return_type != NULL)) {
                                             struct TypeParam * const saved_type_params = codegen->current_type_params;
@@ -31945,7 +32180,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                     struct ASTNode * const m = decl->struct_decl_methods[mi];
                                     if (((((m != NULL) && (m->type == AST_FN_DECL)) && (m->fn_decl_name != NULL)) && (m->fn_decl_type_param_count > 0))) {
                                         uint8_t expected_prefix[256] = {0};
-                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), 256, (const char *)str806, (uint8_t *)struct_name, (uint8_t *)m->fn_decl_name);
+                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str806, (uint8_t *)struct_name, (uint8_t *)m->fn_decl_name);
                                         if (((std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0) && ((gn[prefix_len] == 95) || (gn[prefix_len] == 0)))) {
                                             if ((m->fn_decl_return_type != NULL)) {
                                                 struct TypeParam * const saved_type_params = codegen->current_type_params;
@@ -32016,7 +32251,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                 while ((k < codegen->mono_instance_count)) {
                                     if (((codegen->mono_instances[k].generic_name != NULL) && (codegen->mono_instances[k].is_function != 0))) {
                                         uint8_t expected_prefix[256] = {0};
-                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), 256, (const char *)str1028, (uint8_t *)type_name, (uint8_t *)m->fn_decl_name);
+                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1028, (uint8_t *)type_name, (uint8_t *)m->fn_decl_name);
                                         uint8_t * const gn = codegen->mono_instances[k].generic_name;
                                         if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                             gen_mono_method_prototype(codegen, m, (uint8_t *)type_name, codegen->mono_instances[k].type_args, codegen->mono_instances[k].type_arg_count);
@@ -32057,7 +32292,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                 while ((mi < codegen->mono_instance_count)) {
                                                     if (((codegen->mono_instances[mi].generic_name != NULL) && (codegen->mono_instances[mi].is_function != 0))) {
                                                         uint8_t expected_prefix[256] = {0};
-                                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), 256, (const char *)str1028, (uint8_t *)mono_name, (uint8_t *)m->fn_decl_name);
+                                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1028, (uint8_t *)mono_name, (uint8_t *)m->fn_decl_name);
                                                         uint8_t * const gn = codegen->mono_instances[mi].generic_name;
                                                         if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                                             gen_mono_method_prototype(codegen, m, mono_name, codegen->mono_instances[mi].type_args, codegen->mono_instances[mi].type_arg_count);
@@ -32086,7 +32321,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                             if (((m != NULL) && (m->type == AST_FN_DECL))) {
                                 if ((m->fn_decl_type_param_count > 0)) {
                                     uint8_t expected_prefix[256] = {0};
-                                    const int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), 256, (const char *)str1028, (uint8_t *)struct_name, (uint8_t *)m->fn_decl_name);
+                                    const int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1028, (uint8_t *)struct_name, (uint8_t *)m->fn_decl_name);
                                     int32_t k = 0;
                                     while ((k < codegen->mono_instance_count)) {
                                         if (((codegen->mono_instances[k].generic_name != NULL) && (codegen->mono_instances[k].is_function != 0))) {
@@ -32207,7 +32442,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                             while ((mi < codegen->mono_instance_count)) {
                                                 if (((codegen->mono_instances[mi].generic_name != NULL) && (codegen->mono_instances[mi].is_function != 0))) {
                                                     uint8_t expected_prefix[256] = {0};
-                                                    int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), 256, (const char *)str1028, (uint8_t *)mono_name, (uint8_t *)m->fn_decl_name);
+                                                    int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1028, (uint8_t *)mono_name, (uint8_t *)m->fn_decl_name);
                                                     uint8_t * const gn = codegen->mono_instances[mi].generic_name;
                                                     if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                                         gen_mono_method_function(codegen, m, mono_name, codegen->mono_instances[mi].type_args, codegen->mono_instances[mi].type_arg_count);
@@ -32241,7 +32476,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                 while ((k < codegen->mono_instance_count)) {
                                     if (((codegen->mono_instances[k].generic_name != NULL) && (codegen->mono_instances[k].is_function != 0))) {
                                         uint8_t expected_prefix[256] = {0};
-                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), 256, (const char *)str1028, (uint8_t *)struct_name, (uint8_t *)m->fn_decl_name);
+                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1028, (uint8_t *)struct_name, (uint8_t *)m->fn_decl_name);
                                         uint8_t * const gn = codegen->mono_instances[k].generic_name;
                                         if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                             gen_mono_method_function(codegen, m, struct_name, codegen->mono_instances[k].type_args, codegen->mono_instances[k].type_arg_count);
@@ -32320,7 +32555,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                         while ((k < codegen->mono_instance_count)) {
                                                             if (((codegen->mono_instances[k].generic_name != NULL) && (codegen->mono_instances[k].is_function != 0))) {
                                                                 uint8_t expected_prefix[256] = {0};
-                                                                int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), 256, (const char *)str1028, (uint8_t *)type_name, (uint8_t *)m->fn_decl_name);
+                                                                int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1028, (uint8_t *)type_name, (uint8_t *)m->fn_decl_name);
                                                                 uint8_t * const gn = codegen->mono_instances[k].generic_name;
                                                                 if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                                                     gen_mono_method_function(codegen, m, (uint8_t *)type_name, codegen->mono_instances[k].type_args, codegen->mono_instances[k].type_arg_count);
@@ -33273,22 +33508,26 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                         const int32_t suffix_len = std_string_strlen(bracket);
                                                         uint8_t temp_buf[256] = {0};
                                                         int32_t j = 0;
-                                                        while (((j < prefix_len) && (j < 255))) {
+                                                        while (((j < prefix_len) && (j < TEMP_BUF_LIMIT))) {
                                                             temp_buf[j] = type_c[j];
                                                             j = (j + 1);
                                                         }
-                                                        temp_buf[j] = 0;
+                                                        if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
+                                                            temp_buf[j] = 0;
+                                                        }
                                                         libc_fprintf((void *)codegen->output, (const char *)str1083, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name, bracket);
                                                         const int32_t total_len = ((prefix_len + suffix_len) + 10);
                                                         stored_type_c_for_pointer = (uint8_t *)arena_alloc(codegen->arena, total_len);
                                                         if ((stored_type_c_for_pointer != NULL)) {
                                                             uint8_t temp_buf2[256] = {0};
                                                             j = 0;
-                                                            while (((j < prefix_len) && (j < 255))) {
+                                                            while (((j < prefix_len) && (j < TEMP_BUF_LIMIT))) {
                                                                 temp_buf2[j] = type_c[j];
                                                                 j = (j + 1);
                                                             }
-                                                            temp_buf2[j] = 0;
+                                                            if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
+                                                                temp_buf2[j] = 0;
+                                                            }
                                                             libc_snprintf((char *)(uint8_t *)stored_type_c_for_pointer, total_len, (const char *)str1084, (uint8_t *)(&temp_buf2[0]), bracket);
                                                         }
                                                     } else {
@@ -33880,12 +34119,14 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                     uint8_t struct_name_buf[256] = {0};
                                                                     int32_t j = 7;
                                                                     int32_t k = 0;
-                                                                    while ((((expr_type_c[j] != 0) && (expr_type_c[j] != 32)) && (k < 255))) {
+                                                                    while ((((expr_type_c[j] != 0) && (expr_type_c[j] != 32)) && (k < TEMP_BUF_LIMIT))) {
                                                                         struct_name_buf[k] = expr_type_c[j];
                                                                         j = (j + 1);
                                                                         k = (k + 1);
                                                                     }
-                                                                    struct_name_buf[k] = 0;
+                                                                    if (((k >= 0) && (k < TEMP_BUF_SIZE))) {
+                                                                        struct_name_buf[k] = 0;
+                                                                    }
                                                                     struct ASTNode * const next_method = find_method_in_struct_c99(codegen, (&struct_name_buf[0]), (uint8_t *)(uint8_t *)str392);
                                                                     struct ASTNode * const value_method = find_method_in_struct_c99(codegen, (&struct_name_buf[0]), (uint8_t *)(uint8_t *)str393);
                                                                     if (((next_method != NULL) && (value_method != NULL))) {
@@ -33958,11 +34199,13 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                 const int32_t base_len = std_runtime_ptr_diff(bracket, (uint8_t *)elem_type_c);
                                                                 uint8_t temp_buf[256] = {0};
                                                                 int32_t j = 0;
-                                                                while (((j < base_len) && (j < 255))) {
+                                                                while (((j < base_len) && (j < TEMP_BUF_LIMIT))) {
                                                                     temp_buf[j] = elem_type_c[j];
                                                                     j = (j + 1);
                                                                 }
-                                                                temp_buf[j] = 0;
+                                                                if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
+                                                                    temp_buf[j] = 0;
+                                                                }
                                                                 c99_emit_indent(codegen);
                                                                 libc_fprintf((void *)codegen->output, (const char *)str1129, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name2);
                                                                 gen_expr(codegen, array);
@@ -33979,11 +34222,13 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                 const int32_t base_len2 = std_runtime_ptr_diff(bracket2, (uint8_t *)elem_type_c);
                                                                 uint8_t temp_buf2[256] = {0};
                                                                 int32_t j2 = 0;
-                                                                while (((j2 < base_len2) && (j2 < 255))) {
+                                                                while (((j2 < base_len2) && (j2 < TEMP_BUF_LIMIT))) {
                                                                     temp_buf2[j2] = elem_type_c[j2];
                                                                     j2 = (j2 + 1);
                                                                 }
-                                                                temp_buf2[j2] = 0;
+                                                                if (((j2 >= 0) && (j2 < TEMP_BUF_SIZE))) {
+                                                                    temp_buf2[j2] = 0;
+                                                                }
                                                                 c99_emit_indent(codegen);
                                                                 libc_fprintf((void *)codegen->output, (const char *)str1131, (uint8_t *)(&temp_buf2[0]), (uint8_t *)var_name2, bracket2);
                                                                 c99_emit_indent(codegen);
@@ -34471,15 +34716,19 @@ static __attribute__((unused)) int32_t emit_struct_deps_for_union(struct C99Code
     }
     int32_t generated = 0;
     int32_t i = 0;
-    while ((i < struct_count)) {
-        uint8_t * const struct_name = struct_names[i];
-        if ((struct_name != NULL)) {
-            if ((is_struct_defined(codegen, struct_name) == 0)) {
-                struct ASTNode * const struct_decl = find_struct_decl_c99(codegen, struct_name);
-                if (((struct_decl != NULL) && (struct_decl->type == AST_STRUCT_DECL))) {
-                    gen_struct_definition(codegen, struct_decl);
-                    libc_fputs((uint8_t *)(uint8_t *)str167, (void *)codegen->output);
-                    generated = (generated + 1);
+    const int32_t scount = struct_count;
+    while ((i < scount)) {
+        const int32_t idx = i;
+        if (((idx >= 0) && (idx < scount))) {
+            uint8_t * const struct_name = struct_names[idx];
+            if ((struct_name != NULL)) {
+                if ((is_struct_defined(codegen, struct_name) == 0)) {
+                    struct ASTNode * const struct_decl = find_struct_decl_c99(codegen, struct_name);
+                    if (((struct_decl != NULL) && (struct_decl->type == AST_STRUCT_DECL))) {
+                        gen_struct_definition(codegen, struct_decl);
+                        libc_fputs((uint8_t *)(uint8_t *)str167, (void *)codegen->output);
+                        generated = (generated + 1);
+                    }
                 }
             }
         }
@@ -34510,12 +34759,14 @@ static __attribute__((unused)) struct ASTNode * find_struct_decl_from_type_c(str
         struct ASTNode * _uya_ret = NULL;
         return _uya_ret;
     }
-    if ((name_len >= 128)) {
-        name_len = 127;
+    if ((name_len >= C99_GENERIC_NAME_BUF_SIZE)) {
+        name_len = (C99_GENERIC_NAME_BUF_SIZE - 1);
     }
     uint8_t name_buf[128] = {0};
     memcpy((void *)(&name_buf[0]), (void *)p, (size_t)name_len);
-    name_buf[name_len] = 0;
+    if (((name_len >= 0) && (name_len < C99_GENERIC_NAME_BUF_SIZE))) {
+        name_buf[name_len] = 0;
+    }
     struct ASTNode * _uya_ret = find_struct_decl_c99(codegen, (uint8_t *)(&name_buf[0]));
     return _uya_ret;
 }
@@ -34638,16 +34889,18 @@ static __attribute__((unused)) int32_t extract_generic_name_inline(uint8_t * mon
         return _uya_ret;
     }
     const int32_t len = std_runtime_ptr_diff(underscore, (uint8_t *)mono_name);
-    if (((len >= 128) || (len <= 0))) {
+    if (((len >= C99_GENERIC_NAME_BUF_SIZE) || (len <= 0))) {
         int32_t _uya_ret = 0;
         return _uya_ret;
     }
     int32_t i = 0;
-    while ((i < len)) {
+    while (((i < len) && (i < C99_GENERIC_NAME_BUF_SIZE))) {
         g_generic_name_buf[i] = mono_name[i];
         i = (i + 1);
     }
-    g_generic_name_buf[len] = 0;
+    if (((len >= 0) && (len < C99_GENERIC_NAME_BUF_SIZE))) {
+        g_generic_name_buf[len] = 0;
+    }
     int32_t _uya_ret = 1;
     return _uya_ret;
 }
@@ -34877,9 +35130,9 @@ static __attribute__((unused)) void emit_interface_structs_and_vtables(struct C9
         libc_fprintf((void *)codegen->output, (const char *)str1140, (uint8_t *)safe_iface);
         codegen->indent_level = (codegen->indent_level + 1);
         struct ASTNode * all_sigs[128] = {0};
-        const int32_t sig_count = collect_interface_method_sigs(codegen, iface_name, (&all_sigs[0]), 128);
+        const int32_t sig_count = collect_interface_method_sigs(codegen, iface_name, (&all_sigs[0]), C99_MAX_INTERFACE_METHODS);
         int32_t j = 0;
-        while ((j < sig_count)) {
+        while (((j < sig_count) && (j < C99_MAX_INTERFACE_METHODS))) {
             struct ASTNode * const msig = all_sigs[j];
             if (((msig == NULL) || (msig->type != AST_FN_DECL))) {
                 j = (j + 1);
@@ -34948,7 +35201,7 @@ static __attribute__((unused)) void emit_vtable_constants(struct C99CodeGenerato
             const int32_t sig_count2 = collect_interface_method_sigs(codegen, iface_name, (&all_sigs2[0]), 128);
             libc_fprintf((void *)codegen->output, (const char *)str1142, (uint8_t *)safe_iface, (uint8_t *)safe_iface, (uint8_t *)safe_struct);
             int32_t k = 0;
-            while ((k < sig_count2)) {
+            while (((k < sig_count2) && (k < C99_MAX_INTERFACE_METHODS))) {
                 struct ASTNode * const msig = all_sigs2[k];
                 if (((msig == NULL) || (msig->type != AST_FN_DECL))) {
                     k = (k + 1);
@@ -35228,14 +35481,18 @@ static __attribute__((unused)) uint8_t * get_mono_struct_name(struct C99CodeGene
     int32_t suffix_len = 0;
     int32_t i = 0;
     while ((i < type_arg_count)) {
-        if (((i > 0) && (suffix_len < 511))) {
-            suffix[suffix_len] = (uint8_t)95;
+        if ((i > 0)) {
+            if (((suffix_len >= 0) && (suffix_len < C99_SUFFIX_BUF_SIZE))) {
+                suffix[suffix_len] = (uint8_t)95;
+            }
             suffix_len = (suffix_len + 1);
         }
-        suffix_len = append_type_arg_suffix(codegen, type_args[i], (&suffix[0]), suffix_len, 512);
+        suffix_len = append_type_arg_suffix(codegen, type_args[i], (&suffix[0]), suffix_len, C99_SUFFIX_BUF_SIZE);
         i = (i + 1);
     }
-    suffix[suffix_len] = 0;
+    if (((suffix_len >= 0) && (suffix_len < C99_SUFFIX_BUF_SIZE))) {
+        suffix[suffix_len] = 0;
+    }
     uint8_t * const safe_name = get_safe_c_identifier(codegen, (uint8_t *)generic_name);
     const int32_t name_len = ((((int32_t)std_string_strlen((uint8_t *)safe_name) + 1) + suffix_len) + 1);
     uint8_t * const mono_name = (uint8_t *)arena_alloc(codegen->arena, (size_t)name_len);
@@ -35810,7 +36067,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                     return _uya_ret;
                 }
                 uint8_t base_buf[128] = {0};
-                if ((base_len < 128)) {
+                if (((base_len >= 0) && (base_len < STRUCT_NAME_BUF_SIZE))) {
                     memcpy((void *)(&base_buf[0]), (void *)pointee_type, base_len);
                     base_buf[base_len] = 0;
                     if ((is_const != 0)) {
@@ -35877,19 +36134,19 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                     }
                     uint8_t struct_name_buf[128] = {0};
                     if ((is_void != 0)) {
-                        libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), 128, (const char *)str1167);
+                        libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1167);
                     } else {
                         uint8_t safe[64] = {0};
                         int32_t j = 0;
                         uint8_t * p = payload_c;
-                        while (((p[0] != 0) && (j < 63))) {
+                        while (((p[0] != 0) && (j < (SHORT_NAME_BUF_SIZE - 1)))) {
                             const int32_t c = (int32_t)p[0];
                             if ((((((c >= 97) && (c <= 122)) || ((c >= 65) && (c <= 90))) || ((c >= 48) && (c <= 57))) || (c == 95))) {
                                 safe[j] = p[0];
                                 j = (j + 1);
                             } else {
                                 if ((c == 42)) {
-                                    if ((j < 60)) {
+                                    if ((j < (SHORT_NAME_BUF_SIZE - 4))) {
                                         safe[j] = 112;
                                         safe[(j + 1)] = 116;
                                         safe[(j + 2)] = 114;
@@ -35899,11 +36156,13 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                             }
                             p = (p + 1);
                         }
-                        safe[j] = 0;
+                        if (((j >= 0) && (j < SHORT_NAME_BUF_SIZE))) {
+                            safe[j] = 0;
+                        }
                         if ((j > 0)) {
-                            libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), 128, (const char *)str1168, (uint8_t *)(&safe[0]));
+                            libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1168, (uint8_t *)(&safe[0]));
                         } else {
-                            libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), 128, (const char *)str1169);
+                            libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1169);
                         }
                     }
                     uint8_t * const name_copy = c99_arena_strdup(codegen->arena, (&struct_name_buf[0]));
@@ -35969,7 +36228,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                             std_string_strcpy((char *)(uint8_t *)result, (uint8_t *)base_type);
                             int32_t i = 0;
                             while ((i < dim_count)) {
-                                uint8_t dim_str[16] = {0};
+                                uint8_t dim_str[32] = {0};
                                 libc_snprintf((char *)(uint8_t *)(&dim_str[0]), 16, (const char *)str986, dims[i]);
                                 std_string_strcat((char *)(uint8_t *)result, (uint8_t *)(&dim_str[0]));
                                 i = (i + 1);
@@ -36023,7 +36282,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                         end = (end - 1);
                                     }
                                     uint8_t temp_buf[128] = {0};
-                                    if ((end < 128)) {
+                                    if ((end < STRUCT_NAME_BUF_SIZE)) {
                                         size_t j = 0;
                                         while ((j < end)) {
                                             uint8_t * const char_ptr = (elem_ptr + j);
@@ -36040,7 +36299,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                 }
                             }
                             uint8_t name_buf[128] = {0};
-                            libc_snprintf((char *)(uint8_t *)(&name_buf[0]), 128, (const char *)str1172, (uint8_t *)elem_clean);
+                            libc_snprintf((char *)(uint8_t *)(&name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1172, (uint8_t *)elem_clean);
                             uint8_t * const safe = c99_arena_strdup(codegen->arena, (&name_buf[0]));
                             if ((safe == NULL)) {
                                 uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str186;
@@ -36235,7 +36494,7 @@ static __attribute__((unused)) uint8_t * get_slice_struct_type_c(struct C99CodeG
             }
         }
         uint8_t name_buf[128] = {0};
-        libc_snprintf((char *)(uint8_t *)(&name_buf[0]), 128, (const char *)str1172, (uint8_t *)elem_simple);
+        libc_snprintf((char *)(uint8_t *)(&name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1172, (uint8_t *)elem_simple);
         uint8_t * const safe = get_safe_c_identifier(codegen, (&name_buf[0]));
         if ((safe == NULL)) {
             uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str719;
@@ -36404,7 +36663,7 @@ static __attribute__((unused)) uint8_t * get_c_type_of_expr(struct C99CodeGenera
                                                             }
                                                             uint8_t * const safe_obj_type = get_safe_c_identifier(codegen, (uint8_t *)struct_name_src);
                                                             if ((safe_obj_type != NULL)) {
-                                                                libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), 128, (const char *)str309, (uint8_t *)safe_obj_type);
+                                                                libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str309, (uint8_t *)safe_obj_type);
                                                             }
                                                             struct ASTNode * const method_fn = find_method_in_struct_c99(codegen, (&struct_name_buf[0]), method_name);
                                                             if (((method_fn != NULL) && (method_fn->type == AST_FN_DECL))) {
@@ -37051,12 +37310,14 @@ static __attribute__((unused)) uint8_t * get_array_wrapper_struct_name(struct C9
             elem_name = (uint8_t *)(uint8_t *)(uint8_t *)str172;
         }
         if ((first == 0)) {
-            name_buf[pos] = 95;
+            if (((pos >= 0) && (pos < NAME_BUF_SIZE))) {
+                name_buf[pos] = 95;
+            }
             pos = (pos + 1);
         }
         first = 0;
         const int32_t name_len = std_string_strlen((uint8_t *)elem_name);
-        if (((pos + name_len) < 255)) {
+        if (((pos + name_len) < TEMP_BUF_LIMIT)) {
             memcpy((void *)(&name_buf[pos]), (void *)elem_name, name_len);
             pos = (pos + name_len);
         }
@@ -37066,7 +37327,7 @@ static __attribute__((unused)) uint8_t * get_array_wrapper_struct_name(struct C9
                 uint8_t size_str[32] = {0};
                 libc_snprintf((char *)(uint8_t *)(&size_str[0]), 32, (const char *)str1183, size);
                 const int32_t size_len = std_string_strlen((uint8_t *)(&size_str[0]));
-                if (((pos + size_len) < 255)) {
+                if (((pos + size_len) < TEMP_BUF_LIMIT)) {
                     memcpy((void *)(&name_buf[pos]), (void *)(&size_str[0]), size_len);
                     pos = (pos + size_len);
                 }
@@ -37074,7 +37335,9 @@ static __attribute__((unused)) uint8_t * get_array_wrapper_struct_name(struct C9
         }
         current = element_type;
     }
-    name_buf[pos] = 0;
+    if (((pos >= 0) && (pos < NAME_BUF_SIZE))) {
+        name_buf[pos] = 0;
+    }
     uint8_t * _uya_ret = c99_arena_strdup(codegen->arena, (uint8_t *)(&name_buf[0]));
     return _uya_ret;
 }
@@ -37365,11 +37628,15 @@ static __attribute__((unused)) int32_t c99_codegen_set_mono_instances(struct C99
     }
     codegen->mono_instance_count = 0;
     int32_t i = 0;
-    while (((i < checker->mono_instance_count) && (i < C99_MAX_MONO_INSTANCES))) {
-        codegen->mono_instances[i].generic_name = checker->mono_instances[i].generic_name;
-        codegen->mono_instances[i].is_function = checker->mono_instances[i].is_function;
-        codegen->mono_instances[i].type_arg_count = checker->mono_instances[i].type_arg_count;
-        codegen->mono_instances[i].type_args = checker->mono_instances[i].type_arg_nodes;
+    const int32_t count = checker->mono_instance_count;
+    while (((i < count) && (i < C99_MAX_MONO_INSTANCES))) {
+        const int32_t idx = i;
+        if (((idx >= 0) && (idx < C99_MAX_MONO_INSTANCES))) {
+            codegen->mono_instances[idx].generic_name = checker->mono_instances[idx].generic_name;
+            codegen->mono_instances[idx].is_function = checker->mono_instances[idx].is_function;
+            codegen->mono_instances[idx].type_arg_count = checker->mono_instances[idx].type_arg_count;
+            codegen->mono_instances[idx].type_args = checker->mono_instances[idx].type_arg_nodes;
+        }
         codegen->mono_instance_count = (codegen->mono_instance_count + 1);
         i = (i + 1);
     }
@@ -37403,14 +37670,17 @@ static __attribute__((unused)) int32_t c99_get_or_add_error_id(struct C99CodeGen
     }
     const uint32_t h = c99_hash_error_name((uint8_t *)name);
     int32_t i = 0;
-    while ((i < codegen->error_count)) {
-        if (((codegen->error_names[i] != NULL) && (std_string_strcmp((uint8_t *)codegen->error_names[i], (uint8_t *)name) == 0))) {
-            int32_t _uya_ret = (int32_t)codegen->error_hashes[i];
-            return _uya_ret;
+    const int32_t ecount = codegen->error_count;
+    while ((i < ecount)) {
+        if (((i >= 0) && (i < C99_MAX_ERROR_IDS))) {
+            if (((codegen->error_names[i] != NULL) && (std_string_strcmp((uint8_t *)codegen->error_names[i], (uint8_t *)name) == 0))) {
+                int32_t _uya_ret = (int32_t)codegen->error_hashes[i];
+                return _uya_ret;
+            }
         }
         i = (i + 1);
     }
-    if ((codegen->error_count >= 256)) {
+    if ((codegen->error_count >= C99_MAX_ERROR_IDS)) {
         int32_t _uya_ret = 0;
         return _uya_ret;
     }
@@ -37419,8 +37689,11 @@ static __attribute__((unused)) int32_t c99_get_or_add_error_id(struct C99CodeGen
         int32_t _uya_ret = 0;
         return _uya_ret;
     }
-    codegen->error_names[codegen->error_count] = copy;
-    codegen->error_hashes[codegen->error_count] = h;
+    const int32_t err_idx = codegen->error_count;
+    if (((err_idx >= 0) && (err_idx < C99_MAX_ERROR_IDS))) {
+        codegen->error_names[err_idx] = copy;
+        codegen->error_hashes[err_idx] = h;
+    }
     codegen->error_count = (codegen->error_count + 1);
     int32_t _uya_ret = (int32_t)h;
     return _uya_ret;
@@ -37554,19 +37827,19 @@ static __attribute__((unused)) uint8_t * get_safe_c_identifier(struct C99CodeGen
     }
     uint8_t buf[128] = {0};
     if ((is_c_reserved_name((uint8_t *)name) != 0)) {
-        libc_snprintf((char *)(uint8_t *)(&buf[0]), 128, (const char *)str1211, (uint8_t *)name);
+        libc_snprintf((char *)(uint8_t *)(&buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1211, (uint8_t *)name);
         uint8_t * _uya_ret = c99_arena_strdup(codegen->arena, (uint8_t *)(&buf[0]));
         return _uya_ret;
     }
     int32_t prefix = 1;
     while ((prefix <= 3)) {
         if ((prefix == 1)) {
-            libc_snprintf((char *)(uint8_t *)(&buf[0]), 128, (const char *)str310, (uint8_t *)name);
+            libc_snprintf((char *)(uint8_t *)(&buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str310, (uint8_t *)name);
         } else {
             if ((prefix == 2)) {
-                libc_snprintf((char *)(uint8_t *)(&buf[0]), 128, (const char *)str1212, (uint8_t *)name);
+                libc_snprintf((char *)(uint8_t *)(&buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1212, (uint8_t *)name);
             } else {
-                libc_snprintf((char *)(uint8_t *)(&buf[0]), 128, (const char *)str1211, (uint8_t *)name);
+                libc_snprintf((char *)(uint8_t *)(&buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1211, (uint8_t *)name);
             }
         }
         if ((is_c_keyword((uint8_t *)(&buf[0])) == 0)) {
@@ -37595,7 +37868,7 @@ static __attribute__((unused)) uint8_t * add_string_constant(struct C99CodeGener
         return _uya_ret;
     }
     uint8_t name_buf[32] = {0};
-    libc_snprintf((char *)(uint8_t *)(&name_buf[0]), 32, (const char *)str1213, codegen->string_constant_count);
+    libc_snprintf((char *)(uint8_t *)(&name_buf[0]), NUM_BUF_SIZE, (const char *)str1213, codegen->string_constant_count);
     codegen->string_constants[codegen->string_constant_count].name = c99_arena_strdup(codegen->arena, (uint8_t *)(&name_buf[0]));
     codegen->string_constants[codegen->string_constant_count].value = value;
     codegen->string_constant_count = (codegen->string_constant_count + 1);
@@ -37813,11 +38086,11 @@ static __attribute__((unused)) uint8_t * build_and_add_printf_fmt_from_interp(st
     uint8_t buf[2048] = {0};
     int32_t off = 0;
     int32_t i = 0;
-    while (((i < n) && (off < 2016))) {
+    while (((i < n) && (off < (C99_STRING_INTERP_BUF_SIZE - 32)))) {
         struct ASTStringInterpSegment * const seg = (&interp->string_interp_segments[i]);
         if (((seg->is_text != 0) && (seg->text != NULL))) {
             int32_t p = 0;
-            while (((seg->text[p] != 0) && (off < 2012))) {
+            while (((seg->text[p] != 0) && (off < (C99_STRING_INTERP_BUF_SIZE - 36)))) {
                 if ((seg->text[p] == 37)) {
                     buf[off] = 37;
                     off = (off + 1);
@@ -37834,7 +38107,7 @@ static __attribute__((unused)) uint8_t * build_and_add_printf_fmt_from_interp(st
             off = (off + 1);
             if (((seg->format_spec != NULL) && (seg->format_spec[0] != 0))) {
                 int32_t k = 0;
-                while (((seg->format_spec[k] != 0) && (off < 2046))) {
+                while (((seg->format_spec[k] != 0) && (off < C99_STRING_INTERP_LIMIT))) {
                     buf[off] = seg->format_spec[k];
                     off = (off + 1);
                     k = (k + 1);
@@ -37846,7 +38119,9 @@ static __attribute__((unused)) uint8_t * build_and_add_printf_fmt_from_interp(st
         }
         i = (i + 1);
     }
-    buf[off] = 0;
+    if (((off >= 0) && (off < C99_STRING_INTERP_BUF_SIZE))) {
+        buf[off] = 0;
+    }
     uint8_t * _uya_ret = add_string_constant(codegen, (uint8_t *)(&buf[0]));
     return _uya_ret;
 }
@@ -37864,11 +38139,11 @@ static __attribute__((unused)) void emit_printf_fmt_inline(struct C99CodeGenerat
     uint8_t buf[2048] = {0};
     int32_t off = 0;
     int32_t i = 0;
-    while (((i < n) && (off < 2016))) {
+    while (((i < n) && (off < (C99_STRING_INTERP_BUF_SIZE - 32)))) {
         struct ASTStringInterpSegment * const seg = (&interp->string_interp_segments[i]);
         if (((seg->is_text != 0) && (seg->text != NULL))) {
             int32_t p = 0;
-            while (((seg->text[p] != 0) && (off < 2012))) {
+            while (((seg->text[p] != 0) && (off < (C99_STRING_INTERP_BUF_SIZE - 36)))) {
                 if ((seg->text[p] == 37)) {
                     buf[off] = 37;
                     off = (off + 1);
@@ -37885,7 +38160,7 @@ static __attribute__((unused)) void emit_printf_fmt_inline(struct C99CodeGenerat
             off = (off + 1);
             if (((seg->format_spec != NULL) && (seg->format_spec[0] != 0))) {
                 int32_t k = 0;
-                while (((seg->format_spec[k] != 0) && (off < 2046))) {
+                while (((seg->format_spec[k] != 0) && (off < C99_STRING_INTERP_LIMIT))) {
                     buf[off] = seg->format_spec[k];
                     off = (off + 1);
                     k = (k + 1);
@@ -37897,7 +38172,9 @@ static __attribute__((unused)) void emit_printf_fmt_inline(struct C99CodeGenerat
         }
         i = (i + 1);
     }
-    buf[off] = 0;
+    if (((off >= 0) && (off < C99_STRING_INTERP_BUF_SIZE))) {
+        buf[off] = 0;
+    }
     libc_fputc(34, (void *)codegen->output);
     escape_string_for_c(codegen->output, (uint8_t *)(&buf[0]));
     libc_fputc(34, (void *)codegen->output);
@@ -37959,7 +38236,7 @@ static __attribute__((unused)) void collect_string_constants_from_expr(struct C9
                                 int32_t j = 1;
                                 if (((seg->format_spec != NULL) && (seg->format_spec[0] != 0))) {
                                     int32_t k = 0;
-                                    while (((seg->format_spec[k] != 0) && (j < 62))) {
+                                    while (((seg->format_spec[k] != 0) && (j < (FMT_BUF_SIZE - 2)))) {
                                         fmt_buf[j] = seg->format_spec[k];
                                         j = (j + 1);
                                         k = (k + 1);
@@ -37968,7 +38245,9 @@ static __attribute__((unused)) void collect_string_constants_from_expr(struct C9
                                     fmt_buf[1] = 100;
                                     j = 2;
                                 }
-                                fmt_buf[j] = 0;
+                                if (((j >= 0) && (j < FMT_BUF_SIZE))) {
+                                    fmt_buf[j] = 0;
+                                }
                                 uint8_t * const fmt_in_arena = c99_arena_strdup(codegen->arena, (uint8_t *)(&fmt_buf[0]));
                                 if ((fmt_in_arena != NULL)) {
                                     add_string_constant(codegen, fmt_in_arena);
