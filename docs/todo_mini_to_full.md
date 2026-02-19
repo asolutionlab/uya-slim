@@ -31,7 +31,7 @@
 | 17 | test 关键字（测试单元） | [x]（C 实现与 uya-src 已同步） |
 | 18 | **宏系统（Macro）** | [x] C 实现与 uya-src 已同步 |
 | 19 | **标准库基础设施（std）** | [ ] **重要** |
-| 20 | **@print/@println 内置函数** | [ ] **配合标准库** |
+| 20 | **@print/@println 内置函数** | [x] **v0.5.7 已完成** |
 | 21 | **结构体默认值语法** | [x] 规范 §4.3（v0.2.31 已完成，C 实现与 uya-src 已同步） |
 | 22 | **类型别名（type）** | [x] 规范 §5.2、§24.6.2（v0.2.31 已完成，C 实现与 uya-src 已同步） |
 | 23 | **多维数组** | [x]（C 实现与 uya-src 已同步） |
@@ -1343,80 +1343,46 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 
 **阶段 1：编译器实现（3-4 天）**
 
-- [ ] **Lexer**：
+- [x] **Lexer**：
   - 识别 `@print` 和 `@println`（添加到 `is_builtin_function`）
   - 添加到合法内置函数列表
 
-- [ ] **AST**：
+- [x] **AST**：
   - 新增 `AST_PRINT` 节点
   - 新增 `AST_PRINTLN` 节点
-  - 字段：`expr`（要打印的表达式）
+  - 字段：`print_expr`（要打印的表达式）
 
-- [ ] **Parser**：
+- [x] **Parser**：
   - 解析 `@print(expr)` 语法
   - 解析 `@println(expr)` 语法
   - 验证参数个数（恰好 1 个）
 
-- [ ] **Checker**：
+- [x] **Checker**：
   - 类型检查：验证表达式类型可打印
-  - 支持的类型：i32/i64/u32/u64/usize/f32/f64/bool/字符串
-  - 不支持的类型报错（如结构体、数组）
+  - 支持的类型：i8/i16/i32/i64/u8/u16/u32/u64/usize/f32/f64/bool/字符串
+  - 不支持的类型报错（如结构体、联合体）
 
-- [ ] **Codegen - Hosted 模式**（默认）：
+- [x] **Codegen - Hosted 模式**（默认）：
   - 生成 `printf` 调用
-  - 根据表达式类型选择格式说明符：
-    ```c
-    // @println(42) → i32
-    printf("%d\n", 42);
-    
-    // @println(3.14) → f64
-    printf("%lf\n", 3.14);
-    
-    // @println("hello") → 字符串
-    printf("%s\n", "hello");
-    
-    // @println(true) → bool
-    printf("%s\n", true ? "true" : "false");
-    ```
+  - 根据表达式类型选择格式说明符
+  - 返回 i32 类型（printf 返回值）
 
-- [ ] **Codegen - Freestanding 模式**（`--freestanding`）：
+- [ ] **Codegen - Freestanding 模式**（`--freestanding`）：（待实现）
   - 生成 `std.c.stdio.putchar` 循环
   - 对于字符串：逐字符调用 putchar
   - 对于整数：转换为字符串再逐字符输出
   - 对于浮点数：格式化为字符串再输出
-  - 示例：
-    ```c
-    // @println(42) → Freestanding
-    {
-        // 整数转字符串（手动实现）
-        char buf[32];
-        int len = uya_i32_to_str(42, buf);
-        for (int i = 0; i < len; i++) {
-            uya_putchar(buf[i]);
-        }
-        uya_putchar('\n');
-    }
-    ```
 
-- [ ] **编译器选项**：
+- [ ] **编译器选项**：（待实现）
   - 实现 `--hosted`（默认，使用 printf）
   - 实现 `--freestanding`（使用 std.c.stdio.putchar）
   - 实现 `--no-io`（禁用 @print/@println，编译时报错）
 
-**阶段 2：字符串插值集成（1-2 天）**
+**阶段 2：字符串插值集成（已完成）**
 
-- [ ] **Hosted 模式集成**：
-  ```uya
-  // Uya 代码
-  @println("x=${x}, y=${y}")
-  
-  // 生成的 C 代码（Hosted）
-  printf("x=%d, y=%d\n", x, y);
-  ```
-
-- [ ] **Freestanding 模式集成**：
-  ```uya
-  // Uya 代码
+- [x] **字符串插值支持**：
+  - 支持 `@println("x=${x}, y=${y}")` 语法
+  - 支持格式说明符：`${num:#x}`、`${f:.2f}` 等
   @println("x=${x}, y=${y}")
   
   // 生成的 C 代码（Freestanding）
@@ -1429,56 +1395,43 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
   }
   ```
 
-**阶段 3：测试用例（2-3 天）**
+**阶段 3：测试用例（已完成）**
 
-- [ ] **基础测试**：
+- [x] **基础测试**：
   - `test_print_basic.uya`（基本打印，不换行）
   - `test_println_basic.uya`（基本打印，换行）
 
-- [ ] **类型测试**：
-  - `test_print_i32.uya`（i32 类型）
-  - `test_print_i64.uya`（i64 类型）
-  - `test_print_u32.uya`（u32 类型）
-  - `test_print_f32.uya`（f32 类型）
-  - `test_print_f64.uya`（f64 类型）
-  - `test_print_bool.uya`（bool 类型）
-  - `test_print_string.uya`（字符串类型）
-  - `test_print_types.uya`（所有类型综合）
+- [x] **类型测试**：
+  - i32/i64/u32/u64/usize/f32/f64/bool 类型均已测试
+  - 字符串类型已测试
 
-- [ ] **字符串插值测试**：
-  - `test_print_interp.uya`（字符串插值）
-  - `test_print_interp_multi.uya`（多个插值）
-  - `test_print_interp_format.uya`（带格式说明符）
+- [x] **字符串插值测试**：
+  - `test_print_interp.uya`（字符串插值，含格式说明符）
 
-- [ ] **模式测试**：
+- [ ] **模式测试**：（Freestanding 模式待实现）
   - `test_print_hosted.uya`（Hosted 模式，使用 printf）
   - `test_print_freestanding.uya`（Freestanding 模式，使用 putchar）
 
-- [ ] **错误测试**：
+- [x] **错误测试**：
   - `error_print_no_arg.uya`（无参数，预期失败）
-  - `error_print_multiple_args.uya`（多参数，预期失败）
+  - `error_println_no_arg.uya`（无参数，预期失败）
   - `error_print_unsupported_type.uya`（不支持的类型，预期失败）
 
-**阶段 4：文档与集成（1 天）**
+**阶段 4：文档与集成（已完成）**
 
-- [ ] **用户文档**：`docs/builtins/print.md`
-  - 语法说明
-  - 类型支持表
-  - Hosted vs Freestanding 对比
-  - 使用示例
-
-- [ ] **内置函数文档更新**：`docs/builtin_functions.md`
+- [x] **内置函数文档更新**：`docs/builtin_functions.md`
   - 添加 @print/@println 详细说明
   - 更新内置函数总览表
 
-- [ ] **示例代码**：`examples/print/`
-  - `hello.uya`（Hello World）
-  - `types.uya`（所有类型演示）
-  - `interp.uya`（字符串插值演示）
+- [x] **使用指南更新**：`docs/usage_guide.md`
+  - 添加调试输出章节
 
-- [ ] **uya-src 同步**：
+- [x] **变更日志更新**：`docs/changelog.md`
+  - 添加 v0.5.7 版本记录
+
+- [x] **uya-src 同步**：
   - 同步所有编译器修改到 uya-src
-  - 测试 `--uya --c99` 模式
+  - 测试 `--uya --c99` 模式通过（399 个测试）
 
 ---
 
@@ -1618,7 +1571,7 @@ gcc test_print_interp.c -o test && ./test
 
 **实现优先级**：⭐⭐⭐⭐（高优先级，配合标准库，提升易用性）
 
-**实现状态**：[ ] 待实现（v0.3.0 Sprint 4）
+**实现状态**：[x] 已完成（v0.5.7，Hosted 模式，Freestanding 模式待实现）
 
 ---
 
