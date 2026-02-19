@@ -1496,6 +1496,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 前向声明：stdin/stdout/stderr 的存储（&_stdin 等）在 export 变量初始化中引用
     fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, codegen.output as *void);
     
+    // 测试函数需要 _uya_exit（用于 void 函数中的 try 表达式）
+    if test_count > 0 {
+        fputs("extern void std_runtime__uya_exit(int);\n" as *byte, codegen.output as *void);
+    }
+    
     // 第九步 a：先生成所有常量（确保在函数之前定义）
     i = 0;
     while i < decl_count {
@@ -1858,7 +1863,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("    printf(\"\\n=== Results ===\\n\");\n" as *byte, codegen.output as *void);
         fputs("    printf(\"  Passed: %d\\n\", _test_passed);\n" as *byte, codegen.output as *void);
         fputs("    printf(\"  Failed: %d\\n\", _test_failed);\n" as *byte, codegen.output as *void);
-        fputs("    return 0;\n" as *byte, codegen.output as *void);
+        fputs("    return _test_failed;\n" as *byte, codegen.output as *void);
         fputs("}\n" as *byte, codegen.output as *void);
     }
     

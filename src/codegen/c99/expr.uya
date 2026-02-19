@@ -471,7 +471,11 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     fputs("; if (_uya_try_tmp.error_id != 0) return _uya_try_tmp; _uya_try_tmp.value; })" as *byte, codegen.output as *void);
                 }
             } else {
-                fputs("0" as *byte, codegen.output as *void);
+                // 函数返回 void（或非 error union 类型）：try 表达式在错误时打印错误并退出
+                // 适用于 test "name" {} 块等 void 函数
+                fprintf(codegen.output as *void, "({ %s _uya_try_tmp = " as *byte, operand_union_c as *byte);
+                gen_expr(codegen, operand);
+                fputs("; if (_uya_try_tmp.error_id != 0) { printf(\"\\n  ERROR: try failed\\n\"); std_runtime__uya_exit(1); } _uya_try_tmp.value; })" as *byte, codegen.output as *void);
             }
             return;
         }
