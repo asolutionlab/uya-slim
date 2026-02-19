@@ -6,6 +6,19 @@
 
 ---
 
+## 版本里程碑
+
+| 版本 | 名称 | 状态 | 说明 |
+|------|------|------|------|
+| **v0.5.9** | --outlibc | ✅ 完成 | 生成独立 libc 库 |
+| **v0.5.8** | 零依赖构建 | ✅ 完成 | 编译器 -nostdlib 构建 |
+| **v0.5.7** | 调试打印 | ✅ 完成 | @print/@println 内置函数 |
+| **v0.5.0** | 内存安全证明 | ✅ 完成 | 约束系统 + 符号执行 |
+| **v0.6.0** | 标准库重构 | 🚧 进行中 | std 使用现代特性，libc 薄封装 |
+| **v0.7.0** | 异步完善 | 📋 计划中 | CPS 变换 + 状态机生成 |
+
+---
+
 ## 建议实现顺序（总览）
 
 | 序号 | 阶段 | 状态 |
@@ -972,52 +985,306 @@ test "函数调用测试" {
 
 ---
 
-## 19. 标准库基础设施（std）
+## 19. 标准库基础设施（std）- 重构计划 v0.6.0
 
-**详细设计文档**：
-- 同步标准库（`std.c`、`std.io`、`std.fmt` 等）：[`docs/std_c_design.md`](./docs/std_c_design.md)
-- 异步标准库（`std.async.*`）：[`docs/std_async_design.md`](./docs/std_async_design.md)
+**核心设计理念**：分层架构，std 使用 Uya 现代特性，libc 在 std 基础上做薄封装。
 
-**核心目标**：
+### 19.0 架构重构目标
 
-1. **编译器完全不依赖外部 C 标准库**
-   - Uya 编译器自身使用 std.c（自己实现的标准库）
-   - 实现真正的自举：用 Uya 实现的编译器 + 用 Uya 实现的标准库
+| 层级 | 名称 | 特性 | 用途 |
+|------|------|------|------|
+| **std/** | Uya 标准库 | !T, interface, 泛型, union, mc | Uya 程序首选 |
+| **libc/** | C 兼容层 | 薄封装，C99 ABI，零依赖 | C 程序互操作 |
 
-2. **生成无依赖的 libc 给第三方使用**
-   - 通过 `--outlibc` 生成单文件 C 库（libuya.c + libuya.h）
-   - 生成的库零外部依赖，可替代 musl/glibc
+**设计原则**：
 
-**架构概览**（标准库位于 `lib/std/` 目录，通过 `UYA_ROOT` 环境变量指向 `lib/`）：
+1. **std 使用 Uya 现代特性**
+   - `!T` 错误处理替代裸指针返回
+   - `interface` 定义抽象（Writer, Reader, Iterator）
+   - `union Option<T>` / `union Result<T, E>` 类型安全
+   - 泛型容器（Vec<T>, HashMap<K, V>）
+   - `mc` 宏实现编译期优化
+
+2. **libc 是 std 的薄封装**
+   - 保持 C99 标准库签名兼容（musl/glibc）
+   - 内部调用 std 实现，零重复代码
+   - 更安全的 API（边界检查、空指针防护）
+
+3. **分层依赖**
+   ```
+   libc/  →  std/  →  syscall/
+   (C ABI)  (Uya)    (底层)
+   ```
+
+### 19.0.1 新架构概览
+
 ```
 lib/
-└── std/
-    ├── c/              # 纯 Uya 实现的 C 标准库（musl 替代）
-    │   ├── syscall/    # 系统调用封装（Linux/Windows/macOS）
-    │   │   └── syscall.uya
-    │   ├── string/     # 字符串和内存操作
-    │   │   └── string.uya
-    │   ├── stdio/      # 标准 I/O
-    │   │   └── stdio.uya
-    │   ├── stdlib/     # 内存分配、进程控制（部分完成，存在运行时问题）
-    │   └── math/       # 数学函数（待实现）
-    ├── io/             # 平台无关同步 I/O 抽象
-    ├── async/          # 异步编程标准库（详见 docs/std_async_design.md）
-    │   ├── io/         # AsyncWriter / AsyncReader
-    │   ├── task.uya    # Task<T>, Waker
-    │   ├── event/      # 平台事件后端（epoll/kqueue/IOCP）
-    │   ├── channel.uya # Channel<T>, MpscChannel<T>
-    │   └── scheduler.uya # Scheduler 事件循环调度器
-    ├── fmt/            # 格式化库（纯 Uya 实现）
-    ├── bare_metal/     # 裸机平台支持
-    └── builtin/        # 编译器内置运行时
+├── std/                          # Uya 风格标准库（使用现代特性）
+│   ├── core/                     # 核心类型和 trait
+│   │   ├── error.uya             # 错误类型定义（使用 union）
+│   │   ├── option.uya            # Option<T> = union { Some: T, None }
+│   │   ├── result.uya            # Result<T, E> = union { Ok: T, Err: E }
+│   │   └── traits.uya            # 核心接口（Clone, Eq, Ord, Hash）
+│   ├── io/                       # I/O 抽象（使用 interface）
+│   │   ├── writer.uya            # interface Writer { write(&Self, &[u8]) !usize }
+│   │   ├── reader.uya            # interface Reader { read(&Self, &[u8]) !usize }
+│   │   └── file.uya              # struct File : Writer, Reader
+│   ├── string/                   # 字符串操作（使用 !T 错误处理）
+│   │   └── string.uya            # fn parse_int(s: &str) !i32
+│   ├── mem/                      # 内存操作
+│   │   └── mem.uya               # fn copy(dst: &T, src: &const T, n: usize)
+│   ├── collections/              # 泛型容器
+│   │   ├── vec.uya               # struct Vec<T> { ... }
+│   │   └── map.uya               # struct HashMap<K: Hash, V> { ... }
+│   ├── syscall/                  # 系统调用封装
+│   │   └── linux.uya             # Linux syscall 封装
+│   ├── fmt/                      # 格式化（纯 Uya）
+│   │   └── fmt.uya               # fn format<T: Display>(v: T) !String
+│   └── runtime/                  # 运行时支持
+│       └── runtime.uya           # 程序入口、panic 处理
+│
+└── libc/                         # C 兼容层（薄封装）
+    ├── syscall.uya               # syscall 封装（调用 std.syscall）
+    ├── string.uya                # C 签名：strlen, strcmp...（调用 std.string）
+    ├── stdio.uya                 # C 签名：printf, fopen...（调用 std.io）
+    ├── stdlib.uya                # C 签名：malloc, free...（调用 std.mem）
+    ├── mem.uya                   # C 签名：memcpy, memset...
+    └── unistd.uya                # C 签名：read, write...
 ```
 
+### 19.0.2 Sprint 6: std.core 核心类型（1 周）⭐⭐⭐⭐⭐
+
+**目标**：实现 Option<T>, Result<T, E>, Error 等核心类型
+
+- [ ] **std.core.error** - 错误类型
+  ```uya
+  // 错误类型定义
+  union Error {
+      None,                        // 无错误
+      Message: &[i8],             // 错误消息
+      Code: i32,                  // 错误码
+      System: i32                 // 系统错误码（errno）
+  }
+  
+  export fn error_message(e: &Error) &const byte;
+  export fn error_from_errno(errno: i32) Error;
+  ```
+
+- [ ] **std.core.option** - Option<T> 类型
+  ```uya
+  union Option<T> {
+      Some: T,
+      None
+  }
+  
+  // 泛型方法（需要编译器支持）
+  fn is_some<T>(self: &Option<T>) bool;
+  fn is_none<T>(self: &Option<T>) bool;
+  fn unwrap<T>(self: &Option<T>) !T;  // None 时返回错误
+  fn unwrap_or<T>(self: &Option<T>, default: T) T;
+  ```
+
+- [ ] **std.core.result** - Result<T, E> 类型
+  ```uya
+  union Result<T, E: Error> {
+      Ok: T,
+      Err: E
+  }
+  
+  fn is_ok<T, E>(self: &Result<T, E>) bool;
+  fn is_err<T, E>(self: &Result<T, E>) bool;
+  fn unwrap<T, E>(self: &Result<T, E>) !T;
+  fn unwrap_err<T, E>(self: &Result<T, E>) !E;
+  ```
+
+- [ ] **std.core.traits** - 核心接口
+  ```uya
+  // Clone 接口
+  interface Clone {
+      fn clone(self: &Self) Self;
+  }
+  
+  // Eq 接口
+  interface Eq {
+      fn eq(self: &Self, other: &Self) bool;
+  }
+  
+  // Ord 接口
+  interface Ord {
+      fn cmp(self: &Self, other: &Self) i32;  // -1, 0, 1
+  }
+  
+  // Hash 接口
+  interface Hash {
+      fn hash(self: &Self) u64;
+  }
+  
+  // Display 接口
+  interface Display {
+      fn fmt(self: &Self, writer: &Writer) !void;
+  }
+  ```
+
+### 19.0.3 Sprint 7: std.io I/O 抽象层（1 周）⭐⭐⭐⭐
+
+**目标**：使用 interface 定义 I/O 抽象
+
+- [ ] **std.io.writer** - Writer 接口
+  ```uya
+  interface Writer {
+      fn write(self: &Self, data: &[u8]) !usize;
+      fn write_str(self: &Self, s: &const byte) !usize;
+      fn flush(self: &Self) !void;
+  }
+  
+  // 辅助函数
+  fn write_all(w: &Writer, data: &[u8]) !void;
+  fn write_byte(w: &Writer, b: u8) !void;
+  ```
+
+- [ ] **std.io.reader** - Reader 接口
+  ```uya
+  interface Reader {
+      fn read(self: &Self, buf: &[u8]) !usize;
+      fn read_exact(self: &Self, buf: &[u8]) !void;
+  }
+  
+  // 辅助函数
+  fn read_to_end(r: &Reader, buf: &Vec<u8>) !usize;
+  fn read_line(r: &Reader, buf: &[u8]) !usize;
+  ```
+
+- [ ] **std.io.file** - File 实现
+  ```uya
+  struct File : Writer, Reader {
+      fd: i32,
+      path: &[i8],
+      
+      fn open(path: &const byte, mode: i32) !File;
+      fn close(self: &Self) !void;
+      fn write(self: &Self, data: &[u8]) !usize;
+      fn read(self: &Self, buf: &[u8]) !usize;
+  }
+  
+  // 标准流
+  const stdin: File = File{ fd: 0, ... };
+  const stdout: File = File{ fd: 1, ... };
+  const stderr: File = File{ fd: 2, ... };
+  ```
+
+### 19.0.4 Sprint 8: std.string 字符串操作（1 周）⭐⭐⭐⭐
+
+**目标**：使用 !T 错误处理重构字符串操作
+
+- [ ] **std.string.string** - 安全字符串操作
+  ```uya
+  // 安全版字符串函数（使用 !T 返回错误）
+  export fn strlen(s: &const byte) usize;
+  export fn strcmp(s1: &const byte, s2: &const byte) i32;
+  
+  // 返回错误版本
+  export fn parse_int(s: &const byte) !i32;
+  export fn parse_uint(s: &const byte) !u32;
+  export fn parse_float(s: &const byte) !f64;
+  
+  // 切片操作
+  export fn split(s: &const byte, delim: byte) Vec<&[i8]>;
+  export fn trim(s: &const byte) &const byte;
+  export fn to_lower(s: &byte) void;
+  export fn to_upper(s: &byte) void;
+  
+  // 安全复制
+  export fn copy_safe(dst: &byte, dst_len: usize, src: &const byte) !void;
+  export fn cat_safe(dst: &byte, dst_len: usize, src: &const byte) !void;
+  ```
+
+### 19.0.5 Sprint 9: std.collections 泛型容器（2 周）⭐⭐⭐
+
+**目标**：实现泛型容器（需要泛型编译器支持）
+
+- [ ] **std.collections.vec** - 动态数组
+  ```uya
+  struct Vec<T> {
+      data: &T,
+      len: usize,
+      cap: usize,
+      
+      fn new() Vec<T>;
+      fn with_capacity(cap: usize) !Vec<T>;
+      fn push(self: &Self, value: T) !void;
+      fn pop(self: &Self) Option<T>;
+      fn get(self: &Self, i: usize) !&T;      // 边界检查
+      fn get_unchecked(self: &Self, i: usize) &T;
+      fn len(self: &Self) usize;
+      fn is_empty(self: &Self) bool;
+      fn clear(self: &Self) void;
+      fn drop(self: &Self) void;              // RAII
+  }
+  ```
+
+- [ ] **std.collections.string_buf** - 字符串缓冲区
+  ```uya
+  struct StringBuf {
+      buf: Vec<u8>,
+      
+      fn new() StringBuf;
+      fn from(s: &const byte) !StringBuf;
+      fn push(self: &Self, c: byte) !void;
+      fn push_str(self: &Self, s: &const byte) !void;
+      fn as_str(self: &Self) &[i8];
+      fn clear(self: &Self) void;
+  }
+  ```
+
+### 19.0.6 Sprint 10: libc 薄封装（1 周）⭐⭐⭐⭐
+
+**目标**：在 std 基础上实现 C 兼容层
+
+- [ ] **libc.string** - C 签名字符串函数
+  ```uya
+  // 薄封装：调用 std.string，保持 C 签名
+  export extern fn strlen(s: *const byte) usize {
+      return std.strlen(s as &const byte);
+  }
+  
+  export extern fn strcmp(s1: *const byte, s2: *const byte) i32 {
+      return std.strcmp(s1 as &const byte, s2 as &const byte);
+  }
+  
+  // 安全增强版
+  export extern fn strcpy(dst: *byte, src: *const byte) *byte {
+      const len: usize = std.strlen(src as &const byte);
+      std.mem.copy(dst as &byte, src as &const byte, len + 1);
+      return dst;
+  }
+  ```
+
+- [ ] **libc.stdio** - C 签名 I/O 函数
+  ```uya
+  // 薄封装：调用 std.io，保持 C 签名
+  export extern fn fopen(path: *const byte, mode: *const byte) *FILE {
+      const m: i32 = parse_mode(mode);
+      const f: !std.io.File = std.io.File.open(path as &const byte, m);
+      if f is error { return null; }
+      return to_file_ptr(f);
+  }
+  
+  export extern fn fclose(fp: *FILE) i32 {
+      const f: &std.io.File = from_file_ptr(fp);
+      const r: !void = f.close();
+      if r is error { return -1; }
+      return 0;
+  }
+  ```
+
 **关键特性**：
-- ✅ **完全用 Uya 实现**：std.c 是纯 Uya 代码，不是 FFI 绑定
+- ✅ **完全用 Uya 实现**：std 是纯 Uya 代码，不是 FFI 绑定
 - ✅ **零外部依赖**：直接使用系统调用，不依赖任何 C 库
 - ✅ **单文件输出**：`--outlibc` 生成单个 .c 和 .h 文件
 - ✅ **可替代 musl/glibc**：兼容 C ABI，可作为 libc 使用
+- ✅ **类型安全**：std 使用 !T, Option<T>, Result<T, E>
+- ✅ **泛型容器**：Vec<T>, HashMap<K, V>
 
 **实施路线**：
 
@@ -1262,26 +1529,48 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 
 ---
 
-### 19.2 标准库模块清单（长期）
+### 19.2 标准库模块清单（v0.6.0 重构计划）
 
-以下为 v0.3.0 之后的标准库扩展计划：
+**已完成（v0.3.0 - v0.5.9）**：
 
-- [x] `std.c.syscall` - 系统调用封装（v0.3.0，位于 `lib/std/c/syscall/syscall.uya`）
-- [x] `std.c.string` - 字符串和内存操作（v0.3.0，位于 `lib/std/c/string/string.uya`）
-- [x] `std.c.stdio` - 标准 I/O（v0.3.0，位于 `lib/std/c/stdio/stdio.uya`）
-- [~] `std.c.stdlib` - 内存分配、进程控制（v0.3.x，已实现但需修复编译器 FFI 指针限制）
-- [x] `--outlibc` 功能 - 生成独立 libc（v0.3.0 Sprint 5 已完成）
-- [ ] `std.c.math` - 数学函数（纯 Uya，v0.3.x）
-- [ ] `std.io` - 同步 I/O 抽象层（Writer/Reader 接口，v0.4.0）
-- [ ] `std.fmt` - 格式化库（纯 Uya，v0.4.0）
-- [ ] `std.bare_metal` - 裸机平台支持（v0.5.0）
-- [ ] `std.builtin` - 编译器内置运行时（v0.4.0）
-- [ ] `std.target` - 条件编译宏系统（v0.5.0）
-- [ ] `std.async.*` - 异步标准库（v0.4.0+）
+| 模块 | 状态 | 说明 |
+|------|------|------|
+| `std.syscall` | ✅ | 系统调用封装（Linux x86-64） |
+| `std.string` | ✅ | 字符串操作 |
+| `std.mem` | ✅ | 内存操作 |
+| `std.io.file` | ✅ | 文件 I/O |
+| `libc.*` | ✅ | C 兼容层（string, stdio, stdlib, unistd） |
+| `--outlibc` | ✅ | 生成独立 libc |
+
+**v0.6.0 重构计划**：
+
+| Sprint | 模块 | 说明 | 状态 |
+|--------|------|------|------|
+| 6 | `std.core.error` | 错误类型定义 | [ ] |
+| 6 | `std.core.option` | Option<T> 类型 | [ ] |
+| 6 | `std.core.result` | Result<T, E> 类型 | [ ] |
+| 6 | `std.core.traits` | Clone/Eq/Ord/Hash/Display | [ ] |
+| 7 | `std.io.writer` | Writer 接口 | [ ] |
+| 7 | `std.io.reader` | Reader 接口 | [ ] |
+| 7 | `std.io.file` | File 实现（重构） | [ ] |
+| 8 | `std.string` | 安全字符串操作（!T） | [ ] |
+| 9 | `std.collections.vec` | Vec<T> 泛型容器 | [ ] |
+| 9 | `std.collections.string_buf` | StringBuf | [ ] |
+| 10 | `libc.*` | 薄封装（调用 std） | [ ] |
+
+**长期计划**：
+
+- [ ] `std.fmt` - 格式化库（纯 Uya，使用 Display 接口）
+- [ ] `std.collections.map` - HashMap<K, V> 泛型容器
+- [ ] `std.bare_metal` - 裸机平台支持
+- [ ] `std.builtin` - 编译器内置运行时
+- [ ] `std.target` - 条件编译宏系统
+- [ ] `std.async.*` - 异步标准库（详见 std_async_design.md）
 
 **详细实现方案**：
 - 同步部分：参见 [`docs/std_c_design.md`](./docs/std_c_design.md)
 - 异步部分：参见 [`docs/std_async_design.md`](./docs/std_async_design.md)
+- 核心类型设计：参见本文档 Sprint 6-10
 
 ---
 

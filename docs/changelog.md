@@ -4,6 +4,49 @@
 
 ---
 
+## 0.6x 版本变更（规划中）
+
+**发布日期：** 待定
+
+### v0.6.0 - 标准库重构（规划中）
+
+本版本将重构标准库架构，使用 Uya 现代特性。
+
+#### 主要变更
+
+1. **std 使用现代特性**
+   - `!T` 错误处理替代裸指针返回
+   - `union Option<T>` / `union Result<T, E>` 类型安全
+   - `interface` 定义抽象（Writer, Reader, Clone, Eq）
+   - 泛型容器（Vec<T>, StringBuf）
+
+2. **libc 薄封装**
+   - 保持 C99 标准库签名兼容
+   - 内部调用 std 实现，零重复代码
+   - 更安全的 API（边界检查、空指针防护）
+
+3. **分层架构**
+   ```
+   libc/  →  std/  →  syscall/
+   (C ABI)  (Uya)    (底层)
+   ```
+
+#### Sprint 规划
+
+| Sprint | 内容 | 说明 |
+|--------|------|------|
+| 6 | std.core | Error, Option<T>, Result<T, E>, traits |
+| 7 | std.io | Writer/Reader 接口，File 实现 |
+| 8 | std.string | 安全字符串操作（!T） |
+| 9 | std.collections | Vec<T>, StringBuf 泛型容器 |
+| 10 | libc 薄封装 | 调用 std，保持 C ABI |
+
+#### 详细设计
+
+参见 [`docs/std_refactor_design.md`](./std_refactor_design.md)
+
+---
+
 ## 0.55 版本变更（相对于 0.50）
 
 **发布日期：** 2026年2月19日
