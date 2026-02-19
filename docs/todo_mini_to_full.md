@@ -2116,7 +2116,25 @@ interface IReadWriter {
 - ✅ 回归测试全部通过（319 个测试）
 - ✅ 自举对比（`--c99 -b`）一致
 
-### v0.3.0（目标：2026 Q1）- 标准库里程碑
+### v0.5.4（✅ 已完成，2026-02-19）
+- ✅ 代码质量改进
+  - ✅ 替换魔法数字为命名常量（C99_MAX_ERROR_IDS、C99_GENERIC_NAME_BUF_SIZE 等）
+  - ✅ 修复 stmt.uya 中的 bug（j2 = j + 1 → j2 = j2 + 1）
+- ✅ 回归测试全部通过
+
+### v0.5.5（✅ 已完成，2026-02-19）
+- ✅ 编译选项优化
+  - ✅ 移除 -fwrapv 编译标志（使用 gcc -std=c99 -O3 -fno-builtin）
+- ✅ 内存安全验证
+  - ✅ Valgrind 检查通过（0 errors，无内存泄漏）
+  - ✅ 使用 --max-stackframe=10000000 解决大栈帧问题
+- ✅ 文档更新
+  - ✅ 版本说明（RELEASE_v0.5.5.md）
+  - ✅ 使用指南（usage_guide.md）
+  - ✅ 编译器状态报告（compiler_status.md）
+- ✅ 回归测试全部通过（393 个测试）
+
+### v0.3.0（进行中）- 标准库里程碑
 - ✅ 标准库基础设施（Sprint 1-3：@syscall + std.c.{syscall,string,stdio}）
 - 🎯 @print/@println 内置函数
 - 🎯 编译器零外部依赖（-nostdlib 构建）
@@ -2142,4 +2160,4 @@ interface IReadWriter {
 
 ---
 
-*文档版本：与计划「Mini到完整版TODO」一致，便于与 Cursor 计划联动。*
+*文档版本：v0.5.5（2026-02-19），393 测试全部通过，Valgrind 验证通过。*
