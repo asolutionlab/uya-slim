@@ -19,6 +19,14 @@ enum BackendType {
     BACKEND_C99
 }
 
+// 命令类型
+enum CommandType {
+    COMMAND_BUILD,   // uya build - 编译为可执行文件
+    COMMAND_RUN,     // uya run - 编译并运行
+    COMMAND_TEST,    // uya test - 编译测试并运行
+    COMMAND_OUTLIBC  // uya --outlibc - 生成独立 libc
+}
+
 // 文件读取缓冲区大小（与 Lexer 一致）
 const FILE_BUFFER_SIZE: i32 = 1024 * 1024;
 
@@ -224,14 +232,19 @@ fn get_uya_root(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
 fn print_usage(program_name: &byte) void {
     var name: &byte = program_name;
     if name == null { name = "uya" as *byte; }
-    fprintf(libc.stderr, "用法: %s [输入文件...] -o <输出文件> [选项]\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "      %s --outlibc <输出目录>\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "示例: %s program.uya -o program\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "示例: %s program.uya -o program.c --c99  # 生成 C99 代码\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "示例: %s --outlibc /tmp/libuya  # 生成独立 libc\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "Uya 编译器 - 零GC系统编程语言\n" as *byte);
+    fprintf(libc.stderr, "\n用法:\n" as *byte);
+    fprintf(libc.stderr, "  %s build <文件> [-o <输出>] [选项]  编译为可执行文件\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s run <文件> [选项] [-- <参数>...]  编译并运行\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s test <文件> [选项]               编译测试并运行\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s --outlibc <目录>                 生成独立 libc\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "\n示例:\n" as *byte);
+    fprintf(libc.stderr, "  %s build main.uya -o myapp\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s run main.uya\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s test tests.uya\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s build main.uya -o main.c --c99   # 生成 C99 代码\n" as *byte, name as *byte);
     fprintf(libc.stderr, "\n选项:\n" as *byte);
     fprintf(libc.stderr, "  --c99                使用 C99 后端生成 C 代码\n" as *byte);
-    fprintf(libc.stderr, "  --outlibc <目录>     生成独立的 libuya.c 和 libuya.h\n" as *byte);
     fprintf(libc.stderr, "  --line-directives    启用 #line 指令生成（C99 后端）\n" as *byte);
     fprintf(libc.stderr, "  --no-line-directives 禁用 #line 指令生成\n" as *byte);
     fprintf(libc.stderr, "\n说明:\n" as *byte);
@@ -1013,40 +1026,73 @@ fn collect_module_dependencies(
 }
 
 // 解析命令行参数
+// command: 输出命令类型
 // input_file_indices: 填充前 *input_file_count 个为输入文件在 argv 中的下标
 // outlibc_index: --outlibc 选项的参数索引（-1 表示未指定）
+// run_arg_start: run 命令的运行时参数起始索引（-1 表示无运行时参数）
 // 返回：0 成功，-1 失败
 fn parse_args(
+    command: &CommandType,
     input_file_indices: &i32,
     input_file_count: &i32,
     output_file_index: &i32,
     backend_type: &BackendType,
     emit_line_directives: &i32,
     enable_safety_proof: &i32,
-    outlibc_index: &i32
+    outlibc_index: &i32,
+    run_arg_start: &i32
 ) i32 {
     const argc: i32 = get_argc();
-    if argc < 4 {
+    if argc < 2 {
         const program_name: *byte = get_argv(0);
         if program_name != null {
             print_usage(program_name as &byte);
         }
         return -1;
     }
+    
+    // 初始化输出参数
+    command[0] = CommandType.COMMAND_BUILD;  // 默认为 build
     input_file_count[0] = 0;
     output_file_index[0] = -1;
     backend_type[0] = BackendType.BACKEND_LLVM;
     emit_line_directives[0] = 0;
-    enable_safety_proof[0] = 0;  // 默认关闭（编译器自身尚未完全修复）
-    outlibc_index[0] = -1;  // 默认未指定
+    enable_safety_proof[0] = 0;
+    outlibc_index[0] = -1;
+    run_arg_start[0] = -1;
 
-    var i: i32 = 1;
+    // 检测子命令
+    const first_arg: *byte = get_argv(1);
+    var start_idx: i32 = 1;  // 参数解析起始位置
+    
+    if first_arg != null {
+        if strcmp(first_arg, "build" as *byte) == 0 {
+            command[0] = CommandType.COMMAND_BUILD;
+            start_idx = 2;
+        } else if strcmp(first_arg, "run" as *byte) == 0 {
+            command[0] = CommandType.COMMAND_RUN;
+            start_idx = 2;
+        } else if strcmp(first_arg, "test" as *byte) == 0 {
+            command[0] = CommandType.COMMAND_TEST;
+            start_idx = 2;
+        }
+        // 如果不是子命令，保持默认 COMMAND_BUILD，start_idx = 1
+    }
+
+    var i: i32 = start_idx;
     while i < argc {
         const arg: *byte = get_argv(i);
         if arg == null {
             fprintf(libc.stderr, "错误: 无法获取命令行参数（索引 %d）\n" as *byte, i);
             return -1;
         }
+        
+        // run 命令：检测 -- 之后的参数作为运行时参数
+        if command[0] == CommandType.COMMAND_RUN && strcmp(arg, "--" as *byte) == 0 {
+            run_arg_start[0] = i + 1;
+            break;  // -- 之后的参数不再解析
+        }
+        
         if strcmp(arg, "-o" as *byte) == 0 {
             if i + 1 < argc {
                 output_file_index[0] = i + 1;
@@ -1068,7 +1114,8 @@ fn parse_args(
         } else if strcmp(arg, "--outlibc" as *byte) == 0 {
             if i + 1 < argc {
                 outlibc_index[0] = i + 1;
-                backend_type[0] = BackendType.BACKEND_C99;  // 自动使用 C99 后端
+                command[0] = CommandType.COMMAND_OUTLIBC;
+                backend_type[0] = BackendType.BACKEND_C99;
                 i = i + 1;
             } else {
                 fprintf(libc.stderr, "错误: --outlibc 选项需要指定输出目录\n" as *byte);
@@ -1076,7 +1123,7 @@ fn parse_args(
             }
         } else {
             const c: byte = arg[0];
-            if c != 45 {
+            if c != 45 {  // 不是 '-' 开头
                 if input_file_count[0] >= MAX_INPUT_FILES {
                     fprintf(libc.stderr, "错误: 输入文件数量超过最大限制 (%d)\n" as *byte, MAX_INPUT_FILES);
                     return -1;
@@ -1090,7 +1137,7 @@ fn parse_args(
     }
 
     // --outlibc 模式：不需要输入文件和 -o 参数
-    if outlibc_index[0] >= 0 {
+    if command[0] == CommandType.COMMAND_OUTLIBC {
         return 0;
     }
 
@@ -1102,24 +1149,32 @@ fn parse_args(
         }
         return -1;
     }
-    if output_file_index[0] < 0 {
-        fprintf(libc.stderr, "错误: 未指定输出文件（使用 -o 选项）\n" as *byte);
+    
+    // build 命令必须指定 -o
+    if command[0] == CommandType.COMMAND_BUILD && output_file_index[0] < 0 {
+        fprintf(libc.stderr, "错误: build 命令需要指定输出文件（使用 -o 选项）\n" as *byte);
         const program_name: *byte = get_argv(0);
         if program_name != null {
             print_usage(program_name as &byte);
         }
         return -1;
     }
+    
+    // run 和 test 命令：如果没有指定 -o，自动生成输出路径
+    // 输出路径将在主函数中根据输入文件名生成
+    
     const out_idx: i32 = output_file_index[0];
-    const out_path: *byte = get_argv(out_idx);
-    if out_path == null {
-        fprintf(libc.stderr, "错误: 无法获取输出文件路径（索引 %d）\n" as *byte, out_idx);
-        return -1;
-    }
-    if backend_type[0] == BackendType.BACKEND_LLVM {
-        const ext: *byte = strrchr(out_path, 46);
-        if ext != null && strcmp(ext, ".c" as *byte) == 0 {
-            backend_type[0] = BackendType.BACKEND_C99;
+    if out_idx >= 0 {
+        const out_path: *byte = get_argv(out_idx);
+        if out_path == null {
+            fprintf(libc.stderr, "错误: 无法获取输出文件路径（索引 %d）\n" as *byte, out_idx);
+            return -1;
+        }
+        if backend_type[0] == BackendType.BACKEND_LLVM {
+            const ext: *byte = strrchr(out_path, 46);
+            if ext != null && strcmp(ext, ".c" as *byte) == 0 {
+                backend_type[0] = BackendType.BACKEND_C99;
+            }
         }
     }
     return 0;
@@ -1127,13 +1182,15 @@ fn parse_args(
 
 // 主编译函数：词法 → 语法 → AST 合并 → 类型检查 → 代码生成
 // 支持目录输入和自动依赖收集
+// output_path_override: 如果非 null，使用此路径替代 get_argv(output_file_index)
 fn compile_files(
     input_file_indices: &i32,
     input_file_count: i32,
     output_file_index: i32,
     backend: BackendType,
     emit_line_directives: i32,
-    enable_safety_proof: i32
+    enable_safety_proof: i32,
+    output_path_override: &byte
 ) i32 {
     
     // 初始化临时 Arena（用于依赖收集，使用全局缓冲区避免栈溢出）
@@ -1395,7 +1452,12 @@ fn compile_files(
         i = i + 1;
     }
     const output_file: *byte = get_argv(output_file_index);
-    fprintf(libc.stderr, "输出文件: %s\n" as *byte, output_file);
+    // 如果有覆盖路径，使用覆盖路径
+    var actual_output: *byte = output_file;
+    if output_path_override != null {
+        actual_output = output_path_override as *byte;
+    }
+    fprintf(libc.stderr, "输出文件: %s\n" as *byte, actual_output);
     if project_root != null {
         fprintf(libc.stderr, "项目根目录: %s\n" as *byte, project_root as *byte);
     }
@@ -1501,9 +1563,9 @@ fn compile_files(
     fprintf(libc.stderr, "模块名: %s\n" as *byte, module_name);
 
     // C99 后端：生成 C 源代码（与 C 版本保持一致，直接使用 C99 后端）
-    const out_file: *void = fopen(output_file, "w" as *byte);
+    const out_file: *void = fopen(actual_output, "w" as *byte);
     if out_file == null {
-        fprintf(libc.stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, output_file);
+        fprintf(libc.stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, actual_output);
         return 1;
     }
     var c99_codegen: C99CodeGenerator = C99CodeGenerator { };
@@ -1514,7 +1576,7 @@ fn compile_files(
     }
     // 设置单态化实例（从 TypeChecker 传入）
     c99_codegen_set_mono_instances(&c99_codegen, &checker);
-    if c99_codegen_generate(&c99_codegen, merged_ast, output_file as &byte) != 0 {
+    if c99_codegen_generate(&c99_codegen, merged_ast, actual_output as &byte) != 0 {
         fprintf(libc.stderr, "错误: C99 代码生成失败\n" as *byte);
         c99_codegen_free(&c99_codegen);
         fclose(out_file);
@@ -1522,7 +1584,7 @@ fn compile_files(
     }
     c99_codegen_free(&c99_codegen);
     fclose(out_file);
-    fprintf(libc.stderr, "代码生成完成: %s\n" as *byte, output_file);
+    fprintf(libc.stderr, "代码生成完成: %s\n" as *byte, actual_output);
 
     return 0;
 }
@@ -1537,13 +1599,18 @@ export fn main() i32 {
     var emit_line_directives: i32 = 0;
     var enable_safety_proof: i32 = 0;
     var outlibc_index: i32 = -1;
+    var command: CommandType = CommandType.COMMAND_BUILD;
+    var run_arg_start: i32 = -1;
+    
+    // 临时缓冲区用于自动生成输出路径
+    var auto_output_path: [byte: PATH_MAX] = [];
 
-    if parse_args(&input_file_indices[0], &input_file_count, &output_file_index, &backend, &emit_line_directives, &enable_safety_proof, &outlibc_index) != 0 {
+    if parse_args(&command, &input_file_indices[0], &input_file_count, &output_file_index, &backend, &emit_line_directives, &enable_safety_proof, &outlibc_index, &run_arg_start) != 0 {
         return 1;
     }
 
     // --outlibc 模式
-    if outlibc_index >= 0 {
+    if command == CommandType.COMMAND_OUTLIBC {
         const outlibc_path: *byte = get_argv(outlibc_index);
         if outlibc_path == null {
             fprintf(libc.stderr, "错误: 无法获取 --outlibc 参数\n" as *byte);
@@ -1553,10 +1620,48 @@ export fn main() i32 {
         return result;
     }
 
-    const result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof);
+    // run 和 test 命令：自动生成输出路径
+    if (command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST) && output_file_index < 0 {
+        // 从输入文件名生成输出路径
+        const input_path: *byte = get_argv(input_file_indices[0]);
+        if input_path == null {
+            fprintf(libc.stderr, "错误: 无法获取输入文件路径\n" as *byte);
+            return 1;
+        }
+        
+        // 生成临时文件路径（使用固定路径，因为 getpid 在 nostdlib 模式下不可用）
+        const written: i32 = snprintf(&auto_output_path[0], PATH_MAX, "/tmp/uya_output.c" as *byte);
+        if written <= 0 || written >= PATH_MAX {
+            fprintf(libc.stderr, "错误: 无法生成临时输出路径\n" as *byte);
+            return 1;
+        }
+        output_file_index = -2;  // 标记为自动生成的路径
+        backend = BackendType.BACKEND_C99;  // run/test 模式默认使用 C99 后端
+    }
+    
+    // 确定输出路径覆盖参数
+    var output_path_for_compile: &byte = null;
+    if output_file_index == -2 {
+        output_path_for_compile = &auto_output_path[0];
+    }
+
+    const result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, output_path_for_compile);
     if result != 0 {
         return result;
     }
+    
+    // run 和 test 命令：输出运行提示
+    if command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST {
+        // 获取输出路径
+        var actual_output: &byte = &auto_output_path[0];
+        if output_file_index >= 0 {
+            actual_output = get_argv(output_file_index) as &byte;
+        }
+        
+        fprintf(libc.stderr, "\n编译完成: %s\n" as *byte, actual_output as *byte);
+        fprintf(libc.stderr, "运行命令: gcc -x c -o /tmp/uya_out %s -std=c99 -lm && /tmp/uya_out\n" as *byte, actual_output as *byte);
+    }
+    
     return 0;
 }
 

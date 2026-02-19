@@ -62,6 +62,7 @@
 | 35 | **新标准库内存操作（std.mem）** | [x] **已完成**（lib/std/mem/mem.uya 已实现，包含 memcpy, memset, memmove, memcmp, memchr，测试用例通过） |
 | 36 | **新标准库字符串操作（std.string）** | [x] **已完成**（lib/std/string/string.uya 已实现，包含 strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr, strstr，测试用例通过） |
 | 37 | **新标准库文件 I/O（std.io）** | [x] **已完成**（lib/std/io/file.uya 和 lib/std/io/stream.uya 已实现，包含 fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush，测试用例通过） |
+| 38 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
 
 ---
 
@@ -106,6 +107,70 @@
 - [uya.md](uya.md) §2.1.1 - 指针类型说明
 - [uya.md](uya.md) §5.1 - 函数定义语法
 - [uya.md](uya.md) §5.2 - 外部 C 函数（FFI）
+
+---
+
+## 下次优先实现（统一命令行接口）
+
+### 命令行接口标准化（build/run/test）
+
+- [ ] **统一应用程序入口点**：
+  - 应用程序必须包含 `export fn main() !int` 或 `export fn main() int`
+  - 编译器自动包含 `std.runtime.entry` 模块
+  - 用户无需手动写 `use std.runtime.entry;`
+
+- [ ] **`uya build` 命令**：
+  - 编译为可执行文件：`uya build main.uya -o myapp`
+  - 支持现有参数：`--c99`、`--outlibc` 等
+
+- [ ] **`uya run` 命令**：
+  - 编译并运行：`uya run main.uya`
+  - 传递运行时参数：`uya run main.uya -- --args`
+
+- [ ] **`uya test` 命令**：
+  - 运行测试：`uya test tests.uya`
+  - 允许没有 `export fn main`
+  - 收集所有 `test "name" {}` 块
+  - 自动生成 main 函数运行测试
+
+- [ ] **测试文件格式迁移**：
+  - 旧格式（约 89 个待迁移文件）：
+    ```uya
+    use std.runtime.entry;
+    use std.testing.*;
+
+    fn test_xxx() !void {
+        try expect(condition);
+    }
+
+    export fn main() i32 {
+        test_suite_begin("Tests");
+        run_test("test", test_xxx);
+        return test_suite_end();
+    }
+    ```
+  - 新格式：
+    ```uya
+    use std.testing.check_eq_i32;
+
+    test "test_xxx" {
+        check_eq_i32(actual, expected);
+    }
+    ```
+
+**实现待办**：
+- [ ] **编译器**：添加子命令解析 `build`/`run`/`test`（`src/main.uya`）
+- [ ] **编译器**：收集所有 `test "name" {}` 块（`src/main.uya`）
+- [ ] **编译器**：入口点检测逻辑改进（`src/main.uya`）
+- [ ] **代码生成**：自动生成 main 函数（`src/codegen/c99/main.uya`）
+- [ ] **标准库**：添加 `check_*` 系列断言（`lib/std/testing/testing.uya`）
+- [ ] **标准库**：改进测试运行器（`lib/std/testing/testing.uya`）
+- [ ] **测试迁移**：将 89 个待迁移文件改为新格式（`tests/programs/*.uya`）
+
+**涉及**：`src/main.uya`、`src/codegen/c99/main.uya`、`lib/std/testing/testing.uya`、`tests/programs/*.uya`
+
+**参考文档**：
+- [tests/MIGRATION_TODO.md](../tests/MIGRATION_TODO.md) - 详细迁移计划
 
 ---
 

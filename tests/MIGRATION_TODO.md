@@ -1,9 +1,67 @@
-# 测试框架迁移 TODO
+# 测试框架重构 TODO
 
 ## 目标
-将所有测试文件迁移到 `std.testing.*` 框架，最终实现 **0依赖运行**（无需 bridge.c，像自举编译器一样直接运行）。
+实现测试框架标准化，最终目标：
+1. **统一入口点**: `export fn main() !int` 或 `export fn main() int`
+2. **标准化测试格式**: `test "测试名称" {}` 块
+3. **统一命令行接口**: `uya build` / `uya run` / `uya test`
+4. **0依赖运行**: 无需 bridge.c
 
-## 当前进度
+## 命令行接口设计
+
+### 命令概览
+
+| 命令 | 说明 | 示例 |
+|------|------|------|
+| `uya build <file>` | 编译为可执行文件 | `uya build main.uya -o app` |
+| `uya run <file>` | 编译并运行 | `uya run main.uya` |
+| `uya test <file>` | 编译测试并运行 | `uya test tests.uya` |
+
+### `uya build` 命令
+```bash
+# 编译为可执行文件
+uya build main.uya -o myapp
+
+# 指定后端
+uya build main.uya -o myapp --c99
+
+# 编译为库
+uya build lib.uya --outlibc ./libout
+```
+
+### `uya run` 命令
+```bash
+# 编译并运行
+uya run main.uya
+
+# 传递运行时参数
+uya run main.uya -- --arg1 --arg2
+```
+
+### `uya test` 命令
+```bash
+# 运行单个测试文件
+uya test tests.uya
+
+# 运行目录下所有测试
+uya test tests/
+
+# 显示详细输出
+uya test tests.uya -v
+```
+
+## 当前阶段
+
+| 阶段 | 描述 | 状态 |
+|------|------|------|
+| Phase 0 | 设计规划 | ✅ 完成 |
+| Phase 1 | 编译器子命令支持 (`build`/`run`/`test`) | ✅ 完成 |
+| Phase 2 | 自动生成 main 函数 (test 模式) | 📋 待开始 |
+| Phase 3 | 测试文件迁移到 `test "xxx" {}` 格式 | 📋 待开始 |
+| Phase 4 | 移除手动 `use std.runtime.entry` | 📋 待开始 |
+| Phase 5 | 验证与清理 | 📋 待开始 |
+
+## 当前进度（旧格式迁移）
 - **已迁移**: 302 个文件
 - **待迁移**: 89 个文件
 - **完成度**: 77%
@@ -190,6 +248,103 @@ fn main() i32 {
 
 ---
 
+## 新测试框架设计（`--test` 模式）
+
+### 架构设计
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      测试文件格式                            │
+├─────────────────────────────────────────────────────────────┤
+│  // 旧格式（需要迁移）                                       │
+│  use std.runtime.entry;                                    │
+│  use std.testing.*;                                        │
+│  export fn main() i32 {                                    │
+│      test_suite_begin("Tests");                            │
+│      run_test("test1", test_fn);                           │
+│      return test_suite_end();                              │
+│  }                                                         │
+├─────────────────────────────────────────────────────────────┤
+│  // 新格式（目标）                                          │
+│  use std.testing.check_eq_i32;                             │
+│                                                            │
+│  test "test_addition" {                                    │
+│      check_eq_i32(1 + 1, 2);                               │
+│  }                                                         │
+│                                                            │
+│  test "test_subtraction" {                                 │
+│      check_eq_i32(5 - 3, 2);                               │
+│  }                                                         │
+└─────────────────────────────────────────────────────────────┘
+
+编译器 `--test` 模式流程：
+1. 解析所有 `test "name" {}` 块
+2. 自动生成 main 函数
+3. 调用 uya_run_tests() 运行所有测试
+```
+
+### Phase 0: 设计规划 🚧 进行中
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| 确定新测试格式规范 | 🚧 进行中 | `test "name" {}` 块语法 |
+| 确定 `uya test` 命令行为 | 📋 待开始 | 自动生成 main |
+| 确定入口点规范 | 📋 待开始 | `export fn main() !int` 或 `int` |
+| 确定断言函数命名 | 📋 待开始 | `check_eq_*` vs `assert_eq_*` |
+
+### Phase 1: 编译器修改
+
+| 任务 | 状态 | 文件 | 说明 |
+|------|------|------|------|
+| 添加子命令解析框架 | ✅ 完成 | `src/main.uya` | `build`/`run`/`test` 子命令 |
+| 实现 `uya build` | ✅ 完成 | `src/main.uya` | 编译为可执行文件 |
+| 实现 `uya run` | ✅ 完成 | `src/main.uya` | 编译并生成运行提示 |
+| 实现 `uya test` | ✅ 完成 | `src/main.uya` | 编译测试并生成运行提示 |
+| 收集所有 `test "name" {}` 块 | 📋 待开始 | `src/main.uya` | 测试发现 |
+| 入口点检测逻辑 | 📋 待开始 | `src/main.uya` | 区分 test/app 模式 |
+| 自动生成 main 函数 | 📋 待开始 | `src/codegen/c99/main.uya` | test 模式下生成 |
+
+### Phase 2: 标准库修改
+
+| 任务 | 状态 | 文件 | 说明 |
+|------|------|------|------|
+| 添加 `check_*` 系列断言 | 📋 待开始 | `lib/std/testing/testing.uya` | 不返回错误的新断言 |
+| 改进测试运行器 | 📋 待开始 | `lib/std/testing/testing.uya` | `uya_run_tests()` 函数 |
+| 测试结果输出 | 📋 待开始 | `lib/std/testing/testing.uya` | 格式化输出 |
+
+### Phase 3: 测试文件迁移
+
+| 类别 | 文件数 | 状态 | 说明 |
+|------|--------|------|------|
+| 类别 A: 基础测试 | ~40 | 📋 待开始 | 简单迁移 |
+| 类别 B: 宏测试 | ~25 | 📋 待开始 | 检查兼容性 |
+| 类别 C: 错误处理 | ~8 | 📋 待开始 | 特殊处理 |
+| 类别 D: FFI 测试 | ~12 | 📋 待开始 | 可能保留旧格式 |
+| 类别 E: 标准库测试 | ~20 | 📋 待开始 | 检查依赖 |
+| 类别 F: 系统调用 | ~9 | 📋 待开始 | 检查兼容性 |
+| 类别 G: 模块测试 | ~3 | 📋 待开始 | 简单迁移 |
+| 类别 H: 特殊测试 | ~5 | 📋 待开始 | 检查兼容性 |
+
+### Phase 4: 移除旧依赖
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| 移除 `use std.runtime.entry` | 📋 待开始 | 编译器自动包含 |
+| 移除 `run_test()` 调用 | 📋 待开始 | 使用 `test "name" {}` 块 |
+| 更新 Makefile | 📋 待开始 | 使用 `--test` 参数 |
+| 更新测试运行脚本 | 📋 待开始 | `make tests-uya` |
+
+### Phase 5: 验证与清理
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| 全量测试通过 | 📋 待开始 | `make check` |
+| 自举验证通过 | 📋 待开始 | `make b` |
+| 文档更新 | 📋 待开始 | 更新开发文档 |
+| 移除过时代码 | 📋 待开始 | 清理旧测试框架 |
+
+---
+
 ## 0依赖目标
 
 ### ✅ 已实现（方案C）
@@ -272,5 +427,7 @@ std.runtime：
 
 ## 更新日志
 
+- 2026-02-19: Phase 1 完成 - 实现 `uya build`/`run`/`test` 子命令
+- 2026-02-19: 添加新测试框架设计（`--test` 模式），Phase 0 进行中
 - 2026-02-19: 更新进度（302/391，77%）
 - 2026-02-15: 创建文档，已迁移 159 个文件
