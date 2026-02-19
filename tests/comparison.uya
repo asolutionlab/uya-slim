@@ -1,55 +1,40 @@
 // 比较运算符测试
-use std.runtime.entry;
 // 测试所有比较运算符（<, >, <=, >=, ==, !=）
 
-use std.testing.expect;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
+use std.testing.check_true;
 
-fn test_less_than() !void {
+test "test_less_than" {
     const a: i32 = 10;
     const b: i32 = 20;
-    try expect(a < b);
+    check_true(a < b);
 }
 
-fn test_greater_than() !void {
+test "test_greater_than" {
     const a: i32 = 10;
     const b: i32 = 20;
-    try expect(b > a);
+    check_true(b > a);
 }
 
-fn test_less_equal() !void {
+test "test_less_equal" {
     const a: i32 = 10;
     const c: i32 = 10;
-    try expect(a <= c);
+    check_true(a <= c);
 }
 
-fn test_greater_equal() !void {
+test "test_greater_equal" {
     const a: i32 = 10;
     const b: i32 = 20;
-    try expect(b >= a);
+    check_true(b >= a);
 }
 
-fn test_equal() !void {
+test "test_equal" {
     const a: i32 = 10;
     const c: i32 = 10;
-    try expect(a == c);
+    check_true(a == c);
 }
 
-fn test_not_equal() !void {
+test "test_not_equal" {
     const a: i32 = 10;
     const b: i32 = 20;
-    try expect(a != b);
-}
-
-export fn main() i32 {
-    test_suite_begin("Comparison Tests");
-    run_test("less than", test_less_than);
-    run_test("greater than", test_greater_than);
-    run_test("less equal", test_less_equal);
-    run_test("greater equal", test_greater_equal);
-    run_test("equal", test_equal);
-    run_test("not equal", test_not_equal);
-    return test_suite_end();
+    check_true(a != b);
 }

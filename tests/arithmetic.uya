@@ -1,53 +1,39 @@
 // 算术运算测试
-use std.runtime.entry;
 // 测试所有算术运算符（+ - * / %）
 
-use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
+use std.testing.check_eq_i32;
 
-fn test_addition() !void {
+test "test_addition" {
     const a: i32 = 10;
     const b: i32 = 5;
     var sum: i32 = a + b;
-    try assert_eq_i32(sum, 15);
+    check_eq_i32(sum, 15);
 }
 
-fn test_subtraction() !void {
+test "test_subtraction" {
     const a: i32 = 10;
     const b: i32 = 5;
     var diff: i32 = a - b;
-    try assert_eq_i32(diff, 5);
+    check_eq_i32(diff, 5);
 }
 
-fn test_multiplication() !void {
+test "test_multiplication" {
     const a: i32 = 10;
     const b: i32 = 5;
     var prod: i32 = a * b;
-    try assert_eq_i32(prod, 50);
+    check_eq_i32(prod, 50);
 }
 
-fn test_division() !void {
+test "test_division" {
     const a: i32 = 10;
     const b: i32 = 5;
     var quot: i32 = a / b;
-    try assert_eq_i32(quot, 2);
+    check_eq_i32(quot, 2);
 }
 
-fn test_modulo() !void {
+test "test_modulo" {
     const a: i32 = 10;
     const b: i32 = 5;
     var mod: i32 = a % b;
-    try assert_eq_i32(mod, 0);
-}
-
-export fn main() i32 {
-    test_suite_begin("Arithmetic Tests");
-    run_test("addition", test_addition);
-    run_test("subtraction", test_subtraction);
-    run_test("multiplication", test_multiplication);
-    run_test("division", test_division);
-    run_test("modulo", test_modulo);
-    return test_suite_end();
+    check_eq_i32(mod, 0);
 }

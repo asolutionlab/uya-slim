@@ -1,61 +1,48 @@
 // 复杂表达式测试
-use std.runtime.entry;
 // 测试嵌套的复杂表达式
 
-use std.testing.expect;
-use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
+use std.testing.check_eq_i32;
+use std.testing.check_true;
 
 fn double(x: i32) i32 {
     return x * 2;
 }
 
-fn test_nested_expr() !void {
+test "test_nested_expr" {
     const a: i32 = 5;
     const b: i32 = 10;
     
     // 测试复杂的嵌套表达式
     const result1: i32 = (a + b) * 2 - double(a);
     // (5 + 10) * 2 - 10 = 30 - 10 = 20
-    try assert_eq_i32(result1, 20);
+    check_eq_i32(result1, 20);
 }
 
-fn test_func_arithmetic() !void {
+test "test_func_arithmetic" {
     const a: i32 = 5;
     const b: i32 = 10;
     
     // 测试函数调用和算术运算组合
     const result2: i32 = double(a) + double(b) * 2;
     // 10 + 20 * 2 = 10 + 40 = 50
-    try assert_eq_i32(result2, 50);
+    check_eq_i32(result2, 50);
 }
 
-fn test_comparison_logic() !void {
+test "test_comparison_logic" {
     const a: i32 = 5;
     const b: i32 = 10;
     
     // 测试比较和逻辑运算组合
     const result3: bool = (a < b) && (b > a) && (a + b == 15);
-    try expect(result3);
+    check_true(result3);
 }
 
-fn test_unary_arithmetic() !void {
+test "test_unary_arithmetic" {
     const a: i32 = 5;
     const b: i32 = 10;
     
     // 测试一元运算符和算术运算
     const result4: i32 = -a + b - (-b);
     // -5 + 10 - (-10) = -5 + 10 + 10 = 15
-    try assert_eq_i32(result4, 15);
-}
-
-export fn main() i32 {
-    test_suite_begin("Complex Expr Tests");
-    run_test("nested expr", test_nested_expr);
-    run_test("func arithmetic", test_func_arithmetic);
-    run_test("comparison logic", test_comparison_logic);
-    run_test("unary arithmetic", test_unary_arithmetic);
-    return test_suite_end();
+    check_eq_i32(result4, 15);
 }
