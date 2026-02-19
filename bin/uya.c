@@ -2011,7 +2011,6 @@ struct MacroExpandContext {
     struct TypeChecker * checker;
 };
 
-
 struct Token {
     enum TokenType type;
     uint8_t * value;
@@ -8100,6 +8099,7 @@ static __attribute__((unused)) struct ASTNode * ast_new_node(enum ASTNodeType ty
     node->fn_decl_is_export = 0;
     node->fn_decl_is_extern = 0;
     node->fn_decl_is_async = 0;
+    node->fn_decl_extern_lib_name = NULL;
     node->macro_decl_name = NULL;
     node->macro_decl_params = NULL;
     node->macro_decl_param_count = 0;
@@ -8231,6 +8231,13 @@ static __attribute__((unused)) struct ASTNode * ast_new_node(enum ASTNodeType ty
     node->va_end_ap = NULL;
     node->va_arg_ap = NULL;
     node->va_arg_arg_type = NULL;
+    node->extern_var_decl_name = NULL;
+    node->extern_var_decl_var_type = NULL;
+    node->extern_var_decl_init_expr = NULL;
+    node->extern_var_decl_is_const = 0;
+    node->extern_var_decl_is_extern = 0;
+    node->extern_var_decl_is_export = 0;
+    node->extern_var_decl_extern_lib_name = NULL;
     struct ASTNode * _uya_ret = node;
     return _uya_ret;
 }
@@ -8350,14 +8357,14 @@ static __attribute__((unused)) struct Type copy_type(const struct Type * t) {
 
 static __attribute__((unused)) int32_t hash_string(uint8_t * str) {
     (void)str;
-    int32_t hash = 5381;
+    uint32_t hash = 5381;
     int32_t i = 0;
     while ((str[i] != 0)) {
         const uint8_t c = (uint8_t)str[i];
-        hash = (((hash * 32) + hash) + (int32_t)c);
+        hash = (((hash * 32) + hash) + (uint32_t)c);
         i = (i + 1);
     }
-    int32_t _uya_ret = hash;
+    int32_t _uya_ret = (int32_t)hash;
     return _uya_ret;
 }
 

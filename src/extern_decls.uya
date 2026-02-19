@@ -61,10 +61,7 @@ const S_IFDIR: u32 = 16384;  // 0x4000
 const S_IFREG: u32 = 32768;  // 0x8000
 
 // ===== 目录操作（libc）=====
-struct Dirent {
-    d_name: *byte,
-    d_type: u8,  // DT_REG = 8, DT_DIR = 4
-}
+use libc.Dirent;
 use libc.DIR;
 use libc.opendir;
 use libc.readdir;

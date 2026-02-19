@@ -451,6 +451,7 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.fn_decl_is_export = 0;
     node.fn_decl_is_extern = 0;
     node.fn_decl_is_async = 0;
+    node.fn_decl_extern_lib_name = null;
     node.macro_decl_name = null;
     node.macro_decl_params = null;
     node.macro_decl_param_count = 0;
@@ -582,6 +583,13 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.va_end_ap = null;
     node.va_arg_ap = null;
     node.va_arg_arg_type = null;
+    node.extern_var_decl_name = null;
+    node.extern_var_decl_var_type = null;
+    node.extern_var_decl_init_expr = null;
+    node.extern_var_decl_is_const = 0;
+    node.extern_var_decl_is_extern = 0;
+    node.extern_var_decl_is_export = 0;
+    node.extern_var_decl_extern_lib_name = null;
     return node;
 }
 
