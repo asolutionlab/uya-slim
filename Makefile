@@ -36,7 +36,7 @@ from-c:
 		fi \
 	fi
 	@echo "编译 bin/uya.c ..."
-	@gcc -std=c99 -O1 bin/uya.c -o bin/uya -lm
+	@gcc -std=c99 -O1 -fno-builtin bin/uya.c -o bin/uya
 	@echo ""
 	@echo "✓ 编译器构建完成: bin/uya"
 	@ls -la bin/uya
@@ -57,7 +57,7 @@ uya:
 	@cp src/build/uya.c bin/uya.c
 	@echo "✓ bin/uya.c 已更新"
 	@echo "重新编译 bin/uya ..."
-	@gcc -std=c99 -O1 bin/uya.c -o bin/uya -lm
+	@gcc -std=c99 -O1 -fno-builtin bin/uya.c -o bin/uya
 	@echo ""
 	@echo "✓ 自举编译器构建完成: bin/uya"
 	@echo ""

@@ -156,7 +156,7 @@ if [ ! -f "$COMPILER" ]; then
         cp "$REPO_ROOT/backup/uya.c" "$REPO_ROOT/bin/uya.c"
         if [ -f "$REPO_ROOT/bin/uya.c" ]; then
             echo "编译 bin/uya.c ..."
-            gcc -std=c99 -O2 "$REPO_ROOT/bin/uya.c" -o "$COMPILER" -lm
+            gcc -std=c99 -O2 -fno-builtin "$REPO_ROOT/bin/uya.c" -o "$COMPILER"
             if [ $? -eq 0 ]; then
                 echo -e "${GREEN}✓ 编译器已从备份恢复: $COMPILER${NC}"
             else
@@ -432,7 +432,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                         echo "编译 $OUTPUT_FILE -> $UYA_O"
                     fi
 
-                    if ! gcc --std=c99 -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
+                    if ! gcc --std=c99 -fno-builtin -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
                         echo -e "${RED}✗ 编译 uya.c 失败${NC}"
                         exit 1
                     fi
@@ -452,9 +452,9 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                     # 普通模式：直接编译链接（stderr 使用 libc.stderr，无需 get_stderr 桥接）
                     # 注意：不使用 -static，避免 errno TLS 冲突
                     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        LINK_CMD="gcc --std=c99 -no-pie \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\" -lm"
+                        LINK_CMD="gcc --std=c99 -fno-builtin \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\""
                     else
-                        LINK_CMD="gcc --std=c99 -no-pie \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\" -lm"
+                        LINK_CMD="gcc --std=c99 -fno-builtin \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\""
                     fi
                 fi
 

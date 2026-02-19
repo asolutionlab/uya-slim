@@ -660,10 +660,32 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         // 必须在首个 #include 之前定义，以便 unistd.h 声明 readlink 等 POSIX 函数
         fputs("#ifndef _POSIX_C_SOURCE\n#define _POSIX_C_SOURCE 200809L\n#endif\n" as *byte, codegen.output as *void);
         fputs("\n" as *byte, codegen.output as *void);
-        fputs("#include <stdint.h>\n" as *byte, codegen.output as *void);
-        fputs("#include <stdbool.h>\n" as *byte, codegen.output as *void);
-        fputs("#include <stddef.h>\n" as *byte, codegen.output as *void);
-        fputs("#include <stdarg.h>\n" as *byte, codegen.output as *void);  // for va_list (variadic forward)
+        // 手动定义标准类型，避免包含标准库头文件
+        fputs("// 标准类型定义（不依赖标准库头文件）\n" as *byte, codegen.output as *void);
+        fputs("typedef unsigned char uint8_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef unsigned short uint16_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef unsigned int uint32_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef unsigned long long uint64_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef signed char int8_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef signed short int16_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef signed int int32_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef signed long long int64_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef unsigned long size_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef signed long ssize_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef unsigned long uintptr_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef signed long intptr_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef signed long ptrdiff_t;\n" as *byte, codegen.output as *void);
+        fputs("#ifndef NULL\n#define NULL ((void *)0)\n#endif\n" as *byte, codegen.output as *void);
+        fputs("#ifndef offsetof\n#define offsetof(type, member) ((size_t)&((type *)0)->member)\n#endif\n" as *byte, codegen.output as *void);
+        fputs("#ifndef true\n#define true 1\n#endif\n" as *byte, codegen.output as *void);
+        fputs("#ifndef false\n#define false 0\n#endif\n" as *byte, codegen.output as *void);
+        fputs("typedef _Bool bool;\n" as *byte, codegen.output as *void);
+        // va_list 支持（可变参数函数）
+        fputs("typedef __builtin_va_list va_list;\n" as *byte, codegen.output as *void);
+        fputs("#define va_start(v, l) __builtin_va_start(v, l)\n" as *byte, codegen.output as *void);
+        fputs("#define va_end(v) __builtin_va_end(v)\n" as *byte, codegen.output as *void);
+        fputs("#define va_arg(v, l) __builtin_va_arg(v, l)\n" as *byte, codegen.output as *void);
+        fputs("\n" as *byte, codegen.output as *void);
         // 如果定义了文件 I/O 函数（fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush），不包含 <stdio.h>
         // 避免与标准库声明冲突。自举编译时强制与 C 编译器一致。
         if codegen.has_stdio_conflicts == 0 && is_bootstrap == 0 {
