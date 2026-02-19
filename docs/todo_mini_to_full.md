@@ -934,6 +934,39 @@ test "函数调用测试" {
 - **测试用例 100% 覆盖**：新特性需添加多场景用例（含成功路径与预期失败用例 `error_*.uya`），覆盖主要分支与边界情况。
 - 实现顺序：Lexer → AST → Parser → Checker → Codegen；C 实现与 `uya-src/` 同步。
 
+### 测试覆盖统计
+
+**当前状态**：397 个测试文件，全部通过
+
+| 类别 | 数量 | 说明 |
+|------|------|------|
+| **正常测试** | 299 | `test_*.uya`，预期编译并运行成功 |
+| **错误测试** | 52 | `error_*.uya`，预期编译失败 |
+| **其他测试** | 46 | 基础测试、递归测试等 |
+| **多文件测试** | 若干 | `multifile/`、`cross_deps/` 目录 |
+
+**测试分类**：
+
+| 功能模块 | 测试文件 | 说明 |
+|----------|----------|------|
+| **基础语法** | `test_*.uya` (基础) | 变量、函数、控制流 |
+| **类型系统** | `test_int_types.uya`, `test_float.uya`, `test_bool.uya`, `test_byte.uya` | 整数、浮点、布尔、字节 |
+| **数组与切片** | `test_array_*.uya`, `test_slice.uya`, `test_multidimensional_array.uya` | 数组操作、切片、多维数组 |
+| **结构体** | `test_struct_*.uya` | 结构体定义、方法、默认值 |
+| **联合体** | `test_union*.uya`, `test_extern_union.uya` | union、extern union |
+| **接口** | `test_interface*.uya`, `test_struct_method_with_interface.uya` | interface、接口组合 |
+| **泛型** | `test_generic*.uya` (30+ 个) | 泛型函数、结构体、接口、约束 |
+| **宏系统** | `test_macro*.uya` (20+ 个) | mc 宏、@mc_eval、插值 |
+| **错误处理** | `test_error*.uya`, `test_errdefer*.uya`, `test_defer*.uya` | !T、defer、errdefer |
+| **内存安全** | `test_bounds*.uya`, `test_null*.uya`, `test_move*.uya` | 边界检查、空指针、移动语义 |
+| **标准库** | `test_std_*.uya`, `test_syscall*.uya`, `test_unistd.uya` | std.string, std.mem, std.io |
+| **原子类型** | `test_atomic*.uya` | atomic T |
+| **可变参数** | `test_varargs*.uya`, `test_va_builtin.uya` | ...、@params |
+| **字符串插值** | `test_string_interp*.uya` | ${} 语法 |
+| **内存安全证明** | `test_path_*.uya`, `test_proof*.uya` | 约束证明、符号执行 |
+| **导出与 FFI** | `test_export*.uya`, `test_ffi*.uya`, `test_extern*.uya` | export、extern、FFI |
+| **内建函数** | `test_print*.uya`, `test_src_location.uya`, `test_len*.uya` | @print、@src_*、@len |
+
 ### 测试程序约定
 
 - **测试文件命名**：
@@ -953,6 +986,48 @@ test "函数调用测试" {
 - **验证要求**：
   - 每个测试用例必须同时通过 `--c99`（C 版编译器）和 `--uya --c99`（自举版编译器）
   - 二者都通过才算测试通过
+
+### 测试运行指南
+
+```bash
+# 运行所有测试（使用 C 版编译器）
+./tests/run_programs.sh
+
+# 运行所有测试（使用自举编译器）
+./tests/run_programs.sh --uya
+
+# 只显示失败的测试
+./tests/run_programs.sh -e
+
+# 运行单个测试
+./tests/run_programs.sh test_generic_simple.uya
+./tests/run_programs.sh --uya test_generic_simple.uya
+
+# 运行指定目录的测试
+./tests/run_programs.sh tests/programs/multifile
+
+# 快速验证（并行执行）
+./tests/run_programs_parallel.sh
+
+# 使用 make 命令
+make tests-uya      # 运行所有测试
+make check          # 自举 + 测试
+```
+
+### 测试错误分类（error_*.uya）
+
+| 错误类别 | 测试文件 | 检测内容 |
+|----------|----------|----------|
+| **类型错误** | `error_type_mismatch.uya` | 类型不匹配 |
+| **常量错误** | `error_const_*.uya` | 常量重赋值、溢出、除零 |
+| **移动语义** | `error_move_*.uya` | 移动后使用、循环中移动 |
+| **内存安全** | `error_null_deref.uya`, `error_uninitialized_var.uya` | 空指针解引用、未初始化变量 |
+| **边界检查** | `error_bounds_need_proof.uya`, `error_path_*.uya` | 数组越界、循环边界证明 |
+| **控制流** | `error_defer_*.uya` | defer 中 return/break/continue |
+| **接口** | `error_interface_*.uya` | 接口组合缺失、循环依赖 |
+| **泛型** | `error_generic_constraint_fail.uya` | 泛型约束失败 |
+| **宏** | `error_macro_*.uya` | mc 宏错误 |
+| **可变参数** | `error_va_start_non_varargs.uya` | va_start 使用错误 |
 
 ### 完成任务后更新本文档
 
