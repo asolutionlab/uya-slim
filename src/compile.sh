@@ -439,31 +439,38 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             # 用户 fn main() 被编译为 uya_main()
             if [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ]; then
                 if [ "$USE_NOSTDLIB" = true ]; then
-                    # --nostdlib 模式：编译 .c 为 .o 后链接
+                    # --nostdlib 模式：将 _start 内联汇编嵌入生成的 C 代码
                     UYA_O="$BUILD_DIR/uya.o"
-                    START_C="$REPO_ROOT/lib/std/runtime/entry/start.c"
-                    START_O="$BUILD_DIR/start.o"
+                    
+                    # 在 C 代码开头插入 _start 内联汇编
+                    UYA_C_NOSTDLIB="$BUILD_DIR/uya_nostdlib.c"
+                    cat > "$UYA_C_NOSTDLIB" << 'STARTCODE'
+/* _start - 自定义程序入口（无 C 标准库，内联汇编实现） */
+typedef signed char int8_t;
+typedef unsigned char uint8_t;
+extern int main(int argc, uint8_t **argv);
+__attribute__((naked)) void _start(void) {
+    __asm__ volatile (
+        "movq (%%rsp), %%rdi\n\t"    /* argc */
+        "leaq 8(%%rsp), %%rsi\n\t"   /* argv */
+        "call main\n\t"
+        "movq %%rax, %%rdi\n\t"
+        "movq $60, %%rax\n\t"        /* syscall exit */
+        "syscall\n\t"
+        "hlt\n\t"
+        : : : "memory"
+    );
+}
 
+STARTCODE
+                    cat "$OUTPUT_FILE" >> "$UYA_C_NOSTDLIB"
+                    
                     if [ "$VERBOSE" = true ]; then
-                        echo "编译 $OUTPUT_FILE -> $UYA_O"
+                        echo "编译 $UYA_C_NOSTDLIB -> $UYA_O"
                     fi
 
-                    if ! gcc $CFLAGS -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
-                        echo -e "${RED}✗ 编译 uya.c 失败${NC}"
-                        exit 1
-                    fi
-
-                    # 编译自定义启动代码（C 内联汇编）
-                    if [ -f "$START_C" ]; then
-                        if [ "$VERBOSE" = true ]; then
-                            echo "编译 $START_C -> $START_O"
-                        fi
-                        if ! gcc $CFLAGS -c "$START_C" -o "$START_O" 2>&1; then
-                            echo -e "${RED}✗ 编译 start.c 失败${NC}"
-                            exit 1
-                        fi
-                    else
-                        echo -e "${RED}✗ 找不到启动代码: $START_C${NC}"
+                    if ! gcc $CFLAGS -c "$UYA_C_NOSTDLIB" -o "$UYA_O" 2>&1; then
+                        echo -e "${RED}✗ 编译 uya_nostdlib.c 失败${NC}"
                         exit 1
                     fi
 
@@ -471,11 +478,11 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                     CRTI="$(gcc -print-file-name=crti.o)"
                     CRTN="$(gcc -print-file-name=crtn.o)"
 
-                    # 链接（不使用 libc 和 libgcc，使用自定义 _start）
+                    # 链接（不使用 libc 和 libgcc，使用内嵌 _start）
                     if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRTI\" \"$START_O\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
+                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRTI\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
                     else
-                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRTI\" \"$START_O\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
+                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRTI\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
                     fi
                 else
                     # 普通模式：直接编译链接（stderr 使用 libc.stderr，无需 get_stderr 桥接）
