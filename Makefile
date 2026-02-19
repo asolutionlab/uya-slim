@@ -46,10 +46,31 @@ from-c:
 	@echo "✓ 编译器构建完成: bin/uya"
 	@ls -la bin/uya
 
-# 构建自举编译器（src），并更新 bin/uya.c
+# 构建自举编译器（src），默认使用 --nostdlib（静态链接，零依赖）
 uya:
 	@echo "=========================================="
-	@echo "构建自举编译器 (uya)"
+	@echo "构建自举编译器 (uya) --nostdlib"
+	@echo "=========================================="
+	@if [ ! -f bin/uya ]; then \
+		echo "bin/uya 不存在，从备份构建..."; \
+		$(MAKE) from-c; \
+	fi
+	@echo "使用 bin/uya 编译 src/ ..."
+	@CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" cd src && ./compile.sh --c99 -e --nostdlib
+	@echo ""
+	@echo "更新 bin/uya.c ..."
+	@cp src/build/uya.c bin/uya.c
+	@echo "✓ bin/uya.c 已更新"
+	@echo ""
+	@echo "✓ 自举编译器构建完成: bin/uya（静态链接，零依赖）"
+	@echo ""
+	@echo "提示: 运行 'make b' 验证自举，通过后会自动备份"
+
+# 构建自举编译器（标准库版本，用于调试）
+uya-std:
+	@echo "=========================================="
+	@echo "构建自举编译器 (uya-std)"
+	@echo "使用标准库链接（用于调试）"
 	@echo "=========================================="
 	@if [ ! -f bin/uya ]; then \
 		echo "bin/uya 不存在，从备份构建..."; \
@@ -65,19 +86,12 @@ uya:
 	@echo "CFLAGS: $(CFLAGS)"
 	@gcc $(CFLAGS) bin/uya.c -o bin/uya $(LDFLAGS)
 	@echo ""
-	@echo "✓ 自举编译器构建完成: bin/uya"
+	@echo "✓ 自举编译器构建完成: bin/uya（标准库链接）"
 	@echo ""
-	@echo "提示: 运行 'make b' 验证自举，通过后会自动备份"
+	@echo "提示: 运行 'make b' 验证自举"
 
-# 构建自举编译器（--nostdlib 版本）
-uya-nostdlib: uya-c
-	@echo "=========================================="
-	@echo "构建自举编译器 (uya-nostdlib)"
-	@echo "使用 --nostdlib 选项（不链接标准库）"
-	@echo "=========================================="
-	@cd src && ./compile.sh --c99 -e --nostdlib
-	@echo ""
-	@echo "✓ 自举编译器（--nostdlib）构建完成: bin/uya"
+# 构建自举编译器（--nostdlib 版本）- 别名
+uya-nostdlib: uya
 
 # 构建自举编译器（启用内存安全检查）
 uya-safety:
@@ -98,7 +112,7 @@ b: uya
 	@echo "=========================================="
 	@echo "自举验证：编译器编译自身，验证输出一致性"
 	@echo "=========================================="
-	@cd src && ./compile.sh --c99 -e -b
+	@cd src && ./compile.sh --c99 -e -b --nostdlib
 	@echo ""
 	@echo "✓ 自举验证完成"
 
@@ -297,8 +311,8 @@ help:
 	@echo "可用目标:"
 	@echo "  make from-c        - 从 bin/uya.c 构建（零依赖，不需要 uya-c）"
 	@echo "  make uya-c         - 构建 C 编译器 (bin/uya-c)"
-	@echo "  make uya           - 构建自举编译器 (bin/uya)，自动更新 bin/uya.c"
-	@echo "  make uya-nostdlib  - 构建自举编译器（--nostdlib 版本，不链接标准库）"
+	@echo "  make uya           - 构建自举编译器（默认 --nostdlib，静态链接）"
+	@echo "  make uya-std       - 构建自举编译器（标准库链接，用于调试）"
 	@echo "  make uya-safety    - 构建自举编译器（启用内存安全检查）"
 	@echo "  make b             - 自举验证：编译器编译自身，验证输出一致性"
 	@echo "  make tests          - 运行测试套件（默认 tests/run_programs_parallel.sh 并行）"
