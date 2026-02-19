@@ -509,8 +509,15 @@ fn gen_test_runner(codegen: &C99CodeGenerator, tests: & & ASTNode, test_count: i
         const test_node: &ASTNode = tests[i];
         if test_node != null && test_node.type == ASTNodeType.AST_TEST_STMT {
             const func_name: &byte = get_test_function_name(codegen, test_node.test_stmt_description);
+            const description: &byte = test_node.test_stmt_description;
             if func_name != null {
-                fprintf(codegen.output as *void, "    %s();\n" as *byte, func_name as *byte);
+                // 输出测试名称
+                fprintf(codegen.output as *void, "    printf(\"  TEST: %s ... \");\n" as *byte, description as *byte);
+                // 记录测试前的计数
+                fputs("    { int _before = _test_passed + _test_failed;\n" as *byte, codegen.output as *void);
+                fprintf(codegen.output as *void, "      %s();\n" as *byte, func_name as *byte);
+                fputs("      int _after = _test_passed + _test_failed;\n" as *byte, codegen.output as *void);
+                fputs("      if (_after > _before) printf(\"OK\\n\"); else printf(\"FAILED\\n\"); }\n" as *byte, codegen.output as *void);
             }
         }
         i = i + 1;
@@ -1846,7 +1853,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // std.runtime.entry 的 main 会调用 main_main()
     if has_user_main == 0 && test_count > 0 {
         fputs("int32_t main_main(void) {\n" as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "    printf(\"\\n=== Running %d tests ===\\n\");\n" as *byte, test_count as *byte);
         fputs("    uya_run_tests();\n" as *byte, codegen.output as *void);
+        fputs("    printf(\"\\n=== Results ===\\n\");\n" as *byte, codegen.output as *void);
+        fputs("    printf(\"  Passed: %d\\n\", _test_passed);\n" as *byte, codegen.output as *void);
+        fputs("    printf(\"  Failed: %d\\n\", _test_failed);\n" as *byte, codegen.output as *void);
         fputs("    return 0;\n" as *byte, codegen.output as *void);
         fputs("}\n" as *byte, codegen.output as *void);
     }

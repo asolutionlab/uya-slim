@@ -1263,7 +1263,7 @@ static const char str1203[] = "static void uya_run_tests(void);\n";
 static const char str1204[] = "extern struct FILE _stdin, _stdout, _stderr;\n";
 static const char str1205[] = "%s main(";
 static const char str1206[] = "%s %s(void) {\n";
-static const char str1207[] = "int32_t uya_main(void) {\n";
+static const char str1207[] = "int32_t main_main(void) {\n";
 static const char str1208[] = "/* drop */ ";
 static const char str1209[] = "%s(%s);\n";
 static const char str1210[] = "/* errdefer */ ";
@@ -4553,16 +4553,20 @@ static __attribute__((unused)) int32_t compile_files(int32_t * input_file_indice
         return _uya_ret;
     }
     int32_t has_export_main = 0;
+    int32_t has_test_stmt = 0;
     i = 0;
     while ((i < resolved_count)) {
         const int32_t main_type = detect_main_function(resolved_files[i]);
         if ((main_type == 2)) {
             has_export_main = 1;
-            break;
+        } else {
+            if ((main_type == 1)) {
+                has_test_stmt = 1;
+            }
         }
         i = (i + 1);
     }
-    if ((has_export_main != 0)) {
+    if (((has_export_main != 0) || (has_test_stmt != 0))) {
         uint8_t entry_path[4096] = {0};
         const int32_t entry_len = libc_snprintf((char *)(&entry_path[0]), PATH_MAX, (const char *)str76, (uint8_t *)(&uya_root_buffer[0]));
         if (((entry_len > 0) && (entry_len < PATH_MAX))) {
@@ -33375,14 +33379,13 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         gen_test_runner(codegen, tests_array, test_count);
         libc_fputs((uint8_t *)(uint8_t *)str144, (void *)codegen->output);
     }
-    int32_t has_main = 0;
+    int32_t has_user_main = 0;
     i = 0;
     while ((i < decl_count)) {
         struct ASTNode * const decl = ast->program_decls[i];
         if (((decl != NULL) && (decl->type == AST_FN_DECL))) {
             uint8_t * const func_name = decl->fn_decl_name;
             if ((((func_name != NULL) && (std_string_strcmp((uint8_t *)func_name, (uint8_t *)(uint8_t *)str39) == 0)) && (decl->fn_decl_body != NULL))) {
-                has_main = 1;
                 const int32_t is_export = decl->fn_decl_is_export;
                 const int32_t is_extern_keyword = decl->fn_decl_is_extern;
                 int32_t is_c_main = 0;
@@ -33392,6 +33395,9 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                 int32_t is_app_main = 0;
                 if (((is_export != 0) && (is_extern_keyword == 0))) {
                     is_app_main = 1;
+                }
+                if ((is_c_main == 0)) {
+                    has_user_main = 1;
                 }
                 emit_line_directive(codegen, decl->line, decl->filename);
                 uint8_t * const return_c = convert_array_return_type(codegen, decl->fn_decl_return_type);
@@ -33445,7 +33451,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         }
         i = (i + 1);
     }
-    if (((has_main == 0) && (test_count > 0))) {
+    if (((has_user_main == 0) && (test_count > 0))) {
         libc_fputs((uint8_t *)(uint8_t *)str1207, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1069, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str219, (void *)codegen->output);
