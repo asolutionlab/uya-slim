@@ -1338,6 +1338,120 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
 }
 
 // 生成二元表达式
+// 生成错误类型比较代码
+fn gen_error_value_comparison(codegen: &C99CodeGenerator, left: &ASTNode, right: &ASTNode, op: TokenType) i32 {
+    // err == error.X 或 error.X == err -> .error_id 比较
+    if left != null && right != null {
+        if left.type == ASTNodeType.AST_IDENTIFIER && right.type == ASTNodeType.AST_ERROR_VALUE {
+            var id: i32 = c99_get_or_add_error_id(codegen, right.error_value_name);
+            if id == 0 {
+                id = 1;
+            }
+            const safe: &byte = get_c_name_for_identifier_ref(codegen, left.identifier_name);
+            if op == TokenType.TOKEN_NOT_EQUAL {
+                fprintf(codegen.output as *void, "(%s.error_id != %dU)" as *byte, safe as *byte, id);
+            } else {
+                fprintf(codegen.output as *void, "(%s.error_id == %dU)" as *byte, safe as *byte, id);
+            }
+            return 1;
+        }
+        if left.type == ASTNodeType.AST_ERROR_VALUE && right.type == ASTNodeType.AST_IDENTIFIER {
+            var id: i32 = c99_get_or_add_error_id(codegen, left.error_value_name);
+            if id == 0 {
+                id = 1;
+            }
+            const safe: &byte = get_c_name_for_identifier_ref(codegen, right.identifier_name);
+            if op == TokenType.TOKEN_NOT_EQUAL {
+                fprintf(codegen.output as *void, "(%dU != %s.error_id)" as *byte, id, safe as *byte);
+            } else {
+                fprintf(codegen.output as *void, "(%dU == %s.error_id)" as *byte, id, safe as *byte);
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+// 生成结构体字段比较代码
+fn gen_struct_field_comparison(codegen: &C99CodeGenerator, left: &ASTNode, right: &ASTNode, field: &ASTNode) void {
+    const field_type: &ASTNode = field.var_decl_type;
+    const safe_field: &byte = get_safe_c_identifier(codegen, field.var_decl_name);
+    if safe_field == null { return; }
+    
+    var field_needs_memcmp: i32 = 0;
+    if field_type != null {
+        if field_type.type == ASTNodeType.AST_TYPE_NAMED {
+            const type_name: &byte = field_type.type_named_name;
+            if type_name != null && find_struct_decl_c99(codegen, type_name) != null {
+                field_needs_memcmp = 1;
+            }
+        } else if field_type.type == ASTNodeType.AST_TYPE_ARRAY {
+            field_needs_memcmp = 1;
+        }
+    }
+    
+    if field_needs_memcmp != 0 {
+        fputs("(__uya_memcmp(&(" as *byte, codegen.output as *void);
+        gen_expr(codegen, left);
+        fputs(")." as *byte, codegen.output as *void);
+        fputs(safe_field as *byte, codegen.output as *void);
+        fputs(", &(" as *byte, codegen.output as *void);
+        gen_expr(codegen, right);
+        fputs(")." as *byte, codegen.output as *void);
+        fputs(safe_field as *byte, codegen.output as *void);
+        fputs(", sizeof((" as *byte, codegen.output as *void);
+        gen_expr(codegen, left);
+        fputs(")." as *byte, codegen.output as *void);
+        fputs(safe_field as *byte, codegen.output as *void);
+        fputs(")) == 0)" as *byte, codegen.output as *void);
+    } else {
+        fputs("((" as *byte, codegen.output as *void);
+        gen_expr(codegen, left);
+        fputs(")." as *byte, codegen.output as *void);
+        fputs(safe_field as *byte, codegen.output as *void);
+        fputs(" == (" as *byte, codegen.output as *void);
+        gen_expr(codegen, right);
+        fputs(")." as *byte, codegen.output as *void);
+        fputs(safe_field as *byte, codegen.output as *void);
+        fputs(")" as *byte, codegen.output as *void);
+    }
+}
+
+// 生成结构体 memcmp 比较（回退方案）
+fn gen_struct_memcmp_comparison(codegen: &C99CodeGenerator, left: &ASTNode, right: &ASTNode, op: TokenType) void {
+    fputc(40, codegen.output as *void);  // '('
+    if left.type == ASTNodeType.AST_IDENTIFIER {
+        fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
+        gen_expr(codegen, left);
+        fputs(", &" as *byte, codegen.output as *void);
+        gen_expr(codegen, right);
+        fputs(", sizeof(" as *byte, codegen.output as *void);
+        gen_expr(codegen, left);
+        fputs("))" as *byte, codegen.output as *void);
+    } else if left.type == ASTNodeType.AST_STRUCT_INIT {
+        const struct_name: &byte = left.struct_init_struct_name;
+        fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
+        gen_expr(codegen, left);
+        fputs(", &" as *byte, codegen.output as *void);
+        gen_expr(codegen, right);
+        const safe_struct_name: &byte = get_safe_c_identifier(codegen, struct_name);
+        fprintf(codegen.output as *void, ", sizeof(struct %s))" as *byte, safe_struct_name as *byte);
+    } else {
+        fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
+        gen_expr(codegen, left);
+        fputs(", &" as *byte, codegen.output as *void);
+        gen_expr(codegen, right);
+        fputs(", sizeof(" as *byte, codegen.output as *void);
+        gen_expr(codegen, left);
+        fputs("))" as *byte, codegen.output as *void);
+    }
+    if op == TokenType.TOKEN_EQUAL {
+        fputs(" == 0)" as *byte, codegen.output as *void);
+    } else if op == TokenType.TOKEN_NOT_EQUAL {
+        fputs(" != 0)" as *byte, codegen.output as *void);
+    } else {
+        fputc(41, codegen.output as *void);  // ')'
+    }
+}
 fn gen_binary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const left: &ASTNode = expr.binary_expr_left;
         const right: &ASTNode = expr.binary_expr_right;
@@ -1345,33 +1459,8 @@ fn gen_binary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         
         // 错误类型比较：err == error.X 或 error.X == err -> .error_id 比较
         if op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL {
-            if left != null && right != null {
-                if left.type == ASTNodeType.AST_IDENTIFIER && right.type == ASTNodeType.AST_ERROR_VALUE {
-                var id: i32 = c99_get_or_add_error_id(codegen, right.error_value_name);
-                if id == 0 {
-                    id = 1;
-                }
-                const safe: &byte = get_c_name_for_identifier_ref(codegen, left.identifier_name);
-                if op == TokenType.TOKEN_NOT_EQUAL {
-                    fprintf(codegen.output as *void, "(%s.error_id != %dU)" as *byte, safe as *byte, id);
-                } else {
-                    fprintf(codegen.output as *void, "(%s.error_id == %dU)" as *byte, safe as *byte, id);
-                }
+            if gen_error_value_comparison(codegen, left, right, op) != 0 {
                 return;
-                }
-                if left.type == ASTNodeType.AST_ERROR_VALUE && right.type == ASTNodeType.AST_IDENTIFIER {
-                var id: i32 = c99_get_or_add_error_id(codegen, left.error_value_name);
-                if id == 0 {
-                    id = 1;
-                }
-                const safe: &byte = get_c_name_for_identifier_ref(codegen, right.identifier_name);
-                if op == TokenType.TOKEN_NOT_EQUAL {
-                    fprintf(codegen.output as *void, "(%dU != %s.error_id)" as *byte, id, safe as *byte);
-                } else {
-                    fprintf(codegen.output as *void, "(%dU == %s.error_id)" as *byte, id, safe as *byte);
-                }
-                return;
-                }
             }
         }
         
@@ -1434,31 +1523,7 @@ fn gen_binary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                     field_needs_memcmp = 1;
                                 }
                             }
-                            if field_needs_memcmp != 0 {
-                                fputs("(__uya_memcmp(&(" as *byte, codegen.output as *void);
-                                gen_expr(codegen, left);
-                                fputs(")." as *byte, codegen.output as *void);
-                                fputs(safe_field as *byte, codegen.output as *void);
-                                fputs(", &(" as *byte, codegen.output as *void);
-                                gen_expr(codegen, right);
-                                fputs(")." as *byte, codegen.output as *void);
-                                fputs(safe_field as *byte, codegen.output as *void);
-                                fputs(", sizeof((" as *byte, codegen.output as *void);
-                                gen_expr(codegen, left);
-                                fputs(")." as *byte, codegen.output as *void);
-                                fputs(safe_field as *byte, codegen.output as *void);
-                                fputs(")) == 0)" as *byte, codegen.output as *void);
-                            } else {
-                                fputs("((" as *byte, codegen.output as *void);
-                                gen_expr(codegen, left);
-                                fputs(")." as *byte, codegen.output as *void);
-                                fputs(safe_field as *byte, codegen.output as *void);
-                                fputs(" == (" as *byte, codegen.output as *void);
-                                gen_expr(codegen, right);
-                                fputs(")." as *byte, codegen.output as *void);
-                                fputs(safe_field as *byte, codegen.output as *void);
-                                fputs(")" as *byte, codegen.output as *void);
-                            }
+                            gen_struct_field_comparison(codegen, left, right, field);
                             if i < struct_decl.struct_decl_field_count - 1 {
                                 fputs(" && " as *byte, codegen.output as *void);
                             }
@@ -1471,40 +1536,8 @@ fn gen_binary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     fputc(41, codegen.output as *void);  // ')'
                 }
             } else {
-                // 回退：无法按字段比较时用 memcmp，与 C 编译器一致
-                fputc(40, codegen.output as *void);  // '('
-                if left.type == ASTNodeType.AST_IDENTIFIER {
-                    fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
-                    gen_expr(codegen, left);
-                    fputs(", &" as *byte, codegen.output as *void);
-                    gen_expr(codegen, right);
-                    fputs(", sizeof(" as *byte, codegen.output as *void);
-                    gen_expr(codegen, left);
-                    fputs("))" as *byte, codegen.output as *void);
-                } else if left.type == ASTNodeType.AST_STRUCT_INIT {
-                    const struct_name: &byte = left.struct_init_struct_name;
-                    fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
-                    gen_expr(codegen, left);
-                    fputs(", &" as *byte, codegen.output as *void);
-                    gen_expr(codegen, right);
-                    const safe_struct_name: &byte = get_safe_c_identifier(codegen, struct_name);
-                    fprintf(codegen.output as *void, ", sizeof(struct %s))" as *byte, safe_struct_name as *byte);
-                } else {
-                    fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
-                    gen_expr(codegen, left);
-                    fputs(", &" as *byte, codegen.output as *void);
-                    gen_expr(codegen, right);
-                    fputs(", sizeof(" as *byte, codegen.output as *void);
-                    gen_expr(codegen, left);
-                    fputs("))" as *byte, codegen.output as *void);
-                }
-                if op == TokenType.TOKEN_EQUAL {
-                    fputs(" == 0)" as *byte, codegen.output as *void);
-                } else if op == TokenType.TOKEN_NOT_EQUAL {
-                    fputs(" != 0)" as *byte, codegen.output as *void);
-                } else {
-                    fputc(41, codegen.output as *void);  // ')'
-                }
+                // 回退：无法按字段比较时用 memcmp
+                gen_struct_memcmp_comparison(codegen, left, right, op);
             }
         } else if op == TokenType.TOKEN_PLUS_PIPE || op == TokenType.TOKEN_MINUS_PIPE || op == TokenType.TOKEN_ASTERISK_PIPE ||
             op == TokenType.TOKEN_PLUS_PERCENT || op == TokenType.TOKEN_MINUS_PERCENT || op == TokenType.TOKEN_ASTERISK_PERCENT {
