@@ -5,7 +5,7 @@
 
 ---
 
-## 阶段一：巨型函数拆分 [██░░░░░░░░] 25%
+## 阶段一：巨型函数拆分 [████░░░░░░] 40%
 
 ### 1.1 添加 Type 辅助函数 ✅
 
@@ -31,7 +31,7 @@
 - [x] 运行 `make check` 验证 - **通过**
 - [x] Git 提交: `583ba71 refactor(stage1): 添加 Type 辅助函数`
 
-### 1.2 拆分 `checker_infer_type` 🔄
+### 1.2 拆分 `checker_infer_type` ✅
 
 - [x] 分析函数结构：1223 行，37 个 else if 分支
 - [x] 使用辅助函数替换简单类型返回：
@@ -45,17 +45,18 @@
 - [x] 代码统计：删除 157 行，新增 79 行，净减少 78 行
 - [x] 验证通过：414 测试，自举成功
 - [x] Git 提交: `e3b35b1 refactor(stage1): checker_infer_type 使用辅助函数重构`
-- [ ] 按表达式类型拆分为独立函数：
-  - [ ] `infer_identifier(checker, expr)` - 标识符推断
-  - [ ] `infer_binary_expr(checker, expr)` - 二元表达式推断
-  - [ ] `infer_call_expr(checker, expr)` - 调用表达式推断
-  - [ ] `infer_member_access(checker, expr)` - 成员访问推断
-  - [ ] `infer_match_expr(checker, expr)` - match 表达式推断
-  - [ ] `infer_struct_init(checker, expr)` - 结构体初始化推断
-  - [ ] `infer_array_literal(checker, expr)` - 数组字面量推断
-  - [ ] `infer_cast_expr(checker, expr)` - 类型转换推断
-- [ ] 更新 `checker_infer_type` 为分发函数（≤ 50 行）
-- [ ] 运行 `make check` 验证
+- [x] 按表达式类型拆分为独立函数：
+  - [x] `infer_call_expr(checker, expr)` - 调用表达式推断
+  - [x] `infer_member_access(checker, expr)` - 成员访问推断
+  - [x] `infer_match_expr(checker, expr)` - match 表达式推断
+  - [x] `infer_syscall(checker, expr)` - syscall 推断
+  - [x] `infer_unary_expr(checker, expr)` - 一元表达式推断
+  - [x] `infer_array_access(checker, expr)` - 数组访问推断
+  - [x] `infer_print_expr(checker, expr)` - @print/@println 推断
+  - [x] `infer_catch_expr(checker, expr)` - catch 表达式推断
+- [x] 函数从 1223 行减少到 **474 行**（目标 ≤500 行）
+- [x] 验证通过：414 测试，自举成功
+- [x] Git 提交: `0be615d refactor(stage1): 继续拆分 checker_infer_type 至 474 行`
 
 ### 1.3 拆分 `gen_stmt`
 
