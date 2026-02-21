@@ -15,6 +15,20 @@ use codegen.c99;
 use std.runtime.entry;
 use libc;
 
+// ===== 计时函数 =====
+// 暂时禁用精确计时，使用简单计数器
+
+// 编译统计结构体
+struct CompileStats {
+    parse_time_ms: i64,      // 解析阶段耗时（毫秒）
+    merge_time_ms: i64,      // AST 合并耗时
+    check_time_ms: i64,      // 类型检查耗时
+    codegen_time_ms: i64,    // 代码生成耗时
+    total_time_ms: i64,      // 总耗时
+    file_count: i32,         // 编译文件数
+    ast_nodes: i32,          // AST 节点数（近似）
+}
+
 // 后端类型
 enum BackendType {
     BACKEND_LLVM,
@@ -1481,7 +1495,11 @@ fn compile_files(
     }
     fprintf(libc.stderr, "后端类型: %s\n" as *byte, backend_str);
 
-    var arena: Arena = Arena { buffer: null, size: 0 as usize, offset: 0 as usize };
+    // 初始化编译统计
+    var stats: CompileStats = CompileStats { parse_time_ms: 0, merge_time_ms: 0, check_time_ms: 0, codegen_time_ms: 0, total_time_ms: 0, file_count: 0, ast_nodes: 0 };
+    stats.file_count = all_file_count;  // 记录文件数
+
+    var arena: Arena = Arena { buffer: null, size: 0 as usize, offset: 0 as usize, first_chunk: null, current_chunk: null, total_allocated: 0 as usize };
     arena_init(&arena, &arena_buffer[0], ARENA_BUFFER_SIZE as usize);
 
     var programs: [&ASTNode: MAX_INPUT_FILES] = [];
@@ -1596,7 +1614,12 @@ fn compile_files(
     }
     c99_codegen_free(&c99_codegen);
     fclose(out_file);
-    fprintf(libc.stderr, "代码生成完成: %s\n" as *byte, actual_output);
+    
+    // 输出编译统计
+    fprintf(libc.stderr, "\n=== 编译统计 ===\n" as *byte);
+    fprintf(libc.stderr, "文件数: %d\n" as *byte, stats.file_count);
+    
+    fprintf(libc.stderr, "\n代码生成完成: %s\n" as *byte, actual_output);
 
     return 0;
 }
