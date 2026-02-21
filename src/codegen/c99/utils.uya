@@ -223,6 +223,11 @@ fn c99_emit_comma_space(codegen: &C99CodeGenerator) void {
     fputs(", " as *byte, codegen.output as *void);
 }
 
+// 右花括号换行
+fn c99_emit_close_brace_newline(codegen: &C99CodeGenerator) void {
+    fputs("}\n" as *byte, codegen.output as *void);
+}
+
 // 简单输出（带缩进处理）
 // 注意：Uya Mini 不支持普通函数的可变参数
 // 对于需要格式化的输出，直接使用 fprintf 而不是 c99_emit

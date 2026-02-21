@@ -869,7 +869,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     
     codegen.indent_level = codegen.indent_level - 1;
     c99_emit_indent(codegen);
-    fputs("}\n" as *byte, codegen.output);
+    c99_emit_close_brace_newline(codegen);
 }
 
 // 是否该结构体类型有 drop 方法（规范 §12）
@@ -1053,7 +1053,7 @@ fn gen_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_nam
     codegen.current_depth = saved_depth;
     codegen.indent_level = codegen.indent_level - 1;
     c99_emit_indent(codegen);
-    fputs("}\n" as *byte, codegen.output as *void);
+    c99_emit_close_brace_newline(codegen);
 }
 
 // 检查函数是否是泛型函数（有类型参数）
@@ -1453,7 +1453,7 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
     codegen.current_depth = saved_depth;
     codegen.indent_level = codegen.indent_level - 1;
     
-    fputs("}\n" as *byte, codegen.output as *void);
+    c99_emit_close_brace_newline(codegen);
     
     // 恢复单态化上下文
     codegen.current_type_params = saved_type_params;
@@ -1692,7 +1692,7 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
     codegen.current_depth = saved_depth;
     codegen.indent_level = codegen.indent_level - 1;
     
-    fputs("}\n" as *byte, codegen.output as *void);
+    c99_emit_close_brace_newline(codegen);
     
     // 恢复方法的类型参数上下文
     codegen.current_type_params = saved_type_params;

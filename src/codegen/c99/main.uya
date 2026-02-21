@@ -501,7 +501,7 @@ fn gen_test_function(codegen: &C99CodeGenerator, test_stmt: &ASTNode) void {
     // 恢复之前的返回类型
     codegen.current_function_return_type = saved_return_type;
     
-    fputs("}\n" as *byte, codegen.output as *void);
+    c99_emit_close_brace_newline(codegen);
 }
 
 // 生成测试运行器函数
@@ -533,7 +533,7 @@ fn gen_test_runner(codegen: &C99CodeGenerator, tests: & & ASTNode, test_count: i
         i = i + 1;
     }
     
-    fputs("}\n" as *byte, codegen.output as *void);
+    c99_emit_close_brace_newline(codegen);
 }
 
 // 生成 C99 代码
@@ -774,7 +774,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("    char *d = (char *)dest; const char *s = (const char *)src;\n" as *byte, codegen.output as *void);
         fputs("    for (size_t i = 0; i < n; i++) d[i] = s[i];\n" as *byte, codegen.output as *void);
         fputs("    return dest;\n" as *byte, codegen.output as *void);
-        fputs("}\n" as *byte, codegen.output as *void);
+        c99_emit_close_brace_newline(codegen);
         fputs("static inline int __uya_memcmp(const void *s1, const void *s2, size_t n) {\n" as *byte, codegen.output as *void);
         fputs("    const unsigned char *a = (const unsigned char *)s1, *b = (const unsigned char *)s2;\n" as *byte, codegen.output as *void);
         fputs("    for (size_t i = 0; i < n; i++) { if (a[i] != b[i]) return a[i] - b[i]; } return 0;\n" as *byte, codegen.output as *void);
@@ -1180,7 +1180,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("    register long r9 __asm__(\"r9\") = a6;\n" as *byte, codegen.output as *void);
     fputs("    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx), \"r\"(r10), \"r\"(r8), \"r\"(r9) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.output as *void);
     fputs("    return rax;\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
+    c99_emit_close_brace_newline(codegen);
     
     fputs("#else\n" as *byte, codegen.output as *void);
     fputs("#error \"@syscall currently only supports Linux x86-64\"\n" as *byte, codegen.output as *void);
@@ -1871,7 +1871,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 // 恢复之前的返回类型
                 codegen.current_function_return_type = saved_return_type;
                 
-                fputs("}\n" as *byte, codegen.output as *void);
+                c99_emit_close_brace_newline(codegen);
             }
         }
         i = i + 1;
@@ -1887,7 +1887,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("    printf(\"  Passed: %d\\n\", _test_passed);\n" as *byte, codegen.output as *void);
         fputs("    printf(\"  Failed: %d\\n\", _test_failed);\n" as *byte, codegen.output as *void);
         fputs("    return _test_failed;\n" as *byte, codegen.output as *void);
-        fputs("}\n" as *byte, codegen.output as *void);
+        c99_emit_close_brace_newline(codegen);
     }
     
     return 0;

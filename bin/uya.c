@@ -3077,6 +3077,7 @@ static void c99_emit_indent(struct C99CodeGenerator * codegen);
 static void c99_emit_newline(struct C99CodeGenerator * codegen);
 static void c99_emit_semi_newline(struct C99CodeGenerator * codegen);
 static void c99_emit_comma_space(struct C99CodeGenerator * codegen);
+static void c99_emit_close_brace_newline(struct C99CodeGenerator * codegen);
 static void c99_emit(struct C99CodeGenerator * codegen, uint8_t * str);
 static uint8_t * c99_arena_strdup(struct Arena * arena, uint8_t * src);
 static int32_t is_c_keyword(uint8_t * name);
@@ -31792,7 +31793,7 @@ static __attribute__((unused)) void gen_function(struct C99CodeGenerator * codeg
     codegen->current_depth = saved_current_depth;
     codegen->indent_level = (codegen->indent_level - 1);
     c99_emit_indent(codegen);
-    libc_fputs((uint8_t *)(uint8_t *)str162, codegen->output);
+    c99_emit_close_brace_newline(codegen);
 }
 
 static __attribute__((unused)) int32_t type_has_drop_c99(struct C99CodeGenerator * codegen, uint8_t * struct_name) {
@@ -31984,7 +31985,7 @@ static __attribute__((unused)) void gen_method_function(struct C99CodeGenerator 
     codegen->current_depth = saved_depth;
     codegen->indent_level = (codegen->indent_level - 1);
     c99_emit_indent(codegen);
-    libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+    c99_emit_close_brace_newline(codegen);
 }
 
 static __attribute__((unused)) int32_t is_generic_function_c99(struct ASTNode * fn_decl) {
@@ -32344,7 +32345,7 @@ static __attribute__((unused)) void gen_mono_function(struct C99CodeGenerator * 
     codegen->local_variable_count = saved_local_count;
     codegen->current_depth = saved_depth;
     codegen->indent_level = (codegen->indent_level - 1);
-    libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+    c99_emit_close_brace_newline(codegen);
     codegen->current_type_params = saved_type_params;
     codegen->current_type_param_count = saved_type_param_count;
     codegen->current_type_args = saved_type_args;
@@ -32546,7 +32547,7 @@ static __attribute__((unused)) void gen_mono_method_function(struct C99CodeGener
     codegen->local_variable_count = saved_local_count;
     codegen->current_depth = saved_depth;
     codegen->indent_level = (codegen->indent_level - 1);
-    libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+    c99_emit_close_brace_newline(codegen);
     codegen->current_type_params = saved_type_params;
     codegen->current_type_param_count = saved_type_param_count;
     codegen->current_type_args = saved_type_args;
@@ -33255,7 +33256,7 @@ static __attribute__((unused)) void gen_test_function(struct C99CodeGenerator * 
     gen_stmt(codegen, body);
     libc_fputs((uint8_t *)(uint8_t *)str1105, (void *)codegen->output);
     codegen->current_function_return_type = saved_return_type;
-    libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+    c99_emit_close_brace_newline(codegen);
 }
 
 static __attribute__((unused)) void gen_test_runner(struct C99CodeGenerator * codegen, struct ASTNode * * tests, int32_t test_count) {
@@ -33284,7 +33285,7 @@ static __attribute__((unused)) void gen_test_runner(struct C99CodeGenerator * co
         }
         i = (i + 1);
     }
-    libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+    c99_emit_close_brace_newline(codegen);
 }
 
 static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenerator * codegen, struct ASTNode * ast, uint8_t * output_file) {
@@ -33471,7 +33472,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         libc_fputs((uint8_t *)(uint8_t *)str1169, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1170, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str240, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+        c99_emit_close_brace_newline(codegen);
         libc_fputs((uint8_t *)(uint8_t *)str1171, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1172, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1173, (void *)codegen->output);
@@ -33792,7 +33793,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
     libc_fputs((uint8_t *)(uint8_t *)str1225, (void *)codegen->output);
     libc_fputs((uint8_t *)(uint8_t *)str1226, (void *)codegen->output);
     libc_fputs((uint8_t *)(uint8_t *)str161, (void *)codegen->output);
-    libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+    c99_emit_close_brace_newline(codegen);
     libc_fputs((uint8_t *)(uint8_t *)str1227, (void *)codegen->output);
     libc_fputs((uint8_t *)(uint8_t *)str1228, (void *)codegen->output);
     libc_fputs((uint8_t *)(uint8_t *)str155, (void *)codegen->output);
@@ -34357,7 +34358,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                     }
                 }
                 codegen->current_function_return_type = saved_return_type;
-                libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+                c99_emit_close_brace_newline(codegen);
             }
         }
         i = (i + 1);
@@ -34370,7 +34371,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         libc_fputs((uint8_t *)(uint8_t *)str1238, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1239, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1240, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+        c99_emit_close_brace_newline(codegen);
     }
     int32_t _uya_ret = 0;
     return _uya_ret;
@@ -34815,7 +34816,7 @@ static __attribute__((unused)) int32_t gen_for_iterator(struct C99CodeGenerator 
         libc_fputs((uint8_t *)(uint8_t *)str1268, (void *)codegen->output);
         codegen->indent_level = (codegen->indent_level - 1);
         c99_emit_indent(codegen);
-        libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+        c99_emit_close_brace_newline(codegen);
     }
     uint8_t * const value_cname = get_method_c_name(codegen, (&struct_name_buf[0]), (uint8_t *)(uint8_t *)str632);
     if (((value_cname != NULL) && (var_name2 != NULL))) {
@@ -34825,10 +34826,10 @@ static __attribute__((unused)) int32_t gen_for_iterator(struct C99CodeGenerator 
     gen_stmt(codegen, body2);
     codegen->indent_level = (codegen->indent_level - 1);
     c99_emit_indent(codegen);
-    libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+    c99_emit_close_brace_newline(codegen);
     codegen->indent_level = (codegen->indent_level - 1);
     c99_emit_indent(codegen);
-    libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+    c99_emit_close_brace_newline(codegen);
     int32_t _uya_ret = 1;
     return _uya_ret;
 }
@@ -36115,7 +36116,7 @@ static __attribute__((unused)) int32_t gen_var_decl_void_type(struct C99CodeGene
                 }
                 codegen->indent_level = (codegen->indent_level - 1);
                 c99_emit_indent(codegen);
-                libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+                c99_emit_close_brace_newline(codegen);
                 int32_t _uya_ret = 1;
                 return _uya_ret;
             }
@@ -39697,6 +39698,11 @@ static __attribute__((unused)) void c99_emit_semi_newline(struct C99CodeGenerato
 static __attribute__((unused)) void c99_emit_comma_space(struct C99CodeGenerator * codegen) {
     (void)codegen;
     libc_fputs((uint8_t *)(uint8_t *)str470, (void *)codegen->output);
+}
+
+static __attribute__((unused)) void c99_emit_close_brace_newline(struct C99CodeGenerator * codegen) {
+    (void)codegen;
+    libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
 }
 
 static __attribute__((unused)) void c99_emit(struct C99CodeGenerator * codegen, uint8_t * str) {
