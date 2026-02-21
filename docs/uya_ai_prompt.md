@@ -17,9 +17,12 @@ export use mc
 **内置函数**（以 `@` 开头）：
 - 类型反射：`@size_of`、`@align_of`、`@len`、`@max`、`@min`
 - 源代码位置：`@src_name`、`@src_path`、`@src_line`、`@src_col`、`@func_name`
-- 可变参数：`@params`
+- 可变参数：`@params`、`@va_start`、`@va_end`、`@va_arg`
 - 异步编程：`@async_fn`（函数属性）、`@await`（挂起点）
 - 编译时（宏内）：`@mc_eval`、`@mc_type`、`@mc_ast`、`@mc_code`、`@mc_error`、`@mc_get_env`
+- 系统调用：`@syscall(nr, arg1, ..., arg6)`
+- 指针转换：`@ptr_from_usize`、`@usize_from_ptr`
+- 调试输出：`@print`、`@println`
 
 ## 类型系统
 
@@ -592,6 +595,31 @@ fn example() !void {
 
 **块内禁止**：`return`、`break`、`continue` 等控制流语句。允许：表达式、赋值、函数调用、语句块。替代：用变量记录状态，在 defer/errdefer 外处理控制流。
 
+### test 语句（测试语法）
+
+```uya
+// 单个测试用例
+test "basic_addition" {
+    const result: i32 = add(1, 2);
+    try assert_eq_i32(result, 3, "1 + 2 should equal 3");
+}
+
+// 多个测试用例（每个 test 是独立的测试函数）
+test "addition_with_negative" {
+    const result: i32 = add(-1, 1);
+    try assert_eq_i32(result, 0, "-1 + 1 should equal 0");
+}
+
+// 测试文件组织：tests/test_feature.uya
+// 运行：make tests（自动发现并运行所有 test 语句）
+```
+
+**规则**：
+- `test "描述性名称" { body }` 定义测试用例
+- 测试体返回 `!void`，支持 `try` 表达式
+- 测试失败时打印错误信息并继续执行其他测试
+- 测试文件不使用 `main` 函数，使用 `test "name" {}` 风格
+
 ### 运算符
 
 **优先级表**（从高到低）：
@@ -893,6 +921,32 @@ const msg3: [i8: 64] = "pi=${pi:.2e}\n";  // 科学计数法
 
 见上文"关键字"章节的内置函数列表。所有内置函数以 `@` 开头，无需导入，自动可用，编译期展开。
 
+**新增内置函数详解**：
+
+```uya
+// @syscall - 系统调用（Linux x86-64）
+const result: !i64 = @syscall(60, 0);  // exit(0)，返回错误联合类型
+
+// @ptr_from_usize - 从 usize 转换为指针
+const ptr: &void = @ptr_from_usize(addr);
+
+// @usize_from_ptr - 从指针转换为 usize
+const addr: usize = @usize_from_ptr(ptr);
+
+// @va_start/@va_end/@va_arg - 可变参数处理（FFI）
+fn my_printf(fmt: *byte, ...) i32 {
+    var ap: va_list = [];
+    @va_start(ap, fmt);
+    const arg1: i32 = @va_arg(ap, i32);
+    @va_end(ap);
+    return 0;
+}
+
+// @print/@println - 调试输出（编译期打印）
+@println(x);  // 打印并换行
+@print(y);    // 打印不换行
+```
+
 ## 完整示例
 
 ```uya
@@ -1031,6 +1085,6 @@ mc assert(cond) stmt {
 
 ---
 
-**版本**：Uya 0.46
-**更新日期**：2026-02-15
+**版本**：Uya 0.47
+**更新日期**：2026-02-21
 

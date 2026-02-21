@@ -1,6 +1,6 @@
 # Uya 编译器代码重构计划 v2.0
 
-> 目标：使用最新 Uya 语法规范重构自举编译器，提升代码质量和可维护性
+> 目标：使用 Uya 0.47 最新语法规范重构自举编译器，提升代码质量和可维护性
 
 ## 项目概述
 
@@ -14,6 +14,13 @@
 - 嵌套深度 ≤ 3 层
 - 减少重复代码
 - 统一代码风格
+
+### 使用的 Uya 0.47 新特性
+- `test "name" {}` - 测试语句（替代 main 函数测试）
+- `for 0..N |i| {}` - 整数范围迭代
+- `"text${expr}text"` - 字符串插值
+- `@print/@println` - 调试输出
+- `@syscall` - 系统调用（低层操作）
 
 ---
 
@@ -38,6 +45,36 @@ src/checker/check_expr.uya
 ├── infer_match_expr()            # match 表达式推断
 ├── infer_cast_expr()             # 类型转换推断
 └── infer_struct_init()           # 结构体初始化推断
+```
+
+**重构示例（使用 Uya 0.47 特性）**：
+
+```uya
+// 主入口：使用 match 表达式分派（< 50 行）
+fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
+    if expr == null { return make_void_type(); }
+    
+    match expr.type {
+        ASTNodeType.AST_IDENTIFIER => return infer_identifier(checker, expr),
+        ASTNodeType.AST_NUMBER => return infer_literal(checker, expr),
+        ASTNodeType.AST_BINARY_EXPR => return infer_binary_expr(checker, expr),
+        ASTNodeType.AST_CALL_EXPR => return infer_call_expr(checker, expr),
+        ASTNodeType.AST_MEMBER_ACCESS => return infer_member_access(checker, expr),
+        ASTNodeType.AST_MATCH_EXPR => return infer_match_expr(checker, expr),
+        else => return make_void_type()
+    };
+}
+
+// 独立函数示例：使用字符串插值记录错误
+fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
+    if expr.call_expr_callee == null {
+        // 使用字符串插值生成错误消息
+        const msg: [i8: 128] = "调用表达式缺少被调用者（行 ${expr.line}）";
+        checker_report_error(checker, expr, &msg[0] as &byte);
+        return make_void_type();
+    }
+    // ... 推断逻辑
+}
 ```
 
 **预估工作量**：3-5 天
@@ -117,21 +154,20 @@ fn process_match(expr: &ASTNode) void {
     }
 }
 
-// 重构后（嵌套 2 层）
+// 重构后（嵌套 2 层，使用 Uya 0.47 特性）
 fn process_match(expr: &ASTNode) void {
     if expr == null { return; }
     if expr.type != AST_MATCH_EXPR { return; }
     if expr.match_expr_arms == null { return; }
     
-    var i: i32 = 0;
-    while i < expr.match_expr_arm_count {
+    // 使用 for 范围迭代替代 while
+    for 0..expr.match_expr_arm_count |i| {
         const arm: &ASTNode = arms[i];
-        if arm == null { i = i + 1; continue; }
+        if arm == null { continue; }
         
         if arm.kind == MATCH_PAT_UNION {
             process_union_arm(arm);  // 提取函数
         }
-        i = i + 1;
     }
 }
 ```
@@ -164,27 +200,10 @@ src/codegen/c99/stmt.uya
 
 **当前问题**：Type 结构体初始化代码重复 20+ 次
 
-```uya
-// 当前代码（重复 20+ 次）
-var result: Type = Type {
-    kind: TypeKind.TYPE_VOID,
-    enum_name: null,
-    struct_name: null,
-    pointer_to: null,
-    is_ffi_pointer: 0,
-    element_type: null,
-    array_size: 0,
-    slice_element_type: null,
-    slice_len: 0,
-    tuple_element_types: null,
-    tuple_count: 0,
-};
-```
-
 **重构方案**：在 `src/checker/type_utils.uya` 添加辅助函数
 
 ```uya
-// 新增辅助函数
+// 新增辅助函数（使用 Uya 0.47 简洁语法）
 fn make_void_type() Type {
     return Type { kind: TypeKind.TYPE_VOID, enum_name: null, ... };
 }
@@ -222,18 +241,19 @@ fn make_error_union_type(payload: &Type, error_id: u32) Type { ... }
 // src/codegen/c99/utils.uya 新增
 
 fn emit_array_memcpy(codegen: &C99CodeGenerator, dest: &byte, src: &byte, type_name: &byte) void {
-    fprintf(codegen.output as *void, "__uya_memcpy(%s, %s, sizeof(%s));\n" as *byte, dest as *byte, src as *byte, type_name as *byte);
+    // 使用字符串插值
+    const line: [i8: 256] = "__uya_memcpy(${dest}, ${src}, sizeof(${type_name}));\n";
+    fputs(&line[0] as *byte, codegen.output as *void);
 }
 
 fn emit_error_union_wrap(codegen: &C99CodeGenerator, type_name: &byte, value: &byte) void {
-    fprintf(codegen.output as *void, "(%s){ .error_id = 0, .value = %s }" as *byte, type_name as *byte, value as *byte);
+    const line: [i8: 256] = "(${type_name}){ .error_id = 0, .value = ${value} }";
+    fputs(&line[0] as *byte, codegen.output as *void);
 }
 
 fn emit_indent(codegen: &C99CodeGenerator) void {
-    var i: i32 = 0;
-    while i < codegen.indent_level {
+    for 0..codegen.indent_level {
         fputs("    " as *byte, codegen.output as *void);
-        i = i + 1;
     }
 }
 ```
@@ -259,9 +279,74 @@ if is_integer_type(arg_type) != 0 { ... }
 
 ---
 
-## 阶段四：代码质量改进 [░░░░░░░░░░] 0%
+## 阶段四：测试现代化 [░░░░░░░░░░] 0%
 
-### 4.1 统一错误处理模式
+### 4.1 使用 test 语句重构测试
+
+**当前问题**：测试使用 main 函数风格，不利于增量运行
+
+**重构方案**：将 `tests/` 下的测试改为 `test "name" {}` 风格
+
+```uya
+// 重构前：tests/test_basic.uya
+use std.testing.assert_eq_i32;
+
+fn test_addition() !void {
+    try assert_eq_i32(add(1, 2), 3, "1 + 2 should equal 3");
+}
+
+export fn main() i32 {
+    test_addition();
+    return 0;
+}
+
+// 重构后：tests/test_basic.uya
+use std.testing.assert_eq_i32;
+
+test "test_addition" {
+    try assert_eq_i32(add(1, 2), 3, "1 + 2 should equal 3");
+}
+
+test "test_subtraction" {
+    try assert_eq_i32(sub(5, 3), 2, "5 - 3 should equal 2");
+}
+
+// 无需 main 函数，测试运行器自动发现并执行
+```
+
+**预估工作量**：2 天
+
+### 4.2 添加增量测试验证
+
+为每个重构的函数添加独立测试：
+
+```uya
+// tests/test_type_utils.uya
+
+test "make_void_type" {
+    const t: Type = make_void_type();
+    try assert_eq_i32(t.kind as i32, TypeKind.TYPE_VOID as i32, "should be void type");
+}
+
+test "make_i32_type" {
+    const t: Type = make_i32_type();
+    try assert_eq_i32(t.kind as i32, TypeKind.TYPE_I32 as i32, "should be i32 type");
+}
+
+test "make_pointer_type" {
+    const elem: Type = make_i32_type();
+    const ptr: Type = make_pointer_type(&elem);
+    try assert_eq_i32(ptr.kind as i32, TypeKind.TYPE_POINTER as i32, "should be pointer type");
+}
+```
+
+**预估工作量**：1 天
+
+---
+
+## 阶段五：代码质量改进 [░░░░░░░░░░] 0%
+
+### 5.1 统一错误处理模式
 
 **当前问题**：部分函数返回空类型，部分返回错误码
 
@@ -270,7 +355,7 @@ if is_integer_type(arg_type) != 0 { ... }
 - 检查函数：返回 `i32`（0=失败，1=成功）
 - 生成函数：返回 `void`，通过 `codegen.error_count` 跟踪错误
 
-### 4.2 常量集中定义
+### 5.2 常量集中定义
 
 **当前问题**：魔法数字分散在代码中
 
@@ -282,9 +367,11 @@ pub const MAX_MONO_INSTANCES: i32 = 512;
 pub const MAX_DEFER_DEPTH: i32 = 64;
 pub const MAX_TYPE_PARAMS: i32 = 16;
 pub const TEMP_BUF_SIZE: i32 = 4096;
+pub const MAX_SCOPE_DEPTH: i32 = 64;
+pub const SYMBOL_TABLE_SIZE: i32 = 32768;
 ```
 
-### 4.3 移除未使用变量
+### 5.3 移除未使用变量
 
 根据分析报告清理：
 - `checker/check_expr.uya` 第 1259 行：`match_union_decl`
@@ -307,7 +394,7 @@ pub const TEMP_BUF_SIZE: i32 = 4096;
 | 天数 | 任务 |
 |------|------|
 | Day 1-2 | 拆分 `gen_expr` |
-| Day 3-4 | 降低嵌套深度（提前返回） |
+| Day 3-4 | 降低嵌套深度（提前返回，for 范围迭代） |
 | Day 5 | 提取辅助函数 |
 
 ### 第三周：阶段三 + 阶段四
@@ -316,7 +403,7 @@ pub const TEMP_BUF_SIZE: i32 = 4096;
 |------|------|
 | Day 1-2 | 提取代码生成辅助函数 |
 | Day 3 | 统一类型检查函数调用 |
-| Day 4 | 统一错误处理模式 |
+| Day 4 | 重构测试为 test 语句风格 |
 | Day 5 | 清理未使用变量，集中常量定义 |
 
 ---
@@ -327,6 +414,7 @@ pub const TEMP_BUF_SIZE: i32 = 4096;
 - [ ] 所有函数 ≤ 50 行
 - [ ] 所有嵌套深度 ≤ 3 层
 - [ ] 重复代码减少 50%+
+- [ ] 测试使用 `test "name" {}` 风格
 
 ### 功能验证
 - [ ] `make check` 通过（自举 + 测试）
@@ -352,5 +440,5 @@ pub const TEMP_BUF_SIZE: i32 = 4096;
 ## 参考资料
 
 - `.codebuddy/skills/uya-development.md` - Uya 开发技能文档
-- `docs/uya_ai_prompt.md` - Uya 语言完整语法
+- `docs/uya_ai_prompt.md` - Uya 语言完整语法（v0.47）
 - `.codebuddy/rules/uya-dev-flow.mdc` - Uya 开发流程规则
