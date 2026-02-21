@@ -279,79 +279,119 @@ if is_integer_type(arg_type) != 0 { ... }
 
 ---
 
----
+## 阶段四：Union 数据结构重构 [░░░░░░░░░░] 0%
 
-## 阶段四：枚举 match 表达式优化 [░░░░░░░░░░] 0%
+> **风险评估**：高 → 中（通过增量式迁移降低风险）
+> **详细方案**：`docs/REFACTOR_PLAN_V2_STAGE4_DETAILED.md`
 
-> **风险评估更新**：Union 数据结构重构方案风险极高（需修改 4400+ 处代码）。
-> 采用保守方案：保持数据结构不变，仅进行 match 表达式优化。
-> 详细分析见 `docs/REFACTOR_PLAN_V2_REVIEW.md`。
+### 4.0 核心策略：增量式迁移
 
-### 4.1 使用 match 替代 Type 条件链
+| 原则 | 实施方法 |
+|------|----------|
+| **小步提交** | 每个子任务完成后立即验证 |
+| **向后兼容** | 保留旧字段，添加新 union 字段 |
+| **访问器封装** | 通过函数访问，渐进迁移 |
+| **模块隔离** | 按模块迁移，避免全局改动 |
 
-**当前问题**：139+ 处 `kind == TypeKind.XXX` 条件判断
+### 4.1 Type 结构体 Union 化（5-7 天）
 
-**重构方案**：使用 match 表达式匹配枚举值（保持数据结构不变）
+**当前问题**：`Type` 结构体使用扁平化设计，18 个字段只有部分有效
+
+**字段访问统计**：
+| 字段 | 访问次数 | 优先级 |
+|------|----------|--------|
+| `struct_name` | 52 | P0 |
+| `pointer_to` | 47 | P0 |
+| `element_type` | 35 | P0 |
+| `slice_element_type` | 23 | P0 |
+| 其他字段 | 162 | P1-P2 |
+
+**重构方案**：使用 union 封装变体数据
 
 ```uya
-// 重构前：复杂的 if-else 链
-fn type_to_string(t: Type) &byte {
-    if t.kind == TypeKind.TYPE_ENUM {
-        return t.enum_name;
-    } else if t.kind == TypeKind.TYPE_STRUCT {
-        return t.struct_name;
-    } else if t.kind == TypeKind.TYPE_UNION {
-        return t.union_name;
-    } else if t.kind == TypeKind.TYPE_POINTER {
-        return format("*{}", type_to_string(t.pointer_to));
-    }
-    // ...
+// 重构后设计
+struct Type {
+    kind: TypeKind,
+    data: TypeData,  // 新增：union 类型
 }
 
-// 重构后：使用 match 表达式（数据结构不变）
-fn type_to_string(t: Type) &byte {
-    match t.kind {
-        TypeKind.TYPE_ENUM => return t.enum_name,
-        TypeKind.TYPE_STRUCT => return t.struct_name,
-        TypeKind.TYPE_UNION => return t.union_name,
-        TypeKind.TYPE_POINTER => return format("*{}", type_to_string(t.pointer_to)),
-        TypeKind.TYPE_ARRAY => return format("[{}; {}]", type_to_string(t.element_type), t.array_size),
-        TypeKind.TYPE_SLICE => return format("[]{}", type_to_string(t.slice_element_type)),
-        TypeKind.TYPE_VOID => return "void",
-        TypeKind.TYPE_I32 => return "i32",
-        TypeKind.TYPE_I64 => return "i64",
-        TypeKind.TYPE_F64 => return "f64",
-        TypeKind.TYPE_BOOL => return "bool",
-        else => return "unknown"
-    }
+union TypeData {
+    void_unit: void,              // TYPE_VOID
+    named: &byte,                 // TYPE_ENUM/STRUCT/UNION/INTERFACE
+    pointer: PointerData,         // TYPE_POINTER
+    array: ArrayData,             // TYPE_ARRAY
+    slice: SliceData,             // TYPE_SLICE
+    tuple: TupleData,             // TYPE_TUPLE
+    error_union: ErrorUnionData,  // TYPE_ERROR_UNION
+    atomic: AtomicData,           // TYPE_ATOMIC
+    generic_param: GenericParamData, // TYPE_GENERIC_PARAM
+    struct_generic: StructGenericData, // TYPE_STRUCT 带泛型
 }
 ```
 
-**收益**：
-- 编译期完备性检查（枚举 match）
-- 代码更简洁、可读性提升
-- 无运行时开销
-- 不需要修改核心数据结构（风险低）
+**迁移步骤**：
+1. Step 1: 添加 TypeData union + 访问器函数（1 天）
+2. Step 2: 迁移高频字段访问（2 天）
+3. Step 3: 迁移中低频字段访问（2 天）
+4. Step 4: 移除旧字段 + 验证（1-2 天）
 
-**预估工作量**：3-4 天
+**预估工作量**：5-7 天
 
-### 4.2 使用 match 替代 ASTNode 条件链
+### 4.2 ASTNode 结构体 Union 化（10-13 天）
 
-**当前问题**：564+ 处 `type == ASTNodeType.XXX` 条件判断
+**当前问题**：`ASTNode` 结构体有 100+ 个扁平化字段
 
-**重构方案**：使用 match 表达式匹配枚举值
+**字段组访问统计**（Top 10）：
+| 字段组 | 访问次数 | 优先级 |
+|--------|----------|--------|
+| `fn_decl_*` | 416 | P0 |
+| `var_decl_*` | 332 | P0 |
+| `program_*` | 251 | P0 |
+| `struct_decl_*` | 219 | P0 |
+| `identifier_*` | 178 | P0 |
+| `block_*` | 156 | P1 |
+| `call_expr_*` | 152 | P1 |
+| `cast_expr_*` | 147 | P1 |
+| `union_decl_*` | 126 | P1 |
+| `type_named_*` | 122 | P1 |
+
+**重构方案**：按节点类型分组为 union
 
 ```uya
-// 重构前：大量的 if-else 链
-fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
-    if expr.type == ASTNodeType.AST_NUMBER {
-        result.kind = TypeKind.TYPE_I32;
-    } else if expr.type == ASTNodeType.AST_FLOAT {
-        result.kind = TypeKind.TYPE_F64;
-    } else if expr.type == ASTNodeType.AST_BINARY_EXPR {
-        // 处理二元表达式...
-    }
-    // ... 数百行
+struct ASTNode {
+    type: ASTNodeType,
+    line: i32,
+    column: i32,
+    filename: &byte,
+    data: ASTNodeData,  // 新增：union 类型
+}
+
+union ASTNodeData {
+    // 声明节点
+    program: ProgramData,
+    fn_decl: FnDeclData,
+    struct_decl: StructDeclData,
+    // ... 其他节点类型
+}
+```
+
+**迁移步骤**：
+1. Step 1: 添加 ASTNodeData union + 访问器函数（2 天）
+2. Step 2: 迁移声明节点（3 天）
+3. Step 3: 迁移表达式节点（3 天）
+4. Step 4: 迁移语句节点（2 天）
+5. Step 5: 移除旧字段 + 验证（2-3 天）
+
+**预估工作量**：10-13 天
+
+### 4.3 预期收益
+
+| 指标 | 改进 |
+|------|------|
+| Type 内存占用 | 减少 50%（144 → 72 字节）|
+| ASTNode 内存占用 | 减少 75%（800 → 200 字节）|
+| 类型安全 | 编译期检查字段访问合法性 |
+| match 完备性 | 所有变体分支必须处理 |
 }
 
 // 重构后：使用 match 表达式（数据结构不变）
@@ -496,27 +536,34 @@ pub const SYMBOL_TABLE_SIZE: i32 = 32768;
 | Day 3-4 | 降低嵌套深度（提前返回，for 范围迭代） |
 | Day 5 | 提取辅助函数 |
 
-### 第三周：阶段三 + 阶段四.1
+### 第三周：阶段三 + 阶段四.1 开始
 
 | 天数 | 任务 |
 |------|------|
 | Day 1-2 | 提取代码生成辅助函数 |
 | Day 3 | 统一类型检查函数调用 |
-| Day 4-5 | Type match 表达式优化 |
+| Day 4-5 | **Type Union 化 Step 1-2**：添加 union + 访问器 + 迁移高频字段 |
 
-### 第四周：阶段四.2 + 阶段五
-
-| 天数 | 任务 |
-|------|------|
-| Day 1-3 | ASTNode match 表达式优化 |
-| Day 4 | 重构测试为 test 语句风格 |
-| Day 5 | 添加增量测试验证 |
-
-### 第五周：阶段六 + 验收
+### 第四周：阶段四.1 完成 + 阶段四.2 开始
 
 | 天数 | 任务 |
 |------|------|
-| Day 1-2 | 统一错误处理模式 |
+| Day 1-2 | **Type Union 化 Step 3-5**：迁移剩余字段 + 移除旧字段 |
+| Day 3-5 | **ASTNode Union 化 Step 1-2**：添加 union + 访问器 + 迁移声明节点 |
+
+### 第五周：阶段四.2 完成
+
+| 天数 | 任务 |
+|------|------|
+| Day 1-3 | **ASTNode Union 化 Step 3-4**：迁移表达式和语句节点 |
+| Day 4-5 | **ASTNode Union 化 Step 5**：移除旧字段 + 验证 |
+
+### 第六周：阶段五 + 阶段六 + 验收
+
+| 天数 | 任务 |
+|------|------|
+| Day 1 | 重构测试为 test 语句风格 |
+| Day 2 | 统一错误处理模式 |
 | Day 3 | 常量集中定义，清理未使用变量 |
 | Day 4 | 全面测试验证 |
 | Day 5 | 文档更新，提交验收 |
@@ -531,15 +578,18 @@ pub const SYMBOL_TABLE_SIZE: i32 = 32768;
 - [ ] 重复代码减少 50%+
 - [ ] 测试使用 `test "name" {}` 风格
 
-### Match 表达式优化
-- [ ] Type 条件链替换为 match 表达式（139+ 处）
-- [ ] ASTNode 条件链替换为 match 表达式（564+ 处）
+### Union 数据结构
+- [ ] Type 结构体使用 union 封装变体数据
+- [ ] ASTNode 结构体使用 union 封装变体数据
+- [ ] 所有字段访问使用访问器函数
 - [ ] match 完备性检查通过
 
 ### 功能验证
 - [ ] `make check` 通过（自举 + 测试）
 - [ ] 自举编译时间 ≤ 2s
 - [ ] 无新增编译警告
+- [ ] Type 内存占用减少 50%+
+- [ ] ASTNode 内存占用减少 70%+
 
 ---
 
@@ -550,6 +600,8 @@ pub const SYMBOL_TABLE_SIZE: i32 = 32768;
 | 自举验证失败 | 中 | 高 | 每次小改动后立即验证 |
 | 引入新 bug | 中 | 高 | 保持测试覆盖，增量提交 |
 | 工作量超预期 | 低 | 中 | 优先处理高优先级任务 |
+| 访问器函数遗漏 | 中 | 高 | 使用搜索工具确保所有字段有对应访问器 |
+| Union 迁移不完整 | 低 | 高 | 每步验证，保留回滚点 |
 
 ---
 
@@ -558,3 +610,4 @@ pub const SYMBOL_TABLE_SIZE: i32 = 32768;
 - `.codebuddy/skills/uya-development.md` - Uya 开发技能文档
 - `docs/uya_ai_prompt.md` - Uya 语言完整语法（v0.47）
 - `.codebuddy/rules/uya-dev-flow.mdc` - Uya 开发流程规则
+- `docs/REFACTOR_PLAN_V2_STAGE4_DETAILED.md` - 阶段四详细方案
