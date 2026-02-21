@@ -1881,7 +1881,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // std.runtime.entry 的 main 会调用 main_main()
     if has_user_main == 0 && test_count > 0 {
         fputs("int32_t main_main(void) {\n" as *byte, codegen.output as *void);
-        fprintf(codegen.output as *void, "    printf(\"\\n=== Running %d tests ===\\n\");\n" as *byte, test_count as *byte);
+        fprintf(codegen.output as *void, "    printf(\"\\n=== Running %d tests ===\\n\");\n" as *byte, test_count);
         fputs("    uya_run_tests();\n" as *byte, codegen.output as *void);
         fputs("    printf(\"\\n=== Results ===\\n\");\n" as *byte, codegen.output as *void);
         fputs("    printf(\"  Passed: %d\\n\", _test_passed);\n" as *byte, codegen.output as *void);

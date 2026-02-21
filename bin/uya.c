@@ -33839,7 +33839,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
     }
     if (((has_user_main == 0) && (test_count > 0))) {
         libc_fputs((uint8_t *)(uint8_t *)str1236, (void *)codegen->output);
-        libc_fprintf((void *)codegen->output, (const char *)str1237, (uint8_t *)test_count);
+        libc_fprintf((void *)codegen->output, (const char *)str1237, test_count);
         libc_fputs((uint8_t *)(uint8_t *)str1078, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1238, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1239, (void *)codegen->output);
