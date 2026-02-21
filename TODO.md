@@ -262,9 +262,10 @@
     总耗时: 7790 ms
 
 [ ] 热点函数优化
-    [ ] type_equals 优化
-        - 字符串比较占主要时间
-        - 可考虑字符串 intern（指针比较代替字符串比较）
+    [x] type_equals 优化
+        [x] str_equals 优化：先比较指针
+        [x] 添加字符串池（StringPool）
+        [x] 关键调用点使用字符串池
     [ ] symbol_table_lookup 优化
         - 当前使用线性搜索 O(n)
         - 可考虑哈希表优化

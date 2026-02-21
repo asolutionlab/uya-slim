@@ -26300,24 +26300,7 @@ static __attribute__((unused)) struct Symbol * symbol_table_lookup(struct TypeCh
     while ((i < SYMBOL_TABLE_SIZE)) {
         struct Symbol * const symbol = checker->symbol_table.slots[i];
         if ((symbol != NULL)) {
-            int32_t matched = 1;
-            int32_t j = 0;
-            while ((matched != 0)) {
-                const uint8_t c1 = (uint8_t)symbol->name[j];
-                const uint8_t c2 = (uint8_t)name[j];
-                if ((c1 != c2)) {
-                    matched = 0;
-                } else {
-                    if ((c1 == 0)) {
-                        if ((c2 != 0)) {
-                            matched = 0;
-                        }
-                        break;
-                    }
-                }
-                j = (j + 1);
-            }
-            if ((matched != 0)) {
+            if ((str_equals(symbol->name, (uint8_t *)name) != 0)) {
                 if (((found == NULL) || (symbol->scope_level > found_scope))) {
                     found = symbol;
                     found_scope = symbol->scope_level;

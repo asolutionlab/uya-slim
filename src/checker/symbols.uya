@@ -137,32 +137,17 @@ fn symbol_table_lookup(checker: &TypeChecker, name: &byte) &Symbol {
     if checker == null || name == null {
         return null;
     }
-    
+
     var found: &Symbol = null;
     var found_scope: i32 = -1;
-    
+
     var i: i32 = 0;
     while i < SYMBOL_TABLE_SIZE {
         const symbol: &Symbol = checker.symbol_table.slots[i];
-        
+
         if symbol != null {
-            var matched: i32 = 1;
-            var j: i32 = 0;
-            while matched != 0 {
-                const c1: byte = symbol.name[j] as byte;
-                const c2: byte = name[j] as byte;
-                if c1 != c2 {
-                    matched = 0;
-                } else if c1 == 0 {
-                    if c2 != 0 {
-                        matched = 0;
-                    }
-                    break;
-                }
-                j = j + 1;
-            }
-            
-            if matched != 0 {
+            // 使用优化的 str_equals（先比较指针）
+            if str_equals(symbol.name, name) != 0 {
                 if found == null || symbol.scope_level > found_scope {
                     found = symbol;
                     found_scope = symbol.scope_level;
@@ -171,7 +156,7 @@ fn symbol_table_lookup(checker: &TypeChecker, name: &byte) &Symbol {
         }
         i = i + 1;
     }
-    
+
     return found;
 }
 
