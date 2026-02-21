@@ -626,44 +626,44 @@ static const char str566[] = "call_expr_args";
 static const char str567[] = "array_literal_elements";
 static const char str568[] = "struct_init_field_values";
 static const char str569[] = "@func_name 只能在函数体内使用";
-static const char str570[] = "@print/@println 需要一个参数";
-static const char str571[] = "该类型不支持 @print/@println";
-static const char str572[] = "@va_start 只能在可变参数函数内使用";
-static const char str573[] = "@va_end 只能在可变参数函数内使用";
-static const char str574[] = "@va_arg 只能在可变参数函数内使用";
-static const char str575[] = "不支持的插值类型或格式说明符";
-static const char str576[] = "@params 只能在函数体内使用";
-static const char str577[] = "try 的操作数必须是错误联合类型 !T";
-static const char str578[] = "try 只能在返回错误联合类型的函数中使用";
-static const char str579[] = "catch 的操作数必须是错误联合类型 !T";
-static const char str580[] = "catch 块最后表达式类型必须与成功值类型一致";
-static const char str581[] = "错误集已满";
-static const char str582[] = "不能引用 _";
-static const char str583[] = "变量已被移动，不能再次使用";
-static const char str584[] = "变量在初始化前被使用：请确保变量在使用前已赋值";
-static const char str585[] = "不能使用裸枚举常量，应使用 枚举类型名.变体名 方式访问（如 Color.RED）";
-static const char str586[] = "数组索引越界：常量索引超出数组边界";
-static const char str587[] = "数组索引安全证明失败";
-static const char str588[] = "指针可能为空：请添加空指针检查 (如 if ptr != null)";
-static const char str589[] = "TypeInfo";
-static const char str590[] = "name";
-static const char str591[] = "size";
-static const char str592[] = "align";
-static const char str593[] = "kind";
-static const char str594[] = "is_integer";
-static const char str595[] = "is_float";
-static const char str596[] = "is_bool";
-static const char str597[] = "is_pointer";
-static const char str598[] = "is_array";
-static const char str599[] = "is_void";
-static const char str600[] = "match 所有分支的返回类型必须一致";
-static const char str601[] = "match 联合体必须处理所有变体";
-static const char str602[] = "match 必须包含 else 分支或变量绑定/通配符";
-static const char str603[] = "@syscall 需要系统调用号作为第一个参数";
-static const char str604[] = "@syscall 的系统调用号必须是整数类型";
-static const char str605[] = "@syscall 最多支持 6 个参数";
-static const char str606[] = "@syscall 参数不能为空";
-static const char str607[] = "@syscall 的参数必须是整数或指针类型";
+static const char str570[] = "@va_start 只能在可变参数函数内使用";
+static const char str571[] = "@va_end 只能在可变参数函数内使用";
+static const char str572[] = "@va_arg 只能在可变参数函数内使用";
+static const char str573[] = "不支持的插值类型或格式说明符";
+static const char str574[] = "@params 只能在函数体内使用";
+static const char str575[] = "try 的操作数必须是错误联合类型 !T";
+static const char str576[] = "try 只能在返回错误联合类型的函数中使用";
+static const char str577[] = "错误集已满";
+static const char str578[] = "不能引用 _";
+static const char str579[] = "变量已被移动，不能再次使用";
+static const char str580[] = "变量在初始化前被使用：请确保变量在使用前已赋值";
+static const char str581[] = "不能使用裸枚举常量，应使用 枚举类型名.变体名 方式访问（如 Color.RED）";
+static const char str582[] = "TypeInfo";
+static const char str583[] = "name";
+static const char str584[] = "size";
+static const char str585[] = "align";
+static const char str586[] = "kind";
+static const char str587[] = "is_integer";
+static const char str588[] = "is_float";
+static const char str589[] = "is_bool";
+static const char str590[] = "is_pointer";
+static const char str591[] = "is_array";
+static const char str592[] = "is_void";
+static const char str593[] = "match 所有分支的返回类型必须一致";
+static const char str594[] = "match 联合体必须处理所有变体";
+static const char str595[] = "match 必须包含 else 分支或变量绑定/通配符";
+static const char str596[] = "@syscall 需要系统调用号作为第一个参数";
+static const char str597[] = "@syscall 的系统调用号必须是整数类型";
+static const char str598[] = "@syscall 最多支持 6 个参数";
+static const char str599[] = "@syscall 参数不能为空";
+static const char str600[] = "@syscall 的参数必须是整数或指针类型";
+static const char str601[] = "数组索引越界：常量索引超出数组边界";
+static const char str602[] = "数组索引安全证明失败";
+static const char str603[] = "指针可能为空：请添加空指针检查 (如 if ptr != null)";
+static const char str604[] = "@print/@println 需要一个参数";
+static const char str605[] = "该类型不支持 @print/@println";
+static const char str606[] = "catch 的操作数必须是错误联合类型 !T";
+static const char str607[] = "catch 块最后表达式类型必须与成功值类型一致";
 static const char str608[] = "数组索引越界：索引不能为负数";
 static const char str609[] = "数组索引需要安全证明：复杂表达式暂不支持，请使用简单变量或添加边界检查";
 static const char str610[] = "饱和/包装运算符的操作数必须为整数类型（i8/i16/i32/i64），且类型一致";
@@ -2746,6 +2746,10 @@ static struct Type infer_call_expr(struct TypeChecker * checker, struct ASTNode 
 static struct Type infer_member_access(struct TypeChecker * checker, struct ASTNode * expr);
 static struct Type infer_match_expr(struct TypeChecker * checker, struct ASTNode * expr);
 static struct Type infer_syscall(struct TypeChecker * checker, struct ASTNode * expr);
+static struct Type infer_unary_expr(struct TypeChecker * checker, struct ASTNode * expr);
+static struct Type infer_array_access(struct TypeChecker * checker, struct ASTNode * expr);
+static struct Type infer_print_expr(struct TypeChecker * checker, struct ASTNode * expr);
+static struct Type infer_catch_expr(struct TypeChecker * checker, struct ASTNode * expr);
 static struct Type checker_check_array_access(struct TypeChecker * checker, struct ASTNode * node);
 static struct Type checker_check_alignof(struct TypeChecker * checker, struct ASTNode * node);
 static struct Type checker_check_len(struct TypeChecker * checker, struct ASTNode * node);
@@ -18220,63 +18224,24 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                             return _uya_ret;
                                         } else {
                                             if (((expr->type == AST_PRINT) || (expr->type == AST_PRINTLN))) {
-                                                if ((expr->print_expr == NULL)) {
-                                                    checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str570);
-                                                    struct Type _uya_ret = make_void_type();
-                                                    return _uya_ret;
-                                                }
-                                                struct Type arg_type = checker_infer_type(checker, expr->print_expr);
-                                                int32_t is_printable = 0;
-                                                if (((((((((((((arg_type.kind == TYPE_I8) || (arg_type.kind == TYPE_I16)) || (arg_type.kind == TYPE_I32)) || (arg_type.kind == TYPE_I64)) || (arg_type.kind == TYPE_U8)) || (arg_type.kind == TYPE_U16)) || (arg_type.kind == TYPE_U32)) || (arg_type.kind == TYPE_U64)) || (arg_type.kind == TYPE_USIZE)) || (arg_type.kind == TYPE_F32)) || (arg_type.kind == TYPE_F64)) || (arg_type.kind == TYPE_BOOL))) {
-                                                    is_printable = 1;
-                                                }
-                                                if ((arg_type.kind == TYPE_SLICE)) {
-                                                    if (((arg_type.slice_element_type != NULL) && (arg_type.slice_element_type->kind == TYPE_I8))) {
-                                                        is_printable = 1;
-                                                    }
-                                                }
-                                                if ((arg_type.kind == TYPE_POINTER)) {
-                                                    if (((arg_type.pointer_to != NULL) && (arg_type.pointer_to->kind == TYPE_I8))) {
-                                                        is_printable = 1;
-                                                    }
-                                                    if ((arg_type.pointer_to == NULL)) {
-                                                        is_printable = 1;
-                                                    }
-                                                }
-                                                if ((arg_type.kind == TYPE_ARRAY)) {
-                                                    if (((arg_type.element_type != NULL) && (arg_type.element_type->kind == TYPE_I8))) {
-                                                        is_printable = 1;
-                                                    }
-                                                }
-                                                if ((expr->print_expr->type == AST_STRING_INTERP)) {
-                                                    is_printable = 1;
-                                                }
-                                                if ((expr->print_expr->type == AST_STRING)) {
-                                                    is_printable = 1;
-                                                }
-                                                if ((is_printable == 0)) {
-                                                    checker_report_error(checker, expr->print_expr, (uint8_t *)(uint8_t *)str571);
-                                                    struct Type _uya_ret = make_void_type();
-                                                    return _uya_ret;
-                                                }
-                                                struct Type _uya_ret = make_i32_type();
+                                                struct Type _uya_ret = infer_print_expr(checker, expr);
                                                 return _uya_ret;
                                             } else {
                                                 if (((expr->type == AST_VA_START) || (expr->type == AST_VA_END))) {
                                                     if (((checker->in_function == 0) || (checker->current_function_decl == NULL))) {
                                                         if ((expr->type == AST_VA_START)) {
-                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str572);
+                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str570);
                                                         } else {
-                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str573);
+                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str571);
                                                         }
                                                         struct Type _uya_ret = make_void_type();
                                                         return _uya_ret;
                                                     }
                                                     if ((checker->current_function_decl->fn_decl_is_varargs == 0)) {
                                                         if ((expr->type == AST_VA_START)) {
-                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str572);
+                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str570);
                                                         } else {
-                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str573);
+                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str571);
                                                         }
                                                         struct Type _uya_ret = make_void_type();
                                                         return _uya_ret;
@@ -18298,12 +18263,12 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                 } else {
                                                     if ((expr->type == AST_VA_ARG)) {
                                                         if (((checker->in_function == 0) || (checker->current_function_decl == NULL))) {
-                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str574);
+                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str572);
                                                             struct Type _uya_ret = make_void_type();
                                                             return _uya_ret;
                                                         }
                                                         if ((checker->current_function_decl->fn_decl_is_varargs == 0)) {
-                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str574);
+                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str572);
                                                             struct Type _uya_ret = make_void_type();
                                                             return _uya_ret;
                                                         }
@@ -18344,7 +18309,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                         struct Type seg_type = checker_infer_type(checker, seg->expr);
                                                                         const int32_t w = checker_interp_format_max_width(copy_type((&seg_type)), seg->format_spec);
                                                                         if ((w < 0)) {
-                                                                            checker_report_error(checker, seg->expr, (uint8_t *)(uint8_t *)str575);
+                                                                            checker_report_error(checker, seg->expr, (uint8_t *)(uint8_t *)str573);
                                                                             struct Type _uya_ret = make_void_type();
                                                                             return _uya_ret;
                                                                         }
@@ -18375,7 +18340,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                             } else {
                                                                 if ((expr->type == AST_PARAMS)) {
                                                                     if (((checker->in_function == 0) || (checker->current_function_decl == NULL))) {
-                                                                        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str576);
+                                                                        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str574);
                                                                         struct Type _uya_ret = make_void_type();
                                                                         return _uya_ret;
                                                                     }
@@ -18411,12 +18376,12 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                     if ((expr->type == AST_TRY_EXPR)) {
                                                                         struct Type operand_type = checker_infer_type(checker, expr->try_expr_operand);
                                                                         if ((operand_type.kind != TYPE_ERROR_UNION)) {
-                                                                            checker_report_error(checker, expr->try_expr_operand, (uint8_t *)(uint8_t *)str577);
+                                                                            checker_report_error(checker, expr->try_expr_operand, (uint8_t *)(uint8_t *)str575);
                                                                             struct Type _uya_ret = make_void_type();
                                                                             return _uya_ret;
                                                                         }
                                                                         if (((checker->in_function == 0) || (checker->current_return_type.kind != TYPE_ERROR_UNION))) {
-                                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str578);
+                                                                            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str576);
                                                                             struct Type _uya_ret = make_void_type();
                                                                             return _uya_ret;
                                                                         }
@@ -18433,66 +18398,14 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                             return _uya_ret;
                                                                         } else {
                                                                             if ((expr->type == AST_CATCH_EXPR)) {
-                                                                                struct Type operand_type = checker_infer_type(checker, expr->catch_expr_operand);
-                                                                                if ((operand_type.kind != TYPE_ERROR_UNION)) {
-                                                                                    if (((expr->catch_expr_operand != NULL) && (expr->catch_expr_operand->type == AST_CALL_EXPR))) {
-                                                                                        struct ASTNode * const callee = expr->catch_expr_operand->call_expr_callee;
-                                                                                        if (((((callee != NULL) && (callee->type == AST_IDENTIFIER)) && (callee->identifier_name != NULL)) && (checker->program_node != NULL))) {
-                                                                                            struct ASTNode * const fn_decl = find_fn_decl_from_program(checker->program_node, callee->identifier_name);
-                                                                                            if (((fn_decl != NULL) && (fn_decl->fn_decl_return_type != NULL))) {
-                                                                                                operand_type = type_from_ast(checker, fn_decl->fn_decl_return_type);
-                                                                                            }
-                                                                                        }
-                                                                                    }
-                                                                                    if ((operand_type.kind != TYPE_ERROR_UNION)) {
-                                                                                        checker_report_error(checker, expr->catch_expr_operand, (uint8_t *)(uint8_t *)str579);
-                                                                                        struct Type _uya_ret = make_void_type();
-                                                                                        return _uya_ret;
-                                                                                    }
-                                                                                }
-                                                                                if ((operand_type.error_union_payload_type == NULL)) {
-                                                                                    struct Type _uya_ret = make_void_type();
-                                                                                    return _uya_ret;
-                                                                                }
-                                                                                struct Type payload = operand_type.error_union_payload_type[0];
-                                                                                if ((expr->catch_expr_err_name != NULL)) {
-                                                                                    struct Type err_type = (struct Type){.kind = TYPE_ERROR, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
-                                                                                    checker_enter_scope(checker);
-                                                                                    struct Symbol * const sym = (struct Symbol *)arena_alloc(checker->arena, (int32_t)sizeof(struct Symbol));
-                                                                                    if ((sym != NULL)) {
-                                                                                        sym->name = expr->catch_expr_err_name;
-                                                                                        sym->type = err_type;
-                                                                                        sym->is_const = 1;
-                                                                                        sym->is_initialized = 1;
-                                                                                        sym->scope_level = checker->scope_level;
-                                                                                        sym->line = expr->line;
-                                                                                        sym->column = expr->column;
-                                                                                        sym->pointee_of = NULL;
-                                                                                        symbol_table_insert(checker, sym);
-                                                                                    }
-                                                                                    checker_check_node(checker, expr->catch_expr_catch_block);
-                                                                                    checker_exit_scope(checker);
-                                                                                } else {
-                                                                                    checker_check_node(checker, expr->catch_expr_catch_block);
-                                                                                }
-                                                                                struct ASTNode * const block = expr->catch_expr_catch_block;
-                                                                                if ((((block != NULL) && (block->type == AST_BLOCK)) && (block->block_stmt_count > 0))) {
-                                                                                    struct ASTNode * const last = block->block_stmts[(block->block_stmt_count - 1)];
-                                                                                    if (((last != NULL) && (last->type != AST_RETURN_STMT))) {
-                                                                                        struct Type last_type = checker_infer_type(checker, last);
-                                                                                        if ((type_equals(last_type, payload) == 0)) {
-                                                                                            checker_report_error(checker, last, (uint8_t *)(uint8_t *)str580);
-                                                                                        }
-                                                                                    }
-                                                                                }
-                                                                                struct Type _uya_ret = payload;
+                                                                                struct Type _uya_ret = infer_catch_expr(checker, expr);
                                                                                 return _uya_ret;
                                                                             } else {
                                                                                 if ((expr->type == AST_ERROR_VALUE)) {
                                                                                     uint8_t * const name = expr->error_value_name;
                                                                                     const uint32_t id = get_or_add_error_id(checker, name, expr);
                                                                                     if ((id == 0)) {
-                                                                                        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str581);
+                                                                                        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str577);
                                                                                         struct Type _uya_ret = make_void_type();
                                                                                         return _uya_ret;
                                                                                     }
@@ -18502,79 +18415,32 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                     return _uya_ret;
                                                                                 } else {
                                                                                     if ((expr->type == AST_UNDERSCORE)) {
-                                                                                        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str582);
+                                                                                        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str578);
                                                                                         struct Type _uya_ret = make_void_type();
                                                                                         return _uya_ret;
                                                                                     } else {
                                                                                         if ((expr->type == AST_IDENTIFIER)) {
                                                                                             if ((moved_set_contains(checker, expr->identifier_name) != 0)) {
-                                                                                                checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str583);
+                                                                                                checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str579);
                                                                                                 struct Type _uya_ret = make_void_type();
                                                                                                 return _uya_ret;
                                                                                             }
                                                                                             struct Symbol * const symbol = symbol_table_lookup(checker, expr->identifier_name);
                                                                                             if ((symbol != NULL)) {
                                                                                                 if (((checker->enable_safety_proof != 0) && (symbol->is_initialized == 0))) {
-                                                                                                    checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str584);
+                                                                                                    checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str580);
                                                                                                 }
                                                                                                 struct Type _uya_ret = symbol->type;
                                                                                                 return _uya_ret;
                                                                                             }
                                                                                             if (((((expr->identifier_name != NULL) && (checker != NULL)) && (checker->program_node != NULL)) && (is_enum_variant_name_in_program(checker->program_node, expr->identifier_name) != 0))) {
-                                                                                                checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str585);
+                                                                                                checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str581);
                                                                                             }
                                                                                             struct Type _uya_ret = make_void_type();
                                                                                             return _uya_ret;
                                                                                         } else {
                                                                                             if ((expr->type == AST_UNARY_EXPR)) {
-                                                                                                const enum TokenType op = (enum TokenType)expr->unary_expr_op;
-                                                                                                struct Type operand_type = checker_infer_type(checker, expr->unary_expr_operand);
-                                                                                                if ((op == TOKEN_EXCLAMATION)) {
-                                                                                                    struct Type _uya_ret = make_bool_type();
-                                                                                                    return _uya_ret;
-                                                                                                } else {
-                                                                                                    if ((op == TOKEN_MINUS)) {
-                                                                                                        struct Type _uya_ret = operand_type;
-                                                                                                        return _uya_ret;
-                                                                                                    } else {
-                                                                                                        if ((op == TOKEN_TILDE)) {
-                                                                                                            struct Type _uya_ret = operand_type;
-                                                                                                            return _uya_ret;
-                                                                                                        } else {
-                                                                                                            if ((op == TOKEN_AMPERSAND)) {
-                                                                                                                if ((operand_type.kind == TYPE_VOID)) {
-                                                                                                                    struct Type _uya_ret = make_void_type();
-                                                                                                                    return _uya_ret;
-                                                                                                                }
-                                                                                                                struct Type * const pointed_type_ptr = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
-                                                                                                                if ((pointed_type_ptr == NULL)) {
-                                                                                                                    struct Type _uya_ret = make_void_type();
-                                                                                                                    return _uya_ret;
-                                                                                                                }
-                                                                                                                pointed_type_ptr[0] = copy_type((&operand_type));
-                                                                                                                result.kind = TYPE_POINTER;
-                                                                                                                result.pointer_to = pointed_type_ptr;
-                                                                                                                result.is_ffi_pointer = 0;
-                                                                                                                struct Type _uya_ret = result;
-                                                                                                                return _uya_ret;
-                                                                                                            } else {
-                                                                                                                if ((op == TOKEN_ASTERISK)) {
-                                                                                                                    if ((operand_type.kind != TYPE_POINTER)) {
-                                                                                                                        struct Type _uya_ret = make_void_type();
-                                                                                                                        return _uya_ret;
-                                                                                                                    }
-                                                                                                                    if ((operand_type.pointer_to == NULL)) {
-                                                                                                                        struct Type _uya_ret = make_void_type();
-                                                                                                                        return _uya_ret;
-                                                                                                                    }
-                                                                                                                    struct Type _uya_ret = operand_type.pointer_to[0];
-                                                                                                                    return _uya_ret;
-                                                                                                                }
-                                                                                                            }
-                                                                                                        }
-                                                                                                    }
-                                                                                                }
-                                                                                                struct Type _uya_ret = operand_type;
+                                                                                                struct Type _uya_ret = infer_unary_expr(checker, expr);
                                                                                                 return _uya_ret;
                                                                                             } else {
                                                                                                 if ((expr->type == AST_BINARY_EXPR)) {
@@ -18590,56 +18456,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                             return _uya_ret;
                                                                                                         } else {
                                                                                                             if ((expr->type == AST_ARRAY_ACCESS)) {
-                                                                                                                struct Type array_type = checker_infer_type(checker, expr->array_access_array);
-                                                                                                                if (((array_type.kind == TYPE_ARRAY) && (array_type.element_type != NULL))) {
-                                                                                                                    if ((checker->enable_safety_proof != 0)) {
-                                                                                                                        struct ASTNode * const index_expr = expr->array_access_index;
-                                                                                                                        const int32_t array_size = array_type.array_size;
-                                                                                                                        const int32_t index_val = checker_eval_const_expr(checker, index_expr);
-                                                                                                                        if ((index_val >= 0)) {
-                                                                                                                            if ((index_val >= array_size)) {
-                                                                                                                                checker_report_error(checker, index_expr, (uint8_t *)(uint8_t *)str586);
-                                                                                                                            }
-                                                                                                                        } else {
-                                                                                                                            struct LinearExpr linear_expr = extract_linear_expr(checker, index_expr);
-                                                                                                                            if ((linear_expr.is_valid != 0)) {
-                                                                                                                                if ((verify_linear_expr_bounds(checker, (&linear_expr), array_size, index_expr) == 0)) {
-                                                                                                                                    if ((linear_expr.var_name != NULL)) {
-                                                                                                                                        checker_report_error_ex(checker, index_expr, (uint8_t *)(uint8_t *)str587, linear_expr.var_name, array_size);
-                                                                                                                                    }
-                                                                                                                                }
-                                                                                                                            }
-                                                                                                                        }
-                                                                                                                    }
-                                                                                                                    struct Type _uya_ret = array_type.element_type[0];
-                                                                                                                    return _uya_ret;
-                                                                                                                } else {
-                                                                                                                    if (((array_type.kind == TYPE_SLICE) && (array_type.slice_element_type != NULL))) {
-                                                                                                                        struct Type _uya_ret = array_type.slice_element_type[0];
-                                                                                                                        return _uya_ret;
-                                                                                                                    } else {
-                                                                                                                        if (((array_type.kind == TYPE_POINTER) && (array_type.pointer_to != NULL))) {
-                                                                                                                            if ((checker->enable_safety_proof != 0)) {
-                                                                                                                                struct ASTNode * const array_expr = expr->array_access_array;
-                                                                                                                                if (((array_expr != NULL) && (array_expr->type == AST_IDENTIFIER))) {
-                                                                                                                                    uint8_t * const ptr_name = array_expr->identifier_name;
-                                                                                                                                    if (((pointer_is_nullable(checker, ptr_name) != 0) && (pointer_is_known_nonnull(checker, ptr_name) == 0))) {
-                                                                                                                                        checker_report_error(checker, expr->array_access_array, (uint8_t *)(uint8_t *)str588);
-                                                                                                                                    }
-                                                                                                                                }
-                                                                                                                            }
-                                                                                                                            struct Type pointed_type = array_type.pointer_to[0];
-                                                                                                                            if (((pointed_type.kind == TYPE_ARRAY) && (pointed_type.element_type != NULL))) {
-                                                                                                                                struct Type _uya_ret = pointed_type.element_type[0];
-                                                                                                                                return _uya_ret;
-                                                                                                                            } else {
-                                                                                                                                struct Type _uya_ret = pointed_type;
-                                                                                                                                return _uya_ret;
-                                                                                                                            }
-                                                                                                                        }
-                                                                                                                    }
-                                                                                                                }
-                                                                                                                struct Type _uya_ret = make_void_type();
+                                                                                                                struct Type _uya_ret = infer_array_access(checker, expr);
                                                                                                                 return _uya_ret;
                                                                                                             } else {
                                                                                                                 if ((expr->type == AST_SLICE_EXPR)) {
@@ -19106,10 +18923,10 @@ static __attribute__((unused)) struct Type infer_member_access(struct TypeChecke
     }
     struct ASTNode * const struct_decl = find_struct_decl_from_program(checker->program_node, object_type.struct_name);
     if ((struct_decl == NULL)) {
-        if ((str_equals(object_type.struct_name, (uint8_t *)(uint8_t *)(uint8_t *)str589) != 0)) {
+        if ((str_equals(object_type.struct_name, (uint8_t *)(uint8_t *)(uint8_t *)str582) != 0)) {
             uint8_t * const field_name = expr->member_access_field_name;
             if ((field_name != NULL)) {
-                if ((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str590) != 0)) {
+                if ((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str583) != 0)) {
                     struct Type result = (struct Type){.kind = TYPE_POINTER, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 1, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
                     struct Type * const inner_type = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                     if ((inner_type != NULL)) {
@@ -19119,11 +18936,11 @@ static __attribute__((unused)) struct Type infer_member_access(struct TypeChecke
                     struct Type _uya_ret = result;
                     return _uya_ret;
                 } else {
-                    if ((((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str591) != 0) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str592) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str593) != 0))) {
+                    if ((((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str584) != 0) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str585) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str586) != 0))) {
                         struct Type _uya_ret = make_i32_type();
                         return _uya_ret;
                     } else {
-                        if (((((((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str594) != 0) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str595) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str596) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str597) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str598) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str599) != 0))) {
+                        if (((((((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str587) != 0) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str588) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str589) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str590) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str591) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str592) != 0))) {
                             struct Type _uya_ret = make_bool_type();
                             return _uya_ret;
                         }
@@ -19194,7 +19011,7 @@ static __attribute__((unused)) struct Type infer_match_expr(struct TypeChecker *
             first = 0;
         } else {
             if ((type_equals(unified, copy_type((&t))) == 0)) {
-                checker_report_error(checker, arm.result_expr, (uint8_t *)(uint8_t *)str600);
+                checker_report_error(checker, arm.result_expr, (uint8_t *)(uint8_t *)str593);
             }
         }
         i = (i + 1);
@@ -19241,7 +19058,7 @@ static __attribute__((unused)) struct Type infer_match_expr(struct TypeChecker *
             k = 0;
             while ((k < nv)) {
                 if ((covered[k] == 0)) {
-                    checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str601);
+                    checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str594);
                     break;
                 }
                 k = (k + 1);
@@ -19249,7 +19066,7 @@ static __attribute__((unused)) struct Type infer_match_expr(struct TypeChecker *
         }
     } else {
         if (((has_catch_all == 0) && (expr->match_expr_arm_count > 0))) {
-            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str602);
+            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str595);
         }
     }
     struct Type _uya_ret = unified;
@@ -19260,7 +19077,7 @@ static __attribute__((unused)) struct Type infer_syscall(struct TypeChecker * ch
     (void)checker;
     (void)expr;
     if ((expr->syscall_number == NULL)) {
-        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str603);
+        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str596);
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
@@ -19270,19 +19087,19 @@ static __attribute__((unused)) struct Type infer_syscall(struct TypeChecker * ch
         return _uya_ret;
     }
     if ((is_integer_type(syscall_nr_type.kind) == 0)) {
-        checker_report_error(checker, expr->syscall_number, (uint8_t *)(uint8_t *)str604);
+        checker_report_error(checker, expr->syscall_number, (uint8_t *)(uint8_t *)str597);
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
     if ((expr->syscall_arg_count > 6)) {
-        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str605);
+        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str598);
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
     int32_t sc_i = 0;
     while ((sc_i < expr->syscall_arg_count)) {
         if ((expr->syscall_args[sc_i] == NULL)) {
-            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str606);
+            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str599);
             struct Type _uya_ret = make_void_type();
             return _uya_ret;
         }
@@ -19296,7 +19113,7 @@ static __attribute__((unused)) struct Type infer_syscall(struct TypeChecker * ch
             is_valid_arg = 1;
         }
         if ((is_valid_arg == 0)) {
-            checker_report_error(checker, expr->syscall_args[sc_i], (uint8_t *)(uint8_t *)str607);
+            checker_report_error(checker, expr->syscall_args[sc_i], (uint8_t *)(uint8_t *)str600);
             struct Type _uya_ret = make_void_type();
             return _uya_ret;
         }
@@ -19310,6 +19127,219 @@ static __attribute__((unused)) struct Type infer_syscall(struct TypeChecker * ch
     payload_type->kind = TYPE_I64;
     struct Type result = (struct Type){.kind = TYPE_ERROR_UNION, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = payload_type, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     struct Type _uya_ret = result;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type infer_unary_expr(struct TypeChecker * checker, struct ASTNode * expr) {
+    (void)checker;
+    (void)expr;
+    const enum TokenType op = (enum TokenType)expr->unary_expr_op;
+    struct Type operand_type = checker_infer_type(checker, expr->unary_expr_operand);
+    if ((op == TOKEN_EXCLAMATION)) {
+        struct Type _uya_ret = make_bool_type();
+        return _uya_ret;
+    } else {
+        if ((op == TOKEN_MINUS)) {
+            struct Type _uya_ret = operand_type;
+            return _uya_ret;
+        } else {
+            if ((op == TOKEN_TILDE)) {
+                struct Type _uya_ret = operand_type;
+                return _uya_ret;
+            } else {
+                if ((op == TOKEN_AMPERSAND)) {
+                    if ((operand_type.kind == TYPE_VOID)) {
+                        struct Type _uya_ret = make_void_type();
+                        return _uya_ret;
+                    }
+                    struct Type * const pointed_type_ptr = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
+                    if ((pointed_type_ptr == NULL)) {
+                        struct Type _uya_ret = make_void_type();
+                        return _uya_ret;
+                    }
+                    pointed_type_ptr[0] = copy_type((&operand_type));
+                    struct Type result = (struct Type){.kind = TYPE_POINTER, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = NULL, .pointer_to = pointed_type_ptr, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+                    struct Type _uya_ret = result;
+                    return _uya_ret;
+                } else {
+                    if ((op == TOKEN_ASTERISK)) {
+                        if ((operand_type.kind != TYPE_POINTER)) {
+                            struct Type _uya_ret = make_void_type();
+                            return _uya_ret;
+                        }
+                        if ((operand_type.pointer_to == NULL)) {
+                            struct Type _uya_ret = make_void_type();
+                            return _uya_ret;
+                        }
+                        struct Type _uya_ret = operand_type.pointer_to[0];
+                        return _uya_ret;
+                    }
+                }
+            }
+        }
+    }
+    struct Type _uya_ret = operand_type;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type infer_array_access(struct TypeChecker * checker, struct ASTNode * expr) {
+    (void)checker;
+    (void)expr;
+    struct Type array_type = checker_infer_type(checker, expr->array_access_array);
+    if (((array_type.kind == TYPE_ARRAY) && (array_type.element_type != NULL))) {
+        if ((checker->enable_safety_proof != 0)) {
+            struct ASTNode * const index_expr = expr->array_access_index;
+            const int32_t array_size = array_type.array_size;
+            const int32_t index_val = checker_eval_const_expr(checker, index_expr);
+            if ((index_val >= 0)) {
+                if ((index_val >= array_size)) {
+                    checker_report_error(checker, index_expr, (uint8_t *)(uint8_t *)str601);
+                }
+            } else {
+                struct LinearExpr linear_expr = extract_linear_expr(checker, index_expr);
+                if ((linear_expr.is_valid != 0)) {
+                    if ((verify_linear_expr_bounds(checker, (&linear_expr), array_size, index_expr) == 0)) {
+                        if ((linear_expr.var_name != NULL)) {
+                            checker_report_error_ex(checker, index_expr, (uint8_t *)(uint8_t *)str602, linear_expr.var_name, array_size);
+                        }
+                    }
+                }
+            }
+        }
+        struct Type _uya_ret = array_type.element_type[0];
+        return _uya_ret;
+    } else {
+        if (((array_type.kind == TYPE_SLICE) && (array_type.slice_element_type != NULL))) {
+            struct Type _uya_ret = array_type.slice_element_type[0];
+            return _uya_ret;
+        } else {
+            if (((array_type.kind == TYPE_POINTER) && (array_type.pointer_to != NULL))) {
+                if ((checker->enable_safety_proof != 0)) {
+                    struct ASTNode * const array_expr = expr->array_access_array;
+                    if (((array_expr != NULL) && (array_expr->type == AST_IDENTIFIER))) {
+                        uint8_t * const ptr_name = array_expr->identifier_name;
+                        if (((pointer_is_nullable(checker, ptr_name) != 0) && (pointer_is_known_nonnull(checker, ptr_name) == 0))) {
+                            checker_report_error(checker, expr->array_access_array, (uint8_t *)(uint8_t *)str603);
+                        }
+                    }
+                }
+                struct Type pointed_type = array_type.pointer_to[0];
+                if (((pointed_type.kind == TYPE_ARRAY) && (pointed_type.element_type != NULL))) {
+                    struct Type _uya_ret = pointed_type.element_type[0];
+                    return _uya_ret;
+                } else {
+                    struct Type _uya_ret = pointed_type;
+                    return _uya_ret;
+                }
+            }
+        }
+    }
+    struct Type _uya_ret = make_void_type();
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type infer_print_expr(struct TypeChecker * checker, struct ASTNode * expr) {
+    (void)checker;
+    (void)expr;
+    if ((expr->print_expr == NULL)) {
+        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str604);
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    struct Type arg_type = checker_infer_type(checker, expr->print_expr);
+    int32_t is_printable = 0;
+    if (((((((((((((arg_type.kind == TYPE_I8) || (arg_type.kind == TYPE_I16)) || (arg_type.kind == TYPE_I32)) || (arg_type.kind == TYPE_I64)) || (arg_type.kind == TYPE_U8)) || (arg_type.kind == TYPE_U16)) || (arg_type.kind == TYPE_U32)) || (arg_type.kind == TYPE_U64)) || (arg_type.kind == TYPE_USIZE)) || (arg_type.kind == TYPE_F32)) || (arg_type.kind == TYPE_F64)) || (arg_type.kind == TYPE_BOOL))) {
+        is_printable = 1;
+    }
+    if ((arg_type.kind == TYPE_SLICE)) {
+        if (((arg_type.slice_element_type != NULL) && (arg_type.slice_element_type->kind == TYPE_I8))) {
+            is_printable = 1;
+        }
+    }
+    if ((arg_type.kind == TYPE_POINTER)) {
+        if (((arg_type.pointer_to != NULL) && (arg_type.pointer_to->kind == TYPE_I8))) {
+            is_printable = 1;
+        }
+        if ((arg_type.pointer_to == NULL)) {
+            is_printable = 1;
+        }
+    }
+    if ((arg_type.kind == TYPE_ARRAY)) {
+        if (((arg_type.element_type != NULL) && (arg_type.element_type->kind == TYPE_I8))) {
+            is_printable = 1;
+        }
+    }
+    if ((expr->print_expr->type == AST_STRING_INTERP)) {
+        is_printable = 1;
+    }
+    if ((expr->print_expr->type == AST_STRING)) {
+        is_printable = 1;
+    }
+    if ((is_printable == 0)) {
+        checker_report_error(checker, expr->print_expr, (uint8_t *)(uint8_t *)str605);
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    struct Type _uya_ret = make_i32_type();
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type infer_catch_expr(struct TypeChecker * checker, struct ASTNode * expr) {
+    (void)checker;
+    (void)expr;
+    struct Type operand_type = checker_infer_type(checker, expr->catch_expr_operand);
+    if ((operand_type.kind != TYPE_ERROR_UNION)) {
+        if (((expr->catch_expr_operand != NULL) && (expr->catch_expr_operand->type == AST_CALL_EXPR))) {
+            struct ASTNode * const callee = expr->catch_expr_operand->call_expr_callee;
+            if (((((callee != NULL) && (callee->type == AST_IDENTIFIER)) && (callee->identifier_name != NULL)) && (checker->program_node != NULL))) {
+                struct ASTNode * const fn_decl = find_fn_decl_from_program(checker->program_node, callee->identifier_name);
+                if (((fn_decl != NULL) && (fn_decl->fn_decl_return_type != NULL))) {
+                    operand_type = type_from_ast(checker, fn_decl->fn_decl_return_type);
+                }
+            }
+        }
+        if ((operand_type.kind != TYPE_ERROR_UNION)) {
+            checker_report_error(checker, expr->catch_expr_operand, (uint8_t *)(uint8_t *)str606);
+            struct Type _uya_ret = make_void_type();
+            return _uya_ret;
+        }
+    }
+    if ((operand_type.error_union_payload_type == NULL)) {
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    struct Type payload = operand_type.error_union_payload_type[0];
+    if ((expr->catch_expr_err_name != NULL)) {
+        struct Type err_type = (struct Type){.kind = TYPE_ERROR, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+        checker_enter_scope(checker);
+        struct Symbol * const sym = (struct Symbol *)arena_alloc(checker->arena, (int32_t)sizeof(struct Symbol));
+        if ((sym != NULL)) {
+            sym->name = expr->catch_expr_err_name;
+            sym->type = err_type;
+            sym->is_const = 1;
+            sym->is_initialized = 1;
+            sym->scope_level = checker->scope_level;
+            sym->line = expr->line;
+            sym->column = expr->column;
+            sym->pointee_of = NULL;
+            symbol_table_insert(checker, sym);
+        }
+        checker_check_node(checker, expr->catch_expr_catch_block);
+        checker_exit_scope(checker);
+    } else {
+        checker_check_node(checker, expr->catch_expr_catch_block);
+    }
+    struct ASTNode * const block = expr->catch_expr_catch_block;
+    if ((((block != NULL) && (block->type == AST_BLOCK)) && (block->block_stmt_count > 0))) {
+        struct ASTNode * const last = block->block_stmts[(block->block_stmt_count - 1)];
+        if (((last != NULL) && (last->type != AST_RETURN_STMT))) {
+            struct Type last_type = checker_infer_type(checker, last);
+            if ((type_equals(last_type, payload) == 0)) {
+                checker_report_error(checker, last, (uint8_t *)(uint8_t *)str607);
+            }
+        }
+    }
+    struct Type _uya_ret = payload;
     return _uya_ret;
 }
 
@@ -19341,7 +19371,7 @@ static __attribute__((unused)) struct Type checker_check_array_access(struct Typ
             if ((index_val >= 0)) {
                 const int32_t array_size = array_type.array_size;
                 if ((index_val >= array_size)) {
-                    checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str586);
+                    checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str601);
                 }
                 if ((index_val < 0)) {
                     checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str608);
@@ -19354,9 +19384,9 @@ static __attribute__((unused)) struct Type checker_check_array_access(struct Typ
                     if ((linear_expr.is_valid != 0)) {
                         if ((verify_linear_expr_bounds(checker, (&linear_expr), array_size, node->array_access_index) == 0)) {
                             if ((linear_expr.var_name != NULL)) {
-                                checker_report_error_ex(checker, node->array_access_index, (uint8_t *)(uint8_t *)str587, linear_expr.var_name, array_size);
+                                checker_report_error_ex(checker, node->array_access_index, (uint8_t *)(uint8_t *)str602, linear_expr.var_name, array_size);
                             } else {
-                                checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str586);
+                                checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str601);
                             }
                         }
                     } else {
@@ -19375,7 +19405,7 @@ static __attribute__((unused)) struct Type checker_check_array_access(struct Typ
                     if (((array_expr != NULL) && (array_expr->type == AST_IDENTIFIER))) {
                         uint8_t * const ptr_name = array_expr->identifier_name;
                         if (((pointer_is_nullable(checker, ptr_name) != 0) && (pointer_is_known_nonnull(checker, ptr_name) == 0))) {
-                            checker_report_error(checker, node->array_access_array, (uint8_t *)(uint8_t *)str588);
+                            checker_report_error(checker, node->array_access_array, (uint8_t *)(uint8_t *)str603);
                         }
                     }
                 }
@@ -20059,7 +20089,7 @@ static __attribute__((unused)) int32_t check_match_expr_node(struct TypeChecker 
                 k = 0;
                 while (((k < nv) && (k < MAX_UNION_VARIANTS))) {
                     if ((covered[k] == 0)) {
-                        checker_report_error(checker, node, (uint8_t *)(uint8_t *)str601);
+                        checker_report_error(checker, node, (uint8_t *)(uint8_t *)str594);
                         break;
                     }
                     k = (k + 1);
@@ -20076,7 +20106,7 @@ static __attribute__((unused)) int32_t check_match_expr_node(struct TypeChecker 
             j = (j + 1);
         }
         if (((has_catch_all == 0) && (node->match_expr_arm_count > 0))) {
-            checker_report_error(checker, node, (uint8_t *)(uint8_t *)str602);
+            checker_report_error(checker, node, (uint8_t *)(uint8_t *)str595);
         }
     }
     int32_t _uya_ret = 1;
@@ -22974,27 +23004,27 @@ static __attribute__((unused)) struct ASTNode * create_type_info_struct(struct A
         struct ASTNode * _uya_ret = NULL;
         return _uya_ret;
     }
-    field_names[0] = (uint8_t *)(uint8_t *)(uint8_t *)str590;
+    field_names[0] = (uint8_t *)(uint8_t *)(uint8_t *)str583;
     field_values[0] = create_string_as_ptr(type_name, arena, line, column);
-    field_names[1] = (uint8_t *)(uint8_t *)(uint8_t *)str591;
+    field_names[1] = (uint8_t *)(uint8_t *)(uint8_t *)str584;
     field_values[1] = create_number_literal((int64_t)type_size, arena, line, column);
-    field_names[2] = (uint8_t *)(uint8_t *)(uint8_t *)str592;
+    field_names[2] = (uint8_t *)(uint8_t *)(uint8_t *)str585;
     field_values[2] = create_number_literal((int64_t)type_align, arena, line, column);
-    field_names[3] = (uint8_t *)(uint8_t *)(uint8_t *)str593;
+    field_names[3] = (uint8_t *)(uint8_t *)(uint8_t *)str586;
     field_values[3] = create_number_literal((int64_t)kind, arena, line, column);
-    field_names[4] = (uint8_t *)(uint8_t *)(uint8_t *)str594;
+    field_names[4] = (uint8_t *)(uint8_t *)(uint8_t *)str587;
     field_values[4] = create_bool_literal(is_integer, arena, line, column);
-    field_names[5] = (uint8_t *)(uint8_t *)(uint8_t *)str595;
+    field_names[5] = (uint8_t *)(uint8_t *)(uint8_t *)str588;
     field_values[5] = create_bool_literal(is_float, arena, line, column);
-    field_names[6] = (uint8_t *)(uint8_t *)(uint8_t *)str596;
+    field_names[6] = (uint8_t *)(uint8_t *)(uint8_t *)str589;
     field_values[6] = create_bool_literal(is_bool, arena, line, column);
-    field_names[7] = (uint8_t *)(uint8_t *)(uint8_t *)str597;
+    field_names[7] = (uint8_t *)(uint8_t *)(uint8_t *)str590;
     field_values[7] = create_bool_literal(is_pointer, arena, line, column);
-    field_names[8] = (uint8_t *)(uint8_t *)(uint8_t *)str598;
+    field_names[8] = (uint8_t *)(uint8_t *)(uint8_t *)str591;
     field_values[8] = create_bool_literal(is_array, arena, line, column);
-    field_names[9] = (uint8_t *)(uint8_t *)(uint8_t *)str599;
+    field_names[9] = (uint8_t *)(uint8_t *)(uint8_t *)str592;
     field_values[9] = create_bool_literal(is_void, arena, line, column);
-    struct_init->struct_init_struct_name = (uint8_t *)(uint8_t *)(uint8_t *)str589;
+    struct_init->struct_init_struct_name = (uint8_t *)(uint8_t *)(uint8_t *)str582;
     struct_init->struct_init_field_names = field_names;
     struct_init->struct_init_field_values = field_values;
     struct_init->struct_init_field_count = field_count;
@@ -33245,12 +33275,12 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
     i = 0;
     while ((i < decl_count)) {
         struct ASTNode * const d = ast->program_decls[i];
-        if (((((d != NULL) && (d->type == AST_STRUCT_DECL)) && (d->struct_decl_name != NULL)) && (std_string_strcmp((uint8_t *)d->struct_decl_name, (uint8_t *)(uint8_t *)str589) == 0))) {
+        if (((((d != NULL) && (d->type == AST_STRUCT_DECL)) && (d->struct_decl_name != NULL)) && (std_string_strcmp((uint8_t *)d->struct_decl_name, (uint8_t *)(uint8_t *)str582) == 0))) {
             user_defined_typeinfo = 1;
         }
         i = (i + 1);
     }
-    if (((user_defined_typeinfo == 0) && (is_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str589) == 0))) {
+    if (((user_defined_typeinfo == 0) && (is_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str582) == 0))) {
         libc_fputs((uint8_t *)(uint8_t *)str1196, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1197, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1198, (void *)codegen->output);
@@ -33264,7 +33294,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         libc_fputs((uint8_t *)(uint8_t *)str1206, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1207, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1208, (void *)codegen->output);
-        mark_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str589);
+        mark_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str582);
     }
     i = 0;
     while ((i < decl_count)) {
