@@ -141,7 +141,7 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             // 这种情况下允许通过，因为 null 可能被推断为 TypeKind.TYPE_VOID
             if init_type.kind == TypeKind.TYPE_VOID && var_type.kind == TypeKind.TYPE_POINTER {
                 // null 可以赋值给任何指针类型
-            } else if init_type.kind == TypeKind.TYPE_VOID {
+            } else if is_void_type(init_type) != 0 {
                 // 类型推断失败：放宽检查，允许通过（不报错）
                 // 这在编译器自举时很常见，因为类型推断可能失败
             } else if type_equals(init_type, var_type) == 0 {
@@ -428,7 +428,7 @@ fn checker_check_extern_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
         is_c_compatible = 1;
     }
 
-    if var_type.kind == TypeKind.TYPE_VOID {
+    if is_void_type(var_type) != 0 {
         checker_report_error(checker, node, "extern 变量不能使用 void 类型" as *byte);
         return 0;
     }
@@ -595,7 +595,7 @@ fn checker_check_struct_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             }
 
             const field_type: Type = type_from_ast(checker, field_type_node);
-            if field_type.kind == TypeKind.TYPE_VOID {
+            if is_void_type(field_type) != 0 {
                 // 字段类型无效：放宽检查，允许通过（不报错）
                 // 这在编译器自举时很常见，因为类型推断可能失败或存在前向引用
                 // 不再报告错误，直接允许通过

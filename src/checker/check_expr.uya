@@ -538,7 +538,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         var i: i32 = 0;
         while i < n {
             const et: Type = checker_infer_type(checker, elements[i]);
-            if et.kind == TypeKind.TYPE_VOID {
+            if is_void_type(et) != 0 {
                 return make_void_type();
             }
             element_types[i] = copy_type(&et);
@@ -560,7 +560,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
                 return make_void_type();
             }
             const element_type: Type = checker_infer_type(checker, elements[0]);
-            if element_type.kind == TypeKind.TYPE_VOID {
+            if is_void_type(element_type) != 0 {
                 return make_void_type();
             }
             const element_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
@@ -579,7 +579,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         }
         
         const element_type: Type = checker_infer_type(checker, elements[0]);
-        if element_type.kind == TypeKind.TYPE_VOID {
+        if is_void_type(element_type) != 0 {
             return make_void_type();
         }
         
@@ -685,7 +685,7 @@ fn checker_check_expr_type(checker: &TypeChecker, expr: &ASTNode, expected_type:
     // 特殊情况：放宽对类型推断失败的检查
     // 如果实际类型是 TypeKind.TYPE_VOID（类型推断失败），允许通过（不报错）
     // 这在编译器自举时很常见，因为类型推断可能失败
-    if actual_type.kind == TypeKind.TYPE_VOID {
+    if is_void_type(actual_type) != 0 {
         // 类型推断失败，但不报错（允许通过）
         return 1;
     }
@@ -1094,7 +1094,7 @@ fn infer_syscall(checker: &TypeChecker, expr: &ASTNode) Type {
     }
     
     const syscall_nr_type: Type = checker_infer_type(checker, expr.syscall_number);
-    if syscall_nr_type.kind == TypeKind.TYPE_VOID {
+    if is_void_type(syscall_nr_type) != 0 {
         return make_void_type();
     }
     
@@ -1117,7 +1117,7 @@ fn infer_syscall(checker: &TypeChecker, expr: &ASTNode) Type {
         }
         
         const arg_type: Type = checker_infer_type(checker, expr.syscall_args[sc_i]);
-        if arg_type.kind == TypeKind.TYPE_VOID {
+        if is_void_type(arg_type) != 0 {
             return make_void_type();
         }
         
@@ -1161,7 +1161,7 @@ fn infer_unary_expr(checker: &TypeChecker, expr: &ASTNode) Type {
         return operand_type;
     } else if op == TokenType.TOKEN_AMPERSAND {
         // 取地址（&expr）：返回指向操作数类型的指针类型
-        if operand_type.kind == TypeKind.TYPE_VOID {
+        if is_void_type(operand_type) != 0 {
             // 操作数类型无效
             return make_void_type();
         }
