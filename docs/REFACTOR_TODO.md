@@ -112,7 +112,7 @@
 
 ---
 
-## 阶段二：嵌套深度优化 [████░░░░░░] 40%
+## 阶段二：嵌套深度优化 [██████░░░░] 60%
 
 ### 2.1 提前返回优化
 
@@ -156,13 +156,29 @@
 
 ### 2.3 嵌套深度改进记录
 
-| 函数 | 原始行数 | 当前行数 | 原始深度 | 当前深度 | 状态 |
-|------|----------|----------|----------|----------|------|
-| `gen_var_decl_stmt` | 638 | 398 | 7 | 待确认 | 已提取辅助函数 |
-| `checker_check_struct_decl` | 178 | 166 | 6 | 待确认 | 已提取辅助函数 |
-| `gen_call_expr` | 680 | - | 6 | - | 待处理 |
-| `checker_infer_type` | 474 | - | 5 | - | 待处理 |
-| `infer_match_expr` | 114 | - | 5 | - | 待处理 |
+| 函数 | 原始行数 | 当前行数 | 变化 | 状态 |
+|------|----------|----------|------|------|
+| `gen_var_decl_stmt` | 638 | 398 | -38% | ✅ 已提取辅助函数 |
+| `checker_check_struct_decl` | 178 | 166 | -7% | ✅ 已提取辅助函数 |
+| `gen_call_expr` | 680 | 658 | -3% | ✅ 已提取辅助函数 |
+| `gen_binary_expr` | 259 | - | - | 待处理 |
+| `checker_infer_type` | 474 | - | - | 待处理 |
+| `infer_match_expr` | 114 | - | - | 待处理 |
+
+### 2.4 已提取的辅助函数
+
+**codegen/c99/stmt.uya:**
+- `gen_var_decl_empty_struct_init` - 空结构体初始化
+- `gen_var_decl_struct_init_memcpy` - 结构体数组字段 memcpy
+- `gen_var_decl_void_type` - void 类型变量声明
+- `should_use_va_list` - va_list 检测
+- `emit_pointer_const_decl` - 指针类型 const 声明
+
+**checker/check_stmt.uya:**
+- `method_signature_exists` - 方法签名去重检查
+
+**codegen/c99/expr.uya:**
+- `is_string_function` - 字符串函数检测
 
 ---
 
