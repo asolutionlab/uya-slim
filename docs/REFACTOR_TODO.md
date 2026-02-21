@@ -174,17 +174,19 @@
 
 ---
 
-## 阶段三：重复代码提取 [████░░░░░░] 40%
+## 阶段三：重复代码提取 [██████░░░░] 60%
 
 ### 3.1 提取代码生成辅助函数
 
-- [ ] 在 `src/codegen/c99/utils.uya` 添加：
+- [x] 添加代码生成辅助函数（utils.uya）：
+  - [x] `c99_emit_newline` - 输出换行（替换 45 处）
+  - [x] `c99_emit_semi_newline` - 输出分号换行（替换 37 处）
+- [ ] 继续提取更多辅助函数：
   - [ ] `emit_type(codegen, t)` - 统一类型输出
   - [ ] `emit_expr_as_value(codegen, node)` - 表达式值输出
   - [ ] `emit_defer_chain(codegen, defers)` - defer 链输出
-  - [ ] `emit_error_propagation(codegen, expr)` - 错误传播输出
 - [ ] 替换所有重复的类型输出代码
-- [ ] 运行 `make check` 验证
+- [x] 运行 `make check` 验证 - 通过
 
 ### 3.2 统一类型检查函数调用
 
