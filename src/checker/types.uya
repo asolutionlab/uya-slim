@@ -1,0 +1,205 @@
+// checker/types.uya - 类型定义
+// 从 checker.uya 拆分
+
+use libc.atoi;
+use std.string.strlen;
+use libc.Stat;
+use libc.stat;
+use std.runtime.ptr_diff;
+use std.string.strcat;
+use std.string.strcpy;
+use std.string.strrchr;
+use std.mem.memcpy;
+
+// ===== 常量定义 =====
+
+const MAX_ERROR_NAMES: i32 = 256;
+const MAX_MOVED_NAMES: i32 = 128;
+const MAX_MONO_INSTANCES: i32 = 512;
+const MAX_UNION_VARIANTS: i32 = 32;
+const MAX_INTERFACE_METHODS: i32 = 128;
+const MAX_INTERFACE_STACK: i32 = 64;
+const MAX_BASE_NAME_LEN: i32 = 256;
+const MAX_MONO_NAME_LEN: i32 = 256;
+const MAX_MONO_NAME_LIMIT: i32 = 250;
+const MAX_POINTER_NAMES: i32 = 32;
+const MAX_CONSTRAINTS: i32 = 64;
+
+const SYMBOL_TABLE_SIZE: i32 = 32768;
+const FUNCTION_TABLE_SIZE: i32 = 2048;
+const MODULE_TABLE_SIZE: i32 = 256;
+const IMPORT_TABLE_SIZE: i32 = 512;
+
+// ===== 类型枚举 =====
+
+enum TypeKind {
+    TYPE_I8,
+    TYPE_I16,
+    TYPE_I32,
+    TYPE_I64,
+    TYPE_U8,
+    TYPE_U16,
+    TYPE_U32,
+    TYPE_USIZE,
+    TYPE_U64,
+    TYPE_BOOL,
+    TYPE_BYTE,
+    TYPE_F32,
+    TYPE_F64,
+    TYPE_VOID,
+    TYPE_ENUM,
+    TYPE_INTERFACE,
+    TYPE_STRUCT,
+    TYPE_UNION,
+    TYPE_POINTER,
+    TYPE_ARRAY,
+    TYPE_SLICE,
+    TYPE_TUPLE,
+    TYPE_ERROR_UNION,
+    TYPE_ERROR,
+    TYPE_INT_LIMIT,
+    TYPE_ATOMIC,
+    TYPE_GENERIC_PARAM,
+}
+
+// ===== 类型结构 =====
+
+struct Type {
+    kind: TypeKind,
+    enum_name: &byte,
+    interface_name: &byte,
+    struct_name: &byte,
+    union_name: &byte,
+    pointer_to: &Type,
+    is_ffi_pointer: i32,
+    element_type: &Type,
+    array_size: i32,
+    slice_element_type: &Type,
+    slice_len: i32,
+    tuple_element_types: &Type,
+    tuple_count: i32,
+    error_union_payload_type: &Type,
+    error_error_id: u32,
+    atomic_inner_type: &Type,
+    generic_param_name: &byte,
+    struct_type_args: &Type,
+    struct_type_arg_count: i32,
+}
+
+struct Symbol {
+    name: &byte,
+    type: Type,
+    is_const: i32,
+    is_initialized: i32,
+    scope_level: i32,
+    line: i32,
+    column: i32,
+    pointee_of: &byte,
+    decl_node: &ASTNode,
+}
+
+struct FunctionSignature {
+    name: &byte,
+    param_types: &Type,
+    param_count: i32,
+    return_type: Type,
+    is_extern: i32,
+    is_varargs: i32,
+    line: i32,
+    column: i32,
+}
+
+struct SymbolTable {
+    slots: [&Symbol: SYMBOL_TABLE_SIZE],
+    count: i32,
+}
+
+struct FunctionTable {
+    slots: [&FunctionSignature: FUNCTION_TABLE_SIZE],
+    count: i32,
+}
+
+struct ExportedItem {
+    name: &byte,
+    decl_node: &ASTNode,
+    module_name: &byte,
+    item_type: i32,
+}
+
+struct ModuleDependency {
+    target_module: &byte,
+    use_stmt_node: &ASTNode,
+}
+
+struct ModuleInfo {
+    module_name: &byte,
+    filename: &byte,
+    exports: &ExportedItem,
+    export_count: i32,
+    dependencies: &ModuleDependency,
+    dependency_count: i32,
+}
+
+struct ModuleTable {
+    slots: [&ModuleInfo: MODULE_TABLE_SIZE],
+    count: i32,
+}
+
+struct ImportedItem {
+    local_name: &byte,
+    original_name: &byte,
+    module_name: &byte,
+    item_type: i32,
+}
+
+struct ImportTable {
+    slots: [&ImportedItem: IMPORT_TABLE_SIZE],
+    count: i32,
+}
+
+struct MonoInstance {
+    generic_name: &byte,
+    type_args: &Type,
+    type_arg_nodes: & & ASTNode,
+    type_arg_count: i32,
+    is_function: i32,
+}
+
+struct TypeChecker {
+    arena: &Arena,
+    symbol_table: SymbolTable,
+    function_table: FunctionTable,
+    module_table: ModuleTable,
+    import_table: ImportTable,
+    scope_level: i32,
+    loop_depth: i32,
+    program_node: &ASTNode,
+    error_count: i32,
+    default_filename: &byte,
+    current_return_type: Type,
+    in_function: i32,
+    in_defer_or_errdefer: i32,
+    current_function_decl: &ASTNode,
+    error_names: [&byte: 256],
+    error_hashes: [u32: 256],
+    error_name_count: i32,
+    moved_names: [&byte: 128],
+    moved_count: i32,
+    project_root_dir: &byte,
+    uya_root_dir: &byte,
+    current_type_params: &TypeParam,
+    current_type_param_count: i32,
+    mono_instances: [MonoInstance: 512],
+    mono_instance_count: i32,
+    constraint_var_names: [&byte: 64],
+    constraint_ops: [i32: 64],
+    constraint_values: [i32: 64],
+    constraint_count: i32,
+    pointer_nonnull_names: [&byte: 32],
+    pointer_nonnull_count: i32,
+    pointer_nullable_names: [&byte: 32],
+    pointer_nullable_count: i32,
+    enable_safety_proof: i32,
+    proof_step_limit: i32,
+    proof_step_count: i32,
+}

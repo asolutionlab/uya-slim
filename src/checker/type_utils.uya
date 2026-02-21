@@ -1,0 +1,481 @@
+// checker/type_utils.uya - 类型工具函数
+// 从 checker/main.uya 拆分
+
+// ===== 类型转换 =====
+
+// 将 Type 转换为字符串表示
+fn type_to_string(arena: &Arena, type: Type) &byte {
+    if arena == null {
+        return "unknown" as &byte;
+    }
+    
+    if type.kind == TypeKind.TYPE_I8 { return "i8" as &byte; }
+    if type.kind == TypeKind.TYPE_I16 { return "i16" as &byte; }
+    if type.kind == TypeKind.TYPE_I32 { return "i32" as &byte; }
+    if type.kind == TypeKind.TYPE_I64 { return "i64" as &byte; }
+    if type.kind == TypeKind.TYPE_U8 { return "u8" as &byte; }
+    if type.kind == TypeKind.TYPE_U16 { return "u16" as &byte; }
+    if type.kind == TypeKind.TYPE_U32 { return "u32" as &byte; }
+    if type.kind == TypeKind.TYPE_U64 { return "u64" as &byte; }
+    if type.kind == TypeKind.TYPE_USIZE { return "usize" as &byte; }
+    if type.kind == TypeKind.TYPE_BYTE { return "byte" as &byte; }
+    if type.kind == TypeKind.TYPE_F32 { return "f32" as &byte; }
+    if type.kind == TypeKind.TYPE_F64 { return "f64" as &byte; }
+    if type.kind == TypeKind.TYPE_BOOL { return "bool" as &byte; }
+    if type.kind == TypeKind.TYPE_VOID { return "void" as &byte; }
+    if type.kind == TypeKind.TYPE_STRUCT {
+        if type.struct_name != null {
+            return type.struct_name;
+        }
+        return "struct" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_ENUM {
+        if type.enum_name != null {
+            return type.enum_name;
+        }
+        return "enum" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_UNION {
+        if type.union_name != null {
+            return type.union_name;
+        }
+        return "union" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_INTERFACE {
+        if type.interface_name != null {
+            return type.interface_name;
+        }
+        return "interface" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_POINTER {
+        if type.pointer_to == null {
+            return "&?" as &byte;
+        }
+        const inner: &byte = type_to_string(arena, type.pointer_to[0]);
+        const buf: &byte = arena_alloc(arena, strlen(inner as *byte) + 3) as &byte;
+        if buf != null {
+            if type.is_ffi_pointer != 0 {
+                sprintf(buf as *byte, "*%s" as *byte, inner as *byte);
+            } else {
+                sprintf(buf as *byte, "&%s" as *byte, inner as *byte);
+            }
+            return buf;
+        }
+        return "&?" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_ARRAY {
+        if type.element_type == null {
+            return "[?]" as &byte;
+        }
+        const inner: &byte = type_to_string(arena, type.element_type[0]);
+        const buf: &byte = arena_alloc(arena, strlen(inner as *byte) + 24) as &byte;
+        if buf != null {
+            sprintf(buf as *byte, "[%s: %d]" as *byte, inner as *byte, type.array_size);
+            return buf;
+        }
+        return "[?]" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_SLICE {
+        if type.slice_element_type == null {
+            return "&[?]" as &byte;
+        }
+        const inner: &byte = type_to_string(arena, type.slice_element_type[0]);
+        const buf: &byte = arena_alloc(arena, strlen(inner as *byte) + 8) as &byte;
+        if buf != null {
+            sprintf(buf as *byte, "&[%s]" as *byte, inner as *byte);
+            return buf;
+        }
+        return "&[?]" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_ERROR_UNION {
+        if type.error_union_payload_type == null {
+            return "!?" as &byte;
+        }
+        const inner: &byte = type_to_string(arena, type.error_union_payload_type[0]);
+        const buf: &byte = arena_alloc(arena, strlen(inner as *byte) + 2) as &byte;
+        if buf != null {
+            sprintf(buf as *byte, "!%s" as *byte, inner as *byte);
+            return buf;
+        }
+        return "!?" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_TUPLE {
+        return "(...)" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_ERROR {
+        return "error" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_INT_LIMIT {
+        return "int_limit" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_ATOMIC {
+        if type.atomic_inner_type == null {
+            return "atomic ?" as &byte;
+        }
+        const inner: &byte = type_to_string(arena, type.atomic_inner_type[0]);
+        const buf: &byte = arena_alloc(arena, strlen(inner as *byte) + 8) as &byte;
+        if buf != null {
+            sprintf(buf as *byte, "atomic %s" as *byte, inner as *byte);
+            return buf;
+        }
+        return "atomic ?" as &byte;
+    }
+    if type.kind == TypeKind.TYPE_GENERIC_PARAM {
+        if type.generic_param_name != null {
+            return type.generic_param_name;
+        }
+        return "T" as &byte;
+    }
+    return "unknown" as &byte;
+}
+
+// ===== 类型判断 =====
+
+// 是否为整数类型
+fn is_integer_type(k: TypeKind) i32 {
+    if k == TypeKind.TYPE_I8 || k == TypeKind.TYPE_I16 || k == TypeKind.TYPE_I32 || k == TypeKind.TYPE_I64 {
+        return 1;
+    }
+    if k == TypeKind.TYPE_U8 || k == TypeKind.TYPE_U16 || k == TypeKind.TYPE_U32 || k == TypeKind.TYPE_USIZE || k == TypeKind.TYPE_U64 {
+        return 1;
+    }
+    if k == TypeKind.TYPE_BYTE {
+        return 1;
+    }
+    return 0;
+}
+
+// 是否为浮点类型
+fn is_float_type(k: TypeKind) i32 {
+    if k == TypeKind.TYPE_F32 || k == TypeKind.TYPE_F64 {
+        return 1;
+    }
+    return 0;
+}
+
+// 是否为无符号整数类型
+fn is_unsigned_type(k: TypeKind) i32 {
+    if k == TypeKind.TYPE_U8 || k == TypeKind.TYPE_U16 || 
+       k == TypeKind.TYPE_U32 || k == TypeKind.TYPE_USIZE || k == TypeKind.TYPE_U64 {
+        return 1;
+    }
+    if k == TypeKind.TYPE_BYTE {
+        return 1;
+    }
+    return 0;
+}
+
+// 是否为数值类型
+fn is_numeric_type(k: TypeKind) i32 {
+    if is_integer_type(k) != 0 || is_float_type(k) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+// ===== 约束检查 =====
+
+// 检查类型是否满足内置约束
+fn type_satisfies_builtin_constraint(type: Type, constraint_name: &byte) i32 {
+    if constraint_name == null {
+        return 0;
+    }
+    
+    // Ord 约束：可比较的类型
+    if strcmp(constraint_name as *byte, "Ord" as *byte) == 0 {
+        if is_numeric_type(type.kind) != 0 || type.kind == TypeKind.TYPE_BOOL {
+            return 1;
+        }
+        return 0;
+    }
+    
+    // Clone 约束：可复制的类型
+    if strcmp(constraint_name as *byte, "Clone" as *byte) == 0 {
+        if is_numeric_type(type.kind) != 0 || type.kind == TypeKind.TYPE_BOOL {
+            return 1;
+        }
+        return 0;
+    }
+    
+    // Default 约束：有默认值的类型
+    if strcmp(constraint_name as *byte, "Default" as *byte) == 0 {
+        if is_numeric_type(type.kind) != 0 || type.kind == TypeKind.TYPE_BOOL {
+            return 1;
+        }
+        return 0;
+    }
+    
+    // Copy 约束：可位复制的类型
+    if strcmp(constraint_name as *byte, "Copy" as *byte) == 0 {
+        if is_numeric_type(type.kind) != 0 || type.kind == TypeKind.TYPE_BOOL || type.kind == TypeKind.TYPE_POINTER {
+            return 1;
+        }
+        return 0;
+    }
+    
+    // Eq 约束：可判等的类型
+    if strcmp(constraint_name as *byte, "Eq" as *byte) == 0 {
+        if is_numeric_type(type.kind) != 0 || type.kind == TypeKind.TYPE_BOOL || type.kind == TypeKind.TYPE_POINTER {
+            return 1;
+        }
+        return 0;
+    }
+    
+    return 0;
+}
+
+// 检查类型是否满足约束
+fn type_satisfies_constraint(checker: &TypeChecker, type: Type, constraint_name: &byte) i32 {
+    if constraint_name == null {
+        return 0;
+    }
+    
+    if type_satisfies_builtin_constraint(type, constraint_name) != 0 {
+        return 1;
+    }
+    
+    if type.kind == TypeKind.TYPE_STRUCT && type.struct_name != null && 
+        checker != null && checker.program_node != null {
+        const struct_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, type.struct_name as *byte);
+        if struct_decl != null {
+            var i: i32 = 0;
+            while i < struct_decl.struct_decl_interface_count {
+                if struct_decl.struct_decl_interface_names[i] != null &&
+                    strcmp(struct_decl.struct_decl_interface_names[i] as *byte, constraint_name as *byte) == 0 {
+                    return 1;
+                }
+                i = i + 1;
+            }
+        }
+    }
+    
+    return 0;
+}
+
+// 检查类型参数的所有约束是否满足
+fn check_type_param_constraints(checker: &TypeChecker, type: Type, 
+                                 type_param: &TypeParam, node: &ASTNode,
+                                 param_name: &byte) i32 {
+    if type_param == null || type_param.constraint_count == 0 {
+        return 1;
+    }
+    
+    var i: i32 = 0;
+    while i < type_param.constraint_count {
+        const constraint: *byte = type_param.constraints[i];
+        if constraint != null && type_satisfies_constraint(checker, type, constraint) == 0 {
+            var buf: [byte: MAX_BASE_NAME_LEN * 2] = [];
+            const type_name: &byte = type_to_string(checker.arena, copy_type(&type));
+            snprintf(buf as *byte, MAX_BASE_NAME_LEN * 2, 
+                     "类型 '%s' 不满足泛型参数 '%s' 的约束 '%s'" as *byte,
+                     type_name as *byte,
+                     param_name,
+                     constraint);
+            checker_report_error(checker, node, buf as *byte);
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// ===== 类型解析 =====
+
+// 将 max/min 节点解析为指定整数类型
+fn resolve_int_limit_node(node: &ASTNode, type: Type) void {
+    if node == null || node.type != ASTNodeType.AST_INT_LIMIT {
+        return;
+    }
+    if is_integer_type(type.kind) == 0 {
+        return;
+    }
+    node.int_limit_resolved_kind = type.kind;
+}
+
+// ===== 类型比较 =====
+
+// 类型比较函数
+fn type_equals(t1: Type, t2: Type) i32 {
+    if t1.kind != t2.kind {
+        return 0;
+    }
+    
+    if t1.kind == TypeKind.TYPE_ENUM {
+        if t1.enum_name == null && t2.enum_name == null {
+            return 1;
+        }
+        if t1.enum_name == null || t2.enum_name == null {
+            return 0;
+        }
+        return str_equals(t1.enum_name, t2.enum_name);
+    }
+    
+    if t1.kind == TypeKind.TYPE_STRUCT {
+        if t1.struct_name == null && t2.struct_name == null {
+            return 1;
+        }
+        if t1.struct_name == null || t2.struct_name == null {
+            return 0;
+        }
+        return str_equals(t1.struct_name, t2.struct_name);
+    }
+    
+    if t1.kind == TypeKind.TYPE_UNION {
+        if t1.union_name == null && t2.union_name == null {
+            return 1;
+        }
+        if t1.union_name == null || t2.union_name == null {
+            return 0;
+        }
+        return str_equals(t1.union_name, t2.union_name);
+    }
+    
+    if t1.kind == TypeKind.TYPE_INTERFACE {
+        if t1.interface_name == null && t2.interface_name == null {
+            return 1;
+        }
+        if t1.interface_name == null || t2.interface_name == null {
+            return 0;
+        }
+        return str_equals(t1.interface_name, t2.interface_name);
+    }
+    
+    if t1.kind == TypeKind.TYPE_POINTER {
+        if t1.is_ffi_pointer != t2.is_ffi_pointer {
+            return 0;
+        }
+        if t1.pointer_to == null && t2.pointer_to == null {
+            return 1;
+        }
+        if t1.pointer_to == null || t2.pointer_to == null {
+            return 0;
+        }
+        return type_equals(t1.pointer_to[0], t2.pointer_to[0]);
+    }
+    
+    if t1.kind == TypeKind.TYPE_ARRAY {
+        if t1.array_size != t2.array_size {
+            return 0;
+        }
+        if t1.element_type == null && t2.element_type == null {
+            return 1;
+        }
+        if t1.element_type == null || t2.element_type == null {
+            return 0;
+        }
+        return type_equals(t1.element_type[0], t2.element_type[0]);
+    }
+    
+    if t1.kind == TypeKind.TYPE_SLICE {
+        if t2.kind != TypeKind.TYPE_SLICE {
+            return 0;
+        }
+        if t1.slice_element_type == null && t2.slice_element_type == null {
+            return 1;
+        }
+        if t1.slice_element_type == null || t2.slice_element_type == null {
+            return 0;
+        }
+        return type_equals(t1.slice_element_type[0], t2.slice_element_type[0]);
+    }
+    
+    if t1.kind == TypeKind.TYPE_TUPLE {
+        if t1.tuple_count != t2.tuple_count {
+            return 0;
+        }
+        if t1.tuple_element_types == null && t2.tuple_element_types == null {
+            return 1;
+        }
+        if t1.tuple_element_types == null || t2.tuple_element_types == null {
+            return 0;
+        }
+        var i: i32 = 0;
+        while i < t1.tuple_count {
+            if type_equals(t1.tuple_element_types[i], t2.tuple_element_types[i]) == 0 {
+                return 0;
+            }
+            i = i + 1;
+        }
+        return 1;
+    }
+    
+    if t1.kind == TypeKind.TYPE_ERROR_UNION {
+        if t2.kind != TypeKind.TYPE_ERROR_UNION {
+            return 0;
+        }
+        if t1.error_union_payload_type == null && t2.error_union_payload_type == null {
+            return 1;
+        }
+        if t1.error_union_payload_type == null || t2.error_union_payload_type == null {
+            return 0;
+        }
+        return type_equals(t1.error_union_payload_type[0], t2.error_union_payload_type[0]);
+    }
+    
+    if t1.kind == TypeKind.TYPE_ERROR {
+        if t2.kind == TypeKind.TYPE_ERROR && t1.error_error_id == t2.error_error_id {
+            return 1;
+        }
+        return 0;
+    }
+    
+    if t1.kind == TypeKind.TYPE_ATOMIC {
+        if t2.kind != TypeKind.TYPE_ATOMIC {
+            return 0;
+        }
+        if t1.atomic_inner_type == null && t2.atomic_inner_type == null {
+            return 1;
+        }
+        if t1.atomic_inner_type == null || t2.atomic_inner_type == null {
+            return 0;
+        }
+        return type_equals(t1.atomic_inner_type[0], t2.atomic_inner_type[0]);
+    }
+    
+    if t1.kind == TypeKind.TYPE_GENERIC_PARAM {
+        if t2.kind != TypeKind.TYPE_GENERIC_PARAM {
+            return 0;
+        }
+        if t1.generic_param_name == null && t2.generic_param_name == null {
+            return 1;
+        }
+        if t1.generic_param_name == null || t2.generic_param_name == null {
+            return 0;
+        }
+        return str_equals(t1.generic_param_name, t2.generic_param_name);
+    }
+    
+    return 1;
+}
+
+// 检查类型是否可以隐式转换
+fn type_can_implicitly_convert(from: Type, to: Type) i32 {
+    if type_equals(from, to) != 0 {
+        return 1;
+    }
+    
+    // byte → i32
+    if from.kind == TypeKind.TYPE_BYTE && to.kind == TypeKind.TYPE_I32 {
+        return 1;
+    }
+    
+    // i32 ↔ usize
+    if from.kind == TypeKind.TYPE_I32 && to.kind == TypeKind.TYPE_USIZE {
+        return 1;
+    }
+    if from.kind == TypeKind.TYPE_USIZE && to.kind == TypeKind.TYPE_I32 {
+        return 1;
+    }
+    
+    // i32 字面量 → 其他整数类型
+    if from.kind == TypeKind.TYPE_I32 && is_integer_type(to.kind) != 0 {
+        return 1;
+    }
+    
+    // null → 指针
+    if from.kind == TypeKind.TYPE_VOID && to.kind == TypeKind.TYPE_POINTER {
+        return 1;
+    }
+    
+    return 0;
+}

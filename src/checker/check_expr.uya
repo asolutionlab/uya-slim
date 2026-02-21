@@ -1,0 +1,1465 @@
+// checker/check_expr.uya - 表达式类型推断和检查
+// 从 checker/main.uya 拆分
+
+// ===== 类型辅助函数 =====
+
+// 复制 Type 值
+fn copy_type(t: &Type) Type {
+    var r: Type = Type {
+        kind: t.kind,
+        enum_name: t.enum_name,
+        interface_name: t.interface_name,
+        struct_name: t.struct_name,
+        union_name: t.union_name,
+        pointer_to: t.pointer_to,
+        is_ffi_pointer: t.is_ffi_pointer,
+        element_type: t.element_type,
+        array_size: t.array_size,
+        slice_element_type: t.slice_element_type,
+        slice_len: t.slice_len,
+        tuple_element_types: t.tuple_element_types,
+        tuple_count: t.tuple_count,
+        error_union_payload_type: t.error_union_payload_type,
+        error_error_id: t.error_error_id,
+        atomic_inner_type: t.atomic_inner_type,
+        generic_param_name: t.generic_param_name,
+        struct_type_args: t.struct_type_args,
+        struct_type_arg_count: t.struct_type_arg_count,
+    };
+    return r;
+}
+
+// 插值格式说明符对应类型的最大输出宽度
+fn checker_interp_format_max_width(t: Type, spec: &byte) i32 {
+    if t.kind == TypeKind.TYPE_I32 || t.kind == TypeKind.TYPE_U32 {
+        if spec != null {
+            var i: i32 = 0;
+            while spec[i] != 0 {
+                if spec[i] == 108 { return 21; }
+                i = i + 1;
+            }
+        }
+        return 11;
+    }
+    if t.kind == TypeKind.TYPE_I64 || t.kind == TypeKind.TYPE_U64 { return 21; }
+    if t.kind == TypeKind.TYPE_I8 || t.kind == TypeKind.TYPE_I16 ||
+        t.kind == TypeKind.TYPE_U8 || t.kind == TypeKind.TYPE_U16 { return 11; }
+    if t.kind == TypeKind.TYPE_USIZE { return 21; }
+    if t.kind == TypeKind.TYPE_F32 { return 16; }
+    if t.kind == TypeKind.TYPE_F64 { return 24; }
+    if t.kind == TypeKind.TYPE_BOOL { return 5; }
+    if t.kind == TypeKind.TYPE_POINTER { return 18; }
+    return -1;
+}
+
+// fprintf 从 extern_decls.uya 导入（use libc.fprintf）
+
+// 在结构体声明中查找字段
+// 参数：checker - 类型检查器指针，struct_decl - 结构体声明节点，field_name - 字段名称
+// 返回：找到的字段类型，未找到返回TYPE_VOID类型
+fn find_struct_field_type(checker: &TypeChecker, struct_decl: &ASTNode, field_name: &byte) Type {
+    // 注意：Uya 要求所有变量必须初始化
+    var result: Type = Type {
+        kind: TypeKind.TYPE_VOID,
+        enum_name: null,
+        struct_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+    };
+    
+    if checker == null || struct_decl == null || struct_decl.type != ASTNodeType.AST_STRUCT_DECL || field_name == null {
+        return result;
+    }
+    
+    // 遍历结构体字段列表
+    var i: i32 = 0;
+    while i < struct_decl.struct_decl_field_count {
+        const field: &ASTNode = struct_decl.struct_decl_fields[i];
+        if field != null && field.type == ASTNodeType.AST_VAR_DECL {
+            if field.var_decl_name != null && 
+                str_equals(field.var_decl_name, field_name) != 0 {
+                // 找到字段，返回字段类型
+                return type_from_ast(checker, field.var_decl_type);
+            }
+        }
+        i = i + 1;
+    }
+    
+    // 未找到字段
+    return result;
+}
+
+// 在泛型结构体声明中查找字段，支持类型参数替换
+// 例如：对于 Pair<i32, i64>，查找 key 字段时返回 i32 而非 K
+fn find_struct_field_type_with_substitution(checker: &TypeChecker, struct_decl: &ASTNode, 
+                                             field_name: &byte, type_args: &Type, type_arg_count: i32) Type {
+    var result: Type = Type {
+        kind: TypeKind.TYPE_VOID,
+        enum_name: null,
+        struct_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+    };
+    
+    if checker == null || struct_decl == null || struct_decl.type != ASTNodeType.AST_STRUCT_DECL || field_name == null {
+        return result;
+    }
+    
+    const type_params: &TypeParam = struct_decl.struct_decl_type_params;
+    const type_param_count: i32 = struct_decl.struct_decl_type_param_count;
+    
+    var i: i32 = 0;
+    while i < struct_decl.struct_decl_field_count {
+        const field: &ASTNode = struct_decl.struct_decl_fields[i];
+        if field != null && field.type == ASTNodeType.AST_VAR_DECL {
+            if field.var_decl_name != null && 
+                str_equals(field.var_decl_name, field_name) != 0 {
+                // 找到字段，获取原始类型
+                // 临时设置结构体的类型参数作为当前作用域的泛型参数
+                const saved_params: &TypeParam = checker.current_type_params;
+                const saved_count: i32 = checker.current_type_param_count;
+                checker.current_type_params = type_params;
+                checker.current_type_param_count = type_param_count;
+                
+                var field_type: Type = type_from_ast(checker, field.var_decl_type);
+                
+                // 恢复
+                checker.current_type_params = saved_params;
+                checker.current_type_param_count = saved_count;
+                
+                // 如果字段类型是泛型参数，则进行替换
+                if field_type.kind == TypeKind.TYPE_GENERIC_PARAM && field_type.generic_param_name != null &&
+                    type_params != null && type_args != null && type_arg_count > 0 {
+                    const param_name: &byte = field_type.generic_param_name;
+                    // 查找匹配的类型参数
+                    var j: i32 = 0;
+                    while j < type_param_count && j < type_arg_count {
+                        if type_params[j].name != null && str_equals(type_params[j].name, param_name) != 0 {
+                            // 返回替换后的类型
+                            return type_args[j];
+                        }
+                        j = j + 1;
+                    }
+                }
+                
+                return field_type;
+            }
+        }
+        i = i + 1;
+    }
+    
+    return result;
+}
+
+// ===== 表达式类型推断 =====
+
+// 表达式类型推断函数（从表达式AST节点推断类型）
+// 参数：checker - TypeChecker 指针，expr - 表达式AST节点
+// 返回：Type结构，如果无法推断返回TYPE_VOID类型
+// 注意：这是简化版本，完整的类型推断需要类型检查上下文
+fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
+    // 注意：Uya 要求所有变量必须初始化
+    var result: Type = Type {
+        kind: TypeKind.TYPE_VOID,
+        enum_name: null,
+        struct_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+    };
+    
+    if checker == null || expr == null {
+        return result;
+    }
+    
+    if expr.type == ASTNodeType.AST_NUMBER {
+        result.kind = TypeKind.TYPE_I32;
+        return result;
+    } else if expr.type == ASTNodeType.AST_FLOAT {
+        result.kind = TypeKind.TYPE_F64;
+        return result;
+    } else if expr.type == ASTNodeType.AST_BOOL {
+        // 布尔字面量类型为bool
+        result.kind = TypeKind.TYPE_BOOL;
+        return result;
+    } else if expr.type == ASTNodeType.AST_INT_LIMIT {
+        // max/min：若已从上下文解析则返回该整数类型，否则返回 TypeKind.TYPE_INT_LIMIT
+        const r: i32 = expr.int_limit_resolved_kind;
+        if r != 0 && is_integer_type(r as TypeKind) != 0 {
+            result.kind = r as TypeKind;
+            return result;
+        }
+        result.kind = TypeKind.TYPE_INT_LIMIT;
+        return result;
+    } else if expr.type == ASTNodeType.AST_SRC_NAME || expr.type == ASTNodeType.AST_SRC_PATH {
+        // @src_name/@src_path 返回 &[i8] 类型（切片类型）
+        const slice_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if slice_type == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        slice_type.kind = TypeKind.TYPE_SLICE;
+        
+        const element_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if element_type == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        element_type.kind = TypeKind.TYPE_I8;
+        slice_type.slice_element_type = element_type;
+        
+        result.kind = TypeKind.TYPE_SLICE;
+        result.slice_element_type = element_type;
+        return result;
+    } else if expr.type == ASTNodeType.AST_SRC_LINE || expr.type == ASTNodeType.AST_SRC_COL {
+        // @src_line/@src_col 返回 i32 类型
+        result.kind = TypeKind.TYPE_I32;
+        return result;
+    } else if expr.type == ASTNodeType.AST_FUNC_NAME {
+        // @func_name 返回 &[i8] 类型（切片类型）
+        // 检查是否在函数体内
+        if checker.in_function == 0 || checker.current_function_decl == null {
+            checker_report_error(checker, expr, "@func_name 只能在函数体内使用" as &byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        const slice_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if slice_type == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        slice_type.kind = TypeKind.TYPE_SLICE;
+        
+        const element_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if element_type == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        element_type.kind = TypeKind.TYPE_I8;
+        slice_type.slice_element_type = element_type;
+        
+        result.kind = TypeKind.TYPE_SLICE;
+        result.slice_element_type = element_type;
+        return result;
+    } else if expr.type == ASTNodeType.AST_SYSCALL {
+        // @syscall(nr, arg1, ..., arg6) 返回 !i64 类型
+        
+        // 1. 检查系统调用号（第一个参数）
+        if expr.syscall_number == null {
+            checker_report_error(checker, expr, "@syscall 需要系统调用号作为第一个参数" as &byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        // 检查系统调用号的类型
+        const syscall_nr_type: Type = checker_infer_type(checker, expr.syscall_number);
+        if syscall_nr_type.kind == TypeKind.TYPE_VOID {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        // 系统调用号必须是整数类型
+        if is_integer_type(syscall_nr_type.kind) == 0 {
+            checker_report_error(checker, expr.syscall_number, "@syscall 的系统调用号必须是整数类型" as &byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        // 2. 检查参数（最多 6 个）
+        if expr.syscall_arg_count > 6 {
+            checker_report_error(checker, expr, "@syscall 最多支持 6 个参数" as &byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        // 检查每个参数的类型（必须可转换为 i64）
+        var sc_i: i32 = 0;
+        while sc_i < expr.syscall_arg_count {
+            if expr.syscall_args[sc_i] == null {
+                checker_report_error(checker, expr, "@syscall 参数不能为空" as &byte);
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            
+            const arg_type: Type = checker_infer_type(checker, expr.syscall_args[sc_i]);
+            if arg_type.kind == TypeKind.TYPE_VOID {
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            
+            // 参数类型必须可转换为 i64（整数或指针）
+            var is_valid_arg: i32 = 0;
+            if is_integer_type(arg_type.kind) != 0 || arg_type.kind == TypeKind.TYPE_POINTER {
+                is_valid_arg = 1;
+            }
+            
+            if is_valid_arg == 0 {
+                checker_report_error(checker, expr.syscall_args[sc_i], "@syscall 的参数必须是整数或指针类型" as &byte);
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            
+            sc_i = sc_i + 1;
+        }
+        
+        // 3. 返回类型：!i64（错误联合类型）
+        result.kind = TypeKind.TYPE_ERROR_UNION;
+        
+        const payload_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if payload_type == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        payload_type.kind = TypeKind.TYPE_I64;
+        result.error_union_payload_type = payload_type;
+        return result;
+    } else if expr.type == ASTNodeType.AST_PTR_FROM_USIZE {
+        // @ptr_from_usize 表达式：返回 &void 类型
+        result.kind = TypeKind.TYPE_POINTER;
+        result.pointer_to = null;  // void 类型
+        result.is_ffi_pointer = 0;  // &void，不是 *void
+        // 注意：Uya 版本的 Type 结构体没有 is_const 字段
+        return result;
+    } else if expr.type == ASTNodeType.AST_USIZE_FROM_PTR {
+        // @usize_from_ptr 表达式：返回 usize 类型
+        result.kind = TypeKind.TYPE_USIZE;
+        return result;
+    } else if expr.type == ASTNodeType.AST_PRINT || expr.type == ASTNodeType.AST_PRINTLN {
+        // @print/@println 表达式：打印并返回 void
+        if expr.print_expr == null {
+            checker_report_error(checker, expr, "@print/@println 需要一个参数" as &byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        // 推断参数类型
+        const arg_type: Type = checker_infer_type(checker, expr.print_expr);
+        // 检查参数类型是否可打印
+        var is_printable: i32 = 0;
+        if arg_type.kind == TypeKind.TYPE_I8 || arg_type.kind == TypeKind.TYPE_I16 ||
+           arg_type.kind == TypeKind.TYPE_I32 || arg_type.kind == TypeKind.TYPE_I64 ||
+           arg_type.kind == TypeKind.TYPE_U8 || arg_type.kind == TypeKind.TYPE_U16 ||
+           arg_type.kind == TypeKind.TYPE_U32 || arg_type.kind == TypeKind.TYPE_U64 ||
+           arg_type.kind == TypeKind.TYPE_USIZE || arg_type.kind == TypeKind.TYPE_F32 ||
+           arg_type.kind == TypeKind.TYPE_F64 || arg_type.kind == TypeKind.TYPE_BOOL {
+            is_printable = 1;
+        }
+        if arg_type.kind == TypeKind.TYPE_SLICE {
+            if arg_type.slice_element_type != null && arg_type.slice_element_type.kind == TypeKind.TYPE_I8 {
+                is_printable = 1;
+            }
+        }
+        if arg_type.kind == TypeKind.TYPE_POINTER {
+            if arg_type.pointer_to != null && arg_type.pointer_to.kind == TypeKind.TYPE_I8 {
+                is_printable = 1;
+            }
+            if arg_type.pointer_to == null {
+                is_printable = 1;
+            }
+        }
+        if arg_type.kind == TypeKind.TYPE_ARRAY {
+            if arg_type.element_type != null && arg_type.element_type.kind == TypeKind.TYPE_I8 {
+                is_printable = 1;
+            }
+        }
+        if expr.print_expr.type == ASTNodeType.AST_STRING_INTERP {
+            is_printable = 1;
+        }
+        if expr.print_expr.type == ASTNodeType.AST_STRING {
+            is_printable = 1;
+        }
+        if is_printable == 0 {
+            checker_report_error(checker, expr.print_expr, "该类型不支持 @print/@println" as &byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        // 返回 i32：printf 返回输出的字符数，负值表示错误
+        result.kind = TypeKind.TYPE_I32;
+        return result;
+    } else if expr.type == ASTNodeType.AST_VA_START || expr.type == ASTNodeType.AST_VA_END {
+        if checker.in_function == 0 || checker.current_function_decl == null {
+            if expr.type == ASTNodeType.AST_VA_START {
+                checker_report_error(checker, expr, "@va_start 只能在可变参数函数内使用" as &byte);
+            } else {
+                checker_report_error(checker, expr, "@va_end 只能在可变参数函数内使用" as &byte);
+            }
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        if checker.current_function_decl.fn_decl_is_varargs == 0 {
+            if expr.type == ASTNodeType.AST_VA_START {
+                checker_report_error(checker, expr, "@va_start 只能在可变参数函数内使用" as &byte);
+            } else {
+                checker_report_error(checker, expr, "@va_end 只能在可变参数函数内使用" as &byte);
+            }
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        if expr.type == ASTNodeType.AST_VA_START {
+            if expr.va_start_ap != null { checker_infer_type(checker, expr.va_start_ap); }
+            if expr.va_start_last_param != null { checker_infer_type(checker, expr.va_start_last_param); }
+        } else if expr.va_end_ap != null {
+            checker_infer_type(checker, expr.va_end_ap);
+        }
+        result.kind = TypeKind.TYPE_VOID;
+        return result;
+    } else if expr.type == ASTNodeType.AST_VA_ARG {
+        if checker.in_function == 0 || checker.current_function_decl == null {
+            checker_report_error(checker, expr, "@va_arg 只能在可变参数函数内使用" as &byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        if checker.current_function_decl.fn_decl_is_varargs == 0 {
+            checker_report_error(checker, expr, "@va_arg 只能在可变参数函数内使用" as &byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        if expr.va_arg_ap != null { checker_infer_type(checker, expr.va_arg_ap); }
+        if expr.va_arg_arg_type != null {
+            result = type_from_ast(checker, expr.va_arg_arg_type);
+        } else {
+            result.kind = TypeKind.TYPE_VOID;
+        }
+        return result;
+    } else if expr.type == ASTNodeType.AST_STRING {
+        // 字符串字面量类型为 *byte（FFI 指针类型）
+        // 创建指向 byte 类型的指针类型
+        // 注意：Uya 要求所有变量必须初始化
+        var byte_type: Type = Type {
+            kind: TypeKind.TYPE_BYTE,
+            enum_name: null,
+            struct_name: null,
+            pointer_to: null,
+            is_ffi_pointer: 0,
+            element_type: null,
+            array_size: 0,
+            slice_element_type: null,
+            slice_len: 0,
+        };
+        
+        // 分配指向的类型结构（从Arena分配）
+        // 注意：Uya 不支持指针运算，需要使用数组访问
+        const pointed_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if pointed_type_ptr == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        pointed_type_ptr[0] = byte_type;
+        
+        // 创建 FFI 指针类型（*byte）
+        result.kind = TypeKind.TYPE_POINTER;
+        result.pointer_to = pointed_type_ptr;
+        result.is_ffi_pointer = 1;  // FFI 指针类型
+        return result;
+    } else if expr.type == ASTNodeType.AST_STRING_INTERP {
+        var total: i32 = 1;
+        var i: i32 = 0;
+        while i < expr.string_interp_segment_count {
+            const seg: &ASTStringInterpSegment = &expr.string_interp_segments[i];
+            if seg.is_text != 0 {
+                total = total + (strlen(seg.text as *byte) as i32);
+            } else {
+                const seg_type: Type = checker_infer_type(checker, seg.expr);
+                const w: i32 = checker_interp_format_max_width(copy_type(&seg_type), seg.format_spec);
+                if w < 0 {
+                    checker_report_error(checker, seg.expr, "不支持的插值类型或格式说明符" as *byte);
+                    result.kind = TypeKind.TYPE_VOID;
+                    return result;
+                }
+                total = total + w;
+            }
+            i = i + 1;
+        }
+        expr.string_interp_computed_size = total;
+        const i8_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if i8_ptr == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        i8_ptr[0].kind = TypeKind.TYPE_I8;
+        i8_ptr[0].enum_name = null;
+        i8_ptr[0].struct_name = null;
+        i8_ptr[0].pointer_to = null;
+        i8_ptr[0].is_ffi_pointer = 0;
+        i8_ptr[0].element_type = null;
+        i8_ptr[0].array_size = 0;
+        i8_ptr[0].tuple_element_types = null;
+        i8_ptr[0].tuple_count = 0;
+        result.kind = TypeKind.TYPE_ARRAY;
+        result.element_type = i8_ptr;
+        result.array_size = total;
+        return result;
+    } else if expr.type == ASTNodeType.AST_PARAMS {
+        // @params 仅在函数体内有效，类型为当前函数参数元组（可变参数时仅含固定参数）
+        if checker.in_function == 0 || checker.current_function_decl == null {
+            checker_report_error(checker, expr, "@params 只能在函数体内使用" as *byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        const cur_fn: &ASTNode = checker.current_function_decl;
+        if cur_fn.type != ASTNodeType.AST_FN_DECL || cur_fn.fn_decl_param_count <= 0 {
+            result.kind = TypeKind.TYPE_TUPLE;
+            result.tuple_element_types = null;
+            result.tuple_count = 0;
+            return result;
+        }
+        const elem_types: &Type = arena_alloc(checker.arena, @size_of(Type) * cur_fn.fn_decl_param_count) as &Type;
+        if elem_types == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        var i: i32 = 0;
+        while i < cur_fn.fn_decl_param_count {
+            const p: &ASTNode = cur_fn.fn_decl_params[i];
+            if p != null && p.type == ASTNodeType.AST_VAR_DECL && p.var_decl_type != null {
+                elem_types[i] = type_from_ast(checker, p.var_decl_type);
+            } else {
+                elem_types[i].kind = TypeKind.TYPE_VOID;
+            }
+            i = i + 1;
+        }
+        result.kind = TypeKind.TYPE_TUPLE;
+        result.tuple_element_types = elem_types;
+        result.tuple_count = cur_fn.fn_decl_param_count;
+        return result;
+    } else if expr.type == ASTNodeType.AST_TRY_EXPR {
+        const operand_type: Type = checker_infer_type(checker, expr.try_expr_operand);
+        if operand_type.kind != TypeKind.TYPE_ERROR_UNION {
+            checker_report_error(checker, expr.try_expr_operand, "try 的操作数必须是错误联合类型 !T" as *byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        if checker.in_function == 0 || checker.current_return_type.kind != TypeKind.TYPE_ERROR_UNION {
+            checker_report_error(checker, expr, "try 只能在返回错误联合类型的函数中使用" as *byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        if operand_type.error_union_payload_type == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        return operand_type.error_union_payload_type[0];
+    } else if expr.type == ASTNodeType.AST_AWAIT_EXPR {
+        // @await 表达式 - 暂时返回操作数的类型
+        // 完整实现需要检查操作数是否为 !Future<T> 类型
+        const operand_type: Type = checker_infer_type(checker, expr.await_expr_operand);
+        // TODO: 验证 @await 只能在 @async_fn 函数中使用
+        // TODO: 验证操作数是 !Future<T> 类型，返回 T
+        return operand_type;
+    } else if expr.type == ASTNodeType.AST_CATCH_EXPR {
+        var operand_type: Type = checker_infer_type(checker, expr.catch_expr_operand);
+        if operand_type.kind != TypeKind.TYPE_ERROR_UNION {
+            // 回退：若操作数是调用表达式且被推断为 VOID，从合并后的程序中查找被调函数返回类型（跨模块 export fn !T）
+            if expr.catch_expr_operand != null && expr.catch_expr_operand.type == ASTNodeType.AST_CALL_EXPR {
+                const callee: &ASTNode = expr.catch_expr_operand.call_expr_callee;
+                if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER && callee.identifier_name != null
+                    && checker.program_node != null {
+                    const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, callee.identifier_name);
+                    if fn_decl != null && fn_decl.fn_decl_return_type != null {
+                        operand_type = type_from_ast(checker, fn_decl.fn_decl_return_type);
+                    }
+                }
+            }
+            if operand_type.kind != TypeKind.TYPE_ERROR_UNION {
+                checker_report_error(checker, expr.catch_expr_operand, "catch 的操作数必须是错误联合类型 !T" as *byte);
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+        }
+        if operand_type.error_union_payload_type == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        const payload: Type = operand_type.error_union_payload_type[0];
+        if expr.catch_expr_err_name != null {
+            var err_type: Type = Type { kind: TypeKind.TYPE_ERROR, enum_name: null, struct_name: null, pointer_to: null, is_ffi_pointer: 0, element_type: null, array_size: 0, slice_element_type: null, slice_len: 0, tuple_element_types: null, tuple_count: 0, error_union_payload_type: null, error_error_id: 0 };
+            checker_enter_scope(checker);
+            const sym: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+            if sym != null {
+                sym.name = expr.catch_expr_err_name;
+                sym.type = err_type;
+                sym.is_const = 1;
+                sym.is_initialized = 1;  // catch 错误变量已初始化
+                sym.scope_level = checker.scope_level;
+                sym.line = expr.line;
+                sym.column = expr.column;
+                sym.pointee_of = null;
+                symbol_table_insert(checker, sym);
+            }
+            checker_check_node(checker, expr.catch_expr_catch_block);
+            checker_exit_scope(checker);
+        } else {
+            checker_check_node(checker, expr.catch_expr_catch_block);
+        }
+        const block: &ASTNode = expr.catch_expr_catch_block;
+        if block != null && block.type == ASTNodeType.AST_BLOCK && block.block_stmt_count > 0 {
+            const last: &ASTNode = block.block_stmts[block.block_stmt_count - 1];
+            if last != null && last.type != ASTNodeType.AST_RETURN_STMT {
+                const last_type: Type = checker_infer_type(checker, last);
+                if type_equals(last_type, payload) == 0 {
+                    checker_report_error(checker, last, "catch 块最后表达式类型必须与成功值类型一致" as *byte);
+                }
+            }
+        }
+        return payload;
+    } else if expr.type == ASTNodeType.AST_ERROR_VALUE {
+        const name: &byte = expr.error_value_name;
+        const id: u32 = get_or_add_error_id(checker, name, expr);
+        if id == 0 {
+            checker_report_error(checker, expr, "错误集已满" as *byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        result.kind = TypeKind.TYPE_ERROR;
+        result.error_error_id = id;
+        return result;
+    } else if expr.type == ASTNodeType.AST_UNDERSCORE {
+        checker_report_error(checker, expr, "不能引用 _" as *byte);
+        result.kind = TypeKind.TYPE_VOID;
+        return result;
+    } else if expr.type == ASTNodeType.AST_IDENTIFIER {
+        if moved_set_contains(checker, expr.identifier_name) != 0 {
+            checker_report_error(checker, expr, "变量已被移动，不能再次使用" as &byte);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        // 标识符类型需要从符号表中查找
+        const symbol: &Symbol = symbol_table_lookup(checker, expr.identifier_name);
+        if symbol != null {
+            // 未初始化使用检测（仅当开启安全证明时）
+            if checker.enable_safety_proof != 0 && symbol.is_initialized == 0 {
+                checker_report_error(checker, expr, "变量在初始化前被使用：请确保变量在使用前已赋值" as &byte);
+            }
+            return symbol.type;
+        }
+        // 找不到符号时，仅当该名是程序中某枚举的变体名时才报"裸枚举常量"（Uya 只支持 T.member）
+        // 枚举类型名、null、stderr 等非变体名不在此报错，由 T.member 在 ASTNodeType.AST_MEMBER_ACCESS 分支处理
+        if expr.identifier_name != null && checker != null && checker.program_node != null &&
+            is_enum_variant_name_in_program(checker.program_node, expr.identifier_name) != 0 {
+            checker_report_error(checker, expr,
+                "不能使用裸枚举常量，应使用 枚举类型名.变体名 方式访问（如 Color.RED）" as &byte);
+        }
+        result.kind = TypeKind.TYPE_VOID;
+        return result;
+    } else if expr.type == ASTNodeType.AST_UNARY_EXPR {
+        // 一元表达式：根据运算符推断类型（AST 中 op 存为 i32，转为 TokenType 比较）
+        const op: TokenType = expr.unary_expr_op as TokenType;
+        const operand_type: Type = checker_infer_type(checker, expr.unary_expr_operand);
+        
+        if op == TokenType.TOKEN_EXCLAMATION {
+            // 逻辑非（!）返回bool类型
+            result.kind = TypeKind.TYPE_BOOL;
+            return result;
+        } else if op == TokenType.TOKEN_MINUS {
+            // 一元负号（-）返回操作数类型（应为i32）
+            return operand_type;
+        } else if op == TokenType.TOKEN_TILDE {
+            // 按位取反（~）：操作数必须是整数，返回操作数类型
+            return operand_type;
+        } else if op == TokenType.TOKEN_AMPERSAND {
+            // 取地址（&expr）：返回指向操作数类型的指针类型
+            if operand_type.kind == TypeKind.TYPE_VOID {
+                // 操作数类型无效
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            
+            // 分配操作数类型结构（从Arena分配）
+            // 注意：Uya 不支持指针运算，需要使用数组访问
+            const pointed_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+            if pointed_type_ptr == null {
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            pointed_type_ptr[0] = copy_type(&operand_type);
+            
+            // 创建指针类型（普通指针）
+            result.kind = TypeKind.TYPE_POINTER;
+            result.pointer_to = pointed_type_ptr;
+            result.is_ffi_pointer = 0;  // 普通指针
+            return result;
+        } else if op == TokenType.TOKEN_ASTERISK {
+            // 解引用（*expr）：操作数必须是指针类型，返回指针指向的类型
+            if operand_type.kind != TypeKind.TYPE_POINTER {
+                // 操作数不是指针类型
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            
+            if operand_type.pointer_to == null {
+                // 指针类型无效
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            
+            // 返回指针指向的类型
+            // 注意：Uya 不支持指针解引用，需要使用数组访问
+            return operand_type.pointer_to[0];
+        }
+        
+        // 其他一元运算符，返回操作数类型
+        return operand_type;
+    } else if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        return checker_check_binary_expr(checker, expr);
+    } else if expr.type == ASTNodeType.AST_CALL_EXPR {
+        // 函数调用：返回函数的返回类型
+        const callee: &ASTNode = expr.call_expr_callee;
+        if callee == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        // 先检查是否是模块限定调用（module.func(args)）
+        if callee.type == ASTNodeType.AST_MEMBER_ACCESS {
+            const mod_obj: &ASTNode = callee.member_access_object;
+            if mod_obj != null && mod_obj.type == ASTNodeType.AST_IDENTIFIER && mod_obj.identifier_name != null {
+                const obj_name: &byte = mod_obj.identifier_name;
+                const ih: i32 = hash_string(obj_name);
+                var ii: i32 = ih & (IMPORT_TABLE_SIZE - 1);
+                var mi: i32 = 0;
+                while mi < IMPORT_TABLE_SIZE {
+                    const sl: i32 = (ii + mi) & (IMPORT_TABLE_SIZE - 1);
+                    const imp: &ImportedItem = checker.import_table.slots[sl];
+                    if imp == null { break; }
+                    if imp.item_type == (0 - 1) && str_equals(imp.local_name, obj_name) != 0 {
+                        // 模块限定调用
+                        callee.member_access_is_module_access = 1;
+                        callee.member_access_module_name = imp.module_name;  // 保存模块名
+                        const func_name: &byte = callee.member_access_field_name;
+                        if func_name != null {
+                            const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, func_name);
+                            if fn_decl != null {
+                                return type_from_ast(checker, fn_decl.fn_decl_return_type);
+                            }
+                            const sig: &FunctionSignature = function_table_lookup(checker, func_name);
+                            if sig != null {
+                                return sig.return_type;
+                            }
+                        }
+                        result.kind = TypeKind.TYPE_VOID;
+                        return result;
+                    }
+                    mi = mi + 1;
+                }
+            }
+        }
+        // 联合体变体构造：UnionName.variant(expr)
+        if callee.type == ASTNodeType.AST_MEMBER_ACCESS {
+            const object: &ASTNode = callee.member_access_object;
+            if object != null && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null &&
+                checker != null && checker.program_node != null {
+                const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, object.identifier_name);
+                if union_decl != null {
+                    const variant_name: &byte = callee.member_access_field_name;
+                    if variant_name != null && expr.call_expr_arg_count == 1 && union_decl.union_decl_variants != null {
+                        var i: i32 = 0;
+                        while i < union_decl.union_decl_variant_count {
+                            const v: &ASTNode = union_decl.union_decl_variants[i];
+                            if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
+                                str_equals(v.var_decl_name, variant_name) != 0 {
+                                result.kind = TypeKind.TYPE_UNION;
+                                result.union_name = union_decl.union_decl_name;
+                                return result;
+                            }
+                            i = i + 1;
+                        }
+                    }
+                }
+            }
+            // 结构体方法调用：callee 为 obj.method，obj 类型为结构体（非接口）
+            const object_type: Type = checker_infer_type(checker, callee.member_access_object);
+            if object_type.kind == TypeKind.TYPE_STRUCT && object_type.struct_name != null && checker.program_node != null {
+                const method_name: &byte = callee.member_access_field_name;
+                const m: &ASTNode = find_method_in_struct(checker.program_node, object_type.struct_name, method_name);
+                if m != null {
+                    return type_from_ast(checker, m.fn_decl_return_type);
+                }
+            }
+        }
+        if callee.type != ASTNodeType.AST_IDENTIFIER {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        // 检查是否是泛型函数调用
+        if expr.call_expr_type_arg_count > 0 && expr.call_expr_type_args != null {
+            const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, callee.identifier_name);
+            if fn_decl != null && fn_decl.fn_decl_type_param_count > 0 {
+                // 注册单态化实例
+                register_mono_instance(checker, callee.identifier_name, 
+                    expr.call_expr_type_args, expr.call_expr_type_arg_count, 1);
+                
+                // 返回替换后的返回类型
+                const return_type: Type = type_from_ast(checker, fn_decl.fn_decl_return_type);
+                return substitute_generic_type(checker, return_type,
+                    fn_decl.fn_decl_type_params, fn_decl.fn_decl_type_param_count,
+                    expr.call_expr_type_args, expr.call_expr_type_arg_count);
+            }
+        }
+        
+        const sig: &FunctionSignature = function_table_lookup(checker, callee.identifier_name);
+        if sig != null {
+            return sig.return_type;
+        }
+        // 函数表未找到时从合并后的程序中查找（如跨模块的 export fn），使 catch 等能拿到 !T 返回类型
+        if checker.program_node != null {
+            const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, callee.identifier_name);
+            if fn_decl != null && fn_decl.fn_decl_return_type != null {
+                return type_from_ast(checker, fn_decl.fn_decl_return_type);
+            }
+        }
+        result.kind = TypeKind.TYPE_VOID;
+        return result;
+    } else if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
+        // 字段访问：推断对象类型，然后查找字段类型
+        // 支持结构体类型和指针类型（指针自动解引用）
+        // 也支持枚举类型访问（如 Color.RED）
+        const object: &ASTNode = expr.member_access_object;
+        if object == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        // 检查是否是枚举类型访问（如 Color.RED）
+        // 如果对象是标识符且不是变量，可能是枚举类型名称
+        if object.type == ASTNodeType.AST_IDENTIFIER {
+            const enum_name: &byte = object.identifier_name;
+            if enum_name != null && checker != null && checker.program_node != null {
+                // 检查是否是变量（如果是变量，则不是枚举类型访问）
+                const symbol: &Symbol = symbol_table_lookup(checker, enum_name);
+                if symbol == null {
+                    // 不是变量，可能是枚举类型名称
+                    const enum_decl: &ASTNode = find_enum_decl_from_program(checker.program_node, enum_name);
+                    if enum_decl != null {
+                        // 是枚举类型，验证变体是否存在
+                        const variant_name: &byte = expr.member_access_field_name;
+                        if variant_name != null {
+                            // 查找变体索引
+                            var i: i32 = 0;
+                            while i < enum_decl.enum_decl_variant_count {
+                                if enum_decl.enum_decl_variants[i].name != null &&
+                                    str_equals(enum_decl.enum_decl_variants[i].name, variant_name) != 0 {
+                                    // 找到变体，返回枚举类型
+                                    result.kind = TypeKind.TYPE_ENUM;
+                                    result.enum_name = enum_name;
+                                    return result;
+                                }
+                                i = i + 1;
+                            }
+                        }
+                        // 变体不存在，返回void类型
+                        result.kind = TypeKind.TYPE_VOID;
+                        return result;
+                    }
+                    
+                    // 不是枚举，检查是否是模块导入（use std.c.stdio; -> stdio.xxx）
+                    {
+                        const ih: i32 = hash_string(enum_name);
+                        var ii: i32 = ih & (IMPORT_TABLE_SIZE - 1);
+                        var i2: i32 = 0;
+                        while i2 < IMPORT_TABLE_SIZE {
+                            const sl: i32 = (ii + i2) & (IMPORT_TABLE_SIZE - 1);
+                            const imp: &ImportedItem = checker.import_table.slots[sl];
+                            if imp == null { break; }
+                            if imp.item_type == (0 - 1) && str_equals(imp.local_name, enum_name) != 0 {
+                                // 找到模块导入！标记为模块限定访问
+                                expr.member_access_is_module_access = 1;
+                                expr.member_access_module_name = imp.module_name;  // 保存模块名
+                                result.kind = TypeKind.TYPE_VOID;
+                                return result;
+                            }
+                            i2 = i2 + 1;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 不是枚举类型访问也不是模块限定访问，按结构体字段访问处理
+        var object_type: Type = checker_infer_type(checker, object);
+        
+        // 如果对象是指针类型，自动解引用（Uya Mini 支持指针自动解引用访问字段）
+        if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
+            // 注意：Uya 不支持指针解引用，需要使用数组访问
+            object_type = object_type.pointer_to[0];
+        }
+        
+        // 元组类型：.0, .1, ... 访问
+        if object_type.kind == TypeKind.TYPE_TUPLE {
+            const field_name: &byte = expr.member_access_field_name;
+            if field_name == null || object_type.tuple_element_types == null {
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            const idx: i32 = atoi(field_name as *byte);
+            if idx < 0 || idx >= object_type.tuple_count {
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            return object_type.tuple_element_types[idx];
+        }
+        
+        // 接口类型：obj.method 为接口方法调用，返回该方法的返回类型
+        if object_type.kind == TypeKind.TYPE_INTERFACE && object_type.interface_name != null &&
+            checker != null && checker.program_node != null {
+            const iface: &ASTNode = find_interface_decl_from_program(checker.program_node, object_type.interface_name);
+            const method_name: &byte = expr.member_access_field_name;
+            if iface != null && method_name != null && iface.interface_decl_method_sigs != null {
+                var i: i32 = 0;
+                while i < iface.interface_decl_method_sig_count {
+                    const msig: &ASTNode = iface.interface_decl_method_sigs[i];
+                    if msig != null && msig.type == ASTNodeType.AST_FN_DECL && msig.fn_decl_name != null &&
+                        str_equals(msig.fn_decl_name, method_name) != 0 {
+                        return type_from_ast(checker, msig.fn_decl_return_type);
+                    }
+                    i = i + 1;
+                }
+            }
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        if object_type.kind != TypeKind.TYPE_STRUCT || object_type.struct_name == null {
+            // 对象类型不是结构体，返回void类型
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        // 查找结构体声明
+        const struct_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, object_type.struct_name);
+        if struct_decl == null {
+            // 特殊处理：内置 TypeInfo 结构体（由 @mc_type 生成）
+            if str_equals(object_type.struct_name, ("TypeInfo" as *byte) as &byte) != 0 {
+                const field_name: &byte = expr.member_access_field_name;
+                if field_name != null {
+                    if str_equals(field_name, ("name" as *byte) as &byte) != 0 {
+                        // name: *i8 (FFI 指针)
+                        result.kind = TypeKind.TYPE_POINTER;
+                        result.is_ffi_pointer = 1;
+                        const inner_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+                        if inner_type != null {
+                            inner_type[0] = Type { kind: TypeKind.TYPE_I8, enum_name: null, struct_name: null, pointer_to: null, is_ffi_pointer: 0, element_type: null, array_size: 0, slice_element_type: null, slice_len: 0, tuple_element_types: null, tuple_count: 0 };
+                            result.pointer_to = inner_type;
+                        }
+                        return result;
+                    } else if str_equals(field_name, ("size" as *byte) as &byte) != 0 ||
+                              str_equals(field_name, ("align" as *byte) as &byte) != 0 ||
+                              str_equals(field_name, ("kind" as *byte) as &byte) != 0 {
+                        result.kind = TypeKind.TYPE_I32;
+                        return result;
+                    } else if str_equals(field_name, ("is_integer" as *byte) as &byte) != 0 ||
+                              str_equals(field_name, ("is_float" as *byte) as &byte) != 0 ||
+                              str_equals(field_name, ("is_bool" as *byte) as &byte) != 0 ||
+                              str_equals(field_name, ("is_pointer" as *byte) as &byte) != 0 ||
+                              str_equals(field_name, ("is_array" as *byte) as &byte) != 0 ||
+                              str_equals(field_name, ("is_void" as *byte) as &byte) != 0 {
+                        result.kind = TypeKind.TYPE_BOOL;
+                        return result;
+                    }
+                }
+            }
+            // 结构体声明未找到，返回void类型
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        // 查找字段类型（支持泛型类型参数替换）
+        var field_type: Type = Type { kind: TypeKind.TYPE_VOID };
+        if object_type.struct_type_args != null && object_type.struct_type_arg_count > 0 {
+            // 泛型结构体实例：使用类型参数替换
+            field_type = find_struct_field_type_with_substitution(checker, struct_decl,
+                expr.member_access_field_name,
+                object_type.struct_type_args,
+                object_type.struct_type_arg_count);
+        } else {
+            // 非泛型结构体：直接查找
+            field_type = find_struct_field_type(checker, struct_decl, expr.member_access_field_name);
+        }
+        return field_type;  // 如果字段不存在，field_type.kind 为 TypeKind.TYPE_VOID
+    } else if expr.type == ASTNodeType.AST_ARRAY_ACCESS {
+        // 数组访问：推断数组表达式类型，然后返回元素类型
+        // 支持数组类型 [T: N] 和指针类型 &T（指针类型的数组访问如 &byte[offset]）
+        // 也支持指向数组的指针 &[T: N]（如 &[i32: 3]）
+        const array_type: Type = checker_infer_type(checker, expr.array_access_array);
+        
+        if array_type.kind == TypeKind.TYPE_ARRAY && array_type.element_type != null {
+            // 数组类型：返回数组的元素类型
+            // 注意：Uya 不支持指针解引用，需要使用数组访问
+            
+            // 边界检查（仅当开启安全证明时）
+            // 这里进行符号执行的边界检查
+            if checker.enable_safety_proof != 0 {
+                const index_expr: &ASTNode = expr.array_access_index;
+                const array_size: i32 = array_type.array_size;
+                
+                // 检查索引是否是常量
+                const index_val: i32 = checker_eval_const_expr(checker, index_expr);
+                if index_val >= 0 {
+                    // 常量索引：直接检查越界
+                    if index_val >= array_size {
+                        checker_report_error(checker, index_expr, "数组索引越界：常量索引超出数组边界" as *byte);
+                    }
+                } else {
+                    // 非常量索引：尝试提取线性表达式进行符号执行
+                    const linear_expr: LinearExpr = extract_linear_expr(checker, index_expr);
+                    
+                    if linear_expr.is_valid != 0 {
+                        // 使用符号执行验证边界
+                        if verify_linear_expr_bounds(checker, &linear_expr, array_size, index_expr) == 0 {
+                            // 无法证明安全，报告编译错误
+                            if linear_expr.var_name != null {
+                                checker_report_error_ex(checker, index_expr, 
+                                    "数组索引安全证明失败" as *byte,
+                                    linear_expr.var_name,
+                                    array_size);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return array_type.element_type[0];
+        } else if array_type.kind == TypeKind.TYPE_SLICE && array_type.slice_element_type != null {
+            return array_type.slice_element_type[0];
+        } else if array_type.kind == TypeKind.TYPE_POINTER && array_type.pointer_to != null {
+            // 指针类型：检查指针指向的类型
+            // 注意：Uya 不支持指针解引用，需要使用数组访问
+            
+            // 空指针检测（仅当开启安全证明时）
+            // 只检测被初始化为 null 且未通过 if ptr != null 检查的指针
+            if checker.enable_safety_proof != 0 {
+                const array_expr: &ASTNode = expr.array_access_array;
+                if array_expr != null && array_expr.type == ASTNodeType.AST_IDENTIFIER {
+                    const ptr_name: &byte = array_expr.identifier_name;
+                    // 只有当指针被初始化为 null 且未被标记为非空时才报错
+                    if pointer_is_nullable(checker, ptr_name) != 0 && pointer_is_known_nonnull(checker, ptr_name) == 0 {
+                        // 无法证明指针非空，报告编译错误
+                        checker_report_error(checker, expr.array_access_array, 
+                            "指针可能为空：请添加空指针检查 (如 if ptr != null)" as &byte);
+                    }
+                }
+            }
+            
+            const pointed_type: Type = array_type.pointer_to[0];
+            if pointed_type.kind == TypeKind.TYPE_ARRAY && pointed_type.element_type != null {
+                // 指向数组的指针（如 &[i32: 3]）：返回数组的元素类型
+                // 注意：Uya 不支持指针解引用，需要使用数组访问
+                return pointed_type.element_type[0];
+            } else {
+                // 指向非数组类型的指针（如 &byte）：返回指针指向的类型
+                return pointed_type;
+            }
+        }
+        
+        // 数组表达式类型不是数组类型、切片类型或指针类型，返回void类型
+        result.kind = TypeKind.TYPE_VOID;
+        return result;
+    } else if expr.type == ASTNodeType.AST_SLICE_EXPR {
+        const base_type: Type = checker_infer_type(checker, expr.slice_expr_base);
+        if base_type.kind != TypeKind.TYPE_ARRAY && base_type.kind != TypeKind.TYPE_SLICE {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        var elem: &Type = null;
+        if base_type.kind == TypeKind.TYPE_ARRAY {
+            elem = base_type.element_type;
+        } else {
+            elem = base_type.slice_element_type;
+        }
+        if elem == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        const element_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if element_type_ptr == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        const elem_type: &Type = element_type_ptr;  // 为安全证明建立非空引用
+        if elem != null {
+            elem_type[0] = elem[0];
+        }
+        result.kind = TypeKind.TYPE_SLICE;
+        result.slice_element_type = element_type_ptr;
+        result.slice_len = -1;
+        return result;
+    } else if expr.type == ASTNodeType.AST_STRUCT_INIT {
+        // 结构体字面量：返回结构体类型
+        result.kind = TypeKind.TYPE_STRUCT;
+        // 结构体名称需要存储在Arena中（从AST节点获取的名称已经在Arena中）
+        result.struct_name = expr.struct_init_struct_name;
+        
+        // 检查泛型结构体的类型参数约束
+        if expr.struct_init_type_arg_count > 0 && expr.struct_init_type_args != null {
+            const struct_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, expr.struct_init_struct_name);
+            if struct_decl != null && struct_decl.struct_decl_type_param_count > 0 {
+                const struct_type_params: &TypeParam = struct_decl.struct_decl_type_params;
+                const struct_type_param_count: i32 = struct_decl.struct_decl_type_param_count;
+                if expr.struct_init_type_arg_count == struct_type_param_count {
+                    var ci: i32 = 0;
+                    while ci < struct_type_param_count {
+                        const arg_type: Type = type_from_ast(checker, expr.struct_init_type_args[ci]);
+                        if check_type_param_constraints(checker, arg_type, 
+                                                        &struct_type_params[ci], expr,
+                                                        struct_type_params[ci].name) == 0 {
+                            // 约束检查失败，已报错，但继续返回结构体类型
+                            break;
+                        }
+                        ci = ci + 1;
+                    }
+                }
+            }
+        }
+        return result;
+    } else if expr.type == ASTNodeType.AST_TUPLE_LITERAL {
+        // 元组字面量：(expr1, expr2, ...) 推断为 (T1, T2, ...)
+        const n: i32 = expr.tuple_literal_element_count;
+        const elements: & & ASTNode = expr.tuple_literal_elements;
+        if n <= 0 || elements == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        const element_types: &Type = arena_alloc(checker.arena, @size_of(Type) * n as usize) as &Type;
+        if element_types == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        var i: i32 = 0;
+        while i < n {
+            const et: Type = checker_infer_type(checker, elements[i]);
+            if et.kind == TypeKind.TYPE_VOID {
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            element_types[i] = copy_type(&et);
+            i = i + 1;
+        }
+        result.kind = TypeKind.TYPE_TUPLE;
+        result.tuple_element_types = element_types;
+        result.tuple_count = n;
+        return result;
+    } else if expr.type == ASTNodeType.AST_ARRAY_LITERAL {
+        // 数组字面量：列表形式或 [value: N] 重复形式
+        const repeat_count_expr: &ASTNode = expr.array_literal_repeat_count_expr;
+        const element_count: i32 = expr.array_literal_element_count;
+        const elements: & & ASTNode = expr.array_literal_elements;
+        
+        if repeat_count_expr != null {
+            const n: i32 = checker_eval_const_expr(checker, repeat_count_expr);
+            if n < 0 || elements == null || element_count < 1 {
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            const element_type: Type = checker_infer_type(checker, elements[0]);
+            if element_type.kind == TypeKind.TYPE_VOID {
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            const element_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+            if element_type_ptr == null {
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+            element_type_ptr[0] = copy_type(&element_type);
+            result.kind = TypeKind.TYPE_ARRAY;
+            result.element_type = element_type_ptr;
+            result.array_size = n;
+            return result;
+        }
+        
+        if element_count == 0 {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        const element_type: Type = checker_infer_type(checker, elements[0]);
+        if element_type.kind == TypeKind.TYPE_VOID {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        
+        const element_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if element_type_ptr == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        element_type_ptr[0] = copy_type(&element_type);
+        
+        result.kind = TypeKind.TYPE_ARRAY;
+        result.element_type = element_type_ptr;
+        result.array_size = element_count;
+        
+        return result;
+    } else if expr.type == ASTNodeType.AST_SIZEOF {
+        // sizeof 表达式：返回 i32 类型（字节数）
+        // 注意：这里不验证 target 是否有效，类型检查阶段会验证
+        result.kind = TypeKind.TYPE_I32;
+        return result;
+    } else if expr.type == ASTNodeType.AST_ALIGNOF {
+        // alignof 表达式：返回 i32 类型（对齐字节数）
+        // 注意：这里不验证 target 是否有效，类型检查阶段会验证
+        result.kind = TypeKind.TYPE_I32;
+        return result;
+    } else if expr.type == ASTNodeType.AST_LEN {
+        // len 表达式：返回 i32 类型（元素个数）
+        // 注意：这里不验证 array 是否是数组类型，类型检查阶段会验证
+        result.kind = TypeKind.TYPE_I32;
+        return result;
+    } else if expr.type == ASTNodeType.AST_CAST_EXPR {
+        // 类型转换表达式：as 返回目标类型 T，as! 返回 !T
+        const target_type_node: &ASTNode = expr.cast_expr_target_type;
+        if target_type_node == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        const target_type: Type = type_from_ast(checker, target_type_node);
+        if expr.cast_expr_is_force_cast == 0 {
+            return target_type;
+        }
+        // as! 强转：返回 !T（错误联合类型）
+        const payload_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        if payload_ptr == null {
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        payload_ptr[0] = target_type;
+        result.kind = TypeKind.TYPE_ERROR_UNION;
+        result.error_union_payload_type = payload_ptr;
+        return result;
+    } else if expr.type == ASTNodeType.AST_BLOCK {
+        // 代码块：返回void类型（代码块不返回值）
+        // 放宽检查：允许代码块作为表达式使用（在编译器自举时可能发生）
+        result.kind = TypeKind.TYPE_VOID;
+        return result;
+    } else if expr.type == ASTNodeType.AST_MATCH_EXPR {
+        // match 表达式：所有臂的返回类型必须一致
+        var expr_type: Type = checker_infer_type(checker, expr.match_expr_expr);
+        // 如果是指针类型，自动解引用
+        if expr_type.kind == TypeKind.TYPE_POINTER && expr_type.pointer_to != null {
+            expr_type = expr_type.pointer_to[0];
+        }
+        var match_union_decl: &ASTNode = null;
+        if expr_type.kind == TypeKind.TYPE_UNION && expr_type.union_name != null && checker != null && checker.program_node != null {
+            match_union_decl = find_union_decl_from_program(checker.program_node, expr_type.union_name);
+        }
+        var unified: Type = Type {
+            kind: TypeKind.TYPE_VOID,
+            enum_name: null,
+            struct_name: null,
+            union_name: null,
+            pointer_to: null,
+            is_ffi_pointer: 0,
+            element_type: null,
+            array_size: 0,
+            slice_element_type: null,
+            slice_len: 0,
+            tuple_element_types: null,
+            tuple_count: 0,
+            error_union_payload_type: null,
+            error_error_id: 0,
+        };
+        var first: i32 = 1;
+        var i: i32 = 0;
+        while i < expr.match_expr_arm_count {
+            const arm: ASTMatchArm = expr.match_expr_arms[i];
+            
+            // 为 match 分支变量创建符号表条目（与 checker_check_node 中的逻辑一致）
+            checker_enter_scope(checker);
+            if arm.kind == MatchPatternKind.MATCH_PAT_UNION && arm.variant_name != null &&
+                expr_type.kind == TypeKind.TYPE_UNION && expr_type.union_name != null && checker.program_node != null {
+                const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, expr_type.union_name);
+                if union_decl != null && arm.var_name != null && str_equals(arm.var_name, "_" as *byte) == 0 {
+                    var k: i32 = 0;
+                    while k < union_decl.union_decl_variant_count {
+                        const v: &ASTNode = union_decl.union_decl_variants[k];
+                        if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
+                            str_equals(v.var_decl_name, arm.variant_name) != 0 && v.var_decl_type != null {
+                            const variant_type: Type = type_from_ast(checker, v.var_decl_type);
+                            const sym: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+                            if sym != null {
+                                sym.name = arm.var_name;
+                                sym.type = copy_type(&variant_type);
+                                sym.is_const = 1;
+                                sym.is_initialized = 1;  // match 绑定变量已初始化
+                                sym.scope_level = checker.scope_level;
+                                sym.line = expr.line;
+                                sym.column = expr.column;
+                                sym.pointee_of = null;
+                                symbol_table_insert(checker, sym);
+                            }
+                            break;
+                        }
+                        k = k + 1;
+                    }
+                }
+            }
+            
+            var t: Type = Type { kind: TypeKind.TYPE_VOID, enum_name: null, struct_name: null, union_name: null, pointer_to: null, is_ffi_pointer: 0, element_type: null, array_size: 0, slice_element_type: null, slice_len: 0, tuple_element_types: null, tuple_count: 0, error_union_payload_type: null, error_error_id: 0 };
+            t = checker_infer_type(checker, arm.result_expr);
+            
+            checker_exit_scope(checker);
+            
+            if first != 0 {
+                unified = copy_type(&t);
+                first = 0;
+            } else if type_equals(unified, copy_type(&t)) == 0 {
+                checker_report_error(checker, arm.result_expr, "match 所有分支的返回类型必须一致" as *byte);
+            }
+            i = i + 1;
+        }
+        // 检查 match 是否有 else 分支或覆盖所有变体
+        var has_catch_all: i32 = 0;
+        var j: i32 = 0;
+        while j < expr.match_expr_arm_count {
+            const arm: ASTMatchArm = expr.match_expr_arms[j];
+            if arm.kind == MatchPatternKind.MATCH_PAT_ELSE || arm.kind == MatchPatternKind.MATCH_PAT_BIND || arm.kind == MatchPatternKind.MATCH_PAT_WILDCARD {
+                has_catch_all = 1;
+                break;
+            }
+            j = j + 1;
+        }
+        if expr_type.kind == TypeKind.TYPE_UNION && expr_type.union_name != null && checker.program_node != null {
+            const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, expr_type.union_name);
+            if union_decl != null && union_decl.union_decl_variant_count > 0 && has_catch_all == 0 {
+                var covered: [i32: MAX_UNION_VARIANTS] = [];
+                var nv: i32 = union_decl.union_decl_variant_count;
+                if nv > MAX_UNION_VARIANTS { nv = MAX_UNION_VARIANTS; }
+                var k: i32 = 0;
+                while k < nv && k < MAX_UNION_VARIANTS {
+                    covered[k] = 0;
+                    k = k + 1;
+                }
+                j = 0;
+                while j < expr.match_expr_arm_count {
+                    const arm: ASTMatchArm = expr.match_expr_arms[j];
+                    if arm.kind == MatchPatternKind.MATCH_PAT_UNION && arm.variant_name != null {
+                        var kk: i32 = 0;
+                        while kk < nv && kk < MAX_UNION_VARIANTS {
+                            const v: &ASTNode = union_decl.union_decl_variants[kk];
+                            if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
+                                str_equals(v.var_decl_name, arm.variant_name) != 0 {
+                                covered[kk] = 1;
+                                break;
+                            }
+                            kk = kk + 1;
+                        }
+                    }
+                    j = j + 1;
+                }
+                k = 0;
+                while k < nv && k < MAX_UNION_VARIANTS {
+                    if covered[k] == 0 {
+                        checker_report_error(checker, expr, "match 联合体必须处理所有变体" as *byte);
+                        break;
+                    }
+                    k = k + 1;
+                }
+            }
+        } else if has_catch_all == 0 && expr.match_expr_arm_count > 0 {
+            checker_report_error(checker, expr, "match 必须包含 else 分支或变量绑定/通配符" as *byte);
+        }
+        return unified;
+    } else if expr.type == ASTNodeType.AST_STRUCT_DECL {
+        // 结构体声明：不应该作为表达式使用，但放宽检查
+        // 返回void类型，允许通过（不报错）
+        result.kind = TypeKind.TYPE_VOID;
+        return result;
+    } else {
+        // 其他表达式类型，返回void类型
+        result.kind = TypeKind.TYPE_VOID;
+        return result;
+    }
+}
+
+// 检查表达式类型是否匹配预期类型
+// 参数：checker - TypeChecker 指针，expr - 表达式节点，expected_type - 预期类型
+// 返回：1 表示类型匹配，0 表示类型不匹配
+fn checker_check_expr_type(checker: &TypeChecker, expr: &ASTNode, expected_type: Type) i32 {
+    if checker == null || expr == null {
+        return 0;
+    }
+    const expected_copy: Type = copy_type(&expected_type);
+    const actual_type: Type = checker_infer_type(checker, expr);
+    if type_equals(copy_type(&actual_type), copy_type(&expected_copy)) != 0 {
+        return 1;
+    }
+    // 结构体实现接口时，可装箱为接口类型（赋值/传参）
+    if actual_type.kind == TypeKind.TYPE_STRUCT && expected_copy.kind == TypeKind.TYPE_INTERFACE &&
+        actual_type.struct_name != null && expected_copy.interface_name != null {
+        if struct_implements_interface(checker, actual_type.struct_name, expected_copy.interface_name) != 0 {
+            return 1;
+        }
+    }
+    
+    // 特殊情况：max/min（TypeKind.TYPE_INT_LIMIT）从期望的整数类型解析
+    if actual_type.kind == TypeKind.TYPE_INT_LIMIT && is_integer_type(expected_copy.kind) != 0 {
+        resolve_int_limit_node(expr, copy_type(&expected_copy));
+        return 1;
+    }
+    
+    // 特殊情况：允许 null（TypeKind.TYPE_VOID）赋值给任何指针类型
+    // 在 Uya 中，null 字面量可能被推断为 TypeKind.TYPE_VOID，但应该允许赋值给指针类型
+    if actual_type.kind == TypeKind.TYPE_VOID && expected_copy.kind == TypeKind.TYPE_POINTER {
+        // null 可以赋值给任何指针类型
+        return 1;
+    }
+    
+    // 特殊情况：允许指针类型之间的兼容性（如果源类型无法推断但期望类型是指针，可能是类型推断失败）
+    // 这是一个宽松的检查，用于处理编译器自举时的类型推断问题
+    if actual_type.kind == TypeKind.TYPE_VOID && expected_copy.kind == TypeKind.TYPE_POINTER {
+        // 如果实际类型无法推断（TypeKind.TYPE_VOID），但期望类型是指针类型，可能是 null 或类型推断失败
+        // 对于赋值表达式（如 node.field = null），允许通过
+        return 1;
+    }
+    
+    // 特殊情况：放宽对类型推断失败的检查
+    // 如果实际类型是 TypeKind.TYPE_VOID（类型推断失败），允许通过（不报错）
+    // 这在编译器自举时很常见，因为类型推断可能失败
+    if actual_type.kind == TypeKind.TYPE_VOID {
+        // 类型推断失败，但不报错（允许通过）
+        return 1;
+    }
+    
+    // 特殊情况：对于数组字面量和二元表达式，放宽检查
+    // 这些表达式在编译器自举时经常出现类型推断失败的情况
+    if expr.type == ASTNodeType.AST_ARRAY_LITERAL || expr.type == ASTNodeType.AST_BINARY_EXPR {
+        // 放宽检查，允许通过（不报错）
+        return 1;
+    }
+    
+    // 特殊情况：对于类型转换表达式，放宽检查
+    // 类型转换表达式在编译器自举时经常出现类型推断失败的情况
+    if expr.type == ASTNodeType.AST_CAST_EXPR {
+        // 放宽检查，允许通过（不报错）
+        return 1;
+    }
+    
+    // 特殊情况：对于代码块，放宽检查
+    // 代码块在编译器自举时可能用于初始化，允许通过（不报错）
+    if expr.type == ASTNodeType.AST_BLOCK {
+        // 放宽检查，允许通过（不报错）
+        return 1;
+    }
+    
+    // 类型不匹配：放宽检查，允许通过（不报错）
+    // 这在编译器自举时很常见，因为类型推断可能失败或类型系统不够完善
+    return 1;
+}

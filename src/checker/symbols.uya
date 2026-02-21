@@ -1,0 +1,564 @@
+// checker/symbols.uya - 符号表操作和工具函数
+// 从 checker/main.uya 拆分
+
+// ===== 哈希函数 =====
+
+// 哈希函数（djb2算法，用于字符串哈希）
+// 注意：Uya Mini 不支持位运算符 <<，使用乘法代替
+fn hash_string(str: &byte) i32 {
+    // 使用 u32 避免有符号整数溢出 UB
+    var hash: u32 = 5381;
+    var i: i32 = 0;
+    while str[i] != 0 {
+        const c: u8 = str[i] as u8;
+        hash = ((hash * 32) + hash) + (c as u32); // hash * 33 + c (等价于 hash << 5 + hash)
+        i = i + 1;
+    }
+    return hash as i32; // 返回时转换为 i32，保持 API 兼容
+}
+
+// ===== 初始化函数 =====
+
+// 初始化 TypeChecker
+fn checker_init(checker: &TypeChecker, arena: &Arena, default_filename: &byte) i32 {
+    if checker == null || arena == null {
+        return -1;
+    }
+    
+    checker.arena = arena;
+    
+    // 初始化符号表（所有槽位设为null）
+    var i: i32 = 0;
+    while i < SYMBOL_TABLE_SIZE {
+        checker.symbol_table.slots[i] = null;
+        i = i + 1;
+    }
+    checker.symbol_table.count = 0;
+    
+    // 初始化函数表（所有槽位设为null）
+    i = 0;
+    while i < FUNCTION_TABLE_SIZE {
+        checker.function_table.slots[i] = null;
+        i = i + 1;
+    }
+    checker.function_table.count = 0;
+    
+    // 初始化模块表（所有槽位设为null）
+    i = 0;
+    while i < MODULE_TABLE_SIZE {
+        checker.module_table.slots[i] = null;
+        i = i + 1;
+    }
+    checker.module_table.count = 0;
+    
+    // 初始化导入表（所有槽位设为null）
+    i = 0;
+    while i < IMPORT_TABLE_SIZE {
+        checker.import_table.slots[i] = null;
+        i = i + 1;
+    }
+    checker.import_table.count = 0;
+    
+    checker.scope_level = 0;
+    checker.loop_depth = 0;
+    checker.program_node = null;
+    checker.error_count = 0;
+    checker.default_filename = default_filename;
+    checker.current_return_type.kind = TypeKind.TYPE_VOID;
+    checker.in_function = 0;
+    checker.in_defer_or_errdefer = 0;
+    checker.current_function_decl = null;
+    checker.error_name_count = 0;
+    
+    // 初始化错误集（所有槽位设为null）
+    for 0..256 |i| {
+        checker.error_names[i] = null;
+    }
+    
+    checker.moved_count = 0;
+    checker.project_root_dir = null;
+    checker.uya_root_dir = null;
+    
+    // 初始化泛型相关字段
+    checker.current_type_params = null;
+    checker.current_type_param_count = 0;
+    checker.mono_instance_count = 0;
+    
+    // 初始化约束系统
+    for 0..64 |i| {
+        checker.constraint_var_names[i] = null;
+        checker.constraint_ops[i] = 0;
+        checker.constraint_values[i] = 0;
+    }
+    checker.constraint_count = 0;
+    
+    // 初始化指针非空状态跟踪
+    for 0..32 |i| {
+        checker.pointer_nonnull_names[i] = null;
+    }
+    checker.pointer_nonnull_count = 0;
+    
+    // 初始化可能为空的指针跟踪
+    for 0..32 |i| {
+        checker.pointer_nullable_names[i] = null;
+    }
+    checker.pointer_nullable_count = 0;
+    
+    // 默认关闭内存安全证明（自举编译时关闭，测试时开启）
+    checker.enable_safety_proof = 0;
+    
+    // 证明超时机制：默认限制 1000 步
+    checker.proof_step_limit = 1000;
+    checker.proof_step_count = 0;
+    
+    return 0;
+}
+
+// 获取错误计数
+fn checker_get_error_count(checker: &TypeChecker) i32 {
+    if checker == null {
+        return 0;
+    }
+    return checker.error_count;
+}
+
+// ===== 符号表操作 =====
+
+// 符号表查找函数（支持作用域查找，返回最内层匹配的符号）
+fn symbol_table_lookup(checker: &TypeChecker, name: &byte) &Symbol {
+    if checker == null || name == null {
+        return null;
+    }
+    
+    var found: &Symbol = null;
+    var found_scope: i32 = -1;
+    
+    var i: i32 = 0;
+    while i < SYMBOL_TABLE_SIZE {
+        const symbol: &Symbol = checker.symbol_table.slots[i];
+        
+        if symbol != null {
+            var matched: i32 = 1;
+            var j: i32 = 0;
+            while matched != 0 {
+                const c1: byte = symbol.name[j] as byte;
+                const c2: byte = name[j] as byte;
+                if c1 != c2 {
+                    matched = 0;
+                } else if c1 == 0 {
+                    if c2 != 0 {
+                        matched = 0;
+                    }
+                    break;
+                }
+                j = j + 1;
+            }
+            
+            if matched != 0 {
+                if found == null || symbol.scope_level > found_scope {
+                    found = symbol;
+                    found_scope = symbol.scope_level;
+                }
+            }
+        }
+        i = i + 1;
+    }
+    
+    return found;
+}
+
+// 符号表插入函数（使用开放寻址的哈希表）
+fn symbol_table_insert(checker: &TypeChecker, symbol: &Symbol) i32 {
+    if checker == null || symbol == null || symbol.name == null {
+        return -1;
+    }
+    
+    const existing: &Symbol = symbol_table_lookup(checker, symbol.name);
+    if existing != null && existing.scope_level == symbol.scope_level {
+        return -1;
+    }
+    
+    const hash: i32 = hash_string(symbol.name);
+    var index: i32 = hash % SYMBOL_TABLE_SIZE;
+    if index < 0 {
+        index = index + SYMBOL_TABLE_SIZE;
+    }
+    
+    var i: i32 = 0;
+    while i < SYMBOL_TABLE_SIZE {
+        const slot: i32 = (index + i) % SYMBOL_TABLE_SIZE;
+        
+        if checker.symbol_table.slots[slot] == null {
+            checker.symbol_table.slots[slot] = symbol;
+            checker.symbol_table.count = checker.symbol_table.count + 1;
+            return 0;
+        }
+        i = i + 1;
+    }
+    
+    return -1;
+}
+
+// ===== 函数表操作 =====
+
+// 函数表查找函数
+fn function_table_lookup(checker: &TypeChecker, name: &byte) &FunctionSignature {
+    if checker == null || name == null {
+        return null;
+    }
+    
+    const hash: i32 = hash_string(name);
+    var index: i32 = hash % FUNCTION_TABLE_SIZE;
+    if index < 0 {
+        index = index + FUNCTION_TABLE_SIZE;
+    }
+    
+    var i: i32 = 0;
+    while i < FUNCTION_TABLE_SIZE {
+        const slot: i32 = (index + i) % FUNCTION_TABLE_SIZE;
+        const sig: &FunctionSignature = checker.function_table.slots[slot];
+        
+        if sig == null {
+            i = i + 1;
+            continue;
+        }
+        
+        var matched: i32 = 1;
+        var j: i32 = 0;
+        while matched != 0 {
+            const c1: byte = sig.name[j] as byte;
+            const c2: byte = name[j] as byte;
+            if c1 != c2 {
+                matched = 0;
+            } else if c1 == 0 {
+                if c2 != 0 {
+                    matched = 0;
+                }
+                break;
+            }
+            j = j + 1;
+        }
+        
+        if matched != 0 {
+            return sig;
+        }
+        
+        i = i + 1;
+    }
+    
+    return null;
+}
+
+// 函数表插入函数（使用开放寻址的哈希表）
+fn function_table_insert(checker: &TypeChecker, sig: &FunctionSignature) i32 {
+    if checker == null || sig == null || sig.name == null {
+        return -1;
+    }
+    
+    const hash: i32 = hash_string(sig.name);
+    var index: i32 = hash % FUNCTION_TABLE_SIZE;
+    if index < 0 {
+        index = index + FUNCTION_TABLE_SIZE;
+    }
+    
+    var i: i32 = 0;
+    while i < FUNCTION_TABLE_SIZE {
+        const slot: i32 = (index + i) % FUNCTION_TABLE_SIZE;
+        const existing: &FunctionSignature = checker.function_table.slots[slot];
+        
+        if existing == null {
+            checker.function_table.slots[slot] = sig;
+            checker.function_table.count = checker.function_table.count + 1;
+            return 0;
+        }
+        
+        var matched: i32 = 1;
+        var j: i32 = 0;
+        while matched != 0 {
+            const c1: byte = existing.name[j] as byte;
+            const c2: byte = sig.name[j] as byte;
+            if c1 != c2 {
+                matched = 0;
+            } else if c1 == 0 {
+                if c2 != 0 {
+                    matched = 0;
+                }
+                break;
+            }
+            j = j + 1;
+        }
+        
+        if matched != 0 {
+            if existing.is_extern != 0 && sig.is_extern != 0 {
+                if existing.param_count == sig.param_count &&
+                    type_equals(existing.return_type, sig.return_type) &&
+                    existing.is_varargs == sig.is_varargs {
+                    return 0;
+                } else {
+                    return -1;
+                }
+            } else if existing.is_extern == 0 && sig.is_extern == 0 {
+                return -1;
+            } else {
+                if existing.is_extern != 0 {
+                    checker.function_table.slots[slot] = sig;
+                    return 0;
+                } else {
+                    return 0;
+                }
+            }
+        }
+        
+        i = i + 1;
+    }
+    
+    return -1;
+}
+
+// ===== 作用域管理 =====
+
+// 进入作用域
+fn checker_enter_scope(checker: &TypeChecker) void {
+    if checker != null {
+        checker.scope_level = checker.scope_level + 1;
+    }
+}
+
+// 退出作用域
+fn checker_exit_scope(checker: &TypeChecker) void {
+    if checker == null || checker.scope_level <= 0 {
+        return;
+    }
+    
+    const current_scope: i32 = checker.scope_level;
+    
+    var i: i32 = 0;
+    while i < SYMBOL_TABLE_SIZE {
+        const symbol: &Symbol = checker.symbol_table.slots[i];
+        if symbol != null && symbol.scope_level == current_scope {
+            checker.symbol_table.slots[i] = null;
+            checker.symbol_table.count = checker.symbol_table.count - 1;
+        }
+        i = i + 1;
+    }
+    
+    checker.scope_level = checker.scope_level - 1;
+}
+
+// ===== 字符串工具 =====
+
+// 字符串比较辅助函数（Uya 没有 strcmp）
+fn str_equals(s1: &byte, s2: &byte) i32 {
+    if s1 == null && s2 == null {
+        return 1;
+    }
+    if s1 == null || s2 == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while true {
+        const c1: byte = s1[i] as byte;
+        const c2: byte = s2[i] as byte;
+        if c1 != c2 {
+            return 0;
+        }
+        if c1 == 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// 从 Arena 复制字符串
+fn checker_arena_strdup(arena: &Arena, src: &byte) &byte {
+    if arena == null || src == null {
+        return null;
+    }
+    const n: usize = strlen(src as *byte) + 1;
+    const result: &byte = arena_alloc(arena, n) as &byte;
+    if result == null {
+        return null;
+    }
+    memcpy(result as *void, src as *void, n);
+    return result;
+}
+
+// ===== 移动语义 =====
+
+// 已移动集合检查
+fn moved_set_contains(checker: &TypeChecker, name: &byte) i32 {
+    if checker == null || name == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    const count: i32 = checker.moved_count;
+    while i < count {
+        if i < MAX_MOVED_NAMES {
+            const name_ptr: &byte = checker.moved_names[i];
+            if name_ptr != null && str_equals(name_ptr, name) != 0 {
+                return 1;
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// 检查是否有活跃指针指向变量
+fn has_active_pointer_to(checker: &TypeChecker, var_name: &byte) i32 {
+    if checker == null || var_name == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < SYMBOL_TABLE_SIZE {
+        const s: &Symbol = checker.symbol_table.slots[i];
+        if s != null && s.pointee_of != null && str_equals(s.pointee_of, var_name) != 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// 标记变量已移动
+fn checker_mark_moved(checker: &TypeChecker, node: &ASTNode, var_name: &byte, struct_name: &byte) void {
+    if checker == null || var_name == null || struct_name == null {
+        return;
+    }
+    var err_node: &ASTNode = node;
+    if node == null {
+        err_node = checker.current_function_decl;
+    }
+    if has_active_pointer_to(checker, var_name) != 0 {
+        checker_report_error(checker, err_node, "变量存在活跃指针，不能移动" as *byte);
+        return;
+    }
+    if checker.loop_depth > 0 {
+        checker_report_error(checker, err_node, "循环中的变量不能移动" as *byte);
+        return;
+    }
+    if checker.moved_count >= MAX_MOVED_NAMES {
+        return;
+    }
+    const idx: i32 = checker.moved_count;
+    const copy: &byte = checker_arena_strdup(checker.arena, var_name);
+    if copy != null {
+        if idx >= 0 && idx < MAX_MOVED_NAMES {
+            checker.moved_names[idx] = copy;
+        }
+        checker.moved_count = idx + 1;
+    }
+    // 写回 VAR_DECL 的 was_moved
+    const sym: &Symbol = symbol_table_lookup(checker, var_name);
+    if sym != null && sym.decl_node != null && sym.decl_node.type == ASTNodeType.AST_VAR_DECL {
+        sym.decl_node.var_decl_was_moved = 1;
+    }
+}
+
+// 标记调用参数已移动
+fn checker_mark_moved_call_args(checker: &TypeChecker, node: &ASTNode) void {
+    if checker == null || node == null || node.type != ASTNodeType.AST_CALL_EXPR {
+        return;
+    }
+    const callee: &ASTNode = node.call_expr_callee;
+    const n: i32 = node.call_expr_arg_count;
+    const args: & & ASTNode = node.call_expr_args;
+    if args == null {
+        return;
+    }
+    if callee.type == ASTNodeType.AST_MEMBER_ACCESS {
+        var object_type: Type = checker_infer_type(checker, callee.member_access_object);
+        if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
+            object_type = object_type.pointer_to[0];
+        }
+        if object_type.kind == TypeKind.TYPE_STRUCT && object_type.struct_name != null && checker.program_node != null {
+            const m: &ASTNode = find_method_in_struct(checker.program_node, object_type.struct_name, callee.member_access_field_name);
+            if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_params != null {
+                var i: i32 = 0;
+                while i < n && i + 1 < m.fn_decl_param_count {
+                    const arg: &ASTNode = args[i];
+                    if arg != null && arg.type == ASTNodeType.AST_IDENTIFIER {
+                        const param: &ASTNode = m.fn_decl_params[i + 1];
+                        if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+                            const pt: Type = type_from_ast(checker, param.var_decl_type);
+                            if pt.kind == TypeKind.TYPE_STRUCT && pt.struct_name != null {
+                                checker_mark_moved(checker, arg, arg.identifier_name, pt.struct_name);
+                            }
+                        }
+                    }
+                    i = i + 1;
+                }
+            }
+        }
+        return;
+    }
+    if callee.type != ASTNodeType.AST_IDENTIFIER {
+        return;
+    }
+    const sig: &FunctionSignature = function_table_lookup(checker, callee.identifier_name);
+    if sig == null || sig.param_types == null {
+        return;
+    }
+    var i: i32 = 0;
+    while i < n && i < sig.param_count {
+        if args[i] != null && args[i].type == ASTNodeType.AST_IDENTIFIER &&
+            sig.param_types[i].kind == TypeKind.TYPE_STRUCT && sig.param_types[i].struct_name != null {
+            checker_mark_moved(checker, args[i], args[i].identifier_name, sig.param_types[i].struct_name);
+        }
+        i = i + 1;
+    }
+}
+
+// ===== 错误ID管理 =====
+
+// hash(error_name)，0 保留；djb2 算法
+fn hash_error_name(name: &byte) u32 {
+    var h: u32 = 5381;
+    var i: i32 = 0;
+    while name[i] != 0 {
+        const c: u32 = (name[i] as byte) as u32;
+        h = ((h * 32) + h) + c;
+        i = i + 1;
+    }
+    if h == 0 { return 1; }
+    return h;
+}
+
+// 获取或添加错误 ID
+fn get_or_add_error_id(checker: &TypeChecker, name: &byte, node: &ASTNode) u32 {
+    if checker == null || name == null {
+        return 0;
+    }
+    const h: u32 = hash_error_name(name);
+    var i: i32 = 0;
+    const count: i32 = checker.error_name_count;
+    while i < count {
+        if i < MAX_ERROR_NAMES {
+            const err_name: &byte = checker.error_names[i];
+            const err_hash: u32 = checker.error_hashes[i];
+            if err_name != null && str_equals(err_name, name) != 0 {
+                return err_hash;
+            }
+            if err_hash == h && err_name != null && str_equals(err_name, name) == 0 {
+                checker_report_error(checker, node, "error_id 冲突: 请重命名其一" as *byte);
+                return 0;
+            }
+        }
+        i = i + 1;
+    }
+    if checker.error_name_count >= MAX_ERROR_NAMES {
+        return 0;
+    }
+    const idx: i32 = checker.error_name_count;
+    const copy: &byte = checker_arena_strdup(checker.arena, name);
+    if copy == null {
+        return 0;
+    }
+    if idx >= 0 && idx < MAX_ERROR_NAMES {
+        checker.error_names[idx] = copy;
+        checker.error_hashes[idx] = h;
+    }
+    checker.error_name_count = idx + 1;
+    return h;
+}
