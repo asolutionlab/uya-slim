@@ -339,75 +339,8 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         }
         fputc(41, codegen.output as *void);
     } else if expr.type == ASTNodeType.AST_PRINT || expr.type == ASTNodeType.AST_PRINTLN {
-        // @print(expr) / @println(expr) - 打印表达式
-        if expr.print_expr != null {
-            const inner: &ASTNode = expr.print_expr;
-            var fmt: &byte = null;
-            var need_cast: i32 = 0;  // 是否需要 (char *) 转换
-            
-            // 根据表达式类型确定格式字符串
-            if inner.type == ASTNodeType.AST_NUMBER {
-                // 整数字面量：默认按 i32 处理
-                fmt = "%d";
-            } else if inner.type == ASTNodeType.AST_FLOAT {
-                fmt = "%g";
-            } else if inner.type == ASTNodeType.AST_BOOL {
-                fmt = "%d";
-            } else if inner.type == ASTNodeType.AST_STRING || inner.type == ASTNodeType.AST_STRING_INTERP {
-                fmt = "%s";
-                need_cast = 1;
-            } else if inner.type == ASTNodeType.AST_CAST_EXPR {
-                // 强制转换：根据目标类型选择格式
-                if inner.cast_expr_target_type != null {
-                    const target: &ASTNode = inner.cast_expr_target_type;
-                    if target.type == ASTNodeType.AST_TYPE_NAMED && target.type_named_name != null {
-                        const name: &byte = target.type_named_name;
-                        if str_equals(name as *byte, "i8" as *byte) != 0 ||
-                           str_equals(name as *byte, "i16" as *byte) != 0 ||
-                           str_equals(name as *byte, "i32" as *byte) != 0 ||
-                           str_equals(name as *byte, "i64" as *byte) != 0 {
-                            fmt = "%lld";
-                        } else if str_equals(name as *byte, "u8" as *byte) != 0 ||
-                                  str_equals(name as *byte, "u16" as *byte) != 0 ||
-                                  str_equals(name as *byte, "u32" as *byte) != 0 ||
-                                  str_equals(name as *byte, "u64" as *byte) != 0 ||
-                                  str_equals(name as *byte, "usize" as *byte) != 0 {
-                            fmt = "%llu";
-                        } else if str_equals(name as *byte, "f32" as *byte) != 0 ||
-                                  str_equals(name as *byte, "f64" as *byte) != 0 {
-                            fmt = "%g";
-                        } else if str_equals(name as *byte, "bool" as *byte) != 0 {
-                            fmt = "%d";
-                        }
-                    }
-                }
-            } else if inner.type == ASTNodeType.AST_IDENTIFIER {
-                // 标识符：需要从符号表推断类型，这里简化处理
-                fmt = "%lld";
-            } else if inner.type == ASTNodeType.AST_BINARY_EXPR {
-                // 二元表达式：整数或浮点运算
-                fmt = "%lld";
-            }
-            
-            if fmt == null {
-                fmt = "%lld";  // 默认整数格式
-            }
-            
-            // 生成 printf 调用
-            if expr.type == ASTNodeType.AST_PRINTLN {
-                fprintf(codegen.output as *void, "printf(\"%s\\n\", " as *byte, fmt as *byte);
-            } else {
-                fprintf(codegen.output as *void, "printf(\"%s\", " as *byte, fmt as *byte);
-            }
-            
-            if need_cast != 0 {
-                fputs("(char *)" as *byte, codegen.output as *void);
-            }
-            
-            gen_expr(codegen, expr.print_expr);
-            fputc(41, codegen.output as *void);
-        }
-    } else if expr.type == ASTNodeType.AST_STRING {
+        gen_print_expr(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_STRING {
         // 字符串常量在收集阶段已添加，生成阶段只查找
         const str_const: &byte = find_string_constant(codegen, expr.string_literal_value);
         if str_const != null {
@@ -431,63 +364,8 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         }
         fprintf(codegen.output as *void, "%dU" as *byte, id);
     } else if expr.type == ASTNodeType.AST_TRY_EXPR {
-        const operand: &ASTNode = expr.try_expr_operand;
-        const ret_type: &ASTNode = codegen.current_function_return_type;
-        if operand == null {
-            fputs("0" as *byte, codegen.output as *void);
-            return;
-        }
-        const operand_union_c: &byte = get_c_type_of_expr(codegen, operand);
-        var operand_is_err_union: i32 = 0;
-        if operand_union_c != null && strstr(operand_union_c as *byte, "err_union_" as *byte) != null {
-            operand_is_err_union = 1;
-        }
-        
-        // 检查返回类型是否是 !void
-        var ret_is_void: i32 = 0;
-        if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION && ret_type.type_error_union_payload_type != null {
-            const payload: &ASTNode = ret_type.type_error_union_payload_type;
-            if payload.type == ASTNodeType.AST_TYPE_NAMED && payload.type_named_name != null {
-                if strcmp(payload.type_named_name as *byte, "void" as *byte) == 0 {
-                    ret_is_void = 1;
-                }
-            }
-        }
-        
-        // 检查操作数类型是否是 !void
-        var operand_is_void: i32 = 0;
-        if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_void" as *byte) == 0 {
-            operand_is_void = 1;
-        }
-        
-        if operand_is_err_union == 0 || ret_type == null || ret_type.type != ASTNodeType.AST_TYPE_ERROR_UNION {
-            if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
-                const union_c: &byte = c99_type_to_c(codegen, ret_type);
-                fprintf(codegen.output as *void, "({ %s _uya_try_tmp = " as *byte, union_c as *byte);
-                gen_expr(codegen, operand);
-                if ret_is_void != 0 {
-                    fputs("; if (_uya_try_tmp.error_id != 0) return _uya_try_tmp; })" as *byte, codegen.output as *void);
-                } else {
-                    fputs("; if (_uya_try_tmp.error_id != 0) return _uya_try_tmp; _uya_try_tmp.value; })" as *byte, codegen.output as *void);
-                }
-            } else {
-                // 非 error union 返回类型，无法使用 try
-                fputs("0" as *byte, codegen.output as *void);
-            }
-            return;
-        }
-        const ret_union_c: &byte = c99_type_to_c(codegen, ret_type);
-        fprintf(codegen.output as *void, "({ %s _uya_try_tmp = " as *byte, operand_union_c as *byte);
-        gen_expr(codegen, operand);
-        // 错误传播时需转换为函数返回类型
-        if operand_is_void != 0 {
-            // 操作数是 !void，没有值可解包
-            fprintf(codegen.output as *void, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id }; })" as *byte, ret_union_c as *byte);
-        } else {
-            // 操作数有值，需要解包。即使函数返回 !void，try 表达式本身也需要返回解包的值
-            fprintf(codegen.output as *void, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id }; _uya_try_tmp.value; })" as *byte, ret_union_c as *byte);
-        }
-    } else if expr.type == ASTNodeType.AST_AWAIT_EXPR {
+        gen_try_expr(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_AWAIT_EXPR {
         // @await 表达式 - 暂时直接生成操作数代码
         // 完整实现需要 CPS 变换和状态机生成
         const operand: &ASTNode = expr.await_expr_operand;
@@ -497,738 +375,22 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             fputs("0" as *byte, codegen.output as *void);
         }
     } else if expr.type == ASTNodeType.AST_CATCH_EXPR {
-        const operand: &ASTNode = expr.catch_expr_operand;
-        const block: &ASTNode = expr.catch_expr_catch_block;
-        const err_name: &byte = expr.catch_expr_err_name;
-        const ret_type: &ASTNode = codegen.current_function_return_type;
-        if operand == null || block == null {
-            fputs("0" as *byte, codegen.output as *void);
-            return;
-        }
-        const operand_union_c: &byte = get_c_type_of_expr(codegen, operand);
-        var operand_is_err_union: i32 = 0;
-        if operand_union_c != null && strstr(operand_union_c as *byte, "err_union_" as *byte) != null {
-            operand_is_err_union = 1;
-        }
-        var union_c: &byte = ("int32_t" as *byte) as &byte;
-        var payload_c: &byte = ("int32_t" as *byte) as &byte;
-        if operand_is_err_union != 0 {
-            union_c = operand_union_c;
-            if operand != null && operand.type == ASTNodeType.AST_CAST_EXPR && operand.cast_expr_is_force_cast != 0 && operand.cast_expr_target_type != null {
-                payload_c = c99_type_to_c(codegen, operand.cast_expr_target_type);
-            } else if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION && ret_type.type_error_union_payload_type != null {
-                payload_c = c99_type_to_c(codegen, ret_type.type_error_union_payload_type);
-            } else {
-                // 从错误联合类型名称推断 payload 类型
-                if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_void" as *byte) == 0 {
-                    payload_c = "void" as &byte;
-                } else if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_int64_t" as *byte) == 0 {
-                    payload_c = "int64_t" as &byte;
-                } else {
-                    payload_c = "int32_t" as &byte;
-                }
-            }
-        } else if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
-            union_c = c99_type_to_c(codegen, ret_type);
-            const payload_node: &ASTNode = ret_type.type_error_union_payload_type;
-            if payload_node != null {
-                payload_c = c99_type_to_c(codegen, payload_node);
-            } else {
-                payload_c = "void" as &byte;
-            }
-        } else {
-            fputs("0" as *byte, codegen.output as *void);
-            return;
-        }
-        const n: i32 = block.block_stmt_count;
-        var last_stmt: &ASTNode = null;
-        if n > 0 {
-            last_stmt = block.block_stmts[n - 1];
-        }
-        var is_void_payload: i32 = 0;
-        if payload_c != null && strcmp(payload_c as *byte, "void" as *byte) == 0 {
-            is_void_payload = 1;
-        } else {
-            is_void_payload = 0;
-        }
-        if is_void_payload != 0 {
-            // !void 类型：不需要声明结果变量
-            fprintf(codegen.output as *void, "({ %s _uya_catch_tmp = " as *byte, union_c as *byte);
-        } else {
-            fprintf(codegen.output as *void, "({ %s _uya_catch_result; %s _uya_catch_tmp = " as *byte, payload_c as *byte, union_c as *byte);
-        }
-        gen_expr(codegen, operand);
-        fputs("; if (_uya_catch_tmp.error_id != 0) {\n" as *byte, codegen.output as *void);
-        codegen.indent_level = codegen.indent_level + 1;
-        if err_name != null {
-            const safe: &byte = get_safe_c_identifier(codegen, err_name);
-            c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "%s %s = _uya_catch_tmp;\n" as *byte, union_c as *byte, safe as *byte);
-        }
-        var i: i32 = 0;
-        while i < n {
-            const s: &ASTNode = block.block_stmts[i];
-            if s != null {
-                if i == n - 1 && last_stmt != null && last_stmt.type != ASTNodeType.AST_RETURN_STMT && is_void_payload == 0 {
-                    c99_emit_indent(codegen);
-                    fputs("_uya_catch_result = (" as *byte, codegen.output as *void);
-                    gen_expr(codegen, s);
-                    fputs(");\n" as *byte, codegen.output as *void);
-                } else {
-                    gen_stmt(codegen, s);
-                }
-            }
-            i = i + 1;
-        }
-        codegen.indent_level = codegen.indent_level - 1;
-        c99_emit_indent(codegen);
-        if is_void_payload != 0 {
-            fputs("} else { /* void payload */ } 0; })" as *byte, codegen.output as *void);
-        } else {
-            fputs("} else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; })" as *byte, codegen.output as *void);
-        }
-    } else if expr.type == ASTNodeType.AST_BINARY_EXPR {
-        const left: &ASTNode = expr.binary_expr_left;
-        const right: &ASTNode = expr.binary_expr_right;
-        const op: TokenType = expr.binary_expr_op as TokenType;
-        
-        // 错误类型比较：err == error.X 或 error.X == err -> .error_id 比较
-        if op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL {
-            if left != null && right != null {
-                if left.type == ASTNodeType.AST_IDENTIFIER && right.type == ASTNodeType.AST_ERROR_VALUE {
-                var id: i32 = c99_get_or_add_error_id(codegen, right.error_value_name);
-                if id == 0 {
-                    id = 1;
-                }
-                const safe: &byte = get_c_name_for_identifier_ref(codegen, left.identifier_name);
-                if op == TokenType.TOKEN_NOT_EQUAL {
-                    fprintf(codegen.output as *void, "(%s.error_id != %dU)" as *byte, safe as *byte, id);
-                } else {
-                    fprintf(codegen.output as *void, "(%s.error_id == %dU)" as *byte, safe as *byte, id);
-                }
-                return;
-                }
-                if left.type == ASTNodeType.AST_ERROR_VALUE && right.type == ASTNodeType.AST_IDENTIFIER {
-                var id: i32 = c99_get_or_add_error_id(codegen, left.error_value_name);
-                if id == 0 {
-                    id = 1;
-                }
-                const safe: &byte = get_c_name_for_identifier_ref(codegen, right.identifier_name);
-                if op == TokenType.TOKEN_NOT_EQUAL {
-                    fprintf(codegen.output as *void, "(%dU != %s.error_id)" as *byte, id, safe as *byte);
-                } else {
-                    fprintf(codegen.output as *void, "(%dU == %s.error_id)" as *byte, id, safe as *byte);
-                }
-                return;
-                }
-            }
-        }
-        
-        // 检查是否是结构体比较（== 或 !=）
-        var is_struct_comparison: i32 = 0;
-        if (op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL) && left != null && right != null {
-            // 检查左操作数是否是结构体类型
-            if left.type == ASTNodeType.AST_IDENTIFIER {
-                if is_identifier_struct_type(codegen, left.identifier_name) != 0 {
-                    is_struct_comparison = 1;
-                }
-            } else if left.type == ASTNodeType.AST_STRUCT_INIT {
-                is_struct_comparison = 1;
-            }
-        }
-        
-        if is_struct_comparison != 0 {
-            // 解析出结构体声明，空结构体直接输出 (1)/(0)
-            var struct_decl: &ASTNode = null;
-            if left.type == ASTNodeType.AST_IDENTIFIER {
-                const type_c: &byte = get_identifier_type_c(codegen, left.identifier_name);
-                if type_c != null {
-                    const struct_prefix: *byte = strstr(type_c as *byte, "struct " as *byte);
-                    if struct_prefix != null {
-                        const name_start: &byte = (struct_prefix + 7) as &byte;
-                        struct_decl = find_struct_decl_c99(codegen, name_start);
-                    }
-                }
-            } else if left.type == ASTNodeType.AST_STRUCT_INIT {
-                struct_decl = find_struct_decl_c99(codegen, left.struct_init_struct_name);
-            }
-            if struct_decl != null && struct_decl.struct_decl_field_count == 0 {
-                if op == TokenType.TOKEN_EQUAL {
-                    fputs("(1)" as *byte, codegen.output as *void);
-                } else if op == TokenType.TOKEN_NOT_EQUAL {
-                    fputs("(0)" as *byte, codegen.output as *void);
-                }
-            } else if struct_decl != null && struct_decl.type == ASTNodeType.AST_STRUCT_DECL && struct_decl.struct_decl_field_count > 0 {
-                // 按字段比较，与 C 编译器一致，避免 padding 未初始化导致 memcmp 结果错误
-                if op == TokenType.TOKEN_NOT_EQUAL {
-                    fputs("(!(" as *byte, codegen.output as *void);
-                } else {
-                    fputc(40, codegen.output as *void);  // '('
-                }
-                var i: i32 = 0;
-                while i < struct_decl.struct_decl_field_count {
-                    const field: &ASTNode = struct_decl.struct_decl_fields[i];
-                    if field != null && field.type == ASTNodeType.AST_VAR_DECL {
-                        const field_type: &ASTNode = field.var_decl_type;
-                        const safe_field: &byte = get_safe_c_identifier(codegen, field.var_decl_name);
-                        if safe_field != null {
-                            var field_needs_memcmp: i32 = 0;
-                            if field_type != null {
-                                if field_type.type == ASTNodeType.AST_TYPE_NAMED {
-                                    const type_name: &byte = field_type.type_named_name;
-                                    if type_name != null && find_struct_decl_c99(codegen, type_name) != null {
-                                        field_needs_memcmp = 1;
-                                    }
-                                } else if field_type.type == ASTNodeType.AST_TYPE_ARRAY {
-                                    field_needs_memcmp = 1;
-                                }
-                            }
-                            if field_needs_memcmp != 0 {
-                                fputs("(__uya_memcmp(&(" as *byte, codegen.output as *void);
-                                gen_expr(codegen, left);
-                                fputs(")." as *byte, codegen.output as *void);
-                                fputs(safe_field as *byte, codegen.output as *void);
-                                fputs(", &(" as *byte, codegen.output as *void);
-                                gen_expr(codegen, right);
-                                fputs(")." as *byte, codegen.output as *void);
-                                fputs(safe_field as *byte, codegen.output as *void);
-                                fputs(", sizeof((" as *byte, codegen.output as *void);
-                                gen_expr(codegen, left);
-                                fputs(")." as *byte, codegen.output as *void);
-                                fputs(safe_field as *byte, codegen.output as *void);
-                                fputs(")) == 0)" as *byte, codegen.output as *void);
-                            } else {
-                                fputs("((" as *byte, codegen.output as *void);
-                                gen_expr(codegen, left);
-                                fputs(")." as *byte, codegen.output as *void);
-                                fputs(safe_field as *byte, codegen.output as *void);
-                                fputs(" == (" as *byte, codegen.output as *void);
-                                gen_expr(codegen, right);
-                                fputs(")." as *byte, codegen.output as *void);
-                                fputs(safe_field as *byte, codegen.output as *void);
-                                fputs(")" as *byte, codegen.output as *void);
-                            }
-                            if i < struct_decl.struct_decl_field_count - 1 {
-                                fputs(" && " as *byte, codegen.output as *void);
-                            }
-                        }
-                    }
-                    i = i + 1;
-                }
-                fputc(41, codegen.output as *void);  // ')'
-                if op == TokenType.TOKEN_NOT_EQUAL {
-                    fputc(41, codegen.output as *void);  // ')'
-                }
-            } else {
-                // 回退：无法按字段比较时用 memcmp，与 C 编译器一致
-                fputc(40, codegen.output as *void);  // '('
-                if left.type == ASTNodeType.AST_IDENTIFIER {
-                    fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
-                    gen_expr(codegen, left);
-                    fputs(", &" as *byte, codegen.output as *void);
-                    gen_expr(codegen, right);
-                    fputs(", sizeof(" as *byte, codegen.output as *void);
-                    gen_expr(codegen, left);
-                    fputs("))" as *byte, codegen.output as *void);
-                } else if left.type == ASTNodeType.AST_STRUCT_INIT {
-                    const struct_name: &byte = left.struct_init_struct_name;
-                    fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
-                    gen_expr(codegen, left);
-                    fputs(", &" as *byte, codegen.output as *void);
-                    gen_expr(codegen, right);
-                    const safe_struct_name: &byte = get_safe_c_identifier(codegen, struct_name);
-                    fprintf(codegen.output as *void, ", sizeof(struct %s))" as *byte, safe_struct_name as *byte);
-                } else {
-                    fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
-                    gen_expr(codegen, left);
-                    fputs(", &" as *byte, codegen.output as *void);
-                    gen_expr(codegen, right);
-                    fputs(", sizeof(" as *byte, codegen.output as *void);
-                    gen_expr(codegen, left);
-                    fputs("))" as *byte, codegen.output as *void);
-                }
-                if op == TokenType.TOKEN_EQUAL {
-                    fputs(" == 0)" as *byte, codegen.output as *void);
-                } else if op == TokenType.TOKEN_NOT_EQUAL {
-                    fputs(" != 0)" as *byte, codegen.output as *void);
-                } else {
-                    fputc(41, codegen.output as *void);  // ')'
-                }
-            }
-        } else if op == TokenType.TOKEN_PLUS_PIPE || op == TokenType.TOKEN_MINUS_PIPE || op == TokenType.TOKEN_ASTERISK_PIPE ||
-            op == TokenType.TOKEN_PLUS_PERCENT || op == TokenType.TOKEN_MINUS_PERCENT || op == TokenType.TOKEN_ASTERISK_PERCENT {
-            // 饱和运算 +| -| *| 或包装运算 +% -% *%
-            var type_c: &byte = get_c_type_of_expr(codegen, left);
-            if type_c == null { type_c = "int32_t" as &byte; }
-            if op == TokenType.TOKEN_PLUS_PIPE || op == TokenType.TOKEN_MINUS_PIPE || op == TokenType.TOKEN_ASTERISK_PIPE {
-                var base_type: &byte = type_c;
-                if type_c != null && strncmp(type_c as *byte, "const " as *byte, 6) == 0 { base_type = (type_c as *byte + 6) as &byte; }
-                if base_type == null { base_type = "int32_t" as &byte; }
-                fputs("({ " as *byte, codegen.output as *void);
-                fprintf(codegen.output as *void, "%s _l = (" as *byte, base_type as *byte);
-                gen_expr(codegen, left);
-                fputs("); " as *byte, codegen.output as *void);
-                fprintf(codegen.output as *void, "%s _r = (" as *byte, base_type as *byte);
-                gen_expr(codegen, right);
-                fputs("); " as *byte, codegen.output as *void);
-                fprintf(codegen.output as *void, "%s _s; " as *byte, base_type as *byte);
-                if op == TokenType.TOKEN_PLUS_PIPE {
-                    fputs("__builtin_add_overflow(_l, _r, &_s) ? (_l>=0 && _r>=0 ? " as *byte, codegen.output as *void);
-                } else if op == TokenType.TOKEN_MINUS_PIPE {
-                    fputs("__builtin_sub_overflow(_l, _r, &_s) ? (_l>=0 && _r<0 ? " as *byte, codegen.output as *void);
-                } else {
-                    fprintf(codegen.output as *void, "%s _res; " as *byte, base_type as *byte);
-                    fputs("if (__builtin_mul_overflow(_l, _r, &_s)) _res = ((_l>=0 && _r>=0) || (_l<0 && _r<0)) ? " as *byte, codegen.output as *void);
-                }
-                gen_saturate_limit_from_type_c(codegen, type_c, 1);
-                fputs(" : " as *byte, codegen.output as *void);
-                gen_saturate_limit_from_type_c(codegen, type_c, 0);
-                if op == TokenType.TOKEN_ASTERISK_PIPE {
-                    fputs("; else _res = _s; _res; })" as *byte, codegen.output as *void);
-                } else {
-                    fputs(") : _s; })" as *byte, codegen.output as *void);
-                }
-            } else {
-                const ut: &byte = unsigned_type_for_wrapping(type_c);
-                fprintf(codegen.output as *void, "((%s)((%s)(" as *byte, type_c as *byte, ut as *byte);
-                gen_expr(codegen, left);
-                if op == TokenType.TOKEN_PLUS_PERCENT { fputs(") + (" as *byte, codegen.output as *void); }
-                else if op == TokenType.TOKEN_MINUS_PERCENT { fputs(") - (" as *byte, codegen.output as *void); }
-                else { fputs(") * (" as *byte, codegen.output as *void); }
-                fprintf(codegen.output as *void, "%s)(" as *byte, ut as *byte);
-                gen_expr(codegen, right);
-                fputs(")))" as *byte, codegen.output as *void);
-            }
-        } else {
-            // 普通二元表达式
-            fputc(40, codegen.output as *void);  // '('
-            gen_expr(codegen, left);
-            // 操作符映射
-            if op == TokenType.TOKEN_PLUS {
-                fputs(" + " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_MINUS {
-                fputs(" - " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_ASTERISK {
-                fputs(" * " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_SLASH {
-                fputs(" / " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_PERCENT {
-                fputs(" % " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_EQUAL {
-                fputs(" == " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_NOT_EQUAL {
-                fputs(" != " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_LESS {
-                fputs(" < " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_GREATER {
-                fputs(" > " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_LESS_EQUAL {
-                fputs(" <= " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_GREATER_EQUAL {
-                fputs(" >= " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_LOGICAL_AND {
-                fputs(" && " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_LOGICAL_OR {
-                fputs(" || " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_AMPERSAND {
-                fputs(" & " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_PIPE {
-                fputs(" | " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_CARET {
-                fputs(" ^ " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_LSHIFT {
-                fputs(" << " as *byte, codegen.output as *void);
-            } else if op == TokenType.TOKEN_RSHIFT {
-                fputs(" >> " as *byte, codegen.output as *void);
-            } else {
-                fputs(" + " as *byte, codegen.output as *void); // 默认为加法
-            }
-            gen_expr(codegen, right);
-            fputc(41, codegen.output as *void);  // ')'
-        }
-    } else if expr.type == ASTNodeType.AST_UNARY_EXPR {
-        const op: TokenType = expr.unary_expr_op as TokenType;
-        const operand: &ASTNode = expr.unary_expr_operand;
-        fputc(40, codegen.output as *void);  // '('
-        if op == TokenType.TOKEN_ASTERISK {
-            fputs("*" as *byte, codegen.output as *void);
-        } else if op == TokenType.TOKEN_AMPERSAND {
-            fputs("&" as *byte, codegen.output as *void);
-        } else if op == TokenType.TOKEN_MINUS {
-            fputs("-" as *byte, codegen.output as *void);
-        } else if op == TokenType.TOKEN_EXCLAMATION {
-            fputs("!" as *byte, codegen.output as *void);
-        } else if op == TokenType.TOKEN_TILDE {
-            fputs("~" as *byte, codegen.output as *void);
-        } else if op == TokenType.TOKEN_PLUS {
-            fputs("+" as *byte, codegen.output as *void);
-        } else {
-            fputs("+" as *byte, codegen.output as *void); // 默认
-        }
-        gen_expr(codegen, operand);
-        fputc(41, codegen.output as *void);  // ')'
-    } else if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
-        const object: &ASTNode = expr.member_access_object;
-        const field_name: &byte = expr.member_access_field_name;
-        
-        if object == null || field_name == null {
-            return;
-        }
-        
-        // 模块限定访问（module.item）：输出模块前缀项名
-        if expr.member_access_is_module_access != 0 {
-            const module_name: &byte = expr.member_access_module_name;
-            if module_name != null && field_name != null {
-                // 生成模块前缀名称（module_name.item_name -> module_name_item_name）
-                var prefixed_name: [i8: NAME_BUF_SIZE] = [];
-                var pi: i32 = 0;
-                var p: &i8 = module_name as &i8;
-                while p[0] != 0 && pi < NAME_BUF_SIZE / 2 {
-                    if p[0] == 46 {  // '.'
-                        prefixed_name[pi] = 95;  // '_'
-                    } else {
-                        prefixed_name[pi] = p[0];
-                    }
-                    pi = pi + 1;
-                    p = p + 1;
-                }
-                if pi >= 0 && pi < NAME_BUF_SIZE {
-                    prefixed_name[pi] = 95;  // '_'
-                }
-                pi = pi + 1;
-                p = field_name as &i8;
-                while p[0] != 0 && pi < NAME_BUF_SIZE - 6 {
-                    prefixed_name[pi] = p[0];
-                    pi = pi + 1;
-                    p = p + 1;
-                }
-                if pi >= 0 && pi < NAME_BUF_SIZE {
-                    prefixed_name[pi] = 0;
-                }
-                
-                const safe_name: &byte = get_safe_c_identifier(codegen, &prefixed_name[0]);
-                fprintf(codegen.output as *void, "%s" as *byte, safe_name as *byte);
-            } else {
-                const safe_name: &byte = get_safe_c_identifier(codegen, field_name);
-                fprintf(codegen.output as *void, "%s" as *byte, safe_name as *byte);
-            }
-            return;
-        }
-        
-        // libc.stderr/stdin/stdout：输出裸名以匹配 C 标准（C 使用 stderr 而非 libc.stderr）
-        if object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null {
-            if strcmp(object.identifier_name as *byte, "libc" as *byte) == 0 && field_name != null {
-                if strcmp(field_name as *byte, "stderr" as *byte) == 0 || strcmp(field_name as *byte, "stdin" as *byte) == 0 || strcmp(field_name as *byte, "stdout" as *byte) == 0 {
-                    fprintf(codegen.output as *void, "%s" as *byte, field_name as *byte);
-                    return;
-                }
-            }
-        }
-        
-        // 检查是否是枚举值访问（EnumName.Variant）
-        if object.type == ASTNodeType.AST_IDENTIFIER {
-            const enum_name: &byte = object.identifier_name;
-            if enum_name != null {
-                // 检查是否是枚举类型名称（不检查变量表，直接检查枚举声明）
-                const enum_decl: &ASTNode = find_enum_decl_c99(codegen, enum_name);
-                if enum_decl != null {
-                    // 是枚举类型，查找变体值
-                    const enum_value: i32 = find_enum_variant_value(codegen, enum_decl, field_name);
-                    if enum_value >= 0 {
-                        // 找到变体，直接输出枚举值名称（C中枚举值不需要前缀）
-                        const safe_variant_name: &byte = get_safe_c_identifier(codegen, field_name);
-                        fprintf(codegen.output as *void, "%s" as *byte, safe_variant_name as *byte);
-                        return;
-                    }
-                }
-            }
-        }
-        
-        // 普通字段访问（结构体字段）或元组下标（.0, .1 -> .f0, .f1）
-        var safe_field_name: &byte = null;
-        if field_name[0] >= 48 && field_name[0] <= 57 {
-            const idx: i32 = atoi(field_name as *byte);
-            const buf: &byte = arena_alloc(codegen.arena, 16) as &byte;
-            if buf != null {
-                snprintf(buf as *byte, 16, "f%d" as *byte, idx);
-                safe_field_name = buf;
-            } else {
-                safe_field_name = ("f0" as *byte) as &byte;
-            }
-        } else {
-            safe_field_name = get_safe_c_identifier(codegen, field_name);
-        }
-        if safe_field_name == null {
-            safe_field_name = ("f0" as *byte) as &byte;
-        }
-        
-        // 检查对象是否是指针类型（需要自动解引用）
-        var is_pointer: i32 = 0;
-        if object.type == ASTNodeType.AST_IDENTIFIER {
-            // 标识符：检查变量类型是否是指针
-            // 注意：需要使用 get_safe_c_identifier 转换名称，因为变量表中存储的是转换后的名称
-            const var_name: &byte = object.identifier_name;
-            if var_name != null {
-                const safe_name: &byte = get_safe_c_identifier(codegen, var_name);
-                is_pointer = is_identifier_pointer_type(codegen, safe_name);
-            }
-        } else if object.type == ASTNodeType.AST_MEMBER_ACCESS {
-            // 嵌套成员访问：检查嵌套访问的结果类型是否是指针
-            is_pointer = is_member_access_pointer_type(codegen, object);
-        } else if object.type == ASTNodeType.AST_ARRAY_ACCESS {
-            // 数组访问：检查数组元素类型是否是指针
-            // 例如：programs[i] 如果 programs 的类型是 [&ASTNode: 64]，那么 programs[i] 是指针类型
-            is_pointer = is_array_access_pointer_type(codegen, object);
-        } else if object.type == ASTNodeType.AST_UNARY_EXPR {
-            // 一元表达式：检查操作符
-            const op2: TokenType = object.unary_expr_op as TokenType;
-            if op2 == TokenType.TOKEN_AMPERSAND {
-                // &expr：取地址表达式的结果是指针，但这里访问的是 expr 的字段
-                // 实际上不应该发生这种情况，因为 &expr.field 在语法上不合法
-                // 但为了安全，我们假设不是指针
-                is_pointer = 0;
-            } else if op2 == TokenType.TOKEN_ASTERISK {
-                // *ptr：解引用表达式的结果是结构体本身，不是指针
-                // 所以应该使用 . 而不是 ->
-                is_pointer = 0;
-            }
-            // 其他一元操作符（!, -, +）不影响类型判断
-        }
-        
-        if codegen.emitting_assign_lhs != 0 && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null &&
-            strcmp(object.identifier_name as *byte, "self" as *byte) == 0 && codegen.current_method_struct_name != null {
-            const safe_struct: &byte = get_safe_c_identifier(codegen, codegen.current_method_struct_name);
-            if safe_struct != null {
-                fprintf(codegen.output as *void, "((struct %s *)self)" as *byte, safe_struct as *byte);
-            } else {
-                gen_expr(codegen, object);
-            }
-        } else {
-            gen_expr(codegen, object);
-        }
-        if is_pointer != 0 {
-            // 指针类型使用 -> 操作符
-            fprintf(codegen.output as *void, "->%s" as *byte, safe_field_name as *byte);
-        } else {
-            // 非指针类型使用 . 操作符
-            fprintf(codegen.output as *void, ".%s" as *byte, safe_field_name as *byte);
-        }
-    } else if expr.type == ASTNodeType.AST_SLICE_EXPR {
-        const base: &ASTNode = expr.slice_expr_base;
-        const start_expr: &ASTNode = expr.slice_expr_start_expr;
-        const len_expr: &ASTNode = expr.slice_expr_len_expr;
-        const slice_type_c: &byte = get_c_type_of_expr(codegen, expr);
-        var slice_type_str: &byte = ("struct uya_slice_int32_t" as *byte) as &byte;
-        if slice_type_c != null {
-            slice_type_str = slice_type_c;
-        }
-        fprintf(codegen.output as *void, "(%s){ .ptr = " as *byte, slice_type_str as *byte);
-        if base.type == ASTNodeType.AST_SLICE_EXPR {
-            fputc(40, codegen.output as *void);
-            gen_expr(codegen, base);
-            fputs(").ptr + " as *byte, codegen.output as *void);
-        } else if base.type == ASTNodeType.AST_IDENTIFIER {
-            const type_c: &byte = get_identifier_type_c(codegen, base.identifier_name);
-            if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
-                fputc(40, codegen.output as *void);
-                gen_expr(codegen, base);
-                fputs(").ptr + " as *byte, codegen.output as *void);
-            } else {
-                gen_expr(codegen, base);
-                fputs(" + " as *byte, codegen.output as *void);
-            }
-        } else {
-            gen_expr(codegen, base);
-            fputs(" + " as *byte, codegen.output as *void);
-        }
-        gen_expr(codegen, start_expr);
-        fputs(", .len = " as *byte, codegen.output as *void);
-        gen_expr(codegen, len_expr);
-        fputc(125, codegen.output as *void);  // '}'
-    } else if expr.type == ASTNodeType.AST_ARRAY_ACCESS {
-        const array: &ASTNode = expr.array_access_array;
-        const index: &ASTNode = expr.array_access_index;
-        
-        if array.type == ASTNodeType.AST_SLICE_EXPR {
-            fputc(40, codegen.output as *void);
-            gen_expr(codegen, array);
-            fputs(").ptr[" as *byte, codegen.output as *void);
-            gen_expr(codegen, index);
-            fputc(93, codegen.output as *void);
-            return;
-        }
-        if array.type == ASTNodeType.AST_MEMBER_ACCESS {
-            const type_c: &byte = get_c_type_of_expr(codegen, array);
-            if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
-                fputc(40, codegen.output as *void);
-                gen_expr(codegen, array);
-                fputs(").ptr[" as *byte, codegen.output as *void);
-                gen_expr(codegen, index);
-                fputc(93, codegen.output as *void);
-                return;
-            }
-        }
-        if array.type == ASTNodeType.AST_IDENTIFIER {
-            const type_c: &byte = get_identifier_type_c(codegen, array.identifier_name);
-            if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
-                // 检查标识符是否是指针类型
-                const safe_name: &byte = get_safe_c_identifier(codegen, array.identifier_name);
-                const is_pointer: i32 = is_identifier_pointer_type(codegen, safe_name);
-                if is_pointer != 0 {
-                    // 指针类型使用 -> 操作符
-                    gen_expr(codegen, array);
-                    fputs("->ptr[" as *byte, codegen.output as *void);
-                } else {
-                    // 非指针类型使用 . 操作符
-                    fputc(40, codegen.output as *void);
-                    gen_expr(codegen, array);
-                    fputs(").ptr[" as *byte, codegen.output as *void);
-                }
-                gen_expr(codegen, index);
-                fputc(93, codegen.output as *void);
-                return;
-            }
-        }
-        
-        // 注意：对于指向数组的指针（如 uint8_t (*)[4096]），
-        // 在 C 中可以直接使用 file_paths_buffer[i]，不需要 (*file_paths_buffer)[i]
-        // 因为 file_paths_buffer[i] 会自动解引用
-        gen_expr(codegen, array);
-        fputc(91, codegen.output as *void);  // '['
-        gen_expr(codegen, index);
-        fputc(93, codegen.output as *void);  // ']'
-    } else if expr.type == ASTNodeType.AST_STRUCT_INIT {
-        const orig_name: &byte = expr.struct_init_struct_name;
-        var struct_name: &byte = null;
-        if expr.struct_init_type_arg_count > 0 && expr.struct_init_type_args != null {
-            // 使用单态化结构体名称
-            struct_name = get_mono_struct_name(codegen, orig_name,
-                expr.struct_init_type_args,
-                expr.struct_init_type_arg_count);
-        } else {
-            struct_name = get_safe_c_identifier(codegen, orig_name);
-        }
-        
-        const init_field_count: i32 = expr.struct_init_field_count;
-        
-        // 查找结构体声明以获取字段默认值
-        var struct_decl: &ASTNode = null;
-        if codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
-            var di: i32 = 0;
-            while di < codegen.program_node.program_decl_count {
-                const decl: &ASTNode = codegen.program_node.program_decls[di];
-                if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL && 
-                    decl.struct_decl_name != null && str_equals(decl.struct_decl_name, orig_name) != 0 {
-                    struct_decl = decl;
-                    break;
-                }
-                di = di + 1;
-            }
-        }
-        
-        fprintf(codegen.output as *void, "(struct %s){" as *byte, struct_name as *byte);
-        
-        // 如果找到结构体声明，按结构体字段顺序生成初始化值（包含默认值）
-        if struct_decl != null && struct_decl.struct_decl_fields != null {
-            const struct_field_count: i32 = struct_decl.struct_decl_field_count;
-            var output_count: i32 = 0;
-            
-            var fi: i32 = 0;
-            while fi < struct_field_count {
-                const field: &ASTNode = struct_decl.struct_decl_fields[fi];
-                if field == null || field.type != ASTNodeType.AST_VAR_DECL || field.var_decl_name == null {
-                    fi = fi + 1;
-                    continue;
-                }
-                
-                const field_name: &byte = field.var_decl_name;
-                const safe_field_name: &byte = get_safe_c_identifier(codegen, field_name);
-                
-                // 查找用户是否提供了这个字段的值
-                var user_value: &ASTNode = null;
-                var ui: i32 = 0;
-                while ui < init_field_count {
-                    if expr.struct_init_field_names[ui] != null && 
-                        str_equals(expr.struct_init_field_names[ui], field_name) != 0 {
-                        user_value = expr.struct_init_field_values[ui];
-                        break;
-                    }
-                    ui = ui + 1;
-                }
-                
-                if output_count > 0 {
-                    fputs(", " as *byte, codegen.output as *void);
-                }
-                fprintf(codegen.output as *void, ".%s = " as *byte, safe_field_name as *byte);
-                
-                if user_value != null {
-                    // 使用用户提供的值
-                    gen_expr(codegen, user_value);
-                } else if field.var_decl_init != null {
-                    // 使用字段默认值
-                    gen_expr(codegen, field.var_decl_init);
-                } else {
-                    // 没有默认值，使用零值；数组字段：元素为聚合用 {{0}}，否则用 {0}
-                    const ft: &ASTNode = field.var_decl_type;
-                    if ft != null && ft.type == ASTNodeType.AST_TYPE_ARRAY {
-                        if array_element_is_aggregate_c99(codegen, ft) != 0 {
-                            fputs("{{0}}" as *byte, codegen.output as *void);
-                        } else {
-                            fputs("{0}" as *byte, codegen.output as *void);
-                        }
-                    } else {
-                        fputs("0" as *byte, codegen.output as *void);
-                    }
-                }
-                output_count = output_count + 1;
-                fi = fi + 1;
-            }
-        } else {
-            // 回退：只生成用户提供的字段
-            var i: i32 = 0;
-            while i < init_field_count {
-                const safe_field_name: &byte = get_safe_c_identifier(codegen, expr.struct_init_field_names[i]);
-                fprintf(codegen.output as *void, ".%s = " as *byte, safe_field_name as *byte);
-                gen_expr(codegen, expr.struct_init_field_values[i]);
-                if i < init_field_count - 1 {
-                    fputs(", " as *byte, codegen.output as *void);
-                }
-                i = i + 1;
-            }
-        }
-        fputc(125, codegen.output as *void);  // '}'
-    } else if expr.type == ASTNodeType.AST_ARRAY_LITERAL {
-        const element_count: i32 = expr.array_literal_element_count;
-        const repeat_count_expr: &ASTNode = expr.array_literal_repeat_count_expr;
-        fputc(123, codegen.output as *void);  // '{'
-        if repeat_count_expr != null && element_count >= 1 {
-            var nn: i32 = eval_const_expr(codegen, repeat_count_expr);
-            if nn <= 0 {
-                nn = 1;
-            }
-            var i: i32 = 0;
-            while i < nn {
-                gen_expr(codegen, expr.array_literal_elements[0]);
-                if i < nn - 1 {
-                    fputs(", " as *byte, codegen.output as *void);
-                }
-                i = i + 1;
-            }
-        } else if element_count > 0 {
-            var i: i32 = 0;
-            while i < element_count {
-                gen_expr(codegen, expr.array_literal_elements[i]);
-                if i < element_count - 1 {
-                    fputs(", " as *byte, codegen.output as *void);
-                }
-                i = i + 1;
-            }
-        } else {
-            // 空数组字面量：生成 {0}
-            fputs("0" as *byte, codegen.output as *void);
-        }
-        fputc(125, codegen.output as *void);  // '}'
-    } else if expr.type == ASTNodeType.AST_TUPLE_LITERAL {
+        gen_catch_expr(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        gen_binary_expr(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_UNARY_EXPR {
+        gen_unary_expr(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
+        gen_member_access(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_SLICE_EXPR {
+        gen_slice_expr(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_ARRAY_ACCESS {
+        gen_array_access(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_STRUCT_INIT {
+        gen_struct_init(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_ARRAY_LITERAL {
+        gen_array_literal(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_TUPLE_LITERAL {
         // 元组字面量 (e0, e1, ...) -> (struct { T0 f0; T1 f1; }){ .f0 = e0, .f1 = e1 }
         const elements: & & ASTNode = expr.tuple_literal_elements;
         const n: i32 = expr.tuple_literal_element_count;
@@ -1339,218 +501,10 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         gen_expr(codegen, expr.usize_from_ptr_ptr);
         fputc(41, codegen.output as *void);  // ')'
     } else if expr.type == ASTNodeType.AST_SIZEOF {
-        const target: &ASTNode = expr.sizeof_expr_target;
-        const is_type: i32 = expr.sizeof_expr_is_type;
-        // @size_of 返回 i32，需要显式转换为 int32_t 避免无符号算术警告
-        fputs("(int32_t)sizeof(" as *byte, codegen.output as *void);
-        if is_type != 0 {
-            // 显式检查是否是结构体类型（即使在 c99_type_to_c 中查找失败）
-            if target.type == ASTNodeType.AST_TYPE_NAMED {
-                const name: &byte = target.type_named_name;
-                if name != null && is_c_keyword(name) == 0 {
-                    // 检查是否是结构体（检查是否在表中，不管是否已定义）
-                    const safe_name: &byte = get_safe_c_identifier(codegen, name);
-                    if is_struct_in_table(codegen, safe_name) != 0 {
-                        fprintf(codegen.output as *void, "struct %s" as *byte, safe_name as *byte);
-                    } else {
-                        // 如果不在表中，尝试从程序节点中查找结构体声明
-                        if codegen.program_node != null {
-                            const decl_count: i32 = codegen.program_node.program_decl_count;
-                            var found: i32 = 0;
-                            var i: i32 = 0;
-                            while i < decl_count {
-                                const decl: &ASTNode = codegen.program_node.program_decls[i];
-                                if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL {
-                                    const struct_name: &byte = decl.struct_decl_name;
-                                    if struct_name != null {
-                                        const safe_struct_name: &byte = get_safe_c_identifier(codegen, struct_name);
-                                        if strcmp(safe_struct_name as *byte, safe_name as *byte) == 0 {
-                                            fprintf(codegen.output as *void, "struct %s" as *byte, safe_name as *byte);
-                                            found = 1;
-                                            break;
-                                        }
-                                    }
-                                }
-                                i = i + 1;
-                            }
-                            if found == 0 {
-                                // 不是结构体，使用默认类型转换
-                                const type_c: &byte = c99_type_to_c(codegen, target);
-                                fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
-                            }
-                        } else {
-                            const type_c: &byte = c99_type_to_c(codegen, target);
-                            fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
-                        }
-                    }
-                } else {
-                    const type_c: &byte = c99_type_to_c(codegen, target);
-                    fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
-                }
-            } else {
-                const type_c: &byte = c99_type_to_c(codegen, target);
-                // 检查是否是数组指针类型（包含 [数字] *，且 * 在末尾）
-                const bracket: *byte = strchr(type_c as *byte, 91);  // '['
-                const asterisk: *byte = strrchr(type_c as *byte, 42);  // '*' 从后往前找最后一个 *
-                if bracket != null && asterisk != null && bracket < asterisk {
-                    // 检查 * 是否在末尾（后面只有空格或结束）
-                    const asterisk_offset: i32 = ptr_diff(asterisk, type_c as *byte);
-                    var after_asterisk_offset: i32 = asterisk_offset + 1;
-                    const type_c_len: i32 = strlen(type_c as *byte);
-                    while after_asterisk_offset < type_c_len && type_c[after_asterisk_offset] == 32 {  // ' '
-                        after_asterisk_offset = after_asterisk_offset + 1;
-                    }
-                    if after_asterisk_offset >= type_c_len || type_c[after_asterisk_offset] == 0 {
-                        // 数组指针类型：T[N] * -> T(*)[N]
-                        // 找到 ']' 的位置
-                        const close_bracket: *byte = strchr(bracket, 93);  // ']'
-                        if close_bracket != null {
-                            const base_len: i32 = ptr_diff(bracket, type_c as *byte);
-                            const array_spec_len: i32 = ptr_diff(close_bracket, bracket) + 1;
-                            // 注意：Uya Mini 不支持 %.*s，需要手动处理
-                            var temp_buf: [byte: TEMP_BUF_SIZE] = [];
-                            var j: i32 = 0;
-                            while j < base_len && j < TEMP_BUF_SIZE - 1 {
-                                temp_buf[j] = type_c[j];
-                                j = j + 1;
-                            }
-                            if j >= 0 && j < TEMP_BUF_SIZE {
-                                temp_buf[j] = 0;
-                            }
-                            fprintf(codegen.output as *void, "%s(*)" as *byte, &temp_buf[0] as *byte);
-                            // 输出数组规格
-                            j = 0;
-                            while j < array_spec_len && j < TEMP_BUF_SIZE - 1 {
-                                temp_buf[j] = bracket[j];
-                                j = j + 1;
-                            }
-                            if j >= 0 && j < TEMP_BUF_SIZE {
-                                temp_buf[j] = 0;
-                            }
-                            fprintf(codegen.output as *void, "%s" as *byte, &temp_buf[0] as *byte);
-                        } else {
-                            fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
-                        }
-                    } else {
-                        fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
-                    }
-                } else {
-                    fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
-                }
-            }
-        } else {
-            // 即使 is_type = 0，也检查是否是结构体标识符（如 sizeof(Point) 中的 Point）
-            if target.type == ASTNodeType.AST_IDENTIFIER || target.type == ASTNodeType.AST_TYPE_NAMED {
-                var name: &byte = null;
-                if target.type == ASTNodeType.AST_IDENTIFIER {
-                    name = target.identifier_name;
-                } else {
-                    name = target.type_named_name;
-                }
-                if name != null && is_c_keyword(name) == 0 {
-                    const safe_name: &byte = get_safe_c_identifier(codegen, name);
-                    if is_struct_in_table(codegen, safe_name) != 0 {
-                        fprintf(codegen.output as *void, "struct %s" as *byte, safe_name as *byte);
-                    } else {
-                        var is_enum: i32 = is_enum_in_table(codegen, safe_name);
-                        if is_enum == 0 && find_enum_decl_c99(codegen, safe_name) != null {
-                            is_enum = 1;
-                        }
-                        if is_enum != 0 {
-                            fprintf(codegen.output as *void, "enum %s" as *byte, safe_name as *byte);
-                        } else {
-                            gen_expr(codegen, target);
-                        }
-                    }
-                } else {
-                    gen_expr(codegen, target);
-                }
-            } else {
-                gen_expr(codegen, target);
-            }
-        }
-        fputc(41, codegen.output as *void);  // ')'
-    } else if expr.type == ASTNodeType.AST_LEN {
-        const array: &ASTNode = expr.len_expr_array;
-        
-        if array.type == ASTNodeType.AST_SLICE_EXPR {
-            fputc(40, codegen.output as *void);
-            gen_expr(codegen, array);
-            fputs(").len" as *byte, codegen.output as *void);
-            return;
-        }
-        if array.type == ASTNodeType.AST_MEMBER_ACCESS {
-            const type_c: &byte = get_c_type_of_expr(codegen, array);
-            if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
-                gen_expr(codegen, array);
-                fputs(".len" as *byte, codegen.output as *void);
-                return;
-            }
-        }
-        if array.type == ASTNodeType.AST_IDENTIFIER {
-            const type_c: &byte = get_identifier_type_c(codegen, array.identifier_name);
-            if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
-                gen_expr(codegen, array);
-                fputs(".len" as *byte, codegen.output as *void);
-                return;
-            }
-        }
-        
-        // 检查数组表达式是否是标识符（局部变量或参数）
-        if array.type == ASTNodeType.AST_IDENTIFIER {
-            const var_name: &byte = array.identifier_name;
-            
-            // 查找变量类型以确定数组大小
-            var found: i32 = 0;
-            var array_size: i32 = -1;
-            
-            // 检查局部变量
-            var i: i32 = codegen.local_variable_count - 1;
-            while i >= 0 {
-                if strcmp(codegen.local_variables[i].name as *byte, var_name as *byte) == 0 {
-                    const type_c: &byte = codegen.local_variables[i].type_c;
-                    if type_c != null {
-                        // 从类型字符串中提取数组大小，格式如 "int32_t[3]"
-                        const bracket: *byte = strchr(type_c as *byte, 91);  // '['
-                        if bracket != null {
-                            const bracket_offset: i32 = ptr_diff(bracket, type_c as *byte);
-                            const close_bracket: *byte = strchr(&type_c[bracket_offset + 1] as *byte, 93);  // ']'
-                            if close_bracket != null {
-                                // 提取数字部分
-                                const num_len: i32 = ptr_diff(close_bracket, bracket) - 1;
-                                var num_buf: [byte: NUM_BUF_SIZE] = [];
-                                if num_len < NUM_BUF_SIZE && num_len > 0 {
-                                    memcpy(&num_buf[0] as *void, &type_c[bracket_offset + 1] as *void, num_len);
-                                    num_buf[num_len] = 0;
-                                    array_size = atoi(&num_buf[0] as *byte);
-                                    if array_size > 0 {
-                                        fprintf(codegen.output as *void, "%d" as *byte, array_size);
-                                        found = 1;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    break;
-                }
-                i = i - 1;
-            }
-            
-            // 如果找到数组大小，直接输出
-            if found != 0 {
-                return;
-            }
-        }
-        
-        // 备用方案：使用 sizeof 计算（适用于非参数数组）
-        // 注意：这只适用于栈分配的数组，不适用于函数参数
-        fputs("sizeof(" as *byte, codegen.output as *void);
-        gen_expr(codegen, array);
-        fputs(") / sizeof((" as *byte, codegen.output as *void);
-        gen_expr(codegen, array);
-        fputs(")[0])" as *byte, codegen.output as *void);
-    } else if expr.type == ASTNodeType.AST_ALIGNOF {
+        gen_sizeof_expr(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_LEN {
+        gen_len_expr(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_ALIGNOF {
         const target: &ASTNode = expr.alignof_expr_target;
         const is_type: i32 = expr.alignof_expr_is_type;
         
@@ -1633,95 +587,8 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             fputc(41, codegen.output as *void);  // ')'
         }
     } else if expr.type == ASTNodeType.AST_CAST_EXPR {
-        const src_expr: &ASTNode = expr.cast_expr_expr;
-        const target_type: &ASTNode = expr.cast_expr_target_type;
-        const is_force_cast: i32 = expr.cast_expr_is_force_cast;
-        const type_c: &byte = c99_type_to_c(codegen, target_type);
-        if is_force_cast != 0 {
-            // as! 强转：返回 !T。当源为 !i64 等错误联合时，需解包再包装
-            const src_union_c: &byte = get_c_type_of_expr(codegen, src_expr);
-            var src_is_err_union: i32 = 0;
-            if src_union_c != null && strstr(src_union_c as *byte, "err_union_" as *byte) != null {
-                src_is_err_union = 1;
-            }
-            const tmp: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, 0, 0, codegen.arena, null);
-            var union_c: &byte = "void" as &byte;
-            if tmp != null {
-                tmp.type_error_union_payload_type = target_type;
-                union_c = c99_type_to_c(codegen, tmp);
-            }
-            var is_void: i32 = 0;
-            if target_type != null && target_type.type == ASTNodeType.AST_TYPE_NAMED && target_type.type_named_name != null && strcmp(target_type.type_named_name as *byte, "void" as *byte) == 0 {
-                is_void = 1;
-            }
-            if src_is_err_union != 0 && is_void == 0 {
-                fprintf(codegen.output as *void, "({ %s _uya_asbang_src = " as *byte, src_union_c as *byte);
-                gen_expr(codegen, src_expr);
-                fprintf(codegen.output as *void, "; %s _uya_asbang; " as *byte, union_c as *byte);
-                fputs("if (_uya_asbang_src.error_id != 0) { " as *byte, codegen.output as *void);
-                fputs("_uya_asbang.error_id = _uya_asbang_src.error_id; _uya_asbang.value = 0; " as *byte, codegen.output as *void);
-                fputs("} else { _uya_asbang.error_id = 0; " as *byte, codegen.output as *void);
-                fprintf(codegen.output as *void, "_uya_asbang.value = (%s)(_uya_asbang_src.value); " as *byte, type_c as *byte);
-                fputs("} _uya_asbang; })" as *byte, codegen.output as *void);
-            } else if src_is_err_union != 0 && is_void != 0 {
-                fprintf(codegen.output as *void, "({ %s _uya_asbang_src = " as *byte, src_union_c as *byte);
-                gen_expr(codegen, src_expr);
-                fprintf(codegen.output as *void, "; %s _uya_asbang; " as *byte, union_c as *byte);
-                fputs("_uya_asbang.error_id = _uya_asbang_src.error_id; _uya_asbang; })" as *byte, codegen.output as *void);
-            } else {
-                fprintf(codegen.output as *void, "({ %s _uya_asbang = { .error_id = 0" as *byte, union_c as *byte);
-                if is_void == 0 {
-                    fprintf(codegen.output as *void, ", .value = (%s)(" as *byte, type_c as *byte);
-                    gen_expr(codegen, src_expr);
-                    fputs(") }; _uya_asbang; })" as *byte, codegen.output as *void);
-                } else {
-                    fputs(" }; " as *byte, codegen.output as *void);
-                    gen_expr(codegen, src_expr);
-                    fputs("; _uya_asbang; })" as *byte, codegen.output as *void);
-                }
-            }
-        } else {
-            // 特殊处理：null as * *byte -> (const uint8_t **)NULL（用于 strtol/strtod，匹配 libc 签名）
-            var is_null_to_byte_ptr_ptr: i32 = 0;
-            if src_expr != null && src_expr.type == ASTNodeType.AST_IDENTIFIER && src_expr.identifier_name != null && strcmp(src_expr.identifier_name as *byte, "null" as *byte) == 0 {
-                // 检查目标类型是否是 * *byte（优先检查 AST 结构，然后检查类型字符串）
-                if target_type != null && target_type.type == ASTNodeType.AST_TYPE_POINTER {
-                    const inner_type: &ASTNode = target_type.type_pointer_pointed_type;
-                    if inner_type != null && inner_type.type == ASTNodeType.AST_TYPE_POINTER {
-                        const inner_inner_type: &ASTNode = inner_type.type_pointer_pointed_type;
-                        if inner_inner_type != null && inner_inner_type.type == ASTNodeType.AST_TYPE_NAMED && inner_inner_type.type_named_name != null && strcmp(inner_inner_type.type_named_name as *byte, "byte" as *byte) == 0 {
-                            is_null_to_byte_ptr_ptr = 1;
-                        }
-                    }
-                }
-                // 如果 AST 结构检查没有匹配，再检查类型字符串
-                if is_null_to_byte_ptr_ptr == 0 && type_c != null {
-                    if strcmp(type_c as *byte, "uint8_t **" as *byte) == 0 {
-                        is_null_to_byte_ptr_ptr = 1;
-                    } else {
-                        var has_uint8: i32 = 0;
-                        var has_double_star: i32 = 0;
-                        if strstr(type_c as *byte, "uint8_t" as *byte) != null {
-                            has_uint8 = 1;
-                        }
-                        if strstr(type_c as *byte, "**" as *byte) != null {
-                            has_double_star = 1;
-                        }
-                        if has_uint8 != 0 && has_double_star != 0 {
-                            is_null_to_byte_ptr_ptr = 1;
-                        }
-                    }
-                }
-            }
-            if is_null_to_byte_ptr_ptr != 0 {
-                fputs("(const uint8_t **)NULL" as *byte, codegen.output as *void);
-            } else {
-                fputc(40, codegen.output as *void);  // '('
-                fprintf(codegen.output as *void, "%s)" as *byte, type_c as *byte);
-                gen_expr(codegen, src_expr);
-            }
-        }
-    } else if expr.type == ASTNodeType.AST_IDENTIFIER {
+        gen_cast_expr(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_IDENTIFIER {
         const name: &byte = expr.identifier_name;
         if name != null && strcmp(name as *byte, "null" as *byte) == 0 {
             fputs("NULL" as *byte, codegen.output as *void);
@@ -1736,6 +603,83 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             }
         }
     } else if expr.type == ASTNodeType.AST_CALL_EXPR {
+        gen_call_expr(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_ASSIGN {
+        // 赋值表达式（右结合）：dest = src；dest 为 _ 时仅求值右侧
+        const dest: &ASTNode = expr.assign_dest;
+        const src: &ASTNode = expr.assign_src;
+        
+        fputc(40, codegen.output as *void);  // '('
+        if dest.type == ASTNodeType.AST_UNDERSCORE {
+            gen_expr(codegen, src);
+        } else {
+            gen_expr(codegen, dest);
+            fputs(" = " as *byte, codegen.output as *void);
+            gen_expr(codegen, src);
+        }
+        fputc(41, codegen.output as *void);  // ')'
+    } else if expr.type == ASTNodeType.AST_MATCH_EXPR {
+        gen_match_expr(codegen, expr);
+        } else if expr.type == ASTNodeType.AST_BLOCK {
+        // 块表达式：使用 GCC 语句表达式扩展 ({ stmts; last_expr; })
+        // 最后一条语句如果是表达式，作为整个块的值
+        const block_stmts: & & ASTNode = expr.block_stmts;
+        const block_count: i32 = expr.block_stmt_count;
+        
+        fputs("({ " as *byte, codegen.output as *void);
+        
+        // 找到最后一个非声明的表达式作为返回值
+        var last_expr_idx: i32 = -1;
+        var j: i32 = block_count - 1;
+        while j >= 0 {
+            const bs: &ASTNode = block_stmts[j];
+            if bs == null {
+                j = j - 1;
+                continue;
+            }
+            if bs.type == ASTNodeType.AST_VAR_DECL {
+                j = j - 1;
+                continue;
+            }
+            if bs.type == ASTNodeType.AST_IF_STMT || bs.type == ASTNodeType.AST_WHILE_STMT ||
+                bs.type == ASTNodeType.AST_FOR_STMT || bs.type == ASTNodeType.AST_RETURN_STMT ||
+                bs.type == ASTNodeType.AST_BREAK_STMT || bs.type == ASTNodeType.AST_CONTINUE_STMT ||
+                bs.type == ASTNodeType.AST_BLOCK || bs.type == ASTNodeType.AST_ASSIGN ||
+                bs.type == ASTNodeType.AST_DEFER_STMT || bs.type == ASTNodeType.AST_ERRDEFER_STMT {
+                j = j - 1;
+                continue;
+            }
+            last_expr_idx = j;
+            break;
+        }
+        
+        // 输出所有语句（除了最后一个表达式，它会作为返回值）
+        var k: i32 = 0;
+        while k < block_count {
+            const bs: &ASTNode = block_stmts[k];
+            if bs == null {
+                k = k + 1;
+                continue;
+            }
+            if k == last_expr_idx {
+                // 最后一个表达式，直接输出作为返回值
+                gen_expr(codegen, bs);
+                fputs("; " as *byte, codegen.output as *void);
+            } else {
+                // 普通语句
+                gen_stmt(codegen, bs);
+            }
+            k = k + 1;
+        }
+        
+        fputs("})" as *byte, codegen.output as *void);
+    } else {
+        fputs("0" as *byte, codegen.output as *void);
+    }
+}
+
+// 生成调用表达式
+fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const callee: &ASTNode = expr.call_expr_callee;
         const args: & & ASTNode = expr.call_expr_args;
         const arg_count: i32 = expr.call_expr_arg_count;
@@ -2413,21 +1357,742 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         fputc(41, codegen.output as *void);  // ')'
         }
         }
-    } else if expr.type == ASTNodeType.AST_ASSIGN {
-        // 赋值表达式（右结合）：dest = src；dest 为 _ 时仅求值右侧
-        const dest: &ASTNode = expr.assign_dest;
-        const src: &ASTNode = expr.assign_src;
+}
+
+// 生成二元表达式
+fn gen_binary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const left: &ASTNode = expr.binary_expr_left;
+        const right: &ASTNode = expr.binary_expr_right;
+        const op: TokenType = expr.binary_expr_op as TokenType;
         
-        fputc(40, codegen.output as *void);  // '('
-        if dest.type == ASTNodeType.AST_UNDERSCORE {
-            gen_expr(codegen, src);
+        // 错误类型比较：err == error.X 或 error.X == err -> .error_id 比较
+        if op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL {
+            if left != null && right != null {
+                if left.type == ASTNodeType.AST_IDENTIFIER && right.type == ASTNodeType.AST_ERROR_VALUE {
+                var id: i32 = c99_get_or_add_error_id(codegen, right.error_value_name);
+                if id == 0 {
+                    id = 1;
+                }
+                const safe: &byte = get_c_name_for_identifier_ref(codegen, left.identifier_name);
+                if op == TokenType.TOKEN_NOT_EQUAL {
+                    fprintf(codegen.output as *void, "(%s.error_id != %dU)" as *byte, safe as *byte, id);
+                } else {
+                    fprintf(codegen.output as *void, "(%s.error_id == %dU)" as *byte, safe as *byte, id);
+                }
+                return;
+                }
+                if left.type == ASTNodeType.AST_ERROR_VALUE && right.type == ASTNodeType.AST_IDENTIFIER {
+                var id: i32 = c99_get_or_add_error_id(codegen, left.error_value_name);
+                if id == 0 {
+                    id = 1;
+                }
+                const safe: &byte = get_c_name_for_identifier_ref(codegen, right.identifier_name);
+                if op == TokenType.TOKEN_NOT_EQUAL {
+                    fprintf(codegen.output as *void, "(%dU != %s.error_id)" as *byte, id, safe as *byte);
+                } else {
+                    fprintf(codegen.output as *void, "(%dU == %s.error_id)" as *byte, id, safe as *byte);
+                }
+                return;
+                }
+            }
+        }
+        
+        // 检查是否是结构体比较（== 或 !=）
+        var is_struct_comparison: i32 = 0;
+        if (op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL) && left != null && right != null {
+            // 检查左操作数是否是结构体类型
+            if left.type == ASTNodeType.AST_IDENTIFIER {
+                if is_identifier_struct_type(codegen, left.identifier_name) != 0 {
+                    is_struct_comparison = 1;
+                }
+            } else if left.type == ASTNodeType.AST_STRUCT_INIT {
+                is_struct_comparison = 1;
+            }
+        }
+        
+        if is_struct_comparison != 0 {
+            // 解析出结构体声明，空结构体直接输出 (1)/(0)
+            var struct_decl: &ASTNode = null;
+            if left.type == ASTNodeType.AST_IDENTIFIER {
+                const type_c: &byte = get_identifier_type_c(codegen, left.identifier_name);
+                if type_c != null {
+                    const struct_prefix: *byte = strstr(type_c as *byte, "struct " as *byte);
+                    if struct_prefix != null {
+                        const name_start: &byte = (struct_prefix + 7) as &byte;
+                        struct_decl = find_struct_decl_c99(codegen, name_start);
+                    }
+                }
+            } else if left.type == ASTNodeType.AST_STRUCT_INIT {
+                struct_decl = find_struct_decl_c99(codegen, left.struct_init_struct_name);
+            }
+            if struct_decl != null && struct_decl.struct_decl_field_count == 0 {
+                if op == TokenType.TOKEN_EQUAL {
+                    fputs("(1)" as *byte, codegen.output as *void);
+                } else if op == TokenType.TOKEN_NOT_EQUAL {
+                    fputs("(0)" as *byte, codegen.output as *void);
+                }
+            } else if struct_decl != null && struct_decl.type == ASTNodeType.AST_STRUCT_DECL && struct_decl.struct_decl_field_count > 0 {
+                // 按字段比较，与 C 编译器一致，避免 padding 未初始化导致 memcmp 结果错误
+                if op == TokenType.TOKEN_NOT_EQUAL {
+                    fputs("(!(" as *byte, codegen.output as *void);
+                } else {
+                    fputc(40, codegen.output as *void);  // '('
+                }
+                var i: i32 = 0;
+                while i < struct_decl.struct_decl_field_count {
+                    const field: &ASTNode = struct_decl.struct_decl_fields[i];
+                    if field != null && field.type == ASTNodeType.AST_VAR_DECL {
+                        const field_type: &ASTNode = field.var_decl_type;
+                        const safe_field: &byte = get_safe_c_identifier(codegen, field.var_decl_name);
+                        if safe_field != null {
+                            var field_needs_memcmp: i32 = 0;
+                            if field_type != null {
+                                if field_type.type == ASTNodeType.AST_TYPE_NAMED {
+                                    const type_name: &byte = field_type.type_named_name;
+                                    if type_name != null && find_struct_decl_c99(codegen, type_name) != null {
+                                        field_needs_memcmp = 1;
+                                    }
+                                } else if field_type.type == ASTNodeType.AST_TYPE_ARRAY {
+                                    field_needs_memcmp = 1;
+                                }
+                            }
+                            if field_needs_memcmp != 0 {
+                                fputs("(__uya_memcmp(&(" as *byte, codegen.output as *void);
+                                gen_expr(codegen, left);
+                                fputs(")." as *byte, codegen.output as *void);
+                                fputs(safe_field as *byte, codegen.output as *void);
+                                fputs(", &(" as *byte, codegen.output as *void);
+                                gen_expr(codegen, right);
+                                fputs(")." as *byte, codegen.output as *void);
+                                fputs(safe_field as *byte, codegen.output as *void);
+                                fputs(", sizeof((" as *byte, codegen.output as *void);
+                                gen_expr(codegen, left);
+                                fputs(")." as *byte, codegen.output as *void);
+                                fputs(safe_field as *byte, codegen.output as *void);
+                                fputs(")) == 0)" as *byte, codegen.output as *void);
+                            } else {
+                                fputs("((" as *byte, codegen.output as *void);
+                                gen_expr(codegen, left);
+                                fputs(")." as *byte, codegen.output as *void);
+                                fputs(safe_field as *byte, codegen.output as *void);
+                                fputs(" == (" as *byte, codegen.output as *void);
+                                gen_expr(codegen, right);
+                                fputs(")." as *byte, codegen.output as *void);
+                                fputs(safe_field as *byte, codegen.output as *void);
+                                fputs(")" as *byte, codegen.output as *void);
+                            }
+                            if i < struct_decl.struct_decl_field_count - 1 {
+                                fputs(" && " as *byte, codegen.output as *void);
+                            }
+                        }
+                    }
+                    i = i + 1;
+                }
+                fputc(41, codegen.output as *void);  // ')'
+                if op == TokenType.TOKEN_NOT_EQUAL {
+                    fputc(41, codegen.output as *void);  // ')'
+                }
+            } else {
+                // 回退：无法按字段比较时用 memcmp，与 C 编译器一致
+                fputc(40, codegen.output as *void);  // '('
+                if left.type == ASTNodeType.AST_IDENTIFIER {
+                    fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
+                    gen_expr(codegen, left);
+                    fputs(", &" as *byte, codegen.output as *void);
+                    gen_expr(codegen, right);
+                    fputs(", sizeof(" as *byte, codegen.output as *void);
+                    gen_expr(codegen, left);
+                    fputs("))" as *byte, codegen.output as *void);
+                } else if left.type == ASTNodeType.AST_STRUCT_INIT {
+                    const struct_name: &byte = left.struct_init_struct_name;
+                    fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
+                    gen_expr(codegen, left);
+                    fputs(", &" as *byte, codegen.output as *void);
+                    gen_expr(codegen, right);
+                    const safe_struct_name: &byte = get_safe_c_identifier(codegen, struct_name);
+                    fprintf(codegen.output as *void, ", sizeof(struct %s))" as *byte, safe_struct_name as *byte);
+                } else {
+                    fputs("__uya_memcmp(&" as *byte, codegen.output as *void);
+                    gen_expr(codegen, left);
+                    fputs(", &" as *byte, codegen.output as *void);
+                    gen_expr(codegen, right);
+                    fputs(", sizeof(" as *byte, codegen.output as *void);
+                    gen_expr(codegen, left);
+                    fputs("))" as *byte, codegen.output as *void);
+                }
+                if op == TokenType.TOKEN_EQUAL {
+                    fputs(" == 0)" as *byte, codegen.output as *void);
+                } else if op == TokenType.TOKEN_NOT_EQUAL {
+                    fputs(" != 0)" as *byte, codegen.output as *void);
+                } else {
+                    fputc(41, codegen.output as *void);  // ')'
+                }
+            }
+        } else if op == TokenType.TOKEN_PLUS_PIPE || op == TokenType.TOKEN_MINUS_PIPE || op == TokenType.TOKEN_ASTERISK_PIPE ||
+            op == TokenType.TOKEN_PLUS_PERCENT || op == TokenType.TOKEN_MINUS_PERCENT || op == TokenType.TOKEN_ASTERISK_PERCENT {
+            // 饱和运算 +| -| *| 或包装运算 +% -% *%
+            var type_c: &byte = get_c_type_of_expr(codegen, left);
+            if type_c == null { type_c = "int32_t" as &byte; }
+            if op == TokenType.TOKEN_PLUS_PIPE || op == TokenType.TOKEN_MINUS_PIPE || op == TokenType.TOKEN_ASTERISK_PIPE {
+                var base_type: &byte = type_c;
+                if type_c != null && strncmp(type_c as *byte, "const " as *byte, 6) == 0 { base_type = (type_c as *byte + 6) as &byte; }
+                if base_type == null { base_type = "int32_t" as &byte; }
+                fputs("({ " as *byte, codegen.output as *void);
+                fprintf(codegen.output as *void, "%s _l = (" as *byte, base_type as *byte);
+                gen_expr(codegen, left);
+                fputs("); " as *byte, codegen.output as *void);
+                fprintf(codegen.output as *void, "%s _r = (" as *byte, base_type as *byte);
+                gen_expr(codegen, right);
+                fputs("); " as *byte, codegen.output as *void);
+                fprintf(codegen.output as *void, "%s _s; " as *byte, base_type as *byte);
+                if op == TokenType.TOKEN_PLUS_PIPE {
+                    fputs("__builtin_add_overflow(_l, _r, &_s) ? (_l>=0 && _r>=0 ? " as *byte, codegen.output as *void);
+                } else if op == TokenType.TOKEN_MINUS_PIPE {
+                    fputs("__builtin_sub_overflow(_l, _r, &_s) ? (_l>=0 && _r<0 ? " as *byte, codegen.output as *void);
+                } else {
+                    fprintf(codegen.output as *void, "%s _res; " as *byte, base_type as *byte);
+                    fputs("if (__builtin_mul_overflow(_l, _r, &_s)) _res = ((_l>=0 && _r>=0) || (_l<0 && _r<0)) ? " as *byte, codegen.output as *void);
+                }
+                gen_saturate_limit_from_type_c(codegen, type_c, 1);
+                fputs(" : " as *byte, codegen.output as *void);
+                gen_saturate_limit_from_type_c(codegen, type_c, 0);
+                if op == TokenType.TOKEN_ASTERISK_PIPE {
+                    fputs("; else _res = _s; _res; })" as *byte, codegen.output as *void);
+                } else {
+                    fputs(") : _s; })" as *byte, codegen.output as *void);
+                }
+            } else {
+                const ut: &byte = unsigned_type_for_wrapping(type_c);
+                fprintf(codegen.output as *void, "((%s)((%s)(" as *byte, type_c as *byte, ut as *byte);
+                gen_expr(codegen, left);
+                if op == TokenType.TOKEN_PLUS_PERCENT { fputs(") + (" as *byte, codegen.output as *void); }
+                else if op == TokenType.TOKEN_MINUS_PERCENT { fputs(") - (" as *byte, codegen.output as *void); }
+                else { fputs(") * (" as *byte, codegen.output as *void); }
+                fprintf(codegen.output as *void, "%s)(" as *byte, ut as *byte);
+                gen_expr(codegen, right);
+                fputs(")))" as *byte, codegen.output as *void);
+            }
         } else {
-            gen_expr(codegen, dest);
-            fputs(" = " as *byte, codegen.output as *void);
-            gen_expr(codegen, src);
+            // 普通二元表达式
+            fputc(40, codegen.output as *void);  // '('
+            gen_expr(codegen, left);
+            // 操作符映射
+            if op == TokenType.TOKEN_PLUS {
+                fputs(" + " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_MINUS {
+                fputs(" - " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_ASTERISK {
+                fputs(" * " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_SLASH {
+                fputs(" / " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_PERCENT {
+                fputs(" % " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_EQUAL {
+                fputs(" == " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_NOT_EQUAL {
+                fputs(" != " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_LESS {
+                fputs(" < " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_GREATER {
+                fputs(" > " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_LESS_EQUAL {
+                fputs(" <= " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_GREATER_EQUAL {
+                fputs(" >= " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_LOGICAL_AND {
+                fputs(" && " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_LOGICAL_OR {
+                fputs(" || " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_AMPERSAND {
+                fputs(" & " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_PIPE {
+                fputs(" | " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_CARET {
+                fputs(" ^ " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_LSHIFT {
+                fputs(" << " as *byte, codegen.output as *void);
+            } else if op == TokenType.TOKEN_RSHIFT {
+                fputs(" >> " as *byte, codegen.output as *void);
+            } else {
+                fputs(" + " as *byte, codegen.output as *void); // 默认为加法
+            }
+            gen_expr(codegen, right);
+            fputc(41, codegen.output as *void);  // ')'
+        }
+}
+
+// 生成成员访问表达式
+fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const object: &ASTNode = expr.member_access_object;
+        const field_name: &byte = expr.member_access_field_name;
+        
+        if object == null || field_name == null {
+            return;
+        }
+        
+        // 模块限定访问（module.item）：输出模块前缀项名
+        if expr.member_access_is_module_access != 0 {
+            const module_name: &byte = expr.member_access_module_name;
+            if module_name != null && field_name != null {
+                // 生成模块前缀名称（module_name.item_name -> module_name_item_name）
+                var prefixed_name: [i8: NAME_BUF_SIZE] = [];
+                var pi: i32 = 0;
+                var p: &i8 = module_name as &i8;
+                while p[0] != 0 && pi < NAME_BUF_SIZE / 2 {
+                    if p[0] == 46 {  // '.'
+                        prefixed_name[pi] = 95;  // '_'
+                    } else {
+                        prefixed_name[pi] = p[0];
+                    }
+                    pi = pi + 1;
+                    p = p + 1;
+                }
+                if pi >= 0 && pi < NAME_BUF_SIZE {
+                    prefixed_name[pi] = 95;  // '_'
+                }
+                pi = pi + 1;
+                p = field_name as &i8;
+                while p[0] != 0 && pi < NAME_BUF_SIZE - 6 {
+                    prefixed_name[pi] = p[0];
+                    pi = pi + 1;
+                    p = p + 1;
+                }
+                if pi >= 0 && pi < NAME_BUF_SIZE {
+                    prefixed_name[pi] = 0;
+                }
+                
+                const safe_name: &byte = get_safe_c_identifier(codegen, &prefixed_name[0]);
+                fprintf(codegen.output as *void, "%s" as *byte, safe_name as *byte);
+            } else {
+                const safe_name: &byte = get_safe_c_identifier(codegen, field_name);
+                fprintf(codegen.output as *void, "%s" as *byte, safe_name as *byte);
+            }
+            return;
+        }
+        
+        // libc.stderr/stdin/stdout：输出裸名以匹配 C 标准（C 使用 stderr 而非 libc.stderr）
+        if object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null {
+            if strcmp(object.identifier_name as *byte, "libc" as *byte) == 0 && field_name != null {
+                if strcmp(field_name as *byte, "stderr" as *byte) == 0 || strcmp(field_name as *byte, "stdin" as *byte) == 0 || strcmp(field_name as *byte, "stdout" as *byte) == 0 {
+                    fprintf(codegen.output as *void, "%s" as *byte, field_name as *byte);
+                    return;
+                }
+            }
+        }
+        
+        // 检查是否是枚举值访问（EnumName.Variant）
+        if object.type == ASTNodeType.AST_IDENTIFIER {
+            const enum_name: &byte = object.identifier_name;
+            if enum_name != null {
+                // 检查是否是枚举类型名称（不检查变量表，直接检查枚举声明）
+                const enum_decl: &ASTNode = find_enum_decl_c99(codegen, enum_name);
+                if enum_decl != null {
+                    // 是枚举类型，查找变体值
+                    const enum_value: i32 = find_enum_variant_value(codegen, enum_decl, field_name);
+                    if enum_value >= 0 {
+                        // 找到变体，直接输出枚举值名称（C中枚举值不需要前缀）
+                        const safe_variant_name: &byte = get_safe_c_identifier(codegen, field_name);
+                        fprintf(codegen.output as *void, "%s" as *byte, safe_variant_name as *byte);
+                        return;
+                    }
+                }
+            }
+        }
+        
+        // 普通字段访问（结构体字段）或元组下标（.0, .1 -> .f0, .f1）
+        var safe_field_name: &byte = null;
+        if field_name[0] >= 48 && field_name[0] <= 57 {
+            const idx: i32 = atoi(field_name as *byte);
+            const buf: &byte = arena_alloc(codegen.arena, 16) as &byte;
+            if buf != null {
+                snprintf(buf as *byte, 16, "f%d" as *byte, idx);
+                safe_field_name = buf;
+            } else {
+                safe_field_name = ("f0" as *byte) as &byte;
+            }
+        } else {
+            safe_field_name = get_safe_c_identifier(codegen, field_name);
+        }
+        if safe_field_name == null {
+            safe_field_name = ("f0" as *byte) as &byte;
+        }
+        
+        // 检查对象是否是指针类型（需要自动解引用）
+        var is_pointer: i32 = 0;
+        if object.type == ASTNodeType.AST_IDENTIFIER {
+            // 标识符：检查变量类型是否是指针
+            // 注意：需要使用 get_safe_c_identifier 转换名称，因为变量表中存储的是转换后的名称
+            const var_name: &byte = object.identifier_name;
+            if var_name != null {
+                const safe_name: &byte = get_safe_c_identifier(codegen, var_name);
+                is_pointer = is_identifier_pointer_type(codegen, safe_name);
+            }
+        } else if object.type == ASTNodeType.AST_MEMBER_ACCESS {
+            // 嵌套成员访问：检查嵌套访问的结果类型是否是指针
+            is_pointer = is_member_access_pointer_type(codegen, object);
+        } else if object.type == ASTNodeType.AST_ARRAY_ACCESS {
+            // 数组访问：检查数组元素类型是否是指针
+            // 例如：programs[i] 如果 programs 的类型是 [&ASTNode: 64]，那么 programs[i] 是指针类型
+            is_pointer = is_array_access_pointer_type(codegen, object);
+        } else if object.type == ASTNodeType.AST_UNARY_EXPR {
+            // 一元表达式：检查操作符
+            const op2: TokenType = object.unary_expr_op as TokenType;
+            if op2 == TokenType.TOKEN_AMPERSAND {
+                // &expr：取地址表达式的结果是指针，但这里访问的是 expr 的字段
+                // 实际上不应该发生这种情况，因为 &expr.field 在语法上不合法
+                // 但为了安全，我们假设不是指针
+                is_pointer = 0;
+            } else if op2 == TokenType.TOKEN_ASTERISK {
+                // *ptr：解引用表达式的结果是结构体本身，不是指针
+                // 所以应该使用 . 而不是 ->
+                is_pointer = 0;
+            }
+            // 其他一元操作符（!, -, +）不影响类型判断
+        }
+        
+        if codegen.emitting_assign_lhs != 0 && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null &&
+            strcmp(object.identifier_name as *byte, "self" as *byte) == 0 && codegen.current_method_struct_name != null {
+            const safe_struct: &byte = get_safe_c_identifier(codegen, codegen.current_method_struct_name);
+            if safe_struct != null {
+                fprintf(codegen.output as *void, "((struct %s *)self)" as *byte, safe_struct as *byte);
+            } else {
+                gen_expr(codegen, object);
+            }
+        } else {
+            gen_expr(codegen, object);
+        }
+        if is_pointer != 0 {
+            // 指针类型使用 -> 操作符
+            fprintf(codegen.output as *void, "->%s" as *byte, safe_field_name as *byte);
+        } else {
+            // 非指针类型使用 . 操作符
+            fprintf(codegen.output as *void, ".%s" as *byte, safe_field_name as *byte);
+        }
+}
+
+// 生成 sizeof 表达式
+fn gen_sizeof_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const target: &ASTNode = expr.sizeof_expr_target;
+        const is_type: i32 = expr.sizeof_expr_is_type;
+        // @size_of 返回 i32，需要显式转换为 int32_t 避免无符号算术警告
+        fputs("(int32_t)sizeof(" as *byte, codegen.output as *void);
+        if is_type != 0 {
+            // 显式检查是否是结构体类型（即使在 c99_type_to_c 中查找失败）
+            if target.type == ASTNodeType.AST_TYPE_NAMED {
+                const name: &byte = target.type_named_name;
+                if name != null && is_c_keyword(name) == 0 {
+                    // 检查是否是结构体（检查是否在表中，不管是否已定义）
+                    const safe_name: &byte = get_safe_c_identifier(codegen, name);
+                    if is_struct_in_table(codegen, safe_name) != 0 {
+                        fprintf(codegen.output as *void, "struct %s" as *byte, safe_name as *byte);
+                    } else {
+                        // 如果不在表中，尝试从程序节点中查找结构体声明
+                        if codegen.program_node != null {
+                            const decl_count: i32 = codegen.program_node.program_decl_count;
+                            var found: i32 = 0;
+                            var i: i32 = 0;
+                            while i < decl_count {
+                                const decl: &ASTNode = codegen.program_node.program_decls[i];
+                                if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL {
+                                    const struct_name: &byte = decl.struct_decl_name;
+                                    if struct_name != null {
+                                        const safe_struct_name: &byte = get_safe_c_identifier(codegen, struct_name);
+                                        if strcmp(safe_struct_name as *byte, safe_name as *byte) == 0 {
+                                            fprintf(codegen.output as *void, "struct %s" as *byte, safe_name as *byte);
+                                            found = 1;
+                                            break;
+                                        }
+                                    }
+                                }
+                                i = i + 1;
+                            }
+                            if found == 0 {
+                                // 不是结构体，使用默认类型转换
+                                const type_c: &byte = c99_type_to_c(codegen, target);
+                                fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
+                            }
+                        } else {
+                            const type_c: &byte = c99_type_to_c(codegen, target);
+                            fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
+                        }
+                    }
+                } else {
+                    const type_c: &byte = c99_type_to_c(codegen, target);
+                    fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
+                }
+            } else {
+                const type_c: &byte = c99_type_to_c(codegen, target);
+                // 检查是否是数组指针类型（包含 [数字] *，且 * 在末尾）
+                const bracket: *byte = strchr(type_c as *byte, 91);  // '['
+                const asterisk: *byte = strrchr(type_c as *byte, 42);  // '*' 从后往前找最后一个 *
+                if bracket != null && asterisk != null && bracket < asterisk {
+                    // 检查 * 是否在末尾（后面只有空格或结束）
+                    const asterisk_offset: i32 = ptr_diff(asterisk, type_c as *byte);
+                    var after_asterisk_offset: i32 = asterisk_offset + 1;
+                    const type_c_len: i32 = strlen(type_c as *byte);
+                    while after_asterisk_offset < type_c_len && type_c[after_asterisk_offset] == 32 {  // ' '
+                        after_asterisk_offset = after_asterisk_offset + 1;
+                    }
+                    if after_asterisk_offset >= type_c_len || type_c[after_asterisk_offset] == 0 {
+                        // 数组指针类型：T[N] * -> T(*)[N]
+                        // 找到 ']' 的位置
+                        const close_bracket: *byte = strchr(bracket, 93);  // ']'
+                        if close_bracket != null {
+                            const base_len: i32 = ptr_diff(bracket, type_c as *byte);
+                            const array_spec_len: i32 = ptr_diff(close_bracket, bracket) + 1;
+                            // 注意：Uya Mini 不支持 %.*s，需要手动处理
+                            var temp_buf: [byte: TEMP_BUF_SIZE] = [];
+                            var j: i32 = 0;
+                            while j < base_len && j < TEMP_BUF_SIZE - 1 {
+                                temp_buf[j] = type_c[j];
+                                j = j + 1;
+                            }
+                            if j >= 0 && j < TEMP_BUF_SIZE {
+                                temp_buf[j] = 0;
+                            }
+                            fprintf(codegen.output as *void, "%s(*)" as *byte, &temp_buf[0] as *byte);
+                            // 输出数组规格
+                            j = 0;
+                            while j < array_spec_len && j < TEMP_BUF_SIZE - 1 {
+                                temp_buf[j] = bracket[j];
+                                j = j + 1;
+                            }
+                            if j >= 0 && j < TEMP_BUF_SIZE {
+                                temp_buf[j] = 0;
+                            }
+                            fprintf(codegen.output as *void, "%s" as *byte, &temp_buf[0] as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
+                        }
+                    } else {
+                        fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
+                    }
+                } else {
+                    fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
+                }
+            }
+        } else {
+            // 即使 is_type = 0，也检查是否是结构体标识符（如 sizeof(Point) 中的 Point）
+            if target.type == ASTNodeType.AST_IDENTIFIER || target.type == ASTNodeType.AST_TYPE_NAMED {
+                var name: &byte = null;
+                if target.type == ASTNodeType.AST_IDENTIFIER {
+                    name = target.identifier_name;
+                } else {
+                    name = target.type_named_name;
+                }
+                if name != null && is_c_keyword(name) == 0 {
+                    const safe_name: &byte = get_safe_c_identifier(codegen, name);
+                    if is_struct_in_table(codegen, safe_name) != 0 {
+                        fprintf(codegen.output as *void, "struct %s" as *byte, safe_name as *byte);
+                    } else {
+                        var is_enum: i32 = is_enum_in_table(codegen, safe_name);
+                        if is_enum == 0 && find_enum_decl_c99(codegen, safe_name) != null {
+                            is_enum = 1;
+                        }
+                        if is_enum != 0 {
+                            fprintf(codegen.output as *void, "enum %s" as *byte, safe_name as *byte);
+                        } else {
+                            gen_expr(codegen, target);
+                        }
+                    }
+                } else {
+                    gen_expr(codegen, target);
+                }
+            } else {
+                gen_expr(codegen, target);
+            }
         }
         fputc(41, codegen.output as *void);  // ')'
-    } else if expr.type == ASTNodeType.AST_MATCH_EXPR {
+}
+
+// 生成 len 表达式
+fn gen_len_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const array: &ASTNode = expr.len_expr_array;
+        
+        if array.type == ASTNodeType.AST_SLICE_EXPR {
+            fputc(40, codegen.output as *void);
+            gen_expr(codegen, array);
+            fputs(").len" as *byte, codegen.output as *void);
+            return;
+        }
+        if array.type == ASTNodeType.AST_MEMBER_ACCESS {
+            const type_c: &byte = get_c_type_of_expr(codegen, array);
+            if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
+                gen_expr(codegen, array);
+                fputs(".len" as *byte, codegen.output as *void);
+                return;
+            }
+        }
+        if array.type == ASTNodeType.AST_IDENTIFIER {
+            const type_c: &byte = get_identifier_type_c(codegen, array.identifier_name);
+            if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
+                gen_expr(codegen, array);
+                fputs(".len" as *byte, codegen.output as *void);
+                return;
+            }
+        }
+        
+        // 检查数组表达式是否是标识符（局部变量或参数）
+        if array.type == ASTNodeType.AST_IDENTIFIER {
+            const var_name: &byte = array.identifier_name;
+            
+            // 查找变量类型以确定数组大小
+            var found: i32 = 0;
+            var array_size: i32 = -1;
+            
+            // 检查局部变量
+            var i: i32 = codegen.local_variable_count - 1;
+            while i >= 0 {
+                if strcmp(codegen.local_variables[i].name as *byte, var_name as *byte) == 0 {
+                    const type_c: &byte = codegen.local_variables[i].type_c;
+                    if type_c != null {
+                        // 从类型字符串中提取数组大小，格式如 "int32_t[3]"
+                        const bracket: *byte = strchr(type_c as *byte, 91);  // '['
+                        if bracket != null {
+                            const bracket_offset: i32 = ptr_diff(bracket, type_c as *byte);
+                            const close_bracket: *byte = strchr(&type_c[bracket_offset + 1] as *byte, 93);  // ']'
+                            if close_bracket != null {
+                                // 提取数字部分
+                                const num_len: i32 = ptr_diff(close_bracket, bracket) - 1;
+                                var num_buf: [byte: NUM_BUF_SIZE] = [];
+                                if num_len < NUM_BUF_SIZE && num_len > 0 {
+                                    memcpy(&num_buf[0] as *void, &type_c[bracket_offset + 1] as *void, num_len);
+                                    num_buf[num_len] = 0;
+                                    array_size = atoi(&num_buf[0] as *byte);
+                                    if array_size > 0 {
+                                        fprintf(codegen.output as *void, "%d" as *byte, array_size);
+                                        found = 1;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    break;
+                }
+                i = i - 1;
+            }
+            
+            // 如果找到数组大小，直接输出
+            if found != 0 {
+                return;
+            }
+        }
+        
+        // 备用方案：使用 sizeof 计算（适用于非参数数组）
+        // 注意：这只适用于栈分配的数组，不适用于函数参数
+        fputs("sizeof(" as *byte, codegen.output as *void);
+        gen_expr(codegen, array);
+        fputs(") / sizeof((" as *byte, codegen.output as *void);
+        gen_expr(codegen, array);
+        fputs(")[0])" as *byte, codegen.output as *void);
+}
+
+// 生成结构体初始化
+fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const orig_name: &byte = expr.struct_init_struct_name;
+        var struct_name: &byte = null;
+        if expr.struct_init_type_arg_count > 0 && expr.struct_init_type_args != null {
+            // 使用单态化结构体名称
+            struct_name = get_mono_struct_name(codegen, orig_name,
+                expr.struct_init_type_args,
+                expr.struct_init_type_arg_count);
+        } else {
+            struct_name = get_safe_c_identifier(codegen, orig_name);
+        }
+        
+        const init_field_count: i32 = expr.struct_init_field_count;
+        
+        // 查找结构体声明以获取字段默认值
+        var struct_decl: &ASTNode = null;
+        if codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
+            var di: i32 = 0;
+            while di < codegen.program_node.program_decl_count {
+                const decl: &ASTNode = codegen.program_node.program_decls[di];
+                if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL && 
+                    decl.struct_decl_name != null && str_equals(decl.struct_decl_name, orig_name) != 0 {
+                    struct_decl = decl;
+                    break;
+                }
+                di = di + 1;
+            }
+        }
+        
+        fprintf(codegen.output as *void, "(struct %s){" as *byte, struct_name as *byte);
+        
+        // 如果找到结构体声明，按结构体字段顺序生成初始化值（包含默认值）
+        if struct_decl != null && struct_decl.struct_decl_fields != null {
+            const struct_field_count: i32 = struct_decl.struct_decl_field_count;
+            var output_count: i32 = 0;
+            
+            var fi: i32 = 0;
+            while fi < struct_field_count {
+                const field: &ASTNode = struct_decl.struct_decl_fields[fi];
+                if field == null || field.type != ASTNodeType.AST_VAR_DECL || field.var_decl_name == null {
+                    fi = fi + 1;
+                    continue;
+                }
+                
+                const field_name: &byte = field.var_decl_name;
+                const safe_field_name: &byte = get_safe_c_identifier(codegen, field_name);
+                
+                // 查找用户是否提供了这个字段的值
+                var user_value: &ASTNode = null;
+                var ui: i32 = 0;
+                while ui < init_field_count {
+                    if expr.struct_init_field_names[ui] != null && 
+                        str_equals(expr.struct_init_field_names[ui], field_name) != 0 {
+                        user_value = expr.struct_init_field_values[ui];
+                        break;
+                    }
+                    ui = ui + 1;
+                }
+                
+                if output_count > 0 {
+                    fputs(", " as *byte, codegen.output as *void);
+                }
+                fprintf(codegen.output as *void, ".%s = " as *byte, safe_field_name as *byte);
+                
+                if user_value != null {
+                    // 使用用户提供的值
+                    gen_expr(codegen, user_value);
+                } else if field.var_decl_init != null {
+                    // 使用字段默认值
+                    gen_expr(codegen, field.var_decl_init);
+                } else {
+                    // 没有默认值，使用零值；数组字段：元素为聚合用 {{0}}，否则用 {0}
+                    const ft: &ASTNode = field.var_decl_type;
+                    if ft != null && ft.type == ASTNodeType.AST_TYPE_ARRAY {
+                        if array_element_is_aggregate_c99(codegen, ft) != 0 {
+                            fputs("{{0}}" as *byte, codegen.output as *void);
+                        } else {
+                            fputs("{0}" as *byte, codegen.output as *void);
+                        }
+                    } else {
+                        fputs("0" as *byte, codegen.output as *void);
+                    }
+                }
+                output_count = output_count + 1;
+                fi = fi + 1;
+            }
+        } else {
+            // 回退：只生成用户提供的字段
+            var i: i32 = 0;
+            while i < init_field_count {
+                const safe_field_name: &byte = get_safe_c_identifier(codegen, expr.struct_init_field_names[i]);
+                fprintf(codegen.output as *void, ".%s = " as *byte, safe_field_name as *byte);
+                gen_expr(codegen, expr.struct_init_field_values[i]);
+                if i < init_field_count - 1 {
+                    fputs(", " as *byte, codegen.output as *void);
+                }
+                i = i + 1;
+            }
+        }
+        fputc(125, codegen.output as *void);  // '}'
+}
+
+// 生成 match 表达式
+fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         // match expr { pat => result, ... } 作为表达式：GCC 语句表达式
         const match_expr: &ASTNode = expr.match_expr_expr;
         var m_type: &byte = get_c_type_of_expr(codegen, match_expr);
@@ -2550,61 +2215,470 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             i = i + 1;
         }
         fputs("_uya_r; })" as *byte, codegen.output as *void);
-    } else if expr.type == ASTNodeType.AST_BLOCK {
-        // 块表达式：使用 GCC 语句表达式扩展 ({ stmts; last_expr; })
-        // 最后一条语句如果是表达式，作为整个块的值
-        const block_stmts: & & ASTNode = expr.block_stmts;
-        const block_count: i32 = expr.block_stmt_count;
-        
-        fputs("({ " as *byte, codegen.output as *void);
-        
-        // 找到最后一个非声明的表达式作为返回值
-        var last_expr_idx: i32 = -1;
-        var j: i32 = block_count - 1;
-        while j >= 0 {
-            const bs: &ASTNode = block_stmts[j];
-            if bs == null {
-                j = j - 1;
-                continue;
-            }
-            if bs.type == ASTNodeType.AST_VAR_DECL {
-                j = j - 1;
-                continue;
-            }
-            if bs.type == ASTNodeType.AST_IF_STMT || bs.type == ASTNodeType.AST_WHILE_STMT ||
-                bs.type == ASTNodeType.AST_FOR_STMT || bs.type == ASTNodeType.AST_RETURN_STMT ||
-                bs.type == ASTNodeType.AST_BREAK_STMT || bs.type == ASTNodeType.AST_CONTINUE_STMT ||
-                bs.type == ASTNodeType.AST_BLOCK || bs.type == ASTNodeType.AST_ASSIGN ||
-                bs.type == ASTNodeType.AST_DEFER_STMT || bs.type == ASTNodeType.AST_ERRDEFER_STMT {
-                j = j - 1;
-                continue;
-            }
-            last_expr_idx = j;
-            break;
-        }
-        
-        // 输出所有语句（除了最后一个表达式，它会作为返回值）
-        var k: i32 = 0;
-        while k < block_count {
-            const bs: &ASTNode = block_stmts[k];
-            if bs == null {
-                k = k + 1;
-                continue;
-            }
-            if k == last_expr_idx {
-                // 最后一个表达式，直接输出作为返回值
-                gen_expr(codegen, bs);
-                fputs("; " as *byte, codegen.output as *void);
-            } else {
-                // 普通语句
-                gen_stmt(codegen, bs);
-            }
-            k = k + 1;
-        }
-        
-        fputs("})" as *byte, codegen.output as *void);
-    } else {
-        fputs("0" as *byte, codegen.output as *void);
-    }
 }
 
+// 生成 catch 表达式
+fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const operand: &ASTNode = expr.catch_expr_operand;
+        const block: &ASTNode = expr.catch_expr_catch_block;
+        const err_name: &byte = expr.catch_expr_err_name;
+        const ret_type: &ASTNode = codegen.current_function_return_type;
+        if operand == null || block == null {
+            fputs("0" as *byte, codegen.output as *void);
+            return;
+        }
+        const operand_union_c: &byte = get_c_type_of_expr(codegen, operand);
+        var operand_is_err_union: i32 = 0;
+        if operand_union_c != null && strstr(operand_union_c as *byte, "err_union_" as *byte) != null {
+            operand_is_err_union = 1;
+        }
+        var union_c: &byte = ("int32_t" as *byte) as &byte;
+        var payload_c: &byte = ("int32_t" as *byte) as &byte;
+        if operand_is_err_union != 0 {
+            union_c = operand_union_c;
+            if operand != null && operand.type == ASTNodeType.AST_CAST_EXPR && operand.cast_expr_is_force_cast != 0 && operand.cast_expr_target_type != null {
+                payload_c = c99_type_to_c(codegen, operand.cast_expr_target_type);
+            } else if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION && ret_type.type_error_union_payload_type != null {
+                payload_c = c99_type_to_c(codegen, ret_type.type_error_union_payload_type);
+            } else {
+                // 从错误联合类型名称推断 payload 类型
+                if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_void" as *byte) == 0 {
+                    payload_c = "void" as &byte;
+                } else if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_int64_t" as *byte) == 0 {
+                    payload_c = "int64_t" as &byte;
+                } else {
+                    payload_c = "int32_t" as &byte;
+                }
+            }
+        } else if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+            union_c = c99_type_to_c(codegen, ret_type);
+            const payload_node: &ASTNode = ret_type.type_error_union_payload_type;
+            if payload_node != null {
+                payload_c = c99_type_to_c(codegen, payload_node);
+            } else {
+                payload_c = "void" as &byte;
+            }
+        } else {
+            fputs("0" as *byte, codegen.output as *void);
+            return;
+        }
+        const n: i32 = block.block_stmt_count;
+        var last_stmt: &ASTNode = null;
+        if n > 0 {
+            last_stmt = block.block_stmts[n - 1];
+        }
+        var is_void_payload: i32 = 0;
+        if payload_c != null && strcmp(payload_c as *byte, "void" as *byte) == 0 {
+            is_void_payload = 1;
+        } else {
+            is_void_payload = 0;
+        }
+        if is_void_payload != 0 {
+            // !void 类型：不需要声明结果变量
+            fprintf(codegen.output as *void, "({ %s _uya_catch_tmp = " as *byte, union_c as *byte);
+        } else {
+            fprintf(codegen.output as *void, "({ %s _uya_catch_result; %s _uya_catch_tmp = " as *byte, payload_c as *byte, union_c as *byte);
+        }
+        gen_expr(codegen, operand);
+        fputs("; if (_uya_catch_tmp.error_id != 0) {\n" as *byte, codegen.output as *void);
+        codegen.indent_level = codegen.indent_level + 1;
+        if err_name != null {
+            const safe: &byte = get_safe_c_identifier(codegen, err_name);
+            c99_emit_indent(codegen);
+            fprintf(codegen.output as *void, "%s %s = _uya_catch_tmp;\n" as *byte, union_c as *byte, safe as *byte);
+        }
+        var i: i32 = 0;
+        while i < n {
+            const s: &ASTNode = block.block_stmts[i];
+            if s != null {
+                if i == n - 1 && last_stmt != null && last_stmt.type != ASTNodeType.AST_RETURN_STMT && is_void_payload == 0 {
+                    c99_emit_indent(codegen);
+                    fputs("_uya_catch_result = (" as *byte, codegen.output as *void);
+                    gen_expr(codegen, s);
+                    fputs(");\n" as *byte, codegen.output as *void);
+                } else {
+                    gen_stmt(codegen, s);
+                }
+            }
+            i = i + 1;
+        }
+        codegen.indent_level = codegen.indent_level - 1;
+        c99_emit_indent(codegen);
+        if is_void_payload != 0 {
+            fputs("} else { /* void payload */ } 0; })" as *byte, codegen.output as *void);
+        } else {
+            fputs("} else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; })" as *byte, codegen.output as *void);
+        }
+}
+
+// 生成数组访问表达式
+fn gen_array_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const array: &ASTNode = expr.array_access_array;
+        const index: &ASTNode = expr.array_access_index;
+        
+        if array.type == ASTNodeType.AST_SLICE_EXPR {
+            fputc(40, codegen.output as *void);
+            gen_expr(codegen, array);
+            fputs(").ptr[" as *byte, codegen.output as *void);
+            gen_expr(codegen, index);
+            fputc(93, codegen.output as *void);
+            return;
+        }
+        if array.type == ASTNodeType.AST_MEMBER_ACCESS {
+            const type_c: &byte = get_c_type_of_expr(codegen, array);
+            if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
+                fputc(40, codegen.output as *void);
+                gen_expr(codegen, array);
+                fputs(").ptr[" as *byte, codegen.output as *void);
+                gen_expr(codegen, index);
+                fputc(93, codegen.output as *void);
+                return;
+            }
+        }
+        if array.type == ASTNodeType.AST_IDENTIFIER {
+            const type_c: &byte = get_identifier_type_c(codegen, array.identifier_name);
+            if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
+                // 检查标识符是否是指针类型
+                const safe_name: &byte = get_safe_c_identifier(codegen, array.identifier_name);
+                const is_pointer: i32 = is_identifier_pointer_type(codegen, safe_name);
+                if is_pointer != 0 {
+                    // 指针类型使用 -> 操作符
+                    gen_expr(codegen, array);
+                    fputs("->ptr[" as *byte, codegen.output as *void);
+                } else {
+                    // 非指针类型使用 . 操作符
+                    fputc(40, codegen.output as *void);
+                    gen_expr(codegen, array);
+                    fputs(").ptr[" as *byte, codegen.output as *void);
+                }
+                gen_expr(codegen, index);
+                fputc(93, codegen.output as *void);
+                return;
+            }
+        }
+        
+        // 注意：对于指向数组的指针（如 uint8_t (*)[4096]），
+        // 在 C 中可以直接使用 file_paths_buffer[i]，不需要 (*file_paths_buffer)[i]
+        // 因为 file_paths_buffer[i] 会自动解引用
+        gen_expr(codegen, array);
+        fputc(91, codegen.output as *void);  // '['
+        gen_expr(codegen, index);
+        fputc(93, codegen.output as *void);  // ']'
+}
+
+// 生成类型转换表达式
+fn gen_cast_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const src_expr: &ASTNode = expr.cast_expr_expr;
+        const target_type: &ASTNode = expr.cast_expr_target_type;
+        const is_force_cast: i32 = expr.cast_expr_is_force_cast;
+        const type_c: &byte = c99_type_to_c(codegen, target_type);
+        if is_force_cast != 0 {
+            // as! 强转：返回 !T。当源为 !i64 等错误联合时，需解包再包装
+            const src_union_c: &byte = get_c_type_of_expr(codegen, src_expr);
+            var src_is_err_union: i32 = 0;
+            if src_union_c != null && strstr(src_union_c as *byte, "err_union_" as *byte) != null {
+                src_is_err_union = 1;
+            }
+            const tmp: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, 0, 0, codegen.arena, null);
+            var union_c: &byte = "void" as &byte;
+            if tmp != null {
+                tmp.type_error_union_payload_type = target_type;
+                union_c = c99_type_to_c(codegen, tmp);
+            }
+            var is_void: i32 = 0;
+            if target_type != null && target_type.type == ASTNodeType.AST_TYPE_NAMED && target_type.type_named_name != null && strcmp(target_type.type_named_name as *byte, "void" as *byte) == 0 {
+                is_void = 1;
+            }
+            if src_is_err_union != 0 && is_void == 0 {
+                fprintf(codegen.output as *void, "({ %s _uya_asbang_src = " as *byte, src_union_c as *byte);
+                gen_expr(codegen, src_expr);
+                fprintf(codegen.output as *void, "; %s _uya_asbang; " as *byte, union_c as *byte);
+                fputs("if (_uya_asbang_src.error_id != 0) { " as *byte, codegen.output as *void);
+                fputs("_uya_asbang.error_id = _uya_asbang_src.error_id; _uya_asbang.value = 0; " as *byte, codegen.output as *void);
+                fputs("} else { _uya_asbang.error_id = 0; " as *byte, codegen.output as *void);
+                fprintf(codegen.output as *void, "_uya_asbang.value = (%s)(_uya_asbang_src.value); " as *byte, type_c as *byte);
+                fputs("} _uya_asbang; })" as *byte, codegen.output as *void);
+            } else if src_is_err_union != 0 && is_void != 0 {
+                fprintf(codegen.output as *void, "({ %s _uya_asbang_src = " as *byte, src_union_c as *byte);
+                gen_expr(codegen, src_expr);
+                fprintf(codegen.output as *void, "; %s _uya_asbang; " as *byte, union_c as *byte);
+                fputs("_uya_asbang.error_id = _uya_asbang_src.error_id; _uya_asbang; })" as *byte, codegen.output as *void);
+            } else {
+                fprintf(codegen.output as *void, "({ %s _uya_asbang = { .error_id = 0" as *byte, union_c as *byte);
+                if is_void == 0 {
+                    fprintf(codegen.output as *void, ", .value = (%s)(" as *byte, type_c as *byte);
+                    gen_expr(codegen, src_expr);
+                    fputs(") }; _uya_asbang; })" as *byte, codegen.output as *void);
+                } else {
+                    fputs(" }; " as *byte, codegen.output as *void);
+                    gen_expr(codegen, src_expr);
+                    fputs("; _uya_asbang; })" as *byte, codegen.output as *void);
+                }
+            }
+        } else {
+            // 特殊处理：null as * *byte -> (const uint8_t **)NULL（用于 strtol/strtod，匹配 libc 签名）
+            var is_null_to_byte_ptr_ptr: i32 = 0;
+            if src_expr != null && src_expr.type == ASTNodeType.AST_IDENTIFIER && src_expr.identifier_name != null && strcmp(src_expr.identifier_name as *byte, "null" as *byte) == 0 {
+                // 检查目标类型是否是 * *byte（优先检查 AST 结构，然后检查类型字符串）
+                if target_type != null && target_type.type == ASTNodeType.AST_TYPE_POINTER {
+                    const inner_type: &ASTNode = target_type.type_pointer_pointed_type;
+                    if inner_type != null && inner_type.type == ASTNodeType.AST_TYPE_POINTER {
+                        const inner_inner_type: &ASTNode = inner_type.type_pointer_pointed_type;
+                        if inner_inner_type != null && inner_inner_type.type == ASTNodeType.AST_TYPE_NAMED && inner_inner_type.type_named_name != null && strcmp(inner_inner_type.type_named_name as *byte, "byte" as *byte) == 0 {
+                            is_null_to_byte_ptr_ptr = 1;
+                        }
+                    }
+                }
+                // 如果 AST 结构检查没有匹配，再检查类型字符串
+                if is_null_to_byte_ptr_ptr == 0 && type_c != null {
+                    if strcmp(type_c as *byte, "uint8_t **" as *byte) == 0 {
+                        is_null_to_byte_ptr_ptr = 1;
+                    } else {
+                        var has_uint8: i32 = 0;
+                        var has_double_star: i32 = 0;
+                        if strstr(type_c as *byte, "uint8_t" as *byte) != null {
+                            has_uint8 = 1;
+                        }
+                        if strstr(type_c as *byte, "**" as *byte) != null {
+                            has_double_star = 1;
+                        }
+                        if has_uint8 != 0 && has_double_star != 0 {
+                            is_null_to_byte_ptr_ptr = 1;
+                        }
+                    }
+                }
+            }
+            if is_null_to_byte_ptr_ptr != 0 {
+                fputs("(const uint8_t **)NULL" as *byte, codegen.output as *void);
+            } else {
+                fputc(40, codegen.output as *void);  // '('
+                fprintf(codegen.output as *void, "%s)" as *byte, type_c as *byte);
+                gen_expr(codegen, src_expr);
+            }
+        }
+}
+
+// 生成数组字面量
+fn gen_array_literal(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const element_count: i32 = expr.array_literal_element_count;
+        const repeat_count_expr: &ASTNode = expr.array_literal_repeat_count_expr;
+        fputc(123, codegen.output as *void);  // '{'
+        if repeat_count_expr != null && element_count >= 1 {
+            var nn: i32 = eval_const_expr(codegen, repeat_count_expr);
+            if nn <= 0 {
+                nn = 1;
+            }
+            var i: i32 = 0;
+            while i < nn {
+                gen_expr(codegen, expr.array_literal_elements[0]);
+                if i < nn - 1 {
+                    fputs(", " as *byte, codegen.output as *void);
+                }
+                i = i + 1;
+            }
+        } else if element_count > 0 {
+            var i: i32 = 0;
+            while i < element_count {
+                gen_expr(codegen, expr.array_literal_elements[i]);
+                if i < element_count - 1 {
+                    fputs(", " as *byte, codegen.output as *void);
+                }
+                i = i + 1;
+            }
+        } else {
+            // 空数组字面量：生成 {0}
+            fputs("0" as *byte, codegen.output as *void);
+        }
+        fputc(125, codegen.output as *void);  // '}'
+}
+
+// 生成切片表达式
+fn gen_slice_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const base: &ASTNode = expr.slice_expr_base;
+        const start_expr: &ASTNode = expr.slice_expr_start_expr;
+        const len_expr: &ASTNode = expr.slice_expr_len_expr;
+        const slice_type_c: &byte = get_c_type_of_expr(codegen, expr);
+        var slice_type_str: &byte = ("struct uya_slice_int32_t" as *byte) as &byte;
+        if slice_type_c != null {
+            slice_type_str = slice_type_c;
+        }
+        fprintf(codegen.output as *void, "(%s){ .ptr = " as *byte, slice_type_str as *byte);
+        if base.type == ASTNodeType.AST_SLICE_EXPR {
+            fputc(40, codegen.output as *void);
+            gen_expr(codegen, base);
+            fputs(").ptr + " as *byte, codegen.output as *void);
+        } else if base.type == ASTNodeType.AST_IDENTIFIER {
+            const type_c: &byte = get_identifier_type_c(codegen, base.identifier_name);
+            if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
+                fputc(40, codegen.output as *void);
+                gen_expr(codegen, base);
+                fputs(").ptr + " as *byte, codegen.output as *void);
+            } else {
+                gen_expr(codegen, base);
+                fputs(" + " as *byte, codegen.output as *void);
+            }
+        } else {
+            gen_expr(codegen, base);
+            fputs(" + " as *byte, codegen.output as *void);
+        }
+        gen_expr(codegen, start_expr);
+        fputs(", .len = " as *byte, codegen.output as *void);
+        gen_expr(codegen, len_expr);
+        fputc(125, codegen.output as *void);  // '}'
+}
+
+// 生成 @print/@println 表达式
+fn gen_print_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        // @print(expr) / @println(expr) - 打印表达式
+        if expr.print_expr != null {
+            const inner: &ASTNode = expr.print_expr;
+            var fmt: &byte = null;
+            var need_cast: i32 = 0;  // 是否需要 (char *) 转换
+            
+            // 根据表达式类型确定格式字符串
+            if inner.type == ASTNodeType.AST_NUMBER {
+                // 整数字面量：默认按 i32 处理
+                fmt = "%d";
+            } else if inner.type == ASTNodeType.AST_FLOAT {
+                fmt = "%g";
+            } else if inner.type == ASTNodeType.AST_BOOL {
+                fmt = "%d";
+            } else if inner.type == ASTNodeType.AST_STRING || inner.type == ASTNodeType.AST_STRING_INTERP {
+                fmt = "%s";
+                need_cast = 1;
+            } else if inner.type == ASTNodeType.AST_CAST_EXPR {
+                // 强制转换：根据目标类型选择格式
+                if inner.cast_expr_target_type != null {
+                    const target: &ASTNode = inner.cast_expr_target_type;
+                    if target.type == ASTNodeType.AST_TYPE_NAMED && target.type_named_name != null {
+                        const name: &byte = target.type_named_name;
+                        if str_equals(name as *byte, "i8" as *byte) != 0 ||
+                           str_equals(name as *byte, "i16" as *byte) != 0 ||
+                           str_equals(name as *byte, "i32" as *byte) != 0 ||
+                           str_equals(name as *byte, "i64" as *byte) != 0 {
+                            fmt = "%lld";
+                        } else if str_equals(name as *byte, "u8" as *byte) != 0 ||
+                                  str_equals(name as *byte, "u16" as *byte) != 0 ||
+                                  str_equals(name as *byte, "u32" as *byte) != 0 ||
+                                  str_equals(name as *byte, "u64" as *byte) != 0 ||
+                                  str_equals(name as *byte, "usize" as *byte) != 0 {
+                            fmt = "%llu";
+                        } else if str_equals(name as *byte, "f32" as *byte) != 0 ||
+                                  str_equals(name as *byte, "f64" as *byte) != 0 {
+                            fmt = "%g";
+                        } else if str_equals(name as *byte, "bool" as *byte) != 0 {
+                            fmt = "%d";
+                        }
+                    }
+                }
+            } else if inner.type == ASTNodeType.AST_IDENTIFIER {
+                // 标识符：需要从符号表推断类型，这里简化处理
+                fmt = "%lld";
+            } else if inner.type == ASTNodeType.AST_BINARY_EXPR {
+                // 二元表达式：整数或浮点运算
+                fmt = "%lld";
+            }
+            
+            if fmt == null {
+                fmt = "%lld";  // 默认整数格式
+            }
+            
+            // 生成 printf 调用
+            if expr.type == ASTNodeType.AST_PRINTLN {
+                fprintf(codegen.output as *void, "printf(\"%s\\n\", " as *byte, fmt as *byte);
+            } else {
+                fprintf(codegen.output as *void, "printf(\"%s\", " as *byte, fmt as *byte);
+            }
+            
+            if need_cast != 0 {
+                fputs("(char *)" as *byte, codegen.output as *void);
+            }
+            
+            gen_expr(codegen, expr.print_expr);
+            fputc(41, codegen.output as *void);
+        }
+}
+
+// 生成 try 表达式
+fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const operand: &ASTNode = expr.try_expr_operand;
+        const ret_type: &ASTNode = codegen.current_function_return_type;
+        if operand == null {
+            fputs("0" as *byte, codegen.output as *void);
+            return;
+        }
+        const operand_union_c: &byte = get_c_type_of_expr(codegen, operand);
+        var operand_is_err_union: i32 = 0;
+        if operand_union_c != null && strstr(operand_union_c as *byte, "err_union_" as *byte) != null {
+            operand_is_err_union = 1;
+        }
+        
+        // 检查返回类型是否是 !void
+        var ret_is_void: i32 = 0;
+        if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION && ret_type.type_error_union_payload_type != null {
+            const payload: &ASTNode = ret_type.type_error_union_payload_type;
+            if payload.type == ASTNodeType.AST_TYPE_NAMED && payload.type_named_name != null {
+                if strcmp(payload.type_named_name as *byte, "void" as *byte) == 0 {
+                    ret_is_void = 1;
+                }
+            }
+        }
+        
+        // 检查操作数类型是否是 !void
+        var operand_is_void: i32 = 0;
+        if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_void" as *byte) == 0 {
+            operand_is_void = 1;
+        }
+        
+        if operand_is_err_union == 0 || ret_type == null || ret_type.type != ASTNodeType.AST_TYPE_ERROR_UNION {
+            if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                const union_c: &byte = c99_type_to_c(codegen, ret_type);
+                fprintf(codegen.output as *void, "({ %s _uya_try_tmp = " as *byte, union_c as *byte);
+                gen_expr(codegen, operand);
+                if ret_is_void != 0 {
+                    fputs("; if (_uya_try_tmp.error_id != 0) return _uya_try_tmp; })" as *byte, codegen.output as *void);
+                } else {
+                    fputs("; if (_uya_try_tmp.error_id != 0) return _uya_try_tmp; _uya_try_tmp.value; })" as *byte, codegen.output as *void);
+                }
+            } else {
+                // 非 error union 返回类型，无法使用 try
+                fputs("0" as *byte, codegen.output as *void);
+            }
+            return;
+        }
+        const ret_union_c: &byte = c99_type_to_c(codegen, ret_type);
+        fprintf(codegen.output as *void, "({ %s _uya_try_tmp = " as *byte, operand_union_c as *byte);
+        gen_expr(codegen, operand);
+        // 错误传播时需转换为函数返回类型
+        if operand_is_void != 0 {
+            // 操作数是 !void，没有值可解包
+            fprintf(codegen.output as *void, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id }; })" as *byte, ret_union_c as *byte);
+        } else {
+            // 操作数有值，需要解包。即使函数返回 !void，try 表达式本身也需要返回解包的值
+            fprintf(codegen.output as *void, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id }; _uya_try_tmp.value; })" as *byte, ret_union_c as *byte);
+        }
+}
+
+// 生成一元表达式
+fn gen_unary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        const op: TokenType = expr.unary_expr_op as TokenType;
+        const operand: &ASTNode = expr.unary_expr_operand;
+        fputc(40, codegen.output as *void);  // '('
+        if op == TokenType.TOKEN_ASTERISK {
+            fputs("*" as *byte, codegen.output as *void);
+        } else if op == TokenType.TOKEN_AMPERSAND {
+            fputs("&" as *byte, codegen.output as *void);
+        } else if op == TokenType.TOKEN_MINUS {
+            fputs("-" as *byte, codegen.output as *void);
+        } else if op == TokenType.TOKEN_EXCLAMATION {
+            fputs("!" as *byte, codegen.output as *void);
+        } else if op == TokenType.TOKEN_TILDE {
+            fputs("~" as *byte, codegen.output as *void);
+        } else if op == TokenType.TOKEN_PLUS {
+            fputs("+" as *byte, codegen.output as *void);
+        } else {
+            fputs("+" as *byte, codegen.output as *void); // 默认
+        }
+        gen_expr(codegen, operand);
+        fputc(41, codegen.output as *void);  // ')'
+}
