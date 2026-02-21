@@ -5,7 +5,7 @@
 
 ---
 
-## 阶段一：巨型函数拆分 [██░░░░░░░░] 20%
+## 阶段一：巨型函数拆分 [██░░░░░░░░] 25%
 
 ### 1.1 添加 Type 辅助函数 ✅
 
@@ -31,9 +31,20 @@
 - [x] 运行 `make check` 验证 - **通过**
 - [x] Git 提交: `583ba71 refactor(stage1): 添加 Type 辅助函数`
 
-### 1.2 拆分 `checker_infer_type`
+### 1.2 拆分 `checker_infer_type` 🔄
 
-- [ ] 分析 `src/checker/check_expr.uya` 中 `checker_infer_type` 函数（当前 ~500 行）
+- [x] 分析函数结构：1223 行，37 个 else if 分支
+- [x] 使用辅助函数替换简单类型返回：
+  - [x] AST_NUMBER → `make_i32_type()`
+  - [x] AST_FLOAT → `make_f64_type()`
+  - [x] AST_BOOL → `make_bool_type()`
+  - [x] AST_USIZE_FROM_PTR → `make_usize_type()`
+  - [x] AST_SRC_LINE/SRC_COL → `make_i32_type()`
+  - [x] AST_SIZEOF/ALIGNOF/LEN → `make_i32_type()`
+  - [x] 所有错误返回 → `make_void_type()`（50+ 处）
+- [x] 代码统计：删除 157 行，新增 79 行，净减少 78 行
+- [x] 验证通过：414 测试，自举成功
+- [x] Git 提交: `e3b35b1 refactor(stage1): checker_infer_type 使用辅助函数重构`
 - [ ] 按表达式类型拆分为独立函数：
   - [ ] `infer_identifier(checker, expr)` - 标识符推断
   - [ ] `infer_binary_expr(checker, expr)` - 二元表达式推断
