@@ -32,9 +32,9 @@ enum CommandType {
 // 文件读取缓冲区大小（与 Lexer 一致）
 const FILE_BUFFER_SIZE: i32 = 1024 * 1024;
 
-// Arena 缓冲区大小（优化后：temp_arena 回滚，主 arena 需求降低）
-// 从 384MB 优化到 256MB（再低会导致自举失败）
-const ARENA_BUFFER_SIZE: i32 = 256 * 1024 * 1024;  // 256MB
+// Arena 缓冲区大小（v2.0: 动态增长 Arena）
+// 初始缓冲区 64MB，不足时自动分配新 chunk
+const ARENA_BUFFER_SIZE: i32 = 64 * 1024 * 1024;  // 64MB 初始
 
 // 最大输入文件数
 const MAX_INPUT_FILES: i32 = 64;
@@ -43,9 +43,8 @@ const MAX_INPUT_FILES: i32 = 64;
 var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
 var file_buffer: [byte: FILE_BUFFER_SIZE] = [];
 // 临时 Arena 缓冲区（用于依赖收集，全局变量避免栈溢出）
-// 优化后：依赖收集阶段每个文件解析后回滚 arena，只需单文件 AST 大小
-// 从 384MB 优化到 64MB
-var temp_arena_buffer: [byte: 64 * 1024 * 1024] = [];
+// v2.0: 动态增长，初始 16MB
+var temp_arena_buffer: [byte: 16 * 1024 * 1024] = [];
 // 大数组移到全局变量避免栈溢出（main_file_paths 是 64 * 4096 = 262KB）
 var main_file_paths_global: [[byte: PATH_MAX]: MAX_INPUT_FILES] = [];
 // 将 resolved_files 也移到全局变量，避免栈溢出
@@ -1204,7 +1203,7 @@ fn compile_files(
     
     // 初始化临时 Arena（用于依赖收集，使用全局缓冲区避免栈溢出）
     var temp_arena: Arena = Arena { buffer: null, size: 0 as usize, offset: 0 as usize };
-    arena_init(&temp_arena, &temp_arena_buffer[0], 64 * 1024 * 1024);
+    arena_init(&temp_arena, &temp_arena_buffer[0], 16 * 1024 * 1024);
     
     // 获取 UYA_ROOT 和编译器目录
     var uya_root_base: [byte: PATH_MAX] = [];
