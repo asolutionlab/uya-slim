@@ -66,14 +66,22 @@
   - [x] `gen_while_stmt(codegen, node)` - while 语句生成
   - [x] `gen_break_stmt(codegen)` - break 语句生成
   - [x] `gen_continue_stmt(codegen)` - continue 语句生成
+  - [x] `gen_for_stmt(codegen, node)` - for 语句生成
+  - [x] `gen_for_range(codegen, node, body)` - for range 循环
+  - [x] `gen_for_array(codegen, node, body)` - for 数组遍历
+  - [x] `gen_for_iterator(codegen, ...)` - 迭代器接口循环
+  - [x] `gen_for_array_ref(codegen, ...)` - 数组引用迭代
+  - [x] `gen_for_array_value(codegen, ...)` - 数组值迭代
+  - [x] `gen_return_stmt(codegen, node)` - return 语句生成
+  - [x] `gen_return_array(codegen, ...)` - 数组返回值
+  - [x] `gen_return_normal(codegen, ...)` - 普通返回值
+  - [x] `gen_return_error_union(codegen, ...)` - 错误联合返回值
   - [ ] `gen_var_decl(codegen, node)` - 变量声明生成（~636 行，最大）
-  - [ ] `gen_for_stmt(codegen, node)` - for 语句生成
-  - [ ] `gen_return_stmt(codegen, node)` - return 语句生成
   - [ ] `gen_match_stmt(codegen, node)` - match 语句生成
   - [ ] `gen_assign_stmt(codegen, node)` - 赋值语句生成
-- [ ] 当前进度：1593 → 1556 行（-37 行）
+- [x] 当前进度：1593 → 1106 行（-487 行，-31%）
 - [ ] 目标：≤500 行
-- [ ] 运行 `make check` 验证 - 通过
+- [x] 运行 `make check` 验证 - 通过
 
 ### 1.4 拆分 `gen_expr`
 
