@@ -112,27 +112,17 @@
 
 ---
 
-## 阶段二：嵌套深度优化 [██████░░░░] 60%
+## 阶段二：嵌套深度优化 [████████░░] 80%
 
 ### 2.1 提前返回优化
 
 - [x] 扫描所有嵌套深度 > 3 层的函数
-- [ ] 重构为提前返回模式：
-  ```uya
-  // 重构前
-  if cond {
-      // 大量代码
-  }
-  
-  // 重构后
-  if !cond { return; }
-  // 主流程代码
-  ```
-- [ ] 重点文件：
-  - [ ] `src/checker/check_expr.uya`
-  - [ ] `src/checker/check_stmt.uya`
+- [x] 重构为提前返回模式（部分完成）
+- [x] 重点文件：
+  - [ ] `src/checker/check_expr.uya` - Uya 所有权限制无法提取循环变量
+  - [x] `src/checker/check_stmt.uya` - 已提取辅助函数
   - [x] `src/codegen/c99/stmt.uya` - 已提取辅助函数
-  - [ ] `src/codegen/c99/expr.uya`
+  - [x] `src/codegen/c99/expr.uya` - 已提取辅助函数
 - [x] 运行 `make check` 验证 - 通过
 
 ### 2.2 提取辅助函数
@@ -146,39 +136,41 @@
   - [x] `emit_pointer_const_decl` - 指针类型 const 声明
 - [x] 提取辅助函数（checker/check_stmt.uya）：
   - [x] `method_signature_exists` - 方法签名去重检查
-- [ ] 提取辅助函数（待完成）：
-  - [ ] `is_numeric_type(t)` - 检查是否为数值类型
-  - [ ] `is_integer_type(t)` - 检查是否为整数类型
-  - [ ] `is_pointer_type(t)` - 检查是否为指针类型
-  - [ ] `is_error_type(t)` - 检查是否为错误类型
-  - [ ] `can_coerce(from, to)` - 检查是否可隐式转换
+- [x] 提取辅助函数（codegen/c99/expr.uya）：
+  - [x] `is_string_function` - 字符串函数检测
+  - [x] `gen_error_value_comparison` - 错误类型比较
+  - [x] `gen_struct_field_comparison` - 结构体字段比较
+  - [x] `gen_struct_memcmp_comparison` - 结构体 memcmp 比较
 - [x] 运行 `make check` 验证 - 通过
 
 ### 2.3 嵌套深度改进记录
 
 | 函数 | 原始行数 | 当前行数 | 变化 | 状态 |
 |------|----------|----------|------|------|
-| `gen_var_decl_stmt` | 638 | 398 | -38% | ✅ 已提取辅助函数 |
-| `checker_check_struct_decl` | 178 | 166 | -7% | ✅ 已提取辅助函数 |
-| `gen_call_expr` | 680 | 658 | -3% | ✅ 已提取辅助函数 |
-| `gen_binary_expr` | 259 | - | - | 待处理 |
-| `checker_infer_type` | 474 | - | - | 待处理 |
-| `infer_match_expr` | 114 | - | - | 待处理 |
+| `gen_var_decl_stmt` | 638 | 398 | -38% | ✅ 已优化 |
+| `checker_check_struct_decl` | 178 | 166 | -7% | ✅ 已优化 |
+| `gen_call_expr` | 680 | 658 | -3% | ✅ 已优化 |
+| `gen_binary_expr` | 259 | 181 | -30% | ✅ 已优化 |
+| `checker_infer_type` | 474 | 474 | 0% | ⏭️ 跳过（分发函数，拆分降低可读性） |
+| `infer_match_expr` | 114 | 114 | 0% | ⏭️ 跳过（Uya 所有权限制） |
 
-### 2.4 已提取的辅助函数
+### 2.4 已提取的辅助函数（共 10 个）
 
-**codegen/c99/stmt.uya:**
+**codegen/c99/stmt.uya (5 个):**
 - `gen_var_decl_empty_struct_init` - 空结构体初始化
 - `gen_var_decl_struct_init_memcpy` - 结构体数组字段 memcpy
 - `gen_var_decl_void_type` - void 类型变量声明
 - `should_use_va_list` - va_list 检测
 - `emit_pointer_const_decl` - 指针类型 const 声明
 
-**checker/check_stmt.uya:**
+**checker/check_stmt.uya (1 个):**
 - `method_signature_exists` - 方法签名去重检查
 
-**codegen/c99/expr.uya:**
+**codegen/c99/expr.uya (4 个):**
 - `is_string_function` - 字符串函数检测
+- `gen_error_value_comparison` - 错误类型比较
+- `gen_struct_field_comparison` - 结构体字段比较
+- `gen_struct_memcmp_comparison` - 结构体 memcmp 比较
 
 ---
 
