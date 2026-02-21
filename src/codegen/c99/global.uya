@@ -142,7 +142,7 @@ fn gen_global_var(codegen: &C99CodeGenerator, var_decl: &ASTNode) void {
         gen_global_init_expr(codegen, init_expr);
     }
     
-    fputs(";\n" as *byte, codegen.output as *void);
+    c99_emit_semi_newline(codegen);
     
     // 添加到全局变量表（可选，用于后续引用）
     if codegen.global_variable_count < C99_MAX_GLOBAL_VARS {
@@ -249,7 +249,7 @@ fn gen_extern_var_decl(codegen: &C99CodeGenerator, node: &ASTNode) void {
             gen_global_init_expr(codegen, init_expr);
         }
 
-        fputs(";\n" as *byte, codegen.output as *void);
+        c99_emit_semi_newline(codegen);
 
         // 添加到全局变量表
         if codegen.global_variable_count < C99_MAX_GLOBAL_VARS {

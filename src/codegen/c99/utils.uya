@@ -213,6 +213,11 @@ fn c99_emit_newline(codegen: &C99CodeGenerator) void {
     fputc(10, codegen.output as *void);  // '\n'
 }
 
+// 分号换行
+fn c99_emit_semi_newline(codegen: &C99CodeGenerator) void {
+    fputs(";\n" as *byte, codegen.output as *void);
+}
+
 // 简单输出（带缩进处理）
 // 注意：Uya Mini 不支持普通函数的可变参数
 // 对于需要格式化的输出，直接使用 fprintf 而不是 c99_emit

@@ -959,7 +959,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     fprintf(codegen.output as *void, "[%d]" as *byte, dims[d]);
                     d = d + 1;
                 }
-                fputs(";\n" as *byte, codegen.output as *void);
+                c99_emit_semi_newline(codegen);
             } else {
                 const target_type_c: &byte = c99_type_to_c(codegen, target_type);
                 fprintf(codegen.output as *void, "typedef %s %s;\n" as *byte, target_type_c as *byte, alias_name as *byte);

@@ -1392,7 +1392,7 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
                 c99_emit_indent(codegen);
                 fputs("(void)" as *byte, codegen.output as *void);
                 fputs(pname as *byte, codegen.output as *void);
-                fputs(";\n" as *byte, codegen.output as *void);
+                c99_emit_semi_newline(codegen);
             }
         }
         i = i + 1;
@@ -1631,7 +1631,7 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
                 c99_emit_indent(codegen);
                 fputs("(void)" as *byte, codegen.output as *void);
                 fputs(pname as *byte, codegen.output as *void);
-                fputs(";\n" as *byte, codegen.output as *void);
+                c99_emit_semi_newline(codegen);
             }
         }
         i = i + 1;

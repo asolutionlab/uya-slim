@@ -182,7 +182,7 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         if stmt.type >= ASTNodeType.AST_BINARY_EXPR && stmt.type <= ASTNodeType.AST_VA_ARG {
             c99_emit(codegen, "" as *byte);
             gen_expr(codegen, stmt);
-            fputs(";\n" as *byte, codegen.output as *void);
+            c99_emit_semi_newline(codegen);
         }
         // 忽略其他语句
     }
@@ -270,22 +270,22 @@ fn gen_for_range(codegen: &C99CodeGenerator, stmt: &ASTNode, body2: &ASTNode) vo
             c99_emit_indent(codegen);
             fprintf(codegen.output as *void, "%s %s = " as *byte, range_type_c as *byte, var_name_range as *byte);
             gen_expr(codegen, start_expr);
-            fputs(";\n" as *byte, codegen.output as *void);
+            c99_emit_semi_newline(codegen);
             c99_emit_indent(codegen);
             fprintf(codegen.output as *void, "%s _uya_end = " as *byte, range_type_c as *byte);
             gen_expr(codegen, end_expr);
-            fputs(";\n" as *byte, codegen.output as *void);
+            c99_emit_semi_newline(codegen);
             c99_emit_indent(codegen);
             fprintf(codegen.output as *void, "for (; %s < _uya_end; %s++) {\n" as *byte, var_name_range as *byte, var_name_range as *byte);
         } else {
             c99_emit_indent(codegen);
             fprintf(codegen.output as *void, "%s _uya_s = " as *byte, range_type_c as *byte);
             gen_expr(codegen, start_expr);
-            fputs(";\n" as *byte, codegen.output as *void);
+            c99_emit_semi_newline(codegen);
             c99_emit_indent(codegen);
             fprintf(codegen.output as *void, "%s _uya_e = " as *byte, range_type_c as *byte);
             gen_expr(codegen, end_expr);
-            fputs(";\n" as *byte, codegen.output as *void);
+            c99_emit_semi_newline(codegen);
             c99_emit_indent(codegen);
             fprintf(codegen.output as *void, "for (%s _uya_i = _uya_s; _uya_i < _uya_e; _uya_i++) {\n" as *byte, range_type_c as *byte);
         }
@@ -294,7 +294,7 @@ fn gen_for_range(codegen: &C99CodeGenerator, stmt: &ASTNode, body2: &ASTNode) vo
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "%s %s = " as *byte, range_type_c as *byte, vname as *byte);
         gen_expr(codegen, start_expr);
-        fputs(";\n" as *byte, codegen.output as *void);
+        c99_emit_semi_newline(codegen);
         c99_emit_indent(codegen);
         fputs("while (1) {\n" as *byte, codegen.output as *void);
     }
@@ -409,7 +409,7 @@ fn gen_for_iterator(codegen: &C99CodeGenerator, stmt: &ASTNode, body2: &ASTNode,
     c99_emit_indent(codegen);
     fprintf(codegen.output as *void, "%s _uya_iter = " as *byte, iter_type_c as *byte);
     gen_expr(codegen, array);
-    fputs(";\n" as *byte, codegen.output as *void);
+    c99_emit_semi_newline(codegen);
     
     c99_emit_indent(codegen);
     fputs("while (1) {\n" as *byte, codegen.output as *void);
@@ -624,7 +624,7 @@ fn gen_return_array(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &AS
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
         gen_expr(codegen, expr);
-        fputs(";\n" as *byte, codegen.output as *void);
+        c99_emit_semi_newline(codegen);
     }
 }
 
@@ -643,7 +643,7 @@ fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &A
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
         gen_expr(codegen, expr);
-        fputs(";\n" as *byte, codegen.output as *void);
+        c99_emit_semi_newline(codegen);
     } else {
         var is_err_union_void: i32 = 0;
         if return_type != null && return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
@@ -723,14 +723,14 @@ fn gen_return_error_union_expr(codegen: &C99CodeGenerator, expr: &ASTNode, paylo
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "struct err_union_%s _uya_tmp = " as *byte, expr_payload_c as *byte);
         gen_expr(codegen, expr);
-        fputs(";\n" as *byte, codegen.output as *void);
+        c99_emit_semi_newline(codegen);
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "%s _uya_ret = (_uya_tmp.error_id == 0) ? (%s){ .error_id = 0, .value = (%s)_uya_tmp.value } : (%s){ .error_id = _uya_tmp.error_id };\n" as *byte, ret_c as *byte, ret_c as *byte, ret_payload_c as *byte, ret_c as *byte);
     } else {
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
         gen_expr(codegen, expr);
-        fputs(";\n" as *byte, codegen.output as *void);
+        c99_emit_semi_newline(codegen);
     }
 }
 
@@ -817,7 +817,7 @@ fn gen_assign_non_array(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNod
         codegen.emitting_assign_lhs = 0;
         fputs(" = " as *byte, codegen.output as *void);
         gen_expr(codegen, src);
-        fputs(";\n" as *byte, codegen.output as *void);
+        c99_emit_semi_newline(codegen);
     }
 }
 
@@ -1084,16 +1084,16 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     // 数组声明后必须立即输出初始化，否则会与下一条语句拼接（常见于 var ap_buf; var ap; 连续声明）
                     if init_expr != null {
                         if init_expr.type == ASTNodeType.AST_STRING_INTERP {
-                            fputs(";\n" as *byte, codegen.output as *void);
+                            c99_emit_semi_newline(codegen);
                             c99_emit_string_interp_fill(codegen, init_expr, var_name);
                         } else if init_expr.type == ASTNodeType.AST_IDENTIFIER {
-                            fputs(";\n" as *byte, codegen.output as *void);
+                            c99_emit_semi_newline(codegen);
                             c99_emit_indent(codegen);
                             fprintf(codegen.output as *void, "__uya_memcpy(%s, " as *byte, var_name as *byte);
                             gen_expr(codegen, init_expr);
                             fprintf(codegen.output as *void, ", sizeof(%s));\n" as *byte, var_name as *byte);
                         } else if init_expr.type == ASTNodeType.AST_CALL_EXPR {
-                            fputs(";\n" as *byte, codegen.output as *void);
+                            c99_emit_semi_newline(codegen);
                             c99_emit_indent(codegen);
                             fprintf(codegen.output as *void, "__uya_memcpy(%s, " as *byte, var_name as *byte);
                             gen_expr(codegen, init_expr);
@@ -1110,7 +1110,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         } else {
                             fputs(" = " as *byte, codegen.output as *void);
                             gen_expr(codegen, init_expr);
-                            fputs(";\n" as *byte, codegen.output as *void);
+                            c99_emit_semi_newline(codegen);
                         }
                         if need_pragma_missing_braces != 0 {
                             fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
@@ -1273,7 +1273,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 } else {
                     fputs(" = " as *byte, codegen.output as *void);
                     gen_expr(codegen, init_expr);
-                    fputs(";\n" as *byte, codegen.output as *void);
+                    c99_emit_semi_newline(codegen);
                 }
             } else {
             // 检查是否是空结构体初始化（field_count == 0）
@@ -1337,7 +1337,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             } else if is_array_from_function != 0 {
                 // 从函数调用接收数组：需要从包装结构体中提取
                 // 先完成变量声明（不包含初始化）
-                fputs(";\n" as *byte, codegen.output as *void);
+                c99_emit_semi_newline(codegen);
                 // 然后使用 memcpy 从结构体中提取数组
                 c99_emit_indent(codegen);
                 fprintf(codegen.output as *void, "__uya_memcpy(%s" as *byte, var_name as *byte);
@@ -1348,7 +1348,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 fputs("));\n" as *byte, codegen.output as *void);
             } else if needs_memcpy != 0 {
                 // 数组初始化：使用memcpy
-                fputs(";\n" as *byte, codegen.output as *void);
+                c99_emit_semi_newline(codegen);
                 c99_emit_indent(codegen);
                 fprintf(codegen.output as *void, "__uya_memcpy(%s" as *byte, var_name as *byte);
                 fputs(", " as *byte, codegen.output as *void);
@@ -1357,7 +1357,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 fprintf(codegen.output as *void, "%s" as *byte, var_name as *byte);
                 fputs("));\n" as *byte, codegen.output as *void);
             } else if is_string_interp_init != 0 {
-                fputs(";\n" as *byte, codegen.output as *void);
+                c99_emit_semi_newline(codegen);
                 c99_emit_string_interp_fill(codegen, init_expr, var_name);
             } else if struct_init_needs_memcpy != 0 {
                 gen_var_decl_struct_init_memcpy(codegen, var_name, init_expr);
@@ -1380,7 +1380,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
                 
                 gen_expr(codegen, init_expr);
-                fputs(";\n" as *byte, codegen.output as *void);
+                c99_emit_semi_newline(codegen);
             }
             if need_pragma_missing_braces != 0 {
                 fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
@@ -1396,7 +1396,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             }
             }
         } else {
-            fputs(";\n" as *byte, codegen.output as *void);
+            c99_emit_semi_newline(codegen);
             if codegen.current_drop_scope >= 0 && var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null && type_has_drop_c99(codegen, var_type.type_named_name) != 0 && stmt.var_decl_was_moved == 0 {
                 const dd: i32 = codegen.current_drop_scope;
                 if codegen.drop_var_count[dd] < C99_MAX_DROP_VARS_PER_BLOCK {
@@ -1422,7 +1422,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "%s _uya_m = " as *byte, m_type as *byte);
         gen_expr(codegen, match_expr);
-        fputs(";\n" as *byte, codegen.output as *void);
+        c99_emit_semi_newline(codegen);
         var first: i32 = 1;
         var i: i32 = 0;
         while i < stmt.match_expr_arm_count {
@@ -1450,7 +1450,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     c99_emit(codegen, "}\n" as *byte);
                 } else {
                     gen_expr(codegen, stmt.match_expr_arms[i].result_expr);
-                    fputs(";\n" as *byte, codegen.output as *void);
+                    c99_emit_semi_newline(codegen);
                 }
             } else if stmt.match_expr_arms[i].kind == MatchPatternKind.MATCH_PAT_UNION && stmt.match_expr_arms[i].variant_name != null {
                 const union_decl: &ASTNode = find_union_decl_by_variant_c99(codegen, stmt.match_expr_arms[i].variant_name);
@@ -1490,7 +1490,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             c99_emit(codegen, "}\n" as *byte);
                         } else {
                             gen_expr(codegen, stmt.match_expr_arms[i].result_expr);
-                            fputs(";\n" as *byte, codegen.output as *void);
+                            c99_emit_semi_newline(codegen);
                             if bind != null {
                                 codegen.indent_level = codegen.indent_level - 1;
                                 c99_emit(codegen, "}\n" as *byte);
@@ -1518,7 +1518,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     c99_emit(codegen, "}\n" as *byte);
                 } else {
                     gen_expr(codegen, stmt.match_expr_arms[i].result_expr);
-                    fputs(";\n" as *byte, codegen.output as *void);
+                    c99_emit_semi_newline(codegen);
                 }
             } else if stmt.match_expr_arms[i].kind == MatchPatternKind.MATCH_PAT_BIND {
                 const v: &byte = get_safe_c_identifier(codegen, stmt.match_expr_arms[i].var_name);
@@ -1533,7 +1533,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     gen_stmt(codegen, stmt.match_expr_arms[i].result_expr);
                 } else {
                     gen_expr(codegen, stmt.match_expr_arms[i].result_expr);
-                    fputs(";\n" as *byte, codegen.output as *void);
+                    c99_emit_semi_newline(codegen);
                 }
                 codegen.indent_level = codegen.indent_level - 1;
                 c99_emit(codegen, "}\n" as *byte);
@@ -1545,7 +1545,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     gen_stmt(codegen, stmt.match_expr_arms[i].result_expr);
                 } else {
                     gen_expr(codegen, stmt.match_expr_arms[i].result_expr);
-                    fputs(";\n" as *byte, codegen.output as *void);
+                    c99_emit_semi_newline(codegen);
                 }
                 codegen.indent_level = codegen.indent_level - 1;
                 c99_emit(codegen, "}\n" as *byte);
@@ -1564,7 +1564,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     c99_emit(codegen, "}\n" as *byte);
                 } else {
                     gen_expr(codegen, stmt.match_expr_arms[i].result_expr);
-                    fputs(";\n" as *byte, codegen.output as *void);
+                    c99_emit_semi_newline(codegen);
                 }
             }
             i = i + 1;
@@ -1577,7 +1577,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
 fn gen_var_decl_empty_struct_init(codegen: &C99CodeGenerator, var_name: &byte, struct_decl: &ASTNode) void {
     // 空结构体初始化：手动初始化各个字段，避免 gcc 生成错误的 memset 调用
     // 先完成变量声明（不包含初始化）
-    fputs(";\n" as *byte, codegen.output as *void);
+    c99_emit_semi_newline(codegen);
     
     const field_count: i32 = struct_decl.struct_decl_field_count;
     
@@ -1596,7 +1596,7 @@ fn gen_var_decl_empty_struct_init(codegen: &C99CodeGenerator, var_name: &byte, s
                         c99_emit_indent(codegen);
                         fprintf(codegen.output as *void, "%s.%s = " as *byte, var_name as *byte, field_name as *byte);
                         gen_expr(codegen, default_value);
-                        fputs(";\n" as *byte, codegen.output as *void);
+                        c99_emit_semi_newline(codegen);
                     } else {
                         // 根据字段类型生成初始化代码
                         if field_type.type == ASTNodeType.AST_TYPE_POINTER {
