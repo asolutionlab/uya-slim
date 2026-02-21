@@ -1368,35 +1368,35 @@ static const char str1308[] = "%s));\n";
 static const char str1309[] = " = \"";
 static const char str1310[] = "\";\n";
 static const char str1311[] = "#pragma GCC diagnostic pop\n";
-static const char str1312[] = "VaList";
-static const char str1313[] = "va_list %s;\n";
-static const char str1314[] = "va_list";
-static const char str1315[] = "%s _uya_catch_tmp = ";
-static const char str1316[] = "(*";
-static const char str1317[] = "%s(* const %s)%s";
-static const char str1318[] = "%s(* const)%s";
-static const char str1319[] = "%s const %s";
-static const char str1320[] = "%s const";
-static const char str1321[] = " = {";
-static const char str1322[] = " = { ";
-static const char str1323[] = "%s.%s = ";
-static const char str1324[] = "%s.%s = NULL;\n";
-static const char str1325[] = "__builtin_memset(%s.%s, 0, sizeof(%s.%s));\n";
-static const char str1326[] = "%s.%s = 0;\n";
-static const char str1327[] = "__builtin_memset((void *)&%s, 0, sizeof(%s));\n";
-static const char str1328[] = "__uya_memcpy(%s";
-static const char str1329[] = "__uya_memcpy(%s.%s, ";
-static const char str1330[] = ", sizeof(%s.%s));\n";
-static const char str1331[] = "%sif (_uya_m == 1) ";
-static const char str1332[] = "%sif (_uya_m == 0) ";
-static const char str1333[] = "%sif (_uya_m == %d) ";
-static const char str1334[] = "%sif (_uya_m._tag == %d) {\n";
-static const char str1335[] = "%s %s = _uya_m.u.%s;\n";
-static const char str1336[] = "%sif (_uya_m._tag == %d) ";
-static const char str1337[] = "%sif (0) ";
-static const char str1338[] = "%s{ %s %s = _uya_m;\n";
-static const char str1339[] = "%s{\n";
-static const char str1340[] = "%sif (_uya_m.error_id == %uU) ";
+static const char str1312[] = "va_list %s;\n";
+static const char str1313[] = "va_list";
+static const char str1314[] = "%s const";
+static const char str1315[] = " = {";
+static const char str1316[] = " = { ";
+static const char str1317[] = "__uya_memcpy(%s";
+static const char str1318[] = "%sif (_uya_m == 1) ";
+static const char str1319[] = "%sif (_uya_m == 0) ";
+static const char str1320[] = "%sif (_uya_m == %d) ";
+static const char str1321[] = "%sif (_uya_m._tag == %d) {\n";
+static const char str1322[] = "%s %s = _uya_m.u.%s;\n";
+static const char str1323[] = "%sif (_uya_m._tag == %d) ";
+static const char str1324[] = "%sif (0) ";
+static const char str1325[] = "%s{ %s %s = _uya_m;\n";
+static const char str1326[] = "%s{\n";
+static const char str1327[] = "%sif (_uya_m.error_id == %uU) ";
+static const char str1328[] = "%s.%s = ";
+static const char str1329[] = "%s.%s = NULL;\n";
+static const char str1330[] = "__builtin_memset(%s.%s, 0, sizeof(%s.%s));\n";
+static const char str1331[] = "%s.%s = 0;\n";
+static const char str1332[] = "__builtin_memset((void *)&%s, 0, sizeof(%s));\n";
+static const char str1333[] = "__uya_memcpy(%s.%s, ";
+static const char str1334[] = ", sizeof(%s.%s));\n";
+static const char str1335[] = "%s _uya_catch_tmp = ";
+static const char str1336[] = "VaList";
+static const char str1337[] = "(*";
+static const char str1338[] = "%s(* const %s)%s";
+static const char str1339[] = "%s(* const)%s";
+static const char str1340[] = "%s const %s";
 static const char str1341[] = "uya_tagged_";
 static const char str1342[] = "union %s {\n";
 static const char str1343[] = "struct uya_tagged_%s { int _tag; union %s u; };\n";
@@ -2988,6 +2988,11 @@ static void gen_block_stmt(struct C99CodeGenerator * codegen, struct ASTNode * s
 static void gen_destructure_decl(struct C99CodeGenerator * codegen, struct ASTNode * stmt);
 static void gen_var_decl_stmt(struct C99CodeGenerator * codegen, struct ASTNode * stmt);
 static void gen_match_stmt(struct C99CodeGenerator * codegen, struct ASTNode * stmt);
+static void gen_var_decl_empty_struct_init(struct C99CodeGenerator * codegen, uint8_t * var_name, struct ASTNode * struct_decl);
+static void gen_var_decl_struct_init_memcpy(struct C99CodeGenerator * codegen, uint8_t * var_name, struct ASTNode * init_expr);
+static int32_t gen_var_decl_void_type(struct C99CodeGenerator * codegen, struct ASTNode * init_expr);
+static int32_t should_use_va_list(struct C99CodeGenerator * codegen, struct ASTNode * var_type, uint8_t * var_name, uint8_t * type_c);
+static uint8_t * emit_pointer_const_decl(struct C99CodeGenerator * codegen, uint8_t * var_name, uint8_t * type_c, struct Arena * arena);
 static int32_t is_struct_in_table(struct C99CodeGenerator * codegen, uint8_t * struct_name);
 static int32_t is_struct_defined(struct C99CodeGenerator * codegen, uint8_t * struct_name);
 static void mark_struct_defined(struct C99CodeGenerator * codegen, uint8_t * struct_name);
@@ -35302,170 +35307,49 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
         }
     } else {
         type_c = c99_type_to_c(codegen, var_type);
-        int32_t use_va_list = 0;
-        if ((((((codegen->current_function_decl != NULL) && (codegen->current_function_decl->fn_decl_is_varargs != 0)) && (stmt->var_decl_name != NULL)) && (codegen->current_function_decl->fn_decl_body != NULL)) && (is_va_list_var_name(codegen, codegen->current_function_decl->fn_decl_body, stmt->var_decl_name) != 0))) {
-            int32_t is_ptr_to_void = 0;
-            if (((((((var_type != NULL) && (var_type->type == AST_TYPE_POINTER)) && (var_type->type_pointer_pointed_type != NULL)) && (var_type->type_pointer_pointed_type->type == AST_TYPE_NAMED)) && (var_type->type_pointer_pointed_type->type_named_name != NULL)) && (std_string_strcmp((uint8_t *)var_type->type_pointer_pointed_type->type_named_name, (uint8_t *)(uint8_t *)str517) == 0))) {
-                is_ptr_to_void = 1;
-            }
-            if (((((var_type != NULL) && (var_type->type == AST_TYPE_NAMED)) && (var_type->type_named_name != NULL)) && ((std_string_strcmp((uint8_t *)var_type->type_named_name, (uint8_t *)(uint8_t *)str1312) == 0) || (std_string_strcmp((uint8_t *)var_type->type_named_name, (uint8_t *)(uint8_t *)str517) == 0)))) {
-                is_ptr_to_void = 1;
-            }
-            if (((type_c != NULL) && (((uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str517) != NULL) || ((uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1312) != NULL)))) {
-                is_ptr_to_void = 1;
-            }
-            if ((is_ptr_to_void != 0)) {
-                use_va_list = 1;
-            }
-        }
+        const int32_t use_va_list = should_use_va_list(codegen, var_type, stmt->var_decl_name, (uint8_t *)type_c);
         if ((use_va_list != 0)) {
             c99_emit_indent(codegen);
-            libc_fprintf((void *)codegen->output, (const char *)str1313, (uint8_t *)var_name);
+            libc_fprintf((void *)codegen->output, (const char *)str1312, (uint8_t *)var_name);
             if ((codegen->local_variable_count < C99_MAX_LOCAL_VARS)) {
                 codegen->local_variables[codegen->local_variable_count].name = stmt->var_decl_name;
-                codegen->local_variables[codegen->local_variable_count].type_c = (uint8_t *)(uint8_t *)str1314;
+                codegen->local_variables[codegen->local_variable_count].type_c = (uint8_t *)(uint8_t *)str1313;
                 codegen->local_variable_count = (codegen->local_variable_count + 1);
             }
             if ((need_pragma_missing_braces != 0)) {
                 libc_fputs((uint8_t *)(uint8_t *)str1311, (void *)codegen->output);
             }
             return;
+        }
+        int32_t is_void_type = 0;
+        if ((var_type->type == AST_TYPE_NAMED)) {
+            uint8_t * const type_name = var_type->type_named_name;
+            if (((type_name != NULL) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str517) == 0))) {
+                is_void_type = 1;
+            }
+        }
+        if ((is_void_type != 0)) {
+            gen_var_decl_void_type(codegen, init_expr);
+            return;
+        }
+        if (((is_const != 0) && (var_type->type == AST_TYPE_POINTER))) {
+            stored_type_c_for_pointer = emit_pointer_const_decl(codegen, var_name, (uint8_t *)type_c, codegen->arena);
         } else {
-            int32_t is_void_type = 0;
-            if ((var_type->type == AST_TYPE_NAMED)) {
-                uint8_t * const type_name = var_type->type_named_name;
-                if (((type_name != NULL) && (std_string_strcmp((uint8_t *)type_name, (uint8_t *)(uint8_t *)str517) == 0))) {
-                    is_void_type = 1;
-                }
-            }
-            if ((is_void_type != 0)) {
-                if ((init_expr != NULL)) {
-                    int32_t is_catch_with_break = 0;
-                    if ((init_expr->type == AST_CATCH_EXPR)) {
-                        struct ASTNode * const catch_block = init_expr->catch_expr_catch_block;
-                        if (((catch_block != NULL) && (catch_block->type == AST_BLOCK))) {
-                            int32_t i = 0;
-                            while ((i < catch_block->block_stmt_count)) {
-                                struct ASTNode * const s = catch_block->block_stmts[i];
-                                if (((s != NULL) && ((s->type == AST_BREAK_STMT) || (s->type == AST_CONTINUE_STMT)))) {
-                                    is_catch_with_break = 1;
-                                    break;
-                                }
-                                i = (i + 1);
-                            }
-                        }
-                    }
-                    if ((is_catch_with_break != 0)) {
-                        struct ASTNode * const operand = init_expr->catch_expr_operand;
-                        struct ASTNode * const block = init_expr->catch_expr_catch_block;
-                        uint8_t * const err_name = init_expr->catch_expr_err_name;
-                        if (((operand != NULL) && (block != NULL))) {
-                            uint8_t * const operand_union_c = get_c_type_of_expr(codegen, operand);
-                            int32_t operand_is_err_union = 0;
-                            if (((operand_union_c != NULL) && ((uint8_t *)std_string_strstr((uint8_t *)operand_union_c, (uint8_t *)(uint8_t *)str1004) != NULL))) {
-                                operand_is_err_union = 1;
-                            }
-                            if ((operand_is_err_union != 0)) {
-                                uint8_t * const union_c = operand_union_c;
-                                c99_emit_indent(codegen);
-                                libc_fprintf((void *)codegen->output, (const char *)str1315, (uint8_t *)union_c);
-                                gen_expr(codegen, operand);
-                                libc_fputs((uint8_t *)(uint8_t *)str1010, (void *)codegen->output);
-                                codegen->indent_level = (codegen->indent_level + 1);
-                                if ((err_name != NULL)) {
-                                    uint8_t * const safe = get_safe_c_identifier(codegen, err_name);
-                                    c99_emit_indent(codegen);
-                                    libc_fprintf((void *)codegen->output, (const char *)str1011, (uint8_t *)union_c, (uint8_t *)safe);
-                                }
-                                int32_t i = 0;
-                                while ((i < block->block_stmt_count)) {
-                                    struct ASTNode * const s = block->block_stmts[i];
-                                    if ((s != NULL)) {
-                                        gen_stmt(codegen, s);
-                                    }
-                                    i = (i + 1);
-                                }
-                                codegen->indent_level = (codegen->indent_level - 1);
-                                c99_emit_indent(codegen);
-                                libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
-                                return;
-                            }
-                        }
-                    }
-                    c99_emit_indent(codegen);
-                    libc_fputs((uint8_t *)(uint8_t *)str1293, (void *)codegen->output);
-                    gen_expr(codegen, init_expr);
-                    libc_fputs((uint8_t *)(uint8_t *)str805, (void *)codegen->output);
-                }
-                return;
-            }
-            if (((is_const != 0) && (var_type->type == AST_TYPE_POINTER))) {
-                uint8_t * const open_paren = (uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1316);
-                if ((open_paren != NULL)) {
-                    uint8_t * const close_paren = (uint8_t *)std_string_strchr(open_paren, 41);
-                    uint8_t * const bracket = (uint8_t *)std_string_strchr(open_paren, 91);
-                    if ((((close_paren != NULL) && (bracket != NULL)) && (close_paren < bracket))) {
-                        const int32_t prefix_len = std_runtime_ptr_diff(open_paren, (uint8_t *)type_c);
-                        const int32_t suffix_len = std_string_strlen(bracket);
-                        uint8_t temp_buf[256] = {0};
-                        int32_t j = 0;
-                        while (((j < prefix_len) && (j < TEMP_BUF_LIMIT))) {
-                            temp_buf[j] = type_c[j];
-                            j = (j + 1);
-                        }
-                        if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
-                            temp_buf[j] = 0;
-                        }
-                        libc_fprintf((void *)codegen->output, (const char *)str1317, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name, bracket);
-                        const int32_t total_len = ((prefix_len + suffix_len) + 10);
-                        stored_type_c_for_pointer = (uint8_t *)arena_alloc(codegen->arena, total_len);
-                        if ((stored_type_c_for_pointer != NULL)) {
-                            uint8_t temp_buf2[256] = {0};
-                            j = 0;
-                            while (((j < prefix_len) && (j < TEMP_BUF_LIMIT))) {
-                                temp_buf2[j] = type_c[j];
-                                j = (j + 1);
-                            }
-                            if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
-                                temp_buf2[j] = 0;
-                            }
-                            libc_snprintf((char *)(uint8_t *)stored_type_c_for_pointer, total_len, (const char *)str1318, (uint8_t *)(&temp_buf2[0]), bracket);
-                        }
-                    } else {
-                        c99_emit_indent(codegen);
-                        libc_fprintf((void *)codegen->output, (const char *)str1319, (uint8_t *)type_c, (uint8_t *)var_name);
-                        const int32_t str_len = (std_string_strlen((uint8_t *)type_c) + 7);
-                        stored_type_c_for_pointer = (uint8_t *)arena_alloc(codegen->arena, str_len);
-                        if ((stored_type_c_for_pointer != NULL)) {
-                            libc_snprintf((char *)(uint8_t *)stored_type_c_for_pointer, str_len, (const char *)str1320, (uint8_t *)type_c);
-                        }
-                    }
+            if ((is_const != 0)) {
+                c99_emit_indent(codegen);
+                if (((uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str886) != NULL)) {
+                    libc_fprintf((void *)codegen->output, (const char *)str1063, (uint8_t *)type_c, (uint8_t *)var_name);
                 } else {
-                    c99_emit_indent(codegen);
-                    libc_fprintf((void *)codegen->output, (const char *)str1319, (uint8_t *)type_c, (uint8_t *)var_name);
-                    const int32_t str_len2 = (std_string_strlen((uint8_t *)type_c) + 7);
-                    stored_type_c_for_pointer = (uint8_t *)arena_alloc(codegen->arena, str_len2);
+                    libc_fprintf((void *)codegen->output, (const char *)str1094, (uint8_t *)type_c, (uint8_t *)var_name);
+                    const int32_t str_len4 = (std_string_strlen((uint8_t *)type_c) + 7);
+                    stored_type_c_for_pointer = (uint8_t *)arena_alloc(codegen->arena, str_len4);
                     if ((stored_type_c_for_pointer != NULL)) {
-                        libc_snprintf((char *)(uint8_t *)stored_type_c_for_pointer, str_len2, (const char *)str1320, (uint8_t *)type_c);
+                        libc_snprintf((char *)(uint8_t *)stored_type_c_for_pointer, str_len4, (const char *)str1301, (uint8_t *)type_c);
                     }
                 }
             } else {
-                if ((is_const != 0)) {
-                    c99_emit_indent(codegen);
-                    if (((uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str886) != NULL)) {
-                        libc_fprintf((void *)codegen->output, (const char *)str1063, (uint8_t *)type_c, (uint8_t *)var_name);
-                    } else {
-                        libc_fprintf((void *)codegen->output, (const char *)str1094, (uint8_t *)type_c, (uint8_t *)var_name);
-                        const int32_t str_len4 = (std_string_strlen((uint8_t *)type_c) + 7);
-                        stored_type_c_for_pointer = (uint8_t *)arena_alloc(codegen->arena, str_len4);
-                        if ((stored_type_c_for_pointer != NULL)) {
-                            libc_snprintf((char *)(uint8_t *)stored_type_c_for_pointer, str_len4, (const char *)str1301, (uint8_t *)type_c);
-                        }
-                    }
-                } else {
-                    c99_emit_indent(codegen);
-                    libc_fprintf((void *)codegen->output, (const char *)str1063, (uint8_t *)type_c, (uint8_t *)var_name);
-                }
+                c99_emit_indent(codegen);
+                libc_fprintf((void *)codegen->output, (const char *)str1063, (uint8_t *)type_c, (uint8_t *)var_name);
             }
         }
         uint8_t * type_to_store = NULL;
@@ -35479,7 +35363,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                     const int32_t str_len4 = (std_string_strlen((uint8_t *)type_c) + 7);
                     uint8_t * const manual_type = (uint8_t *)arena_alloc(codegen->arena, str_len4);
                     if ((manual_type != NULL)) {
-                        libc_snprintf((char *)(uint8_t *)manual_type, str_len4, (const char *)str1320, (uint8_t *)type_c);
+                        libc_snprintf((char *)(uint8_t *)manual_type, str_len4, (const char *)str1314, (uint8_t *)type_c);
                         type_to_store = manual_type;
                     } else {
                         type_to_store = type_c;
@@ -35507,7 +35391,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                 struct ASTNode * const cur_fn = codegen->current_function_decl;
                 struct ASTNode * * const params = cur_fn->fn_decl_params;
                 const int32_t n = cur_fn->fn_decl_param_count;
-                libc_fputs((uint8_t *)(uint8_t *)str1321, (void *)codegen->output);
+                libc_fputs((uint8_t *)(uint8_t *)str1315, (void *)codegen->output);
                 int32_t i = 0;
                 while ((i < n)) {
                     libc_fprintf((void *)codegen->output, (const char *)str838, i);
@@ -35533,7 +35417,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                     const int32_t n = init_expr->tuple_literal_element_count;
                     struct ASTNode * * const elements = init_expr->tuple_literal_elements;
                     if (((n > 0) && (elements != NULL))) {
-                        libc_fputs((uint8_t *)(uint8_t *)str1322, (void *)codegen->output);
+                        libc_fputs((uint8_t *)(uint8_t *)str1316, (void *)codegen->output);
                         int32_t i = 0;
                         while ((i < n)) {
                             libc_fprintf((void *)codegen->output, (const char *)str838, i);
@@ -35594,50 +35478,12 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                         }
                     }
                     if ((is_empty_struct_init != 0)) {
-                        libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
-                        struct ASTNode * const struct_decl2 = struct_decl_for_empty_init;
-                        const int32_t field_count3 = struct_decl2->struct_decl_field_count;
-                        if ((field_count3 > 0)) {
-                            int32_t i2 = 0;
-                            while ((i2 < field_count3)) {
-                                struct ASTNode * const field = struct_decl2->struct_decl_fields[i2];
-                                if (((field != NULL) && (field->type == AST_VAR_DECL))) {
-                                    uint8_t * const field_name2 = get_safe_c_identifier(codegen, field->var_decl_name);
-                                    struct ASTNode * const field_type2 = field->var_decl_type;
-                                    struct ASTNode * const default_value = field->var_decl_init;
-                                    if (((field_name2 != NULL) && (field_type2 != NULL))) {
-                                        if ((default_value != NULL)) {
-                                            c99_emit_indent(codegen);
-                                            libc_fprintf((void *)codegen->output, (const char *)str1323, (uint8_t *)var_name, (uint8_t *)field_name2);
-                                            gen_expr(codegen, default_value);
-                                            libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
-                                        } else {
-                                            if ((field_type2->type == AST_TYPE_POINTER)) {
-                                                c99_emit_indent(codegen);
-                                                libc_fprintf((void *)codegen->output, (const char *)str1324, (uint8_t *)var_name, (uint8_t *)field_name2);
-                                            } else {
-                                                if ((field_type2->type == AST_TYPE_ARRAY)) {
-                                                    c99_emit_indent(codegen);
-                                                    libc_fprintf((void *)codegen->output, (const char *)str1325, (uint8_t *)var_name, (uint8_t *)field_name2, (uint8_t *)var_name, (uint8_t *)field_name2);
-                                                } else {
-                                                    c99_emit_indent(codegen);
-                                                    libc_fprintf((void *)codegen->output, (const char *)str1326, (uint8_t *)var_name, (uint8_t *)field_name2);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                i2 = (i2 + 1);
-                            }
-                        } else {
-                            c99_emit_indent(codegen);
-                            libc_fprintf((void *)codegen->output, (const char *)str1327, (uint8_t *)var_name, (uint8_t *)var_name);
-                        }
+                        gen_var_decl_empty_struct_init(codegen, var_name, struct_decl_for_empty_init);
                     } else {
                         if ((is_array_from_function != 0)) {
                             libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
                             c99_emit_indent(codegen);
-                            libc_fprintf((void *)codegen->output, (const char *)str1328, (uint8_t *)var_name);
+                            libc_fprintf((void *)codegen->output, (const char *)str1317, (uint8_t *)var_name);
                             libc_fputs((uint8_t *)(uint8_t *)str470, (void *)codegen->output);
                             gen_expr(codegen, init_expr);
                             libc_fputs((uint8_t *)(uint8_t *)str1307, (void *)codegen->output);
@@ -35647,7 +35493,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                             if ((needs_memcpy != 0)) {
                                 libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
                                 c99_emit_indent(codegen);
-                                libc_fprintf((void *)codegen->output, (const char *)str1328, (uint8_t *)var_name);
+                                libc_fprintf((void *)codegen->output, (const char *)str1317, (uint8_t *)var_name);
                                 libc_fputs((uint8_t *)(uint8_t *)str470, (void *)codegen->output);
                                 gen_expr(codegen, init_expr);
                                 libc_fputs((uint8_t *)(uint8_t *)str927, (void *)codegen->output);
@@ -35659,46 +35505,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                     c99_emit_string_interp_fill(codegen, init_expr, var_name);
                                 } else {
                                     if ((struct_init_needs_memcpy != 0)) {
-                                        libc_fputs((uint8_t *)(uint8_t *)str848, (void *)codegen->output);
-                                        uint8_t * const struct_name3 = get_safe_c_identifier(codegen, init_expr->struct_init_struct_name);
-                                        struct ASTNode * const struct_decl3 = find_struct_decl_c99(codegen, struct_name3);
-                                        const int32_t field_count4 = init_expr->struct_init_field_count;
-                                        libc_fprintf((void *)codegen->output, (const char *)str982, (uint8_t *)struct_name3);
-                                        int32_t i3 = 0;
-                                        while ((i3 < field_count4)) {
-                                            uint8_t * const safe_field_name = get_safe_c_identifier(codegen, init_expr->struct_init_field_names[i3]);
-                                            struct ASTNode * const field_type3 = c99_find_struct_field_type(codegen, struct_decl3, init_expr->struct_init_field_names[i3]);
-                                            struct ASTNode * const field_value2 = init_expr->struct_init_field_values[i3];
-                                            libc_fprintf((void *)codegen->output, (const char *)str983, (uint8_t *)safe_field_name);
-                                            if (((((field_type3 != NULL) && (field_type3->type == AST_TYPE_ARRAY)) && (field_value2 != NULL)) && (field_value2->type == AST_IDENTIFIER))) {
-                                                if ((array_element_is_aggregate_c99(codegen, field_type3) != 0)) {
-                                                    libc_fputs((uint8_t *)(uint8_t *)str984, (void *)codegen->output);
-                                                } else {
-                                                    libc_fputs((uint8_t *)(uint8_t *)str985, (void *)codegen->output);
-                                                }
-                                            } else {
-                                                gen_expr(codegen, field_value2);
-                                            }
-                                            if ((i3 < (field_count4 - 1))) {
-                                                libc_fputs((uint8_t *)(uint8_t *)str470, (void *)codegen->output);
-                                            }
-                                            i3 = (i3 + 1);
-                                        }
-                                        libc_fputs((uint8_t *)(uint8_t *)str766, (void *)codegen->output);
-                                        i3 = 0;
-                                        while ((i3 < field_count4)) {
-                                            uint8_t * const field_name3 = init_expr->struct_init_field_names[i3];
-                                            struct ASTNode * const field_type4 = c99_find_struct_field_type(codegen, struct_decl3, field_name3);
-                                            struct ASTNode * const field_value3 = init_expr->struct_init_field_values[i3];
-                                            if (((((field_type4 != NULL) && (field_type4->type == AST_TYPE_ARRAY)) && (field_value3 != NULL)) && (field_value3->type == AST_IDENTIFIER))) {
-                                                uint8_t * const safe_field_name2 = get_safe_c_identifier(codegen, field_name3);
-                                                c99_emit_indent(codegen);
-                                                libc_fprintf((void *)codegen->output, (const char *)str1329, (uint8_t *)var_name, (uint8_t *)safe_field_name2);
-                                                gen_expr(codegen, field_value3);
-                                                libc_fprintf((void *)codegen->output, (const char *)str1330, (uint8_t *)var_name, (uint8_t *)safe_field_name2);
-                                            }
-                                            i3 = (i3 + 1);
-                                        }
+                                        gen_var_decl_struct_init_memcpy(codegen, var_name, init_expr);
                                     } else {
                                         libc_fputs((uint8_t *)(uint8_t *)str848, (void *)codegen->output);
                                         int32_t needs_cast = 0;
@@ -35768,12 +35575,12 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
             c99_emit_indent(codegen);
             if ((stmt->match_expr_arms[i].literal_is_bool != 0)) {
                 if ((stmt->match_expr_arms[i].literal_int_value != 0)) {
-                    libc_fprintf((void *)codegen->output, (const char *)str1331, (uint8_t *)prefix);
+                    libc_fprintf((void *)codegen->output, (const char *)str1318, (uint8_t *)prefix);
                 } else {
-                    libc_fprintf((void *)codegen->output, (const char *)str1332, (uint8_t *)prefix);
+                    libc_fprintf((void *)codegen->output, (const char *)str1319, (uint8_t *)prefix);
                 }
             } else {
-                libc_fprintf((void *)codegen->output, (const char *)str1333, (uint8_t *)prefix, stmt->match_expr_arms[i].literal_int_value);
+                libc_fprintf((void *)codegen->output, (const char *)str1320, (uint8_t *)prefix, stmt->match_expr_arms[i].literal_int_value);
             }
             if ((stmt->match_expr_arms[i].result_is_block != 0)) {
                 libc_fputs((uint8_t *)(uint8_t *)str1251, (void *)codegen->output);
@@ -35804,13 +35611,13 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                         }
                         if ((bind != NULL)) {
                             c99_emit_indent(codegen);
-                            libc_fprintf((void *)codegen->output, (const char *)str1334, (uint8_t *)prefix, idx);
+                            libc_fprintf((void *)codegen->output, (const char *)str1321, (uint8_t *)prefix, idx);
                             codegen->indent_level = (codegen->indent_level + 1);
                             c99_emit_indent(codegen);
-                            libc_fprintf((void *)codegen->output, (const char *)str1335, (uint8_t *)vtype, (uint8_t *)bind, (uint8_t *)vname);
+                            libc_fprintf((void *)codegen->output, (const char *)str1322, (uint8_t *)vtype, (uint8_t *)bind, (uint8_t *)vname);
                         } else {
                             c99_emit_indent(codegen);
-                            libc_fprintf((void *)codegen->output, (const char *)str1336, (uint8_t *)prefix, idx);
+                            libc_fprintf((void *)codegen->output, (const char *)str1323, (uint8_t *)prefix, idx);
                         }
                         if ((stmt->match_expr_arms[i].result_is_block != 0)) {
                             if ((bind == NULL)) {
@@ -35841,9 +35648,9 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                     }
                     c99_emit_indent(codegen);
                     if ((ev >= 0)) {
-                        libc_fprintf((void *)codegen->output, (const char *)str1333, (uint8_t *)prefix, ev);
+                        libc_fprintf((void *)codegen->output, (const char *)str1320, (uint8_t *)prefix, ev);
                     } else {
-                        libc_fprintf((void *)codegen->output, (const char *)str1337, (uint8_t *)prefix);
+                        libc_fprintf((void *)codegen->output, (const char *)str1324, (uint8_t *)prefix);
                     }
                     if ((stmt->match_expr_arms[i].result_is_block != 0)) {
                         libc_fputs((uint8_t *)(uint8_t *)str1251, (void *)codegen->output);
@@ -35860,9 +35667,9 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                         uint8_t * const v = get_safe_c_identifier(codegen, stmt->match_expr_arms[i].var_name);
                         c99_emit_indent(codegen);
                         if ((v != NULL)) {
-                            libc_fprintf((void *)codegen->output, (const char *)str1338, (uint8_t *)prefix, (uint8_t *)m_type, (uint8_t *)v);
+                            libc_fprintf((void *)codegen->output, (const char *)str1325, (uint8_t *)prefix, (uint8_t *)m_type, (uint8_t *)v);
                         } else {
-                            libc_fprintf((void *)codegen->output, (const char *)str1339, (uint8_t *)prefix);
+                            libc_fprintf((void *)codegen->output, (const char *)str1326, (uint8_t *)prefix);
                         }
                         codegen->indent_level = (codegen->indent_level + 1);
                         if ((stmt->match_expr_arms[i].result_is_block != 0)) {
@@ -35876,7 +35683,7 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                     } else {
                         if (((stmt->match_expr_arms[i].kind == MATCH_PAT_WILDCARD) || (stmt->match_expr_arms[i].kind == MATCH_PAT_ELSE))) {
                             c99_emit_indent(codegen);
-                            libc_fprintf((void *)codegen->output, (const char *)str1339, (uint8_t *)prefix);
+                            libc_fprintf((void *)codegen->output, (const char *)str1326, (uint8_t *)prefix);
                             codegen->indent_level = (codegen->indent_level + 1);
                             if ((stmt->match_expr_arms[i].result_is_block != 0)) {
                                 gen_stmt(codegen, stmt->match_expr_arms[i].result_expr);
@@ -35893,7 +35700,7 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                                     id = 1;
                                 }
                                 c99_emit_indent(codegen);
-                                libc_fprintf((void *)codegen->output, (const char *)str1340, (uint8_t *)prefix, (uint32_t)id);
+                                libc_fprintf((void *)codegen->output, (const char *)str1327, (uint8_t *)prefix, (uint32_t)id);
                                 if ((stmt->match_expr_arms[i].result_is_block != 0)) {
                                     libc_fputs((uint8_t *)(uint8_t *)str1251, (void *)codegen->output);
                                     codegen->indent_level = (codegen->indent_level + 1);
@@ -35914,6 +35721,254 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
     }
     codegen->indent_level = (codegen->indent_level - 1);
     c99_emit(codegen, (uint8_t *)(uint8_t *)str162);
+}
+
+static __attribute__((unused)) void gen_var_decl_empty_struct_init(struct C99CodeGenerator * codegen, uint8_t * var_name, struct ASTNode * struct_decl) {
+    (void)codegen;
+    (void)var_name;
+    (void)struct_decl;
+    libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
+    const int32_t field_count = struct_decl->struct_decl_field_count;
+    if ((field_count > 0)) {
+        int32_t i = 0;
+        while ((i < field_count)) {
+            struct ASTNode * const field = struct_decl->struct_decl_fields[i];
+            if (((field != NULL) && (field->type == AST_VAR_DECL))) {
+                uint8_t * const field_name = get_safe_c_identifier(codegen, field->var_decl_name);
+                struct ASTNode * const field_type = field->var_decl_type;
+                struct ASTNode * const default_value = field->var_decl_init;
+                if (((field_name != NULL) && (field_type != NULL))) {
+                    if ((default_value != NULL)) {
+                        c99_emit_indent(codegen);
+                        libc_fprintf((void *)codegen->output, (const char *)str1328, (uint8_t *)var_name, (uint8_t *)field_name);
+                        gen_expr(codegen, default_value);
+                        libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
+                    } else {
+                        if ((field_type->type == AST_TYPE_POINTER)) {
+                            c99_emit_indent(codegen);
+                            libc_fprintf((void *)codegen->output, (const char *)str1329, (uint8_t *)var_name, (uint8_t *)field_name);
+                        } else {
+                            if ((field_type->type == AST_TYPE_ARRAY)) {
+                                c99_emit_indent(codegen);
+                                libc_fprintf((void *)codegen->output, (const char *)str1330, (uint8_t *)var_name, (uint8_t *)field_name, (uint8_t *)var_name, (uint8_t *)field_name);
+                            } else {
+                                c99_emit_indent(codegen);
+                                libc_fprintf((void *)codegen->output, (const char *)str1331, (uint8_t *)var_name, (uint8_t *)field_name);
+                            }
+                        }
+                    }
+                }
+            }
+            i = (i + 1);
+        }
+    } else {
+        c99_emit_indent(codegen);
+        libc_fprintf((void *)codegen->output, (const char *)str1332, (uint8_t *)var_name, (uint8_t *)var_name);
+    }
+}
+
+static __attribute__((unused)) void gen_var_decl_struct_init_memcpy(struct C99CodeGenerator * codegen, uint8_t * var_name, struct ASTNode * init_expr) {
+    (void)codegen;
+    (void)var_name;
+    (void)init_expr;
+    libc_fputs((uint8_t *)(uint8_t *)str848, (void *)codegen->output);
+    uint8_t * const struct_name = get_safe_c_identifier(codegen, init_expr->struct_init_struct_name);
+    struct ASTNode * const struct_decl = find_struct_decl_c99(codegen, struct_name);
+    const int32_t field_count = init_expr->struct_init_field_count;
+    libc_fprintf((void *)codegen->output, (const char *)str982, (uint8_t *)struct_name);
+    int32_t i = 0;
+    while ((i < field_count)) {
+        uint8_t * const safe_field_name = get_safe_c_identifier(codegen, init_expr->struct_init_field_names[i]);
+        struct ASTNode * const field_type = c99_find_struct_field_type(codegen, struct_decl, init_expr->struct_init_field_names[i]);
+        struct ASTNode * const field_value = init_expr->struct_init_field_values[i];
+        libc_fprintf((void *)codegen->output, (const char *)str983, (uint8_t *)safe_field_name);
+        if (((((field_type != NULL) && (field_type->type == AST_TYPE_ARRAY)) && (field_value != NULL)) && (field_value->type == AST_IDENTIFIER))) {
+            if ((array_element_is_aggregate_c99(codegen, field_type) != 0)) {
+                libc_fputs((uint8_t *)(uint8_t *)str984, (void *)codegen->output);
+            } else {
+                libc_fputs((uint8_t *)(uint8_t *)str985, (void *)codegen->output);
+            }
+        } else {
+            gen_expr(codegen, field_value);
+        }
+        if ((i < (field_count - 1))) {
+            libc_fputs((uint8_t *)(uint8_t *)str470, (void *)codegen->output);
+        }
+        i = (i + 1);
+    }
+    libc_fputs((uint8_t *)(uint8_t *)str766, (void *)codegen->output);
+    i = 0;
+    while ((i < field_count)) {
+        uint8_t * const field_name = init_expr->struct_init_field_names[i];
+        struct ASTNode * const field_type = c99_find_struct_field_type(codegen, struct_decl, field_name);
+        struct ASTNode * const field_value = init_expr->struct_init_field_values[i];
+        if (((((field_type != NULL) && (field_type->type == AST_TYPE_ARRAY)) && (field_value != NULL)) && (field_value->type == AST_IDENTIFIER))) {
+            uint8_t * const safe_field_name = get_safe_c_identifier(codegen, field_name);
+            c99_emit_indent(codegen);
+            libc_fprintf((void *)codegen->output, (const char *)str1333, (uint8_t *)var_name, (uint8_t *)safe_field_name);
+            gen_expr(codegen, field_value);
+            libc_fprintf((void *)codegen->output, (const char *)str1334, (uint8_t *)var_name, (uint8_t *)safe_field_name);
+        }
+        i = (i + 1);
+    }
+}
+
+static __attribute__((unused)) int32_t gen_var_decl_void_type(struct C99CodeGenerator * codegen, struct ASTNode * init_expr) {
+    (void)codegen;
+    (void)init_expr;
+    if ((init_expr == NULL)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t is_catch_with_break = 0;
+    if ((init_expr->type == AST_CATCH_EXPR)) {
+        struct ASTNode * const catch_block = init_expr->catch_expr_catch_block;
+        if (((catch_block != NULL) && (catch_block->type == AST_BLOCK))) {
+            int32_t i = 0;
+            while ((i < catch_block->block_stmt_count)) {
+                struct ASTNode * const s = catch_block->block_stmts[i];
+                if (((s != NULL) && ((s->type == AST_BREAK_STMT) || (s->type == AST_CONTINUE_STMT)))) {
+                    is_catch_with_break = 1;
+                    break;
+                }
+                i = (i + 1);
+            }
+        }
+    }
+    if ((is_catch_with_break != 0)) {
+        struct ASTNode * const operand = init_expr->catch_expr_operand;
+        struct ASTNode * const block = init_expr->catch_expr_catch_block;
+        uint8_t * const err_name = init_expr->catch_expr_err_name;
+        if (((operand != NULL) && (block != NULL))) {
+            uint8_t * const operand_union_c = get_c_type_of_expr(codegen, operand);
+            int32_t operand_is_err_union = 0;
+            if (((operand_union_c != NULL) && ((uint8_t *)std_string_strstr((uint8_t *)operand_union_c, (uint8_t *)(uint8_t *)str1004) != NULL))) {
+                operand_is_err_union = 1;
+            }
+            if ((operand_is_err_union != 0)) {
+                uint8_t * const union_c = operand_union_c;
+                c99_emit_indent(codegen);
+                libc_fprintf((void *)codegen->output, (const char *)str1335, (uint8_t *)union_c);
+                gen_expr(codegen, operand);
+                libc_fputs((uint8_t *)(uint8_t *)str1010, (void *)codegen->output);
+                codegen->indent_level = (codegen->indent_level + 1);
+                if ((err_name != NULL)) {
+                    uint8_t * const safe = get_safe_c_identifier(codegen, err_name);
+                    c99_emit_indent(codegen);
+                    libc_fprintf((void *)codegen->output, (const char *)str1011, (uint8_t *)union_c, (uint8_t *)safe);
+                }
+                int32_t i = 0;
+                while ((i < block->block_stmt_count)) {
+                    struct ASTNode * const s = block->block_stmts[i];
+                    if ((s != NULL)) {
+                        gen_stmt(codegen, s);
+                    }
+                    i = (i + 1);
+                }
+                codegen->indent_level = (codegen->indent_level - 1);
+                c99_emit_indent(codegen);
+                libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
+                int32_t _uya_ret = 1;
+                return _uya_ret;
+            }
+        }
+    }
+    c99_emit_indent(codegen);
+    libc_fputs((uint8_t *)(uint8_t *)str1293, (void *)codegen->output);
+    gen_expr(codegen, init_expr);
+    libc_fputs((uint8_t *)(uint8_t *)str805, (void *)codegen->output);
+    int32_t _uya_ret = 1;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t should_use_va_list(struct C99CodeGenerator * codegen, struct ASTNode * var_type, uint8_t * var_name, uint8_t * type_c) {
+    (void)codegen;
+    (void)var_type;
+    (void)var_name;
+    (void)type_c;
+    if ((codegen->current_function_decl == NULL)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    if ((codegen->current_function_decl->fn_decl_is_varargs == 0)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    if ((var_name == NULL)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    if ((codegen->current_function_decl->fn_decl_body == NULL)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    if ((is_va_list_var_name(codegen, codegen->current_function_decl->fn_decl_body, (uint8_t *)var_name) == 0)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    int32_t is_ptr_to_void = 0;
+    if (((((((var_type != NULL) && (var_type->type == AST_TYPE_POINTER)) && (var_type->type_pointer_pointed_type != NULL)) && (var_type->type_pointer_pointed_type->type == AST_TYPE_NAMED)) && (var_type->type_pointer_pointed_type->type_named_name != NULL)) && (std_string_strcmp((uint8_t *)var_type->type_pointer_pointed_type->type_named_name, (uint8_t *)(uint8_t *)str517) == 0))) {
+        is_ptr_to_void = 1;
+    }
+    if (((((var_type != NULL) && (var_type->type == AST_TYPE_NAMED)) && (var_type->type_named_name != NULL)) && ((std_string_strcmp((uint8_t *)var_type->type_named_name, (uint8_t *)(uint8_t *)str1336) == 0) || (std_string_strcmp((uint8_t *)var_type->type_named_name, (uint8_t *)(uint8_t *)str517) == 0)))) {
+        is_ptr_to_void = 1;
+    }
+    if (((type_c != NULL) && (((uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str517) != NULL) || ((uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1336) != NULL)))) {
+        is_ptr_to_void = 1;
+    }
+    int32_t _uya_ret = is_ptr_to_void;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) uint8_t * emit_pointer_const_decl(struct C99CodeGenerator * codegen, uint8_t * var_name, uint8_t * type_c, struct Arena * arena) {
+    (void)codegen;
+    (void)var_name;
+    (void)type_c;
+    (void)arena;
+    uint8_t * const open_paren = (uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1337);
+    if ((open_paren != NULL)) {
+        uint8_t * const close_paren = (uint8_t *)std_string_strchr(open_paren, 41);
+        uint8_t * const bracket = (uint8_t *)std_string_strchr(open_paren, 91);
+        if ((((close_paren != NULL) && (bracket != NULL)) && (close_paren < bracket))) {
+            const int32_t prefix_len = std_runtime_ptr_diff(open_paren, (uint8_t *)type_c);
+            const int32_t suffix_len = std_string_strlen(bracket);
+            uint8_t temp_buf[256] = {0};
+            int32_t j = 0;
+            while (((j < prefix_len) && (j < TEMP_BUF_LIMIT))) {
+                temp_buf[j] = type_c[j];
+                j = (j + 1);
+            }
+            if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
+                temp_buf[j] = 0;
+            }
+            libc_fprintf((void *)codegen->output, (const char *)str1338, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name, bracket);
+            const int32_t total_len = ((prefix_len + suffix_len) + 10);
+            uint8_t * stored_type = (uint8_t *)arena_alloc(arena, total_len);
+            if ((stored_type != NULL)) {
+                uint8_t temp_buf2[256] = {0};
+                j = 0;
+                while (((j < prefix_len) && (j < TEMP_BUF_LIMIT))) {
+                    temp_buf2[j] = type_c[j];
+                    j = (j + 1);
+                }
+                if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
+                    temp_buf2[j] = 0;
+                }
+                libc_snprintf((char *)(uint8_t *)stored_type, total_len, (const char *)str1339, (uint8_t *)(&temp_buf2[0]), bracket);
+            }
+            uint8_t * _uya_ret = stored_type;
+            return _uya_ret;
+        }
+    }
+    c99_emit_indent(codegen);
+    libc_fprintf((void *)codegen->output, (const char *)str1340, (uint8_t *)type_c, (uint8_t *)var_name);
+    const int32_t str_len = (std_string_strlen((uint8_t *)type_c) + 7);
+    uint8_t * stored_type2 = (uint8_t *)arena_alloc(arena, str_len);
+    if ((stored_type2 != NULL)) {
+        libc_snprintf((char *)(uint8_t *)stored_type2, str_len, (const char *)str1314, (uint8_t *)type_c);
+    }
+    uint8_t * _uya_ret = stored_type2;
+    return _uya_ret;
 }
 
 static __attribute__((unused)) int32_t is_struct_in_table(struct C99CodeGenerator * codegen, uint8_t * struct_name) {
@@ -38650,7 +38705,7 @@ static __attribute__((unused)) int32_t is_identifier_pointer_to_array_type(struc
         int32_t _uya_ret = 0;
         return _uya_ret;
     }
-    uint8_t * const open_paren_asterisk = (uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1316);
+    uint8_t * const open_paren_asterisk = (uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1337);
     if ((open_paren_asterisk != NULL)) {
         uint8_t * const close_paren_bracket = (uint8_t *)std_string_strstr(open_paren_asterisk, (uint8_t *)(uint8_t *)str1386);
         if ((close_paren_bracket != NULL)) {
