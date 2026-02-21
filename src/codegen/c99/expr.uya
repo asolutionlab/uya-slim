@@ -691,18 +691,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         
         // 检测字符串函数，设置 needs_string_h 标志
         if callee_name != null {
-            if strcmp(callee_name as *byte, "strcmp" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strncmp" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strlen" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strcpy" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strncpy" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strcat" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strncat" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strchr" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strrchr" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strstr" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strdup" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strndup" as *byte) == 0 {
+            if is_string_function(callee_name) != 0 {
                 codegen.needs_string_h = 1;
             }
         }
@@ -751,18 +740,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER {
             fn_decl = find_function_decl_c99(codegen, callee_name);
             // 如果是字符串函数（无论是普通函数还是 extern 函数），都需要设置 needs_string_h
-            if callee_name != null && (strcmp(callee_name as *byte, "strcmp" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strncmp" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strlen" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strcpy" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strncpy" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strcat" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strncat" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strchr" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strrchr" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strstr" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strdup" as *byte) == 0 ||
-                strcmp(callee_name as *byte, "strndup" as *byte) == 0) {
+            if is_string_function(callee_name) != 0 {
                 codegen.needs_string_h = 1;
             }
         }
@@ -2681,4 +2659,22 @@ fn gen_unary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         }
         gen_expr(codegen, operand);
         fputc(41, codegen.output as *void);  // ')'
+}
+
+// 检测是否是字符串函数
+fn is_string_function(name: &byte) i32 {
+    if name == null { return 0; }
+    if strcmp(name as *byte, "strcmp" as *byte) == 0 { return 1; }
+    if strcmp(name as *byte, "strncmp" as *byte) == 0 { return 1; }
+    if strcmp(name as *byte, "strlen" as *byte) == 0 { return 1; }
+    if strcmp(name as *byte, "strcpy" as *byte) == 0 { return 1; }
+    if strcmp(name as *byte, "strncpy" as *byte) == 0 { return 1; }
+    if strcmp(name as *byte, "strcat" as *byte) == 0 { return 1; }
+    if strcmp(name as *byte, "strncat" as *byte) == 0 { return 1; }
+    if strcmp(name as *byte, "strchr" as *byte) == 0 { return 1; }
+    if strcmp(name as *byte, "strrchr" as *byte) == 0 { return 1; }
+    if strcmp(name as *byte, "strstr" as *byte) == 0 { return 1; }
+    if strcmp(name as *byte, "strdup" as *byte) == 0 { return 1; }
+    if strcmp(name as *byte, "strndup" as *byte) == 0 { return 1; }
+    return 0;
 }
