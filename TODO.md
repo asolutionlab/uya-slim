@@ -3,7 +3,7 @@
 ## 进度概览
 
 ```
-阶段一：模块拆分    [█████████░] 90%
+阶段一：模块拆分    [██████████] 100%
 阶段二：内存优化    [ ] 0%
 阶段三：性能优化    [ ] 0%
 ```
@@ -120,14 +120,16 @@
     [x] extract_macro_output_*
     [x] expand_macros_in_node_simple
 
-[ ] 继续拆分 main.uya (1227 行 -> 目标 < 500 行)
-    [ ] checker_check_node (~1200 行大函数，需拆分)
+[x] 继续拆分 main.uya (1227 行 -> 610 行)
+    [x] 提取 check_match_expr_node
+    [x] 提取 check_assign_node
+    [x] 提取 check_for_stmt_node
 
 [x] 验证 checker 拆分
     [x] make check 通过 (414/414)
     [x] 每文件 ≤ 2000 行
 
-当前：main.uya 仍有 1227 行，主要是 checker_check_node 大函数
+当前：checker 模块拆分完成！共 16 个文件，10978 行
 ```
 
 ### 1.2 parser.uya 拆分
