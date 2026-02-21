@@ -710,18 +710,7 @@ fn checker_check_struct_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                             const msig: &ASTNode = cur_iface.interface_decl_method_sigs[mi];
                             if msig != null && msig.type == ASTNodeType.AST_FN_DECL && msig.fn_decl_name != null {
                                 // 检查是否已存在
-                                var exists: i32 = 0;
-                                var sj: i32 = 0;
-                                while sj < sig_count && sj < MAX_INTERFACE_METHODS {
-                                    const existing_sig: &ASTNode = method_sigs[sj];
-                                    if existing_sig != null && existing_sig.fn_decl_name != null &&
-                                        str_equals(existing_sig.fn_decl_name, msig.fn_decl_name) != 0 {
-                                        exists = 1;
-                                        break;
-                                    }
-                                    sj = sj + 1;
-                                }
-                                if exists == 0 && sig_count < MAX_INTERFACE_METHODS {
+                                if method_signature_exists(method_sigs, sig_count, msig) == 0 && sig_count < MAX_INTERFACE_METHODS {
                                     method_sigs[sig_count] = msig;
                                     sig_count = sig_count + 1;
                                 }
@@ -751,4 +740,21 @@ fn checker_check_struct_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     }
     
     return 1;
+}
+
+// 检查方法签名是否已存在于列表中
+fn method_signature_exists(method_sigs: [&ASTNode: MAX_INTERFACE_METHODS], sig_count: i32, msig: &ASTNode) i32 {
+    if msig == null || msig.type != ASTNodeType.AST_FN_DECL || msig.fn_decl_name == null {
+        return 0;
+    }
+    var sj: i32 = 0;
+    while sj < sig_count && sj < MAX_INTERFACE_METHODS {
+        const existing_sig: &ASTNode = method_sigs[sj];
+        if existing_sig != null && existing_sig.fn_decl_name != null &&
+            str_equals(existing_sig.fn_decl_name, msig.fn_decl_name) != 0 {
+            return 1;
+        }
+        sj = sj + 1;
+    }
+    return 0;
 }

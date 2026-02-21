@@ -2768,6 +2768,7 @@ static int32_t checker_register_fn_decl(struct TypeChecker * checker, struct AST
 static int32_t checker_check_extern_var_decl(struct TypeChecker * checker, struct ASTNode * node);
 static int32_t checker_check_fn_decl(struct TypeChecker * checker, struct ASTNode * node);
 static int32_t checker_check_struct_decl(struct TypeChecker * checker, struct ASTNode * node);
+static int32_t method_signature_exists(struct ASTNode * method_sigs_param[128], int32_t sig_count, struct ASTNode * msig);
 static int32_t register_mono_instance(struct TypeChecker * checker, uint8_t * generic_name, struct ASTNode * * type_arg_nodes, int32_t type_arg_count, int32_t is_function);
 static struct Type substitute_generic_type(struct TypeChecker * checker, struct Type type, struct TypeParam * type_params, int32_t type_param_count, struct ASTNode * * type_args, int32_t type_arg_count);
 static void pointer_nonnull_add(struct TypeChecker * checker, uint8_t * ptr_name);
@@ -21122,17 +21123,7 @@ static __attribute__((unused)) int32_t checker_check_struct_decl(struct TypeChec
                         while (((mi < cur_iface->interface_decl_method_sig_count) && (sig_count < MAX_INTERFACE_METHODS))) {
                             struct ASTNode * const msig = cur_iface->interface_decl_method_sigs[mi];
                             if ((((msig != NULL) && (msig->type == AST_FN_DECL)) && (msig->fn_decl_name != NULL))) {
-                                int32_t exists = 0;
-                                int32_t sj = 0;
-                                while (((sj < sig_count) && (sj < MAX_INTERFACE_METHODS))) {
-                                    struct ASTNode * const existing_sig = method_sigs[sj];
-                                    if ((((existing_sig != NULL) && (existing_sig->fn_decl_name != NULL)) && (str_equals(existing_sig->fn_decl_name, msig->fn_decl_name) != 0))) {
-                                        exists = 1;
-                                        break;
-                                    }
-                                    sj = (sj + 1);
-                                }
-                                if (((exists == 0) && (sig_count < MAX_INTERFACE_METHODS))) {
+                                if (((method_signature_exists(method_sigs, sig_count, msig) == 0) && (sig_count < MAX_INTERFACE_METHODS))) {
                                     method_sigs[sig_count] = msig;
                                     sig_count = (sig_count + 1);
                                 }
@@ -21160,6 +21151,30 @@ static __attribute__((unused)) int32_t checker_check_struct_decl(struct TypeChec
         }
     }
     int32_t _uya_ret = 1;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t method_signature_exists(struct ASTNode * method_sigs_param[128], int32_t sig_count, struct ASTNode * msig) {
+    // 数组参数按值传递：创建局部副本
+    struct ASTNode * method_sigs[128];
+        __uya_memcpy(method_sigs, method_sigs_param, sizeof(method_sigs));
+    (void)method_sigs_param;
+    (void)sig_count;
+    (void)msig;
+    if ((((msig == NULL) || (msig->type != AST_FN_DECL)) || (msig->fn_decl_name == NULL))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    int32_t sj = 0;
+    while (((sj < sig_count) && (sj < MAX_INTERFACE_METHODS))) {
+        struct ASTNode * const existing_sig = method_sigs[sj];
+        if ((((existing_sig != NULL) && (existing_sig->fn_decl_name != NULL)) && (str_equals(existing_sig->fn_decl_name, msig->fn_decl_name) != 0))) {
+            int32_t _uya_ret = 1;
+            return _uya_ret;
+        }
+        sj = (sj + 1);
+    }
+    int32_t _uya_ret = 0;
     return _uya_ret;
 }
 
