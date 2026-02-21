@@ -29,6 +29,7 @@ const SYMBOL_TABLE_SIZE: i32 = 32768;
 const FUNCTION_TABLE_SIZE: i32 = 2048;
 const MODULE_TABLE_SIZE: i32 = 256;
 const IMPORT_TABLE_SIZE: i32 = 512;
+const STRING_POOL_SIZE: i32 = 16384;  // 字符串池大小
 
 // ===== 类型枚举 =====
 
@@ -157,6 +158,19 @@ struct ImportTable {
     count: i32,
 }
 
+// 字符串池条目
+struct StringPoolEntry {
+    str: &byte,           // 字符串指针
+    hash: i32,            // 哈希值（用于快速比较）
+    next: &StringPoolEntry, // 链表下一个（哈希冲突时）
+}
+
+// 字符串池（用于字符串 intern）
+struct StringPool {
+    buckets: [&StringPoolEntry: STRING_POOL_SIZE],  // 哈希桶
+    count: i32,
+}
+
 struct MonoInstance {
     generic_name: &byte,
     type_args: &Type,
@@ -171,6 +185,7 @@ struct TypeChecker {
     function_table: FunctionTable,
     module_table: ModuleTable,
     import_table: ImportTable,
+    string_pool: StringPool,  // 字符串池
     scope_level: i32,
     loop_depth: i32,
     program_node: &ASTNode,

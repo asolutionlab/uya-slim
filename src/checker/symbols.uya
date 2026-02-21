@@ -58,7 +58,15 @@ fn checker_init(checker: &TypeChecker, arena: &Arena, default_filename: &byte) i
         i = i + 1;
     }
     checker.import_table.count = 0;
-    
+
+    // 初始化字符串池（所有桶设为null）
+    i = 0;
+    while i < STRING_POOL_SIZE {
+        checker.string_pool.buckets[i] = null;
+        i = i + 1;
+    }
+    checker.string_pool.count = 0;
+
     checker.scope_level = 0;
     checker.loop_depth = 0;
     checker.program_node = null;
@@ -348,12 +356,17 @@ fn checker_exit_scope(checker: &TypeChecker) void {
 // ===== 字符串工具 =====
 
 // 字符串比较辅助函数（Uya 没有 strcmp）
+// 优化：先比较指针，相同则直接返回
 fn str_equals(s1: &byte, s2: &byte) i32 {
     if s1 == null && s2 == null {
         return 1;
     }
     if s1 == null || s2 == null {
         return 0;
+    }
+    // 快速路径：指针相同，字符串必定相同
+    if s1 == s2 {
+        return 1;
     }
     var i: i32 = 0;
     while true {
@@ -370,7 +383,60 @@ fn str_equals(s1: &byte, s2: &byte) i32 {
     return 0;
 }
 
-// 从 Arena 复制字符串
+// ===== 字符串池（String Interning）=====
+
+// 字符串池：查找或插入字符串
+// 如果字符串已存在，返回现有指针；否则创建新条目
+fn string_pool_intern(pool: &StringPool, arena: &Arena, str: &byte) &byte {
+    if pool == null || arena == null || str == null {
+        return str;
+    }
+
+    const hash: i32 = hash_string(str);
+    const bucket_idx: i32 = hash % STRING_POOL_SIZE;
+    if bucket_idx < 0 {
+        return str;
+    }
+
+    // 查找现有条目
+    var entry: &StringPoolEntry = pool.buckets[bucket_idx];
+    while entry != null {
+        // 快速检查：哈希值相同才比较字符串
+        if entry.hash == hash && entry.str != null {
+            // 指针比较：如果字符串已在池中
+            if entry.str == str {
+                return entry.str;
+            }
+            // 字符串比较
+            if str_equals(entry.str, str) != 0 {
+                return entry.str;  // 返回已存在的字符串指针
+            }
+        }
+        entry = entry.next;
+    }
+
+    // 创建新条目
+    const n: usize = strlen(str as *byte) + 1;
+    const new_str: &byte = arena_alloc(arena, n) as &byte;
+    if new_str == null {
+        return str;
+    }
+    memcpy(new_str as *void, str as *void, n);
+
+    const new_entry: &StringPoolEntry = arena_alloc(arena, @size_of(StringPoolEntry) as usize) as &StringPoolEntry;
+    if new_entry == null {
+        return new_str;
+    }
+    new_entry.str = new_str;
+    new_entry.hash = hash;
+    new_entry.next = pool.buckets[bucket_idx];
+    pool.buckets[bucket_idx] = new_entry;
+    pool.count = pool.count + 1;
+
+    return new_str;
+}
+
+// 从 Arena 复制字符串（不使用字符串池）
 fn checker_arena_strdup(arena: &Arena, src: &byte) &byte {
     if arena == null || src == null {
         return null;
@@ -382,6 +448,15 @@ fn checker_arena_strdup(arena: &Arena, src: &byte) &byte {
     }
     memcpy(result as *void, src as *void, n);
     return result;
+}
+
+// 从 Arena 复制字符串（使用字符串池，优化版本）
+// 如果字符串已存在，返回现有指针；否则创建新条目
+fn checker_intern_strdup(checker: &TypeChecker, src: &byte) &byte {
+    if checker == null || src == null {
+        return null;
+    }
+    return string_pool_intern(&checker.string_pool, checker.arena, src);
 }
 
 // ===== 移动语义 =====
@@ -442,7 +517,7 @@ fn checker_mark_moved(checker: &TypeChecker, node: &ASTNode, var_name: &byte, st
         return;
     }
     const idx: i32 = checker.moved_count;
-    const copy: &byte = checker_arena_strdup(checker.arena, var_name);
+    const copy: &byte = checker_intern_strdup(checker, var_name);
     if copy != null {
         if idx >= 0 && idx < MAX_MOVED_NAMES {
             checker.moved_names[idx] = copy;
@@ -551,7 +626,7 @@ fn get_or_add_error_id(checker: &TypeChecker, name: &byte, node: &ASTNode) u32 {
         return 0;
     }
     const idx: i32 = checker.error_name_count;
-    const copy: &byte = checker_arena_strdup(checker.arena, name);
+    const copy: &byte = checker_intern_strdup(checker, name);
     if copy == null {
         return 0;
     }

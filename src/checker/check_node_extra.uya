@@ -257,7 +257,7 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
         const sym: &Symbol = symbol_table_lookup(checker, dest.identifier_name);
         if sym != null {
             const x: &byte = src_operand.identifier_name;
-            const copy: &byte = checker_arena_strdup(checker.arena, x);
+            const copy: &byte = checker_intern_strdup(checker, x);
             if copy != null {
                 sym.pointee_of = copy;
             }

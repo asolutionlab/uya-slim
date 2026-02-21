@@ -195,7 +195,7 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                 const operand: &ASTNode = node.var_decl_init.unary_expr_operand;
                 if operand != null && operand.type == ASTNodeType.AST_IDENTIFIER {
                 const x: &byte = operand.identifier_name;
-                const copy: &byte = checker_arena_strdup(checker.arena, x);
+                const copy: &byte = checker_intern_strdup(checker, x);
                 if copy != null {
                     symbol.pointee_of = copy;
                 }

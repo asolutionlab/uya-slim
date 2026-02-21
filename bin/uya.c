@@ -1517,6 +1517,8 @@ struct ModuleInfo;
 struct ModuleTable;
 struct ImportedItem;
 struct ImportTable;
+struct StringPoolEntry;
+struct StringPool;
 struct MonoInstance;
 struct TypeChecker;
 struct StringConstant;
@@ -2235,6 +2237,17 @@ struct ImportTable {
     int32_t count;
 };
 
+struct StringPoolEntry {
+    uint8_t * str;
+    int32_t hash;
+    struct StringPoolEntry * next;
+};
+
+struct StringPool {
+    struct StringPoolEntry * buckets[16384];
+    int32_t count;
+};
+
 struct MonoInstance {
     uint8_t * generic_name;
     struct Type * type_args;
@@ -2249,6 +2262,7 @@ struct TypeChecker {
     struct FunctionTable function_table;
     struct ModuleTable module_table;
     struct ImportTable import_table;
+    struct StringPool string_pool;
     int32_t scope_level;
     int32_t loop_depth;
     struct ASTNode * program_node;
@@ -2835,7 +2849,9 @@ static int32_t function_table_insert(struct TypeChecker * checker, struct Functi
 static void checker_enter_scope(struct TypeChecker * checker);
 static void checker_exit_scope(struct TypeChecker * checker);
 static int32_t str_equals(uint8_t * s1, uint8_t * s2);
+static uint8_t * string_pool_intern(struct StringPool * pool, struct Arena * arena, uint8_t * str);
 static uint8_t * checker_arena_strdup(struct Arena * arena, uint8_t * src);
+static uint8_t * checker_intern_strdup(struct TypeChecker * checker, uint8_t * src);
 static int32_t moved_set_contains(struct TypeChecker * checker, uint8_t * name);
 static int32_t has_active_pointer_to(struct TypeChecker * checker, uint8_t * var_name);
 static void checker_mark_moved(struct TypeChecker * checker, struct ASTNode * node, uint8_t * var_name, uint8_t * struct_name);
@@ -3221,6 +3237,8 @@ const int32_t FUNCTION_TABLE_SIZE = 2048;
 const int32_t MODULE_TABLE_SIZE = 256;
 
 const int32_t IMPORT_TABLE_SIZE = 512;
+
+const int32_t STRING_POOL_SIZE = 16384;
 
 const int32_t FMT_BUF_SIZE = 64;
 
@@ -4785,7 +4803,7 @@ static __attribute__((unused)) int32_t compile_files(int32_t * input_file_indice
     struct Type void_type = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wmissing-braces"
-    struct TypeChecker checker = (struct TypeChecker){.arena = NULL, .symbol_table = (struct SymbolTable){.slots = {0}, .count = 0}, .function_table = (struct FunctionTable){.slots = {0}, .count = 0}, .module_table = 0, .import_table = 0, .scope_level = 0, .loop_depth = 0, .program_node = NULL, .error_count = 0, .default_filename = NULL, .current_return_type = void_type, .in_function = 0, .in_defer_or_errdefer = 0, .current_function_decl = 0, .error_names = {0}, .error_hashes = {0}, .error_name_count = 0, .moved_names = {0}, .moved_count = 0, .project_root_dir = 0, .uya_root_dir = 0, .current_type_params = 0, .current_type_param_count = 0, .mono_instances = {{0}}, .mono_instance_count = 0, .constraint_var_names = {0}, .constraint_ops = {0}, .constraint_values = {0}, .constraint_count = 0, .pointer_nonnull_names = {0}, .pointer_nonnull_count = 0, .pointer_nullable_names = {0}, .pointer_nullable_count = 0, .enable_safety_proof = 0, .proof_step_limit = 0, .proof_step_count = 0};
+    struct TypeChecker checker = (struct TypeChecker){.arena = NULL, .symbol_table = (struct SymbolTable){.slots = {0}, .count = 0}, .function_table = (struct FunctionTable){.slots = {0}, .count = 0}, .module_table = 0, .import_table = 0, .string_pool = 0, .scope_level = 0, .loop_depth = 0, .program_node = NULL, .error_count = 0, .default_filename = NULL, .current_return_type = void_type, .in_function = 0, .in_defer_or_errdefer = 0, .current_function_decl = 0, .error_names = {0}, .error_hashes = {0}, .error_name_count = 0, .moved_names = {0}, .moved_count = 0, .project_root_dir = 0, .uya_root_dir = 0, .current_type_params = 0, .current_type_param_count = 0, .mono_instances = {{0}}, .mono_instance_count = 0, .constraint_var_names = {0}, .constraint_ops = {0}, .constraint_values = {0}, .constraint_count = 0, .pointer_nonnull_names = {0}, .pointer_nonnull_count = 0, .pointer_nullable_names = {0}, .pointer_nullable_count = 0, .enable_safety_proof = 0, .proof_step_limit = 0, .proof_step_count = 0};
 #pragma GCC diagnostic pop
     uint8_t * default_filename = (uint8_t *)(uint8_t *)str100;
     if ((all_file_count > 0)) {
@@ -20184,7 +20202,7 @@ static __attribute__((unused)) int32_t check_assign_node(struct TypeChecker * ch
             struct Symbol * const sym = symbol_table_lookup(checker, dest->identifier_name);
             if ((sym != NULL)) {
                 uint8_t * const x = src_operand->identifier_name;
-                uint8_t * const copy = checker_arena_strdup(checker->arena, x);
+                uint8_t * const copy = checker_intern_strdup(checker, x);
                 if ((copy != NULL)) {
                     sym->pointee_of = copy;
                 }
@@ -20637,7 +20655,7 @@ static __attribute__((unused)) int32_t checker_check_var_decl(struct TypeChecker
                 struct ASTNode * const operand = node->var_decl_init->unary_expr_operand;
                 if (((operand != NULL) && (operand->type == AST_IDENTIFIER))) {
                     uint8_t * const x = operand->identifier_name;
-                    uint8_t * const copy = checker_arena_strdup(checker->arena, x);
+                    uint8_t * const copy = checker_intern_strdup(checker, x);
                     if ((copy != NULL)) {
                         symbol->pointee_of = copy;
                     }
@@ -26193,6 +26211,12 @@ static __attribute__((unused)) int32_t checker_init(struct TypeChecker * checker
         i = (i + 1);
     }
     checker->import_table.count = 0;
+    i = 0;
+    while ((i < STRING_POOL_SIZE)) {
+        checker->string_pool.buckets[i] = NULL;
+        i = (i + 1);
+    }
+    checker->string_pool.count = 0;
     checker->scope_level = 0;
     checker->loop_depth = 0;
     checker->program_node = NULL;
@@ -26491,6 +26515,10 @@ static __attribute__((unused)) int32_t str_equals(uint8_t * s1, uint8_t * s2) {
         int32_t _uya_ret = 0;
         return _uya_ret;
     }
+    if ((s1 == s2)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
     int32_t i = 0;
     while (true) {
         const uint8_t c1 = (uint8_t)s1[i];
@@ -26509,6 +26537,55 @@ static __attribute__((unused)) int32_t str_equals(uint8_t * s1, uint8_t * s2) {
     return _uya_ret;
 }
 
+static __attribute__((unused)) uint8_t * string_pool_intern(struct StringPool * pool, struct Arena * arena, uint8_t * str) {
+    (void)pool;
+    (void)arena;
+    (void)str;
+    if ((((pool == NULL) || (arena == NULL)) || (str == NULL))) {
+        uint8_t * _uya_ret = str;
+        return _uya_ret;
+    }
+    const int32_t hash = hash_string((uint8_t *)str);
+    const int32_t bucket_idx = (hash % STRING_POOL_SIZE);
+    if ((bucket_idx < 0)) {
+        uint8_t * _uya_ret = str;
+        return _uya_ret;
+    }
+    struct StringPoolEntry * entry = pool->buckets[bucket_idx];
+    while ((entry != NULL)) {
+        if (((entry->hash == hash) && (entry->str != NULL))) {
+            if ((entry->str == str)) {
+                uint8_t * _uya_ret = entry->str;
+                return _uya_ret;
+            }
+            if ((str_equals(entry->str, (uint8_t *)str) != 0)) {
+                uint8_t * _uya_ret = entry->str;
+                return _uya_ret;
+            }
+        }
+        entry = entry->next;
+    }
+    const size_t n = (std_string_strlen((uint8_t *)str) + 1);
+    uint8_t * const new_str = (uint8_t *)arena_alloc(arena, n);
+    if ((new_str == NULL)) {
+        uint8_t * _uya_ret = str;
+        return _uya_ret;
+    }
+    memcpy((void *)new_str, (void *)str, n);
+    struct StringPoolEntry * const new_entry = (struct StringPoolEntry *)arena_alloc(arena, (size_t)(int32_t)sizeof(struct StringPoolEntry));
+    if ((new_entry == NULL)) {
+        uint8_t * _uya_ret = new_str;
+        return _uya_ret;
+    }
+    new_entry->str = new_str;
+    new_entry->hash = hash;
+    new_entry->next = pool->buckets[bucket_idx];
+    pool->buckets[bucket_idx] = new_entry;
+    pool->count = (pool->count + 1);
+    uint8_t * _uya_ret = new_str;
+    return _uya_ret;
+}
+
 static __attribute__((unused)) uint8_t * checker_arena_strdup(struct Arena * arena, uint8_t * src) {
     (void)arena;
     (void)src;
@@ -26524,6 +26601,17 @@ static __attribute__((unused)) uint8_t * checker_arena_strdup(struct Arena * are
     }
     memcpy((void *)result, (void *)src, n);
     uint8_t * _uya_ret = result;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) uint8_t * checker_intern_strdup(struct TypeChecker * checker, uint8_t * src) {
+    (void)checker;
+    (void)src;
+    if (((checker == NULL) || (src == NULL))) {
+        uint8_t * _uya_ret = NULL;
+        return _uya_ret;
+    }
+    uint8_t * _uya_ret = string_pool_intern((&checker->string_pool), checker->arena, (uint8_t *)src);
     return _uya_ret;
 }
 
@@ -26594,7 +26682,7 @@ static __attribute__((unused)) void checker_mark_moved(struct TypeChecker * chec
         return;
     }
     const int32_t idx = checker->moved_count;
-    uint8_t * const copy = checker_arena_strdup(checker->arena, (uint8_t *)var_name);
+    uint8_t * const copy = checker_intern_strdup(checker, (uint8_t *)var_name);
     if ((copy != NULL)) {
         if (((idx >= 0) && (idx < MAX_MOVED_NAMES))) {
             checker->moved_names[idx] = copy;
@@ -26710,7 +26798,7 @@ static __attribute__((unused)) uint32_t get_or_add_error_id(struct TypeChecker *
         return _uya_ret;
     }
     const int32_t idx = checker->error_name_count;
-    uint8_t * const copy = checker_arena_strdup(checker->arena, (uint8_t *)name);
+    uint8_t * const copy = checker_intern_strdup(checker, (uint8_t *)name);
     if ((copy == NULL)) {
         uint32_t _uya_ret = 0;
         return _uya_ret;
