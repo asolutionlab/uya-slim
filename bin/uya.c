@@ -2176,6 +2176,7 @@ struct Symbol {
     int32_t column;
     uint8_t * pointee_of;
     struct ASTNode * decl_node;
+    struct Symbol * next_in_scope;
 };
 
 struct FunctionSignature {
@@ -2294,6 +2295,7 @@ struct TypeChecker {
     int32_t enable_safety_proof;
     int32_t proof_step_limit;
     int32_t proof_step_count;
+    struct Symbol * scope_heads[64];
 };
 
 struct StringConstant {
@@ -4803,7 +4805,7 @@ static __attribute__((unused)) int32_t compile_files(int32_t * input_file_indice
     struct Type void_type = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wmissing-braces"
-    struct TypeChecker checker = (struct TypeChecker){.arena = NULL, .symbol_table = (struct SymbolTable){.slots = {0}, .count = 0}, .function_table = (struct FunctionTable){.slots = {0}, .count = 0}, .module_table = 0, .import_table = 0, .string_pool = 0, .scope_level = 0, .loop_depth = 0, .program_node = NULL, .error_count = 0, .default_filename = NULL, .current_return_type = void_type, .in_function = 0, .in_defer_or_errdefer = 0, .current_function_decl = 0, .error_names = {0}, .error_hashes = {0}, .error_name_count = 0, .moved_names = {0}, .moved_count = 0, .project_root_dir = 0, .uya_root_dir = 0, .current_type_params = 0, .current_type_param_count = 0, .mono_instances = {{0}}, .mono_instance_count = 0, .constraint_var_names = {0}, .constraint_ops = {0}, .constraint_values = {0}, .constraint_count = 0, .pointer_nonnull_names = {0}, .pointer_nonnull_count = 0, .pointer_nullable_names = {0}, .pointer_nullable_count = 0, .enable_safety_proof = 0, .proof_step_limit = 0, .proof_step_count = 0};
+    struct TypeChecker checker = (struct TypeChecker){.arena = NULL, .symbol_table = (struct SymbolTable){.slots = {0}, .count = 0}, .function_table = (struct FunctionTable){.slots = {0}, .count = 0}, .module_table = 0, .import_table = 0, .string_pool = 0, .scope_level = 0, .loop_depth = 0, .program_node = NULL, .error_count = 0, .default_filename = NULL, .current_return_type = void_type, .in_function = 0, .in_defer_or_errdefer = 0, .current_function_decl = 0, .error_names = {0}, .error_hashes = {0}, .error_name_count = 0, .moved_names = {0}, .moved_count = 0, .project_root_dir = 0, .uya_root_dir = 0, .current_type_params = 0, .current_type_param_count = 0, .mono_instances = {{0}}, .mono_instance_count = 0, .constraint_var_names = {0}, .constraint_ops = {0}, .constraint_values = {0}, .constraint_count = 0, .pointer_nonnull_names = {0}, .pointer_nonnull_count = 0, .pointer_nullable_names = {0}, .pointer_nullable_count = 0, .enable_safety_proof = 0, .proof_step_limit = 0, .proof_step_count = 0, .scope_heads = {0}};
 #pragma GCC diagnostic pop
     uint8_t * default_filename = (uint8_t *)(uint8_t *)str100;
     if ((all_file_count > 0)) {
@@ -26217,6 +26219,11 @@ static __attribute__((unused)) int32_t checker_init(struct TypeChecker * checker
         i = (i + 1);
     }
     checker->string_pool.count = 0;
+    i = 0;
+    while ((i < 64)) {
+        checker->scope_heads[i] = NULL;
+        i = (i + 1);
+    }
     checker->scope_level = 0;
     checker->loop_depth = 0;
     checker->program_node = NULL;
@@ -26294,22 +26301,21 @@ static __attribute__((unused)) struct Symbol * symbol_table_lookup(struct TypeCh
         struct Symbol * _uya_ret = NULL;
         return _uya_ret;
     }
-    struct Symbol * found = NULL;
-    int32_t found_scope = (-1);
-    int32_t i = 0;
-    while ((i < SYMBOL_TABLE_SIZE)) {
-        struct Symbol * const symbol = checker->symbol_table.slots[i];
-        if ((symbol != NULL)) {
-            if ((str_equals(symbol->name, (uint8_t *)name) != 0)) {
-                if (((found == NULL) || (symbol->scope_level > found_scope))) {
-                    found = symbol;
-                    found_scope = symbol->scope_level;
+    int32_t scope = checker->scope_level;
+    while ((scope >= 0)) {
+        if ((scope < 64)) {
+            struct Symbol * symbol = checker->scope_heads[scope];
+            while ((symbol != NULL)) {
+                if ((str_equals(symbol->name, (uint8_t *)name) != 0)) {
+                    struct Symbol * _uya_ret = symbol;
+                    return _uya_ret;
                 }
+                symbol = symbol->next_in_scope;
             }
         }
-        i = (i + 1);
+        scope = (scope - 1);
     }
-    struct Symbol * _uya_ret = found;
+    struct Symbol * _uya_ret = NULL;
     return _uya_ret;
 }
 
@@ -26336,6 +26342,11 @@ static __attribute__((unused)) int32_t symbol_table_insert(struct TypeChecker * 
         if ((checker->symbol_table.slots[slot] == NULL)) {
             checker->symbol_table.slots[slot] = symbol;
             checker->symbol_table.count = (checker->symbol_table.count + 1);
+            const int32_t scope = symbol->scope_level;
+            if (((scope >= 0) && (scope < 64))) {
+                symbol->next_in_scope = checker->scope_heads[scope];
+                checker->scope_heads[scope] = symbol;
+            }
             int32_t _uya_ret = 0;
             return _uya_ret;
         }
@@ -26475,14 +26486,32 @@ static __attribute__((unused)) void checker_exit_scope(struct TypeChecker * chec
         return;
     }
     const int32_t current_scope = checker->scope_level;
-    int32_t i = 0;
-    while ((i < SYMBOL_TABLE_SIZE)) {
-        struct Symbol * const symbol = checker->symbol_table.slots[i];
-        if (((symbol != NULL) && (symbol->scope_level == current_scope))) {
-            checker->symbol_table.slots[i] = NULL;
-            checker->symbol_table.count = (checker->symbol_table.count - 1);
+    if (((current_scope >= 0) && (current_scope < 64))) {
+        struct Symbol * symbol = checker->scope_heads[current_scope];
+        while ((symbol != NULL)) {
+            const int32_t hash = hash_string(symbol->name);
+            int32_t index = (hash % SYMBOL_TABLE_SIZE);
+            if ((index < 0)) {
+                index = (index + SYMBOL_TABLE_SIZE);
+            }
+            int32_t i = 0;
+            while ((i < SYMBOL_TABLE_SIZE)) {
+                const int32_t slot = ((index + i) % SYMBOL_TABLE_SIZE);
+                if ((checker->symbol_table.slots[slot] == symbol)) {
+                    checker->symbol_table.slots[slot] = NULL;
+                    checker->symbol_table.count = (checker->symbol_table.count - 1);
+                    break;
+                }
+                if ((checker->symbol_table.slots[slot] == NULL)) {
+                    break;
+                }
+                i = (i + 1);
+            }
+            struct Symbol * const next = symbol->next_in_scope;
+            symbol->next_in_scope = NULL;
+            symbol = next;
         }
-        i = (i + 1);
+        checker->scope_heads[current_scope] = NULL;
     }
     checker->scope_level = (checker->scope_level - 1);
 }
@@ -26628,14 +26657,19 @@ static __attribute__((unused)) int32_t has_active_pointer_to(struct TypeChecker 
         int32_t _uya_ret = 0;
         return _uya_ret;
     }
-    int32_t i = 0;
-    while ((i < SYMBOL_TABLE_SIZE)) {
-        struct Symbol * const s = checker->symbol_table.slots[i];
-        if ((((s != NULL) && (s->pointee_of != NULL)) && (str_equals(s->pointee_of, (uint8_t *)var_name) != 0))) {
-            int32_t _uya_ret = 1;
-            return _uya_ret;
+    int32_t scope = checker->scope_level;
+    while ((scope >= 0)) {
+        if ((scope < 64)) {
+            struct Symbol * s = checker->scope_heads[scope];
+            while ((s != NULL)) {
+                if (((s->pointee_of != NULL) && (str_equals(s->pointee_of, (uint8_t *)var_name) != 0))) {
+                    int32_t _uya_ret = 1;
+                    return _uya_ret;
+                }
+                s = s->next_in_scope;
+            }
         }
-        i = (i + 1);
+        scope = (scope - 1);
     }
     int32_t _uya_ret = 0;
     return _uya_ret;

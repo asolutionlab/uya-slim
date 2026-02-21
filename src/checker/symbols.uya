@@ -67,6 +67,13 @@ fn checker_init(checker: &TypeChecker, arena: &Arena, default_filename: &byte) i
     }
     checker.string_pool.count = 0;
 
+    // 初始化作用域链表头数组
+    i = 0;
+    while i < 64 {
+        checker.scope_heads[i] = null;
+        i = i + 1;
+    }
+
     checker.scope_level = 0;
     checker.loop_depth = 0;
     checker.program_node = null;
@@ -133,34 +140,33 @@ fn checker_get_error_count(checker: &TypeChecker) i32 {
 // ===== 符号表操作 =====
 
 // 符号表查找函数（支持作用域查找，返回最内层匹配的符号）
+// 优化：使用作用域链表，从当前作用域向外查找
 fn symbol_table_lookup(checker: &TypeChecker, name: &byte) &Symbol {
     if checker == null || name == null {
         return null;
     }
 
-    var found: &Symbol = null;
-    var found_scope: i32 = -1;
-
-    var i: i32 = 0;
-    while i < SYMBOL_TABLE_SIZE {
-        const symbol: &Symbol = checker.symbol_table.slots[i];
-
-        if symbol != null {
-            // 使用优化的 str_equals（先比较指针）
-            if str_equals(symbol.name, name) != 0 {
-                if found == null || symbol.scope_level > found_scope {
-                    found = symbol;
-                    found_scope = symbol.scope_level;
+    // 从当前作用域开始向外查找
+    var scope: i32 = checker.scope_level;
+    while scope >= 0 {
+        if scope < 64 {
+            var symbol: &Symbol = checker.scope_heads[scope];
+            while symbol != null {
+                // 使用优化的 str_equals（先比较指针）
+                if str_equals(symbol.name, name) != 0 {
+                    return symbol;  // 找到最内层匹配
                 }
+                symbol = symbol.next_in_scope;
             }
         }
-        i = i + 1;
+        scope = scope - 1;
     }
 
-    return found;
+    return null;
 }
 
 // 符号表插入函数（使用开放寻址的哈希表）
+// 同时将符号添加到当前作用域的链表
 fn symbol_table_insert(checker: &TypeChecker, symbol: &Symbol) i32 {
     if checker == null || symbol == null || symbol.name == null {
         return -1;
@@ -184,6 +190,14 @@ fn symbol_table_insert(checker: &TypeChecker, symbol: &Symbol) i32 {
         if checker.symbol_table.slots[slot] == null {
             checker.symbol_table.slots[slot] = symbol;
             checker.symbol_table.count = checker.symbol_table.count + 1;
+            
+            // 添加到当前作用域的链表头部
+            const scope: i32 = symbol.scope_level;
+            if scope >= 0 && scope < 64 {
+                symbol.next_in_scope = checker.scope_heads[scope];
+                checker.scope_heads[scope] = symbol;
+            }
+            
             return 0;
         }
         i = i + 1;
@@ -318,6 +332,7 @@ fn checker_enter_scope(checker: &TypeChecker) void {
 }
 
 // 退出作用域
+// 优化：使用作用域链表快速清理，避免遍历整个符号表
 fn checker_exit_scope(checker: &TypeChecker) void {
     if checker == null || checker.scope_level <= 0 {
         return;
@@ -325,14 +340,36 @@ fn checker_exit_scope(checker: &TypeChecker) void {
     
     const current_scope: i32 = checker.scope_level;
     
-    var i: i32 = 0;
-    while i < SYMBOL_TABLE_SIZE {
-        const symbol: &Symbol = checker.symbol_table.slots[i];
-        if symbol != null && symbol.scope_level == current_scope {
-            checker.symbol_table.slots[i] = null;
-            checker.symbol_table.count = checker.symbol_table.count - 1;
+    // 使用作用域链表遍历当前作用域的所有符号
+    if current_scope >= 0 && current_scope < 64 {
+        var symbol: &Symbol = checker.scope_heads[current_scope];
+        while symbol != null {
+            // 从哈希表中移除符号
+            const hash: i32 = hash_string(symbol.name);
+            var index: i32 = hash % SYMBOL_TABLE_SIZE;
+            if index < 0 {
+                index = index + SYMBOL_TABLE_SIZE;
+            }
+            
+            var i: i32 = 0;
+            while i < SYMBOL_TABLE_SIZE {
+                const slot: i32 = (index + i) % SYMBOL_TABLE_SIZE;
+                if checker.symbol_table.slots[slot] == symbol {
+                    checker.symbol_table.slots[slot] = null;
+                    checker.symbol_table.count = checker.symbol_table.count - 1;
+                    break;
+                }
+                if checker.symbol_table.slots[slot] == null {
+                    break;
+                }
+                i = i + 1;
+            }
+            
+            const next: &Symbol = symbol.next_in_scope;
+            symbol.next_in_scope = null;
+            symbol = next;
         }
-        i = i + 1;
+        checker.scope_heads[current_scope] = null;
     }
     
     checker.scope_level = checker.scope_level - 1;
@@ -466,17 +503,24 @@ fn moved_set_contains(checker: &TypeChecker, name: &byte) i32 {
 }
 
 // 检查是否有活跃指针指向变量
+// 优化：只遍历当前作用域及内层作用域的符号
 fn has_active_pointer_to(checker: &TypeChecker, var_name: &byte) i32 {
     if checker == null || var_name == null {
         return 0;
     }
-    var i: i32 = 0;
-    while i < SYMBOL_TABLE_SIZE {
-        const s: &Symbol = checker.symbol_table.slots[i];
-        if s != null && s.pointee_of != null && str_equals(s.pointee_of, var_name) != 0 {
-            return 1;
+    // 遍历所有作用域的符号
+    var scope: i32 = checker.scope_level;
+    while scope >= 0 {
+        if scope < 64 {
+            var s: &Symbol = checker.scope_heads[scope];
+            while s != null {
+                if s.pointee_of != null && str_equals(s.pointee_of, var_name) != 0 {
+                    return 1;
+                }
+                s = s.next_in_scope;
+            }
         }
-        i = i + 1;
+        scope = scope - 1;
     }
     return 0;
 }

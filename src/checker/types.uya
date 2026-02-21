@@ -97,6 +97,7 @@ struct Symbol {
     column: i32,
     pointee_of: &byte,
     decl_node: &ASTNode,
+    next_in_scope: &Symbol,  // 同一作用域的下一个符号（用于快速遍历）
 }
 
 struct FunctionSignature {
@@ -217,4 +218,7 @@ struct TypeChecker {
     enable_safety_proof: i32,
     proof_step_limit: i32,
     proof_step_count: i32,
+    // 作用域链表头数组：每个作用域的符号链表头
+    // 用于快速遍历当前作用域的符号，避免遍历整个符号表
+    scope_heads: [&Symbol: 64],  // 支持最多 64 层嵌套作用域
 }
