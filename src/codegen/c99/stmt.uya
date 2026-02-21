@@ -1275,38 +1275,9 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         }
             }
     } else if stmt.type == ASTNodeType.AST_IF_STMT {
-        const condition: &ASTNode = stmt.if_stmt_condition;
-        const then_branch: &ASTNode = stmt.if_stmt_then_branch;
-        const else_branch: &ASTNode = stmt.if_stmt_else_branch;
-        
-        c99_emit_indent(codegen);
-        fputs("if (" as *byte, codegen.output as *void);
-        gen_expr(codegen, condition);
-        fputs(") {\n" as *byte, codegen.output as *void);
-        codegen.indent_level = codegen.indent_level + 1;
-        gen_stmt(codegen, then_branch);
-        codegen.indent_level = codegen.indent_level - 1;
-        c99_emit(codegen, "}" as *byte);
-        if else_branch != null {
-            fputs(" else {\n" as *byte, codegen.output as *void);
-            codegen.indent_level = codegen.indent_level + 1;
-            gen_stmt(codegen, else_branch);
-            codegen.indent_level = codegen.indent_level - 1;
-            c99_emit(codegen, "}" as *byte);
-        }
-        fputs("\n" as *byte, codegen.output as *void);
+        gen_if_stmt(codegen, stmt);
     } else if stmt.type == ASTNodeType.AST_WHILE_STMT {
-        const condition: &ASTNode = stmt.while_stmt_condition;
-        const body: &ASTNode = stmt.while_stmt_body;
-        
-        c99_emit_indent(codegen);
-        fputs("while (" as *byte, codegen.output as *void);
-        gen_expr(codegen, condition);
-        fputs(") {\n" as *byte, codegen.output as *void);
-        codegen.indent_level = codegen.indent_level + 1;
-        gen_stmt(codegen, body);
-        codegen.indent_level = codegen.indent_level - 1;
-        c99_emit(codegen, "}\n" as *byte);
+        gen_while_stmt(codegen, stmt);
     } else if stmt.type == ASTNodeType.AST_MATCH_EXPR {
         // match expr { pat => result, ... } 作为语句
         const match_expr: &ASTNode = stmt.match_expr_expr;
@@ -1711,13 +1682,9 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         c99_emit(codegen, "}\n" as *byte);
         }
     } else if stmt.type == ASTNodeType.AST_BREAK_STMT {
-        emit_current_block_drops(codegen);
-        emit_defer_cleanup(codegen, 0);
-        c99_emit(codegen, "break;\n" as *byte);
+        gen_break_stmt(codegen);
     } else if stmt.type == ASTNodeType.AST_CONTINUE_STMT {
-        emit_current_block_drops(codegen);
-        emit_defer_cleanup(codegen, 0);
-        c99_emit(codegen, "continue;\n" as *byte);
+        gen_continue_stmt(codegen);
     } else {
         // 检查是否为表达式节点（包括 @syscall、@va_start、@va_end、@va_arg 等内置函数）
         // 注意：AST_VA_ARG 是最后一个表达式类型，AST_BINARY_EXPR 是第一个
@@ -1728,5 +1695,58 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         }
         // 忽略其他语句
     }
+}
+
+// 生成 if 语句
+fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
+    const condition: &ASTNode = stmt.if_stmt_condition;
+    const then_branch: &ASTNode = stmt.if_stmt_then_branch;
+    const else_branch: &ASTNode = stmt.if_stmt_else_branch;
+    
+    c99_emit_indent(codegen);
+    fputs("if (" as *byte, codegen.output as *void);
+    gen_expr(codegen, condition);
+    fputs(") {\n" as *byte, codegen.output as *void);
+    codegen.indent_level = codegen.indent_level + 1;
+    gen_stmt(codegen, then_branch);
+    codegen.indent_level = codegen.indent_level - 1;
+    c99_emit(codegen, "}" as *byte);
+    if else_branch != null {
+        fputs(" else {\n" as *byte, codegen.output as *void);
+        codegen.indent_level = codegen.indent_level + 1;
+        gen_stmt(codegen, else_branch);
+        codegen.indent_level = codegen.indent_level - 1;
+        c99_emit(codegen, "}" as *byte);
+    }
+    fputs("\n" as *byte, codegen.output as *void);
+}
+
+// 生成 while 语句
+fn gen_while_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
+    const condition: &ASTNode = stmt.while_stmt_condition;
+    const body: &ASTNode = stmt.while_stmt_body;
+    
+    c99_emit_indent(codegen);
+    fputs("while (" as *byte, codegen.output as *void);
+    gen_expr(codegen, condition);
+    fputs(") {\n" as *byte, codegen.output as *void);
+    codegen.indent_level = codegen.indent_level + 1;
+    gen_stmt(codegen, body);
+    codegen.indent_level = codegen.indent_level - 1;
+    c99_emit(codegen, "}\n" as *byte);
+}
+
+// 生成 break 语句
+fn gen_break_stmt(codegen: &C99CodeGenerator) void {
+    emit_current_block_drops(codegen);
+    emit_defer_cleanup(codegen, 0);
+    c99_emit(codegen, "break;\n" as *byte);
+}
+
+// 生成 continue 语句
+fn gen_continue_stmt(codegen: &C99CodeGenerator) void {
+    emit_current_block_drops(codegen);
+    emit_defer_cleanup(codegen, 0);
+    c99_emit(codegen, "continue;\n" as *byte);
 }
 

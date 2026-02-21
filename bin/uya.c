@@ -1359,42 +1359,42 @@ static const char str1299[] = "__builtin_memset((void *)&%s, 0, sizeof(%s));\n";
 static const char str1300[] = "__uya_memcpy(%s";
 static const char str1301[] = "__uya_memcpy(%s.%s, ";
 static const char str1302[] = ", sizeof(%s.%s));\n";
-static const char str1303[] = "if (";
-static const char str1304[] = " else {\n";
-static const char str1305[] = "while (";
-static const char str1306[] = "{\n";
-static const char str1307[] = "%sif (_uya_m == 1) ";
-static const char str1308[] = "%sif (_uya_m == 0) ";
-static const char str1309[] = "%sif (_uya_m == %d) ";
-static const char str1310[] = "%sif (_uya_m._tag == %d) {\n";
-static const char str1311[] = "%s %s = _uya_m.u.%s;\n";
-static const char str1312[] = "%sif (_uya_m._tag == %d) ";
-static const char str1313[] = "%sif (0) ";
-static const char str1314[] = "%s{ %s %s = _uya_m;\n";
-static const char str1315[] = "%s{\n";
-static const char str1316[] = "%sif (_uya_m.error_id == %uU) ";
-static const char str1317[] = "// for range\n";
-static const char str1318[] = "%s _uya_end = ";
-static const char str1319[] = "for (; %s < _uya_end; %s++) {\n";
-static const char str1320[] = "%s _uya_s = ";
-static const char str1321[] = "%s _uya_e = ";
-static const char str1322[] = "for (%s _uya_i = _uya_s; _uya_i < _uya_e; _uya_i++) {\n";
-static const char str1323[] = "while (1) {\n";
-static const char str1324[] = "// for loop - iterator interface\n";
-static const char str1325[] = "%s _uya_iter = ";
-static const char str1326[] = "struct err_union_void _uya_next_result = %s(&_uya_iter);\n";
-static const char str1327[] = "if (_uya_next_result.error_id != 0) {\n";
-static const char str1328[] = "break;  // error.IterEnd\n";
-static const char str1329[] = "%s %s = %s(&_uya_iter);\n";
-static const char str1330[] = "// for loop - array traversal\n";
-static const char str1331[] = "size_t _len = sizeof(";
-static const char str1332[] = ") / sizeof(";
-static const char str1333[] = "[0]);\n";
-static const char str1334[] = "for (size_t _i = 0; _i < _len; _i++) {\n";
-static const char str1335[] = "%s *%s = &";
-static const char str1336[] = "[_i];\n";
-static const char str1337[] = "%s %s%s;\n";
-static const char str1338[] = "[_i], sizeof(%s));\n";
+static const char str1303[] = "{\n";
+static const char str1304[] = "%sif (_uya_m == 1) ";
+static const char str1305[] = "%sif (_uya_m == 0) ";
+static const char str1306[] = "%sif (_uya_m == %d) ";
+static const char str1307[] = "%sif (_uya_m._tag == %d) {\n";
+static const char str1308[] = "%s %s = _uya_m.u.%s;\n";
+static const char str1309[] = "%sif (_uya_m._tag == %d) ";
+static const char str1310[] = "%sif (0) ";
+static const char str1311[] = "%s{ %s %s = _uya_m;\n";
+static const char str1312[] = "%s{\n";
+static const char str1313[] = "%sif (_uya_m.error_id == %uU) ";
+static const char str1314[] = "// for range\n";
+static const char str1315[] = "%s _uya_end = ";
+static const char str1316[] = "for (; %s < _uya_end; %s++) {\n";
+static const char str1317[] = "%s _uya_s = ";
+static const char str1318[] = "%s _uya_e = ";
+static const char str1319[] = "for (%s _uya_i = _uya_s; _uya_i < _uya_e; _uya_i++) {\n";
+static const char str1320[] = "while (1) {\n";
+static const char str1321[] = "// for loop - iterator interface\n";
+static const char str1322[] = "%s _uya_iter = ";
+static const char str1323[] = "struct err_union_void _uya_next_result = %s(&_uya_iter);\n";
+static const char str1324[] = "if (_uya_next_result.error_id != 0) {\n";
+static const char str1325[] = "break;  // error.IterEnd\n";
+static const char str1326[] = "%s %s = %s(&_uya_iter);\n";
+static const char str1327[] = "// for loop - array traversal\n";
+static const char str1328[] = "size_t _len = sizeof(";
+static const char str1329[] = ") / sizeof(";
+static const char str1330[] = "[0]);\n";
+static const char str1331[] = "for (size_t _i = 0; _i < _len; _i++) {\n";
+static const char str1332[] = "%s *%s = &";
+static const char str1333[] = "[_i];\n";
+static const char str1334[] = "%s %s%s;\n";
+static const char str1335[] = "[_i], sizeof(%s));\n";
+static const char str1336[] = "if (";
+static const char str1337[] = " else {\n";
+static const char str1338[] = "while (";
 static const char str1339[] = "break;\n";
 static const char str1340[] = "continue;\n";
 static const char str1341[] = "uya_tagged_";
@@ -2948,6 +2948,10 @@ static void emit_current_block_drops(struct C99CodeGenerator * codegen);
 static void emit_drop_cleanup(struct C99CodeGenerator * codegen, struct ASTNode * * stmts, int32_t stmt_count);
 static void emit_defer_cleanup(struct C99CodeGenerator * codegen, int32_t emit_errdefer);
 static void gen_stmt(struct C99CodeGenerator * codegen, struct ASTNode * stmt);
+static void gen_if_stmt(struct C99CodeGenerator * codegen, struct ASTNode * stmt);
+static void gen_while_stmt(struct C99CodeGenerator * codegen, struct ASTNode * stmt);
+static void gen_break_stmt(struct C99CodeGenerator * codegen);
+static void gen_continue_stmt(struct C99CodeGenerator * codegen);
 static int32_t is_struct_in_table(struct C99CodeGenerator * codegen, uint8_t * struct_name);
 static int32_t is_struct_defined(struct C99CodeGenerator * codegen, uint8_t * struct_name);
 static void mark_struct_defined(struct C99CodeGenerator * codegen, uint8_t * struct_name);
@@ -35172,37 +35176,10 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                     }
                                 } else {
                                     if ((stmt->type == AST_IF_STMT)) {
-                                        struct ASTNode * const condition = stmt->if_stmt_condition;
-                                        struct ASTNode * const then_branch = stmt->if_stmt_then_branch;
-                                        struct ASTNode * const else_branch = stmt->if_stmt_else_branch;
-                                        c99_emit_indent(codegen);
-                                        libc_fputs((uint8_t *)(uint8_t *)str1303, (void *)codegen->output);
-                                        gen_expr(codegen, condition);
-                                        libc_fputs((uint8_t *)(uint8_t *)str1079, (void *)codegen->output);
-                                        codegen->indent_level = (codegen->indent_level + 1);
-                                        gen_stmt(codegen, then_branch);
-                                        codegen->indent_level = (codegen->indent_level - 1);
-                                        c99_emit(codegen, (uint8_t *)(uint8_t *)str431);
-                                        if ((else_branch != NULL)) {
-                                            libc_fputs((uint8_t *)(uint8_t *)str1304, (void *)codegen->output);
-                                            codegen->indent_level = (codegen->indent_level + 1);
-                                            gen_stmt(codegen, else_branch);
-                                            codegen->indent_level = (codegen->indent_level - 1);
-                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str431);
-                                        }
-                                        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                                        gen_if_stmt(codegen, stmt);
                                     } else {
                                         if ((stmt->type == AST_WHILE_STMT)) {
-                                            struct ASTNode * const condition = stmt->while_stmt_condition;
-                                            struct ASTNode * const body = stmt->while_stmt_body;
-                                            c99_emit_indent(codegen);
-                                            libc_fputs((uint8_t *)(uint8_t *)str1305, (void *)codegen->output);
-                                            gen_expr(codegen, condition);
-                                            libc_fputs((uint8_t *)(uint8_t *)str1079, (void *)codegen->output);
-                                            codegen->indent_level = (codegen->indent_level + 1);
-                                            gen_stmt(codegen, body);
-                                            codegen->indent_level = (codegen->indent_level - 1);
-                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str162);
+                                            gen_while_stmt(codegen, stmt);
                                         } else {
                                             if ((stmt->type == AST_MATCH_EXPR)) {
                                                 struct ASTNode * const match_expr = stmt->match_expr_expr;
@@ -35210,7 +35187,7 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                 if ((m_type == NULL)) {
                                                     m_type = (uint8_t *)(uint8_t *)str846;
                                                 }
-                                                c99_emit(codegen, (uint8_t *)(uint8_t *)str1306);
+                                                c99_emit(codegen, (uint8_t *)(uint8_t *)str1303);
                                                 codegen->indent_level = (codegen->indent_level + 1);
                                                 c99_emit_indent(codegen);
                                                 libc_fprintf((void *)codegen->output, (const char *)str1031, (uint8_t *)m_type);
@@ -35228,15 +35205,15 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                         c99_emit_indent(codegen);
                                                         if ((stmt->match_expr_arms[i].literal_is_bool != 0)) {
                                                             if ((stmt->match_expr_arms[i].literal_int_value != 0)) {
-                                                                libc_fprintf((void *)codegen->output, (const char *)str1307, (uint8_t *)prefix);
+                                                                libc_fprintf((void *)codegen->output, (const char *)str1304, (uint8_t *)prefix);
                                                             } else {
-                                                                libc_fprintf((void *)codegen->output, (const char *)str1308, (uint8_t *)prefix);
+                                                                libc_fprintf((void *)codegen->output, (const char *)str1305, (uint8_t *)prefix);
                                                             }
                                                         } else {
-                                                            libc_fprintf((void *)codegen->output, (const char *)str1309, (uint8_t *)prefix, stmt->match_expr_arms[i].literal_int_value);
+                                                            libc_fprintf((void *)codegen->output, (const char *)str1306, (uint8_t *)prefix, stmt->match_expr_arms[i].literal_int_value);
                                                         }
                                                         if ((stmt->match_expr_arms[i].result_is_block != 0)) {
-                                                            libc_fputs((uint8_t *)(uint8_t *)str1306, (void *)codegen->output);
+                                                            libc_fputs((uint8_t *)(uint8_t *)str1303, (void *)codegen->output);
                                                             codegen->indent_level = (codegen->indent_level + 1);
                                                             gen_stmt(codegen, stmt->match_expr_arms[i].result_expr);
                                                             codegen->indent_level = (codegen->indent_level - 1);
@@ -35264,17 +35241,17 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                     }
                                                                     if ((bind != NULL)) {
                                                                         c99_emit_indent(codegen);
-                                                                        libc_fprintf((void *)codegen->output, (const char *)str1310, (uint8_t *)prefix, idx);
+                                                                        libc_fprintf((void *)codegen->output, (const char *)str1307, (uint8_t *)prefix, idx);
                                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                                         c99_emit_indent(codegen);
-                                                                        libc_fprintf((void *)codegen->output, (const char *)str1311, (uint8_t *)vtype, (uint8_t *)bind, (uint8_t *)vname);
+                                                                        libc_fprintf((void *)codegen->output, (const char *)str1308, (uint8_t *)vtype, (uint8_t *)bind, (uint8_t *)vname);
                                                                     } else {
                                                                         c99_emit_indent(codegen);
-                                                                        libc_fprintf((void *)codegen->output, (const char *)str1312, (uint8_t *)prefix, idx);
+                                                                        libc_fprintf((void *)codegen->output, (const char *)str1309, (uint8_t *)prefix, idx);
                                                                     }
                                                                     if ((stmt->match_expr_arms[i].result_is_block != 0)) {
                                                                         if ((bind == NULL)) {
-                                                                            libc_fputs((uint8_t *)(uint8_t *)str1306, (void *)codegen->output);
+                                                                            libc_fputs((uint8_t *)(uint8_t *)str1303, (void *)codegen->output);
                                                                             codegen->indent_level = (codegen->indent_level + 1);
                                                                         }
                                                                         gen_stmt(codegen, stmt->match_expr_arms[i].result_expr);
@@ -35301,12 +35278,12 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                 }
                                                                 c99_emit_indent(codegen);
                                                                 if ((ev >= 0)) {
-                                                                    libc_fprintf((void *)codegen->output, (const char *)str1309, (uint8_t *)prefix, ev);
+                                                                    libc_fprintf((void *)codegen->output, (const char *)str1306, (uint8_t *)prefix, ev);
                                                                 } else {
-                                                                    libc_fprintf((void *)codegen->output, (const char *)str1313, (uint8_t *)prefix);
+                                                                    libc_fprintf((void *)codegen->output, (const char *)str1310, (uint8_t *)prefix);
                                                                 }
                                                                 if ((stmt->match_expr_arms[i].result_is_block != 0)) {
-                                                                    libc_fputs((uint8_t *)(uint8_t *)str1306, (void *)codegen->output);
+                                                                    libc_fputs((uint8_t *)(uint8_t *)str1303, (void *)codegen->output);
                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                     gen_stmt(codegen, stmt->match_expr_arms[i].result_expr);
                                                                     codegen->indent_level = (codegen->indent_level - 1);
@@ -35320,9 +35297,9 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                     uint8_t * const v = get_safe_c_identifier(codegen, stmt->match_expr_arms[i].var_name);
                                                                     c99_emit_indent(codegen);
                                                                     if ((v != NULL)) {
-                                                                        libc_fprintf((void *)codegen->output, (const char *)str1314, (uint8_t *)prefix, (uint8_t *)m_type, (uint8_t *)v);
+                                                                        libc_fprintf((void *)codegen->output, (const char *)str1311, (uint8_t *)prefix, (uint8_t *)m_type, (uint8_t *)v);
                                                                     } else {
-                                                                        libc_fprintf((void *)codegen->output, (const char *)str1315, (uint8_t *)prefix);
+                                                                        libc_fprintf((void *)codegen->output, (const char *)str1312, (uint8_t *)prefix);
                                                                     }
                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                     if ((stmt->match_expr_arms[i].result_is_block != 0)) {
@@ -35336,7 +35313,7 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                 } else {
                                                                     if (((stmt->match_expr_arms[i].kind == MATCH_PAT_WILDCARD) || (stmt->match_expr_arms[i].kind == MATCH_PAT_ELSE))) {
                                                                         c99_emit_indent(codegen);
-                                                                        libc_fprintf((void *)codegen->output, (const char *)str1315, (uint8_t *)prefix);
+                                                                        libc_fprintf((void *)codegen->output, (const char *)str1312, (uint8_t *)prefix);
                                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                                         if ((stmt->match_expr_arms[i].result_is_block != 0)) {
                                                                             gen_stmt(codegen, stmt->match_expr_arms[i].result_expr);
@@ -35353,9 +35330,9 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                                 id = 1;
                                                                             }
                                                                             c99_emit_indent(codegen);
-                                                                            libc_fprintf((void *)codegen->output, (const char *)str1316, (uint8_t *)prefix, (uint32_t)id);
+                                                                            libc_fprintf((void *)codegen->output, (const char *)str1313, (uint8_t *)prefix, (uint32_t)id);
                                                                             if ((stmt->match_expr_arms[i].result_is_block != 0)) {
-                                                                                libc_fputs((uint8_t *)(uint8_t *)str1306, (void *)codegen->output);
+                                                                                libc_fputs((uint8_t *)(uint8_t *)str1303, (void *)codegen->output);
                                                                                 codegen->indent_level = (codegen->indent_level + 1);
                                                                                 gen_stmt(codegen, stmt->match_expr_arms[i].result_expr);
                                                                                 codegen->indent_level = (codegen->indent_level - 1);
@@ -35385,10 +35362,10 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                             range_type_c = (uint8_t *)(uint8_t *)str846;
                                                         }
                                                         c99_emit_indent(codegen);
-                                                        libc_fputs((uint8_t *)(uint8_t *)str1306, (void *)codegen->output);
+                                                        libc_fputs((uint8_t *)(uint8_t *)str1303, (void *)codegen->output);
                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                         c99_emit_indent(codegen);
-                                                        libc_fputs((uint8_t *)(uint8_t *)str1317, (void *)codegen->output);
+                                                        libc_fputs((uint8_t *)(uint8_t *)str1314, (void *)codegen->output);
                                                         if ((end_expr != NULL)) {
                                                             if ((stmt->for_stmt_var_name != NULL)) {
                                                                 uint8_t * const var_name_range = get_safe_c_identifier(codegen, stmt->for_stmt_var_name);
@@ -35397,22 +35374,22 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                 gen_expr(codegen, start_expr);
                                                                 libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
                                                                 c99_emit_indent(codegen);
+                                                                libc_fprintf((void *)codegen->output, (const char *)str1315, (uint8_t *)range_type_c);
+                                                                gen_expr(codegen, end_expr);
+                                                                libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
+                                                                c99_emit_indent(codegen);
+                                                                libc_fprintf((void *)codegen->output, (const char *)str1316, (uint8_t *)var_name_range, (uint8_t *)var_name_range);
+                                                            } else {
+                                                                c99_emit_indent(codegen);
+                                                                libc_fprintf((void *)codegen->output, (const char *)str1317, (uint8_t *)range_type_c);
+                                                                gen_expr(codegen, start_expr);
+                                                                libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
+                                                                c99_emit_indent(codegen);
                                                                 libc_fprintf((void *)codegen->output, (const char *)str1318, (uint8_t *)range_type_c);
                                                                 gen_expr(codegen, end_expr);
                                                                 libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
                                                                 c99_emit_indent(codegen);
-                                                                libc_fprintf((void *)codegen->output, (const char *)str1319, (uint8_t *)var_name_range, (uint8_t *)var_name_range);
-                                                            } else {
-                                                                c99_emit_indent(codegen);
-                                                                libc_fprintf((void *)codegen->output, (const char *)str1320, (uint8_t *)range_type_c);
-                                                                gen_expr(codegen, start_expr);
-                                                                libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
-                                                                c99_emit_indent(codegen);
-                                                                libc_fprintf((void *)codegen->output, (const char *)str1321, (uint8_t *)range_type_c);
-                                                                gen_expr(codegen, end_expr);
-                                                                libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
-                                                                c99_emit_indent(codegen);
-                                                                libc_fprintf((void *)codegen->output, (const char *)str1322, (uint8_t *)range_type_c);
+                                                                libc_fprintf((void *)codegen->output, (const char *)str1319, (uint8_t *)range_type_c);
                                                             }
                                                         } else {
                                                             uint8_t * const vname = get_safe_c_identifier(codegen, stmt->for_stmt_var_name);
@@ -35421,7 +35398,7 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                             gen_expr(codegen, start_expr);
                                                             libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
                                                             c99_emit_indent(codegen);
-                                                            libc_fputs((uint8_t *)(uint8_t *)str1323, (void *)codegen->output);
+                                                            libc_fputs((uint8_t *)(uint8_t *)str1320, (void *)codegen->output);
                                                         }
                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                         gen_stmt(codegen, body2);
@@ -35468,26 +35445,26 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                             value_type_c = (uint8_t *)(uint8_t *)str846;
                                                                         }
                                                                         c99_emit_indent(codegen);
-                                                                        libc_fputs((uint8_t *)(uint8_t *)str1306, (void *)codegen->output);
+                                                                        libc_fputs((uint8_t *)(uint8_t *)str1303, (void *)codegen->output);
                                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                                         c99_emit_indent(codegen);
-                                                                        libc_fputs((uint8_t *)(uint8_t *)str1324, (void *)codegen->output);
+                                                                        libc_fputs((uint8_t *)(uint8_t *)str1321, (void *)codegen->output);
                                                                         c99_emit_indent(codegen);
-                                                                        libc_fprintf((void *)codegen->output, (const char *)str1325, (uint8_t *)iter_type_c);
+                                                                        libc_fprintf((void *)codegen->output, (const char *)str1322, (uint8_t *)iter_type_c);
                                                                         gen_expr(codegen, array);
                                                                         libc_fputs((uint8_t *)(uint8_t *)str1092, (void *)codegen->output);
                                                                         c99_emit_indent(codegen);
-                                                                        libc_fputs((uint8_t *)(uint8_t *)str1323, (void *)codegen->output);
+                                                                        libc_fputs((uint8_t *)(uint8_t *)str1320, (void *)codegen->output);
                                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                                         uint8_t * const next_cname = get_method_c_name(codegen, (&struct_name_buf[0]), (uint8_t *)(uint8_t *)str631);
                                                                         if ((next_cname != NULL)) {
                                                                             c99_emit_indent(codegen);
-                                                                            libc_fprintf((void *)codegen->output, (const char *)str1326, (uint8_t *)next_cname);
+                                                                            libc_fprintf((void *)codegen->output, (const char *)str1323, (uint8_t *)next_cname);
                                                                             c99_emit_indent(codegen);
-                                                                            libc_fputs((uint8_t *)(uint8_t *)str1327, (void *)codegen->output);
+                                                                            libc_fputs((uint8_t *)(uint8_t *)str1324, (void *)codegen->output);
                                                                             codegen->indent_level = (codegen->indent_level + 1);
                                                                             c99_emit_indent(codegen);
-                                                                            libc_fputs((uint8_t *)(uint8_t *)str1328, (void *)codegen->output);
+                                                                            libc_fputs((uint8_t *)(uint8_t *)str1325, (void *)codegen->output);
                                                                             codegen->indent_level = (codegen->indent_level - 1);
                                                                             c99_emit_indent(codegen);
                                                                             libc_fputs((uint8_t *)(uint8_t *)str162, (void *)codegen->output);
@@ -35495,7 +35472,7 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                         uint8_t * const value_cname = get_method_c_name(codegen, (&struct_name_buf[0]), (uint8_t *)(uint8_t *)str632);
                                                                         if (((value_cname != NULL) && (var_name2 != NULL))) {
                                                                             c99_emit_indent(codegen);
-                                                                            libc_fprintf((void *)codegen->output, (const char *)str1329, (uint8_t *)value_type_c, (uint8_t *)var_name2, (uint8_t *)value_cname);
+                                                                            libc_fprintf((void *)codegen->output, (const char *)str1326, (uint8_t *)value_type_c, (uint8_t *)var_name2, (uint8_t *)value_cname);
                                                                         }
                                                                         gen_stmt(codegen, body2);
                                                                         codegen->indent_level = (codegen->indent_level - 1);
@@ -35511,18 +35488,18 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                             elem_type_c = (uint8_t *)(uint8_t *)(uint8_t *)str846;
                                                         }
                                                         c99_emit_indent(codegen);
-                                                        libc_fputs((uint8_t *)(uint8_t *)str1306, (void *)codegen->output);
+                                                        libc_fputs((uint8_t *)(uint8_t *)str1303, (void *)codegen->output);
                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                         c99_emit_indent(codegen);
+                                                        libc_fputs((uint8_t *)(uint8_t *)str1327, (void *)codegen->output);
+                                                        c99_emit_indent(codegen);
+                                                        libc_fputs((uint8_t *)(uint8_t *)str1328, (void *)codegen->output);
+                                                        gen_expr(codegen, array);
+                                                        libc_fputs((uint8_t *)(uint8_t *)str1329, (void *)codegen->output);
+                                                        gen_expr(codegen, array);
                                                         libc_fputs((uint8_t *)(uint8_t *)str1330, (void *)codegen->output);
                                                         c99_emit_indent(codegen);
                                                         libc_fputs((uint8_t *)(uint8_t *)str1331, (void *)codegen->output);
-                                                        gen_expr(codegen, array);
-                                                        libc_fputs((uint8_t *)(uint8_t *)str1332, (void *)codegen->output);
-                                                        gen_expr(codegen, array);
-                                                        libc_fputs((uint8_t *)(uint8_t *)str1333, (void *)codegen->output);
-                                                        c99_emit_indent(codegen);
-                                                        libc_fputs((uint8_t *)(uint8_t *)str1334, (void *)codegen->output);
                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                         if ((is_ref != 0)) {
                                                             uint8_t * const bracket = (uint8_t *)std_string_strchr((uint8_t *)elem_type_c, 91);
@@ -35538,14 +35515,14 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                     temp_buf[j] = 0;
                                                                 }
                                                                 c99_emit_indent(codegen);
-                                                                libc_fprintf((void *)codegen->output, (const char *)str1335, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name2);
+                                                                libc_fprintf((void *)codegen->output, (const char *)str1332, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name2);
                                                                 gen_expr(codegen, array);
-                                                                libc_fputs((uint8_t *)(uint8_t *)str1336, (void *)codegen->output);
+                                                                libc_fputs((uint8_t *)(uint8_t *)str1333, (void *)codegen->output);
                                                             } else {
                                                                 c99_emit_indent(codegen);
-                                                                libc_fprintf((void *)codegen->output, (const char *)str1335, (uint8_t *)elem_type_c, (uint8_t *)var_name2);
+                                                                libc_fprintf((void *)codegen->output, (const char *)str1332, (uint8_t *)elem_type_c, (uint8_t *)var_name2);
                                                                 gen_expr(codegen, array);
-                                                                libc_fputs((uint8_t *)(uint8_t *)str1336, (void *)codegen->output);
+                                                                libc_fputs((uint8_t *)(uint8_t *)str1333, (void *)codegen->output);
                                                             }
                                                         } else {
                                                             uint8_t * const bracket2 = (uint8_t *)std_string_strchr((uint8_t *)elem_type_c, 91);
@@ -35561,16 +35538,16 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                     temp_buf2[j2] = 0;
                                                                 }
                                                                 c99_emit_indent(codegen);
-                                                                libc_fprintf((void *)codegen->output, (const char *)str1337, (uint8_t *)(&temp_buf2[0]), (uint8_t *)var_name2, bracket2);
+                                                                libc_fprintf((void *)codegen->output, (const char *)str1334, (uint8_t *)(&temp_buf2[0]), (uint8_t *)var_name2, bracket2);
                                                                 c99_emit_indent(codegen);
                                                                 libc_fprintf((void *)codegen->output, (const char *)str1277, (uint8_t *)var_name2);
                                                                 gen_expr(codegen, array);
-                                                                libc_fprintf((void *)codegen->output, (const char *)str1338, (uint8_t *)var_name2);
+                                                                libc_fprintf((void *)codegen->output, (const char *)str1335, (uint8_t *)var_name2);
                                                             } else {
                                                                 c99_emit_indent(codegen);
                                                                 libc_fprintf((void *)codegen->output, (const char *)str1270, (uint8_t *)elem_type_c, (uint8_t *)var_name2);
                                                                 gen_expr(codegen, array);
-                                                                libc_fputs((uint8_t *)(uint8_t *)str1336, (void *)codegen->output);
+                                                                libc_fputs((uint8_t *)(uint8_t *)str1333, (void *)codegen->output);
                                                             }
                                                         }
                                                         gen_stmt(codegen, body2);
@@ -35581,14 +35558,10 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                     }
                                                 } else {
                                                     if ((stmt->type == AST_BREAK_STMT)) {
-                                                        emit_current_block_drops(codegen);
-                                                        emit_defer_cleanup(codegen, 0);
-                                                        c99_emit(codegen, (uint8_t *)(uint8_t *)str1339);
+                                                        gen_break_stmt(codegen);
                                                     } else {
                                                         if ((stmt->type == AST_CONTINUE_STMT)) {
-                                                            emit_current_block_drops(codegen);
-                                                            emit_defer_cleanup(codegen, 0);
-                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1340);
+                                                            gen_continue_stmt(codegen);
                                                         } else {
                                                             if (((stmt->type >= AST_BINARY_EXPR) && (stmt->type <= AST_VA_ARG))) {
                                                                 c99_emit(codegen, (uint8_t *)(uint8_t *)str1005);
@@ -35609,6 +35582,59 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
             }
         }
     }
+}
+
+static __attribute__((unused)) void gen_if_stmt(struct C99CodeGenerator * codegen, struct ASTNode * stmt) {
+    (void)codegen;
+    (void)stmt;
+    struct ASTNode * const condition = stmt->if_stmt_condition;
+    struct ASTNode * const then_branch = stmt->if_stmt_then_branch;
+    struct ASTNode * const else_branch = stmt->if_stmt_else_branch;
+    c99_emit_indent(codegen);
+    libc_fputs((uint8_t *)(uint8_t *)str1336, (void *)codegen->output);
+    gen_expr(codegen, condition);
+    libc_fputs((uint8_t *)(uint8_t *)str1079, (void *)codegen->output);
+    codegen->indent_level = (codegen->indent_level + 1);
+    gen_stmt(codegen, then_branch);
+    codegen->indent_level = (codegen->indent_level - 1);
+    c99_emit(codegen, (uint8_t *)(uint8_t *)str431);
+    if ((else_branch != NULL)) {
+        libc_fputs((uint8_t *)(uint8_t *)str1337, (void *)codegen->output);
+        codegen->indent_level = (codegen->indent_level + 1);
+        gen_stmt(codegen, else_branch);
+        codegen->indent_level = (codegen->indent_level - 1);
+        c99_emit(codegen, (uint8_t *)(uint8_t *)str431);
+    }
+    libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+}
+
+static __attribute__((unused)) void gen_while_stmt(struct C99CodeGenerator * codegen, struct ASTNode * stmt) {
+    (void)codegen;
+    (void)stmt;
+    struct ASTNode * const condition = stmt->while_stmt_condition;
+    struct ASTNode * const body = stmt->while_stmt_body;
+    c99_emit_indent(codegen);
+    libc_fputs((uint8_t *)(uint8_t *)str1338, (void *)codegen->output);
+    gen_expr(codegen, condition);
+    libc_fputs((uint8_t *)(uint8_t *)str1079, (void *)codegen->output);
+    codegen->indent_level = (codegen->indent_level + 1);
+    gen_stmt(codegen, body);
+    codegen->indent_level = (codegen->indent_level - 1);
+    c99_emit(codegen, (uint8_t *)(uint8_t *)str162);
+}
+
+static __attribute__((unused)) void gen_break_stmt(struct C99CodeGenerator * codegen) {
+    (void)codegen;
+    emit_current_block_drops(codegen);
+    emit_defer_cleanup(codegen, 0);
+    c99_emit(codegen, (uint8_t *)(uint8_t *)str1339);
+}
+
+static __attribute__((unused)) void gen_continue_stmt(struct C99CodeGenerator * codegen) {
+    (void)codegen;
+    emit_current_block_drops(codegen);
+    emit_defer_cleanup(codegen, 0);
+    c99_emit(codegen, (uint8_t *)(uint8_t *)str1340);
 }
 
 static __attribute__((unused)) int32_t is_struct_in_table(struct C99CodeGenerator * codegen, uint8_t * struct_name) {
