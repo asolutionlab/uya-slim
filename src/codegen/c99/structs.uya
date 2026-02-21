@@ -930,7 +930,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                 const impl: &ASTNode = find_method_in_struct_c99(codegen, struct_name, mname);
                 const cname: &byte = get_method_c_name(codegen, struct_name, mname);
                 if k > 0 {
-                    fputs(", " as *byte, codegen.output as *void);
+                    c99_emit_comma_space(codegen);
                 }
                 if impl != null && cname != null {
                     const ret_c: &byte = convert_array_return_type(codegen, msig.fn_decl_return_type);

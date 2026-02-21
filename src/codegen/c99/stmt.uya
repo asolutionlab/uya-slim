@@ -601,14 +601,14 @@ fn gen_return_array(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &AS
                 if nn <= 0 { nn = 1; }
                 var i: i32 = 0;
                 while i < nn {
-                    if i > 0 { fputs(", " as *byte, codegen.output as *void); }
+                    if i > 0 { c99_emit_comma_space(codegen); }
                     gen_expr(codegen, expr.array_literal_elements[0]);
                     i = i + 1;
                 }
             } else if element_count > 0 {
                 var i: i32 = 0;
                 while i < element_count {
-                    if i > 0 { fputs(", " as *byte, codegen.output as *void); }
+                    if i > 0 { c99_emit_comma_space(codegen); }
                     gen_expr(codegen, expr.array_literal_elements[i]);
                     i = i + 1;
                 }
@@ -751,7 +751,7 @@ fn gen_assign_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     if is_array_assign != 0 {
         c99_emit(codegen, "__uya_memcpy(" as *byte);
         gen_expr(codegen, dest);
-        fputs(", " as *byte, codegen.output as *void);
+        c99_emit_comma_space(codegen);
         gen_expr(codegen, src);
         fputs(", sizeof(" as *byte, codegen.output as *void);
         gen_expr(codegen, dest);
@@ -857,11 +857,11 @@ fn emit_atomic_store(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode, 
     if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
         c99_emit(codegen, "__atomic_store_n(&" as *byte);
         fputs(safe_name as *byte, codegen.output as *void);
-        fputs(", " as *byte, codegen.output as *void);
+        c99_emit_comma_space(codegen);
     } else {
         c99_emit(codegen, "__atomic_store_n(&" as *byte);
         gen_expr(codegen, dest);
-        fputs(", " as *byte, codegen.output as *void);
+        c99_emit_comma_space(codegen);
     }
     gen_expr(codegen, src);
     fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
@@ -873,11 +873,11 @@ fn gen_atomic_compound(codegen: &C99CodeGenerator, dest: &ASTNode, op: TokenType
         if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
             c99_emit(codegen, "__atomic_fetch_add(&" as *byte);
             fputs(safe_name as *byte, codegen.output as *void);
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         } else {
             c99_emit(codegen, "__atomic_fetch_add(&" as *byte);
             gen_expr(codegen, dest);
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         }
         gen_expr(codegen, right);
         fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
@@ -885,11 +885,11 @@ fn gen_atomic_compound(codegen: &C99CodeGenerator, dest: &ASTNode, op: TokenType
         if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
             c99_emit(codegen, "__atomic_fetch_sub(&" as *byte);
             fputs(safe_name as *byte, codegen.output as *void);
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         } else {
             c99_emit(codegen, "__atomic_fetch_sub(&" as *byte);
             gen_expr(codegen, dest);
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         }
         gen_expr(codegen, right);
         fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
@@ -1244,7 +1244,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         fputs("0" as *byte, codegen.output as *void);
                     }
                     if i < n - 1 {
-                        fputs(", " as *byte, codegen.output as *void);
+                        c99_emit_comma_space(codegen);
                     }
                     i = i + 1;
                 }
@@ -1265,7 +1265,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         fprintf(codegen.output as *void, ".f%d = " as *byte, i);
                         gen_expr(codegen, elements[i]);
                         if i < n - 1 {
-                            fputs(", " as *byte, codegen.output as *void);
+                            c99_emit_comma_space(codegen);
                         }
                         i = i + 1;
                     }
@@ -1341,7 +1341,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 // 然后使用 memcpy 从结构体中提取数组
                 c99_emit_indent(codegen);
                 fprintf(codegen.output as *void, "__uya_memcpy(%s" as *byte, var_name as *byte);
-                fputs(", " as *byte, codegen.output as *void);
+                c99_emit_comma_space(codegen);
                 gen_expr(codegen, init_expr);
                 fputs(".data, sizeof(" as *byte, codegen.output as *void);
                 fprintf(codegen.output as *void, "%s" as *byte, var_name as *byte);
@@ -1351,7 +1351,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 c99_emit_semi_newline(codegen);
                 c99_emit_indent(codegen);
                 fprintf(codegen.output as *void, "__uya_memcpy(%s" as *byte, var_name as *byte);
-                fputs(", " as *byte, codegen.output as *void);
+                c99_emit_comma_space(codegen);
                 gen_expr(codegen, init_expr);
                 fputs(", sizeof(" as *byte, codegen.output as *void);
                 fprintf(codegen.output as *void, "%s" as *byte, var_name as *byte);
@@ -1656,7 +1656,7 @@ fn gen_var_decl_struct_init_memcpy(codegen: &C99CodeGenerator, var_name: &byte, 
         }
         
         if i < field_count - 1 {
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         }
         i = i + 1;
     }

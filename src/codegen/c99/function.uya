@@ -907,7 +907,7 @@ fn gen_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_na
         const param_type_c: &byte = c99_type_to_c_with_self_opt(codegen, param.var_decl_type, struct_name, const_self);
         format_param_type(codegen, param_type_c, param_name, codegen.output as *void);
         if i < param_count - 1 {
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         }
         i = i + 1;
     }
@@ -942,7 +942,7 @@ fn gen_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_nam
         const param_type_c: &byte = c99_type_to_c_with_self_opt(codegen, param.var_decl_type, struct_name, const_self);
         format_param_type(codegen, param_type_c, param_name, codegen.output as *void);
         if i < param_count - 1 {
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         }
         i = i + 1;
     }
@@ -1268,7 +1268,7 @@ fn gen_mono_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, ty
         
         format_param_type(codegen, param_type_c, param_name, codegen.output);
         if i < param_count - 1 {
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         }
         i = i + 1;
     }
@@ -1276,7 +1276,7 @@ fn gen_mono_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, ty
     // 处理可变参数
     if is_varargs != 0 {
         if param_count > 0 {
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         }
         fputs("..." as *byte, codegen.output as *void);
     }
@@ -1343,7 +1343,7 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
         
         format_param_type(codegen, param_type_c, param_name, codegen.output);
         if i < param_count - 1 {
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         }
         i = i + 1;
     }
@@ -1351,7 +1351,7 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
     // 处理可变参数
     if is_varargs != 0 {
         if param_count > 0 {
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         }
         fputs("..." as *byte, codegen.output as *void);
     }
@@ -1516,7 +1516,7 @@ fn gen_mono_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, stru
         
         format_param_type(codegen, param_type_c, param_name, codegen.output);
         if i < param_count - 1 {
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         }
         i = i + 1;
     }
@@ -1589,7 +1589,7 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
         
         format_param_type(codegen, param_type_c, param_name, codegen.output);
         if i < param_count - 1 {
-            fputs(", " as *byte, codegen.output as *void);
+            c99_emit_comma_space(codegen);
         }
         i = i + 1;
     }

@@ -22,7 +22,7 @@ fn gen_global_init_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             fprintf(codegen.output as *void, ".%s = " as *byte, safe_field_name as *byte);
             gen_global_init_expr(codegen, expr.struct_init_field_values[i]);
             if i < field_count - 1 {
-                fputs(", " as *byte, codegen.output as *void);
+                c99_emit_comma_space(codegen);
             }
             i = i + 1;
         }
@@ -40,7 +40,7 @@ fn gen_global_init_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             while i < nn {
                 gen_global_init_expr(codegen, expr.array_literal_elements[0]);
                 if i < nn - 1 {
-                    fputs(", " as *byte, codegen.output as *void);
+                    c99_emit_comma_space(codegen);
                 }
                 i = i + 1;
             }
@@ -49,7 +49,7 @@ fn gen_global_init_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             while i < element_count {
                 gen_global_init_expr(codegen, expr.array_literal_elements[i]);
                 if i < element_count - 1 {
-                    fputs(", " as *byte, codegen.output as *void);
+                    c99_emit_comma_space(codegen);
                 }
                 i = i + 1;
             }
