@@ -1,0 +1,421 @@
+# Uya 编译器重构 TODO 清单
+
+**最后更新**：2026-02-21
+**总工期**：6 周（30 天）
+
+---
+
+## 阶段一：巨型函数拆分 [░░░░░░░░░░] 0%
+
+### 1.1 添加 Type 辅助函数
+
+- [ ] 在 `src/checker/types.uya` 添加以下辅助函数：
+  - [ ] `make_void_type()` - 创建 void 类型
+  - [ ] `make_i32_type()` - 创建 i32 类型
+  - [ ] `make_i64_type()` - 创建 i64 类型
+  - [ ] `make_f64_type()` - 创建 f64 类型
+  - [ ] `make_bool_type()` - 创建 bool 类型
+  - [ ] `make_pointer_type(pointee, is_ffi)` - 创建指针类型
+  - [ ] `make_array_type(element, size)` - 创建数组类型
+  - [ ] `make_slice_type(element, len)` - 创建切片类型
+  - [ ] `types_equal(a, b)` - 类型相等判断
+  - [ ] `type_to_string(t)` - 类型转字符串
+- [ ] 运行 `make check` 验证
+
+### 1.2 拆分 `checker_infer_type`
+
+- [ ] 分析 `src/checker/check_expr.uya` 中 `checker_infer_type` 函数（当前 ~500 行）
+- [ ] 按表达式类型拆分为独立函数：
+  - [ ] `infer_identifier(checker, expr)` - 标识符推断
+  - [ ] `infer_binary_expr(checker, expr)` - 二元表达式推断
+  - [ ] `infer_call_expr(checker, expr)` - 调用表达式推断
+  - [ ] `infer_member_access(checker, expr)` - 成员访问推断
+  - [ ] `infer_match_expr(checker, expr)` - match 表达式推断
+  - [ ] `infer_struct_init(checker, expr)` - 结构体初始化推断
+  - [ ] `infer_array_literal(checker, expr)` - 数组字面量推断
+  - [ ] `infer_cast_expr(checker, expr)` - 类型转换推断
+- [ ] 更新 `checker_infer_type` 为分发函数（≤ 50 行）
+- [ ] 运行 `make check` 验证
+
+### 1.3 拆分 `gen_stmt`
+
+- [ ] 分析 `src/codegen/c99/stmt.uya` 中 `gen_stmt` 函数
+- [ ] 按语句类型拆分为独立函数：
+  - [ ] `gen_var_decl(codegen, node)` - 变量声明生成
+  - [ ] `gen_if_stmt(codegen, node)` - if 语句生成
+  - [ ] `gen_while_stmt(codegen, node)` - while 语句生成
+  - [ ] `gen_for_stmt(codegen, node)` - for 语句生成
+  - [ ] `gen_return_stmt(codegen, node)` - return 语句生成
+  - [ ] `gen_defer_stmt(codegen, node)` - defer 语句生成
+  - [ ] `gen_match_stmt(codegen, node)` - match 语句生成
+- [ ] 更新 `gen_stmt` 为分发函数（≤ 50 行）
+- [ ] 运行 `make check` 验证
+
+### 1.4 拆分 `gen_expr`
+
+- [ ] 分析 `src/codegen/c99/expr.uya` 中 `gen_expr` 函数
+- [ ] 按表达式类型拆分为独立函数：
+  - [ ] `gen_binary_expr(codegen, node)` - 二元表达式生成
+  - [ ] `gen_call_expr(codegen, node)` - 调用表达式生成
+  - [ ] `gen_member_access(codegen, node)` - 成员访问生成
+  - [ ] `gen_struct_init(codegen, node)` - 结构体初始化生成
+  - [ ] `gen_array_literal(codegen, node)` - 数组字面量生成
+  - [ ] `gen_cast_expr(codegen, node)` - 类型转换生成
+  - [ ] `gen_match_expr(codegen, node)` - match 表达式生成
+- [ ] 更新 `gen_expr` 为分发函数（≤ 50 行）
+- [ ] 运行 `make check` 验证
+
+---
+
+## 阶段二：嵌套深度优化 [░░░░░░░░░░] 0%
+
+### 2.1 提前返回优化
+
+- [ ] 扫描所有嵌套深度 > 3 层的函数
+- [ ] 重构为提前返回模式：
+  ```uya
+  // 重构前
+  if cond {
+      // 大量代码
+  }
+  
+  // 重构后
+  if !cond { return; }
+  // 主流程代码
+  ```
+- [ ] 重点文件：
+  - [ ] `src/checker/check_expr.uya`
+  - [ ] `src/checker/check_stmt.uya`
+  - [ ] `src/codegen/c99/stmt.uya`
+  - [ ] `src/codegen/c99/expr.uya`
+- [ ] 运行 `make check` 验证
+
+### 2.2 提取辅助函数
+
+- [ ] 识别重复的条件检查模式
+- [ ] 提取为辅助函数：
+  - [ ] `is_numeric_type(t)` - 检查是否为数值类型
+  - [ ] `is_integer_type(t)` - 检查是否为整数类型
+  - [ ] `is_pointer_type(t)` - 检查是否为指针类型
+  - [ ] `is_error_type(t)` - 检查是否为错误类型
+  - [ ] `can_coerce(from, to)` - 检查是否可隐式转换
+- [ ] 运行 `make check` 验证
+
+---
+
+## 阶段三：重复代码提取 [░░░░░░░░░░] 0%
+
+### 3.1 提取代码生成辅助函数
+
+- [ ] 在 `src/codegen/c99/utils.uya` 添加：
+  - [ ] `emit_type(codegen, t)` - 统一类型输出
+  - [ ] `emit_expr_as_value(codegen, node)` - 表达式值输出
+  - [ ] `emit_defer_chain(codegen, defers)` - defer 链输出
+  - [ ] `emit_error_propagation(codegen, expr)` - 错误传播输出
+- [ ] 替换所有重复的类型输出代码
+- [ ] 运行 `make check` 验证
+
+### 3.2 统一类型检查函数调用
+
+- [ ] 搜索所有 `kind == TypeKind.XXX` 模式
+- [ ] 替换为辅助函数调用
+- [ ] 运行 `make check` 验证
+
+### 3.3 提取通用模式
+
+- [ ] 识别并提取以下模式：
+  - [ ] 错误报告模式
+  - [ ] 符号查找模式
+  - [ ] 类型推断模式
+- [ ] 运行 `make check` 验证
+
+---
+
+## 阶段四：Union 数据结构重构 [░░░░░░░░░░] 0%
+
+> **详细方案**：`docs/REFACTOR_PLAN_V2_STAGE4_DETAILED.md`
+
+### 4.1 Type 结构体 Union 化
+
+#### Step 1: 添加 TypeData union + 访问器函数（1 天）
+
+- [ ] 在 `src/checker/types.uya` 添加：
+  - [ ] `union TypeData` 定义
+  - [ ] 辅助结构体（PointerData, ArrayData, SliceData 等）
+  - [ ] 在 `Type` 结构体添加 `data: TypeData` 字段
+- [ ] 创建 `src/checker/type_accessors.uya`：
+  - [ ] `type_get_name(t)` - 获取命名类型名称
+  - [ ] `type_get_pointer_to(t)` - 获取指针目标类型
+  - [ ] `type_is_ffi_pointer(t)` - 检查是否为 FFI 指针
+  - [ ] `type_get_array_element(t)` - 获取数组元素类型
+  - [ ] `type_get_array_size(t)` - 获取数组大小
+  - [ ] `type_get_slice_element(t)` - 获取切片元素类型
+  - [ ] `type_get_tuple_elements(t)` - 获取元组元素
+  - [ ] `type_get_error_payload(t)` - 获取错误联合负载类型
+  - [ ] `type_get_atomic_inner(t)` - 获取原子内部类型
+  - [ ] `type_get_generic_param_name(t)` - 获取泛型参数名
+  - [ ] `type_get_struct_type_args(t)` - 获取结构体类型参数
+- [ ] 创建 `src/checker/type_constructors.uya`：
+  - [ ] 修改所有构造函数，同时设置新旧字段
+- [ ] 运行 `make check` 验证
+
+#### Step 2: 迁移高频字段访问（2 天）
+
+- [ ] 迁移 `struct_name` 字段访问（52 处）
+  - [ ] `src/checker/check_expr.uya` (10 处)
+  - [ ] `src/checker/check_call.uya` (13 处)
+  - [ ] `src/checker/check_stmt.uya` (5 处)
+  - [ ] `src/checker/symbols.uya` (6 处)
+  - [ ] 其他文件 (18 处)
+- [ ] 迁移 `pointer_to` 字段访问（47 处）
+- [ ] 迁移 `element_type` 字段访问（35 处）
+- [ ] 迁移 `slice_element_type` 字段访问（23 处）
+- [ ] 迁移 `struct_type_args` 字段访问（23 处）
+- [ ] 迁移 `error_union_payload_type` 字段访问（21 处）
+- [ ] 迁移 `enum_name` 字段访问（21 处）
+- [ ] 每个文件完成后运行 `make check` 验证
+
+#### Step 3: 迁移中频字段访问（1 天）
+
+- [ ] 迁移 `struct_type_arg_count` 字段访问（19 处）
+- [ ] 迁移 `array_size` 字段访问（12 处）
+- [ ] 迁移 `tuple_element_types` 字段访问（14 处）
+- [ ] 迁移 `tuple_count` 字段访问（11 处）
+- [ ] 迁移 `atomic_inner_type` 字段访问（11 处）
+- [ ] 迁移 `generic_param_name` 字段访问（11 处）
+- [ ] 运行 `make check` 验证
+
+#### Step 4: 迁移低频字段访问（1 天）
+
+- [ ] 迁移 `union_name` 字段访问（8 处）
+- [ ] 迁移 `is_ffi_pointer` 字段访问（8 处）
+- [ ] 迁移 `interface_name` 字段访问（8 处）
+- [ ] 迁移 `slice_len` 字段访问（3 处）
+- [ ] 迁移 `error_error_id` 字段访问（3 处）
+- [ ] 运行 `make check` 验证
+
+#### Step 5: 移除旧字段 + 验证（1-2 天）
+
+- [ ] 确认所有字段访问都已迁移到访问器
+- [ ] 移除 `Type` 结构体中的旧字段
+- [ ] 移除构造函数中的旧字段设置
+- [ ] 运行 `make check` 完整验证
+- [ ] 运行 `make backup` 备份
+- [ ] 创建 git 标签：`git tag stage4.1.complete`
+
+### 4.2 ASTNode 结构体 Union 化
+
+#### Step 1: 添加 ASTNodeData union + 访问器函数（2 天）
+
+- [ ] 在 `src/ast.uya` 添加：
+  - [ ] `union ASTNodeData` 定义
+  - [ ] 所有数据结构体定义（ProgramData, FnDeclData, VarDeclData 等）
+  - [ ] 在 `ASTNode` 结构体添加 `data: ASTNodeData` 字段
+- [ ] 创建 `src/ast_accessors.uya`：
+  - [ ] 声明节点访问器（fn_decl, var_decl, struct_decl 等）
+  - [ ] 表达式节点访问器（binary_expr, call_expr, member_access 等）
+  - [ ] 语句节点访问器（if_stmt, for_stmt, return_stmt 等）
+  - [ ] 字面量节点访问器（identifier, number, string_literal 等）
+  - [ ] 类型节点访问器（type_named, type_pointer, type_array 等）
+- [ ] 创建 `src/ast_constructors.uya`：
+  - [ ] 修改 `ast_new_node` 函数
+  - [ ] 修改所有节点创建函数
+- [ ] 运行 `make check` 验证
+
+#### Step 2: 迁移声明节点（3 天）
+
+- [ ] 迁移 `fn_decl_*` 字段访问（416 处）
+  - [ ] `src/checker/` 目录（约 200 处）
+  - [ ] `src/codegen/c99/` 目录（约 150 处）
+  - [ ] `src/parser/` 目录（约 66 处）
+- [ ] 迁移 `var_decl_*` 字段访问（332 处）
+- [ ] 迁移 `program_*` 字段访问（251 处）
+- [ ] 迁移 `struct_decl_*` 字段访问（219 处）
+- [ ] 迁移 `identifier_*` 字段访问（178 处）
+- [ ] 每个节点组完成后运行 `make check` 验证
+
+#### Step 3: 迁移表达式节点（3 天）
+
+- [ ] 迁移 `call_expr_*` 字段访问（152 处）
+- [ ] 迁移 `cast_expr_*` 字段访问（147 处）
+- [ ] 迁移 `match_expr_*` 字段访问（104 处）
+- [ ] 迁移 `member_access_*` 字段访问（97 处）
+- [ ] 迁移 `binary_expr_*` 字段访问（88 处）
+- [ ] 迁移 `struct_init_*` 字段访问（84 处）
+- [ ] 迁移 `array_literal_*` 字段访问（81 处）
+- [ ] 迁移其他表达式节点
+- [ ] 运行 `make check` 验证
+
+#### Step 4: 迁移语句节点（2 天）
+
+- [ ] 迁移 `block_*` 字段访问（156 处）
+- [ ] 迁移 `for_stmt_*` 字段访问（109 处）
+- [ ] 迁移 `if_stmt_*` 字段访问（58 处）
+- [ ] 迁移 `return_stmt_*` 字段访问（52 处）
+- [ ] 迁移 `while_stmt_*` 字段访问（45 处）
+- [ ] 迁移 `defer_stmt_*` 字段访问（30 处）
+- [ ] 迁移其他语句节点
+- [ ] 运行 `make check` 验证
+
+#### Step 5: 移除旧字段 + 验证（2-3 天）
+
+- [ ] 确认所有字段访问都已迁移到访问器
+- [ ] 移除 `ASTNode` 结构体中的旧字段
+- [ ] 移除 `ast_new_node` 中的旧字段初始化
+- [ ] 运行 `make check` 完整验证
+- [ ] 运行 `make backup` 备份
+- [ ] 创建 git 标签：`git tag stage4.2.complete`
+
+---
+
+## 阶段五：测试现代化 [░░░░░░░░░░] 0%
+
+### 5.1 重构测试为 test 语句风格
+
+- [ ] 扫描所有测试文件中的 `fn test_XXX` 模式
+- [ ] 重构为 `test "description" {}` 风格
+- [ ] 重点文件：
+  - [ ] `tests/test_basic.uya`
+  - [ ] `tests/test_types.uya`
+  - [ ] `tests/test_generics.uya`
+  - [ ] 其他测试文件
+- [ ] 移除测试文件中的 `export fn main()` 函数
+- [ ] 运行 `make tests` 验证
+
+### 5.2 添加增量测试验证
+
+- [ ] 为重构的函数添加独立测试：
+  - [ ] `tests/test_type_accessors.uya` - Type 访问器测试
+  - [ ] `tests/test_ast_accessors.uya` - ASTNode 访问器测试
+- [ ] 运行 `make tests` 验证
+
+---
+
+## 阶段六：代码质量改进 [░░░░░░░░░░] 0%
+
+### 6.1 统一错误处理模式
+
+- [ ] 审计所有函数的返回类型
+- [ ] 统一错误处理规范：
+  - 类型推断函数：返回 `Type`，错误时返回 `make_void_type()`
+  - 检查函数：返回 `i32`（0=失败，1=成功）
+  - 生成函数：返回 `void`，通过 `codegen.error_count` 跟踪错误
+- [ ] 运行 `make check` 验证
+
+### 6.2 常量集中定义
+
+- [ ] 创建 `src/constants.uya` 文件
+- [ ] 集中定义以下常量：
+  - [ ] `MAX_MONO_INSTANCES: i32 = 512`
+  - [ ] `MAX_DEFER_DEPTH: i32 = 64`
+  - [ ] `MAX_TYPE_PARAMS: i32 = 16`
+  - [ ] `TEMP_BUF_SIZE: i32 = 4096`
+  - [ ] `MAX_SCOPE_DEPTH: i32 = 64`
+  - [ ] `SYMBOL_TABLE_SIZE: i32 = 32768`
+- [ ] 替换所有魔法数字
+- [ ] 运行 `make check` 验证
+
+### 6.3 移除未使用变量
+
+- [ ] 清理以下未使用变量：
+  - [ ] `src/checker/check_expr.uya:1259` - `match_union_decl`
+  - [ ] `src/codegen/c99/stmt.uya:504` - `ret_c` 部分分支
+- [ ] 运行 `make check` 验证
+
+---
+
+## 验收清单
+
+### 代码规范
+
+- [ ] 所有函数 ≤ 50 行
+- [ ] 所有嵌套深度 ≤ 3 层
+- [ ] 重复代码减少 50%+
+- [ ] 测试使用 `test "name" {}` 风格
+
+### Union 数据结构
+
+- [ ] Type 结构体使用 union 封装变体数据
+- [ ] ASTNode 结构体使用 union 封装变体数据
+- [ ] 所有字段访问使用访问器函数
+- [ ] match 完备性检查通过
+
+### 功能验证
+
+- [ ] `make check` 通过（自举 + 测试）
+- [ ] 自举编译时间 ≤ 2s
+- [ ] 无新增编译警告
+- [ ] Type 内存占用减少 50%+
+- [ ] ASTNode 内存占用减少 70%+
+
+---
+
+## 进度追踪
+
+| 阶段 | 预估天数 | 实际天数 | 状态 |
+|------|----------|----------|------|
+| 阶段一 | 5 天 | - | 未开始 |
+| 阶段二 | 3 天 | - | 未开始 |
+| 阶段三 | 4 天 | - | 未开始 |
+| 阶段四.1 | 5-7 天 | - | 未开始 |
+| 阶段四.2 | 10-13 天 | - | 未开始 |
+| 阶段五 | 2 天 | - | 未开始 |
+| 阶段六 | 2 天 | - | 未开始 |
+| **总计** | **31-36 天** | **-** | **未开始** |
+
+---
+
+## 每日工作流程
+
+### 开始工作前
+
+```bash
+# 1. 拉取最新代码
+git pull
+
+# 2. 验证当前状态
+make check
+
+# 3. 创建工作分支
+git checkout -b refactor/stage-N-task-M
+```
+
+### 完成任务后
+
+```bash
+# 1. 验证代码
+make check
+
+# 2. 提交更改
+git add -A
+git commit -m "refactor(stage-N): 任务描述"
+
+# 3. 创建标签（重要节点）
+git tag stage-N.step-M
+
+# 4. 备份（阶段完成时）
+make backup
+```
+
+### 遇到问题时
+
+```bash
+# 1. 回滚到上一个提交
+git checkout -- .
+
+# 2. 或回滚到上一个标签
+git reset --hard stage-N.step-M
+
+# 3. 重新开始当前任务
+```
+
+---
+
+## 参考资料
+
+- `docs/REFACTOR_PLAN_V2.md` - 重构计划总览
+- `docs/REFACTOR_PLAN_V2_STAGE4_DETAILED.md` - 阶段四详细方案
+- `docs/REFACTOR_PLAN_V2_REVIEW.md` - 可行性评审报告
+- `.codebuddy/skills/uya-development.md` - Uya 开发技能文档
+- `docs/uya_ai_prompt.md` - Uya 语言完整语法（v0.47）
+- `.codebuddy/rules/uya-dev-flow.mdc` - Uya 开发流程规则
