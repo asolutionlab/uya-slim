@@ -230,23 +230,38 @@ struct uya_tagged_TaggedExample {
 
 ### 3.3 变体类型限制
 
-**重要规则**：Union 变体不能包含引用类型 `&T`（`src/checker/types.uya` 注释）：
+**变体类型支持**：Union 变体**完全支持引用类型 `&T`**：
 
 ```uya
-// ❌ 编译错误：变体不能是引用类型
-union BadRef {
-    ptr: &i32,     // 引用类型
-    val: i32
+// ✅ 编译通过：引用类型变体完全合法
+union IntOrRef {
+    i: i32,
+    r: &i32,      // 引用类型变体
 }
 
-// ✅ 正确：使用 FFI 指针
-union GoodPtr {
-    ptr: *i32,     // FFI 指针（允许）
-    val: i32
+// 使用示例
+fn test_union_ref() void {
+    var x: i32 = 42;
+    const u: IntOrRef = IntOrRef.r(&x);
+    match u {
+        .i(v) => { },
+        .r(v) => { },
+    };
 }
 ```
 
-**原因**：引用类型有生命周期约束，union 的变体切换会破坏生命周期安全。
+**生成的 C 代码**：
+```c
+union IntOrRef {
+    int32_t i;
+    int32_t * r;  // 引用类型映射为 C 指针
+};
+struct uya_tagged_IntOrRef { int _tag; union IntOrRef u; };
+```
+
+**注意**：`&T`（引用）和 `*T`（FFI 指针）的区别：
+- `&T`：映射为 `const T *`（不可变指针）
+- `*T`：映射为 `T *`（可变指针）
 
 ---
 
