@@ -647,20 +647,20 @@ static const char str587[] = "不能引用 _";
 static const char str588[] = "变量已被移动，不能再次使用";
 static const char str589[] = "变量在初始化前被使用：请确保变量在使用前已赋值";
 static const char str590[] = "不能使用裸枚举常量，应使用 枚举类型名.变体名 方式访问（如 Color.RED）";
-static const char str591[] = "TypeInfo";
-static const char str592[] = "name";
-static const char str593[] = "size";
-static const char str594[] = "align";
-static const char str595[] = "kind";
-static const char str596[] = "is_integer";
-static const char str597[] = "is_float";
-static const char str598[] = "is_bool";
-static const char str599[] = "is_pointer";
-static const char str600[] = "is_array";
-static const char str601[] = "is_void";
-static const char str602[] = "数组索引越界：常量索引超出数组边界";
-static const char str603[] = "数组索引安全证明失败";
-static const char str604[] = "指针可能为空：请添加空指针检查 (如 if ptr != null)";
+static const char str591[] = "数组索引越界：常量索引超出数组边界";
+static const char str592[] = "数组索引安全证明失败";
+static const char str593[] = "指针可能为空：请添加空指针检查 (如 if ptr != null)";
+static const char str594[] = "TypeInfo";
+static const char str595[] = "name";
+static const char str596[] = "size";
+static const char str597[] = "align";
+static const char str598[] = "kind";
+static const char str599[] = "is_integer";
+static const char str600[] = "is_float";
+static const char str601[] = "is_bool";
+static const char str602[] = "is_pointer";
+static const char str603[] = "is_array";
+static const char str604[] = "is_void";
 static const char str605[] = "match 所有分支的返回类型必须一致";
 static const char str606[] = "match 联合体必须处理所有变体";
 static const char str607[] = "match 必须包含 else 分支或变量绑定/通配符";
@@ -2742,6 +2742,9 @@ static struct Type find_struct_field_type(struct TypeChecker * checker, struct A
 static struct Type find_struct_field_type_with_substitution(struct TypeChecker * checker, struct ASTNode * struct_decl, uint8_t * field_name, struct Type * type_args, int32_t type_arg_count);
 static struct Type checker_infer_type(struct TypeChecker * checker, struct ASTNode * expr);
 static int32_t checker_check_expr_type(struct TypeChecker * checker, struct ASTNode * expr, struct Type expected_type);
+static struct Type infer_call_expr(struct TypeChecker * checker, struct ASTNode * expr);
+static struct Type infer_member_access(struct TypeChecker * checker, struct ASTNode * expr);
+static struct Type infer_match_expr(struct TypeChecker * checker, struct ASTNode * expr);
 static struct Type checker_check_array_access(struct TypeChecker * checker, struct ASTNode * node);
 static struct Type checker_check_alignof(struct TypeChecker * checker, struct ASTNode * node);
 static struct Type checker_check_len(struct TypeChecker * checker, struct ASTNode * node);
@@ -18629,234 +18632,11 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                     return _uya_ret;
                                                                                                 } else {
                                                                                                     if ((expr->type == AST_CALL_EXPR)) {
-                                                                                                        struct ASTNode * const callee = expr->call_expr_callee;
-                                                                                                        if ((callee == NULL)) {
-                                                                                                            struct Type _uya_ret = make_void_type();
-                                                                                                            return _uya_ret;
-                                                                                                        }
-                                                                                                        if ((callee->type == AST_MEMBER_ACCESS)) {
-                                                                                                            struct ASTNode * const mod_obj = callee->member_access_object;
-                                                                                                            if ((((mod_obj != NULL) && (mod_obj->type == AST_IDENTIFIER)) && (mod_obj->identifier_name != NULL))) {
-                                                                                                                uint8_t * const obj_name = mod_obj->identifier_name;
-                                                                                                                const int32_t ih = hash_string(obj_name);
-                                                                                                                int32_t ii = (ih & (IMPORT_TABLE_SIZE - 1));
-                                                                                                                int32_t mi = 0;
-                                                                                                                while ((mi < IMPORT_TABLE_SIZE)) {
-                                                                                                                    const int32_t sl = ((ii + mi) & (IMPORT_TABLE_SIZE - 1));
-                                                                                                                    struct ImportedItem * const imp = checker->import_table.slots[sl];
-                                                                                                                    if ((imp == NULL)) {
-                                                                                                                        break;
-                                                                                                                    }
-                                                                                                                    if (((imp->item_type == (0 - 1)) && (str_equals(imp->local_name, obj_name) != 0))) {
-                                                                                                                        callee->member_access_is_module_access = 1;
-                                                                                                                        callee->member_access_module_name = imp->module_name;
-                                                                                                                        uint8_t * const func_name = callee->member_access_field_name;
-                                                                                                                        if ((func_name != NULL)) {
-                                                                                                                            struct ASTNode * const fn_decl = find_fn_decl_from_program(checker->program_node, func_name);
-                                                                                                                            if ((fn_decl != NULL)) {
-                                                                                                                                struct Type _uya_ret = type_from_ast(checker, fn_decl->fn_decl_return_type);
-                                                                                                                                return _uya_ret;
-                                                                                                                            }
-                                                                                                                            struct FunctionSignature * const sig = function_table_lookup(checker, func_name);
-                                                                                                                            if ((sig != NULL)) {
-                                                                                                                                struct Type _uya_ret = sig->return_type;
-                                                                                                                                return _uya_ret;
-                                                                                                                            }
-                                                                                                                        }
-                                                                                                                        struct Type _uya_ret = make_void_type();
-                                                                                                                        return _uya_ret;
-                                                                                                                    }
-                                                                                                                    mi = (mi + 1);
-                                                                                                                }
-                                                                                                            }
-                                                                                                        }
-                                                                                                        if ((callee->type == AST_MEMBER_ACCESS)) {
-                                                                                                            struct ASTNode * const object = callee->member_access_object;
-                                                                                                            if ((((((object != NULL) && (object->type == AST_IDENTIFIER)) && (object->identifier_name != NULL)) && (checker != NULL)) && (checker->program_node != NULL))) {
-                                                                                                                struct ASTNode * const union_decl = find_union_decl_from_program(checker->program_node, object->identifier_name);
-                                                                                                                if ((union_decl != NULL)) {
-                                                                                                                    uint8_t * const variant_name = callee->member_access_field_name;
-                                                                                                                    if ((((variant_name != NULL) && (expr->call_expr_arg_count == 1)) && (union_decl->union_decl_variants != NULL))) {
-                                                                                                                        int32_t i = 0;
-                                                                                                                        while ((i < union_decl->union_decl_variant_count)) {
-                                                                                                                            struct ASTNode * const v = union_decl->union_decl_variants[i];
-                                                                                                                            if (((((v != NULL) && (v->type == AST_VAR_DECL)) && (v->var_decl_name != NULL)) && (str_equals(v->var_decl_name, variant_name) != 0))) {
-                                                                                                                                result.kind = TYPE_UNION;
-                                                                                                                                result.union_name = union_decl->union_decl_name;
-                                                                                                                                struct Type _uya_ret = result;
-                                                                                                                                return _uya_ret;
-                                                                                                                            }
-                                                                                                                            i = (i + 1);
-                                                                                                                        }
-                                                                                                                    }
-                                                                                                                }
-                                                                                                            }
-                                                                                                            struct Type object_type = checker_infer_type(checker, callee->member_access_object);
-                                                                                                            if ((((object_type.kind == TYPE_STRUCT) && (object_type.struct_name != NULL)) && (checker->program_node != NULL))) {
-                                                                                                                uint8_t * const method_name = callee->member_access_field_name;
-                                                                                                                struct ASTNode * const m = find_method_in_struct(checker->program_node, object_type.struct_name, method_name);
-                                                                                                                if ((m != NULL)) {
-                                                                                                                    struct Type _uya_ret = type_from_ast(checker, m->fn_decl_return_type);
-                                                                                                                    return _uya_ret;
-                                                                                                                }
-                                                                                                            }
-                                                                                                        }
-                                                                                                        if ((callee->type != AST_IDENTIFIER)) {
-                                                                                                            struct Type _uya_ret = make_void_type();
-                                                                                                            return _uya_ret;
-                                                                                                        }
-                                                                                                        if (((expr->call_expr_type_arg_count > 0) && (expr->call_expr_type_args != NULL))) {
-                                                                                                            struct ASTNode * const fn_decl = find_fn_decl_from_program(checker->program_node, callee->identifier_name);
-                                                                                                            if (((fn_decl != NULL) && (fn_decl->fn_decl_type_param_count > 0))) {
-                                                                                                                register_mono_instance(checker, callee->identifier_name, expr->call_expr_type_args, expr->call_expr_type_arg_count, 1);
-                                                                                                                struct Type return_type = type_from_ast(checker, fn_decl->fn_decl_return_type);
-                                                                                                                struct Type _uya_ret = substitute_generic_type(checker, return_type, fn_decl->fn_decl_type_params, fn_decl->fn_decl_type_param_count, expr->call_expr_type_args, expr->call_expr_type_arg_count);
-                                                                                                                return _uya_ret;
-                                                                                                            }
-                                                                                                        }
-                                                                                                        struct FunctionSignature * const sig = function_table_lookup(checker, callee->identifier_name);
-                                                                                                        if ((sig != NULL)) {
-                                                                                                            struct Type _uya_ret = sig->return_type;
-                                                                                                            return _uya_ret;
-                                                                                                        }
-                                                                                                        if ((checker->program_node != NULL)) {
-                                                                                                            struct ASTNode * const fn_decl = find_fn_decl_from_program(checker->program_node, callee->identifier_name);
-                                                                                                            if (((fn_decl != NULL) && (fn_decl->fn_decl_return_type != NULL))) {
-                                                                                                                struct Type _uya_ret = type_from_ast(checker, fn_decl->fn_decl_return_type);
-                                                                                                                return _uya_ret;
-                                                                                                            }
-                                                                                                        }
-                                                                                                        struct Type _uya_ret = make_void_type();
+                                                                                                        struct Type _uya_ret = infer_call_expr(checker, expr);
                                                                                                         return _uya_ret;
                                                                                                     } else {
                                                                                                         if ((expr->type == AST_MEMBER_ACCESS)) {
-                                                                                                            struct ASTNode * const object = expr->member_access_object;
-                                                                                                            if ((object == NULL)) {
-                                                                                                                struct Type _uya_ret = make_void_type();
-                                                                                                                return _uya_ret;
-                                                                                                            }
-                                                                                                            if ((object->type == AST_IDENTIFIER)) {
-                                                                                                                uint8_t * const enum_name = object->identifier_name;
-                                                                                                                if ((((enum_name != NULL) && (checker != NULL)) && (checker->program_node != NULL))) {
-                                                                                                                    struct Symbol * const symbol = symbol_table_lookup(checker, enum_name);
-                                                                                                                    if ((symbol == NULL)) {
-                                                                                                                        struct ASTNode * const enum_decl = find_enum_decl_from_program(checker->program_node, enum_name);
-                                                                                                                        if ((enum_decl != NULL)) {
-                                                                                                                            uint8_t * const variant_name = expr->member_access_field_name;
-                                                                                                                            if ((variant_name != NULL)) {
-                                                                                                                                int32_t i = 0;
-                                                                                                                                while ((i < enum_decl->enum_decl_variant_count)) {
-                                                                                                                                    if (((enum_decl->enum_decl_variants[i].name != NULL) && (str_equals(enum_decl->enum_decl_variants[i].name, variant_name) != 0))) {
-                                                                                                                                        result.kind = TYPE_ENUM;
-                                                                                                                                        result.enum_name = enum_name;
-                                                                                                                                        struct Type _uya_ret = result;
-                                                                                                                                        return _uya_ret;
-                                                                                                                                    }
-                                                                                                                                    i = (i + 1);
-                                                                                                                                }
-                                                                                                                            }
-                                                                                                                            struct Type _uya_ret = make_void_type();
-                                                                                                                            return _uya_ret;
-                                                                                                                        }
-                                                                                                                        const int32_t ih = hash_string(enum_name);
-                                                                                                                        int32_t ii = (ih & (IMPORT_TABLE_SIZE - 1));
-                                                                                                                        int32_t i2 = 0;
-                                                                                                                        while ((i2 < IMPORT_TABLE_SIZE)) {
-                                                                                                                            const int32_t sl = ((ii + i2) & (IMPORT_TABLE_SIZE - 1));
-                                                                                                                            struct ImportedItem * const imp = checker->import_table.slots[sl];
-                                                                                                                            if ((imp == NULL)) {
-                                                                                                                                break;
-                                                                                                                            }
-                                                                                                                            if (((imp->item_type == (0 - 1)) && (str_equals(imp->local_name, enum_name) != 0))) {
-                                                                                                                                expr->member_access_is_module_access = 1;
-                                                                                                                                expr->member_access_module_name = imp->module_name;
-                                                                                                                                struct Type _uya_ret = make_void_type();
-                                                                                                                                return _uya_ret;
-                                                                                                                            }
-                                                                                                                            i2 = (i2 + 1);
-                                                                                                                        }
-                                                                                                                    }
-                                                                                                                }
-                                                                                                            }
-                                                                                                            struct Type object_type = checker_infer_type(checker, object);
-                                                                                                            if (((object_type.kind == TYPE_POINTER) && (object_type.pointer_to != NULL))) {
-                                                                                                                object_type = object_type.pointer_to[0];
-                                                                                                            }
-                                                                                                            if ((object_type.kind == TYPE_TUPLE)) {
-                                                                                                                uint8_t * const field_name = expr->member_access_field_name;
-                                                                                                                if (((field_name == NULL) || (object_type.tuple_element_types == NULL))) {
-                                                                                                                    struct Type _uya_ret = make_void_type();
-                                                                                                                    return _uya_ret;
-                                                                                                                }
-                                                                                                                const int32_t idx = libc_atoi((uint8_t *)field_name);
-                                                                                                                if (((idx < 0) || (idx >= object_type.tuple_count))) {
-                                                                                                                    struct Type _uya_ret = make_void_type();
-                                                                                                                    return _uya_ret;
-                                                                                                                }
-                                                                                                                struct Type _uya_ret = object_type.tuple_element_types[idx];
-                                                                                                                return _uya_ret;
-                                                                                                            }
-                                                                                                            if (((((object_type.kind == TYPE_INTERFACE) && (object_type.interface_name != NULL)) && (checker != NULL)) && (checker->program_node != NULL))) {
-                                                                                                                struct ASTNode * const iface = find_interface_decl_from_program(checker->program_node, object_type.interface_name);
-                                                                                                                uint8_t * const method_name = expr->member_access_field_name;
-                                                                                                                if ((((iface != NULL) && (method_name != NULL)) && (iface->interface_decl_method_sigs != NULL))) {
-                                                                                                                    int32_t i = 0;
-                                                                                                                    while ((i < iface->interface_decl_method_sig_count)) {
-                                                                                                                        struct ASTNode * const msig = iface->interface_decl_method_sigs[i];
-                                                                                                                        if (((((msig != NULL) && (msig->type == AST_FN_DECL)) && (msig->fn_decl_name != NULL)) && (str_equals(msig->fn_decl_name, method_name) != 0))) {
-                                                                                                                            struct Type _uya_ret = type_from_ast(checker, msig->fn_decl_return_type);
-                                                                                                                            return _uya_ret;
-                                                                                                                        }
-                                                                                                                        i = (i + 1);
-                                                                                                                    }
-                                                                                                                }
-                                                                                                                struct Type _uya_ret = make_void_type();
-                                                                                                                return _uya_ret;
-                                                                                                            }
-                                                                                                            if (((object_type.kind != TYPE_STRUCT) || (object_type.struct_name == NULL))) {
-                                                                                                                struct Type _uya_ret = make_void_type();
-                                                                                                                return _uya_ret;
-                                                                                                            }
-                                                                                                            struct ASTNode * const struct_decl = find_struct_decl_from_program(checker->program_node, object_type.struct_name);
-                                                                                                            if ((struct_decl == NULL)) {
-                                                                                                                if ((str_equals(object_type.struct_name, (uint8_t *)(uint8_t *)(uint8_t *)str591) != 0)) {
-                                                                                                                    uint8_t * const field_name = expr->member_access_field_name;
-                                                                                                                    if ((field_name != NULL)) {
-                                                                                                                        if ((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str592) != 0)) {
-                                                                                                                            result.kind = TYPE_POINTER;
-                                                                                                                            result.is_ffi_pointer = 1;
-                                                                                                                            struct Type * const inner_type = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
-                                                                                                                            if ((inner_type != NULL)) {
-                                                                                                                                inner_type[0] = (struct Type){.kind = TYPE_I8, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
-                                                                                                                                result.pointer_to = inner_type;
-                                                                                                                            }
-                                                                                                                            struct Type _uya_ret = result;
-                                                                                                                            return _uya_ret;
-                                                                                                                        } else {
-                                                                                                                            if ((((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str593) != 0) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str594) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str595) != 0))) {
-                                                                                                                                result.kind = TYPE_I32;
-                                                                                                                                struct Type _uya_ret = result;
-                                                                                                                                return _uya_ret;
-                                                                                                                            } else {
-                                                                                                                                if (((((((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str596) != 0) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str597) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str598) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str599) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str600) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str601) != 0))) {
-                                                                                                                                    result.kind = TYPE_BOOL;
-                                                                                                                                    struct Type _uya_ret = result;
-                                                                                                                                    return _uya_ret;
-                                                                                                                                }
-                                                                                                                            }
-                                                                                                                        }
-                                                                                                                    }
-                                                                                                                }
-                                                                                                                struct Type _uya_ret = make_void_type();
-                                                                                                                return _uya_ret;
-                                                                                                            }
-                                                                                                            struct Type field_type = (struct Type){.kind = TYPE_VOID, .enum_name = 0, .interface_name = 0, .struct_name = 0, .union_name = 0, .pointer_to = 0, .is_ffi_pointer = 0, .element_type = 0, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
-                                                                                                            if (((object_type.struct_type_args != NULL) && (object_type.struct_type_arg_count > 0))) {
-                                                                                                                field_type = find_struct_field_type_with_substitution(checker, struct_decl, expr->member_access_field_name, object_type.struct_type_args, object_type.struct_type_arg_count);
-                                                                                                            } else {
-                                                                                                                field_type = find_struct_field_type(checker, struct_decl, expr->member_access_field_name);
-                                                                                                            }
-                                                                                                            struct Type _uya_ret = field_type;
+                                                                                                            struct Type _uya_ret = infer_member_access(checker, expr);
                                                                                                             return _uya_ret;
                                                                                                         } else {
                                                                                                             if ((expr->type == AST_ARRAY_ACCESS)) {
@@ -18868,14 +18648,14 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                         const int32_t index_val = checker_eval_const_expr(checker, index_expr);
                                                                                                                         if ((index_val >= 0)) {
                                                                                                                             if ((index_val >= array_size)) {
-                                                                                                                                checker_report_error(checker, index_expr, (uint8_t *)(uint8_t *)str602);
+                                                                                                                                checker_report_error(checker, index_expr, (uint8_t *)(uint8_t *)str591);
                                                                                                                             }
                                                                                                                         } else {
                                                                                                                             struct LinearExpr linear_expr = extract_linear_expr(checker, index_expr);
                                                                                                                             if ((linear_expr.is_valid != 0)) {
                                                                                                                                 if ((verify_linear_expr_bounds(checker, (&linear_expr), array_size, index_expr) == 0)) {
                                                                                                                                     if ((linear_expr.var_name != NULL)) {
-                                                                                                                                        checker_report_error_ex(checker, index_expr, (uint8_t *)(uint8_t *)str603, linear_expr.var_name, array_size);
+                                                                                                                                        checker_report_error_ex(checker, index_expr, (uint8_t *)(uint8_t *)str592, linear_expr.var_name, array_size);
                                                                                                                                     }
                                                                                                                                 }
                                                                                                                             }
@@ -18894,7 +18674,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                 if (((array_expr != NULL) && (array_expr->type == AST_IDENTIFIER))) {
                                                                                                                                     uint8_t * const ptr_name = array_expr->identifier_name;
                                                                                                                                     if (((pointer_is_nullable(checker, ptr_name) != 0) && (pointer_is_known_nonnull(checker, ptr_name) == 0))) {
-                                                                                                                                        checker_report_error(checker, expr->array_access_array, (uint8_t *)(uint8_t *)str604);
+                                                                                                                                        checker_report_error(checker, expr->array_access_array, (uint8_t *)(uint8_t *)str593);
                                                                                                                                     }
                                                                                                                                 }
                                                                                                                             }
@@ -19081,113 +18861,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                                     return _uya_ret;
                                                                                                                                                 } else {
                                                                                                                                                     if ((expr->type == AST_MATCH_EXPR)) {
-                                                                                                                                                        struct Type expr_type = checker_infer_type(checker, expr->match_expr_expr);
-                                                                                                                                                        if (((expr_type.kind == TYPE_POINTER) && (expr_type.pointer_to != NULL))) {
-                                                                                                                                                            expr_type = expr_type.pointer_to[0];
-                                                                                                                                                        }
-                                                                                                                                                        struct ASTNode * match_union_decl = NULL;
-                                                                                                                                                        if (((((expr_type.kind == TYPE_UNION) && (expr_type.union_name != NULL)) && (checker != NULL)) && (checker->program_node != NULL))) {
-                                                                                                                                                            match_union_decl = find_union_decl_from_program(checker->program_node, expr_type.union_name);
-                                                                                                                                                        }
-                                                                                                                                                        struct Type unified = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
-                                                                                                                                                        int32_t first = 1;
-                                                                                                                                                        int32_t i = 0;
-                                                                                                                                                        while ((i < expr->match_expr_arm_count)) {
-                                                                                                                                                            struct ASTMatchArm arm = expr->match_expr_arms[i];
-                                                                                                                                                            checker_enter_scope(checker);
-                                                                                                                                                            if ((((((arm.kind == MATCH_PAT_UNION) && (arm.variant_name != NULL)) && (expr_type.kind == TYPE_UNION)) && (expr_type.union_name != NULL)) && (checker->program_node != NULL))) {
-                                                                                                                                                                struct ASTNode * const union_decl = find_union_decl_from_program(checker->program_node, expr_type.union_name);
-                                                                                                                                                                if ((((union_decl != NULL) && (arm.var_name != NULL)) && (str_equals(arm.var_name, (uint8_t *)(uint8_t *)str498) == 0))) {
-                                                                                                                                                                    int32_t k = 0;
-                                                                                                                                                                    while ((k < union_decl->union_decl_variant_count)) {
-                                                                                                                                                                        struct ASTNode * const v = union_decl->union_decl_variants[k];
-                                                                                                                                                                        if ((((((v != NULL) && (v->type == AST_VAR_DECL)) && (v->var_decl_name != NULL)) && (str_equals(v->var_decl_name, arm.variant_name) != 0)) && (v->var_decl_type != NULL))) {
-                                                                                                                                                                            struct Type variant_type = type_from_ast(checker, v->var_decl_type);
-                                                                                                                                                                            struct Symbol * const sym = (struct Symbol *)arena_alloc(checker->arena, (int32_t)sizeof(struct Symbol));
-                                                                                                                                                                            if ((sym != NULL)) {
-                                                                                                                                                                                sym->name = arm.var_name;
-                                                                                                                                                                                sym->type = copy_type((&variant_type));
-                                                                                                                                                                                sym->is_const = 1;
-                                                                                                                                                                                sym->is_initialized = 1;
-                                                                                                                                                                                sym->scope_level = checker->scope_level;
-                                                                                                                                                                                sym->line = expr->line;
-                                                                                                                                                                                sym->column = expr->column;
-                                                                                                                                                                                sym->pointee_of = NULL;
-                                                                                                                                                                                symbol_table_insert(checker, sym);
-                                                                                                                                                                            }
-                                                                                                                                                                            break;
-                                                                                                                                                                        }
-                                                                                                                                                                        k = (k + 1);
-                                                                                                                                                                    }
-                                                                                                                                                                }
-                                                                                                                                                            }
-                                                                                                                                                            struct Type t = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
-                                                                                                                                                            t = checker_infer_type(checker, arm.result_expr);
-                                                                                                                                                            checker_exit_scope(checker);
-                                                                                                                                                            if ((first != 0)) {
-                                                                                                                                                                unified = copy_type((&t));
-                                                                                                                                                                first = 0;
-                                                                                                                                                            } else {
-                                                                                                                                                                if ((type_equals(unified, copy_type((&t))) == 0)) {
-                                                                                                                                                                    checker_report_error(checker, arm.result_expr, (uint8_t *)(uint8_t *)str605);
-                                                                                                                                                                }
-                                                                                                                                                            }
-                                                                                                                                                            i = (i + 1);
-                                                                                                                                                        }
-                                                                                                                                                        int32_t has_catch_all = 0;
-                                                                                                                                                        int32_t j = 0;
-                                                                                                                                                        while ((j < expr->match_expr_arm_count)) {
-                                                                                                                                                            struct ASTMatchArm arm = expr->match_expr_arms[j];
-                                                                                                                                                            if ((((arm.kind == MATCH_PAT_ELSE) || (arm.kind == MATCH_PAT_BIND)) || (arm.kind == MATCH_PAT_WILDCARD))) {
-                                                                                                                                                                has_catch_all = 1;
-                                                                                                                                                                break;
-                                                                                                                                                            }
-                                                                                                                                                            j = (j + 1);
-                                                                                                                                                        }
-                                                                                                                                                        if ((((expr_type.kind == TYPE_UNION) && (expr_type.union_name != NULL)) && (checker->program_node != NULL))) {
-                                                                                                                                                            struct ASTNode * const union_decl = find_union_decl_from_program(checker->program_node, expr_type.union_name);
-                                                                                                                                                            if ((((union_decl != NULL) && (union_decl->union_decl_variant_count > 0)) && (has_catch_all == 0))) {
-                                                                                                                                                                int32_t covered[32] = {0};
-                                                                                                                                                                int32_t nv = union_decl->union_decl_variant_count;
-                                                                                                                                                                if ((nv > MAX_UNION_VARIANTS)) {
-                                                                                                                                                                    nv = MAX_UNION_VARIANTS;
-                                                                                                                                                                }
-                                                                                                                                                                int32_t k = 0;
-                                                                                                                                                                while (((k < nv) && (k < MAX_UNION_VARIANTS))) {
-                                                                                                                                                                    covered[k] = 0;
-                                                                                                                                                                    k = (k + 1);
-                                                                                                                                                                }
-                                                                                                                                                                j = 0;
-                                                                                                                                                                while ((j < expr->match_expr_arm_count)) {
-                                                                                                                                                                    struct ASTMatchArm arm = expr->match_expr_arms[j];
-                                                                                                                                                                    if (((arm.kind == MATCH_PAT_UNION) && (arm.variant_name != NULL))) {
-                                                                                                                                                                        int32_t kk = 0;
-                                                                                                                                                                        while (((kk < nv) && (kk < MAX_UNION_VARIANTS))) {
-                                                                                                                                                                            struct ASTNode * const v = union_decl->union_decl_variants[kk];
-                                                                                                                                                                            if (((((v != NULL) && (v->type == AST_VAR_DECL)) && (v->var_decl_name != NULL)) && (str_equals(v->var_decl_name, arm.variant_name) != 0))) {
-                                                                                                                                                                                covered[kk] = 1;
-                                                                                                                                                                                break;
-                                                                                                                                                                            }
-                                                                                                                                                                            kk = (kk + 1);
-                                                                                                                                                                        }
-                                                                                                                                                                    }
-                                                                                                                                                                    j = (j + 1);
-                                                                                                                                                                }
-                                                                                                                                                                k = 0;
-                                                                                                                                                                while (((k < nv) && (k < MAX_UNION_VARIANTS))) {
-                                                                                                                                                                    if ((covered[k] == 0)) {
-                                                                                                                                                                        checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str606);
-                                                                                                                                                                        break;
-                                                                                                                                                                    }
-                                                                                                                                                                    k = (k + 1);
-                                                                                                                                                                }
-                                                                                                                                                            }
-                                                                                                                                                        } else {
-                                                                                                                                                            if (((has_catch_all == 0) && (expr->match_expr_arm_count > 0))) {
-                                                                                                                                                                checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str607);
-                                                                                                                                                            }
-                                                                                                                                                        }
-                                                                                                                                                        struct Type _uya_ret = unified;
+                                                                                                                                                        struct Type _uya_ret = infer_match_expr(checker, expr);
                                                                                                                                                         return _uya_ret;
                                                                                                                                                     } else {
                                                                                                                                                         if ((expr->type == AST_STRUCT_DECL)) {
@@ -19290,6 +18964,348 @@ static __attribute__((unused)) int32_t checker_check_expr_type(struct TypeChecke
     return _uya_ret;
 }
 
+static __attribute__((unused)) struct Type infer_call_expr(struct TypeChecker * checker, struct ASTNode * expr) {
+    (void)checker;
+    (void)expr;
+    struct ASTNode * const callee = expr->call_expr_callee;
+    if ((callee == NULL)) {
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    if ((callee->type == AST_MEMBER_ACCESS)) {
+        struct ASTNode * const mod_obj = callee->member_access_object;
+        if ((((mod_obj != NULL) && (mod_obj->type == AST_IDENTIFIER)) && (mod_obj->identifier_name != NULL))) {
+            uint8_t * const obj_name = mod_obj->identifier_name;
+            const int32_t ih = hash_string(obj_name);
+            int32_t ii = (ih & (IMPORT_TABLE_SIZE - 1));
+            int32_t mi = 0;
+            while ((mi < IMPORT_TABLE_SIZE)) {
+                const int32_t sl = ((ii + mi) & (IMPORT_TABLE_SIZE - 1));
+                struct ImportedItem * const imp = checker->import_table.slots[sl];
+                if ((imp == NULL)) {
+                    break;
+                }
+                if (((imp->item_type == (0 - 1)) && (str_equals(imp->local_name, obj_name) != 0))) {
+                    callee->member_access_is_module_access = 1;
+                    callee->member_access_module_name = imp->module_name;
+                    uint8_t * const func_name = callee->member_access_field_name;
+                    if ((func_name != NULL)) {
+                        struct ASTNode * const fn_decl = find_fn_decl_from_program(checker->program_node, func_name);
+                        if ((fn_decl != NULL)) {
+                            struct Type _uya_ret = type_from_ast(checker, fn_decl->fn_decl_return_type);
+                            return _uya_ret;
+                        }
+                        struct FunctionSignature * const sig = function_table_lookup(checker, func_name);
+                        if ((sig != NULL)) {
+                            struct Type _uya_ret = sig->return_type;
+                            return _uya_ret;
+                        }
+                    }
+                    struct Type _uya_ret = make_void_type();
+                    return _uya_ret;
+                }
+                mi = (mi + 1);
+            }
+        }
+        struct ASTNode * const object = callee->member_access_object;
+        if ((((((object != NULL) && (object->type == AST_IDENTIFIER)) && (object->identifier_name != NULL)) && (checker != NULL)) && (checker->program_node != NULL))) {
+            struct ASTNode * const union_decl = find_union_decl_from_program(checker->program_node, object->identifier_name);
+            if ((union_decl != NULL)) {
+                uint8_t * const variant_name = callee->member_access_field_name;
+                if ((((variant_name != NULL) && (expr->call_expr_arg_count == 1)) && (union_decl->union_decl_variants != NULL))) {
+                    int32_t i = 0;
+                    while ((i < union_decl->union_decl_variant_count)) {
+                        struct ASTNode * const v = union_decl->union_decl_variants[i];
+                        if (((((v != NULL) && (v->type == AST_VAR_DECL)) && (v->var_decl_name != NULL)) && (str_equals(v->var_decl_name, variant_name) != 0))) {
+                            struct Type _uya_ret = make_named_type(TYPE_UNION, union_decl->union_decl_name);
+                            return _uya_ret;
+                        }
+                        i = (i + 1);
+                    }
+                }
+            }
+            struct Type object_type = checker_infer_type(checker, callee->member_access_object);
+            if ((((object_type.kind == TYPE_STRUCT) && (object_type.struct_name != NULL)) && (checker->program_node != NULL))) {
+                uint8_t * const method_name = callee->member_access_field_name;
+                struct ASTNode * const m = find_method_in_struct(checker->program_node, object_type.struct_name, method_name);
+                if ((m != NULL)) {
+                    struct Type _uya_ret = type_from_ast(checker, m->fn_decl_return_type);
+                    return _uya_ret;
+                }
+            }
+        }
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    if ((callee->type != AST_IDENTIFIER)) {
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    if (((expr->call_expr_type_arg_count > 0) && (expr->call_expr_type_args != NULL))) {
+        struct ASTNode * const fn_decl = find_fn_decl_from_program(checker->program_node, callee->identifier_name);
+        if (((fn_decl != NULL) && (fn_decl->fn_decl_type_param_count > 0))) {
+            register_mono_instance(checker, callee->identifier_name, expr->call_expr_type_args, expr->call_expr_type_arg_count, 1);
+            struct Type return_type = type_from_ast(checker, fn_decl->fn_decl_return_type);
+            struct Type _uya_ret = substitute_generic_type(checker, return_type, fn_decl->fn_decl_type_params, fn_decl->fn_decl_type_param_count, expr->call_expr_type_args, expr->call_expr_type_arg_count);
+            return _uya_ret;
+        }
+    }
+    struct FunctionSignature * const sig = function_table_lookup(checker, callee->identifier_name);
+    if ((sig != NULL)) {
+        struct Type _uya_ret = sig->return_type;
+        return _uya_ret;
+    }
+    if ((checker->program_node != NULL)) {
+        struct ASTNode * const fn_decl = find_fn_decl_from_program(checker->program_node, callee->identifier_name);
+        if (((fn_decl != NULL) && (fn_decl->fn_decl_return_type != NULL))) {
+            struct Type _uya_ret = type_from_ast(checker, fn_decl->fn_decl_return_type);
+            return _uya_ret;
+        }
+    }
+    struct Type _uya_ret = make_void_type();
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type infer_member_access(struct TypeChecker * checker, struct ASTNode * expr) {
+    (void)checker;
+    (void)expr;
+    struct ASTNode * const object = expr->member_access_object;
+    if ((object == NULL)) {
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    if ((object->type == AST_IDENTIFIER)) {
+        uint8_t * const enum_name = object->identifier_name;
+        if ((((enum_name != NULL) && (checker != NULL)) && (checker->program_node != NULL))) {
+            struct Symbol * const symbol = symbol_table_lookup(checker, enum_name);
+            if ((symbol == NULL)) {
+                struct ASTNode * const enum_decl = find_enum_decl_from_program(checker->program_node, enum_name);
+                if ((enum_decl != NULL)) {
+                    uint8_t * const variant_name = expr->member_access_field_name;
+                    if ((variant_name != NULL)) {
+                        int32_t i = 0;
+                        while ((i < enum_decl->enum_decl_variant_count)) {
+                            if (((enum_decl->enum_decl_variants[i].name != NULL) && (str_equals(enum_decl->enum_decl_variants[i].name, variant_name) != 0))) {
+                                struct Type _uya_ret = make_named_type(TYPE_ENUM, enum_name);
+                                return _uya_ret;
+                            }
+                            i = (i + 1);
+                        }
+                    }
+                    struct Type _uya_ret = make_void_type();
+                    return _uya_ret;
+                }
+                const int32_t ih = hash_string(enum_name);
+                int32_t ii = (ih & (IMPORT_TABLE_SIZE - 1));
+                int32_t i2 = 0;
+                while ((i2 < IMPORT_TABLE_SIZE)) {
+                    const int32_t sl = ((ii + i2) & (IMPORT_TABLE_SIZE - 1));
+                    struct ImportedItem * const imp = checker->import_table.slots[sl];
+                    if ((imp == NULL)) {
+                        break;
+                    }
+                    if (((imp->item_type == (0 - 1)) && (str_equals(imp->local_name, enum_name) != 0))) {
+                        expr->member_access_is_module_access = 1;
+                        expr->member_access_module_name = imp->module_name;
+                        struct Type _uya_ret = make_void_type();
+                        return _uya_ret;
+                    }
+                    i2 = (i2 + 1);
+                }
+            }
+        }
+    }
+    struct Type object_type = checker_infer_type(checker, object);
+    if (((object_type.kind == TYPE_POINTER) && (object_type.pointer_to != NULL))) {
+        object_type = object_type.pointer_to[0];
+    }
+    if ((object_type.kind == TYPE_TUPLE)) {
+        uint8_t * const field_name = expr->member_access_field_name;
+        if (((field_name == NULL) || (object_type.tuple_element_types == NULL))) {
+            struct Type _uya_ret = make_void_type();
+            return _uya_ret;
+        }
+        const int32_t idx = libc_atoi((uint8_t *)field_name);
+        if (((idx < 0) || (idx >= object_type.tuple_count))) {
+            struct Type _uya_ret = make_void_type();
+            return _uya_ret;
+        }
+        struct Type _uya_ret = object_type.tuple_element_types[idx];
+        return _uya_ret;
+    }
+    if (((((object_type.kind == TYPE_INTERFACE) && (object_type.interface_name != NULL)) && (checker != NULL)) && (checker->program_node != NULL))) {
+        struct ASTNode * const iface = find_interface_decl_from_program(checker->program_node, object_type.interface_name);
+        uint8_t * const method_name = expr->member_access_field_name;
+        if ((((iface != NULL) && (method_name != NULL)) && (iface->interface_decl_method_sigs != NULL))) {
+            int32_t i = 0;
+            while ((i < iface->interface_decl_method_sig_count)) {
+                struct ASTNode * const msig = iface->interface_decl_method_sigs[i];
+                if (((((msig != NULL) && (msig->type == AST_FN_DECL)) && (msig->fn_decl_name != NULL)) && (str_equals(msig->fn_decl_name, method_name) != 0))) {
+                    struct Type _uya_ret = type_from_ast(checker, msig->fn_decl_return_type);
+                    return _uya_ret;
+                }
+                i = (i + 1);
+            }
+        }
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    if (((object_type.kind != TYPE_STRUCT) || (object_type.struct_name == NULL))) {
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    struct ASTNode * const struct_decl = find_struct_decl_from_program(checker->program_node, object_type.struct_name);
+    if ((struct_decl == NULL)) {
+        if ((str_equals(object_type.struct_name, (uint8_t *)(uint8_t *)(uint8_t *)str594) != 0)) {
+            uint8_t * const field_name = expr->member_access_field_name;
+            if ((field_name != NULL)) {
+                if ((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str595) != 0)) {
+                    struct Type result = (struct Type){.kind = TYPE_POINTER, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 1, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+                    struct Type * const inner_type = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
+                    if ((inner_type != NULL)) {
+                        inner_type[0] = make_i32_type();
+                        result.pointer_to = inner_type;
+                    }
+                    struct Type _uya_ret = result;
+                    return _uya_ret;
+                } else {
+                    if ((((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str596) != 0) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str597) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str598) != 0))) {
+                        struct Type _uya_ret = make_i32_type();
+                        return _uya_ret;
+                    } else {
+                        if (((((((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str599) != 0) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str600) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str601) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str602) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str603) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str604) != 0))) {
+                            struct Type _uya_ret = make_bool_type();
+                            return _uya_ret;
+                        }
+                    }
+                }
+            }
+        }
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    struct Type field_type = (struct Type){.kind = TYPE_VOID, .enum_name = 0, .interface_name = 0, .struct_name = 0, .union_name = 0, .pointer_to = 0, .is_ffi_pointer = 0, .element_type = 0, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    if (((object_type.struct_type_args != NULL) && (object_type.struct_type_arg_count > 0))) {
+        field_type = find_struct_field_type_with_substitution(checker, struct_decl, expr->member_access_field_name, object_type.struct_type_args, object_type.struct_type_arg_count);
+    } else {
+        field_type = find_struct_field_type(checker, struct_decl, expr->member_access_field_name);
+    }
+    struct Type _uya_ret = field_type;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type infer_match_expr(struct TypeChecker * checker, struct ASTNode * expr) {
+    (void)checker;
+    (void)expr;
+    struct Type expr_type = checker_infer_type(checker, expr->match_expr_expr);
+    if (((expr_type.kind == TYPE_POINTER) && (expr_type.pointer_to != NULL))) {
+        expr_type = expr_type.pointer_to[0];
+    }
+    struct ASTNode * match_union_decl = NULL;
+    if (((((expr_type.kind == TYPE_UNION) && (expr_type.union_name != NULL)) && (checker != NULL)) && (checker->program_node != NULL))) {
+        match_union_decl = find_union_decl_from_program(checker->program_node, expr_type.union_name);
+    }
+    struct Type unified = make_void_type();
+    int32_t first = 1;
+    int32_t i = 0;
+    while ((i < expr->match_expr_arm_count)) {
+        struct ASTMatchArm arm = expr->match_expr_arms[i];
+        checker_enter_scope(checker);
+        if ((((((arm.kind == MATCH_PAT_UNION) && (arm.variant_name != NULL)) && (expr_type.kind == TYPE_UNION)) && (expr_type.union_name != NULL)) && (checker->program_node != NULL))) {
+            struct ASTNode * const union_decl = find_union_decl_from_program(checker->program_node, expr_type.union_name);
+            if ((((union_decl != NULL) && (arm.var_name != NULL)) && (str_equals(arm.var_name, (uint8_t *)(uint8_t *)str498) == 0))) {
+                int32_t k = 0;
+                while ((k < union_decl->union_decl_variant_count)) {
+                    struct ASTNode * const v = union_decl->union_decl_variants[k];
+                    if ((((((v != NULL) && (v->type == AST_VAR_DECL)) && (v->var_decl_name != NULL)) && (str_equals(v->var_decl_name, arm.variant_name) != 0)) && (v->var_decl_type != NULL))) {
+                        struct Type variant_type = type_from_ast(checker, v->var_decl_type);
+                        struct Symbol * const sym = (struct Symbol *)arena_alloc(checker->arena, (int32_t)sizeof(struct Symbol));
+                        if ((sym != NULL)) {
+                            sym->name = arm.var_name;
+                            sym->type = copy_type((&variant_type));
+                            sym->is_const = 1;
+                            sym->is_initialized = 1;
+                            sym->scope_level = checker->scope_level;
+                            sym->line = expr->line;
+                            sym->column = expr->column;
+                            sym->pointee_of = NULL;
+                            symbol_table_insert(checker, sym);
+                        }
+                        break;
+                    }
+                    k = (k + 1);
+                }
+            }
+        }
+        struct Type t = checker_infer_type(checker, arm.result_expr);
+        checker_exit_scope(checker);
+        if ((first != 0)) {
+            unified = copy_type((&t));
+            first = 0;
+        } else {
+            if ((type_equals(unified, copy_type((&t))) == 0)) {
+                checker_report_error(checker, arm.result_expr, (uint8_t *)(uint8_t *)str605);
+            }
+        }
+        i = (i + 1);
+    }
+    int32_t has_catch_all = 0;
+    int32_t j = 0;
+    while ((j < expr->match_expr_arm_count)) {
+        struct ASTMatchArm arm = expr->match_expr_arms[j];
+        if ((((arm.kind == MATCH_PAT_ELSE) || (arm.kind == MATCH_PAT_BIND)) || (arm.kind == MATCH_PAT_WILDCARD))) {
+            has_catch_all = 1;
+            break;
+        }
+        j = (j + 1);
+    }
+    if ((((expr_type.kind == TYPE_UNION) && (expr_type.union_name != NULL)) && (checker->program_node != NULL))) {
+        struct ASTNode * const union_decl = find_union_decl_from_program(checker->program_node, expr_type.union_name);
+        if ((((union_decl != NULL) && (union_decl->union_decl_variant_count > 0)) && (has_catch_all == 0))) {
+            int32_t covered[32] = {0};
+            int32_t nv = union_decl->union_decl_variant_count;
+            if ((nv > MAX_UNION_VARIANTS)) {
+                nv = MAX_UNION_VARIANTS;
+            }
+            int32_t k = 0;
+            while ((k < nv)) {
+                covered[k] = 0;
+                k = (k + 1);
+            }
+            j = 0;
+            while ((j < expr->match_expr_arm_count)) {
+                struct ASTMatchArm arm = expr->match_expr_arms[j];
+                if (((arm.kind == MATCH_PAT_UNION) && (arm.variant_name != NULL))) {
+                    int32_t kk = 0;
+                    while ((kk < nv)) {
+                        struct ASTNode * const v = union_decl->union_decl_variants[kk];
+                        if (((((v != NULL) && (v->type == AST_VAR_DECL)) && (v->var_decl_name != NULL)) && (str_equals(v->var_decl_name, arm.variant_name) != 0))) {
+                            covered[kk] = 1;
+                            break;
+                        }
+                        kk = (kk + 1);
+                    }
+                }
+                j = (j + 1);
+            }
+            k = 0;
+            while ((k < nv)) {
+                if ((covered[k] == 0)) {
+                    checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str606);
+                    break;
+                }
+                k = (k + 1);
+            }
+        }
+    } else {
+        if (((has_catch_all == 0) && (expr->match_expr_arm_count > 0))) {
+            checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str607);
+        }
+    }
+    struct Type _uya_ret = unified;
+    return _uya_ret;
+}
+
 static __attribute__((unused)) struct Type checker_check_array_access(struct TypeChecker * checker, struct ASTNode * node) {
     (void)checker;
     (void)node;
@@ -19318,7 +19334,7 @@ static __attribute__((unused)) struct Type checker_check_array_access(struct Typ
             if ((index_val >= 0)) {
                 const int32_t array_size = array_type.array_size;
                 if ((index_val >= array_size)) {
-                    checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str602);
+                    checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str591);
                 }
                 if ((index_val < 0)) {
                     checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str608);
@@ -19331,9 +19347,9 @@ static __attribute__((unused)) struct Type checker_check_array_access(struct Typ
                     if ((linear_expr.is_valid != 0)) {
                         if ((verify_linear_expr_bounds(checker, (&linear_expr), array_size, node->array_access_index) == 0)) {
                             if ((linear_expr.var_name != NULL)) {
-                                checker_report_error_ex(checker, node->array_access_index, (uint8_t *)(uint8_t *)str603, linear_expr.var_name, array_size);
+                                checker_report_error_ex(checker, node->array_access_index, (uint8_t *)(uint8_t *)str592, linear_expr.var_name, array_size);
                             } else {
-                                checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str602);
+                                checker_report_error(checker, node->array_access_index, (uint8_t *)(uint8_t *)str591);
                             }
                         }
                     } else {
@@ -19352,7 +19368,7 @@ static __attribute__((unused)) struct Type checker_check_array_access(struct Typ
                     if (((array_expr != NULL) && (array_expr->type == AST_IDENTIFIER))) {
                         uint8_t * const ptr_name = array_expr->identifier_name;
                         if (((pointer_is_nullable(checker, ptr_name) != 0) && (pointer_is_known_nonnull(checker, ptr_name) == 0))) {
-                            checker_report_error(checker, node->array_access_array, (uint8_t *)(uint8_t *)str604);
+                            checker_report_error(checker, node->array_access_array, (uint8_t *)(uint8_t *)str593);
                         }
                     }
                 }
@@ -22951,27 +22967,27 @@ static __attribute__((unused)) struct ASTNode * create_type_info_struct(struct A
         struct ASTNode * _uya_ret = NULL;
         return _uya_ret;
     }
-    field_names[0] = (uint8_t *)(uint8_t *)(uint8_t *)str592;
+    field_names[0] = (uint8_t *)(uint8_t *)(uint8_t *)str595;
     field_values[0] = create_string_as_ptr(type_name, arena, line, column);
-    field_names[1] = (uint8_t *)(uint8_t *)(uint8_t *)str593;
+    field_names[1] = (uint8_t *)(uint8_t *)(uint8_t *)str596;
     field_values[1] = create_number_literal((int64_t)type_size, arena, line, column);
-    field_names[2] = (uint8_t *)(uint8_t *)(uint8_t *)str594;
+    field_names[2] = (uint8_t *)(uint8_t *)(uint8_t *)str597;
     field_values[2] = create_number_literal((int64_t)type_align, arena, line, column);
-    field_names[3] = (uint8_t *)(uint8_t *)(uint8_t *)str595;
+    field_names[3] = (uint8_t *)(uint8_t *)(uint8_t *)str598;
     field_values[3] = create_number_literal((int64_t)kind, arena, line, column);
-    field_names[4] = (uint8_t *)(uint8_t *)(uint8_t *)str596;
+    field_names[4] = (uint8_t *)(uint8_t *)(uint8_t *)str599;
     field_values[4] = create_bool_literal(is_integer, arena, line, column);
-    field_names[5] = (uint8_t *)(uint8_t *)(uint8_t *)str597;
+    field_names[5] = (uint8_t *)(uint8_t *)(uint8_t *)str600;
     field_values[5] = create_bool_literal(is_float, arena, line, column);
-    field_names[6] = (uint8_t *)(uint8_t *)(uint8_t *)str598;
+    field_names[6] = (uint8_t *)(uint8_t *)(uint8_t *)str601;
     field_values[6] = create_bool_literal(is_bool, arena, line, column);
-    field_names[7] = (uint8_t *)(uint8_t *)(uint8_t *)str599;
+    field_names[7] = (uint8_t *)(uint8_t *)(uint8_t *)str602;
     field_values[7] = create_bool_literal(is_pointer, arena, line, column);
-    field_names[8] = (uint8_t *)(uint8_t *)(uint8_t *)str600;
+    field_names[8] = (uint8_t *)(uint8_t *)(uint8_t *)str603;
     field_values[8] = create_bool_literal(is_array, arena, line, column);
-    field_names[9] = (uint8_t *)(uint8_t *)(uint8_t *)str601;
+    field_names[9] = (uint8_t *)(uint8_t *)(uint8_t *)str604;
     field_values[9] = create_bool_literal(is_void, arena, line, column);
-    struct_init->struct_init_struct_name = (uint8_t *)(uint8_t *)(uint8_t *)str591;
+    struct_init->struct_init_struct_name = (uint8_t *)(uint8_t *)(uint8_t *)str594;
     struct_init->struct_init_field_names = field_names;
     struct_init->struct_init_field_values = field_values;
     struct_init->struct_init_field_count = field_count;
@@ -33222,12 +33238,12 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
     i = 0;
     while ((i < decl_count)) {
         struct ASTNode * const d = ast->program_decls[i];
-        if (((((d != NULL) && (d->type == AST_STRUCT_DECL)) && (d->struct_decl_name != NULL)) && (std_string_strcmp((uint8_t *)d->struct_decl_name, (uint8_t *)(uint8_t *)str591) == 0))) {
+        if (((((d != NULL) && (d->type == AST_STRUCT_DECL)) && (d->struct_decl_name != NULL)) && (std_string_strcmp((uint8_t *)d->struct_decl_name, (uint8_t *)(uint8_t *)str594) == 0))) {
             user_defined_typeinfo = 1;
         }
         i = (i + 1);
     }
-    if (((user_defined_typeinfo == 0) && (is_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str591) == 0))) {
+    if (((user_defined_typeinfo == 0) && (is_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str594) == 0))) {
         libc_fputs((uint8_t *)(uint8_t *)str1196, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1197, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1198, (void *)codegen->output);
@@ -33241,7 +33257,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         libc_fputs((uint8_t *)(uint8_t *)str1206, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1207, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1208, (void *)codegen->output);
-        mark_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str591);
+        mark_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str594);
     }
     i = 0;
     while ((i < decl_count)) {
