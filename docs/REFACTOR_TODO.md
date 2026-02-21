@@ -5,7 +5,7 @@
 
 ---
 
-## 阶段一：巨型函数拆分 [█████░░░░░] 50%
+## 阶段一：巨型函数拆分 [████████░░] 80%
 
 ### 1.1 添加 Type 辅助函数 ✅
 
@@ -58,7 +58,7 @@
 - [x] 验证通过：414 测试，自举成功
 - [x] Git 提交: `0be615d refactor(stage1): 继续拆分 checker_infer_type 至 474 行`
 
-### 1.3 拆分 `gen_stmt` 🔄
+### 1.3 拆分 `gen_stmt` ✅
 
 - [x] 分析 `src/codegen/c99/stmt.uya` 中 `gen_stmt` 函数：1593 行
 - [x] 按语句类型拆分为独立函数：
@@ -78,11 +78,14 @@
   - [x] `gen_return_error_union(codegen, ...)` - 错误联合返回值
   - [x] `gen_assign_stmt(codegen, node)` - 赋值语句生成
   - [x] `gen_assign_atomic(codegen, ...)` - 原子赋值
-  - [ ] `gen_var_decl(codegen, node)` - 变量声明生成（~636 行，最大）
-  - [ ] `gen_match_stmt(codegen, node)` - match 语句生成
-- [x] 当前进度：1593 → 946 行（-647 行，-41%）
-- [ ] 目标：≤500 行
+  - [x] `gen_var_decl_stmt(codegen, node)` - 变量声明生成
+  - [x] `gen_match_stmt(codegen, node)` - match 语句生成
+  - [x] `gen_block_stmt(codegen, node)` - 块语句生成
+  - [x] `gen_destructure_decl(codegen, node)` - 解构声明生成
+- [x] 当前进度：1593 → 52 行（-96.7%，目标达成）
+- [x] 目标：≤500 行 ✅
 - [x] 运行 `make check` 验证 - 通过
+- [x] Git 提交: `3b85361 refactor(codegen): extract gen_match_stmt from gen_stmt`
 
 ### 1.4 拆分 `gen_expr`
 
