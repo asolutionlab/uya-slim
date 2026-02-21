@@ -153,62 +153,7 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     } else if stmt.type == ASTNodeType.AST_RETURN_STMT {
         gen_return_stmt(codegen, stmt);
     } else if stmt.type == ASTNodeType.AST_BLOCK {
-        const stmts: & & ASTNode = stmt.block_stmts;
-        const stmt_count: i32 = stmt.block_stmt_count;
-        const d: i32 = codegen.defer_stack_depth;
-        const saved_drop_scope: i32 = codegen.current_drop_scope;
-        var i: i32 = 0;
-        if d < C99_MAX_DEFER_STACK {
-            codegen.current_drop_scope = d;
-            codegen.drop_var_count[d] = 0;
-            var nd: i32 = 0;
-            var ne: i32 = 0;
-            i = 0;
-            while i < stmt_count && nd < C99_MAX_DEFERS_PER_BLOCK && ne < C99_MAX_DEFERS_PER_BLOCK {
-                const s: &ASTNode = stmts[i];
-                if s.type == ASTNodeType.AST_DEFER_STMT {
-                    codegen.defer_stack[d * C99_MAX_DEFERS_PER_BLOCK + nd] = s;
-                    nd = nd + 1;
-                } else if s.type == ASTNodeType.AST_ERRDEFER_STMT {
-                    codegen.errdefer_stack[d * C99_MAX_DEFERS_PER_BLOCK + ne] = s;
-                    ne = ne + 1;
-                }
-                i = i + 1;
-            }
-            codegen.defer_count[d] = nd;
-            codegen.errdefer_count[d] = ne;
-            codegen.defer_stack_depth = codegen.defer_stack_depth + 1;
-        }
-        i = 0;
-        while i < stmt_count {
-            const s: &ASTNode = stmts[i];
-            if s.type != ASTNodeType.AST_DEFER_STMT && s.type != ASTNodeType.AST_ERRDEFER_STMT {
-                gen_stmt(codegen, s);
-            }
-            i = i + 1;
-        }
-        // 若块以 return/break/continue 结尾，该语句已执行 defer，块尾不再重复（否则会生成 return 后的死代码）
-        var last_is_terminal: i32 = 0;
-        i = stmt_count - 1;
-        while i >= 0 {
-            const s: &ASTNode = stmts[i];
-            if s.type != ASTNodeType.AST_DEFER_STMT && s.type != ASTNodeType.AST_ERRDEFER_STMT {
-                if s.type == ASTNodeType.AST_RETURN_STMT || s.type == ASTNodeType.AST_BREAK_STMT || s.type == ASTNodeType.AST_CONTINUE_STMT {
-                    last_is_terminal = 1;
-                }
-                i = -1;
-            } else {
-                i = i - 1;
-            }
-        }
-        if last_is_terminal == 0 {
-            emit_defer_cleanup(codegen, 0);
-        }
-        emit_drop_cleanup(codegen, stmts, stmt_count);
-        if d < C99_MAX_DEFER_STACK {
-            codegen.defer_stack_depth = codegen.defer_stack_depth - 1;
-        }
-        codegen.current_drop_scope = saved_drop_scope;
+        gen_block_stmt(codegen, stmt);
     } else if stmt.type == ASTNodeType.AST_DEFER_STMT || stmt.type == ASTNodeType.AST_ERRDEFER_STMT {
         // defer/errdefer 语句在块退出时统一处理
     } else if stmt.type == ASTNodeType.AST_TEST_STMT {
@@ -216,51 +161,7 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         // defer/errdefer 在块内被收集，此处不应单独出现（若出现则忽略）
         return;
     } else if stmt.type == ASTNodeType.AST_DESTRUCTURE_DECL {
-        const init: &ASTNode = stmt.destructure_decl_init;
-        const names: & & byte = stmt.destructure_decl_names;
-        const name_count: i32 = stmt.destructure_decl_name_count;
-        const is_const: i32 = stmt.destructure_decl_is_const;
-        if init != null && names != null && name_count > 0 {
-            var i: i32 = 0;
-            while i < name_count {
-                const name: &byte = names[i];
-                if name != null && strcmp(name as *byte, "_" as *byte) != 0 {
-                    var elem_type_c: &byte = ("int32_t" as *byte) as &byte;
-                    if init.type == ASTNodeType.AST_TUPLE_LITERAL && init.tuple_literal_elements != null && i < init.tuple_literal_element_count {
-                        const et: &byte = get_c_type_of_expr(codegen, init.tuple_literal_elements[i]);
-                        if et != null {
-                            elem_type_c = et;
-                        }
-                    }
-                    const safe_name: &byte = get_safe_c_identifier(codegen, name);
-                    if safe_name != null {
-                        if is_const != 0 {
-                            c99_emit(codegen, "const " as *byte);
-                            fprintf(codegen.output as *void, "%s %s = " as *byte, elem_type_c as *byte, safe_name as *byte);
-                        } else {
-                            fprintf(codegen.output as *void, "%s %s = " as *byte, elem_type_c as *byte, safe_name as *byte);
-                        }
-                        gen_expr(codegen, init);
-                        fprintf(codegen.output as *void, ".f%d;\n" as *byte, i);
-                        if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-                            var type_to_store: &byte = elem_type_c;
-                            if is_const != 0 && elem_type_c != null {
-                                const str_len: i32 = strlen(elem_type_c as *byte) + 8;
-                                const buf: &byte = arena_alloc(codegen.arena, str_len) as &byte;
-                                if buf != null {
-                                    snprintf(buf as *byte, str_len, "const %s" as *byte, elem_type_c as *byte);
-                                    type_to_store = buf;
-                                }
-                            }
-                            codegen.local_variables[codegen.local_variable_count].name = safe_name;
-                            codegen.local_variables[codegen.local_variable_count].type_c = type_to_store;
-                            codegen.local_variable_count = codegen.local_variable_count + 1;
-                        }
-                    }
-                }
-                i = i + 1;
-            }
-        }
+        gen_destructure_decl(codegen, stmt);
     } else if stmt.type == ASTNodeType.AST_VAR_DECL {
         const var_name: &byte = get_safe_c_identifier(codegen, stmt.var_decl_name);
         const var_type: &ASTNode = stmt.var_decl_type;
@@ -1788,6 +1689,115 @@ fn gen_atomic_compound(codegen: &C99CodeGenerator, dest: &ASTNode, op: TokenType
         fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
     } else {
         emit_atomic_store(codegen, dest, right, safe_name);
+    }
+}
+
+// 生成块语句
+fn gen_block_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
+    const stmts: & & ASTNode = stmt.block_stmts;
+    const stmt_count: i32 = stmt.block_stmt_count;
+    const d: i32 = codegen.defer_stack_depth;
+    const saved_drop_scope: i32 = codegen.current_drop_scope;
+    var i: i32 = 0;
+    if d < C99_MAX_DEFER_STACK {
+        codegen.current_drop_scope = d;
+        codegen.drop_var_count[d] = 0;
+        var nd: i32 = 0;
+        var ne: i32 = 0;
+        i = 0;
+        while i < stmt_count && nd < C99_MAX_DEFERS_PER_BLOCK && ne < C99_MAX_DEFERS_PER_BLOCK {
+            const s: &ASTNode = stmts[i];
+            if s.type == ASTNodeType.AST_DEFER_STMT {
+                codegen.defer_stack[d * C99_MAX_DEFERS_PER_BLOCK + nd] = s;
+                nd = nd + 1;
+            } else if s.type == ASTNodeType.AST_ERRDEFER_STMT {
+                codegen.errdefer_stack[d * C99_MAX_DEFERS_PER_BLOCK + ne] = s;
+                ne = ne + 1;
+            }
+            i = i + 1;
+        }
+        codegen.defer_count[d] = nd;
+        codegen.errdefer_count[d] = ne;
+        codegen.defer_stack_depth = codegen.defer_stack_depth + 1;
+    }
+    i = 0;
+    while i < stmt_count {
+        const s: &ASTNode = stmts[i];
+        if s.type != ASTNodeType.AST_DEFER_STMT && s.type != ASTNodeType.AST_ERRDEFER_STMT {
+            gen_stmt(codegen, s);
+        }
+        i = i + 1;
+    }
+    // 若块以 return/break/continue 结尾，该语句已执行 defer，块尾不再重复
+    var last_is_terminal: i32 = 0;
+    i = stmt_count - 1;
+    while i >= 0 {
+        const s: &ASTNode = stmts[i];
+        if s.type != ASTNodeType.AST_DEFER_STMT && s.type != ASTNodeType.AST_ERRDEFER_STMT {
+            if s.type == ASTNodeType.AST_RETURN_STMT || s.type == ASTNodeType.AST_BREAK_STMT || s.type == ASTNodeType.AST_CONTINUE_STMT {
+                last_is_terminal = 1;
+            }
+            i = -1;
+        } else {
+            i = i - 1;
+        }
+    }
+    if last_is_terminal == 0 {
+        emit_defer_cleanup(codegen, 0);
+    }
+    emit_drop_cleanup(codegen, stmts, stmt_count);
+    if d < C99_MAX_DEFER_STACK {
+        codegen.defer_stack_depth = codegen.defer_stack_depth - 1;
+    }
+    codegen.current_drop_scope = saved_drop_scope;
+}
+
+// 生成解构声明
+fn gen_destructure_decl(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
+    const init: &ASTNode = stmt.destructure_decl_init;
+    const names: & & byte = stmt.destructure_decl_names;
+    const name_count: i32 = stmt.destructure_decl_name_count;
+    const is_const: i32 = stmt.destructure_decl_is_const;
+    if init != null && names != null && name_count > 0 {
+        var i: i32 = 0;
+        while i < name_count {
+            const name: &byte = names[i];
+            if name != null && strcmp(name as *byte, "_" as *byte) != 0 {
+                var elem_type_c: &byte = ("int32_t" as *byte) as &byte;
+                if init.type == ASTNodeType.AST_TUPLE_LITERAL && init.tuple_literal_elements != null && i < init.tuple_literal_element_count {
+                    const et: &byte = get_c_type_of_expr(codegen, init.tuple_literal_elements[i]);
+                    if et != null {
+                        elem_type_c = et;
+                    }
+                }
+                const safe_name: &byte = get_safe_c_identifier(codegen, name);
+                if safe_name != null {
+                    if is_const != 0 {
+                        c99_emit(codegen, "const " as *byte);
+                        fprintf(codegen.output as *void, "%s %s = " as *byte, elem_type_c as *byte, safe_name as *byte);
+                    } else {
+                        fprintf(codegen.output as *void, "%s %s = " as *byte, elem_type_c as *byte, safe_name as *byte);
+                    }
+                    gen_expr(codegen, init);
+                    fprintf(codegen.output as *void, ".f%d;\n" as *byte, i);
+                    if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                        var type_to_store: &byte = elem_type_c;
+                        if is_const != 0 && elem_type_c != null {
+                            const str_len: i32 = strlen(elem_type_c as *byte) + 8;
+                            const buf: &byte = arena_alloc(codegen.arena, str_len) as &byte;
+                            if buf != null {
+                                snprintf(buf as *byte, str_len, "const %s" as *byte, elem_type_c as *byte);
+                                type_to_store = buf;
+                            }
+                        }
+                        codegen.local_variables[codegen.local_variable_count].name = safe_name;
+                        codegen.local_variables[codegen.local_variable_count].type_c = type_to_store;
+                        codegen.local_variable_count = codegen.local_variable_count + 1;
+                    }
+                }
+            }
+            i = i + 1;
+        }
     }
 }
 
