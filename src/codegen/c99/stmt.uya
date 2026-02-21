@@ -149,167 +149,7 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         // 表达式语句的数据存储在表达式的节点中，直接忽略此节点
         return;
     } else if stmt.type == ASTNodeType.AST_ASSIGN {
-        const dest: &ASTNode = stmt.assign_dest;
-        const src: &ASTNode = stmt.assign_src;
-        
-        // _ = expr：仅求值右侧（显式忽略返回值）
-        if dest.type == ASTNodeType.AST_UNDERSCORE {
-            c99_emit(codegen, "(void)(" as *byte);
-            gen_expr(codegen, src);
-            fputs(");\n" as *byte, codegen.output as *void);
-            return;
-        }
-        
-        // 检查左侧是否是数组类型
-        var is_array_assign: i32 = 0;
-        if dest.type == ASTNodeType.AST_IDENTIFIER {
-            const var_name: &byte = dest.identifier_name;
-            // 检查局部变量
-            var i: i32 = codegen.local_variable_count - 1;
-            while i >= 0 {
-                if strcmp(codegen.local_variables[i].name as *byte, var_name as *byte) == 0 {
-                    const type_c: &byte = codegen.local_variables[i].type_c;
-                    if type_c != null && strchr(type_c as *byte, 91) != null {  // '['
-                        is_array_assign = 1;
-                    }
-                    break;
-                }
-                i = i - 1;
-            }
-            // 检查全局变量
-            if is_array_assign == 0 {
-                i = 0;
-                while i < codegen.global_variable_count {
-                    if global_var_name_matches(codegen, i, var_name) != 0 {
-                        const type_c2: &byte = codegen.global_variables[i].type_c;
-                        if type_c2 != null && strchr(type_c2 as *byte, 91) != null {  // '['
-                            is_array_assign = 1;
-                        }
-                        break;
-                    }
-                    i = i + 1;
-                }
-            }
-        }
-        
-        if is_array_assign != 0 {
-            // 数组赋值：使用 memcpy
-            c99_emit(codegen, "__uya_memcpy(" as *byte);
-            gen_expr(codegen, dest);
-            fputs(", " as *byte, codegen.output as *void);
-            gen_expr(codegen, src);
-            fputs(", sizeof(" as *byte, codegen.output as *void);
-            gen_expr(codegen, dest);
-            fputs("));\n" as *byte, codegen.output as *void);
-        } else {
-            // 检查目标是否为原子类型
-            var is_atomic_assign: i32 = 0;
-            var dest_type_c: &byte = null;
-            if dest.type == ASTNodeType.AST_IDENTIFIER {
-                dest_type_c = get_identifier_type_c(codegen, dest.identifier_name);
-                if dest_type_c != null && strstr(dest_type_c as *byte, "_Atomic" as *byte) != null {
-                    is_atomic_assign = 1;
-                }
-            } else if dest.type == ASTNodeType.AST_MEMBER_ACCESS {
-                dest_type_c = get_c_type_of_expr(codegen, dest);
-                if dest_type_c != null && strstr(dest_type_c as *byte, "_Atomic" as *byte) != null {
-                    is_atomic_assign = 1;
-                }
-            }
-            
-            if is_atomic_assign != 0 {
-                // 获取 safe_name
-                var safe_name: &byte = null;
-                if dest.type == ASTNodeType.AST_IDENTIFIER {
-                    safe_name = get_safe_c_identifier(codegen, dest.identifier_name);
-                }
-                
-                // 检查是否为复合赋值（src 是二元表达式，且左侧是相同的标识符）
-                var is_compound_assign: i32 = 0;
-                var compound_op: TokenType = TokenType.TOKEN_PLUS;
-                var compound_right: &ASTNode = null;
-                if src.type == ASTNodeType.AST_BINARY_EXPR {
-                    const bin_left: &ASTNode = src.binary_expr_left;
-                    const bin_op: TokenType = src.binary_expr_op as TokenType;
-                    compound_right = src.binary_expr_right;
-                    if dest.type == ASTNodeType.AST_IDENTIFIER && bin_left.type == ASTNodeType.AST_IDENTIFIER &&
-                        strcmp(dest.identifier_name as *byte, bin_left.identifier_name as *byte) == 0 {
-                        // 复合赋值：x = x + y 形式
-                        if bin_op == TokenType.TOKEN_PLUS || bin_op == TokenType.TOKEN_MINUS || bin_op == TokenType.TOKEN_ASTERISK ||
-                            bin_op == TokenType.TOKEN_SLASH || bin_op == TokenType.TOKEN_PERCENT {
-                            is_compound_assign = 1;
-                            compound_op = bin_op;
-                        }
-                    }
-                }
-                
-                if is_compound_assign != 0 {
-                    // 原子复合赋值：生成原子 fetch_add/fetch_sub 等
-                    // 硬件支持的原子操作：+= 和 -=
-                    if compound_op == TokenType.TOKEN_PLUS {
-                        if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
-                            c99_emit(codegen, "__atomic_fetch_add(&" as *byte);
-                            fputs(safe_name as *byte, codegen.output as *void);
-                            fputs(", " as *byte, codegen.output as *void);
-                        } else {
-                            c99_emit(codegen, "__atomic_fetch_add(&" as *byte);
-                            gen_expr(codegen, dest);
-                            fputs(", " as *byte, codegen.output as *void);
-                        }
-                        gen_expr(codegen, compound_right);
-                        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
-                    } else if compound_op == TokenType.TOKEN_MINUS {
-                        if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
-                            c99_emit(codegen, "__atomic_fetch_sub(&" as *byte);
-                            fputs(safe_name as *byte, codegen.output as *void);
-                            fputs(", " as *byte, codegen.output as *void);
-                        } else {
-                            c99_emit(codegen, "__atomic_fetch_sub(&" as *byte);
-                            gen_expr(codegen, dest);
-                            fputs(", " as *byte, codegen.output as *void);
-                        }
-                        gen_expr(codegen, compound_right);
-                        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
-                    } else {
-                        // *=, /=, %= 需要使用 compare-and-swap 循环（软件实现）
-                        // 为了简化，先回退到普通原子 store（后续可以优化）
-                        if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
-                            c99_emit(codegen, "__atomic_store_n(&" as *byte);
-                            fputs(safe_name as *byte, codegen.output as *void);
-                            fputs(", " as *byte, codegen.output as *void);
-                        } else {
-                            c99_emit(codegen, "__atomic_store_n(&" as *byte);
-                            gen_expr(codegen, dest);
-                            fputs(", " as *byte, codegen.output as *void);
-                        }
-                        gen_expr(codegen, src);
-                        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
-                    }
-                } else {
-                    // 原子赋值：生成原子 store
-                    if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
-                        c99_emit(codegen, "__atomic_store_n(&" as *byte);
-                        fputs(safe_name as *byte, codegen.output as *void);
-                        fputs(", " as *byte, codegen.output as *void);
-                    } else {
-                        c99_emit(codegen, "__atomic_store_n(&" as *byte);
-                        gen_expr(codegen, dest);
-                        fputs(", " as *byte, codegen.output as *void);
-                    }
-                    gen_expr(codegen, src);
-                    fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
-                }
-            } else {
-                // 普通赋值（self.field 作为左端时需 cast，以支持 const self 参数）
-                c99_emit(codegen, "" as *byte);
-                codegen.emitting_assign_lhs = 1;
-                gen_expr(codegen, dest);
-                codegen.emitting_assign_lhs = 0;
-                fputs(" = " as *byte, codegen.output as *void);
-                gen_expr(codegen, src);
-                fputs(";\n" as *byte, codegen.output as *void);
-            }
-        }
+        gen_assign_stmt(codegen, stmt);
     } else if stmt.type == ASTNodeType.AST_RETURN_STMT {
         gen_return_stmt(codegen, stmt);
     } else if stmt.type == ASTNodeType.AST_BLOCK {
@@ -1784,6 +1624,170 @@ fn gen_return_error_union_expr(codegen: &C99CodeGenerator, expr: &ASTNode, paylo
         fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
         gen_expr(codegen, expr);
         fputs(";\n" as *byte, codegen.output as *void);
+    }
+}
+
+// 生成赋值语句
+fn gen_assign_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
+    const dest: &ASTNode = stmt.assign_dest;
+    const src: &ASTNode = stmt.assign_src;
+    
+    if dest.type == ASTNodeType.AST_UNDERSCORE {
+        c99_emit(codegen, "(void)(" as *byte);
+        gen_expr(codegen, src);
+        fputs(");\n" as *byte, codegen.output as *void);
+        return;
+    }
+    
+    var is_array_assign: i32 = check_assign_is_array(codegen, dest);
+    
+    if is_array_assign != 0 {
+        c99_emit(codegen, "__uya_memcpy(" as *byte);
+        gen_expr(codegen, dest);
+        fputs(", " as *byte, codegen.output as *void);
+        gen_expr(codegen, src);
+        fputs(", sizeof(" as *byte, codegen.output as *void);
+        gen_expr(codegen, dest);
+        fputs("));\n" as *byte, codegen.output as *void);
+    } else {
+        gen_assign_non_array(codegen, dest, src);
+    }
+}
+
+// 检查赋值目标是否为数组
+fn check_assign_is_array(codegen: &C99CodeGenerator, dest: &ASTNode) i32 {
+    if dest.type != ASTNodeType.AST_IDENTIFIER {
+        return 0;
+    }
+    const var_name: &byte = dest.identifier_name;
+    var i: i32 = codegen.local_variable_count - 1;
+    while i >= 0 {
+        if strcmp(codegen.local_variables[i].name as *byte, var_name as *byte) == 0 {
+            const type_c: &byte = codegen.local_variables[i].type_c;
+            if type_c != null && strchr(type_c as *byte, 91) != null {
+                return 1;
+            }
+            break;
+        }
+        i = i - 1;
+    }
+    i = 0;
+    while i < codegen.global_variable_count {
+        if global_var_name_matches(codegen, i, var_name) != 0 {
+            const type_c2: &byte = codegen.global_variables[i].type_c;
+            if type_c2 != null && strchr(type_c2 as *byte, 91) != null {
+                return 1;
+            }
+            break;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// 生成非数组赋值
+fn gen_assign_non_array(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode) void {
+    var is_atomic: i32 = 0;
+    var dest_type_c: &byte = null;
+    if dest.type == ASTNodeType.AST_IDENTIFIER {
+        dest_type_c = get_identifier_type_c(codegen, dest.identifier_name);
+        if dest_type_c != null && strstr(dest_type_c as *byte, "_Atomic" as *byte) != null {
+            is_atomic = 1;
+        }
+    } else if dest.type == ASTNodeType.AST_MEMBER_ACCESS {
+        dest_type_c = get_c_type_of_expr(codegen, dest);
+        if dest_type_c != null && strstr(dest_type_c as *byte, "_Atomic" as *byte) != null {
+            is_atomic = 1;
+        }
+    }
+    
+    if is_atomic != 0 {
+        gen_assign_atomic(codegen, dest, src);
+    } else {
+        c99_emit(codegen, "" as *byte);
+        codegen.emitting_assign_lhs = 1;
+        gen_expr(codegen, dest);
+        codegen.emitting_assign_lhs = 0;
+        fputs(" = " as *byte, codegen.output as *void);
+        gen_expr(codegen, src);
+        fputs(";\n" as *byte, codegen.output as *void);
+    }
+}
+
+// 生成原子赋值
+fn gen_assign_atomic(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode) void {
+    var safe_name: &byte = null;
+    if dest.type == ASTNodeType.AST_IDENTIFIER {
+        safe_name = get_safe_c_identifier(codegen, dest.identifier_name);
+    }
+    
+    var is_compound: i32 = 0;
+    var compound_op: TokenType = TokenType.TOKEN_PLUS;
+    var compound_right: &ASTNode = null;
+    if src.type == ASTNodeType.AST_BINARY_EXPR {
+        const bin_left: &ASTNode = src.binary_expr_left;
+        const bin_op: TokenType = src.binary_expr_op as TokenType;
+        compound_right = src.binary_expr_right;
+        if dest.type == ASTNodeType.AST_IDENTIFIER && bin_left.type == ASTNodeType.AST_IDENTIFIER &&
+            strcmp(dest.identifier_name as *byte, bin_left.identifier_name as *byte) == 0 {
+            if bin_op == TokenType.TOKEN_PLUS || bin_op == TokenType.TOKEN_MINUS || bin_op == TokenType.TOKEN_ASTERISK ||
+                bin_op == TokenType.TOKEN_SLASH || bin_op == TokenType.TOKEN_PERCENT {
+                is_compound = 1;
+                compound_op = bin_op;
+            }
+        }
+    }
+    
+    if is_compound != 0 {
+        gen_atomic_compound(codegen, dest, compound_op, compound_right, safe_name);
+    } else {
+        emit_atomic_store(codegen, dest, src, safe_name);
+    }
+}
+
+// 发射原子 store
+fn emit_atomic_store(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode, safe_name: &byte) void {
+    if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
+        c99_emit(codegen, "__atomic_store_n(&" as *byte);
+        fputs(safe_name as *byte, codegen.output as *void);
+        fputs(", " as *byte, codegen.output as *void);
+    } else {
+        c99_emit(codegen, "__atomic_store_n(&" as *byte);
+        gen_expr(codegen, dest);
+        fputs(", " as *byte, codegen.output as *void);
+    }
+    gen_expr(codegen, src);
+    fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
+}
+
+// 生成原子复合赋值
+fn gen_atomic_compound(codegen: &C99CodeGenerator, dest: &ASTNode, op: TokenType, right: &ASTNode, safe_name: &byte) void {
+    if op == TokenType.TOKEN_PLUS {
+        if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
+            c99_emit(codegen, "__atomic_fetch_add(&" as *byte);
+            fputs(safe_name as *byte, codegen.output as *void);
+            fputs(", " as *byte, codegen.output as *void);
+        } else {
+            c99_emit(codegen, "__atomic_fetch_add(&" as *byte);
+            gen_expr(codegen, dest);
+            fputs(", " as *byte, codegen.output as *void);
+        }
+        gen_expr(codegen, right);
+        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
+    } else if op == TokenType.TOKEN_MINUS {
+        if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
+            c99_emit(codegen, "__atomic_fetch_sub(&" as *byte);
+            fputs(safe_name as *byte, codegen.output as *void);
+            fputs(", " as *byte, codegen.output as *void);
+        } else {
+            c99_emit(codegen, "__atomic_fetch_sub(&" as *byte);
+            gen_expr(codegen, dest);
+            fputs(", " as *byte, codegen.output as *void);
+        }
+        gen_expr(codegen, right);
+        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
+    } else {
+        emit_atomic_store(codegen, dest, right, safe_name);
     }
 }
 
