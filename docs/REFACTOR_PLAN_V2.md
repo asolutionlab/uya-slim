@@ -279,7 +279,235 @@ if is_integer_type(arg_type) != 0 { ... }
 
 ---
 
-## 阶段四：测试现代化 [░░░░░░░░░░] 0%
+## 阶段四：Union 数据结构重构 [░░░░░░░░░░] 0%
+
+### 4.1 Type 结构体 Union 化
+
+**当前问题**：`Type` 结构体使用扁平化设计，所有字段始终存在但只有一个子集有效
+
+```uya
+// 当前设计（src/checker/types.uya:68-88）
+struct Type {
+    kind: TypeKind,
+    // 以下字段根据 kind 只有部分有效
+    enum_name: &byte,           // TYPE_ENUM 时有效
+    interface_name: &byte,      // TYPE_INTERFACE 时有效
+    struct_name: &byte,         // TYPE_STRUCT 时有效
+    union_name: &byte,          // TYPE_UNION 时有效
+    pointer_to: &Type,          // TYPE_POINTER 时有效
+    element_type: &Type,        // TYPE_ARRAY 时有效
+    array_size: i32,            // TYPE_ARRAY 时有效
+    slice_element_type: &Type,  // TYPE_SLICE 时有效
+    slice_len: i32,             // TYPE_SLICE 时有效
+    tuple_element_types: &Type, // TYPE_TUPLE 时有效
+    error_union_payload_type: &Type, // TYPE_ERROR_UNION 时有效
+    // ... 更多字段
+}
+```
+
+**问题分析**：
+- 内存浪费：每个 Type 实例占用所有字段的空间
+- 代码冗余：139+ 处 `kind == TypeKind.XXX` 条件判断
+- 类型安全：编译器无法检查字段访问是否合法
+
+**重构方案**：使用 union 封装变体数据
+
+```uya
+// 重构后设计
+struct Type {
+    kind: TypeKind,
+    data: TypeData,  // union 类型
+}
+
+// 类型数据联合体
+union TypeData {
+    void_unit: void,           // TYPE_VOID, TYPE_I8-I64, TYPE_BOOL 等基础类型
+    named: &byte,              // TYPE_ENUM, TYPE_STRUCT, TYPE_UNION, TYPE_INTERFACE 的名称
+    pointer: PointerData,      // TYPE_POINTER
+    array: ArrayData,          // TYPE_ARRAY
+    slice: SliceData,          // TYPE_SLICE
+    tuple: TupleData,          // TYPE_TUPLE
+    error_union: ErrorUnionData, // TYPE_ERROR_UNION
+    generic_param: &byte,      // TYPE_GENERIC_PARAM
+}
+
+struct PointerData {
+    pointee: &Type,
+    is_ffi: i32,
+}
+
+struct ArrayData {
+    element: &Type,
+    size: i32,
+}
+
+struct SliceData {
+    element: &Type,
+    len: i32,
+}
+
+struct TupleData {
+    elements: &Type,
+    count: i32,
+}
+
+struct ErrorUnionData {
+    payload: &Type,
+    error_id: u32,
+}
+```
+
+**代码简化示例**：
+
+```uya
+// 重构前：复杂的条件判断
+fn type_to_string(t: Type) &byte {
+    if t.kind == TypeKind.TYPE_ENUM {
+        return t.enum_name;
+    } else if t.kind == TypeKind.TYPE_STRUCT {
+        return t.struct_name;
+    } else if t.kind == TypeKind.TYPE_UNION {
+        return t.union_name;
+    }
+    // ...
+}
+
+// 重构后：使用 match 处理 union
+fn type_to_string(t: Type) &byte {
+    match t.data {
+        .named(name) => return name,
+        .pointer(p) => return format("*{}", type_to_string(p.pointee)),
+        .array(a) => return format("[{}; {}]", type_to_string(a.element), a.size),
+        .void_unit(_) => return "void",
+        else => return "unknown"
+    }
+}
+```
+
+**预估工作量**：5 天
+
+### 4.2 ASTNode 结构体 Union 化
+
+**当前问题**：`ASTNode` 结构体有 100+ 个扁平化字段
+
+```uya
+// 当前设计（src/ast.uya:138-450）
+struct ASTNode {
+    type: ASTNodeType,
+    // 100+ 个字段，根据 type 只有部分有效
+    program_decls: & & ASTNode,
+    program_decl_count: i32,
+    enum_decl_name: &byte,
+    // ... 数百个字段
+}
+```
+
+**重构方案**：按节点类型分组为 union
+
+```uya
+struct ASTNode {
+    type: ASTNodeType,
+    line: i32,
+    column: i32,
+    filename: &byte,
+    data: ASTNodeData,  // union 类型
+}
+
+union ASTNodeData {
+    program: ProgramData,
+    enum_decl: EnumDeclData,
+    struct_decl: StructDeclData,
+    fn_decl: FnDeclData,
+    var_decl: VarDeclData,
+    binary_expr: BinaryExprData,
+    call_expr: CallExprData,
+    // ... 其他节点类型
+}
+
+struct ProgramData {
+    decls: & & ASTNode,
+    count: i32,
+}
+
+struct EnumDeclData {
+    name: &byte,
+    variants: &EnumVariant,
+    variant_count: i32,
+    is_export: i32,
+}
+
+struct BinaryExprData {
+    left: &ASTNode,
+    op: i32,
+    right: &ASTNode,
+}
+```
+
+**代码简化示例**：
+
+```uya
+// 重构前：大量的 if-else 链
+fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
+    if expr.type == ASTNodeType.AST_NUMBER {
+        result.kind = TypeKind.TYPE_I32;
+    } else if expr.type == ASTNodeType.AST_FLOAT {
+        result.kind = TypeKind.TYPE_F64;
+    } else if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        // 处理二元表达式...
+    }
+    // ... 数百行
+}
+
+// 重构后：使用 match 表达式
+fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
+    match expr.data {
+        .binary_expr(b) => infer_binary(checker, b),
+        .call_expr(c) => infer_call(checker, c),
+        .member_access(m) => infer_member(checker, m),
+        .number(_) => make_i32_type(),
+        .float(_) => make_f64_type(),
+        else => make_void_type()
+    }
+}
+```
+
+**预估工作量**：7 天
+
+### 4.3 使用 match 替代条件链
+
+**重构目标**：将所有基于 `kind`/`type` 的条件链替换为 match 表达式
+
+**重构前**（564+ 处）：
+```uya
+if node.type == ASTNodeType.AST_PROGRAM {
+    // 处理 program
+} else if node.type == ASTNodeType.AST_ENUM_DECL {
+    // 处理 enum
+} else if node.type == ASTNodeType.AST_STRUCT_DECL {
+    // 处理 struct
+}
+```
+
+**重构后**：
+```uya
+match node.data {
+    .program(p) => handle_program(p),
+    .enum_decl(e) => handle_enum(e),
+    .struct_decl(s) => handle_struct(s),
+    else => handle_other()
+}
+```
+
+**收益**：
+- 编译期完备性检查
+- 消除运行时标签判断开销
+- 代码更简洁、更安全
+
+**预估工作量**：3 天
+
+---
+
+## 阶段五：测试现代化 [░░░░░░░░░░] 0%
 
 ### 4.1 使用 test 语句重构测试
 
@@ -316,7 +544,7 @@ test "test_subtraction" {
 
 **预估工作量**：2 天
 
-### 4.2 添加增量测试验证
+### 5.2 添加增量测试验证
 
 为每个重构的函数添加独立测试：
 
@@ -344,9 +572,9 @@ test "make_pointer_type" {
 
 ---
 
-## 阶段五：代码质量改进 [░░░░░░░░░░] 0%
+## 阶段六：代码质量改进 [░░░░░░░░░░] 0%
 
-### 5.1 统一错误处理模式
+### 6.1 统一错误处理模式
 
 **当前问题**：部分函数返回空类型，部分返回错误码
 
@@ -355,7 +583,7 @@ test "make_pointer_type" {
 - 检查函数：返回 `i32`（0=失败，1=成功）
 - 生成函数：返回 `void`，通过 `codegen.error_count` 跟踪错误
 
-### 5.2 常量集中定义
+### 6.2 常量集中定义
 
 **当前问题**：魔法数字分散在代码中
 
@@ -371,7 +599,7 @@ pub const MAX_SCOPE_DEPTH: i32 = 64;
 pub const SYMBOL_TABLE_SIZE: i32 = 32768;
 ```
 
-### 5.3 移除未使用变量
+### 6.3 移除未使用变量
 
 根据分析报告清理：
 - `checker/check_expr.uya` 第 1259 行：`match_union_decl`
@@ -397,7 +625,7 @@ pub const SYMBOL_TABLE_SIZE: i32 = 32768;
 | Day 3-4 | 降低嵌套深度（提前返回，for 范围迭代） |
 | Day 5 | 提取辅助函数 |
 
-### 第三周：阶段三 + 阶段四
+### 第三周：阶段三 + 阶段五
 
 | 天数 | 任务 |
 |------|------|
@@ -405,6 +633,29 @@ pub const SYMBOL_TABLE_SIZE: i32 = 32768;
 | Day 3 | 统一类型检查函数调用 |
 | Day 4 | 重构测试为 test 语句风格 |
 | Day 5 | 清理未使用变量，集中常量定义 |
+
+### 第四周：阶段四（Union 数据结构重构）
+
+| 天数 | 任务 |
+|------|------|
+| Day 1-2 | 设计 Type union 结构 |
+| Day 3-4 | 重构 Type 使用 union |
+| Day 5 | 验证重构，修复测试 |
+
+### 第五周：阶段四（续）
+
+| 天数 | 任务 |
+|------|------|
+| Day 1-3 | 设计 ASTNode union 结构 |
+| Day 4-5 | 重构 ASTNode 使用 union |
+
+### 第六周：阶段四（续）+ 验收
+
+| 天数 | 任务 |
+|------|------|
+| Day 1-2 | 用 match 替换条件链 |
+| Day 3-4 | 全面测试验证 |
+| Day 5 | 文档更新，提交验收 |
 
 ---
 
@@ -415,6 +666,12 @@ pub const SYMBOL_TABLE_SIZE: i32 = 32768;
 - [ ] 所有嵌套深度 ≤ 3 层
 - [ ] 重复代码减少 50%+
 - [ ] 测试使用 `test "name" {}` 风格
+
+### Union 使用
+- [ ] Type 结构体使用 union 封装变体数据
+- [ ] ASTNode 结构体使用 union 封装变体数据
+- [ ] 条件链替换为 match 表达式（减少 50%+）
+- [ ] match 完备性检查通过
 
 ### 功能验证
 - [ ] `make check` 通过（自举 + 测试）
