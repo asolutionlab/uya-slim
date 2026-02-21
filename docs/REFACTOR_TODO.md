@@ -5,7 +5,7 @@
 
 ---
 
-## 阶段一：巨型函数拆分 [████░░░░░░] 40%
+## 阶段一：巨型函数拆分 [█████░░░░░] 50%
 
 ### 1.1 添加 Type 辅助函数 ✅
 
@@ -76,10 +76,11 @@
   - [x] `gen_return_array(codegen, ...)` - 数组返回值
   - [x] `gen_return_normal(codegen, ...)` - 普通返回值
   - [x] `gen_return_error_union(codegen, ...)` - 错误联合返回值
+  - [x] `gen_assign_stmt(codegen, node)` - 赋值语句生成
+  - [x] `gen_assign_atomic(codegen, ...)` - 原子赋值
   - [ ] `gen_var_decl(codegen, node)` - 变量声明生成（~636 行，最大）
   - [ ] `gen_match_stmt(codegen, node)` - match 语句生成
-  - [ ] `gen_assign_stmt(codegen, node)` - 赋值语句生成
-- [x] 当前进度：1593 → 1106 行（-487 行，-31%）
+- [x] 当前进度：1593 → 946 行（-647 行，-41%）
 - [ ] 目标：≤500 行
 - [x] 运行 `make check` 验证 - 通过
 
