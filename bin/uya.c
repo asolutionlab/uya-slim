@@ -18131,18 +18131,15 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
         return _uya_ret;
     }
     if ((expr->type == AST_NUMBER)) {
-        result.kind = TYPE_I32;
-        struct Type _uya_ret = result;
+        struct Type _uya_ret = make_i32_type();
         return _uya_ret;
     } else {
         if ((expr->type == AST_FLOAT)) {
-            result.kind = TYPE_F64;
-            struct Type _uya_ret = result;
+            struct Type _uya_ret = make_f64_type();
             return _uya_ret;
         } else {
             if ((expr->type == AST_BOOL)) {
-                result.kind = TYPE_BOOL;
-                struct Type _uya_ret = result;
+                struct Type _uya_ret = make_bool_type();
                 return _uya_ret;
             } else {
                 if ((expr->type == AST_INT_LIMIT)) {
@@ -18159,15 +18156,13 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                     if (((expr->type == AST_SRC_NAME) || (expr->type == AST_SRC_PATH))) {
                         struct Type * const slice_type = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                         if ((slice_type == NULL)) {
-                            result.kind = TYPE_VOID;
-                            struct Type _uya_ret = result;
+                            struct Type _uya_ret = make_void_type();
                             return _uya_ret;
                         }
                         slice_type->kind = TYPE_SLICE;
                         struct Type * const element_type = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                         if ((element_type == NULL)) {
-                            result.kind = TYPE_VOID;
-                            struct Type _uya_ret = result;
+                            struct Type _uya_ret = make_void_type();
                             return _uya_ret;
                         }
                         element_type->kind = TYPE_I8;
@@ -18178,28 +18173,24 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                         return _uya_ret;
                     } else {
                         if (((expr->type == AST_SRC_LINE) || (expr->type == AST_SRC_COL))) {
-                            result.kind = TYPE_I32;
-                            struct Type _uya_ret = result;
+                            struct Type _uya_ret = make_i32_type();
                             return _uya_ret;
                         } else {
                             if ((expr->type == AST_FUNC_NAME)) {
                                 if (((checker->in_function == 0) || (checker->current_function_decl == NULL))) {
                                     checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str569);
-                                    result.kind = TYPE_VOID;
-                                    struct Type _uya_ret = result;
+                                    struct Type _uya_ret = make_void_type();
                                     return _uya_ret;
                                 }
                                 struct Type * const slice_type = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                 if ((slice_type == NULL)) {
-                                    result.kind = TYPE_VOID;
-                                    struct Type _uya_ret = result;
+                                    struct Type _uya_ret = make_void_type();
                                     return _uya_ret;
                                 }
                                 slice_type->kind = TYPE_SLICE;
                                 struct Type * const element_type = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                 if ((element_type == NULL)) {
-                                    result.kind = TYPE_VOID;
-                                    struct Type _uya_ret = result;
+                                    struct Type _uya_ret = make_void_type();
                                     return _uya_ret;
                                 }
                                 element_type->kind = TYPE_I8;
@@ -18212,40 +18203,34 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                 if ((expr->type == AST_SYSCALL)) {
                                     if ((expr->syscall_number == NULL)) {
                                         checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str570);
-                                        result.kind = TYPE_VOID;
-                                        struct Type _uya_ret = result;
+                                        struct Type _uya_ret = make_void_type();
                                         return _uya_ret;
                                     }
                                     struct Type syscall_nr_type = checker_infer_type(checker, expr->syscall_number);
                                     if ((syscall_nr_type.kind == TYPE_VOID)) {
-                                        result.kind = TYPE_VOID;
-                                        struct Type _uya_ret = result;
+                                        struct Type _uya_ret = make_void_type();
                                         return _uya_ret;
                                     }
                                     if ((is_integer_type(syscall_nr_type.kind) == 0)) {
                                         checker_report_error(checker, expr->syscall_number, (uint8_t *)(uint8_t *)str571);
-                                        result.kind = TYPE_VOID;
-                                        struct Type _uya_ret = result;
+                                        struct Type _uya_ret = make_void_type();
                                         return _uya_ret;
                                     }
                                     if ((expr->syscall_arg_count > 6)) {
                                         checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str572);
-                                        result.kind = TYPE_VOID;
-                                        struct Type _uya_ret = result;
+                                        struct Type _uya_ret = make_void_type();
                                         return _uya_ret;
                                     }
                                     int32_t sc_i = 0;
                                     while ((sc_i < expr->syscall_arg_count)) {
                                         if ((expr->syscall_args[sc_i] == NULL)) {
                                             checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str573);
-                                            result.kind = TYPE_VOID;
-                                            struct Type _uya_ret = result;
+                                            struct Type _uya_ret = make_void_type();
                                             return _uya_ret;
                                         }
                                         struct Type arg_type = checker_infer_type(checker, expr->syscall_args[sc_i]);
                                         if ((arg_type.kind == TYPE_VOID)) {
-                                            result.kind = TYPE_VOID;
-                                            struct Type _uya_ret = result;
+                                            struct Type _uya_ret = make_void_type();
                                             return _uya_ret;
                                         }
                                         int32_t is_valid_arg = 0;
@@ -18254,8 +18239,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                         }
                                         if ((is_valid_arg == 0)) {
                                             checker_report_error(checker, expr->syscall_args[sc_i], (uint8_t *)(uint8_t *)str574);
-                                            result.kind = TYPE_VOID;
-                                            struct Type _uya_ret = result;
+                                            struct Type _uya_ret = make_void_type();
                                             return _uya_ret;
                                         }
                                         sc_i = (sc_i + 1);
@@ -18263,8 +18247,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                     result.kind = TYPE_ERROR_UNION;
                                     struct Type * const payload_type = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                     if ((payload_type == NULL)) {
-                                        result.kind = TYPE_VOID;
-                                        struct Type _uya_ret = result;
+                                        struct Type _uya_ret = make_void_type();
                                         return _uya_ret;
                                     }
                                     payload_type->kind = TYPE_I64;
@@ -18280,15 +18263,13 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                         return _uya_ret;
                                     } else {
                                         if ((expr->type == AST_USIZE_FROM_PTR)) {
-                                            result.kind = TYPE_USIZE;
-                                            struct Type _uya_ret = result;
+                                            struct Type _uya_ret = make_usize_type();
                                             return _uya_ret;
                                         } else {
                                             if (((expr->type == AST_PRINT) || (expr->type == AST_PRINTLN))) {
                                                 if ((expr->print_expr == NULL)) {
                                                     checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str575);
-                                                    result.kind = TYPE_VOID;
-                                                    struct Type _uya_ret = result;
+                                                    struct Type _uya_ret = make_void_type();
                                                     return _uya_ret;
                                                 }
                                                 struct Type arg_type = checker_infer_type(checker, expr->print_expr);
@@ -18322,12 +18303,10 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                 }
                                                 if ((is_printable == 0)) {
                                                     checker_report_error(checker, expr->print_expr, (uint8_t *)(uint8_t *)str576);
-                                                    result.kind = TYPE_VOID;
-                                                    struct Type _uya_ret = result;
+                                                    struct Type _uya_ret = make_void_type();
                                                     return _uya_ret;
                                                 }
-                                                result.kind = TYPE_I32;
-                                                struct Type _uya_ret = result;
+                                                struct Type _uya_ret = make_i32_type();
                                                 return _uya_ret;
                                             } else {
                                                 if (((expr->type == AST_VA_START) || (expr->type == AST_VA_END))) {
@@ -18337,8 +18316,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                         } else {
                                                             checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str578);
                                                         }
-                                                        result.kind = TYPE_VOID;
-                                                        struct Type _uya_ret = result;
+                                                        struct Type _uya_ret = make_void_type();
                                                         return _uya_ret;
                                                     }
                                                     if ((checker->current_function_decl->fn_decl_is_varargs == 0)) {
@@ -18347,8 +18325,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                         } else {
                                                             checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str578);
                                                         }
-                                                        result.kind = TYPE_VOID;
-                                                        struct Type _uya_ret = result;
+                                                        struct Type _uya_ret = make_void_type();
                                                         return _uya_ret;
                                                     }
                                                     if ((expr->type == AST_VA_START)) {
@@ -18363,21 +18340,18 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                             checker_infer_type(checker, expr->va_end_ap);
                                                         }
                                                     }
-                                                    result.kind = TYPE_VOID;
-                                                    struct Type _uya_ret = result;
+                                                    struct Type _uya_ret = make_void_type();
                                                     return _uya_ret;
                                                 } else {
                                                     if ((expr->type == AST_VA_ARG)) {
                                                         if (((checker->in_function == 0) || (checker->current_function_decl == NULL))) {
                                                             checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str579);
-                                                            result.kind = TYPE_VOID;
-                                                            struct Type _uya_ret = result;
+                                                            struct Type _uya_ret = make_void_type();
                                                             return _uya_ret;
                                                         }
                                                         if ((checker->current_function_decl->fn_decl_is_varargs == 0)) {
                                                             checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str579);
-                                                            result.kind = TYPE_VOID;
-                                                            struct Type _uya_ret = result;
+                                                            struct Type _uya_ret = make_void_type();
                                                             return _uya_ret;
                                                         }
                                                         if ((expr->va_arg_ap != NULL)) {
@@ -18386,7 +18360,8 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                         if ((expr->va_arg_arg_type != NULL)) {
                                                             result = type_from_ast(checker, expr->va_arg_arg_type);
                                                         } else {
-                                                            result.kind = TYPE_VOID;
+                                                            struct Type _uya_ret = make_void_type();
+                                                            return _uya_ret;
                                                         }
                                                         struct Type _uya_ret = result;
                                                         return _uya_ret;
@@ -18395,8 +18370,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                             struct Type byte_type = (struct Type){.kind = TYPE_BYTE, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
                                                             struct Type * const pointed_type_ptr = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                                             if ((pointed_type_ptr == NULL)) {
-                                                                result.kind = TYPE_VOID;
-                                                                struct Type _uya_ret = result;
+                                                                struct Type _uya_ret = make_void_type();
                                                                 return _uya_ret;
                                                             }
                                                             pointed_type_ptr[0] = byte_type;
@@ -18418,8 +18392,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                         const int32_t w = checker_interp_format_max_width(copy_type((&seg_type)), seg->format_spec);
                                                                         if ((w < 0)) {
                                                                             checker_report_error(checker, seg->expr, (uint8_t *)(uint8_t *)str580);
-                                                                            result.kind = TYPE_VOID;
-                                                                            struct Type _uya_ret = result;
+                                                                            struct Type _uya_ret = make_void_type();
                                                                             return _uya_ret;
                                                                         }
                                                                         total = (total + w);
@@ -18429,8 +18402,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                 expr->string_interp_computed_size = total;
                                                                 struct Type * const i8_ptr = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                                                 if ((i8_ptr == NULL)) {
-                                                                    result.kind = TYPE_VOID;
-                                                                    struct Type _uya_ret = result;
+                                                                    struct Type _uya_ret = make_void_type();
                                                                     return _uya_ret;
                                                                 }
                                                                 i8_ptr[0].kind = TYPE_I8;
@@ -18451,8 +18423,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                 if ((expr->type == AST_PARAMS)) {
                                                                     if (((checker->in_function == 0) || (checker->current_function_decl == NULL))) {
                                                                         checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str581);
-                                                                        result.kind = TYPE_VOID;
-                                                                        struct Type _uya_ret = result;
+                                                                        struct Type _uya_ret = make_void_type();
                                                                         return _uya_ret;
                                                                     }
                                                                     struct ASTNode * const cur_fn = checker->current_function_decl;
@@ -18465,8 +18436,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                     }
                                                                     struct Type * const elem_types = (struct Type *)arena_alloc(checker->arena, ((int32_t)sizeof(struct Type) * cur_fn->fn_decl_param_count));
                                                                     if ((elem_types == NULL)) {
-                                                                        result.kind = TYPE_VOID;
-                                                                        struct Type _uya_ret = result;
+                                                                        struct Type _uya_ret = make_void_type();
                                                                         return _uya_ret;
                                                                     }
                                                                     int32_t i = 0;
@@ -18489,19 +18459,16 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                         struct Type operand_type = checker_infer_type(checker, expr->try_expr_operand);
                                                                         if ((operand_type.kind != TYPE_ERROR_UNION)) {
                                                                             checker_report_error(checker, expr->try_expr_operand, (uint8_t *)(uint8_t *)str582);
-                                                                            result.kind = TYPE_VOID;
-                                                                            struct Type _uya_ret = result;
+                                                                            struct Type _uya_ret = make_void_type();
                                                                             return _uya_ret;
                                                                         }
                                                                         if (((checker->in_function == 0) || (checker->current_return_type.kind != TYPE_ERROR_UNION))) {
                                                                             checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str583);
-                                                                            result.kind = TYPE_VOID;
-                                                                            struct Type _uya_ret = result;
+                                                                            struct Type _uya_ret = make_void_type();
                                                                             return _uya_ret;
                                                                         }
                                                                         if ((operand_type.error_union_payload_type == NULL)) {
-                                                                            result.kind = TYPE_VOID;
-                                                                            struct Type _uya_ret = result;
+                                                                            struct Type _uya_ret = make_void_type();
                                                                             return _uya_ret;
                                                                         }
                                                                         struct Type _uya_ret = operand_type.error_union_payload_type[0];
@@ -18526,14 +18493,12 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                     }
                                                                                     if ((operand_type.kind != TYPE_ERROR_UNION)) {
                                                                                         checker_report_error(checker, expr->catch_expr_operand, (uint8_t *)(uint8_t *)str584);
-                                                                                        result.kind = TYPE_VOID;
-                                                                                        struct Type _uya_ret = result;
+                                                                                        struct Type _uya_ret = make_void_type();
                                                                                         return _uya_ret;
                                                                                     }
                                                                                 }
                                                                                 if ((operand_type.error_union_payload_type == NULL)) {
-                                                                                    result.kind = TYPE_VOID;
-                                                                                    struct Type _uya_ret = result;
+                                                                                    struct Type _uya_ret = make_void_type();
                                                                                     return _uya_ret;
                                                                                 }
                                                                                 struct Type payload = operand_type.error_union_payload_type[0];
@@ -18575,8 +18540,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                     const uint32_t id = get_or_add_error_id(checker, name, expr);
                                                                                     if ((id == 0)) {
                                                                                         checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str586);
-                                                                                        result.kind = TYPE_VOID;
-                                                                                        struct Type _uya_ret = result;
+                                                                                        struct Type _uya_ret = make_void_type();
                                                                                         return _uya_ret;
                                                                                     }
                                                                                     result.kind = TYPE_ERROR;
@@ -18586,15 +18550,13 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                 } else {
                                                                                     if ((expr->type == AST_UNDERSCORE)) {
                                                                                         checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str587);
-                                                                                        result.kind = TYPE_VOID;
-                                                                                        struct Type _uya_ret = result;
+                                                                                        struct Type _uya_ret = make_void_type();
                                                                                         return _uya_ret;
                                                                                     } else {
                                                                                         if ((expr->type == AST_IDENTIFIER)) {
                                                                                             if ((moved_set_contains(checker, expr->identifier_name) != 0)) {
                                                                                                 checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str588);
-                                                                                                result.kind = TYPE_VOID;
-                                                                                                struct Type _uya_ret = result;
+                                                                                                struct Type _uya_ret = make_void_type();
                                                                                                 return _uya_ret;
                                                                                             }
                                                                                             struct Symbol * const symbol = symbol_table_lookup(checker, expr->identifier_name);
@@ -18608,16 +18570,14 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                             if (((((expr->identifier_name != NULL) && (checker != NULL)) && (checker->program_node != NULL)) && (is_enum_variant_name_in_program(checker->program_node, expr->identifier_name) != 0))) {
                                                                                                 checker_report_error(checker, expr, (uint8_t *)(uint8_t *)str590);
                                                                                             }
-                                                                                            result.kind = TYPE_VOID;
-                                                                                            struct Type _uya_ret = result;
+                                                                                            struct Type _uya_ret = make_void_type();
                                                                                             return _uya_ret;
                                                                                         } else {
                                                                                             if ((expr->type == AST_UNARY_EXPR)) {
                                                                                                 const enum TokenType op = (enum TokenType)expr->unary_expr_op;
                                                                                                 struct Type operand_type = checker_infer_type(checker, expr->unary_expr_operand);
                                                                                                 if ((op == TOKEN_EXCLAMATION)) {
-                                                                                                    result.kind = TYPE_BOOL;
-                                                                                                    struct Type _uya_ret = result;
+                                                                                                    struct Type _uya_ret = make_bool_type();
                                                                                                     return _uya_ret;
                                                                                                 } else {
                                                                                                     if ((op == TOKEN_MINUS)) {
@@ -18630,14 +18590,12 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                         } else {
                                                                                                             if ((op == TOKEN_AMPERSAND)) {
                                                                                                                 if ((operand_type.kind == TYPE_VOID)) {
-                                                                                                                    result.kind = TYPE_VOID;
-                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                    struct Type _uya_ret = make_void_type();
                                                                                                                     return _uya_ret;
                                                                                                                 }
                                                                                                                 struct Type * const pointed_type_ptr = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                                                                                                 if ((pointed_type_ptr == NULL)) {
-                                                                                                                    result.kind = TYPE_VOID;
-                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                    struct Type _uya_ret = make_void_type();
                                                                                                                     return _uya_ret;
                                                                                                                 }
                                                                                                                 pointed_type_ptr[0] = copy_type((&operand_type));
@@ -18649,13 +18607,11 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                             } else {
                                                                                                                 if ((op == TOKEN_ASTERISK)) {
                                                                                                                     if ((operand_type.kind != TYPE_POINTER)) {
-                                                                                                                        result.kind = TYPE_VOID;
-                                                                                                                        struct Type _uya_ret = result;
+                                                                                                                        struct Type _uya_ret = make_void_type();
                                                                                                                         return _uya_ret;
                                                                                                                     }
                                                                                                                     if ((operand_type.pointer_to == NULL)) {
-                                                                                                                        result.kind = TYPE_VOID;
-                                                                                                                        struct Type _uya_ret = result;
+                                                                                                                        struct Type _uya_ret = make_void_type();
                                                                                                                         return _uya_ret;
                                                                                                                     }
                                                                                                                     struct Type _uya_ret = operand_type.pointer_to[0];
@@ -18675,8 +18631,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                     if ((expr->type == AST_CALL_EXPR)) {
                                                                                                         struct ASTNode * const callee = expr->call_expr_callee;
                                                                                                         if ((callee == NULL)) {
-                                                                                                            result.kind = TYPE_VOID;
-                                                                                                            struct Type _uya_ret = result;
+                                                                                                            struct Type _uya_ret = make_void_type();
                                                                                                             return _uya_ret;
                                                                                                         }
                                                                                                         if ((callee->type == AST_MEMBER_ACCESS)) {
@@ -18708,8 +18663,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                 return _uya_ret;
                                                                                                                             }
                                                                                                                         }
-                                                                                                                        result.kind = TYPE_VOID;
-                                                                                                                        struct Type _uya_ret = result;
+                                                                                                                        struct Type _uya_ret = make_void_type();
                                                                                                                         return _uya_ret;
                                                                                                                     }
                                                                                                                     mi = (mi + 1);
@@ -18748,8 +18702,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                             }
                                                                                                         }
                                                                                                         if ((callee->type != AST_IDENTIFIER)) {
-                                                                                                            result.kind = TYPE_VOID;
-                                                                                                            struct Type _uya_ret = result;
+                                                                                                            struct Type _uya_ret = make_void_type();
                                                                                                             return _uya_ret;
                                                                                                         }
                                                                                                         if (((expr->call_expr_type_arg_count > 0) && (expr->call_expr_type_args != NULL))) {
@@ -18773,15 +18726,13 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                 return _uya_ret;
                                                                                                             }
                                                                                                         }
-                                                                                                        result.kind = TYPE_VOID;
-                                                                                                        struct Type _uya_ret = result;
+                                                                                                        struct Type _uya_ret = make_void_type();
                                                                                                         return _uya_ret;
                                                                                                     } else {
                                                                                                         if ((expr->type == AST_MEMBER_ACCESS)) {
                                                                                                             struct ASTNode * const object = expr->member_access_object;
                                                                                                             if ((object == NULL)) {
-                                                                                                                result.kind = TYPE_VOID;
-                                                                                                                struct Type _uya_ret = result;
+                                                                                                                struct Type _uya_ret = make_void_type();
                                                                                                                 return _uya_ret;
                                                                                                             }
                                                                                                             if ((object->type == AST_IDENTIFIER)) {
@@ -18804,8 +18755,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                     i = (i + 1);
                                                                                                                                 }
                                                                                                                             }
-                                                                                                                            result.kind = TYPE_VOID;
-                                                                                                                            struct Type _uya_ret = result;
+                                                                                                                            struct Type _uya_ret = make_void_type();
                                                                                                                             return _uya_ret;
                                                                                                                         }
                                                                                                                         const int32_t ih = hash_string(enum_name);
@@ -18820,8 +18770,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                             if (((imp->item_type == (0 - 1)) && (str_equals(imp->local_name, enum_name) != 0))) {
                                                                                                                                 expr->member_access_is_module_access = 1;
                                                                                                                                 expr->member_access_module_name = imp->module_name;
-                                                                                                                                result.kind = TYPE_VOID;
-                                                                                                                                struct Type _uya_ret = result;
+                                                                                                                                struct Type _uya_ret = make_void_type();
                                                                                                                                 return _uya_ret;
                                                                                                                             }
                                                                                                                             i2 = (i2 + 1);
@@ -18836,14 +18785,12 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                             if ((object_type.kind == TYPE_TUPLE)) {
                                                                                                                 uint8_t * const field_name = expr->member_access_field_name;
                                                                                                                 if (((field_name == NULL) || (object_type.tuple_element_types == NULL))) {
-                                                                                                                    result.kind = TYPE_VOID;
-                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                    struct Type _uya_ret = make_void_type();
                                                                                                                     return _uya_ret;
                                                                                                                 }
                                                                                                                 const int32_t idx = libc_atoi((uint8_t *)field_name);
                                                                                                                 if (((idx < 0) || (idx >= object_type.tuple_count))) {
-                                                                                                                    result.kind = TYPE_VOID;
-                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                    struct Type _uya_ret = make_void_type();
                                                                                                                     return _uya_ret;
                                                                                                                 }
                                                                                                                 struct Type _uya_ret = object_type.tuple_element_types[idx];
@@ -18863,13 +18810,11 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                         i = (i + 1);
                                                                                                                     }
                                                                                                                 }
-                                                                                                                result.kind = TYPE_VOID;
-                                                                                                                struct Type _uya_ret = result;
+                                                                                                                struct Type _uya_ret = make_void_type();
                                                                                                                 return _uya_ret;
                                                                                                             }
                                                                                                             if (((object_type.kind != TYPE_STRUCT) || (object_type.struct_name == NULL))) {
-                                                                                                                result.kind = TYPE_VOID;
-                                                                                                                struct Type _uya_ret = result;
+                                                                                                                struct Type _uya_ret = make_void_type();
                                                                                                                 return _uya_ret;
                                                                                                             }
                                                                                                             struct ASTNode * const struct_decl = find_struct_decl_from_program(checker->program_node, object_type.struct_name);
@@ -18902,8 +18847,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                         }
                                                                                                                     }
                                                                                                                 }
-                                                                                                                result.kind = TYPE_VOID;
-                                                                                                                struct Type _uya_ret = result;
+                                                                                                                struct Type _uya_ret = make_void_type();
                                                                                                                 return _uya_ret;
                                                                                                             }
                                                                                                             struct Type field_type = (struct Type){.kind = TYPE_VOID, .enum_name = 0, .interface_name = 0, .struct_name = 0, .union_name = 0, .pointer_to = 0, .is_ffi_pointer = 0, .element_type = 0, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
@@ -18965,15 +18909,13 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                         }
                                                                                                                     }
                                                                                                                 }
-                                                                                                                result.kind = TYPE_VOID;
-                                                                                                                struct Type _uya_ret = result;
+                                                                                                                struct Type _uya_ret = make_void_type();
                                                                                                                 return _uya_ret;
                                                                                                             } else {
                                                                                                                 if ((expr->type == AST_SLICE_EXPR)) {
                                                                                                                     struct Type base_type = checker_infer_type(checker, expr->slice_expr_base);
                                                                                                                     if (((base_type.kind != TYPE_ARRAY) && (base_type.kind != TYPE_SLICE))) {
-                                                                                                                        result.kind = TYPE_VOID;
-                                                                                                                        struct Type _uya_ret = result;
+                                                                                                                        struct Type _uya_ret = make_void_type();
                                                                                                                         return _uya_ret;
                                                                                                                     }
                                                                                                                     struct Type * elem = NULL;
@@ -18983,14 +18925,12 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                         elem = base_type.slice_element_type;
                                                                                                                     }
                                                                                                                     if ((elem == NULL)) {
-                                                                                                                        result.kind = TYPE_VOID;
-                                                                                                                        struct Type _uya_ret = result;
+                                                                                                                        struct Type _uya_ret = make_void_type();
                                                                                                                         return _uya_ret;
                                                                                                                     }
                                                                                                                     struct Type * const element_type_ptr = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                                                                                                     if ((element_type_ptr == NULL)) {
-                                                                                                                        result.kind = TYPE_VOID;
-                                                                                                                        struct Type _uya_ret = result;
+                                                                                                                        struct Type _uya_ret = make_void_type();
                                                                                                                         return _uya_ret;
                                                                                                                     }
                                                                                                                     struct Type * const elem_type = element_type_ptr;
@@ -19030,22 +18970,19 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                             const int32_t n = expr->tuple_literal_element_count;
                                                                                                                             struct ASTNode * * const elements = expr->tuple_literal_elements;
                                                                                                                             if (((n <= 0) || (elements == NULL))) {
-                                                                                                                                result.kind = TYPE_VOID;
-                                                                                                                                struct Type _uya_ret = result;
+                                                                                                                                struct Type _uya_ret = make_void_type();
                                                                                                                                 return _uya_ret;
                                                                                                                             }
                                                                                                                             struct Type * const element_types = (struct Type *)arena_alloc(checker->arena, ((int32_t)sizeof(struct Type) * (size_t)n));
                                                                                                                             if ((element_types == NULL)) {
-                                                                                                                                result.kind = TYPE_VOID;
-                                                                                                                                struct Type _uya_ret = result;
+                                                                                                                                struct Type _uya_ret = make_void_type();
                                                                                                                                 return _uya_ret;
                                                                                                                             }
                                                                                                                             int32_t i = 0;
                                                                                                                             while ((i < n)) {
                                                                                                                                 struct Type et = checker_infer_type(checker, elements[i]);
                                                                                                                                 if ((et.kind == TYPE_VOID)) {
-                                                                                                                                    result.kind = TYPE_VOID;
-                                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                                    struct Type _uya_ret = make_void_type();
                                                                                                                                     return _uya_ret;
                                                                                                                                 }
                                                                                                                                 element_types[i] = copy_type((&et));
@@ -19064,20 +19001,17 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                 if ((repeat_count_expr != NULL)) {
                                                                                                                                     const int32_t n = checker_eval_const_expr(checker, repeat_count_expr);
                                                                                                                                     if ((((n < 0) || (elements == NULL)) || (element_count < 1))) {
-                                                                                                                                        result.kind = TYPE_VOID;
-                                                                                                                                        struct Type _uya_ret = result;
+                                                                                                                                        struct Type _uya_ret = make_void_type();
                                                                                                                                         return _uya_ret;
                                                                                                                                     }
                                                                                                                                     struct Type element_type = checker_infer_type(checker, elements[0]);
                                                                                                                                     if ((element_type.kind == TYPE_VOID)) {
-                                                                                                                                        result.kind = TYPE_VOID;
-                                                                                                                                        struct Type _uya_ret = result;
+                                                                                                                                        struct Type _uya_ret = make_void_type();
                                                                                                                                         return _uya_ret;
                                                                                                                                     }
                                                                                                                                     struct Type * const element_type_ptr = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                                                                                                                     if ((element_type_ptr == NULL)) {
-                                                                                                                                        result.kind = TYPE_VOID;
-                                                                                                                                        struct Type _uya_ret = result;
+                                                                                                                                        struct Type _uya_ret = make_void_type();
                                                                                                                                         return _uya_ret;
                                                                                                                                     }
                                                                                                                                     element_type_ptr[0] = copy_type((&element_type));
@@ -19088,20 +19022,17 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                     return _uya_ret;
                                                                                                                                 }
                                                                                                                                 if ((element_count == 0)) {
-                                                                                                                                    result.kind = TYPE_VOID;
-                                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                                    struct Type _uya_ret = make_void_type();
                                                                                                                                     return _uya_ret;
                                                                                                                                 }
                                                                                                                                 struct Type element_type = checker_infer_type(checker, elements[0]);
                                                                                                                                 if ((element_type.kind == TYPE_VOID)) {
-                                                                                                                                    result.kind = TYPE_VOID;
-                                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                                    struct Type _uya_ret = make_void_type();
                                                                                                                                     return _uya_ret;
                                                                                                                                 }
                                                                                                                                 struct Type * const element_type_ptr = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                                                                                                                 if ((element_type_ptr == NULL)) {
-                                                                                                                                    result.kind = TYPE_VOID;
-                                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                                    struct Type _uya_ret = make_void_type();
                                                                                                                                     return _uya_ret;
                                                                                                                                 }
                                                                                                                                 element_type_ptr[0] = copy_type((&element_type));
@@ -19112,25 +19043,21 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                 return _uya_ret;
                                                                                                                             } else {
                                                                                                                                 if ((expr->type == AST_SIZEOF)) {
-                                                                                                                                    result.kind = TYPE_I32;
-                                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                                    struct Type _uya_ret = make_i32_type();
                                                                                                                                     return _uya_ret;
                                                                                                                                 } else {
                                                                                                                                     if ((expr->type == AST_ALIGNOF)) {
-                                                                                                                                        result.kind = TYPE_I32;
-                                                                                                                                        struct Type _uya_ret = result;
+                                                                                                                                        struct Type _uya_ret = make_i32_type();
                                                                                                                                         return _uya_ret;
                                                                                                                                     } else {
                                                                                                                                         if ((expr->type == AST_LEN)) {
-                                                                                                                                            result.kind = TYPE_I32;
-                                                                                                                                            struct Type _uya_ret = result;
+                                                                                                                                            struct Type _uya_ret = make_i32_type();
                                                                                                                                             return _uya_ret;
                                                                                                                                         } else {
                                                                                                                                             if ((expr->type == AST_CAST_EXPR)) {
                                                                                                                                                 struct ASTNode * const target_type_node = expr->cast_expr_target_type;
                                                                                                                                                 if ((target_type_node == NULL)) {
-                                                                                                                                                    result.kind = TYPE_VOID;
-                                                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                                                    struct Type _uya_ret = make_void_type();
                                                                                                                                                     return _uya_ret;
                                                                                                                                                 }
                                                                                                                                                 struct Type target_type = type_from_ast(checker, target_type_node);
@@ -19140,8 +19067,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                                 }
                                                                                                                                                 struct Type * const payload_ptr = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                                                                                                                                 if ((payload_ptr == NULL)) {
-                                                                                                                                                    result.kind = TYPE_VOID;
-                                                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                                                    struct Type _uya_ret = make_void_type();
                                                                                                                                                     return _uya_ret;
                                                                                                                                                 }
                                                                                                                                                 payload_ptr[0] = target_type;
@@ -19151,8 +19077,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                                 return _uya_ret;
                                                                                                                                             } else {
                                                                                                                                                 if ((expr->type == AST_BLOCK)) {
-                                                                                                                                                    result.kind = TYPE_VOID;
-                                                                                                                                                    struct Type _uya_ret = result;
+                                                                                                                                                    struct Type _uya_ret = make_void_type();
                                                                                                                                                     return _uya_ret;
                                                                                                                                                 } else {
                                                                                                                                                     if ((expr->type == AST_MATCH_EXPR)) {
@@ -19266,12 +19191,10 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                                         return _uya_ret;
                                                                                                                                                     } else {
                                                                                                                                                         if ((expr->type == AST_STRUCT_DECL)) {
-                                                                                                                                                            result.kind = TYPE_VOID;
-                                                                                                                                                            struct Type _uya_ret = result;
+                                                                                                                                                            struct Type _uya_ret = make_void_type();
                                                                                                                                                             return _uya_ret;
                                                                                                                                                         } else {
-                                                                                                                                                            result.kind = TYPE_VOID;
-                                                                                                                                                            struct Type _uya_ret = result;
+                                                                                                                                                            struct Type _uya_ret = make_void_type();
                                                                                                                                                             return _uya_ret;
                                                                                                                                                         }
                                                                                                                                                     }
