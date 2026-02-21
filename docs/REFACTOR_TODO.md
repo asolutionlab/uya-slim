@@ -112,11 +112,11 @@
 
 ---
 
-## 阶段二：嵌套深度优化 [░░░░░░░░░░] 0%
+## 阶段二：嵌套深度优化 [████░░░░░░] 40%
 
 ### 2.1 提前返回优化
 
-- [ ] 扫描所有嵌套深度 > 3 层的函数
+- [x] 扫描所有嵌套深度 > 3 层的函数
 - [ ] 重构为提前返回模式：
   ```uya
   // 重构前
@@ -131,20 +131,38 @@
 - [ ] 重点文件：
   - [ ] `src/checker/check_expr.uya`
   - [ ] `src/checker/check_stmt.uya`
-  - [ ] `src/codegen/c99/stmt.uya`
+  - [x] `src/codegen/c99/stmt.uya` - 已提取辅助函数
   - [ ] `src/codegen/c99/expr.uya`
-- [ ] 运行 `make check` 验证
+- [x] 运行 `make check` 验证 - 通过
 
 ### 2.2 提取辅助函数
 
-- [ ] 识别重复的条件检查模式
-- [ ] 提取为辅助函数：
+- [x] 识别重复的条件检查模式
+- [x] 提取辅助函数（codegen/c99/stmt.uya）：
+  - [x] `gen_var_decl_empty_struct_init` - 空结构体初始化
+  - [x] `gen_var_decl_struct_init_memcpy` - 结构体数组字段 memcpy
+  - [x] `gen_var_decl_void_type` - void 类型变量声明
+  - [x] `should_use_va_list` - va_list 检测
+  - [x] `emit_pointer_const_decl` - 指针类型 const 声明
+- [x] 提取辅助函数（checker/check_stmt.uya）：
+  - [x] `method_signature_exists` - 方法签名去重检查
+- [ ] 提取辅助函数（待完成）：
   - [ ] `is_numeric_type(t)` - 检查是否为数值类型
   - [ ] `is_integer_type(t)` - 检查是否为整数类型
   - [ ] `is_pointer_type(t)` - 检查是否为指针类型
   - [ ] `is_error_type(t)` - 检查是否为错误类型
   - [ ] `can_coerce(from, to)` - 检查是否可隐式转换
-- [ ] 运行 `make check` 验证
+- [x] 运行 `make check` 验证 - 通过
+
+### 2.3 嵌套深度改进记录
+
+| 函数 | 原始行数 | 当前行数 | 原始深度 | 当前深度 | 状态 |
+|------|----------|----------|----------|----------|------|
+| `gen_var_decl_stmt` | 638 | 398 | 7 | 待确认 | 已提取辅助函数 |
+| `checker_check_struct_decl` | 178 | 166 | 6 | 待确认 | 已提取辅助函数 |
+| `gen_call_expr` | 680 | - | 6 | - | 待处理 |
+| `checker_infer_type` | 474 | - | 5 | - | 待处理 |
+| `infer_match_expr` | 114 | - | 5 | - | 待处理 |
 
 ---
 
