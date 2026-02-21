@@ -14,6 +14,7 @@ use codegen.c99;
 // C 程序入口（提供 export extern fn main 调用 main_main）
 use std.runtime.entry;
 use libc;
+use libc.stdlib;  // clock, CLOCKS_PER_SEC
 
 // ===== 计时函数 =====
 // 暂时禁用精确计时，使用简单计数器
@@ -1499,6 +1500,13 @@ fn compile_files(
     var stats: CompileStats = CompileStats { parse_time_ms: 0, merge_time_ms: 0, check_time_ms: 0, codegen_time_ms: 0, total_time_ms: 0, file_count: 0, ast_nodes: 0 };
     stats.file_count = all_file_count;  // 记录文件数
 
+    // 计时变量
+    const start_time: i64 = clock();
+    var parse_end_time: i64 = 0;
+    var merge_end_time: i64 = 0;
+    var check_end_time: i64 = 0;
+    var codegen_end_time: i64 = 0;
+
     var arena: Arena = Arena { buffer: null, size: 0 as usize, offset: 0 as usize, first_chunk: null, current_chunk: null, total_allocated: 0 as usize };
     arena_init(&arena, &arena_buffer[0], ARENA_BUFFER_SIZE as usize);
 
@@ -1541,6 +1549,7 @@ fn compile_files(
         fprintf(libc.stderr, "  解析完成: %s\n" as *byte, input_path);
         i = i + 1;
     }
+    parse_end_time = clock();
     fprintf(libc.stderr, "=== 词法/语法分析完成，共 %d 个文件 ===\n" as *byte, all_file_count);
 
     fprintf(libc.stderr, "=== AST 合并阶段 ===\n" as *byte);
@@ -1549,6 +1558,7 @@ fn compile_files(
         fprintf(libc.stderr, "错误: AST 合并失败\n" as *byte);
         return 1;
     }
+    merge_end_time = clock();
     fprintf(libc.stderr, "AST 合并完成，共 %d 个声明\n" as *byte, merged_ast.program_decl_count);
 
     fprintf(libc.stderr, "=== 类型检查阶段 ===\n" as *byte);
@@ -1583,6 +1593,7 @@ fn compile_files(
         }
         return 1;
     }
+    check_end_time = clock();
     fprintf(libc.stderr, "类型检查通过\n" as *byte);
 
     fprintf(libc.stderr, "=== 代码生成阶段 ===\n" as *byte);
@@ -1614,10 +1625,23 @@ fn compile_files(
     }
     c99_codegen_free(&c99_codegen);
     fclose(out_file);
+    codegen_end_time = clock();
+
+    // 计算各阶段耗时（毫秒）
+    stats.parse_time_ms = (parse_end_time - start_time) * 1000 / CLOCKS_PER_SEC;
+    stats.merge_time_ms = (merge_end_time - parse_end_time) * 1000 / CLOCKS_PER_SEC;
+    stats.check_time_ms = (check_end_time - merge_end_time) * 1000 / CLOCKS_PER_SEC;
+    stats.codegen_time_ms = (codegen_end_time - check_end_time) * 1000 / CLOCKS_PER_SEC;
+    stats.total_time_ms = (codegen_end_time - start_time) * 1000 / CLOCKS_PER_SEC;
     
     // 输出编译统计
     fprintf(libc.stderr, "\n=== 编译统计 ===\n" as *byte);
     fprintf(libc.stderr, "文件数: %d\n" as *byte, stats.file_count);
+    fprintf(libc.stderr, "解析耗时: %ld ms\n" as *byte, stats.parse_time_ms);
+    fprintf(libc.stderr, "合并耗时: %ld ms\n" as *byte, stats.merge_time_ms);
+    fprintf(libc.stderr, "检查耗时: %ld ms\n" as *byte, stats.check_time_ms);
+    fprintf(libc.stderr, "生成耗时: %ld ms\n" as *byte, stats.codegen_time_ms);
+    fprintf(libc.stderr, "总耗时: %ld ms\n" as *byte, stats.total_time_ms);
     
     fprintf(libc.stderr, "\n代码生成完成: %s\n" as *byte, actual_output);
 
