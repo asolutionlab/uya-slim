@@ -3,7 +3,7 @@
 ## 进度概览
 
 ```
-阶段一：模块拆分    [████████░░] 60%
+阶段一：模块拆分    [█████████░] 90%
 阶段二：内存优化    [ ] 0%
 阶段三：性能优化    [ ] 0%
 ```
@@ -93,20 +93,41 @@
     [x] extract_linear_expr
     [x] verify_linear_expr_bounds
 
-[ ] 继续拆分 main.uya (4407 行 -> 目标 < 2000 行)
-    [ ] checker_check_array_access
-    [ ] checker_check_node
-    [ ] 模块系统函数
-    [ ] 宏展开函数
-    [ ] checker_check_struct_decl
+[x] 提取 check_expr_extra.uya (824 行) - 表达式检查辅助
+    [x] checker_check_array_access
+    [x] checker_check_alignof
+    [x] checker_check_len
+    [x] checker_check_struct_init
+    [x] checker_check_binary_expr
+    [x] checker_check_cast_expr
+    [x] checker_check_unary_expr
+    [x] checker_check (主入口)
 
-[ ] 提取 interval.uya (~500 行) - 区间算术
+[x] 提取 modules.uya (1197 行) - 模块系统
+    [x] extract_module_path_allocated
+    [x] find_or_create_module
+    [x] build_module_exports
+    [x] process_use_stmt
+    [x] dfs_visit_module
+    [x] detect_circular_dependencies
 
-[ ] 验证 checker 拆分
+[x] 提取 macro_expand.uya (1168 行) - 宏展开
+    [x] find_macro_decl_from_program
+    [x] find_param_binding
+    [x] create_number_literal/bool_literal/string_literal
+    [x] macro_eval_expr
+    [x] deep_copy_ast_with_params/simple
+    [x] extract_macro_output_*
+    [x] expand_macros_in_node_simple
+
+[ ] 继续拆分 main.uya (1227 行 -> 目标 < 500 行)
+    [ ] checker_check_node (~1200 行大函数，需拆分)
+
+[x] 验证 checker 拆分
     [x] make check 通过 (414/414)
-    [ ] 每文件 ≤ 2000 行
+    [x] 每文件 ≤ 2000 行
 
-当前：main.uya 仍有 8,388 行，需继续拆分
+当前：main.uya 仍有 1227 行，主要是 checker_check_node 大函数
 ```
 
 ### 1.2 parser.uya 拆分
