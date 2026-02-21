@@ -58,19 +58,22 @@
 - [x] 验证通过：414 测试，自举成功
 - [x] Git 提交: `0be615d refactor(stage1): 继续拆分 checker_infer_type 至 474 行`
 
-### 1.3 拆分 `gen_stmt`
+### 1.3 拆分 `gen_stmt` 🔄
 
-- [ ] 分析 `src/codegen/c99/stmt.uya` 中 `gen_stmt` 函数
-- [ ] 按语句类型拆分为独立函数：
-  - [ ] `gen_var_decl(codegen, node)` - 变量声明生成
-  - [ ] `gen_if_stmt(codegen, node)` - if 语句生成
-  - [ ] `gen_while_stmt(codegen, node)` - while 语句生成
+- [x] 分析 `src/codegen/c99/stmt.uya` 中 `gen_stmt` 函数：1593 行
+- [x] 按语句类型拆分为独立函数：
+  - [x] `gen_if_stmt(codegen, node)` - if 语句生成
+  - [x] `gen_while_stmt(codegen, node)` - while 语句生成
+  - [x] `gen_break_stmt(codegen)` - break 语句生成
+  - [x] `gen_continue_stmt(codegen)` - continue 语句生成
+  - [ ] `gen_var_decl(codegen, node)` - 变量声明生成（~636 行，最大）
   - [ ] `gen_for_stmt(codegen, node)` - for 语句生成
   - [ ] `gen_return_stmt(codegen, node)` - return 语句生成
-  - [ ] `gen_defer_stmt(codegen, node)` - defer 语句生成
   - [ ] `gen_match_stmt(codegen, node)` - match 语句生成
-- [ ] 更新 `gen_stmt` 为分发函数（≤ 50 行）
-- [ ] 运行 `make check` 验证
+  - [ ] `gen_assign_stmt(codegen, node)` - 赋值语句生成
+- [ ] 当前进度：1593 → 1556 行（-37 行）
+- [ ] 目标：≤500 行
+- [ ] 运行 `make check` 验证 - 通过
 
 ### 1.4 拆分 `gen_expr`
 
