@@ -206,7 +206,7 @@ fn main() i32 { ... }
 
 ### 联合体
 ```uya
-// 联合体定义
+// 联合体定义（Tagged Union，类型安全）
 union IntOrFloat {
     i: i32,
     f: f64
@@ -220,7 +220,32 @@ match v {
     .i(x) => printf("%d\n", x),
     .f(x) => printf("%f\n", x)
 }
+
+// C 兼容联合体（extern union，无标签）
+// 重要：只有 extern union 才能与 C 语言完全兼容
+extern union CData {
+    bytes: [u8: 8],
+    as_u64: u64,
+    as_f64: f64
+}
+// extern union 特性：
+// - 内存布局与 C union 完全一致
+// - 不支持 match 表达式（无运行时标签）
+// - 不支持方法定义
+// - 用于 C FFI 互操作
 ```
+
+**联合体类型对比**：
+
+| 特性 | `union` | `extern union` |
+|------|---------|----------------|
+| 内存布局 | `struct { _tag, u }` | `union` |
+| 标签开销 | 4 字节 + 填充 | 无 |
+| C 兼容性 | 需包装结构体 | **完全兼容** |
+| match 支持 | ✅ | ❌ |
+| 方法支持 | ✅ | ❌ |
+
+**详细文档**：`docs/union_memory_layout.md` - 内存布局、对齐规则、C 互操作指南
 
 ### 结构体
 ```uya
@@ -298,7 +323,7 @@ interface IWriter {
 
 // 泛型接口
 interface Iterator<T> {
-    fn next(self: &Self) union Option<T>;
+    fn next(self: &Self) Option<T>;
 }
 
 // 多约束泛型接口
