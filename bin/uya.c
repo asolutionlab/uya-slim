@@ -2872,6 +2872,22 @@ static int32_t check_type_param_constraints(struct TypeChecker * checker, struct
 static void resolve_int_limit_node(struct ASTNode * node, struct Type type);
 static int32_t type_equals(struct Type t1, struct Type t2);
 static int32_t type_can_implicitly_convert(struct Type from, struct Type to);
+static struct Type make_void_type();
+static struct Type make_i32_type();
+static struct Type make_i64_type();
+static struct Type make_f64_type();
+static struct Type make_bool_type();
+static struct Type make_usize_type();
+static struct Type make_pointer_type(struct Arena * arena, struct Type * pointee, int32_t is_ffi);
+static struct Type make_array_type(struct Arena * arena, struct Type * element, int32_t size);
+static struct Type make_slice_type(struct Arena * arena, struct Type * element);
+static struct Type make_named_type(enum TypeKind kind, uint8_t * name);
+static struct Type make_error_union_type(struct Arena * arena, struct Type * payload);
+static struct Type make_atomic_type(struct Arena * arena, struct Type * inner);
+static int32_t is_void_type(struct Type t);
+static int32_t is_pointer_type(struct Type t);
+static int32_t is_error_type(struct Type t);
+static int32_t is_error_union_type(struct Type t);
 static struct ASTNode * find_enum_decl_c99(struct C99CodeGenerator * codegen, uint8_t * enum_name);
 static int32_t find_enum_variant_value(struct C99CodeGenerator * codegen, struct ASTNode * enum_decl, uint8_t * variant_name);
 static int32_t is_enum_defined(struct C99CodeGenerator * codegen, uint8_t * enum_name);
@@ -27736,6 +27752,156 @@ static __attribute__((unused)) int32_t type_can_implicitly_convert(struct Type f
         return _uya_ret;
     }
     if (((from.kind == TYPE_VOID) && (to.kind == TYPE_POINTER))) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_void_type() {
+    struct Type _uya_ret = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_i32_type() {
+    struct Type _uya_ret = (struct Type){.kind = TYPE_I32, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_i64_type() {
+    struct Type _uya_ret = (struct Type){.kind = TYPE_I64, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_f64_type() {
+    struct Type _uya_ret = (struct Type){.kind = TYPE_F64, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_bool_type() {
+    struct Type _uya_ret = (struct Type){.kind = TYPE_BOOL, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_usize_type() {
+    struct Type _uya_ret = (struct Type){.kind = TYPE_USIZE, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_pointer_type(struct Arena * arena, struct Type * pointee, int32_t is_ffi) {
+    (void)arena;
+    (void)pointee;
+    (void)is_ffi;
+    if (((arena == NULL) || (pointee == NULL))) {
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    struct Type _uya_ret = (struct Type){.kind = TYPE_POINTER, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = pointee, .is_ffi_pointer = is_ffi, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_array_type(struct Arena * arena, struct Type * element, int32_t size) {
+    (void)arena;
+    (void)element;
+    (void)size;
+    if (((arena == NULL) || (element == NULL))) {
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    struct Type _uya_ret = (struct Type){.kind = TYPE_ARRAY, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = element, .array_size = size, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_slice_type(struct Arena * arena, struct Type * element) {
+    (void)arena;
+    (void)element;
+    if (((arena == NULL) || (element == NULL))) {
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    struct Type _uya_ret = (struct Type){.kind = TYPE_SLICE, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = element, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_named_type(enum TypeKind kind, uint8_t * name) {
+    (void)kind;
+    (void)name;
+    struct Type t = (struct Type){.kind = kind, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    if ((kind == TYPE_ENUM)) {
+        t.enum_name = name;
+    } else {
+        if ((kind == TYPE_STRUCT)) {
+            t.struct_name = name;
+        } else {
+            if ((kind == TYPE_UNION)) {
+                t.union_name = name;
+            } else {
+                if ((kind == TYPE_INTERFACE)) {
+                    t.interface_name = name;
+                }
+            }
+        }
+    }
+    struct Type _uya_ret = t;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_error_union_type(struct Arena * arena, struct Type * payload) {
+    (void)arena;
+    (void)payload;
+    if (((arena == NULL) || (payload == NULL))) {
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    struct Type _uya_ret = (struct Type){.kind = TYPE_ERROR_UNION, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = payload, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct Type make_atomic_type(struct Arena * arena, struct Type * inner) {
+    (void)arena;
+    (void)inner;
+    if (((arena == NULL) || (inner == NULL))) {
+        struct Type _uya_ret = make_void_type();
+        return _uya_ret;
+    }
+    struct Type _uya_ret = (struct Type){.kind = TYPE_ATOMIC, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = inner, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_void_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_VOID)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_pointer_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_POINTER)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_error_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_ERROR)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_error_union_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_ERROR_UNION)) {
         int32_t _uya_ret = 1;
         return _uya_ret;
     }

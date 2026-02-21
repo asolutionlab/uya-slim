@@ -479,3 +479,371 @@ fn type_can_implicitly_convert(from: Type, to: Type) i32 {
     
     return 0;
 }
+
+// ===== 类型构造函数 =====
+
+// 创建 void 类型（用于错误返回）
+fn make_void_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_VOID,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建 i32 类型
+fn make_i32_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_I32,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建 i64 类型
+fn make_i64_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_I64,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建 f64 类型
+fn make_f64_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_F64,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建 bool 类型
+fn make_bool_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_BOOL,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建 usize 类型
+fn make_usize_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_USIZE,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建指针类型
+// pointee: 指向的类型（需从 arena 分配）
+// is_ffi: 1 表示 FFI 指针 (*T)，0 表示引用 (&T)
+fn make_pointer_type(arena: &Arena, pointee: &Type, is_ffi: i32) Type {
+    if arena == null || pointee == null {
+        return make_void_type();
+    }
+    return Type {
+        kind: TypeKind.TYPE_POINTER,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: pointee,
+        is_ffi_pointer: is_ffi,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建数组类型
+// element: 元素类型（需从 arena 分配）
+// size: 数组大小
+fn make_array_type(arena: &Arena, element: &Type, size: i32) Type {
+    if arena == null || element == null {
+        return make_void_type();
+    }
+    return Type {
+        kind: TypeKind.TYPE_ARRAY,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: element,
+        array_size: size,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建切片类型
+// element: 元素类型（需从 arena 分配）
+fn make_slice_type(arena: &Arena, element: &Type) Type {
+    if arena == null || element == null {
+        return make_void_type();
+    }
+    return Type {
+        kind: TypeKind.TYPE_SLICE,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: element,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建命名类型（enum/struct/union/interface）
+// kind: TYPE_ENUM, TYPE_STRUCT, TYPE_UNION, TYPE_INTERFACE
+// name: 类型名称
+fn make_named_type(kind: TypeKind, name: &byte) Type {
+    var t: Type = Type {
+        kind: kind,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+    if kind == TypeKind.TYPE_ENUM {
+        t.enum_name = name;
+    } else if kind == TypeKind.TYPE_STRUCT {
+        t.struct_name = name;
+    } else if kind == TypeKind.TYPE_UNION {
+        t.union_name = name;
+    } else if kind == TypeKind.TYPE_INTERFACE {
+        t.interface_name = name;
+    }
+    return t;
+}
+
+// 创建错误联合类型
+// payload: 负载类型（需从 arena 分配）
+fn make_error_union_type(arena: &Arena, payload: &Type) Type {
+    if arena == null || payload == null {
+        return make_void_type();
+    }
+    return Type {
+        kind: TypeKind.TYPE_ERROR_UNION,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: payload,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建原子类型
+// inner: 内部类型（需从 arena 分配）
+fn make_atomic_type(arena: &Arena, inner: &Type) Type {
+    if arena == null || inner == null {
+        return make_void_type();
+    }
+    return Type {
+        kind: TypeKind.TYPE_ATOMIC,
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: inner,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 检查是否为 void 类型（通常表示错误）
+fn is_void_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_VOID {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为指针类型
+fn is_pointer_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_POINTER {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为错误类型
+fn is_error_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ERROR {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为错误联合类型
+fn is_error_union_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ERROR_UNION {
+        return 1;
+    }
+    return 0;
+}
