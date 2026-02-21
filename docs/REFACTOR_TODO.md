@@ -174,7 +174,7 @@
 
 ---
 
-## 阶段三：重复代码提取 [░░░░░░░░░░] 0%
+## 阶段三：重复代码提取 [████░░░░░░] 40%
 
 ### 3.1 提取代码生成辅助函数
 
@@ -188,9 +188,21 @@
 
 ### 3.2 统一类型检查函数调用
 
-- [ ] 搜索所有 `kind == TypeKind.XXX` 模式
-- [ ] 替换为辅助函数调用
-- [ ] 运行 `make check` 验证
+- [x] 搜索所有 `kind == TypeKind.XXX` 模式
+- [x] 添加类型检查辅助函数（type_utils.uya）：
+  - [x] `is_bool_type(t)` - 布尔类型检查
+  - [x] `is_struct_type(t)` - 结构体类型检查
+  - [x] `is_union_type(t)` - 联合体类型检查
+  - [x] `is_array_type(t)` - 数组类型检查
+  - [x] `is_slice_type(t)` - 切片类型检查
+  - [x] `is_tuple_type(t)` - 元组类型检查
+  - [x] `is_enum_type(t)` - 枚举类型检查
+  - [x] `is_interface_type(t)` - 接口类型检查
+  - [x] `is_int_limit_type(t)` - int_limit 类型检查
+  - [x] `is_atomic_type(t)` - 原子类型检查
+  - [x] `is_generic_param_type(t)` - 泛型参数类型检查
+- [x] 替换直接类型比较为辅助函数调用
+- [x] 运行 `make check` 验证 - 通过
 
 ### 3.3 提取通用模式
 
