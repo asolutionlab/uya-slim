@@ -590,7 +590,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     if is_std_lib != 0 {
         // 标准库模式：零依赖，自己定义所有类型
         fputs("// 零依赖标准库：自己定义所有类型（用于 --nostdlib 编译）\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // 定义基本类型
         fputs("// 基本整数类型\n" as *byte, codegen.output as *void);
         fputs("typedef signed char int8_t;\n" as *byte, codegen.output as *void);
@@ -601,34 +601,34 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("typedef unsigned int uint32_t;\n" as *byte, codegen.output as *void);
         fputs("typedef long long int64_t;\n" as *byte, codegen.output as *void);
         fputs("typedef unsigned long long uint64_t;\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // size_t 和 ptrdiff_t
         fputs("// size_t 和 ptrdiff_t\n" as *byte, codegen.output as *void);
         fputs("typedef unsigned long size_t;\n" as *byte, codegen.output as *void);
         fputs("typedef long ptrdiff_t;\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // bool 类型
         fputs("// bool 类型\n" as *byte, codegen.output as *void);
         fputs("typedef uint8_t bool;\n" as *byte, codegen.output as *void);
         fputs("#define true ((bool)1)\n" as *byte, codegen.output as *void);
         fputs("#define false ((bool)0)\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // NULL 定义
         fputs("// NULL 定义\n" as *byte, codegen.output as *void);
         fputs("#define NULL ((void*)0)\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // offsetof 宏（用于 alignof）
         fputs("// offsetof 宏（C99 兼容）\n" as *byte, codegen.output as *void);
         fputs("#define offsetof(type, member) ((size_t) &((type *)0)->member)\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // C99 兼容的 alignof 宏（使用 offsetof 技巧）
         fputs("// C99 兼容的 alignof 实现\n" as *byte, codegen.output as *void);
         fputs("#define uya_alignof(type) offsetof(struct { char c; type t; }, t)\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // va_list 相关（简化定义，仅用于函数签名）
         fputs("// va_list 简化定义（仅用于函数签名）\n" as *byte, codegen.output as *void);
         fputs("typedef char* va_list;\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // 注意：标准库模式不使用 __uya_memcpy/__uya_memcmp，因为标准库自己实现了 memcpy/memcmp
     } else {
         // 普通模式：使用标准库头文件
@@ -676,7 +676,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         
         // 必须在首个 #include 之前定义，以便 unistd.h 声明 readlink 等 POSIX 函数
         fputs("#ifndef _POSIX_C_SOURCE\n#define _POSIX_C_SOURCE 200809L\n#endif\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // 手动定义标准类型，避免包含标准库头文件
         fputs("// 标准类型定义（不依赖标准库头文件）\n" as *byte, codegen.output as *void);
         fputs("typedef unsigned char uint8_t;\n" as *byte, codegen.output as *void);
@@ -702,7 +702,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("#define va_start(v, l) __builtin_va_start(v, l)\n" as *byte, codegen.output as *void);
         fputs("#define va_end(v) __builtin_va_end(v)\n" as *byte, codegen.output as *void);
         fputs("#define va_arg(v, l) __builtin_va_arg(v, l)\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // 如果定义了文件 I/O 函数（fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush），不包含 <stdio.h>
         // 避免与标准库声明冲突。自举编译时强制与 C 编译器一致。
         if codegen.has_stdio_conflicts == 0 && is_bootstrap == 0 {
@@ -764,11 +764,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         if has_own_closedir == 0 && is_bootstrap == 0 {
             fputs("extern int closedir(void *);\n" as *byte, codegen.output as *void);
         }
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // C99 兼容的 alignof 宏（使用 offsetof 技巧）
         fputs("// C99 兼容的 alignof 实现\n" as *byte, codegen.output as *void);
         fputs("#define uya_alignof(type) offsetof(struct { char c; type t; }, t)\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         // 内置 memcpy/memcmp 实现（避免与用户定义的 memcpy/memcmp 冲突）
         fputs("static inline void *__uya_memcpy(void *dest, const void *src, size_t n) {\n" as *byte, codegen.output as *void);
         fputs("    char *d = (char *)dest; const char *s = (const char *)src;\n" as *byte, codegen.output as *void);
@@ -803,7 +803,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("// 错误联合类型（用于 !i64 等）\n" as *byte, codegen.output as *void);
     fputs("struct err_union_int64_t { uint32_t error_id; int64_t value; };\n" as *byte, codegen.output as *void);
     mark_struct_defined(codegen, ("err_union_int64_t" as *byte) as &byte);
-    fputs("\n" as *byte, codegen.output as *void);
+    c99_emit_newline(codegen);
     
     // 第一步：收集所有字符串常量（从全局变量初始化和函数体）
     const decl_count: i32 = ast.program_decl_count;
@@ -829,7 +829,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     
     // 第二步：输出字符串常量定义（在所有其他代码之前）
     emit_string_constants(codegen);
-    fputs("\n" as *byte, codegen.output as *void);
+    c99_emit_newline(codegen);
     
     // 第三步：注册所有错误声明（用于 return error.X 等）
     i = 0;
@@ -898,7 +898,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         i = i + 1;
     }
     if codegen.struct_definition_count > 0 {
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
     }
     
     // 第五步：生成所有枚举定义（在结构体之前，因为结构体可能使用枚举类型）
@@ -918,7 +918,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
             if decl.type == ASTNodeType.AST_ENUM_DECL {
                 gen_enum_definition(codegen, decl);
-                fputs("\n" as *byte, codegen.output as *void);
+                c99_emit_newline(codegen);
             }
         }
         i = i + 1;
@@ -967,7 +967,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         }
         i = i + 1;
     }
-    fputs("\n" as *byte, codegen.output as *void);
+    c99_emit_newline(codegen);
     
     // 第六步 a：收集所有使用的切片类型（含结构体字段中的 &[T]）
     i = 0;
@@ -978,16 +978,16 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 第六步 b：生成切片结构体（&[T] -> struct uya_slice_X），必须在用户结构体之前
     emit_pending_slice_structs(codegen);
     if codegen.slice_struct_count > 0 {
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
     }
     // 第六步 b1：生成错误联合结构体（!T -> struct err_union_X），必须在用户结构体之前
     emit_pending_err_union_structs(codegen);
     if codegen.err_union_struct_count > 0 {
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
     }
     // 第六步 b2：生成接口结构体与 vtable 结构体（vtable 常量在方法前向声明之后生成）
     emit_interface_structs_and_vtables(codegen);
-    fputs("\n" as *byte, codegen.output as *void);
+    c99_emit_newline(codegen);
     // 第六步 c：生成联合体定义（在结构体之前，因结构体可能含联合体）
     // 但首先需要生成联合体变体中引用的结构体（解决嵌套结构体的代码生成顺序问题）
     i = 0;
@@ -997,7 +997,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             // 先生成该联合体所依赖的结构体
             emit_struct_deps_for_union(codegen, decl);
             gen_union_definition(codegen, decl);
-            fputs("\n" as *byte, codegen.output as *void);
+            c99_emit_newline(codegen);
         }
         i = i + 1;
     }
@@ -1051,14 +1051,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                             gen_mono_struct_definition(codegen, decl,
                                 codegen.mono_instances[j].type_args,
                                 codegen.mono_instances[j].type_arg_count);
-                            fputs("\n" as *byte, codegen.output as *void);
+                            c99_emit_newline(codegen);
                         }
                     }
                     j = j + 1;
                 }
             } else {
                 gen_struct_definition(codegen, decl);
-                fputs("\n" as *byte, codegen.output as *void);
+                c99_emit_newline(codegen);
             }
         }
         i = i + 1;
@@ -1323,7 +1323,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 再次输出新收集的错误联合结构体
     emit_pending_err_union_structs(codegen);
     if codegen.err_union_struct_count > 0 {
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
     }
     
     // 第七步：生成所有函数的前向声明（解决相互递归调用）
@@ -1502,7 +1502,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     
     // 第八步 b：生成 vtable 常量（依赖方法前向声明）
     emit_vtable_constants(codegen);
-    fputs("\n" as *byte, codegen.output as *void);
+    c99_emit_newline(codegen);
     
     // 第八步 c：生成测试函数前向声明
     if test_count > 0 {
@@ -1518,7 +1518,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             i = i + 1;
         }
         fputs("static void uya_run_tests(void);\n" as *byte, codegen.output as *void);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
     }
     
     // 前向声明：stdin/stdout/stderr 的存储（&_stdin 等）在 export 变量初始化中引用
@@ -1542,7 +1542,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             // 只生成常量（const 变量）
             if decl.type == ASTNodeType.AST_VAR_DECL && decl.var_decl_is_const != 0 {
                 gen_global_var(codegen, decl);
-                fputs("\n" as *byte, codegen.output as *void);
+                c99_emit_newline(codegen);
             }
             // 生成 extern 变量声明
             if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
@@ -1558,7 +1558,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         const decl: &ASTNode = ast.program_decls[i];
         if decl != null && decl.type == ASTNodeType.AST_VAR_DECL && decl.var_decl_is_const == 0 && decl.var_decl_is_export == 0 {
             gen_global_var(codegen, decl);
-            fputs("\n" as *byte, codegen.output as *void);
+            c99_emit_newline(codegen);
         }
         i = i + 1;
     }
@@ -1625,14 +1625,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                                         gen_mono_method_function(codegen, m, mono_name,
                                                             codegen.mono_instances[mi].type_args,
                                                             codegen.mono_instances[mi].type_arg_count);
-                                                        fputs("\n" as *byte, codegen.output as *void);
+                                                        c99_emit_newline(codegen);
                                                     }
                                                 }
                                                 mi = mi + 1;
                                             }
                                         } else {
                                             gen_method_function(codegen, m, mono_name);
-                                            fputs("\n" as *byte, codegen.output as *void);
+                                            c99_emit_newline(codegen);
                                         }
                                     }
                                     j = j + 1;
@@ -1668,14 +1668,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                             gen_mono_method_function(codegen, m, struct_name,
                                                 codegen.mono_instances[k].type_args,
                                                 codegen.mono_instances[k].type_arg_count);
-                                            fputs("\n" as *byte, codegen.output as *void);
+                                            c99_emit_newline(codegen);
                                         }
                                     }
                                     k = k + 1;
                                 }
                             } else {
                                 gen_method_function(codegen, m, struct_name);
-                                fputs("\n" as *byte, codegen.output as *void);
+                                c99_emit_newline(codegen);
                             }
                         }
                         j = j + 1;
@@ -1689,7 +1689,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     const m: &ASTNode = decl.union_decl_methods[j];
                     if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_body != null {
                         gen_method_function(codegen, m, union_name);
-                        fputs("\n" as *byte, codegen.output as *void);
+                        c99_emit_newline(codegen);
                     }
                     j = j + 1;
                 }
@@ -1699,7 +1699,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 // 常量已在第九步 a 生成；非常量非 export 已在第九步 b0 生成，这里只生成 export 非常量变量
                 if decl.var_decl_is_const == 0 && decl.var_decl_is_export != 0 {
                     gen_global_var(codegen, decl);
-                    fputs("\n" as *byte, codegen.output as *void);
+                    c99_emit_newline(codegen);
                 }
             } else if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
                 // extern 变量已在第九步 a 生成声明，这里不重复生成
@@ -1721,14 +1721,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                 gen_mono_function(codegen, decl,
                                     codegen.mono_instances[j].type_args,
                                     codegen.mono_instances[j].type_arg_count);
-                                fputs("\n" as *byte, codegen.output as *void);
+                                c99_emit_newline(codegen);
                             }
                             j = j + 1;
                         }
                     } else {
                         // 只生成有函数体的定义（外部函数由前向声明处理）
                         gen_function(codegen, decl);
-                        fputs("\n" as *byte, codegen.output as *void);
+                        c99_emit_newline(codegen);
                     }
                 }
             } else if decl.type == ASTNodeType.AST_METHOD_BLOCK {
@@ -1760,7 +1760,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                             gen_mono_method_function(codegen, m, type_name,
                                                 codegen.mono_instances[k].type_args,
                                                 codegen.mono_instances[k].type_arg_count);
-                                            fputs("\n" as *byte, codegen.output as *void);
+                                            c99_emit_newline(codegen);
                                         }
                                     }
                                     k = k + 1;
@@ -1768,7 +1768,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                             } else {
                                 // 非泛型方法
                                 gen_method_function(codegen, m, type_name);
-                                fputs("\n" as *byte, codegen.output as *void);
+                                c99_emit_newline(codegen);
                             }
                         }
                         j = j + 1;
@@ -1786,11 +1786,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         i = 0;
         while i < test_count {
             gen_test_function(codegen, tests_array[i]);
-            fputs("\n" as *byte, codegen.output as *void);
+            c99_emit_newline(codegen);
             i = i + 1;
         }
         gen_test_runner(codegen, tests_array, test_count);
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
     }
     
     // 第十一步：生成 main 函数（uya_main）

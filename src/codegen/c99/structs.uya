@@ -441,7 +441,7 @@ fn emit_struct_deps_for_union(codegen: &C99CodeGenerator, union_decl: &ASTNode) 
                     const struct_decl: &ASTNode = find_struct_decl_c99(codegen, struct_name);
                     if struct_decl != null && struct_decl.type == ASTNodeType.AST_STRUCT_DECL {
                         gen_struct_definition(codegen, struct_decl);
-                        fputs("\n" as *byte, codegen.output as *void);
+                        c99_emit_newline(codegen);
                         generated = generated + 1;
                     }
                 }
@@ -1317,7 +1317,7 @@ fn ensure_nested_generic_struct_defined(codegen: &C99CodeGenerator, type_node: &
             gen_mono_struct_definition(codegen, nested_struct_decl,
                 resolved_type.type_named_type_args,
                 resolved_type.type_named_type_arg_count);
-            fputs("\n" as *byte, codegen.output as *void);
+            c99_emit_newline(codegen);
         }
     }
 }

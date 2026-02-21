@@ -2897,6 +2897,17 @@ static int32_t is_void_type(struct Type t);
 static int32_t is_pointer_type(struct Type t);
 static int32_t is_error_type(struct Type t);
 static int32_t is_error_union_type(struct Type t);
+static int32_t is_bool_type(struct Type t);
+static int32_t is_struct_type(struct Type t);
+static int32_t is_union_type(struct Type t);
+static int32_t is_array_type(struct Type t);
+static int32_t is_slice_type(struct Type t);
+static int32_t is_tuple_type(struct Type t);
+static int32_t is_enum_type(struct Type t);
+static int32_t is_interface_type(struct Type t);
+static int32_t is_int_limit_type(struct Type t);
+static int32_t is_atomic_type(struct Type t);
+static int32_t is_generic_param_type(struct Type t);
 static struct ASTNode * find_enum_decl_c99(struct C99CodeGenerator * codegen, uint8_t * enum_name);
 static int32_t find_enum_variant_value(struct C99CodeGenerator * codegen, struct ASTNode * enum_decl, uint8_t * variant_name);
 static int32_t is_enum_defined(struct C99CodeGenerator * codegen, uint8_t * enum_name);
@@ -18578,7 +18589,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                             int32_t i = 0;
                                                                                                                             while ((i < n)) {
                                                                                                                                 struct Type et = checker_infer_type(checker, elements[i]);
-                                                                                                                                if ((et.kind == TYPE_VOID)) {
+                                                                                                                                if ((is_void_type(et) != 0)) {
                                                                                                                                     struct Type _uya_ret = make_void_type();
                                                                                                                                     return _uya_ret;
                                                                                                                                 }
@@ -18602,7 +18613,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                         return _uya_ret;
                                                                                                                                     }
                                                                                                                                     struct Type element_type = checker_infer_type(checker, elements[0]);
-                                                                                                                                    if ((element_type.kind == TYPE_VOID)) {
+                                                                                                                                    if ((is_void_type(element_type) != 0)) {
                                                                                                                                         struct Type _uya_ret = make_void_type();
                                                                                                                                         return _uya_ret;
                                                                                                                                     }
@@ -18623,7 +18634,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                                                                                                     return _uya_ret;
                                                                                                                                 }
                                                                                                                                 struct Type element_type = checker_infer_type(checker, elements[0]);
-                                                                                                                                if ((element_type.kind == TYPE_VOID)) {
+                                                                                                                                if ((is_void_type(element_type) != 0)) {
                                                                                                                                     struct Type _uya_ret = make_void_type();
                                                                                                                                     return _uya_ret;
                                                                                                                                 }
@@ -18761,7 +18772,7 @@ static __attribute__((unused)) int32_t checker_check_expr_type(struct TypeChecke
         int32_t _uya_ret = 1;
         return _uya_ret;
     }
-    if ((actual_type.kind == TYPE_VOID)) {
+    if ((is_void_type(actual_type) != 0)) {
         int32_t _uya_ret = 1;
         return _uya_ret;
     }
@@ -19132,7 +19143,7 @@ static __attribute__((unused)) struct Type infer_syscall(struct TypeChecker * ch
         return _uya_ret;
     }
     struct Type syscall_nr_type = checker_infer_type(checker, expr->syscall_number);
-    if ((syscall_nr_type.kind == TYPE_VOID)) {
+    if ((is_void_type(syscall_nr_type) != 0)) {
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
@@ -19154,7 +19165,7 @@ static __attribute__((unused)) struct Type infer_syscall(struct TypeChecker * ch
             return _uya_ret;
         }
         struct Type arg_type = checker_infer_type(checker, expr->syscall_args[sc_i]);
-        if ((arg_type.kind == TYPE_VOID)) {
+        if ((is_void_type(arg_type) != 0)) {
             struct Type _uya_ret = make_void_type();
             return _uya_ret;
         }
@@ -19198,7 +19209,7 @@ static __attribute__((unused)) struct Type infer_unary_expr(struct TypeChecker *
                 return _uya_ret;
             } else {
                 if ((op == TOKEN_AMPERSAND)) {
-                    if ((operand_type.kind == TYPE_VOID)) {
+                    if ((is_void_type(operand_type) != 0)) {
                         struct Type _uya_ret = make_void_type();
                         return _uya_ret;
                     }
@@ -20651,7 +20662,7 @@ static __attribute__((unused)) int32_t checker_check_var_decl(struct TypeChecker
                     struct Type init_type = checker_infer_type(checker, node->var_decl_init);
                     if (((init_type.kind == TYPE_VOID) && (var_type.kind == TYPE_POINTER))) {
                     } else {
-                        if ((init_type.kind == TYPE_VOID)) {
+                        if ((is_void_type(init_type) != 0)) {
                         } else {
                             if ((type_equals(init_type, var_type) == 0)) {
                             }
@@ -20891,7 +20902,7 @@ static __attribute__((unused)) int32_t checker_check_extern_var_decl(struct Type
     if ((((((((((((((((var_type.kind == TYPE_I8) || (var_type.kind == TYPE_I16)) || (var_type.kind == TYPE_I32)) || (var_type.kind == TYPE_I64)) || (var_type.kind == TYPE_U8)) || (var_type.kind == TYPE_U16)) || (var_type.kind == TYPE_U32)) || (var_type.kind == TYPE_U64)) || (var_type.kind == TYPE_F32)) || (var_type.kind == TYPE_F64)) || (var_type.kind == TYPE_BOOL)) || (var_type.kind == TYPE_BYTE)) || (var_type.kind == TYPE_USIZE)) || (var_type.kind == TYPE_POINTER)) || (var_type.kind == TYPE_STRUCT))) {
         is_c_compatible = 1;
     }
-    if ((var_type.kind == TYPE_VOID)) {
+    if ((is_void_type(var_type) != 0)) {
         checker_report_error(checker, node, (uint8_t *)(uint8_t *)str653);
         int32_t _uya_ret = 0;
         return _uya_ret;
@@ -21022,7 +21033,7 @@ static __attribute__((unused)) int32_t checker_check_struct_decl(struct TypeChec
                 continue;
             }
             struct Type field_type = type_from_ast(checker, field_type_node);
-            if ((field_type.kind == TYPE_VOID)) {
+            if ((is_void_type(field_type) != 0)) {
                 i = (i + 1);
                 continue;
             }
@@ -27942,6 +27953,116 @@ static __attribute__((unused)) int32_t is_error_type(struct Type t) {
 static __attribute__((unused)) int32_t is_error_union_type(struct Type t) {
     (void)t;
     if ((t.kind == TYPE_ERROR_UNION)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_bool_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_BOOL)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_struct_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_STRUCT)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_union_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_UNION)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_array_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_ARRAY)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_slice_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_SLICE)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_tuple_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_TUPLE)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_enum_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_ENUM)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_interface_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_INTERFACE)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_int_limit_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_INT_LIMIT)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_atomic_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_ATOMIC)) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t is_generic_param_type(struct Type t) {
+    (void)t;
+    if ((t.kind == TYPE_GENERIC_PARAM)) {
         int32_t _uya_ret = 1;
         return _uya_ret;
     }

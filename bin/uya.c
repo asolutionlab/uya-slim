@@ -28230,7 +28230,7 @@ static __attribute__((unused)) int32_t gen_enum_definition(struct C99CodeGenerat
         if ((i < (variant_count - 1))) {
             libc_fputs((uint8_t *)(uint8_t *)str435, (void *)codegen->output);
         }
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         if ((variant->value == NULL)) {
             current_value = (current_value + 1);
         }
@@ -33321,7 +33321,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
     libc_fputs((uint8_t *)(uint8_t *)str1118, (void *)codegen->output);
     if ((is_std_lib != 0)) {
         libc_fputs((uint8_t *)(uint8_t *)str1119, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         libc_fputs((uint8_t *)(uint8_t *)str1120, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str142, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str143, (void *)codegen->output);
@@ -33331,28 +33331,28 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         libc_fputs((uint8_t *)(uint8_t *)str147, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1123, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str149, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         libc_fputs((uint8_t *)(uint8_t *)str1124, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str150, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1125, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         libc_fputs((uint8_t *)(uint8_t *)str1126, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1127, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1128, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1129, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         libc_fputs((uint8_t *)(uint8_t *)str1130, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str154, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         libc_fputs((uint8_t *)(uint8_t *)str1131, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1132, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         libc_fputs((uint8_t *)(uint8_t *)str1133, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1134, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         libc_fputs((uint8_t *)(uint8_t *)str1135, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1136, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
     } else {
         int32_t check_i = 0;
         const int32_t check_decl_count = ast->program_decl_count;
@@ -33378,7 +33378,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
             check_i = (check_i + 1);
         }
         libc_fputs((uint8_t *)(uint8_t *)str1143, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         libc_fputs((uint8_t *)(uint8_t *)str1144, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str143, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str145, (void *)codegen->output);
@@ -33402,7 +33402,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         libc_fputs((uint8_t *)(uint8_t *)str1155, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1156, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1157, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         if (((codegen->has_stdio_conflicts == 0) && (is_bootstrap == 0))) {
             libc_fputs((uint8_t *)(uint8_t *)str1158, (void *)codegen->output);
         }
@@ -33461,10 +33461,10 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         if (((has_own_closedir == 0) && (is_bootstrap == 0))) {
             libc_fputs((uint8_t *)(uint8_t *)str1168, (void *)codegen->output);
         }
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         libc_fputs((uint8_t *)(uint8_t *)str1133, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1134, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
         libc_fputs((uint8_t *)(uint8_t *)str1169, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1170, (void *)codegen->output);
         libc_fputs((uint8_t *)(uint8_t *)str1171, (void *)codegen->output);
@@ -33494,7 +33494,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
     libc_fputs((uint8_t *)(uint8_t *)str1188, (void *)codegen->output);
     libc_fputs((uint8_t *)(uint8_t *)str1189, (void *)codegen->output);
     mark_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str1190);
-    libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+    c99_emit_newline(codegen);
     const int32_t decl_count = ast->program_decl_count;
     int32_t i = 0;
     while ((i < decl_count)) {
@@ -33513,7 +33513,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         i = (i + 1);
     }
     emit_string_constants(codegen);
-    libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+    c99_emit_newline(codegen);
     i = 0;
     while ((i < decl_count)) {
         struct ASTNode * const decl = ast->program_decls[i];
@@ -33568,7 +33568,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         i = (i + 1);
     }
     if ((codegen->struct_definition_count > 0)) {
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
     }
     i = 0;
     while ((i < decl_count)) {
@@ -33584,7 +33584,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
             }
             if ((decl->type == AST_ENUM_DECL)) {
                 gen_enum_definition(codegen, decl);
-                libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                c99_emit_newline(codegen);
             }
         }
         i = (i + 1);
@@ -33626,7 +33626,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         }
         i = (i + 1);
     }
-    libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+    c99_emit_newline(codegen);
     i = 0;
     while ((i < decl_count)) {
         collect_slice_types_from_node(codegen, ast->program_decls[i]);
@@ -33634,21 +33634,21 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
     }
     emit_pending_slice_structs(codegen);
     if ((codegen->slice_struct_count > 0)) {
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
     }
     emit_pending_err_union_structs(codegen);
     if ((codegen->err_union_struct_count > 0)) {
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
     }
     emit_interface_structs_and_vtables(codegen);
-    libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+    c99_emit_newline(codegen);
     i = 0;
     while ((i < decl_count)) {
         struct ASTNode * const decl = ast->program_decls[i];
         if (((decl != NULL) && (decl->type == AST_UNION_DECL))) {
             emit_struct_deps_for_union(codegen, decl);
             gen_union_definition(codegen, decl);
-            libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+            c99_emit_newline(codegen);
         }
         i = (i + 1);
     }
@@ -33688,14 +33688,14 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                     if ((((codegen->mono_instances[j].generic_name != NULL) && (std_string_strcmp((uint8_t *)codegen->mono_instances[j].generic_name, (uint8_t *)sname) == 0)) && (codegen->mono_instances[j].is_function == 0))) {
                         if ((has_unresolved_mono_type_args(decl, codegen->mono_instances[j].type_args, codegen->mono_instances[j].type_arg_count) == 0)) {
                             gen_mono_struct_definition(codegen, decl, codegen->mono_instances[j].type_args, codegen->mono_instances[j].type_arg_count);
-                            libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                            c99_emit_newline(codegen);
                         }
                     }
                     j = (j + 1);
                 }
             } else {
                 gen_struct_definition(codegen, decl);
-                libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                c99_emit_newline(codegen);
             }
         }
         i = (i + 1);
@@ -33910,7 +33910,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
     }
     emit_pending_err_union_structs(codegen);
     if ((codegen->err_union_struct_count > 0)) {
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
     }
     i = 0;
     while ((i < decl_count)) {
@@ -34052,7 +34052,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         i = (i + 1);
     }
     emit_vtable_constants(codegen);
-    libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+    c99_emit_newline(codegen);
     if ((test_count > 0)) {
         i = 0;
         while ((i < test_count)) {
@@ -34066,7 +34066,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
             i = (i + 1);
         }
         libc_fputs((uint8_t *)(uint8_t *)str1232, (void *)codegen->output);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
     }
     libc_fputs((uint8_t *)(uint8_t *)str1233, (void *)codegen->output);
     i = 0;
@@ -34083,7 +34083,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
             }
             if (((decl->type == AST_VAR_DECL) && (decl->var_decl_is_const != 0))) {
                 gen_global_var(codegen, decl);
-                libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                c99_emit_newline(codegen);
             }
             if ((decl->type == AST_EXTERN_VAR_DECL)) {
                 gen_extern_var_decl(codegen, decl);
@@ -34096,7 +34096,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         struct ASTNode * const decl = ast->program_decls[i];
         if (((((decl != NULL) && (decl->type == AST_VAR_DECL)) && (decl->var_decl_is_const == 0)) && (decl->var_decl_is_export == 0))) {
             gen_global_var(codegen, decl);
-            libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+            c99_emit_newline(codegen);
         }
         i = (i + 1);
     }
@@ -34141,14 +34141,14 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                     uint8_t * const gn = codegen->mono_instances[mi].generic_name;
                                                     if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                                         gen_mono_method_function(codegen, m, mono_name, codegen->mono_instances[mi].type_args, codegen->mono_instances[mi].type_arg_count);
-                                                        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                                                        c99_emit_newline(codegen);
                                                     }
                                                 }
                                                 mi = (mi + 1);
                                             }
                                         } else {
                                             gen_method_function(codegen, m, mono_name);
-                                            libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                                            c99_emit_newline(codegen);
                                         }
                                     }
                                     j = (j + 1);
@@ -34175,14 +34175,14 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                         uint8_t * const gn = codegen->mono_instances[k].generic_name;
                                         if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                             gen_mono_method_function(codegen, m, struct_name, codegen->mono_instances[k].type_args, codegen->mono_instances[k].type_arg_count);
-                                            libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                                            c99_emit_newline(codegen);
                                         }
                                     }
                                     k = (k + 1);
                                 }
                             } else {
                                 gen_method_function(codegen, m, struct_name);
-                                libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                                c99_emit_newline(codegen);
                             }
                         }
                         j = (j + 1);
@@ -34196,7 +34196,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                         struct ASTNode * const m = decl->union_decl_methods[j];
                         if ((((m != NULL) && (m->type == AST_FN_DECL)) && (m->fn_decl_body != NULL))) {
                             gen_method_function(codegen, m, union_name);
-                            libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                            c99_emit_newline(codegen);
                         }
                         j = (j + 1);
                     }
@@ -34206,7 +34206,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                         if ((decl->type == AST_VAR_DECL)) {
                             if (((decl->var_decl_is_const == 0) && (decl->var_decl_is_export != 0))) {
                                 gen_global_var(codegen, decl);
-                                libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                                c99_emit_newline(codegen);
                             }
                         } else {
                             if ((decl->type == AST_EXTERN_VAR_DECL)) {
@@ -34223,13 +34223,13 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                             while ((j < codegen->mono_instance_count)) {
                                                 if ((((codegen->mono_instances[j].generic_name != NULL) && (std_string_strcmp((uint8_t *)codegen->mono_instances[j].generic_name, (uint8_t *)func_name) == 0)) && (codegen->mono_instances[j].is_function != 0))) {
                                                     gen_mono_function(codegen, decl, codegen->mono_instances[j].type_args, codegen->mono_instances[j].type_arg_count);
-                                                    libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                                                    c99_emit_newline(codegen);
                                                 }
                                                 j = (j + 1);
                                             }
                                         } else {
                                             gen_function(codegen, decl);
-                                            libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                                            c99_emit_newline(codegen);
                                         }
                                     }
                                 } else {
@@ -34254,14 +34254,14 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                 uint8_t * const gn = codegen->mono_instances[k].generic_name;
                                                                 if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                                                     gen_mono_method_function(codegen, m, (uint8_t *)type_name, codegen->mono_instances[k].type_args, codegen->mono_instances[k].type_arg_count);
-                                                                    libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                                                                    c99_emit_newline(codegen);
                                                                 }
                                                             }
                                                             k = (k + 1);
                                                         }
                                                     } else {
                                                         gen_method_function(codegen, m, (uint8_t *)type_name);
-                                                        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                                                        c99_emit_newline(codegen);
                                                     }
                                                 }
                                                 j = (j + 1);
@@ -34282,11 +34282,11 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
         i = 0;
         while ((i < test_count)) {
             gen_test_function(codegen, tests_array[i]);
-            libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+            c99_emit_newline(codegen);
             i = (i + 1);
         }
         gen_test_runner(codegen, tests_array, test_count);
-        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+        c99_emit_newline(codegen);
     }
     int32_t has_user_main = 0;
     i = 0;
@@ -34603,7 +34603,7 @@ static __attribute__((unused)) void gen_if_stmt(struct C99CodeGenerator * codege
         codegen->indent_level = (codegen->indent_level - 1);
         c99_emit(codegen, (uint8_t *)(uint8_t *)str431);
     }
-    libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+    c99_emit_newline(codegen);
 }
 
 static __attribute__((unused)) void gen_while_stmt(struct C99CodeGenerator * codegen, struct ASTNode * stmt) {
@@ -36661,7 +36661,7 @@ static __attribute__((unused)) int32_t emit_struct_deps_for_union(struct C99Code
                     struct ASTNode * const struct_decl = find_struct_decl_c99(codegen, struct_name);
                     if (((struct_decl != NULL) && (struct_decl->type == AST_STRUCT_DECL))) {
                         gen_struct_definition(codegen, struct_decl);
-                        libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+                        c99_emit_newline(codegen);
                         generated = (generated + 1);
                     }
                 }
@@ -37497,7 +37497,7 @@ static __attribute__((unused)) void ensure_nested_generic_struct_defined(struct 
         struct ASTNode * const nested_struct_decl = find_struct_decl_in_program_c99(codegen, resolved_type->type_named_name);
         if (((nested_struct_decl != NULL) && (is_generic_struct_c99(nested_struct_decl) != 0))) {
             gen_mono_struct_definition(codegen, nested_struct_decl, resolved_type->type_named_type_args, resolved_type->type_named_type_arg_count);
-            libc_fputs((uint8_t *)(uint8_t *)str152, (void *)codegen->output);
+            c99_emit_newline(codegen);
         }
     }
 }

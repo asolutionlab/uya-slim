@@ -209,7 +209,7 @@ fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         codegen.indent_level = codegen.indent_level - 1;
         c99_emit(codegen, "}" as *byte);
     }
-    fputs("\n" as *byte, codegen.output as *void);
+    c99_emit_newline(codegen);
 }
 
 // 生成 while 语句

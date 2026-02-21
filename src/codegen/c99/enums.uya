@@ -175,7 +175,7 @@ fn gen_enum_definition(codegen: &C99CodeGenerator, enum_decl: &ASTNode) i32 {
         if i < variant_count - 1 {
             fputs("," as *byte, codegen.output as *void);
         }
-        fputs("\n" as *byte, codegen.output as *void);
+        c99_emit_newline(codegen);
         
         // 如果没有显式值，下一个变体的值会自动递增
         if variant.value == null {
