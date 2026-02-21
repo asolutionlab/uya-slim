@@ -279,91 +279,22 @@ if is_integer_type(arg_type) != 0 { ... }
 
 ---
 
-## 阶段四：Union 数据结构重构 [░░░░░░░░░░] 0%
+---
 
-> **重要更正**：经深度代码分析和实际测试，Uya union **完全支持引用类型变体**（`&T`）。
+## 阶段四：枚举 match 表达式优化 [░░░░░░░░░░] 0%
+
+> **风险评估更新**：Union 数据结构重构方案风险极高（需修改 4400+ 处代码）。
+> 采用保守方案：保持数据结构不变，仅进行 match 表达式优化。
 > 详细分析见 `docs/REFACTOR_PLAN_V2_REVIEW.md`。
 
-### 4.1 Type 结构体 Union 化
+### 4.1 使用 match 替代 Type 条件链
 
-**当前问题**：`Type` 结构体使用扁平化设计，所有字段始终存在但只有一个子集有效
+**当前问题**：139+ 处 `kind == TypeKind.XXX` 条件判断
 
-```uya
-// 当前设计（src/checker/types.uya:68-88）
-struct Type {
-    kind: TypeKind,
-    // 以下字段根据 kind 只有部分有效
-    enum_name: &byte,           // TYPE_ENUM 时有效
-    interface_name: &byte,      // TYPE_INTERFACE 时有效
-    struct_name: &byte,         // TYPE_STRUCT 时有效
-    union_name: &byte,          // TYPE_UNION 时有效
-    pointer_to: &Type,          // TYPE_POINTER 时有效
-    element_type: &Type,        // TYPE_ARRAY 时有效
-    array_size: i32,            // TYPE_ARRAY 时有效
-    slice_element_type: &Type,  // TYPE_SLICE 时有效
-    slice_len: i32,             // TYPE_SLICE 时有效
-    tuple_element_types: &Type, // TYPE_TUPLE 时有效
-    error_union_payload_type: &Type, // TYPE_ERROR_UNION 时有效
-    // ... 更多字段
-}
-```
-
-**问题分析**：
-- 内存浪费：每个 Type 实例占用所有字段的空间
-- 代码冗余：139+ 处 `kind == TypeKind.XXX` 条件判断
-- 类型安全：编译器无法检查字段访问是否合法
-
-**重构方案**：使用 union 封装变体数据
+**重构方案**：使用 match 表达式匹配枚举值（保持数据结构不变）
 
 ```uya
-// 重构后设计
-struct Type {
-    kind: TypeKind,
-    data: TypeData,  // union 类型
-}
-
-// 类型数据联合体
-union TypeData {
-    void_unit: void,           // TYPE_VOID, TYPE_I8-I64, TYPE_BOOL 等基础类型
-    named: &byte,              // TYPE_ENUM, TYPE_STRUCT, TYPE_UNION, TYPE_INTERFACE 的名称
-    pointer: PointerData,      // TYPE_POINTER
-    array: ArrayData,          // TYPE_ARRAY
-    slice: SliceData,          // TYPE_SLICE
-    tuple: TupleData,          // TYPE_TUPLE
-    error_union: ErrorUnionData, // TYPE_ERROR_UNION
-    generic_param: &byte,      // TYPE_GENERIC_PARAM
-}
-
-struct PointerData {
-    pointee: &Type,
-    is_ffi: i32,
-}
-
-struct ArrayData {
-    element: &Type,
-    size: i32,
-}
-
-struct SliceData {
-    element: &Type,
-    len: i32,
-}
-
-struct TupleData {
-    elements: &Type,
-    count: i32,
-}
-
-struct ErrorUnionData {
-    payload: &Type,
-    error_id: u32,
-}
-```
-
-**代码简化示例**：
-
-```uya
-// 重构前：复杂的条件判断
+// 重构前：复杂的 if-else 链
 fn type_to_string(t: Type) &byte {
     if t.kind == TypeKind.TYPE_ENUM {
         return t.enum_name;
@@ -371,82 +302,44 @@ fn type_to_string(t: Type) &byte {
         return t.struct_name;
     } else if t.kind == TypeKind.TYPE_UNION {
         return t.union_name;
+    } else if t.kind == TypeKind.TYPE_POINTER {
+        return format("*{}", type_to_string(t.pointer_to));
     }
     // ...
 }
 
-// 重构后：使用 match 处理 union
+// 重构后：使用 match 表达式（数据结构不变）
 fn type_to_string(t: Type) &byte {
-    match t.data {
-        .named(name) => return name,
-        .pointer(p) => return format("*{}", type_to_string(p.pointee)),
-        .array(a) => return format("[{}; {}]", type_to_string(a.element), a.size),
-        .void_unit(_) => return "void",
+    match t.kind {
+        TypeKind.TYPE_ENUM => return t.enum_name,
+        TypeKind.TYPE_STRUCT => return t.struct_name,
+        TypeKind.TYPE_UNION => return t.union_name,
+        TypeKind.TYPE_POINTER => return format("*{}", type_to_string(t.pointer_to)),
+        TypeKind.TYPE_ARRAY => return format("[{}; {}]", type_to_string(t.element_type), t.array_size),
+        TypeKind.TYPE_SLICE => return format("[]{}", type_to_string(t.slice_element_type)),
+        TypeKind.TYPE_VOID => return "void",
+        TypeKind.TYPE_I32 => return "i32",
+        TypeKind.TYPE_I64 => return "i64",
+        TypeKind.TYPE_F64 => return "f64",
+        TypeKind.TYPE_BOOL => return "bool",
         else => return "unknown"
     }
 }
 ```
 
-**预估工作量**：5 天
+**收益**：
+- 编译期完备性检查（枚举 match）
+- 代码更简洁、可读性提升
+- 无运行时开销
+- 不需要修改核心数据结构（风险低）
 
-### 4.2 ASTNode 结构体 Union 化
+**预估工作量**：3-4 天
 
-**当前问题**：`ASTNode` 结构体有 100+ 个扁平化字段
+### 4.2 使用 match 替代 ASTNode 条件链
 
-```uya
-// 当前设计（src/ast.uya:138-450）
-struct ASTNode {
-    type: ASTNodeType,
-    // 100+ 个字段，根据 type 只有部分有效
-    program_decls: & & ASTNode,
-    program_decl_count: i32,
-    enum_decl_name: &byte,
-    // ... 数百个字段
-}
-```
+**当前问题**：564+ 处 `type == ASTNodeType.XXX` 条件判断
 
-**重构方案**：按节点类型分组为 union
-
-```uya
-struct ASTNode {
-    type: ASTNodeType,
-    line: i32,
-    column: i32,
-    filename: &byte,
-    data: ASTNodeData,  // union 类型
-}
-
-union ASTNodeData {
-    program: ProgramData,
-    enum_decl: EnumDeclData,
-    struct_decl: StructDeclData,
-    fn_decl: FnDeclData,
-    var_decl: VarDeclData,
-    binary_expr: BinaryExprData,
-    call_expr: CallExprData,
-    // ... 其他节点类型
-}
-
-struct ProgramData {
-    decls: & & ASTNode,
-    count: i32,
-}
-
-struct EnumDeclData {
-    name: &byte,
-    variants: &EnumVariant,
-    variant_count: i32,
-    is_export: i32,
-}
-
-struct BinaryExprData {
-    left: &ASTNode,
-    op: i32,
-    right: &ASTNode,
-}
-```
-
-**代码简化示例**：
+**重构方案**：使用 match 表达式匹配枚举值
 
 ```uya
 // 重构前：大量的 if-else 链
@@ -461,55 +354,30 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
     // ... 数百行
 }
 
-// 重构后：使用 match 表达式
+// 重构后：使用 match 表达式（数据结构不变）
 fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
-    match expr.data {
-        .binary_expr(b) => infer_binary(checker, b),
-        .call_expr(c) => infer_call(checker, c),
-        .member_access(m) => infer_member(checker, m),
-        .number(_) => make_i32_type(),
-        .float(_) => make_f64_type(),
-        else => make_void_type()
+    if expr == null { return make_void_type(); }
+
+    match expr.type {
+        ASTNodeType.AST_IDENTIFIER => return infer_identifier(checker, expr),
+        ASTNodeType.AST_NUMBER => return make_i32_type(),
+        ASTNodeType.AST_FLOAT => return make_f64_type(),
+        ASTNodeType.AST_BOOL => return make_bool_type(),
+        ASTNodeType.AST_BINARY_EXPR => return infer_binary_expr(checker, expr),
+        ASTNodeType.AST_CALL_EXPR => return infer_call_expr(checker, expr),
+        ASTNodeType.AST_MEMBER_ACCESS => return infer_member_access(checker, expr),
+        ASTNodeType.AST_MATCH_EXPR => return infer_match_expr(checker, expr),
+        else => return make_void_type()
     }
-}
-```
-
-**预估工作量**：7 天
-
-### 4.3 使用 match 替代条件链
-
-**重构目标**：将所有基于 `kind`/`type` 的条件链替换为 match 表达式
-
-**重构前**（564+ 处）：
-```uya
-if node.type == ASTNodeType.AST_PROGRAM {
-    // 处理 program
-} else if node.type == ASTNodeType.AST_ENUM_DECL {
-    // 处理 enum
-} else if node.type == ASTNodeType.AST_STRUCT_DECL {
-    // 处理 struct
-}
-```
-
-**重构后**：
-```uya
-match node.data {
-    .program(p) => handle_program(p),
-    .enum_decl(e) => handle_enum(e),
-    .struct_decl(s) => handle_struct(s),
-    else => handle_other()
 }
 ```
 
 **收益**：
 - 编译期完备性检查
-- 消除运行时标签判断开销
-- 代码更简洁、更安全
+- 与阶段一拆分后的函数结构一致
+- 代码更清晰
 
-**预估工作量**：3 天
-
----
-
+**预估工作量**：5-6 天
 ## 阶段五：测试现代化 [░░░░░░░░░░] 0%
 
 ### 5.1 使用 test 语句重构测试
@@ -634,52 +502,14 @@ pub const SYMBOL_TABLE_SIZE: i32 = 32768;
 |------|------|
 | Day 1-2 | 提取代码生成辅助函数 |
 | Day 3 | 统一类型检查函数调用 |
-| Day 4-5 | Type 结构体 Union 化 |
+| Day 4-5 | Type match 表达式优化 |
 
-### 第四周：阶段四.2
-
-| 天数 | 任务 |
-|------|------|
-| Day 1-3 | ASTNode 结构体 Union 化 |
-| Day 4-5 | 用 match 替换条件链 |
-
-### 第五周：阶段五 + 阶段六
+### 第四周：阶段四.2 + 阶段五
 
 | 天数 | 任务 |
 |------|------|
-| Day 1-2 | 重构测试为 test 语句风格 |
-| Day 3 | 添加增量测试验证 |
-| Day 4 | 统一错误处理模式，常量集中定义 |
-| Day 5 | 清理未使用变量 |
-
-### 第六周：验收
-
-| 天数 | 任务 |
-|------|------|
-| Day 1-2 | 全面测试验证 |
-| Day 3-4 | 文档更新 |
-| Day 5 | 提交验收 |
-
----
-
-## 验收标准
-
-### 代码规范
-- [ ] 所有函数 ≤ 50 行
-- [ ] 所有嵌套深度 ≤ 3 层
-- [ ] 重复代码减少 50%+
-- [ ] 测试使用 `test "name" {}` 风格
-
-### Union 使用
-- [ ] Type 结构体使用 union 封装变体数据
-- [ ] ASTNode 结构体使用 union 封装变体数据
-- [ ] 条件链替换为 match 表达式（减少 50%+）
-- [ ] match 完备性检查通过
-
-### 功能验证
-- [ ] `make check` 通过（自举 + 测试）
-- [ ] 自举编译时间 ≤ 2s
-- [ ] 无新增编译警告
+| Day 1-3 | ASTNode match 表达式优化 |
+| Day 4 | 重构测试为 test 语句风格 |
 | Day 5 | 添加增量测试验证 |
 
 ### 第五周：阶段六 + 验收
@@ -710,10 +540,6 @@ pub const SYMBOL_TABLE_SIZE: i32 = 32768;
 - [ ] `make check` 通过（自举 + 测试）
 - [ ] 自举编译时间 ≤ 2s
 - [ ] 无新增编译警告
-
-### 文档更新
-- [ ] 更新 `.codebuddy/skills/uya-development.md`
-- [ ] 更新 `CHANGELOG.md`
 
 ---
 
