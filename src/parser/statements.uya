@@ -1,0 +1,616 @@
+fn parser_parse_block(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    
+    // 期望 '{'
+    if parser_match(parser, TokenType.TOKEN_LEFT_BRACE) == 0 {
+        return null;
+    }
+    
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    
+    // 创建代码块节点
+    const block: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, parser.arena, parser_get_filename(parser));
+    if block == null {
+        return null;
+    }
+    
+    // 初始化语句列表
+    var stmts: & & ASTNode = null;
+    var stmt_count: i32 = 0;
+    var stmt_capacity: i32 = 0;
+    
+    // 消费 '{'
+    parser_consume(parser);
+    
+    // 解析语句列表
+    while parser.current_token != null && 
+          parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) == 0 && 
+          parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+        
+        // 如果当前token是右大括号，说明是空块，直接退出循环
+        if parser.current_token != null && parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) != 0 {
+            break;
+        }
+        
+        // 解析语句
+        const stmt: &ASTNode = parser_parse_statement(parser);
+        if stmt == null {
+            // 解析失败：检查是否是因为遇到了右大括号（空块的情况）
+            if parser.current_token != null && parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) != 0 {
+                // 空块，正常退出循环
+                break;
+            }
+            // 检查是否是 EOF（TokenType.TOKEN_EOF = 0）
+            if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_EOF {
+                // 遇到文件末尾，正常退出循环（可能是函数体不完整，但这是语法错误，会在其他地方报告）
+                break;
+            }
+            // 否则是真正的解析错误
+            // 注意：Uya 版本简化错误报告，不使用 fprintf
+            return null;
+        }
+        
+        // 扩展语句数组（使用 Arena 分配）
+        if stmt_count >= stmt_capacity {
+            var new_capacity: i32 = 0;
+                        if stmt_capacity == 0 {
+                            new_capacity = 4;
+                        } else {
+                            new_capacity = stmt_capacity * 2;
+                        }
+            const new_stmts: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+            if new_stmts == null {
+                // 注意：Uya 版本简化错误报告
+                return null;
+            }
+            
+            // 复制旧语句
+            if stmts != null {
+                var i: i32 = 0;
+                while i < stmt_count {
+                    new_stmts[i] = stmts[i];
+                    i = i + 1;
+                }
+            }
+            
+            stmts = new_stmts;
+            stmt_capacity = new_capacity;
+        }
+        
+        stmts[stmt_count] = stmt;
+        stmt_count = stmt_count + 1;
+    }
+    
+    // 期望 '}'
+    // 注意：如果当前 token 是 'else'，说明可能是 if 语句的 else 分支
+    // 但 block 必须以 '}' 结束，所以这里仍然期望 '}'
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_BRACE) == null {
+        // 注意：Uya 版本简化错误报告
+        return null;
+    }
+    
+    block.block_stmts = stmts;
+    block.block_stmt_count = stmt_count;
+    
+    return block;
+}
+
+// 解析语句
+fn parser_parse_statement(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    
+    // 根据第一个 Token 判断语句类型
+    if parser.current_token.type == TokenType.TOKEN_RETURN {
+        // 解析 return 语句
+        parser_consume(parser);  // 消费 'return'
+        
+        const stmt: &ASTNode = ast_new_node(ASTNodeType.AST_RETURN_STMT, line, column, parser.arena, parser_get_filename(parser));
+        if stmt == null {
+            return null;
+        }
+        
+        // 解析返回值表达式（可选，void 函数可以没有返回值）
+        if parser_match(parser, TokenType.TOKEN_SEMICOLON) != 0 {
+            // 没有返回值（void 函数）
+            stmt.return_stmt_expr = null;
+            parser_consume(parser);  // 消费 ';'
+        } else {
+            // 有返回值表达式
+            const expr: &ASTNode = parser_parse_expression(parser);
+            if expr == null {
+                return null;
+            }
+            stmt.return_stmt_expr = expr;
+            
+            // 期望 ';'
+            if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+                return null;
+            }
+        }
+        
+        return stmt;
+    }
+    
+    if parser_match(parser, TokenType.TOKEN_DEFER) != 0 {
+        parser_consume(parser);
+        const stmt: &ASTNode = ast_new_node(ASTNodeType.AST_DEFER_STMT, line, column, parser.arena, parser_get_filename(parser));
+        if stmt == null {
+            return null;
+        }
+        if parser_match(parser, TokenType.TOKEN_LEFT_BRACE) != 0 {
+            stmt.defer_stmt_body = parser_parse_block(parser);
+        } else {
+            stmt.defer_stmt_body = parser_parse_statement(parser);
+        }
+        if stmt.defer_stmt_body == null {
+            return null;
+        }
+        return stmt;
+    }
+    
+    if parser_match(parser, TokenType.TOKEN_ERRDEFER) != 0 {
+        parser_consume(parser);
+        const stmt: &ASTNode = ast_new_node(ASTNodeType.AST_ERRDEFER_STMT, line, column, parser.arena, parser_get_filename(parser));
+        if stmt == null {
+            return null;
+        }
+        if parser_match(parser, TokenType.TOKEN_LEFT_BRACE) != 0 {
+            stmt.errdefer_stmt_body = parser_parse_block(parser);
+        } else {
+            stmt.errdefer_stmt_body = parser_parse_statement(parser);
+        }
+        if stmt.errdefer_stmt_body == null {
+            return null;
+        }
+        return stmt;
+    }
+    
+    if parser_match(parser, TokenType.TOKEN_TEST) != 0 {
+        parser_consume(parser);  // 消费 'test'
+        
+        const stmt: &ASTNode = ast_new_node(ASTNodeType.AST_TEST_STMT, line, column, parser.arena, parser_get_filename(parser));
+        if stmt == null {
+            return null;
+        }
+        
+        // 解析测试说明字符串
+        if parser_match(parser, TokenType.TOKEN_STRING) == 0 {
+            fprintf(libc.stderr, "错误: 期望测试说明字符串，在第 %d 行第 %d 列\n" as *byte, parser.current_token.line, parser.current_token.column);
+            return null;
+        }
+        stmt.test_stmt_description = parser.current_token.value;
+        parser_consume(parser);  // 消费字符串
+        
+        // 解析测试体（必须是块）
+        if parser_match(parser, TokenType.TOKEN_LEFT_BRACE) == 0 {
+            fprintf(libc.stderr, "错误: 期望 '{'，在第 %d 行第 %d 列\n" as *byte, parser.current_token.line, parser.current_token.column);
+            return null;
+        }
+        stmt.test_stmt_body = parser_parse_block(parser);
+        if stmt.test_stmt_body == null {
+            return null;
+        }
+        
+        return stmt;
+    }
+    
+    if parser_match(parser, TokenType.TOKEN_BREAK) != 0 {
+        // 解析 break 语句
+        parser_consume(parser);  // 消费 'break'
+        
+        const stmt: &ASTNode = ast_new_node(ASTNodeType.AST_BREAK_STMT, line, column, parser.arena, parser_get_filename(parser));
+        if stmt == null {
+            return null;
+        }
+        
+        // 期望 ';'
+        if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+            return null;
+        }
+        
+        return stmt;
+    }
+    
+    if parser_match(parser, TokenType.TOKEN_CONTINUE) != 0 {
+        // 解析 continue 语句
+        parser_consume(parser);  // 消费 'continue'
+        
+        const stmt: &ASTNode = ast_new_node(ASTNodeType.AST_CONTINUE_STMT, line, column, parser.arena, parser_get_filename(parser));
+        if stmt == null {
+            return null;
+        }
+        
+        // 期望 ';'
+        if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+            return null;
+        }
+        
+        return stmt;
+    }
+    
+    if parser_match(parser, TokenType.TOKEN_IF) != 0 {
+        // 解析 if 语句
+        parser_consume(parser);  // 消费 'if'
+        
+        const stmt: &ASTNode = ast_new_node(ASTNodeType.AST_IF_STMT, line, column, parser.arena, parser_get_filename(parser));
+        if stmt == null {
+            return null;
+        }
+        
+        // 解析条件表达式
+        // 设置上下文为条件表达式上下文，以便在解析表达式时正确区分结构体字面量和代码块
+        const saved_context: ParserContext = parser.context;
+        parser.context = ParserContext.PARSER_CONTEXT_CONDITION;
+        const condition: &ASTNode = parser_parse_expression(parser);
+        parser.context = saved_context;  // 恢复上下文
+        if condition == null {
+            return null;
+        }
+        stmt.if_stmt_condition = condition;
+        
+        // 解析 then 分支：允许 { block } 或单条语句（如 if (x) return 2;）
+        var then_branch: &ASTNode = null;
+        if parser_match(parser, TokenType.TOKEN_LEFT_BRACE) != 0 {
+            then_branch = parser_parse_block(parser);
+        } else {
+            const single: &ASTNode = parser_parse_statement(parser);
+            if single == null {
+                return null;
+            }
+            const block: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, single.line, single.column, parser.arena, parser_get_filename(parser));
+            if block == null {
+                return null;
+            }
+            const stmts: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode)) as & & ASTNode;
+            if stmts == null {
+                return null;
+            }
+            stmts[0] = single;
+            block.block_stmts = stmts;
+            block.block_stmt_count = 1;
+            then_branch = block;
+        }
+        if then_branch == null {
+            return null;
+        }
+        stmt.if_stmt_then_branch = then_branch;
+        
+        // 解析 else 分支（可选）
+        // 支持 else if、else { block }、else 单条语句
+        if parser_match(parser, TokenType.TOKEN_ELSE) != 0 {
+            parser_consume(parser);  // 消费 'else'
+            if parser_match(parser, TokenType.TOKEN_IF) != 0 {
+                const else_if_stmt: &ASTNode = parser_parse_statement(parser);
+                if else_if_stmt == null {
+                    return null;
+                }
+                stmt.if_stmt_else_branch = else_if_stmt;
+            } else if parser_match(parser, TokenType.TOKEN_LEFT_BRACE) != 0 {
+                const else_branch: &ASTNode = parser_parse_block(parser);
+                if else_branch == null {
+                    return null;
+                }
+                stmt.if_stmt_else_branch = else_branch;
+            } else {
+                const single: &ASTNode = parser_parse_statement(parser);
+                if single == null {
+                    return null;
+                }
+                const block: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, single.line, single.column, parser.arena, parser_get_filename(parser));
+                if block == null {
+                    return null;
+                }
+                const stmts: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode)) as & & ASTNode;
+                if stmts == null {
+                    return null;
+                }
+                stmts[0] = single;
+                block.block_stmts = stmts;
+                block.block_stmt_count = 1;
+                stmt.if_stmt_else_branch = block;
+            }
+        } else {
+            stmt.if_stmt_else_branch = null;
+        }
+        
+        return stmt;
+    }
+    
+    if parser_match(parser, TokenType.TOKEN_WHILE) != 0 {
+        // 解析 while 语句
+        parser_consume(parser);  // 消费 'while'
+        
+        const stmt: &ASTNode = ast_new_node(ASTNodeType.AST_WHILE_STMT, line, column, parser.arena, parser_get_filename(parser));
+        if stmt == null {
+            return null;
+        }
+        
+        // 解析条件表达式
+        // 设置上下文为条件表达式上下文，以便在解析表达式时正确区分结构体字面量和代码块
+        const saved_context: ParserContext = parser.context;
+        parser.context = ParserContext.PARSER_CONTEXT_CONDITION;
+        const condition: &ASTNode = parser_parse_expression(parser);
+        parser.context = saved_context;  // 恢复上下文
+        if condition == null {
+            return null;
+        }
+        stmt.while_stmt_condition = condition;
+        
+        // 解析循环体（代码块）
+        const body: &ASTNode = parser_parse_block(parser);
+        if body == null {
+            return null;
+        }
+        stmt.while_stmt_body = body;
+        
+        return stmt;
+    }
+    
+    if parser_match(parser, TokenType.TOKEN_FOR) != 0 {
+        parser_consume(parser);  // 消费 'for'
+        
+        const stmt: &ASTNode = ast_new_node(ASTNodeType.AST_FOR_STMT, line, column, parser.arena, parser_get_filename(parser));
+        if stmt == null {
+            return null;
+        }
+        
+        const first_expr: &ASTNode = parser_parse_xor_expr(parser);
+        if first_expr == null {
+            return null;
+        }
+        
+        if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_DOT_DOT {
+            stmt.for_stmt_is_range = 1;
+            stmt.for_stmt_array = null;
+            stmt.for_stmt_range_start = first_expr;
+            parser_consume(parser);  // 消费 '..'
+            if parser.current_token != null && parser.current_token.type != TokenType.TOKEN_PIPE && parser.current_token.type != TokenType.TOKEN_LEFT_BRACE {
+                const end_expr: &ASTNode = parser_parse_xor_expr(parser);
+                if end_expr == null {
+                    return null;
+                }
+                stmt.for_stmt_range_end = end_expr;
+            } else {
+                stmt.for_stmt_range_end = null;
+            }
+            stmt.for_stmt_is_ref = 0;
+            if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_PIPE {
+                parser_consume(parser);  // 消费 '|'
+                if parser_match(parser, TokenType.TOKEN_AMPERSAND) != 0 {
+                    parser_consume(parser);
+                    stmt.for_stmt_is_ref = 1;
+                }
+                const for_var_val: &byte = parser.current_token.value;
+                if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+                    return null;
+                }
+                stmt.for_stmt_var_name = arena_strdup(parser.arena, for_var_val);
+                parser_consume(parser);
+                if parser_expect(parser, TokenType.TOKEN_PIPE) == null {
+                    return null;
+                }
+            } else {
+                stmt.for_stmt_var_name = null;
+            }
+        } else {
+            stmt.for_stmt_is_range = 0;
+            stmt.for_stmt_range_start = null;
+            stmt.for_stmt_range_end = null;
+            stmt.for_stmt_array = first_expr;
+            if parser_expect(parser, TokenType.TOKEN_PIPE) == null {
+                return null;
+            }
+            var is_ref: i32 = 0;
+            if parser_match(parser, TokenType.TOKEN_AMPERSAND) != 0 {
+                parser_consume(parser);
+                is_ref = 1;
+            }
+            const for_var_val: &byte = parser.current_token.value;
+            if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+                return null;
+            }
+            stmt.for_stmt_var_name = arena_strdup(parser.arena, for_var_val);
+            parser_consume(parser);
+            if parser_expect(parser, TokenType.TOKEN_PIPE) == null {
+                return null;
+            }
+            stmt.for_stmt_is_ref = is_ref;
+        }
+        
+        const body: &ASTNode = parser_parse_block(parser);
+        if body == null {
+            return null;
+        }
+        stmt.for_stmt_body = body;
+        return stmt;
+    }
+    
+    if parser_match(parser, TokenType.TOKEN_CONST) != 0 || parser_match(parser, TokenType.TOKEN_VAR) != 0 {
+        // 解析变量声明
+        var is_const: i32 = 0;
+        if parser_match(parser, TokenType.TOKEN_CONST) != 0 {
+            is_const = 1;
+        } else {
+            is_const = 0;
+        }
+        parser_consume(parser);  // 消费 'const' 或 'var'
+        
+        // 解构声明：const (x, y) = expr; 或 var (x, _) = expr;
+        if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_LEFT_PAREN {
+            parser_consume(parser);  // 消费 '('
+            
+            var names: & & byte = arena_alloc(parser.arena, @size_of(&byte) * 16) as & & byte;
+            if names == null {
+                return null;
+            }
+            var cap: i32 = 16;
+            var count: i32 = 0;
+            
+            while parser.current_token != null && parser.current_token.type != TokenType.TOKEN_RIGHT_PAREN {
+                if count > 0 {
+                    if parser_expect(parser, TokenType.TOKEN_COMMA) == null {
+                        return null;
+                    }
+                }
+                const name_val: &byte = parser.current_token.value;
+                if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+                    return null;
+                }
+                const name: &byte = arena_strdup(parser.arena, name_val);
+                if name == null {
+                    return null;
+                }
+                parser_consume(parser);  // 消费标识符
+                if count >= cap {
+                    const new_cap: i32 = cap * 2;
+                    const new_names: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap) as & & byte;
+                    if new_names == null {
+                        return null;
+                    }
+                    var i: i32 = 0;
+                    while i < count {
+                        new_names[i] = names[i];
+                        i = i + 1;
+                    }
+                    names = new_names;
+                    cap = new_cap;
+                }
+                names[count] = name;
+                count = count + 1;
+            }
+            
+            if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null {
+                return null;
+            }
+            if parser_expect(parser, TokenType.TOKEN_ASSIGN) == null {
+                return null;
+            }
+            
+            const saved_context: ParserContext = parser.context;
+            parser.context = ParserContext.PARSER_CONTEXT_VAR_INIT;
+            const init: &ASTNode = parser_parse_expression(parser);
+            parser.context = saved_context;
+            if init == null {
+                return null;
+            }
+            if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+                return null;
+            }
+            
+            const stmt: &ASTNode = ast_new_node(ASTNodeType.AST_DESTRUCTURE_DECL, line, column, parser.arena, parser_get_filename(parser));
+            if stmt == null {
+                return null;
+            }
+            stmt.destructure_decl_names = names;
+            stmt.destructure_decl_name_count = count;
+            stmt.destructure_decl_is_const = is_const;
+            stmt.destructure_decl_init = init;
+            return stmt;
+        }
+        
+        // 期望变量名称，允许 'type' 关键字作为变量名
+        var var_name: &byte = null;
+        if parser_match(parser, TokenType.TOKEN_TYPE) != 0 {
+            var_name = arena_strdup(parser.arena, "type" as &byte);
+        } else if parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+            var_name = arena_strdup(parser.arena, parser.current_token.value);
+        } else {
+            return null;
+        }
+        if var_name == null {
+            return null;
+        }
+        
+        parser_consume(parser);  // 消费变量名称
+        
+        const stmt: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, line, column, parser.arena, parser_get_filename(parser));
+        if stmt == null {
+            return null;
+        }
+        
+        stmt.var_decl_name = var_name;
+        stmt.var_decl_is_const = is_const;
+        
+        // 期望 ':'
+        if parser_expect(parser, TokenType.TOKEN_COLON) == null {
+            return null;
+        }
+        
+        // 解析类型
+        const type: &ASTNode = parser_parse_type(parser);
+        if type == null {
+            return null;
+        }
+        stmt.var_decl_type = type;
+        
+        // 期望 '='
+        if parser_expect(parser, TokenType.TOKEN_ASSIGN) == null {
+            // 变量未初始化：注意：Uya 版本简化错误报告
+            return null;
+        }
+        
+        // 解析初始值表达式
+        // 设置上下文为变量初始化上下文，以便在解析表达式时正确区分结构体字面量和代码块
+        const saved_context: ParserContext = parser.context;
+        parser.context = ParserContext.PARSER_CONTEXT_VAR_INIT;
+        const init: &ASTNode = parser_parse_expression(parser);
+        parser.context = saved_context;  // 恢复上下文
+        if init == null {
+            return null;
+        }
+        stmt.var_decl_init = init;
+        
+        // 期望 ';'
+        if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+            return null;
+        }
+        
+        return stmt;
+    }
+    
+    // 注意：根据规范，enum 和 struct 只能在顶层定义，不能在函数内部或其他局部作用域内定义
+    // 因此这里不处理 TokenType.TOKEN_STRUCT 和 TokenType.TOKEN_ENUM
+    // 函数内部也不允许定义函数（嵌套函数不支持）
+    
+    if parser_match(parser, TokenType.TOKEN_LEFT_BRACE) != 0 {
+        // 解析代码块语句
+        return parser_parse_block(parser);
+    }
+    
+    // 解析表达式语句（表达式后加分号）
+    // 注意：ASTNodeType.AST_EXPR_STMT 节点在 union 中没有对应的数据结构
+    // 根据 ast.c 的注释，表达式语句的数据存储在表达式的节点中
+    // 所以这里直接返回表达式节点（表达式节点本身可以作为语句）
+    
+    // 如果当前token是右大括号，说明是空块，返回NULL（由调用者处理）
+    if parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) != 0 {
+        return null;
+    }
+    
+    const expr: &ASTNode = parser_parse_expression(parser);
+    if expr == null {
+        // 如果当前token是右大括号，说明是空块，返回NULL（由调用者处理）
+        if parser.current_token != null && parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) != 0 {
+            return null;
+        }
+        return null;
+    }
+    
+    // 期望 ';'
+    if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+        return null;
+    }
+    
+    // 直接返回表达式节点（表达式节点可以作为语句）
+    return expr;
+}
+
+// 解析接口声明：interface ID { fn method(self: *Self,...) Ret; ... }

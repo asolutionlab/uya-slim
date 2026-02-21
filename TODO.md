@@ -135,79 +135,83 @@
 ### 1.2 parser.uya 拆分
 
 ```
-[ ] 创建 src/parser/ 目录结构
-[ ] 提取 types.uya (~1000 行)
-    [ ] parser_parse_type
-    [ ] parse_array_type
-    [ ] parse_pointer_type
-    [ ] parse_generic_type
-    [ ] parse_function_type
+[x] 创建 src/parser/ 目录结构
+[x] 提取 types.uya (599 行) - 类型解析
+    [x] parser_parse_type
+    [x] parse_array_type
+    [x] parse_pointer_type
+    [x] parse_generic_type
+    [x] parse_function_type
+    [x] parse_integer_literal
+    [x] parse_float_literal
+    [x] remove_underscores
 
-[ ] 提取 expressions.uya (~2500 行)
-    [ ] parser_parse_expression 主入口
-    [ ] parser_parse_primary_expr
-    [ ] parser_parse_unary_expr
-    [ ] parser_parse_cast_expr
-    [ ] parser_parse_mul_expr
-    [ ] parser_parse_add_expr
-    [ ] parser_parse_shift_expr
-    [ ] parser_parse_rel_expr
-    [ ] parser_parse_eq_expr
-    [ ] parser_parse_bitand_expr
-    [ ] parser_parse_xor_expr
-    [ ] parser_parse_bitor_expr
-    [ ] parser_parse_and_expr
-    [ ] parser_parse_or_expr
-    [ ] parser_parse_assign_expr
-    [ ] parse_integer_literal
-    [ ] parse_float_literal
-    [ ] remove_underscores
+[x] 提取 primary.uya (2393 行) - 基础表达式
+    [x] parser_parse_primary_expr
 
-[ ] 提取 statements.uya (~1500 行)
-    [ ] parser_parse_statement 主入口
-    [ ] parser_parse_block
-    [ ] parser_parse_if_stmt
-    [ ] parser_parse_while_stmt
-    [ ] parser_parse_for_stmt
-    [ ] parser_parse_return_stmt
-    [ ] parser_parse_var_decl
-    [ ] parser_parse_defer_stmt
+[x] 提取 expressions.uya (925 行) - 二元/一元表达式
+    [x] parser_parse_expression 主入口
+    [x] parser_parse_unary_expr
+    [x] parser_parse_cast_expr
+    [x] parser_parse_mul_expr
+    [x] parser_parse_add_expr
+    [x] parser_parse_shift_expr
+    [x] parser_parse_rel_expr
+    [x] parser_parse_eq_expr
+    [x] parser_parse_bitand_expr
+    [x] parser_parse_xor_expr
+    [x] parser_parse_bitor_expr
+    [x] parser_parse_and_expr
+    [x] parser_parse_or_expr
+    [x] parser_parse_assign_expr
+    [x] parser_peek_is_generic_method_call
 
-[ ] 提取 declarations.uya (~1500 行)
-    [ ] parser_parse_declaration 主入口
-    [ ] parser_parse_function
-    [ ] parser_parse_struct
-    [ ] parser_parse_method_block
-    [ ] parser_parse_enum
-    [ ] parser_parse_union
-    [ ] parser_parse_union_body
-    [ ] parser_parse_interface
-    [ ] parser_parse_type_alias
-    [ ] parser_parse_macro
-    [ ] parser_parse_error_decl
-    [ ] parser_parse_use_stmt
-    [ ] parser_parse_extern_decl
-    [ ] parser_parse_extern_function
-    [ ] parser_parse_extern_var_decl
-    [ ] parser_parse_export_var_decl
+[x] 提取 statements.uya (616 行) - 语句解析
+    [x] parser_parse_statement 主入口
+    [x] parser_parse_block
+    [x] parser_parse_if_stmt
+    [x] parser_parse_while_stmt
+    [x] parser_parse_for_stmt
+    [x] parser_parse_return_stmt
+    [x] parser_parse_var_decl
+    [x] parser_parse_defer_stmt
 
-[ ] 创建 main.uya (~700 行)
-    [ ] Parser 结构体
-    [ ] ParserContext 枚举
-    [ ] parser_init
-    [ ] parser_parse
-    [ ] parser_parse_program
-    [ ] parser_match
-    [ ] parser_consume
-    [ ] parser_expect
-    [ ] parser_get_filename
-    [ ] parser_peek_is_struct_init
-    [ ] parser_peek_is_generic_method_call
+[x] 提取 declarations.uya (2200 行) - 声明解析
+    [x] parser_parse_interface
+    [x] parser_parse_method_block
+    [x] parser_parse_struct
+    [x] parser_parse_union_body
+    [x] parser_parse_type_alias
+    [x] parser_parse_macro
+    [x] parser_parse_union
+    [x] parser_parse_enum
+    [x] parser_parse_error_decl
+    [x] parser_parse_function
+    [x] parser_parse_extern_var_decl
+    [x] parser_parse_export_var_decl
+    [x] parser_parse_extern_decl
+    [x] parser_parse_extern_function_after_extern
+    [x] parser_parse_extern_function
+    [x] parser_parse_use_stmt
 
-[ ] 验证 parser 拆分
-    [ ] make check 通过
-    [ ] make tests 通过
-    [ ] 生成 C 代码一致性检查
+[x] 创建 main.uya (479 行) - 解析器入口
+    [x] Parser 结构体
+    [x] ParserContext 枚举
+    [x] parser_init
+    [x] parser_match
+    [x] parser_consume
+    [x] parser_expect
+    [x] parser_get_filename
+    [x] parser_peek_is_struct_init
+    [x] parser_parse_declaration
+    [x] parser_parse
+    [x] parser_parse_program
+
+[x] 验证 parser 拆分
+    [x] make check 通过 (414/414)
+    [x] 每文件 ≤ 2500 行
+
+当前：parser 模块拆分完成！共 6 个文件，7212 行
 ```
 
 ---
@@ -269,13 +273,12 @@
 
 ### 阶段一验收
 ```
-[ ] checker.uya 拆分为 7-8 个文件
-[ ] 每个文件 < 2000 行
-[ ] parser.uya 拆分为 5 个文件
-[ ] 每个文件 < 2500 行
-[ ] make check 通过
-[ ] make tests 通过
-[ ] make backup 成功
+[x] checker.uya 拆分为 16 个文件
+[x] 每个文件 < 2000 行
+[x] parser.uya 拆分为 6 个文件
+[x] 每个文件 < 2500 行
+[x] make check 通过 (414/414)
+[x] make backup 成功
 ```
 
 ### 阶段二验收

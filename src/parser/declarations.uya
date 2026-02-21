@@ -1,0 +1,2200 @@
+fn parser_parse_interface(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    if parser_match(parser, TokenType.TOKEN_INTERFACE) == 0 {
+        return null;
+    }
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    parser_consume(parser);
+    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        return null;
+    }
+    const iface_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+    if iface_name == null {
+        return null;
+    }
+    parser_consume(parser);
+    
+    // 解析泛型参数列表（可选）：<T> 或 <T: Ord>
+    var iface_type_params: &TypeParam = null;
+    var iface_type_param_count: i32 = 0;
+    if parser.current_token != null && parser_match(parser, TokenType.TOKEN_LESS) != 0 {
+        var type_param_capacity: i32 = 0;
+        
+        parser_consume(parser);  // 消费 '<'
+        
+        while parser.current_token != null &&
+              parser_match(parser, TokenType.TOKEN_GREATER) == 0 &&
+              parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+            
+            if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+                return null;
+            }
+            
+            const param_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+            if param_name == null {
+                return null;
+            }
+            parser_consume(parser);
+            
+            if iface_type_param_count >= type_param_capacity {
+                var new_cap: i32 = 0;
+                if type_param_capacity == 0 {
+                    new_cap = 4;
+                } else {
+                    new_cap = type_param_capacity * 2;
+                }
+                const new_params: &TypeParam = arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
+                if new_params == null {
+                    return null;
+                }
+                var k: i32 = 0;
+                while k < iface_type_param_count {
+                    new_params[k] = iface_type_params[k];
+                    k = k + 1;
+                }
+                iface_type_params = new_params;
+                type_param_capacity = new_cap;
+            }
+            
+            iface_type_params[iface_type_param_count].name = param_name;
+            iface_type_params[iface_type_param_count].constraints = null;
+            iface_type_params[iface_type_param_count].constraint_count = 0;
+            
+            // 解析约束（可选）
+            if parser_match(parser, TokenType.TOKEN_COLON) != 0 {
+                parser_consume(parser);
+                var constraints: & & byte = null;
+                var constraint_count: i32 = 0;
+                var constraint_capacity: i32 = 0;
+                
+                while parser.current_token != null &&
+                      parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+                    const constraint_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+                    if constraint_name == null {
+                        return null;
+                    }
+                    parser_consume(parser);
+                    
+                    if constraint_count >= constraint_capacity {
+                        var new_cap2: i32 = 0;
+                        if constraint_capacity == 0 {
+                            new_cap2 = 4;
+                        } else {
+                            new_cap2 = constraint_capacity * 2;
+                        }
+                        const new_constraints: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
+                        if new_constraints == null {
+                            return null;
+                        }
+                        var m: i32 = 0;
+                        while m < constraint_count {
+                            new_constraints[m] = constraints[m];
+                            m = m + 1;
+                        }
+                        constraints = new_constraints;
+                        constraint_capacity = new_cap2;
+                    }
+                    
+                    constraints[constraint_count] = constraint_name;
+                    constraint_count = constraint_count + 1;
+                    
+                    if parser_match(parser, TokenType.TOKEN_PLUS) != 0 {
+                        parser_consume(parser);
+                    } else {
+                        break;
+                    }
+                }
+                
+                iface_type_params[iface_type_param_count].constraints = constraints;
+                iface_type_params[iface_type_param_count].constraint_count = constraint_count;
+            }
+            
+            iface_type_param_count = iface_type_param_count + 1;
+            
+            if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+                parser_consume(parser);
+            } else {
+                break;
+            }
+        }
+        
+        if parser_expect(parser, TokenType.TOKEN_GREATER) == null {
+            return null;
+        }
+    }
+    
+    if parser_expect(parser, TokenType.TOKEN_LEFT_BRACE) == null {
+        return null;
+    }
+    var sigs: & & ASTNode = null;
+    var sig_count: i32 = 0;
+    var sig_cap: i32 = 0;
+    // 组合接口数组
+    var composed: & & byte = null;
+    var composed_count: i32 = 0;
+    var composed_cap: i32 = 0;
+    while parser.current_token != null &&
+          parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) == 0 && parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+        // 检查是否为组合接口引用（标识符后跟分号）
+        if parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+            // 这是组合接口引用：IReader;
+            const composed_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+            if composed_name == null {
+                return null;
+            }
+            parser_consume(parser);  // 消费标识符
+            if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+                return null;
+            }
+            
+            if composed_count >= composed_cap {
+                var new_cap2: i32 = 0;
+                if composed_cap == 0 {
+                    new_cap2 = 4;
+                } else {
+                    new_cap2 = composed_cap * 2;
+                }
+                const new_composed: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
+                if new_composed == null {
+                    return null;
+                }
+                var k: i32 = 0;
+                while k < composed_count {
+                    new_composed[k] = composed[k];
+                    k = k + 1;
+                }
+                composed = new_composed;
+                composed_cap = new_cap2;
+            }
+            composed[composed_count] = composed_name;
+            composed_count = composed_count + 1;
+            continue;
+        }
+        if parser_match(parser, TokenType.TOKEN_FN) == 0 {
+            return null;
+        }
+        const ml: i32 = parser.current_token.line;
+        const mcol: i32 = parser.current_token.column;
+        parser_consume(parser);
+        if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+            return null;
+        }
+        const method_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+        if method_name == null {
+            return null;
+        }
+        parser_consume(parser);
+        if parser_expect(parser, TokenType.TOKEN_LEFT_PAREN) == null {
+            return null;
+        }
+        var params: & & ASTNode = null;
+        var param_count: i32 = 0;
+        var param_cap: i32 = 0;
+        while parser.current_token != null && parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) == 0 &&
+              parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+            if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+                return null;
+            }
+            const pname: &byte = arena_strdup(parser.arena, parser.current_token.value);
+            if pname == null {
+                return null;
+            }
+            parser_consume(parser);
+            if parser_expect(parser, TokenType.TOKEN_COLON) == null {
+                return null;
+            }
+            const ptype: &ASTNode = parser_parse_type(parser);
+            if ptype == null {
+                return null;
+            }
+            if param_count >= param_cap {
+                var new_cap: i32 = 0;
+                if param_cap == 0 {
+                    new_cap = 4;
+                } else {
+                    new_cap = param_cap * 2;
+                }
+                const new_p: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                if new_p == null {
+                    return null;
+                }
+                var i: i32 = 0;
+                while i < param_count {
+                    new_p[i] = params[i];
+                    i = i + 1;
+                }
+                params = new_p;
+                param_cap = new_cap;
+            }
+            const pnode: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, ml, mcol, parser.arena, parser_get_filename(parser));
+            if pnode == null {
+                return null;
+            }
+            pnode.var_decl_name = pname;
+            pnode.var_decl_type = ptype;
+            pnode.var_decl_init = null;
+            pnode.var_decl_is_const = 0;
+            params[param_count] = pnode;
+            param_count = param_count + 1;
+            if parser_match(parser, TokenType.TOKEN_COMMA) == 0 {
+                break;
+            }
+            parser_consume(parser);
+        }
+        if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null {
+            return null;
+        }
+        const ret_type: &ASTNode = parser_parse_type(parser);
+        if ret_type == null {
+            return null;
+        }
+        if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+            return null;
+        }
+        const sig: &ASTNode = ast_new_node(ASTNodeType.AST_FN_DECL, ml, mcol, parser.arena, parser_get_filename(parser));
+        if sig == null {
+            return null;
+        }
+        sig.fn_decl_name = method_name;
+        sig.fn_decl_params = params;
+        sig.fn_decl_param_count = param_count;
+        sig.fn_decl_return_type = ret_type;
+        sig.fn_decl_body = null;
+        sig.fn_decl_is_varargs = 0;
+        if sig_count >= sig_cap {
+            var new_cap: i32 = 0;
+            if sig_cap == 0 {
+                new_cap = 4;
+            } else {
+                new_cap = sig_cap * 2;
+            }
+            const new_sigs: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+            if new_sigs == null {
+                return null;
+            }
+            var i: i32 = 0;
+            while i < sig_count {
+                new_sigs[i] = sigs[i];
+                i = i + 1;
+            }
+            sigs = new_sigs;
+            sig_cap = new_cap;
+        }
+        sigs[sig_count] = sig;
+        sig_count = sig_count + 1;
+    }
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_BRACE) == null {
+        return null;
+    }
+    const node: &ASTNode = ast_new_node(ASTNodeType.AST_INTERFACE_DECL, line, column, parser.arena, parser_get_filename(parser));
+    if node == null {
+        return null;
+    }
+    node.interface_decl_name = iface_name;
+    node.interface_decl_type_params = iface_type_params;
+    node.interface_decl_type_param_count = iface_type_param_count;
+    node.interface_decl_method_sigs = sigs;
+    node.interface_decl_method_sig_count = sig_count;
+    node.interface_decl_composed_interfaces = composed;
+    node.interface_decl_composed_count = composed_count;
+    return node;
+}
+
+// 解析方法块：StructName { fn method(...) { ... } ... }（调用时 struct_name 与 '{' 已消费，当前为块内首 token）
+// 也支持在方法块中调用 struct 返回类型的宏：macro_name(args);
+fn parser_parse_method_block(parser: &Parser, struct_name: &byte) &ASTNode {
+    if parser == null || parser.current_token == null || struct_name == null {
+        return null;
+    }
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    var methods: & & ASTNode = null;
+    var method_count: i32 = 0;
+    var method_cap: i32 = 0;
+    while parser.current_token != null &&
+          parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) == 0 && parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+        var item: &ASTNode = null;
+        
+        if parser_match(parser, TokenType.TOKEN_FN) != 0 {
+            // 解析方法定义
+            item = parser_parse_function(parser);
+        } else if parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+            // 可能是宏调用：macro_name(args);
+            const item_line: i32 = parser.current_token.line;
+            const item_col: i32 = parser.current_token.column;
+            const name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+            if name == null {
+                return null;
+            }
+            parser_consume(parser);
+            
+            if parser_match(parser, TokenType.TOKEN_LEFT_PAREN) != 0 {
+                // 宏调用：name(args);
+                parser_consume(parser);  // 消费 '('
+                
+                const callee: &ASTNode = ast_new_node(ASTNodeType.AST_IDENTIFIER, item_line, item_col, parser.arena, parser_get_filename(parser));
+                if callee == null {
+                    return null;
+                }
+                callee.identifier_name = name;
+                
+                const call: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, item_line, item_col, parser.arena, parser_get_filename(parser));
+                if call == null {
+                    return null;
+                }
+                call.call_expr_callee = callee;
+                call.call_expr_has_ellipsis_forward = 0;
+                
+                // 解析参数列表
+                var args: & & ASTNode = null;
+                var arg_count: i32 = 0;
+                var arg_cap: i32 = 0;
+                while parser.current_token != null && parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) == 0 {
+                    const arg: &ASTNode = parser_parse_expression(parser);
+                    if arg == null {
+                        return null;
+                    }
+                    if arg_count >= arg_cap {
+                        var new_cap: i32 = 4;
+                        if arg_cap != 0 {
+                            new_cap = arg_cap * 2;
+                        }
+                        const new_args: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                        if new_args == null {
+                            return null;
+                        }
+                        var j: i32 = 0;
+                        while j < arg_count && j < new_cap {
+                            if args != null {
+                                new_args[j] = args[j];
+                            }
+                            j = j + 1;
+                        }
+                        args = new_args;
+                        arg_cap = new_cap;
+                    }
+                    if args != null && arg_count >= 0 && arg_count < arg_cap {
+                        args[arg_count] = arg;
+                    }
+                    arg_count = arg_count + 1;
+                    if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+                        parser_consume(parser);
+                    }
+                }
+                if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null {
+                    return null;
+                }
+                if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+                    return null;
+                }
+                
+                call.call_expr_args = args;
+                call.call_expr_arg_count = arg_count;
+                item = call;
+            } else {
+                fprintf(libc.stderr, "错误: 方法块内期望 'fn' 或宏调用\n" as *byte);
+                return null;
+            }
+        } else {
+            // 不是 fn 也不是标识符，跳出循环
+            break;
+        }
+        
+        if item == null {
+            return null;
+        }
+        if method_count >= method_cap {
+            var new_cap: i32 = 0;
+            if method_cap == 0 {
+                new_cap = 4;
+            } else {
+                new_cap = method_cap * 2;
+            }
+            const new_m: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+            if new_m == null {
+                return null;
+            }
+            var i: i32 = 0;
+            while i < method_count {
+                new_m[i] = methods[i];
+                i = i + 1;
+            }
+            methods = new_m;
+            method_cap = new_cap;
+        }
+        methods[method_count] = item;
+        method_count = method_count + 1;
+    }
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_BRACE) == null {
+        return null;
+    }
+    const node: &ASTNode = ast_new_node(ASTNodeType.AST_METHOD_BLOCK, line, column, parser.arena, parser_get_filename(parser));
+    if node == null {
+        return null;
+    }
+    node.method_block_struct_name = struct_name;
+    node.method_block_methods = methods;
+    node.method_block_method_count = method_count;
+    return node;
+}
+
+// 解析结构体声明：struct ID { field_list }
+// field_list = field { ',' field }
+// field = ID ':' type
+fn parser_parse_struct(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    
+    // 期望 'struct'
+    if parser_match(parser, TokenType.TOKEN_STRUCT) == 0 {
+        return null;
+    }
+    
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    
+    // 消费 'struct'
+    parser_consume(parser);
+    
+    // 期望结构体名称
+    const struct_name_val: &byte = parser.current_token.value;
+    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        return null;
+    }
+    const struct_name: &byte = arena_strdup(parser.arena, struct_name_val);
+    if struct_name == null {
+        return null;
+    }
+    
+    // 消费结构体名称
+    parser_consume(parser);
+    
+    // 创建结构体声明节点
+    const struct_decl: &ASTNode = ast_new_node(ASTNodeType.AST_STRUCT_DECL, line, column, parser.arena, parser_get_filename(parser));
+    if struct_decl == null {
+        return null;
+    }
+    
+    struct_decl.struct_decl_name = struct_name;
+    struct_decl.struct_decl_type_params = null;
+    struct_decl.struct_decl_type_param_count = 0;
+    struct_decl.struct_decl_interface_names = null;
+    struct_decl.struct_decl_interface_count = 0;
+    struct_decl.struct_decl_fields = null;
+    struct_decl.struct_decl_field_count = 0;
+    
+    // 解析泛型参数列表（可选）：<T> 或 <T: Ord> 或 <T: Ord + Clone>
+    if parser.current_token != null && parser_match(parser, TokenType.TOKEN_LESS) != 0 {
+        var type_params: &TypeParam = null;
+        var type_param_count: i32 = 0;
+        var type_param_capacity: i32 = 0;
+        
+        parser_consume(parser);  // 消费 '<'
+        
+        while parser.current_token != null &&
+              parser_match(parser, TokenType.TOKEN_GREATER) == 0 &&
+              parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+            
+            // 解析类型参数名称
+            if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+                return null;  // 错误：期望类型参数名称
+            }
+            
+            const param_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+            if param_name == null {
+                return null;
+            }
+            parser_consume(parser);
+            
+            // 分配类型参数结构
+            if type_param_count >= type_param_capacity {
+                var new_cap: i32 = 0;
+                if type_param_capacity == 0 {
+                    new_cap = 4;
+                } else {
+                    new_cap = type_param_capacity * 2;
+                }
+                const new_params: &TypeParam = arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
+                if new_params == null {
+                    return null;
+                }
+                var i: i32 = 0;
+                while i < type_param_count {
+                    new_params[i] = type_params[i];
+                    i = i + 1;
+                }
+                type_params = new_params;
+                type_param_capacity = new_cap;
+            }
+            
+            type_params[type_param_count].name = param_name;
+            type_params[type_param_count].constraints = null;
+            type_params[type_param_count].constraint_count = 0;
+            
+            // 解析约束（可选）：: Ord 或 : Ord + Clone
+            if parser_match(parser, TokenType.TOKEN_COLON) != 0 {
+                parser_consume(parser);  // 消费 ':'
+                
+                var constraints: & & byte = null;
+                var constraint_count: i32 = 0;
+                var constraint_capacity: i32 = 0;
+                
+                // 解析约束列表（用 + 连接）
+                while parser.current_token != null &&
+                      parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+                    
+                    const constraint_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+                    if constraint_name == null {
+                        return null;
+                    }
+                    parser_consume(parser);
+                    
+                    if constraint_count >= constraint_capacity {
+                        var new_cap2: i32 = 0;
+                        if constraint_capacity == 0 {
+                            new_cap2 = 4;
+                        } else {
+                            new_cap2 = constraint_capacity * 2;
+                        }
+                        const new_constraints: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
+                        if new_constraints == null {
+                            return null;
+                        }
+                        var j: i32 = 0;
+                        while j < constraint_count {
+                            new_constraints[j] = constraints[j];
+                            j = j + 1;
+                        }
+                        constraints = new_constraints;
+                        constraint_capacity = new_cap2;
+                    }
+                    
+                    constraints[constraint_count] = constraint_name;
+                    constraint_count = constraint_count + 1;
+                    
+                    // 检查是否有 '+' 连接更多约束
+                    if parser_match(parser, TokenType.TOKEN_PLUS) != 0 {
+                        parser_consume(parser);
+                    } else {
+                        break;
+                    }
+                }
+                
+                type_params[type_param_count].constraints = constraints;
+                type_params[type_param_count].constraint_count = constraint_count;
+            }
+            
+            type_param_count = type_param_count + 1;
+            
+            // 检查是否有逗号（多个类型参数）
+            if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+                parser_consume(parser);
+            } else {
+                break;
+            }
+        }
+        
+        if parser_expect(parser, TokenType.TOKEN_GREATER) == null {
+            return null;  // 错误：期望 '>'
+        }
+        
+        struct_decl.struct_decl_type_params = type_params;
+        struct_decl.struct_decl_type_param_count = type_param_count;
+    }
+    
+    // 可选的 ': InterfaceName { , InterfaceName }'
+    // 支持泛型接口：Interface<T1, T2>
+    if parser_match(parser, TokenType.TOKEN_COLON) != 0 {
+        parser_consume(parser);
+        var ifaces: & & byte = null;
+        var iface_capacity: i32 = 0;
+        var iface_count: i32 = 0;
+        while parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+            if iface_count >= iface_capacity {
+                var new_cap: i32 = 0;
+                if iface_capacity == 0 {
+                    new_cap = 4;
+                } else {
+                    new_cap = iface_capacity * 2;
+                }
+                const new_ifaces: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap) as & & byte;
+                if new_ifaces == null {
+                    return null;
+                }
+                var i: i32 = 0;
+                while i < iface_count {
+                    new_ifaces[i] = ifaces[i];
+                    i = i + 1;
+                }
+                ifaces = new_ifaces;
+                iface_capacity = new_cap;
+            }
+            
+            // 获取接口名称
+            const iface_base_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+            if iface_base_name == null {
+                return null;
+            }
+            parser_consume(parser);
+            
+            // 检查是否有泛型类型参数 <T1, T2, ...>
+            if parser_match(parser, TokenType.TOKEN_LESS) != 0 {
+                // 构建完整的泛型接口名称（如 Container<i32>）
+                var full_name: [byte: MAX_GENERIC_NAME_BUF] = [];
+                var pos: i32 = 0;
+                pos = pos + snprintf((full_name as *byte) + pos, MAX_GENERIC_NAME_BUF - pos, "%s<" as *byte, iface_base_name as *byte);
+                
+                parser_consume(parser);  // 消费 '<'
+                
+                var first_type_arg: i32 = 1;
+                while parser.current_token != null && 
+                      parser_match(parser, TokenType.TOKEN_GREATER) == 0 && 
+                      parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+                    if first_type_arg == 0 {
+                        pos = pos + snprintf((full_name as *byte) + pos, MAX_GENERIC_NAME_BUF - pos, ", " as *byte);
+                    }
+                    first_type_arg = 0;
+                    
+                    // 解析类型名称（简单实现：只支持标识符）
+                    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+                        pos = pos + snprintf((full_name as *byte) + pos, MAX_GENERIC_NAME_BUF - pos, "%s" as *byte, parser.current_token.value as *byte);
+                        parser_consume(parser);
+                    } else {
+                        // 不支持的类型，跳过
+                        parser_consume(parser);
+                    }
+                    
+                    // 检查逗号
+                    if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+                        parser_consume(parser);
+                    } else {
+                        break;
+                    }
+                }
+                
+                const expect_gt: &Token = parser_expect(parser, TokenType.TOKEN_GREATER);
+                if expect_gt == null {
+                    return null;  // 错误：期望 '>'
+                }
+                
+                pos = pos + snprintf((full_name as *byte) + pos, MAX_GENERIC_NAME_BUF - pos, ">" as *byte);
+                ifaces[iface_count] = arena_strdup(parser.arena, full_name as *byte);
+            } else {
+                ifaces[iface_count] = iface_base_name;
+            }
+            
+            if ifaces[iface_count] == null {
+                return null;
+            }
+            iface_count = iface_count + 1;
+            
+            if parser_match(parser, TokenType.TOKEN_COMMA) == 0 {
+                break;
+            }
+            parser_consume(parser);
+        }
+        struct_decl.struct_decl_interface_names = ifaces;
+        struct_decl.struct_decl_interface_count = iface_count;
+    }
+    
+    // 期望 '{'
+    if parser_expect(parser, TokenType.TOKEN_LEFT_BRACE) == null {
+        return null;
+    }
+    
+    // 解析字段列表和内部方法
+    // 字段列表：field { ',' field }
+    // field = ID ':' type
+    // 内部方法：fn ID '(' params ')' type '{' body '}'
+    var fields: & & ASTNode = null;
+    var field_count: i32 = 0;
+    var field_capacity: i32 = 0;
+    
+    var methods: & & ASTNode = null;
+    var method_count: i32 = 0;
+    var method_capacity: i32 = 0;
+    
+    while parser.current_token != null && 
+          parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) == 0 && 
+          parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+        
+        // 检查是否为内部方法定义（fn 关键字）
+        if parser_match(parser, TokenType.TOKEN_FN) != 0 {
+            // 解析内部方法
+            const method: &ASTNode = parser_parse_function(parser);
+            if method == null {
+                return null;
+            }
+            
+            // 扩展方法数组
+            if method_count >= method_capacity {
+                var new_cap: i32 = 0;
+                if method_capacity == 0 {
+                    new_cap = 4;
+                } else {
+                    new_cap = method_capacity * 2;
+                }
+                const new_methods: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                if new_methods == null {
+                    return null;
+                }
+                
+                if methods != null {
+                    var i: i32 = 0;
+                    while i < method_count {
+                        new_methods[i] = methods[i];
+                        i = i + 1;
+                    }
+                }
+                
+                methods = new_methods;
+                method_capacity = new_cap;
+            }
+            
+            methods[method_count] = method;
+            method_count = method_count + 1;
+            
+            // 方法后可选逗号
+            if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+                parser_consume(parser);
+            }
+            continue;
+        }
+        
+        // 解析字段名称（允许 'type' 关键字作为字段名）
+        var field_name: &byte = null;
+        if parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+            field_name = arena_strdup(parser.arena, parser.current_token.value);
+        } else if parser_match(parser, TokenType.TOKEN_TYPE) != 0 {
+            field_name = arena_strdup(parser.arena, "type" as &byte);
+        } else {
+            return null;
+        }
+        if field_name == null {
+            return null;
+        }
+        
+        const field_line: i32 = parser.current_token.line;
+        const field_column: i32 = parser.current_token.column;
+        
+        parser_consume(parser);
+        
+        // 期望 ':'
+        if parser_expect(parser, TokenType.TOKEN_COLON) == null {
+            return null;
+        }
+        
+        // 解析字段类型
+        const field_type: &ASTNode = parser_parse_type(parser);
+        if field_type == null {
+            return null;
+        }
+        
+        // 检查是否有默认值（= expr）
+        var default_value: &ASTNode = null;
+        if parser_match(parser, TokenType.TOKEN_ASSIGN) != 0 {
+            parser_consume(parser);  // 消费 '='
+            default_value = parser_parse_expression(parser);
+            if default_value == null {
+                return null;
+            }
+        }
+        
+        // 创建字段节点（使用 ASTNodeType.AST_VAR_DECL，is_const = 0）
+        const field: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, field_line, field_column, parser.arena, parser_get_filename(parser));
+        if field == null {
+            return null;
+        }
+        
+        field.var_decl_name = field_name;
+        field.var_decl_type = field_type;
+        field.var_decl_init = default_value;  // 存储默认值
+        field.var_decl_is_const = 0;
+        
+        // 扩展字段数组（使用 Arena 分配）
+        if field_count >= field_capacity {
+            var new_capacity: i32 = 0;
+                        if field_capacity == 0 {
+                            new_capacity = 4;
+                        } else {
+                            new_capacity = field_capacity * 2;
+                        }
+            const new_fields: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+            if new_fields == null {
+                // 注意：Uya 版本简化错误报告
+                return null;
+            }
+            
+            // 复制旧字段
+            if fields != null {
+                var i: i32 = 0;
+                while i < field_count {
+                    new_fields[i] = fields[i];
+                    i = i + 1;
+                }
+            }
+            
+            fields = new_fields;
+            field_capacity = new_capacity;
+        }
+        
+        fields[field_count] = field;
+        field_count = field_count + 1;
+        
+        // 检查是否有逗号（可选，最后一个字段后不需要逗号）
+        if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+            parser_consume(parser);
+        }
+    }
+    
+    // 期望 '}'
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_BRACE) == null {
+        return null;
+    }
+    
+    struct_decl.struct_decl_fields = fields;
+    struct_decl.struct_decl_field_count = field_count;
+    struct_decl.struct_decl_methods = methods;
+    struct_decl.struct_decl_method_count = method_count;
+    
+    return struct_decl;
+}
+
+// 解析联合体声明主体：当前 token 为联合体名称 ID，解析 ID { variant_list }；is_extern!=0 时不解析 fn 方法
+fn parser_parse_union_body(parser: &Parser, line: i32, column: i32, is_extern: i32) &ASTNode {
+    if parser == null || parser.current_token == null || parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        return null;
+    }
+    const union_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+    if union_name == null {
+        return null;
+    }
+    parser_consume(parser);
+    const union_decl: &ASTNode = ast_new_node(ASTNodeType.AST_UNION_DECL, line, column, parser.arena, parser_get_filename(parser));
+    if union_decl == null {
+        return null;
+    }
+    union_decl.union_decl_name = union_name;
+    union_decl.union_decl_is_extern = is_extern;
+    if parser_expect(parser, TokenType.TOKEN_LEFT_BRACE) == null {
+        return null;
+    }
+    var variants: & & ASTNode = null;
+    var variant_count: i32 = 0;
+    var variant_capacity: i32 = 0;
+    var methods: & & ASTNode = null;
+    var method_count: i32 = 0;
+    var method_capacity: i32 = 0;
+    while parser.current_token != null &&
+          parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) == 0 &&
+          parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+        if is_extern == 0 && parser_match(parser, TokenType.TOKEN_FN) != 0 {
+            const method: &ASTNode = parser_parse_function(parser);
+            if method == null {
+                return null;
+            }
+            if method_count >= method_capacity {
+                var new_cap: i32 = 0;
+                if method_capacity == 0 {
+                    new_cap = 4;
+                } else {
+                    new_cap = method_capacity * 2;
+                }
+                const new_m: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                if new_m == null {
+                    return null;
+                }
+                var i: i32 = 0;
+                while i < method_count {
+                    new_m[i] = methods[i];
+                    i = i + 1;
+                }
+                methods = new_m;
+                method_capacity = new_cap;
+            }
+            methods[method_count] = method;
+            method_count = method_count + 1;
+            if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+                parser_consume(parser);
+            }
+            continue;
+        }
+        if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+            return null;
+        }
+        const v_line: i32 = parser.current_token.line;
+        const v_column: i32 = parser.current_token.column;
+        const variant_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+        if variant_name == null {
+            return null;
+        }
+        parser_consume(parser);
+        if parser_expect(parser, TokenType.TOKEN_COLON) == null {
+            return null;
+        }
+        const variant_type: &ASTNode = parser_parse_type(parser);
+        if variant_type == null {
+            return null;
+        }
+        const variant: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, v_line, v_column, parser.arena, parser_get_filename(parser));
+        if variant == null {
+            return null;
+        }
+        variant.var_decl_name = variant_name;
+        variant.var_decl_type = variant_type;
+        variant.var_decl_init = null;
+        variant.var_decl_is_const = 0;
+        if variant_count >= variant_capacity {
+            var new_cap: i32 = 0;
+            if variant_capacity == 0 {
+                new_cap = 4;
+            } else {
+                new_cap = variant_capacity * 2;
+            }
+            const new_v: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+            if new_v == null {
+                return null;
+            }
+            var i: i32 = 0;
+            while i < variant_count {
+                new_v[i] = variants[i];
+                i = i + 1;
+            }
+            variants = new_v;
+            variant_capacity = new_cap;
+        }
+        variants[variant_count] = variant;
+        variant_count = variant_count + 1;
+        if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+            parser_consume(parser);
+        }
+    }
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_BRACE) == null {
+        return null;
+    }
+    union_decl.union_decl_variants = variants;
+    union_decl.union_decl_variant_count = variant_count;
+    union_decl.union_decl_methods = methods;
+    union_decl.union_decl_method_count = method_count;
+    return union_decl;
+}
+
+// 解析联合体声明：union ID { variant_list }
+
+// 解析类型别名：type Name = Type ;
+fn parser_parse_type_alias(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    
+    if parser_match(parser, TokenType.TOKEN_TYPE) == 0 {
+        return null;
+    }
+    
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    
+    parser_consume(parser);
+    
+    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        fprintf(libc.stderr, "错误: type 后期望标识符\n" as *byte);
+        return null;
+    }
+    
+    const alias_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+    if alias_name == null {
+        return null;
+    }
+    parser_consume(parser);
+    
+    if parser_expect(parser, TokenType.TOKEN_ASSIGN) == null {
+        return null;
+    }
+    
+    const target_type: &ASTNode = parser_parse_type(parser);
+    if target_type == null {
+        fprintf(libc.stderr, "错误: type 别名需要目标类型\n" as *byte);
+        return null;
+    }
+    
+    if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+        return null;
+    }
+    
+    const type_alias: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ALIAS, line, column, parser.arena, parser_get_filename(parser));
+    if type_alias == null {
+        return null;
+    }
+    
+    type_alias.type_alias_name = alias_name;
+    type_alias.type_alias_target_type = target_type;
+    type_alias.type_alias_is_export = 0;
+    
+    return type_alias;
+}
+
+// 解析宏声明：mc ID(param_list) return_tag { statements }
+fn parser_parse_macro(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    
+    if parser_match(parser, TokenType.TOKEN_MC) == 0 {
+        return null;
+    }
+    
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    
+    parser_consume(parser);
+    
+    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        fprintf(libc.stderr, "错误: 'mc' 后期望宏名称\n" as *byte);
+        return null;
+    }
+    
+    const macro_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+    if macro_name == null {
+        return null;
+    }
+    
+    parser_consume(parser);
+    
+    const macro_decl: &ASTNode = ast_new_node(ASTNodeType.AST_MACRO_DECL, line, column, parser.arena, parser_get_filename(parser));
+    if macro_decl == null {
+        return null;
+    }
+    
+    macro_decl.macro_decl_name = macro_name;
+    macro_decl.macro_decl_params = null;
+    macro_decl.macro_decl_param_count = 0;
+    
+    // 期望 '('
+    if parser_expect(parser, TokenType.TOKEN_LEFT_PAREN) == null {
+        return null;
+    }
+    
+    // 解析参数列表（可选）
+    var params: & & ASTNode = null;
+    var param_count: i32 = 0;
+    var param_capacity: i32 = 0;
+    
+    if parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) == 0 {
+        // 有参数，进入解析循环
+        while parser.current_token != null && 
+              parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) == 0 && 
+              parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+            
+            // 解析参数名称，允许 'type' 关键字作为参数名
+            const param_line: i32 = parser.current_token.line;
+            const param_column: i32 = parser.current_token.column;
+            var param_name: &byte = null;
+            if parser_match(parser, TokenType.TOKEN_TYPE) != 0 {
+                param_name = arena_strdup(parser.arena, "type" as &byte);
+            } else if parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+                param_name = arena_strdup(parser.arena, parser.current_token.value);
+            } else {
+                fprintf(libc.stderr, "错误: 宏参数列表中期望参数名称\n" as *byte);
+                return null;
+            }
+            if param_name == null {
+                return null;
+            }
+            
+            parser_consume(parser);
+            
+            // 期望 ':'
+            if parser_expect(parser, TokenType.TOKEN_COLON) == null {
+                return null;
+            }
+            
+            // 解析参数类型（expr, stmt, type, pattern, ident）
+            // 注意：'type' 既是关键字又是宏参数类型，需要同时接受 TOKEN_IDENTIFIER 和 TOKEN_TYPE
+            var param_type_str: &byte = null;
+            if parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+                param_type_str = arena_strdup(parser.arena, parser.current_token.value);
+            } else if parser_match(parser, TokenType.TOKEN_TYPE) != 0 {
+                param_type_str = arena_strdup(parser.arena, "type" as &byte);
+            } else {
+                fprintf(libc.stderr, "错误: 宏参数类型必须是 'expr', 'stmt', 'type', 'pattern' 或 'ident'\n" as *byte);
+                return null;
+            }
+            if param_type_str == null {
+                return null;
+            }
+            
+            // 验证参数类型
+            if strcmp(param_type_str as *byte, "expr" as *byte) != 0 && 
+               strcmp(param_type_str as *byte, "stmt" as *byte) != 0 &&
+               strcmp(param_type_str as *byte, "type" as *byte) != 0 && 
+               strcmp(param_type_str as *byte, "pattern" as *byte) != 0 &&
+               strcmp(param_type_str as *byte, "ident" as *byte) != 0 {
+                fprintf(libc.stderr, "错误: 宏参数类型必须是 'expr', 'stmt', 'type', 'pattern' 或 'ident'\n" as *byte);
+                return null;
+            }
+            
+            parser_consume(parser);
+            
+            // 解析默认值（可选）
+            var default_value: &ASTNode = null;
+            if parser_match(parser, TokenType.TOKEN_ASSIGN) != 0 {
+                parser_consume(parser);
+                default_value = parser_parse_expression(parser);
+                if default_value == null {
+                    fprintf(libc.stderr, "错误: 宏参数默认值解析失败\n" as *byte);
+                    return null;
+                }
+            }
+            
+            // 创建参数类型节点（使用 AST_TYPE_NAMED）
+            const param_type_node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, param_line, param_column, parser.arena, parser_get_filename(parser));
+            if param_type_node == null {
+                return null;
+            }
+            param_type_node.type_named_name = param_type_str;
+            
+            // 创建参数节点（使用 AST_VAR_DECL）
+            const param: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, param_line, param_column, parser.arena, parser_get_filename(parser));
+            if param == null {
+                return null;
+            }
+            
+            param.var_decl_name = param_name;
+            param.var_decl_type = param_type_node;
+            param.var_decl_init = default_value;
+            param.var_decl_is_const = 0;
+            
+            // 扩展参数数组
+            if param_count >= param_capacity {
+                var new_capacity: i32 = 4;
+                if param_capacity != 0 {
+                    new_capacity = param_capacity * 2;
+                }
+                const new_params: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+                if new_params == null {
+                    fprintf(libc.stderr, "错误: Arena 内存不足，无法分配宏参数数组\n" as *byte);
+                    return null;
+                }
+                
+                if params != null {
+                    var i: i32 = 0;
+                    while i < param_count {
+                        new_params[i] = params[i];
+                        i = i + 1;
+                    }
+                }
+                
+                params = new_params;
+                param_capacity = new_capacity;
+            }
+            
+            params[param_count] = param;
+            param_count = param_count + 1;
+            
+            // 检查是否有逗号
+            if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+                parser_consume(parser);
+            }
+        }
+    }
+    
+    // 期望 ')'
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null {
+        return null;
+    }
+    
+    macro_decl.macro_decl_params = params;
+    macro_decl.macro_decl_param_count = param_count;
+    
+    // 解析返回标签（expr, stmt, struct, type）
+    // 注意：struct 和 type 是关键字，其他是标识符
+    var return_tag: &byte = null;
+    if parser_match(parser, TokenType.TOKEN_STRUCT) != 0 {
+        return_tag = arena_strdup(parser.arena, "struct" as &byte);
+        parser_consume(parser);
+    } else if parser_match(parser, TokenType.TOKEN_TYPE) != 0 {
+        return_tag = arena_strdup(parser.arena, "type" as &byte);
+        parser_consume(parser);
+    } else if parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+        return_tag = arena_strdup(parser.arena, parser.current_token.value);
+        parser_consume(parser);
+    } else {
+        return null;
+    }
+    
+    if return_tag == null {
+        return null;
+    }
+    
+    const body: &ASTNode = parser_parse_block(parser);
+    if body == null {
+        return null;
+    }
+    
+    macro_decl.macro_decl_return_tag = return_tag;
+    macro_decl.macro_decl_body = body;
+    macro_decl.macro_decl_is_export = 0;
+    
+    return macro_decl;
+}
+
+
+fn parser_parse_union(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null || parser_match(parser, TokenType.TOKEN_UNION) == 0 {
+        return null;
+    }
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    parser_consume(parser);
+    return parser_parse_union_body(parser, line, column, 0);
+}
+
+// 解析枚举声明：enum ID '{' variant_list '}'
+// variant_list = variant { ',' variant }
+// variant = ID [ '=' NUM ]
+fn parser_parse_enum(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    
+    // 期望 'enum'
+    if parser_match(parser, TokenType.TOKEN_ENUM) == 0 {
+        return null;
+    }
+    
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    
+    // 消费 'enum'
+    parser_consume(parser);
+    
+    // 期望枚举名称
+    const enum_name_val: &byte = parser.current_token.value;
+    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        return null;
+    }
+    
+    const enum_name: &byte = arena_strdup(parser.arena, enum_name_val);
+    if enum_name == null {
+        return null;
+    }
+    
+    // 消费枚举名称
+    parser_consume(parser);
+    
+    // 创建枚举声明节点
+    const enum_decl: &ASTNode = ast_new_node(ASTNodeType.AST_ENUM_DECL, line, column, parser.arena, parser_get_filename(parser));
+    if enum_decl == null {
+        return null;
+    }
+    
+    enum_decl.enum_decl_name = enum_name;
+    enum_decl.enum_decl_variants = null;
+    enum_decl.enum_decl_variant_count = 0;
+    
+    // 期望 '{'
+    if parser_expect(parser, TokenType.TOKEN_LEFT_BRACE) == null {
+        return null;
+    }
+    
+    // 解析变体列表
+    // 变体列表：variant { ',' variant }
+    // variant = ID
+    var variants: &EnumVariant = null;
+    var variant_count: i32 = 0;
+    var variant_capacity: i32 = 0;
+    
+    while parser.current_token != null && 
+          parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) == 0 && 
+          parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+        
+        // 解析变体名称
+        const variant_name_val: &byte = parser.current_token.value;
+        if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+            return null;
+        }
+        
+        const variant_name: &byte = arena_strdup(parser.arena, variant_name_val);
+        if variant_name == null {
+            return null;
+        }
+        
+        parser_consume(parser);
+        
+        // 扩展变体数组（使用 Arena 分配）
+        if variant_count >= variant_capacity {
+            var new_capacity: i32 = 0;
+                        if variant_capacity == 0 {
+                            new_capacity = 4;
+                        } else {
+                            new_capacity = variant_capacity * 2;
+                        }
+            const new_variants: &EnumVariant = arena_alloc(parser.arena, @size_of(EnumVariant) * new_capacity) as &EnumVariant;
+            if new_variants == null {
+                return null;
+            }
+            
+            // 复制旧变体
+            if variants != null {
+                var i: i32 = 0;
+                while i < variant_count {
+                    new_variants[i] = variants[i];
+                    i = i + 1;
+                }
+            }
+            
+            variants = new_variants;
+            variant_capacity = new_capacity;
+        }
+        
+        // 解析可选的显式值 (= NUM)
+        var variant_value: &byte = null;
+        if parser_match(parser, TokenType.TOKEN_ASSIGN) != 0 {
+            parser_consume(parser);  // 消费 '='
+            
+            // 期望数字字面量
+            if parser_match(parser, TokenType.TOKEN_NUMBER) == 0 {
+                return null;
+            }
+            
+            // 复制数字值字符串到 Arena
+            variant_value = arena_strdup(parser.arena, parser.current_token.value);
+            if variant_value == null {
+                return null;
+            }
+            
+            parser_consume(parser);  // 消费数字值
+        }
+        
+        // 添加变体（确保数组索引有效）
+        if variant_count < variant_capacity {
+            variants[variant_count].name = variant_name;
+            variants[variant_count].value = variant_value;  // null 表示没有显式赋值
+            variant_count = variant_count + 1;
+        } else {
+            // 注意：Uya 版本简化错误报告
+            return null;
+        }
+        
+        // 检查是否有逗号（可选，最后一个变体后不需要逗号）
+        if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+            parser_consume(parser);
+        }
+    }
+    
+    // 期望 '}'
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_BRACE) == null {
+        return null;
+    }
+    
+    enum_decl.enum_decl_variants = variants;
+    enum_decl.enum_decl_variant_count = variant_count;
+    
+    return enum_decl;
+}
+
+// 解析预定义错误声明：error ID ';'
+fn parser_parse_error_decl(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    if parser_match(parser, TokenType.TOKEN_ERROR) == 0 {
+        return null;
+    }
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    parser_consume(parser);
+    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        return null;
+    }
+    const name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+    if name == null {
+        return null;
+    }
+    parser_consume(parser);
+    if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+        return null;
+    }
+    const node: &ASTNode = ast_new_node(ASTNodeType.AST_ERROR_DECL, line, column, parser.arena, parser_get_filename(parser));
+    if node == null {
+        return null;
+    }
+    node.error_decl_name = name;
+    return node;
+}
+
+// 解析函数声明：fn ID '(' [ param_list ] ')' type '{' statements '}'
+// param_list = param { ',' param }
+// param = ID ':' type
+fn parser_parse_function(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    
+    // 期望 'fn'
+    if parser_match(parser, TokenType.TOKEN_FN) == 0 {
+        return null;
+    }
+    
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    
+    // 消费 'fn'
+    parser_consume(parser);
+    
+    // 期望函数名称
+    const fn_name_val: &byte = parser.current_token.value;
+    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        return null;
+    }
+    
+    const fn_name: &byte = arena_strdup(parser.arena, fn_name_val);
+    if fn_name == null {
+        return null;
+    }
+    
+    // 消费函数名称
+    parser_consume(parser);
+    
+    // 创建函数声明节点
+    const fn_decl: &ASTNode = ast_new_node(ASTNodeType.AST_FN_DECL, line, column, parser.arena, parser_get_filename(parser));
+    if fn_decl == null {
+        return null;
+    }
+    
+    fn_decl.fn_decl_name = fn_name;
+    fn_decl.fn_decl_type_params = null;
+    fn_decl.fn_decl_type_param_count = 0;
+    fn_decl.fn_decl_params = null;
+    fn_decl.fn_decl_param_count = 0;
+    fn_decl.fn_decl_return_type = null;
+    fn_decl.fn_decl_body = null;
+    
+    // 解析泛型参数列表（可选）：<T> 或 <T: Ord> 或 <T: Ord + Clone>
+    if parser.current_token != null && parser_match(parser, TokenType.TOKEN_LESS) != 0 {
+        var fn_type_params: &TypeParam = null;
+        var fn_type_param_count: i32 = 0;
+        var fn_type_param_capacity: i32 = 0;
+        
+        parser_consume(parser);  // 消费 '<'
+        
+        while parser.current_token != null &&
+              parser_match(parser, TokenType.TOKEN_GREATER) == 0 &&
+              parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+            
+            if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+                return null;
+            }
+            
+            const fn_param_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+            if fn_param_name == null {
+                return null;
+            }
+            parser_consume(parser);
+            
+            if fn_type_param_count >= fn_type_param_capacity {
+                var new_cap: i32 = 0;
+                if fn_type_param_capacity == 0 {
+                    new_cap = 4;
+                } else {
+                    new_cap = fn_type_param_capacity * 2;
+                }
+                const new_params: &TypeParam = arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
+                if new_params == null {
+                    return null;
+                }
+                var k: i32 = 0;
+                while k < fn_type_param_count {
+                    new_params[k] = fn_type_params[k];
+                    k = k + 1;
+                }
+                fn_type_params = new_params;
+                fn_type_param_capacity = new_cap;
+            }
+            
+            fn_type_params[fn_type_param_count].name = fn_param_name;
+            fn_type_params[fn_type_param_count].constraints = null;
+            fn_type_params[fn_type_param_count].constraint_count = 0;
+            
+            // 解析约束（可选）
+            if parser_match(parser, TokenType.TOKEN_COLON) != 0 {
+                parser_consume(parser);
+                var fn_constraints: & & byte = null;
+                var fn_constraint_count: i32 = 0;
+                var fn_constraint_capacity: i32 = 0;
+                
+                while parser.current_token != null &&
+                      parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+                    const fn_constraint_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+                    if fn_constraint_name == null {
+                        return null;
+                    }
+                    parser_consume(parser);
+                    
+                    if fn_constraint_count >= fn_constraint_capacity {
+                        var new_cap2: i32 = 0;
+                        if fn_constraint_capacity == 0 {
+                            new_cap2 = 4;
+                        } else {
+                            new_cap2 = fn_constraint_capacity * 2;
+                        }
+                        const new_constraints: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
+                        if new_constraints == null {
+                            return null;
+                        }
+                        var m: i32 = 0;
+                        while m < fn_constraint_count {
+                            new_constraints[m] = fn_constraints[m];
+                            m = m + 1;
+                        }
+                        fn_constraints = new_constraints;
+                        fn_constraint_capacity = new_cap2;
+                    }
+                    
+                    fn_constraints[fn_constraint_count] = fn_constraint_name;
+                    fn_constraint_count = fn_constraint_count + 1;
+                    
+                    if parser_match(parser, TokenType.TOKEN_PLUS) != 0 {
+                        parser_consume(parser);
+                    } else {
+                        break;
+                    }
+                }
+                
+                fn_type_params[fn_type_param_count].constraints = fn_constraints;
+                fn_type_params[fn_type_param_count].constraint_count = fn_constraint_count;
+            }
+            
+            fn_type_param_count = fn_type_param_count + 1;
+            
+            if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+                parser_consume(parser);
+            } else {
+                break;
+            }
+        }
+        
+        if parser_expect(parser, TokenType.TOKEN_GREATER) == null {
+            return null;
+        }
+        
+        fn_decl.fn_decl_type_params = fn_type_params;
+        fn_decl.fn_decl_type_param_count = fn_type_param_count;
+    }
+    
+    // 期望 '('
+    if parser_expect(parser, TokenType.TOKEN_LEFT_PAREN) == null {
+        return null;
+    }
+    
+    // 解析参数列表（可选，支持可变参数 ...）
+    var params: & & ASTNode = null;
+    var param_count: i32 = 0;
+    var param_capacity: i32 = 0;
+    var is_varargs: i32 = 0;
+    
+    if parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) == 0 {
+        // 有参数
+        while parser.current_token != null && 
+              parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) == 0 && 
+              parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+            
+            // 检查是否为可变参数标记（...）
+            if parser_match(parser, TokenType.TOKEN_ELLIPSIS) != 0 {
+                parser_consume(parser);
+                is_varargs = 1;
+                break;
+            }
+            
+            // 解析参数名称，允许 'type' 关键字作为参数名
+            const param_line: i32 = parser.current_token.line;
+            const param_column: i32 = parser.current_token.column;
+            var param_name: &byte = null;
+            if parser_match(parser, TokenType.TOKEN_TYPE) != 0 {
+                param_name = arena_strdup(parser.arena, "type" as &byte);
+            } else if parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+                param_name = arena_strdup(parser.arena, parser.current_token.value);
+            } else {
+                return null;
+            }
+            if param_name == null {
+                return null;
+            }
+            
+            parser_consume(parser);
+            
+            // 期望 ':'
+            if parser_expect(parser, TokenType.TOKEN_COLON) == null {
+                return null;
+            }
+            
+            // 解析参数类型
+            const param_type: &ASTNode = parser_parse_type(parser);
+            if param_type == null {
+                return null;
+            }
+            
+            // 创建参数节点（使用 ASTNodeType.AST_VAR_DECL，is_const = 0）
+            const param: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, param_line, param_column, parser.arena, parser_get_filename(parser));
+            if param == null {
+                return null;
+            }
+            
+            param.var_decl_name = param_name;
+            param.var_decl_type = param_type;
+            param.var_decl_init = null;
+            param.var_decl_is_const = 0;
+            
+            // 扩展参数数组（使用 Arena 分配）
+            if param_count >= param_capacity {
+                var new_capacity: i32 = 0;
+                        if param_capacity == 0 {
+                            new_capacity = 4;
+                        } else {
+                            new_capacity = param_capacity * 2;
+                        }
+                const new_params: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+                if new_params == null {
+                    // 注意：Uya 版本简化错误报告
+                    return null;
+                }
+                
+                // 复制旧参数
+                if params != null {
+                    var i: i32 = 0;
+                    while i < param_count {
+                        new_params[i] = params[i];
+                        i = i + 1;
+                    }
+                }
+                
+                params = new_params;
+                param_capacity = new_capacity;
+            }
+            
+            params[param_count] = param;
+            param_count = param_count + 1;
+            
+            // 检查是否有逗号或逗号后 ...
+            if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+                parser_consume(parser);
+            } else if parser_match(parser, TokenType.TOKEN_ELLIPSIS) != 0 {
+                // 逗号后紧跟 ...，下次循环处理
+            }
+        }
+    }
+    
+    // 期望 ')'
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null {
+        return null;
+    }
+    
+    // 解析返回类型
+    const return_type: &ASTNode = parser_parse_type(parser);
+    if return_type == null {
+        return null;
+    }
+    
+    // 解析函数体（代码块）
+    const body: &ASTNode = parser_parse_block(parser);
+    if body == null {
+        // 注意：Uya 版本简化错误报告
+        return null;
+    }
+    
+    fn_decl.fn_decl_params = params;
+    fn_decl.fn_decl_param_count = param_count;
+    fn_decl.fn_decl_return_type = return_type;
+    fn_decl.fn_decl_body = body;
+    fn_decl.fn_decl_is_varargs = is_varargs;
+    
+    return fn_decl;
+}
+
+// 解析 extern 声明：extern 已由调用方消费，当前为 'fn' 或 'union' 或字符串字面量
+// 解析 extern 变量声明：extern const/var name: type;
+// extern 和 const/var 关键字已由调用方消费
+fn parser_parse_extern_var_decl(parser: &Parser, extern_lib_name: &byte, is_const: i32, is_export: i32) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    
+    // 期望标识符
+    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        fprintf(libc.stderr, "错误: extern 变量声明期望标识符\n" as *byte);
+        return null;
+    }
+    const name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+    if name == null {
+        return null;
+    }
+    parser_consume(parser);
+    
+    // 期望冒号
+    if parser_expect(parser, TokenType.TOKEN_COLON) == null {
+        return null;
+    }
+    
+    // 解析类型
+    const var_type: &ASTNode = parser_parse_type(parser);
+    if var_type == null {
+        return null;
+    }
+    
+    // extern 变量声明以分号结尾
+    if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+        return null;
+    }
+    
+    // 创建 extern 变量声明节点
+    const node: &ASTNode = ast_new_node(ASTNodeType.AST_EXTERN_VAR_DECL, line, column, parser.arena, parser_get_filename(parser));
+    if node == null {
+        return null;
+    }
+    
+    node.extern_var_decl_name = name;
+    node.extern_var_decl_var_type = var_type;
+    node.extern_var_decl_init_expr = null;
+    node.extern_var_decl_is_const = is_const;
+    node.extern_var_decl_is_extern = 1;
+    node.extern_var_decl_is_export = is_export;
+    node.extern_var_decl_extern_lib_name = extern_lib_name;
+    
+    return node;
+}
+
+// 解析 export 变量声明：export const/var name: type = value;
+// export 和 const/var 关键字已由调用方消费
+fn parser_parse_export_var_decl(parser: &Parser, is_const: i32, is_export: i32) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    
+    // 期望标识符
+    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        fprintf(libc.stderr, "错误: export 变量声明期望标识符\n" as *byte);
+        return null;
+    }
+    const name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+    if name == null {
+        return null;
+    }
+    parser_consume(parser);
+    
+    // 期望冒号
+    if parser_expect(parser, TokenType.TOKEN_COLON) == null {
+        return null;
+    }
+    
+    // 解析类型
+    const var_type: &ASTNode = parser_parse_type(parser);
+    if var_type == null {
+        return null;
+    }
+    
+    // 期望等号和初始化表达式
+    var init_expr: &ASTNode = null;
+    if parser_match(parser, TokenType.TOKEN_ASSIGN) != 0 {
+        parser_consume(parser);
+        init_expr = parser_parse_expression(parser);
+        if init_expr == null {
+            return null;
+        }
+    }
+    
+    // 以分号结尾
+    if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+        return null;
+    }
+    
+    // 创建 extern 变量声明节点
+    const node: &ASTNode = ast_new_node(ASTNodeType.AST_EXTERN_VAR_DECL, line, column, parser.arena, parser_get_filename(parser));
+    if node == null {
+        return null;
+    }
+    
+    node.extern_var_decl_name = name;
+    node.extern_var_decl_var_type = var_type;
+    node.extern_var_decl_init_expr = init_expr;
+    node.extern_var_decl_is_const = is_const;
+    if init_expr == null {
+        node.extern_var_decl_is_extern = 1;  // 无初始化表达式则为 extern
+    } else {
+        node.extern_var_decl_is_extern = 0;
+    }
+    node.extern_var_decl_is_export = is_export;
+    node.extern_var_decl_extern_lib_name = null;
+    
+    return node;
+}
+
+// 解析 extern 声明：extern 已由调用方消费，当前为 'fn' 或 'union' 或 'const'/'var' 或字符串字面量
+// 若为 'union' 则解析 extern union；若为 const/var 则解析 extern 变量；否则解析 extern fn
+fn parser_parse_extern_decl(parser: &Parser, extern_lib_name: &byte, is_export: i32) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    
+    // extern union
+    if parser_match(parser, TokenType.TOKEN_UNION) != 0 {
+        const line: i32 = parser.current_token.line;
+        const column: i32 = parser.current_token.column;
+        parser_consume(parser);
+        const node: &ASTNode = parser_parse_union_body(parser, line, column, 1);
+        if node != null && is_export != 0 {
+            node.union_decl_is_export = 1;
+        }
+        return node;
+    }
+    
+    // extern const/var
+    if parser_match(parser, TokenType.TOKEN_CONST) != 0 {
+        parser_consume(parser);
+        return parser_parse_extern_var_decl(parser, extern_lib_name, 1, is_export);
+    }
+    if parser_match(parser, TokenType.TOKEN_VAR) != 0 {
+        parser_consume(parser);
+        return parser_parse_extern_var_decl(parser, extern_lib_name, 0, is_export);
+    }
+    
+    // extern fn
+    return parser_parse_extern_function_after_extern(parser, extern_lib_name);
+}
+
+// 解析 extern 函数声明（extern 已消费，当前为 'fn'）
+fn parser_parse_extern_function_after_extern(parser: &Parser, extern_lib_name: &byte) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    if parser_expect(parser, TokenType.TOKEN_FN) == null {
+        return null;
+    }
+    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        return null;
+    }
+    const fn_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+    if fn_name == null {
+        return null;
+    }
+    
+    // 消费函数名称
+    parser_consume(parser);
+    
+    // 创建函数声明节点
+    const fn_decl: &ASTNode = ast_new_node(ASTNodeType.AST_FN_DECL, line, column, parser.arena, parser_get_filename(parser));
+    if fn_decl == null {
+        return null;
+    }
+    
+    fn_decl.fn_decl_name = fn_name;
+    fn_decl.fn_decl_params = null;
+    fn_decl.fn_decl_param_count = 0;
+    fn_decl.fn_decl_return_type = null;
+    fn_decl.fn_decl_body = null;
+    fn_decl.fn_decl_is_varargs = 0;  // 默认不是可变参数函数
+    fn_decl.fn_decl_is_extern = 1;  // extern fn（含 export extern fn main）
+    fn_decl.fn_decl_extern_lib_name = extern_lib_name;  // extern "libc" fn 的库名
+    
+    // 期望 '('
+    if parser_expect(parser, TokenType.TOKEN_LEFT_PAREN) == null {
+        return null;
+    }
+    
+    // 解析参数列表（可选，支持可变参数）
+    var params: & & ASTNode = null;
+    var param_count: i32 = 0;
+    var param_capacity: i32 = 0;
+    var is_varargs: i32 = 0;
+    
+    if parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) == 0 {
+        // 有参数
+        while parser.current_token != null && 
+              parser_match(parser, TokenType.TOKEN_RIGHT_PAREN) == 0 && 
+              parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+            
+            // 检查是否为可变参数标记（...）
+            if parser_match(parser, TokenType.TOKEN_ELLIPSIS) != 0 {
+                // 可变参数标记必须是参数列表的最后一个元素
+                parser_consume(parser);  // 消费 '...'
+                is_varargs = 1;
+                break;  // 遇到 ... 后退出循环
+            }
+            
+            // 解析参数名称，允许 'type' 关键字作为参数名
+            const param_line: i32 = parser.current_token.line;
+            const param_column: i32 = parser.current_token.column;
+            var param_name: &byte = null;
+            if parser_match(parser, TokenType.TOKEN_TYPE) != 0 {
+                param_name = arena_strdup(parser.arena, "type" as &byte);
+            } else if parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+                param_name = arena_strdup(parser.arena, parser.current_token.value);
+            } else {
+                return null;
+            }
+            if param_name == null {
+                return null;
+            }
+            
+            parser_consume(parser);
+            
+            // 期望 ':'
+            if parser_expect(parser, TokenType.TOKEN_COLON) == null {
+                return null;
+            }
+            
+            // 解析参数类型
+            const param_type: &ASTNode = parser_parse_type(parser);
+            if param_type == null {
+                return null;
+            }
+            
+            // 创建参数节点（使用 ASTNodeType.AST_VAR_DECL，is_const = 0）
+            const param: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, param_line, param_column, parser.arena, parser_get_filename(parser));
+            if param == null {
+                return null;
+            }
+            
+            param.var_decl_name = param_name;
+            param.var_decl_type = param_type;
+            param.var_decl_init = null;
+            param.var_decl_is_const = 0;
+            
+            // 扩展参数数组（使用 Arena 分配）
+            if param_count >= param_capacity {
+                var new_capacity: i32 = 0;
+                        if param_capacity == 0 {
+                            new_capacity = 4;
+                        } else {
+                            new_capacity = param_capacity * 2;
+                        }
+                const new_params: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+                if new_params == null {
+                    return null;
+                }
+                
+                // 复制旧参数
+                if params != null {
+                    var i: i32 = 0;
+                    while i < param_count {
+                        new_params[i] = params[i];
+                        i = i + 1;
+                    }
+                }
+                
+                params = new_params;
+                param_capacity = new_capacity;
+            }
+            
+            params[param_count] = param;
+            param_count = param_count + 1;
+            
+            // 检查是否有逗号
+            if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+                parser_consume(parser);
+            } else if parser_match(parser, TokenType.TOKEN_ELLIPSIS) != 0 {
+                // 逗号后紧跟 ...，也是合法的
+                // 不消费逗号，让下次循环处理 ...
+            }
+        }
+    }
+    
+    // 期望 ')'
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null {
+        return null;
+    }
+    
+    // 解析返回类型
+    const return_type: &ASTNode = parser_parse_type(parser);
+    if return_type == null {
+        return null;
+    }
+    
+    fn_decl.fn_decl_params = params;
+    fn_decl.fn_decl_param_count = param_count;
+    fn_decl.fn_decl_return_type = return_type;
+    fn_decl.fn_decl_is_varargs = is_varargs;
+    
+    // 检查是否有函数体（extern "libc" fn 可能有函数体）
+    if parser_match(parser, TokenType.TOKEN_LEFT_BRACE) != 0 {
+        const body: &ASTNode = parser_parse_block(parser);
+        if body == null {
+            return null;
+        }
+        fn_decl.fn_decl_body = body;
+    } else if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+        // 没有函数体，期望分号
+        return null;
+    }
+    
+    return fn_decl;
+}
+
+// 解析 extern 函数声明（从 'extern' 开始）
+fn parser_parse_extern_function(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null || parser_match(parser, TokenType.TOKEN_EXTERN) == 0 {
+        return null;
+    }
+    parser_consume(parser);
+    // 检查是否有字符串字面量（extern "libc" fn）
+    var extern_lib_name: &byte = null;
+    if parser_match(parser, TokenType.TOKEN_STRING) != 0 {
+        extern_lib_name = arena_strdup(parser.arena, parser.current_token.value);
+        if extern_lib_name == null {
+            return null;
+        }
+        parser_consume(parser);
+    }
+    return parser_parse_extern_function_after_extern(parser, extern_lib_name);
+}
+
+// 解析 use 语句（use path; 或 use path.item; 或 use path as alias;）
+fn parser_parse_use_stmt(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    
+    // 期望 'use'
+    if parser_match(parser, TokenType.TOKEN_USE) == 0 {
+        return null;
+    }
+    
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    
+    // 消费 'use'
+    parser_consume(parser);
+    
+    // 解析模块路径（identifier { '.' identifier }）
+    var path_segments: & & byte = null;
+    var path_segment_count: i32 = 0;
+    var path_segment_capacity: i32 = 0;
+    
+    // 至少需要一个标识符
+    if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+        var filename: &byte = "(unknown)" as *byte;
+        if parser.lexer != null && parser.lexer.filename != null {
+            filename = parser.lexer.filename;
+        }
+        fprintf(libc.stderr, "错误: 语法分析失败 (%s:%d:%d): 'use' 后期望模块路径（标识符）\n" as *byte,
+                filename, line, column);
+        return null;
+    }
+    
+    // 读取路径段
+    while parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 {
+        // 扩展数组
+        if path_segment_count >= path_segment_capacity {
+            var new_capacity: i32 = path_segment_capacity;
+            if new_capacity == 0 {
+                new_capacity = 4;
+            } else {
+                new_capacity = new_capacity * 2;
+            }
+            const new_segments: & & byte = arena_alloc(parser.arena, (@size_of(&byte) as usize) * (new_capacity as usize)) as & & byte;
+            if new_segments == null {
+                return null;
+            }
+            
+            // 复制旧段
+            if path_segments != null {
+                var i: i32 = 0;
+                while i < path_segment_count {
+                    new_segments[i] = path_segments[i];
+                    i = i + 1;
+                }
+            }
+            
+            path_segments = new_segments;
+            path_segment_capacity = new_capacity;
+        }
+        
+        const segment: &byte = arena_strdup(parser.arena, parser.current_token.value);
+        if segment == null {
+            return null;
+        }
+        path_segments[path_segment_count] = segment;
+        path_segment_count = path_segment_count + 1;
+        parser_consume(parser);
+        
+        // 检查是否有 '.'
+        if parser_match(parser, TokenType.TOKEN_DOT) == 0 {
+            break;
+        }
+        parser_consume(parser);
+    }
+    
+    // 创建 use 语句节点
+    const use_stmt: &ASTNode = ast_new_node(ASTNodeType.AST_USE_STMT, line, column, parser.arena, parser_get_filename(parser));
+    if use_stmt == null {
+        return null;
+    }
+    
+    use_stmt.use_stmt_path_segments = path_segments;
+    use_stmt.use_stmt_path_segment_count = path_segment_count;
+    use_stmt.use_stmt_item_name = null;
+    use_stmt.use_stmt_alias = null;
+    
+    // 检查是否有特定项名称（use path.item;）
+    if parser_match(parser, TokenType.TOKEN_DOT) != 0 {
+        parser_consume(parser);
+        if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+            var filename: &byte = "(unknown)" as *byte;
+            if parser.lexer != null && parser.lexer.filename != null {
+                filename = parser.lexer.filename;
+            }
+            fprintf(libc.stderr, "错误: 语法分析失败 (%s:%d:%d): '.' 后期望项名称（标识符）\n" as *byte,
+                    filename, parser.current_token.line, parser.current_token.column);
+            return null;
+        }
+        use_stmt.use_stmt_item_name = arena_strdup(parser.arena, parser.current_token.value);
+        if use_stmt.use_stmt_item_name == null {
+            return null;
+        }
+        parser_consume(parser);
+    }
+    
+    // 检查是否有别名（use path as alias;）
+    if parser_match(parser, TokenType.TOKEN_AS) != 0 {
+        parser_consume(parser);
+        if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+            var filename: &byte = "(unknown)" as *byte;
+            if parser.lexer != null && parser.lexer.filename != null {
+                filename = parser.lexer.filename;
+            }
+            fprintf(libc.stderr, "错误: 语法分析失败 (%s:%d:%d): 'as' 后期望别名（标识符）\n" as *byte,
+                    filename, parser.current_token.line, parser.current_token.column);
+            return null;
+        }
+        use_stmt.use_stmt_alias = arena_strdup(parser.arena, parser.current_token.value);
+        if use_stmt.use_stmt_alias == null {
+            return null;
+        }
+        parser_consume(parser);
+    }
+    
+    // 期望 ';'
+    if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+        var filename: &byte = "(unknown)" as *byte;
+        if parser.lexer != null && parser.lexer.filename != null {
+            filename = parser.lexer.filename;
+        }
+        fprintf(libc.stderr, "错误: 语法分析失败 (%s:%d:%d): 'use' 语句后期望 ';'\n" as *byte,
+                filename, parser.current_token.line, parser.current_token.column);
+        return null;
+    }
+    
+    return use_stmt;
+}
+

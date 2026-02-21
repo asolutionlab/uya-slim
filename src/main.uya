@@ -7,6 +7,7 @@
 // use main：收集主文件所在目录下所有 .uya（arena, extern_decls, ast, lexer, parser, checker, str_utils）
 // 否则单文件依赖收集不会自动包含同目录文件，生成的 C 会缺少 ASTNode/Arena 等类型定义导致链接失败。
 use main;
+use parser;
 use checker;
 // C99 代码生成（子目录，整体导入该目录模块）
 use codegen.c99;
