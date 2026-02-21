@@ -5,22 +5,31 @@
 
 ---
 
-## 阶段一：巨型函数拆分 [░░░░░░░░░░] 0%
+## 阶段一：巨型函数拆分 [██░░░░░░░░] 20%
 
-### 1.1 添加 Type 辅助函数
+### 1.1 添加 Type 辅助函数 ✅
 
-- [ ] 在 `src/checker/types.uya` 添加以下辅助函数：
-  - [ ] `make_void_type()` - 创建 void 类型
-  - [ ] `make_i32_type()` - 创建 i32 类型
-  - [ ] `make_i64_type()` - 创建 i64 类型
-  - [ ] `make_f64_type()` - 创建 f64 类型
-  - [ ] `make_bool_type()` - 创建 bool 类型
-  - [ ] `make_pointer_type(pointee, is_ffi)` - 创建指针类型
-  - [ ] `make_array_type(element, size)` - 创建数组类型
-  - [ ] `make_slice_type(element, len)` - 创建切片类型
-  - [ ] `types_equal(a, b)` - 类型相等判断
-  - [ ] `type_to_string(t)` - 类型转字符串
-- [ ] 运行 `make check` 验证
+- [x] 在 `src/checker/type_utils.uya` 添加以下辅助函数：
+  - [x] `make_void_type()` - 创建 void 类型
+  - [x] `make_i32_type()` - 创建 i32 类型
+  - [x] `make_i64_type()` - 创建 i64 类型
+  - [x] `make_f64_type()` - 创建 f64 类型
+  - [x] `make_bool_type()` - 创建 bool 类型
+  - [x] `make_usize_type()` - 创建 usize 类型
+  - [x] `make_pointer_type(arena, pointee, is_ffi)` - 创建指针类型
+  - [x] `make_array_type(arena, element, size)` - 创建数组类型
+  - [x] `make_slice_type(arena, element)` - 创建切片类型
+  - [x] `make_named_type(kind, name)` - 创建命名类型
+  - [x] `make_error_union_type(arena, payload)` - 创建错误联合类型
+  - [x] `make_atomic_type(arena, inner)` - 创建原子类型
+  - [x] `is_void_type(t)` - 检查 void 类型
+  - [x] `is_pointer_type(t)` - 检查指针类型
+  - [x] `is_error_type(t)` - 检查错误类型
+  - [x] `is_error_union_type(t)` - 检查错误联合类型
+- [x] `type_to_string()` - 已存在于 `type_utils.uya`
+- [x] `type_equals()` - 已存在于 `type_utils.uya`
+- [x] 运行 `make check` 验证 - **通过**
+- [x] Git 提交: `583ba71 refactor(stage1): 添加 Type 辅助函数`
 
 ### 1.2 拆分 `checker_infer_type`
 
