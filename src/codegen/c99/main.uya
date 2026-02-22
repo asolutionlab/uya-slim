@@ -803,6 +803,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("// 错误联合类型（用于 !i64 等）\n" as *byte, codegen.output as *void);
     fputs("struct err_union_int64_t { uint32_t error_id; int64_t value; };\n" as *byte, codegen.output as *void);
     mark_struct_defined(codegen, ("err_union_int64_t" as *byte) as &byte);
+    // 生成 err_union_void 用于 test "name" {} 语句
+    fputs("struct err_union_void { uint32_t error_id; };\n" as *byte, codegen.output as *void);
+    mark_struct_defined(codegen, ("err_union_void" as *byte) as &byte);
     c99_emit_newline(codegen);
     
     // 第一步：收集所有字符串常量（从全局变量初始化和函数体）
@@ -1519,6 +1522,36 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         }
         fputs("static void uya_run_tests(void);\n" as *byte, codegen.output as *void);
         c99_emit_newline(codegen);
+        
+        // 生成测试计数变量（必须在 uya_run_tests 定义之前）
+        // 检查是否导入了 std.testing 模块（会定义 _test_passed 和 _test_failed）
+        var has_std_testing: i32 = 0;
+        i = 0;
+        while i < decl_count {
+            const decl: &ASTNode = ast.program_decls[i];
+            if decl != null && decl.type == ASTNodeType.AST_USE_STMT {
+                // 检查路径段是否是 std.testing
+                const seg_count: i32 = decl.use_stmt_path_segment_count;
+                const segs: &(&byte) = decl.use_stmt_path_segments;
+                // std.testing 至少有 2 个路径段
+                if seg_count >= 2 && segs != null {
+                    const seg0: &byte = segs[0];
+                    const seg1: &byte = segs[1];
+                    if seg0 != null && seg1 != null && strcmp(seg0 as *byte, "std" as *byte) == 0 && strcmp(seg1 as *byte, "testing" as *byte) == 0 {
+                        has_std_testing = 1;
+                        break;
+                    }
+                }
+            }
+            i = i + 1;
+        }
+        
+        // 如果没有导入 std.testing，需要定义测试计数变量
+        if has_std_testing == 0 {
+            fputs("static int32_t _test_passed = 0;\n" as *byte, codegen.output as *void);
+            fputs("static int32_t _test_failed = 0;\n" as *byte, codegen.output as *void);
+            c99_emit_newline(codegen);
+        }
     }
     
     // 前向声明：stdin/stdout/stderr 的存储（&_stdin 等）在 export 变量初始化中引用
@@ -1880,6 +1913,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 如果没有用户 main 函数但有 test 语句，生成 main_main 调用测试运行器
     // std.runtime.entry 的 main 会调用 main_main()
     if has_user_main == 0 && test_count > 0 {
+        // 测试计数变量已在第八步 c 中定义
         fputs("int32_t main_main(void) {\n" as *byte, codegen.output as *void);
         fprintf(codegen.output as *void, "    printf(\"\\n=== Running %d tests ===\\n\");\n" as *byte, test_count);
         fputs("    uya_run_tests();\n" as *byte, codegen.output as *void);
