@@ -63,10 +63,77 @@ enum TypeKind {
     TYPE_GENERIC_PARAM,
 }
 
+// ===== 类型数据辅助结构体（阶段四：Union 化重构）=====
+
+// 指针类型数据
+struct PointerData {
+    pointee: &Type,
+    is_ffi: i32,
+}
+
+// 数组类型数据
+struct ArrayData {
+    element: &Type,
+    size: i32,
+}
+
+// 切片类型数据
+struct SliceData {
+    element: &Type,
+    len: i32,
+}
+
+// 元组类型数据
+struct TupleData {
+    elements: &Type,
+    count: i32,
+}
+
+// 错误联合类型数据
+struct ErrorUnionData {
+    payload: &Type,
+    error_id: u32,
+}
+
+// 原子类型数据
+struct AtomicData {
+    inner: &Type,
+}
+
+// 泛型参数数据
+struct GenericParamData {
+    name: &byte,
+}
+
+// 结构体泛型数据
+struct StructGenericData {
+    name: &byte,
+    type_args: &Type,
+    type_arg_count: i32,
+}
+
+// 类型数据联合体（Tagged Union，类型安全）
+// 注意：虽然有额外的标签开销，但提供类型安全
+// Type.kind 字段用于区分类型，可以视为冗余但无害
+union TypeData {
+    named: &byte,                 // TYPE_ENUM, TYPE_STRUCT, TYPE_UNION, TYPE_INTERFACE 的名称
+    pointer: PointerData,         // TYPE_POINTER
+    array: ArrayData,             // TYPE_ARRAY
+    slice: SliceData,             // TYPE_SLICE
+    tuple: TupleData,             // TYPE_TUPLE
+    error_union: ErrorUnionData,  // TYPE_ERROR_UNION
+    atomic_data: AtomicData,      // TYPE_ATOMIC (atomic 是关键字)
+    generic_param: GenericParamData, // TYPE_GENERIC_PARAM
+    struct_generic: StructGenericData, // TYPE_STRUCT 带泛型参数
+}
+
 // ===== 类型结构 =====
 
 struct Type {
     kind: TypeKind,
+    data: TypeData,  // 新增：union 类型数据
+    // === 以下为过渡期保留的旧字段（迁移完成后移除）===
+    // @deprecated: 使用 data 访问
     enum_name: &byte,
     interface_name: &byte,
     struct_name: &byte,

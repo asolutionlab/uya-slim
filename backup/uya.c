@@ -17586,7 +17586,7 @@ static __attribute__((unused)) struct Type checker_check_call_expr(struct TypeCh
                                         if ((st_type.kind == TYPE_F64)) {
                                             pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (MAX_MONO_NAME_LEN - pos), (const char *)str534));
                                         } else {
-                                            if ((st_type.kind == TYPE_BOOL)) {
+                                            if ((is_bool_type(st_type) != 0)) {
                                                 pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (MAX_MONO_NAME_LEN - pos), (const char *)str535));
                                             }
                                         }
@@ -19320,7 +19320,7 @@ static __attribute__((unused)) struct Type infer_print_expr(struct TypeChecker *
             is_printable = 1;
         }
     }
-    if ((arg_type.kind == TYPE_POINTER)) {
+    if ((is_pointer_type(arg_type) != 0)) {
         if (((arg_type.pointer_to != NULL) && (arg_type.pointer_to->kind == TYPE_I8))) {
             is_printable = 1;
         }
@@ -19515,7 +19515,7 @@ static __attribute__((unused)) struct Type checker_check_alignof(struct TypeChec
     }
     if ((node->alignof_expr_is_type != 0)) {
         struct Type target_type = type_from_ast(checker, target);
-        if ((target_type.kind == TYPE_VOID)) {
+        if ((is_void_type(target_type) != 0)) {
             checker_report_error(checker, node, (uint8_t *)(uint8_t *)str558);
             struct Type _uya_ret = result;
             return _uya_ret;
@@ -19528,14 +19528,14 @@ static __attribute__((unused)) struct Type checker_check_alignof(struct TypeChec
                 if ((struct_decl != NULL)) {
                 } else {
                     struct Type expr_type = checker_infer_type(checker, target);
-                    if ((expr_type.kind == TYPE_VOID)) {
+                    if ((is_void_type(expr_type) != 0)) {
                     }
                 }
             } else {
             }
         } else {
             struct Type expr_type = checker_infer_type(checker, target);
-            if ((expr_type.kind == TYPE_VOID)) {
+            if ((is_void_type(expr_type) != 0)) {
             }
         }
     }
@@ -19600,7 +19600,7 @@ static __attribute__((unused)) struct Type checker_check_struct_init(struct Type
         uint8_t * const field_name = node->struct_init_field_names[i];
         struct ASTNode * const field_value = node->struct_init_field_values[i];
         struct Type field_type = find_struct_field_type(checker, struct_decl, field_name);
-        if ((field_type.kind == TYPE_VOID)) {
+        if ((is_void_type(field_type) != 0)) {
             i = (i + 1);
             continue;
         }
@@ -19926,7 +19926,7 @@ static __attribute__((unused)) struct Type checker_check_unary_expr(struct TypeC
                 return _uya_ret;
             } else {
                 if ((op == TOKEN_AMPERSAND)) {
-                    if ((operand_type.kind == TYPE_VOID)) {
+                    if ((is_void_type(operand_type) != 0)) {
                         result.kind = TYPE_POINTER;
                         result.pointer_to = NULL;
                         result.is_ffi_pointer = 0;
@@ -20214,12 +20214,12 @@ static __attribute__((unused)) int32_t check_assign_node(struct TypeChecker * ch
     } else {
         if ((dest->type == AST_MEMBER_ACCESS)) {
             dest_type = checker_check_member_access(checker, dest);
-            if ((dest_type.kind == TYPE_VOID)) {
+            if ((is_void_type(dest_type) != 0)) {
             }
         } else {
             if ((dest->type == AST_ARRAY_ACCESS)) {
                 dest_type = checker_check_array_access(checker, dest);
-                if ((dest_type.kind == TYPE_VOID)) {
+                if ((is_void_type(dest_type) != 0)) {
                     int32_t _uya_ret = 0;
                     return _uya_ret;
                 }
@@ -24340,7 +24340,7 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                 struct ASTNode * const v = node->union_decl_variants[i];
                                 if ((((v != NULL) && (v->type == AST_VAR_DECL)) && (v->var_decl_type != NULL))) {
                                     struct Type vt = type_from_ast(checker, v->var_decl_type);
-                                    if ((vt.kind == TYPE_VOID)) {
+                                    if ((is_void_type(vt) != 0)) {
                                         checker_report_error(checker, node, (uint8_t *)(uint8_t *)str690);
                                         int32_t _uya_ret = 0;
                                         return _uya_ret;
@@ -24556,7 +24556,7 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                                                     }
                                                                                     if (((is_null_literal != 0) && (checker->current_return_type.kind == TYPE_POINTER))) {
                                                                                     } else {
-                                                                                        if ((expr_type.kind == TYPE_VOID)) {
+                                                                                        if ((is_void_type(expr_type) != 0)) {
                                                                                         } else {
                                                                                             if (((type_equals(expr_type, checker->current_return_type) == 0) && (type_can_implicitly_convert(expr_type, checker->current_return_type) == 0))) {
                                                                                                 int32_t allow = 0;
@@ -26916,7 +26916,7 @@ static __attribute__((unused)) struct Type type_from_ast(struct TypeChecker * ch
             return _uya_ret;
         }
         struct Type pointed_type = type_from_ast(checker, pointed_type_node);
-        if ((pointed_type.kind == TYPE_VOID)) {
+        if ((is_void_type(pointed_type) != 0)) {
             if ((pointed_type_node->type == AST_TYPE_NAMED)) {
                 uint8_t * const type_name = pointed_type_node->type_named_name;
                 if (((type_name != NULL) && (str_equals(type_name, (uint8_t *)(uint8_t *)str517) != 0))) {
@@ -27289,7 +27289,7 @@ static __attribute__((unused)) uint8_t * type_to_string(struct Arena * arena, st
         uint8_t * _uya_ret = (uint8_t *)(uint8_t *)str517;
         return _uya_ret;
     }
-    if ((type.kind == TYPE_STRUCT)) {
+    if ((is_struct_type(type) != 0)) {
         if ((type.struct_name != NULL)) {
             uint8_t * _uya_ret = type.struct_name;
             return _uya_ret;
@@ -27321,7 +27321,7 @@ static __attribute__((unused)) uint8_t * type_to_string(struct Arena * arena, st
         uint8_t * _uya_ret = (uint8_t *)(uint8_t *)str362;
         return _uya_ret;
     }
-    if ((type.kind == TYPE_POINTER)) {
+    if ((is_pointer_type(type) != 0)) {
         if ((type.pointer_to == NULL)) {
             uint8_t * _uya_ret = (uint8_t *)(uint8_t *)str673;
             return _uya_ret;

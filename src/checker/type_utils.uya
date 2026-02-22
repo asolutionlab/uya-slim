@@ -1,6 +1,13 @@
 // checker/type_utils.uya - 类型工具函数
 // 从 checker/main.uya 拆分
 
+// ===== TypeData 辅助函数（阶段四：Union 化重构）=====
+
+// 创建空的 TypeData（用于原始类型，不需要额外数据）
+fn make_empty_type_data() TypeData {
+    return TypeData.named(null as &byte);
+}
+
 // ===== 类型转换 =====
 
 // 将 Type 转换为字符串表示
@@ -486,6 +493,7 @@ fn type_can_implicitly_convert(from: Type, to: Type) i32 {
 fn make_void_type() Type {
     return Type {
         kind: TypeKind.TYPE_VOID,
+        data: make_empty_type_data(),
         enum_name: null,
         interface_name: null,
         struct_name: null,
@@ -511,6 +519,7 @@ fn make_void_type() Type {
 fn make_i32_type() Type {
     return Type {
         kind: TypeKind.TYPE_I32,
+        data: make_empty_type_data(),
         enum_name: null,
         interface_name: null,
         struct_name: null,
@@ -536,6 +545,7 @@ fn make_i32_type() Type {
 fn make_i64_type() Type {
     return Type {
         kind: TypeKind.TYPE_I64,
+        data: make_empty_type_data(),
         enum_name: null,
         interface_name: null,
         struct_name: null,
@@ -561,6 +571,7 @@ fn make_i64_type() Type {
 fn make_f64_type() Type {
     return Type {
         kind: TypeKind.TYPE_F64,
+        data: make_empty_type_data(),
         enum_name: null,
         interface_name: null,
         struct_name: null,
@@ -586,6 +597,7 @@ fn make_f64_type() Type {
 fn make_bool_type() Type {
     return Type {
         kind: TypeKind.TYPE_BOOL,
+        data: make_empty_type_data(),
         enum_name: null,
         interface_name: null,
         struct_name: null,
@@ -611,6 +623,7 @@ fn make_bool_type() Type {
 fn make_usize_type() Type {
     return Type {
         kind: TypeKind.TYPE_USIZE,
+        data: make_empty_type_data(),
         enum_name: null,
         interface_name: null,
         struct_name: null,
@@ -639,8 +652,10 @@ fn make_pointer_type(arena: &Arena, pointee: &Type, is_ffi: i32) Type {
     if arena == null || pointee == null {
         return make_void_type();
     }
+    var pd: PointerData = PointerData { pointee: pointee, is_ffi: is_ffi };
     return Type {
         kind: TypeKind.TYPE_POINTER,
+        data: TypeData.pointer(pd),
         enum_name: null,
         interface_name: null,
         struct_name: null,
@@ -669,8 +684,10 @@ fn make_array_type(arena: &Arena, element: &Type, size: i32) Type {
     if arena == null || element == null {
         return make_void_type();
     }
+    var ad: ArrayData = ArrayData { element: element, size: size };
     return Type {
         kind: TypeKind.TYPE_ARRAY,
+        data: TypeData.array(ad),
         enum_name: null,
         interface_name: null,
         struct_name: null,
@@ -698,8 +715,10 @@ fn make_slice_type(arena: &Arena, element: &Type) Type {
     if arena == null || element == null {
         return make_void_type();
     }
+    var sd: SliceData = SliceData { element: element, len: 0 };
     return Type {
         kind: TypeKind.TYPE_SLICE,
+        data: TypeData.slice(sd),
         enum_name: null,
         interface_name: null,
         struct_name: null,
@@ -727,6 +746,7 @@ fn make_slice_type(arena: &Arena, element: &Type) Type {
 fn make_named_type(kind: TypeKind, name: &byte) Type {
     var t: Type = Type {
         kind: kind,
+        data: TypeData.named(name),
         enum_name: null,
         interface_name: null,
         struct_name: null,
@@ -764,8 +784,10 @@ fn make_error_union_type(arena: &Arena, payload: &Type) Type {
     if arena == null || payload == null {
         return make_void_type();
     }
+    var eud: ErrorUnionData = ErrorUnionData { payload: payload, error_id: 0 };
     return Type {
         kind: TypeKind.TYPE_ERROR_UNION,
+        data: TypeData.error_union(eud),
         enum_name: null,
         interface_name: null,
         struct_name: null,
@@ -793,8 +815,10 @@ fn make_atomic_type(arena: &Arena, inner: &Type) Type {
     if arena == null || inner == null {
         return make_void_type();
     }
+    var ad: AtomicData = AtomicData { inner: inner };
     return Type {
         kind: TypeKind.TYPE_ATOMIC,
+        data: TypeData.atomic_data(ad),
         enum_name: null,
         interface_name: null,
         struct_name: null,

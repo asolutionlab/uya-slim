@@ -1506,6 +1506,14 @@ struct Interval;
 struct MacroParamBinding;
 struct MacroExpandContext;
 struct VisitState;
+struct PointerData;
+struct ArrayData;
+struct SliceData;
+struct TupleData;
+struct ErrorUnionData;
+struct AtomicData;
+struct GenericParamData;
+struct StructGenericData;
 struct Type;
 struct Symbol;
 struct FunctionSignature;
@@ -1768,6 +1776,58 @@ struct err_union_int32_t { uint32_t error_id; int32_t value; };
 struct err_union_intptr_t { uint32_t error_id; intptr_t value; };
 struct err_union_voidptr { uint32_t error_id; void * value; };
 
+
+struct PointerData {
+    struct Type * pointee;
+    int32_t is_ffi;
+};
+
+struct ArrayData {
+    struct Type * element;
+    int32_t size;
+};
+
+struct SliceData {
+    struct Type * element;
+    int32_t len;
+};
+
+struct TupleData {
+    struct Type * elements;
+    int32_t count;
+};
+
+struct ErrorUnionData {
+    struct Type * payload;
+    uint32_t error_id;
+};
+
+struct AtomicData {
+    struct Type * inner;
+};
+
+struct GenericParamData {
+    uint8_t * name;
+};
+
+struct StructGenericData {
+    uint8_t * name;
+    struct Type * type_args;
+    int32_t type_arg_count;
+};
+
+union TypeData {
+    uint8_t * named;
+    struct PointerData pointer;
+    struct ArrayData array;
+    struct SliceData slice;
+    struct TupleData tuple;
+    struct ErrorUnionData error_union;
+    struct AtomicData atomic_data;
+    struct GenericParamData generic_param;
+    struct StructGenericData struct_generic;
+};
+struct uya_tagged_TypeData { int _tag; union TypeData u; };
 
 // 内置 TypeInfo 结构体（由 @mc_type 使用）
 struct TypeInfo {
@@ -2144,8 +2204,17 @@ struct VisitState {
     int32_t state;
 };
 
+
+
+
+
+
+
+
+
 struct Type {
     enum TypeKind kind;
+    struct uya_tagged_TypeData data;
     uint8_t * enum_name;
     uint8_t * interface_name;
     uint8_t * struct_name;
@@ -2870,6 +2939,7 @@ static void checker_mark_moved_call_args(struct TypeChecker * checker, struct AS
 static uint32_t hash_error_name(uint8_t * name);
 static uint32_t get_or_add_error_id(struct TypeChecker * checker, uint8_t * name, struct ASTNode * node);
 static struct Type type_from_ast(struct TypeChecker * checker, struct ASTNode * type_node);
+static struct uya_tagged_TypeData make_empty_type_data();
 static uint8_t * type_to_string(struct Arena * arena, struct Type type);
 static int32_t is_integer_type(enum TypeKind k);
 static int32_t is_float_type(enum TypeKind k);
@@ -4890,7 +4960,7 @@ static __attribute__((unused)) int32_t compile_files(int32_t * input_file_indice
     merge_end_time = clock();
     libc_fprintf(stderr, (const char *)str98, merged_ast->program_decl_count);
     libc_fprintf(stderr, (const char *)str99);
-    struct Type void_type = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type void_type = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     #pragma GCC diagnostic push
     #pragma GCC diagnostic ignored "-Wmissing-braces"
     struct TypeChecker checker = (struct TypeChecker){.arena = NULL, .symbol_table = (struct SymbolTable){.slots = {0}, .count = 0}, .function_table = (struct FunctionTable){.slots = {0}, .count = 0}, .module_table = 0, .import_table = 0, .string_pool = 0, .scope_level = 0, .loop_depth = 0, .program_node = NULL, .error_count = 0, .default_filename = NULL, .current_return_type = void_type, .in_function = 0, .in_defer_or_errdefer = 0, .current_function_decl = 0, .error_names = {0}, .error_hashes = {0}, .error_name_count = 0, .moved_names = {0}, .moved_count = 0, .project_root_dir = 0, .uya_root_dir = 0, .current_type_params = 0, .current_type_param_count = 0, .mono_instances = {{0}}, .mono_instance_count = 0, .constraint_var_names = {0}, .constraint_ops = {0}, .constraint_values = {0}, .constraint_count = 0, .pointer_nonnull_names = {0}, .pointer_nonnull_count = 0, .pointer_nullable_names = {0}, .pointer_nullable_count = 0, .enable_safety_proof = 0, .proof_step_limit = 0, .proof_step_count = 0, .scope_heads = {0}};
@@ -17396,7 +17466,7 @@ static __attribute__((unused)) double parse_float_literal(uint8_t * str, struct 
 static __attribute__((unused)) struct Type checker_check_call_expr(struct TypeChecker * checker, struct ASTNode * node) {
     (void)checker;
     (void)node;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if ((((checker == NULL) || (node == NULL)) || (node->type != AST_CALL_EXPR))) {
         struct Type _uya_ret = result;
         return _uya_ret;
@@ -17586,7 +17656,7 @@ static __attribute__((unused)) struct Type checker_check_call_expr(struct TypeCh
                                         if ((st_type.kind == TYPE_F64)) {
                                             pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (MAX_MONO_NAME_LEN - pos), (const char *)str534));
                                         } else {
-                                            if ((st_type.kind == TYPE_BOOL)) {
+                                            if ((is_bool_type(st_type) != 0)) {
                                                 pos = (pos + libc_snprintf((char *)(uint8_t *)(&mono_name[pos]), (MAX_MONO_NAME_LEN - pos), (const char *)str535));
                                             }
                                         }
@@ -17933,7 +18003,7 @@ static __attribute__((unused)) struct Type checker_check_call_expr(struct TypeCh
 static __attribute__((unused)) struct Type checker_check_member_access(struct TypeChecker * checker, struct ASTNode * node) {
     (void)checker;
     (void)node;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if ((((checker == NULL) || (node == NULL)) || (node->type != AST_MEMBER_ACCESS))) {
         struct Type _uya_ret = result;
         return _uya_ret;
@@ -18048,7 +18118,7 @@ static __attribute__((unused)) struct Type checker_check_member_access(struct Ty
         struct Type _uya_ret = result;
         return _uya_ret;
     }
-    struct Type field_type = (struct Type){.kind = TYPE_VOID, .enum_name = 0, .interface_name = 0, .struct_name = 0, .union_name = 0, .pointer_to = 0, .is_ffi_pointer = 0, .element_type = 0, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type field_type = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = 0, .interface_name = 0, .struct_name = 0, .union_name = 0, .pointer_to = 0, .is_ffi_pointer = 0, .element_type = 0, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if (((object_type.struct_type_args != NULL) && (object_type.struct_type_arg_count > 0))) {
         field_type = find_struct_field_type_with_substitution(checker, struct_decl, node->member_access_field_name, object_type.struct_type_args, object_type.struct_type_arg_count);
     } else {
@@ -18070,7 +18140,7 @@ static __attribute__((unused)) struct Type checker_check_member_access(struct Ty
 
 static __attribute__((unused)) struct Type copy_type(const struct Type * t) {
     (void)t;
-    struct Type r = (struct Type){.kind = t->kind, .enum_name = t->enum_name, .interface_name = t->interface_name, .struct_name = t->struct_name, .union_name = t->union_name, .pointer_to = t->pointer_to, .is_ffi_pointer = t->is_ffi_pointer, .element_type = t->element_type, .array_size = t->array_size, .slice_element_type = t->slice_element_type, .slice_len = t->slice_len, .tuple_element_types = t->tuple_element_types, .tuple_count = t->tuple_count, .error_union_payload_type = t->error_union_payload_type, .error_error_id = t->error_error_id, .atomic_inner_type = t->atomic_inner_type, .generic_param_name = t->generic_param_name, .struct_type_args = t->struct_type_args, .struct_type_arg_count = t->struct_type_arg_count};
+    struct Type r = (struct Type){.kind = t->kind, .data = 0, .enum_name = t->enum_name, .interface_name = t->interface_name, .struct_name = t->struct_name, .union_name = t->union_name, .pointer_to = t->pointer_to, .is_ffi_pointer = t->is_ffi_pointer, .element_type = t->element_type, .array_size = t->array_size, .slice_element_type = t->slice_element_type, .slice_len = t->slice_len, .tuple_element_types = t->tuple_element_types, .tuple_count = t->tuple_count, .error_union_payload_type = t->error_union_payload_type, .error_error_id = t->error_error_id, .atomic_inner_type = t->atomic_inner_type, .generic_param_name = t->generic_param_name, .struct_type_args = t->struct_type_args, .struct_type_arg_count = t->struct_type_arg_count};
     struct Type _uya_ret = r;
     return _uya_ret;
 }
@@ -18128,7 +18198,7 @@ static __attribute__((unused)) struct Type find_struct_field_type(struct TypeChe
     (void)checker;
     (void)struct_decl;
     (void)field_name;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if (((((checker == NULL) || (struct_decl == NULL)) || (struct_decl->type != AST_STRUCT_DECL)) || (field_name == NULL))) {
         struct Type _uya_ret = result;
         return _uya_ret;
@@ -18154,7 +18224,7 @@ static __attribute__((unused)) struct Type find_struct_field_type_with_substitut
     (void)field_name;
     (void)type_args;
     (void)type_arg_count;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if (((((checker == NULL) || (struct_decl == NULL)) || (struct_decl->type != AST_STRUCT_DECL)) || (field_name == NULL))) {
         struct Type _uya_ret = result;
         return _uya_ret;
@@ -18197,7 +18267,7 @@ static __attribute__((unused)) struct Type find_struct_field_type_with_substitut
 static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker * checker, struct ASTNode * expr) {
     (void)checker;
     (void)expr;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if (((checker == NULL) || (expr == NULL))) {
         struct Type _uya_ret = result;
         return _uya_ret;
@@ -18349,7 +18419,7 @@ static __attribute__((unused)) struct Type checker_infer_type(struct TypeChecker
                                                         return _uya_ret;
                                                     } else {
                                                         if ((expr->type == AST_STRING)) {
-                                                            struct Type byte_type = (struct Type){.kind = TYPE_BYTE, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+                                                            struct Type byte_type = (struct Type){.kind = TYPE_BYTE, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
                                                             struct Type * const pointed_type_ptr = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                                             if ((pointed_type_ptr == NULL)) {
                                                                 struct Type _uya_ret = make_void_type();
@@ -18991,7 +19061,7 @@ static __attribute__((unused)) struct Type infer_member_access(struct TypeChecke
             uint8_t * const field_name = expr->member_access_field_name;
             if ((field_name != NULL)) {
                 if ((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str583) != 0)) {
-                    struct Type result = (struct Type){.kind = TYPE_POINTER, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 1, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+                    struct Type result = (struct Type){.kind = TYPE_POINTER, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 1, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
                     struct Type * const inner_type = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                     if ((inner_type != NULL)) {
                         inner_type[0] = make_i32_type();
@@ -19015,7 +19085,7 @@ static __attribute__((unused)) struct Type infer_member_access(struct TypeChecke
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
-    struct Type field_type = (struct Type){.kind = TYPE_VOID, .enum_name = 0, .interface_name = 0, .struct_name = 0, .union_name = 0, .pointer_to = 0, .is_ffi_pointer = 0, .element_type = 0, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type field_type = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = 0, .interface_name = 0, .struct_name = 0, .union_name = 0, .pointer_to = 0, .is_ffi_pointer = 0, .element_type = 0, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if (((object_type.struct_type_args != NULL) && (object_type.struct_type_arg_count > 0))) {
         field_type = find_struct_field_type_with_substitution(checker, struct_decl, expr->member_access_field_name, object_type.struct_type_args, object_type.struct_type_arg_count);
     } else {
@@ -19189,7 +19259,7 @@ static __attribute__((unused)) struct Type infer_syscall(struct TypeChecker * ch
         return _uya_ret;
     }
     payload_type->kind = TYPE_I64;
-    struct Type result = (struct Type){.kind = TYPE_ERROR_UNION, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = payload_type, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_ERROR_UNION, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = payload_type, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     struct Type _uya_ret = result;
     return _uya_ret;
 }
@@ -19222,7 +19292,7 @@ static __attribute__((unused)) struct Type infer_unary_expr(struct TypeChecker *
                         return _uya_ret;
                     }
                     pointed_type_ptr[0] = copy_type((&operand_type));
-                    struct Type result = (struct Type){.kind = TYPE_POINTER, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = NULL, .pointer_to = pointed_type_ptr, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+                    struct Type result = (struct Type){.kind = TYPE_POINTER, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = NULL, .pointer_to = pointed_type_ptr, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
                     struct Type _uya_ret = result;
                     return _uya_ret;
                 } else {
@@ -19320,7 +19390,7 @@ static __attribute__((unused)) struct Type infer_print_expr(struct TypeChecker *
             is_printable = 1;
         }
     }
-    if ((arg_type.kind == TYPE_POINTER)) {
+    if ((is_pointer_type(arg_type) != 0)) {
         if (((arg_type.pointer_to != NULL) && (arg_type.pointer_to->kind == TYPE_I8))) {
             is_printable = 1;
         }
@@ -19374,7 +19444,7 @@ static __attribute__((unused)) struct Type infer_catch_expr(struct TypeChecker *
     }
     struct Type payload = operand_type.error_union_payload_type[0];
     if ((expr->catch_expr_err_name != NULL)) {
-        struct Type err_type = (struct Type){.kind = TYPE_ERROR, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+        struct Type err_type = (struct Type){.kind = TYPE_ERROR, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
         checker_enter_scope(checker);
         struct Symbol * const sym = (struct Symbol *)arena_alloc(checker->arena, (int32_t)sizeof(struct Symbol));
         if ((sym != NULL)) {
@@ -19410,7 +19480,7 @@ static __attribute__((unused)) struct Type infer_catch_expr(struct TypeChecker *
 static __attribute__((unused)) struct Type checker_check_array_access(struct TypeChecker * checker, struct ASTNode * node) {
     (void)checker;
     (void)node;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if ((((checker == NULL) || (node == NULL)) || (node->type != AST_ARRAY_ACCESS))) {
         struct Type _uya_ret = result;
         return _uya_ret;
@@ -19502,7 +19572,7 @@ static __attribute__((unused)) struct Type checker_check_array_access(struct Typ
 static __attribute__((unused)) struct Type checker_check_alignof(struct TypeChecker * checker, struct ASTNode * node) {
     (void)checker;
     (void)node;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if ((((checker == NULL) || (node == NULL)) || (node->type != AST_ALIGNOF))) {
         struct Type _uya_ret = result;
         return _uya_ret;
@@ -19515,7 +19585,7 @@ static __attribute__((unused)) struct Type checker_check_alignof(struct TypeChec
     }
     if ((node->alignof_expr_is_type != 0)) {
         struct Type target_type = type_from_ast(checker, target);
-        if ((target_type.kind == TYPE_VOID)) {
+        if ((is_void_type(target_type) != 0)) {
             checker_report_error(checker, node, (uint8_t *)(uint8_t *)str558);
             struct Type _uya_ret = result;
             return _uya_ret;
@@ -19528,14 +19598,14 @@ static __attribute__((unused)) struct Type checker_check_alignof(struct TypeChec
                 if ((struct_decl != NULL)) {
                 } else {
                     struct Type expr_type = checker_infer_type(checker, target);
-                    if ((expr_type.kind == TYPE_VOID)) {
+                    if ((is_void_type(expr_type) != 0)) {
                     }
                 }
             } else {
             }
         } else {
             struct Type expr_type = checker_infer_type(checker, target);
-            if ((expr_type.kind == TYPE_VOID)) {
+            if ((is_void_type(expr_type) != 0)) {
             }
         }
     }
@@ -19547,7 +19617,7 @@ static __attribute__((unused)) struct Type checker_check_alignof(struct TypeChec
 static __attribute__((unused)) struct Type checker_check_len(struct TypeChecker * checker, struct ASTNode * node) {
     (void)checker;
     (void)node;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if ((((checker == NULL) || (node == NULL)) || (node->type != AST_LEN))) {
         struct Type _uya_ret = result;
         return _uya_ret;
@@ -19571,7 +19641,7 @@ static __attribute__((unused)) struct Type checker_check_len(struct TypeChecker 
 static __attribute__((unused)) struct Type checker_check_struct_init(struct TypeChecker * checker, struct ASTNode * node) {
     (void)checker;
     (void)node;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if ((((checker == NULL) || (node == NULL)) || (node->type != AST_STRUCT_INIT))) {
         struct Type _uya_ret = result;
         return _uya_ret;
@@ -19600,7 +19670,7 @@ static __attribute__((unused)) struct Type checker_check_struct_init(struct Type
         uint8_t * const field_name = node->struct_init_field_names[i];
         struct ASTNode * const field_value = node->struct_init_field_values[i];
         struct Type field_type = find_struct_field_type(checker, struct_decl, field_name);
-        if ((field_type.kind == TYPE_VOID)) {
+        if ((is_void_type(field_type) != 0)) {
             i = (i + 1);
             continue;
         }
@@ -19622,7 +19692,7 @@ static __attribute__((unused)) struct Type checker_check_struct_init(struct Type
 static __attribute__((unused)) struct Type checker_check_binary_expr(struct TypeChecker * checker, struct ASTNode * node) {
     (void)checker;
     (void)node;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if ((((checker == NULL) || (node == NULL)) || (node->type != AST_BINARY_EXPR))) {
         struct Type _uya_ret = result;
         return _uya_ret;
@@ -19875,7 +19945,7 @@ static __attribute__((unused)) void checker_check_cast_expr(struct TypeChecker *
 static __attribute__((unused)) struct Type checker_check_unary_expr(struct TypeChecker * checker, struct ASTNode * node) {
     (void)checker;
     (void)node;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if ((((checker == NULL) || (node == NULL)) || (node->type != AST_UNARY_EXPR))) {
         struct Type _uya_ret = result;
         return _uya_ret;
@@ -19926,7 +19996,7 @@ static __attribute__((unused)) struct Type checker_check_unary_expr(struct TypeC
                 return _uya_ret;
             } else {
                 if ((op == TOKEN_AMPERSAND)) {
-                    if ((operand_type.kind == TYPE_VOID)) {
+                    if ((is_void_type(operand_type) != 0)) {
                         result.kind = TYPE_POINTER;
                         result.pointer_to = NULL;
                         result.is_ffi_pointer = 0;
@@ -20080,7 +20150,7 @@ static __attribute__((unused)) int32_t check_match_expr_node(struct TypeChecker 
             struct ASTNode * const union_decl = find_union_decl_from_program(checker->program_node, expr_type.union_name);
             if ((union_decl != NULL)) {
                 int32_t found = 0;
-                struct Type variant_type = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+                struct Type variant_type = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
                 int32_t k = 0;
                 while ((k < union_decl->union_decl_variant_count)) {
                     struct ASTNode * const v = union_decl->union_decl_variants[k];
@@ -20186,7 +20256,7 @@ static __attribute__((unused)) int32_t check_assign_node(struct TypeChecker * ch
         int32_t _uya_ret = 0;
         return _uya_ret;
     }
-    struct Type dest_type = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+    struct Type dest_type = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
     if ((dest->type == AST_UNDERSCORE)) {
         if ((checker_check_node(checker, node->assign_src) == 0)) {
             int32_t _uya_ret = 0;
@@ -20214,12 +20284,12 @@ static __attribute__((unused)) int32_t check_assign_node(struct TypeChecker * ch
     } else {
         if ((dest->type == AST_MEMBER_ACCESS)) {
             dest_type = checker_check_member_access(checker, dest);
-            if ((dest_type.kind == TYPE_VOID)) {
+            if ((is_void_type(dest_type) != 0)) {
             }
         } else {
             if ((dest->type == AST_ARRAY_ACCESS)) {
                 dest_type = checker_check_array_access(checker, dest);
-                if ((dest_type.kind == TYPE_VOID)) {
+                if ((is_void_type(dest_type) != 0)) {
                     int32_t _uya_ret = 0;
                     return _uya_ret;
                 }
@@ -20490,7 +20560,7 @@ static __attribute__((unused)) int32_t check_for_stmt_node(struct TypeChecker * 
         }
         checker_enter_scope(checker);
         checker->loop_depth = (checker->loop_depth + 1);
-        struct Type var_type = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+        struct Type var_type = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
         if ((array_type.element_type == NULL)) {
             checker_report_error(checker, node, (uint8_t *)(uint8_t *)str635);
             checker_enter_scope(checker);
@@ -20518,7 +20588,7 @@ static __attribute__((unused)) int32_t check_for_stmt_node(struct TypeChecker * 
                 return _uya_ret;
             } else {
                 element_type_ptr[0] = copy_type((&array_type.element_type[0]));
-                var_type = (struct Type){.kind = TYPE_POINTER, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = element_type_ptr, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+                var_type = (struct Type){.kind = TYPE_POINTER, .data = 0, .enum_name = NULL, .interface_name = 0, .struct_name = NULL, .union_name = 0, .pointer_to = element_type_ptr, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
             }
         } else {
             var_type = copy_type((&array_type.element_type[0]));
@@ -24340,7 +24410,7 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                 struct ASTNode * const v = node->union_decl_variants[i];
                                 if ((((v != NULL) && (v->type == AST_VAR_DECL)) && (v->var_decl_type != NULL))) {
                                     struct Type vt = type_from_ast(checker, v->var_decl_type);
-                                    if ((vt.kind == TYPE_VOID)) {
+                                    if ((is_void_type(vt) != 0)) {
                                         checker_report_error(checker, node, (uint8_t *)(uint8_t *)str690);
                                         int32_t _uya_ret = 0;
                                         return _uya_ret;
@@ -24501,7 +24571,7 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                                                 struct Type prev_return_type = checker->current_return_type;
                                                                                 const int32_t prev_in_function = checker->in_function;
                                                                                 struct ASTNode * const prev_function_decl = checker->current_function_decl;
-                                                                                struct Type error_void_type = (struct Type){.kind = TYPE_ERROR_UNION, .enum_name = 0, .interface_name = 0, .struct_name = 0, .union_name = 0, .pointer_to = 0, .is_ffi_pointer = 0, .element_type = 0, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
+                                                                                struct Type error_void_type = (struct Type){.kind = TYPE_ERROR_UNION, .data = 0, .enum_name = 0, .interface_name = 0, .struct_name = 0, .union_name = 0, .pointer_to = 0, .is_ffi_pointer = 0, .element_type = 0, .array_size = 0, .slice_element_type = 0, .slice_len = 0, .tuple_element_types = 0, .tuple_count = 0, .error_union_payload_type = 0, .error_error_id = 0, .atomic_inner_type = 0, .generic_param_name = 0, .struct_type_args = 0, .struct_type_arg_count = 0};
                                                                                 struct Type * const void_type = (struct Type *)arena_alloc(checker->arena, (int32_t)sizeof(struct Type));
                                                                                 if ((void_type != NULL)) {
                                                                                     void_type->kind = TYPE_VOID;
@@ -24556,7 +24626,7 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                                                     }
                                                                                     if (((is_null_literal != 0) && (checker->current_return_type.kind == TYPE_POINTER))) {
                                                                                     } else {
-                                                                                        if ((expr_type.kind == TYPE_VOID)) {
+                                                                                        if ((is_void_type(expr_type) != 0)) {
                                                                                         } else {
                                                                                             if (((type_equals(expr_type, checker->current_return_type) == 0) && (type_can_implicitly_convert(expr_type, checker->current_return_type) == 0))) {
                                                                                                 int32_t allow = 0;
@@ -26902,7 +26972,7 @@ static __attribute__((unused)) uint32_t get_or_add_error_id(struct TypeChecker *
 static __attribute__((unused)) struct Type type_from_ast(struct TypeChecker * checker, struct ASTNode * type_node) {
     (void)checker;
     (void)type_node;
-    struct Type result = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct Type result = (struct Type){.kind = TYPE_VOID, .data = 0, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     if ((type_node == NULL)) {
         result.kind = TYPE_VOID;
         struct Type _uya_ret = result;
@@ -26916,7 +26986,7 @@ static __attribute__((unused)) struct Type type_from_ast(struct TypeChecker * ch
             return _uya_ret;
         }
         struct Type pointed_type = type_from_ast(checker, pointed_type_node);
-        if ((pointed_type.kind == TYPE_VOID)) {
+        if ((is_void_type(pointed_type) != 0)) {
             if ((pointed_type_node->type == AST_TYPE_NAMED)) {
                 uint8_t * const type_name = pointed_type_node->type_named_name;
                 if (((type_name != NULL) && (str_equals(type_name, (uint8_t *)(uint8_t *)str517) != 0))) {
@@ -27226,6 +27296,11 @@ static __attribute__((unused)) struct Type type_from_ast(struct TypeChecker * ch
     return _uya_ret;
 }
 
+static __attribute__((unused)) struct uya_tagged_TypeData make_empty_type_data() {
+    struct uya_tagged_TypeData _uya_ret = ((struct uya_tagged_TypeData){ ._tag = 0, .u = (union TypeData){ .named = ((uint8_t *)NULL) } });
+    return _uya_ret;
+}
+
 static __attribute__((unused)) uint8_t * type_to_string(struct Arena * arena, struct Type type) {
     (void)arena;
     (void)type;
@@ -27289,7 +27364,7 @@ static __attribute__((unused)) uint8_t * type_to_string(struct Arena * arena, st
         uint8_t * _uya_ret = (uint8_t *)(uint8_t *)str517;
         return _uya_ret;
     }
-    if ((type.kind == TYPE_STRUCT)) {
+    if ((is_struct_type(type) != 0)) {
         if ((type.struct_name != NULL)) {
             uint8_t * _uya_ret = type.struct_name;
             return _uya_ret;
@@ -27321,7 +27396,7 @@ static __attribute__((unused)) uint8_t * type_to_string(struct Arena * arena, st
         uint8_t * _uya_ret = (uint8_t *)(uint8_t *)str362;
         return _uya_ret;
     }
-    if ((type.kind == TYPE_POINTER)) {
+    if ((is_pointer_type(type) != 0)) {
         if ((type.pointer_to == NULL)) {
             uint8_t * _uya_ret = (uint8_t *)(uint8_t *)str673;
             return _uya_ret;
@@ -27814,32 +27889,32 @@ static __attribute__((unused)) int32_t type_can_implicitly_convert(struct Type f
 }
 
 static __attribute__((unused)) struct Type make_void_type() {
-    struct Type _uya_ret = (struct Type){.kind = TYPE_VOID, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct Type _uya_ret = (struct Type){.kind = TYPE_VOID, .data = make_empty_type_data(), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     return _uya_ret;
 }
 
 static __attribute__((unused)) struct Type make_i32_type() {
-    struct Type _uya_ret = (struct Type){.kind = TYPE_I32, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct Type _uya_ret = (struct Type){.kind = TYPE_I32, .data = make_empty_type_data(), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     return _uya_ret;
 }
 
 static __attribute__((unused)) struct Type make_i64_type() {
-    struct Type _uya_ret = (struct Type){.kind = TYPE_I64, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct Type _uya_ret = (struct Type){.kind = TYPE_I64, .data = make_empty_type_data(), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     return _uya_ret;
 }
 
 static __attribute__((unused)) struct Type make_f64_type() {
-    struct Type _uya_ret = (struct Type){.kind = TYPE_F64, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct Type _uya_ret = (struct Type){.kind = TYPE_F64, .data = make_empty_type_data(), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     return _uya_ret;
 }
 
 static __attribute__((unused)) struct Type make_bool_type() {
-    struct Type _uya_ret = (struct Type){.kind = TYPE_BOOL, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct Type _uya_ret = (struct Type){.kind = TYPE_BOOL, .data = make_empty_type_data(), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     return _uya_ret;
 }
 
 static __attribute__((unused)) struct Type make_usize_type() {
-    struct Type _uya_ret = (struct Type){.kind = TYPE_USIZE, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct Type _uya_ret = (struct Type){.kind = TYPE_USIZE, .data = make_empty_type_data(), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     return _uya_ret;
 }
 
@@ -27851,7 +27926,8 @@ static __attribute__((unused)) struct Type make_pointer_type(struct Arena * aren
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
-    struct Type _uya_ret = (struct Type){.kind = TYPE_POINTER, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = pointee, .is_ffi_pointer = is_ffi, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct PointerData pd = (struct PointerData){.pointee = pointee, .is_ffi = is_ffi};
+    struct Type _uya_ret = (struct Type){.kind = TYPE_POINTER, .data = ((struct uya_tagged_TypeData){ ._tag = 1, .u = (union TypeData){ .pointer = (pd) } }), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = pointee, .is_ffi_pointer = is_ffi, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     return _uya_ret;
 }
 
@@ -27863,7 +27939,8 @@ static __attribute__((unused)) struct Type make_array_type(struct Arena * arena,
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
-    struct Type _uya_ret = (struct Type){.kind = TYPE_ARRAY, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = element, .array_size = size, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct ArrayData ad = (struct ArrayData){.element = element, .size = size};
+    struct Type _uya_ret = (struct Type){.kind = TYPE_ARRAY, .data = ((struct uya_tagged_TypeData){ ._tag = 2, .u = (union TypeData){ .array = (ad) } }), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = element, .array_size = size, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     return _uya_ret;
 }
 
@@ -27874,14 +27951,15 @@ static __attribute__((unused)) struct Type make_slice_type(struct Arena * arena,
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
-    struct Type _uya_ret = (struct Type){.kind = TYPE_SLICE, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = element, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct SliceData sd = (struct SliceData){.element = element, .len = 0};
+    struct Type _uya_ret = (struct Type){.kind = TYPE_SLICE, .data = ((struct uya_tagged_TypeData){ ._tag = 3, .u = (union TypeData){ .slice = (sd) } }), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = element, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     return _uya_ret;
 }
 
 static __attribute__((unused)) struct Type make_named_type(enum TypeKind kind, uint8_t * name) {
     (void)kind;
     (void)name;
-    struct Type t = (struct Type){.kind = kind, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct Type t = (struct Type){.kind = kind, .data = ((struct uya_tagged_TypeData){ ._tag = 0, .u = (union TypeData){ .named = (name) } }), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     if ((kind == TYPE_ENUM)) {
         t.enum_name = name;
     } else {
@@ -27908,7 +27986,8 @@ static __attribute__((unused)) struct Type make_error_union_type(struct Arena * 
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
-    struct Type _uya_ret = (struct Type){.kind = TYPE_ERROR_UNION, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = payload, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct ErrorUnionData eud = (struct ErrorUnionData){.payload = payload, .error_id = 0};
+    struct Type _uya_ret = (struct Type){.kind = TYPE_ERROR_UNION, .data = ((struct uya_tagged_TypeData){ ._tag = 5, .u = (union TypeData){ .error_union = (eud) } }), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = payload, .error_error_id = 0, .atomic_inner_type = NULL, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     return _uya_ret;
 }
 
@@ -27919,7 +27998,8 @@ static __attribute__((unused)) struct Type make_atomic_type(struct Arena * arena
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
-    struct Type _uya_ret = (struct Type){.kind = TYPE_ATOMIC, .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = inner, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
+    struct AtomicData ad = (struct AtomicData){.inner = inner};
+    struct Type _uya_ret = (struct Type){.kind = TYPE_ATOMIC, .data = ((struct uya_tagged_TypeData){ ._tag = 6, .u = (union TypeData){ .atomic_data = (ad) } }), .enum_name = NULL, .interface_name = NULL, .struct_name = NULL, .union_name = NULL, .pointer_to = NULL, .is_ffi_pointer = 0, .element_type = NULL, .array_size = 0, .slice_element_type = NULL, .slice_len = 0, .tuple_element_types = NULL, .tuple_count = 0, .error_union_payload_type = NULL, .error_error_id = 0, .atomic_inner_type = inner, .generic_param_name = NULL, .struct_type_args = NULL, .struct_type_arg_count = 0};
     return _uya_ret;
 }
 
