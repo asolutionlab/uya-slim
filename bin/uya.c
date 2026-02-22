@@ -18116,12 +18116,12 @@ static __attribute__((unused)) struct Type checker_check_member_access(struct Ty
         struct Type _uya_ret = result;
         return _uya_ret;
     }
-    if (((object_type.kind != TYPE_STRUCT) || (object_type.struct_name == NULL))) {
+    if (((object_type.kind != TYPE_STRUCT) || (type_get_struct_name((&object_type)) == NULL))) {
         result.kind = TYPE_VOID;
         struct Type _uya_ret = result;
         return _uya_ret;
     }
-    if ((((object_type.kind == TYPE_STRUCT) && (object_type.struct_name != NULL)) && (str_equals(object_type.struct_name, (uint8_t *)(uint8_t *)str562) != 0))) {
+    if ((((object_type.kind == TYPE_STRUCT) && (type_get_struct_name((&object_type)) != NULL)) && (str_equals(type_get_struct_name((&object_type)), (uint8_t *)(uint8_t *)str562) != 0))) {
         uint8_t * const field_name = node->member_access_field_name;
         if ((field_name != NULL)) {
             if (((((((str_equals(field_name, (uint8_t *)(uint8_t *)str563) != 0) || (str_equals(field_name, (uint8_t *)(uint8_t *)str564) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)str565) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)str566) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)str567) != 0)) || (str_equals(field_name, (uint8_t *)(uint8_t *)str568) != 0))) {
@@ -18140,7 +18140,7 @@ static __attribute__((unused)) struct Type checker_check_member_access(struct Ty
             return _uya_ret;
         }
     }
-    struct ASTNode * const struct_decl = find_struct_decl_from_program(checker->program_node, object_type.struct_name);
+    struct ASTNode * const struct_decl = find_struct_decl_from_program(checker->program_node, type_get_struct_name((&object_type)));
     if ((struct_decl == NULL)) {
         result.kind = TYPE_VOID;
         struct Type _uya_ret = result;
@@ -18156,7 +18156,7 @@ static __attribute__((unused)) struct Type checker_check_member_access(struct Ty
         struct Type _uya_ret = field_type;
         return _uya_ret;
     }
-    struct ASTNode * const m = find_method_in_struct(checker->program_node, object_type.struct_name, node->member_access_field_name);
+    struct ASTNode * const m = find_method_in_struct(checker->program_node, type_get_struct_name((&object_type)), node->member_access_field_name);
     if ((m != NULL)) {
         struct Type _uya_ret = type_from_ast(checker, m->fn_decl_return_type);
         return _uya_ret;

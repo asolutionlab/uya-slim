@@ -667,7 +667,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
         return result;
     }
     
-    if object_type.kind != TypeKind.TYPE_STRUCT || object_type.struct_name == null {
+    if object_type.kind != TypeKind.TYPE_STRUCT || type_get_struct_name(&object_type) == null {
         // 对象类型不是结构体：放宽检查，允许通过（不报错）
         // 这在编译器自举时很常见，因为类型推断可能失败（不支持类型缩小）
         // 返回 void 类型，允许访问但不进行严格的类型检查
@@ -679,8 +679,8 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
     // 在 Uya 源代码中，ASTNode 结构体包含所有字段（不使用 union）
     // 但在 C 代码中，ASTNode 使用 union，所以字段名不同
     // 为了支持编译器自举，我们需要特殊处理 ASTNode 类型的字段访问
-    if object_type.kind == TypeKind.TYPE_STRUCT && object_type.struct_name != null &&
-        str_equals(object_type.struct_name, "ASTNode" as *byte) != 0 {
+    if object_type.kind == TypeKind.TYPE_STRUCT && type_get_struct_name(&object_type) != null &&
+        str_equals(type_get_struct_name(&object_type), "ASTNode" as *byte) != 0 {
         const field_name: &byte = node.member_access_field_name;
         
         // 允许访问 ASTNode 的所有字段（在 Uya 源代码中，这些字段都存在）
@@ -713,7 +713,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
     }
     
     // 查找结构体声明
-    const struct_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, object_type.struct_name);
+    const struct_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, type_get_struct_name(&object_type));
     if struct_decl == null {
         // 结构体未找到：放宽检查，允许通过（不报错）
         // 这在编译器自举时很常见，因为结构体可能尚未定义或类型推断失败
@@ -738,7 +738,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
         return field_type;
     }
     // 字段不存在：检查是否为结构体方法
-    const m: &ASTNode = find_method_in_struct(checker.program_node, object_type.struct_name, node.member_access_field_name);
+    const m: &ASTNode = find_method_in_struct(checker.program_node, type_get_struct_name(&object_type), node.member_access_field_name);
     if m != null {
         return type_from_ast(checker, m.fn_decl_return_type);
     }

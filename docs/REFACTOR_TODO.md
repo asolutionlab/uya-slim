@@ -217,7 +217,7 @@
 
 ---
 
-## 阶段四：Union 数据结构重构 [██░░░░░░░░] 20%
+## 阶段四：Union 数据结构重构 [████░░░░░░] 40%
 
 > **详细方案**：`docs/REFACTOR_PLAN_V2_STAGE4_DETAILED.md`
 
