@@ -40,7 +40,7 @@ fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
         
         const pointed_type: Type = type_from_ast(checker, pointed_type_node);
         
-        if pointed_type.kind == TypeKind.TYPE_VOID {
+        if is_void_type(pointed_type) != 0 {
             if pointed_type_node.type == ASTNodeType.AST_TYPE_NAMED {
                 const type_name: &byte = pointed_type_node.type_named_name;
                 if type_name != null && str_equals(type_name, "void" as *byte) != 0 {

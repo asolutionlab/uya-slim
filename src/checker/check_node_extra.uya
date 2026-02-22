@@ -204,13 +204,13 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
     } else if dest.type == ASTNodeType.AST_MEMBER_ACCESS {
         // 字段访问赋值：检查字段类型（与 C 一致：VOID 时不报错，继续由 checker_check_expr_type 放宽处理）
         dest_type = checker_check_member_access(checker, dest);
-        if dest_type.kind == TypeKind.TYPE_VOID {
+        if is_void_type(dest_type) != 0 {
             // 类型推断失败：放宽检查，允许通过（与 C 一致，不阻塞）
         }
     } else if dest.type == ASTNodeType.AST_ARRAY_ACCESS {
         // 数组访问赋值：检查元素类型
         dest_type = checker_check_array_access(checker, dest);
-        if dest_type.kind == TypeKind.TYPE_VOID {
+        if is_void_type(dest_type) != 0 {
             // 数组访问失败（错误已在 checker_check_array_access 中报告）
             return 0;
         }

@@ -213,7 +213,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             const v: &ASTNode = node.union_decl_variants[i];
             if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_type != null {
                 const vt: Type = type_from_ast(checker, v.var_decl_type);
-                if vt.kind == TypeKind.TYPE_VOID {
+                if is_void_type(vt) != 0 {
                     checker_report_error(checker, node, "联合体变体类型无效" as *byte);
                     return 0;
                 }
@@ -456,7 +456,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             // 如果表达式是 null 字面量且期望类型是指针类型，允许通过
             if is_null_literal != 0 && checker.current_return_type.kind == TypeKind.TYPE_POINTER {
                 // null 可以赋值给任何指针类型，允许通过
-            } else if expr_type.kind == TypeKind.TYPE_VOID {
+            } else if is_void_type(expr_type) != 0 {
                 // 类型推断失败（如全局变量在第二遍中尚未可见），放宽检查
             } else if type_equals(expr_type, checker.current_return_type) == 0 &&
                 type_can_implicitly_convert(expr_type, checker.current_return_type) == 0 {

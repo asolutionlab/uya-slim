@@ -207,7 +207,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                                 pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_i64" as *byte);
                             } else if st_type.kind == TypeKind.TYPE_F64 {
                                 pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_f64" as *byte);
-                            } else if st_type.kind == TypeKind.TYPE_BOOL {
+                            } else if is_bool_type(st_type) != 0 {
                                 pos = pos + snprintf(&mono_name[pos] as *byte, MAX_MONO_NAME_LEN - pos, "_bool" as *byte);
                             }
                             sti = sti + 1;

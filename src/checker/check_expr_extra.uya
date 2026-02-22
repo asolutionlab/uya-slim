@@ -181,7 +181,7 @@ fn checker_check_alignof(checker: &TypeChecker, node: &ASTNode) Type {
     if node.alignof_expr_is_type != 0 {
         // target 是类型节点，验证类型是否有效
         const target_type: Type = type_from_ast(checker, target);
-        if target_type.kind == TypeKind.TYPE_VOID {
+        if is_void_type(target_type) != 0 {
             checker_report_error(checker, node, "类型检查错误" as *byte);
             return result;
         }
@@ -199,7 +199,7 @@ fn checker_check_alignof(checker: &TypeChecker, node: &ASTNode) Type {
                 } else {
                     // 不是结构体类型，尝试作为表达式推断类型
                     const expr_type: Type = checker_infer_type(checker, target);
-                    if expr_type.kind == TypeKind.TYPE_VOID {
+                    if is_void_type(expr_type) != 0 {
                         // 类型推断失败：放宽检查，允许通过（不报错）
                         // 这在编译器自举时很常见，因为类型推断可能失败
                     }
@@ -210,7 +210,7 @@ fn checker_check_alignof(checker: &TypeChecker, node: &ASTNode) Type {
         } else {
             // 其他表达式类型，正常推断类型
             const expr_type: Type = checker_infer_type(checker, target);
-            if expr_type.kind == TypeKind.TYPE_VOID {
+            if is_void_type(expr_type) != 0 {
                 // 类型推断失败：放宽检查，允许通过（不报错）
                 // 这在编译器自举时很常见，因为类型推断可能失败
             }
@@ -320,7 +320,7 @@ fn checker_check_struct_init(checker: &TypeChecker, node: &ASTNode) Type {
         const field_value: &ASTNode = node.struct_init_field_values[i];
         
         const field_type: Type = find_struct_field_type(checker, struct_decl, field_name);
-        if field_type.kind == TypeKind.TYPE_VOID {
+        if is_void_type(field_type) != 0 {
             // 放宽检查：字段类型无效时，允许通过（不报错）
             i = i + 1;
             continue;
@@ -692,7 +692,7 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
         return result;
     } else if op == TokenType.TOKEN_AMPERSAND {
         // 取地址（&expr）：与 C 一致，操作数类型无效（TypeKind.TYPE_VOID）时放宽检查，返回 &void，不报错
-        if operand_type.kind == TypeKind.TYPE_VOID {
+        if is_void_type(operand_type) != 0 {
             result.kind = TypeKind.TYPE_POINTER;
             result.pointer_to = null;  // &void
             result.is_ffi_pointer = 0;

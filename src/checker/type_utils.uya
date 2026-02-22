@@ -23,7 +23,7 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
     if type.kind == TypeKind.TYPE_F64 { return "f64" as &byte; }
     if type.kind == TypeKind.TYPE_BOOL { return "bool" as &byte; }
     if type.kind == TypeKind.TYPE_VOID { return "void" as &byte; }
-    if type.kind == TypeKind.TYPE_STRUCT {
+    if is_struct_type(type) != 0 {
         if type.struct_name != null {
             return type.struct_name;
         }
@@ -47,7 +47,7 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
         }
         return "interface" as &byte;
     }
-    if type.kind == TypeKind.TYPE_POINTER {
+    if is_pointer_type(type) != 0 {
         if type.pointer_to == null {
             return "&?" as &byte;
         }

@@ -1287,7 +1287,7 @@ fn infer_print_expr(checker: &TypeChecker, expr: &ASTNode) Type {
             is_printable = 1;
         }
     }
-    if arg_type.kind == TypeKind.TYPE_POINTER {
+    if is_pointer_type(arg_type) != 0 {
         if arg_type.pointer_to != null && arg_type.pointer_to.kind == TypeKind.TYPE_I8 {
             is_printable = 1;
         }
