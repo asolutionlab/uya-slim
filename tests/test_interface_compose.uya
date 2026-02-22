@@ -1,10 +1,6 @@
 // 接口组合测试程序
-use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 interface IReader {
     fn read(self: &Self) i32;
@@ -45,14 +41,8 @@ fn test_read_writer(rw: IReadWriter) i32 {
     return val + f;
 }
 
-fn test_interface_compose() !void {
+test "interface compose" {
     var buf: Buffer = Buffer{ data: 42, flushed: 10 };
     const result1: i32 = test_read_writer(buf);
     try assert_eq_i32(result1, 52);
-}
-
-export fn main() i32 {
-    test_suite_begin("Interface Compose Tests");
-    run_test("interface compose", test_interface_compose);
-    return test_suite_end();
 }

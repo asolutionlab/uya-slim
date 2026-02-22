@@ -1,19 +1,15 @@
 // 测试程序：验证类型转换和指针类型
-use std.runtime.entry;
 // 测试指针类型转换、类型推断等
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 struct Data {
     value: i32,
     next: &Data,
 }
 
-fn test_pointer_cast() !void {
+test "pointer cast" {
     var data: Data = Data{ value: 42, next: null };
     var data2: Data = Data{ value: 100, next: null };
     
@@ -37,7 +33,7 @@ fn test_pointer_cast() !void {
     try assert_eq_i32(data2.value, 300);
 }
 
-fn test_null_pointer() !void {
+test "null pointer" {
     const ptr: &Data = null;
     
     try expect(ptr == null);
@@ -52,7 +48,7 @@ fn test_null_pointer() !void {
     try expect(data.next == null);
 }
 
-fn test_pointer_type_inference() !void {
+test "pointer type inference" {
     var data: Data = Data{ value: 10, next: null };
     
     // 指针类型：&data 的类型是 &Data
@@ -63,12 +59,4 @@ fn test_pointer_type_inference() !void {
     
     ptr.value = 20;
     try assert_eq_i32(data.value, 20);
-}
-
-export fn main() i32 {
-    test_suite_begin("Type Conversion Pointer Tests");
-    run_test("pointer cast", test_pointer_cast);
-    run_test("null pointer", test_null_pointer);
-    run_test("pointer type inference", test_pointer_type_inference);
-    return test_suite_end();
 }

@@ -1,11 +1,7 @@
 // 测试程序：验证指针类型的成员访问
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 struct Point {
     x: i32,
@@ -66,29 +62,19 @@ var g_point: Point = Point{ x: 0, y: 0 };
 var g_container_point: Point = Point{ x: 0, y: 0 };
 var g_container: Container = Container{ point: &g_container_point };
 
-fn test_pointer_param_wrapper() !void {
+test "pointer param" {
     try test_pointer_param(&g_rect);
     try assert_eq_i32(g_rect.top_left.x, 5);
     try assert_eq_i32(g_rect.bottom_right.x, 15);
 }
 
-fn test_nested_pointer_wrapper() !void {
+test "nested pointer" {
     try test_nested_pointer(&g_point);
     try assert_eq_i32(g_point.x, 100);
     try assert_eq_i32(g_point.y, 200);
 }
 
-fn test_struct_with_pointer_field_wrapper() !void {
+test "struct with pointer field" {
     try test_struct_with_pointer_field(&g_container);
     try assert_eq_i32(g_container_point.x, 50);
-}
-
-export fn main() i32 {
-    test_suite_begin("Pointer Member Access Tests");
-    
-    run_test("pointer param", test_pointer_param_wrapper);
-    run_test("nested pointer", test_nested_pointer_wrapper);
-    run_test("struct with pointer field", test_struct_with_pointer_field_wrapper);
-    
-    return test_suite_end();
 }

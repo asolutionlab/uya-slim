@@ -1,13 +1,9 @@
 // 测试 for 循环（数组遍历）
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_for_value_iter() !void {
+test "for value iter" {
     const arr: [i32: 5] = [1, 2, 3, 4, 5];
     var sum: i32 = 0;
     
@@ -18,7 +14,7 @@ fn test_for_value_iter() !void {
     try assert_eq_i32(sum, 15);
 }
 
-fn test_for_ref_iter() !void {
+test "for ref iter" {
     var arr2: [i32: 5] = [1, 2, 3, 4, 5];
     
     for arr2 |&item| {
@@ -28,7 +24,7 @@ fn test_for_ref_iter() !void {
     try expect(arr2[0] == 2 && arr2[1] == 4 && arr2[2] == 6 && arr2[3] == 8 && arr2[4] == 10);
 }
 
-fn test_for_break_continue() !void {
+test "for break continue" {
     var arr3: [i32: 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     var sum2: i32 = 0;
     
@@ -43,14 +39,4 @@ fn test_for_break_continue() !void {
     }
     
     try assert_eq_i32(sum2, 23);  // 1+2+3+4+6+7 = 23
-}
-
-export fn main() i32 {
-    test_suite_begin("For Loop Tests");
-    
-    run_test("for value iter", test_for_value_iter);
-    run_test("for ref iter", test_for_ref_iter);
-    run_test("for break continue", test_for_break_continue);
-    
-    return test_suite_end();
 }

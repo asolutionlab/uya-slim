@@ -1,13 +1,9 @@
 // 元组类型测试：(T1,T2)、字面量、.0/.1 访问、解构
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_tuple_access() !void {
+test "tuple access" {
     const p: (i32, i32) = (10, 20);
     const x: i32 = p.0;
     const y: i32 = p.1;
@@ -15,28 +11,19 @@ fn test_tuple_access() !void {
     try assert_eq_i32(y, 20);
 }
 
-fn test_tuple_another() !void {
+test "tuple another" {
     const q: (i32, i32) = (1, 2);
     try assert_eq_i32(q.0, 1);
     try assert_eq_i32(q.1, 2);
 }
 
-fn test_tuple_destructure() !void {
+test "tuple destructure" {
     const (a, b) = (100, 200);
     try assert_eq_i32(a, 100);
     try assert_eq_i32(b, 200);
 }
 
-fn test_tuple_destructure_ignore() !void {
+test "tuple destructure ignore" {
     const (m, _) = (7, 8);
     try assert_eq_i32(m, 7);
-}
-
-export fn main() i32 {
-    test_suite_begin("Tuple Tests");
-    run_test("tuple access", test_tuple_access);
-    run_test("tuple another", test_tuple_another);
-    run_test("tuple destructure", test_tuple_destructure);
-    run_test("tuple destructure ignore", test_tuple_destructure_ignore);
-    return test_suite_end();
 }

@@ -1,10 +1,6 @@
 // 测试布尔函数返回值
-use std.runtime.entry;
 
 use std.testing.assert;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 // ============================================================
 // 测试用例
@@ -18,32 +14,18 @@ fn is_false() bool {
     return false;
 }
 
-fn test_true_return() !void {
+test "true_return" {
     const a: bool = is_true();
     try assert(a, "is_true should return true");
 }
 
-fn test_false_return() !void {
+test "false_return" {
     const b: bool = is_false();
     try assert(b == false, "is_false should return false");
 }
 
-fn test_bool_combination() !void {
+test "bool_combination" {
     const a: bool = is_true();
     const b: bool = is_false();
     try assert(a && !b, "true && !false should be true");
-}
-
-// ============================================================
-// 主函数
-// ============================================================
-
-export fn main() i32 {
-    test_suite_begin("Boolean Function Tests");
-    
-    run_test("true_return", test_true_return);
-    run_test("false_return", test_false_return);
-    run_test("bool_combination", test_bool_combination);
-    
-    return test_suite_end();
 }

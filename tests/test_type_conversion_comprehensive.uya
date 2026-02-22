@@ -1,14 +1,10 @@
 // 类型转换完整测试程序
-use std.runtime.entry;
 // 测试所有支持的类型转换：i32↔byte、i32↔bool、i32↔usize、&void↔&T
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_i32_to_byte() !void {
+test "i32 to byte" {
     // i32 as byte（截断）
     var i32_val: i32 = 256;
     var byte_val: byte = i32_val as byte;
@@ -23,7 +19,7 @@ fn test_i32_to_byte() !void {
     try assert_eq_i32(byte_val3 as i32, 44);  // 300 % 256 = 44
 }
 
-fn test_byte_to_i32() !void {
+test "byte to i32" {
     // byte as i32（零扩展）
     var byte_val4: byte = 200;
     var i32_val4: i32 = byte_val4 as i32;
@@ -34,7 +30,7 @@ fn test_byte_to_i32() !void {
     try assert_eq_i32(i32_val5, 0);
 }
 
-fn test_i32_to_bool() !void {
+test "i32 to bool" {
     // i32 as bool（非零值为 true，零值为 false）
     var i32_val6: i32 = 42;
     var bool_val1: bool = i32_val6 as bool;
@@ -49,7 +45,7 @@ fn test_i32_to_bool() !void {
     try expect(bool_val3);
 }
 
-fn test_bool_to_i32() !void {
+test "bool to i32" {
     // bool as i32（true 转换为 1，false 转换为 0）
     var bool_val4: bool = true;
     var i32_val9: i32 = bool_val4 as i32;
@@ -60,7 +56,7 @@ fn test_bool_to_i32() !void {
     try assert_eq_i32(i32_val10, 0);
 }
 
-fn test_i32_to_usize() !void {
+test "i32 to usize" {
     // i32 as usize
     var i32_val11: i32 = 123;
     var usize_val1: usize = i32_val11 as usize;
@@ -71,7 +67,7 @@ fn test_i32_to_usize() !void {
     try assert_eq_i32(usize_val2 as i32, 0);
 }
 
-fn test_usize_to_i32() !void {
+test "usize to i32" {
     // usize as i32
     var usize_val3: usize = 456 as usize;
     var i32_val13: i32 = usize_val3 as i32;
@@ -82,7 +78,7 @@ fn test_usize_to_i32() !void {
     try assert_eq_i32(i32_val14, 0);
 }
 
-fn test_pointer_conversion() !void {
+test "pointer conversion" {
     // &T as &void（类型擦除）
     var x: i32 = 42;
     var i32_ptr: &i32 = &x;
@@ -95,7 +91,7 @@ fn test_pointer_conversion() !void {
     try assert_eq_i32(*recovered_i32_ptr, 42);
 }
 
-fn test_conversion_in_expr() !void {
+test "conversion in expr" {
     // 类型转换用于比较运算
     var byte_val6: byte = 42;
     try assert_eq_i32(byte_val6 as i32, 42);
@@ -112,24 +108,10 @@ fn test_conversion_in_expr() !void {
     try expect(bool_val6);
 }
 
-fn test_conversion_priority() !void {
+test "conversion priority" {
     // 类型转换优先级高于乘除运算
     var i32_val17: i32 = 10;
     var byte_val8: byte = 2;
     var result2: i32 = (i32_val17 as byte) as i32 * (byte_val8 as i32);
     try assert_eq_i32(result2, 20);
-}
-
-export fn main() i32 {
-    test_suite_begin("Type Conversion Comprehensive Tests");
-    run_test("i32 to byte", test_i32_to_byte);
-    run_test("byte to i32", test_byte_to_i32);
-    run_test("i32 to bool", test_i32_to_bool);
-    run_test("bool to i32", test_bool_to_i32);
-    run_test("i32 to usize", test_i32_to_usize);
-    run_test("usize to i32", test_usize_to_i32);
-    run_test("pointer conversion", test_pointer_conversion);
-    run_test("conversion in expr", test_conversion_in_expr);
-    run_test("conversion priority", test_conversion_priority);
-    return test_suite_end();
 }

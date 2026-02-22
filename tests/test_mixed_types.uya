@@ -1,11 +1,7 @@
 // 混合类型组合场景测试程序
-use std.runtime.entry;
 // 测试枚举、结构体、数组、指针等类型的复杂组合场景
 
 use std.testing.expect;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 enum Color {
     Red = 1,
@@ -38,7 +34,7 @@ struct Node {
     point: Point,
 }
 
-fn test_enum_struct() !void {
+test "enum + struct" {
     const rect: Rect = Rect{
         top_left: Point{ x: 0, y: 0 },
         bottom_right: Point{ x: 10, y: 10 },
@@ -51,7 +47,7 @@ fn test_enum_struct() !void {
     try expect(rect.top_left.y == 0);
 }
 
-fn test_enum_array() !void {
+test "enum + array" {
     const colors: [Color: 3] = [Color.Red, Color.Green, Color.Blue];
     try expect(colors[0] == Color.Red);
     try expect(colors[1] == Color.Green);
@@ -66,7 +62,7 @@ fn test_enum_array() !void {
     try expect(count == 3);
 }
 
-fn test_struct_array() !void {
+test "struct + array" {
     const points: [Point: 3] = [
         Point{ x: 0, y: 0 },
         Point{ x: 10, y: 10 },
@@ -87,7 +83,7 @@ fn test_struct_array() !void {
     try expect(points2[2].x == 20);
 }
 
-fn test_enum_struct_array() !void {
+test "enum + struct + array" {
     const rects: [Rect: 2] = [
         Rect{
             top_left: Point{ x: 0, y: 0 },
@@ -111,7 +107,7 @@ fn test_enum_struct_array() !void {
     try expect(rects[1].bottom_right.x == 30);
 }
 
-fn test_pointer_struct_enum() !void {
+test "pointer + struct + enum" {
     var rect: Rect = Rect{
         top_left: Point{ x: 0, y: 0 },
         bottom_right: Point{ x: 10, y: 10 },
@@ -133,7 +129,7 @@ fn test_pointer_struct_enum() !void {
     try expect(rect_ptr.bottom_right.x == 10);
 }
 
-fn test_multidim_struct_array() !void {
+test "multidim struct array" {
     const grid: [[Point: 2]: 2] = [
         [Point{ x: 0, y: 0 }, Point{ x: 1, y: 1 }],
         [Point{ x: 2, y: 2 }, Point{ x: 3, y: 3 }],
@@ -145,7 +141,7 @@ fn test_multidim_struct_array() !void {
     try expect(grid[1][1].y == 3);
 }
 
-fn test_enum_struct_comparison() !void {
+test "enum + struct comparison" {
     const rect1: Rect = Rect{
         top_left: Point{ x: 0, y: 0 },
         bottom_right: Point{ x: 10, y: 10 },
@@ -182,7 +178,7 @@ fn test_mixed_function_params(p: Point, c: Color, s: Status) Rect {
     };
 }
 
-fn test_mixed_function() !void {
+test "mixed function params" {
     const p: Point = Point{ x: 5, y: 5 };
     const rect: Rect = test_mixed_function_params(p, Color.Green, Status.Processing);
     
@@ -194,7 +190,7 @@ fn test_mixed_function() !void {
     try expect(rect.status == Status.Processing);
 }
 
-fn test_mixed_sizeof_alignof() !void {
+test "mixed sizeof/alignof" {
     const point_size: i32 = @size_of(Point);
     const color_size: i32 = @size_of(Color);
     const rect_size: i32 = @size_of(Rect);
@@ -210,7 +206,7 @@ fn test_mixed_sizeof_alignof() !void {
     try expect(rect_align == 4);
 }
 
-fn test_mixed_type_conversion() !void {
+test "mixed type conversion" {
     const color_val: i32 = Color.Red as i32;
     try expect(color_val == 1);
     
@@ -221,7 +217,7 @@ fn test_mixed_type_conversion() !void {
     try expect(color_as_i32 == 2);
 }
 
-fn test_complex_combination() !void {
+test "complex combination" {
     const rects: [Rect: 3] = [
         Rect{
             top_left: Point{ x: 0, y: 0 },
@@ -262,20 +258,4 @@ fn test_complex_combination() !void {
     try expect(blue_count == 1);
     try expect(rects[0].top_left.x == 0);
     try expect(rects[2].bottom_right.x == 30);
-}
-
-export fn main() i32 {
-    test_suite_begin("Mixed Types Tests");
-    run_test("enum + struct", test_enum_struct);
-    run_test("enum + array", test_enum_array);
-    run_test("struct + array", test_struct_array);
-    run_test("enum + struct + array", test_enum_struct_array);
-    run_test("pointer + struct + enum", test_pointer_struct_enum);
-    run_test("multidim struct array", test_multidim_struct_array);
-    run_test("enum + struct comparison", test_enum_struct_comparison);
-    run_test("mixed function params", test_mixed_function);
-    run_test("mixed sizeof/alignof", test_mixed_sizeof_alignof);
-    run_test("mixed type conversion", test_mixed_type_conversion);
-    run_test("complex combination", test_complex_combination);
-    return test_suite_end();
 }

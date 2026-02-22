@@ -1,33 +1,21 @@
 // 简单比较测试
-use std.runtime.entry;
 
 use std.testing.expect;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_less_than() !void {
+test "less than" {
     const a: i32 = 10;
     const b: i32 = 20;
     try expect(a < b);
 }
 
-fn test_greater_than() !void {
+test "greater than" {
     const a: i32 = 10;
     const b: i32 = 20;
     try expect(b > a);
 }
 
-fn test_equality() !void {
+test "equality" {
     const a: i32 = 10;
     const b: i32 = 10;
     try expect(a == b);
-}
-
-export fn main() i32 {
-    test_suite_begin("Simple Compare Tests");
-    run_test("less than", test_less_than);
-    run_test("greater than", test_greater_than);
-    run_test("equality", test_equality);
-    return test_suite_end();
 }

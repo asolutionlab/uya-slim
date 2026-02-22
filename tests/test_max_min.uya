@@ -1,36 +1,23 @@
 // 测试 max/min 关键字：类型极值（编译期常量，从上下文推断类型）
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_max_value() !void {
+test "max value" {
     const MAX: i32 = @max;
     try assert_eq_i32(MAX, 2147483647);
 }
 
-fn test_min_value() !void {
+test "min value" {
     const MIN: i32 = @min;
     try assert_eq_i32(MIN, -2147483647 - 1);
 }
 
-fn test_max_in_expression() !void {
+test "max in expression" {
     const a: i32 = 10;
     try expect(a < @max - 20);
 }
 
-fn test_min_in_expression() !void {
+test "min in expression" {
     try expect(@min + 1 < 0);
-}
-
-export fn main() i32 {
-    test_suite_begin("Max/Min Builtin Tests");
-    run_test("max value", test_max_value);
-    run_test("min value", test_min_value);
-    run_test("max in expression", test_max_in_expression);
-    run_test("min in expression", test_min_in_expression);
-    return test_suite_end();
 }

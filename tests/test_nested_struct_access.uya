@@ -1,12 +1,8 @@
 // 嵌套结构体字段访问测试程序
-use std.runtime.entry;
 // 测试嵌套结构体的字段访问、自动解引用、字段赋值
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 struct Inner {
     value: i32,
@@ -44,7 +40,7 @@ fn modify_inner_value(o: &Outer) void {
     o.inner.value = 700;
 }
 
-fn test_basic_nested_access() !void {
+test "basic nested access" {
     // 值访问
     var outer: Outer = Outer{ inner: Inner{ value: 42 }, count: 10 };
     var inner_value: i32 = outer.inner.value;
@@ -55,7 +51,7 @@ fn test_basic_nested_access() !void {
     try assert_eq_i32(outer.inner.value, 100);
 }
 
-fn test_pointer_field_access() !void {
+test "pointer field access" {
     // 指针字段访问（自动解引用）
     var inner: Inner = Inner{ value: 50 };
     var outer2: Outer = Outer{ inner: inner, count: 20 };
@@ -70,7 +66,7 @@ fn test_pointer_field_access() !void {
     try assert_eq_i32(outer2.inner.value, 200);
 }
 
-fn test_deep_nesting() !void {
+test "deep nesting" {
     // 三层嵌套访问
     var deep: DeepOuter = DeepOuter{
         middle: DeepMiddle{
@@ -92,7 +88,7 @@ fn test_deep_nesting() !void {
     try assert_eq_i32(middle_value, 200);
 }
 
-fn test_pointer_to_nested() !void {
+test "pointer to nested" {
     var deep: DeepOuter = DeepOuter{
         middle: DeepMiddle{
             deep: DeepInner{ data: 300 },
@@ -116,7 +112,7 @@ fn test_pointer_to_nested() !void {
     try assert_eq_i32(data2, 500);
 }
 
-fn test_array_field_access() !void {
+test "array field access" {
     var array_outer: ArrayOuter = ArrayOuter{
         items: [
             Inner{ value: 1 },
@@ -135,7 +131,7 @@ fn test_array_field_access() !void {
     try assert_eq_i32(array_outer.items[1].value, 20);
 }
 
-fn test_nested_in_function() !void {
+test "nested in function" {
     var outer3: Outer = Outer{ inner: Inner{ value: 600 }, count: 30 };
     var value2: i32 = get_inner_value(outer3);
     try assert_eq_i32(value2, 600);
@@ -145,7 +141,7 @@ fn test_nested_in_function() !void {
     try assert_eq_i32(outer3b.inner.value, 700);
 }
 
-fn test_nested_comparison() !void {
+test "nested comparison" {
     var outer4: Outer = Outer{ inner: Inner{ value: 100 }, count: 10 };
     var outer5: Outer = Outer{ inner: Inner{ value: 100 }, count: 10 };
     
@@ -153,16 +149,4 @@ fn test_nested_comparison() !void {
     
     var outer6: Outer = Outer{ inner: Inner{ value: 200 }, count: 10 };
     try expect(outer4 != outer6);
-}
-
-export fn main() i32 {
-    test_suite_begin("Nested Struct Access Tests");
-    run_test("basic nested access", test_basic_nested_access);
-    run_test("pointer field access", test_pointer_field_access);
-    run_test("deep nesting", test_deep_nesting);
-    run_test("pointer to nested", test_pointer_to_nested);
-    run_test("array field access", test_array_field_access);
-    run_test("nested in function", test_nested_in_function);
-    run_test("nested comparison", test_nested_comparison);
-    return test_suite_end();
 }

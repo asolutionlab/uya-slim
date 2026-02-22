@@ -1,10 +1,6 @@
 // 枚举类型比较运算符测试程序
-use std.runtime.entry;
 
 use std.testing.expect;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 enum Priority {
     LOW = 1,
@@ -18,7 +14,7 @@ enum Status {
     COMPLETED,
 }
 
-fn test_enum_eq() !void {
+test "enum eq" {
     var p1: Priority = Priority.LOW;
     var p2: Priority = Priority.LOW;
     try expect(p1 == p2);
@@ -27,35 +23,35 @@ fn test_enum_eq() !void {
     try expect(p1 != p3);
 }
 
-fn test_enum_lt() !void {
+test "enum lt" {
     var p1: Priority = Priority.LOW;
     var p3: Priority = Priority.MEDIUM;
     try expect(p1 < p3);
     try expect(p3 < Priority.HIGH);
 }
 
-fn test_enum_gt() !void {
+test "enum gt" {
     var p1: Priority = Priority.LOW;
     var p3: Priority = Priority.MEDIUM;
     try expect(p3 > p1);
     try expect(Priority.HIGH > p3);
 }
 
-fn test_enum_lte() !void {
+test "enum lte" {
     var p1: Priority = Priority.LOW;
     var p2: Priority = Priority.LOW;
     try expect(p1 <= p2);
     try expect(p1 <= Priority.MEDIUM);
 }
 
-fn test_enum_gte() !void {
+test "enum gte" {
     var p1: Priority = Priority.LOW;
     var p2: Priority = Priority.LOW;
     try expect(p1 >= p2);
     try expect(Priority.MEDIUM >= p1);
 }
 
-fn test_enum_auto_increment_compare() !void {
+test "enum auto increment compare" {
     var s1: Status = Status.PENDING;
     var s2: Status = Status.RUNNING;
     var s3: Status = Status.COMPLETED;
@@ -63,17 +59,4 @@ fn test_enum_auto_increment_compare() !void {
     try expect(s1 < s2);
     try expect(s2 < s3);
     try expect(s3 > s2);
-}
-
-export fn main() i32 {
-    test_suite_begin("Enum Comparison Tests");
-    
-    run_test("enum eq", test_enum_eq);
-    run_test("enum lt", test_enum_lt);
-    run_test("enum gt", test_enum_gt);
-    run_test("enum lte", test_enum_lte);
-    run_test("enum gte", test_enum_gte);
-    run_test("enum auto increment compare", test_enum_auto_increment_compare);
-    
-    return test_suite_end();
 }

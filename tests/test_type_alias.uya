@@ -1,11 +1,7 @@
 // 测试类型别名功能
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 // 基本类型别名
 type Int = i32;
@@ -78,7 +74,7 @@ mc make_type_info(T: type) expr {
     @mc_type(T);
 }
 
-fn test_basic_type_alias() !void {
+test "basic type alias" {
     // 使用类型别名声明变量
     var a: Int = 42;
     var b: Byte = 255;
@@ -88,26 +84,26 @@ fn test_basic_type_alias() !void {
     try assert_eq_i32(b as i32, 255);
 }
 
-fn test_pointer_type_alias() !void {
+test "pointer type alias" {
     var x: i32 = 100;
     var ptr: IntPtr = &x;
     
     try assert_eq_i32(*ptr, 100);
 }
 
-fn test_array_type_alias() !void {
+test "array type alias" {
     var arr: IntArray = [1, 2, 3, 4];
     
     try assert_eq_i32(arr[0], 1);
 }
 
-fn test_struct_type_alias() !void {
+test "struct type alias" {
     var p: Pt = Point { x: 10, y: 20 };
     
     try assert_eq_i32(p.x, 10);
 }
 
-fn test_multi_level_alias() !void {
+test "multi level alias" {
     var m: MyInt = 50;
     var n: MyByte = 128;
     
@@ -115,7 +111,7 @@ fn test_multi_level_alias() !void {
     try assert_eq_i32(n as i32, 128);
 }
 
-fn test_generic_type_alias() !void {
+test "generic type alias" {
     // IntBox = Box<i32>
     var ibox: IntBox = Box<i32> { value: 123 };
     try assert_eq_i32(ibox.value, 123);
@@ -135,7 +131,7 @@ fn test_generic_type_alias() !void {
     try assert_eq_i32(bbox.value.value, 999);
 }
 
-fn test_macro_type_alias() !void {
+test "macro type alias" {
     // 使用 TypeInfo 的别名
     const ti: TI = make_type_info(i32);
     try assert_eq_i32(ti.size, 4);
@@ -145,16 +141,4 @@ fn test_macro_type_alias() !void {
     const f64_info: TI = make_type_info(f64);
     try assert_eq_i32(f64_info.size, 8);
     try expect(f64_info.is_float);
-}
-
-export fn main() i32 {
-    test_suite_begin("Type Alias Tests");
-    run_test("basic type alias", test_basic_type_alias);
-    run_test("pointer type alias", test_pointer_type_alias);
-    run_test("array type alias", test_array_type_alias);
-    run_test("struct type alias", test_struct_type_alias);
-    run_test("multi level alias", test_multi_level_alias);
-    run_test("generic type alias", test_generic_type_alias);
-    run_test("macro type alias", test_macro_type_alias);
-    return test_suite_end();
 }

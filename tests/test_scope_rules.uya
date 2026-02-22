@@ -1,20 +1,16 @@
 // 作用域规则测试程序
-use std.runtime.entry;
 // 根据 UYA_MINI_SPEC.md 5.1 节的作用域规则进行测试
 // 测试全局作用域、局部作用域、块作用域和作用域嵌套
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 // 全局作用域变量
 const global_const: i32 = 100;
 var global_var: i32 = 200;
 
 // 测试函数：验证作用域嵌套和访问规则
-fn test_scope_nesting() !void {
+test "scope nesting" {
     // 函数局部作用域变量
     const local_const: i32 = 10;
     var local_var: i32 = 20;
@@ -83,7 +79,7 @@ fn helper_param_scope(x: i32, y: i32) i32 {
     return 0;
 }
 
-fn test_param_scope() !void {
+test "param scope" {
     const result: i32 = helper_param_scope(1, 2);
     try assert_eq_i32(result, 0);
 }
@@ -105,7 +101,7 @@ fn helper_if_block_scope(condition: bool) i32 {
     return 0;
 }
 
-fn test_if_block_scope() !void {
+test "if block scope" {
     const result1: i32 = helper_if_block_scope(true);
     try assert_eq_i32(result1, 0);
     
@@ -113,8 +109,7 @@ fn test_if_block_scope() !void {
     try assert_eq_i32(result2, 0);
 }
 
-// 测试 while 循环块作用域
-fn test_while_block_scope() !void {
+test "while block scope" {
     var count: i32 = 0;
     while count < 3 {
         const loop_var: i32 = count * 10;
@@ -124,8 +119,7 @@ fn test_while_block_scope() !void {
     }
 }
 
-// 测试 for 循环块作用域
-fn test_for_block_scope() !void {
+test "for block scope" {
     const arr: [i32: 3] = [10, 20, 30];
     var sum: i32 = 0;
     
@@ -137,8 +131,7 @@ fn test_for_block_scope() !void {
     try assert_eq_i32(sum, 120);  // (10*2) + (20*2) + (30*2) = 120
 }
 
-// 测试函数调用中的作用域
-fn test_function_call_scope() !void {
+test "function call scope" {
     const local: i32 = 42;
     
     // 调用函数，验证参数作用域
@@ -149,8 +142,7 @@ fn test_function_call_scope() !void {
     try assert_eq_i32(local, 42);
 }
 
-// 测试多层嵌套作用域
-fn test_deep_nesting() !void {
+test "deep nesting" {
     const level1: i32 = 1;
     {
         const level2: i32 = 2;
@@ -167,16 +159,4 @@ fn test_deep_nesting() !void {
             }
         }
     }
-}
-
-export fn main() i32 {
-    test_suite_begin("Scope Rules Tests");
-    run_test("scope nesting", test_scope_nesting);
-    run_test("param scope", test_param_scope);
-    run_test("if block scope", test_if_block_scope);
-    run_test("while block scope", test_while_block_scope);
-    run_test("for block scope", test_for_block_scope);
-    run_test("function call scope", test_function_call_scope);
-    run_test("deep nesting", test_deep_nesting);
-    return test_suite_end();
 }

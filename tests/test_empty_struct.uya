@@ -1,13 +1,9 @@
 // 空结构体测试程序
-use std.runtime.entry;
 // 测试空结构体的定义、实例化、sizeof、alignof
 // 根据规范，空结构体大小为 1 字节，对齐为 1 字节
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 struct Empty {
     // 空结构体，无字段
@@ -22,7 +18,7 @@ fn process_empty(e: Empty) Empty {
     return e;
 }
 
-fn test_empty_struct_sizeof() !void {
+test "empty struct sizeof" {
     const empty_size: i32 = @size_of(Empty);
     try assert_eq_i32(empty_size, 1);
     
@@ -31,7 +27,7 @@ fn test_empty_struct_sizeof() !void {
     try assert_eq_i32(empty_var_size, 1);
 }
 
-fn test_empty_struct_alignof() !void {
+test "empty struct alignof" {
     const empty_align: i32 = @align_of(Empty);
     try assert_eq_i32(empty_align, 1);
     
@@ -40,7 +36,7 @@ fn test_empty_struct_alignof() !void {
     try assert_eq_i32(empty_var_align, 1);
 }
 
-fn test_empty_struct_pointer() !void {
+test "empty struct pointer" {
     const empty_ptr_size: i32 = @size_of(&Empty);
     try expect(empty_ptr_size == 4 || empty_ptr_size == 8);
     
@@ -49,7 +45,7 @@ fn test_empty_struct_pointer() !void {
     try expect(empty_ptr != null);
 }
 
-fn test_empty_struct_comparison() !void {
+test "empty struct comparison" {
     var empty1: Empty = Empty{};
     var empty2: Empty = Empty{};
     try expect(empty1 == empty2);
@@ -58,33 +54,21 @@ fn test_empty_struct_comparison() !void {
     try expect(empty3 == empty2);
 }
 
-fn test_empty_struct_array() !void {
+test "empty struct array" {
     var empty_array: [Empty: 3] = [Empty{}, Empty{}, Empty{}];
     const empty_array_size: i32 = @size_of(empty_array);
     try assert_eq_i32(empty_array_size, 3);
 }
 
-fn test_empty_struct_as_param_and_return() !void {
+test "empty struct as param and return" {
     var empty2: Empty = Empty{};
     var empty4: Empty = process_empty(empty2);
     const empty_cmp: Empty = Empty{};
     try expect(empty4 == empty_cmp);
 }
 
-fn test_empty_struct_as_field() !void {
+test "empty struct as field" {
     var container: Container = Container{ data: 42, empty: Empty{} };
     const container_size: i32 = @size_of(Container);
     try assert_eq_i32(container_size, 8);
-}
-
-export fn main() i32 {
-    test_suite_begin("Empty Struct Tests");
-    run_test("empty struct sizeof", test_empty_struct_sizeof);
-    run_test("empty struct alignof", test_empty_struct_alignof);
-    run_test("empty struct pointer", test_empty_struct_pointer);
-    run_test("empty struct comparison", test_empty_struct_comparison);
-    run_test("empty struct array", test_empty_struct_array);
-    run_test("empty struct as param and return", test_empty_struct_as_param_and_return);
-    run_test("empty struct as field", test_empty_struct_as_field);
-    return test_suite_end();
 }

@@ -1,13 +1,9 @@
 // 饱和运算 +| -| *| 与包装运算 +% -% *% 测试，规范 uya.md §10、§16
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_saturating_add() !void {
+test "saturating add" {
     const max_i32: i32 = 2147483647;
     const a: i32 = 2000000000;
     const b: i32 = 2000000000;
@@ -24,7 +20,7 @@ fn test_saturating_add() !void {
     try assert_eq_i32(normal_add, 30);
 }
 
-fn test_saturating_sub() !void {
+test "saturating sub" {
     const max_i32: i32 = 2147483647;
     const min_i32: i32 = (-2147483647 - 1);
     
@@ -42,7 +38,7 @@ fn test_saturating_sub() !void {
     try assert_eq_i32(normal_sub, 42);
 }
 
-fn test_saturating_mul() !void {
+test "saturating mul" {
     const max_i32: i32 = 2147483647;
     
     const m1: i32 = 50000;
@@ -54,7 +50,7 @@ fn test_saturating_mul() !void {
     try assert_eq_i32(normal_mul, 21);
 }
 
-fn test_wrapping_add() !void {
+test "wrapping add" {
     const max_i32: i32 = 2147483647;
     const min_i32: i32 = (-2147483647 - 1);
     
@@ -67,7 +63,7 @@ fn test_wrapping_add() !void {
     try assert_eq_i32(wrap_add2, 300);
 }
 
-fn test_wrapping_sub() !void {
+test "wrapping sub" {
     const max_i32: i32 = 2147483647;
     const min_i32: i32 = (-2147483647 - 1);
     
@@ -77,20 +73,9 @@ fn test_wrapping_sub() !void {
     try assert_eq_i32(wrap_sub, max_i32);
 }
 
-fn test_wrapping_mul() !void {
+test "wrapping mul" {
     const w5: i32 = 65536;
     const w6: i32 = 65536;
     const wrap_mul: i32 = w5 *% w6;  // 包装
     try assert_eq_i32(wrap_mul, 0);
-}
-
-export fn main() i32 {
-    test_suite_begin("Saturating Wrapping Tests");
-    run_test("saturating add", test_saturating_add);
-    run_test("saturating sub", test_saturating_sub);
-    run_test("saturating mul", test_saturating_mul);
-    run_test("wrapping add", test_wrapping_add);
-    run_test("wrapping sub", test_wrapping_sub);
-    run_test("wrapping mul", test_wrapping_mul);
-    return test_suite_end();
 }

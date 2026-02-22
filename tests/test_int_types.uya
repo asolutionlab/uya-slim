@@ -1,13 +1,9 @@
 // 测试新增整数类型：i8, i16, i64, u8, u16, u32, u64
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_int_types() !void {
+test "int types" {
     const a: i8 = 42;
     const b: i16 = 1000;
     const c: i64 = 999999;
@@ -23,15 +19,8 @@ fn test_int_types() !void {
     try expect(g == 4000000000);
 }
 
-fn test_type_conversion() !void {
+test "type conversion" {
     const x: i8 = 1 as i8;
     const y: i32 = x as i32;
     try assert_eq_i32(y, 1);
-}
-
-export fn main() i32 {
-    test_suite_begin("Int Types Tests");
-    run_test("int types", test_int_types);
-    run_test("type conversion", test_type_conversion);
-    return test_suite_end();
 }

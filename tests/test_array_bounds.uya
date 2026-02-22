@@ -1,11 +1,7 @@
 // 数组边界测试程序
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 struct Point {
     x: i32,
@@ -20,14 +16,14 @@ fn process_element(val: i32) i32 {
     return val * 2;
 }
 
-fn test_basic_bounds() !void {
+test "basic bounds" {
     const arr1: [i32: 3] = [10, 20, 30];
     try assert_eq_i32(arr1[0], 10);
     try assert_eq_i32(arr1[2], 30);
     try assert_eq_i32(arr1[1], 20);
 }
 
-fn test_variable_index() !void {
+test "variable index" {
     const arr1: [i32: 3] = [10, 20, 30];
     var index: i32 = 0;
     if index >= 0 && index < @len(arr1) {
@@ -40,7 +36,7 @@ fn test_variable_index() !void {
     }
 }
 
-fn test_loop_access() !void {
+test "loop access" {
     const arr2: [i32: 5] = [1, 2, 3, 4, 5];
     var sum: i32 = 0;
     var i: i32 = 0;
@@ -52,7 +48,7 @@ fn test_loop_access() !void {
     try assert_eq_i32(sum, 15);
 }
 
-fn test_for_loop() !void {
+test "for loop" {
     const arr2: [i32: 5] = [1, 2, 3, 4, 5];
     var sum2: i32 = 0;
     for arr2 |item| {
@@ -61,7 +57,7 @@ fn test_for_loop() !void {
     try assert_eq_i32(sum2, 15);
 }
 
-fn test_multidim_bounds() !void {
+test "multidim bounds" {
     const arr3: [[i32: 2]: 3] = [
         [1, 2],
         [3, 4],
@@ -72,7 +68,7 @@ fn test_multidim_bounds() !void {
     try assert_eq_i32(arr3[1][0], 3);
 }
 
-fn test_expr_index() !void {
+test "expr index" {
     const arr4: [i32: 4] = [100, 200, 300, 400];
     try assert_eq_i32(arr4[1 + 1], 300);
     
@@ -83,7 +79,7 @@ fn test_expr_index() !void {
     try assert_eq_i32(arr4[get_index()], 400);
 }
 
-fn test_slice_access() !void {
+test "slice access" {
     var arr6: [i32: 3] = [1, 2, 3];
     const arr6_ptr: &[i32: 3] = arr6[0:3];
     
@@ -94,7 +90,7 @@ fn test_slice_access() !void {
     try assert_eq_i32(arr6[1], 20);
 }
 
-fn test_struct_array_bounds() !void {
+test "struct array bounds" {
     const arr7: [Point: 3] = [
         Point{ x: 1, y: 2 },
         Point{ x: 3, y: 4 },
@@ -111,29 +107,29 @@ fn test_struct_array_bounds() !void {
     try assert_eq_i32(arr8[0].x, 100);
 }
 
-fn test_single_element() !void {
+test "single element" {
     const arr9: [i32: 1] = [42];
     try assert_eq_i32(arr9[0], 42);
 }
 
-fn test_large_array() !void {
+test "large array" {
     const arr10: [i32: 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     try assert_eq_i32(arr10[0], 0);
     try assert_eq_i32(arr10[9], 9);
 }
 
-fn test_conditional_access() !void {
+test "conditional access" {
     const arr11: [i32: 3] = [1, 2, 3];
     try expect(arr11[0] == 1 && arr11[1] == 2 && arr11[2] == 3);
 }
 
-fn test_array_as_func_param() !void {
+test "array as func param" {
     const arr12: [i32: 3] = [10, 20, 30];
     const result: i32 = process_element(arr12[1]);
     try assert_eq_i32(result, 40);
 }
 
-fn test_nested_access() !void {
+test "nested access" {
     const arr13: [[i32: 2]: 2] = [
         [1, 2],
         [3, 4],
@@ -149,7 +145,7 @@ fn test_nested_access() !void {
     try assert_eq_i32(arr14[0][1], 200);
 }
 
-fn test_len_check() !void {
+test "len check" {
     const arr15: [i32: 5] = [1, 2, 3, 4, 5];
     var safe_index: i32 = 3;
     if safe_index >= 0 && safe_index < @len(arr15) {
@@ -157,7 +153,7 @@ fn test_len_check() !void {
     }
 }
 
-fn test_complex_expr() !void {
+test "complex expr" {
     const arr16: [i32: 4] = [1, 2, 3, 4];
     const sum: i32 = arr16[0] + arr16[1] + arr16[2] + arr16[3];
     try assert_eq_i32(sum, 10);
@@ -165,7 +161,7 @@ fn test_complex_expr() !void {
 }
 
 // 测试交换律：0 <= i 和 10 > i 形式
-fn test_swapped_comparison() !void {
+test "swapped comparison" {
     const arr: [i32: 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     var i: i32 = 5;
 
@@ -186,7 +182,7 @@ fn test_swapped_comparison() !void {
 }
 
 // 测试线性表达式：i + 1 < 10 形式
-fn test_linear_expr() !void {
+test "linear expr" {
     const arr: [i32: 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     var i: i32 = 4;
 
@@ -208,7 +204,7 @@ fn test_linear_expr() !void {
 }
 
 // 测试 else 分支约束
-fn test_else_branch() !void {
+test "else branch" {
     const arr: [i32: 5] = [10, 20, 30, 40, 50];
     var i: i32 = 3;
 
@@ -224,7 +220,7 @@ fn test_else_branch() !void {
 }
 
 // 测试 const 变量作为边界
-fn test_const_bounds() !void {
+test "const bounds" {
     const SIZE: i32 = 5;
     const arr: [i32: 5] = [1, 2, 3, 4, 5];
     var i: i32 = 2;
@@ -236,7 +232,7 @@ fn test_const_bounds() !void {
 }
 
 // 测试多次访问合并证明（同一变量索引只证明一次）
-fn test_multi_access() !void {
+test "multi access" {
     var arr: [i32: 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     var i: i32 = 5;
 
@@ -261,32 +257,4 @@ fn test_multi_access() !void {
         try assert_eq_i32(arr[j], 100);
         try assert_eq_i32(arr2[j], 200);
     }
-}
-
-export fn main() i32 {
-    test_suite_begin("Array Bounds Tests");
-    
-    run_test("basic bounds", test_basic_bounds);
-    run_test("variable index", test_variable_index);
-    run_test("loop access", test_loop_access);
-    run_test("for loop", test_for_loop);
-    run_test("multidim bounds", test_multidim_bounds);
-    run_test("expr index", test_expr_index);
-    run_test("slice access", test_slice_access);
-    run_test("struct array bounds", test_struct_array_bounds);
-    run_test("single element", test_single_element);
-    run_test("large array", test_large_array);
-    run_test("conditional access", test_conditional_access);
-    run_test("array as func param", test_array_as_func_param);
-    run_test("nested access", test_nested_access);
-    run_test("len check", test_len_check);
-    run_test("complex expr", test_complex_expr);
-    // 新增测试
-    run_test("swapped comparison", test_swapped_comparison);
-    run_test("linear expr", test_linear_expr);
-    run_test("else branch", test_else_branch);
-    run_test("const bounds", test_const_bounds);
-    run_test("multi access", test_multi_access);
-    
-    return test_suite_end();
 }

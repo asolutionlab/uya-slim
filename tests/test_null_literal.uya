@@ -1,69 +1,52 @@
 // null 字面量测试程序
-use std.runtime.entry;
 
 use std.testing.expect;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 struct Node {
     value: i32,
     next: &Node,
 }
 
-fn test_null_i32_ptr() !void {
+test "null i32 ptr" {
     var ptr1: &i32 = null;
     try expect(ptr1 == null);
 }
 
-fn test_null_struct_ptr() !void {
+test "null struct ptr" {
     var node_ptr: &Node = null;
     try expect(node_ptr == null);
 }
 
-fn test_null_ptr_equality() !void {
+test "null ptr equality" {
     var ptr1: &i32 = null;
     var ptr2: &i32 = null;
     try expect(ptr1 == ptr2);
 }
 
-fn test_non_null_ptr() !void {
+test "non null ptr" {
     var x: i32 = 42;
     var ptr3: &i32 = &x;
     try expect(ptr3 != null);
 }
 
-fn test_null_assign() !void {
+test "null assign" {
     var x: i32 = 42;
     var ptr4: &i32 = &x;
     ptr4 = null;
     try expect(ptr4 == null);
 }
 
-fn test_null_usize_ptr() !void {
+test "null usize ptr" {
     var usize_ptr: &usize = null;
     try expect(usize_ptr == null);
 }
 
-fn test_null_bool_ptr() !void {
+test "null bool ptr" {
     var bool_ptr: &bool = null;
     try expect(bool_ptr == null);
 }
 
-fn test_null_byte_ptr() !void {
+test "null byte ptr" {
     var byte_ptr: &byte = null;
     try expect(byte_ptr == null);
-}
-
-export fn main() i32 {
-    test_suite_begin("Null Literal Tests");
-    run_test("null i32 ptr", test_null_i32_ptr);
-    run_test("null struct ptr", test_null_struct_ptr);
-    run_test("null ptr equality", test_null_ptr_equality);
-    run_test("non null ptr", test_non_null_ptr);
-    run_test("null assign", test_null_assign);
-    run_test("null usize ptr", test_null_usize_ptr);
-    run_test("null bool ptr", test_null_bool_ptr);
-    run_test("null byte ptr", test_null_byte_ptr);
-    return test_suite_end();
 }

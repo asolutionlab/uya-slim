@@ -1,13 +1,9 @@
 // else if 语句测试
-use std.runtime.entry;
 // 测试 else if 语法和多个条件分支
 
 use std.testing.expect;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_simple_else_if() !void {
+test "simple else if" {
     const x: i32 = 2;
     var result: i32 = 0;
     if x == 1 {
@@ -20,7 +16,7 @@ fn test_simple_else_if() !void {
     try expect(result == 20);
 }
 
-fn test_multiple_else_if_chain() !void {
+test "multiple else if chain" {
     const y: i32 = 3;
     var result: i32 = 0;
     if y == 1 {
@@ -37,7 +33,7 @@ fn test_multiple_else_if_chain() !void {
     try expect(result == 300);
 }
 
-fn test_first_condition_true() !void {
+test "first condition true" {
     const z: i32 = 1;
     var result: i32 = 0;
     if z == 1 {
@@ -52,7 +48,7 @@ fn test_first_condition_true() !void {
     try expect(result == 1000);
 }
 
-fn test_all_conditions_false() !void {
+test "all conditions false" {
     const w: i32 = 99;
     var result: i32 = 0;
     if w == 1 {
@@ -67,7 +63,7 @@ fn test_all_conditions_false() !void {
     try expect(result == 40000);
 }
 
-fn test_no_final_else() !void {
+test "no final else" {
     const v: i32 = 2;
     var result: i32 = 0;
     if v == 1 {
@@ -76,16 +72,4 @@ fn test_no_final_else() !void {
         result = 200000;
     }
     try expect(result == 200000);
-}
-
-export fn main() i32 {
-    test_suite_begin("Else If Tests");
-    
-    run_test("simple else if", test_simple_else_if);
-    run_test("multiple else if chain", test_multiple_else_if_chain);
-    run_test("first condition true", test_first_condition_true);
-    run_test("all conditions false", test_all_conditions_false);
-    run_test("no final else", test_no_final_else);
-    
-    return test_suite_end();
 }

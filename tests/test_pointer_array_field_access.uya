@@ -1,18 +1,14 @@
 // 测试程序：验证指针类型数组访问后访问字段
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 struct TestStruct {
     name: &byte,
     value: i32,
 }
 
-fn test_pointer_array_field_access() !void {
+test "pointer array field access" {
     var arr: [TestStruct: 3] = [
         TestStruct{ name: null, value: 10 },
         TestStruct{ name: null, value: 20 },
@@ -35,10 +31,4 @@ fn test_pointer_array_field_access() !void {
     try assert_eq_i32(arr[0].value, 100);
     try assert_eq_i32(arr[1].value, 110);
     try assert_eq_i32(arr[2].value, 120);
-}
-
-export fn main() i32 {
-    test_suite_begin("Pointer Array Field Access Tests");
-    run_test("pointer array field access", test_pointer_array_field_access);
-    return test_suite_end();
 }

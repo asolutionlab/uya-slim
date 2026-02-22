@@ -1,10 +1,6 @@
 // 联合体方法（外部方法块）：IntOrFloat 有 as_f64、is_int 方法
-use std.runtime.entry;
 
 use std.testing.expect;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 union IntOrFloat {
     i: i32,
@@ -26,35 +22,26 @@ IntOrFloat {
     }
 }
 
-fn test_union_as_f64_int() !void {
+test "union as_f64 int" {
     const vi: IntOrFloat = IntOrFloat.i(42);
     const as_float: f64 = vi.as_f64();
     try expect(as_float >= 41.9 && as_float <= 42.1);
 }
 
-fn test_union_is_int() !void {
+test "union is_int" {
     const vi: IntOrFloat = IntOrFloat.i(42);
     const is_int_val: bool = vi.is_int();
     try expect(is_int_val);
 }
 
-fn test_union_as_f64_float() !void {
+test "union as_f64 float" {
     const vf: IntOrFloat = IntOrFloat.f(3.14);
     const as_float2: f64 = vf.as_f64();
     try expect(as_float2 >= 3.13 && as_float2 <= 3.15);
 }
 
-fn test_union_is_float() !void {
+test "union is_float" {
     const vf: IntOrFloat = IntOrFloat.f(3.14);
     const is_int2: bool = vf.is_int();
     try expect(!is_int2);
-}
-
-export fn main() i32 {
-    test_suite_begin("Union Method Tests");
-    run_test("union as_f64 int", test_union_as_f64_int);
-    run_test("union is_int", test_union_is_int);
-    run_test("union as_f64 float", test_union_as_f64_float);
-    run_test("union is_float", test_union_is_float);
-    return test_suite_end();
 }

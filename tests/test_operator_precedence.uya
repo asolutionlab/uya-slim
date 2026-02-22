@@ -1,13 +1,9 @@
 // 运算符优先级完整测试程序
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_unary_priority() !void {
+test "unary priority" {
     var x: i32 = 5;
     var result1: i32 = -x * 2;
     try assert_eq_i32(result1, -10);
@@ -17,14 +13,14 @@ fn test_unary_priority() !void {
     try expect(result2);
 }
 
-fn test_cast_priority() !void {
+test "cast priority" {
     var i32_val: i32 = 10;
     var byte_val: byte = 2;
     var result: i32 = (i32_val as byte) as i32 * (byte_val as i32);
     try assert_eq_i32(result, 20);
 }
 
-fn test_mul_div_mod_priority() !void {
+test "mul/div/mod priority" {
     var result1: i32 = 2 + 3 * 4;
     try assert_eq_i32(result1, 14);
     
@@ -35,7 +31,7 @@ fn test_mul_div_mod_priority() !void {
     try assert_eq_i32(result3, 13);
 }
 
-fn test_mul_div_mod_assoc() !void {
+test "mul/div/mod assoc" {
     var result1: i32 = 24 / 4 / 2;
     try assert_eq_i32(result1, 3);
     
@@ -43,12 +39,12 @@ fn test_mul_div_mod_assoc() !void {
     try assert_eq_i32(result2, 24);
 }
 
-fn test_add_sub_priority() !void {
+test "add/sub priority" {
     var result1: i32 = 1 + 2 * 3;
     try assert_eq_i32(result1, 7);
 }
 
-fn test_add_sub_assoc() !void {
+test "add/sub assoc" {
     var result1: i32 = 10 - 3 - 2;
     try assert_eq_i32(result1, 5);
     
@@ -56,7 +52,7 @@ fn test_add_sub_assoc() !void {
     try assert_eq_i32(result2, 6);
 }
 
-fn test_comparison_priority() !void {
+test "comparison priority" {
     var result1: bool = 1 + 2 < 5;
     try expect(result1);
     
@@ -70,7 +66,7 @@ fn test_comparison_priority() !void {
     try expect(result3);
 }
 
-fn test_equality_priority() !void {
+test "equality priority" {
     var result1: bool = 1 + 2 == 3;
     try expect(result1);
     
@@ -78,7 +74,7 @@ fn test_equality_priority() !void {
     try expect(result2);
 }
 
-fn test_logic_and_priority() !void {
+test "logic and priority" {
     var result1: bool = true || false && false;
     try expect(result1);
     
@@ -89,12 +85,12 @@ fn test_logic_and_priority() !void {
     try expect(!result3);
 }
 
-fn test_logic_or_assoc() !void {
+test "logic or assoc" {
     var result: bool = false || false || true;
     try expect(result);
 }
 
-fn test_assign_priority() !void {
+test "assign priority" {
     var var1: i32 = 10;
     var var2: i32 = 20;
     var var3: i32 = 0;
@@ -102,7 +98,7 @@ fn test_assign_priority() !void {
     try assert_eq_i32(var3, 30);
 }
 
-fn test_complex_expr() !void {
+test "complex expr" {
     var result1: i32 = 2 * 3 + 4 * 5;
     try assert_eq_i32(result1, 26);
     
@@ -111,21 +107,4 @@ fn test_complex_expr() !void {
     
     var result3: bool = !false && 5 < 10 || 3 > 5;
     try expect(result3);
-}
-
-export fn main() i32 {
-    test_suite_begin("Operator Precedence Tests");
-    run_test("unary priority", test_unary_priority);
-    run_test("cast priority", test_cast_priority);
-    run_test("mul/div/mod priority", test_mul_div_mod_priority);
-    run_test("mul/div/mod assoc", test_mul_div_mod_assoc);
-    run_test("add/sub priority", test_add_sub_priority);
-    run_test("add/sub assoc", test_add_sub_assoc);
-    run_test("comparison priority", test_comparison_priority);
-    run_test("equality priority", test_equality_priority);
-    run_test("logic and priority", test_logic_and_priority);
-    run_test("logic or assoc", test_logic_or_assoc);
-    run_test("assign priority", test_assign_priority);
-    run_test("complex expr", test_complex_expr);
-    return test_suite_end();
 }

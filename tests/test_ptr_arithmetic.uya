@@ -1,13 +1,9 @@
 // 测试指针转换函数实现指针算术
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_ptr_arithmetic() !void {
+test "ptr arithmetic" {
     var arr: [i32: 5] = [];
     arr[0] = 10;
     arr[1] = 20;
@@ -34,7 +30,7 @@ fn test_ptr_arithmetic() !void {
     try assert_eq_i32(third_value, 30);
 }
 
-fn test_ptr_diff() !void {
+test "ptr diff" {
     var arr: [i32: 5] = [10, 20, 30, 40, 50];
     
     const ptr1: &i32 = &arr[0];
@@ -46,11 +42,4 @@ fn test_ptr_diff() !void {
     const expected_diff: usize = i32_size * 2;
     
     try expect(diff == expected_diff);
-}
-
-export fn main() i32 {
-    test_suite_begin("Pointer Arithmetic Tests");
-    run_test("ptr arithmetic", test_ptr_arithmetic);
-    run_test("ptr diff", test_ptr_diff);
-    return test_suite_end();
 }

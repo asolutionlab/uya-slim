@@ -1,22 +1,18 @@
 use std.testing.assert_eq_i32;
-use std.runtime.entry;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_basic_len() !void {
+test "basic len" {
     var arr: [i32: 5] = [1, 2, 3, 4, 5];
     const len_val: i32 = @len(arr);
     try assert_eq_i32(len_val, 5);
 }
 
-fn test_different_types() !void {
+test "different types" {
     var bytes: [byte: 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     const byte_len: i32 = @len(bytes);
     try assert_eq_i32(byte_len, 10);
 }
 
-fn test_len_in_loop() !void {
+test "len in loop" {
     var arr: [i32: 5] = [1, 2, 3, 4, 5];
     var sum: i32 = 0;
     var i: i32 = 0;
@@ -27,19 +23,10 @@ fn test_len_in_loop() !void {
     try assert_eq_i32(sum, 15);
 }
 
-fn test_len_vs_sizeof() !void {
+test "len vs sizeof" {
     var arr: [i32: 5] = [1, 2, 3, 4, 5];
     const arr_size: i32 = @size_of(arr);
     const arr_len: i32 = @len(arr);
     try assert_eq_i32(arr_size, 20);
     try assert_eq_i32(arr_len, 5);
-}
-
-export fn main() i32 {
-    test_suite_begin("Len Tests");
-    run_test("basic len", test_basic_len);
-    run_test("different types", test_different_types);
-    run_test("len in loop", test_len_in_loop);
-    run_test("len vs sizeof", test_len_vs_sizeof);
-    return test_suite_end();
 }

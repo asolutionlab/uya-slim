@@ -1,10 +1,6 @@
 // 枚举类型基本测试
-use std.runtime.entry;
 
 use std.testing.expect;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 enum Color {
     RED,
@@ -12,15 +8,7 @@ enum Color {
     BLUE,
 }
 
-fn test_enum_value() !void {
+test "enum value" {
     const c: Color = Color.RED;
     try expect(c == Color.RED);
-}
-
-export fn main() i32 {
-    test_suite_begin("Enum Basic Tests");
-    
-    run_test("enum value", test_enum_value);
-    
-    return test_suite_end();
 }

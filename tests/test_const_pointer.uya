@@ -1,49 +1,34 @@
 // 测试 &const T 和 *const T 只读指针类型
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 fn read_value(ptr: & const i32) i32 {
     return ptr[0];
 }
 
-fn test_implicit_conversion() !void {
+test "implicit conversion" {
     var x: i32 = 42;
     var ptr: &i32 = &x;
     var const_ptr: & const i32 = ptr;
     try expect(const_ptr[0] == 42);
 }
 
-fn test_const_pointer_usage() !void {
+test "const pointer usage" {
     var x: i32 = 100;
     var const_ptr: & const i32 = &x;
     try expect(const_ptr[0] == 100);
 }
 
-fn test_const_pointer_function_param() !void {
+test "const pointer function param" {
     var x: i32 = 200;
     const result: i32 = read_value(&x);
     try assert_eq_i32(result, 200);
 }
 
-fn test_const_pointer_with_mutable() !void {
+test "const pointer with mutable" {
     var x: i32 = 300;
     var ptr: &i32 = &x;
     const result: i32 = read_value(ptr);
     try assert_eq_i32(result, 300);
-}
-
-export fn main() i32 {
-    test_suite_begin("Const Pointer Tests");
-    
-    run_test("implicit conversion", test_implicit_conversion);
-    run_test("const pointer usage", test_const_pointer_usage);
-    run_test("const pointer function param", test_const_pointer_function_param);
-    run_test("const pointer with mutable", test_const_pointer_with_mutable);
-    
-    return test_suite_end();
 }

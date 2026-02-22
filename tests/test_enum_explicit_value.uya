@@ -1,10 +1,6 @@
 // 枚举显式赋值测试程序
-use std.runtime.entry;
 
 use std.testing.expect;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 enum HttpStatus {
     OK = 200,
@@ -12,7 +8,7 @@ enum HttpStatus {
     SERVER_ERROR = 500,
 }
 
-fn test_enum_explicit_value() !void {
+test "enum explicit value" {
     const status1: HttpStatus = HttpStatus.OK;
     const status2: HttpStatus = HttpStatus.NOT_FOUND;
     const status3: HttpStatus = HttpStatus.SERVER_ERROR;
@@ -20,12 +16,4 @@ fn test_enum_explicit_value() !void {
     try expect(status1 == HttpStatus.OK);
     try expect(status2 == HttpStatus.NOT_FOUND);
     try expect(status3 == HttpStatus.SERVER_ERROR);
-}
-
-export fn main() i32 {
-    test_suite_begin("Enum Explicit Value Tests");
-    
-    run_test("enum explicit value", test_enum_explicit_value);
-    
-    return test_suite_end();
 }

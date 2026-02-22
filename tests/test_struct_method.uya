@@ -1,10 +1,6 @@
 // 结构体方法（无接口）：Point 有 distance 方法
-use std.runtime.entry;
 
 use std.testing.expect;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 struct Point {
   x: f32,
@@ -17,14 +13,8 @@ Point {
   }
 }
 
-fn test_struct_method() !void {
+test "struct method" {
   const p: Point = Point{ x: 2.0, y: 3.0 };
   const d: f32 = p.distance();
   try expect(d >= 4.9 && d <= 5.1);
-}
-
-export fn main() i32 {
-  test_suite_begin("Struct Method Tests");
-  run_test("struct method", test_struct_method);
-  return test_suite_end();
 }

@@ -1,29 +1,16 @@
 // 测试空数组字面量
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_empty_array_len() !void {
+test "empty array len" {
     var arr: [i32: 100] = [];
     const len_val: i32 = @len(arr);
     try assert_eq_i32(len_val, 100);
 }
 
-fn test_empty_array_sizeof() !void {
+test "empty array sizeof" {
     var arr: [i32: 100] = [];
     const size_val: i32 = @size_of(arr);
     try assert_eq_i32(size_val, 400);  // 100 * 4 字节
-}
-
-export fn main() i32 {
-    test_suite_begin("Empty Array Tests");
-    
-    run_test("empty array len", test_empty_array_len);
-    run_test("empty array sizeof", test_empty_array_sizeof);
-    
-    return test_suite_end();
 }

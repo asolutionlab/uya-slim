@@ -1,12 +1,8 @@
 // 测试 for 整数范围
-use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_for_range_sum() !void {
+test "for range sum" {
     var sum: i32 = 0;
     for 0..5 |i| {
         sum = sum + i;
@@ -14,7 +10,7 @@ fn test_for_range_sum() !void {
     try assert_eq_i32(sum, 10);  // 0+1+2+3+4 = 10
 }
 
-fn test_for_range_discard() !void {
+test "for range discard" {
     var count: i32 = 0;
     for 0..3 {
         count = count + 1;
@@ -22,20 +18,10 @@ fn test_for_range_discard() !void {
     try assert_eq_i32(count, 3);
 }
 
-fn test_for_range_prod() !void {
+test "for range prod" {
     var prod: i32 = 1;
     for 1..4 |k| {
         prod = prod * k;
     }
     try assert_eq_i32(prod, 6);  // 1*1*2*3 = 6
-}
-
-export fn main() i32 {
-    test_suite_begin("For Range Tests");
-    
-    run_test("for range sum", test_for_range_sum);
-    run_test("for range discard", test_for_range_discard);
-    run_test("for range prod", test_for_range_prod);
-    
-    return test_suite_end();
 }

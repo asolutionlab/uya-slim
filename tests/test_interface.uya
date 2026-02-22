@@ -1,10 +1,6 @@
 // 接口：定义、实现、装箱与调用
-use std.runtime.entry;
 
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
 interface IAdd {
   fn add(self: &Self, x: i32) i32;
@@ -24,14 +20,8 @@ fn use_it(a: IAdd) i32 {
   return a.add(10);
 }
 
-fn test_interface() !void {
+test "interface" {
   const c: Counter = Counter{ value: 5 };
   const n: i32 = use_it(c);
   try assert_eq_i32(n, 15);
-}
-
-export fn main() i32 {
-  test_suite_begin("Interface Tests");
-  run_test("interface", test_interface);
-  return test_suite_end();
 }

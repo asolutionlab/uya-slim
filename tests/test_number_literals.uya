@@ -1,13 +1,9 @@
 // 测试不同进制的整数字面量和下划线分隔符
-use std.runtime.entry;
 
 use std.testing.expect;
 use std.testing.assert_eq_i32;
-use std.testing.test_suite_begin;
-use std.testing.test_suite_end;
-use std.testing.run_test;
 
-fn test_decimal() !void {
+test "decimal" {
     const dec1: i32 = 42;
     const dec2: i32 = 1_000_000;
     const dec3: i32 = 123_456_789;
@@ -17,7 +13,7 @@ fn test_decimal() !void {
     try assert_eq_i32(dec3, 123456789);
 }
 
-fn test_hexadecimal() !void {
+test "hexadecimal" {
     const hex1: i32 = 0xFF;
     const hex2: i32 = 0x1A2B;
     const hex3: i32 = 0xDEAD_BEEF;
@@ -29,7 +25,7 @@ fn test_hexadecimal() !void {
     try assert_eq_i32(hex4, 43981);
 }
 
-fn test_octal() !void {
+test "octal" {
     const oct1: i32 = 0o755;
     const oct2: i32 = 0O644;
     const oct3: i32 = 0o7_777;
@@ -39,7 +35,7 @@ fn test_octal() !void {
     try assert_eq_i32(oct3, 4095);  // 0o7777 = 4095
 }
 
-fn test_binary() !void {
+test "binary" {
     const bin1: i32 = 0b1010;
     const bin2: i32 = 0B11110000;
     const bin3: i32 = 0b1111_0000_1010_0101;
@@ -49,7 +45,7 @@ fn test_binary() !void {
     try assert_eq_i32(bin3, 61605);  // = 61605
 }
 
-fn test_float_underscore() !void {
+test "float underscore" {
     const float1: f64 = 1_000.5;
     const float2: f64 = 3.141_592_653;
     const float3: f64 = 1.0e1_0;
@@ -57,14 +53,4 @@ fn test_float_underscore() !void {
     try expect(float1 > 999.9 && float1 < 1000.6);
     try expect(float2 > 3.14 && float2 < 3.15);
     try expect(float3 > 1.0e9);
-}
-
-export fn main() i32 {
-    test_suite_begin("Number Literals Tests");
-    run_test("decimal", test_decimal);
-    run_test("hexadecimal", test_hexadecimal);
-    run_test("octal", test_octal);
-    run_test("binary", test_binary);
-    run_test("float underscore", test_float_underscore);
-    return test_suite_end();
 }
