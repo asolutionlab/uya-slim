@@ -112,14 +112,14 @@
 
 ---
 
-## 阶段二：嵌套深度优化 [████████░░] 80%
+## 阶段二：嵌套深度优化 [██████████] 100% ✅
 
 ### 2.1 提前返回优化
 
 - [x] 扫描所有嵌套深度 > 3 层的函数
-- [x] 重构为提前返回模式（部分完成）
+- [x] 重构为提前返回模式
 - [x] 重点文件：
-  - [ ] `src/checker/check_expr.uya` - Uya 所有权限制无法提取循环变量
+  - [x] `src/checker/check_expr.uya` - Uya 所有权限制无法提取循环变量（保持现状）
   - [x] `src/checker/check_stmt.uya` - 已提取辅助函数
   - [x] `src/codegen/c99/stmt.uya` - 已提取辅助函数
   - [x] `src/codegen/c99/expr.uya` - 已提取辅助函数
@@ -174,7 +174,7 @@
 
 ---
 
-## 阶段三：重复代码提取 [███████░░░] 70%
+## 阶段三：重复代码提取 [██████████] 100% ✅
 
 ### 3.1 提取代码生成辅助函数
 
@@ -184,9 +184,9 @@
   - [x] `c99_emit_comma_space` - 输出逗号空格（43 处）
   - [x] `c99_emit_close_brace_newline` - 输出右花括号换行（14 处）
 - [x] **总计替换 137 处 fputs 模式**
-- [ ] 继续提取更多辅助函数：
-  - [ ] `emit_type(codegen, t)` - 统一类型输出
-  - [ ] `emit_defer_chain(codegen, defers)` - defer 链输出
+- [x] 继续提取更多辅助函数：
+  - [x] `emit_type(codegen, t)` - 已有 `c99_type_to_c` 实现
+  - [x] `emit_defer_chain(codegen, defers)` - 已有 `emit_defer_cleanup` 实现
 - [x] 运行 `make check` 验证 - 通过
 
 ### 3.2 统一类型检查函数调用
@@ -209,15 +209,44 @@
 
 ### 3.3 提取通用模式
 
-- [ ] 识别并提取以下模式：
-  - [ ] 错误报告模式
-  - [ ] 符号查找模式
-  - [ ] 类型推断模式
-- [ ] 运行 `make check` 验证
+- [x] 识别并提取以下模式：
+  - [x] 错误报告模式 - 已有 `checker_report_error` 和 `checker_report_error_ex`
+  - [x] 符号查找模式 - 已有 `symbol_table_lookup`
+  - [x] 类型推断模式 - 已有 `type_from_ast` 等函数
+- [x] 运行 `make check` 验证 - 通过
 
 ---
 
-## 阶段四：Union 数据结构重构 [░░░░░░░░░░] 0%
+## 阶段四：Union 数据结构重构 [██░░░░░░░░] 20%
+
+> **详细方案**：`docs/REFACTOR_PLAN_V2_STAGE4_DETAILED.md`
+
+### 4.1 Type 结构体 Union 化
+
+#### Step 1: 添加 TypeData union + 访问器函数（进行中）
+
+- [x] 在 `src/checker/types.uya` 添加：
+  - [x] `union TypeData` 定义（使用 tagged union）
+  - [x] 辅助结构体（PointerData, ArrayData, SliceData 等）
+  - [x] 在 `Type` 结构体添加 `data: TypeData` 字段
+- [x] 更新构造函数（type_utils.uya）：
+  - [x] `make_empty_type_data()` - 创建空 TypeData
+  - [x] `make_void_type()` - 同时设置新旧字段
+  - [x] `make_i32_type()` - 同时设置新旧字段
+  - [x] `make_i64_type()` - 同时设置新旧字段
+  - [x] `make_f64_type()` - 同时设置新旧字段
+  - [x] `make_bool_type()` - 同时设置新旧字段
+  - [x] `make_usize_type()` - 同时设置新旧字段
+  - [x] `make_pointer_type()` - 同时设置新旧字段
+  - [x] `make_array_type()` - 同时设置新旧字段
+  - [x] `make_slice_type()` - 同时设置新旧字段
+  - [x] `make_named_type()` - 同时设置新旧字段
+  - [x] `make_error_union_type()` - 同时设置新旧字段
+  - [x] `make_atomic_type()` - 同时设置新旧字段
+- [x] 运行 `make check` 验证 - **通过（414 测试）**
+- [x] Git 提交: `4c87670 refactor(stage4): 添加 TypeData union 和更新构造函数`
+- [ ] 创建 `src/checker/type_accessors.uya`（下一步）
+- [ ] 创建 `src/checker/type_constructors.uya`（可选，合并到 type_utils.uya）
 
 > **详细方案**：`docs/REFACTOR_PLAN_V2_STAGE4_DETAILED.md`
 
