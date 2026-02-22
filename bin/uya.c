@@ -18854,8 +18854,8 @@ static __attribute__((unused)) int32_t checker_check_expr_type(struct TypeChecke
         int32_t _uya_ret = 1;
         return _uya_ret;
     }
-    if (((((actual_type.kind == TYPE_STRUCT) && (expected_copy.kind == TYPE_INTERFACE)) && (actual_type.struct_name != NULL)) && (expected_copy.interface_name != NULL))) {
-        if ((struct_implements_interface(checker, actual_type.struct_name, expected_copy.interface_name) != 0)) {
+    if (((((actual_type.kind == TYPE_STRUCT) && (expected_copy.kind == TYPE_INTERFACE)) && (type_get_struct_name((&actual_type)) != NULL)) && (type_get_interface_name((&expected_copy)) != NULL))) {
+        if ((struct_implements_interface(checker, type_get_struct_name((&actual_type)), type_get_interface_name((&expected_copy))) != 0)) {
             int32_t _uya_ret = 1;
             return _uya_ret;
         }
@@ -18954,9 +18954,9 @@ static __attribute__((unused)) struct Type infer_call_expr(struct TypeChecker * 
                 }
             }
             struct Type object_type = checker_infer_type(checker, callee->member_access_object);
-            if ((((object_type.kind == TYPE_STRUCT) && (object_type.struct_name != NULL)) && (checker->program_node != NULL))) {
+            if ((((object_type.kind == TYPE_STRUCT) && (type_get_struct_name((&object_type)) != NULL)) && (checker->program_node != NULL))) {
                 uint8_t * const method_name = callee->member_access_field_name;
-                struct ASTNode * const m = find_method_in_struct(checker->program_node, object_type.struct_name, method_name);
+                struct ASTNode * const m = find_method_in_struct(checker->program_node, type_get_struct_name((&object_type)), method_name);
                 if ((m != NULL)) {
                     struct Type _uya_ret = type_from_ast(checker, m->fn_decl_return_type);
                     return _uya_ret;
@@ -19079,13 +19079,13 @@ static __attribute__((unused)) struct Type infer_member_access(struct TypeChecke
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
-    if (((object_type.kind != TYPE_STRUCT) || (object_type.struct_name == NULL))) {
+    if (((object_type.kind != TYPE_STRUCT) || (type_get_struct_name((&object_type)) == NULL))) {
         struct Type _uya_ret = make_void_type();
         return _uya_ret;
     }
-    struct ASTNode * const struct_decl = find_struct_decl_from_program(checker->program_node, object_type.struct_name);
+    struct ASTNode * const struct_decl = find_struct_decl_from_program(checker->program_node, type_get_struct_name((&object_type)));
     if ((struct_decl == NULL)) {
-        if ((str_equals(object_type.struct_name, (uint8_t *)(uint8_t *)(uint8_t *)str582) != 0)) {
+        if ((str_equals(type_get_struct_name((&object_type)), (uint8_t *)(uint8_t *)(uint8_t *)str582) != 0)) {
             uint8_t * const field_name = expr->member_access_field_name;
             if ((field_name != NULL)) {
                 if ((str_equals(field_name, (uint8_t *)(uint8_t *)(uint8_t *)str583) != 0)) {
@@ -19706,8 +19706,8 @@ static __attribute__((unused)) struct Type checker_check_struct_init(struct Type
             i = (i + 1);
             continue;
         }
-        if (((((field_value != NULL) && (field_value->type == AST_IDENTIFIER)) && (field_type.kind == TYPE_STRUCT)) && (field_type.struct_name != NULL))) {
-            checker_mark_moved(checker, field_value, field_value->identifier_name, field_type.struct_name);
+        if (((((field_value != NULL) && (field_value->type == AST_IDENTIFIER)) && (field_type.kind == TYPE_STRUCT)) && (type_get_struct_name((&field_type)) != NULL))) {
+            checker_mark_moved(checker, field_value, field_value->identifier_name, type_get_struct_name((&field_type)));
         }
         i = (i + 1);
     }
@@ -20367,8 +20367,8 @@ static __attribute__((unused)) int32_t check_assign_node(struct TypeChecker * ch
     }
     if (((src != NULL) && (src->type == AST_IDENTIFIER))) {
         struct Type st = checker_infer_type(checker, src);
-        if (((st.kind == TYPE_STRUCT) && (st.struct_name != NULL))) {
-            checker_mark_moved(checker, node, src->identifier_name, st.struct_name);
+        if (((st.kind == TYPE_STRUCT) && (type_get_struct_name((&st)) != NULL))) {
+            checker_mark_moved(checker, node, src->identifier_name, type_get_struct_name((&st)));
         }
     }
     if (((checker->enable_safety_proof != 0) && (dest->type == AST_IDENTIFIER))) {
@@ -20499,8 +20499,8 @@ static __attribute__((unused)) int32_t check_for_stmt_node(struct TypeChecker * 
         }
     }
     if (((array_type.kind != TYPE_ARRAY) || (array_type.element_type == NULL))) {
-        if ((((expr_type.kind == TYPE_STRUCT) && (expr_type.struct_name != NULL)) && (checker->program_node != NULL))) {
-            uint8_t * const struct_name = expr_type.struct_name;
+        if ((((expr_type.kind == TYPE_STRUCT) && (type_get_struct_name((&expr_type)) != NULL)) && (checker->program_node != NULL))) {
+            uint8_t * const struct_name = type_get_struct_name((&expr_type));
             struct ASTNode * const next_method = find_method_in_struct(checker->program_node, struct_name, (uint8_t *)(uint8_t *)str631);
             struct ASTNode * const value_method = find_method_in_struct(checker->program_node, struct_name, (uint8_t *)(uint8_t *)str632);
             if (((next_method != NULL) && (value_method != NULL))) {
@@ -20817,8 +20817,8 @@ static __attribute__((unused)) int32_t checker_check_var_decl(struct TypeChecker
                     }
                 }
             }
-            if (((((node->var_decl_init != NULL) && (node->var_decl_init->type == AST_IDENTIFIER)) && (var_type.kind == TYPE_STRUCT)) && (var_type.struct_name != NULL))) {
-                checker_mark_moved(checker, node, node->var_decl_init->identifier_name, var_type.struct_name);
+            if (((((node->var_decl_init != NULL) && (node->var_decl_init->type == AST_IDENTIFIER)) && (var_type.kind == TYPE_STRUCT)) && (type_get_struct_name((&var_type)) != NULL))) {
+                checker_mark_moved(checker, node, node->var_decl_init->identifier_name, type_get_struct_name((&var_type)));
             }
         }
     }
@@ -26897,8 +26897,8 @@ static __attribute__((unused)) void checker_mark_moved_call_args(struct TypeChec
         if (((object_type.kind == TYPE_POINTER) && (object_type.pointer_to != NULL))) {
             object_type = object_type.pointer_to[0];
         }
-        if ((((object_type.kind == TYPE_STRUCT) && (object_type.struct_name != NULL)) && (checker->program_node != NULL))) {
-            struct ASTNode * const m = find_method_in_struct(checker->program_node, object_type.struct_name, callee->member_access_field_name);
+        if ((((object_type.kind == TYPE_STRUCT) && (type_get_struct_name((&object_type)) != NULL)) && (checker->program_node != NULL))) {
+            struct ASTNode * const m = find_method_in_struct(checker->program_node, type_get_struct_name((&object_type)), callee->member_access_field_name);
             if ((((m != NULL) && (m->type == AST_FN_DECL)) && (m->fn_decl_params != NULL))) {
                 int32_t i = 0;
                 while (((i < n) && ((i + 1) < m->fn_decl_param_count))) {
@@ -26907,8 +26907,8 @@ static __attribute__((unused)) void checker_mark_moved_call_args(struct TypeChec
                         struct ASTNode * const param = m->fn_decl_params[(i + 1)];
                         if ((((param != NULL) && (param->type == AST_VAR_DECL)) && (param->var_decl_type != NULL))) {
                             struct Type pt = type_from_ast(checker, param->var_decl_type);
-                            if (((pt.kind == TYPE_STRUCT) && (pt.struct_name != NULL))) {
-                                checker_mark_moved(checker, arg, arg->identifier_name, pt.struct_name);
+                            if (((pt.kind == TYPE_STRUCT) && (type_get_struct_name((&pt)) != NULL))) {
+                                checker_mark_moved(checker, arg, arg->identifier_name, type_get_struct_name((&pt)));
                             }
                         }
                     }
@@ -26927,8 +26927,8 @@ static __attribute__((unused)) void checker_mark_moved_call_args(struct TypeChec
     }
     int32_t i = 0;
     while (((i < n) && (i < sig->param_count))) {
-        if (((((args[i] != NULL) && (args[i]->type == AST_IDENTIFIER)) && (sig->param_types[i].kind == TYPE_STRUCT)) && (sig->param_types[i].struct_name != NULL))) {
-            checker_mark_moved(checker, args[i], args[i]->identifier_name, sig->param_types[i].struct_name);
+        if (((((args[i] != NULL) && (args[i]->type == AST_IDENTIFIER)) && (sig->param_types[i].kind == TYPE_STRUCT)) && (type_get_struct_name((&sig->param_types[i])) != NULL))) {
+            checker_mark_moved(checker, args[i], args[i]->identifier_name, type_get_struct_name((&sig->param_types[i])));
         }
         i = (i + 1);
     }
@@ -27660,8 +27660,8 @@ static __attribute__((unused)) uint8_t * type_to_string(struct Arena * arena, st
         return _uya_ret;
     }
     if ((is_struct_type(type) != 0)) {
-        if ((type.struct_name != NULL)) {
-            uint8_t * _uya_ret = type.struct_name;
+        if ((type_get_struct_name((&type)) != NULL)) {
+            uint8_t * _uya_ret = type_get_struct_name((&type));
             return _uya_ret;
         }
         uint8_t * _uya_ret = (uint8_t *)(uint8_t *)str363;
@@ -27909,8 +27909,8 @@ static __attribute__((unused)) int32_t type_satisfies_constraint(struct TypeChec
         int32_t _uya_ret = 1;
         return _uya_ret;
     }
-    if (((((type.kind == TYPE_STRUCT) && (type.struct_name != NULL)) && (checker != NULL)) && (checker->program_node != NULL))) {
-        struct ASTNode * const struct_decl = find_struct_decl_from_program(checker->program_node, (uint8_t *)type.struct_name);
+    if (((((type.kind == TYPE_STRUCT) && (type_get_struct_name((&type)) != NULL)) && (checker != NULL)) && (checker->program_node != NULL))) {
+        struct ASTNode * const struct_decl = find_struct_decl_from_program(checker->program_node, (uint8_t *)type_get_struct_name((&type)));
         if ((struct_decl != NULL)) {
             int32_t i = 0;
             while ((i < struct_decl->struct_decl_interface_count)) {
@@ -27985,15 +27985,15 @@ static __attribute__((unused)) int32_t type_equals(struct Type t1, struct Type t
         return _uya_ret;
     }
     if ((t1.kind == TYPE_STRUCT)) {
-        if (((t1.struct_name == NULL) && (t2.struct_name == NULL))) {
+        if (((type_get_struct_name((&t1)) == NULL) && (type_get_struct_name((&t2)) == NULL))) {
             int32_t _uya_ret = 1;
             return _uya_ret;
         }
-        if (((t1.struct_name == NULL) || (t2.struct_name == NULL))) {
+        if (((type_get_struct_name((&t1)) == NULL) || (type_get_struct_name((&t2)) == NULL))) {
             int32_t _uya_ret = 0;
             return _uya_ret;
         }
-        int32_t _uya_ret = str_equals(t1.struct_name, t2.struct_name);
+        int32_t _uya_ret = str_equals(type_get_struct_name((&t1)), type_get_struct_name((&t2)));
         return _uya_ret;
     }
     if ((t1.kind == TYPE_UNION)) {
