@@ -2938,6 +2938,34 @@ static void checker_mark_moved(struct TypeChecker * checker, struct ASTNode * no
 static void checker_mark_moved_call_args(struct TypeChecker * checker, struct ASTNode * node);
 static uint32_t hash_error_name(uint8_t * name);
 static uint32_t get_or_add_error_id(struct TypeChecker * checker, uint8_t * name, struct ASTNode * node);
+static uint8_t * type_get_name(struct Type * t);
+static uint8_t * type_get_enum_name(struct Type * t);
+static uint8_t * type_get_struct_name(struct Type * t);
+static uint8_t * type_get_union_name(struct Type * t);
+static uint8_t * type_get_interface_name(struct Type * t);
+static struct Type * type_get_pointer_to(struct Type * t);
+static int32_t type_is_ffi_pointer(struct Type * t);
+static struct Type * type_get_array_element(struct Type * t);
+static int32_t type_get_array_size(struct Type * t);
+static struct Type * type_get_slice_element(struct Type * t);
+static int32_t type_get_slice_len(struct Type * t);
+static struct Type * type_get_tuple_elements(struct Type * t);
+static int32_t type_get_tuple_count(struct Type * t);
+static struct Type * type_get_error_payload(struct Type * t);
+static uint32_t type_get_error_id(struct Type * t);
+static struct Type * type_get_atomic_inner(struct Type * t);
+static uint8_t * type_get_generic_param_name(struct Type * t);
+static struct Type * type_get_struct_type_args(struct Type * t);
+static int32_t type_get_struct_type_arg_count(struct Type * t);
+static void type_set_name(struct Type * t, uint8_t * name);
+static void type_set_pointer(struct Type * t, struct Type * pointee, int32_t is_ffi);
+static void type_set_array(struct Type * t, struct Type * element, int32_t size);
+static void type_set_slice(struct Type * t, struct Type * element, int32_t len);
+static void type_set_tuple(struct Type * t, struct Type * elements, int32_t count);
+static void type_set_error_union(struct Type * t, struct Type * payload, uint32_t error_id);
+static void type_set_atomic(struct Type * t, struct Type * inner);
+static void type_set_generic_param(struct Type * t, uint8_t * name);
+static void type_set_struct_generic(struct Type * t, uint8_t * name, struct Type * type_args, int32_t type_arg_count);
 static struct Type type_from_ast(struct TypeChecker * checker, struct ASTNode * type_node);
 static struct uya_tagged_TypeData make_empty_type_data();
 static uint8_t * type_to_string(struct Arena * arena, struct Type type);
@@ -26967,6 +26995,273 @@ static __attribute__((unused)) uint32_t get_or_add_error_id(struct TypeChecker *
     checker->error_name_count = (idx + 1);
     uint32_t _uya_ret = h;
     return _uya_ret;
+}
+
+static __attribute__((unused)) uint8_t * type_get_name(struct Type * t) {
+    (void)t;
+    if ((t == NULL)) {
+        uint8_t * _uya_ret = (uint8_t *)NULL;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) uint8_t * type_get_enum_name(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_ENUM))) {
+        uint8_t * _uya_ret = (uint8_t *)NULL;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) uint8_t * type_get_struct_name(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_STRUCT))) {
+        uint8_t * _uya_ret = (uint8_t *)NULL;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) uint8_t * type_get_union_name(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_UNION))) {
+        uint8_t * _uya_ret = (uint8_t *)NULL;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) uint8_t * type_get_interface_name(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_INTERFACE))) {
+        uint8_t * _uya_ret = (uint8_t *)NULL;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) struct Type * type_get_pointer_to(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_POINTER))) {
+        struct Type * _uya_ret = (struct Type *)NULL;
+        return _uya_ret;
+    }
+        return (struct Type *){0};
+}
+
+static __attribute__((unused)) int32_t type_is_ffi_pointer(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_POINTER))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) struct Type * type_get_array_element(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_ARRAY))) {
+        struct Type * _uya_ret = (struct Type *)NULL;
+        return _uya_ret;
+    }
+        return (struct Type *){0};
+}
+
+static __attribute__((unused)) int32_t type_get_array_size(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_ARRAY))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) struct Type * type_get_slice_element(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_SLICE))) {
+        struct Type * _uya_ret = (struct Type *)NULL;
+        return _uya_ret;
+    }
+        return (struct Type *){0};
+}
+
+static __attribute__((unused)) int32_t type_get_slice_len(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_SLICE))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) struct Type * type_get_tuple_elements(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_TUPLE))) {
+        struct Type * _uya_ret = (struct Type *)NULL;
+        return _uya_ret;
+    }
+        return (struct Type *){0};
+}
+
+static __attribute__((unused)) int32_t type_get_tuple_count(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_TUPLE))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) struct Type * type_get_error_payload(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_ERROR_UNION))) {
+        struct Type * _uya_ret = (struct Type *)NULL;
+        return _uya_ret;
+    }
+        return (struct Type *){0};
+}
+
+static __attribute__((unused)) uint32_t type_get_error_id(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_ERROR_UNION))) {
+        uint32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) struct Type * type_get_atomic_inner(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_ATOMIC))) {
+        struct Type * _uya_ret = (struct Type *)NULL;
+        return _uya_ret;
+    }
+        return (struct Type *){0};
+}
+
+static __attribute__((unused)) uint8_t * type_get_generic_param_name(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_GENERIC_PARAM))) {
+        uint8_t * _uya_ret = (uint8_t *)NULL;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) struct Type * type_get_struct_type_args(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_STRUCT))) {
+        struct Type * _uya_ret = (struct Type *)NULL;
+        return _uya_ret;
+    }
+        return (struct Type *){0};
+}
+
+static __attribute__((unused)) int32_t type_get_struct_type_arg_count(struct Type * t) {
+    (void)t;
+    if (((t == NULL) || (t->kind != TYPE_STRUCT))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+        return 0;
+}
+
+static __attribute__((unused)) void type_set_name(struct Type * t, uint8_t * name) {
+    (void)t;
+    (void)name;
+    if ((t == NULL)) {
+        return;
+    }
+    t->data = ((struct uya_tagged_TypeData){ ._tag = 0, .u = (union TypeData){ .named = (name) } });
+}
+
+static __attribute__((unused)) void type_set_pointer(struct Type * t, struct Type * pointee, int32_t is_ffi) {
+    (void)t;
+    (void)pointee;
+    (void)is_ffi;
+    if ((t == NULL)) {
+        return;
+    }
+    struct PointerData pd = (struct PointerData){.pointee = pointee, .is_ffi = is_ffi};
+    t->data = ((struct uya_tagged_TypeData){ ._tag = 1, .u = (union TypeData){ .pointer = (pd) } });
+}
+
+static __attribute__((unused)) void type_set_array(struct Type * t, struct Type * element, int32_t size) {
+    (void)t;
+    (void)element;
+    (void)size;
+    if ((t == NULL)) {
+        return;
+    }
+    struct ArrayData ad = (struct ArrayData){.element = element, .size = size};
+    t->data = ((struct uya_tagged_TypeData){ ._tag = 2, .u = (union TypeData){ .array = (ad) } });
+}
+
+static __attribute__((unused)) void type_set_slice(struct Type * t, struct Type * element, int32_t len) {
+    (void)t;
+    (void)element;
+    (void)len;
+    if ((t == NULL)) {
+        return;
+    }
+    struct SliceData sd = (struct SliceData){.element = element, .len = len};
+    t->data = ((struct uya_tagged_TypeData){ ._tag = 3, .u = (union TypeData){ .slice = (sd) } });
+}
+
+static __attribute__((unused)) void type_set_tuple(struct Type * t, struct Type * elements, int32_t count) {
+    (void)t;
+    (void)elements;
+    (void)count;
+    if ((t == NULL)) {
+        return;
+    }
+    struct TupleData td = (struct TupleData){.elements = elements, .count = count};
+    t->data = ((struct uya_tagged_TypeData){ ._tag = 4, .u = (union TypeData){ .tuple = (td) } });
+}
+
+static __attribute__((unused)) void type_set_error_union(struct Type * t, struct Type * payload, uint32_t error_id) {
+    (void)t;
+    (void)payload;
+    (void)error_id;
+    if ((t == NULL)) {
+        return;
+    }
+    struct ErrorUnionData eud = (struct ErrorUnionData){.payload = payload, .error_id = error_id};
+    t->data = ((struct uya_tagged_TypeData){ ._tag = 5, .u = (union TypeData){ .error_union = (eud) } });
+}
+
+static __attribute__((unused)) void type_set_atomic(struct Type * t, struct Type * inner) {
+    (void)t;
+    (void)inner;
+    if ((t == NULL)) {
+        return;
+    }
+    struct AtomicData ad = (struct AtomicData){.inner = inner};
+    t->data = ((struct uya_tagged_TypeData){ ._tag = 6, .u = (union TypeData){ .atomic_data = (ad) } });
+}
+
+static __attribute__((unused)) void type_set_generic_param(struct Type * t, uint8_t * name) {
+    (void)t;
+    (void)name;
+    if ((t == NULL)) {
+        return;
+    }
+    struct GenericParamData gpd = (struct GenericParamData){.name = name};
+    t->data = ((struct uya_tagged_TypeData){ ._tag = 7, .u = (union TypeData){ .generic_param = (gpd) } });
+}
+
+static __attribute__((unused)) void type_set_struct_generic(struct Type * t, uint8_t * name, struct Type * type_args, int32_t type_arg_count) {
+    (void)t;
+    (void)name;
+    (void)type_args;
+    (void)type_arg_count;
+    if ((t == NULL)) {
+        return;
+    }
+    struct StructGenericData sgd = (struct StructGenericData){.name = name, .type_args = type_args, .type_arg_count = type_arg_count};
+    t->data = ((struct uya_tagged_TypeData){ ._tag = 8, .u = (union TypeData){ .struct_generic = (sgd) } });
 }
 
 static __attribute__((unused)) struct Type type_from_ast(struct TypeChecker * checker, struct ASTNode * type_node) {

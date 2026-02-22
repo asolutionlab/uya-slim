@@ -223,7 +223,7 @@
 
 ### 4.1 Type 结构体 Union 化
 
-#### Step 1: 添加 TypeData union + 访问器函数（进行中）
+#### Step 1: 添加 TypeData union + 访问器函数 ✅
 
 - [x] 在 `src/checker/types.uya` 添加：
   - [x] `union TypeData` 定义（使用 tagged union）
@@ -243,10 +243,20 @@
   - [x] `make_named_type()` - 同时设置新旧字段
   - [x] `make_error_union_type()` - 同时设置新旧字段
   - [x] `make_atomic_type()` - 同时设置新旧字段
+- [x] 创建 `src/checker/type_accessors.uya`：
+  - [x] 命名类型访问器（type_get_name, type_get_enum_name 等）
+  - [x] 指针类型访问器（type_get_pointer_to, type_is_ffi_pointer）
+  - [x] 数组类型访问器（type_get_array_element, type_get_array_size）
+  - [x] 切片类型访问器（type_get_slice_element, type_get_slice_len）
+  - [x] 元组类型访问器（type_get_tuple_elements, type_get_tuple_count）
+  - [x] 错误联合类型访问器（type_get_error_payload, type_get_error_id）
+  - [x] 原子类型访问器（type_get_atomic_inner）
+  - [x] 泛型参数访问器（type_get_generic_param_name）
+  - [x] 结构体泛型访问器（type_get_struct_type_args, type_get_struct_type_arg_count）
+  - [x] 类型设置器函数（type_set_* 系列）
 - [x] 运行 `make check` 验证 - **通过（414 测试）**
 - [x] Git 提交: `4c87670 refactor(stage4): 添加 TypeData union 和更新构造函数`
-- [ ] 创建 `src/checker/type_accessors.uya`（下一步）
-- [ ] 创建 `src/checker/type_constructors.uya`（可选，合并到 type_utils.uya）
+- [ ] 迁移字段访问到访问器函数（下一步）
 
 > **详细方案**：`docs/REFACTOR_PLAN_V2_STAGE4_DETAILED.md`
 
