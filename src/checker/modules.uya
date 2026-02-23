@@ -671,6 +671,119 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
             }
         }
     } else if seg_count > 1 {
+        // 检查第一个路径段是否对应的目录存在
+        // 如果第一个路径段不是目录，报错并提示用户
+        const first_seg: &byte = segs[0];
+        if first_seg != null {
+            // 检查第一个路径段是否对应的目录存在
+            var first_seg_dir_found: i32 = 0;
+            var first_seg_dir_path: [byte: PATH_MAX] = [];
+            const first_seg_len: usize = strlen(first_seg as *byte);
+            
+            // 从 node.filename 提取项目根目录
+            var project_root_for_check: &byte = null;
+            if node.filename != null {
+                var last_slash_check: &byte = strrchr(node.filename as *byte, 47 as byte);  // '/'
+                if last_slash_check == null {
+                    last_slash_check = strrchr(node.filename as *byte, 92 as byte);  // '\'
+                }
+                if last_slash_check != null {
+                    const dir_len_check: usize = ptr_diff(last_slash_check, node.filename as *byte) as usize + 1;
+                    if dir_len_check < PATH_MAX {
+                        project_root_for_check = arena_alloc(checker.arena, dir_len_check + 1) as &byte;
+                        if project_root_for_check != null {
+                            memcpy(project_root_for_check as *void, node.filename as *void, dir_len_check);
+                            project_root_for_check[dir_len_check] = 0;
+                        }
+                    }
+                }
+            }
+            
+            // 尝试在项目根目录中查找
+            if project_root_for_check != null {
+                const root_len_check: usize = strlen(project_root_for_check as *byte);
+                if root_len_check + first_seg_len < PATH_MAX {
+                    strcpy(&first_seg_dir_path[0], project_root_for_check as *byte);
+                    strcat(&first_seg_dir_path[0] as *byte, first_seg as *byte);
+                    var st_check: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
+                    if stat(&first_seg_dir_path[0] as *byte, &st_check as &Stat) == 0 {
+                        if ((st_check.st_mode as u32) & S_IFMT) == S_IFDIR {
+                            first_seg_dir_found = 1;
+                        }
+                    }
+                }
+            }
+            
+            // 尝试在 checker.project_root_dir 中查找
+            if first_seg_dir_found == 0 && checker.project_root_dir != null {
+                const root_len_check2: usize = strlen(checker.project_root_dir as *byte);
+                if root_len_check2 + first_seg_len < PATH_MAX {
+                    strcpy(&first_seg_dir_path[0], checker.project_root_dir as *byte);
+                    strcat(&first_seg_dir_path[0] as *byte, first_seg as *byte);
+                    var st_check2: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
+                    if stat(&first_seg_dir_path[0] as *byte, &st_check2 as &Stat) == 0 {
+                        if ((st_check2.st_mode as u32) & S_IFMT) == S_IFDIR {
+                            first_seg_dir_found = 1;
+                        }
+                    }
+                }
+            }
+            
+            // 尝试在 UYA_ROOT 中查找（标准库）
+            if first_seg_dir_found == 0 && checker.uya_root_dir != null {
+                const root_len_check3: usize = strlen(checker.uya_root_dir as *byte);
+                if root_len_check3 + first_seg_len < PATH_MAX {
+                    strcpy(&first_seg_dir_path[0], checker.uya_root_dir as *byte);
+                    strcat(&first_seg_dir_path[0] as *byte, first_seg as *byte);
+                    var st_check3: Stat = Stat { st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0, st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0, st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0 };
+                    if stat(&first_seg_dir_path[0] as *byte, &st_check3 as &Stat) == 0 {
+                        if ((st_check3.st_mode as u32) & S_IFMT) == S_IFDIR {
+                            first_seg_dir_found = 1;
+                        }
+                    }
+                }
+            }
+            
+            // 如果第一个路径段不是目录，报错
+            if first_seg_dir_found == 0 {
+                // 构建错误消息
+                var error_msg_buf: [byte: 512] = [];
+                const msg_prefix: &byte = "模块路径段 '" as *byte;
+                const msg_suffix: &byte = "' 不是目录。模块必须是一个目录。" as *byte;
+                var msg_idx: usize = 0;
+                const prefix_len: usize = strlen(msg_prefix);
+                const suffix_len: usize = strlen(msg_suffix);
+                
+                // 复制前缀
+                var p_i: usize = 0;
+                while p_i < prefix_len && msg_idx < 500 {
+                    error_msg_buf[msg_idx] = (msg_prefix as *byte + p_i)[0];
+                    msg_idx = msg_idx + 1;
+                    p_i = p_i + 1;
+                }
+                
+                // 复制路径段名
+                var s_i: usize = 0;
+                while s_i < first_seg_len && msg_idx < 500 {
+                    error_msg_buf[msg_idx] = (first_seg as *byte + s_i)[0];
+                    msg_idx = msg_idx + 1;
+                    s_i = s_i + 1;
+                }
+                
+                // 复制后缀
+                p_i = 0;
+                while p_i < suffix_len && msg_idx < 510 {
+                    error_msg_buf[msg_idx] = (msg_suffix as *byte + p_i)[0];
+                    msg_idx = msg_idx + 1;
+                    p_i = p_i + 1;
+                }
+                
+                error_msg_buf[msg_idx] = 0;
+                checker_report_error(checker, node, &error_msg_buf[0]);
+                return 0;
+            }
+        }
+        
         // 先尝试全路径作为模块名
         var full_total: usize = 0;
         var i: i32 = 0;
@@ -855,6 +968,18 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
     
     if module_name == null {
         checker_report_error(checker, node, "use 语句的模块名无效" as *byte);
+        return 0;
+    }
+    
+    // 检测错误的 libc 模块用法（libc.stdio.xxx → 应该使用 libc.xxx）
+    // libc 模块是扁平化的，所有函数都在 libc 模块下，不是 libc.stdio
+    if module_name != null && strlen(module_name as *byte) >= 5
+        && (module_name[0] as byte) == 108 && (module_name[1] as byte) == 105
+        && (module_name[2] as byte) == 98 && (module_name[3] as byte) == 99
+        && (module_name[4] as byte) == 46 {
+        // 模块名以 "libc." 开头，说明用户尝试使用 libc.stdio.xxx 这样的路径
+        // 这是错误的，因为 libc 是扁平化模块
+        checker_report_error(checker, node, "libc 模块是扁平化的，请使用 'use libc.xxx;' 而不是 'use libc.stdio.xxx;'" as *byte);
         return 0;
     }
     
