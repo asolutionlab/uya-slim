@@ -598,84 +598,70 @@ fn optimized_example() i32 {
 
 ## 8. 实现清单
 
-### 8.1 Lexer（src/lexer.c）
+### 8.1 Lexer（src/lexer.uya）
 
-- [ ] 识别 `@asm` 为合法内置函数
-- [ ] 在 `is_builtin_function` 中添加 `"asm"` 分支
+- [ ] 在内置函数列表中添加 `"asm"`（第 1069 行附近）
 - [ ] 支持字符串字面量中的转义序列
 
-### 8.2 AST（src/ast.h, src/ast.c）
+### 8.2 AST（src/ast.uya）
 
-- [ ] 新增 `AST_ASM` 节点类型
-- [ ] 添加字段：
-  ```c
-  struct {
-      struct {
-          const char *instruction;  // 指令字符串
-          ASTNode **inputs;         // 输入表达式数组
-          ASTNode **outputs;        // 输出表达式数组
-          int input_count;          // 输入个数
-          int output_count;         // 输出个数
-      } *stmts;                    // 语句数组
-      int stmt_count;              // 语句个数
-      ASTNode **clobbers;          // clobber 寄存器数组
-      int clobber_count;           // clobber 个数
-      bool clobbers_memory;        // 是否修改内存
-  } asm;
+- [ ] 在 `ASTNodeType` 枚举中添加 `AST_ASM`（第 112 行 `AST_SYSCALL` 之后）
+- [ ] 在 `ASTNode` 结构体中添加字段：
+  ```uya
+  // asm（@asm { ... } 内联汇编块）
+  asm_stmts: &AsmStmt,        // 语句数组
+  asm_stmt_count: i32,        // 语句个数
+  asm_clobbers: &&byte,       // clobber 寄存器名称数组
+  asm_clobber_count: i32,     // clobber 个数
+  asm_clobbers_memory: bool,  // 是否修改内存
   ```
+- [ ] 新增 `AsmStmt` 结构体定义
 
-### 8.3 Parser（src/parser.c）
+### 8.3 Parser（src/parser/primary.uya）
 
-- [ ] 在 `primary_expr` 中识别 `TOKEN_AT_IDENTIFIER` 值为 `"asm"` 的情况
+- [ ] 在 `parser_parse_primary_expr` 中识别 `TOKEN_AT_IDENTIFIER` 值为 `"asm"` 的情况
 - [ ] 解析 `@asm { ... }` 语法
 - [ ] 解析指令字符串模板
 - [ ] 解析输入/输出表达式列表
 - [ ] 解析 clobbers 声明
 - [ ] 验证语法正确性
 
-### 8.4 Checker（src/checker.c）
+### 8.4 Checker（src/checker/）
 
+#### 8.4.1 check_expr.uya
+
+- [ ] 添加 `check_asm_block` 函数
 - [ ] 类型检查：
   - [ ] 验证输入表达式类型与占位符兼容
   - [ ] 验证输出表达式类型与指令结果兼容
   - [ ] 验证寄存器约束不与调用约定冲突
   - [ ] 验证内存操作类型安全
   - [ ] 验证原子操作使用正确类型
-- [ ] 内存安全验证：
-  - [ ] 确保内存操作不会越界（编译期可证明时）
-  - [ ] 验证指针类型安全
-  - [ ] 检测潜在的数据竞争
-- [ ] 并发安全验证：
-  - [ ] 验证原子操作使用 `atomic T` 类型
-  - [ ] 检测并发安全问题
-- [ ] 编译期优化：
-  - [ ] 常量传播
-  - [ ] 指令融合
-  - [ ] 冗余消除
+
+#### 8.4.2 type_utils.uya
+
+- [ ] 添加 `is_valid_asm_input_type` 函数
+- [ ] 添加 `is_valid_asm_output_type` 函数
+- [ ] 添加 `is_register_type` 函数
+- [ ] 添加 `is_asm_mem_type` 函数
 
 ### 8.5 Codegen（src/codegen/c99/）
 
-#### 8.5.1 expr.c
+#### 8.5.1 expr.uya
 
+- [ ] 在 `gen_expr` 中添加 `AST_ASM` 分支
 - [ ] 生成 `@asm` 调用代码
   - [ ] 为每条指令生成 C99 内联汇编
   - [ ] 生成寄存器分配代码
   - [ ] 生成 clobbers 声明
   - [ ] 处理内存操作
 
-#### 8.5.2 utils.c
+#### 8.5.2 utils.uya
 
 - [ ] 添加寄存器约束映射函数
   - [ ] `@asm_reg` → `"r"` 约束
   - [ ] 特定寄存器 → 固定约束
   - [ ] 平台特定映射
-
-#### 8.5.3 platform.c（新文件）
-
-- [ ] 平台检测代码
-  - [ ] `@asm_target()` 内置函数
-  - [ ] 平台特定寄存器类型
-  - [ ] 调用约定映射
 
 ### 8.6 测试用例（tests/programs/）
 
@@ -943,3 +929,35 @@ fn add_asm(a: i32, b: i32) i32 {
 
 **版本历史**：
 - v1.0.0（2026-02-22）：初始设计文档
+
+---
+
+## 15. 语法说明
+
+### 15.1 新增语法元素
+
+`@asm` 内联汇编需要新增以下语法元素：
+
+| 语法元素 | 说明 | 状态 |
+|----------|------|------|
+| `->` (TOKEN_ARROW) | 输入输出分隔符 | **待实现** |
+| `clobbers = [...]` | clobber 声明语法 | 可复用现有赋值语法 |
+| `@asm_reg` 类型 | 通用寄存器类型 | **待实现** |
+| `@asm_mem` 类型 | 内存操作类型 | **待实现** |
+| `@asm_target()` 内置函数 | 平台检测 | **待实现** |
+
+### 15.2 与现有语法的兼容性
+
+**数组字面量**：`clobbers = ["rcx", "r11"]` 复用现有数组字面量语法（`[expr1, expr2, ...]`）
+
+**字符串字面量**：指令模板复用现有字符串字面量语法
+
+**块语法**：`@asm { ... }` 复用现有块语法
+
+### 15.3 实现顺序建议
+
+1. **Lexer**：添加 `TOKEN_ARROW`（`->`）token
+2. **AST**：添加 `AST_ASM` 节点类型
+3. **Parser**：实现 `@asm` 块解析
+4. **Checker**：实现类型检查
+5. **Codegen**：生成 C99 内联汇编
