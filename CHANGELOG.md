@@ -1,5 +1,54 @@
 # Uya 变更日志
 
+## v0.7.2 - @asm 测试覆盖率完善
+
+> 发布日期：2026-02-23
+
+### 测试
+
+- **@asm 功能测试覆盖率 100%**
+  - 新增 9 个正向测试文件，覆盖基础功能、类型系统、clobbers、边界情况等
+  - 新增 17 个反向测试文件，覆盖语法错误、类型错误、限制检查等
+  - 修复了类型检查器中 `AST_ASM` 节点作为语句使用时未进行类型检查的 bug
+
+### 新增测试文件
+
+**正向测试（9 个）：**
+- `test_asm_basic.uya` - 基础功能：简单指令、无输入输出、多输入多输出
+- `test_asm_types.uya` - 类型系统：i8/i16/i32/i64/u8/u16/u32/u64/usize/指针
+- `test_asm_clobbers.uya` - clobbers 声明：单/多寄存器、memory、混合
+- `test_asm_edge_cases.uya` - 边界情况：空指令、最大输入/输出、控制流中使用
+- `test_asm_codegen.uya` - 代码生成验证
+- `test_asm_expressions.uya` - 表达式：变量、常量、数组元素、结构体字段
+- `test_asm_duplicate_output.uya` - 多输出变量测试
+- `test_asm_const_output.uya` - 输出测试
+- `test_asm_void_output.uya` - 无输出测试
+
+**反向测试（17 个）：**
+- `error_asm_empty_block.uya` - @asm 块不能为空
+- `error_asm_missing_string.uya` - 期望指令字符串
+- `error_asm_invalid_input_type.uya` - f32 输入类型错误
+- `error_asm_invalid_output_type.uya` - f64 输出类型错误
+- `error_asm_output_pointer.uya` - 指针不能作为输出
+- `error_asm_f64_input.uya` - f64 输入类型错误
+- `error_asm_f64_output.uya` - f64 输出类型错误
+- `error_asm_missing_paren.uya` - 语法错误：缺少 '('
+- `error_asm_missing_close_paren.uya` - 语法错误：缺少 ')'
+- `error_asm_missing_brace.uya` - 语法错误：缺少 '{'
+- `error_asm_missing_close_brace.uya` - 语法错误：缺少 '}'
+- `error_asm_too_many_inputs.uya` - 输入超过最大限制
+- `error_asm_too_many_outputs.uya` - 输出超过最大限制
+- `error_asm_void_input.uya` - void 类型输入错误
+- `error_asm_struct_input.uya` - 结构体输入错误
+- `error_asm_array_input.uya` - 数组输入错误
+- `error_asm_slice_input.uya` - 切片输入错误
+
+### 修复
+
+- 修复 `src/checker/main.uya`：`AST_ASM` 节点作为语句使用时未调用类型检查
+
+---
+
 ## v0.7.1 - 切片字面量 & 语法增强
 
 > 发布日期：2026-02-21

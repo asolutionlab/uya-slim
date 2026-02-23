@@ -265,6 +265,11 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         }
         checker_exit_scope(checker);
         return 1;
+    } else if node.type == ASTNodeType.AST_ASM {
+        // @asm 块作为语句使用时，需要调用类型检查
+        const asm_type: Type = checker_infer_type(checker, node);
+        _ = asm_type;
+        return 1;
     } else if node.type == ASTNodeType.AST_IF_STMT {
         // 先检查条件表达式（这会进行类型检查，包括类型不匹配的错误）
         if node.if_stmt_condition != null {

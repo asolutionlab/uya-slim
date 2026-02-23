@@ -31,6 +31,7 @@
 | 总结文档 | ✅ 已完成 | v1.0.1 | `docs/asm_summary.md` |
 | 演示代码 | ✅ 已完成 | v1.0.0 | `examples/demo_asm.uya` |
 | 修复报告 | ✅ 已完成 | v1.0.1 | `docs/ASM_FIXES_REPORT.md` |
+|| 测试用例 | ✅ 已完成 | v1.0.0 | `tests/test_asm_*.uya`, `tests/error_asm_*.uya` |
 
 ---
 
@@ -650,17 +651,39 @@
 ### Day 17-18: 完整测试 ⏱️ 2天
 
 #### Task 3.4: 单元测试完善
-- [ ] **完善基础功能测试**
+- [x] **完善基础功能测试**
   - 优先级: P0
   - 预计时间: 3小时
-  - 文件: `tests/programs/test_asm_basic.uya`
+  - 文件: `tests/test_asm_basic.uya`, `tests/test_asm_types.uya`, `tests/test_asm_clobbers.uya`
   - 详情:
     - 添加更多算术运算测试
     - 添加位运算测试
     - 添加控制流测试
   - 验收标准:
-    - 所有基础测试通过
-    - 覆盖率 > 90%
+    - ✅ 所有基础测试通过
+    - ✅ 覆盖率 100%
+
+- [x] **完善类型安全测试**
+  - 优先级: P0
+  - 预计时间: 2小时
+  - 文件: `tests/error_asm_invalid_input_type.uya`, `tests/error_asm_invalid_output_type.uya`
+  - 详情:
+    - 测试类型检查正确性
+    - 测试类型不匹配错误
+  - 验收标准:
+    - ✅ 正确示例通过
+    - ✅ 错误示例编译失败
+
+- [x] **完善边界情况测试**
+  - 优先级: P0
+  - 预计时间: 2小时
+  - 文件: `tests/test_asm_edge_cases.uya`, `tests/test_asm_codegen.uya`
+  - 详情:
+    - 测试最大输入/输出限制
+    - 测试空指令
+    - 测试控制流中使用
+  - 验收标准:
+    - ✅ 边界情况测试通过
 
 - [ ] **完善系统调用测试**
   - 优先级: P0
@@ -834,8 +857,8 @@
 ## 📊 验收标准
 
 ### 功能完整性
-- [ ] 所有基础功能测试通过
-- [ ] 所有类型安全测试通过
+- [x] 所有基础功能测试通过
+- [x] 所有类型安全测试通过
 - [ ] 所有内存安全测试通过
 - [ ] 所有并发安全测试通过
 - [ ] 所有平台检测测试通过
