@@ -115,6 +115,7 @@ enum ASTNodeType {
     AST_VA_START,       // @va_start(ap, last) - 可变参数函数内初始化 va_list
     AST_VA_END,        // @va_end(ap) - 结束 va_list 访问
     AST_VA_ARG,        // @va_arg(ap, Type) - 从 va_list 按类型获取下一个参数
+    AST_ASM,           // @asm { ... } - 内联汇编块
     AST_PRINT,          // @print(expr) - 打印表达式（不换行）
     AST_PRINTLN,        // @println(expr) - 打印表达式并换行
     AST_TYPE_NAMED,
@@ -388,6 +389,16 @@ struct ASTNode {
     // va_arg_expr
     va_arg_ap: &ASTNode,
     va_arg_arg_type: &ASTNode,
+    // asm（@asm { ... } 内联汇编块）
+    asm_instructions: & & byte,     // 指令字符串数组
+    asm_instruction_count: i32,     // 指令数量
+    asm_inputs: & & ASTNode,        // 输入表达式数组（每条指令的输入连续存储）
+    asm_input_counts: & i32,        // 每条指令的输入数量
+    asm_outputs: & & ASTNode,       // 输出表达式数组（每条指令的输出连续存储）
+    asm_output_counts: & i32,       // 每条指令的输出数量
+    asm_clobbers: & & byte,         // clobber 寄存器名称数组
+    asm_clobber_count: i32,         // clobber 个数
+    asm_clobbers_memory: i32,       // 是否修改内存（1=是）
     // print/println（@print/@println）
     print_expr: &ASTNode,    // 要打印的表达式
     // type_atomic（atomic T）
@@ -587,6 +598,16 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.va_end_ap = null;
     node.va_arg_ap = null;
     node.va_arg_arg_type = null;
+    // asm 字段初始化
+    node.asm_instructions = null;
+    node.asm_instruction_count = 0;
+    node.asm_inputs = null;
+    node.asm_input_counts = null;
+    node.asm_outputs = null;
+    node.asm_output_counts = null;
+    node.asm_clobbers = null;
+    node.asm_clobber_count = 0;
+    node.asm_clobbers_memory = 0;
     node.print_expr = null;
     node.extern_var_decl_name = null;
     node.extern_var_decl_var_type = null;

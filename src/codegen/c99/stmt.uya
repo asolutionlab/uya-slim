@@ -177,9 +177,12 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     } else if stmt.type == ASTNodeType.AST_CONTINUE_STMT {
         gen_continue_stmt(codegen);
     } else {
-        // 检查是否为表达式节点（包括 @syscall、@va_start、@va_end、@va_arg 等内置函数）
+        // 检查是否为表达式节点（包括 @syscall、@va_start、@va_end、@va_arg、@asm 等内置函数）
         // 注意：AST_VA_ARG 是最后一个表达式类型，AST_BINARY_EXPR 是第一个
-        if stmt.type >= ASTNodeType.AST_BINARY_EXPR && stmt.type <= ASTNodeType.AST_VA_ARG {
+        // AST_ASM 是新增的表达式类型，需要单独处理
+        if stmt.type == ASTNodeType.AST_ASM {
+            gen_expr(codegen, stmt);
+        } else if stmt.type >= ASTNodeType.AST_BINARY_EXPR && stmt.type <= ASTNodeType.AST_VA_ARG {
             c99_emit(codegen, "" as *byte);
             gen_expr(codegen, stmt);
             c99_emit_semi_newline(codegen);

@@ -849,6 +849,11 @@ fn parser_parse_assign_expr(parser: &Parser) &ASTNode {
         return null;
     }
     
+    // 如果是 @asm 块，不尝试解析赋值表达式（clobbers 在 @asm 解析器中处理）
+    if left.type == ASTNodeType.AST_ASM {
+        return left;
+    }
+    
     // 检查是否有赋值运算符（包括复合赋值）
     if parser.current_token != null && (
         parser_match(parser, TokenType.TOKEN_ASSIGN) != 0 ||

@@ -1,0 +1,10 @@
+// test_asm_basic.uya - @asm 内联汇编基础测试
+
+// 测试简单的汇编指令
+test "asm simple" {
+    var x: i32 = 0;
+    var y: i32 = 10;
+    @asm {
+        "mov %0, %1" (y, -> x);
+    }
+}

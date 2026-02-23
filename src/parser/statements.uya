@@ -641,6 +641,11 @@ fn parser_parse_statement(parser: &Parser) &ASTNode {
         }
     }
     
+    // @asm 块也可以省略分号（clobbers 在 @asm 解析器中处理）
+    if expr.type == ASTNodeType.AST_ASM {
+        can_omit_semicolon = 1;
+    }
+    
     // 期望 ';'
     if can_omit_semicolon == 0 {
         if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
