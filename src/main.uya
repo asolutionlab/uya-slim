@@ -1,5 +1,5 @@
 // main.uya - 编译器主程序
-// 从 compiler-c/src/main.c 覆盖式翻译
+// Uya 自举编译器
 // 架构：export fn main 编译为 main_main，由 std.runtime.entry 的 C main 调用
 // 命令行参数通过 get_argc/get_argv 获取
 

@@ -1,5 +1,5 @@
 // lexer.uya - 词法分析器
-// 从 compiler-c/src/lexer.c 重新覆盖式翻译
+// Uya 自举编译器
 //
 // 注意：Uya 没有 union，本模块无 union
 // 注意：Uya 不支持指针运算，ptr + i 转换为 &ptr[i]

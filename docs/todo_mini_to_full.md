@@ -1,6 +1,6 @@
 # Uya Mini 到完整版待办文档
 
-基于 [compiler-c-spec/UYA_MINI_SPEC.md](compiler-c-spec/UYA_MINI_SPEC.md) 第 9 节「与完整 Uya 的区别」与项目根目录 [uya.md](uya.md) 完整规范对照。实现时按「建议实现顺序」执行，每项需同步更新 C 实现与 `uya-src/`，测试需同时通过 `--c99` 与 `--uya --c99`。
+基于项目根目录 [uya.md](uya.md) 完整规范。实现时按「建议实现顺序」执行，每项需在自举编译器中实现，测试需同时通过 `--c99` 与 `--uya --c99`。
 
 **实现约定**：在编写编译器代码前，先在 `tests/` 添加测试用例（如 `test_xxx.uya` 或预期编译失败的 `error_xxx.uya`），覆盖目标场景；实现后再跑 `--c99` 与 `--uya --c99` 验证，二者都通过才算通过。
 
@@ -994,7 +994,7 @@ test "函数调用测试" {
 ## 文档与测试约定
 
 - **先添加测试用例**：在编写编译器代码前，先在 `tests/` 添加测试用例（如 `test_xxx.uya` 或预期编译失败的 `error_xxx.uya`），覆盖目标场景。
-- 新特性先在 [compiler-c-spec/UYA_MINI_SPEC.md](compiler-c-spec/UYA_MINI_SPEC.md)（或完整版 spec）中定义类型、BNF、语义、C99 映射。
+- 新特性先在完整版 spec [uya.md](uya.md) 中定义类型、BNF、语义、C99 映射。
 - 测试放在 `tests/`，需同时通过 `--c99` 与 `--uya --c99`。
 - **测试用例 100% 覆盖**：新特性需添加多场景用例（含成功路径与预期失败用例 `error_*.uya`），覆盖主要分支与边界情况。
 - 实现顺序：Lexer → AST → Parser → Checker → Codegen；C 实现与 `uya-src/` 同步。

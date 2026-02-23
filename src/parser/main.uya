@@ -1,5 +1,5 @@
 // parser.uya - 语法分析器
-// 从 compiler-c/src/parser.c 重新覆盖式翻译
+// Uya 自举编译器
 //
 // 注意：Uya 没有 union，所有 union 字段都转换为结构体的独立字段
 // 注意：Uya 不支持指针运算，ptr + i 必须转换为 &ptr[i]

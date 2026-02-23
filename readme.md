@@ -258,7 +258,7 @@ fn increment(counter: *Counter) void {
 ## 当前状态（v0.5.5）
 
 - **自举编译器**：已完成自举，393 个测试全部通过。编译器能编译自身，输出 C99 代码。
-- **开发模式**：仅维护 `src/` 目录的自举编译器，`compiler-c/` 已退役（仅供参考）。
+- **开发模式**：仅维护 `src/` 目录的自举编译器。
 - **快速构建**：`gcc -std=c99 -O3 -fno-builtin bin/uya.c -o bin/uya` 即可从 C99 代码构建编译器。
 - **内存验证**：Valgrind 验证通过，无内存泄漏，无内存错误。
 - **语言规范**：完整版见 [docs/uya.md](./docs/uya.md)。

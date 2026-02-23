@@ -25,7 +25,7 @@ ulimit -s unlimited 2>/dev/null || ulimit -s 524288 2>/dev/null || true
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-COMPILER="$REPO_ROOT/bin/uya-c"
+COMPILER="$REPO_ROOT/bin/uya"
 TEST_DIR="$SCRIPT_DIR"
 BUILD_DIR="$TEST_DIR/build"
 ERRORS_ONLY=false
@@ -120,24 +120,15 @@ fi
 
 # 检查编译器是否存在
 if [ -z "$COMPILER" ] || [ ! -f "$COMPILER" ] || [ ! -x "$COMPILER" ]; then
-    if [ "$USE_UYA" = true ]; then
-        echo "错误: Uya 自举编译器不存在: $COMPILER"
-        echo "请先运行 'cd src && ./compile.sh -e --c99' 构建 Uya 编译器"
-    else
-        echo "错误: C 编译器不存在: $COMPILER"
-        echo "请先运行 'cd compiler-c && make build' 构建编译器"
-    fi
+    echo "错误: Uya 自举编译器不存在: $COMPILER"
+    echo "请先运行 'make from-c' 或 'make uya' 构建编译器"
     exit 1
 fi
 
 if [ "$ERRORS_ONLY" = false ]; then
     echo "开始运行 Uya 测试程序（并行版本，${PARALLEL_JOBS} 线程）..."
     echo "使用编译器: $COMPILER"
-    if [ "$USE_UYA" = true ]; then
-        echo "（Uya 版本编译器）"
-    else
-        echo "（C99 后端）"
-    fi
+    echo "（Uya 自举编译器）"
     if [ -n "$TARGET_PATH" ]; then
         echo "目标: $TARGET_PATH"
     fi

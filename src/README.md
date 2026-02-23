@@ -47,28 +47,28 @@
 
 ### 手动编译
 
-如果不使用脚本，也可以直接使用 C 版本的编译器：
+如果不使用脚本，也可以直接使用自举编译器：
 
 ```bash
 # 从项目根目录运行
 cd ..
 
 # 编译所有 src 文件
-./compiler-c/build/compiler-c src/*.uya -o compiler-c/build/uya-compiler/compiler
+./bin/uya --c99 src/*.uya -o src/build/uya.c
 
 # 或者指定文件顺序（按依赖关系）
-./build/compiler-mini \
-    uya-src/arena.uya \
-    uya-src/str_utils.uya \
-    uya-src/extern_decls.uya \
-    uya-src/llvm_api.uya \
-    uya-src/ast.uya \
-    uya-src/lexer.uya \
-    uya-src/parser.uya \
-    uya-src/checker.uya \
-    uya-src/codegen.uya \
-    uya-src/main.uya \
-    -o build/uya-compiler/compiler
+./bin/uya --c99 \
+    src/arena.uya \
+    src/str_utils.uya \
+    src/extern_decls.uya \
+    src/llvm_api.uya \
+    src/ast.uya \
+    src/lexer.uya \
+    src/parser.uya \
+    src/checker.uya \
+    src/codegen.uya \
+    src/main.uya \
+    -o src/build/uya.c
 ```
 
 ## 依赖关系
@@ -104,7 +104,7 @@ gcc -no-pie build/uya-compiler/compiler.o \
 
 ## 注意事项
 
-1. **编译器要求**：需要使用已构建的 C 版本编译器（`../build/compiler-mini`）。C 版将维护至本目录（uya-src）完整实现，详见 [docs/RELEASE_v0.1.0.md](../../docs/RELEASE_v0.1.0.md) 与上级 [README](../readme.md)。
+1. **编译器要求**：需要使用已构建的自举编译器（`bin/uya`）。详见 [docs/RELEASE_v0.1.0.md](../../docs/RELEASE_v0.1.0.md) 与上级 [README](../readme.md)。
 2. **文件顺序**：虽然编译器支持任意顺序的多文件编译，但建议按照依赖关系顺序排列文件
 3. **类型检查**：编译器会检查跨文件的符号引用和类型匹配
 4. **输出格式**：默认输出为目标文件（`.o`），需要使用链接器生成可执行文件
@@ -113,11 +113,13 @@ gcc -no-pie build/uya-compiler/compiler.o \
 
 ### 编译器不存在
 
-如果提示编译器不存在，请先构建 C 版本编译器：
+如果提示编译器不存在，请先构建自举编译器：
 
 ```bash
 cd ..
-make build
+make from-c  # 从 bin/uya.c 构建
+# 或
+make uya     # 完整构建（需要已有的 bin/uya）
 ```
 
 ### 编译错误
@@ -147,7 +149,7 @@ make build
 
 ## 参考
 
-- [Uya Mini 规范](../../docs/compiler-c-spec/UYA_MINI_SPEC.md) - 完整语言规范
+- [docs/uya.md](../../docs/uya.md) - 完整语言规范
 - [v0.1.0 版本说明](../../docs/RELEASE_v0.1.0.md) - 自举达成与发布说明
 
 
