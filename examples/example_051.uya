@@ -1,8 +1,12 @@
-       match x {
-           0 => expr1,
-           1 => expr2,
-           true => expr3,
-           error.FileNotFound => expr4,
-           else => expr5,
-       }
+// match 表达式示例
+// 注意：match 分支中的表达式类型必须一致
+
+fn example(x: i32) i32 {
+    const result: i32 = match x {
+        0 => 10,
+        1 => 20,
+        else => 0
+    };
+    return result;
+}
        

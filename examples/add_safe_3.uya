@@ -3,14 +3,19 @@
            return try a + b;  // 自动检查溢出，溢出返回 error.Overflow
        }
 
+extern fn printf(fmt: *byte, ...) i32;
+
       // 使用示例：处理溢出错误
-      const result: i32 = try x + y catch |err| {
-          if err == error.Overflow {
-              printf("Overflow occurred\n");
-              // 处理溢出情况，如返回默认值或报告错误
-          }
-          return 0;  // 提供默认值
-      };
+      fn handle_overflow(x: i32, y: i32) i32 {
+          const result: i32 = (try x + y) catch |err| {
+              if err == error.Overflow {
+                  printf("Overflow occurred\n");
+                  // 处理溢出情况，如返回默认值或报告错误
+              }
+              return 0;  // 提供默认值
+          };
+          return result;
+      }
 
       // 使用示例：传播错误
       fn calculate(a: i32, b: i32, c: i32) !i32 {

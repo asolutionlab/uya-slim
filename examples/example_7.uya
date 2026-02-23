@@ -4,10 +4,16 @@
        const slice: &[i32] = &arr[2:5];  // 局部变量，生命周期匹配
    }
    
-   // ❌ 非法：切片可能逃逸
-   fn example() void {
+   // ✅ 合法：局部切片，生命周期匹配
+   fn example_ok() void {
        const arr: [i32: 10] = [0: 10];
-       var external: &[i32] = null;
-       external = &arr[2:5];  // 如果external生命周期更长，编译错误
+       const slice: &[i32] = &arr[2:5];  // 局部变量，生命周期匹配
+   }
+   
+   // ❌ 非法：切片可能逃逸（示例代码，实际会编译错误）
+   fn example_err() void {
+       const arr: [i32: 10] = [0: 10];
+       // var external: &[i32] = null;  // 切片类型不支持 null
+       // external = &arr[2:5];  // 如果external生命周期更长，编译错误
    }
    

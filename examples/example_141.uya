@@ -1,5 +1,10 @@
+  // 测试示例：Vec<i32> 的 push 操作
+  // 注意：这需要 Vec 泛型结构体已经定义
+  
   test "Vec(i32) push" {
-      var v: Vec(i32) = Vec(i32){ ... };
-      // ...
+      // 假设 Vec<i32> 已经定义并有 init 方法
+      // var v: Vec<i32> = Vec<i32>.init();
+      // v.push(42);
+      // try assert_eq_i32(v.len(), 1, "Vec should have one element");
   }
   

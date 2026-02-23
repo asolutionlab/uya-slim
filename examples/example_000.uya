@@ -1,7 +1,12 @@
 // Uya：程序员提供证明，编译器验证证明
-const arr: [i32: 10] = [0: 10];
-const i: i32 = get_index();
-if i < 0 || i >= 10 {
-    return error.OutOfBounds;  // 显式检查，返回错误
+// 示例：安全的数组访问
+fn safe_array_access_example() !i32 {
+    const arr: [i32: 10] = [0: 10];
+    // 假设 i 是从某个函数获取的索引
+    const i: i32 = 5;  // 示例值
+    if i < 0 || i >= 10 {
+        return error.OutOfBounds;  // 显式检查，返回错误
+    }
+    const x: i32 = arr[i];  // 编译器证明 i >= 0 && i < 10，安全
+    return x;
 }
-const x: i32 = arr[i];  // 编译器证明 i >= 0 && i < 10，安全

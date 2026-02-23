@@ -2,8 +2,8 @@
 
 // 基本泛型接口：迭代器
 interface Iterator<T> {
-    fn next(self: &Self) union Option<T>;
-    fn has_next(self: &Self) bool;
+    fn next(self: &Self) !void;
+    fn value(self: &Self) !T;
 }
 
 // 使用示例
@@ -30,26 +30,31 @@ interface Container<T> {
 
 // 结构体实现泛型接口
 struct VecIterator<T> : Iterator<T> {
-    data: &T,
+    data: &[T],
     index: i32,
-    len: i32,
-    
-    fn next(self: &Self) union Option<T> {
-        // 实现迭代逻辑
-        return error.EndOfIterator;
+    len: i32
+}
+
+VecIterator {
+    fn next(self: &Self) !void {
+        if self.index >= self.len {
+            return error.IterEnd;
+        }
+        self.index = self.index + 1;
     }
     
-    fn has_next(self: &Self) bool {
-        return self.index < self.len;
+    fn value(self: &Self) !T {
+        const idx: i32 = self.index - 1;
+        if idx < 0 || idx >= self.len {
+            return error.InvalidIteratorState;
+        }
+        return self.data[idx];
     }
 }
 
 // 使用泛型接口作为函数参数
 fn iterate_over<T>(iter: Iterator<T>) void {
-    while iter.has_next() {
-        const item = iter.next();
-        // 处理 item
-    }
+    // 实际使用需要处理错误
 }
 
 fn main() i32 {

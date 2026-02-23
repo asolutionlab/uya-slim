@@ -11,7 +11,7 @@ union Poll<T> {
 }
 
 interface Future<T> {
-    fn poll(self: &Self, waker: &Waker) union Poll<T>;
+    fn poll(self: &Self, waker: &Waker) Poll<T>;
 }
 
 struct Waker {
@@ -28,13 +28,13 @@ struct AsyncTask {
 }
 
 AsyncTask {
-    fn poll(self: &Self, waker: &Waker) union Poll<i32> {
+    fn poll(self: &Self, waker: &Waker) Poll<i32> {
         if self.state == 0 {
-            return union Poll<i32> { Pending: void };
+            return Poll<i32>{ Pending: void };
         } else if self.state == 1 {
-            return union Poll<i32> { Ready: self.result };
+            return Poll<i32>{ Ready: self.result };
         } else {
-            return union Poll<i32> { Error: error.TaskFailed };
+            return Poll<i32>{ Error: error.TaskFailed };
         }
     }
 }

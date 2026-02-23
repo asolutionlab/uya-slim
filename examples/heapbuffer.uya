@@ -6,7 +6,7 @@ struct HeapBuffer {
     size: i32
 }
 
-fn drop(self: HeapBuffer) void {
+fn drop(self: &HeapBuffer) void {
     if self.data != null {
         free(self.data);
     }

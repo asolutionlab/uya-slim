@@ -1,6 +1,6 @@
      // 使用 max/min 关键字访问极值（类型推断）
-     const a: i32 = ...;
-     const b: i32 = ...;
+     const a: i32 = 100;
+     const b: i32 = 200;
      if a > 0 && b > 0 && a > max - b {  // 从 a 和 b 的类型 i32 推断
          return error.Overflow;
      }

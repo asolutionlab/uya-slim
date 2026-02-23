@@ -1,9 +1,12 @@
+// for 循环展开伪代码（只读迭代）
+// 说明：这是编译器内部展开逻辑的示意
+
       // 原始代码
-      for obj |item| {
-          // body
-      }
+      // for obj |item| {
+      //     // body
+      // }
       
-      // 展开为
+      // 展开为（伪代码）
       {
           var iter: IIteratorT = obj;  // 自动装箱为接口（T为元素类型）
           while true {

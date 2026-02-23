@@ -1,3 +1,7 @@
+struct File {
+    fd: i32
+}
+
 fn example(condition: bool) void {
     const file: File = File{ fd: 1 };
     

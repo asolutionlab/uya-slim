@@ -1,3 +1,5 @@
+extern fn printf(fmt: *byte, ...) i32;
+
 fn nested_example() !void {
     defer {
         printf("Outer defer\n");

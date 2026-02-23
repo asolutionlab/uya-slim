@@ -1,6 +1,16 @@
-       match point {
-           Point{ x: 0, y: 0 } => expr1,
-           Point{ x: x_val, y: y_val } => expr2,  // 绑定字段
-           else => expr3,
-       }
+// match 表达式示例：结构体解构
+
+struct Point {
+    x: f32,
+    y: f32
+}
+
+fn example(point: Point) f32 {
+    const result: f32 = match point {
+        Point{ x: 0.0, y: 0.0 } => 0.0,
+        Point{ x: x_val, y: y_val } => x_val + y_val,  // 绑定字段
+        else => 0.0
+    };
+    return result;
+}
        

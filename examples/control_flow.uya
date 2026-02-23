@@ -1,3 +1,13 @@
-if expr block [ else block ]
-while expr block
-break; continue; return expr;
+// 控制流语法说明
+// 这是语法定义，不是可执行代码
+
+// if 语句语法：
+// if expr block [ else block ]
+
+// while 循环语法：
+// while expr block
+
+// 控制流关键字：
+// break;    - 跳出循环
+// continue; - 继续下一次迭代
+// return expr; - 返回值

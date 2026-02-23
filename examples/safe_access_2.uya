@@ -6,7 +6,7 @@ const x: i32 = arr[5];  // 5 < 10，编译期证明安全
 const y: i32 = arr[10];  // 10 >= 10，编译错误
 
 // ✅ 编译通过：变量索引有证明
-fn safe_access(arr: [i32: 10], i: i32) i32 {
+fn safe_access(arr: [i32: 10], i: i32) !i32 {
   if i < 0 || i >= 10 {
     return error.OutOfBounds;
   }

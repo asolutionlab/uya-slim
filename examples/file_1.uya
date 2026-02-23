@@ -3,7 +3,7 @@ extern struct File : IReadable, IWritable {
     fd: i32
     
     // ✅ 可以有方法
-    fn read(self: *Self, buf: *byte, len: i32) !i32 {
+    fn read(self: &Self, buf: *byte, len: i32) !i32 {
         extern read(fd: i32, buf: *void, count: i32) i32;
         const result: i32 = read(self.fd, buf, len);
         if result < 0 {
@@ -12,7 +12,7 @@ extern struct File : IReadable, IWritable {
         return result;
     }
     
-    fn write(self: *Self, buf: *byte, len: i32) !i32 {
+    fn write(self: &Self, buf: *byte, len: i32) !i32 {
         extern write(fd: i32, buf: *void, count: i32) i32;
         const result: i32 = write(self.fd, buf, len);
         if result < 0 {
@@ -22,7 +22,7 @@ extern struct File : IReadable, IWritable {
     }
     
     // ✅ 可以有 drop（RAII 自动资源管理）
-    fn drop(self: *Self) void {
+    fn drop(self: &Self) void {
         extern close(fd: i32) i32;
         close(self.fd);
     }
@@ -30,19 +30,19 @@ extern struct File : IReadable, IWritable {
 
 // ✅ 可以实现接口
 interface IReadable {
-    fn read(self: *Self, buf: *byte, len: i32) !i32;
+    fn read(self: &Self, buf: *byte, len: i32) !i32;
 }
 
 interface IWritable {
-    fn write(self: *Self, buf: *byte, len: i32) !i32;
+    fn write(self: &Self, buf: *byte, len: i32) !i32;
 }
 
 File {
-    fn read(self: *Self, buf: *byte, len: i32) !i32 {
+    fn read(self: &Self, buf: *byte, len: i32) !i32 {
         return self.read(buf, len);
     }
     
-    fn write(self: *Self, buf: *byte, len: i32) !i32 {
+    fn write(self: &Self, buf: *byte, len: i32) !i32 {
         return self.write(buf, len);
     }
 }

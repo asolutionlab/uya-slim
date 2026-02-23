@@ -1,3 +1,5 @@
+extern fn printf(fmt: *byte, ...) i32;
+
 fn example() void {
     defer {
         printf("Cleanup 1\n");

@@ -1,6 +1,10 @@
+struct File {
+    fd: i32
+}
+
 fn example() void {
     const file: File = File{ fd: 1 };
-    const ptr: *File = &file;  // 指针在外层作用域
+    const ptr: &File = &file;  // 指针在外层作用域
     
     {
         // ❌ 编译错误：变量 'file' 存在活跃指针（ptr），不能移动

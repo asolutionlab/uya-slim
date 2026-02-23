@@ -3,6 +3,7 @@
       
       fn example() void {
           const f: File = File{ fd: 1 };  // 直接使用 File 类型
-          const w: IWriter = ...;         // 直接使用 IWriter 接口
+          // IWriter 接口可以从实现了该接口的类型自动装箱
+          // const w: IWriter = f;  // 自动装箱为接口
       }
       

@@ -1,3 +1,11 @@
+// match 表达式综合示例
+
+struct Point {
+    x: f32,
+    y: f32
+}
+
+fn example(score: i32, result: !i32, point: Point) i32 {
     // 整数常量匹配
     const grade: i32 = match score {
         90 => 5, 80 => 4, 70 => 3, 60 => 2,
@@ -12,12 +20,15 @@
     };
     
     // 结构体解构
-    match point {
-        Point{ x: 0, y: 0 } => 0,
-        Point{ x: x, y: y } => {
-            if x > 0 && y > 0 { 1 }
-            else if x < 0 && y > 0 { 2 }
+    const quadrant: i32 = match point {
+        Point{ x: 0.0, y: 0.0 } => 0,
+        Point{ x: x_val, y: y_val } => {
+            if x_val > 0.0 && y_val > 0.0 { 1 }
+            else if x_val < 0.0 && y_val > 0.0 { 2 }
             else { 3 }
         }
     };
+    
+    return grade + value + quadrant;
+}
     

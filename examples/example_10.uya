@@ -1,3 +1,13 @@
+extern fn printf(fmt: *byte, ...) i32;
+
+struct File {
+    fd: i32
+}
+
+fn open_file(path: *byte) !File {
+    return File{ fd: 1 };
+}
+
 fn example() !void {
     const file: File = try open_file("test.txt");
     

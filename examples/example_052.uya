@@ -1,6 +1,11 @@
-       match x {
-           0 => expr1,
-           y => expr2,  // y 绑定到 x 的值
-           else => expr3,
-       }
+// match 表达式示例：值绑定
+
+fn example(x: i32) i32 {
+    const result: i32 = match x {
+        0 => 10,
+        y => y,  // y 绑定到 x 的值
+        else => 0
+    };
+    return result;
+}
        

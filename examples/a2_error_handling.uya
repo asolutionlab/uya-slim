@@ -43,7 +43,7 @@ fn read_file(path: *byte) !i32 {
     }
     
     var buf: [byte: 1024] = [];
-    const n: i32 = read(file.fd, buf, 1024);
+    const n: i32 = read(file.fd, &buf[0], 1024);
     if n < 0 {
         return error.FileError;
     }

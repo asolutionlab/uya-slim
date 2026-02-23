@@ -1,3 +1,17 @@
+interface IWriter {
+    fn write(self: &Self, buf: *byte, len: i32) i32;
+}
+
+struct Console {
+    fd: i32
+}
+
+Console : IWriter {
+    fn write(self: &Self, buf: *byte, len: i32) i32 {
+        return 0;
+    }
+}
+
 fn example() void {
     const console: Console = Console{ fd: 1 };
     const writer: IWriter = console;  // 装箱为接口值（16字节结构体）

@@ -6,3 +6,6 @@
         i = i + 1;
     }
     
+    // 使用数组
+    const first: f32 = buf[0];
+    

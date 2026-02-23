@@ -1,10 +1,18 @@
-      fn main() i32 {
-          const result: i32 = read_file("test.txt") catch |err| {
-              printf("Failed to read file\n");
-              return 1;  // 直接退出 main 函数，返回 1（跳过后续所有代码）
-          };
-          // 如果 read_file 成功，继续执行这里
-          printf("Read %d bytes\n", result);
-          return 0;
-      }
+extern fn printf(fmt: *byte, ...) i32;
+
+// 假设这是从其他模块导入的函数
+fn read_file(path: *byte) !i32 {
+    // 示例实现
+    return 42;
+}
+
+fn main() i32 {
+    const result: i32 = read_file("test.txt") catch |err| {
+        printf("Failed to read file\n");
+        return 1;  // 直接退出 main 函数，返回 1（跳过后续所有代码）
+    };
+    // 如果 read_file 成功，继续执行这里
+    printf("Read %d bytes\n", result);
+    return 0;
+}
       

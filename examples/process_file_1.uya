@@ -1,3 +1,10 @@
+// 声明外部函数
+extern fn open(path: *byte, flags: i32) i32;
+
+struct File {
+    fd: i32
+}
+
 fn process_file(f: File) void {
     // f 的所有权从调用者移动到函数参数
     // 函数返回时，f 离开作用域，自动调用 drop

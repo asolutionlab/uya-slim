@@ -5,7 +5,7 @@
     
     // 结构体方法（静态方法，语法糖）- 无 impl 关键字（推荐使用 Self）
     Point {
-        fn distance(self: *Self) f32 {
+        fn distance(self: &Self) f32 {
             extern sqrt(x: f64) f64;
             const x: f64 = self.x as f64;
             const y: f64 = self.y as f64;
@@ -15,12 +15,12 @@
     
     // 接口定义
     interface IDrawable {
-        fn draw(self: *Self) void;
+        fn draw(self: &Self) void;
     }
     
     // 接口实现（动态派发，vtable）- 使用 : 分隔结构体名和接口名
     Point : IDrawable {
-        fn draw(self: *Self) void {
+        fn draw(self: &Self) void {
             extern printf(fmt: *byte, ...) i32;
             printf("Point at (%f, %f)\n", self.x, self.y);
         }

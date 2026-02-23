@@ -1,3 +1,22 @@
+extern fn printf(fmt: *byte, ...) i32;
+
+// 假设的结构体和函数
+struct File {
+    fd: i32
+}
+
+fn open_file(path: *byte) !File {
+    return File{ fd: 1 };
+}
+
+fn process(file: File) !i32 {
+    return 42;
+}
+
+fn rollback_transaction() void {
+    // 回滚事务的实现
+}
+
 fn process_file(path: *byte) !i32 {
     const file: File = try open_file(path);
     

@@ -16,7 +16,7 @@ union Poll<T> {
 // ============================================
 
 interface Future<T> {
-    fn poll(self: &Self, waker: &Waker) union Poll<T>;
+    fn poll(self: &Self, waker: &Waker) Poll<T>;
 }
 
 // ============================================
@@ -29,11 +29,11 @@ struct MyFuture {
 }
 
 MyFuture {
-    fn poll(self: &Self, waker: &Waker) union Poll<i32> {
+    fn poll(self: &Self, waker: &Waker) Poll<i32> {
         if self.ready {
-            return union Poll<i32> { Ready: self.value };
+            return Poll<i32>{ Ready: self.value };
         } else {
-            return union Poll<i32> { Pending: void };
+            return Poll<i32>{ Pending: void };
         }
     }
 }
@@ -43,7 +43,7 @@ MyFuture {
 // ============================================
 
 fn check_future(future: Future<i32>, waker: &Waker) i32 {
-    const result: union Poll<i32> = future.poll(waker);
+    const result: Poll<i32> = future.poll(waker);
     match result {
         .Pending => {
             // 继续等待
@@ -65,7 +65,7 @@ fn check_future(future: Future<i32>, waker: &Waker) i32 {
 // ============================================
 
 fn check_future_with_error(future: Future<i32>, waker: &Waker) !i32 {
-    const result: union Poll<i32> = future.poll(waker);
+    const result: Poll<i32> = future.poll(waker);
     match result {
         .Pending => {
             return error.NotReady;

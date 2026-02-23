@@ -1,2 +1,8 @@
-defer statement;
-defer { statements }
+// defer 语法说明
+// 这是语法定义，不是可执行代码
+
+// defer 语法：
+// defer statement;      - 单语句形式
+// defer { statements }  - 块语句形式
+
+// 作用：在作用域结束时执行清理代码

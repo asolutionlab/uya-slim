@@ -1,3 +1,6 @@
-     export fn sizeof(T) i32  = @size_of(T);   // 仅编译器可见的折叠记号
-     export fn alignof(T) i32 = @align_of(T);
+     // 内置函数：获取类型大小和对齐
+     // @size_of 和 @align_of 是编译期内置函数
+     // 示例：
+     // const file_size: i32 = @size_of(struct File);
+     // const file_align: i32 = @align_of(struct File);
      

@@ -11,7 +11,11 @@
     };
     
     // 访问多维数组字段（需要边界检查证明）
-    if i >= 0 && i < 3 && j >= 0 && j < 4 {
-        const value: f32 = mat.data[i][j];  // 编译器证明安全
+    fn get_element(m: &Mat3x4, i: i32, j: i32) !f32 {
+        if i >= 0 && i < 3 && j >= 0 && j < 4 {
+            const value: f32 = m.data[i][j];  // 编译器证明安全
+            return value;
+        }
+        return error.OutOfBounds;
     }
     

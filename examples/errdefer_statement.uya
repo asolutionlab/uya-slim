@@ -1,2 +1,8 @@
-errdefer statement;
-errdefer { statements }
+// errdefer 语法说明
+// 这是语法定义，不是可执行代码
+
+// errdefer 语法：
+// errdefer statement;      - 单语句形式
+// errdefer { statements }  - 块语句形式
+
+// 作用：仅在错误返回时执行清理代码

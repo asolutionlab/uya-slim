@@ -1,6 +1,17 @@
-      const result: i32 = divide(10, 0) catch |err| {
-          printf("Error: %d\n", err);
-          0  // 返回默认值，result = 0
-      };
-      // result 的类型是 i32（不是 !i32），值为 0
+extern fn printf(fmt: *byte, ...) i32;
+
+fn divide(a: i32, b: i32) !i32 {
+    if b == 0 {
+        return error.DivisionByZero;
+    }
+    return a / b;
+}
+
+fn example() void {
+    const result: i32 = divide(10, 0) catch |err| {
+        printf("Error: %d\n", err);
+        0  // 返回默认值，result = 0
+    };
+    // result 的类型是 i32（不是 !i32），值为 0
+}
       

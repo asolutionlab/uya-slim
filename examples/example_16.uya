@@ -1,3 +1,7 @@
+struct File {
+    fd: i32
+}
+
 fn example() void {
     const arr1: [File: 3] = [File{fd:1}, File{fd:2}, File{fd:3}];
     

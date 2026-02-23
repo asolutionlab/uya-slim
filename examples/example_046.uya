@@ -47,6 +47,7 @@
     }
     
     // 整数范围，丢弃元素
+    const N: i32 = 10;
     for 0..N {
         printf("loop\n");  // 执行 N 次
     }

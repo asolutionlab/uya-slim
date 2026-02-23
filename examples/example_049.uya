@@ -1,6 +1,11 @@
+// match 表达式示例
+
+fn example(x: i32) i32 {
     const result: i32 = match x {
         0 => 10,
         1 => 20,
-        else => 30,
+        else => 30
     };
+    return result;
+}
     

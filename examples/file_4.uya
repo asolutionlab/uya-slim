@@ -1,8 +1,12 @@
+// 文件移动示例（需要声明外部函数）
+extern fn open(path: *byte, flags: i32) i32;
+extern fn close(fd: i32) i32;
+
 struct File {
     fd: i32
 }
 
-fn drop(self: File) void {
+fn drop(self: &File) void {
     close(self.fd);
 }
 
