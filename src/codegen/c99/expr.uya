@@ -2706,7 +2706,7 @@ fn gen_slice_from_array_literal(codegen: &C99CodeGenerator, unary_expr: &ASTNode
         }
         
         // 生成数组复合字面量
-        fprintf(codegen.output as *void, "%s[%d]){" as *byte, elem_type_str as *byte, actual_len as *byte);
+        fprintf(codegen.output as *void, "%s[%d]){" as *byte, elem_type_str as *byte, actual_len);
         
         if repeat_count_expr != null && element_count >= 1 {
             // [value: N] 形式
@@ -2736,7 +2736,7 @@ fn gen_slice_from_array_literal(codegen: &C99CodeGenerator, unary_expr: &ASTNode
     }
     
     // 生成长度字段
-    fprintf(codegen.output as *void, ", .len = %d }" as *byte, actual_len as *byte);
+    fprintf(codegen.output as *void, ", .len = %d }" as *byte, actual_len);
 }
 
 // 生成一元表达式
