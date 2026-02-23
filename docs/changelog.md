@@ -8,6 +8,48 @@
 
 **发布日期：** 待定
 
+### v0.7.1 - 切片字面量 & 语法增强
+
+**发布日期：** 2026-02-21
+
+#### 主要变更
+
+1. **切片字面量（从数组字面量创建切片）**
+   - 新增语法：`&[elem1, elem2, ...]` 和 `&[value: N]`
+   - 无需先声明数组变量，直接从字面量创建切片
+   - 示例：
+     ```uya
+     const slice1: &[i32] = &[1, 2, 3];      // 从列表创建
+     const slice2: &[i32] = &[0: 10];        // 从重复值创建
+     ```
+   - 实现位置：
+     - `src/codegen/c99/expr.uya`: 新增 `gen_slice_from_array_literal()` 函数
+     - `src/codegen/c99/types.uya`: 切片类型推断
+     - `src/codegen/c99/stmt.uya`: 变量声明时设置 expected_type
+
+2. **match 表达式省略分号**
+   - 当 match 的所有分支都是 block（用 `{}` 包裹）时，可省略分号
+   - 提升代码流畅性，减少语法噪音
+   - 示例：
+     ```uya
+     match status {
+         200 => { process_success(); },
+         404 => { handle_error(); },
+         else => { handle_default(); }
+     }  // 可以省略这里的分号
+     ```
+   - 实现位置：`src/parser/statements.uya`
+
+3. **类型推断改进**
+   - 变量声明时正确传递 expected_type
+   - 支持从目标类型推断切片元素类型
+
+#### 代码统计
+
+- 修改文件：6 个
+- 新增代码：~180 行
+- 测试状态：自举通过
+
 ### v0.6.0 - 标准库重构（规划中）
 
 本版本将重构标准库架构，使用 Uya 现代特性。

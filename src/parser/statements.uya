@@ -604,9 +604,48 @@ fn parser_parse_statement(parser: &Parser) &ASTNode {
         return null;
     }
     
+    // 检查是否是 match 表达式且所有 arm 都是 block
+    // 如果是，且后面跟着 '}' 或语句开始的关键字，可以省略分号
+    var can_omit_semicolon: i32 = 0;
+    if expr.type == ASTNodeType.AST_MATCH_EXPR {
+        var all_arms_are_blocks: i32 = 1;
+        var i: i32 = 0;
+        while i < expr.match_expr_arm_count {
+            if expr.match_expr_arms[i].result_is_block == 0 {
+                all_arms_are_blocks = 0;
+                break;
+            }
+            i = i + 1;
+        }
+        
+        if all_arms_are_blocks != 0 {
+            // 检查后面是否是 '}' 或语句开始的关键字
+            if parser.current_token != null && (
+                parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) != 0 ||
+                parser_match(parser, TokenType.TOKEN_RETURN) != 0 ||
+                parser_match(parser, TokenType.TOKEN_IF) != 0 ||
+                parser_match(parser, TokenType.TOKEN_WHILE) != 0 ||
+                parser_match(parser, TokenType.TOKEN_FOR) != 0 ||
+                parser_match(parser, TokenType.TOKEN_CONST) != 0 ||
+                parser_match(parser, TokenType.TOKEN_VAR) != 0 ||
+                parser_match(parser, TokenType.TOKEN_BREAK) != 0 ||
+                parser_match(parser, TokenType.TOKEN_CONTINUE) != 0 ||
+                parser_match(parser, TokenType.TOKEN_DEFER) != 0 ||
+                parser_match(parser, TokenType.TOKEN_ERRDEFER) != 0 ||
+                parser_match(parser, TokenType.TOKEN_LEFT_BRACE) != 0 ||
+                parser_match(parser, TokenType.TOKEN_IDENTIFIER) != 0 ||
+                parser_match(parser, TokenType.TOKEN_MATCH) != 0
+            ) {
+                can_omit_semicolon = 1;
+            }
+        }
+    }
+    
     // 期望 ';'
-    if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
-        return null;
+    if can_omit_semicolon == 0 {
+        if parser_expect(parser, TokenType.TOKEN_SEMICOLON) == null {
+            return null;
+        }
     }
     
     // 直接返回表达式节点（表达式节点可以作为语句）

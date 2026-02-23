@@ -464,6 +464,10 @@ if i >= 0 && i < 10 {
 const slice: &[i32] = &arr[2:5];           // 动态长度切片
 const exact: &[i32: 3] = &arr[2:3];        // 已知长度切片
 const tail: &[i32] = &arr[-3:3];           // 负数索引，从倒数第3个开始
+
+// 从数组字面量直接创建切片（0.48 新增）
+const slice1: &[i32] = &[1, 2, 3];         // 从列表创建
+const slice2: &[i32] = &[0: 10];           // 从重复值创建
 ```
 
 ### 控制流
@@ -538,6 +542,14 @@ match status {
     error.FileNotFound => handle_error(),
     else => handle_default()
 };
+
+// 省略分号（0.48 新增）：所有分支都是 block 时可省略分号
+match status {
+    200 => { process_success(); },
+    404 => { handle_error(); },
+    else => { handle_default(); }
+}
+// 当 match 的所有分支都是 block（用 {} 包裹），且后面跟着 } 或语句开始关键字时，可省略分号
 
 // 结构体解构
 match point {
@@ -1118,6 +1130,6 @@ mc assert(cond) stmt {
 
 ---
 
-**版本**：Uya 0.47
+**版本**：Uya 0.48
 **更新日期**：2026-02-21
 

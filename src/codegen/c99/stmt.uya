@@ -1016,6 +1016,11 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         const var_type: &ASTNode = stmt.var_decl_type;
         const init_expr: &ASTNode = stmt.var_decl_init;
         const is_const: i32 = stmt.var_decl_is_const;
+        
+        // 设置期望类型（用于 &[array_literal] 的类型推断）
+        const saved_expected_type: &ASTNode = codegen.expected_type;
+        codegen.expected_type = var_type;
+        
         var is_string_interp_init: i32 = 0;
         if init_expr != null && init_expr.type == ASTNodeType.AST_STRING_INTERP {
             is_string_interp_init = 1;
@@ -1120,6 +1125,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             codegen.local_variables[codegen.local_variable_count].type_c = stored_type_c;
                             codegen.local_variable_count = codegen.local_variable_count + 1;
                         }
+                        codegen.expected_type = saved_expected_type;
                         return;
                     }
                 }
@@ -1152,6 +1158,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 if need_pragma_missing_braces != 0 {
                     fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
                 }
+                codegen.expected_type = saved_expected_type;
                 return;
             }
             // 检查是否是 void 类型
@@ -1164,6 +1171,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             }
             if is_void_type != 0 {
                 gen_var_decl_void_type(codegen, init_expr);
+                codegen.expected_type = saved_expected_type;
                 return;
             }
             // 为存储到变量表准备完整的类型字符串（包括 const 修饰符）
@@ -1408,6 +1416,8 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         }
             }
 
+        // 恢复期望类型
+        codegen.expected_type = saved_expected_type;
 }
 // 生成 match 语句
 fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {

@@ -2670,10 +2670,86 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         }
 }
 
+// 生成从数组字面量创建的切片（&[value: N] 或 &[elem1, elem2, ...]）
+// unar_expr: 整个取地址表达式 &array_literal
+fn gen_slice_from_array_literal(codegen: &C99CodeGenerator, unary_expr: &ASTNode) void {
+    const array_expr: &ASTNode = unary_expr.unary_expr_operand;
+    
+    // 从整个取地址表达式获取切片类型
+    const slice_type_c: &byte = get_c_type_of_expr(codegen, unary_expr);
+    var slice_type_str: &byte = ("struct uya_slice_int32_t" as *byte) as &byte;
+    if slice_type_c != null {
+        slice_type_str = slice_type_c;
+    }
+    
+    const element_count: i32 = array_expr.array_literal_element_count;
+    const repeat_count_expr: &ASTNode = array_expr.array_literal_repeat_count_expr;
+    
+    // 计算实际长度
+    var actual_len: i32 = element_count;
+    if repeat_count_expr != null && element_count >= 1 {
+        actual_len = eval_const_expr(codegen, repeat_count_expr);
+        if actual_len < 0 {
+            actual_len = 0;
+        }
+    }
+    
+    // 生成切片结构体
+    fprintf(codegen.output as *void, "(%s){ .ptr = (" as *byte, slice_type_str as *byte);
+    
+    if actual_len > 0 {
+        // 获取元素类型（从数组字面量的第一个元素）
+        const elem_type_c: &byte = get_c_type_of_expr(codegen, array_expr.array_literal_elements[0]);
+        var elem_type_str: &byte = ("int32_t" as *byte) as &byte;
+        if elem_type_c != null {
+            elem_type_str = elem_type_c;
+        }
+        
+        // 生成数组复合字面量
+        fprintf(codegen.output as *void, "%s[%d]){" as *byte, elem_type_str as *byte, actual_len as *byte);
+        
+        if repeat_count_expr != null && element_count >= 1 {
+            // [value: N] 形式
+            var i: i32 = 0;
+            while i < actual_len {
+                gen_expr(codegen, array_expr.array_literal_elements[0]);
+                if i < actual_len - 1 {
+                    c99_emit_comma_space(codegen);
+                }
+                i = i + 1;
+            }
+        } else {
+            // [elem1, elem2, ...] 形式
+            var i: i32 = 0;
+            while i < element_count {
+                gen_expr(codegen, array_expr.array_literal_elements[i]);
+                if i < element_count - 1 {
+                    c99_emit_comma_space(codegen);
+                }
+                i = i + 1;
+            }
+        }
+        fputs("}" as *byte, codegen.output as *void);
+    } else {
+        // 空切片：使用 NULL 指针
+        fputs("void *)0" as *byte, codegen.output as *void);
+    }
+    
+    // 生成长度字段
+    fprintf(codegen.output as *void, ", .len = %d }" as *byte, actual_len as *byte);
+}
+
 // 生成一元表达式
 fn gen_unary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const op: TokenType = expr.unary_expr_op as TokenType;
         const operand: &ASTNode = expr.unary_expr_operand;
+        
+        // 特殊处理：& 作用于数组字面量，生成切片
+        if op == TokenType.TOKEN_AMPERSAND && operand.type == ASTNodeType.AST_ARRAY_LITERAL {
+            gen_slice_from_array_literal(codegen, expr);
+            return;
+        }
+        
         fputc(40, codegen.output as *void);  // '('
         if op == TokenType.TOKEN_ASTERISK {
             fputs("*" as *byte, codegen.output as *void);

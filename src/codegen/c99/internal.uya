@@ -193,6 +193,9 @@ struct C99CodeGenerator {
     current_type_args: & & ASTNode,      // 当前实例化的类型实参
     current_type_arg_count: i32,         // 当前实例化的类型实参数量
     
+    // 期望类型上下文（用于 &[array_literal] 类型推断）
+    expected_type: &ASTNode,             // 当前表达式的期望类型（从变量声明/赋值推断）
+    
     // 结构体类型参数上下文（用于泛型方法）
     struct_type_params: &TypeParam,      // 结构体的类型参数列表
     struct_type_param_count: i32,         // 结构体的类型参数数量
