@@ -95,10 +95,13 @@ test "asm mixed clobbers" {
 test "asm array bounds" {
     var arr: [i32: 4] = [1, 2, 3, 4];
     var idx: i32 = 2;
-    var ptr: &i32 = &arr[idx];
-    var result: i32 = 0;
-    @asm {
-        "nop" (ptr, -> result);
+    // 边界检查
+    if idx >= 0 && idx < 4 {
+        var ptr: &i32 = &arr[idx];
+        var result: i32 = 0;
+        @asm {
+            "nop" (ptr, -> result);
+        }
     }
 }
 

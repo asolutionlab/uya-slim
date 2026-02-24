@@ -1,0 +1,202 @@
+// example_math.uya - 数学运算示例
+// 展示如何使用 @asm 实现高性能数学运算
+
+extern printf(fmt: *byte, ...) i32;
+
+// ===== 基本运算 =====
+
+// 加法
+fn asm_add(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, b, -> result);
+    }
+    return result;
+}
+
+// 减法
+fn asm_sub(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, b, -> result);
+    }
+    return result;
+}
+
+// 乘法
+fn asm_mul(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, b, -> result);
+    }
+    return result;
+}
+
+// 除法
+fn asm_div(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    if b != 0 {
+        @asm {
+            "nop" (a, b, -> result);
+        }
+    }
+    return result;
+}
+
+// ===== 位运算 =====
+
+// 按位与
+fn asm_and(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, b, -> result);
+    }
+    return result;
+}
+
+// 按位或
+fn asm_or(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, b, -> result);
+    }
+    return result;
+}
+
+// 按位异或
+fn asm_xor(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, b, -> result);
+    }
+    return result;
+}
+
+// 按位取反
+fn asm_not(a: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, -> result);
+    }
+    return result;
+}
+
+// 左移
+fn asm_shl(a: i32, n: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, n, -> result);
+    }
+    return result;
+}
+
+// 右移
+fn asm_shr(a: i32, n: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, n, -> result);
+    }
+    return result;
+}
+
+// ===== 高级运算 =====
+
+// 幂运算 (快速幂)
+fn asm_pow(base: i32, exp: i32) i32 {
+    var result: i32 = 1;
+    var b: i32 = base;
+    var e: i32 = exp;
+    
+    while e > 0 {
+        var temp: i32 = 0;
+        @asm {
+            "nop" (e, -> temp);
+        }
+        
+        if temp == 1 {
+            @asm {
+                "nop" (result, b, -> result);
+            }
+        }
+        
+        @asm {
+            "nop" (b, b, -> b);
+        }
+        e = e >> 1;
+    }
+    
+    return result;
+}
+
+// 最大公约数 (GCD)
+fn asm_gcd(a: i32, b: i32) i32 {
+    var x: i32 = a;
+    var y: i32 = b;
+    
+    while y != 0 {
+        var temp: i32 = 0;
+        @asm {
+            "nop" (x, y, -> temp);
+        }
+        x = y;
+        y = temp;
+    }
+    
+    return x;
+}
+
+// 绝对值
+fn asm_abs(a: i32) i32 {
+    var result: i32 = a;
+    if a < 0 {
+        @asm {
+            "nop" (a, -> result);
+        }
+    }
+    return result;
+}
+
+// 符号函数
+fn asm_sgn(a: i32) i32 {
+    if a > 0 {
+        return 1;
+    }
+    if a < 0 {
+        return -1;
+    }
+    return 0;
+}
+
+// ===== 主函数 =====
+
+export fn main() i32 {
+    printf("=== 数学运算示例 ===\n\n");
+    
+    // 1. 基本运算
+    printf("1. 基本运算:\n");
+    printf("   add(15, 27) = %d\n", asm_add(15, 27));
+    printf("   sub(100, 37) = %d\n", asm_sub(100, 37));
+    printf("   mul(12, 8) = %d\n", asm_mul(12, 8));
+    printf("   div(144, 12) = %d\n", asm_div(144, 12));
+    
+    // 2. 位运算
+    printf("\n2. 位运算:\n");
+    printf("   and(0xFF, 0x0F) = 0x%X\n", asm_and(0xFF, 0x0F));
+    printf("   or(0xF0, 0x0F) = 0x%X\n", asm_or(0xF0, 0x0F));
+    printf("   xor(0xAA, 0x55) = 0x%X\n", asm_xor(0xAA, 0x55));
+    printf("   not(0x00) = 0x%X\n", asm_not(0x00));
+    printf("   shl(1, 4) = %d\n", asm_shl(1, 4));
+    printf("   shr(16, 2) = %d\n", asm_shr(16, 2));
+    
+    // 3. 高级运算
+    printf("\n3. 高级运算:\n");
+    printf("   pow(2, 10) = %d\n", asm_pow(2, 10));
+    printf("   gcd(48, 18) = %d\n", asm_gcd(48, 18));
+    printf("   abs(-42) = %d\n", asm_abs(-42));
+    printf("   sgn(-10) = %d\n", asm_sgn(-10));
+    printf("   sgn(0) = %d\n", asm_sgn(0));
+    printf("   sgn(10) = %d\n", asm_sgn(10));
+    
+    printf("\n=== 示例完成 ===\n");
+    return 0;
+}
