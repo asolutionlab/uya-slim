@@ -257,14 +257,14 @@ run_single_test() {
     fi
     
     if [ "$base_name" = "extern_function" ]; then
-        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" 2>/dev/null && link_succeeded=true
+        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_EXTERN" -lm 2>/dev/null && link_succeeded=true
     elif [ "$base_name" = "test_comprehensive_cast" ] || [ "$base_name" = "test_ffi_cast" ] || [ "$base_name" = "test_pointer_cast" ] || [ "$base_name" = "test_simple_cast" ] || [ "$base_name" = "test_extern_union" ]; then
-        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" 2>/dev/null && link_succeeded=true
+        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_FFI" -lm 2>/dev/null && link_succeeded=true
     elif [ "$base_name" = "test_abi_calling_convention" ]; then
-        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" 2>/dev/null && link_succeeded=true
+        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" "$EXTRA_C_ABI" -lm 2>/dev/null && link_succeeded=true
     else
         # 编译器已自动生成 main，直接链接
-        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" 2>/dev/null && link_succeeded=true
+        gcc $GCC_OPTS -o "$BUILD_DIR/$base_name" "$output_file" -lm 2>/dev/null && link_succeeded=true
     fi
     
     if [ "$link_succeeded" = false ]; then
