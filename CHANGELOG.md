@@ -1,5 +1,61 @@
 # Uya 变更日志
 
+## v0.7.4 - P1/P2 可选任务实现
+
+> 发布日期：2026-02-24
+
+### 新特性
+
+#### P1 任务
+
+- **越界访问检测（bounds_check_pass）**
+  - 在 `checker/proof.uya` 中实现编译期静态分析
+  - 检测数组访问越界风险
+  - 检测指针算术越界风险
+  - 检测切片边界越界风险
+  - 支持 `BoundsCheckRisk` 枚举（SAFE/WARNING/ERROR）
+
+#### P2 任务
+
+- **指令融合优化（instruction_fusion_pass）**
+  - 在 `checker/optimizer.uya` 中实现指令融合框架
+  - 检测可融合的连续算术指令
+  - 检测乘加融合（MAC）模式
+  - 为后续优化提供分析基础
+
+- **冗余指令消除（redundant_instruction_elimination_pass）**
+  - 在 `checker/optimizer.uya` 中实现冗余指令检测
+  - 检测 nop 等无副作用指令
+  - 检测自移动指令（如 mov r0, r0）
+  - 寄存器生命周期分析框架
+
+- **RISC-V 平台扩展支持**
+  - 新增 `TYPE_ASM_REG_RISCV_V` 类型（向量扩展）
+  - 新增 `TYPE_ASM_REG_RISCV_F` 类型（单精度浮点）
+  - 新增 `TYPE_ASM_REG_RISCV_D` 类型（双精度浮点）
+  - 更新 `is_riscv_reg_type()` 函数支持新类型
+  - 更新 `asm_reg_type_name()` 函数支持新类型
+
+### 新增函数
+
+- `check_array_bounds_const()` - 检测数组访问越界（常量索引）
+- `check_pointer_arithmetic_bounds()` - 检测指针算术越界
+- `check_slice_bounds()` - 检测切片边界越界
+- `bounds_check_pass()` - 全程序越界访问检测 Pass
+- `can_fuse_arithmetic_instructions()` - 检测指令融合机会
+- `instruction_fusion_pass()` - 指令融合优化 Pass
+- `detect_redundant_instruction()` - 检测冗余指令
+- `analyze_register_lifecycle()` - 寄存器生命周期分析
+- `redundant_instruction_elimination_pass()` - 冗余指令消除 Pass
+- `optimize_asm_block()` - @asm 块综合优化入口
+
+### 测试
+
+- 新增 `tests/programs/test_bounds_check.uya` 测试文件
+- 所有 462 个现有测试通过
+
+---
+
 ## v0.7.3 - 编译期优化功能完善
 
 > 发布日期：2026-02-24

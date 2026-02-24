@@ -40,6 +40,9 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
     if type.kind == TypeKind.TYPE_ASM_REG_X64_YMM { return "@asm_reg_x64_ymm" as &byte; }
     if type.kind == TypeKind.TYPE_ASM_REG_X64_ZMM { return "@asm_reg_x64_zmm" as &byte; }
     if type.kind == TypeKind.TYPE_ASM_REG_ARM64_V { return "@asm_reg_arm64_v" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_RISCV_V { return "@asm_reg_riscv_v" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_RISCV_F { return "@asm_reg_riscv_f" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_RISCV_D { return "@asm_reg_riscv_d" as &byte; }
     if type.kind == TypeKind.TYPE_ASM_MEM { return "@asm_mem" as &byte; }
     if is_struct_type(type) != 0 {
         if type.struct_name != null {
@@ -999,7 +1002,10 @@ fn is_any_asm_reg_type(t: Type) i32 {
        t.kind == TypeKind.TYPE_ASM_REG_X64_XMM ||
        t.kind == TypeKind.TYPE_ASM_REG_X64_YMM ||
        t.kind == TypeKind.TYPE_ASM_REG_X64_ZMM ||
-       t.kind == TypeKind.TYPE_ASM_REG_ARM64_V {
+       t.kind == TypeKind.TYPE_ASM_REG_ARM64_V ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_V ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_F ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_D {
         return 1;
     }
     return 0;
@@ -1035,7 +1041,10 @@ fn is_arm64_reg_type(t: Type) i32 {
 
 // 检查是否为 RISC-V 寄存器类型
 fn is_riscv_reg_type(t: Type) i32 {
-    if t.kind == TypeKind.TYPE_ASM_REG_RISCV {
+    if t.kind == TypeKind.TYPE_ASM_REG_RISCV ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_V ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_F ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_D {
         return 1;
     }
     return 0;
@@ -1046,7 +1055,8 @@ fn is_simd_reg_type(t: Type) i32 {
     if t.kind == TypeKind.TYPE_ASM_REG_X64_XMM ||
        t.kind == TypeKind.TYPE_ASM_REG_X64_YMM ||
        t.kind == TypeKind.TYPE_ASM_REG_X64_ZMM ||
-       t.kind == TypeKind.TYPE_ASM_REG_ARM64_V {
+       t.kind == TypeKind.TYPE_ASM_REG_ARM64_V ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_V {
         return 1;
     }
     return 0;
@@ -1063,6 +1073,9 @@ fn asm_reg_type_name(t: Type) &byte {
     if t.kind == TypeKind.TYPE_ASM_REG_X64_YMM { return "@asm_reg_x64_ymm" as &byte; }
     if t.kind == TypeKind.TYPE_ASM_REG_X64_ZMM { return "@asm_reg_x64_zmm" as &byte; }
     if t.kind == TypeKind.TYPE_ASM_REG_ARM64_V { return "@asm_reg_arm64_v" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_RISCV_V { return "@asm_reg_riscv_v" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_RISCV_F { return "@asm_reg_riscv_f" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_RISCV_D { return "@asm_reg_riscv_d" as &byte; }
     if t.kind == TypeKind.TYPE_ASM_MEM { return "@asm_mem" as &byte; }
     return "unknown" as &byte;
 }

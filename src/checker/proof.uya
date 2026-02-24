@@ -329,3 +329,261 @@ fn checker_reset_proof_steps(checker: &TypeChecker) void {
         checker.pointer_nonnull_count = 0;
     }
 }
+
+// ===== P1: 越界访问检测（编译期静态分析） =====
+
+// 越界访问风险等级
+export enum BoundsCheckRisk {
+    BOUNDS_SAFE,        // 已证明安全
+    BOUNDS_WARNING,     // 可能越界（需要警告）
+    BOUNDS_ERROR        // 确定越界
+}
+
+// 越界访问检测结果
+export struct BoundsCheckResult {
+    risk: i32,          // BoundsCheckRisk 值
+    index_value: i32,   // 索引值（常量时有效）
+    array_size: i32,    // 数组大小
+    message: &byte      // 错误/警告消息
+}
+
+// 检测数组访问是否可能越界（常量索引检测）
+export fn check_array_bounds_const(checker: &TypeChecker, array_expr: &ASTNode, index_expr: &ASTNode) BoundsCheckResult {
+    var result: BoundsCheckResult = BoundsCheckResult{
+        risk: BoundsCheckRisk.BOUNDS_SAFE as i32,
+        index_value: -1,
+        array_size: 0,
+        message: null
+    };
+    
+    if checker == null || array_expr == null || index_expr == null {
+        return result;
+    }
+    
+    // 获取数组类型和大小
+    const array_type: Type = checker_infer_type(checker, array_expr);
+    if array_type.kind != TypeKind.TYPE_ARRAY {
+        return result;
+    }
+    result.array_size = array_type.array_size;
+    
+    // 检查索引是否为常量
+    if is_constant_expression(checker, index_expr) != 0 {
+        const index_value: i32 = checker_eval_const_expr(checker, index_expr);
+        result.index_value = index_value;
+        
+        if index_value < 0 || index_value >= result.array_size {
+            result.risk = BoundsCheckRisk.BOUNDS_ERROR as i32;
+            result.message = "数组索引越界：索引值超出数组边界" as &byte;
+        } else {
+            result.risk = BoundsCheckRisk.BOUNDS_SAFE as i32;
+        }
+    }
+    
+    return result;
+}
+
+// 检测指针算术是否可能越界
+export fn check_pointer_arithmetic_bounds(checker: &TypeChecker, ptr_expr: &ASTNode, offset_expr: &ASTNode, base_size: i32) BoundsCheckResult {
+    var result: BoundsCheckResult = BoundsCheckResult{
+        risk: BoundsCheckRisk.BOUNDS_SAFE as i32,
+        index_value: -1,
+        array_size: base_size,
+        message: null
+    };
+    
+    if checker == null || ptr_expr == null || offset_expr == null {
+        return result;
+    }
+    
+    // 检查偏移是否为常量
+    if is_constant_expression(checker, offset_expr) != 0 {
+        const offset_value: i32 = checker_eval_const_expr(checker, offset_expr);
+        result.index_value = offset_value;
+        
+        // 如果知道数组大小，检查是否越界
+        if base_size > 0 {
+            if offset_value < 0 || offset_value >= base_size {
+                result.risk = BoundsCheckRisk.BOUNDS_WARNING as i32;
+                result.message = "指针算术可能越界：偏移超出已知边界" as &byte;
+            }
+        }
+        
+        // 负偏移需要特别关注
+        if offset_value < 0 {
+            result.risk = BoundsCheckRisk.BOUNDS_WARNING as i32;
+            result.message = "指针算术：负偏移需要证明安全" as &byte;
+        }
+    }
+    
+    return result;
+}
+
+// 检测切片边界是否可能越界
+export fn check_slice_bounds(checker: &TypeChecker, array_expr: &ASTNode, start_expr: &ASTNode, len_expr: &ASTNode) BoundsCheckResult {
+    var result: BoundsCheckResult = BoundsCheckResult{
+        risk: BoundsCheckRisk.BOUNDS_SAFE as i32,
+        index_value: -1,
+        array_size: 0,
+        message: null
+    };
+    
+    if checker == null || array_expr == null {
+        return result;
+    }
+    
+    // 获取数组类型和大小
+    const array_type: Type = checker_infer_type(checker, array_expr);
+    if array_type.kind != TypeKind.TYPE_ARRAY {
+        return result;
+    }
+    result.array_size = array_type.array_size;
+    
+    // 检查起始位置
+    if start_expr != null && is_constant_expression(checker, start_expr) != 0 {
+        const start_value: i32 = checker_eval_const_expr(checker, start_expr);
+        
+        // 处理负数索引
+        var actual_start: i32 = start_value;
+        if start_value < 0 {
+            actual_start = result.array_size + start_value;
+        }
+        
+        if actual_start < 0 || actual_start > result.array_size {
+            result.risk = BoundsCheckRisk.BOUNDS_ERROR as i32;
+            result.message = "切片起始位置越界" as &byte;
+            return result;
+        }
+    }
+    
+    // 检查长度
+    if len_expr != null && is_constant_expression(checker, len_expr) != 0 {
+        const len_value: i32 = checker_eval_const_expr(checker, len_expr);
+        
+        if len_value < 0 {
+            result.risk = BoundsCheckRisk.BOUNDS_ERROR as i32;
+            result.message = "切片长度不能为负数" as &byte;
+            return result;
+        }
+        
+        if start_expr != null && is_constant_expression(checker, start_expr) != 0 {
+            const start_value: i32 = checker_eval_const_expr(checker, start_expr);
+            var actual_start: i32 = start_value;
+            if start_value < 0 {
+                actual_start = result.array_size + start_value;
+            }
+            
+            if actual_start + len_value > result.array_size {
+                result.risk = BoundsCheckRisk.BOUNDS_ERROR as i32;
+                result.message = "切片结束位置越界" as &byte;
+                return result;
+            }
+        }
+    }
+    
+    return result;
+}
+
+// 全程序越界访问检测 Pass
+export fn bounds_check_pass(checker: &TypeChecker, node: &ASTNode) void {
+    if node == null || checker == null {
+        return;
+    }
+    
+    // 处理程序顶层
+    if node.type == ASTNodeType.AST_PROGRAM && node.program_decls != null {
+        var i: i32 = 0;
+        while i < node.program_decl_count {
+            bounds_check_pass(checker, node.program_decls[i]);
+            i = i + 1;
+        }
+        return;
+    }
+    
+    // 检测数组访问
+    if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        const result: BoundsCheckResult = check_array_bounds_const(checker, node.array_access_array, node.array_access_index);
+        
+        if result.risk == BoundsCheckRisk.BOUNDS_ERROR as i32 {
+            checker_report_error(checker, node, result.message);
+        } else if result.risk == BoundsCheckRisk.BOUNDS_WARNING as i32 && result.message != null {
+            // 警告级别，仅输出提示
+            if libc.stderr != null {
+                fprintf(libc.stderr, "%s:(%d:%d): 警告: %s\n" as *byte, 
+                    node.filename as *byte, node.line, node.column, result.message as *byte);
+            }
+        }
+    }
+    
+    // 检测切片操作
+    if node.type == ASTNodeType.AST_SLICE_EXPR {
+        const result: BoundsCheckResult = check_slice_bounds(checker, node.slice_expr_base, node.slice_expr_start_expr, node.slice_expr_len_expr);
+        
+        if result.risk == BoundsCheckRisk.BOUNDS_ERROR as i32 {
+            checker_report_error(checker, node, result.message);
+        }
+    }
+    
+    // 递归处理子节点
+    if node.type == ASTNodeType.AST_BINARY_EXPR {
+        bounds_check_pass(checker, node.binary_expr_left);
+        bounds_check_pass(checker, node.binary_expr_right);
+    } else if node.type == ASTNodeType.AST_UNARY_EXPR {
+        bounds_check_pass(checker, node.unary_expr_operand);
+    } else if node.type == ASTNodeType.AST_CALL_EXPR {
+        if node.call_expr_args != null {
+            var i: i32 = 0;
+            while i < node.call_expr_arg_count {
+                bounds_check_pass(checker, node.call_expr_args[i]);
+                i = i + 1;
+            }
+        }
+    } else if node.type == ASTNodeType.AST_MEMBER_ACCESS {
+        bounds_check_pass(checker, node.member_access_object);
+    } else if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        bounds_check_pass(checker, node.array_access_array);
+        bounds_check_pass(checker, node.array_access_index);
+    } else if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
+        bounds_check_pass(checker, node.var_decl_init);
+    } else if node.type == ASTNodeType.AST_IF_STMT {
+        bounds_check_pass(checker, node.if_stmt_condition);
+        if node.if_stmt_then_branch != null {
+            bounds_check_pass(checker, node.if_stmt_then_branch);
+        }
+        if node.if_stmt_else_branch != null {
+            bounds_check_pass(checker, node.if_stmt_else_branch);
+        }
+    } else if node.type == ASTNodeType.AST_WHILE_STMT {
+        bounds_check_pass(checker, node.while_stmt_condition);
+        if node.while_stmt_body != null {
+            bounds_check_pass(checker, node.while_stmt_body);
+        }
+    } else if node.type == ASTNodeType.AST_FOR_STMT {
+        if node.for_stmt_array != null {
+            bounds_check_pass(checker, node.for_stmt_array);
+        }
+        if node.for_stmt_body != null {
+            bounds_check_pass(checker, node.for_stmt_body);
+        }
+    } else if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            bounds_check_pass(checker, node.block_stmts[i]);
+            i = i + 1;
+        }
+    } else if node.type == ASTNodeType.AST_FN_DECL && node.fn_decl_body != null {
+        bounds_check_pass(checker, node.fn_decl_body);
+    } else if node.type == ASTNodeType.AST_RETURN_STMT && node.return_stmt_expr != null {
+        bounds_check_pass(checker, node.return_stmt_expr);
+    } else if node.type == ASTNodeType.AST_SLICE_EXPR {
+        if node.slice_expr_base != null {
+            bounds_check_pass(checker, node.slice_expr_base);
+        }
+        if node.slice_expr_start_expr != null {
+            bounds_check_pass(checker, node.slice_expr_start_expr);
+        }
+        if node.slice_expr_len_expr != null {
+            bounds_check_pass(checker, node.slice_expr_len_expr);
+        }
+    }
+}
