@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # 项目根目录
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_DIR="$PROJECT_ROOT/tests"
-BUILD_DIR="$PROJECT_DIR/build"
+BUILD_DIR="$PROJECT_ROOT/build"
 
 # 统计变量
 TOTAL_TESTS=0
@@ -77,7 +77,7 @@ compile_test() {
     print_test "$test_name"
     
     # 编译到 C
-    if ! "$PROJECT_ROOT/bin/uya" --c99 "$test_file" > "$c_file" 2>&1; then
+    if ! "$PROJECT_ROOT/bin/uya" --c99 "$test_file" -o "$c_file" 2>&1; then
         print_fail "编译到 C 失败"
         return 1
     fi
@@ -236,7 +236,7 @@ main() {
         local demo_c="$BUILD_DIR/demo_asm.c"
         local demo_exe="$BUILD_DIR/demo_asm"
         
-        if "$PROJECT_ROOT/bin/uya" --c99 "$PROJECT_ROOT/examples/demo_asm.uya" > "$demo_c" 2>&1; then
+        if "$PROJECT_ROOT/bin/uya" --c99 "$PROJECT_ROOT/examples/demo_asm.uya" -o "$demo_c" 2>&1; then
             if gcc -O2 -o "$demo_exe" "$demo_c" -lm 2>&1; then
                 echo -e "${GREEN}✓ 演示程序编译成功${NC}"
                 echo -e "${YELLOW}运行演示程序:${NC}"

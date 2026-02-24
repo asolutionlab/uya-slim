@@ -1,7 +1,7 @@
 // demo_asm.uya - @asm 内联汇编功能演示
 // 展示 @asm 的各种使用场景和最佳实践
 
-extern printf(fmt: *byte, ...) i32;
+extern "libc" fn printf(fmt: *byte, ...) i32;
 
 // ===== 1. 基本算术运算 =====
 
@@ -95,9 +95,13 @@ fn swap_values(a: &i32, b: &i32) void {
 
 // 计算两个数的和与差
 fn sum_and_diff(a: i32, b: i32, sum: &i32, diff: &i32) void {
+    var sum_val: i32 = 0;
+    var diff_val: i32 = 0;
     @asm {
-        "nop" (a, b, -> sum, diff);
+        "nop" (a, b, -> sum_val, diff_val);
     }
+    sum[0] = sum_val;
+    diff[0] = diff_val;
 }
 
 // ===== 6. 寄存器 Clobber 声明 =====

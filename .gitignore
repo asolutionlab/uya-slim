@@ -32,3 +32,4 @@ test_std_io.txt
 musl-src/
 src/build/
 tests/build/
+build/
