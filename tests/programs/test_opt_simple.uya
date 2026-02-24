@@ -1,0 +1,13 @@
+// tests/programs/test_opt_simple.uya
+// 简单测试优化是否工作
+
+// 测试常量折叠
+export fn main() i32 {
+    const a: i32 = 10 + 20;  // 应该被优化为 30
+    
+    if a == 30 {
+        return 0;  // 成功
+    }
+    
+    return 1;  // 失败
+}

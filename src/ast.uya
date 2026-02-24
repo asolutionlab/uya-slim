@@ -404,6 +404,11 @@ struct ASTNode {
     print_expr: &ASTNode,    // 要打印的表达式
     // type_atomic（atomic T）
     type_atomic_inner_type: &ASTNode,
+    // 优化相关字段（v0.7.3 新增）
+    is_optimized: i32,          // 是否已被优化（1=是，0=否）
+    optimized_value: i32,       // 优化后的值（常量折叠）
+    is_dead_code: i32,          // 是否为死代码（1=是，需要跳过）
+    is_proved_safe: i32,        // 是否已证明安全（1=是，可跳过运行时检查）
 }
 
 // 创建新的 AST 节点
@@ -617,6 +622,11 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.extern_var_decl_is_extern = 0;
     node.extern_var_decl_is_export = 0;
     node.extern_var_decl_extern_lib_name = null;
+    // 优化字段初始化
+    node.is_optimized = 0;
+    node.optimized_value = 0;
+    node.is_dead_code = 0;
+    node.is_proved_safe = 0;
     return node;
 }
 

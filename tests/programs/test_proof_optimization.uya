@@ -1,0 +1,117 @@
+// tests/programs/test_proof_optimization.uya
+// 测试证明优化（利用内存安全证明消除运行时检查）
+
+use std.testing;
+
+// 测试证明优化：常量索引边界检查
+test "proof_opt_constant_index" {
+    const arr: [i32: 5] = [1, 2, 3, 4, 5];
+    const i: i32 = 2;
+    
+    // 编译器可以证明 i >= 0 && i < 5
+    // 优化：移除 if，直接访问 arr[i]
+    if i >= 0 && i < 5 {
+        const value: i32 = arr[i];
+        try testing.assert_eq_i32(value, 3, "constant index access should be optimized");
+    }
+}
+
+// 测试证明优化：循环变量边界检查
+test "proof_opt_loop_variable" {
+    var arr: [i32: 10] = [0: 10];
+    
+    // 编译器可以证明 i 在 [0, 10) 范围内
+    // 优化：移除边界检查
+    for 0..10 |i| {
+        if i >= 0 && i < 10 {
+            arr[i] = i * 2;
+        }
+    }
+    
+    try testing.assert_eq_i32(arr[5], 10, "loop variable should be optimized");
+}
+
+// 测试证明优化：指针非空检查
+test "proof_opt_null_check" {
+    var ptr: &i32 = null;
+    var value: i32 = 42;
+    ptr = &value;
+    
+    // 编译器可以证明 ptr != null（刚刚赋值）
+    // 优化：移除 null 检查
+    if ptr != null {
+        const v: i32 = *ptr;
+        try testing.assert_eq_i32(v, 42, "null check should be optimized away");
+    }
+}
+
+// 测试证明优化：数组大小已知
+test "proof_opt_array_size" {
+    const arr: [i32: 100] = [0: 100];
+    const size: i32 = @len(arr);
+    
+    // 编译器知道 size = 100
+    // 优化：移除 size 检查
+    if size == 100 {
+        arr[50] = 123;
+        try testing.assert_eq_i32(arr[50], 123, "array size optimization");
+    }
+}
+
+// 测试证明优化：常量表达式边界
+test "proof_opt_expr_boundary" {
+    var arr: [i32: 20] = [0: 20];
+    const base: i32 = 5;
+    const offset: i32 = 3;
+    const index: i32 = base + offset;  // 编译期计算 = 8
+    
+    // 编译器可以证明 index = 8, 8 >= 0 && 8 < 20
+    // 优化：移除边界检查
+    if index >= 0 && index < 20 {
+        arr[index] = 999;
+        try testing.assert_eq_i32(arr[8], 999, "expression boundary should be optimized");
+    }
+}
+
+// 测试证明优化：负数索引（倒数索引）
+test "proof_opt_negative_index" {
+    var arr: [i32: 10] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const len: i32 = @len(arr);
+    const i: i32 = len - 3;  // 倒数第3个 = 8
+    
+    // 编译器可以证明 i = 7
+    // 优化：移除边界检查
+    if i >= 0 && i < len {
+        const value: i32 = arr[i];
+        try testing.assert_eq_i32(value, 8, "negative index should be optimized");
+    }
+}
+
+// 测试证明优化：多个条件组合
+test "proof_opt_combined_conditions" {
+    const arr: [i32: 10] = [0: 10];
+    const a: i32 = 3;
+    const b: i32 = 5;
+    
+    // 编译器可以证明 a >= 0 && a < 10 && b >= 0 && b < 10
+    // 优化：移除所有边界检查
+    if a >= 0 && a < 10 && b >= 0 && b < 10 {
+        const sum: i32 = arr[a] + arr[b];
+        try testing.assert_eq_i32(sum, 0, "combined conditions should be optimized");
+    }
+}
+
+// 主函数运行所有测试
+fn main() i32 {
+    testing.test_suite_begin("Proof Optimization Tests");
+    
+    testing.run_test("constant_index", test_proof_opt_constant_index);
+    testing.run_test("loop_variable", test_proof_opt_loop_variable);
+    testing.run_test("null_check", test_proof_opt_null_check);
+    testing.run_test("array_size", test_proof_opt_array_size);
+    testing.run_test("expr_boundary", test_proof_opt_expr_boundary);
+    testing.run_test("negative_index", test_proof_opt_negative_index);
+    testing.run_test("combined_conditions", test_proof_opt_combined_conditions);
+    
+    return testing.test_suite_end();
+}

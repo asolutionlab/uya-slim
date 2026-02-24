@@ -123,6 +123,14 @@ fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) 
             memcpy(prefix as *void, rel as *void, base_len);
             prefix[base_len] = 95 as byte;
             prefix[base_len + 1] = 0 as byte;
+            // 将路径分隔符 / 和 \ 替换为 _
+            var idx: i32 = 0;
+            while idx < base_len as i32 {
+                if prefix[idx] == 47 || prefix[idx] == 92 {  // '/' or '\'
+                    prefix[idx] = 95 as byte;  // '_'
+                }
+                idx = idx + 1;
+            }
             return prefix;
         }
     }

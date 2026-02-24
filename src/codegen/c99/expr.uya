@@ -189,6 +189,13 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         return;
     }
     
+    // v0.7.3 优化支持：检查是否已优化
+    if expr.is_optimized != 0 {
+        // 常量折叠：直接输出优化后的值
+        fprintf(codegen.output as *void, "/* optimized */ %d" as *byte, expr.optimized_value);
+        return;
+    }
+    
     if expr.type == ASTNodeType.AST_NUMBER {
         // 检查是否有类型信息，如果是 i64 类型，使用 LL 后缀
         const type_c: &byte = get_c_type_of_expr(codegen, expr);

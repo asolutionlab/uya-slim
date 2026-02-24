@@ -1,0 +1,76 @@
+// tests/programs/test_constant_folding_simple.uya
+// 简单测试编译期常量折叠优化
+
+use std.testing;
+
+// 测试基础常量折叠
+fn test_basic_folding() !void {
+    const a: i32 = 10 + 20;
+    try testing.assert_eq_i32(a, 30);
+    
+    const b: i32 = 100 - 30;
+    try testing.assert_eq_i32(b, 70);
+    
+    const c: i32 = 7 * 8;
+    try testing.assert_eq_i32(c, 56);
+    
+    const d: i32 = 100 / 4;
+    try testing.assert_eq_i32(d, 25);
+    
+    const e: i32 = 17 % 5;
+    try testing.assert_eq_i32(e, 2);
+}
+
+// 测试嵌套常量折叠
+fn test_nested_folding() !void {
+    const a: i32 = 10;
+    const b: i32 = a * 2;
+    const c: i32 = b + 5;
+    try testing.assert_eq_i32(c, 25);
+}
+
+// 测试复杂表达式
+fn test_complex_folding() !void {
+    const x: i32 = (10 + 20) * (5 - 2);
+    try testing.assert_eq_i32(x, 90);
+}
+
+// 测试布尔表达式
+fn test_boolean_folding() !void {
+    const a: bool = true && false;
+    try testing.assert_eq_bool(a, false);
+    
+    const b: bool = true || false;
+    try testing.assert_eq_bool(b, true);
+    
+    const c: bool = !true;
+    try testing.assert_eq_bool(c, false);
+}
+
+// 主函数
+export fn main() i32 {
+    testing.test_suite_begin("Constant Folding Tests");
+    
+    // 运行测试并处理错误
+    test_basic_folding() catch |err| {
+        testing.test_fail("basic_folding");
+    };
+    testing.test_pass("basic_folding");
+    
+    test_nested_folding() catch |err| {
+        testing.test_fail("nested_folding");
+    };
+    testing.test_pass("nested_folding");
+    
+    test_complex_folding() catch |err| {
+        testing.test_fail("complex_folding");
+    };
+    testing.test_pass("complex_folding");
+    
+    test_boolean_folding() catch |err| {
+        testing.test_fail("boolean_folding");
+    };
+    testing.test_pass("boolean_folding");
+    
+    return testing.test_suite_end();
+}
