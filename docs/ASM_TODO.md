@@ -45,7 +45,7 @@
 ### Day 1-2: 语法和 AST ⏱️ 2天
 
 #### Task 1.1: Lexer 支持 `@asm` 关键字
-- [ ] **在 `compiler-c/src/lexer.c` 中添加 `@asm` 识别**
+- [x] **在 `compiler-c/src/lexer.c` 中添加 `@asm` 识别**
   - 优先级: P0
   - 预计时间: 2小时
   - 文件: `compiler-c/src/lexer.c`
@@ -56,7 +56,7 @@
     - Lexer 能正确识别 `@asm` 为内置函数
     - 测试: `make test_lexer_asm` 通过
 
-- [ ] **支持字符串字面量转义序列**
+- [x] **支持字符串字面量转义序列**
   - 优先级: P0
   - 预计时间: 1小时
   - 文件: `compiler-c/src/lexer.c`
@@ -68,7 +68,7 @@
     - 测试: 包含转义序列的 @asm 指令正确编译
 
 #### Task 1.2: AST 添加 `AST_ASM` 节点
-- [ ] **在 `compiler-c/src/ast.h` 中定义 AST_ASM 节点类型**
+- [x] **在 `compiler-c/src/ast.h` 中定义 AST_ASM 节点类型**
   - 优先级: P0
   - 预计时间: 1小时
   - 文件: `compiler-c/src/ast.h`
@@ -83,7 +83,7 @@
     - AST 节点类型正确添加
     - 编译通过,无警告
 
-- [ ] **定义 @asm 节点数据结构**
+- [x] **定义 @asm 节点数据结构**
   - 优先级: P0
   - 预计时间: 2小时
   - 文件: `compiler-c/src/ast.h`
@@ -110,7 +110,7 @@
     - 数据结构定义完整
     - 包含所有必要字段
 
-- [ ] **实现 @asm 节点构造函数**
+- [x] **实现 @asm 节点构造函数**
   - 优先级: P0
   - 预计时间: 1小时
   - 文件: `compiler-c/src/ast.c`
@@ -122,7 +122,7 @@
     - 测试: `make test_ast_asm` 通过
 
 #### Task 1.3: Parser 实现基础语法解析
-- [ ] **在 `primary_expr` 中识别 `@asm`**
+- [x] **在 `primary_expr` 中识别 `@asm`**
   - 优先级: P0
   - 预计时间: 1小时
   - 文件: `compiler-c/src/parser.c`
@@ -132,7 +132,7 @@
   - 验收标准:
     - Parser 能识别 `@asm` 开始的块
 
-- [ ] **实现 `parse_asm_block` 函数**
+- [x] **实现 `parse_asm_block` 函数**
   - 优先级: P0
   - 预计时间: 4小时
   - 文件: `compiler-c/src/parser.c`
@@ -142,12 +142,12 @@
     - 解析输入/输出表达式列表
     - 解析可选的 clobbers 声明
   - 子任务:
-    - [ ] 解析 `{` 开始符号
-    - [ ] 解析指令字符串
-    - [ ] 解析 `(inputs, outputs)` 语法
-    - [ ] 解析 `->` 分隔符
-    - [ ] 解析 `clobbers = [...]` 语法
-    - [ ] 解析 `}` 结束符号
+    - [x] 解析 `{` 开始符号
+    - [x] 解析指令字符串
+    - [x] 解析 `(inputs, outputs)` 语法
+    - [x] 解析 `->` 分隔符
+    - [x] 解析 `clobbers = [...]` 语法
+    - [x] 解析 `}` 结束符号
   - 验收标准:
     - 正确解析基本语法
     - 错误情况有清晰的错误提示
@@ -158,7 +158,7 @@
 ### Day 3-4: 类型检查 ⏱️ 2天
 
 #### Task 1.4: Checker 实现基础类型检查
-- [ ] **实现 `check_asm_block` 函数**
+- [x] **实现 `check_asm_block` 函数**
   - 优先级: P0
   - 预计时间: 3小时
   - 文件: `compiler-c/src/checker.c`
@@ -172,7 +172,7 @@
     - 类型检查逻辑完整
     - 错误提示清晰
 
-- [ ] **实现类型验证辅助函数**
+- [x] **实现类型验证辅助函数**
   - 优先级: P0
   - 预计时间: 2小时
   - 文件: `compiler-c/src/checker.c`
@@ -185,7 +185,7 @@
     - 辅助函数正确实现
     - 类型检查完整
 
-- [ ] **添加寄存器类型系统**
+- [x] **添加寄存器类型系统**
   - 优先级: P0
   - 预计时间: 2小时
   - 文件: `compiler-c/src/types.h`, `compiler-c/src/types.c`
@@ -198,7 +198,7 @@
     - 类型定义完整
     - 类型推断正确
 
-- [ ] **在 `check_expr` 中添加 @asm 处理**
+- [x] **在 `check_expr` 中添加 @asm 处理**
   - 优先级: P0
   - 预计时间: 1小时
   - 文件: `compiler-c/src/checker.c`
@@ -214,7 +214,7 @@
 ### Day 5: 基础代码生成 ⏱️ 1天
 
 #### Task 1.5: Codegen 实现简单指令生成
-- [ ] **实现 `gen_asm_block` 函数**
+- [x] **实现 `gen_asm_block` 函数**
   - 优先级: P0
   - 预计时间: 3小时
   - 文件: `compiler-c/src/codegen/c99/expr.c`
@@ -226,7 +226,7 @@
     - 能生成正确的 C99 内联汇编
     - 生成的代码可编译
 
-- [ ] **实现 `gen_asm_stmt` 函数**
+- [x] **实现 `gen_asm_stmt` 函数**
   - 优先级: P0
   - 预计时间: 2小时
   - 文件: `compiler-c/src/codegen/c99/expr.c`
@@ -239,7 +239,7 @@
     - 单条指令正确生成
     - 多条指令正确处理
 
-- [ ] **添加临时变量生成函数**
+- [x] **添加临时变量生成函数**
   - 优先级: P0
   - 预计时间: 1小时
   - 文件: `compiler-c/src/codegen/c99/utils.c`
@@ -250,7 +250,7 @@
     - 变量名唯一
     - 格式规范
 
-- [ ] **在 `gen_expr` 中添加 @asm 处理**
+- [x] **在 `gen_expr` 中添加 @asm 处理**
   - 优先级: P0
   - 预计时间: 1小时
   - 文件: `compiler-c/src/codegen/c99/expr.c`
@@ -261,7 +261,7 @@
     - 代码生成集成完成
     - 测试: `make test_codegen_asm` 通过
 
-- [ ] **创建基础测试用例**
+- [x] **创建基础测试用例**
   - 优先级: P0
   - 预计时间: 2小时
   - 文件: `tests/programs/test_asm_basic.uya`
@@ -277,14 +277,14 @@
 
 ### 阶段 1 交付物检查清单
 
-- [ ] Lexer 能识别 `@asm` 关键字
-- [ ] AST 包含完整的 @asm 节点结构
-- [ ] Parser 能正确解析基础语法
-- [ ] Checker 能进行基础类型检查
-- [ ] Codegen 能生成 C99 内联汇编
-- [ ] 基础测试用例通过 (`test_asm_basic.uya`)
-- [ ] 可以编译简单的 @asm 块
-- [ ] 生成的 C 代码可编译和运行
+- [x] Lexer 能识别 `@asm` 关键字
+- [x] AST 包含完整的 @asm 节点结构
+- [x] Parser 能正确解析基础语法
+- [x] Checker 能进行基础类型检查
+- [x] Codegen 能生成 C99 内联汇编
+- [x] 基础测试用例通过 (`test_asm_basic.uya`)
+- [x] 可以编译简单的 @asm 块
+- [x] 生成的 C 代码可编译和运行
 
 ---
 

@@ -693,7 +693,13 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
     } else if op == TokenType.TOKEN_AMPERSAND {
         // 取地址（&expr）：与 C 一致，操作数类型无效（TypeKind.TYPE_VOID）时放宽检查，返回 &void，不报错
         if is_void_type(operand_type) != 0 {
+            // 设置新的 union data 字段
+            var pd: PointerData = PointerData {
+                pointee: null as &Type,
+                is_ffi: 0,
+            };
             result.kind = TypeKind.TYPE_POINTER;
+            result.data = TypeData.pointer(pd);
             result.pointer_to = null;  // &void
             result.is_ffi_pointer = 0;
             return result;
@@ -707,7 +713,13 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
         }
         pointed_type_ptr[0] = copy_type(&operand_type);
         
+        // 设置新的 union data 字段
+        var pd: PointerData = PointerData {
+            pointee: pointed_type_ptr,
+            is_ffi: 0,
+        };
         result.kind = TypeKind.TYPE_POINTER;
+        result.data = TypeData.pointer(pd);
         result.pointer_to = pointed_type_ptr;
         result.is_ffi_pointer = 0;
         return result;

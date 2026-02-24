@@ -7,6 +7,7 @@
 fn copy_type(t: &Type) Type {
     var r: Type = Type {
         kind: t.kind,
+        data: t.data,  // 复制 union data 字段
         enum_name: t.enum_name,
         interface_name: t.interface_name,
         struct_name: t.struct_name,
@@ -256,7 +257,13 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         return infer_syscall(checker, expr);
     } else if expr.type == ASTNodeType.AST_PTR_FROM_USIZE {
         // @ptr_from_usize 表达式：返回 &void 类型
+        // 设置新的 union data 字段
+        var pd: PointerData = PointerData {
+            pointee: null as &Type,
+            is_ffi: 0,  // &void，不是 *void
+        };
         result.kind = TypeKind.TYPE_POINTER;
+        result.data = TypeData.pointer(pd);
         result.pointer_to = null;  // void 类型
         result.is_ffi_pointer = 0;  // &void，不是 *void
         // 注意：Uya 版本的 Type 结构体没有 is_const 字段
@@ -334,7 +341,13 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         pointed_type_ptr[0] = byte_type;
         
         // 创建 FFI 指针类型（*byte）
+        // 设置新的 union data 字段
+        var pd: PointerData = PointerData {
+            pointee: pointed_type_ptr,
+            is_ffi: 1,  // FFI 指针类型
+        };
         result.kind = TypeKind.TYPE_POINTER;
+        result.data = TypeData.pointer(pd);
         result.pointer_to = pointed_type_ptr;
         result.is_ffi_pointer = 1;  // FFI 指针类型
         return result;
@@ -1187,6 +1200,11 @@ fn infer_asm_block(checker: &TypeChecker, expr: &ASTNode) Type {
                 checker_report_error(checker, input_expr, "@asm 输入必须是整数或指针类型" as &byte);
                 return make_void_type();
             }
+            // 内存安全：检查 FFI 指针（*T）不能直接使用
+            if type_is_ffi_pointer(&input_type) != 0 {
+                checker_report_error(checker, input_expr, "FFI 指针 (*T) 不能直接用于 @asm，请转换为 &T 类型" as &byte);
+                return make_void_type();
+            }
             in_idx = in_idx + 1;
         }
         input_offset = input_offset + input_count;
@@ -1203,6 +1221,11 @@ fn infer_asm_block(checker: &TypeChecker, expr: &ASTNode) Type {
             const output_type: Type = checker_infer_type(checker, output_expr);
             if is_void_type(output_type) != 0 {
                 checker_report_error(checker, output_expr, "@asm 输出表达式类型无效" as &byte);
+                return make_void_type();
+            }
+            // 内存安全：检查 FFI 指针不能作为输出
+            if type_is_ffi_pointer(&output_type) != 0 {
+                checker_report_error(checker, output_expr, "FFI 指针 (*T) 不能作为 @asm 输出" as &byte);
                 return make_void_type();
             }
             // 验证输出类型（整数）
@@ -1258,8 +1281,14 @@ fn infer_unary_expr(checker: &TypeChecker, expr: &ASTNode) Type {
         }
         pointed_type_ptr[0] = copy_type(&operand_type);
         
+        // 设置新的 union data 字段
+        var pd: PointerData = PointerData {
+            pointee: pointed_type_ptr,
+            is_ffi: 0,
+        };
         var result: Type = Type {
             kind: TypeKind.TYPE_POINTER,
+            data: TypeData.pointer(pd),
             enum_name: null,
             struct_name: null,
             union_name: null,

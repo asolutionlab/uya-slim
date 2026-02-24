@@ -23,6 +23,7 @@ export use mc
 - 系统调用：`@syscall(nr, arg1, ..., arg6)`
 - 指针转换：`@ptr_from_usize`、`@usize_from_ptr`
 - 调试输出：`@print`、`@println`
+- 内联汇编（0.72 新增）：`@asm { ... }` - 类型安全的内联汇编块
 
 ## 类型系统
 
@@ -966,6 +967,48 @@ const msg3: [i8: 64] = "pi=${pi:.2e}\n";  // 科学计数法
 
 见上文"关键字"章节的内置函数列表。所有内置函数以 `@` 开头，无需导入，自动可用，编译期展开。
 
+**@asm 内联汇编（0.72 新增）**：
+```uya
+// 基本语法
+@asm {
+    "instruction template" (input1, input2, ..., -> output1, output2, ...)
+        clobbers = [reg1, reg2, ..., "memory"];
+}
+
+// 简单示例：两数相加
+fn add_with_asm(a: i32, b: i32) i32 {
+    var result: i32;
+    @asm {
+        "add {a}, {b}" (a, b, -> result);
+    }
+    return result;
+}
+
+// 系统调用示例
+fn syscall_write(fd: i32, buf: &const byte, count: i32) !i32 {
+    const SYS_write: i64 = 1;
+    var result: i64;
+    @asm {
+        "mov rax, {nr}" (SYS_write, -> rax);
+        "mov rdi, {fd}" (fd, -> rdi);
+        "mov rsi, {buf}" (buf, -> rsi);
+        "mov rdx, {count}" (count, -> rdx);
+        "syscall" (rax, rdi, rsi, rdx, -> result);
+    } clobbers = ["rcx", "r11", "memory"];
+    
+    if result < 0 { return error.SyscallFailed; }
+    return result as! i32;
+}
+```
+
+**@asm 规则**：
+- **类型安全**：编译期类型检查，支持 i8/i16/i32/i64/u8/u16/u32/u64/usize 和指针类型
+- **不支持类型**：f32/f64、void、结构体、数组、切片不能作为输入/输出
+- **输入限制**：最多 16 个输入表达式
+- **输出限制**：最多 16 个输出表达式
+- **clobbers**：声明被修改的寄存器，确保编译器优化正确
+- **平台支持**：x86-64 Linux/macOS，ARM64 Linux/macOS
+
 **新增内置函数详解**：
 
 ```uya
@@ -1130,6 +1173,6 @@ mc assert(cond) stmt {
 
 ---
 
-**版本**：Uya 0.48
-**更新日期**：2026-02-21
+**版本**：Uya 0.72
+**更新日期**：2026-02-23
 
