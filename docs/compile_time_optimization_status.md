@@ -66,16 +66,38 @@
 ==================
 ```
 
+### 已知问题：编译器 bug - optimizer.uya 函数未完全生成
+
+**问题描述**：
+- `src/checker/optimizer.uya` 中定义了 15 个函数
+- 但生成的 C 代码中只有前 5 个 export 函数被生成
+- 后面的函数（`is_constant_expression`, `constant_folding_pass`, `dead_code_elimination_pass`, `proof_optimization_pass` 等）完全没有被生成
+- 这导致如果 `optimize_program` 调用这些函数，会出现链接错误
+
+**临时解决方案**：
+- 简化 `optimize_program` 函数，不调用那些未生成的函数
+- 当前版本只返回节点，不做实际优化
+
+**根本原因**（待调查）：
+- 可能是解析器解析 optimizer.uya 时提前终止
+- 可能是 AST 合并时丢失了部分声明
+- 可能是代码生成器遍历 AST 时跳过了某些声明
+
+**证据**：
+- optimizer.uya 有 15 个函数，17 个声明
+- 生成的 C 代码中只有 5 个 `checker_optimizer_` 函数声明和定义
+- proof.uya 有 12 个函数，生成的 C 代码中有 11 个相关引用（基本正常）
+- 问题只出现在 optimizer.uya 文件
+
 ### 待完成工作
 
-1. **自举编译器集成**
-   - 当前修改还未集成到自举编译器
-   - 需要成功运行 `make uya` 以生成新的 bin/uya.c
+1. **修复编译器 bug**
+   - 调查为什么 optimizer.uya 中后面的函数没有被生成
+   - 可能需要检查解析器、AST 合并或代码生成器
 
-2. **优化器完善**
-   - 常量折叠：目前只标记了优化，需要在代码生成阶段正确使用优化值
-   - 死代码消除：需要更精确的条件分析
-   - 证明优化：需要扩展证明系统
+2. **重新启用完整优化功能**
+   - 修复 bug 后，恢复 `optimize_program` 中的完整优化调用
+   - 包括常量折叠、死代码消除、证明优化
 
 3. **命令行选项**
    - 添加 `--opt=<level>` 选项
