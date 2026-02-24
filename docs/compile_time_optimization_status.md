@@ -43,13 +43,39 @@
   - 支持常量折叠（直接输出优化后的值）
 
 ### 6. 测试用例
-- 创建了三个测试文件：
+- 创建了测试文件：
   - `tests/programs/test_constant_folding.uya`（常量折叠测试）
   - `tests/programs/test_dead_code_elimination.uya`（死代码消除测试）
   - `tests/programs/test_proof_optimization.uya`（证明优化测试）
   - `tests/programs/test_constant_folding_simple.uya`（简化版测试，已通过）
 
+### 7. 命令行选项
+- 添加了 `--opt=<0-3>` 选项设置优化级别
+- 添加了 `-O0`, `-O1`, `-O2`, `-O3` 简写形式
+- 默认优化级别为 1
+
 ## 当前状态
+
+### ✅ 已修复：Lexer 不支持三元运算符导致的解析问题
+
+**问题描述**：
+- `src/checker/optimizer.uya` 使用了三元运算符 `? :`
+- Lexer 遇到 `?` 字符时返回 `TOKEN_EOF`，导致 parser 认为文件结束
+- 后续函数定义全部丢失
+
+**修复内容**：
+1. 将三元运算符改为 if-else 语句
+2. 修复被掩盖的其他错误：
+   - TokenType 名称修正：`TOKEN_AND_AND` → `TOKEN_LOGICAL_AND`
+   - TokenType 名称修正：`TOKEN_OR_OR` → `TOKEN_LOGICAL_OR`
+   - TokenType 名称修正：`TOKEN_EQUAL_EQUAL` → `TOKEN_EQUAL`
+   - TokenType 名称修正：`TOKEN_BANG_EQUAL` → `TOKEN_NOT_EQUAL`
+   - ASTNodeType 修正：`AST_INDEX_EXPR` → `AST_ARRAY_ACCESS`
+   - 字段名修正：`bool_value` → `bool_literal_value`
+
+**验证结果**：
+- ✅ optimizer.uya 解析后声明数量：5 → 20
+- ✅ 所有 454 个测试通过
 
 ### 测试结果
 ✅ 简单测试通过：
@@ -66,46 +92,36 @@
 ==================
 ```
 
-### 已知问题：编译器 bug - optimizer.uya 函数未完全生成
+## 使用方法
 
-**问题描述**：
-- `src/checker/optimizer.uya` 中定义了 15 个函数
-- 但生成的 C 代码中只有前 5 个 export 函数被生成
-- 后面的函数（`is_constant_expression`, `constant_folding_pass`, `dead_code_elimination_pass`, `proof_optimization_pass` 等）完全没有被生成
-- 这导致如果 `optimize_program` 调用这些函数，会出现链接错误
+### 命令行选项
 
-**临时解决方案**：
-- 简化 `optimize_program` 函数，不调用那些未生成的函数
-- 当前版本只返回节点，不做实际优化
+```bash
+# 禁用优化（调试模式）
+./bin/uya build main.uya -o app.c --c99 --opt=0
+./bin/uya build main.uya -o app.c --c99 -O0
 
-**根本原因**（待调查）：
-- 可能是解析器解析 optimizer.uya 时提前终止
-- 可能是 AST 合并时丢失了部分声明
-- 可能是代码生成器遍历 AST 时跳过了某些声明
+# 默认优化（常量折叠 + 死代码消除）
+./bin/uya build main.uya -o app.c --c99 --opt=1
+./bin/uya build main.uya -o app.c --c99 -O1
 
-**证据**：
-- optimizer.uya 有 15 个函数，17 个声明
-- 生成的 C 代码中只有 5 个 `checker_optimizer_` 函数声明和定义
-- proof.uya 有 12 个函数，生成的 C 代码中有 11 个相关引用（基本正常）
-- 问题只出现在 optimizer.uya 文件
+# 启用证明优化
+./bin/uya build main.uya -o app.c --c99 --opt=2
+./bin/uya build main.uya -o app.c --c99 -O2
 
-### 待完成工作
+# 启用所有优化（未来支持内联和循环展开）
+./bin/uya build main.uya -o app.c --c99 --opt=3
+./bin/uya build main.uya -o app.c --c99 -O3
+```
 
-1. **修复编译器 bug**
-   - 调查为什么 optimizer.uya 中后面的函数没有被生成
-   - 可能需要检查解析器、AST 合并或代码生成器
+### 优化级别说明
 
-2. **重新启用完整优化功能**
-   - 修复 bug 后，恢复 `optimize_program` 中的完整优化调用
-   - 包括常量折叠、死代码消除、证明优化
-
-3. **命令行选项**
-   - 添加 `--opt=<level>` 选项
-   - 添加 `--verbose` 选项显示优化日志
-
-4. **性能测试**
-   - 对比优化前后的性能
-   - 测量优化阶段耗时
+| 级别 | 选项 | 功能 |
+|------|------|------|
+| 0 | `--opt=0` 或 `-O0` | 禁用优化（调试模式） |
+| 1 | `--opt=1` 或 `-O1` | 常量折叠 + 死代码消除（**默认**） |
+| 2 | `--opt=2` 或 `-O2` | + 证明优化 |
+| 3 | `--opt=3` 或 `-O3` | + 内联 + 循环展开（未来） |
 
 ## 实现示例
 
@@ -156,11 +172,12 @@ AST → 类型检查 → 优化 → 代码生成
 
 ## 下一步计划
 
-1. 修复自举编译器集成问题
-2. 完善常量折叠实现
-3. 添加详细的优化日志
-4. 编写更多测试用例
-5. 性能测试和调优
+1. ✅ ~~修复 Lexer 三元运算符 bug~~（已完成）
+2. ✅ ~~添加命令行选项 `--opt=<level>`~~（已完成）
+3. 完善常量折叠实现
+4. 添加详细的优化日志
+5. 编写更多测试用例
+6. 性能测试和调优
 
 ## 参考资料
 - [Uya 语言规范](./docs/uya_ai_prompt.md)

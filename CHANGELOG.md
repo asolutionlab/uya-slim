@@ -1,5 +1,46 @@
 # Uya 变更日志
 
+## v0.7.3 - 编译期优化功能完善
+
+> 发布日期：2026-02-24
+
+### 新特性
+
+- **优化级别命令行选项**
+  - `--opt=<0-3>` 设置优化级别
+  - `-O0`, `-O1`, `-O2`, `-O3` 简写形式
+  - 默认优化级别为 1（常量折叠 + 死代码消除）
+
+### 优化级别说明
+
+| 级别 | 功能 |
+|------|------|
+| 0 | 禁用优化（调试模式） |
+| 1 | 常量折叠 + 死代码消除（默认） |
+| 2 | + 证明优化 |
+| 3 | + 内联 + 循环展开（未来） |
+
+### 修复
+
+- **修复 Lexer 不支持三元运算符导致的优化器解析问题**
+  - 问题：lexer 遇到 `?` 返回 `TOKEN_EOF`，导致 parser 提前终止
+  - 影响：`optimizer.uya` 中三元运算符后的函数定义全部丢失
+  - 修复：将三元运算符改为 if-else 语句
+  - 同时修复了被掩盖的 TokenType 名称错误：
+    - `TOKEN_AND_AND` → `TOKEN_LOGICAL_AND`
+    - `TOKEN_OR_OR` → `TOKEN_LOGICAL_OR`
+    - `TOKEN_EQUAL_EQUAL` → `TOKEN_EQUAL`
+    - `TOKEN_BANG_EQUAL` → `TOKEN_NOT_EQUAL`
+  - 修复 ASTNodeType 和字段名错误：
+    - `AST_INDEX_EXPR` → `AST_ARRAY_ACCESS`
+    - `bool_value` → `bool_literal_value`
+
+### 文档更新
+
+- 更新 `docs/compile_time_optimization_status.md` 状态文档
+
+---
+
 ## v0.7.2 - @asm 测试覆盖率完善
 
 > 发布日期：2026-02-23

@@ -140,7 +140,10 @@ fn is_constant_expression(checker: &TypeChecker, node: &ASTNode) i32 {
     if node.type == ASTNodeType.AST_BINARY_EXPR {
         const left_const: i32 = is_constant_expression(checker, node.binary_expr_left);
         const right_const: i32 = is_constant_expression(checker, node.binary_expr_right);
-        return left_const != 0 && right_const != 0 ? 1 : 0;
+        if left_const != 0 && right_const != 0 {
+            return 1;
+        }
+        return 0;
     }
     
     if node.type == ASTNodeType.AST_UNARY_EXPR {
@@ -161,7 +164,10 @@ fn is_constant_expression(checker: &TypeChecker, node: &ASTNode) i32 {
 
 // 尝试将布尔值转换为整数
 fn bool_to_int(b: i32) i32 {
-    return b != 0 ? 1 : 0;
+    if b != 0 {
+        return 1;
+    }
+    return 0;
 }
 
 // 常量折叠：二元表达式
@@ -207,10 +213,10 @@ fn constant_fold_boolean(checker: &TypeChecker, node: &ASTNode) &ASTNode {
     
     // 检查是否为布尔常量表达式
     if node.type == ASTNodeType.AST_BINARY_EXPR {
-        const op: i32 = node.binary_expr_op as i32;
+        const op: TokenType = node.binary_expr_op as TokenType;
         
         // 逻辑运算符
-        if op == TokenType.TOKEN_AND_AND || op == TokenType.TOKEN_OR_OR {
+        if op == TokenType.TOKEN_LOGICAL_AND || op == TokenType.TOKEN_LOGICAL_OR {
             const left_const: i32 = is_constant_expression(checker, node.binary_expr_left);
             const right_const: i32 = is_constant_expression(checker, node.binary_expr_right);
             
@@ -229,7 +235,7 @@ fn constant_fold_boolean(checker: &TypeChecker, node: &ASTNode) &ASTNode {
         // 比较运算符
         if op == TokenType.TOKEN_LESS || op == TokenType.TOKEN_GREATER ||
            op == TokenType.TOKEN_LESS_EQUAL || op == TokenType.TOKEN_GREATER_EQUAL ||
-           op == TokenType.TOKEN_EQUAL_EQUAL || op == TokenType.TOKEN_BANG_EQUAL {
+           op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL {
             const left_const: i32 = is_constant_expression(checker, node.binary_expr_left);
             const right_const: i32 = is_constant_expression(checker, node.binary_expr_right);
             
@@ -312,7 +318,7 @@ fn get_constant_condition_value(checker: &TypeChecker, node: &ASTNode) i32 {
     }
     
     if node.type == ASTNodeType.AST_BOOL {
-        return node.bool_value;
+        return node.bool_literal_value;
     }
     
     // 常量表达式求值
@@ -440,9 +446,9 @@ export fn proof_optimization_pass(checker: &TypeChecker, node: &ASTNode) &ASTNod
     }
     
     // 处理数组访问
-    if node.type == ASTNodeType.AST_INDEX_EXPR {
-        const array_expr: &ASTNode = node.index_expr_array;
-        const index_expr: &ASTNode = node.index_expr_index;
+    if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        const array_expr: &ASTNode = node.array_access_array;
+        const index_expr: &ASTNode = node.array_access_index;
         
         if can_prove_bounds_check(checker, array_expr, index_expr) != 0 {
             // 可以证明边界安全，标记为优化

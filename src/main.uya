@@ -264,6 +264,8 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  --c99                使用 C99 后端生成 C 代码\n" as *byte);
     fprintf(libc.stderr, "  --line-directives    启用 #line 指令生成（C99 后端）\n" as *byte);
     fprintf(libc.stderr, "  --no-line-directives 禁用 #line 指令生成\n" as *byte);
+    fprintf(libc.stderr, "  --opt=<0-3>          优化级别（0=禁用, 1=默认, 2=+证明优化, 3=+内联）\n" as *byte);
+    fprintf(libc.stderr, "  -O0, -O1, -O2, -O3   优化级别（简写形式）\n" as *byte);
     fprintf(libc.stderr, "\n说明:\n" as *byte);
     fprintf(libc.stderr, "  - 可以指定单个文件或目录，编译器会自动解析模块依赖\n" as *byte);
     fprintf(libc.stderr, "  - 如果指定目录，目录中必须只有一个文件包含 main 函数\n" as *byte);
@@ -1057,6 +1059,7 @@ fn parse_args(
     backend_type: &BackendType,
     emit_line_directives: &i32,
     enable_safety_proof: &i32,
+    opt_level: &i32,
     outlibc_index: &i32,
     run_arg_start: &i32,
     is_nostdlib: &i32
@@ -1077,6 +1080,7 @@ fn parse_args(
     backend_type[0] = BackendType.BACKEND_LLVM;
     emit_line_directives[0] = 0;
     enable_safety_proof[0] = 0;
+    opt_level[0] = 1;  // 默认优化级别 1
     outlibc_index[0] = -1;
     run_arg_start[0] = -1;
     is_nostdlib[0] = 0;
@@ -1131,6 +1135,22 @@ fn parse_args(
             enable_safety_proof[0] = 1;
         } else if strcmp(arg, "--no-safety-proof" as *byte) == 0 {
             enable_safety_proof[0] = 0;
+        } else if strcmp(arg, "--opt=0" as *byte) == 0 {
+            opt_level[0] = 0;
+        } else if strcmp(arg, "--opt=1" as *byte) == 0 {
+            opt_level[0] = 1;
+        } else if strcmp(arg, "--opt=2" as *byte) == 0 {
+            opt_level[0] = 2;
+        } else if strcmp(arg, "--opt=3" as *byte) == 0 {
+            opt_level[0] = 3;
+        } else if strcmp(arg, "-O0" as *byte) == 0 {
+            opt_level[0] = 0;
+        } else if strcmp(arg, "-O1" as *byte) == 0 {
+            opt_level[0] = 1;
+        } else if strcmp(arg, "-O2" as *byte) == 0 {
+            opt_level[0] = 2;
+        } else if strcmp(arg, "-O3" as *byte) == 0 {
+            opt_level[0] = 3;
         } else if strcmp(arg, "--nostdlib" as *byte) == 0 {
             is_nostdlib[0] = 1;
         } else if strcmp(arg, "--outlibc" as *byte) == 0 {
@@ -1213,6 +1233,7 @@ fn compile_files(
     backend: BackendType,
     emit_line_directives: i32,
     enable_safety_proof: i32,
+    opt_level: i32,
     output_path_override: &byte,
     is_nostdlib: i32
 ) i32 {
@@ -1599,8 +1620,7 @@ fn compile_files(
 
     // ===== 优化阶段（v0.7.3 新增）=====
     var opt_end_time: i64 = 0;
-    var opt_level: i32 = 1;  // 默认启用基础优化
-    
+
     // 创建优化配置
     var opt_config: OptimizationConfig = create_optimization_config(opt_level);
     opt_config.verbose = 1;  // 启用详细输出
@@ -1688,6 +1708,7 @@ export fn main() i32 {
     var backend: BackendType = BackendType.BACKEND_LLVM;
     var emit_line_directives: i32 = 0;
     var enable_safety_proof: i32 = 0;
+    var opt_level: i32 = 1;
     var outlibc_index: i32 = -1;
     var command: CommandType = CommandType.COMMAND_BUILD;
     var run_arg_start: i32 = -1;
@@ -1696,7 +1717,7 @@ export fn main() i32 {
     // 临时缓冲区用于自动生成输出路径
     var auto_output_path: [byte: PATH_MAX] = [];
 
-    if parse_args(&command, &input_file_indices[0], &input_file_count, &output_file_index, &backend, &emit_line_directives, &enable_safety_proof, &outlibc_index, &run_arg_start, &is_nostdlib) != 0 {
+    if parse_args(&command, &input_file_indices[0], &input_file_count, &output_file_index, &backend, &emit_line_directives, &enable_safety_proof, &opt_level, &outlibc_index, &run_arg_start, &is_nostdlib) != 0 {
         return 1;
     }
 
@@ -1736,7 +1757,7 @@ export fn main() i32 {
         output_path_for_compile = &auto_output_path[0];
     }
 
-    const result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, output_path_for_compile, is_nostdlib);
+    const result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib);
     if result != 0 {
         return result;
     }
