@@ -30,6 +30,17 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
     if type.kind == TypeKind.TYPE_F64 { return "f64" as &byte; }
     if type.kind == TypeKind.TYPE_BOOL { return "bool" as &byte; }
     if type.kind == TypeKind.TYPE_VOID { return "void" as &byte; }
+    // @asm 寄存器类型
+    if type.kind == TypeKind.TYPE_ASM_REG { return "@asm_reg" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_X64 { return "@asm_reg_x64" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_X86 { return "@asm_reg_x86" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_ARM64 { return "@asm_reg_arm64" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_RISCV { return "@asm_reg_riscv" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_X64_XMM { return "@asm_reg_x64_xmm" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_X64_YMM { return "@asm_reg_x64_ymm" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_X64_ZMM { return "@asm_reg_x64_zmm" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_ARM64_V { return "@asm_reg_arm64_v" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_MEM { return "@asm_mem" as &byte; }
     if is_struct_type(type) != 0 {
         if type.struct_name != null {
             return type.struct_name;
@@ -958,6 +969,102 @@ fn is_generic_param_type(t: Type) i32 {
         return 1;
     }
     return 0;
+}
+
+// ===== @asm 寄存器类型辅助函数 =====
+
+// 检查是否为 ASM 寄存器类型（通用）
+fn is_asm_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 ASM 内存操作类型
+fn is_asm_mem_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_MEM {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为任意 ASM 寄存器类型（包括平台特定）
+fn is_any_asm_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64 ||
+       t.kind == TypeKind.TYPE_ASM_REG_X86 ||
+       t.kind == TypeKind.TYPE_ASM_REG_ARM64 ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_XMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_YMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_ZMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_ARM64_V {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 x86-64 寄存器类型
+fn is_x64_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG_X64 ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_XMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_YMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_ZMM {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 x86 寄存器类型
+fn is_x86_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG_X86 {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 ARM64 寄存器类型
+fn is_arm64_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG_ARM64 ||
+       t.kind == TypeKind.TYPE_ASM_REG_ARM64_V {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 RISC-V 寄存器类型
+fn is_riscv_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG_RISCV {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 SIMD 寄存器类型
+fn is_simd_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG_X64_XMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_YMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_ZMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_ARM64_V {
+        return 1;
+    }
+    return 0;
+}
+
+// 获取寄存器类型名称（用于错误提示）
+fn asm_reg_type_name(t: Type) &byte {
+    if t.kind == TypeKind.TYPE_ASM_REG { return "@asm_reg" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_X64 { return "@asm_reg_x64" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_X86 { return "@asm_reg_x86" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_ARM64 { return "@asm_reg_arm64" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_RISCV { return "@asm_reg_riscv" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_X64_XMM { return "@asm_reg_x64_xmm" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_X64_YMM { return "@asm_reg_x64_ymm" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_X64_ZMM { return "@asm_reg_x64_zmm" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_ARM64_V { return "@asm_reg_arm64_v" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_MEM { return "@asm_mem" as &byte; }
+    return "unknown" as &byte;
 }
 
 // ===== @asm 并发安全辅助函数 =====

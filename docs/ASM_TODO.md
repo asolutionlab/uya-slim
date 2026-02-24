@@ -469,19 +469,21 @@
     - ✅ `@asm_target()` 函数可用
     - ✅ 返回正确的平台枚举值（整数）
 
-- [ ] **实现平台特定寄存器类型**
+- [x] **实现平台特定寄存器类型**
   - 优先级: P0
   - 预计时间: 2小时
   - 文件: 
     - `src/checker/types.uya`
-    - `src/codegen/c99/main.uya`
+    - `src/checker/type_utils.uya`
+    - `src/checker/type_from_ast.uya`
+    - `src/codegen/c99/types.uya`
   - 详情:
     - 添加 x86-64 寄存器类型
     - 添加 ARM64 寄存器类型
     - 实现寄存器约束映射
   - 验收标准:
-    - 平台特定寄存器类型可用
-    - 寄存器约束正确映射
+    - ✅ 平台特定寄存器类型可用
+    - ✅ 寄存器约束正确映射
 
 - [x] **实现条件编译支持**
   - 优先级: P0

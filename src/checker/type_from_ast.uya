@@ -283,6 +283,26 @@ fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
             result.kind = TypeKind.TYPE_F64;
         } else if str_equals(type_name, "void" as *byte) != 0 {
             result.kind = TypeKind.TYPE_VOID;
+        } else if str_equals(type_name, "@asm_reg" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_ASM_REG;
+        } else if str_equals(type_name, "@asm_reg_x64" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_ASM_REG_X64;
+        } else if str_equals(type_name, "@asm_reg_x86" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_ASM_REG_X86;
+        } else if str_equals(type_name, "@asm_reg_arm64" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_ASM_REG_ARM64;
+        } else if str_equals(type_name, "@asm_reg_riscv" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_ASM_REG_RISCV;
+        } else if str_equals(type_name, "@asm_reg_x64_xmm" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_ASM_REG_X64_XMM;
+        } else if str_equals(type_name, "@asm_reg_x64_ymm" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_ASM_REG_X64_YMM;
+        } else if str_equals(type_name, "@asm_reg_x64_zmm" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_ASM_REG_X64_ZMM;
+        } else if str_equals(type_name, "@asm_reg_arm64_v" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_ASM_REG_ARM64_V;
+        } else if str_equals(type_name, "@asm_mem" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_ASM_MEM;
         } else {
             // 自定义类型
             if checker != null && checker.program_node != null {
