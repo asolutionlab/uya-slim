@@ -26,12 +26,14 @@ export fn assert(condition: bool, message: &const byte) !void {
     if !condition {
         return error.AssertionFailed;
     }
+    _test_passed = _test_passed + 1;
 }
 
 export fn assert_true(condition: bool) !void {
     if !condition {
         return error.AssertionFailed;
     }
+    _test_passed = _test_passed + 1;
 }
 
 // 简写断言（无消息）
@@ -39,42 +41,49 @@ export fn expect(condition: bool) !void {
     if !condition {
         return error.AssertionFailed;
     }
+    _test_passed = _test_passed + 1;
 }
 
 export fn assert_eq_i32(actual: i32, expected: i32) !void {
     if actual != expected {
         return error.AssertionFailed;
     }
+    _test_passed = _test_passed + 1;
 }
 
 export fn assert_eq_i64(actual: i64, expected: i64) !void {
     if actual != expected {
         return error.AssertionFailed;
     }
+    _test_passed = _test_passed + 1;
 }
 
 export fn assert_eq_u64(actual: u64, expected: u64) !void {
     if actual != expected {
         return error.AssertionFailed;
     }
+    _test_passed = _test_passed + 1;
 }
 
 export fn assert_eq_bool(actual: bool, expected: bool) !void {
     if actual != expected {
         return error.AssertionFailed;
     }
+    _test_passed = _test_passed + 1;
 }
 
 export fn expect_not_null(ptr: &byte) !void {
     if ptr == null as &byte {
         return error.AssertionFailed;
     }
+    _test_passed = _test_passed + 1;
 }
 
 export fn expect_null(ptr: &byte) !void {
     if ptr != null as &byte {
         return error.AssertionFailed;
     }
+    _test_passed = _test_passed + 1;
 }
 
 // ============================================================

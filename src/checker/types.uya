@@ -61,6 +61,22 @@ enum TypeKind {
     TYPE_INT_LIMIT,
     TYPE_ATOMIC,
     TYPE_GENERIC_PARAM,
+    // @asm 寄存器类型
+    TYPE_ASM_REG,          // 通用寄存器（编译器自动分配）
+    TYPE_ASM_REG_X64,      // x86-64 通用寄存器
+    TYPE_ASM_REG_X86,      // x86 通用寄存器
+    TYPE_ASM_REG_ARM64,    // ARM64 通用寄存器
+    TYPE_ASM_REG_RISCV,    // RISC-V 通用寄存器
+    // @asm SIMD 寄存器类型
+    TYPE_ASM_REG_X64_XMM,  // x86-64 SSE (128-bit)
+    TYPE_ASM_REG_X64_YMM,  // x86-64 AVX/AVX2 (256-bit)
+    TYPE_ASM_REG_X64_ZMM,  // x86-64 AVX-512 (512-bit)
+    TYPE_ASM_REG_ARM64_V,  // ARM64 NEON (128-bit)
+    TYPE_ASM_REG_RISCV_V,  // RISC-V V 扩展 (可变长度向量)
+    TYPE_ASM_REG_RISCV_F,  // RISC-V F 扩展 (单精度浮点)
+    TYPE_ASM_REG_RISCV_D,  // RISC-V D 扩展 (双精度浮点)
+    // @asm 内存操作类型
+    TYPE_ASM_MEM,          // 内存操作数
 }
 
 // ===== 类型数据辅助结构体（阶段四：Union 化重构）=====

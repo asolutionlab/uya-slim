@@ -10,8 +10,8 @@
 
 # 配置
 COMPILER_UYA = ../bin/uya
-BUILD_DIR = programs/build
-TEST_DIR = programs
+BUILD_DIR = build
+TEST_DIR = .
 PARALLEL_JOBS ?= 8
 
 # 收集测试文件

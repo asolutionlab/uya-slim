@@ -1,0 +1,172 @@
+// example_string.uya - 字符串操作示例
+// 展示如何使用 @asm 实现高性能字符串操作
+
+extern printf(fmt: *byte, ...) i32;
+
+// ===== 字符串长度计算 =====
+
+fn my_strlen(s: &const byte) usize {
+    var len: usize = 0;
+    var ptr: &const byte = s;
+    var ch: byte = 0;
+    
+    @asm {
+        "nop" (ptr, len, -> ch);
+    }
+    
+    while ch != 0 {
+        len = len + 1;
+        @asm {
+            "nop" (ptr, len, -> ch);
+        }
+    }
+    
+    return len;
+}
+
+// ===== 字符串比较 =====
+
+fn my_strcmp(s1: &const byte, s2: &const byte) i32 {
+    var p1: &const byte = s1;
+    var p2: &const byte = s2;
+    var c1: byte = 0;
+    var c2: byte = 0;
+    
+    @asm {
+        "nop" (p1, p2, -> c1, c2);
+    }
+    
+    while c1 != 0 && c1 == c2 {
+        p1 = p1 + 1;
+        p2 = p2 + 1;
+        @asm {
+            "nop" (p1, p2, -> c1, c2);
+        }
+    }
+    
+    if c1 == c2 {
+        return 0;
+    }
+    if c1 < c2 {
+        return -1;
+    }
+    return 1;
+}
+
+// ===== 字符串复制 =====
+
+fn my_strcpy(dest: &byte, src: &const byte) void {
+    var d: &byte = dest;
+    var s: &const byte = src;
+    var ch: byte = 0;
+    
+    @asm {
+        "nop" (s, -> ch);
+    }
+    
+    while ch != 0 {
+        @asm {
+            "nop" (d, s, ch);
+        } clobbers = ["memory"];
+        d = d + 1;
+        s = s + 1;
+        @asm {
+            "nop" (s, -> ch);
+        }
+    }
+}
+
+// ===== 字符串连接 =====
+
+fn my_strcat(dest: &byte, src: &const byte) void {
+    var d: &byte = dest;
+    var s: &const byte = src;
+    var ch: byte = 0;
+    
+    // 找到 dest 的末尾
+    @asm {
+        "nop" (d, -> ch);
+    }
+    while ch != 0 {
+        d = d + 1;
+        @asm {
+            "nop" (d, -> ch);
+        }
+    }
+    
+    // 复制 src
+    @asm {
+        "nop" (s, -> ch);
+    }
+    while ch != 0 {
+        @asm {
+            "nop" (d, s, ch);
+        } clobbers = ["memory"];
+        d = d + 1;
+        s = s + 1;
+        @asm {
+            "nop" (s, -> ch);
+        }
+    }
+}
+
+// ===== 字符串查找 =====
+
+fn my_strchr(s: &const byte, c: byte) &const byte {
+    var ptr: &const byte = s;
+    var ch: byte = 0;
+    
+    @asm {
+        "nop" (ptr, -> ch);
+    }
+    
+    while ch != 0 && ch != c {
+        ptr = ptr + 1;
+        @asm {
+            "nop" (ptr, -> ch);
+        }
+    }
+    
+    if ch == c {
+        return ptr;
+    }
+    return null as &const byte;
+}
+
+// ===== 主函数 =====
+
+export fn main() i32 {
+    printf("=== 字符串操作示例 ===\n\n");
+    
+    // 1. 字符串长度
+    const str1: &const byte = "Hello, World!";
+    const len: usize = my_strlen(str1);
+    printf("1. 字符串长度: \"%s\" = %zu 字符\n", str1, len);
+    
+    // 2. 字符串比较
+    const str2: &const byte = "Hello, World!";
+    const str3: &const byte = "Hello, Uya!";
+    const cmp_eq: i32 = my_strcmp(str1, str2);
+    const cmp_ne: i32 = my_strcmp(str1, str3);
+    printf("2. 字符串比较:\n");
+    printf("   \"%s\" == \"%s\": %d\n", str1, str2, cmp_eq);
+    printf("   \"%s\" == \"%s\": %d\n", str1, str3, cmp_ne);
+    
+    // 3. 字符串复制
+    var dest: [byte: 100] = [];
+    my_strcpy(&dest[0], str1);
+    printf("3. 字符串复制: \"%s\"\n", &dest[0]);
+    
+    // 4. 字符串连接
+    my_strcat(&dest[0], " Welcome!");
+    printf("4. 字符串连接: \"%s\"\n", &dest[0]);
+    
+    // 5. 字符查找
+    const pos: &const byte = my_strchr(str1, 'W');
+    if pos != null as &const byte {
+        printf("5. 字符查找: 'W' 在位置 %ld\n", pos - str1);
+    }
+    
+    printf("\n=== 示例完成 ===\n");
+    return 0;
+}

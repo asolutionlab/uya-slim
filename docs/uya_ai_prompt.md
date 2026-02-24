@@ -23,6 +23,7 @@ export use mc
 - 系统调用：`@syscall(nr, arg1, ..., arg6)`
 - 指针转换：`@ptr_from_usize`、`@usize_from_ptr`
 - 调试输出：`@print`、`@println`
+- 内联汇编（0.72 新增）：`@asm { ... }` - 类型安全的内联汇编块
 
 ## 类型系统
 
@@ -966,6 +967,324 @@ const msg3: [i8: 64] = "pi=${pi:.2e}\n";  // 科学计数法
 
 见上文"关键字"章节的内置函数列表。所有内置函数以 `@` 开头，无需导入，自动可用，编译期展开。
 
+**@asm 内联汇编（0.72 新增）**：
+
+`@asm` 是编译期内置函数，用于直接编写内联汇编代码，替代 C99 的内联汇编语法。它是构建高性能底层库、操作系统内核、编译器基础设施的关键工具。
+
+**设计目标**：
+- **类型安全**：编译期验证汇编代码的类型约束，防止未定义行为
+- **跨平台支持**：抽象不同平台的汇编指令和调用约定，统一语法
+- **零成本抽象**：编译期展开，零运行时开销
+- **内存安全**：确保汇编操作不破坏 Uya 的内存安全保证
+
+**基本语法**：
+```uya
+@asm {
+    "instruction template" (input1, input2, ..., -> output1, output2, ...)
+        clobbers = [reg1, reg2, ..., "memory"];
+}
+```
+
+**语法元素**：
+
+| 元素 | 说明 | 示例 |
+|------|------|------|
+| `instruction template` | 汇编指令模板 | `"add {a}, {b}"` |
+| `{name}` | 占位符，引用输入/输出 | `{a}`, `{b}` |
+| `input_exprs` | 输入表达式列表 | `a, b, c` |
+| `output_exprs` | 输出表达式列表 | `-> result` |
+| `clobbers` | 被修改的寄存器列表 | `clobbers = ["rax", "rcx"]` |
+| `"memory"` | 声明修改内存 | `clobbers = ["memory"]` |
+
+**输出变量声明规则**：
+```uya
+// ✅ 正确：输出变量在块外显式声明
+var result: i32;
+@asm {
+    "add {a}, {b}" (a, b, -> result);
+}
+
+// ❌ 错误：不能在 -> 处隐式声明
+@asm {
+    "add {a}, {b}" (a, b -> var result: i32);  // 编译错误
+}
+```
+
+**简单示例：两数相加**：
+```uya
+fn add_with_asm(a: i32, b: i32) i32 {
+    var result: i32;
+    @asm {
+        "add {a}, {b}" (a, b, -> result);
+    }
+    return result;
+}
+```
+
+**系统调用示例**：
+```uya
+fn syscall_write(fd: i32, buf: &const byte, count: i32) !i32 {
+    const SYS_write: i64 = 1;
+    var result: i64;  // 显式声明输出变量
+
+    @asm {
+        "mov rax, {nr}" (SYS_write, -> rax);
+        "mov rdi, {fd}" (fd, -> rdi);
+        "mov rsi, {buf}" (buf, -> rsi);
+        "mov rdx, {count}" (count, -> rdx);
+        "syscall" (rax, rdi, rsi, rdx, -> result);
+    } clobbers = ["rcx", "r11", "memory"];
+    
+    if result < 0 { return error.SyscallFailed; }
+    return result as! i32;  // 使用 as! 处理可能溢出的转换
+}
+```
+
+**多条指令示例**：
+```uya
+fn complex_calc(a: i32, b: i32, c: i32) i32 {
+    var temp: i32;
+    var result: i32;
+    
+    @asm {
+        "mov {temp}, {a}" (a, -> temp);
+        "add {temp}, {b}" (temp, b, -> temp);
+        "add {temp}, {c}" (temp, c, -> result);
+    }
+    
+    return result;
+}
+```
+
+**@asm 类型系统**：
+
+**支持的类型**：
+- **整数类型**：`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `usize`
+- **指针类型**：`&T`（可变指针）、`&const T`（只读指针）、`&atomic T`（原子指针）
+
+**不支持的类型**：
+- `f32`, `f64`（浮点数，未来支持）
+- `void`（空类型）
+- 结构体类型
+- 数组类型
+- 切片类型
+- FFI 指针 `*T`（必须转换为 Uya 指针）
+
+**寄存器类型**：
+```uya
+// 通用寄存器（编译器自动分配）
+type @asm_reg = opaque;
+
+// 平台特定寄存器
+type @asm_reg_x64 = opaque;    // x86-64 寄存器
+type @asm_reg_x86 = opaque;    // x86 寄存器
+type @asm_reg_arm64 = opaque;  // ARM64 寄存器
+
+// 使用示例
+fn auto_reg(a: i32, b: i32) i32 {
+    var temp: @asm_reg;  // 编译器自动分配寄存器
+    var result: i32;
+    
+    @asm {
+        "mov {temp}, {a}" (a, -> temp);
+        "add {temp}, {b}" (temp, b, -> result);
+    }
+    
+    return result;
+}
+```
+
+**内存操作类型**：
+```uya
+// 内存操作包装
+@asm_mem<T>(ptr: &T) -> asm_mem;
+
+// 使用示例
+fn read_u32(ptr: &u32) u32 {
+    var value: u32;
+    @asm {
+        "mov {value}, [{ptr}]" (@asm_mem(ptr), -> value);
+    }
+    return value;
+}
+
+fn write_u32(ptr: &u32, value: u32) void {
+    @asm {
+        "mov [{ptr}], {value}" (value, @asm_mem(ptr), -> _);
+    }
+}
+```
+
+**原子操作示例**：
+```uya
+fn atomic_fetch_add(ptr: &atomic i32, value: i32) i32 {
+    var old: i32;
+    @asm {
+        "lock xadd {ptr}, {value}" (@asm_mem(ptr), value, -> old);
+    }
+    return old;
+}
+
+fn atomic_compare_exchange(ptr: &atomic i32, expected: i32, desired: i32) bool {
+    var prev: i32;
+    @asm {
+        "lock cmpxchg [{ptr}], {desired}" (
+            @asm_mem(ptr), desired, -> prev
+        );
+    }
+    return prev == expected;
+}
+```
+
+**平台支持与检测**：
+```uya
+// 平台类型枚举
+enum @asm_target {
+    x86_64_linux,
+    x86_64_macos,
+    x86_64_windows,
+    arm64_linux,
+    arm64_macos,
+    arm64_windows,
+    riscv64_linux,
+}
+
+// 获取当前平台
+const target: @asm_target = @asm_target();
+
+// 条件编译示例
+fn platform_specific_add(a: i32, b: i32) i32 {
+    var result: i32;
+    
+    if @asm_target() == .x86_64_linux {
+        @asm {
+            "add {a}, {b}" (a, b, -> result);
+        }
+    } else if @asm_target() == .arm64_linux {
+        @asm {
+            "add {a}, {b}, {result}" (a, b, -> result);
+        }
+    } else {
+        // 使用 Uya 原生加法
+        result = a + b;
+    }
+    
+    return result;
+}
+```
+
+**x86-64 平台系统调用**：
+```uya
+fn x86_64_syscall_write(fd: i32, buf: &const byte, count: i32) !i32 {
+    const SYS_write: i64 = 1;
+    var result: i64;
+
+    @asm {
+        "mov rax, {nr}" (SYS_write, -> rax);
+        "mov rdi, {fd}" (fd, -> rdi);
+        "mov rsi, {buf}" (buf, -> rsi);
+        "mov rdx, {count}" (count, -> rdx);
+        "syscall" (rax, rdi, rsi, rdx, -> result);
+    } clobbers = ["rcx", "r11", "memory"];
+
+    if result < 0 { return error.SyscallFailed; }
+    return result as! i32;
+}
+```
+
+**ARM64 平台系统调用**：
+```uya
+fn arm64_syscall_write(fd: i32, buf: &const byte, count: i32) !i32 {
+    const SYS_write: i64 = 64;
+    var result: i64;
+
+    @asm {
+        "mov x8, {nr}" (SYS_write, -> x8);
+        "mov x0, {fd}" (fd, -> x0);
+        "mov x1, {buf}" (buf, -> x1);
+        "mov x2, {count}" (count, -> x2);
+        "svc #0" (x8, x0, x1, x2, -> result);
+    } clobbers = ["x16", "x17", "memory"];
+
+    if result < 0 { return error.SyscallFailed; }
+    return result as! i32;
+}
+```
+
+**@asm 规则**：
+- **类型安全**：编译期类型检查，防止类型不匹配
+- **输出变量声明**：必须在 @asm 块外显式声明
+- **输入限制**：最多 16 个输入表达式
+- **输出限制**：最多 16 个输出表达式
+- **clobbers 声明**：必须显式声明所有被修改的寄存器
+- **内存修改**：修改内存的指令必须声明 `"memory"` clobber
+- **FFI 指针**：不能直接使用，必须转换为 Uya 指针类型
+- **原子操作**：必须使用 `atomic T` 类型
+- **平台支持**：x86-64 Linux/macOS，ARM64 Linux/macOS，RISC-V Linux（开发中）
+
+**内存安全机制**：
+1. **指针类型转换**：FFI 指针不能直接使用，必须转换为 Uya 指针
+2. **内存操作声明**：修改内存的指令必须声明 `"memory"` clobber
+3. **边界检查**：数组访问需要边界检查证明
+4. **并发安全**：原子操作必须使用 `atomic T` 类型
+
+**最佳实践**：
+1. **优先使用编译器优化**：普通操作不要用 @asm
+2. **显式声明 clobbers**：确保编译器优化正确
+3. **使用类型安全的内存操作**：使用 `@asm_mem()` 包装
+4. **使用平台抽象**：用 `@asm_target()` 检测平台
+5. **优先使用原子类型**：并发操作使用 `atomic T`
+
+**常见错误与修正**：
+```uya
+// ❌ 错误：输出变量未声明
+@asm {
+    "add {a}, {b}" (a, b, -> result);  // result 未声明
+}
+
+// ✅ 正确
+var result: i32;
+@asm {
+    "add {a}, {b}" (a, b, -> result);
+}
+
+// ❌ 错误：忘记 clobbers 声明
+@asm {
+    "syscall" (rax, rdi, -> result);  // 可能导致优化错误
+}
+
+// ✅ 正确
+@asm {
+    "syscall" (rax, rdi, -> result);
+} clobbers = ["rcx", "r11", "memory"];
+
+// ❌ 错误：类型不支持
+var f: f64 = 3.14;
+@asm {
+    "nop" (f);  // f64 不支持
+}
+
+// ✅ 正确
+var i: i32 = 3;
+@asm {
+    "nop" (i);
+}
+
+// ❌ 错误：FFI 指针直接使用
+extern malloc(size: usize) *void;
+var ptr: *void = malloc(100);
+@asm {
+    "nop" (ptr);  // FFI 指针不能直接使用
+}
+
+// ✅ 正确
+var buffer: [byte: 100] = [];
+var ptr: &byte = &buffer[0];
+@asm {
+    "nop" (ptr);
+}
+```
+
 **新增内置函数详解**：
 
 ```uya
@@ -1130,6 +1449,66 @@ mc assert(cond) stmt {
 
 ---
 
-**版本**：Uya 0.48
-**更新日期**：2026-02-21
+**版本**：Uya 0.74
+**更新日期**：2026-02-24
+
+## 最新版本更新（v0.7.3 - v0.7.4）
+
+### v0.7.4 新特性（2026-02-24）
+
+#### 越界访问检测（bounds_check_pass）
+
+编译期静态分析检测内存越界访问：
+
+- **数组访问越界检测**：常量索引编译期直接验证，变量索引区间分析
+- **指针算术越界检测**：检测指针运算的边界安全性
+- **切片边界越界检测**：验证切片操作的边界合法性
+
+**检测级别**：
+- `SAFE`：编译期可证明安全
+- `WARNING`：需要运行时检查
+- `ERROR`：编译期可证明越界
+
+#### 编译期优化框架
+
+**指令融合优化**：
+- 检测可融合的连续算术指令
+- 乘加融合（MAC）模式识别
+- 为后续优化提供分析基础
+
+**冗余指令消除**：
+- 检测 nop 等无副作用指令
+- 检测自移动指令（如 `mov r0, r0`）
+- 寄存器生命周期分析
+
+#### RISC-V 平台扩展支持
+
+新增 RISC-V 扩展寄存器类型：
+- `TYPE_ASM_REG_RISCV_V` - 向量扩展
+- `TYPE_ASM_REG_RISCV_F` - 单精度浮点
+- `TYPE_ASM_REG_RISCV_D` - 双精度浮点
+
+### v0.7.3 新特性（2026-02-24）
+
+#### 优化级别命令行选项
+
+```bash
+./bin/uya --opt=2 source.uya -o output.c  # 优化级别 2
+./bin/uya -O2 source.uya -o output.c      # 简写形式
+```
+
+**优化级别说明**：
+| 级别 | 功能 |
+|------|------|
+| `-O0` | 禁用优化（调试模式） |
+| `-O1` | 常量折叠 + 死代码消除（默认） |
+| `-O2` | + 证明优化 |
+| `-O3` | + 内联 + 循环展开（未来） |
+
+#### 编译期优化增强
+
+- **常量折叠**：编译期计算常量表达式，减少运行时开销
+- **死代码消除**：自动移除不可达代码，减少生成代码体积
+
+---
 

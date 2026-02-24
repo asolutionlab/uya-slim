@@ -225,6 +225,36 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
             return ("double" as *byte) as &byte;
         } else if strcmp(name as *byte, "void" as *byte) == 0 {
             return ("void" as *byte) as &byte;
+        } else if strcmp(name as *byte, "@asm_reg" as *byte) == 0 {
+            // 通用寄存器类型 - 编译器自动分配，使用 register 关键字
+            return ("register int64_t" as *byte) as &byte;
+        } else if strcmp(name as *byte, "@asm_reg_x64" as *byte) == 0 {
+            // x86-64 通用寄存器 - 64位
+            return ("register int64_t" as *byte) as &byte;
+        } else if strcmp(name as *byte, "@asm_reg_x86" as *byte) == 0 {
+            // x86 通用寄存器 - 32位
+            return ("register int32_t" as *byte) as &byte;
+        } else if strcmp(name as *byte, "@asm_reg_arm64" as *byte) == 0 {
+            // ARM64 通用寄存器 - 64位
+            return ("register int64_t" as *byte) as &byte;
+        } else if strcmp(name as *byte, "@asm_reg_riscv" as *byte) == 0 {
+            // RISC-V 通用寄存器 - 64位
+            return ("register int64_t" as *byte) as &byte;
+        } else if strcmp(name as *byte, "@asm_reg_x64_xmm" as *byte) == 0 {
+            // x86-64 SSE 寄存器 - 128位
+            return ("__m128" as *byte) as &byte;
+        } else if strcmp(name as *byte, "@asm_reg_x64_ymm" as *byte) == 0 {
+            // x86-64 AVX/AVX2 寄存器 - 256位
+            return ("__m256" as *byte) as &byte;
+        } else if strcmp(name as *byte, "@asm_reg_x64_zmm" as *byte) == 0 {
+            // x86-64 AVX-512 寄存器 - 512位
+            return ("__m512" as *byte) as &byte;
+        } else if strcmp(name as *byte, "@asm_reg_arm64_v" as *byte) == 0 {
+            // ARM64 NEON 寄存器 - 128位
+            return ("int128x1_t" as *byte) as &byte;
+        } else if strcmp(name as *byte, "@asm_mem" as *byte) == 0 {
+            // 内存操作数类型 - 指针
+            return ("void *" as *byte) as &byte;
         } else {
             // 结构体、接口或枚举类型
             const safe_name: &byte = get_safe_c_identifier(codegen, name);

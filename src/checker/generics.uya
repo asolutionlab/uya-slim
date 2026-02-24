@@ -130,6 +130,12 @@ fn substitute_generic_type(checker: &TypeChecker, type: Type,
             inner_ptr[0] = copy_type(&inner);
             var result: Type = copy_type(&type);
             result.pointer_to = inner_ptr;
+            // 更新 union data 字段
+            var pd: PointerData = PointerData {
+                pointee: inner_ptr,
+                is_ffi: type.is_ffi_pointer,
+            };
+            result.data = TypeData.pointer(pd);
             return result;
         }
     }

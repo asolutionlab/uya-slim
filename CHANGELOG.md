@@ -1,5 +1,151 @@
 # Uya 变更日志
 
+## v0.7.4 - P1/P2 可选任务实现
+
+> 发布日期：2026-02-24
+
+### 新特性
+
+#### P1 任务
+
+- **越界访问检测（bounds_check_pass）**
+  - 在 `checker/proof.uya` 中实现编译期静态分析
+  - 检测数组访问越界风险
+  - 检测指针算术越界风险
+  - 检测切片边界越界风险
+  - 支持 `BoundsCheckRisk` 枚举（SAFE/WARNING/ERROR）
+
+#### P2 任务
+
+- **指令融合优化（instruction_fusion_pass）**
+  - 在 `checker/optimizer.uya` 中实现指令融合框架
+  - 检测可融合的连续算术指令
+  - 检测乘加融合（MAC）模式
+  - 为后续优化提供分析基础
+
+- **冗余指令消除（redundant_instruction_elimination_pass）**
+  - 在 `checker/optimizer.uya` 中实现冗余指令检测
+  - 检测 nop 等无副作用指令
+  - 检测自移动指令（如 mov r0, r0）
+  - 寄存器生命周期分析框架
+
+- **RISC-V 平台扩展支持**
+  - 新增 `TYPE_ASM_REG_RISCV_V` 类型（向量扩展）
+  - 新增 `TYPE_ASM_REG_RISCV_F` 类型（单精度浮点）
+  - 新增 `TYPE_ASM_REG_RISCV_D` 类型（双精度浮点）
+  - 更新 `is_riscv_reg_type()` 函数支持新类型
+  - 更新 `asm_reg_type_name()` 函数支持新类型
+
+### 新增函数
+
+- `check_array_bounds_const()` - 检测数组访问越界（常量索引）
+- `check_pointer_arithmetic_bounds()` - 检测指针算术越界
+- `check_slice_bounds()` - 检测切片边界越界
+- `bounds_check_pass()` - 全程序越界访问检测 Pass
+- `can_fuse_arithmetic_instructions()` - 检测指令融合机会
+- `instruction_fusion_pass()` - 指令融合优化 Pass
+- `detect_redundant_instruction()` - 检测冗余指令
+- `analyze_register_lifecycle()` - 寄存器生命周期分析
+- `redundant_instruction_elimination_pass()` - 冗余指令消除 Pass
+- `optimize_asm_block()` - @asm 块综合优化入口
+
+### 测试
+
+- 新增 `tests/programs/test_bounds_check.uya` 测试文件
+- 所有 462 个现有测试通过
+
+---
+
+## v0.7.3 - 编译期优化功能完善
+
+> 发布日期：2026-02-24
+
+### 新特性
+
+- **优化级别命令行选项**
+  - `--opt=<0-3>` 设置优化级别
+  - `-O0`, `-O1`, `-O2`, `-O3` 简写形式
+  - 默认优化级别为 1（常量折叠 + 死代码消除）
+
+### 优化级别说明
+
+| 级别 | 功能 |
+|------|------|
+| 0 | 禁用优化（调试模式） |
+| 1 | 常量折叠 + 死代码消除（默认） |
+| 2 | + 证明优化 |
+| 3 | + 内联 + 循环展开（未来） |
+
+### 修复
+
+- **修复 Lexer 不支持三元运算符导致的优化器解析问题**
+  - 问题：lexer 遇到 `?` 返回 `TOKEN_EOF`，导致 parser 提前终止
+  - 影响：`optimizer.uya` 中三元运算符后的函数定义全部丢失
+  - 修复：将三元运算符改为 if-else 语句
+  - 同时修复了被掩盖的 TokenType 名称错误：
+    - `TOKEN_AND_AND` → `TOKEN_LOGICAL_AND`
+    - `TOKEN_OR_OR` → `TOKEN_LOGICAL_OR`
+    - `TOKEN_EQUAL_EQUAL` → `TOKEN_EQUAL`
+    - `TOKEN_BANG_EQUAL` → `TOKEN_NOT_EQUAL`
+  - 修复 ASTNodeType 和字段名错误：
+    - `AST_INDEX_EXPR` → `AST_ARRAY_ACCESS`
+    - `bool_value` → `bool_literal_value`
+
+### 文档更新
+
+- 更新 `docs/compile_time_optimization_status.md` 状态文档
+
+---
+
+## v0.7.2 - @asm 测试覆盖率完善
+
+> 发布日期：2026-02-23
+
+### 测试
+
+- **@asm 功能测试覆盖率 100%**
+  - 新增 9 个正向测试文件，覆盖基础功能、类型系统、clobbers、边界情况等
+  - 新增 17 个反向测试文件，覆盖语法错误、类型错误、限制检查等
+  - 修复了类型检查器中 `AST_ASM` 节点作为语句使用时未进行类型检查的 bug
+
+### 新增测试文件
+
+**正向测试（9 个）：**
+- `test_asm_basic.uya` - 基础功能：简单指令、无输入输出、多输入多输出
+- `test_asm_types.uya` - 类型系统：i8/i16/i32/i64/u8/u16/u32/u64/usize/指针
+- `test_asm_clobbers.uya` - clobbers 声明：单/多寄存器、memory、混合
+- `test_asm_edge_cases.uya` - 边界情况：空指令、最大输入/输出、控制流中使用
+- `test_asm_codegen.uya` - 代码生成验证
+- `test_asm_expressions.uya` - 表达式：变量、常量、数组元素、结构体字段
+- `test_asm_duplicate_output.uya` - 多输出变量测试
+- `test_asm_const_output.uya` - 输出测试
+- `test_asm_void_output.uya` - 无输出测试
+
+**反向测试（17 个）：**
+- `error_asm_empty_block.uya` - @asm 块不能为空
+- `error_asm_missing_string.uya` - 期望指令字符串
+- `error_asm_invalid_input_type.uya` - f32 输入类型错误
+- `error_asm_invalid_output_type.uya` - f64 输出类型错误
+- `error_asm_output_pointer.uya` - 指针不能作为输出
+- `error_asm_f64_input.uya` - f64 输入类型错误
+- `error_asm_f64_output.uya` - f64 输出类型错误
+- `error_asm_missing_paren.uya` - 语法错误：缺少 '('
+- `error_asm_missing_close_paren.uya` - 语法错误：缺少 ')'
+- `error_asm_missing_brace.uya` - 语法错误：缺少 '{'
+- `error_asm_missing_close_brace.uya` - 语法错误：缺少 '}'
+- `error_asm_too_many_inputs.uya` - 输入超过最大限制
+- `error_asm_too_many_outputs.uya` - 输出超过最大限制
+- `error_asm_void_input.uya` - void 类型输入错误
+- `error_asm_struct_input.uya` - 结构体输入错误
+- `error_asm_array_input.uya` - 数组输入错误
+- `error_asm_slice_input.uya` - 切片输入错误
+
+### 修复
+
+- 修复 `src/checker/main.uya`：`AST_ASM` 节点作为语句使用时未调用类型检查
+
+---
+
 ## v0.7.1 - 切片字面量 & 语法增强
 
 > 发布日期：2026-02-21

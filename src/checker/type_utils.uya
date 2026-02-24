@@ -30,6 +30,20 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
     if type.kind == TypeKind.TYPE_F64 { return "f64" as &byte; }
     if type.kind == TypeKind.TYPE_BOOL { return "bool" as &byte; }
     if type.kind == TypeKind.TYPE_VOID { return "void" as &byte; }
+    // @asm 寄存器类型
+    if type.kind == TypeKind.TYPE_ASM_REG { return "@asm_reg" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_X64 { return "@asm_reg_x64" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_X86 { return "@asm_reg_x86" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_ARM64 { return "@asm_reg_arm64" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_RISCV { return "@asm_reg_riscv" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_X64_XMM { return "@asm_reg_x64_xmm" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_X64_YMM { return "@asm_reg_x64_ymm" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_X64_ZMM { return "@asm_reg_x64_zmm" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_ARM64_V { return "@asm_reg_arm64_v" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_RISCV_V { return "@asm_reg_riscv_v" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_RISCV_F { return "@asm_reg_riscv_f" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_REG_RISCV_D { return "@asm_reg_riscv_d" as &byte; }
+    if type.kind == TypeKind.TYPE_ASM_MEM { return "@asm_mem" as &byte; }
     if is_struct_type(type) != 0 {
         if type.struct_name != null {
             return type.struct_name;
@@ -955,6 +969,226 @@ fn is_atomic_type(t: Type) i32 {
 // 检查是否为泛型参数类型
 fn is_generic_param_type(t: Type) i32 {
     if t.kind == TypeKind.TYPE_GENERIC_PARAM {
+        return 1;
+    }
+    return 0;
+}
+
+// ===== @asm 寄存器类型辅助函数 =====
+
+// 检查是否为 ASM 寄存器类型（通用）
+fn is_asm_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 ASM 内存操作类型
+fn is_asm_mem_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_MEM {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为任意 ASM 寄存器类型（包括平台特定）
+fn is_any_asm_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64 ||
+       t.kind == TypeKind.TYPE_ASM_REG_X86 ||
+       t.kind == TypeKind.TYPE_ASM_REG_ARM64 ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_XMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_YMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_ZMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_ARM64_V ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_V ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_F ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_D {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 x86-64 寄存器类型
+fn is_x64_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG_X64 ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_XMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_YMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_ZMM {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 x86 寄存器类型
+fn is_x86_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG_X86 {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 ARM64 寄存器类型
+fn is_arm64_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG_ARM64 ||
+       t.kind == TypeKind.TYPE_ASM_REG_ARM64_V {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 RISC-V 寄存器类型
+fn is_riscv_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG_RISCV ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_V ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_F ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_D {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 SIMD 寄存器类型
+fn is_simd_reg_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_ASM_REG_X64_XMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_YMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_X64_ZMM ||
+       t.kind == TypeKind.TYPE_ASM_REG_ARM64_V ||
+       t.kind == TypeKind.TYPE_ASM_REG_RISCV_V {
+        return 1;
+    }
+    return 0;
+}
+
+// 获取寄存器类型名称（用于错误提示）
+fn asm_reg_type_name(t: Type) &byte {
+    if t.kind == TypeKind.TYPE_ASM_REG { return "@asm_reg" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_X64 { return "@asm_reg_x64" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_X86 { return "@asm_reg_x86" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_ARM64 { return "@asm_reg_arm64" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_RISCV { return "@asm_reg_riscv" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_X64_XMM { return "@asm_reg_x64_xmm" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_X64_YMM { return "@asm_reg_x64_ymm" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_X64_ZMM { return "@asm_reg_x64_zmm" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_ARM64_V { return "@asm_reg_arm64_v" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_RISCV_V { return "@asm_reg_riscv_v" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_RISCV_F { return "@asm_reg_riscv_f" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_REG_RISCV_D { return "@asm_reg_riscv_d" as &byte; }
+    if t.kind == TypeKind.TYPE_ASM_MEM { return "@asm_mem" as &byte; }
+    return "unknown" as &byte;
+}
+
+// ===== @asm 并发安全辅助函数 =====
+
+// 检查是否为指向原子类型的指针
+// 例如: &atomic i32 返回 1, &i32 返回 0
+fn is_pointer_to_atomic(t: Type) i32 {
+    // 必须是指针类型
+    if t.kind != TypeKind.TYPE_POINTER {
+        return 0;
+    }
+    // 检查指针指向的类型
+    if t.pointer_to == null {
+        return 0;
+    }
+    // 指向的类型必须是 atomic 类型
+    if t.pointer_to.kind == TypeKind.TYPE_ATOMIC {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查字符串是否以指定前缀开始
+fn str_starts_with(str: &byte, prefix: &byte) i32 {
+    if str == null || prefix == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while prefix[i] != 0 {
+        if str[i] != prefix[i] {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+// 检查字符串是否包含指定子串
+fn str_contains(str: &byte, substr: &byte) i32 {
+    if str == null || substr == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while str[i] != 0 {
+        var j: i32 = 0;
+        var is_match: i32 = 1;
+        while substr[j] != 0 {
+            if str[i + j] == 0 || str[i + j] != substr[j] {
+                is_match = 0;
+                break;
+            }
+            j = j + 1;
+        }
+        if is_match != 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// 检查是否为原子操作指令（包含 lock 前缀）
+fn is_atomic_instruction(instr: &byte) i32 {
+    if instr == null {
+        return 0;
+    }
+    // 检查 "lock " 前缀（注意有空格）
+    if str_starts_with(instr, "lock " as &byte) != 0 {
+        return 1;
+    }
+    // 检查其他原子操作指令
+    // x86-64 原子指令: xadd, xchg, cmpxchg
+    if str_contains(instr, "xadd" as &byte) != 0 {
+        return 1;
+    }
+    if str_contains(instr, "xchg" as &byte) != 0 {
+        return 1;
+    }
+    if str_contains(instr, "cmpxchg" as &byte) != 0 {
+        return 1;
+    }
+    // 内存屏障指令
+    if str_contains(instr, "mfence" as &byte) != 0 {
+        return 1;
+    }
+    if str_contains(instr, "sfence" as &byte) != 0 {
+        return 1;
+    }
+    if str_contains(instr, "lfence" as &byte) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查指令是否需要内存屏障语义
+fn requires_memory_barrier(instr: &byte) i32 {
+    if instr == null {
+        return 0;
+    }
+    // lock 前缀的指令需要内存屏障
+    if str_starts_with(instr, "lock " as &byte) != 0 {
+        return 1;
+    }
+    // 内存屏障指令
+    if str_contains(instr, "mfence" as &byte) != 0 {
+        return 1;
+    }
+    if str_contains(instr, "sfence" as &byte) != 0 {
+        return 1;
+    }
+    if str_contains(instr, "lfence" as &byte) != 0 {
         return 1;
     }
     return 0;

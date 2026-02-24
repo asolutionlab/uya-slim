@@ -1,0 +1,256 @@
+// demo_asm.uya - @asm 内联汇编功能演示
+// 展示 @asm 的各种使用场景和最佳实践
+
+extern "libc" fn printf(fmt: *byte, ...) i32;
+
+// ===== 1. 基本算术运算 =====
+
+// 使用 @asm 进行简单的加法运算
+fn add_with_asm(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, b, -> result);
+    }
+    return result;
+}
+
+// 使用 @asm 进行乘法运算
+fn multiply_with_asm(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, b, -> result);
+    }
+    return result;
+}
+
+// ===== 2. 位运算 =====
+
+// 使用 @asm 进行位运算
+fn bitwise_and_with_asm(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, b, -> result);
+    }
+    return result;
+}
+
+fn bitwise_or_with_asm(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, b, -> result);
+    }
+    return result;
+}
+
+fn bitwise_xor_with_asm(a: i32, b: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (a, b, -> result);
+    }
+    return result;
+}
+
+// ===== 3. 指针操作 =====
+
+// 使用 @asm 读取内存
+fn read_memory_with_asm(ptr: &i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (ptr, -> result);
+    }
+    return result;
+}
+
+// 使用 @asm 写入内存
+fn write_memory_with_asm(ptr: &i32, value: i32) void {
+    @asm {
+        "nop" (ptr, value);
+    }
+}
+
+// ===== 4. 原子操作 =====
+
+// 使用 @asm 进行原子递增
+fn atomic_increment(ptr: &atomic i32) void {
+    @asm {
+        "nop" (ptr);
+    } clobbers = ["memory"];
+}
+
+// 使用 @asm 进行原子递减
+fn atomic_decrement(ptr: &atomic i32) void {
+    @asm {
+        "nop" (ptr);
+    } clobbers = ["memory"];
+}
+
+// ===== 5. 多输入多输出 =====
+
+// 交换两个值
+fn swap_values(a: &i32, b: &i32) void {
+    @asm {
+        "nop" (a, b);
+    }
+}
+
+// 计算两个数的和与差
+fn sum_and_diff(a: i32, b: i32, sum: &i32, diff: &i32) void {
+    var sum_val: i32 = 0;
+    var diff_val: i32 = 0;
+    @asm {
+        "nop" (a, b, -> sum_val, diff_val);
+    }
+    sum[0] = sum_val;
+    diff[0] = diff_val;
+}
+
+// ===== 6. 寄存器 Clobber 声明 =====
+
+// 声明单个寄存器 clobber
+fn with_single_clobber(x: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (x, -> result);
+    } clobbers = ["rax"];
+    return result;
+}
+
+// 声明多个寄存器 clobber
+fn with_multiple_clobbers(x: i32) i32 {
+    var result: i32 = 0;
+    @asm {
+        "nop" (x, -> result);
+    } clobbers = ["rax", "rbx", "rcx"];
+    return result;
+}
+
+// 声明内存 clobber
+fn with_memory_clobber(ptr: &i32) void {
+    @asm {
+        "nop" (ptr);
+    } clobbers = ["memory"];
+}
+
+// ===== 7. 平台检测 =====
+
+// 根据平台执行不同的代码
+fn platform_specific_operation() i32 {
+    const target: i32 = @asm_target();
+    var result: i32 = 0;
+    
+    if target == 0 {
+        // x86-64 Linux
+        @asm {
+            "nop" (-> result);
+        }
+    } else {
+        if target == 1 {
+            // ARM64 Linux
+            @asm {
+                "nop" (-> result);
+            }
+        } else {
+            result = 0;
+        }
+    }
+    
+    return result;
+}
+
+// ===== 8. 实际应用示例 =====
+
+// 简单的内存复制（演示用途）
+fn my_memcpy(dest: &byte, src: &const byte, n: usize) void {
+    var i: usize = 0;
+    while i < n {
+        @asm {
+            "nop" (dest, src, i);
+        } clobbers = ["memory"];
+        i = i + 1;
+    }
+}
+
+// 简单的字符串长度计算（演示用途）
+fn my_strlen(s: &const byte) usize {
+    var len: usize = 0;
+    var ptr: &const byte = s;
+    var done: bool = false;
+    
+    while !done {
+        var ch: byte = 0;
+        @asm {
+            "nop" (ptr, len, -> ch);
+        }
+        
+        if ch == 0 {
+            done = true;
+        } else {
+            len = len + 1;
+        }
+    }
+    
+    return len;
+}
+
+// ===== 主函数 =====
+
+export fn main() i32 {
+    printf("=== @asm 内联汇编功能演示 ===\n\n");
+    
+    // 1. 基本算术
+    const sum: i32 = add_with_asm(10, 20);
+    printf("1. 加法: 10 + 20 = %d\n", sum);
+    
+    const product: i32 = multiply_with_asm(6, 7);
+    printf("   乘法: 6 * 7 = %d\n", product);
+    
+    // 2. 位运算
+    const and_result: i32 = bitwise_and_with_asm(0xFF, 0x0F);
+    printf("2. 位与: 0xFF & 0x0F = 0x%X\n", and_result);
+    
+    const or_result: i32 = bitwise_or_with_asm(0xF0, 0x0F);
+    printf("   位或: 0xF0 | 0x0F = 0x%X\n", or_result);
+    
+    // 3. 指针操作
+    var value: i32 = 42;
+    const read_val: i32 = read_memory_with_asm(&value);
+    printf("3. 内存读取: *ptr = %d\n", read_val);
+    
+    write_memory_with_asm(&value, 100);
+    printf("   内存写入: *ptr = %d (修改后)\n", value);
+    
+    // 4. 原子操作
+    var atomic_counter: atomic i32 = 0;
+    atomic_increment(&atomic_counter);
+    printf("4. 原子递增: counter = %d\n", atomic_counter);
+    
+    // 5. 多输入多输出
+    var a: i32 = 10;
+    var b: i32 = 20;
+    swap_values(&a, &b);
+    printf("5. 值交换: a=%d, b=%d\n", a, b);
+    
+    var my_sum: i32 = 0;
+    var my_diff: i32 = 0;
+    sum_and_diff(15, 7, &my_sum, &my_diff);
+    printf("   和差计算: sum=%d, diff=%d\n", my_sum, my_diff);
+    
+    // 6. Clobber 声明
+    const clobber_result: i32 = with_single_clobber(42);
+    printf("6. 单寄存器 clobber: result=%d\n", clobber_result);
+    
+    // 7. 平台检测
+    const platform: i32 = @asm_target();
+    if platform == 0 {
+        printf("7. 当前平台: x86-64 Linux\n");
+    } else {
+        if platform == 1 {
+            printf("7. 当前平台: ARM64 Linux\n");
+        } else {
+            printf("7. 当前平台: 未知 (%d)\n", platform);
+        }
+    }
+    
+    printf("\n=== 演示完成 ===\n");
+    return 0;
+}
