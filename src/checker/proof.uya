@@ -47,8 +47,8 @@ fn get_last_checker_error() &byte {
 
 // ===== 溢出检测常量 =====
 
-const I32_MAX: i32 = 2147483647;
-const I32_MIN: i32 = -2147483647 - 1;
+const I32_MAX: i32 = @max;
+const I32_MIN: i32 = @min;
 
 // ===== 溢出检测函数 =====
 

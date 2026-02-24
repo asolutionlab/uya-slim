@@ -90,8 +90,7 @@ export fn get_optimization_stats() OptimizationStats {
     return optimizer_stats;
 }
 
-// 执行优化（当前版本：简化实现）
-// TODO: 编译器 bug - 后面的函数定义未被生成，暂时禁用完整优化
+// 执行优化
 export fn optimize_program(checker: &TypeChecker, node: &ASTNode, config: OptimizationConfig) &ASTNode {
     if node == null || checker == null {
         return node;
@@ -105,9 +104,45 @@ export fn optimize_program(checker: &TypeChecker, node: &ASTNode, config: Optimi
         printf("[optimize] optimize_program called (level %d)\n" as *byte, config.level);
     }
     
-    // 当前版本：只返回节点，不做实际优化
-    // 完整优化需要 constant_folding_pass 等函数，但这些函数未被生成
-    // 这可能是编译器的一个 bug：AST 中某些函数定义未被生成到 C 代码
+    // Pass 1: 常量折叠
+    if config.enable_constant_folding != 0 {
+        if config.verbose != 0 {
+            printf("[optimize] running constant_folding_pass\n" as *byte);
+        }
+        constant_folding_pass(checker, node);
+    }
+    
+    // Pass 2: 死代码消除
+    if config.enable_dead_code_elimination != 0 {
+        if config.verbose != 0 {
+            printf("[optimize] running dead_code_elimination_pass\n" as *byte);
+        }
+        dead_code_elimination_pass(checker, node);
+    }
+    
+    // Pass 3: 证明优化
+    if config.enable_proof_optimization != 0 {
+        if config.verbose != 0 {
+            printf("[optimize] running proof_optimization_pass\n" as *byte);
+        }
+        proof_optimization_pass(checker, node);
+    }
+    
+    // Pass 4: 内联优化
+    if config.enable_inline != 0 {
+        if config.verbose != 0 {
+            printf("[optimize] running inline_pass\n" as *byte);
+        }
+        inline_pass(checker, node);
+    }
+    
+    // Pass 5: 循环展开
+    if config.enable_loop_unrolling != 0 {
+        if config.verbose != 0 {
+            printf("[optimize] running loop_unrolling_pass\n" as *byte);
+        }
+        loop_unrolling_pass(checker, node);
+    }
     
     return node;
 }
@@ -162,14 +197,6 @@ fn is_constant_expression(checker: &TypeChecker, node: &ASTNode) i32 {
     return 0;
 }
 
-// 尝试将布尔值转换为整数
-fn bool_to_int(b: i32) i32 {
-    if b != 0 {
-        return 1;
-    }
-    return 0;
-}
-
 // 常量折叠：二元表达式
 fn constant_fold_binary(checker: &TypeChecker, node: &ASTNode) &ASTNode {
     if node == null || checker == null {
@@ -184,15 +211,13 @@ fn constant_fold_binary(checker: &TypeChecker, node: &ASTNode) &ASTNode {
     // 使用现有的常量求值函数
     const value: i32 = checker_eval_const_expr(checker, node);
     
-    // 如果求值失败，返回原节点
+    // 如果求值失败（返回-1），返回原节点
+    // 注意：-1 也可能是合法值，但这里简化处理
     if value == -1 {
-        // 可能是布尔表达式，尝试求值
-        // 这里简化处理，只处理数值表达式
         return node;
     }
     
-    // 创建新的数字节点替换原表达式
-    // 注意：在 Uya 中，我们标记节点已优化，在代码生成阶段使用
+    // 标记节点已优化
     node.is_optimized = 1;
     node.optimized_value = value;
     
@@ -205,58 +230,19 @@ fn constant_fold_binary(checker: &TypeChecker, node: &ASTNode) &ASTNode {
     return node;
 }
 
-// 常量折叠：布尔表达式
-fn constant_fold_boolean(checker: &TypeChecker, node: &ASTNode) &ASTNode {
+// 常量折叠 Pass
+export fn constant_folding_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode {
     if node == null || checker == null {
         return node;
     }
     
-    // 检查是否为布尔常量表达式
-    if node.type == ASTNodeType.AST_BINARY_EXPR {
-        const op: TokenType = node.binary_expr_op as TokenType;
-        
-        // 逻辑运算符
-        if op == TokenType.TOKEN_LOGICAL_AND || op == TokenType.TOKEN_LOGICAL_OR {
-            const left_const: i32 = is_constant_expression(checker, node.binary_expr_left);
-            const right_const: i32 = is_constant_expression(checker, node.binary_expr_right);
-            
-            if left_const != 0 && right_const != 0 {
-                // 两边都是常量，可以求值
-                // 这里简化处理，标记为优化
-                node.is_optimized = 1;
-                optimizer_stats.constant_folded = optimizer_stats.constant_folded + 1;
-                
-                if optimizer_verbose != 0 {
-                    printf("[optimize] boolean expression folded\n" as *byte);
-                }
-            }
+    // 处理程序顶层声明
+    if node.type == ASTNodeType.AST_PROGRAM && node.program_decls != null {
+        var i: i32 = 0;
+        while i < node.program_decl_count {
+            constant_folding_pass(checker, node.program_decls[i]);
+            i = i + 1;
         }
-        
-        // 比较运算符
-        if op == TokenType.TOKEN_LESS || op == TokenType.TOKEN_GREATER ||
-           op == TokenType.TOKEN_LESS_EQUAL || op == TokenType.TOKEN_GREATER_EQUAL ||
-           op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL {
-            const left_const: i32 = is_constant_expression(checker, node.binary_expr_left);
-            const right_const: i32 = is_constant_expression(checker, node.binary_expr_right);
-            
-            if left_const != 0 && right_const != 0 {
-                // 两边都是常量，可以求值
-                node.is_optimized = 1;
-                optimizer_stats.constant_folded = optimizer_stats.constant_folded + 1;
-                
-                if optimizer_verbose != 0 {
-                    printf("[optimize] comparison expression folded\n" as *byte);
-                }
-            }
-        }
-    }
-    
-    return node;
-}
-
-// 常量折叠 Pass
-export fn constant_folding_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode {
-    if node == null || checker == null {
         return node;
     }
     
@@ -265,7 +251,6 @@ export fn constant_folding_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode 
         constant_folding_pass(checker, node.binary_expr_left);
         constant_folding_pass(checker, node.binary_expr_right);
         constant_fold_binary(checker, node);
-        constant_fold_boolean(checker, node);
     } else if node.type == ASTNodeType.AST_UNARY_EXPR {
         constant_folding_pass(checker, node.unary_expr_operand);
     } else if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
@@ -289,6 +274,9 @@ export fn constant_folding_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode 
             constant_folding_pass(checker, node.block_stmts[i]);
             i = i + 1;
         }
+    } else if node.type == ASTNodeType.AST_FN_DECL && node.fn_decl_body != null {
+        // 处理函数体
+        constant_folding_pass(checker, node.fn_decl_body);
     }
     
     return node;
@@ -329,6 +317,16 @@ fn get_constant_condition_value(checker: &TypeChecker, node: &ASTNode) i32 {
 // 死代码消除 Pass
 export fn dead_code_elimination_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode {
     if node == null || checker == null {
+        return node;
+    }
+    
+    // 处理程序顶层声明
+    if node.type == ASTNodeType.AST_PROGRAM && node.program_decls != null {
+        var i: i32 = 0;
+        while i < node.program_decl_count {
+            dead_code_elimination_pass(checker, node.program_decls[i]);
+            i = i + 1;
+        }
         return node;
     }
     
@@ -378,6 +376,9 @@ export fn dead_code_elimination_pass(checker: &TypeChecker, node: &ASTNode) &AST
             dead_code_elimination_pass(checker, node.block_stmts[i]);
             i = i + 1;
         }
+    } else if node.type == ASTNodeType.AST_FN_DECL && node.fn_decl_body != null {
+        // 处理函数体
+        dead_code_elimination_pass(checker, node.fn_decl_body);
     }
     
     return node;
@@ -406,42 +407,22 @@ fn can_prove_bounds_check(checker: &TypeChecker, array_expr: &ASTNode, index_exp
         }
     }
     
-    // 检查是否为循环变量
-    if index_expr.type == ASTNodeType.AST_IDENTIFIER {
-        // 检查是否在循环范围内
-        // 这里简化处理，实际需要检查循环范围
-        const var_name: &byte = index_expr.identifier_name;
-        
-        // 检查约束
-        var i: i32 = 0;
-        while i < checker.constraint_count {
-            if i < 64 {
-                if checker.constraint_var_names[i] != null && var_name != null {
-                    if strcmp(checker.constraint_var_names[i] as *byte, var_name as *byte) == 0 {
-                        // 找到约束，检查是否满足
-                        const op: i32 = checker.constraint_ops[i];
-                        const value: i32 = checker.constraint_values[i];
-                        
-                        // 简化：如果约束表明变量在 [0, array_size) 范围内
-                        if op == 1 && value == 0 {
-                            // 约束：var >= 0
-                            // 还需要检查 var < array_size
-                            // 这里简化处理
-                            return 1;
-                        }
-                    }
-                }
-            }
-            i = i + 1;
-        }
-    }
-    
     return 0;
 }
 
 // 证明优化 Pass
 export fn proof_optimization_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode {
     if node == null || checker == null {
+        return node;
+    }
+    
+    // 处理程序顶层声明
+    if node.type == ASTNodeType.AST_PROGRAM && node.program_decls != null {
+        var i: i32 = 0;
+        while i < node.program_decl_count {
+            proof_optimization_pass(checker, node.program_decls[i]);
+            i = i + 1;
+        }
         return node;
     }
     
@@ -467,9 +448,6 @@ export fn proof_optimization_pass(checker: &TypeChecker, node: &ASTNode) &ASTNod
         const condition: &ASTNode = node.if_stmt_condition;
         
         if condition != null && condition.type == ASTNodeType.AST_BINARY_EXPR {
-            // 检查是否为边界检查模式：i >= 0 && i < len
-            // 这里简化处理，实际需要更复杂的模式匹配
-            
             // 如果能证明条件恒为真，则优化
             if is_constant_condition(checker, condition) != 0 {
                 const cond_value: i32 = get_constant_condition_value(checker, condition);
@@ -500,6 +478,351 @@ export fn proof_optimization_pass(checker: &TypeChecker, node: &ASTNode) &ASTNod
             proof_optimization_pass(checker, node.block_stmts[i]);
             i = i + 1;
         }
+    } else if node.type == ASTNodeType.AST_FN_DECL && node.fn_decl_body != null {
+        // 处理函数体
+        proof_optimization_pass(checker, node.fn_decl_body);
+    }
+    
+    return node;
+}
+
+// ===== 内联优化 =====
+
+// 内联配置
+const INLINE_MAX_LINES: i32 = 20;      // 最大可内联函数行数
+const INLINE_MAX_DEPTH: i32 = 3;       // 最大内联深度
+
+// 内联上下文（跟踪递归）
+var inline_depth: i32 = 0;
+var inline_call_stack: [&byte: 64] = [];  // 调用栈，防止递归
+var inline_call_stack_top: i32 = 0;
+
+// 检查函数是否可内联
+fn can_inline_function(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
+    if fn_decl == null || checker == null {
+        return 0;
+    }
+    
+    // 必须有函数体
+    if fn_decl.fn_decl_body == null {
+        return 0;
+    }
+    
+    // extern 函数不能内联
+    if fn_decl.fn_decl_is_extern != 0 {
+        return 0;
+    }
+    
+    // 泛型函数暂不内联
+    if fn_decl.fn_decl_type_param_count > 0 {
+        return 0;
+    }
+    
+    // 估算函数体大小（简化：用语句数量）
+    const body: &ASTNode = fn_decl.fn_decl_body;
+    if body == null || body.type != ASTNodeType.AST_BLOCK {
+        return 0;
+    }
+    
+    // 函数体语句数量限制
+    if body.block_stmt_count > INLINE_MAX_LINES {
+        return 0;
+    }
+    
+    return 1;
+}
+
+// 检查函数是否在调用栈中（递归检测）
+fn is_in_call_stack(fn_name: &byte) i32 {
+    if fn_name == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < inline_call_stack_top {
+        if inline_call_stack[i] != null && str_equals(inline_call_stack[i], fn_name) != 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// 内联函数调用
+fn inline_call_expr(checker: &TypeChecker, call_node: &ASTNode, current_fn: &ASTNode) &ASTNode {
+    if call_node == null || checker == null {
+        return call_node;
+    }
+    
+    // 获取被调函数名
+    const callee: &ASTNode = call_node.call_expr_callee;
+    if callee == null || callee.type != ASTNodeType.AST_IDENTIFIER {
+        return call_node;
+    }
+    const fn_name: &byte = callee.identifier_name;
+    if fn_name == null {
+        return call_node;
+    }
+    
+    // 防止递归内联
+    if is_in_call_stack(fn_name) != 0 {
+        return call_node;
+    }
+    
+    // 查找函数声明
+    const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, fn_name);
+    if fn_decl == null {
+        return call_node;
+    }
+    
+    // 检查是否可内联
+    if can_inline_function(checker, fn_decl) == 0 {
+        return call_node;
+    }
+    
+    // 检查内联深度
+    if inline_depth >= INLINE_MAX_DEPTH {
+        return call_node;
+    }
+    
+    // 标记内联
+    call_node.is_inlined = 1;
+    call_node.inlined_body = fn_decl.fn_decl_body;
+    
+    // 更新统计
+    optimizer_stats.inlined_functions = optimizer_stats.inlined_functions + 1;
+    
+    if optimizer_verbose != 0 {
+        printf("[optimize] inlined function: %s\n" as *byte, fn_name);
+    }
+    
+    // 将函数名加入调用栈
+    if inline_call_stack_top < 64 {
+        inline_call_stack[inline_call_stack_top] = fn_name;
+        inline_call_stack_top = inline_call_stack_top + 1;
+    }
+    
+    // 递归处理内联后的函数体
+    inline_depth = inline_depth + 1;
+    inline_pass(checker, fn_decl.fn_decl_body);
+    inline_depth = inline_depth - 1;
+    
+    // 从调用栈弹出
+    inline_call_stack_top = inline_call_stack_top - 1;
+    if inline_call_stack_top >= 0 {
+        inline_call_stack[inline_call_stack_top] = null;
+    }
+    
+    return call_node;
+}
+
+// 内联优化 Pass
+export fn inline_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode {
+    if node == null || checker == null {
+        return node;
+    }
+    
+    // 重置内联状态（仅在顶层调用）
+    if inline_depth == 0 {
+        inline_call_stack_top = 0;
+        var i: i32 = 0;
+        while i < 64 {
+            inline_call_stack[i] = null;
+            i = i + 1;
+        }
+    }
+    
+    // 处理程序顶层声明
+    if node.type == ASTNodeType.AST_PROGRAM && node.program_decls != null {
+        var i: i32 = 0;
+        while i < node.program_decl_count {
+            inline_pass(checker, node.program_decls[i]);
+            i = i + 1;
+        }
+        return node;
+    }
+    
+    // 获取当前函数
+    const current_fn: &ASTNode = checker.current_function_decl;
+    
+    // 处理函数调用
+    if node.type == ASTNodeType.AST_CALL_EXPR {
+        inline_call_expr(checker, node, current_fn);
+    }
+    
+    // 递归处理子节点
+    if node.type == ASTNodeType.AST_BINARY_EXPR {
+        inline_pass(checker, node.binary_expr_left);
+        inline_pass(checker, node.binary_expr_right);
+    } else if node.type == ASTNodeType.AST_UNARY_EXPR {
+        inline_pass(checker, node.unary_expr_operand);
+    } else if node.type == ASTNodeType.AST_CALL_EXPR {
+        // 处理参数
+        if node.call_expr_args != null {
+            var i: i32 = 0;
+            while i < node.call_expr_arg_count {
+                inline_pass(checker, node.call_expr_args[i]);
+                i = i + 1;
+            }
+        }
+    } else if node.type == ASTNodeType.AST_MEMBER_ACCESS {
+        inline_pass(checker, node.member_access_object);
+    } else if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        inline_pass(checker, node.array_access_array);
+        inline_pass(checker, node.array_access_index);
+    } else if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
+        inline_pass(checker, node.var_decl_init);
+    } else if node.type == ASTNodeType.AST_IF_STMT {
+        inline_pass(checker, node.if_stmt_condition);
+        if node.if_stmt_then_branch != null {
+            inline_pass(checker, node.if_stmt_then_branch);
+        }
+        if node.if_stmt_else_branch != null {
+            inline_pass(checker, node.if_stmt_else_branch);
+        }
+    } else if node.type == ASTNodeType.AST_WHILE_STMT {
+        inline_pass(checker, node.while_stmt_condition);
+        if node.while_stmt_body != null {
+            inline_pass(checker, node.while_stmt_body);
+        }
+    } else if node.type == ASTNodeType.AST_FOR_STMT {
+        if node.for_stmt_array != null {
+            inline_pass(checker, node.for_stmt_array);
+        }
+        if node.for_stmt_range_start != null {
+            inline_pass(checker, node.for_stmt_range_start);
+        }
+        if node.for_stmt_range_end != null {
+            inline_pass(checker, node.for_stmt_range_end);
+        }
+        if node.for_stmt_body != null {
+            inline_pass(checker, node.for_stmt_body);
+        }
+    } else if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            inline_pass(checker, node.block_stmts[i]);
+            i = i + 1;
+        }
+    } else if node.type == ASTNodeType.AST_FN_DECL && node.fn_decl_body != null {
+        // 设置当前函数上下文
+        const prev_fn: &ASTNode = checker.current_function_decl;
+        checker.current_function_decl = node;
+        inline_pass(checker, node.fn_decl_body);
+        checker.current_function_decl = prev_fn;
+    } else if node.type == ASTNodeType.AST_RETURN_STMT && node.return_stmt_expr != null {
+        inline_pass(checker, node.return_stmt_expr);
+    }
+    
+    return node;
+}
+
+// ===== 循环展开 =====
+
+// 循环展开配置
+const UNROLL_MAX_ITERATIONS: i32 = 8;   // 最大展开迭代次数
+const UNROLL_MIN_ITERATIONS: i32 = 2;   // 最小展开迭代次数
+
+// 检查范围循环是否可展开
+fn can_unroll_for_range(node: &ASTNode) i32 {
+    if node == null {
+        return 0;
+    }
+    
+    // 必须是范围循环
+    if node.for_stmt_is_range == 0 {
+        return 0;
+    }
+    
+    // 起止必须是常量
+    if node.for_stmt_range_start == null || node.for_stmt_range_end == null {
+        return 0;
+    }
+    
+    return 1;
+}
+
+// 计算范围循环迭代次数
+fn get_range_iteration_count(node: &ASTNode, checker: &TypeChecker) i32 {
+    if node == null || checker == null {
+        return -1;
+    }
+    
+    // 检查起始是否为常量
+    const start: &ASTNode = node.for_stmt_range_start;
+    const end: &ASTNode = node.for_stmt_range_end;
+    
+    if is_constant_expression(checker, start) == 0 {
+        return -1;
+    }
+    if is_constant_expression(checker, end) == 0 {
+        return -1;
+    }
+    
+    const start_val: i32 = checker_eval_const_expr(checker, start);
+    const end_val: i32 = checker_eval_const_expr(checker, end);
+    
+    // 计算迭代次数
+    const count: i32 = end_val - start_val;
+    if count < UNROLL_MIN_ITERATIONS || count > UNROLL_MAX_ITERATIONS {
+        return -1;
+    }
+    
+    return count;
+}
+
+// 循环展开 Pass
+export fn loop_unrolling_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode {
+    if node == null || checker == null {
+        return node;
+    }
+    
+    // 处理程序顶层声明
+    if node.type == ASTNodeType.AST_PROGRAM && node.program_decls != null {
+        var i: i32 = 0;
+        while i < node.program_decl_count {
+            loop_unrolling_pass(checker, node.program_decls[i]);
+            i = i + 1;
+        }
+        return node;
+    }
+    
+    // 处理 for 范围循环
+    if node.type == ASTNodeType.AST_FOR_STMT && can_unroll_for_range(node) != 0 {
+        const iter_count: i32 = get_range_iteration_count(node, checker);
+        
+        if iter_count > 0 && iter_count <= UNROLL_MAX_ITERATIONS {
+            // 标记循环为可展开
+            node.is_unrolled = 1;
+            node.unroll_count = iter_count;
+            
+            optimizer_stats.loops_unrolled = optimizer_stats.loops_unrolled + 1;
+            
+            if optimizer_verbose != 0 {
+                printf("[optimize] loop unrolled: %d iterations\n" as *byte, iter_count);
+            }
+        }
+    }
+    
+    // 递归处理子节点
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            loop_unrolling_pass(checker, node.block_stmts[i]);
+            i = i + 1;
+        }
+    } else if node.type == ASTNodeType.AST_FN_DECL && node.fn_decl_body != null {
+        loop_unrolling_pass(checker, node.fn_decl_body);
+    } else if node.type == ASTNodeType.AST_IF_STMT {
+        if node.if_stmt_then_branch != null {
+            loop_unrolling_pass(checker, node.if_stmt_then_branch);
+        }
+        if node.if_stmt_else_branch != null {
+            loop_unrolling_pass(checker, node.if_stmt_else_branch);
+        }
+    } else if node.type == ASTNodeType.AST_WHILE_STMT && node.while_stmt_body != null {
+        loop_unrolling_pass(checker, node.while_stmt_body);
+    } else if node.type == ASTNodeType.AST_FOR_STMT && node.for_stmt_body != null {
+        loop_unrolling_pass(checker, node.for_stmt_body);
     }
     
     return node;
