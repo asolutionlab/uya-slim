@@ -116,6 +116,7 @@ enum ASTNodeType {
     AST_VA_END,        // @va_end(ap) - 结束 va_list 访问
     AST_VA_ARG,        // @va_arg(ap, Type) - 从 va_list 按类型获取下一个参数
     AST_ASM,           // @asm { ... } - 内联汇编块
+    AST_ASM_TARGET,    // @asm_target() - 平台检测
     AST_PRINT,          // @print(expr) - 打印表达式（不换行）
     AST_PRINTLN,        // @println(expr) - 打印表达式并换行
     AST_TYPE_NAMED,

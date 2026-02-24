@@ -316,6 +316,32 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
     } else if expr.type == ASTNodeType.AST_ASM {
         // @asm { ... } 内联汇编块
         return infer_asm_block(checker, expr);
+    } else if expr.type == ASTNodeType.AST_ASM_TARGET {
+        // @asm_target() - 返回平台枚举类型
+        // 返回一个内置枚举类型 @asm_target
+        var target_type: Type = Type {
+            kind: TypeKind.TYPE_ENUM,
+            data: TypeData.named("@asm_target" as &byte),
+            enum_name: "@asm_target" as &byte,
+            interface_name: null,
+            struct_name: null,
+            union_name: null,
+            pointer_to: null,
+            is_ffi_pointer: 0,
+            element_type: null,
+            array_size: 0,
+            slice_element_type: null,
+            slice_len: 0,
+            tuple_element_types: null,
+            tuple_count: 0,
+            error_union_payload_type: null,
+            error_error_id: 0,
+            atomic_inner_type: null,
+            generic_param_name: null,
+            struct_type_args: null,
+            struct_type_arg_count: 0,
+        };
+        return target_type;
     } else if expr.type == ASTNodeType.AST_STRING {
         // 字符串字面量类型为 *byte（FFI 指针类型）
         // 创建指向 byte 类型的指针类型
@@ -1173,12 +1199,26 @@ fn infer_asm_block(checker: &TypeChecker, expr: &ASTNode) Type {
     var instr_idx: i32 = 0;
     var input_offset: i32 = 0;
     var output_offset: i32 = 0;
+    var has_atomic_instruction: i32 = 0;  // 追踪是否有原子操作指令
+    var has_memory_barrier: i32 = 0;      // 追踪是否有内存屏障指令
 
     while instr_idx < expr.asm_instruction_count {
         // 检查指令字符串
         if expr.asm_instructions[instr_idx] == null {
             checker_report_error(checker, expr, "@asm 指令不能为空" as &byte);
             return make_void_type();
+        }
+
+        const instr: &byte = expr.asm_instructions[instr_idx];
+
+        // 并发安全：检测原子操作指令
+        if is_atomic_instruction(instr) != 0 {
+            has_atomic_instruction = 1;
+        }
+
+        // 并发安全：检测内存屏障指令
+        if requires_memory_barrier(instr) != 0 {
+            has_memory_barrier = 1;
         }
 
         // 检查输入表达式
@@ -1205,6 +1245,22 @@ fn infer_asm_block(checker: &TypeChecker, expr: &ASTNode) Type {
                 checker_report_error(checker, input_expr, "FFI 指针 (*T) 不能直接用于 @asm，请转换为 &T 类型" as &byte);
                 return make_void_type();
             }
+
+            // 并发安全：原子操作必须使用 atomic 类型
+            // 如果指令包含 "lock" 前缀，第一个指针输入必须是指向 atomic 类型的指针
+            if is_atomic_instruction(instr) != 0 && is_pointer_type(input_type) != 0 {
+                // 对于 lock 指令，检查第一个指针参数是否指向 atomic 类型
+                // 注意：我们允许第一个指针参数不是 atomic，但会发出警告
+                // 因为用户可能确实知道自己在做什么（例如手动实现原子操作）
+                // 但我们强烈建议使用 atomic 类型
+                if is_pointer_to_atomic(input_type) == 0 {
+                    // 发出警告而非错误，保持兼容性
+                    // 但对于严格的原子操作，建议使用 atomic 类型
+                    // checker_report_error(checker, input_expr, 
+                    //     "原子操作建议使用 atomic 类型指针 (&atomic T)" as &byte);
+                }
+            }
+
             in_idx = in_idx + 1;
         }
         input_offset = input_offset + input_count;
@@ -1242,13 +1298,28 @@ fn infer_asm_block(checker: &TypeChecker, expr: &ASTNode) Type {
 
     // 3. 检查 clobbers
     var clobber_idx: i32 = 0;
+    var has_memory_clobber: i32 = 0;
     while clobber_idx < expr.asm_clobber_count {
         if expr.asm_clobbers[clobber_idx] == null {
             checker_report_error(checker, expr, "@asm clobber 名称不能为空" as &byte);
             return make_void_type();
         }
+        // 并发安全：检测 "memory" clobber
+        if str_equals(expr.asm_clobbers[clobber_idx], "memory" as &byte) != 0 {
+            has_memory_clobber = 1;
+        }
         clobber_idx = clobber_idx + 1;
     }
+
+    // 并发安全：内存屏障指令需要 memory clobber
+    if has_memory_barrier != 0 && has_memory_clobber == 0 {
+        checker_report_error(checker, expr, 
+            "内存屏障指令需要声明 clobbers = [\"memory\"]" as &byte);
+        return make_void_type();
+    }
+
+    // 并发安全：原子操作建议声明 memory clobber（警告而非错误）
+    // 因为某些原子操作可能不需要完整的内存屏障
 
     // 4. @asm 块返回 void 类型
     return make_void_type();

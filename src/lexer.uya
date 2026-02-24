@@ -1067,13 +1067,15 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
             if str_equals_lexer(value, "println" as &byte) != 0 { is_builtin = 1; }
             // 内联汇编（@asm）
             if str_equals_lexer(value, "asm" as &byte) != 0 { is_builtin = 1; }
+            // 平台检测（@asm_target）
+            if str_equals_lexer(value, "asm_target" as &byte) != 0 { is_builtin = 1; }
 
             if is_builtin != 0 {
                 return make_token(arena, TokenType.TOKEN_AT_IDENTIFIER, value, line, column);
             }
 
             // 未知的内置函数
-            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@async_fn、@await、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@syscall、@ptr_from_usize、@usize_from_ptr、@print、@println、@asm\n" as *byte, value);
+            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@async_fn、@await、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@syscall、@ptr_from_usize、@usize_from_ptr、@print、@println、@asm、@asm_target\n" as *byte, value);
             return null;
         }
         return null;
