@@ -171,6 +171,21 @@ main() {
         fi
     done
     
+    # 5.1 ARM64 平台测试
+    print_header "5.1 ARM64 平台测试"
+    
+    if [ -f "$TEST_DIR/test_asm_arm64.uya" ]; then
+        # 检测当前平台
+        ARCH=$(uname -m)
+        if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+            echo -e "${GREEN}检测到 ARM64 平台，运行 ARM64 特定测试${NC}"
+            compile_test "$TEST_DIR/test_asm_arm64.uya"
+        else
+            echo -e "${YELLOW}当前平台: $ARCH，跳过 ARM64 特定测试${NC}"
+            print_skip "ARM64 测试（当前平台非 ARM64）"
+        fi
+    fi
+    
     # 6. 系统调用测试
     print_header "6. 系统调用测试"
     

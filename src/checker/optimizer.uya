@@ -277,7 +277,176 @@ export fn constant_folding_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode 
     } else if node.type == ASTNodeType.AST_FN_DECL && node.fn_decl_body != null {
         // 处理函数体
         constant_folding_pass(checker, node.fn_decl_body);
+    } else if node.type == ASTNodeType.AST_ASM {
+        // @asm 内联汇编块优化
+        constant_fold_asm_block(checker, node);
     }
+    
+    return node;
+}
+
+// ===== @asm 常量折叠优化 =====
+
+// 计算 @asm 块的总输入数量
+fn get_total_asm_input_count(node: &ASTNode) i32 {
+    if node == null || node.asm_input_counts == null {
+        return 0;
+    }
+    var total: i32 = 0;
+    var i: i32 = 0;
+    while i < node.asm_instruction_count {
+        total = total + node.asm_input_counts[i];
+        i = i + 1;
+    }
+    return total;
+}
+
+// 检查 @asm 块是否可以进行常量折叠
+fn can_fold_asm_block(checker: &TypeChecker, node: &ASTNode) i32 {
+    if node == null {
+        return 0;
+    }
+    
+    // 计算总输入数量
+    const total_input_count: i32 = get_total_asm_input_count(node);
+    
+    // 检查是否有输入
+    if total_input_count == 0 {
+        // 无输入的简单指令，可以优化
+        return 1;
+    }
+    
+    // 检查所有输入是否都是常量
+    if node.asm_inputs != null {
+        var i: i32 = 0;
+        while i < total_input_count {
+            const input: &ASTNode = node.asm_inputs[i];
+            if input != null && is_constant_expression(checker, input) == 0 {
+                // 有非常量输入，不能折叠
+                return 0;
+            }
+            i = i + 1;
+        }
+    }
+    
+    return 1;
+}
+
+// 常量折叠 @asm 块
+fn constant_fold_asm_block(checker: &TypeChecker, node: &ASTNode) &ASTNode {
+    if node == null || checker == null {
+        return node;
+    }
+    
+    // 计算总输入数量
+    const total_input_count: i32 = get_total_asm_input_count(node);
+    
+    // 检查是否可以折叠
+    if can_fold_asm_block(checker, node) == 0 {
+        // 递归处理输入表达式
+        if node.asm_inputs != null {
+            var i: i32 = 0;
+            while i < total_input_count {
+                constant_folding_pass(checker, node.asm_inputs[i]);
+                i = i + 1;
+            }
+        }
+        return node;
+    }
+    
+    // 特定指令优化
+    if node.asm_instructions != null && node.asm_instruction_count > 0 {
+        var i: i32 = 0;
+        while i < node.asm_instruction_count {
+            const instr: &byte = node.asm_instructions[i];
+            
+            // 检查是否为纯计算指令（可折叠）
+            if can_fold_asm_instruction_str(instr) != 0 {
+                // 标记为可优化
+                if optimizer_verbose != 0 {
+                    printf("[optimize] @asm instruction can be constant folded\n" as *byte);
+                }
+                
+                // TODO: 实际的指令求值需要更复杂的逻辑
+                // 注意：@asm 是语句块，不应该标记 is_optimized（那是用于表达式的）
+                // 如果是 nop 等无副作用指令，可以标记为死代码
+                
+                optimizer_stats.constant_folded = optimizer_stats.constant_folded + 1;
+            }
+            
+            i = i + 1;
+        }
+    }
+    
+    // 注意：不要标记 is_optimized，因为 @asm 不是表达式
+    // node.is_optimized = 1;
+    
+    return node;
+}
+
+// 检查 @asm 指令字符串是否可以折叠
+fn can_fold_asm_instruction_str(instr: &byte) i32 {
+    if instr == null {
+        return 0;
+    }
+    
+    // 可以折叠的指令模式
+    // 例如：纯算术运算、位运算等
+    
+    // nop 指令可以优化掉（无副作用）
+    if strcmp(instr as *byte, "nop" as *byte) == 0 {
+        return 1;
+    }
+    
+    // 简单的 mov 指令（如果输入是常量）
+    // 这需要更复杂的分析，暂时返回 0
+    
+    return 0;
+}
+
+// ===== @asm 寄存器重用优化 =====
+
+// 寄存器分配信息
+struct RegisterAllocation {
+    reg_name: &byte,       // 寄存器名称
+    var_name: &byte,       // 变量名
+    last_use: i32,         // 最后使用位置
+    is_alive: i32          // 是否活跃
+}
+
+// 分析 @asm 块的寄存器使用
+fn analyze_asm_register_usage(node: &ASTNode) void {
+    if node == null || node.asm_instructions == null {
+        return;
+    }
+    
+    // TODO: 实现寄存器使用分析
+    // 这需要数据流分析来确定寄存器的生命周期
+    
+    if optimizer_verbose != 0 {
+        printf("[optimize] analyzing register usage for @asm block\n" as *byte);
+    }
+}
+
+// 寄存器重用优化 Pass
+export fn register_reuse_optimization_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode {
+    if node == null || checker == null {
+        return node;
+    }
+    
+    // 只处理 @asm 节点
+    if node.type != ASTNodeType.AST_ASM {
+        return node;
+    }
+    
+    // 分析寄存器使用
+    analyze_asm_register_usage(node);
+    
+    // TODO: 实现寄存器重用
+    // 需要分析：
+    // 1. 每个输入/输出的生命周期
+    // 2. 哪些寄存器可以重用
+    // 3. 优化寄存器分配
     
     return node;
 }
