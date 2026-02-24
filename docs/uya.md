@@ -42,6 +42,7 @@
 - [16. 标准库](#16-标准库)
 - [17. 字符串与格式化](#17-字符串与格式化)
 - [18. 异步编程](#18-异步编程)
+- [19. 内联汇编](#19-内联汇编)
 - [25. 宏系统](#25-宏系统)
 - [附录 A. 完整示例](#附录-a-完整示例)
 - [附录 B. 扩展特性](#附录-b-扩展特性)
@@ -5029,6 +5030,279 @@ fn main() !Future<i32> {
 ### 18.9 一句话总结
 
 > **异步编程基础设施**：`@async_fn`/`@await` + `union Poll<T>` + `interface Future<T>`；返回必须 `!Future<T>`；状态机零分配，挂起显式，并发安全编译期证明。
+
+---
+
+## 19 内联汇编
+
+### 19.1 概述
+
+`@asm` 是一个编译期内置函数，用于直接编写内联汇编代码，替代 C99 的内联汇编语法。它是构建高性能底层库、操作系统内核、编译器基础设施的关键工具。
+
+### 19.2 设计哲学
+
+`@asm` 遵循 Uya 的**坚如磐石**设计哲学：
+
+1. **显式控制**：所有汇编操作显式声明，无隐式副作用
+2. **编译期证明**：在当前函数内验证汇编操作的安全性
+3. **零成本**：直接生成汇编指令，无运行时包装
+4. **类型安全**：寄存器、内存操作与 Uya 类型系统绑定
+
+### 19.3 基本语法
+
+```uya
+@asm {
+    // 单条指令
+    "instruction template" (input1, input2, ..., -> output1, output2, ...)
+        clobbers = [reg1, reg2, ..., "memory"];
+    
+    // 多条指令块
+    "mov rax, {a}" (a, -> rax);
+    "add rax, {b}" (rax, b, -> rax);
+    "syscall" (rax, -> result);
+}
+```
+
+**语法元素**：
+- `instruction template`：汇编指令模板，使用 `{name}` 占位符
+- `input_exprs`：输入表达式列表
+- `output_exprs`：输出表达式列表（在 `->` 之后）
+- `clobbers`：显式声明的寄存器列表和内存修改
+
+### 19.4 类型安全机制
+
+#### 19.4.1 寄存器类型
+
+```uya
+// 平台无关寄存器
+type @asm_reg = opaque;  // 编译器分配的通用寄存器
+
+// 平台特定寄存器（编译期平台检测）
+type @asm_reg_x64 = opaque;   // x86-64 通用寄存器
+type @asm_reg_x86 = opaque;   // x86 通用寄存器
+type @asm_reg_arm64 = opaque; // ARM64 通用寄存器
+```
+
+#### 19.4.2 内存操作类型
+
+```uya
+// 内存操作包装
+@asm_mem<T>(ptr: &T) -> asm_mem;
+
+// 使用示例
+fn atomic_add(ptr: &i32, value: i32) void {
+    @asm {
+        "lock xadd {ptr}, {value}" (@asm_mem(ptr), value, -> ptr*);
+    }
+}
+```
+
+#### 19.4.3 类型检查规则
+
+**编译器验证规则**：
+1. 输入表达式类型必须与占位符类型兼容
+2. 输出表达式类型必须与指令结果类型兼容
+3. 寄存器约束不能与调用约定冲突
+4. 内存操作必须有明确的类型标注
+5. clobbers 必须显式声明所有被修改的寄存器
+
+### 19.5 内存安全保证
+
+#### 19.5.1 寄存器验证
+
+```uya
+// ✅ 安全：编译器自动分配临时寄存器
+@asm {
+    "add {tmp}, {a}" (a, -> tmp: @asm_reg);
+    "add {tmp}, {b}" (tmp, b, -> result);
+}
+
+// ❌ 不安全：未声明 clobber
+@asm {
+    "mov rax, 1" (-> _);  // 编译错误：未声明 clobber
+}
+
+// ✅ 正确：显式声明 clobber
+@asm {
+    "mov rax, 1" (-> _);
+} clobbers = ["rax"];
+```
+
+#### 19.5.2 内存安全验证
+
+```uya
+// ✅ 安全：有明确指针类型
+fn read_u32(ptr: &u32) u32 {
+    var value: u32;
+    @asm {
+        "mov {value}, [{ptr}]" (@asm_mem(ptr), -> value);
+    }
+    return value;
+}
+
+// ❌ 不安全：无类型指针（FFI 指针）
+fn read_u32_unsafe(ptr: *u32) u32 {
+    var value: u32;
+    @asm {
+        "mov {value}, [{ptr}]" (ptr, -> value);  // 编译错误
+    }
+    return value;
+}
+```
+
+#### 19.5.3 并发安全验证
+
+```uya
+// ✅ 正确：原子操作
+fn atomic_fetch_add(ptr: &atomic i32, value: i32) i32 {
+    var old: i32;
+    @asm {
+        "lock xadd {ptr}, {value}" (@asm_mem(ptr), value, -> old);
+    }
+    return old;
+}
+
+// ❌ 错误：非原子类型
+fn unsafe_fetch_add(ptr: &i32, value: i32) i32 {
+    var old: i32;
+    @asm {
+        "lock xadd {ptr}, {value}" (@asm_mem(ptr), value, -> old);
+        // 编译错误：ptr 不是 atomic 类型
+    }
+    return old;
+}
+```
+
+### 19.6 平台支持
+
+#### 19.6.1 平台检测
+
+```uya
+// 目标平台枚举
+enum @asm_target {
+    x86_64_linux,
+    x86_64_macos,
+    x86_64_windows,
+    arm64_linux,
+    arm64_macos,
+    arm64_windows,
+}
+
+// 获取当前平台
+const target: @asm_target = @asm_target();
+```
+
+#### 19.6.2 条件编译示例
+
+```uya
+fn syscall_write(fd: i32, buf: &const byte, count: i32) !i32 {
+    var result: i64;  // 显式声明输出变量
+
+    if @asm_target() == .x86_64_linux {
+        @asm {
+            "mov rax, 1" (-> rax);
+            "mov rdi, {fd}" (fd, -> rdi);
+            "mov rsi, {buf}" (buf, -> rsi);
+            "mov rdx, {count}" (count, -> rdx);
+            "syscall" (rax, rdi, rsi, rdx, -> result);
+        } clobbers = ["rcx", "r11"];
+    } else if @asm_target() == .arm64_linux {
+        @asm {
+            "mov x8, #64" (-> x8);
+            "mov x0, {fd}" (fd, -> x0);
+            "mov x1, {buf}" (buf, -> x1);
+            "mov x2, {count}" (count, -> x2);
+            "svc #0" (x8, x0, x1, x2, -> result);
+        } clobbers = ["x16", "x17"];
+    }
+
+    if result < 0 {
+        return error.SyscallFailed;
+    }
+
+    return result as! i32;  // 使用 as! 处理可能溢出的转换
+}
+```
+
+#### 19.6.3 平台特定寄存器
+
+| 平台 | 通用寄存器类型 | 特殊寄存器 |
+|------|---------------|-----------|
+| x86-64 | `@asm_reg_x64` | rax, rbx, rcx, rdx, rsi, rdi, rbp, rsp, r8-r15 |
+| x86 | `@asm_reg_x86` | eax, ebx, ecx, edx, esi, edi, ebp, esp |
+| ARM64 | `@asm_reg_arm64` | x0-x30 |
+
+### 19.7 使用示例
+
+#### 19.7.1 基本算术运算
+
+```uya
+fn add_with_overflow(a: i32, b: i32) !(i32, bool) {
+    var result: i32;
+    var overflow: bool;
+    
+    @asm {
+        "add {a}, {b}" (a, b, -> result, @asm_flag("overflow" -> overflow));
+    }
+    
+    return (result, overflow);
+}
+```
+
+#### 19.7.2 系统调用
+
+```uya
+fn syscall_exit(code: i32) noreturn {
+    const SYS_exit: i64 = 60;
+    
+    @asm {
+        "mov rax, {nr}" (SYS_exit, -> rax);
+        "mov rdi, {code}" (code, -> rdi);
+        "syscall" (rax, rdi, -> _);
+    } clobbers = ["rcx", "r11"];
+}
+```
+
+#### 19.7.3 CPU 特性检测
+
+```uya
+struct CPUFeatures {
+    has_sse: bool,
+    has_sse2: bool,
+    has_avx: bool,
+    has_avx2: bool,
+}
+
+fn detect_cpu_features() CPUFeatures {
+    var features: CPUFeatures = {};
+    
+    @asm {
+        // CPUID 指令
+        "mov eax, 1" (-> eax);
+        "cpuid" (eax, -> eax, ebx, ecx, edx);
+        
+        // 提取特性位
+        "test edx, 1<<25" (edx, -> features.has_sse);
+        "test edx, 1<<26" (edx, -> features.has_sse2);
+        "test ecx, 1<<28" (ecx, -> features.has_avx);
+        "test ebx, 1<<5" (ebx, -> features.has_avx2);
+    }
+    
+    return features;
+}
+```
+
+### 19.8 详细文档
+
+完整的 API 参考、最佳实践和更多示例，请参阅：
+
+- **[内联汇编设计文档](asm_design.md)** - 设计哲学、语法设计、类型系统
+- **[内联汇编 API 参考](asm_api_reference.md)** - 完整 API 文档、使用示例
+- **[内联汇编最佳实践](asm_best_practices.md)** - 性能优化、安全保证
+
+### 19.9 一句话总结
+
+> **@asm = 类型安全 + 跨平台 + 内存安全 + 零成本的内联汇编**
 
 ---
 

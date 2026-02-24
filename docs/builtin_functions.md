@@ -40,6 +40,8 @@
 - [7. 异步编程函数](#7-异步编程函数)
   - [@async_fn](#async_fn)
   - [@await](#await)
+- [8. 内联汇编函数](#8-内联汇编函数)
+  - [@asm](#asm)
 
 ---
 
@@ -1205,7 +1207,204 @@ try @await future_expr
 
 ---
 
-## 8. 内置函数分类总结
+## 8. 内联汇编函数
+
+> **状态**：设计完成，实现中  
+> **参考**：规范 §19 内联汇编
+
+### @asm
+
+**函数签名**：
+```uya
+@asm {
+    "instruction template" (input1, input2, ..., -> output1, output2, ...)
+        clobbers = [reg1, reg2, ..., "memory"];
+}
+```
+
+**功能描述**：
+编译期内置函数，用于直接编写内联汇编代码。提供类型安全、内存安全的汇编操作，替代 C99 的内联汇编语法。
+
+**参数**：
+- `instruction template`：汇编指令模板（字符串字面量）
+- `input_exprs`：输入表达式列表
+- `output_exprs`：输出表达式列表（在 `->` 之后）
+- `clobbers`：被修改的寄存器列表（可选）
+
+**返回值**：
+- 无返回值（输出通过输出参数返回）
+
+**使用示例**：
+```uya
+// 基本算术运算
+fn add_with_asm(a: i32, b: i32) i32 {
+    var result: i32;
+    
+    @asm {
+        "add {a}, {b}" (a, b, -> result);
+    }
+    
+    return result;
+}
+
+// 系统调用
+fn syscall_write(fd: i32, buf: &const byte, count: i32) !i32 {
+    const SYS_write: i64 = 1;
+    var result: i64;  // 显式声明输出变量
+
+    @asm {
+        "mov rax, {nr}" (SYS_write, -> rax);
+        "mov rdi, {fd}" (fd, -> rdi);
+        "mov rsi, {buf}" (buf, -> rsi);
+        "mov rdx, {count}" (count, -> rdx);
+        "syscall" (rax, rdi, rsi, rdx, -> result);
+    } clobbers = ["rcx", "r11", "memory"];
+
+    if result < 0 {
+        return error.SyscallFailed;
+    }
+
+    return result as! i32;  // 使用 as! 处理可能溢出的转换
+}
+
+// 原子操作
+fn atomic_fetch_add(ptr: &atomic i32, value: i32) i32 {
+    var old: i32;
+    
+    @asm {
+        "lock xadd {ptr}, {value}" (@asm_mem(ptr), value, -> old);
+    }
+    
+    return old;
+}
+
+// 平台条件编译
+fn platform_add(a: i32, b: i32) i32 {
+    var result: i32;
+    
+    if @asm_target() == .x86_64_linux {
+        @asm {
+            "add {a}, {b}" (a, b, -> result);
+        }
+    } else if @asm_target() == .arm64_linux {
+        @asm {
+            "add {a}, {b}, {result}" (a, b, -> result);
+        }
+    } else {
+        result = a + b;
+    }
+    
+    return result;
+}
+```
+
+**寄存器类型**：
+```uya
+// 平台无关寄存器（编译器自动分配）
+type @asm_reg = opaque;
+
+// 平台特定寄存器
+type @asm_reg_x64 = opaque;   // x86-64
+type @asm_reg_x86 = opaque;   // x86
+type @asm_reg_arm64 = opaque; // ARM64
+
+// 使用示例
+fn auto_reg(a: i32, b: i32) i32 {
+    var temp: @asm_reg;
+    var result: i32;
+    
+    @asm {
+        "mov {temp}, {a}" (a, -> temp);
+        "add {temp}, {b}" (temp, b, -> result);
+    }
+    
+    return result;
+}
+```
+
+**内存操作类型**：
+```uya
+// 类型安全的内存操作
+type @asm_mem<T> = opaque;
+
+// 使用示例
+fn read_u32(ptr: &u32) u32 {
+    var value: u32;
+    
+    @asm {
+        "mov {value}, [{ptr}]" (@asm_mem(ptr), -> value);
+    }
+    
+    return value;
+}
+
+fn write_u32(ptr: &u32, value: u32) void {
+    @asm {
+        "mov [{ptr}], {value}" (value, @asm_mem(ptr), -> _);
+    }
+}
+```
+
+**平台检测**：
+```uya
+// 目标平台枚举
+enum @asm_target {
+    x86_64_linux,
+    x86_64_macos,
+    x86_64_windows,
+    arm64_linux,
+    arm64_macos,
+    arm64_windows,
+}
+
+// 获取当前平台
+const target: @asm_target = @asm_target();
+```
+
+**安全约束**：
+1. **类型检查**：输入/输出类型必须匹配
+2. **寄存器验证**：寄存器约束不能与调用约定冲突
+3. **内存安全**：内存操作必须有明确类型
+4. **并发安全**：原子操作必须使用 `atomic T` 类型
+5. **clobber 声明**：必须声明所有被修改的寄存器
+
+**错误示例**：
+```uya
+// ❌ 错误：类型不匹配
+@asm {
+    "mov {dst}, {src}" (src: f64, -> dst: i32);  // 编译错误
+}
+
+// ❌ 错误：未声明 clobber
+@asm {
+    "mov rax, 1" (-> _);  // 编译错误：未声明 clobber
+}
+
+// ✅ 正确：显式声明 clobber
+@asm {
+    "mov rax, 1" (-> _);
+} clobbers = ["rax"];
+
+// ❌ 错误：非原子类型的原子操作
+fn unsafe_fetch_add(ptr: &i32, value: i32) i32 {
+    var old: i32;
+    @asm {
+        "lock xadd {ptr}, {value}" (@asm_mem(ptr), value, -> old);
+        // 编译错误：ptr 不是 atomic 类型
+    }
+    return old;
+}
+```
+
+**注意事项**：
+- 编译期展开，零运行时开销
+- 输出变量必须在 `@asm` 块外显式声明
+- 平台相关代码使用 `@asm_target()` 进行条件编译
+- 详细的 API 参考和最佳实践见 [asm_api_reference.md](asm_api_reference.md)
+
+---
+
+## 9. 内置函数分类总结
 
 | 分类 | 函数 | 编译期 | 运行时 | 状态 |
 |------|------|--------|--------|------|
@@ -1234,10 +1433,11 @@ try @await future_expr
 | | `@println` | - | ✓ | ✅ 已实现 |
 | **异步编程** | `@async_fn` | ✓ | ✓ | 🚧 语法解析完成 |
 | | `@await` | ✓ | ✓ | 🚧 语法解析完成 |
+|| **内联汇编** | `@asm` | ✓ | - | 📋 规范支持 |
 
 ---
 
-## 9. 命名惯例
+## 10. 命名惯例
 
 Uya 内置函数遵循以下命名惯例：
 
@@ -1256,7 +1456,7 @@ Uya 内置函数遵循以下命名惯例：
 
 ---
 
-## 10. 性能保证
+## 11. 性能保证
 
 所有内置函数遵循 Uya 的零成本抽象原则：
 

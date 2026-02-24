@@ -536,7 +536,215 @@ fn example() !void {
 
 ---
 
-## 十三、宏系统速查
+## 十三、内联汇编速查
+
+### 基本语法格式
+
+```uya
+@asm {
+    // 单条指令
+    "instruction template" (inputs, -> outputs)
+        clobbers = [reg1, reg2, "memory"];
+    
+    // 多条指令
+    "mov rax, 1" (-> _);
+    "syscall" (rax, rdi, -> result);
+}
+```
+
+**语法元素**：
+- `instruction template`：汇编指令模板，使用 `{name}` 占位符
+- `inputs`：输入表达式列表
+- `outputs`：输出表达式列表（`->` 之后）
+- `clobbers`：被修改的寄存器列表
+
+### 常用指令示例
+
+```uya
+// 基本算术
+fn add_asm(a: i32, b: i32) i32 {
+    var result: i32;
+    @asm {
+        "add {a}, {b}" (a, b, -> result);
+    }
+    return result;
+}
+
+// 系统调用（x86-64 Linux）
+fn syscall_write(fd: i32, buf: &const byte, count: i32) !i32 {
+    var result: i64;
+    @asm {
+        "mov rax, 1" (-> _);
+        "mov rdi, {fd}" (fd, -> _);
+        "mov rsi, {buf}" (buf, -> _);
+        "mov rdx, {count}" (count, -> _);
+        "syscall" (-> result);
+    } clobbers = ["rcx", "r11", "memory"];
+    
+    if result < 0 { return error.SyscallFailed; }
+    return result as! i32;
+}
+
+// 原子操作
+fn atomic_fetch_add(ptr: &atomic i32, value: i32) i32 {
+    var old: i32;
+    @asm {
+        "lock xadd {ptr}, {value}" (@asm_mem(ptr), value, -> old);
+    }
+    return old;
+}
+
+// CPUID 指令
+fn cpuid(leaf: u32) (u32, u32, u32, u32) {
+    var eax: u32, ebx: u32, ecx: u32, edx: u32;
+    @asm {
+        "mov eax, {leaf}" (leaf, -> eax);
+        "cpuid" (eax, -> eax, ebx, ecx, edx);
+    }
+    return (eax, ebx, ecx, edx);
+}
+```
+
+### 类型支持列表
+
+#### 寄存器类型
+
+| 类型 | 说明 | 平台 |
+|------|------|------|
+| `@asm_reg` | 编译器自动分配的通用寄存器 | 跨平台 |
+| `@asm_reg_x64` | x86-64 专用寄存器 | x86-64 |
+| `@asm_reg_x86` | x86 专用寄存器 | x86 |
+| `@asm_reg_arm64` | ARM64 专用寄存器 | ARM64 |
+
+#### 内存操作类型
+
+```uya
+type @asm_mem<T> = opaque;  // 类型安全的内存操作
+```
+
+**使用示例**：
+```uya
+fn read_u32(ptr: &u32) u32 {
+    var value: u32;
+    @asm {
+        "mov {value}, [{ptr}]" (@asm_mem(ptr), -> value);
+    }
+    return value;
+}
+```
+
+### 平台差异说明
+
+#### x86-64 平台
+
+```uya
+// 系统调用号
+const SYS_write: i64 = 1;
+const SYS_read: i64 = 0;
+
+// 系统调用约定
+// rax = 系统调用号
+// rdi, rsi, rdx, r10, r8, r9 = 参数
+// rax = 返回值
+
+@asm {
+    "mov rax, {nr}" (syscall_nr, -> _);
+    "mov rdi, {arg1}" (arg1, -> _);
+    "syscall" (-> result);
+} clobbers = ["rcx", "r11", "memory"];
+```
+
+#### ARM64 平台
+
+```uya
+// 系统调用号
+const SYS_write: i64 = 64;
+const SYS_read: i64 = 63;
+
+// 系统调用约定
+// x8 = 系统调用号
+// x0-x5 = 参数
+// x0 = 返回值
+
+@asm {
+    "mov x8, {nr}" (syscall_nr, -> _);
+    "mov x0, {arg1}" (arg1, -> _);
+    "svc #0" (-> result);
+} clobbers = ["x16", "x17", "memory"];
+```
+
+### 平台检测
+
+```uya
+enum @asm_target {
+    x86_64_linux,
+    x86_64_macos,
+    x86_64_windows,
+    arm64_linux,
+    arm64_macos,
+    arm64_windows,
+}
+
+// 获取当前平台
+const target: @asm_target = @asm_target();
+
+// 条件编译
+if @asm_target() == .x86_64_linux {
+    // x86-64 Linux 代码
+} else if @asm_target() == .arm64_linux {
+    // ARM64 Linux 代码
+}
+```
+
+### 安全约束
+
+1. **类型检查**：输入/输出类型必须匹配
+2. **寄存器验证**：寄存器约束不能与调用约定冲突
+3. **内存安全**：内存操作必须有明确类型
+4. **并发安全**：原子操作必须使用 `atomic T` 类型
+5. **clobber 声明**：必须声明所有被修改的寄存器
+
+### 错误示例
+
+```uya
+// ❌ 错误：类型不匹配
+@asm {
+    "mov {dst}, {src}" (src: f64, -> dst: i32);
+}
+
+// ❌ 错误：未声明 clobber
+@asm {
+    "mov rax, 1" (-> _);  // rax 被修改但未声明
+}
+
+// ✅ 正确：显式声明 clobber
+@asm {
+    "mov rax, 1" (-> _);
+} clobbers = ["rax"];
+
+// ❌ 错误：非原子类型的原子操作
+@asm {
+    "lock xadd {ptr}, {value}" (@asm_mem(ptr), value, -> old);
+    // ptr 必须是 &atomic i32 类型
+}
+```
+
+### 最佳实践
+
+1. **优先使用编译器优化**：能用 Uya 原生语法的，不要用 @asm
+2. **显式声明 clobbers**：声明所有被修改的寄存器
+3. **使用类型安全内存操作**：使用 `@asm_mem` 包装指针
+4. **平台抽象**：使用 `@asm_target()` 进行条件编译
+5. **优先使用原子类型**：使用 `atomic T` 类型
+
+**详细文档**：
+- [内联汇编设计文档](asm_design.md)
+- [内联汇编 API 参考](asm_api_reference.md)
+- [内联汇编最佳实践](asm_best_practices.md)
+
+---
+
+## 十四、宏系统速查
 
 ### 宏定义
 
@@ -593,7 +801,7 @@ mc double_explicit(x: expr) expr {
 ```
 ---
 
-## 十四、常见问题与解答
+## 十五、常见问题与解答
 
 ### Q: 如何声明数组？
 A: `const arr: [i32: 5] = [1,2,3,4,5];`
@@ -640,7 +848,7 @@ A: 使用尖括号 `<T>`，约束紧邻参数 `<T: Ord>`，多约束连接 `<T: 
 
 ---
 
-## 十五、完整示例
+## 十六、完整示例
 
 ```uya
 // 接口定义
@@ -688,7 +896,7 @@ fn main() i32 {
 
 ---
 
-## 十六、下一步学习
+## 十七、下一步学习
 
 - **完整语法**：查看 [grammar_formal.md](./grammar_formal.md)（完整BNF定义）
 - **语言规范**：查看 [uya.md](./uya.md)（完整语义说明）

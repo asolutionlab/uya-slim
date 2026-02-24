@@ -1,5 +1,94 @@
 # 编译期优化功能实现报告
 
+**版本**：v0.7.4  
+**更新日期**：2026-02-24
+
+## 最新进展（v0.7.3 - v0.7.4）
+
+### v0.7.4 新特性（2026-02-24）
+
+#### 1. 越界访问检测（P1 任务）
+
+在 `src/checker/proof.uya` 中实现了编译期静态分析：
+
+**新增函数**：
+- `check_array_bounds_const()` - 检测数组访问越界（常量索引）
+- `check_pointer_arithmetic_bounds()` - 检测指针算术越界
+- `check_slice_bounds()` - 检测切片边界越界
+- `bounds_check_pass()` - 全程序越界访问检测 Pass
+
+**检测级别**：
+- `SAFE`：编译期可证明安全
+- `WARNING`：需要运行时检查
+- `ERROR`：编译期可证明越界
+
+**测试**：新增 `tests/programs/test_bounds_check.uya` 测试文件
+
+#### 2. 指令融合优化（P2 任务）
+
+在 `src/checker/optimizer.uya` 中实现了指令融合框架：
+
+**新增函数**：
+- `can_fuse_arithmetic_instructions()` - 检测指令融合机会
+- `instruction_fusion_pass()` - 指令融合优化 Pass
+
+**支持的融合模式**：
+- 乘加融合（MAC）：`mul` + `add` → `madd`
+
+#### 3. 冗余指令消除（P2 任务）
+
+在 `src/checker/optimizer.uya` 中实现了冗余指令检测：
+
+**新增函数**：
+- `detect_redundant_instruction()` - 检测冗余指令
+- `analyze_register_lifecycle()` - 寄存器生命周期分析
+- `redundant_instruction_elimination_pass()` - 冗余指令消除 Pass
+- `optimize_asm_block()` - @asm 块综合优化入口
+
+**检测类型**：
+- `nop` 等无副作用指令
+- 自移动指令（如 `mov r0, r0`）
+- 死寄存器写入
+
+#### 4. RISC-V 平台扩展支持
+
+**新增寄存器类型**：
+- `TYPE_ASM_REG_RISCV_V` - 向量扩展寄存器
+- `TYPE_ASM_REG_RISCV_F` - 单精度浮点寄存器
+- `TYPE_ASM_REG_RISCV_D` - 双精度浮点寄存器
+
+**更新函数**：
+- `is_riscv_reg_type()` - 支持新寄存器类型判断
+- `asm_reg_type_name()` - 支持新寄存器名称
+
+### v0.7.3 新特性（2026-02-24）
+
+#### 优化级别命令行选项
+
+**新增命令行参数**：
+- `--opt=<0-3>` 设置优化级别
+- `-O0`, `-O1`, `-O2`, `-O3` 简写形式
+- 默认优化级别为 1（常量折叠 + 死代码消除）
+
+#### 修复 Lexer 三元运算符问题
+
+**问题描述**：
+- Lexer 遇到 `?` 返回 `TOKEN_EOF`，导致 Parser 提前终止
+- 影响 `checker/optimizer.uya` 中三元运算符后的函数定义全部丢失
+
+**修复内容**：
+- 将三元运算符改为 if-else 语句
+- 修复 TokenType 名称错误：
+  - `TOKEN_AND_AND` → `TOKEN_LOGICAL_AND`
+  - `TOKEN_OR_OR` → `TOKEN_LOGICAL_OR`
+  - `TOKEN_EQUAL_EQUAL` → `TOKEN_EQUAL`
+  - `TOKEN_BANG_EQUAL` → `TOKEN_NOT_EQUAL`
+- 修复 ASTNodeType 和字段名错误：
+  - `AST_INDEX_EXPR` → `AST_ARRAY_ACCESS`
+  - `bool_value` → `bool_literal_value`
+
+---
+
 ## 已完成的工作
 
 ### 1. 设计文档
@@ -78,7 +167,14 @@
 - ✅ 所有 454 个测试通过
 
 ### 测试结果
-✅ 简单测试通过：
+
+✅ **所有 462 个测试通过**（v0.7.4）：
+- ✅ 9 个 @asm 正向测试
+- ✅ 17 个 @asm 反向测试
+- ✅ 编译期优化测试
+- ✅ 越界检测测试
+
+**优化测试详情**：
 ```
 === Test Suite: Constant Folding Tests ===
   TEST: basic_folding ... OK

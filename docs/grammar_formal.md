@@ -215,10 +215,73 @@ primary_expr   = ID | NUM | STRING | CHAR | 'true' | 'false' | 'null'
                | builtin_expr
                | struct_literal | array_literal | tuple_literal | enum_literal | union_literal
                | match_expr | '(' expr ')'
-builtin_expr   = '@' ('sizeof' | 'alignof' | 'len' | 'max' | 'min' | 'params' | 'va_start' | 'va_end' | 'va_arg')
-               # @size_of(T)、@align_of(T)、@len(expr) 为调用形式；@max、@min 为值形式；@params 为函数体内参数元组；@va_start(ap,last)、@va_end(ap)、@va_arg(ap,Type) 为可变参数栈访问（uya.md §5.4）
+builtin_expr   = '@' ('sizeof' | 'alignof' | 'len' | 'max' | 'min' | 'params' | 'va_start' | 'va_end' | 'va_arg' | 'asm')
+               # @size_of(T)、@align_of(T)、@len(expr) 为调用形式；@max、@min 为值形式；@params 为函数体内参数元组；@va_start(ap,last)、@va_end(ap)、@va_arg(ap,Type) 为可变参数栈访问（uya.md §5.4）；@asm 为内联汇编块（uya.md §19）
 union_literal  = ID '.' ID '(' expr ')'  # 联合体创建，如 IntOrFloat.i(42)、NetworkPacket.ipv4([...])
 ```
+
+### 内联汇编
+
+```
+asm_stmt       = '@asm' '{' { asm_instruction } '}' [ 'clobbers' '=' '[' STRING { ',' STRING } ']' ]
+asm_instruction = STRING '(' [ expr_list ] [ '->' expr_list ] ')' [ 'clobbers' '=' '[' STRING { ',' STRING } ']' ] ';'
+```
+
+**说明**：
+- **@asm 块**：内联汇编语句块，包含一条或多条汇编指令
+- **指令模板**：字符串字面量，使用 `{name}` 作为占位符
+- **输入列表**：指令的输入操作数，多个用逗号分隔
+- **输出列表**：指令的输出操作数，使用 `->` 分隔
+- **clobbers 声明**：显式声明被修改的寄存器列表
+- **内存修改**：使用 `"memory"` 字符串声明内存被修改
+
+**示例**：
+```uya
+// 单条指令
+@asm {
+    "add {a}, {b}" (a, b, -> result);
+}
+
+// 多条指令
+@asm {
+    "mov rax, 1" (-> _);
+    "syscall" (rax, rdi, rsi, rdx, -> result);
+} clobbers = ["rcx", "r11", "memory"];
+
+// 原子操作
+@asm {
+    "lock xadd {ptr}, {value}" (@asm_mem(ptr), value, -> old);
+}
+```
+
+**寄存器类型**：
+```uya
+type @asm_reg = opaque;       // 编译器自动分配的通用寄存器
+type @asm_reg_x64 = opaque;   // x86-64 专用寄存器
+type @asm_reg_x86 = opaque;   // x86 专用寄存器
+type @asm_reg_arm64 = opaque; // ARM64 专用寄存器
+```
+
+**内存操作类型**：
+```uya
+type @asm_mem<T> = opaque;    // 类型安全的内存操作包装
+```
+
+**平台检测**：
+```uya
+enum @asm_target {
+    x86_64_linux,
+    x86_64_macos,
+    x86_64_windows,
+    arm64_linux,
+    arm64_macos,
+    arm64_windows,
+}
+
+const target: @asm_target = @asm_target();
+```
+
+**详细说明**：见 [uya.md](./uya.md#19-内联汇编) 内联汇编章节
 
 ### 特殊表达式
 
