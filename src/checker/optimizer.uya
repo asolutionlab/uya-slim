@@ -90,8 +90,8 @@ export fn get_optimization_stats() OptimizationStats {
     return optimizer_stats;
 }
 
-// 执行优化（简化版本，移到前面以确保生成）
-// 注意：完整版本在文件后面，但可能不会被生成
+// 执行优化（当前版本：简化实现）
+// TODO: 编译器 bug - 后面的函数定义未被生成，暂时禁用完整优化
 export fn optimize_program(checker: &TypeChecker, node: &ASTNode, config: OptimizationConfig) &ASTNode {
     if node == null || checker == null {
         return node;
@@ -101,11 +101,13 @@ export fn optimize_program(checker: &TypeChecker, node: &ASTNode, config: Optimi
     optimizer_reset_stats();
     optimizer_verbose = config.verbose;
     
-    // 当前简化版本：只返回节点，不做实际优化
-    // 完整优化需要 constant_folding_pass 等函数
     if config.verbose != 0 {
         printf("[optimize] optimize_program called (level %d)\n" as *byte, config.level);
     }
+    
+    // 当前版本：只返回节点，不做实际优化
+    // 完整优化需要 constant_folding_pass 等函数，但这些函数未被生成
+    // 这可能是编译器的一个 bug：AST 中某些函数定义未被生成到 C 代码
     
     return node;
 }
