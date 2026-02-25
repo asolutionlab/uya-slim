@@ -1397,27 +1397,26 @@ fn infer_array_access(checker: &TypeChecker, expr: &ASTNode) Type {
     const array_type: Type = checker_infer_type(checker, expr.array_access_array);
     
     if array_type.kind == TypeKind.TYPE_ARRAY && array_type.element_type != null {
-        // 边界检查（仅当开启安全证明时）
-        if checker.enable_safety_proof != 0 {
-            const index_expr: &ASTNode = expr.array_access_index;
-            const array_size: i32 = array_type.array_size;
+        const index_expr: &ASTNode = expr.array_access_index;
+        const array_size: i32 = array_type.array_size;
+        
+        // 常量索引越界检查（始终执行，不依赖 enable_safety_proof）
+        const index_val: i32 = checker_eval_const_expr(checker, index_expr);
+        if index_val >= 0 {
+            if index_val >= array_size {
+                checker_report_error(checker, index_expr, "数组索引越界：常量索引超出数组边界" as *byte);
+            }
+        } else if checker.enable_safety_proof != 0 {
+            // 变量索引：使用约束系统验证边界（仅当开启安全证明时）
+            const linear_expr: LinearExpr = extract_linear_expr(checker, index_expr);
             
-            const index_val: i32 = checker_eval_const_expr(checker, index_expr);
-            if index_val >= 0 {
-                if index_val >= array_size {
-                    checker_report_error(checker, index_expr, "数组索引越界：常量索引超出数组边界" as *byte);
-                }
-            } else {
-                const linear_expr: LinearExpr = extract_linear_expr(checker, index_expr);
-                
-                if linear_expr.is_valid != 0 {
-                    if verify_linear_expr_bounds(checker, &linear_expr, array_size, index_expr) == 0 {
-                        if linear_expr.var_name != null {
-                            checker_report_error_ex(checker, index_expr, 
-                                "数组索引安全证明失败" as *byte,
-                                linear_expr.var_name,
-                                array_size);
-                        }
+            if linear_expr.is_valid != 0 {
+                if verify_linear_expr_bounds(checker, &linear_expr, array_size, index_expr) == 0 {
+                    if linear_expr.var_name != null {
+                        checker_report_error_ex(checker, index_expr, 
+                            "数组索引安全证明失败" as *byte,
+                            linear_expr.var_name,
+                            array_size);
                     }
                 }
             }
