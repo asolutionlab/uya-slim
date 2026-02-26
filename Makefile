@@ -31,8 +31,8 @@ from-c:
 		fi \
 	fi
 	@echo "编译 bin/uya.c ..."
-	@echo "CFLAGS: $(CFLAGS)"
-	@bash -c 'ulimit -s 32768 && gcc $(CFLAGS) bin/uya.c -o bin/uya $(LDFLAGS)'
+	@echo "CFLAGS: $(CFLAGS) -nostdlib"
+	@bash -c 'ulimit -s 32768 && gcc $(CFLAGS) -nostdlib bin/uya.c -o bin/uya $(LDFLAGS)'
 	@echo ""
 	@echo "✓ 编译器构建完成: bin/uya"
 	@ls -la bin/uya
