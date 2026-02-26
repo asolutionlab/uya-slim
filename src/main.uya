@@ -272,7 +272,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  --no-safety-proof    禁用内存安全证明\n" as *byte);
     fprintf(libc.stderr, "  --nostdlib           不自动包含标准库\n" as *byte);
     fprintf(libc.stderr, "  -o <文件>            指定输出文件名\n" as *byte);
-    fprintf(libc.stderr, "  --stack-size <KB>    设置堆栈大小（KB），默认 16384 (16MB)\n" as *byte);
+    fprintf(libc.stderr, "  --stack-size <KB>    设置堆栈大小（KB），默认 65536 (64MB)\n" as *byte);
     fprintf(libc.stderr, "  -h, --help           显示此帮助信息\n" as *byte);
     fprintf(libc.stderr, "\n说明:\n" as *byte);
     fprintf(libc.stderr, "  - 可以指定单个文件或目录，编译器会自动解析模块依赖\n" as *byte);
@@ -1756,7 +1756,7 @@ export fn main() i32 {
     var command: CommandType = CommandType.COMMAND_BUILD;
     var run_arg_start: i32 = -1;
     var is_nostdlib: i32 = 0;
-    var stack_size: i32 = 16384;  // 默认 16MB 堆栈
+    var stack_size: i32 = 65536;  // 默认 64MB 堆栈
 
     // 临时缓冲区用于自动生成输出路径
     var auto_output_path: [byte: PATH_MAX] = [];
