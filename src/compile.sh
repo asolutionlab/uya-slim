@@ -47,6 +47,7 @@ usage() {
   --line-directives    启用 #line 指令生成（C99 后端，默认禁用）
   --nostdlib          链接时不使用标准库（仅在使用 -e 时有效）
   --safety-proof      启用内存安全检查
+  --stack-size KB     设置堆栈大小（KB），编译器启动时使用 setrlimit 设置
   --compiler PATH     指定编译器路径（默认: $COMPILER）
 
 示例:
@@ -117,6 +118,10 @@ while [[ $# -gt 0 ]]; do
         --safety-proof)
             USE_SAFETY_PROOF=true
             shift
+            ;;
+        --stack-size)
+            STACK_SIZE="$2"
+            shift 2
             ;;
         -o|--output)
             BUILD_DIR="$2"
@@ -376,8 +381,7 @@ trap "rm -f '$TEMP_OUTPUT' '$TEMP_ERRORS'" EXIT
 
 # 执行编译，捕获所有输出
 # 注意：确保 UYA_ROOT 环境变量被传递给编译器
-# 注意：增大栈限制，避免编译器栈溢出（编译器内部有大型局部数组）
-ulimit -s 65536 2>/dev/null || true
+# 堆栈大小由 Uya 编译器在启动时使用 setrlimit 设置
 if [ "$VERBOSE" = true ] || [ "$DEBUG" = true ]; then
     # 详细模式：显示所有输出
     env UYA_ROOT="$UYA_ROOT" "${COMPILER_CMD[@]}" 2>&1 | tee "$TEMP_OUTPUT"

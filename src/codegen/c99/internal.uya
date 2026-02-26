@@ -210,7 +210,10 @@ struct C99CodeGenerator {
     has_stdio_conflicts: i32,             // 1 表示定义了与 stdio.h 冲突的函数
     
     // --nostdlib 模式：生成 _start 入口
-    is_nostdlib: i32                     // 1 表示生成 _start 内联汇编
+    is_nostdlib: i32,                     // 1 表示生成 _start 内联汇编
+
+    // 堆栈大小设置（KB）
+    stack_size: i32                       // 堆栈大小（KB），0 表示默认
 }
 
 // ===== 函数声明 =====

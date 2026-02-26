@@ -32,7 +32,7 @@ from-c:
 	fi
 	@echo "编译 bin/uya.c ..."
 	@echo "CFLAGS: $(CFLAGS)"
-	@gcc $(CFLAGS) bin/uya.c -o bin/uya $(LDFLAGS)
+	@bash -c 'ulimit -s 32768 && gcc $(CFLAGS) bin/uya.c -o bin/uya $(LDFLAGS)'
 	@echo ""
 	@echo "✓ 编译器构建完成: bin/uya"
 	@ls -la bin/uya
@@ -47,7 +47,7 @@ uya:
 		$(MAKE) from-c; \
 	fi
 	@echo "使用 bin/uya 编译 src/ ..."
-	@CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" cd src && ./compile.sh --c99 -e --nostdlib
+	@bash -c 'ulimit -s 32768 && CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" cd src && ./compile.sh --c99 -e --nostdlib'
 	@echo ""
 	@echo "更新 bin/uya.c ..."
 	@cp src/build/uya.c bin/uya.c
@@ -103,7 +103,7 @@ b: uya
 	@echo "=========================================="
 	@echo "自举验证：编译器编译自身，验证输出一致性"
 	@echo "=========================================="
-	@cd src && ./compile.sh --c99 -e -b --nostdlib
+	@bash -c 'ulimit -s 32768 && cd src && ./compile.sh --c99 -e -b --nostdlib'
 	@echo ""
 	@echo "✓ 自举验证完成"
 

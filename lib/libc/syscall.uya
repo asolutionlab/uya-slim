@@ -33,6 +33,8 @@ export const SYS_rmdir: i64 = 84;
 export const SYS_unlink: i64 = 87;
 export const SYS_readlink: i64 = 89;
 export const SYS_getdents64: i64 = 217;
+export const SYS_setrlimit: i64 = 160;
+export const SYS_getrlimit: i64 = 97;
 
 // ============================================================
 // 文件操作标志（open）
@@ -226,6 +228,29 @@ export extern "libc" fn sys_kill(pid: i64, sig: i32) !i32 {
 // sys_readlink - 读取符号链接
 export extern "libc" fn sys_readlink(pathname: *const byte, buf: *byte, bufsiz: usize) !isize {
     return @syscall(SYS_readlink, pathname as i64, buf as i64, bufsiz as i64) as! isize;
+}
+
+// ============================================================
+// 资源限制（rlimit）
+// ============================================================
+
+// rlimit 结构体（Linux x86_64）
+export struct RLimit {
+    rlim_cur: u64,  // 软限制
+    rlim_max: u64   // 硬限制
+}
+
+// RLIMIT_STACK - 堆栈大小限制
+export const RLIMIT_STACK: i32 = 3;
+
+// sys_setrlimit - 设置资源限制
+export extern "libc" fn sys_setrlimit(resource: i32, rlim: &const RLimit) !i32 {
+    return @syscall(SYS_setrlimit, resource as i64, rlim as i64) as! i32;
+}
+
+// sys_getrlimit - 获取资源限制
+export extern "libc" fn sys_getrlimit(resource: i32, rlim: &RLimit) !i32 {
+    return @syscall(SYS_getrlimit, resource as i64, rlim as i64) as! i32;
 }
 
 // sys_getdents64 - 读取目录项

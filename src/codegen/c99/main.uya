@@ -587,6 +587,13 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("// 使用 -std=c99 编译\n" as *byte, codegen.output as *void);
     fputs("//\n" as *byte, codegen.output as *void);
     
+    // 输出堆栈大小提示（如果指定了）
+    if codegen.stack_size > 0 {
+        fprintf(codegen.output as *void, "// 堆栈大小提示：此程序需要至少 %d KB 的堆栈空间\n" as *byte, codegen.stack_size);
+        fprintf(codegen.output as *void, "// 编译时请使用：ulimit -s %d\n" as *byte, codegen.stack_size);
+        fputs("//\n" as *byte, codegen.output as *void);
+    }
+
     if is_std_lib != 0 {
         // 标准库模式：零依赖，自己定义所有类型
         fputs("// 零依赖标准库：自己定义所有类型（用于 --nostdlib 编译）\n" as *byte, codegen.output as *void);

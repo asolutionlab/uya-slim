@@ -8,17 +8,17 @@
 // C 标准库函数（在 extern_decls.uya 中声明）
 
 // 创建 C99 代码生成器
-fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, module_name: &byte, emit_line_directives: i32, is_nostdlib: i32) i32 {
+fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, module_name: &byte, emit_line_directives: i32, is_nostdlib: i32, stack_size: i32) i32 {
     if codegen == null || arena == null || output == null || module_name == null {
         return -1;
     }
-    
+
     // 初始化字段
     codegen.arena = arena;
     codegen.output = output;
     codegen.indent_level = 0;
     codegen.module_name = module_name;
-    
+
     // 初始化表
     codegen.string_constant_count = 0;
     codegen.struct_definition_count = 0;
@@ -55,7 +55,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
         codegen.errdefer_count[ii] = 0;
         ii = ii + 1;
     }
-    
+
     // 初始化泛型单态化相关字段
     codegen.mono_instance_count = 0;
     codegen.current_type_params = null;
@@ -66,7 +66,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.struct_type_param_count = 0;
     codegen.struct_type_args = null;
     codegen.struct_type_arg_count = 0;
-    
+
     // 初始化标准库头文件标志
     codegen.needs_string_h = 0;
     codegen.needs_stdio_h = 0;
@@ -75,7 +75,9 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.has_stdio_conflicts = 0;
     // 初始化 is_nostdlib
     codegen.is_nostdlib = is_nostdlib;
-    
+    // 初始化 stack_size
+    codegen.stack_size = stack_size;
+
     return 0;
 }
 
