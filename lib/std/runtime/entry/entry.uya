@@ -1,5 +1,5 @@
 // std.runtime.entry - C 程序入口
-// 版本：v0.2.1
+// 版本：v0.2.2
 // 说明：提供 export extern "libc" fn main 作为 C 入口，应用程序需要 use 此模块
 // 模块路径：lib/std/runtime/entry/entry.uya → use std.runtime.entry;
 //
@@ -21,9 +21,29 @@ use std.runtime.saved_argv;
 // 声明应用程序主入口（由编译器从 export fn main() 生成为 main_main）
 extern fn main_main() i32;
 
+// setrlimit 需要的类型（在函数外定义）
+struct EntryRLimit {
+    rlim_cur: u64,
+    rlim_max: u64
+}
+
 // C main 函数：保存参数并调用应用程序主程序
 // export extern "libc" 生成裸函数名（无模块前缀），作为程序入口
 export extern "libc" fn main(argc: i32, argv: & &byte) i32 {
+    // 在调用 main_main 之前设置堆栈大小为 16MB
+    // 这确保在 Uya 代码执行之前就有足够的堆栈空间
+    // 使用 @syscall 内置函数直接调用 setrlimit，避免导入 syscall 模块
+    const SYS_setrlimit: i64 = 160;
+    const RLIMIT_STACK: i32 = 3;
+    
+    var rlim: EntryRLimit = EntryRLimit {
+        rlim_cur: 16 * 1024 * 1024,  // 16MB
+        rlim_max: 16 * 1024 * 1024
+    };
+    
+    // 直接调用 setrlimit 系统调用
+    _ = @syscall(SYS_setrlimit, RLIMIT_STACK as i64, &rlim as i64);
+
     // 保存命令行参数到 std.runtime 的全局变量
     saved_argc = argc;
     saved_argv = argv;

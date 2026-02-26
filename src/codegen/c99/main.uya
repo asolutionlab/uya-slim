@@ -744,6 +744,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         if codegen.has_stdio_conflicts == 0 && is_bootstrap == 0 {
             fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);  // for standard I/O functions (printf, puts, etc.)
         }
+        // 添加 sys/resource.h 用于 setrlimit（堆栈大小设置）
+        if codegen.stack_size > 0 {
+            fputs("#include <sys/resource.h>\n" as *byte, codegen.output as *void);  // for setrlimit
+        }
         // 不包含 stdlib.h，避免间接引入 stdio.h 导致 fprintf 与 built-in 冲突；exit/malloc 等由 libc 通过 syscall 实现
         // 仅当 needs_string_h 且未定义 string/mem 函数时才包含 <string.h>
         var has_mem_functions: i32 = 0;
@@ -1912,19 +1916,29 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                         pj = pj + 1;
                     }
                     fputs(") {\n" as *byte, codegen.output);
+                    
+                    // 在 C main 函数开始处立即设置堆栈大小（在变量声明之前）
+                    if is_c_main == 0 && codegen.stack_size > 0 {
+                        fprintf(codegen.output as *void, "    { struct rlimit rlim = { %dUL, %dUL }; if (setrlimit(RLIMIT_STACK, &rlim) != 0) { /* 忽略错误 */ } }\n" as *byte, codegen.stack_size * 1024, codegen.stack_size * 1024);
+                    }
                 } else {
                     fprintf(codegen.output as *void, "%s %s(void) {\n" as *byte, return_c as *byte, main_c_name as *byte);
+                    
+                    // 在 C main 函数开始处立即设置堆栈大小（在变量声明之前）
+                    if is_c_main == 0 && codegen.stack_size > 0 {
+                        fprintf(codegen.output as *void, "    { struct rlimit rlim = { %dUL, %dUL }; if (setrlimit(RLIMIT_STACK, &rlim) != 0) { /* 忽略错误 */ } }\n" as *byte, codegen.stack_size * 1024, codegen.stack_size * 1024);
+                    }
                 }
-                
+
                 // 保存并设置当前函数的返回类型
                 const saved_return_type: &ASTNode = codegen.current_function_return_type;
                 codegen.current_function_return_type = decl.fn_decl_return_type;
-                
+
                 // 如果有测试，在函数体开始处调用测试运行器（仅 uya_main）
                 if test_count > 0 && is_app_main == 0 && is_c_main == 0 {
                     fputs("    uya_run_tests();\n" as *byte, codegen.output as *void);
                 }
-                
+
                 // 生成原始函数体
                 const body: &ASTNode = decl.fn_decl_body;
                 if body != null && body.type == ASTNodeType.AST_BLOCK {
