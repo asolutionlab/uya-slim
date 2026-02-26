@@ -689,7 +689,7 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
             if init.type == ASTNodeType.AST_MC_EVAL {
                 var success: i32 = 0;
                 const value: i64 = macro_eval_expr(init.mc_eval_operand, ctx, &success);
-                if success != 0 && local_binding_count < 64 {
+                if success != 0 && local_binding_count < @len(local_bindings) {
                     const num: &ASTNode = create_number_literal(value, ctx.arena, init.line, init.column);
                     if num != null {
                         local_bindings[local_binding_count].param_name = s.var_decl_name;
@@ -698,9 +698,9 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
                     }
                 }
             }
-            
+
             // 处理 @mc_type
-            if init.type == ASTNodeType.AST_MC_TYPE && local_binding_count < 64 {
+            if init.type == ASTNodeType.AST_MC_TYPE && local_binding_count < @len(local_bindings) {
                 const operand: &ASTNode = init.mc_type_operand;
                 if operand != null {
                     // 先对操作数进行参数替换

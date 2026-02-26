@@ -431,7 +431,7 @@ fn emit_struct_deps_for_union(codegen: &C99CodeGenerator, union_decl: &ASTNode) 
     var generated: i32 = 0;
     var i: i32 = 0;
     // struct_names 数组大小为 128
-    while i < 128 {
+    while i < @len(struct_names) {
         // 只有当 i < struct_count 时才处理
         if i < struct_count {
             const struct_name: &byte = struct_names[i];

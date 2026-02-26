@@ -14,7 +14,7 @@ var reported_error_count: i32 = 0;
 fn was_error_reported(var_name: &byte, array_size: i32) i32 {
     var i: i32 = 0;
     while i < reported_error_count {
-        if i < 32 {
+        if i < @len(reported_error_vars) {
             if reported_error_vars[i] != null && var_name != null {
                 if strcmp(reported_error_vars[i] as *byte, var_name as *byte) == 0 {
                     if reported_error_sizes[i] == array_size {
@@ -30,14 +30,14 @@ fn was_error_reported(var_name: &byte, array_size: i32) i32 {
 
 // 记录已报告的错误
 fn mark_error_reported(var_name: &byte, array_size: i32) void {
-    if reported_error_count < 0 || reported_error_count >= 32 {
+    if reported_error_count < 0 || reported_error_count >= @len(reported_error_vars) {
         return;
     }
     if was_error_reported(var_name, array_size) != 0 {
         return;
     }
     // 证明：reported_error_count 在 [0, 32) 范围内
-    if reported_error_count >= 0 && reported_error_count < 32 {
+    if reported_error_count >= 0 && reported_error_count < @len(reported_error_vars) {
         reported_error_vars[reported_error_count] = var_name;
         reported_error_sizes[reported_error_count] = array_size;
         reported_error_count = reported_error_count + 1;
@@ -320,13 +320,13 @@ fn checker_proof_step(checker: &TypeChecker, node: &ASTNode) i32 {
 fn checker_reset_proof_steps(checker: &TypeChecker) void {
     if checker != null {
         checker.proof_step_count = 0;
-        for 0..64 |i| {
+        for 0..@len(checker.constraint_var_names) |i| {
             checker.constraint_var_names[i] = null;
             checker.constraint_ops[i] = 0;
             checker.constraint_values[i] = 0;
         }
         checker.constraint_count = 0;
-        for 0..32 |i| {
+        for 0..@len(checker.pointer_nonnull_names) |i| {
             checker.pointer_nonnull_names[i] = null;
         }
         checker.pointer_nonnull_count = 0;

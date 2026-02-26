@@ -794,7 +794,7 @@ export fn inline_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode {
     if inline_depth == 0 {
         inline_call_stack_top = 0;
         var i: i32 = 0;
-        while i < 64 {
+        while i < @len(inline_call_stack) {
             inline_call_stack[i] = null;
             i = i + 1;
         }
