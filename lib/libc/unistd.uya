@@ -125,6 +125,40 @@ export extern "libc" fn _exit(status: i32) void {
     // 不会执行到这里
 }
 
+// waitpid - 等待子进程状态
+export extern "libc" fn waitpid(pid: i32, status: &i32, options: i32) i32 {
+    const result: !i64 = @syscall(SYS_waitpid, pid as i64, status as i64, options as i64);
+    const ret: i64 = result catch {
+        errno = ECHILD;
+        return 0 - 1;
+    };
+    return ret as i32;
+}
+
+// system - 执行 shell 命令（0 依赖实现）
+export fn system(cmd: &const byte) i32 {
+    if cmd == null {
+        return 0;
+    }
+    
+    const pid: i32 = fork();
+    if pid == 0 {
+        // 子进程：执行 /bin/sh -c cmd
+        const sh_path: &const byte = "/bin/sh";
+        const sh_c: &const byte = "-c";
+        var args: [&const byte: 4] = [sh_path, sh_c, cmd, null];
+        var env: [&const byte: 1] = [null];
+        execve(sh_path, &args[0] as & &byte, &env[0] as & &byte);
+        _exit(127);
+    }
+    if pid > 0 {
+        var status: i32 = 0;
+        waitpid(pid, &status, 0);
+        return status;
+    }
+    return 0 - 1;
+}
+
 // ============================================================
 // 文件系统函数
 // ============================================================
