@@ -74,7 +74,7 @@ BOOTSTRAP_COMPARE=false
 USE_C99=false
 USE_LINE_DIRECTIVES=false
 USE_NOSTDLIB=false
-USE_SAFETY_PROOF=false
+USE_SAFETY_PROOF=false  # 默认禁用内存安全证明（可通过 --safety-proof 启用）
 
 # 解析命令行选项
 while [[ $# -gt 0 ]]; do

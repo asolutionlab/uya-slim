@@ -1100,9 +1100,12 @@ fn has_unresolved_mono_type_args(generic_decl: &ASTNode, type_args: & & ASTNode,
         if arg != null && arg.type == ASTNodeType.AST_TYPE_NAMED && arg.type_named_name != null {
             const name: &byte = arg.type_named_name;
             var j: i32 = 0;
-            while j < type_param_count {
-                if type_params[j].name != null && strcmp(type_params[j].name as *byte, name as *byte) == 0 {
-                    return 1;  // 类型实参是未解析的类型参数
+            while j < type_param_count && j < 64 {
+                if type_params != null {
+                    const tp_name: &byte = type_params[j].name;
+                    if tp_name != null && strcmp(tp_name as *byte, name as *byte) == 0 {
+                        return 1;  // 类型实参是未解析的类型参数
+                    }
                 }
                 j = j + 1;
             }

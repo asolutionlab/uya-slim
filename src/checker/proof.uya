@@ -30,15 +30,18 @@ fn was_error_reported(var_name: &byte, array_size: i32) i32 {
 
 // 记录已报告的错误
 fn mark_error_reported(var_name: &byte, array_size: i32) void {
-    if reported_error_count >= 32 {
+    if reported_error_count < 0 || reported_error_count >= 32 {
         return;
     }
     if was_error_reported(var_name, array_size) != 0 {
         return;
     }
-    reported_error_vars[reported_error_count] = var_name;
-    reported_error_sizes[reported_error_count] = array_size;
-    reported_error_count = reported_error_count + 1;
+    // 证明：reported_error_count 在 [0, 32) 范围内
+    if reported_error_count >= 0 && reported_error_count < 32 {
+        reported_error_vars[reported_error_count] = var_name;
+        reported_error_sizes[reported_error_count] = array_size;
+        reported_error_count = reported_error_count + 1;
+    }
 }
 
 fn get_last_checker_error() &byte {

@@ -1094,7 +1094,7 @@ fn parse_args(
     output_file_index[0] = -1;
     backend_type[0] = BackendType.BACKEND_LLVM;
     emit_line_directives[0] = 0;
-    enable_safety_proof[0] = 0;
+    enable_safety_proof[0] = 0;  // 默认禁用内存安全证明（使用 --safety-proof 启用）
     opt_level[0] = 1;  // 默认优化级别 1
     outlibc_index[0] = -1;
     run_arg_start[0] = -1;
