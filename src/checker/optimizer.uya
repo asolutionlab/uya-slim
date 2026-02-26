@@ -707,7 +707,7 @@ fn is_in_call_stack(fn_name: &byte) i32 {
         return 0;
     }
     var i: i32 = 0;
-    while i < inline_call_stack_top && i < 64 {
+    while i < inline_call_stack_top && i < @len(inline_call_stack) {
         if inline_call_stack[i] != null && str_equals(inline_call_stack[i], fn_name) != 0 {
             return 1;
         }
@@ -765,19 +765,19 @@ fn inline_call_expr(checker: &TypeChecker, call_node: &ASTNode, current_fn: &AST
     }
     
     // 将函数名加入调用栈
-    if inline_call_stack_top >= 0 && inline_call_stack_top < 64 {
+    if inline_call_stack_top >= 0 && inline_call_stack_top < @len(inline_call_stack) {
         inline_call_stack[inline_call_stack_top] = fn_name;
         inline_call_stack_top = inline_call_stack_top + 1;
     }
-    
+
     // 递归处理内联后的函数体
     inline_depth = inline_depth + 1;
     inline_pass(checker, fn_decl.fn_decl_body);
     inline_depth = inline_depth - 1;
-    
+
     // 从调用栈弹出
     inline_call_stack_top = inline_call_stack_top - 1;
-    if inline_call_stack_top >= 0 && inline_call_stack_top < 64 {
+    if inline_call_stack_top >= 0 && inline_call_stack_top < @len(inline_call_stack) {
         inline_call_stack[inline_call_stack_top] = null;
     }
     
