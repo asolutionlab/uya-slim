@@ -652,9 +652,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             // 检查是否定义了与标准库冲突的函数
             if check_decl.type == ASTNodeType.AST_FN_DECL {
                 const fn_name: &byte = check_decl.fn_decl_name;
-                const fn_body: &ASTNode = check_decl.fn_decl_body;
-                // 只有定义了函数体（不是 extern）才认为是冲突
-                if fn_name != null && fn_body != null && (
+                // 检查是否定义了与 stdio.h 冲突的函数（不管是否有 extern 属性）
+                if fn_name != null && (
                     strcmp(fn_name as *byte, ("fopen" as *byte) as &byte) == 0 ||
                     strcmp(fn_name as *byte, ("fclose" as *byte) as &byte) == 0 ||
                     strcmp(fn_name as *byte, ("fread" as *byte) as &byte) == 0 ||
@@ -663,7 +662,18 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     strcmp(fn_name as *byte, ("fputc" as *byte) as &byte) == 0 ||
                     strcmp(fn_name as *byte, ("fputs" as *byte) as &byte) == 0 ||
                     strcmp(fn_name as *byte, ("fprintf" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fflush" as *byte) as &byte) == 0) {
+                    strcmp(fn_name as *byte, ("fflush" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("printf" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("puts" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("fgets" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("fscanf" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("scanf" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("snprintf" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("sprintf" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("vprintf" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("vfprintf" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("vsprintf" as *byte) as &byte) == 0 ||
+                    strcmp(fn_name as *byte, ("vsnprintf" as *byte) as &byte) == 0) {
                     codegen.has_stdio_conflicts = 1;
                 }
             }
@@ -798,8 +808,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         if codegen.freestanding == 0 && codegen.needs_stdlib_h != 0 && has_stdlib_conflicts == 0 && is_bootstrap == 0 {
             fputs("#include <stdlib.h>\n" as *byte, codegen.output as *void);
         }
-        // 如果使用了 stdio 函数（printf, fprintf 等），包含 <stdio.h>
-        if codegen.freestanding == 0 && codegen.needs_stdio_h != 0 && is_bootstrap == 0 {
+        // 如果使用了 stdio 函数（printf, fprintf 等）且没有冲突，包含 <stdio.h>
+        if codegen.freestanding == 0 && codegen.needs_stdio_h != 0 && codegen.has_stdio_conflicts == 0 && is_bootstrap == 0 {
             fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);
         }
         // 不包含 sys/stat.h、unistd.h，避免间接引入 stdio.h 导致 fprintf 等与 built-in 冲突；stat/readlink 由 libc 通过 syscall 实现

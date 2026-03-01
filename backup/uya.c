@@ -1383,334 +1383,338 @@ static const char str1295[] = "fwrite";
 static const char str1296[] = "fgetc";
 static const char str1297[] = "fputc";
 static const char str1298[] = "fflush";
-static const char str1299[] = "#ifndef _POSIX_C_SOURCE\n#define _POSIX_C_SOURCE 200809L\n#endif\n";
-static const char str1300[] = "// @asm_target 平台检测\n";
-static const char str1301[] = "#if defined(__x86_64__) || defined(_M_X64)\n";
-static const char str1302[] = "  #if defined(__linux__)\n";
-static const char str1303[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 0\n";
-static const char str1304[] = "  #elif defined(__APPLE__)\n";
-static const char str1305[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 1\n";
-static const char str1306[] = "  #elif defined(_WIN32)\n";
-static const char str1307[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 2\n";
-static const char str1308[] = "  #else\n";
-static const char str1309[] = "  #endif\n";
-static const char str1310[] = "#elif defined(__aarch64__) || defined(_M_ARM64)\n";
-static const char str1311[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 3\n";
-static const char str1312[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 4\n";
-static const char str1313[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 5\n";
-static const char str1314[] = "#elif defined(__riscv) && __riscv_xlen == 64\n";
-static const char str1315[] = "  #define UYA_ASM_TARGET_X86_64_LINUX 6\n";
-static const char str1316[] = "#else\n";
-static const char str1317[] = "  #define UYA_ASM_TARGET_X86_64_LINUX 0\n";
-static const char str1318[] = "#endif\n";
-static const char str1319[] = "// 标准类型定义（不依赖标准库头文件）\n";
-static const char str1320[] = "typedef signed long ssize_t;\n";
-static const char str1321[] = "typedef unsigned long uintptr_t;\n";
-static const char str1322[] = "typedef signed long intptr_t;\n";
-static const char str1323[] = "typedef signed long ptrdiff_t;\n";
-static const char str1324[] = "#ifndef NULL\n#define NULL ((void *)0)\n#endif\n";
-static const char str1325[] = "#ifndef offsetof\n#define offsetof(type, member) ((size_t)&((type *)0)->member)\n#endif\n";
-static const char str1326[] = "#ifndef true\n#define true 1\n#endif\n";
-static const char str1327[] = "#ifndef false\n#define false 0\n#endif\n";
-static const char str1328[] = "typedef _Bool bool;\n";
-static const char str1329[] = "typedef __builtin_va_list va_list;\n";
-static const char str1330[] = "#define va_start(v, l) __builtin_va_start(v, l)\n";
-static const char str1331[] = "#define va_end(v) __builtin_va_end(v)\n";
-static const char str1332[] = "#define va_arg(v, l) __builtin_va_arg(v, l)\n";
-static const char str1333[] = "#include <stdio.h>\n";
-static const char str1334[] = "#include <sys/resource.h>\n";
-static const char str1335[] = "memcpy";
-static const char str1336[] = "memset";
-static const char str1337[] = "memmove";
-static const char str1338[] = "memcmp";
-static const char str1339[] = "memchr";
-static const char str1340[] = "#include <string.h>\n";
-static const char str1341[] = "labs";
-static const char str1342[] = "strtoul";
-static const char str1343[] = "qsort";
-static const char str1344[] = "bsearch";
-static const char str1345[] = "#include <stdlib.h>\n";
-static const char str1346[] = "closedir";
-static const char str1347[] = "extern void *opendir(const char *);\n";
-static const char str1348[] = "extern void *readdir(void *);\n";
-static const char str1349[] = "extern int closedir(void *);\n";
-static const char str1350[] = "static inline void *__uya_memcpy(void *dest, const void *src, size_t n) {\n";
-static const char str1351[] = "    char *d = (char *)dest; const char *s = (const char *)src;\n";
-static const char str1352[] = "    for (size_t i = 0; i < n; i++) d[i] = s[i];\n";
-static const char str1353[] = "static inline int __uya_memcmp(const void *s1, const void *s2, size_t n) {\n";
-static const char str1354[] = "    const unsigned char *a = (const unsigned char *)s1, *b = (const unsigned char *)s2;\n";
-static const char str1355[] = "    for (size_t i = 0; i < n; i++) { if (a[i] != b[i]) return a[i] - b[i]; } return 0;\n";
-static const char str1356[] = "// syscall write - 写入文件描述符\n";
-static const char str1357[] = "static long uya_write(int fd, const char *buf, unsigned long len) {\n";
-static const char str1358[] = "    long ret;\n";
-static const char str1359[] = "    __asm__ volatile (\"syscall\" : \"=a\"(ret) : \"a\"(1), \"D\"(fd), \"S\"(buf), \"d\"(len) : \"rcx\", \"r11\", \"memory\");\n";
-static const char str1360[] = "    return ret;\n";
-static const char str1361[] = "// strlen - 计算字符串长度\n";
-static const char str1362[] = "static unsigned long uya_strlen(const char *s) {\n";
-static const char str1363[] = "    unsigned long len = 0;\n";
-static const char str1364[] = "// _start - 自定义程序入口（无 C 标准库，内联汇编实现）\n";
-static const char str1365[] = "extern int main(int argc, uint8_t **argv);\n";
-static const char str1366[] = "__attribute__((naked)) void _start(void) {\n";
-static const char str1367[] = "    __asm__ volatile (\n";
-static const char str1368[] = "        \"movq (%%rsp), %%rdi\\n\\t\"    /* argc */\n";
-static const char str1369[] = "        \"leaq 8(%%rsp), %%rsi\\n\\t\"   /* argv */\n";
-static const char str1370[] = "        \"call main\\n\\t\"\n";
-static const char str1371[] = "        \"movq %%rax, %%rdi\\n\\t\"\n";
-static const char str1372[] = "        \"movq $60, %%rax\\n\\t\"        /* syscall exit */\n";
-static const char str1373[] = "        \"syscall\\n\\t\"\n";
-static const char str1374[] = "        \"hlt\\n\\t\"\n";
-static const char str1375[] = "        : : : \"memory\"\n";
-static const char str1376[] = "// 错误联合类型（用于 !i64 等）\n";
-static const char str1377[] = "struct err_union_int64_t { uint32_t error_id; int64_t value; };\n";
-static const char str1378[] = "err_union_int64_t";
-static const char str1379[] = "struct err_union_void { uint32_t error_id; };\n";
-static const char str1380[] = "err_union_void";
-static const char str1381[] = "struct TypeInfo;\n";
-static const char str1382[] = "struct %s;\n";
-static const char str1383[] = "typedef %s %s";
-static const char str1384[] = "[%d]";
-static const char str1385[] = "typedef %s %s;\n";
-static const char str1386[] = "// 内置 TypeInfo 结构体（由 @mc_type 使用）\n";
-static const char str1387[] = "struct TypeInfo {\n";
-static const char str1388[] = "    int8_t * name;\n";
-static const char str1389[] = "    int32_t size;\n";
-static const char str1390[] = "    int32_t align;\n";
-static const char str1391[] = "    int32_t kind;\n";
-static const char str1392[] = "    bool is_integer;\n";
-static const char str1393[] = "    bool is_float;\n";
-static const char str1394[] = "    bool is_bool;\n";
-static const char str1395[] = "    bool is_pointer;\n";
-static const char str1396[] = "    bool is_array;\n";
-static const char str1397[] = "    bool is_void;\n";
-static const char str1398[] = "};\n\n";
-static const char str1399[] = "// 系统调用辅助函数（Linux x86-64）\n";
-static const char str1400[] = "static inline long uya_syscall0(long nr) {\n";
-static const char str1401[] = "    register long rax __asm__(\"rax\") = nr;\n";
-static const char str1402[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax) : \"rcx\", \"r11\", \"memory\");\n";
-static const char str1403[] = "static inline long uya_syscall1(long nr, long a1) {\n";
-static const char str1404[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi) : \"rcx\", \"r11\", \"memory\");\n";
-static const char str1405[] = "static inline long uya_syscall2(long nr, long a1, long a2) {\n";
-static const char str1406[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi) : \"rcx\", \"r11\", \"memory\");\n";
-static const char str1407[] = "static inline long uya_syscall3(long nr, long a1, long a2, long a3) {\n";
-static const char str1408[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx) : \"rcx\", \"r11\", \"memory\");\n";
-static const char str1409[] = "static inline long uya_syscall4(long nr, long a1, long a2, long a3, long a4) {\n";
-static const char str1410[] = "    register long r10 __asm__(\"r10\") = a4;\n";
-static const char str1411[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx), \"r\"(r10) : \"rcx\", \"r11\", \"memory\");\n";
-static const char str1412[] = "static inline long uya_syscall5(long nr, long a1, long a2, long a3, long a4, long a5) {\n";
-static const char str1413[] = "    register long r8 __asm__(\"r8\") = a5;\n";
-static const char str1414[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx), \"r\"(r10), \"r\"(r8) : \"rcx\", \"r11\", \"memory\");\n";
-static const char str1415[] = "static inline long uya_syscall6(long nr, long a1, long a2, long a3, long a4, long a5, long a6) {\n";
-static const char str1416[] = "    register long r9 __asm__(\"r9\") = a6;\n";
-static const char str1417[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx), \"r\"(r10), \"r\"(r8), \"r\"(r9) : \"rcx\", \"r11\", \"memory\");\n";
-static const char str1418[] = "#error \"@syscall currently only supports Linux x86-64\"\n";
-static const char str1419[] = "%s_%s_";
-static const char str1420[] = "static struct err_union_void %s(void);\n";
-static const char str1421[] = "static void uya_run_tests(void);\n";
-static const char str1422[] = "testing";
-static const char str1423[] = "static int32_t _test_passed = 0;\n";
-static const char str1424[] = "static int32_t _test_failed = 0;\n";
-static const char str1425[] = "extern struct FILE _stdin, _stdout, _stderr;\n";
-static const char str1426[] = "%s main(";
-static const char str1427[] = "    { struct rlimit rlim = { %dUL, %dUL }; if (setrlimit(RLIMIT_STACK, &rlim) != 0) { /* 忽略错误 */ } }\n";
-static const char str1428[] = "%s %s(void) {\n";
-static const char str1429[] = "int32_t main_main(void) {\n";
-static const char str1430[] = "    printf(\"\\n=== Running %d tests ===\\n\");\n";
-static const char str1431[] = "    printf(\"\\n=== Results ===\\n\");\n";
-static const char str1432[] = "    printf(\"  Passed: %d\\n\", _test_passed);\n";
-static const char str1433[] = "    printf(\"  Failed: %d\\n\", _test_failed);\n";
-static const char str1434[] = "    return _test_failed;\n";
-static const char str1435[] = "/* drop */ ";
-static const char str1436[] = "%s(%s);\n";
-static const char str1437[] = "/* errdefer */ ";
-static const char str1438[] = "/* defer */ ";
-static const char str1439[] = "char __uya_interp_%d[%d];\n";
-static const char str1440[] = "printf(\"%%s\\n\", __uya_interp_%d);\n";
-static const char str1441[] = "printf(\"%%s\", __uya_interp_%d);\n";
-static const char str1442[] = "if (";
-static const char str1443[] = " else {\n";
-static const char str1444[] = "while (";
-static const char str1445[] = "break;\n";
-static const char str1446[] = "continue;\n";
-static const char str1447[] = "{\n";
-static const char str1448[] = "// for range\n";
-static const char str1449[] = "%s %s = ";
-static const char str1450[] = "%s _uya_end = ";
-static const char str1451[] = "for (; %s < _uya_end; %s++) {\n";
-static const char str1452[] = "%s _uya_s = ";
-static const char str1453[] = "%s _uya_e = ";
-static const char str1454[] = "for (%s _uya_i = _uya_s; _uya_i < _uya_e; _uya_i++) {\n";
-static const char str1455[] = "while (1) {\n";
-static const char str1456[] = "// for loop - array traversal\n";
-static const char str1457[] = "size_t _len = sizeof(";
-static const char str1458[] = ") / sizeof(";
-static const char str1459[] = "[0]);\n";
-static const char str1460[] = "for (size_t _i = 0; _i < _len; _i++) {\n";
-static const char str1461[] = "// for loop - iterator interface\n";
-static const char str1462[] = "%s _uya_iter = ";
-static const char str1463[] = "struct err_union_void _uya_next_result = %s(&_uya_iter);\n";
-static const char str1464[] = "if (_uya_next_result.error_id != 0) {\n";
-static const char str1465[] = "break;  // error.IterEnd\n";
-static const char str1466[] = "%s %s = %s(&_uya_iter);\n";
-static const char str1467[] = "%s *%s = &";
-static const char str1468[] = "[_i];\n";
-static const char str1469[] = "%s %s%s;\n";
-static const char str1470[] = "__uya_memcpy(%s, ";
-static const char str1471[] = "[_i], sizeof(%s));\n";
-static const char str1472[] = "return (%s){ .error_id = %dU };\n";
-static const char str1473[] = "return (%s){ .error_id = %dU, .value = 0 };\n";
-static const char str1474[] = "return;\n";
-static const char str1475[] = "return _uya_ret;\n";
-static const char str1476[] = "%s _uya_ret = (struct %s) { .data = ";
-static const char str1477[] = " };\n";
-static const char str1478[] = "%s _uya_ret = ";
-static const char str1479[] = "%s _uya_ret = (%s){ .error_id = 0 };\n";
-static const char str1480[] = "%s _uya_ret = 0;\n";
-static const char str1481[] = "result";
-static const char str1482[] = "%s _uya_ret = (%s){ .error_id = 0, .value = ";
-static const char str1483[] = "struct err_union_intptr_t";
-static const char str1484[] = "intptr_t";
-static const char str1485[] = "struct err_union_int32_t";
-static const char str1486[] = "struct err_union_";
-static const char str1487[] = "struct err_union_%s _uya_tmp = ";
-static const char str1488[] = "%s _uya_ret = (_uya_tmp.error_id == 0) ? (%s){ .error_id = 0, .value = (%s)_uya_tmp.value } : (%s){ .error_id = _uya_tmp.error_id };\n";
-static const char str1489[] = "(void)(";
-static const char str1490[] = "__uya_memcpy(";
-static const char str1491[] = "));\n";
-static const char str1492[] = "__atomic_store_n(&";
-static const char str1493[] = ", __ATOMIC_SEQ_CST);\n";
-static const char str1494[] = "__atomic_fetch_add(&";
-static const char str1495[] = "__atomic_fetch_sub(&";
-static const char str1496[] = ".f%d;\n";
-static const char str1497[] = "const %s";
-static const char str1498[] = "checker";
-static const char str1499[] = "TypeChecker";
-static const char str1500[] = "#pragma GCC diagnostic push\n";
-static const char str1501[] = "#pragma GCC diagnostic ignored \"-Wmissing-braces\"\n";
-static const char str1502[] = ", sizeof(%s));\n";
-static const char str1503[] = ".data, sizeof(";
-static const char str1504[] = "%s));\n";
-static const char str1505[] = " = \"";
-static const char str1506[] = "\";\n";
-static const char str1507[] = "#pragma GCC diagnostic pop\n";
-static const char str1508[] = "va_list %s;\n";
-static const char str1509[] = "va_list";
-static const char str1510[] = "%s const";
-static const char str1511[] = " = {";
-static const char str1512[] = " = { ";
-static const char str1513[] = "__uya_memcpy(%s";
-static const char str1514[] = "%sif (_uya_m == 1) ";
-static const char str1515[] = "%sif (_uya_m == 0) ";
-static const char str1516[] = "%sif (_uya_m == %d) ";
-static const char str1517[] = "%sif (_uya_m._tag == %d) {\n";
-static const char str1518[] = "%s %s = _uya_m.u.%s;\n";
-static const char str1519[] = "%sif (_uya_m._tag == %d) ";
-static const char str1520[] = "%sif (0) ";
-static const char str1521[] = "%s{ %s %s = _uya_m;\n";
-static const char str1522[] = "%s{\n";
-static const char str1523[] = "%sif (_uya_m.error_id == %uU) ";
-static const char str1524[] = "%s.%s = ";
-static const char str1525[] = "%s.%s = NULL;\n";
-static const char str1526[] = "__builtin_memset(%s.%s, 0, sizeof(%s.%s));\n";
-static const char str1527[] = "%s.%s = 0;\n";
-static const char str1528[] = "__builtin_memset((void *)&%s, 0, sizeof(%s));\n";
-static const char str1529[] = "__uya_memcpy(%s.%s, ";
-static const char str1530[] = ", sizeof(%s.%s));\n";
-static const char str1531[] = "%s _uya_catch_tmp = ";
-static const char str1532[] = "VaList";
-static const char str1533[] = "(*";
-static const char str1534[] = "%s(* const %s)%s";
-static const char str1535[] = "%s(* const)%s";
-static const char str1536[] = "%s const %s";
-static const char str1537[] = "uya_tagged_";
-static const char str1538[] = "union %s {\n";
-static const char str1539[] = "struct uya_tagged_%s { int _tag; union %s u; };\n";
-static const char str1540[] = "uya_%s_%s";
-static const char str1541[] = "struct uya_interface_%s { void *vtable; void *data; };\n";
-static const char str1542[] = "struct uya_vtable_%s {\n";
-static const char str1543[] = "%s (*%s)(void *self";
-static const char str1544[] = "static const struct uya_vtable_%s uya_vtable_%s_%s = { ";
-static const char str1545[] = "(%s (*)(void *self";
-static const char str1546[] = "))&%s";
-static const char str1547[] = "struct %s {\n";
-static const char str1548[] = "char _empty;\n";
-static const char str1549[] = "%s %s[%d];\n";
-static const char str1550[] = "Self";
-static const char str1551[] = "const struct uya_tagged_%s *";
-static const char str1552[] = "struct uya_tagged_%s *";
-static const char str1553[] = "const struct %s *";
-static const char str1554[] = "struct %s *";
-static const char str1555[] = "struct uya_tagged_%s";
-static const char str1556[] = "%s *";
-static const char str1557[] = "int8_t";
-static const char str1558[] = "int16_t";
-static const char str1559[] = "size_t";
-static const char str1560[] = "float";
-static const char str1561[] = "double";
-static const char str1562[] = "register int64_t";
-static const char str1563[] = "register int32_t";
-static const char str1564[] = "__m128";
-static const char str1565[] = "__m256";
-static const char str1566[] = "__m512";
-static const char str1567[] = "int128x1_t";
-static const char str1568[] = "void *";
-static const char str1569[] = "struct uya_interface_%s";
-static const char str1570[] = "union %s";
-static const char str1571[] = "void*";
-static const char str1572[] = "const %s *";
-static const char str1573[] = "const %s (*)%s";
-static const char str1574[] = "%s (*)%s";
-static const char str1575[] = "_Atomic(%s)";
-static const char str1576[] = "err_union_%s";
-static const char str1577[] = "err_union_T";
-static const char str1578[] = "%s[%d]";
-static const char str1579[] = "enum ";
-static const char str1580[] = "uya_slice_%s";
-static const char str1581[] = "struct %s { %s *ptr; size_t len; };\n";
-static const char str1582[] = "uint";
-static const char str1583[] = "char";
-static const char str1584[] = "uintptr_t";
-static const char str1585[] = "ssize_t";
-static const char str1586[] = "struct %s { uint32_t error_id;";
-static const char str1587[] = " %s value;";
-static const char str1588[] = "struct uya_slice_";
-static const char str1589[] = ")[";
-static const char str1590[] = " * *";
-static const char str1591[] = "uya_array_";
-static const char str1592[] = "_%d";
-static const char str1593[] = "    %s data[%d];\n";
-static const char str1594[] = "#line %d \"";
-static const char str1595[] = "\"\n";
-static const char str1596[] = "#line %d\n";
-static const char str1597[] = "    ";
-static const char str1598[] = ";\n";
-static const char str1599[] = "auto";
-static const char str1600[] = "case";
-static const char str1601[] = "default";
-static const char str1602[] = "do";
-static const char str1603[] = "goto";
-static const char str1604[] = "long";
-static const char str1605[] = "register";
-static const char str1606[] = "short";
-static const char str1607[] = "signed";
-static const char str1608[] = "sizeof";
-static const char str1609[] = "static";
-static const char str1610[] = "switch";
-static const char str1611[] = "typedef";
-static const char str1612[] = "volatile";
-static const char str1613[] = "_Bool";
-static const char str1614[] = "_Complex";
-static const char str1615[] = "_Imaginary";
-static const char str1616[] = "inline";
-static const char str1617[] = "restrict";
-static const char str1618[] = "st_atime";
-static const char str1619[] = "st_mtime";
-static const char str1620[] = "st_ctime";
-static const char str1621[] = "uya_%s";
-static const char str1622[] = "_%s_";
-static const char str1623[] = "str%d";
-static const char str1624[] = "\\r";
-static const char str1625[] = "\n// 字符串常量（char 类型以满足 -Wformat= 对 fprintf/snprintf 格式参数的要求）\n";
-static const char str1626[] = "static const char %s[] = \"";
+static const char str1299[] = "puts";
+static const char str1300[] = "fgets";
+static const char str1301[] = "fscanf";
+static const char str1302[] = "scanf";
+static const char str1303[] = "#ifndef _POSIX_C_SOURCE\n#define _POSIX_C_SOURCE 200809L\n#endif\n";
+static const char str1304[] = "// @asm_target 平台检测\n";
+static const char str1305[] = "#if defined(__x86_64__) || defined(_M_X64)\n";
+static const char str1306[] = "  #if defined(__linux__)\n";
+static const char str1307[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 0\n";
+static const char str1308[] = "  #elif defined(__APPLE__)\n";
+static const char str1309[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 1\n";
+static const char str1310[] = "  #elif defined(_WIN32)\n";
+static const char str1311[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 2\n";
+static const char str1312[] = "  #else\n";
+static const char str1313[] = "  #endif\n";
+static const char str1314[] = "#elif defined(__aarch64__) || defined(_M_ARM64)\n";
+static const char str1315[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 3\n";
+static const char str1316[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 4\n";
+static const char str1317[] = "    #define UYA_ASM_TARGET_X86_64_LINUX 5\n";
+static const char str1318[] = "#elif defined(__riscv) && __riscv_xlen == 64\n";
+static const char str1319[] = "  #define UYA_ASM_TARGET_X86_64_LINUX 6\n";
+static const char str1320[] = "#else\n";
+static const char str1321[] = "  #define UYA_ASM_TARGET_X86_64_LINUX 0\n";
+static const char str1322[] = "#endif\n";
+static const char str1323[] = "// 标准类型定义（不依赖标准库头文件）\n";
+static const char str1324[] = "typedef signed long ssize_t;\n";
+static const char str1325[] = "typedef unsigned long uintptr_t;\n";
+static const char str1326[] = "typedef signed long intptr_t;\n";
+static const char str1327[] = "typedef signed long ptrdiff_t;\n";
+static const char str1328[] = "#ifndef NULL\n#define NULL ((void *)0)\n#endif\n";
+static const char str1329[] = "#ifndef offsetof\n#define offsetof(type, member) ((size_t)&((type *)0)->member)\n#endif\n";
+static const char str1330[] = "#ifndef true\n#define true 1\n#endif\n";
+static const char str1331[] = "#ifndef false\n#define false 0\n#endif\n";
+static const char str1332[] = "typedef _Bool bool;\n";
+static const char str1333[] = "typedef __builtin_va_list va_list;\n";
+static const char str1334[] = "#define va_start(v, l) __builtin_va_start(v, l)\n";
+static const char str1335[] = "#define va_end(v) __builtin_va_end(v)\n";
+static const char str1336[] = "#define va_arg(v, l) __builtin_va_arg(v, l)\n";
+static const char str1337[] = "#include <stdio.h>\n";
+static const char str1338[] = "#include <sys/resource.h>\n";
+static const char str1339[] = "memcpy";
+static const char str1340[] = "memset";
+static const char str1341[] = "memmove";
+static const char str1342[] = "memcmp";
+static const char str1343[] = "memchr";
+static const char str1344[] = "#include <string.h>\n";
+static const char str1345[] = "labs";
+static const char str1346[] = "strtoul";
+static const char str1347[] = "qsort";
+static const char str1348[] = "bsearch";
+static const char str1349[] = "#include <stdlib.h>\n";
+static const char str1350[] = "closedir";
+static const char str1351[] = "extern void *opendir(const char *);\n";
+static const char str1352[] = "extern void *readdir(void *);\n";
+static const char str1353[] = "extern int closedir(void *);\n";
+static const char str1354[] = "static inline void *__uya_memcpy(void *dest, const void *src, size_t n) {\n";
+static const char str1355[] = "    char *d = (char *)dest; const char *s = (const char *)src;\n";
+static const char str1356[] = "    for (size_t i = 0; i < n; i++) d[i] = s[i];\n";
+static const char str1357[] = "static inline int __uya_memcmp(const void *s1, const void *s2, size_t n) {\n";
+static const char str1358[] = "    const unsigned char *a = (const unsigned char *)s1, *b = (const unsigned char *)s2;\n";
+static const char str1359[] = "    for (size_t i = 0; i < n; i++) { if (a[i] != b[i]) return a[i] - b[i]; } return 0;\n";
+static const char str1360[] = "// syscall write - 写入文件描述符\n";
+static const char str1361[] = "static long uya_write(int fd, const char *buf, unsigned long len) {\n";
+static const char str1362[] = "    long ret;\n";
+static const char str1363[] = "    __asm__ volatile (\"syscall\" : \"=a\"(ret) : \"a\"(1), \"D\"(fd), \"S\"(buf), \"d\"(len) : \"rcx\", \"r11\", \"memory\");\n";
+static const char str1364[] = "    return ret;\n";
+static const char str1365[] = "// strlen - 计算字符串长度\n";
+static const char str1366[] = "static unsigned long uya_strlen(const char *s) {\n";
+static const char str1367[] = "    unsigned long len = 0;\n";
+static const char str1368[] = "// _start - 自定义程序入口（无 C 标准库，内联汇编实现）\n";
+static const char str1369[] = "extern int main(int argc, uint8_t **argv);\n";
+static const char str1370[] = "__attribute__((naked)) void _start(void) {\n";
+static const char str1371[] = "    __asm__ volatile (\n";
+static const char str1372[] = "        \"movq (%%rsp), %%rdi\\n\\t\"    /* argc */\n";
+static const char str1373[] = "        \"leaq 8(%%rsp), %%rsi\\n\\t\"   /* argv */\n";
+static const char str1374[] = "        \"call main\\n\\t\"\n";
+static const char str1375[] = "        \"movq %%rax, %%rdi\\n\\t\"\n";
+static const char str1376[] = "        \"movq $60, %%rax\\n\\t\"        /* syscall exit */\n";
+static const char str1377[] = "        \"syscall\\n\\t\"\n";
+static const char str1378[] = "        \"hlt\\n\\t\"\n";
+static const char str1379[] = "        : : : \"memory\"\n";
+static const char str1380[] = "// 错误联合类型（用于 !i64 等）\n";
+static const char str1381[] = "struct err_union_int64_t { uint32_t error_id; int64_t value; };\n";
+static const char str1382[] = "err_union_int64_t";
+static const char str1383[] = "struct err_union_void { uint32_t error_id; };\n";
+static const char str1384[] = "err_union_void";
+static const char str1385[] = "struct TypeInfo;\n";
+static const char str1386[] = "struct %s;\n";
+static const char str1387[] = "typedef %s %s";
+static const char str1388[] = "[%d]";
+static const char str1389[] = "typedef %s %s;\n";
+static const char str1390[] = "// 内置 TypeInfo 结构体（由 @mc_type 使用）\n";
+static const char str1391[] = "struct TypeInfo {\n";
+static const char str1392[] = "    int8_t * name;\n";
+static const char str1393[] = "    int32_t size;\n";
+static const char str1394[] = "    int32_t align;\n";
+static const char str1395[] = "    int32_t kind;\n";
+static const char str1396[] = "    bool is_integer;\n";
+static const char str1397[] = "    bool is_float;\n";
+static const char str1398[] = "    bool is_bool;\n";
+static const char str1399[] = "    bool is_pointer;\n";
+static const char str1400[] = "    bool is_array;\n";
+static const char str1401[] = "    bool is_void;\n";
+static const char str1402[] = "};\n\n";
+static const char str1403[] = "// 系统调用辅助函数（Linux x86-64）\n";
+static const char str1404[] = "static inline long uya_syscall0(long nr) {\n";
+static const char str1405[] = "    register long rax __asm__(\"rax\") = nr;\n";
+static const char str1406[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax) : \"rcx\", \"r11\", \"memory\");\n";
+static const char str1407[] = "static inline long uya_syscall1(long nr, long a1) {\n";
+static const char str1408[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi) : \"rcx\", \"r11\", \"memory\");\n";
+static const char str1409[] = "static inline long uya_syscall2(long nr, long a1, long a2) {\n";
+static const char str1410[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi) : \"rcx\", \"r11\", \"memory\");\n";
+static const char str1411[] = "static inline long uya_syscall3(long nr, long a1, long a2, long a3) {\n";
+static const char str1412[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx) : \"rcx\", \"r11\", \"memory\");\n";
+static const char str1413[] = "static inline long uya_syscall4(long nr, long a1, long a2, long a3, long a4) {\n";
+static const char str1414[] = "    register long r10 __asm__(\"r10\") = a4;\n";
+static const char str1415[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx), \"r\"(r10) : \"rcx\", \"r11\", \"memory\");\n";
+static const char str1416[] = "static inline long uya_syscall5(long nr, long a1, long a2, long a3, long a4, long a5) {\n";
+static const char str1417[] = "    register long r8 __asm__(\"r8\") = a5;\n";
+static const char str1418[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx), \"r\"(r10), \"r\"(r8) : \"rcx\", \"r11\", \"memory\");\n";
+static const char str1419[] = "static inline long uya_syscall6(long nr, long a1, long a2, long a3, long a4, long a5, long a6) {\n";
+static const char str1420[] = "    register long r9 __asm__(\"r9\") = a6;\n";
+static const char str1421[] = "    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx), \"r\"(r10), \"r\"(r8), \"r\"(r9) : \"rcx\", \"r11\", \"memory\");\n";
+static const char str1422[] = "#error \"@syscall currently only supports Linux x86-64\"\n";
+static const char str1423[] = "%s_%s_";
+static const char str1424[] = "static struct err_union_void %s(void);\n";
+static const char str1425[] = "static void uya_run_tests(void);\n";
+static const char str1426[] = "testing";
+static const char str1427[] = "static int32_t _test_passed = 0;\n";
+static const char str1428[] = "static int32_t _test_failed = 0;\n";
+static const char str1429[] = "extern struct FILE _stdin, _stdout, _stderr;\n";
+static const char str1430[] = "%s main(";
+static const char str1431[] = "    { struct rlimit rlim = { %dUL, %dUL }; if (setrlimit(RLIMIT_STACK, &rlim) != 0) { /* 忽略错误 */ } }\n";
+static const char str1432[] = "%s %s(void) {\n";
+static const char str1433[] = "int32_t main_main(void) {\n";
+static const char str1434[] = "    printf(\"\\n=== Running %d tests ===\\n\");\n";
+static const char str1435[] = "    printf(\"\\n=== Results ===\\n\");\n";
+static const char str1436[] = "    printf(\"  Passed: %d\\n\", _test_passed);\n";
+static const char str1437[] = "    printf(\"  Failed: %d\\n\", _test_failed);\n";
+static const char str1438[] = "    return _test_failed;\n";
+static const char str1439[] = "/* drop */ ";
+static const char str1440[] = "%s(%s);\n";
+static const char str1441[] = "/* errdefer */ ";
+static const char str1442[] = "/* defer */ ";
+static const char str1443[] = "char __uya_interp_%d[%d];\n";
+static const char str1444[] = "printf(\"%%s\\n\", __uya_interp_%d);\n";
+static const char str1445[] = "printf(\"%%s\", __uya_interp_%d);\n";
+static const char str1446[] = "if (";
+static const char str1447[] = " else {\n";
+static const char str1448[] = "while (";
+static const char str1449[] = "break;\n";
+static const char str1450[] = "continue;\n";
+static const char str1451[] = "{\n";
+static const char str1452[] = "// for range\n";
+static const char str1453[] = "%s %s = ";
+static const char str1454[] = "%s _uya_end = ";
+static const char str1455[] = "for (; %s < _uya_end; %s++) {\n";
+static const char str1456[] = "%s _uya_s = ";
+static const char str1457[] = "%s _uya_e = ";
+static const char str1458[] = "for (%s _uya_i = _uya_s; _uya_i < _uya_e; _uya_i++) {\n";
+static const char str1459[] = "while (1) {\n";
+static const char str1460[] = "// for loop - array traversal\n";
+static const char str1461[] = "size_t _len = sizeof(";
+static const char str1462[] = ") / sizeof(";
+static const char str1463[] = "[0]);\n";
+static const char str1464[] = "for (size_t _i = 0; _i < _len; _i++) {\n";
+static const char str1465[] = "// for loop - iterator interface\n";
+static const char str1466[] = "%s _uya_iter = ";
+static const char str1467[] = "struct err_union_void _uya_next_result = %s(&_uya_iter);\n";
+static const char str1468[] = "if (_uya_next_result.error_id != 0) {\n";
+static const char str1469[] = "break;  // error.IterEnd\n";
+static const char str1470[] = "%s %s = %s(&_uya_iter);\n";
+static const char str1471[] = "%s *%s = &";
+static const char str1472[] = "[_i];\n";
+static const char str1473[] = "%s %s%s;\n";
+static const char str1474[] = "__uya_memcpy(%s, ";
+static const char str1475[] = "[_i], sizeof(%s));\n";
+static const char str1476[] = "return (%s){ .error_id = %dU };\n";
+static const char str1477[] = "return (%s){ .error_id = %dU, .value = 0 };\n";
+static const char str1478[] = "return;\n";
+static const char str1479[] = "return _uya_ret;\n";
+static const char str1480[] = "%s _uya_ret = (struct %s) { .data = ";
+static const char str1481[] = " };\n";
+static const char str1482[] = "%s _uya_ret = ";
+static const char str1483[] = "%s _uya_ret = (%s){ .error_id = 0 };\n";
+static const char str1484[] = "%s _uya_ret = 0;\n";
+static const char str1485[] = "result";
+static const char str1486[] = "%s _uya_ret = (%s){ .error_id = 0, .value = ";
+static const char str1487[] = "struct err_union_intptr_t";
+static const char str1488[] = "intptr_t";
+static const char str1489[] = "struct err_union_int32_t";
+static const char str1490[] = "struct err_union_";
+static const char str1491[] = "struct err_union_%s _uya_tmp = ";
+static const char str1492[] = "%s _uya_ret = (_uya_tmp.error_id == 0) ? (%s){ .error_id = 0, .value = (%s)_uya_tmp.value } : (%s){ .error_id = _uya_tmp.error_id };\n";
+static const char str1493[] = "(void)(";
+static const char str1494[] = "__uya_memcpy(";
+static const char str1495[] = "));\n";
+static const char str1496[] = "__atomic_store_n(&";
+static const char str1497[] = ", __ATOMIC_SEQ_CST);\n";
+static const char str1498[] = "__atomic_fetch_add(&";
+static const char str1499[] = "__atomic_fetch_sub(&";
+static const char str1500[] = ".f%d;\n";
+static const char str1501[] = "const %s";
+static const char str1502[] = "checker";
+static const char str1503[] = "TypeChecker";
+static const char str1504[] = "#pragma GCC diagnostic push\n";
+static const char str1505[] = "#pragma GCC diagnostic ignored \"-Wmissing-braces\"\n";
+static const char str1506[] = ", sizeof(%s));\n";
+static const char str1507[] = ".data, sizeof(";
+static const char str1508[] = "%s));\n";
+static const char str1509[] = " = \"";
+static const char str1510[] = "\";\n";
+static const char str1511[] = "#pragma GCC diagnostic pop\n";
+static const char str1512[] = "va_list %s;\n";
+static const char str1513[] = "va_list";
+static const char str1514[] = "%s const";
+static const char str1515[] = " = {";
+static const char str1516[] = " = { ";
+static const char str1517[] = "__uya_memcpy(%s";
+static const char str1518[] = "%sif (_uya_m == 1) ";
+static const char str1519[] = "%sif (_uya_m == 0) ";
+static const char str1520[] = "%sif (_uya_m == %d) ";
+static const char str1521[] = "%sif (_uya_m._tag == %d) {\n";
+static const char str1522[] = "%s %s = _uya_m.u.%s;\n";
+static const char str1523[] = "%sif (_uya_m._tag == %d) ";
+static const char str1524[] = "%sif (0) ";
+static const char str1525[] = "%s{ %s %s = _uya_m;\n";
+static const char str1526[] = "%s{\n";
+static const char str1527[] = "%sif (_uya_m.error_id == %uU) ";
+static const char str1528[] = "%s.%s = ";
+static const char str1529[] = "%s.%s = NULL;\n";
+static const char str1530[] = "__builtin_memset(%s.%s, 0, sizeof(%s.%s));\n";
+static const char str1531[] = "%s.%s = 0;\n";
+static const char str1532[] = "__builtin_memset((void *)&%s, 0, sizeof(%s));\n";
+static const char str1533[] = "__uya_memcpy(%s.%s, ";
+static const char str1534[] = ", sizeof(%s.%s));\n";
+static const char str1535[] = "%s _uya_catch_tmp = ";
+static const char str1536[] = "VaList";
+static const char str1537[] = "(*";
+static const char str1538[] = "%s(* const %s)%s";
+static const char str1539[] = "%s(* const)%s";
+static const char str1540[] = "%s const %s";
+static const char str1541[] = "uya_tagged_";
+static const char str1542[] = "union %s {\n";
+static const char str1543[] = "struct uya_tagged_%s { int _tag; union %s u; };\n";
+static const char str1544[] = "uya_%s_%s";
+static const char str1545[] = "struct uya_interface_%s { void *vtable; void *data; };\n";
+static const char str1546[] = "struct uya_vtable_%s {\n";
+static const char str1547[] = "%s (*%s)(void *self";
+static const char str1548[] = "static const struct uya_vtable_%s uya_vtable_%s_%s = { ";
+static const char str1549[] = "(%s (*)(void *self";
+static const char str1550[] = "))&%s";
+static const char str1551[] = "struct %s {\n";
+static const char str1552[] = "char _empty;\n";
+static const char str1553[] = "%s %s[%d];\n";
+static const char str1554[] = "Self";
+static const char str1555[] = "const struct uya_tagged_%s *";
+static const char str1556[] = "struct uya_tagged_%s *";
+static const char str1557[] = "const struct %s *";
+static const char str1558[] = "struct %s *";
+static const char str1559[] = "struct uya_tagged_%s";
+static const char str1560[] = "%s *";
+static const char str1561[] = "int8_t";
+static const char str1562[] = "int16_t";
+static const char str1563[] = "size_t";
+static const char str1564[] = "float";
+static const char str1565[] = "double";
+static const char str1566[] = "register int64_t";
+static const char str1567[] = "register int32_t";
+static const char str1568[] = "__m128";
+static const char str1569[] = "__m256";
+static const char str1570[] = "__m512";
+static const char str1571[] = "int128x1_t";
+static const char str1572[] = "void *";
+static const char str1573[] = "struct uya_interface_%s";
+static const char str1574[] = "union %s";
+static const char str1575[] = "void*";
+static const char str1576[] = "const %s *";
+static const char str1577[] = "const %s (*)%s";
+static const char str1578[] = "%s (*)%s";
+static const char str1579[] = "_Atomic(%s)";
+static const char str1580[] = "err_union_%s";
+static const char str1581[] = "err_union_T";
+static const char str1582[] = "%s[%d]";
+static const char str1583[] = "enum ";
+static const char str1584[] = "uya_slice_%s";
+static const char str1585[] = "struct %s { %s *ptr; size_t len; };\n";
+static const char str1586[] = "uint";
+static const char str1587[] = "char";
+static const char str1588[] = "uintptr_t";
+static const char str1589[] = "ssize_t";
+static const char str1590[] = "struct %s { uint32_t error_id;";
+static const char str1591[] = " %s value;";
+static const char str1592[] = "struct uya_slice_";
+static const char str1593[] = ")[";
+static const char str1594[] = " * *";
+static const char str1595[] = "uya_array_";
+static const char str1596[] = "_%d";
+static const char str1597[] = "    %s data[%d];\n";
+static const char str1598[] = "#line %d \"";
+static const char str1599[] = "\"\n";
+static const char str1600[] = "#line %d\n";
+static const char str1601[] = "    ";
+static const char str1602[] = ";\n";
+static const char str1603[] = "auto";
+static const char str1604[] = "case";
+static const char str1605[] = "default";
+static const char str1606[] = "do";
+static const char str1607[] = "goto";
+static const char str1608[] = "long";
+static const char str1609[] = "register";
+static const char str1610[] = "short";
+static const char str1611[] = "signed";
+static const char str1612[] = "sizeof";
+static const char str1613[] = "static";
+static const char str1614[] = "switch";
+static const char str1615[] = "typedef";
+static const char str1616[] = "volatile";
+static const char str1617[] = "_Bool";
+static const char str1618[] = "_Complex";
+static const char str1619[] = "_Imaginary";
+static const char str1620[] = "inline";
+static const char str1621[] = "restrict";
+static const char str1622[] = "st_atime";
+static const char str1623[] = "st_mtime";
+static const char str1624[] = "st_ctime";
+static const char str1625[] = "uya_%s";
+static const char str1626[] = "_%s_";
+static const char str1627[] = "str%d";
+static const char str1628[] = "\\r";
+static const char str1629[] = "\n// 字符串常量（char 类型以满足 -Wformat= 对 fprintf/snprintf 格式参数的要求）\n";
+static const char str1630[] = "static const char %s[] = \"";
 
 struct TypeInfo;
 struct CompileStats;
@@ -37185,8 +37189,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                             }
                                                                                                             if ((check_decl->type == AST_FN_DECL)) {
                                                                                                                 uint8_t * const fn_name = check_decl->fn_decl_name;
-                                                                                                                struct ASTNode * const fn_body = check_decl->fn_decl_body;
-                                                                                                                if ((((fn_name != NULL) && (fn_body != NULL)) && (((((((((std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str991) == 0) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1293) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1294) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1295) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1296) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1297) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str999) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str907) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1298) == 0)))) {
+                                                                                                                if (((fn_name != NULL) && ((((((((((((((((((((std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str991) == 0) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1293) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1294) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1295) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1296) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1297) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str999) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str907) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1298) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str903) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1299) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1300) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1301) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str1302) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str909) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str905) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str904) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str908) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str906) == 0)) || (std_string_strcmp((uint8_t *)fn_name, (uint8_t *)(uint8_t *)(uint8_t *)str910) == 0)))) {
                                                                                                                     codegen->has_stdio_conflicts = 1;
                                                                                                                 }
                                                                                                             }
@@ -37198,36 +37201,36 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                             }
                                                                                                             check_i = (check_i + 1);
                                                                                                         }
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1299, (void *)codegen->output);
-                                                                                                        c99_emit_newline(codegen);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1300, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1301, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1302, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1303, (void *)codegen->output);
+                                                                                                        c99_emit_newline(codegen);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1304, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1305, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1306, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1307, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1308, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1303, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1309, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1310, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1302, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1311, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1304, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1312, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1306, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1307, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1313, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1308, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1311, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1309, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1314, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1306, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1315, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1308, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1316, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1310, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1317, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1312, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1315, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1313, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1318, (void *)codegen->output);
-                                                                                                        c99_emit_newline(codegen);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1319, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1320, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1321, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1322, (void *)codegen->output);
+                                                                                                        c99_emit_newline(codegen);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1323, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str187, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str189, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str191, (void *)codegen->output);
@@ -37237,10 +37240,6 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str190, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str192, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str194, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1320, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1321, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1322, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1323, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1324, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1325, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1326, (void *)codegen->output);
@@ -37250,13 +37249,17 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1330, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1331, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1332, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1333, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1334, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1335, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1336, (void *)codegen->output);
                                                                                                         c99_emit_newline(codegen);
                                                                                                         if ((codegen->freestanding == 0)) {
                                                                                                             if (((codegen->has_stdio_conflicts == 0) && (is_bootstrap == 0))) {
-                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1333, (void *)codegen->output);
+                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1337, (void *)codegen->output);
                                                                                                             }
                                                                                                             if ((codegen->stack_size > 0)) {
-                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1334, (void *)codegen->output);
+                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1338, (void *)codegen->output);
                                                                                                             }
                                                                                                         }
                                                                                                         int32_t has_mem_functions = 0;
@@ -37267,7 +37270,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                             if ((((md != NULL) && (md->type == AST_FN_DECL)) && (md->fn_decl_body != NULL))) {
                                                                                                                 uint8_t * const mn = md->fn_decl_name;
                                                                                                                 if ((mn != NULL)) {
-                                                                                                                    if ((((((std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1335) == 0) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1336) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1337) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1338) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1339) == 0))) {
+                                                                                                                    if ((((((std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1339) == 0) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1340) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1341) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1342) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1343) == 0))) {
                                                                                                                         has_mem_functions = 1;
                                                                                                                     } else {
                                                                                                                         if ((((((((((std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1004) == 0) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str992) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str993) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str998) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1187) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1003) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1001) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str994) == 0)) || (std_string_strcmp((uint8_t *)mn, (uint8_t *)(uint8_t *)str1000) == 0))) {
@@ -37279,7 +37282,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                             mi = (mi + 1);
                                                                                                         }
                                                                                                         if ((((((codegen->freestanding == 0) && (codegen->needs_string_h != 0)) && (has_string_functions == 0)) && (has_mem_functions == 0)) && (is_bootstrap == 0))) {
-                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1340, (void *)codegen->output);
+                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1344, (void *)codegen->output);
                                                                                                         }
                                                                                                         int32_t has_stdlib_conflicts = 0;
                                                                                                         int32_t si = 0;
@@ -37288,7 +37291,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                             if ((((sd != NULL) && (sd->type == AST_FN_DECL)) && (sd->fn_decl_body != NULL))) {
                                                                                                                 uint8_t * const sn = sd->fn_decl_name;
                                                                                                                 if ((sn != NULL)) {
-                                                                                                                    if (((((std_string_strcmp((uint8_t *)sn, (uint8_t *)(uint8_t *)str1341) == 0) || (std_string_strcmp((uint8_t *)sn, (uint8_t *)(uint8_t *)str1342) == 0)) || (std_string_strcmp((uint8_t *)sn, (uint8_t *)(uint8_t *)str1343) == 0)) || (std_string_strcmp((uint8_t *)sn, (uint8_t *)(uint8_t *)str1344) == 0))) {
+                                                                                                                    if (((((std_string_strcmp((uint8_t *)sn, (uint8_t *)(uint8_t *)str1345) == 0) || (std_string_strcmp((uint8_t *)sn, (uint8_t *)(uint8_t *)str1346) == 0)) || (std_string_strcmp((uint8_t *)sn, (uint8_t *)(uint8_t *)str1347) == 0)) || (std_string_strcmp((uint8_t *)sn, (uint8_t *)(uint8_t *)str1348) == 0))) {
                                                                                                                         has_stdlib_conflicts = 1;
                                                                                                                     }
                                                                                                                 }
@@ -37296,10 +37299,10 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                             si = (si + 1);
                                                                                                         }
                                                                                                         if (((((codegen->freestanding == 0) && (codegen->needs_stdlib_h != 0)) && (has_stdlib_conflicts == 0)) && (is_bootstrap == 0))) {
-                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1345, (void *)codegen->output);
+                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1349, (void *)codegen->output);
                                                                                                         }
-                                                                                                        if ((((codegen->freestanding == 0) && (codegen->needs_stdio_h != 0)) && (is_bootstrap == 0))) {
-                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1333, (void *)codegen->output);
+                                                                                                        if (((((codegen->freestanding == 0) && (codegen->needs_stdio_h != 0)) && (codegen->has_stdio_conflicts == 0)) && (is_bootstrap == 0))) {
+                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1337, (void *)codegen->output);
                                                                                                         }
                                                                                                         int32_t has_own_opendir = 0;
                                                                                                         int32_t has_own_readdir = 0;
@@ -37316,7 +37319,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                         if ((std_string_strcmp((uint8_t *)n, (uint8_t *)(uint8_t *)str1032) == 0)) {
                                                                                                                             has_own_readdir = 1;
                                                                                                                         } else {
-                                                                                                                            if ((std_string_strcmp((uint8_t *)n, (uint8_t *)(uint8_t *)str1346) == 0)) {
+                                                                                                                            if ((std_string_strcmp((uint8_t *)n, (uint8_t *)(uint8_t *)str1350) == 0)) {
                                                                                                                                 has_own_closedir = 1;
                                                                                                                             }
                                                                                                                         }
@@ -37326,45 +37329,41 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                             di = (di + 1);
                                                                                                         }
                                                                                                         if ((((has_own_opendir == 0) && (is_bootstrap == 0)) && (codegen->freestanding == 0))) {
-                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1347, (void *)codegen->output);
+                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1351, (void *)codegen->output);
                                                                                                         }
                                                                                                         if ((((has_own_readdir == 0) && (is_bootstrap == 0)) && (codegen->freestanding == 0))) {
-                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1348, (void *)codegen->output);
+                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1352, (void *)codegen->output);
                                                                                                         }
                                                                                                         if ((((has_own_closedir == 0) && (is_bootstrap == 0)) && (codegen->freestanding == 0))) {
-                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1349, (void *)codegen->output);
+                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1353, (void *)codegen->output);
                                                                                                         }
                                                                                                         c99_emit_newline(codegen);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1289, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1290, (void *)codegen->output);
                                                                                                         c99_emit_newline(codegen);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1350, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1351, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1352, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str284, (void *)codegen->output);
-                                                                                                        c99_emit_close_brace_newline(codegen);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1353, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1354, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1355, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
-                                                                                                    }
-                                                                                                    if ((codegen->is_nostdlib != 0)) {
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1356, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str284, (void *)codegen->output);
+                                                                                                        c99_emit_close_brace_newline(codegen);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1357, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1358, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1359, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1360, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
+                                                                                                    }
+                                                                                                    if ((codegen->is_nostdlib != 0)) {
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1360, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1361, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1362, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1363, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str268, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str274, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1364, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1365, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1366, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1367, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str268, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str274, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1368, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1369, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1370, (void *)codegen->output);
@@ -37373,14 +37372,18 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1373, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1374, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1375, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1376, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1377, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1378, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1379, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1201, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
                                                                                                     }
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1376, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1377, (void *)codegen->output);
-                                                                                                    mark_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str1378);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1379, (void *)codegen->output);
-                                                                                                    mark_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str1380);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1380, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1381, (void *)codegen->output);
+                                                                                                    mark_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str1382);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1383, (void *)codegen->output);
+                                                                                                    mark_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str1384);
                                                                                                     c99_emit_newline(codegen);
                                                                                                     const int32_t decl_count = ast->program_decl_count;
                                                                                                     int32_t i = 0;
@@ -37446,11 +37449,11 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                         }
                                                                                                         i = (i + 1);
                                                                                                     }
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1381, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1385, (void *)codegen->output);
                                                                                                     i = 0;
                                                                                                     while ((i < codegen->struct_definition_count)) {
                                                                                                         if ((is_struct_defined(codegen, codegen->struct_definitions[i].name) == 0)) {
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1382, (uint8_t *)codegen->struct_definitions[i].name);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1386, (uint8_t *)codegen->struct_definitions[i].name);
                                                                                                         }
                                                                                                         i = (i + 1);
                                                                                                     }
@@ -37499,16 +37502,16 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                     current = current->type_array_element_type;
                                                                                                                 }
                                                                                                                 uint8_t * const base_type_c = c99_type_to_c(codegen, current);
-                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1383, (uint8_t *)base_type_c, (uint8_t *)alias_name);
+                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1387, (uint8_t *)base_type_c, (uint8_t *)alias_name);
                                                                                                                 int32_t d = 0;
                                                                                                                 while ((d < dim_count)) {
-                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1384, dims[d]);
+                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1388, dims[d]);
                                                                                                                     d = (d + 1);
                                                                                                                 }
                                                                                                                 c99_emit_semi_newline(codegen);
                                                                                                             } else {
                                                                                                                 uint8_t * const target_type_c = c99_type_to_c(codegen, target_type);
-                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1385, (uint8_t *)target_type_c, (uint8_t *)alias_name);
+                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1389, (uint8_t *)target_type_c, (uint8_t *)alias_name);
                                                                                                             }
                                                                                                         }
                                                                                                         i = (i + 1);
@@ -37549,10 +37552,6 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                         i = (i + 1);
                                                                                                     }
                                                                                                     if (((user_defined_typeinfo == 0) && (is_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str651) == 0))) {
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1386, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1387, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1388, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1389, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1390, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1391, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1392, (void *)codegen->output);
@@ -37562,6 +37561,10 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1396, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1397, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1398, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1399, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1400, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1401, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1402, (void *)codegen->output);
                                                                                                         mark_struct_defined(codegen, (uint8_t *)(uint8_t *)(uint8_t *)str651);
                                                                                                     }
                                                                                                     i = 0;
@@ -37620,66 +37623,66 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                         i = (i + 1);
                                                                                                     }
                                                                                                     codegen->test_count = test_count;
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1399, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str201, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1400, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1401, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1402, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str205, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1403, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1401, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str208, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str201, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1404, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str205, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1405, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1401, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str208, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str211, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1406, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str205, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1407, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1401, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1405, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str208, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str211, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str214, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1408, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str205, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1409, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1401, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1405, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str208, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str211, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str214, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1410, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str205, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1411, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str205, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1405, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str208, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str211, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str214, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1412, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1401, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str208, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str211, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str214, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1410, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1413, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1414, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str205, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1415, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1401, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1413, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1405, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str208, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str211, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str214, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1410, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1413, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1414, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1415, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str205, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1416, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1405, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str208, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str211, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str214, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1414, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1417, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1418, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str205, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str254, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1419, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1405, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str208, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str211, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str214, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1414, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1417, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1420, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1421, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str205, (void *)codegen->output);
                                                                                                     c99_emit_close_brace_newline(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1316, (void *)codegen->output);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1418, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1320, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1422, (void *)codegen->output);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str199, (void *)codegen->output);
                                                                                                     int32_t j = 0;
                                                                                                     while ((j < codegen->mono_instance_count)) {
@@ -37833,7 +37836,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                                 while ((k < codegen->mono_instance_count)) {
                                                                                                                                     if (((codegen->mono_instances[k].generic_name != NULL) && (codegen->mono_instances[k].is_function != 0))) {
                                                                                                                                         uint8_t expected_prefix[256] = {0};
-                                                                                                                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1419, (uint8_t *)type_name, (uint8_t *)m->fn_decl_name);
+                                                                                                                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1423, (uint8_t *)type_name, (uint8_t *)m->fn_decl_name);
                                                                                                                                         uint8_t * const gn = codegen->mono_instances[k].generic_name;
                                                                                                                                         if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                                                                                                                             gen_mono_method_prototype(codegen, m, (uint8_t *)type_name, codegen->mono_instances[k].type_args, codegen->mono_instances[k].type_arg_count);
@@ -37874,7 +37877,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                                                 while ((mi < codegen->mono_instance_count)) {
                                                                                                                                                     if (((codegen->mono_instances[mi].generic_name != NULL) && (codegen->mono_instances[mi].is_function != 0))) {
                                                                                                                                                         uint8_t expected_prefix[256] = {0};
-                                                                                                                                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1419, (uint8_t *)mono_name, (uint8_t *)m->fn_decl_name);
+                                                                                                                                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1423, (uint8_t *)mono_name, (uint8_t *)m->fn_decl_name);
                                                                                                                                                         uint8_t * const gn = codegen->mono_instances[mi].generic_name;
                                                                                                                                                         if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                                                                                                                                             gen_mono_method_prototype(codegen, m, mono_name, codegen->mono_instances[mi].type_args, codegen->mono_instances[mi].type_arg_count);
@@ -37903,7 +37906,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                             if (((m != NULL) && (m->type == AST_FN_DECL))) {
                                                                                                                                 if ((m->fn_decl_type_param_count > 0)) {
                                                                                                                                     uint8_t expected_prefix[256] = {0};
-                                                                                                                                    const int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1419, (uint8_t *)struct_name, (uint8_t *)m->fn_decl_name);
+                                                                                                                                    const int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1423, (uint8_t *)struct_name, (uint8_t *)m->fn_decl_name);
                                                                                                                                     int32_t k = 0;
                                                                                                                                     while ((k < codegen->mono_instance_count)) {
                                                                                                                                         if (((codegen->mono_instances[k].generic_name != NULL) && (codegen->mono_instances[k].is_function != 0))) {
@@ -37947,12 +37950,12 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                             if (((test_node != NULL) && (test_node->type == AST_TEST_STMT))) {
                                                                                                                 uint8_t * const func_name = get_test_function_name(codegen, test_node->test_stmt_description);
                                                                                                                 if ((func_name != NULL)) {
-                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1420, (uint8_t *)func_name);
+                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1424, (uint8_t *)func_name);
                                                                                                                 }
                                                                                                             }
                                                                                                             i = (i + 1);
                                                                                                         }
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1421, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1425, (void *)codegen->output);
                                                                                                         c99_emit_newline(codegen);
                                                                                                         int32_t has_std_testing = 0;
                                                                                                         i = 0;
@@ -37964,7 +37967,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                 if (((seg_count >= 2) && (segs != NULL))) {
                                                                                                                     uint8_t * const seg0 = segs[0];
                                                                                                                     uint8_t * const seg1 = segs[1];
-                                                                                                                    if (((((seg0 != NULL) && (seg1 != NULL)) && (std_string_strcmp((uint8_t *)seg0, (uint8_t *)(uint8_t *)str51) == 0)) && (std_string_strcmp((uint8_t *)seg1, (uint8_t *)(uint8_t *)str1422) == 0))) {
+                                                                                                                    if (((((seg0 != NULL) && (seg1 != NULL)) && (std_string_strcmp((uint8_t *)seg0, (uint8_t *)(uint8_t *)str51) == 0)) && (std_string_strcmp((uint8_t *)seg1, (uint8_t *)(uint8_t *)str1426) == 0))) {
                                                                                                                         has_std_testing = 1;
                                                                                                                         break;
                                                                                                                     }
@@ -37973,12 +37976,12 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                             i = (i + 1);
                                                                                                         }
                                                                                                         if ((has_std_testing == 0)) {
-                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1423, (void *)codegen->output);
-                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1424, (void *)codegen->output);
+                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1427, (void *)codegen->output);
+                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1428, (void *)codegen->output);
                                                                                                             c99_emit_newline(codegen);
                                                                                                         }
                                                                                                     }
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1425, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1429, (void *)codegen->output);
                                                                                                     i = 0;
                                                                                                     while ((i < decl_count)) {
                                                                                                         struct ASTNode * const decl = ast->program_decls[i];
@@ -38047,7 +38050,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                                             while ((mi < codegen->mono_instance_count)) {
                                                                                                                                                 if (((codegen->mono_instances[mi].generic_name != NULL) && (codegen->mono_instances[mi].is_function != 0))) {
                                                                                                                                                     uint8_t expected_prefix[256] = {0};
-                                                                                                                                                    int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1419, (uint8_t *)mono_name, (uint8_t *)m->fn_decl_name);
+                                                                                                                                                    int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1423, (uint8_t *)mono_name, (uint8_t *)m->fn_decl_name);
                                                                                                                                                     uint8_t * const gn = codegen->mono_instances[mi].generic_name;
                                                                                                                                                     if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                                                                                                                                         gen_mono_method_function(codegen, m, mono_name, codegen->mono_instances[mi].type_args, codegen->mono_instances[mi].type_arg_count);
@@ -38081,7 +38084,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                                 while ((k < codegen->mono_instance_count)) {
                                                                                                                                     if (((codegen->mono_instances[k].generic_name != NULL) && (codegen->mono_instances[k].is_function != 0))) {
                                                                                                                                         uint8_t expected_prefix[256] = {0};
-                                                                                                                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1419, (uint8_t *)struct_name, (uint8_t *)m->fn_decl_name);
+                                                                                                                                        int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1423, (uint8_t *)struct_name, (uint8_t *)m->fn_decl_name);
                                                                                                                                         uint8_t * const gn = codegen->mono_instances[k].generic_name;
                                                                                                                                         if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                                                                                                                             gen_mono_method_function(codegen, m, struct_name, codegen->mono_instances[k].type_args, codegen->mono_instances[k].type_arg_count);
@@ -38160,7 +38163,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                                                         while ((k < codegen->mono_instance_count)) {
                                                                                                                                                             if (((codegen->mono_instances[k].generic_name != NULL) && (codegen->mono_instances[k].is_function != 0))) {
                                                                                                                                                                 uint8_t expected_prefix[256] = {0};
-                                                                                                                                                                int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1419, (uint8_t *)type_name, (uint8_t *)m->fn_decl_name);
+                                                                                                                                                                int32_t prefix_len = libc_snprintf((char *)(uint8_t *)(&expected_prefix[0]), NAME_BUF_SIZE, (const char *)str1423, (uint8_t *)type_name, (uint8_t *)m->fn_decl_name);
                                                                                                                                                                 uint8_t * const gn = codegen->mono_instances[k].generic_name;
                                                                                                                                                                 if (((gn != NULL) && (std_string_strncmp((uint8_t *)gn, (uint8_t *)(&expected_prefix[0]), prefix_len) == 0))) {
                                                                                                                                                                     gen_mono_method_function(codegen, m, (uint8_t *)type_name, codegen->mono_instances[k].type_args, codegen->mono_instances[k].type_arg_count);
@@ -38229,7 +38232,7 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                     }
                                                                                                                 }
                                                                                                                 if ((is_c_main != 0)) {
-                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1426, (uint8_t *)return_c);
+                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1430, (uint8_t *)return_c);
                                                                                                                     int32_t pj = 0;
                                                                                                                     const int32_t pcount = decl->fn_decl_param_count;
                                                                                                                     while ((pj < pcount)) {
@@ -38247,12 +38250,12 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                     }
                                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1234, codegen->output);
                                                                                                                     if (((is_c_main == 0) && (codegen->stack_size > 0))) {
-                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1427, (codegen->stack_size * 1024), (codegen->stack_size * 1024));
+                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1431, (codegen->stack_size * 1024), (codegen->stack_size * 1024));
                                                                                                                     }
                                                                                                                 } else {
-                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1428, (uint8_t *)return_c, (uint8_t *)main_c_name);
+                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1432, (uint8_t *)return_c, (uint8_t *)main_c_name);
                                                                                                                     if (((is_c_main == 0) && (codegen->stack_size > 0))) {
-                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1427, (codegen->stack_size * 1024), (codegen->stack_size * 1024));
+                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1431, (codegen->stack_size * 1024), (codegen->stack_size * 1024));
                                                                                                                     }
                                                                                                                 }
                                                                                                                 struct ASTNode * const saved_return_type = codegen->current_function_return_type;
@@ -38277,13 +38280,13 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                         i = (i + 1);
                                                                                                     }
                                                                                                     if (((has_user_main == 0) && (test_count > 0))) {
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1429, (void *)codegen->output);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1430, test_count);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1233, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1431, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1432, (void *)codegen->output);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1433, (void *)codegen->output);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1434, (void *)codegen->output);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1434, test_count);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1233, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1435, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1436, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1437, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1438, (void *)codegen->output);
                                                                                                         c99_emit_close_brace_newline(codegen);
                                                                                                     }
                                                                                                     int32_t _uya_ret = 0;
@@ -38551,8 +38554,8 @@ static __attribute__((unused)) void emit_current_block_drops(struct C99CodeGener
                                                                                                         uint8_t * const drop_c = get_method_c_name(codegen, codegen->drop_struct_name[((d * C99_MAX_DROP_VARS_PER_BLOCK) + i)], (uint8_t *)(uint8_t *)str736);
                                                                                                         uint8_t * const var_safe = codegen->drop_var_safe[((d * C99_MAX_DROP_VARS_PER_BLOCK) + i)];
                                                                                                         if (((drop_c != NULL) && (var_safe != NULL))) {
-                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1435);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1436, (uint8_t *)drop_c, (uint8_t *)var_safe);
+                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1439);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1440, (uint8_t *)drop_c, (uint8_t *)var_safe);
                                                                                                         }
                                                                                                         i = (i - 1);
                                                                                                     }
@@ -38589,8 +38592,8 @@ static __attribute__((unused)) void emit_drop_cleanup(struct C99CodeGenerator * 
                                                                                                         uint8_t * const drop_c = get_method_c_name(codegen, struct_name, (uint8_t *)(uint8_t *)str736);
                                                                                                         uint8_t * const var_safe = get_safe_c_identifier(codegen, n->var_decl_name);
                                                                                                         if (((drop_c != NULL) && (var_safe != NULL))) {
-                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1435);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1436, (uint8_t *)drop_c, (uint8_t *)var_safe);
+                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1439);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1440, (uint8_t *)drop_c, (uint8_t *)var_safe);
                                                                                                         }
                                                                                                         i = (i - 1);
                                                                                                     }
@@ -38608,7 +38611,7 @@ static __attribute__((unused)) void emit_defer_cleanup(struct C99CodeGenerator *
                                                                                                         while ((i >= 0)) {
                                                                                                             struct ASTNode * const n = codegen->errdefer_stack[((d * C99_MAX_DEFERS_PER_BLOCK) + i)];
                                                                                                             if ((((n != NULL) && (n->type == AST_ERRDEFER_STMT)) && (n->errdefer_stmt_body != NULL))) {
-                                                                                                                c99_emit(codegen, (uint8_t *)(uint8_t *)str1437);
+                                                                                                                c99_emit(codegen, (uint8_t *)(uint8_t *)str1441);
                                                                                                                 gen_stmt(codegen, n->errdefer_stmt_body);
                                                                                                             }
                                                                                                             i = (i - 1);
@@ -38618,7 +38621,7 @@ static __attribute__((unused)) void emit_defer_cleanup(struct C99CodeGenerator *
                                                                                                     while ((i >= 0)) {
                                                                                                         struct ASTNode * const n = codegen->defer_stack[((d * C99_MAX_DEFERS_PER_BLOCK) + i)];
                                                                                                         if ((((n != NULL) && (n->type == AST_DEFER_STMT)) && (n->defer_stmt_body != NULL))) {
-                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1438);
+                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1442);
                                                                                                             gen_stmt(codegen, n->defer_stmt_body);
                                                                                                         }
                                                                                                         i = (i - 1);
@@ -38682,15 +38685,15 @@ static __attribute__((unused)) void gen_stmt(struct C99CodeGenerator * codegen, 
                                                                                                                                                                         const int32_t temp_name_idx = codegen->interp_temp_counter;
                                                                                                                                                                         codegen->interp_temp_counter = (codegen->interp_temp_counter + 1);
                                                                                                                                                                         c99_emit_indent(codegen);
-                                                                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1439, temp_name_idx, inner->string_interp_computed_size);
+                                                                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1443, temp_name_idx, inner->string_interp_computed_size);
                                                                                                                                                                         uint8_t name_buf[32] = {0};
                                                                                                                                                                         libc_snprintf((char *)(uint8_t *)(&name_buf[0]), 32, (const char *)str989, temp_name_idx);
                                                                                                                                                                         c99_emit_string_interp_fill(codegen, inner, (uint8_t *)(&name_buf[0]));
                                                                                                                                                                         c99_emit_indent(codegen);
                                                                                                                                                                         if ((stmt->type == AST_PRINTLN)) {
-                                                                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1440, temp_name_idx);
+                                                                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1444, temp_name_idx);
                                                                                                                                                                         } else {
-                                                                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1441, temp_name_idx);
+                                                                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1445, temp_name_idx);
                                                                                                                                                                         }
                                                                                                                                                                         return;
                                                                                                                                                                     }
@@ -38738,7 +38741,7 @@ static __attribute__((unused)) void gen_if_stmt(struct C99CodeGenerator * codege
                                                                                                     }
                                                                                                     if ((else_is_dead != 0)) {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1442, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1446, (void *)codegen->output);
                                                                                                         gen_expr(codegen, condition);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1234, (void *)codegen->output);
                                                                                                         codegen->indent_level = (codegen->indent_level + 1);
@@ -38751,7 +38754,7 @@ static __attribute__((unused)) void gen_if_stmt(struct C99CodeGenerator * codege
                                                                                                         return;
                                                                                                     }
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1442, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1446, (void *)codegen->output);
                                                                                                     gen_expr(codegen, condition);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1234, (void *)codegen->output);
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
@@ -38761,7 +38764,7 @@ static __attribute__((unused)) void gen_if_stmt(struct C99CodeGenerator * codege
                                                                                                     codegen->indent_level = (codegen->indent_level - 1);
                                                                                                     c99_emit(codegen, (uint8_t *)(uint8_t *)str478);
                                                                                                     if (((else_branch != NULL) && (else_is_dead == 0))) {
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1443, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1447, (void *)codegen->output);
                                                                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                                                                         gen_stmt(codegen, else_branch);
                                                                                                         codegen->indent_level = (codegen->indent_level - 1);
@@ -38776,7 +38779,7 @@ static __attribute__((unused)) void gen_while_stmt(struct C99CodeGenerator * cod
                                                                                                     struct ASTNode * const condition = stmt->while_stmt_condition;
                                                                                                     struct ASTNode * const body = stmt->while_stmt_body;
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1444, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1448, (void *)codegen->output);
                                                                                                     gen_expr(codegen, condition);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1234, (void *)codegen->output);
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
@@ -38789,14 +38792,14 @@ static __attribute__((unused)) void gen_break_stmt(struct C99CodeGenerator * cod
                                                                                                     (void)codegen;
                                                                                                     emit_current_block_drops(codegen);
                                                                                                     emit_defer_cleanup(codegen, 0);
-                                                                                                    c99_emit(codegen, (uint8_t *)(uint8_t *)str1445);
+                                                                                                    c99_emit(codegen, (uint8_t *)(uint8_t *)str1449);
                                                                                                 }
 
 static __attribute__((unused)) void gen_continue_stmt(struct C99CodeGenerator * codegen) {
                                                                                                     (void)codegen;
                                                                                                     emit_current_block_drops(codegen);
                                                                                                     emit_defer_cleanup(codegen, 0);
-                                                                                                    c99_emit(codegen, (uint8_t *)(uint8_t *)str1446);
+                                                                                                    c99_emit(codegen, (uint8_t *)(uint8_t *)str1450);
                                                                                                 }
 
 static __attribute__((unused)) void gen_for_stmt(struct C99CodeGenerator * codegen, struct ASTNode * stmt) {
@@ -38821,43 +38824,43 @@ static __attribute__((unused)) void gen_for_range(struct C99CodeGenerator * code
                                                                                                         range_type_c = (uint8_t *)(uint8_t *)str973;
                                                                                                     }
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1447, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1451, (void *)codegen->output);
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1448, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1452, (void *)codegen->output);
                                                                                                     if ((end_expr != NULL)) {
                                                                                                         if ((stmt->for_stmt_var_name != NULL)) {
                                                                                                             uint8_t * const var_name_range = get_safe_c_identifier(codegen, stmt->for_stmt_var_name);
                                                                                                             c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1449, (uint8_t *)range_type_c, (uint8_t *)var_name_range);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1453, (uint8_t *)range_type_c, (uint8_t *)var_name_range);
                                                                                                             gen_expr(codegen, start_expr);
-                                                                                                            c99_emit_semi_newline(codegen);
-                                                                                                            c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1450, (uint8_t *)range_type_c);
-                                                                                                            gen_expr(codegen, end_expr);
-                                                                                                            c99_emit_semi_newline(codegen);
-                                                                                                            c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1451, (uint8_t *)var_name_range, (uint8_t *)var_name_range);
-                                                                                                        } else {
-                                                                                                            c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1452, (uint8_t *)range_type_c);
-                                                                                                            gen_expr(codegen, start_expr);
-                                                                                                            c99_emit_semi_newline(codegen);
-                                                                                                            c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1453, (uint8_t *)range_type_c);
-                                                                                                            gen_expr(codegen, end_expr);
                                                                                                             c99_emit_semi_newline(codegen);
                                                                                                             c99_emit_indent(codegen);
                                                                                                             libc_fprintf((void *)codegen->output, (const char *)str1454, (uint8_t *)range_type_c);
+                                                                                                            gen_expr(codegen, end_expr);
+                                                                                                            c99_emit_semi_newline(codegen);
+                                                                                                            c99_emit_indent(codegen);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1455, (uint8_t *)var_name_range, (uint8_t *)var_name_range);
+                                                                                                        } else {
+                                                                                                            c99_emit_indent(codegen);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1456, (uint8_t *)range_type_c);
+                                                                                                            gen_expr(codegen, start_expr);
+                                                                                                            c99_emit_semi_newline(codegen);
+                                                                                                            c99_emit_indent(codegen);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1457, (uint8_t *)range_type_c);
+                                                                                                            gen_expr(codegen, end_expr);
+                                                                                                            c99_emit_semi_newline(codegen);
+                                                                                                            c99_emit_indent(codegen);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1458, (uint8_t *)range_type_c);
                                                                                                         }
                                                                                                     } else {
                                                                                                         uint8_t * const vname = get_safe_c_identifier(codegen, stmt->for_stmt_var_name);
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1449, (uint8_t *)range_type_c, (uint8_t *)vname);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1453, (uint8_t *)range_type_c, (uint8_t *)vname);
                                                                                                         gen_expr(codegen, start_expr);
                                                                                                         c99_emit_semi_newline(codegen);
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1455, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1459, (void *)codegen->output);
                                                                                                     }
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                                                     gen_stmt(codegen, body2);
@@ -38882,18 +38885,18 @@ static __attribute__((unused)) void gen_for_array(struct C99CodeGenerator * code
                                                                                                         elem_type_c = (uint8_t *)(uint8_t *)(uint8_t *)str973;
                                                                                                     }
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1447, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1451, (void *)codegen->output);
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1456, (void *)codegen->output);
-                                                                                                    c99_emit_indent(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1457, (void *)codegen->output);
-                                                                                                    gen_expr(codegen, array);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1458, (void *)codegen->output);
-                                                                                                    gen_expr(codegen, array);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1459, (void *)codegen->output);
-                                                                                                    c99_emit_indent(codegen);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1460, (void *)codegen->output);
+                                                                                                    c99_emit_indent(codegen);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1461, (void *)codegen->output);
+                                                                                                    gen_expr(codegen, array);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1462, (void *)codegen->output);
+                                                                                                    gen_expr(codegen, array);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1463, (void *)codegen->output);
+                                                                                                    c99_emit_indent(codegen);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1464, (void *)codegen->output);
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                                                     if ((is_ref != 0)) {
                                                                                                         gen_for_array_ref(codegen, array, var_name2, (uint8_t *)elem_type_c);
@@ -38955,26 +38958,26 @@ static __attribute__((unused)) int32_t gen_for_iterator(struct C99CodeGenerator 
                                                                                                         value_type_c = (uint8_t *)(uint8_t *)str973;
                                                                                                     }
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1447, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1451, (void *)codegen->output);
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1461, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1465, (void *)codegen->output);
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1462, (uint8_t *)iter_type_c);
+                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1466, (uint8_t *)iter_type_c);
                                                                                                     gen_expr(codegen, array);
                                                                                                     c99_emit_semi_newline(codegen);
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1455, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1459, (void *)codegen->output);
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                                                     uint8_t * const next_cname = get_method_c_name(codegen, (&struct_name_buf[0]), (uint8_t *)(uint8_t *)str712);
                                                                                                     if ((next_cname != NULL)) {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1463, (uint8_t *)next_cname);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1467, (uint8_t *)next_cname);
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1464, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1468, (void *)codegen->output);
                                                                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1465, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1469, (void *)codegen->output);
                                                                                                         codegen->indent_level = (codegen->indent_level - 1);
                                                                                                         c99_emit_indent(codegen);
                                                                                                         c99_emit_close_brace_newline(codegen);
@@ -38982,7 +38985,7 @@ static __attribute__((unused)) int32_t gen_for_iterator(struct C99CodeGenerator 
                                                                                                     uint8_t * const value_cname = get_method_c_name(codegen, (&struct_name_buf[0]), (uint8_t *)(uint8_t *)str713);
                                                                                                     if (((value_cname != NULL) && (var_name2 != NULL))) {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1466, (uint8_t *)value_type_c, (uint8_t *)var_name2, (uint8_t *)value_cname);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1470, (uint8_t *)value_type_c, (uint8_t *)var_name2, (uint8_t *)value_cname);
                                                                                                     }
                                                                                                     gen_stmt(codegen, body2);
                                                                                                     codegen->indent_level = (codegen->indent_level - 1);
@@ -39013,14 +39016,14 @@ static __attribute__((unused)) void gen_for_array_ref(struct C99CodeGenerator * 
                                                                                                             temp_buf[j] = 0;
                                                                                                         }
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1467, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name2);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1471, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name2);
                                                                                                         gen_expr(codegen, array);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1468, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1472, (void *)codegen->output);
                                                                                                     } else {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1467, (uint8_t *)elem_type_c, (uint8_t *)var_name2);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1471, (uint8_t *)elem_type_c, (uint8_t *)var_name2);
                                                                                                         gen_expr(codegen, array);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1468, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1472, (void *)codegen->output);
                                                                                                     }
                                                                                                 }
 
@@ -39042,16 +39045,16 @@ static __attribute__((unused)) void gen_for_array_value(struct C99CodeGenerator 
                                                                                                             temp_buf2[j2] = 0;
                                                                                                         }
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1469, (uint8_t *)(&temp_buf2[0]), (uint8_t *)var_name2, bracket2);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1473, (uint8_t *)(&temp_buf2[0]), (uint8_t *)var_name2, bracket2);
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1470, (uint8_t *)var_name2);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1474, (uint8_t *)var_name2);
                                                                                                         gen_expr(codegen, array);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1471, (uint8_t *)var_name2);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1475, (uint8_t *)var_name2);
                                                                                                     } else {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1449, (uint8_t *)elem_type_c, (uint8_t *)var_name2);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1453, (uint8_t *)elem_type_c, (uint8_t *)var_name2);
                                                                                                         gen_expr(codegen, array);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1468, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1472, (void *)codegen->output);
                                                                                                     }
                                                                                                 }
 
@@ -39092,10 +39095,10 @@ static __attribute__((unused)) void gen_return_stmt(struct C99CodeGenerator * co
                                                                                                         }
                                                                                                         if ((payload_void != 0)) {
                                                                                                             c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1472, (uint8_t *)ret_c, id);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1476, (uint8_t *)ret_c, id);
                                                                                                         } else {
                                                                                                             c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1473, (uint8_t *)ret_c, id);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1477, (uint8_t *)ret_c, id);
                                                                                                         }
                                                                                                         return;
                                                                                                     }
@@ -39109,7 +39112,7 @@ static __attribute__((unused)) void gen_return_stmt(struct C99CodeGenerator * co
                                                                                                         }
                                                                                                         if ((is_void != 0)) {
                                                                                                             emit_current_block_drops(codegen);
-                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1474);
+                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1478);
                                                                                                             return;
                                                                                                         }
                                                                                                     }
@@ -39128,7 +39131,7 @@ static __attribute__((unused)) void gen_return_stmt(struct C99CodeGenerator * co
                                                                                                     }
                                                                                                     emit_current_block_drops(codegen);
                                                                                                     emit_defer_cleanup(codegen, is_error_return);
-                                                                                                    c99_emit(codegen, (uint8_t *)(uint8_t *)str1475);
+                                                                                                    c99_emit(codegen, (uint8_t *)(uint8_t *)str1479);
                                                                                                 }
 
 static __attribute__((unused)) void gen_return_array(struct C99CodeGenerator * codegen, struct ASTNode * expr, struct ASTNode * return_type, uint8_t * ret_c) {
@@ -39140,7 +39143,7 @@ static __attribute__((unused)) void gen_return_array(struct C99CodeGenerator * c
                                                                                                     if ((struct_name != NULL)) {
                                                                                                         gen_array_wrapper_struct(codegen, return_type, struct_name);
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1476, (uint8_t *)ret_c, (uint8_t *)struct_name);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1480, (uint8_t *)ret_c, (uint8_t *)struct_name);
                                                                                                         if ((expr->type == AST_ARRAY_LITERAL)) {
                                                                                                             libc_fputc(123, (void *)codegen->output);
                                                                                                             const int32_t element_count = expr->array_literal_element_count;
@@ -39176,10 +39179,10 @@ static __attribute__((unused)) void gen_return_array(struct C99CodeGenerator * c
                                                                                                         } else {
                                                                                                             gen_expr(codegen, expr);
                                                                                                         }
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1477, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1481, (void *)codegen->output);
                                                                                                     } else {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1478, (uint8_t *)ret_c);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1482, (uint8_t *)ret_c);
                                                                                                         gen_expr(codegen, expr);
                                                                                                         c99_emit_semi_newline(codegen);
                                                                                                     }
@@ -39202,7 +39205,7 @@ static __attribute__((unused)) void gen_return_normal(struct C99CodeGenerator * 
                                                                                                     } else {
                                                                                                         if (((is_void == 0) && (expr != NULL))) {
                                                                                                             c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1478, (uint8_t *)ret_c);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1482, (uint8_t *)ret_c);
                                                                                                             gen_expr(codegen, expr);
                                                                                                             c99_emit_semi_newline(codegen);
                                                                                                         } else {
@@ -39215,9 +39218,9 @@ static __attribute__((unused)) void gen_return_normal(struct C99CodeGenerator * 
                                                                                                             }
                                                                                                             c99_emit_indent(codegen);
                                                                                                             if ((is_err_union_void != 0)) {
-                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1479, (uint8_t *)ret_c, (uint8_t *)ret_c);
+                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1483, (uint8_t *)ret_c, (uint8_t *)ret_c);
                                                                                                             } else {
-                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1480, (uint8_t *)ret_c);
+                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1484, (uint8_t *)ret_c);
                                                                                                             }
                                                                                                         }
                                                                                                     }
@@ -39235,7 +39238,7 @@ static __attribute__((unused)) void gen_return_error_union(struct C99CodeGenerat
                                                                                                     }
                                                                                                     int32_t expr_is_error_union = 0;
                                                                                                     if (((expr->type == AST_IDENTIFIER) && (expr->identifier_name != NULL))) {
-                                                                                                        if (((uint8_t *)std_string_strstr((uint8_t *)expr->identifier_name, (uint8_t *)(uint8_t *)str1481) != NULL)) {
+                                                                                                        if (((uint8_t *)std_string_strstr((uint8_t *)expr->identifier_name, (uint8_t *)(uint8_t *)str1485) != NULL)) {
                                                                                                             expr_is_error_union = 1;
                                                                                                         }
                                                                                                     } else {
@@ -39254,12 +39257,12 @@ static __attribute__((unused)) void gen_return_error_union(struct C99CodeGenerat
                                                                                                     } else {
                                                                                                         if ((payload_void != 0)) {
                                                                                                             c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1479, (uint8_t *)ret_c, (uint8_t *)ret_c);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1483, (uint8_t *)ret_c, (uint8_t *)ret_c);
                                                                                                         } else {
                                                                                                             c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1482, (uint8_t *)ret_c, (uint8_t *)ret_c);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1486, (uint8_t *)ret_c, (uint8_t *)ret_c);
                                                                                                             gen_expr(codegen, expr);
-                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1477, (void *)codegen->output);
+                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1481, (void *)codegen->output);
                                                                                                         }
                                                                                                     }
                                                                                                 }
@@ -39276,16 +39279,16 @@ static __attribute__((unused)) void gen_return_error_union_expr(struct C99CodeGe
                                                                                                         if ((std_string_strcmp((uint8_t *)expr_union_c, (uint8_t *)(uint8_t *)str1139) == 0)) {
                                                                                                             expr_payload_c = (uint8_t *)(uint8_t *)str1140;
                                                                                                         } else {
-                                                                                                            if ((std_string_strcmp((uint8_t *)expr_union_c, (uint8_t *)(uint8_t *)str1483) == 0)) {
-                                                                                                                expr_payload_c = (uint8_t *)(uint8_t *)str1484;
+                                                                                                            if ((std_string_strcmp((uint8_t *)expr_union_c, (uint8_t *)(uint8_t *)str1487) == 0)) {
+                                                                                                                expr_payload_c = (uint8_t *)(uint8_t *)str1488;
                                                                                                             } else {
-                                                                                                                if ((std_string_strcmp((uint8_t *)expr_union_c, (uint8_t *)(uint8_t *)str1485) == 0)) {
+                                                                                                                if ((std_string_strcmp((uint8_t *)expr_union_c, (uint8_t *)(uint8_t *)str1489) == 0)) {
                                                                                                                     expr_payload_c = (uint8_t *)(uint8_t *)str973;
                                                                                                                 } else {
                                                                                                                     if ((std_string_strcmp((uint8_t *)expr_union_c, (uint8_t *)(uint8_t *)str1138) == 0)) {
                                                                                                                         expr_payload_c = (uint8_t *)(uint8_t *)str585;
                                                                                                                     } else {
-                                                                                                                        if ((std_string_strncmp((uint8_t *)expr_union_c, (uint8_t *)(uint8_t *)str1486, 16) == 0)) {
+                                                                                                                        if ((std_string_strncmp((uint8_t *)expr_union_c, (uint8_t *)(uint8_t *)str1490, 16) == 0)) {
                                                                                                                             expr_payload_c = (&expr_union_c[16]);
                                                                                                                         } else {
                                                                                                                             expr_payload_c = (uint8_t *)(uint8_t *)str973;
@@ -39305,14 +39308,14 @@ static __attribute__((unused)) void gen_return_error_union_expr(struct C99CodeGe
                                                                                                     }
                                                                                                     if (((needs_conversion != 0) && (payload_void == 0))) {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1487, (uint8_t *)expr_payload_c);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1491, (uint8_t *)expr_payload_c);
                                                                                                         gen_expr(codegen, expr);
                                                                                                         c99_emit_semi_newline(codegen);
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1488, (uint8_t *)ret_c, (uint8_t *)ret_c, (uint8_t *)ret_payload_c, (uint8_t *)ret_c);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1492, (uint8_t *)ret_c, (uint8_t *)ret_c, (uint8_t *)ret_payload_c, (uint8_t *)ret_c);
                                                                                                     } else {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1478, (uint8_t *)ret_c);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1482, (uint8_t *)ret_c);
                                                                                                         gen_expr(codegen, expr);
                                                                                                         c99_emit_semi_newline(codegen);
                                                                                                     }
@@ -39324,20 +39327,20 @@ static __attribute__((unused)) void gen_assign_stmt(struct C99CodeGenerator * co
                                                                                                     struct ASTNode * const dest = stmt->assign_dest;
                                                                                                     struct ASTNode * const src = stmt->assign_src;
                                                                                                     if ((dest->type == AST_UNDERSCORE)) {
-                                                                                                        c99_emit(codegen, (uint8_t *)(uint8_t *)str1489);
+                                                                                                        c99_emit(codegen, (uint8_t *)(uint8_t *)str1493);
                                                                                                         gen_expr(codegen, src);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str941, (void *)codegen->output);
                                                                                                         return;
                                                                                                     }
                                                                                                     int32_t is_array_assign = check_assign_is_array(codegen, dest);
                                                                                                     if ((is_array_assign != 0)) {
-                                                                                                        c99_emit(codegen, (uint8_t *)(uint8_t *)str1490);
+                                                                                                        c99_emit(codegen, (uint8_t *)(uint8_t *)str1494);
                                                                                                         gen_expr(codegen, dest);
                                                                                                         c99_emit_comma_space(codegen);
                                                                                                         gen_expr(codegen, src);
                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1057, (void *)codegen->output);
                                                                                                         gen_expr(codegen, dest);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1491, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1495, (void *)codegen->output);
                                                                                                     } else {
                                                                                                         gen_assign_non_array(codegen, dest, src);
                                                                                                     }
@@ -39446,16 +39449,16 @@ static __attribute__((unused)) void emit_atomic_store(struct C99CodeGenerator * 
                                                                                                     (void)src;
                                                                                                     (void)safe_name;
                                                                                                     if (((safe_name != NULL) && (std_string_strcmp((uint8_t *)safe_name, (uint8_t *)(uint8_t *)str1021) != 0))) {
-                                                                                                        c99_emit(codegen, (uint8_t *)(uint8_t *)str1492);
+                                                                                                        c99_emit(codegen, (uint8_t *)(uint8_t *)str1496);
                                                                                                         libc_fputs((uint8_t *)safe_name, (void *)codegen->output);
                                                                                                         c99_emit_comma_space(codegen);
                                                                                                     } else {
-                                                                                                        c99_emit(codegen, (uint8_t *)(uint8_t *)str1492);
+                                                                                                        c99_emit(codegen, (uint8_t *)(uint8_t *)str1496);
                                                                                                         gen_expr(codegen, dest);
                                                                                                         c99_emit_comma_space(codegen);
                                                                                                     }
                                                                                                     gen_expr(codegen, src);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1493, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1497, (void *)codegen->output);
                                                                                                 }
 
 static __attribute__((unused)) void gen_atomic_compound(struct C99CodeGenerator * codegen, struct ASTNode * dest, enum TokenType op, struct ASTNode * right, uint8_t * safe_name) {
@@ -39466,29 +39469,29 @@ static __attribute__((unused)) void gen_atomic_compound(struct C99CodeGenerator 
                                                                                                     (void)safe_name;
                                                                                                     if ((op == TOKEN_PLUS)) {
                                                                                                         if (((safe_name != NULL) && (std_string_strcmp((uint8_t *)safe_name, (uint8_t *)(uint8_t *)str1021) != 0))) {
-                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1494);
+                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1498);
                                                                                                             libc_fputs((uint8_t *)safe_name, (void *)codegen->output);
                                                                                                             c99_emit_comma_space(codegen);
                                                                                                         } else {
-                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1494);
+                                                                                                            c99_emit(codegen, (uint8_t *)(uint8_t *)str1498);
                                                                                                             gen_expr(codegen, dest);
                                                                                                             c99_emit_comma_space(codegen);
                                                                                                         }
                                                                                                         gen_expr(codegen, right);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1493, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1497, (void *)codegen->output);
                                                                                                     } else {
                                                                                                         if ((op == TOKEN_MINUS)) {
                                                                                                             if (((safe_name != NULL) && (std_string_strcmp((uint8_t *)safe_name, (uint8_t *)(uint8_t *)str1021) != 0))) {
-                                                                                                                c99_emit(codegen, (uint8_t *)(uint8_t *)str1495);
+                                                                                                                c99_emit(codegen, (uint8_t *)(uint8_t *)str1499);
                                                                                                                 libc_fputs((uint8_t *)safe_name, (void *)codegen->output);
                                                                                                                 c99_emit_comma_space(codegen);
                                                                                                             } else {
-                                                                                                                c99_emit(codegen, (uint8_t *)(uint8_t *)str1495);
+                                                                                                                c99_emit(codegen, (uint8_t *)(uint8_t *)str1499);
                                                                                                                 gen_expr(codegen, dest);
                                                                                                                 c99_emit_comma_space(codegen);
                                                                                                             }
                                                                                                             gen_expr(codegen, right);
-                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1493, (void *)codegen->output);
+                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1497, (void *)codegen->output);
                                                                                                         } else {
                                                                                                             emit_atomic_store(codegen, dest, right, (uint8_t *)safe_name);
                                                                                                         }
@@ -39580,19 +39583,19 @@ static __attribute__((unused)) void gen_destructure_decl(struct C99CodeGenerator
                                                                                                                 if ((safe_name != NULL)) {
                                                                                                                     if ((is_const != 0)) {
                                                                                                                         c99_emit(codegen, (uint8_t *)(uint8_t *)str981);
-                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1449, (uint8_t *)elem_type_c, (uint8_t *)safe_name);
+                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1453, (uint8_t *)elem_type_c, (uint8_t *)safe_name);
                                                                                                                     } else {
-                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1449, (uint8_t *)elem_type_c, (uint8_t *)safe_name);
+                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1453, (uint8_t *)elem_type_c, (uint8_t *)safe_name);
                                                                                                                     }
                                                                                                                     gen_expr(codegen, init);
-                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1496, i);
+                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1500, i);
                                                                                                                     if ((codegen->local_variable_count < C99_MAX_LOCAL_VARS)) {
                                                                                                                         uint8_t * type_to_store = elem_type_c;
                                                                                                                         if (((is_const != 0) && (elem_type_c != NULL))) {
                                                                                                                             const int32_t str_len = (std_string_strlen((uint8_t *)elem_type_c) + 8);
                                                                                                                             uint8_t * const buf = (uint8_t *)arena_alloc(codegen->arena, str_len);
                                                                                                                             if ((buf != NULL)) {
-                                                                                                                                libc_snprintf((char *)(uint8_t *)buf, str_len, (const char *)str1497, (uint8_t *)elem_type_c);
+                                                                                                                                libc_snprintf((char *)(uint8_t *)buf, str_len, (const char *)str1501, (uint8_t *)elem_type_c);
                                                                                                                                 type_to_store = buf;
                                                                                                                             }
                                                                                                                         }
@@ -39621,14 +39624,14 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                         is_string_interp_init = 1;
                                                                                                     }
                                                                                                     int32_t need_pragma_missing_braces = 0;
-                                                                                                    if (((((((((init_expr != NULL) && (init_expr->type == AST_STRUCT_INIT)) && (stmt->var_decl_name != NULL)) && (std_string_strcmp((uint8_t *)stmt->var_decl_name, (uint8_t *)(uint8_t *)str1498) == 0)) && (var_type != NULL)) && (var_type->type == AST_TYPE_NAMED)) && (var_type->type_named_name != NULL)) && (std_string_strcmp((uint8_t *)var_type->type_named_name, (uint8_t *)(uint8_t *)str1499) == 0))) {
+                                                                                                    if (((((((((init_expr != NULL) && (init_expr->type == AST_STRUCT_INIT)) && (stmt->var_decl_name != NULL)) && (std_string_strcmp((uint8_t *)stmt->var_decl_name, (uint8_t *)(uint8_t *)str1502) == 0)) && (var_type != NULL)) && (var_type->type == AST_TYPE_NAMED)) && (var_type->type_named_name != NULL)) && (std_string_strcmp((uint8_t *)var_type->type_named_name, (uint8_t *)(uint8_t *)str1503) == 0))) {
                                                                                                         need_pragma_missing_braces = 1;
                                                                                                     }
                                                                                                     if ((need_pragma_missing_braces != 0)) {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1500, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1504, (void *)codegen->output);
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1501, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1505, (void *)codegen->output);
                                                                                                     }
                                                                                                     uint8_t * type_c = NULL;
                                                                                                     uint8_t * stored_type_c = NULL;
@@ -39640,7 +39643,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                             if ((is_const != 0)) {
                                                                                                                 stored_type_c = (uint8_t *)arena_alloc(codegen->arena, (type_len + 7));
                                                                                                                 if ((stored_type_c != NULL)) {
-                                                                                                                    libc_snprintf((char *)(uint8_t *)stored_type_c, (type_len + 7), (const char *)str1497, (uint8_t *)type_c);
+                                                                                                                    libc_snprintf((char *)(uint8_t *)stored_type_c, (type_len + 7), (const char *)str1501, (uint8_t *)type_c);
                                                                                                                 }
                                                                                                             } else {
                                                                                                                 stored_type_c = c99_arena_strdup(codegen->arena, (uint8_t *)type_c);
@@ -39669,25 +39672,25 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                                         if ((init_expr->type == AST_IDENTIFIER)) {
                                                                                                                             c99_emit_semi_newline(codegen);
                                                                                                                             c99_emit_indent(codegen);
-                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1470, (uint8_t *)var_name);
+                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1474, (uint8_t *)var_name);
                                                                                                                             gen_expr(codegen, init_expr);
-                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1502, (uint8_t *)var_name);
+                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1506, (uint8_t *)var_name);
                                                                                                                         } else {
                                                                                                                             if ((init_expr->type == AST_CALL_EXPR)) {
                                                                                                                                 c99_emit_semi_newline(codegen);
                                                                                                                                 c99_emit_indent(codegen);
-                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1470, (uint8_t *)var_name);
+                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1474, (uint8_t *)var_name);
                                                                                                                                 gen_expr(codegen, init_expr);
-                                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1503, (void *)codegen->output);
-                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1504, (uint8_t *)var_name);
+                                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1507, (void *)codegen->output);
+                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1508, (uint8_t *)var_name);
                                                                                                                             } else {
                                                                                                                                 if ((init_expr->type == AST_STRING)) {
-                                                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1505, (void *)codegen->output);
+                                                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1509, (void *)codegen->output);
                                                                                                                                     uint8_t * const str_val = init_expr->string_literal_value;
                                                                                                                                     if ((str_val != NULL)) {
                                                                                                                                         escape_string_for_c(codegen->output, str_val);
                                                                                                                                     }
-                                                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1506, (void *)codegen->output);
+                                                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1510, (void *)codegen->output);
                                                                                                                                 } else {
                                                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str986, (void *)codegen->output);
                                                                                                                                     gen_expr(codegen, init_expr);
@@ -39697,7 +39700,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                                         }
                                                                                                                     }
                                                                                                                     if ((need_pragma_missing_braces != 0)) {
-                                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1507, (void *)codegen->output);
+                                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1511, (void *)codegen->output);
                                                                                                                     }
                                                                                                                     if (((stored_type_c != NULL) && (codegen->local_variable_count < C99_MAX_LOCAL_VARS))) {
                                                                                                                         codegen->local_variables[codegen->local_variable_count].name = stmt->var_decl_name;
@@ -39723,14 +39726,14 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                         const int32_t use_va_list = should_use_va_list(codegen, var_type, stmt->var_decl_name, (uint8_t *)type_c);
                                                                                                         if ((use_va_list != 0)) {
                                                                                                             c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1508, (uint8_t *)var_name);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1512, (uint8_t *)var_name);
                                                                                                             if ((codegen->local_variable_count < C99_MAX_LOCAL_VARS)) {
                                                                                                                 codegen->local_variables[codegen->local_variable_count].name = stmt->var_decl_name;
-                                                                                                                codegen->local_variables[codegen->local_variable_count].type_c = (uint8_t *)(uint8_t *)str1509;
+                                                                                                                codegen->local_variables[codegen->local_variable_count].type_c = (uint8_t *)(uint8_t *)str1513;
                                                                                                                 codegen->local_variable_count = (codegen->local_variable_count + 1);
                                                                                                             }
                                                                                                             if ((need_pragma_missing_braces != 0)) {
-                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1507, (void *)codegen->output);
+                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1511, (void *)codegen->output);
                                                                                                             }
                                                                                                             codegen->expected_type = saved_expected_type;
                                                                                                             return;
@@ -39759,7 +39762,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                                     const int32_t str_len4 = (std_string_strlen((uint8_t *)type_c) + 7);
                                                                                                                     stored_type_c_for_pointer = (uint8_t *)arena_alloc(codegen->arena, str_len4);
                                                                                                                     if ((stored_type_c_for_pointer != NULL)) {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)stored_type_c_for_pointer, str_len4, (const char *)str1497, (uint8_t *)type_c);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)stored_type_c_for_pointer, str_len4, (const char *)str1501, (uint8_t *)type_c);
                                                                                                                     }
                                                                                                                 }
                                                                                                             } else {
@@ -39778,7 +39781,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                                     const int32_t str_len4 = (std_string_strlen((uint8_t *)type_c) + 7);
                                                                                                                     uint8_t * const manual_type = (uint8_t *)arena_alloc(codegen->arena, str_len4);
                                                                                                                     if ((manual_type != NULL)) {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)manual_type, str_len4, (const char *)str1510, (uint8_t *)type_c);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)manual_type, str_len4, (const char *)str1514, (uint8_t *)type_c);
                                                                                                                         type_to_store = manual_type;
                                                                                                                     } else {
                                                                                                                         type_to_store = type_c;
@@ -39806,7 +39809,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                                 struct ASTNode * const cur_fn = codegen->current_function_decl;
                                                                                                                 struct ASTNode * * const params = cur_fn->fn_decl_params;
                                                                                                                 const int32_t n = cur_fn->fn_decl_param_count;
-                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1511, (void *)codegen->output);
+                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1515, (void *)codegen->output);
                                                                                                                 int32_t i = 0;
                                                                                                                 while ((i < n)) {
                                                                                                                     libc_fprintf((void *)codegen->output, (const char *)str976, i);
@@ -39832,7 +39835,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                                     const int32_t n = init_expr->tuple_literal_element_count;
                                                                                                                     struct ASTNode * * const elements = init_expr->tuple_literal_elements;
                                                                                                                     if (((n > 0) && (elements != NULL))) {
-                                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1512, (void *)codegen->output);
+                                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1516, (void *)codegen->output);
                                                                                                                         int32_t i = 0;
                                                                                                                         while ((i < n)) {
                                                                                                                             libc_fprintf((void *)codegen->output, (const char *)str976, i);
@@ -39842,7 +39845,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                                             }
                                                                                                                             i = (i + 1);
                                                                                                                         }
-                                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1477, (void *)codegen->output);
+                                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1481, (void *)codegen->output);
                                                                                                                     } else {
                                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str986, (void *)codegen->output);
                                                                                                                         gen_expr(codegen, init_expr);
@@ -39898,22 +39901,22 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                                         if ((is_array_from_function != 0)) {
                                                                                                                             c99_emit_semi_newline(codegen);
                                                                                                                             c99_emit_indent(codegen);
-                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1513, (uint8_t *)var_name);
+                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1517, (uint8_t *)var_name);
                                                                                                                             c99_emit_comma_space(codegen);
                                                                                                                             gen_expr(codegen, init_expr);
-                                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1503, (void *)codegen->output);
+                                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1507, (void *)codegen->output);
                                                                                                                             libc_fprintf((void *)codegen->output, (const char *)str520, (uint8_t *)var_name);
-                                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1491, (void *)codegen->output);
+                                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1495, (void *)codegen->output);
                                                                                                                         } else {
                                                                                                                             if ((needs_memcpy != 0)) {
                                                                                                                                 c99_emit_semi_newline(codegen);
                                                                                                                                 c99_emit_indent(codegen);
-                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1513, (uint8_t *)var_name);
+                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1517, (uint8_t *)var_name);
                                                                                                                                 c99_emit_comma_space(codegen);
                                                                                                                                 gen_expr(codegen, init_expr);
                                                                                                                                 libc_fputs((uint8_t *)(uint8_t *)str1057, (void *)codegen->output);
                                                                                                                                 libc_fprintf((void *)codegen->output, (const char *)str520, (uint8_t *)var_name);
-                                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1491, (void *)codegen->output);
+                                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1495, (void *)codegen->output);
                                                                                                                             } else {
                                                                                                                                 if ((is_string_interp_init != 0)) {
                                                                                                                                     c99_emit_semi_newline(codegen);
@@ -39938,7 +39941,7 @@ static __attribute__((unused)) void gen_var_decl_stmt(struct C99CodeGenerator * 
                                                                                                                         }
                                                                                                                     }
                                                                                                                     if ((need_pragma_missing_braces != 0)) {
-                                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1507, (void *)codegen->output);
+                                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1511, (void *)codegen->output);
                                                                                                                     }
                                                                                                                     if (((((((codegen->current_drop_scope >= 0) && (var_type != NULL)) && (var_type->type == AST_TYPE_NAMED)) && (var_type->type_named_name != NULL)) && (type_has_drop_c99(codegen, var_type->type_named_name) != 0)) && (stmt->var_decl_was_moved == 0))) {
                                                                                                                         const int32_t dd = codegen->current_drop_scope;
@@ -39973,7 +39976,7 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                                                                                                     if ((m_type == NULL)) {
                                                                                                         m_type = (uint8_t *)(uint8_t *)str973;
                                                                                                     }
-                                                                                                    c99_emit(codegen, (uint8_t *)(uint8_t *)str1447);
+                                                                                                    c99_emit(codegen, (uint8_t *)(uint8_t *)str1451);
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                                                     c99_emit_indent(codegen);
                                                                                                     libc_fprintf((void *)codegen->output, (const char *)str1122, (uint8_t *)m_type);
@@ -39991,15 +39994,15 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                                                                                                             c99_emit_indent(codegen);
                                                                                                             if ((stmt->match_expr_arms[i].literal_is_bool != 0)) {
                                                                                                                 if ((stmt->match_expr_arms[i].literal_int_value != 0)) {
-                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1514, (uint8_t *)prefix);
+                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1518, (uint8_t *)prefix);
                                                                                                                 } else {
-                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1515, (uint8_t *)prefix);
+                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1519, (uint8_t *)prefix);
                                                                                                                 }
                                                                                                             } else {
-                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1516, (uint8_t *)prefix, stmt->match_expr_arms[i].literal_int_value);
+                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1520, (uint8_t *)prefix, stmt->match_expr_arms[i].literal_int_value);
                                                                                                             }
                                                                                                             if ((stmt->match_expr_arms[i].result_is_block != 0)) {
-                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1447, (void *)codegen->output);
+                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1451, (void *)codegen->output);
                                                                                                                 codegen->indent_level = (codegen->indent_level + 1);
                                                                                                                 gen_stmt(codegen, stmt->match_expr_arms[i].result_expr);
                                                                                                                 codegen->indent_level = (codegen->indent_level - 1);
@@ -40027,17 +40030,17 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                                                                                                                         }
                                                                                                                         if ((bind != NULL)) {
                                                                                                                             c99_emit_indent(codegen);
-                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1517, (uint8_t *)prefix, idx);
+                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1521, (uint8_t *)prefix, idx);
                                                                                                                             codegen->indent_level = (codegen->indent_level + 1);
                                                                                                                             c99_emit_indent(codegen);
-                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1518, (uint8_t *)vtype, (uint8_t *)bind, (uint8_t *)vname);
+                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1522, (uint8_t *)vtype, (uint8_t *)bind, (uint8_t *)vname);
                                                                                                                         } else {
                                                                                                                             c99_emit_indent(codegen);
-                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1519, (uint8_t *)prefix, idx);
+                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1523, (uint8_t *)prefix, idx);
                                                                                                                         }
                                                                                                                         if ((stmt->match_expr_arms[i].result_is_block != 0)) {
                                                                                                                             if ((bind == NULL)) {
-                                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1447, (void *)codegen->output);
+                                                                                                                                libc_fputs((uint8_t *)(uint8_t *)str1451, (void *)codegen->output);
                                                                                                                                 codegen->indent_level = (codegen->indent_level + 1);
                                                                                                                             }
                                                                                                                             gen_stmt(codegen, stmt->match_expr_arms[i].result_expr);
@@ -40064,12 +40067,12 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                                                                                                                     }
                                                                                                                     c99_emit_indent(codegen);
                                                                                                                     if ((ev >= 0)) {
-                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1516, (uint8_t *)prefix, ev);
+                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1520, (uint8_t *)prefix, ev);
                                                                                                                     } else {
-                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1520, (uint8_t *)prefix);
+                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1524, (uint8_t *)prefix);
                                                                                                                     }
                                                                                                                     if ((stmt->match_expr_arms[i].result_is_block != 0)) {
-                                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1447, (void *)codegen->output);
+                                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1451, (void *)codegen->output);
                                                                                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                                                                                         gen_stmt(codegen, stmt->match_expr_arms[i].result_expr);
                                                                                                                         codegen->indent_level = (codegen->indent_level - 1);
@@ -40083,9 +40086,9 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                                                                                                                         uint8_t * const v = get_safe_c_identifier(codegen, stmt->match_expr_arms[i].var_name);
                                                                                                                         c99_emit_indent(codegen);
                                                                                                                         if ((v != NULL)) {
-                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1521, (uint8_t *)prefix, (uint8_t *)m_type, (uint8_t *)v);
+                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1525, (uint8_t *)prefix, (uint8_t *)m_type, (uint8_t *)v);
                                                                                                                         } else {
-                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1522, (uint8_t *)prefix);
+                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1526, (uint8_t *)prefix);
                                                                                                                         }
                                                                                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                                                                                         if ((stmt->match_expr_arms[i].result_is_block != 0)) {
@@ -40099,7 +40102,7 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                                                                                                                     } else {
                                                                                                                         if (((stmt->match_expr_arms[i].kind == MATCH_PAT_WILDCARD) || (stmt->match_expr_arms[i].kind == MATCH_PAT_ELSE))) {
                                                                                                                             c99_emit_indent(codegen);
-                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1522, (uint8_t *)prefix);
+                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1526, (uint8_t *)prefix);
                                                                                                                             codegen->indent_level = (codegen->indent_level + 1);
                                                                                                                             if ((stmt->match_expr_arms[i].result_is_block != 0)) {
                                                                                                                                 gen_stmt(codegen, stmt->match_expr_arms[i].result_expr);
@@ -40116,9 +40119,9 @@ static __attribute__((unused)) void gen_match_stmt(struct C99CodeGenerator * cod
                                                                                                                                     id = 1;
                                                                                                                                 }
                                                                                                                                 c99_emit_indent(codegen);
-                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1523, (uint8_t *)prefix, (uint32_t)id);
+                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1527, (uint8_t *)prefix, (uint32_t)id);
                                                                                                                                 if ((stmt->match_expr_arms[i].result_is_block != 0)) {
-                                                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1447, (void *)codegen->output);
+                                                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1451, (void *)codegen->output);
                                                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                                                                                     gen_stmt(codegen, stmt->match_expr_arms[i].result_expr);
                                                                                                                                     codegen->indent_level = (codegen->indent_level - 1);
@@ -40156,20 +40159,20 @@ static __attribute__((unused)) void gen_var_decl_empty_struct_init(struct C99Cod
                                                                                                                 if (((field_name != NULL) && (field_type != NULL))) {
                                                                                                                     if ((default_value != NULL)) {
                                                                                                                         c99_emit_indent(codegen);
-                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1524, (uint8_t *)var_name, (uint8_t *)field_name);
+                                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1528, (uint8_t *)var_name, (uint8_t *)field_name);
                                                                                                                         gen_expr(codegen, default_value);
                                                                                                                         c99_emit_semi_newline(codegen);
                                                                                                                     } else {
                                                                                                                         if ((field_type->type == AST_TYPE_POINTER)) {
                                                                                                                             c99_emit_indent(codegen);
-                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1525, (uint8_t *)var_name, (uint8_t *)field_name);
+                                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1529, (uint8_t *)var_name, (uint8_t *)field_name);
                                                                                                                         } else {
                                                                                                                             if ((field_type->type == AST_TYPE_ARRAY)) {
                                                                                                                                 c99_emit_indent(codegen);
-                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1526, (uint8_t *)var_name, (uint8_t *)field_name, (uint8_t *)var_name, (uint8_t *)field_name);
+                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1530, (uint8_t *)var_name, (uint8_t *)field_name, (uint8_t *)var_name, (uint8_t *)field_name);
                                                                                                                             } else {
                                                                                                                                 c99_emit_indent(codegen);
-                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1527, (uint8_t *)var_name, (uint8_t *)field_name);
+                                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1531, (uint8_t *)var_name, (uint8_t *)field_name);
                                                                                                                             }
                                                                                                                         }
                                                                                                                     }
@@ -40179,7 +40182,7 @@ static __attribute__((unused)) void gen_var_decl_empty_struct_init(struct C99Cod
                                                                                                         }
                                                                                                     } else {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1528, (uint8_t *)var_name, (uint8_t *)var_name);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1532, (uint8_t *)var_name, (uint8_t *)var_name);
                                                                                                     }
                                                                                                 }
 
@@ -40221,9 +40224,9 @@ static __attribute__((unused)) void gen_var_decl_struct_init_memcpy(struct C99Co
                                                                                                         if (((((field_type != NULL) && (field_type->type == AST_TYPE_ARRAY)) && (field_value != NULL)) && (field_value->type == AST_IDENTIFIER))) {
                                                                                                             uint8_t * const safe_field_name = get_safe_c_identifier(codegen, field_name);
                                                                                                             c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1529, (uint8_t *)var_name, (uint8_t *)safe_field_name);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1533, (uint8_t *)var_name, (uint8_t *)safe_field_name);
                                                                                                             gen_expr(codegen, field_value);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1530, (uint8_t *)var_name, (uint8_t *)safe_field_name);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1534, (uint8_t *)var_name, (uint8_t *)safe_field_name);
                                                                                                         }
                                                                                                         i = (i + 1);
                                                                                                     }
@@ -40264,7 +40267,7 @@ static __attribute__((unused)) int32_t gen_var_decl_void_type(struct C99CodeGene
                                                                                                             if ((operand_is_err_union != 0)) {
                                                                                                                 uint8_t * const union_c = operand_union_c;
                                                                                                                 c99_emit_indent(codegen);
-                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1531, (uint8_t *)union_c);
+                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1535, (uint8_t *)union_c);
                                                                                                                 gen_expr(codegen, operand);
                                                                                                                 libc_fputs((uint8_t *)(uint8_t *)str1143, (void *)codegen->output);
                                                                                                                 codegen->indent_level = (codegen->indent_level + 1);
@@ -40290,7 +40293,7 @@ static __attribute__((unused)) int32_t gen_var_decl_void_type(struct C99CodeGene
                                                                                                         }
                                                                                                     }
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1489, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1493, (void *)codegen->output);
                                                                                                     gen_expr(codegen, init_expr);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str941, (void *)codegen->output);
                                                                                                     int32_t _uya_ret = 1;
@@ -40326,10 +40329,10 @@ static __attribute__((unused)) int32_t should_use_va_list(struct C99CodeGenerato
                                                                                                     if (((((((var_type != NULL) && (var_type->type == AST_TYPE_POINTER)) && (var_type->type_pointer_pointed_type != NULL)) && (var_type->type_pointer_pointed_type->type == AST_TYPE_NAMED)) && (var_type->type_pointer_pointed_type->type_named_name != NULL)) && (std_string_strcmp((uint8_t *)var_type->type_pointer_pointed_type->type_named_name, (uint8_t *)(uint8_t *)str585) == 0))) {
                                                                                                         is_ptr_to_void = 1;
                                                                                                     }
-                                                                                                    if (((((var_type != NULL) && (var_type->type == AST_TYPE_NAMED)) && (var_type->type_named_name != NULL)) && ((std_string_strcmp((uint8_t *)var_type->type_named_name, (uint8_t *)(uint8_t *)str1532) == 0) || (std_string_strcmp((uint8_t *)var_type->type_named_name, (uint8_t *)(uint8_t *)str585) == 0)))) {
+                                                                                                    if (((((var_type != NULL) && (var_type->type == AST_TYPE_NAMED)) && (var_type->type_named_name != NULL)) && ((std_string_strcmp((uint8_t *)var_type->type_named_name, (uint8_t *)(uint8_t *)str1536) == 0) || (std_string_strcmp((uint8_t *)var_type->type_named_name, (uint8_t *)(uint8_t *)str585) == 0)))) {
                                                                                                         is_ptr_to_void = 1;
                                                                                                     }
-                                                                                                    if (((type_c != NULL) && (((uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str585) != NULL) || ((uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1532) != NULL)))) {
+                                                                                                    if (((type_c != NULL) && (((uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str585) != NULL) || ((uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1536) != NULL)))) {
                                                                                                         is_ptr_to_void = 1;
                                                                                                     }
                                                                                                     int32_t _uya_ret = is_ptr_to_void;
@@ -40341,7 +40344,7 @@ static __attribute__((unused)) uint8_t * emit_pointer_const_decl(struct C99CodeG
                                                                                                     (void)var_name;
                                                                                                     (void)type_c;
                                                                                                     (void)arena;
-                                                                                                    uint8_t * const open_paren = (uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1533);
+                                                                                                    uint8_t * const open_paren = (uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1537);
                                                                                                     if ((open_paren != NULL)) {
                                                                                                         uint8_t * const close_paren = (uint8_t *)std_string_strchr(open_paren, 41);
                                                                                                         uint8_t * const bracket = (uint8_t *)std_string_strchr(open_paren, 91);
@@ -40357,7 +40360,7 @@ static __attribute__((unused)) uint8_t * emit_pointer_const_decl(struct C99CodeG
                                                                                                             if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
                                                                                                                 temp_buf[j] = 0;
                                                                                                             }
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1534, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name, bracket);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1538, (uint8_t *)(&temp_buf[0]), (uint8_t *)var_name, bracket);
                                                                                                             const int32_t total_len = ((prefix_len + suffix_len) + 10);
                                                                                                             uint8_t * stored_type = (uint8_t *)arena_alloc(arena, total_len);
                                                                                                             if ((stored_type != NULL)) {
@@ -40370,18 +40373,18 @@ static __attribute__((unused)) uint8_t * emit_pointer_const_decl(struct C99CodeG
                                                                                                                 if (((j >= 0) && (j < TEMP_BUF_SIZE))) {
                                                                                                                     temp_buf2[j] = 0;
                                                                                                                 }
-                                                                                                                libc_snprintf((char *)(uint8_t *)stored_type, total_len, (const char *)str1535, (uint8_t *)(&temp_buf2[0]), bracket);
+                                                                                                                libc_snprintf((char *)(uint8_t *)stored_type, total_len, (const char *)str1539, (uint8_t *)(&temp_buf2[0]), bracket);
                                                                                                             }
                                                                                                             uint8_t * _uya_ret = stored_type;
                                                                                                             return _uya_ret;
                                                                                                         }
                                                                                                     }
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1536, (uint8_t *)type_c, (uint8_t *)var_name);
+                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1540, (uint8_t *)type_c, (uint8_t *)var_name);
                                                                                                     const int32_t str_len = (std_string_strlen((uint8_t *)type_c) + 7);
                                                                                                     uint8_t * stored_type2 = (uint8_t *)arena_alloc(arena, str_len);
                                                                                                     if ((stored_type2 != NULL)) {
-                                                                                                        libc_snprintf((char *)(uint8_t *)stored_type2, str_len, (const char *)str1510, (uint8_t *)type_c);
+                                                                                                        libc_snprintf((char *)(uint8_t *)stored_type2, str_len, (const char *)str1514, (uint8_t *)type_c);
                                                                                                     }
                                                                                                     uint8_t * _uya_ret = stored_type2;
                                                                                                     return _uya_ret;
@@ -40563,7 +40566,7 @@ static __attribute__((unused)) struct ASTNode * find_union_decl_by_tagged_c99(st
                                                                                                         struct ASTNode * _uya_ret = NULL;
                                                                                                         return _uya_ret;
                                                                                                     }
-                                                                                                    if ((std_string_strncmp((uint8_t *)tagged_suffix, (uint8_t *)(uint8_t *)str1537, 11) != 0)) {
+                                                                                                    if ((std_string_strncmp((uint8_t *)tagged_suffix, (uint8_t *)(uint8_t *)str1541, 11) != 0)) {
                                                                                                         struct ASTNode * _uya_ret = NULL;
                                                                                                         return _uya_ret;
                                                                                                     }
@@ -40647,7 +40650,7 @@ static __attribute__((unused)) int32_t gen_union_definition(struct C99CodeGenera
                                                                                                         return _uya_ret;
                                                                                                     }
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1538, (uint8_t *)union_name);
+                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1542, (uint8_t *)union_name);
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                                                     int32_t i = 0;
                                                                                                     while ((i < n)) {
@@ -40666,7 +40669,7 @@ static __attribute__((unused)) int32_t gen_union_definition(struct C99CodeGenera
                                                                                                     c99_emit(codegen, (uint8_t *)(uint8_t *)str902);
                                                                                                     if ((union_decl->union_decl_is_extern == 0)) {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1539, (uint8_t *)union_name, (uint8_t *)union_name);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1543, (uint8_t *)union_name, (uint8_t *)union_name);
                                                                                                     }
                                                                                                     int32_t _uya_ret = 0;
                                                                                                     return _uya_ret;
@@ -41084,7 +41087,7 @@ static __attribute__((unused)) uint8_t * get_method_c_name(struct C99CodeGenerat
                                                                                                         uint8_t * _uya_ret = NULL;
                                                                                                         return _uya_ret;
                                                                                                     }
-                                                                                                    libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1540, (uint8_t *)safe_s, (uint8_t *)safe_m);
+                                                                                                    libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1544, (uint8_t *)safe_s, (uint8_t *)safe_m);
                                                                                                     uint8_t * _uya_ret = buf;
                                                                                                     return _uya_ret;
                                                                                                 }
@@ -41231,8 +41234,8 @@ static __attribute__((unused)) void emit_interface_structs_and_vtables(struct C9
                                                                                                             continue;
                                                                                                         }
                                                                                                         uint8_t * const safe_iface = get_safe_c_identifier(codegen, iface_name);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1541, (uint8_t *)safe_iface);
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1542, (uint8_t *)safe_iface);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1545, (uint8_t *)safe_iface);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1546, (uint8_t *)safe_iface);
                                                                                                         codegen->indent_level = (codegen->indent_level + 1);
                                                                                                         struct ASTNode * all_sigs[128] = {0};
                                                                                                         const int32_t sig_count = collect_interface_method_sigs(codegen, iface_name, (&all_sigs[0]), C99_MAX_INTERFACE_METHODS);
@@ -41247,7 +41250,7 @@ static __attribute__((unused)) void emit_interface_structs_and_vtables(struct C9
                                                                                                             uint8_t * const mname = get_safe_c_identifier(codegen, msig->fn_decl_name);
                                                                                                             const int32_t pc = msig->fn_decl_param_count;
                                                                                                             c99_emit_indent(codegen);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1543, (uint8_t *)ret_c, (uint8_t *)mname);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1547, (uint8_t *)ret_c, (uint8_t *)mname);
                                                                                                             int32_t k = 1;
                                                                                                             while (((k < pc) && (msig->fn_decl_params != NULL))) {
                                                                                                                 struct ASTNode * const p = msig->fn_decl_params[k];
@@ -41304,7 +41307,7 @@ static __attribute__((unused)) void emit_vtable_constants(struct C99CodeGenerato
                                                                                                             uint8_t * const safe_iface = get_safe_c_identifier(codegen, iface_name);
                                                                                                             struct ASTNode * all_sigs2[128] = {0};
                                                                                                             const int32_t sig_count2 = collect_interface_method_sigs(codegen, iface_name, (&all_sigs2[0]), 128);
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1544, (uint8_t *)safe_iface, (uint8_t *)safe_iface, (uint8_t *)safe_struct);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1548, (uint8_t *)safe_iface, (uint8_t *)safe_iface, (uint8_t *)safe_struct);
                                                                                                             int32_t k = 0;
                                                                                                             while (((k < sig_count2) && (k < C99_MAX_INTERFACE_METHODS))) {
                                                                                                                 struct ASTNode * const msig = all_sigs2[k];
@@ -41321,7 +41324,7 @@ static __attribute__((unused)) void emit_vtable_constants(struct C99CodeGenerato
                                                                                                                 if (((impl != NULL) && (cname != NULL))) {
                                                                                                                     uint8_t * const ret_c = convert_array_return_type(codegen, msig->fn_decl_return_type);
                                                                                                                     const int32_t pc = msig->fn_decl_param_count;
-                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1545, (uint8_t *)ret_c);
+                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1549, (uint8_t *)ret_c);
                                                                                                                     int32_t ki = 1;
                                                                                                                     while (((ki < pc) && (msig->fn_decl_params != NULL))) {
                                                                                                                         struct ASTNode * const pk = msig->fn_decl_params[ki];
@@ -41330,13 +41333,13 @@ static __attribute__((unused)) void emit_vtable_constants(struct C99CodeGenerato
                                                                                                                         }
                                                                                                                         ki = (ki + 1);
                                                                                                                     }
-                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1546, (uint8_t *)cname);
+                                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1550, (uint8_t *)cname);
                                                                                                                 } else {
                                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str983, (void *)codegen->output);
                                                                                                                 }
                                                                                                                 k = (k + 1);
                                                                                                             }
-                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1477, (void *)codegen->output);
+                                                                                                            libc_fputs((uint8_t *)(uint8_t *)str1481, (void *)codegen->output);
                                                                                                             j = (j + 1);
                                                                                                         }
                                                                                                         i = (i + 1);
@@ -41384,12 +41387,12 @@ static __attribute__((unused)) int32_t gen_struct_definition(struct C99CodeGener
                                                                                                     }
                                                                                                     add_struct_definition(codegen, struct_name);
                                                                                                     c99_emit_indent(codegen);
-                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1547, (uint8_t *)struct_name);
+                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1551, (uint8_t *)struct_name);
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                                                     const int32_t field_count = struct_decl->struct_decl_field_count;
                                                                                                     if ((field_count == 0)) {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1548, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1552, (void *)codegen->output);
                                                                                                     } else {
                                                                                                         int32_t i = 0;
                                                                                                         while ((i < field_count)) {
@@ -41418,7 +41421,7 @@ static __attribute__((unused)) int32_t gen_struct_definition(struct C99CodeGener
                                                                                                                     array_size = 1;
                                                                                                                 }
                                                                                                                 c99_emit_indent(codegen);
-                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1549, (uint8_t *)elem_type_c, (uint8_t *)field_name, array_size);
+                                                                                                                libc_fprintf((void *)codegen->output, (const char *)str1553, (uint8_t *)elem_type_c, (uint8_t *)field_name, array_size);
                                                                                                             } else {
                                                                                                                 uint8_t * const field_type_c = c99_type_to_c(codegen, field_type);
                                                                                                                 c99_emit_indent(codegen);
@@ -41716,11 +41719,11 @@ static __attribute__((unused)) int32_t gen_mono_struct_definition(struct C99Code
                                                                                                         return _uya_ret;
                                                                                                     }
                                                                                                     add_struct_definition(codegen, mono_name);
-                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1547, (uint8_t *)mono_name);
+                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1551, (uint8_t *)mono_name);
                                                                                                     codegen->indent_level = (codegen->indent_level + 1);
                                                                                                     if ((field_count == 0)) {
                                                                                                         c99_emit_indent(codegen);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1548, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1552, (void *)codegen->output);
                                                                                                     } else {
                                                                                                         fi = 0;
                                                                                                         while ((fi < field_count)) {
@@ -41785,7 +41788,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c_with_self_opt(struct C99C
                                                                                                     }
                                                                                                     if (((type_node->type == AST_TYPE_POINTER) && (type_node->type_pointer_pointed_type != NULL))) {
                                                                                                         struct ASTNode * const pt = type_node->type_pointer_pointed_type;
-                                                                                                        if ((((pt->type == AST_TYPE_NAMED) && (pt->type_named_name != NULL)) && (std_string_strcmp((uint8_t *)pt->type_named_name, (uint8_t *)(uint8_t *)str1550) == 0))) {
+                                                                                                        if ((((pt->type == AST_TYPE_NAMED) && (pt->type_named_name != NULL)) && (std_string_strcmp((uint8_t *)pt->type_named_name, (uint8_t *)(uint8_t *)str1554) == 0))) {
                                                                                                             int32_t use_const = 0;
                                                                                                             if ((type_node->type_pointer_is_ffi_pointer == 0)) {
                                                                                                                 use_const = 1;
@@ -41796,15 +41799,15 @@ static __attribute__((unused)) uint8_t * c99_type_to_c_with_self_opt(struct C99C
                                                                                                             if ((buf != NULL)) {
                                                                                                                 if ((is_union != 0)) {
                                                                                                                     if ((use_const != 0)) {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1551, (uint8_t *)safe);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1555, (uint8_t *)safe);
                                                                                                                     } else {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1552, (uint8_t *)safe);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1556, (uint8_t *)safe);
                                                                                                                     }
                                                                                                                 } else {
                                                                                                                     if ((use_const != 0)) {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1553, (uint8_t *)safe);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1557, (uint8_t *)safe);
                                                                                                                     } else {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1554, (uint8_t *)safe);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1558, (uint8_t *)safe);
                                                                                                                     }
                                                                                                                 }
                                                                                                                 uint8_t * _uya_ret = buf;
@@ -41812,7 +41815,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c_with_self_opt(struct C99C
                                                                                                             }
                                                                                                         }
                                                                                                     } else {
-                                                                                                        if ((((type_node->type == AST_TYPE_NAMED) && (type_node->type_named_name != NULL)) && (std_string_strcmp((uint8_t *)type_node->type_named_name, (uint8_t *)(uint8_t *)str1550) == 0))) {
+                                                                                                        if ((((type_node->type == AST_TYPE_NAMED) && (type_node->type_named_name != NULL)) && (std_string_strcmp((uint8_t *)type_node->type_named_name, (uint8_t *)(uint8_t *)str1554) == 0))) {
                                                                                                             uint8_t * const safe = get_safe_c_identifier(codegen, (uint8_t *)self_struct_name);
                                                                                                             int32_t len = (std_string_strlen((uint8_t *)safe) + 8);
                                                                                                             if ((is_union != 0)) {
@@ -41821,7 +41824,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c_with_self_opt(struct C99C
                                                                                                             uint8_t * const buf = (uint8_t *)arena_alloc(codegen->arena, len);
                                                                                                             if ((buf != NULL)) {
                                                                                                                 if ((is_union != 0)) {
-                                                                                                                    libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1555, (uint8_t *)safe);
+                                                                                                                    libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1559, (uint8_t *)safe);
                                                                                                                 } else {
                                                                                                                     libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str979, (uint8_t *)safe);
                                                                                                                 }
@@ -41913,7 +41916,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                 const int32_t len = (std_string_strlen((uint8_t *)inner_c) + 4);
                                                                                                                 uint8_t * const buf = (uint8_t *)arena_alloc(codegen->arena, len);
                                                                                                                 if ((buf != NULL)) {
-                                                                                                                    libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1556, (uint8_t *)inner_c);
+                                                                                                                    libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1560, (uint8_t *)inner_c);
                                                                                                                     uint8_t * _uya_ret = buf;
                                                                                                                     return _uya_ret;
                                                                                                                 }
@@ -41939,11 +41942,11 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                             return _uya_ret;
                                                                                                         }
                                                                                                         if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str612) == 0)) {
-                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1557;
+                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1561;
                                                                                                             return _uya_ret;
                                                                                                         } else {
                                                                                                             if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str613) == 0)) {
-                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1558;
+                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1562;
                                                                                                                 return _uya_ret;
                                                                                                             } else {
                                                                                                                 if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str579) == 0)) {
@@ -41967,11 +41970,11 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                                     return _uya_ret;
                                                                                                                                 } else {
                                                                                                                                     if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str580) == 0)) {
-                                                                                                                                        uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1559;
+                                                                                                                                        uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1563;
                                                                                                                                         return _uya_ret;
                                                                                                                                     } else {
                                                                                                                                         if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str861) == 0)) {
-                                                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1484;
+                                                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1488;
                                                                                                                                             return _uya_ret;
                                                                                                                                         } else {
                                                                                                                                             if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str618) == 0)) {
@@ -41987,11 +41990,11 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                                                         return _uya_ret;
                                                                                                                                                     } else {
                                                                                                                                                         if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str583) == 0)) {
-                                                                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1560;
+                                                                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1564;
                                                                                                                                                             return _uya_ret;
                                                                                                                                                         } else {
                                                                                                                                                             if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str584) == 0)) {
-                                                                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1561;
+                                                                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1565;
                                                                                                                                                                 return _uya_ret;
                                                                                                                                                             } else {
                                                                                                                                                                 if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str585) == 0)) {
@@ -41999,43 +42002,43 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                                                                     return _uya_ret;
                                                                                                                                                                 } else {
                                                                                                                                                                     if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str862) == 0)) {
-                                                                                                                                                                        uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1562;
+                                                                                                                                                                        uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1566;
                                                                                                                                                                         return _uya_ret;
                                                                                                                                                                     } else {
                                                                                                                                                                         if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str863) == 0)) {
-                                                                                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1562;
+                                                                                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1566;
                                                                                                                                                                             return _uya_ret;
                                                                                                                                                                         } else {
                                                                                                                                                                             if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str864) == 0)) {
-                                                                                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1563;
+                                                                                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1567;
                                                                                                                                                                                 return _uya_ret;
                                                                                                                                                                             } else {
                                                                                                                                                                                 if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str865) == 0)) {
-                                                                                                                                                                                    uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1562;
+                                                                                                                                                                                    uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1566;
                                                                                                                                                                                     return _uya_ret;
                                                                                                                                                                                 } else {
                                                                                                                                                                                     if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str866) == 0)) {
-                                                                                                                                                                                        uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1562;
+                                                                                                                                                                                        uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1566;
                                                                                                                                                                                         return _uya_ret;
                                                                                                                                                                                     } else {
                                                                                                                                                                                         if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str867) == 0)) {
-                                                                                                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1564;
+                                                                                                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1568;
                                                                                                                                                                                             return _uya_ret;
                                                                                                                                                                                         } else {
                                                                                                                                                                                             if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str868) == 0)) {
-                                                                                                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1565;
+                                                                                                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1569;
                                                                                                                                                                                                 return _uya_ret;
                                                                                                                                                                                             } else {
                                                                                                                                                                                                 if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str869) == 0)) {
-                                                                                                                                                                                                    uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1566;
+                                                                                                                                                                                                    uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1570;
                                                                                                                                                                                                     return _uya_ret;
                                                                                                                                                                                                 } else {
                                                                                                                                                                                                     if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str870) == 0)) {
-                                                                                                                                                                                                        uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1567;
+                                                                                                                                                                                                        uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1571;
                                                                                                                                                                                                         return _uya_ret;
                                                                                                                                                                                                     } else {
                                                                                                                                                                                                         if ((std_string_strcmp((uint8_t *)name, (uint8_t *)(uint8_t *)str871) == 0)) {
-                                                                                                                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1568;
+                                                                                                                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1572;
                                                                                                                                                                                                             return _uya_ret;
                                                                                                                                                                                                         } else {
                                                                                                                                                                                                             uint8_t * const safe_name = get_safe_c_identifier(codegen, name);
@@ -42052,7 +42055,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                                                                                                                                 const int32_t len = (std_string_strlen((uint8_t *)safe_name) + 24);
                                                                                                                                                                                                                                 uint8_t * const buf = (uint8_t *)arena_alloc(codegen->arena, len);
                                                                                                                                                                                                                                 if ((buf != NULL)) {
-                                                                                                                                                                                                                                    libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1569, (uint8_t *)safe_name);
+                                                                                                                                                                                                                                    libc_snprintf((char *)(uint8_t *)buf, len, (const char *)str1573, (uint8_t *)safe_name);
                                                                                                                                                                                                                                     uint8_t * _uya_ret = buf;
                                                                                                                                                                                                                                     return _uya_ret;
                                                                                                                                                                                                                                 }
@@ -42070,7 +42073,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                                                                                                                     const int32_t len_ext = (std_string_strlen((uint8_t *)safe_name) + 10);
                                                                                                                                                                                                                     uint8_t * const buf_ext = (uint8_t *)arena_alloc(codegen->arena, len_ext);
                                                                                                                                                                                                                     if ((buf_ext != NULL)) {
-                                                                                                                                                                                                                        libc_snprintf((char *)(uint8_t *)buf_ext, len_ext, (const char *)str1570, (uint8_t *)safe_name);
+                                                                                                                                                                                                                        libc_snprintf((char *)(uint8_t *)buf_ext, len_ext, (const char *)str1574, (uint8_t *)safe_name);
                                                                                                                                                                                                                         uint8_t * _uya_ret = buf_ext;
                                                                                                                                                                                                                         return _uya_ret;
                                                                                                                                                                                                                     }
@@ -42078,7 +42081,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                                                                                                                     const int32_t len_u = (std_string_strlen((uint8_t *)safe_name) + 22);
                                                                                                                                                                                                                     uint8_t * const buf_u = (uint8_t *)arena_alloc(codegen->arena, len_u);
                                                                                                                                                                                                                     if ((buf_u != NULL)) {
-                                                                                                                                                                                                                        libc_snprintf((char *)(uint8_t *)buf_u, len_u, (const char *)str1555, (uint8_t *)safe_name);
+                                                                                                                                                                                                                        libc_snprintf((char *)(uint8_t *)buf_u, len_u, (const char *)str1559, (uint8_t *)safe_name);
                                                                                                                                                                                                                         uint8_t * _uya_ret = buf_u;
                                                                                                                                                                                                                         return _uya_ret;
                                                                                                                                                                                                                     }
@@ -42191,7 +42194,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                             uint8_t * const pointee_type_raw = c99_type_to_c(codegen, pointed_type);
                                                                                                             uint8_t * const pointee_type = c99_arena_strdup(codegen->arena, pointee_type_raw);
                                                                                                             if ((pointee_type == NULL)) {
-                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1571;
+                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1575;
                                                                                                                 return _uya_ret;
                                                                                                             }
                                                                                                             const int32_t is_const = type_node->type_pointer_is_const;
@@ -42202,7 +42205,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                             const int32_t str_len = ((std_string_strlen((uint8_t *)pointee_type) + extra_len) + 8);
                                                                                                             uint8_t * const result = (uint8_t *)arena_alloc(codegen->arena, str_len);
                                                                                                             if ((result == NULL)) {
-                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1571;
+                                                                                                                uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1575;
                                                                                                                 return _uya_ret;
                                                                                                             }
                                                                                                             uint8_t * const bracket = (uint8_t *)std_string_strchr((uint8_t *)pointee_type, 91);
@@ -42217,9 +42220,9 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                 uint8_t * const arr_ptr = (uint8_t *)arena_alloc(codegen->arena, total_len);
                                                                                                                 if ((arr_ptr == NULL)) {
                                                                                                                     if ((is_const != 0)) {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)result, str_len, (const char *)str1572, (uint8_t *)pointee_type);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)result, str_len, (const char *)str1576, (uint8_t *)pointee_type);
                                                                                                                     } else {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)result, str_len, (const char *)str1556, (uint8_t *)pointee_type);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)result, str_len, (const char *)str1560, (uint8_t *)pointee_type);
                                                                                                                     }
                                                                                                                     uint8_t * _uya_ret = result;
                                                                                                                     return _uya_ret;
@@ -42229,29 +42232,29 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                     memcpy((void *)(&base_buf[0]), (void *)pointee_type, base_len);
                                                                                                                     base_buf[base_len] = 0;
                                                                                                                     if ((is_const != 0)) {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)arr_ptr, total_len, (const char *)str1573, (uint8_t *)(&base_buf[0]), dims);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)arr_ptr, total_len, (const char *)str1577, (uint8_t *)(&base_buf[0]), dims);
                                                                                                                     } else {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)arr_ptr, total_len, (const char *)str1574, (uint8_t *)(&base_buf[0]), dims);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)arr_ptr, total_len, (const char *)str1578, (uint8_t *)(&base_buf[0]), dims);
                                                                                                                     }
                                                                                                                 } else {
                                                                                                                     if ((is_const != 0)) {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)arr_ptr, total_len, (const char *)str1572, (uint8_t *)pointee_type);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)arr_ptr, total_len, (const char *)str1576, (uint8_t *)pointee_type);
                                                                                                                     } else {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)arr_ptr, total_len, (const char *)str1556, (uint8_t *)pointee_type);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)arr_ptr, total_len, (const char *)str1560, (uint8_t *)pointee_type);
                                                                                                                     }
                                                                                                                 }
                                                                                                                 uint8_t * _uya_ret = arr_ptr;
                                                                                                                 return _uya_ret;
                                                                                                             }
                                                                                                             if ((is_const != 0)) {
-                                                                                                                libc_snprintf((char *)(uint8_t *)result, str_len, (const char *)str1572, (uint8_t *)pointee_type);
+                                                                                                                libc_snprintf((char *)(uint8_t *)result, str_len, (const char *)str1576, (uint8_t *)pointee_type);
                                                                                                                 uint8_t * const copied = c99_arena_strdup(codegen->arena, result);
                                                                                                                 if ((copied != NULL)) {
                                                                                                                     uint8_t * _uya_ret = copied;
                                                                                                                     return _uya_ret;
                                                                                                                 }
                                                                                                             } else {
-                                                                                                                libc_snprintf((char *)(uint8_t *)result, str_len, (const char *)str1556, (uint8_t *)pointee_type);
+                                                                                                                libc_snprintf((char *)(uint8_t *)result, str_len, (const char *)str1560, (uint8_t *)pointee_type);
                                                                                                                 uint8_t * const copied = c99_arena_strdup(codegen->arena, result);
                                                                                                                 if ((copied != NULL)) {
                                                                                                                     uint8_t * _uya_ret = copied;
@@ -42275,7 +42278,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                     uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str585;
                                                                                                                     return _uya_ret;
                                                                                                                 }
-                                                                                                                libc_snprintf((char *)(uint8_t *)result, len, (const char *)str1575, (uint8_t *)inner_c);
+                                                                                                                libc_snprintf((char *)(uint8_t *)result, len, (const char *)str1579, (uint8_t *)inner_c);
                                                                                                                 uint8_t * _uya_ret = result;
                                                                                                                 return _uya_ret;
                                                                                                             } else {
@@ -42292,7 +42295,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                     }
                                                                                                                     uint8_t struct_name_buf[128] = {0};
                                                                                                                     if ((is_void != 0)) {
-                                                                                                                        libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1380);
+                                                                                                                        libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1384);
                                                                                                                     } else {
                                                                                                                         uint8_t safe[64] = {0};
                                                                                                                         int32_t j = 0;
@@ -42318,9 +42321,9 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                             safe[j] = 0;
                                                                                                                         }
                                                                                                                         if ((j > 0)) {
-                                                                                                                            libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1576, (uint8_t *)(&safe[0]));
+                                                                                                                            libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1580, (uint8_t *)(&safe[0]));
                                                                                                                         } else {
-                                                                                                                            libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1577);
+                                                                                                                            libc_snprintf((char *)(uint8_t *)(&struct_name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1581);
                                                                                                                         }
                                                                                                                     }
                                                                                                                     uint8_t * const name_copy = c99_arena_strdup(codegen->arena, (&struct_name_buf[0]));
@@ -42387,7 +42390,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                             int32_t i = 0;
                                                                                                                             while ((i < dim_count)) {
                                                                                                                                 uint8_t dim_str[32] = {0};
-                                                                                                                                libc_snprintf((char *)(uint8_t *)(&dim_str[0]), 16, (const char *)str1384, dims[i]);
+                                                                                                                                libc_snprintf((char *)(uint8_t *)(&dim_str[0]), 16, (const char *)str1388, dims[i]);
                                                                                                                                 std_string_strcat((char *)(uint8_t *)result, (uint8_t *)(&dim_str[0]));
                                                                                                                                 i = (i + 1);
                                                                                                                             }
@@ -42401,7 +42404,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                                 uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str585;
                                                                                                                                 return _uya_ret;
                                                                                                                             }
-                                                                                                                            libc_snprintf((char *)(uint8_t *)result, buf_len, (const char *)str1578, (uint8_t *)element_c, array_size);
+                                                                                                                            libc_snprintf((char *)(uint8_t *)result, buf_len, (const char *)str1582, (uint8_t *)element_c, array_size);
                                                                                                                             uint8_t * _uya_ret = result;
                                                                                                                             return _uya_ret;
                                                                                                                         }
@@ -42421,7 +42424,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                             if ((std_string_strncmp((uint8_t *)elem_c, (uint8_t *)(uint8_t *)str1020, 7) == 0)) {
                                                                                                                                 elem_simple = (&elem_c[7]);
                                                                                                                             } else {
-                                                                                                                                if ((std_string_strncmp((uint8_t *)elem_c, (uint8_t *)(uint8_t *)str1579, 5) == 0)) {
+                                                                                                                                if ((std_string_strncmp((uint8_t *)elem_c, (uint8_t *)(uint8_t *)str1583, 5) == 0)) {
                                                                                                                                     elem_simple = (&elem_c[5]);
                                                                                                                                 }
                                                                                                                             }
@@ -42457,7 +42460,7 @@ static __attribute__((unused)) uint8_t * c99_type_to_c(struct C99CodeGenerator *
                                                                                                                                 }
                                                                                                                             }
                                                                                                                             uint8_t name_buf[128] = {0};
-                                                                                                                            libc_snprintf((char *)(uint8_t *)(&name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1580, (uint8_t *)elem_clean);
+                                                                                                                            libc_snprintf((char *)(uint8_t *)(&name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1584, (uint8_t *)elem_clean);
                                                                                                                             uint8_t * const safe = c99_arena_strdup(codegen->arena, (&name_buf[0]));
                                                                                                                             if ((safe == NULL)) {
                                                                                                                                 uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str585;
@@ -42568,7 +42571,7 @@ static __attribute__((unused)) void emit_pending_slice_structs(struct C99CodeGen
                                                                                                             i = (i + 1);
                                                                                                             continue;
                                                                                                         }
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1581, (uint8_t *)name, (uint8_t *)elem_c);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1585, (uint8_t *)name, (uint8_t *)elem_c);
                                                                                                         mark_struct_defined(codegen, name);
                                                                                                         i = (i + 1);
                                                                                                     }
@@ -42602,7 +42605,7 @@ static __attribute__((unused)) void emit_pending_err_union_structs(struct C99Cod
                                                                                                         }
                                                                                                         if ((is_void == 0)) {
                                                                                                             int32_t is_known_type = 0;
-                                                                                                            if ((((((((((((((std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1128, 3) == 0) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1582, 4) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1560, 5) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1561, 6) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1583, 4) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str585, 4) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str581, 4) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str409, 6) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str407, 4) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1484, 8) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1584, 9) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1559, 6) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1585, 7) == 0))) {
+                                                                                                            if ((((((((((((((std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1128, 3) == 0) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1586, 4) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1564, 5) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1565, 6) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1587, 4) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str585, 4) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str581, 4) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str409, 6) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str407, 4) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1488, 8) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1588, 9) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1563, 6) == 0)) || (std_string_strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1589, 7) == 0))) {
                                                                                                                 is_known_type = 1;
                                                                                                             }
                                                                                                             if ((is_known_type == 0)) {
@@ -42610,11 +42613,11 @@ static __attribute__((unused)) void emit_pending_err_union_structs(struct C99Cod
                                                                                                                 continue;
                                                                                                             }
                                                                                                         }
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1586, (uint8_t *)name);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1590, (uint8_t *)name);
                                                                                                         if ((is_void == 0)) {
-                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1587, (uint8_t *)payload_c);
+                                                                                                            libc_fprintf((void *)codegen->output, (const char *)str1591, (uint8_t *)payload_c);
                                                                                                         }
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1477, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1481, (void *)codegen->output);
                                                                                                         mark_struct_defined(codegen, name);
                                                                                                         i = (i + 1);
                                                                                                     }
@@ -42647,12 +42650,12 @@ static __attribute__((unused)) uint8_t * get_slice_struct_type_c(struct C99CodeG
                                                                                                         if ((std_string_strncmp((uint8_t *)elem_c, (uint8_t *)(uint8_t *)str1020, 7) == 0)) {
                                                                                                             elem_simple = (&elem_c[7]);
                                                                                                         } else {
-                                                                                                            if ((std_string_strncmp((uint8_t *)elem_c, (uint8_t *)(uint8_t *)str1579, 5) == 0)) {
+                                                                                                            if ((std_string_strncmp((uint8_t *)elem_c, (uint8_t *)(uint8_t *)str1583, 5) == 0)) {
                                                                                                                 elem_simple = (&elem_c[5]);
                                                                                                             }
                                                                                                         }
                                                                                                         uint8_t name_buf[128] = {0};
-                                                                                                        libc_snprintf((char *)(uint8_t *)(&name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1580, (uint8_t *)elem_simple);
+                                                                                                        libc_snprintf((char *)(uint8_t *)(&name_buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1584, (uint8_t *)elem_simple);
                                                                                                         uint8_t * const safe = get_safe_c_identifier(codegen, (&name_buf[0]));
                                                                                                         if ((safe == NULL)) {
                                                                                                             uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1166;
@@ -42684,7 +42687,7 @@ static __attribute__((unused)) uint8_t * get_c_type_of_expr(struct C99CodeGenera
                                                                                                         return _uya_ret;
                                                                                                     } else {
                                                                                                         if ((expr->type == AST_FLOAT)) {
-                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1561;
+                                                                                                            uint8_t * _uya_ret = (uint8_t *)(uint8_t *)(uint8_t *)str1565;
                                                                                                             return _uya_ret;
                                                                                                         } else {
                                                                                                             if ((expr->type == AST_BOOL)) {
@@ -42792,7 +42795,7 @@ static __attribute__((unused)) uint8_t * get_c_type_of_expr(struct C99CodeGenera
                                                                                                                                             if ((elem_type != NULL)) {
                                                                                                                                                 uint8_t * const elem_type_c = c99_type_to_c(codegen, elem_type);
                                                                                                                                                 if ((elem_type_c != NULL)) {
-                                                                                                                                                    uint8_t * const prefix = (uint8_t *)(uint8_t *)str1588;
+                                                                                                                                                    uint8_t * const prefix = (uint8_t *)(uint8_t *)str1592;
                                                                                                                                                     const int32_t prefix_len = std_string_strlen(prefix);
                                                                                                                                                     const int32_t elem_len = std_string_strlen((uint8_t *)elem_type_c);
                                                                                                                                                     uint8_t * const slice_type = (uint8_t *)arena_alloc(codegen->arena, (size_t)((prefix_len + elem_len) + 1));
@@ -42814,7 +42817,7 @@ static __attribute__((unused)) uint8_t * get_c_type_of_expr(struct C99CodeGenera
                                                                                                                                             elem_type_c = inferred_elem_type;
                                                                                                                                         }
                                                                                                                                     }
-                                                                                                                                    uint8_t * const prefix = (uint8_t *)(uint8_t *)str1588;
+                                                                                                                                    uint8_t * const prefix = (uint8_t *)(uint8_t *)str1592;
                                                                                                                                     const int32_t prefix_len = std_string_strlen(prefix);
                                                                                                                                     const int32_t elem_len = std_string_strlen((uint8_t *)elem_type_c);
                                                                                                                                     uint8_t * const slice_type = (uint8_t *)arena_alloc(codegen->arena, (size_t)((prefix_len + elem_len) + 1));
@@ -43225,9 +43228,9 @@ static __attribute__((unused)) int32_t is_identifier_pointer_to_array_type(struc
                                                                                                         int32_t _uya_ret = 0;
                                                                                                         return _uya_ret;
                                                                                                     }
-                                                                                                    uint8_t * const open_paren_asterisk = (uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1533);
+                                                                                                    uint8_t * const open_paren_asterisk = (uint8_t *)std_string_strstr((uint8_t *)type_c, (uint8_t *)(uint8_t *)str1537);
                                                                                                     if ((open_paren_asterisk != NULL)) {
-                                                                                                        uint8_t * const close_paren_bracket = (uint8_t *)std_string_strstr(open_paren_asterisk, (uint8_t *)(uint8_t *)str1589);
+                                                                                                        uint8_t * const close_paren_bracket = (uint8_t *)std_string_strstr(open_paren_asterisk, (uint8_t *)(uint8_t *)str1593);
                                                                                                         if ((close_paren_bracket != NULL)) {
                                                                                                             int32_t _uya_ret = 1;
                                                                                                             return _uya_ret;
@@ -43278,7 +43281,7 @@ static __attribute__((unused)) int32_t is_array_access_pointer_type(struct C99Co
                                                                                                             int32_t _uya_ret = 0;
                                                                                                             return _uya_ret;
                                                                                                         }
-                                                                                                        if (((uint8_t *)std_string_strstr((uint8_t *)array_type_c, (uint8_t *)(uint8_t *)str1590) != NULL)) {
+                                                                                                        if (((uint8_t *)std_string_strstr((uint8_t *)array_type_c, (uint8_t *)(uint8_t *)str1594) != NULL)) {
                                                                                                             int32_t _uya_ret = 1;
                                                                                                             return _uya_ret;
                                                                                                         }
@@ -43481,7 +43484,7 @@ static __attribute__((unused)) uint8_t * get_array_wrapper_struct_name(struct C9
                                                                                                         return _uya_ret;
                                                                                                     }
                                                                                                     uint8_t name_buf[256] = {0};
-                                                                                                    std_string_strcpy((char *)(uint8_t *)(&name_buf[0]), (uint8_t *)(uint8_t *)str1591);
+                                                                                                    std_string_strcpy((char *)(uint8_t *)(&name_buf[0]), (uint8_t *)(uint8_t *)str1595);
                                                                                                     int32_t pos = std_string_strlen((uint8_t *)(&name_buf[0]));
                                                                                                     struct ASTNode * current = array_type;
                                                                                                     int32_t first = 1;
@@ -43534,7 +43537,7 @@ static __attribute__((unused)) uint8_t * get_array_wrapper_struct_name(struct C9
                                                                                                             const int32_t size = eval_const_expr(codegen, size_expr);
                                                                                                             if ((size > 0)) {
                                                                                                                 uint8_t size_str[32] = {0};
-                                                                                                                libc_snprintf((char *)(uint8_t *)(&size_str[0]), 32, (const char *)str1592, size);
+                                                                                                                libc_snprintf((char *)(uint8_t *)(&size_str[0]), 32, (const char *)str1596, size);
                                                                                                                 const int32_t size_len = std_string_strlen((uint8_t *)(&size_str[0]));
                                                                                                                 if (((pos + size_len) < TEMP_BUF_LIMIT)) {
                                                                                                                     memcpy((void *)(&name_buf[pos]), (void *)(&size_str[0]), size_len);
@@ -43566,7 +43569,7 @@ static __attribute__((unused)) void gen_array_wrapper_struct(struct C99CodeGener
                                                                                                         codegen->struct_definitions[codegen->struct_definition_count].defined = 0;
                                                                                                         codegen->struct_definition_count = (codegen->struct_definition_count + 1);
                                                                                                     }
-                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1547, (uint8_t *)struct_name);
+                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1551, (uint8_t *)struct_name);
                                                                                                     struct ASTNode * const element_type = array_type->type_array_element_type;
                                                                                                     struct ASTNode * const size_expr = array_type->type_array_size_expr;
                                                                                                     uint8_t * const elem_type_c = c99_type_to_c(codegen, element_type);
@@ -43579,7 +43582,7 @@ static __attribute__((unused)) void gen_array_wrapper_struct(struct C99CodeGener
                                                                                                     } else {
                                                                                                         array_size = 1;
                                                                                                     }
-                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1593, (uint8_t *)elem_type_c, array_size);
+                                                                                                    libc_fprintf((void *)codegen->output, (const char *)str1597, (uint8_t *)elem_type_c, array_size);
                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str902, (void *)codegen->output);
                                                                                                     int32_t i = 0;
                                                                                                     while ((i < codegen->struct_definition_count)) {
@@ -43826,9 +43829,9 @@ static __attribute__((unused)) int32_t c99_codegen_new(struct C99CodeGenerator *
                                                                                                     codegen->needs_stdio_h = 0;
                                                                                                     codegen->needs_stdlib_h = 0;
                                                                                                     codegen->has_stdio_conflicts = 0;
-                                                                                                    codegen->is_nostdlib = 0;
+                                                                                                    codegen->is_nostdlib = is_nostdlib;
                                                                                                     codegen->stack_size = stack_size;
-                                                                                                    codegen->freestanding = 1;
+                                                                                                    codegen->freestanding = is_nostdlib;
                                                                                                     int32_t _uya_ret = 0;
                                                                                                     return _uya_ret;
                                                                                                 }
@@ -43935,7 +43938,7 @@ static __attribute__((unused)) void emit_line_directive(struct C99CodeGenerator 
                                                                                                     codegen->current_line = line;
                                                                                                     codegen->current_filename = filename;
                                                                                                     if (((filename != NULL) && (filename[0] != 0))) {
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1594, line);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1598, line);
                                                                                                         uint8_t * p = filename;
                                                                                                         while ((p[0] != 0)) {
                                                                                                             if (((p[0] == 92) || (p[0] == 34))) {
@@ -43944,9 +43947,9 @@ static __attribute__((unused)) void emit_line_directive(struct C99CodeGenerator 
                                                                                                             libc_fputc((int32_t)p[0], (void *)codegen->output);
                                                                                                             p = (p + 1);
                                                                                                         }
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1595, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1599, (void *)codegen->output);
                                                                                                     } else {
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1596, line);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1600, line);
                                                                                                     }
                                                                                                 }
 
@@ -43954,7 +43957,7 @@ static __attribute__((unused)) void c99_emit_indent(struct C99CodeGenerator * co
                                                                                                     (void)codegen;
                                                                                                     int32_t i = 0;
                                                                                                     while ((i < codegen->indent_level)) {
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1597, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1601, (void *)codegen->output);
                                                                                                         i = (i + 1);
                                                                                                     }
                                                                                                 }
@@ -43966,7 +43969,7 @@ static __attribute__((unused)) void c99_emit_newline(struct C99CodeGenerator * c
 
 static __attribute__((unused)) void c99_emit_semi_newline(struct C99CodeGenerator * codegen) {
                                                                                                     (void)codegen;
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1598, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1602, (void *)codegen->output);
                                                                                                 }
 
 static __attribute__((unused)) void c99_emit_comma_space(struct C99CodeGenerator * codegen) {
@@ -44010,7 +44013,7 @@ static __attribute__((unused)) int32_t is_c_keyword(uint8_t * name) {
                                                                                                         int32_t _uya_ret = 0;
                                                                                                         return _uya_ret;
                                                                                                     }
-                                                                                                    const uint8_t * keywords[38] = {(uint8_t *)(uint8_t *)str1599, (uint8_t *)(uint8_t *)str421, (uint8_t *)(uint8_t *)str1600, (uint8_t *)(uint8_t *)str1583, (uint8_t *)(uint8_t *)str412, (uint8_t *)(uint8_t *)str422, (uint8_t *)(uint8_t *)str1601, (uint8_t *)(uint8_t *)str1602, (uint8_t *)(uint8_t *)str1561, (uint8_t *)(uint8_t *)str418, (uint8_t *)(uint8_t *)str407, (uint8_t *)(uint8_t *)str415, (uint8_t *)(uint8_t *)str1560, (uint8_t *)(uint8_t *)str420, (uint8_t *)(uint8_t *)str1603, (uint8_t *)(uint8_t *)str417, (uint8_t *)(uint8_t *)str1128, (uint8_t *)(uint8_t *)str1604, (uint8_t *)(uint8_t *)str1605, (uint8_t *)(uint8_t *)str416, (uint8_t *)(uint8_t *)str1606, (uint8_t *)(uint8_t *)str1607, (uint8_t *)(uint8_t *)str1608, (uint8_t *)(uint8_t *)str1609, (uint8_t *)(uint8_t *)str409, (uint8_t *)(uint8_t *)str1610, (uint8_t *)(uint8_t *)str1611, (uint8_t *)(uint8_t *)str410, (uint8_t *)(uint8_t *)str911, (uint8_t *)(uint8_t *)str585, (uint8_t *)(uint8_t *)str1612, (uint8_t *)(uint8_t *)str419, (uint8_t *)(uint8_t *)str581, (uint8_t *)(uint8_t *)str1613, (uint8_t *)(uint8_t *)str1614, (uint8_t *)(uint8_t *)str1615, (uint8_t *)(uint8_t *)str1616, (uint8_t *)(uint8_t *)str1617};
+                                                                                                    const uint8_t * keywords[38] = {(uint8_t *)(uint8_t *)str1603, (uint8_t *)(uint8_t *)str421, (uint8_t *)(uint8_t *)str1604, (uint8_t *)(uint8_t *)str1587, (uint8_t *)(uint8_t *)str412, (uint8_t *)(uint8_t *)str422, (uint8_t *)(uint8_t *)str1605, (uint8_t *)(uint8_t *)str1606, (uint8_t *)(uint8_t *)str1565, (uint8_t *)(uint8_t *)str418, (uint8_t *)(uint8_t *)str407, (uint8_t *)(uint8_t *)str415, (uint8_t *)(uint8_t *)str1564, (uint8_t *)(uint8_t *)str420, (uint8_t *)(uint8_t *)str1607, (uint8_t *)(uint8_t *)str417, (uint8_t *)(uint8_t *)str1128, (uint8_t *)(uint8_t *)str1608, (uint8_t *)(uint8_t *)str1609, (uint8_t *)(uint8_t *)str416, (uint8_t *)(uint8_t *)str1610, (uint8_t *)(uint8_t *)str1611, (uint8_t *)(uint8_t *)str1612, (uint8_t *)(uint8_t *)str1613, (uint8_t *)(uint8_t *)str409, (uint8_t *)(uint8_t *)str1614, (uint8_t *)(uint8_t *)str1615, (uint8_t *)(uint8_t *)str410, (uint8_t *)(uint8_t *)str911, (uint8_t *)(uint8_t *)str585, (uint8_t *)(uint8_t *)str1616, (uint8_t *)(uint8_t *)str419, (uint8_t *)(uint8_t *)str581, (uint8_t *)(uint8_t *)str1617, (uint8_t *)(uint8_t *)str1618, (uint8_t *)(uint8_t *)str1619, (uint8_t *)(uint8_t *)str1620, (uint8_t *)(uint8_t *)str1621};
                                                                                                     int32_t i = 0;
                                                                                                     while ((i < 38)) {
                                                                                                         if ((std_string_strcmp((uint8_t *)name, (uint8_t *)keywords[i]) == 0)) {
@@ -44029,7 +44032,7 @@ static __attribute__((unused)) int32_t is_c_reserved_name(uint8_t * name) {
                                                                                                         int32_t _uya_ret = 0;
                                                                                                         return _uya_ret;
                                                                                                     }
-                                                                                                    const uint8_t * reserved[3] = {(uint8_t *)(uint8_t *)str1618, (uint8_t *)(uint8_t *)str1619, (uint8_t *)(uint8_t *)str1620};
+                                                                                                    const uint8_t * reserved[3] = {(uint8_t *)(uint8_t *)str1622, (uint8_t *)(uint8_t *)str1623, (uint8_t *)(uint8_t *)str1624};
                                                                                                     int32_t i = 0;
                                                                                                     while ((i < 3)) {
                                                                                                         if ((std_string_strcmp((uint8_t *)name, (uint8_t *)reserved[i]) == 0)) {
@@ -44055,7 +44058,7 @@ static __attribute__((unused)) uint8_t * get_safe_c_identifier(struct C99CodeGen
                                                                                                     }
                                                                                                     uint8_t buf[128] = {0};
                                                                                                     if ((is_c_reserved_name((uint8_t *)name) != 0)) {
-                                                                                                        libc_snprintf((char *)(uint8_t *)(&buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1621, (uint8_t *)name);
+                                                                                                        libc_snprintf((char *)(uint8_t *)(&buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1625, (uint8_t *)name);
                                                                                                         uint8_t * _uya_ret = c99_arena_strdup(codegen->arena, (uint8_t *)(&buf[0]));
                                                                                                         return _uya_ret;
                                                                                                     }
@@ -44065,9 +44068,9 @@ static __attribute__((unused)) uint8_t * get_safe_c_identifier(struct C99CodeGen
                                                                                                             libc_snprintf((char *)(uint8_t *)(&buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str599, (uint8_t *)name);
                                                                                                         } else {
                                                                                                             if ((prefix == 2)) {
-                                                                                                                libc_snprintf((char *)(uint8_t *)(&buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1622, (uint8_t *)name);
+                                                                                                                libc_snprintf((char *)(uint8_t *)(&buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1626, (uint8_t *)name);
                                                                                                             } else {
-                                                                                                                libc_snprintf((char *)(uint8_t *)(&buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1621, (uint8_t *)name);
+                                                                                                                libc_snprintf((char *)(uint8_t *)(&buf[0]), STRUCT_NAME_BUF_SIZE, (const char *)str1625, (uint8_t *)name);
                                                                                                             }
                                                                                                         }
                                                                                                         if ((is_c_keyword((uint8_t *)(&buf[0])) == 0)) {
@@ -44096,7 +44099,7 @@ static __attribute__((unused)) uint8_t * add_string_constant(struct C99CodeGener
                                                                                                         return _uya_ret;
                                                                                                     }
                                                                                                     uint8_t name_buf[32] = {0};
-                                                                                                    libc_snprintf((char *)(uint8_t *)(&name_buf[0]), NUM_BUF_SIZE, (const char *)str1623, codegen->string_constant_count);
+                                                                                                    libc_snprintf((char *)(uint8_t *)(&name_buf[0]), NUM_BUF_SIZE, (const char *)str1627, codegen->string_constant_count);
                                                                                                     codegen->string_constants[codegen->string_constant_count].name = c99_arena_strdup(codegen->arena, (uint8_t *)(&name_buf[0]));
                                                                                                     codegen->string_constants[codegen->string_constant_count].value = value;
                                                                                                     codegen->string_constant_count = (codegen->string_constant_count + 1);
@@ -44138,7 +44141,7 @@ static __attribute__((unused)) void escape_string_for_c(void * output, uint8_t *
                                                                                                                 libc_fputs((uint8_t *)(uint8_t *)str1194, (void *)output);
                                                                                                             } else {
                                                                                                                 if ((p[0] == 13)) {
-                                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1624, (void *)output);
+                                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1628, (void *)output);
                                                                                                                 } else {
                                                                                                                     if ((p[0] == 92)) {
                                                                                                                         libc_fputs((uint8_t *)(uint8_t *)str1195, (void *)output);
@@ -44161,12 +44164,12 @@ static __attribute__((unused)) void emit_string_constants(struct C99CodeGenerato
                                                                                                     if ((codegen->string_constant_count == 0)) {
                                                                                                         return;
                                                                                                     }
-                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1625, (void *)codegen->output);
+                                                                                                    libc_fputs((uint8_t *)(uint8_t *)str1629, (void *)codegen->output);
                                                                                                     int32_t i = 0;
                                                                                                     while ((i < codegen->string_constant_count)) {
-                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1626, (uint8_t *)codegen->string_constants[i].name);
+                                                                                                        libc_fprintf((void *)codegen->output, (const char *)str1630, (uint8_t *)codegen->string_constants[i].name);
                                                                                                         escape_string_for_c(codegen->output, codegen->string_constants[i].value);
-                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1506, (void *)codegen->output);
+                                                                                                        libc_fputs((uint8_t *)(uint8_t *)str1510, (void *)codegen->output);
                                                                                                         i = (i + 1);
                                                                                                     }
                                                                                                 }

@@ -75,12 +75,12 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.needs_stdlib_h = 0;
     // 初始化 has_stdio_conflicts 标志
     codegen.has_stdio_conflicts = 0;
-    // 默认禁用 nostdlib 模式（自举编译需要标准库入口）
-    codegen.is_nostdlib = 0;
+    // 使用传入的 is_nostdlib 参数
+    codegen.is_nostdlib = is_nostdlib;
     // 初始化 stack_size
     codegen.stack_size = stack_size;
-    // 默认启用 freestanding 模式（不包含任何标准库头文件）
-    codegen.freestanding = 1;
+    // freestanding 模式：仅在 nostdlib 模式下启用（不包含任何标准库头文件）
+    codegen.freestanding = is_nostdlib;
 
     return 0;
 }
