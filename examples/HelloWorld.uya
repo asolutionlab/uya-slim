@@ -1,0 +1,10 @@
+// HelloWorld.uya - Uya 语言入门示例
+// 展示基本的输出功能
+
+export fn main() i32 {
+    // 输出 Hello World
+    @println("Hello, World!");
+    @println("欢迎使用 Uya 编程语言！");
+
+    return 0;
+}

@@ -16,6 +16,7 @@ use std.runtime.entry;
 use libc;
 use libc.stdlib;  // clock, CLOCKS_PER_SEC
 use libc.syscall;  // sys_setrlimit, RLIMIT_STACK
+use libc.unistd;  // system
 
 // ===== 计时函数 =====
 // 暂时禁用精确计时，使用简单计数器
@@ -270,7 +271,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  -O0, -O1, -O2, -O3   优化级别（简写形式）\n" as *byte);
     fprintf(libc.stderr, "  --safety-proof       启用内存安全证明（默认启用）\n" as *byte);
     fprintf(libc.stderr, "  --no-safety-proof    禁用内存安全证明\n" as *byte);
-    fprintf(libc.stderr, "  --nostdlib           不自动包含标准库\n" as *byte);
+    fprintf(libc.stderr, "  --nostdlib           完全独立模式：无标准库依赖，使用 syscall\n" as *byte);
     fprintf(libc.stderr, "  -o <文件>            指定输出文件名\n" as *byte);
     fprintf(libc.stderr, "  --stack-size <KB>    设置堆栈大小（KB），默认 65536 (64MB)\n" as *byte);
     fprintf(libc.stderr, "  -h, --help           显示此帮助信息\n" as *byte);
@@ -1102,7 +1103,7 @@ fn parse_args(
     opt_level[0] = 1;  // 默认优化级别 1
     outlibc_index[0] = -1;
     run_arg_start[0] = -1;
-    is_nostdlib[0] = 0;
+    is_nostdlib[0] = 0;  // 默认不启用 nostdlib
     stack_size[0] = 0;  // 默认自动设置堆栈大小
 
     // 检测子命令
@@ -1233,16 +1234,6 @@ fn parse_args(
         return -1;
     }
     
-    // build 命令必须指定 -o
-    if command[0] == CommandType.COMMAND_BUILD && output_file_index[0] < 0 {
-        fprintf(libc.stderr, "错误: build 命令需要指定输出文件（使用 -o 选项）\n" as *byte);
-        const program_name: *byte = get_argv(0);
-        if program_name != null {
-            print_usage(program_name as &byte);
-        }
-        return -1;
-    }
-    
     // run 和 test 命令：如果没有指定 -o，自动生成输出路径
     // 输出路径将在主函数中根据输入文件名生成
     
@@ -1259,6 +1250,49 @@ fn parse_args(
                 backend_type[0] = BackendType.BACKEND_C99;
             }
         }
+    }
+    return 0;
+}
+
+// 检测输出路径是否为 C 文件（以 .c 结尾）
+// 返回：1 表示 C 文件，0 表示其他
+fn is_c_output(output_path: &byte) i32 {
+    if output_path == null { return 0; }
+    const len: usize = strlen(output_path as *byte);
+    if len < 2 { return 0; }
+    if output_path[len - 2] == 46 as byte && output_path[len - 1] == 99 as byte {
+        return 1;
+    }
+    return 0;
+}
+
+// 调用 gcc 链接生成可执行文件
+// c_file: C 源代码文件路径
+// output: 输出可执行文件路径
+// is_nostdlib: 是否使用 --nostdlib 模式
+// 返回：0 成功，非 0 失败
+fn link_with_gcc(c_file: &byte, output: &byte, is_nostdlib: i32) i32 {
+    var cmd: [byte: 4096] = [];
+    var cmd_len: i32 = 0;
+
+    if is_nostdlib != 0 {
+        // --nostdlib 模式：零依赖静态链接
+        cmd_len = snprintf(&cmd[0], 4096, "PATH=/usr/lib/gcc/x86_64-linux-gnu/12:$PATH gcc -std=c99 -O2 -nostdlib -fno-builtin -static %s -o %s -lgcc" as *byte, c_file as *byte, output as *byte);
+    } else {
+        // 普通模式
+        cmd_len = snprintf(&cmd[0], 4096, "PATH=/usr/lib/gcc/x86_64-linux-gnu/12:$PATH gcc -std=c99 -O2 -fno-builtin %s -o %s" as *byte, c_file as *byte, output as *byte);
+    }
+
+    if cmd_len <= 0 || cmd_len >= 4096 {
+        fprintf(libc.stderr, "错误：构建 gcc 命令失败\n" as *byte);
+        return 1;
+    }
+
+    fprintf(libc.stderr, "信息：调用 gcc 链接：%s\n" as *byte, &cmd[0] as *byte);
+    const result: i32 = system(&cmd[0] as *byte);
+    if result != 0 {
+        fprintf(libc.stderr, "错误：gcc 链接失败，返回码：%d\n" as *byte, result);
+        return 1;
     }
     return 0;
 }
@@ -1423,12 +1457,12 @@ fn compile_files(
                 }
             } else {
                 // 多文件模式下，允许某些文件不包含 main（它们是库文件）
-                // 但如果这是唯一输入文件，则必须包含 main
+                // 但如果这是唯一输入文件�����则必须包含 main
                 if input_file_count == 1 {
                     fprintf(libc.stderr, "错误: 文件 '%s' 不包含 main 函数\n" as *byte, input_path);
                     return 1;
                 }
-                // 多文件模式：将不包含 main 的文件也加入列表（作为库文件）
+                // 多文件模式：将不包含 main 的文件也加入列表（作为���文件）
                 resolved_files[resolved_count] = input;
                 resolved_count = resolved_count + 1;
             }
@@ -1744,7 +1778,7 @@ fn compile_files(
 
 // 程序入口（export fn main 编译为 main_main，由 std.runtime.entry 的 C main 调用）
 export fn main() i32 {
-    
+
     var input_file_indices: [i32: 64] = [];
     var input_file_count: i32 = 0;
     var output_file_index: i32 = -1;
@@ -1788,6 +1822,18 @@ export fn main() i32 {
         return result;
     }
 
+    // build 命令：如果没有指定 -o，使用默认输出 a.out
+    if command == CommandType.COMMAND_BUILD && output_file_index < 0 {
+        // 生成临时 C 文件路径
+        const written: i32 = snprintf(&auto_output_path[0], PATH_MAX, "/tmp/uya_output.c" as *byte);
+        if written <= 0 || written >= PATH_MAX {
+            fprintf(libc.stderr, "错误：无法生成临时输出路径\n" as *byte);
+            return 1;
+        }
+        output_file_index = -2;  // 标记为自动生成的路径
+        backend = BackendType.BACKEND_C99;  // build 模式默认使用 C99 后端
+    }
+
     // run 和 test 命令：自动生成输出路径
     if (command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST) && output_file_index < 0 {
         // 从输入文件名生成输出路径
@@ -1817,7 +1863,37 @@ export fn main() i32 {
     if result != 0 {
         return result;
     }
-    
+
+    // build 命令：检测输出类型（C 文件或可执行文件）
+    var is_output_c_file: i32 = 0;
+    if command == CommandType.COMMAND_BUILD && output_file_index >= 0 {
+        const out_path: *byte = get_argv(output_file_index);
+        if out_path != null && is_c_output(out_path as &byte) != 0 {
+            is_output_c_file = 1;
+        }
+    }
+
+    // build 命令：如果输出不是 C 文件，调用 gcc 链接
+    if command == CommandType.COMMAND_BUILD && is_output_c_file == 0 {
+        var c_file: &byte = &auto_output_path[0];
+        var output: &byte = "a.out" as *byte;
+
+        // 如果指定了 -o，使用指定的输出路径
+        if output_file_index >= 0 {
+            output = get_argv(output_file_index) as *byte;
+        }
+
+        // 调用 gcc 链接
+        const link_result: i32 = link_with_gcc(c_file, output, is_nostdlib);
+        if link_result != 0 {
+            fprintf(libc.stderr, "错误：链接失败\n" as *byte);
+            return 1;
+        }
+
+        fprintf(libc.stderr, "\n编译完成：%s\n" as *byte, output as *byte);
+        return 0;
+    }
+
     // run 和 test 命令：输出运行提示
     if command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST {
         // 获取输出路径

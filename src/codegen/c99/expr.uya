@@ -2564,7 +2564,7 @@ fn gen_print_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             const inner: &ASTNode = expr.print_expr;
             var fmt: &byte = null;
             var need_cast: i32 = 0;  // 是否需要 (char *) 转换
-            
+
             // 根据表达式类型确定格式字符串
             if inner.type == ASTNodeType.AST_NUMBER {
                 // 整数字面量：默认按 i32 处理
@@ -2608,24 +2608,45 @@ fn gen_print_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 // 二元表达式：整数或浮点运算
                 fmt = "%lld";
             }
-            
+
             if fmt == null {
                 fmt = "%lld";  // 默认整数格式
             }
-            
-            // 生成 printf 调用
-            if expr.type == ASTNodeType.AST_PRINTLN {
-                fprintf(codegen.output as *void, "printf(\"%s\\n\", " as *byte, fmt as *byte);
+
+            // nostdlib 模式：使用 syscall write，仅支持字符串
+            if codegen.is_nostdlib != 0 && (inner.type == ASTNodeType.AST_STRING || inner.type == ASTNodeType.AST_STRING_INTERP) {
+                // 生成 uya_write(1, "string", len) 调用
+                fputs("uya_write(1, " as *byte, codegen.output as *void);
+                if need_cast != 0 {
+                    fputs("(char *)" as *byte, codegen.output as *void);
+                }
+                gen_expr(codegen, expr.print_expr);
+                // 计算字符串长度（内联 strlen）
+                fputs(", uya_strlen(" as *byte, codegen.output as *void);
+                if need_cast != 0 {
+                    fputs("(char *)" as *byte, codegen.output as *void);
+                }
+                gen_expr(codegen, expr.print_expr);
+                fputs("))" as *byte, codegen.output as *void);
+                // 如果是 println，再输出换行符
+                if expr.type == ASTNodeType.AST_PRINTLN {
+                    fputs("; uya_write(1, \"\\n\", 1)" as *byte, codegen.output as *void);
+                }
             } else {
-                fprintf(codegen.output as *void, "printf(\"%s\", " as *byte, fmt as *byte);
+                // 普通模式：生成 printf 调用
+                if expr.type == ASTNodeType.AST_PRINTLN {
+                    fprintf(codegen.output as *void, "printf(\"%s\\n\", " as *byte, fmt as *byte);
+                } else {
+                    fprintf(codegen.output as *void, "printf(\"%s\", " as *byte, fmt as *byte);
+                }
+
+                if need_cast != 0 {
+                    fputs("(char *)" as *byte, codegen.output as *void);
+                }
+
+                gen_expr(codegen, expr.print_expr);
+                fputc(41, codegen.output as *void);
             }
-            
-            if need_cast != 0 {
-                fputs("(char *)" as *byte, codegen.output as *void);
-            }
-            
-            gen_expr(codegen, expr.print_expr);
-            fputc(41, codegen.output as *void);
         }
 }
 

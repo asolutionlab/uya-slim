@@ -741,12 +741,15 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         c99_emit_newline(codegen);
         // 如果定义了文件 I/O 函数（fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush），不包含 <stdio.h>
         // 避免与标准库声明冲突。自举编译时强制与 C 编译器一致。
-        if codegen.has_stdio_conflicts == 0 && is_bootstrap == 0 {
-            fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);  // for standard I/O functions (printf, puts, etc.)
-        }
-        // 添加 sys/resource.h 用于 setrlimit（堆栈大小设置）
-        if codegen.stack_size > 0 {
-            fputs("#include <sys/resource.h>\n" as *byte, codegen.output as *void);  // for setrlimit
+        // freestanding 模式下不包含任何标准库头文件
+        if codegen.freestanding == 0 {
+            if codegen.has_stdio_conflicts == 0 && is_bootstrap == 0 {
+                fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);  // for standard I/O functions (printf, puts, etc.)
+            }
+            // 添加 sys/resource.h 用于 setrlimit（堆栈大小设置）
+            if codegen.stack_size > 0 {
+                fputs("#include <sys/resource.h>\n" as *byte, codegen.output as *void);  // for setrlimit
+            }
         }
         // 不包含 stdlib.h，避免间接引入 stdio.h 导致 fprintf 与 built-in 冲突；exit/malloc 等由 libc 通过 syscall 实现
         // 仅当 needs_string_h 且未定义 string/mem 函数时才包含 <string.h>
@@ -770,8 +773,34 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
             mi = mi + 1;
         }
-        if codegen.needs_string_h != 0 && has_string_functions == 0 && has_mem_functions == 0 && is_bootstrap == 0 {
+        if codegen.freestanding == 0 && codegen.needs_string_h != 0 && has_string_functions == 0 && has_mem_functions == 0 && is_bootstrap == 0 {
             fputs("#include <string.h>\n" as *byte, codegen.output as *void);
+        }
+        // 检测是否定义了与 stdlib.h 冲突的函数（labs, strtoul, qsort, bsearch 等）
+        var has_stdlib_conflicts: i32 = 0;
+        var si: i32 = 0;
+        while si < check_decl_count {
+            const sd: &ASTNode = ast.program_decls[si];
+            if sd != null && sd.type == ASTNodeType.AST_FN_DECL && sd.fn_decl_body != null {
+                const sn: &byte = sd.fn_decl_name;
+                if sn != null {
+                    if strcmp(sn as *byte, "labs" as *byte) == 0 ||
+                       strcmp(sn as *byte, "strtoul" as *byte) == 0 ||
+                       strcmp(sn as *byte, "qsort" as *byte) == 0 ||
+                       strcmp(sn as *byte, "bsearch" as *byte) == 0 {
+                        has_stdlib_conflicts = 1;
+                    }
+                }
+            }
+            si = si + 1;
+        }
+        // 如果使用了 stdlib 函数（exit, malloc, free 等）且没有冲突，包含 <stdlib.h>
+        if codegen.freestanding == 0 && codegen.needs_stdlib_h != 0 && has_stdlib_conflicts == 0 && is_bootstrap == 0 {
+            fputs("#include <stdlib.h>\n" as *byte, codegen.output as *void);
+        }
+        // 如果使用了 stdio 函数（printf, fprintf 等），包含 <stdio.h>
+        if codegen.freestanding == 0 && codegen.needs_stdio_h != 0 && is_bootstrap == 0 {
+            fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);
         }
         // 不包含 sys/stat.h、unistd.h，避免间接引入 stdio.h 导致 fprintf 等与 built-in 冲突；stat/readlink 由 libc 通过 syscall 实现
         // 若本程序定义了 opendir/readdir/closedir（如 stdlib），不声明系统符号，避免与生成的 uya_opendir 等冲突
@@ -795,13 +824,13 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
             di = di + 1;
         }
-        if has_own_opendir == 0 && is_bootstrap == 0 {
+        if has_own_opendir == 0 && is_bootstrap == 0 && codegen.freestanding == 0 {
             fputs("extern void *opendir(const char *);\n" as *byte, codegen.output as *void);
         }
-        if has_own_readdir == 0 && is_bootstrap == 0 {
+        if has_own_readdir == 0 && is_bootstrap == 0 && codegen.freestanding == 0 {
             fputs("extern void *readdir(void *);\n" as *byte, codegen.output as *void);
         }
-        if has_own_closedir == 0 && is_bootstrap == 0 {
+        if has_own_closedir == 0 && is_bootstrap == 0 && codegen.freestanding == 0 {
             fputs("extern int closedir(void *);\n" as *byte, codegen.output as *void);
         }
         c99_emit_newline(codegen);
@@ -820,9 +849,25 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("    for (size_t i = 0; i < n; i++) { if (a[i] != b[i]) return a[i] - b[i]; } return 0;\n" as *byte, codegen.output as *void);
         fputs("}\n\n" as *byte, codegen.output as *void);
     }
-    
-    // --nostdlib 模式：生成 _start 入口（内联汇编）
+
+    // --nostdlib 模式：生成 _start 入口和辅助函数
     if codegen.is_nostdlib != 0 {
+        // 添加 syscall write 和 strlen 辅助函数
+        fputs("// syscall write - 写入文件描述符\n" as *byte, codegen.output as *void);
+        fputs("static long uya_write(int fd, const char *buf, unsigned long len) {\n" as *byte, codegen.output as *void);
+        fputs("    long ret;\n" as *byte, codegen.output as *void);
+        fputs("    __asm__ volatile (\"syscall\" : \"=a\"(ret) : \"a\"(1), \"D\"(fd), \"S\"(buf), \"d\"(len) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.output as *void);
+        fputs("    return ret;\n" as *byte, codegen.output as *void);
+        fputs("}\n\n" as *byte, codegen.output as *void);
+        
+        fputs("// strlen - 计算字符串长度\n" as *byte, codegen.output as *void);
+        fputs("static unsigned long uya_strlen(const char *s) {\n" as *byte, codegen.output as *void);
+        fputs("    unsigned long len = 0;\n" as *byte, codegen.output as *void);
+        fputs("    while (s[len]) len++;\n" as *byte, codegen.output as *void);
+        fputs("    return len;\n" as *byte, codegen.output as *void);
+        fputs("}\n\n" as *byte, codegen.output as *void);
+        
+        // 生成 _start 入口
         fputs("// _start - 自定义程序入口（无 C 标准库，内联汇编实现）\n" as *byte, codegen.output as *void);
         fputs("extern int main(int argc, uint8_t **argv);\n" as *byte, codegen.output as *void);
         fputs("__attribute__((naked)) void _start(void) {\n" as *byte, codegen.output as *void);

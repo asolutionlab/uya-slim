@@ -212,6 +212,9 @@ struct C99CodeGenerator {
     // --nostdlib 模式：生成 _start 入口
     is_nostdlib: i32,                     // 1 表示生成 _start 内联汇编
 
+    // --freestanding 模式：不包含任何标准库头文件
+    freestanding: i32,                    // 1 表示完全独立，不包含 #include
+
     // 堆栈大小设置（KB）
     stack_size: i32                       // 堆栈大小（KB），0 表示默认
 }
