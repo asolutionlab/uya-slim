@@ -1894,16 +1894,53 @@ export fn main() i32 {
         return 0;
     }
 
-    // run 和 test 命令：输出运行提示
+    // run 和 test 命令：自动编译并运行
     if command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST {
         // 获取输出路径
         var actual_output: &byte = &auto_output_path[0];
         if output_file_index >= 0 {
             actual_output = get_argv(output_file_index) as &byte;
         }
+
+        // 生成临时可执行文件路径
+        var run_output: [byte: PATH_MAX] = [];
+        const run_written: i32 = snprintf(&run_output[0], PATH_MAX, "/tmp/uya_out" as *byte);
+        if run_written <= 0 || run_written >= PATH_MAX {
+            fprintf(libc.stderr, "错误：无法生成运行时输出路径\n" as *byte);
+            return 1;
+        }
+
+        // 调用 gcc 链接生成可执行文件
+        fprintf(libc.stderr, "\n编译完成：%s\n" as *byte, actual_output as *byte);
         
-        fprintf(libc.stderr, "\n编译完成: %s\n" as *byte, actual_output as *byte);
-        fprintf(libc.stderr, "运行命令: gcc -x c -o /tmp/uya_out %s -std=c99 -lm && /tmp/uya_out\n" as *byte, actual_output as *byte);
+        var gcc_cmd: [byte: 4096] = [];
+        var gcc_cmd_len: i32 = 0;
+        if is_nostdlib != 0 {
+            gcc_cmd_len = snprintf(&gcc_cmd[0], 4096, "PATH=/usr/lib/gcc/x86_64-linux-gnu/12:$PATH gcc -std=c99 -O2 -nostdlib -fno-builtin -static %s -o /tmp/uya_out -lgcc" as *byte, actual_output as *byte);
+        } else {
+            gcc_cmd_len = snprintf(&gcc_cmd[0], 4096, "PATH=/usr/lib/gcc/x86_64-linux-gnu/12:$PATH gcc -std=c99 -O2 %s -o /tmp/uya_out -lm" as *byte, actual_output as *byte);
+        }
+        
+        if gcc_cmd_len <= 0 || gcc_cmd_len >= 4096 {
+            fprintf(libc.stderr, "错误：构建 gcc 命令失败\n" as *byte);
+            return 1;
+        }
+        
+        const gcc_result: i32 = system(&gcc_cmd[0] as *byte);
+        if gcc_result != 0 {
+            fprintf(libc.stderr, "错误：gcc 链接失败，返回码：%d\n" as *byte, gcc_result);
+            return 1;
+        }
+
+        // 运行程序
+        var run_cmd: [byte: 4096] = [];
+        var run_cmd_len: i32 = snprintf(&run_cmd[0], 4096, "/tmp/uya_out" as *byte);
+        const run_result: i32 = system(&run_cmd[0] as *byte);
+        if run_result != 0 {
+            fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, run_result);
+        }
+        
+        return 0;
     }
     
     return 0;
