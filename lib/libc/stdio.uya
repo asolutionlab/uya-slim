@@ -11,15 +11,123 @@
 // C 标准库兼容的流类型（outlibc 时对应 C 的 FILE* 所指类型）
 export struct FILE {
     fd: i64,
+    buffer: [byte: 4096],      // 添加缓冲区
+    buf_pos: usize,            // 当前缓冲区位置
+    buf_len: usize,            // 缓冲区中有效数据长度
+    buf_mode: i32,             // 缓冲模式：0-无缓冲，1-行缓冲，2-全缓冲
 }
 
-var _stdin: FILE = FILE{ fd: 0 };
-var _stdout: FILE = FILE{ fd: 1 };
-var _stderr: FILE = FILE{ fd: 2 };
+var _stdin: FILE = FILE{ fd: 0, buf_pos: 0, buf_len: 0, buf_mode: 0 };
+var _stdout: FILE = FILE{ fd: 1, buf_pos: 0, buf_len: 0, buf_mode: 1 };  // 行缓冲
+var _stderr: FILE = FILE{ fd: 2, buf_pos: 0, buf_len: 0, buf_mode: 0 };  // 无缓冲
 
 export var stdin: &FILE = &_stdin;
 export var stdout: &FILE = &_stdout;
 export var stderr: &FILE = &_stderr;
+
+// ============================================================
+// 缓冲区操作函数
+// ============================================================
+
+// flush_buffer - 刷新流的缓冲区
+export fn flush_buffer(stream: &FILE) i32 {
+    if stream.buf_len == 0 {
+        return 0;  // 没有需要刷新的数据
+    }
+    
+    // 写入缓冲区中的所有数据
+    const result: !i64 = @syscall(SYS_write, stream.fd, stream.buffer as i64, stream.buf_len as i64);
+    const written: i64 = result catch {
+        return -1;  // 写入失败
+    };
+    
+    if written < 0 {
+        return -1;
+    }
+    
+    // 重置缓冲区
+    stream.buf_pos = 0;
+    stream.buf_len = 0;
+    
+    return 0;
+}
+
+// write_to_buffer - 将数据写入流的缓冲区
+export fn write_to_buffer(stream: &FILE, buf: &const byte, n: usize) i64 {
+    if n == 0 {
+        return 0;
+    }
+    
+    // 如果禁用了缓冲或缓冲区太小，直接写入
+    if stream.buf_mode == 0 || n >= 4096 {
+        const result: !i64 = @syscall(SYS_write, stream.fd, buf as i64, n as i64);
+        const written: i64 = result catch {
+            return -1;
+        };
+        return written;
+    }
+    
+    // 尝试将数据放入缓冲区
+    var bytes_written: usize = 0;
+    var remaining: usize = n;
+    var src_offset: usize = 0;
+
+    while remaining > 0 {
+        var space_left: usize = 4096 - stream.buf_len;
+
+        if space_left == 0 {
+            // 缓冲区满了，先刷新
+            if flush_buffer(stream) < 0 {
+                return -1;
+            }
+        }
+
+        var to_copy: usize = 0;
+        if remaining < space_left {
+            to_copy = remaining;
+        } else {
+            to_copy = space_left;
+        }
+
+        // 复制数据到缓冲区
+        var i: usize = 0;
+        while i < to_copy {
+            stream.buffer[stream.buf_len + i] = buf[src_offset + i];
+            i = i + 1;
+        }
+
+        // 先复制数据到缓冲区
+        stream.buf_len = stream.buf_len + to_copy;
+        src_offset = src_offset + to_copy;
+        bytes_written = bytes_written + to_copy;
+        remaining = remaining - to_copy;
+
+        // 如果是行缓冲且遇到了换行符，则刷新
+        if stream.buf_mode == 1 {
+            // 只检查本次写入的数据（从 buf_start 到当前 buf_len）
+            var buf_start: usize = stream.buf_len - to_copy;
+            var j: usize = buf_start;
+            var need_flush: bool = false;
+            while j < stream.buf_len {
+                // 添加边界检查以满足 safety-proof
+                if j < 4096 {
+                    if stream.buffer[j] == 10 {  // '\n'
+                        need_flush = true;
+                        break;
+                    }
+                }
+                j = j + 1;
+            }
+            if need_flush {
+                if flush_buffer(stream) < 0 {
+                    return -1;
+                }
+            }
+        }
+    }
+
+    return bytes_written as i64;
+}
 
 // ============================================================
 // 标准文件描述符
@@ -36,65 +144,92 @@ export const STDERR: i64 = 2;
 // put_char - 向标准输出写入一个字符
 // 返回：写入的字符（成功）或 -1（失败）
 export fn put_char(c: i32) i32 {
-    var ch: byte = c as byte;
-    const result: !i64 = @syscall(SYS_write, STDOUT, &ch as i64, 1);
-    const written: i64 = result catch {
-        return 0 - 1;
-    };
-    if written == 1 {
-        return c;
-    }
-    return 0 - 1;
+    return put_char_fd(c, STDOUT);
 }
 
-// put_char_fd - 向指定文件描述符写入一个字符
+// put_char_fd - 吐定文件描述符写入一个字符
 // 返回：写入的字符（成功）或 -1（失败）
 export fn put_char_fd(c: i32, fd: i64) i32 {
-    var ch: byte = c as byte;
-    const result: !i64 = @syscall(SYS_write, fd, &ch as i64, 1);
-    const written: i64 = result catch {
-        return 0 - 1;
-    };
-    if written == 1 {
+    // 查找对应的FILE流
+    var target_stream: &FILE = null;
+    if fd == 0 { target_stream = stdin; }
+    else if fd == 1 { target_stream = stdout; }
+    else if fd == 2 { target_stream = stderr; }
+    
+    if target_stream != null {
+        // 对于标准流，使用缓冲机制
+        const ch: byte = c as byte;
+        const result: i64 = write_to_buffer(target_stream, &ch, 1);
+        if result < 0 {
+            return -1;
+        }
+        
+        // 如果是行缓冲且是换行符，刷新缓冲区
+        if target_stream.buf_mode == 1 && ch == 10 {
+            if flush_buffer(target_stream) < 0 {
+                return -1;
+            }
+        }
+        
         return c;
+    } else {
+        // 非标准流，直接写入
+        var ch: byte = c as byte;
+        const result: !i64 = @syscall(SYS_write, fd, &ch as i64, 1);
+        const written: i64 = result catch {
+            return 0 - 1;
+        };
+        if written == 1 {
+            return c;
+        }
+        return 0 - 1;
     }
-    return 0 - 1;
 }
 
 // write_bytes - 向标准输出写入 n 个字节
 // 返回：写入的字节数，失败返回 -1
 export fn write_bytes(buf: &const byte, n: usize) i64 {
-    const result: !i64 = @syscall(SYS_write, STDOUT, buf as i64, n as i64);
-    const written: i64 = result catch {
-        return 0 - 1;
-    };
-    return written;
+    return write_bytes_fd(buf, n, STDOUT);
 }
 
 // write_bytes_fd - 向指定文件描述符写入 n 个字节
 // 返回：写入的字节数，失败返回 -1
 export fn write_bytes_fd(buf: &const byte, n: usize, fd: i64) i64 {
-    const result: !i64 = @syscall(SYS_write, fd, buf as i64, n as i64);
-    const written: i64 = result catch {
-        return 0 - 1;
-    };
-    return written;
+    // 查找对应的FILE流
+    var target_stream: &FILE = null;
+    if fd == 0 { target_stream = stdin; }
+    else if fd == 1 { target_stream = stdout; }
+    else if fd == 2 { target_stream = stderr; }
+    
+    if target_stream != null {
+        // 对于标准流，使用缓冲机制
+        return write_to_buffer(target_stream, buf, n);
+    } else {
+        // 非标准流，直接写入
+        const result: !i64 = @syscall(SYS_write, fd, buf as i64, n as i64);
+        const written: i64 = result catch {
+            return 0 - 1;
+        };
+        return written;
+    }
 }
 
 // put_str_len - 向标准输出写入指定长度的字符串并换行
 // 返回：0 成功，-1 失败
 export fn put_str_len(s: &const byte, len: usize) i32 {
     // 写入字符串内容
-    const result: !i64 = @syscall(SYS_write, STDOUT, s as i64, len as i64);
-    _ = result catch {
+    const result: i64 = write_bytes(s, len);
+    if result < 0 {
         return 0 - 1;
-    };
+    }
+    
     // 写入换行符
     var newline: byte = 10 as byte;
-    const nl_result: !i64 = @syscall(SYS_write, STDOUT, &newline as i64, 1);
-    _ = nl_result catch {
+    const nl_result: i64 = write_bytes(&newline, 1);
+    if nl_result < 0 {
         return 0 - 1;
-    };
+    }
+    
     return 0;
 }
 
@@ -672,29 +807,23 @@ export fn fprintf(stream: &FILE, format: &const byte, ...) i32 {
     return written as i32;
 }
 
-// fwrite - 向文件流写入数据（C 标准库兼容）
-// 返回：写入的元素数
+// fwrite - 向文件流写入数据
+// 参数：ptr - 数据指针，size - 单个元素大小，nmemb - 元素数量，stream - 文件流
+// 返回：成功写入的元素数量
 export fn fwrite(ptr: &const byte, size: usize, nmemb: usize, stream: &FILE) usize {
-    if ptr == null || stream == null || size == 0 || nmemb == 0 {
-        return 0;
-    }
-    const fd: i64 = stream.fd;
-    if fd < 0 {
+    if stream == null || ptr == null || size == 0 || nmemb == 0 {
         return 0;
     }
     
     const total_size: usize = size * nmemb;
-    const result: !isize = sys_write(fd as i32, ptr, total_size);
-    const bytes_written: isize = result catch {
-        return 0;
-    };
     
-    if bytes_written < 0 as isize {
+    // 使用缓冲写入
+    const result: i64 = write_to_buffer(stream, ptr, total_size);
+    if result < 0 {
         return 0;
     }
     
-    // 返回写入的元素数（向下取整）
-    return (bytes_written as usize) / size;
+    return (result as usize) / size;
 }
 
 // fputc - 向文件流写入一个字符（C 标准库兼容）

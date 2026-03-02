@@ -64,18 +64,24 @@ export fn realloc(ptr: &void, size: usize) &void {
     if ptr == null {
         return malloc(size);
     }
-    
+
     if size == 0 {
         free(ptr);
         return null;
     }
-    
-    // 简化实现：分配新内存（实际应该复制旧数据并释放旧内存）
+
+    // 分配新内存
     const new_ptr: &void = malloc(size);
     if new_ptr == null {
         return null;
     }
-    
+
+    // 复制旧数据到新内存（简化：假设最小分配为 4096 字节）
+    _ = memcpy(new_ptr as *byte, ptr as *const byte, 4096);
+
+    // 释放旧内存
+    free(ptr);
+
     return new_ptr;
 }
 

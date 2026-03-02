@@ -2157,6 +2157,10 @@ struct Arena {
 
 struct FILE {
     int64_t fd;
+    uint8_t buffer[4096];
+    size_t buf_pos;
+    size_t buf_len;
+    int32_t buf_mode;
 };
 
 struct DIR {
@@ -2961,6 +2965,8 @@ uint8_t * memset(uint8_t * s, int32_t c, size_t n);
 uint8_t * memmove(uint8_t * dest, const uint8_t * src, size_t n);
 int32_t memcmp(const uint8_t * s1, const uint8_t * s2, size_t n);
 uint8_t * memchr(const uint8_t * s, int32_t c, size_t n);
+int32_t libc_flush_buffer(struct FILE * stream);
+int64_t libc_write_to_buffer(struct FILE * stream, const uint8_t * buf, size_t n);
 int32_t libc_put_char(int32_t c);
 int32_t libc_put_char_fd(int32_t c, int64_t fd);
 int64_t libc_write_bytes(const uint8_t * buf, size_t n);
@@ -3929,11 +3935,11 @@ uint8_t main_file_paths_global[64][4096] = {0};
 
 uint8_t * resolved_files_global[64] = {0};
 
-struct FILE _stdin = {.fd = 0};
+struct FILE _stdin = {.fd = 0, .buf_pos = 0, .buf_len = 0, .buf_mode = 0};
 
-struct FILE _stdout = {.fd = 1};
+struct FILE _stdout = {.fd = 1, .buf_pos = 0, .buf_len = 0, .buf_mode = 1};
 
-struct FILE _stderr = {.fd = 2};
+struct FILE _stderr = {.fd = 2, .buf_pos = 0, .buf_len = 0, .buf_mode = 0};
 
 struct FILE fopen_fd_storage[64] = {0};
 
@@ -6644,48 +6650,152 @@ uint8_t * memchr(const uint8_t * s, int32_t c, size_t n) {
     return _uya_ret;
 }
 
-int32_t libc_put_char(int32_t c) {
-    (void)c;
-    uint8_t ch = (uint8_t)c;
-    struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, STDOUT, (int64_t)(&ch), 1); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
-    const int64_t written = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    if ((written == 1)) {
-        int32_t _uya_ret = c;
+int32_t libc_flush_buffer(struct FILE * stream) {
+    (void)stream;
+    if ((stream->buf_len == 0)) {
+        int32_t _uya_ret = 0;
         return _uya_ret;
     }
-    int32_t _uya_ret = (0 - 1);
+    struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, stream->fd, (int64_t)stream->buffer, (int64_t)stream->buf_len); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
+    const int64_t written = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+    if ((written < 0)) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    stream->buf_pos = 0;
+    stream->buf_len = 0;
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+int64_t libc_write_to_buffer(struct FILE * stream, const uint8_t * buf, size_t n) {
+    (void)stream;
+    (void)buf;
+    (void)n;
+    if ((n == 0)) {
+        int64_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    if (((stream->buf_mode == 0) || (n >= 4096))) {
+        struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, stream->fd, (int64_t)buf, (int64_t)n); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
+        const int64_t written = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+            int64_t _uya_ret = (-1);
+            return _uya_ret;
+        } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+        int64_t _uya_ret = written;
+        return _uya_ret;
+    }
+    size_t bytes_written = 0;
+    size_t remaining = n;
+    size_t src_offset = 0;
+    while ((remaining > 0)) {
+        size_t space_left = (4096 - stream->buf_len);
+        if ((space_left == 0)) {
+            if ((libc_flush_buffer(stream) < 0)) {
+                int64_t _uya_ret = (-1);
+                return _uya_ret;
+            }
+        }
+        size_t to_copy = 0;
+        if ((remaining < space_left)) {
+            to_copy = remaining;
+        } else {
+            to_copy = space_left;
+        }
+        size_t i = 0;
+        while ((i < to_copy)) {
+            stream->buffer[(stream->buf_len + i)] = buf[(src_offset + i)];
+            i = (i + 1);
+        }
+        stream->buf_len = (stream->buf_len + to_copy);
+        src_offset = (src_offset + to_copy);
+        bytes_written = (bytes_written + to_copy);
+        remaining = (remaining - to_copy);
+        if ((stream->buf_mode == 1)) {
+            size_t buf_start = (stream->buf_len - to_copy);
+            size_t j = buf_start;
+            bool need_flush = false;
+            while ((j < stream->buf_len)) {
+                if ((j < 4096)) {
+                    if ((stream->buffer[j] == 10)) {
+                        need_flush = true;
+                        break;
+                    }
+                }
+                j = (j + 1);
+            }
+            if (need_flush) {
+                if ((libc_flush_buffer(stream) < 0)) {
+                    int64_t _uya_ret = (-1);
+                    return _uya_ret;
+                }
+            }
+        }
+    }
+    int64_t _uya_ret = (int64_t)bytes_written;
+    return _uya_ret;
+}
+
+int32_t libc_put_char(int32_t c) {
+    (void)c;
+    int32_t _uya_ret = libc_put_char_fd(c, STDOUT);
     return _uya_ret;
 }
 
 int32_t libc_put_char_fd(int32_t c, int64_t fd) {
     (void)c;
     (void)fd;
-    uint8_t ch = (uint8_t)c;
-    struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, fd, (int64_t)(&ch), 1); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
-    const int64_t written = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    if ((written == 1)) {
+    struct FILE * target_stream = NULL;
+    if ((fd == 0)) {
+        target_stream = stdin;
+    } else {
+        if ((fd == 1)) {
+            target_stream = stdout;
+        } else {
+            if ((fd == 2)) {
+                target_stream = stderr;
+            }
+        }
+    }
+    if ((target_stream != NULL)) {
+        const uint8_t ch = (uint8_t)c;
+        const int64_t result = libc_write_to_buffer(target_stream, (&ch), 1);
+        if ((result < 0)) {
+            int32_t _uya_ret = (-1);
+            return _uya_ret;
+        }
+        if (((target_stream->buf_mode == 1) && (ch == 10))) {
+            if ((libc_flush_buffer(target_stream) < 0)) {
+                int32_t _uya_ret = (-1);
+                return _uya_ret;
+            }
+        }
         int32_t _uya_ret = c;
         return _uya_ret;
+    } else {
+        uint8_t ch = (uint8_t)c;
+        struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, fd, (int64_t)(&ch), 1); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
+        const int64_t written = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+            int32_t _uya_ret = (0 - 1);
+            return _uya_ret;
+        } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+        if ((written == 1)) {
+            int32_t _uya_ret = c;
+            return _uya_ret;
+        }
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
     }
-    int32_t _uya_ret = (0 - 1);
-    return _uya_ret;
+        return 0;
 }
 
 int64_t libc_write_bytes(const uint8_t * buf, size_t n) {
     (void)buf;
     (void)n;
-    struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, STDOUT, (int64_t)buf, (int64_t)n); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
-    const int64_t written = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
-        int64_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    int64_t _uya_ret = written;
+    int64_t _uya_ret = libc_write_bytes_fd(buf, n, STDOUT);
     return _uya_ret;
 }
 
@@ -6693,29 +6803,47 @@ int64_t libc_write_bytes_fd(const uint8_t * buf, size_t n, int64_t fd) {
     (void)buf;
     (void)n;
     (void)fd;
-    struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, fd, (int64_t)buf, (int64_t)n); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
-    const int64_t written = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
-        int64_t _uya_ret = (0 - 1);
+    struct FILE * target_stream = NULL;
+    if ((fd == 0)) {
+        target_stream = stdin;
+    } else {
+        if ((fd == 1)) {
+            target_stream = stdout;
+        } else {
+            if ((fd == 2)) {
+                target_stream = stderr;
+            }
+        }
+    }
+    if ((target_stream != NULL)) {
+        int64_t _uya_ret = libc_write_to_buffer(target_stream, buf, n);
         return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    int64_t _uya_ret = written;
-    return _uya_ret;
+    } else {
+        struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, fd, (int64_t)buf, (int64_t)n); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
+        const int64_t written = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+            int64_t _uya_ret = (0 - 1);
+            return _uya_ret;
+        } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+        int64_t _uya_ret = written;
+        return _uya_ret;
+    }
+        return 0;
 }
 
 int32_t libc_put_str_len(const uint8_t * s, size_t len) {
     (void)s;
     (void)len;
-    struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, STDOUT, (int64_t)s, (int64_t)len); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
-    (void)(({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+    const int64_t result = libc_write_bytes(s, len);
+    if ((result < 0)) {
         int32_t _uya_ret = (0 - 1);
         return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; }));
+    }
     uint8_t newline = (uint8_t)10;
-    struct err_union_int64_t nl_result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, STDOUT, (int64_t)(&newline), 1); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
-    (void)(({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = nl_result; if (_uya_catch_tmp.error_id != 0) {
+    const int64_t nl_result = libc_write_bytes((&newline), 1);
+    if ((nl_result < 0)) {
         int32_t _uya_ret = (0 - 1);
         return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; }));
+    }
     int32_t _uya_ret = 0;
     return _uya_ret;
 }
@@ -7314,26 +7442,17 @@ size_t libc_fwrite(const uint8_t * ptr, size_t size, size_t nmemb, struct FILE *
     (void)size;
     (void)nmemb;
     (void)stream;
-    if (((((ptr == NULL) || (stream == NULL)) || (size == 0)) || (nmemb == 0))) {
-        size_t _uya_ret = 0;
-        return _uya_ret;
-    }
-    const int64_t fd = stream->fd;
-    if ((fd < 0)) {
+    if (((((stream == NULL) || (ptr == NULL)) || (size == 0)) || (nmemb == 0))) {
         size_t _uya_ret = 0;
         return _uya_ret;
     }
     const size_t total_size = (size * nmemb);
-    struct err_union_intptr_t result = sys_write((int32_t)fd, ptr, total_size);
-    const intptr_t bytes_written = ({ int32_t _uya_catch_result; struct err_union_intptr_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
-        size_t _uya_ret = 0;
-        return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    if ((bytes_written < (intptr_t)0)) {
+    const int64_t result = libc_write_to_buffer(stream, ptr, total_size);
+    if ((result < 0)) {
         size_t _uya_ret = 0;
         return _uya_ret;
     }
-    size_t _uya_ret = ((size_t)bytes_written / size);
+    size_t _uya_ret = ((size_t)result / size);
     return _uya_ret;
 }
 
@@ -7845,6 +7964,8 @@ void * libc_realloc(void * ptr, size_t size) {
         void * _uya_ret = NULL;
         return _uya_ret;
     }
+    (void)(memcpy((uint8_t *)new_ptr, (const uint8_t *)ptr, 4096));
+    libc_free(ptr);
     void * _uya_ret = new_ptr;
     return _uya_ret;
 }
