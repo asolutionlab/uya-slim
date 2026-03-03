@@ -821,6 +821,130 @@ export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: 
     return result;
 }
 
+// ============================================================
+// 长长整型转换 (atoll, strtoll, strtoull)
+// ============================================================
+
+// atoll - 字符串转长长整型 (i64)
+export extern "libc" fn atoll(s: &const byte) i64 {
+    if s == null { return 0; }
+    
+    var result: i64 = 0;
+    var i: usize = 0;
+    var is_neg: bool = false;
+    
+    // 跳过空白
+    while s[i] == 32 || s[i] == 9 || s[i] == 10 || s[i] == 13 { i = i + 1; }
+    
+    // 符号
+    if s[i] == 45 { is_neg = true; i = i + 1; }
+    else if s[i] == 43 { i = i + 1; }
+    
+    // 转换
+    while s[i] >= 48 && s[i] <= 57 {
+        result = result * 10 + (s[i] - 48) as i64;
+        i = i + 1;
+    }
+    
+    if is_neg { result = 0 - result; }
+    return result;
+}
+
+// strtoll - 字符串转长长整型 (带尾指针和进制)
+export extern "libc" fn strtoll(nptr: &const byte, endptr: & &const byte, base: i32) i64 {
+    if nptr == null {
+        if endptr != null { endptr[0] = null; }
+        return 0;
+    }
+    
+    var p: &const byte = nptr;
+    var neg: bool = false;
+    var result: i64 = 0;
+    
+    // 空白
+    while p[0] == 32 || p[0] == 9 || p[0] == 10 || p[0] == 13 { p = &p[1]; }
+    
+    // 符号
+    if p[0] == 45 { neg = true; p = &p[1]; }
+    else if p[0] == 43 { p = &p[1]; }
+    
+    // 基数
+    var b: i32 = base;
+    if b == 0 {
+        if p[0] == 48 {
+            p = &p[1];
+            if p[0] == 120 || p[0] == 88 { b = 16; p = &p[1]; }
+            else { b = 8; }
+        } else { b = 10; }
+    } else if b == 16 {
+        if p[0] == 48 && (p[1] == 120 || p[1] == 88) { p = &p[2]; }
+    }
+    
+    // 转换
+    while p[0] != 0 {
+        var digit: i64 = -1;
+        var c: byte = p[0];
+        if c >= 48 && c <= 57 { digit = (c - 48) as i64; }
+        else if c >= 97 && c <= 122 { digit = (c - 97 + 10) as i64; }
+        else if c >= 65 && c <= 90 { digit = (c - 65 + 10) as i64; }
+        else { break; }
+        
+        if digit < 0 || digit >= b as i64 { break; }
+        result = result * b as i64 + digit;
+        p = &p[1];
+    }
+    
+    if endptr != null { endptr[0] = p; }
+    if neg { result = 0 - result; }
+    return result;
+}
+
+// strtoull - 字符串转无符号长长整型
+export extern "libc" fn strtoull(nptr: &const byte, endptr: & &const byte, base: i32) u64 {
+    if nptr == null {
+        if endptr != null { endptr[0] = null; }
+        return 0;
+    }
+    
+    var p: &const byte = nptr;
+    var result: u64 = 0;
+    
+    // 空白
+    while p[0] == 32 || p[0] == 9 || p[0] == 10 || p[0] == 13 { p = &p[1]; }
+    
+    // 符号 (忽略)
+    if p[0] == 43 { p = &p[1]; }
+    
+    // 基数
+    var b: i32 = base;
+    if b == 0 {
+        if p[0] == 48 {
+            p = &p[1];
+            if p[0] == 120 || p[0] == 88 { b = 16; p = &p[1]; }
+            else { b = 8; }
+        } else { b = 10; }
+    } else if b == 16 {
+        if p[0] == 48 && (p[1] == 120 || p[1] == 88) { p = &p[2]; }
+    }
+    
+    // 转换
+    while p[0] != 0 {
+        var digit: u64 = 0;
+        var c: byte = p[0];
+        if c >= 48 && c <= 57 { digit = (c - 48) as u64; }
+        else if c >= 97 && c <= 122 { digit = (c - 97 + 10) as u64; }
+        else if c >= 65 && c <= 90 { digit = (c - 65 + 10) as u64; }
+        else { break; }
+        
+        if digit >= b as u64 { break; }
+        result = result * b as u64 + digit;
+        p = &p[1];
+    }
+    
+    if endptr != null { endptr[0] = p; }
+    return result;
+}
+
 // qsort - 快速排序
 // 注意：函数指针参数暂不支持，此处为占位声明
 // 实际使用时需要通过 C 链接

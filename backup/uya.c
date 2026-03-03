@@ -3061,6 +3061,9 @@ struct div_t div(int32_t numer, int32_t denom);
 struct ldiv_t ldiv(int64_t numer, int64_t denom);
 struct lldiv_t lldiv(int64_t numer, int64_t denom);
 uint64_t strtoul(const uint8_t * nptr, const uint8_t * * endptr, int32_t base);
+int64_t atoll(const uint8_t * s);
+int64_t strtoll(const uint8_t * nptr, const uint8_t * * endptr, int32_t base);
+uint64_t strtoull(const uint8_t * nptr, const uint8_t * * endptr, int32_t base);
 int64_t clock();
 int32_t libc_stat(const uint8_t * path, struct Stat * buf);
 int32_t libc_readlink(const uint8_t * path, uint8_t * buf, size_t bufsiz);
@@ -8764,6 +8767,182 @@ uint64_t strtoul(const uint8_t * nptr, const uint8_t * * endptr, int32_t base) {
     if ((overflow != 0)) {
         uint64_t _uya_ret = (uint64_t)-1;
         return _uya_ret;
+    }
+    uint64_t _uya_ret = result;
+    return _uya_ret;
+}
+
+int64_t atoll(const uint8_t * s) {
+    (void)s;
+    if ((s == NULL)) {
+        int64_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    int64_t result = 0;
+    size_t i = 0;
+    bool is_neg = false;
+    while (((((s[i] == 32) || (s[i] == 9)) || (s[i] == 10)) || (s[i] == 13))) {
+        i = (i + 1);
+    }
+    if ((s[i] == 45)) {
+        is_neg = true;
+        i = (i + 1);
+    } else {
+        if ((s[i] == 43)) {
+            i = (i + 1);
+        }
+    }
+    while (((s[i] >= 48) && (s[i] <= 57))) {
+        result = ((result * 10) + (int64_t)(s[i] - 48));
+        i = (i + 1);
+    }
+    if (is_neg) {
+        result = (0 - result);
+    }
+    int64_t _uya_ret = result;
+    return _uya_ret;
+}
+
+int64_t strtoll(const uint8_t * nptr, const uint8_t * * endptr, int32_t base) {
+    (void)nptr;
+    (void)endptr;
+    (void)base;
+    if ((nptr == NULL)) {
+        if ((endptr != NULL)) {
+            endptr[0] = NULL;
+        }
+        int64_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    const uint8_t * p = nptr;
+    bool neg = false;
+    int64_t result = 0;
+    while (((((p[0] == 32) || (p[0] == 9)) || (p[0] == 10)) || (p[0] == 13))) {
+        p = (&p[1]);
+    }
+    if ((p[0] == 45)) {
+        neg = true;
+        p = (&p[1]);
+    } else {
+        if ((p[0] == 43)) {
+            p = (&p[1]);
+        }
+    }
+    int32_t b = base;
+    if ((b == 0)) {
+        if ((p[0] == 48)) {
+            p = (&p[1]);
+            if (((p[0] == 120) || (p[0] == 88))) {
+                b = 16;
+                p = (&p[1]);
+            } else {
+                b = 8;
+            }
+        } else {
+            b = 10;
+        }
+    } else {
+        if ((b == 16)) {
+            if (((p[0] == 48) && ((p[1] == 120) || (p[1] == 88)))) {
+                p = (&p[2]);
+            }
+        }
+    }
+    while ((p[0] != 0)) {
+        int64_t digit = (-1);
+        uint8_t c = p[0];
+        if (((c >= 48) && (c <= 57))) {
+            digit = (int64_t)(c - 48);
+        } else {
+            if (((c >= 97) && (c <= 122))) {
+                digit = (int64_t)((c - 97) + 10);
+            } else {
+                if (((c >= 65) && (c <= 90))) {
+                    digit = (int64_t)((c - 65) + 10);
+                } else {
+                    break;
+                }
+            }
+        }
+        if (((digit < 0) || (digit >= (int64_t)b))) {
+            break;
+        }
+        result = ((result * (int64_t)b) + digit);
+        p = (&p[1]);
+    }
+    if ((endptr != NULL)) {
+        endptr[0] = p;
+    }
+    if (neg) {
+        result = (0 - result);
+    }
+    int64_t _uya_ret = result;
+    return _uya_ret;
+}
+
+uint64_t strtoull(const uint8_t * nptr, const uint8_t * * endptr, int32_t base) {
+    (void)nptr;
+    (void)endptr;
+    (void)base;
+    if ((nptr == NULL)) {
+        if ((endptr != NULL)) {
+            endptr[0] = NULL;
+        }
+        uint64_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    const uint8_t * p = nptr;
+    uint64_t result = 0;
+    while (((((p[0] == 32) || (p[0] == 9)) || (p[0] == 10)) || (p[0] == 13))) {
+        p = (&p[1]);
+    }
+    if ((p[0] == 43)) {
+        p = (&p[1]);
+    }
+    int32_t b = base;
+    if ((b == 0)) {
+        if ((p[0] == 48)) {
+            p = (&p[1]);
+            if (((p[0] == 120) || (p[0] == 88))) {
+                b = 16;
+                p = (&p[1]);
+            } else {
+                b = 8;
+            }
+        } else {
+            b = 10;
+        }
+    } else {
+        if ((b == 16)) {
+            if (((p[0] == 48) && ((p[1] == 120) || (p[1] == 88)))) {
+                p = (&p[2]);
+            }
+        }
+    }
+    while ((p[0] != 0)) {
+        uint64_t digit = 0;
+        uint8_t c = p[0];
+        if (((c >= 48) && (c <= 57))) {
+            digit = (uint64_t)(c - 48);
+        } else {
+            if (((c >= 97) && (c <= 122))) {
+                digit = (uint64_t)((c - 97) + 10);
+            } else {
+                if (((c >= 65) && (c <= 90))) {
+                    digit = (uint64_t)((c - 65) + 10);
+                } else {
+                    break;
+                }
+            }
+        }
+        if ((digit >= (uint64_t)b)) {
+            break;
+        }
+        result = ((result * (uint64_t)b) + digit);
+        p = (&p[1]);
+    }
+    if ((endptr != NULL)) {
+        endptr[0] = p;
     }
     uint64_t _uya_ret = result;
     return _uya_ret;
