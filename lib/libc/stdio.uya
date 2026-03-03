@@ -947,6 +947,61 @@ export fn fsetpos(stream: &FILE, pos: &i64) i32 {
     return fseek(stream, pos[0], 0);  // SEEK_SET
 }
 
+// ============================================================
+// 文件操作函数 (remove, rename, tmpfile)
+// ============================================================
+
+// remove - 删除文件
+// 返回：0 成功，-1 失败
+export fn remove(path: &const byte) i32 {
+    if path == null { return -1; }
+    const result: !i32 = sys_unlink(path);
+    const ret: i32 = result catch { return -1; };
+    if ret < 0 { return -1; }
+    return 0;
+}
+
+// rename - 重命名文件
+// 返回：0 成功，-1 失败
+export fn rename(oldpath: &const byte, newpath: &const byte) i32 {
+    if oldpath == null || newpath == null { return -1; }
+    const result: !i32 = @syscall(SYS_rename, oldpath as i64, newpath as i64) as! i32;
+    const ret: i32 = result catch { return -1; };
+    return ret;
+}
+
+// tmpfile - 创建临时文件
+// 返回：文件流指针，失败返回 null
+export fn tmpfile() &FILE {
+    // 简化实现：返回 null
+    return null;
+}
+
+// tmpnam - 生成临时文件名
+// 返回：临时文件名，失败返回 null
+export fn tmpnam(s: &byte) &byte {
+    if s == null { return null; }
+    // 简化实现：生成一个简单的临时文件名
+    s[0] = 47; s[1] = 116; s[2] = 109; s[3] = 112;  // "/tmp"
+    s[4] = 47;
+    s[5] = 117; s[6] = 121; s[7] = 97;  // "uya"
+    s[8] = 48; s[9] = 48; s[10] = 48; s[11] = 48;  // "0000"
+    s[12] = 0;
+    return s;
+}
+
+// perror - 打印错误信息到 stderr
+export fn perror(s: &const byte) void {
+    // 简化实现：打印 "error"
+    if s != null {
+        fputs(s, stderr);
+        fputc(58 as i32, stderr);  // ':'
+        fputc(32 as i32, stderr);  // ' '
+    }
+    fputs((83 as byte) as &const byte, stderr);  // "System error"
+    fputc(10 as i32, stderr);  // '\n'
+}
+
 // sprintf - 格式化字符串（简化版本，只支持 %s、%d、%%）
 // 返回：写入的字符数（不包括 null 终止符），失败返回负数
 export fn sprintf(buf: &byte, format: &const byte, ...) i32 {

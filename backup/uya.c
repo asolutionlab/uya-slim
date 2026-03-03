@@ -3028,6 +3028,11 @@ int32_t libc_ferror(struct FILE * stream);
 void libc_clearerr(struct FILE * stream);
 int32_t libc_fgetpos(struct FILE * stream, int64_t * pos);
 int32_t libc_fsetpos(struct FILE * stream, int64_t * pos);
+int32_t libc_remove(const uint8_t * path);
+int32_t libc_rename(const uint8_t * oldpath, const uint8_t * newpath);
+struct FILE * libc_tmpfile();
+uint8_t * libc_tmpnam(uint8_t * s);
+void libc_perror(const uint8_t * s);
 int32_t libc_sprintf(uint8_t * buf, const uint8_t * format, ...);
 int32_t libc_snprintf(uint8_t * buf, size_t n, const uint8_t * format, ...);
 int32_t printf(const uint8_t * format, ...);
@@ -3814,6 +3819,7 @@ const int64_t SYS_chdir = 80;
 const int64_t SYS_mkdir = 83;
 const int64_t SYS_rmdir = 84;
 const int64_t SYS_unlink = 87;
+const int64_t SYS_rename = 82;
 const int64_t SYS_readlink = 89;
 const int64_t SYS_getdents64 = 217;
 const int64_t SYS_setrlimit = 160;
@@ -7692,6 +7698,80 @@ int32_t libc_fsetpos(struct FILE * stream, int64_t * pos) {
     }
     int32_t _uya_ret = libc_fseek(stream, pos[0], 0);
     return _uya_ret;
+}
+
+int32_t libc_remove(const uint8_t * path) {
+    (void)path;
+    if ((path == NULL)) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    struct err_union_int32_t result = sys_unlink(path);
+    const int32_t ret = ({ int32_t _uya_catch_result; struct err_union_int32_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+    if ((ret < 0)) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+int32_t libc_rename(const uint8_t * oldpath, const uint8_t * newpath) {
+    (void)oldpath;
+    (void)newpath;
+    if (((oldpath == NULL) || (newpath == NULL))) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    struct err_union_int32_t result = ({ struct err_union_int64_t _uya_asbang_src = ({ long _uya_syscall_ret = uya_syscall2(SYS_rename, (int64_t)oldpath, (int64_t)newpath); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; }); struct err_union_int32_t _uya_asbang; if (_uya_asbang_src.error_id != 0) { _uya_asbang.error_id = _uya_asbang_src.error_id; _uya_asbang.value = 0; } else { _uya_asbang.error_id = 0; _uya_asbang.value = (int32_t)(_uya_asbang_src.value); } _uya_asbang; });
+    const int32_t ret = ({ int32_t _uya_catch_result; struct err_union_int32_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+    int32_t _uya_ret = ret;
+    return _uya_ret;
+}
+
+struct FILE * libc_tmpfile() {
+    struct FILE * _uya_ret = NULL;
+    return _uya_ret;
+}
+
+uint8_t * libc_tmpnam(uint8_t * s) {
+    (void)s;
+    if ((s == NULL)) {
+        uint8_t * _uya_ret = NULL;
+        return _uya_ret;
+    }
+    s[0] = 47;
+    s[1] = 116;
+    s[2] = 109;
+    s[3] = 112;
+    s[4] = 47;
+    s[5] = 117;
+    s[6] = 121;
+    s[7] = 97;
+    s[8] = 48;
+    s[9] = 48;
+    s[10] = 48;
+    s[11] = 48;
+    s[12] = 0;
+    uint8_t * _uya_ret = s;
+    return _uya_ret;
+}
+
+void libc_perror(const uint8_t * s) {
+    (void)s;
+    if ((s != NULL)) {
+        libc_fputs(s, stderr);
+        libc_fputc((int32_t)58, stderr);
+        libc_fputc((int32_t)32, stderr);
+    }
+    libc_fputs((const uint8_t *)(uint8_t)83, stderr);
+    libc_fputc((int32_t)10, stderr);
 }
 
 int32_t libc_sprintf(uint8_t * buf, const uint8_t * format, ...) {
