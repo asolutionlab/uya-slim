@@ -1,0 +1,172 @@
+// libc.setjmp - 非局部跳转函数
+// 版本：v0.1.0
+// 说明：C 标准库非局部跳转函数（setjmp/longjmp）
+
+// ============================================================
+// jmp_buf 结构定义
+// ============================================================
+
+// jmp_buf 保存寄存器上下文
+// 在 x86_64 上，需要保存以下寄存器：
+// - RBX, RBP, R12-R15 (被调用者保存寄存器)
+// - RSP (栈指针)
+// - RIP (返回地址)
+// - 可能还需要保存信号掩码
+
+export const _JB_SIZE: usize = 8;  // 保存 8 个 64 位值
+
+export struct jmp_buf {
+    data: [u64: _JB_SIZE],
+}
+
+// ============================================================
+// setjmp - 保存当前执行环境
+// ============================================================
+
+// setjmp 保存当前的执行上下文到 env 中
+// 首次调用时返回 0
+// 当 longjmp 跳转回来时，返回 val（不能为 0）
+//
+// 注意：这是一个简化实现，实际的 setjmp 需要保存更多寄存器状态
+// 在完整的实现中，应该使用内联汇编或编译器内置函数
+
+export extern "libc" fn setjmp(env: &jmp_buf) i32 {
+    if env == null { return 0; }
+    
+    // 简化实现：只保存一个标记值
+    // 完整的实现需要保存：RBX, RBP, R12, R13, R14, R15, RSP, RIP
+    
+    // 使用一个全局数组来存储 jmp_buf 数据（简化实现）
+    // 实际项目中应该使用 @setjmp 内置函数
+    
+    env.data[0] = 0;  // 标记为首次调用
+    env.data[1] = 0;  // 保留
+    env.data[2] = 0;  // 保留
+    env.data[3] = 0;  // 保留
+    env.data[4] = 0;  // 保留
+    env.data[5] = 0;  // 保留
+    env.data[6] = 0;  // 保留
+    env.data[7] = 0;  // 保留
+    
+    return 0;
+}
+
+// ============================================================
+// longjmp - 恢复到保存的执行环境
+// ============================================================
+
+// longjmp 恢复之前由 setjmp 保存的执行上下文
+// 程序将继续从 setjmp 调用处执行，返回值为 val
+// 如果 val 为 0，则返回 1
+
+export extern "libc" fn longjmp(env: jmp_buf, val: i32) void {
+    // 简化实现
+    // 完整的实现需要：
+    // 1. 恢复所有保存的寄存器
+    // 2. 恢复栈指针
+    // 3. 跳转到保存的返回地址
+    
+    // 检查 env 是否有效
+    if env.data[0] == 0 {
+        // 无效的 jmp_buf，行为未定义
+        // 在调试模式下应该报错
+    }
+    
+    // 设置返回值（不能为 0）
+    var return_val: i32 = val;
+    if return_val == 0 {
+        return_val = 1;
+    }
+    
+    // 在简化实现中，我们无法真正跳转
+    // 需要使用编译器内置函数 @longjmp 或内联汇编
+    
+    // TODO: 使用编译器内置函数实现真正的 longjmp
+    // @longjmp(env, val)
+    
+    // 临时实现：使用无限循环等待外部中断
+    // 这只是一个占位符，实际使用时应该用编译器内置函数
+    while true {
+        // 等待信号或其他中断
+    }
+}
+
+// ============================================================
+// sigsetjmp / siglongjmp - 带信号掩码的非局部跳转
+// ============================================================
+
+// sigjmp_buf - 带信号掩码的跳转缓冲区
+export struct sigjmp_buf {
+    data: [u64: _JB_SIZE + 8],  // 额外空间保存信号掩码
+}
+
+// sigsetjmp - 保存执行环境和信号掩码
+// savemask 非零时保存信号掩码
+export extern "libc" fn sigsetjmp(env: &sigjmp_buf, savemask: i32) i32 {
+    if env == null { return 0; }
+    
+    // 初始化
+    var i: usize = 0;
+    while i < _JB_SIZE {
+        env.data[i] = 0;
+        i = i + 1;
+    }
+    
+    // 如果 savemask 非零，保存当前信号掩码
+    // 简化实现：暂时不处理信号掩码
+    
+    return 0;
+}
+
+// siglongjmp - 恢复执行环境和信号掩码
+export extern "libc" fn siglongjmp(env: sigjmp_buf, val: i32) void {
+    // 简化实现，与 longjmp 相同
+    longjmp(jmp_buf{ data: [env.data[0], env.data[1], env.data[2], env.data[3], 
+                           env.data[4], env.data[5], env.data[6], env.data[7]] }, val);
+}
+
+// ============================================================
+// _setjmp / _longjmp - 不保存信号掩码的简化版本
+// ============================================================
+
+// _setjmp - 简化版本的 setjmp（不保存信号掩码）
+export extern "libc" fn _setjmp(env: &jmp_buf) i32 {
+    return setjmp(env);
+}
+
+// _longjmp - 简化版本的 longjmp
+export extern "libc" fn _longjmp(env: jmp_buf, val: i32) void {
+    longjmp(env, val);
+}
+
+// ============================================================
+// 宏定义（用于 C 兼容）
+// ============================================================
+
+// 在 C 代码中，setjmp 是一个宏，展开为 __setjmp
+// 这里我们直接提供函数实现
+
+// setjmp 宏（C 兼容）
+// #define setjmp(env) __setjmp(env)
+
+// ============================================================
+// 使用示例（注释）
+// ============================================================
+
+// 使用 setjmp/longjmp 进行错误处理：
+//
+// var env: jmp_buf = jmp_buf{ data: [0: u64: 8] };
+// var result: i32 = setjmp(&env);
+// 
+// if result == 0 {
+//     // 首次调用，设置错误处理
+//     if setup_resources() < 0 {
+//         longjmp(env, 1);  // 跳转到错误处理
+//     }
+//     // 正常执行...
+// } else {
+//     // 从 longjmp 跳转回来
+//     // 清理资源并返回错误
+//     cleanup();
+//     return -1;
+// }

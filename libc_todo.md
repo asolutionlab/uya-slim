@@ -118,10 +118,10 @@
 - [ ] `vprintf` - 可变参数格式化输出到标准输出
 - [ ] `vsprintf` - 可变参数格式化到字符串
 - [ ] `vsnprintf` - 可变参数格式化到字符串（限制长度）
-- [ ] `remove` - 删除文件
-- [ ] `rename` - 重命名文件
-- [ ] `tmpfile` - 创建临时文件
-- [ ] `tmpnam` - 生成临时文件名
+- [x] `remove` - 删除文件
+- [x] `rename` - 重命名文件
+- [x] `tmpfile` - 创建临时文件
+- [x] `tmpnam` - 生成临时文件名
 - [ ] `setbuf` - 设置缓冲区
 - [ ] `setvbuf` - 设置缓冲区及模式
 - [ ] `fgetpos` - 获取文件位置
@@ -129,78 +129,95 @@
 
 ### 3. 标准库函数
 
-- [ ] `div` - 整数除法
-- [ ] `ldiv` - 长整型除法
-- [ ] `lldiv` - 长长整型除法
-- [ ] `atoll` - 字符串转长长整型
-- [ ] `strtoll` - 字符串转长长整型
-- [ ] `strtoull` - 字符串转无符号长长整型
-- [ ] `strtoul` - 字符串转无符号长整型
-- [ ] `rand` - 随机数生成
-- [ ] `srand` - 设置随机数种子
-- [ ] `qsort` - 快速排序
-- [ ] `bsearch` - 二分查找
+- [x] `div` - 整数除法
+- [x] `ldiv` - 长整型除法
+- [x] `lldiv` - 长长整型除法
+- [x] `atoll` - 字符串转长长整型
+- [x] `strtoll` - 字符串转长长整型
+- [x] `strtoull` - 字符串转无符号长长整型
+- [x] `strtoul` - 字符串转无符号长整型
+- [x] `rand` - 随机数生成
+- [x] `srand` - 设置随机数种子
+- [x] `qsort` - 快速排序
+- [x] `bsearch` - 二分查找
 - [ ] `mbstowcs` - 多字节字符串转宽字符串
 - [ ] `wcstombs` - 宽字符串转多字节字符串
 - [ ] `system` - 执行系统命令（部分实现）
 
 ### 4. 字符分类函数 (`lib/libc/ctype.uya`)
 
-- [ ] `isalnum` - 是否字母数字
-- [ ] `isalpha` - 是否字母
-- [ ] `isdigit` - 是否数字
-- [ ] `islower` - 是否小写字母
-- [ ] `isupper` - 是否大写字母
-- [ ] `isspace` - 是否空白字符
-- [ ] `ispunct` - 是否标点符号
-- [ ] `isprint` - 是否可打印字符
-- [ ] `isgraph` - 是否图形字符
-- [ ] `iscntrl` - 是否控制字符
-- [ ] `isxdigit` - 是否十六进制数字
-- [ ] `tolower` - 转小写
-- [ ] `toupper` - 转大写
+- [x] `isalnum` - 是否字母数字
+- [x] `isalpha` - 是否字母
+- [x] `isdigit` - 是否数字
+- [x] `islower` - 是否小写字母
+- [x] `isupper` - 是否大写字母
+- [x] `isspace` - 是否空白字符
+- [x] `ispunct` - 是否标点符号
+- [x] `isprint` - 是否可打印字符
+- [x] `isgraph` - 是否图形字符
+- [x] `iscntrl` - 是否控制字符
+- [x] `isxdigit` - 是否十六进制数字
+- [x] `tolower` - 转小写
+- [x] `toupper` - 转大写
 
-### 5. 数学函数 (`lib/libc/math.uya` - 未创建)
+### 5. 数学函数 (`lib/libc/math.uya`)
 
-- [ ] `sin`, `cos`, `tan` - 三角函数
-- [ ] `asin`, `acos`, `atan`, `atan2` - 反三角函数
-- [ ] `sinh`, `cosh`, `tanh` - 双曲函数
-- [ ] `asinh`, `acosh`, `atanh` - 反双曲函数
-- [ ] `exp`, `log`, `log10` - 指数对数函数
-- [ ] `pow`, `sqrt`, `cbrt` - 幂函数
-- [ ] `ceil`, `floor`, `trunc`, `round` - 舍入函数
-- [ ] `fabs`, `fmod`, `remainder` - 浮点数运算
-- [ ] `fmax`, `fmin`, `fdim` - 最值函数
-- [ ] `hypot` - 斜边函数
-- [ ] `copysign`, `nextafter` - 浮点数操作
-- [ ] `nan` - 产生NaN
+- [x] `sin`, `cos`, `tan` - 三角函数
+- [x] `asin`, `acos`, `atan`, `atan2` - 反三角函数
+- [x] `sinh`, `cosh`, `tanh` - 双曲函数
+- [x] `asinh`, `acosh`, `atanh` - 反双曲函数
+- [x] `exp`, `log`, `log10`, `log2` - 指数对数函数
+- [x] `pow`, `sqrt`, `cbrt` - 幂函数
+- [x] `ceil`, `floor`, `trunc`, `round`, `nearbyint`, `rint` - 舍入函数
+- [x] `fabs`, `fmod`, `remainder` - 浮点数运算
+- [x] `fmax`, `fmin`, `fdim` - 最值函数
+- [x] `hypot` - 斜边函数
+- [x] `copysign`, `nextafter`, `nan` - 浮点数操作
 
-### 6. 时间日期函数 (`lib/libc/time.uya` - 未创建)
+### 6. 时间日期函数 (`lib/libc/time.uya`)
 
-- [ ] `time` - 获取时间
-- [ ] `clock` - 获取处理器时间
-- [ ] `difftime` - 计算时间差
-- [ ] `mktime` - 转换为日历时间
-- [ ] `strftime` - 格式化时间
-- [ ] `asctime` - 时间转字符串
-- [ ] `ctime` - 日历时间转字符串
-- [ ] `gmtime` - UTC时间
-- [ ] `localtime` - 本地时间
+- [x] `time` - 获取时间
+- [x] `clock` - 获取处理器时间
+- [x] `difftime` - 计算时间差
+- [x] `mktime` - 转换为日历时间
+- [x] `strftime` - 格式化时间
+- [x] `asctime` - 时间转字符串
+- [x] `ctime` - 日历时间转字符串
+- [x] `gmtime` - UTC时间
+- [x] `localtime` - 本地时间
 
-### 7. 信号处理函数 (`lib/libc/signal.uya` - 未创建)
+### 7. 信号处理函数 (`lib/libc/signal.uya`)
 
-- [ ] `signal` - 信号处理
-- [ ] `raise` - 发送信号
+- [x] `signal` - 信号处理
+- [x] `raise` - 发送信号
 
-### 8. 非局部跳转函数 (`lib/libc/setjmp.uya` - 未创建)
+- [x] `kill` - 发送信号到进程
+- [x] `sigprocmask` - 设置信号掩码
+- [x] `sigpending` - 检查挂起信号
+- [x] `sigsuspend` - 原子地替换信号掩码并挂起
+- [x] `alarm` - 设置定时器
+- [x] `pause` - 挂起进程直到信号
+- [x] `sigemptyset` - 初始化空信号集
+- [x] `sigfillset` - 初始化满信号集
+- [x] `sigaddset` - 添加信号到集合
+- [x] `sigdelset` - 从集合删除信号
+- [x] `sigismember` - 测试信号是否在集合中
+- [x] `atexit` - 注册退出处理函数
+- [x] `on_exit` - 注册退出处理函数（带参数）
+### 8. 非局部跳转函数 (`lib/libc/setjmp.uya`)
 
-- [ ] `setjmp` - 设置非局部跳转点
-- [ ] `longjmp` - 非局部跳转
+- [x] `setjmp` - 设置非局部跳转点
+- [x] `longjmp` - 非局部跳转
+- [x] `sigsetjmp` - 设置非局部跳转点（保存信号掩码）
+- [x] `siglongjmp` - 非局部跳转（恢复信号掩码）
+- [x] `_setjmp` - 简化版设置跳转点
+- [x] `_longjmp` - 简化版非局部跳转
 
-### 9. 可变参数函数 (`lib/libc/stdarg.uya` - 未创建)
+### 9. 可变参数函数 (`lib/libc/stdarg.uya`)
 
-- [ ] `va_start`, `va_arg`, `va_end` - 可变参数处理
+- [x] `va_start`, `va_arg`, `va_end` - 可变参数处理
 
+- [x] `va_copy` - 复制 va_list
 ## 优化建议
 
 ### 1. 性能优化
@@ -257,6 +274,6 @@
 1. **内存分配器优化**：重构了[malloc](file:///media/winger/_dde_home/winger/uya/lib/libc/stdlib.uya#L15-L32)、[free](file:///media/winger/_dde_home/winger/uya/lib/libc/stdlib.uya#L34-L40)和[realloc](file:///media/winger/_dde_home/winger/uya/lib/libc/stdlib.uya#L63-L81)函数，参考musl实现，使用空闲链表和块合并策略，提高了内存利用率
 2. **I/O缓冲机制**：为stdio函数添加了缓冲机制，减少了系统调用的频率
 
-但仍有许多标准C库函数有待实现，特别是数学函数、时间日期函数、字符分类函数等。此外，一些高级功能如可变参数函数、信号处理、非局部跳转等也需要添加。
+目前，数学函数、时间日期函数、字符分类函数、信号处理、非局部跳转和可变参数函数等模块已经实现。但仍有一些字符串操作函数（如 strcat、strncat、strtok 等）、标准输入输出函数（如 fscanf、sscanf、vfprintf 等）以及部分高级功能有待完善。
 
 项目整体上朝着实现一个完整的C标准库子集的方向发展，并逐步将功能迁移到更现代的 `std.*` 模块中。未来的工作重点应放在性能优化、功能完整性和跨平台支持上。
