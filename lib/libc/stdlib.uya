@@ -599,6 +599,96 @@ export extern "libc" fn rand() i32 {
 
 export const RAND_MAX: i32 = @max;
 
+// ============================================================
+// 排序和搜索 (qsort, bsearch)
+// ============================================================
+
+// qsort 内部：交换两个内存块
+fn qsort_swap(a: &byte, b: &byte, size: usize) void {
+    var i: usize = 0;
+    while i < size {
+        var tmp: byte = a[i];
+        a[i] = b[i];
+        b[i] = tmp;
+        i = i + 1;
+    }
+}
+
+// qsort 内部：比较两个内存块（按字节比较）
+fn qsort_cmp(a: &byte, b: &byte, size: usize) i32 {
+    var i: usize = 0;
+    while i < size {
+        if a[i] < b[i] { return -1; }
+        if a[i] > b[i] { return 1; }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// qsort 内部：递归排序
+fn qsort_rec(arr: &byte, left: usize, right: usize, size: usize) void {
+    if left >= right { return; }
+    
+    var pivot: usize = left + (right - left) / 2;
+    var i: usize = left;
+    var j: usize = right;
+    
+    while i <= j {
+        while qsort_cmp(&arr[i * size], &arr[pivot * size], size) < 0 {
+            i = i + 1;
+        }
+        while qsort_cmp(&arr[j * size], &arr[pivot * size], size) > 0 {
+            if j == 0 { break; }
+            j = j - 1;
+        }
+        
+        if i <= j {
+            if i != j { qsort_swap(&arr[i * size], &arr[j * size], size); }
+            if pivot == i { pivot = j; }
+            else if pivot == j { pivot = i; }
+            i = i + 1;
+            if j == 0 { break; }
+            j = j - 1;
+        }
+    }
+    
+    if left < j { qsort_rec(arr, left, j, size); }
+    if i < right { qsort_rec(arr, i, right, size); }
+}
+
+// qsort - 快速排序（按字节比较）
+export extern "libc" fn qsort(base: &void, nmemb: usize, size: usize, compar: &void) void {
+    if base == null || nmemb <= 1 || size == 0 { return; }
+    var arr: &byte = base as &byte;
+    qsort_rec(arr, 0, nmemb - 1, size);
+}
+
+// bsearch - 二分搜索（按字节比较）
+export extern "libc" fn bsearch(key: &const void, base: &const void, nmemb: usize, size: usize, compar: &void) &void {
+    if base == null || nmemb == 0 || size == 0 { return null; }
+    
+    var left: usize = 0;
+    var right: usize = nmemb - 1;
+    var arr: &const byte = base as &const byte;
+    var key_arr: &const byte = key as &const byte;
+    
+    while left <= right {
+        var mid: usize = left + (right - left) / 2;
+        var cmp: i32 = qsort_cmp(key_arr, &arr[mid * size], size);
+        
+        if cmp == 0 {
+            return &arr[mid * size] as &void;
+        } else if cmp < 0 {
+            if mid == 0 { break; }
+            right = mid - 1;
+        } else {
+            left = mid + 1;
+        }
+    }
+    
+    return null;
+}
+
 // strtoul - 字符串转无符号长整数
 export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: i32) u64 {
     if nptr == null {
