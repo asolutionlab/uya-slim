@@ -615,7 +615,7 @@ fn qsort_swap(a: &byte, b: &byte, size: usize) void {
 }
 
 // qsort 内部：比较两个内存块（按字节比较）
-fn qsort_cmp(a: &byte, b: &byte, size: usize) i32 {
+fn qsort_cmp(a: &const byte, b: &const byte, size: usize) i32 {
     var i: usize = 0;
     while i < size {
         if a[i] < b[i] { return -1; }
@@ -628,20 +628,20 @@ fn qsort_cmp(a: &byte, b: &byte, size: usize) i32 {
 // qsort 内部：递归排序
 fn qsort_rec(arr: &byte, left: usize, right: usize, size: usize) void {
     if left >= right { return; }
-    
+
     var pivot: usize = left + (right - left) / 2;
     var i: usize = left;
     var j: usize = right;
-    
+
     while i <= j {
-        while qsort_cmp(&arr[i * size], &arr[pivot * size], size) < 0 {
+        while qsort_cmp((arr as &const byte) + i * size, (arr as &const byte) + pivot * size, size) < 0 {
             i = i + 1;
         }
-        while qsort_cmp(&arr[j * size], &arr[pivot * size], size) > 0 {
+        while qsort_cmp((arr as &const byte) + j * size, (arr as &const byte) + pivot * size, size) > 0 {
             if j == 0 { break; }
             j = j - 1;
         }
-        
+
         if i <= j {
             if i != j { qsort_swap(&arr[i * size], &arr[j * size], size); }
             if pivot == i { pivot = j; }
@@ -651,7 +651,7 @@ fn qsort_rec(arr: &byte, left: usize, right: usize, size: usize) void {
             j = j - 1;
         }
     }
-    
+
     if left < j { qsort_rec(arr, left, j, size); }
     if i < right { qsort_rec(arr, i, right, size); }
 }

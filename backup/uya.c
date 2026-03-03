@@ -3053,7 +3053,7 @@ int64_t labs(int64_t x);
 void srand(uint32_t seed);
 int32_t rand();
 static void qsort_swap(uint8_t * a, uint8_t * b, size_t size);
-static int32_t qsort_cmp(uint8_t * a, uint8_t * b, size_t size);
+static int32_t qsort_cmp(const uint8_t * a, const uint8_t * b, size_t size);
 static void qsort_rec(uint8_t * arr, size_t left, size_t right, size_t size);
 void qsort(void * base, size_t nmemb, size_t size, void * compar);
 void * bsearch(const void * key, const void * base, size_t nmemb, size_t size, void * compar);
@@ -8539,7 +8539,7 @@ static __attribute__((unused)) void qsort_swap(uint8_t * a, uint8_t * b, size_t 
     }
 }
 
-static __attribute__((unused)) int32_t qsort_cmp(uint8_t * a, uint8_t * b, size_t size) {
+static __attribute__((unused)) int32_t qsort_cmp(const uint8_t * a, const uint8_t * b, size_t size) {
     (void)a;
     (void)b;
     (void)size;
@@ -8571,10 +8571,10 @@ static __attribute__((unused)) void qsort_rec(uint8_t * arr, size_t left, size_t
     size_t i = left;
     size_t j = right;
     while ((i <= j)) {
-        while ((qsort_cmp((&arr[(i * size)]), (&arr[(pivot * size)]), size) < 0)) {
+        while ((qsort_cmp(((const uint8_t *)arr + (i * size)), ((const uint8_t *)arr + (pivot * size)), size) < 0)) {
             i = (i + 1);
         }
-        while ((qsort_cmp((&arr[(j * size)]), (&arr[(pivot * size)]), size) > 0)) {
+        while ((qsort_cmp(((const uint8_t *)arr + (j * size)), ((const uint8_t *)arr + (pivot * size)), size) > 0)) {
             if ((j == 0)) {
                 break;
             }
