@@ -214,8 +214,12 @@ export fn main() i32 {
     const argc: i32 = get_argc();
     
     if argc < 2 {
+        var name: &byte = "uya" as *byte;
         const argv0: *byte = get_argv(0);
-        print_usage(if argv0 != null { argv0 as &byte } else { "uya" as *byte });
+        if argv0 != null {
+            name = argv0 as &byte;
+        }
+        print_usage(name);
         return 1;
     }
     
@@ -229,8 +233,12 @@ export fn main() i32 {
     if strcmp(first_arg, "-h" as *byte) == 0 || 
        strcmp(first_arg, "--help" as *byte) == 0 ||
        strcmp(first_arg, "help" as *byte) == 0 {
+        var name: &byte = "uya" as *byte;
         const argv0: *byte = get_argv(0);
-        print_usage(if argv0 != null { argv0 as &byte } else { "uya" as *byte });
+        if argv0 != null {
+            name = argv0 as &byte;
+        }
+        print_usage(name);
         return 0;
     }
     
@@ -474,6 +482,29 @@ struct FmtStats {
     errors: i32,       // 错误数
 }
 
+// 格式化结果
+struct FormatResult {
+    success: i32,          // 是否成功（0 = 失败，1 = 成功）
+    output_len: usize,     // 输出长度
+    error_message: &byte,  // 错误消息（失败时）
+}
+
+// Arena 分配器（用于持久化路径）
+struct Arena {
+    data: &byte,
+    size: usize,
+    used: usize,
+}
+
+fn arena_alloc(arena: &Arena, size: usize) &byte {
+    if arena.used + size > arena.size {
+        return null;
+    }
+    const ptr: &byte = arena.data + arena.used;
+    arena.used = arena.used + size;
+    return ptr;
+}
+
 // 打印使用说明
 fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "Uya 代码格式化工具\n" as *byte);
@@ -545,7 +576,8 @@ fn collect_uya_files(
     file_count: &i32,
     recursive: i32,
     exclude_patterns: &&byte,
-    exclude_count: i32
+    exclude_count: i32,
+    arena: &Arena
 ) i32 {
     const dir: *DIR = opendir(dir_path as *byte);
     if dir == null {
@@ -583,14 +615,19 @@ fn collect_uya_files(
                     file_count,
                     recursive,
                     exclude_patterns,
-                    exclude_count
+                    exclude_count,
+                    arena
                 );
             }
         } else if is_uya_file(&full_path[0] as &byte) != 0 {
             // 添加 .uya 文件
-            // TODO: 分配内存存储路径
-            files[file_count[0]] = &full_path[0];  // 简化，实际需复制
-            file_count[0] = file_count[0] + 1;
+            // 使用 arena 分配持久化路径（避免局部变量覆盖）
+            const path_copy: &byte = arena_alloc(arena, PATH_MAX) as &byte;
+            if path_copy != null {
+                strcpy(path_copy as *byte, &full_path[0]);
+                files[file_count[0]] = path_copy;
+                file_count[0] = file_count[0] + 1;
+            }
         }
         
         entry = readdir(dir);
@@ -655,11 +692,17 @@ fn format_single_file(
         // TODO: 实现差异输出
     } else {
         // 写入模式
-        const changed: i32 = if bytes_read != result.output_len ||
-            memcmp(&buffer[0], &output[0], bytes_read) != 0 { 1 } else { 0 };
+        var changed: i32 = 0;
+        if bytes_read != result.output_len ||
+           memcmp(&buffer[0], &output[0], bytes_read) != 0 {
+            changed = 1;
+        }
         
         if changed != 0 || output_file != null {
-            const out_path: &byte = if output_file != null { output_file } else { filepath };
+            var out_path: &byte = filepath;
+            if output_file != null {
+                out_path = output_file;
+            }
             const out_file: *void = fopen(out_path as *byte, "wb" as *byte);
             if out_file == null {
                 fprintf(libc.stderr, "错误: 无法写入 '%s'\n" as *byte, out_path as *byte);
@@ -741,6 +784,14 @@ export fn main() i32 {
     // 统计
     var stats: FmtStats = FmtStats { total: 0, formatted: 0, changed: 0, errors: 0 };
     
+    // 初始化 arena（用于存储文件路径）
+    var arena_data: [byte: 1024 * 1024] = [];  // 1MB
+    var arena: Arena = Arena {
+        data: &arena_data[0],
+        size: 1024 * 1024,
+        used: 0
+    };
+    
     // 处理输入路径
     i = 0;
     while i < input_count {
@@ -758,7 +809,8 @@ export fn main() i32 {
                 &file_count,
                 recursive,
                 &exclude_patterns[0] as &&byte,
-                exclude_count
+                exclude_count,
+                &arena
             );
             
             // 格式化每个文件
@@ -783,10 +835,12 @@ export fn main() i32 {
     
     // 检查模式返回码
     if mode == FmtMode.FMT_MODE_CHECK {
-        return if stats.changed > 0 { 1 } else { 0 };
+        if stats.changed > 0 { return 1; }
+        return 0;
     }
     
-    return if stats.errors > 0 { 1 } else { 0 };
+    if stats.errors > 0 { return 1; }
+    return 0;
 }
 ```
 
@@ -832,6 +886,280 @@ export fn main() i32 {
 │     有变化: 2                                       │
 │     返回码: 1 (check 模式下有变化则返回 1)          │
 └─────────────────────────────────────────────────────┘
+```
+
+### 4.5 格式化器核心实现
+
+`src/fmt/formatter.uya`：
+
+```uya
+// formatter.uya - 格式化器核心实现
+// 职责：将源代码解析为 AST，然后按规则输出格式化代码
+
+use lexer;
+use parser;
+use ast;
+use libc;
+use libc.stdio;
+
+// 格式化配置
+struct FormatConfig {
+    indent_size: i32,       // 缩进空格数（默认 4）
+    max_line_width: i32,    // 最大行宽（默认 100）
+    use_tabs: i32,          // 使用 Tab 缩进（默认 false）
+    trailing_newline: i32,  // 文件末尾空行（默认 true）
+    semicolons: i32,        // 保留分号（默认 true）
+}
+
+// 格式化上下文
+struct FormatContext {
+    config: FormatConfig,
+    output: &byte,          // 输出缓冲区
+    output_size: usize,     // 输出缓冲区大小
+    output_pos: usize,      // 当前写入位置
+    indent_level: i32,      // 当前缩进级别
+    line_start: i32,        // 是否在行首
+    line_length: i32,       // 当前行长度
+}
+
+// 默认配置
+fn default_config() FormatConfig {
+    return FormatConfig {
+        indent_size: 4,
+        max_line_width: 100,
+        use_tabs: 0,
+        trailing_newline: 1,
+        semicolons: 1
+    };
+}
+
+// 写入字符
+fn write_char(ctx: &FormatContext, c: byte) void {
+    if ctx.output_pos < ctx.output_size {
+        ctx.output[ctx.output_pos] = c;
+        ctx.output_pos = ctx.output_pos + 1;
+    }
+    ctx.line_length = ctx.line_length + 1;
+    ctx.line_start = 0;
+}
+
+// 写入字符串
+fn write_str(ctx: &FormatContext, s: &byte) void {
+    var i: usize = 0;
+    while s[i] != 0 {
+        write_char(ctx, s[i]);
+        i = i + 1;
+    }
+}
+
+// 写入换行
+fn write_newline(ctx: &FormatContext) void {
+    write_char(ctx, 10);  // '\n'
+    ctx.line_length = 0;
+    ctx.line_start = 1;
+}
+
+// 写入缩进
+fn write_indent(ctx: &FormatContext) void {
+    var i: i32 = 0;
+    while i < ctx.indent_level {
+        var j: i32 = 0;
+        while j < ctx.config.indent_size {
+            write_char(ctx, 32);  // ' '
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+// 格式化表达式
+fn format_expr(ctx: &FormatContext, expr: &ASTNode) void {
+    if expr == null { return; }
+    
+    if expr.type == ASTNodeType.AST_LITERAL {
+        // 字面量：直接输出
+        write_str(ctx, expr.value);
+    } else if expr.type == ASTNodeType.AST_IDENTIFIER {
+        // 标识符：直接输出
+        write_str(ctx, expr.name);
+    } else if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        // 二元表达式：(left op right)
+        format_expr(ctx, expr.left);
+        write_char(ctx, 32);  // ' '
+        write_str(ctx, expr.op);
+        write_char(ctx, 32);  // ' '
+        format_expr(ctx, expr.right);
+    } else if expr.type == ASTNodeType.AST_CALL_EXPR {
+        // 调用表达式：func(args)
+        format_expr(ctx, expr.callee);
+        write_char(ctx, 40);  // '('
+        var i: usize = 0;
+        while i < expr.arg_count {
+            if i > 0 {
+                write_str(ctx, ", " as *byte);
+            }
+            format_expr(ctx, expr.args[i]);
+            i = i + 1;
+        }
+        write_char(ctx, 41);  // ')'
+    }
+    // ... 其他表达式类型
+}
+
+// 格式化语句
+fn format_stmt(ctx: &FormatContext, stmt: &ASTNode) void {
+    if stmt == null { return; }
+    
+    write_indent(ctx);
+    
+    if stmt.type == ASTNodeType.AST_VAR_DECL {
+        // 变量声明：var name: Type = value;
+        write_str(ctx, "var " as *byte);
+        write_str(ctx, stmt.name);
+        write_str(ctx, ": " as *byte);
+        write_str(ctx, stmt.var_type);
+        write_str(ctx, " = " as *byte);
+        format_expr(ctx, stmt.init);
+        if ctx.config.semicolons != 0 {
+            write_char(ctx, 59);  // ';'
+        }
+        write_newline(ctx);
+    } else if stmt.type == ASTNodeType.AST_RETURN_STMT {
+        // 返回语句：return value;
+        write_str(ctx, "return" as *byte);
+        if stmt.value != null {
+            write_char(ctx, 32);  // ' '
+            format_expr(ctx, stmt.value);
+        }
+        if ctx.config.semicolons != 0 {
+            write_char(ctx, 59);  // ';'
+        }
+        write_newline(ctx);
+    } else if stmt.type == ASTNodeType.AST_IF_STMT {
+        // if 语句
+        write_str(ctx, "if " as *byte);
+        format_expr(ctx, stmt.condition);
+        write_str(ctx, " {" as *byte);
+        write_newline(ctx);
+        
+        ctx.indent_level = ctx.indent_level + 1;
+        format_block(ctx, stmt.then_block);
+        ctx.indent_level = ctx.indent_level - 1;
+        
+        write_indent(ctx);
+        write_char(ctx, 125);  // '}'
+        write_newline(ctx);
+    }
+    // ... 其他语句类型
+}
+
+// 格式化代码块
+fn format_block(ctx: &FormatContext, block: &ASTNode) void {
+    if block == null || block.statements == null { return; }
+    
+    var i: usize = 0;
+    while i < block.stmt_count {
+        format_stmt(ctx, block.statements[i]);
+        i = i + 1;
+    }
+}
+
+// 格式化函数定义
+fn format_function(ctx: &FormatContext, func: &ASTNode) void {
+    write_indent(ctx);
+    
+    // fn name(params) ReturnType { body }
+    write_str(ctx, "fn " as *byte);
+    write_str(ctx, func.name);
+    write_char(ctx, 40);  // '('
+    
+    // 参数
+    var i: usize = 0;
+    while i < func.param_count {
+        if i > 0 {
+            write_str(ctx, ", " as *byte);
+        }
+        write_str(ctx, func.params[i].name);
+        write_str(ctx, ": " as *byte);
+        write_str(ctx, func.params[i].param_type);
+        i = i + 1;
+    }
+    
+    write_char(ctx, 41);  // ')'
+    
+    // 返回类型
+    if func.return_type != null {
+        write_str(ctx, " " as *byte);
+        write_str(ctx, func.return_type);
+    }
+    
+    write_str(ctx, " {" as *byte);
+    write_newline(ctx);
+    
+    // 函数体
+    ctx.indent_level = ctx.indent_level + 1;
+    format_block(ctx, func.body);
+    ctx.indent_level = ctx.indent_level - 1;
+    
+    write_indent(ctx);
+    write_char(ctx, 125);  // '}'
+    write_newline(ctx);
+}
+
+// 主格式化函数
+export fn format_code(
+    input: &byte,
+    input_len: usize,
+    output: &byte,
+    output_max: usize
+) FormatResult {
+    var result: FormatResult = FormatResult {
+        success: 1,
+        output_len: 0,
+        error_message: null
+    };
+    
+    // 1. 词法分析
+    var tokens: TokenBuffer = tokenize(input, input_len);
+    if tokens.error != null {
+        result.success = 0;
+        result.error_message = tokens.error;
+        return result;
+    }
+    
+    // 2. 语法分析
+    var ast_root: ASTNode = parse(tokens);
+    if ast_root.error != null {
+        result.success = 0;
+        result.error_message = ast_root.error;
+        return result;
+    }
+    
+    // 3. 格式化输出
+    var ctx: FormatContext = FormatContext {
+        config: default_config(),
+        output: output,
+        output_size: output_max,
+        output_pos: 0,
+        indent_level: 0,
+        line_start: 1,
+        line_length: 0
+    };
+    
+    // 遍历 AST，输出格式化代码
+    var i: usize = 0;
+    while i < ast_root.decl_count {
+        const decl: &ASTNode = ast_root.declarations[i];
+        if decl.type == ASTNodeType.AST_FUNCTION {
+            format_function(&ctx, decl);
+            write_newline(&ctx);
+        }
+        i = i + 1;
+    }
+    
+    result.output_len = ctx.output_pos;
+    return result;
+}
 ```
 
 ---
