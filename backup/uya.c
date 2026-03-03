@@ -2190,11 +2190,11 @@ struct Arena {
 };
 
 struct jmp_buf {
-    uint64_t data[1];
+    uint64_t data[8];
 };
 
 struct sigjmp_buf {
-    uint64_t data[1];
+    uint64_t data[16];
 };
 
 struct sigaction {
@@ -4019,9 +4019,9 @@ const int32_t NSIG = 65;
 const int32_t SIG_BLOCK = 0;
 const int32_t SIG_UNBLOCK = 1;
 const int32_t SIG_SETMASK = 2;
-const void * SIG_DFL = (void *)NULL;
-const void * SIG_IGN = (void *)(size_t)1;
-const void * SIG_ERR = (void *)(size_t)-1;
+const size_t SIG_DFL = 0;
+const size_t SIG_IGN = 1;
+const size_t SIG_ERR = -1;
 const int64_t SYS_rt_sigaction = 13;
 
 const int64_t SYS_rt_sigprocmask = 14;
@@ -8284,7 +8284,7 @@ static __attribute__((unused)) void _signal_dispatch(int32_t signum) {
     (void)signum;
     if (((signum >= 0) && (signum < (int32_t)sizeof(_signal_handlers) / sizeof((_signal_handlers)[0])))) {
         void * handler = _signal_handlers[(size_t)signum];
-        if (((handler != NULL) && (handler != SIG_IGN))) {
+        if (((handler != NULL) && (handler != (void *)SIG_IGN))) {
         }
     }
 }
@@ -8295,23 +8295,23 @@ void * signal(int32_t signum, void * handler) {
     if (((signum >= 1) && (signum < (int32_t)sizeof(_signal_handlers) / sizeof((_signal_handlers)[0])))) {
         void * old_handler = _signal_handlers[(size_t)signum];
         if ((old_handler == NULL)) {
-            old_handler = SIG_DFL;
+            old_handler = (void *)SIG_DFL;
         }
         _signal_handlers[(size_t)signum] = handler;
         struct sigaction sa = (struct sigaction){.sa_handler = handler, .sa_flags = 67108864, .sa_restorer = NULL, .sa_mask = 0};
         struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall4(SYS_rt_sigaction, signum, (int64_t)(&sa), 0, 8); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
         int64_t ret = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
-            void * _uya_ret = SIG_ERR;
+            void * _uya_ret = (void *)SIG_ERR;
             return _uya_ret;
         } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
         if ((ret < 0)) {
-            void * _uya_ret = SIG_ERR;
+            void * _uya_ret = (void *)SIG_ERR;
             return _uya_ret;
         }
         void * _uya_ret = old_handler;
         return _uya_ret;
     }
-    void * _uya_ret = SIG_ERR;
+    void * _uya_ret = (void *)SIG_ERR;
     return _uya_ret;
 }
 

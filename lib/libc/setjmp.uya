@@ -16,7 +16,7 @@
 export const _JB_SIZE: usize = 8;  // 保存 8 个 64 位值
 
 export struct jmp_buf {
-    data: [u64: _JB_SIZE],
+    data: [u64: 8],  // 直接使用字面量，避免 C99 代码生成问题
 }
 
 // ============================================================
@@ -97,7 +97,7 @@ export extern "libc" fn longjmp(env: jmp_buf, val: i32) void {
 
 // sigjmp_buf - 带信号掩码的跳转缓冲区
 export struct sigjmp_buf {
-    data: [u64: _JB_SIZE + 8],  // 额外空间保存信号掩码
+    data: [u64: 16],  // 8 + 8，额外空间保存信号掩码
 }
 
 // sigsetjmp - 保存执行环境和信号掩码

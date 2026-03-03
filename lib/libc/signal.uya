@@ -47,9 +47,11 @@ export const SIG_UNBLOCK: i32 = 1;  // 解除阻塞信号
 export const SIG_SETMASK: i32 = 2;  // 设置信号掩码
 
 // 信号处理函数类型
-export const SIG_DFL: &void = null as &void;           // 默认处理
-export const SIG_IGN: &void = (1 as usize) as &void;   // 忽略信号
-export const SIG_ERR: &void = (0xFFFFFFFF as usize) as &void;  // 错误返回值
+// SIG_DFL、SIG_IGN、SIG_ERR 在 C 中是宏，这里用常量表示
+// 注意：这些值在 signal() 函数中使用时会进行类型转换
+export const SIG_DFL: usize = 0;           // 默认处理 (null)
+export const SIG_IGN: usize = 1;           // 忽略信号
+export const SIG_ERR: usize = 0xFFFFFFFF;  // 错误返回值 (-1)
 
 // ============================================================
 // 信号处理函数类型
@@ -100,7 +102,7 @@ fn _signal_dispatch(signum: i32) void {
     // 安全检查：确保信号编号在有效范围内
     if signum >= 0 && signum < @len(_signal_handlers) as i32 {
         var handler: &void = _signal_handlers[signum as usize];
-        if handler != null && handler != SIG_IGN {
+        if handler != null && handler != SIG_IGN as &void {
             // 调用信号处理函数
             // 注意：这里需要类型转换来调用函数
             // 由于 Uya 的限制，我们使用内联方式处理
@@ -118,7 +120,7 @@ export extern "libc" fn signal(signum: i32, handler: &void) &void {
         // 保存旧的处理函数
         var old_handler: &void = _signal_handlers[signum as usize];
         if old_handler == null {
-            old_handler = SIG_DFL;
+            old_handler = SIG_DFL as &void;
         }
         
         // 设置新的处理函数
@@ -133,15 +135,15 @@ export extern "libc" fn signal(signum: i32, handler: &void) &void {
         };
         
         var result: !i64 = @syscall(SYS_rt_sigaction, signum, &sa as i64, 0, 8);
-        var ret: i64 = result catch { return SIG_ERR; };
+        var ret: i64 = result catch { return SIG_ERR as &void; };
         
         if ret < 0 {
-            return SIG_ERR;
+            return SIG_ERR as &void;
         }
         
         return old_handler;
     }
-    return SIG_ERR;
+    return SIG_ERR as &void;
 }
 
 // ============================================================
