@@ -198,6 +198,7 @@ struct ASTNode {
     fn_decl_is_export: i32,  // 1 表示 export fn，0 表示私有
     fn_decl_is_extern: i32,  // 1 表示 extern fn（含 export extern fn main），0 表示普通函数
     fn_decl_is_async: i32,   // 1 表示 @async_fn，0 表示普通函数
+    fn_decl_is_naked: i32,   // 1 表示 @naked_fn，0 表示普通函数
     fn_decl_extern_lib_name: &byte,  // extern "libc" fn 中的库名（如 "libc"），null 表示普通 extern fn
     // macro_decl（宏声明）
     macro_decl_name: &byte,
@@ -477,6 +478,7 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.fn_decl_is_export = 0;
     node.fn_decl_is_extern = 0;
     node.fn_decl_is_async = 0;
+    node.fn_decl_is_naked = 0;
     node.fn_decl_extern_lib_name = null;
     node.macro_decl_name = null;
     node.macro_decl_params = null;
