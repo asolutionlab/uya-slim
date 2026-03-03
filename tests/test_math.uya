@@ -1,0 +1,119 @@
+// test_math.uya - math 模块测试
+use std.runtime.entry;
+
+use libc.sin;
+use libc.cos;
+use libc.tan;
+use libc.sqrt;
+use libc.fabs;
+use libc.pow;
+use libc.ceil;
+use libc.floor;
+use libc.fmod;
+use libc.isnan;
+use libc.isinf;
+use libc.INFINITY;
+use libc.NAN;
+use libc.PI;
+
+// 导入测试框架
+use std.testing.assert_eq_i32;
+use std.testing.assert;
+use std.testing.expect;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+// 辅助函数：比较浮点数近似相等
+fn approx_eq(a: f64, b: f64, epsilon: f64) bool {
+    var diff: f64 = a - b;
+    if diff < 0.0 { diff = 0.0 - diff; }
+    return diff < epsilon;
+}
+
+// ============================================================
+// 基础数学函数测试
+// ============================================================
+
+fn test_fabs() !void {
+    try assert(approx_eq(fabs(3.14), 3.14, 0.0001), "fabs(3.14)" as &const byte);
+    try assert(approx_eq(fabs(-3.14), 3.14, 0.0001), "fabs(-3.14)" as &const byte);
+    try assert(approx_eq(fabs(0.0), 0.0, 0.0001), "fabs(0)" as &const byte);
+}
+
+fn test_sqrt() !void {
+    try assert(approx_eq(sqrt(4.0), 2.0, 0.0001), "sqrt(4)" as &const byte);
+    try assert(approx_eq(sqrt(9.0), 3.0, 0.0001), "sqrt(9)" as &const byte);
+    try assert(approx_eq(sqrt(0.0), 0.0, 0.0001), "sqrt(0)" as &const byte);
+}
+
+fn test_pow() !void {
+    try assert(approx_eq(pow(2.0, 3.0), 8.0, 0.0001), "pow(2,3)" as &const byte);
+    try assert(approx_eq(pow(3.0, 2.0), 9.0, 0.0001), "pow(3,2)" as &const byte);
+    try assert(approx_eq(pow(2.0, 0.0), 1.0, 0.0001), "pow(2,0)" as &const byte);
+}
+
+fn test_ceil_floor() !void {
+    try assert(approx_eq(ceil(3.14), 4.0, 0.0001), "ceil(3.14)" as &const byte);
+    try assert(approx_eq(ceil(-3.14), -3.0, 0.0001), "ceil(-3.14)" as &const byte);
+    try assert(approx_eq(floor(3.14), 3.0, 0.0001), "floor(3.14)" as &const byte);
+    try assert(approx_eq(floor(-3.14), -4.0, 0.0001), "floor(-3.14)" as &const byte);
+}
+
+fn test_fmod() !void {
+    try assert(approx_eq(fmod(10.0, 3.0), 1.0, 0.0001), "fmod(10,3)" as &const byte);
+    try assert(approx_eq(fmod(7.5, 2.5), 0.0, 0.0001), "fmod(7.5,2.5)" as &const byte);
+}
+
+// ============================================================
+// 三角函数测试
+// ============================================================
+
+fn test_sin_cos() !void {
+    // sin(0) = 0
+    try assert(approx_eq(sin(0.0), 0.0, 0.0001), "sin(0)" as &const byte);
+    // cos(0) = 1
+    try assert(approx_eq(cos(0.0), 1.0, 0.0001), "cos(0)" as &const byte);
+    // sin(PI) ≈ 0
+    try assert(approx_eq(sin(PI), 0.0, 0.001), "sin(PI)" as &const byte);
+    // cos(PI) ≈ -1
+    try assert(approx_eq(cos(PI), -1.0, 0.001), "cos(PI)" as &const byte);
+}
+
+fn test_tan() !void {
+    // tan(0) = 0
+    try assert(approx_eq(tan(0.0), 0.0, 0.0001), "tan(0)" as &const byte);
+}
+
+// ============================================================
+// 特殊值测试
+// ============================================================
+
+fn test_special_values() !void {
+    // isnan 测试
+    try expect(isnan(NAN) != 0);
+    try expect(isnan(0.0) == 0);
+    
+    // isinf 测试
+    try expect(isinf(INFINITY) != 0);
+    try expect(isinf(0.0) == 0);
+}
+
+// ============================================================
+// 主函数
+// ============================================================
+
+export fn main() i32 {
+    test_suite_begin("libc.math");
+
+    run_test("fabs", test_fabs);
+    run_test("sqrt", test_sqrt);
+    run_test("pow", test_pow);
+    run_test("ceil_floor", test_ceil_floor);
+    run_test("fmod", test_fmod);
+    run_test("sin_cos", test_sin_cos);
+    run_test("tan", test_tan);
+    run_test("special_values", test_special_values);
+
+    return test_suite_end();
+}

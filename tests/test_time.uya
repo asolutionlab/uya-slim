@@ -1,0 +1,90 @@
+// test_time.uya - time 模块测试
+use std.runtime.entry;
+
+use libc.time_t;
+use libc.tm;
+use libc.time;
+use libc.mktime;
+use libc.localtime;
+use libc.gmtime;
+
+// 导入测试框架
+use std.testing.assert_eq_i32;
+use std.testing.expect;
+use std.testing.expect_not_null;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+use std.testing.run_test;
+
+// ============================================================
+// time 函数测试
+// ============================================================
+
+fn test_time_func() !void {
+    var t: time_t = time(null);
+    // 时间应该大于 0（1970年以来的秒数）
+    try expect(t > 0);
+}
+
+// ============================================================
+// tm 结构体测试
+// ============================================================
+
+fn test_tm_struct() !void {
+    var t: time_t = time(null);
+    var local_tm: &tm = localtime(&t);
+    
+    try expect_not_null(local_tm as &void);
+    
+    // 验证 tm 结构体字段在合理范围内
+    if local_tm != null {
+        try expect(local_tm.tm_sec >= 0 && local_tm.tm_sec < 62);
+        try expect(local_tm.tm_min >= 0 && local_tm.tm_min < 60);
+        try expect(local_tm.tm_hour >= 0 && local_tm.tm_hour < 24);
+        try expect(local_tm.tm_mday >= 1 && local_tm.tm_mday <= 31);
+        try expect(local_tm.tm_mon >= 0 && local_tm.tm_mon < 12);
+        try expect(local_tm.tm_year >= 0);
+    }
+}
+
+// ============================================================
+// gmtime 测试
+// ============================================================
+
+fn test_gmtime_func() !void {
+    var t: time_t = time(null);
+    var utc_tm: &tm = gmtime(&t);
+    
+    try expect_not_null(utc_tm as &void);
+}
+
+// ============================================================
+// mktime 测试
+// ============================================================
+
+fn test_mktime_func() !void {
+    // 创建一个已知的日期: 2024-01-01 00:00:00
+    var t: time_t = time(null);
+    var local_tm: &tm = localtime(&t);
+    
+    if local_tm != null {
+        // mktime 应该返回一个有效的时间戳
+        var result: time_t = mktime(local_tm);
+        try expect(result > 0);
+    }
+}
+
+// ============================================================
+// 主函数
+// ============================================================
+
+export fn main() i32 {
+    test_suite_begin("libc.time");
+
+    run_test("time_func", test_time_func);
+    run_test("tm_struct", test_tm_struct);
+    run_test("gmtime_func", test_gmtime_func);
+    run_test("mktime_func", test_mktime_func);
+
+    return test_suite_end();
+}
