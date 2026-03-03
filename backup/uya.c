@@ -1758,6 +1758,7 @@ struct sigjmp_buf;
 struct sigaction;
 struct sigset_t;
 struct FILE;
+struct _FmtContext;
 struct ChunkHeader;
 struct FreeChunk;
 struct div_t;
@@ -2225,6 +2226,13 @@ struct FILE {
     size_t buf_pos;
     size_t buf_len;
     int32_t buf_mode;
+};
+
+struct _FmtContext {
+    uint8_t * buf;
+    size_t buf_pos;
+    size_t buf_max;
+    struct FILE * stream;
 };
 
 struct ChunkHeader {
@@ -3190,6 +3198,16 @@ size_t libc_fread(uint8_t * ptr, size_t size, size_t nmemb, struct FILE * stream
 int32_t libc_fgetc(struct FILE * stream);
 static size_t _fmt_f64_to_buf(uint8_t * buf, size_t buf_pos, size_t buf_max, double val, int32_t precision);
 int32_t libc_fprintf(struct FILE * stream, const uint8_t * format, ...);
+static void _fmt_i32_to_buf(struct _FmtContext * ctx, int32_t value);
+static void _fmt_u32_hex_to_buf(struct _FmtContext * ctx, uint32_t value, int32_t uppercase);
+static void _fmt_str_to_buf(struct _FmtContext * ctx, const uint8_t * s);
+static int32_t _vfprintf_impl(struct FILE * stream, const uint8_t * format, va_list ap, int32_t use_buf, uint8_t * out_buf, size_t buf_size);
+static void _fmt_u32_to_buf(struct _FmtContext * ctx, uint32_t value);
+static void _fmt_u64_to_buf(struct _FmtContext * ctx, uint64_t value);
+int32_t libc_vfprintf(struct FILE * stream, const uint8_t * format, va_list ap);
+int32_t libc_vprintf(const uint8_t * format, va_list ap);
+int32_t libc_vsprintf(uint8_t * buf, const uint8_t * format, va_list ap);
+int32_t libc_vsnprintf(uint8_t * buf, size_t n, const uint8_t * format, va_list ap);
 size_t libc_fwrite(const uint8_t * ptr, size_t size, size_t nmemb, struct FILE * stream);
 int32_t libc_fputc(int32_t c, struct FILE * stream);
 int32_t libc_fputs(const uint8_t * s, struct FILE * stream);
@@ -8604,7 +8622,8 @@ int64_t libc_write_to_buffer(struct FILE * stream, const uint8_t * buf, size_t n
         int64_t _uya_ret = 0;
         return _uya_ret;
     }
-    if (((stream->buf_mode == 0) || (n >= 4096))) {
+    const size_t buf_size = sizeof(stream->buffer) / sizeof((stream->buffer)[0]);
+    if (((stream->buf_mode == 0) || (n >= buf_size))) {
         struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, stream->fd, (int64_t)buf, (int64_t)n); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
         const int64_t written = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
             int64_t _uya_ret = (-1);
@@ -8617,7 +8636,7 @@ int64_t libc_write_to_buffer(struct FILE * stream, const uint8_t * buf, size_t n
     size_t remaining = n;
     size_t src_offset = 0;
     while ((remaining > 0)) {
-        size_t space_left = (4096 - stream->buf_len);
+        size_t space_left = (buf_size - stream->buf_len);
         if ((space_left == 0)) {
             if ((libc_flush_buffer(stream) < 0)) {
                 int64_t _uya_ret = (-1);
@@ -8644,7 +8663,7 @@ int64_t libc_write_to_buffer(struct FILE * stream, const uint8_t * buf, size_t n
             size_t j = buf_start;
             bool need_flush = false;
             while ((j < stream->buf_len)) {
-                if ((j < 4096)) {
+                if ((j < buf_size)) {
                     if ((stream->buffer[j] == 10)) {
                         need_flush = true;
                         break;
@@ -8949,8 +8968,9 @@ struct FILE * libc_fopen(const uint8_t * filename, const uint8_t * mode) {
         struct FILE * _uya_ret = NULL;
         return _uya_ret;
     } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+    const size_t storage_size = sizeof(fopen_fd_storage) / sizeof((fopen_fd_storage)[0]);
     size_t j = 0;
-    while ((j < 64)) {
+    while ((j < storage_size)) {
         if ((fopen_fd_storage[j].fd <= 0)) {
             fopen_fd_storage[j].fd = (int64_t)fd;
             struct FILE * _uya_ret = (&fopen_fd_storage[j]);
@@ -9445,6 +9465,330 @@ int32_t libc_fprintf(struct FILE * stream, const uint8_t * format, ...) {
         return _uya_ret;
     } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
     int32_t _uya_ret = (int32_t)written;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) void _fmt_i32_to_buf(struct _FmtContext * ctx, int32_t value) {
+    (void)ctx;
+    (void)value;
+    int32_t num = value;
+    int32_t is_neg = 0;
+    if ((num < 0)) {
+        is_neg = 1;
+        num = (0 - num);
+    }
+    uint8_t digits[16] = {0};
+    size_t digit_idx = 0;
+    if ((num == 0)) {
+        digits[0] = 48;
+        digit_idx = 1;
+    } else {
+        int32_t temp = num;
+        while ((temp > 0)) {
+            const int32_t digit = (temp % 10);
+            digits[digit_idx] = (uint8_t)(48 + digit);
+            digit_idx = (digit_idx + 1);
+            temp = (temp / 10);
+        }
+    }
+    if (((is_neg > 0) && (ctx->buf_pos < ctx->buf_max))) {
+        ctx->buf[ctx->buf_pos] = 45;
+        ctx->buf_pos = (ctx->buf_pos + 1);
+    }
+    size_t i = 0;
+    while (((i < digit_idx) && (ctx->buf_pos < ctx->buf_max))) {
+        ctx->buf[ctx->buf_pos] = digits[((digit_idx - 1) - i)];
+        ctx->buf_pos = (ctx->buf_pos + 1);
+        i = (i + 1);
+    }
+}
+
+static __attribute__((unused)) void _fmt_u32_hex_to_buf(struct _FmtContext * ctx, uint32_t value, int32_t uppercase) {
+    (void)ctx;
+    (void)value;
+    (void)uppercase;
+    uint32_t num = value;
+    const uint8_t hex_lower[16] = {48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102};
+    const uint8_t hex_upper[16] = {48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70};
+    const uint32_t sixteen = 16;
+    uint8_t hdigits[8] = {0};
+    size_t hidx = 0;
+    if ((num == 0)) {
+        hdigits[0] = 48;
+        hidx = 1;
+    } else {
+        while (((num > 0) && (hidx < 8))) {
+            const size_t idx = (size_t)(num % sixteen);
+            if (((idx >= 0) && (idx < 16))) {
+                if ((uppercase > 0)) {
+                    hdigits[hidx] = hex_upper[idx];
+                } else {
+                    hdigits[hidx] = hex_lower[idx];
+                }
+            }
+            hidx = (hidx + 1);
+            num = (num / sixteen);
+        }
+    }
+    size_t i = 0;
+    while (((i < hidx) && (ctx->buf_pos < ctx->buf_max))) {
+        ctx->buf[ctx->buf_pos] = hdigits[((hidx - 1) - i)];
+        ctx->buf_pos = (ctx->buf_pos + 1);
+        i = (i + 1);
+    }
+}
+
+static __attribute__((unused)) void _fmt_str_to_buf(struct _FmtContext * ctx, const uint8_t * s) {
+    (void)ctx;
+    (void)s;
+    if ((s == NULL)) {
+        return;
+    }
+    const size_t len = std_string_strlen(s);
+    size_t i = 0;
+    while (((i < len) && (ctx->buf_pos < ctx->buf_max))) {
+        ctx->buf[ctx->buf_pos] = s[i];
+        ctx->buf_pos = (ctx->buf_pos + 1);
+        i = (i + 1);
+    }
+}
+
+static __attribute__((unused)) int32_t _vfprintf_impl(struct FILE * stream, const uint8_t * format, va_list ap, int32_t use_buf, uint8_t * out_buf, size_t buf_size) {
+    (void)stream;
+    (void)format;
+    (void)ap;
+    (void)use_buf;
+    (void)out_buf;
+    (void)buf_size;
+    if ((format == NULL)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    uint8_t local_buf[4096] = {0};
+    struct _FmtContext ctx = (struct _FmtContext){.buf = (&local_buf[0]), .buf_pos = 0, .buf_max = 4095, .stream = stream};
+    if (((use_buf > 0) && (out_buf != NULL))) {
+        ctx.buf = out_buf;
+        if ((buf_size > 0)) {
+            ctx.buf_max = (buf_size - 1);
+        }
+    }
+    size_t format_pos = 0;
+    const size_t format_len = std_string_strlen(format);
+    while (((format_pos < format_len) && (ctx.buf_pos < ctx.buf_max))) {
+        const uint8_t c = format[format_pos];
+        if ((c == 37)) {
+            format_pos = (format_pos + 1);
+            if ((format_pos < format_len)) {
+                const uint8_t spec = format[format_pos];
+                if ((spec == 115)) {
+                    const uint8_t * const s = va_arg(ap, const uint8_t *);
+                    _fmt_str_to_buf((&ctx), s);
+                } else {
+                    if ((spec == 100)) {
+                        const int32_t d = va_arg(ap, int32_t);
+                        _fmt_i32_to_buf((&ctx), d);
+                    } else {
+                        if ((((spec == 108) && ((format_pos + 1) < format_len)) && (format[(format_pos + 1)] == 100))) {
+                            format_pos = (format_pos + 1);
+                            const int64_t ld = va_arg(ap, int64_t);
+                            if ((ld < 0)) {
+                                if ((ctx.buf_pos < ctx.buf_max)) {
+                                    ctx.buf[ctx.buf_pos] = 45;
+                                    ctx.buf_pos = (ctx.buf_pos + 1);
+                                }
+                                _fmt_u64_to_buf((&ctx), (uint64_t)(0 - ld));
+                            } else {
+                                _fmt_u64_to_buf((&ctx), (uint64_t)ld);
+                            }
+                        } else {
+                            if ((spec == 117)) {
+                                const uint32_t uval = va_arg(ap, uint32_t);
+                                _fmt_u32_to_buf((&ctx), uval);
+                            } else {
+                                if ((spec == 120)) {
+                                    const uint32_t xval = va_arg(ap, uint32_t);
+                                    _fmt_u32_hex_to_buf((&ctx), xval, 0);
+                                } else {
+                                    if ((spec == 88)) {
+                                        const uint32_t xval = va_arg(ap, uint32_t);
+                                        _fmt_u32_hex_to_buf((&ctx), xval, 1);
+                                    } else {
+                                        if ((spec == 112)) {
+                                            const size_t pval = va_arg(ap, size_t);
+                                            if ((ctx.buf_pos < ctx.buf_max)) {
+                                                ctx.buf[ctx.buf_pos] = 48;
+                                                ctx.buf_pos = (ctx.buf_pos + 1);
+                                            }
+                                            if ((ctx.buf_pos < ctx.buf_max)) {
+                                                ctx.buf[ctx.buf_pos] = 120;
+                                                ctx.buf_pos = (ctx.buf_pos + 1);
+                                            }
+                                            _fmt_u64_to_buf((&ctx), (uint64_t)pval);
+                                        } else {
+                                            if ((spec == 99)) {
+                                                const int32_t cval = va_arg(ap, int32_t);
+                                                if ((ctx.buf_pos < ctx.buf_max)) {
+                                                    ctx.buf[ctx.buf_pos] = (uint8_t)cval;
+                                                    ctx.buf_pos = (ctx.buf_pos + 1);
+                                                }
+                                            } else {
+                                                if ((((spec == 122) && ((format_pos + 1) < format_len)) && (format[(format_pos + 1)] == 117))) {
+                                                    format_pos = (format_pos + 1);
+                                                    const size_t zu_val = va_arg(ap, size_t);
+                                                    _fmt_u64_to_buf((&ctx), (uint64_t)zu_val);
+                                                } else {
+                                                    if ((spec == 103)) {
+                                                        const double fval = va_arg(ap, double);
+                                                        ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, 6);
+                                                    } else {
+                                                        if ((spec == 37)) {
+                                                            if ((ctx.buf_pos < ctx.buf_max)) {
+                                                                ctx.buf[ctx.buf_pos] = 37;
+                                                                ctx.buf_pos = (ctx.buf_pos + 1);
+                                                            }
+                                                        } else {
+                                                            if ((ctx.buf_pos < ctx.buf_max)) {
+                                                                ctx.buf[ctx.buf_pos] = 37;
+                                                                ctx.buf_pos = (ctx.buf_pos + 1);
+                                                            }
+                                                            if ((ctx.buf_pos < ctx.buf_max)) {
+                                                                ctx.buf[ctx.buf_pos] = spec;
+                                                                ctx.buf_pos = (ctx.buf_pos + 1);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            ctx.buf[ctx.buf_pos] = c;
+            ctx.buf_pos = (ctx.buf_pos + 1);
+        }
+        format_pos = (format_pos + 1);
+    }
+    if (((use_buf == 0) && (stream != NULL))) {
+        const int64_t fd = stream->fd;
+        if ((fd >= 0)) {
+            struct err_union_intptr_t result = sys_write((int32_t)fd, (&local_buf[0]), ctx.buf_pos);
+            ({ int32_t _uya_catch_result; struct err_union_intptr_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+                int32_t _uya_ret = (0 - 1);
+                return _uya_ret;
+            } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+        }
+    } else {
+        if (((out_buf != NULL) && (ctx.buf_pos < buf_size))) {
+            out_buf[ctx.buf_pos] = 0;
+        }
+    }
+    int32_t _uya_ret = (int32_t)ctx.buf_pos;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) void _fmt_u32_to_buf(struct _FmtContext * ctx, uint32_t value) {
+    (void)ctx;
+    (void)value;
+    uint32_t num = value;
+    uint8_t digits[16] = {0};
+    size_t digit_idx = 0;
+    if ((num == 0)) {
+        digits[0] = 48;
+        digit_idx = 1;
+    } else {
+        const uint32_t ten = 10;
+        while (((num > 0) && (digit_idx < 16))) {
+            const int32_t digit = (int32_t)(num % ten);
+            digits[digit_idx] = (uint8_t)(48 + digit);
+            digit_idx = (digit_idx + 1);
+            num = (num / ten);
+        }
+    }
+    size_t i = 0;
+    while (((i < digit_idx) && (ctx->buf_pos < ctx->buf_max))) {
+        ctx->buf[ctx->buf_pos] = digits[((digit_idx - 1) - i)];
+        ctx->buf_pos = (ctx->buf_pos + 1);
+        i = (i + 1);
+    }
+}
+
+static __attribute__((unused)) void _fmt_u64_to_buf(struct _FmtContext * ctx, uint64_t value) {
+    (void)ctx;
+    (void)value;
+    uint64_t num = value;
+    uint8_t digits[24] = {0};
+    size_t digit_idx = 0;
+    if ((num == 0)) {
+        digits[0] = 48;
+        digit_idx = 1;
+    } else {
+        const uint64_t ten = 10;
+        while (((num > 0) && (digit_idx < 24))) {
+            const int32_t digit = (int32_t)(num % ten);
+            digits[digit_idx] = (uint8_t)(48 + digit);
+            digit_idx = (digit_idx + 1);
+            num = (num / ten);
+        }
+    }
+    size_t i = 0;
+    while (((i < digit_idx) && (ctx->buf_pos < ctx->buf_max))) {
+        ctx->buf[ctx->buf_pos] = digits[((digit_idx - 1) - i)];
+        ctx->buf_pos = (ctx->buf_pos + 1);
+        i = (i + 1);
+    }
+}
+
+int32_t libc_vfprintf(struct FILE * stream, const uint8_t * format, va_list ap) {
+    (void)stream;
+    (void)format;
+    (void)ap;
+    if (((stream == NULL) || (format == NULL))) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    const int64_t fd = stream->fd;
+    if ((fd < 0)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = _vfprintf_impl(stream, format, ap, 0, NULL, 0);
+    return _uya_ret;
+}
+
+int32_t libc_vprintf(const uint8_t * format, va_list ap) {
+    (void)format;
+    (void)ap;
+    int32_t _uya_ret = libc_vfprintf(stdout, format, ap);
+    return _uya_ret;
+}
+
+int32_t libc_vsprintf(uint8_t * buf, const uint8_t * format, va_list ap) {
+    (void)buf;
+    (void)format;
+    (void)ap;
+    if (((buf == NULL) || (format == NULL))) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = _vfprintf_impl(NULL, format, ap, 1, (uint8_t *)buf, 0);
+    return _uya_ret;
+}
+
+int32_t libc_vsnprintf(uint8_t * buf, size_t n, const uint8_t * format, va_list ap) {
+    (void)buf;
+    (void)n;
+    (void)format;
+    (void)ap;
+    if ((((buf == NULL) || (format == NULL)) || (n == 0))) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = _vfprintf_impl(NULL, format, ap, 1, (uint8_t *)buf, n);
     return _uya_ret;
 }
 
@@ -36008,14 +36352,22 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                                                         } else {
                                                                                                                                             if ((expr->type == AST_VA_START)) {
                                                                                                                                                 libc_fputs((uint8_t *)(uint8_t *)str990, (void *)codegen->output);
-                                                                                                                                                gen_expr(codegen, expr->va_start_ap);
+                                                                                                                                                if ((((expr->va_start_ap != NULL) && (expr->va_start_ap->type == AST_UNARY_EXPR)) && ((enum TokenType)expr->va_start_ap->unary_expr_op == TOKEN_AMPERSAND))) {
+                                                                                                                                                    gen_expr(codegen, expr->va_start_ap->unary_expr_operand);
+                                                                                                                                                } else {
+                                                                                                                                                    gen_expr(codegen, expr->va_start_ap);
+                                                                                                                                                }
                                                                                                                                                 c99_emit_comma_space(codegen);
                                                                                                                                                 gen_expr(codegen, expr->va_start_last_param);
                                                                                                                                                 libc_fputc(41, (void *)codegen->output);
                                                                                                                                             } else {
                                                                                                                                                 if ((expr->type == AST_VA_END)) {
                                                                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str991, (void *)codegen->output);
-                                                                                                                                                    gen_expr(codegen, expr->va_end_ap);
+                                                                                                                                                    if ((((expr->va_end_ap != NULL) && (expr->va_end_ap->type == AST_UNARY_EXPR)) && ((enum TokenType)expr->va_end_ap->unary_expr_op == TOKEN_AMPERSAND))) {
+                                                                                                                                                        gen_expr(codegen, expr->va_end_ap->unary_expr_operand);
+                                                                                                                                                    } else {
+                                                                                                                                                        gen_expr(codegen, expr->va_end_ap);
+                                                                                                                                                    }
                                                                                                                                                     libc_fputc(41, (void *)codegen->output);
                                                                                                                                                 } else {
                                                                                                                                                     if ((expr->type == AST_VA_ARG)) {
@@ -36031,7 +36383,11 @@ static __attribute__((unused)) void gen_expr(struct C99CodeGenerator * codegen, 
                                                                                                                                                     } else {
                                                                                                                                                         if ((expr->type == AST_VA_COPY)) {
                                                                                                                                                             libc_fputs((uint8_t *)(uint8_t *)str995, (void *)codegen->output);
-                                                                                                                                                            gen_expr(codegen, expr->va_copy_dest);
+                                                                                                                                                            if ((((expr->va_copy_dest != NULL) && (expr->va_copy_dest->type == AST_UNARY_EXPR)) && ((enum TokenType)expr->va_copy_dest->unary_expr_op == TOKEN_AMPERSAND))) {
+                                                                                                                                                                gen_expr(codegen, expr->va_copy_dest->unary_expr_operand);
+                                                                                                                                                            } else {
+                                                                                                                                                                gen_expr(codegen, expr->va_copy_dest);
+                                                                                                                                                            }
                                                                                                                                                             c99_emit_comma_space(codegen);
                                                                                                                                                             gen_expr(codegen, expr->va_copy_src);
                                                                                                                                                             libc_fputc(41, (void *)codegen->output);
