@@ -1,7 +1,7 @@
 // libc.setjmp - 非局部跳转函数
-// 版本：v0.6.0
-// 说明：当前版本为简化实现，完整实现需要编译器内置函数支持
-// 使用 AT&T 汇编语法
+// 版本：v0.7.0
+// 说明：使用 @naked_fn 实现完整的 setjmp/longjmp
+// 注意：naked 函数中直接使用参数寄存器，不使用输入操作数
 
 export const _JB_SIZE: usize = 8;
 
@@ -16,136 +16,102 @@ export struct sigjmp_buf {
 }
 
 // setjmp - 保存执行上下文
-// 当前实现：保存寄存器，返回 0
-// 注意：完整的 setjmp/longjmp 实现需要编译器内置函数或 naked 函数支持
-export fn setjmp(env: &jmp_buf) i32 {
+// 使用 @naked_fn 避免 GCC 生成 prologue
+// jmp_buf 布局：
+//   [0] rbx, [1] rbp, [2] r12, [3] r13, [4] r14, [5] r15, [6] rsp, [7] rip
+// 参数：rdi = env
+export @naked_fn fn setjmp(env: &jmp_buf) i32 {
     @asm {
-        "movq %%rbx, (%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq %%rbp, 8(%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq %%r12, 16(%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq %%r13, 24(%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq %%r14, 32(%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq %%r15, 40(%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "leaq 16(%%rsp), %%rax" (env as usize);
-        "movq %%rax, 48(%0)" (env as usize);
-    } clobbers = ["memory", "rax"]
-    @asm {
-        "movq 8(%%rsp), %%rax" (env as usize);
-        "movq %%rax, 56(%0)" (env as usize);
-    } clobbers = ["memory", "rax"]
-    return 0;
+        // 参数: rdi = env
+        // 保存 callee-saved 寄存器
+        "movq %%rbx, 0(%%rdi)" ();
+        "movq %%rbp, 8(%%rdi)" ();
+        "movq %%r12, 16(%%rdi)" ();
+        "movq %%r13, 24(%%rdi)" ();
+        "movq %%r14, 32(%%rdi)" ();
+        "movq %%r15, 40(%%rdi)" ();
+        // rsp: 返回后的栈指针 = 当前 rsp + 8 (只有 return address)
+        "leaq 8(%%rsp), %%rax" ();
+        "movq %%rax, 48(%%rdi)" ();
+        // rip: 返回地址在 [rsp]
+        "movq (%%rsp), %%rax" ();
+        "movq %%rax, 56(%%rdi)" ();
+        // 返回 0
+        "xorl %%eax, %%eax" ();
+        "ret" ();
+    } clobbers = ["memory", "rax"];
 }
 
-// longjmp - 恢复执行上下文
-// 当前实现：不完整，仅恢复寄存器但不跳转
-// 完整实现需要 naked 函数或编译器内置函数
-export fn longjmp(env: &jmp_buf, val: i32) void {
-    var ret_val: i64 = val as i64;
-    if ret_val == 0 {
-        ret_val = 1;
-    }
-    
-    // 恢复被调用者保存寄存器
+// longjmp - 恢复执行上下文并跳转
+// 使用 @naked_fn 避免 GCC 生成 prologue/epilogue
+// 参数已在寄存器中：rdi = env, esi = val
+export @naked_fn fn longjmp(env: &jmp_buf, val: i32) void {
     @asm {
-        "movq (%0), %%rbx" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq 8(%0), %%rbp" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq 16(%0), %%r12" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq 24(%0), %%r13" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq 32(%0), %%r14" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq 40(%0), %%r15" (env as usize);
-    } clobbers = ["memory"]
-    
-    // 注意：完整的 longjmp 需要：
-    // 1. 恢复 rsp
-    // 2. 跳转到保存的 rip
-    // 这需要在单个原子操作中完成，当前 Uya 编译器不支持
-    
-    // 当前实现：无限循环（模拟 "永远不会返回"）
-    while true {
-    }
+        // 参数: rdi = env, esi = val
+        // 如果 val == 0，设为 1（POSIX 要求）
+        "testl %%esi, %%esi" ();
+        "movl $1, %%eax" ();
+        "cmovzl %%eax, %%esi" ();
+        // 设置返回值到 eax
+        "movl %%esi, %%eax" ();
+        // 恢复 callee-saved 寄存器
+        "movq 0(%%rdi), %%rbx" ();
+        "movq 8(%%rdi), %%rbp" ();
+        "movq 16(%%rdi), %%r12" ();
+        "movq 24(%%rdi), %%r13" ();
+        "movq 32(%%rdi), %%r14" ();
+        "movq 40(%%rdi), %%r15" ();
+        // 恢复 rsp
+        "movq 48(%%rdi), %%rsp" ();
+        // 跳转到保存的 rip（setjmp 的返回地址）
+        "jmpq *56(%%rdi)" ();
+    } clobbers = ["memory"];
 }
 
-// sigsetjmp / siglongjmp
-export fn sigsetjmp(env: &sigjmp_buf, savemask: i32) i32 {
+// sigsetjmp - 保存执行上下文和信号掩码
+export @naked_fn fn sigsetjmp(env: &sigjmp_buf, savemask: i32) i32 {
     @asm {
-        "movq %%rbx, (%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq %%rbp, 8(%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq %%r12, 16(%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq %%r13, 24(%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq %%r14, 32(%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq %%r15, 40(%0)" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "leaq 16(%%rsp), %%rax" (env as usize);
-        "movq %%rax, 48(%0)" (env as usize);
-    } clobbers = ["memory", "rax"]
-    @asm {
-        "movq 8(%%rsp), %%rax" (env as usize);
-        "movq %%rax, 56(%0)" (env as usize);
-    } clobbers = ["memory", "rax"]
-    env.data[8] = savemask as u64;
-    return 0;
+        // 参数: rdi = env, esi = savemask
+        "movq %%rbx, 0(%%rdi)" ();
+        "movq %%rbp, 8(%%rdi)" ();
+        "movq %%r12, 16(%%rdi)" ();
+        "movq %%r13, 24(%%rdi)" ();
+        "movq %%r14, 32(%%rdi)" ();
+        "movq %%r15, 40(%%rdi)" ();
+        "leaq 8(%%rsp), %%rax" ();
+        "movq %%rax, 48(%%rdi)" ();
+        "movq (%%rsp), %%rax" ();
+        "movq %%rax, 56(%%rdi)" ();
+        // 保存 savemask
+        "movl %%esi, 64(%%rdi)" ();
+        // TODO: 如果 savemask != 0，保存信号掩码
+        // 返回 0
+        "xorl %%eax, %%eax" ();
+        "ret" ();
+    } clobbers = ["memory", "rax"];
 }
 
-export fn siglongjmp(env: &sigjmp_buf, val: i32) void {
-    var ret_val: i64 = val as i64;
-    if ret_val == 0 {
-        ret_val = 1;
-    }
+// siglongjmp - 恢复执行上下文和信号掩码
+export @naked_fn fn siglongjmp(env: &sigjmp_buf, val: i32) void {
     @asm {
-        "movq (%0), %%rbx" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq 8(%0), %%rbp" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq 16(%0), %%r12" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq 24(%0), %%r13" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq 32(%0), %%r14" (env as usize);
-    } clobbers = ["memory"]
-    @asm {
-        "movq 40(%0), %%r15" (env as usize);
-    } clobbers = ["memory"]
-    while true {
-    }
+        // 参数: rdi = env, esi = val
+        "testl %%esi, %%esi" ();
+        "movl $1, %%eax" ();
+        "cmovzl %%eax, %%esi" ();
+        "movl %%esi, %%eax" ();
+        "movq 0(%%rdi), %%rbx" ();
+        "movq 8(%%rdi), %%rbp" ();
+        "movq 16(%%rdi), %%r12" ();
+        "movq 24(%%rdi), %%r13" ();
+        "movq 32(%%rdi), %%r14" ();
+        "movq 40(%%rdi), %%r15" ();
+        "movq 48(%%rdi), %%rsp" ();
+        // TODO: 恢复信号掩码（如果 savemask != 0）
+        "jmpq *56(%%rdi)" ();
+    } clobbers = ["memory"];
 }
 
+// 别名函数
 export fn _setjmp(env: &jmp_buf) i32 {
     return setjmp(env);
 }
