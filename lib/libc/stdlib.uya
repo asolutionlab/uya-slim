@@ -579,6 +579,26 @@ export extern "libc" fn labs(x: i64) i64 {
     return x;
 }
 
+// ============================================================
+// 随机数生成 (rand, srand) - 线性同余法
+// ============================================================
+
+var rand_seed: i64 = 1;
+var rand_max_val: i64 = 2147483647;
+
+// srand - 设置随机数种子
+export extern "libc" fn srand(seed: u32) void {
+    rand_seed = seed as i64;
+}
+
+// rand - 生成伪随机数 (0 到 RAND_MAX)
+export extern "libc" fn rand() i32 {
+    rand_seed = (rand_seed * 1103515245 + 12345) % rand_max_val;
+    return ((rand_seed >> 16) as i32) & @max;
+}
+
+export const RAND_MAX: i32 = @max;
+
 // strtoul - 字符串转无符号长整数
 export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: i32) u64 {
     if nptr == null {
