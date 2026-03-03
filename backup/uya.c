@@ -3032,6 +3032,8 @@ double libc_strtod(const uint8_t * nptr, const uint8_t * * endptr);
 int64_t libc_strtol(const uint8_t * nptr, const uint8_t * * endptr, int32_t base);
 int32_t abs(int32_t x);
 int64_t labs(int64_t x);
+void srand(uint32_t seed);
+int32_t rand();
 uint64_t strtoul(const uint8_t * nptr, const uint8_t * * endptr, int32_t base);
 extern void qsort(void * base, size_t nmemb, size_t size, void * compar);
 extern void * bsearch(const void * key, const void * base, size_t nmemb, size_t size, void * compar);
@@ -3741,6 +3743,7 @@ const size_t PAGE_SIZE = 4096;
 
 const uint64_t CHUNK_MAGIC = -559038737;
 
+const int32_t RAND_MAX = 0;
 const int64_t CLOCKS_PER_SEC = 1000000;
 const size_t READDIR_BUF_SIZE = 8192;
 
@@ -3977,6 +3980,10 @@ struct FILE _stderr = {.fd = 2, .buf_pos = 0, .buf_len = 0, .buf_mode = 0};
 struct FILE fopen_fd_storage[64] = {0};
 
 struct FreeChunk * free_list_head = NULL;
+
+int64_t rand_seed = 1;
+
+int64_t rand_max_val = 2147483647;
 
 struct DirState opendir_storage[64] = {0};
 
@@ -8481,6 +8488,17 @@ int64_t labs(int64_t x) {
         return _uya_ret;
     }
     int64_t _uya_ret = x;
+    return _uya_ret;
+}
+
+void srand(uint32_t seed) {
+    (void)seed;
+    rand_seed = (int64_t)seed;
+}
+
+int32_t rand() {
+    rand_seed = (((rand_seed * 1103515245) + 12345) % rand_max_val);
+    int32_t _uya_ret = ((int32_t)(rand_seed >> 16) & 2147483647);
     return _uya_ret;
 }
 
