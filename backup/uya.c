@@ -1725,6 +1725,8 @@ struct EntryRLimit;
 struct ArenaChunk;
 struct Arena;
 struct FILE;
+struct ChunkHeader;
+struct FreeChunk;
 struct DIR;
 struct DirState;
 struct Stat;
@@ -2161,6 +2163,17 @@ struct FILE {
     size_t buf_pos;
     size_t buf_len;
     int32_t buf_mode;
+};
+
+struct ChunkHeader {
+    uint64_t magic;
+    size_t size;
+};
+
+struct FreeChunk {
+    struct ChunkHeader header;
+    struct FreeChunk * prev;
+    struct FreeChunk * next;
 };
 
 struct DIR {
@@ -2994,6 +3007,18 @@ int32_t libc_snprintf(uint8_t * buf, size_t n, const uint8_t * format, ...);
 int32_t printf(const uint8_t * format, ...);
 int32_t puts(const uint8_t * s);
 uint8_t * fgets(uint8_t * buf, int32_t n, struct FILE * stream);
+static size_t align_up(size_t size);
+static bool is_null(void * ptr);
+static struct ChunkHeader * to_header(void * ptr);
+static void * to_user_ptr(struct ChunkHeader * hdr);
+static bool is_free(struct ChunkHeader * hdr);
+static void set_free(struct ChunkHeader * hdr, bool free);
+static size_t get_size(struct ChunkHeader * hdr);
+static void remove_free(struct FreeChunk * chunk);
+static void add_free(struct FreeChunk * chunk);
+static struct ChunkHeader * morecore(size_t needed);
+static struct FreeChunk * find_chunk(size_t needed);
+static void split_chunk(struct FreeChunk * chunk, size_t needed);
 void * libc_malloc(size_t size);
 void libc_free(void * ptr);
 void * libc_calloc(size_t nmemb, size_t size);
@@ -3708,6 +3733,14 @@ struct FILE * stderr = (&_stderr);
 const int64_t STDIN = 0;
 const int64_t STDOUT = 1;
 const int64_t STDERR = 2;
+const size_t MALLOC_ALIGN = 16;
+
+const size_t MIN_CHUNK_SIZE = 64;
+
+const size_t PAGE_SIZE = 4096;
+
+const uint64_t CHUNK_MAGIC = -559038737;
+
 const int64_t CLOCKS_PER_SEC = 1000000;
 const size_t READDIR_BUF_SIZE = 8192;
 
@@ -3942,6 +3975,8 @@ struct FILE _stdout = {.fd = 1, .buf_pos = 0, .buf_len = 0, .buf_mode = 1};
 struct FILE _stderr = {.fd = 2, .buf_pos = 0, .buf_len = 0, .buf_mode = 0};
 
 struct FILE fopen_fd_storage[64] = {0};
+
+struct FreeChunk * free_list_head = NULL;
 
 struct DirState opendir_storage[64] = {0};
 
@@ -7906,43 +7941,209 @@ uint8_t * fgets(uint8_t * buf, int32_t n, struct FILE * stream) {
     return _uya_ret;
 }
 
+static __attribute__((unused)) size_t align_up(size_t size) {
+    (void)size;
+    if ((size == 0)) {
+        size_t _uya_ret = MALLOC_ALIGN;
+        return _uya_ret;
+    }
+    size_t q = (size / MALLOC_ALIGN);
+    size_t r = (size - (q * MALLOC_ALIGN));
+    if ((r == 0)) {
+        size_t _uya_ret = size;
+        return _uya_ret;
+    }
+    size_t _uya_ret = ((q + 1) * MALLOC_ALIGN);
+    return _uya_ret;
+}
+
+static __attribute__((unused)) bool is_null(void * ptr) {
+    (void)ptr;
+    bool _uya_ret = ((size_t)(uint8_t *)ptr == 0);
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct ChunkHeader * to_header(void * ptr) {
+    (void)ptr;
+    struct ChunkHeader * _uya_ret = (struct ChunkHeader *)((uint8_t *)ptr - (int32_t)sizeof(struct ChunkHeader));
+    return _uya_ret;
+}
+
+static __attribute__((unused)) void * to_user_ptr(struct ChunkHeader * hdr) {
+    (void)hdr;
+    void * _uya_ret = (void *)((uint8_t *)hdr + (int32_t)sizeof(struct ChunkHeader));
+    return _uya_ret;
+}
+
+static __attribute__((unused)) bool is_free(struct ChunkHeader * hdr) {
+    (void)hdr;
+    bool _uya_ret = (((int64_t)hdr->size % (int64_t)2) != 0);
+    return _uya_ret;
+}
+
+static __attribute__((unused)) void set_free(struct ChunkHeader * hdr, bool free) {
+    (void)hdr;
+    (void)free;
+    size_t base = ((size_t)((int64_t)hdr->size / (int64_t)2) * 2);
+    if (free) {
+        hdr->size = (base + 1);
+    } else {
+        hdr->size = base;
+    }
+}
+
+static __attribute__((unused)) size_t get_size(struct ChunkHeader * hdr) {
+    (void)hdr;
+    size_t _uya_ret = ((size_t)((int64_t)hdr->size / (int64_t)2) * 2);
+    return _uya_ret;
+}
+
+static __attribute__((unused)) void remove_free(struct FreeChunk * chunk) {
+    (void)chunk;
+    if (is_null((void *)chunk)) {
+        return;
+    }
+    if ((!is_null((void *)chunk->prev))) {
+        chunk->prev->next = chunk->next;
+    } else {
+        free_list_head = chunk->next;
+    }
+    if ((!is_null((void *)chunk->next))) {
+        chunk->next->prev = chunk->prev;
+    }
+}
+
+static __attribute__((unused)) void add_free(struct FreeChunk * chunk) {
+    (void)chunk;
+    if (is_null((void *)chunk)) {
+        return;
+    }
+    set_free((&chunk->header), true);
+    chunk->prev = NULL;
+    chunk->next = free_list_head;
+    if ((!is_null((void *)free_list_head))) {
+        free_list_head->prev = chunk;
+    }
+    free_list_head = chunk;
+}
+
+static __attribute__((unused)) struct ChunkHeader * morecore(size_t needed) {
+    (void)needed;
+    size_t alloc_size = (needed + (int32_t)sizeof(struct ChunkHeader));
+    if ((alloc_size < PAGE_SIZE)) {
+        alloc_size = PAGE_SIZE;
+    }
+    struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall6(SYS_mmap, 0, (int64_t)alloc_size, (PROT_READ | PROT_WRITE), (MAP_PRIVATE | MAP_ANONYMOUS), (0 - 1), 0); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
+    const int64_t ptr = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+        struct ChunkHeader * _uya_ret = NULL;
+        return _uya_ret;
+    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+    if ((ptr < 0)) {
+        struct ChunkHeader * _uya_ret = NULL;
+        return _uya_ret;
+    }
+    struct ChunkHeader * hdr = (struct ChunkHeader *)ptr;
+    hdr->magic = CHUNK_MAGIC;
+    hdr->size = alloc_size;
+    set_free(hdr, true);
+    struct FreeChunk * chunk = (struct FreeChunk *)ptr;
+    chunk->prev = NULL;
+    chunk->next = NULL;
+    struct ChunkHeader * _uya_ret = hdr;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) struct FreeChunk * find_chunk(size_t needed) {
+    (void)needed;
+    struct FreeChunk * cur = free_list_head;
+    while ((!is_null((void *)cur))) {
+        size_t sz = get_size((&cur->header));
+        if ((sz >= (needed + (int32_t)sizeof(struct ChunkHeader)))) {
+            struct FreeChunk * _uya_ret = cur;
+            return _uya_ret;
+        }
+        cur = cur->next;
+    }
+    struct FreeChunk * _uya_ret = NULL;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) void split_chunk(struct FreeChunk * chunk, size_t needed) {
+    (void)chunk;
+    (void)needed;
+    struct ChunkHeader * hdr = (&chunk->header);
+    size_t sz = get_size(hdr);
+    size_t rem = (sz - needed);
+    if ((rem >= (MIN_CHUNK_SIZE + (int32_t)sizeof(struct ChunkHeader)))) {
+        hdr->size = needed;
+        if (is_free(hdr)) {
+            hdr->size = (needed + 1);
+        }
+        struct ChunkHeader * new_hdr = (struct ChunkHeader *)((uint8_t *)hdr + needed);
+        new_hdr->magic = CHUNK_MAGIC;
+        new_hdr->size = rem;
+        set_free(new_hdr, true);
+        struct FreeChunk * new_chunk = (struct FreeChunk *)new_hdr;
+        new_chunk->prev = NULL;
+        new_chunk->next = NULL;
+        add_free(new_chunk);
+    }
+}
+
 void * libc_malloc(size_t size) {
     (void)size;
     if ((size == 0)) {
         void * _uya_ret = NULL;
         return _uya_ret;
     }
-    struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall6(SYS_mmap, 0, (int64_t)size, (PROT_READ | PROT_WRITE), (MAP_PRIVATE | MAP_ANONYMOUS), (0 - 1), 0); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
-    const int64_t ptr = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
-        void * _uya_ret = NULL;
-        return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    if ((ptr < 0)) {
+    size_t aligned = align_up(size);
+    if ((aligned < MIN_CHUNK_SIZE)) {
+        aligned = MIN_CHUNK_SIZE;
+    }
+    struct FreeChunk * chunk = find_chunk(aligned);
+    if (is_null((void *)chunk)) {
+        struct ChunkHeader * hdr = morecore(aligned);
+        if (is_null((void *)hdr)) {
+            void * _uya_ret = NULL;
+            return _uya_ret;
+        }
+        add_free((struct FreeChunk *)hdr);
+        chunk = find_chunk(aligned);
+    }
+    if (is_null((void *)chunk)) {
         void * _uya_ret = NULL;
         return _uya_ret;
     }
-    void * _uya_ret = (void *)ptr;
+    remove_free(chunk);
+    set_free((&chunk->header), false);
+    split_chunk(chunk, aligned);
+    void * _uya_ret = to_user_ptr((&chunk->header));
     return _uya_ret;
 }
 
 void libc_free(void * ptr) {
     (void)ptr;
-    if ((ptr == NULL)) {
+    if (is_null(ptr)) {
         return;
     }
-    (void)(({ long _uya_syscall_ret = uya_syscall2(SYS_munmap, (int64_t)ptr, 4096); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; }));
+    struct ChunkHeader * hdr = to_header(ptr);
+    if ((hdr->magic != CHUNK_MAGIC)) {
+        return;
+    }
+    struct FreeChunk * chunk = (struct FreeChunk *)hdr;
+    add_free(chunk);
 }
 
 void * libc_calloc(size_t nmemb, size_t size) {
     (void)nmemb;
     (void)size;
-    const size_t total_size = (nmemb * size);
-    void * const ptr = libc_malloc(total_size);
-    if ((ptr == NULL)) {
+    size_t total = (nmemb * size);
+    void * ptr = libc_malloc(total);
+    if (is_null(ptr)) {
         void * _uya_ret = NULL;
         return _uya_ret;
     }
-    (void)(memset((void *)ptr, 0, total_size));
+    (void)(memset((uint8_t *)ptr, 0, total));
     void * _uya_ret = ptr;
     return _uya_ret;
 }
@@ -7950,7 +8151,7 @@ void * libc_calloc(size_t nmemb, size_t size) {
 void * libc_realloc(void * ptr, size_t size) {
     (void)ptr;
     (void)size;
-    if ((ptr == NULL)) {
+    if (is_null(ptr)) {
         void * _uya_ret = libc_malloc(size);
         return _uya_ret;
     }
@@ -7959,12 +8160,22 @@ void * libc_realloc(void * ptr, size_t size) {
         void * _uya_ret = NULL;
         return _uya_ret;
     }
-    void * const new_ptr = libc_malloc(size);
-    if ((new_ptr == NULL)) {
+    struct ChunkHeader * hdr = to_header(ptr);
+    if ((hdr->magic != CHUNK_MAGIC)) {
         void * _uya_ret = NULL;
         return _uya_ret;
     }
-    (void)(memcpy((uint8_t *)new_ptr, (const uint8_t *)ptr, 4096));
+    size_t old_sz = (get_size(hdr) - (int32_t)sizeof(struct ChunkHeader));
+    if ((size <= old_sz)) {
+        void * _uya_ret = ptr;
+        return _uya_ret;
+    }
+    void * new_ptr = libc_malloc(size);
+    if (is_null(new_ptr)) {
+        void * _uya_ret = NULL;
+        return _uya_ret;
+    }
+    (void)(memcpy((uint8_t *)new_ptr, (const uint8_t *)ptr, old_sz));
     libc_free(ptr);
     void * _uya_ret = new_ptr;
     return _uya_ret;
