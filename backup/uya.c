@@ -3020,6 +3020,14 @@ size_t libc_fwrite(const uint8_t * ptr, size_t size, size_t nmemb, struct FILE *
 int32_t libc_fputc(int32_t c, struct FILE * stream);
 int32_t libc_fputs(const uint8_t * s, struct FILE * stream);
 int32_t libc_fflush(struct FILE * stream);
+int32_t libc_fseek(struct FILE * stream, int64_t offset, int32_t whence);
+int64_t libc_ftell(struct FILE * stream);
+void libc_rewind(struct FILE * stream);
+int32_t libc_feof(struct FILE * stream);
+int32_t libc_ferror(struct FILE * stream);
+void libc_clearerr(struct FILE * stream);
+int32_t libc_fgetpos(struct FILE * stream, int64_t * pos);
+int32_t libc_fsetpos(struct FILE * stream, int64_t * pos);
 int32_t libc_sprintf(uint8_t * buf, const uint8_t * format, ...);
 int32_t libc_snprintf(uint8_t * buf, size_t n, const uint8_t * format, ...);
 int32_t printf(const uint8_t * format, ...);
@@ -3050,6 +3058,8 @@ double libc_strtod(const uint8_t * nptr, const uint8_t * * endptr);
 int64_t libc_strtol(const uint8_t * nptr, const uint8_t * * endptr, int32_t base);
 int32_t abs(int32_t x);
 int64_t labs(int64_t x);
+int64_t llabs(int64_t x);
+uint8_t * libc_lltoa(int64_t value, uint8_t * buf, int32_t radix);
 void srand(uint32_t seed);
 int32_t rand();
 static void qsort_swap(uint8_t * a, uint8_t * b, size_t size);
@@ -3068,6 +3078,10 @@ int64_t clock();
 int32_t libc_stat(const uint8_t * path, struct Stat * buf);
 int32_t libc_readlink(const uint8_t * path, uint8_t * buf, size_t bufsiz);
 uint8_t * libc_getenv(const uint8_t * name);
+int32_t libc_putenv(const uint8_t * string);
+int32_t libc_setenv(const uint8_t * name, const uint8_t * value, int32_t overwrite);
+int32_t libc_unsetenv(const uint8_t * name);
+int32_t libc_clearenv();
 struct DIR * libc_opendir(const uint8_t * name);
 struct Dirent * libc_readdir(struct DIR * dirp);
 int32_t libc_closedir(struct DIR * dirp);
@@ -7582,6 +7596,104 @@ int32_t libc_fflush(struct FILE * stream) {
     return _uya_ret;
 }
 
+int32_t libc_fseek(struct FILE * stream, int64_t offset, int32_t whence) {
+    (void)stream;
+    (void)offset;
+    (void)whence;
+    if ((stream == NULL)) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_lseek, stream->fd, offset, (int64_t)whence); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
+    const int64_t ret = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+    if ((ret < 0)) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+int64_t libc_ftell(struct FILE * stream) {
+    (void)stream;
+    if ((stream == NULL)) {
+        int64_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_lseek, stream->fd, 0, 1); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
+    const int64_t ret = ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+        int64_t _uya_ret = (-1);
+        return _uya_ret;
+    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+    int64_t _uya_ret = ret;
+    return _uya_ret;
+}
+
+void libc_rewind(struct FILE * stream) {
+    (void)stream;
+    if ((stream == NULL)) {
+        return;
+    }
+    (void)(({ long _uya_syscall_ret = uya_syscall3(SYS_lseek, stream->fd, 0, 0); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; }));
+}
+
+int32_t libc_feof(struct FILE * stream) {
+    (void)stream;
+    if ((stream == NULL)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+int32_t libc_ferror(struct FILE * stream) {
+    (void)stream;
+    if ((stream == NULL)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+void libc_clearerr(struct FILE * stream) {
+    (void)stream;
+    if ((stream == NULL)) {
+        return;
+    }
+}
+
+int32_t libc_fgetpos(struct FILE * stream, int64_t * pos) {
+    (void)stream;
+    (void)pos;
+    if (((stream == NULL) || (pos == NULL))) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    pos[0] = libc_ftell(stream);
+    if ((pos[0] < 0)) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+int32_t libc_fsetpos(struct FILE * stream, int64_t * pos) {
+    (void)stream;
+    (void)pos;
+    if (((stream == NULL) || (pos == NULL))) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = libc_fseek(stream, pos[0], 0);
+    return _uya_ret;
+}
+
 int32_t libc_sprintf(uint8_t * buf, const uint8_t * format, ...) {
     (void)buf;
     (void)format;
@@ -8518,6 +8630,67 @@ int64_t labs(int64_t x) {
     return _uya_ret;
 }
 
+int64_t llabs(int64_t x) {
+    (void)x;
+    if ((x < 0)) {
+        int64_t _uya_ret = (0 - x);
+        return _uya_ret;
+    }
+    int64_t _uya_ret = x;
+    return _uya_ret;
+}
+
+uint8_t * libc_lltoa(int64_t value, uint8_t * buf, int32_t radix) {
+    (void)value;
+    (void)buf;
+    (void)radix;
+    if ((((buf == NULL) || (radix < 2)) || (radix > 36))) {
+        uint8_t * _uya_ret = NULL;
+        return _uya_ret;
+    }
+    bool neg = false;
+    int64_t num = value;
+    if ((num < 0)) {
+        neg = true;
+        num = (0 - num);
+    }
+    size_t i = 0;
+    uint8_t digits[64] = {0};
+    if ((num == 0)) {
+        digits[0] = 48;
+        i = 1;
+    } else {
+        while ((num > 0)) {
+            int64_t digit = (num % (int64_t)radix);
+            if ((digit < 10)) {
+                digits[i] = (uint8_t)(48 + digit);
+            } else {
+                digits[i] = (uint8_t)(87 + digit);
+            }
+            i = (i + 1);
+            num = (num / (int64_t)radix);
+        }
+    }
+    if (neg) {
+        buf[0] = 45;
+        size_t j = 0;
+        while ((j < i)) {
+            buf[(j + 1)] = digits[((i - j) - 1)];
+            j = (j + 1);
+        }
+        buf[(i + 1)] = 0;
+    } else {
+        size_t j = 0;
+        while ((j < i)) {
+            buf[j] = digits[((i - j) - 1)];
+            j = (j + 1);
+        }
+        buf[i] = 0;
+    }
+    uint8_t * _uya_ret = buf;
+    return _uya_ret;
+}
+
 void srand(uint32_t seed) {
     (void)seed;
     rand_seed = (int64_t)seed;
@@ -9009,6 +9182,43 @@ uint8_t * libc_getenv(const uint8_t * name) {
         return _uya_ret;
     }
     uint8_t * _uya_ret = NULL;
+    return _uya_ret;
+}
+
+int32_t libc_putenv(const uint8_t * string) {
+    (void)string;
+    if ((string == NULL)) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+int32_t libc_setenv(const uint8_t * name, const uint8_t * value, int32_t overwrite) {
+    (void)name;
+    (void)value;
+    (void)overwrite;
+    if (((name == NULL) || (value == NULL))) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+int32_t libc_unsetenv(const uint8_t * name) {
+    (void)name;
+    if ((name == NULL)) {
+        int32_t _uya_ret = (-1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+int32_t libc_clearenv() {
+    int32_t _uya_ret = 0;
     return _uya_ret;
 }
 

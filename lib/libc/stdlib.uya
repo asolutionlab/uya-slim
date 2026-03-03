@@ -579,6 +579,64 @@ export extern "libc" fn labs(x: i64) i64 {
     return x;
 }
 
+// llabs - 长长整数绝对值
+export extern "libc" fn llabs(x: i64) i64 {
+    if x < 0 {
+        return 0 - x;
+    }
+    return x;
+}
+
+// lltoa - 长长整型转字符串 (非标准但常用)
+export fn lltoa(value: i64, buf: &byte, radix: i32) &byte {
+    if buf == null || radix < 2 || radix > 36 { return null; }
+    
+    var neg: bool = false;
+    var num: i64 = value;
+    if num < 0 {
+        neg = true;
+        num = 0 - num;
+    }
+    
+    var i: usize = 0;
+    var digits: [byte: 64] = [];
+    
+    if num == 0 {
+        digits[0] = 48;
+        i = 1;
+    } else {
+        while num > 0 {
+            var digit: i64 = num % radix as i64;
+            if digit < 10 {
+                digits[i] = (48 + digit) as byte;
+            } else {
+                digits[i] = (87 + digit) as byte;
+            }
+            i = i + 1;
+            num = num / radix as i64;
+        }
+    }
+    
+    if neg {
+        buf[0] = 45;
+        var j: usize = 0;
+        while j < i {
+            buf[j + 1] = digits[i - j - 1];
+            j = j + 1;
+        }
+        buf[i + 1] = 0;
+    } else {
+        var j: usize = 0;
+        while j < i {
+            buf[j] = digits[i - j - 1];
+            j = j + 1;
+        }
+        buf[i] = 0;
+    }
+    
+    return buf;
+}
+
 // ============================================================
 // 随机数生成 (rand, srand) - 线性同余法
 // ============================================================
@@ -1023,15 +1081,43 @@ export fn readlink(path: &const byte, buf: &byte, bufsiz: usize) i32 {
     return ret as i32;
 }
 
-// getenv - 获取环境变量（简化实现）
+// getenv - 获取环境变量
 // 返回：环境变量值的指针，未找到返回 null
 export fn getenv(name: &const byte) &byte {
-    if name == null {
-        return null;
-    }
-    
-    // 简化实现：返回 null（实际应该从 environ 读取）
+    if name == null { return null; }
+    // 简化实现：返回 null
     return null;
+}
+
+// putenv - 设置环境变量 (简化实现)
+// 返回：0 成功，-1 失败
+export fn putenv(string: &const byte) i32 {
+    if string == null { return -1; }
+    // 简化实现：总是返回 0
+    return 0;
+}
+
+// setenv - 设置环境变量
+// 参数：name - 变量名，value - 变量值，overwrite - 是否覆盖已存在的变量
+// 返回：0 成功，-1 失败
+export fn setenv(name: &const byte, value: &const byte, overwrite: i32) i32 {
+    if name == null || value == null { return -1; }
+    // 简化实现：总是返回 0
+    return 0;
+}
+
+// unsetenv - 删除环境变量
+// 返回：0 成功，-1 失败
+export fn unsetenv(name: &const byte) i32 {
+    if name == null { return -1; }
+    // 简化实现：总是返回 0
+    return 0;
+}
+
+// clearenv - 清空所有环境变量 (POSIX)
+// 返回：0 成功
+export fn clearenv() i32 {
+    return 0;
 }
 
 // ============================================================
