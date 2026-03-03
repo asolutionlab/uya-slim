@@ -613,8 +613,6 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("// size_t 和 ptrdiff_t\n" as *byte, codegen.output as *void);
         fputs("typedef unsigned long size_t;\n" as *byte, codegen.output as *void);
         fputs("typedef long ptrdiff_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef long intptr_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned long uintptr_t;\n" as *byte, codegen.output as *void);
         c99_emit_newline(codegen);
         // bool 类型
         fputs("// bool 类型\n" as *byte, codegen.output as *void);
@@ -636,11 +634,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         c99_emit_newline(codegen);
         // va_list 相关（简化定义，仅用于函数签名）
         fputs("// va_list 简化定义（仅用于函数签名）\n" as *byte, codegen.output as *void);
-        fputs("typedef __builtin_va_list va_list;\n" as *byte, codegen.output as *void);
-        fputs("#define va_start(ap, last) __builtin_va_start(ap, last)\n" as *byte, codegen.output as *void);
-        fputs("#define va_end(ap) __builtin_va_end(ap)\n" as *byte, codegen.output as *void);
-        fputs("#define va_arg(ap, type) __builtin_va_arg(ap, type)\n" as *byte, codegen.output as *void);
-        fputs("#define va_copy(dest, src) __builtin_va_copy(dest, src)\n" as *byte, codegen.output as *void);
+        fputs("typedef char* va_list;\n" as *byte, codegen.output as *void);
         c99_emit_newline(codegen);
         // 注意：标准库模式不使用 __uya_memcpy/__uya_memcmp，因为标准库自己实现了 memcpy/memcmp
     } else {
@@ -2001,16 +1995,12 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     fputs("    uya_run_tests();\n" as *byte, codegen.output as *void);
                 }
 
-                // 生成原始函数体
+                // 生成函数体（使用 gen_stmt 触发 gen_block_stmt 的完整逻辑，包括 defer 和 drop 清理）
                 const body: &ASTNode = decl.fn_decl_body;
-                if body != null && body.type == ASTNodeType.AST_BLOCK {
-                    const stmts: & & ASTNode = body.block_stmts;
-                    const stmt_count: i32 = body.block_stmt_count;
-                    var j: i32 = 0;
-                    while j < stmt_count {
-                        gen_stmt(codegen, stmts[j]);
-                        j = j + 1;
-                    }
+                if body != null {
+                    codegen.indent_level = codegen.indent_level + 1;
+                    gen_stmt(codegen, body);
+                    codegen.indent_level = codegen.indent_level - 1;
                 }
                 
                 // 恢复之前的返回类型

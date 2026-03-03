@@ -9153,318 +9153,11 @@ int32_t libc_fprintf(struct FILE * stream, const uint8_t * format, ...) {
         int32_t _uya_ret = (0 - 1);
         return _uya_ret;
     }
-    const int64_t fd = stream->fd;
-    if ((fd < 0)) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    uint8_t ap_buf[32] = {0};
     va_list ap;
     va_start(ap, format);
-    uint8_t buf[4096] = {0};
-    size_t buf_pos = 0;
-    size_t format_pos = 0;
-    const size_t format_len = std_string_strlen(format);
-    const size_t buf_max = 4095;
-    while (((format_pos < format_len) && (buf_pos < buf_max))) {
-        const uint8_t c = format[format_pos];
-        if ((c == 37)) {
-            format_pos = (format_pos + 1);
-            if ((format_pos < format_len)) {
-                const uint8_t spec = format[format_pos];
-                if ((((spec == 42) && ((format_pos + 1) < format_len)) && (format[(format_pos + 1)] == 115))) {
-                    format_pos = (format_pos + 1);
-                    const int32_t width = va_arg(ap, int32_t);
-                    const uint8_t * const s = va_arg(ap, const uint8_t *);
-                    if ((s != NULL)) {
-                        const size_t len = std_string_strlen(s);
-                        int32_t pad = (width - (int32_t)len);
-                        while (((pad > 0) && (buf_pos < buf_max))) {
-                            buf[buf_pos] = 32;
-                            buf_pos = (buf_pos + 1);
-                            pad = (pad - 1);
-                        }
-                        size_t i = 0;
-                        while (((i < len) && (buf_pos < buf_max))) {
-                            buf[buf_pos] = s[i];
-                            buf_pos = (buf_pos + 1);
-                            i = (i + 1);
-                        }
-                    }
-                } else {
-                    if ((spec == 115)) {
-                        const uint8_t * const s = va_arg(ap, const uint8_t *);
-                        if ((s != NULL)) {
-                            const size_t len = std_string_strlen(s);
-                            size_t i = 0;
-                            while (((i < len) && (buf_pos < buf_max))) {
-                                buf[buf_pos] = s[i];
-                                buf_pos = (buf_pos + 1);
-                                i = (i + 1);
-                            }
-                        }
-                    } else {
-                        if ((spec == 100)) {
-                            const int32_t d = va_arg(ap, int32_t);
-                            int32_t num = d;
-                            int32_t is_neg = 0;
-                            if ((num < 0)) {
-                                is_neg = 1;
-                                num = (0 - num);
-                            }
-                            uint8_t digits[16] = {0};
-                            size_t digit_idx = 0;
-                            if ((num == 0)) {
-                                digits[0] = 48;
-                                digit_idx = 1;
-                            } else {
-                                int32_t temp = num;
-                                while ((temp > 0)) {
-                                    const int32_t digit = (temp % 10);
-                                    digits[digit_idx] = (uint8_t)(48 + digit);
-                                    digit_idx = (digit_idx + 1);
-                                    temp = (temp / 10);
-                                }
-                            }
-                            if (((is_neg > 0) && (buf_pos < buf_max))) {
-                                buf[buf_pos] = 45;
-                                buf_pos = (buf_pos + 1);
-                            }
-                            size_t i = 0;
-                            while (((i < digit_idx) && (buf_pos < buf_max))) {
-                                buf[buf_pos] = digits[((digit_idx - 1) - i)];
-                                buf_pos = (buf_pos + 1);
-                                i = (i + 1);
-                            }
-                        } else {
-                            if ((((spec == 108) && ((format_pos + 1) < format_len)) && (format[(format_pos + 1)] == 100))) {
-                                format_pos = (format_pos + 1);
-                                const int64_t ld = va_arg(ap, int64_t);
-                                int64_t num64 = ld;
-                                int32_t is_neg64 = 0;
-                                if ((num64 < 0)) {
-                                    is_neg64 = 1;
-                                    num64 = (0 - num64);
-                                }
-                                uint8_t digits64[24] = {0};
-                                size_t digit_idx64 = 0;
-                                if ((num64 == 0)) {
-                                    digits64[0] = 48;
-                                    digit_idx64 = 1;
-                                } else {
-                                    int64_t temp64 = num64;
-                                    while ((temp64 > 0)) {
-                                        const int64_t digit = (temp64 % (int64_t)10);
-                                        digits64[digit_idx64] = (uint8_t)(48 + digit);
-                                        digit_idx64 = (digit_idx64 + 1);
-                                        temp64 = (temp64 / (int64_t)10);
-                                    }
-                                }
-                                if (((is_neg64 > 0) && (buf_pos < buf_max))) {
-                                    buf[buf_pos] = 45;
-                                    buf_pos = (buf_pos + 1);
-                                }
-                                size_t i = 0;
-                                while (((i < digit_idx64) && (buf_pos < buf_max))) {
-                                    buf[buf_pos] = digits64[((digit_idx64 - 1) - i)];
-                                    buf_pos = (buf_pos + 1);
-                                    i = (i + 1);
-                                }
-                            } else {
-                                if ((spec == 37)) {
-                                    buf[buf_pos] = (uint8_t)37;
-                                    buf_pos = (buf_pos + 1);
-                                } else {
-                                    if ((spec == 117)) {
-                                        const uint32_t uval = va_arg(ap, uint32_t);
-                                        uint32_t num = uval;
-                                        uint8_t digits[16] = {0};
-                                        size_t digit_idx = 0;
-                                        if ((num == 0)) {
-                                            digits[0] = 48;
-                                            digit_idx = 1;
-                                        } else {
-                                            const uint32_t ten_u = 10;
-                                            while (((num > 0) && (digit_idx < 16))) {
-                                                const int32_t digit = (int32_t)(num % ten_u);
-                                                digits[digit_idx] = (uint8_t)(48 + digit);
-                                                digit_idx = (digit_idx + 1);
-                                                num = (num / ten_u);
-                                            }
-                                        }
-                                        size_t i = 0;
-                                        while (((i < digit_idx) && (buf_pos < buf_max))) {
-                                            buf[buf_pos] = digits[((digit_idx - 1) - i)];
-                                            buf_pos = (buf_pos + 1);
-                                            i = (i + 1);
-                                        }
-                                    } else {
-                                        if ((spec == 120)) {
-                                            const uint32_t xval = va_arg(ap, uint32_t);
-                                            uint32_t num = xval;
-                                            const uint8_t hex_chars_lower[16] = {48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102};
-                                            uint8_t hdigits[8] = {0};
-                                            size_t hidx = 0;
-                                            if ((num == 0)) {
-                                                hdigits[0] = 48;
-                                                hidx = 1;
-                                            } else {
-                                                while (((num > 0) && (hidx < 8))) {
-                                                    hdigits[hidx] = hex_chars_lower[(size_t)(num % 16)];
-                                                    hidx = (hidx + 1);
-                                                    num = (num / 16);
-                                                }
-                                            }
-                                            size_t hi = 0;
-                                            while (((hi < hidx) && (buf_pos < buf_max))) {
-                                                buf[buf_pos] = hdigits[((hidx - 1) - hi)];
-                                                buf_pos = (buf_pos + 1);
-                                                hi = (hi + 1);
-                                            }
-                                        } else {
-                                            if ((spec == 88)) {
-                                                const uint32_t xval = va_arg(ap, uint32_t);
-                                                uint32_t num = xval;
-                                                const uint8_t hex_chars_upper[16] = {48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70};
-                                                uint8_t hdigits[8] = {0};
-                                                size_t hidx = 0;
-                                                if ((num == 0)) {
-                                                    hdigits[0] = 48;
-                                                    hidx = 1;
-                                                } else {
-                                                    while (((num > 0) && (hidx < 8))) {
-                                                        hdigits[hidx] = hex_chars_upper[(size_t)(num % 16)];
-                                                        hidx = (hidx + 1);
-                                                        num = (num / 16);
-                                                    }
-                                                }
-                                                size_t hi = 0;
-                                                while (((hi < hidx) && (buf_pos < buf_max))) {
-                                                    buf[buf_pos] = hdigits[((hidx - 1) - hi)];
-                                                    buf_pos = (buf_pos + 1);
-                                                    hi = (hi + 1);
-                                                }
-                                            } else {
-                                                if ((spec == 112)) {
-                                                    const size_t pval = va_arg(ap, size_t);
-                                                    buf[buf_pos] = 48;
-                                                    buf_pos = (buf_pos + 1);
-                                                    if ((buf_pos < buf_max)) {
-                                                        buf[buf_pos] = 120;
-                                                        buf_pos = (buf_pos + 1);
-                                                    }
-                                                    size_t pnum = pval;
-                                                    const uint8_t hex_chars_p[16] = {48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102};
-                                                    uint8_t pdigits[16] = {0};
-                                                    size_t pidx = 0;
-                                                    if ((pnum == 0)) {
-                                                        pdigits[0] = 48;
-                                                        pidx = 1;
-                                                    } else {
-                                                        while (((pnum > 0) && (pidx < 16))) {
-                                                            pdigits[pidx] = hex_chars_p[(size_t)(pnum % 16)];
-                                                            pidx = (pidx + 1);
-                                                            pnum = (pnum / 16);
-                                                        }
-                                                    }
-                                                    size_t pi = 0;
-                                                    while (((pi < pidx) && (buf_pos < buf_max))) {
-                                                        buf[buf_pos] = pdigits[((pidx - 1) - pi)];
-                                                        buf_pos = (buf_pos + 1);
-                                                        pi = (pi + 1);
-                                                    }
-                                                } else {
-                                                    if ((spec == 99)) {
-                                                        const int32_t cval = va_arg(ap, int32_t);
-                                                        if ((buf_pos < buf_max)) {
-                                                            buf[buf_pos] = (uint8_t)cval;
-                                                            buf_pos = (buf_pos + 1);
-                                                        }
-                                                    } else {
-                                                        if ((((spec == 122) && ((format_pos + 1) < format_len)) && (format[(format_pos + 1)] == 117))) {
-                                                            format_pos = (format_pos + 1);
-                                                            const size_t zu_val = va_arg(ap, size_t);
-                                                            size_t num = zu_val;
-                                                            const size_t ten = 10;
-                                                            uint8_t digits[24] = {0};
-                                                            size_t digit_idx = 0;
-                                                            if ((num == 0)) {
-                                                                digits[0] = 48;
-                                                                digit_idx = 1;
-                                                            } else {
-                                                                while (((num > 0) && (digit_idx < 24))) {
-                                                                    const int32_t digit = (int32_t)(num % ten);
-                                                                    digits[digit_idx] = (uint8_t)(48 + digit);
-                                                                    digit_idx = (digit_idx + 1);
-                                                                    num = (num / ten);
-                                                                }
-                                                            }
-                                                            size_t i = 0;
-                                                            while (((i < digit_idx) && (buf_pos < buf_max))) {
-                                                                buf[buf_pos] = digits[((digit_idx - 1) - i)];
-                                                                buf_pos = (buf_pos + 1);
-                                                                i = (i + 1);
-                                                            }
-                                                        } else {
-                                                            if ((spec == 103)) {
-                                                                const double fval = va_arg(ap, double);
-                                                                buf_pos = _fmt_f64_to_buf(buf, buf_pos, buf_max, fval, 6);
-                                                            } else {
-                                                                if ((spec == 46)) {
-                                                                    format_pos = (format_pos + 1);
-                                                                    int32_t prec = 0;
-                                                                    while ((((format_pos < format_len) && (format[format_pos] >= 48)) && (format[format_pos] <= 57))) {
-                                                                        prec = ((prec * 10) + (int32_t)(format[format_pos] - 48));
-                                                                        format_pos = (format_pos + 1);
-                                                                    }
-                                                                    if (((format_pos < format_len) && (format[format_pos] == 103))) {
-                                                                        format_pos = (format_pos + 1);
-                                                                        const double fval = va_arg(ap, double);
-                                                                        buf_pos = _fmt_f64_to_buf(buf, buf_pos, buf_max, fval, prec);
-                                                                    } else {
-                                                                        buf[buf_pos] = (uint8_t)37;
-                                                                        buf_pos = (buf_pos + 1);
-                                                                        if ((buf_pos < buf_max)) {
-                                                                            buf[buf_pos] = spec;
-                                                                            buf_pos = (buf_pos + 1);
-                                                                        }
-                                                                        format_pos = (format_pos - 1);
-                                                                    }
-                                                                } else {
-                                                                    buf[buf_pos] = (uint8_t)37;
-                                                                    buf_pos = (buf_pos + 1);
-                                                                    if ((buf_pos < buf_max)) {
-                                                                        buf[buf_pos] = spec;
-                                                                        buf_pos = (buf_pos + 1);
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            buf[buf_pos] = c;
-            buf_pos = (buf_pos + 1);
-        }
-        format_pos = (format_pos + 1);
-    }
+    const int32_t result = libc_vfprintf(stream, format, ap);
     va_end(ap);
-    buf[buf_pos] = (uint8_t)0;
-    struct err_union_intptr_t result = sys_write((int32_t)fd, (&buf[0]), buf_pos);
-    const intptr_t written = ({ int32_t _uya_catch_result; struct err_union_intptr_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    int32_t _uya_ret = (int32_t)written;
+    int32_t _uya_ret = result;
     return _uya_ret;
 }
 
@@ -9580,6 +9273,33 @@ static __attribute__((unused)) int32_t _vfprintf_impl(struct FILE * stream, cons
             format_pos = (format_pos + 1);
             if ((format_pos < format_len)) {
                 const uint8_t spec = format[format_pos];
+                int32_t precision = (-1);
+                if ((spec == 46)) {
+                    format_pos = (format_pos + 1);
+                    precision = 0;
+                    while ((((format_pos < format_len) && (format[format_pos] >= 48)) && (format[format_pos] <= 57))) {
+                        precision = ((precision * 10) + (int32_t)(format[format_pos] - 48));
+                        format_pos = (format_pos + 1);
+                    }
+                    if ((format_pos < format_len)) {
+                        const uint8_t actual_spec = format[format_pos];
+                        if ((actual_spec == 103)) {
+                            const double fval = va_arg(ap, double);
+                            int32_t prec = precision;
+                            if ((prec < 0)) {
+                                prec = 6;
+                            }
+                            ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, prec);
+                        } else {
+                            if ((ctx.buf_pos < ctx.buf_max)) {
+                                ctx.buf[ctx.buf_pos] = 37;
+                                ctx.buf_pos = (ctx.buf_pos + 1);
+                            }
+                        }
+                    }
+                    format_pos = (format_pos + 1);
+                    continue;
+                }
                 if ((spec == 115)) {
                     const uint8_t * const s = va_arg(ap, const uint8_t *);
                     _fmt_str_to_buf((&ctx), s);
@@ -10176,112 +9896,11 @@ int32_t libc_sprintf(uint8_t * buf, const uint8_t * format, ...) {
         int32_t _uya_ret = (0 - 1);
         return _uya_ret;
     }
-    uint8_t ap_buf[32] = {0};
     va_list ap;
     va_start(ap, format);
-    size_t buf_pos = 0;
-    size_t format_pos = 0;
-    const size_t format_len = std_string_strlen(format);
-    const size_t max_buf = 4095;
-    while (((format_pos < format_len) && (buf_pos < max_buf))) {
-        const uint8_t c = format[format_pos];
-        if ((c == 37)) {
-            format_pos = (format_pos + 1);
-            if ((format_pos < format_len)) {
-                const uint8_t spec = format[format_pos];
-                if ((spec == 115)) {
-                    const uint8_t * const s = va_arg(ap, const uint8_t *);
-                    if ((s != NULL)) {
-                        const size_t len = std_string_strlen(s);
-                        size_t i = 0;
-                        while (((i < len) && (buf_pos < max_buf))) {
-                            buf[buf_pos] = s[i];
-                            buf_pos = (buf_pos + 1);
-                            i = (i + 1);
-                        }
-                    }
-                } else {
-                    if ((spec == 100)) {
-                        const int32_t d = va_arg(ap, int32_t);
-                        int32_t num = d;
-                        int32_t is_neg = 0;
-                        if ((num < 0)) {
-                            is_neg = 1;
-                            num = (0 - num);
-                        }
-                        uint8_t digits[16] = {0};
-                        size_t digit_idx = 0;
-                        if ((num == 0)) {
-                            digits[0] = 48;
-                            digit_idx = 1;
-                        } else {
-                            int32_t temp = num;
-                            while ((temp > 0)) {
-                                const int32_t digit = (temp % 10);
-                                digits[digit_idx] = (uint8_t)(48 + digit);
-                                digit_idx = (digit_idx + 1);
-                                temp = (temp / 10);
-                            }
-                        }
-                        if (((is_neg > 0) && (buf_pos < max_buf))) {
-                            buf[buf_pos] = 45;
-                            buf_pos = (buf_pos + 1);
-                        }
-                        size_t i = 0;
-                        while (((i < digit_idx) && (buf_pos < max_buf))) {
-                            buf[buf_pos] = digits[((digit_idx - 1) - i)];
-                            buf_pos = (buf_pos + 1);
-                            i = (i + 1);
-                        }
-                    } else {
-                        if ((spec == 37)) {
-                            buf[buf_pos] = (uint8_t)37;
-                            buf_pos = (buf_pos + 1);
-                        } else {
-                            if ((spec == 117)) {
-                                const uint32_t uval = va_arg(ap, uint32_t);
-                                uint32_t num = uval;
-                                uint8_t digits[16] = {0};
-                                size_t digit_idx = 0;
-                                if ((num == 0)) {
-                                    digits[0] = 48;
-                                    digit_idx = 1;
-                                } else {
-                                    const uint32_t ten_u = 10;
-                                    while (((num > 0) && (digit_idx < 16))) {
-                                        const int32_t digit = (int32_t)(num % ten_u);
-                                        digits[digit_idx] = (uint8_t)(48 + digit);
-                                        digit_idx = (digit_idx + 1);
-                                        num = (num / ten_u);
-                                    }
-                                }
-                                size_t i = 0;
-                                while (((i < digit_idx) && (buf_pos < max_buf))) {
-                                    buf[buf_pos] = digits[((digit_idx - 1) - i)];
-                                    buf_pos = (buf_pos + 1);
-                                    i = (i + 1);
-                                }
-                            } else {
-                                buf[buf_pos] = (uint8_t)37;
-                                buf_pos = (buf_pos + 1);
-                                if ((buf_pos < max_buf)) {
-                                    buf[buf_pos] = spec;
-                                    buf_pos = (buf_pos + 1);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            buf[buf_pos] = c;
-            buf_pos = (buf_pos + 1);
-        }
-        format_pos = (format_pos + 1);
-    }
+    const int32_t result = libc_vsprintf((uint8_t *)buf, format, ap);
     va_end(ap);
-    buf[buf_pos] = (uint8_t)0;
-    int32_t _uya_ret = (int32_t)buf_pos;
+    int32_t _uya_ret = result;
     return _uya_ret;
 }
 
@@ -10293,219 +9912,21 @@ int32_t libc_snprintf(uint8_t * buf, size_t n, const uint8_t * format, ...) {
         int32_t _uya_ret = (0 - 1);
         return _uya_ret;
     }
-    uint8_t ap_buf[32] = {0};
     va_list ap;
     va_start(ap, format);
-    size_t buf_pos = 0;
-    size_t format_pos = 0;
-    const size_t format_len = std_string_strlen(format);
-    size_t max_buf = (n - 1);
-    if ((max_buf > 4096)) {
-        max_buf = 4096;
-    }
-    while (((format_pos < format_len) && (buf_pos < max_buf))) {
-        const uint8_t c = format[format_pos];
-        if ((c == 37)) {
-            format_pos = (format_pos + 1);
-            if ((format_pos < format_len)) {
-                const uint8_t spec = format[format_pos];
-                if ((spec == 115)) {
-                    const uint8_t * const s = va_arg(ap, const uint8_t *);
-                    if ((s != NULL)) {
-                        const size_t len = std_string_strlen(s);
-                        size_t i = 0;
-                        while (((i < len) && (buf_pos < max_buf))) {
-                            buf[buf_pos] = s[i];
-                            buf_pos = (buf_pos + 1);
-                            i = (i + 1);
-                        }
-                    }
-                } else {
-                    if ((spec == 100)) {
-                        const int32_t d = va_arg(ap, int32_t);
-                        int32_t num = d;
-                        int32_t is_neg = 0;
-                        if ((num < 0)) {
-                            is_neg = 1;
-                            num = (0 - num);
-                        }
-                        uint8_t digits[16] = {0};
-                        size_t digit_idx = 0;
-                        if ((num == 0)) {
-                            digits[0] = 48;
-                            digit_idx = 1;
-                        } else {
-                            int32_t temp = num;
-                            while ((temp > 0)) {
-                                const int32_t digit = (temp % 10);
-                                digits[digit_idx] = (uint8_t)(48 + digit);
-                                digit_idx = (digit_idx + 1);
-                                temp = (temp / 10);
-                            }
-                        }
-                        if (((is_neg > 0) && (buf_pos < max_buf))) {
-                            buf[buf_pos] = 45;
-                            buf_pos = (buf_pos + 1);
-                        }
-                        size_t i = 0;
-                        while (((i < digit_idx) && (buf_pos < max_buf))) {
-                            buf[buf_pos] = digits[((digit_idx - 1) - i)];
-                            buf_pos = (buf_pos + 1);
-                            i = (i + 1);
-                        }
-                    } else {
-                        if ((spec == 37)) {
-                            buf[buf_pos] = (uint8_t)37;
-                            buf_pos = (buf_pos + 1);
-                        } else {
-                            if ((spec == 117)) {
-                                const uint32_t uval = va_arg(ap, uint32_t);
-                                uint32_t num = uval;
-                                uint8_t digits[16] = {0};
-                                size_t digit_idx = 0;
-                                if ((num == 0)) {
-                                    digits[0] = 48;
-                                    digit_idx = 1;
-                                } else {
-                                    const uint32_t ten_u = 10;
-                                    while (((num > 0) && (digit_idx < 16))) {
-                                        const int32_t digit = (int32_t)(num % ten_u);
-                                        digits[digit_idx] = (uint8_t)(48 + digit);
-                                        digit_idx = (digit_idx + 1);
-                                        num = (num / ten_u);
-                                    }
-                                }
-                                size_t i = 0;
-                                while (((i < digit_idx) && (buf_pos < max_buf))) {
-                                    buf[buf_pos] = digits[((digit_idx - 1) - i)];
-                                    buf_pos = (buf_pos + 1);
-                                    i = (i + 1);
-                                }
-                            } else {
-                                buf[buf_pos] = (uint8_t)37;
-                                buf_pos = (buf_pos + 1);
-                                if ((buf_pos < max_buf)) {
-                                    buf[buf_pos] = spec;
-                                    buf_pos = (buf_pos + 1);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            buf[buf_pos] = c;
-            buf_pos = (buf_pos + 1);
-        }
-        format_pos = (format_pos + 1);
-    }
+    const int32_t result = libc_vsnprintf((uint8_t *)buf, n, format, ap);
     va_end(ap);
-    if ((buf_pos < n)) {
-        buf[buf_pos] = (uint8_t)0;
-    } else {
-        if ((n > 0)) {
-            buf[(n - 1)] = (uint8_t)0;
-        }
-    }
-    int32_t _uya_ret = (int32_t)buf_pos;
+    int32_t _uya_ret = result;
     return _uya_ret;
 }
 
 int32_t printf(const uint8_t * format, ...) {
     (void)format;
-    uint8_t ap_buf[32] = {0};
     va_list ap;
     va_start(ap, format);
-    uint8_t buf[4096] = {0};
-    size_t buf_pos = 0;
-    size_t format_pos = 0;
-    const size_t format_len = std_string_strlen(format);
-    const size_t buf_max = 4095;
-    while (((format_pos < format_len) && (buf_pos < buf_max))) {
-        const uint8_t c = format[format_pos];
-        if ((c == 37)) {
-            format_pos = (format_pos + 1);
-            if ((format_pos < format_len)) {
-                const uint8_t spec = format[format_pos];
-                if ((spec == 115)) {
-                    const uint8_t * const s = va_arg(ap, const uint8_t *);
-                    if ((s != NULL)) {
-                        const size_t len = std_string_strlen(s);
-                        size_t i = 0;
-                        while (((i < len) && (buf_pos < buf_max))) {
-                            buf[buf_pos] = s[i];
-                            buf_pos = (buf_pos + 1);
-                            i = (i + 1);
-                        }
-                    }
-                } else {
-                    if ((spec == 100)) {
-                        const int32_t d = va_arg(ap, int32_t);
-                        int32_t num = d;
-                        int32_t is_neg = 0;
-                        if ((num < 0)) {
-                            is_neg = 1;
-                            num = (0 - num);
-                        }
-                        uint8_t digits[16] = {0};
-                        size_t digit_idx = 0;
-                        if ((num == 0)) {
-                            digits[0] = 48;
-                            digit_idx = 1;
-                        } else {
-                            while ((num > 0)) {
-                                const int32_t digit = (num % 10);
-                                digits[digit_idx] = (uint8_t)(48 + digit);
-                                digit_idx = (digit_idx + 1);
-                                num = (num / 10);
-                            }
-                        }
-                        if (((is_neg > 0) && (buf_pos < buf_max))) {
-                            buf[buf_pos] = 45;
-                            buf_pos = (buf_pos + 1);
-                        }
-                        size_t i = 0;
-                        while (((i < digit_idx) && (buf_pos < buf_max))) {
-                            buf[buf_pos] = digits[((digit_idx - 1) - i)];
-                            buf_pos = (buf_pos + 1);
-                            i = (i + 1);
-                        }
-                    } else {
-                        if ((spec == 37)) {
-                            buf[buf_pos] = (uint8_t)37;
-                            buf_pos = (buf_pos + 1);
-                        } else {
-                            if ((spec == 99)) {
-                                const int32_t ch = va_arg(ap, int32_t);
-                                buf[buf_pos] = (uint8_t)ch;
-                                buf_pos = (buf_pos + 1);
-                            } else {
-                                buf[buf_pos] = (uint8_t)37;
-                                buf_pos = (buf_pos + 1);
-                                if ((buf_pos < buf_max)) {
-                                    buf[buf_pos] = spec;
-                                    buf_pos = (buf_pos + 1);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else {
-            buf[buf_pos] = c;
-            buf_pos = (buf_pos + 1);
-        }
-        format_pos = (format_pos + 1);
-    }
+    const int32_t result = libc_vprintf(format, ap);
     va_end(ap);
-    if ((buf_pos > 0)) {
-        struct err_union_int64_t result = ({ long _uya_syscall_ret = uya_syscall3(SYS_write, STDOUT, (int64_t)(&buf[0]), (int64_t)buf_pos); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
-        ({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
-            int32_t _uya_ret = (0 - 1);
-            return _uya_ret;
-        } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    }
-    int32_t _uya_ret = (int32_t)buf_pos;
+    int32_t _uya_ret = result;
     return _uya_ret;
 }
 
@@ -10583,7 +10004,6 @@ int32_t libc_fscanf(struct FILE * stream, const uint8_t * format, ...) {
         int32_t _uya_ret = (0 - 1);
         return _uya_ret;
     }
-    uint8_t ap_buf[32] = {0};
     va_list ap;
     va_start(ap, format);
     int32_t matched = 0;
@@ -10710,7 +10130,6 @@ int32_t libc_sscanf(const uint8_t * str, const uint8_t * format, ...) {
         int32_t _uya_ret = (0 - 1);
         return _uya_ret;
     }
-    uint8_t ap_buf[32] = {0};
     va_list ap;
     va_start(ap, format);
     int32_t matched = 0;
@@ -42378,14 +41797,10 @@ static __attribute__((unused)) int32_t c99_codegen_generate(struct C99CodeGenera
                                                                                                                     libc_fputs((uint8_t *)(uint8_t *)str1265, (void *)codegen->output);
                                                                                                                 }
                                                                                                                 struct ASTNode * const body = decl->fn_decl_body;
-                                                                                                                if (((body != NULL) && (body->type == AST_BLOCK))) {
-                                                                                                                    struct ASTNode * * const stmts = body->block_stmts;
-                                                                                                                    const int32_t stmt_count = body->block_stmt_count;
-                                                                                                                    int32_t j = 0;
-                                                                                                                    while ((j < stmt_count)) {
-                                                                                                                        gen_stmt(codegen, stmts[j]);
-                                                                                                                        j = (j + 1);
-                                                                                                                    }
+                                                                                                                if ((body != NULL)) {
+                                                                                                                    codegen->indent_level = (codegen->indent_level + 1);
+                                                                                                                    gen_stmt(codegen, body);
+                                                                                                                    codegen->indent_level = (codegen->indent_level - 1);
                                                                                                                 }
                                                                                                                 codegen->current_function_return_type = saved_return_type;
                                                                                                                 c99_emit_close_brace_newline(codegen);
@@ -48881,152 +48296,169 @@ static __attribute__((unused)) void collect_string_constants_from_decl(struct C9
                                                                                                             }
                                                                                                             codegen->current_function_decl = saved_current_function_decl;
                                                                                                         } else {
+                                                                                                            if ((decl->type == AST_METHOD_BLOCK)) {
+                                                                                                                int32_t i = 0;
+                                                                                                                while ((i < decl->method_block_method_count)) {
+                                                                                                                    struct ASTNode * const m = decl->method_block_methods[i];
+                                                                                                                    if (((m != NULL) && (m->type == AST_FN_DECL))) {
+                                                                                                                        struct ASTNode * const saved_current_function_decl = codegen->current_function_decl;
+                                                                                                                        codegen->current_function_decl = m;
+                                                                                                                        struct ASTNode * const body = m->fn_decl_body;
+                                                                                                                        if ((body != NULL)) {
+                                                                                                                            collect_string_constants_from_stmt(codegen, body);
+                                                                                                                        }
+                                                                                                                        codegen->current_function_decl = saved_current_function_decl;
+                                                                                                                    }
+                                                                                                                    i = (i + 1);
+                                                                                                                }
+                                                                                                            } else {
+                                                                                                            }
                                                                                                         }
                                                                                                     }
                                                                                                 }
 
 int32_t main_main(void) {
-                                                                                                int32_t input_file_indices[64] = {0};
-                                                                                                int32_t input_file_count = 0;
-                                                                                                int32_t output_file_index = (-1);
-                                                                                                enum BackendType backend = BACKEND_LLVM;
-                                                                                                int32_t emit_line_directives = 0;
-                                                                                                int32_t enable_safety_proof = 0;
-                                                                                                int32_t opt_level = 1;
-                                                                                                int32_t outlibc_index = (-1);
-                                                                                                enum CommandType command = COMMAND_BUILD;
-                                                                                                int32_t run_arg_start = (-1);
-                                                                                                int32_t is_nostdlib = 0;
-                                                                                                int32_t stack_size = 65536;
-                                                                                                uint8_t auto_output_path[4096] = {0};
-                                                                                                if ((parse_args((&command), (&input_file_indices[0]), (&input_file_count), (&output_file_index), (&backend), (&emit_line_directives), (&enable_safety_proof), (&opt_level), (&outlibc_index), (&run_arg_start), (&is_nostdlib), (&stack_size)) != 0)) {
-                                                                                                    int32_t _uya_ret = 1;
-                                                                                                    return _uya_ret;
-                                                                                                }
-                                                                                                if ((stack_size > 0)) {
-                                                                                                    const uint64_t stack_bytes = ((uint64_t)stack_size * 1024);
-                                                                                                    struct RLimit rlim = (struct RLimit){.rlim_cur = stack_bytes, .rlim_max = stack_bytes};
-                                                                                                    (void)(sys_setrlimit(RLIMIT_STACK, (&rlim)));
-                                                                                                }
-                                                                                                if ((command == COMMAND_OUTLIBC)) {
-                                                                                                    uint8_t * const outlibc_path = std_runtime_get_argv(outlibc_index);
-                                                                                                    if ((outlibc_path == NULL)) {
-                                                                                                        libc_fprintf(stderr, (const char *)str159);
+                                                                                                    int32_t input_file_indices[64] = {0};
+                                                                                                    int32_t input_file_count = 0;
+                                                                                                    int32_t output_file_index = (-1);
+                                                                                                    enum BackendType backend = BACKEND_LLVM;
+                                                                                                    int32_t emit_line_directives = 0;
+                                                                                                    int32_t enable_safety_proof = 0;
+                                                                                                    int32_t opt_level = 1;
+                                                                                                    int32_t outlibc_index = (-1);
+                                                                                                    enum CommandType command = COMMAND_BUILD;
+                                                                                                    int32_t run_arg_start = (-1);
+                                                                                                    int32_t is_nostdlib = 0;
+                                                                                                    int32_t stack_size = 65536;
+                                                                                                    uint8_t auto_output_path[4096] = {0};
+                                                                                                    if ((parse_args((&command), (&input_file_indices[0]), (&input_file_count), (&output_file_index), (&backend), (&emit_line_directives), (&enable_safety_proof), (&opt_level), (&outlibc_index), (&run_arg_start), (&is_nostdlib), (&stack_size)) != 0)) {
                                                                                                         int32_t _uya_ret = 1;
                                                                                                         return _uya_ret;
                                                                                                     }
-                                                                                                    const int32_t result = generate_libc((uint8_t *)outlibc_path);
-                                                                                                    int32_t _uya_ret = result;
-                                                                                                    return _uya_ret;
-                                                                                                }
-                                                                                                if (((command == COMMAND_BUILD) && (output_file_index < 0))) {
-                                                                                                    const int32_t written = libc_snprintf((char *)(&auto_output_path[0]), PATH_MAX, (const char *)str160);
-                                                                                                    if (((written <= 0) || (written >= PATH_MAX))) {
-                                                                                                        libc_fprintf(stderr, (const char *)str161);
-                                                                                                        int32_t _uya_ret = 1;
+                                                                                                    if ((stack_size > 0)) {
+                                                                                                        const uint64_t stack_bytes = ((uint64_t)stack_size * 1024);
+                                                                                                        struct RLimit rlim = (struct RLimit){.rlim_cur = stack_bytes, .rlim_max = stack_bytes};
+                                                                                                        (void)(sys_setrlimit(RLIMIT_STACK, (&rlim)));
+                                                                                                    }
+                                                                                                    if ((command == COMMAND_OUTLIBC)) {
+                                                                                                        uint8_t * const outlibc_path = std_runtime_get_argv(outlibc_index);
+                                                                                                        if ((outlibc_path == NULL)) {
+                                                                                                            libc_fprintf(stderr, (const char *)str159);
+                                                                                                            int32_t _uya_ret = 1;
+                                                                                                            return _uya_ret;
+                                                                                                        }
+                                                                                                        const int32_t result = generate_libc((uint8_t *)outlibc_path);
+                                                                                                        int32_t _uya_ret = result;
                                                                                                         return _uya_ret;
                                                                                                     }
-                                                                                                    output_file_index = (-2);
-                                                                                                    backend = BACKEND_C99;
-                                                                                                }
-                                                                                                if ((((command == COMMAND_RUN) || (command == COMMAND_TEST)) && (output_file_index < 0))) {
-                                                                                                    uint8_t * const input_path = std_runtime_get_argv(input_file_indices[0]);
-                                                                                                    if ((input_path == NULL)) {
-                                                                                                        libc_fprintf(stderr, (const char *)str162);
-                                                                                                        int32_t _uya_ret = 1;
+                                                                                                    if (((command == COMMAND_BUILD) && (output_file_index < 0))) {
+                                                                                                        const int32_t written = libc_snprintf((char *)(&auto_output_path[0]), PATH_MAX, (const char *)str160);
+                                                                                                        if (((written <= 0) || (written >= PATH_MAX))) {
+                                                                                                            libc_fprintf(stderr, (const char *)str161);
+                                                                                                            int32_t _uya_ret = 1;
+                                                                                                            return _uya_ret;
+                                                                                                        }
+                                                                                                        output_file_index = (-2);
+                                                                                                        backend = BACKEND_C99;
+                                                                                                    }
+                                                                                                    if ((((command == COMMAND_RUN) || (command == COMMAND_TEST)) && (output_file_index < 0))) {
+                                                                                                        uint8_t * const input_path = std_runtime_get_argv(input_file_indices[0]);
+                                                                                                        if ((input_path == NULL)) {
+                                                                                                            libc_fprintf(stderr, (const char *)str162);
+                                                                                                            int32_t _uya_ret = 1;
+                                                                                                            return _uya_ret;
+                                                                                                        }
+                                                                                                        const int32_t written = libc_snprintf((char *)(&auto_output_path[0]), PATH_MAX, (const char *)str160);
+                                                                                                        if (((written <= 0) || (written >= PATH_MAX))) {
+                                                                                                            libc_fprintf(stderr, (const char *)str163);
+                                                                                                            int32_t _uya_ret = 1;
+                                                                                                            return _uya_ret;
+                                                                                                        }
+                                                                                                        output_file_index = (-2);
+                                                                                                        backend = BACKEND_C99;
+                                                                                                    }
+                                                                                                    uint8_t * output_path_for_compile = NULL;
+                                                                                                    if ((output_file_index == (-2))) {
+                                                                                                        output_path_for_compile = (&auto_output_path[0]);
+                                                                                                    }
+                                                                                                    const int32_t result = compile_files((&input_file_indices[0]), input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, opt_level, (uint8_t *)output_path_for_compile, is_nostdlib, stack_size);
+                                                                                                    if ((result != 0)) {
+                                                                                                        int32_t _uya_ret = result;
                                                                                                         return _uya_ret;
                                                                                                     }
-                                                                                                    const int32_t written = libc_snprintf((char *)(&auto_output_path[0]), PATH_MAX, (const char *)str160);
-                                                                                                    if (((written <= 0) || (written >= PATH_MAX))) {
-                                                                                                        libc_fprintf(stderr, (const char *)str163);
-                                                                                                        int32_t _uya_ret = 1;
+                                                                                                    int32_t is_output_c_file = 0;
+                                                                                                    if (((command == COMMAND_BUILD) && (output_file_index >= 0))) {
+                                                                                                        uint8_t * const out_path = std_runtime_get_argv(output_file_index);
+                                                                                                        if (((out_path != NULL) && (is_c_output((uint8_t *)out_path) != 0))) {
+                                                                                                            is_output_c_file = 1;
+                                                                                                        }
+                                                                                                    }
+                                                                                                    if (((command == COMMAND_BUILD) && (is_output_c_file == 0))) {
+                                                                                                        uint8_t * c_file = (&auto_output_path[0]);
+                                                                                                        uint8_t * output = (uint8_t *)(uint8_t *)str164;
+                                                                                                        if ((output_file_index >= 0)) {
+                                                                                                            output = (uint8_t *)std_runtime_get_argv(output_file_index);
+                                                                                                        }
+                                                                                                        const int32_t link_result = link_with_gcc((uint8_t *)c_file, (uint8_t *)output, is_nostdlib);
+                                                                                                        if ((link_result != 0)) {
+                                                                                                            libc_fprintf(stderr, (const char *)str165);
+                                                                                                            int32_t _uya_ret = 1;
+                                                                                                            return _uya_ret;
+                                                                                                        }
+                                                                                                        libc_fprintf(stderr, (const char *)str166, (uint8_t *)output);
+                                                                                                        int32_t _uya_ret = 0;
                                                                                                         return _uya_ret;
                                                                                                     }
-                                                                                                    output_file_index = (-2);
-                                                                                                    backend = BACKEND_C99;
-                                                                                                }
-                                                                                                uint8_t * output_path_for_compile = NULL;
-                                                                                                if ((output_file_index == (-2))) {
-                                                                                                    output_path_for_compile = (&auto_output_path[0]);
-                                                                                                }
-                                                                                                const int32_t result = compile_files((&input_file_indices[0]), input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, opt_level, (uint8_t *)output_path_for_compile, is_nostdlib, stack_size);
-                                                                                                if ((result != 0)) {
-                                                                                                    int32_t _uya_ret = result;
-                                                                                                    return _uya_ret;
-                                                                                                }
-                                                                                                int32_t is_output_c_file = 0;
-                                                                                                if (((command == COMMAND_BUILD) && (output_file_index >= 0))) {
-                                                                                                    uint8_t * const out_path = std_runtime_get_argv(output_file_index);
-                                                                                                    if (((out_path != NULL) && (is_c_output((uint8_t *)out_path) != 0))) {
-                                                                                                        is_output_c_file = 1;
-                                                                                                    }
-                                                                                                }
-                                                                                                if (((command == COMMAND_BUILD) && (is_output_c_file == 0))) {
-                                                                                                    uint8_t * c_file = (&auto_output_path[0]);
-                                                                                                    uint8_t * output = (uint8_t *)(uint8_t *)str164;
-                                                                                                    if ((output_file_index >= 0)) {
-                                                                                                        output = (uint8_t *)std_runtime_get_argv(output_file_index);
-                                                                                                    }
-                                                                                                    const int32_t link_result = link_with_gcc((uint8_t *)c_file, (uint8_t *)output, is_nostdlib);
-                                                                                                    if ((link_result != 0)) {
-                                                                                                        libc_fprintf(stderr, (const char *)str165);
-                                                                                                        int32_t _uya_ret = 1;
+                                                                                                    if (((command == COMMAND_RUN) || (command == COMMAND_TEST))) {
+                                                                                                        uint8_t * actual_output = (&auto_output_path[0]);
+                                                                                                        if ((output_file_index >= 0)) {
+                                                                                                            actual_output = (uint8_t *)std_runtime_get_argv(output_file_index);
+                                                                                                        }
+                                                                                                        uint8_t run_output[4096] = {0};
+                                                                                                        const int32_t run_written = libc_snprintf((char *)(&run_output[0]), PATH_MAX, (const char *)str167);
+                                                                                                        if (((run_written <= 0) || (run_written >= PATH_MAX))) {
+                                                                                                            libc_fprintf(stderr, (const char *)str168);
+                                                                                                            int32_t _uya_ret = 1;
+                                                                                                            return _uya_ret;
+                                                                                                        }
+                                                                                                        libc_fprintf(stderr, (const char *)str166, (uint8_t *)actual_output);
+                                                                                                        uint8_t gcc_cmd[4096] = {0};
+                                                                                                        int32_t gcc_cmd_len = 0;
+                                                                                                        if ((is_nostdlib != 0)) {
+                                                                                                            gcc_cmd_len = libc_snprintf((char *)(&gcc_cmd[0]), 4096, (const char *)str169, (uint8_t *)actual_output);
+                                                                                                        } else {
+                                                                                                            gcc_cmd_len = libc_snprintf((char *)(&gcc_cmd[0]), 4096, (const char *)str170, (uint8_t *)actual_output);
+                                                                                                        }
+                                                                                                        if (((gcc_cmd_len <= 0) || (gcc_cmd_len >= 4096))) {
+                                                                                                            libc_fprintf(stderr, (const char *)str91);
+                                                                                                            int32_t _uya_ret = 1;
+                                                                                                            return _uya_ret;
+                                                                                                        }
+                                                                                                        const int32_t gcc_result = libc_system((uint8_t *)(&gcc_cmd[0]));
+                                                                                                        if ((gcc_result != 0)) {
+                                                                                                            libc_fprintf(stderr, (const char *)str93, gcc_result);
+                                                                                                            int32_t _uya_ret = 1;
+                                                                                                            return _uya_ret;
+                                                                                                        }
+                                                                                                        uint8_t run_cmd[4096] = {0};
+                                                                                                        int32_t run_cmd_len = libc_snprintf((char *)(&run_cmd[0]), 4096, (const char *)str167);
+                                                                                                        const int32_t run_result = libc_system((uint8_t *)(&run_cmd[0]));
+                                                                                                        if ((run_result != 0)) {
+                                                                                                            libc_fprintf(stderr, (const char *)str171, run_result);
+                                                                                                        }
+                                                                                                        int32_t _uya_ret = 0;
                                                                                                         return _uya_ret;
                                                                                                     }
-                                                                                                    libc_fprintf(stderr, (const char *)str166, (uint8_t *)output);
                                                                                                     int32_t _uya_ret = 0;
                                                                                                     return _uya_ret;
-                                                                                                }
-                                                                                                if (((command == COMMAND_RUN) || (command == COMMAND_TEST))) {
-                                                                                                    uint8_t * actual_output = (&auto_output_path[0]);
-                                                                                                    if ((output_file_index >= 0)) {
-                                                                                                        actual_output = (uint8_t *)std_runtime_get_argv(output_file_index);
-                                                                                                    }
-                                                                                                    uint8_t run_output[4096] = {0};
-                                                                                                    const int32_t run_written = libc_snprintf((char *)(&run_output[0]), PATH_MAX, (const char *)str167);
-                                                                                                    if (((run_written <= 0) || (run_written >= PATH_MAX))) {
-                                                                                                        libc_fprintf(stderr, (const char *)str168);
-                                                                                                        int32_t _uya_ret = 1;
-                                                                                                        return _uya_ret;
-                                                                                                    }
-                                                                                                    libc_fprintf(stderr, (const char *)str166, (uint8_t *)actual_output);
-                                                                                                    uint8_t gcc_cmd[4096] = {0};
-                                                                                                    int32_t gcc_cmd_len = 0;
-                                                                                                    if ((is_nostdlib != 0)) {
-                                                                                                        gcc_cmd_len = libc_snprintf((char *)(&gcc_cmd[0]), 4096, (const char *)str169, (uint8_t *)actual_output);
-                                                                                                    } else {
-                                                                                                        gcc_cmd_len = libc_snprintf((char *)(&gcc_cmd[0]), 4096, (const char *)str170, (uint8_t *)actual_output);
-                                                                                                    }
-                                                                                                    if (((gcc_cmd_len <= 0) || (gcc_cmd_len >= 4096))) {
-                                                                                                        libc_fprintf(stderr, (const char *)str91);
-                                                                                                        int32_t _uya_ret = 1;
-                                                                                                        return _uya_ret;
-                                                                                                    }
-                                                                                                    const int32_t gcc_result = libc_system((uint8_t *)(&gcc_cmd[0]));
-                                                                                                    if ((gcc_result != 0)) {
-                                                                                                        libc_fprintf(stderr, (const char *)str93, gcc_result);
-                                                                                                        int32_t _uya_ret = 1;
-                                                                                                        return _uya_ret;
-                                                                                                    }
-                                                                                                    uint8_t run_cmd[4096] = {0};
-                                                                                                    int32_t run_cmd_len = libc_snprintf((char *)(&run_cmd[0]), 4096, (const char *)str167);
-                                                                                                    const int32_t run_result = libc_system((uint8_t *)(&run_cmd[0]));
-                                                                                                    if ((run_result != 0)) {
-                                                                                                        libc_fprintf(stderr, (const char *)str171, run_result);
-                                                                                                    }
-                                                                                                    int32_t _uya_ret = 0;
-                                                                                                    return _uya_ret;
-                                                                                                }
-                                                                                                int32_t _uya_ret = 0;
-                                                                                                return _uya_ret;
 }
 int32_t main(int32_t argc, uint8_t * * argv) {
-                                                                                                const int64_t SYS_setrlimit = 160;
-                                                                                                const int32_t RLIMIT_STACK = 3;
-                                                                                                struct EntryRLimit rlim = (struct EntryRLimit){.rlim_cur = ((16 * 1024) * 1024), .rlim_max = ((16 * 1024) * 1024)};
-                                                                                                (void)(({ long _uya_syscall_ret = uya_syscall2(SYS_setrlimit, (int64_t)RLIMIT_STACK, (int64_t)(&rlim)); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; }));
-                                                                                                saved_argc = argc;
-                                                                                                saved_argv = argv;
-                                                                                                int32_t _uya_ret = main_main();
-                                                                                                return _uya_ret;
+                                                                                                    const int64_t SYS_setrlimit = 160;
+                                                                                                    const int32_t RLIMIT_STACK = 3;
+                                                                                                    struct EntryRLimit rlim = (struct EntryRLimit){.rlim_cur = ((16 * 1024) * 1024), .rlim_max = ((16 * 1024) * 1024)};
+                                                                                                    (void)(({ long _uya_syscall_ret = uya_syscall2(SYS_setrlimit, (int64_t)RLIMIT_STACK, (int64_t)(&rlim)); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; }));
+                                                                                                    saved_argc = argc;
+                                                                                                    saved_argv = argv;
+                                                                                                    int32_t _uya_ret = main_main();
+                                                                                                    return _uya_ret;
 }

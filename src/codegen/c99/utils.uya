@@ -912,7 +912,7 @@ fn collect_string_constants_from_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode
     }
 }
 
-// 收集声明中的字符串常量（全局变量初始化、函数体）
+// 收集声明中的字符串常量（全局变量初始化、函数体、方法块）
 fn collect_string_constants_from_decl(codegen: &C99CodeGenerator, decl: &ASTNode) void {
     if decl == null {
         return;
@@ -934,6 +934,24 @@ fn collect_string_constants_from_decl(codegen: &C99CodeGenerator, decl: &ASTNode
         
         // 恢复之前的函数上下文
         codegen.current_function_decl = saved_current_function_decl;
+    } else if decl.type == ASTNodeType.AST_METHOD_BLOCK {
+        // 方法块：遍历所有方法，收集字符串常量
+        var i: i32 = 0;
+        while i < decl.method_block_method_count {
+            const m: &ASTNode = decl.method_block_methods[i];
+            if m != null && m.type == ASTNodeType.AST_FN_DECL {
+                const saved_current_function_decl: &ASTNode = codegen.current_function_decl;
+                codegen.current_function_decl = m;
+                
+                const body: &ASTNode = m.fn_decl_body;
+                if body != null {
+                    collect_string_constants_from_stmt(codegen, body);
+                }
+                
+                codegen.current_function_decl = saved_current_function_decl;
+            }
+            i = i + 1;
+        }
     } else {
         // 其他声明类型
     }

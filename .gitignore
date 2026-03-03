@@ -33,3 +33,4 @@ musl-src/
 src/build/
 tests/build/
 build/
+a.out
