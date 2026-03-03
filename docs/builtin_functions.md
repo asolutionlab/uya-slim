@@ -40,7 +40,9 @@
 - [7. 异步编程函数](#7-异步编程函数)
   - [@async_fn](#async_fn)
   - [@await](#await)
-- [8. 内联汇编函数](#8-内联汇编函数)
+- [8. 裸函数属性](#8-裸函数属性)
+  - [@naked_fn](#naked_fn)
+- [9. 内联汇编函数](#9-内联汇编函数)
   - [@asm](#asm)
 
 ---
@@ -1207,7 +1209,110 @@ try @await future_expr
 
 ---
 
-## 8. 内联汇编函数
+## 8. 裸函数属性
+
+### @naked_fn
+
+**函数签名**：
+```uya
+@naked_fn fn function_name(...) ReturnType {
+    @asm {
+        // 仅能使用内联汇编
+    }
+}
+```
+
+**功能描述**：
+标记函数为裸函数（naked function），编译器不会生成函数 prologue（序言）和 epilogue（尾声）代码。裸函数必须完全由内联汇编实现。
+
+**使用场景**：
+- 实现操作系统内核代码
+- 实现 `setjmp`/`longjmp` 等底层控制流操作
+- 实现自定义调用约定
+- 性能关键的内联汇编函数
+
+**约束**：
+- 函数体必须只包含 `@asm` 块
+- 不能有常规 Uya 代码（变量声明、表达式等）
+- 必须使用内联汇编正确处理参数和返回值
+- 需要手动保存/恢复调用者保存寄存器（如需要）
+
+**使用示例**：
+```uya
+// setjmp 实现 - 保存执行上下文
+export @naked_fn fn setjmp(env: &jmp_buf) i32 {
+    @asm {
+        // 保存 callee-saved 寄存器
+        "movq %%rbx, 0(%0)" (env as usize);
+        "movq %%rbp, 8(%0)" (env as usize);
+        "movq %%r12, 16(%0)" (env as usize);
+        "movq %%r13, 24(%0)" (env as usize);
+        "movq %%r14, 32(%0)" (env as usize);
+        "movq %%r15, 40(%0)" (env as usize);
+        "movq %%rsp, 48(%0)" (env as usize);
+        // 保存返回地址
+        "leaq 0(%%rip), %%rax" ();
+        "movq %%rax, 56(%0)" (env as usize);
+        // 返回 0
+        "xorl %%eax, %%eax" ();
+        "ret" ();
+    } clobbers = ["memory"];
+}
+
+// longjmp 实现 - 恢复执行上下文
+export @naked_fn fn longjmp(env: &jmp_buf, val: i32) void {
+    @asm {
+        // val 为 0 时返回 1，否则返回 val
+        "testl %%esi, %%esi" ();
+        "movl $1, %%eax" ();
+        "cmovzl %%eax, %%esi" ();
+        "movl %%esi, %%eax" ();
+        // 恢复 callee-saved 寄存器
+        "movq 0(%%rdi), %%rbx" ();
+        "movq 8(%%rdi), %%rbp" ();
+        "movq 16(%%rdi), %%r12" ();
+        "movq 24(%%rdi), %%r13" ();
+        "movq 32(%%rdi), %%r14" ();
+        "movq 40(%%rdi), %%r15" ();
+        "movq 48(%%rdi), %%rsp" ();
+        // 跳转到保存的地址
+        "movq 56(%%rdi), %%rax" ();
+        "jmpq *%%rax" ();
+    } clobbers = ["memory"];
+}
+```
+
+**C 代码生成**：
+```c
+// @naked_fn 生成 __attribute__((naked))
+__attribute__((naked)) int32_t setjmp(jmp_buf* env) {
+    __asm__ volatile (
+        "movq %%rbx, 0(%0)\n\t"
+        "movq %%rbp, 8(%0)\n\t"
+        // ...
+        "ret"
+        :
+        : "r"(env)
+        : "memory"
+    );
+}
+```
+
+**x86-64 调用约定说明**：
+- **参数传递**：前 6 个整数/指针参数在 `rdi`, `rsi`, `rdx`, `rcx`, `r8`, `r9`
+- **返回值**：整数返回值在 `rax`
+- **Callee-saved 寄存器**：`rbx`, `rbp`, `r12`, `r13`, `r14`, `r15`（必须保存）
+- **Caller-saved 寄存器**：`rax`, `rcx`, `rdx`, `rsi`, `rdi`, `r8`, `r9`, `r10`, `r11`（可自由使用）
+
+**注意事项**：
+- 裸函数是高级特性，需要深入了解目标平台的 ABI
+- 错误使用可能导致未定义行为或程序崩溃
+- 建议仅在实现底层系统代码时使用
+- 与 `@asm` 块配合使用，所有指令必须在单个 `@asm` 块中
+
+---
+
+## 9. 内联汇编函数
 
 > **状态**：设计完成，实现中  
 > **参考**：规范 §19 内联汇编
@@ -1404,7 +1509,7 @@ fn unsafe_fetch_add(ptr: &i32, value: i32) i32 {
 
 ---
 
-## 9. 内置函数分类总结
+## 10. 内置函数分类总结
 
 | 分类 | 函数 | 编译期 | 运行时 | 状态 |
 |------|------|--------|--------|------|
@@ -1433,11 +1538,12 @@ fn unsafe_fetch_add(ptr: &i32, value: i32) i32 {
 | | `@println` | - | ✓ | ✅ 已实现 |
 | **异步编程** | `@async_fn` | ✓ | ✓ | 🚧 语法解析完成 |
 | | `@await` | ✓ | ✓ | 🚧 语法解析完成 |
-|| **内联汇编** | `@asm` | ✓ | - | 📋 规范支持 |
+| **裸函数** | `@naked_fn` | ✓ | - | ✅ 已实现 |
+| **内联汇编** | `@asm` | ✓ | - | 📋 规范支持 |
 
 ---
 
-## 10. 命名惯例
+## 11. 命名惯例
 
 Uya 内置函数遵循以下命名惯例：
 
@@ -1456,7 +1562,7 @@ Uya 内置函数遵循以下命名惯例：
 
 ---
 
-## 11. 性能保证
+## 12. 性能保证
 
 所有内置函数遵循 Uya 的零成本抽象原则：
 
@@ -1469,7 +1575,7 @@ Uya 内置函数遵循以下命名惯例：
 
 ---
 
-## 11. 常见使用模式
+## 13. 常见使用模式
 
 ### 10.1 调试和日志
 
@@ -1542,10 +1648,11 @@ fn buffer_info<T>() void {
 
 ---
 
-## 12. 版本历史
+## 14. 版本历史
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v0.47 | 2026-03-03 | 新增裸函数属性：`@naked_fn` |
 | v0.46 | 2026-02-19 | 新增调试打印函数：`@print`、`@println` |
 | v0.45 | 2026-02-15 | 与 uya.md 同步，添加详细函数说明 |
 | v0.43 | 2026-02-14 | 与 uya.md 同步，添加详细函数说明 |
@@ -1554,7 +1661,7 @@ fn buffer_info<T>() void {
 
 ---
 
-## 13. 参考文档
+## 15. 参考文档
 
 - [Uya 语言规范](uya.md) - 完整语言规范
 - [语法速查](grammar_quick.md) - 语法速查手册

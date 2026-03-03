@@ -4318,10 +4318,14 @@ fn caller() void {
 | `@va_start` | `@va_start(ap, last)` | 可变参数函数内初始化 va_list（编译时展开为 C 宏） |
 | `@va_end` | `@va_end(ap)` | 结束 va_list 访问（编译时展开为 C 宏） |
 | `@va_arg` | `@va_arg(ap, Type)` | 从 va_list 获取下一个参数，类型由 Type 指定 |
+| `@async_fn` | 函数属性 | 标记异步函数，触发 CPS 变换 |
+| `@naked_fn` | 函数属性 | 标记裸函数（无 prologue/epilogue），用于底层系统代码 |
+| `@await` | 表达式 | 等待异步操作完成（仅 `@async_fn` 内） |
+| `@asm` | `@asm { ... }` | 内联汇编块 |
 
 **命名惯例**：
 - 单一概念：`@len`, `@max`, `@min`（短形式）
-- 复合概念：`@size_of`, `@align_of`, `@async_fn`（下划线分隔）
+- 复合概念：`@size_of`, `@align_of`, `@async_fn`, `@naked_fn`（下划线分隔）
 
 > **完整内置函数列表**：详见 [builtin_functions.md](./builtin_functions.md)
 

@@ -8,6 +8,48 @@
 
 **发布日期：** 待定
 
+### v0.7.2 - 裸函数属性 @naked_fn
+
+**发布日期：** 2026-03-03
+
+#### 主要变更
+
+1. **新增 `@naked_fn` 函数属性**
+   - 标记函数为裸函数（无 prologue/epilogue）
+   - 函数体必须只包含 `@asm` 内联汇编
+   - 生成的 C 代码添加 `__attribute__((naked))`
+   - 用于实现底层系统代码：`setjmp`/`longjmp`、操作系统内核等
+
+2. **内联汇编块合并**
+   - 修复：`@asm` 块中所有指令现在合并为单个 `__asm__ volatile`
+   - 之前：每条指令生成独立的 `__asm__ volatile`（导致裸函数无法正常工作）
+   - 现在：所有指令在同一个汇编块中执行
+
+3. **实现 setjmp/longjmp**
+   - 使用 `@naked_fn` 重新实现 `lib/libc/setjmp.uya`
+   - x86-64 调用约定：参数在 rdi/rsi/rdx，返回值在 rax
+   - 保存/恢复 callee-saved 寄存器：rbx, rbp, r12-r15
+
+#### 使用示例
+
+```uya
+// 裸函数示例：setjmp
+export @naked_fn fn setjmp(env: &jmp_buf) i32 {
+    @asm {
+        "movq %%rbx, 0(%0)" (env as usize);
+        "movq %%rbp, 8(%0)" (env as usize);
+        // ... 保存其他寄存器
+        "xorl %%eax, %%eax" ();
+        "ret" ();
+    } clobbers = ["memory"];
+}
+```
+
+#### 测试状态
+
+- 自举验证：✓ 通过
+- 单元测试：`tests/test_naked_fn.uya`、`tests/test_longjmp_full.uya`
+
 ### v0.7.1 - 切片字面量 & 语法增强
 
 **发布日期：** 2026-02-21

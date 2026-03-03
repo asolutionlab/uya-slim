@@ -19,6 +19,7 @@ export use mc
 - 源代码位置：`@src_name`、`@src_path`、`@src_line`、`@src_col`、`@func_name`
 - 可变参数：`@params`、`@va_start`、`@va_end`、`@va_arg`
 - 异步编程：`@async_fn`（函数属性）、`@await`（挂起点）
+- 裸函数：`@naked_fn`（函数属性，无 prologue/epilogue）
 - 编译时（宏内）：`@mc_eval`、`@mc_type`、`@mc_ast`、`@mc_code`、`@mc_error`、`@mc_get_env`
 - 系统调用：`@syscall(nr, arg1, ..., arg6)`
 - 指针转换：`@ptr_from_usize`、`@usize_from_ptr`
