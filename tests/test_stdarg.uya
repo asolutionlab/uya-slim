@@ -1,0 +1,248 @@
+// test_stdarg.uya - 测试 libc.stdarg 模块
+// 可变参数处理函数
+
+use std.runtime.entry;
+// 使用 lib/std/testing.uya 测试框架
+
+use libc.va_list;
+use libc.va_init;
+use libc.va_start_uya;
+use libc.va_end_uya;
+use libc.va_copy_uya;
+use libc.va_arg_i32;
+use libc.va_arg_i64;
+use libc.va_arg_usize;
+use libc.va_arg_ptr;
+use libc.va_set_i32;
+use libc.va_set_i64;
+use libc.va_set_ptr;
+
+// 导入测试框架
+use std.testing.expect;
+
+test "va_list_size" {
+    // 验证 va_list 结构体存在
+    var ap: va_list = va_list{
+        args: [0: 16],
+        count: 0,
+        index: 0,
+        reg_count: 0,
+        stack_args: null,
+        stack_index: 0,
+    };
+    
+    try expect(ap.count == 0);
+    try expect(ap.index == 0);
+}
+
+test "va_init_basic" {
+    var ap: va_list = va_list{
+        args: [0: 16],
+        count: 0,
+        index: 0,
+        reg_count: 0,
+        stack_args: null,
+        stack_index: 0,
+    };
+    
+    va_init(&ap, 3);
+    
+    try expect(ap.count == 3);
+    try expect(ap.index == 0);
+}
+
+test "va_set_and_get_i32" {
+    var ap: va_list = va_list{
+        args: [0: 16],
+        count: 0,
+        index: 0,
+        reg_count: 0,
+        stack_args: null,
+        stack_index: 0,
+    };
+    
+    va_init(&ap, 3);
+    
+    // 设置参数
+    va_set_i32(&ap, 0, 42);
+    va_set_i32(&ap, 1, -100);
+    va_set_i32(&ap, 2, 0);
+    
+    // 获取参数
+    var v0: i32 = va_arg_i32(&ap);
+    var v1: i32 = va_arg_i32(&ap);
+    var v2: i32 = va_arg_i32(&ap);
+    
+    try expect(v0 == 42);
+    try expect(v1 == -100);
+    try expect(v2 == 0);
+}
+
+test "va_set_and_get_i64" {
+    var ap: va_list = va_list{
+        args: [0: 16],
+        count: 0,
+        index: 0,
+        reg_count: 0,
+        stack_args: null,
+        stack_index: 0,
+    };
+    
+    va_init(&ap, 2);
+    
+    va_set_i64(&ap, 0, 0x123456789ABCDEF);
+    va_set_i64(&ap, 1, -1);
+    
+    var v0: i64 = va_arg_i64(&ap);
+    var v1: i64 = va_arg_i64(&ap);
+    
+    try expect(v0 == 0x123456789ABCDEF);
+    try expect(v1 == -1);
+}
+
+test "va_set_and_get_usize" {
+    var ap: va_list = va_list{
+        args: [0: 16],
+        count: 0,
+        index: 0,
+        reg_count: 0,
+        stack_args: null,
+        stack_index: 0,
+    };
+    
+    va_init(&ap, 2);
+    
+    va_set_i64(&ap, 0, 1000 as i64);  // 使用 va_set_i64 设置 usize 值
+    va_set_i64(&ap, 1, 2000 as i64);
+    
+    var v0: usize = va_arg_usize(&ap);
+    var v1: usize = va_arg_usize(&ap);
+    
+    try expect(v0 == 1000);
+    try expect(v1 == 2000);
+}
+
+test "va_set_and_get_ptr" {
+    var ap: va_list = va_list{
+        args: [0: 16],
+        count: 0,
+        index: 0,
+        reg_count: 0,
+        stack_args: null,
+        stack_index: 0,
+    };
+    
+    var buf: [byte: 4] = ['t' as byte, 'e' as byte, 's' as byte, 't' as byte];
+    var ptr: &byte = @ptr_from_usize(@usize_from_ptr(&buf)) as &byte;
+    
+    va_init(&ap, 1);
+    va_set_ptr(&ap, 0, ptr as &void);
+    
+    var result: &void = va_arg_ptr(&ap);
+    try expect(@usize_from_ptr(result) == @usize_from_ptr(ptr));
+}
+
+test "va_copy_basic" {
+    var src: va_list = va_list{
+        args: [0: 16],
+        count: 0,
+        index: 0,
+        reg_count: 0,
+        stack_args: null,
+        stack_index: 0,
+    };
+    
+    va_init(&src, 3);
+    va_set_i32(&src, 0, 10);
+    va_set_i32(&src, 1, 20);
+    va_set_i32(&src, 2, 30);
+    
+    // 读取第一个参数
+    var first: i32 = va_arg_i32(&src);
+    try expect(first == 10);
+    
+    // 复制 va_list
+    var dest: va_list = va_list{
+        args: [0: 16],
+        count: 0,
+        index: 0,
+        reg_count: 0,
+        stack_args: null,
+        stack_index: 0,
+    };
+    va_copy_uya(&dest, src);
+    
+    // dest 应该从 src 当前位置继续
+    try expect(dest.index == 1);
+    try expect(dest.count == 3);
+    
+    var second: i32 = va_arg_i32(&dest);
+    try expect(second == 20);
+}
+
+test "va_end_basic" {
+    var ap: va_list = va_list{
+        args: [0: 16],
+        count: 5,
+        index: 3,
+        reg_count: 0,
+        stack_args: null,
+        stack_index: 0,
+    };
+    
+    va_end_uya(&ap);
+    
+    try expect(ap.count == 0);
+    try expect(ap.index == 0);
+}
+
+test "va_start_uya_basic" {
+    var ap: va_list = va_list{
+        args: [0: 16],
+        count: 5,  // 之前有值
+        index: 3,
+        reg_count: 0,
+        stack_args: null,
+        stack_index: 0,
+    };
+    
+    va_start_uya(&ap, null);
+    
+    // va_start 应该重置状态
+    try expect(ap.count == 0);
+    try expect(ap.index == 0);
+}
+
+test "va_arg_out_of_bounds" {
+    var ap: va_list = va_list{
+        args: [0: 16],
+        count: 1,
+        index: 0,
+        reg_count: 0,
+        stack_args: null,
+        stack_index: 0,
+    };
+    
+    va_set_i32(&ap, 0, 42);
+    
+    // 读取唯一的参数
+    var v0: i32 = va_arg_i32(&ap);
+    try expect(v0 == 42);
+    
+    // 越界读取应返回 0
+    var v1: i32 = va_arg_i32(&ap);
+    try expect(v1 == 0);
+}
+
+test "va_null_pointer_safety" {
+    // null 指针不应崩溃
+    va_init(null, 5);
+    va_start_uya(null, null);
+    va_end_uya(null);
+    
+    var result: i32 = va_set_i32(null, 0, 42);
+    try expect(result == -1);
+    
+    var val: i32 = va_arg_i32(null);
+    try expect(val == 0);
+}
