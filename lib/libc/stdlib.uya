@@ -689,6 +689,55 @@ export extern "libc" fn bsearch(key: &const void, base: &const void, nmemb: usiz
     return null;
 }
 
+// ============================================================
+// 除法运算 (div, ldiv, lldiv)
+// ============================================================
+
+// div_t - div 函数返回值类型
+struct div_t {
+    quot: i32,  // 商
+    rem: i32,   // 余数
+}
+
+// ldiv_t - ldiv 函数返回值类型
+struct ldiv_t {
+    quot: i64,  // 商
+    rem: i64,   // 余数
+}
+
+// lldiv_t - lldiv 函数返回值类型
+struct lldiv_t {
+    quot: i64,  // 商
+    rem: i64,   // 余数
+}
+
+// div - 整数除法
+export extern "libc" fn div(numer: i32, denom: i32) div_t {
+    var result: div_t = div_t{ quot: 0, rem: 0 };
+    if denom == 0 { return result; }
+    result.quot = numer / denom;
+    result.rem = numer % denom;
+    return result;
+}
+
+// ldiv - 长整数除法
+export extern "libc" fn ldiv(numer: i64, denom: i64) ldiv_t {
+    var result: ldiv_t = ldiv_t{ quot: 0, rem: 0 };
+    if denom == 0 { return result; }
+    result.quot = numer / denom;
+    result.rem = numer % denom;
+    return result;
+}
+
+// lldiv - 长长整数除法
+export extern "libc" fn lldiv(numer: i64, denom: i64) lldiv_t {
+    var result: lldiv_t = lldiv_t{ quot: 0, rem: 0 };
+    if denom == 0 { return result; }
+    result.quot = numer / denom;
+    result.rem = numer % denom;
+    return result;
+}
+
 // strtoul - 字符串转无符号长整数
 export extern "libc" fn strtoul(nptr: &const byte, endptr: & &const byte, base: i32) u64 {
     if nptr == null {

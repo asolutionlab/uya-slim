@@ -1727,6 +1727,9 @@ struct Arena;
 struct FILE;
 struct ChunkHeader;
 struct FreeChunk;
+struct div_t;
+struct ldiv_t;
+struct lldiv_t;
 struct DIR;
 struct DirState;
 struct Stat;
@@ -2174,6 +2177,21 @@ struct FreeChunk {
     struct ChunkHeader header;
     struct FreeChunk * prev;
     struct FreeChunk * next;
+};
+
+struct div_t {
+    int32_t quot;
+    int32_t rem;
+};
+
+struct ldiv_t {
+    int64_t quot;
+    int64_t rem;
+};
+
+struct lldiv_t {
+    int64_t quot;
+    int64_t rem;
 };
 
 struct DIR {
@@ -3039,6 +3057,9 @@ static int32_t qsort_cmp(uint8_t * a, uint8_t * b, size_t size);
 static void qsort_rec(uint8_t * arr, size_t left, size_t right, size_t size);
 void qsort(void * base, size_t nmemb, size_t size, void * compar);
 void * bsearch(const void * key, const void * base, size_t nmemb, size_t size, void * compar);
+struct div_t div(int32_t numer, int32_t denom);
+struct ldiv_t ldiv(int64_t numer, int64_t denom);
+struct lldiv_t lldiv(int64_t numer, int64_t denom);
 uint64_t strtoul(const uint8_t * nptr, const uint8_t * * endptr, int32_t base);
 int64_t clock();
 int32_t libc_stat(const uint8_t * path, struct Stat * buf);
@@ -8629,6 +8650,48 @@ void * bsearch(const void * key, const void * base, size_t nmemb, size_t size, v
         }
     }
     void * _uya_ret = NULL;
+    return _uya_ret;
+}
+
+struct div_t div(int32_t numer, int32_t denom) {
+    (void)numer;
+    (void)denom;
+    struct div_t result = (struct div_t){.quot = 0, .rem = 0};
+    if ((denom == 0)) {
+        struct div_t _uya_ret = result;
+        return _uya_ret;
+    }
+    result.quot = (numer / denom);
+    result.rem = (numer % denom);
+    struct div_t _uya_ret = result;
+    return _uya_ret;
+}
+
+struct ldiv_t ldiv(int64_t numer, int64_t denom) {
+    (void)numer;
+    (void)denom;
+    struct ldiv_t result = (struct ldiv_t){.quot = 0, .rem = 0};
+    if ((denom == 0)) {
+        struct ldiv_t _uya_ret = result;
+        return _uya_ret;
+    }
+    result.quot = (numer / denom);
+    result.rem = (numer % denom);
+    struct ldiv_t _uya_ret = result;
+    return _uya_ret;
+}
+
+struct lldiv_t lldiv(int64_t numer, int64_t denom) {
+    (void)numer;
+    (void)denom;
+    struct lldiv_t result = (struct lldiv_t){.quot = 0, .rem = 0};
+    if ((denom == 0)) {
+        struct lldiv_t _uya_ret = result;
+        return _uya_ret;
+    }
+    result.quot = (numer / denom);
+    result.rem = (numer % denom);
+    struct lldiv_t _uya_ret = result;
     return _uya_ret;
 }
 
