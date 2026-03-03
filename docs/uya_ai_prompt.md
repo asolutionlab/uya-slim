@@ -1300,7 +1300,7 @@ const addr: usize = @usize_from_ptr(ptr);
 
 // @va_start/@va_end/@va_arg - 可变参数处理（FFI）
 fn my_printf(fmt: *byte, ...) i32 {
-    var ap: va_list = [];
+    var ap: va_list = va_list{};
     @va_start(ap, fmt);
     const arg1: i32 = @va_arg(ap, i32);
     @va_end(ap);

@@ -612,9 +612,10 @@ fn main() i32 {
 
 | 内置 | 声明 | C 等价 | 说明 |
 |------|------|--------|------|
-| `@va_start` | `@va_start(ap, last)` | `va_start(ap, last)` | 初始化 va_list，`last` 为最后一个命名参数 |
-| `@va_end` | `@va_end(ap)` | `va_end(ap)` | 结束 va_list 访问，必须与 `@va_start` 成对 |
+| `@va_start` | `@va_start(&ap, last)` | `va_start(ap, last)` | 初始化 va_list，`last` 为最后一个命名参数 |
+| `@va_end` | `@va_end(&ap)` | `va_end(ap)` | 结束 va_list 访问，必须与 `@va_start` 成对 |
 | `@va_arg` | `@va_arg(ap, Type)` | `va_arg(ap, type)` | 按类型获取下一个参数，如 `@va_arg(ap, i32)` |
+| `@va_copy` | `@va_copy(&dest, src)` | `va_copy(dest, src)` | 复制 va_list（新增） |
 
 **完整用法示例**（纯 Uya 实现 vprintf 包装）：
 ```uya
@@ -650,14 +651,14 @@ fn sum_n(n: i32, ...) i32 {
 
 ### @va_start
 
-**声明**：`@va_start(ap, last)`  
+**声明**：`@va_start(&ap, last)`  
 **函数签名**：
 ```uya
-@va_start(ap: &void, last: &void) void
+@va_start(ap: &va_list, last: &T) void
 ```
 
 **功能描述**：
-在可变参数函数内初始化 va_list，用于后续将可变参数传递给 vprintf/vfprintf 等 C 函数。编译时展开为 C 的 `va_start(ap, last)` 宏。
+在可变参数函数内初始化 va_list。编译时展开为 C 的 `va_start(ap, last)` 宏。
 
 **使用场景**：
 - 实现类似 printf 的可变参数包装
@@ -665,128 +666,148 @@ fn sum_n(n: i32, ...) i32 {
 
 **使用示例**：
 ```uya
-extern "libc" fn vfprintf(stream: *void, format: *const byte, ap: *void) i32;
+export extern "libc" fn vfprintf(stream: *void, format: &const byte, ap: va_list) i32;
 
 fn my_vfprintf(stream: &FILE, format: &const byte, ...) i32 {
-    var ap_buf: [byte: 32] = [];
-    var ap: &void = &ap_buf[0] as &void;
-    @va_start(ap, format);
+    var ap: va_list = va_list{};
+    @va_start(&ap, format);  // format 是最后一个命名参数
     const ret: i32 = vfprintf(stream as *void, format, ap);
-    @va_end(ap);
+    @va_end(&ap);
     return ret;
 }
 ```
 
 **注意事项**：
 - 仅在可变参数函数（形参含 `...`）内有效
-- `ap` 需指向足以存放 va_list 的缓冲区
-- `last` 必须为最后一个命名参数的引用（如 format）
+- `ap` 是 `va_list` 类型变量，`&ap` 传递其地址
+- `last` 必须为最后一个命名参数（如 format）
 - 与 `@va_end` 成对使用，确保每个 `@va_start` 都有对应 `@va_end`
 
 ---
 
 ### @va_end
 
-**声明**：`@va_end(ap)`  
+**声明**：`@va_end(&ap)`  
 **函数签名**：
 ```uya
-@va_end(ap: &void) void
+@va_end(ap: &va_list) void
 ```
 
 **功能描述**：
-结束对 va_list 的访问，清理可变参数栈状态。编译时展开为 C 的 `va_end(ap)` 宏。必须与 `@va_start` 成对调用。
+结束对 va_list 的访问。编译时展开为 C 的 `va_end(ap)` 宏。必须与 `@va_start` 或 `@va_copy` 成对调用。
 
 **使用示例**：
 ```uya
 fn process_varargs(fmt: &const byte, ...) void {
-    var ap: [byte: 32] = [];
-    @va_start(&ap[0] as &void, fmt);
+    var ap: va_list = va_list{};
+    @va_start(&ap, fmt);
     // 使用 va_list 传递给 vprintf 等...
-    @va_end(&ap[0] as &void);
+    @va_end(&ap);
 }
 ```
 
 **注意事项**：
-- 每个 `@va_start` 必须有对应的 `@va_end`
+- 每个 `@va_start` 或 `@va_copy` 必须有对应的 `@va_end`
 - 在函数返回前必须调用 `@va_end`，包括所有返回路径
 
 ---
 
 ### @va_arg
 
-**声明**：`@va_arg(ap, Type)`，如 `@va_arg(ap, i32)`、`@va_arg(ap, *byte)`  
+**声明**：`@va_arg(ap, Type)`，如 `@va_arg(ap, i32)`、`@va_arg(ap, &byte)`  
 **函数签名**：
 ```uya
-@va_arg(ap: &void, Type) T
+@va_arg(ap: va_list, Type) T
 ```
 
 **功能描述**：
-从 va_list 获取下一个参数，类型由第二个参数指定。编译时展开为 C 的 `va_arg(ap, type)` 宏。必须在 `@va_start` 与 `@va_end` 之间调用。
+从 va_list 获取下一个参数，类型由第二个参数指定。编译时展开为 C 的 `va_arg(ap, type)` 宏。
 
 **参数**：
-- `ap`：由 `@va_start` 初始化的 va_list（指针）
-- `Type`：期望的参数类型（如 `i32`、`i64`、`*byte`、`f64` 等）
+- `ap`：`va_list` 类型（由 `@va_start` 初始化或作为参数传入）
+- `Type`：期望的参数类型（如 `i32`、`i64`、`&byte`、`f64` 等）
 
 **返回值**：
 - 类型与 `Type` 一致
 - 每次调用会推进 va_list 到下一个参数
 
+**使用场景**：
+1. 在可变参数函数内（与 `@va_start` 配合）
+2. 在接收 `va_list` 参数的函数内
+
 **使用示例**：
 ```uya
+// 场景1：可变参数函数
 fn sum_ints(count: i32, ...) i32 {
-    var ap: [byte: 32] = [];
-    @va_start(&ap[0] as &void, count);
+    var ap: va_list = va_list{};
+    @va_start(&ap, count);
     var total: i32 = 0;
     var i: i32 = 0;
     while i < count {
-        const val: i32 = @va_arg(&ap[0] as &void, i32);
+        const val: i32 = @va_arg(ap, i32);
         total = total + val;
         i = i + 1;
     }
-    @va_end(&ap[0] as &void);
+    @va_end(&ap);
     return total;
+}
+
+// 场景2：接收 va_list 参数的函数
+fn my_vprintf(format: &const byte, ap: va_list) i32 {
+    // 可以直接使用 @va_arg
+    const first_arg: i32 = @va_arg(ap, i32);
+    // ...
+    return 0;
 }
 ```
 
 **支持的类型**：
-- `i32`、`i64`：整数类型（C 中 int、long 等会提升）
-- `*byte`、`*void`、`&byte`：指针类型（字符串、对象指针）
+- `i32`、`i64`、`usize`：整数类型
+- `&byte`、`&void`：指针类型
 - `f64`：双精度浮点（C 可变参数中 float 提升为 double）
 
-**混合类型示例**（%d、%s、%ld 等格式）：
+**注意事项**：
+- 类型必须与实际传入参数一致，否则未定义行为（与 C 相同）
+- 可变参数默认提升：`char`/`short` → `int`，`float` → `double`
+
+---
+
+### @va_copy
+
+**声明**：`@va_copy(&dest, src)`  
+**函数签名**：
 ```uya
-fn log_msg(fmt: &const byte, ...) void {
-    var ap: [byte: 32] = [];
-    @va_start(&ap[0] as &void, fmt);
-    // 根据格式串解析，此处简化：依次取 i32、*byte、i64
-    const n: i32 = @va_arg(&ap[0] as &void, i32);
-    const s: *byte = @va_arg(&ap[0] as &void, *byte);
-    const x: i64 = @va_arg(&ap[0] as &void, i64);
-    @va_end(&ap[0] as &void);
-    // 使用 n, s, x 进行格式化输出...
-}
+@va_copy(dest: &va_list, src: va_list) void
 ```
 
-**错误示例**：
-```uya
-fn bad_usage() void {
-    var ap: [byte: 32] = [];
-    @va_start(&ap[0] as &void, ap);  // ❌ 错误：非可变参数函数（无 ...）内不能使用 @va_start
-}
+**功能描述**：
+复制 va_list，用于多次遍历同一组可变参数。编译时展开为 C 的 `va_copy(dest, src)` 宏。
 
-fn bad_order(fmt: &const byte, ...) void {
-    var ap: [byte: 32] = [];
-    const x = @va_arg(&ap[0] as &void, i32);  // ❌ 错误：未调用 @va_start
-    @va_start(&ap[0] as &void, fmt);
-    @va_end(&ap[0] as &void);
-    const y = @va_arg(&ap[0] as &void, i32);  // ❌ 错误：@va_end 之后不能再调用 @va_arg
+**使用示例**：
+```uya
+fn measure_and_print(format: &const byte, ...) i32 {
+    var ap: va_list = va_list{};
+    @va_start(&ap, format);
+    
+    // 复制 va_list 以便多次遍历
+    var ap_copy: va_list = va_list{};
+    @va_copy(&ap_copy, ap);
+    
+    // 第一次遍历：计算需要的长度
+    const needed: i32 = _calc_length(format, ap_copy);
+    @va_end(&ap_copy);
+    
+    // 第二次遍历：实际输出
+    const result: i32 = _do_output(format, ap);
+    @va_end(&ap);
+    
+    return result;
 }
 ```
 
 **注意事项**：
-- 仅在 `@va_start` 与 `@va_end` 之间有效
-- 类型必须与实际传入参数一致，否则未定义行为（与 C 相同）
-- 可变参数默认提升：`char`/`short` → `int`，`float` → `double`
+- 每个 `@va_copy` 必须有对应的 `@va_end`
+- 复制的 va_list 独立于原 va_list，可以独立遍历
 
 ---
 

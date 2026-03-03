@@ -1,0 +1,81 @@
+// 测试新增的 libc stdio 函数
+// TDD 测试文件 - 避免字符串常量依赖
+
+use std.testing.assert_eq_i32;
+use std.testing.expect;
+
+extern fn strcmp(s1: &const byte, s2: &const byte) i32;
+
+// ============================================================
+// sscanf 测试 - 使用数字验证
+// ============================================================
+
+test "sscanf_int" {
+    var x: i32 = 0;
+    const result: i32 = sscanf("12345", "%d", &x);
+    try assert_eq_i32(result, 1);
+    try assert_eq_i32(x, 12345);
+}
+
+test "sscanf_int_negative" {
+    var x: i32 = 0;
+    const result: i32 = sscanf("-42", "%d", &x);
+    try assert_eq_i32(result, 1);
+    try assert_eq_i32(x, 0 - 42);
+}
+
+test "sscanf_multiple" {
+    var a: i32 = 0;
+    var b: i32 = 0;
+    const result: i32 = sscanf("10 20", "%d %d", &a, &b);
+    try assert_eq_i32(result, 2);
+    try assert_eq_i32(a, 10);
+    try assert_eq_i32(b, 20);
+}
+
+// ============================================================
+// sprintf 新格式测试
+// ============================================================
+
+test "sprintf_hex_lower" {
+    var buf: [byte: 32] = [];
+    sprintf(&buf[0], "%x", 255);
+    // 验证输出是 "ff"
+    try assert_eq_i32(buf[0] as i32, 102);  // 'f'
+    try assert_eq_i32(buf[1] as i32, 102);  // 'f'
+    try assert_eq_i32(buf[2] as i32, 0);    // null terminator
+}
+
+test "sprintf_hex_upper" {
+    var buf: [byte: 32] = [];
+    sprintf(&buf[0], "%X", 255);
+    // 验证输出是 "FF"
+    try assert_eq_i32(buf[0] as i32, 70);  // 'F'
+    try assert_eq_i32(buf[1] as i32, 70);  // 'F'
+    try assert_eq_i32(buf[2] as i32, 0);   // null terminator
+}
+
+test "sprintf_hex_zero" {
+    var buf: [byte: 32] = [];
+    sprintf(&buf[0], "%x", 0);
+    try assert_eq_i32(buf[0] as i32, 48);  // '0'
+    try assert_eq_i32(buf[1] as i32, 0);   // null terminator
+}
+
+test "sprintf_char" {
+    var buf: [byte: 32] = [];
+    sprintf(&buf[0], "%c", 65);
+    try assert_eq_i32(buf[0] as i32, 65);  // 'A'
+    try assert_eq_i32(buf[1] as i32, 0);   // null terminator
+}
+
+test "sprintf_pointer" {
+    var buf: [byte: 32] = [];
+    const ptr: usize = 255;
+    sprintf(&buf[0], "%p", ptr);
+    // 指针格式: 0xff
+    try assert_eq_i32(buf[0] as i32, 48);  // '0'
+    try assert_eq_i32(buf[1] as i32, 120); // 'x'
+    try assert_eq_i32(buf[2] as i32, 102); // 'f'
+    try assert_eq_i32(buf[3] as i32, 102); // 'f'
+}

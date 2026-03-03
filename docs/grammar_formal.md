@@ -215,8 +215,8 @@ primary_expr   = ID | NUM | STRING | CHAR | 'true' | 'false' | 'null'
                | builtin_expr
                | struct_literal | array_literal | tuple_literal | enum_literal | union_literal
                | match_expr | '(' expr ')'
-builtin_expr   = '@' ('sizeof' | 'alignof' | 'len' | 'max' | 'min' | 'params' | 'va_start' | 'va_end' | 'va_arg' | 'asm')
-               # @size_of(T)、@align_of(T)、@len(expr) 为调用形式；@max、@min 为值形式；@params 为函数体内参数元组；@va_start(ap,last)、@va_end(ap)、@va_arg(ap,Type) 为可变参数栈访问（uya.md §5.4）；@asm 为内联汇编块（uya.md §19）
+builtin_expr   = '@' ('sizeof' | 'alignof' | 'len' | 'max' | 'min' | 'params' | 'va_start' | 'va_end' | 'va_arg' | 'va_copy' | 'asm')
+               # @size_of(T)、@align_of(T)、@len(expr) 为调用形式；@max、@min 为值形式；@params 为函数体内参数元组；@va_start(&ap,last)、@va_end(&ap)、@va_arg(ap,Type)、@va_copy(&dest,src) 为可变参数栈访问（uya.md §5.4）；@asm 为内联汇编块（uya.md §19）
 union_literal  = ID '.' ID '(' expr ')'  # 联合体创建，如 IntOrFloat.i(42)、NetworkPacket.ipv4([...])
 ```
 

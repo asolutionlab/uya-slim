@@ -11,19 +11,28 @@
 ### 1. 可变参数函数支持
 
 **新增内置函数**：
-- **`@va_start(ap, last)`**：在可变参数函数内初始化 va_list
-- **`@va_end(ap)`**：结束 va_list
+- **`@va_start(&ap, last)`**：在可变参数函数内初始化 va_list
+- **`@va_end(&ap)`**：结束 va_list
 - **`@va_arg(ap, Type)`**：从 va_list 按类型提取下一个参数
+- **`@va_copy(&dest, src)`**：复制 va_list
 
-**用途**：支持纯 Uya 实现 libc.stdarg，无需依赖 `extern "libc"`。
+**`va_list` 是编译器内置类型**，大小与目标平台相关。
+
+**用途**：支持纯 Uya 实现 libc.stdarg 和 vprintf 系列函数，完全兼容 C ABI。
 
 **示例**：
 ```uya
 fn my_printf(fmt: &const byte, ...) i32 {
     var ap: va_list;
-    @va_start(ap, fmt);
+    @va_start(&ap, fmt);
     const c: i32 = @va_arg(ap, i32);
-    @va_end(ap);
+    @va_end(&ap);
+    return c;
+}
+
+// 接收 va_list 参数的函数
+fn my_vprintf(fmt: &const byte, ap: va_list) i32 {
+    const c: i32 = @va_arg(ap, i32);
     return c;
 }
 ```
@@ -92,7 +101,7 @@ make b   # C 编译器与自举编译器生成的 C 文件完全一致
 |------|----------|
 | `codegen/c99/function.c` | `export fn` 生成模块前缀；`export extern fn main` 生成 C 入口 |
 | `codegen/c99/main.c` | 重写第九步支持多种 main 函数生成 |
-| `codegen/c99/expr.c` | `@va_start`/`@va_end`/`@va_arg` 展开 |
+| `codegen/c99/expr.c` | `@va_start`/`@va_end`/`@va_arg`/`@va_copy` 展开 |
 | `checker.c` | 可变参数函数内 va_* 使用检查；extern 变量检查 |
 | `parser.c`, `lexer.c`, `ast.c/h` | va_* 内置函数解析；extern 变量语法 |
 
@@ -101,7 +110,7 @@ make b   # C 编译器与自举编译器生成的 C 文件完全一致
 | 模块 | 变更要点 |
 |------|----------|
 | `codegen/c99/function.uya` | `export fn` 前缀生成；extern 变量处理 |
-| `codegen/c99/expr.uya` | `@va_start`/`@va_arg` 展开；`%*s` 格式修复 |
+| `codegen/c99/expr.uya` | `@va_start`/`@va_arg`/`@va_copy` 展开；`%*s` 格式修复 |
 | `checker.uya` | va_* 使用位置检查 |
 | `main.uya` | 依赖收集增强 |
 | `compile.sh` | 静态链接优化 |
@@ -151,7 +160,7 @@ make tests-uya             # 自举版测试通过（341/341）
 
 | 类别 | 内容 |
 |------|------|
-| **语言/内置** | `@va_start`、`@va_end`、`@va_arg` 内置函数 |
+| **语言/内置** | `@va_start`、`@va_end`、`@va_arg`、`@va_copy` 内置函数；`va_list` 内置类型 |
 | **语言/语法** | `extern const/var` 变量声明；`export extern "libc" fn` 语法 |
 | **架构** | Scheme C 双入口架构（`export fn main` → `main_main`） |
 | **标准库** | libc.fprintf 格式增强（`%*s`、`%g`、`%zu`）；libc.readdir 实现 |

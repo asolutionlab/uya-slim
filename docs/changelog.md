@@ -8,6 +8,79 @@
 
 **发布日期：** 待定
 
+### v0.7.3 - va_list 内置类型
+
+**发布日期：** 2026-03-03
+
+#### 主要变更
+
+1. **va_list 升级为编译器内置类型**
+   - 不再是结构体，而是平台相关的编译器内置类型
+   - 直接映射到 C 的 `__builtin_va_list`
+   - 与 C 代码完全兼容
+
+2. **新增 `@va_copy` 内置函数**
+   - 复制 va_list 状态，用于多次遍历可变参数
+   - 语法：`@va_copy(&dest, src)`
+
+3. **放宽 `@va_arg` 使用限制**
+   - 可在接收 `va_list` 参数的函数内使用（之前只能在可变参数函数内使用）
+   - 支持将 va_list 传递给其他函数处理
+
+4. **初始化语法**
+   - 使用 `var ap: va_list = va_list{};` 初始化
+   - 然后用 `@va_start(&ap, last_param)` 初始化
+
+#### 使用示例
+
+```uya
+// 可变参数函数
+fn my_printf(format: &const byte, ...) i32 {
+    var ap: va_list = va_list{};
+    @va_start(&ap, format);
+
+    const val: i32 = @va_arg(ap, i32);
+    const str: &const byte = @va_arg(ap, &const byte);
+
+    @va_end(&ap);
+    return 0;
+}
+
+// 接收 va_list 参数的函数
+fn process_va_list(ap: va_list) i32 {
+    return @va_arg(ap, i32);  // ✅ 现在可以直接使用
+}
+
+// va_copy 示例
+fn multi_pass(format: &const byte, ...) i32 {
+    var ap1: va_list = va_list{};
+    @va_start(&ap1, format);
+
+    var ap2: va_list = va_list{};
+    @va_copy(&ap2, ap1);
+
+    const v1: i32 = @va_arg(ap1, i32);
+    const v2: i32 = @va_arg(ap2, i32);  // 相同的参数
+
+    @va_end(&ap1);
+    @va_end(&ap2);
+    return v1 + v2;
+}
+```
+
+#### 破坏性变更
+
+- 删除旧的 `test_stdarg.uya` 测试（使用结构体 API）
+- `lib/libc/stdarg.uya` 简化为文档注释
+- 直接访问 va_list 结构体成员（如 `ap.count`）不再支持
+
+#### 测试状态
+
+- 自举验证：✓ 通过
+- 测试验证：473/473 通过
+
+---
+
 ### v0.7.2 - 裸函数属性 @naked_fn
 
 **发布日期：** 2026-03-03
@@ -599,21 +672,18 @@ fn deref(ptr: &i32) i32 {
 
 ## 0.44 版本变更（相对于 0.43）
 
-### 0.44 @va_start / @va_end / @va_arg 内置函数
+### 0.44 @va_start / @va_end / @va_arg / @va_copy 内置函数
 
-- **新增 `@va_start` / `@va_end` 内置函数**：
-  - **语法**：`@va_start(ap, last)`、`@va_end(ap)`
-  - **用途**：在可变参数函数内初始化/结束 va_list，用于将可变参数传递给 vprintf/vfprintf 等 C 函数
-  - **约束**：仅可在形参含 `...` 的可变参数函数内使用；`@va_start` 与 `@va_end` 必须成对调用
-  - **实现**：编译时展开为 C 的 `va_start`/`va_end` 宏
-  - **设计目的**：支持纯 Uya 实现 libc.stdarg，无需依赖 extern "libc"
+- **`va_list` 内置类型**：
+  - `va_list` 是编译器内置类型，大小与目标平台相关（x86-64: 24字节，ARM64: 32字节，Windows x64: 8字节）
+  - 可作为函数参数、结构体成员，可取指针
 
-- **新增 `@va_arg` 内置函数**：
-  - **语法**：`@va_arg(ap, Type)`，如 `@va_arg(ap, i32)`、`@va_arg(ap, *byte)`
-  - **用途**：从 va_list 按类型提取下一个参数，用于遍历可变参数
-  - **支持类型**：i32、i64、*byte、*void、f64 等
-  - **实现**：编译时展开为 C 的 `va_arg(ap, type)` 宏
-  - **设计目的**：支持纯 Uya 实现 vprintf 等格式化函数
+- **新增 `@va_start` / `@va_end` / `@va_arg` / `@va_copy` 内置函数**：
+  - **语法**：`@va_start(&ap, last)`、`@va_end(&ap)`、`@va_arg(ap, Type)`、`@va_copy(&dest, src)`
+  - **用途**：在可变参数函数内初始化/结束 va_list，或在接收 va_list 参数的函数内使用 @va_arg
+  - **约束**：`@va_start` 仅可在形参含 `...` 的可变参数函数内使用；`@va_arg` 可在可变参数函数内或接收 va_list 参数的函数内使用
+  - **实现**：编译时展开为 C 的对应宏
+  - **设计目的**：支持实现 vprintf 等 C 标准库函数，完全兼容 C ABI
 
 ---
 

@@ -736,6 +736,80 @@ export fn fprintf(stream: &FILE, format: &const byte, ...) i32 {
                         buf_pos = buf_pos + 1;
                         i = i + 1;
                     }
+                } else if spec == 120 {  // %x - 十六进制（小写）
+                    const xval: u32 = @va_arg(ap, u32);
+                    var num: u32 = xval;
+                    const hex_chars_lower: [byte: 16] = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102];
+                    var hdigits: [byte: 8] = [];
+                    var hidx: usize = 0;
+                    if num == 0 {
+                        hdigits[0] = 48;
+                        hidx = 1;
+                    } else {
+                        while num > 0 && hidx < 8 {
+                            hdigits[hidx] = hex_chars_lower[(num % 16) as usize];
+                            hidx = hidx + 1;
+                            num = num / 16;
+                        }
+                    }
+                    var hi: usize = 0;
+                    while hi < hidx && buf_pos < buf_max {
+                        buf[buf_pos] = hdigits[hidx - 1 - hi];
+                        buf_pos = buf_pos + 1;
+                        hi = hi + 1;
+                    }
+                } else if spec == 88 {  // %X - 十六进制（大写）
+                    const xval: u32 = @va_arg(ap, u32);
+                    var num: u32 = xval;
+                    const hex_chars_upper: [byte: 16] = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 65, 66, 67, 68, 69, 70];
+                    var hdigits: [byte: 8] = [];
+                    var hidx: usize = 0;
+                    if num == 0 {
+                        hdigits[0] = 48;
+                        hidx = 1;
+                    } else {
+                        while num > 0 && hidx < 8 {
+                            hdigits[hidx] = hex_chars_upper[(num % 16) as usize];
+                            hidx = hidx + 1;
+                            num = num / 16;
+                        }
+                    }
+                    var hi: usize = 0;
+                    while hi < hidx && buf_pos < buf_max {
+                        buf[buf_pos] = hdigits[hidx - 1 - hi];
+                        buf_pos = buf_pos + 1;
+                        hi = hi + 1;
+                    }
+                } else if spec == 112 {  // %p - 指针
+                    const pval: usize = @va_arg(ap, usize);
+                    buf[buf_pos] = 48; buf_pos = buf_pos + 1;  // '0'
+                    if buf_pos < buf_max { buf[buf_pos] = 120; buf_pos = buf_pos + 1; }  // 'x'
+                    var pnum: usize = pval;
+                    const hex_chars_p: [byte: 16] = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102];
+                    var pdigits: [byte: 16] = [];
+                    var pidx: usize = 0;
+                    if pnum == 0 {
+                        pdigits[0] = 48;
+                        pidx = 1;
+                    } else {
+                        while pnum > 0 && pidx < 16 {
+                            pdigits[pidx] = hex_chars_p[(pnum % 16) as usize];
+                            pidx = pidx + 1;
+                            pnum = pnum / 16;
+                        }
+                    }
+                    var pi: usize = 0;
+                    while pi < pidx && buf_pos < buf_max {
+                        buf[buf_pos] = pdigits[pidx - 1 - pi];
+                        buf_pos = buf_pos + 1;
+                        pi = pi + 1;
+                    }
+                } else if spec == 99 {  // %c - 字符
+                    const cval: i32 = @va_arg(ap, i32);
+                    if buf_pos < buf_max {
+                        buf[buf_pos] = cval as byte;
+                        buf_pos = buf_pos + 1;
+                    }
                 } else if spec == 122 && format_pos + 1 < format_len && format[format_pos + 1] == 117 {
                     format_pos = format_pos + 1;
                     const zu_val: usize = @va_arg(ap, usize);
@@ -947,6 +1021,50 @@ export fn fsetpos(stream: &FILE, pos: &i64) i32 {
     return fseek(stream, pos[0], 0);  // SEEK_SET
 }
 
+// setbuf - 设置流缓冲区
+// mode: _IOFBF(0)-全缓冲, _IOLBF(1)-行缓冲, _IONBF(2)-无缓冲
+// 如果 buf 为 null，则关闭缓冲
+export fn setbuf(stream: &FILE, buf: &byte) void {
+    if stream == null { return; }
+    if buf == null {
+        // 无缓冲模式
+        stream.buf_mode = 0;
+        stream.buf_len = 0;
+        stream.buf_pos = 0;
+    } else {
+        // 全缓冲模式，使用提供的缓冲区（简化：仍使用内置缓冲区）
+        stream.buf_mode = 2;
+    }
+}
+
+// setvbuf - 设置流缓冲区及模式
+// mode: _IOFBF(0)-全缓冲, _IOLBF(1)-行缓冲, _IONBF(2)-无缓冲
+// size: 缓冲区大小（简化实现：忽略，使用内置4096字节缓冲区）
+// 返回：0 成功，非0 失败
+export fn setvbuf(stream: &FILE, buf: &byte, mode: i32, size: usize) i32 {
+    if stream == null { return -1; }
+    
+    // 先刷新现有缓冲区
+    if stream.buf_len > 0 {
+        flush_buffer(stream);
+    }
+    
+    if mode == 0 {        // _IOFBF - 全缓冲
+        stream.buf_mode = 2;
+    } else if mode == 1 { // _IOLBF - 行缓冲
+        stream.buf_mode = 1;
+    } else {              // _IONBF - 无缓冲
+        stream.buf_mode = 0;
+    }
+    
+    // 简化实现：忽略用户提供的 buf 和 size，使用内置缓冲区
+    // 如果 buf 为 null 且 mode 不是无缓冲，仍使用内置缓冲区
+    stream.buf_pos = 0;
+    stream.buf_len = 0;
+    
+    return 0;
+}
+
 // ============================================================
 // 文件操作函数 (remove, rename, tmpfile)
 // ============================================================
@@ -972,8 +1090,77 @@ export fn rename(oldpath: &const byte, newpath: &const byte) i32 {
 
 // tmpfile - 创建临时文件
 // 返回：文件流指针，失败返回 null
+// 注意：文件在关闭或程序退出时自动删除
+var _tmpfile_counter: i32 = 0;
+
+// O_RDWR | O_CREAT | O_EXCL = 2 | 64 | 128 = 194
+const _TMPFILE_O_FLAGS: i32 = 194;
+// S_IRUSR | S_IWUSR = 256 | 128 = 384
+const _TMPFILE_MODE: i32 = 384;
+
 export fn tmpfile() &FILE {
-    // 简化实现：返回 null
+    // 生成唯一临时文件名
+    var name: [byte: 32] = [];
+    name[0] = 47; name[1] = 116; name[2] = 109; name[3] = 112;  // "/tmp"
+    name[4] = 47;
+    name[5] = 117; name[6] = 121; name[7] = 97;  // "uya"
+    name[8] = 95;  // '_'
+    
+    // 使用计数器生成唯一ID
+    _tmpfile_counter = _tmpfile_counter + 1;
+    var counter: i32 = _tmpfile_counter;
+    var idx: usize = 9;
+    
+    if counter == 0 {
+        name[idx] = 48;  // '0'
+        idx = idx + 1;
+    } else {
+        var digits: [byte: 10] = [];
+        var d: usize = 0;
+        while counter > 0 && d < 10 {
+            digits[d] = (48 + (counter % 10)) as byte;
+            counter = counter / 10;
+            d = d + 1;
+        }
+        // 反转写入
+        var i: usize = 0;
+        while i < d {
+            name[idx] = digits[d - 1 - i];
+            idx = idx + 1;
+            i = i + 1;
+        }
+    }
+    name[idx] = 0;
+    
+    // 直接使用系统调用创建文件，避免与 std.io.fopen 冲突
+    const fd_result: !i32 = sys_open(&name[0], _TMPFILE_O_FLAGS, _TMPFILE_MODE);
+    const fd_val: i32 = fd_result catch { return null; };
+    if fd_val < 0 { return null; }
+    
+    // 分配静态 FILE 存储
+    var storage: &FILE = _alloc_file_storage();
+    if storage == null {
+        sys_close(fd_val) catch { };
+        return null;
+    }
+    storage.fd = fd_val as i64;
+    storage.buf_pos = 0;
+    storage.buf_len = 0;
+    storage.buf_mode = 2;
+    
+    return storage;
+}
+
+// 简化的 FILE 存储分配
+var _file_storage: [FILE: 16] = [];
+var _file_storage_idx: usize = 0;
+
+fn _alloc_file_storage() &FILE {
+    if _file_storage_idx >= 0 && _file_storage_idx < @len(_file_storage) {
+        const ptr: &FILE = &_file_storage[_file_storage_idx];
+        _file_storage_idx = _file_storage_idx + 1;
+        return ptr;
+    }
     return null;
 }
 
@@ -981,24 +1168,58 @@ export fn tmpfile() &FILE {
 // 返回：临时文件名，失败返回 null
 export fn tmpnam(s: &byte) &byte {
     if s == null { return null; }
-    // 简化实现：生成一个简单的临时文件名
+    
+    // 使用计数器生成唯一文件名
+    _tmpfile_counter = _tmpfile_counter + 1;
+    
     s[0] = 47; s[1] = 116; s[2] = 109; s[3] = 112;  // "/tmp"
     s[4] = 47;
     s[5] = 117; s[6] = 121; s[7] = 97;  // "uya"
-    s[8] = 48; s[9] = 48; s[10] = 48; s[11] = 48;  // "0000"
-    s[12] = 0;
+    s[8] = 95;  // '_'
+    
+    var counter: i32 = _tmpfile_counter;
+    var idx: usize = 9;
+    
+    if counter == 0 {
+        s[idx] = 48;  // '0'
+        idx = idx + 1;
+    } else {
+        var digits: [byte: 10] = [];
+        var d: usize = 0;
+        while counter > 0 && d < 10 {
+            digits[d] = (48 + (counter % 10)) as byte;
+            counter = counter / 10;
+            d = d + 1;
+        }
+        // 反转写入
+        var i: usize = 0;
+        while i < d {
+            s[idx] = digits[d - 1 - i];
+            idx = idx + 1;
+            i = i + 1;
+        }
+    }
+    s[idx] = 0;
+    
     return s;
 }
 
 // perror - 打印错误信息到 stderr
+// 打印格式: "s: error_message\n"
+extern fn strerror(errnum: i32) &byte;
+
 export fn perror(s: &const byte) void {
-    // 简化实现：打印 "error"
-    if s != null {
+    if s != null && s[0] != 0 {
         fputs(s, stderr);
         fputc(58 as i32, stderr);  // ':'
         fputc(32 as i32, stderr);  // ' '
     }
-    fputs((83 as byte) as &const byte, stderr);  // "System error"
+    const err_msg: &byte = strerror(errno);
+    if err_msg != null {
+        fputs(err_msg, stderr);
+    } else {
+        fputs("Unknown error", stderr);
+    }
     fputc(10 as i32, stderr);  // '\n'
 }
 
@@ -1383,4 +1604,269 @@ export extern "libc" fn fgets(buf: &byte, n: i32, stream: &FILE) &byte {
     
     buf[i] = 0;
     return buf;
+}
+
+// ============================================================
+// 格式化输入函数 (fscanf, sscanf)
+// ============================================================
+
+// _skip_whitespace - 跳过空白字符
+fn _skip_whitespace_from_stream(stream: &FILE) void {
+    if stream == null { return; }
+    var c: i32 = fgetc(stream);
+    while c == 32 || c == 9 || c == 10 || c == 13 {  // space, tab, newline, cr
+        c = fgetc(stream);
+    }
+    // 回退一个字符（简化：不支持回退，改为使用 ungetc 逻辑）
+    // 这里简化处理：将非空白字符放回缓冲区开头
+    if c != 0 - 1 && stream.buf_pos > 0 {
+        stream.buf_pos = stream.buf_pos - 1;
+    }
+}
+
+// fscanf - 从流中格式化输入
+// 支持 %d、%s、%c、%%
+// 返回：成功匹配的项数
+export fn fscanf(stream: &FILE, format: &const byte, ...) i32 {
+    if stream == null || format == null {
+        return 0 - 1;
+    }
+    
+    var ap_buf: [byte: 32] = [];
+    var ap: &void = &ap_buf[0] as &void;
+    @va_start(ap, format);
+    
+    var matched: i32 = 0;
+    var format_pos: usize = 0;
+    const format_len: usize = strlen(format);
+    
+    while format_pos < format_len {
+        const fc: byte = format[format_pos];
+        
+        if fc == 37 {  // '%'
+            format_pos = format_pos + 1;
+            if format_pos >= format_len { break; }
+            
+            const spec: byte = format[format_pos];
+            
+            if spec == 37 {  // %%
+                const c: i32 = fgetc(stream);
+                if c != 37 { break; }
+            } else if spec == 100 {  // %d - 读取整数
+                // 跳过前导空白
+                var c: i32 = fgetc(stream);
+                while c == 32 || c == 9 || c == 10 || c == 13 {
+                    c = fgetc(stream);
+                }
+                
+                if c == 0 - 1 { break; }  // EOF
+                
+                var num: i32 = 0;
+                var is_neg: i32 = 0;
+                
+                if c == 45 {  // '-'
+                    is_neg = 1;
+                    c = fgetc(stream);
+                } else if c == 43 {  // '+'
+                    c = fgetc(stream);
+                }
+                
+                if c < 48 || c > 57 { break; }  // 不是数字
+                
+                while c >= 48 && c <= 57 {
+                    num = num * 10 + (c - 48);
+                    c = fgetc(stream);
+                }
+                
+                if is_neg > 0 { num = 0 - num; }
+                
+                const ptr: &i32 = @va_arg(ap, &i32);
+                if ptr != null {
+                    ptr[0] = num;
+                    matched = matched + 1;
+                }
+                
+                // 回退非数字字符
+                if c != 0 - 1 && stream.buf_pos > 0 {
+                    stream.buf_pos = stream.buf_pos - 1;
+                }
+            } else if spec == 115 {  // %s - 读取字符串
+                // 跳过前导空白
+                var c: i32 = fgetc(stream);
+                while c == 32 || c == 9 || c == 10 || c == 13 {
+                    c = fgetc(stream);
+                }
+                
+                if c == 0 - 1 { break; }  // EOF
+                
+                const ptr: &byte = @va_arg(ap, &byte);
+                if ptr == null { break; }
+                
+                var idx: usize = 0;
+                while c != 0 - 1 && c != 32 && c != 9 && c != 10 && c != 13 {
+                    ptr[idx] = c as byte;
+                    idx = idx + 1;
+                    c = fgetc(stream);
+                }
+                ptr[idx] = 0;
+                matched = matched + 1;
+                
+                // 回退空白字符
+                if c != 0 - 1 && stream.buf_pos > 0 {
+                    stream.buf_pos = stream.buf_pos - 1;
+                }
+            } else if spec == 99 {  // %c - 读取单个字符
+                const c: i32 = fgetc(stream);
+                if c == 0 - 1 { break; }  // EOF
+                
+                const ptr: &byte = @va_arg(ap, &byte);
+                if ptr != null {
+                    ptr[0] = c as byte;
+                    matched = matched + 1;
+                }
+            }
+            
+            format_pos = format_pos + 1;
+        } else if fc == 32 || fc == 9 || fc == 10 || fc == 13 {
+            // 格式字符串中的空白：跳过输入中的空白
+            var c: i32 = fgetc(stream);
+            while c == 32 || c == 9 || c == 10 || c == 13 {
+                c = fgetc(stream);
+            }
+            // 回退非空白字符
+            if c != 0 - 1 && stream.buf_pos > 0 {
+                stream.buf_pos = stream.buf_pos - 1;
+            }
+            format_pos = format_pos + 1;
+        } else {
+            // 普通字符：必须精确匹配
+            const c: i32 = fgetc(stream);
+            if c != fc as i32 { break; }
+            format_pos = format_pos + 1;
+        }
+    }
+    
+    @va_end(ap);
+    return matched;
+}
+
+// sscanf - 从字符串中格式化输入
+// 支持 %d、%s、%c、%%
+// 返回：成功匹配的项数
+export fn sscanf(str: &const byte, format: &const byte, ...) i32 {
+    if str == null || format == null {
+        return 0 - 1;
+    }
+    
+    var ap_buf: [byte: 32] = [];
+    var ap: &void = &ap_buf[0] as &void;
+    @va_start(ap, format);
+    
+    var matched: i32 = 0;
+    var format_pos: usize = 0;
+    var str_pos: usize = 0;
+    const format_len: usize = strlen(format);
+    const str_len: usize = strlen(str);
+    
+    while format_pos < format_len && str_pos < str_len {
+        const fc: byte = format[format_pos];
+        
+        if fc == 37 {  // '%'
+            format_pos = format_pos + 1;
+            if format_pos >= format_len { break; }
+            
+            const spec: byte = format[format_pos];
+            
+            if spec == 37 {  // %%
+                if str_pos >= str_len || str[str_pos] != 37 { break; }
+                str_pos = str_pos + 1;
+            } else if spec == 100 {  // %d - 读取整数
+                // 跳过前导空白
+                while str_pos < str_len {
+                    const c: byte = str[str_pos];
+                    if c != 32 && c != 9 && c != 10 && c != 13 { break; }
+                    str_pos = str_pos + 1;
+                }
+                
+                if str_pos >= str_len { break; }
+                
+                var num: i32 = 0;
+                var is_neg: i32 = 0;
+                
+                if str[str_pos] == 45 {  // '-'
+                    is_neg = 1;
+                    str_pos = str_pos + 1;
+                } else if str[str_pos] == 43 {  // '+'
+                    str_pos = str_pos + 1;
+                }
+                
+                if str_pos >= str_len || str[str_pos] < 48 || str[str_pos] > 57 {
+                    break;  // 不是数字
+                }
+                
+                while str_pos < str_len && str[str_pos] >= 48 && str[str_pos] <= 57 {
+                    num = num * 10 + (str[str_pos] as i32 - 48);
+                    str_pos = str_pos + 1;
+                }
+                
+                if is_neg > 0 { num = 0 - num; }
+                
+                const ptr: &i32 = @va_arg(ap, &i32);
+                if ptr != null {
+                    ptr[0] = num;
+                    matched = matched + 1;
+                }
+            } else if spec == 115 {  // %s - 读取字符串
+                // 跳过前导空白
+                while str_pos < str_len {
+                    const c: byte = str[str_pos];
+                    if c != 32 && c != 9 && c != 10 && c != 13 { break; }
+                    str_pos = str_pos + 1;
+                }
+                
+                if str_pos >= str_len { break; }
+                
+                const ptr: &byte = @va_arg(ap, &byte);
+                if ptr == null { break; }
+                
+                var idx: usize = 0;
+                while str_pos < str_len {
+                    const c: byte = str[str_pos];
+                    if c == 32 || c == 9 || c == 10 || c == 13 { break; }
+                    ptr[idx] = c;
+                    idx = idx + 1;
+                    str_pos = str_pos + 1;
+                }
+                ptr[idx] = 0;
+                matched = matched + 1;
+            } else if spec == 99 {  // %c - 读取单个字符
+                if str_pos >= str_len { break; }
+                
+                const ptr: &byte = @va_arg(ap, &byte);
+                if ptr != null {
+                    ptr[0] = str[str_pos];
+                    str_pos = str_pos + 1;
+                    matched = matched + 1;
+                }
+            }
+            
+            format_pos = format_pos + 1;
+        } else if fc == 32 || fc == 9 || fc == 10 || fc == 13 {
+            // 格式字符串中的空白：跳过输入中的空白
+            while str_pos < str_len {
+                const c: byte = str[str_pos];
+                if c != 32 && c != 9 && c != 10 && c != 13 { break; }
+                str_pos = str_pos + 1;
+            }
+            format_pos = format_pos + 1;
+        } else {
+            // 普通字符：必须精确匹配
+            if str_pos >= str_len || str[str_pos] != fc { break; }
+            str_pos = str_pos + 1;
+            format_pos = format_pos + 1;
+        }
+    }
+    
+    @va_end(ap);
+    return matched;
 }

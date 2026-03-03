@@ -90,7 +90,8 @@
 - [x] `@len(arr)` - 数组长度
 - [x] `@max(T)` / `@min(T)` - 类型极值
 - [x] `@syscall(nr, ...)` - 系统调用
-- [x] `@va_start` / `@va_arg` / `@va_end` - 可变参数
+- [x] `@va_start` / `@va_arg` / `@va_end` / `@va_copy` - 可变参数（va_list 为内置类型）
+- [ ] `va_list` 内置类型 - 待实现（参见 va_list_native_design.md）
 - [x] `@src_name` / `@src_path` / `@src_line` - 源码位置
 - [x] `@ptr_from_usize` / `@usize_from_ptr` - 指针转换
 

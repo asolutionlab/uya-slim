@@ -88,24 +88,25 @@
 
 ### 0.44（2026-02-14）
 
-- **`@va_start` / `@va_end` / `@va_arg` 内置函数**（新增）：
-  - 语法：`@va_start(ap, last)`、`@va_end(ap)`、`@va_arg(ap, Type)`
-  - 在可变参数函数内初始化/结束 va_list 访问，并从 va_list 按类型提取参数
-  - 编译时展开为 C 的 `va_start`/`va_end`/`va_arg` 宏
+- **`@va_start` / `@va_end` / `@va_arg` / `@va_copy` 内置函数**（新增）：
+  - 语法：`@va_start(&ap, last)`、`@va_end(&ap)`、`@va_arg(ap, Type)`、`@va_copy(&dest, src)`
+  - `va_list` 是编译器内置类型，大小与目标平台相关
+  - 在可变参数函数内初始化/结束 va_list 访问，或接收 va_list 参数的函数内使用 @va_arg
+  - 编译时展开为 C 的 `va_start`/`va_end`/`va_arg`/`va_copy` 宏
   - 用于将可变参数传递给 vprintf/vfprintf 等 C 函数，支持纯 Uya 实现 libc.stdarg、libc.vprintf
-  - **约束**：仅可在形参含 `...` 的可变参数函数内使用；`@va_start` 与 `@va_end` 必须成对调用
+  - **约束**：`@va_start` 仅可在形参含 `...` 的可变参数函数内使用；`@va_arg` 可在可变参数函数内或接收 va_list 参数的函数内使用
   - **示例**：
     ```uya
     fn sum_ints(count: i32, ...) i32 {
-        var ap: [byte: 32] = [];
-        @va_start(&ap[0] as &void, count);
+        var ap: va_list = va_list{};
+        @va_start(&ap, count);
         var total: i32 = 0;
         var i: i32 = 0;
         while i < count {
-            total += @va_arg(&ap[0] as &void, i32);
+            total += @va_arg(ap, i32);
             i += 1;
         }
-        @va_end(&ap[0] as &void);
+        @va_end(&ap);
         return total;
     }
     ```
@@ -2963,21 +2964,21 @@ fn conditional_print(debug: bool, fmt: *byte, ...) void {
 }
 ```
 
-#### 5.4.4a 使用 @va_start / @va_end / @va_arg
+#### 5.4.4a 使用 @va_start / @va_end / @va_arg / @va_copy
 
-**声明**：`@va_start(ap, last)` | `@va_end(ap)` | `@va_arg(ap, Type)`
+**声明**：`@va_start(&ap, last)` | `@va_end(&ap)` | `@va_arg(ap, Type)` | `@va_copy(&dest, src)`
 
-当需要将可变参数传递给 vprintf/vfprintf 或自行遍历时，使用这三个内置函数：
+`va_list` 是编译器内置类型，用于表示可变参数列表。当需要将可变参数传递给 vprintf/vfprintf 或自行遍历时，使用这些内置函数：
 
 **示例 1**：包装 vfprintf（传递给 C 函数）
 ```uya
-extern "libc" fn vfprintf(stream: *void, format: *const byte, ap: *void) i32;
+export extern "libc" fn vfprintf(stream: *void, format: *const byte, ap: va_list) i32;
 
 fn my_vfprintf(stream: &FILE, fmt: &const byte, ...) i32 {
-    var ap: [byte: 32] = [];
-    @va_start(&ap[0] as &void, fmt);
-    const ret = vfprintf(stream as *void, fmt, &ap[0] as &void);
-    @va_end(&ap[0] as &void);
+    var ap: va_list = va_list{};
+    @va_start(&ap, fmt);  // fmt 是最后一个命名参数
+    const ret = vfprintf(stream as *void, fmt, ap);
+    @va_end(&ap);
     return ret;
 }
 ```
@@ -2985,24 +2986,54 @@ fn my_vfprintf(stream: &FILE, fmt: &const byte, ...) i32 {
 **示例 2**：遍历可变参数（使用 @va_arg）
 ```uya
 fn sum_n(n: i32, ...) i32 {
-    var ap: [byte: 32] = [];
-    @va_start(&ap[0] as &void, n);
+    var ap: va_list = va_list{};
+    @va_start(&ap, n);
     var s: i32 = 0;
     var i: i32 = 0;
     while i < n {
-        s = s + @va_arg(&ap[0] as &void, i32);
+        s = s + @va_arg(ap, i32);
         i = i + 1;
     }
-    @va_end(&ap[0] as &void);
+    @va_end(&ap);
     return s;
 }
 // 调用: sum_n(3, 10, 20, 30) 返回 60
 ```
 
-- `@va_start(ap, last)`：初始化 va_list，`last` 为最后一个命名参数
-- `@va_end(ap)`：结束访问，必须与 `@va_start` 成对调用
-- `@va_arg(ap, Type)`：按类型取下一个参数，支持 `i32`、`i64`、`*byte`、`f64` 等
-- 编译时展开为 C 的 `va_start`/`va_end`/`va_arg` 宏
+**示例 3**：接收 va_list 参数的函数
+```uya
+fn my_vprintf(format: &const byte, ap: va_list) i32 {
+    // 可以直接使用 @va_arg
+    const first: i32 = @va_arg(ap, i32);
+    // ...
+    return 0;
+}
+```
+
+**示例 4**：复制 va_list（使用 @va_copy）
+```uya
+fn measure_and_print(format: &const byte, ...) i32 {
+    var ap: va_list = va_list{};
+    @va_start(&ap, format);
+
+    var ap2: va_list = va_list{};
+    @va_copy(&ap2, ap);  // 复制以便多次遍历
+
+    const len: i32 = _calc_length(format, ap2);
+    @va_end(&ap2);
+
+    const ret: i32 = _do_print(format, ap);
+    @va_end(&ap);
+
+    return ret;
+}
+```
+
+- `@va_start(&ap, last)`：初始化 va_list，`last` 为最后一个命名参数
+- `@va_end(&ap)`：结束访问，必须与 `@va_start` 或 `@va_copy` 成对调用
+- `@va_arg(ap, Type)`：按类型取下一个参数，支持 `i32`、`i64`、`&byte`、`f64` 等
+- `@va_copy(&dest, src)`：复制 va_list，用于多次遍历
+- 编译时展开为 C 的 `va_start`/`va_end`/`va_arg`/`va_copy` 宏
 - 详见 [builtin_functions.md §@va_*](./builtin_functions.md#va_start)
 
 #### 5.4.5 编译器优化策略
@@ -4315,9 +4346,10 @@ fn caller() void {
 | `@align_of` | `fn @align_of(T) i32` | 返回类型 `T` 的对齐字节数（编译期常量） |
 | `@max` | 上下文推断 | 整数类型最大值（编译期常量） |
 | `@min` | 上下文推断 | 整数类型最小值（编译期常量） |
-| `@va_start` | `@va_start(ap, last)` | 可变参数函数内初始化 va_list（编译时展开为 C 宏） |
-| `@va_end` | `@va_end(ap)` | 结束 va_list 访问（编译时展开为 C 宏） |
+| `@va_start` | `@va_start(&ap, last)` | 可变参数函数内初始化 va_list（编译时展开为 C 宏） |
+| `@va_end` | `@va_end(&ap)` | 结束 va_list 访问（编译时展开为 C 宏） |
 | `@va_arg` | `@va_arg(ap, Type)` | 从 va_list 获取下一个参数，类型由 Type 指定 |
+| `@va_copy` | `@va_copy(&dest, src)` | 复制 va_list（编译时展开为 C 宏） |
 | `@async_fn` | 函数属性 | 标记异步函数，触发 CPS 变换 |
 | `@naked_fn` | 函数属性 | 标记裸函数（无 prologue/epilogue），用于底层系统代码 |
 | `@await` | 表达式 | 等待异步操作完成（仅 `@async_fn` 内） |

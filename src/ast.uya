@@ -115,6 +115,7 @@ enum ASTNodeType {
     AST_VA_START,       // @va_start(ap, last) - 可变参数函数内初始化 va_list
     AST_VA_END,        // @va_end(ap) - 结束 va_list 访问
     AST_VA_ARG,        // @va_arg(ap, Type) - 从 va_list 按类型获取下一个参数
+    AST_VA_COPY,       // @va_copy(dest, src) - 复制 va_list
     AST_ASM,           // @asm { ... } - 内联汇编块
     AST_ASM_TARGET,    // @asm_target() - 平台检测
     AST_PRINT,          // @print(expr) - 打印表达式（不换行）
@@ -391,6 +392,9 @@ struct ASTNode {
     // va_arg_expr
     va_arg_ap: &ASTNode,
     va_arg_arg_type: &ASTNode,
+    // va_copy_expr
+    va_copy_dest: &ASTNode,
+    va_copy_src: &ASTNode,
     // asm（@asm { ... } 内联汇编块）
     asm_instructions: & & byte,     // 指令字符串数组
     asm_instruction_count: i32,     // 指令数量

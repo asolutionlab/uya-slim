@@ -44,6 +44,7 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
     if type.kind == TypeKind.TYPE_ASM_REG_RISCV_F { return "@asm_reg_riscv_f" as &byte; }
     if type.kind == TypeKind.TYPE_ASM_REG_RISCV_D { return "@asm_reg_riscv_d" as &byte; }
     if type.kind == TypeKind.TYPE_ASM_MEM { return "@asm_mem" as &byte; }
+    if type.kind == TypeKind.TYPE_VA_LIST { return "va_list" as &byte; }
     if is_struct_type(type) != 0 {
         if type.struct_name != null {
             return type.struct_name;
@@ -987,6 +988,14 @@ fn is_asm_reg_type(t: Type) i32 {
 // 检查是否为 ASM 内存操作类型
 fn is_asm_mem_type(t: Type) i32 {
     if t.kind == TypeKind.TYPE_ASM_MEM {
+        return 1;
+    }
+    return 0;
+}
+
+// 检查是否为 va_list 类型
+fn is_va_list_type(t: Type) i32 {
+    if t.kind == TypeKind.TYPE_VA_LIST {
         return 1;
     }
     return 0;

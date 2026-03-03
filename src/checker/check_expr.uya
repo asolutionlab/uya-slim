@@ -298,14 +298,42 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         }
         return make_void_type();
     } else if expr.type == ASTNodeType.AST_VA_ARG {
+        // @va_arg 可以在两种上下文中使用：
+        // 1. 可变参数函数内（与 @va_start 配合）
+        // 2. 接收 va_list 参数的函数内
         if checker.in_function == 0 || checker.current_function_decl == null {
-            checker_report_error(checker, expr, "@va_arg 只能在可变参数函数内使用" as &byte);
+            checker_report_error(checker, expr, "@va_arg 只能在可变参数函数或接收 va_list 参数的函数内使用" as &byte);
             return make_void_type();
         }
-        if checker.current_function_decl.fn_decl_is_varargs == 0 {
-            checker_report_error(checker, expr, "@va_arg 只能在可变参数函数内使用" as &byte);
+        
+        // 检查是否是可变参数函数
+        const is_variadic: i32 = checker.current_function_decl.fn_decl_is_varargs;
+        
+        // 检查是否有 va_list 参数
+        var has_va_list_param: i32 = 0;
+        if is_variadic == 0 && checker.current_function_decl.fn_decl_params != null {
+            var pi: i32 = 0;
+            while pi < checker.current_function_decl.fn_decl_param_count {
+                const param: &ASTNode = checker.current_function_decl.fn_decl_params[pi];
+                if param != null && param.type == ASTNodeType.AST_VAR_DECL {
+                    const param_type: &ASTNode = param.var_decl_type;
+                    if param_type != null && param_type.type == ASTNodeType.AST_TYPE_NAMED {
+                        const type_name: &byte = param_type.type_named_name;
+                        if type_name != null && str_equals(type_name, "va_list" as *byte) != 0 {
+                            has_va_list_param = 1;
+                            break;
+                        }
+                    }
+                }
+                pi = pi + 1;
+            }
+        }
+        
+        if is_variadic == 0 && has_va_list_param == 0 {
+            checker_report_error(checker, expr, "@va_arg 只能在可变参数函数或接收 va_list 参数的函数内使用" as &byte);
             return make_void_type();
         }
+        
         if expr.va_arg_ap != null { checker_infer_type(checker, expr.va_arg_ap); }
         if expr.va_arg_arg_type != null {
             result = type_from_ast(checker, expr.va_arg_arg_type);
@@ -313,6 +341,42 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             return make_void_type();
         }
         return result;
+    } else if expr.type == ASTNodeType.AST_VA_COPY {
+        // @va_copy 可以在可变参数函数内或接收 va_list 参数的函数内使用
+        if checker.in_function == 0 || checker.current_function_decl == null {
+            checker_report_error(checker, expr, "@va_copy 只能在可变参数函数或接收 va_list 参数的函数内使用" as &byte);
+            return make_void_type();
+        }
+        
+        const is_variadic_va: i32 = checker.current_function_decl.fn_decl_is_varargs;
+        
+        var has_va_list_param_va: i32 = 0;
+        if is_variadic_va == 0 && checker.current_function_decl.fn_decl_params != null {
+            var piva: i32 = 0;
+            while piva < checker.current_function_decl.fn_decl_param_count {
+                const paramva: &ASTNode = checker.current_function_decl.fn_decl_params[piva];
+                if paramva != null && paramva.type == ASTNodeType.AST_VAR_DECL {
+                    const param_typeva: &ASTNode = paramva.var_decl_type;
+                    if param_typeva != null && param_typeva.type == ASTNodeType.AST_TYPE_NAMED {
+                        const type_nameva: &byte = param_typeva.type_named_name;
+                        if type_nameva != null && str_equals(type_nameva, "va_list" as *byte) != 0 {
+                            has_va_list_param_va = 1;
+                            break;
+                        }
+                    }
+                }
+                piva = piva + 1;
+            }
+        }
+        
+        if is_variadic_va == 0 && has_va_list_param_va == 0 {
+            checker_report_error(checker, expr, "@va_copy 只能在可变参数函数或接收 va_list 参数的函数内使用" as &byte);
+            return make_void_type();
+        }
+        
+        if expr.va_copy_dest != null { checker_infer_type(checker, expr.va_copy_dest); }
+        if expr.va_copy_src != null { checker_infer_type(checker, expr.va_copy_src); }
+        return make_void_type();
     } else if expr.type == ASTNodeType.AST_ASM {
         // @asm { ... } 内联汇编块
         return infer_asm_block(checker, expr);

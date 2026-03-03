@@ -255,6 +255,9 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
         } else if strcmp(name as *byte, "@asm_mem" as *byte) == 0 {
             // 内存操作数类型 - 指针
             return ("void *" as *byte) as &byte;
+        } else if strcmp(name as *byte, "va_list" as *byte) == 0 {
+            // va_list 类型 - 直接映射到 C 的 va_list
+            return ("va_list" as *byte) as &byte;
         } else {
             // 结构体、接口或枚举类型
             const safe_name: &byte = get_safe_c_identifier(codegen, name);

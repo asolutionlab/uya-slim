@@ -77,6 +77,8 @@ enum TypeKind {
     TYPE_ASM_REG_RISCV_D,  // RISC-V D 扩展 (双精度浮点)
     // @asm 内存操作类型
     TYPE_ASM_MEM,          // 内存操作数
+    // va_list 内置类型
+    TYPE_VA_LIST,          // 可变参数列表类型（平台相关大小）
 }
 
 // ===== 类型数据辅助结构体（阶段四：Union 化重构）=====

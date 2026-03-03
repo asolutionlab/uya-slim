@@ -1255,6 +1255,29 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         } else {
             // 非数组类型
             type_c = c99_type_to_c(codegen, var_type);
+            // 检查是否是 va_list 类型（内置类型）
+            var is_va_list_builtin: i32 = 0;
+            if var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null {
+                if strcmp(var_type.type_named_name as *byte, "va_list" as *byte) == 0 {
+                    is_va_list_builtin = 1;
+                }
+            }
+            if is_va_list_builtin != 0 {
+                // va_list 类型变量：生成 va_list ap; 不初始化（va_start 会初始化）
+                c99_emit_indent(codegen);
+                fprintf(codegen.output as *void, "va_list %s;\n" as *byte, var_name as *byte);
+                if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                    codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
+                    codegen.local_variables[codegen.local_variable_count].type_c = "va_list" as *byte;
+                    codegen.local_variable_count = codegen.local_variable_count + 1;
+                }
+                // va_list 变量不由初始化表达式初始化，va_start 会初始化，必须提前返回
+                if need_pragma_missing_braces != 0 {
+                    fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
+                }
+                codegen.expected_type = saved_expected_type;
+                return;
+            }
             // 可变参数函数内：作为 @va_start 第一个参数的 &void 变量需生成 va_list，不初始化（va_start 会初始化）
             const use_va_list: i32 = should_use_va_list(codegen, var_type, stmt.var_decl_name, type_c);
             if use_va_list != 0 {

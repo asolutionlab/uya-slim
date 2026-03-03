@@ -102,30 +102,31 @@
 
 ### 1. 字符串操作函数
 
-- [ ] `strcat` - 字符串连接
-- [ ] `strncat` - 连接字符串的前n个字符
-- [ ] `strspn` - 扫描字符串
-- [ ] `strcspn` - 扫描字符串补集
-- [ ] `strpbrk` - 字符串中查找任一字符
-- [ ] `strtok` - 字符串分割
-- [ ] `strerror` - 错误信息字符串
+- [x] `strcat` - 字符串连接
+- [x] `strncat` - 连接字符串的前n个字符
+- [x] `strspn` - 扫描字符串
+- [x] `strcspn` - 扫描字符串补集
+- [x] `strpbrk` - 字符串中查找任一字符
+- [x] `strtok` - 字符串分割
+- [x] `strerror` - 错误信息字符串（在 errno.uya 中）
 
 ### 2. 标准输入输出函数
 
-- [ ] `fscanf` - 格式化输入（从文件）
-- [ ] `sscanf` - 格式化输入（从字符串）
-- [ ] `vfprintf` - 可变参数格式化输出
-- [ ] `vprintf` - 可变参数格式化输出到标准输出
-- [ ] `vsprintf` - 可变参数格式化到字符串
-- [ ] `vsnprintf` - 可变参数格式化到字符串（限制长度）
+- [x] `fscanf` - 格式化输入（从文件）
+- [x] `sscanf` - 格式化输入（从字符串）
+- [ ] `vfprintf` - 可变参数格式化输出（**待实现**：需要编译器支持 `va_list` 作为内置类型，参见 [va_list 设计文档](docs/va_list_native_design.md)）
+- [ ] `vprintf` - 可变参数格式化输出到标准输出（**待实现**）
+- [ ] `vsprintf` - 可变参数格式化到字符串（**待实现**）
+- [ ] `vsnprintf` - 可变参数格式化到字符串（**待实现**）
 - [x] `remove` - 删除文件
 - [x] `rename` - 重命名文件
-- [x] `tmpfile` - 创建临时文件
-- [x] `tmpnam` - 生成临时文件名
-- [ ] `setbuf` - 设置缓冲区
-- [ ] `setvbuf` - 设置缓冲区及模式
-- [ ] `fgetpos` - 获取文件位置
-- [ ] `fsetpos` - 设置文件位置
+- [x] `tmpfile` - 创建临时文件（已完善，使用唯一文件名）
+- [x] `tmpnam` - 生成临时文件名（已完善，使用计数器生成）
+- [x] `setbuf` - 设置缓冲区
+- [x] `setvbuf` - 设置缓冲区及模式
+- [x] `fgetpos` - 获取文件位置
+- [x] `fsetpos` - 设置文件位置
+- [x] `perror` - 打印错误信息（已完善，调用strerror显示实际错误）
 
 ### 3. 标准库函数
 
@@ -142,7 +143,7 @@
 - [x] `bsearch` - 二分查找
 - [ ] `mbstowcs` - 多字节字符串转宽字符串
 - [ ] `wcstombs` - 宽字符串转多字节字符串
-- [ ] `system` - 执行系统命令（部分实现）
+- [x] `system` - 执行系统命令（已完善）
 
 ### 4. 字符分类函数 (`lib/libc/ctype.uya`)
 
@@ -225,7 +226,7 @@
 - [x] **内存分配器优化**: [malloc](file:///media/winger/_dde_home/winger/uya/lib/libc/stdlib.uya#L15-L32)/[free](file:///media/winger/_dde_home/winger/uya/lib/libc/stdlib.uya#L34-L40)/[realloc](file:///media/winger/_dde_home/winger/uya/lib/libc/stdlib.uya#L63-L81)现在参考musl实现，使用空闲链表和块合并策略
 - [ ] **字符串操作优化**: 优化[strlen](file:///media/winger/_dde_home/winger/uya/lib/libc/string.uya#L15-L22)等函数，考虑使用SIMD指令或一次处理多个字节
 - [x] **I/O缓冲机制**: 实现缓冲机制以减少系统调用次数，提升[fwrite](file:///media/winger/_dde_home/winger/uya/lib/libc/stdio.uya#L678-L688)、[fread](file:///media/winger/_dde_home/winger/uya/lib/libc/stdio.uya#L335-L356)等函数的性能
-- [ ] **格式化函数优化**: 改进[printf](file:///media/winger/_dde_home/winger/uya/lib/libc/stdio.uya#L989-L993)系列函数，支持更多格式化选项和更好的性能
+- [x] **格式化函数优化**: [printf](file:///media/winger/_dde_home/winger/uya/lib/libc/stdio.uya)系列函数现已支持 %s、%d、%ld、%u、%zu、%x、%X、%p、%c、%g、%.Ng、%%
 
 ### 2. 功能增强
 

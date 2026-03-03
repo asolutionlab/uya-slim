@@ -1,306 +1,48 @@
 // libc.stdarg - 可变参数处理
-// 版本：v0.1.0
-// 说明：C 标准库可变参数宏/函数
-
-// ============================================================
-// va_list 类型定义
-// ============================================================
-
-// va_list 用于遍历可变参数
-// 在 Uya 中，我们使用一个结构体来保存参数状态
-
-export struct va_list {
-    args: [u64: 16],      // 参数存储（最多 16 个参数）
-    count: usize,         // 参数数量
-    index: usize,         // 当前参数索引
-    reg_count: usize,     // 已使用的寄存器参数数量
-    stack_args: &u64,     // 栈上参数指针
-    stack_index: usize,   // 栈上参数索引
-}
-
-// ============================================================
-// va_start - 初始化 va_list
-// ============================================================
-
-// va_start 初始化可变参数列表
-// last_param 是最后一个命名参数的名称
+// 版本：v0.2.0
+// 说明：va_list 现在是编译器内置类型
 //
-// 注意：在 Uya 中，可变参数的处理与 C 不同
-// 这里提供一个简化的实现框架
-// 注意：为避免与 C 宏冲突，函数名使用 _uya_ 前缀
-
-export fn va_start_uya(ap: &va_list, last_param: &void) void {
-    if ap == null { return; }
-    
-    ap.count = 0;
-    ap.index = 0;
-    ap.reg_count = 0;
-    ap.stack_args = null;
-    ap.stack_index = 0;
-    
-    // 初始化参数数组
-    var i: usize = 0;
-    while i < 16 {
-        ap.args[i] = 0;
-        i = i + 1;
-    }
-    
-    // 注意：实际的参数获取需要编译器支持
-    // 在 Uya 中应该使用 @va_start 或类似内置函数
-}
+// 使用内置函数：
+// - @va_start(&ap, last_param) - 初始化 va_list
+// - @va_arg(ap, Type) - 获取下一个参数
+// - @va_end(&ap) - 结束 va_list 访问
+// - @va_copy(&dest, src) - 复制 va_list
 
 // ============================================================
-// va_arg - 获取下一个参数
+// va_list 类型
 // ============================================================
 
-// va_arg 获取可变参数列表中的下一个参数
-// type 是期望的参数类型
-//
-// 注意：这是一个宏，在 C 中展开为复杂的表达式
-// 在 Uya 中，我们提供函数版本
-
-// va_arg 的泛型版本（需要编译器支持）
-// 由于 Uya 可能不支持泛型，我们提供多个类型特定的版本
-
-// va_arg_i32 - 获取 i32 类型参数
-export fn va_arg_i32(ap: &va_list) i32 {
-    if ap == null || ap.index >= ap.count {
-        return 0;
-    }
-    
-    var val: i32 = ap.args[ap.index] as i32;
-    ap.index = ap.index + 1;
-    return val;
-}
-
-// va_arg_i64 - 获取 i64 类型参数
-export fn va_arg_i64(ap: &va_list) i64 {
-    if ap == null || ap.index >= ap.count {
-        return 0;
-    }
-    
-    var val: i64 = ap.args[ap.index] as i64;
-    ap.index = ap.index + 1;
-    return val;
-}
-
-// va_arg_usize - 获取 usize 类型参数
-export fn va_arg_usize(ap: &va_list) usize {
-    if ap == null || ap.index >= ap.count {
-        return 0;
-    }
-    
-    var val: usize = ap.args[ap.index] as usize;
-    ap.index = ap.index + 1;
-    return val;
-}
-
-// va_arg_ptr - 获取指针类型参数
-export fn va_arg_ptr(ap: &va_list) &void {
-    if ap == null || ap.index >= ap.count {
-        return null;
-    }
-    
-    var val: &void = ap.args[ap.index] as &void;
-    ap.index = ap.index + 1;
-    return val;
-}
-
-// va_arg_f64 - 获取 f64 类型参数
-export fn va_arg_f64(ap: &va_list) f64 {
-    if ap == null || ap.index >= ap.count {
-        return 0.0;
-    }
-    
-    // 注意：浮点数可能需要特殊处理
-    var val: f64 = ap.args[ap.index] as f64;
-    ap.index = ap.index + 1;
-    return val;
-}
-
-// va_arg_byte - 获取 byte 类型参数
-export fn va_arg_byte(ap: &va_list) byte {
-    if ap == null || ap.index >= ap.count {
-        return 0;
-    }
-    
-    var val: byte = ap.args[ap.index] as byte;
-    ap.index = ap.index + 1;
-    return val;
-}
-
-// va_arg_str - 获取字符串参数
-export fn va_arg_str(ap: &va_list) &byte {
-    return va_arg_ptr(ap) as &byte;
-}
+// va_list 是编译器内置类型，无需定义
+// 平台相关大小：
+// - x86-64 Linux: 24 字节
+// - x86-64 Windows: 8 字节
+// - ARM64: 32 字节
 
 // ============================================================
-// va_copy - 复制 va_list
+// 使用示例
 // ============================================================
 
-export fn va_copy_uya(dest: &va_list, src: va_list) void {
-    if dest == null { return; }
-    
-    dest.count = src.count;
-    dest.index = src.index;
-    dest.reg_count = src.reg_count;
-    dest.stack_args = src.stack_args;
-    dest.stack_index = src.stack_index;
-    
-    var i: usize = 0;
-    while i < 16 {
-        dest.args[i] = src.args[i];
-        i = i + 1;
-    }
-}
-
-// ============================================================
-// va_end - 结束可变参数处理
-// ============================================================
-
-export fn va_end_uya(ap: &va_list) void {
-    if ap == null { return; }
-    
-    // 清理 va_list
-    ap.index = 0;
-    ap.count = 0;
-    ap.reg_count = 0;
-    ap.stack_args = null;
-    ap.stack_index = 0;
-    
-    // 在 C 中，va_end 可能释放资源
-    // 在 Uya 中，通常不需要特殊处理
-}
-
-// ============================================================
-// 辅助函数：构建 va_list
-// ============================================================
-
-// 这些函数用于手动构建 va_list，用于某些特殊情况
-
-// va_init - 初始化 va_list 并设置参数
-export fn va_init(ap: &va_list, count: usize) void {
-    if ap == null { return; }
-    
-    ap.count = count;
-    ap.index = 0;
-    ap.reg_count = 0;
-    ap.stack_args = null;
-    ap.stack_index = 0;
-    
-    var i: usize = 0;
-    while i < 16 {
-        ap.args[i] = 0;
-        i = i + 1;
-    }
-}
-
-// va_set_i32 - 设置 i32 参数
-export fn va_set_i32(ap: &va_list, index: usize, val: i32) i32 {
-    if ap == null || index >= 16 {
-        return -1;
-    }
-    
-    ap.args[index] = val as u64;
-    if index >= ap.count {
-        ap.count = index + 1;
-    }
-    return 0;
-}
-
-// va_set_i64 - 设置 i64 参数
-export fn va_set_i64(ap: &va_list, index: usize, val: i64) i32 {
-    if ap == null || index >= 16 {
-        return -1;
-    }
-    
-    ap.args[index] = val as u64;
-    if index >= ap.count {
-        ap.count = index + 1;
-    }
-    return 0;
-}
-
-// va_set_ptr - 设置指针参数
-export fn va_set_ptr(ap: &va_list, index: usize, val: &void) i32 {
-    if ap == null || index >= 16 {
-        return -1;
-    }
-    
-    ap.args[index] = val as u64;
-    if index >= ap.count {
-        ap.count = index + 1;
-    }
-    return 0;
-}
-
-// va_set_f64 - 设置 f64 参数
-export fn va_set_f64(ap: &va_list, index: usize, val: f64) i32 {
-    if ap == null || index >= 16 {
-        return -1;
-    }
-    
-    ap.args[index] = val as u64;
-    if index >= ap.count {
-        ap.count = index + 1;
-    }
-    return 0;
-}
-
-// va_set_str - 设置字符串参数
-export fn va_set_str(ap: &va_list, index: usize, val: &const byte) i32 {
-    return va_set_ptr(ap, index, val as &void);
-}
-
-// ============================================================
-// 可变参数函数示例
-// ============================================================
-
-// 以下是一个可变参数函数的示例框架
-// 实际使用时需要编译器支持
-
-// 示例：简单的求和函数
-// export fn sum(count: i32, ...) i32 {
+// fn my_printf(format: &const byte, ...) i32 {
 //     var ap: va_list = va_list{};
-//     var result: i32 = 0;
-//     
-//     va_start(&ap, count);
-//     
-//     var i: i32 = 0;
-//     while i < count {
-//         result = result + va_arg_i32(&ap);
-//         i = i + 1;
-//     }
-//     
-//     va_end(&ap);
-//     return result;
-// }
-
-// 示例：类似 printf 的函数
-// export fn my_printf(format: *const byte, ...) i32 {
-//     var ap: va_list = va_list{};
-//     
-//     va_start(&ap, format);
+//     @va_start(&ap, format);
 //     
 //     // 解析 format 并获取参数
-//     // 调用实际的格式化输出函数
+//     const val: i32 = @va_arg(ap, i32);
+//     const str: &const byte = @va_arg(ap, &const byte);
 //     
-//     va_end(&ap);
+//     @va_end(&ap);
 //     return 0;
 // }
-
-// ============================================================
-// 宏定义（C 兼容）
-// ============================================================
-
-// 在 C 代码中，这些是宏：
-// #define va_start(ap, last) __va_start(&(ap), last)
-// #define va_arg(ap, type) __va_arg(&(ap), type)
-// #define va_end(ap) __va_end(&(ap))
-// #define va_copy(dest, src) __va_copy(&(dest), &(src))
-
-// 在 Uya 中，我们使用函数调用：
-// va_start(&ap, last_param);
-// va_arg_i32(&ap)  // 或其他类型特定版本
-// va_end(&ap);
-// va_copy(&dest, src);
+//
+// fn process_va_list(ap: va_list) i32 {
+//     // 接收 va_list 参数的函数可以直接使用 @va_arg
+//     return @va_arg(ap, i32);
+// }
+//
+// fn copy_and_process(ap: va_list) i32 {
+//     var ap_copy: va_list = va_list{};
+//     @va_copy(&ap_copy, ap);
+//     const val: i32 = @va_arg(ap_copy, i32);
+//     @va_end(&ap_copy);
+//     return val;
+// }

@@ -303,6 +303,8 @@ fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
             result.kind = TypeKind.TYPE_ASM_REG_ARM64_V;
         } else if str_equals(type_name, "@asm_mem" as *byte) != 0 {
             result.kind = TypeKind.TYPE_ASM_MEM;
+        } else if str_equals(type_name, "va_list" as *byte) != 0 {
+            result.kind = TypeKind.TYPE_VA_LIST;
         } else {
             // 自定义类型
             if checker != null && checker.program_node != null {

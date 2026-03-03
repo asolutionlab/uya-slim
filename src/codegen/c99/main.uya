@@ -748,6 +748,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("#define va_start(v, l) __builtin_va_start(v, l)\n" as *byte, codegen.output as *void);
         fputs("#define va_end(v) __builtin_va_end(v)\n" as *byte, codegen.output as *void);
         fputs("#define va_arg(v, l) __builtin_va_arg(v, l)\n" as *byte, codegen.output as *void);
+        fputs("#define va_copy(d, s) __builtin_va_copy(d, s)\n" as *byte, codegen.output as *void);
         c99_emit_newline(codegen);
         // 如果定义了文件 I/O 函数（fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush），不包含 <stdio.h>
         // 避免与标准库声明冲突。自举编译时强制与 C 编译器一致。

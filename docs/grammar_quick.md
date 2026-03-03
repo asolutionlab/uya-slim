@@ -416,10 +416,11 @@ fn sum(...) i32 {
 - 声明：`...` 为参数列表最后一项
 - 转发：`printf(fmt, ...)` 将可变参数转发
 - `@params`：函数体内访问所有参数作为元组
-- `@va_start` / `@va_end` / `@va_arg`：可变参数栈访问
-  - 声明：`@va_start(ap, last)`、`@va_end(ap)`、`@va_arg(ap, Type)`
-  - 示例：`@va_start(&ap[0] as &void, fmt); ret = vfprintf(stream, fmt, ap); @va_end(ap);`
-  - 遍历：`@va_arg(ap, i32)`、`@va_arg(ap, *byte)`、`@va_arg(ap, i64)` 等
+- `@va_start` / `@va_end` / `@va_arg` / `@va_copy`：可变参数栈访问
+  - 声明：`@va_start(&ap, last)`、`@va_end(&ap)`、`@va_arg(ap, Type)`、`@va_copy(&dest, src)`
+  - 初始化：`var ap: va_list = va_list{}; @va_start(&ap, last_param);`
+  - 遍历：`@va_arg(ap, i32)`、`@va_arg(ap, &byte)`、`@va_arg(ap, i64)` 等
+  - 复制：`@va_copy(&ap2, ap1)` 用于多次遍历
 
 ### 导出函数给 C
 
