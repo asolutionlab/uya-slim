@@ -55,13 +55,28 @@ export struct pthread_t {
     detached: atomic i32,
 }
 
-// pthread_mutex_t - 互斥量（0=未锁，1=已锁，atomic+futex 实现）
-export struct pthread_mutex_t {
-    state: atomic i32,
+// 互斥量类型常量
+export const PTHREAD_MUTEX_NORMAL: i32 = 0;     // 普通锁
+export const PTHREAD_MUTEX_RECURSIVE: i32 = 1;  // 递归锁
+export const PTHREAD_MUTEX_ERRORCHECK: i32 = 2; // 检错锁
+
+// pthread_mutexattr_t - 互斥量属性结构体
+export struct pthread_mutexattr_t {
+    type: i32,  // 锁类型：0=普通，1=递归，2=检错
 }
 
-// 保护“写全局 + clone”临界区，保证多线程并发 pthread_create 时子线程拿到正确 fn/arg
-var _pthread_create_mutex: pthread_mutex_t = pthread_mutex_t{ state: 0 };
+// pthread_mutex_t - 互斥量（支持普通锁和递归锁）
+// - state: 0=未锁，1=已锁（普通锁）；>0=递归计数（递归锁）
+// - owner: 当前持有者线程 ID（仅用于递归锁）
+// - type: 锁类型
+export struct pthread_mutex_t {
+    state: atomic i32,
+    owner: i64,      // 持有者线程 ID
+    type: i32,       // 锁类型
+}
+
+// 保护"写全局 + clone"临界区，保证多线程并发 pthread_create 时子线程拿到正确 fn/arg
+var _pthread_create_mutex: pthread_mutex_t = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
 
 // pthread_cond_t - 条件变量（基于 futex 实现）
 // - waiters: 当前等待线程数
@@ -227,13 +242,54 @@ export extern "libc" fn pthread_exit(retval: &void) void {
     sys_exit(0);
 }
 
-// pthread_mutex_init - 初始化互斥量（state=0 表示未锁）
-export extern "libc" fn pthread_mutex_init(mutex: &pthread_mutex_t, attr: &const pthread_mutexattr_t) i32 {
+// pthread_mutexattr_init - 初始化互斥量属性
+export extern "libc" fn pthread_mutexattr_init(attr: &pthread_mutexattr_t) i32 {
+    if attr == null {
+        return 22; // EINVAL
+    }
+    attr.type = PTHREAD_MUTEX_NORMAL;
+    return 0;
+}
+
+// pthread_mutexattr_destroy - 销毁互斥量属性（恒成功）
+export extern "libc" fn pthread_mutexattr_destroy(attr: &pthread_mutexattr_t) i32 {
     _ = attr;
+    return 0;
+}
+
+// pthread_mutexattr_gettype - 获取互斥量类型
+export extern "libc" fn pthread_mutexattr_gettype(attr: &const pthread_mutexattr_t, type: &i32) i32 {
+    if attr == null || type == null {
+        return 22; // EINVAL
+    }
+    type[0] = attr.type;
+    return 0;
+}
+
+// pthread_mutexattr_settype - 设置互斥量类型
+export extern "libc" fn pthread_mutexattr_settype(attr: &pthread_mutexattr_t, type: i32) i32 {
+    if attr == null {
+        return 22; // EINVAL
+    }
+    if type < 0 || type > 2 {
+        return 22; // EINVAL
+    }
+    attr.type = type;
+    return 0;
+}
+
+// pthread_mutex_init - 初始化互斥量（支持属性）
+export extern "libc" fn pthread_mutex_init(mutex: &pthread_mutex_t, attr: &const pthread_mutexattr_t) i32 {
     if mutex == null {
         return 22;
     }
     mutex.state = 0;
+    mutex.owner = 0;
+    if attr == null {
+        mutex.type = PTHREAD_MUTEX_NORMAL;
+    } else {
+        mutex.type = attr.type;
+    }
     return 0;
 }
 
@@ -243,11 +299,32 @@ export extern "libc" fn pthread_mutex_destroy(mutex: &pthread_mutex_t) i32 {
     return 0;
 }
 
-// pthread_mutex_lock - 加锁（CAS + futex 等待）
+// pthread_mutex_lock - 加锁（支持普通锁和递归锁）
 export extern "libc" fn pthread_mutex_lock(mutex: &pthread_mutex_t) i32 {
     if mutex == null {
         return 22;
     }
+    
+    const tid: i64 = sys_getpid() catch { return 1; };
+    
+    if mutex.type == PTHREAD_MUTEX_RECURSIVE {
+        // 递归锁：检查是否已持有
+        if mutex.owner == tid {
+            // 已持有，增加计数
+            mutex.state = mutex.state + 1;
+            return 0;
+        }
+        // 未持有，尝试获取
+        var expected: i32 = 0;
+        while __atomic_compare_exchange_n(&mutex.state, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+            sys_futex((&mutex.state) as &i32, FUTEX_WAIT, 1, null);
+            expected = 0;
+        }
+        mutex.owner = tid;
+        return 0;
+    }
+    
+    // 普通锁：简单 CAS
     var expected: i32 = 0;
     while __atomic_compare_exchange_n(&mutex.state, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
         sys_futex((&mutex.state) as &i32, FUTEX_WAIT, 1, null);
@@ -256,26 +333,62 @@ export extern "libc" fn pthread_mutex_lock(mutex: &pthread_mutex_t) i32 {
     return 0;
 }
 
-// pthread_mutex_unlock - 解锁（store 0 + futex 唤醒）
+// pthread_mutex_unlock - 解锁（支持普通锁和递归锁）
 export extern "libc" fn pthread_mutex_unlock(mutex: &pthread_mutex_t) i32 {
     if mutex == null {
         return 22;
     }
+    
+    const tid: i64 = sys_getpid() catch { return 1; };
+    
+    if mutex.type == PTHREAD_MUTEX_RECURSIVE {
+        // 递归锁：检查持有者
+        if mutex.owner != tid {
+            return 1; // EPERM
+        }
+        // 减少计数
+        if mutex.state > 1 {
+            mutex.state = mutex.state - 1;
+            return 0;
+        }
+        // 最后一次解锁
+        mutex.owner = 0;
+    }
+    
     mutex.state = 0;
     sys_futex((&mutex.state) as &i32, FUTEX_WAKE, 1, null);
     return 0;
 }
 
-// pthread_mutex_trylock - 尝试加锁（仅 CAS，不等待）
+// pthread_mutex_trylock - 尝试加锁（支持普通锁和递归锁）
 export extern "libc" fn pthread_mutex_trylock(mutex: &pthread_mutex_t) i32 {
     if mutex == null {
         return 22;
     }
+    
+    const tid: i64 = sys_getpid() catch { return 1; };
+    
+    if mutex.type == PTHREAD_MUTEX_RECURSIVE {
+        // 递归锁：检查是否已持有
+        if mutex.owner == tid {
+            mutex.state = mutex.state + 1;
+            return 0;
+        }
+        // 未持有，尝试获取
+        var expected: i32 = 0;
+        if __atomic_compare_exchange_n(&mutex.state, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+            mutex.owner = tid;
+            return 0;
+        }
+        return 16; // EBUSY
+    }
+    
+    // 普通锁：简单 CAS
     var expected: i32 = 0;
     if __atomic_compare_exchange_n(&mutex.state, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
         return 0;
     }
-    return 16;
+    return 16; // EBUSY
 }
 
 // pthread_mutex_timedlock - 带超时的加锁

@@ -227,14 +227,14 @@
 - [x] `pthread_mutexattr_t` - 互斥量属性结构体（占位）
 - [x] `pthread_mutex_init` - 初始化互斥量
 - [x] `pthread_mutex_destroy` - 销毁互斥量
-- [x] `pthread_mutex_lock` - 加锁
-- [x] `pthread_mutex_unlock` - 解锁
-- [x] `pthread_mutex_trylock` - 尝试加锁
+- [x] `pthread_mutex_lock` - 加锁（支持普通锁和递归锁）
+- [x] `pthread_mutex_unlock` - 解锁（支持普通锁和递归锁）
+- [x] `pthread_mutex_trylock` - 尝试加锁（支持普通锁和递归锁）
 - [x] `pthread_mutex_timedlock` - 带超时加锁（简化实现）
-- [ ] `pthread_mutexattr_init` - 初始化互斥量属性
-- [ ] `pthread_mutexattr_destroy` - 销毁互斥量属性
-- [ ] `pthread_mutexattr_gettype` - 获取互斥量类型
-- [ ] `pthread_mutexattr_settype` - 设置互斥量类型（普通/递归/检错）
+- [x] `pthread_mutexattr_init` - 初始化互斥量属性
+- [x] `pthread_mutexattr_destroy` - 销毁互斥量属性
+- [x] `pthread_mutexattr_gettype` - 获取互斥量类型
+- [x] `pthread_mutexattr_settype` - 设置互斥量类型（普通/递归/检错）
 
 #### 条件变量
 
