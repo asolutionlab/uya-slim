@@ -826,8 +826,12 @@ fn _vfprintf_impl(stream: &FILE, format: &const byte, ap: va_list, use_buf: i32,
                     format_pos = format_pos + 1;
                     const zu_val: usize = @va_arg(ap, usize);
                     _fmt_u64_to_buf(&ctx, zu_val as u64);
-                // %g - 浮点数
+                // %g - 浮点数（自动格式）
                 } else if spec == 103 {
+                    const fval: f64 = @va_arg(ap, f64);
+                    ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, 6);
+                // %f - 固定小数位浮点数
+                } else if spec == 102 {
                     const fval: f64 = @va_arg(ap, f64);
                     ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, 6);
                 // %% - 百分号

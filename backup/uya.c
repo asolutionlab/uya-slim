@@ -3111,6 +3111,8 @@ double log(double x);
 double ln(double x);
 double log10(double x);
 double log2(double x);
+double exp2(double x);
+float log2f(float x);
 double pow(double x, double y);
 double sqrt(double x);
 double cbrt(double x);
@@ -3142,6 +3144,26 @@ int32_t approx_equal(double a, double b, double epsilon);
 int32_t imax(int32_t a, int32_t b);
 int32_t imin(int32_t a, int32_t b);
 int32_t iclamp(int32_t x, int32_t min_val, int32_t max_val);
+float fabsf(float x);
+float fmaf(float x, float y, float z);
+float sqrtf(float x);
+float cbrtf(float x);
+float expf(float x);
+float exp2f(float x);
+float logf(float x);
+float log10f(float x);
+float powf(float x, float y);
+float sinf(float x);
+float cosf(float x);
+float tanf(float x);
+float asinf(float x);
+float acosf(float x);
+float atanf(float x);
+float atan2f(float y, float x);
+float ceilf(float x);
+float floorf(float x);
+float truncf(float x);
+float roundf(float x);
 uint64_t isqrt(uint64_t n);
 int64_t ipow(int64_t base, int32_t exp);
 int64_t gcd(int64_t a, int64_t b);
@@ -3994,7 +4016,7 @@ const double SQRT1_2 = 0.70710678118654737;
 const double LN2 = 0.69314718055994521;
 const double LN10 = 2.30258509299404590;
 const double INFINITY = .00000000000000000;
-const double NAN = 0;
+const double NAN = 0.0;
 const double HUGE_VAL = INFINITY;
 const float HUGE_VALF = (float)INFINITY;
 const double HUGE_VALL = INFINITY;
@@ -6950,8 +6972,8 @@ void perror(uint8_t * s) {
 
 double fabs(double x) {
     (void)x;
-    if ((x < 0)) {
-        double _uya_ret = (0 - x);
+    if ((x < 0.0)) {
+        double _uya_ret = (0.0 - x);
         return _uya_ret;
     }
     double _uya_ret = x;
@@ -6976,12 +6998,12 @@ int32_t isnan(double x) {
 
 int32_t isinf(double x) {
     (void)x;
-    if ((x == 0)) {
+    if ((x == 0.0)) {
         int32_t _uya_ret = 0;
         return _uya_ret;
     }
-    if (((x * 2) == x)) {
-        if ((x > 0)) {
+    if (((x * 2.0) == x)) {
+        if ((x > 0.0)) {
             int32_t _uya_ret = 1;
             return _uya_ret;
         }
@@ -7002,8 +7024,8 @@ double copysign(double x, double y) {
     (void)x;
     (void)y;
     double result = fabs(x);
-    if ((y < 0)) {
-        result = (0 - result);
+    if ((y < 0.0)) {
+        result = (0.0 - result);
     }
     double _uya_ret = result;
     return _uya_ret;
@@ -7012,7 +7034,7 @@ double copysign(double x, double y) {
 double fmod(double x, double y) {
     (void)x;
     (void)y;
-    if ((y == 0)) {
+    if ((y == 0.0)) {
         double _uya_ret = NAN;
         return _uya_ret;
     }
@@ -7021,7 +7043,7 @@ double fmod(double x, double y) {
         return _uya_ret;
     }
     double result = (x - ((x / y) * y));
-    if (((result < 0) != (x < 0))) {
+    if (((result < 0.0) != (x < 0.0))) {
         result = (result + y);
     }
     double _uya_ret = result;
@@ -7042,16 +7064,16 @@ double sin(double x) {
     if ((xx > PI)) {
         xx = (xx - TWO_PI);
     }
-    if ((xx < (0 - PI))) {
+    if ((xx < (0.0 - PI))) {
         xx = (xx + TWO_PI);
     }
-    double result = 0;
+    double result = 0.0;
     double term = xx;
     double x2 = (xx * xx);
     int32_t n = 1;
     while ((n < 30)) {
         result = (result + term);
-        term = (0 - ((term * x2) / ((double)(n + 1) * (double)(n + 2))));
+        term = (0.0 - ((term * x2) / ((double)(n + 1) * (double)(n + 2))));
         n = (n + 2);
     }
     double _uya_ret = result;
@@ -7072,16 +7094,16 @@ double cos(double x) {
     if ((xx > PI)) {
         xx = (xx - TWO_PI);
     }
-    if ((xx < (0 - PI))) {
+    if ((xx < (0.0 - PI))) {
         xx = (xx + TWO_PI);
     }
-    double result = 0;
-    double term = 1;
+    double result = 0.0;
+    double term = 1.0;
     double x2 = (xx * xx);
     int32_t n = 0;
     while ((n < 30)) {
         result = (result + term);
-        term = (0 - ((term * x2) / ((double)(n + 1) * (double)(n + 2))));
+        term = (0.0 - ((term * x2) / ((double)(n + 1) * (double)(n + 2))));
         n = (n + 2);
     }
     double _uya_ret = result;
@@ -7091,12 +7113,12 @@ double cos(double x) {
 double tan(double x) {
     (void)x;
     double c = cos(x);
-    if ((c == 0)) {
-        if ((x > 0)) {
+    if ((c == 0.0)) {
+        if ((x > 0.0)) {
             double _uya_ret = INFINITY;
             return _uya_ret;
         }
-        double _uya_ret = (0 - INFINITY);
+        double _uya_ret = (0.0 - INFINITY);
         return _uya_ret;
     }
     double _uya_ret = (sin(x) / c);
@@ -7105,81 +7127,81 @@ double tan(double x) {
 
 double asin(double x) {
     (void)x;
-    if (((x < (-1)) || (x > 1))) {
+    if (((x < (-1.0)) || (x > 1.0))) {
         double _uya_ret = NAN;
         return _uya_ret;
     }
-    if ((x == (-1))) {
-        double _uya_ret = (0 - PI_2);
+    if ((x == (-1.0))) {
+        double _uya_ret = (0.0 - PI_2);
         return _uya_ret;
     }
-    if ((x == 1)) {
+    if ((x == 1.0)) {
         double _uya_ret = PI_2;
         return _uya_ret;
     }
-    if ((x == 0)) {
-        double _uya_ret = 0;
+    if ((x == 0.0)) {
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
-    double sqrt_val = sqrt((1 - (x * x)));
+    double sqrt_val = sqrt((1.0 - (x * x)));
     double _uya_ret = atan2(x, sqrt_val);
     return _uya_ret;
 }
 
 double acos(double x) {
     (void)x;
-    if (((x < (-1)) || (x > 1))) {
+    if (((x < (-1.0)) || (x > 1.0))) {
         double _uya_ret = NAN;
         return _uya_ret;
     }
-    if ((x == (-1))) {
+    if ((x == (-1.0))) {
         double _uya_ret = PI;
         return _uya_ret;
     }
-    if ((x == 1)) {
-        double _uya_ret = 0;
+    if ((x == 1.0)) {
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
-    if ((x == (0 - 1))) {
+    if ((x == (0.0 - 1.0))) {
         double _uya_ret = PI;
         return _uya_ret;
     }
-    double sqrt_val = sqrt((1 - (x * x)));
-    double _uya_ret = (2 * atan2(sqrt_val, (1 + x)));
+    double sqrt_val = sqrt((1.0 - (x * x)));
+    double _uya_ret = (2.0 * atan2(sqrt_val, (1.0 + x)));
     return _uya_ret;
 }
 
 double atan(double x) {
     (void)x;
     if ((isinf(x) != 0)) {
-        if ((x > 0)) {
+        if ((x > 0.0)) {
             double _uya_ret = PI_2;
             return _uya_ret;
         }
-        double _uya_ret = (0 - PI_2);
+        double _uya_ret = (0.0 - PI_2);
         return _uya_ret;
     }
-    if ((x == 0)) {
-        double _uya_ret = 0;
+    if ((x == 0.0)) {
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
-    double sign = 1;
+    double sign = 1.0;
     double xx = x;
-    if ((x < 0)) {
-        sign = (0 - 1);
-        xx = (0 - x);
+    if ((x < 0.0)) {
+        sign = (0.0 - 1.0);
+        xx = (0.0 - x);
     }
-    if ((xx > 1)) {
-        double _uya_ret = (sign * (PI_2 - atan((1 / xx))));
+    if ((xx > 1.0)) {
+        double _uya_ret = (sign * (PI_2 - atan((1.0 / xx))));
         return _uya_ret;
     }
     double x2 = (xx * xx);
-    double result = 0;
+    double result = 0.0;
     double term = xx;
     int32_t n = 1;
     while ((n < 100)) {
         result = (result + (term / (double)n));
-        term = (0 - (term * x2));
+        term = (0.0 - (term * x2));
         n = (n + 2);
     }
     double _uya_ret = (sign * result);
@@ -7193,12 +7215,12 @@ double atan2(double y, double x) {
         double _uya_ret = NAN;
         return _uya_ret;
     }
-    if ((x > 0)) {
+    if ((x > 0.0)) {
         double _uya_ret = atan((y / x));
         return _uya_ret;
     } else {
-        if ((x < 0)) {
-            if ((y >= 0)) {
+        if ((x < 0.0)) {
+            if ((y >= 0.0)) {
                 double _uya_ret = (atan((y / x)) + PI);
                 return _uya_ret;
             } else {
@@ -7206,12 +7228,12 @@ double atan2(double y, double x) {
                 return _uya_ret;
             }
         } else {
-            if ((y > 0)) {
+            if ((y > 0.0)) {
                 double _uya_ret = PI_2;
                 return _uya_ret;
             }
-            if ((y < 0)) {
-                double _uya_ret = (0 - PI_2);
+            if ((y < 0.0)) {
+                double _uya_ret = (0.0 - PI_2);
                 return _uya_ret;
             }
             double _uya_ret = NAN;
@@ -7227,13 +7249,13 @@ double sinh(double x) {
         double _uya_ret = x;
         return _uya_ret;
     }
-    if ((x == 0)) {
-        double _uya_ret = 0;
+    if ((x == 0.0)) {
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
     double exp_x = exp(x);
-    double exp_neg_x = exp((0 - x));
-    double _uya_ret = ((exp_x - exp_neg_x) / 2);
+    double exp_neg_x = exp((0.0 - x));
+    double _uya_ret = ((exp_x - exp_neg_x) / 2.0);
     return _uya_ret;
 }
 
@@ -7243,32 +7265,32 @@ double cosh(double x) {
         double _uya_ret = INFINITY;
         return _uya_ret;
     }
-    if ((x == 0)) {
-        double _uya_ret = 1;
+    if ((x == 0.0)) {
+        double _uya_ret = 1.0;
         return _uya_ret;
     }
     double exp_x = exp(x);
-    double exp_neg_x = exp((0 - x));
-    double _uya_ret = ((exp_x + exp_neg_x) / 2);
+    double exp_neg_x = exp((0.0 - x));
+    double _uya_ret = ((exp_x + exp_neg_x) / 2.0);
     return _uya_ret;
 }
 
 double tanh(double x) {
     (void)x;
     if ((isinf(x) != 0)) {
-        if ((x > 0)) {
-            double _uya_ret = 1;
+        if ((x > 0.0)) {
+            double _uya_ret = 1.0;
             return _uya_ret;
         }
-        double _uya_ret = (0 - 1);
+        double _uya_ret = (0.0 - 1.0);
         return _uya_ret;
     }
-    if ((x == 0)) {
-        double _uya_ret = 0;
+    if ((x == 0.0)) {
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
-    double exp_2x = exp((2 * x));
-    double _uya_ret = ((exp_2x - 1) / (exp_2x + 1));
+    double exp_2x = exp((2.0 * x));
+    double _uya_ret = ((exp_2x - 1.0) / (exp_2x + 1.0));
     return _uya_ret;
 }
 
@@ -7278,88 +7300,88 @@ double asinh(double x) {
         double _uya_ret = x;
         return _uya_ret;
     }
-    if ((x == 0)) {
-        double _uya_ret = 0;
+    if ((x == 0.0)) {
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
-    double _uya_ret = ln((x + sqrt(((x * x) + 1))));
+    double _uya_ret = ln((x + sqrt(((x * x) + 1.0))));
     return _uya_ret;
 }
 
 double acosh(double x) {
     (void)x;
-    if ((x < 1)) {
+    if ((x < 1.0)) {
         double _uya_ret = NAN;
         return _uya_ret;
     }
-    if ((x == 1)) {
-        double _uya_ret = 0;
+    if ((x == 1.0)) {
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
-    double _uya_ret = ln((x + sqrt(((x * x) - 1))));
+    double _uya_ret = ln((x + sqrt(((x * x) - 1.0))));
     return _uya_ret;
 }
 
 double atanh(double x) {
     (void)x;
-    if (((x < (-1)) || (x > 1))) {
+    if (((x < (-1.0)) || (x > 1.0))) {
         double _uya_ret = NAN;
         return _uya_ret;
     }
-    if ((x == (-1))) {
-        double _uya_ret = (0 - INFINITY);
+    if ((x == (-1.0))) {
+        double _uya_ret = (0.0 - INFINITY);
         return _uya_ret;
     }
-    if ((x == 1)) {
+    if ((x == 1.0)) {
         double _uya_ret = INFINITY;
         return _uya_ret;
     }
-    if ((x == 0)) {
-        double _uya_ret = 0;
+    if ((x == 0.0)) {
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
-    double _uya_ret = (0.50000000000000000 * ln(((1 + x) / (1 - x))));
+    double _uya_ret = (0.50000000000000000 * ln(((1.0 + x) / (1.0 - x))));
     return _uya_ret;
 }
 
 double exp(double x) {
     (void)x;
-    if ((x == 0)) {
-        double _uya_ret = 1;
+    if ((x == 0.0)) {
+        double _uya_ret = 1.0;
         return _uya_ret;
     }
     if ((isinf(x) != 0)) {
-        if ((x > 0)) {
+        if ((x > 0.0)) {
             double _uya_ret = INFINITY;
             return _uya_ret;
         }
-        double _uya_ret = 0;
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
-    if ((x > 709)) {
+    if ((x > 709.0)) {
         double _uya_ret = INFINITY;
         return _uya_ret;
     }
-    if ((x < (-745))) {
-        double _uya_ret = 0;
+    if ((x < (-745.0))) {
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
     int64_t n = (int64_t)((x / LN2) + 0.50000000000000000);
     double r = (x - ((double)n * LN2));
-    double result = 1;
-    double term = 1;
+    double result = 1.0;
+    double term = 1.0;
     int32_t i = 1;
     while ((i < 60)) {
         term = ((term * r) / (double)i);
         result = (result + term);
         i = (i + 1);
     }
-    double pow2 = 1;
+    double pow2 = 1.0;
     int64_t abs_n = n;
     if ((n < 0)) {
         abs_n = (0 - n);
     }
-    double base = 2;
+    double base = 2.0;
     int64_t exp_val = abs_n;
     while ((exp_val > 0)) {
         if (((exp_val & (int64_t)1) != 0)) {
@@ -7379,39 +7401,39 @@ double exp(double x) {
 
 double log(double x) {
     (void)x;
-    if ((x < 0)) {
+    if ((x < 0.0)) {
         double _uya_ret = NAN;
         return _uya_ret;
     }
-    if ((x == 0)) {
-        double _uya_ret = (0 - INFINITY);
+    if ((x == 0.0)) {
+        double _uya_ret = (0.0 - INFINITY);
         return _uya_ret;
     }
     if ((isinf(x) != 0)) {
         double _uya_ret = INFINITY;
         return _uya_ret;
     }
-    if ((x == 1)) {
-        double _uya_ret = 0;
+    if ((x == 1.0)) {
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
     int64_t e = 0;
     double m = x;
-    while ((m >= 2)) {
-        m = (m / 2);
+    while ((m >= 2.0)) {
+        m = (m / 2.0);
         e = (e + 1);
     }
-    while ((m < 1)) {
-        m = (m * 2);
+    while ((m < 1.0)) {
+        m = (m * 2.0);
         e = (e - 1);
     }
-    double t = (m - 1);
-    double result = 0;
+    double t = (m - 1.0);
+    double result = 0.0;
     double term = t;
     int32_t i = 1;
     while ((i < 100)) {
         result = (result + (term / (double)i));
-        term = (0 - (term * t));
+        term = (0.0 - (term * t));
         i = (i + 1);
     }
     double _uya_ret = (result + ((double)e * LN2));
@@ -7426,12 +7448,12 @@ double ln(double x) {
 
 double log10(double x) {
     (void)x;
-    if ((x < 0)) {
+    if ((x < 0.0)) {
         double _uya_ret = NAN;
         return _uya_ret;
     }
-    if ((x == 0)) {
-        double _uya_ret = (0 - INFINITY);
+    if ((x == 0.0)) {
+        double _uya_ret = (0.0 - INFINITY);
         return _uya_ret;
     }
     if ((isinf(x) != 0)) {
@@ -7444,12 +7466,12 @@ double log10(double x) {
 
 double log2(double x) {
     (void)x;
-    if ((x < 0)) {
+    if ((x < 0.0)) {
         double _uya_ret = NAN;
         return _uya_ret;
     }
-    if ((x == 0)) {
-        double _uya_ret = (0 - INFINITY);
+    if ((x == 0.0)) {
+        double _uya_ret = (0.0 - INFINITY);
         return _uya_ret;
     }
     if ((isinf(x) != 0)) {
@@ -7460,50 +7482,124 @@ double log2(double x) {
     return _uya_ret;
 }
 
+double exp2(double x) {
+    (void)x;
+    if ((x == 0.0)) {
+        double _uya_ret = 1.0;
+        return _uya_ret;
+    }
+    if ((isinf(x) != 0)) {
+        if ((x > 0.0)) {
+            double _uya_ret = INFINITY;
+            return _uya_ret;
+        }
+        double _uya_ret = 0.0;
+        return _uya_ret;
+    }
+    if ((x > 1024.0)) {
+        double _uya_ret = INFINITY;
+        return _uya_ret;
+    }
+    if ((x < (-1024.0))) {
+        double _uya_ret = 0.0;
+        return _uya_ret;
+    }
+    int64_t n = (int64_t)x;
+    double r = (x - (double)n);
+    double r_ln2 = (r * LN2);
+    double result = 1.0;
+    double term = 1.0;
+    int32_t i = 1;
+    while ((i < 60)) {
+        term = ((term * r_ln2) / (double)i);
+        result = (result + term);
+        i = (i + 1);
+    }
+    double pow2 = 1.0;
+    int64_t abs_n = n;
+    if ((n < 0)) {
+        abs_n = (0 - n);
+    }
+    double base = 2.0;
+    int64_t exp_val = abs_n;
+    while ((exp_val > 0)) {
+        if (((exp_val & (int64_t)1) != 0)) {
+            pow2 = (pow2 * base);
+        }
+        base = (base * base);
+        exp_val = (exp_val >> 1);
+    }
+    if ((n < 0)) {
+        result = (result / pow2);
+    } else {
+        result = (result * pow2);
+    }
+    double _uya_ret = result;
+    return _uya_ret;
+}
+
+float log2f(float x) {
+    (void)x;
+    if ((x < 0.0)) {
+        float _uya_ret = (float)NAN;
+        return _uya_ret;
+    }
+    if ((x == 0.0)) {
+        float _uya_ret = (float)(0.0 - INFINITY);
+        return _uya_ret;
+    }
+    if ((isinf((double)x) != 0)) {
+        float _uya_ret = (float)INFINITY;
+        return _uya_ret;
+    }
+    float _uya_ret = (float)(log((double)x) / LN2);
+    return _uya_ret;
+}
+
 double pow(double x, double y) {
     (void)x;
     (void)y;
-    if ((y == 0)) {
-        double _uya_ret = 1;
+    if ((y == 0.0)) {
+        double _uya_ret = 1.0;
         return _uya_ret;
     }
-    if ((x == 0)) {
-        if ((y > 0)) {
-            double _uya_ret = 0;
+    if ((x == 0.0)) {
+        if ((y > 0.0)) {
+            double _uya_ret = 0.0;
             return _uya_ret;
         }
         double _uya_ret = INFINITY;
         return _uya_ret;
     }
     if ((isinf(x) != 0)) {
-        if ((y > 0)) {
+        if ((y > 0.0)) {
             double _uya_ret = INFINITY;
             return _uya_ret;
         }
-        double _uya_ret = 0;
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
     if ((isinf(y) != 0)) {
-        if ((x == 1)) {
-            double _uya_ret = 1;
+        if ((x == 1.0)) {
+            double _uya_ret = 1.0;
             return _uya_ret;
         }
-        if ((fabs(x) < 1)) {
-            if ((y > 0)) {
-                double _uya_ret = 0;
+        if ((fabs(x) < 1.0)) {
+            if ((y > 0.0)) {
+                double _uya_ret = 0.0;
                 return _uya_ret;
             }
             double _uya_ret = INFINITY;
             return _uya_ret;
         }
-        if ((y > 0)) {
+        if ((y > 0.0)) {
             double _uya_ret = INFINITY;
             return _uya_ret;
         }
-        double _uya_ret = 0;
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
-    if ((x < 0)) {
+    if ((x < 0.0)) {
         int64_t y_int = (int64_t)y;
         if (((double)y_int != y)) {
             double _uya_ret = NAN;
@@ -7511,7 +7607,7 @@ double pow(double x, double y) {
         }
         double result = exp((y * log(fabs(x))));
         if (((y_int & (int64_t)1) != 0)) {
-            result = (0 - result);
+            result = (0.0 - result);
         }
         double _uya_ret = result;
         return _uya_ret;
@@ -7522,25 +7618,25 @@ double pow(double x, double y) {
 
 double sqrt(double x) {
     (void)x;
-    if ((x < 0)) {
+    if ((x < 0.0)) {
         double _uya_ret = NAN;
         return _uya_ret;
     }
-    if (((x == 0) || (isinf(x) != 0))) {
+    if (((x == 0.0) || (isinf(x) != 0))) {
         double _uya_ret = x;
         return _uya_ret;
     }
-    if ((x == 1)) {
-        double _uya_ret = 1;
+    if ((x == 1.0)) {
+        double _uya_ret = 1.0;
         return _uya_ret;
     }
-    double guess = (x / 2);
-    if ((guess == 0)) {
-        guess = 1;
+    double guess = (x / 2.0);
+    if ((guess == 0.0)) {
+        guess = 1.0;
     }
     int32_t i = 0;
     while ((i < 100)) {
-        double new_guess = ((guess + (x / guess)) / 2);
+        double new_guess = ((guess + (x / guess)) / 2.0);
         if ((new_guess == guess)) {
             break;
         }
@@ -7553,23 +7649,23 @@ double sqrt(double x) {
 
 double cbrt(double x) {
     (void)x;
-    if (((x == 0) || (isinf(x) != 0))) {
+    if (((x == 0.0) || (isinf(x) != 0))) {
         double _uya_ret = x;
         return _uya_ret;
     }
-    double sign = 1;
+    double sign = 1.0;
     double abs_x = x;
-    if ((x < 0)) {
-        sign = (0 - 1);
-        abs_x = (0 - x);
+    if ((x < 0.0)) {
+        sign = (0.0 - 1.0);
+        abs_x = (0.0 - x);
     }
-    double guess = (abs_x / 3);
-    if ((guess == 0)) {
-        guess = 1;
+    double guess = (abs_x / 3.0);
+    if ((guess == 0.0)) {
+        guess = 1.0;
     }
     int32_t i = 0;
     while ((i < 100)) {
-        double new_guess = (((2 * guess) + (abs_x / (guess * guess))) / 3);
+        double new_guess = (((2.0 * guess) + (abs_x / (guess * guess))) / 3.0);
         if ((new_guess == guess)) {
             break;
         }
@@ -7595,7 +7691,7 @@ double ceil(double x) {
         double _uya_ret = x;
         return _uya_ret;
     }
-    if ((x > 0)) {
+    if ((x > 0.0)) {
         double _uya_ret = (double)(i + 1);
         return _uya_ret;
     }
@@ -7618,7 +7714,7 @@ double floor(double x) {
         double _uya_ret = x;
         return _uya_ret;
     }
-    if ((x < 0)) {
+    if ((x < 0.0)) {
         double _uya_ret = (double)(i - 1);
         return _uya_ret;
     }
@@ -7650,7 +7746,7 @@ double round(double x) {
         double _uya_ret = x;
         return _uya_ret;
     }
-    if ((x >= 0)) {
+    if ((x >= 0.0)) {
         double _uya_ret = floor((x + 0.50000000000000000));
         return _uya_ret;
     }
@@ -7719,7 +7815,7 @@ double fdim(double x, double y) {
         double _uya_ret = (x - y);
         return _uya_ret;
     }
-    double _uya_ret = 0;
+    double _uya_ret = 0.0;
     return _uya_ret;
 }
 
@@ -7773,19 +7869,19 @@ double hypot(double x, double y) {
         xx = yy;
         yy = tmp;
     }
-    if ((xx == 0)) {
-        double _uya_ret = 0;
+    if ((xx == 0.0)) {
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
     double ratio = (yy / xx);
-    double _uya_ret = (xx * sqrt((1 + (ratio * ratio))));
+    double _uya_ret = (xx * sqrt((1.0 + (ratio * ratio))));
     return _uya_ret;
 }
 
 double remainder(double x, double y) {
     (void)x;
     (void)y;
-    if ((y == 0)) {
+    if ((y == 0.0)) {
         double _uya_ret = NAN;
         return _uya_ret;
     }
@@ -7798,7 +7894,7 @@ double remquo(double x, double y, int32_t * quo) {
     (void)x;
     (void)y;
     (void)quo;
-    if ((y == 0)) {
+    if ((y == 0.0)) {
         if ((quo != NULL)) {
             quo[0] = 0;
         }
@@ -7829,7 +7925,7 @@ double modf(double x, double * iptr) {
 double scalbn(double x, int32_t n) {
     (void)x;
     (void)n;
-    double _uya_ret = (x * pow(2, (double)n));
+    double _uya_ret = (x * pow(2.0, (double)n));
     return _uya_ret;
 }
 
@@ -7839,7 +7935,7 @@ int32_t ilogb(double x) {
         int32_t _uya_ret = 2147483647;
         return _uya_ret;
     }
-    if ((x == 0)) {
+    if ((x == 0.0)) {
         int32_t ret = /* optimized */ -2147483647;
         int32_t _uya_ret = (ret - 1);
         return _uya_ret;
@@ -7850,12 +7946,12 @@ int32_t ilogb(double x) {
     }
     double abs_x = fabs(x);
     int32_t exp_val = 0;
-    while ((abs_x >= 2)) {
-        abs_x = (abs_x / 2);
+    while ((abs_x >= 2.0)) {
+        abs_x = (abs_x / 2.0);
         exp_val = (exp_val + 1);
     }
-    while ((abs_x < 1)) {
-        abs_x = (abs_x * 2);
+    while ((abs_x < 1.0)) {
+        abs_x = (abs_x * 2.0);
         exp_val = (exp_val - 1);
     }
     int32_t _uya_ret = exp_val;
@@ -7872,11 +7968,11 @@ double ldexp(double x, int32_t n) {
 double frexp(double x, int32_t * exp) {
     (void)x;
     (void)exp;
-    if ((x == 0)) {
+    if ((x == 0.0)) {
         if ((exp != NULL)) {
             exp[0] = 0;
         }
-        double _uya_ret = 0;
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
     if (((isinf(x) != 0) || (isnan(x) != 0))) {
@@ -7888,19 +7984,19 @@ double frexp(double x, int32_t * exp) {
     }
     double abs_x = fabs(x);
     int32_t e = 0;
-    while ((abs_x >= 1)) {
-        abs_x = (abs_x / 2);
+    while ((abs_x >= 1.0)) {
+        abs_x = (abs_x / 2.0);
         e = (e + 1);
     }
     while ((abs_x < 0.50000000000000000)) {
-        abs_x = (abs_x * 2);
+        abs_x = (abs_x * 2.0);
         e = (e - 1);
     }
     if ((exp != NULL)) {
         exp[0] = e;
     }
-    if ((x < 0)) {
-        double _uya_ret = (0 - abs_x);
+    if ((x < 0.0)) {
+        double _uya_ret = (0.0 - abs_x);
         return _uya_ret;
     }
     double _uya_ret = abs_x;
@@ -7909,12 +8005,12 @@ double frexp(double x, int32_t * exp) {
 
 int32_t signbit(double x) {
     (void)x;
-    if ((x < 0)) {
+    if ((x < 0.0)) {
         int32_t _uya_ret = 1;
         return _uya_ret;
     }
-    if ((x == 0)) {
-        if (((1 / x) < 0)) {
+    if ((x == 0.0)) {
+        if (((1.0 / x) < 0.0)) {
             int32_t _uya_ret = 1;
             return _uya_ret;
         }
@@ -7942,12 +8038,12 @@ double nextafter(double x, double y) {
         return _uya_ret;
     }
     const double epsilon = 0.00000000000000022;
-    if ((x == 0)) {
-        if ((y > 0)) {
+    if ((x == 0.0)) {
+        if ((y > 0.0)) {
             double _uya_ret = epsilon;
             return _uya_ret;
         }
-        double _uya_ret = (0 - epsilon);
+        double _uya_ret = (0.0 - epsilon);
         return _uya_ret;
     }
     if ((y > x)) {
@@ -8009,6 +8105,134 @@ int32_t iclamp(int32_t x, int32_t min_val, int32_t max_val) {
         return _uya_ret;
     }
     int32_t _uya_ret = x;
+    return _uya_ret;
+}
+
+float fabsf(float x) {
+    (void)x;
+    if ((x < (float)0.0)) {
+        float _uya_ret = ((float)0.0 - x);
+        return _uya_ret;
+    }
+    float _uya_ret = x;
+    return _uya_ret;
+}
+
+float fmaf(float x, float y, float z) {
+    (void)x;
+    (void)y;
+    (void)z;
+    float _uya_ret = (float)((x * y) + z);
+    return _uya_ret;
+}
+
+float sqrtf(float x) {
+    (void)x;
+    float _uya_ret = (float)sqrt((double)x);
+    return _uya_ret;
+}
+
+float cbrtf(float x) {
+    (void)x;
+    float _uya_ret = (float)cbrt((double)x);
+    return _uya_ret;
+}
+
+float expf(float x) {
+    (void)x;
+    float _uya_ret = (float)exp((double)x);
+    return _uya_ret;
+}
+
+float exp2f(float x) {
+    (void)x;
+    float _uya_ret = (float)exp2((double)x);
+    return _uya_ret;
+}
+
+float logf(float x) {
+    (void)x;
+    float _uya_ret = (float)log((double)x);
+    return _uya_ret;
+}
+
+float log10f(float x) {
+    (void)x;
+    float _uya_ret = (float)log10((double)x);
+    return _uya_ret;
+}
+
+float powf(float x, float y) {
+    (void)x;
+    (void)y;
+    float _uya_ret = (float)pow((double)x, (double)y);
+    return _uya_ret;
+}
+
+float sinf(float x) {
+    (void)x;
+    float _uya_ret = (float)sin((double)x);
+    return _uya_ret;
+}
+
+float cosf(float x) {
+    (void)x;
+    float _uya_ret = (float)cos((double)x);
+    return _uya_ret;
+}
+
+float tanf(float x) {
+    (void)x;
+    float _uya_ret = (float)tan((double)x);
+    return _uya_ret;
+}
+
+float asinf(float x) {
+    (void)x;
+    float _uya_ret = (float)asin((double)x);
+    return _uya_ret;
+}
+
+float acosf(float x) {
+    (void)x;
+    float _uya_ret = (float)acos((double)x);
+    return _uya_ret;
+}
+
+float atanf(float x) {
+    (void)x;
+    float _uya_ret = (float)atan((double)x);
+    return _uya_ret;
+}
+
+float atan2f(float y, float x) {
+    (void)y;
+    (void)x;
+    float _uya_ret = (float)atan2((double)y, (double)x);
+    return _uya_ret;
+}
+
+float ceilf(float x) {
+    (void)x;
+    float _uya_ret = (float)ceil((double)x);
+    return _uya_ret;
+}
+
+float floorf(float x) {
+    (void)x;
+    float _uya_ret = (float)floor((double)x);
+    return _uya_ret;
+}
+
+float truncf(float x) {
+    (void)x;
+    float _uya_ret = (float)trunc((double)x);
+    return _uya_ret;
+}
+
+float roundf(float x) {
+    (void)x;
+    float _uya_ret = (float)round((double)x);
     return _uya_ret;
 }
 
@@ -9085,8 +9309,8 @@ static __attribute__((unused)) size_t _fmt_f64_to_buf(uint8_t * buf, size_t buf_
         size_t _uya_ret = pos;
         return _uya_ret;
     }
-    if (((x != 0) && ((x * 2) == x))) {
-        if ((x < 0)) {
+    if (((x != 0.0) && ((x * 2.0) == x))) {
+        if ((x < 0.0)) {
             buf[pos] = 45;
             pos = (pos + 1);
             if ((pos >= buf_max)) {
@@ -9104,12 +9328,12 @@ static __attribute__((unused)) size_t _fmt_f64_to_buf(uint8_t * buf, size_t buf_
         size_t _uya_ret = pos;
         return _uya_ret;
     }
-    if ((x < 0)) {
+    if ((x < 0.0)) {
         buf[pos] = 45;
         pos = (pos + 1);
-        x = (0 - x);
+        x = (0.0 - x);
     }
-    if ((x == 0)) {
+    if ((x == 0.0)) {
         buf[pos] = 48;
         pos = (pos + 1);
         if (((precision > 0) && (pos < buf_max))) {
@@ -9158,7 +9382,7 @@ static __attribute__((unused)) size_t _fmt_f64_to_buf(uint8_t * buf, size_t buf_
         pos = (pos + 1);
         i = 0;
         while (((i < prec) && (pos < buf_max))) {
-            frac = (frac * 10);
+            frac = (frac * 10.0);
             const int32_t d = (int32_t)frac;
             buf[pos] = (uint8_t)(48 + d);
             pos = (pos + 1);
@@ -9385,19 +9609,24 @@ static __attribute__((unused)) int32_t _vfprintf_impl(struct FILE * stream, cons
                                                         const double fval = va_arg(ap, double);
                                                         ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, 6);
                                                     } else {
-                                                        if ((spec == 37)) {
-                                                            if ((ctx.buf_pos < ctx.buf_max)) {
-                                                                ctx.buf[ctx.buf_pos] = 37;
-                                                                ctx.buf_pos = (ctx.buf_pos + 1);
-                                                            }
+                                                        if ((spec == 102)) {
+                                                            const double fval = va_arg(ap, double);
+                                                            ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, 6);
                                                         } else {
-                                                            if ((ctx.buf_pos < ctx.buf_max)) {
-                                                                ctx.buf[ctx.buf_pos] = 37;
-                                                                ctx.buf_pos = (ctx.buf_pos + 1);
-                                                            }
-                                                            if ((ctx.buf_pos < ctx.buf_max)) {
-                                                                ctx.buf[ctx.buf_pos] = spec;
-                                                                ctx.buf_pos = (ctx.buf_pos + 1);
+                                                            if ((spec == 37)) {
+                                                                if ((ctx.buf_pos < ctx.buf_max)) {
+                                                                    ctx.buf[ctx.buf_pos] = 37;
+                                                                    ctx.buf_pos = (ctx.buf_pos + 1);
+                                                                }
+                                                            } else {
+                                                                if ((ctx.buf_pos < ctx.buf_max)) {
+                                                                    ctx.buf[ctx.buf_pos] = 37;
+                                                                    ctx.buf_pos = (ctx.buf_pos + 1);
+                                                                }
+                                                                if ((ctx.buf_pos < ctx.buf_max)) {
+                                                                    ctx.buf[ctx.buf_pos] = spec;
+                                                                    ctx.buf_pos = (ctx.buf_pos + 1);
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -9758,17 +9987,40 @@ int32_t libc_remove(const uint8_t * path) {
         int32_t _uya_ret = (-1);
         return _uya_ret;
     }
-    struct err_union_int32_t result = sys_unlink(path);
-    const int32_t ret = ({ int32_t _uya_catch_result; struct err_union_int32_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+    const uint32_t _S_IFMT = 61440;
+    const uint32_t _S_IFDIR = 16384;
+    struct Stat stat_buf = (struct Stat){.st_dev = 0, .st_ino = 0, .st_nlink = 0, .st_mode = 0, .st_uid = 0, .st_gid = 0, ._pad0 = 0, .st_rdev = 0, .st_size = 0, .st_blksize = 0, .st_blocks = 0, .uya_st_atime = 0, .st_atime_nsec = 0, .uya_st_mtime = 0, .st_mtime_nsec = 0, .uya_st_ctime = 0, .st_ctime_nsec = 0, ._unused0 = 0, ._unused1 = 0, ._unused2 = 0};
+    struct err_union_int32_t stat_result = sys_stat(path, (&stat_buf));
+    const int32_t stat_ret = ({ int32_t _uya_catch_result; struct err_union_int32_t _uya_catch_tmp = stat_result; if (_uya_catch_tmp.error_id != 0) {
         int32_t _uya_ret = (-1);
         return _uya_ret;
     } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    if ((ret < 0)) {
+    if ((stat_ret != 0)) {
         int32_t _uya_ret = (-1);
         return _uya_ret;
     }
-    int32_t _uya_ret = 0;
-    return _uya_ret;
+    if ((((uint32_t)stat_buf.st_mode & _S_IFMT) == _S_IFDIR)) {
+        struct err_union_int32_t rmdir_result = sys_rmdir(path);
+        const int32_t rmdir_ret = ({ int32_t _uya_catch_result; struct err_union_int32_t _uya_catch_tmp = rmdir_result; if (_uya_catch_tmp.error_id != 0) {
+            int32_t _uya_ret = (-1);
+            return _uya_ret;
+        } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+        int32_t _uya_ret = rmdir_ret;
+        return _uya_ret;
+    } else {
+        struct err_union_int32_t result = sys_unlink(path);
+        const int32_t ret = ({ int32_t _uya_catch_result; struct err_union_int32_t _uya_catch_tmp = result; if (_uya_catch_tmp.error_id != 0) {
+            int32_t _uya_ret = (-1);
+            return _uya_ret;
+        } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+        if ((ret < 0)) {
+            int32_t _uya_ret = (-1);
+            return _uya_ret;
+        }
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+        return 0;
 }
 
 int32_t libc_rename(const uint8_t * oldpath, const uint8_t * newpath) {
@@ -10601,12 +10853,12 @@ int64_t libc_atol(const uint8_t * s) {
 double libc_atof(const uint8_t * s) {
     (void)s;
     if ((s == NULL)) {
-        double _uya_ret = 0;
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
     size_t i = 0;
     bool is_neg = false;
-    double result = 0;
+    double result = 0.0;
     while (((((s[i] == (uint8_t)32) || (s[i] == (uint8_t)9)) || (s[i] == (uint8_t)10)) || (s[i] == (uint8_t)13))) {
         i = (i + 1);
     }
@@ -10619,24 +10871,24 @@ double libc_atof(const uint8_t * s) {
         }
     }
     while (((s[i] >= (uint8_t)48) && (s[i] <= (uint8_t)57))) {
-        const double digit = ((double)s[i] - 48);
-        result = ((result * 10) + digit);
+        const double digit = ((double)s[i] - 48.0);
+        result = ((result * 10.0) + digit);
         i = (i + 1);
     }
     if ((s[i] == (uint8_t)46)) {
         i = (i + 1);
-        double frac = 0;
-        double frac_div = 10;
+        double frac = 0.0;
+        double frac_div = 10.0;
         while (((s[i] >= (uint8_t)48) && (s[i] <= (uint8_t)57))) {
-            const double digit = ((double)s[i] - 48);
+            const double digit = ((double)s[i] - 48.0);
             frac = (frac + (digit / frac_div));
-            frac_div = (frac_div * 10);
+            frac_div = (frac_div * 10.0);
             i = (i + 1);
         }
         result = (result + frac);
     }
     if (is_neg) {
-        result = (0 - result);
+        result = (0.0 - result);
     }
     double _uya_ret = result;
     return _uya_ret;
@@ -10649,12 +10901,12 @@ double libc_strtod(const uint8_t * nptr, const uint8_t * * endptr) {
         if ((endptr != NULL)) {
             endptr[0] = NULL;
         }
-        double _uya_ret = 0;
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
     size_t i = 0;
     bool is_neg = false;
-    double result = 0;
+    double result = 0.0;
     while (((((nptr[i] == (uint8_t)32) || (nptr[i] == (uint8_t)9)) || (nptr[i] == (uint8_t)10)) || (nptr[i] == (uint8_t)13))) {
         i = (i + 1);
     }
@@ -10667,18 +10919,18 @@ double libc_strtod(const uint8_t * nptr, const uint8_t * * endptr) {
         }
     }
     while (((nptr[i] >= (uint8_t)48) && (nptr[i] <= (uint8_t)57))) {
-        const double digit = ((double)nptr[i] - 48);
-        result = ((result * 10) + digit);
+        const double digit = ((double)nptr[i] - 48.0);
+        result = ((result * 10.0) + digit);
         i = (i + 1);
     }
     if ((nptr[i] == (uint8_t)46)) {
         i = (i + 1);
-        double frac = 0;
-        double frac_div = 10;
+        double frac = 0.0;
+        double frac_div = 10.0;
         while (((nptr[i] >= (uint8_t)48) && (nptr[i] <= (uint8_t)57))) {
-            const double digit = ((double)nptr[i] - 48);
+            const double digit = ((double)nptr[i] - 48.0);
             frac = (frac + (digit / frac_div));
-            frac_div = (frac_div * 10);
+            frac_div = (frac_div * 10.0);
             i = (i + 1);
         }
         result = (result + frac);
@@ -10705,24 +10957,24 @@ double libc_strtod(const uint8_t * nptr, const uint8_t * * endptr) {
         if ((exp_val > 308)) {
             int32_t k = 0;
             while ((k < 40)) {
-                result = (result * 1000000000);
+                result = (result * 1000000000.0);
                 k = (k + 1);
             }
         } else {
             if ((exp_val < (-324))) {
-                result = 0;
+                result = 0.0;
             } else {
                 if ((exp_val != 0)) {
-                    double scale = 1;
+                    double scale = 1.0;
                     int32_t e = exp_val;
                     if ((e > 0)) {
                         while ((e > 0)) {
-                            scale = (scale * 10);
+                            scale = (scale * 10.0);
                             e = (e - 1);
                         }
                     } else {
                         while ((e < 0)) {
-                            scale = (scale / 10);
+                            scale = (scale / 10.0);
                             e = (e + 1);
                         }
                     }
@@ -10732,7 +10984,7 @@ double libc_strtod(const uint8_t * nptr, const uint8_t * * endptr) {
         }
     }
     if (is_neg) {
-        result = (0 - result);
+        result = (0.0 - result);
     }
     if ((endptr != NULL)) {
         endptr[0] = (&nptr[i]);
@@ -13226,7 +13478,7 @@ static __attribute__((unused)) struct ASTNode * ast_new_node(enum ASTNodeType ty
     node->cast_expr_is_force_cast = 0;
     node->identifier_name = NULL;
     node->number_value = 0;
-    node->float_literal_value = 0;
+    node->float_literal_value = 0.0;
     node->bool_literal_value = 0;
     node->int_limit_is_max = 0;
     node->int_limit_resolved_kind = 0;
@@ -22043,7 +22295,7 @@ static __attribute__((unused)) double parse_float_literal(uint8_t * str, struct 
     (void)arena;
     uint8_t * const cleaned = remove_underscores((uint8_t *)str, arena);
     if ((cleaned == NULL)) {
-        double _uya_ret = 0;
+        double _uya_ret = 0.0;
         return _uya_ret;
     }
     double _uya_ret = (double)libc_strtod((uint8_t *)cleaned, (const uint8_t **)NULL);

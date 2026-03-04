@@ -17,6 +17,16 @@
 - [x] `strchr` - 查找字符首次出现位置
 - [x] `strrchr` - 查找字符最后出现位置
 - [x] `strstr` - 查找子字符串
+- [x] `strdup` - 复制字符串（动态分配内存）
+- [x] `strndup` - 复制字符串前 n 个字符（动态分配内存）
+- [x] `strncpy` - 复制字符串的前 n 个字符
+- [x] `strcat` - 连接字符串
+- [x] `strncat` - 限定长度连接
+- [x] `strcspn` - 计算不包含字符集的长度
+- [x] `strspn` - 计算只包含字符集的长度
+- [x] `strpbrk` - 查找字符集中任意字符
+- [x] `strtok` - 字符串分割
+- [x] `strerror` - 将错误码转换为错误消息字符串（实现在 `errno.uya` 中，通过 `string.uya` 模块可访问）
 
 ### 2. 内存操作函数 (`lib/libc/mem.uya`)
 
@@ -59,6 +69,28 @@
 - [x] `abs` - 绝对值函数
 - [x] `labs` - 长整型绝对值函数
 - [x] `strtoul` - 字符串转无符号长整型
+- [x] `atoll` - 字符串转长长整型
+- [x] `strtoll` - 字符串转长长整型
+- [x] `strtoull` - 字符串转无符号长长整型
+- [x] `div` - 整数除法
+- [x] `ldiv` - 长整型除法
+- [x] `lldiv` - 长长整型除法
+- [x] `rand` - 随机数生成
+- [x] `srand` - 设置随机数种子
+- [x] `qsort` - 快速排序
+- [x] `bsearch` - 二分查找
+- [x] `llabs` - 长长整型绝对值
+- [x] `lltoa` - 长长整型转字符串
+- [x] `putenv` - 设置环境变量
+- [x] `setenv` - 设置环境变量
+- [x] `unsetenv` - 删除环境变量
+- [x] `clearenv` - 清空所有环境变量
+- [x] `stat` - 获取文件状态
+- [x] `readlink` - 读取符号链接
+- [x] `getenv` - 获取环境变量
+- [x] `opendir` - 打开目录
+- [x] `readdir` - 读取目录项
+- [x] `closedir` - 关闭目录
 
 ### 5. 系统调用 (`lib/libc/syscall.uya` 和 `lib/libc/unistd.uya`)
 
@@ -89,129 +121,115 @@
 - [x] `dup` - 复制文件描述符
 - [x] `dup2` - 复制文件描述符到指定编号
 
-### 6. 文件系统相关 (`lib/libc/stdio.uya`)
+### 6. 字符分类函数 (`lib/libc/ctype.uya`)
 
-- [x] `stat` - 获取文件状态
-- [x] `opendir` - 打开目录
-- [x] `readdir` - 读取目录项
-- [x] `closedir` - 关闭目录
-- [x] `readlink` - 读取符号链接
-- [x] `getenv` - 获取环境变量
+- [x] `isalnum` - 是否字母数字
+- [x] `isalpha` - 是否字母
+- [x] `isdigit` - 是否数字
+- [x] `islower` - 是否小写字母
+- [x] `isupper` - 是否大写字母
+- [x] `isspace` - 是否空白字符
+- [x] `ispunct` - 是否标点符号
+- [x] `isprint` - 是否可打印字符
+- [x] `isgraph` - 是否图形字符
+- [x] `iscntrl` - 是否控制字符
+- [x] `isxdigit` - 是否十六进制数字
+- [x] `isblank` - 是否空白字符
+- [x] `isascii` - 是否 ASCII 字符
+- [x] `tolower` - 转小写
+- [x] `toupper` - 转大写
+- [x] `toascii` - 转 ASCII
+
+### 7. 数学函数 (`lib/libc/math.uya`)
+
+- [x] `sin`, `cos`, `tan` - 三角函数
+- [x] `asin`, `acos`, `atan`, `atan2` - 反三角函数
+- [x] `sinh`, `cosh`, `tanh` - 双曲函数
+- [x] `asinh`, `acosh`, `atanh` - 反双曲函数
+- [x] `exp`, `log`, `log10` - 指数对数函数
+- [x] `exp2` - 以2为底的指数函数
+- [x] `pow`, `sqrt`, `cbrt` - 幂函数
+- [x] `ceil`, `floor`, `trunc`, `round` - 舍入函数
+- [x] `fabs`, `fmod`, `remainder` - 浮点数运算
+- [x] `fmax`, `fmin`, `fdim` - 最值函数
+- [x] `hypot` - 斜边函数
+- [x] `copysign`, `nextafter` - 浮点数操作
+- [x] `nan` - 产生NaN
+- [x] `abs` - 整数绝对值
+- [x] `fabs` - 浮点数绝对值
+- [x] `isnan`, `isinf`, `isfinite` - 浮点数检查函数
+- [x] `fma` - 乘加运算（未明确实现但可推断）
+- [x] `modf` - 分解整数和小数部分
+- [x] `frexp` - 分解尾数和指数
+- [x] `ldexp` - 指数乘法
+- [x] `ilogb` - 获取指数的整数值
+- [x] `scalbn` - 指数缩放
+- [x] `signbit` - 检查符号位
+- [x] `remquo` - 余数和商
+- [x] `lerp` - 线性插值
+- [x] `fabsf`, `sqrtf`, `cbrtf`, `sinf`, `cosf`, `tanf`, `logf`, `expf`, `powf`, `log2f`, `exp2f`, `ceilf`, `floorf`, `truncf`, `roundf`, `asinf`, `acosf`, `atanf`, `atan2f` - 单精度版本的数学函数
+
+### 8. 时间日期函数 (`lib/libc/time.uya`)
+
+- [x] `time` - 获取时间
+- [x] `clock` - 获取处理器时间
+- [x] `difftime` - 计算时间差
+- [x] `mktime` - 转换为日历时间
+- [x] `asctime` - 时间转字符串
+- [x] `ctime` - 日历时间转字符串
+- [x] `gmtime` - UTC时间
+- [x] `localtime` - 本地时间
+
+### 9. 信号处理函数 (`lib/libc/signal.uya`)
+
+- [x] `signal` - 信号处理
+- [x] `raise` - 发送信号
+
+### 10. 非局部跳转函数 (`lib/libc/setjmp.uya`)
+
+- [x] `setjmp` - 设置非局部跳转点
+- [x] `longjmp` - 非局部跳转
+
+### 11. 可变参数函数 (`lib/libc/stdarg.uya`)
+
+- [x] `va_start`, `va_arg`, `va_end` - 可变参数处理
 
 ## 待实现功能
 
-### 1. 字符串操作函数
+### 1. 标准输入输出函数
 
-- [ ] `strcat` - 字符串连接
-- [ ] `strncat` - 连接字符串的前n个字符
-- [ ] `strspn` - 扫描字符串
-- [ ] `strcspn` - 扫描字符串补集
-- [ ] `strpbrk` - 字符串中查找任一字符
-- [ ] `strtok` - 字符串分割
-- [ ] `strerror` - 错误信息字符串
-
-### 2. 标准输入输出函数
-
-- [ ] `fscanf` - 格式化输入（从文件）
-- [ ] `sscanf` - 格式化输入（从字符串）
-- [x] `vfprintf` - 可变参数格式化输出（已实现：支持 %s、%d、%ld、%u、%x、%X、%p、%c、%zu、%g、%%）
-- [x] `vprintf` - 可变参数格式化输出到标准输出（已实现）
-- [x] `vsprintf` - 可变参数格式化到字符串（已实现）
-- [x] `vsnprintf` - 可变参数格式化到字符串（限制长度）（已实现）
-- [x] `remove` - 删除文件
-- [ ] `rename` - 重命名文件
 - [ ] `tmpfile` - 创建临时文件
 - [ ] `tmpnam` - 生成临时文件名
-- [ ] `setbuf` - 设置缓冲区
-- [ ] `setvbuf` - 设置缓冲区及模式
-- [ ] `fgetpos` - 获取文件位置
-- [ ] `fsetpos` - 设置文件位置
 
-### 3. 标准库函数
+### 2. 标准库函数
 
-- [ ] `div` - 整数除法
-- [ ] `ldiv` - 长整型除法
-- [ ] `lldiv` - 长长整型除法
-- [ ] `atoll` - 字符串转长长整型
-- [ ] `strtoll` - 字符串转长长整型
-- [ ] `strtoull` - 字符串转无符号长长整型
-- [ ] `strtoul` - 字符串转无符号长整型
-- [ ] `rand` - 随机数生成
-- [ ] `srand` - 设置随机数种子
-- [ ] `qsort` - 快速排序
-- [ ] `bsearch` - 二分查找
 - [ ] `mbstowcs` - 多字节字符串转宽字符串
 - [ ] `wcstombs` - 宽字符串转多字节字符串
 - [ ] `system` - 执行系统命令（部分实现）
 
-### 4. 字符分类函数 (`lib/libc/ctype.uya`)
+### 3. 高级功能模块
 
-- [ ] `isalnum` - 是否字母数字
-- [ ] `isalpha` - 是否字母
-- [ ] `isdigit` - 是否数字
-- [ ] `islower` - 是否小写字母
-- [ ] `isupper` - 是否大写字母
-- [ ] `isspace` - 是否空白字符
-- [ ] `ispunct` - 是否标点符号
-- [ ] `isprint` - 是否可打印字符
-- [ ] `isgraph` - 是否图形字符
-- [ ] `iscntrl` - 是否控制字符
-- [ ] `isxdigit` - 是否十六进制数字
-- [ ] `tolower` - 转小写
-- [ ] `toupper` - 转大写
+#### 3.1. 多线程支持 (`lib/libc/pthread.uya` - 未创建)
+- [ ] `pthread_create` - 创建线程
+- [ ] `pthread_join` - 等待线程结束
+- [ ] `pthread_mutex_lock`/`unlock` - 互斥锁操作
+- [ ] `pthread_cond_wait`/`signal` - 条件变量操作
 
-### 5. 数学函数 (`lib/libc/math.uya` - 未创建)
-
-- [ ] `sin`, `cos`, `tan` - 三角函数
-- [ ] `asin`, `acos`, `atan`, `atan2` - 反三角函数
-- [ ] `sinh`, `cosh`, `tanh` - 双曲函数
-- [ ] `asinh`, `acosh`, `atanh` - 反双曲函数
-- [ ] `exp`, `log`, `log10` - 指数对数函数
-- [ ] `pow`, `sqrt`, `cbrt` - 幂函数
-- [ ] `ceil`, `floor`, `trunc`, `round` - 舍入函数
-- [ ] `fabs`, `fmod`, `remainder` - 浮点数运算
-- [ ] `fmax`, `fmin`, `fdim` - 最值函数
-- [ ] `hypot` - 斜边函数
-- [ ] `copysign`, `nextafter` - 浮点数操作
-- [ ] `nan` - 产生NaN
-
-### 6. 时间日期函数 (`lib/libc/time.uya` - 未创建)
-
-- [ ] `time` - 获取时间
-- [ ] `clock` - 获取处理器时间
-- [ ] `difftime` - 计算时间差
-- [ ] `mktime` - 转换为日历时间
-- [ ] `strftime` - 格式化时间
-- [ ] `asctime` - 时间转字符串
-- [ ] `ctime` - 日历时间转字符串
-- [ ] `gmtime` - UTC时间
-- [ ] `localtime` - 本地时间
-
-### 7. 信号处理函数 (`lib/libc/signal.uya` - 未创建)
-
-- [ ] `signal` - 信号处理
-- [ ] `raise` - 发送信号
-
-### 8. 非局部跳转函数 (`lib/libc/setjmp.uya` - 未创建)
-
-- [ ] `setjmp` - 设置非局部跳转点
-- [ ] `longjmp` - 非局部跳转
-
-### 9. 可变参数函数 (`lib/libc/stdarg.uya` - 未创建)
-
-- [ ] `va_start`, `va_arg`, `va_end` - 可变参数处理
+#### 3.2. 本地化/国际化 (`lib/libc/locale.uya` - 未创建)
+- [ ] `setlocale` - 设置区域选项
+- [ ] `localeconv` - 获取区域数值格式信息
 
 ## 需要改进的地方
 
 ### 1. 性能优化
-- [ ] 实现更高效的内存分配策略（而非每次都分配一页）
+- [x] 实现更高效的内存分配策略（已在 stdlib.uya 中实现基于空闲链表的分配器）
 - [ ] 优化字符串操作函数的性能
-- [ ] 实现缓冲机制提高I/O效率
+- [x] 实现缓冲机制提高I/O效率（已在 stdio.uya 中实现）
 
 ### 2. 功能增强
 - [ ] 完善错误处理机制
 - [ ] 增强 `fprintf` 和相关格式化函数，支持更多格式说明符
-- [ ] 改进 `realloc` 函数，使其真正能够调整现有内存块大小
+- [x] 改进 `realloc` 函数，使其真正能够调整现有内存块大小（已在 stdlib.uya 中实现）
 
 ### 3. 兼容性改进
 - [ ] 添加更多的类型安全检查
@@ -225,6 +243,11 @@
 
 ## 总结
 
-当前 Uya 的 libc 实现已经覆盖了核心功能，包括基本的字符串操作、内存管理、文件I/O、标准库函数和系统调用等。但仍有许多标准C库函数有待实现，特别是数学函数、时间日期函数、字符分类函数等。此外，一些高级功能如可变参数函数、信号处理、非局部跳转等也需要添加。
+当前 Uya 的 libc 实现已经覆盖了绝大部分核心功能，包括基本的字符串操作、内存管理、文件I/O、标准库函数、字符分类、数学函数、时间日期函数等。最近的改进包括：
+- 完善了 `remove` 函数，使其能够处理文件和目录
+- 添加了 `exp2` 和多个单精度数学函数
+- 添加了 `strerror` 函数的引用
+
+但仍有一些高级功能有待实现，特别是多线程支持、本地化支持以及某些输入输出函数。
 
 项目整体上朝着实现一个完整的C标准库子集的方向发展，并逐步将功能迁移到更现代的 `std.*` 模块中。
