@@ -767,6 +767,17 @@ fn collect_module_dependencies(
                                         }
                                         j = j + 1;
                                     }
+                                    // 同时检查 pending 数组中是否已存在（防止重复添加）
+                                    if in_list == 0 {
+                                        var pk: i32 = 0;
+                                        while pk < pending_count {
+                                            if pending[pk] != null && paths_equal(pending[pk], &fp[0] as &byte) != 0 {
+                                                in_list = 1;
+                                                break;
+                                            }
+                                            pk = pk + 1;
+                                        }
+                                    }
                                     if in_list == 0 {
                                         const path_copy: &byte = arena_alloc(arena, strlen(&fp[0]) + 1) as &byte;
                                         if path_copy != null {
@@ -783,11 +794,17 @@ fn collect_module_dependencies(
                     closedir(dir);
                     if pending_count > 0 {
                         sort_paths(&pending[0] as &(&byte), pending_count);
+                        // 先把所有文件添加到 file_list（防止递归时重复添加）
                         var idx: i32 = 0;
                         while idx < pending_count {
-                            const pc: &byte = pending[idx];
-                            file_list[current_size] = pc;
+                            file_list[current_size] = pending[idx];
                             current_size = current_size + 1;
+                            idx = idx + 1;
+                        }
+                        // 然后递归处理每个文件的依赖
+                        idx = 0;
+                        while idx < pending_count {
+                            const pc: &byte = pending[idx];
                             current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
                             if current_size < 0 { return -1; }
                             idx = idx + 1;
@@ -835,6 +852,17 @@ fn collect_module_dependencies(
                                             }
                                             j = j + 1;
                                         }
+                                        // 同时检查 pending 数组中是否已存在（防止重复添加）
+                                        if in_proc == 0 {
+                                            var k: i32 = 0;
+                                            while k < pending_count {
+                                                if pending[k] != null && paths_equal(pending[k], &fp[0] as &byte) != 0 {
+                                                    in_proc = 1;
+                                                    break;
+                                                }
+                                                k = k + 1;
+                                            }
+                                        }
                                         if in_proc == 0 {
                                             const path_copy: &byte = arena_alloc(arena, strlen(&fp[0]) + 1) as &byte;
                                             if path_copy != null {
@@ -852,11 +880,17 @@ fn collect_module_dependencies(
                     closedir(dir);
                     if pending_count > 0 {
                         sort_paths(&pending[0] as &(&byte), pending_count);
+                        // 先把所有文件添加到 file_list（防止递归时重复添加）
                         var idx: i32 = 0;
                         while idx < pending_count {
-                            const pc: &byte = pending[idx];
-                            file_list[current_size] = pc;
+                            file_list[current_size] = pending[idx];
                             current_size = current_size + 1;
+                            idx = idx + 1;
+                        }
+                        // 然后递归处理每个文件的依赖
+                        idx = 0;
+                        while idx < pending_count {
+                            const pc: &byte = pending[idx];
                             current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
                             if current_size < 0 { return -1; }
                             idx = idx + 1;
@@ -934,11 +968,17 @@ fn collect_module_dependencies(
                     closedir(dir);
                     if pending_count > 0 {
                         sort_paths(&pending[0] as &(&byte), pending_count);
+                        // 先把所有文件添加到 file_list（防止递归时重复添加）
                         var idx: i32 = 0;
                         while idx < pending_count {
-                            const pc: &byte = pending[idx];
-                            file_list[current_size] = pc;
+                            file_list[current_size] = pending[idx];
                             current_size = current_size + 1;
+                            idx = idx + 1;
+                        }
+                        // 然后递归处理每个文件的依赖
+                        idx = 0;
+                        while idx < pending_count {
+                            const pc: &byte = pending[idx];
                             current_size = collect_module_dependencies(pc, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
                             if current_size < 0 { return -1; }
                             idx = idx + 1;
@@ -1002,6 +1042,17 @@ fn collect_module_dependencies(
                                         break;
                                     }
                                     j = j + 1;
+                                }
+                                // 同时检查 pending 数组中是否已存在（防止重复添加）
+                                if already_added == 0 {
+                                    var pk: i32 = 0;
+                                    while pk < pending_count {
+                                        if pending[pk] != null && paths_equal(pending[pk], &full_path[0] as &byte) != 0 {
+                                            already_added = 1;
+                                            break;
+                                        }
+                                        pk = pk + 1;
+                                    }
                                 }
                                 if already_added == 0 {
                                     const path_copy: &byte = arena_alloc(arena, strlen(&full_path[0]) + 1) as &byte;
@@ -1853,6 +1904,23 @@ export fn main() i32 {
         backend = BackendType.BACKEND_C99;  // run/test 模式默认使用 C99 后端
     }
     
+    // build 命令：如果指定了非 .c 输出，需要生成临时 C 文件
+    var user_output_path: *byte = null;  // 用户指定的输出路径（用于 gcc 链接）
+    if command == CommandType.COMMAND_BUILD && output_file_index >= 0 {
+        const out_path: *byte = get_argv(output_file_index);
+        if out_path != null && is_c_output(out_path as &byte) == 0 {
+            // 输出不是 .c 文件，保存用户指定的路径，生成临时 C 文件路径
+            user_output_path = out_path;
+            const written: i32 = snprintf(&auto_output_path[0], PATH_MAX, "/tmp/uya_output.c" as *byte);
+            if written <= 0 || written >= PATH_MAX {
+                fprintf(libc.stderr, "错误: 无法生成临时输出路径\n" as *byte);
+                return 1;
+            }
+            output_file_index = -2;  // 标记为自动生成的路径
+            backend = BackendType.BACKEND_C99;
+        }
+    }
+    
     // 确定输出路径覆盖参数
     var output_path_for_compile: &byte = null;
     if output_file_index == -2 {
@@ -1865,6 +1933,7 @@ export fn main() i32 {
     }
 
     // build 命令：检测输出类型（C 文件或可执行文件）
+    // 注意：output_file_index 可能是 -2（自动生成路径），此时用户指定了非 .c 输出
     var is_output_c_file: i32 = 0;
     if command == CommandType.COMMAND_BUILD && output_file_index >= 0 {
         const out_path: *byte = get_argv(output_file_index);
@@ -1874,13 +1943,18 @@ export fn main() i32 {
     }
 
     // build 命令：如果输出不是 C 文件，调用 gcc 链接
+    // 条件：output_file_index == -2（自动生成 C 文件）或用户指定了非 .c 输出
     if command == CommandType.COMMAND_BUILD && is_output_c_file == 0 {
-        var c_file: &byte = &auto_output_path[0];
+        // C 文件路径（auto_output_path 已设置）
+        const c_file: &byte = &auto_output_path[0];
+        
         var output: &byte = "a.out" as *byte;
 
-        // 如果指定了 -o，使用指定的输出路径
-        if output_file_index >= 0 {
-            output = get_argv(output_file_index) as *byte;
+        // 如果用户指定了输出路径，使用它
+        if user_output_path != null {
+            output = user_output_path as &byte;
+        } else if output_file_index >= 0 {
+            output = get_argv(output_file_index) as &byte;
         }
 
         // 调用 gcc 链接
