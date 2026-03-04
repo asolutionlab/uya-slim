@@ -216,10 +216,10 @@
 - [x] `pthread_self` - 获取当前线程 ID
 - [x] `pthread_equal` - 比较两个线程 ID
 - [x] `pthread_detach` - 分离线程
-- [ ] `pthread_cancel` - 取消线程
-- [ ] `pthread_testcancel` - 检查取消请求
-- [ ] `pthread_setcancelstate` - 设置取消状态
-- [ ] `pthread_setcanceltype` - 设置取消类型
+- [x] `pthread_cancel` - 取消线程
+- [x] `pthread_testcancel` - 检查取消请求
+- [x] `pthread_setcancelstate` - 设置取消状态
+- [x] `pthread_setcanceltype` - 设置取消类型
 
 
 #### 互斥量
