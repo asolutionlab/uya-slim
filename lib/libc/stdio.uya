@@ -516,6 +516,7 @@ export fn fgetc(stream: &FILE) i32 {
 }
 
 // _fmt_f64_to_buf - 将 f64 格式化为字符串追加到 buf，返回新的 buf_pos
+// 支持：普通数值、NaN、Infinity、科学计数法（大数/小数）
 fn _fmt_f64_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, precision: i32) usize {
     var pos: usize = buf_pos;
     if pos >= buf_max { return pos; }
@@ -548,6 +549,7 @@ fn _fmt_f64_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, precisi
         }
         return pos;
     }
+    // 处理符号
     if x < 0.0 {
         buf[pos] = 45;
         pos = pos + 1;
@@ -568,41 +570,119 @@ fn _fmt_f64_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, precisi
         }
         return pos;
     }
-    var int_part: i64 = x as i64;
-    var frac: f64 = x - (int_part as f64);
-    var digits: [byte: 24] = [];
-    var di: usize = 0;
-    if int_part == 0 {
-        digits[di] = 48;
-        di = di + 1;
-    } else {
-        var t: i64 = int_part;
-        if t < 0 { t = 0 - t; }
-        while t > 0 && di < 24 {
-            digits[di] = (48 + (t % 10) as i32) as byte;
-            di = di + 1;
-            t = t / 10;
-        }
+
+    // 计算指数：科学计数法需要将数值归一化到 [1, 10)
+    var exp: i32 = 0;
+    var normalized: f64 = x;
+    while normalized >= 10.0 {
+        normalized = normalized / 10.0;
+        exp = exp + 1;
     }
-    var i: usize = 0;
-    while i < di && pos < buf_max {
-        buf[pos] = digits[di - 1 - i];
-        pos = pos + 1;
-        i = i + 1;
+    while normalized < 1.0 && normalized > 0.0 {
+        normalized = normalized * 10.0;
+        exp = exp - 1;
     }
-    var prec: i32 = precision;
-    if prec < 0 { prec = 6; }
-    if prec > 0 && pos < buf_max {
-        buf[pos] = 46;
+
+    // 判断是否需要科学计数法：|exp| >= 6 或数值超出 i64 范围
+    const use_scientific: bool = exp > 15 || exp < -4;
+
+    if use_scientific {
+        // 科学计数法输出：m.nnnnnne±xx
+        var prec: i32 = precision;
+        if prec < 0 { prec = 6; }
+
+        // 输出整数部分
+        const int_digit: i32 = normalized as i32;
+        buf[pos] = (48 + int_digit) as byte;
         pos = pos + 1;
-        i = 0;
-        while i < prec && pos < buf_max {
-            frac = frac * 10.0;
-            const d: i32 = frac as i32;
-            buf[pos] = (48 + d) as byte;
+
+        // 输出小数部分
+        if prec > 0 && pos < buf_max {
+            buf[pos] = 46;
             pos = pos + 1;
-            frac = frac - (d as f64);
+            var frac: f64 = normalized - (int_digit as f64);
+            var k: i32 = 0;
+            while k < prec && pos < buf_max {
+                frac = frac * 10.0;
+                const d: i32 = frac as i32;
+                buf[pos] = (48 + d) as byte;
+                pos = pos + 1;
+                frac = frac - (d as f64);
+                k = k + 1;
+            }
+        }
+
+        // 输出指数部分 e±xx
+        if pos < buf_max {
+            buf[pos] = 101;  // 'e'
+            pos = pos + 1;
+        }
+        if exp < 0 {
+            if pos < buf_max {
+                buf[pos] = 45;  // '-'
+                pos = pos + 1;
+            }
+            exp = 0 - exp;
+        } else {
+            if pos < buf_max {
+                buf[pos] = 43;  // '+'
+                pos = pos + 1;
+            }
+        }
+        // 输出指数值（至少两位）
+        if exp >= 100 {
+            buf[pos] = (48 + exp / 100) as byte;
+            pos = pos + 1;
+            exp = exp % 100;
+        }
+        if exp >= 10 {
+            buf[pos] = (48 + exp / 10) as byte;
+            pos = pos + 1;
+            exp = exp % 10;
+        } else if pos > buf_pos + 1 {
+            // 补零：e+05 而非 e+5
+            buf[pos] = 48;
+            pos = pos + 1;
+        }
+        buf[pos] = (48 + exp) as byte;
+        pos = pos + 1;
+    } else {
+        // 普通格式输出：固定小数位
+        var int_part: i64 = x as i64;
+        var frac: f64 = x - (int_part as f64);
+        var digits: [byte: 24] = [];
+        var di: usize = 0;
+        if int_part == 0 {
+            digits[di] = 48;
+            di = di + 1;
+        } else {
+            var t: i64 = int_part;
+            while t > 0 && di < 24 {
+                digits[di] = (48 + (t % 10) as i32) as byte;
+                di = di + 1;
+                t = t / 10;
+            }
+        }
+        var i: usize = 0;
+        while i < di && pos < buf_max {
+            buf[pos] = digits[di - 1 - i];
+            pos = pos + 1;
             i = i + 1;
+        }
+        var prec: i32 = precision;
+        if prec < 0 { prec = 6; }
+        if prec > 0 && pos < buf_max {
+            buf[pos] = 46;
+            pos = pos + 1;
+            i = 0;
+            while i < prec && pos < buf_max {
+                frac = frac * 10.0;
+                const d: i32 = frac as i32;
+                buf[pos] = (48 + d) as byte;
+                pos = pos + 1;
+                frac = frac - (d as f64);
+                i = i + 1;
+            }
         }
     }
     return pos;
