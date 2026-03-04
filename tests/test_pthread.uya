@@ -285,6 +285,58 @@ fn test_pthread_setcancelstate() !void {
     try expect(pthread_setcanceltype(2, null) == 22); // EINVAL
 }
 
+// 用于测试 TLS 的线程函数
+var _tls_test_value: i32 = 42;
+var _tls_thread_result: i64 = 0;
+var _tls_key_seq: i32 = 0;
+fn tls_test_thread(arg: &void) &void {
+    _ = arg;
+    
+    // 设置线程特定值
+    var key1: pthread_key_t = pthread_key_t{ seq: _tls_key_seq, destructor: null };
+    pthread_setspecific(key1, (&_tls_test_value) as &void);
+    
+    // 获取线程特定值（使用新的副本避免移动问题）
+    var key2: pthread_key_t = pthread_key_t{ seq: _tls_key_seq, destructor: null };
+    const val: &void = pthread_getspecific(key2);
+    const val_ptr: &i32 = val as &i32;
+    _tls_thread_result = val_ptr[0] as i64;
+    
+    return null;
+}
+
+// 测试线程特定数据（TLS）
+fn test_pthread_key() !void {
+    // 测试创建键
+    var key: pthread_key_t = pthread_key_t{ seq: 0, destructor: null };
+    try expect(pthread_key_create(&key, null) == 0);
+    try expect(key.seq > 0);  // 序列号应该被设置
+    
+    // 测试设置和获取特定于线程的数据
+    const test_value: i32 = 123;
+    var key_copy: pthread_key_t = pthread_key_t{ seq: key.seq, destructor: key.destructor };
+    const set_ret: i32 = pthread_setspecific(key_copy, (&test_value) as &void);
+    try expect(set_ret == 0);
+    
+    var key_copy2: pthread_key_t = pthread_key_t{ seq: key.seq, destructor: key.destructor };
+    const retrieved: &void = pthread_getspecific(key_copy2);
+    try expect(retrieved != null);
+    
+    // 使用指针解引用
+    const retrieved_ptr: &i32 = retrieved as &i32;
+    const val: i32 = retrieved_ptr[0];
+    try expect(val == 123);
+    
+    // 测试删除键
+    try expect(pthread_key_delete(&key) == 0);
+    
+    // 测试无效参数
+    try expect(pthread_key_create(null as &pthread_key_t, null) == 22); // EINVAL
+    try expect(pthread_key_delete(null as &pthread_key_t) == 22); // EINVAL
+    var invalid_key: pthread_key_t = pthread_key_t{ seq: 0, destructor: null };
+    try expect(pthread_setspecific(invalid_key, null) == 22); // EINVAL
+}
+
 export fn main() i32 {
     test_suite_begin("pthread");
 
@@ -389,6 +441,12 @@ export fn main() i32 {
         return test_suite_end();
     };
     test_pass("pthread_setcancelstate");
+
+    test_pthread_key() catch {
+        test_fail("pthread_key");
+        return test_suite_end();
+    };
+    test_pass("pthread_key");
 
     return test_suite_end();
 }

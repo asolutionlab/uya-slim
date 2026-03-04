@@ -250,11 +250,11 @@
 
 #### 线程特定数据（TLS）
 
-- [ ] `pthread_key_t` - 线程特定数据键结构体
-- [ ] `pthread_key_create` - 创建线程特定数据键
-- [ ] `pthread_key_delete` - 删除线程特定数据键
-- [ ] `pthread_getspecific` - 获取线程特定数据
-- [ ] `pthread_setspecific` - 设置线程特定数据
+- [x] `pthread_key_t` - 线程特定数据键结构体
+- [x] `pthread_key_create` - 创建线程特定数据键
+- [x] `pthread_key_delete` - 删除线程特定数据键
+- [x] `pthread_getspecific` - 获取线程特定数据
+- [x] `pthread_setspecific` - 设置线程特定数据
 
 #### 读写锁
 
