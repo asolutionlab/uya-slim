@@ -420,7 +420,7 @@ fn _strftime_write_4d(buf: &byte, maxsize: usize, pos: &usize, val: i32) void {
 
 // strftime - 格式化时间到字符串
 // 支持的格式说明符：Y,y,m,d,H,M,S,w,a,A,b,B,j,U,I,p,r,T,D,F,c,x,X,Z,%
-export fn strftime(s: &byte, maxsize: usize, format: &const byte, timeptr: &const tm) usize {
+export extern "libc" fn strftime(s: &byte, maxsize: usize, format: &const byte, timeptr: &const tm) usize {
     if s == null || format == null || timeptr == null || maxsize == 0 {
         return 0;
     }

@@ -136,7 +136,7 @@ export extern "libc" fn waitpid(pid: i32, status: &i32, options: i32) i32 {
 }
 
 // system - 执行 shell 命令（0 依赖实现）
-export fn system(cmd: &const byte) i32 {
+export extern "libc" fn system(cmd: &const byte) i32 {
     if cmd == null {
         return 0;
     }

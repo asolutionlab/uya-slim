@@ -1267,19 +1267,20 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     fputs("(uint8_t *)" as *byte, codegen.output as *void);
                 } else if callee_name != null && strcmp(callee_name as *byte, "sys_open" as *byte) == 0 && i == 0 {
                     // 不添加 cast，与 C 版一致
+                } else if callee_name != null && (
+                    (strcmp(callee_name as *byte, "snprintf" as *byte) == 0 && i == 0) ||
+                    (strcmp(callee_name as *byte, "sprintf" as *byte) == 0 && i == 0) ||
+                    (strcmp(callee_name as *byte, "vsnprintf" as *byte) == 0 && i == 0) ||
+                    (strcmp(callee_name as *byte, "vsprintf" as *byte) == 0 && i == 0) ||
+                    (strcmp(callee_name as *byte, "strcpy" as *byte) == 0 && i == 0) ||
+                    (strcmp(callee_name as *byte, "strcat" as *byte) == 0 && i == 0) ||
+                    (strcmp(callee_name as *byte, "readlink" as *byte) == 0 && i == 1)) {
+                    fputs("(char *)" as *byte, codegen.output as *void);
                 } else if is_libc != 0 {
                     fputs("(const char *)" as *byte, codegen.output as *void);
                 } else {
                     fputs("(uint8_t *)" as *byte, codegen.output as *void);
                 }
-            // C 版对非 string/byte_ptr 参数不添加 (const char *)；仅 snprintf/sprintf 等特定函数需 (char *)
-            } else if callee_name != null && (
-                (strcmp(callee_name as *byte, "snprintf" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "sprintf" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "strcpy" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "strcat" as *byte) == 0 && i == 0) ||
-                (strcmp(callee_name as *byte, "readlink" as *byte) == 0 && i == 1)) {
-                fputs("(char *)" as *byte, codegen.output as *void);
             }
             
             // 检查是否是大结构体参数且函数期望指针

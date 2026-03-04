@@ -230,7 +230,7 @@
 - [x] `pthread_mutex_lock` - 加锁
 - [x] `pthread_mutex_unlock` - 解锁
 - [x] `pthread_mutex_trylock` - 尝试加锁
-- [ ] `pthread_mutex_timedlock` - 带超时加锁
+- [x] `pthread_mutex_timedlock` - 带超时加锁（简化实现）
 - [ ] `pthread_mutexattr_init` - 初始化互斥量属性
 - [ ] `pthread_mutexattr_destroy` - 销毁互斥量属性
 - [ ] `pthread_mutexattr_gettype` - 获取互斥量类型
@@ -243,7 +243,7 @@
 - [x] `pthread_cond_init` - 初始化条件变量
 - [x] `pthread_cond_destroy` - 销毁条件变量
 - [x] `pthread_cond_wait` - 等待条件变量（基于 futex + seq 实现）
-- [ ] `pthread_cond_timedwait` - 带超时等待条件变量
+- [x] `pthread_cond_timedwait` - 带超时等待条件变量
 - [x] `pthread_cond_signal` - 唤醒一个等待线程（基于 futex 实现）
 - [x] `pthread_cond_broadcast` - 唤醒所有等待线程（基于 futex 实现）
 
@@ -291,7 +291,7 @@
 
 #### 线程调度
 
-- [ ] `pthread_yield` - 让出 CPU
+- [x] `pthread_yield` - 让出 CPU（基于 sched_yield 系统调用）
 - [ ] `pthread_setaffinity_np` - 设置线程 CPU 亲和性
 - [ ] `pthread_getaffinity_np` - 获取线程 CPU 亲和性
 

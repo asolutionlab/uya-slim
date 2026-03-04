@@ -30,7 +30,7 @@ export var stderr: &FILE = &_stderr;
 // ============================================================
 
 // flush_buffer - 刷新流的缓冲区
-export fn flush_buffer(stream: &FILE) i32 {
+export extern "libc" fn flush_buffer(stream: &FILE) i32 {
     if stream.buf_len == 0 {
         return 0;  // 没有需要刷新的数据
     }
@@ -53,7 +53,7 @@ export fn flush_buffer(stream: &FILE) i32 {
 }
 
 // write_to_buffer - 将数据写入流的缓冲区
-export fn write_to_buffer(stream: &FILE, buf: &const byte, n: usize) i64 {
+export extern "libc" fn write_to_buffer(stream: &FILE, buf: &const byte, n: usize) i64 {
     if n == 0 {
         return 0;
     }
@@ -144,13 +144,13 @@ export const STDERR: i64 = 2;
 
 // put_char - 向标准输出写入一个字符
 // 返回：写入的字符（成功）或 -1（失败）
-export fn put_char(c: i32) i32 {
+export extern "libc" fn put_char(c: i32) i32 {
     return put_char_fd(c, STDOUT);
 }
 
 // put_char_fd - 吐定文件描述符写入一个字符
 // 返回：写入的字符（成功）或 -1（失败）
-export fn put_char_fd(c: i32, fd: i64) i32 {
+export extern "libc" fn put_char_fd(c: i32, fd: i64) i32 {
     // 查找对应的FILE流
     var target_stream: &FILE = null;
     if fd == 0 { target_stream = stdin; }
@@ -189,13 +189,13 @@ export fn put_char_fd(c: i32, fd: i64) i32 {
 
 // write_bytes - 向标准输出写入 n 个字节
 // 返回：写入的字节数，失败返回 -1
-export fn write_bytes(buf: &const byte, n: usize) i64 {
+export extern "libc" fn write_bytes(buf: &const byte, n: usize) i64 {
     return write_bytes_fd(buf, n, STDOUT);
 }
 
 // write_bytes_fd - 向指定文件描述符写入 n 个字节
 // 返回：写入的字节数，失败返回 -1
-export fn write_bytes_fd(buf: &const byte, n: usize, fd: i64) i64 {
+export extern "libc" fn write_bytes_fd(buf: &const byte, n: usize, fd: i64) i64 {
     // 查找对应的FILE流
     var target_stream: &FILE = null;
     if fd == 0 { target_stream = stdin; }
@@ -217,7 +217,7 @@ export fn write_bytes_fd(buf: &const byte, n: usize, fd: i64) i64 {
 
 // put_str_len - 向标准输出写入指定长度的字符串并换行
 // 返回：0 成功，-1 失败
-export fn put_str_len(s: &const byte, len: usize) i32 {
+export extern "libc" fn put_str_len(s: &const byte, len: usize) i32 {
     // 写入字符串内容
     const result: i64 = write_bytes(s, len);
     if result < 0 {
@@ -240,7 +240,7 @@ export fn put_str_len(s: &const byte, len: usize) i32 {
 
 // get_char - 从标准输入读取一个字符
 // 返回：读取的字符，EOF 或错误返回 -1
-export fn get_char() i32 {
+export extern "libc" fn get_char() i32 {
     var ch: byte = 0 as byte;
     const result: !i64 = @syscall(SYS_read, STDIN, &ch as i64, 1);
     const bytes_read: i64 = result catch {
@@ -254,7 +254,7 @@ export fn get_char() i32 {
 
 // read_bytes - 从标准输入读取最多 n 个字节
 // 返回：读取的字节数，EOF 或错误返回 -1
-export fn read_bytes(buf: &byte, n: usize) i64 {
+export extern "libc" fn read_bytes(buf: &byte, n: usize) i64 {
     const result: !i64 = @syscall(SYS_read, STDIN, buf as i64, n as i64);
     const bytes_read: i64 = result catch {
         return 0 - 1;
@@ -264,7 +264,7 @@ export fn read_bytes(buf: &byte, n: usize) i64 {
 
 // read_bytes_fd - 从指定文件描述符读取最多 n 个字节
 // 返回：读取的字节数，EOF 或错误返回 -1
-export fn read_bytes_fd(buf: &byte, n: usize, fd: i64) i64 {
+export extern "libc" fn read_bytes_fd(buf: &byte, n: usize, fd: i64) i64 {
     const result: !i64 = @syscall(SYS_read, fd, buf as i64, n as i64);
     const bytes_read: i64 = result catch {
         return 0 - 1;
@@ -278,7 +278,7 @@ export fn read_bytes_fd(buf: &byte, n: usize, fd: i64) i64 {
 
 // i32_to_str - 将 i32 转换为十进制字符串
 // 返回：写入的字符数
-export fn i32_to_str(value: i32, buf: &byte) usize {
+export extern "libc" fn i32_to_str(value: i32, buf: &byte) usize {
     var v: i32 = value;
     var len: usize = 0;
     var is_neg: bool = false;
@@ -322,7 +322,7 @@ export fn i32_to_str(value: i32, buf: &byte) usize {
 
 // i64_to_str - 将 i64 转换为十进制字符串
 // 返回：写入的字符数
-export fn i64_to_str(value: i64, buf: &byte) usize {
+export extern "libc" fn i64_to_str(value: i64, buf: &byte) usize {
     var v: i64 = value;
     var len: usize = 0;
     var is_neg: bool = false;
@@ -366,7 +366,7 @@ export fn i64_to_str(value: i64, buf: &byte) usize {
 
 // print_i32 - 将 i32 值打印到标准输出
 // 返回：写入的字符数
-export fn print_i32(value: i32) usize {
+export extern "libc" fn print_i32(value: i32) usize {
     var buf: [byte: 12] = [];
     const len: usize = i32_to_str(value, &buf[0] as &byte);
     _ = write_bytes(&buf[0] as &byte, len);
@@ -375,7 +375,7 @@ export fn print_i32(value: i32) usize {
 
 // print_i64 - 将 i64 值打印到标准输出
 // 返回：写入的字符数
-export fn print_i64(value: i64) usize {
+export extern "libc" fn print_i64(value: i64) usize {
     var buf: [byte: 21] = [];
     const len: usize = i64_to_str(value, &buf[0] as &byte);
     _ = write_bytes(&buf[0] as &byte, len);
@@ -391,7 +391,7 @@ var fopen_fd_storage: [FILE: 64] = [];
 
 // fopen - 打开文件（C 标准库兼容）
 // 返回：FILE*，失败返回 null
-export fn fopen(filename: &const byte, mode: &const byte) &FILE {
+export extern "libc" fn fopen(filename: &const byte, mode: &const byte) &FILE {
     if filename == null || mode == null {
         return null;
     }
@@ -450,7 +450,7 @@ export fn fopen(filename: &const byte, mode: &const byte) &FILE {
 
 // fclose - 关闭文件（C 标准库兼容）
 // 返回：0 成功，EOF (-1) 失败
-export fn fclose(stream: &FILE) i32 {
+export extern "libc" fn fclose(stream: &FILE) i32 {
     if stream == null {
         return 0 - 1;  // EOF
     }
@@ -468,7 +468,7 @@ export fn fclose(stream: &FILE) i32 {
 
 // fread - 从文件读取（C 标准库兼容）
 // 返回：读取的元素数
-export fn fread(ptr: &byte, size: usize, nmemb: usize, stream: &FILE) usize {
+export extern "libc" fn fread(ptr: &byte, size: usize, nmemb: usize, stream: &FILE) usize {
     if ptr == null || stream == null || size == 0 || nmemb == 0 {
         return 0;
     }
@@ -493,7 +493,7 @@ export fn fread(ptr: &byte, size: usize, nmemb: usize, stream: &FILE) usize {
 
 // fgetc - 从文件读取一个字符（C 标准库兼容）
 // 返回：读取的字符，EOF (-1) 表示错误或文件结束
-export fn fgetc(stream: &FILE) i32 {
+export extern "libc" fn fgetc(stream: &FILE) i32 {
     if stream == null {
         return 0 - 1;  // EOF
     }
@@ -690,7 +690,7 @@ fn _fmt_f64_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, precisi
 
 // fprintf - C 标准库兼容，stream 为 FILE*（stdin/stdout/stderr）
 // 支持 %s、%d、%ld、%u、%x、%X、%p、%c、%zu、%g、%%、%*s、%.Ng
-export fn fprintf(stream: &FILE, format: &const byte, ...) i32 {
+export extern "libc" fn fprintf(stream: &FILE, format: &const byte, ...) i32 {
     if stream == null || format == null {
         return 0 - 1;
     }
@@ -1007,7 +1007,7 @@ fn _fmt_u64_to_buf(ctx: &_FmtContext, value: u64) void {
 
 // vfprintf - 格式化输出到文件流（接收 va_list 参数）
 // 支持 %s、%d、%ld、%u、%x、%X、%p、%c、%zu、%g、%%
-export fn vfprintf(stream: &FILE, format: &const byte, ap: va_list) i32 {
+export extern "libc" fn vfprintf(stream: &FILE, format: &const byte, ap: va_list) i32 {
     if stream == null || format == null {
         return 0 - 1;
     }
@@ -1019,12 +1019,12 @@ export fn vfprintf(stream: &FILE, format: &const byte, ap: va_list) i32 {
 }
 
 // vprintf - 格式化输出到 stdout（接收 va_list 参数）
-export fn vprintf(format: &const byte, ap: va_list) i32 {
+export extern "libc" fn vprintf(format: &const byte, ap: va_list) i32 {
     return vfprintf(stdout, format, ap);
 }
 
 // vsprintf - 格式化到字符串（接收 va_list 参数）
-export fn vsprintf(buf: &byte, format: &const byte, ap: va_list) i32 {
+export extern "libc" fn vsprintf(buf: &byte, format: &const byte, ap: va_list) i32 {
     if buf == null || format == null {
         return 0 - 1;
     }
@@ -1032,7 +1032,7 @@ export fn vsprintf(buf: &byte, format: &const byte, ap: va_list) i32 {
 }
 
 // vsnprintf - 格式化到字符串（带长度限制，接收 va_list 参数）
-export fn vsnprintf(buf: &byte, n: usize, format: &const byte, ap: va_list) i32 {
+export extern "libc" fn vsnprintf(buf: &byte, n: usize, format: &const byte, ap: va_list) i32 {
     if buf == null || format == null || n == 0 {
         return 0 - 1;
     }
@@ -1042,7 +1042,7 @@ export fn vsnprintf(buf: &byte, n: usize, format: &const byte, ap: va_list) i32 
 // fwrite - 向文件流写入数据
 // 参数：ptr - 数据指针，size - 单个元素大小，nmemb - 元素数量，stream - 文件流
 // 返回：成功写入的元素数量
-export fn fwrite(ptr: &const byte, size: usize, nmemb: usize, stream: &FILE) usize {
+export extern "libc" fn fwrite(ptr: &const byte, size: usize, nmemb: usize, stream: &FILE) usize {
     if stream == null || ptr == null || size == 0 || nmemb == 0 {
         return 0;
     }
@@ -1060,7 +1060,7 @@ export fn fwrite(ptr: &const byte, size: usize, nmemb: usize, stream: &FILE) usi
 
 // fputc - 向文件流写入一个字符（C 标准库兼容）
 // 返回：写入的字符，EOF (-1) 表示错误
-export fn fputc(c: i32, stream: &FILE) i32 {
+export extern "libc" fn fputc(c: i32, stream: &FILE) i32 {
     if stream == null {
         return 0 - 1;  // EOF
     }
@@ -1084,7 +1084,7 @@ export fn fputc(c: i32, stream: &FILE) i32 {
 
 // fputs - 向文件流写入字符串（C 标准库兼容）
 // 返回：非负值成功，EOF (-1) 失败
-export fn fputs(s: &const byte, stream: &FILE) i32 {
+export extern "libc" fn fputs(s: &const byte, stream: &FILE) i32 {
     if s == null || stream == null {
         return 0 - 1;  // EOF
     }
@@ -1105,7 +1105,7 @@ export fn fputs(s: &const byte, stream: &FILE) i32 {
 
 // fflush - 刷新文件流缓冲区（C 标准库兼容）
 // 注意：使用低级 I/O 无缓冲，直接返回成功
-export fn fflush(stream: &FILE) i32 {
+export extern "libc" fn fflush(stream: &FILE) i32 {
     if stream == null {
         return 0 - 1;
     }
@@ -1119,7 +1119,7 @@ export fn fflush(stream: &FILE) i32 {
 // fseek - 设置文件位置指针
 // 参数：stream - 文件流，offset - 偏移量，whence - 起始位置 (SEEK_SET/SEEK_CUR/SEEK_END)
 // 返回：0 成功，-1 失败
-export fn fseek(stream: &FILE, offset: i64, whence: i32) i32 {
+export extern "libc" fn fseek(stream: &FILE, offset: i64, whence: i32) i32 {
     if stream == null { return -1; }
     // 简化实现：使用 lseek
     const result: !i64 = @syscall(SYS_lseek, stream.fd, offset, whence as i64);
@@ -1130,7 +1130,7 @@ export fn fseek(stream: &FILE, offset: i64, whence: i32) i32 {
 
 // ftell - 获取当前文件位置
 // 返回：当前位置，失败返回 -1
-export fn ftell(stream: &FILE) i64 {
+export extern "libc" fn ftell(stream: &FILE) i64 {
     if stream == null { return -1; }
     const result: !i64 = @syscall(SYS_lseek, stream.fd, 0, 1);  // SEEK_CUR = 1
     const ret: i64 = result catch { return -1; };
@@ -1138,14 +1138,14 @@ export fn ftell(stream: &FILE) i64 {
 }
 
 // rewind - 重置文件位置指针到开头
-export fn rewind(stream: &FILE) void {
+export extern "libc" fn rewind(stream: &FILE) void {
     if stream == null { return; }
     _ = @syscall(SYS_lseek, stream.fd, 0, 0);  // SEEK_SET = 0
 }
 
 // feof - 检查是否到达文件末尾
 // 返回：非 0 表示 EOF，0 表示未到达
-export fn feof(stream: &FILE) i32 {
+export extern "libc" fn feof(stream: &FILE) i32 {
     if stream == null { return 0; }
     // 简化实现：总是返回 0
     return 0;
@@ -1153,20 +1153,20 @@ export fn feof(stream: &FILE) i32 {
 
 // ferror - 检查文件流错误标志
 // 返回：非 0 表示有错误，0 表示无错误
-export fn ferror(stream: &FILE) i32 {
+export extern "libc" fn ferror(stream: &FILE) i32 {
     if stream == null { return 0; }
     // 简化实现：总是返回 0
     return 0;
 }
 
 // clearerr - 清除文件流错误标志
-export fn clearerr(stream: &FILE) void {
+export extern "libc" fn clearerr(stream: &FILE) void {
     if stream == null { return; }
     // 简化实现：无操作
 }
 
 // fgetpos - 获取文件位置 (POSIX)
-export fn fgetpos(stream: &FILE, pos: &i64) i32 {
+export extern "libc" fn fgetpos(stream: &FILE, pos: &i64) i32 {
     if stream == null || pos == null { return -1; }
     pos[0] = ftell(stream);
     if pos[0] < 0 { return -1; }
@@ -1174,7 +1174,7 @@ export fn fgetpos(stream: &FILE, pos: &i64) i32 {
 }
 
 // fsetpos - 设置文件位置 (POSIX)
-export fn fsetpos(stream: &FILE, pos: &i64) i32 {
+export extern "libc" fn fsetpos(stream: &FILE, pos: &i64) i32 {
     if stream == null || pos == null { return -1; }
     return fseek(stream, pos[0], 0);  // SEEK_SET
 }
@@ -1182,7 +1182,7 @@ export fn fsetpos(stream: &FILE, pos: &i64) i32 {
 // setbuf - 设置流缓冲区
 // mode: _IOFBF(0)-全缓冲, _IOLBF(1)-行缓冲, _IONBF(2)-无缓冲
 // 如果 buf 为 null，则关闭缓冲
-export fn setbuf(stream: &FILE, buf: &byte) void {
+export extern "libc" fn setbuf(stream: &FILE, buf: &byte) void {
     if stream == null { return; }
     if buf == null {
         // 无缓冲模式
@@ -1199,7 +1199,7 @@ export fn setbuf(stream: &FILE, buf: &byte) void {
 // mode: _IOFBF(0)-全缓冲, _IOLBF(1)-行缓冲, _IONBF(2)-无缓冲
 // size: 缓冲区大小（简化实现：忽略，使用内置4096字节缓冲区）
 // 返回：0 成功，非0 失败
-export fn setvbuf(stream: &FILE, buf: &byte, mode: i32, size: usize) i32 {
+export extern "libc" fn setvbuf(stream: &FILE, buf: &byte, mode: i32, size: usize) i32 {
     if stream == null { return -1; }
     
     // 先刷新现有缓冲区
@@ -1247,7 +1247,7 @@ export fn setvbuf(stream: &FILE, buf: &byte, mode: i32, size: usize) i32 {
 
 // remove - 删除文件或目录
 // 根据路径类型，使用 unlink 删除文件或 rmdir 删除目录
-export fn remove(path: &const byte) i32 {
+export extern "libc" fn remove(path: &const byte) i32 {
     if path == null { return -1; }
     
     // 导入 stat 函数以判断路径类型
@@ -1289,7 +1289,7 @@ export fn remove(path: &const byte) i32 {
 
 // rename - 重命名文件
 // 返回：0 成功，-1 失败
-export fn rename(oldpath: &const byte, newpath: &const byte) i32 {
+export extern "libc" fn rename(oldpath: &const byte, newpath: &const byte) i32 {
     if oldpath == null || newpath == null { return -1; }
     const result: !i32 = @syscall(SYS_rename, oldpath as i64, newpath as i64) as! i32;
     const ret: i32 = result catch { return -1; };
@@ -1306,7 +1306,7 @@ const _TMPFILE_O_FLAGS: i32 = 194;
 // S_IRUSR | S_IWUSR = 256 | 128 = 384
 const _TMPFILE_MODE: i32 = 384;
 
-export fn tmpfile() &FILE {
+export extern "libc" fn tmpfile() &FILE {
     // 生成唯一临时文件名
     var name: [byte: 32] = [];
     name[0] = 47; name[1] = 116; name[2] = 109; name[3] = 112;  // "/tmp"
@@ -1374,7 +1374,7 @@ fn _alloc_file_storage() &FILE {
 
 // tmpnam - 生成临时文件名
 // 返回：临时文件名，失败返回 null
-export fn tmpnam(s: &byte) &byte {
+export extern "libc" fn tmpnam(s: &byte) &byte {
     if s == null { return null; }
     
     // 使用计数器生成唯一文件名
@@ -1416,7 +1416,7 @@ export fn tmpnam(s: &byte) &byte {
 // 打印格式: "s: error_message\n"
 extern fn strerror(errnum: i32) &byte;
 
-export fn perror(s: &const byte) void {
+export extern "libc" fn perror(s: &const byte) void {
     if s != null && s[0] != 0 {
         fputs(s, stderr);
         fputc(58 as i32, stderr);  // ':'
@@ -1433,7 +1433,7 @@ export fn perror(s: &const byte) void {
 
 // sprintf - 格式化字符串
 // 返回：写入的字符数（不包括 null 终止符），失败返回负数
-export fn sprintf(buf: &byte, format: &const byte, ...) i32 {
+export extern "libc" fn sprintf(buf: &byte, format: &const byte, ...) i32 {
     if buf == null || format == null {
         return 0 - 1;
     }
@@ -1446,7 +1446,7 @@ export fn sprintf(buf: &byte, format: &const byte, ...) i32 {
 
 // snprintf - 格式化字符串（带长度限制）
 // 返回：写入的字符数（不包括 null 终止符），失败返回负数
-export fn snprintf(buf: &byte, n: usize, format: &const byte, ...) i32 {
+export extern "libc" fn snprintf(buf: &byte, n: usize, format: &const byte, ...) i32 {
     if buf == null || format == null || n == 0 {
         return 0 - 1;
     }
@@ -1467,7 +1467,7 @@ export extern "libc" fn printf(format: &const byte, ...) i32 {
     @va_start(&ap, format);
     
     // 使用 vprintf 实现
-    const result: i32 = libc_vprintf(format, ap);
+    const result: i32 = vprintf(format, ap);
     
     @va_end(&ap);
     return result;
@@ -1546,7 +1546,7 @@ fn _skip_whitespace_from_stream(stream: &FILE) void {
 // fscanf - 从流中格式化输入
 // 支持 %d、%s、%c、%%
 // 返回：成功匹配的项数
-export fn fscanf(stream: &FILE, format: &const byte, ...) i32 {
+export extern "libc" fn fscanf(stream: &FILE, format: &const byte, ...) i32 {
     if stream == null || format == null {
         return 0 - 1;
     }
@@ -1671,7 +1671,7 @@ export fn fscanf(stream: &FILE, format: &const byte, ...) i32 {
 // sscanf - 从字符串中格式化输入
 // 支持 %d、%s、%c、%%
 // 返回：成功匹配的项数
-export fn sscanf(str: &const byte, format: &const byte, ...) i32 {
+export extern "libc" fn sscanf(str: &const byte, format: &const byte, ...) i32 {
     if str == null || format == null {
         return 0 - 1;
     }

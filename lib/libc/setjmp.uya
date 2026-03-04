@@ -112,18 +112,18 @@ export @naked_fn fn siglongjmp(env: &sigjmp_buf, val: i32) void {
 }
 
 // 别名函数
-export fn _setjmp(env: &jmp_buf) i32 {
+export extern "libc" fn _setjmp(env: &jmp_buf) i32 {
     return setjmp(env);
 }
 
-export fn _longjmp(env: &jmp_buf, val: i32) void {
+export extern "libc" fn _longjmp(env: &jmp_buf, val: i32) void {
     longjmp(env, val);
 }
 
-export fn jmp_buf_size() usize {
+export extern "libc" fn jmp_buf_size() usize {
     return @size_of(jmp_buf);
 }
 
-export fn sigjmp_buf_size() usize {
+export extern "libc" fn sigjmp_buf_size() usize {
     return @size_of(sigjmp_buf);
 }

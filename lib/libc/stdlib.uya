@@ -162,7 +162,7 @@ fn split_chunk(chunk: &FreeChunk, needed: usize) void {
 }
 
 // malloc - 分配内存（musl 风格）
-export fn malloc(size: usize) &void {
+export extern "libc" fn malloc(size: usize) &void {
     if size == 0 { return null; }
 
     var aligned: usize = align_up(size);
@@ -189,7 +189,7 @@ export fn malloc(size: usize) &void {
 }
 
 // free - 释放内存（简化版：只添加到空闲链表）
-export fn free(ptr: &void) void {
+export extern "libc" fn free(ptr: &void) void {
     if is_null(ptr) { return; }
 
     var hdr: &ChunkHeader = to_header(ptr);
@@ -200,7 +200,7 @@ export fn free(ptr: &void) void {
 }
 
 // calloc - 分配并清零
-export fn calloc(nmemb: usize, size: usize) &void {
+export extern "libc" fn calloc(nmemb: usize, size: usize) &void {
     var total: usize = nmemb * size;
     var ptr: &void = malloc(total);
     if is_null(ptr) { return null; }
@@ -209,7 +209,7 @@ export fn calloc(nmemb: usize, size: usize) &void {
 }
 
 // realloc - 重新分配
-export fn realloc(ptr: &void, size: usize) &void {
+export extern "libc" fn realloc(ptr: &void, size: usize) &void {
     if is_null(ptr) { return malloc(size); }
     if size == 0 { free(ptr); return null; }
 
@@ -232,12 +232,12 @@ export fn realloc(ptr: &void, size: usize) &void {
 // ============================================================
 
 // exit - 正常退出进程
-export fn exit(status: i32) void {
+export extern "libc" fn exit(status: i32) void {
     sys_exit(status as i64);
 }
 
 // abort - 异常终止进程（发送 SIGABRT）
-export fn abort() void {
+export extern "libc" fn abort() void {
     // 使用 sys_getpid 函数
     const pid_result: !i64 = sys_getpid();
     const pid: i64 = pid_result catch {
@@ -255,7 +255,7 @@ export fn abort() void {
 // ============================================================
 
 // atoi - 将字符串转换为 i32
-export fn atoi(s: &const byte) i32 {
+export extern "libc" fn atoi(s: &const byte) i32 {
     if s == null {
         return 0;
     }
@@ -292,7 +292,7 @@ export fn atoi(s: &const byte) i32 {
 }
 
 // atol - 将字符串转换为 i64
-export fn atol(s: &const byte) i64 {
+export extern "libc" fn atol(s: &const byte) i64 {
     if s == null {
         return 0;
     }
@@ -329,7 +329,7 @@ export fn atol(s: &const byte) i64 {
 }
 
 // atof - 将字符串转换为 f64（简化实现）
-export fn atof(s: &const byte) f64 {
+export extern "libc" fn atof(s: &const byte) f64 {
     if s == null {
         return 0.0;
     }
@@ -382,7 +382,7 @@ export fn atof(s: &const byte) f64 {
 }
 
 // strtod - 将字符串转换为 f64（C 标准库兼容）
-export fn strtod(nptr: &const byte, endptr: & &const byte) f64 {
+export extern "libc" fn strtod(nptr: &const byte, endptr: & &const byte) f64 {
     if nptr == null {
         if endptr != null {
             endptr[0] = null;
@@ -493,7 +493,7 @@ export fn strtod(nptr: &const byte, endptr: & &const byte) f64 {
 }
 
 // strtol - 将字符串转换为 i64（C 标准库兼容）
-export fn strtol(nptr: &const byte, endptr: & &const byte, base: i32) i64 {
+export extern "libc" fn strtol(nptr: &const byte, endptr: & &const byte, base: i32) i64 {
     if nptr == null {
         if endptr != null {
             endptr[0] = null;
@@ -596,7 +596,7 @@ export extern "libc" fn llabs(x: i64) i64 {
 }
 
 // lltoa - 长长整型转字符串 (非标准但常用)
-export fn lltoa(value: i64, buf: &byte, radix: i32) &byte {
+export extern "libc" fn lltoa(value: i64, buf: &byte, radix: i32) &byte {
     if buf == null || radix < 2 || radix > 36 { return null; }
     
     var neg: bool = false;
@@ -1118,7 +1118,7 @@ use std.string.strncpy;
 
 // stat - 获取文件状态（C 标准库兼容）
 // 返回：0 成功，-1 失败
-export fn stat(path: &const byte, buf: &Stat) i32 {
+export extern "libc" fn stat(path: &const byte, buf: &Stat) i32 {
     if path == null || buf == null {
         return 0 - 1;
     }
@@ -1138,7 +1138,7 @@ export fn stat(path: &const byte, buf: &Stat) i32 {
 
 // readlink - 读取符号链接（C 标准库兼容）
 // 返回：读取的字节数，失败返回 -1
-export fn readlink(path: &const byte, buf: &byte, bufsiz: usize) i32 {
+export extern "libc" fn readlink(path: &const byte, buf: &byte, bufsiz: usize) i32 {
     if path == null || buf == null || bufsiz == 0 {
         return 0 - 1;
     }
@@ -1158,7 +1158,7 @@ export fn readlink(path: &const byte, buf: &byte, bufsiz: usize) i32 {
 
 // getenv - 获取环境变量
 // 返回：环境变量值的指针，未找到返回 null
-export fn getenv(name: &const byte) &byte {
+export extern "libc" fn getenv(name: &const byte) &byte {
     if name == null { return null; }
     // 简化实现：返回 null
     return null;
@@ -1166,7 +1166,7 @@ export fn getenv(name: &const byte) &byte {
 
 // putenv - 设置环境变量 (简化实现)
 // 返回：0 成功，-1 失败
-export fn putenv(string: &const byte) i32 {
+export extern "libc" fn putenv(string: &const byte) i32 {
     if string == null { return -1; }
     // 简化实现：总是返回 0
     return 0;
@@ -1175,7 +1175,7 @@ export fn putenv(string: &const byte) i32 {
 // setenv - 设置环境变量
 // 参数：name - 变量名，value - 变量值，overwrite - 是否覆盖已存在的变量
 // 返回：0 成功，-1 失败
-export fn setenv(name: &const byte, value: &const byte, overwrite: i32) i32 {
+export extern "libc" fn setenv(name: &const byte, value: &const byte, overwrite: i32) i32 {
     if name == null || value == null { return -1; }
     // 简化实现：总是返回 0
     return 0;
@@ -1183,7 +1183,7 @@ export fn setenv(name: &const byte, value: &const byte, overwrite: i32) i32 {
 
 // unsetenv - 删除环境变量
 // 返回：0 成功，-1 失败
-export fn unsetenv(name: &const byte) i32 {
+export extern "libc" fn unsetenv(name: &const byte) i32 {
     if name == null { return -1; }
     // 简化实现：总是返回 0
     return 0;
@@ -1191,7 +1191,7 @@ export fn unsetenv(name: &const byte) i32 {
 
 // clearenv - 清空所有环境变量 (POSIX)
 // 返回：0 成功
-export fn clearenv() i32 {
+export extern "libc" fn clearenv() i32 {
     return 0;
 }
 
@@ -1218,7 +1218,7 @@ var readdir_result: Dirent = Dirent { d_ino: 0, d_off: 0, d_reclen: 0, d_type: 0
 
 // opendir - 打开目录（C 标准库兼容）
 // 返回：DIR*，失败返回 null
-export fn opendir(name: &const byte) &DIR {
+export extern "libc" fn opendir(name: &const byte) &DIR {
     if name == null {
         return null;
     }
@@ -1251,7 +1251,7 @@ export fn opendir(name: &const byte) &DIR {
 // readdir - 读取目录项（使用 getdents64 实现）
 // 返回：Dirent*，失败或结束返回 null
 // Linux linux_dirent64 布局：d_ino(8) d_off(8) d_reclen(2) d_type(1) d_name[]
-export fn readdir(dirp: &DIR) &Dirent {
+export extern "libc" fn readdir(dirp: &DIR) &Dirent {
     if dirp == null {
         return null;
     }
@@ -1311,7 +1311,7 @@ export fn readdir(dirp: &DIR) &Dirent {
 
 // closedir - 关闭目录（C 标准库兼容）
 // 返回：0 成功，-1 失败
-export fn closedir(dirp: &DIR) i32 {
+export extern "libc" fn closedir(dirp: &DIR) i32 {
     if dirp == null {
         return 0 - 1;
     }

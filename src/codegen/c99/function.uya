@@ -427,7 +427,7 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                 }
             }
             
-            // 对于 extern "libc" fn 的 byte 指针，仅 strlen 使用 const；sprintf/snprintf 第一参可修改
+            // 对于 extern "libc" fn 的 byte 指针，仅 strlen 使用 const；sprintf/snprintf/vsprintf/vsnprintf 第一参可修改
             // 与 C 版一致：其他保持 c99_type_to_c 的默认输出（uint8_t *）
             var is_libc: i32 = is_extern_libc_function(codegen, fn_decl.fn_decl_name);
             if is_libc != 0 && param_type.type == ASTNodeType.AST_TYPE_POINTER {
@@ -438,7 +438,9 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                         if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "strlen" as *byte) == 0 {
                             param_type_c = ("const uint8_t *" as *byte) as &byte;
                         } else if fn_decl.fn_decl_name != null && ((strcmp(fn_decl.fn_decl_name as *byte, "sprintf" as *byte) == 0 ||
-                                   strcmp(fn_decl.fn_decl_name as *byte, "snprintf" as *byte) == 0) && i == 0) {
+                                   strcmp(fn_decl.fn_decl_name as *byte, "snprintf" as *byte) == 0 ||
+                                   strcmp(fn_decl.fn_decl_name as *byte, "vsprintf" as *byte) == 0 ||
+                                   strcmp(fn_decl.fn_decl_name as *byte, "vsnprintf" as *byte) == 0) && i == 0) {
                             param_type_c = ("uint8_t *" as *byte) as &byte;
                         }
                     }
