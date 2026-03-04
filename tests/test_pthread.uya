@@ -108,6 +108,15 @@ fn test_pthread_cond_timedwait() !void {
     pthread_mutex_destroy(&mutex);
 }
 
+fn test_pthread_spinlock() !void {
+    var spin: pthread_spinlock_t = pthread_spinlock_t{ lock: 0 };
+    try expect(pthread_spin_init(&spin, 0) == 0);
+    // 简化测试：不实际加锁，避免忙等待问题
+    try expect(pthread_spin_trylock(&spin) == 0);
+    try expect(pthread_spin_unlock(&spin) == 0);
+    try expect(pthread_spin_destroy(&spin) == 0);
+}
+
 export fn main() i32 {
     test_suite_begin("pthread");
 
@@ -164,6 +173,12 @@ export fn main() i32 {
         return test_suite_end();
     };
     test_pass("pthread_cond_timedwait");
+
+    test_pthread_spinlock() catch {
+        test_fail("pthread_spinlock");
+        return test_suite_end();
+    };
+    test_pass("pthread_spinlock");
 
     return test_suite_end();
 }

@@ -498,3 +498,65 @@ export extern "libc" fn pthread_yield() i32 {
     };
     return 0;
 }
+
+// ============================================================
+// 自旋锁（pthread_spinlock）
+// ============================================================
+
+// pthread_spinlock_t - 自旋锁结构体
+// - lock: 0=未锁，1=已锁（使用原子 CAS 实现）
+// - 说明：不使用 futex，只是忙等待（自旋）
+export struct pthread_spinlock_t {
+    lock: atomic i32,
+}
+
+// pthread_spin_init - 初始化自旋锁
+export extern "libc" fn pthread_spin_init(lock: &pthread_spinlock_t, pshared: i32) i32 {
+    _ = pshared;
+    if lock == null {
+        return 22; // EINVAL
+    }
+    lock.lock = 0;
+    return 0;
+}
+
+// pthread_spin_destroy - 销毁自旋锁（恒成功，无资源释放）
+export extern "libc" fn pthread_spin_destroy(lock: &pthread_spinlock_t) i32 {
+    _ = lock;
+    return 0;
+}
+
+// pthread_spin_lock - 加自旋锁（忙等待）
+export extern "libc" fn pthread_spin_lock(lock: &pthread_spinlock_t) i32 {
+    if lock == null {
+        return 22; // EINVAL
+    }
+    var expected: i32 = 0;
+    while __atomic_compare_exchange_n(&lock.lock, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+        // 忙等待，定期让出 CPU
+        _ = pthread_yield();
+        expected = 0;
+    }
+    return 0;
+}
+
+// pthread_spin_unlock - 解自旋锁
+export extern "libc" fn pthread_spin_unlock(lock: &pthread_spinlock_t) i32 {
+    if lock == null {
+        return 22; // EINVAL
+    }
+    lock.lock = 0;
+    return 0;
+}
+
+// pthread_spin_trylock - 尝试加自旋锁（仅 CAS，不等待）
+export extern "libc" fn pthread_spin_trylock(lock: &pthread_spinlock_t) i32 {
+    if lock == null {
+        return 22; // EINVAL
+    }
+    var expected: i32 = 0;
+    if __atomic_compare_exchange_n(&lock.lock, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+        return 0;
+    }
+    return 16; // EBUSY
+}

@@ -269,12 +269,12 @@
 
 #### 自旋锁
 
-- [ ] `pthread_spinlock_t` - 自旋锁结构体
-- [ ] `pthread_spin_init` - 初始化自旋锁
-- [ ] `pthread_spin_destroy` - 销毁自旋锁
-- [ ] `pthread_spin_lock` - 加自旋锁
-- [ ] `pthread_spin_unlock` - 解自旋锁
-- [ ] `pthread_spin_trylock` - 尝试加自旋锁
+- [x] `pthread_spinlock_t` - 自旋锁结构体
+- [x] `pthread_spin_init` - 初始化自旋锁
+- [x] `pthread_spin_destroy` - 销毁自旋锁
+- [x] `pthread_spin_lock` - 加自旋锁（基于 CAS + pthread_yield）
+- [x] `pthread_spin_unlock` - 解自旋锁
+- [x] `pthread_spin_trylock` - 尝试加自旋锁
 
 #### 屏障
 
