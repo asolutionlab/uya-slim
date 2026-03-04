@@ -33,12 +33,34 @@ fn test_atomic_struct_sub() !void {
     try assert_eq_i32(counter.value, 40);
 }
 
+// 结构体字段上的 *= /= %=（CAS 循环）
+fn test_atomic_struct_mul() !void {
+    var counter: Counter = Counter{ value: 6 };
+    counter.value *= 7;
+    try assert_eq_i32(counter.value, 42);
+}
+
+fn test_atomic_struct_div() !void {
+    var counter: Counter = Counter{ value: 42 };
+    counter.value /= 7;
+    try assert_eq_i32(counter.value, 6);
+}
+
+fn test_atomic_struct_mod() !void {
+    var counter: Counter = Counter{ value: 13 };
+    counter.value %= 5;
+    try assert_eq_i32(counter.value, 3);
+}
+
 export fn main() i32 {
     test_suite_begin("Atomic Struct Tests");
     
     run_test("atomic struct field", test_atomic_struct_field);
     run_test("atomic struct add", test_atomic_struct_add);
     run_test("atomic struct sub", test_atomic_struct_sub);
+    run_test("atomic struct mul", test_atomic_struct_mul);
+    run_test("atomic struct div", test_atomic_struct_div);
+    run_test("atomic struct mod", test_atomic_struct_mod);
     
     return test_suite_end();
 }

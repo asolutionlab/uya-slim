@@ -37,6 +37,14 @@ export const SYS_readlink: i64 = 89;
 export const SYS_getdents64: i64 = 217;
 export const SYS_setrlimit: i64 = 160;
 export const SYS_getrlimit: i64 = 97;
+// 线程与同步（参考 musl，用于 libc.pthread）
+export const SYS_clone: i64 = 56;
+export const SYS_futex: i64 = 202;
+export const SYS_set_tid_address: i64 = 218;
+
+// futex 操作（Linux futex(2)）
+export const FUTEX_WAIT: i32 = 0;
+export const FUTEX_WAKE: i32 = 1;
 
 // ============================================================
 // 文件操作标志（open）
@@ -225,6 +233,20 @@ export extern "libc" fn sys_stat(pathname: *const byte, statbuf: &Stat) !i32 {
 // sys_kill - 发送信号
 export extern "libc" fn sys_kill(pid: i64, sig: i32) !i32 {
     return @syscall(SYS_kill, pid, sig as i64) as! i32;
+}
+
+// sys_waitpid - 等待子进程/线程退出（用于 pthread_join 等）
+export extern "libc" fn sys_waitpid(pid: i32, status: &i32, options: i32) !i32 {
+    return @syscall(SYS_waitpid, pid as i64, status as i64, options as i64) as! i32;
+}
+
+// sys_futex - futex 系统调用（用于 mutex/cond，零依赖）
+// uaddr: 用户态原子变量地址, op: FUTEX_WAIT(0)/FUTEX_WAKE(1), val: 含义依 op
+// timeout: FUTEX_WAIT 时可为 null；返回 0 成功，负为 -errno
+export extern "libc" fn sys_futex(uaddr: &i32, op: i32, val: i32, timeout: &void) i32 {
+    const r: !i64 = @syscall(SYS_futex, uaddr as i64, op as i64, val as i64, timeout as i64, 0, 0);
+    const v: i64 = r catch { return -1; };
+    return v as i32;
 }
 
 // sys_readlink - 读取符号链接

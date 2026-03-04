@@ -250,6 +250,46 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
         return 0;
     }
     const src: &ASTNode = node.assign_src;
+
+    // 原子类型的复合赋值额外检查：
+    // 1) atomic +=/-=/*=//=/= 的右侧不能是浮点或 bool
+    // 2) atomic /=、%= 的右侧若是常量 0 则报错
+    if dest_type.kind == TypeKind.TYPE_ATOMIC && dest_type.atomic_inner_type != null &&
+        src != null && src.type == ASTNodeType.AST_BINARY_EXPR {
+        const bin_left: &ASTNode = src.binary_expr_left;
+        const bin_right: &ASTNode = src.binary_expr_right;
+        const bin_op: TokenType = src.binary_expr_op as TokenType;
+
+        // 仅匹配编译器对复合赋值的降级模式：var = var op expr
+        if dest.type == ASTNodeType.AST_IDENTIFIER && bin_left != null &&
+            bin_left.type == ASTNodeType.AST_IDENTIFIER &&
+            str_equals(bin_left.identifier_name, dest.identifier_name) != 0 {
+            const right_type: Type = checker_infer_type(checker, bin_right);
+
+            if bin_op == TokenType.TOKEN_PLUS || bin_op == TokenType.TOKEN_MINUS ||
+               bin_op == TokenType.TOKEN_ASTERISK || bin_op == TokenType.TOKEN_SLASH ||
+               bin_op == TokenType.TOKEN_PERCENT {
+                // 右侧禁止浮点和 bool，用于构造 atomic 负向用例
+                if right_type.kind == TypeKind.TYPE_F32 || right_type.kind == TypeKind.TYPE_F64 ||
+                    right_type.kind == TypeKind.TYPE_BOOL {
+                    checker_report_error(checker, bin_right,
+                        "atomic 复合赋值右侧类型必须为整数类型，且与内部类型兼容" as *byte);
+                    return 0;
+                }
+            }
+
+            // atomic /= 0 或 %= 0：常量 0 视为错误
+            if bin_op == TokenType.TOKEN_SLASH || bin_op == TokenType.TOKEN_PERCENT {
+                const denom_val: i32 = checker_eval_const_expr(checker, bin_right);
+                if denom_val == 0 {
+                    checker_report_error(checker, bin_right,
+                        "atomic /= 或 %= 的右操作数不能为常量 0" as *byte);
+                    return 0;
+                }
+            }
+        }
+    }
+
     if dest.type == ASTNodeType.AST_IDENTIFIER && src != null && src.type == ASTNodeType.AST_UNARY_EXPR &&
         (src.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND {
         const src_operand: &ASTNode = src.unary_expr_operand;

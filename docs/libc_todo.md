@@ -205,22 +205,46 @@
 
 - [x] `va_start`, `va_arg`, `va_end` - 可变参数处理
 
+### 12. 宽字符与多字节函数 (`lib/libc/wchar.uya`)
+
+- [x] `mblen` - 获取多字节字符长度
+- [x] `mbtowc` - 多字节字符转宽字符
+- [x] `wctomb` - 宽字符转多字节字符
+- [x] `mbstowcs` - 多字节字符串转宽字符串
+- [x] `wcstombs` - 宽字符串转多字节字符串
+- [x] `wcslen` - 宽字符串长度
+- [x] `wcscpy` - 宽字符串复制
+- [x] `wcscat` - 宽字符串连接
+- [x] `wcscmp` - 宽字符串比较
+- [x] `iswalpha`, `iswdigit`, `iswalnum`, `iswspace` - 宽字符分类
+- [x] `towlower`, `towupper` - 宽字符大小写转换
+
+### 13. POSIX 线程 (`lib/libc/pthread.uya`)
+
+零 libpthread 依赖，基于 Linux SYS_clone + futex + GCC 原子 CAS。
+
+- [x] `pthread_create` - 创建线程（独立栈、trampoline 调用 start_routine、多线程安全）
+- [x] `pthread_join` - 等待线程结束并回收栈
+- [x] `pthread_exit` - 线程退出（当前固定 sys_exit(0)，retval 未传回）
+- [x] `pthread_mutex_init` / `pthread_mutex_destroy` - 互斥量初始化/销毁
+- [x] `pthread_mutex_lock` / `pthread_mutex_unlock` - 加锁/解锁（CAS + futex）
+- [x] `pthread_mutex_trylock` - 尝试加锁
+- [ ] `pthread_join` 的 retval - 子线程返回值尚未写回
+- [ ] `pthread_exit(retval)` - retval 未使用
+- [ ] 条件变量 - `pthread_cond_*` 仅占位，未基于 futex 实现
+- [ ] 线程/互斥属性 - `pthread_attr_t` / `pthread_mutexattr_t` 未使用
+- [ ] `pthread_self` / `pthread_equal` / `pthread_detach` - 未实现
+
 ## 待实现功能
 
-### 1. 标准库函数
+### 1. 高级功能模块
 
-- [ ] `mbstowcs` - 多字节字符串转宽字符串
-- [ ] `wcstombs` - 宽字符串转多字节字符串
+#### 1.1. 多线程支持（部分完成，见上文 §13）
+- [ ] 条件变量完整实现（`pthread_cond_wait` / `signal` / `broadcast`）
+- [ ] join 返回子线程 retval、`pthread_exit(retval)` 传递
+- [ ] 可配置栈大小/属性、detach、pthread_self/equal
 
-### 2. 高级功能模块
-
-#### 3.1. 多线程支持 (`lib/libc/pthread.uya` - 未创建)
-- [ ] `pthread_create` - 创建线程
-- [ ] `pthread_join` - 等待线程结束
-- [ ] `pthread_mutex_lock`/`unlock` - 互斥锁操作
-- [ ] `pthread_cond_wait`/`signal` - 条件变量操作
-
-#### 3.2. 本地化/国际化 (`lib/libc/locale.uya` - 未创建)
+#### 1.2. 本地化/国际化 (`lib/libc/locale.uya` - 未创建)
 - [ ] `setlocale` - 设置区域选项
 - [ ] `localeconv` - 获取区域数值格式信息
 
@@ -248,11 +272,13 @@
 
 ## 总结
 
-当前 Uya 的 libc 实现已经覆盖了绝大部分核心功能，包括基本的字符串操作、内存管理、文件I/O、标准库函数、字符分类、数学函数、时间日期函数等。最近的改进包括：
+当前 Uya 的 libc 实现已经覆盖了绝大部分核心功能，包括基本的字符串操作、内存管理、文件I/O、标准库函数、字符分类、数学函数、时间日期函数、宽字符与多字节转换（`lib/libc/wchar.uya`）等。最近的改进包括：
 - 完善了 `remove` 函数，使其能够处理文件和目录
 - 添加了 `exp2` 和多个单精度数学函数
 - 添加了 `strerror` 函数的引用
+- `mbstowcs`、`wcstombs` 及宽字符系列已在 `wchar.uya` 中实现并有 `tests/test_wchar.uya` 覆盖
+- **pthread 最小子集**：`lib/libc/pthread.uya` 零 libpthread 依赖，已实现 create/join、mutex（CAS+futex）、trampoline 调用 start_routine（@asm）、多线程安全的 create；条件变量、retval 传递、属性与 detach 等尚未实现
 
-但仍有一些高级功能有待实现，特别是多线程支持、本地化支持以及某些输入输出函数。
+但仍有一些高级功能有待实现，特别是条件变量、join/exit 返回值传递、本地化支持等。
 
 项目整体上朝着实现一个完整的C标准库子集的方向发展，并逐步将功能迁移到更现代的 `std.*` 模块中。

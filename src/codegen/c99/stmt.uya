@@ -978,7 +978,7 @@ fn emit_atomic_store(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode, 
     fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
 }
 
-// 生成原子复合赋值
+// 生成原子复合赋值（+=/-= 硬件指令，*= / = / %= 用 compare-and-swap 循环，规范 13.3）
 fn gen_atomic_compound(codegen: &C99CodeGenerator, dest: &ASTNode, op: TokenType, right: &ASTNode, safe_name: &byte) void {
     if op == TokenType.TOKEN_PLUS {
         if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
@@ -1004,6 +1004,59 @@ fn gen_atomic_compound(codegen: &C99CodeGenerator, dest: &ASTNode, op: TokenType
         }
         gen_expr(codegen, right);
         fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
+    } else if op == TokenType.TOKEN_ASTERISK || op == TokenType.TOKEN_SLASH || op == TokenType.TOKEN_PERCENT {
+        const dest_type_c: &byte = get_c_type_of_expr(codegen, dest);
+        const inner_type: &byte = get_atomic_inner_type_c(codegen, dest_type_c);
+        if inner_type == null {
+            emit_atomic_store(codegen, dest, right, safe_name);
+            return;
+        }
+        c99_emit_indent(codegen);
+        fputs("{\n" as *byte, codegen.output as *void);
+        codegen.indent_level = codegen.indent_level + 1;
+        c99_emit_indent(codegen);
+        fprintf(codegen.output as *void, "%s _uya_atomic_expected = __atomic_load_n(" as *byte, inner_type as *byte);
+        if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
+            fprintf(codegen.output as *void, "&%s" as *byte, safe_name as *byte);
+        } else {
+            fputs("&(" as *byte, codegen.output as *void);
+            gen_expr(codegen, dest);
+            fputs(")" as *byte, codegen.output as *void);
+        }
+        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
+        c99_emit_indent(codegen);
+        fprintf(codegen.output as *void, "%s _uya_atomic_desired;\n" as *byte, inner_type as *byte);
+        c99_emit_indent(codegen);
+        fputs("for (;;) {\n" as *byte, codegen.output as *void);
+        codegen.indent_level = codegen.indent_level + 1;
+        c99_emit_indent(codegen);
+        fputs("_uya_atomic_desired = _uya_atomic_expected " as *byte, codegen.output as *void);
+        if op == TokenType.TOKEN_ASTERISK {
+            fputs("* " as *byte, codegen.output as *void);
+        } else if op == TokenType.TOKEN_SLASH {
+            fputs("/ " as *byte, codegen.output as *void);
+        } else {
+            fputc(37, codegen.output as *void);
+            fputs(" " as *byte, codegen.output as *void);
+        }
+        gen_expr(codegen, right);
+        fputs(";\n" as *byte, codegen.output as *void);
+        c99_emit_indent(codegen);
+        fputs("if (__atomic_compare_exchange_n(" as *byte, codegen.output as *void);
+        if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
+            fprintf(codegen.output as *void, "&%s" as *byte, safe_name as *byte);
+        } else {
+            fputs("&(" as *byte, codegen.output as *void);
+            gen_expr(codegen, dest);
+            fputs(")" as *byte, codegen.output as *void);
+        }
+        fputs(", &_uya_atomic_expected, _uya_atomic_desired, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) break;\n" as *byte, codegen.output as *void);
+        codegen.indent_level = codegen.indent_level - 1;
+        c99_emit_indent(codegen);
+        fputs("}\n" as *byte, codegen.output as *void);
+        codegen.indent_level = codegen.indent_level - 1;
+        c99_emit_indent(codegen);
+        fputs("}\n" as *byte, codegen.output as *void);
     } else {
         emit_atomic_store(codegen, dest, right, safe_name);
     }

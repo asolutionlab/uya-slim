@@ -1721,6 +1721,36 @@ fn get_identifier_type_c(codegen: &C99CodeGenerator, name: &byte) &byte {
     return null;
 }
 
+// 从 _Atomic(inner) 形式的类型字符串中提取 inner 类型，用于原子 CAS 循环
+// 返回 arena 分配的字符串，调用方不需 free；若非 _Atomic(...) 则返回 null
+fn get_atomic_inner_type_c(codegen: &C99CodeGenerator, type_c: &byte) &byte {
+    if type_c == null {
+        return null;
+    }
+    if strstr(type_c as *byte, "_Atomic(" as *byte) != type_c as *byte {
+        return null;
+    }
+    const inner_start: &byte = (type_c as &byte) + 8;
+    var inner_len: i32 = 0;
+    while inner_len < 64 && (inner_start[inner_len] as i32) != 0 && (inner_start[inner_len] as i32) != 41 {
+        inner_len = inner_len + 1;
+    }
+    if (inner_start[inner_len] as i32) != 41 {
+        return null;
+    }
+    const buf: &byte = arena_alloc(codegen.arena, (inner_len + 1) as usize) as &byte;
+    if buf == null {
+        return null;
+    }
+    var j: i32 = 0;
+    while j < inner_len {
+        buf[j] = inner_start[j];
+        j = j + 1;
+    }
+    buf[inner_len] = 0;
+    return buf;
+}
+
 // 生成数组包装结构体的名称
 // 例如：[i32: 3] -> "uya_array_i32_3", [[i32: 2]: 3] -> "uya_array_i32_2_3"
 fn get_array_wrapper_struct_name(codegen: &C99CodeGenerator, array_type: &ASTNode) &byte {
