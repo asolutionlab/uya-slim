@@ -279,11 +279,11 @@
 
 #### 屏障
 
-- [ ] `pthread_barrier_t` - 屏障结构体
-- [ ] `pthread_barrierattr_t` - 屏障属性结构体
-- [ ] `pthread_barrier_init` - 初始化屏障
-- [ ] `pthread_barrier_destroy` - 销毁屏障
-- [ ] `pthread_barrier_wait` - 等待屏障
+- [x] `pthread_barrier_t` - 屏障结构体
+- [x] `pthread_barrierattr_t` - 屏障属性结构体
+- [x] `pthread_barrier_init` - 初始化屏障
+- [x] `pthread_barrier_destroy` - 销毁屏障
+- [x] `pthread_barrier_wait` - 等待屏障
 
 #### 一次性初始化
 

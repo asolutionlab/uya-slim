@@ -305,6 +305,12 @@ fn tls_test_thread(arg: &void) &void {
     return null;
 }
 
+// 用于测试屏障的共享数据
+var _barrier_test_counter: atomic i32 = 0;
+var _barrier: pthread_barrier_t = pthread_barrier_t{ count: 0, arrived: 0, generation: 0, mutex: pthread_mutex_t{ state: 0, owner: 0, type: 0 }, cond: pthread_cond_t{ waiters: 0, seq: 0 } };
+var _barrier_test_value1: i32 = 0;
+var _barrier_test_value2: i32 = 0;
+
 // 测试线程特定数据（TLS）
 fn test_pthread_key() !void {
     // 测试创建键
@@ -335,6 +341,32 @@ fn test_pthread_key() !void {
     try expect(pthread_key_delete(null as &pthread_key_t) == 22); // EINVAL
     var invalid_key: pthread_key_t = pthread_key_t{ seq: 0, destructor: null };
     try expect(pthread_setspecific(invalid_key, null) == 22); // EINVAL
+}
+
+// 测试屏障
+fn test_pthread_barrier() !void {
+    // 测试屏障属性
+    var attr: pthread_barrierattr_t = pthread_barrierattr_t{ _unused: 0 };
+    try expect(pthread_barrierattr_init(&attr) == 0);
+    try expect(pthread_barrierattr_destroy(&attr) == 0);
+    
+    // 测试无效参数
+    try expect(pthread_barrier_init(null as &pthread_barrier_t, null, 2) == 22); // EINVAL
+    
+    // 测试创建屏障（单线程，简化测试）
+    var barrier: pthread_barrier_t = pthread_barrier_t{ count: 0, arrived: 0, generation: 0, mutex: pthread_mutex_t{ state: 0, owner: 0, type: 0 }, cond: pthread_cond_t{ waiters: 0, seq: 0 } };
+    try expect(pthread_barrier_init(&barrier, null, 1) == 0);
+    
+    // 单线程等待应该立即返回 PTHREAD_BARRIER_SERIAL_THREAD
+    const ret: i32 = pthread_barrier_wait(&barrier);
+    try expect(ret == PTHREAD_BARRIER_SERIAL_THREAD);
+    
+    // 测试销毁
+    try expect(pthread_barrier_destroy(&barrier) == 0);
+    
+    // 测试无效计数
+    var barrier2: pthread_barrier_t = pthread_barrier_t{ count: 0, arrived: 0, generation: 0, mutex: pthread_mutex_t{ state: 0, owner: 0, type: 0 }, cond: pthread_cond_t{ waiters: 0, seq: 0 } };
+    try expect(pthread_barrier_init(&barrier2, null, 0) == 22); // EINVAL
 }
 
 export fn main() i32 {
@@ -447,6 +479,12 @@ export fn main() i32 {
         return test_suite_end();
     };
     test_pass("pthread_key");
+
+    test_pthread_barrier() catch {
+        test_fail("pthread_barrier");
+        return test_suite_end();
+    };
+    test_pass("pthread_barrier");
 
     return test_suite_end();
 }

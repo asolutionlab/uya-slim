@@ -1033,6 +1033,118 @@ export extern "libc" fn pthread_setcanceltype(type_: i32, oldtype: &i32) i32 {
 export const PTHREAD_CANCELED: &void = (-1 as i64) as &void;
 
 // ============================================================
+// 屏障（pthread_barrier）
+// ============================================================
+
+// pthread_barrier_t - 屏障结构体
+// - count: 需要等待的线程总数
+// - arrived: 已到达的线程数
+// - generation: 当前代（用于处理多个等待周期）
+// - mutex: 保护内部状态的互斥锁
+export struct pthread_barrier_t {
+    count: i32,
+    arrived: atomic i32,
+    generation: atomic i32,
+    mutex: pthread_mutex_t,
+    cond: pthread_cond_t,
+}
+
+// pthread_barrierattr_t - 屏障属性结构体（占位）
+export struct pthread_barrierattr_t {
+    _unused: i32,
+}
+
+// pthread_barrierattr_init - 初始化屏障属性
+export extern "libc" fn pthread_barrierattr_init(attr: &pthread_barrierattr_t) i32 {
+    if attr == null {
+        return 22; // EINVAL
+    }
+    attr._unused = 0;
+    return 0;
+}
+
+// pthread_barrierattr_destroy - 销毁屏障属性
+export extern "libc" fn pthread_barrierattr_destroy(attr: &pthread_barrierattr_t) i32 {
+    _ = attr;
+    return 0;
+}
+
+// pthread_barrier_init - 初始化屏障
+// 参数：
+// - barrier: 屏障对象
+// - attr: 屏障属性（可为 null）
+// - count: 需要同步的线程数（必须 > 0）
+// 返回：0 成功，非 0 错误码
+export extern "libc" fn pthread_barrier_init(barrier: &pthread_barrier_t, attr: &const pthread_barrierattr_t, count: i32) i32 {
+    _ = attr;
+    
+    if barrier == null {
+        return 22; // EINVAL
+    }
+    if count <= 0 {
+        return 22; // EINVAL
+    }
+    
+    barrier.count = count;
+    barrier.arrived = 0;
+    barrier.generation = 0;
+    barrier.mutex = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
+    barrier.cond = pthread_cond_t{ waiters: 0, seq: 0 };
+    
+    return 0;
+}
+
+// pthread_barrier_destroy - 销毁屏障
+export extern "libc" fn pthread_barrier_destroy(barrier: &pthread_barrier_t) i32 {
+    if barrier == null {
+        return 22; // EINVAL
+    }
+    
+    // 检查是否有线程正在等待
+    if barrier.arrived != 0 {
+        return 16; // EBUSY
+    }
+    
+    return 0;
+}
+
+// pthread_barrier_wait - 等待屏障
+// 说明：
+// - 每个线程调用此函数等待，直到 count 个线程都到达
+// - 返回 PTHREAD_BARRIER_SERIAL_THREAD 的线程负责执行序列化操作
+// 返回：0 或 PTHREAD_BARRIER_SERIAL_THREAD（表示最后一个到达的线程）
+export const PTHREAD_BARRIER_SERIAL_THREAD: i32 = 1;
+
+export extern "libc" fn pthread_barrier_wait(barrier: &pthread_barrier_t) i32 {
+    if barrier == null {
+        return 22; // EINVAL
+    }
+    
+    _ = pthread_mutex_lock(&barrier.mutex);
+    
+    const current_gen: i32 = barrier.generation;
+    const my_arrived: i32 = barrier.arrived + 1;
+    barrier.arrived = my_arrived;
+    
+    if my_arrived >= barrier.count {
+        // 最后一个到达的线程，唤醒所有等待者
+        barrier.arrived = 0;
+        barrier.generation = current_gen + 1;
+        _ = pthread_cond_broadcast(&barrier.cond);
+        _ = pthread_mutex_unlock(&barrier.mutex);
+        return PTHREAD_BARRIER_SERIAL_THREAD;
+    }
+    
+    // 不是最后一个，等待其他线程
+    while barrier.generation == current_gen {
+        _ = pthread_cond_wait(&barrier.cond, &barrier.mutex);
+    }
+    
+    _ = pthread_mutex_unlock(&barrier.mutex);
+    return 0;
+}
+
+// ============================================================
 // 线程特定数据（TLS - Thread Local Storage）
 // ============================================================
 
