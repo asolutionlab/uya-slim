@@ -42,6 +42,10 @@ export const SYS_clone: i64 = 56;
 export const SYS_futex: i64 = 202;
 export const SYS_set_tid_address: i64 = 218;
 
+// CPU 调度（sched）
+export const SYS_sched_setaffinity: i64 = 203;
+export const SYS_sched_getaffinity: i64 = 204;
+
 // futex 操作（Linux futex(2)）
 export const FUTEX_WAIT: i32 = 0;
 export const FUTEX_WAKE: i32 = 1;
@@ -280,4 +284,22 @@ export extern "libc" fn sys_getrlimit(resource: i32, rlim: &RLimit) !i32 {
 // sys_getdents64 - 读取目录项
 export extern "libc" fn sys_getdents64(fd: i32, dirp: *void, count: usize) !isize {
     return @syscall(SYS_getdents64, fd as i64, dirp as i64, count as i64) as! isize;
+}
+
+// ============================================================
+// CPU 调度（sched）
+// ============================================================
+
+// sched_setaffinity - 设置进程/线程的 CPU 亲和性
+export extern "libc" fn sched_setaffinity(pid: i64, cpusetsize: usize, mask: &void) i32 {
+    const r: !i64 = @syscall(SYS_sched_setaffinity, pid, cpusetsize as i64, mask as i64);
+    const v: i64 = r catch { return -1; };
+    return v as i32;
+}
+
+// sched_getaffinity - 获取进程/线程的 CPU 亲和性
+export extern "libc" fn sched_getaffinity(pid: i64, cpusetsize: usize, mask: &void) i32 {
+    const r: !i64 = @syscall(SYS_sched_getaffinity, pid, cpusetsize as i64, mask as i64);
+    const v: i64 = r catch { return -1; };
+    return v as i32;
 }

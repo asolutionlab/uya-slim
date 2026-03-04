@@ -6,12 +6,14 @@
 // - 线程实现基于 Linux x86-64 的 SYS_clone + 独立栈 + waitpid
 // - 目前仅实现最小子集，满足 tests/test_pthread.uya
 
-// 依赖 libc.syscall：SYS_clone、futex、waitpid
+// 依赖 libc.syscall：SYS_clone、futex、waitpid、sched
 use libc.SYS_clone;
 use libc.sys_futex;
 use libc.FUTEX_WAIT;
 use libc.FUTEX_WAKE;
 use libc.gettimeofday;
+use libc.sched_setaffinity;
+use libc.sched_getaffinity;
 
 // 前向声明：使用 libc.stdlib 的 malloc/free 与 libc.syscall 的 sys_exit
 extern fn malloc(size: usize) &void;
@@ -1312,4 +1314,205 @@ export extern "libc" fn pthread_setspecific(key: pthread_key_t, value: &void) i3
     
     val_ptr[0] = value;
     return 0;
+}
+
+// ============================================================
+// CPU 亲和性（GNU 扩展）
+// ============================================================
+
+// cpu_set_t - CPU 集合结构体（模拟 glibc 实现）
+// 使用 1024 位（128 字节）来表示最多 1024 个 CPU
+export struct cpu_set_t {
+    bits0: u64,
+    bits1: u64,
+    bits2: u64,
+    bits3: u64,
+    bits4: u64,
+    bits5: u64,
+    bits6: u64,
+    bits7: u64,
+    bits8: u64,
+    bits9: u64,
+    bits10: u64,
+    bits11: u64,
+    bits12: u64,
+    bits13: u64,
+    bits14: u64,
+    bits15: u64,
+}
+
+// 清空 CPU 集合
+export extern "libc" fn CPU_ZERO(set: &cpu_set_t) void {
+    if set == null {
+        return;
+    }
+    set.bits0 = 0;
+    set.bits1 = 0;
+    set.bits2 = 0;
+    set.bits3 = 0;
+    set.bits4 = 0;
+    set.bits5 = 0;
+    set.bits6 = 0;
+    set.bits7 = 0;
+    set.bits8 = 0;
+    set.bits9 = 0;
+    set.bits10 = 0;
+    set.bits11 = 0;
+    set.bits12 = 0;
+    set.bits13 = 0;
+    set.bits14 = 0;
+    set.bits15 = 0;
+}
+
+// 设置指定 CPU 到集合
+export extern "libc" fn CPU_SET(cpu: i32, set: &cpu_set_t) void {
+    if set == null || cpu < 0 || cpu >= 1024 {
+        return;
+    }
+    const idx: usize = (cpu as usize) / 64 as usize;
+    const bit: u64 = 1 as u64 << ((cpu as usize % 64 as usize) as i32);
+    if idx == 0 { set.bits0 = set.bits0 | bit; }
+    else if idx == 1 { set.bits1 = set.bits1 | bit; }
+    else if idx == 2 { set.bits2 = set.bits2 | bit; }
+    else if idx == 3 { set.bits3 = set.bits3 | bit; }
+    else if idx == 4 { set.bits4 = set.bits4 | bit; }
+    else if idx == 5 { set.bits5 = set.bits5 | bit; }
+    else if idx == 6 { set.bits6 = set.bits6 | bit; }
+    else if idx == 7 { set.bits7 = set.bits7 | bit; }
+    else if idx == 8 { set.bits8 = set.bits8 | bit; }
+    else if idx == 9 { set.bits9 = set.bits9 | bit; }
+    else if idx == 10 { set.bits10 = set.bits10 | bit; }
+    else if idx == 11 { set.bits11 = set.bits11 | bit; }
+    else if idx == 12 { set.bits12 = set.bits12 | bit; }
+    else if idx == 13 { set.bits13 = set.bits13 | bit; }
+    else if idx == 14 { set.bits14 = set.bits14 | bit; }
+    else if idx == 15 { set.bits15 = set.bits15 | bit; }
+}
+
+// 清除指定 CPU 从集合
+export extern "libc" fn CPU_CLR(cpu: i32, set: &cpu_set_t) void {
+    if set == null || cpu < 0 || cpu >= 1024 {
+        return;
+    }
+    const idx: usize = (cpu as usize) / 64 as usize;
+    const bit: u64 = 1 as u64 << ((cpu as usize % 64 as usize) as i32);
+    if idx == 0 { set.bits0 = set.bits0 & (~bit); }
+    else if idx == 1 { set.bits1 = set.bits1 & (~bit); }
+    else if idx == 2 { set.bits2 = set.bits2 & (~bit); }
+    else if idx == 3 { set.bits3 = set.bits3 & (~bit); }
+    else if idx == 4 { set.bits4 = set.bits4 & (~bit); }
+    else if idx == 5 { set.bits5 = set.bits5 & (~bit); }
+    else if idx == 6 { set.bits6 = set.bits6 & (~bit); }
+    else if idx == 7 { set.bits7 = set.bits7 & (~bit); }
+    else if idx == 8 { set.bits8 = set.bits8 & (~bit); }
+    else if idx == 9 { set.bits9 = set.bits9 & (~bit); }
+    else if idx == 10 { set.bits10 = set.bits10 & (~bit); }
+    else if idx == 11 { set.bits11 = set.bits11 & (~bit); }
+    else if idx == 12 { set.bits12 = set.bits12 & (~bit); }
+    else if idx == 13 { set.bits13 = set.bits13 & (~bit); }
+    else if idx == 14 { set.bits14 = set.bits14 & (~bit); }
+    else if idx == 15 { set.bits15 = set.bits15 & (~bit); }
+}
+
+// 测试指定 CPU 是否在集合中
+export extern "libc" fn CPU_ISSET(cpu: i32, set: &cpu_set_t) i32 {
+    if set == null || cpu < 0 || cpu >= 1024 {
+        return 0;
+    }
+    const idx: usize = (cpu as usize) / 64 as usize;
+    const bit: u64 = 1 as u64 << ((cpu as usize % 64 as usize) as i32);
+    var bits: u64 = 0;
+    if idx == 0 { bits = set.bits0; }
+    else if idx == 1 { bits = set.bits1; }
+    else if idx == 2 { bits = set.bits2; }
+    else if idx == 3 { bits = set.bits3; }
+    else if idx == 4 { bits = set.bits4; }
+    else if idx == 5 { bits = set.bits5; }
+    else if idx == 6 { bits = set.bits6; }
+    else if idx == 7 { bits = set.bits7; }
+    else if idx == 8 { bits = set.bits8; }
+    else if idx == 9 { bits = set.bits9; }
+    else if idx == 10 { bits = set.bits10; }
+    else if idx == 11 { bits = set.bits11; }
+    else if idx == 12 { bits = set.bits12; }
+    else if idx == 13 { bits = set.bits13; }
+    else if idx == 14 { bits = set.bits14; }
+    else if idx == 15 { bits = set.bits15; }
+    else { return 0; }
+    
+    if (bits & bit) != 0 {
+        return 1;
+    }
+    return 0;
+}
+
+// 计算集合中 CPU 数量
+export extern "libc" fn CPU_COUNT(set: &cpu_set_t) i32 {
+    if set == null {
+        return 0;
+    }
+    var count: i32 = 0;
+    var bits: u64 = set.bits0;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits1;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits2;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits3;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits4;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits5;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits6;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits7;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits8;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits9;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits10;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits11;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits12;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits13;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits14;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    bits = set.bits15;
+    while bits != 0 { count = count + 1; bits = bits & (bits - 1); }
+    return count;
+}
+
+// pthread_setaffinity_np - 设置线程 CPU 亲和性（GNU 扩展）
+// 参数：
+// - thread: 目标线程
+// - cpusetsize: CPU 集合大小（sizeof(cpu_set_t)）
+// - cpuset: CPU 集合指针
+export extern "libc" fn pthread_setaffinity_np(thread: &pthread_t, cpusetsize: usize, cpuset: &cpu_set_t) i32 {
+    if thread == null || cpuset == null {
+        return 22; // EINVAL
+    }
+    if cpusetsize < @size_of(cpu_set_t) {
+        return 22; // EINVAL
+    }
+    
+    const tid: i64 = thread.tid;
+    return sched_setaffinity(tid, cpusetsize, cpuset as &void);
+}
+
+// pthread_getaffinity_np - 获取线程 CPU 亲和性（GNU 扩展）
+export extern "libc" fn pthread_getaffinity_np(thread: &pthread_t, cpusetsize: usize, cpuset: &cpu_set_t) i32 {
+    if thread == null || cpuset == null {
+        return 22; // EINVAL
+    }
+    if cpusetsize < @size_of(cpu_set_t) {
+        return 22; // EINVAL
+    }
+    
+    const tid: i64 = thread.tid;
+    return sched_getaffinity(tid, cpusetsize, cpuset as &void);
 }

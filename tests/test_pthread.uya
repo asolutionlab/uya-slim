@@ -369,6 +369,67 @@ fn test_pthread_barrier() !void {
     try expect(pthread_barrier_init(&barrier2, null, 0) == 22); // EINVAL
 }
 
+// 测试 CPU 集合操作
+fn test_pthread_cpuset() !void {
+    // 测试 CPU_ZERO
+    var cpuset: cpu_set_t = cpu_set_t{ bits0: 0, bits1: 0, bits2: 0, bits3: 0, bits4: 0, bits5: 0, bits6: 0, bits7: 0, bits8: 0, bits9: 0, bits10: 0, bits11: 0, bits12: 0, bits13: 0, bits14: 0, bits15: 0 };
+    CPU_ZERO(&cpuset);
+    try expect(CPU_COUNT(&cpuset) == 0);
+    
+    // 测试 CPU_SET 和 CPU_ISSET
+    CPU_SET(0, &cpuset);
+    try expect(CPU_ISSET(0, &cpuset) != 0);
+    try expect(CPU_ISSET(1, &cpuset) == 0);
+    try expect(CPU_COUNT(&cpuset) == 1);
+    
+    CPU_SET(1, &cpuset);
+    CPU_SET(5, &cpuset);
+    try expect(CPU_ISSET(0, &cpuset) != 0);
+    try expect(CPU_ISSET(1, &cpuset) != 0);
+    try expect(CPU_ISSET(5, &cpuset) != 0);
+    try expect(CPU_COUNT(&cpuset) == 3);
+    
+    // 测试 CPU_CLR
+    CPU_CLR(1, &cpuset);
+    try expect(CPU_ISSET(1, &cpuset) == 0);
+    try expect(CPU_COUNT(&cpuset) == 2);
+}
+
+// 测试 CPU 亲和性
+fn test_pthread_affinity() !void {
+    // 创建临时线程
+    var th: pthread_t = pthread_t{ tid: 0, stack: null, stack_size: 0, detached: 0 };
+    try expect(pthread_create(&th, null as &const pthread_attr_t, &thread_start as &void, null) == 0);
+    
+    // 测试获取当前亲和性
+    var cpuset: cpu_set_t = cpu_set_t{ bits0: 0, bits1: 0, bits2: 0, bits3: 0, bits4: 0, bits5: 0, bits6: 0, bits7: 0, bits8: 0, bits9: 0, bits10: 0, bits11: 0, bits12: 0, bits13: 0, bits14: 0, bits15: 0 };
+    CPU_ZERO(&cpuset);
+    
+    // 获取亲和性（可能失败，取决于权限）
+    const get_ret: i32 = pthread_getaffinity_np(&th, @size_of(cpu_set_t), &cpuset);
+    // 只验证不返回 EINVAL
+    try expect(get_ret != 22);
+    
+    // 设置亲和性（尝试设置为 CPU 0）
+    if get_ret == 0 {
+        CPU_ZERO(&cpuset);
+        CPU_SET(0, &cpuset);
+        const set_ret: i32 = pthread_setaffinity_np(&th, @size_of(cpu_set_t), &cpuset);
+        // 只验证不返回 EINVAL
+        try expect(set_ret != 22);
+    }
+    
+    // 等待线程结束
+    pthread_join(&th, null as & &void);
+    
+    // 测试无效参数
+    var cpuset2: cpu_set_t = cpu_set_t{ bits0: 0, bits1: 0, bits2: 0, bits3: 0, bits4: 0, bits5: 0, bits6: 0, bits7: 0, bits8: 0, bits9: 0, bits10: 0, bits11: 0, bits12: 0, bits13: 0, bits14: 0, bits15: 0 };
+    try expect(pthread_getaffinity_np(null as &pthread_t, @size_of(cpu_set_t), &cpuset2) == 22);
+    try expect(pthread_setaffinity_np(null as &pthread_t, @size_of(cpu_set_t), &cpuset2) == 22);
+    try expect(pthread_getaffinity_np(&th, 0, &cpuset2) == 22);
+    try expect(pthread_setaffinity_np(&th, 0, &cpuset2) == 22);
+}
+
 export fn main() i32 {
     test_suite_begin("pthread");
 
@@ -485,6 +546,18 @@ export fn main() i32 {
         return test_suite_end();
     };
     test_pass("pthread_barrier");
+
+    test_pthread_cpuset() catch {
+        test_fail("pthread_cpuset");
+        return test_suite_end();
+    };
+    test_pass("pthread_cpuset");
+
+    test_pthread_affinity() catch {
+        test_fail("pthread_affinity");
+        return test_suite_end();
+    };
+    test_pass("pthread_affinity");
 
     return test_suite_end();
 }

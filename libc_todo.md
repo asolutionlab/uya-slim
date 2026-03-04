@@ -293,8 +293,8 @@
 #### 线程调度
 
 - [x] `pthread_yield` - 让出 CPU（基于 sched_yield 系统调用）
-- [ ] `pthread_setaffinity_np` - 设置线程 CPU 亲和性
-- [ ] `pthread_getaffinity_np` - 获取线程 CPU 亲和性
+- [x] `pthread_setaffinity_np` - 设置线程 CPU 亲和性
+- [x] `pthread_getaffinity_np` - 获取线程 CPU 亲和性
 
 ## 优化建议
 
