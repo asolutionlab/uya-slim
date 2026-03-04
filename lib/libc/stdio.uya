@@ -520,13 +520,31 @@ fn _fmt_f64_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, precisi
     var pos: usize = buf_pos;
     if pos >= buf_max { return pos; }
     var x: f64 = val;
+    // 检查 NaN
     if x != x {
-        const nan: &const byte = "nan" as &const byte;
+        const nan_str: &const byte = "nan" as &const byte;
         var i: i32 = 0;
-        while nan[i] != 0 && pos < buf_max {
-            buf[pos] = nan[i];
+        while nan_str[i] != 0 && pos < buf_max {
+            buf[pos] = nan_str[i];
             pos = pos + 1;
             i = i + 1;
+        }
+        return pos;
+    }
+    // 检查无穷大：无穷大的特性是 inf * 2 == inf，而有限数值 x * 2 != x
+    if x != 0.0 && x * 2.0 == x {
+        // 输出 "inf" 或 "-inf"
+        if x < 0.0 {
+            buf[pos] = 45;  // '-'
+            pos = pos + 1;
+            if pos >= buf_max { return pos; }
+        }
+        const inf_str: &const byte = "inf" as &const byte;
+        var j: i32 = 0;
+        while inf_str[j] != 0 && pos < buf_max {
+            buf[pos] = inf_str[j];
+            pos = pos + 1;
+            j = j + 1;
         }
         return pos;
     }
