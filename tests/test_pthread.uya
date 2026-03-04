@@ -159,6 +159,54 @@ fn test_pthread_recursive_mutex() !void {
     pthread_mutexattr_destroy(&attr);
 }
 
+// 测试 pthread_attr
+fn test_pthread_attr() !void {
+    var attr: pthread_attr_t = pthread_attr_t{ stack_size: 0, detached: 0 };
+    try expect(pthread_attr_init(&attr) == 0);
+
+    // 测试默认栈大小
+    var stacksize: usize = 0;
+    try expect(pthread_attr_getstacksize(&attr, &stacksize) == 0);
+    try expect(stacksize > 0);  // 应该返回默认大小
+
+    // 测试设置栈大小
+    try expect(pthread_attr_setstacksize(&attr, 1024 * 1024) == 0);  // 1MB
+    try expect(pthread_attr_getstacksize(&attr, &stacksize) == 0);
+    try expect(stacksize == 1024 * 1024);
+
+    // 测试最小栈大小限制
+    try expect(pthread_attr_setstacksize(&attr, 4096) == 22);  // 太小，应该失败
+
+    // 测试分离状态
+    var detachstate: i32 = 0;
+    try expect(pthread_attr_getdetachstate(&attr, &detachstate) == 0);
+    try expect(detachstate == PTHREAD_CREATE_JOINABLE);
+
+    try expect(pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) == 0);
+    try expect(pthread_attr_getdetachstate(&attr, &detachstate) == 0);
+    try expect(detachstate == PTHREAD_CREATE_DETACHED);
+
+    // 测试无效分离状态
+    try expect(pthread_attr_setdetachstate(&attr, 2) == 22);  // 无效值
+
+    try expect(pthread_attr_destroy(&attr) == 0);
+}
+
+// 测试使用 attr 创建分离线程
+fn test_pthread_attr_detached() !void {
+    var attr: pthread_attr_t = pthread_attr_t{ stack_size: 0, detached: 0 };
+    try expect(pthread_attr_init(&attr) == 0);
+    try expect(pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) == 0);
+
+    var th: pthread_t = pthread_t{ tid: 0, stack: null, stack_size: 0, detached: 0 };
+    try expect(pthread_create(&th, &attr, &thread_start as &void, null) == 0);
+
+    // 分离线程不需要 join，应该已经设置 detached 标志
+    try expect(th.detached == PTHREAD_CREATE_DETACHED);
+
+    try expect(pthread_attr_destroy(&attr) == 0);
+}
+
 export fn main() i32 {
     test_suite_begin("pthread");
 
@@ -233,6 +281,18 @@ export fn main() i32 {
         return test_suite_end();
     };
     test_pass("pthread_recursive_mutex");
+
+    test_pthread_attr() catch {
+        test_fail("pthread_attr");
+        return test_suite_end();
+    };
+    test_pass("pthread_attr");
+
+    test_pthread_attr_detached() catch {
+        test_fail("pthread_attr_detached");
+        return test_suite_end();
+    };
+    test_pass("pthread_attr_detached");
 
     return test_suite_end();
 }

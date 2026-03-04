@@ -206,7 +206,13 @@
 - [x] `pthread_join` - 等待线程结束
 - [x] `pthread_exit` - 退出当前线程
 - [x] `pthread_t` - 线程标识结构体（包含分离状态）
-- [x] `pthread_attr_t` - 线程属性结构体（占位）
+- [x] `pthread_attr_t` - 线程属性结构体（支持栈大小和分离状态）
+- [x] `pthread_attr_init` - 初始化线程属性
+- [x] `pthread_attr_destroy` - 销毁线程属性
+- [x] `pthread_attr_getstacksize` - 获取线程栈大小
+- [x] `pthread_attr_setstacksize` - 设置线程栈大小
+- [x] `pthread_attr_getdetachstate` - 获取分离状态
+- [x] `pthread_attr_setdetachstate` - 设置分离状态
 - [x] `pthread_self` - 获取当前线程 ID
 - [x] `pthread_equal` - 比较两个线程 ID
 - [x] `pthread_detach` - 分离线程
@@ -214,12 +220,7 @@
 - [ ] `pthread_testcancel` - 检查取消请求
 - [ ] `pthread_setcancelstate` - 设置取消状态
 - [ ] `pthread_setcanceltype` - 设置取消类型
-- [ ] `pthread_attr_init` - 初始化线程属性
-- [ ] `pthread_attr_destroy` - 销毁线程属性
-- [ ] `pthread_attr_getstack` - 获取线程栈属性
-- [ ] `pthread_attr_setstack` - 设置线程栈属性
-- [ ] `pthread_attr_getstacksize` - 获取线程栈大小
-- [ ] `pthread_attr_setstacksize` - 设置线程栈大小
+
 
 #### 互斥量
 
