@@ -77,6 +77,7 @@
 - [x] `close` - 关闭文件描述符
 - [x] `lseek` - 移动文件指针
 - [x] `getpid` - 获取进程ID
+- [x] `getppid` - 获取父进程ID
 - [x] `fork` - 创建进程
 - [x] `execve` - 执行程序
 - [x] `_exit` - 立即退出进程
@@ -88,6 +89,7 @@
 - [x] `getcwd` - 获取当前工作目录
 - [x] `dup` - 复制文件描述符
 - [x] `dup2` - 复制文件描述符到指定编号
+- [x] `sleep` - 暂停执行指定的秒数
 
 ### 6. 文件系统相关 (`lib/libc/stdio.uya`)
 
@@ -97,55 +99,29 @@
 - [x] `closedir` - 关闭目录
 - [x] `readlink` - 读取符号链接
 - [x] `getenv` - 获取环境变量
+- [x] `putenv` - 设置环境变量
+- [x] `setenv` - 设置环境变量（带覆盖）
+- [x] `unsetenv` - 删除环境变量
+- [x] `clearenv` - 清除环境变量
+
+### 7. 文件位置和状态函数 (`lib/libc/stdio.uya`)
+
+- [x] `fseek` - 移动文件指针
+- [x] `ftell` - 获取当前文件位置
+- [x] `rewind` - 重置文件指针到开头
+- [x] `feof` - 检查文件结束标志
+- [x] `ferror` - 检查文件错误标志
+- [x] `clearerr` - 清除文件错误和结束标志
+- [x] `fgetpos` - 获取文件位置
+- [x] `fsetpos` - 设置文件位置
 
 ## 待实现功能
 
-### 1. 字符串操作函数
-
-- [x] `strcat` - 字符串连接
-- [x] `strncat` - 连接字符串的前n个字符
-- [x] `strspn` - 扫描字符串
-- [x] `strcspn` - 扫描字符串补集
-- [x] `strpbrk` - 字符串中查找任一字符
-- [x] `strtok` - 字符串分割
-- [x] `strerror` - 错误信息字符串（在 errno.uya 中）
-
-### 2. 标准输入输出函数
-
-- [x] `fscanf` - 格式化输入（从文件）
-- [x] `sscanf` - 格式化输入（从字符串）
-- [ ] `vfprintf` - 可变参数格式化输出（**待实现**：需要编译器支持 `va_list` 作为内置类型，参见 [va_list 设计文档](docs/va_list_native_design.md)）
-- [ ] `vprintf` - 可变参数格式化输出到标准输出（**待实现**）
-- [ ] `vsprintf` - 可变参数格式化到字符串（**待实现**）
-- [ ] `vsnprintf` - 可变参数格式化到字符串（**待实现**）
-- [x] `remove` - 删除文件
-- [x] `rename` - 重命名文件
-- [x] `tmpfile` - 创建临时文件（已完善，使用唯一文件名）
-- [x] `tmpnam` - 生成临时文件名（已完善，使用计数器生成）
-- [x] `setbuf` - 设置缓冲区
-- [x] `setvbuf` - 设置缓冲区及模式
-- [x] `fgetpos` - 获取文件位置
-- [x] `fsetpos` - 设置文件位置
-- [x] `perror` - 打印错误信息（已完善，调用strerror显示实际错误）
-
-### 3. 标准库函数
-
-- [x] `div` - 整数除法
-- [x] `ldiv` - 长整型除法
-- [x] `lldiv` - 长长整型除法
-- [x] `atoll` - 字符串转长长整型
-- [x] `strtoll` - 字符串转长长整型
-- [x] `strtoull` - 字符串转无符号长长整型
-- [x] `strtoul` - 字符串转无符号长整型
-- [x] `rand` - 随机数生成
-- [x] `srand` - 设置随机数种子
-- [x] `qsort` - 快速排序
-- [x] `bsearch` - 二分查找
+### 1. 标准库函数
 - [ ] `mbstowcs` - 多字节字符串转宽字符串
 - [ ] `wcstombs` - 宽字符串转多字节字符串
-- [x] `system` - 执行系统命令（已完善）
 
-### 4. 字符分类函数 (`lib/libc/ctype.uya`)
+### 2. 字符分类函数 (`lib/libc/ctype.uya`)
 
 - [x] `isalnum` - 是否字母数字
 - [x] `isalpha` - 是否字母
@@ -219,6 +195,104 @@
 - [x] `va_start`, `va_arg`, `va_end` - 可变参数处理
 
 - [x] `va_copy` - 复制 va_list
+
+### 10. POSIX 线程函数 (`lib/libc/pthread.uya`)
+
+#### 线程管理
+
+- [x] `pthread_create` - 创建线程
+- [x] `pthread_join` - 等待线程结束
+- [x] `pthread_exit` - 退出当前线程
+- [x] `pthread_t` - 线程标识结构体（包含分离状态）
+- [x] `pthread_attr_t` - 线程属性结构体（占位）
+- [x] `pthread_self` - 获取当前线程 ID
+- [x] `pthread_equal` - 比较两个线程 ID
+- [x] `pthread_detach` - 分离线程
+- [ ] `pthread_cancel` - 取消线程
+- [ ] `pthread_testcancel` - 检查取消请求
+- [ ] `pthread_setcancelstate` - 设置取消状态
+- [ ] `pthread_setcanceltype` - 设置取消类型
+- [ ] `pthread_attr_init` - 初始化线程属性
+- [ ] `pthread_attr_destroy` - 销毁线程属性
+- [ ] `pthread_attr_getstack` - 获取线程栈属性
+- [ ] `pthread_attr_setstack` - 设置线程栈属性
+- [ ] `pthread_attr_getstacksize` - 获取线程栈大小
+- [ ] `pthread_attr_setstacksize` - 设置线程栈大小
+
+#### 互斥量
+
+- [x] `pthread_mutex_t` - 互斥量结构体
+- [x] `pthread_mutexattr_t` - 互斥量属性结构体（占位）
+- [x] `pthread_mutex_init` - 初始化互斥量
+- [x] `pthread_mutex_destroy` - 销毁互斥量
+- [x] `pthread_mutex_lock` - 加锁
+- [x] `pthread_mutex_unlock` - 解锁
+- [x] `pthread_mutex_trylock` - 尝试加锁
+- [ ] `pthread_mutex_timedlock` - 带超时加锁
+- [ ] `pthread_mutexattr_init` - 初始化互斥量属性
+- [ ] `pthread_mutexattr_destroy` - 销毁互斥量属性
+- [ ] `pthread_mutexattr_gettype` - 获取互斥量类型
+- [ ] `pthread_mutexattr_settype` - 设置互斥量类型（普通/递归/检错）
+
+#### 条件变量
+
+- [x] `pthread_cond_t` - 条件变量结构体（基于 futex 实现）
+- [x] `pthread_condattr_t` - 条件变量属性结构体（占位）
+- [x] `pthread_cond_init` - 初始化条件变量
+- [x] `pthread_cond_destroy` - 销毁条件变量
+- [x] `pthread_cond_wait` - 等待条件变量（基于 futex + seq 实现）
+- [ ] `pthread_cond_timedwait` - 带超时等待条件变量
+- [x] `pthread_cond_signal` - 唤醒一个等待线程（基于 futex 实现）
+- [x] `pthread_cond_broadcast` - 唤醒所有等待线程（基于 futex 实现）
+
+#### 线程特定数据（TLS）
+
+- [ ] `pthread_key_t` - 线程特定数据键结构体
+- [ ] `pthread_key_create` - 创建线程特定数据键
+- [ ] `pthread_key_delete` - 删除线程特定数据键
+- [ ] `pthread_getspecific` - 获取线程特定数据
+- [ ] `pthread_setspecific` - 设置线程特定数据
+
+#### 读写锁
+
+- [ ] `pthread_rwlock_t` - 读写锁结构体
+- [ ] `pthread_rwlockattr_t` - 读写锁属性结构体
+- [ ] `pthread_rwlock_init` - 初始化读写锁
+- [ ] `pthread_rwlock_destroy` - 销毁读写锁
+- [ ] `pthread_rwlock_rdlock` - 获取读锁
+- [ ] `pthread_rwlock_wrlock` - 获取写锁
+- [ ] `pthread_rwlock_unlock` - 释放读写锁
+- [ ] `pthread_rwlock_tryrdlock` - 尝试获取读锁
+- [ ] `pthread_rwlock_trywrlock` - 尝试获取写锁
+
+#### 自旋锁
+
+- [ ] `pthread_spinlock_t` - 自旋锁结构体
+- [ ] `pthread_spin_init` - 初始化自旋锁
+- [ ] `pthread_spin_destroy` - 销毁自旋锁
+- [ ] `pthread_spin_lock` - 加自旋锁
+- [ ] `pthread_spin_unlock` - 解自旋锁
+- [ ] `pthread_spin_trylock` - 尝试加自旋锁
+
+#### 屏障
+
+- [ ] `pthread_barrier_t` - 屏障结构体
+- [ ] `pthread_barrierattr_t` - 屏障属性结构体
+- [ ] `pthread_barrier_init` - 初始化屏障
+- [ ] `pthread_barrier_destroy` - 销毁屏障
+- [ ] `pthread_barrier_wait` - 等待屏障
+
+#### 一次性初始化
+
+- [x] `pthread_once_t` - 一次性初始化控制结构体（基于 CAS 实现）
+- [x] `pthread_once` - 一次性初始化（基于 CAS 实现）
+
+#### 线程调度
+
+- [ ] `pthread_yield` - 让出 CPU
+- [ ] `pthread_setaffinity_np` - 设置线程 CPU 亲和性
+- [ ] `pthread_getaffinity_np` - 获取线程 CPU 亲和性
+
 ## 优化建议
 
 ### 1. 性能优化
@@ -270,11 +344,50 @@
 
 ## 总结
 
-当前 Uya 的 libc 实现已经覆盖了核心功能，包括基本的字符串操作、内存管理、文件I/O、标准库函数和系统调用等。我们已经完成了几个重要的优化：
+当前 Uya 的 libc 实现已经覆盖了核心功能，包括基本的字符串操作、内存管理、文件I/O、标准库函数、系统调用和POSIX线程等。我们已经完成了几个重要的优化：
 
 1. **内存分配器优化**：重构了[malloc](file:///media/winger/_dde_home/winger/uya/lib/libc/stdlib.uya#L15-L32)、[free](file:///media/winger/_dde_home/winger/uya/lib/libc/stdlib.uya#L34-L40)和[realloc](file:///media/winger/_dde_home/winger/uya/lib/libc/stdlib.uya#L63-L81)函数，参考musl实现，使用空闲链表和块合并策略，提高了内存利用率
 2. **I/O缓冲机制**：为stdio函数添加了缓冲机制，减少了系统调用的频率
+3. **POSIX线程支持**：实现了pthread_t、pthread_mutex_t、pthread_cond_t等核心结构，支持线程创建、互斥锁、条件变量、一次性初始化等功能
 
-目前，数学函数、时间日期函数、字符分类函数、信号处理、非局部跳转和可变参数函数等模块已经实现。但仍有一些字符串操作函数（如 strcat、strncat、strtok 等）、标准输入输出函数（如 fscanf、sscanf、vfprintf 等）以及部分高级功能有待完善。
+### 已完成模块
+
+✅ **字符串操作** - 完整实现 strlen, strcmp, strncmp, strcasecmp, strncasecmp, strcpy, strncpy, strcat, strncat, strdup, strndup, strchr, strrchr, strstr, strcspn, strspn, strpbrk, strtok
+
+✅ **内存操作** - 完整实现 memcpy, memset, memmove, memcmp, memchr
+
+✅ **标准输入输出** - 完整实现 fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, vfprintf, printf, vprintf, sprintf, vsprintf, snprintf, vsnprintf, fflush, puts, fgets, fscanf, sscanf, fseek, ftell, rewind, feof, ferror, clearerr, fgetpos, fsetpos, setbuf, setvbuf, remove, rename, tmpfile, tmpnam, perror
+
+✅ **标准库函数** - 完整实现 malloc, free, calloc, realloc, exit, abort, atoi, atol, atof, strtod, strtol, strtoul, strtoll, strtoull, abs, labs, llabs, div, ldiv, lldiv, atoll, rand, srand, qsort, bsearch, system, strdup, strndup
+
+✅ **字符分类** - 完整实现 isalnum, isalpha, isdigit, islower, isupper, isspace, ispunct, isprint, isgraph, iscntrl, isxdigit, tolower, toupper
+
+✅ **数学函数** - 完整实现 sin, cos, tan, asin, acos, atan, atan2, sinh, cosh, tanh, asinh, acosh, atanh, exp, log, log10, log2, pow, sqrt, cbrt, ceil, floor, trunc, round, nearbyint, rint, fabs, fmod, remainder, fmax, fmin, fdim, hypot, copysign, nextafter, nan
+
+✅ **时间日期** - 完整实现 time, clock, difftime, mktime, strftime, asctime, ctime, gmtime, localtime
+
+✅ **信号处理** - 完整实现 signal, raise, kill, sigprocmask, sigpending, sigsuspend, alarm, pause, sigemptyset, sigfillset, sigaddset, sigdelset, sigismember, atexit, on_exit
+
+✅ **非局部跳转** - 完整实现 setjmp, longjmp, sigsetjmp, siglongjmp, _setjmp, _longjmp
+
+✅ **可变参数** - 完整实现 va_start, va_arg, va_end, va_copy
+
+✅ **系统调用** - 完整实现 sys_write, sys_read, sys_open, sys_close, sys_exit, sys_getpid, sys_lseek, sys_mmap, sys_munmap, sys_stat, read, write, close, lseek, getpid, getppid, fork, execve, _exit, access, unlink, mkdir, rmdir, chdir, getcwd, dup, dup2, sleep, stat, opendir, readdir, closedir, readlink
+
+✅ **环境变量** - 完整实现 getenv, putenv, setenv, unsetenv, clearenv
+
+✅ **错误处理** - 完整实现 strerror
+
+✅ **POSIX线程** - 实现线程创建、互斥锁、条件变量、线程ID获取、线程分离、一次性初始化等核心功能
+
+### 待完成功能
+
+❌ **宽字符支持** - mbstowcs, wcstombs（多字节/宽字符转换）
+
+❌ **线程高级功能** - pthread_cancel, pthread_detach 资源自动回收, pthread_cond_timedwait, pthread_mutex_timedlock, pthread_attr 相关函数, 读写锁, 自旋锁, 屏障, 线程特定数据(TLS)
+
+❌ **性能优化** - 字符串操作 SIMD 优化, 边界检查增强
+
+❌ **线程安全** - 为所有函数添加必要的同步机制
 
 项目整体上朝着实现一个完整的C标准库子集的方向发展，并逐步将功能迁移到更现代的 `std.*` 模块中。未来的工作重点应放在性能优化、功能完整性和跨平台支持上。

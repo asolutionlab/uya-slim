@@ -46,10 +46,12 @@ fn _pthread_call_start(start_fn: &void, start_arg: &void) &void {
 // 说明：
 // - tid: clone 返回的子进程/线程 ID（用于 waitpid）
 // - stack/stack_size: 线程栈内存，由 pthread_create 分配，pthread_join 释放
+// - detached: 是否已分离（分离线程不调用 join，资源自动回收）
 export struct pthread_t {
     tid: i64,
     stack: &void,
     stack_size: usize,
+    detached: atomic i32,
 }
 
 // pthread_mutex_t - 互斥量（0=未锁，1=已锁，atomic+futex 实现）
@@ -60,8 +62,24 @@ export struct pthread_mutex_t {
 // 保护“写全局 + clone”临界区，保证多线程并发 pthread_create 时子线程拿到正确 fn/arg
 var _pthread_create_mutex: pthread_mutex_t = pthread_mutex_t{ state: 0 };
 
-// 条件变量与属性结构：占位，当前实现中未使用
-export struct pthread_cond_t { _unused: i32 }
+// pthread_cond_t - 条件变量（基于 futex 实现）
+// - waiters: 当前等待线程数
+// - seq: 信号序号，用于避免虚假唤醒
+export struct pthread_cond_t {
+    waiters: atomic i32,
+    seq: atomic i32,
+}
+
+// 保护条件变量内部状态的全局 mutex
+var _cond_mutex: pthread_mutex_t = pthread_mutex_t{ state: 0 };
+
+// pthread_once_t - 一次性初始化控制结构体
+// state: 0=未初始化，1=正在初始化，2=已初始化
+export struct pthread_once_t {
+    state: atomic i32,
+}
+
+// 属性结构：占位，当前实现中未使用
 export struct pthread_attr_t { _unused: i32 }
 export struct pthread_mutexattr_t { _unused: i32 }
 export struct pthread_condattr_t { _unused: i32 }
@@ -112,16 +130,23 @@ export fn pthread_create(thread: &pthread_t, attr: &const pthread_attr_t, start_
     thread.tid = tid;
     thread.stack = stack_mem;
     thread.stack_size = PTHREAD_STACK_SIZE;
+    thread.detached = 0;
     return 0;
 }
 
 // pthread_join - 等待线程结束（基于 waitpid）
 // 说明：
 // - 当前忽略 retval，仅等待线程退出并回收其栈内存
+// - 分离线程不能 join
 extern "libc" fn sys_waitpid(pid: i32, status: &i32, options: i32) !i32;
 
-export fn pthread_join(thread: pthread_t, retval: & &void) i32 {
+export fn pthread_join(thread: &pthread_t, retval: & &void) i32 {
     _ = retval;
+
+    // 检查是否已分离
+    if thread.detached != 0 {
+        return 22; // EINVAL
+    }
 
     var status: i32 = 0;
     const pid: i32 = thread.tid as i32;
@@ -134,6 +159,59 @@ export fn pthread_join(thread: pthread_t, retval: & &void) i32 {
         free(thread.stack);
     }
     return 0;
+}
+
+// pthread_detach - 分离线程
+// 说明：
+// - 分离线程在退出时自动释放资源，不需要 join
+// - 标志线程为分离状态，但不立即释放栈（需要线程结束）
+export fn pthread_detach(thread: &pthread_t) i32 {
+    if thread == null {
+        return 22; // EINVAL
+    }
+
+    // 检查是否已分离
+    if thread.detached != 0 {
+        return 22; // EINVAL
+    }
+
+    // 标记为分离
+    var expected: i32 = 0;
+    if __atomic_compare_exchange_n(&thread.detached, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+        return 0;
+    }
+    return 22; // EINVAL
+}
+
+// pthread_once - 一次性初始化
+// 说明：
+// - 确保初始化函数只被调用一次
+// - 使用 CAS 原子操作保证线程安全
+export fn pthread_once(once_control: &pthread_once_t, init_routine: &void) void {
+    if once_control == null || init_routine == null {
+        return;
+    }
+
+    // 检查是否已初始化
+    var expected: i32 = 2;
+    if __atomic_compare_exchange_n(&once_control.state, &expected, 2, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+        return;
+    }
+
+    // CAS 将状态从 0（未初始化）设置为 1（正在初始化）
+    expected = 0;
+    if __atomic_compare_exchange_n(&once_control.state, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+        // 成功设置状态为 1，执行初始化函数
+        _pthread_call_start(init_routine, null);
+        // 设置状态为 2（已初始化）
+        once_control.state = 2;
+        return;
+    }
+
+    // 其他线程正在初始化，等待完成
+    while once_control.state != 2 {
+        // 短暂休眠避免忙等待（空操作）
+    }
 }
 
 // pthread_exit - 当前实现直接调用 sys_exit
@@ -193,31 +271,114 @@ export fn pthread_mutex_trylock(mutex: &pthread_mutex_t) i32 {
     return 16;
 }
 
-// 条件变量相关接口暂未实现，保留空壳以便后续扩展
-export fn pthread_cond_init(cond: &pthread_cond_t, attr: &const pthread_condattr_t) i32 {
-    _ = cond;
-    _ = attr;
+// pthread_self - 获取当前线程 ID
+// 使用 SYS_getpid（当前 clone 实现创建的是进程，与 fork 类似）
+extern "libc" fn sys_getpid() !i64;
+
+export fn pthread_self() pthread_t {
+    const tid: !i64 = sys_getpid();
+    const tid_val: i64 = tid catch { return pthread_t{ tid: -1, stack: null, stack_size: 0 }; };
+    return pthread_t{
+        tid: tid_val,
+        stack: null,
+        stack_size: 0,
+    };
+}
+
+// pthread_equal - 比较两个线程 ID
+export fn pthread_equal(t1: pthread_t, t2: pthread_t) i32 {
+    if t1.tid == t2.tid {
+        return 1;
+    }
     return 0;
 }
 
+// pthread_cond_init - 初始化条件变量
+export fn pthread_cond_init(cond: &pthread_cond_t, attr: &const pthread_condattr_t) i32 {
+    _ = attr;
+    if cond == null {
+        return 22;
+    }
+    cond.waiters = 0;
+    cond.seq = 0;
+    return 0;
+}
+
+// pthread_cond_destroy - 恒成功（无资源释放）
 export fn pthread_cond_destroy(cond: &pthread_cond_t) i32 {
     _ = cond;
     return 0;
 }
 
+// pthread_cond_wait - 等待条件变量
+// 算法：
+// 1. 增加 waiters 计数
+// 2. 记录当前 seq
+// 3. 释放 mutex
+// 4. futex_wait 等待 seq 变化
+// 5. 重新获取 mutex
+// 6. 减少 waiters 计数
 export fn pthread_cond_wait(cond: &pthread_cond_t, mutex: &pthread_mutex_t) i32 {
-    _ = cond;
-    _ = mutex;
-    // TODO: 基于 futex 实现
+    if cond == null || mutex == null {
+        return 22;
+    }
+
+    // 增加 waiters 计数（使用原子操作）
+    var expected: i32 = cond.waiters;
+    var new_val: i32 = expected + 1;
+    while __atomic_compare_exchange_n(&cond.waiters, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+        new_val = expected + 1;
+    }
+
+    // 记录当前 seq
+    const seq: i32 = cond.seq;
+
+    // 释放 mutex
+    _ = pthread_mutex_unlock(mutex);
+
+    // futex_wait 等待 seq 变化
+    sys_futex((&cond.seq) as &i32, FUTEX_WAIT, seq, null);
+
+    // 重新获取 mutex
+    _ = pthread_mutex_lock(mutex);
+
+    // 减少 waiters 计数
+    expected = cond.waiters;
+    new_val = expected - 1;
+    while __atomic_compare_exchange_n(&cond.waiters, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+        new_val = expected - 1;
+    }
+
     return 0;
 }
 
+// pthread_cond_signal - 唤醒一个等待线程
 export fn pthread_cond_signal(cond: &pthread_cond_t) i32 {
-    _ = cond;
+    if cond == null {
+        return 22;
+    }
+
+    // 增加 seq，唤醒一个等待线程
+    cond.seq = cond.seq + 1;
+    sys_futex((&cond.seq) as &i32, FUTEX_WAKE, 1, null);
+
     return 0;
 }
 
+// pthread_cond_broadcast - 唤醒所有等待线程
 export fn pthread_cond_broadcast(cond: &pthread_cond_t) i32 {
-    _ = cond;
+    if cond == null {
+        return 22;
+    }
+
+    // 获取当前等待线程数
+    const n: i32 = cond.waiters;
+
+    if n > 0 {
+        // 增加 seq，唤醒所有等待线程
+        cond.seq = cond.seq + 1;
+        sys_futex((&cond.seq) as &i32, FUTEX_WAKE, n, null);
+    }
+
     return 0;
 }
