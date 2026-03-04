@@ -258,15 +258,15 @@
 
 #### 读写锁
 
-- [ ] `pthread_rwlock_t` - 读写锁结构体
-- [ ] `pthread_rwlockattr_t` - 读写锁属性结构体
-- [ ] `pthread_rwlock_init` - 初始化读写锁
-- [ ] `pthread_rwlock_destroy` - 销毁读写锁
-- [ ] `pthread_rwlock_rdlock` - 获取读锁
-- [ ] `pthread_rwlock_wrlock` - 获取写锁
-- [ ] `pthread_rwlock_unlock` - 释放读写锁
-- [ ] `pthread_rwlock_tryrdlock` - 尝试获取读锁
-- [ ] `pthread_rwlock_trywrlock` - 尝试获取写锁
+- [x] `pthread_rwlock_t` - 读写锁结构体
+- [x] `pthread_rwlockattr_t` - 读写锁属性结构体
+- [x] `pthread_rwlock_init` - 初始化读写锁
+- [x] `pthread_rwlock_destroy` - 销毁读写锁
+- [x] `pthread_rwlock_rdlock` - 获取读锁（基于 CAS + pthread_yield）
+- [x] `pthread_rwlock_wrlock` - 获取写锁（基于 CAS + pthread_yield）
+- [x] `pthread_rwlock_unlock` - 释放读写锁
+- [x] `pthread_rwlock_tryrdlock` - 尝试获取读锁
+- [x] `pthread_rwlock_trywrlock` - 尝试获取写锁
 
 #### 自旋锁
 

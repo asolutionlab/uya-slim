@@ -207,6 +207,30 @@ fn test_pthread_attr_detached() !void {
     try expect(pthread_attr_destroy(&attr) == 0);
 }
 
+// 测试读写锁
+fn test_pthread_rwlock() !void {
+    var rwlock: pthread_rwlock_t = pthread_rwlock_t{ readers: 0, writer: 0, writer_tid: 0 };
+    try expect(pthread_rwlock_init(&rwlock, null) == 0);
+
+    // 测试读锁
+    try expect(pthread_rwlock_rdlock(&rwlock) == 0);
+    try expect(pthread_rwlock_unlock(&rwlock) == 0);
+
+    // 测试写锁
+    try expect(pthread_rwlock_wrlock(&rwlock) == 0);
+    try expect(pthread_rwlock_unlock(&rwlock) == 0);
+
+    // 测试尝试读锁
+    try expect(pthread_rwlock_tryrdlock(&rwlock) == 0);
+    try expect(pthread_rwlock_unlock(&rwlock) == 0);
+
+    // 测试尝试写锁
+    try expect(pthread_rwlock_trywrlock(&rwlock) == 0);
+    try expect(pthread_rwlock_unlock(&rwlock) == 0);
+
+    try expect(pthread_rwlock_destroy(&rwlock) == 0);
+}
+
 export fn main() i32 {
     test_suite_begin("pthread");
 
@@ -293,6 +317,12 @@ export fn main() i32 {
         return test_suite_end();
     };
     test_pass("pthread_attr_detached");
+
+    test_pthread_rwlock() catch {
+        test_fail("pthread_rwlock");
+        return test_suite_end();
+    };
+    test_pass("pthread_rwlock");
 
     return test_suite_end();
 }

@@ -760,3 +760,160 @@ export extern "libc" fn pthread_spin_trylock(lock: &pthread_spinlock_t) i32 {
     }
     return 16; // EBUSY
 }
+
+// ============================================================
+// 读写锁（pthread_rwlock）
+// ============================================================
+
+// pthread_rwlock_t - 读写锁结构体
+// - readers: 当前持有读锁的读者数（0 表示无读者）
+// - writer: 0=无写者，1=有写者
+// - writer_tid: 写者线程 ID（用于递归检测）
+export struct pthread_rwlock_t {
+    readers: atomic i32,
+    writer: atomic i32,
+    writer_tid: i64,
+}
+
+// pthread_rwlockattr_t - 读写锁属性结构体（占位）
+export struct pthread_rwlockattr_t {
+    _unused: i32,
+}
+
+// pthread_rwlock_init - 初始化读写锁
+export extern "libc" fn pthread_rwlock_init(rwlock: &pthread_rwlock_t, attr: &const pthread_rwlockattr_t) i32 {
+    _ = attr;
+    if rwlock == null {
+        return 22; // EINVAL
+    }
+    rwlock.readers = 0;
+    rwlock.writer = 0;
+    rwlock.writer_tid = 0;
+    return 0;
+}
+
+// pthread_rwlock_destroy - 销毁读写锁（恒成功）
+export extern "libc" fn pthread_rwlock_destroy(rwlock: &pthread_rwlock_t) i32 {
+    _ = rwlock;
+    return 0;
+}
+
+// pthread_rwlock_rdlock - 获取读锁
+// 多个读者可以同时持有读锁
+export extern "libc" fn pthread_rwlock_rdlock(rwlock: &pthread_rwlock_t) i32 {
+    if rwlock == null {
+        return 22; // EINVAL
+    }
+    
+    // 等待写者释放
+    while true {
+        // 检查是否有写者
+        if rwlock.writer == 0 {
+            // 尝试增加读者计数
+            var expected: i32 = rwlock.readers;
+            var new_val: i32 = expected + 1;
+            if __atomic_compare_exchange_n(&rwlock.readers, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+                return 0; // 成功获取读锁
+            }
+        }
+        // 有写者或 CAS 失败，让出 CPU
+        _ = pthread_yield();
+    }
+    return 0;
+}
+
+// pthread_rwlock_tryrdlock - 尝试获取读锁（不等待）
+export extern "libc" fn pthread_rwlock_tryrdlock(rwlock: &pthread_rwlock_t) i32 {
+    if rwlock == null {
+        return 22; // EINVAL
+    }
+    
+    // 检查是否有写者
+    if rwlock.writer != 0 {
+        return 16; // EBUSY
+    }
+    
+    // 尝试增加读者计数
+    var expected: i32 = rwlock.readers;
+    var new_val: i32 = expected + 1;
+    if __atomic_compare_exchange_n(&rwlock.readers, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+        return 0; // 成功
+    }
+    return 16; // EBUSY
+}
+
+// pthread_rwlock_wrlock - 获取写锁
+// 写锁独占，必须等待所有读者和写者释放
+export extern "libc" fn pthread_rwlock_wrlock(rwlock: &pthread_rwlock_t) i32 {
+    if rwlock == null {
+        return 22; // EINVAL
+    }
+    
+    const tid: i64 = sys_getpid() catch { return 1; };
+    
+    // 等待读者和写者释放
+    while true {
+        // 检查是否没有读者和写者
+        if rwlock.readers == 0 && rwlock.writer == 0 {
+            // 尝试设置写者标志
+            var expected: i32 = 0;
+            if __atomic_compare_exchange_n(&rwlock.writer, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+                rwlock.writer_tid = tid;
+                return 0; // 成功获取写锁
+            }
+        }
+        // 有读者或写者，让出 CPU
+        _ = pthread_yield();
+    }
+    return 0;
+}
+
+// pthread_rwlock_trywrlock - 尝试获取写锁（不等待）
+export extern "libc" fn pthread_rwlock_trywrlock(rwlock: &pthread_rwlock_t) i32 {
+    if rwlock == null {
+        return 22; // EINVAL
+    }
+    
+    const tid: i64 = sys_getpid() catch { return 1; };
+    
+    // 检查是否有读者或写者
+    if rwlock.readers != 0 || rwlock.writer != 0 {
+        return 16; // EBUSY
+    }
+    
+    // 尝试设置写者标志
+    var expected: i32 = 0;
+    if __atomic_compare_exchange_n(&rwlock.writer, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+        rwlock.writer_tid = tid;
+        return 0; // 成功
+    }
+    return 16; // EBUSY
+}
+
+// pthread_rwlock_unlock - 释放读写锁
+export extern "libc" fn pthread_rwlock_unlock(rwlock: &pthread_rwlock_t) i32 {
+    if rwlock == null {
+        return 22; // EINVAL
+    }
+    
+    const tid: i64 = sys_getpid() catch { return 1; };
+    
+    // 检查是否是写者
+    if rwlock.writer != 0 && rwlock.writer_tid == tid {
+        // 释放写锁
+        rwlock.writer = 0;
+        rwlock.writer_tid = 0;
+        return 0;
+    }
+    
+    // 释放读锁（减少读者计数）
+    var expected: i32 = rwlock.readers;
+    var new_val: i32 = expected - 1;
+    while __atomic_compare_exchange_n(&rwlock.readers, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+        if expected == 0 {
+            return 1; // 错误：没有读锁
+        }
+        new_val = expected - 1;
+    }
+    return 0;
+}
