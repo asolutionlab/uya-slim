@@ -52,6 +52,16 @@
 - [x] `printf` - 格式化输出到标准输出（简化版）
 - [x] `puts` - 输出字符串并换行
 - [x] `fgets` - 从流中获取字符串
+- [x] `fscanf` - 格式化输入（从文件，支持 %d/%s/%c/%%）
+- [x] `sscanf` - 格式化输入（从字符串，支持 %d/%s/%c/%%）
+- [x] `remove` - 删除文件或目录
+- [x] `rename` - 重命名文件
+- [x] `tmpfile` - 创建临时文件
+- [x] `tmpnam` - 生成临时文件名
+- [x] `setbuf` - 设置缓冲区
+- [x] `setvbuf` - 设置缓冲区及模式
+- [x] `fgetpos` - 获取文件位置
+- [x] `fsetpos` - 设置文件位置
 
 ### 4. 标准库函数 (`lib/libc/stdlib.uya`)
 
@@ -179,6 +189,7 @@
 - [x] `ctime` - 日历时间转字符串
 - [x] `gmtime` - UTC时间
 - [x] `localtime` - 本地时间
+- [x] `strftime` - 格式化时间（支持 %Y/%y/%m/%d/%H/%M/%S/%a/%A/%b/%B/%I/%p/%T/%F/%c 等）
 
 ### 9. 信号处理函数 (`lib/libc/signal.uya`)
 
@@ -196,18 +207,12 @@
 
 ## 待实现功能
 
-### 1. 标准输入输出函数
-
-- [ ] `tmpfile` - 创建临时文件
-- [ ] `tmpnam` - 生成临时文件名
-
-### 2. 标准库函数
+### 1. 标准库函数
 
 - [ ] `mbstowcs` - 多字节字符串转宽字符串
 - [ ] `wcstombs` - 宽字符串转多字节字符串
-- [ ] `system` - 执行系统命令（部分实现）
 
-### 3. 高级功能模块
+### 2. 高级功能模块
 
 #### 3.1. 多线程支持 (`lib/libc/pthread.uya` - 未创建)
 - [ ] `pthread_create` - 创建线程
