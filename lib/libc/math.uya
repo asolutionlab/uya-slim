@@ -48,9 +48,13 @@ export extern "libc" fn isnan(x: f64) i32 {
 }
 
 // 判断是否为无穷大
+// 无穷大的特性：inf * 2 == inf，而有限数值 x * 2 != x
 export extern "libc" fn isinf(x: f64) i32 {
-    if x == INFINITY { return 1; }
-    if x == 0.0 - INFINITY { return -1; }
+    if x == 0.0 { return 0; }
+    if x * 2.0 == x {
+        if x > 0.0 { return 1; }
+        return -1;
+    }
     return 0;
 }
 
