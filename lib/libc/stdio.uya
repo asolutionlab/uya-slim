@@ -1143,14 +1143,64 @@ export fn setvbuf(stream: &FILE, buf: &byte, mode: i32, size: usize) i32 {
 // 文件操作函数 (remove, rename, tmpfile)
 // ============================================================
 
-// remove - 删除文件
-// 返回：0 成功，-1 失败
+// stat 结构定义（如果尚未定义）
+// 注意：这部分应该在文件顶部或其他合适的位置定义
+// struct Stat {
+//     st_dev: u64,     // 设备ID
+//     st_ino: u64,     // inode号
+//     st_mode: u32,    // 文件类型和权限
+//     st_nlink: u64,   // 硬链接数
+//     st_uid: u32,     // 用户ID
+//     st_gid: u32,     // 组ID
+//     st_rdev: u64,    // 设备文件的设备ID
+//     st_size: i64,    // 文件大小（字节）
+//     st_blksize: u32, // 块大小
+//     st_blocks: u64,  // 分配的512B块数
+//     st_atime: i64,   // 最后访问时间
+//     st_mtime: i64,   // 最后修改时间
+//     st_ctime: i64,   // 状态改变时间
+// };
+
+// remove - 删除文件或目录
+// 根据路径类型，使用 unlink 删除文件或 rmdir 删除目录
 export fn remove(path: &const byte) i32 {
     if path == null { return -1; }
-    const result: !i32 = sys_unlink(path);
-    const ret: i32 = result catch { return -1; };
-    if ret < 0 { return -1; }
-    return 0;
+    
+    // 导入 stat 函数以判断路径类型
+    // 注意：在函数内部不能直接使用 import，需要通过模块调用
+    
+    // 定义必要的常量（使用局部名称避免遮蔽外层定义）
+    const _S_IFMT: u32 = 61440;   // 0170000 文件类型掩码
+    const _S_IFDIR: u32 = 16384;  // 0040000 目录
+    
+    // 获取文件状态
+    var stat_buf: Stat = Stat{
+        st_dev: 0, st_ino: 0, st_nlink: 0, st_mode: 0, st_uid: 0, st_gid: 0, _pad0: 0,
+        st_rdev: 0, st_size: 0, st_blksize: 0, st_blocks: 0, 
+        st_atime: 0, st_atime_nsec: 0, st_mtime: 0, st_mtime_nsec: 0,
+        st_ctime: 0, st_ctime_nsec: 0, _unused0: 0, _unused1: 0, _unused2: 0
+    };
+    
+    const stat_result: !i32 = sys_stat(path, &stat_buf);
+    const stat_ret: i32 = stat_result catch { return -1; };
+    if stat_ret != 0 { 
+        // 无法获取文件状态，可能是文件不存在
+        return -1; 
+    }
+    
+    // 检查是否为目录
+    if (stat_buf.st_mode as u32 & _S_IFMT) == _S_IFDIR {
+        // 是目录，使用 rmdir
+        const rmdir_result: !i32 = sys_rmdir(path);
+        const rmdir_ret: i32 = rmdir_result catch { return -1; };
+        return rmdir_ret;
+    } else {
+        // 是普通文件，使用 unlink
+        const result: !i32 = sys_unlink(path);
+        const ret: i32 = result catch { return -1; };
+        if ret < 0 { return -1; }
+        return 0;
+    }
 }
 
 // rename - 重命名文件

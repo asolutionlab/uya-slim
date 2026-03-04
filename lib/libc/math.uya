@@ -412,6 +412,66 @@ export extern "libc" fn log2(x: f64) f64 {
     return log(x) / LN2;
 }
 
+// exp2 - 指数函数 2^x
+export extern "libc" fn exp2(x: f64) f64 {
+    if x == 0.0 { return 1.0; }
+    if isinf(x) != 0 {
+        if x > 0.0 { return INFINITY; }
+        return 0.0;
+    }
+    if x > 1024.0 { return INFINITY; }  // 防止溢出
+    if x < -1024.0 { return 0.0; }      // 防止下溢
+    
+    // 使用 2^x = 2^(n+r) = 2^n * 2^r，其中 n 是整数部分，r 是小数部分
+    var n: i64 = x as i64;
+    var r: f64 = x - n as f64;
+    
+    // 使用泰勒级数计算 e^(r*ln2)
+    var r_ln2: f64 = r * LN2;
+    var result: f64 = 1.0;
+    var term: f64 = 1.0;
+    
+    var i: i32 = 1;
+    while i < 60 {
+        term = term * r_ln2 / i as f64;
+        result = result + term;
+        i = i + 1;
+    }
+    
+    // 计算 2^n
+    var pow2: f64 = 1.0;
+    var abs_n: i64 = n;
+    if n < 0 { abs_n = 0 - n; }
+    
+    // 使用快速幂
+    var base: f64 = 2.0;
+    var exp_val: i64 = abs_n;
+    while exp_val > 0 {
+        if (exp_val & 1 as i64) != 0 {
+            pow2 = pow2 * base;
+        }
+        base = base * base;
+        exp_val = exp_val >> 1;
+    }
+    
+    if n < 0 {
+        result = result / pow2;
+    } else {
+        result = result * pow2;
+    }
+    
+    return result;
+}
+
+// log2f - 以 2 为底的对数 (float 版本)
+export extern "libc" fn log2f(x: f32) f32 {
+    if x < 0.0 { return NAN as f32; }
+    if x == 0.0 { return (0.0 - INFINITY) as f32; }
+    if isinf(x as f64) != 0 { return INFINITY as f32; }
+    
+    return (log(x as f64) / LN2) as f32;
+}
+
 // pow - 幂函数 x^y
 export extern "libc" fn pow(x: f64, y: f64) f64 {
     if y == 0.0 { return 1.0; }
@@ -798,6 +858,115 @@ export extern "libc" fn iclamp(x: i32, min_val: i32, max_val: i32) i32 {
     return x;
 }
 
+// ============================================================
+// Float 版本的数学函数
+// ============================================================
+
+// fabsf - 单精度浮点数绝对值
+export extern "libc" fn fabsf(x: f32) f32 {
+    if x < 0.0 as f32 { return (0.0 as f32) - x; }
+    return x;
+}
+
+// fmaf - 单精度浮点数乘加运算 (fused multiply-add)
+export extern "libc" fn fmaf(x: f32, y: f32, z: f32) f32 {
+    return (x * y + z) as f32;
+}
+
+// sqrtf - 单精度平方根
+export extern "libc" fn sqrtf(x: f32) f32 {
+    return sqrt(x as f64) as f32;
+}
+
+// cbrtf - 单精度立方根
+export extern "libc" fn cbrtf(x: f32) f32 {
+    return cbrt(x as f64) as f32;
+}
+
+// expf - 单精度指数函数
+export extern "libc" fn expf(x: f32) f32 {
+    return exp(x as f64) as f32;
+}
+
+// exp2f - 单精度指数函数 2^x
+export extern "libc" fn exp2f(x: f32) f32 {
+    return exp2(x as f64) as f32;
+}
+
+// logf - 单精度自然对数
+export extern "libc" fn logf(x: f32) f32 {
+    return log(x as f64) as f32;
+}
+
+// log10f - 单精度常用对数
+export extern "libc" fn log10f(x: f32) f32 {
+    return log10(x as f64) as f32;
+}
+
+// powf - 单精度幂函数
+export extern "libc" fn powf(x: f32, y: f32) f32 {
+    return pow(x as f64, y as f64) as f32;
+}
+
+// sinf - 单精度正弦函数
+export extern "libc" fn sinf(x: f32) f32 {
+    return sin(x as f64) as f32;
+}
+
+// cosf - 单精度余弦函数
+export extern "libc" fn cosf(x: f32) f32 {
+    return cos(x as f64) as f32;
+}
+
+// tanf - 单精度正切函数
+export extern "libc" fn tanf(x: f32) f32 {
+    return tan(x as f64) as f32;
+}
+
+// asinf - 单精度反正弦函数
+export extern "libc" fn asinf(x: f32) f32 {
+    return asin(x as f64) as f32;
+}
+
+// acosf - 单精度反余弦函数
+export extern "libc" fn acosf(x: f32) f32 {
+    return acos(x as f64) as f32;
+}
+
+// atanf - 单精度反正切函数
+export extern "libc" fn atanf(x: f32) f32 {
+    return atan(x as f64) as f32;
+}
+
+// atan2f - 单精度双参数反正切函数
+export extern "libc" fn atan2f(y: f32, x: f32) f32 {
+    return atan2(y as f64, x as f64) as f32;
+}
+
+// ceilf - 单精度向上取整
+export extern "libc" fn ceilf(x: f32) f32 {
+    return ceil(x as f64) as f32;
+}
+
+// floorf - 单精度向下取整
+export extern "libc" fn floorf(x: f32) f32 {
+    return floor(x as f64) as f32;
+}
+
+// truncf - 单精度截断取整
+export extern "libc" fn truncf(x: f32) f32 {
+    return trunc(x as f64) as f32;
+}
+
+// roundf - 单精度四舍五入
+export extern "libc" fn roundf(x: f32) f32 {
+    return round(x as f64) as f32;
+}
+
+// ============================================================
+// Float 版本的数学函数结束
+// ============================================================
+
 // isqrt - 整数平方根
 export extern "libc" fn isqrt(n: u64) u64 {
     if n == 0 { return 0; }
@@ -837,6 +1006,10 @@ export extern "libc" fn ipow(base: i64, exp: i32) i64 {
     
     return result;
 }
+
+// ============================================================
+// 额外的数学函数
+// ============================================================
 
 // gcd - 最大公约数
 export extern "libc" fn gcd(a: i64, b: i64) i64 {
