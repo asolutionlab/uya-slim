@@ -117,11 +117,13 @@
 
 ## 待实现功能
 
-### 1. 标准库函数
-- [ ] `mbstowcs` - 多字节字符串转宽字符串
-- [ ] `wcstombs` - 宽字符串转多字节字符串
+### 1. 标准库函数（全部完成）
 
-### 2. 字符分类函数 (`lib/libc/ctype.uya`)
+### 2. 宽字符支持（已全部实现）
+- [x] `mbstowcs` - 多字节字符串转宽字符串
+- [x] `wcstombs` - 宽字符串转多字节字符串
+
+### 3. 字符分类函数 (`lib/libc/ctype.uya`)
 
 - [x] `isalnum` - 是否字母数字
 - [x] `isalpha` - 是否字母
@@ -374,6 +376,8 @@
 
 ✅ **系统调用** - 完整实现 sys_write, sys_read, sys_open, sys_close, sys_exit, sys_getpid, sys_lseek, sys_mmap, sys_munmap, sys_stat, read, write, close, lseek, getpid, getppid, fork, execve, _exit, access, unlink, mkdir, rmdir, chdir, getcwd, dup, dup2, sleep, stat, opendir, readdir, closedir, readlink
 
+✅ **宽字符支持** - 完整实现 mblen, mbtowc, wctomb, mbstowcs, wcstombs, wcslen, wcscpy, wcscat, wcscmp, iswalpha, iswdigit, iswalnum, iswspace, towlower, towupper
+
 ✅ **环境变量** - 完整实现 getenv, putenv, setenv, unsetenv, clearenv
 
 ✅ **错误处理** - 完整实现 strerror
@@ -381,8 +385,6 @@
 ✅ **POSIX线程** - 实现线程创建、互斥锁、条件变量、线程ID获取、线程分离、一次性初始化等核心功能
 
 ### 待完成功能
-
-❌ **宽字符支持** - mbstowcs, wcstombs（多字节/宽字符转换）
 
 ❌ **线程高级功能** - pthread_cancel, pthread_detach 资源自动回收, pthread_cond_timedwait, pthread_mutex_timedlock, pthread_attr 相关函数, 读写锁, 自旋锁, 屏障, 线程特定数据(TLS)
 
