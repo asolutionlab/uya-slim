@@ -10,7 +10,7 @@
 
 | Phase | 阶段       | 状态     | 说明 |
 |-------|------------|----------|------|
-| 1     | syscall 层 | 即将完成 | 系统调用层，待清理工作 |
+| 1     | syscall 层 | 已完成   | 系统调用层，包含测试和迁移计划 |
 | 2     | mem 层     | 未开始   | 纯内存操作层，独立基础层 |
 | 3     | osal 层    | 未开始   | 操作系统抽象层，依赖 syscall |
 | 4     | libc 层    | 未开始   | C 兼容层，依赖 osal + mem |
@@ -146,7 +146,50 @@ export fn my_func(s: &byte) void;
 
 ### 1.9 清理工作
 
-- [ ] 明确 `lib/libc/syscall.uya` 的迁移/废弃计划（与 `lib/syscall/linux.uya` 存在重复）。
+- [x] 明确 `lib/libc/syscall.uya` 的迁移/废弃计划（与 `lib/syscall/linux.uya` 存在重复）。
+
+#### 迁移方案分析
+
+**当前状态**：
+- `lib/libc/syscall.uya`（515 行）：旧实现，使用 `export extern "libc" fn`，提供 C 兼容接口
+- `lib/syscall/linux.uya`（432 行）：新实现，使用 `export fn`，作为 osal 层的基础
+
+**使用情况**：
+- 测试文件（13 个）：`test_syscall_*.uya`、`test_std_syscall*.uya` 使用 `libc.sys_*`
+- `lib/libc/pthread.uya`：使用 `libc.sys_futex`
+- `lib/std/io/file.uya`：使用 `libc.sys_open`、`libc.sys_close`、`libc.sys_read`、`libc.sys_write`、`libc.sys_lseek`
+
+**迁移策略对比**：
+
+| 方案 | 优点 | 缺点 | 推荐度 |
+|------|------|------|--------|
+| **方案 1：保留双文件** | 改动最小，维护简单，接口层次清晰 | 存在代码重复 | ⭐⭐⭐⭐⭐ |
+| **方案 2：统一使用 syscall 层** | 消除重复，单一数据源 | 需修改所有测试和库文件 | ⭐⭐ |
+
+**推荐方案：方案 1（保留双文件）**
+
+理由：
+1. **接口层次清晰**：
+   - `lib/libc/syscall.uya`：提供 C 兼容接口（`export extern "libc" fn`），用于 libc 层
+   - `lib/syscall/linux.uya`：提供 osal 接口（`export fn`），用于 osal 层
+
+2. **维护简单**：
+   - 无需大规模重构测试文件
+   - 避免破坏现有 libc 层的兼容性
+
+3. **明确分工**：
+   - libc 层代码（如 `lib/libc/unistd.uya`、`lib/libc/stdio.uya`）继续使用 `@syscall` 内置函数
+   - osal 层代码使用 `use syscall`（`lib/syscall/linux.uya`）
+   - `lib/libc/syscall.uya` 仅作为测试和部分 libc 层的辅助函数
+
+4. **代码重复可控**：
+   - 两个文件各有其用途和接口要求
+   - 可通过代码审查确保一致性
+
+**实施计划**（Phase 4 统一处理）：
+1. osal 层创建时，仅 `use syscall`（`lib/syscall/linux.uya`）
+2. libc 层重构时，评估是否可以统一使用 syscall 层
+3. 测试文件保持现状，减少不必要的改动
 
 ---
 
