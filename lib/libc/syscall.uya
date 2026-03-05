@@ -308,3 +308,69 @@ export extern "libc" fn sched_getaffinity(pid: i64, cpusetsize: usize, mask: &vo
     const v: i64 = r catch { return -1; };
     return v as i32;
 }
+
+// ============================================================
+// 额外系统调用
+// ============================================================
+
+// sys_brk - 更改数据段地址
+// addr: 新的数据段结束地址，0 表示获取当前地址
+// 返回：新的数据段地址
+export extern "libc" fn sys_brk(addr: i64) i64 {
+    const r: !i64 = @syscall(SYS_brk, addr);
+    return r catch { return 0; };
+}
+
+// sys_dup - 复制文件描述符
+// 返回：新的文件描述符
+export extern "libc" fn sys_dup(fd: i32) !i32 {
+    return @syscall(SYS_dup, fd as i64) as! i32;
+}
+
+// sys_dup2 - 复制文件描述符到指定值
+// oldfd: 原文件描述符
+// newfd: 目标文件描述符
+// 返回：newfd
+export extern "libc" fn sys_dup2(oldfd: i32, newfd: i32) !i32 {
+    return @syscall(SYS_dup2, oldfd as i64, newfd as i64) as! i32;
+}
+
+// sys_rename - 重命名文件
+// oldpath: 原路径
+// newpath: 新路径
+// 返回：0 成功，-1 失败
+export extern "libc" fn sys_rename(oldpath: &const byte, newpath: &const byte) !i32 {
+    return @syscall(SYS_rename, oldpath as i64, newpath as i64) as! i32;
+}
+
+// sys_fstat - 获取文件状态（通过文件描述符）
+// fd: 文件描述符
+// statbuf: 状态缓冲区
+// 返回：0 成功，-1 失败
+export extern "libc" fn sys_fstat(fd: i32, statbuf: &Stat) !i32 {
+    return @syscall(SYS_fstat, fd as i64, statbuf as i64) as! i32;
+}
+
+// sys_lstat - 获取符号链接状态（不跟随符号链接）
+// path: 文件路径
+// statbuf: 状态缓冲区
+// 返回：0 成功，-1 失败
+export extern "libc" fn sys_lstat(path: &const byte, statbuf: &Stat) !i32 {
+    // SYS_lstat = 6 (与 fstat 不同的)
+    return @syscall(6, path as i64, statbuf as i64) as! i32;
+}
+
+// sys_fork - 创建新进程
+// 返回：子进程返回 0，父进程返回子进程 PID，-1 表示失败
+export extern "libc" fn sys_fork() !i64 {
+    return @syscall(SYS_fork);
+}
+
+// sys_execve - 执行新程序
+// path: 可执行文件路径
+// argv: 参数数组
+// envp: 环境变量数组
+// 返回：成功不返回，失败返回 -1
+export extern "libc" fn sys_execve(path: &const byte, argv: &(&const byte), envp: &(&const byte)) !i32 {
+    return @syscall(SYS_execve, path as i64, argv as i64, envp as i64) as! i32;
+}

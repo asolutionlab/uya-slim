@@ -136,11 +136,7 @@ export fn my_func(s: &byte) void;
 ### 1.7 文件/目录
 
 - [x] `sys_stat`、`sys_access`、`sys_readlink`、`sys_unlink`、`sys_mkdir`、`sys_rmdir`、`sys_chdir`、`sys_getcwd`（已实现，已测试）。
-- [ ] `sys_lstat`（未定义，待实现）。
-- [ ] `sys_fstat`（仅常量定义，待实现函数体）。
-- [ ] `sys_rename`（仅常量定义，待实现函数体）。
-- [ ] `sys_dup`（仅常量定义，待实现函数体）。
-- [ ] `sys_dup2`（仅常量定义，待实现函数体）。
+- [x] `sys_lstat`、`sys_fstat`、`sys_rename`、`sys_dup`、`sys_dup2`（已实现函数体）。
 - [ ] 补充文件/目录测试。
 
 ### 1.8 用户/组
