@@ -158,19 +158,15 @@ export fn memset(s: &byte, c: u8, n: usize) &byte;
 use syscall;
 
 // 错误类型定义
-union OSError {
-    None,
-    NotFound,
-    PermissionDenied,
-    AlreadyExists,
-    InvalidInput,
-    IoError,
-    OutOfMemory,
-    NotSupported,
-    TimedOut,
-    Interrupted,
-    Code: i32              // 原始系统错误码
-}
+error NotFound;
+error PermissionDenied;
+error AlreadyExists;
+error InvalidInput;
+error IoError;
+error OutOfMemory;
+error NotSupported;
+error TimedOut;
+error Interrupted;
 
 // 文件相关
 struct File {
@@ -208,9 +204,6 @@ export fn os_clock_gettime(clock: ClockId) !Duration;
 export fn os_mkdir(path: &const byte, mode: u32) !void;
 export fn os_rmdir(path: &const byte) !void;
 export fn os_readdir(path: &const byte) !Vec<DirEntry>;
-
-// 错误转换
-fn errno_to_oserror(errno: i32) OSError;
 ```
 
 ### 4. libc - C 兼容层
@@ -371,18 +364,12 @@ osal 使用 syscall 实现底层功能：
 use syscall;
 
 export fn os_open(path: &const byte, flags: OSFlags, mode: u32) !File {
-    const fd: i32 = syscall.sys_open(path, flags, mode);
-    if fd < 0 {
-        return OSError.Code(errno);
-    }
+    const fd: i32 = try syscall.sys_open(path, flags, mode);
     return File{ fd: fd, owns_fd: true };
 }
 
 export fn os_read(f: &File, buf: &byte, count: usize) !usize {
-    const n: i32 = syscall.sys_read(f.fd, buf, count);
-    if n < 0 {
-        return OSError.Code(errno);
-    }
+    const n: isize = try syscall.sys_read(f.fd, buf, count);
     return n as usize;
 }
 ```
@@ -537,7 +524,7 @@ std → libc → osal → syscall
 ### 3. 错误处理分层
 
 - **syscall**：返回原始错误码
-- **osal**：转换为 OSError（!T）
+- **osal**：使用 error 定义（!T）
 - **libc**：转换为 C 风格（返回 -1/null）
 - **std**：保持 !T 或转换为 Result
 

@@ -205,7 +205,7 @@ export fn my_func(s: &byte) void;
 ## Phase 3：osal 层
 
 - [ ] 建立 `lib/osal/`，新增 `osal.uya`（及按设计拆分的 `file.uya`、`process.uya`、`time.uya`、`dir.uya`、`error.uya` 等）。
-- [ ] `use syscall`；定义统一错误类型（如 `OSError` union）；对外 API 使用 `!T` 风格。
+- [ ] `use syscall`；定义统一错误类型（使用 `error` 定义）；对外 API 使用 `!T` 风格。
 - [ ] 实现文件抽象：`os_open`、`os_close`、`os_read`、`os_write`、`os_seek`、`os_stat`、`os_fstat`；测试先行，`make check` 通过。
 - [ ] 实现内存管理抽象：`os_mmap`、`os_munmap`（底层调用 syscall）；测试先行，`make check` 通过。
 - [ ] 实现进程/线程抽象：`os_spawn`、`os_exec`、`os_exit`、`os_getpid`、`os_gettid`、`os_kill`、`os_waitpid`；测试先行，`make check` 通过。

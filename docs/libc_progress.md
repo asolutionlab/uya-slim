@@ -297,7 +297,7 @@ std → libc → osal → syscall
 ### 4. 错误处理
 
 - syscall：返回原始错误码
-- osal：转换为 OSError（!T）
+- osal：使用 error 定义（!T）
 - libc：转换为 C 风格（-1/null）
 - std：保持 !T
 
