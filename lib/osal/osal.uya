@@ -22,6 +22,7 @@ use syscall.sys_waitpid;
 use syscall.sys_kill;
 use syscall.sys_nanosleep;
 use syscall.sys_gettimeofday;
+use syscall.sys_clock_gettime;
 use syscall.sys_mkdir;
 use syscall.sys_rmdir;
 use syscall.sys_chdir;
@@ -44,6 +45,21 @@ use syscall.sys_setuid;
 use syscall.sys_setgid;
 use syscall.Stat;
 use syscall.RLimit;
+use syscall.TimeSpec;
+
+// ============================================================
+// 错误类型定义
+// ============================================================
+
+error NotFound;
+error PermissionDenied;
+error AlreadyExists;
+error InvalidInput;
+error IoError;
+error OutOfMemory;
+error NotSupported;
+error TimedOut;
+error Interrupted;
 
 export struct TimeSpec {
     tv_sec: i64,
@@ -98,7 +114,7 @@ struct OSMapFlags {
 // 时间类型定义
 // ============================================================
 
-struct Duration {
+export struct Duration {
     seconds: i64,
     nanoseconds: i64
 }
@@ -360,6 +376,15 @@ export fn os_gettimeofday(tv: &TimeVal, tz: &void) !void {
     try sys_gettimeofday(tv, tz);
 }
 
+export fn os_clock_gettime(clock_id: i32) !Duration {
+    var ts: TimeSpec = TimeSpec { tv_sec: 0, tv_nsec: 0 };
+    try sys_clock_gettime(clock_id, &ts);
+    return Duration {
+        seconds: ts.tv_sec,
+        nanoseconds: ts.tv_nsec
+    };
+}
+
 // ============================================================
 // 进程操作
 // ============================================================
@@ -375,6 +400,22 @@ export fn os_fork() !i64 {
 
 export fn os_waitpid(pid: i32, status: &i32, options: i32) !i32 {
     return try sys_waitpid(pid, status, options);
+}
+
+export fn os_spawn(path: &const byte, args: &[&const byte], env: &[&const byte]) !i32 {
+    const pid: i64 = try sys_fork();
+    if pid == 0 {
+        // 子进程：执行新程序
+        try sys_execve(path, &args[0], &env[0]);
+        sys_exit(1);
+    } else {
+        // 父进程：返回子进程 PID
+        return pid as i32;
+    }
+}
+
+export fn os_exec(path: &const byte, args: &[&const byte], env: &[&const byte]) !void {
+    try sys_execve(path, &args[0], &env[0]);
 }
 
 export fn os_execve(path: &const byte, argv: &(&const byte), envp: &(&const byte)) !void {
@@ -416,3 +457,12 @@ export fn os_setrlimit(resource: i32, rlim: &const RLimit) !void {
 export fn os_ioctl(fd: i32, request: i64, arg: i64) !i32 {
     return try sys_ioctl(fd, request, arg);
 }
+
+// ============================================================
+// 时钟常量
+// ============================================================
+
+export const CLOCK_REALTIME: i32 = 0;
+export const CLOCK_MONOTONIC: i32 = 1;
+export const CLOCK_PROCESS_CPUTIME_ID: i32 = 2;
+export const CLOCK_THREAD_CPUTIME_ID: i32 = 3;

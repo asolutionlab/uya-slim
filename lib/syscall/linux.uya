@@ -43,6 +43,7 @@ export const SYS_sched_setaffinity: i64 = 203;
 export const SYS_sched_getaffinity: i64 = 204;
 export const SYS_nanosleep: i64 = 35;
 export const SYS_gettimeofday: i64 = 96;
+export const SYS_clock_gettime: i64 = 228;
 
 // 文件控制
 export const SYS_fcntl: i64 = 72;
@@ -344,6 +345,14 @@ export fn sys_nanosleep(req: &const TimeSpec, rem: &TimeSpec) !i32 {
 // 返回：0 成功，-1 失败
 export fn sys_gettimeofday(tv: &TimeVal, tz: &void) !i32 {
     return @syscall(SYS_gettimeofday, tv as i64, tz as i64) as! i32;
+}
+
+// sys_clock_gettime - 获取时钟时间
+// clock_id: 时钟类型（CLOCK_REALTIME, CLOCK_MONOTONIC 等）
+// tp: 存储时间的 TimeSpec 结构
+// 返回：0 成功，-1 失败
+export fn sys_clock_gettime(clock_id: i32, tp: &TimeSpec) !i32 {
+    return @syscall(SYS_clock_gettime, clock_id as i64, tp as i64) as! i32;
 }
 
 // ============================================================
