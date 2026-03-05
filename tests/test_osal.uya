@@ -2,6 +2,9 @@
 
 use osal.os_getpid;
 use osal.os_gettid;
+use osal.os_getcwd;
+use osal.os_mkdir;
+use osal.os_rmdir;
 use std.testing.expect;
 
 // ============================================================
@@ -17,3 +20,17 @@ test "os_gettid" {
     const tid: i32 = try os_gettid();
     try expect(tid > 0);
 }
+
+test "os_mkdir_rmdir" {
+    const test_dir: *const byte = "/tmp/uya_osal_test_dir" as *const byte;
+    try os_mkdir(test_dir, 0o755);
+    try os_rmdir(test_dir);
+}
+
+test "os_mkdir_rmdir2" {
+    const test_dir: *const byte = "/tmp/uya_osal_test_dir2" as *const byte;
+    try os_mkdir(test_dir, 0o755);
+    try os_rmdir(test_dir);
+}
+
+
