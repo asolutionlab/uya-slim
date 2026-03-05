@@ -64,6 +64,8 @@
 | 37 | **新标准库文件 I/O（std.io）** | [x] **已完成**（lib/std/io/file.uya 和 lib/std/io/stream.uya 已实现，包含 fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush，测试用例通过） |
 | 38 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
 
+标准库分层重构（std → libc → osal → syscall）的详细任务见 [todo_std_refactor.md](todo_std_refactor.md)。
+
 ---
 
 ## 下次优先实现（规范 0.42 变更）
