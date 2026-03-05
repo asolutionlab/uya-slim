@@ -223,12 +223,24 @@ export fn my_func(s: &byte) void;
 
 ---
 
-## Phase 4：libc 层
+## Phase 4：libc 层（暂时搁置）
 
-- [ ] 重构 `lib/libc/` 中字符串/内存类：改为调用 `lib/mem`（如 `strlen`、`strcmp`、`strcpy`、`memcpy`、`memset` 等）；保持 C 签名与 ABI；测试先行，`make check` 通过。
-- [ ] 重构 `lib/libc/` 中文件/进程类：改为调用 `lib/osal`（如 `fopen`、`fread`、`fwrite` 等封装 osal 文件抽象）；保持 C 签名；测试先行，`make check` 通过。
-- [ ] pthread/time 等按设计文档规划：依赖 osal 或 syscall 的薄封装；测试先行，`make check` 通过。
-- [ ] 验证：`make check` 通过；`--outlibc` 生成的库能与 C 代码链接。
+**当前问题**（2026-03-05 发现）：
+- lib/mem/mem.uya 同时导出内部函数（如 `mem_copy`）和 libc 兼容函数（如 `export extern "libc" fn memcmp`）
+- 当 lib/libc/mem.uya 使用 `use mem` 时，编译器自举会因函数名冲突而失败
+- 根本原因：编译器对 `lib/libc/` 目录有特殊处理，导致跨层导入时模块命名冲突
+
+**短期方案**（推荐）：
+1. 暂时搁置 Phase 4（libc 层）重构
+2. 继续进行 Phase 5（std 层）开发
+3. std 层可以直接使用 osal 和 mem 层，不受 libc 层问题影响
+
+**长期方案**：
+1. 分析并修复编译器对 `lib/libc/` 目录跨层导入的处理逻辑
+2. 可能需要调整模块命名规则，支持同一目录下不同层级的模块隔离
+3. 确保 libc 兼容函数能正确链接到系统 C 库而不产生冲突
+
+---
 
 ---
 
