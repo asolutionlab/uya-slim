@@ -3629,20 +3629,6 @@ int32_t iswalnum(wint_t wc);
 int32_t iswspace(wint_t wc);
 wint_t towlower(wint_t wc);
 wint_t towupper(wint_t wc);
-size_t std_string_strlen(const uint8_t * s);
-int32_t std_string_strcmp(const uint8_t * s1, const uint8_t * s2);
-int32_t std_string_strncmp(const uint8_t * s1, const uint8_t * s2, size_t n);
-uint8_t * std_string_strcpy(uint8_t * dst, const uint8_t * src);
-uint8_t * std_string_strncpy(uint8_t * dst, const uint8_t * src, size_t n);
-uint8_t * std_string_strcat(uint8_t * dst, const uint8_t * src);
-uint8_t * std_string_strchr(const uint8_t * s, uint8_t c);
-uint8_t * std_string_strrchr(const uint8_t * s, uint8_t c);
-uint8_t * std_string_strstr(const uint8_t * haystack, const uint8_t * needle);
-size_t std_mem_mem_copy(uint8_t * dst, const uint8_t * src, size_t n);
-size_t std_mem_mem_set(uint8_t * dst, uint8_t value, size_t n);
-size_t std_mem_mem_move(uint8_t * dst, const uint8_t * src, size_t n);
-int32_t std_mem_mem_cmp(const uint8_t * s1, const uint8_t * s2, size_t n);
-uint8_t * std_mem_mem_chr(const uint8_t * s, uint8_t c, size_t n);
 int32_t std_runtime_get_argc();
 uint8_t * std_runtime_get_argv(int32_t index);
 int32_t std_runtime_ptr_diff(uint8_t * ptr1, uint8_t * ptr2);
@@ -3659,6 +3645,20 @@ int32_t std_io_fputc(int32_t c, void * handle);
 int32_t std_io_fputs(const uint8_t * s, void * handle);
 int32_t std_io_fprintf(void * handle, const uint8_t * format, int32_t arg);
 int32_t std_io_fflush(void * handle);
+size_t std_string_strlen(const uint8_t * s);
+int32_t std_string_strcmp(const uint8_t * s1, const uint8_t * s2);
+int32_t std_string_strncmp(const uint8_t * s1, const uint8_t * s2, size_t n);
+uint8_t * std_string_strcpy(uint8_t * dst, const uint8_t * src);
+uint8_t * std_string_strncpy(uint8_t * dst, const uint8_t * src, size_t n);
+uint8_t * std_string_strcat(uint8_t * dst, const uint8_t * src);
+uint8_t * std_string_strchr(const uint8_t * s, uint8_t c);
+uint8_t * std_string_strrchr(const uint8_t * s, uint8_t c);
+uint8_t * std_string_strstr(const uint8_t * haystack, const uint8_t * needle);
+size_t std_mem_mem_copy(uint8_t * dst, const uint8_t * src, size_t n);
+size_t std_mem_mem_set(uint8_t * dst, uint8_t value, size_t n);
+size_t std_mem_mem_move(uint8_t * dst, const uint8_t * src, size_t n);
+int32_t std_mem_mem_cmp(const uint8_t * s1, const uint8_t * s2, size_t n);
+uint8_t * std_mem_mem_chr(const uint8_t * s, uint8_t c, size_t n);
 static struct ASTNode * parser_parse_interface(struct Parser * parser);
 static struct ASTNode * parser_parse_method_block(struct Parser * parser, uint8_t * struct_name);
 static struct ASTNode * parser_parse_struct(struct Parser * parser);
@@ -11180,7 +11180,7 @@ void pthread_testcancel() {
     const size_t idx = _pthread_cancel_index(tid);
     _Atomic(int32_t) * flag_ptr = (_Atomic(int32_t) *)((int32_t *)__atomic_load_n(&_pthread_cancel_flags, __ATOMIC_SEQ_CST) + idx);
     if ((__atomic_load_n(&flag_ptr, __ATOMIC_SEQ_CST)[0] != 0)) {
-        sys_exit((int32_t)PTHREAD_CANCELED);
+        sys_exit((-1));
     }
 }
 
@@ -17110,6 +17110,328 @@ wint_t towupper(wint_t wc) {
     return _uya_ret;
 }
 
+int32_t std_runtime_get_argc() {
+    int32_t _uya_ret = saved_argc;
+    return _uya_ret;
+}
+
+uint8_t * std_runtime_get_argv(int32_t index) {
+    (void)index;
+    if (((index < 0) || (index >= saved_argc))) {
+        uint8_t * _uya_ret = NULL;
+        return _uya_ret;
+    }
+    if ((saved_argv == NULL)) {
+        uint8_t * _uya_ret = NULL;
+        return _uya_ret;
+    }
+    uint8_t * _uya_ret = saved_argv[index];
+    return _uya_ret;
+}
+
+int32_t std_runtime_ptr_diff(uint8_t * ptr1, uint8_t * ptr2) {
+    (void)ptr1;
+    (void)ptr2;
+    if (((ptr1 == NULL) || (ptr2 == NULL))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    const size_t addr1 = (uintptr_t)((void *)ptr1);
+    const size_t addr2 = (uintptr_t)((void *)ptr2);
+    if ((addr1 >= addr2)) {
+        int32_t _uya_ret = (int32_t)(addr1 - addr2);
+        return _uya_ret;
+    } else {
+        int32_t _uya_ret = (0 - (int32_t)(addr2 - addr1));
+        return _uya_ret;
+    }
+        return 0;
+}
+
+void std_runtime__uya_exit(int32_t code) {
+    (void)code;
+    ({ long _uya_syscall_ret = uya_syscall1(60, code); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
+    __builtin_unreachable();
+}
+
+
+static __attribute__((unused)) void * alloc_file_handle(int64_t fd) {
+    (void)fd;
+    const int32_t count = (int32_t)file_handle_count;
+    if (((count >= 0) && (count < 1024))) {
+        file_handles[count] = fd;
+        void * const handle = (void *)(&file_handles[count]);
+        file_handle_count = (file_handle_count + 1);
+        void * _uya_ret = handle;
+        return _uya_ret;
+    }
+    void * _uya_ret = NULL;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int64_t get_fd_from_handle(void * handle) {
+    (void)handle;
+    if ((handle == NULL)) {
+        int64_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    int64_t * const fd_ptr = (int64_t *)handle;
+    int64_t _uya_ret = fd_ptr[0];
+    return _uya_ret;
+}
+
+void * std_io_fopen(const uint8_t * path, int64_t flags, int64_t mode) {
+    (void)path;
+    (void)flags;
+    (void)mode;
+    const int64_t fd = ({ int32_t _uya_catch_result; struct err_union_int32_t _uya_catch_tmp = sys_open(path, (int32_t)flags, (int32_t)mode); if (_uya_catch_tmp.error_id != 0) {
+        void * _uya_ret = NULL;
+        return _uya_ret;
+    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+    void * _uya_ret = alloc_file_handle(fd);
+    return _uya_ret;
+}
+
+int32_t std_io_fclose(void * handle) {
+    (void)handle;
+    if ((handle == NULL)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    const int64_t fd = get_fd_from_handle(handle);
+    if ((fd < 0)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    (void)(({ int32_t _uya_catch_result; struct err_union_int32_t _uya_catch_tmp = sys_close(fd); if (_uya_catch_tmp.error_id != 0) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; }));
+    int64_t * const fd_ptr = (int64_t *)handle;
+    fd_ptr[0] = (0 - 1);
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+size_t std_io_fread(uint8_t * buf, size_t size, size_t count, void * handle) {
+    (void)buf;
+    (void)size;
+    (void)count;
+    (void)handle;
+    if (((handle == NULL) || (buf == NULL))) {
+        size_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    const int64_t fd = get_fd_from_handle(handle);
+    if ((fd < 0)) {
+        size_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    const size_t total_size = (size * count);
+    const intptr_t bytes_read = ({ int32_t _uya_catch_result; struct err_union_intptr_t _uya_catch_tmp = sys_read((int32_t)fd, (uint8_t *)buf, total_size); if (_uya_catch_tmp.error_id != 0) {
+        size_t _uya_ret = 0;
+        return _uya_ret;
+    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+    if ((bytes_read < (intptr_t)0)) {
+        size_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    const size_t elements_read = ((size_t)bytes_read / size);
+    size_t _uya_ret = elements_read;
+    return _uya_ret;
+}
+
+size_t std_io_fwrite(const uint8_t * buf, size_t size, size_t count, void * handle) {
+    (void)buf;
+    (void)size;
+    (void)count;
+    (void)handle;
+    if (((handle == NULL) || (buf == NULL))) {
+        size_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    const int64_t fd = get_fd_from_handle(handle);
+    if ((fd < 0)) {
+        size_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    const size_t total_size = (size * count);
+    const intptr_t bytes_written = ({ int32_t _uya_catch_result; struct err_union_intptr_t _uya_catch_tmp = sys_write((int32_t)fd, buf, total_size); if (_uya_catch_tmp.error_id != 0) {
+        size_t _uya_ret = 0;
+        return _uya_ret;
+    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
+    if ((bytes_written < (intptr_t)0)) {
+        size_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    const size_t elements_written = ((size_t)bytes_written / size);
+    size_t _uya_ret = elements_written;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t fseek_internal(void * handle, int64_t offset, int64_t whence) {
+    (void)handle;
+    (void)offset;
+    (void)whence;
+    if ((handle == NULL)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    const int64_t fd = get_fd_from_handle(handle);
+    if ((fd < 0)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    (void)(({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = sys_lseek(fd, offset, whence); if (_uya_catch_tmp.error_id != 0) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; }));
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+int32_t std_io_fgetc(void * handle) {
+    (void)handle;
+    if ((handle == NULL)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    uint8_t buf[1] = {0};
+    const size_t read_count = fread((&buf[0]), 1, 1, handle);
+    if ((read_count == 0)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = (int32_t)buf[0];
+    return _uya_ret;
+}
+
+int32_t std_io_fputc(int32_t c, void * handle) {
+    (void)c;
+    (void)handle;
+    if ((handle == NULL)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    if (((c < 0) || (c > 255))) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    uint8_t buf[1] = {0};
+    buf[0] = (uint8_t)c;
+    const size_t write_count = fwrite((&buf[0]), 1, 1, handle);
+    if ((write_count == 0)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = c;
+    return _uya_ret;
+}
+
+int32_t std_io_fputs(const uint8_t * s, void * handle) {
+    (void)s;
+    (void)handle;
+    if (((handle == NULL) || (s == NULL))) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    const size_t len = strlen(s);
+    if ((len == 0)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    const size_t write_count = fwrite(s, 1, len, handle);
+    if ((write_count != len)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    int32_t _uya_ret = (int32_t)len;
+    return _uya_ret;
+}
+
+int32_t std_io_fprintf(void * handle, const uint8_t * format, int32_t arg) {
+    (void)handle;
+    (void)format;
+    (void)arg;
+    if (((handle == NULL) || (format == NULL))) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    uint8_t * const percent_pos = (uint8_t *)strchr(format, 37);
+    if ((percent_pos == NULL)) {
+        int32_t _uya_ret = fputs(format, handle);
+        return _uya_ret;
+    }
+    const size_t prefix_len = ((uintptr_t)((void *)percent_pos) - (uintptr_t)((void *)format));
+    if ((prefix_len > 0)) {
+        uint8_t prefix_buf[256] = {0};
+        std_mem_mem_copy((&prefix_buf[0]), format, prefix_len);
+        const int32_t prefix_write = fputs((&prefix_buf[0]), handle);
+        if ((prefix_write < 0)) {
+            int32_t _uya_ret = (0 - 1);
+            return _uya_ret;
+        }
+    }
+    uint8_t num_buf[16] = {0};
+    int32_t num = arg;
+    int32_t is_negative = 0;
+    if ((num < 0)) {
+        is_negative = 1;
+        num = (0 - num);
+    }
+    size_t digit_count = 0;
+    if ((num == 0)) {
+        num_buf[digit_count] = 48;
+        digit_count = (digit_count + 1);
+    } else {
+        int32_t temp = num;
+        uint8_t digits[16] = {0};
+        size_t digit_idx = 0;
+        while ((temp > 0)) {
+            const int32_t digit = (temp % 10);
+            digits[digit_idx] = (uint8_t)(48 + digit);
+            digit_idx = (digit_idx + 1);
+            temp = (temp / 10);
+        }
+        size_t i = 0;
+        while ((i < digit_idx)) {
+            num_buf[digit_count] = digits[((digit_idx - 1) - i)];
+            digit_count = (digit_count + 1);
+            i = (i + 1);
+        }
+    }
+    if ((is_negative > 0)) {
+        uint8_t neg_buf[1] = {0};
+        neg_buf[0] = 45;
+        (void)(fputs((&neg_buf[0]), handle));
+    }
+    num_buf[digit_count] = 0;
+    const int32_t num_write = fputs((&num_buf[0]), handle);
+    if ((num_write < 0)) {
+        int32_t _uya_ret = (0 - 1);
+        return _uya_ret;
+    }
+    const uint8_t * const suffix_start = (percent_pos + 2);
+    const size_t suffix_len = strlen(suffix_start);
+    if ((suffix_len > 0)) {
+        uint8_t suffix_buf[256] = {0};
+        std_mem_mem_copy((&suffix_buf[0]), suffix_start, suffix_len);
+        const int32_t suffix_write = fputs((&suffix_buf[0]), handle);
+        if ((suffix_write < 0)) {
+            int32_t _uya_ret = (0 - 1);
+            return _uya_ret;
+        }
+    }
+    int32_t _uya_ret = (int32_t)((prefix_len + digit_count) + suffix_len);
+    return _uya_ret;
+}
+
+int32_t std_io_fflush(void * handle) {
+    (void)handle;
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
 size_t std_string_strlen(const uint8_t * s) {
     (void)s;
     if ((s == NULL)) {
@@ -17447,328 +17769,6 @@ uint8_t * std_mem_mem_chr(const uint8_t * s, uint8_t c, size_t n) {
         i = (i + 1);
     }
     uint8_t * _uya_ret = NULL;
-    return _uya_ret;
-}
-
-int32_t std_runtime_get_argc() {
-    int32_t _uya_ret = saved_argc;
-    return _uya_ret;
-}
-
-uint8_t * std_runtime_get_argv(int32_t index) {
-    (void)index;
-    if (((index < 0) || (index >= saved_argc))) {
-        uint8_t * _uya_ret = NULL;
-        return _uya_ret;
-    }
-    if ((saved_argv == NULL)) {
-        uint8_t * _uya_ret = NULL;
-        return _uya_ret;
-    }
-    uint8_t * _uya_ret = saved_argv[index];
-    return _uya_ret;
-}
-
-int32_t std_runtime_ptr_diff(uint8_t * ptr1, uint8_t * ptr2) {
-    (void)ptr1;
-    (void)ptr2;
-    if (((ptr1 == NULL) || (ptr2 == NULL))) {
-        int32_t _uya_ret = 0;
-        return _uya_ret;
-    }
-    const size_t addr1 = (uintptr_t)((void *)ptr1);
-    const size_t addr2 = (uintptr_t)((void *)ptr2);
-    if ((addr1 >= addr2)) {
-        int32_t _uya_ret = (int32_t)(addr1 - addr2);
-        return _uya_ret;
-    } else {
-        int32_t _uya_ret = (0 - (int32_t)(addr2 - addr1));
-        return _uya_ret;
-    }
-        return 0;
-}
-
-void std_runtime__uya_exit(int32_t code) {
-    (void)code;
-    ({ long _uya_syscall_ret = uya_syscall1(60, code); struct err_union_int64_t _uya_result; if (_uya_syscall_ret < 0) { _uya_result.error_id = (int)(-_uya_syscall_ret); } else { _uya_result.error_id = 0; _uya_result.value = _uya_syscall_ret; } _uya_result; });
-    __builtin_unreachable();
-}
-
-
-static __attribute__((unused)) void * alloc_file_handle(int64_t fd) {
-    (void)fd;
-    const int32_t count = (int32_t)file_handle_count;
-    if (((count >= 0) && (count < 1024))) {
-        file_handles[count] = fd;
-        void * const handle = (void *)(&file_handles[count]);
-        file_handle_count = (file_handle_count + 1);
-        void * _uya_ret = handle;
-        return _uya_ret;
-    }
-    void * _uya_ret = NULL;
-    return _uya_ret;
-}
-
-static __attribute__((unused)) int64_t get_fd_from_handle(void * handle) {
-    (void)handle;
-    if ((handle == NULL)) {
-        int64_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    int64_t * const fd_ptr = (int64_t *)handle;
-    int64_t _uya_ret = fd_ptr[0];
-    return _uya_ret;
-}
-
-void * std_io_fopen(const uint8_t * path, int64_t flags, int64_t mode) {
-    (void)path;
-    (void)flags;
-    (void)mode;
-    const int64_t fd = ({ int32_t _uya_catch_result; struct err_union_int32_t _uya_catch_tmp = sys_open(path, (int32_t)flags, (int32_t)mode); if (_uya_catch_tmp.error_id != 0) {
-        void * _uya_ret = NULL;
-        return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    void * _uya_ret = alloc_file_handle(fd);
-    return _uya_ret;
-}
-
-int32_t std_io_fclose(void * handle) {
-    (void)handle;
-    if ((handle == NULL)) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    const int64_t fd = get_fd_from_handle(handle);
-    if ((fd < 0)) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    (void)(({ int32_t _uya_catch_result; struct err_union_int32_t _uya_catch_tmp = sys_close(fd); if (_uya_catch_tmp.error_id != 0) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; }));
-    int64_t * const fd_ptr = (int64_t *)handle;
-    fd_ptr[0] = (0 - 1);
-    int32_t _uya_ret = 0;
-    return _uya_ret;
-}
-
-size_t std_io_fread(uint8_t * buf, size_t size, size_t count, void * handle) {
-    (void)buf;
-    (void)size;
-    (void)count;
-    (void)handle;
-    if (((handle == NULL) || (buf == NULL))) {
-        size_t _uya_ret = 0;
-        return _uya_ret;
-    }
-    const int64_t fd = get_fd_from_handle(handle);
-    if ((fd < 0)) {
-        size_t _uya_ret = 0;
-        return _uya_ret;
-    }
-    const size_t total_size = (size * count);
-    const intptr_t bytes_read = ({ int32_t _uya_catch_result; struct err_union_intptr_t _uya_catch_tmp = sys_read((int32_t)fd, (uint8_t *)buf, total_size); if (_uya_catch_tmp.error_id != 0) {
-        size_t _uya_ret = 0;
-        return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    if ((bytes_read < (intptr_t)0)) {
-        size_t _uya_ret = 0;
-        return _uya_ret;
-    }
-    const size_t elements_read = ((size_t)bytes_read / size);
-    size_t _uya_ret = elements_read;
-    return _uya_ret;
-}
-
-size_t std_io_fwrite(const uint8_t * buf, size_t size, size_t count, void * handle) {
-    (void)buf;
-    (void)size;
-    (void)count;
-    (void)handle;
-    if (((handle == NULL) || (buf == NULL))) {
-        size_t _uya_ret = 0;
-        return _uya_ret;
-    }
-    const int64_t fd = get_fd_from_handle(handle);
-    if ((fd < 0)) {
-        size_t _uya_ret = 0;
-        return _uya_ret;
-    }
-    const size_t total_size = (size * count);
-    const intptr_t bytes_written = ({ int32_t _uya_catch_result; struct err_union_intptr_t _uya_catch_tmp = sys_write((int32_t)fd, buf, total_size); if (_uya_catch_tmp.error_id != 0) {
-        size_t _uya_ret = 0;
-        return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; });
-    if ((bytes_written < (intptr_t)0)) {
-        size_t _uya_ret = 0;
-        return _uya_ret;
-    }
-    const size_t elements_written = ((size_t)bytes_written / size);
-    size_t _uya_ret = elements_written;
-    return _uya_ret;
-}
-
-static __attribute__((unused)) int32_t fseek_internal(void * handle, int64_t offset, int64_t whence) {
-    (void)handle;
-    (void)offset;
-    (void)whence;
-    if ((handle == NULL)) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    const int64_t fd = get_fd_from_handle(handle);
-    if ((fd < 0)) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    (void)(({ int64_t _uya_catch_result; struct err_union_int64_t _uya_catch_tmp = sys_lseek(fd, offset, whence); if (_uya_catch_tmp.error_id != 0) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    } else _uya_catch_result = _uya_catch_tmp.value; _uya_catch_result; }));
-    int32_t _uya_ret = 0;
-    return _uya_ret;
-}
-
-int32_t std_io_fgetc(void * handle) {
-    (void)handle;
-    if ((handle == NULL)) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    uint8_t buf[1] = {0};
-    const size_t read_count = fread((&buf[0]), 1, 1, handle);
-    if ((read_count == 0)) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    int32_t _uya_ret = (int32_t)buf[0];
-    return _uya_ret;
-}
-
-int32_t std_io_fputc(int32_t c, void * handle) {
-    (void)c;
-    (void)handle;
-    if ((handle == NULL)) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    if (((c < 0) || (c > 255))) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    uint8_t buf[1] = {0};
-    buf[0] = (uint8_t)c;
-    const size_t write_count = fwrite((&buf[0]), 1, 1, handle);
-    if ((write_count == 0)) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    int32_t _uya_ret = c;
-    return _uya_ret;
-}
-
-int32_t std_io_fputs(const uint8_t * s, void * handle) {
-    (void)s;
-    (void)handle;
-    if (((handle == NULL) || (s == NULL))) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    const size_t len = strlen(s);
-    if ((len == 0)) {
-        int32_t _uya_ret = 0;
-        return _uya_ret;
-    }
-    const size_t write_count = fwrite(s, 1, len, handle);
-    if ((write_count != len)) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    int32_t _uya_ret = (int32_t)len;
-    return _uya_ret;
-}
-
-int32_t std_io_fprintf(void * handle, const uint8_t * format, int32_t arg) {
-    (void)handle;
-    (void)format;
-    (void)arg;
-    if (((handle == NULL) || (format == NULL))) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    uint8_t * const percent_pos = (uint8_t *)strchr(format, 37);
-    if ((percent_pos == NULL)) {
-        int32_t _uya_ret = fputs(format, handle);
-        return _uya_ret;
-    }
-    const size_t prefix_len = ((uintptr_t)((void *)percent_pos) - (uintptr_t)((void *)format));
-    if ((prefix_len > 0)) {
-        uint8_t prefix_buf[256] = {0};
-        std_mem_mem_copy((&prefix_buf[0]), format, prefix_len);
-        const int32_t prefix_write = fputs((&prefix_buf[0]), handle);
-        if ((prefix_write < 0)) {
-            int32_t _uya_ret = (0 - 1);
-            return _uya_ret;
-        }
-    }
-    uint8_t num_buf[16] = {0};
-    int32_t num = arg;
-    int32_t is_negative = 0;
-    if ((num < 0)) {
-        is_negative = 1;
-        num = (0 - num);
-    }
-    size_t digit_count = 0;
-    if ((num == 0)) {
-        num_buf[digit_count] = 48;
-        digit_count = (digit_count + 1);
-    } else {
-        int32_t temp = num;
-        uint8_t digits[16] = {0};
-        size_t digit_idx = 0;
-        while ((temp > 0)) {
-            const int32_t digit = (temp % 10);
-            digits[digit_idx] = (uint8_t)(48 + digit);
-            digit_idx = (digit_idx + 1);
-            temp = (temp / 10);
-        }
-        size_t i = 0;
-        while ((i < digit_idx)) {
-            num_buf[digit_count] = digits[((digit_idx - 1) - i)];
-            digit_count = (digit_count + 1);
-            i = (i + 1);
-        }
-    }
-    if ((is_negative > 0)) {
-        uint8_t neg_buf[1] = {0};
-        neg_buf[0] = 45;
-        (void)(fputs((&neg_buf[0]), handle));
-    }
-    num_buf[digit_count] = 0;
-    const int32_t num_write = fputs((&num_buf[0]), handle);
-    if ((num_write < 0)) {
-        int32_t _uya_ret = (0 - 1);
-        return _uya_ret;
-    }
-    const uint8_t * const suffix_start = (percent_pos + 2);
-    const size_t suffix_len = strlen(suffix_start);
-    if ((suffix_len > 0)) {
-        uint8_t suffix_buf[256] = {0};
-        std_mem_mem_copy((&suffix_buf[0]), suffix_start, suffix_len);
-        const int32_t suffix_write = fputs((&suffix_buf[0]), handle);
-        if ((suffix_write < 0)) {
-            int32_t _uya_ret = (0 - 1);
-            return _uya_ret;
-        }
-    }
-    int32_t _uya_ret = (int32_t)((prefix_len + digit_count) + suffix_len);
-    return _uya_ret;
-}
-
-int32_t std_io_fflush(void * handle) {
-    (void)handle;
-    int32_t _uya_ret = 0;
     return _uya_ret;
 }
 

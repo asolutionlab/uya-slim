@@ -992,8 +992,8 @@ export extern "libc" fn pthread_testcancel() void {
     
     // 检查是否有取消请求
     if flag_ptr[0] != 0 {
-        // 有取消请求，退出线程
-        sys_exit(PTHREAD_CANCELED as i32);
+        // 有取消请求，退出线程（直接使用 -1 而不是 PTHREAD_CANCELED，避免指针转换警告）
+        sys_exit(-1);
     }
 }
 
