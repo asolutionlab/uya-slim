@@ -1051,8 +1051,13 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
     // 处理导入项
     const alias: &byte = node.use_stmt_alias;
     
-    if is_whole_module_import != 0 || (item_name == null && alias != null) {
-        // 整体导入模块（use std.c.stdio; 或 use std.c.stdio as io;）
+    // 整体导入模块的条件：
+    // 1. is_whole_module_import != 0（已确认为整体导入，如 use std.c.stdio;）
+    // 2. item_name == null（没有指定具体项名）
+    //    - 单段路径（use mem;）→ 整体导入
+    //    - 多段路径（use a.b.c;）→ 整体导入
+    if is_whole_module_import != 0 || item_name == null {
+        // 整体导入模块（use mem; 或 use std.c.stdio; 或 use std.c.stdio as io;）
         var local_name: &byte = alias;
         if local_name == null && seg_count > 0 {
             local_name = segs[seg_count - 1];
@@ -1087,14 +1092,17 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
         var item_type: i32 = 0;
         var export_decl: &ASTNode = null;
         var k: i32 = 0;
-        while k < module.export_count {
-            if str_equals(module.exports[k].name, item_name) != 0 {
-                found = 1;
-                item_type = module.exports[k].item_type;
-                export_decl = module.exports[k].decl_node;
-                break;
+        // 防御性检查：确保 exports 不为 null
+        if module.exports != null {
+            while k < module.export_count {
+                if str_equals(module.exports[k].name, item_name) != 0 {
+                    found = 1;
+                    item_type = module.exports[k].item_type;
+                    export_decl = module.exports[k].decl_node;
+                    break;
+                }
+                k = k + 1;
             }
-            k = k + 1;
         }
         
         if found == 0 {

@@ -37,11 +37,13 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             var ih: u32 = hash_string(obj_name);
             var ii: i32 = (ih as i32) & (IMPORT_TABLE_SIZE - 1);
             var i2: i32 = 0;
+            var found_import: i32 = 0;
             while i2 < IMPORT_TABLE_SIZE {
                 const sl: i32 = (ii + i2) & (IMPORT_TABLE_SIZE - 1);
                 const imp: &ImportedItem = checker.import_table.slots[sl];
                 if imp == null { break; }
                 if imp.item_type == (0 - 1) && str_equals(imp.local_name, obj_name) != 0 {
+                    found_import = 1;
                     // 模块限定调用
                     callee.member_access_is_module_access = 1;
                     callee.member_access_module_name = imp.module_name;  // 保存模块名
@@ -50,30 +52,52 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                     var mh: u32 = hash_string(module_name);
                     var mi: i32 = (mh as i32) & (MODULE_TABLE_SIZE - 1);
                     var i3: i32 = 0;
+                    var found_module: i32 = 0;
                     while i3 < MODULE_TABLE_SIZE {
                         const ml: i32 = (mi + i3) & (MODULE_TABLE_SIZE - 1);
                         const mod: &ModuleInfo = checker.module_table.slots[ml];
                         if mod == null { break; }
                         if str_equals(mod.module_name, module_name) != 0 {
+                            found_module = 1;
                             // 在模块导出项中查找函数
                             var ei: i32 = 0;
-                            while ei < mod.export_count {
-                                if mod.exports[ei].name != null && str_equals(mod.exports[ei].name, field_name) != 0 {
-                                    // 找到函数，从声明节点获取返回类型
-                                    const fn_decl: &ASTNode = mod.exports[ei].decl_node;
-                                    if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL {
-                                        return type_from_ast(checker, fn_decl.fn_decl_return_type);
+                            var found_in_module: i32 = 0;
+                            // 防御性检查：确保 exports 不为 null
+                            if mod.exports != null {
+                                while ei < mod.export_count {
+                                    if mod.exports[ei].name != null && str_equals(mod.exports[ei].name, field_name) != 0 {
+                                        // 找到函数，从声明节点获取返回类型
+                                        const fn_decl: &ASTNode = mod.exports[ei].decl_node;
+                                        if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL {
+                                            found_in_module = 1;
+                                            return type_from_ast(checker, fn_decl.fn_decl_return_type);
+                                        }
                                     }
+                                    ei = ei + 1;
                                 }
-                                ei = ei + 1;
+                            }
+                            // 模块中不存在该函数，报告错误
+                            if found_in_module == 0 {
+                                checker_report_error(checker, node, "模块中不存在该函数" as *byte);
+                                return result;
                             }
                             break;
                         }
                         i3 = i3 + 1;
                     }
+                    // 找到了导入项但找不到模块，报告错误
+                    if found_module == 0 {
+                        checker_report_error(checker, node, "模块不存在" as *byte);
+                        return result;
+                    }
                     break;
                 }
                 i2 = i2 + 1;
+            }
+            // 使用了模块限定语法但没有找到对应的模块导入
+            if found_import == 0 && i2 == IMPORT_TABLE_SIZE {
+                checker_report_error(checker, node, "未导入的模块" as *byte);
+                return result;
             }
         }
     }
