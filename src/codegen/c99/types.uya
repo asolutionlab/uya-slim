@@ -665,10 +665,16 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
             const elem_ptr: *byte = elem_simple as *byte;
             const last_char: *byte = elem_ptr + (elem_len - 1);
             if last_char[0] == 42 {  // '*'
+                // 先去除 const 前缀（如 "const uint8_t *"）
+                var working_str: &byte = elem_simple;
+                if strncmp(elem_simple as *byte, "const " as *byte, 6) == 0 {
+                    working_str = &elem_simple[6];
+                }
+                
                 // 找到最后一个 '*'，向前查找并去除空格
-                var end: usize = elem_len - 1;
+                var end: usize = strlen(working_str as *byte) - 1;
                 while end > 0 {
-                    const prev_char: *byte = elem_ptr + (end - 1);
+                    const prev_char: *byte = working_str + (end - 1);
                     if prev_char[0] != 32 {  // ' '
                         break;
                     }
@@ -679,7 +685,7 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
                 if end < STRUCT_NAME_BUF_SIZE {
                     var j: usize = 0;
                     while j < end {
-                        const char_ptr: *byte = elem_ptr + j;
+                        const char_ptr: *byte = working_str + j;
                         temp_buf[j] = char_ptr[0];
                         j = j + 1;
                     }
