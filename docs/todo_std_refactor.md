@@ -123,9 +123,9 @@ export fn my_func(s: &byte) void;
 
 ### 1.5 时间相关
 
-- [ ] `sys_nanosleep`（未定义，待实现）。
-- [ ] `sys_gettimeofday`（未定义，待实现）。
-- [ ] 补充时间测试。
+- [x] `sys_nanosleep`（已实现，已测试）。
+- [x] `sys_gettimeofday`（已实现，已测试）。
+- [x] 补充时间测试。
 
 ### 1.6 设备/控制
 

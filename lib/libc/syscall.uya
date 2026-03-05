@@ -46,6 +46,10 @@ export const SYS_set_tid_address: i64 = 218;
 export const SYS_sched_setaffinity: i64 = 203;
 export const SYS_sched_getaffinity: i64 = 204;
 
+// 时间相关
+export const SYS_nanosleep: i64 = 35;
+export const SYS_gettimeofday: i64 = 96;
+
 // futex 操作（Linux futex(2)）
 export const FUTEX_WAIT: i32 = 0;
 export const FUTEX_WAKE: i32 = 1;
@@ -373,4 +377,40 @@ export extern "libc" fn sys_fork() !i64 {
 // 返回：成功不返回，失败返回 -1
 export extern "libc" fn sys_execve(path: &const byte, argv: &(&const byte), envp: &(&const byte)) !i32 {
     return @syscall(SYS_execve, path as i64, argv as i64, envp as i64) as! i32;
+}
+
+// ============================================================
+// 时间相关结构体
+// ============================================================
+
+// timespec - 时间结构体（用于 nanosleep）
+export struct TimeSpec {
+    tv_sec: i64,   // 秒
+    tv_nsec: i64   // 纳秒
+}
+
+// timeval - 时间结构体（用于 gettimeofday）
+export struct TimeVal {
+    tv_sec: i64,   // 秒
+    tv_usec: i64  // 微秒
+}
+
+// ============================================================
+// 时间相关系统调用
+// ============================================================
+
+// sys_nanosleep - 纳秒级睡眠
+// req: 请求的睡眠时间
+// rem: 剩余时间（被中断时返回）
+// 返回：0 成功，-1 失败
+export fn sys_nanosleep(req: &const TimeSpec, rem: &TimeSpec) !i32 {
+    return @syscall(SYS_nanosleep, req as i64, rem as i64) as! i32;
+}
+
+// sys_gettimeofday - 获取当前时间
+// tv: 时间值输出
+// tz: 时区（通常为 null，保留用于兼容性）
+// 返回：0 成功，-1 失败
+export fn sys_gettimeofday(tv: &TimeVal, tz: &void) !i32 {
+    return @syscall(SYS_gettimeofday, tv as i64, tz as i64) as! i32;
 }

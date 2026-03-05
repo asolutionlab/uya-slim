@@ -29,8 +29,10 @@ export type clock_t = u64;
 // 系统调用定义
 // ============================================================
 
+use libc.SYS_time;
+use libc.SYS_gettimeofday;
+
 const SYS_time: i64 = 83;
-const SYS_gettimeofday: i64 = 96;
 
 // ============================================================
 // 时间获取函数
