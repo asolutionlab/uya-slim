@@ -859,3 +859,67 @@ error Interrupted;
 - `tests/test_osal.uya` - osal 层测试
 - `docs/todo_std_refactor.md` - 标准库重构计划（Phase 3）
 - `docs/libc_progress.md` - libc 开发进度
+
+---
+
+## 11. Phase 4 重构遇到的编译器问题（2026-03-05）
+
+### 11.1 问题描述
+
+**目标**：Phase 4（libc 层）重构要求 `lib/libc/string.uya` 和 `lib/libc/mem.uya` 调用 `lib/mem/mem.uya` 的函数。
+
+**问题**：当在 `lib/libc/` 目录的文件中添加 `use mem` 语句时，编译器自举会失败（退出码 141 或链接错误）。
+
+### 11.2 问题根因分析
+
+**模块命名冲突**：
+1. `lib/mem/mem.uya` 导出内部函数名：`mem_copy`, `mem_set`, `mem_compare`, `strlen`, `strcmp` 等
+   - 这些函数生成 C 代码时会加上 `mem_` 前缀：`mem_memset`, `mem_strlen` 等
+2. `lib/libc/mem.uya` 需要导出 libc 兼容函数：`export extern "libc" fn memcpy`, `memset`, `memcmp`, `strlen` 等
+   - 这些函数应该生成**裸名**（没有模块前缀）：`memcpy`, `memset`, `memcmp`, `strlen` 等
+3. **冲突**：当 `lib/libc/mem.uya` `use mem` 时，两个模块的函数都会被生成到 C 代码
+   - 导致重复定义错误：`error: redefinition of 'memcmp'`
+
+### 11.3 验证结果
+
+**成功的场景**：
+- ✅ 普通测试文件（如 `tests/test_libc_use_mem.uya`）可以成功 `use mem` 并使用 mem 层函数
+- ✅ 编译、链接、运行都正常
+
+**失败的场景**：
+- ❌ `lib/libc/` 目录下的文件（如 `lib/libc/mem.uya`）使用 `use mem` 会导致编译器自举时崩溃或链接失败
+
+### 11.4 结论
+
+**当前状态**：
+- Phase 1（syscall 层）：✅ 已完成
+- Phase 2（mem 层）：✅ 已完成  
+- Phase 3（osal 层）：✅ 已完成
+- Phase 4（libc 层）：⚠️ 需要先修复编译器才能进行跨层导入
+- Phase 5（std 层）：⏳ 待开始
+
+### 11.5 建议方案
+
+**短期方案**（继续 Phase 5）：
+1. Phase 4（libc 层重构）暂时搁置，等待编译器修复
+2. Phase 5（std 层）可以直接使用 osal 和 mem 层，不需要依赖 libc 层
+3. std 层的开发可以继续进行，不会受到影响
+
+**长期方案**（修复编译器）：
+1. 分析编译器在处理 `lib/libc/` 目录跨层导入时的特殊逻辑
+2. 修复模块命名冲突，避免重复定义
+3. 可能需要调整模块前缀生成规则，支持同一目录下不同层级的模块隔离
+
+### 11.6 关键要点
+
+1. **跨层导入的目录限制** - 编译器对 `lib/libc/` 目录有特殊处理，该目录下的文件无法正常 `use` 其他目录的模块
+2. **函数名冲突** - 内部函数名（带前缀）和 libc 兼容名（裸名）不能在同一个编译单元中同时生成
+3. **测试与实现的差异** - 普通测试文件没有特殊处理，可以正常跨层导入，但 `lib/libc/` 目录下的文件不行
+4. **分层架构的挑战** - libc 层作为 C 兼容层，需要在调用 mem 层时处理命名和 ABI 兼容性问题
+
+### 11.7 相关文件
+
+- `lib/mem/mem.uya` - mem 层实现
+- `lib/libc/mem.uya` - libc 层内存函数（待重构）
+- `lib/libc/string.uya` - libc 层字符串函数（待重构）
+- `tests/test_libc_use_mem.uya` - 测试 mem 层函数调用（已验证成功）
