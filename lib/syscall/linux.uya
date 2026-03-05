@@ -44,6 +44,20 @@ export const SYS_sched_getaffinity: i64 = 204;
 export const SYS_nanosleep: i64 = 35;
 export const SYS_gettimeofday: i64 = 96;
 
+// 文件控制
+export const SYS_fcntl: i64 = 72;
+
+// 用户/组
+export const SYS_getuid: i64 = 102;
+export const SYS_getgid: i64 = 104;
+export const SYS_setuid: i64 = 105;
+export const SYS_setgid: i64 = 106;
+export const SYS_geteuid: i64 = 107;
+export const SYS_getegid: i64 = 108;
+
+// 线程
+export const SYS_gettid: i64 = 186;
+
 export const FUTEX_WAIT: i32 = 0;
 export const FUTEX_WAKE: i32 = 1;
 
@@ -330,4 +344,89 @@ export fn sys_nanosleep(req: &const TimeSpec, rem: &TimeSpec) !i32 {
 // 返回：0 成功，-1 失败
 export fn sys_gettimeofday(tv: &TimeVal, tz: &void) !i32 {
     return @syscall(SYS_gettimeofday, tv as i64, tz as i64) as! i32;
+}
+
+// ============================================================
+// 文件控制相关系统调用
+// ============================================================
+
+// sys_ioctl - 设备控制
+// fd: 文件描述符
+// request: 请求码
+// arg: 参数（类型取决于 request）
+// 返回：成功返回 0，失败返回 -1
+export fn sys_ioctl(fd: i32, request: i64, arg: i64) !i32 {
+    return @syscall(SYS_ioctl, fd as i64, request, arg) as! i32;
+}
+
+// sys_fcntl - 文件控制
+// fd: 文件描述符
+// cmd: 命令
+// arg: 参数（某些命令需要）
+// 返回：成功返回 0，失败返回 -1
+export fn sys_fcntl(fd: i32, cmd: i32, arg: i32) !i32 {
+    return @syscall(SYS_fcntl, fd as i64, cmd as i64, arg as i64) as! i32;
+}
+
+// ============================================================
+// 用户/组相关系统调用
+// ============================================================
+
+// sys_getuid - 获取真实用户 ID
+// 返回：真实用户 ID
+export fn sys_getuid() !i32 {
+    return @syscall(SYS_getuid) as! i32;
+}
+
+// sys_getgid - 获取真实组 ID
+// 返回：真实组 ID
+export fn sys_getgid() !i32 {
+    return @syscall(SYS_getgid) as! i32;
+}
+
+// sys_setuid - 设置真实用户 ID
+// uid: 用户 ID
+// 返回：0 成功，-1 失败
+export fn sys_setuid(uid: i32) !i32 {
+    return @syscall(SYS_setuid, uid as i64) as! i32;
+}
+
+// sys_setgid - 设置真实组 ID
+// gid: 组 ID
+// 返回：0 成功，-1 失败
+export fn sys_setgid(gid: i32) !i32 {
+    return @syscall(SYS_setgid, gid as i64) as! i32;
+}
+
+// sys_geteuid - 获取有效用户 ID
+// 返回：有效用户 ID
+export fn sys_geteuid() !i32 {
+    return @syscall(SYS_geteuid) as! i32;
+}
+
+// sys_getegid - 获取有效组 ID
+// 返回：有效组 ID
+export fn sys_getegid() !i32 {
+    return @syscall(SYS_getegid) as! i32;
+}
+
+// ============================================================
+// 线程相关系统调用
+// ============================================================
+
+// sys_gettid - 获取当前线程 ID
+// 返回：线程 ID
+export fn sys_gettid() !i32 {
+    return @syscall(SYS_gettid) as! i32;
+}
+
+// sys_clone - 克隆进程/线程
+// flags: 克隆标志
+// child_stack: 子进程栈指针
+// ptid: 父进程 tid 指针
+// ctid: 子进程 tid 指针
+// tls: 线程本地存储指针
+// 返回：父进程返回子进程 PID，子进程返回 0
+export fn sys_clone(flags: i64, child_stack: &void, ptid: &i32, ctid: &i32, tls: &void) !i64 {
+    return @syscall(SYS_clone, flags, child_stack as i64, ptid as i64, ctid as i64, tls as i64);
 }

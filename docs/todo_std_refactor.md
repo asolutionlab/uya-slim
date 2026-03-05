@@ -117,9 +117,9 @@ export fn my_func(s: &byte) void;
 
 - [x] `sys_exit`、`sys_getpid`、`sys_kill`、`sys_waitpid`（已实现，已测试）。
 - [x] `sys_getppid`（已实现函数体，已测试）。
-- [ ] `sys_clone`（仅常量定义，待实现函数体）。
-- [ ] `sys_execve`（仅常量定义，待实现函数体）。
-- [ ] `sys_gettid`（未定义，待实现）。
+- [x] `sys_clone`（已实现，已测试）。
+- [x] `sys_execve`（已实现，已测试）。
+- [x] `sys_gettid`（已实现，已测试）。
 
 ### 1.5 时间相关
 
@@ -129,9 +129,9 @@ export fn my_func(s: &byte) void;
 
 ### 1.6 设备/控制
 
-- [ ] `sys_ioctl`（仅常量定义，待实现函数体）。
-- [ ] `sys_fcntl`（未定义，待实现）。
-- [ ] 补充设备/控制测试。
+- [x] `sys_ioctl`（已实现，已测试）。
+- [x] `sys_fcntl`（已实现，已测试）。
+- [x] 补充设备/控制测试。
 
 ### 1.7 文件/目录
 
@@ -141,8 +141,8 @@ export fn my_func(s: &byte) void;
 
 ### 1.8 用户/组
 
-- [ ] `sys_getuid`、`sys_getgid`、`sys_setuid`、`sys_setgid`、`sys_geteuid`、`sys_getegid`（未定义，待实现）。
-- [ ] 补充用户/组测试。
+- [x] `sys_getuid`、`sys_getgid`、`sys_setuid`、`sys_setgid`、`sys_geteuid`、`sys_getegid`（已实现，已测试）。
+- [x] 补充用户/组测试。
 
 ### 1.9 清理工作
 

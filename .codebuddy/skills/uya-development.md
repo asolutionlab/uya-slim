@@ -502,3 +502,248 @@ while i < 512 {
     i = i + 1;
 }
 ```
+
+---
+
+## 9. Syscall 层开发经验（2026-03-05）
+
+### 9.1 syscall 函数实现规范
+
+#### 9.1.1 函数声明方式
+
+**核心原则**：syscall 层不链接 C 标准库，因此不使用 `extern "libc"`。
+
+```uya
+// ✅ 正确：使用 export fn
+export fn sys_read(fd: i32, buf: &byte, count: usize) !isize {
+    return @syscall(SYS_read, fd as i64, buf as i64, count as i64) as! isize;
+}
+
+// ❌ 错误：sys_nanosleep 和 sys_gettimeofday 错误使用了 extern "libc"
+export extern "libc" fn sys_nanosleep(req: &const TimeSpec, rem: &TimeSpec) !i32 {
+    return @syscall(SYS_nanosleep, req as i64, rem as i64) as! i32;
+}
+```
+
+**原因**：
+- `export extern "libc" fn` 用于在 libc 层实现 C 标准库函数（带函数体）
+- syscall 层是 Uya 内部使用，不需要与 C 标准库兼容
+- 使用 `export fn` 会自动添加模块前缀（`libc_` 或 `syscall_`），避免符号冲突
+
+#### 9.1.2 双重文件维护
+
+syscall 函数需要在两个文件中保持完全一致：
+
+```uya
+// lib/libc/syscall.uya（旧位置，待迁移）
+export const SYS_getpid: i64 = 39;
+export fn sys_getpid() !i64 {
+    return @syscall(SYS_getpid);
+}
+
+// lib/syscall/linux.uya（新位置，标准库重构 Phase 1）
+export const SYS_getpid: i64 = 39;
+export fn sys_getpid() !i64 {
+    return @syscall(SYS_getpid);
+}
+```
+
+**注意事项**：
+- 系统调用号常量必须在两个文件中都定义
+- 函数签名（参数类型、返回类型）必须完全一致
+- 函数体实现也必须一致
+
+**迁移计划**（待完成）：
+- 明确 `lib/libc/syscall.uya` 的废弃时间
+- 逐步将所有 use 语句从 `libc.syscall` 迁移到 `syscall`
+- 最后删除 `lib/libc/syscall.uya`
+
+### 9.2 测试编写规范
+
+#### 9.2.1 expect 函数限制
+
+**问题**：`expect` 函数不支持消息参数
+
+```uya
+// ❌ 错误：expect 不支持第二个消息参数
+try expect(result == 0, "sys_nanosleep should succeed");
+
+// ✅ 正确：只使用布尔表达式
+try expect(result == 0);
+```
+
+#### 9.2.2 struct 定义位置限制
+
+**问题**：Uya 不支持在函数内部定义 struct
+
+```uya
+// ❌ 错误：struct 不能在函数内部定义
+test "test_ioctl" {
+    struct winsize {
+        ws_row: u16,
+        ws_col: u16,
+    }
+    var ws: winsize = ...;
+}
+
+// ✅ 正确：struct 必须在文件级别定义
+struct winsize {
+    ws_row: u16,
+    ws_col: u16,
+}
+
+test "test_ioctl" {
+    var ws: winsize = ...;
+}
+```
+
+#### 9.2.3 测试文件命名规范
+
+- 测试文件以 `test_syscall_` 开头，后跟功能模块名
+- 示例：
+  - `test_syscall_time.uya` - 时间相关测试
+  - `test_syscall_user.uya` - 用户/组测试
+  - `test_syscall_ioctl.uya` - 设备控制测试
+  - `test_syscall_thread.uya` - 线程测试
+
+### 9.3 常见问题与解决方案
+
+#### 9.3.1 编译缓存问题
+
+**症状**：修改头文件后，编译器仍然使用旧版本
+
+```bash
+# 解决方法：删除编译缓存
+rm src/build/uya.c
+make check
+```
+
+**原因**：`src/build/uya.c` 可能缓存了旧的定义
+
+#### 9.3.2 缺失系统调用号
+
+**症状**：编译错误 "undefined reference to SYS_xxx"
+
+```uya
+// 需要在 lib/syscall/linux.uya 中添加常量
+export const SYS_nanosleep: i64 = 35;
+export const SYS_gettimeofday: i64 = 96;
+export const SYS_fcntl: i64 = 72;
+export const SYS_getuid: i64 = 102;
+// ... 其他系统调用号
+```
+
+**Linux x86-64 系统调用号参考**：
+- SYS_gettid: 186
+- SYS_getuid: 102
+- SYS_getgid: 104
+- SYS_setuid: 105
+- SYS_setgid: 106
+- SYS_geteuid: 107
+- SYS_getegid: 108
+- SYS_fcntl: 72
+
+### 9.4 已实现的 syscall 函数清单（截至 2026-03-05）
+
+#### 9.4.1 基础文件操作
+- ✅ `sys_read(fd, buf, count)` - 读取文件
+- ✅ `sys_write(fd, buf, count)` - 写入文件
+- ✅ `sys_open(pathname, flags, mode)` - 打开文件
+- ✅ `sys_close(fd)` - 关闭文件
+- ✅ `sys_lseek(fd, offset, whence)` - 文件定位
+
+#### 9.4.2 内存管理
+- ✅ `sys_mmap(addr, length, prot, flags, fd, offset)` - 内存映射
+- ✅ `sys_munmap(addr, length)` - 解除映射
+- ✅ `sys_brk(addr)` - 更改数据段地址
+
+#### 9.4.3 进程/线程相关
+- ✅ `sys_exit(status)` - 退出进程
+- ✅ `sys_getpid()` - 获取进程 ID
+- ✅ `sys_getppid()` - 获取父进程 ID
+- ✅ `sys_kill(pid, sig)` - 发送信号
+- ✅ `sys_waitpid(pid, status, options)` - 等待子进程
+- ✅ `sys_fork()` - 创建进程
+- ✅ `sys_execve(path, argv, envp)` - 执行程序
+- ✅ `sys_clone(flags, child_stack, ptid, ctid, tls)` - 克隆进程/线程
+- ✅ `sys_gettid()` - 获取线程 ID
+
+#### 9.4.4 时间相关
+- ✅ `sys_nanosleep(req, rem)` - 纳秒级睡眠
+- ✅ `sys_gettimeofday(tv, tz)` - 获取当前时间
+
+#### 9.4.5 设备/控制
+- ✅ `sys_ioctl(fd, request, arg)` - 设备控制
+- ✅ `sys_fcntl(fd, cmd, arg)` - 文件控制
+
+#### 9.4.6 文件/目录操作
+- ✅ `sys_stat(pathname, statbuf)` - 获取文件状态
+- ✅ `sys_fstat(fd, statbuf)` - 获取文件状态（通过描述符）
+- ✅ `sys_lstat(pathname, statbuf)` - 获取符号链接状态
+- ✅ `sys_access(pathname, mode)` - 检查文件权限
+- ✅ `sys_unlink(pathname)` - 删除文件
+- ✅ `sys_mkdir(pathname, mode)` - 创建目录
+- ✅ `sys_rmdir(pathname)` - 删除目录
+- ✅ `sys_chdir(pathname)` - 切换目录
+- ✅ `sys_getcwd(buf, size)` - 获取当前目录
+- ✅ `sys_readlink(pathname, buf, bufsiz)` - 读取符号链接
+- ✅ `sys_rename(oldpath, newpath)` - 重命名文件
+- ✅ `sys_dup(fd)` - 复制文件描述符
+- ✅ `sys_dup2(oldfd, newfd)` - 复制文件描述符到指定值
+
+#### 9.4.7 用户/组相关
+- ✅ `sys_getuid()` - 获取真实用户 ID
+- ✅ `sys_getgid()` - 获取真实组 ID
+- ✅ `sys_setuid(uid)` - 设置真实用户 ID
+- ✅ `sys_setgid(gid)` - 设置真实组 ID
+- ✅ `sys_geteuid()` - 获取有效用户 ID
+- ✅ `sys_getegid()` - 获取有效组 ID
+
+#### 9.4.8 线程同步
+- ✅ `sys_futex(uaddr, op, val, timeout)` - 快速用户空间互斥
+- ✅ `sched_setaffinity(pid, cpusetsize, mask)` - 设置 CPU 亲和性
+- ✅ `sched_getaffinity(pid, cpusetsize, mask)` - 获取 CPU 亲和性
+
+#### 9.4.9 资源限制
+- ✅ `sys_getrlimit(resource, rlim)` - 获取资源限制
+- ✅ `sys_setrlimit(resource, rlim)` - 设置资源限制
+
+### 9.5 开发检查清单
+
+实现新的 syscall 函数时，按以下步骤操作：
+
+```bash
+# 1. 在 lib/syscall/linux.uya 中添加系统调用号常量
+export const SYS_NEWCALL: i64 = 123;
+
+# 2. 在 lib/syscall/linux.uya 中实现函数
+export fn sys_newcall(...) !ReturnType {
+    return @syscall(SYS_NEWCALL, ...) as! ReturnType;
+}
+
+# 3. 在 lib/libc/syscall.uya 中添加相同的常量和函数
+export const SYS_NEWCALL: i64 = 123;
+export fn sys_newcall(...) !ReturnType {
+    return @syscall(SYS_NEWCALL, ...) as! ReturnType;
+}
+
+# 4. 创建测试文件 tests/test_syscall_xxx.uya
+# 测试基本功能、边界条件、错误处理
+
+# 5. 运行测试验证
+make tests  # 确保所有测试通过
+
+# 6. 如果有编译缓存问题
+rm src/build/uya.c
+make check  # 完整验证（自举 + 测试）
+```
+
+### 9.6 关键记忆要点
+
+1. **syscall 层不使用 extern "libc"** - 使用 `export fn` 而非 `export extern "libc" fn`
+2. **双重文件维护** - `lib/libc/syscall.uya` 和 `lib/syscall/linux.uya` 必须保持一致
+3. **expect 不支持消息参数** - 只传递布尔表达式
+4. **struct 不能在函数内定义** - 必须在文件级别定义
+5. **编译缓存问题** - 修改常量后可能需要删除 `src/build/uya.c`
+6. **系统调用号必须完整** - 缺少常量会导致链接错误
+7. **测试先行原则** - 实现 syscall 前先写测试
