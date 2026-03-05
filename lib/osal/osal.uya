@@ -17,7 +17,14 @@ use syscall.sys_mkdir;
 use syscall.sys_rmdir;
 use syscall.sys_chdir;
 use syscall.sys_getcwd;
+use syscall.sys_stat;
+use syscall.sys_fstat;
+use syscall.sys_lstat;
+use syscall.sys_access;
+use syscall.sys_unlink;
+use syscall.sys_rename;
 use syscall.TimeSpec;
+use syscall.Stat;
 
 // ============================================================
 // 文件相关
@@ -194,4 +201,69 @@ export fn os_chdir(path: &const byte) !void {
 export fn os_getcwd(buf: &byte, size: usize) !isize {
     const val: isize = try sys_getcwd(buf, size);
     return val;
+}
+
+// ============================================================
+// 文件状态查询
+// ============================================================
+
+export fn os_stat(path: &const byte, statbuf: &OSStat) !void {
+    var tmp_stat: Stat = Stat{};
+    try sys_stat(path, &tmp_stat);
+    statbuf.st_dev = tmp_stat.st_dev;
+    statbuf.st_ino = tmp_stat.st_ino;
+    statbuf.st_mode = tmp_stat.st_mode;
+    statbuf.st_nlink = tmp_stat.st_nlink;
+    statbuf.st_uid = tmp_stat.st_uid;
+    statbuf.st_gid = tmp_stat.st_gid;
+    statbuf.st_rdev = tmp_stat.st_rdev;
+    statbuf.st_size = tmp_stat.st_size;
+    statbuf.st_blksize = tmp_stat.st_blksize;
+    statbuf.st_blocks = tmp_stat.st_blocks;
+}
+
+export fn os_fstat(fd: i32, statbuf: &OSStat) !void {
+    var tmp_stat: Stat = Stat{};
+    try sys_fstat(fd, &tmp_stat);
+    statbuf.st_dev = tmp_stat.st_dev;
+    statbuf.st_ino = tmp_stat.st_ino;
+    statbuf.st_mode = tmp_stat.st_mode;
+    statbuf.st_nlink = tmp_stat.st_nlink;
+    statbuf.st_uid = tmp_stat.st_uid;
+    statbuf.st_gid = tmp_stat.st_gid;
+    statbuf.st_rdev = tmp_stat.st_rdev;
+    statbuf.st_size = tmp_stat.st_size;
+    statbuf.st_blksize = tmp_stat.st_blksize;
+    statbuf.st_blocks = tmp_stat.st_blocks;
+}
+
+export fn os_lstat(path: &const byte, statbuf: &OSStat) !void {
+    var tmp_stat: Stat = Stat{};
+    try sys_lstat(path, &tmp_stat);
+    statbuf.st_dev = tmp_stat.st_dev;
+    statbuf.st_ino = tmp_stat.st_ino;
+    statbuf.st_mode = tmp_stat.st_mode;
+    statbuf.st_nlink = tmp_stat.st_nlink;
+    statbuf.st_uid = tmp_stat.st_uid;
+    statbuf.st_gid = tmp_stat.st_gid;
+    statbuf.st_rdev = tmp_stat.st_rdev;
+    statbuf.st_size = tmp_stat.st_size;
+    statbuf.st_blksize = tmp_stat.st_blksize;
+    statbuf.st_blocks = tmp_stat.st_blocks;
+}
+
+// ============================================================
+// 文件权限和操作
+// ============================================================
+
+export fn os_access(path: &const byte, mode: i32) !void {
+    try sys_access(path, mode);
+}
+
+export fn os_unlink(path: &const byte) !void {
+    try sys_unlink(path);
+}
+
+export fn os_rename(oldpath: &const byte, newpath: &const byte) !void {
+    try sys_rename(oldpath, newpath);
 }
