@@ -1,18 +1,255 @@
-# 标准库重构设计文档 v0.6.0
+# 标准库重构设计文档 v0.7.1
 
 ## 概述
 
 本设计文档描述 Uya 标准库的重构计划，核心目标是：
 
-1. **std 使用 Uya 现代特性**：`!T`, `interface`, 泛型, `union`, `mc`
-2. **libc 是 std 的薄封装**：保持 C99 ABI 兼容，内部调用 std
-3. **分层架构**：libc → std → syscall
+1. **分层架构清晰**：std → libc → osal → syscall
+2. **零依赖设计**：每层只依赖下一层，无循环依赖
+3. **syscall 裸层**：直接封装 Linux 系统调用
+4. **osal 抽象层**：操作系统功能抽象，统一接口
+5. **libc C 兼容层**：薄封装，保持 C99 ABI 兼容
+6. **std Uya 风格层**：使用 `!T`, `interface`, 泛型, `union`
 
-## 设计原则
+## 架构设计
 
-### 1. std 层：Uya 原生风格
+```
+                    ┌─────────────────┐
+                    │      std        │  Uya 原生风格 (!T, interface, 泛型)
+                    │   标准库顶层    │
+                    └────────┬────────┘
+                             │ use
+                    ┌────────▼────────┐
+                    │     libc        │  C 兼容层（薄封装，保持 C 签名）
+                    └────────┬────────┘
+                             │ use
+                    ┌────────▼────────┐
+                    │      osal       │  操作系统抽象层（统一接口）
+                    └────────┬────────┘
+                             │ use
+                    ┌────────▼────────┐
+                    │    syscall      │  系统调用层（直接封装 Linux syscall）
+                    └─────────────────┘
+                             ▲
+                             │ use (mem 不在主依赖链，是独立基础层)
+                    ┌────────┴────────┐
+                    │      mem        │  纯内存操作（无系统调用依赖）
+                    └─────────────────┘
+```
 
-使用 Uya 的类型安全特性：
+## 分层职责
+
+### 1. syscall - 系统调用层（最底层）
+
+**职责**：直接封装 Linux 系统调用，提供最原始的系统能力
+
+**特点**：
+- 无任何依赖
+- 命名与 Linux syscall 一致（如 `sys_read`, `sys_write`）
+- 返回原始错误码（需要上层处理）
+
+```uya
+// lib/syscall/linux.uya
+
+// 纯系统调用，无依赖
+export fn sys_read(fd: i32, buf: &byte, count: usize) i32;
+export fn sys_write(fd: i32, buf: &const byte, count: usize) i32;
+export fn sys_open(path: &const byte, flags: i32, mode: u32) i32;
+export fn sys_close(fd: i32) i32;
+export fn sys_mmap(addr: &void, len: usize, prot: i32, flags: i32, fd: i32, offset: i64) &void;
+export fn sys_munmap(addr: &void, len: usize) i32;
+export fn sys_brk(addr: i32) i32;
+export fn sys_clone(flags: usize, stack: &void) i32;
+export fn sys_execve(path: &const byte, argv: &(&const byte), envp: &(&const byte)) i32;
+export fn sys_exit(code: i32) void;
+export fn sys_gettid() i32;
+export fn sys_kill(pid: i32, sig: i32) i32;
+export fn sys_nanosleep(req: &TimeSpec, rem: &TimeSpec) i32;
+export fn sys_gettimeofday(tv: &TimeVal, tz: &void) i32;
+export fn sys_ioctl(fd: i32, request: usize, arg: usize) i32;
+export fn sys_fcntl(fd: i32, cmd: i32, arg: usize) i32;
+export fn sys_stat(path: &const byte, statbuf: &Stat) i32;
+export fn sys_lstat(path: &const byte, statbuf: &Stat) i32;
+export fn sys_fstat(fd: i32, statbuf: &Stat) i32;
+export fn sys_access(path: &const byte, mode: i32) i32;
+export fn sys_readlink(path: &const byte, buf: &byte, bufsiz: usize) i32;
+export fn sys_unlink(path: &const byte) i32;
+export fn sys_rename(oldpath: &const byte, newpath: &const byte) i32;
+export fn sys_mkdir(path: &const byte, mode: u32) i32;
+export fn sys_rmdir(path: &const byte) i32;
+export fn sys_dup(fd: i32) i32;
+export fn sys_dup2(oldfd: i32, newfd: i32) i32;
+export fn sys_getpid() i32;
+export fn sys_getppid() i32;
+export fn sys_getuid() u32;
+export fn sys_getgid() u32;
+export fn sys_setuid(uid: u32) i32;
+export fn sys_setgid(gid: u32) i32;
+export fn sys_geteuid() u32;
+export fn sys_getegid() u32;
+```
+
+### 2. mem - 纯内存操作层（独立基础层）
+
+**职责**：提供纯内存操作，无任何系统调用依赖
+
+**特点**：
+- 无依赖，独立于主依赖链
+- 所有函数都是纯内存操作
+- 可被任何层使用
+
+```uya
+// lib/mem/mem.uya
+
+// 内存操作
+export fn copy(dst: &byte, src: &const byte, n: usize) void;
+export fn copy_backward(dst: &byte, src: &const byte, n: usize) void;
+export fn set(s: &byte, c: u8, n: usize) void;
+export fn zero(s: &byte, n: usize) void;
+export fn compare(s1: &const byte, s2: &const byte, n: usize) i32;
+
+// 字符串操作（纯内存）
+export fn strlen(s: &const byte) usize;
+export fn strnlen(s: &const byte, maxlen: usize) usize;
+export fn strcmp(s1: &const byte, s2: &const byte) i32;
+export fn strncmp(s1: &const byte, s2: &const byte, n: usize) i32;
+export fn strcpy(dst: &byte, src: &const byte) &byte;
+export fn strncpy(dst: &byte, src: &const byte, n: usize) &byte;
+export fn strcat(dst: &byte, src: &const byte) &byte;
+export fn strncat(dst: &byte, src: &const byte, n: usize) &byte;
+export fn memchr(s: &const byte, c: u8, n: &byte) &byte;
+export fn strchr(s: &const byte, c: u8) &byte;
+export fn strrchr(s: &const byte, c: u8) &byte;
+
+// 字节操作
+export fn memcmp(s1: &const byte, s2: &const byte, n: usize) i32;
+export fn memset(s: &byte, c: u8, n: usize) &byte;
+```
+
+### 3. osal - 操作系统抽象层
+
+**职责**：在 syscall 之上提供统一的操作系统抽象，屏蔽系统调用细节差异
+
+**特点**：
+- 依赖 syscall
+- 提供统一的错误处理（使用 !T）
+- 跨平台抽象接口
+- 不处理纯内存操作（由 mem 层负责）
+
+```uya
+// lib/osal/osal.uya
+use syscall;
+
+// 错误类型定义
+union OSError {
+    None,
+    NotFound,
+    PermissionDenied,
+    AlreadyExists,
+    InvalidInput,
+    IoError,
+    OutOfMemory,
+    NotSupported,
+    TimedOut,
+    Interrupted,
+    Code: i32              // 原始系统错误码
+}
+
+// 文件相关
+struct File {
+    fd: i32,
+    owns_fd: bool
+}
+
+export fn os_open(path: &const byte, flags: OSFlags, mode: u32) !File;
+export fn os_close(f: &File) !void;
+export fn os_read(f: &File, buf: &byte, count: usize) !usize;
+export fn os_write(f: &File, buf: &const byte, count: usize) !usize;
+export fn os_seek(f: &File, offset: i64, whence: i32) !i64;
+export fn os_stat(path: &const byte) !OSStat;
+export fn os_fstat(f: &File) !OSStat;
+
+// 内存管理（底层使用 mmap）
+export fn os_mmap(addr: &void, size: usize, prot: OSProt, flags: OSMapFlags, fd: i32, offset: i64) !&void;
+export fn os_munmap(addr: &void, size: usize) !void;
+
+// 进程/线程
+export fn os_spawn(path: &const byte, args: &[&const byte], env: &[&const byte]) !i32;
+export fn os_exec(path: &const byte, args: &[&const byte], env: &[&const byte]) !void;
+export fn os_exit(code: i32) void;
+export fn os_getpid() i32;
+export fn os_gettid() i32;
+export fn os_kill(pid: i32, sig: i32) !void;
+export fn os_waitpid(pid: i32) !i32;
+
+// 时间
+export fn os_sleep(duration: Duration) !void;
+export fn os_gettimeofday() Duration;
+export fn os_clock_gettime(clock: ClockId) !Duration;
+
+// 目录操作
+export fn os_mkdir(path: &const byte, mode: u32) !void;
+export fn os_rmdir(path: &const byte) !void;
+export fn os_readdir(path: &const byte) !Vec<DirEntry>;
+
+// 错误转换
+fn errno_to_oserror(errno: i32) OSError;
+```
+
+### 4. libc - C 兼容层
+
+**职责**：在 osal + mem 之上提供 C 兼容接口，保持 C99 ABI 兼容
+
+**特点**：
+- 依赖 osal 和 mem
+- 保持 C 函数签名
+- 错误转换为 C 风格（返回 -1/null）
+- 字符串/内存操作调用 mem，文件/进程操作调用 osal
+
+```uya
+// lib/libc/string.uya
+use osal;
+use mem;
+
+// C 签名，内部调用 mem 实现
+export extern fn strlen(s: *const byte) usize {
+    return mem.strlen(s as &const byte);
+}
+
+export extern fn strcmp(s1: *const byte, s2: *const byte) i32 {
+    return mem.strcmp(s1 as &const byte, s2 as &const byte);
+}
+
+export extern fn strncmp(s1: *const byte, s2: *const byte, n: usize) i32 {
+    return mem.strncmp(s1 as &const byte, s2 as &const byte, n);
+}
+
+export extern fn strcpy(dst: *byte, src: *const byte) *byte {
+    if dst == null || src == null { return dst; }
+    return mem.strcpy(dst as &byte, src as &const byte) as *byte;
+}
+
+export extern fn memcpy(dst: *void, src: *const void, n: usize) *void {
+    if dst == null || src == null { return dst; }
+    mem.copy(dst as &byte, src as &const byte, n);
+    return dst;
+}
+
+export extern fn memset(s: *void, c: i32, n: usize) *void {
+    if s == null { return s; }
+    mem.set(s as &byte, c as u8, n);
+    return s;
+}
+```
+
+### 5. std - Uya 原生风格标准库（最顶层）
+
+**职责**：在 libc + osal 之上提供 Uya 现代特性（!T, interface, 泛型）
+
+**特点**：
+- 依赖 libc 和 osal
+- 使用 Uya 高级特性
+- 类型安全、错误处理现代化
 
 ```uya
 // 错误处理：使用 !T 替代裸指针/null 返回
@@ -45,735 +282,171 @@ struct Vec<T> {
 }
 ```
 
-### 2. libc 层：C99 兼容
-
-薄封装，保持 C 签名：
-
-```uya
-// C 签名，内部调用 std 实现
-export extern fn strlen(s: *const byte) usize {
-    return std.strlen(s as &const byte);
-}
-
-export extern fn fopen(path: *const byte, mode: *const byte) *FILE {
-    // 转换并调用 std.io.File.open
-}
-```
-
-## 架构设计
+## 目录结构
 
 ```
 lib/
-├── std/                          # Uya 风格标准库
-│   ├── core/                     # 核心类型（Sprint 6）
-│   │   ├── error.uya             # 错误类型
-│   │   ├── option.uya            # Option<T>
-│   │   ├── result.uya            # Result<T, E>
-│   │   └── traits.uya            # Clone, Eq, Ord, Hash, Display
-│   │
-│   ├── io/                       # I/O 抽象（Sprint 7）
-│   │   ├── writer.uya            # interface Writer
-│   │   ├── reader.uya            # interface Reader
-│   │   └── file.uya              # struct File : Writer, Reader
-│   │
-│   ├── string/                   # 字符串操作（Sprint 8）
-│   │   └── string.uya            # 安全字符串函数
-│   │
-│   ├── mem/                      # 内存操作（Sprint 6）
-│   │   ├── mem.uya               # copy, set, cmp
-│   │   ├── allocator.uya         # IAllocator 接口
-│   │   ├── heap.uya              # HeapAllocator
-│   │   ├── arena.uya             # ArenaAllocator
-│   │   └── fixed_buf.uya         # FixedBufferAllocator
-│   │
-│   ├── collections/              # 泛型容器（Sprint 9）
-│   │   ├── vec.uya               # Vec<T>
-│   │   └── string_buf.uya        # StringBuf
-│   │
-│   ├── syscall/                  # 系统调用
-│   │   └── linux.uya             # Linux syscall 封装
-│   │
-│   ├── fmt/                      # 格式化
-│   │   └── fmt.uya               # format<T: Display>
-│   │
-│   └── runtime/                  # 运行时
-│       └── runtime.uya           # panic, entry
+├── syscall/                     # 系统调用层（无依赖）
+│   └── linux.uya               # Linux syscall 封装
 │
-└── libc/                         # C 兼容层（Sprint 10）
-    ├── syscall.uya               # syscall 封装
-    ├── string.uya                # strlen, strcmp, strcpy...
-    ├── stdio.uya                 # printf, fopen, fclose...
-    ├── stdlib.uya                # malloc, free, atoi...
-    ├── mem.uya                   # memcpy, memset...
-    └── unistd.uya                # read, write, close...
+├── mem/                         # 纯内存操作层（独立基础层）
+│   ├── mem.uya                 # copy, set, cmp
+│   └── string.uya              # strlen, strcmp, strcpy...
+│
+├── osal/                        # 操作系统抽象层（依赖 syscall）
+│   ├── osal.uya                # 核心抽象
+│   ├── file.uya                # 文件抽象
+│   ├── process.uya             # 进程/线程抽象
+│   ├── time.uya                # 时间抽象
+│   ├── dir.uya                 # 目录操作抽象
+│   └── error.uya               # 错误类型
+│
+├── libc/                        # C 兼容层（依赖 osal + mem）
+│   ├── string.uya              # strlen, strcmp, strcpy...
+│   ├── stdio.uya               # printf, fopen, fclose...
+│   ├── stdlib.uya              # malloc, free, atoi...
+│   ├── unistd.uya              # read, write, close...
+│   ├── mem.uya                # memcpy, memset...
+│   ├── pthread.uya             # pthread_* 系列
+│   ├── time.uya                # time, clock...
+│   └── sys.uya                 # sys/* 头文件
+│
+└── std/                         # Uya 原生风格层（依赖 libc + osal）
+    ├── core/                    # 核心类型
+    │   ├── error.uya           # 错误类型
+    │   ├── option.uya          # Option<T>
+    │   ├── result.uya          # Result<T, E>
+    │   └── traits.uya          # Clone, Eq, Ord, Hash, Display
+    │
+    ├── io/                      # I/O 抽象
+    │   ├── writer.uya          # interface Writer
+    │   ├── reader.uya          # interface Reader
+    │   └── file.uya            # struct File : Writer, Reader
+    │
+    ├── string/                  # 字符串操作
+    │   └── string.uya          # 安全字符串函数
+    │
+    ├── mem/                     # 内存操作
+    │   ├── allocator.uya       # IAllocator 接口
+    │   ├── heap.uya            # HeapAllocator（调用 osal.mmap）
+    │   ├── arena.uya           # ArenaAllocator
+    │   └── fixed_buf.uya       # FixedBufferAllocator
+    │
+    ├── collections/             # 泛型容器
+    │   ├── vec.uya             # Vec<T>
+    │   └── string_buf.uya      # StringBuf
+    │
+    ├── fmt/                     # 格式化
+    │   └── fmt.uya             # format<T: Display>
+    │
+    └── runtime/                 # 运行时
+        └── runtime.uya          # panic, entry
 ```
 
-## Sprint 6: std.core 核心类型
+## 依赖关系详解
 
-### 6.1 std.core.error
+### syscall → osal
 
-```uya
-// 错误类型定义
-union Error {
-    None,                        // 无错误
-    Message: &[i8],             // 错误消息
-    Code: i32,                  // 错误码
-    System: i32                 // 系统错误码（errno）
-}
-
-// 错误函数
-export fn error_none() Error;
-export fn error_message(msg: &const byte) Error;
-export fn error_code(code: i32) Error;
-export fn error_from_errno(errno: i32) Error;
-export fn error_to_string(e: &Error) &[i8];
-export fn error_is_none(e: &Error) bool;
-```
-
-### 6.2 std.core.option
+osal 使用 syscall 实现底层功能：
 
 ```uya
-// Option<T> - 可选值
-union Option<T> {
-    Some: T,
-    None
+// lib/osal/file.uya
+use syscall;
+
+export fn os_open(path: &const byte, flags: OSFlags, mode: u32) !File {
+    const fd: i32 = syscall.sys_open(path, flags, mode);
+    if fd < 0 {
+        return OSError.Code(errno);
+    }
+    return File{ fd: fd, owns_fd: true };
 }
 
-// 方法
-fn option_some<T>(value: T) Option<T>;
-fn option_none<T>() Option<T>;
-fn option_is_some<T>(self: &Option<T>) bool;
-fn option_is_none<T>(self: &Option<T>) bool;
-fn option_unwrap<T>(self: &Option<T>) !T;      // None 时返回错误
-fn option_unwrap_or<T>(self: &Option<T>, default: T) T;
-fn option_map<T, U>(self: &Option<T>, f: fn(T) U) Option<U>;
-fn option_and_then<T, U>(self: &Option<T>, f: fn(T) Option<U>) Option<U>;
-```
-
-### 6.3 std.core.result
-
-```uya
-// Result<T, E> - 结果类型
-union Result<T, E: Error> {
-    Ok: T,
-    Err: E
-}
-
-// 方法
-fn result_ok<T, E>(value: T) Result<T, E>;
-fn result_err<T, E>(err: E) Result<T, E>;
-fn result_is_ok<T, E>(self: &Result<T, E>) bool;
-fn result_is_err<T, E>(self: &Result<T, E>) bool;
-fn result_unwrap<T, E>(self: &Result<T, E>) !T;
-fn result_unwrap_err<T, E>(self: &Result<T, E>) !E;
-fn result_map<T, U, E>(self: &Result<T, E>, f: fn(T) U) Result<U, E>;
-fn result_map_err<T, E, F>(self: &Result<T, E>, f: fn(E) F) Result<T, F>;
-fn result_and_then<T, U, E>(self: &Result<T, E>, f: fn(T) Result<U, E>) Result<U, E>;
-```
-
-### 6.4 std.core.traits
-
-```uya
-// Clone - 克隆接口
-interface Clone {
-    fn clone(self: &Self) Self;
-}
-
-// Eq - 相等比较
-interface Eq {
-    fn eq(self: &Self, other: &Self) bool;
-    fn ne(self: &Self, other: &Self) bool;  // 默认实现
-}
-
-// Ord - 有序比较
-interface Ord {
-    fn cmp(self: &Self, other: &Self) i32;  // -1, 0, 1
-    fn lt(self: &Self, other: &Self) bool;
-    fn le(self: &Self, other: &Self) bool;
-    fn gt(self: &Self, other: &Self) bool;
-    fn ge(self: &Self, other: &Self) bool;
-}
-
-// Hash - 哈希
-interface Hash {
-    fn hash(self: &Self) u64;
-}
-
-// Display - 格式化显示
-interface Display {
-    fn fmt(self: &Self, writer: &Writer) !void;
+export fn os_read(f: &File, buf: &byte, count: usize) !usize {
+    const n: i32 = syscall.sys_read(f.fd, buf, count);
+    if n < 0 {
+        return OSError.Code(errno);
+    }
+    return n as usize;
 }
 ```
 
-### 6.5 std.mem.allocator - Zig 风格 IAllocator ⭐⭐⭐⭐⭐
+### osal → std.mem.HeapAllocator
 
-**设计理念**：借鉴 Zig 的分配器设计，提供可插拔、类型安全的内存分配接口。
-
-**核心原则**：
-1. **显式传递分配器**：避免全局状态，分配器作为参数传递
-2. **错误联合返回**：使用 `!T` 处理分配失败
-3. **多种分配器实现**：支持不同场景（堆、Arena、固定缓冲区）
-4. **零抽象开销**：接口编译为直接调用，无虚表开销
+std 层的 HeapAllocator 调用 osal 的 mmap：
 
 ```uya
-// std/mem/allocator.uya
-
-/// 分配错误类型
-union AllocError {
-    None,
-    OutOfMemory,           // 内存不足
-    InvalidAlignment,      // 无效对齐要求
-    InvalidPointer,        // 无效指针（释放/调整大小时）
-}
-
-/// Zig 风格分配器接口
-interface IAllocator {
-    /// 分配 size 字节内存，失败返回错误
-    fn alloc(self: &Self, size: usize) !&void;
-    
-    /// 分配并清零
-    fn alloc_zeroed(self: &Self, size: usize) !&void;
-    
-    /// 释放内存
-    fn free(self: &Self, ptr: &void) void;
-    
-    /// 调整内存大小（可选实现）
-    fn resize(self: &Self, ptr: &void, old_size: usize, new_size: usize) !&void;
-    
-    /// 创建单个对象
-    fn create<T>(self: &Self) !&T;
-    
-    /// 销毁单个对象
-    fn destroy<T>(self: &Self, ptr: &T) void;
-}
-```
-
-### 6.6 std.mem.heap - HeapAllocator
-
-```uya
-// std/mem/heap.uya
+// lib/std/mem/heap.uya
+use osal;
 
 /// 全局堆分配器 - 基于 mmap/munmap 系统调用
 struct HeapAllocator : IAllocator {
     fn alloc(self: &Self, size: usize) !&void {
-        // 调用 syscall.mmap
-        const ptr: !&void = syscall.mmap(
+        const ptr: !&void = osal.os_mmap(
             null,                           // addr: 让内核选择
             size + @size_of(usize),         // 额外存储大小
-            syscall.PROT_READ | syscall.PROT_WRITE,
-            syscall.MAP_PRIVATE | syscall.MAP_ANONYMOUS,
+            OSProt.READ | OSProt.WRITE,
+            OSMapFlags.PRIVATE | OSMapFlags.ANONYMOUS,
             -1,                             // fd
             0                               // offset
         );
         if ptr is error { return AllocError.OutOfMemory; }
         
-        // 在块头存储大小（用于 free）
         const header: &usize = ptr as &usize;
         *header = size + @size_of(usize);
-        return (ptr as &usize + 1) as &void;  // 跳过头部
+        return (ptr as &usize + 1) as &void;
     }
     
     fn free(self: &Self, ptr: &void) void {
-        // 从头部获取实际起始地址和大小
         const header: &usize = (ptr as &usize - 1) as &usize;
         const actual_size: usize = *header;
-        syscall.munmap(header as &void, actual_size);
-    }
-    
-    fn create<T>(self: &Self) !&T {
-        const ptr: !&void = self.alloc(@size_of(T));
-        if ptr is error { return error; }
-        return ptr as &T;
-    }
-    
-    fn destroy<T>(self: &Self, ptr: &T) void {
-        self.free(ptr as &void);
+        osal.os_munmap(header as &void, actual_size);
     }
 }
 
-/// 全局堆分配器实例
 const heap_allocator: HeapAllocator = HeapAllocator{};
 
-/// 便捷函数（使用全局堆分配器）
 export fn alloc(size: usize) !&void { return heap_allocator.alloc(size); }
-export fn alloc_zeroed(size: usize) !&void { return heap_allocator.alloc_zeroed(size); }
 export fn free(ptr: &void) void { heap_allocator.free(ptr); }
-export fn create<T>() !&T { return heap_allocator.create<T>(); }
-export fn destroy<T>(ptr: &T) void { heap_allocator.destroy<T>(ptr); }
 ```
 
-### 6.7 std.mem.arena - ArenaAllocator
+### mem → libc
+
+libc 是 mem 的薄封装（C 兼容）：
 
 ```uya
-// std/mem/arena.uya
+// lib/libc/string.uya
+use mem;
 
-/// Arena 分配器 - 线性分配，批量释放
-/// 适用于：临时计算、解析器、编译器中间数据
-struct ArenaAllocator : IAllocator {
-    buffer: &[u8],
-    offset: usize,
-    
-    fn init(buf: &[u8]) ArenaAllocator {
-        return ArenaAllocator{ buffer: buf, offset: 0 };
-    }
-    
-    fn alloc(self: &Self, size: usize) !&void {
-        // 对齐到 8 字节
-        const aligned_size: usize = (size + 7) & ~7;
-        
-        if self.offset + aligned_size > self.buffer.len {
-            return AllocError.OutOfMemory;
-        }
-        
-        const ptr: &void = &self.buffer[self.offset] as &void;
-        self.offset += aligned_size;
-        return ptr;
-    }
-    
-    fn alloc_zeroed(self: &Self, size: usize) !&void {
-        const ptr: !&void = self.alloc(size);
-        if ptr is error { return error; }
-        std.mem.set(ptr as &byte, 0, size);
-        return ptr;
-    }
-    
-    fn free(self: &Self, ptr: &void) void {
-        // Arena 不支持单独释放 - 使用 reset 批量释放
-    }
-    
-    /// 重置 arena（释放所有分配）
-    fn reset(self: &Self) void {
-        self.offset = 0;
-    }
-    
-    /// 获取已使用字节数
-    fn used(self: &Self) usize {
-        return self.offset;
-    }
-    
-    /// 获取剩余字节数
-    fn remaining(self: &Self) usize {
-        return self.buffer.len - self.offset;
-    }
-}
-```
-
-### 6.8 std.mem.fixed_buf - FixedBufferAllocator
-
-```uya
-// std/mem/fixed_buf.uya
-
-/// 固定缓冲区分配器 - 栈上分配，零堆开销
-/// 适用于：嵌入式系统、实时系统、避免动态分配
-struct FixedBufferAllocator : IAllocator {
-    buffer: &[u8],
-    offset: usize,
-    
-    fn init(buf: &[u8]) FixedBufferAllocator {
-        return FixedBufferAllocator{ buffer: buf, offset: 0 };
-    }
-    
-    fn alloc(self: &Self, size: usize) !&void {
-        const aligned_size: usize = (size + 7) & ~7;
-        
-        if self.offset + aligned_size > self.buffer.len {
-            return AllocError.OutOfMemory;
-        }
-        
-        const ptr: &void = &self.buffer[self.offset] as &void;
-        self.offset += aligned_size;
-        return ptr;
-    }
-    
-    fn free(self: &Self, ptr: &void) void {
-        // 固定缓冲区不支持单独释放
-    }
-    
-    /// 重置缓冲区
-    fn reset(self: &Self) void {
-        self.offset = 0;
-    }
-}
-
-/// 栈上分配示例
-fn stack_example() void {
-    var buf: [4096]u8;
-    var arena: ArenaAllocator = ArenaAllocator.init(buf[0..]);
-    
-    // 使用 arena 分配临时数据
-    const temp: !&byte = arena.alloc(100);
-    
-    // ... 使用 temp ...
-    
-    // 函数返回时 buf 在栈上自动释放，无需手动 free
-}
-```
-
-### 6.9 std.mem.logging - LoggingAllocator
-
-```uya
-// std/mem/logging.uya
-
-/// 日志分配器 - 包装器，记录所有分配操作（调试用）
-struct LoggingAllocator : IAllocator {
-    child: &IAllocator,
-    name: &const byte,
-    alloc_count: usize,
-    free_count: usize,
-    total_bytes: usize,
-    
-    fn init(child: &IAllocator, name: &const byte) LoggingAllocator {
-        return LoggingAllocator{
-            child: child,
-            name: name,
-            alloc_count: 0,
-            free_count: 0,
-            total_bytes: 0
-        };
-    }
-    
-    fn alloc(self: &Self, size: usize) !&void {
-        @print("[");
-        @print(self.name);
-        @print("] alloc ");
-        @println(size);
-        
-        const ptr: !&void = self.child.alloc(size);
-        if ptr is not error {
-            self.alloc_count += 1;
-            self.total_bytes += size;
-        }
-        return ptr;
-    }
-    
-    fn free(self: &Self, ptr: &void) void {
-        @print("[");
-        @print(self.name);
-        @print("] free\n");
-        
-        self.free_count += 1;
-        self.child.free(ptr);
-    }
-    
-    /// 打印统计信息
-    fn print_stats(self: &Self) void {
-        @print("[");
-        @print(self.name);
-        @print("] stats: allocs=");
-        @print(self.alloc_count);
-        @print(" frees=");
-        @print(self.free_count);
-        @print(" bytes=");
-        @println(self.total_bytes);
-    }
-}
-```
-
-### 6.10 分配器使用模式
-
-```uya
-// 1. 显式传递分配器（推荐）
-fn Vec<T>.with_capacity(alloc: &IAllocator, cap: usize) !Vec<T> {
-    return Vec<T>{
-        data: alloc.alloc(cap * @size_of(T)) as &T,
-        len: 0,
-        cap: cap,
-        allocator: alloc
-    };
-}
-
-// 2. 使用 arena 进行临时分配
-fn parse_expression(arena: &ArenaAllocator, tokens: &[Token]) !Expr {
-    // 所有临时数据都在 arena 上分配
-    const temp: &byte = arena.alloc(1024)!;
-    // ...
-    // 不需要手动释放，调用者会 reset arena
-}
-
-// 3. 混合使用多个分配器
-fn process_file(path: &const byte) !void {
-    // 临时数据用 arena
-    var arena_buf: [65536]u8;
-    var arena: ArenaAllocator = ArenaAllocator.init(arena_buf[0..]);
-    
-    // 长期数据用堆
-    const result: !&Result = heap_allocator.create<Result>();
-    
-    // 处理...
-    parse_with_arena(&arena, path);
-    
-    // arena 自动释放，result 需要手动释放
-    heap_allocator.destroy(result);
-}
-
-// 4. 嵌入式系统（无堆）
-fn embedded_main() void {
-    // 只使用固定缓冲区，无动态分配
-    var buf: [8192]u8;
-    var alloc: FixedBufferAllocator = FixedBufferAllocator.init(buf[0..]);
-    
-    const data: !&Config = alloc.create<Config>();
-    // ...
-}
-```
-
-## Sprint 7: std.io I/O 抽象
-
-### 7.1 std.io.writer
-
-```uya
-// Writer 接口
-interface Writer {
-    fn write(self: &Self, data: &[u8]) !usize;
-    fn write_str(self: &Self, s: &const byte) !usize;
-    fn flush(self: &Self) !void;
-}
-
-// 辅助函数
-export fn write_all(w: &Writer, data: &[u8]) !void;
-export fn write_byte(w: &Writer, b: u8) !void;
-export fn write_u8(w: &Writer, v: u8) !void;
-export fn write_u16_le(w: &Writer, v: u16) !void;
-export fn write_u32_le(w: &Writer, v: u32) !void;
-export fn write_u64_le(w: &Writer, v: u64) !void;
-```
-
-### 7.2 std.io.reader
-
-```uya
-// Reader 接口
-interface Reader {
-    fn read(self: &Self, buf: &[u8]) !usize;
-    fn read_exact(self: &Self, buf: &[u8]) !void;
-}
-
-// 辅助函数
-export fn read_to_end(r: &Reader, buf: &Vec<u8>) !usize;
-export fn read_line(r: &Reader, line: &[u8]) !usize;
-export fn read_u8(r: &Reader) !u8;
-export fn read_u16_le(r: &Reader) !u16;
-export fn read_u32_le(r: &Reader) !u32;
-```
-
-### 7.3 std.io.file
-
-```uya
-// 文件结构体
-struct File : Writer, Reader {
-    fd: i32,
-    owns_fd: bool,              // 是否拥有 fd（close 时需要）
-    
-    // 构造函数
-    fn open(path: &const byte, flags: i32, mode: i32) !File;
-    fn create(path: &const byte, mode: i32) !File;
-    
-    // Writer 接口
-    fn write(self: &Self, data: &[u8]) !usize;
-    fn write_str(self: &Self, s: &const byte) !usize;
-    fn flush(self: &Self) !void;
-    
-    // Reader 接口
-    fn read(self: &Self, buf: &[u8]) !usize;
-    fn read_exact(self: &Self, buf: &[u8]) !void;
-    
-    // 其他操作
-    fn seek(self: &Self, offset: i64, whence: i32) !i64;
-    fn close(self: &Self) !void;
-    fn drop(self: &Self);       // RAII: 自动关闭
-}
-
-// 标准流
-export const stdin: File = File{ fd: 0, owns_fd: false };
-export const stdout: File = File{ fd: 1, owns_fd: false };
-export const stderr: File = File{ fd: 2, owns_fd: false };
-```
-
-## Sprint 8: std.string 安全字符串操作
-
-```uya
-// 基本字符串函数（无错误返回）
-export fn strlen(s: &const byte) usize;
-export fn strcmp(s1: &const byte, s2: &const byte) i32;
-export fn strncmp(s1: &const byte, s2: &const byte, n: usize) i32;
-
-// 安全复制（带边界检查）
-export fn copy_safe(dst: &byte, dst_len: usize, src: &const byte) !void;
-export fn cat_safe(dst: &byte, dst_len: usize, src: &const byte) !void;
-
-// 解析函数（返回 !T）
-export fn parse_i8(s: &const byte) !i8;
-export fn parse_i16(s: &const byte) !i16;
-export fn parse_i32(s: &const byte) !i32;
-export fn parse_i64(s: &const byte) !i64;
-export fn parse_u8(s: &const byte) !u8;
-export fn parse_u16(s: &const byte) !u16;
-export fn parse_u32(s: &const byte) !u32;
-export fn parse_u64(s: &const byte) !u64;
-export fn parse_f32(s: &const byte) !f32;
-export fn parse_f64(s: &const byte) !f64;
-
-// 字符串操作（返回 Option）
-export fn find(s: &const byte, c: byte) Option<usize>;
-export fn rfind(s: &const byte, c: byte) Option<usize>;
-export fn split_first(s: &const byte, delim: byte) Option<(&const byte, &const byte)>;
-
-// 大小写转换
-export fn to_lower_inplace(s: &byte) void;
-export fn to_upper_inplace(s: &byte) void;
-
-// 检查函数
-export fn starts_with(s: &const byte, prefix: &const byte) bool;
-export fn ends_with(s: &const byte, suffix: &const byte) bool;
-export fn is_whitespace(s: &const byte) bool;
-export fn is_digit(s: &const byte) bool;
-```
-
-## Sprint 9: std.collections 泛型容器
-
-### 9.1 std.collections.vec
-
-```uya
-// 动态数组
-struct Vec<T> {
-    data: &T,
-    len: usize,
-    cap: usize,
-    
-    // 构造函数
-    fn new() Vec<T>;
-    fn with_capacity(cap: usize) !Vec<T>;
-    fn from_slice(slice: &[T]) !Vec<T> where T: Clone;
-    
-    // 访问
-    fn len(self: &Self) usize;
-    fn is_empty(self: &Self) bool;
-    fn capacity(self: &Self) usize;
-    fn get(self: &Self, i: usize) !&T;           // 边界检查
-    fn get_unchecked(self: &Self, i: usize) &T;  // 无检查
-    fn first(self: &Self) Option<&T>;
-    fn last(self: &Self) Option<&T>;
-    fn as_slice(self: &Self) &[T];
-    
-    // 修改
-    fn push(self: &Self, value: T) !void;
-    fn pop(self: &Self) Option<T>;
-    fn insert(self: &Self, i: usize, value: T) !void;
-    fn remove(self: &Self, i: usize) !T;
-    fn clear(self: &Self) void;
-    fn truncate(self: &Self, new_len: usize) void;
-    fn reserve(self: &Self, additional: usize) !void;
-    
-    // 迭代
-    fn iter(self: &Self) Iterator<T>;
-    
-    // RAII
-    fn drop(self: &Self) void;
-}
-```
-
-### 9.2 std.collections.string_buf
-
-```uya
-// 字符串缓冲区
-struct StringBuf {
-    buf: Vec<u8>,
-    
-    // 构造函数
-    fn new() StringBuf;
-    fn with_capacity(cap: usize) !StringBuf;
-    fn from(s: &const byte) !StringBuf;
-    
-    // 访问
-    fn len(self: &Self) usize;
-    fn is_empty(self: &Self) bool;
-    fn as_str(self: &Self) &[i8];
-    fn as_bytes(self: &Self) &[u8];
-    
-    // 修改
-    fn push(self: &Self, c: byte) !void;
-    fn push_str(self: &Self, s: &const byte) !void;
-    fn push_slice(self: &Self, s: &[u8]) !void;
-    fn clear(self: &Self) void;
-    fn truncate(self: &Self, new_len: usize) void;
-    
-    // 格式化
-    fn format<T: Display>(self: &Self, value: T) !void;
-    
-    // RAII
-    fn drop(self: &Self) void;
-}
-```
-
-## Sprint 10: libc 薄封装
-
-### 10.1 设计原则
-
-libc 是 std 的薄封装层：
-
-1. **保持 C 签名**：函数名、参数类型、返回值完全兼容 C99
-2. **调用 std 实现**：不重复实现逻辑
-3. **错误转换**：std 的 `!T` 转换为 C 的返回码/null
-4. **安全增强**：添加边界检查、空指针防护
-
-### 10.2 libc.string
-
-```uya
-use std.string;
-use std.mem;
-
-// strlen - 调用 std 实现
 export extern fn strlen(s: *const byte) usize {
-    return std.strlen(s as &const byte);
+    if s == null { return 0; }
+    return mem.strlen(s);
 }
 
-// strcmp - 调用 std 实现
 export extern fn strcmp(s1: *const byte, s2: *const byte) i32 {
-    return std.strcmp(s1 as &const byte, s2 as &const byte);
-}
-
-// strcpy - 安全增强
-export extern fn strcpy(dst: *byte, src: *const byte) *byte {
-    if dst == null || src == null { return dst; }
-    const len: usize = std.strlen(src as &const byte);
-    std.mem.copy(dst as &byte, src as &const byte, len + 1);
-    return dst;
-}
-
-// strcat - 安全增强
-export extern fn strcat(dst: *byte, src: *const byte) *byte {
-    if dst == null || src == null { return dst; }
-    const dst_len: usize = std.strlen(dst as &const byte);
-    const src_len: usize = std.strlen(src as &const byte);
-    std.mem.copy((dst as usize + dst_len) as &byte, src as &const byte, src_len + 1);
-    return dst;
+    if s1 == null || s2 == null { return 0; }
+    return mem.strcmp(s1, s2);
 }
 ```
 
-### 10.3 libc.stdio
+### osal + mem → libc
+
+libc 根据功能调用不同底层实现：
 
 ```uya
-use std.io;
-use std.mem;
+// lib/libc/stdio.uya
+use osal;
+use mem;
 
-// FILE 类型定义（与 C 兼容）
-struct FILE {
-    fd: i32,
-    flags: i32,
-    buffer: &[u8],
-    buf_len: usize,
-}
-
-// fopen - 调用 std.io.File.open
 export extern fn fopen(path: *const byte, mode: *const byte) *FILE {
     if path == null || mode == null { return null; }
     
     const flags: i32 = parse_mode(mode as &const byte);
-    const result: !std.io.File = std.io.File.open(path as &const byte, flags, 0o644);
+    const result: !osal.File = osal.os_open(path as &const byte, flags, 0o644);
     
     if result is error { return null; }
     
-    // 分配 FILE 结构
-    const f: *FILE = std.mem.alloc(@size_of(FILE)) as *FILE;
+    // 使用 osal 分配 FILE 结构
+    const f: *FILE = osal.os_mmap(null, @size_of(FILE), ...) as *FILE;
     if f == null { return null; }
     
     f.fd = result.fd;
@@ -784,68 +457,132 @@ export extern fn fopen(path: *const byte, mode: *const byte) *FILE {
     return f;
 }
 
-// fclose - 调用 std.io.File.close
-export extern fn fclose(fp: *FILE) i32 {
-    if fp == null { return -1; }
-    
-    var f: std.io.File = std.io.File{ fd: fp.fd, owns_fd: true };
-    const result: !void = f.close();
-    
-    std.mem.free(fp as &void);
-    
-    if result is error { return -1; }
-    return 0;
-}
-
-// fwrite - 调用 std.io.Writer.write
-export extern fn fwrite(ptr: *const void, size: usize, nmemb: usize, fp: *FILE) usize {
-    if ptr == null || fp == null { return 0; }
-    const total: usize = size * nmemb;
-    var f: std.io.File = std.io.File{ fd: fp.fd, owns_fd: false };
-    const result: !usize = f.write(ptr as &[u8], total);
-    if result is error { return 0; }
-    return result / size;
+export extern fn memcpy(dst: *void, src: *const void, n: usize) *void {
+    if dst == null || src == null { return dst; }
+    mem.copy(dst as &byte, src as &const byte, n);
+    return dst;
 }
 ```
 
-## 迁移计划
+### libc + osal → std
 
-### 阶段 1：核心类型（Sprint 6）
+std 使用 libc 和 osal 作为基础：
 
-1. 实现 `std.core.error`
-2. 实现 `std.core.option`
-3. 实现 `std.core.result`
-4. 实现 `std.core.traits`
+```uya
+// lib/std/io/file.uya
+use libc;
+use osal;
 
-### 阶段 2：I/O 抽象（Sprint 7）
+struct File : Writer, Reader {
+    fd: i32,
+    owns_fd: bool,
+    
+    fn open(path: &const byte, flags: i32, mode: i32) !File {
+        const fp: *libc.FILE = libc.fopen(path, mode_to_cstring(flags));
+        if fp == null {
+            return Error.FromErrno;
+        }
+        return File{ fd: fp.fd, owns_fd: true };
+    }
+    
+    fn read(self: &Self, buf: &[u8]) !usize {
+        const n: usize = libc.fread(buf, 1, buf.len, self.fp);
+        if n == 0 && buf.len > 0 {
+            return Error.FromErrno;
+        }
+        return n;
+    }
+}
+```
 
-1. 定义 `interface Writer`
-2. 定义 `interface Reader`
-3. 重构 `std.io.File` 实现 Writer/Reader
+## 设计原则
 
-### 阶段 3：字符串操作（Sprint 8）
+### 1. 单一职责
 
-1. 重构 `std.string` 使用 `!T`
-2. 添加安全版本函数
-3. 添加解析函数
+每层只负责一件事：
+- **syscall**：系统调用映射
+- **mem**：纯内存操作（独立基础层）
+- **osal**：操作系统抽象
+- **libc**：C 兼容
+- **std**：Uya 现代化
 
-### 阶段 4：泛型容器（Sprint 9）
+### 2. 依赖单向
 
-1. 实现 `Vec<T>`
-2. 实现 `StringBuf`
-3. 添加迭代器支持
+依赖方向永远是向下的：
+```
+std → libc → osal → syscall
+         ↘
+          mem  (独立基础层，不在主依赖链)
+```
 
-### 阶段 5：libc 封装（Sprint 10）
+禁止反向依赖或跨层依赖。
 
-1. 重构 `libc.string` 调用 std
-2. 重构 `libc.stdio` 调用 std
-3. 重构 `libc.stdlib` 调用 std
+### 3. 错误处理分层
+
+- **syscall**：返回原始错误码
+- **osal**：转换为 OSError（!T）
+- **libc**：转换为 C 风格（返回 -1/null）
+- **std**：保持 !T 或转换为 Result
+
+### 4. 零重复实现
+
+不重复实现功能，上层调用下层：
+
+```uya
+// ❌ 错误：libc 直接实现字符串操作
+fn strlen(s: &const byte) usize {
+    var i: usize = 0;
+    while s[i] != 0 { i += 1; }
+    return i;
+}
+
+// ✅ 正确：libc 调用 mem
+fn strlen(s: &const byte) usize {
+    return mem.strlen(s);
+}
+```
+
+### 5. mem 层独立
+
+mem 层是独立的基础层，任何层都可以使用它：
+- libc 使用 mem 处理字符串/内存
+- std 可以直接使用 mem
+- osal 不使用 mem（因为需要系统调用）
+
+## 实现优先级
+
+### Phase 1: syscall 层
+1. 实现基本文件操作：read, write, open, close
+2. 实现内存管理：mmap, munmap, brk
+3. 实现进程管理：fork, exec, exit, wait
+
+### Phase 2: mem 层
+1. 实现 copy, set, compare 等内存操作
+2. 实现 strlen, strcmp, strcpy 等字符串操作
+3. 确保无任何外部依赖
+
+### Phase 3: osal 层
+1. 封装 syscall 为统一接口
+2. 实现错误转换
+3. 添加跨平台抽象（未来支持其他 OS）
+
+### Phase 4: libc 层
+1. 重构现有 libc 调用 mem（字符串/内存）和 osal（文件/进程）
+2. 添加 pthread 支持
+3. 添加 time/clock 支持
+
+### Phase 5: std 层
+1. 实现核心类型（Option, Result, Error）
+2. 实现 I/O 抽象（Writer, Reader）
+3. 实现 HeapAllocator 调用 osal.mmap
+4. 实现泛型容器（Vec, StringBuf）
 
 ## 验证标准
 
-每个 Sprint 完成后需验证：
+每个阶段完成后需验证：
 
 1. **编译通过**：`make check` 通过
 2. **测试覆盖**：新增测试用例全部通过
-3. **自举验证**：编译器能使用新 std 编译自身
-4. **libc 兼容**：`--outlibc` 生成的库能与 C 代码链接
+3. **自举验证**：编译器能使用新标准库编译自身
+4. **依赖检查**：无循环依赖，每层只依赖下一层
+5. **libc 兼容**：`--outlibc` 生成的库能与 C 代码链接
