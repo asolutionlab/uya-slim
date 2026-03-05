@@ -10,7 +10,7 @@
 
 | Phase | 阶段       | 状态     | 说明 |
 |-------|------------|----------|------|
-| 1     | syscall 层 | 未开始   | 系统调用层，无依赖 |
+| 1     | syscall 层 | 进行中   | 系统调用层，约 50% 完成，待补充测试 |
 | 2     | mem 层     | 未开始   | 纯内存操作层，独立基础层 |
 | 3     | osal 层    | 未开始   | 操作系统抽象层，依赖 syscall |
 | 4     | libc 层    | 未开始   | C 兼容层，依赖 osal + mem |
@@ -20,18 +20,138 @@
 
 ---
 
+## extern "libc" 与函数命名规则
+
+> **重要**：AI 必须准确理解裸名与非裸名的规则，避免生成错误的函数声明。
+
+### 规则速查表
+
+| 语法 | C 输出 | 用途 |
+|------|--------|------|
+| `fn foo(...)` | `static void uya_foo(...)` | 内部函数，带 `uya_` 前缀 |
+| `export fn foo(...)` | `void module_prefix_foo(...)` | 导出函数，**带模块前缀** |
+| `extern fn foo(...)` | `extern void foo(...)` | 声明外部 C 函数，**裸名** |
+| `extern "libc" fn foo(...)` | `extern void foo(...)` | 声明 C 标准库函数，**裸名**，`byte`→`char` |
+| `export extern fn foo(...)` | `void foo(...)` | 用 Uya 实现 C 兼容函数，**裸名** |
+| `export extern "libc" fn foo(...)` | `void foo(...)` | 用 Uya 实现 C 标准库函数，**裸名**，`byte`→`char` |
+
+### 关键区分
+
+**1. `export fn` vs `export extern fn`**
+
+```uya
+// ❌ 错误：libc 层使用 export fn 会导致 C 名带模块前缀
+// lib/libc/string.uya（模块 libc.string → 前缀 libc_string）
+export fn strlen(s: *const byte) usize { ... }
+// 生成：usize libc_string_strlen(*const byte s)  ← 不是标准 C 库的 strlen！
+
+// ✅ 正确：libc 层必须使用 export extern "libc" fn
+export extern "libc" fn strlen(s: *const byte) usize { ... }
+// 生成：size_t strlen(const char *s)  ← 标准 C 库签名！
+```
+
+**2. `lib/syscall/` 的特殊规则**
+
+```uya
+// lib/syscall/linux.uya（模块 syscall → 前缀 syscall_）
+// 注意：此层不需要 extern "libc"，因为不链接 C 标准库
+
+// ✅ 正确：syscall 层使用普通 export fn，会自动添加 syscall_ 前缀
+export fn sys_read(fd: i32, buf: &byte, count: usize) !isize { ... }
+// 生成：isize syscall_sys_read(i32 fd, byte* buf, usize count)
+
+// ✅ 正确：syscall 层也可以使用裸名（如果需要与其他代码链接）
+export extern fn sys_read(fd: i32, buf: &byte, count: usize) !isize { ... }
+// 生成：isize sys_read(i32 fd, byte* buf, usize count)  ← 裸名
+```
+
+**3. `byte` 类型映射**
+
+```uya
+// 在 extern "libc" 声明中，byte 自动映射为 char
+extern "libc" fn strlen(s: *const byte) usize;
+// C 声明：size_t strlen(const char *s);  ← byte 变成 char
+
+// 在普通函数中，byte 是 unsigned char
+export fn my_func(s: &byte) void;
+// C 声明：void module_prefix_my_func(unsigned char *s);
+```
+
+### 各层推荐用法
+
+| 层 | 推荐语法 | 原因 |
+|----|----------|------|
+| **syscall** | `export fn sys_xxx(...)` | 自动添加 `syscall_` 前缀，避免符号冲突 |
+| **mem** | `export fn xxx(...)` | 模块前缀隔离，如 `mem_copy` |
+| **osal** | `export fn os_xxx(...)` | 模块前缀隔离，如 `osal_os_open` |
+| **libc** | `export extern "libc" fn xxx(...)` | **必须裸名**，保持 C ABI 兼容 |
+| **std** | `export fn xxx(...)` | 模块前缀隔离，Uya 原生风格 |
+
+### 引用说明
+
+详见 [`docs/uya.md`](uya.md) 第 114-133 行、第 2160-2199 行。
+
+---
+
 ## Phase 1：syscall 层
 
-- [x] 建立 `lib/syscall/`，新增 `linux.uya`（与现有 `lib/libc/syscall.uya` 对齐，无 extern "libc"）。
+### 1.1 基础设施（已完成）
+
+- [x] 建立 `lib/syscall/`，新增 `linux.uya`（使用 `export fn`，不使用 `extern "libc"`，因为 syscall 层不链接 C 标准库）。
 - [x] 编译器支持 `use syscall` → 收集 `lib/syscall/*.uya`（main.uya）；codegen 为 `lib/syscall/` 增加 `syscall_` 前缀（function.uya、expr.uya 回退）。
 - [x] 为 lib/libc/ 和 lib/syscall/ 下的 export 变量添加模块前缀（排除 stderr/stdin/stdout 以保持与系统 libc 兼容）。
-- [ ] 实现基础文件操作：`sys_read`、`sys_write`、`sys_open`、`sys_close`；测试先行，`make check` 通过。
-- [ ] 实现内存管理：`sys_mmap`、`sys_munmap`、`sys_brk`；测试先行，`make check` 通过。
-- [ ] 实现进程/线程相关：`sys_clone`、`sys_execve`、`sys_exit`、`sys_gettid`、`sys_kill`、`sys_getpid`、`sys_getppid` 等；测试先行，`make check` 通过。
-- [ ] 实现时间：`sys_nanosleep`、`sys_gettimeofday`；测试先行，`make check` 通过。
-- [ ] 实现设备/控制：`sys_ioctl`、`sys_fcntl`；测试先行，`make check` 通过。
-- [ ] 实现文件/目录：`sys_stat`、`sys_lstat`、`sys_fstat`、`sys_access`、`sys_readlink`、`sys_unlink`、`sys_rename`、`sys_mkdir`、`sys_rmdir`、`sys_dup`、`sys_dup2`；测试先行，`make check` 通过。
-- [ ] 实现用户/组：`sys_getuid`、`sys_getgid`、`sys_setuid`、`sys_setgid`、`sys_geteuid`、`sys_getegid`（按需）；测试先行，`make check` 通过。
+
+### 1.2 基础文件操作
+
+- [x] `sys_read`、`sys_write`、`sys_open`、`sys_close`（已实现，需补充测试）。
+- [x] `sys_lseek`（已实现，需补充测试）。
+- [ ] 补充 `test "sys_read_write_file" {}` 等功能测试。
+
+### 1.3 内存管理
+
+- [x] `sys_mmap`、`sys_munmap`（已实现，需补充测试）。
+- [ ] `sys_brk`（仅常量定义，待实现函数体）。
+- [ ] 补充内存管理测试。
+
+### 1.4 进程/线程相关
+
+- [x] `sys_exit`、`sys_getpid`、`sys_kill`、`sys_waitpid`（已实现，需补充测试）。
+- [ ] `sys_clone`（仅常量定义，待实现函数体）。
+- [ ] `sys_execve`（仅常量定义，待实现函数体）。
+- [ ] `sys_gettid`（未定义，待实现）。
+- [ ] `sys_getppid`（仅常量定义，待实现函数体）。
+- [ ] 补充进程/线程测试。
+
+### 1.5 时间相关
+
+- [ ] `sys_nanosleep`（未定义，待实现）。
+- [ ] `sys_gettimeofday`（未定义，待实现）。
+- [ ] 补充时间测试。
+
+### 1.6 设备/控制
+
+- [ ] `sys_ioctl`（仅常量定义，待实现函数体）。
+- [ ] `sys_fcntl`（未定义，待实现）。
+- [ ] 补充设备/控制测试。
+
+### 1.7 文件/目录
+
+- [x] `sys_stat`、`sys_access`、`sys_readlink`、`sys_unlink`、`sys_mkdir`、`sys_rmdir`、`sys_chdir`、`sys_getcwd`（已实现，需补充测试）。
+- [ ] `sys_lstat`（未定义，待实现）。
+- [ ] `sys_fstat`（仅常量定义，待实现函数体）。
+- [ ] `sys_rename`（仅常量定义，待实现函数体）。
+- [ ] `sys_dup`（仅常量定义，待实现函数体）。
+- [ ] `sys_dup2`（仅常量定义，待实现函数体）。
+- [ ] 补充文件/目录测试。
+
+### 1.8 用户/组
+
+- [ ] `sys_getuid`、`sys_getgid`、`sys_setuid`、`sys_setgid`、`sys_geteuid`、`sys_getegid`（未定义，待实现）。
+- [ ] 补充用户/组测试。
+
+### 1.9 清理工作
+
+- [ ] 明确 `lib/libc/syscall.uya` 的迁移/废弃计划（与 `lib/syscall/linux.uya` 存在重复）。
 
 ---
 

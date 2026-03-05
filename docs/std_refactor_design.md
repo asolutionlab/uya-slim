@@ -52,39 +52,56 @@
 // lib/syscall/linux.uya
 
 // 纯系统调用，无依赖
-export fn sys_read(fd: i32, buf: &byte, count: usize) i32;
-export fn sys_write(fd: i32, buf: &const byte, count: usize) i32;
-export fn sys_open(path: &const byte, flags: i32, mode: u32) i32;
-export fn sys_close(fd: i32) i32;
-export fn sys_mmap(addr: &void, len: usize, prot: i32, flags: i32, fd: i32, offset: i64) &void;
-export fn sys_munmap(addr: &void, len: usize) i32;
+// 文件操作 - 返回 !isize/!i32，使用 @syscall 内置转换
+export fn sys_read(fd: i32, buf: &byte, count: usize) !isize;
+export fn sys_write(fd: i32, buf: &const byte, count: usize) !isize;
+export fn sys_open(path: &const byte, flags: i32, mode: i32) !i32;
+export fn sys_close(fd: i32) !i32;
+export fn sys_lseek(fd: i32, offset: i64, whence: i32) !i64;
+
+// 内存管理
+export fn sys_mmap(addr: &void, length: usize, prot: i32, flags: i32, fd: i32, offset: i64) !&void;
+export fn sys_munmap(addr: &void, length: usize) !i32;
 export fn sys_brk(addr: i32) i32;
-export fn sys_clone(flags: usize, stack: &void) i32;
-export fn sys_execve(path: &const byte, argv: &(&const byte), envp: &(&const byte)) i32;
+
+// 进程/线程
+export fn sys_clone(flags: usize, stack: &void) !i32;
+export fn sys_execve(path: &const byte, argv: &(&const byte), envp: &(&const byte)) !i32;
 export fn sys_exit(code: i32) void;
-export fn sys_gettid() i32;
-export fn sys_kill(pid: i32, sig: i32) i32;
-export fn sys_nanosleep(req: &TimeSpec, rem: &TimeSpec) i32;
-export fn sys_gettimeofday(tv: &TimeVal, tz: &void) i32;
-export fn sys_ioctl(fd: i32, request: usize, arg: usize) i32;
-export fn sys_fcntl(fd: i32, cmd: i32, arg: usize) i32;
-export fn sys_stat(path: &const byte, statbuf: &Stat) i32;
-export fn sys_lstat(path: &const byte, statbuf: &Stat) i32;
-export fn sys_fstat(fd: i32, statbuf: &Stat) i32;
-export fn sys_access(path: &const byte, mode: i32) i32;
-export fn sys_readlink(path: &const byte, buf: &byte, bufsiz: usize) i32;
-export fn sys_unlink(path: &const byte) i32;
-export fn sys_rename(oldpath: &const byte, newpath: &const byte) i32;
-export fn sys_mkdir(path: &const byte, mode: u32) i32;
-export fn sys_rmdir(path: &const byte) i32;
-export fn sys_dup(fd: i32) i32;
-export fn sys_dup2(oldfd: i32, newfd: i32) i32;
-export fn sys_getpid() i32;
-export fn sys_getppid() i32;
+export fn sys_gettid() !i32;
+export fn sys_kill(pid: i64, sig: i32) !i32;
+export fn sys_getpid() !i64;
+export fn sys_getppid() !i64;
+export fn sys_waitpid(pid: i32, status: &i32, options: i32) !i32;
+
+// 时间
+export fn sys_nanosleep(req: &TimeSpec, rem: &TimeSpec) !i32;
+export fn sys_gettimeofday(tv: &TimeVal, tz: &void) !i32;
+
+// 设备/控制
+export fn sys_ioctl(fd: i32, request: usize, arg: usize) !i32;
+export fn sys_fcntl(fd: i32, cmd: i32, arg: usize) !i32;
+
+// 文件/目录
+export fn sys_stat(path: &const byte, statbuf: &Stat) !i32;
+export fn sys_lstat(path: &const byte, statbuf: &Stat) !i32;
+export fn sys_fstat(fd: i32, statbuf: &Stat) !i32;
+export fn sys_access(path: &const byte, mode: i32) !i32;
+export fn sys_readlink(path: &const byte, buf: &byte, bufsiz: usize) !isize;
+export fn sys_unlink(path: &const byte) !i32;
+export fn sys_rename(oldpath: &const byte, newpath: &const byte) !i32;
+export fn sys_mkdir(path: &const byte, mode: i32) !i32;
+export fn sys_rmdir(path: &const byte) !i32;
+export fn sys_dup(fd: i32) !i32;
+export fn sys_dup2(oldfd: i32, newfd: i32) !i32;
+export fn sys_chdir(path: &const byte) !i32;
+export fn sys_getcwd(buf: &byte, size: usize) !isize;
+
+// 用户/组
 export fn sys_getuid() u32;
 export fn sys_getgid() u32;
-export fn sys_setuid(uid: u32) i32;
-export fn sys_setgid(gid: u32) i32;
+export fn sys_setuid(uid: u32) !i32;
+export fn sys_setgid(gid: u32) !i32;
 export fn sys_geteuid() u32;
 export fn sys_getegid() u32;
 ```
