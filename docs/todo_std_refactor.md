@@ -11,7 +11,7 @@
 | Phase | 阶段       | 状态     | 说明 |
 |-------|------------|----------|------|
 | 1     | syscall 层 | 已完成   | 系统调用层，包含测试和迁移计划 |
-| 2     | mem 层     | 未开始   | 纯内存操作层，独立基础层 |
+| 2     | mem 层     | 已完成   | 纯内存操作层，独立基础层 |
 | 3     | osal 层    | 未开始   | 操作系统抽象层，依赖 syscall |
 | 4     | libc 层    | 未开始   | C 兼容层，依赖 osal + mem |
 | 5     | std 层     | 未开始   | Uya 原生风格层，依赖 libc（及可选 osal） |
@@ -195,10 +195,10 @@ export fn my_func(s: &byte) void;
 
 ## Phase 2：mem 层
 
-- [ ] 建立 `lib/mem/`，新增 `mem.uya`（及可选 `string.uya`）。
-- [ ] 实现内存操作：`copy`、`copy_backward`、`set`、`zero`、`compare`、`memcmp`、`memset`、`memchr`；保证无系统调用依赖；测试先行，`make check` 通过。
-- [ ] 实现字符串操作（纯内存）：`strlen`、`strnlen`、`strcmp`、`strncmp`、`strcpy`、`strncpy`、`strcat`、`strncat`、`strchr`、`strrchr`；无外部依赖；测试先行，`make check` 通过。
-- [ ] 验证：编译通过、无循环依赖、被依赖方（如后续 libc）可引用。
+- [x] 建立 `lib/mem/`，新增 `mem.uya`（包含内存和字符串操作）。
+- [x] 实现内存操作：`copy`、`copy_backward`、`set`、`zero`、`compare`、`memcmp`、`memset`、`memchr`；保证无系统调用依赖；测试先行，`make check` 通过。
+- [x] 实现字符串操作（纯内存）：`strlen`、`strnlen`、`strcmp`、`strncmp`、`strcpy`、`strncpy`、`strcat`、`strncat`、`strchr`、`strrchr`；无外部依赖；测试先行，`make check` 通过。
+- [x] 验证：编译通过、无循环依赖、被依赖方（如后续 libc）可引用。
 
 ---
 
