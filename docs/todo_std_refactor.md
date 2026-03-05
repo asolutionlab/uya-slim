@@ -103,9 +103,9 @@ export fn my_func(s: &byte) void;
 
 ### 1.2 基础文件操作
 
-- [x] `sys_read`、`sys_write`、`sys_open`、`sys_close`（已实现，需补充测试）。
-- [x] `sys_lseek`（已实现，需补充测试）。
-- [ ] 补充 `test "sys_read_write_file" {}` 等功能测试。
+- [x] `sys_read`、`sys_write`、`sys_open`、`sys_close`（已实现，已测试）。
+- [x] `sys_lseek`（已实现，已测试）。
+- [x] 补充 `test "sys_read_write_file" {}` 等功能测试（`tests/test_syscall_file.uya`）。
 
 ### 1.3 内存管理
 
@@ -136,7 +136,7 @@ export fn my_func(s: &byte) void;
 
 ### 1.7 文件/目录
 
-- [x] `sys_stat`、`sys_access`、`sys_readlink`、`sys_unlink`、`sys_mkdir`、`sys_rmdir`、`sys_chdir`、`sys_getcwd`（已实现，需补充测试）。
+- [x] `sys_stat`、`sys_access`、`sys_readlink`、`sys_unlink`、`sys_mkdir`、`sys_rmdir`、`sys_chdir`、`sys_getcwd`（已实现，已测试）。
 - [ ] `sys_lstat`（未定义，待实现）。
 - [ ] `sys_fstat`（仅常量定义，待实现函数体）。
 - [ ] `sys_rename`（仅常量定义，待实现函数体）。
