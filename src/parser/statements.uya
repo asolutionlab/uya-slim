@@ -550,10 +550,9 @@ fn parser_parse_statement(parser: &Parser) &ASTNode {
             return null;
         }
         stmt.var_decl_type = type;
-        
+
         // 期望 '='
-        if parser_expect(parser, TokenType.TOKEN_ASSIGN) == null {
-            // 变量未初始化：注意：Uya 版本简化错误报告
+        if parser_expect_var_init(parser, type) == null {
             return null;
         }
         

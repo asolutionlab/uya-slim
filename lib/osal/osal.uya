@@ -6,13 +6,22 @@ use syscall.sys_close;
 use syscall.sys_read;
 use syscall.sys_write;
 use syscall.sys_lseek;
+use syscall.sys_dup;
+use syscall.sys_dup2;
+use syscall.sys_fcntl;
+use syscall.sys_ioctl;
 use syscall.sys_mmap;
 use syscall.sys_munmap;
 use syscall.sys_exit;
 use syscall.sys_getpid;
+use syscall.sys_getppid;
 use syscall.sys_gettid;
+use syscall.sys_fork;
+use syscall.sys_execve;
+use syscall.sys_waitpid;
 use syscall.sys_kill;
 use syscall.sys_nanosleep;
+use syscall.sys_gettimeofday;
 use syscall.sys_mkdir;
 use syscall.sys_rmdir;
 use syscall.sys_chdir;
@@ -23,8 +32,35 @@ use syscall.sys_lstat;
 use syscall.sys_access;
 use syscall.sys_unlink;
 use syscall.sys_rename;
-use syscall.TimeSpec;
+use syscall.sys_readlink;
+use syscall.sys_getdents64;
+use syscall.sys_getrlimit;
+use syscall.sys_setrlimit;
+use syscall.sys_getuid;
+use syscall.sys_getgid;
+use syscall.sys_geteuid;
+use syscall.sys_getegid;
+use syscall.sys_setuid;
+use syscall.sys_setgid;
 use syscall.Stat;
+use syscall.RLimit;
+
+export struct TimeSpec {
+    tv_sec: i64,
+    tv_nsec: i64
+}
+
+export struct TimeVal {
+    tv_sec: i64,
+    tv_usec: i64
+}
+
+export struct RLimit {
+    rlim_cur: u64,
+    rlim_max: u64
+}
+
+export const RLIMIT_STACK: i32 = 3;
 
 // ============================================================
 // 文件相关
@@ -78,7 +114,7 @@ struct ClockId {
 // 文件相关
 // ============================================================
 
-struct File {
+export struct File {
     fd: i32,
     owns_fd: bool
 }
@@ -266,4 +302,117 @@ export fn os_unlink(path: &const byte) !void {
 
 export fn os_rename(oldpath: &const byte, newpath: &const byte) !void {
     try sys_rename(oldpath, newpath);
+}
+
+// ============================================================
+// 文件描述符操作
+// ============================================================
+
+export fn os_dup(fd: i32) !i32 {
+    return try sys_dup(fd);
+}
+
+export fn os_dup2(oldfd: i32, newfd: i32) !i32 {
+    return try sys_dup2(oldfd, newfd);
+}
+
+export fn os_fcntl(fd: i32, cmd: i32, arg: i32) !i32 {
+    return try sys_fcntl(fd, cmd, arg);
+}
+
+// ============================================================
+// 用户/组操作
+// ============================================================
+
+export fn os_getuid() !u32 {
+    const val: i32 = try sys_getuid();
+    return val as u32;
+}
+
+export fn os_getgid() !u32 {
+    const val: i32 = try sys_getgid();
+    return val as u32;
+}
+
+export fn os_geteuid() !u32 {
+    const val: i32 = try sys_geteuid();
+    return val as u32;
+}
+
+export fn os_getegid() !u32 {
+    const val: i32 = try sys_getegid();
+    return val as u32;
+}
+
+export fn os_setuid(uid: u32) !void {
+    try sys_setuid(uid as i32);
+}
+
+export fn os_setgid(gid: u32) !void {
+    try sys_setgid(gid as i32);
+}
+
+// ============================================================
+// 时间操作
+// ============================================================
+
+export fn os_gettimeofday(tv: &TimeVal, tz: &void) !void {
+    try sys_gettimeofday(tv, tz);
+}
+
+// ============================================================
+// 进程操作
+// ============================================================
+
+export fn os_getppid() !i32 {
+    const val: i64 = try sys_getppid();
+    return val as i32;
+}
+
+export fn os_fork() !i64 {
+    return try sys_fork();
+}
+
+export fn os_waitpid(pid: i32, status: &i32, options: i32) !i32 {
+    return try sys_waitpid(pid, status, options);
+}
+
+export fn os_execve(path: &const byte, argv: &(&const byte), envp: &(&const byte)) !void {
+    try sys_execve(path, argv, envp);
+}
+
+// ============================================================
+// 符号链接操作
+// ============================================================
+
+export fn os_readlink(path: &const byte, buf: &byte, bufsiz: usize) !isize {
+    return try sys_readlink(path, buf, bufsiz);
+}
+
+// ============================================================
+// 目录遍历
+// ============================================================
+
+export fn os_getdents64(fd: i32, dirp: &void, count: usize) !isize {
+    return try sys_getdents64(fd, dirp, count);
+}
+
+// ============================================================
+// 资源限制
+// ============================================================
+
+export fn os_getrlimit(resource: i32, rlim: &RLimit) !void {
+    try sys_getrlimit(resource, rlim);
+}
+
+export fn os_setrlimit(resource: i32, rlim: &const RLimit) !void {
+    try sys_setrlimit(resource, rlim);
+}
+
+// ============================================================
+// 设备控制
+// ============================================================
+
+export fn os_ioctl(fd: i32, request: i64, arg: i64) !i32 {
+    return try sys_ioctl(fd, request, arg);
 }
