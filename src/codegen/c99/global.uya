@@ -71,7 +71,9 @@ fn gen_global_var(codegen: &C99CodeGenerator, var_decl: &ASTNode) void {
     }
     
     const orig_name: &byte = var_decl.var_decl_name;
-    const var_name: &byte = get_c_name_for_global_constant(codegen, orig_name);
+    const filename: &byte = var_decl.filename;
+    const is_export: i32 = var_decl.var_decl_is_export;
+    const var_name: &byte = get_c_name_for_global_constant(codegen, orig_name, filename, is_export);
     const var_type: &ASTNode = var_decl.var_decl_type;
     const init_expr: &ASTNode = var_decl.var_decl_init;
     const is_const: i32 = var_decl.var_decl_is_const;

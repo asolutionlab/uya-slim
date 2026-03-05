@@ -22,7 +22,9 @@
 
 ## Phase 1：syscall 层
 
-- [ ] 建立 `lib/syscall/`，新增 `linux.uya`（或与现有 `lib/libc/syscall.uya` 迁移对齐）。
+- [x] 建立 `lib/syscall/`，新增 `linux.uya`（与现有 `lib/libc/syscall.uya` 对齐，无 extern "libc"）。
+- [x] 编译器支持 `use syscall` → 收集 `lib/syscall/*.uya`（main.uya）；codegen 为 `lib/syscall/` 增加 `syscall_` 前缀（function.uya、expr.uya 回退）。
+- [x] 为 lib/libc/ 和 lib/syscall/ 下的 export 变量添加模块前缀（排除 stderr/stdin/stdout 以保持与系统 libc 兼容）。
 - [ ] 实现基础文件操作：`sys_read`、`sys_write`、`sys_open`、`sys_close`；测试先行，`make check` 通过。
 - [ ] 实现内存管理：`sys_mmap`、`sys_munmap`、`sys_brk`；测试先行，`make check` 通过。
 - [ ] 实现进程/线程相关：`sys_clone`、`sys_execve`、`sys_exit`、`sys_gettid`、`sys_kill`、`sys_getpid`、`sys_getppid` 等；测试先行，`make check` 通过。

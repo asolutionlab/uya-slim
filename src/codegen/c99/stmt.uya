@@ -936,7 +936,7 @@ fn gen_assign_non_array(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNod
 fn gen_assign_atomic(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode) void {
     var safe_name: &byte = null;
     if dest.type == ASTNodeType.AST_IDENTIFIER {
-        safe_name = get_safe_c_identifier(codegen, dest.identifier_name);
+        safe_name = get_c_name_for_identifier_ref(codegen, dest.identifier_name);
     }
     
     var is_compound: i32 = 0;

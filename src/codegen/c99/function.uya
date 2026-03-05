@@ -181,10 +181,31 @@ fn get_c_name_for_global_function(codegen: &C99CodeGenerator, name: &byte, for_d
     return get_safe_c_identifier(codegen, name);
 }
 
-// 全局常量在 C 中的名称
-fn get_c_name_for_global_constant(codegen: &C99CodeGenerator, name: &byte) &byte {
+// 全局常量在 C 中的名称（lib/libc/ 和 lib/syscall/ 下的 export 变量加模块前缀）
+fn get_c_name_for_global_constant(codegen: &C99CodeGenerator, name: &byte, filename: &byte, is_export: i32) &byte {
     if name == null {
         return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
+    }
+    // 仅对 lib/libc/ 和 lib/syscall/ 下的 export 变量添加模块前缀
+    // 但排除 stderr/stdin/stdout，因为它们需要链接到系统 libc
+    if filename != null && is_export != 0 {
+        const is_std_stream: i32 = (strcmp(name as *byte, "stderr" as *byte) == 0) ||
+                                   (strcmp(name as *byte, "stdin" as *byte) == 0) ||
+                                   (strcmp(name as *byte, "stdout" as *byte) == 0);
+        if is_std_stream == 0 {
+            const prefix: &byte = get_module_prefix_from_filename(codegen, filename);
+            if prefix != null && prefix[0] != 0 {
+                const safe_name: &byte = get_safe_c_identifier(codegen, name);
+                const prefix_len: usize = strlen(prefix as *byte);
+                const name_len: usize = strlen(safe_name as *byte);
+                const result: &byte = arena_alloc(codegen.arena, prefix_len + name_len + 1) as &byte;
+                if result != null {
+                    strcpy(result as *byte, prefix as *byte);
+                    strcpy((result as *byte + prefix_len) as *byte, safe_name as *byte);
+                    return result;
+                }
+            }
+        }
     }
     return get_safe_c_identifier(codegen, name);
 }

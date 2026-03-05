@@ -1734,6 +1734,27 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     return;
                 }
             }
+            // syscall.xxx：无 member_access_module_name 时回退为 syscall_xxx（标准库 syscall 层）
+            if strcmp(object.identifier_name as *byte, "syscall" as *byte) == 0 && field_name != null {
+                var fallback_name: [i8: NAME_BUF_SIZE] = [];
+                var fi: i32 = 0;
+                var fp: &i8 = ("syscall_" as *byte) as &i8;
+                while fp[0] != 0 && fi < NAME_BUF_SIZE - 1 {
+                    fallback_name[fi] = fp[0];
+                    fi = fi + 1;
+                    fp = fp + 1;
+                }
+                fp = field_name as &i8;
+                while fp[0] != 0 && fi < NAME_BUF_SIZE - 1 {
+                    fallback_name[fi] = fp[0];
+                    fi = fi + 1;
+                    fp = fp + 1;
+                }
+                if fi < NAME_BUF_SIZE { fallback_name[fi] = 0; }
+                const safe_fb: &byte = get_safe_c_identifier(codegen, &fallback_name[0]);
+                fprintf(codegen.output as *void, "%s" as *byte, safe_fb as *byte);
+                return;
+            }
         }
         
         // 检查是否是枚举值访问（EnumName.Variant）
