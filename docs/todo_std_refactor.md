@@ -10,7 +10,7 @@
 
 | Phase | 阶段       | 状态     | 说明 |
 |-------|------------|----------|------|
-| 1     | syscall 层 | 进行中   | 系统调用层，约 50% 完成，待补充测试 |
+| 1     | syscall 层 | 即将完成 | 系统调用层，待清理工作 |
 | 2     | mem 层     | 未开始   | 纯内存操作层，独立基础层 |
 | 3     | osal 层    | 未开始   | 操作系统抽象层，依赖 syscall |
 | 4     | libc 层    | 未开始   | C 兼容层，依赖 osal + mem |
@@ -109,9 +109,9 @@ export fn my_func(s: &byte) void;
 
 ### 1.3 内存管理
 
-- [x] `sys_mmap`、`sys_munmap`（已实现，需补充测试）。
-- [ ] `sys_brk`（仅常量定义，待实现函数体）。
-- [ ] 补充内存管理测试（暂缓，因为 `lib/libc/wchar.uya` 有编译错误）。
+- [x] `sys_mmap`、`sys_munmap`（已实现，已测试）。
+- [x] `sys_brk`（已实现，已测试）。
+- [x] 补充内存管理测试（已实现 test_syscall_mem.uya）。
 
 ### 1.4 进程/线程相关
 
@@ -136,8 +136,8 @@ export fn my_func(s: &byte) void;
 ### 1.7 文件/目录
 
 - [x] `sys_stat`、`sys_access`、`sys_readlink`、`sys_unlink`、`sys_mkdir`、`sys_rmdir`、`sys_chdir`、`sys_getcwd`（已实现，已测试）。
-- [x] `sys_lstat`、`sys_fstat`、`sys_rename`、`sys_dup`、`sys_dup2`（已实现函数体）。
-- [ ] 补充文件/目录测试。
+- [x] `sys_lstat`、`sys_fstat`、`sys_rename`、`sys_dup`、`sys_dup2`（已实现，已测试）。
+- [x] 补充文件/目录测试（已实现 test_syscall_dir.uya）。
 
 ### 1.8 用户/组
 
