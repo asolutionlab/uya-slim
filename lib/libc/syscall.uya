@@ -184,6 +184,11 @@ export extern "libc" fn sys_getpid() !i64 {
     return @syscall(SYS_getpid);
 }
 
+// sys_getppid - 获取父进程 ID
+export extern "libc" fn sys_getppid() !i64 {
+    return @syscall(SYS_getppid);
+}
+
 // sys_lseek - 移动文件读写位置
 export extern "libc" fn sys_lseek(fd: i32, offset: i64, whence: i32) !i64 {
     return @syscall(SYS_lseek, fd as i64, offset, whence as i64);

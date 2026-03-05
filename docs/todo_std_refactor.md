@@ -111,16 +111,15 @@ export fn my_func(s: &byte) void;
 
 - [x] `sys_mmap`、`sys_munmap`（已实现，需补充测试）。
 - [ ] `sys_brk`（仅常量定义，待实现函数体）。
-- [ ] 补充内存管理测试。
+- [ ] 补充内存管理测试（暂缓，因为 `lib/libc/wchar.uya` 有编译错误）。
 
 ### 1.4 进程/线程相关
 
-- [x] `sys_exit`、`sys_getpid`、`sys_kill`、`sys_waitpid`（已实现，需补充测试）。
+- [x] `sys_exit`、`sys_getpid`、`sys_kill`、`sys_waitpid`（已实现，已测试）。
+- [x] `sys_getppid`（已实现函数体，已测试）。
 - [ ] `sys_clone`（仅常量定义，待实现函数体）。
 - [ ] `sys_execve`（仅常量定义，待实现函数体）。
 - [ ] `sys_gettid`（未定义，待实现）。
-- [ ] `sys_getppid`（仅常量定义，待实现函数体）。
-- [ ] 补充进程/线程测试。
 
 ### 1.5 时间相关
 
