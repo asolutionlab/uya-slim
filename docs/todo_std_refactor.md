@@ -12,7 +12,7 @@
 |-------|------------|----------|------|
 | 1     | syscall 层 | 已完成   | 系统调用层，包含测试和迁移计划 |
 | 2     | mem 层     | 已完成   | 纯内存操作层，独立基础层 |
-| 3     | osal 层    | 未开始   | 操作系统抽象层，依赖 syscall |
+| 3     | osal 层    | 已完成   | 操作系统抽象层，依赖 syscall（2026-03-05 完成） |
 | 4     | libc 层    | 未开始   | C 兼容层，依赖 osal + mem |
 | 5     | std 层     | 未开始   | Uya 原生风格层，依赖 libc（及可选 osal） |
 
@@ -202,16 +202,17 @@ export fn my_func(s: &byte) void;
 
 ---
 
-## Phase 3：osal 层
+## Phase 3：osal 层（已完成：2026-03-05）
 
-- [ ] 建立 `lib/osal/`，新增 `osal.uya`（及按设计拆分的 `file.uya`、`process.uya`、`time.uya`、`dir.uya`、`error.uya` 等）。
-- [ ] `use syscall`；定义统一错误类型（使用 `error` 定义）；对外 API 使用 `!T` 风格。
-- [ ] 实现文件抽象：`os_open`、`os_close`、`os_read`、`os_write`、`os_seek`、`os_stat`、`os_fstat`；测试先行，`make check` 通过。
-- [ ] 实现内存管理抽象：`os_mmap`、`os_munmap`（底层调用 syscall）；测试先行，`make check` 通过。
-- [ ] 实现进程/线程抽象：`os_spawn`、`os_exec`、`os_exit`、`os_getpid`、`os_gettid`、`os_kill`、`os_waitpid`；测试先行，`make check` 通过。
-- [ ] 实现时间抽象：`os_sleep`、`os_gettimeofday`、`os_clock_gettime`；测试先行，`make check` 通过。
-- [ ] 实现目录操作：`os_mkdir`、`os_rmdir`、`os_readdir`；测试先行，`make check` 通过。
-- [ ] 验证：仅依赖 syscall，不依赖 libc/std；`make check` 通过。
+- [x] 建立 `lib/osal/`，新增 `osal.uya`（统一实现，未拆分文件）。
+- [x] `use syscall`；定义统一错误类型（使用 `error` 定义）；对外 API 使用 `!T` 风格。
+- [x] 实现文件抽象：`os_open`、`os_close`、`os_read`、`os_write`、`os_seek`、`os_stat`、`os_fstat`、`os_lstat`；测试先行，`make check` 通过。
+- [x] 实现内存管理抽象：`os_mmap`、`os_munmap`（底层调用 syscall）；测试先行，`make check` 通过。
+- [x] 实现进程/线程抽象：`os_spawn`、`os_exec`、`os_exit`、`os_getpid`、`os_gettid`、`os_kill`、`os_waitpid`、`os_fork`、`os_getppid`；测试先行，`make check` 通过。
+- [x] 实现时间抽象：`os_sleep`、`os_gettimeofday`、`os_clock_gettime`；测试先行，`make check` 通过。
+- [x] 实现目录操作：`os_mkdir`、`os_rmdir`、`os_chdir`、`os_getcwd`、`os_access`、`os_unlink`、`os_rename`、`os_readlink`、`os_getdents64`；测试先行，`make check` 通过。
+- [x] 实现其他功能：`os_dup`、`os_dup2`、`os_fcntl`、`os_ioctl`、`os_getuid`、`os_getgid`、`os_geteuid`、`os_getegid`、`os_setuid`、`os_setgid`、`os_getrlimit`、`os_setrlimit`；测试先行，`make check` 通过。
+- [x] 验证：仅依赖 syscall，不依赖 libc/std；`make check` 通过（所有 496 个测试通过）。
 
 ### osal 跨平台实现策略
 

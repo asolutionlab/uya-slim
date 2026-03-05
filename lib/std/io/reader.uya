@@ -1,0 +1,7 @@
+// lib/std/io/reader.uya - I/O 阅读器接口
+
+// Reader 接口定义（使用 Uya 接口语法）
+interface Reader {
+    // 从读取器读取数据到缓冲区
+    fn read(self: &Self, buf: &byte, count: usize) isize;
+}

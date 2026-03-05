@@ -287,6 +287,7 @@ fn main() i32 {
 14. **整数溢出检测** → 在 C 语言中，有符号整数溢出是未定义行为，不能依赖溢出后的结果判断；必须使用安全方法（如 `left > I32_MAX - right`）
 15. **I32_MIN 定义** → 使用 `-2147483647 - 1` 而非 `-2147483648`，后者会被解析为一元负运算导致溢出
 16. **枚举值引用问题** → 某些情况下 Uya 编译器会错误地生成 `TokenType.TOKEN_XXX` 而不是 `TOKEN_XXX`，导致 C 编译错误。临时解决方案：使用数字常量代替枚举值
+17. **只显示失败的测试** → 使用 `make tests e` 或 `./tests/run_programs_parallel.sh -e` 只显示失败的测试项，避免大量通过测试的输出干扰调试
 
 ---
 
@@ -747,3 +748,114 @@ make check  # 完整验证（自举 + 测试）
 5. **编译缓存问题** - 修改常量后可能需要删除 `src/build/uya.c`
 6. **系统调用号必须完整** - 缺少常量会导致链接错误
 7. **测试先行原则** - 实现 syscall 前先写测试
+
+---
+
+## 10. osal 层开发经验（2026-03-05）
+
+### 10.1 osal 层已完成
+
+**完成日期**：2026-03-05  
+**测试覆盖**：所有功能均有对应测试，496 个测试全部通过
+
+### 10.2 已实现的功能
+
+#### 10.2.1 文件操作
+- `os_open(path, flags, mode)` - 打开文件
+- `os_close(f)` - 关闭文件
+- `os_read(f, buf, count)` - 读取文件
+- `os_write(f, buf, count)` - 写入文件
+- `os_seek(f, offset, whence)` - 文件定位
+- `os_stat(path, statbuf)` - 获取文件状态
+- `os_fstat(fd, statbuf)` - 通过描述符获取文件状态
+- `os_lstat(path, statbuf)` - 获取符号链接状态
+
+#### 10.2.2 内存管理
+- `os_mmap(addr, size, prot, flags, fd, offset)` - 内存映射
+- `os_munmap(addr, size)` - 解除映射
+
+#### 10.2.3 进程/线程
+- `os_spawn(path, args, env)` - 创建进程
+- `os_exec(path, args, env)` - 执行程序
+- `os_execve(path, argv, envp)` - 执行程序（完整版）
+- `os_exit(code)` - 退出进程
+- `os_getpid()` - 获取进程 ID
+- `os_getppid()` - 获取父进程 ID
+- `os_gettid()` - 获取线程 ID
+- `os_kill(pid, sig)` - 发送信号
+- `os_waitpid(pid, status, options)` - 等待子进程
+- `os_fork()` - 创建进程
+
+#### 10.2.4 时间操作
+- `os_sleep(seconds, nanoseconds)` - 纳秒级睡眠
+- `os_gettimeofday(tv, tz)` - 获取当前时间
+- `os_clock_gettime(clock_id)` - 获取时钟时间
+
+#### 10.2.5 目录操作
+- `os_mkdir(path, mode)` - 创建目录
+- `os_rmdir(path)` - 删除目录
+- `os_chdir(path)` - 切换目录
+- `os_getcwd(buf, size)` - 获取当前目录
+- `os_access(path, mode)` - 检查文件权限
+- `os_unlink(path)` - 删除文件
+- `os_rename(oldpath, newpath)` - 重命名文件
+- `os_readlink(path, buf, bufsiz)` - 读取符号链接
+- `os_getdents64(fd, dirp, count)` - 读取目录项
+
+#### 10.2.6 其他功能
+- `os_dup(fd)` - 复制文件描述符
+- `os_dup2(oldfd, newfd)` - 复制文件描述符到指定值
+- `os_fcntl(fd, cmd, arg)` - 文件控制
+- `os_ioctl(fd, request, arg)` - 设备控制
+- `os_getuid()` - 获取真实用户 ID
+- `os_getgid()` - 获取真实组 ID
+- `os_geteuid()` - 获取有效用户 ID
+- `os_getegid()` - 获取有效组 ID
+- `os_setuid(uid)` - 设置真实用户 ID
+- `os_setgid(gid)` - 设置真实组 ID
+- `os_getrlimit(resource, rlim)` - 获取资源限制
+- `os_setrlimit(resource, rlim)` - 设置资源限制
+
+### 10.3 错误处理
+
+osal 层定义了统一的错误类型，使用 `!T` 风格：
+
+```uya
+error NotFound;
+error PermissionDenied;
+error AlreadyExists;
+error InvalidInput;
+error IoError;
+error OutOfMemory;
+error NotSupported;
+error TimedOut;
+error Interrupted;
+```
+
+### 10.4 测试覆盖
+
+测试文件：`tests/test_osal.uya`
+
+覆盖的测试用例：
+- 进程 ID 获取：`os_getpid`、`os_getppid`、`os_gettid`
+- 用户/组信息：`os_getuid`、`os_getgid`、`os_geteuid`、`os_getegid`
+- 目录操作：`os_mkdir_rmdir`、`os_mkdir_rmdir2`、`os_access`
+- 文件描述符：`os_dup`、`os_dup2`
+- 时间：`os_gettimeofday`、`os_getrlimit`
+- 文件 I/O：`os_open_write_read_close`、`os_seek`
+- 睡眠：`os_sleep`
+
+### 10.5 关键要点
+
+1. **统一错误类型** - osal 层定义了一组统一的错误类型，所有函数使用 `!T` 风格返回
+2. **完全依赖 syscall** - osal 层只依赖 syscall 层，不依赖 libc 或 std
+3. **测试先行** - 所有功能都有对应的测试用例
+4. **API 设计一致** - 所有函数遵循统一的命名约定和错误处理方式
+5. **跨平台预留** - osal 层为跨平台扩展预留了接口，当前仅支持 Linux
+
+### 10.6 相关文件
+
+- `lib/osal/osal.uya` - osal 层实现
+- `tests/test_osal.uya` - osal 层测试
+- `docs/todo_std_refactor.md` - 标准库重构计划（Phase 3）
+- `docs/libc_progress.md` - libc 开发进度

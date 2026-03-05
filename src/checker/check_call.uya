@@ -94,11 +94,9 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                 }
                 i2 = i2 + 1;
             }
-            // 使用了模块限定语法但没有找到对应的模块导入
-            if found_import == 0 && i2 == IMPORT_TABLE_SIZE {
-                checker_report_error(checker, node, "未导入的模块" as *byte);
-                return result;
-            }
+            // 注意：这里不再报告"未导入的模块"错误
+            // 因为可能是结构体方法调用（如 p.distance()）
+            // 结构体方法调用会在后面的代码中处理
         }
     }
     

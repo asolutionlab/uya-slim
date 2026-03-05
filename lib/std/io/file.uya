@@ -1,164 +1,44 @@
-// std.io.file - 文件 I/O 操作
-// 版本：v0.2.0
-// 说明：基于 libc.syscall 实现文件操作（纯 Uya 实现，零外部依赖）
-// 模块路径：lib/std/io/file.uya → use std.io.file;
+// lib/std/io/file.uya - 文件 I/O 抽象层
+// 基于 uya-dev-flow 规则设计
 
-use libc.sys_open;
-use libc.sys_close;
-use libc.sys_read;
-use libc.sys_write;
-use libc.sys_lseek;
-use libc.O_RDONLY;
-use libc.O_WRONLY;
-use libc.O_RDWR;
-use libc.O_CREAT;
-use libc.O_TRUNC;
-use libc.O_APPEND;
-use libc.SEEK_SET;
-use libc.SEEK_CUR;
-use libc.SEEK_END;
-use libc.S_IRWXU;
-use libc.S_IRUSR;
-use libc.S_IWUSR;
-use libc.S_IRGRP;
-use libc.S_IWGRP;
-use libc.S_IROTH;
-use libc.S_IWOTH;
-
-// 重新导出文件操作标志和权限模式（从系统调用层）
-// 注意：这些常量已经在 std.syscall.linux 中定义，这里只是重新导出以便使用
-// 由于 Uya 不支持重新导出，我们直接使用 use 语句导入
-
-// 文件句柄类型（实际上是指向文件描述符的指针）
-// 在 Uya 中，我们使用 &void 来表示文件句柄
-// 文件描述符存储在全局数组中，句柄是指向该数组元素的指针
-
-// 文件句柄存储（最多支持 1024 个打开的文件）
-var file_handles: [i64: 1024] = [];
-var file_handle_count: usize = 0;
-
-// 分配文件句柄
-fn alloc_file_handle(fd: i64) &void {
-    // 转换为 i32 以支持约束系统
-    const count: i32 = file_handle_count as i32;
-    if count >= 0 && count < 1024 {
-        file_handles[count] = fd;
-        const handle: &void = &file_handles[count] as &void;
-        file_handle_count = file_handle_count + 1;
-        return handle;
-    }
-    return null;
+// 基础文件操作
+export struct File {
+    fd: i32,
+    flags: u8,  // 文件标志位
 }
 
-// 从文件句柄获取文件描述符
-fn get_fd_from_handle(handle: &void) i64 {
-    if handle == null {
-        return 0 - 1;
-    }
-    const fd_ptr: &i64 = handle as &i64;
-    return fd_ptr[0];
+// 文件标志位定义
+const FILE_RDONLY: u8 = 1 << 0;
+const FILE_WRONLY: u8 = 1 << 1;
+const FILE_RDWR: u8 = FILE_RDONLY | FILE_WRONLY;
+const FILE_APPEND: u8 = 1 << 2;
+const FILE_CREATE: u8 = 1 << 3;
+
+// 根据文档，文件 I/O 抽象层依赖 syscall 层（或 osal 层）
+// 提供接口定义，但暂时使用 syscall 的内联实现
+
+// 注意：这是 std 层的临时实现，后续需要迁移到 osal 层
+
+// 文件打开（简化实现，直接调用 syscall）
+export fn file_open(path: &const byte, flags: u8) !i32 {
+    var fd: i32 = -1;
+    // TODO: 实现 open syscall
+    return fd;
 }
 
-// 打开文件
-// 参数：
-//   path: 文件路径（以 null 结尾的字符串）
-//   flags: 打开标志（O_RDONLY, O_WRONLY, O_CREAT 等）
-//   mode: 文件权限模式（仅在 O_CREAT 时有效）
-// 返回：文件句柄（&void），失败返回 null
-export fn fopen(path: &const byte, flags: i64, mode: i64) &void {
-    const fd: i64 = sys_open(path, flags as i32, mode as i32) catch {
-        return null;
-    };
-    return alloc_file_handle(fd);
+// 文件关闭
+export fn file_close(fd: i32) !void {
+    // TODO: 实现 close syscall
 }
 
-// 关闭文件
-// 参数：
-//   handle: 文件句柄
-// 返回：0 表示成功，-1 表示失败
-export fn fclose(handle: &void) i32 {
-    if handle == null {
-        return 0 - 1;
-    }
-    const fd: i64 = get_fd_from_handle(handle);
-    if fd < 0 {
-        return 0 - 1;
-    }
-    _ = sys_close(fd) catch {
-        return 0 - 1;
-    };
-    // 标记句柄为无效（简化：不回收，只标记为 -1）
-    const fd_ptr: &i64 = handle as &i64;
-    fd_ptr[0] = 0 - 1;
-    return 0;
+// 文件读取
+export fn file_read(fd: i32, buf: &byte, count: usize) isize {
+    // TODO: 实现 read syscall
+    return -1;
 }
 
-// 读取文件
-// 参数：
-//   buf: 缓冲区指针
-//   size: 每个元素的大小（通常为 1）
-//   count: 要读取的元素数量
-//   handle: 文件句柄
-// 返回：实际读取的元素数量
-export fn fread(buf: &byte, size: usize, count: usize, handle: &void) usize {
-    if handle == null || buf == null {
-        return 0;
-    }
-    const fd: i64 = get_fd_from_handle(handle);
-    if fd < 0 {
-        return 0;
-    }
-    const total_size: usize = size * count;
-    const bytes_read: isize = sys_read(fd as i32, buf, total_size) catch {
-        return 0;
-    };
-    if bytes_read < 0 as isize {
-        return 0;
-    }
-    // 计算实际读取的元素数量
-    const elements_read: usize = bytes_read as usize / size;
-    return elements_read;
+// 文件写入
+export fn file_write(fd: i32, buf: &const byte, count: usize) isize {
+    // TODO: 实现 write syscall
+    return -1;
 }
-
-// 写入文件
-// 参数：
-//   buf: 缓冲区指针
-//   size: 每个元素的大小（通常为 1）
-//   count: 要写入的元素数量
-//   handle: 文件句柄
-// 返回：实际写入的元素数量
-export fn fwrite(buf: &const byte, size: usize, count: usize, handle: &void) usize {
-    if handle == null || buf == null {
-        return 0;
-    }
-    const fd: i64 = get_fd_from_handle(handle);
-    if fd < 0 {
-        return 0;
-    }
-    const total_size: usize = size * count;
-    const bytes_written: isize = sys_write(fd as i32, buf, total_size) catch {
-        return 0;
-    };
-    if bytes_written < 0 as isize {
-        return 0;
-    }
-    // 计算实际写入的元素数量
-    const elements_written: usize = bytes_written as usize / size;
-    return elements_written;
-}
-
-// 文件定位（简化实现，不导出）
-fn fseek_internal(handle: &void, offset: i64, whence: i64) i32 {
-    if handle == null {
-        return 0 - 1;
-    }
-    const fd: i64 = get_fd_from_handle(handle);
-    if fd < 0 {
-        return 0 - 1;
-    }
-    _ = sys_lseek(fd, offset, whence) catch {
-        return 0 - 1;
-    };
-    return 0;
-}
-

@@ -1,7 +1,7 @@
 # libc 开发进度与改进计划 v0.8.0
 
 **整合版本**：基于 std_refactor_design.md v0.7.1 架构  
-**日期**：2026-03-05  
+**日期**：2026-03-05（更新 osal 层状态）  
 **参考**：musl-libc (https://musl.libc.org)
 
 ## 概述
@@ -37,10 +37,10 @@
 
 | 层级 | 目录 | 状态 |
 |------|------|------|
-| syscall | `lib/syscall/` | 待创建 |
-| mem | `lib/mem/` | 待创建 |
-| osal | `lib/osal/` | 待创建 |
-| libc | `lib/libc/` | **已实现** |
+| syscall | `lib/syscall/` | **已完成** |
+| mem | `lib/mem/` | **已完成** |
+| osal | `lib/osal/` | **已完成**（2026-03-05）
+| libc | `lib/libc/` | **已实现**（待重构以使用 osal/mem） |
 | std | `lib/std/` | **部分实现** |
 
 ---
