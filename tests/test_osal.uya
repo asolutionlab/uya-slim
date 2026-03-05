@@ -1,0 +1,19 @@
+// test_osal.uya - osal 层操作系统抽象测试
+
+use osal.os_getpid;
+use osal.os_gettid;
+use std.testing.expect;
+
+// ============================================================
+// 测试用例
+// ============================================================
+
+test "os_getpid" {
+    const pid: i32 = try os_getpid();
+    try expect(pid > 0);
+}
+
+test "os_gettid" {
+    const tid: i32 = try os_gettid();
+    try expect(tid > 0);
+}

@@ -1,0 +1,197 @@
+// osal.osal - 操作系统抽象层
+// 在 syscall 之上提供统一的操作系统抽象
+
+use syscall.sys_open;
+use syscall.sys_close;
+use syscall.sys_read;
+use syscall.sys_write;
+use syscall.sys_lseek;
+use syscall.sys_mmap;
+use syscall.sys_munmap;
+use syscall.sys_exit;
+use syscall.sys_getpid;
+use syscall.sys_gettid;
+use syscall.sys_kill;
+use syscall.sys_nanosleep;
+use syscall.sys_mkdir;
+use syscall.sys_rmdir;
+use syscall.sys_chdir;
+use syscall.sys_getcwd;
+use syscall.TimeSpec;
+
+// ============================================================
+// 文件相关
+// ============================================================
+
+const O_RDONLY: i32 = 0;
+const O_WRONLY: i32 = 1;
+const O_RDWR: i32 = 2;
+const O_CREAT: i32 = 64;
+const O_TRUNC: i32 = 512;
+const O_APPEND: i32 = 1024;
+
+// ============================================================
+// 内存保护常量
+// ============================================================
+
+struct OSProt {
+    READ: i32,
+    WRITE: i32,
+    EXEC: i32,
+    NONE: i32
+}
+
+// ============================================================
+// 文件映射常量
+// ============================================================
+
+struct OSMapFlags {
+    SHARED: i32,
+    PRIVATE: i32,
+    ANONYMOUS: i32
+}
+
+// ============================================================
+// 时间类型定义
+// ============================================================
+
+struct Duration {
+    seconds: i64,
+    nanoseconds: i64
+}
+
+struct ClockId {
+    REALTIME: i32,
+    MONOTONIC: i32,
+    PROCESS_CPUTIME: i32,
+    THREAD_CPUTIME: i32
+}
+
+// ============================================================
+// 文件相关
+// ============================================================
+
+struct File {
+    fd: i32,
+    owns_fd: bool
+}
+
+// ============================================================
+// 文件状态结构体
+// ============================================================
+
+struct OSStat {
+    st_dev: u64,
+    st_ino: u64,
+    st_mode: u32,
+    st_nlink: u32,
+    st_uid: u32,
+    st_gid: u32,
+    st_rdev: u64,
+    st_size: i64,
+    st_blksize: i64,
+    st_blocks: i64
+}
+
+// ============================================================
+// 文件操作
+// ============================================================
+
+export fn os_open(path: &const byte, flags: i32, mode: u32) !i32 {
+    const fd: i32 = try sys_open(path, flags, mode as i32);
+    return fd;
+}
+
+export fn os_close(f: &File) !void {
+    if f.owns_fd && f.fd >= 0 {
+        try sys_close(f.fd);
+        f.owns_fd = false;
+        f.fd = -1;
+    }
+}
+
+export fn os_read(f: &File, buf: &byte, count: usize) !usize {
+    const val: isize = try sys_read(f.fd, buf, count);
+    return val as usize;
+}
+
+export fn os_write(f: &File, buf: &const byte, count: usize) !usize {
+    const val: isize = try sys_write(f.fd, buf, count);
+    return val as usize;
+}
+
+export fn os_seek(f: &File, offset: i64, whence: i32) !i64 {
+    const val: i64 = try sys_lseek(f.fd, offset, whence);
+    return val;
+}
+
+// ============================================================
+// 内存管理
+// ============================================================
+
+export fn os_mmap(addr: &void, size: usize, prot: i32, flags: i32, fd: i32, offset: i64) !&void {
+    const val: &void = try sys_mmap(addr, size, prot, flags, fd, offset);
+    if val == @ptr_from_usize(0) as &void {
+        return error.OutOfMemory;
+    }
+    return val;
+}
+
+export fn os_munmap(addr: &void, size: usize) !void {
+    try sys_munmap(addr, size);
+}
+
+// ============================================================
+// 进程/线程
+// ============================================================
+
+export fn os_exit(code: i32) void {
+    sys_exit(code);
+}
+
+export fn os_getpid() !i32 {
+    const val: i64 = try sys_getpid();
+    return val as i32;
+}
+
+export fn os_gettid() !i32 {
+    return try sys_gettid();
+}
+
+export fn os_kill(pid: i32, sig: i32) !void {
+    try sys_kill(pid as i64, sig);
+}
+
+// ============================================================
+// 时间操作
+// ============================================================
+
+export fn os_sleep(seconds: i64, nanoseconds: i64) !void {
+    var ts: TimeSpec = TimeSpec {
+        tv_sec: seconds,
+        tv_nsec: nanoseconds
+    };
+    var rem: TimeSpec = TimeSpec { tv_sec: 0, tv_nsec: 0 };
+    try sys_nanosleep(&ts, &rem);
+}
+
+// ============================================================
+// 目录操作
+// ============================================================
+
+export fn os_mkdir(path: &const byte, mode: u32) !void {
+    try sys_mkdir(path, mode as i32);
+}
+
+export fn os_rmdir(path: &const byte) !void {
+    try sys_rmdir(path);
+}
+
+export fn os_chdir(path: &const byte) !void {
+    try sys_chdir(path);
+}
+
+export fn os_getcwd(buf: &byte, size: usize) !isize {
+    const val: isize = try sys_getcwd(buf, size);
+    return val;
+}
