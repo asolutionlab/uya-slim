@@ -34,8 +34,31 @@ test "sscanf_multiple" {
 }
 
 // ============================================================
-// sprintf 新格式测试
+// sprintf 新格式测试（含 %i/%o）
 // ============================================================
+
+test "sprintf_i_equivalent_to_d" {
+    var buf: [byte: 32] = [];
+    sprintf(&buf[0], "%d %i", 42, 42);
+    // 期望输出 "42 42"
+    try assert_eq_i32(buf[0] as i32, 52);  // '4'
+    try assert_eq_i32(buf[1] as i32, 50);  // '2'
+    try assert_eq_i32(buf[2] as i32, 32);  // ' '
+    try assert_eq_i32(buf[3] as i32, 52);  // '4'
+    try assert_eq_i32(buf[4] as i32, 50);  // '2'
+    try assert_eq_i32(buf[5] as i32, 0);   // '\0'
+}
+
+test "sprintf_octal" {
+    var buf: [byte: 32] = [];
+    sprintf(&buf[0], "%o %o", 8, 0);
+    // 期望输出 "10 0"
+    try assert_eq_i32(buf[0] as i32, 49);  // '1'
+    try assert_eq_i32(buf[1] as i32, 48);  // '0'
+    try assert_eq_i32(buf[2] as i32, 32);  // ' '
+    try assert_eq_i32(buf[3] as i32, 48);  // '0'
+    try assert_eq_i32(buf[4] as i32, 0);   // '\0'
+}
 
 test "sprintf_hex_lower" {
     var buf: [byte: 32] = [];
