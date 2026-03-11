@@ -403,12 +403,18 @@ block_comment  = '/*' .* '*/'
 identifier     = [A-Za-z_][A-Za-z0-9_]*
 NUM            = integer | float
 integer        = decimal_integer | hex_integer | octal_integer | binary_integer
-decimal_integer = [0-9] ( [0-9] | '_' )*
-hex_integer    = '0' [xX] [0-9a-fA-F] ( [0-9a-fA-F] | '_' )*
-octal_integer  = '0' [oO] [0-7] ( [0-7] | '_' )*
-binary_integer = '0' [bB] [01] ( [01] | '_' )*
-float          = [0-9] ( [0-9] | '_' )* '.' [0-9] ( [0-9] | '_' )* [ exponent ]?
-               | [0-9] ( [0-9] | '_' )* exponent
+decimal_integer = [0-9] ( [0-9] | '_' )* [ int_suffix ]?
+hex_integer    = '0' [xX] [0-9a-fA-F] ( [0-9a-fA-F] | '_' )* [ int_suffix ]?
+octal_integer  = '0' [oO] [0-7] ( [0-7] | '_' )* [ int_suffix ]?
+binary_integer = '0' [bB] [01] ( [01] | '_' )* [ int_suffix ]?
+float          = [0-9] ( [0-9] | '_' )* '.' [0-9] ( [0-9] | '_' )* [ exponent ]? [ float_suffix ]?
+               | [0-9] ( [0-9] | '_' )* exponent [ float_suffix ]?
+
+int_suffix     = 'i8' | 'i16' | 'i32' | 'i64'
+               | 'u8' | 'u16' | 'u32' | 'u64'
+               | 'usize'
+
+float_suffix   = 'f32' | 'f64'
 exponent       = [eE] [+-]? [0-9] ( [0-9] | '_' )*
 STRING         = '"' { character | escape_sequence } '"' | '`' { character } '`'
 TEXT           = [^${}]+

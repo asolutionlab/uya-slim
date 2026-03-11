@@ -197,29 +197,59 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
     }
     
     if expr.type == ASTNodeType.AST_NUMBER {
-        // 检查是否有类型信息，如果是 i64 类型，使用 LL 后缀
-        const type_c: &byte = get_c_type_of_expr(codegen, expr);
-        if type_c != null && (strstr(type_c as *byte, "int64" as *byte) != null || strstr(type_c as *byte, "i64" as *byte) != null) {
-            // i64 类型：使用 LL 后缀
-            fprintf(codegen.output as *void, "%dLL" as *byte, expr.number_value);
+        // 根据字面量后缀生成对应的 C 代码格式
+        const suffix: i32 = expr.literal_suffix;
+        const val: i64 = expr.number_value;
+        const i32_max: i32 = 2147483647;
+        const i32_min: i32 = 0 - i32_max - 1;
+        
+        // 判断是否需要 i64 格式
+        const needs_i64: i32 = (suffix == 4) || 
+                               (val < i32_min as i64) || (val > i32_max as i64);
+        
+        if suffix == 7 || suffix == 5 || suffix == 6 {  // U32, U8, U16
+            // u8, u16, u32 类型：使用 U 后缀
+            fprintf(codegen.output as *void, "%dU" as *byte, val as i32);
+        } else if suffix == 8 || suffix == 9 {  // U64, USIZE
+            // u64, usize 类型：使用 ULL 后缀
+            fprintf(codegen.output as *void, "%dULL" as *byte, val as i32);
+        } else if needs_i64 != 0 {
+            // i64 类型或超出 i32 范围：使用 LL 后缀
+            if val < i32_min as i64 || val > i32_max as i64 {
+                // 大数值用十六进制避免 %lld 格式问题
+                fprintf(codegen.output as *void, "0x%XLL" as *byte, val as i32);
+            } else {
+                fprintf(codegen.output as *void, "%dLL" as *byte, val as i32);
+            }
         } else {
-            // 其他类型：使用普通整数
-            fprintf(codegen.output as *void, "%d" as *byte, expr.number_value);
+            // i8, i16, i32 或无后缀：使用普通整数
+            fprintf(codegen.output as *void, "%d" as *byte, val as i32);
         }
     } else if expr.type == ASTNodeType.AST_FLOAT {
-        // 整数值的浮点字面量（如 0.0、10.0）输出为整数，与 C 版 %.17g 一致
-        // Uya lib 的 fprintf 对 %.17g 输出 0.00000000000000000，C 版输出 0
+        // 根据浮点字面量后缀生成对应的 C 代码格式
+        const suffix: i32 = expr.float_literal_suffix;
         const val: f64 = expr.float_literal_value;
         const truncated: i64 = val as i64;
         const i32_max: i32 = 2147483647;
-        if val == (truncated as f64) {
-            if truncated >= (0 - i32_max - 1) && truncated <= i32_max as i64 {
+        const i32_min: i32 = 0 - i32_max - 1;
+        
+        if suffix == 10 {  // F32
+            // f32 类型：使用 F 后缀
+            fprintf(codegen.output as *void, "%.9gF" as *byte, val);
+        } else if suffix == 11 {  // F64
+            // f64 类型：使用普通格式
+            if val == (truncated as f64) && truncated >= i32_min as i64 && truncated <= i32_max as i64 {
                 fprintf(codegen.output as *void, "%d" as *byte, truncated as i32);
             } else {
-                fprintf(codegen.output as *void, "%dLL" as *byte, truncated);
+                fprintf(codegen.output as *void, "%.17g" as *byte, val);
             }
         } else {
-            fprintf(codegen.output as *void, "%.17g" as *byte, val);
+            // 无后缀，默认 f64
+            if val == (truncated as f64) && truncated >= i32_min as i64 && truncated <= i32_max as i64 {
+                fprintf(codegen.output as *void, "%d" as *byte, truncated as i32);
+            } else {
+                fprintf(codegen.output as *void, "%.17g" as *byte, val);
+            }
         }
     } else if expr.type == ASTNodeType.AST_BOOL {
         if expr.bool_literal_value != 0 {

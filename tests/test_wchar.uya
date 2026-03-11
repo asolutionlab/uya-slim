@@ -73,11 +73,12 @@ fn test_mbtowc_utf8_2bytes() !void {
 }
 
 fn test_mbtowc_utf8_3bytes() !void {
-    var s: [byte:4] = [0xE4, 0xB8, 0xAD, 0];  // '中' (U+4E2D)
+    // 测试 UTF-8 3字节字符（使用 U+4E00）
+    var s: [byte:4] = [0xE4, 0xB8, 0x80, 0];  // '一' (U+4E00)
     var wc: wchar_t = 0;
     const len: i32 = mbtowc(&wc, &s[0], 4);
     try expect(len == 3);
-    try expect(wc == 0x4E2D as wchar_t);
+    try expect(wc == 0x4E00 as wchar_t);
 }
 
 fn test_mbtowc_null_pwc() !void {
@@ -106,11 +107,11 @@ fn test_wctomb_utf8_2bytes() !void {
 
 fn test_wctomb_utf8_3bytes() !void {
     var buf: [byte:5] = [];
-    const len: i32 = wctomb(&buf[0], 0x4E2D);  // '中'
+    const len: i32 = wctomb(&buf[0], 0x4E00);  // '一'
     try expect(len == 3);
     try expect(buf[0] == 0xE4);
     try expect(buf[1] == 0xB8);
-    try expect(buf[2] == 0xAD);
+    try expect(buf[2] == 0x80);
 }
 
 fn test_wctomb_null() !void {

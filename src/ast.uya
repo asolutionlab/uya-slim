@@ -14,6 +14,22 @@ enum MatchPatternKind {
     MATCH_PAT_ELSE,      // else 分支
 }
 
+// 字面量类型后缀枚举
+enum LiteralSuffix {
+    LITERAL_SUFFIX_NONE,    // 无后缀
+    LITERAL_SUFFIX_I8,
+    LITERAL_SUFFIX_I16,
+    LITERAL_SUFFIX_I32,
+    LITERAL_SUFFIX_I64,
+    LITERAL_SUFFIX_U8,
+    LITERAL_SUFFIX_U16,
+    LITERAL_SUFFIX_U32,
+    LITERAL_SUFFIX_U64,
+    LITERAL_SUFFIX_USIZE,
+    LITERAL_SUFFIX_F32,
+    LITERAL_SUFFIX_F64,
+}
+
 // match 臂结构（Uya 无 union，扁平化为独立字段）
 // 字面量臂时用 literal_int_value / literal_is_bool 避免对 literal_expr 指针的 . 访问（C 需 ->）
 struct ASTMatchArm {
@@ -314,8 +330,10 @@ struct ASTNode {
     identifier_name: &byte,
     // number
     number_value: i32,
+    literal_suffix: i32,  // 字面量类型后缀 (0=NONE, 1=I8, 2=I16, 3=I32, 4=I64, 5=U8, 6=U16, 7=U32, 8=U64, 9=USIZE, 10=F32, 11=F64)
     // float_literal
     float_literal_value: f64,
+    float_literal_suffix: i32,  // 浮点字面量类型后缀
     // bool_literal
     bool_literal_value: i32,
     // int_limit (max/min)
@@ -563,7 +581,9 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.cast_expr_is_force_cast = 0;
     node.identifier_name = null;
     node.number_value = 0;
+    node.literal_suffix = LiteralSuffix.LITERAL_SUFFIX_NONE;
     node.float_literal_value = 0.0;
+    node.float_literal_suffix = LiteralSuffix.LITERAL_SUFFIX_NONE;
     node.bool_literal_value = 0;
     node.int_limit_is_max = 0;
     node.int_limit_resolved_kind = 0;

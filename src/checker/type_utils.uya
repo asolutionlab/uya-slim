@@ -530,6 +530,58 @@ fn make_void_type() Type {
     };
 }
 
+// 创建 i8 类型
+fn make_i8_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_I8,
+        data: make_empty_type_data(),
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建 i16 类型
+fn make_i16_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_I16,
+        data: make_empty_type_data(),
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
 // 创建 i32 类型
 fn make_i32_type() Type {
     return Type {
@@ -582,10 +634,140 @@ fn make_i64_type() Type {
     };
 }
 
+// 创建 f32 类型
+fn make_f32_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_F32,
+        data: make_empty_type_data(),
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
 // 创建 f64 类型
 fn make_f64_type() Type {
     return Type {
         kind: TypeKind.TYPE_F64,
+        data: make_empty_type_data(),
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建 u8 类型
+fn make_u8_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_U8,
+        data: make_empty_type_data(),
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建 u16 类型
+fn make_u16_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_U16,
+        data: make_empty_type_data(),
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建 u32 类型
+fn make_u32_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_U32,
+        data: make_empty_type_data(),
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+    };
+}
+
+// 创建 u64 类型
+fn make_u64_type() Type {
+    return Type {
+        kind: TypeKind.TYPE_U64,
         data: make_empty_type_data(),
         enum_name: null,
         interface_name: null,
