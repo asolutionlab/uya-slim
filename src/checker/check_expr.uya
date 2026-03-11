@@ -193,8 +193,38 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
     }
     
     if expr.type == ASTNodeType.AST_NUMBER {
+        // 根据字面量后缀返回对应类型
+        const suffix: i32 = expr.literal_suffix;
+        if suffix == 1 {  // I8
+            return make_i8_type();
+        } else if suffix == 2 {  // I16
+            return make_i16_type();
+        } else if suffix == 3 {  // I32
+            return make_i32_type();
+        } else if suffix == 4 {  // I64
+            return make_i64_type();
+        } else if suffix == 5 {  // U8
+            return make_u8_type();
+        } else if suffix == 6 {  // U16
+            return make_u16_type();
+        } else if suffix == 7 {  // U32
+            return make_u32_type();
+        } else if suffix == 8 {  // U64
+            return make_u64_type();
+        } else if suffix == 9 {  // USIZE
+            return make_usize_type();
+        }
+        // 无后缀，默认 i32
         return make_i32_type();
     } else if expr.type == ASTNodeType.AST_FLOAT {
+        // 根据浮点字面量后缀返回对应类型
+        const suffix: i32 = expr.float_literal_suffix;
+        if suffix == 10 {  // F32
+            return make_f32_type();
+        } else if suffix == 11 {  // F64
+            return make_f64_type();
+        }
+        // 无后缀，默认 f64
         return make_f64_type();
     } else if expr.type == ASTNodeType.AST_BOOL {
         // 布尔字面量类型为bool

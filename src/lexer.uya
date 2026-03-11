@@ -510,7 +510,33 @@ fn read_number(lexer: &Lexer, arena: &Arena) &Token {
         }
     }
     
-    // 保存完整字面量（含 0x/0o/0b 前缀），供 parse_integer_literal 识别进制
+    // 读取可选的类型后缀（如 i8, i32, u8, usize, f32, f64）
+    // 规则：后缀必须以字母开头，后面可以跟数字，用于与标识符区分
+    var seen_alpha: i32 = 0;
+    while lexer.position < lexer.buffer_size {
+        const sc: byte = peek_char(lexer, 0);
+        const scu: i32 = sc as i32;
+        var is_alpha: i32 = 0;
+        if (scu >= 97 && scu <= 122) || (scu >= 65 && scu <= 90) {
+            is_alpha = 1;
+        }
+        var is_digit2: i32 = 0;
+        if scu >= 48 && scu <= 57 {
+            is_digit2 = 1;
+        }
+        if is_alpha != 0 {
+            seen_alpha = 1;
+            advance_char(lexer);
+            continue;
+        }
+        if seen_alpha != 0 && is_digit2 != 0 {
+            advance_char(lexer);
+            continue;
+        }
+        break;
+    }
+    
+    // 保存完整字面量（含 0x/0o/0b 前缀以及类型后缀），供解析阶段使用
     const n: usize = lexer.position - start_index;
     const start_ptr: &byte = &lexer.buffer[start_index] as &byte;
     const value: &byte = arena_copy_str(arena, start_ptr, n);

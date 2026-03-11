@@ -560,40 +560,200 @@ fn remove_underscores(str: &byte, arena: &Arena) &byte {
     return result;
 }
 
-// 辅助函数：解析整数字面量（支持多进制和下划线）
-fn parse_integer_literal(str: &byte, arena: &Arena) i32 {
+// 辅助函数：解析字面量后缀，返回后缀类型和长度
+// 返回: 0=NONE, 1=I8, 2=I16, 3=I32, 4=I64, 5=U8, 6=U16, 7=U32, 8=U64, 9=USIZE, 10=F32, 11=F64
+fn parse_literal_suffix(str: &byte, suffix_len: &i32) i32 {
+    suffix_len[0] = 0;
+    if str == null {
+        return 0;  // NONE
+    }
+    
+    // 检查第一个字符是否是字母（后缀开头）
+    const c0: byte = str[0];
+    if (c0 < 97 || c0 > 122) && (c0 < 65 || c0 > 90) {
+        return 0;  // NONE
+    }
+    
+    // 检查后缀：i8, i16, i32, i64, u8, u16, u32, u64, usize
+    // 浮点后缀：f32, f64
+    // 枚举值: NONE=0, I8=1, I16=2, I32=3, I64=4, U8=5, U16=6, U32=7, U64=8, USIZE=9, F32=10, F64=11
+    if c0 == 105 { // 'i'
+        if str[1] == 56 && (str[2] < 48 || str[2] > 57) { // 'i8'
+            suffix_len[0] = 2;
+            return 1;  // I8
+        }
+        if str[1] == 49 && str[2] == 54 && (str[3] < 48 || str[3] > 57) { // 'i16'
+            suffix_len[0] = 3;
+            return 2;  // I16
+        }
+        if str[1] == 51 && str[2] == 50 && (str[3] < 48 || str[3] > 57) { // 'i32'
+            suffix_len[0] = 3;
+            return 3;  // I32
+        }
+        if str[1] == 54 && str[2] == 52 && (str[3] < 48 || str[3] > 57) { // 'i64'
+            suffix_len[0] = 3;
+            return 4;  // I64
+        }
+    }
+    if c0 == 117 { // 'u'
+        if str[1] == 56 && (str[2] < 48 || str[2] > 57) { // 'u8'
+            suffix_len[0] = 2;
+            return 5;  // U8
+        }
+        if str[1] == 49 && str[2] == 54 && (str[3] < 48 || str[3] > 57) { // 'u16'
+            suffix_len[0] = 3;
+            return 6;  // U16
+        }
+        if str[1] == 51 && str[2] == 50 && (str[3] < 48 || str[3] > 57) { // 'u32'
+            suffix_len[0] = 3;
+            return 7;  // U32
+        }
+        if str[1] == 54 && str[2] == 52 && (str[3] < 48 || str[3] > 57) { // 'u64'
+            suffix_len[0] = 3;
+            return 8;  // U64
+        }
+        if str[1] == 115 && str[2] == 105 && str[3] == 122 && str[4] == 101 && (str[5] < 48 || str[5] > 57) { // 'usize'
+            suffix_len[0] = 5;
+            return 9;  // USIZE
+        }
+    }
+    if c0 == 102 { // 'f'
+        if str[1] == 51 && str[2] == 50 && (str[3] < 48 || str[3] > 57) { // 'f32'
+            suffix_len[0] = 3;
+            return 10;  // F32
+        }
+        if str[1] == 54 && str[2] == 52 && (str[3] < 48 || str[3] > 57) { // 'f64'
+            suffix_len[0] = 3;
+            return 11;  // F64
+        }
+    }
+    
+    return 0;  // NONE
+}
+
+// 辅助函数：解析整数字面量（支持多进制、下划线和类型后缀）
+fn parse_integer_literal_with_suffix(str: &byte, arena: &Arena, suffix: &i32) i64 {
+    suffix[0] = 0;  // LITERAL_SUFFIX_NONE
     const cleaned: &byte = remove_underscores(str, arena);
     if cleaned == null {
         return 0;
     }
-    var base: i32 = 10;
-    var start_pos: i32 = 0;
-    if cleaned[0] == 48 {
-        if cleaned[1] == 120 || cleaned[1] == 88 {
-            base = 16;
-            start_pos = 2;
+    
+    // 首先检查后缀
+    var len: usize = 0;
+    while cleaned[len] != 0 {
+        len = len + 1;
+    }
+    
+    // 从后往前找后缀
+    var suffix_start: usize = len;
+    var i: usize = len;
+    while i > 0 {
+        i = i - 1;
+        const c: byte = cleaned[i];
+        if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) {
+            // 字母，可能是后缀的一部分
+            suffix_start = i;
         } else {
-            if cleaned[1] == 111 || cleaned[1] == 79 {
-                base = 8;
-                start_pos = 2;
-            } else {
-                if cleaned[1] == 98 || cleaned[1] == 66 {
-                    base = 2;
-                    start_pos = 2;
-                }
-            }
+            break;
         }
     }
-    const ptr: *byte = &cleaned[start_pos as usize] as *byte;
-    const result: i64 = strtol(ptr, null as * *byte, base);
-    return result as i32;
+    
+    // 检查是否有后缀
+    if suffix_start < len {
+        var suffix_len_var: i32 = 0;
+        suffix[0] = parse_literal_suffix(&cleaned[suffix_start], &suffix_len_var);
+        // 重置字符串长度为去除后缀后的长度
+        len = suffix_start;
+    }
+    
+    // 解析数字部分
+    var base: i32 = 10;
+    var start_pos: usize = 0;
+    if len > 2 && cleaned[0] == 48 {
+        if cleaned[1] == 120 || cleaned[1] == 88 {  // 0x
+            base = 16;
+            start_pos = 2;
+        } else if cleaned[1] == 111 || cleaned[1] == 79 {  // 0o
+            base = 8;
+            start_pos = 2;
+        } else if cleaned[1] == 98 || cleaned[1] == 66 {  // 0b
+            base = 2;
+            start_pos = 2;
+        }
+    }
+    
+    // 复制数字部分到临时缓冲区
+    var temp: [byte: 256] = [0:256];
+    var j: usize = 0;
+    i = start_pos;
+    while i < len && j < 255 {
+        temp[j] = cleaned[i];
+        j = j + 1;
+        i = i + 1;
+    }
+    temp[j] = 0;
+    
+    const result: i64 = strtoll(&temp[0] as &byte, null as * *byte, base);
+    return result;
 }
 
-// 辅助函数：解析浮点字面量（支持下划线）
-fn parse_float_literal(str: &byte, arena: &Arena) f64 {
+// 辅助函数：解析浮点字面量（支持下划线和类型后缀）
+fn parse_float_literal_with_suffix(str: &byte, arena: &Arena, suffix: &i32) f64 {
+    suffix[0] = 0;  // LITERAL_SUFFIX_NONE
     const cleaned: &byte = remove_underscores(str, arena);
     if cleaned == null {
         return 0.0;
     }
-    return strtod(cleaned as *byte, null as * *byte) as f64;
+    
+    // 检查后缀：f32, f64
+    var len: usize = 0;
+    while cleaned[len] != 0 {
+        len = len + 1;
+    }
+    
+    // 从后往前找后缀
+    var suffix_start: usize = len;
+    var i: usize = len;
+    while i > 0 {
+        i = i - 1;
+        const c: byte = cleaned[i];
+        if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) {
+            suffix_start = i;
+        } else {
+            break;
+        }
+    }
+    
+    // 检查是否有后缀
+    if suffix_start < len {
+        var suffix_len_var: i32 = 0;
+        suffix[0] = parse_literal_suffix(&cleaned[suffix_start], &suffix_len_var);
+    }
+    
+    // 复制数字部分（不含后缀）到临时缓冲区
+    var temp: [byte: 256] = [0:256];
+    var j: usize = 0;
+    i = 0;
+    while i < suffix_start && j < 255 {
+        temp[j] = cleaned[i];
+        j = j + 1;
+        i = i + 1;
+    }
+    temp[j] = 0;
+    
+    return strtod(&temp[0] as &byte, null as * *byte) as f64;
+}
+
+// 辅助函数：解析整数字面量（支持多进制和下划线）- 兼容旧接口
+fn parse_integer_literal(str: &byte, arena: &Arena) i32 {
+    var suffix: i32 = 0;  // LITERAL_SUFFIX_NONE
+    const result: i64 = parse_integer_literal_with_suffix(str, arena, &suffix);
+    return result as i32;
+}
+
+// 辅助函数：解析浮点字面量（支持下划线）- 兼容旧接口
+fn parse_float_literal(str: &byte, arena: &Arena) f64 {
+    var suffix: i32 = 0;  // LITERAL_SUFFIX_NONE
+    return parse_float_literal_with_suffix(str, arena, &suffix);
 }

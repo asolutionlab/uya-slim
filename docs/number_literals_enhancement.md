@@ -2,7 +2,7 @@
 
 ## 功能概述
 
-为 Uya 编译器添加了数字字面量的多进制支持和下划线分隔符，提高代码可读性。
+为 Uya 编译器添加了数字字面量的多进制支持、下划线分隔符和**类型后缀**，提高代码可读性和类型表达能力。
 
 ## 实现的功能
 
@@ -44,6 +44,45 @@
 - 小数点后：`3.141_592_653`
 - 指数部分：`1.0e1_0`
 
+### 4. 类型后缀（v0.7.x 起）
+
+在多进制和下划线的基础上，整数和浮点字面量支持**显式类型后缀**，与主规范 `docs/uya.md`、词法/语法文档完全一致：
+
+- **整数后缀**（对应 `LiteralSuffix` 枚举）：
+  - `i8`、`i16`、`i32`、`i64`
+  - `u8`、`u16`、`u32`、`u64`
+  - `usize`
+- **浮点后缀**：
+  - `f32`、`f64`
+
+示例：
+
+```uya
+// 整数类型后缀
+const a: i8   = 100i8;
+const b: i32  = 100000i32;
+const c: u8   = 255u8;
+const d: u32  = 0xFFu32;
+const e: usize = 42usize;
+
+// 浮点类型后缀
+const f: f32 = 1.5f32;
+const g: f64 = 3.14f64;
+```
+
+解析规则：
+
+- 后缀直接跟在数字末尾，中间不能有下划线（例如 `0xFFu8`、`1.0e10f64`）。
+- Lexer 读入完整字面量（含进制前缀、数字主体、下划线和类型后缀），Parser 通过 `parse_integer_literal_with_suffix` / `parse_float_literal_with_suffix`：
+  - 去除下划线
+  - 识别末尾的后缀并记录到 AST：`literal_suffix` / `float_literal_suffix`
+  - 剥离后缀后再按进制解析数值
+- 没有后缀时：整数默认 `i32`，浮点默认 `f64`，与之前行为保持一致。
+
+对应测试用例：
+
+- `tests/test_literal_suffix.uya`：覆盖整型与浮点型的各种后缀组合（十进制与十六进制）。
+
 ## 实现范围
 
 ### C 编译器 (`compiler-mini/src/`)
@@ -65,11 +104,15 @@
   - 无需修改（整数在 Parser 阶段已转换为统一的十进制值）
   - Codegen 生成标准十进制 C 字面量
 
-### 自举编译器 (`compiler-mini/uya-src/`)
+### 自举编译器 (`src/` 自举版 Uya)
 
-- ⏸️ **待更新**（当前 C 编译器已完整实现）
-  - 需要同步更新 `lexer.uya`
-  - 需要同步更新 `parser.uya`
+- ✅ **Lexer** (`src/lexer.uya`)
+  - 已同步多进制、下划线分隔符和类型后缀的实现逻辑
+  - 在 `read_number` 中读取完整数字+后缀，交由 Parser 解析
+- ✅ **Parser** (`src/parser/types.uya`, `src/parser/primary.uya`)
+  - 使用 `parse_integer_literal_with_suffix` / `parse_float_literal_with_suffix`
+  - 将解析出的后缀写入 AST 节点的 `literal_suffix` / `float_literal_suffix`
+
 
 ## 测试
 
@@ -129,8 +172,6 @@ fn main() i32 {
 
 ## 后续工作
 
-- [ ] 同步更新自举编译器（`uya-src/lexer.uya`, `uya-src/parser.uya`）
-- [ ] 验证 `--uya --c99` 编译路径
-- [ ] 考虑添加 `u32`/`i64` 等后缀支持（如 `0xFFu32`）
-- [ ] 考虑支持十六进制浮点字面量（`0x1.0p10`）
+- [ ] 进一步扩展 C 版编译器和自举版的十六进制浮点字面量（`0x1.0p10` 等）
+- [ ] 在更多高级示例和教程中使用类型后缀（性能敏感、FFI 场景）
 
