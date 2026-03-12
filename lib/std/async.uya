@@ -8,6 +8,4 @@
 // - 泛型 interface（interface Future<T>）
 
 /// 唤醒器占位。运行时可用其通知任务就绪；完整实现需函数指针等支持。
-struct Waker {}
-
-export struct Waker;
+export struct Waker {}

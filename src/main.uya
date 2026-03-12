@@ -707,6 +707,31 @@ fn collect_module_dependencies(
         }
         // std 模块：收集 lib/std/ 目录下所有 .uya 文件（与 C 编译器一致）
         if (strcmp(&module_names_stack[i][0] as *byte, "std" as *byte) == 0 || strncmp(&module_names_stack[i][0] as *byte, "std." as *byte, 4) == 0) && uya_root != null && uya_root[0] != 0 {
+            // 先尝试按单文件解析（如 std.async -> lib/std/async.uya），避免依赖 lib/std/async/ 目录存在
+            var single_file: [byte: PATH_MAX] = [];
+            if find_module_file(&module_names_stack[i][0] as *byte, project_root, uya_root, &single_file[0], PATH_MAX) == 0 {
+                var in_list: i32 = 0;
+                var j: i32 = 0;
+                while j < current_size {
+                    if file_list[j] != null && paths_equal(file_list[j], &single_file[0] as &byte) != 0 {
+                        in_list = 1;
+                        break;
+                    }
+                    j = j + 1;
+                }
+                if in_list == 0 && current_size < max_files {
+                    const path_copy: &byte = arena_alloc(arena, strlen(&single_file[0]) + 1) as &byte;
+                    if path_copy != null {
+                        strcpy(path_copy as *byte, &single_file[0]);
+                        file_list[current_size] = path_copy;
+                        current_size = current_size + 1;
+                        current_size = collect_module_dependencies(path_copy, file_list, current_size, max_files, processed_files, processed_count, max_processed, project_root, uya_root, arena);
+                        if current_size < 0 { return -1; }
+                    }
+                }
+                i = i + 1;
+                continue;
+            }
             var std_dir: [byte: PATH_MAX] = [];
             var dlen: i32 = 0;
             if strcmp(&module_names_stack[i][0] as *byte, "std" as *byte) == 0 {

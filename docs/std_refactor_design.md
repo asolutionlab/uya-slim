@@ -11,7 +11,21 @@
 5. **libc C 兼容层**：薄封装，保持 C99 ABI 兼容
 6. **std Uya 风格层**：使用 `!T`, `interface`, 泛型, `union`
 
-## 架构设计
+## 项目状态（与设计对照）
+
+> 详细任务与勾选见 [todo_std_refactor.md](todo_std_refactor.md)。
+
+| 层级 | 设计目标 | 当前实现状态 |
+|------|----------|--------------|
+| **syscall** | `lib/syscall/linux.uya`，无依赖 | ✅ 已完成：`lib/syscall/linux.uya` 存在，基础 syscall 已实现并测试 |
+| **mem** | `lib/mem/`（mem.uya + string.uya），无依赖 | ✅ 已完成：`lib/mem/mem.uya` 存在，纯内存/字符串操作已实现 |
+| **osal** | `lib/osal/`，仅依赖 syscall | ✅ 已完成（2026-03-05）：`lib/osal/osal.uya`，统一 API + !T |
+| **libc** | `lib/libc/`，依赖 osal + mem，薄封装 C 签名 | ⚠️ **未按设计重构**：当前 libc 仍为**零外部依赖**（直接使用 `@syscall` 等），未 `use osal` / `use mem`；Phase 4 因编译器跨层导入冲突暂时搁置 |
+| **std** | `lib/std/`，依赖 libc（及可选 osal） | 🔲 部分存在：`lib/std/` 下有 runtime、io、mem、string、testing 等，尚未对齐设计中的 Option/Result、Writer/Reader、HeapAllocator、Vec 等 |
+
+**依赖现状**：  
+- syscall、mem、osal 已按设计独立存在且无循环依赖。  
+- libc 与 std 尚未接入「libc → osal + mem」「std → libc」的依赖链；libc 仍自包含实现，std 可继续在现有基础上扩展。
 
 ```
                     ┌─────────────────┐
