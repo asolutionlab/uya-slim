@@ -26,6 +26,8 @@ fn copy_type(t: &Type) Type {
         generic_param_name: t.generic_param_name,
         struct_type_args: t.struct_type_args,
         struct_type_arg_count: t.struct_type_arg_count,
+        union_type_args: t.union_type_args,
+        union_type_arg_count: t.union_type_arg_count,
     };
     return r;
 }
@@ -434,6 +436,8 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             generic_param_name: null,
             struct_type_args: null,
             struct_type_arg_count: 0,
+            union_type_args: null,
+            union_type_arg_count: 0,
         };
         return target_type;
     } else if expr.type == ASTNodeType.AST_STRING {
@@ -577,7 +581,7 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         return make_void_type();
     } else if expr.type == ASTNodeType.AST_IDENTIFIER {
         if moved_set_contains(checker, expr.identifier_name) != 0 {
-            checker_report_error(checker, expr, "变量已被移动，不能再次使用" as &byte);
+            checker_report_error_moved(checker, expr, expr.identifier_name);
             return make_void_type();
         }
         // 标识符类型需要从符号表中查找

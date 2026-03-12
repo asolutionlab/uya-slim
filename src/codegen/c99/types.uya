@@ -179,9 +179,21 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
             return ("void" as *byte) as &byte;
         }
         
-        // 检查是否有类型实参（泛型结构体实例化）
+        // 检查是否有类型实参（泛型结构体/联合体实例化）
         if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
-            // 使用单态化结构体名称
+            const ud: &ASTNode = find_union_decl_c99(codegen, name);
+            if ud != null && is_generic_union_c99(ud) != 0 {
+                const mono_name: &byte = get_mono_union_name(codegen, name,
+                    type_node.type_named_type_args,
+                    type_node.type_named_type_arg_count);
+                const mn_len: i32 = (strlen(mono_name as *byte) as i32) + 24;
+                const buf: &byte = arena_alloc(codegen.arena, mn_len as usize) as &byte;
+                if buf != null {
+                    snprintf(buf as *byte, mn_len, "struct uya_tagged_%s" as *byte, mono_name as *byte);
+                    return buf;
+                }
+                return ("void" as *byte) as &byte;
+            }
             const mono_name: &byte = get_mono_struct_name(codegen, name,
                 type_node.type_named_type_args,
                 type_node.type_named_type_arg_count);

@@ -270,6 +270,35 @@ fn checker_report_error(checker: &TypeChecker, node: &ASTNode, message: &byte) v
     }
 }
 
+// 报告「变量已被移动」错误，并指出具体变量名
+fn checker_report_error_moved(checker: &TypeChecker, node: &ASTNode, var_name: &byte) void {
+    if checker != null {
+        last_checker_error_message = "变量已被移动，不能再次使用" as *byte;
+        checker.error_count = checker.error_count + 1;
+        if libc.stderr != null {
+            var filename: &byte = "(unknown)" as *byte;
+            if node != null && node.filename != null {
+                filename = node.filename;
+            } else if checker.default_filename != null {
+                filename = checker.default_filename;
+            }
+            if node != null {
+                if var_name != null && var_name[0] != 0 {
+                    fprintf(libc.stderr, "%s:(%d:%d): 错误: 变量 '%s' 已被移动，不能再次使用\n" as *byte, filename, node.line, node.column, var_name as *byte);
+                } else {
+                    fprintf(libc.stderr, "%s:(%d:%d): 错误: 变量已被移动，不能再次使用\n" as *byte, filename, node.line, node.column);
+                }
+            } else {
+                if var_name != null && var_name[0] != 0 {
+                    fprintf(libc.stderr, "%s: 错误: 变量 '%s' 已被移动，不能再次使用\n" as *byte, filename, var_name as *byte);
+                } else {
+                    fprintf(libc.stderr, "%s: 错误: 变量已被移动，不能再次使用\n" as *byte, filename);
+                }
+            }
+        }
+    }
+}
+
 // 报告证明失败错误（扩展版本）
 fn checker_report_error_ex(checker: &TypeChecker, node: &ASTNode, error_type: &byte, var_name: &byte, size: i32) void {
     if checker != null {

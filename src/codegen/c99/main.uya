@@ -1099,10 +1099,30 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     while i < decl_count {
         const decl: &ASTNode = ast.program_decls[i];
         if decl != null && decl.type == ASTNodeType.AST_UNION_DECL {
-            // 先生成该联合体所依赖的结构体
-            emit_struct_deps_for_union(codegen, decl);
-            gen_union_definition(codegen, decl);
-            c99_emit_newline(codegen);
+            if is_generic_union_c99(decl) != 0 {
+                const uname: &byte = decl.union_decl_name;
+                var j: i32 = 0;
+                while j < codegen.mono_instance_count {
+                    if codegen.mono_instances[j].generic_name != null &&
+                        strcmp(codegen.mono_instances[j].generic_name as *byte, uname as *byte) == 0 &&
+                        codegen.mono_instances[j].is_function == 0 {
+                        if has_unresolved_mono_type_args(decl,
+                            codegen.mono_instances[j].type_args,
+                            codegen.mono_instances[j].type_arg_count) == 0 {
+                            emit_struct_deps_for_union(codegen, decl);
+                            gen_mono_union_definition(codegen, decl,
+                                codegen.mono_instances[j].type_args,
+                                codegen.mono_instances[j].type_arg_count);
+                            c99_emit_newline(codegen);
+                        }
+                    }
+                    j = j + 1;
+                }
+            } else {
+                emit_struct_deps_for_union(codegen, decl);
+                gen_union_definition(codegen, decl);
+                c99_emit_newline(codegen);
+            }
         }
         i = i + 1;
     }

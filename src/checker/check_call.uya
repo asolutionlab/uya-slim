@@ -10,6 +10,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         kind: TypeKind.TYPE_VOID,
         enum_name: null,
         struct_name: null,
+        union_name: null,
         pointer_to: null,
         is_ffi_pointer: 0,
         element_type: null,
@@ -18,6 +19,10 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         slice_len: 0,
         tuple_element_types: null,
         tuple_count: 0,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
     
     if checker == null || node == null || node.type != ASTNodeType.AST_CALL_EXPR {
@@ -100,20 +105,31 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         }
     }
     
-    // 联合体变体构造、接口方法调用或结构体方法调用：callee 为 obj.method 或 UnionName.variant
+    // 联合体变体构造、接口方法调用或结构体方法调用：callee 为 obj.method 或 UnionName.variant 或 UnionName<Args>.variant
     if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS {
         const object: &ASTNode = callee.member_access_object;
         const method_name: &byte = callee.member_access_field_name;
-        if object != null && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null &&
-            checker.program_node != null {
-            const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, object.identifier_name);
+        var union_name_for_lookup: &byte = null;
+        if object != null && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null {
+            union_name_for_lookup = object.identifier_name;
+        } else if object != null && object.type == ASTNodeType.AST_TYPE_NAMED && object.type_named_name != null {
+            union_name_for_lookup = object.type_named_name;
+        }
+        if union_name_for_lookup != null && checker.program_node != null {
+            const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, union_name_for_lookup);
             if union_decl != null && method_name != null {
                 var i: i32 = 0;
                 while i < union_decl.union_decl_variant_count {
                     const v: &ASTNode = union_decl.union_decl_variants[i];
                         if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
                         str_equals(v.var_decl_name, method_name) != 0 {
-                        const variant_type: Type = type_from_ast(checker, v.var_decl_type);
+                        var variant_type: Type = type_from_ast(checker, v.var_decl_type);
+                        if union_decl.union_decl_type_param_count > 0 && object != null && object.type == ASTNodeType.AST_TYPE_NAMED &&
+                            object.type_named_type_args != null && object.type_named_type_arg_count > 0 {
+                            variant_type = substitute_generic_type(checker, variant_type,
+                                union_decl.union_decl_type_params, union_decl.union_decl_type_param_count,
+                                object.type_named_type_args, object.type_named_type_arg_count);
+                        }
                         if variant_type.kind == TypeKind.TYPE_VOID {
                             if node.call_expr_arg_count != 0 {
                                 checker_report_error(checker, node, "void 变体构造不需要实参" as *byte);
@@ -131,6 +147,19 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                         }
                         result.kind = TypeKind.TYPE_UNION;
                         result.union_name = union_decl.union_decl_name;
+                        if object != null && object.type == ASTNodeType.AST_TYPE_NAMED && object.type_named_type_arg_count > 0 && object.type_named_type_args != null {
+                            const count: i32 = object.type_named_type_arg_count;
+                            const ta: &Type = arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
+                            if ta != null {
+                                var tai: i32 = 0;
+                                while tai < count {
+                                    ta[tai] = type_from_ast(checker, object.type_named_type_args[tai]);
+                                    tai = tai + 1;
+                                }
+                                result.union_type_args = ta;
+                                result.union_type_arg_count = count;
+                            }
+                        }
                         return result;
                     }
                     i = i + 1;

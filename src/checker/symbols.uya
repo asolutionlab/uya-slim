@@ -530,6 +530,11 @@ fn checker_mark_moved(checker: &TypeChecker, node: &ASTNode, var_name: &byte, st
     if checker == null || var_name == null || struct_name == null {
         return;
     }
+    // 不标记 match 等引入的绑定变量（无 decl_node），避免误报「变量已被移动」
+    const sym: &Symbol = symbol_table_lookup(checker, var_name);
+    if sym != null && sym.decl_node == null {
+        return;
+    }
     var err_node: &ASTNode = node;
     if node == null {
         err_node = checker.current_function_decl;
@@ -554,7 +559,6 @@ fn checker_mark_moved(checker: &TypeChecker, node: &ASTNode, var_name: &byte, st
         checker.moved_count = idx + 1;
     }
     // 写回 VAR_DECL 的 was_moved
-    const sym: &Symbol = symbol_table_lookup(checker, var_name);
     if sym != null && sym.decl_node != null && sym.decl_node.type == ASTNodeType.AST_VAR_DECL {
         sym.decl_node.var_decl_was_moved = 1;
     }

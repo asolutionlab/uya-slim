@@ -23,6 +23,8 @@ fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
     
     if type_node == null {
@@ -327,6 +329,20 @@ fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
                         if union_decl != null {
                             result.kind = TypeKind.TYPE_UNION;
                             result.union_name = type_name;
+                            if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null &&
+                                union_decl.union_decl_type_param_count > 0 {
+                                const count: i32 = type_node.type_named_type_arg_count;
+                                const ta: &Type = arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
+                                if ta != null {
+                                    var tai: i32 = 0;
+                                    while tai < count {
+                                        ta[tai] = type_from_ast(checker, type_node.type_named_type_args[tai]);
+                                        tai = tai + 1;
+                                    }
+                                    result.union_type_args = ta;
+                                    result.union_type_arg_count = count;
+                                }
+                            }
                         } else {
                             result.kind = TypeKind.TYPE_STRUCT;
                             result.struct_name = type_name;

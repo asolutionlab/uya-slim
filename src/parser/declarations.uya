@@ -1025,6 +1025,70 @@ fn parser_parse_union_body(parser: &Parser, line: i32, column: i32, is_extern: i
     }
     union_decl.union_decl_name = union_name;
     union_decl.union_decl_is_extern = is_extern;
+    union_decl.union_decl_type_params = null;
+    union_decl.union_decl_type_param_count = 0;
+    if is_extern == 0 && parser.current_token != null && parser_match(parser, TokenType.TOKEN_LESS) != 0 {
+        parser_consume(parser);
+        var type_params: &TypeParam = null;
+        var type_param_count: i32 = 0;
+        var type_param_capacity: i32 = 0;
+        while parser.current_token != null &&
+              parser_match(parser, TokenType.TOKEN_GREATER) == 0 &&
+              parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+            if parser_match(parser, TokenType.TOKEN_IDENTIFIER) == 0 {
+                return null;
+            }
+            const param_name: &byte = arena_strdup(parser.arena, parser.current_token.value);
+            if param_name == null {
+                return null;
+            }
+            parser_consume(parser);
+            if type_param_count >= type_param_capacity {
+                var new_cap: i32 = 0;
+                if type_param_capacity == 0 {
+                    new_cap = 4;
+                } else {
+                    new_cap = type_param_capacity * 2;
+                }
+                const new_params: &TypeParam = arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
+                if new_params == null {
+                    return null;
+                }
+                var i: i32 = 0;
+                while i < type_param_count {
+                    if type_params != null {
+                        new_params[i] = type_params[i];
+                    }
+                    i = i + 1;
+                }
+                type_params = new_params;
+                type_param_capacity = new_cap;
+            }
+            if type_params == null {
+                return null;
+            }
+            {
+                const type_params_ptr: &TypeParam = type_params;
+                if type_params_ptr == null {
+                    return null;
+                }
+                type_params_ptr[type_param_count].name = param_name;
+                type_params_ptr[type_param_count].constraints = null;
+                type_params_ptr[type_param_count].constraint_count = 0;
+            }
+            type_param_count = type_param_count + 1;
+            if parser_match(parser, TokenType.TOKEN_COMMA) != 0 {
+                parser_consume(parser);
+            } else {
+                break;
+            }
+        }
+        if parser_expect(parser, TokenType.TOKEN_GREATER) == null {
+            return null;
+        }
+        union_decl.union_decl_type_params = type_params;
+        union_decl.union_decl_type_param_count = type_param_count;
+    }
     if parser_expect(parser, TokenType.TOKEN_LEFT_BRACE) == null {
         return null;
     }

@@ -349,7 +349,23 @@ fn type_equals(t1: Type, t2: Type) i32 {
         if t1.union_name == null || t2.union_name == null {
             return 0;
         }
-        return str_equals(t1.union_name, t2.union_name);
+        if str_equals(t1.union_name, t2.union_name) == 0 {
+            return 0;
+        }
+        if t1.union_type_arg_count != t2.union_type_arg_count {
+            return 0;
+        }
+        if t1.union_type_arg_count > 0 && (t1.union_type_args == null || t2.union_type_args == null) {
+            return 0;
+        }
+        var ui: i32 = 0;
+        while ui < t1.union_type_arg_count {
+            if type_equals(t1.union_type_args[ui], t2.union_type_args[ui]) == 0 {
+                return 0;
+            }
+            ui = ui + 1;
+        }
+        return 1;
     }
     
     if t1.kind == TypeKind.TYPE_INTERFACE {
@@ -527,6 +543,8 @@ fn make_void_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -553,6 +571,8 @@ fn make_i8_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -579,6 +599,8 @@ fn make_i16_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -605,6 +627,8 @@ fn make_i32_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -631,6 +655,8 @@ fn make_i64_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -657,6 +683,8 @@ fn make_f32_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -683,6 +711,8 @@ fn make_f64_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -709,6 +739,8 @@ fn make_u8_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -735,6 +767,8 @@ fn make_u16_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -761,6 +795,8 @@ fn make_u32_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -787,6 +823,8 @@ fn make_u64_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -813,6 +851,8 @@ fn make_bool_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -839,6 +879,8 @@ fn make_usize_type() Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -871,6 +913,8 @@ fn make_pointer_type(arena: &Arena, pointee: &Type, is_ffi: i32) Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -903,6 +947,8 @@ fn make_array_type(arena: &Arena, element: &Type, size: i32) Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -934,6 +980,8 @@ fn make_slice_type(arena: &Arena, element: &Type) Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -962,6 +1010,8 @@ fn make_named_type(kind: TypeKind, name: &byte) Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
     if kind == TypeKind.TYPE_ENUM {
         t.enum_name = name;
@@ -1003,6 +1053,8 @@ fn make_error_union_type(arena: &Arena, payload: &Type) Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 
@@ -1034,6 +1086,8 @@ fn make_atomic_type(arena: &Arena, inner: &Type) Type {
         generic_param_name: null,
         struct_type_args: null,
         struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
     };
 }
 

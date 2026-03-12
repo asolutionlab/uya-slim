@@ -956,19 +956,61 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             fputc(41, codegen.output as *void);
             return;
         }
-        // 联合体变体构造：UnionName.variant(expr) 或 UnionName.variant()（void 变体）
+        // 联合体变体构造：UnionName.variant(expr) 或 Foo<i32>.variant(expr)
         if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS {
             const obj: &ASTNode = callee.member_access_object;
             const method_name: &byte = callee.member_access_field_name;
-            if obj != null && obj.type == ASTNodeType.AST_IDENTIFIER && obj.identifier_name != null &&
-                (arg_count == 1 || arg_count == 0) && (arg_count == 0 || (expr.call_expr_args != null && expr.call_expr_args[0] != null)) {
-                const union_decl: &ASTNode = find_union_decl_c99(codegen, obj.identifier_name);
-                if union_decl != null {
+            if obj != null && (arg_count == 1 || arg_count == 0) && (arg_count == 0 || (expr.call_expr_args != null && expr.call_expr_args[0] != null)) {
+                var union_decl: &ASTNode = null;
+                var uname: &byte = null;
+                if obj.type == ASTNodeType.AST_IDENTIFIER && obj.identifier_name != null {
+                    union_decl = find_union_decl_c99(codegen, obj.identifier_name);
+                    if union_decl != null {
+                        if union_decl.union_decl_type_param_count > 0 {
+                            var found_mono: i32 = 0;
+                            var mono_idx: i32 = -1;
+                            var j: i32 = 0;
+                            while j < codegen.mono_instance_count {
+                                if codegen.mono_instances[j].generic_name != null &&
+                                    strcmp(codegen.mono_instances[j].generic_name as *byte, obj.identifier_name as *byte) == 0 &&
+                                    codegen.mono_instances[j].is_function == 0 {
+                                    if found_mono != 0 {
+                                        mono_idx = -1;
+                                        break;
+                                    }
+                                    found_mono = 1;
+                                    mono_idx = j;
+                                }
+                                j = j + 1;
+                            }
+                            if mono_idx >= 0 && codegen.mono_instances[mono_idx].type_args != null && codegen.mono_instances[mono_idx].type_arg_count > 0 {
+                                const mono: &byte = get_mono_union_name(codegen, obj.identifier_name,
+                                    codegen.mono_instances[mono_idx].type_args,
+                                    codegen.mono_instances[mono_idx].type_arg_count);
+                                uname = get_safe_c_identifier(codegen, mono);
+                            } else {
+                                uname = get_safe_c_identifier(codegen, union_decl.union_decl_name);
+                            }
+                        } else {
+                            uname = get_safe_c_identifier(codegen, union_decl.union_decl_name);
+                        }
+                    }
+                } else if obj.type == ASTNodeType.AST_TYPE_NAMED && obj.type_named_name != null {
+                    union_decl = find_union_decl_c99(codegen, obj.type_named_name);
+                    if union_decl != null {
+                        if union_decl.union_decl_type_param_count > 0 && obj.type_named_type_arg_count > 0 && obj.type_named_type_args != null {
+                            const mono: &byte = get_mono_union_name(codegen, obj.type_named_name, obj.type_named_type_args, obj.type_named_type_arg_count);
+                            uname = get_safe_c_identifier(codegen, mono);
+                        } else {
+                            uname = get_safe_c_identifier(codegen, union_decl.union_decl_name);
+                        }
+                    }
+                }
+                if union_decl != null && uname != null {
                     const idx: i32 = find_union_variant_index(union_decl, method_name);
                     if idx >= 0 {
-                        const uname: &byte = get_safe_c_identifier(codegen, union_decl.union_decl_name);
                         const vname_c: &byte = get_safe_c_identifier(codegen, method_name);
-                        if uname != null && vname_c != null {
+                        if vname_c != null {
                             const vnode: &ASTNode = union_decl.union_decl_variants[idx];
                             const is_void: i32 = (vnode != null && vnode.type == ASTNodeType.AST_VAR_DECL && vnode.var_decl_type != null &&
                                 vnode.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED && vnode.var_decl_type.type_named_name != null &&
@@ -2275,9 +2317,18 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     if idx >= 0 && uname != null && vname != null {
                         const vnode: &ASTNode = union_decl.union_decl_variants[idx];
                         var vtype: &byte = "int" as &byte;
+                        const saved_sp: &TypeParam = codegen.struct_type_params;
+                        const saved_sa: & & ASTNode = codegen.struct_type_args;
+                        const saved_spc: i32 = codegen.struct_type_param_count;
+                        const saved_sac: i32 = codegen.struct_type_arg_count;
+                        if set_union_mono_context_from_tagged_type(codegen, union_decl, m_type) != 0 { }
                         if vnode != null && vnode.type == ASTNodeType.AST_VAR_DECL && vnode.var_decl_type != null {
                             vtype = c99_type_to_c(codegen, vnode.var_decl_type);
                         }
+                        codegen.struct_type_params = saved_sp;
+                        codegen.struct_type_args = saved_sa;
+                        codegen.struct_type_param_count = saved_spc;
+                        codegen.struct_type_arg_count = saved_sac;
                         var bind: &byte = null;
                         if expr.match_expr_arms[i].var_name != null && strcmp(expr.match_expr_arms[i].var_name as *byte, "_" as *byte) != 0 {
                             bind = get_safe_c_identifier(codegen, expr.match_expr_arms[i].var_name);

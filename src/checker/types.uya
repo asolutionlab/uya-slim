@@ -170,6 +170,8 @@ struct Type {
     generic_param_name: &byte,
     struct_type_args: &Type,
     struct_type_arg_count: i32,
+    union_type_args: &Type,
+    union_type_arg_count: i32,
 }
 
 struct Symbol {

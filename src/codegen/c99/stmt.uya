@@ -1658,9 +1658,18 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     if idx >= 0 && uname != null && vname != null {
                         const vnode: &ASTNode = union_decl.union_decl_variants[idx];
                         var vtype: &byte = "int" as &byte;
+                        const saved_sp: &TypeParam = codegen.struct_type_params;
+                        const saved_sa: & & ASTNode = codegen.struct_type_args;
+                        const saved_spc: i32 = codegen.struct_type_param_count;
+                        const saved_sac: i32 = codegen.struct_type_arg_count;
+                        if set_union_mono_context_from_tagged_type(codegen, union_decl, m_type) != 0 { }
                         if vnode != null && vnode.type == ASTNodeType.AST_VAR_DECL && vnode.var_decl_type != null {
                             vtype = c99_type_to_c(codegen, vnode.var_decl_type);
                         }
+                        codegen.struct_type_params = saved_sp;
+                        codegen.struct_type_args = saved_sa;
+                        codegen.struct_type_param_count = saved_spc;
+                        codegen.struct_type_arg_count = saved_sac;
                         var bind: &byte = null;
                         if stmt.match_expr_arms[i].var_name != null && strcmp(stmt.match_expr_arms[i].var_name as *byte, "_" as *byte) != 0 {
                             bind = get_safe_c_identifier(codegen, stmt.match_expr_arms[i].var_name);

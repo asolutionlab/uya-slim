@@ -198,6 +198,8 @@ struct ASTNode {
     union_decl_method_count: i32,
     union_decl_is_extern: i32,  // 1 表示 extern union（C 互操作，仅生成 union，无 tagged 包装）
     union_decl_is_export: i32,  // 1 表示 export union，0 表示私有
+    union_decl_type_params: &TypeParam,  // 泛型参数（如 <T>），null 表示非泛型
+    union_decl_type_param_count: i32,
     // method_block（StructName/UnionName { fn method(...) { ... } ... }）
     method_block_struct_name: &byte,
     method_block_union_name: &byte,    // 联合体名称（为 null 时表示结构体方法块）
@@ -485,6 +487,8 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.union_decl_method_count = 0;
     node.union_decl_is_extern = 0;
     node.union_decl_is_export = 0;
+    node.union_decl_type_params = null;
+    node.union_decl_type_param_count = 0;
     node.method_block_struct_name = null;
     node.method_block_union_name = null;
     node.method_block_methods = null;

@@ -161,7 +161,7 @@ fn find_method_in_union_c99(codegen: &C99CodeGenerator, union_name: &byte, metho
     return null;
 }
 
-// 根据 C 类型后缀（如 "uya_tagged_IntOrFloat"）查找联合体声明
+// 根据 C 类型后缀（如 "uya_tagged_IntOrFloat" 或 "uya_tagged_Foo_i32"）查找联合体声明
 fn find_union_decl_by_tagged_c99(codegen: &C99CodeGenerator, tagged_suffix: &byte) &ASTNode {
     if codegen == null || codegen.program_node == null || tagged_suffix == null {
         return null;
@@ -178,6 +178,27 @@ fn find_union_decl_by_tagged_c99(codegen: &C99CodeGenerator, tagged_suffix: &byt
             const safe: &byte = get_safe_c_identifier(codegen, decl.union_decl_name);
             if safe != null && strcmp(safe as *byte, suffix) == 0 {
                 return decl;
+            }
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while i < decl_count {
+        const decl: &ASTNode = codegen.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_UNION_DECL && is_generic_union_c99(decl) != 0 {
+            var j: i32 = 0;
+            while j < codegen.mono_instance_count {
+                if codegen.mono_instances[j].generic_name != null &&
+                    strcmp(codegen.mono_instances[j].generic_name as *byte, decl.union_decl_name as *byte) == 0 &&
+                    codegen.mono_instances[j].is_function == 0 {
+                    const mono_name: &byte = get_mono_union_name(codegen, decl.union_decl_name,
+                        codegen.mono_instances[j].type_args,
+                        codegen.mono_instances[j].type_arg_count);
+                    if mono_name != null && strcmp(mono_name as *byte, suffix) == 0 {
+                        return decl;
+                    }
+                }
+                j = j + 1;
             }
         }
         i = i + 1;
@@ -202,6 +223,38 @@ fn find_union_decl_by_variant_c99(codegen: &C99CodeGenerator, variant_name: &byt
         i = i + 1;
     }
     return null;
+}
+
+// 根据 C 类型字符串（如 "struct uya_tagged_Foo_i32"）设置联合体单态上下文，用于 match 内变体类型的解析
+// 返回 1 表示已设置，0 表示未设置（非泛型或未找到）
+fn set_union_mono_context_from_tagged_type(codegen: &C99CodeGenerator, union_decl: &ASTNode, tagged_type_c: &byte) i32 {
+    if codegen == null || union_decl == null || tagged_type_c == null || is_generic_union_c99(union_decl) == 0 {
+        return 0;
+    }
+    const p: *byte = strstr(tagged_type_c as *byte, "uya_tagged_" as *byte);
+    if p == null {
+        return 0;
+    }
+    const suffix: &byte = &p[11] as &byte;
+    var j: i32 = 0;
+    while j < codegen.mono_instance_count {
+        if codegen.mono_instances[j].generic_name != null &&
+            strcmp(codegen.mono_instances[j].generic_name as *byte, union_decl.union_decl_name as *byte) == 0 &&
+            codegen.mono_instances[j].is_function == 0 {
+            const mono_name: &byte = get_mono_union_name(codegen, union_decl.union_decl_name,
+                codegen.mono_instances[j].type_args,
+                codegen.mono_instances[j].type_arg_count);
+            if mono_name != null && strcmp(mono_name as *byte, suffix) == 0 {
+                codegen.struct_type_params = union_decl.union_decl_type_params;
+                codegen.struct_type_args = codegen.mono_instances[j].type_args;
+                codegen.struct_type_param_count = union_decl.union_decl_type_param_count;
+                codegen.struct_type_arg_count = codegen.mono_instances[j].type_arg_count;
+                return 1;
+            }
+        }
+        j = j + 1;
+    }
+    return 0;
 }
 
 // 返回联合体变体索引（0-based），不存在返回 -1
@@ -261,6 +314,66 @@ fn gen_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode) i32 {
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "struct uya_tagged_%s { int _tag; union %s u; };\n" as *byte, union_name as *byte, union_name as *byte);
     }
+    return 0;
+}
+
+// 生成单态化联合体定义（泛型 union Foo<T> 的 Foo_i32 等）
+fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, type_args: & &ASTNode, type_arg_count: i32) i32 {
+    if codegen == null || union_decl == null || union_decl.type != ASTNodeType.AST_UNION_DECL {
+        return -1;
+    }
+    const orig_name: &byte = union_decl.union_decl_name;
+    if orig_name == null || type_args == null || type_arg_count <= 0 {
+        return -1;
+    }
+    const mono_name: &byte = get_mono_union_name(codegen, orig_name, type_args, type_arg_count);
+    const union_name: &byte = get_safe_c_identifier(codegen, mono_name);
+    if union_name == null {
+        return -1;
+    }
+    const n: i32 = union_decl.union_decl_variant_count;
+    const variants: & & ASTNode = union_decl.union_decl_variants;
+    if n <= 0 || variants == null {
+        return -1;
+    }
+    var saved_struct_type_params: &TypeParam = codegen.struct_type_params;
+    var saved_struct_type_args: & & ASTNode = codegen.struct_type_args;
+    var saved_struct_type_param_count: i32 = codegen.struct_type_param_count;
+    var saved_struct_type_arg_count: i32 = codegen.struct_type_arg_count;
+    codegen.struct_type_params = union_decl.union_decl_type_params;
+    codegen.struct_type_args = type_args;
+    codegen.struct_type_param_count = union_decl.union_decl_type_param_count;
+    codegen.struct_type_arg_count = type_arg_count;
+    c99_emit_indent(codegen);
+    fprintf(codegen.output as *void, "union %s {\n" as *byte, union_name as *byte);
+    codegen.indent_level = codegen.indent_level + 1;
+    var i: i32 = 0;
+    while i < n {
+        const v: &ASTNode = variants[i];
+        if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null && v.var_decl_type != null {
+            const vname: &byte = get_safe_c_identifier(codegen, v.var_decl_name);
+            var vtype: &byte = c99_type_to_c(codegen, v.var_decl_type);
+            if vtype != null && v.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED && v.var_decl_type.type_named_name != null &&
+                strcmp(v.var_decl_type.type_named_name as *byte, "void" as *byte) == 0 {
+                vtype = "char" as &byte;
+            }
+            if vname != null && vtype != null {
+                c99_emit_indent(codegen);
+                fprintf(codegen.output as *void, "%s %s;\n" as *byte, vtype as *byte, vname as *byte);
+            }
+        }
+        i = i + 1;
+    }
+    codegen.indent_level = codegen.indent_level - 1;
+    c99_emit(codegen, "};\n" as *byte);
+    if union_decl.union_decl_is_extern == 0 {
+        c99_emit_indent(codegen);
+        fprintf(codegen.output as *void, "struct uya_tagged_%s { int _tag; union %s u; };\n" as *byte, union_name as *byte, union_name as *byte);
+    }
+    codegen.struct_type_params = saved_struct_type_params;
+    codegen.struct_type_args = saved_struct_type_args;
+    codegen.struct_type_param_count = saved_struct_type_param_count;
+    codegen.struct_type_arg_count = saved_struct_type_arg_count;
     return 0;
 }
 
@@ -1079,6 +1192,17 @@ fn is_generic_struct_c99(struct_decl: &ASTNode) i32 {
     return 0;
 }
 
+// 检查联合体是否是泛型联合体（有类型参数）
+fn is_generic_union_c99(union_decl: &ASTNode) i32 {
+    if union_decl == null || union_decl.type != ASTNodeType.AST_UNION_DECL {
+        return 0;
+    }
+    if union_decl.union_decl_type_param_count > 0 {
+        return 1;
+    }
+    return 0;
+}
+
 // 检查单态化类型参数是否包含未解析的类型参数
 // 例如：Container<T> 中 T 还是类型参数，而不是具体类型（如 i32）
 fn has_unresolved_mono_type_args(generic_decl: &ASTNode, type_args: & & ASTNode, type_arg_count: i32) i32 {
@@ -1095,6 +1219,9 @@ fn has_unresolved_mono_type_args(generic_decl: &ASTNode, type_args: & & ASTNode,
     } else if generic_decl.type == ASTNodeType.AST_FN_DECL {
         type_params = generic_decl.fn_decl_type_params;
         type_param_count = generic_decl.fn_decl_type_param_count;
+    } else if generic_decl.type == ASTNodeType.AST_UNION_DECL {
+        type_params = generic_decl.union_decl_type_params;
+        type_param_count = generic_decl.union_decl_type_param_count;
     }
     
     if type_params == null || type_param_count == 0 {
@@ -1256,6 +1383,37 @@ fn get_mono_struct_name(codegen: &C99CodeGenerator, generic_name: &byte, type_ar
     }
     snprintf(mono_name as *byte, name_len, "%s_%s" as *byte, safe_name as *byte, suffix as *byte);
     
+    return mono_name;
+}
+
+// 获取单态化联合体名称（与 get_mono_struct_name 规则一致，如 Foo<i32> -> Foo_i32）
+fn get_mono_union_name(codegen: &C99CodeGenerator, generic_name: &byte, type_args: & &ASTNode, type_arg_count: i32) &byte {
+    if codegen == null || generic_name == null || type_args == null || type_arg_count <= 0 {
+        return generic_name;
+    }
+    var suffix: [byte: C99_SUFFIX_BUF_SIZE] = [0: C99_SUFFIX_BUF_SIZE];
+    var suffix_len: i32 = 0;
+    var i: i32 = 0;
+    while i < type_arg_count {
+        if i > 0 {
+            if suffix_len >= 0 && suffix_len < C99_SUFFIX_BUF_SIZE {
+                suffix[suffix_len] = 95 as byte;
+            }
+            suffix_len = suffix_len + 1;
+        }
+        suffix_len = append_type_arg_suffix(codegen, type_args[i], &suffix[0], suffix_len, C99_SUFFIX_BUF_SIZE);
+        i = i + 1;
+    }
+    if suffix_len >= 0 && suffix_len < C99_SUFFIX_BUF_SIZE {
+        suffix[suffix_len] = 0;
+    }
+    const safe_name: &byte = get_safe_c_identifier(codegen, generic_name);
+    const name_len: i32 = (strlen(safe_name as *byte) as i32) + 1 + suffix_len + 1;
+    const mono_name: &byte = arena_alloc(codegen.arena, name_len as usize) as &byte;
+    if mono_name == null {
+        return generic_name;
+    }
+    snprintf(mono_name as *byte, name_len, "%s_%s" as *byte, safe_name as *byte, suffix as *byte);
     return mono_name;
 }
 
