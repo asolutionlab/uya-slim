@@ -850,7 +850,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 - [~] **标准库实现**（基于核心类型，详见 [`docs/std_async_design.md`](./docs/std_async_design.md)）
   - [x] `lib/std/async.uya`：`struct Waker`、`union Poll<T>`（Ready/Pending）、`interface Future<T>`、`struct Future<T>`（`state: Poll<T>`、`fn poll(...) Poll<T>`）、`struct Task<T> : Future<T>`（`task_ready`、`poll`）
   - [x] 结构体含泛型 union 字段时 codegen 先输出 union 单态（如 `Poll_i32`），并用 arena 持久化 tagged 名避免重定义
-  - [x] 测试：`test_async_await_parse.uya`、`test_task_std_async.uya` 通过 `--c99` 与 `--uya --c99`
+  - [x] 测试：`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya` 通过 `--c99` 与 `--uya --c99`
   - [ ] `std.async.task` 模块：拆分/扩展（当前已在 async.uya 中）
   - [ ] `std.async.io` 模块：`AsyncWriter`, `AsyncReader`（非阻塞 I/O）
   - [ ] `std.async.event` 模块：`EventLoop`（epoll/kqueue/IOCP）
@@ -868,6 +868,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [ ] `test_async_fn_basic.uya` - 基本异步函数
   - [x] `test_async_await_parse.uya` - @async_fn/@await 解析与 @await 上下文校验（仅允许在 async 函数内）
   - [x] `test_task_std_async.uya` - std.async 提供 Task<T>、Poll<T>、Future<T>，task_ready + poll 返回 Ready
+  - [x] `test_async_return_value.uya` - @async_fn 中直接 return T 自动包装为 Future<T>（无 @await 时 poll 立即 Ready）
   - [ ] `test_async_await.uya` - `try @await` 基本使用
   - [ ] `test_async_poll.uya` - `Poll<T>` 使用
   - [ ] `test_async_future.uya` - `Future<T>` 接口实现
@@ -1009,7 +1010,7 @@ test "函数调用测试" {
 
 ### 测试覆盖统计
 
-**当前状态**：504 个测试文件，全部通过
+**当前状态**：505 个测试文件，全部通过
 
 | 类别 | 数量 | 说明 |
 |------|------|------|
@@ -1017,7 +1018,7 @@ test "函数调用测试" {
 | **错误测试** | 52 | `error_*.uya`，预期编译失败 |
 | **其他测试** | 46+ | 基础测试、递归测试等 |
 | **多文件测试** | 若干 | `multifile/`、`cross_deps/` 目录 |
-| **std.async 相关** | 2 | `test_async_await_parse.uya`、`test_task_std_async.uya` |
+| **std.async 相关** | 3 | `test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya` |
 
 **测试分类**：
 
@@ -2709,4 +2710,4 @@ interface IReadWriter {
 
 ---
 
-*文档版本：v0.5.7（2026-02-19），504 测试全部通过，内存安全证明已完成；std.async 阶段 2（Task/Future/Poll）编译与测试通过。*
+*文档版本：v0.5.7（2026-02-19），505 测试全部通过，内存安全证明已完成；std.async 阶段 2（Task/Future/Poll）及 @async_fn return T 自动包装已实现。*

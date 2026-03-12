@@ -453,6 +453,28 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     str_equals(payload.interface_name, expr_type.struct_name) != 0 {
                     return 1;
                 }
+                // @async_fn：允许 return T，自动包装为 !Future<T> 的成功分支（T 为 Future 的类型参数）
+                if checker.current_function_decl != null && checker.current_function_decl.fn_decl_is_async != 0 {
+                    const ret_ast: &ASTNode = checker.current_function_decl.fn_decl_return_type;
+                    if ret_ast != null && ret_ast.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+                        ret_ast.type_error_union_payload_type != null {
+                        const payload_ast: &ASTNode = ret_ast.type_error_union_payload_type;
+                        if payload_ast.type == ASTNodeType.AST_TYPE_NAMED && payload_ast.type_named_name != null &&
+                            str_equals(payload_ast.type_named_name, "Future" as *byte) != 0 &&
+                            payload_ast.type_named_type_arg_count >= 1 && payload_ast.type_named_type_args != null {
+                            const future_t: Type = type_from_ast(checker, payload_ast.type_named_type_args[0]);
+                            if type_equals(expr_type, future_t) != 0 {
+                                return 1;
+                            }
+                        }
+                    }
+                    if payload.struct_type_args != null && payload.struct_type_arg_count >= 1 {
+                        const future_t: Type = payload.struct_type_args[0];
+                        if type_equals(expr_type, future_t) != 0 {
+                            return 1;
+                        }
+                    }
+                }
             }
             
             // 特殊处理：检查是否是 null 字面量（ASTNodeType.AST_IDENTIFIER 且名称为 "null"）

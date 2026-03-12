@@ -802,10 +802,32 @@ fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_typ
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0 };\n" as *byte, ret_c as *byte, ret_c as *byte);
     } else {
+        // @async_fn 中 return T：生成 Future<T>{ state: Poll<T>.Ready(expr) }，仅当表达式为标量 T（非结构体字面量）时包装
+        var is_async_return_value: i32 = 0;
+        if payload_node != null && payload_node.type == ASTNodeType.AST_TYPE_NAMED && payload_node.type_named_name != null &&
+            strcmp(payload_node.type_named_name as *byte, "Future" as *byte) == 0 &&
+            payload_node.type_named_type_arg_count >= 1 && payload_node.type_named_type_args != null &&
+            expr.type != ASTNodeType.AST_STRUCT_INIT {
+            const expr_c: &byte = get_c_type_of_expr(codegen, expr);
+            const inner_type_node: &ASTNode = payload_node.type_named_type_args[0];
+            const inner_c: &byte = c99_type_to_c(codegen, inner_type_node);
+            if expr_c != null && inner_c != null && strcmp(expr_c as *byte, inner_c as *byte) == 0 {
+                is_async_return_value = 1;
+            }
+        }
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = " as *byte, ret_c as *byte, ret_c as *byte);
-        gen_expr(codegen, expr);
-        fputs(" };\n" as *byte, codegen.output as *void);
+        if is_async_return_value != 0 {
+            const payload_c: &byte = c99_type_to_c(codegen, payload_node);
+            const poll_mono: &byte = get_mono_union_name(codegen, "Poll" as &byte, payload_node.type_named_type_args, 1);
+            const poll_safe: &byte = get_safe_c_identifier(codegen, poll_mono);
+            fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = (%s){ .state = ((struct uya_tagged_%s){ ._tag = 1, .u = (union %s){ .Ready = " as *byte, ret_c as *byte, ret_c as *byte, payload_c as *byte, poll_safe as *byte, poll_safe as *byte);
+            gen_expr(codegen, expr);
+            fputs(" } }) } };\n" as *byte, codegen.output as *void);
+        } else {
+            fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = " as *byte, ret_c as *byte, ret_c as *byte);
+            gen_expr(codegen, expr);
+            fputs(" };\n" as *byte, codegen.output as *void);
+        }
     }
 }
 

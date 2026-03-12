@@ -451,8 +451,9 @@ fn struct_implements_interface(checker: &TypeChecker, struct_name: &byte, interf
             // 泛型接口名如 "Future<T>" 与声明名 "Future" 匹配：基名相同且 decl 以 '<' 继续
             const inlen: i32 = strlen(interface_name as *byte) as i32;
             const dlen: i32 = strlen(decl_iface as *byte) as i32;
+            const decl_ptr: *byte = decl_iface as *byte;
             if dlen > inlen && strncmp(decl_iface as *byte, interface_name as *byte, inlen) == 0 &&
-                (decl_iface as *byte)[inlen] == 60 {
+                decl_ptr[inlen] == 60 {
                 return 1;
             }
         }
