@@ -461,6 +461,7 @@
 ## 13. 联合体（union）
 
 - [x] **union 定义**：`union Name { variant1: Type1, variant2: Type2 }`，规范 uya.md §4.5
+- [x] **泛型 union**：`union Name<T> { ... }`，单态化 `Name<i32>`、`Name<T>.variant(x)` 与 match（uya-src 已实现，test_generic_union.uya 通过）
 - [x] **创建**：`UnionName.variant(expr)`，如 `IntOrFloat.i(42)`
 - [x] **访问**：`match` 模式匹配（必须处理所有变体）、`.variant(bind)` 模式、穷尽性检查
 - [x] **实现**：带隐藏 tag 的 C 布局（`struct uya_tagged_U { int _tag; union U u; }`），零开销 match
