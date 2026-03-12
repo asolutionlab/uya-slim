@@ -1088,14 +1088,15 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     if codegen.slice_struct_count > 0 {
         c99_emit_newline(codegen);
     }
-    // 第六步 b1：生成错误联合结构体（!T -> struct err_union_X），必须在用户结构体之前
+    // 第六步 b1：生成接口结构体与 vtable 结构体（vtable 常量在方法前向声明之后生成）
+    // 说明：错误联合结构体可能以 interface 作为 payload，需要先有 interface struct 定义。
+    emit_interface_structs_and_vtables(codegen);
+    c99_emit_newline(codegen);
+    // 第六步 b2：生成错误联合结构体（!T -> struct err_union_X），必须在用户结构体之前
     emit_pending_err_union_structs(codegen);
     if codegen.err_union_struct_count > 0 {
         c99_emit_newline(codegen);
     }
-    // 第六步 b2：生成接口结构体与 vtable 结构体（vtable 常量在方法前向声明之后生成）
-    emit_interface_structs_and_vtables(codegen);
-    c99_emit_newline(codegen);
     // 第六步 c：生成联合体定义（在结构体之前，因结构体可能含联合体）
     // 但首先需要生成联合体变体中引用的结构体（解决嵌套结构体的代码生成顺序问题）
     i = 0;

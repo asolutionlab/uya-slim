@@ -181,6 +181,21 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
         
         // 检查是否有类型实参（泛型结构体/联合体实例化）
         if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
+            // 泛型接口实例：Future<i32> 等 -> struct uya_interface_Future_i32
+            // 说明：接口与结构体可能同名（如 std.async 的 Future），这里优先接口以匹配 checker/type_from_ast 的行为。
+            const iface_decl: &ASTNode = find_interface_decl_c99(codegen, name);
+            if iface_decl != null && iface_decl.interface_decl_type_param_count > 0 {
+                const mono_name_i: &byte = get_mono_struct_name(codegen, name,
+                    type_node.type_named_type_args,
+                    type_node.type_named_type_arg_count);
+                const mn_len_i: i32 = (strlen(mono_name_i as *byte) as i32) + 24;
+                const buf_i: &byte = arena_alloc(codegen.arena, mn_len_i as usize) as &byte;
+                if buf_i != null {
+                    snprintf(buf_i as *byte, mn_len_i, "struct uya_interface_%s" as *byte, mono_name_i as *byte);
+                    return buf_i;
+                }
+                return ("void" as *byte) as &byte;
+            }
             const ud: &ASTNode = find_union_decl_c99(codegen, name);
             if ud != null && is_generic_union_c99(ud) != 0 {
                 const mono_name: &byte = get_mono_union_name(codegen, name,

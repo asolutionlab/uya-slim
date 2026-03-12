@@ -492,10 +492,18 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             gen_expr(codegen, operand);
             return;
         }
-        const poll_cname: &byte = get_method_c_name(codegen, future_mono, "poll" as *byte);
-        if poll_cname == null {
-            gen_expr(codegen, operand);
-            return;
+        // interface Future<T>：走 vtable 调用；struct Future<T>：走直接函数调用
+        var is_iface_future: i32 = 0;
+        if strncmp(future_mono as *byte, "uya_interface_" as *byte, 14) == 0 {
+            is_iface_future = 1;
+        }
+        var poll_cname: &byte = null;
+        if is_iface_future == 0 {
+            poll_cname = get_method_c_name(codegen, future_mono, "poll" as *byte);
+            if poll_cname == null {
+                gen_expr(codegen, operand);
+                return;
+            }
         }
 
         // Poll<T> 单态名：Poll_<Tmono>
@@ -522,7 +530,13 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         fputs("} else { " as *byte, codegen.output as *void);
         fprintf(codegen.output as *void, "struct %s _uya_f = _uya_op.value; " as *byte, future_mono as *byte);
         fputs("struct Waker _uya_w = (struct Waker){0}; " as *byte, codegen.output as *void);
-        fprintf(codegen.output as *void, "struct uya_tagged_%s _uya_p = %s(&(_uya_f), (&_uya_w)); " as *byte, poll_safe as *byte, poll_cname as *byte);
+        if is_iface_future != 0 {
+            const iface_safe: &byte = get_safe_c_identifier(codegen, &future_mono[14]);
+            fprintf(codegen.output as *void, "struct uya_tagged_%s _uya_p = ((struct uya_vtable_%s *)(_uya_f).vtable)->poll((_uya_f).data, (&_uya_w)); " as *byte,
+                poll_safe as *byte, iface_safe as *byte);
+        } else {
+            fprintf(codegen.output as *void, "struct uya_tagged_%s _uya_p = %s(&(_uya_f), (&_uya_w)); " as *byte, poll_safe as *byte, poll_cname as *byte);
+        }
         fprintf(codegen.output as *void, "if (_uya_p._tag == 1) { _uya_r = (%s){ .error_id = 0, .value = _uya_p.u.Ready }; } else { _uya_r = (%s){ .error_id = %dU }; } } _uya_r; })" as *byte,
             await_union_c as *byte, await_union_c as *byte, pending_id);
     } else if expr.type == ASTNodeType.AST_CATCH_EXPR {
