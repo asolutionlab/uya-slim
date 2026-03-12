@@ -1,12 +1,12 @@
 # std.async 异步标准库设计文档
 
 **相关文档**：
-- [std.c 标准库设计](std_c_design.md) — 同步 I/O（`std.io`）、C 标准库替代（`std.c`）
-- [语言规范 第 18 章](uya.md) — 异步编程语言核心（`@async_fn`、`@await`、`Future<T>`、`Poll<T>`）
+- [std/libc 标准库设计](std_c_design.md) — 同步 I/O（`std.io`）、C 兼容层（`lib/libc`）
+- [语言规范 第 18 章](uya.md#18-异步编程) — 异步编程语言核心（`@async_fn`、`@await`、`interface Future<T>`、`union Poll<T>`）
 
 ## 概述
 
-`std.async` 是 Uya 异步编程的标准库模块，基于语言核心类型（`Future<T>`、`Poll<T>`、`Waker`）实现高级异步抽象。
+`std.async` 是 Uya 异步编程的标准库模块，基于语言核心类型（`interface Future<T>`、`union Poll<T>`、`struct Waker`）实现高级异步抽象。
 
 **设计原则**：
 - 基于语言核心的 `@async_fn` / `@await` / `Future<T>` / `Poll<T>`
@@ -15,6 +15,8 @@
 - 与 `std.io` 形成同步/异步对称设计
 
 ## 架构概览
+
+**当前实现**：`lib/std/async.uya` 单文件占位（`Future<T>`、`Waker` 空结构体），满足 `@async_fn` 返回 `!Future<T>` 及类型检查。以下为**目标**目录结构，后续按阶段拆分实现。
 
 ```
 std/async/
@@ -90,9 +92,9 @@ AsyncFd : AsyncWriter {
     fn write(self: &Self, data: &[u8]) !Future<usize> {
         // 内部实现：
         // 1. 尝试非阻塞写入
-        // 2. 如果返回 EAGAIN，注册到事件循环，返回 Pending
+        // 2. 如果返回 EAGAIN，注册到事件循环，返回 union Poll<usize> { Pending: void }
         // 3. 事件就绪时，waker.wake() 唤醒任务
-        // 4. 重新 poll 时完成写入，返回 Ready
+        // 4. 重新 poll 时完成写入，返回 union Poll<usize> { Ready: n }
     }
 }
 
@@ -123,7 +125,7 @@ fn fetch_and_write(reader: &AsyncReader, writer: &AsyncWriter) !Future<void> {
 ### Task\<T\>
 
 - 异步任务的包装类型
-- 实现 `Future<T>` 接口
+- 实现 `Future<T>` 接口（即实现 `poll(self: &Self, waker: &Waker) union Poll<T>`）
 - 提供任务生命周期管理
 
 ### Waker
@@ -206,7 +208,7 @@ fn fetch_and_write(reader: &AsyncReader, writer: &AsyncWriter) !Future<void> {
 
 | 阶段 | 内容 | 优先级 | 依赖 |
 |------|------|--------|------|
-| 1 | **语言核心**（`@async_fn`, `@await`, `Future<T>`, `Poll<T>`） | ⭐⭐⭐⭐⭐ | 编译器 |
+| 1 | **语言核心**（`@async_fn`, `@await`, `interface Future<T>`, `union Poll<T>`） | ⭐⭐⭐⭐⭐ | 编译器 |
 | 2 | **std.async.task**（`Task<T>`, `Waker`） | ⭐⭐⭐⭐ | 阶段 1 |
 | 3 | **std.async.event**（`EventLoop` + Linux epoll） | ⭐⭐⭐⭐ | 阶段 1 + `@syscall` |
 | 4 | **std.async.io**（`AsyncWriter`, `AsyncReader`, `AsyncFd`） | ⭐⭐⭐⭐ | 阶段 2 + 3 |
@@ -223,3 +225,11 @@ fn fetch_and_write(reader: &AsyncReader, writer: &AsyncWriter) !Future<void> {
 **第三个里程碑**（跨平台）：
 完成阶段 1-7，支持 Linux / macOS / Windows 异步编程。
 
+---
+
+## 文档评审要点（供维护参考）
+
+- **与 uya.md 一致**：语言核心类型采用规范中的精确写法——`interface Future<T>`、`union Poll<T>`、`struct Waker`；阶段 1 与 uya.md 第 18.1/18.3 节对齐。
+- **取消与显式控制**：uya.md 要求“取消必须显式检查 `is_cancelled()`”；本设计在概述中体现了“显式控制”，若后续增加任务取消 API，需与 18 章保持一致。
+- **辅助函数归属**：`async_print_to` / `async_println_to` 未指定所在文件，实现时可放在 `std/async/io/writer.uya` 或单独工具模块。
+- **Option 依赖**：`AsyncFd` 示例使用 `Option<&Waker>`，依赖 `std.core.option`（见 [std_c_design](std_c_design.md)）；实现时需确保 use 或本模块提供等价类型。
