@@ -1595,8 +1595,57 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 if needs_cast != 0 {
                     fputs("(uint8_t *)" as *byte, codegen.output as *void);
                 }
-                
-                gen_expr(codegen, init_expr);
+
+                // 装箱：当变量类型是接口，且初始化表达式是实现了该接口的结构体值时，生成 vtable+data
+                var did_box: i32 = 0;
+                if var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null {
+                    const iface_decl: &ASTNode = find_interface_decl_c99(codegen, var_type.type_named_name);
+                    if iface_decl != null && init_expr != null {
+                        var struct_name_for_check: &byte = null;
+                        if init_expr.type == ASTNodeType.AST_IDENTIFIER && init_expr.identifier_name != null {
+                            const arg_type_c: &byte = get_identifier_type_c(codegen, init_expr.identifier_name);
+                            if arg_type_c != null {
+                                var atc: &byte = arg_type_c;
+                                if strncmp(atc as *byte, "const " as *byte, 6) == 0 {
+                                    atc = &arg_type_c[6] as &byte;
+                                }
+                                if strncmp(atc as *byte, "struct " as *byte, 7) == 0 &&
+                                    strstr(atc as *byte, "uya_interface_" as *byte) == null {
+                                    var snbuf: [byte: SHORT_NAME_BUF_SIZE] = [];
+                                    const start: &byte = &atc[7] as &byte;
+                                    var pos: i32 = 0;
+                                    while start[pos] != 0 && start[pos] != 32 && start[pos] != 42 && pos < SHORT_NAME_BUF_SIZE - 1 {
+                                        snbuf[pos] = start[pos];
+                                        pos = pos + 1;
+                                    }
+                                    snbuf[pos] = 0;
+                                    if pos > 0 && struct_implements_interface_c99(codegen, &snbuf[0] as &byte, var_type.type_named_name) != 0 {
+                                        struct_name_for_check = &snbuf[0] as &byte;
+                                    }
+                                }
+                            }
+                        } else if init_expr.type == ASTNodeType.AST_STRUCT_INIT {
+                            const st_name: &byte = init_expr.struct_init_struct_name;
+                            if st_name != null && struct_implements_interface_c99(codegen, st_name, var_type.type_named_name) != 0 {
+                                struct_name_for_check = st_name;
+                            }
+                        }
+
+                        if struct_name_for_check != null {
+                            const safe_iface: &byte = get_safe_c_identifier(codegen, var_type.type_named_name);
+                            const safe_struct: &byte = get_safe_c_identifier(codegen, struct_name_for_check);
+                            fprintf(codegen.output as *void, "(struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&(" as *byte,
+                                safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
+                            gen_expr(codegen, init_expr);
+                            fputs(") }" as *byte, codegen.output as *void);
+                            did_box = 1;
+                        }
+                    }
+                }
+
+                if did_box == 0 {
+                    gen_expr(codegen, init_expr);
+                }
                 c99_emit_semi_newline(codegen);
             }
             if need_pragma_missing_braces != 0 {

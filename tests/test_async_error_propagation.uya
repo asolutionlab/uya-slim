@@ -1,0 +1,32 @@
+// test_async_error_propagation.uya
+// 验证 try @await 对两类错误的传播：
+// 1) 操作数本身是 !Future<T>，若它在进入 poll 前就已是 error，@await 应直接传播该错误
+// 2) 若 poll 返回 Pending，当前最小闭环实现会返回 error.AsyncPending（单独在 test_async_await 覆盖）
+
+use std.async;
+use std.testing.expect;
+
+error Foo;
+
+fn err_future() !Future<i32> {
+    return error.Foo;
+}
+
+@async_fn
+fn await_err_future_should_propagate() !Future<i32> {
+    const _x: i32 = try @await err_future();
+    _ = _x;
+    return 1;
+}
+
+fn call_should_error() !void {
+    const _f: Future<i32> = try await_err_future_should_propagate();
+    _ = _f;
+}
+
+test "await_operand_error_propagates" {
+    var got_error: bool = false;
+    call_should_error() catch { got_error = true; };
+    try expect(got_error);
+}
+

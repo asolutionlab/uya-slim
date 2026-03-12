@@ -873,9 +873,9 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `test_async_await.uya` - `try @await` 基本使用（Ready 与 Pending 最小闭环）
   - [x] `test_poll_std_async.uya` - `Poll<T>` 使用（原计划名 `test_async_poll.uya`）
   - [x] `test_async_poll_inline_struct_init.uya` - 回归：结构体字段内联初始化 `Poll<T>` 时必须使用单态化 tagged union
-  - [ ] `test_async_future.uya` - `Future<T>` 接口实现
+  - [ ] `test_async_future.uya` - `Future<T>` 接口实现（泛型 interface 单态化/装箱支持完善后再补）
   - [ ] `test_async_state_machine.uya` - 状态机生成验证
-  - [ ] `test_async_error_propagation.uya` - 错误传播
+  - [x] `test_async_error_propagation.uya` - 错误传播（操作数错误直接传播）
   - [x] `test_async_nested.uya` - 多 @async_fn（poll Future&lt;i32&gt;；嵌套 Future&lt;Future&lt;T&gt;&gt; 待完善）
   - [ ] `error_async_wrong_return.uya` - 返回类型错误
   - [x] `error_await_outside_async.uya` - `try @await` 在非异步函数中使用
