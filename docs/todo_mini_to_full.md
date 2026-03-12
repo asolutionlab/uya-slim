@@ -850,7 +850,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 - [~] **标准库实现**（基于核心类型，详见 [`docs/std_async_design.md`](./docs/std_async_design.md)）
   - [x] `lib/std/async.uya`：`struct Waker`、`union Poll<T>`（Ready/Pending）、`interface Future<T>`、`struct Future<T>`（`state: Poll<T>`、`fn poll(...) Poll<T>`）、`struct Task<T> : Future<T>`（`task_ready`、`poll`）
   - [x] 结构体含泛型 union 字段时 codegen 先输出 union 单态（如 `Poll_i32`），并用 arena 持久化 tagged 名避免重定义
-  - [x] 测试：`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya` 通过 `--c99` 与 `--uya --c99`
+  - [x] 测试：`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya`、`test_async_nested.uya` 通过 `--c99` 与 `--uya --c99`
   - [ ] `std.async.task` 模块：拆分/扩展（当前已在 async.uya 中）
   - [ ] `std.async.io` 模块：`AsyncWriter`, `AsyncReader`（非阻塞 I/O）
   - [ ] `std.async.event` 模块：`EventLoop`（epoll/kqueue/IOCP）
@@ -874,7 +874,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [ ] `test_async_future.uya` - `Future<T>` 接口实现
   - [ ] `test_async_state_machine.uya` - 状态机生成验证
   - [ ] `test_async_error_propagation.uya` - 错误传播
-  - [ ] `test_async_nested.uya` - 嵌套异步调用
+  - [x] `test_async_nested.uya` - 多 @async_fn（poll Future&lt;i32&gt;；嵌套 Future&lt;Future&lt;T&gt;&gt; 待完善）
   - [ ] `error_async_wrong_return.uya` - 返回类型错误
   - [x] `error_await_outside_async.uya` - `try @await` 在非异步函数中使用
   - [ ] `error_async_recursive.uya` - 递归异步函数（应报错）

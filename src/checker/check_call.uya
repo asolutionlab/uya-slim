@@ -341,6 +341,40 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                 }
                 return type_from_ast(checker, m.fn_decl_return_type);
             } else {
+                // 回退：单态化结构体名（如 Future_Future_i32）在 AST 中无独立声明，用基名（首段）按接口解析
+                var base_buf: [byte: 64] = [];
+                var bi: i32 = 0;
+                const sn: *byte = object_type.struct_name as *byte;
+                while sn[bi] != 0 && sn[bi] != 95 && bi < 63 {
+                    base_buf[bi] = sn[bi];
+                    bi = bi + 1;
+                }
+                base_buf[bi] = 0;
+                const base_name: &byte = &base_buf[0];
+                var m_fallback: &ASTNode = find_method_in_struct(checker.program_node, base_name, method_name);
+                if m_fallback == null {
+                    if find_interface_decl_from_program(checker.program_node, base_name) != null {
+                        m_fallback = find_interface_method_sig(checker.program_node, base_name, method_name);
+                    }
+                }
+                if m_fallback != null {
+                    var expected_args: i32 = m_fallback.fn_decl_param_count - 1;
+                    if expected_args < 0 { expected_args = 0; }
+                    if node.call_expr_arg_count != expected_args {
+                        checker_report_error(checker, node, "方法调用实参个数不匹配" as *byte);
+                        return result;
+                    }
+                    var j: i32 = 0;
+                    while j < expected_args && j < node.call_expr_arg_count {
+                        const param_type: Type = type_from_ast(checker, m_fallback.fn_decl_params[j + 1].var_decl_type);
+                        if checker_check_expr_type(checker, node.call_expr_args[j], copy_type(&param_type)) == 0 {
+                            checker_report_error(checker, node, "方法调用参数类型不匹配" as *byte);
+                            return result;
+                        }
+                        j = j + 1;
+                    }
+                    return type_from_ast(checker, m_fallback.fn_decl_return_type);
+                }
                 checker_report_error(checker, node, "结构体上不存在该方法" as *byte);
             }
         }

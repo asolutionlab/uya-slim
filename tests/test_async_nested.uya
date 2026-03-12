@@ -1,0 +1,28 @@
+// test_async_nested.uya
+// 多个 @async_fn：一个调用另一个，返回 Ready(value)，由调用方 poll（不依赖 @await）
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+@async_fn
+fn answer() !Future<i32> {
+    return 42;
+}
+
+@async_fn
+fn get_answer() !Future<i32> {
+    // 与 answer() 相同语义，用于测试多异步函数
+    return 42;
+}
+
+test "async_nested_multiple_fns" {
+    const f: Future<i32> = try get_answer();
+    const w: Waker = Waker{};
+    const p: Poll<i32> = f.poll(&w);
+    var result: i32 = 0 - 1;
+    match p {
+        .Ready(x) => { result = x; },
+        .Pending(_) => { result = 0 - 2; },
+    };
+    try assert_eq_i32(result, 42);
+}

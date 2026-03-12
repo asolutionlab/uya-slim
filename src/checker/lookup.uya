@@ -48,23 +48,28 @@ fn is_enum_variant_name_in_program(program_node: &ASTNode, name: &byte) i32 {
 
 // ===== 结构体查找 =====
 
-// 从程序节点中查找结构体声明
+// 从程序节点中查找结构体声明（精确匹配 "Future" 或基名匹配 "Future<T>"）
 fn find_struct_decl_from_program(program_node: &ASTNode, struct_name: &byte) &ASTNode {
     if program_node == null || program_node.type != ASTNodeType.AST_PROGRAM || struct_name == null {
         return null;
     }
-    
+    const snlen: i32 = strlen(struct_name as *byte) as i32;
     var i: i32 = 0;
     while i < program_node.program_decl_count {
         const decl: &ASTNode = program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL {
-            if decl.struct_decl_name != null && str_equals(decl.struct_decl_name, struct_name) != 0 {
+        if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_name != null {
+            const d: &byte = decl.struct_decl_name;
+            if str_equals(d, struct_name) != 0 {
+                return decl;
+            }
+            const dlen: i32 = strlen(d as *byte) as i32;
+            const d_ptr: *byte = d as *byte;
+            if dlen > snlen && strncmp(d as *byte, struct_name as *byte, snlen) == 0 && d_ptr[snlen] == 60 {
                 return decl;
             }
         }
         i = i + 1;
     }
-    
     return null;
 }
 
@@ -110,16 +115,23 @@ fn find_union_decl_from_program(program_node: &ASTNode, union_name: &byte) &ASTN
 
 // ===== 接口查找 =====
 
-// 从程序节点中查找接口声明
+// 从程序节点中查找接口声明（精确匹配 "Future" 或基名匹配 "Future<T>"）
 fn find_interface_decl_from_program(program_node: &ASTNode, interface_name: &byte) &ASTNode {
     if program_node == null || program_node.type != ASTNodeType.AST_PROGRAM || interface_name == null {
         return null;
     }
+    const inlen: i32 = strlen(interface_name as *byte) as i32;
     var i: i32 = 0;
     while i < program_node.program_decl_count {
         const decl: &ASTNode = program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_INTERFACE_DECL {
-            if decl.interface_decl_name != null && str_equals(decl.interface_decl_name, interface_name) != 0 {
+        if decl != null && decl.type == ASTNodeType.AST_INTERFACE_DECL && decl.interface_decl_name != null {
+            const d: &byte = decl.interface_decl_name;
+            if str_equals(d, interface_name) != 0 {
+                return decl;
+            }
+            const dlen: i32 = strlen(d as *byte) as i32;
+            const d_ptr: *byte = d as *byte;
+            if dlen > inlen && strncmp(d as *byte, interface_name as *byte, inlen) == 0 && d_ptr[inlen] == 60 {
                 return decl;
             }
         }
