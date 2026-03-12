@@ -811,12 +811,12 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 解析 `@await expression` 表达式
   - [ ] 解析 `!Future<T>` 返回类型（需泛型接口支持）
   - [ ] 解析 `union Poll<T>` 类型定义（需联合体泛型支持）
-  - [ ] 验证 `@await` 只能在 `@async_fn` 函数内使用
+  - [x] 验证 `@await` 只能在 `@async_fn` 函数内使用
 
 - [~] **Checker**：异步编程类型检查（基础实现，C 实现与 uya-src 已同步）
   - [ ] `@async_fn` 函数必须返回 `!Future<T>` 类型
   - [ ] `@await` 表达式操作数必须返回 `!Future<T>` 类型
-  - [ ] `@await` 只能在 `@async_fn` 函数内使用
+  - [x] `@await` 只能在 `@async_fn` 函数内使用
   - [x] `@await` 表达式基础类型推断（当前返回操作数类型）
   - [ ] `union Poll<T>` 类型检查（Pending/Ready/Error 变体）
   - [ ] `interface Future<T>` 接口定义和实现检查
@@ -846,7 +846,8 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [ ] `struct Waker` 定义（唤醒器）
   - [ ] 为内置类型提供异步支持
 
-- [ ] **标准库实现**（基于核心类型，详见 [`docs/std_async_design.md`](./docs/std_async_design.md)）
+- [~] **标准库实现**（基于核心类型，详见 [`docs/std_async_design.md`](./docs/std_async_design.md)）
+  - [x] `lib/std/async.uya` 占位模块（struct Waker 占位，无函数指针）
   - [ ] `std.async.task` 模块：`Task<T>`, `Waker` 实现
   - [ ] `std.async.io` 模块：`AsyncWriter`, `AsyncReader`（非阻塞 I/O）
   - [ ] `std.async.event` 模块：`EventLoop`（epoll/kqueue/IOCP）
@@ -862,6 +863,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 
 - [ ] **测试用例**：
   - [ ] `test_async_fn_basic.uya` - 基本异步函数
+  - [x] `test_async_await_parse.uya` - @async_fn/@await 解析与 @await 上下文校验（仅允许在 async 函数内）
   - [ ] `test_async_await.uya` - `try @await` 基本使用
   - [ ] `test_async_poll.uya` - `Poll<T>` 使用
   - [ ] `test_async_future.uya` - `Future<T>` 接口实现
@@ -869,7 +871,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [ ] `test_async_error_propagation.uya` - 错误传播
   - [ ] `test_async_nested.uya` - 嵌套异步调用
   - [ ] `error_async_wrong_return.uya` - 返回类型错误
-  - [ ] `error_await_outside_async.uya` - `try @await` 在非异步函数中使用
+  - [x] `error_await_outside_async.uya` - `try @await` 在非异步函数中使用
   - [ ] `error_async_recursive.uya` - 递归异步函数（应报错）
 
 **涉及**：Lexer、AST、Parser、Checker、Codegen（CPS 变换、状态机生成），uya-src。
