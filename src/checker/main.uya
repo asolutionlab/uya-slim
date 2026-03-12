@@ -213,10 +213,6 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             const v: &ASTNode = node.union_decl_variants[i];
             if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_type != null {
                 const vt: Type = type_from_ast(checker, v.var_decl_type);
-                if is_void_type(vt) != 0 {
-                    checker_report_error(checker, node, "联合体变体类型无效" as *byte);
-                    return 0;
-                }
             }
             i = i + 1;
         }

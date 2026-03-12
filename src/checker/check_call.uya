@@ -111,16 +111,23 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                 var i: i32 = 0;
                 while i < union_decl.union_decl_variant_count {
                     const v: &ASTNode = union_decl.union_decl_variants[i];
-                    if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
+                        if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
                         str_equals(v.var_decl_name, method_name) != 0 {
-                        if node.call_expr_arg_count != 1 {
-                            checker_report_error(checker, node, "联合体变体构造需要恰好一个实参" as *byte);
-                            return result;
-                        }
                         const variant_type: Type = type_from_ast(checker, v.var_decl_type);
-                        if checker_check_expr_type(checker, node.call_expr_args[0], copy_type(&variant_type)) == 0 {
-                            checker_report_error(checker, node, "联合体变体构造实参类型不匹配" as *byte);
-                            return result;
+                        if variant_type.kind == TypeKind.TYPE_VOID {
+                            if node.call_expr_arg_count != 0 {
+                                checker_report_error(checker, node, "void 变体构造不需要实参" as *byte);
+                                return result;
+                            }
+                        } else {
+                            if node.call_expr_arg_count != 1 {
+                                checker_report_error(checker, node, "联合体变体构造需要恰好一个实参" as *byte);
+                                return result;
+                            }
+                            if checker_check_expr_type(checker, node.call_expr_args[0], copy_type(&variant_type)) == 0 {
+                                checker_report_error(checker, node, "联合体变体构造实参类型不匹配" as *byte);
+                                return result;
+                            }
                         }
                         result.kind = TypeKind.TYPE_UNION;
                         result.union_name = union_decl.union_decl_name;

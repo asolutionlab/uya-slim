@@ -243,7 +243,11 @@ fn gen_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode) i32 {
         const v: &ASTNode = variants[i];
         if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null && v.var_decl_type != null {
             const vname: &byte = get_safe_c_identifier(codegen, v.var_decl_name);
-            const vtype: &byte = c99_type_to_c(codegen, v.var_decl_type);
+            var vtype: &byte = c99_type_to_c(codegen, v.var_decl_type);
+            if vtype != null && v.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED && v.var_decl_type.type_named_name != null &&
+                strcmp(v.var_decl_type.type_named_name as *byte, "void" as *byte) == 0 {
+                vtype = "char" as &byte;
+            }
             if vname != null && vtype != null {
                 c99_emit_indent(codegen);
                 fprintf(codegen.output as *void, "%s %s;\n" as *byte, vtype as *byte, vname as *byte);
