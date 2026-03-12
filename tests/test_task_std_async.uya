@@ -1,0 +1,17 @@
+// test_task_std_async.uya - 验证 std.async 提供 Task<T> 与 interface Future<T>
+// 设计见 docs/std_async_design.md 阶段 2；TDD：先写测试，再实现。
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+test "task_ready_poll_returns_ready" {
+    const t: Task<i32> = task_ready(42);
+    const w: Waker = Waker{};
+    const p: Poll<i32> = t.poll(&w);
+    var result: i32 = 0 - 1;
+    match p {
+        .Ready(x) => { result = x; },
+        .Pending(_) => { result = 0 - 2; },
+    };
+    try assert_eq_i32(result, 42);
+}

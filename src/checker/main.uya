@@ -436,11 +436,23 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 return 1;
             }
             
-            // 特殊处理：返回类型为 !T 且返回成功值：表达式类型与 !T 的载荷 T 一致
+            // 特殊处理：返回类型为 !T 且返回成功值：表达式类型与 !T 的载荷 T 一致，或结构体与接口同名（如 Future）
             if checker.current_return_type.kind == TypeKind.TYPE_ERROR_UNION &&
-                checker.current_return_type.error_union_payload_type != null &&
-                type_equals(expr_type, checker.current_return_type.error_union_payload_type[0]) != 0 {
-                return 1;
+                checker.current_return_type.error_union_payload_type != null {
+                const payload: Type = checker.current_return_type.error_union_payload_type[0];
+                if type_equals(expr_type, payload) != 0 {
+                    return 1;
+                }
+                if payload.kind == TypeKind.TYPE_INTERFACE && payload.interface_name != null &&
+                    expr_type.kind == TypeKind.TYPE_STRUCT && expr_type.struct_name != null &&
+                    struct_implements_interface(checker, expr_type.struct_name, payload.interface_name) != 0 {
+                    return 1;
+                }
+                if payload.kind == TypeKind.TYPE_INTERFACE && payload.interface_name != null &&
+                    expr_type.kind == TypeKind.TYPE_STRUCT && expr_type.struct_name != null &&
+                    str_equals(payload.interface_name, expr_type.struct_name) != 0 {
+                    return 1;
+                }
             }
             
             // 特殊处理：检查是否是 null 字面量（ASTNodeType.AST_IDENTIFIER 且名称为 "null"）

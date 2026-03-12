@@ -988,6 +988,20 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                     codegen.mono_instances[mono_idx].type_args,
                                     codegen.mono_instances[mono_idx].type_arg_count);
                                 uname = get_safe_c_identifier(codegen, mono);
+                            } else if codegen.current_type_params != null && codegen.current_type_arg_count == union_decl.union_decl_type_param_count && codegen.current_type_args != null {
+                                // 泛型函数内 Poll.Ready(x) 等：用当前函数类型实参解析单态名（如 task_ready 内 Poll -> Poll_i32）
+                                const mono: &byte = get_mono_union_name(codegen, obj.identifier_name,
+                                    codegen.current_type_args,
+                                    codegen.current_type_arg_count);
+                                uname = get_safe_c_identifier(codegen, mono);
+                            } else if codegen.expected_type != null && codegen.expected_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                                codegen.expected_type.type_named_name != null && str_equals(codegen.expected_type.type_named_name, obj.identifier_name) != 0 &&
+                                codegen.expected_type.type_named_type_arg_count > 0 && codegen.expected_type.type_named_type_args != null {
+                                // 变量声明 const p: Poll<i32> = Poll<i32>.Ready(42)：用期望类型实参解析单态名
+                                const mono: &byte = get_mono_union_name(codegen, obj.identifier_name,
+                                    codegen.expected_type.type_named_type_args,
+                                    codegen.expected_type.type_named_type_arg_count);
+                                uname = get_safe_c_identifier(codegen, mono);
                             } else {
                                 uname = get_safe_c_identifier(codegen, union_decl.union_decl_name);
                             }
@@ -2180,6 +2194,23 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             }
         }
         
+        // 单态结构体字面量（如 Future<i32>{ state: Poll<i32>.Pending() }）：设置 struct 类型实参上下文，使字段值中的 T 解析为 i32
+        var saved_stp: &TypeParam = null;
+        var saved_stp_count: i32 = 0;
+        var saved_sta: & & ASTNode = null;
+        var saved_sta_count: i32 = 0;
+        if expr.struct_init_type_arg_count > 0 && expr.struct_init_type_args != null && struct_decl != null &&
+            struct_decl.struct_decl_type_params != null && struct_decl.struct_decl_type_param_count > 0 {
+            saved_stp = codegen.struct_type_params;
+            saved_stp_count = codegen.struct_type_param_count;
+            saved_sta = codegen.struct_type_args;
+            saved_sta_count = codegen.struct_type_arg_count;
+            codegen.struct_type_params = struct_decl.struct_decl_type_params;
+            codegen.struct_type_param_count = struct_decl.struct_decl_type_param_count;
+            codegen.struct_type_args = expr.struct_init_type_args;
+            codegen.struct_type_arg_count = expr.struct_init_type_arg_count;
+        }
+        
         fprintf(codegen.output as *void, "(struct %s){" as *byte, struct_name as *byte);
         
         // 如果找到结构体声明，按结构体字段顺序生成初始化值（包含默认值）
@@ -2249,6 +2280,12 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 }
                 i = i + 1;
             }
+        }
+        if saved_stp != null {
+            codegen.struct_type_params = saved_stp;
+            codegen.struct_type_param_count = saved_stp_count;
+            codegen.struct_type_args = saved_sta;
+            codegen.struct_type_arg_count = saved_sta_count;
         }
         fputc(125, codegen.output as *void);  // '}'
 }

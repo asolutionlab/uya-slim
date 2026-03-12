@@ -432,6 +432,7 @@ fn check_method_self_param(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
 // ===== 接口实现检查 =====
 
 // 检查结构体是否实现某接口
+// interface_name 为声明中的名称（如 "Future"）；struct 的接口列表可能带泛型（如 "Future<T>"），按基名匹配
 fn struct_implements_interface(checker: &TypeChecker, struct_name: &byte, interface_name: &byte) i32 {
     if checker == null || checker.program_node == null || struct_name == null || interface_name == null {
         return 0;
@@ -442,9 +443,18 @@ fn struct_implements_interface(checker: &TypeChecker, struct_name: &byte, interf
     }
     var i: i32 = 0;
     while i < struct_decl.struct_decl_interface_count {
-        if struct_decl.struct_decl_interface_names[i] != null &&
-            str_equals(struct_decl.struct_decl_interface_names[i], interface_name) != 0 {
-            return 1;
+        const decl_iface: &byte = struct_decl.struct_decl_interface_names[i];
+        if decl_iface != null {
+            if str_equals(decl_iface, interface_name) != 0 {
+                return 1;
+            }
+            // 泛型接口名如 "Future<T>" 与声明名 "Future" 匹配：基名相同且 decl 以 '<' 继续
+            const inlen: i32 = strlen(interface_name as *byte) as i32;
+            const dlen: i32 = strlen(decl_iface as *byte) as i32;
+            if dlen > inlen && strncmp(decl_iface as *byte, interface_name as *byte, inlen) == 0 &&
+                (decl_iface as *byte)[inlen] == 60 {
+                return 1;
+            }
         }
         i = i + 1;
     }

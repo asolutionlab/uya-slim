@@ -16,7 +16,7 @@
 
 ## 架构概览
 
-**当前实现**：`lib/std/async.uya` 单文件占位（`Future<T>`、`Waker`、**`Poll<T>`**）；`union Poll<T> { Pending: void, Ready: T }` 已提供。以下为**目标**目录结构，后续按阶段拆分实现。
+**当前实现**：`lib/std/async.uya` 提供 `Waker`、**`interface Future<T>`**、**`Task<T> : Future<T>`**（含 `task_ready`、`poll`）、`struct Future<T>` 占位、**`Poll<T>`**。以下为**目标**目录结构，后续按阶段拆分实现。
 
 ```
 std/async/
