@@ -694,7 +694,129 @@ fn _fmt_f64_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, precisi
     return pos;
 }
 
-// fprintf - C 标准库兼容，stream 为 FILE*（stdin/stdout/stderr）
+// _fmt_f64_hex_to_buf - C99 %a/%A：十六进制浮点 [-]0xh.hhhhp±d
+// uppercase: 0 为 %a (0x1.xxxp+0)，非0 为 %A (0X1.XXXP+0)
+fn _fmt_f64_hex_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, precision: i32, uppercase: i32) usize {
+    var pos: usize = buf_pos;
+    var x: f64 = val;
+    if x != x {
+        if uppercase != 0 {
+            if pos < buf_max { buf[pos] = 78; pos = pos + 1; }
+            if pos < buf_max { buf[pos] = 65; pos = pos + 1; }
+            if pos < buf_max { buf[pos] = 78; pos = pos + 1; }
+        } else {
+            if pos < buf_max { buf[pos] = 110; pos = pos + 1; }
+            if pos < buf_max { buf[pos] = 97; pos = pos + 1; }
+            if pos < buf_max { buf[pos] = 110; pos = pos + 1; }
+        }
+        return pos;
+    }
+    if x != 0.0 && x * 2.0 == x {
+        if x < 0.0 {
+            if pos < buf_max { buf[pos] = 45; pos = pos + 1; }
+        }
+        if uppercase != 0 {
+            if pos < buf_max { buf[pos] = 73; pos = pos + 1; }
+            if pos < buf_max { buf[pos] = 78; pos = pos + 1; }
+            if pos < buf_max { buf[pos] = 70; pos = pos + 1; }
+        } else {
+            if pos < buf_max { buf[pos] = 105; pos = pos + 1; }
+            if pos < buf_max { buf[pos] = 110; pos = pos + 1; }
+            if pos < buf_max { buf[pos] = 102; pos = pos + 1; }
+        }
+        return pos;
+    }
+    if x < 0.0 {
+        if pos < buf_max { buf[pos] = 45; pos = pos + 1; }
+        x = 0.0 - x;
+    }
+    if x == 0.0 {
+        if uppercase != 0 {
+            if pos < buf_max { buf[pos] = 48; pos = pos + 1; }
+            if pos < buf_max { buf[pos] = 88; pos = pos + 1; }
+        } else {
+            if pos < buf_max { buf[pos] = 48; pos = pos + 1; }
+            if pos < buf_max { buf[pos] = 120; pos = pos + 1; }
+        }
+        if pos < buf_max { buf[pos] = 48; pos = pos + 1; }
+        if pos < buf_max { buf[pos] = 46; pos = pos + 1; }
+        var prec: i32 = precision;
+        if prec < 0 { prec = 0; }
+        var i: i32 = 0;
+        while i < prec && pos < buf_max {
+            buf[pos] = 48;
+            pos = pos + 1;
+            i = i + 1;
+        }
+        if uppercase != 0 {
+            if pos < buf_max { buf[pos] = 80; pos = pos + 1; }
+        } else {
+            if pos < buf_max { buf[pos] = 112; pos = pos + 1; }
+        }
+        if pos < buf_max { buf[pos] = 43; pos = pos + 1; }
+        if pos < buf_max { buf[pos] = 48; pos = pos + 1; }
+        return pos;
+    }
+    var exp: i32 = 0;
+    while x >= 1.0 {
+        x = x / 2.0;
+        exp = exp + 1;
+    }
+    while x < 0.5 {
+        x = x * 2.0;
+        exp = exp - 1;
+    }
+    exp = exp - 1;
+    if uppercase != 0 {
+        if pos < buf_max { buf[pos] = 48; pos = pos + 1; }
+        if pos < buf_max { buf[pos] = 88; pos = pos + 1; }
+    } else {
+        if pos < buf_max { buf[pos] = 48; pos = pos + 1; }
+        if pos < buf_max { buf[pos] = 120; pos = pos + 1; }
+    }
+    if pos < buf_max { buf[pos] = 49; pos = pos + 1; }
+    if pos < buf_max { buf[pos] = 46; pos = pos + 1; }
+    var frac: f64 = x - 0.5;
+    var prec: i32 = precision;
+    if prec < 0 { prec = 13; }
+    var k: i32 = 0;
+    while k < prec && pos < buf_max {
+        frac = frac * 16.0;
+        var d: i32 = frac as i32;
+        if d >= 16 { d = 15; }
+        frac = frac - (d as f64);
+        if uppercase != 0 {
+            if d >= 10 { buf[pos] = (65 + d - 10) as byte; } else { buf[pos] = (48 + d) as byte; }
+        } else {
+            if d >= 10 { buf[pos] = (97 + d - 10) as byte; } else { buf[pos] = (48 + d) as byte; }
+        }
+        pos = pos + 1;
+        k = k + 1;
+    }
+    if uppercase != 0 {
+        if pos < buf_max { buf[pos] = 80; pos = pos + 1; }
+    } else {
+        if pos < buf_max { buf[pos] = 112; pos = pos + 1; }
+    }
+    if exp < 0 {
+        if pos < buf_max { buf[pos] = 45; pos = pos + 1; }
+        exp = 0 - exp;
+    } else {
+        if pos < buf_max { buf[pos] = 43; pos = pos + 1; }
+    }
+    if exp >= 100 {
+        if pos < buf_max { buf[pos] = (48 + exp / 100) as byte; pos = pos + 1; }
+        exp = exp % 100;
+    }
+    if exp >= 10 {
+        if pos < buf_max { buf[pos] = (48 + exp / 10) as byte; pos = pos + 1; }
+        exp = exp % 10;
+    } else if prec > 0 || pos > buf_pos + 1 {
+        if pos < buf_max { buf[pos] = 48; pos = pos + 1; }
+    }
+    if pos < buf_max { buf[pos] = (48 + exp) as byte; pos = pos + 1; }
+    return pos;
+}
 // 支持 %s、%d、%ld、%u、%x、%X、%p、%c、%zu、%g、%%、%*s、%.Ng
 export extern "libc" fn fprintf(stream: &FILE, format: &const byte, ...) i32 {
     if stream == null || format == null {
@@ -1205,30 +1327,39 @@ fn _vfprintf_impl(stream: &FILE, format: &const byte, ap: va_list, use_buf: i32,
                         _fmt_i32_to_buf_full(&temp_ctx, ld as i32, flags, precision);
                     }
                     _fmt_apply_padding(&ctx, &temp_buf[0], temp_ctx.buf_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
-                // %u - 无符号整数（支持 width、precision）
-                } else if spec == 117 && length != 4 {
-                    const uval: u32 = @va_arg(ap, u32);
+                // %u - 无符号（支持 width；%lu length==3 用 u64；%hu/%hhu 用 mask）
+                } else if spec == 117 && length != 4 && length != 6 {
                     var temp_buf: [byte: 256] = [];
                     var temp_ctx: _FmtContext = _FmtContext{ buf: &temp_buf[0], buf_pos: 0, buf_max: 255, stream: null, total_len: 0 };
-                    _fmt_u32_to_buf(&temp_ctx, uval);
+                    if length == 3 {
+                        const lu_val: u64 = @va_arg(ap, u64);
+                        _fmt_u64_to_buf(&temp_ctx, lu_val);
+                    } else {
+                        var uval: u32 = @va_arg(ap, u32);
+                        if length == 2 { uval = uval & (255 as u32); } else if length == 1 { uval = uval & (65535 as u32); }
+                        _fmt_u32_to_buf(&temp_ctx, uval);
+                    }
                     _fmt_apply_padding(&ctx, &temp_buf[0], temp_ctx.buf_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
-                // %x - 十六进制小写（支持 #、width）
+                // %x - 十六进制小写（支持 #、width；%hx/%hhx 用 mask）
                 } else if spec == 120 && length != 4 {
-                    const xval: u32 = @va_arg(ap, u32);
+                    var xval: u32 = @va_arg(ap, u32);
+                    if length == 2 { xval = xval & (255 as u32); } else if length == 1 { xval = xval & (65535 as u32); }
                     var temp_buf: [byte: 256] = [];
                     var temp_ctx: _FmtContext = _FmtContext{ buf: &temp_buf[0], buf_pos: 0, buf_max: 255, stream: null, total_len: 0 };
                     _fmt_u32_hex_to_buf_prefix(&temp_ctx, xval, 0, flags & _FMT_HASH);
                     _fmt_apply_padding(&ctx, &temp_buf[0], temp_ctx.buf_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
-                // %X - 十六进制大写（支持 #、width）
+                // %X - 十六进制大写（支持 #、width；%hX/%hhX 用 mask）
                 } else if spec == 88 && length != 4 {
-                    const xval: u32 = @va_arg(ap, u32);
+                    var xval: u32 = @va_arg(ap, u32);
+                    if length == 2 { xval = xval & (255 as u32); } else if length == 1 { xval = xval & (65535 as u32); }
                     var temp_buf: [byte: 256] = [];
                     var temp_ctx: _FmtContext = _FmtContext{ buf: &temp_buf[0], buf_pos: 0, buf_max: 255, stream: null, total_len: 0 };
                     _fmt_u32_hex_to_buf_prefix(&temp_ctx, xval, 1, flags & _FMT_HASH);
                     _fmt_apply_padding(&ctx, &temp_buf[0], temp_ctx.buf_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
-                // %o - 八进制（支持 #、width）
+                // %o - 八进制（支持 #、width；%ho/%hho 用 mask）
                 } else if spec == 111 && length != 4 {
-                    const oval: u32 = @va_arg(ap, u32);
+                    var oval: u32 = @va_arg(ap, u32);
+                    if length == 2 { oval = oval & (255 as u32); } else if length == 1 { oval = oval & (65535 as u32); }
                     var temp_buf: [byte: 256] = [];
                     var temp_ctx: _FmtContext = _FmtContext{ buf: &temp_buf[0], buf_pos: 0, buf_max: 255, stream: null, total_len: 0 };
                     if (flags & _FMT_HASH) != 0 && oval != 0 {
@@ -1238,199 +1369,212 @@ fn _vfprintf_impl(stream: &FILE, format: &const byte, ap: va_list, use_buf: i32,
                     }
                     _fmt_u32_octal_to_buf(&temp_ctx, oval);
                     _fmt_apply_padding(&ctx, &temp_buf[0], temp_ctx.buf_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
-                // %p - 指针
+                // %p - 指针（支持 width）
                 } else if spec == 112 {
                     const pval: usize = @va_arg(ap, usize);
-                    ctx.total_len = ctx.total_len + 2;
-                    if ctx.buf_pos < ctx.buf_max {
-                        ctx.buf[ctx.buf_pos] = 48;
-                        ctx.buf_pos = ctx.buf_pos + 1;
-                    }
-                    if ctx.buf_pos < ctx.buf_max {
-                        ctx.buf[ctx.buf_pos] = 120;
-                        ctx.buf_pos = ctx.buf_pos + 1;
-                    }
-                    _fmt_u64_to_buf(&ctx, pval as u64);
-                // %c - 字符
+                    var temp_buf: [byte: 256] = [];
+                    var temp_ctx: _FmtContext = _FmtContext{ buf: &temp_buf[0], buf_pos: 0, buf_max: 255, stream: null, total_len: 0 };
+                    temp_ctx.buf[temp_ctx.buf_pos] = 48;
+                    temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                    temp_ctx.total_len = temp_ctx.total_len + 1;
+                    temp_ctx.buf[temp_ctx.buf_pos] = 120;
+                    temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                    temp_ctx.total_len = temp_ctx.total_len + 1;
+                    _fmt_u64_to_buf(&temp_ctx, pval as u64);
+                    _fmt_apply_padding(&ctx, &temp_buf[0], temp_ctx.buf_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
+                // %c - 字符（支持 width）
                 } else if spec == 99 {
                     const cval: i32 = @va_arg(ap, i32);
-                    ctx.total_len = ctx.total_len + 1;
-                    if ctx.buf_pos < ctx.buf_max {
-                        ctx.buf[ctx.buf_pos] = cval as byte;
-                        ctx.buf_pos = ctx.buf_pos + 1;
-                    }
-                // %zu - size_t 无符号
-                } else if spec == 122 && format_pos + 1 < format_len && format[format_pos + 1] == 117 {
-                    format_pos = format_pos + 1;
+                    var temp_buf: [byte: 8] = [];
+                    temp_buf[0] = cval as byte;
+                    _fmt_apply_padding(&ctx, &temp_buf[0], 1, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
+                // %zu - size_t 无符号（length==6 已解析）
+                } else if spec == 117 && length == 6 {
                     const zu_val: usize = @va_arg(ap, usize);
-                    _fmt_u64_to_buf(&ctx, zu_val as u64);
-                // %zd - size_t 有符号 / ssize_t（C99）
-                } else if spec == 122 && format_pos + 1 < format_len && format[format_pos + 1] == 100 {
-                    format_pos = format_pos + 1;
+                    var temp_buf: [byte: 256] = [];
+                    var temp_ctx: _FmtContext = _FmtContext{ buf: &temp_buf[0], buf_pos: 0, buf_max: 255, stream: null, total_len: 0 };
+                    _fmt_u64_to_buf(&temp_ctx, zu_val as u64);
+                    _fmt_apply_padding(&ctx, &temp_buf[0], temp_ctx.buf_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
+                // %zd - size_t 有符号（C99）
+                } else if spec == 100 && length == 6 {
                     const zd_val: i64 = @va_arg(ap, i64);
+                    var temp_buf: [byte: 256] = [];
+                    var temp_ctx: _FmtContext = _FmtContext{ buf: &temp_buf[0], buf_pos: 0, buf_max: 255, stream: null, total_len: 0 };
                     if zd_val < 0 {
-                        ctx.total_len = ctx.total_len + 1;
-                        if ctx.buf_pos < ctx.buf_max {
-                            ctx.buf[ctx.buf_pos] = 45;
-                            ctx.buf_pos = ctx.buf_pos + 1;
-                        }
-                        _fmt_u64_to_buf(&ctx, (0 - zd_val) as u64);
+                        temp_ctx.buf[temp_ctx.buf_pos] = 45;
+                        temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                        temp_ctx.total_len = temp_ctx.total_len + 1;
+                        _fmt_u64_to_buf(&temp_ctx, (0 - zd_val) as u64);
                     } else {
-                        _fmt_u64_to_buf(&ctx, zd_val as u64);
+                        _fmt_u64_to_buf(&temp_ctx, zd_val as u64);
                     }
-                // %j - intmax_t/uintmax_t（C99）
-                } else if spec == 106 && format_pos + 1 < format_len {
-                    const conv: byte = format[format_pos + 1];
-                    format_pos = format_pos + 2;
-                    if conv == 100 || conv == 105 {
+                    _fmt_apply_padding(&ctx, &temp_buf[0], temp_ctx.buf_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
+                // %j - intmax_t/uintmax_t（C99，length==5 已解析）
+                } else if length == 5 {
+                    var temp_buf: [byte: 256] = [];
+                    var temp_ctx: _FmtContext = _FmtContext{ buf: &temp_buf[0], buf_pos: 0, buf_max: 255, stream: null, total_len: 0 };
+                    if spec == 100 || spec == 105 {
                         const jd: i64 = @va_arg(ap, i64);
                         if jd < 0 {
-                            ctx.total_len = ctx.total_len + 1;
-                            if ctx.buf_pos < ctx.buf_max {
-                                ctx.buf[ctx.buf_pos] = 45;
-                                ctx.buf_pos = ctx.buf_pos + 1;
-                            }
-                            _fmt_u64_to_buf(&ctx, (0 - jd) as u64);
+                            temp_ctx.buf[temp_ctx.buf_pos] = 45;
+                            temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                            temp_ctx.total_len = temp_ctx.total_len + 1;
+                            _fmt_u64_to_buf(&temp_ctx, (0 - jd) as u64);
                         } else {
-                            _fmt_u64_to_buf(&ctx, jd as u64);
+                            _fmt_i32_to_buf_full(&temp_ctx, jd as i32, flags, precision);
                         }
-                    } else if conv == 117 {
+                    } else if spec == 117 {
                         const ju: u64 = @va_arg(ap, u64);
-                        _fmt_u64_to_buf(&ctx, ju);
-                    } else if conv == 111 {
+                        _fmt_u64_to_buf(&temp_ctx, ju);
+                    } else if spec == 111 {
                         const jo: u64 = @va_arg(ap, u64);
-                        _fmt_u64_octal_to_buf(&ctx, jo);
-                    } else if conv == 120 {
+                        _fmt_u64_octal_to_buf(&temp_ctx, jo);
+                    } else if spec == 120 {
                         const jx: u64 = @va_arg(ap, u64);
-                        _fmt_u64_hex_to_buf(&ctx, jx, 0);
-                    } else if conv == 88 {
+                        if (flags & _FMT_HASH) != 0 && jx != 0 {
+                            temp_ctx.buf[temp_ctx.buf_pos] = 48;
+                            temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                            temp_ctx.total_len = temp_ctx.total_len + 1;
+                            temp_ctx.buf[temp_ctx.buf_pos] = 120;
+                            temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                            temp_ctx.total_len = temp_ctx.total_len + 1;
+                        }
+                        _fmt_u64_hex_to_buf(&temp_ctx, jx, 0);
+                    } else if spec == 88 {
                         const jX: u64 = @va_arg(ap, u64);
-                        _fmt_u64_hex_to_buf(&ctx, jX, 1);
+                        if (flags & _FMT_HASH) != 0 && jX != 0 {
+                            temp_ctx.buf[temp_ctx.buf_pos] = 48;
+                            temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                            temp_ctx.total_len = temp_ctx.total_len + 1;
+                            temp_ctx.buf[temp_ctx.buf_pos] = 88;
+                            temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                            temp_ctx.total_len = temp_ctx.total_len + 1;
+                        }
+                        _fmt_u64_hex_to_buf(&temp_ctx, jX, 1);
                     } else {
                         ctx.total_len = ctx.total_len + 2;
                         if ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = 37; ctx.buf_pos = ctx.buf_pos + 1; }
                         if ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = 106; ctx.buf_pos = ctx.buf_pos + 1; }
-                        if ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = conv; ctx.buf_pos = ctx.buf_pos + 1; }
+                        if ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = spec; ctx.buf_pos = ctx.buf_pos + 1; }
                     }
-                    continue;
-                // %t - ptrdiff_t（C99）
-                } else if spec == 116 && format_pos + 1 < format_len {
-                    const conv: byte = format[format_pos + 1];
-                    format_pos = format_pos + 2;
-                    if conv == 100 || conv == 105 {
+                    if spec == 100 || spec == 105 || spec == 117 || spec == 111 || spec == 120 || spec == 88 {
+                        _fmt_apply_padding(&ctx, &temp_buf[0], temp_ctx.buf_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
+                    }
+                // %t - ptrdiff_t（C99，length==7 已解析）
+                } else if length == 7 {
+                    var temp_buf: [byte: 256] = [];
+                    var temp_ctx: _FmtContext = _FmtContext{ buf: &temp_buf[0], buf_pos: 0, buf_max: 255, stream: null, total_len: 0 };
+                    if spec == 100 || spec == 105 {
                         const td: i64 = @va_arg(ap, i64);
                         if td < 0 {
-                            ctx.total_len = ctx.total_len + 1;
-                            if ctx.buf_pos < ctx.buf_max {
-                                ctx.buf[ctx.buf_pos] = 45;
-                                ctx.buf_pos = ctx.buf_pos + 1;
-                            }
-                            _fmt_u64_to_buf(&ctx, (0 - td) as u64);
+                            temp_ctx.buf[temp_ctx.buf_pos] = 45;
+                            temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                            temp_ctx.total_len = temp_ctx.total_len + 1;
+                            _fmt_u64_to_buf(&temp_ctx, (0 - td) as u64);
                         } else {
-                            _fmt_u64_to_buf(&ctx, td as u64);
+                            _fmt_i32_to_buf_full(&temp_ctx, td as i32, flags, precision);
                         }
-                    } else if conv == 117 {
+                    } else if spec == 117 {
                         const tu: u64 = @va_arg(ap, u64);
-                        _fmt_u64_to_buf(&ctx, tu);
-                    } else if conv == 111 {
+                        _fmt_u64_to_buf(&temp_ctx, tu);
+                    } else if spec == 111 {
                         const to: u64 = @va_arg(ap, u64);
-                        _fmt_u64_octal_to_buf(&ctx, to);
-                    } else if conv == 120 {
+                        _fmt_u64_octal_to_buf(&temp_ctx, to);
+                    } else if spec == 120 {
                         const tx: u64 = @va_arg(ap, u64);
-                        _fmt_u64_hex_to_buf(&ctx, tx, 0);
-                    } else if conv == 88 {
+                        if (flags & _FMT_HASH) != 0 && tx != 0 {
+                            temp_ctx.buf[temp_ctx.buf_pos] = 48;
+                            temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                            temp_ctx.total_len = temp_ctx.total_len + 1;
+                            temp_ctx.buf[temp_ctx.buf_pos] = 120;
+                            temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                            temp_ctx.total_len = temp_ctx.total_len + 1;
+                        }
+                        _fmt_u64_hex_to_buf(&temp_ctx, tx, 0);
+                    } else if spec == 88 {
                         const tX: u64 = @va_arg(ap, u64);
-                        _fmt_u64_hex_to_buf(&ctx, tX, 1);
+                        if (flags & _FMT_HASH) != 0 && tX != 0 {
+                            temp_ctx.buf[temp_ctx.buf_pos] = 48;
+                            temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                            temp_ctx.total_len = temp_ctx.total_len + 1;
+                            temp_ctx.buf[temp_ctx.buf_pos] = 88;
+                            temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
+                            temp_ctx.total_len = temp_ctx.total_len + 1;
+                        }
+                        _fmt_u64_hex_to_buf(&temp_ctx, tX, 1);
                     } else {
                         ctx.total_len = ctx.total_len + 2;
                         if ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = 37; ctx.buf_pos = ctx.buf_pos + 1; }
                         if ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = 116; ctx.buf_pos = ctx.buf_pos + 1; }
-                        if ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = conv; ctx.buf_pos = ctx.buf_pos + 1; }
+                        if ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = spec; ctx.buf_pos = ctx.buf_pos + 1; }
                     }
-                    continue;
-                // %h / %hh - short / char（C99）
-                } else if spec == 104 && format_pos + 1 < format_len {
-                    const next: byte = format[format_pos + 1];
-                    var conv: byte = 0;
-                    if next == 104 && format_pos + 2 < format_len {
-                        conv = format[format_pos + 2];
-                        format_pos = format_pos + 3;
-                    } else {
-                        conv = next;
-                        format_pos = format_pos + 2;
+                    if spec == 100 || spec == 105 || spec == 117 || spec == 111 || spec == 120 || spec == 88 {
+                        _fmt_apply_padding(&ctx, &temp_buf[0], temp_ctx.buf_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
                     }
-                    const mask255: u32 = 255;
-                    const mask65535: u32 = 65535;
-                    if conv == 100 || conv == 105 {
-                        var hv: i32 = @va_arg(ap, i32);
-                        if next == 104 {
-                            hv = (hv << 24) >> 24;
-                        } else {
-                            hv = (hv << 16) >> 16;
-                        }
-                        _fmt_i32_to_buf(&ctx, hv);
-                    } else if conv == 117 {
-                        var hu: u32 = @va_arg(ap, u32);
-                        if next == 104 { hu = hu & mask255; } else { hu = hu & mask65535; }
-                        _fmt_u32_to_buf(&ctx, hu);
-                    } else if conv == 111 {
-                        var ho: u32 = @va_arg(ap, u32);
-                        if next == 104 { ho = ho & mask255; } else { ho = ho & mask65535; }
-                        _fmt_u32_octal_to_buf(&ctx, ho);
-                    } else if conv == 120 {
-                        var hx: u32 = @va_arg(ap, u32);
-                        if next == 104 { hx = hx & mask255; } else { hx = hx & mask65535; }
-                        _fmt_u32_hex_to_buf(&ctx, hx, 0);
-                    } else if conv == 88 {
-                        var hX: u32 = @va_arg(ap, u32);
-                        if next == 104 { hX = hX & mask255; } else { hX = hX & mask65535; }
-                        _fmt_u32_hex_to_buf(&ctx, hX, 1);
-                    } else {
-                        var n_extra: usize = 2;
-                        if next == 104 { n_extra = 3; }
-                        ctx.total_len = ctx.total_len + n_extra;
-                        if ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = 37; ctx.buf_pos = ctx.buf_pos + 1; }
-                        if ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = 104; ctx.buf_pos = ctx.buf_pos + 1; }
-                        if next == 104 && ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = 104; ctx.buf_pos = ctx.buf_pos + 1; }
-                        if ctx.buf_pos < ctx.buf_max { ctx.buf[ctx.buf_pos] = conv; ctx.buf_pos = ctx.buf_pos + 1; }
-                    }
-                    continue;
-                // %g - 浮点数（自动格式）
+                // %g - 浮点数（自动格式，支持 width/precision）
                 } else if spec == 103 {
                     const fval: f64 = @va_arg(ap, f64);
-                    const old_pos: usize = ctx.buf_pos;
-                    ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, 6, 0, 0, 0);
-                    ctx.total_len = ctx.total_len + (ctx.buf_pos - old_pos);
+                    var temp_buf: [byte: 256] = [];
+                    var prec: i32 = precision;
+                    if prec < 0 { prec = 6; }
+                    const end_pos: usize = _fmt_f64_to_buf(&temp_buf[0], 0, 255, fval, prec, 0, 0, 0);
+                    _fmt_apply_padding(&ctx, &temp_buf[0], end_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
                 // %G - 浮点数（自动格式，指数大写 INF/NAN）（C99）
                 } else if spec == 71 {
                     const fval: f64 = @va_arg(ap, f64);
-                    const old_pos: usize = ctx.buf_pos;
-                    ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, 6, 0, 1, 1);
-                    ctx.total_len = ctx.total_len + (ctx.buf_pos - old_pos);
+                    var temp_buf: [byte: 256] = [];
+                    var prec: i32 = precision;
+                    if prec < 0 { prec = 6; }
+                    const end_pos: usize = _fmt_f64_to_buf(&temp_buf[0], 0, 255, fval, prec, 0, 1, 1);
+                    _fmt_apply_padding(&ctx, &temp_buf[0], end_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
                 // %e - 科学计数法小写
                 } else if spec == 101 {
                     const fval: f64 = @va_arg(ap, f64);
-                    const old_pos: usize = ctx.buf_pos;
-                    ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, 6, 1, 0, 0);
-                    ctx.total_len = ctx.total_len + (ctx.buf_pos - old_pos);
+                    var temp_buf: [byte: 256] = [];
+                    var prec: i32 = precision;
+                    if prec < 0 { prec = 6; }
+                    const end_pos: usize = _fmt_f64_to_buf(&temp_buf[0], 0, 255, fval, prec, 1, 0, 0);
+                    _fmt_apply_padding(&ctx, &temp_buf[0], end_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
                 // %E - 科学计数法大写
                 } else if spec == 69 {
                     const fval: f64 = @va_arg(ap, f64);
-                    const old_pos: usize = ctx.buf_pos;
-                    ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, 6, 1, 1, 0);
-                    ctx.total_len = ctx.total_len + (ctx.buf_pos - old_pos);
+                    var temp_buf: [byte: 256] = [];
+                    var prec: i32 = precision;
+                    if prec < 0 { prec = 6; }
+                    const end_pos: usize = _fmt_f64_to_buf(&temp_buf[0], 0, 255, fval, prec, 1, 1, 0);
+                    _fmt_apply_padding(&ctx, &temp_buf[0], end_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
                 // %f - 固定小数位浮点数
                 } else if spec == 102 {
                     const fval: f64 = @va_arg(ap, f64);
-                    const old_pos: usize = ctx.buf_pos;
-                    ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, 6, 0, 0, 0);
-                    ctx.total_len = ctx.total_len + (ctx.buf_pos - old_pos);
+                    var temp_buf: [byte: 256] = [];
+                    var prec: i32 = precision;
+                    if prec < 0 { prec = 6; }
+                    const end_pos: usize = _fmt_f64_to_buf(&temp_buf[0], 0, 255, fval, prec, 0, 0, 0);
+                    _fmt_apply_padding(&ctx, &temp_buf[0], end_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
                 // %F - 固定小数位，INF/NAN 大写（C99）
                 } else if spec == 70 {
                     const fval: f64 = @va_arg(ap, f64);
-                    const old_pos: usize = ctx.buf_pos;
-                    ctx.buf_pos = _fmt_f64_to_buf(ctx.buf, ctx.buf_pos, ctx.buf_max, fval, 6, 0, 0, 1);
-                    ctx.total_len = ctx.total_len + (ctx.buf_pos - old_pos);
+                    var temp_buf: [byte: 256] = [];
+                    var prec: i32 = precision;
+                    if prec < 0 { prec = 6; }
+                    const end_pos: usize = _fmt_f64_to_buf(&temp_buf[0], 0, 255, fval, prec, 0, 0, 1);
+                    _fmt_apply_padding(&ctx, &temp_buf[0], end_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
+                // %a - 十六进制浮点小写（C99）
+                } else if spec == 97 {
+                    const fval: f64 = @va_arg(ap, f64);
+                    var temp_buf: [byte: 256] = [];
+                    var prec: i32 = precision;
+                    if prec < 0 { prec = 13; }
+                    const end_pos: usize = _fmt_f64_hex_to_buf(&temp_buf[0], 0, 255, fval, prec, 0);
+                    _fmt_apply_padding(&ctx, &temp_buf[0], end_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
+                // %A - 十六进制浮点大写（C99）
+                } else if spec == 65 {
+                    const fval: f64 = @va_arg(ap, f64);
+                    var temp_buf: [byte: 256] = [];
+                    var prec: i32 = precision;
+                    if prec < 0 { prec = 13; }
+                    const end_pos: usize = _fmt_f64_hex_to_buf(&temp_buf[0], 0, 255, fval, prec, 1);
+                    _fmt_apply_padding(&ctx, &temp_buf[0], end_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
                 // %% - 百分号
                 } else if spec == 37 {
                     ctx.total_len = ctx.total_len + 1;

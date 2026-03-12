@@ -257,3 +257,120 @@ test "sprintf_width_precision_combined" {
     try assert_eq_i32(buf[5] as i32, 98);  // 'b'
     try assert_eq_i32(buf[6] as i32, 0);
 }
+
+// ============================================================
+// C99 length: %zu %zd %jd %ju %hd %hu
+// ============================================================
+
+test "sprintf_zu_size_t" {
+    var buf: [byte: 32] = [];
+    const val: usize = 999;
+    sprintf(&buf[0], "%zu", val);
+    try assert_eq_i32(buf[0] as i32, 57);  // '9'
+    try assert_eq_i32(buf[1] as i32, 57);
+    try assert_eq_i32(buf[2] as i32, 57);
+    try assert_eq_i32(buf[3] as i32, 0);
+}
+
+test "sprintf_zd_positive" {
+    var buf: [byte: 32] = [];
+    const val: i64 = 123;
+    sprintf(&buf[0], "%zd", val);
+    try assert_eq_i32(buf[0] as i32, 49);  // '1'
+    try assert_eq_i32(buf[1] as i32, 50);  // '2'
+    try assert_eq_i32(buf[2] as i32, 51);  // '3'
+    try assert_eq_i32(buf[3] as i32, 0);
+}
+
+test "sprintf_zd_negative" {
+    var buf: [byte: 32] = [];
+    const val: i64 = 0 - 1;
+    sprintf(&buf[0], "%zd", val);
+    try assert_eq_i32(buf[0] as i32, 45);  // '-'
+    try assert_eq_i32(buf[1] as i32, 49);  // '1'
+    try assert_eq_i32(buf[2] as i32, 0);
+}
+
+test "sprintf_jd_ju" {
+    var buf: [byte: 64] = [];
+    const jd: i64 = 0 - 42;
+    const ju: u64 = 100;
+    sprintf(&buf[0], "%jd %ju", jd, ju);
+    try assert_eq_i32(buf[0] as i32, 45);  // '-'
+    try assert_eq_i32(buf[1] as i32, 52);  // '4'
+    try assert_eq_i32(buf[2] as i32, 50);  // '2'
+    try assert_eq_i32(buf[3] as i32, 32);
+    try assert_eq_i32(buf[4] as i32, 49);  // '1'
+    try assert_eq_i32(buf[5] as i32, 48);  // '0'
+    try assert_eq_i32(buf[6] as i32, 48);  // '0'
+    try assert_eq_i32(buf[7] as i32, 0);
+}
+
+test "sprintf_hd_hu" {
+    var buf: [byte: 32] = [];
+    const d: i32 = 0 - 1;
+    const u: u32 = 255;
+    sprintf(&buf[0], "%hd %hu", d, u);
+    // %hd -1 -> "-1", %hu 255 -> "255"
+    try assert_eq_i32(buf[0] as i32, 45);  // '-'
+    try assert_eq_i32(buf[1] as i32, 49);  // '1'
+    try assert_eq_i32(buf[2] as i32, 32);
+    try assert_eq_i32(buf[3] as i32, 50);  // '2'
+    try assert_eq_i32(buf[4] as i32, 53);  // '5'
+    try assert_eq_i32(buf[5] as i32, 53);  // '5'
+    try assert_eq_i32(buf[6] as i32, 0);
+}
+
+// ============================================================
+// C99 %a %A 十六进制浮点、浮点/%c width
+// ============================================================
+
+test "sprintf_a_hex_float" {
+    var buf: [byte: 64] = [];
+    const val: f64 = 1.0;
+    sprintf(&buf[0], "%a", val);
+    try assert_eq_i32(buf[0] as i32, 48);  // '0'
+    try assert_eq_i32(buf[1] as i32, 120); // 'x'
+    try assert_eq_i32(buf[2] as i32, 49);  // '1'
+    try assert_eq_i32(buf[3] as i32, 46);  // '.'
+    try assert_eq_i32(buf[4] as i32, 112); // 'p'
+    try assert_eq_i32(buf[5] as i32, 43);  // '+'
+    try assert_eq_i32(buf[6] as i32, 48);  // '0'
+}
+
+test "sprintf_A_hex_float" {
+    var buf: [byte: 64] = [];
+    const val: f64 = 1.0;
+    sprintf(&buf[0], "%A", val);
+    try assert_eq_i32(buf[0] as i32, 48);  // '0'
+    try assert_eq_i32(buf[1] as i32, 88);  // 'X'
+    try assert_eq_i32(buf[2] as i32, 49);  // '1'
+    try assert_eq_i32(buf[3] as i32, 46);  // '.'
+    try assert_eq_i32(buf[4] as i32, 80);  // 'P'
+    try assert_eq_i32(buf[5] as i32, 43);  // '+'
+    try assert_eq_i32(buf[6] as i32, 48);  // '0'
+}
+
+test "sprintf_float_width" {
+    var buf: [byte: 32] = [];
+    sprintf(&buf[0], "%8.2f", 3.14);
+    try assert_eq_i32(buf[0] as i32, 32);  // 右对齐，前导空格
+    try assert_eq_i32(buf[1] as i32, 32);
+    try assert_eq_i32(buf[2] as i32, 32);
+    try assert_eq_i32(buf[3] as i32, 51);  // '3'
+    try assert_eq_i32(buf[4] as i32, 46);  // '.'
+    try assert_eq_i32(buf[5] as i32, 49);  // '1'
+    try assert_eq_i32(buf[6] as i32, 52);  // '4'
+    try assert_eq_i32(buf[7] as i32, 0);
+}
+
+test "sprintf_c_width" {
+    var buf: [byte: 32] = [];
+    sprintf(&buf[0], "%5c", 65);
+    try assert_eq_i32(buf[0] as i32, 32);
+    try assert_eq_i32(buf[1] as i32, 32);
+    try assert_eq_i32(buf[2] as i32, 32);
+    try assert_eq_i32(buf[3] as i32, 32);
+    try assert_eq_i32(buf[4] as i32, 65);  // 'A'
+    try assert_eq_i32(buf[5] as i32, 0);
+}
