@@ -30,6 +30,18 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
     }
     
     const callee: &ASTNode = node.call_expr_callee;
+
+    // @async_fn 直接递归检测：禁止在异步函数体内直接调用自身（含 try @await self(...)）
+    // 目的：在 CPS/状态机生成与大小计算完成前，先阻止会导致状态机大小不确定的模式。
+    if checker != null && checker.current_function_decl != null &&
+        checker.current_function_decl.fn_decl_is_async != 0 &&
+        callee != null && callee.type == ASTNodeType.AST_IDENTIFIER &&
+        callee.identifier_name != null &&
+        checker.current_function_decl.fn_decl_name != null &&
+        str_equals(callee.identifier_name, checker.current_function_decl.fn_decl_name) != 0 {
+        checker_report_error(checker, node, "@async_fn 函数不允许直接递归调用（待 CPS/状态机大小计算实现）" as *byte);
+        return result;
+    }
     
     // 处理模块限定调用（module.func(args)）
     if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS {

@@ -881,7 +881,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `error_await_outside_async.uya` - `try @await` 在非异步函数中使用
   - [x] `error_await_operand_not_error_union.uya` - @await 操作数为 `Future<T>`（缺少 !）应失败
   - [x] `error_await_operand_not_future.uya` - @await 操作数非 `!Future<T>` 应失败
-  - [ ] `error_async_recursive.uya` - 递归异步函数（应报错）
+  - [x] `error_async_recursive.uya` - 递归异步函数（应报错；当前先禁止直接递归，后续由状态机大小计算接管）
 
 **涉及**：Lexer、AST、Parser、Checker、Codegen（CPS 变换、状态机生成），uya-src。
 
