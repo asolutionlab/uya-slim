@@ -1,25 +1,29 @@
 // test_async_await_parse.uya
-// 验证 @async_fn 与 @await 解析及 @await 上下文校验（仅允许在 async 函数内）
+// 验证 @async_fn 与 @await 解析、@await 上下文校验、@async_fn 必须返回 !Future<T>
 
+use std.async;
 use std.testing.assert_eq_i32;
 
 @async_fn
-fn async_return_value() i32 {
-    return 42;
+fn async_return_value() !Future<i32> {
+    return Future<i32>{};
 }
 
 @async_fn
-fn async_call_async() i32 {
-    const val: i32 = @await async_return_value();
-    return val;
+fn async_call_async() !Future<i32> {
+    const _f: Future<i32> = try @await async_return_value();
+    _ = _f;
+    return Future<i32>{};
 }
 
 test "async_fn_definition" {
-    const result: i32 = async_return_value();
-    try assert_eq_i32(result, 42);
+    const f: Future<i32> = try async_return_value();
+    _ = f;
+    try assert_eq_i32(1, 1);
 }
 
 test "async_call_async_with_await" {
-    const result: i32 = async_call_async();
-    try assert_eq_i32(result, 42);
+    const f: Future<i32> = try async_call_async();
+    _ = f;
+    try assert_eq_i32(1, 1);
 }

@@ -57,6 +57,9 @@ fn mark_struct_defined(codegen: &C99CodeGenerator, struct_name: &byte) void {
 
 // 添加结构体定义
 fn add_struct_definition(codegen: &C99CodeGenerator, struct_name: &byte) void {
+    if is_struct_in_table(codegen, struct_name) != 0 {
+        return;
+    }
     if is_struct_defined(codegen, struct_name) != 0 {
         return;
     }
@@ -1430,3 +1433,26 @@ fn gen_mono_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode,
     return 0;
 }
 
+// 若 type_node 为泛型结构体类型（如 Future<i32>），先输出其单态化定义，供 err_union 等依赖使用
+fn ensure_mono_struct_emitted_for_type_node(codegen: &C99CodeGenerator, type_node: &ASTNode) void {
+    if codegen == null || type_node == null || type_node.type != ASTNodeType.AST_TYPE_NAMED {
+        return;
+    }
+    if type_node.type_named_name == null || type_node.type_named_type_arg_count <= 0 {
+        return;
+    }
+    const struct_decl: &ASTNode = find_struct_decl_c99(codegen, type_node.type_named_name);
+    if struct_decl == null || is_generic_struct_c99(struct_decl) == 0 {
+        return;
+    }
+    if type_node.type_named_type_args == null {
+        return;
+    }
+    const mono_name: &byte = get_mono_struct_name(codegen, type_node.type_named_name,
+        type_node.type_named_type_args, type_node.type_named_type_arg_count);
+    if is_struct_defined(codegen, mono_name) != 0 {
+        return;
+    }
+    gen_mono_struct_definition(codegen, struct_decl,
+        type_node.type_named_type_args, type_node.type_named_type_arg_count);
+}

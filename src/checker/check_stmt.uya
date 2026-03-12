@@ -503,6 +503,25 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
         }
     }
     
+    // @async_fn 函数必须返回 !Future<T> 类型
+    if node.fn_decl_is_async != 0 && node.fn_decl_return_type != null {
+        const ret: &ASTNode = node.fn_decl_return_type;
+        if ret.type != ASTNodeType.AST_TYPE_ERROR_UNION {
+            checker_report_error(checker, node, "@async_fn 函数必须返回 !Future<T> 类型" as *byte);
+            return 0;
+        }
+        const payload: &ASTNode = ret.type_error_union_payload_type;
+        if payload == null || payload.type != ASTNodeType.AST_TYPE_NAMED ||
+            payload.type_named_name == null || str_equals(payload.type_named_name, "Future" as *byte) == 0 {
+            checker_report_error(checker, node, "@async_fn 函数必须返回 !Future<T> 类型" as *byte);
+            return 0;
+        }
+        if payload.type_named_type_arg_count != 1 {
+            checker_report_error(checker, node, "@async_fn 函数必须返回 !Future<T> 类型" as *byte);
+            return 0;
+        }
+    }
+    
     // 获取函数返回类型
     const return_type: Type = type_from_ast(checker, node.fn_decl_return_type);
     
