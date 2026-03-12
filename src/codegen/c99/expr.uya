@@ -1044,6 +1044,15 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     union_decl = find_union_decl_c99(codegen, obj.identifier_name);
                     if union_decl != null {
                         if union_decl.union_decl_type_param_count > 0 {
+                            // 支持语法：Poll<i32>.Ready(x)
+                            // 解析器可能把 <...> 类型实参挂在 call_expr_type_args 上（而不是 obj 为 AST_TYPE_NAMED）。
+                            if expr.call_expr_type_arg_count > 0 && expr.call_expr_type_args != null {
+                                const mono: &byte = get_mono_union_name(codegen, obj.identifier_name,
+                                    expr.call_expr_type_args,
+                                    expr.call_expr_type_arg_count);
+                                uname = get_safe_c_identifier(codegen, mono);
+                            }
+                            if uname == null {
                             var found_mono: i32 = 0;
                             var mono_idx: i32 = -1;
                             var j: i32 = 0;
@@ -1081,6 +1090,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                 uname = get_safe_c_identifier(codegen, mono);
                             } else {
                                 uname = get_safe_c_identifier(codegen, union_decl.union_decl_name);
+                            }
                             }
                         } else {
                             uname = get_safe_c_identifier(codegen, union_decl.union_decl_name);
@@ -2325,7 +2335,47 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 
                 if user_value != null {
                     // 使用用户提供的值
+                    const saved_expected: &ASTNode = codegen.expected_type;
+                    // 为字段表达式设置 expected_type，帮助泛型 union/struct 构造选择正确的单态名（如 Poll<T> -> Poll_i32）
+                    if field.var_decl_type != null {
+                        var resolved: &ASTNode = field.var_decl_type;
+                        if codegen.struct_type_params != null && codegen.struct_type_args != null &&
+                            codegen.struct_type_param_count > 0 && codegen.struct_type_arg_count == codegen.struct_type_param_count &&
+                            field.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                            field.var_decl_type.type_named_type_arg_count > 0 && field.var_decl_type.type_named_type_args != null {
+                            const tmp: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, expr.line, expr.column, codegen.arena, expr.filename);
+                            if tmp != null {
+                                tmp.type_named_name = field.var_decl_type.type_named_name;
+                                const n: i32 = field.var_decl_type.type_named_type_arg_count;
+                                const args: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode) * n) as & & ASTNode;
+                                if args != null {
+                                    var ai: i32 = 0;
+                                    while ai < n {
+                                        var a: &ASTNode = field.var_decl_type.type_named_type_args[ai];
+                                        if a != null && a.type == ASTNodeType.AST_TYPE_NAMED && a.type_named_name != null {
+                                            var pi: i32 = 0;
+                                            while pi < codegen.struct_type_param_count {
+                                                if codegen.struct_type_params[pi].name != null &&
+                                                    str_equals(codegen.struct_type_params[pi].name, a.type_named_name) != 0 {
+                                                    a = codegen.struct_type_args[pi];
+                                                    break;
+                                                }
+                                                pi = pi + 1;
+                                            }
+                                        }
+                                        args[ai] = a;
+                                        ai = ai + 1;
+                                    }
+                                    tmp.type_named_type_args = args;
+                                    tmp.type_named_type_arg_count = n;
+                                    resolved = tmp;
+                                }
+                            }
+                        }
+                        codegen.expected_type = resolved;
+                    }
                     gen_expr(codegen, user_value);
+                    codegen.expected_type = saved_expected;
                 } else if field.var_decl_init != null {
                     // 使用字段默认值
                     gen_expr(codegen, field.var_decl_init);

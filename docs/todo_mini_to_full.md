@@ -872,6 +872,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `test_async_return_value.uya` - @async_fn 中直接 return T 自动包装为 Future<T>（无 @await 时 poll 立即 Ready）
   - [x] `test_async_await.uya` - `try @await` 基本使用（Ready 与 Pending 最小闭环）
   - [x] `test_poll_std_async.uya` - `Poll<T>` 使用（原计划名 `test_async_poll.uya`）
+  - [x] `test_async_poll_inline_struct_init.uya` - 回归：结构体字段内联初始化 `Poll<T>` 时必须使用单态化 tagged union
   - [ ] `test_async_future.uya` - `Future<T>` 接口实现
   - [ ] `test_async_state_machine.uya` - 状态机生成验证
   - [ ] `test_async_error_propagation.uya` - 错误传播
