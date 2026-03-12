@@ -154,6 +154,8 @@ struct Type {
     // @deprecated: 使用 data 访问
     enum_name: &byte,
     interface_name: &byte,
+    interface_type_args: &Type,
+    interface_type_arg_count: i32,
     struct_name: &byte,
     union_name: &byte,
     pointer_to: &Type,

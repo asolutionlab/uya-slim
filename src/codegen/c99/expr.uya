@@ -440,14 +440,91 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
     } else if expr.type == ASTNodeType.AST_TRY_EXPR {
         gen_try_expr(codegen, expr);
         } else if expr.type == ASTNodeType.AST_AWAIT_EXPR {
-        // @await 表达式 - 暂时直接生成操作数代码
-        // 完整实现需要 CPS 变换和状态机生成
+        // @await expression:
+        // 最小闭环：同步路径展开
+        // - operand: !Future<T>
+        // - 生成：poll 一次，若 Ready 返回 !T 的成功分支；若 Pending 返回 error.AsyncPending
+        // 注意：完整语义需要 CPS/状态机；这里先支持 Ready 用例以驱动 TDD。
         const operand: &ASTNode = expr.await_expr_operand;
-        if operand != null {
-            gen_expr(codegen, operand);
-        } else {
+        if operand == null {
             fputs("0" as *byte, codegen.output as *void);
+            return;
         }
+
+        // 期望类型：T
+        var payload_type: &ASTNode = codegen.expected_type;
+        if payload_type == null {
+            // 回退：无法推断 payload，仍生成操作数
+            gen_expr(codegen, operand);
+            return;
+        }
+
+        // 构造 !T 的 C 类型（struct err_union_...）
+        const err_union_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, expr.line, expr.column, codegen.arena, expr.filename);
+        if err_union_type == null {
+            gen_expr(codegen, operand);
+            return;
+        }
+        err_union_type.type_error_union_payload_type = payload_type;
+        const await_union_c: &byte = c99_type_to_c(codegen, err_union_type);
+        const payload_c: &byte = c99_type_to_c(codegen, payload_type);
+
+        // operand 的错误联合类型（!Future<T>）
+        const operand_union_c: &byte = get_c_type_of_expr(codegen, operand);
+        var future_mono: &byte = null;
+        if operand_union_c != null && strncmp(operand_union_c as *byte, "struct err_union_" as *byte, 16) == 0 {
+            const payload_part: &byte = &operand_union_c[16];
+            if payload_part != null {
+                var p: &byte = payload_part;
+                // 跳过可能的 '_' 前缀（safe identifier）
+                while p[0] == 95 {  // '_'
+                    p = &p[1];
+                }
+                if strncmp(p as *byte, "struct" as *byte, 6) == 0 {
+                    future_mono = &p[6];
+                } else {
+                    future_mono = p;
+                }
+            }
+        }
+        if future_mono == null {
+            // 回退：无法推断 Future 单态名
+            gen_expr(codegen, operand);
+            return;
+        }
+        const poll_cname: &byte = get_method_c_name(codegen, future_mono, "poll" as *byte);
+        if poll_cname == null {
+            gen_expr(codegen, operand);
+            return;
+        }
+
+        // Poll<T> 单态名：Poll_<Tmono>
+        const type_args: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+        if type_args == null {
+            gen_expr(codegen, operand);
+            return;
+        }
+        type_args[0] = payload_type;
+        const poll_mono: &byte = get_mono_union_name(codegen, "Poll" as &byte, type_args, 1);
+        const poll_safe: &byte = get_safe_c_identifier(codegen, poll_mono);
+
+        // error.AsyncPending
+        var pending_id: i32 = c99_get_or_add_error_id(codegen, "AsyncPending" as *byte);
+        if pending_id == 0 {
+            pending_id = 1;
+        }
+
+        // 生成表达式语句块：返回 struct err_union_<T>
+        fprintf(codegen.output as *void, "({ %s _uya_r; %s _uya_op = " as *byte, await_union_c as *byte, operand_union_c as *byte);
+        gen_expr(codegen, operand);
+        fputs("; if (_uya_op.error_id != 0) { _uya_r = (" as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "%s){ .error_id = _uya_op.error_id }; " as *byte, await_union_c as *byte);
+        fputs("} else { " as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "struct %s _uya_f = _uya_op.value; " as *byte, future_mono as *byte);
+        fputs("struct Waker _uya_w = (struct Waker){0}; " as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "struct uya_tagged_%s _uya_p = %s(&(_uya_f), (&_uya_w)); " as *byte, poll_safe as *byte, poll_cname as *byte);
+        fprintf(codegen.output as *void, "if (_uya_p._tag == 1) { _uya_r = (%s){ .error_id = 0, .value = _uya_p.u.Ready }; } else { _uya_r = (%s){ .error_id = %dU }; } } _uya_r; })" as *byte,
+            await_union_c as *byte, await_union_c as *byte, pending_id);
     } else if expr.type == ASTNodeType.AST_CATCH_EXPR {
         gen_catch_expr(codegen, expr);
         } else if expr.type == ASTNodeType.AST_BINARY_EXPR {

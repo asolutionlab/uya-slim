@@ -905,6 +905,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("// 错误联合类型（用于 !i64 等）\n" as *byte, codegen.output as *void);
     fputs("struct err_union_int64_t { uint32_t error_id; int64_t value; };\n" as *byte, codegen.output as *void);
     mark_struct_defined(codegen, ("err_union_int64_t" as *byte) as &byte);
+    // 常用错误联合：!i32
+    fputs("struct err_union_int32_t { uint32_t error_id; int32_t value; };\n" as *byte, codegen.output as *void);
+    mark_struct_defined(codegen, ("err_union_int32_t" as *byte) as &byte);
     // 生成 err_union_void 用于 test "name" {} 语句
     fputs("struct err_union_void { uint32_t error_id; };\n" as *byte, codegen.output as *void);
     mark_struct_defined(codegen, ("err_union_void" as *byte) as &byte);

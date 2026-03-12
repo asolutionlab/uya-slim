@@ -495,6 +495,12 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 // 类型推断失败（如全局变量在第二遍中尚未可见），放宽检查
             } else if type_equals(expr_type, checker.current_return_type) == 0 &&
                 type_can_implicitly_convert(expr_type, checker.current_return_type) == 0 {
+                // 兼容：同名结构体（可能因泛型实参推断差异导致类型实参缺失/不一致）
+                if expr_type.kind == TypeKind.TYPE_STRUCT && checker.current_return_type.kind == TypeKind.TYPE_STRUCT &&
+                    expr_type.struct_name != null && checker.current_return_type.struct_name != null &&
+                    str_equals(expr_type.struct_name, checker.current_return_type.struct_name) != 0 {
+                    return 1;
+                }
                 // 兼容：若期望为 i32 而表达式被推断为结构体（type_from_ast 将内置类型误判为结构体名时），视为匹配
                 var allow: i32 = 0;
                 if checker.current_return_type.kind == TypeKind.TYPE_I32 && expr_type.kind == TypeKind.TYPE_STRUCT {

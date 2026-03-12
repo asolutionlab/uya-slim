@@ -522,6 +522,14 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
         }
     }
     
+    // 泛型函数：在解析返回类型/函数体时启用类型参数作用域
+    const saved_type_params: &TypeParam = checker.current_type_params;
+    const saved_type_param_count: i32 = checker.current_type_param_count;
+    if node.fn_decl_type_param_count > 0 && node.fn_decl_type_params != null {
+        checker.current_type_params = node.fn_decl_type_params;
+        checker.current_type_param_count = node.fn_decl_type_param_count;
+    }
+
     // 获取函数返回类型
     const return_type: Type = type_from_ast(checker, node.fn_decl_return_type);
     
@@ -581,6 +589,10 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
         
         checker_exit_scope(checker);
     }
+
+    // 恢复泛型类型参数作用域
+    checker.current_type_params = saved_type_params;
+    checker.current_type_param_count = saved_type_param_count;
     
     // 恢复之前的函数状态
     checker.current_return_type = prev_return_type;

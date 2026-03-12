@@ -1053,6 +1053,16 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         return ("int32_t" as *byte) as &byte;
     } else if expr.type == ASTNodeType.AST_SYSCALL {
         return ("struct err_union_int64_t" as *byte) as &byte;
+    } else if expr.type == ASTNodeType.AST_AWAIT_EXPR {
+        // @await expr：在 checker 已推断为 !T；codegen 侧用 expected_type 得到 payload 的 C 类型
+        if codegen.expected_type != null {
+            const err_union_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, expr.line, expr.column, codegen.arena, expr.filename);
+            if err_union_type != null {
+                err_union_type.type_error_union_payload_type = codegen.expected_type;
+                return c99_type_to_c(codegen, err_union_type);
+            }
+        }
+        return ("struct err_union_int32_t" as *byte) as &byte;
     } else if expr.type == ASTNodeType.AST_CAST_EXPR {
         const target_type: &ASTNode = expr.cast_expr_target_type;
         if target_type == null {

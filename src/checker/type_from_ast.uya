@@ -319,6 +319,19 @@ fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
                 if iface_decl != null {
                     result.kind = TypeKind.TYPE_INTERFACE;
                     result.interface_name = type_name;
+                    if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
+                        const count_i: i32 = type_node.type_named_type_arg_count;
+                        const ta_i: &Type = arena_alloc(checker.arena, (@size_of(Type)) * (count_i as usize)) as &Type;
+                        if ta_i != null {
+                            var tai_i: i32 = 0;
+                            while tai_i < count_i {
+                                ta_i[tai_i] = type_from_ast(checker, type_node.type_named_type_args[tai_i]);
+                                tai_i = tai_i + 1;
+                            }
+                            result.interface_type_args = ta_i;
+                            result.interface_type_arg_count = count_i;
+                        }
+                    }
                 } else {
                     const enum_decl: &ASTNode = find_enum_decl_from_program(checker.program_node, type_name);
                     if enum_decl != null {

@@ -318,6 +318,17 @@ fn resolve_int_limit_node(node: &ASTNode, type: Type) void {
 
 // 类型比较函数
 fn type_equals(t1: Type, t2: Type) i32 {
+    // 兼容：泛型参数在某些上下文会被推断为同名结构体（如 T）
+    if t1.kind == TypeKind.TYPE_GENERIC_PARAM && t1.generic_param_name != null &&
+        t2.kind == TypeKind.TYPE_STRUCT && t2.struct_name != null &&
+        str_equals(t1.generic_param_name, t2.struct_name) != 0 {
+        return 1;
+    }
+    if t2.kind == TypeKind.TYPE_GENERIC_PARAM && t2.generic_param_name != null &&
+        t1.kind == TypeKind.TYPE_STRUCT && t1.struct_name != null &&
+        str_equals(t2.generic_param_name, t1.struct_name) != 0 {
+        return 1;
+    }
     if t1.kind != t2.kind {
         return 0;
     }
@@ -339,7 +350,23 @@ fn type_equals(t1: Type, t2: Type) i32 {
         if t1.struct_name == null || t2.struct_name == null {
             return 0;
         }
-        return str_equals(t1.struct_name, t2.struct_name);
+        if str_equals(t1.struct_name, t2.struct_name) == 0 {
+            return 0;
+        }
+        if t1.struct_type_arg_count != t2.struct_type_arg_count {
+            return 0;
+        }
+        if t1.struct_type_arg_count > 0 && (t1.struct_type_args == null || t2.struct_type_args == null) {
+            return 0;
+        }
+        var si: i32 = 0;
+        while si < t1.struct_type_arg_count {
+            if type_equals(t1.struct_type_args[si], t2.struct_type_args[si]) == 0 {
+                return 0;
+            }
+            si = si + 1;
+        }
+        return 1;
     }
     
     if t1.kind == TypeKind.TYPE_UNION {
@@ -375,7 +402,23 @@ fn type_equals(t1: Type, t2: Type) i32 {
         if t1.interface_name == null || t2.interface_name == null {
             return 0;
         }
-        return str_equals(t1.interface_name, t2.interface_name);
+        if str_equals(t1.interface_name, t2.interface_name) == 0 {
+            return 0;
+        }
+        if t1.interface_type_arg_count != t2.interface_type_arg_count {
+            return 0;
+        }
+        if t1.interface_type_arg_count > 0 && (t1.interface_type_args == null || t2.interface_type_args == null) {
+            return 0;
+        }
+        var ii: i32 = 0;
+        while ii < t1.interface_type_arg_count {
+            if type_equals(t1.interface_type_args[ii], t2.interface_type_args[ii]) == 0 {
+                return 0;
+            }
+            ii = ii + 1;
+        }
+        return 1;
     }
     
     if t1.kind == TypeKind.TYPE_POINTER {
