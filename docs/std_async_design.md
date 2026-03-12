@@ -16,7 +16,7 @@
 
 ## 架构概览
 
-**当前实现**：`lib/std/async.uya` 单文件占位（`Future<T>`、`Waker`、**`Poll_i32`** 空/占位），满足 `@async_fn` 返回 `!Future<T>` 及类型检查；**`union Poll_i32 { Pending: void, Ready: i32 }`** 已提供，**`Poll<T>` 可基于泛型 union 实现（泛型 union 已支持）**。以下为**目标**目录结构，后续按阶段拆分实现。
+**当前实现**：`lib/std/async.uya` 单文件占位（`Future<T>`、`Waker`、**`Poll<T>`**）；`union Poll<T> { Pending: void, Ready: T }` 已提供。以下为**目标**目录结构，后续按阶段拆分实现。
 
 ```
 std/async/

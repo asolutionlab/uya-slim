@@ -1,10 +1,9 @@
 // lib/std/async.uya - 异步运行时占位类型
 //
 // 模块路径：use std.async
-// 当前提供 Waker、Future<T>、Poll_i32 占位；Poll<T> 待泛型 union 支持后实现。
-// 完整实现（Task<T>、Waker.wake、union Poll<T>、interface Future<T>）依赖：
+// 当前提供 Waker、Future<T>、Poll<T>（泛型 union）；完整实现依赖函数指针等。
+// 完整实现（Task<T>、Waker.wake、interface Future<T>）依赖：
 // - 函数指针类型 fn(...) return_type
-// - 泛型 union（union Poll<T>）
 // - 泛型 interface（interface Future<T>）
 
 /// 唤醒器占位。运行时可用其通知任务就绪；完整实现需函数指针等支持。
@@ -13,8 +12,8 @@ export struct Waker {}
 /// Future 占位。@async_fn 函数必须返回 !Future<T>；完整实现为 interface Future<T>。
 export struct Future<T> {}
 
-/// 异步轮询结果占位（i32）。语言核心为 union Poll<T>（Pending/Ready）；当前仅提供 Poll_i32，Poll<T> 待泛型 union 支持。
-export union Poll_i32 {
+/// 异步轮询结果。语言核心类型 union Poll<T>（Pending/Ready）。
+export union Poll<T> {
     Pending: void,
-    Ready: i32,
+    Ready: T,
 }
