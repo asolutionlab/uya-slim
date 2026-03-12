@@ -797,6 +797,18 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 
 **实现待办**：
 
+**重要语义说明（Pending vs Error）**：
+- `poll()` 的返回 `Poll<T>` 表达的是**调度层状态**：`Ready` / `Pending`。`Pending` 不是“错误”，只是“尚未就绪”。
+- `!T` 表达的是**业务层结果**：成功值 `T` 或错误集合中的某个 error。
+- 因此更“正统/易实现状态机”的形态通常是 `Future<!T>`（即 `poll() -> Poll<!T>`）：  
+  - `Poll.Pending`：挂起（应由调度器驱动再次 poll）  
+  - `Poll.Ready(!T)`：就绪；其中 `!T` 再区分成功/失败  
+- 当前实现阶段为了最小闭环，采用了 `!Future<T>` + `error.AsyncPending` 的临时约定（把 Pending 伪装为 error），后续在实现 CPS/状态机时应逐步迁移，避免 `try @await` 与“挂起”语义耦合。
+
+**迁移建议（兼容期 → 正统期）**：
+- 兼容期：保持 `@async_fn` 返回 `!Future<T>` 的规则不变，先把 “单个 @await” 真正生成可挂起/恢复的状态机（仍可用 `error.AsyncPending` 兼容旧测试）。
+- 正统期：引入/迁移到 `Future<!T>`（或等价设计），让 Pending 走 `Poll.Pending`，让错误传播走 `!T`（或 `Poll<ErrUnion>`），逐步移除 `error.AsyncPending` 作为控制流的用途。
+
 - [x] **Lexer**：识别异步编程语法（C 实现与 uya-src 已同步）
   - [x] 识别 `@async_fn` 函数属性（`@` 后跟 `async_fn`）
   - [x] 识别 `@await` 关键字（`@` 后跟 `await`）
