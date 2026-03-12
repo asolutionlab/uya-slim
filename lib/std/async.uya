@@ -17,8 +17,14 @@ export interface Future<T> {
     fn poll(self: &Self, waker: &Waker) Poll<T>;
 }
 
-/// Future 占位。@async_fn 函数当前返回此类型；仅满足返回类型检查。
-export struct Future<T> {}
+/// Future 占位。@async_fn 函数当前返回此类型；实现 interface Future<T> 以便类型兼容。
+export struct Future<T> : Future<T> {
+    state: Poll<T>,
+
+    fn poll(self: &Self, waker: &Waker) Poll<T> {
+        return self.state;
+    }
+}
 
 /// 异步任务包装。实现 Future<T>，可持有 Poll 状态并供 poll。
 export struct Task<T> : Future<T> {

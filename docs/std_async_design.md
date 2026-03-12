@@ -16,7 +16,7 @@
 
 ## 架构概览
 
-**当前实现**：`lib/std/async.uya` 提供 `Waker`、**`interface Future<T>`**、**`Task<T> : Future<T>`**（含 `task_ready`、`poll`）、`struct Future<T>` 占位、**`Poll<T>`**。以下为**目标**目录结构，后续按阶段拆分实现。
+**当前实现**：`lib/std/async.uya` 提供 **`struct Waker`**、**`union Poll<T>`**（Ready/Pending）、**`interface Future<T>`**、**`struct Future<T>`**（含 `state: Poll<T>`、`fn poll(...) Poll<T>`）、**`struct Task<T> : Future<T>`**（含 `task_ready`、`poll`）。`test_async_await_parse.uya` 与 `test_task_std_async.uya` 已通过 `--c99` 与 `--uya --c99`。编译器在结构体含泛型 union 字段时会先输出该 union 的单态定义（如 `Poll_i32`、`uya_tagged_Poll_i32`），且通过 arena 持久化 tagged 名避免重定义。以下为**目标**目录结构，后续按阶段拆分实现。
 
 ```
 std/async/

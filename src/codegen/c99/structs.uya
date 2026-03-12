@@ -331,6 +331,13 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
     if union_name == null {
         return -1;
     }
+    if union_decl.union_decl_is_extern == 0 {
+        var tagged_buf: [byte: 128] = [0: 128];
+        var blen: i32 = snprintf(&tagged_buf[0] as *byte, 128, "uya_tagged_%s" as *byte, union_name as *byte);
+        if blen > 0 && blen < 128 && is_struct_defined(codegen, &tagged_buf[0] as &byte) != 0 {
+            return 0;
+        }
+    }
     const n: i32 = union_decl.union_decl_variant_count;
     const variants: & & ASTNode = union_decl.union_decl_variants;
     if n <= 0 || variants == null {
@@ -369,6 +376,15 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
     if union_decl.union_decl_is_extern == 0 {
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "struct uya_tagged_%s { int _tag; union %s u; };\n" as *byte, union_name as *byte, union_name as *byte);
+        var tagged_buf2: [byte: 128] = [0: 128];
+        var blen2: i32 = snprintf(&tagged_buf2[0] as *byte, 128, "uya_tagged_%s" as *byte, union_name as *byte);
+        if blen2 > 0 && blen2 < 128 {
+            const tag_copy: &byte = c99_arena_strdup(codegen.arena, &tagged_buf2[0] as &byte);
+            if tag_copy != null {
+                add_struct_definition(codegen, tag_copy);
+                mark_struct_defined(codegen, tag_copy);
+            }
+        }
     }
     codegen.struct_type_params = saved_struct_type_params;
     codegen.struct_type_args = saved_struct_type_args;
@@ -1486,6 +1502,24 @@ fn ensure_nested_generic_struct_defined(codegen: &C99CodeGenerator, type_node: &
                 resolved_type.type_named_type_args,
                 resolved_type.type_named_type_arg_count);
             c99_emit_newline(codegen);
+        } else {
+            const nested_union_decl: &ASTNode = find_union_decl_c99(codegen, resolved_type.type_named_name);
+            if nested_union_decl != null && is_generic_union_c99(nested_union_decl) != 0 &&
+                resolved_type.type_named_type_arg_count > 0 && resolved_type.type_named_type_args != null {
+                const mono_union_name: &byte = get_mono_union_name(codegen, resolved_type.type_named_name,
+                    resolved_type.type_named_type_args,
+                    resolved_type.type_named_type_arg_count);
+                if mono_union_name != null {
+                    var tag_buf: [byte: 128] = [0: 128];
+                    var tlen: i32 = snprintf(&tag_buf[0] as *byte, 128, "uya_tagged_%s" as *byte, get_safe_c_identifier(codegen, mono_union_name) as *byte);
+                    if tlen > 0 && tlen < 128 && is_struct_defined(codegen, &tag_buf[0] as &byte) == 0 {
+                        gen_mono_union_definition(codegen, nested_union_decl,
+                            resolved_type.type_named_type_args,
+                            resolved_type.type_named_type_arg_count);
+                        c99_emit_newline(codegen);
+                    }
+                }
+            }
         }
     }
 }

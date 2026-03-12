@@ -6,14 +6,14 @@ use std.testing.assert_eq_i32;
 
 @async_fn
 fn async_return_value() !Future<i32> {
-    return Future<i32>{};
+    return Future<i32>{ state: Poll<i32>.Pending() };
 }
 
 @async_fn
 fn async_call_async() !Future<i32> {
     const _f: Future<i32> = try @await async_return_value();
     _ = _f;
-    return Future<i32>{};
+    return Future<i32>{ state: Poll<i32>.Pending() };
 }
 
 test "async_fn_definition" {
