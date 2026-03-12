@@ -8,6 +8,31 @@
 
 **发布日期：** 待定
 
+### stdio _vfprintf_impl C99 兼容（2026-03-12）
+
+#### 主要变更
+
+1. **格式说明符 C99 对齐**
+   - **flags**：`-`、`+`、空格、`0`、`#` 全支持
+   - **width / precision**：数字与 `*` / `.*`，用于 `%s`、`%d`、`%f` 等
+   - **length**：`h`/`hh`、`l`、`ll`、`j`、`z`、`t`、`L`
+
+2. **新增 / 修正的转换**
+   - **%zu / %zd**：size_t 无符号/有符号，带 width 填充
+   - **%j**（intmax_t/uintmax_t）、**%t**（ptrdiff_t）：d/i/u/o/x/X，temp buffer + padding
+   - **%h / %hh**：在 %d/%i/%u/%o/%x/%X 中按 length 1/2 做 8/16 位 mask
+   - **%a / %A**：C99 十六进制浮点（`0x1.xxxp±d` / `0X1.XXXP±d`），新增 `_fmt_f64_hex_to_buf`
+
+3. **浮点、%c、%p 的 width**
+   - 浮点（%f/%e/%g/%F/%E/%G）与 %c、%p 统一先写入 temp buffer，再按 width 做左/右对齐与零填充
+
+#### 测试
+
+- `tests/test_libc_stdio_new.uya`：新增 %zu/%zd、%jd/%ju、%hd/%hu、%a/%A、%8.2f、%5c 等用例
+- `make check`：497 通过，0 失败
+
+---
+
 ### v0.7.3 - va_list 内置类型
 
 **发布日期：** 2026-03-03

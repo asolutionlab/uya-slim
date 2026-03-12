@@ -1,7 +1,7 @@
-# libc 开发进度与改进计划 v0.8.0
+# libc 开发进度与改进计划 v0.8.1
 
 **整合版本**：基于 std_refactor_design.md v0.7.1 架构  
-**日期**：2026-03-05（更新 osal 层状态）  
+**日期**：2026-03-12（stdio _vfprintf_impl C99 兼容）  
 **参考**：musl-libc (https://musl.libc.org)
 
 ## 概述
@@ -102,6 +102,20 @@
 - [x] `remove` / `rename` - 文件操作
 - [x] `tmpfile` / `tmpnam` - 临时文件
 - [x] `setbuf` / `setvbuf` - 缓冲区设置
+
+#### 1.4.1 _vfprintf_impl 格式说明符（C99 兼容）
+
+`fprintf` / `printf` / `sprintf` / `snprintf` 内部使用 `_vfprintf_impl`，已实现 C99 风格格式解析与输出：
+
+| 类别 | 支持项 |
+|------|--------|
+| **flags** | `-` 左对齐、`+` 正号、空格、`0` 零填充、`#` 八进制/十六进制前缀 |
+| **width / precision** | 数字、`*` / `.*` 从参数读取；字符串 `%.Ns`、整数 `%.Nd`、浮点 `%W.Pf` |
+| **length** | `h` / `hh`、`l`、`ll`、`j` (intmax_t)、`z` (size_t)、`t` (ptrdiff_t)、`L` |
+| **转换** | `d`/`i`/`u`/`o`/`x`/`X`、`f`/`F`/`e`/`E`/`g`/`G`、`a`/`A`（十六进制浮点）、`c`/`s`/`p`/`n`、`%%` |
+| **length+转换** | `%zu`/`%zd`、`%jd`/`%ju`、`%td`/`%tu`、`%hd`/`%hu`、`%lld`/`%llu` 等，均支持 width 填充 |
+
+浮点、`%c`、`%p` 均支持 width 左/右对齐与零填充；`%a`/`%A` 输出形式为 `0x1.xxxp±d` / `0X1.XXXP±d`。
 
 ### 1.5 stdlib 模块（已完成）
 
