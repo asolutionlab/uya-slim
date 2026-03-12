@@ -3,6 +3,7 @@
 基于项目根目录 [uya.md](uya.md) 完整规范。实现时按「建议实现顺序」执行，每项需在自举编译器中实现，测试需同时通过 `--c99` 与 `--uya --c99`。
 
 **实现约定**：在编写编译器代码前，先在 `tests/` 添加测试用例（如 `test_xxx.uya` 或预期编译失败的 `error_xxx.uya`），覆盖目标场景；实现后再跑 `--c99` 与 `--uya --c99` 验证，二者都通过才算通过。
+开发流程遵循 [.codebuddy/rules/uya-dev-flow.mdc](../.codebuddy/rules/uya-dev-flow.mdc)（TDD、`make check`）。
 
 ---
 
