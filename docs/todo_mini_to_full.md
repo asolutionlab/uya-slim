@@ -816,9 +816,9 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 
 - [~] **Checker**：异步编程类型检查（基础实现，C 实现与 uya-src 已同步）
   - [ ] `@async_fn` 函数必须返回 `!Future<T>` 类型
-  - [ ] `@await` 表达式操作数必须返回 `!Future<T>` 类型
+  - [x] `@await` 表达式操作数必须返回 `!Future<T>` 类型（新增错误用例覆盖）
   - [x] `@await` 只能在 `@async_fn` 函数内使用
-  - [x] `@await` 表达式基础类型推断（当前返回操作数类型）
+  - [x] `@await` 表达式基础类型推断（当前返回操作数类型；后续 CPS 会改为返回 T）
   - [ ] `union Poll<T>` 类型检查（Pending/Ready/Error 变体）
   - [ ] `interface Future<T>` 接口定义和实现检查
   - [ ] 状态机大小编译期计算（递归调用检查）
@@ -877,6 +877,8 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `test_async_nested.uya` - 多 @async_fn（poll Future&lt;i32&gt;；嵌套 Future&lt;Future&lt;T&gt;&gt; 待完善）
   - [ ] `error_async_wrong_return.uya` - 返回类型错误
   - [x] `error_await_outside_async.uya` - `try @await` 在非异步函数中使用
+  - [x] `error_await_operand_not_error_union.uya` - @await 操作数为 `Future<T>`（缺少 !）应失败
+  - [x] `error_await_operand_not_future.uya` - @await 操作数非 `!Future<T>` 应失败
   - [ ] `error_async_recursive.uya` - 递归异步函数（应报错）
 
 **涉及**：Lexer、AST、Parser、Checker、Codegen（CPS 变换、状态机生成），uya-src。

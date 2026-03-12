@@ -8,6 +8,14 @@
 
 **发布日期：** 待定
 
+### @await 操作数类型约束收紧（2026-03-12）
+
+- **语义修正**：`@await` 的操作数现在必须是 `!Future<T>`（错误联合包裹的 Future）
+- **新增错误用例**：
+  - `tests/error_await_operand_not_error_union.uya`
+  - `tests/error_await_operand_not_future.uya`
+- **验证**：`make check` 通过（自举对比一致 + 全量测试通过）
+
 ### stdio _vfprintf_impl C99 兼容（2026-03-12）
 
 #### 主要变更

@@ -563,6 +563,25 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             return make_void_type();
         }
         const operand_type: Type = checker_infer_type(checker, expr.await_expr_operand);
+        if operand_type.kind != TypeKind.TYPE_ERROR_UNION || operand_type.error_union_payload_type == null {
+            checker_report_error(checker, expr, "@await 操作数必须是 !Future<T> 类型" as &byte);
+            return make_void_type();
+        }
+        const payload: Type = operand_type.error_union_payload_type[0];
+        // 允许 Future<T> 作为 interface 或 struct（标准库中两者同名）
+        if payload.kind == TypeKind.TYPE_INTERFACE && payload.interface_name != null &&
+            str_equals(payload.interface_name, "Future" as *byte) != 0 {
+            return operand_type;
+        }
+        if payload.kind != TypeKind.TYPE_STRUCT || payload.struct_name == null ||
+            str_equals(payload.struct_name, "Future" as *byte) == 0 {
+            checker_report_error(checker, expr, "@await 操作数必须是 !Future<T> 类型" as &byte);
+            return make_void_type();
+        }
+        if payload.struct_type_arg_count != 1 {
+            checker_report_error(checker, expr, "@await 操作数必须是 !Future<T> 类型" as &byte);
+            return make_void_type();
+        }
         return operand_type;
     } else if expr.type == ASTNodeType.AST_CATCH_EXPR {
         return infer_catch_expr(checker, expr);
