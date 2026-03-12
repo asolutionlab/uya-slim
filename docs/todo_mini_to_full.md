@@ -3,7 +3,7 @@
 基于项目根目录 [uya.md](uya.md) 完整规范。实现时按「建议实现顺序」执行，每项需在自举编译器中实现，测试需同时通过 `--c99` 与 `--uya --c99`。
 
 **实现约定**：在编写编译器代码前，先在 `tests/` 添加测试用例（如 `test_xxx.uya` 或预期编译失败的 `error_xxx.uya`），覆盖目标场景；实现后再跑 `--c99` 与 `--uya --c99` 验证，二者都通过才算通过。
-开发流程遵循 [.codebuddy/rules/uya-dev-flow.mdc](../.codebuddy/rules/uya-dev-flow.mdc)（TDD、`make check`）。
+开发流程遵循 [.codebuddy/rules/uya-dev-flow.mdc](../.codebuddy/rules/uya-dev-flow.mdc)（TDD、`make clean;make backup`）。
 
 ---
 
@@ -816,10 +816,10 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 验证 `@await` 只能在 `@async_fn` 函数内使用
 
 - [~] **Checker**：异步编程类型检查（基础实现，C 实现与 uya-src 已同步）
-  - [ ] `@async_fn` 函数必须返回 `!Future<T>` 类型
+  - [x] `@async_fn` 函数必须返回 `!Future<T>` 类型（`error_async_wrong_return.uya` 覆盖）
   - [x] `@await` 表达式操作数必须返回 `!Future<T>` 类型（新增错误用例覆盖）
   - [x] `@await` 只能在 `@async_fn` 函数内使用
-  - [x] `@await` 表达式基础类型推断（当前返回操作数类型；后续 CPS 会改为返回 T）
+  - [x] `@await` 返回类型推断为 `!T`（当前 codegen 走最小同步路径；后续 CPS 会改为真正挂起/恢复）
   - [ ] `union Poll<T>` 类型检查（Pending/Ready/Error 变体）
   - [ ] `interface Future<T>` 接口定义和实现检查
   - [ ] 状态机大小编译期计算（递归调用检查）
@@ -866,12 +866,12 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [ ] 唤醒安全性验证（Waker 使用）
 
 - [ ] **测试用例**：
-  - [ ] `test_async_fn_basic.uya` - 基本异步函数
+  - [x] `test_async_fn_basic.uya` - 基本异步函数（poll 立即 Ready）
   - [x] `test_async_await_parse.uya` - @async_fn/@await 解析与 @await 上下文校验（仅允许在 async 函数内）
   - [x] `test_task_std_async.uya` - std.async 提供 Task<T>、Poll<T>、Future<T>，task_ready + poll 返回 Ready
   - [x] `test_async_return_value.uya` - @async_fn 中直接 return T 自动包装为 Future<T>（无 @await 时 poll 立即 Ready）
-  - [ ] `test_async_await.uya` - `try @await` 基本使用
-  - [ ] `test_async_poll.uya` - `Poll<T>` 使用
+  - [x] `test_async_await.uya` - `try @await` 基本使用（Ready 与 Pending 最小闭环）
+  - [x] `test_poll_std_async.uya` - `Poll<T>` 使用（原计划名 `test_async_poll.uya`）
   - [ ] `test_async_future.uya` - `Future<T>` 接口实现
   - [ ] `test_async_state_machine.uya` - 状态机生成验证
   - [ ] `test_async_error_propagation.uya` - 错误传播

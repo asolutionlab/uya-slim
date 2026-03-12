@@ -81,6 +81,7 @@ static inline int __uya_memcmp(const void *s1, const void *s2, size_t n) {
 
 // 错误联合类型（用于 !i64 等）
 struct err_union_int64_t { uint32_t error_id; int64_t value; };
+struct err_union_int32_t { uint32_t error_id; int32_t value; };
 struct err_union_void { uint32_t error_id; };
 
 
@@ -2203,7 +2204,6 @@ typedef uint64_t clock_t;
 typedef int32_t wchar_t;
 typedef int32_t wint_t;
 
-struct err_union_int32_t { uint32_t error_id; int32_t value; };
 struct err_union_intptr_t { uint32_t error_id; intptr_t value; };
 struct err_union_voidptr { uint32_t error_id; void * value; };
 
