@@ -839,8 +839,8 @@ fn emit_pending_err_union_structs(codegen: &C99CodeGenerator) void {
             i = i + 1;
             continue;
         }
-        // 若 payload 为泛型结构体（如 Future<i32>），先输出其单态化定义，避免 err_union 中引用不完整类型
-        ensure_mono_struct_emitted_for_type_node(codegen, payload_node);
+        // 若 payload 为结构体（泛型或非泛型），先输出其定义，避免 err_union 中引用不完整类型
+        ensure_struct_emitted_for_type_node(codegen, payload_node);
         // 检查是否已定义（可能已被其他路径输出）
         if is_struct_defined(codegen, name) != 0 {
             i = i + 1;

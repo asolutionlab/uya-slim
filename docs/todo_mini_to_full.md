@@ -3,7 +3,8 @@
 基于项目根目录 [uya.md](uya.md) 完整规范。实现时按「建议实现顺序」执行，每项需在自举编译器中实现，测试需同时通过 `--c99` 与 `--uya --c99`。
 
 **实现约定**：在编写编译器代码前，先在 `tests/` 添加测试用例（如 `test_xxx.uya` 或预期编译失败的 `error_xxx.uya`），覆盖目标场景；实现后再跑 `--c99` 与 `--uya --c99` 验证，二者都通过才算通过。
-开发流程遵循 [.codebuddy/rules/uya-dev-flow.mdc](../.codebuddy/rules/uya-dev-flow.mdc)（TDD、`make clean;make backup`）。
+
+**开发流程遵循**： [.codebuddy/rules/uya-dev-flow.mdc](../.codebuddy/rules/uya-dev-flow.mdc)（TDD、`make clean;make backup`）。
 
 ---
 
@@ -846,6 +847,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 
 - [~] **Codegen**：异步编程代码生成（基础实现，C 实现与 uya-src 已同步）
   - [x] `@await` 表达式基础代码生成（当前生成同步调用）
+  - [x] 修复：i32 INT_MIN 用 `@min` 比较并输出 `(-2147483647-1)`，避免字面量溢出与 `--` 解析；err_union 先输出 payload 结构体（`ensure_struct_emitted_for_type_node`）；catch 表达式从 `err_union_structX` 推断 payload 类型；vtable 前先输出 union tagged 前向声明
   - [ ] 生成状态机结构体（包含状态、局部变量、continuation）
   - [ ] 生成状态机初始化代码
   - [ ] 生成状态转换代码（`@await` 点）
@@ -866,7 +868,10 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 测试：`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya`、`test_async_nested.uya` 通过 `--c99` 与 `--uya --c99`
   - [ ] `std.async.task` 模块：拆分/扩展（当前已在 async.uya 中）
   - [ ] `std.async.io` 模块：`AsyncWriter`, `AsyncReader`（非阻塞 I/O）
-  - [ ] `std.async.event` 模块：`EventLoop`（epoll/kqueue/IOCP）
+  - [x] `std.async.event` 模块：`EventLoop`（epoll/kqueue/IOCP）
+    - [x] epoll 系统调用层：`lib/syscall/linux.uya` 与 `lib/libc/syscall.uya` 已添加 `SYS_epoll_*`、`EpollEvent`、`EPOLLET`、`sys_epoll_create1`/`sys_epoll_ctl`/`sys_epoll_wait`；`test_epoll_syscall.uya` 通过 `--c99` 与 `--uya --c99`
+    - [x] `lib/std/async_event.uya`：`EventKind`、`interface EventLoop`、`struct LinuxEpoll : EventLoop`（`use libc.syscall`）
+    - [x] `test_std_async_event.uya` 端到端通过（codegen 已修复：err_union 先输出 payload 结构体、catch 推断 struct payload、union 前向声明、INT_MIN 用 @min）
   - [ ] `std.async.channel` 模块：`Channel<T>`, `MpscChannel<T>`（依赖原子类型）
   - [ ] `std.async.scheduler` 模块：`Scheduler` 事件循环调度器
   - [ ] `std.thread` 模块：`ThreadPool`, `async_compute<T>`
@@ -886,6 +891,8 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `test_poll_std_async.uya` - `Poll<T>` 使用（原计划名 `test_async_poll.uya`）
   - [x] `test_async_poll_inline_struct_init.uya` - 回归：结构体字段内联初始化 `Poll<T>` 时必须使用单态化 tagged union
   - [x] `test_async_future_interface_box.uya` - `Future<T>`（泛型 interface）单态化 + 装箱后可调用 poll（vtable+data）
+  - [x] `test_epoll_syscall.uya` - libc.syscall 提供 epoll_create1/epoll_wait/EpollEvent，通过 `--c99` 与 `--uya --c99`
+  - [x] `test_std_async_event.uya` - std.async_event 的 EventLoop/LinuxEpoll 端到端，通过 `--c99` 与 `--uya --c99`
   - [ ] `test_async_state_machine.uya` - 状态机生成验证
   - [x] `test_async_error_propagation.uya` - 错误传播（操作数错误直接传播）
   - [x] `test_async_nested.uya` - 多 @async_fn（poll Future&lt;i32&gt;；嵌套 Future&lt;Future&lt;T&gt;&gt; 待完善）

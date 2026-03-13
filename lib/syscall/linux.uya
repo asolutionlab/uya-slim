@@ -59,6 +59,11 @@ export const SYS_getegid: i64 = 108;
 // 线程
 export const SYS_gettid: i64 = 186;
 
+// epoll（Linux 可扩展 I/O 事件通知）
+export const SYS_epoll_create1: i64 = 291;
+export const SYS_epoll_ctl: i64 = 233;
+export const SYS_epoll_wait: i64 = 232;
+
 export const FUTEX_WAIT: i32 = 0;
 export const FUTEX_WAKE: i32 = 1;
 
@@ -70,6 +75,17 @@ export const O_EXCL: i64 = 0x80;
 export const O_TRUNC: i64 = 0x200;
 export const O_APPEND: i64 = 0x400;
 export const O_DIRECTORY: i64 = 0x10000;
+
+// epoll 事件与操作常量
+export const EPOLLIN: i32 = 0x001;
+export const EPOLLOUT: i32 = 0x004;
+export const EPOLLERR: i32 = 0x008;
+export const EPOLLHUP: i32 = 0x010;
+export const EPOLLET: i32 = -2147483648;
+export const EPOLL_CTL_ADD: i32 = 1;
+export const EPOLL_CTL_MOD: i32 = 2;
+export const EPOLL_CTL_DEL: i32 = 3;
+export const EPOLL_CLOEXEC: i32 = 0x80000;
 
 export const S_IRWXU: i64 = 0o700;
 export const S_IRUSR: i64 = 0o400;
@@ -375,6 +391,45 @@ export fn sys_ioctl(fd: i32, request: i64, arg: i64) !i32 {
 // 返回：成功返回 0，失败返回 -1
 export fn sys_fcntl(fd: i32, cmd: i32, arg: i32) !i32 {
     return @syscall(SYS_fcntl, fd as i64, cmd as i64, arg as i64) as! i32;
+}
+
+// ============================================================
+// epoll 相关（Linux 可扩展 I/O 事件通知）
+// ============================================================
+
+/// epoll_event：与 Linux ABI 兼容（events: u32 + pad + data: u64）
+export struct EpollEvent {
+    events: u32,
+    _pad: u32,
+    data: u64,
+}
+
+/// epoll_create1 - 创建 epoll 实例
+/// flags: EPOLL_CLOEXEC 等，0 表示无标志
+/// 返回：epoll fd，失败返回 -1
+export fn sys_epoll_create1(flags: i32) !i32 {
+    return @syscall(SYS_epoll_create1, flags as i64) as! i32;
+}
+
+/// epoll_ctl - 控制 epoll 实例（ADD/MOD，需传入 event）
+export fn sys_epoll_ctl(epfd: i32, op: i32, fd: i32, event: &const EpollEvent) !i32 {
+    return @syscall(SYS_epoll_ctl, epfd as i64, op as i64, fd as i64, event as i64) as! i32;
+}
+
+/// epoll_ctl - 删除 fd（DEL 时 event 在内核中忽略，此处不传）
+export fn sys_epoll_ctl_del(epfd: i32, fd: i32) !i32 {
+    var dummy: EpollEvent = EpollEvent{ events: 0, _pad: 0, data: 0 };
+    return @syscall(SYS_epoll_ctl, epfd as i64, EPOLL_CTL_DEL as i64, fd as i64, &dummy as i64) as! i32;
+}
+
+/// epoll_wait - 等待事件
+/// epfd: epoll 文件描述符
+/// events: 输出事件数组
+/// maxevents: 数组长度
+/// timeout_ms: 超时毫秒，-1 表示无限
+/// 返回：就绪事件数量，0 超时，-1 错误
+export fn sys_epoll_wait(epfd: i32, events: &EpollEvent, maxevents: i32, timeout_ms: i32) !i32 {
+    return @syscall(SYS_epoll_wait, epfd as i64, events as i64, maxevents as i64, timeout_ms as i64) as! i32;
 }
 
 // ============================================================

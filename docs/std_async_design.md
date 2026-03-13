@@ -151,7 +151,7 @@ fn fetch_and_write(reader: &AsyncReader, writer: &AsyncWriter) !Future<void> {
 | macOS | `kqueue` | `std/async/event/macos.uya` |
 | Windows | `IOCP` | `std/async/event/windows.uya` |
 
-- [ ] **统一事件接口**（`std/async/event/common.uya`）：
+- [x] **统一事件接口**（当前实现于 `lib/std/async_event.uya`，模块路径 `use std.async_event`）：
   ```uya
   export interface EventLoop {
       fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !void;
@@ -166,10 +166,10 @@ fn fetch_and_write(reader: &AsyncReader, writer: &AsyncWriter) !Future<void> {
   }
   ```
 
-- [ ] **Linux 实现**（`std/async/event/linux.uya`）：
-  - 基于 `epoll_create1` / `epoll_ctl` / `epoll_wait` 系统调用
-  - 可选 `io_uring` 高性能后端（需 Linux 5.1+）
-  - 通过 `@syscall` 内置函数实现，零外部依赖
+- [x] **Linux 实现**（同上文件，`struct LinuxEpoll : EventLoop`）：
+  - 基于 `libc.syscall` 的 `sys_epoll_create1` / `sys_epoll_ctl` / `sys_epoll_wait`（底层为 `@syscall`）
+  - epoll 常量（含 `EPOLLET`）与 `EpollEvent` 已加入 `lib/libc/syscall.uya` 与 `lib/syscall/linux.uya`
+  - 端到端测试 `test_std_async_event.uya`、`test_epoll_syscall.uya` 已通过 `--c99` 与 `--uya --c99`（codegen 已修复）
 
 - [ ] **macOS 实现**（`std/async/event/macos.uya`）：
   - 基于 `kqueue` / `kevent` 系统调用

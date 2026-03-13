@@ -1,0 +1,62 @@
+// lib/std/async_event.uya - 异步事件循环抽象与 Linux epoll 实现
+//
+// 模块路径：use std.async_event
+// 设计见 docs/std_async_design.md 阶段 3（std.async.event）。
+
+use std.async;
+use libc.syscall;
+
+/// 事件关注类型：可读、可写、可读可写
+export union EventKind {
+    Readable: void,
+    Writable: void,
+    ReadWrite: void,
+}
+
+/// 将 EventKind 转为 epoll 事件掩码（仅 Linux 实现使用）
+fn event_kind_to_epoll(k: EventKind) i32 {
+    match k {
+        .Readable(_) => { return EPOLLIN; },
+        .Writable(_) => { return EPOLLOUT; },
+        .ReadWrite(_) => { return EPOLLIN | EPOLLOUT; },
+    };
+    return 0;
+}
+
+/// 事件循环统一接口：注册 fd、注销、轮询
+export interface EventLoop {
+    fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !void;
+    fn deregister(self: &Self, fd: i32) !void;
+    fn poll(self: &Self, timeout_ms: i32) !i32;
+}
+
+/// Linux epoll 事件循环实现
+export struct LinuxEpoll : EventLoop {
+    epfd: i32,
+
+    fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !void {
+        _ = waker;
+        var ev: EpollEvent = EpollEvent{
+            events: event_kind_to_epoll(interest) as u32,
+            _pad: 0,
+            data: fd as u64,
+        };
+        _ = try sys_epoll_ctl(self.epfd, EPOLL_CTL_ADD, fd, &ev);
+    }
+
+    fn deregister(self: &Self, fd: i32) !void {
+        _ = try sys_epoll_ctl_del(self.epfd, fd);
+    }
+
+    fn poll(self: &Self, timeout_ms: i32) !i32 {
+        var events: [EpollEvent: 64] = [];
+        const n: i32 = try sys_epoll_wait(self.epfd, &events[0], 64, timeout_ms);
+        return n;
+    }
+}
+
+/// 创建 Linux epoll 实例（flags 传 0 或 EPOLL_CLOEXEC）
+export fn linux_epoll_create(flags: i32) !LinuxEpoll {
+    const fd: i32 = try sys_epoll_create1(flags);
+    return LinuxEpoll{ epfd: fd };
+}

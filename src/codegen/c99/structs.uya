@@ -940,12 +940,55 @@ fn collect_interface_method_sigs(codegen: &C99CodeGenerator, interface_name: &by
     return collect_interface_method_sigs_internal(codegen, interface_name, sigs, max_sigs, 0);
 }
 
+// 在 vtable 等之前输出所有 union 的 struct uya_tagged_X 前向声明，避免 vtable 参数列表中 "declared inside parameter list" 警告/错误
+fn emit_union_tagged_forward_decls(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.program_node == null {
+        return;
+    }
+    const decl_count: i32 = codegen.program_node.program_decl_count;
+    var i: i32 = 0;
+    while i < decl_count {
+        const decl: &ASTNode = codegen.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_UNION_DECL && decl.union_decl_name != null {
+            if is_generic_union_c99(decl) != 0 {
+                var j: i32 = 0;
+                while j < codegen.mono_instance_count {
+                    if codegen.mono_instances[j].generic_name != null &&
+                        strcmp(codegen.mono_instances[j].generic_name as *byte, decl.union_decl_name as *byte) == 0 &&
+                        codegen.mono_instances[j].is_function == 0 &&
+                        has_unresolved_mono_type_args(decl, codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count) == 0 {
+                        const mono_name: &byte = get_mono_struct_name(codegen, decl.union_decl_name,
+                            codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count);
+                        if mono_name != null {
+                            const safe: &byte = get_safe_c_identifier(codegen, mono_name);
+                            if safe != null {
+                                fprintf(codegen.output as *void, "struct uya_tagged_%s;\n" as *byte, safe as *byte);
+                            }
+                        }
+                        break;
+                    }
+                    j = j + 1;
+                }
+            } else {
+                const safe: &byte = get_safe_c_identifier(codegen, decl.union_decl_name);
+                if safe != null {
+                    fprintf(codegen.output as *void, "struct uya_tagged_%s;\n" as *byte, safe as *byte);
+                }
+            }
+        }
+        i = i + 1;
+    }
+}
+
 fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.program_node == null {
         return;
     }
     const decl_count: i32 = codegen.program_node.program_decl_count;
-    
+
+    // 第零步：联合体 tagged 结构体前向声明，供 vtable 参数类型使用
+    emit_union_tagged_forward_decls(codegen);
+
     // 第一步：预先生成所有接口方法签名中使用的错误联合类型结构体定义
     // 跳过泛型接口（类型参数会导致错误联合类型如 err_union_T 无法编译）
     var i: i32 = 0;
@@ -2069,4 +2112,31 @@ fn ensure_mono_struct_emitted_for_type_node(codegen: &C99CodeGenerator, type_nod
     }
     gen_mono_struct_definition(codegen, struct_decl,
         type_node.type_named_type_args, type_node.type_named_type_arg_count);
+}
+
+// 确保 type_node 对应的结构体已输出（泛型则单态化，非泛型则直接定义），供 err_union 等依赖使用，避免 incomplete type
+fn ensure_struct_emitted_for_type_node(codegen: &C99CodeGenerator, type_node: &ASTNode) void {
+    if codegen == null || type_node == null || type_node.type != ASTNodeType.AST_TYPE_NAMED {
+        return;
+    }
+    if type_node.type_named_name == null {
+        return;
+    }
+    if type_node.type_named_type_arg_count > 0 {
+        ensure_mono_struct_emitted_for_type_node(codegen, type_node);
+        return;
+    }
+    const struct_name: &byte = type_node.type_named_name;
+    const struct_decl: &ASTNode = find_struct_decl_c99(codegen, struct_name);
+    if struct_decl == null {
+        return;
+    }
+    const c_name: &byte = get_safe_c_identifier(codegen, struct_name);
+    if c_name == null {
+        return;
+    }
+    if is_struct_defined(codegen, c_name) != 0 {
+        return;
+    }
+    gen_struct_definition(codegen, struct_decl);
 }
