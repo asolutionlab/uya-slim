@@ -679,6 +679,7 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         is_array_return = 1;
     }
     var ret_c: &byte = convert_array_return_type(codegen, return_type);
+    ret_c = normalize_poll_return_type(codegen, ret_c);
     if ret_c == null {
         ret_c = "int32_t" as *byte;
     }
@@ -751,10 +752,36 @@ fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &A
     if return_type != null && return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION && expr != null && expr.type != ASTNodeType.AST_ERROR_VALUE {
         gen_return_error_union(codegen, expr, return_type, ret_c);
     } else if is_void == 0 && expr != null {
-        c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
-        gen_expr(codegen, expr);
-        c99_emit_semi_newline(codegen);
+        var did_interface_box: i32 = 0;
+        if return_type != null && return_type.type == ASTNodeType.AST_TYPE_NAMED && return_type.type_named_name != null {
+            const iface_decl: &ASTNode = find_interface_decl_c99(codegen, return_type.type_named_name);
+            if iface_decl != null && expr.type == ASTNodeType.AST_STRUCT_INIT && expr.struct_init_struct_name != null &&
+                struct_implements_interface_c99(codegen, expr.struct_init_struct_name, return_type.type_named_name) != 0 {
+                var iface_mono: &byte = return_type.type_named_name;
+                if return_type.type_named_type_arg_count > 0 && return_type.type_named_type_args != null {
+                    iface_mono = get_mono_struct_name(codegen, return_type.type_named_name,
+                        return_type.type_named_type_args, return_type.type_named_type_arg_count);
+                }
+                var struct_mono: &byte = expr.struct_init_struct_name;
+                if expr.struct_init_type_arg_count > 0 && expr.struct_init_type_args != null {
+                    struct_mono = get_mono_struct_name(codegen, expr.struct_init_struct_name,
+                        expr.struct_init_type_args, expr.struct_init_type_arg_count);
+                }
+                const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono);
+                const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
+                c99_emit_indent(codegen);
+                fprintf(codegen.output as *void, "%s _uya_ret = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&(" as *byte, ret_c as *byte, safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
+                gen_expr(codegen, expr);
+                fputs(") };\n" as *byte, codegen.output as *void);
+                did_interface_box = 1;
+            }
+        }
+        if did_interface_box == 0 {
+            c99_emit_indent(codegen);
+            fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
+            gen_expr(codegen, expr);
+            c99_emit_semi_newline(codegen);
+        }
     } else {
         var is_err_union_void: i32 = 0;
         if return_type != null && return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
@@ -1815,6 +1842,11 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             codegen.indent_level = codegen.indent_level + 1;
                             c99_emit_indent(codegen);
                             fprintf(codegen.output as *void, "%s %s = _uya_m.u.%s;\n" as *byte, vtype as *byte, bind as *byte, vname as *byte);
+                            if stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                                codegen.local_variables[codegen.local_variable_count].name = stmt.match_expr_arms[i].var_name;
+                                codegen.local_variables[codegen.local_variable_count].type_c = vtype;
+                                codegen.local_variable_count = codegen.local_variable_count + 1;
+                            }
                         } else {
                             c99_emit_indent(codegen);
                             fprintf(codegen.output as *void, "%sif (_uya_m._tag == %d) " as *byte, prefix as *byte, idx);
@@ -1836,6 +1868,9 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                                 codegen.indent_level = codegen.indent_level - 1;
                                 c99_emit(codegen, "}\n" as *byte);
                             }
+                        }
+                        if bind != null && stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count > 0 {
+                            codegen.local_variable_count = codegen.local_variable_count - 1;
                         }
                     }
                 }
@@ -1866,6 +1901,11 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 c99_emit_indent(codegen);
                 if v != null {
                     fprintf(codegen.output as *void, "%s{ %s %s = _uya_m;\n" as *byte, prefix as *byte, m_type as *byte, v as *byte);
+                    if stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                        codegen.local_variables[codegen.local_variable_count].name = stmt.match_expr_arms[i].var_name;
+                        codegen.local_variables[codegen.local_variable_count].type_c = m_type;
+                        codegen.local_variable_count = codegen.local_variable_count + 1;
+                    }
                 } else {
                     fprintf(codegen.output as *void, "%s{\n" as *byte, prefix as *byte);
                 }
@@ -1875,6 +1915,9 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 } else {
                     gen_expr(codegen, stmt.match_expr_arms[i].result_expr);
                     c99_emit_semi_newline(codegen);
+                }
+                if v != null && stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count > 0 {
+                    codegen.local_variable_count = codegen.local_variable_count - 1;
                 }
                 codegen.indent_level = codegen.indent_level - 1;
                 c99_emit(codegen, "}\n" as *byte);

@@ -61,6 +61,13 @@ fn check_match_expr_node(checker: &TypeChecker, node: &ASTNode) i32 {
                         str_equals(v.var_decl_name, arm.variant_name) != 0 {
                         found = 1;
                         variant_type = type_from_ast(checker, v.var_decl_type);
+                        if expr_type.union_type_args != null && expr_type.union_type_arg_count >= 1 &&
+                            union_decl.union_decl_type_param_count >= 1 &&
+                            (variant_type.kind == TypeKind.TYPE_GENERIC_PARAM ||
+                             (v.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED && v.var_decl_type.type_named_name != null &&
+                              (v.var_decl_type.type_named_type_arg_count == 0 || v.var_decl_type.type_named_type_args == null))) {
+                            variant_type = copy_type(&expr_type.union_type_args[0]);
+                        }
                         break;
                     }
                     k = k + 1;

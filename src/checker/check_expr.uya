@@ -550,9 +550,30 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             checker_report_error(checker, expr.try_expr_operand, "try 的操作数必须是错误联合类型 !T" as *byte);
             return make_void_type();
         }
-        if checker.in_function == 0 || checker.current_return_type.kind != TypeKind.TYPE_ERROR_UNION {
-            checker_report_error(checker, expr, "try 只能在返回错误联合类型的函数中使用" as *byte);
+        if checker.in_function == 0 {
+            checker_report_error(checker, expr, "try 只能在函数中使用" as *byte);
             return make_void_type();
+        }
+        // 常规路径：函数返回 !T
+        if checker.current_return_type.kind != TypeKind.TYPE_ERROR_UNION {
+            // 异步阶段 B：@async_fn 返回 Future<!T>，允许 try 传播到内部 !T
+            var allow_in_async: i32 = 0;
+            if checker.current_function_decl != null && checker.current_function_decl.fn_decl_is_async != 0 &&
+                checker.current_function_decl.fn_decl_return_type != null {
+                const fr: &ASTNode = checker.current_function_decl.fn_decl_return_type;
+                if fr.type == ASTNodeType.AST_TYPE_NAMED && fr.type_named_name != null &&
+                    str_equals(fr.type_named_name, "Future" as *byte) != 0 &&
+                    fr.type_named_type_arg_count == 1 && fr.type_named_type_args != null {
+                    const a0: &ASTNode = fr.type_named_type_args[0];
+                    if a0 != null && a0.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                        allow_in_async = 1;
+                    }
+                }
+            }
+            if allow_in_async == 0 {
+                checker_report_error(checker, expr, "try 只能在返回错误联合类型的函数中使用" as *byte);
+                return make_void_type();
+            }
         }
         if operand_type.error_union_payload_type == null {
             return make_void_type();
@@ -565,39 +586,51 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             return make_void_type();
         }
         const operand_type: Type = checker_infer_type(checker, expr.await_expr_operand);
-        if operand_type.kind != TypeKind.TYPE_ERROR_UNION || operand_type.error_union_payload_type == null {
-            checker_report_error(checker, expr, "@await 操作数必须是 !Future<T> 类型" as &byte);
-            return make_void_type();
-        }
-        const payload: Type = operand_type.error_union_payload_type[0];
-        // @await 返回 !T（T 为 Future 的类型参数）
-        var inner_ptr: &Type = null;
-        if payload.kind == TypeKind.TYPE_INTERFACE && payload.interface_name != null &&
-            str_equals(payload.interface_name, "Future" as *byte) != 0 {
-            if payload.interface_type_arg_count != 1 || payload.interface_type_args == null {
-                checker_report_error(checker, expr, "@await 操作数必须是 !Future<T> 类型" as &byte);
+        // 支持两种形式：Future<!T> 或 !Future<T>
+        var inner_err: &Type = null;
+        if operand_type.kind == TypeKind.TYPE_INTERFACE && operand_type.interface_name != null &&
+            str_equals(operand_type.interface_name, "Future" as *byte) != 0 {
+            if operand_type.interface_type_arg_count != 1 || operand_type.interface_type_args == null {
+                checker_report_error(checker, expr, "@await 操作数必须是 Future<!T> 或 !Future<T> 类型" as &byte);
                 return make_void_type();
             }
-            inner_ptr = payload.interface_type_args;
-        } else if payload.kind == TypeKind.TYPE_STRUCT && payload.struct_name != null &&
-            str_equals(payload.struct_name, "Future" as *byte) != 0 {
-            if payload.struct_type_arg_count != 1 || payload.struct_type_args == null {
-                checker_report_error(checker, expr, "@await 操作数必须是 !Future<T> 类型" as &byte);
+            inner_err = operand_type.interface_type_args;
+        } else if operand_type.kind == TypeKind.TYPE_STRUCT && operand_type.struct_name != null &&
+            str_equals(operand_type.struct_name, "Future" as *byte) != 0 {
+            if operand_type.struct_type_arg_count != 1 || operand_type.struct_type_args == null {
+                checker_report_error(checker, expr, "@await 操作数必须是 Future<!T> 或 !Future<T> 类型" as &byte);
                 return make_void_type();
             }
-            inner_ptr = payload.struct_type_args;
+            inner_err = operand_type.struct_type_args;
+        } else if operand_type.kind == TypeKind.TYPE_ERROR_UNION && operand_type.error_union_payload_type != null {
+            // !Future<T>：取出 payload Future<T>，@await 结果为 !T（先解包 ! 再 await，语义上等价）
+            const payload: Type = operand_type.error_union_payload_type[0];
+            if payload.kind == TypeKind.TYPE_INTERFACE && payload.interface_name != null &&
+                str_equals(payload.interface_name, "Future" as *byte) != 0 &&
+                payload.interface_type_arg_count == 1 && payload.interface_type_args != null {
+                inner_err = payload.interface_type_args;
+            } else if payload.kind == TypeKind.TYPE_STRUCT && payload.struct_name != null &&
+                str_equals(payload.struct_name, "Future" as *byte) != 0 &&
+                payload.struct_type_arg_count == 1 && payload.struct_type_args != null {
+                inner_err = payload.struct_type_args;
+            }
+            if inner_err == null {
+                checker_report_error(checker, expr, "@await 操作数必须是 Future<!T> 或 !Future<T> 类型" as &byte);
+                return make_void_type();
+            }
+            // inner_err[0] 是 T；@await !Future<T> 返回 !T，故构造 !T
+            var result_await: Type = Type { kind: TypeKind.TYPE_ERROR_UNION, enum_name: null, struct_name: null, pointer_to: null, is_ffi_pointer: 0, element_type: null, array_size: 0, slice_element_type: null, slice_len: 0, tuple_element_types: null, tuple_count: 0, error_union_payload_type: inner_err, error_error_id: 0 };
+            return result_await;
         } else {
-            checker_report_error(checker, expr, "@await 操作数必须是 !Future<T> 类型" as &byte);
+            checker_report_error(checker, expr, "@await 操作数必须是 Future<!T> 或 !Future<T> 类型" as &byte);
             return make_void_type();
         }
-        const payload_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
-        if payload_ptr == null || inner_ptr == null {
+        if inner_err == null || inner_err[0].kind != TypeKind.TYPE_ERROR_UNION || inner_err[0].error_union_payload_type == null {
+            checker_report_error(checker, expr, "@await 操作数必须是 Future<!T> 或 !Future<T> 类型" as &byte);
             return make_void_type();
         }
-        payload_ptr[0] = copy_type(&inner_ptr[0]);
-        var await_result: Type = Type { kind: TypeKind.TYPE_ERROR_UNION };
-        await_result.error_union_payload_type = payload_ptr;
-        return await_result;
+        // @await 返回 !T（即 Future 的类型参数）
+        return inner_err[0];
     } else if expr.type == ASTNodeType.AST_CATCH_EXPR {
         return infer_catch_expr(checker, expr);
     } else if expr.type == ASTNodeType.AST_ERROR_VALUE {
@@ -1186,7 +1219,14 @@ fn infer_match_expr(checker: &TypeChecker, expr: &ASTNode) Type {
                     const v: &ASTNode = union_decl.union_decl_variants[k];
                     if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null &&
                         str_equals(v.var_decl_name, arm.variant_name) != 0 && v.var_decl_type != null {
-                        const variant_type: Type = type_from_ast(checker, v.var_decl_type);
+                        var variant_type: Type = type_from_ast(checker, v.var_decl_type);
+                        if expr_type.union_type_args != null && expr_type.union_type_arg_count >= 1 &&
+                            union_decl.union_decl_type_param_count >= 1 &&
+                            (variant_type.kind == TypeKind.TYPE_GENERIC_PARAM ||
+                             (v.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED && v.var_decl_type.type_named_name != null &&
+                              (v.var_decl_type.type_named_type_arg_count == 0 || v.var_decl_type.type_named_type_args == null))) {
+                            variant_type = copy_type(&expr_type.union_type_args[0]);
+                        }
                         const sym: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
                         if sym != null {
                             sym.name = arm.var_name;

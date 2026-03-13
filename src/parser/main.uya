@@ -278,6 +278,28 @@ fn parser_peek_is_struct_init(parser: &Parser) i32 {
     return is_struct_init;
 }
 
+// 若当前为 '{' 且下一 token 为 '}' 则返回 1（用于将 Pending({}) 等中的 {} 解析为空块）
+fn parser_peek_next_is_rbrace(parser: &Parser) i32 {
+    if parser == null || parser.lexer == null || parser.current_token == null {
+        return 0;
+    }
+    if parser.current_token.type != TokenType.TOKEN_LEFT_BRACE {
+        return 0;
+    }
+    const lexer: &Lexer = parser.lexer;
+    var saved_position: usize = lexer.position;
+    var saved_line: i32 = lexer.line;
+    var saved_column: i32 = lexer.column;
+    const next: &Token = lexer_next_token(lexer, parser.arena);
+    lexer.position = saved_position;
+    lexer.line = saved_line;
+    lexer.column = saved_column;
+    if next != null && next.type == TokenType.TOKEN_RIGHT_BRACE {
+        return 1;
+    }
+    return 0;
+}
+
 // 前向声明（Uya 不支持，需要重新组织函数顺序）
 // 注意：这些函数会在后面定义，但需要先声明以便递归调用
 // 由于 Uya 不支持前向声明，我们需要重新组织函数顺序

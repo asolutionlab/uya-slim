@@ -1959,6 +1959,27 @@ fn convert_array_return_type(codegen: &C99CodeGenerator, return_type: &ASTNode) 
     return result;
 }
 
+// 兼容 Poll<!T> 的历史返回类型名：
+// 旧代码生成的接口方法/实现签名可能使用 "struct uya_tagged_Poll_T" 作为返回类型，
+// 而新的 union 单态实例实际定义为 "struct uya_tagged_Poll_<...>" 并通过
+// `typedef struct uya_tagged_<...> uya_tagged_Poll_T;` 提供别名。
+// C 语言中 `typedef` 的别名名为 `uya_tagged_Poll_T`，而不是 `struct uya_tagged_Poll_T`，
+// 因此这里将返回类型字符串标准化为 typedef 名称，避免产生不完整类型。
+// 若 ret_c 含 '!'（如 struct uya_tagged_Poll_!i32），先经 codegen 做 C 标识符 sanitize。
+fn normalize_poll_return_type(codegen: &C99CodeGenerator, ret_c: &byte) &byte {
+    if ret_c == null {
+        return null;
+    }
+    if strchr(ret_c as *byte, 33) != null {
+        return sanitize_type_name_for_c(codegen, ret_c);
+    }
+    if strcmp(ret_c as *byte, "struct uya_tagged_Poll_T" as *byte) == 0 ||
+       strstr(ret_c as *byte, "uya_tagged_Poll_T" as *byte) != null {
+        return "uya_tagged_Poll_T" as &byte;
+    }
+    return ret_c;
+}
+
 // 获取数组表达式的元素类型（返回C类型字符串）
 // 如果无法确定类型，返回NULL
 fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byte {

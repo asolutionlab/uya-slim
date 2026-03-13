@@ -35,7 +35,19 @@ export struct Task<T> : Future<T> {
     }
 }
 
+/// 将值包装为错误联合 !T 的成功分支。
+/// 用于构造 Future<!T> 的 Ready(payload) 场景。
+export fn ok<T>(value: T) !T {
+    return value;
+}
+
 /// 创建已就绪任务。poll 时立即返回 Ready(value)。
 export fn task_ready<T>(value: T) Task<T> {
     return Task<T>{ state: Poll<T>.Ready(value) };
+}
+
+/// 创建已就绪任务：Ready(ok(value))，便于构造 Future<!T>。
+export fn task_ready_ok_i32(value: i32) Task<!i32> {
+    const ok_value: !i32 = ok<i32>(value);
+    return Task<!i32>{ state: Poll<!i32>.Ready(ok_value) };
 }

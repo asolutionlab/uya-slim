@@ -14,6 +14,10 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
         if parser_peek_is_struct_init(parser) == 0 {
             return parser_parse_block(parser);
         }
+        // 孤立的 {}（如 Pending({})）解析为空块，不作为结构体字面量
+        if parser_peek_next_is_rbrace(parser) != 0 {
+            return parser_parse_block(parser);
+        }
         // 否则，由标识符处理（结构体初始化：StructName{ field: value }）
     }
     
@@ -118,7 +122,7 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
                 const t: TokenType = after_less.type;
                 // 如果 '<' 后面是表达式的开始，则 '<' 可能是比较运算符
                 if t == TokenType.TOKEN_NUMBER || t == TokenType.TOKEN_FLOAT || t == TokenType.TOKEN_STRING ||
-                   t == TokenType.TOKEN_MINUS || t == TokenType.TOKEN_EXCLAMATION || t == TokenType.TOKEN_TILDE ||
+                   t == TokenType.TOKEN_MINUS || t == TokenType.TOKEN_TILDE ||
                    t == TokenType.TOKEN_TRUE || t == TokenType.TOKEN_FALSE || t == TokenType.TOKEN_NULL ||
                    t == TokenType.TOKEN_LEFT_PAREN || t == TokenType.TOKEN_INTERP_OPEN {
                     is_generic = 0;
@@ -1601,7 +1605,7 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
             if after_less != null {
                 const t: TokenType = after_less.type;
                 if t == TokenType.TOKEN_NUMBER || t == TokenType.TOKEN_FLOAT || t == TokenType.TOKEN_STRING ||
-                   t == TokenType.TOKEN_MINUS || t == TokenType.TOKEN_EXCLAMATION || t == TokenType.TOKEN_TILDE ||
+                   t == TokenType.TOKEN_MINUS || t == TokenType.TOKEN_TILDE ||
                    t == TokenType.TOKEN_TRUE || t == TokenType.TOKEN_FALSE || t == TokenType.TOKEN_NULL ||
                    t == TokenType.TOKEN_LEFT_PAREN || t == TokenType.TOKEN_AT_IDENTIFIER ||
                    t == TokenType.TOKEN_INTERP_OPEN {

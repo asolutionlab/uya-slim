@@ -441,104 +441,15 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         gen_try_expr(codegen, expr);
         } else if expr.type == ASTNodeType.AST_AWAIT_EXPR {
         // @await expression:
-        // 最小闭环：同步路径展开
-        // - operand: !Future<T>
-        // - 生成：poll 一次，若 Ready 返回 !T 的成功分支；若 Pending 返回 error.AsyncPending
-        // 注意：完整语义需要 CPS/状态机；这里先支持 Ready 用例以驱动 TDD。
+        // 阶段 B（正统语义）：Pending 必须走 Poll.Pending，由 @async_fn 状态机的 poll 驱动。
+        // 因此这里不再生成“把 Pending 伪装成 error.AsyncPending”的控制流。
+        // 目前 @await 节点应由 @async_fn 专用 codegen 路径消解；此处仅保底输出操作数，避免崩溃。
         const operand: &ASTNode = expr.await_expr_operand;
         if operand == null {
             fputs("0" as *byte, codegen.output as *void);
             return;
         }
-
-        // 期望类型：T
-        var payload_type: &ASTNode = codegen.expected_type;
-        if payload_type == null {
-            // 回退：无法推断 payload，仍生成操作数
-            gen_expr(codegen, operand);
-            return;
-        }
-
-        // 构造 !T 的 C 类型（struct err_union_...）
-        const err_union_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, expr.line, expr.column, codegen.arena, expr.filename);
-        if err_union_type == null {
-            gen_expr(codegen, operand);
-            return;
-        }
-        err_union_type.type_error_union_payload_type = payload_type;
-        const await_union_c: &byte = c99_type_to_c(codegen, err_union_type);
-        const payload_c: &byte = c99_type_to_c(codegen, payload_type);
-
-        // operand 的错误联合类型（!Future<T>）
-        const operand_union_c: &byte = get_c_type_of_expr(codegen, operand);
-        var future_mono: &byte = null;
-        if operand_union_c != null && strncmp(operand_union_c as *byte, "struct err_union_" as *byte, 16) == 0 {
-            const payload_part: &byte = &operand_union_c[16];
-            if payload_part != null {
-                var p: &byte = payload_part;
-                // 跳过可能的 '_' 前缀（safe identifier）
-                while p[0] == 95 {  // '_'
-                    p = &p[1];
-                }
-                if strncmp(p as *byte, "struct" as *byte, 6) == 0 {
-                    future_mono = &p[6];
-                } else {
-                    future_mono = p;
-                }
-            }
-        }
-        if future_mono == null {
-            // 回退：无法推断 Future 单态名
-            gen_expr(codegen, operand);
-            return;
-        }
-        // interface Future<T>：走 vtable 调用；struct Future<T>：走直接函数调用
-        var is_iface_future: i32 = 0;
-        if strncmp(future_mono as *byte, "uya_interface_" as *byte, 14) == 0 {
-            is_iface_future = 1;
-        }
-        var poll_cname: &byte = null;
-        if is_iface_future == 0 {
-            poll_cname = get_method_c_name(codegen, future_mono, "poll" as *byte);
-            if poll_cname == null {
-                gen_expr(codegen, operand);
-                return;
-            }
-        }
-
-        // Poll<T> 单态名：Poll_<Tmono>
-        const type_args: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
-        if type_args == null {
-            gen_expr(codegen, operand);
-            return;
-        }
-        type_args[0] = payload_type;
-        const poll_mono: &byte = get_mono_union_name(codegen, "Poll" as &byte, type_args, 1);
-        const poll_safe: &byte = get_safe_c_identifier(codegen, poll_mono);
-
-        // error.AsyncPending
-        var pending_id: i32 = c99_get_or_add_error_id(codegen, "AsyncPending" as *byte);
-        if pending_id == 0 {
-            pending_id = 1;
-        }
-
-        // 生成表达式语句块：返回 struct err_union_<T>
-        fprintf(codegen.output as *void, "({ %s _uya_r; %s _uya_op = " as *byte, await_union_c as *byte, operand_union_c as *byte);
         gen_expr(codegen, operand);
-        fputs("; if (_uya_op.error_id != 0) { _uya_r = (" as *byte, codegen.output as *void);
-        fprintf(codegen.output as *void, "%s){ .error_id = _uya_op.error_id }; " as *byte, await_union_c as *byte);
-        fputs("} else { " as *byte, codegen.output as *void);
-        fprintf(codegen.output as *void, "struct %s _uya_f = _uya_op.value; " as *byte, future_mono as *byte);
-        fputs("struct Waker _uya_w = (struct Waker){0}; " as *byte, codegen.output as *void);
-        if is_iface_future != 0 {
-            const iface_safe: &byte = get_safe_c_identifier(codegen, &future_mono[14]);
-            fprintf(codegen.output as *void, "struct uya_tagged_%s _uya_p = ((struct uya_vtable_%s *)(_uya_f).vtable)->poll((_uya_f).data, (&_uya_w)); " as *byte,
-                poll_safe as *byte, iface_safe as *byte);
-        } else {
-            fprintf(codegen.output as *void, "struct uya_tagged_%s _uya_p = %s(&(_uya_f), (&_uya_w)); " as *byte, poll_safe as *byte, poll_cname as *byte);
-        }
-        fprintf(codegen.output as *void, "if (_uya_p._tag == 1) { _uya_r = (%s){ .error_id = 0, .value = _uya_p.u.Ready }; } else { _uya_r = (%s){ .error_id = %dU }; } } _uya_r; })" as *byte,
-            await_union_c as *byte, await_union_c as *byte, pending_id);
     } else if expr.type == ASTNodeType.AST_CATCH_EXPR {
         gen_catch_expr(codegen, expr);
         } else if expr.type == ASTNodeType.AST_BINARY_EXPR {
@@ -1064,7 +975,32 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                 const mono: &byte = get_mono_union_name(codegen, obj.identifier_name,
                                     expr.call_expr_type_args,
                                     expr.call_expr_type_arg_count);
-                                uname = get_safe_c_identifier(codegen, mono);
+                                if mono != null && strchr(mono as *byte, 95) != null { uname = get_safe_c_identifier(codegen, mono); }
+                            }
+                            // 变量初始化 const p: Poll<i32> = Poll<i32>.Ready(42)：优先用期望类型实参（测试等非泛型上下文中无 call_expr_type_args）
+                            if uname == null && codegen.expected_type != null && codegen.expected_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                                codegen.expected_type.type_named_type_arg_count > 0 && codegen.expected_type.type_named_type_args != null {
+                                const mono: &byte = get_mono_union_name(codegen, obj.identifier_name,
+                                    codegen.expected_type.type_named_type_args,
+                                    codegen.expected_type.type_named_type_arg_count);
+                                if mono != null && strchr(mono as *byte, 95) != null {
+                                    uname = get_safe_c_identifier(codegen, mono);
+                                }
+                            }
+                            if uname == null && codegen.current_function_return_type != null && codegen.current_function_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+                                codegen.current_function_return_type.type_error_union_payload_type != null {
+                                const payload: &ASTNode = codegen.current_function_return_type.type_error_union_payload_type;
+                                if payload.type == ASTNodeType.AST_TYPE_NAMED && payload.type_named_type_arg_count >= 1 && payload.type_named_type_args != null {
+                                    const mono: &byte = get_mono_union_name(codegen, obj.identifier_name, payload.type_named_type_args, 1);
+                                    if mono != null && strchr(mono as *byte, 95) != null { uname = get_safe_c_identifier(codegen, mono); }
+                                }
+                            }
+                            if uname == null && codegen.current_function_return_type != null && codegen.current_function_return_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                                codegen.current_function_return_type.type_named_type_arg_count >= 1 &&
+                                codegen.current_function_return_type.type_named_type_args != null {
+                                const ret: &ASTNode = codegen.current_function_return_type;
+                                const mono: &byte = get_mono_union_name(codegen, obj.identifier_name, ret.type_named_type_args, 1);
+                                if mono != null && strchr(mono as *byte, 95) != null { uname = get_safe_c_identifier(codegen, mono); }
                             }
                             if uname == null {
                             var found_mono: i32 = 0;
@@ -1087,21 +1023,109 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                 const mono: &byte = get_mono_union_name(codegen, obj.identifier_name,
                                     codegen.mono_instances[mono_idx].type_args,
                                     codegen.mono_instances[mono_idx].type_arg_count);
-                                uname = get_safe_c_identifier(codegen, mono);
+                                if mono != null && strchr(mono as *byte, 95) != null { uname = get_safe_c_identifier(codegen, mono); }
                             } else if codegen.current_type_params != null && codegen.current_type_arg_count == union_decl.union_decl_type_param_count && codegen.current_type_args != null {
                                 // 泛型函数内 Poll.Ready(x) 等：用当前函数类型实参解析单态名（如 task_ready 内 Poll -> Poll_i32）
                                 const mono: &byte = get_mono_union_name(codegen, obj.identifier_name,
                                     codegen.current_type_args,
                                     codegen.current_type_arg_count);
-                                uname = get_safe_c_identifier(codegen, mono);
-                            } else if codegen.expected_type != null && codegen.expected_type.type == ASTNodeType.AST_TYPE_NAMED &&
-                                codegen.expected_type.type_named_name != null && str_equals(codegen.expected_type.type_named_name, obj.identifier_name) != 0 &&
-                                codegen.expected_type.type_named_type_arg_count > 0 && codegen.expected_type.type_named_type_args != null {
-                                // 变量声明 const p: Poll<i32> = Poll<i32>.Ready(42)：用期望类型实参解析单态名
+                                if mono != null && strchr(mono as *byte, 95) != null { uname = get_safe_c_identifier(codegen, mono); }
+                            }
+                            if uname == null && codegen.current_function_return_type != null && codegen.current_function_return_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                                codegen.current_function_return_type.type_named_name != null && str_equals(codegen.current_function_return_type.type_named_name, obj.identifier_name) != 0 &&
+                                codegen.current_function_return_type.type_named_type_arg_count > 0 && codegen.current_function_return_type.type_named_type_args != null {
+                                // 如 return Poll<!i32>.Pending({}); 当前函数返回 Poll<!i32>，用其类型实参解析单态名
                                 const mono: &byte = get_mono_union_name(codegen, obj.identifier_name,
-                                    codegen.expected_type.type_named_type_args,
-                                    codegen.expected_type.type_named_type_arg_count);
-                                uname = get_safe_c_identifier(codegen, mono);
+                                    codegen.current_function_return_type.type_named_type_args,
+                                    codegen.current_function_return_type.type_named_type_arg_count);
+                                if mono != null && strchr(mono as *byte, 95) != null { uname = get_safe_c_identifier(codegen, mono); }
+                            } else if codegen.current_function_return_type != null && codegen.current_function_return_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                                codegen.current_function_return_type.type_named_type_arg_count == 1 &&
+                                codegen.current_function_return_type.type_named_type_args != null {
+                                const ret_type: &ASTNode = codegen.current_function_return_type;
+                                const mono: &byte = get_mono_union_name(codegen, obj.identifier_name,
+                                    ret_type.type_named_type_args, 1);
+                                if mono != null && strchr(mono as *byte, 95) != null {
+                                    uname = get_safe_c_identifier(codegen, mono);
+                                }
+                            }
+                            if uname == null && codegen.struct_type_args != null && codegen.struct_type_arg_count >= 1 {
+                                const mono: &byte = get_mono_union_name(codegen, obj.identifier_name,
+                                    codegen.struct_type_args, 1);
+                                if mono != null && strchr(mono as *byte, 95) != null { uname = get_safe_c_identifier(codegen, mono); }
+                            }
+                            if uname == null && codegen.current_function_return_type != null {
+                                var ret_node: &ASTNode = codegen.current_function_return_type;
+                                if ret_node.type == ASTNodeType.AST_TYPE_ERROR_UNION && ret_node.type_error_union_payload_type != null {
+                                    ret_node = ret_node.type_error_union_payload_type;
+                                }
+                                if ret_node.type == ASTNodeType.AST_TYPE_NAMED {
+                                const ret_c: &byte = c99_type_to_c(codegen, ret_node);
+                                if ret_c != null && strchr(ret_c as *byte, 95) != null {
+                                    var start: *byte = ret_c as *byte;
+                                    if strncmp(start, "struct " as *byte, 7) == 0 { start = start + 7; }
+                                    const us: *byte = strchr(start, 95);
+                                    if us != null && us[1] != 0 {
+                                        const suffix: &byte = &us[1] as &byte;
+                                        const need: i32 = 6 + strlen(suffix as *byte) + 1;
+                                        if need > 0 && need < 128 {
+                                            const buf: &byte = arena_alloc(codegen.arena, need as usize) as &byte;
+                                            if buf != null {
+                                                snprintf(buf as *byte, need, "Poll_%s" as *byte, suffix as *byte);
+                                                uname = get_safe_c_identifier(codegen, buf);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            }
+                            if uname == null && codegen.current_function_return_type != null && codegen.current_function_return_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                                codegen.current_function_return_type.type_named_name != null && codegen.current_function_return_type.type_named_type_arg_count > 0 &&
+                                codegen.current_function_return_type.type_named_type_args != null {
+                                // 多类型参时从结构体字段推导：如 Task<T,U> 的 state: Poll<T>
+                                const ret_type: &ASTNode = codegen.current_function_return_type;
+                                const ret_struct: &ASTNode = find_struct_decl_c99(codegen, ret_type.type_named_name);
+                                if ret_struct != null && ret_struct.struct_decl_fields != null && ret_struct.struct_decl_type_params != null && ret_struct.struct_decl_type_param_count > 0 {
+                                    var fi: i32 = 0;
+                                    while fi < ret_struct.struct_decl_field_count && uname == null {
+                                        const field: &ASTNode = ret_struct.struct_decl_fields[fi];
+                                        if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null &&
+                                            field.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED && field.var_decl_type.type_named_name != null &&
+                                            str_equals(field.var_decl_type.type_named_name, obj.identifier_name) != 0 &&
+                                            field.var_decl_type.type_named_type_arg_count == 1 && field.var_decl_type.type_named_type_args != null {
+                                            const fa: &ASTNode = field.var_decl_type.type_named_type_args[0];
+                                            var param_idx: i32 = -1;
+                                            if fa != null && fa.type == ASTNodeType.AST_TYPE_NAMED && fa.type_named_name != null {
+                                                var pi: i32 = 0;
+                                                while pi < ret_struct.struct_decl_type_param_count {
+                                                    if ret_struct.struct_decl_type_params[pi].name != null &&
+                                                        strcmp(ret_struct.struct_decl_type_params[pi].name as *byte, fa.type_named_name as *byte) == 0 {
+                                                        param_idx = pi;
+                                                        break;
+                                                    }
+                                                    pi = pi + 1;
+                                                }
+                                            }
+                                            if param_idx >= 0 && param_idx < ret_type.type_named_type_arg_count && ret_type.type_named_type_args != null {
+                                                const one_arg: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+                                                if one_arg != null {
+                                                    one_arg[0] = ret_type.type_named_type_args[param_idx];
+                                                    const mono: &byte = get_mono_union_name(codegen, obj.identifier_name, one_arg, 1);
+                                                    if mono != null && mono != obj.identifier_name {
+                                                        uname = get_safe_c_identifier(codegen, mono);
+                                                    }
+                                                }
+                                            }
+                                            break;
+                                        }
+                                        fi = fi + 1;
+                                    }
+                                }
+                                {
+                                    if uname == null {
+                                        uname = get_safe_c_identifier(codegen, union_decl.union_decl_name);
+                                    }
+                                }
                             } else {
                                 uname = get_safe_c_identifier(codegen, union_decl.union_decl_name);
                             }
@@ -1116,7 +1140,39 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         if union_decl.union_decl_type_param_count > 0 && obj.type_named_type_arg_count > 0 && obj.type_named_type_args != null {
                             const mono: &byte = get_mono_union_name(codegen, obj.type_named_name, obj.type_named_type_args, obj.type_named_type_arg_count);
                             uname = get_safe_c_identifier(codegen, mono);
-                        } else {
+                        }
+                        if uname == null && union_decl.union_decl_type_param_count > 0 && codegen.struct_type_args != null && codegen.struct_type_arg_count >= 1 {
+                            const mono: &byte = get_mono_union_name(codegen, obj.type_named_name, codegen.struct_type_args, 1);
+                            if mono != null && strchr(mono as *byte, 95) != null { uname = get_safe_c_identifier(codegen, mono); }
+                        }
+                        if uname == null && codegen.current_function_return_type != null && codegen.current_function_return_type.type == ASTNodeType.AST_TYPE_NAMED {
+                            const ret_c: &byte = c99_type_to_c(codegen, codegen.current_function_return_type);
+                            if ret_c != null && strchr(ret_c as *byte, 95) != null {
+                                var start: *byte = ret_c as *byte;
+                                if strncmp(start, "struct " as *byte, 7) == 0 { start = start + 7; }
+                                const us: *byte = strchr(start, 95);
+                                if us != null && us[1] != 0 {
+                                    const suffix: &byte = &us[1] as &byte;
+                                    const need: i32 = 6 + strlen(suffix as *byte) + 1;
+                                    if need > 0 && need < 128 {
+                                        const buf: &byte = arena_alloc(codegen.arena, need as usize) as &byte;
+                                        if buf != null {
+                                            snprintf(buf as *byte, need, "Poll_%s" as *byte, suffix as *byte);
+                                            uname = get_safe_c_identifier(codegen, buf);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if uname == null && codegen.current_function_return_type != null && codegen.current_function_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+                            codegen.current_function_return_type.type_error_union_payload_type != null {
+                            const payload: &ASTNode = codegen.current_function_return_type.type_error_union_payload_type;
+                            if payload.type == ASTNodeType.AST_TYPE_NAMED && payload.type_named_type_arg_count >= 1 && payload.type_named_type_args != null {
+                                const mono: &byte = get_mono_union_name(codegen, obj.type_named_name, payload.type_named_type_args, 1);
+                                if mono != null && strchr(mono as *byte, 95) != null { uname = get_safe_c_identifier(codegen, mono); }
+                            }
+                        }
+                        if uname == null {
                             uname = get_safe_c_identifier(codegen, union_decl.union_decl_name);
                         }
                     }
@@ -2513,11 +2569,19 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         }
                         if bind != null {
                             fprintf(codegen.output as *void, "%sif (_uya_m%s_tag == %d) { %s %s = _uya_m%su.%s; _uya_r = " as *byte, prefix as &byte, acc as &byte, idx, vtype as &byte, bind as &byte, acc as &byte, vname as &byte);
+                            if expr.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                                codegen.local_variables[codegen.local_variable_count].name = expr.match_expr_arms[i].var_name;
+                                codegen.local_variables[codegen.local_variable_count].type_c = vtype;
+                                codegen.local_variable_count = codegen.local_variable_count + 1;
+                            }
                         } else {
                             fprintf(codegen.output as *void, "%sif (_uya_m%s_tag == %d) _uya_r = " as *byte, prefix as &byte, acc as &byte, idx);
                         }
                         gen_expr(codegen, expr.match_expr_arms[i].result_expr);
                         if bind != null {
+                            if expr.match_expr_arms[i].var_name != null && codegen.local_variable_count > 0 {
+                                codegen.local_variable_count = codegen.local_variable_count - 1;
+                            }
                             fputs("; } " as *byte, codegen.output as *void);
                         } else {
                             fputs("; " as *byte, codegen.output as *void);
@@ -2541,9 +2605,17 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 const v: &byte = get_safe_c_identifier(codegen, expr.match_expr_arms[i].var_name);
                 if v != null {
                     fprintf(codegen.output as *void, "%s{ %s %s = _uya_m; _uya_r = " as *byte, prefix as *byte, m_type as *byte, v as *byte);
+                    if expr.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                        codegen.local_variables[codegen.local_variable_count].name = expr.match_expr_arms[i].var_name;
+                        codegen.local_variables[codegen.local_variable_count].type_c = m_type;
+                        codegen.local_variable_count = codegen.local_variable_count + 1;
+                    }
                 }
                 gen_expr(codegen, expr.match_expr_arms[i].result_expr);
                 if v != null {
+                    if expr.match_expr_arms[i].var_name != null && codegen.local_variable_count > 0 {
+                        codegen.local_variable_count = codegen.local_variable_count - 1;
+                    }
                     fputs("; } " as *byte, codegen.output as *void);
                 } else {
                     fputs("; " as *byte, codegen.output as *void);

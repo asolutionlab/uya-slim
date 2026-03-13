@@ -4,6 +4,113 @@
 // 检查函数调用
 // 参数：checker - TypeChecker 指针，node - 函数调用节点
 // 返回：函数返回类型（如果检查失败返回TYPE_VOID）
+
+// ===== B0：泛型返回类型的单态化实例注册（struct/union） =====
+// 当调用泛型函数时，如果其返回类型是泛型结构体/联合体（如 Task<T>、Poll<!T>），
+// 需要额外注册对应的单态化类型实例，否则 codegen 可能只会生成函数而缺少结构体定义。
+fn substitute_type_ast_for_mono(checker: &TypeChecker,
+                               type_node: &ASTNode,
+                               type_params: &TypeParam, type_param_count: i32,
+                               type_args: & & ASTNode, type_arg_count: i32) &ASTNode {
+    if checker == null || type_node == null {
+        return type_node;
+    }
+    // 类型参数 T → 具体实参 type_args[i]
+    if type_node.type == ASTNodeType.AST_TYPE_NAMED && type_node.type_named_name != null {
+        const name: &byte = type_node.type_named_name;
+        var i: i32 = 0;
+        while i < type_param_count && i < type_arg_count {
+            if type_params[i].name != null && str_equals(type_params[i].name, name) != 0 {
+                if type_args != null && type_args[i] != null {
+                    return type_args[i];
+                }
+            }
+            i = i + 1;
+        }
+        // 嵌套泛型：Foo<T> 的 T 也要替换
+        if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
+            const cnt: i32 = type_node.type_named_type_arg_count;
+            const new_args: & & ASTNode = arena_alloc(checker.arena, (@size_of(&ASTNode)) * (cnt as usize)) as & & ASTNode;
+            if new_args == null {
+                return type_node;
+            }
+            var j: i32 = 0;
+            while j < cnt {
+                new_args[j] = substitute_type_ast_for_mono(checker, type_node.type_named_type_args[j],
+                    type_params, type_param_count, type_args, type_arg_count);
+                j = j + 1;
+            }
+            const new_named: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, type_node.line, type_node.column, checker.arena, type_node.filename);
+            if new_named == null {
+                return type_node;
+            }
+            new_named.type_named_name = type_node.type_named_name;
+            new_named.type_named_type_args = new_args;
+            new_named.type_named_type_arg_count = cnt;
+            return new_named;
+        }
+        return type_node;
+    }
+    // !T / !Foo<T>
+    if type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION && type_node.type_error_union_payload_type != null {
+        const payload: &ASTNode = substitute_type_ast_for_mono(checker, type_node.type_error_union_payload_type,
+            type_params, type_param_count, type_args, type_arg_count);
+        const eu: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, type_node.line, type_node.column, checker.arena, type_node.filename);
+        if eu == null {
+            return type_node;
+        }
+        eu.type_error_union_payload_type = payload;
+        return eu;
+    }
+    // 指针类型
+    if type_node.type == ASTNodeType.AST_TYPE_POINTER && type_node.type_pointer_pointed_type != null {
+        const inner: &ASTNode = substitute_type_ast_for_mono(checker, type_node.type_pointer_pointed_type,
+            type_params, type_param_count, type_args, type_arg_count);
+        const p: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_POINTER, type_node.line, type_node.column, checker.arena, type_node.filename);
+        if p == null {
+            return type_node;
+        }
+        p.type_pointer_pointed_type = inner;
+        return p;
+    }
+    return type_node;
+}
+
+fn register_mono_from_return_type_ast(checker: &TypeChecker,
+                                     ret_type: &ASTNode,
+                                     type_params: &TypeParam, type_param_count: i32,
+                                     type_args: & & ASTNode, type_arg_count: i32) void {
+    if checker == null || ret_type == null {
+        return;
+    }
+    // 只处理命名泛型类型：Foo<...>
+    if ret_type.type == ASTNodeType.AST_TYPE_NAMED && ret_type.type_named_name != null &&
+        ret_type.type_named_type_arg_count > 0 && ret_type.type_named_type_args != null {
+        const cnt: i32 = ret_type.type_named_type_arg_count;
+        const new_args: & & ASTNode = arena_alloc(checker.arena, (@size_of(&ASTNode)) * (cnt as usize)) as & & ASTNode;
+        if new_args == null {
+            return;
+        }
+        var i: i32 = 0;
+        while i < cnt {
+            new_args[i] = substitute_type_ast_for_mono(checker, ret_type.type_named_type_args[i],
+                type_params, type_param_count, type_args, type_arg_count);
+            i = i + 1;
+        }
+        register_mono_instance(checker, ret_type.type_named_name, new_args, cnt, 0);
+    }
+    // 递归处理 !Foo<...>
+    if ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION && ret_type.type_error_union_payload_type != null {
+        register_mono_from_return_type_ast(checker, ret_type.type_error_union_payload_type,
+            type_params, type_param_count, type_args, type_arg_count);
+    }
+    // 递归指针
+    if ret_type.type == ASTNodeType.AST_TYPE_POINTER && ret_type.type_pointer_pointed_type != null {
+        register_mono_from_return_type_ast(checker, ret_type.type_pointer_pointed_type,
+            type_params, type_param_count, type_args, type_arg_count);
+    }
+}
+
 fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
     var result: Type = Type {
@@ -563,6 +670,9 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         
         // 注册单态化实例
         register_mono_instance(checker, callee.identifier_name, type_args, type_arg_count, 1);
+        // 额外注册返回类型中出现的泛型类型实例（struct/union）
+        register_mono_from_return_type_ast(checker, fn_decl_for_generic.fn_decl_return_type,
+            type_params, type_param_count, type_args, type_arg_count);
         
         // 检查参数个数
         if node.call_expr_arg_count != fn_decl_for_generic.fn_decl_param_count {
@@ -594,6 +704,12 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         return substitute_generic_type(checker, return_type,
             type_params, type_param_count,
             type_args, type_arg_count);
+    }
+
+    // 显式写了 <...> 但未能解析到泛型声明：仍注册单态化实例，避免 codegen 生成调用却缺少定义。
+    // 这常见于跨模块导入/重命名导致 find_fn_decl_from_program 取不到声明节点的情况。
+    if node.call_expr_type_arg_count > 0 && node.call_expr_type_args != null {
+        register_mono_instance(checker, callee.identifier_name, node.call_expr_type_args, node.call_expr_type_arg_count, 1);
     }
     
     // 末尾 ... 转发可变参数：仅允许在可变参数函数体内，且被调函数也必须是可变参数

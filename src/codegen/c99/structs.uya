@@ -995,7 +995,8 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
                 j = j + 1;
                 continue;
             }
-            const ret_c: &byte = convert_array_return_type(codegen, msig.fn_decl_return_type);
+            var ret_c: &byte = convert_array_return_type(codegen, msig.fn_decl_return_type);
+            ret_c = normalize_poll_return_type(codegen, ret_c);
             const mname: &byte = get_safe_c_identifier(codegen, msig.fn_decl_name);
             const pc: i32 = msig.fn_decl_param_count;
             c99_emit_indent(codegen);
@@ -1073,7 +1074,8 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
                     j = j + 1;
                     continue;
                 }
-                const ret_c: &byte = convert_array_return_type(codegen, msig.fn_decl_return_type);
+                var ret_c: &byte = convert_array_return_type(codegen, msig.fn_decl_return_type);
+                ret_c = normalize_poll_return_type(codegen, ret_c);
                 const mname: &byte = get_safe_c_identifier(codegen, msig.fn_decl_name);
                 const pc: i32 = msig.fn_decl_param_count;
                 c99_emit_indent(codegen);
@@ -1234,7 +1236,8 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                                     while sjA < scA && sjA < C99_MAX_INTERFACE_METHODS {
                                         const msigA: &ASTNode = sigsA[sjA];
                                         if msigA != null && msigA.type == ASTNodeType.AST_FN_DECL {
-                                            const retA: &byte = convert_array_return_type(codegen, msigA.fn_decl_return_type);
+                                            var retA: &byte = convert_array_return_type(codegen, msigA.fn_decl_return_type);
+                                            retA = normalize_poll_return_type(codegen, retA);
                                             const mnA: &byte = get_safe_c_identifier(codegen, msigA.fn_decl_name);
                                             const pcA: i32 = msigA.fn_decl_param_count;
                                             c99_emit_indent(codegen);
@@ -1277,7 +1280,8 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                                     c99_emit_comma_space(codegen);
                                 }
                                 if implA != null && cnameA != null {
-                                    const retA2: &byte = convert_array_return_type(codegen, msigA2.fn_decl_return_type);
+                                    var retA2: &byte = convert_array_return_type(codegen, msigA2.fn_decl_return_type);
+                                    retA2 = normalize_poll_return_type(codegen, retA2);
                                     const pcA2: i32 = msigA2.fn_decl_param_count;
                                     fprintf(codegen.output as *void, "(%s (*)(void *self" as *byte, retA2 as *byte);
                                     var kiA2: i32 = 1;
@@ -1364,7 +1368,8 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                             while sj < sc0 && sj < C99_MAX_INTERFACE_METHODS {
                                 const msig0: &ASTNode = sigs0[sj];
                                 if msig0 != null && msig0.type == ASTNodeType.AST_FN_DECL {
-                                    const ret0: &byte = convert_array_return_type(codegen, msig0.fn_decl_return_type);
+                                    var ret0: &byte = convert_array_return_type(codegen, msig0.fn_decl_return_type);
+                                    ret0 = normalize_poll_return_type(codegen, ret0);
                                     const mn0: &byte = get_safe_c_identifier(codegen, msig0.fn_decl_name);
                                     const pc0: i32 = msig0.fn_decl_param_count;
                                     c99_emit_indent(codegen);
@@ -1406,7 +1411,8 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                             c99_emit_comma_space(codegen);
                         }
                         if impl != null && cname != null {
-                            const ret_c: &byte = convert_array_return_type(codegen, msig.fn_decl_return_type);
+                            var ret_c: &byte = convert_array_return_type(codegen, msig.fn_decl_return_type);
+                            ret_c = normalize_poll_return_type(codegen, ret_c);
                             const pc: i32 = msig.fn_decl_param_count;
                             fprintf(codegen.output as *void, "(%s (*)(void *self" as *byte, ret_c as *byte);
                             var ki: i32 = 1;
@@ -1635,7 +1641,14 @@ fn has_unresolved_mono_type_args(generic_decl: &ASTNode, type_args: & & ASTNode,
     
     var i: i32 = 0;
     while i < type_arg_count {
-        const arg: &ASTNode = type_args[i];
+        var arg: &ASTNode = type_args[i];
+        // 递归剥离外层包装：!T / ptr T
+        if arg != null && arg.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+            arg = arg.type_error_union_payload_type;
+        }
+        if arg != null && arg.type == ASTNodeType.AST_TYPE_POINTER {
+            arg = arg.type_pointer_pointed_type;
+        }
         if arg != null && arg.type == ASTNodeType.AST_TYPE_NAMED && arg.type_named_name != null {
             const name: &byte = arg.type_named_name;
             var j: i32 = 0;
@@ -1711,6 +1724,11 @@ fn append_type_arg_suffix(codegen: &C99CodeGenerator, type_arg: &ASTNode,
         }
         
         // 添加基础类型名
+        // 若解析到的类型不是命名类型（如 !i32），则递归处理解析后的类型本身
+        if found != 0 && resolved_type != null && resolved_type.type != ASTNodeType.AST_TYPE_NAMED {
+            return append_type_arg_suffix(codegen, resolved_type, suffix, result_len, max_len);
+        }
+
         var j: i32 = 0;
         while type_name[j] != 0 && result_len < max_len - 1 {
             suffix[result_len] = type_name[j];
@@ -1747,6 +1765,17 @@ fn append_type_arg_suffix(codegen: &C99CodeGenerator, type_arg: &ASTNode,
         }
         const pointed: &ASTNode = type_arg.type_pointer_pointed_type;
         result_len = append_type_arg_suffix(codegen, pointed, suffix, result_len, max_len);
+    } else if type_arg.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+        // 错误联合类型：err_T
+        const err_prefix: &byte = "err_";
+        var k: i32 = 0;
+        while err_prefix[k] != 0 && result_len < max_len - 1 {
+            suffix[result_len] = err_prefix[k];
+            result_len = result_len + 1;
+            k = k + 1;
+        }
+        const payload: &ASTNode = type_arg.type_error_union_payload_type;
+        result_len = append_type_arg_suffix(codegen, payload, suffix, result_len, max_len);
     }
     
     return result_len;

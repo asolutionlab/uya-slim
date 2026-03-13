@@ -749,6 +749,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("#ifndef true\n#define true 1\n#endif\n" as *byte, codegen.output as *void);
         fputs("#ifndef false\n#define false 0\n#endif\n" as *byte, codegen.output as *void);
         fputs("typedef _Bool bool;\n" as *byte, codegen.output as *void);
+        // 兼容 async 阶段 B：Future<!i32>/Task<!i32> 的 Poll<!i32> 返回类型别名
+        // 说明：struct uya_tagged_Poll_err_i32 在 union Poll<!i32> 的单态实例定义中给出，此处只做前向声明与 typedef。
+        fputs("struct uya_tagged_Poll_err_i32;\n" as *byte, codegen.output as *void);
+        fputs("typedef struct uya_tagged_Poll_err_i32 uya_tagged_Poll_T;\n" as *byte, codegen.output as *void);
         // va_list 支持（可变参数函数）
         fputs("typedef __builtin_va_list va_list;\n" as *byte, codegen.output as *void);
         fputs("#define va_start(v, l) __builtin_va_start(v, l)\n" as *byte, codegen.output as *void);
@@ -1977,7 +1981,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     has_user_main = 1;
                 }
                 emit_line_directive(codegen, decl.line, decl.filename);
-                const return_c: &byte = convert_array_return_type(codegen, decl.fn_decl_return_type);
+                var return_c: &byte = convert_array_return_type(codegen, decl.fn_decl_return_type);
+                return_c = normalize_poll_return_type(codegen, return_c);
                 var main_c_name: &byte = "uya_main" as *byte;
                 if is_app_main != 0 {
                     main_c_name = "main_main" as *byte;

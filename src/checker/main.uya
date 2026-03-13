@@ -453,9 +453,12 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     str_equals(payload.interface_name, expr_type.struct_name) != 0 {
                     return 1;
                 }
-                // @async_fn：允许 return T，自动包装为 !Future<T> 的成功分支（T 为 Future 的类型参数）
+                // @async_fn：允许 return T，
+                // - 旧语义：函数返回 !Future<T>，此处自动包装为 !Future<T> 的成功分支
+                // - 新语义：函数返回 Future<!T>，此处自动包装为 Future<!T>（由 C99 后端状态机处理）
                 if checker.current_function_decl != null && checker.current_function_decl.fn_decl_is_async != 0 {
                     const ret_ast: &ASTNode = checker.current_function_decl.fn_decl_return_type;
+                    // 形式二：!Future<T>
                     if ret_ast != null && ret_ast.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
                         ret_ast.type_error_union_payload_type != null {
                         const payload_ast: &ASTNode = ret_ast.type_error_union_payload_type;
@@ -468,10 +471,20 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                             }
                         }
                     }
-                    if payload.struct_type_args != null && payload.struct_type_arg_count >= 1 {
-                        const future_t: Type = payload.struct_type_args[0];
-                        if type_equals(expr_type, future_t) != 0 {
-                            return 1;
+                    // 形式一：Future<!T> —— 此时 current_return_type 自身就是 Future<!T>，
+                    // payload.struct_type_args[0] 为 !T，比较 expr_type 是否等于其载荷类型。
+                    if payload.kind == TypeKind.TYPE_STRUCT &&
+                        payload.struct_name != null &&
+                        str_equals(payload.struct_name, "Future" as *byte) != 0 &&
+                        payload.struct_type_args != null &&
+                        payload.struct_type_arg_count >= 1 {
+                        const inner_err: Type = payload.struct_type_args[0];
+                        if inner_err.kind == TypeKind.TYPE_ERROR_UNION &&
+                            inner_err.error_union_payload_type != null {
+                            const future_t: Type = inner_err.error_union_payload_type[0];
+                            if type_equals(expr_type, future_t) != 0 {
+                                return 1;
+                            }
                         }
                     }
                 }
@@ -493,6 +506,11 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 // null 可以赋值给任何指针类型，允许通过
             } else if is_void_type(expr_type) != 0 {
                 // 类型推断失败（如全局变量在第二遍中尚未可见），放宽检查
+            } else if checker.current_return_type.kind == TypeKind.TYPE_INTERFACE &&
+                checker.current_return_type.interface_name != null &&
+                expr_type.kind == TypeKind.TYPE_STRUCT && expr_type.struct_name != null &&
+                struct_implements_interface(checker, expr_type.struct_name, checker.current_return_type.interface_name) != 0 {
+                // 允许：返回实现了接口的结构体值（struct -> interface）
             } else if type_equals(expr_type, checker.current_return_type) == 0 &&
                 type_can_implicitly_convert(expr_type, checker.current_return_type) == 0 {
                 // 兼容：同名结构体（可能因泛型实参推断差异导致类型实参缺失/不一致）
@@ -500,6 +518,21 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     expr_type.struct_name != null && checker.current_return_type.struct_name != null &&
                     str_equals(expr_type.struct_name, checker.current_return_type.struct_name) != 0 {
                     return 1;
+                }
+                // @async_fn（阶段 B）：允许 return T，自动包装为 Future<!T>（T 为 !T 的载荷）
+                if checker.current_function_decl != null && checker.current_function_decl.fn_decl_is_async != 0 {
+                    if checker.current_return_type.kind == TypeKind.TYPE_INTERFACE &&
+                        checker.current_return_type.interface_name != null &&
+                        str_equals(checker.current_return_type.interface_name, "Future" as *byte) != 0 &&
+                        checker.current_return_type.interface_type_arg_count == 1 &&
+                        checker.current_return_type.interface_type_args != null &&
+                        checker.current_return_type.interface_type_args[0].kind == TypeKind.TYPE_ERROR_UNION &&
+                        checker.current_return_type.interface_type_args[0].error_union_payload_type != null {
+                        const inner_t: Type = checker.current_return_type.interface_type_args[0].error_union_payload_type[0];
+                        if type_equals(expr_type, inner_t) != 0 {
+                            return 1;
+                        }
+                    }
                 }
                 // 兼容：若期望为 i32 而表达式被推断为结构体（type_from_ast 将内置类型误判为结构体名时），视为匹配
                 var allow: i32 = 0;

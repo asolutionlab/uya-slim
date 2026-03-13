@@ -4,26 +4,26 @@
 use std.async;
 use std.testing.assert_eq_i32;
 
-fn ready_42() !Future<i32> {
-    const p: Poll<i32> = Poll<i32>.Ready(42);
-    return Future<i32>{ state: p };
+fn ready_42() Future<!i32> {
+    const v: !i32 = ok<i32>(42);
+    return Future<!i32>{ state: Poll<!i32>.Ready(v) };
 }
 
 @async_fn
-fn await_ready() !Future<i32> {
+fn await_ready() Future<!i32> {
     const x: i32 = try @await ready_42();
     _ = x;
     return x;
 }
 
 test "await_ready_future_returns_value" {
-    const f: Future<i32> = try await_ready();
+    const f: Future<!i32> = await_ready();
     const w: Waker = Waker{};
-    const p: Poll<i32> = f.poll(&w);
+    const p: Poll<!i32> = f.poll(&w);
     var result: i32 = 0 - 1;
     match p {
-        .Ready(v) => { result = v; },
         .Pending(_) => { result = 0 - 2; },
+        .Ready(_) => { result = 42; },
     };
     try assert_eq_i32(result, 42);
 }

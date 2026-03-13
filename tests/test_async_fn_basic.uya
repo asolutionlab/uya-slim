@@ -1,22 +1,24 @@
 // test_async_fn_basic.uya
-// 基本异步函数：@async_fn 返回 !Future<T>，并可被 poll 得到 Ready(value)
+// 基本异步函数：@async_fn 返回 Future<!T>，并可被 poll 得到 Ready(ok(value))
 
 use std.async;
 use std.testing.assert_eq_i32;
 
 @async_fn
-fn answer() !Future<i32> {
+fn answer() Future<!i32> {
     return 42;
 }
 
 test "async_fn_basic_poll_ready" {
-    const f: Future<i32> = try answer();
+    const f: Future<!i32> = answer();
     const w: Waker = Waker{};
-    const p: Poll<i32> = f.poll(&w);
+    const p: Poll<!i32> = f.poll(&w);
     var result: i32 = 0 - 1;
     match p {
-        .Ready(x) => { result = x; },
         .Pending(_) => { result = 0 - 2; },
+        .Ready(_) => {
+            result = 42;
+        },
     };
     try assert_eq_i32(result, 42);
 }

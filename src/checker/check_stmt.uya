@@ -503,21 +503,40 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
         }
     }
     
-    // @async_fn 函数必须返回 !Future<T> 类型
+    // @async_fn 返回类型约束（异步阶段 A/B 兼容）：
+    // 1) 旧语义：!Future<T>（错误由外层 ! 表达，payload 为 Future<T>）
+    // 2) 新语义：Future<!T>（错误由 Future 的类型参数 !T 表达，适配状态机 Poll<!T>）
     if node.fn_decl_is_async != 0 && node.fn_decl_return_type != null {
         const ret: &ASTNode = node.fn_decl_return_type;
-        if ret.type != ASTNodeType.AST_TYPE_ERROR_UNION {
-            checker_report_error(checker, node, "@async_fn 函数必须返回 !Future<T> 类型" as *byte);
-            return 0;
+        var ok: i32 = 0;
+
+        // 形式一：Future<!T>
+        if ret.type == ASTNodeType.AST_TYPE_NAMED && ret.type_named_name != null &&
+            str_equals(ret.type_named_name, "Future" as *byte) != 0 &&
+            ret.type_named_type_arg_count == 1 && ret.type_named_type_args != null {
+            const a0: &ASTNode = ret.type_named_type_args[0];
+            if a0 != null && a0.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+                a0.type_error_union_payload_type != null {
+                ok = 1;
+            }
         }
-        const payload: &ASTNode = ret.type_error_union_payload_type;
-        if payload == null || payload.type != ASTNodeType.AST_TYPE_NAMED ||
-            payload.type_named_name == null || str_equals(payload.type_named_name, "Future" as *byte) == 0 {
-            checker_report_error(checker, node, "@async_fn 函数必须返回 !Future<T> 类型" as *byte);
-            return 0;
+
+        // 形式二：!Future<T>
+        if ok == 0 && ret.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+            ret.type_error_union_payload_type != null {
+            const payload: &ASTNode = ret.type_error_union_payload_type;
+            if payload != null && payload.type == ASTNodeType.AST_TYPE_NAMED &&
+                payload.type_named_name != null &&
+                str_equals(payload.type_named_name, "Future" as *byte) != 0 &&
+                payload.type_named_type_arg_count == 1 &&
+                payload.type_named_type_args != null &&
+                payload.type_named_type_args[0] != null {
+                ok = 1;
+            }
         }
-        if payload.type_named_type_arg_count != 1 {
-            checker_report_error(checker, node, "@async_fn 函数必须返回 !Future<T> 类型" as *byte);
+
+        if ok == 0 {
+            checker_report_error(checker, node, "@async_fn 函数必须返回 Future<!T> 或 !Future<T> 类型" as *byte);
             return 0;
         }
     }

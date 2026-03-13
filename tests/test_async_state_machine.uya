@@ -1,0 +1,53 @@
+// test_async_state_machine.uya
+// 目标：阶段 B（Future<!T>）下，@async_fn 生成的 future 能在 poll 时返回 Pending，
+// 并在后续 poll 时返回 Ready(ok)（不再使用 error.AsyncPending 控制流）。
+
+use std.async;
+use std.testing.assert_eq_i32;
+use std.testing.assert_true;
+
+struct FlipPending : Future<!i32> {
+    polled: i32,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = waker;
+        if self.polled == 0 {
+            // 第一次：Pending
+            return Poll<!i32>.Pending({});
+        }
+        // 第二次及以后：Ready(ok(7))
+        return Poll<!i32>.Ready(ok<i32>(7));
+    }
+}
+
+fn flip_pending() Future<!i32> {
+    return FlipPending{ polled: 0 };
+}
+
+@async_fn
+fn await_flip_then_return() Future<!i32> {
+    const x: i32 = try @await flip_pending();
+    return x;
+}
+
+test "async_state_machine_pending_then_ready" {
+    const f: Future<!i32> = await_flip_then_return();
+    const w: Waker = Waker{};
+
+    const p1: Poll<!i32> = f.poll(&w);
+    var pending_seen: bool = false;
+    match p1 {
+        .Pending(_) => { pending_seen = true; },
+        .Ready(_) => { pending_seen = false; },
+    };
+    try assert_true(pending_seen);
+
+    const p2: Poll<!i32> = f.poll(&w);
+    var v: i32 = 0 - 1;
+    match p2 {
+        .Pending(_) => { v = 0 - 2; },
+        .Ready(r) => { v = r catch { 0 - 3; }; },
+    };
+    try assert_eq_i32(v, 7);
+}
+
