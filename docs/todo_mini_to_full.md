@@ -837,21 +837,21 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [ ] `interface Future<T>` 接口定义和实现检查
   - [ ] 状态机大小编译期计算（递归调用检查）
 
-- [ ] **CPS 变换（Continuation-Passing Style）**：状态机生成
-  - [ ] 分析 `@async_fn` 函数体，识别所有 `@await` 点
-  - [ ] 将函数体转换为状态机结构
-  - [ ] 为每个 `@await` 点创建状态
-  - [ ] 生成状态转换代码
-  - [ ] 处理局部变量在状态间的保存和恢复
+- [~] **CPS 变换（Continuation-Passing Style）**：状态机生成
+  - [x] 分析 `@async_fn` 函数体，识别所有 `@await` 点（顺序收集 const x = try @await ...）
+  - [x] 将函数体转换为状态机结构（state + await_fut 单槽，多状态）
+  - [x] 为每个 `@await` 点创建状态（state 0 起点，state 1..n 各 await 就绪后）
+  - [x] 生成状态转换代码（poll 内 if state==k 分支，绑定变量在函数顶声明、块内赋值）
+  - [x] 处理局部变量在状态间的保存和恢复（多 await 时在 poll 开头声明所有绑定变量）
   - [ ] 计算状态机大小（编译期确定）
 
 - [~] **Codegen**：异步编程代码生成（基础实现，C 实现与 uya-src 已同步）
   - [x] `@await` 表达式基础代码生成（当前生成同步调用）
   - [x] 修复：i32 INT_MIN 用 `@min` 比较并输出 `(-2147483647-1)`，避免字面量溢出与 `--` 解析；err_union 先输出 payload 结构体（`ensure_struct_emitted_for_type_node`）；catch 表达式从 `err_union_structX` 推断 payload 类型；vtable 前先输出 union tagged 前向声明
-  - [ ] 生成状态机结构体（包含状态、局部变量、continuation）
-  - [ ] 生成状态机初始化代码
-  - [ ] 生成状态转换代码（`@await` 点）
-  - [ ] 生成 `poll()` 方法实现（状态机驱动）
+  - [x] 单/多 @await 状态机：结构体（state + await_fut）、poll 内多状态（state 0..n）、绑定变量在 poll 顶声明；test_async_state_machine、test_async_multiple_await 通过
+  - [x] 生成状态机初始化代码（malloc + state=0）
+  - [x] 生成状态转换代码（多 `@await` 点循环生成 if state==k）
+  - [x] 生成 `poll()` 方法实现（状态机驱动）
   - [ ] 生成 `union Poll<T>` 结构体定义
   - [ ] 生成 `interface Future<T>` vtable
   - [ ] 处理错误传播（`!Future<T>` 中的错误联合）
@@ -893,15 +893,15 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `test_async_future_interface_box.uya` - `Future<T>`（泛型 interface）单态化 + 装箱后可调用 poll（vtable+data）
   - [x] `test_epoll_syscall.uya` - libc.syscall 提供 epoll_create1/epoll_wait/EpollEvent，通过 `--c99` 与 `--uya --c99`
   - [x] `test_std_async_event.uya` - std.async_event 的 EventLoop/LinuxEpoll 端到端，通过 `--c99` 与 `--uya --c99`
-  - [ ] `test_async_state_machine.uya` - 状态机生成验证
+  - [x] `test_async_state_machine.uya` - 状态机生成验证（单 @await Pending→Ready 闭环，通过 `--c99` 与 `--uya --c99`）
+  - [x] `test_async_multiple_await.uya` - 多 @await 状态机（两处 try @await 顺序执行，返回值 a+b，通过 `--c99` 与 `--uya --c99`）
   - [x] `test_async_error_propagation.uya` - 错误传播（操作数错误直接传播）
   - [x] `test_async_nested.uya` - 多 @async_fn（poll Future&lt;i32&gt;；嵌套 Future&lt;Future&lt;T&gt;&gt; 待完善）
-  - [ ] `error_async_wrong_return.uya` - 返回类型错误
+  - [x] `error_async_wrong_return.uya` - @async_fn 返回非 Future<!T>/!Future<T> 时编译报错，预期失败通过
   - [x] `error_await_outside_async.uya` - `try @await` 在非异步函数中使用
   - [x] `error_await_operand_not_error_union.uya` - @await 操作数为 `Future<T>`（缺少 !）应失败
   - [x] `error_await_operand_not_future.uya` - @await 操作数非 `!Future<T>` 应失败
   - [x] `error_async_recursive.uya` - 递归异步函数（应报错；当前先禁止直接递归，后续由状态机大小计算接管）
-  - [x] `error_async_multiple_await.uya` - 多个 @await（当前先限制每个 async_fn 最多 1 个 await，后续由状态机生成接管）
 
 **涉及**：Lexer、AST、Parser、Checker、Codegen（CPS 变换、状态机生成），uya-src。
 

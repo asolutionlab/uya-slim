@@ -14,8 +14,8 @@ fn err_future() !Future<i32> {
 
 @async_fn
 fn await_err_future_should_propagate() !Future<i32> {
-    const _x: i32 = try @await err_future();
-    _ = _x;
+    const _f: Future<i32> = try @await err_future();
+    _ = _f;
     return 1;
 }
 

@@ -7,41 +7,41 @@ use std.async;
 use std.testing.assert_eq_i32;
 use std.testing.expect;
 
-fn ready_7() !Future<i32> {
-    const p: Poll<i32> = Poll<i32>.Ready(7);
-    return Future<i32>{ state: p };
+fn ready_7() Future<!i32> {
+    const p: Poll<!i32> = Poll<!i32>.Ready(ok<i32>(7));
+    return Future<!i32>{ state: p };
 }
 
-fn pending_i32() !Future<i32> {
-    const p: Poll<i32> = Poll<i32>.Pending();
-    return Future<i32>{ state: p };
+fn pending_i32() Future<!i32> {
+    const p: Poll<!i32> = Poll<!i32>.Pending();
+    return Future<!i32>{ state: p };
 }
 
 @async_fn
-fn await_ready_7() !Future<i32> {
+fn await_ready_7() Future<!i32> {
     const x: i32 = try @await ready_7();
     return x;
 }
 
 @async_fn
-fn await_pending_should_error() !Future<i32> {
+fn await_pending_should_error() Future<!i32> {
     const _x: i32 = try @await pending_i32();
     _ = _x;
     return 1;
 }
 
 fn call_pending_should_error() !void {
-    const _f: Future<i32> = try await_pending_should_error();
+    const _f: Future<!i32> = await_pending_should_error();
     _ = _f;
 }
 
 test "async_await_ready_returns_value" {
-    const f: Future<i32> = try await_ready_7();
+    const f: Future<!i32> = await_ready_7();
     const w: Waker = Waker{};
-    const p: Poll<i32> = f.poll(&w);
+    const p: Poll<!i32> = f.poll(&w);
     var result: i32 = 0 - 1;
     match p {
-        .Ready(v) => { result = v; },
+        .Ready(ok_val) => { result = ok_val catch { 0 - 3; }; },
         .Pending(_) => { result = 0 - 2; },
     };
     try assert_eq_i32(result, 7);

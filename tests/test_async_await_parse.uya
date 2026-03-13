@@ -11,7 +11,7 @@ fn async_return_value() !Future<i32> {
 
 @async_fn
 fn async_call_async() !Future<i32> {
-    const _x: i32 = try @await async_return_value();
+    const _x: Future<i32> = try @await async_return_value();
     _ = _x;
     return Future<i32>{ state: Poll<i32>.Pending() };
 }
