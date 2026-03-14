@@ -73,12 +73,12 @@
 ### 3.1 宏（编译器反射）或手写
 
 - [ ] 宏 to_json 利用编译器反射实现自动结构体序列化（**有宏之后结构体无需手写**）；[x] 当前无宏，手写 to_json 已提供示例。
-- [ ] 宏 from_json 利用编译器反射实现自动结构体反序列化（**有宏之后结构体无需手写**）；[ ] 无宏时：提供手写 `from_json` 示例（FromJson 接口 + 从 JsonValue.obj 按 key 取 value 并赋给结构体字段）。
+- [ ] 宏 from_json 利用编译器反射实现自动结构体反序列化（**有宏之后结构体无需手写**）；[x] 无宏时：提供手写 `from_json` 示例（FromJson 接口 + 从 JsonValue.obj 按 key 取 value 并赋给结构体字段，见 `json_object_get`、`user_from_json`）。
 
 ### 3.2 测试
 
 - [x] `tests/test_json_struct_roundtrip.uya`：结构体 → `encode_to_to_json` → 校验输出字节 → **parse 端到端**（再解析为 JsonValue 校验 id/name）
-- [ ] 结构体 roundtrip 含「parse → from_json → 结构体 → to_json → parse」，验证有宏时无需手写、无宏时手写 to_json/from_json 对称。
+- [x] 结构体 roundtrip 含「parse → from_json → 结构体 → to_json → parse」，验证有宏时无需手写、无宏时手写 to_json/from_json 对称（见 `test_json_struct_roundtrip.uya`）。
 
 ---
 

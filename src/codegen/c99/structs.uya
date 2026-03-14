@@ -693,6 +693,61 @@ fn emit_struct_deps_for_union(codegen: &C99CodeGenerator, union_decl: &ASTNode) 
     return generated;
 }
 
+// 收集结构体字段中引用的值类型结构体（用于定义顺序：被依赖的在前）
+fn collect_struct_types_in_struct(codegen: &C99CodeGenerator, struct_decl: &ASTNode, out_names: & & byte, max_count: i32, out_count: &i32) i32 {
+    if codegen == null || struct_decl == null || struct_decl.type != ASTNodeType.AST_STRUCT_DECL {
+        return 0;
+    }
+    if out_count == null {
+        return 0;
+    }
+    out_count[0] = 0;
+    const field_count: i32 = struct_decl.struct_decl_field_count;
+    const fields: & & ASTNode = struct_decl.struct_decl_fields;
+    if field_count <= 0 || fields == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < field_count {
+        const field: &ASTNode = fields[i];
+        if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+            collect_value_struct_deps_from_type(codegen, field.var_decl_type, out_names, max_count, out_count);
+        }
+        i = i + 1;
+    }
+    return out_count[0];
+}
+
+// 生成结构体所依赖的值类型结构体定义（在生成当前结构体之前）
+fn emit_struct_deps_for_struct(codegen: &C99CodeGenerator, struct_decl: &ASTNode) i32 {
+    if codegen == null || struct_decl == null {
+        return 0;
+    }
+    var struct_names: [&byte: 128] = [];
+    var struct_count: i32 = 0;
+    collect_struct_types_in_struct(codegen, struct_decl, &struct_names[0], 128, &struct_count);
+    if struct_count <= 0 {
+        return 0;
+    }
+    var generated: i32 = 0;
+    var i: i32 = 0;
+    while i < @len(struct_names) {
+        if i < struct_count {
+            const struct_name: &byte = struct_names[i];
+            if struct_name != null && is_struct_defined(codegen, struct_name) == 0 {
+                const dep_decl: &ASTNode = find_struct_decl_c99(codegen, struct_name);
+                if dep_decl != null && dep_decl.type == ASTNodeType.AST_STRUCT_DECL {
+                    gen_struct_definition(codegen, dep_decl);
+                    c99_emit_newline(codegen);
+                    generated = generated + 1;
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return generated;
+}
+
 // 从 C 类型字符串（如 "struct Data"、"const struct Data *"、"struct Data *"）中提取结构体名并查找声明
 fn find_struct_decl_from_type_c(codegen: &C99CodeGenerator, type_c: &byte) &ASTNode {
     if codegen == null || type_c == null || codegen.program_node == null {
@@ -1667,6 +1722,9 @@ fn gen_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode) i32 
     if is_struct_defined(codegen, struct_name) != 0 {
         return 0;
     }
+    
+    // 先生成字段依赖的值类型结构体（保证完整类型在 C 中可用）
+    emit_struct_deps_for_struct(codegen, struct_decl);
     
     // 添加结构体定义标记
     add_struct_definition(codegen, struct_name);

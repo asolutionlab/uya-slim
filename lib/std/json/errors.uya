@@ -10,3 +10,6 @@ export error NumberOverflow;
 export error InvalidNumber;
 export error NestingTooDeep;
 export error BufferTooSmall;
+// from_json 用：值非对象、缺少字段
+export error NotAnObject;
+export error MissingField;

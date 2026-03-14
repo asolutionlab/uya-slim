@@ -3,6 +3,7 @@
 
 use std.json.value.JsonValue;
 use std.json.value.JsonStrView;
+use std.json.value.JsonObject;
 use std.json.errors;
 use std.mem.arena.Arena;
 use std.mem.arena.arena_alloc;
@@ -216,4 +217,29 @@ export fn encode_to_to_json(value: &ToJson, buf: &byte, cap: usize) !usize {
     value.to_json(&w);
     if w.overflow { return error.BufferTooSmall; }
     return w.used;
+}
+
+// --- from_json 辅助：按 key 从对象取 value 指针（手写 from_json 用）---
+
+/// 比较 JsonStrView 与 (ptr, len) 是否相等
+export fn json_str_view_eq(s: JsonStrView, ptr: &byte, len: usize) bool {
+    if s.len != len { return false; }
+    var i: usize = 0;
+    while i < len {
+        if s.ptr[i] != ptr[i] { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+/// 从 JsonObject 中按 key 查找，返回指向 value 的指针；未找到返回 error.MissingField
+export fn json_object_get(o: &JsonObject, key_ptr: &byte, key_len: usize) !&JsonValue {
+    var i: usize = 0;
+    while i < o.len {
+        if json_str_view_eq(o.pairs[i].key, key_ptr, key_len) {
+            return &o.pairs[i].value;
+        }
+        i = i + 1;
+    }
+    return error.MissingField;
 }

@@ -1,5 +1,6 @@
-// 测试 std.json Phase 3：结构体序列化（手写 to_json）
-// 流程：构造结构体 → encode_to_to_json → 校验输出字节 → parse 端到端验证
+// 测试 std.json Phase 3：结构体序列化/反序列化（手写 to_json / from_json）
+// 流程1：构造结构体 → encode_to_to_json → 校验输出字节 → parse 端到端验证
+// 流程2：parse → from_json → User → to_json → parse 往返
 use std.runtime.entry;
 use std.json.value.JsonValue;
 use std.json.value.JsonStrView;
@@ -9,7 +10,9 @@ use std.json.encoder.json_write_byte;
 use std.json.encoder.json_write_i64;
 use std.json.encoder.json_write_str_view;
 use std.json.encoder.encode_to_to_json;
+use std.json.encoder.json_object_get;
 use std.json.encoder.ToJson;
+use std.json.errors;
 use std.mem.arena.Arena;
 use std.mem.arena.arena_init;
 
@@ -37,6 +40,36 @@ User {
         json_write_byte(w, 58);
         json_write_str_view(w, self.name);
         json_write_byte(w, 125);
+    }
+}
+
+/// 手写 from_json 示例：从 JsonValue 对象变体按 key 取 value 赋给 User（无宏时）
+fn user_from_json(arena: &Arena, v: &JsonValue) !User {
+    match v[0] {
+        .obj(o) => {
+            var id_key: [byte: 2] = [];
+            id_key[0] = 105;
+            id_key[1] = 100;
+            const id_ref: &JsonValue = try json_object_get(&o, &id_key[0], 2);
+            var id_val: i64 = 0;
+            match id_ref[0] {
+                .int_val(x) => { id_val = x; },
+                else => { return error.MissingField; },
+            }
+            var name_key: [byte: 4] = [];
+            name_key[0] = 110;
+            name_key[1] = 97;
+            name_key[2] = 109;
+            name_key[3] = 101;
+            const name_ref: &JsonValue = try json_object_get(&o, &name_key[0], 4);
+            var name_val: JsonStrView = JsonStrView{ ptr: null, len: 0 };
+            match name_ref[0] {
+                .str(s) => { name_val = s; },
+                else => { return error.MissingField; },
+            }
+            return User{ id: id_val, name: name_val };
+        },
+        else => { return error.NotAnObject; },
     }
 }
 
@@ -77,6 +110,31 @@ export fn main() i32 {
             }
         },
         else => { return 16; },
+    }
+
+    // roundtrip：parse → from_json → User → to_json → parse
+    const parsed2: JsonValue = parse(&a, &buf[0], n) catch { return 17; };
+    const u2: User = user_from_json(&a, &parsed2) catch { return 18; };
+    if u2.id != 42 { return 19; }
+    if u2.name.len != 3 || u2.name.ptr[0] != 97 || u2.name.ptr[1] != 98 || u2.name.ptr[2] != 99 { return 20; }
+    var buf2: [byte: 128] = [];
+    const as_json2: ToJson = u2;
+    const n2: usize = encode_to_to_json(&as_json2, &buf2[0], 128) catch { return 21; };
+    if n2 != 22 { return 22; }
+    const parsed3: JsonValue = parse(&a, &buf2[0], n2) catch { return 23; };
+    match parsed3 {
+        .obj(obj3) => {
+            if obj3.len != 2 { return 24; }
+            match obj3.pairs[0].value {
+                .int_val(x) => { if x != 42 { return 25; } },
+                else => { return 26; },
+            }
+            match obj3.pairs[1].value {
+                .str(s) => { if s.len != 3 || s.ptr[0] != 97 || s.ptr[1] != 98 || s.ptr[2] != 99 { return 27; } },
+                else => { return 28; },
+            }
+        },
+        else => { return 29; },
     }
     return 0;
 }
