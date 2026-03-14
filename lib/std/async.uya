@@ -138,3 +138,35 @@ export fn mem_async_reader_new(data: &const byte, len: usize) MemAsyncReader {
     return MemAsyncReader{ _buf: data, _len: len, _pos: 0 };
 }
 
+// ============================================================
+// AsyncFd - 基于文件描述符的异步 I/O（同步实现，待扩展非阻塞）
+// ============================================================
+
+use libc.syscall;
+
+/// 基于 fd 的异步 I/O 包装。当前为同步实现（阻塞 write/read），适用于常规文件。
+/// 后续可扩展：fcntl O_NONBLOCK + EAGAIN 返回 Pending。
+export struct AsyncFd : AsyncWriter, AsyncReader {
+    fd: i32,
+
+    fn write(self: &Self, data: &const byte, count: usize) !Future<usize> {
+        const n: isize = try sys_write(self.fd, data as *const byte, count);
+        return Future<usize>{ state: Poll<usize>.Ready(n as usize) };
+    }
+
+    fn flush(self: &Self) !Future<usize> {
+        _ = self;
+        return Future<usize>{ state: Poll<usize>.Ready(0) };
+    }
+
+    fn read(self: &Self, buf: &byte, count: usize) !Future<usize> {
+        const n: isize = try sys_read(self.fd, buf as *byte, count);
+        return Future<usize>{ state: Poll<usize>.Ready(n as usize) };
+    }
+}
+
+/// 从 fd 创建 AsyncFd。
+export fn async_fd_new(fd: i32) AsyncFd {
+    return AsyncFd{ fd: fd };
+}
+

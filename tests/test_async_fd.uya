@@ -1,0 +1,23 @@
+// test_async_fd.uya - 测试 std.async.AsyncFd（fd 上的 AsyncWriter/AsyncReader）
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+fn test_async_fd_write() !void {
+    const STDOUT: i32 = 1;
+    var af: AsyncFd = async_fd_new(STDOUT);
+    var buf: [byte: 4] = [ 65, 66, 67, 68 ];
+    const f: Future<usize> = try af.write(&buf[0] as &const byte, 4);
+    const wk: Waker = Waker{};
+    const p: Poll<usize> = f.poll(&wk);
+    var result: usize = 0;
+    match p {
+        .Ready(n) => { result = n; },
+        .Pending(_) => { },
+    };
+    try assert_eq_i32(result as i32, 4);
+}
+
+test "async_fd_write_returns_ready" {
+    try test_async_fd_write();
+}
