@@ -227,7 +227,7 @@ export fn encode_into_arena_for_to_json(ar: &Arena, value: &ToJson) !JsonStrView
     return JsonStrView{ ptr: buf, len: n };
 }
 
-// --- from_json 辅助：按 key 从对象取 value 指针（手写 from_json 用）---
+// --- from_json 辅助：按 key 找下标、key 比较（手写 from_json 用）---
 
 /// 比较 JsonStrView 与 (ptr, len) 是否相等
 export fn json_str_view_eq(s: JsonStrView, ptr: &byte, len: usize) bool {

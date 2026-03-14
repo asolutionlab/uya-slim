@@ -55,7 +55,7 @@ fn user_from_json(arena: &Arena, v: &JsonValue) !User {
             var id_val: i64 = 0;
             match o.pairs[id_idx].value {
                 .int_val(x) => { id_val = x; },
-                else => { return error.MissingField; },
+                else => { return error.WrongType; },
             }
             var name_key: [byte: 4] = [];
             name_key[0] = 110;
@@ -66,7 +66,7 @@ fn user_from_json(arena: &Arena, v: &JsonValue) !User {
             var name_val: JsonStrView = JsonStrView{ ptr: null, len: 0 };
             match o.pairs[name_idx].value {
                 .str(s) => { name_val = s; },
-                else => { return error.MissingField; },
+                else => { return error.WrongType; },
             }
             return User{ id: id_val, name: name_val };
         },

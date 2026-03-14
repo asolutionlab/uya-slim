@@ -163,6 +163,10 @@ export error NumberOverflow;
 export error InvalidNumber;
 export error NestingTooDeep;
 export error BufferTooSmall;
+// from_json 用
+export error NotAnObject;
+export error MissingField;
+export error WrongType;
 ```
 
 ### 6.4 数值策略

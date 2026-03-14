@@ -81,6 +81,8 @@
 - [x] `tests/test_json_struct_roundtrip.uya`：结构体 → `encode_to_to_json` → 校验输出字节 → **parse 端到端**（再解析为 JsonValue 校验 id/name）
 - [x] 结构体 roundtrip 含「parse → from_json → 结构体 → to_json → parse」，验证有宏时无需手写、无宏时手写 to_json/from_json 对称（见 `test_json_struct_roundtrip.uya`）。
 - [x] `tests/test_json_from_json_errors.uya`：json_object_find_index 缺 key 返回 error.MissingField。
+- [x] `tests/test_json_from_json_wrong_type.uya`：from_json 字段类型不匹配时返回 error.WrongType。
+- [x] `errors.uya`：新增 WrongType，手写 from_json 时用于字段类型不符。
 
 ---
 
