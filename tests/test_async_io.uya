@@ -3,6 +3,7 @@
 
 use std.async;
 use std.testing.assert_eq_i32;
+use std.testing.expect;
 
 fn test_write_impl() !void {
     var w: MemAsyncWriter = mem_async_writer_new();

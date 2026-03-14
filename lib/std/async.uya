@@ -81,13 +81,12 @@ export fn block_on_i32(f: Future<!i32>) !i32 {
 // ============================================================
 
 /// 异步输出抽象。write/flush 返回 !Future<T>，可在 @async_fn 中 try @await。
-/// flush 返回 Future<usize>，0 表示成功。
 export interface AsyncWriter {
     fn write(self: &Self, data: &const byte, count: usize) !Future<usize>;
     fn flush(self: &Self) !Future<usize>;
 }
 
-/// 异步输入抽象。read/read_exact 返回 !Future<T>，可在 @async_fn 中 try @await。
+/// 异步输入抽象。read 返回 !Future<usize>，可在 @async_fn 中 try @await。
 export interface AsyncReader {
     fn read(self: &Self, buf: &byte, count: usize) !Future<usize>;
 }
@@ -112,3 +111,4 @@ export struct MemAsyncWriter : AsyncWriter {
 export fn mem_async_writer_new() MemAsyncWriter {
     return MemAsyncWriter{ _pos: 0 };
 }
+

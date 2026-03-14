@@ -63,8 +63,24 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             var i: i32 = 0;
             while i < node.interface_decl_method_sig_count {
                 const msig: &ASTNode = node.interface_decl_method_sigs[i];
-                if msig != null && check_method_self_param(checker, msig) == 0 {
-                    return 0;
+                if msig != null {
+                    if check_method_self_param(checker, msig) == 0 {
+                        return 0;
+                    }
+                    // 为方法签名中的类型注册 mono 实例（如 Future<usize>），确保 codegen 能为泛型接口生成 vtable
+                    if msig.fn_decl_return_type != null {
+                        _ = type_from_ast(checker, msig.fn_decl_return_type);
+                    }
+                    if msig.fn_decl_params != null {
+                        var k: i32 = 1;
+                        while k < msig.fn_decl_param_count {
+                            const p: &ASTNode = msig.fn_decl_params[k];
+                            if p != null && p.type == ASTNodeType.AST_VAR_DECL && p.var_decl_type != null {
+                                _ = type_from_ast(checker, p.var_decl_type);
+                            }
+                            k = k + 1;
+                        }
+                    }
                 }
                 i = i + 1;
             }
