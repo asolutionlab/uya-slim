@@ -75,3 +75,40 @@ export fn block_on_i32(f: Future<!i32>) !i32 {
         };
     }
 }
+
+// ============================================================
+// std.async.io - 异步 I/O 抽象（设计见 docs/std_async_design.md）
+// ============================================================
+
+/// 异步输出抽象。write/flush 返回 !Future<T>，可在 @async_fn 中 try @await。
+/// flush 返回 Future<usize>，0 表示成功。
+export interface AsyncWriter {
+    fn write(self: &Self, data: &const byte, count: usize) !Future<usize>;
+    fn flush(self: &Self) !Future<usize>;
+}
+
+/// 异步输入抽象。read/read_exact 返回 !Future<T>，可在 @async_fn 中 try @await。
+export interface AsyncReader {
+    fn read(self: &Self, buf: &byte, count: usize) !Future<usize>;
+}
+
+/// 内存-backed 异步写入器（用于测试）。每次 write 立即返回 Ready(count)。
+export struct MemAsyncWriter : AsyncWriter {
+    _pos: usize,
+
+    fn write(self: &Self, data: &const byte, count: usize) !Future<usize> {
+        _ = self;
+        _ = data;
+        return Future<usize>{ state: Poll<usize>.Ready(count) };
+    }
+
+    fn flush(self: &Self) !Future<usize> {
+        _ = self;
+        return Future<usize>{ state: Poll<usize>.Ready(0) };
+    }
+}
+
+/// 创建 MemAsyncWriter。
+export fn mem_async_writer_new() MemAsyncWriter {
+    return MemAsyncWriter{ _pos: 0 };
+}

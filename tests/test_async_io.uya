@@ -1,0 +1,40 @@
+// test_async_io.uya
+// 测试 std.async 的 AsyncWriter/AsyncReader 接口与 MemAsyncWriter
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+fn test_write_impl() !void {
+    var w: MemAsyncWriter = mem_async_writer_new();
+    var buf: [byte: 4] = [ 1, 2, 3, 4 ];
+    const f: Future<usize> = try w.write(&buf[0] as &const byte, 4);
+    const wk: Waker = Waker{};
+    const p: Poll<usize> = f.poll(&wk);
+    var result: usize = 0;
+    match p {
+        .Ready(n) => { result = n; },
+        .Pending(_) => { },
+    };
+    try assert_eq_i32(result as i32, 4);
+}
+
+fn test_flush_impl() !void {
+    var w: MemAsyncWriter = mem_async_writer_new();
+    const f: Future<usize> = try w.flush();
+    const wk: Waker = Waker{};
+    const p: Poll<usize> = f.poll(&wk);
+    var result: usize = 1;
+    match p {
+        .Ready(n) => { result = n; },
+        .Pending(_) => { result = 1; },
+    };
+    try assert_eq_i32(result as i32, 0);
+}
+
+test "mem_async_writer_write_returns_ready" {
+    try test_write_impl();
+}
+
+test "mem_async_writer_flush_returns_ready" {
+    try test_flush_impl();
+}
