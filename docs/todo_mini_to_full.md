@@ -79,7 +79,8 @@
 | 36 | **新标准库字符串操作（std.string）** | [x] **已完成**（lib/std/string/string.uya 已实现，包含 strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr, strstr，测试用例通过） |
 | 37 | **新标准库文件 I/O（std.io）** | [x] **已完成**（lib/std/io/file.uya 和 lib/std/io/stream.uya 已实现，包含 fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush，测试用例通过） |
 | 38 | **新标准库 JSON（std.json）** | [ ] 高性能 JSON 编解码器，详见 [todo_json.md](todo_json.md)、[json_design.md](json_design.md) |
-| 39 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
+| 39 | **新标准库 YAML（std.yaml）** | [ ] 高性能 YAML 编解码器，详见 [todo_yaml.md](todo_yaml.md)、[yaml_design.md](yaml_design.md) |
+| 40 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
 
 标准库分层重构（std → libc → osal → syscall）的详细任务见 [todo_std_refactor.md](todo_std_refactor.md)。
 
@@ -798,6 +799,8 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 **语法规范**（规范 0.40）：`@async_fn` 函数属性、`try @await` 挂起点、`union Poll<T>`、`interface Future<T>`。详见 [uya.md](uya.md) §18。
 
 **异步标准库设计**：详见 [`docs/std_async_design.md`](./docs/std_async_design.md)（`std.async.io`、`std.async.task`、`std.async.event`、`std.async.channel`、`std.async.scheduler`）。
+
+**循环内 await 设计**：详见 [`docs/async_loop_await_design.md`](./docs/async_loop_await_design.md)、[`docs/todo_async_loop_await.md`](./docs/todo_async_loop_await.md)。
 
 **设计目标**：
 - 显式控制：所有挂起必须 `try @await`，取消必须显式检查 `is_cancelled()`
