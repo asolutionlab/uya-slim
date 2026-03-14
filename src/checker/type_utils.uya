@@ -558,6 +558,13 @@ fn type_can_implicitly_convert(from: Type, to: Type) i32 {
         return 1;
     }
     
+    // 指针到切片 → 切片（return &base[start:len] 时表达式类型为 &(slice)，期望类型为 slice；语义为“解引用”得到切片值）
+    if from.kind == TypeKind.TYPE_POINTER && from.pointer_to != null &&
+        from.pointer_to[0].kind == TypeKind.TYPE_SLICE &&
+        to.kind == TypeKind.TYPE_SLICE {
+        return 1;
+    }
+    
     return 0;
 }
 

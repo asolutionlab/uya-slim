@@ -369,6 +369,7 @@ fn find_union_variant_index(union_decl: &ASTNode, variant_name: &byte) i32 {
 }
 
 // 生成联合体定义：union U { ... }; struct uya_tagged_U { int _tag; union U u; };
+// 若已通过 ensure_union_emitted_for_type_node 提前发射（如 err_union 的 payload），则跳过避免重复
 fn gen_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode) i32 {
     if codegen == null || union_decl == null || union_decl.type != ASTNodeType.AST_UNION_DECL {
         return -1;
@@ -376,6 +377,12 @@ fn gen_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode) i32 {
     const union_name: &byte = get_safe_c_identifier(codegen, union_decl.union_decl_name);
     if union_name == null {
         return -1;
+    }
+    var key_buf: [byte: 144] = [];
+    snprintf(&key_buf[0] as *byte, 144, "uya_union_%s" as *byte, union_name as *byte);
+    const key: &byte = c99_arena_strdup(codegen.arena, &key_buf[0] as &byte);
+    if key != null && is_struct_defined(codegen, key) != 0 {
+        return 0;
     }
     const n: i32 = union_decl.union_decl_variant_count;
     const variants: & & ASTNode = union_decl.union_decl_variants;
@@ -407,6 +414,9 @@ fn gen_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode) i32 {
     if union_decl.union_decl_is_extern == 0 {
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "struct uya_tagged_%s { int _tag; union %s u; };\n" as *byte, union_name as *byte, union_name as *byte);
+    }
+    if key != null {
+        mark_struct_defined(codegen, key);
     }
     return 0;
 }
@@ -2234,4 +2244,20 @@ fn ensure_struct_emitted_for_type_node(codegen: &C99CodeGenerator, type_node: &A
         return;
     }
     gen_struct_definition(codegen, struct_decl);
+}
+
+// 确保 type_node 对应的联合体已输出（供 err_union 的 payload 为 union 时使用，避免 incomplete type）
+fn ensure_union_emitted_for_type_node(codegen: &C99CodeGenerator, type_node: &ASTNode) void {
+    if codegen == null || type_node == null || type_node.type != ASTNodeType.AST_TYPE_NAMED {
+        return;
+    }
+    if type_node.type_named_name == null || type_node.type_named_type_arg_count > 0 {
+        return;
+    }
+    const union_decl: &ASTNode = find_union_decl_c99(codegen, type_node.type_named_name);
+    if union_decl == null {
+        return;
+    }
+    emit_struct_deps_for_union(codegen, union_decl);
+    gen_union_definition(codegen, union_decl);
 }

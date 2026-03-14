@@ -861,7 +861,8 @@ fn emit_pending_err_union_structs(codegen: &C99CodeGenerator) void {
             i = i + 1;
             continue;
         }
-        // 若 payload 为结构体（泛型或非泛型），先输出其定义，避免 err_union 中引用不完整类型
+        // 若 payload 为联合体或结构体，先输出其定义，避免 err_union 中引用不完整类型（如 !JsonValue）
+        ensure_union_emitted_for_type_node(codegen, payload_node);
         ensure_struct_emitted_for_type_node(codegen, payload_node);
         // 检查是否已定义（可能已被其他路径输出）
         if is_struct_defined(codegen, name) != 0 {
@@ -1126,6 +1127,29 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         }
         return c99_type_to_c(codegen, target_type);
     } else if expr.type == ASTNodeType.AST_ARRAY_ACCESS {
+        const array: &ASTNode = expr.array_access_array;
+        if array == null {
+            return ("int32_t" as *byte) as &byte;
+        }
+        const base_c: &byte = get_c_type_of_expr(codegen, array);
+        if base_c == null {
+            return ("int32_t" as *byte) as &byte;
+        }
+        const star: *byte = strrchr(base_c as *byte, 42);
+        if star != null {
+            var len: i32 = (star - (base_c as *byte)) as i32;
+            while len > 0 && (base_c[len - 1] == 32 || base_c[len - 1] == 9) {
+                len = len - 1;
+            }
+            if len > 0 {
+                const elem_type: &byte = arena_alloc(codegen.arena, (len + 1) as usize) as &byte;
+                if elem_type != null {
+                    memcpy(elem_type as *void, base_c as *void, len as usize);
+                    elem_type[len] = 0 as byte;
+                    return elem_type;
+                }
+            }
+        }
         return ("int32_t" as *byte) as &byte;
     } else if expr.type == ASTNodeType.AST_CALL_EXPR {
         // 方法调用：callee 为 obj.method，需要推断方法返回类型

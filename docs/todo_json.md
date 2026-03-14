@@ -1,6 +1,6 @@
 # Uya JSON 编解码器实现待办
 
-**参考**：[json_design.md](json_design.md)
+**参考**：[json_design.md](json_design.md)（设计与语法对齐 [grammar_formal.md](grammar_formal.md)）
 
 实现时遵循项目 TDD 流程：先添加测试 → 实现代码 → `make check` 验证。
 
@@ -10,33 +10,32 @@
 
 ### 1.1 前置依赖
 
-- [ ] 确认 Arena 可用性：`src/arena.uya` 或新建 `lib/std/mem/arena.uya`
-- [ ] 若无 Arena，实现或封装 `arena_alloc`/`arena_reset` 的等效接口
+- [x] 确认 Arena 可用性：已实现 `lib/std/mem/arena.uya`（仅缓冲区 bump，无 malloc）
+- [x] `arena_init`/`arena_alloc`/`arena_reset` 可用
 
 ### 1.2 数据结构
 
-- [ ] 创建 `lib/std/json/` 目录
-- [ ] `error.uya`：定义 `JsonError`（InvalidUtf8、InvalidEscape、InvalidUnicode、UnexpectedToken、UnexpectedEof、NumberOverflow、InvalidNumber、NestingTooDeep）
-- [ ] `value.uya`：`JsonValue` union、`JsonArray`、`JsonKeyValue`、`JsonObject` 结构体
+- [x] 创建 `lib/std/json/` 目录
+- [x] `errors.uya`：Json 错误（InvalidUtf8、InvalidEscape、InvalidUnicode、UnexpectedToken、UnexpectedEof、NumberOverflow、InvalidNumber、NestingTooDeep）
+- [x] `value.uya`：`JsonValue` union、`JsonStrView`、`JsonArray`、`JsonKeyValue`、`JsonObject`
 
 ### 1.3 标量解析器
 
-- [ ] `parser.uya`：实现 `parse(arena, input) !JsonValue`
-  - [ ] 空白跳过
-  - [ ] 解析 null、true、false
-  - [ ] 解析整数（i64）、浮点（f64），手写解析逻辑
-  - [ ] 解析字符串，返回 `&[byte]` 视图（零拷贝）
-  - [ ] 解析数组
-  - [ ] 解析对象
-  - [ ] 转义序列：`\n\t\r\"\\`、`\uXXXX`
-  - [ ] 错误位置报告（行/列或偏移）
+- [x] `parser.uya`：实现 `parse(arena, ptr, len) !JsonValue`（API 用 ptr+len 替代 `&[byte]` 以规避 slice codegen）
+  - [x] 空白跳过、null/true/false、整数(i64)/浮点(f64)、字符串(JsonStrView)、数组、对象
+  - [x] 转义 `\n\t\r\"\\`、`\uXXXX`
+  - [x] codegen 已修复：err_union 的 union payload（如 `!JsonValue`）会先 emit union 定义、错误返回用 `(payload_c){0}` 初始化；i64 字面量用 `number_value_i64` 避免截断
 
 ### 1.4 测试
 
-- [ ] `tests/test_json_parse_basic.uya`：null、bool、数字、字符串
-- [ ] `tests/test_json_parse_array.uya`：空数组、嵌套数组
-- [ ] `tests/test_json_parse_object.uya`：空对象、嵌套对象
-- [ ] `tests/error_json_*.uya`：预期解析失败用例
+- [x] `tests/test_json_value.uya`：仅测试 JsonValue 构造与 match（通过）
+- [x] `tests/test_json_parse_basic.uya`：null、bool、整数、浮点 3.0、字符串
+- [x] `tests/test_json_parse_float.uya`：浮点数 3.14、-1.5、科学计数法 1e2
+- [x] `tests/test_json_parse_array.uya`：空数组、[1,2]、嵌套数组
+- [x] `tests/test_json_parse_object.uya`：空对象、{\"a\":1}、嵌套对象
+- [x] `tests/test_json_parse_invalid.uya`：预期解析失败用例（非法 JSON 需返回 error）
+- [x] `tests/test_json_parse_string.uya`：字符串解析与转义（`"abc"`、`"a\nb"`、`""`）
+- [x] `tests/test_json_roundtrip.uya`：parse → encode_to → parse 往返（对象 `{"x":1}`、数组 `[1,2]`）
 
 ---
 
@@ -44,25 +43,27 @@
 
 ### 2.1 JsonWriter
 
-- [ ] `encoder.uya`：`JsonWriter` 结构体（buffer + 写入位置）
-- [ ] `write_null`、`write_bool`、`write_i64`、`write_f64`
-- [ ] `write_string`（转义处理）
-- [ ] `write_array_start`、`write_array_end`、`write_object_start`、`write_object_end`
+- [x] `encoder.uya`：`JsonWriter` 结构体（buf、cap、used、overflow）
+- [x] `json_write_null`、`json_write_bool`、`json_write_i64`、`json_write_f64`
+- [x] `json_write_str_view`（转义 `\"\\\n\r\t`）
+- [x] `json_write_value` 递归写入 JsonValue（含数组、对象）
 
 ### 2.2 基础类型 ToJson
 
-- [ ] `impl.uya`：为 i32、i64、f64、bool、`&[byte]` 实现 ToJson（若接口可用）或提供 `json_write_*` 函数
+- [x] 通过 `json_write_value` 统一处理 JsonValue，未单独做 ToJson 接口（可后续加 `impl.uya`）
 
 ### 2.3 API
 
-- [ ] `encode_to(value, buf, cap) !usize`
-- [ ] `encode(arena, value) !&[byte]`（需能处理 JsonValue 等）
+- [x] `encode_to(v: &JsonValue, buf, cap) !usize`（缓冲区不足返回 error.BufferTooSmall）
+- [x] `encode_into_arena(arena, v) !JsonStrView`（在 arena 中编码并返回 ptr+len 视图，等价语义，避免 `!&[byte]` 的 slice 返回值）
+- [ ] `encode(arena, value) !&[byte]`（可选，依赖 slice 返回值 codegen）
 
 ### 2.4 测试
 
-- [ ] `tests/test_json_encode_basic.uya`：基础类型 roundtrip
-- [ ] `tests/test_json_encode_array.uya`
-- [ ] `tests/test_json_encode_object.uya`
+- [x] `tests/test_json_encode_basic.uya`：null、bool、数字、字符串编码
+- [x] `tests/test_json_encode_array.uya`：空数组、[1,2]
+- [x] `tests/test_json_encode_object.uya`：空对象、{\"a\":1}
+- [x] `tests/test_json_encode_arena.uya`：encode_into_arena 返回 JsonStrView
 
 ---
 
@@ -70,12 +71,12 @@
 
 ### 3.1 宏或手写
 
-- [ ] 若 `@mc` 可用：实现 `impl_json!(StructName)` 宏
-- [ ] 否则：提供手写 `to_json` 示例，文档说明用户需为每个结构体实现
+- [ ] 若规范 §25 宏系统（`mc`）可用：可实现 `impl_json(StructName)` 宏（定义如 `mc impl_json(T: type) struct { ... }`，用 `@mc_type(T)` 反射字段并生成 `to_json`；调用与函数一致：`impl_json(User)`，详见 [uya.md §25](uya.md)）
+- [x] 否则：提供手写 `to_json` 示例（`encoder.uya` 中 `ToJson` 接口 + `json_write_byte`，测试中 `User` 手写 `to_json`）
 
 ### 3.2 测试
 
-- [ ] `tests/test_json_struct_roundtrip.uya`：结构体 encode → parse → 字段比较
+- [x] `tests/test_json_struct_roundtrip.uya`：结构体 → `encode_to_to_json` → 校验输出字节 → **parse 端到端**（再解析为 JsonValue 校验 id/name）
 
 ---
 
@@ -89,9 +90,9 @@
 
 ## Benchmark
 
-- [ ] 获取 twitter.json、citm_catalog.json、canada.json
-- [ ] 编写 `tests/bench_json.uya` 或独立 benchmark 脚本
-- [ ] 记录 Phase 1 / Phase 4 吞吐量（GB/s）
+- [ ] 获取 twitter.json、citm_catalog.json、canada.json（可选，用于大文件吞吐量；当前用内嵌负载）
+- [x] 编写 `tests/bench_json.uya`：内嵌 JSON 负载，parse/encode 循环 + `clock()` 测时，打印 ticks 与 parse_total_bytes（可用 CLOCKS_PER_SEC 换算 MB/s）
+- [x] 记录 Phase 1 基准：运行 `./tests/build/bench_json` 可见 parse/encode ticks；Phase 4 SIMD 后可对比 GB/s
 
 ---
 

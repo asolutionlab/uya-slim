@@ -1,0 +1,15 @@
+// std.json - JSON 编解码器模块入口（目录即模块）
+// 模块路径：lib/std/json/ → use std.json;
+//
+// API 概览（子模块需单独 use）：
+//   use std.json.value.JsonValue;
+//   use std.json.value.JsonStrView;
+//   use std.json.value.JsonArray;
+//   use std.json.value.JsonObject;
+//   use std.json.value.JsonKeyValue;
+//   use std.json.parser.parse;
+//   use std.json.encoder.encode_to;
+//   use std.json.encoder.encode_into_arena;
+//   use std.json.encoder.JsonWriter;
+//   use std.json.encoder.ToJson;
+//   use std.json.errors;   // 解析错误类型

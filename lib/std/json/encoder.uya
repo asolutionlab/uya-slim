@@ -1,0 +1,213 @@
+// std.json.encoder - JSON 编码器
+// 模块路径：lib/std/json/encoder.uya → use std.json.encoder;
+
+use std.json.value.JsonValue;
+use std.json.value.JsonStrView;
+use std.json.errors;
+use std.mem.arena.Arena;
+use std.mem.arena.arena_alloc;
+
+export struct JsonWriter {
+    buf: &byte,
+    cap: usize,
+    used: usize,
+    overflow: bool,
+}
+
+fn write_byte(w: &JsonWriter, b: byte) void {
+    if w.overflow { return; }
+    if w.used >= w.cap { w.overflow = true; return; }
+    w.buf[w.used] = b;
+    w.used = w.used + 1;
+}
+
+fn write_bytes(w: &JsonWriter, ptr: &byte, len: usize) void {
+    var i: usize = 0;
+    while i < len {
+        write_byte(w, ptr[i]);
+        i = i + 1;
+    }
+}
+
+/// 写单个字节（用于手写 to_json 时写 `{` `}` `"` `:` `,` 等）
+export fn json_write_byte(w: &JsonWriter, b: byte) void {
+    write_byte(w, b);
+}
+
+export fn json_writer_init(w: &JsonWriter, buf: &byte, cap: usize) void {
+    if w == null { return; }
+    w.buf = buf;
+    w.cap = cap;
+    w.used = 0;
+    w.overflow = false;
+}
+
+export fn json_write_null(w: &JsonWriter) void {
+    write_byte(w, 110);
+    write_byte(w, 117);
+    write_byte(w, 108);
+    write_byte(w, 108);
+}
+
+export fn json_write_bool(w: &JsonWriter, v: bool) void {
+    if v {
+        write_byte(w, 116);
+        write_byte(w, 114);
+        write_byte(w, 117);
+        write_byte(w, 101);
+    } else {
+        write_byte(w, 102);
+        write_byte(w, 97);
+        write_byte(w, 108);
+        write_byte(w, 115);
+        write_byte(w, 101);
+    }
+}
+
+fn write_digit(w: &JsonWriter, d: i32) void {
+    write_byte(w, (d + 48) as byte);
+}
+
+fn json_write_i64_impl(w: &JsonWriter, v: i64) void {
+    if v == 0 {
+        write_byte(w, 48);
+        return;
+    }
+    var n: i64 = v;
+    if n < 0 {
+        write_byte(w, 45);
+        n = 0 - n;
+    }
+    var stack: [byte: 24] = [];
+    var i: i32 = 0;
+    while n != 0 && i < 24 {
+        stack[i] = (n % 10) as byte;
+        n = n / 10;
+        i = i + 1;
+    }
+    while i > 0 {
+        i = i - 1;
+        if i >= 0 && i < 24 {
+            write_byte(w, stack[i] + 48);
+        }
+    }
+}
+
+export fn json_write_i64(w: &JsonWriter, v: i64) void {
+    json_write_i64_impl(w, v);
+}
+
+fn json_write_f64_impl(w: &JsonWriter, v: f64) void {
+    if v != v {
+        json_write_null(w);
+        return;
+    }
+    if v >= 1.0e15 || v <= -1.0e15 || (v > -0.0001 && v < 0.0001 && v != 0.0) {
+        json_write_null(w);
+        return;
+    }
+    var x: i64 = v as i64;
+    json_write_i64_impl(w, x);
+    var frac: f64 = v - (x as f64);
+    if frac < 0.0 { frac = 0.0 - frac; }
+    if frac >= 0.0000001 {
+        write_byte(w, 46);
+        var k: i32 = 0;
+        while k < 15 && frac >= 0.0000001 {
+            frac = frac * 10.0;
+            const d: i32 = frac as i32;
+            write_digit(w, d);
+            frac = frac - (d as f64);
+            k = k + 1;
+        }
+    }
+}
+
+export fn json_write_f64(w: &JsonWriter, v: f64) void {
+    json_write_f64_impl(w, v);
+}
+
+export fn json_write_str_view(w: &JsonWriter, s: JsonStrView) void {
+    write_byte(w, 34);
+    var i: usize = 0;
+    while i < s.len {
+        const b: byte = s.ptr[i];
+        if b == 34 { write_byte(w, 92); write_byte(w, 34); }
+        else if b == 92 { write_byte(w, 92); write_byte(w, 92); }
+        else if b == 10 { write_byte(w, 92); write_byte(w, 110); }
+        else if b == 13 { write_byte(w, 92); write_byte(w, 114); }
+        else if b == 9 { write_byte(w, 92); write_byte(w, 116); }
+        else { write_byte(w, b); }
+        i = i + 1;
+    }
+    write_byte(w, 34);
+}
+
+fn write_value(w: &JsonWriter, v: &JsonValue) void {
+    const val: JsonValue = v[0];
+    match val {
+        .json_null(_) => { json_write_null(w); },
+        .bool_val(x) => { json_write_bool(w, x); },
+        .int_val(x) => { json_write_i64(w, x); },
+        .float_val(x) => { json_write_f64(w, x); },
+        .str(s) => { json_write_str_view(w, s); },
+        .arr(a) => {
+            write_byte(w, 91);
+            var i: usize = 0;
+            while i < a.len {
+                if i > 0 { write_byte(w, 44); }
+                write_value(w, &a.items[i]);
+                i = i + 1;
+            }
+            write_byte(w, 93);
+        },
+        .obj(o) => {
+            write_byte(w, 123);
+            var i: usize = 0;
+            while i < o.len {
+                if i > 0 { write_byte(w, 44); }
+                json_write_str_view(w, o.pairs[i].key);
+                write_byte(w, 58);
+                write_value(w, &o.pairs[i].value);
+                i = i + 1;
+            }
+            write_byte(w, 125);
+        },
+    }
+}
+
+export fn json_write_value(w: &JsonWriter, v: &JsonValue) void {
+    write_value(w, v);
+}
+
+export fn encode_to(v: &JsonValue, buf: &byte, cap: usize) !usize {
+    var w: JsonWriter = JsonWriter{ buf: buf, cap: cap, used: 0, overflow: false };
+    json_writer_init(&w, buf, cap);
+    json_write_value(&w, v);
+    if w.overflow { return error.BufferTooSmall; }
+    return w.used;
+}
+
+// 单次编码最大字节数；超过则返回 BufferTooSmall
+const ENCODE_ARENA_MAX: usize = 65536;
+
+/// 在 arena 中分配缓冲区并编码，返回指向 arena 内数据的视图（等价于 encode(arena, value)，避免返回 &[byte]）
+export fn encode_into_arena(ar: &Arena, v: &JsonValue) !JsonStrView {
+    const buf: &byte = arena_alloc(ar, ENCODE_ARENA_MAX);
+    if buf == null { return error.BufferTooSmall; }
+    const n: usize = try encode_to(v, buf, ENCODE_ARENA_MAX);
+    return JsonStrView{ ptr: buf, len: n };
+}
+
+// Phase 3：结构体序列化。实现 ToJson 的结构体可通过 encode_to_to_json 编码。
+export interface ToJson {
+    fn to_json(self: &Self, w: &JsonWriter) void;
+}
+
+export fn encode_to_to_json(value: &ToJson, buf: &byte, cap: usize) !usize {
+    var w: JsonWriter = JsonWriter{ buf: buf, cap: cap, used: 0, overflow: false };
+    json_writer_init(&w, buf, cap);
+    value.to_json(&w);
+    if w.overflow { return error.BufferTooSmall; }
+    return w.used;
+}

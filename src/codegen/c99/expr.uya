@@ -197,9 +197,9 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
     }
     
     if expr.type == ASTNodeType.AST_NUMBER {
-        // 根据字面量后缀生成对应的 C 代码格式
+        // 根据字面量后缀生成对应的 C 代码格式（超出 i32 时用 number_value_i64 避免截断）
         const suffix: i32 = expr.literal_suffix;
-        const val: i64 = expr.number_value;
+        const val: i64 = expr.number_value_i64;
         const i32_max: i32 = 2147483647;
         const i32_min: i32 = 0 - i32_max - 1;
         
@@ -211,13 +211,23 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             // u8, u16, u32 类型：使用 U 后缀
             fprintf(codegen.output as *void, "%dU" as *byte, val as i32);
         } else if suffix == 8 || suffix == 9 {  // U64, USIZE
-            // u64, usize 类型：使用 ULL 后缀
-            fprintf(codegen.output as *void, "%dULL" as *byte, val as i32);
+            // u64, usize 类型：使用 ULL 后缀；超出 i32 时用高/低 32 位拼成 64 位
+            if val < i32_min as i64 || val > i32_max as i64 {
+                const mask32: i64 = 4294967295;
+                const low32: i64 = val & mask32;
+                const high32: i64 = (val >> 32) & mask32;
+                fprintf(codegen.output as *void, "((uint64_t)(uint32_t)0x%XULL + ((uint64_t)(uint32_t)0x%XULL << 32))" as *byte, low32 as i32, high32 as i32);
+            } else {
+                fprintf(codegen.output as *void, "%dULL" as *byte, val as i32);
+            }
         } else if needs_i64 != 0 {
             // i64 类型或超出 i32 范围：使用 LL 后缀
             if val < i32_min as i64 || val > i32_max as i64 {
-                // 大数值用十六进制避免 %lld 格式问题
-                fprintf(codegen.output as *void, "0x%XLL" as *byte, val as i32);
+                // 超出 i32 时用高/低 32 位拼成 64 位常量，避免 val as i32 截断
+                const mask32: i64 = 4294967295;
+                const low32: i64 = val & mask32;
+                const high32: i64 = (val >> 32) & mask32;
+                fprintf(codegen.output as *void, "((int64_t)(uint32_t)0x%XULL + ((int64_t)(uint32_t)0x%XULL << 32))" as *byte, low32 as i32, high32 as i32);
             } else {
                 fprintf(codegen.output as *void, "%dLL" as *byte, val as i32);
             }
@@ -1218,11 +1228,26 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 const p: *byte = strstr(obj_type_c as *byte, "uya_interface_" as *byte);
                 const iface_start: &byte = &p[14] as &byte;
                 const safe_method: &byte = get_safe_c_identifier(codegen, method_name);
-                fprintf(codegen.output as *void, "((struct uya_vtable_%s *)(" as *byte, iface_start as *byte);
+                const is_ptr: bool = (strchr(obj_type_c as *byte, 42) != null);
+                fputs("((struct uya_vtable_" as *byte, codegen.output as *void);
+                var k: i32 = 0;
+                while iface_start[k] != 0 && iface_start[k] != 32 && iface_start[k] != 42 {
+                    fputc(iface_start[k], codegen.output as *void);
+                    k = k + 1;
+                }
+                fputs(" *)(" as *byte, codegen.output as *void);
                 gen_expr(codegen, obj);
-                fprintf(codegen.output as *void, ").vtable)->%s((" as *byte, safe_method as *byte);
+                if is_ptr {
+                    fprintf(codegen.output as *void, ")->vtable)->%s((" as *byte, safe_method as *byte);
+                } else {
+                    fprintf(codegen.output as *void, ").vtable)->%s((" as *byte, safe_method as *byte);
+                }
                 gen_expr(codegen, obj);
-                fputs(").data" as *byte, codegen.output as *void);
+                if is_ptr {
+                    fputs(")->data" as *byte, codegen.output as *void);
+                } else {
+                    fputs(").data" as *byte, codegen.output as *void);
+                }
                 var i: i32 = 0;
                 while i < arg_count {
                     c99_emit_comma_space(codegen);

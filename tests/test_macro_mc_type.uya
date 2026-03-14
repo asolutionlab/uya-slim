@@ -1,12 +1,18 @@
-// 测试 @mc_type 编译时类型反射
+// 测试 @mc_type 编译时类型反射（含结构体字段反射 field_count / fields）
 
 use std.testing.assert_eq_i32;
 use std.testing.assert_eq_bool;
 use std.testing.assert_true;
 
-// 定义简化版 TypeInfo 结构体
+// 结构体字段信息（与编译器内置 FieldInfo 一致）
+struct FieldInfo {
+    name: *i8,
+    type_name: *i8,
+}
+
+// 定义简化版 TypeInfo 结构体（含 fields 以支持结构体类型反射）
 struct TypeInfo {
-    name: *i8,      // 使用指针而非 slice
+    name: *i8,
     size: i32,
     align: i32,
     kind: i32,
@@ -16,6 +22,13 @@ struct TypeInfo {
     is_pointer: bool,
     is_array: bool,
     is_void: bool,
+    field_count: i32 = 0,
+    fields: [FieldInfo: 16] = [],
+}
+
+struct Point {
+    x: i32,
+    y: f64,
 }
 
 // 宏：获取类型信息
@@ -63,4 +76,13 @@ test "test_bool_type" {
     const bool_info: TypeInfo = get_type_info(bool);
     try assert_eq_i32(bool_info.size, 1);
     try assert_eq_i32(bool_info.is_bool, true);
+}
+
+test "test_struct_type_fields" {
+    const point_info: TypeInfo = get_type_info(Point);
+    try assert_eq_i32(point_info.field_count, 2);
+    try assert_eq_i32(point_info.kind, 6);
+    const f0: FieldInfo = point_info.fields[0];
+    try assert_true(f0.name != null);
+    try assert_true(f0.type_name != null);
 }

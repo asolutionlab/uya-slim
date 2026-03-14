@@ -332,6 +332,7 @@ struct ASTNode {
     identifier_name: &byte,
     // number
     number_value: i32,
+    number_value_i64: i64,  // 完整 i64 值，供 codegen 生成超出 i32 的常量；解析时与 number_value 同步
     literal_suffix: i32,  // 字面量类型后缀 (0=NONE, 1=I8, 2=I16, 3=I32, 4=I64, 5=U8, 6=U16, 7=U32, 8=U64, 9=USIZE, 10=F32, 11=F64)
     // float_literal
     float_literal_value: f64,
@@ -585,6 +586,7 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.cast_expr_is_force_cast = 0;
     node.identifier_name = null;
     node.number_value = 0;
+    node.number_value_i64 = 0;
     node.literal_suffix = LiteralSuffix.LITERAL_SUFFIX_NONE;
     node.float_literal_value = 0.0;
     node.float_literal_suffix = LiteralSuffix.LITERAL_SUFFIX_NONE;

@@ -12,7 +12,7 @@
 ### 基本结构
 
 ```uya
-// 函数定义
+// 函数定义（返回类型可为任意类型，含切片 &[T]、错误联合 !T 或 !&[byte]）
 fn add(a: i32, b: i32) i32 {
     return a + b;
 }
@@ -50,7 +50,7 @@ var y: i32 = 10;
 | **联合体** | `UnionName` | `const v: IntOrFloat = IntOrFloat.i(42);` | 标签联合体，编译期证明安全 |
 | **接口** | `InterfaceName`<br>`InterfaceName<T>` | `const writer: IWriter = ...;`<br>`const iter: Iterator<String> = ...;` | 接口类型，支持泛型参数 |
 | **元组** | `(T1, T2, ...)` | `const t: (i32, f64) = (10, 3.14);` | 元组类型 |
-| **错误联合** | `!T` | `fn may_fail() !i32 { ... }` | 可能返回错误 |
+| **错误联合** | `!T` | `fn may_fail() !i32 { ... }`<br>`fn encode() !&[byte] { ... }` | 可能返回错误；可与切片组合为返回值 `!&[byte]` |
 | **原子类型** | `atomic T` | `value: atomic i32` | 原子类型 |
 | **函数指针** | `fn(...) type` | `type Func = fn(i32, i32) i32;` | 函数指针类型 |
 
@@ -775,6 +775,8 @@ export mc add(a: expr, b: expr) expr {
 | `@mc_code(ast)` | AST 转代码 | `@mc_code(ast_node)` |
 | `@mc_error(msg)` | 编译时错误 | `@mc_error("类型不匹配")` |
 | `@mc_get_env(name)` | 读取环境变量 | `@mc_get_env("DEBUG")` |
+
+**TypeInfo**：`@mc_type(expr)` 返回的结构体，至少含 `name`、`size`、`align`、`kind`、`is_*` 等；扩展实现可含 **`fields`**（结构体字段列表，元素为 FieldInfo），供宏内泛型序列化（如 `impl_json(StructName)`）使用。详见 [uya.md](uya.md) §25.4.2、[grammar_formal.md](grammar_formal.md)。
 
 ### 宏调用与跨模块使用
 

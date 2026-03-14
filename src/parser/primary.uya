@@ -29,7 +29,8 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
         }
         var suffix: i32 = 0;  // LITERAL_SUFFIX_NONE
         const value: i64 = parse_integer_literal_with_suffix(parser.current_token.value, parser.arena, &suffix);
-        node.number_value = value as i32;  // 存储为i32保持兼容
+        node.number_value = value as i32;  // 保持兼容
+        node.number_value_i64 = value;     // 完整 i64 供 codegen 使用
         node.literal_suffix = suffix;
         parser_consume(parser);
         return node;

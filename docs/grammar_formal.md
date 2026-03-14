@@ -216,7 +216,9 @@ primary_expr   = ID | NUM | STRING | CHAR | 'true' | 'false' | 'null'
                | struct_literal | array_literal | tuple_literal | enum_literal | union_literal
                | match_expr | '(' expr ')'
 builtin_expr   = '@' ('sizeof' | 'alignof' | 'len' | 'max' | 'min' | 'params' | 'va_start' | 'va_end' | 'va_arg' | 'va_copy' | 'asm')
+               | '@' ('mc_type' | 'mc_eval' | 'mc_ast' | 'mc_code' | 'mc_error' | 'mc_get_env') '(' expr_list ')'
                # @size_of(T)、@align_of(T)、@len(expr) 为调用形式；@max、@min 为值形式；@params 为函数体内参数元组；@va_start(&ap,last)、@va_end(&ap)、@va_arg(ap,Type)、@va_copy(&dest,src) 为可变参数栈访问（uya.md §5.4）；@asm 为内联汇编块（uya.md §19）
+               # 宏系统内置（uya.md §25）：@mc_type(expr) 返回 TypeInfo；@mc_eval(expr) 编译时求值；@mc_ast(code)、@mc_code(ast)、@mc_error(msg)、@mc_get_env(name)
 union_literal  = ID '.' ID '(' expr ')'  # 联合体创建，如 IntOrFloat.i(42)、NetworkPacket.ipv4([...])
 ```
 
@@ -463,6 +465,15 @@ macro_call     = ID '(' arg_list ')'
 - 宏调用语法与普通函数调用完全一致
 - 跨模块宏导入：`use module.macro_name;`
 - 详细说明见 [uya.md](./uya.md#25-宏系统)
+
+**编译时类型反射（@mc_type 与 TypeInfo）**：
+- `@mc_type(expr)` 为内置函数，参数为类型或表达式，返回 `TypeInfo` 结构体（编译时求值）。
+- **TypeInfo**（编译器提供的结构体，用于宏内类型查询）至少包含：`name`、`size`、`align`、`kind`、`is_integer`、`is_float`、`is_bool`、`is_pointer`、`is_array`、`is_void`；扩展实现可包含 **`fields`**（结构体字段列表），用于泛型序列化（如 `impl_json(T)`）等。
+- **FieldInfo**（当 TypeInfo 表示结构体时）：每个元素描述一个字段，至少包含字段名与类型信息（如 `name`、`type` 或等价字段）；具体字段由实现定义，见 [uya.md](./uya.md#2542-mc_typeexpr)。
+
+**函数返回类型**：
+- `type` 在 `fn_decl` 中作为返回类型，可为任意类型产生式，包括 `slice_type`、`error_union_type` 及其组合。
+- 合法示例：`fn f() &[byte]`、`fn g() !&[byte]`、`fn h() !i32`。切片与错误联合作为返回值时，语义与 codegen 需支持返回切片结构体（如 `struct { ptr; len; }`）及错误联合的 payload 为切片的情形。
 
 
 ---

@@ -1,0 +1,63 @@
+// bench_json.uya - JSON 解析/编码性能基准（Phase 1 标量解析器）
+// 使用内嵌 JSON 负载，多次 parse/encode，用 clock() 测时并打印吞吐量信息。
+// 运行方式：编译后执行可执行文件可见输出；测试脚本以退出码 0 判定通过。
+//
+// 参考：docs/todo_json.md Benchmark 节；Phase 4 可选 SIMD 后可对比 GB/s。
+
+use std.runtime.entry;
+use std.json.value.JsonValue;
+use std.json.parser.parse;
+use std.json.encoder.encode_to;
+use std.mem.arena.Arena;
+use std.mem.arena.arena_init;
+use std.mem.arena.arena_reset;
+
+extern "libc" fn printf(fmt: *byte, ...) i32;
+extern "libc" fn clock() i64;
+
+// 内嵌 JSON：{"id":42,"name":"abc"} 便于与 test_json_struct_roundtrip 对齐
+const PAYLOAD: [byte: 24] = [
+    123, 34, 105, 100, 34, 58, 52, 50, 44, 34, 110, 97, 109, 101, 34, 58, 34, 97, 98, 99, 34, 125
+];
+const PAYLOAD_LEN: usize = 22;
+const PARSE_ITERATIONS: i32 = 50000;
+const ENCODE_ITERATIONS: i32 = 50000;
+
+export fn main() i32 {
+    var arena_buf: [byte: 65536] = [];
+    var a: Arena = Arena{ buffer: null, size: 0, used: 0 };
+    arena_init(&a, &arena_buf[0], 65536);
+
+    var out_buf: [byte: 256] = [];
+
+    // 预热：确保 parse 成功
+    const v: JsonValue = parse(&a, &PAYLOAD[0], PAYLOAD_LEN) catch { return 1; };
+    const _n0: usize = encode_to(&v, &out_buf[0], 256) catch { return 2; };
+    arena_reset(&a);
+
+    var start: i64 = clock();
+    var i: i32 = 0;
+    while i < PARSE_ITERATIONS {
+        arena_reset(&a);
+        const _v: JsonValue = parse(&a, &PAYLOAD[0], PAYLOAD_LEN) catch { return 3; };
+        i = i + 1;
+    }
+    var end: i64 = clock();
+    const parse_ticks: i64 = end - start;
+    const parse_total_bytes: i64 = (PAYLOAD_LEN as i64) * (PARSE_ITERATIONS as i64);
+
+    start = clock();
+    i = 0;
+    while i < ENCODE_ITERATIONS {
+        const _n: usize = encode_to(&v, &out_buf[0], 256) catch { return 4; };
+        i = i + 1;
+    }
+    end = clock();
+    const encode_ticks: i64 = end - start;
+
+    printf("bench_json: parse %d x %d bytes => %ld ticks; encode %d x => %ld ticks\n" as *byte,
+           PARSE_ITERATIONS, PAYLOAD_LEN, parse_ticks, ENCODE_ITERATIONS, encode_ticks);
+    printf("  (throughput: parse_total_bytes=%ld, use CLOCKS_PER_SEC to get MB/s)\n" as *byte, parse_total_bytes);
+
+    return 0;
+}

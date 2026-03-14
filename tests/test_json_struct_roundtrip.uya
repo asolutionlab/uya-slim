@@ -1,0 +1,82 @@
+// 测试 std.json Phase 3：结构体序列化（手写 to_json）
+// 流程：构造结构体 → encode_to_to_json → 校验输出字节 → parse 端到端验证
+use std.runtime.entry;
+use std.json.value.JsonValue;
+use std.json.value.JsonStrView;
+use std.json.parser.parse;
+use std.json.encoder.JsonWriter;
+use std.json.encoder.json_write_byte;
+use std.json.encoder.json_write_i64;
+use std.json.encoder.json_write_str_view;
+use std.json.encoder.encode_to_to_json;
+use std.json.encoder.ToJson;
+use std.mem.arena.Arena;
+use std.mem.arena.arena_init;
+
+struct User : ToJson {
+    id: i64,
+    name: JsonStrView,
+}
+
+User {
+    fn to_json(self: &User, w: &JsonWriter) void {
+        var id_buf: [byte: 2] = [];
+        id_buf[0] = 105;
+        id_buf[1] = 100;
+        var name_key_buf: [byte: 4] = [];
+        name_key_buf[0] = 110;
+        name_key_buf[1] = 97;
+        name_key_buf[2] = 109;
+        name_key_buf[3] = 101;
+        json_write_byte(w, 123);
+        json_write_str_view(w, JsonStrView{ ptr: &id_buf[0], len: 2 });
+        json_write_byte(w, 58);
+        json_write_i64(w, self.id);
+        json_write_byte(w, 44);
+        json_write_str_view(w, JsonStrView{ ptr: &name_key_buf[0], len: 4 });
+        json_write_byte(w, 58);
+        json_write_str_view(w, self.name);
+        json_write_byte(w, 125);
+    }
+}
+
+export fn main() i32 {
+    var buf: [byte: 128] = [];
+    var name_buf: [byte: 4] = [];
+    name_buf[0] = 97;
+    name_buf[1] = 98;
+    name_buf[2] = 99;
+    const u: User = User{ id: 42, name: JsonStrView{ ptr: &name_buf[0], len: 3 } };
+    const as_to_json: ToJson = u;
+    const n: usize = encode_to_to_json(&as_to_json, &buf[0], 128) catch { return 1; };
+    // 期望 {"id":42,"name":"abc"} 长度 22
+    if n != 22 { return 2; }
+    if buf[0] != 123 || buf[1] != 34 || buf[2] != 105 || buf[3] != 100 || buf[4] != 34 { return 3; }
+    if buf[5] != 58 || buf[6] != 52 || buf[7] != 50 { return 4; }
+    if buf[8] != 44 || buf[9] != 34 || buf[10] != 110 || buf[11] != 97 || buf[12] != 109 || buf[13] != 101 || buf[14] != 34 { return 5; }
+    if buf[15] != 58 || buf[16] != 34 || buf[17] != 97 || buf[18] != 98 || buf[19] != 99 || buf[20] != 34 || buf[21] != 125 { return 6; }
+
+    // parse 端到端：将编码结果再解析为 JsonValue，校验对象键值
+    var arena_buf: [byte: 4096] = [];
+    var a: Arena = Arena{ buffer: null, size: 0, used: 0 };
+    arena_init(&a, &arena_buf[0], 4096);
+    const parsed: JsonValue = parse(&a, &buf[0], n) catch { return 7; };
+    match parsed {
+        .obj(obj) => {
+            if obj.len != 2 { return 8; }
+            if obj.pairs == null { return 9; }
+            if obj.pairs[0].key.len != 2 || obj.pairs[0].key.ptr[0] != 105 || obj.pairs[0].key.ptr[1] != 100 { return 10; }
+            match obj.pairs[0].value {
+                .int_val(x) => { if x != 42 { return 11; } },
+                else => { return 12; },
+            }
+            if obj.pairs[1].key.len != 4 || obj.pairs[1].key.ptr[0] != 110 || obj.pairs[1].key.ptr[1] != 97 || obj.pairs[1].key.ptr[2] != 109 || obj.pairs[1].key.ptr[3] != 101 { return 13; }
+            match obj.pairs[1].value {
+                .str(s) => { if s.len != 3 || s.ptr[0] != 97 || s.ptr[1] != 98 || s.ptr[2] != 99 { return 14; } },
+                else => { return 15; },
+            }
+        },
+        else => { return 16; },
+    }
+    return 0;
+}

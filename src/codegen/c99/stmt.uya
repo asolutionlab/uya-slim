@@ -657,8 +657,13 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             c99_emit_indent(codegen);
             fprintf(codegen.output as *void, "return (%s){ .error_id = %dU };\n" as *byte, ret_c as *byte, id);
         } else {
+            const payload_c: &byte = c99_type_to_c(codegen, payload_node);
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "return (%s){ .error_id = %dU, .value = 0 };\n" as *byte, ret_c as *byte, id);
+            if payload_c != null && (strncmp(payload_c as *byte, "struct " as *byte, 7) == 0 || strncmp(payload_c as *byte, "union " as *byte, 6) == 0) {
+                fprintf(codegen.output as *void, "return (%s){ .error_id = %dU, .value = (%s){0} };\n" as *byte, ret_c as *byte, id, payload_c as *byte);
+            } else {
+                fprintf(codegen.output as *void, "return (%s){ .error_id = %dU, .value = 0 };\n" as *byte, ret_c as *byte, id);
+            }
         }
         return;
     }
@@ -783,10 +788,23 @@ fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &A
             }
         }
         if did_interface_box == 0 {
+            // 返回类型为 slice 且表达式为 &(slice) 时，生成解引用以得到切片值（_uya_ret 为 struct uya_slice_*，不能赋指针）
+            var need_deref: i32 = 0;
+            if return_type != null && return_type.type == ASTNodeType.AST_TYPE_SLICE &&
+                expr.type == ASTNodeType.AST_UNARY_EXPR &&
+                (expr.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND {
+                need_deref = 1;
+            }
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
-            gen_expr(codegen, expr);
-            c99_emit_semi_newline(codegen);
+            if need_deref != 0 {
+                fprintf(codegen.output as *void, "%s _uya_ret = *(" as *byte, ret_c as *byte);
+                gen_expr(codegen, expr);
+                c99_emit(codegen, ");\n" as *byte);
+            } else {
+                fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
+                gen_expr(codegen, expr);
+                c99_emit_semi_newline(codegen);
+            }
         }
     } else {
         var is_err_union_void: i32 = 0;
@@ -908,9 +926,22 @@ fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_typ
                 }
             }
             if did_box == 0 {
-                fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = " as *byte, ret_c as *byte, ret_c as *byte);
-                gen_expr(codegen, expr);
-                fputs(" };\n" as *byte, codegen.output as *void);
+                // payload 为 slice 且表达式为 &(slice) 时，.value 需解引用得到切片值
+                var need_deref: i32 = 0;
+                if payload_node != null && payload_node.type == ASTNodeType.AST_TYPE_SLICE &&
+                    expr.type == ASTNodeType.AST_UNARY_EXPR &&
+                    (expr.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND {
+                    need_deref = 1;
+                }
+                if need_deref != 0 {
+                    fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = *(" as *byte, ret_c as *byte, ret_c as *byte);
+                    gen_expr(codegen, expr);
+                    fputs(") };\n" as *byte, codegen.output as *void);
+                } else {
+                    fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = " as *byte, ret_c as *byte, ret_c as *byte);
+                    gen_expr(codegen, expr);
+                    fputs(" };\n" as *byte, codegen.output as *void);
+                }
             }
         }
     }

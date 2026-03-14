@@ -61,6 +61,7 @@ fn create_number_literal(value: i64, arena: &Arena, line: i32, column: i32) &AST
         return null;
     }
     node.number_value = value as i32;
+    node.number_value_i64 = value;
     return node;
 }
 
@@ -88,8 +89,21 @@ fn create_string_literal(value: &byte, arena: &Arena, line: i32, column: i32) &A
     return node;
 }
 
-// 创建带类型转换的字符串字面量 AST 节点（string as *i8）
+// 创建 null 字面量 AST 节点（用于指针字段占位）
+fn create_null_identifier(arena: &Arena, line: i32, column: i32) &ASTNode {
+    const node: &ASTNode = ast_new_node(ASTNodeType.AST_IDENTIFIER, line, column, arena, null);
+    if node == null {
+        return null;
+    }
+    node.identifier_name = ("null" as *byte) as &byte;
+    return node;
+}
+
+// 创建带类型转换的字符串字面量 AST 节点（string as *i8）；value 为 null 时返回 null 字面量
 fn create_string_as_ptr(value: &byte, arena: &Arena, line: i32, column: i32) &ASTNode {
+    if value == null {
+        return create_null_identifier(arena, line, column);
+    }
     const str_node: &ASTNode = create_string_literal(value, arena, line, column);
     if str_node == null {
         return null;
@@ -193,7 +207,8 @@ fn get_type_size_from_name(name: &byte) i32 {
 }
 
 // 创建 TypeInfo 结构体字面量 AST 节点
-fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column: i32) &ASTNode {
+// checker 非 null 时，对结构体类型会填充 field_count 与 fields（用于宏内泛型序列化等）
+fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column: i32, checker: &TypeChecker) &ASTNode {
     if type_node == null || arena == null {
         return null;
     }
@@ -253,15 +268,16 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
         return null;
     }
     
-    // 分配字段数组
-    const field_count: i32 = 10;  // name, size, align, kind, is_integer, is_float, is_bool, is_pointer, is_array, is_void
-    const field_names: &(&byte) = arena_alloc(arena, (8 * field_count) as u64) as &(&byte);
-    const field_values: &(&ASTNode) = arena_alloc(arena, (8 * field_count) as u64) as &(&ASTNode);
+    // 分配字段数组（最多 12：10 个基础 + field_count + fields）
+    const field_count_max: i32 = 12;
+    var field_count: i32 = 10;
+    const field_names: &(&byte) = arena_alloc(arena, (8 * field_count_max) as u64) as &(&byte);
+    const field_values: &(&ASTNode) = arena_alloc(arena, (8 * field_count_max) as u64) as &(&ASTNode);
     if field_names == null || field_values == null {
         return null;
     }
     
-    // 设置字段
+    // 设置基础字段
     field_names[0] = ("name" as *byte) as &byte;
     field_values[0] = create_string_as_ptr(type_name, arena, line, column);
     
@@ -292,6 +308,64 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
     field_names[9] = ("is_void" as *byte) as &byte;
     field_values[9] = create_bool_literal(is_void, arena, line, column);
     
+    var n_fields: i32 = 0;
+    var struct_decl: &ASTNode = null;
+    if kind == 6 && checker != null && checker.program_node != null && type_name != null {
+        struct_decl = find_struct_decl_from_program(checker.program_node, type_name);
+        if struct_decl != null && struct_decl.struct_decl_fields != null && struct_decl.struct_decl_field_count > 0 {
+            n_fields = struct_decl.struct_decl_field_count;
+            if n_fields > 16 {
+                n_fields = 16;
+            }
+        }
+    }
+    const MAX_FIELDS: i32 = 16;
+    const elements: &(&ASTNode) = arena_alloc(arena, (8 * MAX_FIELDS) as u64) as &(&ASTNode);
+    if elements != null {
+        var ei: i32 = 0;
+        while ei < MAX_FIELDS {
+            var fi_init: &ASTNode = ast_new_node(ASTNodeType.AST_STRUCT_INIT, line, column, arena, null);
+            if fi_init != null {
+                const fn_arr: &(&byte) = arena_alloc(arena, 16) as &(&byte);
+                const fv_arr: &(&ASTNode) = arena_alloc(arena, 16) as &(&ASTNode);
+                if fn_arr != null && fv_arr != null {
+                    fn_arr[0] = ("name" as *byte) as &byte;
+                    fn_arr[1] = ("type_name" as *byte) as &byte;
+                    if struct_decl != null && ei < n_fields {
+                        const field_node: &ASTNode = struct_decl.struct_decl_fields[ei];
+                        if field_node != null && field_node.type == ASTNodeType.AST_VAR_DECL {
+                            fv_arr[0] = create_string_as_ptr(field_node.var_decl_name, arena, line, column);
+                            fv_arr[1] = create_string_as_ptr(get_type_name_from_ast(field_node.var_decl_type, arena), arena, line, column);
+                        } else {
+                            fv_arr[0] = create_null_identifier(arena, line, column);
+                            fv_arr[1] = create_null_identifier(arena, line, column);
+                        }
+                    } else {
+                        fv_arr[0] = create_null_identifier(arena, line, column);
+                        fv_arr[1] = create_null_identifier(arena, line, column);
+                    }
+                    fi_init.struct_init_struct_name = ("FieldInfo" as *byte) as &byte;
+                    fi_init.struct_init_field_names = fn_arr;
+                    fi_init.struct_init_field_values = fv_arr;
+                    fi_init.struct_init_field_count = 2;
+                }
+            }
+            elements[ei] = fi_init;
+            ei = ei + 1;
+        }
+        const arr_lit: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_LITERAL, line, column, arena, null);
+        if arr_lit != null {
+            arr_lit.array_literal_elements = elements;
+            arr_lit.array_literal_element_count = MAX_FIELDS;
+            arr_lit.array_literal_repeat_count_expr = null;
+            field_names[10] = ("field_count" as *byte) as &byte;
+            field_values[10] = create_number_literal(n_fields as i64, arena, line, column);
+            field_names[11] = ("fields" as *byte) as &byte;
+            field_values[11] = arr_lit;
+            field_count = 12;
+        }
+    }
+    
     struct_init.struct_init_struct_name = ("TypeInfo" as *byte) as &byte;
     struct_init.struct_init_field_names = field_names;
     struct_init.struct_init_field_values = field_values;
@@ -320,7 +394,7 @@ fn macro_eval_expr(expr: &ASTNode, ctx: &MacroExpandContext, success: &i32) i64 
     
     if expr.type == ASTNodeType.AST_NUMBER {
         *success = 1;
-        return expr.number_value as i64;
+        return expr.number_value_i64;
     } else if expr.type == ASTNodeType.AST_BOOL {
         *success = 1;
         if expr.bool_literal_value != 0 {
@@ -421,6 +495,7 @@ fn deep_copy_ast_with_params(node: &ASTNode, ctx: &MacroExpandContext, filename:
     // 根据节点类型复制数据
     if node.type == ASTNodeType.AST_NUMBER {
         copy.number_value = node.number_value;
+        copy.number_value_i64 = node.number_value_i64;
     } else if node.type == ASTNodeType.AST_FLOAT {
         copy.float_literal_value = node.float_literal_value;
     } else if node.type == ASTNodeType.AST_BOOL {
@@ -587,7 +662,7 @@ fn deep_copy_ast_with_params(node: &ASTNode, ctx: &MacroExpandContext, filename:
                 actual_operand = resolved_operand;
             }
             // 创建 TypeInfo 结构体
-            const type_info: &ASTNode = create_type_info_struct(actual_operand, ctx.arena, node.line, node.column);
+            const type_info: &ASTNode = create_type_info_struct(actual_operand, ctx.arena, node.line, node.column, ctx.checker);
             if type_info != null {
                 return type_info;
             }
@@ -633,6 +708,7 @@ fn deep_copy_ast_simple(node: &ASTNode, arena: &Arena, filename: &byte) &ASTNode
     // 根据节点类型复制数据
     if node.type == ASTNodeType.AST_NUMBER {
         copy.number_value = node.number_value;
+        copy.number_value_i64 = node.number_value_i64;
     } else if node.type == ASTNodeType.AST_FLOAT {
         copy.float_literal_value = node.float_literal_value;
     } else if node.type == ASTNodeType.AST_BOOL {
@@ -710,7 +786,7 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
                         actual_operand = resolved_operand;
                     }
                     // 创建 TypeInfo 结构体
-                    const type_info: &ASTNode = create_type_info_struct(actual_operand, ctx.arena, init.line, init.column);
+                    const type_info: &ASTNode = create_type_info_struct(actual_operand, ctx.arena, init.line, init.column, ctx.checker);
                     if type_info != null {
                         local_bindings[local_binding_count].param_name = s.var_decl_name;
                         local_bindings[local_binding_count].arg_ast = type_info;
@@ -819,7 +895,7 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
                     if resolved_operand != null {
                         actual_operand = resolved_operand;
                     }
-                    const type_info: &ASTNode = create_type_info_struct(actual_operand, merged_ctx.arena, stmt.line, stmt.column);
+                    const type_info: &ASTNode = create_type_info_struct(actual_operand, merged_ctx.arena, stmt.line, stmt.column, merged_ctx.checker);
                     if type_info != null {
                         return type_info;
                     }

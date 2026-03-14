@@ -529,6 +529,39 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 // 允许：返回实现了接口的结构体值（struct -> interface）
             } else if type_equals(expr_type, checker.current_return_type) == 0 &&
                 type_can_implicitly_convert(expr_type, checker.current_return_type) == 0 {
+                // 临时：仅对切片返回放宽，避免误放行其他类型（见下方 ret_slice/expr_slice）
+                var allow: i32 = 0;
+                // 兼容：返回值类型为 &[T] 或 !&[T]；表达式可能为 slice 或 &(slice)
+                var ret_slice: i32 = 0;
+                if checker.current_return_type.kind == TypeKind.TYPE_SLICE {
+                    ret_slice = 1;
+                } else if checker.current_return_type.kind == TypeKind.TYPE_POINTER && checker.current_return_type.pointer_to != null &&
+                    checker.current_return_type.pointer_to[0].kind == TypeKind.TYPE_SLICE {
+                    ret_slice = 1;
+                } else if checker.current_return_type.kind == TypeKind.TYPE_ERROR_UNION &&
+                    checker.current_return_type.error_union_payload_type != null &&
+                    checker.current_return_type.error_union_payload_type[0].kind == TypeKind.TYPE_SLICE {
+                    ret_slice = 1;
+                } else if checker.current_return_type.kind == TypeKind.TYPE_ERROR_UNION &&
+                    checker.current_return_type.error_union_payload_type != null &&
+                    checker.current_return_type.error_union_payload_type[0].kind == TypeKind.TYPE_POINTER &&
+                    checker.current_return_type.error_union_payload_type[0].pointer_to != null &&
+                    checker.current_return_type.error_union_payload_type[0].pointer_to[0].kind == TypeKind.TYPE_SLICE {
+                    ret_slice = 1;
+                }
+                var expr_slice: i32 = 0;
+                if expr_type.kind == TypeKind.TYPE_SLICE {
+                    expr_slice = 1;
+                } else if expr_type.kind == TypeKind.TYPE_POINTER && expr_type.pointer_to != null &&
+                    expr_type.pointer_to[0].kind == TypeKind.TYPE_SLICE {
+                    expr_slice = 1;
+                }
+                if ret_slice != 0 && expr_slice != 0 {
+                    allow = 1;
+                }
+                if allow != 0 {
+                    return 1;
+                }
                 // 兼容：同名结构体（可能因泛型实参推断差异导致类型实参缺失/不一致）
                 if expr_type.kind == TypeKind.TYPE_STRUCT && checker.current_return_type.kind == TypeKind.TYPE_STRUCT &&
                     expr_type.struct_name != null && checker.current_return_type.struct_name != null &&
@@ -551,7 +584,6 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     }
                 }
                 // 兼容：若期望为 i32 而表达式被推断为结构体（type_from_ast 将内置类型误判为结构体名时），视为匹配
-                var allow: i32 = 0;
                 if checker.current_return_type.kind == TypeKind.TYPE_I32 && expr_type.kind == TypeKind.TYPE_STRUCT {
                     allow = 1;
                 }
