@@ -249,7 +249,7 @@ make tests-uya && make b
 # 编辑相关文档
 
 # 3. 创建版本说明
-vim docs/RELEASE_v0.3.5.md
+vim docs/releases/RELEASE_v0.3.5.md
 
 # 4. 提交并打标签
 git add -A
@@ -317,6 +317,6 @@ make restore    # 手动恢复
 ## 相关文档
 
 - **回归测试说明**：[TESTING.md](./TESTING.md)
-- **版本历史**：[RELEASE_*.md](./)
+- **版本历史**：[RELEASE_*.md](./releases/)
 - **语言规范**：[uya.md](./uya.md)
 - **变更日志**：[changelog.md](./changelog.md)

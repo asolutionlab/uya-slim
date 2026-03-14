@@ -130,7 +130,7 @@ add r0, r0, r3
 
 - 更新 `docs/uya_ai_prompt.md` 版本至 0.74
 - 更新 `readme.md` 版本至 v0.7.4
-- 新增 `docs/RELEASE_v0.7.3.md` 和 `docs/RELEASE_v0.7.4.md`
+- 新增 `docs/releases/RELEASE_v0.7.3.md` 和 `docs/releases/RELEASE_v0.7.4.md`
 
 ## 后续计划
 

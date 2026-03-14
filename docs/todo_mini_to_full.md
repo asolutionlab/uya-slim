@@ -2231,7 +2231,7 @@ const cfg2 = Config{ port: 3000 }; // 仅覆盖 port
 
 **参考文档**：
 - [uya.md](uya.md) §4.3 - 结构体默认值语法
-- [RELEASE_v0.2.31.md](RELEASE_v0.2.31.md) - v0.2.31 版本说明
+- [RELEASE_v0.2.31.md](releases/RELEASE_v0.2.31.md) - v0.2.31 版本说明
 
 **实现状态**：✅ 已完成（v0.2.31，C 实现与 uya-src 已同步，所有测试通过）
 
@@ -2269,7 +2269,7 @@ type Position = Point;                       // 结构体类型别名
 - [uya.md](uya.md) §5.2 - 函数指针与类型别名
 - [uya.md](uya.md) §24.6.2 - 类型别名实现
 - [uya.md](uya.md) §29.5 - 已实现特性列表
-- [RELEASE_v0.2.31.md](RELEASE_v0.2.31.md) - v0.2.31 版本说明
+- [RELEASE_v0.2.31.md](releases/RELEASE_v0.2.31.md) - v0.2.31 版本说明
 
 **实现状态**：✅ 已完成（v0.2.31，C 实现与 uya-src 已同步，所有测试通过）
 

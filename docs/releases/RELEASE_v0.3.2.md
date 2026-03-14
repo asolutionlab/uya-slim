@@ -177,7 +177,7 @@ make tests-uya             # 自举版测试通过（341/341）
 - **语法规范**：`docs/grammar_formal.md`、`docs/grammar_quick.md`
 - **内置函数**：`docs/builtin_functions.md`
 - **变更日志**：`docs/changelog.md`
-- **上一版说明**：`docs/RELEASE_v0.3.1.md`
+- **上一版说明**：`docs/releases/RELEASE_v0.3.1.md`
 
 ---
 

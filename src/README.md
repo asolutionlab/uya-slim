@@ -104,7 +104,7 @@ gcc -no-pie build/uya-compiler/compiler.o \
 
 ## 注意事项
 
-1. **编译器要求**：需要使用已构建的自举编译器（`bin/uya`）。详见 [docs/RELEASE_v0.1.0.md](../../docs/RELEASE_v0.1.0.md) 与上级 [README](../readme.md)。
+1. **编译器要求**：需要使用已构建的自举编译器（`bin/uya`）。详见 [docs/releases/RELEASE_v0.1.0.md](../../docs/releases/RELEASE_v0.1.0.md) 与上级 [README](../readme.md)。
 2. **文件顺序**：虽然编译器支持任意顺序的多文件编译，但建议按照依赖关系顺序排列文件
 3. **类型检查**：编译器会检查跨文件的符号引用和类型匹配
 4. **输出格式**：默认输出为目标文件（`.o`），需要使用链接器生成可执行文件
@@ -150,7 +150,7 @@ make uya     # 完整构建（需要已有的 bin/uya）
 ## 参考
 
 - [docs/uya.md](../../docs/uya.md) - 完整语言规范
-- [v0.1.0 版本说明](../../docs/RELEASE_v0.1.0.md) - 自举达成与发布说明
+- [v0.1.0 版本说明](../../docs/releases/RELEASE_v0.1.0.md) - 自举达成与发布说明
 
 
 

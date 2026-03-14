@@ -346,4 +346,4 @@ struct CompileStats {
 
 - [Uya 语言规范](docs/uya_ai_prompt.md)
 - [Uya 开发技能](.codebuddy/skills/uya-development.md)
-- [版本发布说明](docs/RELEASE_v0.1.0.md)
+- [版本发布说明](docs/releases/RELEASE_v0.1.0.md)

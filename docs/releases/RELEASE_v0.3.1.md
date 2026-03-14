@@ -134,7 +134,7 @@ make tests-uya             # 自举版测试
 - **语言规范**：`docs/uya.md`
 - **语法规范**：`docs/grammar_formal.md`、`docs/grammar_quick.md`
 - **实现与待办**：`docs/compiler-c-spec/`、`docs/todo_mini_to_full.md`
-- **上一版说明**：`docs/RELEASE_v0.2.32.md`
+- **上一版说明**：`docs/releases/RELEASE_v0.2.32.md`
 
 ---
 

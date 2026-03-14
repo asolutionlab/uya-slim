@@ -161,7 +161,7 @@ case AST_METHOD_BLOCK:
 - **语言规范**：`docs/uya.md`（v0.46）
 - **测试规范**：`docs/testing_guide.md`（v1.1.0）
 - **变更日志**：`docs/changelog.md`
-- **上一版说明**：`docs/RELEASE_v0.3.3.md`
+- **上一版说明**：`docs/releases/RELEASE_v0.3.3.md`
 
 ---
 

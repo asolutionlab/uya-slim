@@ -1687,7 +1687,7 @@ fn buffer_info<T>() void {
 - [Uya 语言规范](uya.md) - 完整语言规范
 - [语法速查](grammar_quick.md) - 语法速查手册
 - [Uya Mini 规范](compiler-c-spec/UYA_MINI_SPEC.md) - 当前实现的子集规范
-- [发行说明](RELEASE_v0.1.0.md) - v0.1.0 版本说明
+- [发行说明](releases/RELEASE_v0.1.0.md) - v0.1.0 版本说明
 
 ---
 

@@ -181,7 +181,7 @@ make tests-uya             # 自举版测试通过
 - **测试规范**：`docs/testing_guide.md`（v1.1.0）
 - **语法规范**：`docs/grammar_formal.md`、`docs/grammar_quick.md`
 - **变更日志**：`docs/changelog.md`
-- **上一版说明**：`docs/RELEASE_v0.3.2.md`
+- **上一版说明**：`docs/releases/RELEASE_v0.3.2.md`
 
 ---
 
