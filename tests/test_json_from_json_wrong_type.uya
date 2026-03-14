@@ -3,11 +3,12 @@ use std.runtime.entry;
 use std.json.value.JsonValue;
 use std.json.parser.parse;
 use std.json.encoder.json_object_find_index;
+use std.json.encoder.json_expect_i64;
 use std.json.errors;
 use std.mem.arena.Arena;
 use std.mem.arena.arena_init;
 
-/// 仅取 "id" 为 i64 的微型 from_json，类型不符返回 error.WrongType
+/// 仅取 "id" 为 i64 的微型 from_json，使用 json_expect_i64（类型不符返回 WrongType）
 fn parse_id_only(arena: &Arena, v: &JsonValue) !i64 {
     match v[0] {
         .obj(o) => {
@@ -15,10 +16,7 @@ fn parse_id_only(arena: &Arena, v: &JsonValue) !i64 {
             id_key[0] = 105;
             id_key[1] = 100;
             const idx: usize = try json_object_find_index(&o, &id_key[0], 2);
-            match o.pairs[idx].value {
-                .int_val(x) => { return x; },
-                else => { return error.WrongType; },
-            }
+            return json_expect_i64(&o.pairs[idx].value);
         },
         else => { return error.NotAnObject; },
     }

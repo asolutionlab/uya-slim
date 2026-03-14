@@ -11,6 +11,8 @@ use std.json.encoder.json_write_i64;
 use std.json.encoder.json_write_str_view;
 use std.json.encoder.encode_to_to_json;
 use std.json.encoder.json_object_find_index;
+use std.json.encoder.json_expect_i64;
+use std.json.encoder.json_expect_str;
 use std.json.encoder.ToJson;
 use std.json.errors;
 use std.mem.arena.Arena;
@@ -44,7 +46,7 @@ User {
 }
 
 /// 手写 from_json 示例：从 JsonValue 对象变体按 key 取 value 赋给 User（无宏时）。
-/// 使用 json_object_find_index 在同一作用域内读取 value，不存储 &JsonValue（零 UB）。
+/// 使用 json_object_find_index + json_expect_i64/json_expect_str，不存储 &JsonValue（零 UB）。
 fn user_from_json(arena: &Arena, v: &JsonValue) !User {
     match v[0] {
         .obj(o) => {
@@ -52,22 +54,14 @@ fn user_from_json(arena: &Arena, v: &JsonValue) !User {
             id_key[0] = 105;
             id_key[1] = 100;
             const id_idx: usize = try json_object_find_index(&o, &id_key[0], 2);
-            var id_val: i64 = 0;
-            match o.pairs[id_idx].value {
-                .int_val(x) => { id_val = x; },
-                else => { return error.WrongType; },
-            }
+            const id_val: i64 = try json_expect_i64(&o.pairs[id_idx].value);
             var name_key: [byte: 4] = [];
             name_key[0] = 110;
             name_key[1] = 97;
             name_key[2] = 109;
             name_key[3] = 101;
             const name_idx: usize = try json_object_find_index(&o, &name_key[0], 4);
-            var name_val: JsonStrView = JsonStrView{ ptr: null, len: 0 };
-            match o.pairs[name_idx].value {
-                .str(s) => { name_val = s; },
-                else => { return error.WrongType; },
-            }
+            const name_val: JsonStrView = try json_expect_str(&o.pairs[name_idx].value);
             return User{ id: id_val, name: name_val };
         },
         else => { return error.NotAnObject; },

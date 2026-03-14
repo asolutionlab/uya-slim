@@ -252,3 +252,19 @@ export fn json_object_find_index(o: &JsonObject, key_ptr: &byte, key_len: usize)
     }
     return error.MissingField;
 }
+
+/// 期望 JsonValue 为整数，否则返回 error.WrongType（手写 from_json 用）
+export fn json_expect_i64(v: &JsonValue) !i64 {
+    match v[0] {
+        .int_val(x) => { return x; },
+        else => { return error.WrongType; },
+    }
+}
+
+/// 期望 JsonValue 为字符串视图，否则返回 error.WrongType（手写 from_json 用）
+export fn json_expect_str(v: &JsonValue) !JsonStrView {
+    match v[0] {
+        .str(s) => { return s; },
+        else => { return error.WrongType; },
+    }
+}
