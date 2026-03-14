@@ -268,3 +268,20 @@ export fn json_expect_str(v: &JsonValue) !JsonStrView {
         else => { return error.WrongType; },
     }
 }
+
+/// 期望 JsonValue 为布尔，否则返回 error.WrongType（手写 from_json 用）
+export fn json_expect_bool(v: &JsonValue) !bool {
+    match v[0] {
+        .bool_val(x) => { return x; },
+        else => { return error.WrongType; },
+    }
+}
+
+/// 期望 JsonValue 为浮点数，否则返回 error.WrongType（手写 from_json 用）
+export fn json_expect_f64(v: &JsonValue) !f64 {
+    match v[0] {
+        .float_val(x) => { return x; },
+        .int_val(x) => { return x as f64; },
+        else => { return error.WrongType; },
+    }
+}

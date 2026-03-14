@@ -83,7 +83,8 @@
 - [x] `tests/test_json_from_json_errors.uya`：json_object_find_index 缺 key 返回 error.MissingField。
 - [x] `tests/test_json_from_json_wrong_type.uya`：from_json 字段类型不匹配时返回 error.WrongType。
 - [x] `errors.uya`：新增 WrongType，手写 from_json 时用于字段类型不符。
-- [x] `encoder.uya`：新增 json_expect_i64(v)/json_expect_str(v)，手写 from_json 时减少 match 样板；roundtrip 与 wrong_type 测试已改用。
+- [x] `encoder.uya`：新增 json_expect_i64/str/bool/f64(v)，手写 from_json 时减少 match 样板；f64 接受 int_val 自动转 float。
+- [x] `tests/test_json_expect_helpers.uya`：覆盖四种 expect 辅助及类型不符时 WrongType。
 
 ---
 
