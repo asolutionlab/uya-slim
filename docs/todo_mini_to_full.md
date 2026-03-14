@@ -78,7 +78,7 @@
 | 35 | **新标准库内存操作（std.mem）** | [x] **已完成**（lib/std/mem/mem.uya 已实现，包含 memcpy, memset, memmove, memcmp, memchr，测试用例通过） |
 | 36 | **新标准库字符串操作（std.string）** | [x] **已完成**（lib/std/string/string.uya 已实现，包含 strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr, strstr，测试用例通过） |
 | 37 | **新标准库文件 I/O（std.io）** | [x] **已完成**（lib/std/io/file.uya 和 lib/std/io/stream.uya 已实现，包含 fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush，测试用例通过） |
-| 38 | **新标准库 JSON（std.json）** | [~] Phase 1–3 已完成（解析/编码/结构体 roundtrip + bench_json.uya）；可选：Phase 4 SIMD、`encode(arena)!&[byte]`、大文件 benchmark，详见 [todo_json.md](todo_json.md)、[json_design.md](json_design.md) |
+| 38 | **新标准库 JSON（std.json）** | [~] Phase 1–3 已完成（解析/编码/结构体 roundtrip + bench_json.uya）；可选：利用编译器反射的 to_json/from_json 宏、Phase 4 SIMD、`encode(arena)!&[byte]`、大文件 benchmark，详见 [todo_json.md](todo_json.md)、[json_design.md](json_design.md) |
 | 39 | **新标准库 YAML（std.yaml）** | [ ] 高性能 YAML 编解码器，详见 [todo_yaml.md](todo_yaml.md)、[yaml_design.md](yaml_design.md) |
 | 40 | **新标准库 Protobuf（std.protobuf）** | [ ] 高性能 Protobuf 编解码器，详见 [todo_protobuf.md](todo_protobuf.md)、[protobuf_design.md](protobuf_design.md) |
 | 41 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |

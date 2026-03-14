@@ -68,16 +68,17 @@
 
 ---
 
-## Phase 3：结构体序列化
+## Phase 3：结构体序列化/反序列化
 
-### 3.1 宏或手写
+### 3.1 宏（编译器反射）或手写
 
-- [ ] 若规范 §25 宏系统（`mc`）可用：可实现 `impl_json(StructName)` 宏（定义如 `mc impl_json(T: type) struct { ... }`，用 `@mc_type(T)` 反射字段并生成 `to_json`；调用与函数一致：`impl_json(User)`，详见 [uya.md §25](uya.md)）
-- [x] 否则：提供手写 `to_json` 示例（`encoder.uya` 中 `ToJson` 接口 + `json_write_byte`，测试中 `User` 手写 `to_json`）
+- [ ] 宏 to_json 利用编译器反射实现自动结构体序列化（**有宏之后结构体无需手写**）；[x] 当前无宏，手写 to_json 已提供示例。
+- [ ] 宏 from_json 利用编译器反射实现自动结构体反序列化（**有宏之后结构体无需手写**）；[ ] 无宏时：提供手写 `from_json` 示例（FromJson 接口 + 从 JsonValue.obj 按 key 取 value 并赋给结构体字段）。
 
 ### 3.2 测试
 
 - [x] `tests/test_json_struct_roundtrip.uya`：结构体 → `encode_to_to_json` → 校验输出字节 → **parse 端到端**（再解析为 JsonValue 校验 id/name）
+- [ ] 结构体 roundtrip 含「parse → from_json → 结构体 → to_json → parse」，验证有宏时无需手写、无宏时手写 to_json/from_json 对称。
 
 ---
 

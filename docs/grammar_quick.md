@@ -776,7 +776,7 @@ export mc add(a: expr, b: expr) expr {
 | `@mc_error(msg)` | 编译时错误 | `@mc_error("类型不匹配")` |
 | `@mc_get_env(name)` | 读取环境变量 | `@mc_get_env("DEBUG")` |
 
-**TypeInfo**：`@mc_type(expr)` 返回的结构体，至少含 `name`、`size`、`align`、`kind`、`is_*` 等；扩展实现可含 **`fields`**（结构体字段列表，元素为 FieldInfo），供宏内泛型序列化（如 `impl_json(StructName)`）使用。详见 [uya.md](uya.md) §25.4.2、[grammar_formal.md](grammar_formal.md)。
+**TypeInfo**：`@mc_type(expr)` 返回的结构体，至少含 `name`、`size`、`align`、`kind`、`is_*` 等；扩展实现可含 **`fields`**（结构体字段列表，元素为 FieldInfo），用于编译器反射实现的自动结构体序列化/反序列化（如宏 to_json、from_json）。详见 [uya.md](uya.md) §25.4.2、[grammar_formal.md](grammar_formal.md)。
 
 ### 宏调用与跨模块使用
 

@@ -468,7 +468,7 @@ macro_call     = ID '(' arg_list ')'
 
 **编译时类型反射（@mc_type 与 TypeInfo）**：
 - `@mc_type(expr)` 为内置函数，参数为类型或表达式，返回 `TypeInfo` 结构体（编译时求值）。
-- **TypeInfo**（编译器提供的结构体，用于宏内类型查询）至少包含：`name`、`size`、`align`、`kind`、`is_integer`、`is_float`、`is_bool`、`is_pointer`、`is_array`、`is_void`；扩展实现可包含 **`fields`**（结构体字段列表），用于泛型序列化（如 `impl_json(T)`）等。
+- **TypeInfo**（编译器提供的结构体，用于宏内类型查询）至少包含：`name`、`size`、`align`、`kind`、`is_integer`、`is_float`、`is_bool`、`is_pointer`、`is_array`、`is_void`；扩展实现可包含 **`fields`**（结构体字段列表），用于编译器反射实现的自动结构体序列化/反序列化（如宏 to_json、from_json）等。
 - **FieldInfo**（当 TypeInfo 表示结构体时）：每个元素描述一个字段，至少包含字段名与类型信息（如 `name`、`type` 或等价字段）；具体字段由实现定义，见 [uya.md](./uya.md#2542-mc_typeexpr)。
 
 **函数返回类型**：
