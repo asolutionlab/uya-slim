@@ -73,7 +73,11 @@
 
 ### 3.1 宏（编译器反射）或手写
 
-- [x] 宏 to_json_skeleton：`lib/std/json/macros.uya`，方法块内 `to_json_skeleton({ ... })` 生成 to_json 骨架（开头/结尾 `{` `}` 由宏生成）；[ ] 完整反射 to_json（按字段名自动生成）待编译器支持。
+- [x] 宏 to_json_skeleton：`lib/std/json/macros.uya`，方法块内 `to_json_skeleton({ ... })` 生成 to_json 骨架（开头/结尾 `{` `}` 由宏生成）。
+- [x] 完整反射 to_json：`to_json_reflect()` 宏（方法块内无参调用），编译器按结构体字段自动生成 to_json；支持字段类型 i64、i32、f64、bool、JsonStrView；测试见 `tests/test_json_to_json_reflect.uya`。
+- [ ] **encode_to_to_json 宏 / to_json 单态展开（进行中）**  
+  - 已做：`encode_to_to_json` 改为库侧宏（`lib/std/json/macros.uya`），占位体 `error.BufferTooSmall as ! usize`；编译器在 `macro_expand` 中首参为类型名时用 `build_encode_to_to_json_block` 生成编码块，首参为类型形参 `T` 时不展开（保留调用）；单态体在 codegen 中经 `prepare_mono_body_expand_macros` 再展开；类型检查对 `try encode_to_to_json(...)` 特例放行；try 操作数为 block 时按 `!usize` 生成 C 类型。  
+  - 待做：codegen 对「块末为 if（error | value）、块作为 try 操作数」生成可赋给 `struct err_union_size_t` 的表达式（如三元或 err_union 构造），并修正 `return &buf[0:n]` 的切片类型（避免 uya_slice_void）。当前 `make check` 通过 545/547，未通过：`test_json_to_json_reflect`、`test_json_struct_roundtrip`（链接失败）。
 - [ ] 宏 from_json：顶层 stmt 宏暂不可用，仍手写 from_json；[x] 手写示例见 `json_object_find_index`、`user_from_json`。
 
 ### 3.2 测试

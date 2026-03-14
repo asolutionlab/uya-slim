@@ -2221,7 +2221,14 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
     if body == null {
         return;
     }
-    
+    var body_to_gen: &ASTNode = body;
+    if codegen.checker != null && orig_name != null && strcmp(orig_name as *byte, "to_json" as *byte) == 0 &&
+       fn_decl.fn_decl_type_params != null && fn_decl.fn_decl_type_param_count > 0 &&
+       type_args != null && type_arg_count > 0 {
+        const expanded: &ASTNode = prepare_mono_body_expand_macros(codegen.checker, body,
+            fn_decl.fn_decl_type_params, fn_decl.fn_decl_type_param_count, type_args, type_arg_count);
+        if expanded != null { body_to_gen = expanded; }
+    }
     // 保存并设置单态化上下文
     const saved_type_params: &TypeParam = codegen.current_type_params;
     const saved_type_param_count: i32 = codegen.current_type_param_count;
@@ -2312,13 +2319,13 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
     }
     
     // 生成函数体
-    gen_stmt(codegen, body);
+    gen_stmt(codegen, body_to_gen);
     
     // 若返回类型非 void 且函数体末尾无 return，补兜底 return 避免 -Wreturn-type
     var has_return_mono: i32 = 0;
-    if body.type == ASTNodeType.AST_BLOCK && body.block_stmts != null {
-        const stmts_mono: & & ASTNode = body.block_stmts;
-        const stmt_count_mono: i32 = body.block_stmt_count;
+    if body_to_gen.type == ASTNodeType.AST_BLOCK && body_to_gen.block_stmts != null {
+        const stmts_mono: & & ASTNode = body_to_gen.block_stmts;
+        const stmt_count_mono: i32 = body_to_gen.block_stmt_count;
         var j: i32 = stmt_count_mono - 1;
         while j >= 0 {
             const s: &ASTNode = stmts_mono[j];

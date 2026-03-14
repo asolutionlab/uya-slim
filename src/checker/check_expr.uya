@@ -547,6 +547,48 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
     } else if expr.type == ASTNodeType.AST_TRY_EXPR {
         const operand_type: Type = checker_infer_type(checker, expr.try_expr_operand);
         if operand_type.kind != TypeKind.TYPE_ERROR_UNION {
+            // 特例：to_json<T> 内 try encode_to_to_json(T,...) 未展开或已展开为占位；单态体在 codegen 时再展开，此处视为 !usize。
+            const op: &ASTNode = expr.try_expr_operand;
+            var accept_as_encode_placeholder: i32 = 0;
+            if op != null && op.type == ASTNodeType.AST_CALL_EXPR && op.call_expr_arg_count >= 4 &&
+               op.call_expr_callee != null {
+                const callee: &ASTNode = op.call_expr_callee;
+                if callee.type == ASTNodeType.AST_IDENTIFIER && callee.identifier_name != null &&
+                   str_equals(callee.identifier_name, "encode_to_to_json" as *byte) != 0 {
+                    accept_as_encode_placeholder = 1;
+                }
+                if accept_as_encode_placeholder == 0 && callee.type == ASTNodeType.AST_MEMBER_ACCESS && callee.member_access_field_name != null &&
+                   str_equals(callee.member_access_field_name, "encode_to_to_json" as *byte) != 0 {
+                    accept_as_encode_placeholder = 1;
+                }
+            }
+            if accept_as_encode_placeholder == 0 && op != null && op.type == ASTNodeType.AST_CAST_EXPR &&
+               op.cast_expr_target_type != null && op.cast_expr_target_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                accept_as_encode_placeholder = 1;
+            }
+            if accept_as_encode_placeholder != 0 {
+                if checker.current_function_decl == null || checker.in_function == 0 {
+                    checker_report_error(checker, expr, "try 只能在函数中使用" as *byte);
+                    return make_void_type();
+                }
+                if checker.current_return_type.kind != TypeKind.TYPE_ERROR_UNION {
+                    var allow: i32 = 0;
+                    if checker.current_function_decl.fn_decl_is_async != 0 && checker.current_function_decl.fn_decl_return_type != null {
+                        const fr: &ASTNode = checker.current_function_decl.fn_decl_return_type;
+                        if fr.type == ASTNodeType.AST_TYPE_NAMED && fr.type_named_name != null &&
+                           str_equals(fr.type_named_name, "Future" as *byte) != 0 &&
+                           fr.type_named_type_arg_count == 1 && fr.type_named_type_args != null &&
+                           fr.type_named_type_args[0] != null && fr.type_named_type_args[0].type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                            allow = 1;
+                        }
+                    }
+                    if allow == 0 {
+                        checker_report_error(checker, expr, "try 只能在返回错误联合类型的函数中使用" as *byte);
+                        return make_void_type();
+                    }
+                }
+                return make_usize_type();
+            }
             checker_report_error(checker, expr.try_expr_operand, "try 的操作数必须是错误联合类型 !T" as *byte);
             return make_void_type();
         }

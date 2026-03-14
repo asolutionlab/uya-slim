@@ -1,10 +1,13 @@
 // std.json.encoder - JSON 编码器
 // 模块路径：lib/std/json/encoder.uya → use std.json.encoder;
+// 对外只保留 to_json(arena, obj) !&[byte]、from_json(arena, buffer) !T；内部用宏/内联实现。
 
 use std.json.value.JsonValue;
 use std.json.value.JsonStrView;
 use std.json.value.JsonObject;
 use std.json.errors;
+use std.json.parser.parse;
+use std.json.macros;
 use std.mem.arena.Arena;
 use std.mem.arena.arena_alloc;
 
@@ -144,6 +147,12 @@ export fn json_write_str_view(w: &JsonWriter, s: JsonStrView) void {
     write_byte(w, 34);
 }
 
+/// 写 JSON 键（双引号 + 转义键字节 + 双引号 + 冒号），供 to_json_reflect 等宏生成代码使用
+export fn json_write_key(w: &JsonWriter, ptr: &byte, len: usize) void {
+    json_write_str_view(w, JsonStrView{ ptr: ptr, len: len });
+    write_byte(w, 58);
+}
+
 fn write_value(w: &JsonWriter, v: &JsonValue) void {
     const val: JsonValue = v[0];
     match val {
@@ -177,10 +186,11 @@ fn write_value(w: &JsonWriter, v: &JsonValue) void {
     }
 }
 
-export fn json_write_value(w: &JsonWriter, v: &JsonValue) void {
+fn json_write_value(w: &JsonWriter, v: &JsonValue) void {
     write_value(w, v);
 }
 
+/// JsonValue 树编码到缓冲区（供测试与兼容用；结构体请用 to_json）
 export fn encode_to(v: &JsonValue, buf: &byte, cap: usize) !usize {
     var w: JsonWriter = JsonWriter{ buf: buf, cap: cap, used: 0, overflow: false };
     json_writer_init(&w, buf, cap);
@@ -189,10 +199,10 @@ export fn encode_to(v: &JsonValue, buf: &byte, cap: usize) !usize {
     return w.used;
 }
 
-// 单次编码最大字节数；超过则返回 BufferTooSmall
+// 单次编码最大字节数；to_json / encode 内部分配用
 const ENCODE_ARENA_MAX: usize = 65536;
 
-/// 在 arena 中分配缓冲区并编码，返回指向 arena 内数据的视图（等价于 encode(arena, value)，避免返回 &[byte]）
+/// 在 arena 中编码 JsonValue 并返回视图（供测试与兼容用；结构体请用 to_json）
 export fn encode_into_arena(ar: &Arena, v: &JsonValue) !JsonStrView {
     const buf: &byte = arena_alloc(ar, ENCODE_ARENA_MAX);
     if buf == null { return error.BufferTooSmall; }
@@ -200,42 +210,35 @@ export fn encode_into_arena(ar: &Arena, v: &JsonValue) !JsonStrView {
     return JsonStrView{ ptr: buf, len: n };
 }
 
-/// 在 arena 中编码并返回切片 &[byte]（生命周期与 arena 一致；依赖 slice 返回值 codegen）
+/// 在 arena 中编码 JsonValue 并返回 &[byte]（供测试与兼容用；结构体请用 to_json）
 export fn encode(ar: &Arena, v: &JsonValue) !&[byte] {
     const view: JsonStrView = try encode_into_arena(ar, v);
     return &view.ptr[0: view.len];
 }
 
-// Phase 3：结构体序列化。实现 ToJson 的结构体可通过 encode_to_to_json 编码。
-export interface ToJson {
-    fn to_json(self: &Self, w: &JsonWriter) void;
-}
-
-export fn encode_to_to_json(value: &ToJson, buf: &byte, cap: usize) !usize {
-    var w: JsonWriter = JsonWriter{ buf: buf, cap: cap, used: 0, overflow: false };
-    json_writer_init(&w, buf, cap);
-    value.to_json(&w);
-    if w.overflow { return error.BufferTooSmall; }
-    return w.used;
-}
-
-/// 在 arena 中编码 ToJson 并返回视图（与 encode_into_arena(arena, &JsonValue) 对称）
-export fn encode_into_arena_for_to_json(ar: &Arena, value: &ToJson) !JsonStrView {
+/// 将对象 obj 序列化为 JSON 字节切片，生命周期与 arena 一致。内部由 encode_to_to_json 宏按类型 T 展开编码。
+export fn to_json<T>(ar: &Arena, obj: T) !&[byte] {
     const buf: &byte = arena_alloc(ar, ENCODE_ARENA_MAX);
     if buf == null { return error.BufferTooSmall; }
-    const n: usize = try encode_to_to_json(value, buf, ENCODE_ARENA_MAX);
-    return JsonStrView{ ptr: buf, len: n };
+    const n: usize = try encode_to_to_json(T, &obj, buf, ENCODE_ARENA_MAX);
+    return &buf[0: n];
 }
 
-/// 结构体 → JSON 字节（arena 分配，返回 &[byte]，生命周期与 arena 一致）
-export fn to_json(ar: &Arena, value: &ToJson) !&[byte] {
-    const view: JsonStrView = try encode_into_arena_for_to_json(ar, value);
-    return &view.ptr[0: view.len];
+// 结构体解码：在调用处由 codegen 内联展开，from_json 内部使用
+fn __decode_json<T>(ar: &Arena, v: &JsonValue) !T {
+    _ = ar;
+    _ = v;
+    return error.Unsupported;
 }
 
-// --- from_json 辅助：按 key 找下标、key 比较（手写 from_json 用）---
+/// 将 JSON 字节切片反序列化为类型 T 的值。内部用宏/内联展开解码。
+export fn from_json<T>(ar: &Arena, buffer: &[byte]) !T {
+    const v: JsonValue = try parse(ar, buffer.ptr, buffer.len);
+    return __decode_json<T>(ar, &v);
+}
 
-/// 比较 JsonStrView 与 (ptr, len) 是否相等
+// --- from_json 内联解码用（codegen 生成代码会调用，需 export 以便链接）---
+
 export fn json_str_view_eq(s: JsonStrView, ptr: &byte, len: usize) bool {
     if s.len != len { return false; }
     var i: usize = 0;
@@ -246,8 +249,6 @@ export fn json_str_view_eq(s: JsonStrView, ptr: &byte, len: usize) bool {
     return true;
 }
 
-/// 从 JsonObject 中按 key 查找，返回 pair 下标；未找到返回 error.MissingField。
-/// 调用方应在同一作用域内用 o.pairs[idx].value 读取，勿存储 &JsonValue 或令其逃逸（零 UB）。
 export fn json_object_find_index(o: &JsonObject, key_ptr: &byte, key_len: usize) !usize {
     var i: usize = 0;
     while i < o.len {
@@ -259,7 +260,6 @@ export fn json_object_find_index(o: &JsonObject, key_ptr: &byte, key_len: usize)
     return error.MissingField;
 }
 
-/// 期望 JsonValue 为整数，否则返回 error.WrongType（手写 from_json 用）
 export fn json_expect_i64(v: &JsonValue) !i64 {
     match v[0] {
         .int_val(x) => { return x; },
@@ -267,7 +267,6 @@ export fn json_expect_i64(v: &JsonValue) !i64 {
     }
 }
 
-/// 期望 JsonValue 为字符串视图，否则返回 error.WrongType（手写 from_json 用）
 export fn json_expect_str(v: &JsonValue) !JsonStrView {
     match v[0] {
         .str(s) => { return s; },
@@ -275,7 +274,6 @@ export fn json_expect_str(v: &JsonValue) !JsonStrView {
     }
 }
 
-/// 期望 JsonValue 为布尔，否则返回 error.WrongType（手写 from_json 用）
 export fn json_expect_bool(v: &JsonValue) !bool {
     match v[0] {
         .bool_val(x) => { return x; },
@@ -283,7 +281,6 @@ export fn json_expect_bool(v: &JsonValue) !bool {
     }
 }
 
-/// 期望 JsonValue 为浮点数，否则返回 error.WrongType（手写 from_json 用）
 export fn json_expect_f64(v: &JsonValue) !f64 {
     match v[0] {
         .float_val(x) => { return x; },

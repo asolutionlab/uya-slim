@@ -3147,7 +3147,19 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             fputs("0" as *byte, codegen.output as *void);
             return;
         }
-        const operand_union_c: &byte = get_c_type_of_expr(codegen, operand);
+        var operand_union_c: &byte = get_c_type_of_expr(codegen, operand);
+        // 操作数为 AST_BLOCK 时（如 encode_to_to_json 展开的块）get_c_type_of_expr 可能未返回错误联合类型，按 !usize 处理
+        if operand.type == ASTNodeType.AST_BLOCK && (operand_union_c == null || strstr(operand_union_c as *byte, "err_union_" as *byte) == null) {
+            const payload_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, codegen.arena, null);
+            if payload_type != null {
+                payload_type.type_named_name = "usize" as &byte;
+                const err_union_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, 0, 0, codegen.arena, null);
+                if err_union_type != null {
+                    err_union_type.type_error_union_payload_type = payload_type;
+                    operand_union_c = c99_type_to_c(codegen, err_union_type);
+                }
+            }
+        }
         var operand_is_err_union: i32 = 0;
         if operand_union_c != null && strstr(operand_union_c as *byte, "err_union_" as *byte) != null {
             operand_is_err_union = 1;

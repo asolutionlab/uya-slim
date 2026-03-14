@@ -111,6 +111,7 @@ struct MonoInstanceCodegen {
 // C99 代码生成器结构
 struct C99CodeGenerator {
     arena: &Arena,  // Arena 分配器
+    checker: &TypeChecker,  // 类型检查器（用于单态体宏展开等）
     output: &void,  // 输出文件指针（FILE*），使用普通指针类型以便在普通函数中使用
     indent_level: i32,  // 当前缩进级别
     module_name: &byte,  // 模块名称

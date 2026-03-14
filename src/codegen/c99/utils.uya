@@ -17,6 +17,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
 
     // 初始化字段
     codegen.arena = arena;
+    codegen.checker = null;
     codegen.output = output;
     codegen.indent_level = 0;
     codegen.module_name = module_name;
@@ -101,7 +102,7 @@ fn c99_codegen_set_mono_instances(codegen: &C99CodeGenerator, checker: &TypeChec
     if codegen == null || checker == null {
         return -1;
     }
-
+    codegen.checker = checker;
     codegen.mono_instance_count = 0;
 
     const count: i32 = checker.mono_instance_count;
