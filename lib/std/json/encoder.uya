@@ -227,6 +227,12 @@ export fn encode_into_arena_for_to_json(ar: &Arena, value: &ToJson) !JsonStrView
     return JsonStrView{ ptr: buf, len: n };
 }
 
+/// 结构体 → JSON 字节（arena 分配，返回 &[byte]，生命周期与 arena 一致）
+export fn to_json(ar: &Arena, value: &ToJson) !&[byte] {
+    const view: JsonStrView = try encode_into_arena_for_to_json(ar, value);
+    return &view.ptr[0: view.len];
+}
+
 // --- from_json 辅助：按 key 找下标、key 比较（手写 from_json 用）---
 
 /// 比较 JsonStrView 与 (ptr, len) 是否相等

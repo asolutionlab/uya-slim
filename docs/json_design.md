@@ -192,17 +192,21 @@ interface ToJson {
 
 ```uya
 fn encode_to(value: &ToJson, buf: &byte, cap: usize) !usize;
-fn encode_into_arena(arena: &Arena, value: &JsonValue) !JsonStrView;  // 当前实现，避免 !&[byte] 返回值
-// fn encode(arena: &Arena, value: &ToJson) !&[byte];  // 可选，依赖 slice 返回值 codegen
+fn encode_into_arena(arena: &Arena, value: &JsonValue) !JsonStrView;
+fn encode(arena: &Arena, value: &JsonValue) !&[byte];
+fn to_json(arena: &Arena, value: &ToJson) !&[byte];   // 结构体→JSON 字节（arena 分配，返回 &[byte]）
+fn parse(arena: &Arena, ptr: &byte, len: usize) !JsonValue;
+// from_json(arena, &[byte]) !T：按类型 T 由调用方实现（先 parse(arena, ptr, len) 再按 T 提取）
 ```
 
 ### 7.3 结构体序列化（to_json）
 
-**宏 to_json 利用编译器反射实现自动结构体序列化；有宏之后结构体无需手写**。未提供宏或需细粒度控制时可手写 ToJson（见 `tests/test_json_struct_roundtrip.uya`）。
+**骨架宏 to_json_skeleton**：`use std.json.macros.to_json_skeleton`，在方法块内 `to_json_skeleton({ ... })` 生成 to_json 方法（仅负责开头/结尾的 `{` `}`，中间由调用方填写）。完整反射 to_json（按字段名自动生成）待编译器支持。未用宏时可手写 ToJson（见 `tests/test_json_struct_roundtrip.uya`）。
 
 ### 7.4 结构体反序列化（from_json）
 
-- **FromJson 接口**：`fn from_json(arena: &Arena, v: &JsonValue) !Self`（从 JsonValue 对象变体按字段名解析并填充结构体，失败返回错误）。
+- **目标 API**：`from_json(arena: &Arena, input: &[byte]) !T`（字节→T）。库侧提供 `parse(arena, ptr, len) !JsonValue`；类型 T 的 from_json 由用户实现：先 `parse(arena, &input[0], @len(input))` 再按 T 从 JsonValue 提取（如 `user_from_json(arena, &v)`）。
+- **FromJson 形态**：`fn from_json(arena: &Arena, v: &JsonValue) !Self`（从 JsonValue 对象变体按字段名解析并填充结构体，失败返回错误）。
 - **宏 from_json 利用编译器反射实现自动结构体反序列化；有宏之后结构体无需手写**。未提供宏或需细粒度控制时可手写。与 to_json 对称，实现 roundtrip。
 - **手写辅助**：`json_object_find_index(o, key_ptr, key_len) !usize`；`json_expect_i64(v) !i64`、`json_expect_str(v) !JsonStrView`、`json_expect_bool(v) !bool`、`json_expect_f64(v) !f64`（类型不符返回 WrongType；f64 接受 int_val 自动转 float）；`json_str_view_eq`。调用方在同一作用域内用 `o.pairs[idx].value`，不返回/存储 `&JsonValue`（零 UB）。
 
@@ -216,9 +220,9 @@ lib/std/json/
   value.uya         # JsonValue、JsonStrView、JsonArray、JsonObject、JsonKeyValue
   errors.uya        # 错误定义（命名 errors 避免与关键字 error 冲突，见 grammar）
   parser.uya        # parse(arena, ptr, len)、解析逻辑
-  encoder.uya       # JsonWriter、encode_to、encode_into_arena、ToJson、encode_to_to_json
+  encoder.uya       # JsonWriter、encode_to、encode_into_arena、ToJson、encode_to_to_json、json_expect_*
+  macros.uya        # to_json_skeleton(body) 骨架宏（方法块内生成 to_json）
   impl.uya          # 可选：基础类型 ToJson 实现
-  impl_macro.uya    # 可选：利用编译器反射的 to_json/from_json 宏（规范 §25），有宏之后结构体无需手写，自动生成序列化/反序列化
 ```
 
 ---

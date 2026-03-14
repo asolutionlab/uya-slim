@@ -73,8 +73,8 @@
 
 ### 3.1 宏（编译器反射）或手写
 
-- [ ] 宏 to_json 利用编译器反射实现自动结构体序列化（**有宏之后结构体无需手写**）；[x] 当前无宏，手写 to_json 已提供示例。
-- [ ] 宏 from_json 利用编译器反射实现自动结构体反序列化（**有宏之后结构体无需手写**）；[x] 无宏时：提供手写 `from_json` 示例（FromJson 接口 + 从 JsonValue.obj 按 key 取 value 并赋给结构体字段，见 `json_object_find_index`、`user_from_json`）。
+- [x] 宏 to_json_skeleton：`lib/std/json/macros.uya`，方法块内 `to_json_skeleton({ ... })` 生成 to_json 骨架（开头/结尾 `{` `}` 由宏生成）；[ ] 完整反射 to_json（按字段名自动生成）待编译器支持。
+- [ ] 宏 from_json：顶层 stmt 宏暂不可用，仍手写 from_json；[x] 手写示例见 `json_object_find_index`、`user_from_json`。
 
 ### 3.2 测试
 

@@ -1,0 +1,18 @@
+// std.json.macros - JSON 序列化骨架宏（手写 to_json 时减少样板）
+// 模块路径：lib/std/json/macros.uya → use std.json.macros;
+// 在方法块中调用 to_json_skeleton({ ... })，生成 to_json 方法（开头/结尾的 { } 由宏生成）。
+
+use std.json.encoder.JsonWriter;
+use std.json.encoder.json_write_byte;
+
+/// 生成 to_json 方法骨架：开头 `{`、结尾 `}` 由宏生成，中间由 body 填充。
+/// 用法：StructName : ToJson { to_json_skeleton({ json_write_str_view(w, ...); json_write_byte(w, 58); ... }); }
+export mc to_json_skeleton(body: stmt) struct {
+    @mc_code(@mc_ast(
+        fn to_json(self: &Self, w: &JsonWriter) void {
+            json_write_byte(w, 123);
+            ${body};
+            json_write_byte(w, 125);
+        }
+    ));
+}
