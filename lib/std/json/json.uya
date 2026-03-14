@@ -10,6 +10,7 @@
 //   use std.json.parser.parse;
 //   use std.json.encoder.encode_to;
 //   use std.json.encoder.encode_into_arena;
+//   use std.json.encoder.encode;   // encode(arena, value) !&[byte]
 //   use std.json.encoder.JsonWriter;
 //   use std.json.encoder.ToJson;
 //   use std.json.errors;   // 解析错误类型

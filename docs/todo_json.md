@@ -56,7 +56,7 @@
 
 - [x] `encode_to(v: &JsonValue, buf, cap) !usize`（缓冲区不足返回 error.BufferTooSmall）
 - [x] `encode_into_arena(arena, v) !JsonStrView`（在 arena 中编码并返回 ptr+len 视图，等价语义，避免 `!&[byte]` 的 slice 返回值）
-- [ ] `encode(arena, value) !&[byte]`（可选，依赖 slice 返回值 codegen）
+- [x] `encode(arena, value) !&[byte]`（已实现：依赖 slice 返回值 + 指针作切片 base；见 test_json_encode_slice.uya）
 
 ### 2.4 测试
 
@@ -64,6 +64,7 @@
 - [x] `tests/test_json_encode_array.uya`：空数组、[1,2]
 - [x] `tests/test_json_encode_object.uya`：空对象、{\"a\":1}
 - [x] `tests/test_json_encode_arena.uya`：encode_into_arena 返回 JsonStrView
+- [x] `tests/test_json_encode_slice.uya`：encode(arena, value) 返回 &[byte]，@len 与内容校验
 
 ---
 

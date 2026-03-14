@@ -199,6 +199,12 @@ export fn encode_into_arena(ar: &Arena, v: &JsonValue) !JsonStrView {
     return JsonStrView{ ptr: buf, len: n };
 }
 
+/// 在 arena 中编码并返回切片 &[byte]（生命周期与 arena 一致；依赖 slice 返回值 codegen）
+export fn encode(ar: &Arena, v: &JsonValue) !&[byte] {
+    const view: JsonStrView = try encode_into_arena(ar, v);
+    return &view.ptr[0: view.len];
+}
+
 // Phase 3：结构体序列化。实现 ToJson 的结构体可通过 encode_to_to_json 编码。
 export interface ToJson {
     fn to_json(self: &Self, w: &JsonWriter) void;
