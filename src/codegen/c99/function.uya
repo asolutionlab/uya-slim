@@ -1780,7 +1780,10 @@ fn substitute_type_arg(codegen: &C99CodeGenerator, type_node: &ASTNode) &ASTNode
 // 获取类型的 C 表示（支持类型参数替换）
 fn c99_mono_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
     const substituted: &ASTNode = substitute_type_arg(codegen, type_node);
-    return c99_type_to_c(codegen, substituted);
+    codegen.type_conv_depth = codegen.type_conv_depth + 1;
+    const r: &byte = c99_type_to_c(codegen, substituted);
+    codegen.type_conv_depth = codegen.type_conv_depth - 1;
+    return r;
 }
 
 // 生成单态化函数原型

@@ -2670,8 +2670,12 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 // 从错误联合类型名称推断 payload 类型
                 if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_void" as *byte) == 0 {
                     payload_c = "void" as &byte;
+                } else if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_int32_t" as *byte) == 0 {
+                    payload_c = "int32_t" as &byte;
                 } else if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_int64_t" as *byte) == 0 {
                     payload_c = "int64_t" as &byte;
+                } else if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_intptr_t" as *byte) == 0 {
+                    payload_c = "intptr_t" as &byte;
                 } else if operand_union_c != null && strncmp(operand_union_c as *byte, "struct err_union_struct" as *byte, 23) == 0 {
                     // err_union_structLinuxEpoll -> payload "struct LinuxEpoll"
                     const rest: *byte = operand_union_c as *byte + 23;
@@ -2680,6 +2684,22 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     payload_c = c99_arena_strdup(codegen.arena, &buf[0] as &byte);
                     if payload_c == null {
                         payload_c = "int32_t" as &byte;
+                    }
+                } else if operand_union_c != null && strncmp(operand_union_c as *byte, "struct err_union_" as *byte, 17) == 0 {
+                    // err_union_LinuxEpoll 等 -> payload "struct LinuxEpoll"；原始类型已在上面显式处理
+                    const rest: *byte = operand_union_c as *byte + 17;
+                    if strcmp(rest, "int32_t" as *byte) == 0 || strcmp(rest, "int64_t" as *byte) == 0
+                        || strcmp(rest, "intptr_t" as *byte) == 0 || strcmp(rest, "void" as *byte) == 0
+                        || strcmp(rest, "size_t" as *byte) == 0 || strcmp(rest, "uintptr_t" as *byte) == 0
+                        || strcmp(rest, "ssize_t" as *byte) == 0 {
+                        payload_c = rest;
+                    } else {
+                        var buf: [byte: 128] = [];
+                        snprintf(&buf[0] as *byte, 128, "struct %s" as *byte, rest);
+                        payload_c = c99_arena_strdup(codegen.arena, &buf[0] as &byte);
+                        if payload_c == null {
+                            payload_c = "int32_t" as &byte;
+                        }
                     }
                 } else {
                     payload_c = "int32_t" as &byte;

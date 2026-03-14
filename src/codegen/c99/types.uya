@@ -73,10 +73,16 @@ fn c99_type_to_c_with_self_opt(codegen: &C99CodeGenerator, type_node: &ASTNode, 
     return c99_type_to_c(codegen, type_node);
 }
 
+// 类型转换递归深度限制（防止 Future/Poll 等泛型导致的无限递归）
+const C99_TYPE_CONV_MAX_DEPTH: i32 = 64;
+
 // 类型映射函数
 fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
     if type_node == null {
         return ("void" as *byte) as &byte;
+    }
+    if codegen != null && codegen.type_conv_depth >= C99_TYPE_CONV_MAX_DEPTH {
+        return ("int32_t" as *byte) as &byte;
     }
     
     // 在单态化上下文中，先进行类型参数替换
@@ -96,7 +102,10 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
                         if codegen.current_type_args[tpi] == type_node {
                             return tp_name;  // 返回原始名称，避免无限递归
                         }
-                        return c99_type_to_c(codegen, codegen.current_type_args[tpi]);
+                        codegen.type_conv_depth = codegen.type_conv_depth + 1;
+                        const r: &byte = c99_type_to_c(codegen, codegen.current_type_args[tpi]);
+                        codegen.type_conv_depth = codegen.type_conv_depth - 1;
+                        return r;
                     }
                 }
                 tpi = tpi + 1;
@@ -113,7 +122,10 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
                         if codegen.struct_type_args[spi] == type_node {
                             return tp_name;
                         }
-                        return c99_type_to_c(codegen, codegen.struct_type_args[spi]);
+                        codegen.type_conv_depth = codegen.type_conv_depth + 1;
+                        const r2: &byte = c99_type_to_c(codegen, codegen.struct_type_args[spi]);
+                        codegen.type_conv_depth = codegen.type_conv_depth - 1;
+                        return r2;
                     }
                 }
                 spi = spi + 1;
@@ -538,11 +550,21 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
         if is_void != 0 {
             snprintf(&struct_name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "err_union_void" as *byte);
         } else {
-            // 从 payload_c 生成名称，但需要特殊处理 void* 等类型
-            // payload_c 可能是 "void *"、"int32_t *" 等
+            // 从 payload_c 生成名称；需避免 !(!T) 等递归导致的 "err_union_structerr_union_..."
+            // 若 payload_c 为 "struct err_union_X"，递归剥离直到得到基础类型（如 int32_t）
+            var p: &byte = payload_c;
+            if strncmp(payload_c as *byte, "struct " as *byte, 7) == 0 {
+                p = &payload_c[7];
+            }
+            while strncmp(p as *byte, "err_union_" as *byte, 10) == 0 {
+                p = &p[10];
+            }
+            // 若剥离后为空或为 "err"/"err_" 等 fragment（递归命名残留），回退为 int32_t
+            if p[0] == 0 || (strncmp(p as *byte, "err" as *byte, 3) == 0 && (p[3] == 0 || p[3] == 95 as byte)) {
+                p = "int32_t" as &byte;
+            }
             var safe: [byte: SHORT_NAME_BUF_SIZE] = [];
             var j: i32 = 0;
-            var p: &byte = payload_c;
             while p[0] != 0 && j < SHORT_NAME_BUF_SIZE - 1 {
                 const c: i32 = p[0] as i32;
                 // 保留字母、数字、下划线和星号（用于指针类型）

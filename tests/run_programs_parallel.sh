@@ -287,10 +287,20 @@ run_single_test() {
 export -f run_single_test
 export COMPILER USE_UYA SCRIPT_DIR BUILD_DIR USE_C99
 
+SKIP_TESTS=()
+
 # 执行并行测试
 PASSED=0
 FAILED=0
 TOTAL_TESTS=${#TEST_FILES[@]}
+SKIP_COUNT=0
+for t in "${TEST_FILES[@]}"; do
+    if [[ "$t" != MULTIFILE:* ]]; then
+        bn=$(basename "$t" .uya)
+        for s in "${SKIP_TESTS[@]}"; do [ "$bn" = "$s" ] && SKIP_COUNT=$((SKIP_COUNT+1)) && break; done
+    fi
+done
+TOTAL_TESTS=$((TOTAL_TESTS - SKIP_COUNT))
 
 if [ "$ERRORS_ONLY" = false ]; then
     echo "发现 $TOTAL_TESTS 个测试任务"
@@ -301,12 +311,15 @@ fi
 single_tests=()
 multifile_tests=()
 
-# 分类测试：单文件测试和多文件测试
+# 分类测试
 for test_item in "${TEST_FILES[@]}"; do
     if [[ "$test_item" == MULTIFILE:* ]]; then
         multifile_tests+=("$test_item")
     else
-        single_tests+=("$test_item")
+        bn=$(basename "$test_item" .uya)
+        skip=0
+        for s in "${SKIP_TESTS[@]}"; do [ "$bn" = "$s" ] && skip=1 && break; done
+        [ $skip -eq 0 ] && single_tests+=("$test_item")
     fi
 done
 

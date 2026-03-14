@@ -202,6 +202,9 @@ struct C99CodeGenerator {
     struct_type_args: & & ASTNode,        // 结构体的类型实参
     struct_type_arg_count: i32,           // 结构体的类型实参数量
     
+    // 类型转换递归深度（防止 c99_type_to_c/c99_mono_type_to_c 无限递归）
+    type_conv_depth: i32,
+    
     // 跟踪是否需要包含标准库头文件
     needs_string_h: i32,                 // 1 表示需要 #include <string.h>
     needs_stdio_h: i32,                   // 1 表示需要 #include <stdio.h>

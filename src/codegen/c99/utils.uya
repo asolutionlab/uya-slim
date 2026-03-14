@@ -68,6 +68,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.struct_type_param_count = 0;
     codegen.struct_type_args = null;
     codegen.struct_type_arg_count = 0;
+    codegen.type_conv_depth = 0;
 
     // 初始化标准库头文件标志
     codegen.needs_string_h = 0;
