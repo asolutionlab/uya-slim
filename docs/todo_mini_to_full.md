@@ -4,7 +4,21 @@
 
 **实现约定**：在编写编译器代码前，先在 `tests/` 添加测试用例（如 `test_xxx.uya` 或预期编译失败的 `error_xxx.uya`），覆盖目标场景；实现后再跑 `--c99` 与 `--uya --c99` 验证，二者都通过才算通过。
 
-**开发流程遵循**： [.codebuddy/rules/uya-dev-flow.mdc](../.codebuddy/rules/uya-dev-flow.mdc)（TDD、`make clean;make backup`）。
+---
+
+## AI 开发流程（必读）
+
+**基于本文档做开发时，必须按以下流程执行**：
+
+| 阶段 | 操作 |
+|------|------|
+| **开始前** | `make check` 验证当前状态（bin/uya 不存在则先 `make from-c`） |
+| **新功能** | 1. 在 tests/ 添加 test "name" {} 测试 → 2. `make tests` 确认失败（红）→ 3. 实现代码 → 4. `make tests` 通过（绿） |
+| **修 Bug/重构** | 修改后执行 `make check` 验证 |
+| **完成** | 提交前必须 `make check` 通过；完整验证用 `make backup` |
+| **禁止** | 测试失败时提交代码 |
+
+详细规范见 [.codebuddy/rules/uya-dev-flow.mdc](../.codebuddy/rules/uya-dev-flow.mdc)。
 
 ---
 
