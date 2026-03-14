@@ -1,0 +1,37 @@
+// lib/std/async_channel.uya - 单槽通道（设计见 docs/std_async_design.md）
+// 模块路径：use std.async_channel
+// 依赖 std.async（Poll, Future）
+
+use std.async;
+
+/// 单槽通道。send 返回 Ready(0) 当槽位空；recv 返回 Ready(v) 当槽位满。
+/// 基于 atomic 实现，适用于单消费者场景。
+export struct Channel_i32 {
+    _state: atomic i32,   // 0=empty, 1=full
+    _value: i32,
+
+    fn send(self: &Self, v: i32) Future<usize> {
+        const s: i32 = self._state;
+        if s == 0 {
+            self._value = v;
+            self._state = 1;
+            return Future<usize>{ state: Poll<usize>.Ready(0) };
+        }
+        return Future<usize>{ state: Poll<usize>.Pending(0) };
+    }
+
+    fn recv(self: &Self) Future<i32> {
+        const s: i32 = self._state;
+        if s == 1 {
+            const v: i32 = self._value;
+            self._state = 0;
+            return Future<i32>{ state: Poll<i32>.Ready(v) };
+        }
+        return Future<i32>{ state: Poll<i32>.Pending(0) };
+    }
+}
+
+/// 创建 Channel_i32。
+export fn channel_i32_new() Channel_i32 {
+    return Channel_i32{ _state: 0, _value: 0 };
+}

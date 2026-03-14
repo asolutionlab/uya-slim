@@ -1,0 +1,27 @@
+// test_async_channel.uya - 测试 std.async_channel.Channel_i32 单槽通道
+
+use std.async;
+use std.async_channel;
+use std.testing.assert_eq_i32;
+
+test "channel_send_recv" {
+    var ch: Channel_i32 = channel_i32_new();
+    const fw: Future<usize> = ch.send(42);
+    const wk: Waker = Waker{};
+    const pw: Poll<usize> = fw.poll(&wk);
+    var sent: i32 = 0;
+    match pw {
+        .Ready(_) => { sent = 1; },
+        .Pending(_) => { },
+    };
+    try assert_eq_i32(sent, 1);
+
+    const fr: Future<i32> = ch.recv();
+    const pr: Poll<i32> = fr.poll(&wk);
+    var got: i32 = 0;
+    match pr {
+        .Ready(v) => { got = v; },
+        .Pending(_) => { },
+    };
+    try assert_eq_i32(got, 42);
+}

@@ -47,7 +47,7 @@ uya:
 		$(MAKE) from-c; \
 	fi
 	@echo "使用 bin/uya 编译 src/ ..."
-	@bash -c 'ulimit -s 32768 && CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" cd src && ./compile.sh --c99 -e'
+	@bash -c 'ulimit -s 32768 && CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" cd src && ./compile.sh --c99 -e --nostdlib'
 	@echo ""
 	@echo "更新 bin/uya.c ..."
 	@cp src/build/uya.c bin/uya.c

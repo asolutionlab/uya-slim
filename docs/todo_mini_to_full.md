@@ -872,7 +872,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
     - [x] epoll 系统调用层：`lib/syscall/linux.uya` 与 `lib/libc/syscall.uya` 已添加 `SYS_epoll_*`、`EpollEvent`、`EPOLLET`、`sys_epoll_create1`/`sys_epoll_ctl`/`sys_epoll_wait`；`test_epoll_syscall.uya` 通过 `--c99` 与 `--uya --c99`
     - [x] `lib/std/async_event.uya`：`EventKind`、`interface EventLoop`、`struct LinuxEpoll : EventLoop`（`use libc.syscall`）
     - [x] `test_std_async_event.uya` 端到端通过（codegen 已修复：err_union 先输出 payload 结构体、catch 推断 struct payload、union 前向声明、INT_MIN 用 @min）
-  - [ ] `std.async.channel` 模块：`Channel<T>`, `MpscChannel<T>`（依赖原子类型）
+  - [~] `std.async.channel` 模块：`Channel_i32` 单槽通道（MpscChannel 待实现）
   - [ ] `std.async.scheduler` 模块：`Scheduler` 事件循环调度器
   - [ ] `std.thread` 模块：`ThreadPool`, `async_compute<T>`
 
@@ -904,6 +904,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `error_async_recursive.uya` - 递归异步函数（应报错；当前先禁止直接递归，后续由状态机大小计算接管）
   - [x] `test_async_io.uya` - AsyncWriter/AsyncReader 接口与 MemAsyncWriter、MemAsyncReader
   - [x] `test_async_fd.uya` - AsyncFd 基于 fd 的 AsyncWriter/AsyncReader
+  - [x] `test_async_channel.uya` - Channel_i32 单槽通道 send/recv
 
 **涉及**：Lexer、AST、Parser、Checker、Codegen（CPS 变换、状态机生成），uya-src。
 
