@@ -15,7 +15,7 @@
 | **开始前** | `make check` 验证当前状态（bin/uya 不存在则先 `make from-c`） |
 | **新功能** | 1. 在 tests/ 添加 test "name" {} 测试 → 2. `make tests` 确认失败（红）→ 3. 实现代码 → 4. `make tests` 通过（绿） |
 | **修 Bug/重构** | 修改后执行 `make check` 验证 |
-| **完成** | 提交前必须 `make check` 通过；完整验证用 `make backup` |
+| **完成** | 提交前必须 `make check` 通过；完整验证用 `make backup`；**提交时需包含 `backup/uya.c`** |
 | **禁止** | 测试失败时提交代码 |
 
 详细规范见 [.codebuddy/rules/uya-dev-flow.mdc](../.codebuddy/rules/uya-dev-flow.mdc)。
