@@ -57,6 +57,7 @@
 - [x] `encode_to(v: &JsonValue, buf, cap) !usize`（缓冲区不足返回 error.BufferTooSmall）
 - [x] `encode_into_arena(arena, v) !JsonStrView`（在 arena 中编码并返回 ptr+len 视图，等价语义，避免 `!&[byte]` 的 slice 返回值）
 - [x] `encode(arena, value) !&[byte]`（已实现：依赖 slice 返回值 + 指针作切片 base；见 test_json_encode_slice.uya）
+- [x] `encode_into_arena_for_to_json(arena, value: &ToJson) !JsonStrView`（与 encode_into_arena 对称，结构体序列化进 arena 取视图）
 
 ### 2.4 测试
 
@@ -73,12 +74,13 @@
 ### 3.1 宏（编译器反射）或手写
 
 - [ ] 宏 to_json 利用编译器反射实现自动结构体序列化（**有宏之后结构体无需手写**）；[x] 当前无宏，手写 to_json 已提供示例。
-- [ ] 宏 from_json 利用编译器反射实现自动结构体反序列化（**有宏之后结构体无需手写**）；[x] 无宏时：提供手写 `from_json` 示例（FromJson 接口 + 从 JsonValue.obj 按 key 取 value 并赋给结构体字段，见 `json_object_get`、`user_from_json`）。
+- [ ] 宏 from_json 利用编译器反射实现自动结构体反序列化（**有宏之后结构体无需手写**）；[x] 无宏时：提供手写 `from_json` 示例（FromJson 接口 + 从 JsonValue.obj 按 key 取 value 并赋给结构体字段，见 `json_object_find_index`、`user_from_json`）。
 
 ### 3.2 测试
 
 - [x] `tests/test_json_struct_roundtrip.uya`：结构体 → `encode_to_to_json` → 校验输出字节 → **parse 端到端**（再解析为 JsonValue 校验 id/name）
 - [x] 结构体 roundtrip 含「parse → from_json → 结构体 → to_json → parse」，验证有宏时无需手写、无宏时手写 to_json/from_json 对称（见 `test_json_struct_roundtrip.uya`）。
+- [x] `tests/test_json_from_json_errors.uya`：json_object_find_index 缺 key 返回 error.MissingField。
 
 ---
 

@@ -2711,7 +2711,7 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         payload_c = "int32_t" as &byte;
                     }
                 } else if operand_union_c != null && strncmp(operand_union_c as *byte, "struct err_union_" as *byte, 17) == 0 {
-                    // err_union_LinuxEpoll 等 -> payload "struct LinuxEpoll"；原始类型已在上面显式处理
+                    // err_union_LinuxEpoll 等 -> payload "struct LinuxEpoll"；err_union_Xptr -> payload "struct X *"
                     const rest: *byte = operand_union_c as *byte + 17;
                     if strcmp(rest, "int32_t" as *byte) == 0 || strcmp(rest, "int64_t" as *byte) == 0
                         || strcmp(rest, "intptr_t" as *byte) == 0 || strcmp(rest, "void" as *byte) == 0
@@ -2719,11 +2719,27 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         || strcmp(rest, "ssize_t" as *byte) == 0 {
                         payload_c = rest;
                     } else {
-                        var buf: [byte: 128] = [];
-                        snprintf(&buf[0] as *byte, 128, "struct %s" as *byte, rest);
-                        payload_c = c99_arena_strdup(codegen.arena, &buf[0] as &byte);
-                        if payload_c == null {
-                            payload_c = "int32_t" as &byte;
+                        const rest_len: i32 = strlen(rest);
+                        if rest_len >= 3 && rest[rest_len - 3] == 112 && rest[rest_len - 2] == 116 && rest[rest_len - 1] == 114 {
+                            // 以 "ptr" 结尾：payload 为指针类型 "struct X *"
+                            var buf: [byte: 128] = [];
+                            if rest_len - 3 < 125 {
+                                memcpy(&buf[0] as *void, rest as *void, (rest_len - 3) as usize);
+                                buf[rest_len - 3] = 0;
+                                var buf2: [byte: 132] = [];
+                                snprintf(&buf2[0] as *byte, 132, "struct %s *" as *byte, &buf[0] as *byte);
+                                payload_c = c99_arena_strdup(codegen.arena, &buf2[0] as &byte);
+                            }
+                            if payload_c == null {
+                                payload_c = "void*" as &byte;
+                            }
+                        } else {
+                            var buf: [byte: 128] = [];
+                            snprintf(&buf[0] as *byte, 128, "struct %s" as *byte, rest);
+                            payload_c = c99_arena_strdup(codegen.arena, &buf[0] as &byte);
+                            if payload_c == null {
+                                payload_c = "int32_t" as &byte;
+                            }
                         }
                     }
                 } else {

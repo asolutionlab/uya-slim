@@ -10,7 +10,10 @@
 //   use std.json.parser.parse;
 //   use std.json.encoder.encode_to;
 //   use std.json.encoder.encode_into_arena;
-//   use std.json.encoder.encode;   // encode(arena, value) !&[byte]
+//   use std.json.encoder.encode;
+//   use std.json.encoder.encode_into_arena_for_to_json; // encode_into_arena_for_to_json(arena, &ToJson) !JsonStrView
 //   use std.json.encoder.JsonWriter;
 //   use std.json.encoder.ToJson;
-//   use std.json.errors;   // 解析错误类型
+//   use std.json.encoder.json_object_find_index;  // 手写 from_json 用：按 key 找下标，再 o.pairs[idx].value
+//   use std.json.encoder.json_str_view_eq;        // 手写 from_json 用：key 比较
+//   use std.json.errors;   // 解析错误（含 NotAnObject、MissingField 供 from_json）
