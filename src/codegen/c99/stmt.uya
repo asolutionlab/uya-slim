@@ -41,6 +41,7 @@ fn is_expr_type(node_type: ASTNodeType) i32 {
     if node_type == ASTNodeType.AST_MC_ERROR { return 1; }
     if node_type == ASTNodeType.AST_MC_INTERP { return 1; }
     if node_type == ASTNodeType.AST_MC_TYPE { return 1; }
+    if node_type == ASTNodeType.AST_MC_SOURCE { return 1; }
     if node_type == ASTNodeType.AST_AWAIT_EXPR { return 1; }
     if node_type == ASTNodeType.AST_SRC_NAME { return 1; }
     if node_type == ASTNodeType.AST_SRC_PATH { return 1; }
@@ -53,6 +54,7 @@ fn is_expr_type(node_type: ASTNodeType) i32 {
     if node_type == ASTNodeType.AST_VA_START { return 1; }
     if node_type == ASTNodeType.AST_VA_END { return 1; }
     if node_type == ASTNodeType.AST_VA_ARG { return 1; }
+    if node_type == ASTNodeType.AST_VA_COPY { return 1; }
     if node_type == ASTNodeType.AST_ASM { return 1; }
     if node_type == ASTNodeType.AST_ASM_TARGET { return 1; }
     if node_type == ASTNodeType.AST_PRINT { return 1; }

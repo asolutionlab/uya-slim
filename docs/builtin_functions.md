@@ -928,6 +928,26 @@ fn @mc_code(ast: ASTNode) code
 
 ---
 
+### @mc_source
+
+**函数签名**：
+```uya
+fn @mc_source(expr) *i8
+```
+
+**功能描述**：
+在宏内、编译期将表达式序列化为源码形式字符串（与字符串字面量类型一致，如 `*i8`）。结果为规范表示（如运算符两侧有空格），不保证与源文件字节完全一致。
+
+**使用示例**：
+```uya
+mc to_string(e: expr) expr {
+    @mc_source(e);
+}
+// to_string(a > 0)  =>  "a > 0"
+```
+
+---
+
 ### @mc_error
 
 **函数签名**：

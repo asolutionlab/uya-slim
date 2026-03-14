@@ -403,6 +403,234 @@ fn get_string_literal_from_ast(node: &ASTNode) &byte {
     return null;
 }
 
+// 二元操作符 TokenType 转源码字符串（用于 @mc_source 序列化）
+fn binary_op_to_source_string(op: i32) &byte {
+    const t: TokenType = op as TokenType;
+    if t == TokenType.TOKEN_PLUS { return (" + " as *byte) as &byte; }
+    if t == TokenType.TOKEN_MINUS { return (" - " as *byte) as &byte; }
+    if t == TokenType.TOKEN_ASTERISK { return (" * " as *byte) as &byte; }
+    if t == TokenType.TOKEN_SLASH { return (" / " as *byte) as &byte; }
+    if t == TokenType.TOKEN_PERCENT { return (" % " as *byte) as &byte; }
+    if t == TokenType.TOKEN_EQUAL { return (" == " as *byte) as &byte; }
+    if t == TokenType.TOKEN_NOT_EQUAL { return (" != " as *byte) as &byte; }
+    if t == TokenType.TOKEN_LESS { return (" < " as *byte) as &byte; }
+    if t == TokenType.TOKEN_GREATER { return (" > " as *byte) as &byte; }
+    if t == TokenType.TOKEN_LESS_EQUAL { return (" <= " as *byte) as &byte; }
+    if t == TokenType.TOKEN_GREATER_EQUAL { return (" >= " as *byte) as &byte; }
+    if t == TokenType.TOKEN_LOGICAL_AND { return (" && " as *byte) as &byte; }
+    if t == TokenType.TOKEN_LOGICAL_OR { return (" || " as *byte) as &byte; }
+    if t == TokenType.TOKEN_AMPERSAND { return (" & " as *byte) as &byte; }
+    if t == TokenType.TOKEN_PIPE { return (" | " as *byte) as &byte; }
+    if t == TokenType.TOKEN_CARET { return (" ^ " as *byte) as &byte; }
+    if t == TokenType.TOKEN_LSHIFT { return (" << " as *byte) as &byte; }
+    if t == TokenType.TOKEN_RSHIFT { return (" >> " as *byte) as &byte; }
+    return (" + " as *byte) as &byte;
+}
+
+// 一元操作符 TokenType 转源码字符串
+fn unary_op_to_source_string(op: i32) &byte {
+    const t: TokenType = op as TokenType;
+    if t == TokenType.TOKEN_MINUS { return ("-" as *byte) as &byte; }
+    if t == TokenType.TOKEN_EXCLAMATION { return ("!" as *byte) as &byte; }
+    if t == TokenType.TOKEN_TILDE { return ("~" as *byte) as &byte; }
+    if t == TokenType.TOKEN_AMPERSAND { return ("&" as *byte) as &byte; }
+    if t == TokenType.TOKEN_ASTERISK { return ("*" as *byte) as &byte; }
+    return ("" as *byte) as &byte;
+}
+
+// 类型节点转源码字符串（仅支持简单类型名、指针）
+fn type_to_source_string(type_node: &ASTNode, arena: &Arena) &byte {
+    if type_node == null || arena == null {
+        return null;
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_NAMED && type_node.type_named_name != null {
+        return macro_arena_strdup(arena, (type_node.type_named_name as *byte) as &byte);
+    }
+    if type_node.type == ASTNodeType.AST_TYPE_POINTER && type_node.type_pointer_pointed_type != null {
+        const inner: &byte = type_to_source_string(type_node.type_pointer_pointed_type, arena);
+        if inner == null {
+            return null;
+        }
+        const inner_len: i32 = strlen(inner as *byte);
+        const buf: &byte = arena_alloc(arena, (inner_len + 3) as u64) as &byte;
+        if buf == null {
+            return null;
+        }
+        buf[0] = 42 as i8;
+        memcpy((buf + 1) as *void, inner as *void, (inner_len + 1) as u64);
+        return buf;
+    }
+    return null;
+}
+
+// 将表达式 AST 序列化为源码形式字符串，写入 arena 并返回指针；不支持的类型返回 null
+fn ast_expr_to_source_string(node: &ASTNode, arena: &Arena, filename: &byte) &byte {
+    if node == null || arena == null {
+        return null;
+    }
+    if node.type == ASTNodeType.AST_IDENTIFIER {
+        if node.identifier_name == null {
+            return null;
+        }
+        return macro_arena_strdup(arena, (node.identifier_name as *byte) as &byte);
+    }
+    if node.type == ASTNodeType.AST_NUMBER {
+        const buf: &byte = arena_alloc(arena, 24) as &byte;
+        if buf == null {
+            return null;
+        }
+        sprintf(buf as *byte, "%lld" as *byte, node.number_value_i64);
+        return buf;
+    }
+    if node.type == ASTNodeType.AST_FLOAT {
+        const buf: &byte = arena_alloc(arena, 32) as &byte;
+        if buf == null {
+            return null;
+        }
+        sprintf(buf as *byte, "%g" as *byte, node.float_literal_value);
+        return buf;
+    }
+    if node.type == ASTNodeType.AST_BOOL {
+        if node.bool_literal_value != 0 {
+            return macro_arena_strdup(arena, ("true" as *byte) as &byte);
+        } else {
+            return macro_arena_strdup(arena, ("false" as *byte) as &byte);
+        }
+    }
+    if node.type == ASTNodeType.AST_STRING {
+        if node.string_literal_value == null {
+            return macro_arena_strdup(arena, ("\"\"" as *byte) as &byte);
+        }
+        const raw: &byte = (node.string_literal_value as *byte) as &byte;
+        const len: i32 = strlen(raw as *byte);
+        const buf: &byte = arena_alloc(arena, (len + 3) as u64) as &byte;
+        if buf == null {
+            return null;
+        }
+        buf[0] = 34 as i8;
+        memcpy((buf + 1) as *void, raw as *void, (len + 1) as u64);
+        buf[len + 1] = 34 as i8;
+        buf[len + 2] = 0 as i8;
+        return buf;
+    }
+    if node.type == ASTNodeType.AST_BINARY_EXPR {
+        const left: &byte = ast_expr_to_source_string(node.binary_expr_left, arena, filename);
+        const right: &byte = ast_expr_to_source_string(node.binary_expr_right, arena, filename);
+        const op_s: &byte = binary_op_to_source_string(node.binary_expr_op);
+        if left == null || right == null || op_s == null {
+            return null;
+        }
+        const total: i32 = strlen(left as *byte) + strlen(op_s as *byte) + strlen(right as *byte) + 1;
+        const buf: &byte = arena_alloc(arena, total as u64) as &byte;
+        if buf == null {
+            return null;
+        }
+        sprintf(buf as *byte, "%s%s%s" as *byte, left as *byte, op_s as *byte, right as *byte);
+        return buf;
+    }
+    if node.type == ASTNodeType.AST_UNARY_EXPR {
+        const op_s: &byte = unary_op_to_source_string(node.unary_expr_op);
+        const operand_s: &byte = ast_expr_to_source_string(node.unary_expr_operand, arena, filename);
+        if operand_s == null {
+            return null;
+        }
+        const total: i32 = strlen(op_s as *byte) + strlen(operand_s as *byte) + 1;
+        const buf: &byte = arena_alloc(arena, total as u64) as &byte;
+        if buf == null {
+            return null;
+        }
+        sprintf(buf as *byte, "%s%s" as *byte, op_s as *byte, operand_s as *byte);
+        return buf;
+    }
+    if node.type == ASTNodeType.AST_MEMBER_ACCESS {
+        const obj: &byte = ast_expr_to_source_string(node.member_access_object, arena, filename);
+        if obj == null || node.member_access_field_name == null {
+            return null;
+        }
+        const obj_len: i32 = strlen(obj as *byte);
+        const field_len: i32 = strlen(node.member_access_field_name as *byte);
+        const buf: &byte = arena_alloc(arena, (obj_len + field_len + 3) as u64) as &byte;
+        if buf == null {
+            return null;
+        }
+        sprintf(buf as *byte, "%s.%s" as *byte, obj as *byte, node.member_access_field_name as *byte);
+        return buf;
+    }
+    if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        const arr: &byte = ast_expr_to_source_string(node.array_access_array, arena, filename);
+        const idx: &byte = ast_expr_to_source_string(node.array_access_index, arena, filename);
+        if arr == null || idx == null {
+            return null;
+        }
+        const total: i32 = strlen(arr as *byte) + strlen(idx as *byte) + 4;
+        const buf: &byte = arena_alloc(arena, total as u64) as &byte;
+        if buf == null {
+            return null;
+        }
+        sprintf(buf as *byte, "%s[%s]" as *byte, arr as *byte, idx as *byte);
+        return buf;
+    }
+    if node.type == ASTNodeType.AST_CAST_EXPR {
+        const expr_s: &byte = ast_expr_to_source_string(node.cast_expr_expr, arena, filename);
+        const type_s: &byte = type_to_source_string(node.cast_expr_target_type, arena);
+        if expr_s == null || type_s == null {
+            return null;
+        }
+        const total: i32 = strlen(expr_s as *byte) + strlen(type_s as *byte) + 5;
+        const buf: &byte = arena_alloc(arena, total as u64) as &byte;
+        if buf == null {
+            return null;
+        }
+        sprintf(buf as *byte, "%s as %s" as *byte, expr_s as *byte, type_s as *byte);
+        return buf;
+    }
+    if node.type == ASTNodeType.AST_CALL_EXPR {
+        const callee: &byte = ast_expr_to_source_string(node.call_expr_callee, arena, filename);
+        if callee == null {
+            return null;
+        }
+        var parts_len: i32 = strlen(callee as *byte) + 2;
+        var i: i32 = 0;
+        while i < node.call_expr_arg_count {
+            if node.call_expr_args != null {
+                const arg: &byte = ast_expr_to_source_string(node.call_expr_args[i], arena, filename);
+                if arg != null {
+                    parts_len = parts_len + strlen(arg as *byte) + 2;
+                }
+            }
+            i = i + 1;
+        }
+        const buf: &byte = arena_alloc(arena, (parts_len + 1) as u64) as &byte;
+        if buf == null {
+            return null;
+        }
+        var pos: i32 = sprintf(buf as *byte, "%s(" as *byte, callee as *byte);
+        i = 0;
+        while i < node.call_expr_arg_count {
+            if node.call_expr_args != null {
+                const arg: &byte = ast_expr_to_source_string(node.call_expr_args[i], arena, filename);
+                if arg != null {
+                    if i > 0 {
+                        pos = pos + sprintf((buf + pos) as *byte, ", %s" as *byte, arg as *byte);
+                    } else {
+                        pos = pos + sprintf((buf + pos) as *byte, "%s" as *byte, arg as *byte);
+                    }
+                }
+            }
+            i = i + 1;
+        }
+        pos = pos + sprintf((buf + pos) as *byte, ")" as *byte);
+        return buf;
+    }
+    if node.type == ASTNodeType.AST_TYPE_NAMED {
+        if node.type_named_name != null {
+            return macro_arena_strdup(arena, (node.type_named_name as *byte) as &byte);
+        }
+        return null;
+    }
+    return null;
+}
+
 // 检查结构体字面量是否为 TypeInfo（与 create_type_info_struct 生成的名字一致）
 fn is_typeinfo_struct_init(node: &ASTNode) i32 {
     if node == null || node.type != ASTNodeType.AST_STRUCT_INIT {
@@ -651,6 +879,8 @@ fn deep_copy_ast_with_field_subst(node: &ASTNode, ctx: &MacroExpandContext, file
         copy.mc_code_operand = deep_copy_ast_with_field_subst(node.mc_code_operand, ctx, filename, loop_var_name, current_name, current_type_name);
     } else if node.type == ASTNodeType.AST_MC_AST && node.mc_ast_operand != null {
         copy.mc_ast_operand = deep_copy_ast_with_field_subst(node.mc_ast_operand, ctx, filename, loop_var_name, current_name, current_type_name);
+    } else if node.type == ASTNodeType.AST_MC_SOURCE && node.mc_source_operand != null {
+        copy.mc_source_operand = deep_copy_ast_with_field_subst(node.mc_source_operand, ctx, filename, loop_var_name, current_name, current_type_name);
     } else if node.type == ASTNodeType.AST_STRUCT_INIT {
         copy.struct_init_struct_name = node.struct_init_struct_name;
         copy.struct_init_field_count = node.struct_init_field_count;
@@ -1072,6 +1302,19 @@ fn deep_copy_ast_with_params(node: &ASTNode, ctx: &MacroExpandContext, filename:
         }
         // 失败时保留原节点
         copy.mc_type_operand = deep_copy_ast_with_params(node.mc_type_operand, ctx, filename);
+    } else if node.type == ASTNodeType.AST_MC_SOURCE {
+        // @mc_source(expr)：将表达式序列化为字符串字面量
+        const operand: &ASTNode = node.mc_source_operand;
+        if operand != null {
+            const resolved: &ASTNode = deep_copy_ast_with_params(operand, ctx, filename);
+            if resolved != null {
+                const src_str: &byte = ast_expr_to_source_string(resolved, ctx.arena, filename);
+                if src_str != null {
+                    return create_string_literal(src_str, ctx.arena, node.line, node.column);
+                }
+            }
+        }
+        copy.mc_source_operand = deep_copy_ast_with_params(node.mc_source_operand, ctx, filename);
     } else if node.type == ASTNodeType.AST_STRUCT_INIT {
         // 结构体初始化
         copy.struct_init_struct_name = node.struct_init_struct_name;
@@ -1307,13 +1550,14 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
                     }
                 }
             }
-            // 对于表达式节点，直接作为输出
+            // 对于表达式节点，直接作为输出（含 @mc_source(expr)，展开为字符串字面量）
             if stmt.type == ASTNodeType.AST_NUMBER || stmt.type == ASTNodeType.AST_BOOL ||
                 stmt.type == ASTNodeType.AST_STRING || stmt.type == ASTNodeType.AST_IDENTIFIER ||
                 stmt.type == ASTNodeType.AST_BINARY_EXPR || stmt.type == ASTNodeType.AST_UNARY_EXPR ||
                 stmt.type == ASTNodeType.AST_CALL_EXPR || stmt.type == ASTNodeType.AST_MEMBER_ACCESS ||
                 stmt.type == ASTNodeType.AST_ARRAY_ACCESS || stmt.type == ASTNodeType.AST_STRUCT_INIT ||
-                stmt.type == ASTNodeType.AST_ARRAY_LITERAL || stmt.type == ASTNodeType.AST_MC_INTERP {
+                stmt.type == ASTNodeType.AST_ARRAY_LITERAL || stmt.type == ASTNodeType.AST_MC_INTERP ||
+                stmt.type == ASTNodeType.AST_MC_SOURCE {
                 return deep_copy_ast_with_params(stmt, &merged_ctx, filename);
             }
         }

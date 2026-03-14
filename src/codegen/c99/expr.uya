@@ -440,6 +440,9 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             // 如果找不到（不应该发生），输出空字符串作为后备
             fputs("(uint8_t *)\"\"" as *byte, codegen.output as *void);
         }
+    } else if expr.type == ASTNodeType.AST_MC_SOURCE {
+        // @mc_source 应在宏展开时已替换为 AST_STRING；未替换时输出空字符串
+        fputs("(uint8_t *)\"\"" as *byte, codegen.output as *void);
     } else if expr.type == ASTNodeType.AST_STRING_INTERP {
         if codegen.string_interp_buf != null {
             fputs(codegen.string_interp_buf as *byte, codegen.output as *void);
@@ -584,12 +587,20 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
     } else if expr.type == ASTNodeType.AST_PTR_FROM_USIZE {
         // @ptr_from_usize(value) 生成 (void *)(uintptr_t)(value)
         fputs("(void *)(uintptr_t)(" as *byte, codegen.output as *void);
-        gen_expr(codegen, expr.ptr_from_usize_value);
+        if expr.ptr_from_usize_value == null {
+            fputs("0" as *byte, codegen.output as *void);
+        } else {
+            gen_expr(codegen, expr.ptr_from_usize_value);
+        }
         fputc(41, codegen.output as *void);  // ')'
     } else if expr.type == ASTNodeType.AST_USIZE_FROM_PTR {
         // @usize_from_ptr(ptr) 生成 (uintptr_t)(ptr)
         fputs("(uintptr_t)(" as *byte, codegen.output as *void);
-        gen_expr(codegen, expr.usize_from_ptr_ptr);
+        if expr.usize_from_ptr_ptr == null {
+            fputs("0" as *byte, codegen.output as *void);
+        } else {
+            gen_expr(codegen, expr.usize_from_ptr_ptr);
+        }
         fputc(41, codegen.output as *void);  // ')'
     } else if expr.type == ASTNodeType.AST_SIZEOF {
         gen_sizeof_expr(codegen, expr);
@@ -601,7 +612,9 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         
         // 获取类型字符串
         var type_c: &byte = null;
-        if is_type != 0 {
+        if target == null {
+            type_c = ("int" as *byte) as &byte;
+        } else if is_type != 0 {
             type_c = c99_type_to_c(codegen, target);
         } else {
             // 即使 is_type = 0，也检查是否是类型标识符（如 alignof(usize) 中的 usize）
@@ -1788,6 +1801,10 @@ fn gen_binary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const right: &ASTNode = expr.binary_expr_right;
         const op: TokenType = expr.binary_expr_op as TokenType;
         
+        if left == null || right == null {
+            fputs("0" as *byte, codegen.output as *void);
+            return;
+        }
         // 错误类型比较：err == error.X 或 error.X == err -> .error_id 比较
         if op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL {
             if gen_error_value_comparison(codegen, left, right, op) != 0 {
@@ -2139,7 +2156,9 @@ fn gen_sizeof_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const is_type: i32 = expr.sizeof_expr_is_type;
         // @size_of 返回 i32，需要显式转换为 int32_t 避免无符号算术警告
         fputs("(int32_t)sizeof(" as *byte, codegen.output as *void);
-        if is_type != 0 {
+        if target == null {
+            fputs("int" as *byte, codegen.output as *void);
+        } else if is_type != 0 {
             // 显式检查是否是结构体类型（即使在 c99_type_to_c 中查找失败）
             if target.type == ASTNodeType.AST_TYPE_NAMED {
                 const name: &byte = target.type_named_name;
@@ -2272,6 +2291,10 @@ fn gen_sizeof_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
 fn gen_len_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const array: &ASTNode = expr.len_expr_array;
         
+        if array == null {
+            fputs("0" as *byte, codegen.output as *void);
+            return;
+        }
         if array.type == ASTNodeType.AST_SLICE_EXPR {
             fputc(40, codegen.output as *void);
             gen_expr(codegen, array);

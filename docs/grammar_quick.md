@@ -772,6 +772,7 @@ export mc add(a: expr, b: expr) expr {
 | `@mc_eval(expr)` | 编译时求值 | `@mc_eval(2 + 3)` → `5` |
 | `@mc_type(T)` | 类型反射 | `@mc_type(i32)` → `TypeInfo` |
 | `@mc_ast(code)` | 代码转 AST | `@mc_ast(x + y)` |
+| `@mc_source(expr)` | 表达式源码字符串 | `@mc_source(a > 0)` → `"a > 0"` |
 | `@mc_code(ast)` | AST 转代码 | `@mc_code(ast_node)` |
 | `@mc_error(msg)` | 编译时错误 | `@mc_error("类型不匹配")` |
 | `@mc_get_env(name)` | 读取环境变量 | `@mc_get_env("DEBUG")` |

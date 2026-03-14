@@ -426,10 +426,14 @@ fn get_safe_c_identifier(codegen: &C99CodeGenerator, name: &byte) &byte {
 
 // 添加字符串常量
 fn add_string_constant(codegen: &C99CodeGenerator, value: &byte) &byte {
+    if value == null {
+        return null;
+    }
     // 检查是否已存在相同的字符串常量
     var i: i32 = 0;
     while i < codegen.string_constant_count {
-        if strcmp(codegen.string_constants[i].value as *byte, value as *byte) == 0 {
+        if codegen.string_constants[i].value != null &&
+           strcmp(codegen.string_constants[i].value as *byte, value as *byte) == 0 {
             return codegen.string_constants[i].name;
         }
         i = i + 1;
@@ -718,7 +722,9 @@ fn collect_string_constants_from_expr(codegen: &C99CodeGenerator, expr: &ASTNode
     }
     
     if expr.type == ASTNodeType.AST_STRING {
-        add_string_constant(codegen, expr.string_literal_value);
+        if expr.string_literal_value != null {
+            add_string_constant(codegen, expr.string_literal_value);
+        }
     } else if expr.type == ASTNodeType.AST_SRC_NAME {
         // 收集文件名字符串常量
         const filename: &byte = expr.filename;

@@ -119,6 +119,7 @@ enum ASTNodeType {
     AST_MC_ERROR,       // @mc_error(msg) - 宏内报错
     AST_MC_INTERP,      // ${expr} - 宏内插值
     AST_MC_TYPE,        // @mc_type(expr) - 宏内类型反射
+    AST_MC_SOURCE,      // @mc_source(expr) - 宏内将表达式序列化为源码字符串
     AST_AWAIT_EXPR,     // try @await expr - 异步等待表达式
     AST_SRC_NAME,       // @src_name - 源文件名
     AST_SRC_PATH,       // @src_path - 源文件路径
@@ -237,6 +238,7 @@ struct ASTNode {
     mc_error_operand: &ASTNode,
     mc_interp_operand: &ASTNode,
     mc_type_operand: &ASTNode,
+    mc_source_operand: &ASTNode,
     // var_decl
     var_decl_name: &byte,
     var_decl_type: &ASTNode,
@@ -522,6 +524,7 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.mc_error_operand = null;
     node.mc_interp_operand = null;
     node.mc_type_operand = null;
+    node.mc_source_operand = null;
     node.var_decl_name = null;
     node.var_decl_type = null;
     node.var_decl_init = null;
