@@ -1,0 +1,28 @@
+// lib/std/async_scheduler.uya - 异步调度器
+//
+// 模块路径：use std.async_scheduler
+// 设计见 docs/std_async_design.md 阶段 5（std.async.scheduler）。
+// 当前为最小骨架：run 包装 block_on；后续集成 EventLoop 处理 Pending。
+
+use std.async;
+
+/// 调度器。当前最小实现；后续持有 EventLoop 处理 I/O 就绪。
+export struct Scheduler {}
+
+/// 创建调度器。
+export fn scheduler_new() Scheduler {
+    return Scheduler{};
+}
+
+/// 同步运行 Future<!T> 直到 Ready，返回 !T。
+/// 当前委托 block_on；后续在 Pending 时轮询 EventLoop 后重试。
+export fn scheduler_run<T>(self: &Scheduler, f: Future<!T>) !T {
+    _ = self;
+    return block_on(f);
+}
+
+/// scheduler_run 的 i32 特化，便于无需显式泛型参数的调用。
+export fn scheduler_run_i32(self: &Scheduler, f: Future<!i32>) !i32 {
+    _ = self;
+    return block_on_i32(f);
+}

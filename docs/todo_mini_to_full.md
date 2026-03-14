@@ -12,11 +12,11 @@
 
 | 阶段 | 操作 |
 |------|------|
-| **开始前** | `make check` 验证当前状态（bin/uya 不存在则先 `make from-c`） |
+| **开始前** | `make backup` 验证当前状态（bin/uya 不存在则先 `make from-c`） |
 | **新功能** | 1. 在 tests/ 添加 test "name" {} 测试 → 2. `make tests` 确认失败（红）→ 3. 实现代码 → 4. `make tests` 通过（绿） |
-| **修 Bug/重构** | 修改后执行 `make check` 验证 |
-| **完成** | 提交前必须 `make check` 通过；完整验证用 `make backup`；**提交时需包含 `backup/uya.c`** |
-| **禁止** | 测试失败时提交代码 |
+| **修 Bug/重构** | 修改后执行 `make backup` 验证 |
+| **提交前必做** | **必须**执行 `make backup`，并将 `backup/uya.c` 一起提交（backup 包含自举+测试验证；否则 `make clean` 后无法恢复） |
+| **禁止** | 测试失败时提交代码；跳过 `make backup` 即提交 |
 
 详细规范见 [.codebuddy/rules/uya-dev-flow.mdc](../.codebuddy/rules/uya-dev-flow.mdc)。
 
@@ -887,7 +887,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
     - [x] `lib/std/async_event.uya`：`EventKind`、`interface EventLoop`、`struct LinuxEpoll : EventLoop`（`use libc.syscall`）
     - [x] `test_std_async_event.uya` 端到端通过（codegen 已修复：err_union 先输出 payload 结构体、catch 推断 struct payload、union 前向声明、INT_MIN 用 @min）
   - [~] `std.async.channel` 模块：`Channel_i32` 单槽通道（MpscChannel 待实现）
-  - [ ] `std.async.scheduler` 模块：`Scheduler` 事件循环调度器
+  - [~] `std.async.scheduler` 模块：`Scheduler` 事件循环调度器（最小骨架：`scheduler_new`、`scheduler_run`/`scheduler_run_i32`，委托 block_on；EventLoop 集成待实现）
   - [ ] `std.thread` 模块：`ThreadPool`, `async_compute<T>`
 
 - [ ] **编译期验证**：
@@ -919,6 +919,8 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `test_async_io.uya` - AsyncWriter/AsyncReader 接口与 MemAsyncWriter、MemAsyncReader
   - [x] `test_async_fd.uya` - AsyncFd 基于 fd 的 AsyncWriter/AsyncReader
   - [x] `test_async_channel.uya` - Channel_i32 单槽通道 send/recv
+  - [x] `test_block_on.uya` - block_on 同步运行 Future<!T> 直到 Ready
+  - [x] `test_std_async_scheduler.uya` - std.async_scheduler 的 Scheduler、scheduler_run_i32
 
 **涉及**：Lexer、AST、Parser、Checker、Codegen（CPS 变换、状态机生成），uya-src。
 

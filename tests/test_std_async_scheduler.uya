@@ -1,0 +1,23 @@
+// test_std_async_scheduler.uya - 测试 std.async_scheduler.Scheduler
+
+use std.async;
+use std.async_scheduler;
+use std.testing.assert_eq_i32;
+
+fn ready(v: i32) Future<!i32> {
+    const p: Poll<!i32> = Poll<!i32>.Ready(ok<i32>(v));
+    return Future<!i32>{ state: p };
+}
+
+@async_fn
+fn add_async() Future<!i32> {
+    const a: i32 = try @await ready(10);
+    const b: i32 = try @await ready(20);
+    return a + b;
+}
+
+test "scheduler_run" {
+    var s: Scheduler = scheduler_new();
+    const result: i32 = try scheduler_run_i32(&s, add_async());
+    try assert_eq_i32(result, 30);
+}
