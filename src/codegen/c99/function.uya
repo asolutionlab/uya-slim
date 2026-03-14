@@ -1189,8 +1189,11 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         effective_return_type.type_named_type_args != null {
         var child_ta: & & ASTNode = effective_return_type.type_named_type_args;
         var child_ta_count: i32 = 1;
-        const caller_returns_future_literal: i32 = (ret_expr != null && ret_expr.type == ASTNodeType.AST_STRUCT_INIT && ret_expr.struct_init_struct_name != null &&
-            strcmp(ret_expr.struct_init_struct_name as *byte, "Future" as *byte) == 0) ? 1 : 0;
+        var caller_returns_future_literal: i32 = 0;
+        if ret_expr != null && ret_expr.type == ASTNodeType.AST_STRUCT_INIT && ret_expr.struct_init_struct_name != null &&
+            strcmp(ret_expr.struct_init_struct_name as *byte, "Future" as *byte) == 0 {
+            caller_returns_future_literal = 1;
+        }
         if caller_returns_future_literal != 0 && await_bind_types[0] != null && await_bind_types[0].type == ASTNodeType.AST_TYPE_NAMED &&
             await_bind_types[0].type_named_name != null && strcmp(await_bind_types[0].type_named_name as *byte, "Future" as *byte) == 0 {
             const pay_ta: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
