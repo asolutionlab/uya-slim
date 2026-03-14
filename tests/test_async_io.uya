@@ -60,3 +60,31 @@ fn test_read_impl() !void {
 test "mem_async_reader_read_returns_ready" {
     try test_read_impl();
 }
+
+// 联合测试：从 MemAsyncReader 读取并写入 MemAsyncWriter
+fn test_read_then_write_impl() !void {
+    var src: [byte: 4] = [ 65, 66, 67, 68 ];
+    var r: MemAsyncReader = mem_async_reader_new(&src[0] as &const byte, 4);
+    var w: MemAsyncWriter = mem_async_writer_new();
+    var buf: [byte: 8] = [];
+    const fr: Future<usize> = try r.read(&buf[0], 4);
+    const wk: Waker = Waker{};
+    var pr: Poll<usize> = fr.poll(&wk);
+    var n: usize = 0;
+    match pr {
+        .Ready(k) => { n = k; },
+        .Pending(_) => { },
+    };
+    try assert_eq_i32(n as i32, 4);
+    const fw: Future<usize> = try w.write(&buf[0] as &const byte, n);
+    pr = fw.poll(&wk);
+    match pr {
+        .Ready(k) => { n = k; },
+        .Pending(_) => { },
+    };
+    try assert_eq_i32(n as i32, 4);
+}
+
+test "mem_async_read_then_write" {
+    try test_read_then_write_impl();
+}
