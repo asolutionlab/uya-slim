@@ -80,7 +80,8 @@
 | 37 | **新标准库文件 I/O（std.io）** | [x] **已完成**（lib/std/io/file.uya 和 lib/std/io/stream.uya 已实现，包含 fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush，测试用例通过） |
 | 38 | **新标准库 JSON（std.json）** | [ ] 高性能 JSON 编解码器，详见 [todo_json.md](todo_json.md)、[json_design.md](json_design.md) |
 | 39 | **新标准库 YAML（std.yaml）** | [ ] 高性能 YAML 编解码器，详见 [todo_yaml.md](todo_yaml.md)、[yaml_design.md](yaml_design.md) |
-| 40 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
+| 40 | **新标准库 Protobuf（std.protobuf）** | [ ] 高性能 Protobuf 编解码器，详见 [todo_protobuf.md](todo_protobuf.md)、[protobuf_design.md](protobuf_design.md) |
+| 41 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
 
 标准库分层重构（std → libc → osal → syscall）的详细任务见 [todo_std_refactor.md](todo_std_refactor.md)。
 
