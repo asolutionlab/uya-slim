@@ -51,3 +51,27 @@ export fn task_ready_ok_i32(value: i32) Task<!i32> {
     const ok_value: !i32 = ok<i32>(value);
     return Task<!i32>{ state: Poll<!i32>.Ready(ok_value) };
 }
+
+/// 同步运行 Future<!T> 直到 Ready，返回 !T。Pending 时轮询直到就绪（忙等待，测试用）。
+export fn block_on<T>(f: Future<!T>) !T {
+    const w: Waker = Waker{};
+    while true {
+        const p: Poll<!T> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => { },
+        };
+    }
+}
+
+/// block_on 的 i32 特化，便于无需显式泛型参数的调用。
+export fn block_on_i32(f: Future<!i32>) !i32 {
+    const w: Waker = Waker{};
+    while true {
+        const p: Poll<!i32> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => { },
+        };
+    }
+}

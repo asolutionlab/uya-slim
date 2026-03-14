@@ -1,0 +1,23 @@
+// test_block_on.uya
+// 测试 std.async.block_on：同步运行 Future<!T> 直到 Ready
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+fn ready(v: i32) Future<!i32> {
+    const p: Poll<!i32> = Poll<!i32>.Ready(ok<i32>(v));
+    return Future<!i32>{ state: p };
+}
+
+@async_fn
+fn two_awaits() Future<!i32> {
+    const a: i32 = try @await ready(1);
+    const b: i32 = try @await ready(2);
+    return a + b;
+}
+
+test "block_on_runs_until_ready" {
+    const f: Future<!i32> = two_awaits();
+    const result: i32 = block_on_i32(f) catch { 0 - 1; };
+    try assert_eq_i32(result, 3);
+}
