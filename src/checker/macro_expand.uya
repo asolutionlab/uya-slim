@@ -314,12 +314,12 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
         struct_decl = find_struct_decl_from_program(checker.program_node, type_name);
         if struct_decl != null && struct_decl.struct_decl_fields != null && struct_decl.struct_decl_field_count > 0 {
             n_fields = struct_decl.struct_decl_field_count;
-            if n_fields > 16 {
-                n_fields = 16;
+            if n_fields > 64 {
+                n_fields = 64;
             }
         }
     }
-    const MAX_FIELDS: i32 = 16;
+    const MAX_FIELDS: i32 = 64;
     const elements: &(&ASTNode) = arena_alloc(arena, (8 * MAX_FIELDS) as u64) as &(&ASTNode);
     if elements != null {
         var ei: i32 = 0;
@@ -372,6 +372,409 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
     struct_init.struct_init_field_count = field_count;
     
     return struct_init;
+}
+
+// 将字符串复制到 arena，返回指向 arena 内副本的指针（用于宏展开期持久化；与 parser 的 arena_strdup 重名故加前缀）
+fn macro_arena_strdup(arena: &Arena, src: &byte) &byte {
+    if src == null || arena == null {
+        return null;
+    }
+    const len: i32 = strlen(src as *byte);
+    const buf: &byte = arena_alloc(arena, (len + 1) as u64) as &byte;
+    if buf == null {
+        return null;
+    }
+    memcpy(buf as *void, src as *void, (len + 1) as u64);
+    return buf;
+}
+
+// 从 AST 节点提取字符串字面量指针（支持 AST_STRING 或 AST_CAST_EXPR 包装的字符串）
+fn get_string_literal_from_ast(node: &ASTNode) &byte {
+    if node == null {
+        return null;
+    }
+    if node.type == ASTNodeType.AST_STRING {
+        return (node.string_literal_value as *byte) as &byte;
+    }
+    if node.type == ASTNodeType.AST_CAST_EXPR && node.cast_expr_expr != null &&
+       node.cast_expr_expr.type == ASTNodeType.AST_STRING {
+        return (node.cast_expr_expr.string_literal_value as *byte) as &byte;
+    }
+    return null;
+}
+
+// 检查结构体字面量是否为 TypeInfo（与 create_type_info_struct 生成的名字一致）
+fn is_typeinfo_struct_init(node: &ASTNode) i32 {
+    if node == null || node.type != ASTNodeType.AST_STRUCT_INIT {
+        return 0;
+    }
+    if node.struct_init_struct_name == null {
+        return 0;
+    }
+    if strcmp(node.struct_init_struct_name as *byte, "TypeInfo" as *byte) != 0 {
+        return 0;
+    }
+    return 1;
+}
+
+// 从 TypeInfo 结构体字面量 AST 中读取 field_count；非 TypeInfo 或格式不符返回 -1
+fn get_typeinfo_field_count_from_ast(type_info_ast: &ASTNode) i32 {
+    if type_info_ast == null || is_typeinfo_struct_init(type_info_ast) == 0 {
+        return -1;
+    }
+    if type_info_ast.struct_init_field_names == null || type_info_ast.struct_init_field_values == null {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < type_info_ast.struct_init_field_count {
+        if type_info_ast.struct_init_field_names[i] != null &&
+           strcmp(type_info_ast.struct_init_field_names[i] as *byte, "field_count" as *byte) == 0 {
+            const val: &ASTNode = type_info_ast.struct_init_field_values[i];
+            if val != null && val.type == ASTNodeType.AST_NUMBER {
+                return val.number_value_i64 as i32;
+            }
+            return -1;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// 从 TypeInfo 结构体字面量 AST 中读取第 index 个 FieldInfo 的 name 和 type_name，复制到 arena 并通过 out_name、out_type_name 返回；成功返回 1，失败返回 0
+fn get_typeinfo_field_name_type_from_ast(type_info_ast: &ASTNode, index: i32, arena: &Arena, out_name: &(&byte), out_type_name: &(&byte)) i32 {
+    if type_info_ast == null || arena == null || out_name == null || out_type_name == null {
+        return 0;
+    }
+    if is_typeinfo_struct_init(type_info_ast) == 0 {
+        return 0;
+    }
+    if type_info_ast.struct_init_field_names == null || type_info_ast.struct_init_field_values == null {
+        return 0;
+    }
+    var fields_idx: i32 = -1;
+    var i: i32 = 0;
+    while i < type_info_ast.struct_init_field_count {
+        if type_info_ast.struct_init_field_names[i] != null &&
+           strcmp(type_info_ast.struct_init_field_names[i] as *byte, "fields" as *byte) == 0 {
+            fields_idx = i;
+            break;
+        }
+        i = i + 1;
+    }
+    if fields_idx < 0 {
+        return 0;
+    }
+    const fields_val: &ASTNode = type_info_ast.struct_init_field_values[fields_idx];
+    if fields_val == null || fields_val.type != ASTNodeType.AST_ARRAY_LITERAL {
+        return 0;
+    }
+    if fields_val.array_literal_elements == null || index < 0 || index >= fields_val.array_literal_element_count {
+        return 0;
+    }
+    const field_info: &ASTNode = fields_val.array_literal_elements[index];
+    if field_info == null || field_info.type != ASTNodeType.AST_STRUCT_INIT {
+        return 0;
+    }
+    if field_info.struct_init_field_names == null || field_info.struct_init_field_values == null {
+        return 0;
+    }
+    var name_idx: i32 = -1;
+    var type_name_idx: i32 = -1;
+    i = 0;
+    while i < field_info.struct_init_field_count {
+        if field_info.struct_init_field_names[i] != null {
+            if strcmp(field_info.struct_init_field_names[i] as *byte, "name" as *byte) == 0 {
+                name_idx = i;
+            } else if strcmp(field_info.struct_init_field_names[i] as *byte, "type_name" as *byte) == 0 {
+                type_name_idx = i;
+            }
+        }
+        i = i + 1;
+    }
+    if name_idx < 0 || type_name_idx < 0 {
+        return 0;
+    }
+    const name_src: &byte = get_string_literal_from_ast(field_info.struct_init_field_values[name_idx]);
+    const type_name_src: &byte = get_string_literal_from_ast(field_info.struct_init_field_values[type_name_idx]);
+    if name_src == null || type_name_src == null {
+        return 0;
+    }
+    const name_copied: &byte = macro_arena_strdup(arena, name_src);
+    const type_name_copied: &byte = macro_arena_strdup(arena, type_name_src);
+    if name_copied == null || type_name_copied == null {
+        return 0;
+    }
+    *out_name = name_copied;
+    *out_type_name = type_name_copied;
+    return 1;
+}
+
+// 从字符串创建标识符 AST 节点（name_ptr 须指向 arena 内已持久化的字符串）
+fn create_identifier_from_string(name_ptr: &byte, arena: &Arena, line: i32, column: i32) &ASTNode {
+    if name_ptr == null || arena == null {
+        return null;
+    }
+    const node: &ASTNode = ast_new_node(ASTNodeType.AST_IDENTIFIER, line, column, arena, null);
+    if node == null {
+        return null;
+    }
+    node.identifier_name = name_ptr;
+    return node;
+}
+
+// 从类型名字符串创建 AST_TYPE_NAMED 节点（type_name_ptr 须指向 arena 内已持久化的字符串；仅简单类型名）
+fn create_type_named_from_string(type_name_ptr: &byte, arena: &Arena, line: i32, column: i32) &ASTNode {
+    if type_name_ptr == null || arena == null {
+        return null;
+    }
+    const node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, line, column, arena, null);
+    if node == null {
+        return null;
+    }
+    node.type_named_name = type_name_ptr;
+    return node;
+}
+
+// 带 field.name / field.type_name 替换的深拷贝（用于 for info.fields 每轮 body）
+// 当 node 为 member_access(identifier(loop_var_name), "name") 时返回 identifier(current_name)；
+// 为 member_access(identifier(loop_var_name), "type_name") 时返回 type_named(current_type_name)。
+fn deep_copy_ast_with_field_subst(node: &ASTNode, ctx: &MacroExpandContext, filename: &byte, loop_var_name: &byte, current_name: &byte, current_type_name: &byte) &ASTNode {
+    if node == null || ctx == null || ctx.arena == null {
+        return null;
+    }
+    if node.type == ASTNodeType.AST_MEMBER_ACCESS && node.member_access_object != null &&
+       node.member_access_object.type == ASTNodeType.AST_IDENTIFIER &&
+       node.member_access_object.identifier_name != null && loop_var_name != null &&
+       node.member_access_field_name != null {
+        if strcmp(node.member_access_object.identifier_name as *byte, loop_var_name as *byte) == 0 {
+            if strcmp(node.member_access_field_name as *byte, "name" as *byte) == 0 && current_name != null {
+                return create_identifier_from_string(current_name, ctx.arena, node.line, node.column);
+            }
+            if strcmp(node.member_access_field_name as *byte, "type_name" as *byte) == 0 && current_type_name != null {
+                return create_type_named_from_string(current_type_name, ctx.arena, node.line, node.column);
+            }
+        }
+    }
+    // 否则与 deep_copy_ast_with_params 相同逻辑，但递归时传入 field_subst 参数
+    if node.type == ASTNodeType.AST_IDENTIFIER && node.identifier_name != null {
+        const arg: &ASTNode = find_param_binding(ctx, node.identifier_name);
+        if arg != null {
+            var no_param_ctx: MacroExpandContext = MacroExpandContext{ bindings: null, binding_count: 0, arena: ctx.arena, checker: ctx.checker };
+            return deep_copy_ast_with_field_subst(arg, &no_param_ctx, filename, loop_var_name, current_name, current_type_name);
+        }
+    }
+    const copy: &ASTNode = ast_new_node(node.type, node.line, node.column, ctx.arena, filename);
+    if copy == null {
+        return null;
+    }
+    if node.type == ASTNodeType.AST_NUMBER {
+        copy.number_value = node.number_value;
+        copy.number_value_i64 = node.number_value_i64;
+    } else if node.type == ASTNodeType.AST_FLOAT {
+        copy.float_literal_value = node.float_literal_value;
+    } else if node.type == ASTNodeType.AST_BOOL {
+        copy.bool_literal_value = node.bool_literal_value;
+    } else if node.type == ASTNodeType.AST_STRING {
+        copy.string_literal_value = node.string_literal_value;
+    } else if node.type == ASTNodeType.AST_IDENTIFIER {
+        copy.identifier_name = node.identifier_name;
+    } else if node.type == ASTNodeType.AST_BINARY_EXPR {
+        copy.binary_expr_op = node.binary_expr_op;
+        copy.binary_expr_left = deep_copy_ast_with_field_subst(node.binary_expr_left, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.binary_expr_right = deep_copy_ast_with_field_subst(node.binary_expr_right, ctx, filename, loop_var_name, current_name, current_type_name);
+    } else if node.type == ASTNodeType.AST_UNARY_EXPR {
+        copy.unary_expr_op = node.unary_expr_op;
+        copy.unary_expr_operand = deep_copy_ast_with_field_subst(node.unary_expr_operand, ctx, filename, loop_var_name, current_name, current_type_name);
+    } else if node.type == ASTNodeType.AST_CALL_EXPR {
+        copy.call_expr_callee = deep_copy_ast_with_field_subst(node.call_expr_callee, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.call_expr_arg_count = node.call_expr_arg_count;
+        if node.call_expr_args != null && node.call_expr_arg_count > 0 {
+            copy.call_expr_args = arena_alloc(ctx.arena, @size_of(&ASTNode) * node.call_expr_arg_count) as & & ASTNode;
+            if copy.call_expr_args != null {
+                var i: i32 = 0;
+                while i < node.call_expr_arg_count {
+                    copy.call_expr_args[i] = deep_copy_ast_with_field_subst(node.call_expr_args[i], ctx, filename, loop_var_name, current_name, current_type_name);
+                    i = i + 1;
+                }
+            }
+        }
+    } else if node.type == ASTNodeType.AST_MEMBER_ACCESS {
+        copy.member_access_object = deep_copy_ast_with_field_subst(node.member_access_object, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.member_access_field_name = node.member_access_field_name;
+        copy.member_access_is_module_access = node.member_access_is_module_access;
+        copy.member_access_module_name = node.member_access_module_name;
+    } else if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        copy.array_access_array = deep_copy_ast_with_field_subst(node.array_access_array, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.array_access_index = deep_copy_ast_with_field_subst(node.array_access_index, ctx, filename, loop_var_name, current_name, current_type_name);
+    } else if node.type == ASTNodeType.AST_MC_INTERP {
+        const operand: &ASTNode = node.mc_interp_operand;
+        if operand != null && operand.type == ASTNodeType.AST_IDENTIFIER && operand.identifier_name != null {
+            const arg: &ASTNode = find_param_binding(ctx, operand.identifier_name);
+            if arg != null {
+                var no_param_ctx: MacroExpandContext = MacroExpandContext{ bindings: null, binding_count: 0, arena: ctx.arena, checker: ctx.checker };
+                return deep_copy_ast_with_field_subst(arg, &no_param_ctx, filename, loop_var_name, current_name, current_type_name);
+            }
+        }
+        copy.mc_interp_operand = deep_copy_ast_with_field_subst(operand, ctx, filename, loop_var_name, current_name, current_type_name);
+    } else if node.type == ASTNodeType.AST_BLOCK {
+        copy.block_stmt_count = node.block_stmt_count;
+        if node.block_stmts != null && node.block_stmt_count > 0 {
+            copy.block_stmts = arena_alloc(ctx.arena, @size_of(&ASTNode) * node.block_stmt_count) as & & ASTNode;
+            if copy.block_stmts != null {
+                var i: i32 = 0;
+                while i < node.block_stmt_count {
+                    copy.block_stmts[i] = deep_copy_ast_with_field_subst(node.block_stmts[i], ctx, filename, loop_var_name, current_name, current_type_name);
+                    i = i + 1;
+                }
+            }
+        }
+    } else if node.type == ASTNodeType.AST_IF_STMT {
+        copy.if_stmt_condition = deep_copy_ast_with_field_subst(node.if_stmt_condition, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.if_stmt_then_branch = deep_copy_ast_with_field_subst(node.if_stmt_then_branch, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.if_stmt_else_branch = deep_copy_ast_with_field_subst(node.if_stmt_else_branch, ctx, filename, loop_var_name, current_name, current_type_name);
+    } else if node.type == ASTNodeType.AST_FOR_STMT {
+        copy.for_stmt_var_name = node.for_stmt_var_name;
+        copy.for_stmt_array = deep_copy_ast_with_field_subst(node.for_stmt_array, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.for_stmt_body = deep_copy_ast_with_field_subst(node.for_stmt_body, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.for_stmt_is_range = node.for_stmt_is_range;
+        copy.for_stmt_range_start = deep_copy_ast_with_field_subst(node.for_stmt_range_start, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.for_stmt_range_end = deep_copy_ast_with_field_subst(node.for_stmt_range_end, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.for_stmt_is_ref = node.for_stmt_is_ref;
+    } else if node.type == ASTNodeType.AST_RETURN_STMT {
+        copy.return_stmt_expr = deep_copy_ast_with_field_subst(node.return_stmt_expr, ctx, filename, loop_var_name, current_name, current_type_name);
+    } else if node.type == ASTNodeType.AST_VAR_DECL {
+        copy.var_decl_name = node.var_decl_name;
+        copy.var_decl_type = deep_copy_ast_with_field_subst(node.var_decl_type, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.var_decl_init = deep_copy_ast_with_field_subst(node.var_decl_init, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.var_decl_is_const = node.var_decl_is_const;
+    } else if node.type == ASTNodeType.AST_MC_CODE && node.mc_code_operand != null {
+        copy.mc_code_operand = deep_copy_ast_with_field_subst(node.mc_code_operand, ctx, filename, loop_var_name, current_name, current_type_name);
+    } else if node.type == ASTNodeType.AST_MC_AST && node.mc_ast_operand != null {
+        copy.mc_ast_operand = deep_copy_ast_with_field_subst(node.mc_ast_operand, ctx, filename, loop_var_name, current_name, current_type_name);
+    } else if node.type == ASTNodeType.AST_STRUCT_INIT {
+        copy.struct_init_struct_name = node.struct_init_struct_name;
+        copy.struct_init_field_count = node.struct_init_field_count;
+        if node.struct_init_field_names != null && node.struct_init_field_values != null && node.struct_init_field_count > 0 {
+            copy.struct_init_field_names = arena_alloc(ctx.arena, 8 * node.struct_init_field_count) as &(&byte);
+            copy.struct_init_field_values = arena_alloc(ctx.arena, 8 * node.struct_init_field_count) as &(&ASTNode);
+            if copy.struct_init_field_names != null && copy.struct_init_field_values != null {
+                var i: i32 = 0;
+                while i < node.struct_init_field_count {
+                    copy.struct_init_field_names[i] = node.struct_init_field_names[i];
+                    copy.struct_init_field_values[i] = deep_copy_ast_with_field_subst(node.struct_init_field_values[i], ctx, filename, loop_var_name, current_name, current_type_name);
+                    i = i + 1;
+                }
+            }
+        }
+    } else if node.type == ASTNodeType.AST_TYPE_NAMED {
+        copy.type_named_name = node.type_named_name;
+    } else if node.type == ASTNodeType.AST_TYPE_POINTER {
+        copy.type_pointer_pointed_type = deep_copy_ast_with_field_subst(node.type_pointer_pointed_type, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.type_pointer_is_ffi_pointer = node.type_pointer_is_ffi_pointer;
+    } else {
+        // 未显式处理的节点类型，回退为普通深拷贝（不再做 field 替换）
+        return deep_copy_ast_with_params(node, ctx, filename);
+    }
+    return copy;
+}
+
+// 若 for 语句为「for info.fields |var|」且 info 绑定到 TypeInfo，则展开为块并返回新块；否则返回 null（不展开）。
+fn expand_for_over_typeinfo_fields_once(for_stmt: &ASTNode, ctx: &MacroExpandContext, filename: &byte) &ASTNode {
+    if for_stmt == null || for_stmt.type != ASTNodeType.AST_FOR_STMT || ctx == null || ctx.arena == null {
+        return null;
+    }
+    if for_stmt.for_stmt_array == null || for_stmt.for_stmt_array.type != ASTNodeType.AST_MEMBER_ACCESS {
+        return null;
+    }
+    const obj: &ASTNode = for_stmt.for_stmt_array.member_access_object;
+    if obj == null || obj.type != ASTNodeType.AST_IDENTIFIER || obj.identifier_name == null {
+        return null;
+    }
+    if for_stmt.for_stmt_array.member_access_field_name == null ||
+       strcmp(for_stmt.for_stmt_array.member_access_field_name as *byte, "fields" as *byte) != 0 {
+        return null;
+    }
+    const bound: &ASTNode = find_param_binding(ctx, obj.identifier_name);
+    if bound == null || is_typeinfo_struct_init(bound) == 0 {
+        return null;
+    }
+    const n: i32 = get_typeinfo_field_count_from_ast(bound);
+    if n < 0 {
+        return null;
+    }
+    if for_stmt.for_stmt_body == null {
+        return null;
+    }
+    const loop_var: &byte = for_stmt.for_stmt_var_name;
+    if loop_var == null {
+        return null;
+    }
+    const block: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, for_stmt.line, for_stmt.column, ctx.arena, filename);
+    if block == null {
+        return null;
+    }
+    block.block_stmt_count = n;
+    block.block_stmts = arena_alloc(ctx.arena, @size_of(&ASTNode) * n) as & & ASTNode;
+    if block.block_stmts == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < n {
+        var out_name: &byte = null;
+        var out_type: &byte = null;
+        if get_typeinfo_field_name_type_from_ast(bound, i, ctx.arena, &out_name, &out_type) == 0 {
+            return null;
+        }
+        const body_i: &ASTNode = deep_copy_ast_with_field_subst(for_stmt.for_stmt_body, ctx, filename, loop_var, out_name, out_type);
+        if body_i == null {
+            return null;
+        }
+        block.block_stmts[i] = body_i;
+        i = i + 1;
+    }
+    return block;
+}
+
+// 对宏体做一次「for over TypeInfo.fields」展开（仅顶层）：将每个可展开的 for 替换为块，返回新 body 供后续查找输出使用。
+fn expand_body_for_over_typeinfo_fields(body: &ASTNode, ctx: &MacroExpandContext, filename: &byte) &ASTNode {
+    if body == null || body.type != ASTNodeType.AST_BLOCK || ctx == null || ctx.arena == null {
+        return body;
+    }
+    const n: i32 = body.block_stmt_count;
+    if n <= 0 || body.block_stmts == null {
+        return body;
+    }
+    const new_stmts: &(&ASTNode) = arena_alloc(ctx.arena, @size_of(&ASTNode) * n) as & & ASTNode;
+    if new_stmts == null {
+        return body;
+    }
+    var changed: i32 = 0;
+    var i: i32 = 0;
+    while i < n {
+        const stmt: &ASTNode = body.block_stmts[i];
+        if stmt != null && stmt.type == ASTNodeType.AST_FOR_STMT {
+            const expanded: &ASTNode = expand_for_over_typeinfo_fields_once(stmt, ctx, filename);
+            if expanded != null {
+                new_stmts[i] = expanded;
+                changed = 1;
+            } else {
+                new_stmts[i] = stmt;
+            }
+        } else {
+            new_stmts[i] = stmt;
+        }
+        i = i + 1;
+    }
+    if changed == 0 {
+        return body;
+    }
+    const new_block: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, body.line, body.column, ctx.arena, filename);
+    if new_block == null {
+        return body;
+    }
+    new_block.block_stmt_count = n;
+    new_block.block_stmts = new_stmts;
+    return new_block;
 }
 
 // 编译时求值表达式（用于 @mc_eval）
@@ -841,10 +1244,13 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
         }
     }
     
+    // 编译期 for over TypeInfo.fields 展开（仅顶层）：将可展开的 for 替换为块
+    const body_to_use: &ASTNode = expand_body_for_over_typeinfo_fields(body, &merged_ctx, filename);
+    
     // 遍历宏体语句，查找输出节点
-    var i: i32 = body.block_stmt_count - 1;
+    var i: i32 = body_to_use.block_stmt_count - 1;
     while i >= 0 {
-        const stmt: &ASTNode = body.block_stmts[i];
+        const stmt: &ASTNode = body_to_use.block_stmts[i];
         if stmt == null {
             i = i - 1;
             continue;

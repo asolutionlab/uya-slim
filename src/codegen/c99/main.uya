@@ -1170,7 +1170,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             fputs("    bool is_array;\n" as *byte, codegen.output as *void);
             fputs("    bool is_void;\n" as *byte, codegen.output as *void);
             fputs("    int32_t field_count;\n" as *byte, codegen.output as *void);
-            fputs("    struct FieldInfo fields[16];\n" as *byte, codegen.output as *void);
+            fputs("    struct FieldInfo fields[64];\n" as *byte, codegen.output as *void);
             fputs("};\n\n" as *byte, codegen.output as *void);
             mark_struct_defined(codegen, ("TypeInfo" as *byte) as &byte);
         }

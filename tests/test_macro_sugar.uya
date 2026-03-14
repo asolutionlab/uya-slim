@@ -3,19 +3,7 @@
 use std.testing.assert_eq_i32;
 use std.testing.assert_eq_bool;
 use std.testing.assert_true;
-
-struct TypeInfo {
-    name: *i8,
-    size: i32,
-    align: i32,
-    kind: i32,
-    is_integer: bool,
-    is_float: bool,
-    is_bool: bool,
-    is_pointer: bool,
-    is_array: bool,
-    is_void: bool,
-}
+use std.macro_typeinfo.TypeInfo;
 
 // expr 语法糖
 mc double_it() expr {

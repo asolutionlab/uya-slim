@@ -868,15 +868,11 @@ fn @mc_type(expr) TypeInfo
 **功能描述**：
 在编译时获取表达式的类型信息，返回 `TypeInfo` 结构体。
 
-**返回值**：
+**返回值**：`TypeInfo` 结构体，定义见标准库 `lib/std/macro_typeinfo.uya`（未 use 时由 codegen 自动生成同构内置定义）；**获取 fields 数组大小请用 `@len(info.fields)`**（不导出容量常量）：
+
 ```uya
-struct TypeInfo {
-    kind: TypeKind,      // 类型种类（i32, struct, etc.）
-    name: *byte,         // 类型名称
-    size: i32,           // 类型大小
-    align: i32,          // 类型对齐
-    // ... 其他字段
-}
+struct FieldInfo { name: *i8; type_name: *i8; }
+struct TypeInfo { ...; fields: [FieldInfo: 64]; }
 ```
 
 **使用示例**：

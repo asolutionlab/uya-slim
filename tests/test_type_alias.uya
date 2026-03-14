@@ -52,19 +52,7 @@ type BoxOfBox = Box<Box<i32>>;
 // 宏创建的类型别名
 // ============================================
 
-// TypeInfo 结构体（用于 @mc_type）
-struct TypeInfo {
-    name: *i8,
-    size: i32,
-    align: i32,
-    kind: i32,
-    is_integer: bool,
-    is_float: bool,
-    is_bool: bool,
-    is_pointer: bool,
-    is_array: bool,
-    is_void: bool,
-}
+use std.macro_typeinfo.TypeInfo;
 
 // 类型信息别名
 type TI = TypeInfo;

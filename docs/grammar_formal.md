@@ -468,8 +468,9 @@ macro_call     = ID '(' arg_list ')'
 
 **编译时类型反射（@mc_type 与 TypeInfo）**：
 - `@mc_type(expr)` 为内置函数，参数为类型或表达式，返回 `TypeInfo` 结构体（编译时求值）。
-- **TypeInfo**（编译器提供的结构体，用于宏内类型查询）至少包含：`name`、`size`、`align`、`kind`、`is_integer`、`is_float`、`is_bool`、`is_pointer`、`is_array`、`is_void`；扩展实现可包含 **`fields`**（结构体字段列表），用于编译器反射实现的自动结构体序列化/反序列化（如宏 to_json、from_json）等。
-- **FieldInfo**（当 TypeInfo 表示结构体时）：每个元素描述一个字段，至少包含字段名与类型信息（如 `name`、`type` 或等价字段）；具体字段由实现定义，见 [uya.md](./uya.md#2542-mc_typeexpr)。
+- **TypeInfo**（由标准库 `lib/std/macro_typeinfo.uya` 定义或 codegen 自动生成）：包含 `name`（*i8）、`size`、`align`、`kind`、`is_integer`、`is_float`、`is_bool`、`is_pointer`、`is_array`、`is_void`、`field_count`、`fields`（固定长度数组）；**获取 fields 大小请用 `@len(info.fields)`**（不导出容量常量），用于宏内类型查询与 `for info.fields` 编译期展开。
+- **FieldInfo**（同上）：包含 `name`（*i8）、`type_name`（*i8）；在 `for info.fields |var|` 展开时，`var.name` 替换为当前字段名的标识符 AST，`var.type_name` 替换为当前字段类型的类型 AST。详见 [uya.md §25.4.2](./uya.md#2542-mc_typeexpr) 当前实现小节。
+- **宏展开期对 `for info.fields |var|` 的特殊处理**（语义规则，BNF 不变）：在宏体内，当 `for` 的集合表达式为 `expr.fields` 且 **`expr` 为标识符**、该标识符绑定到 `@mc_type(...)` 得到的 TypeInfo 结构体字面量时，在宏展开阶段将该 for **展开为顺序块**（即 `{ body_0; body_1; ... }`，n = field_count）；循环变量 `var` 的 **`var.name`** 在每轮替换为当前字段名的标识符 AST，**`var.type_name`** 替换为当前字段类型的类型 AST。仅对**宏体顶层**的此类 for 触发展开；受体非标识符或未绑定到 TypeInfo 时保持普通 for 语义，不报错。详见 [uya.md §25.6.1](./uya.md#2561-编译期-for-over-typeinfofields)。
 
 **函数返回类型**：
 - `type` 在 `fn_decl` 中作为返回类型，可为任意类型产生式，包括 `slice_type`、`error_union_type` 及其组合。

@@ -3,28 +3,8 @@
 use std.testing.assert_eq_i32;
 use std.testing.assert_eq_bool;
 use std.testing.assert_true;
-
-// 结构体字段信息（与编译器内置 FieldInfo 一致）
-struct FieldInfo {
-    name: *i8,
-    type_name: *i8,
-}
-
-// 定义简化版 TypeInfo 结构体（含 fields 以支持结构体类型反射）
-struct TypeInfo {
-    name: *i8,
-    size: i32,
-    align: i32,
-    kind: i32,
-    is_integer: bool,
-    is_float: bool,
-    is_bool: bool,
-    is_pointer: bool,
-    is_array: bool,
-    is_void: bool,
-    field_count: i32 = 0,
-    fields: [FieldInfo: 16] = [],
-}
+use std.macro_typeinfo.TypeInfo;
+use std.macro_typeinfo.FieldInfo;
 
 struct Point {
     x: i32,

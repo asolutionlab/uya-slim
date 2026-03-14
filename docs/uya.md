@@ -5591,6 +5591,35 @@ struct MethodSignature {
 }
 ```
 
+**当前实现（与 std.macro_typeinfo 及 codegen 一致）**：
+
+上述为规范目标形态；**当前实现**中 TypeInfo 与 FieldInfo 的布局定义在标准库 `lib/std/macro_typeinfo.uya`，与 codegen 在未 use 该模块时自动生成的内置定义一致。**获取 fields 数组大小时请使用 `@len(info.fields)`**（不导出容量常量）。
+
+```uya
+// lib/std/macro_typeinfo.uya
+export struct FieldInfo {
+    name: *i8,
+    type_name: *i8,
+}
+
+export struct TypeInfo {
+    name: *i8,
+    size: i32,
+    align: i32,
+    kind: i32,
+    is_integer: bool,
+    is_float: bool,
+    is_bool: bool,
+    is_pointer: bool,
+    is_array: bool,
+    is_void: bool,
+    field_count: i32 = 0,
+    fields: [FieldInfo: 64] = [],
+}
+```
+
+使用 `@mc_type` 或 `for info.fields` 时，可通过 `use std.macro_typeinfo.TypeInfo`（及 `use std.macro_typeinfo.FieldInfo`）引用；若不 use，codegen 在检测到 `@mc_type` 时会自动生成上述内置定义。宏内 `for info.fields |var|` 的循环变量 `var` 使用 **`var.name`**（标识符 AST）与 **`var.type_name`**（类型 AST）与当前实现一致。
+
 #### 25.4.3 `@mc_ast(expr)`
 
 **代码转抽象语法树函数**
@@ -5827,6 +5856,44 @@ mc specialize(val) expr {
         @mc_code(@mc_ast( simple_op(${@mc_ast(v)}) ));
     }
 }
+```
+
+#### 25.6.1 编译期 for over TypeInfo.fields
+
+在宏体内，对 `@mc_type(T)` 得到的 TypeInfo 的 `fields` 可进行**编译期展开**的 for 循环：将 `for info.fields |field| { body }` 在宏展开阶段展开为顺序执行的块 `{ body_0; body_1; ... ; body_{n-1} }`，其中 `body_i` 为第 i 个字段对应的 body 副本，且循环变量 `field` 的成员访问在每轮中被替换为当前字段的元数据。
+
+**语法形式**：`for expr.fields |var| { body }`
+
+**触发条件**（须同时满足）：
+
+- `expr` **必须为标识符**（即 `.fields` 的受体为简单变量名，如 `info`）。若受体为表达式（如 `(get_info()).fields`），则不触发编译期展开，按普通 for 语义处理，不报错。
+- 该标识符在当前宏上下文中绑定到 **TypeInfo 结构体字面量**（即来自 `const info = @mc_type(T);` 的 `info`）。结构体名须与编译器生成 TypeInfo 时使用的名字一致（当前为 `"TypeInfo"`）。
+- **仅宏体顶层的 for** 触发展开：只对宏体块中直接出现的 `for info.fields |var|` 做展开，不递归进 body 内部再展开内层同类 for。
+
+**不触发**：`for 0..n |i|`（范围 for）；受体非标识符；标识符未绑定或绑定的不是 TypeInfo；非顶层 for。上述情况保持普通 for 语义。
+
+**替换语义**：在每一轮展开的 `body_i` 中：
+
+- `var.name`：替换为**以当前字段名为名的标识符 AST**（用于生成如 `self.$(field.name)` 的代码）。
+- `var.type_name`：替换为**表示当前字段类型的类型 AST**（如 `AST_TYPE_NAMED`，仅简单类型名），用于生成类型注解或调用。
+
+**展开结果**：原 for 语句被替换为一个块，块内为 n 条语句（n = TypeInfo.field_count），每条为 body 的一份拷贝（经上述替换）。该块作为整体参与后续宏展开；若宏的返回标签为 `stmt` 或 `struct` 且该块为「最后一个有效语句」，则**整个块**作为宏的单一输出。
+
+**示例**（语义说明，具体实现依赖编译器支持）：
+
+```uya
+struct Point { x: i32; y: f64; }
+
+mc gen_serialize(T: type) stmt {
+    const info = @mc_type(T);
+    for info.fields |f| {
+        @mc_code(@mc_ast(
+            buffer.write_${f.type_name}(self.${f.name});
+        ));
+    }
+}
+// 展开后等价于（Point 有两个字段时）：
+// { buffer.write_i32(self.x); buffer.write_f64(self.y); }
 ```
 
 ### 25.7 宏与函数的区别
