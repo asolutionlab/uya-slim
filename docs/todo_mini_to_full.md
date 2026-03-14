@@ -867,7 +867,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 结构体含泛型 union 字段时 codegen 先输出 union 单态（如 `Poll_i32`），并用 arena 持久化 tagged 名避免重定义
   - [x] 测试：`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya`、`test_async_nested.uya` 通过 `--c99` 与 `--uya --c99`
   - [ ] `std.async.task` 模块：拆分/扩展（当前已在 async.uya 中）
-  - [~] `std.async.io` 模块：`AsyncWriter`, `AsyncReader` 接口 + `MemAsyncWriter`（非阻塞 AsyncFd 待实现）
+  - [~] `std.async.io` 模块：`AsyncWriter`, `AsyncReader` 接口 + `MemAsyncWriter`、`MemAsyncReader`（非阻塞 AsyncFd 待实现）
   - [x] `std.async.event` 模块：`EventLoop`（epoll/kqueue/IOCP）
     - [x] epoll 系统调用层：`lib/syscall/linux.uya` 与 `lib/libc/syscall.uya` 已添加 `SYS_epoll_*`、`EpollEvent`、`EPOLLET`、`sys_epoll_create1`/`sys_epoll_ctl`/`sys_epoll_wait`；`test_epoll_syscall.uya` 通过 `--c99` 与 `--uya --c99`
     - [x] `lib/std/async_event.uya`：`EventKind`、`interface EventLoop`、`struct LinuxEpoll : EventLoop`（`use libc.syscall`）

@@ -39,3 +39,24 @@ test "mem_async_writer_write_returns_ready" {
 test "mem_async_writer_flush_returns_ready" {
     try test_flush_impl();
 }
+
+fn test_read_impl() !void {
+    var data: [byte: 4] = [ 10, 20, 30, 40 ];
+    var r: MemAsyncReader = mem_async_reader_new(&data[0] as &const byte, 4);
+    var buf: [byte: 8] = [];
+    const f: Future<usize> = try r.read(&buf[0], 4);
+    const wk: Waker = Waker{};
+    const p: Poll<usize> = f.poll(&wk);
+    var result: usize = 0;
+    match p {
+        .Ready(n) => { result = n; },
+        .Pending(_) => { },
+    };
+    try assert_eq_i32(result as i32, 4);
+    try assert_eq_i32(buf[0] as i32, 10);
+    try assert_eq_i32(buf[3] as i32, 40);
+}
+
+test "mem_async_reader_read_returns_ready" {
+    try test_read_impl();
+}

@@ -112,3 +112,29 @@ export fn mem_async_writer_new() MemAsyncWriter {
     return MemAsyncWriter{ _pos: 0 };
 }
 
+/// 内存-backed 异步读取器（用于测试）。从预加载缓冲区读取，每次 read 立即返回 Ready(n)。
+export struct MemAsyncReader : AsyncReader {
+    _buf: &const byte,
+    _len: usize,
+    _pos: usize,
+
+    fn read(self: &Self, buf: &byte, count: usize) !Future<usize> {
+        var avail: usize = self._len - self._pos;
+        if avail > count {
+            avail = count;
+        }
+        var i: usize = 0;
+        while i < avail {
+            buf[i] = self._buf[self._pos + i];
+            i = i + 1;
+        }
+        self._pos = self._pos + avail;
+        return Future<usize>{ state: Poll<usize>.Ready(avail) };
+    }
+}
+
+/// 从给定缓冲区创建 MemAsyncReader。
+export fn mem_async_reader_new(data: &const byte, len: usize) MemAsyncReader {
+    return MemAsyncReader{ _buf: data, _len: len, _pos: 0 };
+}
+
