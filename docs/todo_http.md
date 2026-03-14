@@ -1,0 +1,184 @@
+# Uya HTTP 框架实现待办
+
+**参考**：[http_framework_design.md](http_framework_design.md)、[.cursor/plans/uya_高性能_http_框架_09efdaaa.plan.md](.cursor/plans/uya_高性能_http_框架_09efdaaa.plan.md)
+
+实现时遵循项目 TDD 流程：先添加测试 → 实现代码 → `make check` 验证。新增测试需同时通过 `--c99` 与 `--uya --c99`。
+
+---
+
+## Phase 1：TCP 基础设施
+
+### 1.1 前置
+
+- [ ] 确认 Uya 可用的 socket/syscall 封装（若尚无，在 **lib/libc/** 如 syscall.uya 或 socket.uya 增加 socket 相关系统调用封装；若需更高级 API 再在 lib/std/net 或 lib/std/sys 提供）
+- [ ] 确认 fd 类型（i32 或等效）与 close 语义
+
+### 1.2 测试
+
+- [ ] `tests/test_tcp_*.uya` 或 `tests/programs/test_tcp_*.uya`：建立 listen、accept 一次、读写字节、关闭
+
+---
+
+## Phase 2：http.types
+
+### 2.1 目录与错误
+
+- [ ] 创建 `lib/std/http/` 目录
+- [ ] `types.uya`：预定义错误 InvalidRequest、MethodNotAllowed、URITooLong、HeaderTooLarge、PayloadTooLarge、TooManyParams、ValueTooLong、InvalidToken、InvalidBoundary、TooManyParts
+
+### 2.2 枚举与常量
+
+- [ ] Method 枚举：GET、POST、PUT、PATCH、DELETE、OPTIONS、HEAD
+- [ ] Status 枚举：OK、Created、NoContent、BadRequest、NotFound、MethodNotAllowed、Conflict、InternalServerError 等
+- [ ] ServerMode 枚举：Blocking、Epoll、ThreadPool
+- [ ] 常量 P=8、Q=16、L=256、MAX_MULTIPART_PARTS（path_params/query 条数、单 key/value 最大字节、multipart part 数量上限）
+
+### 2.3 结构体
+
+- [ ] Request：method、path、path_params、query、headers、body（借用 &[byte]，buffer 归 Server/Conn）；multipart 时提供 Part 类型与 parse_multipart / req.multipart()
+- [ ] path_params/query 为固定容量线性数组（P、Q、L）
+- [ ] Response：status、headers、body
+- [ ] Context：request、response、conn
+- [ ] Conn：fd；实现 `fn drop(self: Conn) void`（按值关闭 fd）
+
+### 2.4 接口与辅助
+
+- [ ] Handler 接口：`fn serve(self: &Self, ctx: &Context) !void`
+- [ ] Middleware 接口：`fn process(self: &Self, ctx: &Context, next: Handler) !void`（首版仅类型）
+- [ ] Request.get_header(self: &Self, name: &[byte]) !&[byte]（name 为 header 名切片，语法规范 slice_type）
+- [ ] get_bearer_token(req: &Request) !&[byte]（在 types 或同模块，避免 jwt 循环依赖）
+- [ ] ServerConfig：mode、max_connections
+
+### 2.5 测试
+
+- [ ] `tests/test_http_types.uya`：枚举、Request/Response/Context 构造、get_header、get_bearer_token、path_params/query 边界
+
+---
+
+## Phase 3：http.parse
+
+### 3.1 解析器
+
+- [ ] `parse.uya`：`parse(buf: &[byte]) !Request` 或 `!ParseResult`；若单请求则仅返回 Request，若支持 Keep-alive 则返回 consumed（或 ParseResult 含 request + consumed），供下一轮 parse 使用剩余数据
+- [ ] 请求行：METHOD SP URI SP VERSION；URI 含 path + query
+- [ ] 头部解析：Content-Type、Content-Length 等；单 header 与总 header 受 L/常量限制
+- [ ] Body：按 Content-Length，首版 body 上限（如 64KB）；Content-Type 为 multipart/form-data 时按 boundary 解析 part
+- [ ] Multipart：parse_multipart(body, boundary) 或 Request.multipart()；Part 含 name、filename、content_type、body；常量 MAX_MULTIPART_PARTS 限定 part 数；InvalidBoundary/TooManyParts
+- [ ] 所有下标访问在当前函数内证明安全（循环条件/边界检查），失败返回 error.XXX
+
+### 3.2 Keep-alive
+
+- [ ] 单请求边界：请求行 + 头部 + Content-Length body；多请求时根据 parse 返回的 consumed 或 remaining 将剩余数据作为下一轮 parse 输入
+
+### 3.3 测试
+
+- [ ] `tests/test_http_parse.uya`：GET/POST、path、query、headers、body、边界与错误（InvalidRequest、URITooLong、HeaderTooLarge、PayloadTooLarge）
+- [ ] `tests/test_http_multipart.uya`：multipart/form-data 解析、boundary、part name/filename/body、TooManyParts/InvalidBoundary
+
+---
+
+## Phase 4：http.router
+
+### 4.1 Router
+
+- [ ] `router.uya`：路由表 (method, path_pattern) -> Handler；容量由常量限定（如 MAX_ROUTES），不用字面常数
+- [ ] 路径参数：`/users/:id`、`/posts/:postId/comments/:commentId`；匹配时写入 path_params
+- [ ] 404：路径未匹配；405：路径匹配但方法不允许
+
+### 4.2 资源组（可选）
+
+- [ ] ResourceHandlers 结构体字面量：get、post、get_by_id、put、delete 等；router.resource("/users", handlers)
+
+### 4.3 测试
+
+- [ ] `tests/test_http_router.uya`：注册、匹配、path_params 提取、404/405
+
+---
+
+## Phase 5：http.server
+
+### 5.1 Server
+
+- [ ] `server.uya`：ServerConfig、Server；listen、accept 循环
+- [ ] 首版：阻塞 accept + 每连接一线程；Conn RAII（drop 关闭 fd）
+- [ ] 每连接：读 buffer -> parse -> router.serve(ctx) -> 写 Response；Keep-alive 时剩余数据下一轮 parse
+- [ ] 错误路径：parse 失败 / Handler 错误 -> 4xx/5xx 响应并发送
+
+### 5.2 epoll 预留
+
+- [ ] ServerConfig.mode 含 ServerMode.Epoll；server.uya 中预留 run_epoll_loop 或条件分支（首版不实现）
+
+### 5.3 测试与示例
+
+- [ ] `tests/test_http_server.uya`：本地 listen、发请求、校验响应（plaintext、简单 JSON）
+- [ ] `examples/http_server.uya` 或 `tests/programs/http_echo.uya`：最小可运行示例
+
+---
+
+## Phase 6：测试与示例完善
+
+### 6.1 覆盖
+
+- [ ] 所有 !T 错误路径有测试（parse、router、get_header、get_bearer_token）
+- [ ] 多请求 Keep-alive 测试
+- [ ] 预期编译失败：`error_http_*.uya`（若有）
+
+### 6.2 示例
+
+- [ ] REST 示例：GET/POST 资源、path_params、query、Status.Created/NoContent
+- [ ] 在 [http_framework_design.md](http_framework_design.md) 或 README 的 HTTP 小节中注明：TDD、`make check`、`--uya --c99` 要求
+
+---
+
+## Phase 7：http.jwt
+
+### 7.1 工具与解析
+
+- [ ] `jwt.uya`：Base64URL 解码（decode_base64url）
+- [ ] JWT 三段解析：header.payload.signature；不依赖 get_bearer_token
+
+### 7.2 API
+
+- [ ] verify(token: &[byte], secret: &[byte]) !&[byte]（HS256 验签，返回 raw payload）
+- [ ] decode(token: &[byte]) !&[byte]（不验签）
+- [ ] sign(payload: &[byte], secret: &[byte]) !&[byte]（签发 HS256）
+- [ ] has_expired(payload: &[byte]) bool（可选；首版可不实现）
+
+### 7.3 依赖
+
+- [ ] HMAC-SHA256：FFI（libc/OpenSSL）或最小自实现；文档注明选择
+
+### 7.4 测试
+
+- [ ] `tests/test_http_jwt.uya`：verify、decode、sign、无效 token 返回 InvalidToken
+
+---
+
+## Phase 8：性能基准与验证
+
+### 8.1 基准程序
+
+- [ ] `benchmarks/http_bench.uya` 或等价：plaintext、简单 JSON、path 参数；body 档位 1KB/10KB/100KB
+- [ ] 记录 QPS、p50/p95/p99 延迟、并发连接数、内存（RSS/每连接）
+
+### 8.2 环境与脚本
+
+- [ ] 文档记录：CPU、内存、OS、编译器；wrk 使用 keep-alive
+- [ ] 脚本解析 wrk 输出；基线存入 `benchmarks/baseline.json`
+- [ ] 回归允许 ±5%；CI 或文档中说明如何复现
+
+---
+
+## Phase 9/10：后续迭代
+
+- [ ] ServerMode.Epoll 多路复用实现
+- [ ] 中间件实现：logging、CORS、jwt_auth（包装 Handler，401/403 语义见设计文档）
+- [ ] 异步 Handler、线程池模式（ThreadPool）
+- [ ] http.client（可选）
+- [ ] 与 std.json 集成（请求/响应 JSON 序列化）
+
+---
+
+## 与主待办集成
+
+- [ ] 在 [todo_mini_to_full.md](todo_mini_to_full.md) 中添加 **std.http** 条目（若尚未存在）
