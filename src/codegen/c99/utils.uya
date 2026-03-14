@@ -82,6 +82,16 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.stack_size = stack_size;
     // freestanding 模式：仅在 nostdlib 模式下启用（不包含任何标准库头文件）
     codegen.freestanding = is_nostdlib;
+    // async 状态机参数捕获
+    codegen.async_state_var = null;
+    codegen.async_param_count = 0;
+    codegen.async_loop_var_name = null;
+    codegen.async_loop_var_c = null;
+    ii = 0;
+    while ii < 16 {
+        codegen.async_param_names[ii] = null;
+        ii = ii + 1;
+    }
 
     return 0;
 }

@@ -586,17 +586,19 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             return make_void_type();
         }
         const operand_type: Type = checker_infer_type(checker, expr.await_expr_operand);
-        // 支持两种形式：Future<!T> 或 !Future<T>
+        // 支持 Future<!T>、!Future<T>、Future<T>（单态名如 Future_usize 也视为 Future）
         var inner_err: &Type = null;
         if operand_type.kind == TypeKind.TYPE_INTERFACE && operand_type.interface_name != null &&
-            str_equals(operand_type.interface_name, "Future" as *byte) != 0 {
+            (str_equals(operand_type.interface_name, "Future" as *byte) != 0 ||
+             (strlen(operand_type.interface_name as *byte) >= 6 && strncmp(operand_type.interface_name as *byte, "Future" as *byte, 6) == 0)) {
             if operand_type.interface_type_arg_count != 1 || operand_type.interface_type_args == null {
                 checker_report_error(checker, expr, "@await 操作数必须是 Future<!T> 或 !Future<T> 类型" as &byte);
                 return make_void_type();
             }
             inner_err = operand_type.interface_type_args;
         } else if operand_type.kind == TypeKind.TYPE_STRUCT && operand_type.struct_name != null &&
-            str_equals(operand_type.struct_name, "Future" as *byte) != 0 {
+            (str_equals(operand_type.struct_name, "Future" as *byte) != 0 ||
+             (strlen(operand_type.struct_name as *byte) >= 6 && strncmp(operand_type.struct_name as *byte, "Future" as *byte, 6) == 0)) {
             if operand_type.struct_type_arg_count != 1 || operand_type.struct_type_args == null {
                 checker_report_error(checker, expr, "@await 操作数必须是 Future<!T> 或 !Future<T> 类型" as &byte);
                 return make_void_type();
@@ -606,11 +608,13 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             // !Future<T>：取出 payload Future<T>，@await 结果为 !T（先解包 ! 再 await，语义上等价）
             const payload: Type = operand_type.error_union_payload_type[0];
             if payload.kind == TypeKind.TYPE_INTERFACE && payload.interface_name != null &&
-                str_equals(payload.interface_name, "Future" as *byte) != 0 &&
+                (str_equals(payload.interface_name, "Future" as *byte) != 0 ||
+                 (strlen(payload.interface_name as *byte) >= 6 && strncmp(payload.interface_name as *byte, "Future" as *byte, 6) == 0)) &&
                 payload.interface_type_arg_count == 1 && payload.interface_type_args != null {
                 inner_err = payload.interface_type_args;
             } else if payload.kind == TypeKind.TYPE_STRUCT && payload.struct_name != null &&
-                str_equals(payload.struct_name, "Future" as *byte) != 0 &&
+                (str_equals(payload.struct_name, "Future" as *byte) != 0 ||
+                 (strlen(payload.struct_name as *byte) >= 6 && strncmp(payload.struct_name as *byte, "Future" as *byte, 6) == 0)) &&
                 payload.struct_type_arg_count == 1 && payload.struct_type_args != null {
                 inner_err = payload.struct_type_args;
             }
@@ -625,12 +629,17 @@ fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             checker_report_error(checker, expr, "@await 操作数必须是 Future<!T> 或 !Future<T> 类型" as &byte);
             return make_void_type();
         }
-        if inner_err == null || inner_err[0].kind != TypeKind.TYPE_ERROR_UNION || inner_err[0].error_union_payload_type == null {
-            checker_report_error(checker, expr, "@await 操作数必须是 Future<!T> 或 !Future<T> 类型" as &byte);
+        if inner_err == null {
+            checker_report_error(checker, expr, "@await 操作数必须是 Future<!T> 或 !Future<T> 或 Future<T> 类型" as &byte);
             return make_void_type();
         }
-        // @await 返回 !T（即 Future 的类型参数）
-        return inner_err[0];
+        // Future<!T>：@await 返回 !T
+        if inner_err[0].kind == TypeKind.TYPE_ERROR_UNION && inner_err[0].error_union_payload_type != null {
+            return inner_err[0];
+        }
+        // Future<T>（T 非错误联合）：@await 操作数必须是 !Future<T> 或 Future<!T>，不接受 plain Future<T>
+        checker_report_error(checker, expr, "@await 操作数必须是 !Future<T> 或 Future<!T> 类型" as &byte);
+        return make_void_type();
     } else if expr.type == ASTNodeType.AST_CATCH_EXPR {
         return infer_catch_expr(checker, expr);
     } else if expr.type == ASTNodeType.AST_ERROR_VALUE {
@@ -1002,7 +1011,11 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
             }
             
             // 结构体方法调用：callee 为 obj.method，obj 类型为结构体（非接口）
-            const object_type: Type = checker_infer_type(checker, callee.member_access_object);
+            var object_type: Type = checker_infer_type(checker, callee.member_access_object);
+            // 若对象是指针类型，解引用以获取方法（与 check_call 一致）
+            if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
+                object_type = object_type.pointer_to[0];
+            }
             if object_type.kind == TypeKind.TYPE_STRUCT && object_type.struct_name != null && checker.program_node != null {
                 const method_name: &byte = callee.member_access_field_name;
                 const m: &ASTNode = find_method_in_struct(checker.program_node, object_type.struct_name, method_name);

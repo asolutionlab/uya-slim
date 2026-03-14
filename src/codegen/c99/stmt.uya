@@ -1827,6 +1827,19 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         if set_union_mono_context_from_tagged_type(codegen, union_decl, m_type) != 0 { }
                         if vnode != null && vnode.type == ASTNodeType.AST_VAR_DECL && vnode.var_decl_type != null {
                             vtype = c99_type_to_c(codegen, vnode.var_decl_type);
+                            if vtype != null && vnode.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                                vnode.var_decl_type.type_named_name != null && vnode.var_decl_type.type_named_type_arg_count == 0 &&
+                                strcmp(vtype as *byte, vnode.var_decl_type.type_named_name as *byte) == 0 &&
+                                m_type != null {
+                                const p_suffix: *byte = strstr(m_type as *byte, "uya_tagged_" as *byte);
+                                if p_suffix != null {
+                                    const suffix_fb: &byte = &p_suffix[11] as &byte;
+                                    const fallback_c: &byte = variant_c_type_from_tagged_suffix(codegen, union_decl, suffix_fb);
+                                    if fallback_c != null {
+                                        vtype = fallback_c;
+                                    }
+                                }
+                            }
                         }
                         codegen.struct_type_params = saved_sp;
                         codegen.struct_type_args = saved_sa;

@@ -1002,7 +1002,18 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         // 字段不存在，尝试查找方法
         const method: &ASTNode = find_method_in_struct_c99(codegen, struct_decl.struct_decl_name, field_name);
         if method != null && method.type == ASTNodeType.AST_FN_DECL {
-            return c99_type_to_c(codegen, method.fn_decl_return_type);
+            var ret: &byte = ("int32_t" as *byte) as &byte;
+            const saved_sp: &TypeParam = codegen.struct_type_params;
+            const saved_sa: & & ASTNode = codegen.struct_type_args;
+            const saved_spc: i32 = codegen.struct_type_param_count;
+            const saved_sac: i32 = codegen.struct_type_arg_count;
+            if set_struct_mono_context_from_type_c(codegen, base_type_c) != 0 { }
+            ret = c99_type_to_c(codegen, method.fn_decl_return_type);
+            codegen.struct_type_params = saved_sp;
+            codegen.struct_type_args = saved_sa;
+            codegen.struct_type_param_count = saved_spc;
+            codegen.struct_type_arg_count = saved_sac;
+            return ret;
         }
         return ("int32_t" as *byte) as &byte;
     } else if expr.type == ASTNodeType.AST_UNARY_EXPR {

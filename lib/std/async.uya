@@ -41,6 +41,11 @@ export fn ok<T>(value: T) !T {
     return value;
 }
 
+/// ok<Future<usize>> 的非泛型特化，避免 generic codegen 单态化顺序问题。
+export fn ok_future_usize(value: Future<usize>) !Future<usize> {
+    return value;
+}
+
 /// 创建已就绪任务。poll 时立即返回 Ready(value)。
 export fn task_ready<T>(value: T) Task<T> {
     return Task<T>{ state: Poll<T>.Ready(value) };
@@ -76,6 +81,39 @@ export fn block_on_i32(f: Future<!i32>) !i32 {
     }
 }
 
+/// block_on 的 usize 特化。
+export fn block_on_usize(f: Future<!usize>) !usize {
+    const w: Waker = Waker{};
+    while true {
+        const p: Poll<!usize> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => { },
+        };
+    }
+}
+
+/// block_on 的 Future<usize> 特化（无错误传播，直接返回 usize）。
+export fn block_on_usize_plain(f: Future<usize>) usize {
+    const w: Waker = Waker{};
+    while true {
+        const p: Poll<usize> = f.poll(&w);
+        match p {
+            .Ready(n) => { return n; },
+            .Pending(_) => { },
+        };
+    }
+}
+
+/// 运行 !Future<usize>：先 try 得到 Future<usize>，再 block_on_usize_plain。
+/// 注意：async_copy() 返回的是 err_union，其 .value 实际为状态机（Future<!Future<usize>>）。
+/// 因此需先 block_on 外层得到 !Future<usize>，再 try 得到 Future<usize>，再 block_on 内层。
+/// 本函数接受 err_union_!Future<usize>，内部完成两层 block_on + try。
+export fn block_on_future_usize_err(f: !Future<usize>) !usize {
+    const inner: Future<usize> = try f;
+    return block_on_usize_plain(inner);
+}
+
 // ============================================================
 // std.async.io - 异步 I/O 抽象（设计见 docs/std_async_design.md）
 // ============================================================
@@ -98,12 +136,14 @@ export struct MemAsyncWriter : AsyncWriter {
     fn write(self: &Self, data: &const byte, count: usize) !Future<usize> {
         _ = self;
         _ = data;
-        return Future<usize>{ state: Poll<usize>.Ready(count) };
+        const f: Future<usize> = Future<usize>{ state: Poll<usize>.Ready(count) };
+        return ok_future_usize(f);
     }
 
     fn flush(self: &Self) !Future<usize> {
         _ = self;
-        return Future<usize>{ state: Poll<usize>.Ready(0) };
+        const f: Future<usize> = Future<usize>{ state: Poll<usize>.Ready(0) };
+        return ok_future_usize(f);
     }
 }
 
@@ -129,7 +169,8 @@ export struct MemAsyncReader : AsyncReader {
             i = i + 1;
         }
         self._pos = self._pos + avail;
-        return Future<usize>{ state: Poll<usize>.Ready(avail) };
+        const f: Future<usize> = Future<usize>{ state: Poll<usize>.Ready(avail) };
+        return ok_future_usize(f);
     }
 }
 
@@ -138,8 +179,24 @@ export fn mem_async_reader_new(data: &const byte, len: usize) MemAsyncReader {
     return MemAsyncReader{ _buf: data, _len: len, _pos: 0 };
 }
 
+/// 从 MemAsyncReader 复制到 MemAsyncWriter，直到读取 0 字节。返回总复制字节数。
+export @async_fn fn async_copy(reader: &MemAsyncReader, writer: &MemAsyncWriter, buf: &byte, buf_len: usize) !Future<usize> {
+    var total: usize = 0;
+    while true {
+        const n: usize = try @await reader.read(buf, buf_len);
+        if n == 0 {
+            return total;
+        }
+        const written: usize = try @await writer.write(buf as &const byte, n);
+        total = total + written;
+        if written < n {
+            return total;
+        }
+    }
+}
+
 // ============================================================
-// AsyncFd - 基于文件描述符的异步 I/O（同步实现，待扩展非阻塞）
+// AsyncFd - 基于文件描述符的异步 I/O - 基于文件描述符的异步 I/O（同步实现，待扩展非阻塞）
 // ============================================================
 
 use libc.syscall;

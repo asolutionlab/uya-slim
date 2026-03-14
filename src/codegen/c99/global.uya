@@ -172,9 +172,32 @@ fn global_var_name_matches(codegen: &C99CodeGenerator, i: i32, name: &byte) i32 
 }
 
 // 引用标识符时使用的 C 名称（全局常量与系统宏冲突时返回 uya_ 前缀名）
+// 在 async 状态机 poll 内：参数标识符输出为 s->param
 fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte {
     if codegen == null || name == null {
         return get_safe_c_identifier(codegen, name);
+    }
+    if codegen.async_state_var != null && codegen.async_loop_var_name != null &&
+        strcmp(codegen.async_loop_var_name as *byte, name as *byte) == 0 {
+        return codegen.async_loop_var_c;
+    }
+    if codegen.async_state_var != null && codegen.async_param_count > 0 {
+        var ai: i32 = 0;
+        while ai < codegen.async_param_count && ai < 16 {
+            if codegen.async_param_names[ai] != null &&
+                strcmp(codegen.async_param_names[ai] as *byte, name as *byte) == 0 {
+                const s_len: i32 = strlen(codegen.async_state_var as *byte);
+                const n_len: i32 = strlen(name as *byte);
+                const buf: &byte = arena_alloc(codegen.arena, (s_len + 2 + n_len + 1) as usize) as &byte;
+                if buf != null {
+                    snprintf(buf as *byte, s_len + 2 + n_len + 1, "%s->%s" as *byte,
+                        codegen.async_state_var as *byte, name as *byte);
+                    return buf;
+                }
+                break;
+            }
+            ai = ai + 1;
+        }
     }
     var i: i32 = 0;
     while i < codegen.global_variable_count {

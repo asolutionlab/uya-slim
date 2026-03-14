@@ -655,10 +655,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 continue;
             }
             
-            // 检查是否定义了与标准库冲突的函数
-            if check_decl.type == ASTNodeType.AST_FN_DECL {
+            // 检查是否定义了与标准库冲突的函数（仅限有实现的函数，extern 声明不冲突）
+            if check_decl.type == ASTNodeType.AST_FN_DECL && check_decl.fn_decl_body != null {
                 const fn_name: &byte = check_decl.fn_decl_name;
-                // 检查是否定义了与 stdio.h 冲突的函数（不管是否有 extern 属性）
+                // 检查是否定义了与 stdio.h 冲突的函数
                 if fn_name != null && (
                     strcmp(fn_name as *byte, ("fopen" as *byte) as &byte) == 0 ||
                     strcmp(fn_name as *byte, ("fclose" as *byte) as &byte) == 0 ||
@@ -692,6 +692,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             // 预扫描函数体，检测标准库函数调用
             if check_decl.type == ASTNodeType.AST_FN_DECL && check_decl.fn_decl_body != null {
                 collect_stdlib_functions_from_node(codegen, check_decl.fn_decl_body);
+                if check_decl.fn_decl_is_async != 0 {
+                    codegen.needs_stdlib_h = 1;
+                }
             }
             
             check_i = check_i + 1;

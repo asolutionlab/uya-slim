@@ -640,7 +640,7 @@ export fn proof_optimization_pass(checker: &TypeChecker, node: &ASTNode) &ASTNod
         }
     }
     
-    // 处理其他节点类型
+    // 处理其他节点类型（需递归以访问所有包含的表达式）
     if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
         var i: i32 = 0;
         while i < node.block_stmt_count {
@@ -648,8 +648,19 @@ export fn proof_optimization_pass(checker: &TypeChecker, node: &ASTNode) &ASTNod
             i = i + 1;
         }
     } else if node.type == ASTNodeType.AST_FN_DECL && node.fn_decl_body != null {
-        // 处理函数体
         proof_optimization_pass(checker, node.fn_decl_body);
+    } else if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
+        // 变量初始化中的数组访问等也会被证明优化
+        proof_optimization_pass(checker, node.var_decl_init);
+    } else if node.type == ASTNodeType.AST_RETURN_STMT && node.return_stmt_expr != null {
+        proof_optimization_pass(checker, node.return_stmt_expr);
+    } else if node.type == ASTNodeType.AST_ASSIGN {
+        if node.assign_dest != null {
+            proof_optimization_pass(checker, node.assign_dest);
+        }
+        if node.assign_src != null {
+            proof_optimization_pass(checker, node.assign_src);
+        }
     }
     
     return node;
