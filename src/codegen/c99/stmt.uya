@@ -271,6 +271,12 @@ fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     const then_branch: &ASTNode = stmt.if_stmt_then_branch;
     const else_branch: &ASTNode = stmt.if_stmt_else_branch;
 
+    // 证明优化：条件恒为真时直接生成 then 分支，移除 if 包装
+    if stmt.is_proved_safe != 0 && then_branch != null && then_branch.is_dead_code == 0 {
+        gen_stmt(codegen, then_branch);
+        return;
+    }
+
     // 检查死代码标记（优化器设置）
     var then_is_dead: i32 = 0;
     var else_is_dead: i32 = 0;

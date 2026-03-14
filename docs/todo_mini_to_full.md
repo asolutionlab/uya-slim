@@ -2604,8 +2604,8 @@ interface IReadWriter {
 
 #### 3. 优化与完善（持续进行）⭐⭐⭐
 
-- [ ] **证明优化 Codegen 完善**：在 `src/codegen/c99/stmt.uya` 的 `gen_if_stmt` 中利用 `is_proved_safe`，当 if 条件恒为真时直接生成 then 分支（移除 if 包装），不保留条件；当前 optimizer 已标记 `is_proved_safe`，但 codegen 未使用
-- [ ] **优化器递归 test 体**：在 `src/checker/optimizer.uya` 中为 `dead_code_elimination_pass` 和 `proof_optimization_pass` 添加 `AST_TEST_STMT` 递归，处理 `test_stmt_body`，否则 test 块内的 if (true/false) 等不会被死代码消除或证明优化
+- [x] **证明优化 Codegen 完善**：在 `src/codegen/c99/stmt.uya` 的 `gen_if_stmt` 中利用 `is_proved_safe`，当 if 条件恒为真时直接生成 then 分支（移除 if 包装），不保留条件；optimizer 已扩展支持 AST_BOOL/常量表达式，codegen 已完善
+- [x] **优化器递归 test 体**：在 `src/checker/optimizer.uya` 中为 `dead_code_elimination_pass` 和 `proof_optimization_pass` 添加 `AST_TEST_STMT` 递归
 - 修复泛型接口中的 const 限定符警告
 - 完善错误信息提示
 - 性能优化（编译速度、生成代码质量）

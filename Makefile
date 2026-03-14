@@ -199,7 +199,15 @@ check: b
 		exit 1; \
 	fi
 	@echo ""
-	@echo "✓ 验证通过（自举 + 测试）"
+	@echo "验证证明优化..."
+	@./tests/verify_proof_optimization.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ 证明优化验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "✓ 验证通过（自举 + 测试 + 证明优化）"
 
 # 备份（依赖 check 通过）
 backup: check

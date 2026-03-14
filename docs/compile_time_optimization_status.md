@@ -126,7 +126,7 @@
 ### 5. 代码生成支持
 - 修改了 `src/codegen/c99/stmt.uya` 中的 `gen_if_stmt` 函数
   - 支持跳过死代码分支（`is_dead_code`）
-  - ⚠️ **待实现**：证明优化（条件恒为真时直接生成 then 分支，移除 if 包装）— optimizer 已标记 `is_proved_safe`，codegen 尚未利用
+  - ✅ **已实现**：证明优化（条件恒为真时直接生成 then 分支，移除 if 包装）— optimizer 标记 `is_proved_safe`，codegen 已利用；`checker_eval_const_expr` 支持比较/逻辑运算符；`checker_eval_const_expr_in_block` 支持块内局部 const 求值；optimizer 支持 `AST_TEST_STMT` 递归
 - 修改了 `src/codegen/c99/expr.uya` 中的 `gen_expr` 函数
   - 支持常量折叠（直接输出优化后的值）
 

@@ -62,7 +62,7 @@ test "expr_boundary" {
     
     // 编译器可以证明 index = 8, 8 >= 0 && 8 < 20
     // 优化：移除边界检查
-    if index >= 0 && index < 20 {
+    if index >= 0 && index < @len(arr) {
         arr[index] = 999;
         try assert_eq_i32(arr[8], 999);
     }
@@ -91,5 +91,12 @@ test "combined_conditions" {
     if a >= 0 && a < 10 && b >= 0 && b < 10 {
         const sum: i32 = arr[a] + arr[b];
         try assert_eq_i32(sum, 0);
+    }
+}
+
+test "size_of_condition" {
+    // 内置函数 @size_of 在常量条件中可求值，条件恒为真时移除 if
+    if @size_of(i32) == 4 {
+        try assert_eq_i32(1, 1);
     }
 }

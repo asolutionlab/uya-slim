@@ -186,14 +186,53 @@ fn is_constant_expression(checker: &TypeChecker, node: &ASTNode) i32 {
     }
     
     if node.type == ASTNodeType.AST_LEN {
-        // @len 在编译期可计算
         return 1;
     }
-    
+    if node.type == ASTNodeType.AST_SIZEOF || node.type == ASTNodeType.AST_ALIGNOF {
+        return 1;
+    }
     if node.type == ASTNodeType.AST_CAST_EXPR {
         return is_constant_expression(checker, node.cast_expr_expr);
     }
-    
+    return 0;
+}
+
+// 带 block 的常量表达式检查（优化阶段用，可解析块内局部 const）
+fn is_constant_expression_in_block(checker: &TypeChecker, node: &ASTNode, block: &ASTNode) i32 {
+    if node == null || checker == null {
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_NUMBER || node.type == ASTNodeType.AST_BOOL {
+        return 1;
+    }
+    if node.type == ASTNodeType.AST_IDENTIFIER {
+        if symbol_table_lookup(checker, node.identifier_name) != null {
+            return 1;
+        }
+        if block != null && find_const_init_in_block(block, node.identifier_name) != null {
+            return 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_BINARY_EXPR {
+        if is_constant_expression_in_block(checker, node.binary_expr_left, block) != 0 &&
+           is_constant_expression_in_block(checker, node.binary_expr_right, block) != 0 {
+            return 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_UNARY_EXPR {
+        return is_constant_expression_in_block(checker, node.unary_expr_operand, block);
+    }
+    if node.type == ASTNodeType.AST_LEN {
+        return 1;
+    }
+    if node.type == ASTNodeType.AST_SIZEOF || node.type == ASTNodeType.AST_ALIGNOF {
+        return 1;
+    }
+    if node.type == ASTNodeType.AST_CAST_EXPR {
+        return is_constant_expression_in_block(checker, node.cast_expr_expr, block);
+    }
     return 0;
 }
 
@@ -470,15 +509,21 @@ fn is_constant_condition(checker: &TypeChecker, node: &ASTNode) i32 {
 
 // 获取常量条件的布尔值
 fn get_constant_condition_value(checker: &TypeChecker, node: &ASTNode) i32 {
+    return get_constant_condition_value_in_block(checker, node, null);
+}
+
+// 带 block 上下文的常量条件求值（可解析块内局部 const）
+fn get_constant_condition_value_in_block(checker: &TypeChecker, node: &ASTNode, block: &ASTNode) i32 {
     if node == null {
         return -1;
     }
-    
     if node.type == ASTNodeType.AST_BOOL {
         return node.bool_literal_value;
     }
-    
-    // 常量表达式求值
+    if block != null {
+        const v: i32 = checker_eval_const_expr_in_block(checker, node, block);
+        return v;
+    }
     const value: i32 = checker_eval_const_expr(checker, node);
     return value;
 }
@@ -546,8 +591,9 @@ export fn dead_code_elimination_pass(checker: &TypeChecker, node: &ASTNode) &AST
             i = i + 1;
         }
     } else if node.type == ASTNodeType.AST_FN_DECL && node.fn_decl_body != null {
-        // 处理函数体
         dead_code_elimination_pass(checker, node.fn_decl_body);
+    } else if node.type == ASTNodeType.AST_TEST_STMT && node.test_stmt_body != null {
+        dead_code_elimination_pass(checker, node.test_stmt_body);
     }
     
     return node;
@@ -579,22 +625,22 @@ fn can_prove_bounds_check(checker: &TypeChecker, array_expr: &ASTNode, index_exp
     return 0;
 }
 
-// 证明优化 Pass
-export fn proof_optimization_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode {
+// 证明优化 Pass（内部实现，支持传入 enclosing_block 以解析局部 const）
+fn proof_optimization_pass_impl(checker: &TypeChecker, node: &ASTNode, enclosing_block: &ASTNode) &ASTNode {
     if node == null || checker == null {
         return node;
     }
-    
+
     // 处理程序顶层声明
     if node.type == ASTNodeType.AST_PROGRAM && node.program_decls != null {
         var i: i32 = 0;
         while i < node.program_decl_count {
-            proof_optimization_pass(checker, node.program_decls[i]);
+            proof_optimization_pass_impl(checker, node.program_decls[i], null);
             i = i + 1;
         }
         return node;
     }
-    
+
     // 处理数组访问
     if node.type == ASTNodeType.AST_ARRAY_ACCESS {
         const array_expr: &ASTNode = node.array_access_array;
@@ -611,59 +657,69 @@ export fn proof_optimization_pass(checker: &TypeChecker, node: &ASTNode) &ASTNod
         }
     }
     
-    // 处理 if 语句中的边界检查
+    // 处理 if 语句：条件恒为真时标记 is_proved_safe（codegen 将移除 if 包装）
     if node.type == ASTNodeType.AST_IF_STMT {
-        // 检查条件是否为边界检查
         const condition: &ASTNode = node.if_stmt_condition;
-        
-        if condition != null && condition.type == ASTNodeType.AST_BINARY_EXPR {
-            // 如果能证明条件恒为真，则优化
-            if is_constant_condition(checker, condition) != 0 {
-                const cond_value: i32 = get_constant_condition_value(checker, condition);
-                if cond_value == 1 {
-                    node.is_proved_safe = 1;
-                    optimizer_stats.proof_optimized = optimizer_stats.proof_optimized + 1;
-                    
-                    if optimizer_verbose != 0 {
-                        printf("[optimize] proof optimized: condition proved true\n" as *byte);
-                    }
+
+        var cond_constant: i32 = 0;
+        if condition != null {
+            if enclosing_block != null {
+                cond_constant = is_constant_expression_in_block(checker, condition, enclosing_block);
+            } else {
+                cond_constant = is_constant_condition(checker, condition);
+            }
+        }
+        if condition != null && cond_constant != 0 {
+            const cond_value: i32 = get_constant_condition_value_in_block(checker, condition, enclosing_block);
+            if cond_value == 1 {
+                node.is_proved_safe = 1;
+                optimizer_stats.proof_optimized = optimizer_stats.proof_optimized + 1;
+                
+                if optimizer_verbose != 0 {
+                    printf("[optimize] proof optimized: condition proved true\n" as *byte);
                 }
             }
         }
         
         // 递归处理子节点
         if node.if_stmt_then_branch != null {
-            proof_optimization_pass(checker, node.if_stmt_then_branch);
+            proof_optimization_pass_impl(checker, node.if_stmt_then_branch, enclosing_block);
         }
         if node.if_stmt_else_branch != null {
-            proof_optimization_pass(checker, node.if_stmt_else_branch);
+            proof_optimization_pass_impl(checker, node.if_stmt_else_branch, enclosing_block);
         }
     }
-    
-    // 处理其他节点类型（需递归以访问所有包含的表达式）
+
+    // 处理 block：传递自身作为 enclosing_block
     if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
         var i: i32 = 0;
         while i < node.block_stmt_count {
-            proof_optimization_pass(checker, node.block_stmts[i]);
+            proof_optimization_pass_impl(checker, node.block_stmts[i], node);
             i = i + 1;
         }
     } else if node.type == ASTNodeType.AST_FN_DECL && node.fn_decl_body != null {
-        proof_optimization_pass(checker, node.fn_decl_body);
+        proof_optimization_pass_impl(checker, node.fn_decl_body, null);
+    } else if node.type == ASTNodeType.AST_TEST_STMT && node.test_stmt_body != null {
+        proof_optimization_pass_impl(checker, node.test_stmt_body, null);
     } else if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
-        // 变量初始化中的数组访问等也会被证明优化
-        proof_optimization_pass(checker, node.var_decl_init);
+        proof_optimization_pass_impl(checker, node.var_decl_init, enclosing_block);
     } else if node.type == ASTNodeType.AST_RETURN_STMT && node.return_stmt_expr != null {
-        proof_optimization_pass(checker, node.return_stmt_expr);
+        proof_optimization_pass_impl(checker, node.return_stmt_expr, enclosing_block);
     } else if node.type == ASTNodeType.AST_ASSIGN {
         if node.assign_dest != null {
-            proof_optimization_pass(checker, node.assign_dest);
+            proof_optimization_pass_impl(checker, node.assign_dest, enclosing_block);
         }
         if node.assign_src != null {
-            proof_optimization_pass(checker, node.assign_src);
+            proof_optimization_pass_impl(checker, node.assign_src, enclosing_block);
         }
     }
-    
+
     return node;
+}
+
+// 证明优化 Pass（对外入口）
+export fn proof_optimization_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode {
+    return proof_optimization_pass_impl(checker, node, null);
 }
 
 // ===== 内联优化 =====

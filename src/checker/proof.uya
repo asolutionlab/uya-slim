@@ -206,6 +206,22 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
                 return -1;
             }
             return left_val % right_val;
+        } else if op == TokenType.TOKEN_LESS {
+            if left_val < right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_GREATER {
+            if left_val > right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_LESS_EQUAL {
+            if left_val <= right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_GREATER_EQUAL {
+            if left_val >= right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_EQUAL {
+            if left_val == right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_NOT_EQUAL {
+            if left_val != right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_LOGICAL_AND {
+            if left_val != 0 && right_val != 0 { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_LOGICAL_OR {
+            if left_val != 0 || right_val != 0 { return 1; } else { return 0; }
         } else {
             return -1;
         }
@@ -236,12 +252,243 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
             return array_type.array_size;
         }
         return -1;
+    } else if expr.type == ASTNodeType.AST_SIZEOF {
+        const target: &ASTNode = expr.sizeof_expr_target;
+        if target == null { return -1; }
+        var t: Type = checker_infer_type(checker, target);
+        if expr.sizeof_expr_is_type != 0 {
+            t = type_from_ast(checker, target);
+        }
+        return get_type_size_bytes(&t);
+    } else if expr.type == ASTNodeType.AST_ALIGNOF {
+        const target: &ASTNode = expr.alignof_expr_target;
+        if target == null { return -1; }
+        var t: Type = checker_infer_type(checker, target);
+        if expr.alignof_expr_is_type != 0 {
+            t = type_from_ast(checker, target);
+        }
+        return get_type_align_bytes(&t);
     } else if expr.type == ASTNodeType.AST_CAST_EXPR {
         const inner_expr: &ASTNode = expr.cast_expr_expr;
         if inner_expr == null {
             return -1;
         }
         return checker_eval_const_expr(checker, inner_expr);
+    } else {
+        return -1;
+    }
+}
+
+// 根据 Type 计算字节大小（用于 @size_of 常量求值，仅支持基础类型和数组）
+fn get_type_size_bytes(t: &Type) i32 {
+    if t == null {
+        return -1;
+    }
+    if t.kind == TypeKind.TYPE_I8 || t.kind == TypeKind.TYPE_U8 || t.kind == TypeKind.TYPE_BOOL || t.kind == TypeKind.TYPE_BYTE {
+        return 1;
+    }
+    if t.kind == TypeKind.TYPE_I16 || t.kind == TypeKind.TYPE_U16 {
+        return 2;
+    }
+    if t.kind == TypeKind.TYPE_I32 || t.kind == TypeKind.TYPE_U32 || t.kind == TypeKind.TYPE_F32 {
+        return 4;
+    }
+    if t.kind == TypeKind.TYPE_I64 || t.kind == TypeKind.TYPE_U64 || t.kind == TypeKind.TYPE_F64 || t.kind == TypeKind.TYPE_USIZE || t.kind == TypeKind.TYPE_POINTER {
+        return 8;
+    }
+    if t.kind == TypeKind.TYPE_ARRAY && t.array_size >= 0 {
+        const elem_size: i32 = get_type_size_bytes(t.element_type);
+        if elem_size > 0 && t.array_size <= 0x7FFFFFFF / elem_size {
+            return elem_size * t.array_size;
+        }
+    }
+    return -1;
+}
+
+// 根据 Type 计算对齐（字节），仅支持基础类型
+fn get_type_align_bytes(t: &Type) i32 {
+    const sz: i32 = get_type_size_bytes(t);
+    if sz <= 0 {
+        return -1;
+    }
+    if sz <= 1 {
+        return 1;
+    }
+    if sz <= 2 {
+        return 2;
+    }
+    if sz <= 4 {
+        return 4;
+    }
+    return 8;
+}
+
+// 在 block 内查找变量/const 的声明节点（用于 @len 等获取类型）
+fn find_decl_in_block(block: &ASTNode, name: &byte) &ASTNode {
+    if block == null || block.type != ASTNodeType.AST_BLOCK || block.block_stmts == null || name == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < block.block_stmt_count {
+        const stmt: &ASTNode = block.block_stmts[i];
+        if stmt != null && stmt.type == ASTNodeType.AST_VAR_DECL && stmt.var_decl_name != null &&
+           strcmp(stmt.var_decl_name as *byte, name as *byte) == 0 {
+            return stmt;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+// 在 block 内查找 const 变量的初始化表达式（用于优化阶段，符号表已 pop）
+export fn find_const_init_in_block(block: &ASTNode, name: &byte) &ASTNode {
+    if block == null || block.type != ASTNodeType.AST_BLOCK || block.block_stmts == null || name == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < block.block_stmt_count {
+        const stmt: &ASTNode = block.block_stmts[i];
+        if stmt != null && stmt.type == ASTNodeType.AST_VAR_DECL && stmt.var_decl_is_const != 0 &&
+           stmt.var_decl_name != null && strcmp(stmt.var_decl_name as *byte, name as *byte) == 0 &&
+           stmt.var_decl_init != null {
+            return stmt.var_decl_init;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+// 带 block 上下文的常量求值（优化阶段用，可解析块内局部 const）
+export fn checker_eval_const_expr_in_block(checker: &TypeChecker, expr: &ASTNode, block: &ASTNode) i32 {
+    if expr == null || checker == null {
+        return -1;
+    }
+    if expr.type == ASTNodeType.AST_NUMBER {
+        return expr.number_value as i32;
+    } else if expr.type == ASTNodeType.AST_IDENTIFIER {
+        const symbol: &Symbol = symbol_table_lookup(checker, expr.identifier_name);
+        if symbol != null && symbol.is_const != 0 && symbol.decl_node != null {
+            const decl: &ASTNode = symbol.decl_node;
+            if decl.type == ASTNodeType.AST_VAR_DECL && decl.var_decl_init != null {
+                return checker_eval_const_expr_in_block(checker, decl.var_decl_init, block);
+            }
+        }
+        if block != null {
+            const init: &ASTNode = find_const_init_in_block(block, expr.identifier_name);
+            if init != null {
+                return checker_eval_const_expr_in_block(checker, init, block);
+            }
+        }
+        if checker.program_node == null {
+            return -1;
+        }
+        const program: &ASTNode = checker.program_node;
+        if program.type != ASTNodeType.AST_PROGRAM {
+            return -1;
+        }
+        var i: i32 = 0;
+        while i < program.program_decl_count {
+            const decl: &ASTNode = program.program_decls[i];
+            if decl != null && decl.type == ASTNodeType.AST_VAR_DECL &&
+               decl.var_decl_name != null &&
+               strcmp(decl.var_decl_name as *byte, expr.identifier_name as *byte) == 0 &&
+               decl.var_decl_is_const != 0 {
+                const init: &ASTNode = decl.var_decl_init;
+                if init != null {
+                    return checker_eval_const_expr_in_block(checker, init, block);
+                }
+                return -1;
+            }
+            i = i + 1;
+        }
+        return -1;
+    } else if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        const left_val: i32 = checker_eval_const_expr_in_block(checker, expr.binary_expr_left, block);
+        const right_val: i32 = checker_eval_const_expr_in_block(checker, expr.binary_expr_right, block);
+        if left_val == -1 || right_val == -1 {
+            return -1;
+        }
+        const op: TokenType = expr.binary_expr_op as TokenType;
+        if op == TokenType.TOKEN_PLUS {
+            if check_i32_add_overflow(left_val, right_val) != 0 { return -1; }
+            return left_val + right_val;
+        } else if op == TokenType.TOKEN_MINUS {
+            if check_i32_sub_overflow(left_val, right_val) != 0 { return -1; }
+            return left_val - right_val;
+        } else if op == TokenType.TOKEN_ASTERISK {
+            if check_i32_mul_overflow(left_val, right_val) != 0 { return -1; }
+            return left_val * right_val;
+        } else if op == TokenType.TOKEN_SLASH {
+            if right_val == 0 { return -1; }
+            return left_val / right_val;
+        } else if op == TokenType.TOKEN_PERCENT {
+            if right_val == 0 { return -1; }
+            return left_val % right_val;
+        } else if op == TokenType.TOKEN_LESS {
+            if left_val < right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_GREATER {
+            if left_val > right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_LESS_EQUAL {
+            if left_val <= right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_GREATER_EQUAL {
+            if left_val >= right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_EQUAL {
+            if left_val == right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_NOT_EQUAL {
+            if left_val != right_val { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_LOGICAL_AND {
+            if left_val != 0 && right_val != 0 { return 1; } else { return 0; }
+        } else if op == TokenType.TOKEN_LOGICAL_OR {
+            if left_val != 0 || right_val != 0 { return 1; } else { return 0; }
+        } else {
+            return -1;
+        }
+    } else if expr.type == ASTNodeType.AST_UNARY_EXPR {
+        const operand_val: i32 = checker_eval_const_expr_in_block(checker, expr.unary_expr_operand, block);
+        if operand_val == -1 { return -1; }
+        const op: TokenType = expr.unary_expr_op as TokenType;
+        if op == TokenType.TOKEN_PLUS { return operand_val; }
+        else if op == TokenType.TOKEN_MINUS {
+            if check_i32_neg_overflow(operand_val) != 0 { return -1; }
+            return -operand_val;
+        } else { return -1; }
+    } else if expr.type == ASTNodeType.AST_LEN {
+        const array_expr: &ASTNode = expr.len_expr_array;
+        if array_expr == null { return -1; }
+        var array_type: Type = checker_infer_type(checker, array_expr);
+        if array_type.kind == TypeKind.TYPE_ARRAY {
+            return array_type.array_size;
+        }
+        if block != null && array_expr.type == ASTNodeType.AST_IDENTIFIER && array_expr.identifier_name != null {
+            const decl: &ASTNode = find_decl_in_block(block, array_expr.identifier_name);
+            if decl != null && decl.var_decl_type != null {
+                array_type = type_from_ast(checker, decl.var_decl_type);
+                if array_type.kind == TypeKind.TYPE_ARRAY {
+                    return array_type.array_size;
+                }
+            }
+        }
+        return -1;
+    } else if expr.type == ASTNodeType.AST_SIZEOF {
+        const target: &ASTNode = expr.sizeof_expr_target;
+        if target == null { return -1; }
+        var t: Type = checker_infer_type(checker, target);
+        if expr.sizeof_expr_is_type != 0 {
+            t = type_from_ast(checker, target);
+        }
+        return get_type_size_bytes(&t);
+    } else if expr.type == ASTNodeType.AST_ALIGNOF {
+        const target: &ASTNode = expr.alignof_expr_target;
+        if target == null { return -1; }
+        var t: Type = checker_infer_type(checker, target);
+        if expr.alignof_expr_is_type != 0 {
+            t = type_from_ast(checker, target);
+        }
+        return get_type_align_bytes(&t);
+    } else if expr.type == ASTNodeType.AST_CAST_EXPR {
+        const inner_expr: &ASTNode = expr.cast_expr_expr;
+        if inner_expr == null { return -1; }
+        return checker_eval_const_expr_in_block(checker, inner_expr, block);
     } else {
         return -1;
     }
