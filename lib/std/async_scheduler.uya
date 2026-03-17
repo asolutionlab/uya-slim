@@ -8,6 +8,17 @@
 use std.async;
 use std.async_event;
 
+fn scheduler_event_kind_from_waker(w: &Waker) EventKind {
+    const interest: i32 = w.io_interest_code();
+    if interest == 1 {
+        return EventKind.Readable({});
+    }
+    if interest == 2 {
+        return EventKind.Writable({});
+    }
+    return EventKind.ReadWrite({});
+}
+
 /// 调度器。当前为单任务最小实现；后续可扩展为持有队列与 EventLoop 的完整运行时。
 export struct Scheduler {}
 
@@ -36,6 +47,7 @@ export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f:
     var w: Waker = Waker{};
     while true {
         w.reset();
+        w.clear_io_interest();
         const p: Poll<!T> = f.poll(&w);
         match p {
             .Ready(ok_val) => { return ok_val; },
@@ -43,7 +55,27 @@ export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f:
                 if w.is_woken() {
                     continue;
                 }
-                _ = try loop.poll(timeout_ms);
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! T;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! T;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! T;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! T;
+                };
             },
         };
     }
@@ -55,6 +87,7 @@ export fn scheduler_run_i32_with_event_loop(self: &Scheduler, loop: EventLoop, f
     var w: Waker = Waker{};
     while true {
         w.reset();
+        w.clear_io_interest();
         const p: Poll<!i32> = f.poll(&w);
         match p {
             .Ready(ok_val) => { return ok_val; },
@@ -62,7 +95,67 @@ export fn scheduler_run_i32_with_event_loop(self: &Scheduler, loop: EventLoop, f
                 if w.is_woken() {
                     continue;
                 }
-                _ = try loop.poll(timeout_ms);
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! i32;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! i32;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! i32;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! i32;
+                };
+            },
+        };
+    }
+}
+
+/// scheduler_run_with_event_loop 的 usize 特化，便于异步 I/O 直接返回字节数。
+export fn scheduler_run_usize_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!usize>, timeout_ms: i32) !usize {
+    _ = self;
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!usize> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! usize;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! usize;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! usize;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! usize;
+                };
             },
         };
     }

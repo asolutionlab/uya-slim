@@ -96,6 +96,7 @@ export const F_SETFL: i32 = 4;
 export const EPOLLIN: i32 = 0x001;
 export const EPOLLOUT: i32 = 0x004;
 export const EPOLL_CTL_ADD: i32 = 1;
+export const EPOLL_CTL_MOD: i32 = 2;
 export const EPOLL_CTL_DEL: i32 = 3;
 export const EPOLL_CLOEXEC: i32 = 0x80000;
 

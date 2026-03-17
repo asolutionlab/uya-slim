@@ -1,14 +1,76 @@
 // test_async_fd.uya - 测试 std.async.AsyncFd（fd 上的 AsyncWriter/AsyncReader）
 
 use std.async;
+use std.async_event;
+use std.async_scheduler;
 use std.testing.assert_eq_i32;
-use libc.syscall;
 
 error UnexpectedPending;
 error ExpectedPending;
 error AsyncFdFailed;
 error PipeCreateFailed;
 error PipeWriteFailed;
+error EventLoopRegisterFailed;
+error EventLoopWritableFailed;
+
+const TEST_SYS_WRITE: i64 = 1;
+const TEST_SYS_CLOSE: i64 = 3;
+const TEST_SYS_PIPE2: i64 = 293;
+const TEST_O_NONBLOCK: i32 = 0x800;
+
+fn test_sys_write(fd: i32, buf: &const byte, count: usize) !isize {
+    return @syscall(TEST_SYS_WRITE, fd as i64, buf as i64, count as i64) as! isize;
+}
+
+fn test_sys_close(fd: i32) !i32 {
+    return @syscall(TEST_SYS_CLOSE, fd as i64) as! i32;
+}
+
+fn test_sys_pipe2(pipefd: &i32, flags: i32) !i32 {
+    return @syscall(TEST_SYS_PIPE2, pipefd as i64, flags as i64) as! i32;
+}
+
+var async_fd_mock_registered_fd: i32 = 0 - 1;
+var async_fd_mock_write_fd: i32 = 0 - 1;
+var async_fd_mock_register_count: i32 = 0;
+var async_fd_mock_poll_count: i32 = 0;
+var async_fd_mock_waker: &Waker = null;
+
+struct AsyncFdWakeLoop : EventLoop {
+    fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !i32 {
+        _ = self;
+        match interest {
+            .Readable(_) => { },
+            .Writable(_) => { return error.EventLoopRegisterFailed; },
+            .ReadWrite(_) => { return error.EventLoopRegisterFailed; },
+        };
+        async_fd_mock_registered_fd = fd;
+        async_fd_mock_register_count = async_fd_mock_register_count + 1;
+        async_fd_mock_waker = waker;
+        return 0;
+    }
+
+    fn deregister(self: &Self, fd: i32) !i32 {
+        _ = self;
+        _ = fd;
+        return 0;
+    }
+
+    fn poll(self: &Self, timeout_ms: i32) !i32 {
+        _ = self;
+        _ = timeout_ms;
+        async_fd_mock_poll_count = async_fd_mock_poll_count + 1;
+        var src: [byte: 4] = [ 10, 20, 30, 40 ];
+        const written: isize = test_sys_write(async_fd_mock_write_fd, &src[0] as &const byte, 4) catch {
+            return error.EventLoopWritableFailed;
+        };
+        if written != 4 {
+            return error.EventLoopWritableFailed;
+        }
+        async_fd_mock_waker.wake();
+        return 1;
+    }
+}
 
 fn test_async_fd_write() !void {
     const STDOUT: i32 = 1;
@@ -27,7 +89,7 @@ fn test_async_fd_write() !void {
 
 fn test_async_fd_read_pending_then_ready() !void {
     var fds: [i32: 2] = [];
-    _ = sys_pipe2(&fds[0], O_NONBLOCK) catch {
+    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
         return error.PipeCreateFailed;
     };
     const read_fd: i32 = fds[0];
@@ -47,7 +109,7 @@ fn test_async_fd_read_pending_then_ready() !void {
     try assert_eq_i32(saw_pending, 1);
 
     var src: [byte: 4] = [ 10, 20, 30, 40 ];
-    const written: isize = sys_write(write_fd, &src[0] as *const byte, 4) catch {
+    const written: isize = test_sys_write(write_fd, &src[0] as &const byte, 4) catch {
         return error.PipeWriteFailed;
     };
     try assert_eq_i32(written as i32, 4);
@@ -64,8 +126,41 @@ fn test_async_fd_read_pending_then_ready() !void {
     try assert_eq_i32(buf[2] as i32, 30);
     try assert_eq_i32(buf[3] as i32, 40);
 
-    _ = sys_close(read_fd);
-    _ = sys_close(write_fd);
+    _ = test_sys_close(read_fd);
+    _ = test_sys_close(write_fd);
+}
+
+fn test_async_fd_read_with_event_loop_wakes() !void {
+    var fds: [i32: 2] = [];
+    _ = test_sys_pipe2(&fds[0], TEST_O_NONBLOCK) catch {
+        return error.PipeCreateFailed;
+    };
+    const read_fd: i32 = fds[0];
+    const write_fd: i32 = fds[1];
+
+    async_fd_mock_registered_fd = 0 - 1;
+    async_fd_mock_write_fd = write_fd;
+    async_fd_mock_register_count = 0;
+    async_fd_mock_poll_count = 0;
+    async_fd_mock_waker = null;
+
+    var af: AsyncFd = async_fd_new(read_fd);
+    var buf: [byte: 8] = [];
+    var scheduler: Scheduler = scheduler_new();
+    const loop: EventLoop = AsyncFdWakeLoop{};
+    const f: Future<!usize> = af.read(&buf[0], 4);
+    const read_count: usize = try scheduler_run_usize_with_event_loop(&scheduler, loop, f, 50);
+    try assert_eq_i32(read_count as i32, 4);
+    try assert_eq_i32(async_fd_mock_registered_fd, read_fd);
+    try assert_eq_i32(async_fd_mock_register_count, 1);
+    try assert_eq_i32(async_fd_mock_poll_count, 1);
+    try assert_eq_i32(buf[0] as i32, 10);
+    try assert_eq_i32(buf[1] as i32, 20);
+    try assert_eq_i32(buf[2] as i32, 30);
+    try assert_eq_i32(buf[3] as i32, 40);
+
+    _ = test_sys_close(read_fd);
+    _ = test_sys_close(write_fd);
 }
 
 test "async_fd_write_returns_ready" {
@@ -74,4 +169,8 @@ test "async_fd_write_returns_ready" {
 
 test "async_fd_read_returns_pending_on_eagain_then_ready" {
     try test_async_fd_read_pending_then_ready();
+}
+
+test "async_fd_read_with_event_loop_wakes_to_ready" {
+    try test_async_fd_read_with_event_loop_wakes();
 }

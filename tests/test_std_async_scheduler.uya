@@ -27,16 +27,18 @@ var scheduler_loop_poll_count: i32 = 0;
 var scheduler_wake_poll_count: i32 = 0;
 
 struct TestEventLoop : EventLoop {
-    fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !void {
+    fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !i32 {
         _ = self;
         _ = fd;
         _ = interest;
         _ = waker;
+        return 0;
     }
 
-    fn deregister(self: &Self, fd: i32) !void {
+    fn deregister(self: &Self, fd: i32) !i32 {
         _ = self;
         _ = fd;
+        return 0;
     }
 
     fn poll(self: &Self, timeout_ms: i32) !i32 {

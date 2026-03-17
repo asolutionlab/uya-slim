@@ -8,6 +8,8 @@
 /// 后续可在此基础上扩展到事件循环注册、任务队列与跨线程唤醒。
 export struct Waker {
     _wake_count: atomic i32,
+    _io_fd: i32,
+    _io_interest: i32,
 
     /// 标记一次唤醒请求；调度器可据此选择直接重试而非进入事件循环等待。
     fn wake(self: &Self) void {
@@ -22,6 +24,39 @@ export struct Waker {
     /// 当前轮询是否已经收到唤醒请求。
     fn is_woken(self: &Self) bool {
         return self._wake_count != 0;
+    }
+
+    /// 请求调度器在 Pending 后为指定 fd 注册读事件。
+    fn wait_readable(self: &Self, fd: i32) void {
+        self._io_fd = fd;
+        self._io_interest = 1;
+    }
+
+    /// 请求调度器在 Pending 后为指定 fd 注册写事件。
+    fn wait_writable(self: &Self, fd: i32) void {
+        self._io_fd = fd;
+        self._io_interest = 2;
+    }
+
+    /// 清除当前轮询记录的 I/O 关注。
+    fn clear_io_interest(self: &Self) void {
+        self._io_fd = 0;
+        self._io_interest = 0;
+    }
+
+    /// 当前轮询是否请求了事件循环注册。
+    fn has_io_interest(self: &Self) bool {
+        return self._io_interest != 0;
+    }
+
+    /// 读取当前记录的 fd。
+    fn io_fd(self: &Self) i32 {
+        return self._io_fd;
+    }
+
+    /// 将内部编码转换为 EventLoop 使用的兴趣种类编码。
+    fn io_interest_code(self: &Self) i32 {
+        return self._io_interest;
     }
 }
 
@@ -88,6 +123,7 @@ export fn block_on<T>(f: Future<!T>) !T {
     var w: Waker = Waker{};
     while true {
         w.reset();
+        w.clear_io_interest();
         const p: Poll<!T> = f.poll(&w);
         match p {
             .Ready(ok_val) => { return ok_val; },
@@ -101,6 +137,7 @@ export fn block_on_i32(f: Future<!i32>) !i32 {
     var w: Waker = Waker{};
     while true {
         w.reset();
+        w.clear_io_interest();
         const p: Poll<!i32> = f.poll(&w);
         match p {
             .Ready(ok_val) => { return ok_val; },
@@ -114,6 +151,7 @@ export fn block_on_usize(f: Future<!usize>) !usize {
     var w: Waker = Waker{};
     while true {
         w.reset();
+        w.clear_io_interest();
         const p: Poll<!usize> = f.poll(&w);
         match p {
             .Ready(ok_val) => { return ok_val; },
@@ -127,6 +165,7 @@ export fn block_on_usize_plain(f: Future<usize>) usize {
     var w: Waker = Waker{};
     while true {
         w.reset();
+        w.clear_io_interest();
         const p: Poll<usize> = f.poll(&w);
         match p {
             .Ready(n) => { return n; },
@@ -251,6 +290,7 @@ struct AsyncFdWriteFuture : Future<!usize> {
         const result: !isize = sys_write(self.fd, self.data as *const byte, self.count);
         const n: isize = result catch |err| {
             if async_fd_error_id_is_would_block(@error_id(err)) {
+                waker.wait_writable(self.fd);
                 return Poll<!usize>.Pending({});
             }
             const err_value: !usize = result as! usize;
@@ -285,6 +325,7 @@ struct AsyncFdReadFuture : Future<!usize> {
         const result: !isize = sys_read(self.fd, self.buf as *byte, self.count);
         const n: isize = result catch |err| {
             if async_fd_error_id_is_would_block(@error_id(err)) {
+                waker.wait_readable(self.fd);
                 return Poll<!usize>.Pending({});
             }
             const err_value: !usize = result as! usize;
