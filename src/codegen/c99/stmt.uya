@@ -1382,6 +1382,59 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     // 维度部分是从 '[' 开始到结尾
                     const dimensions: *byte = type_c as *byte + base_len;
                     
+                    // const x: [T:n] = try expr 时用块内逐元素赋值，数组声明不能带 const（C 中无法对 const 数组元素赋值）
+                    if init_expr != null && init_expr.type == ASTNodeType.AST_TRY_EXPR && init_expr.try_expr_operand != null &&
+                        var_type.type_array_size_expr != null && var_type.type_array_size_expr.type == ASTNodeType.AST_NUMBER &&
+                        var_type.type_array_element_type != null {
+                        const n: i32 = var_type.type_array_size_expr.number_value;
+                        if n > 0 && n <= 64 {
+                            c99_emit_indent(codegen);
+                            fprintf(codegen.output as *void, "%s %s%s = {0};\n" as *byte, base_type as *byte, var_name as *byte, dimensions);
+                            type_c = null;
+                            c99_emit_indent(codegen);
+                            fputs("{\n" as *byte, codegen.output as *void);
+                            codegen.indent_level = codegen.indent_level + 1;
+                            const try_operand: &ASTNode = init_expr.try_expr_operand;
+                            const eu_node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, stmt.line, stmt.column, codegen.arena, stmt.filename);
+                            var union_c: &byte = null;
+                            if eu_node != null {
+                                eu_node.type_error_union_payload_type = var_type;
+                                union_c = c99_type_to_c(codegen, eu_node);
+                            }
+                            if union_c != null {
+                                c99_emit_indent(codegen);
+                                fprintf(codegen.output as *void, "%s _uya_try_arr_tmp = " as *byte, union_c as *byte);
+                                const saved_block_union: &byte = codegen.expected_block_union_type;
+                                codegen.expected_block_union_type = union_c;
+                                gen_expr(codegen, try_operand);
+                                codegen.expected_block_union_type = saved_block_union;
+                                fputs(";\n" as *byte, codegen.output as *void);
+                                var ret_union_c: &byte = ("void" as *byte) as &byte;
+                                if codegen.current_function_return_type != null && codegen.current_function_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                                    ret_union_c = c99_type_to_c(codegen, codegen.current_function_return_type);
+                                }
+                                c99_emit_indent(codegen);
+                                fprintf(codegen.output as *void, "if (_uya_try_arr_tmp.error_id != 0) return (%s){ .error_id = _uya_try_arr_tmp.error_id };\n" as *byte, ret_union_c as *byte);
+                                var ci: i32 = 0;
+                                while ci < n {
+                                    c99_emit_indent(codegen);
+                                    fprintf(codegen.output as *void, "%s[%d] = _uya_try_arr_tmp.value[%d];\n" as *byte, var_name as *byte, ci, ci);
+                                    ci = ci + 1;
+                                }
+                            }
+                            codegen.indent_level = codegen.indent_level - 1;
+                            c99_emit_indent(codegen);
+                            fputs("}\n" as *byte, codegen.output as *void);
+                            if stored_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                                codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
+                                codegen.local_variables[codegen.local_variable_count].type_c = stored_type_c;
+                                codegen.local_variable_count = codegen.local_variable_count + 1;
+                            }
+                            codegen.expected_type = saved_expected_type;
+                            return;
+                        }
+                    }
+                    
                     // 生成数组声明：const base_type var_name dimensions（字符串插值初始化时不使用 const）
                     c99_emit_indent(codegen);
                     if is_const != 0 && is_string_interp_init == 0 {

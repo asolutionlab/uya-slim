@@ -1076,8 +1076,8 @@ fn make_named_type(kind: TypeKind, name: &byte) Type {
 }
 
 // 创建错误联合类型
-// payload: 负载类型（需从 arena 分配）
-fn make_error_union_type(arena: &Arena, payload: &Type) Type {
+// payload: 负载类型（需从 arena 分配）；codegen 用其从 match 成功臂推导 try 的 !T
+export fn make_error_union_type(arena: &Arena, payload: &Type) Type {
     if arena == null || payload == null {
         return make_void_type();
     }

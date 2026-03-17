@@ -1,6 +1,9 @@
 // checker/type_from_ast.uya - 从 AST 节点创建 Type
 // 从 checker/main.uya 拆分
 
+use std.string.strlen;
+use std.string.strcpy;
+
 // 从AST类型节点创建Type结构
 fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
     var result: Type = Type {
@@ -399,4 +402,117 @@ fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
     
     result.kind = TypeKind.TYPE_VOID;
     return result;
+}
+
+// 返回基本类型对应的类型名字符串（静态，仅用于已知 kind）
+fn primitive_type_name(kind: TypeKind) &byte {
+    if kind == TypeKind.TYPE_I8 { return "i8" as &byte; }
+    if kind == TypeKind.TYPE_I16 { return "i16" as &byte; }
+    if kind == TypeKind.TYPE_I32 { return "i32" as &byte; }
+    if kind == TypeKind.TYPE_I64 { return "i64" as &byte; }
+    if kind == TypeKind.TYPE_U8 { return "u8" as &byte; }
+    if kind == TypeKind.TYPE_U16 { return "u16" as &byte; }
+    if kind == TypeKind.TYPE_U32 { return "u32" as &byte; }
+    if kind == TypeKind.TYPE_U64 { return "u64" as &byte; }
+    if kind == TypeKind.TYPE_USIZE { return "usize" as &byte; }
+    if kind == TypeKind.TYPE_BOOL { return "bool" as &byte; }
+    if kind == TypeKind.TYPE_BYTE { return "byte" as &byte; }
+    if kind == TypeKind.TYPE_F32 { return "f32" as &byte; }
+    if kind == TypeKind.TYPE_F64 { return "f64" as &byte; }
+    if kind == TypeKind.TYPE_VOID { return "void" as &byte; }
+    return null;
+}
+
+// 将 Type 转为 AST 类型节点（供 codegen 用 try 的类型注册 err_union 等）。line/column/filename 用于节点位置。
+export fn type_to_ast(checker: &TypeChecker, t: &Type, line: i32, column: i32, filename: &byte) &ASTNode {
+    if checker == null || t == null || checker.arena == null {
+        return null;
+    }
+    const arena: &Arena = checker.arena;
+    if t.kind == TypeKind.TYPE_ERROR_UNION {
+        const payload: &Type = t.error_union_payload_type;
+        if payload == null { return null; }
+        const payload_ast: &ASTNode = type_to_ast(checker, payload, line, column, filename);
+        if payload_ast == null { return null; }
+        const node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, line, column, arena, filename);
+        if node == null { return null; }
+        node.type_error_union_payload_type = payload_ast;
+        return node;
+    }
+    if t.kind == TypeKind.TYPE_ARRAY {
+        if t.element_type == null { return null; }
+        const elem_ast: &ASTNode = type_to_ast(checker, t.element_type, line, column, filename);
+        if elem_ast == null { return null; }
+        const node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ARRAY, line, column, arena, filename);
+        if node == null { return null; }
+        node.type_array_element_type = elem_ast;
+        const size_node: &ASTNode = ast_new_node(ASTNodeType.AST_NUMBER, line, column, arena, filename);
+        if size_node == null { return null; }
+        size_node.number_value = t.array_size;
+        size_node.number_value_i64 = t.array_size as i64;
+        node.type_array_size_expr = size_node;
+        return node;
+    }
+    if t.kind == TypeKind.TYPE_SLICE {
+        if t.slice_element_type == null { return null; }
+        const elem_ast: &ASTNode = type_to_ast(checker, t.slice_element_type, line, column, filename);
+        if elem_ast == null { return null; }
+        const node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_SLICE, line, column, arena, filename);
+        if node == null { return null; }
+        node.type_slice_element_type = elem_ast;
+        node.type_slice_size_expr = null;
+        return node;
+    }
+    if t.kind == TypeKind.TYPE_STRUCT && t.struct_name != null {
+        const len: i32 = strlen(t.struct_name as *byte);
+        const name_copy: &byte = arena_alloc(arena, (len + 1) as usize) as &byte;
+        if name_copy == null { return null; }
+        strcpy(name_copy as *byte, t.struct_name as *byte);
+        const node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, line, column, arena, filename);
+        if node == null { return null; }
+        node.type_named_name = name_copy;
+        return node;
+    }
+    if t.kind == TypeKind.TYPE_ENUM && t.enum_name != null {
+        const len: i32 = strlen(t.enum_name as *byte);
+        const name_copy: &byte = arena_alloc(arena, (len + 1) as usize) as &byte;
+        if name_copy == null { return null; }
+        strcpy(name_copy as *byte, t.enum_name as *byte);
+        const node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, line, column, arena, filename);
+        if node == null { return null; }
+        node.type_named_name = name_copy;
+        return node;
+    }
+    if t.kind == TypeKind.TYPE_UNION && t.union_name != null {
+        const len: i32 = strlen(t.union_name as *byte);
+        const name_copy: &byte = arena_alloc(arena, (len + 1) as usize) as &byte;
+        if name_copy == null { return null; }
+        strcpy(name_copy as *byte, t.union_name as *byte);
+        const node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, line, column, arena, filename);
+        if node == null { return null; }
+        node.type_named_name = name_copy;
+        return node;
+    }
+    if t.kind == TypeKind.TYPE_INTERFACE && t.interface_name != null {
+        const len: i32 = strlen(t.interface_name as *byte);
+        const name_copy: &byte = arena_alloc(arena, (len + 1) as usize) as &byte;
+        if name_copy == null { return null; }
+        strcpy(name_copy as *byte, t.interface_name as *byte);
+        const node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, line, column, arena, filename);
+        if node == null { return null; }
+        node.type_named_name = name_copy;
+        return node;
+    }
+    const prim: &byte = primitive_type_name(t.kind);
+    if prim != null {
+        const len: i32 = strlen(prim as *byte);
+        const name_copy: &byte = arena_alloc(arena, (len + 1) as usize) as &byte;
+        if name_copy == null { return null; }
+        strcpy(name_copy as *byte, prim as *byte);
+        const node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, line, column, arena, filename);
+        if node == null { return null; }
+        node.type_named_name = name_copy;
+        return node;
+    }
+    return null;
 }

@@ -114,6 +114,66 @@ fn collect_stdlib_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode
     }
 }
 
+// 递归收集函数体内 try 表达式的类型，提前注册 err_union_*，避免 from_json 等中嵌套 try 使用未定义类型
+fn collect_err_union_from_ast(codegen: &C99CodeGenerator, node: &ASTNode) void {
+    if codegen == null || node == null {
+        return;
+    }
+    if node.type == ASTNodeType.AST_TRY_EXPR {
+        if codegen.checker != null && node.try_expr_operand != null {
+            const try_type: Type = checker_infer_type(codegen.checker, node);
+            if try_type.kind == TypeKind.TYPE_ERROR_UNION {
+                const try_ast: &ASTNode = type_to_ast(codegen.checker, &try_type, node.line, node.column, node.filename);
+                if try_ast != null {
+                    c99_type_to_c(codegen, try_ast);
+                }
+            }
+        }
+        collect_err_union_from_ast(codegen, node.try_expr_operand);
+        return;
+    }
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            collect_err_union_from_ast(codegen, node.block_stmts[i]);
+            i = i + 1;
+        }
+    } else if node.type == ASTNodeType.AST_IF_STMT {
+        if node.if_stmt_condition != null { collect_err_union_from_ast(codegen, node.if_stmt_condition); }
+        if node.if_stmt_then_branch != null { collect_err_union_from_ast(codegen, node.if_stmt_then_branch); }
+        if node.if_stmt_else_branch != null { collect_err_union_from_ast(codegen, node.if_stmt_else_branch); }
+    } else if node.type == ASTNodeType.AST_WHILE_STMT && node.while_stmt_body != null {
+        collect_err_union_from_ast(codegen, node.while_stmt_body);
+    } else if node.type == ASTNodeType.AST_FOR_STMT && node.for_stmt_body != null {
+        collect_err_union_from_ast(codegen, node.for_stmt_body);
+    } else if node.type == ASTNodeType.AST_VAR_DECL {
+        if node.var_decl_init != null { collect_err_union_from_ast(codegen, node.var_decl_init); }
+    } else if node.type == ASTNodeType.AST_RETURN_STMT && node.return_stmt_expr != null {
+        collect_err_union_from_ast(codegen, node.return_stmt_expr);
+    } else if node.type == ASTNodeType.AST_ASSIGN && node.assign_src != null {
+        collect_err_union_from_ast(codegen, node.assign_src);
+    } else if node.type == ASTNodeType.AST_CALL_EXPR {
+        if node.call_expr_args != null {
+            var i: i32 = 0;
+            while i < node.call_expr_arg_count {
+                collect_err_union_from_ast(codegen, node.call_expr_args[i]);
+                i = i + 1;
+            }
+        }
+    } else if node.type == ASTNodeType.AST_MATCH_EXPR {
+        if node.match_expr_expr != null { collect_err_union_from_ast(codegen, node.match_expr_expr); }
+        if node.match_expr_arms != null {
+            var a: i32 = 0;
+            while a < node.match_expr_arm_count {
+                if node.match_expr_arms[a].result_expr != null {
+                    collect_err_union_from_ast(codegen, node.match_expr_arms[a].result_expr);
+                }
+                a = a + 1;
+            }
+        }
+    }
+}
+
 // 递归收集字符串函数调用和 memset 使用，设置 needs_string_h 标志
 fn collect_string_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if codegen == null || node == null {
@@ -1478,6 +1538,78 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 }
             }
             j = j + 1;
+        }
+    }
+    // 第六步 e2：遍历所有函数体中的 try 表达式，注册其类型（如 from_json 内层 !Point），便于后续 emit 时类型已定义
+    if codegen.checker != null {
+        var j: i32 = 0;
+        while j < codegen.mono_instance_count {
+            if codegen.mono_instances[j].generic_name != null && codegen.mono_instances[j].is_function != 0 &&
+                strcmp(codegen.mono_instances[j].generic_name as *byte, "from_json" as *byte) == 0 &&
+                codegen.mono_instances[j].type_args != null && codegen.mono_instances[j].type_arg_count >= 1 {
+                const ta0: &ASTNode = codegen.mono_instances[j].type_args[0];
+                if ta0 != null && ta0.type == ASTNodeType.AST_TYPE_NAMED && ta0.type_named_name != null {
+                    const body_to_walk: &ASTNode = build_from_json_reflect_body(codegen.checker, ta0, 0, 0, null);
+                    if body_to_walk != null {
+                        collect_err_union_from_ast(codegen, body_to_walk);
+                    }
+                    const struct_decl: &ASTNode = find_struct_decl_from_program(ast, ta0.type_named_name);
+                    if struct_decl != null && struct_decl.struct_decl_fields != null && struct_decl.struct_decl_field_count > 0 {
+                        var fi: i32 = 0;
+                        while fi < struct_decl.struct_decl_field_count {
+                            const fd: &ASTNode = struct_decl.struct_decl_fields[fi];
+                            if fd != null && fd.type == ASTNodeType.AST_VAR_DECL && fd.var_decl_type != null {
+                                const ft: &ASTNode = fd.var_decl_type;
+                                var need_err_union: i32 = 0;
+                                if ft.type == ASTNodeType.AST_TYPE_ARRAY { need_err_union = 1; }
+                                if ft.type == ASTNodeType.AST_TYPE_NAMED && ft.type_named_name != null {
+                                    const inner: &ASTNode = find_struct_decl_from_program(ast, ft.type_named_name);
+                                    if inner != null && inner.struct_decl_fields != null && inner.struct_decl_field_count > 0 {
+                                        need_err_union = 1;
+                                    }
+                                }
+                                if need_err_union != 0 {
+                                    const eu_node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, 0, 0, codegen.arena, null);
+                                    if eu_node != null {
+                                        eu_node.type_error_union_payload_type = ft;
+                                        c99_type_to_c(codegen, eu_node);
+                                    }
+                                }
+                            }
+                            fi = fi + 1;
+                        }
+                    }
+                }
+            }
+            j = j + 1;
+        }
+        i = 0;
+        while i < decl_count {
+            const decl: &ASTNode = ast.program_decls[i];
+            if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_body != null {
+                if is_generic_function_c99(decl) != 0 {
+                    j = 0;
+                    while j < codegen.mono_instance_count {
+                        if codegen.mono_instances[j].generic_name != null &&
+                            strcmp(codegen.mono_instances[j].generic_name as *byte, decl.fn_decl_name as *byte) == 0 &&
+                            codegen.mono_instances[j].is_function != 0 &&
+                            has_unresolved_mono_type_args(decl, codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count) == 0 {
+                            if strcmp(decl.fn_decl_name as *byte, "from_json" as *byte) != 0 {
+                                const expanded: &ASTNode = prepare_mono_body_expand_macros(codegen.checker, decl.fn_decl_body,
+                                    decl.fn_decl_type_params, decl.fn_decl_type_param_count,
+                                    codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count);
+                                if expanded != null {
+                                    collect_err_union_from_ast(codegen, expanded);
+                                }
+                            }
+                        }
+                        j = j + 1;
+                    }
+                } else {
+                    collect_err_union_from_ast(codegen, decl.fn_decl_body);
+                }
+            }
+            i = i + 1;
         }
     }
     // 再次输出新收集的错误联合结构体

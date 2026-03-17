@@ -883,23 +883,25 @@ fn emit_pending_err_union_structs(codegen: &C99CodeGenerator) void {
         // 检查 payload_c 是否以已知前缀开头，如果不是则跳过
         if is_void == 0 {
             var is_known_type: i32 = 0;
-            // 已知 C 类型前缀
-            if strncmp(payload_c as *byte, "int" as *byte, 3) == 0 ||
-               strncmp(payload_c as *byte, "uint" as *byte, 4) == 0 ||
-               strncmp(payload_c as *byte, "float" as *byte, 5) == 0 ||
-               strncmp(payload_c as *byte, "double" as *byte, 6) == 0 ||
-               strncmp(payload_c as *byte, "char" as *byte, 4) == 0 ||
-               strncmp(payload_c as *byte, "void" as *byte, 4) == 0 ||
-               strncmp(payload_c as *byte, "bool" as *byte, 4) == 0 ||
-               strncmp(payload_c as *byte, "struct" as *byte, 6) == 0 ||
-               strncmp(payload_c as *byte, "enum" as *byte, 4) == 0 ||
-               strncmp(payload_c as *byte, "intptr_t" as *byte, 8) == 0 ||
-               strncmp(payload_c as *byte, "uintptr_t" as *byte, 9) == 0 ||
-               strncmp(payload_c as *byte, "size_t" as *byte, 6) == 0 ||
-               strncmp(payload_c as *byte, "ssize_t" as *byte, 7) == 0 {
+            if payload_node.type == ASTNodeType.AST_TYPE_ARRAY {
                 is_known_type = 1;
+            } else {
+                if strncmp(payload_c as *byte, "int" as *byte, 3) == 0 ||
+                   strncmp(payload_c as *byte, "uint" as *byte, 4) == 0 ||
+                   strncmp(payload_c as *byte, "float" as *byte, 5) == 0 ||
+                   strncmp(payload_c as *byte, "double" as *byte, 6) == 0 ||
+                   strncmp(payload_c as *byte, "char" as *byte, 4) == 0 ||
+                   strncmp(payload_c as *byte, "void" as *byte, 4) == 0 ||
+                   strncmp(payload_c as *byte, "bool" as *byte, 4) == 0 ||
+                   strncmp(payload_c as *byte, "struct" as *byte, 6) == 0 ||
+                   strncmp(payload_c as *byte, "enum" as *byte, 4) == 0 ||
+                   strncmp(payload_c as *byte, "intptr_t" as *byte, 8) == 0 ||
+                   strncmp(payload_c as *byte, "uintptr_t" as *byte, 9) == 0 ||
+                   strncmp(payload_c as *byte, "size_t" as *byte, 6) == 0 ||
+                   strncmp(payload_c as *byte, "ssize_t" as *byte, 7) == 0 {
+                    is_known_type = 1;
+                }
             }
-            // 如果不是已知类型，跳过（很可能是泛型类型参数）
             if is_known_type == 0 {
                 i = i + 1;
                 continue;
@@ -907,7 +909,17 @@ fn emit_pending_err_union_structs(codegen: &C99CodeGenerator) void {
         }
         fprintf(codegen.output as *void, "struct %s { uint32_t error_id;" as *byte, name as *byte);
         if is_void == 0 {
-            fprintf(codegen.output as *void, " %s value;" as *byte, payload_c as *byte);
+            if payload_node.type == ASTNodeType.AST_TYPE_ARRAY && payload_node.type_array_element_type != null && payload_node.type_array_size_expr != null {
+                const elem_c: &byte = c99_type_to_c(codegen, payload_node.type_array_element_type);
+                const arr_size: i32 = eval_const_expr(codegen, payload_node.type_array_size_expr);
+                if elem_c != null && arr_size > 0 {
+                    fprintf(codegen.output as *void, " %s value[%d];" as *byte, elem_c as *byte, arr_size);
+                } else {
+                    fprintf(codegen.output as *void, " %s value;" as *byte, payload_c as *byte);
+                }
+            } else {
+                fprintf(codegen.output as *void, " %s value;" as *byte, payload_c as *byte);
+            }
         }
         fputs(" };\n" as *byte, codegen.output as *void);
         mark_struct_defined(codegen, name);

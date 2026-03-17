@@ -795,7 +795,46 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 gen_expr(codegen, else_b);
                 fputs(" }; } _block_ret; " as *byte, codegen.output as *void);
             } else if k == last_expr_idx {
-                gen_expr(codegen, bs);
+                // 块结果为数组类型且最后一条是变量引用时，用复合字面量拷贝，避免 C 中数组名 decay 成指针导致 .value = 赋值失败
+                // 从块内同名的 VAR_DECL 取数组类型（不依赖 checker 当前作用域）
+                var array_type_node: &ASTNode = null;
+                if bs.type == ASTNodeType.AST_IDENTIFIER && bs.identifier_name != null {
+                    var si: i32 = 0;
+                    while si < block_count {
+                        const st: &ASTNode = block_stmts[si];
+                        if st != null && st.type == ASTNodeType.AST_VAR_DECL && st.var_decl_name != null &&
+                            strcmp(st.var_decl_name as *byte, bs.identifier_name as *byte) == 0 &&
+                            st.var_decl_type != null && st.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY {
+                            array_type_node = st.var_decl_type;
+                            break;
+                        }
+                        si = si + 1;
+                    }
+                }
+                var use_array_compound: i32 = 0;
+                if array_type_node != null && array_type_node.type_array_element_type != null &&
+                    array_type_node.type_array_size_expr != null && array_type_node.type_array_size_expr.type == ASTNodeType.AST_NUMBER {
+                    use_array_compound = 1;
+                }
+                if use_array_compound != 0 {
+                    const elem_c: &byte = c99_type_to_c(codegen, array_type_node.type_array_element_type);
+                    const n: i32 = array_type_node.type_array_size_expr.number_value;
+                    if n > 0 && n <= 64 {
+                        const var_name: &byte = bs.identifier_name;
+                        fprintf(codegen.output as *void, "(%s[%d]){ " as *byte, elem_c as *byte, n);
+                        var i: i32 = 0;
+                        while i < n {
+                            if i > 0 { fputs(", " as *byte, codegen.output as *void); }
+                            fprintf(codegen.output as *void, "%s[%d]" as *byte, var_name as *byte, i);
+                            i = i + 1;
+                        }
+                        fputs(" }" as *byte, codegen.output as *void);
+                    } else {
+                        gen_expr(codegen, bs);
+                    }
+                } else {
+                    gen_expr(codegen, bs);
+                }
                 fputs("; " as *byte, codegen.output as *void);
             } else {
                 gen_stmt(codegen, bs);
@@ -2448,7 +2487,26 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             codegen.struct_type_arg_count = expr.struct_init_type_arg_count;
         }
         
-        fprintf(codegen.output as *void, "(struct %s){" as *byte, struct_name as *byte);
+        var struct_init_needs_memcpy: i32 = 0;
+        if struct_decl != null {
+            var mi: i32 = 0;
+            while mi < init_field_count {
+                const mf_name: &byte = expr.struct_init_field_names[mi];
+                const mf_value: &ASTNode = expr.struct_init_field_values[mi];
+                const mf_type: &ASTNode = c99_find_struct_field_type(codegen, struct_decl, mf_name);
+                if mf_type != null && mf_type.type == ASTNodeType.AST_TYPE_ARRAY &&
+                    mf_value != null && mf_value.type == ASTNodeType.AST_IDENTIFIER {
+                    struct_init_needs_memcpy = 1;
+                    break;
+                }
+                mi = mi + 1;
+            }
+        }
+        if struct_init_needs_memcpy != 0 && struct_decl != null {
+            fprintf(codegen.output as *void, "({ struct %s _uya_tmp = (struct %s){" as *byte, struct_name as *byte, struct_name as *byte);
+        } else {
+            fprintf(codegen.output as *void, "(struct %s){" as *byte, struct_name as *byte);
+        }
         
         // 如果找到结构体声明，按结构体字段顺序生成初始化值（包含默认值）
         if struct_decl != null && struct_decl.struct_decl_fields != null {
@@ -2524,7 +2582,17 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         }
                         codegen.expected_type = resolved;
                     }
-                    gen_expr(codegen, user_value);
+                    if struct_init_needs_memcpy != 0 && field.var_decl_type != null &&
+                        field.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY &&
+                        user_value.type == ASTNodeType.AST_IDENTIFIER {
+                        if array_element_is_aggregate_c99(codegen, field.var_decl_type) != 0 {
+                            fputs("{{0}}" as *byte, codegen.output as *void);
+                        } else {
+                            fputs("{0}" as *byte, codegen.output as *void);
+                        }
+                    } else {
+                        gen_expr(codegen, user_value);
+                    }
                     codegen.expected_type = saved_expected;
                 } else if field.var_decl_init != null {
                     // 使用字段默认值
@@ -2565,6 +2633,24 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             codegen.struct_type_arg_count = saved_sta_count;
         }
         fputc(125, codegen.output as *void);  // '}'
+        if struct_init_needs_memcpy != 0 && struct_decl != null {
+            fputs("; " as *byte, codegen.output as *void);
+            var ci: i32 = 0;
+            while ci < init_field_count {
+                const cf_name: &byte = expr.struct_init_field_names[ci];
+                const cf_value: &ASTNode = expr.struct_init_field_values[ci];
+                const cf_type: &ASTNode = c99_find_struct_field_type(codegen, struct_decl, cf_name);
+                if cf_type != null && cf_type.type == ASTNodeType.AST_TYPE_ARRAY &&
+                    cf_value != null && cf_value.type == ASTNodeType.AST_IDENTIFIER {
+                    const safe_cf_name: &byte = get_safe_c_identifier(codegen, cf_name);
+                    fprintf(codegen.output as *void, "__uya_memcpy(_uya_tmp.%s, " as *byte, safe_cf_name as *byte);
+                    gen_expr(codegen, cf_value);
+                    fprintf(codegen.output as *void, ", sizeof(_uya_tmp.%s)); " as *byte, safe_cf_name as *byte);
+                }
+                ci = ci + 1;
+            }
+            fputs("_uya_tmp; })" as *byte, codegen.output as *void);
+        }
 }
 
 // 生成 match 表达式
@@ -2576,13 +2662,16 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             m_type = "int32_t" as &byte;
         }
         var res_type: &byte = "int32_t" as &byte;
-        if expr.match_expr_arm_count > 0 {
+        var need_err_union_wrap: i32 = 0;
+        if codegen.expected_block_union_type != null && strstr(codegen.expected_block_union_type as *byte, "err_union_" as *byte) != null {
+            res_type = codegen.expected_block_union_type;
+            need_err_union_wrap = 1;
+        } else if expr.match_expr_arm_count > 0 {
             const t: &byte = get_c_type_of_expr(codegen, expr.match_expr_arms[0].result_expr);
             if t != null && strcmp(t as *byte, "int32_t" as *byte) != 0 {
                 res_type = t;
             }
         }
-        var need_err_union_wrap: i32 = 0;
         if res_type != null && strncmp(res_type as *byte, "struct " as *byte, 7) == 0 &&
             strstr(res_type as *byte, "err_union_" as *byte) == null {
             var k: i32 = 0;
@@ -2677,12 +2766,50 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         } else {
                             fprintf(codegen.output as *void, "%sif (_uya_m%s_tag == %d) _uya_r = " as *byte, prefix as &byte, acc as &byte, idx);
                         }
+                        var wrap_array_payload: i32 = 0;
                         if need_err_union_wrap != 0 && res_type != null {
-                            fprintf(codegen.output as *void, "(%s){ .error_id = 0, .value = " as *byte, res_type as *byte);
-                        }
-                        gen_expr(codegen, expr.match_expr_arms[i].result_expr);
-                        if need_err_union_wrap != 0 {
-                            fputs(" } " as *byte, codegen.output as *void);
+                            const wrap_result: &ASTNode = expr.match_expr_arms[i].result_expr;
+                            if wrap_result != null && wrap_result.type == ASTNodeType.AST_BLOCK && wrap_result.block_stmts != null {
+                                var last_expr: &ASTNode = null;
+                                var wj: i32 = wrap_result.block_stmt_count - 1;
+                                while wj >= 0 {
+                                    const wsj: &ASTNode = wrap_result.block_stmts[wj];
+                                    if wsj != null && wsj.type != ASTNodeType.AST_VAR_DECL &&
+                                        wsj.type != ASTNodeType.AST_RETURN_STMT && wsj.type != ASTNodeType.AST_IF_STMT &&
+                                        wsj.type != ASTNodeType.AST_WHILE_STMT && wsj.type != ASTNodeType.AST_FOR_STMT &&
+                                        wsj.type != ASTNodeType.AST_BREAK_STMT && wsj.type != ASTNodeType.AST_CONTINUE_STMT &&
+                                        wsj.type != ASTNodeType.AST_DEFER_STMT && wsj.type != ASTNodeType.AST_ERRDEFER_STMT &&
+                                        wsj.type != ASTNodeType.AST_ASSIGN {
+                                        last_expr = wsj;
+                                        break;
+                                    }
+                                    wj = wj - 1;
+                                }
+                                if last_expr != null && last_expr.type == ASTNodeType.AST_IDENTIFIER && last_expr.identifier_name != null {
+                                    var wi: i32 = 0;
+                                    while wi < wrap_result.block_stmt_count {
+                                        const ws: &ASTNode = wrap_result.block_stmts[wi];
+                                        if ws != null && ws.type == ASTNodeType.AST_VAR_DECL && ws.var_decl_name != null &&
+                                            str_equals(ws.var_decl_name, last_expr.identifier_name) != 0 &&
+                                            ws.var_decl_type != null && ws.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY {
+                                            wrap_array_payload = 1;
+                                            break;
+                                        }
+                                        wi = wi + 1;
+                                    }
+                                }
+                            }
+                            if wrap_array_payload != 0 {
+                                fprintf(codegen.output as *void, "({ %s _uya_wrap = (%s){ .error_id = 0 }; __uya_memcpy(_uya_wrap.value, " as *byte, res_type as *byte, res_type as *byte);
+                                gen_expr(codegen, expr.match_expr_arms[i].result_expr);
+                                fputs(", sizeof(_uya_wrap.value)); _uya_wrap; })" as *byte, codegen.output as *void);
+                            } else {
+                                fprintf(codegen.output as *void, "(%s){ .error_id = 0, .value = " as *byte, res_type as *byte);
+                                gen_expr(codegen, expr.match_expr_arms[i].result_expr);
+                                fputs(" } " as *byte, codegen.output as *void);
+                            }
+                        } else {
+                            gen_expr(codegen, expr.match_expr_arms[i].result_expr);
                         }
                         if bind != null {
                             if expr.match_expr_arms[i].var_name != null && codegen.local_variable_count > 0 {
@@ -3294,13 +3421,94 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         
         if operand_is_err_union == 0 || ret_type == null || ret_type.type != ASTNodeType.AST_TYPE_ERROR_UNION {
             if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
-                const union_c: &byte = c99_type_to_c(codegen, ret_type);
+                var union_c: &byte = c99_type_to_c(codegen, ret_type);
+                var try_payload_ast: &ASTNode = null;
+                if codegen.checker != null {
+                    var try_union_c: &byte = null;
+                    if operand.type == ASTNodeType.AST_MATCH_EXPR && operand.match_expr_arm_count > 0 && operand.match_expr_arms != null {
+                        var first_result: &ASTNode = operand.match_expr_arms[0].result_expr;
+                        if first_result != null && first_result.type != ASTNodeType.AST_ERROR_VALUE {
+                            var payload_ast: &ASTNode = null;
+                            if first_result.type == ASTNodeType.AST_BLOCK && first_result.block_stmts != null {
+                                var si: i32 = 0;
+                                while si < first_result.block_stmt_count {
+                                    const st: &ASTNode = first_result.block_stmts[si];
+                                    if st != null && st.type == ASTNodeType.AST_VAR_DECL && st.var_decl_type != null {
+                                        payload_ast = st.var_decl_type;
+                                        si = first_result.block_stmt_count;
+                                    }
+                                    si = si + 1;
+                                }
+                            }
+                            if payload_ast != null { try_payload_ast = payload_ast; }
+                            if payload_ast == null {
+                                var infer_node: &ASTNode = first_result;
+                                if first_result.type == ASTNodeType.AST_BLOCK && first_result.block_stmt_count > 0 && first_result.block_stmts != null {
+                                    infer_node = first_result.block_stmts[first_result.block_stmt_count - 1];
+                                }
+                                const payload_type: Type = checker_infer_type(codegen.checker, infer_node);
+                                if payload_type.kind == TypeKind.TYPE_ERROR_UNION {
+                                    const try_ast: &ASTNode = type_to_ast(codegen.checker, &payload_type, expr.line, expr.column, expr.filename);
+                                    if try_ast != null { try_union_c = c99_type_to_c(codegen, try_ast); }
+                                } else if payload_type.kind != TypeKind.TYPE_VOID {
+                                    const payload_ptr: &Type = arena_alloc(codegen.checker.arena, @size_of(Type)) as &Type;
+                                    if payload_ptr != null {
+                                        payload_ptr[0] = payload_type;
+                                        const eu_type: Type = make_error_union_type(codegen.checker.arena, payload_ptr);
+                                        const try_ast: &ASTNode = type_to_ast(codegen.checker, &eu_type, expr.line, expr.column, expr.filename);
+                                        if try_ast != null { try_union_c = c99_type_to_c(codegen, try_ast); }
+                                    }
+                                }
+                            } else {
+                                const eu_node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, expr.line, expr.column, codegen.arena, expr.filename);
+                                if eu_node != null {
+                                    eu_node.type_error_union_payload_type = payload_ast;
+                                    try_union_c = c99_type_to_c(codegen, eu_node);
+                                }
+                            }
+                        }
+                    }
+                    if try_union_c == null {
+                        const try_type: Type = checker_infer_type(codegen.checker, operand);
+                        if try_type.kind == TypeKind.TYPE_ERROR_UNION {
+                            const try_ast: &ASTNode = type_to_ast(codegen.checker, &try_type, expr.line, expr.column, expr.filename);
+                            if try_ast != null { try_union_c = c99_type_to_c(codegen, try_ast); }
+                        }
+                    }
+                    if try_union_c != null && strstr(try_union_c as *byte, "err_union_" as *byte) != null {
+                        union_c = try_union_c;
+                    }
+                }
+                const ret_union_c: &byte = c99_type_to_c(codegen, ret_type);
                 fprintf(codegen.output as *void, "({ %s _uya_try_tmp = " as *byte, union_c as *byte);
+                const saved_expected_block: &byte = codegen.expected_block_union_type;
+                codegen.expected_block_union_type = union_c;
                 gen_expr(codegen, operand);
+                codegen.expected_block_union_type = saved_expected_block;
                 if ret_is_void != 0 {
                     fputs("; if (_uya_try_tmp.error_id != 0) return _uya_try_tmp; })" as *byte, codegen.output as *void);
                 } else {
-                    fputs("; if (_uya_try_tmp.error_id != 0) return _uya_try_tmp; _uya_try_tmp.value; })" as *byte, codegen.output as *void);
+                    fputs("; if (_uya_try_tmp.error_id != 0) return " as *byte, codegen.output as *void);
+                    fprintf(codegen.output as *void, "(%s){ .error_id = _uya_try_tmp.error_id }; " as *byte, ret_union_c as *byte);
+                    if try_payload_ast != null && try_payload_ast.type == ASTNodeType.AST_TYPE_ARRAY && try_payload_ast.type_array_element_type != null &&
+                        try_payload_ast.type_array_size_expr != null && try_payload_ast.type_array_size_expr.type == ASTNodeType.AST_NUMBER {
+                        const elem_c: &byte = c99_type_to_c(codegen, try_payload_ast.type_array_element_type);
+                        const n: i32 = try_payload_ast.type_array_size_expr.number_value;
+                        if n > 0 && n <= 64 {
+                            fprintf(codegen.output as *void, "(%s[%d]){ " as *byte, elem_c as *byte, n);
+                            var ti: i32 = 0;
+                            while ti < n {
+                                if ti > 0 { fputs(", " as *byte, codegen.output as *void); }
+                                fprintf(codegen.output as *void, "_uya_try_tmp.value[%d]" as *byte, ti);
+                                ti = ti + 1;
+                            }
+                            fputs(" }; })" as *byte, codegen.output as *void);
+                        } else {
+                            fputs("_uya_try_tmp.value; })" as *byte, codegen.output as *void);
+                        }
+                    } else {
+                        fputs("_uya_try_tmp.value; })" as *byte, codegen.output as *void);
+                    }
                 }
             } else {
                 // 非 error union 返回类型，无法使用 try

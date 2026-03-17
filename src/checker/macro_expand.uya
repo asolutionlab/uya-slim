@@ -2588,12 +2588,7 @@ export fn build_from_json_reflect_body(checker: &TypeChecker, type_arg: &ASTNode
     while check_fi < struct_decl.struct_decl_field_count {
         const fd: &ASTNode = struct_decl.struct_decl_fields[check_fi];
         if fd != null && fd.type == ASTNodeType.AST_VAR_DECL && fd.var_decl_type != null {
-            if fd.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY { return null; }
-            const ftype: &byte = get_type_name_from_ast(fd.var_decl_type, checker.arena);
-            if strcmp(ftype as *byte, "JsonStrView" as *byte) != 0 {
-                const inner: &ASTNode = find_struct_decl_from_program(checker.program_node, ftype);
-                if inner != null && inner.struct_decl_fields != null && inner.struct_decl_field_count > 0 { return null; }
-            }
+            if fd.var_decl_type.type == ASTNodeType.AST_TYPE_SLICE { return null; }
         }
         check_fi = check_fi + 1;
     }

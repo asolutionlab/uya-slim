@@ -173,8 +173,8 @@ fn find_struct_field_type_with_substitution(checker: &TypeChecker, struct_decl: 
 // 表达式类型推断函数（从表达式AST节点推断类型）
 // 参数：checker - TypeChecker 指针，expr - 表达式AST节点
 // 返回：Type结构，如果无法推断返回TYPE_VOID类型
-// 注意：这是简化版本，完整的类型推断需要类型检查上下文
-fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
+// 注意：这是简化版本，完整的类型推断需要类型检查上下文；codegen 用此获取 try 表达式类型以生成正确 err_union 临时
+export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
     var result: Type = Type {
         kind: TypeKind.TYPE_VOID,

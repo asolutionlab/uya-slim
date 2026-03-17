@@ -77,6 +77,7 @@
 - [x] 完整反射 to_json：`to_json_reflect()` 宏（方法块内无参调用），编译器按结构体字段自动生成 to_json；支持字段类型 i64、i32、f64、bool、JsonStrView；测试见 `tests/test_json_to_json_reflect.uya`。
 - [x] **encode_to_to_json 宏 / to_json 单态展开**：库侧宏占位体，编译器 `build_encode_to_to_json_block` 按类型名生成编码块；单态体经 `prepare_mono_body_expand_macros` 展开；`to_json<T>(arena, obj)` 已可用，测试见 `test_json_to_json_reflect`、`test_json_nested`、`test_json_array`。
 - [x] **宏 from_json**：单态 `from_json<T>(arena, buffer)` 当首类型实参为结构体时自动生成合成 body（parse + 按字段解码），无需方法块；含嵌套或数组成员的结构体暂不生成 body，沿用默认 `__decode_json`。手写时可用 `json_object_find_index`、`json_expect_*`。
+- [ ] **from_json 反射支持嵌套/数组（可选）**：`build_decode_struct_expr` 已支持嵌套结构体与定长数组，当前在 `build_from_json_reflect_body` 中遇到数组或嵌套结构体字段时仍 return null，以免触发 codegen 两处问题：① try 的操作数为 match（返回非 err_union 类型如 `[i64:3]` 或 `Point`）时，try 的临时变量类型误用函数返回类型（如 `err_union_WithArray`）而非操作数类型的 err_union（如 `err_union_int64_t_3`、`err_union_Point`）；② 内层 `err_union_Point` 等需在 `from_json_Rect` 等使用前已发射。待 codegen 修复后再去掉该 return null 并补测 Rect/WithArray 往返。
 
 ### 3.2 测试
 

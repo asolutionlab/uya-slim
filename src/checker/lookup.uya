@@ -48,8 +48,8 @@ fn is_enum_variant_name_in_program(program_node: &ASTNode, name: &byte) i32 {
 
 // ===== 结构体查找 =====
 
-// 从程序节点中查找结构体声明（精确匹配 "Future" 或基名匹配 "Future<T>"）
-fn find_struct_decl_from_program(program_node: &ASTNode, struct_name: &byte) &ASTNode {
+// 从程序节点中查找结构体声明（精确匹配 "Future" 或基名匹配 "Future<T>"）；codegen 用其预注册 from_json 内层 err_union
+export fn find_struct_decl_from_program(program_node: &ASTNode, struct_name: &byte) &ASTNode {
     if program_node == null || program_node.type != ASTNodeType.AST_PROGRAM || struct_name == null {
         return null;
     }
