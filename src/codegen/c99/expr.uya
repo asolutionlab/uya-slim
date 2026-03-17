@@ -3439,21 +3439,54 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         if first_result != null && first_result.type != ASTNodeType.AST_ERROR_VALUE {
                             var payload_ast: &ASTNode = null;
                             if first_result.type == ASTNodeType.AST_BLOCK && first_result.block_stmts != null {
-                                var si: i32 = 0;
-                                while si < first_result.block_stmt_count {
+                                var block_tail_expr: &ASTNode = null;
+                                var si: i32 = first_result.block_stmt_count - 1;
+                                while si >= 0 {
                                     const st: &ASTNode = first_result.block_stmts[si];
-                                    if st != null && st.type == ASTNodeType.AST_VAR_DECL && st.var_decl_type != null {
-                                        payload_ast = st.var_decl_type;
-                                        si = first_result.block_stmt_count;
+                                    if st != null && st.type != ASTNodeType.AST_VAR_DECL &&
+                                        st.type != ASTNodeType.AST_RETURN_STMT && st.type != ASTNodeType.AST_IF_STMT &&
+                                        st.type != ASTNodeType.AST_WHILE_STMT && st.type != ASTNodeType.AST_FOR_STMT &&
+                                        st.type != ASTNodeType.AST_BREAK_STMT && st.type != ASTNodeType.AST_CONTINUE_STMT &&
+                                        st.type != ASTNodeType.AST_DEFER_STMT && st.type != ASTNodeType.AST_ERRDEFER_STMT &&
+                                        st.type != ASTNodeType.AST_ASSIGN && st.type != ASTNodeType.AST_EXPR_STMT {
+                                        block_tail_expr = st;
+                                        si = -1;
                                     }
-                                    si = si + 1;
+                                    si = si - 1;
+                                }
+                                if block_tail_expr != null && block_tail_expr.type == ASTNodeType.AST_IDENTIFIER &&
+                                    block_tail_expr.identifier_name != null {
+                                    si = first_result.block_stmt_count - 1;
+                                    while si >= 0 {
+                                        const st2: &ASTNode = first_result.block_stmts[si];
+                                        if st2 != null && st2.type == ASTNodeType.AST_VAR_DECL &&
+                                            st2.var_decl_name != null && st2.var_decl_type != null &&
+                                            strcmp(st2.var_decl_name as *byte, block_tail_expr.identifier_name as *byte) == 0 {
+                                            payload_ast = st2.var_decl_type;
+                                            si = -1;
+                                        }
+                                        si = si - 1;
+                                    }
                                 }
                             }
                             if payload_ast != null { try_payload_ast = payload_ast; }
                             if payload_ast == null {
                                 var infer_node: &ASTNode = first_result;
                                 if first_result.type == ASTNodeType.AST_BLOCK && first_result.block_stmt_count > 0 && first_result.block_stmts != null {
-                                    infer_node = first_result.block_stmts[first_result.block_stmt_count - 1];
+                                    var sj: i32 = first_result.block_stmt_count - 1;
+                                    while sj >= 0 {
+                                        const st3: &ASTNode = first_result.block_stmts[sj];
+                                        if st3 != null && st3.type != ASTNodeType.AST_VAR_DECL &&
+                                            st3.type != ASTNodeType.AST_RETURN_STMT && st3.type != ASTNodeType.AST_IF_STMT &&
+                                            st3.type != ASTNodeType.AST_WHILE_STMT && st3.type != ASTNodeType.AST_FOR_STMT &&
+                                            st3.type != ASTNodeType.AST_BREAK_STMT && st3.type != ASTNodeType.AST_CONTINUE_STMT &&
+                                            st3.type != ASTNodeType.AST_DEFER_STMT && st3.type != ASTNodeType.AST_ERRDEFER_STMT &&
+                                            st3.type != ASTNodeType.AST_ASSIGN && st3.type != ASTNodeType.AST_EXPR_STMT {
+                                            infer_node = st3;
+                                            sj = -1;
+                                        }
+                                        sj = sj - 1;
+                                    }
                                 }
                                 const payload_type: Type = checker_infer_type(codegen.checker, infer_node);
                                 if payload_type.kind == TypeKind.TYPE_ERROR_UNION {

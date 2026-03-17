@@ -121,11 +121,93 @@ fn collect_err_union_from_ast(codegen: &C99CodeGenerator, node: &ASTNode) void {
     }
     if node.type == ASTNodeType.AST_TRY_EXPR {
         if codegen.checker != null && node.try_expr_operand != null {
-            const try_type: Type = checker_infer_type(codegen.checker, node);
-            if try_type.kind == TypeKind.TYPE_ERROR_UNION {
-                const try_ast: &ASTNode = type_to_ast(codegen.checker, &try_type, node.line, node.column, node.filename);
-                if try_ast != null {
-                    c99_type_to_c(codegen, try_ast);
+            var registered: i32 = 0;
+            const operand: &ASTNode = node.try_expr_operand;
+            if operand.type == ASTNodeType.AST_MATCH_EXPR && operand.match_expr_arm_count > 0 && operand.match_expr_arms != null {
+                var first_result: &ASTNode = null;
+                var ai: i32 = 0;
+                while ai < operand.match_expr_arm_count {
+                    const arm: ASTMatchArm = operand.match_expr_arms[ai];
+                    if arm.result_expr != null && arm.result_expr.type != ASTNodeType.AST_ERROR_VALUE {
+                        first_result = arm.result_expr;
+                        ai = operand.match_expr_arm_count;
+                    }
+                    ai = ai + 1;
+                }
+                if first_result != null {
+                    var payload_ast: &ASTNode = null;
+                    var infer_node: &ASTNode = first_result;
+                    if first_result.type == ASTNodeType.AST_BLOCK && first_result.block_stmts != null && first_result.block_stmt_count > 0 {
+                        var tail_expr: &ASTNode = null;
+                        ai = first_result.block_stmt_count - 1;
+                        while ai >= 0 {
+                            const st: &ASTNode = first_result.block_stmts[ai];
+                            if st != null && st.type != ASTNodeType.AST_VAR_DECL &&
+                                st.type != ASTNodeType.AST_RETURN_STMT && st.type != ASTNodeType.AST_IF_STMT &&
+                                st.type != ASTNodeType.AST_WHILE_STMT && st.type != ASTNodeType.AST_FOR_STMT &&
+                                st.type != ASTNodeType.AST_BREAK_STMT && st.type != ASTNodeType.AST_CONTINUE_STMT &&
+                                st.type != ASTNodeType.AST_DEFER_STMT && st.type != ASTNodeType.AST_ERRDEFER_STMT &&
+                                st.type != ASTNodeType.AST_ASSIGN && st.type != ASTNodeType.AST_EXPR_STMT {
+                                tail_expr = st;
+                                ai = -1;
+                            }
+                            ai = ai - 1;
+                        }
+                        if tail_expr != null {
+                            infer_node = tail_expr;
+                        }
+                        if tail_expr != null && tail_expr.type == ASTNodeType.AST_IDENTIFIER && tail_expr.identifier_name != null {
+                            ai = first_result.block_stmt_count - 1;
+                            while ai >= 0 {
+                                const st2: &ASTNode = first_result.block_stmts[ai];
+                                if st2 != null && st2.type == ASTNodeType.AST_VAR_DECL &&
+                                    st2.var_decl_name != null && st2.var_decl_type != null &&
+                                    strcmp(st2.var_decl_name as *byte, tail_expr.identifier_name as *byte) == 0 {
+                                    payload_ast = st2.var_decl_type;
+                                    ai = -1;
+                                }
+                                ai = ai - 1;
+                            }
+                        }
+                    }
+                    if payload_ast != null {
+                        const eu_node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, 0, 0, codegen.arena, null);
+                        if eu_node != null {
+                            eu_node.type_error_union_payload_type = payload_ast;
+                            c99_type_to_c(codegen, eu_node);
+                            registered = 1;
+                        }
+                    }
+                    if registered == 0 && infer_node != null {
+                        const payload_type: Type = checker_infer_type(codegen.checker, infer_node);
+                        if payload_type.kind == TypeKind.TYPE_ERROR_UNION {
+                            const try_ast: &ASTNode = type_to_ast(codegen.checker, &payload_type, node.line, node.column, node.filename);
+                            if try_ast != null {
+                                c99_type_to_c(codegen, try_ast);
+                                registered = 1;
+                            }
+                        } else if payload_type.kind != TypeKind.TYPE_VOID {
+                            const payload_ptr: &Type = arena_alloc(codegen.checker.arena, @size_of(Type)) as &Type;
+                            if payload_ptr != null {
+                                payload_ptr[0] = payload_type;
+                                const eu_type: Type = make_error_union_type(codegen.checker.arena, payload_ptr);
+                                const try_ast: &ASTNode = type_to_ast(codegen.checker, &eu_type, node.line, node.column, node.filename);
+                                if try_ast != null {
+                                    c99_type_to_c(codegen, try_ast);
+                                    registered = 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if registered == 0 {
+                const try_type: Type = checker_infer_type(codegen.checker, node);
+                if try_type.kind == TypeKind.TYPE_ERROR_UNION {
+                    const try_ast: &ASTNode = type_to_ast(codegen.checker, &try_type, node.line, node.column, node.filename);
+                    if try_ast != null {
+                        c99_type_to_c(codegen, try_ast);
+                    }
                 }
             }
         }
@@ -1562,6 +1644,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                 const ft: &ASTNode = fd.var_decl_type;
                                 var need_err_union: i32 = 0;
                                 if ft.type == ASTNodeType.AST_TYPE_ARRAY { need_err_union = 1; }
+                                if ft.type == ASTNodeType.AST_TYPE_SLICE { need_err_union = 1; }
                                 if ft.type == ASTNodeType.AST_TYPE_NAMED && ft.type_named_name != null {
                                     const inner: &ASTNode = find_struct_decl_from_program(ast, ft.type_named_name);
                                     if inner != null && inner.struct_decl_fields != null && inner.struct_decl_field_count > 0 {
