@@ -78,7 +78,7 @@
 - [ ] **encode_to_to_json 宏 / to_json 单态展开（进行中）**  
   - 已做：`encode_to_to_json` 改为库侧宏（`lib/std/json/macros.uya`），占位体 `error.BufferTooSmall as ! usize`；编译器在 `macro_expand` 中首参为类型名时用 `build_encode_to_to_json_block` 生成编码块，首参为类型形参 `T` 时不展开（保留调用）；单态体在 codegen 中经 `prepare_mono_body_expand_macros` 再展开；类型检查对 `try encode_to_to_json(...)` 特例放行；try 操作数为 block 时按 `!usize` 生成 C 类型。  
   - 待做：codegen 对「块末为 if（error | value）、块作为 try 操作数」生成可赋给 `struct err_union_size_t` 的表达式（如三元或 err_union 构造），并修正 `return &buf[0:n]` 的切片类型（避免 uya_slice_void）。当前 `make check` 通过 545/547，未通过：`test_json_to_json_reflect`、`test_json_struct_roundtrip`（链接失败）。
-- [ ] 宏 from_json：顶层 stmt 宏暂不可用，仍手写 from_json；[x] 手写示例见 `json_object_find_index`、`user_from_json`。
+- [x] 宏 from_json：结构体方法块内 `from_json_reflect()` 由编译器展开；单态 `from_json<T>(arena, buffer)` 当 T 含 `_from_json_placeholder` 时使用合成 body（parse + match 按字段解码）；[x] 手写示例见 `json_object_find_index`、`user_from_json`。
 
 ### 3.2 测试
 

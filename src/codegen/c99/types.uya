@@ -1317,6 +1317,63 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         }
         // 无法推断返回类型，返回默认类型
         return ("int32_t" as *byte) as &byte;
+    } else if expr.type == ASTNodeType.AST_MATCH_EXPR {
+        if expr.match_expr_arm_count > 0 && expr.match_expr_arms != null {
+            const first_t: &byte = get_c_type_of_expr(codegen, expr.match_expr_arms[0].result_expr);
+            if first_t != null && strncmp(first_t as *byte, "struct " as *byte, 7) == 0 &&
+                strstr(first_t as *byte, "err_union_" as *byte) == null {
+                var k: i32 = 0;
+                while k < expr.match_expr_arm_count {
+                    const res_k: &ASTNode = expr.match_expr_arms[k].result_expr;
+                    if (expr.match_expr_arms[k].kind == MatchPatternKind.MATCH_PAT_ELSE || expr.match_expr_arms[k].kind == MatchPatternKind.MATCH_PAT_WILDCARD) &&
+                        res_k != null && res_k.type == ASTNodeType.AST_ERROR_VALUE {
+                        const payload_name: &byte = &first_t[7];
+                        const buf: &byte = arena_alloc(codegen.arena, (16 + strlen(payload_name as *byte)) as usize) as &byte;
+                        if buf != null {
+                            snprintf(buf as *byte, 64, "struct err_union_%s" as *byte, payload_name as *byte);
+                            return buf;
+                        }
+                        k = expr.match_expr_arm_count;
+                        break;
+                    }
+                    k = k + 1;
+                }
+            }
+            if first_t != null && strcmp(first_t as *byte, "int32_t" as *byte) != 0 {
+                return first_t;
+            }
+        }
+        return ("int32_t" as *byte) as &byte;
+    } else if expr.type == ASTNodeType.AST_STRUCT_INIT {
+        if expr.struct_init_struct_name != null {
+            const name: &byte = expr.struct_init_struct_name;
+            const safe: &byte = get_safe_c_identifier(codegen, name);
+            if safe != null {
+                const buf: &byte = arena_alloc(codegen.arena, (8 + strlen(safe as *byte)) as usize) as &byte;
+                if buf != null {
+                    snprintf(buf as *byte, 64, "struct %s" as *byte, safe as *byte);
+                    return buf;
+                }
+            }
+        }
+        return ("int32_t" as *byte) as &byte;
+    } else if expr.type == ASTNodeType.AST_BLOCK {
+        if expr.block_stmts != null && expr.block_stmt_count > 0 {
+            var j: i32 = expr.block_stmt_count - 1;
+            while j >= 0 {
+                const bs: &ASTNode = expr.block_stmts[j];
+                if bs != null && bs.type != ASTNodeType.AST_VAR_DECL &&
+                    bs.type != ASTNodeType.AST_RETURN_STMT && bs.type != ASTNodeType.AST_IF_STMT &&
+                    bs.type != ASTNodeType.AST_WHILE_STMT && bs.type != ASTNodeType.AST_FOR_STMT &&
+                    bs.type != ASTNodeType.AST_BREAK_STMT && bs.type != ASTNodeType.AST_CONTINUE_STMT &&
+                    bs.type != ASTNodeType.AST_DEFER_STMT && bs.type != ASTNodeType.AST_ERRDEFER_STMT &&
+                    bs.type != ASTNodeType.AST_ASSIGN && bs.type != ASTNodeType.AST_EXPR_STMT {
+                    return get_c_type_of_expr(codegen, bs);
+                }
+                j = j - 1;
+            }
+        }
+        return ("int32_t" as *byte) as &byte;
     } else {
         return ("int32_t" as *byte) as &byte;
     }

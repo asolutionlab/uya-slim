@@ -2229,6 +2229,18 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
             fn_decl.fn_decl_type_params, fn_decl.fn_decl_type_param_count, type_args, type_arg_count);
         if expanded != null { body_to_gen = expanded; }
     }
+    // from_json<T>：首类型实参为结构体时，按结构体字段生成解码 body（与 to_json 一致，无需方法块声明）
+    if codegen.checker != null && orig_name != null && strcmp(orig_name as *byte, "from_json" as *byte) == 0 &&
+       type_args != null && type_arg_count >= 1 && type_args[0] != null &&
+       type_args[0].type == ASTNodeType.AST_TYPE_NAMED && type_args[0].type_named_name != null {
+        var filename: &byte = null;
+        if fn_decl.filename != null {
+            filename = fn_decl.filename;
+        }
+        const reflect_body: &ASTNode = build_from_json_reflect_body(codegen.checker, type_args[0],
+            fn_decl.line, fn_decl.column, filename);
+        if reflect_body != null { body_to_gen = reflect_body; }
+    }
     // 保存并设置单态化上下文
     const saved_type_params: &TypeParam = codegen.current_type_params;
     const saved_type_param_count: i32 = codegen.current_type_param_count;

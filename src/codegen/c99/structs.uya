@@ -859,6 +859,22 @@ fn find_method_in_block(method_block: &ASTNode, method_name: &byte) &ASTNode {
     return null;
 }
 
+// 检查结构体是否包含 from_json_reflect（方法块中有 _from_json_placeholder 方法）
+export fn struct_has_from_json_reflect_c99(codegen: &C99CodeGenerator, struct_name: &byte) i32 {
+    if codegen == null || struct_name == null {
+        return 0;
+    }
+    const block: &ASTNode = find_method_block_for_struct_c99(codegen, struct_name);
+    if block == null {
+        return 0;
+    }
+    const m: &ASTNode = find_method_in_block(block, ("_from_json_placeholder" as *byte) as &byte);
+    if m != null {
+        return 1;
+    }
+    return 0;
+}
+
 // 查找结构体方法（同时检查外部方法块和内部定义的方法）
 // 全局静态缓冲区用于从单态化名称提取泛型名称（避免 arena 分配）
 var g_generic_name_buf: [byte: C99_GENERIC_NAME_BUF_SIZE] = [];

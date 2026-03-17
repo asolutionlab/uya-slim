@@ -2577,10 +2577,30 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         }
         var res_type: &byte = "int32_t" as &byte;
         if expr.match_expr_arm_count > 0 {
-            // 尝试从 result_expr 获取类型
             const t: &byte = get_c_type_of_expr(codegen, expr.match_expr_arms[0].result_expr);
             if t != null && strcmp(t as *byte, "int32_t" as *byte) != 0 {
                 res_type = t;
+            }
+        }
+        var need_err_union_wrap: i32 = 0;
+        if res_type != null && strncmp(res_type as *byte, "struct " as *byte, 7) == 0 &&
+            strstr(res_type as *byte, "err_union_" as *byte) == null {
+            var k: i32 = 0;
+            while k < expr.match_expr_arm_count {
+                const res_k: &ASTNode = expr.match_expr_arms[k].result_expr;
+                if (expr.match_expr_arms[k].kind == MatchPatternKind.MATCH_PAT_ELSE || expr.match_expr_arms[k].kind == MatchPatternKind.MATCH_PAT_WILDCARD) &&
+                    res_k != null && res_k.type == ASTNodeType.AST_ERROR_VALUE {
+                    const payload_name: &byte = &res_type[7];
+                    const buf: &byte = arena_alloc(codegen.arena, (16 + strlen(payload_name as *byte)) as usize) as &byte;
+                    if buf != null {
+                        snprintf(buf as *byte, 64, "struct err_union_%s" as *byte, payload_name as *byte);
+                        res_type = buf;
+                        need_err_union_wrap = 1;
+                    }
+                    k = expr.match_expr_arm_count;
+                    break;
+                }
+                k = k + 1;
             }
         }
         // 检测是否是指针类型（以 " *" 结尾）
@@ -2657,7 +2677,13 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         } else {
                             fprintf(codegen.output as *void, "%sif (_uya_m%s_tag == %d) _uya_r = " as *byte, prefix as &byte, acc as &byte, idx);
                         }
+                        if need_err_union_wrap != 0 && res_type != null {
+                            fprintf(codegen.output as *void, "(%s){ .error_id = 0, .value = " as *byte, res_type as *byte);
+                        }
                         gen_expr(codegen, expr.match_expr_arms[i].result_expr);
+                        if need_err_union_wrap != 0 {
+                            fputs(" } " as *byte, codegen.output as *void);
+                        }
                         if bind != null {
                             if expr.match_expr_arms[i].var_name != null && codegen.local_variable_count > 0 {
                                 codegen.local_variable_count = codegen.local_variable_count - 1;
@@ -2702,7 +2728,30 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 }
             } else if expr.match_expr_arms[i].kind == MatchPatternKind.MATCH_PAT_WILDCARD || expr.match_expr_arms[i].kind == MatchPatternKind.MATCH_PAT_ELSE {
                 fprintf(codegen.output as *void, "%s{ _uya_r = " as *byte, prefix as *byte);
-                gen_expr(codegen, expr.match_expr_arms[i].result_expr);
+                const else_result: &ASTNode = expr.match_expr_arms[i].result_expr;
+                var use_err_union: i32 = 0;
+                var err_union_type: &byte = null;
+                if else_result != null && else_result.type == ASTNodeType.AST_ERROR_VALUE && res_type != null {
+                    if strstr(res_type as *byte, "err_union_" as *byte) != null {
+                        use_err_union = 1;
+                        err_union_type = res_type;
+                    } else if strncmp(res_type as *byte, "struct " as *byte, 7) == 0 {
+                        const payload_name: &byte = &res_type[7];
+                        const buf: &byte = arena_alloc(codegen.arena, (16 + strlen(payload_name as *byte)) as usize) as &byte;
+                        if buf != null {
+                            snprintf(buf as *byte, 64, "struct err_union_%s" as *byte, payload_name as *byte);
+                            use_err_union = 1;
+                            err_union_type = buf;
+                        }
+                    }
+                }
+                if use_err_union != 0 && err_union_type != null {
+                    var err_id: i32 = c99_get_or_add_error_id(codegen, else_result.error_value_name);
+                    if err_id == 0 { err_id = 1; }
+                    fprintf(codegen.output as *void, "(%s){ .error_id = %uU }" as *byte, err_union_type as *byte, err_id as u32);
+                } else {
+                    gen_expr(codegen, else_result);
+                }
                 fputs("; } " as *byte, codegen.output as *void);
             } else if expr.match_expr_arms[i].kind == MatchPatternKind.MATCH_PAT_ERROR {
                 var id: i32 = c99_get_or_add_error_id(codegen, expr.match_expr_arms[i].error_name);
