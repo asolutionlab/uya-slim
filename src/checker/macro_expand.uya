@@ -1837,7 +1837,6 @@ export fn prepare_mono_body_expand_macros(checker: &TypeChecker, body: &ASTNode,
 // 递归计算 encode 块中“字段部分”的语句数（不含 var_w/init/open_brace/close_brace/if_expr）
 fn count_encode_field_stmts(checker: &TypeChecker, struct_decl: &ASTNode) i32 {
     if checker == null || struct_decl == null || struct_decl.struct_decl_fields == null { return 0; }
-    const arena: &Arena = checker.arena;
     var total: i32 = 0;
     var fi: i32 = 0;
     const n: i32 = struct_decl.struct_decl_field_count;
@@ -1848,36 +1847,320 @@ fn count_encode_field_stmts(checker: &TypeChecker, struct_decl: &ASTNode) i32 {
             continue;
         }
         if fi > 0 { total = total + 1; }
-        total = total + 1;
-        const field_type: &ASTNode = field_node.var_decl_type;
-        if field_type != null && field_type.type == ASTNodeType.AST_TYPE_ARRAY {
-            var arr_size: i32 = 0;
-            if field_type.type_array_size_expr != null {
-                arr_size = checker_eval_const_expr(checker, field_type.type_array_size_expr);
-            }
-            if arr_size < 0 { arr_size = 0; }
-            if arr_size > 64 { arr_size = 64; }
-            total = total + 1;
-            if arr_size > 0 { total = total + (arr_size - 1) + arr_size; }
-            total = total + 1;
-        } else if field_type != null && field_type.type == ASTNodeType.AST_TYPE_SLICE {
-            total = total + 3;
-        } else {
-            const ftype: &byte = get_type_name_from_ast(field_node.var_decl_type, arena);
-            const inner_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, ftype);
-            var skip_nested: i32 = 0;
-            if strcmp(ftype as *byte, "JsonStrView" as *byte) == 0 { skip_nested = 1; }
-            if inner_decl != null && inner_decl.struct_decl_fields != null && inner_decl.struct_decl_field_count > 0 && skip_nested == 0 {
-                total = total + 1;
-                total = total + count_encode_field_stmts(checker, inner_decl);
-                total = total + 1;
-            } else {
-                total = total + 1;
-            }
-        }
+        total = total + 2;
         fi = fi + 1;
     }
     return total;
+}
+
+fn build_json_write_byte_stmt(addr_w: &ASTNode, byte_value: i64, arena: &Arena, line: i32, column: i32, filename: &byte) &ASTNode {
+    if addr_w == null || arena == null { return null; }
+    const s_json_write_byte: &byte = macro_arena_strdup(arena, ("json_write_byte" as *byte) as &byte);
+    if s_json_write_byte == null { return null; }
+    const args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
+    if args == null { return null; }
+    args[0] = addr_w;
+    args[1] = create_number_literal(byte_value, arena, line, column);
+    const call_stmt: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line, column, arena, filename);
+    if call_stmt == null { return null; }
+    call_stmt.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line, column);
+    call_stmt.call_expr_args = args;
+    call_stmt.call_expr_arg_count = 2;
+    call_stmt.call_expr_has_ellipsis_forward = 0;
+    call_stmt.call_expr_type_args = null;
+    call_stmt.call_expr_type_arg_count = 0;
+    return call_stmt;
+}
+
+fn build_json_write_key_stmt(addr_w: &ASTNode, key_name: &byte, arena: &Arena, line: i32, column: i32, filename: &byte) &ASTNode {
+    if addr_w == null || key_name == null || arena == null { return null; }
+    const s_json_write_key: &byte = macro_arena_strdup(arena, ("json_write_key" as *byte) as &byte);
+    if s_json_write_key == null { return null; }
+    const key_args: &(&ASTNode) = arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
+    if key_args == null { return null; }
+    key_args[0] = addr_w;
+    key_args[1] = create_string_literal(key_name, arena, line, column);
+    key_args[2] = create_number_literal((strlen(key_name as *byte)) as i64, arena, line, column);
+    const call_key: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line, column, arena, filename);
+    if call_key == null { return null; }
+    call_key.call_expr_callee = create_identifier_from_string(s_json_write_key, arena, line, column);
+    call_key.call_expr_args = key_args;
+    call_key.call_expr_arg_count = 3;
+    call_key.call_expr_has_ellipsis_forward = 0;
+    call_key.call_expr_type_args = null;
+    call_key.call_expr_type_arg_count = 0;
+    return call_key;
+}
+
+fn build_json_write_scalar_stmt(type_name: &byte, value_expr: &ASTNode, addr_w: &ASTNode, arena: &Arena, line: i32, column: i32, filename: &byte) &ASTNode {
+    if type_name == null || value_expr == null || addr_w == null || arena == null { return null; }
+    const s_json_write_i64: &byte = macro_arena_strdup(arena, ("json_write_i64" as *byte) as &byte);
+    const s_json_write_str_view: &byte = macro_arena_strdup(arena, ("json_write_str_view" as *byte) as &byte);
+    const s_json_write_bool: &byte = macro_arena_strdup(arena, ("json_write_bool" as *byte) as &byte);
+    const s_json_write_f64: &byte = macro_arena_strdup(arena, ("json_write_f64" as *byte) as &byte);
+    if s_json_write_i64 == null || s_json_write_str_view == null || s_json_write_bool == null || s_json_write_f64 == null { return null; }
+    const write_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
+    if write_args == null { return null; }
+    write_args[0] = addr_w;
+    write_args[1] = value_expr;
+    var write_callee: &byte = s_json_write_i64;
+    if strcmp(type_name as *byte, "JsonStrView" as *byte) == 0 { write_callee = s_json_write_str_view; }
+    else if strcmp(type_name as *byte, "bool" as *byte) == 0 { write_callee = s_json_write_bool; }
+    else if strcmp(type_name as *byte, "f64" as *byte) == 0 { write_callee = s_json_write_f64; }
+    const call_write: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line, column, arena, filename);
+    if call_write == null { return null; }
+    call_write.call_expr_callee = create_identifier_from_string(write_callee, arena, line, column);
+    call_write.call_expr_args = write_args;
+    call_write.call_expr_arg_count = 2;
+    call_write.call_expr_has_ellipsis_forward = 0;
+    call_write.call_expr_type_args = null;
+    call_write.call_expr_type_arg_count = 0;
+    return call_write;
+}
+
+fn build_json_write_value_stmt(checker: &TypeChecker, type_node: &ASTNode, value_expr: &ASTNode, addr_w: &ASTNode, name_hint: &byte, line: i32, column: i32, filename: &byte) &ASTNode {
+    if checker == null || checker.arena == null || type_node == null || value_expr == null || addr_w == null {
+        return null;
+    }
+    const arena: &Arena = checker.arena;
+    var safe_name_hint: &byte = name_hint;
+    if safe_name_hint == null {
+        safe_name_hint = ("value" as *byte) as &byte;
+    }
+
+    if type_node.type == ASTNodeType.AST_TYPE_ARRAY {
+        var arr_size: i32 = 0;
+        if type_node.type_array_size_expr != null {
+            arr_size = checker_eval_const_expr(checker, type_node.type_array_size_expr);
+        }
+        if arr_size < 0 { arr_size = 0; }
+        const elem_type: &ASTNode = type_node.type_array_element_type;
+        if elem_type == null { return null; }
+
+        var loop_name_buf: [byte: 80] = [];
+        snprintf(&loop_name_buf[0] as *byte, 80, "%s_i" as *byte, safe_name_hint as *byte);
+        const loop_var_name: &byte = macro_arena_strdup(arena, &loop_name_buf[0]);
+        if loop_var_name == null { return null; }
+
+        var child_hint_buf: [byte: 80] = [];
+        snprintf(&child_hint_buf[0] as *byte, 80, "%s_elem" as *byte, safe_name_hint as *byte);
+        const child_hint: &byte = macro_arena_strdup(arena, &child_hint_buf[0]);
+        if child_hint == null { return null; }
+
+        const cond_left: &ASTNode = create_identifier_from_string(loop_var_name, arena, line, column);
+        if cond_left == null { return null; }
+        const comma_cond: &ASTNode = ast_new_node(ASTNodeType.AST_BINARY_EXPR, line, column, arena, filename);
+        if comma_cond == null { return null; }
+        comma_cond.binary_expr_op = (TokenType.TOKEN_GREATER) as i32;
+        comma_cond.binary_expr_left = cond_left;
+        comma_cond.binary_expr_right = create_number_literal(0, arena, line, column);
+
+        const comma_stmt: &ASTNode = build_json_write_byte_stmt(addr_w, 44, arena, line, column, filename);
+        if comma_stmt == null { return null; }
+        const if_comma: &ASTNode = ast_new_node(ASTNodeType.AST_IF_STMT, line, column, arena, filename);
+        if if_comma == null { return null; }
+        if_comma.if_stmt_condition = comma_cond;
+        if_comma.if_stmt_then_branch = comma_stmt;
+        if_comma.if_stmt_else_branch = null;
+
+        const elem_index: &ASTNode = create_identifier_from_string(loop_var_name, arena, line, column);
+        if elem_index == null { return null; }
+        const elem_expr: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_ACCESS, line, column, arena, filename);
+        if elem_expr == null { return null; }
+        elem_expr.array_access_array = value_expr;
+        elem_expr.array_access_index = elem_index;
+
+        const elem_stmt: &ASTNode = build_json_write_value_stmt(checker, elem_type, elem_expr, addr_w, child_hint, line, column, filename);
+        if elem_stmt == null { return null; }
+
+        const loop_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 2) as u64) as &(&ASTNode);
+        if loop_body_stmts == null { return null; }
+        loop_body_stmts[0] = if_comma;
+        loop_body_stmts[1] = elem_stmt;
+        const loop_body: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, arena, filename);
+        if loop_body == null { return null; }
+        loop_body.block_stmts = loop_body_stmts;
+        loop_body.block_stmt_count = 2;
+
+        const range_zero: &ASTNode = create_number_literal(0, arena, line, column);
+        if range_zero == null { return null; }
+        range_zero.literal_suffix = 9;
+        const range_end: &ASTNode = create_number_literal(arr_size as i64, arena, line, column);
+        if range_end == null { return null; }
+        range_end.literal_suffix = 9;
+        const array_for: &ASTNode = ast_new_node(ASTNodeType.AST_FOR_STMT, line, column, arena, filename);
+        if array_for == null { return null; }
+        array_for.for_stmt_is_range = 1;
+        array_for.for_stmt_array = null;
+        array_for.for_stmt_range_start = range_zero;
+        array_for.for_stmt_range_end = range_end;
+        array_for.for_stmt_var_name = loop_var_name;
+        array_for.for_stmt_is_ref = 0;
+        array_for.for_stmt_body = loop_body;
+
+        const block_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 3) as u64) as &(&ASTNode);
+        if block_stmts == null { return null; }
+        block_stmts[0] = build_json_write_byte_stmt(addr_w, 91, arena, line, column, filename);
+        block_stmts[1] = array_for;
+        block_stmts[2] = build_json_write_byte_stmt(addr_w, 93, arena, line, column, filename);
+        if block_stmts[0] == null || block_stmts[2] == null { return null; }
+        const array_block: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, arena, filename);
+        if array_block == null { return null; }
+        array_block.block_stmts = block_stmts;
+        array_block.block_stmt_count = 3;
+        return array_block;
+    }
+
+    if type_node.type == ASTNodeType.AST_TYPE_SLICE {
+        const elem_type: &ASTNode = type_node.type_slice_element_type;
+        if elem_type == null { return null; }
+        const s_len: &byte = macro_arena_strdup(arena, ("len" as *byte) as &byte);
+        const s_ptr: &byte = macro_arena_strdup(arena, ("ptr" as *byte) as &byte);
+        if s_len == null || s_ptr == null { return null; }
+
+        var loop_name_buf: [byte: 80] = [];
+        snprintf(&loop_name_buf[0] as *byte, 80, "%s_i" as *byte, safe_name_hint as *byte);
+        const loop_var_name: &byte = macro_arena_strdup(arena, &loop_name_buf[0]);
+        if loop_var_name == null { return null; }
+
+        var child_hint_buf: [byte: 80] = [];
+        snprintf(&child_hint_buf[0] as *byte, 80, "%s_elem" as *byte, safe_name_hint as *byte);
+        const child_hint: &byte = macro_arena_strdup(arena, &child_hint_buf[0]);
+        if child_hint == null { return null; }
+
+        const slice_len: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line, column, arena, filename);
+        if slice_len == null { return null; }
+        slice_len.member_access_object = value_expr;
+        slice_len.member_access_field_name = s_len;
+        slice_len.member_access_is_module_access = 0;
+        slice_len.member_access_module_name = null;
+
+        const slice_ptr: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line, column, arena, filename);
+        if slice_ptr == null { return null; }
+        slice_ptr.member_access_object = value_expr;
+        slice_ptr.member_access_field_name = s_ptr;
+        slice_ptr.member_access_is_module_access = 0;
+        slice_ptr.member_access_module_name = null;
+
+        const cond_left: &ASTNode = create_identifier_from_string(loop_var_name, arena, line, column);
+        if cond_left == null { return null; }
+        const comma_cond: &ASTNode = ast_new_node(ASTNodeType.AST_BINARY_EXPR, line, column, arena, filename);
+        if comma_cond == null { return null; }
+        comma_cond.binary_expr_op = (TokenType.TOKEN_GREATER) as i32;
+        comma_cond.binary_expr_left = cond_left;
+        comma_cond.binary_expr_right = create_number_literal(0, arena, line, column);
+
+        const comma_stmt: &ASTNode = build_json_write_byte_stmt(addr_w, 44, arena, line, column, filename);
+        if comma_stmt == null { return null; }
+        const if_comma: &ASTNode = ast_new_node(ASTNodeType.AST_IF_STMT, line, column, arena, filename);
+        if if_comma == null { return null; }
+        if_comma.if_stmt_condition = comma_cond;
+        if_comma.if_stmt_then_branch = comma_stmt;
+        if_comma.if_stmt_else_branch = null;
+
+        const elem_index: &ASTNode = create_identifier_from_string(loop_var_name, arena, line, column);
+        if elem_index == null { return null; }
+        const elem_expr: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_ACCESS, line, column, arena, filename);
+        if elem_expr == null { return null; }
+        elem_expr.array_access_array = slice_ptr;
+        elem_expr.array_access_index = elem_index;
+
+        const elem_stmt: &ASTNode = build_json_write_value_stmt(checker, elem_type, elem_expr, addr_w, child_hint, line, column, filename);
+        if elem_stmt == null { return null; }
+
+        const loop_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 2) as u64) as &(&ASTNode);
+        if loop_body_stmts == null { return null; }
+        loop_body_stmts[0] = if_comma;
+        loop_body_stmts[1] = elem_stmt;
+        const loop_body: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, arena, filename);
+        if loop_body == null { return null; }
+        loop_body.block_stmts = loop_body_stmts;
+        loop_body.block_stmt_count = 2;
+
+        const range_zero: &ASTNode = create_number_literal(0, arena, line, column);
+        if range_zero == null { return null; }
+        range_zero.literal_suffix = 9;
+        const slice_for: &ASTNode = ast_new_node(ASTNodeType.AST_FOR_STMT, line, column, arena, filename);
+        if slice_for == null { return null; }
+        slice_for.for_stmt_is_range = 1;
+        slice_for.for_stmt_array = null;
+        slice_for.for_stmt_range_start = range_zero;
+        slice_for.for_stmt_range_end = slice_len;
+        slice_for.for_stmt_var_name = loop_var_name;
+        slice_for.for_stmt_is_ref = 0;
+        slice_for.for_stmt_body = loop_body;
+
+        const block_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 3) as u64) as &(&ASTNode);
+        if block_stmts == null { return null; }
+        block_stmts[0] = build_json_write_byte_stmt(addr_w, 91, arena, line, column, filename);
+        block_stmts[1] = slice_for;
+        block_stmts[2] = build_json_write_byte_stmt(addr_w, 93, arena, line, column, filename);
+        if block_stmts[0] == null || block_stmts[2] == null { return null; }
+        const slice_block: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, arena, filename);
+        if slice_block == null { return null; }
+        slice_block.block_stmts = block_stmts;
+        slice_block.block_stmt_count = 3;
+        return slice_block;
+    }
+
+    const type_name: &byte = get_type_name_from_ast(type_node, arena);
+    if type_name == null { return null; }
+    const inner_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, type_name);
+    var is_json_str_view: i32 = 0;
+    if strcmp(type_name as *byte, "JsonStrView" as *byte) == 0 { is_json_str_view = 1; }
+    if inner_decl != null && inner_decl.struct_decl_fields != null && inner_decl.struct_decl_field_count > 0 && is_json_str_view == 0 {
+        const stmt_count: i32 = 2 + count_encode_field_stmts(checker, inner_decl);
+        const stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * stmt_count) as u64) as &(&ASTNode);
+        if stmts == null { return null; }
+        var idx: i32 = 0;
+        stmts[idx] = build_json_write_byte_stmt(addr_w, 123, arena, line, column, filename);
+        if stmts[idx] == null { return null; }
+        idx = idx + 1;
+        var fi: i32 = 0;
+        while fi < inner_decl.struct_decl_field_count {
+            const inner_field: &ASTNode = inner_decl.struct_decl_fields[fi];
+            if inner_field == null || inner_field.type != ASTNodeType.AST_VAR_DECL || inner_field.var_decl_name == null {
+                fi = fi + 1;
+                continue;
+            }
+            const ifname: &byte = inner_field.var_decl_name as &byte;
+            if fi > 0 {
+                stmts[idx] = build_json_write_byte_stmt(addr_w, 44, arena, line, column, filename);
+                if stmts[idx] == null { return null; }
+                idx = idx + 1;
+            }
+            stmts[idx] = build_json_write_key_stmt(addr_w, ifname, arena, line, column, filename);
+            if stmts[idx] == null { return null; }
+            idx = idx + 1;
+
+            const inner_member: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line, column, arena, filename);
+            if inner_member == null { return null; }
+            inner_member.member_access_object = value_expr;
+            inner_member.member_access_field_name = macro_arena_strdup(arena, ifname);
+            inner_member.member_access_is_module_access = 0;
+            inner_member.member_access_module_name = null;
+
+            var child_hint_buf: [byte: 120] = [];
+            snprintf(&child_hint_buf[0] as *byte, 120, "%s_%s" as *byte, safe_name_hint as *byte, ifname as *byte);
+            const child_hint: &byte = macro_arena_strdup(arena, &child_hint_buf[0]);
+            if child_hint == null { return null; }
+
+            stmts[idx] = build_json_write_value_stmt(checker, inner_field.var_decl_type, inner_member, addr_w, child_hint, line, column, filename);
+            if stmts[idx] == null { return null; }
+            idx = idx + 1;
+            fi = fi + 1;
+        }
+        stmts[idx] = build_json_write_byte_stmt(addr_w, 125, arena, line, column, filename);
+        if stmts[idx] == null { return null; }
+        idx = idx + 1;
+        const nested_block: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, arena, filename);
+        if nested_block == null { return null; }
+        nested_block.block_stmts = stmts;
+        nested_block.block_stmt_count = idx;
+        return nested_block;
+    }
+
+    return build_json_write_scalar_stmt(type_name, value_expr, addr_w, arena, line, column, filename);
 }
 
 // 为 encode_to_to_json!(T, value, buf, cap) 按结构体 T 生成编码块 AST（!usize）。
@@ -1902,19 +2185,10 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
     const s_cap: &byte = macro_arena_strdup(arena, ("cap" as *byte) as &byte);
     const s_JsonWriter: &byte = macro_arena_strdup(arena, ("JsonWriter" as *byte) as &byte);
     const s_json_writer_init: &byte = macro_arena_strdup(arena, ("json_writer_init" as *byte) as &byte);
-    const s_json_write_byte: &byte = macro_arena_strdup(arena, ("json_write_byte" as *byte) as &byte);
-    const s_json_write_key: &byte = macro_arena_strdup(arena, ("json_write_key" as *byte) as &byte);
-    const s_json_write_i64: &byte = macro_arena_strdup(arena, ("json_write_i64" as *byte) as &byte);
-    const s_json_write_str_view: &byte = macro_arena_strdup(arena, ("json_write_str_view" as *byte) as &byte);
-    const s_json_write_bool: &byte = macro_arena_strdup(arena, ("json_write_bool" as *byte) as &byte);
-    const s_json_write_f64: &byte = macro_arena_strdup(arena, ("json_write_f64" as *byte) as &byte);
     const s_overflow: &byte = macro_arena_strdup(arena, ("overflow" as *byte) as &byte);
     const s_used: &byte = macro_arena_strdup(arena, ("used" as *byte) as &byte);
-    const s_len: &byte = macro_arena_strdup(arena, ("len" as *byte) as &byte);
-    const s_ptr: &byte = macro_arena_strdup(arena, ("ptr" as *byte) as &byte);
     const s_BufferTooSmall: &byte = macro_arena_strdup(arena, ("BufferTooSmall" as *byte) as &byte);
-    if s_w == null || s_JsonWriter == null || s_json_writer_init == null || s_json_write_byte == null || s_json_write_key == null ||
-       s_len == null || s_ptr == null {
+    if s_w == null || s_JsonWriter == null || s_json_writer_init == null || s_overflow == null || s_used == null || s_BufferTooSmall == null {
         return null;
     }
 
@@ -1970,31 +2244,10 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
     var_w.var_decl_init = struct_init_w;
     var_w.var_decl_is_const = 0;
 
-    const open_brace: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
+    const open_brace: &ASTNode = build_json_write_byte_stmt(addr_w, 123, arena, line + line_off, column + col_off, filename);
     if open_brace == null { return null; }
-    const open_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-    if open_args == null { return null; }
-    open_args[0] = addr_w;
-    open_args[1] = create_number_literal(123, arena, line + line_off, column + col_off);
-    open_brace.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-    open_brace.call_expr_args = open_args;
-    open_brace.call_expr_arg_count = 2;
-    open_brace.call_expr_has_ellipsis_forward = 0;
-    open_brace.call_expr_type_args = null;
-    open_brace.call_expr_type_arg_count = 0;
-
-    const close_brace: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
+    const close_brace: &ASTNode = build_json_write_byte_stmt(addr_w, 125, arena, line + line_off, column + col_off, filename);
     if close_brace == null { return null; }
-    const close_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-    if close_args == null { return null; }
-    close_args[0] = addr_w;
-    close_args[1] = create_number_literal(125, arena, line + line_off, column + col_off);
-    close_brace.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-    close_brace.call_expr_args = close_args;
-    close_brace.call_expr_arg_count = 2;
-    close_brace.call_expr_has_ellipsis_forward = 0;
-    close_brace.call_expr_type_args = null;
-    close_brace.call_expr_type_arg_count = 0;
 
     const value_deref: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_ACCESS, line + line_off, column + col_off, arena, filename);
     if value_deref == null { return null; }
@@ -2021,42 +2274,13 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
             continue;
         }
         if fi > 0 {
-            const comma_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-            if comma_args == null { fi = fi + 1; continue; }
-            comma_args[0] = addr_w;
-            comma_args[1] = create_number_literal(44, arena, line + line_off, column + col_off);
-            const call_comma: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-            if call_comma == null { fi = fi + 1; continue; }
-            call_comma.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-            call_comma.call_expr_args = comma_args;
-            call_comma.call_expr_arg_count = 2;
-            call_comma.call_expr_has_ellipsis_forward = 0;
-            call_comma.call_expr_type_args = null;
-            call_comma.call_expr_type_arg_count = 0;
-            stmts[idx] = call_comma;
+            stmts[idx] = build_json_write_byte_stmt(addr_w, 44, arena, line + line_off, column + col_off, filename);
+            if stmts[idx] == null { fi = fi + 1; continue; }
             idx = idx + 1;
         }
         const fname: &byte = field_node.var_decl_name as &byte;
-        const ftype: &byte = get_type_name_from_ast(field_node.var_decl_type, arena);
-        const key_str: &ASTNode = create_string_literal(fname, arena, line + line_off, column + col_off);
-        if key_str == null { fi = fi + 1; continue; }
-        const key_len: i32 = strlen(fname as *byte);
-        const key_len_node: &ASTNode = create_number_literal(key_len as i64, arena, line + line_off, column + col_off);
-        if key_len_node == null { fi = fi + 1; continue; }
-        const key_args: &(&ASTNode) = arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
-        if key_args == null { fi = fi + 1; continue; }
-        key_args[0] = addr_w;
-        key_args[1] = key_str;
-        key_args[2] = key_len_node;
-        const call_key: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-        if call_key == null { fi = fi + 1; continue; }
-        call_key.call_expr_callee = create_identifier_from_string(s_json_write_key, arena, line + line_off, column + col_off);
-        call_key.call_expr_args = key_args;
-        call_key.call_expr_arg_count = 3;
-        call_key.call_expr_has_ellipsis_forward = 0;
-        call_key.call_expr_type_args = null;
-        call_key.call_expr_type_arg_count = 0;
-        stmts[idx] = call_key;
+        stmts[idx] = build_json_write_key_stmt(addr_w, fname, arena, line + line_off, column + col_off, filename);
+        if stmts[idx] == null { fi = fi + 1; continue; }
         idx = idx + 1;
 
         const member_acc: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line + line_off, column + col_off, arena, filename);
@@ -2065,341 +2289,10 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
         member_acc.member_access_field_name = macro_arena_strdup(arena, fname);
         member_acc.member_access_is_module_access = 0;
         member_acc.member_access_module_name = null;
-        const field_type: &ASTNode = field_node.var_decl_type;
-        if field_type != null && field_type.type == ASTNodeType.AST_TYPE_ARRAY {
-            var arr_size: i32 = 0;
-            if field_type.type_array_size_expr != null {
-                arr_size = checker_eval_const_expr(checker, field_type.type_array_size_expr);
-            }
-            if arr_size < 0 { arr_size = 0; }
-            if arr_size > 64 { arr_size = 64; }
-            const arr_open: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-            if arr_open == null { fi = fi + 1; continue; }
-            const ao_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-            if ao_args == null { fi = fi + 1; continue; }
-            ao_args[0] = addr_w;
-            ao_args[1] = create_number_literal(91, arena, line + line_off, column + col_off);
-            arr_open.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-            arr_open.call_expr_args = ao_args;
-            arr_open.call_expr_arg_count = 2;
-            arr_open.call_expr_has_ellipsis_forward = 0;
-            arr_open.call_expr_type_args = null;
-            arr_open.call_expr_type_arg_count = 0;
-            stmts[idx] = arr_open;
-            idx = idx + 1;
-            const elem_type: &ASTNode = field_type.type_array_element_type;
-            const elem_ftype: &byte = get_type_name_from_ast(elem_type, arena);
-            var arr_i: i32 = 0;
-            while arr_i < arr_size {
-                if arr_i > 0 {
-                    const ac_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-                    if ac_args == null { arr_i = arr_i + 1; continue; }
-                    ac_args[0] = addr_w;
-                    ac_args[1] = create_number_literal(44, arena, line + line_off, column + col_off);
-                    const call_ac: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-                    if call_ac == null { arr_i = arr_i + 1; continue; }
-                    call_ac.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-                    call_ac.call_expr_args = ac_args;
-                    call_ac.call_expr_arg_count = 2;
-                    call_ac.call_expr_has_ellipsis_forward = 0;
-                    call_ac.call_expr_type_args = null;
-                    call_ac.call_expr_type_arg_count = 0;
-                    stmts[idx] = call_ac;
-                    idx = idx + 1;
-                }
-                const arr_acc: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_ACCESS, line + line_off, column + col_off, arena, filename);
-                if arr_acc == null { arr_i = arr_i + 1; continue; }
-                arr_acc.array_access_array = member_acc;
-                arr_acc.array_access_index = create_number_literal(arr_i as i64, arena, line + line_off, column + col_off);
-                const aw_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-                if aw_args == null { arr_i = arr_i + 1; continue; }
-                aw_args[0] = addr_w;
-                aw_args[1] = arr_acc;
-                var arr_write_callee: &byte = s_json_write_i64;
-                if strcmp(elem_ftype as *byte, "JsonStrView" as *byte) == 0 { arr_write_callee = s_json_write_str_view; }
-                else if strcmp(elem_ftype as *byte, "bool" as *byte) == 0 { arr_write_callee = s_json_write_bool; }
-                else if strcmp(elem_ftype as *byte, "f64" as *byte) == 0 { arr_write_callee = s_json_write_f64; }
-                const call_arr_write: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-                if call_arr_write == null { arr_i = arr_i + 1; continue; }
-                call_arr_write.call_expr_callee = create_identifier_from_string(arr_write_callee, arena, line + line_off, column + col_off);
-                call_arr_write.call_expr_args = aw_args;
-                call_arr_write.call_expr_arg_count = 2;
-                call_arr_write.call_expr_has_ellipsis_forward = 0;
-                call_arr_write.call_expr_type_args = null;
-                call_arr_write.call_expr_type_arg_count = 0;
-                stmts[idx] = call_arr_write;
-                idx = idx + 1;
-                arr_i = arr_i + 1;
-            }
-            const arr_close: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-            if arr_close == null { fi = fi + 1; continue; }
-            const ac_close_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-            if ac_close_args == null { fi = fi + 1; continue; }
-            ac_close_args[0] = addr_w;
-            ac_close_args[1] = create_number_literal(93, arena, line + line_off, column + col_off);
-            arr_close.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-            arr_close.call_expr_args = ac_close_args;
-            arr_close.call_expr_arg_count = 2;
-            arr_close.call_expr_has_ellipsis_forward = 0;
-            arr_close.call_expr_type_args = null;
-            arr_close.call_expr_type_arg_count = 0;
-            stmts[idx] = arr_close;
-            idx = idx + 1;
-        } else if field_type != null && field_type.type == ASTNodeType.AST_TYPE_SLICE {
-            const slice_open: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-            if slice_open == null { fi = fi + 1; continue; }
-            const so_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-            if so_args == null { fi = fi + 1; continue; }
-            so_args[0] = addr_w;
-            so_args[1] = create_number_literal(91, arena, line + line_off, column + col_off);
-            slice_open.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-            slice_open.call_expr_args = so_args;
-            slice_open.call_expr_arg_count = 2;
-            slice_open.call_expr_has_ellipsis_forward = 0;
-            slice_open.call_expr_type_args = null;
-            slice_open.call_expr_type_arg_count = 0;
-            stmts[idx] = slice_open;
-            idx = idx + 1;
 
-            const slice_elem_type: &ASTNode = field_type.type_slice_element_type;
-            const slice_elem_ftype: &byte = get_type_name_from_ast(slice_elem_type, arena);
-            var slice_write_callee: &byte = s_json_write_i64;
-            if strcmp(slice_elem_ftype as *byte, "JsonStrView" as *byte) == 0 { slice_write_callee = s_json_write_str_view; }
-            else if strcmp(slice_elem_ftype as *byte, "bool" as *byte) == 0 { slice_write_callee = s_json_write_bool; }
-            else if strcmp(slice_elem_ftype as *byte, "f64" as *byte) == 0 { slice_write_callee = s_json_write_f64; }
-
-            var slice_name_buf: [byte: 40] = [];
-            snprintf(&slice_name_buf[0] as *byte, 40, "%s_i" as *byte, fname as *byte);
-            const slice_i_name: &byte = macro_arena_strdup(arena, &slice_name_buf[0]);
-            if slice_i_name == null { fi = fi + 1; continue; }
-
-            const slice_len: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line + line_off, column + col_off, arena, filename);
-            if slice_len == null { fi = fi + 1; continue; }
-            slice_len.member_access_object = member_acc;
-            slice_len.member_access_field_name = s_len;
-            slice_len.member_access_is_module_access = 0;
-            slice_len.member_access_module_name = null;
-
-            const slice_ptr: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line + line_off, column + col_off, arena, filename);
-            if slice_ptr == null { fi = fi + 1; continue; }
-            slice_ptr.member_access_object = member_acc;
-            slice_ptr.member_access_field_name = s_ptr;
-            slice_ptr.member_access_is_module_access = 0;
-            slice_ptr.member_access_module_name = null;
-
-            const slice_zero: &ASTNode = create_number_literal(0, arena, line + line_off, column + col_off);
-            if slice_zero == null { fi = fi + 1; continue; }
-            slice_zero.literal_suffix = 9;
-
-            const id_slice_i_cond: &ASTNode = create_identifier_from_string(slice_i_name, arena, line + line_off, column + col_off);
-            if id_slice_i_cond == null { fi = fi + 1; continue; }
-            const slice_cond: &ASTNode = ast_new_node(ASTNodeType.AST_BINARY_EXPR, line + line_off, column + col_off, arena, filename);
-            if slice_cond == null { fi = fi + 1; continue; }
-            slice_cond.binary_expr_op = (TokenType.TOKEN_GREATER) as i32;
-            slice_cond.binary_expr_left = id_slice_i_cond;
-            slice_cond.binary_expr_right = create_number_literal(0, arena, line + line_off, column + col_off);
-
-            const sc_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-            if sc_args == null { fi = fi + 1; continue; }
-            sc_args[0] = addr_w;
-            sc_args[1] = create_number_literal(44, arena, line + line_off, column + col_off);
-            const call_sc: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-            if call_sc == null { fi = fi + 1; continue; }
-            call_sc.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-            call_sc.call_expr_args = sc_args;
-            call_sc.call_expr_arg_count = 2;
-            call_sc.call_expr_has_ellipsis_forward = 0;
-            call_sc.call_expr_type_args = null;
-            call_sc.call_expr_type_arg_count = 0;
-
-            const if_slice_comma: &ASTNode = ast_new_node(ASTNodeType.AST_IF_STMT, line + line_off, column + col_off, arena, filename);
-            if if_slice_comma == null { fi = fi + 1; continue; }
-            if_slice_comma.if_stmt_condition = slice_cond;
-            if_slice_comma.if_stmt_then_branch = call_sc;
-            if_slice_comma.if_stmt_else_branch = null;
-
-            const id_slice_i_write: &ASTNode = create_identifier_from_string(slice_i_name, arena, line + line_off, column + col_off);
-            if id_slice_i_write == null { fi = fi + 1; continue; }
-            const slice_elem: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_ACCESS, line + line_off, column + col_off, arena, filename);
-            if slice_elem == null { fi = fi + 1; continue; }
-            slice_elem.array_access_array = slice_ptr;
-            slice_elem.array_access_index = id_slice_i_write;
-
-            const sw_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-            if sw_args == null { fi = fi + 1; continue; }
-            sw_args[0] = addr_w;
-            sw_args[1] = slice_elem;
-            const call_slice_write: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-            if call_slice_write == null { fi = fi + 1; continue; }
-            call_slice_write.call_expr_callee = create_identifier_from_string(slice_write_callee, arena, line + line_off, column + col_off);
-            call_slice_write.call_expr_args = sw_args;
-            call_slice_write.call_expr_arg_count = 2;
-            call_slice_write.call_expr_has_ellipsis_forward = 0;
-            call_slice_write.call_expr_type_args = null;
-            call_slice_write.call_expr_type_arg_count = 0;
-
-            const slice_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 2) as u64) as &(&ASTNode);
-            if slice_body_stmts == null { fi = fi + 1; continue; }
-            slice_body_stmts[0] = if_slice_comma;
-            slice_body_stmts[1] = call_slice_write;
-            const slice_body: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line + line_off, column + col_off, arena, filename);
-            if slice_body == null { fi = fi + 1; continue; }
-            slice_body.block_stmts = slice_body_stmts;
-            slice_body.block_stmt_count = 2;
-
-            const slice_for: &ASTNode = ast_new_node(ASTNodeType.AST_FOR_STMT, line + line_off, column + col_off, arena, filename);
-            if slice_for == null { fi = fi + 1; continue; }
-            slice_for.for_stmt_is_range = 1;
-            slice_for.for_stmt_array = null;
-            slice_for.for_stmt_range_start = slice_zero;
-            slice_for.for_stmt_range_end = slice_len;
-            slice_for.for_stmt_var_name = slice_i_name;
-            slice_for.for_stmt_is_ref = 0;
-            slice_for.for_stmt_body = slice_body;
-            stmts[idx] = slice_for;
-            idx = idx + 1;
-
-            const slice_close: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-            if slice_close == null { fi = fi + 1; continue; }
-            const sc_close_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-            if sc_close_args == null { fi = fi + 1; continue; }
-            sc_close_args[0] = addr_w;
-            sc_close_args[1] = create_number_literal(93, arena, line + line_off, column + col_off);
-            slice_close.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-            slice_close.call_expr_args = sc_close_args;
-            slice_close.call_expr_arg_count = 2;
-            slice_close.call_expr_has_ellipsis_forward = 0;
-            slice_close.call_expr_type_args = null;
-            slice_close.call_expr_type_arg_count = 0;
-            stmts[idx] = slice_close;
-            idx = idx + 1;
-        } else {
-        const scalar_ftype: &byte = get_type_name_from_ast(field_node.var_decl_type, arena);
-        const inner_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, scalar_ftype);
-        var is_json_str_view: i32 = 0;
-        if strcmp(scalar_ftype as *byte, "JsonStrView" as *byte) == 0 { is_json_str_view = 1; }
-        if inner_decl != null && inner_decl.struct_decl_fields != null && inner_decl.struct_decl_field_count > 0 && is_json_str_view == 0 {
-            const nested_open: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-            if nested_open == null { fi = fi + 1; continue; }
-            const no_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-            if no_args == null { fi = fi + 1; continue; }
-            no_args[0] = addr_w;
-            no_args[1] = create_number_literal(123, arena, line + line_off, column + col_off);
-            nested_open.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-            nested_open.call_expr_args = no_args;
-            nested_open.call_expr_arg_count = 2;
-            nested_open.call_expr_has_ellipsis_forward = 0;
-            nested_open.call_expr_type_args = null;
-            nested_open.call_expr_type_arg_count = 0;
-            stmts[idx] = nested_open;
-            idx = idx + 1;
-            var inner_fi: i32 = 0;
-            const inner_n: i32 = inner_decl.struct_decl_field_count;
-            while inner_fi < inner_n {
-                const inner_field: &ASTNode = inner_decl.struct_decl_fields[inner_fi];
-                if inner_field == null || inner_field.type != ASTNodeType.AST_VAR_DECL || inner_field.var_decl_name == null {
-                    inner_fi = inner_fi + 1;
-                    continue;
-                }
-                if inner_fi > 0 {
-                    const ic_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-                    if ic_args == null { inner_fi = inner_fi + 1; continue; }
-                    ic_args[0] = addr_w;
-                    ic_args[1] = create_number_literal(44, arena, line + line_off, column + col_off);
-                    const call_ic: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-                    if call_ic == null { inner_fi = inner_fi + 1; continue; }
-                    call_ic.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-                    call_ic.call_expr_args = ic_args;
-                    call_ic.call_expr_arg_count = 2;
-                    call_ic.call_expr_has_ellipsis_forward = 0;
-                    call_ic.call_expr_type_args = null;
-                    call_ic.call_expr_type_arg_count = 0;
-                    stmts[idx] = call_ic;
-                    idx = idx + 1;
-                }
-                const ifname: &byte = inner_field.var_decl_name as &byte;
-                const iftype: &byte = get_type_name_from_ast(inner_field.var_decl_type, arena);
-                const ikey_str: &ASTNode = create_string_literal(ifname, arena, line + line_off, column + col_off);
-                if ikey_str == null { inner_fi = inner_fi + 1; continue; }
-                const ikey_len: i32 = strlen(ifname as *byte);
-                const ikey_len_node: &ASTNode = create_number_literal(ikey_len as i64, arena, line + line_off, column + col_off);
-                if ikey_len_node == null { inner_fi = inner_fi + 1; continue; }
-                const ikey_args: &(&ASTNode) = arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
-                if ikey_args == null { inner_fi = inner_fi + 1; continue; }
-                ikey_args[0] = addr_w;
-                ikey_args[1] = ikey_str;
-                ikey_args[2] = ikey_len_node;
-                const call_ikey: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-                if call_ikey == null { inner_fi = inner_fi + 1; continue; }
-                call_ikey.call_expr_callee = create_identifier_from_string(s_json_write_key, arena, line + line_off, column + col_off);
-                call_ikey.call_expr_args = ikey_args;
-                call_ikey.call_expr_arg_count = 3;
-                call_ikey.call_expr_has_ellipsis_forward = 0;
-                call_ikey.call_expr_type_args = null;
-                call_ikey.call_expr_type_arg_count = 0;
-                stmts[idx] = call_ikey;
-                idx = idx + 1;
-                const inner_member: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line + line_off, column + col_off, arena, filename);
-                if inner_member == null { inner_fi = inner_fi + 1; continue; }
-                inner_member.member_access_object = member_acc;
-                inner_member.member_access_field_name = macro_arena_strdup(arena, ifname);
-                inner_member.member_access_is_module_access = 0;
-                inner_member.member_access_module_name = null;
-                const iwrite_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-                if iwrite_args == null { inner_fi = inner_fi + 1; continue; }
-                iwrite_args[0] = addr_w;
-                iwrite_args[1] = inner_member;
-                var iwrite_callee: &byte = s_json_write_i64;
-                if strcmp(iftype as *byte, "JsonStrView" as *byte) == 0 { iwrite_callee = s_json_write_str_view; }
-                else if strcmp(iftype as *byte, "bool" as *byte) == 0 { iwrite_callee = s_json_write_bool; }
-                else if strcmp(iftype as *byte, "f64" as *byte) == 0 { iwrite_callee = s_json_write_f64; }
-                const call_iwrite: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-                if call_iwrite == null { inner_fi = inner_fi + 1; continue; }
-                call_iwrite.call_expr_callee = create_identifier_from_string(iwrite_callee, arena, line + line_off, column + col_off);
-                call_iwrite.call_expr_args = iwrite_args;
-                call_iwrite.call_expr_arg_count = 2;
-                call_iwrite.call_expr_has_ellipsis_forward = 0;
-                call_iwrite.call_expr_type_args = null;
-                call_iwrite.call_expr_type_arg_count = 0;
-                stmts[idx] = call_iwrite;
-                idx = idx + 1;
-                inner_fi = inner_fi + 1;
-            }
-            const nested_close: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-            if nested_close == null { fi = fi + 1; continue; }
-            const nc_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-            if nc_args == null { fi = fi + 1; continue; }
-            nc_args[0] = addr_w;
-            nc_args[1] = create_number_literal(125, arena, line + line_off, column + col_off);
-            nested_close.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
-            nested_close.call_expr_args = nc_args;
-            nested_close.call_expr_arg_count = 2;
-            nested_close.call_expr_has_ellipsis_forward = 0;
-            nested_close.call_expr_type_args = null;
-            nested_close.call_expr_type_arg_count = 0;
-            stmts[idx] = nested_close;
-            idx = idx + 1;
-        } else {
-            const write_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
-            if write_args == null { fi = fi + 1; continue; }
-            write_args[0] = addr_w;
-            write_args[1] = member_acc;
-            var write_callee: &byte = s_json_write_i64;
-            if strcmp(scalar_ftype as *byte, "JsonStrView" as *byte) == 0 { write_callee = s_json_write_str_view; }
-            else if strcmp(scalar_ftype as *byte, "bool" as *byte) == 0 { write_callee = s_json_write_bool; }
-            else if strcmp(scalar_ftype as *byte, "f64" as *byte) == 0 { write_callee = s_json_write_f64; }
-            const call_write: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-            if call_write == null { fi = fi + 1; continue; }
-            call_write.call_expr_callee = create_identifier_from_string(write_callee, arena, line + line_off, column + col_off);
-            call_write.call_expr_args = write_args;
-            call_write.call_expr_arg_count = 2;
-            call_write.call_expr_has_ellipsis_forward = 0;
-            call_write.call_expr_type_args = null;
-            call_write.call_expr_type_arg_count = 0;
-            stmts[idx] = call_write;
-            idx = idx + 1;
-        }
-        }
+        stmts[idx] = build_json_write_value_stmt(checker, field_node.var_decl_type, member_acc, addr_w, fname, line + line_off, column + col_off, filename);
+        if stmts[idx] == null { fi = fi + 1; continue; }
+        idx = idx + 1;
         fi = fi + 1;
     }
 
@@ -2434,6 +2327,429 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
     block.block_stmts = stmts;
     block.block_stmt_count = idx;
     return block;
+}
+
+fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, value_expr: &ASTNode, name_hint: &byte, line: i32, column: i32, filename: &byte) &ASTNode {
+    if checker == null || checker.arena == null || type_node == null || value_expr == null {
+        return null;
+    }
+    const arena: &Arena = checker.arena;
+    const unary_amp: i32 = (TokenType.TOKEN_AMPERSAND) as i32;
+    var safe_name_hint: &byte = name_hint;
+    if safe_name_hint == null {
+        safe_name_hint = ("value" as *byte) as &byte;
+    }
+
+    const s_json_expect_i64: &byte = macro_arena_strdup(arena, ("json_expect_i64" as *byte) as &byte);
+    const s_json_expect_str: &byte = macro_arena_strdup(arena, ("json_expect_str" as *byte) as &byte);
+    const s_json_expect_bool: &byte = macro_arena_strdup(arena, ("json_expect_bool" as *byte) as &byte);
+    const s_json_expect_f64: &byte = macro_arena_strdup(arena, ("json_expect_f64" as *byte) as &byte);
+    const s_arena_alloc: &byte = macro_arena_strdup(arena, ("arena_alloc" as *byte) as &byte);
+    const s_ar: &byte = macro_arena_strdup(arena, ("ar" as *byte) as &byte);
+    const s_items: &byte = macro_arena_strdup(arena, ("items" as *byte) as &byte);
+    const s_len: &byte = macro_arena_strdup(arena, ("len" as *byte) as &byte);
+    const s_usize: &byte = macro_arena_strdup(arena, ("usize" as *byte) as &byte);
+    const s_WrongType: &byte = macro_arena_strdup(arena, ("WrongType" as *byte) as &byte);
+    const s_obj: &byte = macro_arena_strdup(arena, ("obj" as *byte) as &byte);
+    const s_arr: &byte = macro_arena_strdup(arena, ("arr" as *byte) as &byte);
+    if s_json_expect_i64 == null || s_json_expect_str == null || s_json_expect_bool == null || s_json_expect_f64 == null ||
+       s_items == null || s_len == null || s_usize == null || s_WrongType == null || s_obj == null || s_arr == null {
+        return null;
+    }
+
+    if type_node.type == ASTNodeType.AST_TYPE_ARRAY {
+        var arr_size: i32 = 0;
+        if type_node.type_array_size_expr != null {
+            arr_size = checker_eval_const_expr(checker, type_node.type_array_size_expr);
+        }
+        if arr_size < 0 { arr_size = 0; }
+        const elem_type: &ASTNode = type_node.type_array_element_type;
+        if elem_type == null { return null; }
+
+        var name_buf: [byte: 120] = [];
+        snprintf(&name_buf[0] as *byte, 120, "%s_arr_json" as *byte, safe_name_hint as *byte);
+        const arr_match_name: &byte = macro_arena_strdup(arena, &name_buf[0]);
+        if arr_match_name == null { return null; }
+        snprintf(&name_buf[0] as *byte, 120, "%s_arr_tmp" as *byte, safe_name_hint as *byte);
+        const arr_var_name: &byte = macro_arena_strdup(arena, &name_buf[0]);
+        if arr_var_name == null { return null; }
+        snprintf(&name_buf[0] as *byte, 120, "%s_i" as *byte, safe_name_hint as *byte);
+        const loop_var_name: &byte = macro_arena_strdup(arena, &name_buf[0]);
+        if loop_var_name == null { return null; }
+        snprintf(&name_buf[0] as *byte, 120, "%s_elem" as *byte, safe_name_hint as *byte);
+        const child_hint: &byte = macro_arena_strdup(arena, &name_buf[0]);
+        if child_hint == null { return null; }
+
+        const id_a: &ASTNode = create_identifier_from_string(arr_match_name, arena, line, column);
+        if id_a == null { return null; }
+        const a_len: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line, column, arena, filename);
+        if a_len == null { return null; }
+        a_len.member_access_object = id_a;
+        a_len.member_access_field_name = s_len;
+        a_len.member_access_is_module_access = 0;
+        a_len.member_access_module_name = null;
+        const len_cmp: &ASTNode = create_number_literal(arr_size as i64, arena, line, column);
+        if len_cmp == null { return null; }
+        const bin_neq: &ASTNode = ast_new_node(ASTNodeType.AST_BINARY_EXPR, line, column, arena, filename);
+        if bin_neq == null { return null; }
+        bin_neq.binary_expr_op = (TokenType.TOKEN_NOT_EQUAL) as i32;
+        bin_neq.binary_expr_left = a_len;
+        bin_neq.binary_expr_right = len_cmp;
+        const err_wrong: &ASTNode = ast_new_node(ASTNodeType.AST_ERROR_VALUE, line, column, arena, filename);
+        if err_wrong == null { return null; }
+        err_wrong.error_value_name = s_WrongType;
+        const return_err: &ASTNode = ast_new_node(ASTNodeType.AST_RETURN_STMT, line, column, arena, filename);
+        if return_err == null { return null; }
+        return_err.return_stmt_expr = err_wrong;
+        const if_stmt: &ASTNode = ast_new_node(ASTNodeType.AST_IF_STMT, line, column, arena, filename);
+        if if_stmt == null { return null; }
+        if_stmt.if_stmt_condition = bin_neq;
+        if_stmt.if_stmt_then_branch = return_err;
+        if_stmt.if_stmt_else_branch = null;
+
+        const empty_init: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_LITERAL, line, column, arena, filename);
+        if empty_init == null { return null; }
+        empty_init.array_literal_element_count = 0;
+        empty_init.array_literal_elements = null;
+        const var_arr: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, line, column, arena, filename);
+        if var_arr == null { return null; }
+        var_arr.var_decl_name = arr_var_name;
+        var_arr.var_decl_type = type_node;
+        var_arr.var_decl_init = empty_init;
+        var_arr.var_decl_is_const = 0;
+
+        const a_items: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line, column, arena, filename);
+        if a_items == null { return null; }
+        a_items.member_access_object = create_identifier_from_string(arr_match_name, arena, line, column);
+        a_items.member_access_field_name = s_items;
+        a_items.member_access_is_module_access = 0;
+        a_items.member_access_module_name = null;
+        const items_i: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_ACCESS, line, column, arena, filename);
+        if items_i == null { return null; }
+        items_i.array_access_array = a_items;
+        items_i.array_access_index = create_identifier_from_string(loop_var_name, arena, line, column);
+        if items_i.array_access_index == null { return null; }
+        const elem_decode: &ASTNode = build_decode_json_value_expr(checker, elem_type, items_i, child_hint, line, column, filename);
+        if elem_decode == null { return null; }
+        const arr_access: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_ACCESS, line, column, arena, filename);
+        if arr_access == null { return null; }
+        arr_access.array_access_array = create_identifier_from_string(arr_var_name, arena, line, column);
+        arr_access.array_access_index = create_identifier_from_string(loop_var_name, arena, line, column);
+        if arr_access.array_access_array == null || arr_access.array_access_index == null { return null; }
+        const assign_elem: &ASTNode = ast_new_node(ASTNodeType.AST_ASSIGN, line, column, arena, filename);
+        if assign_elem == null { return null; }
+        assign_elem.assign_dest = arr_access;
+        assign_elem.assign_src = elem_decode;
+        const loop_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 1) as u64) as &(&ASTNode);
+        if loop_body_stmts == null { return null; }
+        loop_body_stmts[0] = assign_elem;
+        const loop_body: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, arena, filename);
+        if loop_body == null { return null; }
+        loop_body.block_stmts = loop_body_stmts;
+        loop_body.block_stmt_count = 1;
+
+        const range_zero: &ASTNode = create_number_literal(0, arena, line, column);
+        if range_zero == null { return null; }
+        range_zero.literal_suffix = 9;
+        const range_end: &ASTNode = create_number_literal(arr_size as i64, arena, line, column);
+        if range_end == null { return null; }
+        range_end.literal_suffix = 9;
+        const arr_for: &ASTNode = ast_new_node(ASTNodeType.AST_FOR_STMT, line, column, arena, filename);
+        if arr_for == null { return null; }
+        arr_for.for_stmt_is_range = 1;
+        arr_for.for_stmt_array = null;
+        arr_for.for_stmt_range_start = range_zero;
+        arr_for.for_stmt_range_end = range_end;
+        arr_for.for_stmt_var_name = loop_var_name;
+        arr_for.for_stmt_is_ref = 0;
+        arr_for.for_stmt_body = loop_body;
+
+        const arr_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 4) as u64) as &(&ASTNode);
+        if arr_stmts == null { return null; }
+        arr_stmts[0] = if_stmt;
+        arr_stmts[1] = var_arr;
+        arr_stmts[2] = arr_for;
+        arr_stmts[3] = create_identifier_from_string(arr_var_name, arena, line, column);
+        if arr_stmts[3] == null { return null; }
+        const arr_block: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, arena, filename);
+        if arr_block == null { return null; }
+        arr_block.block_stmts = arr_stmts;
+        arr_block.block_stmt_count = 4;
+
+        const arms_arr: &ASTMatchArm = arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
+        if arms_arr == null { return null; }
+        arms_arr[0].kind = MatchPatternKind.MATCH_PAT_UNION;
+        arms_arr[0].variant_name = s_arr;
+        arms_arr[0].var_name = arr_match_name;
+        arms_arr[0].result_expr = arr_block;
+        arms_arr[0].result_is_block = 1;
+        arms_arr[1].kind = MatchPatternKind.MATCH_PAT_ELSE;
+        const err_arr: &ASTNode = ast_new_node(ASTNodeType.AST_ERROR_VALUE, line, column, arena, filename);
+        if err_arr == null { return null; }
+        err_arr.error_value_name = s_WrongType;
+        arms_arr[1].result_expr = err_arr;
+        const match_arr: &ASTNode = ast_new_node(ASTNodeType.AST_MATCH_EXPR, line, column, arena, filename);
+        if match_arr == null { return null; }
+        match_arr.match_expr_expr = value_expr;
+        match_arr.match_expr_arms = arms_arr;
+        match_arr.match_expr_arm_count = 2;
+        const try_arr: &ASTNode = ast_new_node(ASTNodeType.AST_TRY_EXPR, line, column, arena, filename);
+        if try_arr == null { return null; }
+        try_arr.try_expr_operand = match_arr;
+        return try_arr;
+    }
+
+    if type_node.type == ASTNodeType.AST_TYPE_SLICE {
+        const elem_type: &ASTNode = type_node.type_slice_element_type;
+        if elem_type == null || s_arena_alloc == null || s_ar == null { return null; }
+
+        var name_buf: [byte: 120] = [];
+        snprintf(&name_buf[0] as *byte, 120, "%s_arr_json" as *byte, safe_name_hint as *byte);
+        const arr_match_name: &byte = macro_arena_strdup(arena, &name_buf[0]);
+        if arr_match_name == null { return null; }
+        snprintf(&name_buf[0] as *byte, 120, "%s_ptr" as *byte, safe_name_hint as *byte);
+        const ptr_var_name: &byte = macro_arena_strdup(arena, &name_buf[0]);
+        if ptr_var_name == null { return null; }
+        snprintf(&name_buf[0] as *byte, 120, "%s_slice" as *byte, safe_name_hint as *byte);
+        const slice_var_name: &byte = macro_arena_strdup(arena, &name_buf[0]);
+        if slice_var_name == null { return null; }
+        snprintf(&name_buf[0] as *byte, 120, "%s_i" as *byte, safe_name_hint as *byte);
+        const loop_var_name: &byte = macro_arena_strdup(arena, &name_buf[0]);
+        if loop_var_name == null { return null; }
+        snprintf(&name_buf[0] as *byte, 120, "%s_elem" as *byte, safe_name_hint as *byte);
+        const child_hint: &byte = macro_arena_strdup(arena, &name_buf[0]);
+        if child_hint == null { return null; }
+
+        const a_len: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line, column, arena, filename);
+        if a_len == null { return null; }
+        a_len.member_access_object = create_identifier_from_string(arr_match_name, arena, line, column);
+        a_len.member_access_field_name = s_len;
+        a_len.member_access_is_module_access = 0;
+        a_len.member_access_module_name = null;
+        if a_len.member_access_object == null { return null; }
+
+        const sizeof_target: &ASTNode = deep_copy_ast_substitute_type_params(elem_type, null, 0, null, 0, arena, filename);
+        if sizeof_target == null { return null; }
+        const sizeof_expr: &ASTNode = ast_new_node(ASTNodeType.AST_SIZEOF, line, column, arena, filename);
+        if sizeof_expr == null { return null; }
+        sizeof_expr.sizeof_expr_target = sizeof_target;
+        sizeof_expr.sizeof_expr_is_type = 1;
+        const type_usize_size: &ASTNode = create_type_named_from_string(s_usize, arena, line, column);
+        if type_usize_size == null { return null; }
+        const sizeof_as_usize: &ASTNode = ast_new_node(ASTNodeType.AST_CAST_EXPR, line, column, arena, filename);
+        if sizeof_as_usize == null { return null; }
+        sizeof_as_usize.cast_expr_expr = sizeof_expr;
+        sizeof_as_usize.cast_expr_target_type = type_usize_size;
+        sizeof_as_usize.cast_expr_is_force_cast = 0;
+        const bytes_expr: &ASTNode = ast_new_node(ASTNodeType.AST_BINARY_EXPR, line, column, arena, filename);
+        if bytes_expr == null { return null; }
+        bytes_expr.binary_expr_op = (TokenType.TOKEN_ASTERISK) as i32;
+        bytes_expr.binary_expr_left = a_len;
+        bytes_expr.binary_expr_right = sizeof_as_usize;
+
+        const alloc_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
+        if alloc_args == null { return null; }
+        alloc_args[0] = create_identifier_from_string(s_ar, arena, line, column);
+        alloc_args[1] = bytes_expr;
+        if alloc_args[0] == null { return null; }
+        const call_alloc: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line, column, arena, filename);
+        if call_alloc == null { return null; }
+        call_alloc.call_expr_callee = create_identifier_from_string(s_arena_alloc, arena, line, column);
+        call_alloc.call_expr_args = alloc_args;
+        call_alloc.call_expr_arg_count = 2;
+        call_alloc.call_expr_has_ellipsis_forward = 0;
+        call_alloc.call_expr_type_args = null;
+        call_alloc.call_expr_type_arg_count = 0;
+
+        const ptr_elem_type: &ASTNode = deep_copy_ast_substitute_type_params(elem_type, null, 0, null, 0, arena, filename);
+        if ptr_elem_type == null { return null; }
+        const ptr_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_POINTER, line, column, arena, filename);
+        if ptr_type == null { return null; }
+        ptr_type.type_pointer_is_ffi_pointer = 0;
+        ptr_type.type_pointer_pointed_type = ptr_elem_type;
+        const alloc_cast: &ASTNode = ast_new_node(ASTNodeType.AST_CAST_EXPR, line, column, arena, filename);
+        if alloc_cast == null { return null; }
+        alloc_cast.cast_expr_expr = call_alloc;
+        alloc_cast.cast_expr_target_type = ptr_type;
+        alloc_cast.cast_expr_is_force_cast = 0;
+        const var_ptr: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, line, column, arena, filename);
+        if var_ptr == null { return null; }
+        var_ptr.var_decl_name = ptr_var_name;
+        var_ptr.var_decl_type = ptr_type;
+        var_ptr.var_decl_init = alloc_cast;
+        var_ptr.var_decl_is_const = 1;
+
+        const a_items: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line, column, arena, filename);
+        if a_items == null { return null; }
+        a_items.member_access_object = create_identifier_from_string(arr_match_name, arena, line, column);
+        a_items.member_access_field_name = s_items;
+        a_items.member_access_is_module_access = 0;
+        a_items.member_access_module_name = null;
+        if a_items.member_access_object == null { return null; }
+        const items_i: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_ACCESS, line, column, arena, filename);
+        if items_i == null { return null; }
+        items_i.array_access_array = a_items;
+        items_i.array_access_index = create_identifier_from_string(loop_var_name, arena, line, column);
+        if items_i.array_access_index == null { return null; }
+        const elem_decode: &ASTNode = build_decode_json_value_expr(checker, elem_type, items_i, child_hint, line, column, filename);
+        if elem_decode == null { return null; }
+        const ptr_i: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_ACCESS, line, column, arena, filename);
+        if ptr_i == null { return null; }
+        ptr_i.array_access_array = create_identifier_from_string(ptr_var_name, arena, line, column);
+        ptr_i.array_access_index = create_identifier_from_string(loop_var_name, arena, line, column);
+        if ptr_i.array_access_array == null || ptr_i.array_access_index == null { return null; }
+        const assign_elem: &ASTNode = ast_new_node(ASTNodeType.AST_ASSIGN, line, column, arena, filename);
+        if assign_elem == null { return null; }
+        assign_elem.assign_dest = ptr_i;
+        assign_elem.assign_src = elem_decode;
+        const loop_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 1) as u64) as &(&ASTNode);
+        if loop_body_stmts == null { return null; }
+        loop_body_stmts[0] = assign_elem;
+        const loop_body: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, arena, filename);
+        if loop_body == null { return null; }
+        loop_body.block_stmts = loop_body_stmts;
+        loop_body.block_stmt_count = 1;
+
+        const range_zero: &ASTNode = create_number_literal(0, arena, line, column);
+        if range_zero == null { return null; }
+        range_zero.literal_suffix = 9;
+        const a_len_for: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line, column, arena, filename);
+        if a_len_for == null { return null; }
+        a_len_for.member_access_object = create_identifier_from_string(arr_match_name, arena, line, column);
+        a_len_for.member_access_field_name = s_len;
+        a_len_for.member_access_is_module_access = 0;
+        a_len_for.member_access_module_name = null;
+        if a_len_for.member_access_object == null { return null; }
+        const slice_for: &ASTNode = ast_new_node(ASTNodeType.AST_FOR_STMT, line, column, arena, filename);
+        if slice_for == null { return null; }
+        slice_for.for_stmt_is_range = 1;
+        slice_for.for_stmt_array = null;
+        slice_for.for_stmt_range_start = range_zero;
+        slice_for.for_stmt_range_end = a_len_for;
+        slice_for.for_stmt_var_name = loop_var_name;
+        slice_for.for_stmt_is_ref = 0;
+        slice_for.for_stmt_body = loop_body;
+
+        const slice_start_zero: &ASTNode = create_number_literal(0, arena, line, column);
+        if slice_start_zero == null { return null; }
+        slice_start_zero.literal_suffix = 9;
+        const a_len_slice: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line, column, arena, filename);
+        if a_len_slice == null { return null; }
+        a_len_slice.member_access_object = create_identifier_from_string(arr_match_name, arena, line, column);
+        a_len_slice.member_access_field_name = s_len;
+        a_len_slice.member_access_is_module_access = 0;
+        a_len_slice.member_access_module_name = null;
+        if a_len_slice.member_access_object == null { return null; }
+        const slice_expr: &ASTNode = ast_new_node(ASTNodeType.AST_SLICE_EXPR, line, column, arena, filename);
+        if slice_expr == null { return null; }
+        slice_expr.slice_expr_base = create_identifier_from_string(ptr_var_name, arena, line, column);
+        slice_expr.slice_expr_start_expr = slice_start_zero;
+        slice_expr.slice_expr_len_expr = a_len_slice;
+        if slice_expr.slice_expr_base == null { return null; }
+        const addr_slice_expr: &ASTNode = ast_new_node(ASTNodeType.AST_UNARY_EXPR, line, column, arena, filename);
+        if addr_slice_expr == null { return null; }
+        addr_slice_expr.unary_expr_op = unary_amp;
+        addr_slice_expr.unary_expr_operand = slice_expr;
+        const var_slice: &ASTNode = ast_new_node(ASTNodeType.AST_VAR_DECL, line, column, arena, filename);
+        if var_slice == null { return null; }
+        var_slice.var_decl_name = slice_var_name;
+        var_slice.var_decl_type = type_node;
+        var_slice.var_decl_init = addr_slice_expr;
+        var_slice.var_decl_is_const = 1;
+
+        const slice_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 4) as u64) as &(&ASTNode);
+        if slice_stmts == null { return null; }
+        slice_stmts[0] = var_ptr;
+        slice_stmts[1] = slice_for;
+        slice_stmts[2] = var_slice;
+        slice_stmts[3] = create_identifier_from_string(slice_var_name, arena, line, column);
+        if slice_stmts[3] == null { return null; }
+        const slice_block: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, arena, filename);
+        if slice_block == null { return null; }
+        slice_block.block_stmts = slice_stmts;
+        slice_block.block_stmt_count = 4;
+
+        const arms_slice: &ASTMatchArm = arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
+        if arms_slice == null { return null; }
+        arms_slice[0].kind = MatchPatternKind.MATCH_PAT_UNION;
+        arms_slice[0].variant_name = s_arr;
+        arms_slice[0].var_name = arr_match_name;
+        arms_slice[0].result_expr = slice_block;
+        arms_slice[0].result_is_block = 1;
+        arms_slice[1].kind = MatchPatternKind.MATCH_PAT_ELSE;
+        const err_slice: &ASTNode = ast_new_node(ASTNodeType.AST_ERROR_VALUE, line, column, arena, filename);
+        if err_slice == null { return null; }
+        err_slice.error_value_name = s_WrongType;
+        arms_slice[1].result_expr = err_slice;
+        const match_slice: &ASTNode = ast_new_node(ASTNodeType.AST_MATCH_EXPR, line, column, arena, filename);
+        if match_slice == null { return null; }
+        match_slice.match_expr_expr = value_expr;
+        match_slice.match_expr_arms = arms_slice;
+        match_slice.match_expr_arm_count = 2;
+        const try_slice: &ASTNode = ast_new_node(ASTNodeType.AST_TRY_EXPR, line, column, arena, filename);
+        if try_slice == null { return null; }
+        try_slice.try_expr_operand = match_slice;
+        return try_slice;
+    }
+
+    const type_name: &byte = get_type_name_from_ast(type_node, arena);
+    if type_name == null { return null; }
+    const inner_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, type_name);
+    var is_json_str_view: i32 = 0;
+    if strcmp(type_name as *byte, "JsonStrView" as *byte) == 0 { is_json_str_view = 1; }
+    if inner_decl != null && inner_decl.struct_decl_fields != null && inner_decl.struct_decl_field_count > 0 && is_json_str_view == 0 {
+        var obj_name_buf: [byte: 120] = [];
+        snprintf(&obj_name_buf[0] as *byte, 120, "o_%s" as *byte, safe_name_hint as *byte);
+        const o_inner_name: &byte = macro_arena_strdup(arena, &obj_name_buf[0]);
+        if o_inner_name == null { return null; }
+        const nested_block: &ASTNode = build_decode_struct_expr(checker, inner_decl, type_name, o_inner_name, line, column, filename);
+        if nested_block == null { return null; }
+        const arms_nested: &ASTMatchArm = arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
+        if arms_nested == null { return null; }
+        arms_nested[0].kind = MatchPatternKind.MATCH_PAT_UNION;
+        arms_nested[0].variant_name = s_obj;
+        arms_nested[0].var_name = o_inner_name;
+        arms_nested[0].result_expr = nested_block;
+        arms_nested[0].result_is_block = 1;
+        arms_nested[1].kind = MatchPatternKind.MATCH_PAT_ELSE;
+        const err_nested: &ASTNode = ast_new_node(ASTNodeType.AST_ERROR_VALUE, line, column, arena, filename);
+        if err_nested == null { return null; }
+        err_nested.error_value_name = s_WrongType;
+        arms_nested[1].result_expr = err_nested;
+        const match_nested: &ASTNode = ast_new_node(ASTNodeType.AST_MATCH_EXPR, line, column, arena, filename);
+        if match_nested == null { return null; }
+        match_nested.match_expr_expr = value_expr;
+        match_nested.match_expr_arms = arms_nested;
+        match_nested.match_expr_arm_count = 2;
+        const try_nested: &ASTNode = ast_new_node(ASTNodeType.AST_TRY_EXPR, line, column, arena, filename);
+        if try_nested == null { return null; }
+        try_nested.try_expr_operand = match_nested;
+        return try_nested;
+    }
+
+    const addr_value: &ASTNode = ast_new_node(ASTNodeType.AST_UNARY_EXPR, line, column, arena, filename);
+    if addr_value == null { return null; }
+    addr_value.unary_expr_operand = value_expr;
+    addr_value.unary_expr_op = unary_amp;
+    var expect_callee: &byte = s_json_expect_i64;
+    if strcmp(type_name as *byte, "JsonStrView" as *byte) == 0 { expect_callee = s_json_expect_str; }
+    else if strcmp(type_name as *byte, "bool" as *byte) == 0 { expect_callee = s_json_expect_bool; }
+    else if strcmp(type_name as *byte, "f64" as *byte) == 0 { expect_callee = s_json_expect_f64; }
+    const expect_args: &(&ASTNode) = arena_alloc(arena, (1 * 8) as u64) as &(&ASTNode);
+    if expect_args == null { return null; }
+    expect_args[0] = addr_value;
+    const call_expect: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line, column, arena, filename);
+    if call_expect == null { return null; }
+    call_expect.call_expr_callee = create_identifier_from_string(expect_callee, arena, line, column);
+    call_expect.call_expr_args = expect_args;
+    call_expect.call_expr_arg_count = 1;
+    call_expect.call_expr_has_ellipsis_forward = 0;
+    call_expect.call_expr_type_args = null;
+    call_expect.call_expr_type_arg_count = 0;
+    const try_expect: &ASTNode = ast_new_node(ASTNodeType.AST_TRY_EXPR, line, column, arena, filename);
+    if try_expect == null { return null; }
+    try_expect.try_expr_operand = call_expect;
+    return try_expect;
 }
 
 // 从 JsonObject 变量（obj_var_name，如 "o"）解码出结构体，返回块表达式（语句 + 末尾 struct init）。
@@ -2626,11 +2942,6 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
             var_ptr.var_decl_init = alloc_cast;
             var_ptr.var_decl_is_const = 1;
 
-            var expect_callee_slice: &byte = s_json_expect_i64;
-            if strcmp(slice_elem_ftype as *byte, "JsonStrView" as *byte) == 0 { expect_callee_slice = s_json_expect_str; }
-            else if strcmp(slice_elem_ftype as *byte, "bool" as *byte) == 0 { expect_callee_slice = s_json_expect_bool; }
-            else if strcmp(slice_elem_ftype as *byte, "f64" as *byte) == 0 { expect_callee_slice = s_json_expect_f64; }
-
             const a_items: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line + line_off, column + col_off, arena, filename);
             if a_items == null { fi = fi + 1; continue; }
             a_items.member_access_object = create_identifier_from_string(s_a, arena, line + line_off, column + col_off);
@@ -2643,24 +2954,8 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
             if items_i == null { fi = fi + 1; continue; }
             items_i.array_access_array = a_items;
             items_i.array_access_index = id_slice_i_items;
-            const addr_items_i: &ASTNode = ast_new_node(ASTNodeType.AST_UNARY_EXPR, line + line_off, column + col_off, arena, filename);
-            if addr_items_i == null { fi = fi + 1; continue; }
-            addr_items_i.unary_expr_op = unary_amp;
-            addr_items_i.unary_expr_operand = items_i;
-            const expect_args_slice: &(&ASTNode) = arena_alloc(arena, (1 * 8) as u64) as &(&ASTNode);
-            if expect_args_slice == null { fi = fi + 1; continue; }
-            expect_args_slice[0] = addr_items_i;
-            const call_expect_slice: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-            if call_expect_slice == null { fi = fi + 1; continue; }
-            call_expect_slice.call_expr_callee = create_identifier_from_string(expect_callee_slice, arena, line + line_off, column + col_off);
-            call_expect_slice.call_expr_args = expect_args_slice;
-            call_expect_slice.call_expr_arg_count = 1;
-            call_expect_slice.call_expr_has_ellipsis_forward = 0;
-            call_expect_slice.call_expr_type_args = null;
-            call_expect_slice.call_expr_type_arg_count = 0;
-            const try_expect_slice: &ASTNode = ast_new_node(ASTNodeType.AST_TRY_EXPR, line + line_off, column + col_off, arena, filename);
-            if try_expect_slice == null { fi = fi + 1; continue; }
-            try_expect_slice.try_expr_operand = call_expect_slice;
+            const elem_decode: &ASTNode = build_decode_json_value_expr(checker, slice_elem_type, items_i, ptr_var_name, line + line_off, column + col_off, filename);
+            if elem_decode == null { fi = fi + 1; continue; }
 
             const id_ptr_assign: &ASTNode = create_identifier_from_string(ptr_var_name, arena, line + line_off, column + col_off);
             if id_ptr_assign == null { fi = fi + 1; continue; }
@@ -2673,7 +2968,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
             const assign_elem: &ASTNode = ast_new_node(ASTNodeType.AST_ASSIGN, line + line_off, column + col_off, arena, filename);
             if assign_elem == null { fi = fi + 1; continue; }
             assign_elem.assign_dest = ptr_i;
-            assign_elem.assign_src = try_expect_slice;
+            assign_elem.assign_src = elem_decode;
 
             const loop_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 1) as u64) as &(&ASTNode);
             if loop_body_stmts == null { fi = fi + 1; continue; }
@@ -2815,10 +3110,6 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
             var_arr.var_decl_is_const = 0;
             arr_stmts[arr_idx] = var_arr;
             arr_idx = arr_idx + 1;
-            var expect_callee_arr: &byte = s_json_expect_i64;
-            if strcmp(elem_ftype as *byte, "JsonStrView" as *byte) == 0 { expect_callee_arr = s_json_expect_str; }
-            else if strcmp(elem_ftype as *byte, "bool" as *byte) == 0 { expect_callee_arr = s_json_expect_bool; }
-            else if strcmp(elem_ftype as *byte, "f64" as *byte) == 0 { expect_callee_arr = s_json_expect_f64; }
             var ai: i32 = 0;
             while ai < arr_size {
                 const a_items: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line + line_off, column + col_off, arena, filename);
@@ -2831,24 +3122,8 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
                 if items_i == null { fi = fi + 1; continue; }
                 items_i.array_access_array = a_items;
                 items_i.array_access_index = create_number_literal(ai as i64, arena, line + line_off, column + col_off);
-                const addr_items_i: &ASTNode = ast_new_node(ASTNodeType.AST_UNARY_EXPR, line + line_off, column + col_off, arena, filename);
-                if addr_items_i == null { fi = fi + 1; continue; }
-                addr_items_i.unary_expr_op = unary_amp;
-                addr_items_i.unary_expr_operand = items_i;
-                const expect_args_arr: &(&ASTNode) = arena_alloc(arena, (1 * 8) as u64) as &(&ASTNode);
-                if expect_args_arr == null { fi = fi + 1; continue; }
-                expect_args_arr[0] = addr_items_i;
-                const call_expect_arr: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
-                if call_expect_arr == null { fi = fi + 1; continue; }
-                call_expect_arr.call_expr_callee = create_identifier_from_string(expect_callee_arr, arena, line + line_off, column + col_off);
-                call_expect_arr.call_expr_args = expect_args_arr;
-                call_expect_arr.call_expr_arg_count = 1;
-                call_expect_arr.call_expr_has_ellipsis_forward = 0;
-                call_expect_arr.call_expr_type_args = null;
-                call_expect_arr.call_expr_type_arg_count = 0;
-                const try_expect_arr: &ASTNode = ast_new_node(ASTNodeType.AST_TRY_EXPR, line + line_off, column + col_off, arena, filename);
-                if try_expect_arr == null { fi = fi + 1; continue; }
-                try_expect_arr.try_expr_operand = call_expect_arr;
+                const elem_decode: &ASTNode = build_decode_json_value_expr(checker, elem_type, items_i, val_var_name, line + line_off, column + col_off, filename);
+                if elem_decode == null { fi = fi + 1; continue; }
                 const id_arr_var: &ASTNode = create_identifier_from_string(val_var_name, arena, line + line_off, column + col_off);
                 if id_arr_var == null { fi = fi + 1; continue; }
                 const arr_i_node: &ASTNode = create_number_literal(ai as i64, arena, line + line_off, column + col_off);
@@ -2860,7 +3135,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
                 const assign_elem: &ASTNode = ast_new_node(ASTNodeType.AST_ASSIGN, line + line_off, column + col_off, arena, filename);
                 if assign_elem == null { fi = fi + 1; continue; }
                 assign_elem.assign_dest = arr_access;
-                assign_elem.assign_src = try_expect_arr;
+                assign_elem.assign_src = elem_decode;
                 arr_stmts[arr_idx] = assign_elem;
                 arr_idx = arr_idx + 1;
                 ai = ai + 1;
