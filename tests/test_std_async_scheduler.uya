@@ -1,6 +1,7 @@
 // test_std_async_scheduler.uya - 测试 std.async_scheduler.Scheduler
 
 use std.async;
+use std.async_event;
 use std.async_scheduler;
 use std.testing.assert_eq_i32;
 
@@ -20,4 +21,57 @@ test "scheduler_run" {
     var s: Scheduler = scheduler_new();
     const result: i32 = try scheduler_run_i32(&s, add_async());
     try assert_eq_i32(result, 30);
+}
+
+var scheduler_loop_poll_count: i32 = 0;
+
+struct TestEventLoop : EventLoop {
+    fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !void {
+        _ = self;
+        _ = fd;
+        _ = interest;
+        _ = waker;
+    }
+
+    fn deregister(self: &Self, fd: i32) !void {
+        _ = self;
+        _ = fd;
+    }
+
+    fn poll(self: &Self, timeout_ms: i32) !i32 {
+        _ = self;
+        scheduler_loop_poll_count = scheduler_loop_poll_count + 1;
+        return timeout_ms;
+    }
+}
+
+struct ReadyAfterEventLoopPoll : Future<!i32> {
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = self;
+        _ = waker;
+        if scheduler_loop_poll_count == 0 {
+            return Poll<!i32>.Pending({});
+        }
+        return Poll<!i32>.Ready(ok<i32>(99));
+    }
+}
+
+fn test_event_loop() EventLoop {
+    return TestEventLoop{};
+}
+
+fn pending_then_ready_future() Future<!i32> {
+    return ReadyAfterEventLoopPoll{};
+}
+
+test "scheduler_run_with_event_loop_polls_pending_future" {
+    scheduler_loop_poll_count = 0;
+
+    var s: Scheduler = scheduler_new();
+    const loop: EventLoop = test_event_loop();
+    const f: Future<!i32> = pending_then_ready_future();
+    const result: i32 = try scheduler_run_i32_with_event_loop(&s, loop, f, 0);
+
+    try assert_eq_i32(result, 99);
+    try assert_eq_i32(scheduler_loop_poll_count, 1);
 }

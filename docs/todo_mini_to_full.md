@@ -860,6 +860,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `@await` 返回类型推断为 `!T`（当前已接入 `Poll<!T>` 最小状态机闭环）
   - [x] `union Poll<T>` 类型检查（`test_poll_std_async.uya` 覆盖）
   - [x] `interface Future<T>` 接口定义和实现检查（`test_async_future_interface_box.uya` 覆盖）
+  - [x] 接口方法 / 受约束泛型方法返回 `!T` 的推断（`test_interface_error_union_method.uya` 覆盖 `EventLoop.poll()` / `counter.next()`）
   - [~] 状态机大小编译期计算（当前已禁止直接递归与 async 调用环；完整大小/布局计算仍待实现）
 
 - [~] **CPS 变换（Continuation-Passing Style）**：状态机生成
@@ -898,7 +899,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
     - [x] `lib/std/async_event.uya`：`EventKind`、`interface EventLoop`、`struct LinuxEpoll : EventLoop`（`use libc.syscall`）
     - [x] `test_std_async_event.uya` 端到端通过（codegen 已修复：err_union 先输出 payload 结构体、catch 推断 struct payload、union 前向声明、INT_MIN 用 @min）
   - [~] `std.async.channel` 模块：`Channel_i32` 单槽通道已完成；`MpscChannel_i32` 最小单槽/CAS 版本已落地（`test_async_channel.uya` 覆盖 send/recv 与满槽 Pending），通用/多槽 `MpscChannel<T>` 待实现
-  - [~] `std.async.scheduler` 模块：`Scheduler` 最小骨架已完成（`scheduler_new`、`scheduler_run`/`scheduler_run_i32`，`test_std_async_scheduler.uya` 通过），EventLoop 集成待实现
+  - [~] `std.async.scheduler` 模块：`Scheduler` 最小闭环已完成（`scheduler_new`、`scheduler_run`/`scheduler_run_i32`、`scheduler_run_i32_with_event_loop`；`Pending` 时可驱动 `EventLoop.poll()`，`test_std_async_scheduler.uya` 通过），完整任务队列 / `Waker` 调度待实现
   - [ ] `std.thread` 模块：`ThreadPool`, `async_compute<T>`
 
 - [~] **编译期验证**：
@@ -934,7 +935,8 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `test_async_copy.uya` - `async_copy` 覆盖循环内 `@await` 与 `MemAsyncReader`/`MemAsyncWriter`
   - [x] `test_async_channel.uya` - `Channel_i32` send/recv，`MpscChannel_i32` 单槽 CAS 抢占、满槽 Pending、消费后重发
   - [x] `test_block_on.uya` - block_on 同步运行 Future<!T> 直到 Ready
-  - [x] `test_std_async_scheduler.uya` - std.async_scheduler 的 Scheduler、scheduler_run_i32
+  - [x] `test_std_async_scheduler.uya` - `Scheduler`、`scheduler_run_i32`、`scheduler_run_i32_with_event_loop`（Pending 时驱动 `EventLoop.poll()`）
+  - [x] `test_interface_error_union_method.uya` - 接口方法与受约束泛型方法返回 `!T` 时，`try`/`catch` 类型推断正确
 
 **涉及**：Lexer、AST、Parser、Checker、Codegen（CPS 变换、状态机生成），uya-src。
 
@@ -1067,7 +1069,7 @@ test "函数调用测试" {
 
 ### 测试覆盖统计
 
-**当前状态**：558 个测试任务，全部通过
+**当前状态**：559 个测试任务，全部通过
 
 | 类别 | 数量 | 说明 |
 |------|------|------|
@@ -2543,7 +2545,7 @@ interface IReadWriter {
 
 **开发质量（2/2 完成）**：
 - ✅ 消灭所有警告（编译器代码与生成代码）
-- ✅ 完整自举（C 实现与 uya-src 完全同步，558 个测试任务全部通过）
+- ✅ 完整自举（C 实现与 uya-src 完全同步，559 个测试任务全部通过）
 
 ### 部分完成的特性（1 项）
 
@@ -2653,7 +2655,7 @@ interface IReadWriter {
 
 **后续路线**：
 - 状态机大小编译期计算与递归/间接递归分析
-- `Scheduler` 集成 `EventLoop` / `Waker`，补齐非阻塞 I/O 与 `EAGAIN -> Pending`
+- `Scheduler` 从当前“单任务 + EventLoop.poll 重试”推进到完整 `EventLoop` / `Waker` 调度，并补齐非阻塞 I/O 与 `EAGAIN -> Pending`
 - `Channel` 扩展到通用/多槽 `MpscChannel<T>`，并补齐 `std.thread` / `ThreadPool`
 - Send/Sync 推导与跨线程验证
 
@@ -2774,4 +2776,4 @@ interface IReadWriter {
 
 ---
 
-*文档版本：v0.5.9（2026-03-17），558 个测试任务全部通过，内存安全证明已完成；异步最小闭环已打通：`Future<!T>` 主路径、单/多 `@await` 状态机、`Poll/Future/Waker`、`std.async` / `std.async_event` / `std.async_channel` / `std.async_scheduler` 基础实现均已落地，其中 `std.async.channel` 已包含 `Channel_i32` 与最小 `MpscChannel_i32`。*
+*文档版本：v0.5.9（2026-03-17），559 个测试任务全部通过，内存安全证明已完成；异步最小闭环已打通：`Future<!T>` 主路径、单/多 `@await` 状态机、`Poll/Future/Waker`、`std.async` / `std.async_event` / `std.async_channel` / `std.async_scheduler` 基础实现均已落地，其中 `std.async.channel` 已包含 `Channel_i32` 与最小 `MpscChannel_i32`。*

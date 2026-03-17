@@ -2,11 +2,13 @@
 //
 // 模块路径：use std.async_scheduler
 // 设计见 docs/std_async_design.md 阶段 5（std.async.scheduler）。
-// 当前为最小骨架：run 包装 block_on；后续集成 EventLoop 处理 Pending。
+// 当前为最小实现：既支持 block_on 包装，也支持在 Pending 时驱动 EventLoop.poll()。
+// 后续仍需补齐真正的任务队列、Waker 唤醒与多任务调度。
 
 use std.async;
+use std.async_event;
 
-/// 调度器。当前最小实现；后续持有 EventLoop 处理 I/O 就绪。
+/// 调度器。当前为单任务最小实现；后续可扩展为持有队列与 EventLoop 的完整运行时。
 export struct Scheduler {}
 
 /// 创建调度器。
@@ -15,7 +17,7 @@ export fn scheduler_new() Scheduler {
 }
 
 /// 同步运行 Future<!T> 直到 Ready，返回 !T。
-/// 当前委托 block_on；后续在 Pending 时轮询 EventLoop 后重试。
+/// 这是最简单的忙等待入口，仍委托 block_on。
 export fn scheduler_run<T>(self: &Scheduler, f: Future<!T>) !T {
     _ = self;
     return block_on(f);
@@ -25,4 +27,35 @@ export fn scheduler_run<T>(self: &Scheduler, f: Future<!T>) !T {
 export fn scheduler_run_i32(self: &Scheduler, f: Future<!i32>) !i32 {
     _ = self;
     return block_on_i32(f);
+}
+
+/// 运行 Future<!T>，当 poll 返回 Pending 时主动驱动 EventLoop 一次后再重试。
+/// 当前仍是单任务/顺序轮询模型，后续再扩展为真正的任务队列与 Waker 调度。
+export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f: Future<!T>, timeout_ms: i32) !T {
+    _ = self;
+    const w: Waker = Waker{};
+    while true {
+        const p: Poll<!T> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                _ = try loop.poll(timeout_ms);
+            },
+        };
+    }
+}
+
+/// scheduler_run_with_event_loop 的 i32 特化，便于无需显式泛型参数的调用。
+export fn scheduler_run_i32_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!i32>, timeout_ms: i32) !i32 {
+    _ = self;
+    const w: Waker = Waker{};
+    while true {
+        const p: Poll<!i32> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                _ = try loop.poll(timeout_ms);
+            },
+        };
+    }
 }

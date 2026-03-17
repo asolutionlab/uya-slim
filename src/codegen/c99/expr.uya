@@ -1716,8 +1716,19 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             }
                         }
                         if struct_name_for_check != null {
-                            const safe_iface: &byte = get_safe_c_identifier(codegen, param_type_name);
-                            const safe_struct: &byte = get_safe_c_identifier(codegen, struct_name_for_check);
+                            var iface_mono: &byte = param_type_name;
+                            if param.var_decl_type.type_named_type_arg_count > 0 && param.var_decl_type.type_named_type_args != null {
+                                iface_mono = get_mono_struct_name(codegen, param_type_name,
+                                    param.var_decl_type.type_named_type_args, param.var_decl_type.type_named_type_arg_count);
+                            }
+                            var struct_mono: &byte = struct_name_for_check;
+                            if arg.type == ASTNodeType.AST_STRUCT_INIT &&
+                                arg.struct_init_type_arg_count > 0 && arg.struct_init_type_args != null {
+                                struct_mono = get_mono_struct_name(codegen, struct_name_for_check,
+                                    arg.struct_init_type_args, arg.struct_init_type_arg_count);
+                            }
+                            const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono);
+                            const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
                             fprintf(codegen.output as *void, "(struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&(" as *byte,
                                     safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
                             gen_expr(codegen, expr.call_expr_args[i]);

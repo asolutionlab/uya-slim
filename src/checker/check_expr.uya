@@ -1007,6 +1007,9 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
     
     // 先检查是否是模块限定调用（module.func(args)）
     if callee.type == ASTNodeType.AST_MEMBER_ACCESS {
+        const object: &ASTNode = callee.member_access_object;
+        const method_name: &byte = callee.member_access_field_name;
+
         const mod_obj: &ASTNode = callee.member_access_object;
         if mod_obj != null && mod_obj.type == ASTNodeType.AST_IDENTIFIER && mod_obj.identifier_name != null {
             const obj_name: &byte = mod_obj.identifier_name;
@@ -1039,7 +1042,6 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
         }
         
         // 联合体变体构造：UnionName.variant(expr)
-        const object: &ASTNode = callee.member_access_object;
         if object != null && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null &&
             checker != null && checker.program_node != null {
             const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, object.identifier_name);
@@ -1057,19 +1059,79 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
                     }
                 }
             }
-            
-            // 结构体方法调用：callee 为 obj.method，obj 类型为结构体（非接口）
-            var object_type: Type = checker_infer_type(checker, callee.member_access_object);
-            // 若对象是指针类型，解引用以获取方法（与 check_call 一致）
-            if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
-                object_type = object_type.pointer_to[0];
+        }
+
+        var object_type: Type = checker_infer_type(checker, object);
+        if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
+            object_type = object_type.pointer_to[0];
+        }
+
+        if object_type.kind == TypeKind.TYPE_INTERFACE && object_type.interface_name != null &&
+            method_name != null && checker.program_node != null {
+            const msig: &ASTNode = find_interface_method_sig(checker.program_node, object_type.interface_name, method_name);
+            if msig != null {
+                return type_from_ast(checker, msig.fn_decl_return_type);
             }
-            if object_type.kind == TypeKind.TYPE_STRUCT && object_type.struct_name != null && checker.program_node != null {
-                const method_name: &byte = callee.member_access_field_name;
-                const m: &ASTNode = find_method_in_struct(checker.program_node, object_type.struct_name, method_name);
-                if m != null {
-                    return type_from_ast(checker, m.fn_decl_return_type);
+        }
+
+        if object_type.kind == TypeKind.TYPE_GENERIC_PARAM && object_type.generic_param_name != null &&
+            method_name != null && checker.current_type_params != null && checker.program_node != null {
+            var tpi: i32 = 0;
+            while tpi < checker.current_type_param_count {
+                const tp: &TypeParam = &checker.current_type_params[tpi];
+                if tp != null && tp.name != null &&
+                    str_equals(tp.name, object_type.generic_param_name) != 0 {
+                    if tp.constraints != null {
+                        var ci: i32 = 0;
+                        while ci < tp.constraint_count {
+                            const constraint_name: &byte = tp.constraints[ci];
+                            if constraint_name != null {
+                                const msig: &ASTNode = find_interface_method_sig(checker.program_node, constraint_name, method_name);
+                                if msig != null {
+                                    return type_from_ast(checker, msig.fn_decl_return_type);
+                                }
+                            }
+                            ci = ci + 1;
+                        }
+                    }
+                    break;
                 }
+                tpi = tpi + 1;
+            }
+        }
+
+        if object_type.kind == TypeKind.TYPE_UNION && object_type.union_name != null &&
+            method_name != null && checker.program_node != null {
+            const m_union: &ASTNode = find_method_in_union(checker.program_node, object_type.union_name, method_name);
+            if m_union != null {
+                return type_from_ast(checker, m_union.fn_decl_return_type);
+            }
+        }
+
+        if object_type.kind == TypeKind.TYPE_STRUCT && object_type.struct_name != null &&
+            method_name != null && checker.program_node != null {
+            const m: &ASTNode = find_method_in_struct(checker.program_node, object_type.struct_name, method_name);
+            if m != null {
+                return type_from_ast(checker, m.fn_decl_return_type);
+            }
+
+            var base_buf: [byte: 64] = [];
+            var bi: i32 = 0;
+            const sn: *byte = object_type.struct_name as *byte;
+            while sn[bi] != 0 && sn[bi] != 95 && bi < 63 {
+                base_buf[bi] = sn[bi];
+                bi = bi + 1;
+            }
+            base_buf[bi] = 0;
+            const base_name: &byte = &base_buf[0];
+            var m_fallback: &ASTNode = find_method_in_struct(checker.program_node, base_name, method_name);
+            if m_fallback == null {
+                if find_interface_decl_from_program(checker.program_node, base_name) != null {
+                    m_fallback = find_interface_method_sig(checker.program_node, base_name, method_name);
+                }
+            }
+            if m_fallback != null {
+                return type_from_ast(checker, m_fallback.fn_decl_return_type);
             }
         }
         
