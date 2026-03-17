@@ -4,6 +4,10 @@
 
 use std.async;
 
+// GCC 原子 CAS 内建；这里本地声明，避免引入整个 pthread 模块造成额外依赖。
+extern "libc" fn __atomic_compare_exchange_n(ptr: &atomic i32, expected: &i32, desired: i32, weak: i32, success_mem: i32, failure_mem: i32) i32;
+const ATOMIC_SEQ_CST: i32 = 5;
+
 /// 单槽通道。send 返回 Ready(0) 当槽位空；recv 返回 Ready(v) 当槽位满。
 /// 基于 atomic 实现，适用于单消费者场景。
 export struct Channel_i32 {
@@ -34,4 +38,36 @@ export struct Channel_i32 {
 /// 创建 Channel_i32。
 export fn channel_i32_new() Channel_i32 {
     return Channel_i32{ _state: 0, _value: 0 };
+}
+
+/// 多生产者、单消费者 i32 通道的最小实现。
+/// 当前仍为单槽模型，但 send 通过 CAS 抢占槽位，避免多个生产者同时写入。
+export struct MpscChannel_i32 {
+    _state: atomic i32,   // 0=empty, 1=producer_reserved, 2=full
+    _value: i32,
+
+    fn send(self: &Self, v: i32) Future<usize> {
+        var expected: i32 = 0;
+        if __atomic_compare_exchange_n(&self._state, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+            self._value = v;
+            self._state = 2;
+            return Future<usize>{ state: Poll<usize>.Ready(0) };
+        }
+        return Future<usize>{ state: Poll<usize>.Pending(0) };
+    }
+
+    fn recv(self: &Self) Future<i32> {
+        const s: i32 = self._state;
+        if s == 2 {
+            const v: i32 = self._value;
+            self._state = 0;
+            return Future<i32>{ state: Poll<i32>.Ready(v) };
+        }
+        return Future<i32>{ state: Poll<i32>.Pending(0) };
+    }
+}
+
+/// 创建 MpscChannel_i32。
+export fn mpsc_channel_i32_new() MpscChannel_i32 {
+    return MpscChannel_i32{ _state: 0, _value: 0 };
 }

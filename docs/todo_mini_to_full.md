@@ -31,7 +31,7 @@
 | **v0.5.7** | 调试打印 | ✅ 完成 | @print/@println 内置函数 |
 | **v0.5.0** | 内存安全证明 | ✅ 完成 | 约束系统 + 符号执行 |
 | **v0.6.0** | 标准库重构 | 🚧 进行中 | std 使用现代特性，libc 薄封装 |
-| **v0.7.0** | 异步完善 | 📋 计划中 | CPS 变换 + 状态机生成 |
+| **v0.7.0** | 异步完善 | 🚧 进行中 | 基础状态机/运行时已打通，完整调度与编译期验证待补齐 |
 
 ---
 
@@ -56,7 +56,7 @@
 | 13 | 联合体（union） | [x]（C 实现与 uya-src 已同步） |
 | 14 | 消灭所有警告 | [x]（主要工作已完成，剩余问题见下方说明） |
 | 15 | 泛型（Generics） | [x]（C 实现与 uya-src 已同步，类型推断与约束检查完成） |
-| 16 | 异步编程（Async） | [~]（语法解析完成：@async_fn/@await；std.async 提供 Task/Future/Poll，test_task_std_async 通过；CPS 变换/状态机生成待实现） |
+| 16 | 异步编程（Async） | [~]（C 实现与 uya-src 已同步；`Future<!T>` 主路径 + `!Future<T>` 兼容路径、单/多 `@await` 状态机与 `std.async` 最小闭环已完成；编译期大小计算与完整运行时待完善） |
 | 17 | test 关键字（测试单元） | [x]（C 实现与 uya-src 已同步） |
 | 18 | **宏系统（Macro）** | [x] C 实现与 uya-src 已同步 |
 | 19 | **标准库基础设施（std）** | [ ] **重要** |
@@ -799,9 +799,9 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 
 **语法规范**（规范 0.40）：`@async_fn` 函数属性、`try @await` 挂起点、`union Poll<T>`、`interface Future<T>`。详见 [uya.md](uya.md) §18。
 
-**异步标准库设计**：详见 [`docs/std_async_design.md`](./docs/std_async_design.md)（`std.async.io`、`std.async.task`、`std.async.event`、`std.async.channel`、`std.async.scheduler`）。
+**异步标准库设计**：详见 [`docs/std_async_design.md`](./std_async_design.md)（`std.async.io`、`std.async.task`、`std.async.event`、`std.async.channel`、`std.async.scheduler`）。
 
-**循环内 await 设计**：详见 [`docs/async_loop_await_design.md`](./docs/async_loop_await_design.md)、[`docs/todo_async_loop_await.md`](./docs/todo_async_loop_await.md)。
+**循环内 await 设计**：详见 [`docs/async_loop_await_design.md`](./async_loop_await_design.md)、[`docs/todo_async_loop_await.md`](./todo_async_loop_await.md)。
 
 **设计目标**：
 - 显式控制：所有挂起必须 `try @await`，取消必须显式检查 `is_cancelled()`
@@ -823,11 +823,17 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 - 因此更“正统/易实现状态机”的形态通常是 `Future<!T>`（即 `poll() -> Poll<!T>`）：  
   - `Poll.Pending`：挂起（应由调度器驱动再次 poll）  
   - `Poll.Ready(!T)`：就绪；其中 `!T` 再区分成功/失败  
-- 当前实现阶段为了最小闭环，采用了 `!Future<T>` + `error.AsyncPending` 的临时约定（把 Pending 伪装为 error），后续在实现 CPS/状态机时应逐步迁移，避免 `try @await` 与“挂起”语义耦合。
+- 当前实现已进入**兼容期中的阶段 B**：状态机 codegen 主路径使用 `Future<!T>` / `Poll<!T>`，`Pending` 走 `Poll.Pending`（`test_async_state_machine.uya` 覆盖）。
+- 为兼容既有语法与测试，Checker 仍接受 `!Future<T>`；`test_async_await.uya` 仍保留 `error.AsyncPending` 兼容路径，后续应逐步收敛并删除这条旧控制流。
 
 **迁移建议（兼容期 → 正统期）**：
-- 兼容期：保持 `@async_fn` 返回 `!Future<T>` 的规则不变，先把 “单个 @await” 真正生成可挂起/恢复的状态机（仍可用 `error.AsyncPending` 兼容旧测试）。
-- 正统期：引入/迁移到 `Future<!T>`（或等价设计），让 Pending 走 `Poll.Pending`，让错误传播走 `!T`（或 `Poll<ErrUnion>`），逐步移除 `error.AsyncPending` 作为控制流的用途。
+- 兼容期：同时支持 `Future<!T>` 与 `!Future<T>`；以 `Future<!T>` + `Poll.Pending` 作为状态机主路径，逐步清理 `error.AsyncPending` 控制流与旧签名。
+- 正统期：统一到 `Future<!T>`（或等价设计），让 Pending 走 `Poll.Pending`，让错误传播走 `!T`（或 `Poll<ErrUnion>`），移除 `!Future<T>` 兼容层。
+
+**当前实现状态（2026-03）**：
+- 已完成最小闭环：`@async_fn` / `try @await`、`Future<!T>` 的 `poll` 状态机、单/多 `@await`、基础错误传播、`block_on`
+- 标准库已有最小模块：`std.async`、`std.async_event`、`std.async_channel`、`std.async_scheduler`
+- 与最终目标仍有差距：状态机当前仍通过 `malloc` 分配，`Scheduler` 仍委托 `block_on`，`Waker`/非阻塞 I/O/Send/Sync 证明尚未完成
 
 - [x] **Lexer**：识别异步编程语法（C 实现与 uya-src 已同步）
   - [x] 识别 `@async_fn` 函数属性（`@` 后跟 `async_fn`）
@@ -837,27 +843,27 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 - [x] **AST**：异步编程节点扩展（C 实现与 uya-src 已同步）
   - [x] 函数声明添加 `is_async` 字段（标记 `@async_fn`）
   - [x] `AST_AWAIT_EXPR` 节点：`@await expression`
-  - [ ] 类型节点支持 `!Future<T>` 类型（需泛型接口支持）
-  - [ ] 支持 `union Poll<T>` 类型定义和使用（需联合体泛型支持）
+  - [x] 类型节点支持 `!Future<T>` 与 `Future<!T>`（基于泛型 interface 已可用）
+  - [x] 支持 `union Poll<T>` 类型定义和使用（基于联合体泛型单态化）
 
 - [x] **Parser**：异步编程语法解析（C 实现与 uya-src 已同步）
   - [x] 解析 `@async_fn` 函数属性（函数声明前的属性）
   - [x] 解析 `@await expression` 表达式
-  - [ ] 解析 `!Future<T>` 返回类型（需泛型接口支持）
-  - [ ] 解析 `union Poll<T>` 类型定义（需联合体泛型支持）
+  - [x] 解析 `!Future<T>` 与 `Future<!T>` 返回类型（兼容双轨语义）
+  - [x] 解析 `union Poll<T>` 类型定义（基于联合体泛型语法）
   - [x] 验证 `@await` 只能在 `@async_fn` 函数内使用
 
 - [~] **Checker**：异步编程类型检查（基础实现，C 实现与 uya-src 已同步）
-  - [x] `@async_fn` 函数必须返回 `!Future<T>` 类型（`error_async_wrong_return.uya` 覆盖）
-  - [x] `@await` 表达式操作数必须返回 `!Future<T>` 类型（新增错误用例覆盖）
+  - [x] `@async_fn` 函数必须返回 `Future<!T>` 或 `!Future<T>` 类型（`error_async_wrong_return.uya` 覆盖非法返回类型）
+  - [x] `@await` 表达式操作数必须返回 `Future<!T>` 或 `!Future<T>` 类型（错误用例覆盖）
   - [x] `@await` 只能在 `@async_fn` 函数内使用
-  - [x] `@await` 返回类型推断为 `!T`（当前 codegen 走最小同步路径；后续 CPS 会改为真正挂起/恢复）
-  - [ ] `union Poll<T>` 类型检查（Pending/Ready/Error 变体）
-  - [ ] `interface Future<T>` 接口定义和实现检查
-  - [ ] 状态机大小编译期计算（递归调用检查）
+  - [x] `@await` 返回类型推断为 `!T`（当前已接入 `Poll<!T>` 最小状态机闭环）
+  - [x] `union Poll<T>` 类型检查（`test_poll_std_async.uya` 覆盖）
+  - [x] `interface Future<T>` 接口定义和实现检查（`test_async_future_interface_box.uya` 覆盖）
+  - [~] 状态机大小编译期计算（当前已禁止直接递归与 async 调用环；完整大小/布局计算仍待实现）
 
 - [~] **CPS 变换（Continuation-Passing Style）**：状态机生成
-  - [x] 分析 `@async_fn` 函数体，识别所有 `@await` 点（顺序收集 const x = try @await ...）
+  - [x] 分析 `@async_fn` 函数体，识别所有 `@await` 点（单/多 `@await` 已稳定，`async_copy` 覆盖循环内场景）
   - [x] 将函数体转换为状态机结构（state + await_fut 单槽，多状态）
   - [x] 为每个 `@await` 点创建状态（state 0 起点，state 1..n 各 await 就绪后）
   - [x] 生成状态转换代码（poll 内 if state==k 分支，绑定变量在函数顶声明、块内赋值）
@@ -865,48 +871,49 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [ ] 计算状态机大小（编译期确定）
 
 - [~] **Codegen**：异步编程代码生成（基础实现，C 实现与 uya-src 已同步）
-  - [x] `@await` 表达式基础代码生成（当前生成同步调用）
+  - [x] `@await` 表达式代码生成（已接入 `Poll<!T>` 最小状态机闭环）
   - [x] 修复：i32 INT_MIN 用 `@min` 比较并输出 `(-2147483647-1)`，避免字面量溢出与 `--` 解析；err_union 先输出 payload 结构体（`ensure_struct_emitted_for_type_node`）；catch 表达式从 `err_union_structX` 推断 payload 类型；vtable 前先输出 union tagged 前向声明
-  - [x] 单/多 @await 状态机：结构体（state + await_fut）、poll 内多状态（state 0..n）、绑定变量在 poll 顶声明；test_async_state_machine、test_async_multiple_await 通过
-  - [x] 生成状态机初始化代码（malloc + state=0）
-  - [x] 生成状态转换代码（多 `@await` 点循环生成 if state==k）
+  - [x] 单/多 `@await` 状态机：结构体（state + await_fut）、poll 内多状态（state 0..n）、绑定变量在 poll 顶声明；`test_async_state_machine`、`test_async_multiple_await`、`test_async_copy` 通过
+  - [~] 生成状态机初始化代码（当前使用 `malloc + state=0`，后续需收敛到编译期布局/零堆分配目标）
+  - [x] 生成状态转换代码（多 `@await` 点循环生成 `if state==k`）
   - [x] 生成 `poll()` 方法实现（状态机驱动）
-  - [ ] 生成 `union Poll<T>` 结构体定义
-  - [ ] 生成 `interface Future<T>` vtable
-  - [ ] 处理错误传播（`!Future<T>` 中的错误联合）
+  - [x] 生成 `union Poll<T>` 结构体定义（`test_poll_std_async.uya`、`test_async_poll_inline_struct_init.uya` 覆盖）
+  - [x] 生成 `interface Future<T>` vtable（`test_async_future_interface_box.uya` 覆盖）
+  - [x] 处理错误传播（`!Future<T>` 中的错误联合；`test_async_error_propagation.uya` 覆盖）
 
-- [ ] **标准类型定义**：核心异步类型
-  - [ ] `union Poll<T>` 定义（Pending/Ready/Error 变体）
-  - [ ] `interface Future<T>` 接口定义
-  - [ ] `struct Waker` 定义（唤醒器）
+- [~] **标准类型定义**：核心异步类型
+  - [x] `union Poll<T>` 定义（Ready/Pending 两变体已在 `lib/std/async.uya` 落地）
+  - [x] `interface Future<T>` 接口定义
+  - [x] `struct Waker` 定义（当前为占位实现）
   - [ ] 为内置类型提供异步支持
 
-- [~] **标准库实现**（基于核心类型，详见 [`docs/std_async_design.md`](./docs/std_async_design.md)）
-  - [x] `lib/std/async.uya`：`struct Waker`、`union Poll<T>`（Ready/Pending）、`interface Future<T>`、`struct Future<T>`（`state: Poll<T>`、`fn poll(...) Poll<T>`）、`struct Task<T> : Future<T>`（`task_ready`、`poll`）
+- [~] **标准库实现**（基于核心类型，详见 [`docs/std_async_design.md`](./std_async_design.md)）
+  - [x] `lib/std/async.uya`：`struct Waker`、`union Poll<T>`（Ready/Pending）、`interface Future<T>`、`struct Future<T>`（`state: Poll<T>`、`fn poll(...) Poll<T>`）、`struct Task<T> : Future<T>`（`task_ready`、`poll`）、`block_on`
   - [x] 结构体含泛型 union 字段时 codegen 先输出 union 单态（如 `Poll_i32`），并用 arena 持久化 tagged 名避免重定义
-  - [x] 测试：`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya`、`test_async_nested.uya` 通过 `--c99` 与 `--uya --c99`
-  - [ ] `std.async.task` 模块：拆分/扩展（当前已在 async.uya 中）
-  - [~] `std.async.io` 模块：`AsyncWriter`, `AsyncReader` 接口 + `MemAsyncWriter`、`MemAsyncReader`、`AsyncFd`（同步实现，非阻塞 EAGAIN 待扩展）
+  - [x] 测试：`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya`、`test_async_await_ready.uya`、`test_async_nested.uya` 通过 `--c99` 与 `--uya --c99`
+  - [~] `std.async.task` 模块：`Task<T>` / `task_ready` 已在 `async.uya` 落地，后续再拆分/扩展
+  - [~] `std.async.io` 模块：`AsyncWriter`, `AsyncReader` 接口 + `MemAsyncWriter`、`MemAsyncReader`、`AsyncFd`（同步实现；`test_async_io.uya`、`test_async_fd.uya`、`test_async_copy.uya` 已覆盖，非阻塞 EAGAIN 待扩展）
   - [x] `std.async.event` 模块：`EventLoop`（epoll/kqueue/IOCP）
     - [x] epoll 系统调用层：`lib/syscall/linux.uya` 与 `lib/libc/syscall.uya` 已添加 `SYS_epoll_*`、`EpollEvent`、`EPOLLET`、`sys_epoll_create1`/`sys_epoll_ctl`/`sys_epoll_wait`；`test_epoll_syscall.uya` 通过 `--c99` 与 `--uya --c99`
     - [x] `lib/std/async_event.uya`：`EventKind`、`interface EventLoop`、`struct LinuxEpoll : EventLoop`（`use libc.syscall`）
     - [x] `test_std_async_event.uya` 端到端通过（codegen 已修复：err_union 先输出 payload 结构体、catch 推断 struct payload、union 前向声明、INT_MIN 用 @min）
-  - [~] `std.async.channel` 模块：`Channel_i32` 单槽通道（MpscChannel 待实现）
-  - [~] `std.async.scheduler` 模块：`Scheduler` 事件循环调度器（最小骨架：`scheduler_new`、`scheduler_run`/`scheduler_run_i32`，委托 block_on；EventLoop 集成待实现）
+  - [~] `std.async.channel` 模块：`Channel_i32` 单槽通道已完成；`MpscChannel_i32` 最小单槽/CAS 版本已落地（`test_async_channel.uya` 覆盖 send/recv 与满槽 Pending），通用/多槽 `MpscChannel<T>` 待实现
+  - [~] `std.async.scheduler` 模块：`Scheduler` 最小骨架已完成（`scheduler_new`、`scheduler_run`/`scheduler_run_i32`，`test_std_async_scheduler.uya` 通过），EventLoop 集成待实现
   - [ ] `std.thread` 模块：`ThreadPool`, `async_compute<T>`
 
-- [ ] **编译期验证**：
-  - [ ] 状态机大小编译期计算（递归调用报错）
+- [~] **编译期验证**：
+  - [~] 状态机大小编译期计算（直接递归与 async 间接调用环已报错，完整大小/间接递归分析待实现）
   - [ ] Send/Sync 约束推导（跨线程安全性）
   - [ ] 状态机转换正确性验证
   - [ ] 唤醒安全性验证（Waker 使用）
 
-- [ ] **测试用例**：
+- [~] **测试用例**：
   - [x] `test_async_fn_basic.uya` - 基本异步函数（poll 立即 Ready）
   - [x] `test_async_await_parse.uya` - @async_fn/@await 解析与 @await 上下文校验（仅允许在 async 函数内）
   - [x] `test_task_std_async.uya` - std.async 提供 Task<T>、Poll<T>、Future<T>，task_ready + poll 返回 Ready
-  - [x] `test_async_return_value.uya` - @async_fn 中直接 return T 自动包装为 Future<T>（无 @await 时 poll 立即 Ready）
+  - [x] `test_async_return_value.uya` - `@async_fn` 中直接 `return T` 自动包装为异步返回类型（兼容 `Future<!T>` / `!Future<T>`；无 `@await` 时 poll 立即 Ready）
   - [x] `test_async_await.uya` - `try @await` 基本使用（Ready 与 Pending 最小闭环）
+  - [x] `test_async_await_ready.uya` - `try @await` 遇到 Ready future 时返回值类型与结果正确
   - [x] `test_poll_std_async.uya` - `Poll<T>` 使用（原计划名 `test_async_poll.uya`）
   - [x] `test_async_poll_inline_struct_init.uya` - 回归：结构体字段内联初始化 `Poll<T>` 时必须使用单态化 tagged union
   - [x] `test_async_future_interface_box.uya` - `Future<T>`（泛型 interface）单态化 + 装箱后可调用 poll（vtable+data）
@@ -919,11 +926,13 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `error_async_wrong_return.uya` - @async_fn 返回非 Future<!T>/!Future<T> 时编译报错，预期失败通过
   - [x] `error_await_outside_async.uya` - `try @await` 在非异步函数中使用
   - [x] `error_await_operand_not_error_union.uya` - @await 操作数为 `Future<T>`（缺少 !）应失败
-  - [x] `error_await_operand_not_future.uya` - @await 操作数非 `!Future<T>` 应失败
+  - [x] `error_await_operand_not_future.uya` - `@await` 操作数既非 `Future<!T>` 也非 `!Future<T>` 时应失败
   - [x] `error_async_recursive.uya` - 递归异步函数（应报错；当前先禁止直接递归，后续由状态机大小计算接管）
+  - [x] `error_async_indirect_recursive.uya` - 异步函数形成调用环（如 ping/pong 互相 `@await`）应报错
   - [x] `test_async_io.uya` - AsyncWriter/AsyncReader 接口与 MemAsyncWriter、MemAsyncReader
   - [x] `test_async_fd.uya` - AsyncFd 基于 fd 的 AsyncWriter/AsyncReader
-  - [x] `test_async_channel.uya` - Channel_i32 单槽通道 send/recv
+  - [x] `test_async_copy.uya` - `async_copy` 覆盖循环内 `@await` 与 `MemAsyncReader`/`MemAsyncWriter`
+  - [x] `test_async_channel.uya` - `Channel_i32` send/recv，`MpscChannel_i32` 单槽 CAS 抢占、满槽 Pending、消费后重发
   - [x] `test_block_on.uya` - block_on 同步运行 Future<!T> 直到 Ready
   - [x] `test_std_async_scheduler.uya` - std.async_scheduler 的 Scheduler、scheduler_run_i32
 
@@ -1058,7 +1067,7 @@ test "函数调用测试" {
 
 ### 测试覆盖统计
 
-**当前状态**：505 个测试文件，全部通过
+**当前状态**：558 个测试任务，全部通过
 
 | 类别 | 数量 | 说明 |
 |------|------|------|
@@ -1066,7 +1075,7 @@ test "函数调用测试" {
 | **错误测试** | 52 | `error_*.uya`，预期编译失败 |
 | **其他测试** | 46+ | 基础测试、递归测试等 |
 | **多文件测试** | 若干 | `multifile/`、`cross_deps/` 目录 |
-| **std.async 相关** | 3 | `test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya` |
+| **std.async 相关** | 20+ | `test_async_state_machine.uya`、`test_async_multiple_await.uya`、`test_async_copy.uya`、`test_std_async_event.uya`、`test_std_async_scheduler.uya` 等 |
 
 **测试分类**：
 
@@ -1903,11 +1912,11 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 - [ ] `std.bare_metal` - 裸机平台支持
 - [ ] `std.builtin` - 编译器内置运行时
 - [ ] `std.target` - 条件编译宏系统
-- [ ] `std.async.*` - 异步标准库（详见 std_async_design.md）
+- [~] `std.async.*` - 异步标准库（`std.async` / `std.async_event` / `std.async_channel` / `std.async_scheduler` 已有最小实现，详见 `std_async_design.md`）
 
 **详细实现方案**：
 - 同步部分：参见 [`docs/std_c_design.md`](./docs/std_c_design.md)
-- 异步部分：参见 [`docs/std_async_design.md`](./docs/std_async_design.md)
+- 异步部分：参见 [`docs/std_async_design.md`](./std_async_design.md)
 - 核心类型设计：参见本文档 Sprint 6-10
 
 ---
@@ -2534,11 +2543,11 @@ interface IReadWriter {
 
 **开发质量（2/2 完成）**：
 - ✅ 消灭所有警告（编译器代码与生成代码）
-- ✅ 完整自举（C 实现与 uya-src 完全同步，310+ 测试全部通过）
+- ✅ 完整自举（C 实现与 uya-src 完全同步，558 个测试任务全部通过）
 
 ### 部分完成的特性（1 项）
 
-- 🔄 **异步编程**（语法解析完成，状态机生成待实现）
+- 🔄 **异步编程**（`Future<!T>` 主路径 + `!Future<T>` 兼容路径、单/多 `@await` 状态机与 `std.async` 最小运行时已完成；编译期大小计算与完整调度待完善）
 
 ### 待实现的核心特性（3 项）
 
@@ -2635,17 +2644,22 @@ interface IReadWriter {
 
 #### 2. 异步编程完善（运行时支持）⭐⭐⭐⭐
 
-**目标**：完成状态机生成与运行时
+**目标**：补完编译期验证与完整运行时，收敛当前最小闭环实现
 
-**实施路线**：
-- CPS 变换（continuation-passing style）
-- 状态机生成（@await 点分析）
-- Poll<T> / Future<T> 运行时
-- std.async.{task, io, event, scheduler}
+**当前已完成**：
+- 单/多 `@await` 状态机、`Poll/Future/Waker` 基础类型
+- `std.async`、`std.async_event`、`std.async_channel`、`std.async_scheduler` 最小闭环
+- `block_on`、基础错误传播、`async_copy` 等端到端验证
+
+**后续路线**：
+- 状态机大小编译期计算与递归/间接递归分析
+- `Scheduler` 集成 `EventLoop` / `Waker`，补齐非阻塞 I/O 与 `EAGAIN -> Pending`
+- `Channel` 扩展到通用/多槽 `MpscChannel<T>`，并补齐 `std.thread` / `ThreadPool`
+- Send/Sync 推导与跨线程验证
 
 **依赖**：标准库基础设施（syscall）
 
-**详细设计**：见 [`docs/std_async_design.md`](./docs/std_async_design.md)
+**详细设计**：见 [`docs/std_async_design.md`](./std_async_design.md)
 
 ### 长期计划（v0.4.x+）
 
@@ -2741,8 +2755,8 @@ interface IReadWriter {
 - ✅ --outlibc 生成独立 libc（Sprint 5 已完成）
 
 ### v0.4.0（目标：2026 Q2）- 异步里程碑
-|- ✅ 内存安全证明（v0.48 已完成：编译期证明+运行时检查可选）
-- 🎯 异步编程完整运行时
+- ✅ 内存安全证明（v0.48 已完成：编译期证明+运行时检查可选）
+- 🎯 异步编程完整运行时（基础状态机与最小运行时已完成）
 - 🎯 并发安全保证
 - 🎯 标准库：collections + async
 
@@ -2760,4 +2774,4 @@ interface IReadWriter {
 
 ---
 
-*文档版本：v0.5.7（2026-02-19），505 测试全部通过，内存安全证明已完成；std.async 阶段 2（Task/Future/Poll）及 @async_fn return T 自动包装已实现。*
+*文档版本：v0.5.9（2026-03-17），558 个测试任务全部通过，内存安全证明已完成；异步最小闭环已打通：`Future<!T>` 主路径、单/多 `@await` 状态机、`Poll/Future/Waker`、`std.async` / `std.async_event` / `std.async_channel` / `std.async_scheduler` 基础实现均已落地，其中 `std.async.channel` 已包含 `Channel_i32` 与最小 `MpscChannel_i32`。*

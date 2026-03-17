@@ -24,6 +24,7 @@ const MAX_MONO_NAME_LEN: i32 = 256;
 const MAX_MONO_NAME_LIMIT: i32 = 250;
 const MAX_POINTER_NAMES: i32 = 32;
 const MAX_CONSTRAINTS: i32 = 64;
+const MAX_ASYNC_CALL_EDGES: i32 = 512;
 
 const SYMBOL_TABLE_SIZE: i32 = 32768;
 const FUNCTION_TABLE_SIZE: i32 = 2048;
@@ -312,4 +313,8 @@ struct TypeChecker {
     // 作用域链表头数组：每个作用域的符号链表头
     // 用于快速遍历当前作用域的符号，避免遍历整个符号表
     scope_heads: [&Symbol: 64],  // 支持最多 64 层嵌套作用域
+    // 异步函数调用图（用于在完整状态机大小计算前先检测 async 调用环）
+    async_call_edge_from: [&byte: MAX_ASYNC_CALL_EDGES],
+    async_call_edge_to: [&byte: MAX_ASYNC_CALL_EDGES],
+    async_call_edge_count: i32,
 }

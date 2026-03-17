@@ -73,6 +73,13 @@ fn checker_init(checker: &TypeChecker, arena: &Arena, default_filename: &byte) i
         checker.scope_heads[i] = null;
         i = i + 1;
     }
+    i = 0;
+    while i < @len(checker.async_call_edge_from) {
+        checker.async_call_edge_from[i] = null;
+        checker.async_call_edge_to[i] = null;
+        i = i + 1;
+    }
+    checker.async_call_edge_count = 0;
 
     checker.scope_level = 0;
     checker.loop_depth = 0;

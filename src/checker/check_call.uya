@@ -111,6 +111,122 @@ fn register_mono_from_return_type_ast(checker: &TypeChecker,
     }
 }
 
+const MAX_ASYNC_CALL_VISITED: i32 = 64;
+
+fn async_call_visited_contains(visited: & & byte, visited_count: i32, name: &byte) i32 {
+    if visited == null || name == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < visited_count {
+        if visited[i] != null && str_equals(visited[i], name) != 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn async_call_add_edge(checker: &TypeChecker, from_name: &byte, to_name: &byte) i32 {
+    if checker == null || from_name == null || to_name == null {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < checker.async_call_edge_count {
+        if checker.async_call_edge_from[i] != null && checker.async_call_edge_to[i] != null &&
+            str_equals(checker.async_call_edge_from[i], from_name) != 0 &&
+            str_equals(checker.async_call_edge_to[i], to_name) != 0 {
+            return 0;
+        }
+        i = i + 1;
+    }
+    if checker.async_call_edge_count >= @len(checker.async_call_edge_from) {
+        return 0;
+    }
+    checker.async_call_edge_from[checker.async_call_edge_count] = from_name;
+    checker.async_call_edge_to[checker.async_call_edge_count] = to_name;
+    checker.async_call_edge_count = checker.async_call_edge_count + 1;
+    return 1;
+}
+
+fn async_call_path_exists(checker: &TypeChecker, from_name: &byte, target_name: &byte,
+                         visited: & & byte, visited_count: i32) i32 {
+    if checker == null || from_name == null || target_name == null {
+        return 0;
+    }
+    if str_equals(from_name, target_name) != 0 {
+        return 1;
+    }
+    if visited_count >= MAX_ASYNC_CALL_VISITED {
+        return 0;
+    }
+    if async_call_visited_contains(visited, visited_count, from_name) != 0 {
+        return 0;
+    }
+    visited[visited_count] = from_name;
+    var i: i32 = 0;
+    while i < checker.async_call_edge_count {
+        if checker.async_call_edge_from[i] != null && checker.async_call_edge_to[i] != null &&
+            str_equals(checker.async_call_edge_from[i], from_name) != 0 {
+            if str_equals(checker.async_call_edge_to[i], target_name) != 0 {
+                return 1;
+            }
+            if async_call_path_exists(checker, checker.async_call_edge_to[i], target_name,
+                visited, visited_count + 1) != 0 {
+                return 1;
+            }
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn resolve_async_callee_fn_decl(checker: &TypeChecker, callee: &ASTNode) &ASTNode {
+    if checker == null || callee == null {
+        return null;
+    }
+    if callee.type == ASTNodeType.AST_IDENTIFIER && callee.identifier_name != null && checker.program_node != null {
+        const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, callee.identifier_name);
+        if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL && fn_decl.fn_decl_is_async != 0 {
+            return fn_decl;
+        }
+        return null;
+    }
+    if callee.type == ASTNodeType.AST_MEMBER_ACCESS &&
+        callee.member_access_is_module_access != 0 &&
+        callee.member_access_module_name != null &&
+        callee.member_access_field_name != null {
+        const module_name: &byte = callee.member_access_module_name;
+        var mh: u32 = hash_string(module_name);
+        var mi: i32 = (mh as i32) & (MODULE_TABLE_SIZE - 1);
+        var i: i32 = 0;
+        while i < MODULE_TABLE_SIZE {
+            const ml: i32 = (mi + i) & (MODULE_TABLE_SIZE - 1);
+            const mod: &ModuleInfo = checker.module_table.slots[ml];
+            if mod == null { break; }
+            if str_equals(mod.module_name, module_name) != 0 {
+                if mod.exports != null {
+                    var ei: i32 = 0;
+                    while ei < mod.export_count {
+                        if mod.exports[ei].name != null &&
+                            str_equals(mod.exports[ei].name, callee.member_access_field_name) != 0 {
+                            const fn_decl: &ASTNode = mod.exports[ei].decl_node;
+                            if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL && fn_decl.fn_decl_is_async != 0 {
+                                return fn_decl;
+                            }
+                            return null;
+                        }
+                        ei = ei + 1;
+                    }
+                }
+                break;
+            }
+            i = i + 1;
+        }
+    }
+    return null;
+}
+
 fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
     var result: Type = Type {
@@ -221,6 +337,28 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             // 注意：这里不再报告"未导入的模块"错误
             // 因为可能是结构体方法调用（如 p.distance()）
             // 结构体方法调用会在后面的代码中处理
+        }
+    }
+
+    // @async_fn 间接递归检测：记录 async 调用边，并在闭环时报告错误。
+    // 目的：在完整状态机大小计算实现前，先禁止 async 调用图成环。
+    if checker != null && checker.current_function_decl != null &&
+        checker.current_function_decl.fn_decl_is_async != 0 &&
+        checker.current_function_decl.fn_decl_name != null {
+        const current_async_name: &byte = checker.current_function_decl.fn_decl_name;
+        const async_callee_fn: &ASTNode = resolve_async_callee_fn_decl(checker, callee);
+        if async_callee_fn != null && async_callee_fn.fn_decl_name != null {
+            if str_equals(async_callee_fn.fn_decl_name, current_async_name) != 0 {
+                checker_report_error(checker, node, "@async_fn 函数不允许直接递归调用（待 CPS/状态机大小计算实现）" as *byte);
+                return result;
+            }
+            if async_call_add_edge(checker, current_async_name, async_callee_fn.fn_decl_name) != 0 {
+                var visited: [&byte: 64] = [];
+                if async_call_path_exists(checker, async_callee_fn.fn_decl_name, current_async_name, &visited[0], 0) != 0 {
+                    checker_report_error(checker, node, "@async_fn 函数不允许形成递归调用环（待 CPS/状态机大小计算实现）" as *byte);
+                    return result;
+                }
+            }
         }
     }
     
