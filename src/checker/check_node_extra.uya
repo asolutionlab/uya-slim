@@ -38,6 +38,8 @@ fn check_match_expr_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 sym.line = node.line;
                 sym.column = node.column;
                 sym.pointee_of = null;
+                sym.pointer_known_length = -1;
+                sym.pointer_length_param = null;
                 symbol_table_insert(checker, sym);
             }
         }
@@ -83,6 +85,8 @@ fn check_match_expr_node(checker: &TypeChecker, node: &ASTNode) i32 {
                         sym.is_initialized = 1;  // match 联合体绑定变量已初始化
                         sym.scope_level = checker.scope_level;
                         sym.line = node.line;
+                        sym.pointer_known_length = -1;
+                        sym.pointer_length_param = null;
                         sym.column = node.column;
                         sym.pointee_of = null;
                         symbol_table_insert(checker, sym);
@@ -420,6 +424,8 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 loop_var.line = node.line;
                 loop_var.column = node.column;
                 loop_var.pointee_of = null;
+                loop_var.pointer_known_length = -1;
+                loop_var.pointer_length_param = null;
                 symbol_table_insert(checker, loop_var);
             }
         }
@@ -506,6 +512,8 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
                             loop_var.line = node.line;
                             loop_var.column = node.column;
                             loop_var.pointee_of = null;
+                            loop_var.pointer_known_length = -1;
+                            loop_var.pointer_length_param = null;
                             symbol_table_insert(checker, loop_var);
                         }
                     }
@@ -669,6 +677,8 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
             loop_var.line = node.line;
             loop_var.column = node.column;
             loop_var.pointee_of = null;
+            loop_var.pointer_known_length = -1;
+            loop_var.pointer_length_param = null;
             if symbol_table_insert(checker, loop_var) != 0 {
                 // 符号表插入失败：放宽检查，允许通过（不报错），继续检查循环体
                 // 这可能是因为符号已存在或其他原因，但不应该阻止循环体的检查

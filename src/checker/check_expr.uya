@@ -1298,6 +1298,8 @@ fn infer_match_expr(checker: &TypeChecker, expr: &ASTNode) Type {
                             sym.line = expr.line;
                             sym.column = expr.column;
                             sym.pointee_of = null;
+                            sym.pointer_known_length = -1;
+                            sym.pointer_length_param = null;
                             symbol_table_insert(checker, sym);
                         }
                         break;
@@ -1795,6 +1797,8 @@ fn infer_catch_expr(checker: &TypeChecker, expr: &ASTNode) Type {
             sym.line = expr.line;
             sym.column = expr.column;
             sym.pointee_of = null;
+            sym.pointer_known_length = -1;
+            sym.pointer_length_param = null;
             symbol_table_insert(checker, sym);
         }
         checker_check_node(checker, expr.catch_expr_catch_block);

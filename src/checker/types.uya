@@ -187,6 +187,8 @@ struct Symbol {
     pointee_of: &byte,
     decl_node: &ASTNode,
     next_in_scope: &Symbol,  // 同一作用域的下一个符号（用于快速遍历）
+    pointer_known_length: i32,  // 指针已知长度（如 *byte = "ab" 为 3），-1 表示未知；用于 --safety-proof 时下标边界证明
+    pointer_length_param: &byte,  // 若为函数参数且与下一参数成 (ptr, len) 对，则为 len 参数名，否则 null；有此时允许 ptr[i] 作长度证明
 }
 
 struct FunctionSignature {

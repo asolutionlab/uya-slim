@@ -50,6 +50,8 @@ fn checker_check_destructure_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             symbol.column = node.column;
             symbol.pointee_of = null;
             symbol.decl_node = null;  // 解构无单个 VAR_DECL 节点
+            symbol.pointer_known_length = -1;
+            symbol.pointer_length_param = null;
             const existing: &Symbol = symbol_table_lookup(checker, name);
             if existing != null && existing.scope_level == checker.scope_level {
                 checker_report_error(checker, node, "变量重复定义" as *byte);
@@ -178,20 +180,29 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             symbol.name = node.var_decl_name;
             symbol.type = copy_type(&var_type);
             symbol.is_const = node.var_decl_is_const;
-            // 初始化状态：默认已初始化（保守策略，避免误报）
-            // 以后可以扩展为精确检测未初始化变量
             symbol.is_initialized = 1;
             symbol.scope_level = checker.scope_level;
             symbol.line = node.line;
             symbol.column = node.column;
             symbol.pointee_of = null;
             symbol.decl_node = node;
+            symbol.pointer_known_length = -1;
+            symbol.pointer_length_param = null;
+            if node.var_decl_init != null && node.var_decl_init.type == ASTNodeType.AST_STRING &&
+                var_type.kind == TypeKind.TYPE_POINTER && node.var_decl_init.string_literal_value != null {
+                var len: i32 = 0;
+                while node.var_decl_init.string_literal_value[len] != 0 {
+                    len = len + 1;
+                }
+                symbol.pointer_known_length = len + 1;
+            }
             if symbol_table_insert(checker, symbol) != 0 {
                 checker_report_error(checker, node, "符号表已满，无法添加变量" as *byte);
                 return 0;
             }
             if node.var_decl_init != null && node.var_decl_init.type == ASTNodeType.AST_UNARY_EXPR &&
                 (node.var_decl_init.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND {
+                symbol.pointer_known_length = 1;
                 const operand: &ASTNode = node.var_decl_init.unary_expr_operand;
                 if operand != null && operand.type == ASTNodeType.AST_IDENTIFIER {
                 const x: &byte = operand.identifier_name;
@@ -204,6 +215,39 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             if node.var_decl_init != null && node.var_decl_init.type == ASTNodeType.AST_IDENTIFIER &&
                 var_type.kind == TypeKind.TYPE_STRUCT && var_type.struct_name != null {
                 checker_mark_moved(checker, node, node.var_decl_init.identifier_name, var_type.struct_name);
+            }
+            if checker.enable_safety_proof != 0 && node.var_decl_init != null && var_type.kind == TypeKind.TYPE_POINTER {
+                const init_node: &ASTNode = node.var_decl_init;
+                if init_node.type == ASTNodeType.AST_CALL_EXPR && init_node.call_expr_callee != null &&
+                    init_node.call_expr_callee.type == ASTNodeType.AST_IDENTIFIER && init_node.call_expr_arg_count >= 1 {
+                    const callee_name: &byte = init_node.call_expr_callee.identifier_name;
+                    var is_alloc: i32 = 0;
+                    if str_equals(callee_name, "malloc" as *byte) != 0 || str_equals(callee_name, "calloc" as *byte) != 0 {
+                        is_alloc = 1;
+                    }
+                    if is_alloc != 0 {
+                        const arg0: &ASTNode = init_node.call_expr_args[0];
+                        if arg0 != null && arg0.type == ASTNodeType.AST_NUMBER {
+                            const val: i32 = checker_eval_const_expr(checker, arg0);
+                            if val >= 0 {
+                                symbol.pointer_known_length = val;
+                            }
+                        } else if arg0 != null && arg0.type == ASTNodeType.AST_IDENTIFIER && arg0.identifier_name != null {
+                            symbol.pointer_length_param = arg0.identifier_name;
+                        }
+                    }
+                } else if init_node.type == ASTNodeType.AST_CAST_EXPR && init_node.cast_expr_expr != null &&
+                    init_node.cast_expr_expr.type == ASTNodeType.AST_IDENTIFIER && init_node.cast_expr_expr.identifier_name != null {
+                    const src_sym: &Symbol = symbol_table_lookup(checker, init_node.cast_expr_expr.identifier_name);
+                    if src_sym != null {
+                        if src_sym.pointer_known_length >= 0 {
+                            symbol.pointer_known_length = src_sym.pointer_known_length;
+                        }
+                        if src_sym.pointer_length_param != null {
+                            symbol.pointer_length_param = src_sym.pointer_length_param;
+                        }
+                    }
+                }
             }
         }
     }
@@ -292,13 +336,27 @@ fn checker_register_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     symbol.name = node.var_decl_name;
     symbol.type = copy_type(&var_type);
     symbol.is_const = node.var_decl_is_const;
-    // 顶层变量注册：假设已初始化（实际检查在 checker_check_var_decl 中）
     symbol.is_initialized = 1;
     symbol.scope_level = 0;
     symbol.line = node.line;
     symbol.column = node.column;
     symbol.pointee_of = null;
     symbol.decl_node = node;
+    symbol.pointer_known_length = -1;
+    symbol.pointer_length_param = null;
+    if node.var_decl_init != null && node.var_decl_init.type == ASTNodeType.AST_STRING &&
+        var_type.kind == TypeKind.TYPE_POINTER && node.var_decl_init.string_literal_value != null {
+        var len: i32 = 0;
+        while node.var_decl_init.string_literal_value[len] != 0 {
+            len = len + 1;
+        }
+        symbol.pointer_known_length = len + 1;
+    }
+    if node.var_decl_init != null && node.var_decl_init.type == ASTNodeType.AST_UNARY_EXPR &&
+        (node.var_decl_init.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND &&
+        var_type.kind == TypeKind.TYPE_POINTER {
+        symbol.pointer_known_length = 1;
+    }
     if symbol_table_insert(checker, symbol) != 0 {
         return 0;
     }
@@ -459,12 +517,14 @@ fn checker_check_extern_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     symbol.name = node.extern_var_decl_name;
     symbol.type = var_type;
     symbol.is_const = node.extern_var_decl_is_const;
-    symbol.is_initialized = 1;  // extern 变量假设已初始化
-    symbol.scope_level = 0;  // 顶层声明
+    symbol.is_initialized = 1;
+    symbol.scope_level = 0;
     symbol.line = node.line;
     symbol.column = node.column;
     symbol.pointee_of = null;
     symbol.decl_node = node;
+    symbol.pointer_known_length = -1;
+    symbol.pointer_length_param = null;
 
     if symbol_table_insert(checker, symbol) != 0 {
         // 检查是否是因为符号已存在（这是允许的，多模块编译时同名符号可能被多次注册）
@@ -585,13 +645,15 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                 if param_symbol != null {
                     param_symbol.name = param.var_decl_name;
                     param_symbol.type = copy_type(&param_type);
-                    param_symbol.is_const = 1;  // 参数是只读的
-                    param_symbol.is_initialized = 1;  // 参数已初始化
+                    param_symbol.is_const = 1;
+                    param_symbol.is_initialized = 1;
                     param_symbol.scope_level = checker.scope_level;
                     param_symbol.line = param.line;
                     param_symbol.column = param.column;
                     param_symbol.pointee_of = null;
                     param_symbol.decl_node = param;
+                    param_symbol.pointer_known_length = -1;
+                    param_symbol.pointer_length_param = null;
                     symbol_table_insert(checker, param_symbol);
                     // 函数参数如果是指针类型，假设为非空（调用者负责传递有效指针）
                     if checker.enable_safety_proof != 0 && param_type.kind == TypeKind.TYPE_POINTER {
@@ -600,6 +662,38 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                 }
             }
             i = i + 1;
+        }
+        // 指针参数与长度：若某指针参数之后存在整数类型参数（如 (dest, src, n) 中的 n），取第一个作为长度参数，允许 ptr[i] 作证明
+        if checker.enable_safety_proof != 0 && node.fn_decl_param_count >= 2 {
+            var j: i32 = 0;
+            while j < node.fn_decl_param_count {
+                const p: &ASTNode = node.fn_decl_params[j];
+                if p != null && p.type == ASTNodeType.AST_VAR_DECL {
+                    const pt: Type = type_from_ast(checker, p.var_decl_type);
+                    if pt.kind == TypeKind.TYPE_POINTER && p.var_decl_name != null {
+                        var k: i32 = j + 1;
+                        while k < node.fn_decl_param_count {
+                            const later: &ASTNode = node.fn_decl_params[k];
+                            if later != null && later.type == ASTNodeType.AST_VAR_DECL && later.var_decl_name != null {
+                                const lt: Type = type_from_ast(checker, later.var_decl_type);
+                                var is_len: i32 = 0;
+                                if lt.kind == TypeKind.TYPE_I32 || lt.kind == TypeKind.TYPE_USIZE || lt.kind == TypeKind.TYPE_U32 || lt.kind == TypeKind.TYPE_U64 {
+                                    is_len = 1;
+                                }
+                                if is_len != 0 {
+                                    const ptr_sym: &Symbol = symbol_table_lookup(checker, p.var_decl_name);
+                                    if ptr_sym != null {
+                                        ptr_sym.pointer_length_param = later.var_decl_name;
+                                    }
+                                    break;
+                                }
+                            }
+                            k = k + 1;
+                        }
+                    }
+                }
+                j = j + 1;
+            }
         }
         
         checker.moved_count = 0;
