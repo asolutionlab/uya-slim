@@ -33,12 +33,16 @@ export fn scheduler_run_i32(self: &Scheduler, f: Future<!i32>) !i32 {
 /// 当前仍是单任务/顺序轮询模型，后续再扩展为真正的任务队列与 Waker 调度。
 export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f: Future<!T>, timeout_ms: i32) !T {
     _ = self;
-    const w: Waker = Waker{};
+    var w: Waker = Waker{};
     while true {
+        w.reset();
         const p: Poll<!T> = f.poll(&w);
         match p {
             .Ready(ok_val) => { return ok_val; },
             .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
                 _ = try loop.poll(timeout_ms);
             },
         };
@@ -48,12 +52,16 @@ export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f:
 /// scheduler_run_with_event_loop 的 i32 特化，便于无需显式泛型参数的调用。
 export fn scheduler_run_i32_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!i32>, timeout_ms: i32) !i32 {
     _ = self;
-    const w: Waker = Waker{};
+    var w: Waker = Waker{};
     while true {
+        w.reset();
         const p: Poll<!i32> = f.poll(&w);
         match p {
             .Ready(ok_val) => { return ok_val; },
             .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
                 _ = try loop.poll(timeout_ms);
             },
         };

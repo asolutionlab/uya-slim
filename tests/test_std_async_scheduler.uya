@@ -24,6 +24,7 @@ test "scheduler_run" {
 }
 
 var scheduler_loop_poll_count: i32 = 0;
+var scheduler_wake_poll_count: i32 = 0;
 
 struct TestEventLoop : EventLoop {
     fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !void {
@@ -56,12 +57,29 @@ struct ReadyAfterEventLoopPoll : Future<!i32> {
     }
 }
 
+struct WakeThenReadyWithoutEventLoopPoll : Future<!i32> {
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = self;
+        if scheduler_wake_poll_count == 0 {
+            scheduler_wake_poll_count = scheduler_wake_poll_count + 1;
+            waker.wake();
+            return Poll<!i32>.Pending({});
+        }
+        scheduler_wake_poll_count = scheduler_wake_poll_count + 1;
+        return Poll<!i32>.Ready(ok<i32>(123));
+    }
+}
+
 fn test_event_loop() EventLoop {
     return TestEventLoop{};
 }
 
 fn pending_then_ready_future() Future<!i32> {
     return ReadyAfterEventLoopPoll{};
+}
+
+fn wake_then_ready_future() Future<!i32> {
+    return WakeThenReadyWithoutEventLoopPoll{};
 }
 
 test "scheduler_run_with_event_loop_polls_pending_future" {
@@ -74,4 +92,18 @@ test "scheduler_run_with_event_loop_polls_pending_future" {
 
     try assert_eq_i32(result, 99);
     try assert_eq_i32(scheduler_loop_poll_count, 1);
+}
+
+test "scheduler_run_with_event_loop_skips_poll_when_woken" {
+    scheduler_loop_poll_count = 0;
+    scheduler_wake_poll_count = 0;
+
+    var s: Scheduler = scheduler_new();
+    const loop: EventLoop = test_event_loop();
+    const f: Future<!i32> = wake_then_ready_future();
+    const result: i32 = try scheduler_run_i32_with_event_loop(&s, loop, f, 0);
+
+    try assert_eq_i32(result, 123);
+    try assert_eq_i32(scheduler_wake_poll_count, 2);
+    try assert_eq_i32(scheduler_loop_poll_count, 0);
 }

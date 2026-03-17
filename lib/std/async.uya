@@ -3,8 +3,27 @@
 // 模块路径：use std.async
 // 提供：Waker、interface Future<T>、struct Future<T> 占位、Task<T>、Poll<T>。
 
-/// 唤醒器占位。运行时可用其通知任务就绪；完整实现需函数指针等支持。
-export struct Waker {}
+/// 最小唤醒器。
+/// 当前仅维护“是否被唤醒”的可观察状态，供 Future 在 poll 内请求立即重试。
+/// 后续可在此基础上扩展到事件循环注册、任务队列与跨线程唤醒。
+export struct Waker {
+    _wake_count: atomic i32,
+
+    /// 标记一次唤醒请求；调度器可据此选择直接重试而非进入事件循环等待。
+    fn wake(self: &Self) void {
+        self._wake_count = self._wake_count + 1;
+    }
+
+    /// 清空当前已记录的唤醒状态。
+    fn reset(self: &Self) void {
+        self._wake_count = 0;
+    }
+
+    /// 当前轮询是否已经收到唤醒请求。
+    fn is_woken(self: &Self) bool {
+        return self._wake_count != 0;
+    }
+}
 
 /// 异步轮询结果。语言核心类型 union Poll<T>（Pending/Ready）。
 export union Poll<T> {
