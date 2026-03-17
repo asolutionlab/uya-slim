@@ -31,13 +31,26 @@ struct MacroParamBinding {
     arg_ast: &ASTNode,   // 实参 AST 节点
 }
 
+struct HygieneCopyState {
+    scope_names: [&byte: 256],
+    scope_renamed_names: [&byte: 256],
+    scope_entry_count: i32,
+    scope_starts: [i32: 64],
+    scope_depth: i32,
+}
+
 // 宏展开上下文
 struct MacroExpandContext {
     bindings: &MacroParamBinding,  // 参数绑定数组
     binding_count: i32,            // 绑定数量
     arena: &Arena,                 // Arena 分配器
     checker: &TypeChecker,         // 类型检查器（用于报告错误）
+    hygiene_enabled: i32,          // 是否启用卫生重命名
+    hygiene_expansion_id: i32,     // 本次宏展开的唯一编号
+    hygiene_next_local_id: i32,    // 本次展开内下一个局部绑定编号
 }
+
+var macro_hygiene_expansion_counter: i32 = 0;
 
 // 在绑定中查找参数
 fn find_param_binding(ctx: &MacroExpandContext, name: &byte) &ASTNode {
@@ -772,14 +785,94 @@ fn create_type_named_from_string(type_name_ptr: &byte, arena: &Arena, line: i32,
     return node;
 }
 
-// 带 field.name / field.type_name 替换的深拷贝（用于 for info.fields 每轮 body）
-// 当 node 为 member_access(identifier(loop_var_name), "name") 时返回 identifier(current_name)；
-// 为 member_access(identifier(loop_var_name), "type_name") 时返回 type_named(current_type_name)。
-fn deep_copy_ast_with_field_subst(node: &ASTNode, ctx: &MacroExpandContext, filename: &byte, loop_var_name: &byte, current_name: &byte, current_type_name: &byte) &ASTNode {
+fn macro_ctx_has_hygiene(ctx: &MacroExpandContext) i32 {
+    if ctx == null {
+        return 0;
+    }
+    return ctx.hygiene_enabled;
+}
+
+fn next_macro_hygiene_expansion_id() i32 {
+    const expansion_id: i32 = macro_hygiene_expansion_counter;
+    macro_hygiene_expansion_counter = macro_hygiene_expansion_counter + 1;
+    return expansion_id;
+}
+
+fn hygiene_enter_scope(state: &HygieneCopyState) void {
+    if state == null {
+        return;
+    }
+    if state.scope_depth >= 0 && state.scope_depth < @len(state.scope_starts) {
+        state.scope_starts[state.scope_depth] = state.scope_entry_count;
+        state.scope_depth = state.scope_depth + 1;
+    }
+}
+
+fn hygiene_exit_scope(state: &HygieneCopyState) void {
+    if state == null || state.scope_depth <= 0 {
+        return;
+    }
+    state.scope_depth = state.scope_depth - 1;
+    if state.scope_depth >= 0 && state.scope_depth < @len(state.scope_starts) {
+        state.scope_entry_count = state.scope_starts[state.scope_depth];
+    }
+}
+
+fn hygiene_add_binding(state: &HygieneCopyState, original_name: &byte, renamed_name: &byte) void {
+    if state == null || original_name == null || renamed_name == null {
+        return;
+    }
+    if state.scope_entry_count >= 0 && state.scope_entry_count < @len(state.scope_names) {
+        state.scope_names[state.scope_entry_count] = original_name;
+        state.scope_renamed_names[state.scope_entry_count] = renamed_name;
+        state.scope_entry_count = state.scope_entry_count + 1;
+    }
+}
+
+fn hygiene_lookup_binding(state: &HygieneCopyState, name: &byte) &byte {
+    if state == null || name == null {
+        return null;
+    }
+    var i: i32 = state.scope_entry_count - 1;
+    while i >= 0 {
+        if state.scope_names[i] != null && strcmp(state.scope_names[i] as *byte, name as *byte) == 0 {
+            return state.scope_renamed_names[i];
+        }
+        i = i - 1;
+    }
+    return null;
+}
+
+fn create_hygiene_name(ctx: &MacroExpandContext, original_name: &byte) &byte {
+    if ctx == null || ctx.arena == null || original_name == null {
+        return original_name;
+    }
+    const local_id: i32 = ctx.hygiene_next_local_id;
+    ctx.hygiene_next_local_id = ctx.hygiene_next_local_id + 1;
+    const name_len: i32 = strlen(original_name as *byte);
+    const buf_len: i32 = name_len + 48;
+    const buf: &byte = arena_alloc(ctx.arena, buf_len as u64) as &byte;
+    if buf == null {
+        return original_name;
+    }
+    snprintf(buf as *byte, buf_len, "%s__hyg_%d_%d" as *byte, original_name as *byte, ctx.hygiene_expansion_id, local_id);
+    return buf;
+}
+
+fn init_hygiene_copy_state(state: &HygieneCopyState) void {
+    if state == null {
+        return;
+    }
+    state.scope_entry_count = 0;
+    state.scope_depth = 0;
+}
+
+fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &byte, state: &HygieneCopyState, loop_var_name: &byte, current_name: &byte, current_type_name: &byte, enable_field_subst: i32) &ASTNode {
     if node == null || ctx == null || ctx.arena == null {
         return null;
     }
-    if node.type == ASTNodeType.AST_MEMBER_ACCESS && node.member_access_object != null &&
+
+    if enable_field_subst != 0 && node.type == ASTNodeType.AST_MEMBER_ACCESS && node.member_access_object != null &&
        node.member_access_object.type == ASTNodeType.AST_IDENTIFIER &&
        node.member_access_object.identifier_name != null && loop_var_name != null &&
        node.member_access_field_name != null {
@@ -792,18 +885,42 @@ fn deep_copy_ast_with_field_subst(node: &ASTNode, ctx: &MacroExpandContext, file
             }
         }
     }
-    // 否则与 deep_copy_ast_with_params 相同逻辑，但递归时传入 field_subst 参数
+
     if node.type == ASTNodeType.AST_IDENTIFIER && node.identifier_name != null {
+        if macro_ctx_has_hygiene(ctx) != 0 {
+            const renamed_name: &byte = hygiene_lookup_binding(state, node.identifier_name);
+            if renamed_name != null {
+                return create_identifier_from_string(renamed_name, ctx.arena, node.line, node.column);
+            }
+        }
         const arg: &ASTNode = find_param_binding(ctx, node.identifier_name);
         if arg != null {
-            var no_param_ctx: MacroExpandContext = MacroExpandContext{ bindings: null, binding_count: 0, arena: ctx.arena, checker: ctx.checker };
-            return deep_copy_ast_with_field_subst(arg, &no_param_ctx, filename, loop_var_name, current_name, current_type_name);
+            var no_param_ctx: MacroExpandContext = MacroExpandContext{
+                bindings: null,
+                binding_count: 0,
+                arena: ctx.arena,
+                checker: ctx.checker,
+                hygiene_enabled: 0,
+                hygiene_expansion_id: ctx.hygiene_expansion_id,
+                hygiene_next_local_id: ctx.hygiene_next_local_id
+            };
+            var no_param_state: HygieneCopyState = HygieneCopyState{
+                scope_names: [],
+                scope_renamed_names: [],
+                scope_entry_count: 0,
+                scope_starts: [],
+                scope_depth: 0
+            };
+            init_hygiene_copy_state(&no_param_state);
+            return deep_copy_ast_internal(arg, &no_param_ctx, filename, &no_param_state, loop_var_name, current_name, current_type_name, enable_field_subst);
         }
     }
+
     const copy: &ASTNode = ast_new_node(node.type, node.line, node.column, ctx.arena, filename);
     if copy == null {
         return null;
     }
+
     if node.type == ASTNodeType.AST_NUMBER {
         copy.number_value = node.number_value;
         copy.number_value_i64 = node.number_value_i64;
@@ -819,79 +936,224 @@ fn deep_copy_ast_with_field_subst(node: &ASTNode, ctx: &MacroExpandContext, file
         copy.identifier_name = node.identifier_name;
     } else if node.type == ASTNodeType.AST_BINARY_EXPR {
         copy.binary_expr_op = node.binary_expr_op;
-        copy.binary_expr_left = deep_copy_ast_with_field_subst(node.binary_expr_left, ctx, filename, loop_var_name, current_name, current_type_name);
-        copy.binary_expr_right = deep_copy_ast_with_field_subst(node.binary_expr_right, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.binary_expr_left = deep_copy_ast_internal(node.binary_expr_left, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.binary_expr_right = deep_copy_ast_internal(node.binary_expr_right, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_UNARY_EXPR {
         copy.unary_expr_op = node.unary_expr_op;
-        copy.unary_expr_operand = deep_copy_ast_with_field_subst(node.unary_expr_operand, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.unary_expr_operand = deep_copy_ast_internal(node.unary_expr_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_CALL_EXPR {
-        copy.call_expr_callee = deep_copy_ast_with_field_subst(node.call_expr_callee, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.call_expr_callee = deep_copy_ast_internal(node.call_expr_callee, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
         copy.call_expr_arg_count = node.call_expr_arg_count;
         if node.call_expr_args != null && node.call_expr_arg_count > 0 {
             copy.call_expr_args = arena_alloc(ctx.arena, @size_of(&ASTNode) * node.call_expr_arg_count) as & & ASTNode;
             if copy.call_expr_args != null {
                 var i: i32 = 0;
                 while i < node.call_expr_arg_count {
-                    copy.call_expr_args[i] = deep_copy_ast_with_field_subst(node.call_expr_args[i], ctx, filename, loop_var_name, current_name, current_type_name);
+                    copy.call_expr_args[i] = deep_copy_ast_internal(node.call_expr_args[i], ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
                     i = i + 1;
                 }
             }
         }
     } else if node.type == ASTNodeType.AST_MEMBER_ACCESS {
-        copy.member_access_object = deep_copy_ast_with_field_subst(node.member_access_object, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.member_access_object = deep_copy_ast_internal(node.member_access_object, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
         copy.member_access_field_name = node.member_access_field_name;
         copy.member_access_is_module_access = node.member_access_is_module_access;
         copy.member_access_module_name = node.member_access_module_name;
     } else if node.type == ASTNodeType.AST_ARRAY_ACCESS {
-        copy.array_access_array = deep_copy_ast_with_field_subst(node.array_access_array, ctx, filename, loop_var_name, current_name, current_type_name);
-        copy.array_access_index = deep_copy_ast_with_field_subst(node.array_access_index, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.array_access_array = deep_copy_ast_internal(node.array_access_array, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.array_access_index = deep_copy_ast_internal(node.array_access_index, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_MC_INTERP {
         const operand: &ASTNode = node.mc_interp_operand;
         if operand != null && operand.type == ASTNodeType.AST_IDENTIFIER && operand.identifier_name != null {
-            const arg: &ASTNode = find_param_binding(ctx, operand.identifier_name);
-            if arg != null {
-                var no_param_ctx: MacroExpandContext = MacroExpandContext{ bindings: null, binding_count: 0, arena: ctx.arena, checker: ctx.checker };
-                return deep_copy_ast_with_field_subst(arg, &no_param_ctx, filename, loop_var_name, current_name, current_type_name);
+            const arg2: &ASTNode = find_param_binding(ctx, operand.identifier_name);
+            if arg2 != null {
+                var no_param_ctx2: MacroExpandContext = MacroExpandContext{
+                    bindings: null,
+                    binding_count: 0,
+                    arena: ctx.arena,
+                    checker: ctx.checker,
+                    hygiene_enabled: 0,
+                    hygiene_expansion_id: ctx.hygiene_expansion_id,
+                    hygiene_next_local_id: ctx.hygiene_next_local_id
+                };
+                var no_param_state2: HygieneCopyState = HygieneCopyState{
+                    scope_names: [],
+                    scope_renamed_names: [],
+                    scope_entry_count: 0,
+                    scope_starts: [],
+                    scope_depth: 0
+                };
+                init_hygiene_copy_state(&no_param_state2);
+                return deep_copy_ast_internal(arg2, &no_param_ctx2, filename, &no_param_state2, loop_var_name, current_name, current_type_name, enable_field_subst);
             }
         }
-        copy.mc_interp_operand = deep_copy_ast_with_field_subst(operand, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.mc_interp_operand = deep_copy_ast_internal(operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_BLOCK {
         copy.block_stmt_count = node.block_stmt_count;
         if node.block_stmts != null && node.block_stmt_count > 0 {
             copy.block_stmts = arena_alloc(ctx.arena, @size_of(&ASTNode) * node.block_stmt_count) as & & ASTNode;
             if copy.block_stmts != null {
+                hygiene_enter_scope(state);
                 var i: i32 = 0;
                 while i < node.block_stmt_count {
-                    copy.block_stmts[i] = deep_copy_ast_with_field_subst(node.block_stmts[i], ctx, filename, loop_var_name, current_name, current_type_name);
+                    copy.block_stmts[i] = deep_copy_ast_internal(node.block_stmts[i], ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+                    i = i + 1;
+                }
+                hygiene_exit_scope(state);
+            }
+        }
+    } else if node.type == ASTNodeType.AST_IF_STMT {
+        copy.if_stmt_condition = deep_copy_ast_internal(node.if_stmt_condition, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.if_stmt_then_branch = deep_copy_ast_internal(node.if_stmt_then_branch, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.if_stmt_else_branch = deep_copy_ast_internal(node.if_stmt_else_branch, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_WHILE_STMT {
+        copy.while_stmt_condition = deep_copy_ast_internal(node.while_stmt_condition, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.while_stmt_body = deep_copy_ast_internal(node.while_stmt_body, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_FOR_STMT {
+        var renamed_loop_name: &byte = node.for_stmt_var_name;
+        copy.for_stmt_array = deep_copy_ast_internal(node.for_stmt_array, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.for_stmt_is_range = node.for_stmt_is_range;
+        copy.for_stmt_range_start = deep_copy_ast_internal(node.for_stmt_range_start, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.for_stmt_range_end = deep_copy_ast_internal(node.for_stmt_range_end, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.for_stmt_is_ref = node.for_stmt_is_ref;
+        if macro_ctx_has_hygiene(ctx) != 0 && node.for_stmt_var_name != null {
+            renamed_loop_name = create_hygiene_name(ctx, node.for_stmt_var_name);
+        }
+        copy.for_stmt_var_name = renamed_loop_name;
+        hygiene_enter_scope(state);
+        if macro_ctx_has_hygiene(ctx) != 0 && node.for_stmt_var_name != null && renamed_loop_name != null {
+            hygiene_add_binding(state, node.for_stmt_var_name, renamed_loop_name);
+        }
+        copy.for_stmt_body = deep_copy_ast_internal(node.for_stmt_body, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        hygiene_exit_scope(state);
+    } else if node.type == ASTNodeType.AST_RETURN_STMT {
+        copy.return_stmt_expr = deep_copy_ast_internal(node.return_stmt_expr, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_VAR_DECL {
+        var renamed_var_name: &byte = node.var_decl_name;
+        copy.var_decl_type = deep_copy_ast_internal(node.var_decl_type, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.var_decl_init = deep_copy_ast_internal(node.var_decl_init, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.var_decl_is_const = node.var_decl_is_const;
+        if macro_ctx_has_hygiene(ctx) != 0 && node.var_decl_name != null &&
+           strcmp(node.var_decl_name as *byte, "self" as *byte) != 0 {
+            renamed_var_name = create_hygiene_name(ctx, node.var_decl_name);
+        }
+        copy.var_decl_name = renamed_var_name;
+        if macro_ctx_has_hygiene(ctx) != 0 && node.var_decl_name != null && renamed_var_name != null &&
+           strcmp(node.var_decl_name as *byte, "self" as *byte) != 0 {
+            hygiene_add_binding(state, node.var_decl_name, renamed_var_name);
+        }
+    } else if node.type == ASTNodeType.AST_ASSIGN {
+        copy.assign_dest = deep_copy_ast_internal(node.assign_dest, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.assign_src = deep_copy_ast_internal(node.assign_src, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_TYPE_NAMED {
+        if node.type_named_name != null {
+            const arg3: &ASTNode = find_param_binding(ctx, node.type_named_name);
+            if arg3 != null {
+                var no_param_ctx3: MacroExpandContext = MacroExpandContext{
+                    bindings: null,
+                    binding_count: 0,
+                    arena: ctx.arena,
+                    checker: ctx.checker,
+                    hygiene_enabled: 0,
+                    hygiene_expansion_id: ctx.hygiene_expansion_id,
+                    hygiene_next_local_id: ctx.hygiene_next_local_id
+                };
+                var no_param_state3: HygieneCopyState = HygieneCopyState{
+                    scope_names: [],
+                    scope_renamed_names: [],
+                    scope_entry_count: 0,
+                    scope_starts: [],
+                    scope_depth: 0
+                };
+                init_hygiene_copy_state(&no_param_state3);
+                return deep_copy_ast_internal(arg3, &no_param_ctx3, filename, &no_param_state3, loop_var_name, current_name, current_type_name, enable_field_subst);
+            }
+        }
+        copy.type_named_name = node.type_named_name;
+    } else if node.type == ASTNodeType.AST_TYPE_POINTER {
+        copy.type_pointer_pointed_type = deep_copy_ast_internal(node.type_pointer_pointed_type, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.type_pointer_is_ffi_pointer = node.type_pointer_is_ffi_pointer;
+    } else if node.type == ASTNodeType.AST_TYPE_ARRAY {
+        copy.type_array_element_type = deep_copy_ast_internal(node.type_array_element_type, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.type_array_size_expr = deep_copy_ast_internal(node.type_array_size_expr, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_CAST_EXPR {
+        copy.cast_expr_expr = deep_copy_ast_internal(node.cast_expr_expr, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.cast_expr_target_type = deep_copy_ast_internal(node.cast_expr_target_type, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.cast_expr_is_force_cast = node.cast_expr_is_force_cast;
+    } else if node.type == ASTNodeType.AST_FN_DECL {
+        copy.fn_decl_name = node.fn_decl_name;
+        copy.fn_decl_return_type = deep_copy_ast_internal(node.fn_decl_return_type, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.fn_decl_param_count = node.fn_decl_param_count;
+        copy.fn_decl_is_varargs = node.fn_decl_is_varargs;
+        copy.fn_decl_is_export = node.fn_decl_is_export;
+        hygiene_enter_scope(state);
+        if node.fn_decl_params != null && node.fn_decl_param_count > 0 {
+            copy.fn_decl_params = arena_alloc(ctx.arena, @size_of(&ASTNode) * node.fn_decl_param_count) as & & ASTNode;
+            if copy.fn_decl_params != null {
+                var i: i32 = 0;
+                while i < node.fn_decl_param_count {
+                    copy.fn_decl_params[i] = deep_copy_ast_internal(node.fn_decl_params[i], ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
                     i = i + 1;
                 }
             }
         }
-    } else if node.type == ASTNodeType.AST_IF_STMT {
-        copy.if_stmt_condition = deep_copy_ast_with_field_subst(node.if_stmt_condition, ctx, filename, loop_var_name, current_name, current_type_name);
-        copy.if_stmt_then_branch = deep_copy_ast_with_field_subst(node.if_stmt_then_branch, ctx, filename, loop_var_name, current_name, current_type_name);
-        copy.if_stmt_else_branch = deep_copy_ast_with_field_subst(node.if_stmt_else_branch, ctx, filename, loop_var_name, current_name, current_type_name);
-    } else if node.type == ASTNodeType.AST_FOR_STMT {
-        copy.for_stmt_var_name = node.for_stmt_var_name;
-        copy.for_stmt_array = deep_copy_ast_with_field_subst(node.for_stmt_array, ctx, filename, loop_var_name, current_name, current_type_name);
-        copy.for_stmt_body = deep_copy_ast_with_field_subst(node.for_stmt_body, ctx, filename, loop_var_name, current_name, current_type_name);
-        copy.for_stmt_is_range = node.for_stmt_is_range;
-        copy.for_stmt_range_start = deep_copy_ast_with_field_subst(node.for_stmt_range_start, ctx, filename, loop_var_name, current_name, current_type_name);
-        copy.for_stmt_range_end = deep_copy_ast_with_field_subst(node.for_stmt_range_end, ctx, filename, loop_var_name, current_name, current_type_name);
-        copy.for_stmt_is_ref = node.for_stmt_is_ref;
-    } else if node.type == ASTNodeType.AST_RETURN_STMT {
-        copy.return_stmt_expr = deep_copy_ast_with_field_subst(node.return_stmt_expr, ctx, filename, loop_var_name, current_name, current_type_name);
-    } else if node.type == ASTNodeType.AST_VAR_DECL {
-        copy.var_decl_name = node.var_decl_name;
-        copy.var_decl_type = deep_copy_ast_with_field_subst(node.var_decl_type, ctx, filename, loop_var_name, current_name, current_type_name);
-        copy.var_decl_init = deep_copy_ast_with_field_subst(node.var_decl_init, ctx, filename, loop_var_name, current_name, current_type_name);
-        copy.var_decl_is_const = node.var_decl_is_const;
-    } else if node.type == ASTNodeType.AST_MC_CODE && node.mc_code_operand != null {
-        copy.mc_code_operand = deep_copy_ast_with_field_subst(node.mc_code_operand, ctx, filename, loop_var_name, current_name, current_type_name);
-    } else if node.type == ASTNodeType.AST_MC_AST && node.mc_ast_operand != null {
-        copy.mc_ast_operand = deep_copy_ast_with_field_subst(node.mc_ast_operand, ctx, filename, loop_var_name, current_name, current_type_name);
-    } else if node.type == ASTNodeType.AST_MC_SOURCE && node.mc_source_operand != null {
-        copy.mc_source_operand = deep_copy_ast_with_field_subst(node.mc_source_operand, ctx, filename, loop_var_name, current_name, current_type_name);
+        copy.fn_decl_body = deep_copy_ast_internal(node.fn_decl_body, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        hygiene_exit_scope(state);
+    } else if node.type == ASTNodeType.AST_TRY_EXPR {
+        copy.try_expr_operand = deep_copy_ast_internal(node.try_expr_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_CATCH_EXPR {
+        var renamed_err_name: &byte = node.catch_expr_err_name;
+        copy.catch_expr_operand = deep_copy_ast_internal(node.catch_expr_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        if macro_ctx_has_hygiene(ctx) != 0 && node.catch_expr_err_name != null {
+            renamed_err_name = create_hygiene_name(ctx, node.catch_expr_err_name);
+        }
+        copy.catch_expr_err_name = renamed_err_name;
+        hygiene_enter_scope(state);
+        if macro_ctx_has_hygiene(ctx) != 0 && node.catch_expr_err_name != null && renamed_err_name != null {
+            hygiene_add_binding(state, node.catch_expr_err_name, renamed_err_name);
+        }
+        copy.catch_expr_catch_block = deep_copy_ast_internal(node.catch_expr_catch_block, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        hygiene_exit_scope(state);
+    } else if node.type == ASTNodeType.AST_MC_EVAL {
+        var success: i32 = 0;
+        const value: i64 = macro_eval_expr(node.mc_eval_operand, ctx, &success);
+        if success != 0 {
+            const num: &ASTNode = create_number_literal(value, ctx.arena, node.line, node.column);
+            if num != null {
+                return num;
+            }
+        }
+        copy.mc_eval_operand = deep_copy_ast_internal(node.mc_eval_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_MC_CODE {
+        copy.mc_code_operand = deep_copy_ast_internal(node.mc_code_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_MC_AST {
+        copy.mc_ast_operand = deep_copy_ast_internal(node.mc_ast_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_MC_TYPE {
+        const operand2: &ASTNode = node.mc_type_operand;
+        if operand2 != null {
+            const resolved_operand: &ASTNode = deep_copy_ast_internal(operand2, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+            var actual_operand: &ASTNode = operand2;
+            if resolved_operand != null {
+                actual_operand = resolved_operand;
+            }
+            const type_info: &ASTNode = create_type_info_struct(actual_operand, ctx.arena, node.line, node.column, ctx.checker);
+            if type_info != null {
+                return type_info;
+            }
+        }
+        copy.mc_type_operand = deep_copy_ast_internal(node.mc_type_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_MC_SOURCE {
+        const operand3: &ASTNode = node.mc_source_operand;
+        if operand3 != null {
+            const resolved: &ASTNode = deep_copy_ast_internal(operand3, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+            if resolved != null {
+                const src_str: &byte = ast_expr_to_source_string(resolved, ctx.arena, filename);
+                if src_str != null {
+                    return create_string_literal(src_str, ctx.arena, node.line, node.column);
+                }
+            }
+        }
+        copy.mc_source_operand = deep_copy_ast_internal(node.mc_source_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_STRUCT_INIT {
         copy.struct_init_struct_name = node.struct_init_struct_name;
         copy.struct_init_field_count = node.struct_init_field_count;
@@ -902,21 +1164,31 @@ fn deep_copy_ast_with_field_subst(node: &ASTNode, ctx: &MacroExpandContext, file
                 var i: i32 = 0;
                 while i < node.struct_init_field_count {
                     copy.struct_init_field_names[i] = node.struct_init_field_names[i];
-                    copy.struct_init_field_values[i] = deep_copy_ast_with_field_subst(node.struct_init_field_values[i], ctx, filename, loop_var_name, current_name, current_type_name);
+                    copy.struct_init_field_values[i] = deep_copy_ast_internal(node.struct_init_field_values[i], ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
                     i = i + 1;
                 }
             }
         }
-    } else if node.type == ASTNodeType.AST_TYPE_NAMED {
-        copy.type_named_name = node.type_named_name;
-    } else if node.type == ASTNodeType.AST_TYPE_POINTER {
-        copy.type_pointer_pointed_type = deep_copy_ast_with_field_subst(node.type_pointer_pointed_type, ctx, filename, loop_var_name, current_name, current_type_name);
-        copy.type_pointer_is_ffi_pointer = node.type_pointer_is_ffi_pointer;
-    } else {
-        // 未显式处理的节点类型，回退为普通深拷贝（不再做 field 替换）
-        return deep_copy_ast_with_params(node, ctx, filename);
+    } else if node.type == ASTNodeType.AST_ERROR_VALUE {
+        copy.error_value_name = node.error_value_name;
     }
+
     return copy;
+}
+
+// 带 field.name / field.type_name 替换的深拷贝（用于 for info.fields 每轮 body）
+// 当 node 为 member_access(identifier(loop_var_name), "name") 时返回 identifier(current_name)；
+// 为 member_access(identifier(loop_var_name), "type_name") 时返回 type_named(current_type_name)。
+fn deep_copy_ast_with_field_subst(node: &ASTNode, ctx: &MacroExpandContext, filename: &byte, loop_var_name: &byte, current_name: &byte, current_type_name: &byte) &ASTNode {
+    var state: HygieneCopyState = HygieneCopyState{
+        scope_names: [],
+        scope_renamed_names: [],
+        scope_entry_count: 0,
+        scope_starts: [],
+        scope_depth: 0
+    };
+    init_hygiene_copy_state(&state);
+    return deep_copy_ast_internal(node, ctx, filename, &state, loop_var_name, current_name, current_type_name, 1);
 }
 
 // 若 for 语句为「for info.fields |var|」且 info 绑定到 TypeInfo，则展开为块并返回新块；否则返回 null（不展开）。
@@ -1117,240 +1389,15 @@ fn macro_eval_expr(expr: &ASTNode, ctx: &MacroExpandContext, success: &i32) i64 
 
 // 深拷贝 AST 节点（支持参数替换）
 fn deep_copy_ast_with_params(node: &ASTNode, ctx: &MacroExpandContext, filename: &byte) &ASTNode {
-    if node == null || ctx == null || ctx.arena == null {
-        return null;
-    }
-    
-    // 如果是标识符，检查是否是宏参数
-    if node.type == ASTNodeType.AST_IDENTIFIER && node.identifier_name != null {
-        const arg: &ASTNode = find_param_binding(ctx, node.identifier_name);
-        if arg != null {
-            // 参数引用，递归拷贝实参 AST（不再应用参数替换，避免无限递归）
-            var no_param_ctx: MacroExpandContext = MacroExpandContext{ bindings: null, binding_count: 0, arena: ctx.arena, checker: ctx.checker };
-            return deep_copy_ast_with_params(arg, &no_param_ctx, filename);
-        }
-    }
-    
-    const copy: &ASTNode = ast_new_node(node.type, node.line, node.column, ctx.arena, filename);
-    if copy == null {
-        return null;
-    }
-    
-    // 根据节点类型复制数据
-    if node.type == ASTNodeType.AST_NUMBER {
-        copy.number_value = node.number_value;
-        copy.number_value_i64 = node.number_value_i64;
-    } else if node.type == ASTNodeType.AST_FLOAT {
-        copy.float_literal_value = node.float_literal_value;
-    } else if node.type == ASTNodeType.AST_BOOL {
-        copy.bool_literal_value = node.bool_literal_value;
-    } else if node.type == ASTNodeType.AST_STRING {
-        copy.string_literal_value = node.string_literal_value;
-    } else if node.type == ASTNodeType.AST_CHAR {
-        copy.char_literal_value = node.char_literal_value;
-    } else if node.type == ASTNodeType.AST_IDENTIFIER {
-        copy.identifier_name = node.identifier_name;
-    } else if node.type == ASTNodeType.AST_BINARY_EXPR {
-        copy.binary_expr_op = node.binary_expr_op;
-        copy.binary_expr_left = deep_copy_ast_with_params(node.binary_expr_left, ctx, filename);
-        copy.binary_expr_right = deep_copy_ast_with_params(node.binary_expr_right, ctx, filename);
-    } else if node.type == ASTNodeType.AST_UNARY_EXPR {
-        copy.unary_expr_op = node.unary_expr_op;
-        copy.unary_expr_operand = deep_copy_ast_with_params(node.unary_expr_operand, ctx, filename);
-    } else if node.type == ASTNodeType.AST_CALL_EXPR {
-        copy.call_expr_callee = deep_copy_ast_with_params(node.call_expr_callee, ctx, filename);
-        copy.call_expr_arg_count = node.call_expr_arg_count;
-        if node.call_expr_args != null && node.call_expr_arg_count > 0 {
-            copy.call_expr_args = arena_alloc(ctx.arena, @size_of(&ASTNode) * node.call_expr_arg_count) as & & ASTNode;
-            if copy.call_expr_args != null {
-                var i: i32 = 0;
-                while i < node.call_expr_arg_count {
-                    copy.call_expr_args[i] = deep_copy_ast_with_params(node.call_expr_args[i], ctx, filename);
-                    i = i + 1;
-                }
-            }
-        }
-    } else if node.type == ASTNodeType.AST_MEMBER_ACCESS {
-        copy.member_access_object = deep_copy_ast_with_params(node.member_access_object, ctx, filename);
-        copy.member_access_field_name = node.member_access_field_name;
-        copy.member_access_is_module_access = node.member_access_is_module_access;
-        copy.member_access_module_name = node.member_access_module_name;
-    } else if node.type == ASTNodeType.AST_ARRAY_ACCESS {
-        copy.array_access_array = deep_copy_ast_with_params(node.array_access_array, ctx, filename);
-        copy.array_access_index = deep_copy_ast_with_params(node.array_access_index, ctx, filename);
-    } else if node.type == ASTNodeType.AST_MC_INTERP {
-        // 宏插值 ${expr}：检查 operand 是否是参数引用
-        const operand: &ASTNode = node.mc_interp_operand;
-        if operand != null && operand.type == ASTNodeType.AST_IDENTIFIER && operand.identifier_name != null {
-            // 查找参数绑定
-            const arg: &ASTNode = find_param_binding(ctx, operand.identifier_name);
-            if arg != null {
-                // 参数引用，返回实参 AST 的深拷贝
-                var no_param_ctx: MacroExpandContext = MacroExpandContext{ bindings: null, binding_count: 0, arena: ctx.arena };
-                return deep_copy_ast_with_params(arg, &no_param_ctx, filename);
-            }
-        }
-        // 不是参数引用，递归处理 operand
-        copy.mc_interp_operand = deep_copy_ast_with_params(operand, ctx, filename);
-    } else if node.type == ASTNodeType.AST_BLOCK {
-        // 块语句
-        copy.block_stmt_count = node.block_stmt_count;
-        if node.block_stmts != null && node.block_stmt_count > 0 {
-            copy.block_stmts = arena_alloc(ctx.arena, @size_of(&ASTNode) * node.block_stmt_count) as & & ASTNode;
-            if copy.block_stmts != null {
-                var i: i32 = 0;
-                while i < node.block_stmt_count {
-                    copy.block_stmts[i] = deep_copy_ast_with_params(node.block_stmts[i], ctx, filename);
-                    i = i + 1;
-                }
-            }
-        }
-    } else if node.type == ASTNodeType.AST_IF_STMT {
-        // if 语句
-        copy.if_stmt_condition = deep_copy_ast_with_params(node.if_stmt_condition, ctx, filename);
-        copy.if_stmt_then_branch = deep_copy_ast_with_params(node.if_stmt_then_branch, ctx, filename);
-        copy.if_stmt_else_branch = deep_copy_ast_with_params(node.if_stmt_else_branch, ctx, filename);
-    } else if node.type == ASTNodeType.AST_WHILE_STMT {
-        // while 语句
-        copy.while_stmt_condition = deep_copy_ast_with_params(node.while_stmt_condition, ctx, filename);
-        copy.while_stmt_body = deep_copy_ast_with_params(node.while_stmt_body, ctx, filename);
-    } else if node.type == ASTNodeType.AST_FOR_STMT {
-        // for 语句
-        copy.for_stmt_var_name = node.for_stmt_var_name;
-        copy.for_stmt_array = deep_copy_ast_with_params(node.for_stmt_array, ctx, filename);
-        copy.for_stmt_body = deep_copy_ast_with_params(node.for_stmt_body, ctx, filename);
-        copy.for_stmt_is_range = node.for_stmt_is_range;
-        copy.for_stmt_range_start = deep_copy_ast_with_params(node.for_stmt_range_start, ctx, filename);
-        copy.for_stmt_range_end = deep_copy_ast_with_params(node.for_stmt_range_end, ctx, filename);
-        copy.for_stmt_is_ref = node.for_stmt_is_ref;
-    } else if node.type == ASTNodeType.AST_RETURN_STMT {
-        // return 语句
-        copy.return_stmt_expr = deep_copy_ast_with_params(node.return_stmt_expr, ctx, filename);
-    } else if node.type == ASTNodeType.AST_VAR_DECL {
-        // 变量声明
-        copy.var_decl_name = node.var_decl_name;
-        copy.var_decl_type = deep_copy_ast_with_params(node.var_decl_type, ctx, filename);
-        copy.var_decl_init = deep_copy_ast_with_params(node.var_decl_init, ctx, filename);
-        copy.var_decl_is_const = node.var_decl_is_const;
-    } else if node.type == ASTNodeType.AST_ASSIGN {
-        // 赋值语句
-        copy.assign_dest = deep_copy_ast_with_params(node.assign_dest, ctx, filename);
-        copy.assign_src = deep_copy_ast_with_params(node.assign_src, ctx, filename);
-    } else if node.type == ASTNodeType.AST_TYPE_NAMED {
-        // 命名类型 - 检查是否是宏参数
-        if node.type_named_name != null {
-            const arg: &ASTNode = find_param_binding(ctx, node.type_named_name);
-            if arg != null {
-                // 参数引用，返回实参 AST 的深拷贝
-                var no_param_ctx: MacroExpandContext = MacroExpandContext{ bindings: null, binding_count: 0, arena: ctx.arena, checker: ctx.checker };
-                return deep_copy_ast_with_params(arg, &no_param_ctx, filename);
-            }
-        }
-        copy.type_named_name = node.type_named_name;
-    } else if node.type == ASTNodeType.AST_TYPE_POINTER {
-        // 指针类型
-        copy.type_pointer_pointed_type = deep_copy_ast_with_params(node.type_pointer_pointed_type, ctx, filename);
-        copy.type_pointer_is_ffi_pointer = node.type_pointer_is_ffi_pointer;
-    } else if node.type == ASTNodeType.AST_TYPE_ARRAY {
-        // 数组类型
-        copy.type_array_element_type = deep_copy_ast_with_params(node.type_array_element_type, ctx, filename);
-        copy.type_array_size_expr = deep_copy_ast_with_params(node.type_array_size_expr, ctx, filename);
-    } else if node.type == ASTNodeType.AST_CAST_EXPR {
-        // 类型转换
-        copy.cast_expr_expr = deep_copy_ast_with_params(node.cast_expr_expr, ctx, filename);
-        copy.cast_expr_target_type = deep_copy_ast_with_params(node.cast_expr_target_type, ctx, filename);
-        copy.cast_expr_is_force_cast = node.cast_expr_is_force_cast;
-    } else if node.type == ASTNodeType.AST_FN_DECL {
-        // 函数定义
-        copy.fn_decl_name = node.fn_decl_name;
-        copy.fn_decl_return_type = deep_copy_ast_with_params(node.fn_decl_return_type, ctx, filename);
-        copy.fn_decl_body = deep_copy_ast_with_params(node.fn_decl_body, ctx, filename);
-        copy.fn_decl_param_count = node.fn_decl_param_count;
-        copy.fn_decl_is_varargs = node.fn_decl_is_varargs;
-        copy.fn_decl_is_export = node.fn_decl_is_export;
-        if node.fn_decl_params != null && node.fn_decl_param_count > 0 {
-            copy.fn_decl_params = arena_alloc(ctx.arena, @size_of(&ASTNode) * node.fn_decl_param_count) as & & ASTNode;
-            if copy.fn_decl_params != null {
-                var i: i32 = 0;
-                while i < node.fn_decl_param_count {
-                    copy.fn_decl_params[i] = deep_copy_ast_with_params(node.fn_decl_params[i], ctx, filename);
-                    i = i + 1;
-                }
-            }
-        }
-    } else if node.type == ASTNodeType.AST_MC_EVAL {
-        // 对 @mc_eval 进行编译时求值
-        var success: i32 = 0;
-        const value: i64 = macro_eval_expr(node.mc_eval_operand, ctx, &success);
-        if success != 0 {
-            // 求值成功，替换为数字字面量
-            const num: &ASTNode = create_number_literal(value, ctx.arena, node.line, node.column);
-            if num != null {
-                return num;
-            }
-        }
-        // 求值失败，保留原节点
-        copy.mc_eval_operand = deep_copy_ast_with_params(node.mc_eval_operand, ctx, filename);
-    } else if node.type == ASTNodeType.AST_MC_CODE {
-        // @mc_code 节点
-        copy.mc_code_operand = deep_copy_ast_with_params(node.mc_code_operand, ctx, filename);
-    } else if node.type == ASTNodeType.AST_MC_AST {
-        // @mc_ast 节点
-        copy.mc_ast_operand = deep_copy_ast_with_params(node.mc_ast_operand, ctx, filename);
-    } else if node.type == ASTNodeType.AST_MC_TYPE {
-        // @mc_type 节点 - 编译时类型反射
-        const operand: &ASTNode = node.mc_type_operand;
-        if operand != null {
-            // 先对操作数进行参数替换
-            const resolved_operand: &ASTNode = deep_copy_ast_with_params(operand, ctx, filename);
-            var actual_operand: &ASTNode = operand;
-            if resolved_operand != null {
-                actual_operand = resolved_operand;
-            }
-            // 创建 TypeInfo 结构体
-            const type_info: &ASTNode = create_type_info_struct(actual_operand, ctx.arena, node.line, node.column, ctx.checker);
-            if type_info != null {
-                return type_info;
-            }
-        }
-        // 失败时保留原节点
-        copy.mc_type_operand = deep_copy_ast_with_params(node.mc_type_operand, ctx, filename);
-    } else if node.type == ASTNodeType.AST_MC_SOURCE {
-        // @mc_source(expr)：将表达式序列化为字符串字面量
-        const operand: &ASTNode = node.mc_source_operand;
-        if operand != null {
-            const resolved: &ASTNode = deep_copy_ast_with_params(operand, ctx, filename);
-            if resolved != null {
-                const src_str: &byte = ast_expr_to_source_string(resolved, ctx.arena, filename);
-                if src_str != null {
-                    return create_string_literal(src_str, ctx.arena, node.line, node.column);
-                }
-            }
-        }
-        copy.mc_source_operand = deep_copy_ast_with_params(node.mc_source_operand, ctx, filename);
-    } else if node.type == ASTNodeType.AST_STRUCT_INIT {
-        // 结构体初始化
-        copy.struct_init_struct_name = node.struct_init_struct_name;
-        copy.struct_init_field_count = node.struct_init_field_count;
-        if node.struct_init_field_names != null && node.struct_init_field_values != null && node.struct_init_field_count > 0 {
-            copy.struct_init_field_names = arena_alloc(ctx.arena, 8 * node.struct_init_field_count) as &(&byte);
-            copy.struct_init_field_values = arena_alloc(ctx.arena, 8 * node.struct_init_field_count) as &(&ASTNode);
-            if copy.struct_init_field_names != null && copy.struct_init_field_values != null {
-                var i: i32 = 0;
-                while i < node.struct_init_field_count {
-                    copy.struct_init_field_names[i] = node.struct_init_field_names[i];
-                    copy.struct_init_field_values[i] = deep_copy_ast_with_params(node.struct_init_field_values[i], ctx, filename);
-                    i = i + 1;
-                }
-            }
-        }
-    } else if node.type == ASTNodeType.AST_ERROR_VALUE {
-        // 错误值（error.Name）
-        copy.error_value_name = node.error_value_name;
-    }
-    // 其他类型暂时只复制基本信息
-    
-    return copy;
+    var state: HygieneCopyState = HygieneCopyState{
+        scope_names: [],
+        scope_renamed_names: [],
+        scope_entry_count: 0,
+        scope_starts: [],
+        scope_depth: 0
+    };
+    init_hygiene_copy_state(&state);
+    return deep_copy_ast_internal(node, ctx, filename, &state, null, null, null, 0);
 }
 
 // 深拷贝 AST 节点（简化版本，仅支持基本节点类型）
@@ -2898,7 +2945,15 @@ fn expand_macros_in_node_simple(checker: &TypeChecker, node_ptr: & & ASTNode) vo
                 const body: &ASTNode = macro_decl.macro_decl_body;
                 if body != null {
                     // 构建参数绑定
-                    var ctx: MacroExpandContext = MacroExpandContext{ bindings: null, binding_count: 0, arena: checker.arena, checker: checker };
+                    var ctx: MacroExpandContext = MacroExpandContext{
+                        bindings: null,
+                        binding_count: 0,
+                        arena: checker.arena,
+                        checker: checker,
+                        hygiene_enabled: 1,
+                        hygiene_expansion_id: next_macro_hygiene_expansion_id(),
+                        hygiene_next_local_id: 0
+                    };
                     
                     if param_count > 0 && arg_count > 0 {
                         // 分配绑定数组
@@ -3023,7 +3078,15 @@ fn expand_macros_in_node_simple(checker: &TypeChecker, node_ptr: & & ASTNode) vo
                                 const arg_count: i32 = method.call_expr_arg_count;
                                 
                                 // 建立参数绑定
-                                var ctx: MacroExpandContext = MacroExpandContext{ bindings: null, binding_count: 0, arena: checker.arena, checker: checker };
+                                var ctx: MacroExpandContext = MacroExpandContext{
+                                    bindings: null,
+                                    binding_count: 0,
+                                    arena: checker.arena,
+                                    checker: checker,
+                                    hygiene_enabled: 1,
+                                    hygiene_expansion_id: next_macro_hygiene_expansion_id(),
+                                    hygiene_next_local_id: 0
+                                };
                                 
                                 if param_count > 0 && arg_count > 0 {
                                     const bindings: &MacroParamBinding = arena_alloc(checker.arena, @size_of(MacroParamBinding) * param_count) as &MacroParamBinding;
