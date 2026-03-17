@@ -430,14 +430,15 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
     } else if expr.type == ASTNodeType.AST_PRINT || expr.type == ASTNodeType.AST_PRINTLN {
         gen_print_expr(codegen, expr);
         } else if expr.type == ASTNodeType.AST_STRING {
-        // 字符串常量在收集阶段已添加，生成阶段只查找
+        // 字符串常量在收集阶段已添加则用名称；宏展开产生的字面量未收集则内联输出，避免文件末尾定义导致 C 中“先声明后使用”错误
         const str_const: &byte = find_string_constant(codegen, expr.string_literal_value);
         if str_const != null {
-            // 字符串常量声明为 static const uint8_t[]，用 (uint8_t *) 转换
-            // 避免赋给非 const 指针字段时的 -Wdiscarded-qualifiers 警告
             fprintf(codegen.output as *void, "(uint8_t *)%s" as *byte, str_const as *byte);
+        } else if expr.string_literal_value != null {
+            fputs("(uint8_t *)\"" as *byte, codegen.output as *void);
+            escape_string_for_c(codegen.output, expr.string_literal_value);
+            fputc(34, codegen.output as *void);
         } else {
-            // 如果找不到（不应该发生），输出空字符串作为后备
             fputs("(uint8_t *)\"\"" as *byte, codegen.output as *void);
         }
     } else if expr.type == ASTNodeType.AST_MC_SOURCE {
@@ -757,7 +758,19 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             break;
         }
         
-        // 输出所有语句（除了最后一个表达式，它会作为返回值）
+        // 块末为 if 且（try 期望错误联合类型或常见 encode_to_to_json 形态）时：生成 _block_ret 并赋两分支，使语句表达式有确定类型
+        var use_if_as_value: i32 = 0;
+        var last_stmt: &ASTNode = null;
+        if block_count > 0 {
+            last_stmt = block_stmts[block_count - 1];
+            if last_stmt != null && last_stmt.type == ASTNodeType.AST_IF_STMT &&
+                last_stmt.if_stmt_then_branch != null && last_stmt.if_stmt_then_branch.type == ASTNodeType.AST_ERROR_VALUE &&
+                last_stmt.if_stmt_else_branch != null {
+                use_if_as_value = 1;
+                last_expr_idx = -1;
+            }
+        }
+        
         var k: i32 = 0;
         while k < block_count {
             const bs: &ASTNode = block_stmts[k];
@@ -765,12 +778,24 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 k = k + 1;
                 continue;
             }
-            if k == last_expr_idx {
-                // 最后一个表达式，直接输出作为返回值
+            if use_if_as_value != 0 && k == block_count - 1 {
+                var union_c: &byte = codegen.expected_block_union_type;
+                if union_c == null { union_c = ("struct err_union_size_t" as *byte) as &byte; }
+                const cond: &ASTNode = last_stmt.if_stmt_condition;
+                const then_b: &ASTNode = last_stmt.if_stmt_then_branch;
+                const else_b: &ASTNode = last_stmt.if_stmt_else_branch;
+                const err_id: i32 = c99_get_or_add_error_id(codegen, then_b.error_value_name);
+                var err_id_u: u32 = err_id as u32;
+                if err_id_u == 0 { err_id_u = 1; }
+                fprintf(codegen.output as *void, "%s _block_ret; if (" as *byte, union_c as *byte);
+                gen_expr(codegen, cond);
+                fprintf(codegen.output as *void, ") { _block_ret = (%s){ .error_id = %uU, .value = 0 }; } else { _block_ret = (%s){ .error_id = 0, .value = " as *byte, union_c as *byte, err_id_u, union_c as *byte);
+                gen_expr(codegen, else_b);
+                fputs(" }; } _block_ret; " as *byte, codegen.output as *void);
+            } else if k == last_expr_idx {
                 gen_expr(codegen, bs);
                 fputs("; " as *byte, codegen.output as *void);
             } else {
-                // 普通语句
                 gen_stmt(codegen, bs);
             }
             k = k + 1;
@@ -2739,8 +2764,11 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     if strcmp(rest, "int32_t" as *byte) == 0 || strcmp(rest, "int64_t" as *byte) == 0
                         || strcmp(rest, "intptr_t" as *byte) == 0 || strcmp(rest, "void" as *byte) == 0
                         || strcmp(rest, "size_t" as *byte) == 0 || strcmp(rest, "uintptr_t" as *byte) == 0
-                        || strcmp(rest, "ssize_t" as *byte) == 0 {
+                        || strcmp(rest, "ssize_t" as *byte) == 0 || strcmp(rest, "bool" as *byte) == 0
+                        || strcmp(rest, "double" as *byte) == 0 {
                         payload_c = rest;
+                    } else if strcmp(rest, "f64" as *byte) == 0 {
+                        payload_c = ("double" as *byte) as &byte;
                     } else {
                         const rest_len: i32 = strlen(rest);
                         if rest_len >= 3 && rest[rest_len - 3] == 112 && rest[rest_len - 2] == 116 && rest[rest_len - 1] == 114 {
@@ -3033,12 +3061,43 @@ fn gen_slice_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 gen_expr(codegen, base);
                 fputs(").ptr + " as *byte, codegen.output as *void);
             } else {
+                // byte 切片 .ptr 需 uint8_t*；arena_alloc 等常为 void*，C99 禁止 void* 算术，用 (uint8_t *) 避免 -Wpointer-arith
+                var need_uint8_cast: i32 = 0;
+                if slice_type_str != null && strstr(slice_type_str as *byte, "uya_slice_uint8_t" as *byte) != null {
+                    need_uint8_cast = 1;
+                }
+                if need_uint8_cast == 0 && type_c != null && strstr(type_c as *byte, "void" as *byte) != null && strstr(type_c as *byte, "*" as *byte) != null {
+                    need_uint8_cast = 1;
+                }
+                if need_uint8_cast != 0 {
+                    fputs("(uint8_t *)(" as *byte, codegen.output as *void);
+                    gen_expr(codegen, base);
+                    fputs(") + " as *byte, codegen.output as *void);
+                } else {
+                    gen_expr(codegen, base);
+                    fputs(" + " as *byte, codegen.output as *void);
+                }
+            }
+        } else {
+            // byte 切片或 base 为 void* 时转 (uint8_t *) 避免 -Wpointer-arith
+            var need_uint8_cast: i32 = 0;
+            if slice_type_str != null && strstr(slice_type_str as *byte, "uya_slice_uint8_t" as *byte) != null {
+                need_uint8_cast = 1;
+            }
+            if need_uint8_cast == 0 {
+                const base_type_c: &byte = get_c_type_of_expr(codegen, base);
+                if base_type_c != null && strstr(base_type_c as *byte, "void" as *byte) != null && strstr(base_type_c as *byte, "*" as *byte) != null {
+                    need_uint8_cast = 1;
+                }
+            }
+            if need_uint8_cast != 0 {
+                fputs("(uint8_t *)(" as *byte, codegen.output as *void);
+                gen_expr(codegen, base);
+                fputs(") + " as *byte, codegen.output as *void);
+            } else {
                 gen_expr(codegen, base);
                 fputs(" + " as *byte, codegen.output as *void);
             }
-        } else {
-            gen_expr(codegen, base);
-            fputs(" + " as *byte, codegen.output as *void);
         }
         gen_expr(codegen, start_expr);
         fputs(", .len = " as *byte, codegen.output as *void);
@@ -3200,7 +3259,10 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         }
         const ret_union_c: &byte = c99_type_to_c(codegen, ret_type);
         fprintf(codegen.output as *void, "({ %s _uya_try_tmp = " as *byte, operand_union_c as *byte);
+        const saved_expected_block: &byte = codegen.expected_block_union_type;
+        codegen.expected_block_union_type = operand_union_c;
         gen_expr(codegen, operand);
+        codegen.expected_block_union_type = saved_expected_block;
         // 错误传播时需转换为函数返回类型
         if operand_is_void != 0 {
             // 操作数是 !void，没有值可解包

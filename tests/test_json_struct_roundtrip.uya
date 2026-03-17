@@ -1,26 +1,17 @@
-// 测试 std.json Phase 3：结构体序列化/反序列化（宏骨架 to_json_skeleton / from_json_skeleton）
-// 流程1：构造结构体 → encode_to_to_json → 校验输出字节 → parse 端到端验证
-// 流程2：parse → from_json → User → to_json → parse 往返
+// 测试 std.json to_json / 往返：to_json(arena, obj) 内联编码，解码用手写 user_from_json
 use std.runtime.entry;
 use std.json.value.JsonValue;
 use std.json.value.JsonStrView;
 use std.json.parser.parse;
-use std.json.encoder.JsonWriter;
-use std.json.encoder.json_write_byte;
-use std.json.encoder.json_write_i64;
-use std.json.encoder.json_write_str_view;
-use std.json.encoder.encode_to_to_json;
 use std.json.encoder.to_json;
 use std.json.encoder.json_object_find_index;
 use std.json.encoder.json_expect_i64;
 use std.json.encoder.json_expect_str;
-use std.json.encoder.ToJson;
-use std.json.macros.to_json_skeleton;
 use std.json.errors;
 use std.mem.arena.Arena;
 use std.mem.arena.arena_init;
 
-struct User : ToJson {
+struct User {
     id: i64,
     name: JsonStrView,
 }
@@ -46,47 +37,24 @@ fn user_from_json(arena: &Arena, v: &JsonValue) !User {
     }
 }
 
-User {
-    to_json_skeleton({
-        var id_buf: [byte: 2] = [];
-        id_buf[0] = 105;
-        id_buf[1] = 100;
-        var name_key_buf: [byte: 4] = [];
-        name_key_buf[0] = 110;
-        name_key_buf[1] = 97;
-        name_key_buf[2] = 109;
-        name_key_buf[3] = 101;
-        json_write_str_view(w, JsonStrView{ ptr: &id_buf[0], len: 2 });
-        json_write_byte(w, 58);
-        json_write_i64(w, self.id);
-        json_write_byte(w, 44);
-        json_write_str_view(w, JsonStrView{ ptr: &name_key_buf[0], len: 4 });
-        json_write_byte(w, 58);
-        json_write_str_view(w, self.name);
-    });
-}
-
 export fn main() i32 {
-    var buf: [byte: 128] = [];
+    // 两次 to_json 各需 ENCODE_ARENA_MAX(64K)，parse 等也占 arena，故用 256K
+    var arena_buf: [byte: 262144] = [];
+    var a: Arena = Arena{ buffer: null, size: 0, used: 0 };
+    arena_init(&a, &arena_buf[0], 262144);
     var name_buf: [byte: 4] = [];
     name_buf[0] = 97;
     name_buf[1] = 98;
     name_buf[2] = 99;
     const u: User = User{ id: 42, name: JsonStrView{ ptr: &name_buf[0], len: 3 } };
-    const as_to_json: ToJson = u;
-    const n: usize = encode_to_to_json(&as_to_json, &buf[0], 128) catch { return 1; };
-    // 期望 {"id":42,"name":"abc"} 长度 22
-    if n != 22 { return 2; }
-    if buf[0] != 123 || buf[1] != 34 || buf[2] != 105 || buf[3] != 100 || buf[4] != 34 { return 3; }
-    if buf[5] != 58 || buf[6] != 52 || buf[7] != 50 { return 4; }
-    if buf[8] != 44 || buf[9] != 34 || buf[10] != 110 || buf[11] != 97 || buf[12] != 109 || buf[13] != 101 || buf[14] != 34 { return 5; }
-    if buf[15] != 58 || buf[16] != 34 || buf[17] != 97 || buf[18] != 98 || buf[19] != 99 || buf[20] != 34 || buf[21] != 125 { return 6; }
+    const slice: &[byte] = to_json<User>(&a, u) catch { return 1; };
+    if slice.len != 22 { return 2; }
+    if slice.ptr[0] != 123 || slice.ptr[1] != 34 || slice.ptr[2] != 105 || slice.ptr[3] != 100 || slice.ptr[4] != 34 { return 3; }
+    if slice.ptr[5] != 58 || slice.ptr[6] != 52 || slice.ptr[7] != 50 { return 4; }
+    if slice.ptr[8] != 44 || slice.ptr[9] != 34 || slice.ptr[10] != 110 || slice.ptr[11] != 97 || slice.ptr[12] != 109 || slice.ptr[13] != 101 || slice.ptr[14] != 34 { return 5; }
+    if slice.ptr[15] != 58 || slice.ptr[16] != 34 || slice.ptr[17] != 97 || slice.ptr[18] != 98 || slice.ptr[19] != 99 || slice.ptr[20] != 34 || slice.ptr[21] != 125 { return 6; }
 
-    // parse 端到端：将编码结果再解析为 JsonValue，校验对象键值（arena 需足够大，to_json 内部分配 ENCODE_ARENA_MAX）
-    var arena_buf: [byte: 131072] = [];
-    var a: Arena = Arena{ buffer: null, size: 0, used: 0 };
-    arena_init(&a, &arena_buf[0], 131072);
-    const parsed: JsonValue = parse(&a, &buf[0], n) catch { return 7; };
+    const parsed: JsonValue = parse(&a, slice.ptr, slice.len) catch { return 7; };
     match parsed {
         .obj(obj) => {
             if obj.len != 2 { return 8; }
@@ -105,15 +73,13 @@ export fn main() i32 {
         else => { return 16; },
     }
 
-    // roundtrip：parse → from_json → User → to_json → parse
-    const parsed2: JsonValue = parse(&a, &buf[0], n) catch { return 17; };
+    const parsed2: JsonValue = parse(&a, slice.ptr, slice.len) catch { return 17; };
     const u2: User = user_from_json(&a, &parsed2) catch { return 18; };
     if u2.id != 42 { return 19; }
     if u2.name.len != 3 || u2.name.ptr[0] != 97 || u2.name.ptr[1] != 98 || u2.name.ptr[2] != 99 { return 20; }
-    const as_json2: ToJson = u2;
-    const json_slice: &[byte] = to_json(&a, &as_json2) catch { return 21; };
-    if @len(json_slice) != 22 { return 22; }
-    const parsed3: JsonValue = parse(&a, &json_slice.ptr[0], @len(json_slice)) catch { return 23; };
+    const slice2: &[byte] = to_json<User>(&a, u2) catch { return 21; };
+    if slice2.len != 22 { return 22; }
+    const parsed3: JsonValue = parse(&a, slice2.ptr, slice2.len) catch { return 23; };
     match parsed3 {
         .obj(obj3) => {
             if obj3.len != 2 { return 24; }

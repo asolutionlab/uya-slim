@@ -119,7 +119,7 @@ struct C99CodeGenerator {
     // 字符串常量表
     string_constants: [StringConstant: C99_MAX_STRING_CONSTANTS],
     string_constant_count: i32,
-    
+    string_constants_emitted_count: i32,  // 第二步已输出的数量；宏展开等可能后续 add，末尾补输出
     // 结构体定义表
     struct_definitions: [StructDefinition: C99_MAX_STRUCT_DEFINITIONS],
     struct_definition_count: i32,
@@ -196,6 +196,8 @@ struct C99CodeGenerator {
     
     // 期望类型上下文（用于 &[array_literal] 类型推断）
     expected_type: &ASTNode,             // 当前表达式的期望类型（从变量声明/赋值推断）
+    // try 的块操作数：期望块末尾产生该错误联合 C 类型（用于块末为 if 时生成可赋值的表达式）
+    expected_block_union_type: &byte,
     
     // 结构体类型参数上下文（用于泛型方法）
     struct_type_params: &TypeParam,      // 结构体的类型参数列表

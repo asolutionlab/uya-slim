@@ -39,9 +39,10 @@ fn user_from_json(arena: &Arena, v: &JsonValue) !User {
 }
 
 export fn main() i32 {
-    var arena_buf: [byte: 131072] = [];
+    // 两次 to_json 各需 ENCODE_ARENA_MAX(64K)，parse 等也占 arena，故用 256K
+    var arena_buf: [byte: 262144] = [];
     var a: Arena = Arena{ buffer: null, size: 0, used: 0 };
-    arena_init(&a, &arena_buf[0], 131072);
+    arena_init(&a, &arena_buf[0], 262144);
     var name_buf: [byte: 4] = [];
     name_buf[0] = 97;
     name_buf[1] = 98;

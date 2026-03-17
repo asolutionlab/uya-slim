@@ -1099,6 +1099,18 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 说明：错误联合结构体可能以 interface 作为 payload，需要先有 interface struct 定义。
     emit_interface_structs_and_vtables(codegen);
     c99_emit_newline(codegen);
+    // 预注册 !usize（encode_to_to_json 展开块返回类型），使 err_union_size_t 在第一批输出，避免在函数体内使用未定义类型
+    {
+        const usize_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, codegen.arena, null);
+        if usize_type != null {
+            usize_type.type_named_name = "usize" as &byte;
+            const err_union_usize: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, 0, 0, codegen.arena, null);
+            if err_union_usize != null {
+                err_union_usize.type_error_union_payload_type = usize_type;
+                c99_type_to_c(codegen, err_union_usize);
+            }
+        }
+    }
     // 第六步 b2：生成错误联合结构体（!T -> struct err_union_X），必须在用户结构体之前
     emit_pending_err_union_structs(codegen);
     if codegen.err_union_struct_count > 0 {
@@ -1344,6 +1356,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     const decl: &ASTNode = ast.program_decls[k];
                     if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null &&
                         strcmp(decl.fn_decl_name as *byte, gn as *byte) == 0 {
+                        if has_unresolved_mono_type_args(decl, codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count) != 0 {
+                            found = 1;
+                            break;
+                        }
                         // 收集返回类型的错误联合结构体
                         if decl.fn_decl_return_type != null {
                             // 临时设置单态化上下文
@@ -1482,7 +1498,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 while j < codegen.mono_instance_count {
                     if codegen.mono_instances[j].generic_name != null &&
                         strcmp(codegen.mono_instances[j].generic_name as *byte, fn_name as *byte) == 0 &&
-                        codegen.mono_instances[j].is_function != 0 {
+                        codegen.mono_instances[j].is_function != 0 &&
+                        has_unresolved_mono_type_args(decl, codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count) == 0 {
                         gen_mono_function_prototype(codegen, decl,
                             codegen.mono_instances[j].type_args,
                             codegen.mono_instances[j].type_arg_count);
@@ -1885,13 +1902,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     is_main = 1;
                 }
                 if is_main == 0 {
-                    // 跳过泛型函数模板，为单态化实例生成定义
+                    // 跳过泛型函数模板，为单态化实例生成定义（跳过未解析类型参数如 T、void）
                     if is_generic_function_c99(decl) != 0 {
                         var j: i32 = 0;
                         while j < codegen.mono_instance_count {
                             if codegen.mono_instances[j].generic_name != null &&
                                 strcmp(codegen.mono_instances[j].generic_name as *byte, func_name as *byte) == 0 &&
-                                codegen.mono_instances[j].is_function != 0 {
+                                codegen.mono_instances[j].is_function != 0 &&
+                                has_unresolved_mono_type_args(decl, codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count) == 0 {
                                 gen_mono_function(codegen, decl,
                                     codegen.mono_instances[j].type_args,
                                     codegen.mono_instances[j].type_arg_count);
@@ -2071,6 +2089,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("    return _test_failed;\n" as *byte, codegen.output as *void);
         c99_emit_close_brace_newline(codegen);
     }
+    
+    // 输出宏展开等阶段才加入的字符串常量（如 encode_to_to_json 中的 "id"/"name"）
+    emit_pending_string_constants(codegen);
     
     return 0;
 }

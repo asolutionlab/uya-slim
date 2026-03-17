@@ -24,6 +24,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
 
     // 初始化表
     codegen.string_constant_count = 0;
+    codegen.string_constants_emitted_count = 0;
     codegen.struct_definition_count = 0;
     codegen.enum_definition_count = 0;
     codegen.function_declaration_count = 0;
@@ -512,6 +513,25 @@ fn emit_string_constants(codegen: &C99CodeGenerator) void {
         fputs("\";\n" as *byte, codegen.output as *void);
         i = i + 1;
     }
+    codegen.string_constants_emitted_count = codegen.string_constant_count;
+}
+
+// 输出收集阶段之后才加入的字符串常量（如宏展开产生的 "id"/"name"）
+export fn emit_pending_string_constants(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.string_constant_count <= codegen.string_constants_emitted_count {
+        return;
+    }
+    fputs("\n// 延迟字符串常量（宏展开等）\n" as *byte, codegen.output as *void);
+    var i: i32 = codegen.string_constants_emitted_count;
+    while i < codegen.string_constant_count {
+        if codegen.string_constants[i].value != null {
+            fprintf(codegen.output as *void, "static const char %s[] = \"" as *byte, codegen.string_constants[i].name as *byte);
+            escape_string_for_c(codegen.output, codegen.string_constants[i].value);
+            fputs("\";\n" as *byte, codegen.output as *void);
+        }
+        i = i + 1;
+    }
+    codegen.string_constants_emitted_count = codegen.string_constant_count;
 }
 
 // 评估编译时常量表达式（返回 -1 表示无法评估）

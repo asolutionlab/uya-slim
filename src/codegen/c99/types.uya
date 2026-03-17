@@ -939,6 +939,10 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
         } else if strncmp(elem_c as *byte, "enum " as *byte, 5) == 0 {
             elem_simple = &elem_c[5];
         }
+        // void* 缓冲区常见于 &[byte]，用 uint8_t 得到 uya_slice_uint8_t，避免 uya_slice_void（无 ptr/len）
+        if strcmp(elem_simple as *byte, "void" as *byte) == 0 {
+            elem_simple = ("uint8_t" as *byte) as &byte;
+        }
         var name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
         snprintf(&name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "uya_slice_%s" as *byte, elem_simple as *byte);
         const safe: &byte = get_safe_c_identifier(codegen, &name_buf[0]);
@@ -2140,6 +2144,22 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
                         memcpy(elem_type2 as *void, type_c as *void, base_len);
                         elem_type2[base_len] = 0;
                         return elem_type2;
+                    }
+                }
+                // 指针类型 T* 视为切片元素类型 T（如 buf: &byte -> byte）
+                const asterisk: *byte = strchr(type_c as *byte, 42);
+                if asterisk != null {
+                    var base_len_p: i32 = ptr_diff(asterisk, type_c as *byte);
+                    while base_len_p > 0 && (type_c[base_len_p - 1] == 32 || type_c[base_len_p - 1] == 9) {
+                        base_len_p = base_len_p - 1;
+                    }
+                    if base_len_p > 0 {
+                        const elem_p: &byte = arena_alloc(codegen.arena, (base_len_p + 1) as usize) as &byte;
+                        if elem_p != null {
+                            memcpy(elem_p as *void, type_c as *void, base_len_p as usize);
+                            elem_p[base_len_p] = 0;
+                            return elem_p;
+                        }
                     }
                 }
                 return null;

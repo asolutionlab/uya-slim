@@ -1856,6 +1856,9 @@ fn has_unresolved_mono_type_args(generic_decl: &ASTNode, type_args: & & ASTNode,
         }
         if arg != null && arg.type == ASTNodeType.AST_TYPE_NAMED && arg.type_named_name != null {
             const name: &byte = arg.type_named_name;
+            if strcmp(name as *byte, "void" as *byte) == 0 {
+                return 1;  // void 不作为有效单态化实参
+            }
             var j: i32 = 0;
             while j < type_param_count && j < 64 {
                 if type_params != null {

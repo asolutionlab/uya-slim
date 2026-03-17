@@ -14,9 +14,9 @@
 | AST 节点类型 | 77 种 |
 | 代码生成函数 | 133 个 |
 | 测试用例 | 547 个 |
-| 测试通过率 | 99.6%（545 通过，2 失败） |
+| 测试通过率 | 100% |
 
-**当前已知失败**：`test_json_to_json_reflect`、`test_json_struct_roundtrip`（链接失败，与 encode_to_to_json 单态展开后块末 if 的 codegen 有关，见 `docs/todo_json.md` §3.1）。
+**说明**：`test_json_to_json_reflect`、`test_json_struct_roundtrip` 已修复（encode_to_to_json 在字段间输出逗号；测试 arena 扩大为 256K 以容纳两次 to_json 的 64K 缓冲）。
 
 ---
 

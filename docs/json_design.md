@@ -201,7 +201,7 @@ fn parse(arena: &Arena, ptr: &byte, len: usize) !JsonValue;
 
 ### 7.3 结构体序列化（to_json）
 
-**骨架宏 to_json_skeleton**：`use std.json.macros.to_json_skeleton`，在方法块内 `to_json_skeleton({ ... })` 生成 to_json 方法（仅负责开头/结尾的 `{` `}`，中间由调用方填写）。完整反射 to_json（按字段名自动生成）待编译器支持。未用宏时可手写 ToJson（见 `tests/test_json_struct_roundtrip.uya`）。
+**骨架宏 to_json_skeleton**：`use std.json.macros.to_json_skeleton`，在方法块内 `to_json_skeleton({ ... })` 生成 to_json 方法（仅负责开头/结尾的 `{` `}`，中间由调用方填写）。**反射宏 to_json_reflect**：`use std.json.macros.to_json_reflect`，在方法块内无参调用 `to_json_reflect()`，由编译器按结构体字段自动生成 to_json（支持 i64、i32、f64、bool、JsonStrView）。未用宏时可手写 ToJson（见 `tests/test_json_struct_roundtrip.uya`、`tests/test_json_to_json_reflect.uya`）。
 
 ### 7.4 结构体反序列化（from_json）
 
