@@ -804,6 +804,8 @@ fn deep_copy_ast_with_field_subst(node: &ASTNode, ctx: &MacroExpandContext, file
         copy.bool_literal_value = node.bool_literal_value;
     } else if node.type == ASTNodeType.AST_STRING {
         copy.string_literal_value = node.string_literal_value;
+    } else if node.type == ASTNodeType.AST_CHAR {
+        copy.char_literal_value = node.char_literal_value;
     } else if node.type == ASTNodeType.AST_IDENTIFIER {
         copy.identifier_name = node.identifier_name;
     } else if node.type == ASTNodeType.AST_BINARY_EXPR {
@@ -1135,6 +1137,8 @@ fn deep_copy_ast_with_params(node: &ASTNode, ctx: &MacroExpandContext, filename:
         copy.bool_literal_value = node.bool_literal_value;
     } else if node.type == ASTNodeType.AST_STRING {
         copy.string_literal_value = node.string_literal_value;
+    } else if node.type == ASTNodeType.AST_CHAR {
+        copy.char_literal_value = node.char_literal_value;
     } else if node.type == ASTNodeType.AST_IDENTIFIER {
         copy.identifier_name = node.identifier_name;
     } else if node.type == ASTNodeType.AST_BINARY_EXPR {
@@ -1361,6 +1365,8 @@ fn deep_copy_ast_simple(node: &ASTNode, arena: &Arena, filename: &byte) &ASTNode
         copy.bool_literal_value = node.bool_literal_value;
     } else if node.type == ASTNodeType.AST_STRING {
         copy.string_literal_value = node.string_literal_value;
+    } else if node.type == ASTNodeType.AST_CHAR {
+        copy.char_literal_value = node.char_literal_value;
     } else if node.type == ASTNodeType.AST_IDENTIFIER {
         copy.identifier_name = node.identifier_name;
     } else if node.type == ASTNodeType.AST_BINARY_EXPR {
@@ -1748,11 +1754,12 @@ export fn deep_copy_ast_substitute_type_params(node: &ASTNode, type_params: &Typ
         copy.cast_expr_expr = deep_copy_ast_substitute_type_params(node.cast_expr_expr, type_params, type_param_count, type_args, type_arg_count, arena, filename);
         copy.cast_expr_target_type = deep_copy_ast_substitute_type_params(node.cast_expr_target_type, type_params, type_param_count, type_args, type_arg_count, arena, filename);
         copy.cast_expr_is_force_cast = node.cast_expr_is_force_cast;
-    } else if node.type == ASTNodeType.AST_NUMBER || node.type == ASTNodeType.AST_FLOAT || node.type == ASTNodeType.AST_BOOL || node.type == ASTNodeType.AST_STRING {
+    } else if node.type == ASTNodeType.AST_NUMBER || node.type == ASTNodeType.AST_FLOAT || node.type == ASTNodeType.AST_BOOL || node.type == ASTNodeType.AST_STRING || node.type == ASTNodeType.AST_CHAR {
         if node.type == ASTNodeType.AST_NUMBER { copy.number_value = node.number_value; copy.number_value_i64 = node.number_value_i64; }
         else if node.type == ASTNodeType.AST_FLOAT { copy.float_literal_value = node.float_literal_value; }
         else if node.type == ASTNodeType.AST_BOOL { copy.bool_literal_value = node.bool_literal_value; }
         else if node.type == ASTNodeType.AST_STRING { copy.string_literal_value = node.string_literal_value; }
+        else if node.type == ASTNodeType.AST_CHAR { copy.char_literal_value = node.char_literal_value; }
     } else {
         return deep_copy_ast_simple(node, arena, filename);
     }

@@ -107,6 +107,7 @@ enum ASTNodeType {
     AST_BOOL,
     AST_INT_LIMIT,
     AST_STRING,
+    AST_CHAR,           // 字符字面量 'x' 或 '\n'，可赋给 byte
     AST_STRING_INTERP,  // 字符串插值 "text${expr}text" 或 "text${expr:spec}text"，结果为 [i8: N]
     AST_PARAMS,   // @params 内置变量（函数体内参数元组）
     AST_TRY_EXPR,       // try expr（错误传播）
@@ -346,6 +347,8 @@ struct ASTNode {
     int_limit_resolved_kind: i32,
     // string_literal
     string_literal_value: &byte,
+    // char_literal（字符字面量，赋给 byte）
+    char_literal_value: i32,
     // string_interp（"text${expr}text" 或 "text${expr:spec}text"）
     string_interp_segments: &ASTStringInterpSegment,
     string_interp_segment_count: i32,
@@ -597,6 +600,7 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.int_limit_is_max = 0;
     node.int_limit_resolved_kind = 0;
     node.string_literal_value = null;
+    node.char_literal_value = 0;
     node.string_interp_segments = null;
     node.string_interp_segment_count = 0;
     node.string_interp_computed_size = 0;

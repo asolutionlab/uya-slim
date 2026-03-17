@@ -15,6 +15,7 @@ enum TokenType {
     TOKEN_FLOAT,
     TOKEN_STRING,
     TOKEN_RAW_STRING,   // 原始字符串字面量（反引号，无转义）
+    TOKEN_CHAR,         // 字符字面量（单引号 'x' 或 '\n'，可赋给 byte）
     // 字符串插值相关（"text${expr}text" 或 "text${expr:spec}text"）
     TOKEN_INTERP_TEXT,
     TOKEN_INTERP_OPEN,
@@ -615,6 +616,63 @@ fn read_string(lexer: &Lexer, arena: &Arena) &Token {
     return make_token(arena, TokenType.TOKEN_STRING, value, line, column);
 }
 
+// 读取字符字面量 'x' 或 '\n' 等，返回 TOKEN_CHAR，token.value 为 ASCII 值的十进制字符串（如 "99"）
+fn read_char_literal(lexer: &Lexer, arena: &Arena, line: i32, column: i32) &Token {
+    if lexer.position >= lexer.buffer_size {
+        return null;
+    }
+    var char_val: i32 = 0;
+    const c: byte = peek_char(lexer, 0);
+    if c == 92 {
+        advance_char(lexer);
+        if lexer.position >= lexer.buffer_size {
+            return null;
+        }
+        const e: byte = peek_char(lexer, 0);
+        if e == 110 {
+            char_val = 10;
+        } else if e == 116 {
+            char_val = 9;
+        } else if e == 92 {
+            char_val = 92;
+        } else if e == 39 {
+            char_val = 39;
+        } else if e == 48 {
+            char_val = 0;
+        } else if e == 114 {
+            char_val = 13;
+        } else if e == 34 {
+            char_val = 34;
+        } else {
+            return null;
+        }
+        advance_char(lexer);
+    } else {
+        char_val = c as i32;
+        advance_char(lexer);
+    }
+    if lexer.position >= lexer.buffer_size || peek_char(lexer, 0) != 39 {
+        return null;
+    }
+    advance_char(lexer);
+    var buf: [byte: 8] = [];
+    const n: i32 = snprintf(buf as *byte, 8, "%d" as *byte, char_val);
+    if n < 0 || n >= 8 {
+        return null;
+    }
+    const value: &byte = arena_alloc(arena, (n + 1) as u64) as &byte;
+    if value == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < n {
+        value[i] = buf[i];
+        i = i + 1;
+    }
+    value[n] = 0;
+    return make_token(arena, TokenType.TOKEN_CHAR, value, line, column);
+}
+
 // 将字符串内一个字符（或转义序列）读入 string_text_buffer，成功返回 0，失败返回 -1
 fn read_string_char_into_buffer(lexer: &Lexer) i32 {
     if lexer.position >= lexer.buffer_size {
@@ -828,6 +886,14 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
             lexer.has_seen_interp_in_string = 0;
             lexer.string_text_len = 0;
             continue;
+        }
+        if c == 39 {
+            advance_char(lexer);
+            const char_tok: &Token = read_char_literal(lexer, arena, line, column);
+            if char_tok != null {
+                return char_tok;
+            }
+            return make_token(arena, TokenType.TOKEN_EOF, null, line, column);
         }
         if c == 96 {
             advance_char(lexer);

@@ -137,6 +137,8 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
     }
     if expr.type == ASTNodeType.AST_NUMBER {
         return expr.number_value as i32;
+    } else if expr.type == ASTNodeType.AST_CHAR {
+        return expr.char_literal_value;
     } else if expr.type == ASTNodeType.AST_IDENTIFIER {
         const symbol: &Symbol = symbol_table_lookup(checker, expr.identifier_name);
         if symbol != null && symbol.is_const != 0 && symbol.decl_node != null {
@@ -365,6 +367,8 @@ export fn checker_eval_const_expr_in_block(checker: &TypeChecker, expr: &ASTNode
     }
     if expr.type == ASTNodeType.AST_NUMBER {
         return expr.number_value as i32;
+    } else if expr.type == ASTNodeType.AST_CHAR {
+        return expr.char_literal_value;
     } else if expr.type == ASTNodeType.AST_IDENTIFIER {
         const symbol: &Symbol = symbol_table_lookup(checker, expr.identifier_name);
         if symbol != null && symbol.is_const != 0 && symbol.decl_node != null {
