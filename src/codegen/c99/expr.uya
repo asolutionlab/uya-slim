@@ -2590,6 +2590,15 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         } else {
                             fputs("{0}" as *byte, codegen.output as *void);
                         }
+                    } else if field.var_decl_type != null &&
+                        field.var_decl_type.type == ASTNodeType.AST_TYPE_SLICE &&
+                        user_value.type == ASTNodeType.AST_UNARY_EXPR &&
+                        (user_value.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND &&
+                        user_value.unary_expr_operand != null &&
+                        user_value.unary_expr_operand.type == ASTNodeType.AST_SLICE_EXPR {
+                        fputs("*(" as *byte, codegen.output as *void);
+                        gen_expr(codegen, user_value);
+                        fputs(")" as *byte, codegen.output as *void);
                     } else {
                         gen_expr(codegen, user_value);
                     }

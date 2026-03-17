@@ -171,6 +171,15 @@ fn get_type_name_from_ast(type_node: &ASTNode, arena: &Arena) &byte {
             return buf;
         }
         return ("[?]" as *byte) as &byte;
+    } else if type_node.type == ASTNodeType.AST_TYPE_SLICE {
+        const inner: &byte = get_type_name_from_ast(type_node.type_slice_element_type, arena);
+        const inner_len: i32 = strlen(inner as *byte);
+        const buf: &byte = arena_alloc(arena, (inner_len + 8) as u64) as &byte;
+        if buf != null {
+            sprintf(buf as *byte, "&[%s]" as *byte, inner);
+            return buf;
+        }
+        return ("&[?]" as *byte) as &byte;
     }
     
     return ("unknown" as *byte) as &byte;
@@ -1804,6 +1813,8 @@ fn count_encode_field_stmts(checker: &TypeChecker, struct_decl: &ASTNode) i32 {
             total = total + 1;
             if arr_size > 0 { total = total + (arr_size - 1) + arr_size; }
             total = total + 1;
+        } else if field_type != null && field_type.type == ASTNodeType.AST_TYPE_SLICE {
+            total = total + 3;
         } else {
             const ftype: &byte = get_type_name_from_ast(field_node.var_decl_type, arena);
             const inner_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, ftype);
@@ -1852,8 +1863,11 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
     const s_json_write_f64: &byte = macro_arena_strdup(arena, ("json_write_f64" as *byte) as &byte);
     const s_overflow: &byte = macro_arena_strdup(arena, ("overflow" as *byte) as &byte);
     const s_used: &byte = macro_arena_strdup(arena, ("used" as *byte) as &byte);
+    const s_len: &byte = macro_arena_strdup(arena, ("len" as *byte) as &byte);
+    const s_ptr: &byte = macro_arena_strdup(arena, ("ptr" as *byte) as &byte);
     const s_BufferTooSmall: &byte = macro_arena_strdup(arena, ("BufferTooSmall" as *byte) as &byte);
-    if s_w == null || s_JsonWriter == null || s_json_writer_init == null || s_json_write_byte == null || s_json_write_key == null {
+    if s_w == null || s_JsonWriter == null || s_json_writer_init == null || s_json_write_byte == null || s_json_write_key == null ||
+       s_len == null || s_ptr == null {
         return null;
     }
 
@@ -2083,6 +2097,134 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
             arr_close.call_expr_type_args = null;
             arr_close.call_expr_type_arg_count = 0;
             stmts[idx] = arr_close;
+            idx = idx + 1;
+        } else if field_type != null && field_type.type == ASTNodeType.AST_TYPE_SLICE {
+            const slice_open: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
+            if slice_open == null { fi = fi + 1; continue; }
+            const so_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
+            if so_args == null { fi = fi + 1; continue; }
+            so_args[0] = addr_w;
+            so_args[1] = create_number_literal(91, arena, line + line_off, column + col_off);
+            slice_open.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
+            slice_open.call_expr_args = so_args;
+            slice_open.call_expr_arg_count = 2;
+            slice_open.call_expr_has_ellipsis_forward = 0;
+            slice_open.call_expr_type_args = null;
+            slice_open.call_expr_type_arg_count = 0;
+            stmts[idx] = slice_open;
+            idx = idx + 1;
+
+            const slice_elem_type: &ASTNode = field_type.type_slice_element_type;
+            const slice_elem_ftype: &byte = get_type_name_from_ast(slice_elem_type, arena);
+            var slice_write_callee: &byte = s_json_write_i64;
+            if strcmp(slice_elem_ftype as *byte, "JsonStrView" as *byte) == 0 { slice_write_callee = s_json_write_str_view; }
+            else if strcmp(slice_elem_ftype as *byte, "bool" as *byte) == 0 { slice_write_callee = s_json_write_bool; }
+            else if strcmp(slice_elem_ftype as *byte, "f64" as *byte) == 0 { slice_write_callee = s_json_write_f64; }
+
+            var slice_name_buf: [byte: 40] = [];
+            snprintf(&slice_name_buf[0] as *byte, 40, "%s_i" as *byte, fname as *byte);
+            const slice_i_name: &byte = macro_arena_strdup(arena, &slice_name_buf[0]);
+            if slice_i_name == null { fi = fi + 1; continue; }
+
+            const slice_len: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line + line_off, column + col_off, arena, filename);
+            if slice_len == null { fi = fi + 1; continue; }
+            slice_len.member_access_object = member_acc;
+            slice_len.member_access_field_name = s_len;
+            slice_len.member_access_is_module_access = 0;
+            slice_len.member_access_module_name = null;
+
+            const slice_ptr: &ASTNode = ast_new_node(ASTNodeType.AST_MEMBER_ACCESS, line + line_off, column + col_off, arena, filename);
+            if slice_ptr == null { fi = fi + 1; continue; }
+            slice_ptr.member_access_object = member_acc;
+            slice_ptr.member_access_field_name = s_ptr;
+            slice_ptr.member_access_is_module_access = 0;
+            slice_ptr.member_access_module_name = null;
+
+            const slice_zero: &ASTNode = create_number_literal(0, arena, line + line_off, column + col_off);
+            if slice_zero == null { fi = fi + 1; continue; }
+            slice_zero.literal_suffix = 9;
+
+            const id_slice_i_cond: &ASTNode = create_identifier_from_string(slice_i_name, arena, line + line_off, column + col_off);
+            if id_slice_i_cond == null { fi = fi + 1; continue; }
+            const slice_cond: &ASTNode = ast_new_node(ASTNodeType.AST_BINARY_EXPR, line + line_off, column + col_off, arena, filename);
+            if slice_cond == null { fi = fi + 1; continue; }
+            slice_cond.binary_expr_op = (TokenType.TOKEN_GREATER) as i32;
+            slice_cond.binary_expr_left = id_slice_i_cond;
+            slice_cond.binary_expr_right = create_number_literal(0, arena, line + line_off, column + col_off);
+
+            const sc_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
+            if sc_args == null { fi = fi + 1; continue; }
+            sc_args[0] = addr_w;
+            sc_args[1] = create_number_literal(44, arena, line + line_off, column + col_off);
+            const call_sc: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
+            if call_sc == null { fi = fi + 1; continue; }
+            call_sc.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
+            call_sc.call_expr_args = sc_args;
+            call_sc.call_expr_arg_count = 2;
+            call_sc.call_expr_has_ellipsis_forward = 0;
+            call_sc.call_expr_type_args = null;
+            call_sc.call_expr_type_arg_count = 0;
+
+            const if_slice_comma: &ASTNode = ast_new_node(ASTNodeType.AST_IF_STMT, line + line_off, column + col_off, arena, filename);
+            if if_slice_comma == null { fi = fi + 1; continue; }
+            if_slice_comma.if_stmt_condition = slice_cond;
+            if_slice_comma.if_stmt_then_branch = call_sc;
+            if_slice_comma.if_stmt_else_branch = null;
+
+            const id_slice_i_write: &ASTNode = create_identifier_from_string(slice_i_name, arena, line + line_off, column + col_off);
+            if id_slice_i_write == null { fi = fi + 1; continue; }
+            const slice_elem: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_ACCESS, line + line_off, column + col_off, arena, filename);
+            if slice_elem == null { fi = fi + 1; continue; }
+            slice_elem.array_access_array = slice_ptr;
+            slice_elem.array_access_index = id_slice_i_write;
+
+            const sw_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
+            if sw_args == null { fi = fi + 1; continue; }
+            sw_args[0] = addr_w;
+            sw_args[1] = slice_elem;
+            const call_slice_write: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
+            if call_slice_write == null { fi = fi + 1; continue; }
+            call_slice_write.call_expr_callee = create_identifier_from_string(slice_write_callee, arena, line + line_off, column + col_off);
+            call_slice_write.call_expr_args = sw_args;
+            call_slice_write.call_expr_arg_count = 2;
+            call_slice_write.call_expr_has_ellipsis_forward = 0;
+            call_slice_write.call_expr_type_args = null;
+            call_slice_write.call_expr_type_arg_count = 0;
+
+            const slice_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 2) as u64) as &(&ASTNode);
+            if slice_body_stmts == null { fi = fi + 1; continue; }
+            slice_body_stmts[0] = if_slice_comma;
+            slice_body_stmts[1] = call_slice_write;
+            const slice_body: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line + line_off, column + col_off, arena, filename);
+            if slice_body == null { fi = fi + 1; continue; }
+            slice_body.block_stmts = slice_body_stmts;
+            slice_body.block_stmt_count = 2;
+
+            const slice_for: &ASTNode = ast_new_node(ASTNodeType.AST_FOR_STMT, line + line_off, column + col_off, arena, filename);
+            if slice_for == null { fi = fi + 1; continue; }
+            slice_for.for_stmt_is_range = 1;
+            slice_for.for_stmt_array = null;
+            slice_for.for_stmt_range_start = slice_zero;
+            slice_for.for_stmt_range_end = slice_len;
+            slice_for.for_stmt_var_name = slice_i_name;
+            slice_for.for_stmt_is_ref = 0;
+            slice_for.for_stmt_body = slice_body;
+            stmts[idx] = slice_for;
+            idx = idx + 1;
+
+            const slice_close: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
+            if slice_close == null { fi = fi + 1; continue; }
+            const sc_close_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
+            if sc_close_args == null { fi = fi + 1; continue; }
+            sc_close_args[0] = addr_w;
+            sc_close_args[1] = create_number_literal(93, arena, line + line_off, column + col_off);
+            slice_close.call_expr_callee = create_identifier_from_string(s_json_write_byte, arena, line + line_off, column + col_off);
+            slice_close.call_expr_args = sc_close_args;
+            slice_close.call_expr_arg_count = 2;
+            slice_close.call_expr_has_ellipsis_forward = 0;
+            slice_close.call_expr_type_args = null;
+            slice_close.call_expr_type_arg_count = 0;
+            stmts[idx] = slice_close;
             idx = idx + 1;
         } else {
         const scalar_ftype: &byte = get_type_name_from_ast(field_node.var_decl_type, arena);

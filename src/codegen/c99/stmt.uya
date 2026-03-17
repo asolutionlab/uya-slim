@@ -1827,7 +1827,21 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
 
                 if did_box == 0 {
-                    gen_expr(codegen, init_expr);
+                    var need_slice_deref_init: i32 = 0;
+                    if var_type != null && var_type.type == ASTNodeType.AST_TYPE_SLICE &&
+                        init_expr.type == ASTNodeType.AST_UNARY_EXPR &&
+                        (init_expr.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND &&
+                        init_expr.unary_expr_operand != null &&
+                        init_expr.unary_expr_operand.type == ASTNodeType.AST_SLICE_EXPR {
+                        need_slice_deref_init = 1;
+                    }
+                    if need_slice_deref_init != 0 {
+                        fputs("*(" as *byte, codegen.output as *void);
+                        gen_expr(codegen, init_expr);
+                        fputs(")" as *byte, codegen.output as *void);
+                    } else {
+                        gen_expr(codegen, init_expr);
+                    }
                 }
                 c99_emit_semi_newline(codegen);
             }
