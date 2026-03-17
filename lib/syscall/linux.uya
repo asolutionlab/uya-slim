@@ -47,6 +47,7 @@ export const SYS_clock_gettime: i64 = 228;
 
 // 文件控制
 export const SYS_fcntl: i64 = 72;
+export const SYS_pipe2: i64 = 293;
 
 // 用户/组
 export const SYS_getuid: i64 = 102;
@@ -75,6 +76,10 @@ export const O_EXCL: i64 = 0x80;
 export const O_TRUNC: i64 = 0x200;
 export const O_APPEND: i64 = 0x400;
 export const O_DIRECTORY: i64 = 0x10000;
+export const O_NONBLOCK: i32 = 0x800;
+
+export const F_GETFL: i32 = 3;
+export const F_SETFL: i32 = 4;
 
 // epoll 事件与操作常量
 export const EPOLLIN: i32 = 0x001;
@@ -391,6 +396,10 @@ export fn sys_ioctl(fd: i32, request: i64, arg: i64) !i32 {
 // 返回：成功返回 0，失败返回 -1
 export fn sys_fcntl(fd: i32, cmd: i32, arg: i32) !i32 {
     return @syscall(SYS_fcntl, fd as i64, cmd as i64, arg as i64) as! i32;
+}
+
+export fn sys_pipe2(pipefd: &i32, flags: i32) !i32 {
+    return @syscall(SYS_pipe2, pipefd as i64, flags as i64) as! i32;
 }
 
 // ============================================================

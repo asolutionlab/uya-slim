@@ -5,29 +5,32 @@ use std.async;
 use std.testing.assert_eq_i32;
 use std.testing.expect;
 
+error UnexpectedPending;
+error AsyncIoFailed;
+
 fn test_write_impl() !void {
     var w: MemAsyncWriter = mem_async_writer_new();
     var buf: [byte: 4] = [ 1, 2, 3, 4 ];
-    const f: Future<usize> = try w.write(&buf[0] as &const byte, 4);
+    const f: Future<!usize> = w.write(&buf[0] as &const byte, 4);
     const wk: Waker = Waker{};
-    const p: Poll<usize> = f.poll(&wk);
+    const p: Poll<!usize> = f.poll(&wk);
     var result: usize = 0;
     match p {
-        .Ready(n) => { result = n; },
-        .Pending(_) => { },
+        .Ready(n) => { result = n catch { return error.AsyncIoFailed; }; },
+        .Pending(_) => { return error.UnexpectedPending; },
     };
     try assert_eq_i32(result as i32, 4);
 }
 
 fn test_flush_impl() !void {
     var w: MemAsyncWriter = mem_async_writer_new();
-    const f: Future<usize> = try w.flush();
+    const f: Future<!usize> = w.flush();
     const wk: Waker = Waker{};
-    const p: Poll<usize> = f.poll(&wk);
+    const p: Poll<!usize> = f.poll(&wk);
     var result: usize = 1;
     match p {
-        .Ready(n) => { result = n; },
-        .Pending(_) => { result = 1; },
+        .Ready(n) => { result = n catch { return error.AsyncIoFailed; }; },
+        .Pending(_) => { return error.UnexpectedPending; },
     };
     try assert_eq_i32(result as i32, 0);
 }
@@ -44,13 +47,13 @@ fn test_read_impl() !void {
     var data: [byte: 4] = [ 10, 20, 30, 40 ];
     var r: MemAsyncReader = mem_async_reader_new(&data[0] as &const byte, 4);
     var buf: [byte: 8] = [];
-    const f: Future<usize> = try r.read(&buf[0], 4);
+    const f: Future<!usize> = r.read(&buf[0], 4);
     const wk: Waker = Waker{};
-    const p: Poll<usize> = f.poll(&wk);
+    const p: Poll<!usize> = f.poll(&wk);
     var result: usize = 0;
     match p {
-        .Ready(n) => { result = n; },
-        .Pending(_) => { },
+        .Ready(n) => { result = n catch { return error.AsyncIoFailed; }; },
+        .Pending(_) => { return error.UnexpectedPending; },
     };
     try assert_eq_i32(result as i32, 4);
     try assert_eq_i32(buf[0] as i32, 10);
@@ -67,20 +70,20 @@ fn test_read_then_write_impl() !void {
     var r: MemAsyncReader = mem_async_reader_new(&src[0] as &const byte, 4);
     var w: MemAsyncWriter = mem_async_writer_new();
     var buf: [byte: 8] = [];
-    const fr: Future<usize> = try r.read(&buf[0], 4);
+    const fr: Future<!usize> = r.read(&buf[0], 4);
     const wk: Waker = Waker{};
-    var pr: Poll<usize> = fr.poll(&wk);
+    var pr: Poll<!usize> = fr.poll(&wk);
     var n: usize = 0;
     match pr {
-        .Ready(k) => { n = k; },
-        .Pending(_) => { },
+        .Ready(k) => { n = k catch { return error.AsyncIoFailed; }; },
+        .Pending(_) => { return error.UnexpectedPending; },
     };
     try assert_eq_i32(n as i32, 4);
-    const fw: Future<usize> = try w.write(&buf[0] as &const byte, n);
+    const fw: Future<!usize> = w.write(&buf[0] as &const byte, n);
     pr = fw.poll(&wk);
     match pr {
-        .Ready(k) => { n = k; },
-        .Pending(_) => { },
+        .Ready(k) => { n = k catch { return error.AsyncIoFailed; }; },
+        .Pending(_) => { return error.UnexpectedPending; },
     };
     try assert_eq_i32(n as i32, 4);
 }

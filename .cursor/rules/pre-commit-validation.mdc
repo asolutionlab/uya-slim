@@ -1,0 +1,11 @@
+---
+description: 提交前必须先 clean 再 backup
+alwaysApply: true
+---
+
+# 提交前验证流程
+
+- 准备提交时，必须按顺序执行：`make clean`，然后 `make backup`。
+- `make backup` 包含完整验证与备份；只有它成功后才允许提交。
+- 如果 `make clean` 后导致 `bin/uya` 缺失，也不能跳过 `make backup`。
+- 只要 `make backup`、自举验证或测试失败，就禁止提交。

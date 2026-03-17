@@ -16,7 +16,7 @@
 
 ## 架构概览
 
-**当前实现**：`lib/std/async.uya` 提供 **`struct Waker`**（最小 `wake/reset/is_woken` 状态语义）、**`union Poll<T>`**（Ready/Pending）、**`interface Future<T>`**、**`struct Future<T>`**（含 `state: Poll<T>`、`fn poll(...) Poll<T>`）、**`struct Task<T> : Future<T>`**（含 `task_ready`、`poll`）。`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya`、`test_async_nested.uya`、`test_std_async_waker.uya` 已通过 `--c99` 与 `--uya --c99`。**@async_fn 中可直接 `return T`**：无 `@await` 时自动包装为 `Future<T>{ state: Poll<T>.Ready(expr) }`，poll 立即返回 Ready。Checker 对单态/泛型名做基名匹配（如 `Future<T>`、`Future_i32` 可解析为接口/结构体 `Future`），方法解析失败时回退到基名查找。**已知限制**：注解类型 `Future<Future<T>>` 上调用 `.poll` 尚可能报「结构体上不存在该方法」，待修复；当前可改用单层 `Future<T>` 或由调用方先 `try` 再 poll。编译器在结构体含泛型 union 字段时会先输出该 union 的单态定义（如 `Poll_i32`、`uya_tagged_Poll_i32`），且通过 arena 持久化 tagged 名避免重定义。**无 await 且返回 `!Future<T>` 的 @async_fn**：状态机形态为 `Future<!Future<T>>`，其 `struct uya_interface_*` / `struct uya_vtable_*` 在 `src/codegen/c99/function.uya` 中按需生成（不经过 `mono_instances`），并用 `is_struct_defined` 避免重复定义。以下为**目标**目录结构，后续按阶段拆分实现。
+**当前实现**：`lib/std/async.uya` 提供 **`struct Waker`**（最小 `wake/reset/is_woken` 状态语义）、**`union Poll<T>`**（Ready/Pending）、**`interface Future<T>`**、**`struct Future<T>`**（含 `state: Poll<T>`、`fn poll(...) Poll<T>`）、**`struct Task<T> : Future<T>`**（含 `task_ready`、`poll`）。`std.async.io` 当前已收敛到 **`Future<!usize>`** 主路径：`MemAsyncWriter` / `MemAsyncReader` 直接返回 `Ready(ok(n))`，`AsyncFd` 在 `poll()` 时确保 `O_NONBLOCK`，并将 `EAGAIN` / `EWOULDBLOCK` 映射为 `Poll.Pending`，后续再次 `poll()` 时重试系统调用。`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya`、`test_async_nested.uya`、`test_std_async_waker.uya`、`test_async_io.uya`、`test_async_fd.uya`、`test_async_copy.uya` 已通过 `--c99` 与 `--uya --c99`。**@async_fn 中可直接 `return T`**：无 `@await` 时自动包装为 `Future<T>{ state: Poll<T>.Ready(expr) }`，poll 立即返回 Ready。Checker 对单态/泛型名做基名匹配（如 `Future<T>`、`Future_i32` 可解析为接口/结构体 `Future`），方法解析失败时回退到基名查找。**已知限制**：注解类型 `Future<Future<T>>` 上调用 `.poll` 尚可能报「结构体上不存在该方法」，待修复；当前可改用单层 `Future<T>` 或由调用方先 `try` 再 poll。编译器在结构体含泛型 union 字段时会先输出该 union 的单态定义（如 `Poll_i32`、`uya_tagged_Poll_i32`），且通过 arena 持久化 tagged 名避免重定义。**无 await 且返回 `!Future<T>` 的 @async_fn**：状态机形态为 `Future<!Future<T>>`，其 `struct uya_interface_*` / `struct uya_vtable_*` 在 `src/codegen/c99/function.uya` 中按需生成（不经过 `mono_instances`），并用 `is_struct_defined` 避免重复定义。以下为**目标**目录结构，后续按阶段拆分实现。
 
 ```
 std/async/
@@ -42,7 +42,7 @@ std/async/
 
 | 维度 | `std.io` | `std.async.io` |
 |------|----------|----------------|
-| 返回类型 | `!usize` / `!void` | `!Future<usize>` / `!Future<void>` |
+| 返回类型 | `!usize` / `!void` | `Future<!usize>`（当前最小实现） |
 | 执行方式 | 同步阻塞 | 状态机 + 非阻塞 |
 | 使用场景 | 普通函数 | `@async_fn` 函数 |
 | I/O 后端 | 直接系统调用 | poll + waker 事件驱动 |
@@ -54,24 +54,25 @@ std/async/
 
 **当前现状补充**：
 - 语言层已提供 `@error_id(err)`，可读取 `@syscall` 失败路径的 errno 数值
-- 因此 `AsyncFd` 的 `EAGAIN` / `EWOULDBLOCK` 判定已可在 Uya 层完成，后续主要剩余 Future 状态与事件循环接线
+- `AsyncFd` 已将 `EAGAIN` / `EWOULDBLOCK` 映射为 `Poll.Pending`，并通过再次 `poll()` 重试非阻塞 syscall
+- 后续主要剩余事件循环注册、`Waker` 唤醒与 `EventLoop.poll()` 接线
 
 ### 核心接口
 
 - [ ] **AsyncWriter 接口**：统一的异步输出抽象
   ```uya
   export interface AsyncWriter {
-      fn write(self: &Self, data: &[u8]) !Future<usize>;
-      fn write_str(self: &Self, s: &[i8]) !Future<usize>;
-      fn flush(self: &Self) !Future<void>;
+      fn write(self: &Self, data: &[u8]) Future<!usize>;
+      fn write_str(self: &Self, s: &[i8]) Future<!usize>;
+      fn flush(self: &Self) Future<!usize>;
   }
   ```
 
 - [ ] **AsyncReader 接口**：统一的异步输入抽象
   ```uya
   export interface AsyncReader {
-      fn read(self: &Self, buf: &[u8]) !Future<usize>;
-      fn read_exact(self: &Self, buf: &[u8]) !Future<void>;
+      fn read(self: &Self, buf: &[u8]) Future<!usize>;
+      fn read_exact(self: &Self, buf: &[u8]) Future<!usize>;
   }
   ```
 
@@ -93,18 +94,18 @@ struct AsyncFd {
 }
 
 AsyncFd : AsyncWriter {
-    fn write(self: &Self, data: &[u8]) !Future<usize> {
+    fn write(self: &Self, data: &[u8]) Future<!usize> {
         // 内部实现：
-        // 1. 尝试非阻塞写入
-        // 2. 如果返回 EAGAIN，注册到事件循环，返回 union Poll<usize> { Pending: void }
-        // 3. 事件就绪时，waker.wake() 唤醒任务
-        // 4. 重新 poll 时完成写入，返回 union Poll<usize> { Ready: n }
+        // 1. poll() 时确保 fd 为 O_NONBLOCK
+        // 2. 尝试非阻塞写入
+        // 3. 如果返回 EAGAIN，返回 Poll.Pending
+        // 4. 下一次 poll() 重试 syscall
     }
 }
 
 AsyncFd : AsyncReader {
-    fn read(self: &Self, buf: &[u8]) !Future<usize> {
-        // 类似 write，基于非阻塞读取 + 事件通知
+    fn read(self: &Self, buf: &[u8]) Future<!usize> {
+        // 类似 write，当前先落地为非阻塞读取 + Pending + 手动重 poll
     }
 }
 ```

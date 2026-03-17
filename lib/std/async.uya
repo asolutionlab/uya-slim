@@ -60,9 +60,16 @@ export fn ok<T>(value: T) !T {
     return value;
 }
 
-/// ok<Future<usize>> 的非泛型特化，避免 generic codegen 单态化顺序问题。
-export fn ok_future_usize(value: Future<usize>) !Future<usize> {
-    return value;
+/// 构造 Poll<!usize>.Ready(ok(value))，供异步 I/O ready 路径复用。
+fn poll_ready_ok_usize(value: usize) Poll<!usize> {
+    const ok_value: !usize = ok<usize>(value);
+    const p: Poll<!usize> = Poll<!usize>.Ready(ok_value);
+    return p;
+}
+
+/// 构造已就绪的 Future<!usize>。
+fn future_ready_ok_usize(value: usize) Future<!usize> {
+    return Future<!usize>{ state: poll_ready_ok_usize(value) };
 }
 
 /// 创建已就绪任务。poll 时立即返回 Ready(value)。
@@ -128,45 +135,35 @@ export fn block_on_usize_plain(f: Future<usize>) usize {
     }
 }
 
-/// 运行 !Future<usize>：先 try 得到 Future<usize>，再 block_on_usize_plain。
-/// 注意：async_copy() 返回的是 err_union，其 .value 实际为状态机（Future<!Future<usize>>）。
-/// 因此需先 block_on 外层得到 !Future<usize>，再 try 得到 Future<usize>，再 block_on 内层。
-/// 本函数接受 err_union_!Future<usize>，内部完成两层 block_on + try。
-export fn block_on_future_usize_err(f: !Future<usize>) !usize {
-    const inner: Future<usize> = try f;
-    return block_on_usize_plain(inner);
-}
-
 // ============================================================
 // std.async.io - 异步 I/O 抽象（设计见 docs/std_async_design.md）
 // ============================================================
 
-/// 异步输出抽象。write/flush 返回 !Future<T>，可在 @async_fn 中 try @await。
+/// 异步输出抽象。当前统一收敛到 Future<!usize>：
+/// Pending 表示尚未就绪，Ready(ok(n)) 表示成功，Ready(err) 表示 I/O 失败。
 export interface AsyncWriter {
-    fn write(self: &Self, data: &const byte, count: usize) !Future<usize>;
-    fn flush(self: &Self) !Future<usize>;
+    fn write(self: &Self, data: &const byte, count: usize) Future<!usize>;
+    fn flush(self: &Self) Future<!usize>;
 }
 
-/// 异步输入抽象。read 返回 !Future<usize>，可在 @async_fn 中 try @await。
+/// 异步输入抽象。read 返回 Future<!usize>，可在 @async_fn 中 try @await。
 export interface AsyncReader {
-    fn read(self: &Self, buf: &byte, count: usize) !Future<usize>;
+    fn read(self: &Self, buf: &byte, count: usize) Future<!usize>;
 }
 
 /// 内存-backed 异步写入器（用于测试）。每次 write 立即返回 Ready(count)。
 export struct MemAsyncWriter : AsyncWriter {
     _pos: usize,
 
-    fn write(self: &Self, data: &const byte, count: usize) !Future<usize> {
+    fn write(self: &Self, data: &const byte, count: usize) Future<!usize> {
         _ = self;
         _ = data;
-        const f: Future<usize> = Future<usize>{ state: Poll<usize>.Ready(count) };
-        return ok_future_usize(f);
+        return future_ready_ok_usize(count);
     }
 
-    fn flush(self: &Self) !Future<usize> {
+    fn flush(self: &Self) Future<!usize> {
         _ = self;
-        const f: Future<usize> = Future<usize>{ state: Poll<usize>.Ready(0) };
-        return ok_future_usize(f);
+        return future_ready_ok_usize(0);
     }
 }
 
@@ -181,7 +178,7 @@ export struct MemAsyncReader : AsyncReader {
     _len: usize,
     _pos: usize,
 
-    fn read(self: &Self, buf: &byte, count: usize) !Future<usize> {
+    fn read(self: &Self, buf: &byte, count: usize) Future<!usize> {
         var avail: usize = self._len - self._pos;
         if avail > count {
             avail = count;
@@ -192,8 +189,7 @@ export struct MemAsyncReader : AsyncReader {
             i = i + 1;
         }
         self._pos = self._pos + avail;
-        const f: Future<usize> = Future<usize>{ state: Poll<usize>.Ready(avail) };
-        return ok_future_usize(f);
+        return future_ready_ok_usize(avail);
     }
 }
 
@@ -203,7 +199,7 @@ export fn mem_async_reader_new(data: &const byte, len: usize) MemAsyncReader {
 }
 
 /// 从 MemAsyncReader 复制到 MemAsyncWriter，直到读取 0 字节。返回总复制字节数。
-export @async_fn fn async_copy(reader: &MemAsyncReader, writer: &MemAsyncWriter, buf: &byte, buf_len: usize) !Future<usize> {
+export @async_fn fn async_copy(reader: &MemAsyncReader, writer: &MemAsyncWriter, buf: &byte, buf_len: usize) Future<!usize> {
     var total: usize = 0;
     while true {
         const n: usize = try @await reader.read(buf, buf_len);
@@ -224,24 +220,97 @@ export @async_fn fn async_copy(reader: &MemAsyncReader, writer: &MemAsyncWriter,
 
 use libc.syscall;
 
-/// 基于 fd 的异步 I/O 包装。当前为同步实现（阻塞 write/read），适用于常规文件。
-/// 后续可扩展：fcntl O_NONBLOCK + EAGAIN 返回 Pending。
+const ASYNC_ERR_EAGAIN: u32 = 11;
+const ASYNC_ERR_EWOULDBLOCK: u32 = 11;
+
+fn async_fd_error_id_is_would_block(err_id: u32) bool {
+    return err_id == ASYNC_ERR_EAGAIN || err_id == ASYNC_ERR_EWOULDBLOCK;
+}
+
+struct AsyncFdWriteFuture : Future<!usize> {
+    fd: i32,
+    data: &const byte,
+    count: usize,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        _ = waker;
+        const flags_result: !i32 = sys_fcntl(self.fd, F_GETFL, 0);
+        const flags: i32 = flags_result catch {
+            const err_value: !usize = flags_result as! usize;
+            const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
+            return p;
+        };
+        if (flags & O_NONBLOCK) == 0 {
+            const set_result: !i32 = sys_fcntl(self.fd, F_SETFL, flags | O_NONBLOCK);
+            _ = set_result catch {
+                const err_value: !usize = set_result as! usize;
+                const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
+                return p;
+            };
+        }
+        const result: !isize = sys_write(self.fd, self.data as *const byte, self.count);
+        const n: isize = result catch |err| {
+            if async_fd_error_id_is_would_block(@error_id(err)) {
+                return Poll<!usize>.Pending({});
+            }
+            const err_value: !usize = result as! usize;
+            const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
+            return p;
+        };
+        return poll_ready_ok_usize(n as usize);
+    }
+}
+
+struct AsyncFdReadFuture : Future<!usize> {
+    fd: i32,
+    buf: &byte,
+    count: usize,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        _ = waker;
+        const flags_result: !i32 = sys_fcntl(self.fd, F_GETFL, 0);
+        const flags: i32 = flags_result catch {
+            const err_value: !usize = flags_result as! usize;
+            const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
+            return p;
+        };
+        if (flags & O_NONBLOCK) == 0 {
+            const set_result: !i32 = sys_fcntl(self.fd, F_SETFL, flags | O_NONBLOCK);
+            _ = set_result catch {
+                const err_value: !usize = set_result as! usize;
+                const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
+                return p;
+            };
+        }
+        const result: !isize = sys_read(self.fd, self.buf as *byte, self.count);
+        const n: isize = result catch |err| {
+            if async_fd_error_id_is_would_block(@error_id(err)) {
+                return Poll<!usize>.Pending({});
+            }
+            const err_value: !usize = result as! usize;
+            const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
+            return p;
+        };
+        return poll_ready_ok_usize(n as usize);
+    }
+}
+
+/// 基于 fd 的异步 I/O 包装。
+/// 当前最小实现会在 poll 时确保 O_NONBLOCK，若遇到 EAGAIN/EWOULDBLOCK 则返回 Pending。
 export struct AsyncFd : AsyncWriter, AsyncReader {
     fd: i32,
 
-    fn write(self: &Self, data: &const byte, count: usize) !Future<usize> {
-        const n: isize = try sys_write(self.fd, data as *const byte, count);
-        return Future<usize>{ state: Poll<usize>.Ready(n as usize) };
+    fn write(self: &Self, data: &const byte, count: usize) Future<!usize> {
+        return AsyncFdWriteFuture{ fd: self.fd, data: data, count: count };
     }
 
-    fn flush(self: &Self) !Future<usize> {
+    fn flush(self: &Self) Future<!usize> {
         _ = self;
-        return Future<usize>{ state: Poll<usize>.Ready(0) };
+        return future_ready_ok_usize(0);
     }
 
-    fn read(self: &Self, buf: &byte, count: usize) !Future<usize> {
-        const n: isize = try sys_read(self.fd, buf as *byte, count);
-        return Future<usize>{ state: Poll<usize>.Ready(n as usize) };
+    fn read(self: &Self, buf: &byte, count: usize) Future<!usize> {
+        return AsyncFdReadFuture{ fd: self.fd, buf: buf, count: count };
     }
 }
 

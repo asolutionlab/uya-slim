@@ -2,22 +2,76 @@
 
 use std.async;
 use std.testing.assert_eq_i32;
+use libc.syscall;
+
+error UnexpectedPending;
+error ExpectedPending;
+error AsyncFdFailed;
+error PipeCreateFailed;
+error PipeWriteFailed;
 
 fn test_async_fd_write() !void {
     const STDOUT: i32 = 1;
     var af: AsyncFd = async_fd_new(STDOUT);
     var buf: [byte: 4] = [ 65, 66, 67, 68 ];
-    const f: Future<usize> = try af.write(&buf[0] as &const byte, 4);
+    const f: Future<!usize> = af.write(&buf[0] as &const byte, 4);
     const wk: Waker = Waker{};
-    const p: Poll<usize> = f.poll(&wk);
+    const p: Poll<!usize> = f.poll(&wk);
     var result: usize = 0;
     match p {
-        .Ready(n) => { result = n; },
-        .Pending(_) => { },
+        .Ready(n) => { result = n catch { return error.AsyncFdFailed; }; },
+        .Pending(_) => { return error.UnexpectedPending; },
     };
     try assert_eq_i32(result as i32, 4);
 }
 
+fn test_async_fd_read_pending_then_ready() !void {
+    var fds: [i32: 2] = [];
+    _ = sys_pipe2(&fds[0], O_NONBLOCK) catch {
+        return error.PipeCreateFailed;
+    };
+    const read_fd: i32 = fds[0];
+    const write_fd: i32 = fds[1];
+
+    var af: AsyncFd = async_fd_new(read_fd);
+    var buf: [byte: 8] = [];
+    const f: Future<!usize> = af.read(&buf[0], 4);
+    const wk: Waker = Waker{};
+
+    const first_poll: Poll<!usize> = f.poll(&wk);
+    var saw_pending: i32 = 0;
+    match first_poll {
+        .Ready(_) => { saw_pending = 0; },
+        .Pending(_) => { saw_pending = 1; },
+    };
+    try assert_eq_i32(saw_pending, 1);
+
+    var src: [byte: 4] = [ 10, 20, 30, 40 ];
+    const written: isize = sys_write(write_fd, &src[0] as *const byte, 4) catch {
+        return error.PipeWriteFailed;
+    };
+    try assert_eq_i32(written as i32, 4);
+
+    const second_poll: Poll<!usize> = f.poll(&wk);
+    var read_count: usize = 0;
+    match second_poll {
+        .Ready(value) => { read_count = value catch { return error.AsyncFdFailed; }; },
+        .Pending(_) => { return error.UnexpectedPending; },
+    };
+    try assert_eq_i32(read_count as i32, 4);
+    try assert_eq_i32(buf[0] as i32, 10);
+    try assert_eq_i32(buf[1] as i32, 20);
+    try assert_eq_i32(buf[2] as i32, 30);
+    try assert_eq_i32(buf[3] as i32, 40);
+
+    _ = sys_close(read_fd);
+    _ = sys_close(write_fd);
+}
+
 test "async_fd_write_returns_ready" {
     try test_async_fd_write();
+}
+
+test "async_fd_read_returns_pending_on_eagain_then_ready" {
+    try test_async_fd_read_pending_then_ready();
 }

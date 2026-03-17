@@ -52,6 +52,7 @@ export const SYS_gettimeofday: i64 = 96;
 
 // 文件控制
 export const SYS_fcntl: i64 = 72;
+export const SYS_pipe2: i64 = 293;
 
 // 用户/组
 export const SYS_getuid: i64 = 102;
@@ -466,6 +467,13 @@ export fn sys_ioctl(fd: i32, request: i64, arg: i64) !i32 {
 // 返回：成功返回 0，失败返回 -1
 export fn sys_fcntl(fd: i32, cmd: i32, arg: i32) !i32 {
     return @syscall(SYS_fcntl, fd as i64, cmd as i64, arg as i64) as! i32;
+}
+
+// sys_pipe2 - 创建管道
+// pipefd: 指向 2 个 i32 的数组首元素，返回 [read_fd, write_fd]
+// flags: 管道标志（如 O_NONBLOCK）
+export fn sys_pipe2(pipefd: &i32, flags: i32) !i32 {
+    return @syscall(SYS_pipe2, pipefd as i64, flags as i64) as! i32;
 }
 
 // ============================================================
