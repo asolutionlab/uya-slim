@@ -420,7 +420,7 @@ Uya的"坚如磐石"设计哲学带来以下不可动摇的收益：
   defer errdefer try catch error null interface atomic union
   export use
   ```
-- **内置函数**：所有内置函数均以 `@` 开头，无需导入。包括：`@size_of(T)`、`@align_of(T)`、`@len(a)`（数组长度）、`@max`、`@min`（整数类型极值，类型由上下文推断）。
+- **内置函数**：所有内置函数均以 `@` 开头，无需导入。包括：`@size_of(T)`、`@align_of(T)`、`@len(a)`（数组长度）、`@max`、`@min`（整数类型极值，类型由上下文推断）、`@error_id(err)`（提取错误值的数值 ID）。
 - 标识符 `[A-Za-z_][A-Za-z0-9_]*`，区分大小写。
 - 数值字面量：
   - 整数字面量：
@@ -2624,6 +2624,7 @@ bin/uya-c --c99 app.uya lib/std/runtime/entry/entry.uya -o app.c
   - catch 块中可以判断错误类型并做不同处理
   - 错误类型不能直接打印，需要通过模式匹配处理
   - 支持预定义错误和运行时错误的混合比较：`if err == error.PredefinedError || err == error.RuntimeError { ... }`
+  - 可通过 `@error_id(err)` 读取错误值的数值 ID；对 `@syscall` 失败路径，该 ID 等于底层 errno 值
   
 **错误处理设计哲学**：
 - **编译期检查**：错误处理是编译期检查，编译器在当前函数内验证错误处理
@@ -4370,6 +4371,7 @@ fn caller() void {
 | `@len` | `fn @len(a: [T: N]) i32` | 返回数组元素个数 `N`（编译期常量） |
 | `@size_of` | `fn @size_of(T) i32` | 返回类型 `T` 的字节大小（编译期常量） |
 | `@align_of` | `fn @align_of(T) i32` | 返回类型 `T` 的对齐字节数（编译期常量） |
+| `@error_id` | `fn @error_id(err: error) u32` | 提取错误值的数值 ID；可用于检查 `@syscall` 返回的 errno |
 | `@max` | 上下文推断 | 整数类型最大值（编译期常量） |
 | `@min` | 上下文推断 | 整数类型最小值（编译期常量） |
 | `@va_start` | `@va_start(&ap, last)` | 可变参数函数内初始化 va_list（编译时展开为 C 宏） |

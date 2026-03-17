@@ -685,6 +685,12 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             }
         }
         return 1;
+    } else if node.type == ASTNodeType.AST_ERROR_ID {
+        if node.error_id_operand != null {
+            checker_check_node(checker, node.error_id_operand);
+        }
+        _ = checker_infer_type(checker, node);
+        return 1;
     } else if node.type == ASTNodeType.AST_VA_START || node.type == ASTNodeType.AST_VA_END || node.type == ASTNodeType.AST_VA_ARG {
         // 必须调用 checker_infer_type 以触发可变参数函数内校验
         checker_infer_type(checker, node);
@@ -706,7 +712,33 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         if node.catch_expr_operand != null {
             checker_check_node(checker, node.catch_expr_operand);
         }
-        if node.catch_expr_catch_block != null {
+        if node.catch_expr_err_name != null {
+            var err_type: Type = Type {
+                kind: TypeKind.TYPE_ERROR, enum_name: null, struct_name: null, pointer_to: null,
+                is_ffi_pointer: 0, element_type: null, array_size: 0, slice_element_type: null,
+                slice_len: 0, tuple_element_types: null, tuple_count: 0,
+                error_union_payload_type: null, error_error_id: 0
+            };
+            checker_enter_scope(checker);
+            const sym: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+            if sym != null {
+                sym.name = node.catch_expr_err_name;
+                sym.type = err_type;
+                sym.is_const = 1;
+                sym.is_initialized = 1;
+                sym.scope_level = checker.scope_level;
+                sym.line = node.line;
+                sym.column = node.column;
+                sym.pointee_of = null;
+                sym.pointer_known_length = -1;
+                sym.pointer_length_param = null;
+                symbol_table_insert(checker, sym);
+            }
+            if node.catch_expr_catch_block != null {
+                checker_check_node(checker, node.catch_expr_catch_block);
+            }
+            checker_exit_scope(checker);
+        } else if node.catch_expr_catch_block != null {
             checker_check_node(checker, node.catch_expr_catch_block);
         }
         return 1;

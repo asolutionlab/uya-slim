@@ -1169,6 +1169,8 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         return ("int32_t" as *byte) as &byte;
     } else if expr.type == ASTNodeType.AST_SYSCALL {
         return ("struct err_union_int64_t" as *byte) as &byte;
+    } else if expr.type == ASTNodeType.AST_ERROR_ID {
+        return ("uint32_t" as *byte) as &byte;
     } else if expr.type == ASTNodeType.AST_AWAIT_EXPR {
         // @await expr：在 checker 已推断为 !T；codegen 侧用 expected_type 得到 payload 的 C 类型
         if codegen.expected_type != null {

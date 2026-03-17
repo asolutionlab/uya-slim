@@ -130,6 +130,7 @@ enum ASTNodeType {
     AST_SYSCALL,        // @syscall(nr, arg1, ..., arg6) - 系统调用
     AST_PTR_FROM_USIZE, // @ptr_from_usize(value) - 从 usize 转换为指针
     AST_USIZE_FROM_PTR, // @usize_from_ptr(ptr) - 从指针转换为 usize
+    AST_ERROR_ID,       // @error_id(err) - 提取错误值的数值 ID
     AST_VA_START,       // @va_start(ap, last) - 可变参数函数内初始化 va_list
     AST_VA_END,        // @va_end(ap) - 结束 va_list 访问
     AST_VA_ARG,        // @va_arg(ap, Type) - 从 va_list 按类型获取下一个参数
@@ -410,6 +411,8 @@ struct ASTNode {
     ptr_from_usize_value: &ASTNode,  // usize 值表达式
     // usize_from_ptr_expr
     usize_from_ptr_ptr: &ASTNode,    // 指针表达式
+    // error_id_expr
+    error_id_operand: &ASTNode,      // 错误表达式
     // va_start_expr
     va_start_ap: &ASTNode,
     va_start_last_param: &ASTNode,
@@ -643,6 +646,7 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.syscall_arg_count = 0;
     node.ptr_from_usize_value = null;
     node.usize_from_ptr_ptr = null;
+    node.error_id_operand = null;
     node.va_start_ap = null;
     node.va_start_last_param = null;
     node.va_end_ap = null;

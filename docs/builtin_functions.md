@@ -1,8 +1,8 @@
 # Uya 内置函数使用文档
 
-> 版本：v0.46（2026-02-19）  
+> 版本：v0.48（2026-03-17）  
 > 此文档为 uya.md 的详细补充说明  
-> 语言规范：0.46  
+> 语言规范：0.48  
 > 所有内置函数均以 `@` 开头，编译期展开，零运行时开销，无需导入或声明
 
 ---
@@ -27,6 +27,7 @@
   - [@va_start](#va_start)
   - [@va_end](#va_end)
   - [@va_arg](#va_arg)
+  - [@va_copy](#va_copy)
 - [5. 宏编译时函数](#5-宏编译时函数)
   - [@mc_eval](#mc_eval)
   - [@mc_type](#mc_type)
@@ -34,15 +35,17 @@
   - [@mc_code](#mc_code)
   - [@mc_error](#mc_error)
   - [@mc_get_env](#mc_get_env)
-- [6. 调试打印函数](#6-调试打印函数)
+- [6. 错误处理函数](#6-错误处理函数)
+  - [@error_id](#error_id)
+- [7. 调试打印函数](#7-调试打印函数)
   - [@print](#print)
   - [@println](#println)
-- [7. 异步编程函数](#7-异步编程函数)
+- [8. 异步编程函数](#8-异步编程函数)
   - [@async_fn](#async_fn)
   - [@await](#await)
-- [8. 裸函数属性](#8-裸函数属性)
+- [9. 裸函数属性](#9-裸函数属性)
   - [@naked_fn](#naked_fn)
-- [9. 内联汇编函数](#9-内联汇编函数)
+- [10. 内联汇编函数](#10-内联汇编函数)
   - [@asm](#asm)
 
 ---
@@ -988,7 +991,61 @@ mc get_build_env() *byte {
 
 ---
 
-## 6. 调试打印函数
+## 6. 错误处理函数
+
+### @error_id
+
+**函数签名**：
+```uya
+fn @error_id(err: error) u32
+```
+
+**功能描述**：
+提取错误值的数值 ID。对语言级错误值（如 `error.NamedFailure`）返回编译器分配的错误 ID；对 `@syscall` 失败路径捕获到的错误值，返回底层 errno 数值。
+
+**参数**：
+- `err`：`error` 类型表达式
+
+**返回值**：
+- `u32` 类型，表示错误值的数值 ID
+
+**使用示例**：
+```uya
+use libc.ENOENT;
+
+error NamedFailure;
+
+const SYS_open: i64 = 2;
+const O_RDONLY: i64 = 0;
+
+fn open_missing_file_errno() !u32 {
+    const path: *byte = "/nonexistent";
+    const result: !i64 = @syscall(SYS_open, path as i64, O_RDONLY, 0);
+    _ = result catch |err| {
+        return @error_id(err);
+    };
+    return 0;
+}
+
+fn main() i32 {
+    const named_id: u32 = @error_id(error.NamedFailure);
+    const errno_id: u32 = open_missing_file_errno() catch { return 1; };
+
+    if named_id == 0 || errno_id != ENOENT as u32 {
+        return 2;
+    }
+    return 0;
+}
+```
+
+**注意事项**：
+- 参数必须是 `error` 类型，不能直接传 `!T`；若手里是错误联合值，需先 `catch |err|` 或 `match` 取出错误值
+- 当参数是 `error.NamedFailure` 这类错误字面量时，可直接用于记录或比较对应 ID
+- 当参数来自 `@syscall` 的错误路径时，可直接与 `libc.EAGAIN`、`libc.ENOENT` 等 errno 常量比较
+
+---
+
+## 7. 调试打印函数
 
 ### @print
 
@@ -1184,9 +1241,9 @@ fn main() i32 {
 
 ---
 
-## 7. 异步编程函数
+## 8. 异步编程函数
 
-> **状态**：语法解析已实现，CPS 变换和状态机生成待实现  
+> **状态**：最小闭环已实现（`@async_fn` / `@await`、`Poll/Future/Waker`、`block_on`、最小 `Scheduler`）；状态机大小编译期布局与完整运行时待完善  
 > **参考**：规范 §18 异步编程
 
 ### @async_fn
@@ -1246,7 +1303,7 @@ try @await future_expr
 
 ---
 
-## 8. 裸函数属性
+## 9. 裸函数属性
 
 ### @naked_fn
 
@@ -1349,7 +1406,7 @@ __attribute__((naked)) int32_t setjmp(jmp_buf* env) {
 
 ---
 
-## 9. 内联汇编函数
+## 10. 内联汇编函数
 
 > **状态**：设计完成，实现中  
 > **参考**：规范 §19 内联汇编
@@ -1546,7 +1603,7 @@ fn unsafe_fetch_add(ptr: &i32, value: i32) i32 {
 
 ---
 
-## 10. 内置函数分类总结
+## 11. 内置函数分类总结
 
 | 分类 | 函数 | 编译期 | 运行时 | 状态 |
 |------|------|--------|--------|------|
@@ -1565,22 +1622,24 @@ fn unsafe_fetch_add(ptr: &i32, value: i32) i32 {
 | | `@va_start` | ✓ | - | 📋 规范支持 |
 | | `@va_end` | ✓ | - | 📋 规范支持 |
 | | `@va_arg` | ✓ | - | 📋 规范支持 |
+| | `@va_copy` | ✓ | - | 📋 规范支持 |
 | **宏系统** | `@mc_eval` | ✓ | - | 🚧 语法解析完成 |
 | | `@mc_type` | ✓ | - | 🚧 语法解析完成 |
 | | `@mc_ast` | ✓ | - | 🚧 语法解析完成 |
 | | `@mc_code` | ✓ | - | 🚧 语法解析完成 |
 | | `@mc_error` | ✓ | - | 🚧 语法解析完成 |
 | | `@mc_get_env` | ✓ | - | 🚧 语法解析完成 |
+| **错误处理** | `@error_id` | ✓ | ✓ | ✅ 已实现 |
 | **调试打印** | `@print` | - | ✓ | ✅ 已实现 |
 | | `@println` | - | ✓ | ✅ 已实现 |
-| **异步编程** | `@async_fn` | ✓ | ✓ | 🚧 语法解析完成 |
-| | `@await` | ✓ | ✓ | 🚧 语法解析完成 |
+| **异步编程** | `@async_fn` | ✓ | ✓ | 🚧 最小闭环已实现 |
+| | `@await` | ✓ | ✓ | 🚧 最小闭环已实现 |
 | **裸函数** | `@naked_fn` | ✓ | - | ✅ 已实现 |
 | **内联汇编** | `@asm` | ✓ | - | 📋 规范支持 |
 
 ---
 
-## 11. 命名惯例
+## 12. 命名惯例
 
 Uya 内置函数遵循以下命名惯例：
 
@@ -1588,8 +1647,8 @@ Uya 内置函数遵循以下命名惯例：
    - `@len`, `@max`, `@min`
 
 2. **复合概念**：使用 snake_case（下划线分隔）
-   - `@size_of`, `@align_of`, `@async_fn`
-   - `@va_start`, `@va_end`, `@va_arg`（可变参数栈访问）
+   - `@size_of`, `@align_of`, `@error_id`, `@async_fn`
+   - `@va_start`, `@va_end`, `@va_arg`, `@va_copy`（可变参数栈访问）
    - `@src_name`, `@src_path`, `@src_line`, `@src_col`, `@func_name`
    - `@mc_eval`, `@mc_type`, `@mc_ast`, `@mc_code`, `@mc_error`, `@mc_get_env`
 
@@ -1599,22 +1658,22 @@ Uya 内置函数遵循以下命名惯例：
 
 ---
 
-## 12. 性能保证
+## 13. 性能保证
 
 所有内置函数遵循 Uya 的零成本抽象原则：
 
 | 类别 | 性能保证 |
 |------|----------|
-| **编译期展开** | `@size_of`, `@align_of`, `@len(数组)`, `@max`, `@min`, `@src_*`, `@func_name`, `@va_start`, `@va_end`, `@va_arg` |
+| **编译期展开** | `@size_of`, `@align_of`, `@len(数组)`, `@max`, `@min`, `@src_*`, `@func_name`, `@va_start`, `@va_end`, `@va_arg`, `@va_copy`, `@error_id(error.X)` |
 | **零运行时开销** | 上述函数在编译时完全求值或展开为 C 宏 |
-| **运行时访问** | `@len(切片)` → 访问切片的 `.len` 字段（一次内存访问） |
-| **可变参数** | `@params` → 零抽象开销，直接映射到 C va_list；`@va_start`/`@va_end`/`@va_arg` → 展开为 C 宏 |
+| **运行时访问** | `@len(切片)` → 访问切片的 `.len` 字段；`@error_id(err)` → 读取错误值的 `.error_id` 字段 |
+| **可变参数** | `@params` → 零抽象开销，直接映射到 C va_list；`@va_start`/`@va_end`/`@va_arg`/`@va_copy` → 展开为 C 宏 |
 
 ---
 
-## 13. 常见使用模式
+## 14. 常见使用模式
 
-### 10.1 调试和日志
+### 14.1 调试和日志
 
 ```uya
 extern printf(fmt: *byte, ...) i32;
@@ -1635,7 +1694,7 @@ fn main() i32 {
 }
 ```
 
-### 10.2 断言实现
+### 14.2 断言实现
 
 ```uya
 extern printf(fmt: *byte, ...) i32;
@@ -1664,7 +1723,7 @@ fn main() i32 {
 }
 ```
 
-### 10.3 泛型容器大小计算
+### 14.3 泛型容器大小计算
 
 ```uya
 struct Buffer<T> {
@@ -1685,10 +1744,11 @@ fn buffer_info<T>() void {
 
 ---
 
-## 14. 版本历史
+## 15. 版本历史
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v0.48 | 2026-03-17 | 新增错误处理内置函数：`@error_id`；同步异步与 errno 读取说明 |
 | v0.47 | 2026-03-03 | 新增裸函数属性：`@naked_fn` |
 | v0.46 | 2026-02-19 | 新增调试打印函数：`@print`、`@println` |
 | v0.45 | 2026-02-15 | 与 uya.md 同步，添加详细函数说明 |
@@ -1698,7 +1758,7 @@ fn buffer_info<T>() void {
 
 ---
 
-## 15. 参考文档
+## 16. 参考文档
 
 - [Uya 语言规范](uya.md) - 完整语言规范
 - [语法速查](grammar_quick.md) - 语法速查手册
@@ -1707,5 +1767,5 @@ fn buffer_info<T>() void {
 
 ---
 
-**本文档由 Uya 编译器团队维护，最后更新：2026-02-19**
+**本文档由 Uya 编译器团队维护，最后更新：2026-03-17**
 

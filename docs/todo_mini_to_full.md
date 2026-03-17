@@ -893,7 +893,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 结构体含泛型 union 字段时 codegen 先输出 union 单态（如 `Poll_i32`），并用 arena 持久化 tagged 名避免重定义
   - [x] 测试：`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya`、`test_async_await_ready.uya`、`test_async_nested.uya` 通过 `--c99` 与 `--uya --c99`
   - [~] `std.async.task` 模块：`Task<T>` / `task_ready` 已在 `async.uya` 落地，后续再拆分/扩展
-  - [~] `std.async.io` 模块：`AsyncWriter`, `AsyncReader` 接口 + `MemAsyncWriter`、`MemAsyncReader`、`AsyncFd`（同步实现；`test_async_io.uya`、`test_async_fd.uya`、`test_async_copy.uya` 已覆盖，非阻塞 EAGAIN 待扩展）
+  - [~] `std.async.io` 模块：`AsyncWriter`, `AsyncReader` 接口 + `MemAsyncWriter`、`MemAsyncReader`、`AsyncFd`（同步实现；`test_async_io.uya`、`test_async_fd.uya`、`test_async_copy.uya` 已覆盖；语言层已提供 `@error_id(err)` 读取 syscall errno，非阻塞 `EAGAIN -> Pending` 接线待扩展）
   - [x] `std.async.event` 模块：`EventLoop`（epoll/kqueue/IOCP）
     - [x] epoll 系统调用层：`lib/syscall/linux.uya` 与 `lib/libc/syscall.uya` 已添加 `SYS_epoll_*`、`EpollEvent`、`EPOLLET`、`sys_epoll_create1`/`sys_epoll_ctl`/`sys_epoll_wait`；`test_epoll_syscall.uya` 通过 `--c99` 与 `--uya --c99`
     - [x] `lib/std/async_event.uya`：`EventKind`、`interface EventLoop`、`struct LinuxEpoll : EventLoop`（`use libc.syscall`）
@@ -961,6 +961,8 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 - [x] **@size_of/@align_of**：保持（以 @ 开头），支持基础类型、数组、结构体、切片等类型集合（规范 uya.md §16）
 - [x] **@len**：扩展至切片等，规范 uya.md §16  
   **C 实现（已完成）**：Checker 支持数组（TYPE_ARRAY）和切片（TYPE_SLICE）类型；Codegen 对切片表达式生成 `.len` 访问，对切片字段也支持 `.len` 访问。测试 test_slice.uya 通过 `--c99`。**uya-src 已同步**：checker.uya、codegen/c99/expr.uya。通过 `--uya --c99`。
+- [x] **@error_id**：读取 `error` 值的数值 ID，可用于 `@syscall` 失败路径的 errno 判定（规范 uya.md §16）
+  **C 实现（已完成）**：Lexer/AST/Parser/Checker/Codegen 已新增 `@error_id(err)`；支持 `error.NamedFailure` 字面量与 `catch |err|` 绑定值；对 `@syscall` 失败路径返回 errno 数值。测试 `test_error_id_builtin.uya` 通过 `--c99` 与 `--uya --c99`，完整 `make check` 通过。
 - [x] **@src_name/@src_path/@src_line/@src_col/@func_name 内置函数**：源代码位置信息和函数名（v0.2.31 已完成）
   - [x] Lexer：识别新内置函数（C 实现与 uya-src 已同步）
   - [x] AST：添加 AST_SRC_NAME/AST_SRC_PATH/AST_SRC_LINE/AST_SRC_COL/AST_FUNC_NAME 节点（C 实现与 uya-src 已同步）
@@ -969,7 +971,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] Codegen：生成字符串常量或整数常量，@func_name 从 current_function_decl 获取函数名；字符串常量自动去重优化（C 实现与 uya-src 已同步）
   - [x] 测试用例：test_src_location.uya、test_func_name_simple.uya（C 版 `--c99` 和自举版 `--uya --c99` 均通过）
   - [x] 自举对比：C 编译器与自举编译器生成的 C 文件完全一致
-  - [x] 完整文档：`docs/builtin_functions.md`（972 行，包含 18 个内置函数详细说明）
+  - [x] 完整文档：`docs/builtin_functions.md`（已同步 `@error_id`、异步内置最新状态与内置函数总览）
 - [x] **忽略标识符 _**：用于忽略返回值、解构、match，规范 uya.md §3
 
 **忽略标识符 _（已实现）**：Parser 在 primary_expr 中当标识符为 `_` 时生成 AST_UNDERSCORE；解构中 `_` 已支持（names 含 `"_"` 时 checker/codegen 跳过）。Checker：`_ = expr` 仅检查右侧；禁止 `var _`、参数 `_`；infer_type 对 AST_UNDERSCORE 报错「不能引用 _」。Codegen：`_ = expr` 语句生成 `(void)(expr);`，表达式生成 `(expr)`。测试 `test_underscore.uya` 通过 `--c99`；uya-src 已同步，自举编译通过。
@@ -1070,7 +1072,7 @@ test "函数调用测试" {
 
 ### 测试覆盖统计
 
-**当前状态**：559 个测试任务，全部通过
+**当前状态**：560 个测试任务，全部通过
 
 | 类别 | 数量 | 说明 |
 |------|------|------|
@@ -1100,7 +1102,7 @@ test "函数调用测试" {
 | **字符串插值** | `test_string_interp*.uya` | ${} 语法 |
 | **内存安全证明** | `test_path_*.uya`, `test_proof*.uya` | 约束证明、符号执行 |
 | **导出与 FFI** | `test_export*.uya`, `test_ffi*.uya`, `test_extern*.uya` | export、extern、FFI |
-| **内建函数** | `test_print*.uya`, `test_src_location.uya`, `test_len*.uya` | @print、@src_*、@len |
+| **内建函数** | `test_print*.uya`, `test_src_location.uya`, `test_len*.uya`, `test_error_id_builtin.uya` | @print、@src_*、@len、@error_id |
 
 ### 测试程序约定
 
@@ -2546,7 +2548,7 @@ interface IReadWriter {
 
 **开发质量（2/2 完成）**：
 - ✅ 消灭所有警告（编译器代码与生成代码）
-- ✅ 完整自举（C 实现与 uya-src 完全同步，559 个测试任务全部通过）
+- ✅ 完整自举（C 实现与 uya-src 完全同步，560 个测试任务全部通过）
 
 ### 部分完成的特性（1 项）
 
@@ -2777,4 +2779,4 @@ interface IReadWriter {
 
 ---
 
-*文档版本：v0.5.9（2026-03-17），559 个测试任务全部通过，内存安全证明已完成；异步最小闭环已打通：`Future<!T>` 主路径、单/多 `@await` 状态机、`Poll/Future/Waker`、`std.async` / `std.async_event` / `std.async_channel` / `std.async_scheduler` 基础实现均已落地，其中 `std.async.channel` 已包含 `Channel_i32` 与最小 `MpscChannel_i32`。*
+*文档版本：v0.5.9（2026-03-17），560 个测试任务全部通过，内存安全证明已完成；异步最小闭环已打通：`Future<!T>` 主路径、单/多 `@await` 状态机、`Poll/Future/Waker`、`std.async` / `std.async_event` / `std.async_channel` / `std.async_scheduler` 基础实现均已落地，其中 `std.async.channel` 已包含 `Channel_i32` 与最小 `MpscChannel_i32`。*

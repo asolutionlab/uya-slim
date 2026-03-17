@@ -16,8 +16,38 @@ fn two_awaits() Future<!i32> {
     return a + b;
 }
 
+var block_on_reset_poll_count: i32 = 0;
+
+struct WakeThenCheckReset : Future<!i32> {
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        _ = self;
+        if block_on_reset_poll_count == 0 {
+            block_on_reset_poll_count = block_on_reset_poll_count + 1;
+            waker.wake();
+            return Poll<!i32>.Pending({});
+        }
+        block_on_reset_poll_count = block_on_reset_poll_count + 1;
+        if waker.is_woken() {
+            return Poll<!i32>.Ready(ok<i32>(0 - 1));
+        }
+        return Poll<!i32>.Ready(ok<i32>(7));
+    }
+}
+
+fn wake_then_check_reset_future() Future<!i32> {
+    return WakeThenCheckReset{};
+}
+
 test "block_on_runs_until_ready" {
     const f: Future<!i32> = two_awaits();
     const result: i32 = block_on_i32(f) catch { 0 - 1; };
     try assert_eq_i32(result, 3);
+}
+
+test "block_on_resets_waker_between_polls" {
+    block_on_reset_poll_count = 0;
+    const f: Future<!i32> = wake_then_check_reset_future();
+    const result: i32 = block_on_i32(f) catch { 0 - 2; };
+    try assert_eq_i32(result, 7);
+    try assert_eq_i32(block_on_reset_poll_count, 2);
 }

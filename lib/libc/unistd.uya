@@ -115,6 +115,7 @@ export extern "libc" fn execve(pathname: &const byte, argv: & &byte, envp: & &by
     const result: !i64 = @syscall(SYS_execve, pathname as i64, argv as i64, envp as i64);
     result catch {
         errno = ENOENT;
+        return 0 - 1;
     };
     return 0 - 1; // 执行成功不会返回
 }

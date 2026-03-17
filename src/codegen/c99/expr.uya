@@ -605,6 +605,20 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             gen_expr(codegen, expr.usize_from_ptr_ptr);
         }
         fputc(41, codegen.output as *void);  // ')'
+    } else if expr.type == ASTNodeType.AST_ERROR_ID {
+        // @error_id(err) 提取错误值的数值 ID。
+        const operand: &ASTNode = expr.error_id_operand;
+        if operand == null {
+            fputs("0U" as *byte, codegen.output as *void);
+        } else if operand.type == ASTNodeType.AST_ERROR_VALUE {
+            fputs("((uint32_t)(" as *byte, codegen.output as *void);
+            gen_expr(codegen, operand);
+            fputs("))" as *byte, codegen.output as *void);
+        } else {
+            fputs("((uint32_t)((" as *byte, codegen.output as *void);
+            gen_expr(codegen, operand);
+            fputs(").error_id))" as *byte, codegen.output as *void);
+        }
     } else if expr.type == ASTNodeType.AST_SIZEOF {
         gen_sizeof_expr(codegen, expr);
         } else if expr.type == ASTNodeType.AST_LEN {

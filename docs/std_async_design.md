@@ -52,6 +52,10 @@ std/async/
 - 在 `@async_fn` 中调用同步 `std.io` 方法虽然语法合法，但会**阻塞当前任务**
 - 异步场景应使用 `std.async.io` 中的 `AsyncWriter` / `AsyncReader`
 
+**当前现状补充**：
+- 语言层已提供 `@error_id(err)`，可读取 `@syscall` 失败路径的 errno 数值
+- 因此 `AsyncFd` 的 `EAGAIN` / `EWOULDBLOCK` 判定已可在 Uya 层完成，后续主要剩余 Future 状态与事件循环接线
+
 ### 核心接口
 
 - [ ] **AsyncWriter 接口**：统一的异步输出抽象

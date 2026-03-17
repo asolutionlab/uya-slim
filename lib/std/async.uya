@@ -78,8 +78,9 @@ export fn task_ready_ok_i32(value: i32) Task<!i32> {
 
 /// 同步运行 Future<!T> 直到 Ready，返回 !T。Pending 时轮询直到就绪（忙等待，测试用）。
 export fn block_on<T>(f: Future<!T>) !T {
-    const w: Waker = Waker{};
+    var w: Waker = Waker{};
     while true {
+        w.reset();
         const p: Poll<!T> = f.poll(&w);
         match p {
             .Ready(ok_val) => { return ok_val; },
@@ -90,8 +91,9 @@ export fn block_on<T>(f: Future<!T>) !T {
 
 /// block_on 的 i32 特化，便于无需显式泛型参数的调用。
 export fn block_on_i32(f: Future<!i32>) !i32 {
-    const w: Waker = Waker{};
+    var w: Waker = Waker{};
     while true {
+        w.reset();
         const p: Poll<!i32> = f.poll(&w);
         match p {
             .Ready(ok_val) => { return ok_val; },
@@ -102,8 +104,9 @@ export fn block_on_i32(f: Future<!i32>) !i32 {
 
 /// block_on 的 usize 特化。
 export fn block_on_usize(f: Future<!usize>) !usize {
-    const w: Waker = Waker{};
+    var w: Waker = Waker{};
     while true {
+        w.reset();
         const p: Poll<!usize> = f.poll(&w);
         match p {
             .Ready(ok_val) => { return ok_val; },
@@ -114,8 +117,9 @@ export fn block_on_usize(f: Future<!usize>) !usize {
 
 /// block_on 的 Future<usize> 特化（无错误传播，直接返回 usize）。
 export fn block_on_usize_plain(f: Future<usize>) usize {
-    const w: Waker = Waker{};
+    var w: Waker = Waker{};
     while true {
+        w.reset();
         const p: Poll<usize> = f.poll(&w);
         match p {
             .Ready(n) => { return n; },
