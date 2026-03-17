@@ -2,11 +2,16 @@
 //
 // 模块路径：use std.async_scheduler
 // 设计见 docs/std_async_design.md 阶段 5（std.async.scheduler）。
-// 当前为最小实现：既支持 block_on 包装，也支持在 Pending 时驱动 EventLoop.poll()。
-// 后续仍需补齐真正的任务队列、Waker 唤醒与多任务调度。
+// 当前已支持 block_on 包装、单任务 EventLoop 驱动、双任务共享 EventLoop，
+// 以及固定容量 TaskQueue_i32 的共享 EventLoop 多任务轮询。
+// 后续仍需补齐通用泛型任务队列、更完整的 Waker 唤醒与多任务调度。
 
 use std.async;
 use std.async_event;
+
+error TaskQueueFull;
+
+export const TASK_QUEUE_I32_CAPACITY: i32 = 8;
 
 fn scheduler_event_kind_from_waker(w: &Waker) EventKind {
     const interest: i32 = w.io_interest_code();
@@ -17,6 +22,103 @@ fn scheduler_event_kind_from_waker(w: &Waker) EventKind {
         return EventKind.Writable({});
     }
     return EventKind.ReadWrite({});
+}
+
+fn scheduler_registered_fd_contains(registered_fds: &i32, registered_count: i32, fd: i32) bool {
+    var i: i32 = 0;
+    while i < registered_count {
+        if registered_fds[i] == fd {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn scheduler_register_waker_interest(loop: EventLoop, w: &Waker, registered_fds: &i32, registered_count: &i32) !i32 {
+    if !w.has_io_interest() {
+        return 0;
+    }
+
+    const fd: i32 = w.io_fd();
+    const interest: EventKind = scheduler_event_kind_from_waker(w);
+    const reg_result: !i32 = loop.register(fd, interest, w);
+    _ = reg_result catch {
+        return reg_result as! i32;
+    };
+
+    if scheduler_registered_fd_contains(registered_fds, *registered_count, fd) {
+        return 1;
+    }
+    if *registered_count < 0 || *registered_count >= 8 {
+        return 0;
+    }
+    registered_fds[*registered_count] = fd;
+    *registered_count = *registered_count + 1;
+    return 1;
+}
+
+fn scheduler_deregister_registered_fds(loop: EventLoop, registered_fds: &i32, registered_count: i32) !i32 {
+    var i: i32 = 0;
+    while i < registered_count {
+        const dereg_result: !i32 = loop.deregister(registered_fds[i]);
+        _ = dereg_result catch {
+            return dereg_result as! i32;
+        };
+        i = i + 1;
+    }
+    return 0;
+}
+
+export struct TaskQueueSlot_i32 {
+    future: Future<!i32>,
+    waker: Waker,
+    active: i32,
+    done: i32,
+    result: i32,
+}
+
+export struct TaskQueue_i32 {
+    len: i32,
+    slots: [TaskQueueSlot_i32: 8] = [],
+
+    fn push(self: &Self, f: Future<!i32>) !i32 {
+        if self.len >= TASK_QUEUE_I32_CAPACITY {
+            return error.TaskQueueFull;
+        }
+
+        const idx: i32 = self.len;
+        if idx < 0 || idx >= 8 {
+            return error.TaskQueueFull;
+        }
+        self.slots[idx as usize] = TaskQueueSlot_i32{
+            future: f,
+            waker: Waker{},
+            active: 1,
+            done: 0,
+            result: 0,
+        };
+        self.len = idx + 1;
+        return idx;
+    }
+
+    fn result(self: &Self, idx: i32) i32 {
+        if idx < 0 || idx >= self.len || idx >= 8 {
+            return 0;
+        }
+        return self.slots[idx as usize].result;
+    }
+
+    fn is_done(self: &Self, idx: i32) bool {
+        if idx < 0 || idx >= self.len || idx >= 8 {
+            return false;
+        }
+        return self.slots[idx as usize].done != 0;
+    }
+}
+
+export fn task_queue_i32_new() TaskQueue_i32 {
+    return TaskQueue_i32{ len: 0 };
 }
 
 /// 调度器。当前为单任务最小实现；后续可扩展为持有队列与 EventLoop 的完整运行时。
@@ -159,4 +261,164 @@ export fn scheduler_run_usize_with_event_loop(self: &Scheduler, loop: EventLoop,
             },
         };
     }
+}
+
+/// 使用共享 EventLoop 运行两个 i32 任务，直到二者都完成。
+/// 这是迈向通用任务队列前的最小多任务入口，可验证单轮统一注册/轮询/唤醒。
+export fn scheduler_run_pair_i32_with_event_loop(self: &Scheduler, loop: EventLoop, first: Future<!i32>, second: Future<!i32>, first_result: &i32, second_result: &i32, timeout_ms: i32) !i32 {
+    _ = self;
+    var first_done: i32 = 0;
+    var second_done: i32 = 0;
+    var first_waker: Waker = Waker{};
+    var second_waker: Waker = Waker{};
+
+    while first_done == 0 || second_done == 0 {
+        var registered_fds: [i32: 2] = [];
+        var registered_count: i32 = 0;
+        var made_progress: i32 = 0;
+        var any_pending: i32 = 0;
+
+        if first_done == 0 {
+            first_waker.reset();
+            first_waker.clear_io_interest();
+            const first_poll: Poll<!i32> = first.poll(&first_waker);
+            match first_poll {
+                .Ready(ok_val) => {
+                    *first_result = ok_val catch {
+                        return ok_val as! i32;
+                    };
+                    first_done = 1;
+                    made_progress = 1;
+                },
+                .Pending(_) => {
+                    any_pending = 1;
+                    if first_waker.is_woken() {
+                        made_progress = 1;
+                    } else if first_waker.has_io_interest() {
+                        _ = try scheduler_register_waker_interest(loop, &first_waker, &registered_fds[0], &registered_count);
+                    }
+                },
+            };
+        }
+
+        if second_done == 0 {
+            second_waker.reset();
+            second_waker.clear_io_interest();
+            const second_poll: Poll<!i32> = second.poll(&second_waker);
+            match second_poll {
+                .Ready(ok_val) => {
+                    *second_result = ok_val catch {
+                        return ok_val as! i32;
+                    };
+                    second_done = 1;
+                    made_progress = 1;
+                },
+                .Pending(_) => {
+                    any_pending = 1;
+                    if second_waker.is_woken() {
+                        made_progress = 1;
+                    } else if second_waker.has_io_interest() {
+                        _ = try scheduler_register_waker_interest(loop, &second_waker, &registered_fds[0], &registered_count);
+                    }
+                },
+            };
+        }
+
+        if first_done != 0 && second_done != 0 {
+            return 2;
+        }
+        if made_progress != 0 {
+            continue;
+        }
+        if registered_count != 0 {
+            const poll_result: !i32 = loop.poll(timeout_ms);
+            _ = poll_result catch {
+                return poll_result as! i32;
+            };
+            _ = try scheduler_deregister_registered_fds(loop, &registered_fds[0], registered_count);
+            continue;
+        }
+        if any_pending != 0 {
+            const poll_result: !i32 = loop.poll(timeout_ms);
+            _ = poll_result catch {
+                return poll_result as! i32;
+            };
+        }
+    }
+
+    return 2;
+}
+
+/// 使用共享 EventLoop 运行固定容量的 i32 任务队列，直到全部完成。
+/// 当前为最小多任务轮询实现：顺序 poll 所有任务，统一驱动一次 EventLoop，再进入下一轮。
+export fn scheduler_run_task_queue_i32_with_event_loop(self: &Scheduler, loop: EventLoop, queue: &TaskQueue_i32, timeout_ms: i32) !i32 {
+    _ = self;
+    var completed: i32 = 0;
+
+    while completed < queue.len {
+        var registered_fds: [i32: 8] = [];
+        var registered_count: i32 = 0;
+        var made_progress: i32 = 0;
+        var any_pending: i32 = 0;
+        var i: i32 = 0;
+
+        while i < queue.len {
+            const slot_idx: i32 = i;
+            if slot_idx >= 0 && slot_idx < 8 {
+                if queue.slots[slot_idx as usize].active == 0 || queue.slots[slot_idx as usize].done != 0 {
+                    i = i + 1;
+                    continue;
+                }
+
+                queue.slots[slot_idx as usize].waker.reset();
+                queue.slots[slot_idx as usize].waker.clear_io_interest();
+                const p: Poll<!i32> = queue.slots[slot_idx as usize].future.poll(&queue.slots[slot_idx as usize].waker);
+                match p {
+                    .Ready(ok_val) => {
+                        const value: i32 = ok_val catch {
+                            return ok_val as! i32;
+                        };
+                        queue.slots[slot_idx as usize].done = 1;
+                        queue.slots[slot_idx as usize].result = value;
+                        completed = completed + 1;
+                        made_progress = 1;
+                    },
+                    .Pending(_) => {
+                        any_pending = 1;
+                        if queue.slots[slot_idx as usize].waker.is_woken() {
+                            made_progress = 1;
+                        } else if queue.slots[slot_idx as usize].waker.has_io_interest() {
+                            _ = try scheduler_register_waker_interest(loop, &queue.slots[slot_idx as usize].waker, &registered_fds[0], &registered_count);
+                        }
+                    },
+                };
+            } else {
+                break;
+            }
+            i = i + 1;
+        }
+
+        if completed >= queue.len {
+            return completed;
+        }
+        if made_progress != 0 {
+            continue;
+        }
+        if registered_count != 0 {
+            const poll_result: !i32 = loop.poll(timeout_ms);
+            _ = poll_result catch {
+                return poll_result as! i32;
+            };
+            _ = try scheduler_deregister_registered_fds(loop, &registered_fds[0], registered_count);
+            continue;
+        }
+        if any_pending != 0 {
+            const poll_result: !i32 = loop.poll(timeout_ms);
+            _ = poll_result catch {
+                return poll_result as! i32;
+            };
+        }
+    }
+
+    return completed;
 }

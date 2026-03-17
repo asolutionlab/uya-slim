@@ -567,6 +567,13 @@ fn collect_value_struct_deps_from_type(codegen: &C99CodeGenerator, type_node: &A
         if type_name == null || is_primitive_type_name(type_name) != 0 {
             return;
         }
+
+        // 接口值在 C 侧是 vtable + data 的胖指针，不需要当作值类型结构体依赖展开。
+        // 这里必须优先按接口判定，否则像 Future<!i32> 这类“接口/结构体同名”场景
+        // 会被误收集成结构体模板依赖，最终错误生成 struct Future { state: Poll<T> }。
+        if find_interface_decl_c99(codegen, type_name) != null {
+            return;
+        }
         
         // 检查是否已添加
         var already_added: i32 = 0;

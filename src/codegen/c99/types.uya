@@ -1024,6 +1024,42 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
 }
 
 // 从表达式推断 C 类型字符串（用于元组字面量等），尽力而为
+fn c99_array_index_result_type_c(codegen: &C99CodeGenerator, array_type_c: &byte) &byte {
+    if codegen == null || array_type_c == null {
+        return null;
+    }
+    const left_bracket: *byte = strchr(array_type_c as *byte, 91);
+    if left_bracket == null {
+        return null;
+    }
+    const right_bracket: *byte = strchr(left_bracket, 93);
+    if right_bracket == null {
+        return null;
+    }
+
+    var prefix_len: i32 = (left_bracket - (array_type_c as *byte)) as i32;
+    while prefix_len > 0 && (array_type_c[prefix_len - 1] == 32 || array_type_c[prefix_len - 1] == 9) {
+        prefix_len = prefix_len - 1;
+    }
+
+    const suffix: &byte = &right_bracket[1] as &byte;
+    const suffix_len: i32 = strlen(suffix as *byte) as i32;
+    const result_len: i32 = prefix_len + suffix_len + 1;
+    const result: &byte = arena_alloc(codegen.arena, result_len as usize) as &byte;
+    if result == null {
+        return null;
+    }
+
+    if prefix_len > 0 {
+        memcpy(result as *void, array_type_c as *void, prefix_len as usize);
+    }
+    if suffix_len > 0 {
+        memcpy((&result[prefix_len]) as *void, suffix as *void, suffix_len as usize);
+    }
+    result[prefix_len + suffix_len] = 0 as byte;
+    return result;
+}
+
 fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
     if codegen == null || expr == null {
         return ("int32_t" as *byte) as &byte;
@@ -1203,6 +1239,10 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         const base_c: &byte = get_c_type_of_expr(codegen, array);
         if base_c == null {
             return ("int32_t" as *byte) as &byte;
+        }
+        const indexed_array_type: &byte = c99_array_index_result_type_c(codegen, base_c);
+        if indexed_array_type != null {
+            return indexed_array_type;
         }
         const star: *byte = strrchr(base_c as *byte, 42);
         if star != null {

@@ -16,7 +16,7 @@
 
 ## 架构概览
 
-**当前实现**：`lib/std/async.uya` 提供 **`struct Waker`**（最小 `wake/reset/is_woken` 语义，并可暂存一次 `fd + interest` I/O 注册请求）、**`union Poll<T>`**（Ready/Pending）、**`interface Future<T>`**、**`struct Future<T>`**（含 `state: Poll<T>`、`fn poll(...) Poll<T>`）、**`struct Task<T> : Future<T>`**（含 `task_ready`、`poll`）。`std.async.io` 当前已收敛到 **`Future<!usize>`** 主路径：`MemAsyncWriter` / `MemAsyncReader` 直接返回 `Ready(ok(n))`，`AsyncFd` 在 `poll()` 时确保 `O_NONBLOCK`，并将 `EAGAIN` / `EWOULDBLOCK` 映射为 `Poll.Pending`；此时 future 会把读/写关注记录到 `Waker`，由 `Scheduler` 通过 `EventLoop.register()/poll()/deregister()` 驱动下一轮唤醒。`LinuxEpoll` 当前也已在 `poll()` 命中后按 fd 查找已注册 `Waker` 并调用 `wake()`。`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya`、`test_async_nested.uya`、`test_std_async_waker.uya`、`test_async_io.uya`、`test_async_fd.uya`、`test_async_copy.uya`、`test_std_async_event.uya`、`test_std_async_scheduler.uya` 已通过 `--c99` 与 `--uya --c99`。**@async_fn 中可直接 `return T`**：无 `@await` 时自动包装为 `Future<T>{ state: Poll<T>.Ready(expr) }`，poll 立即返回 Ready。Checker 对单态/泛型名做基名匹配（如 `Future<T>`、`Future_i32` 可解析为接口/结构体 `Future`），方法解析失败时回退到基名查找。**已知限制**：注解类型 `Future<Future<T>>` 上调用 `.poll` 尚可能报「结构体上不存在该方法」，待修复；当前可改用单层 `Future<T>` 或由调用方先 `try` 再 poll。编译器在结构体含泛型 union 字段时会先输出该 union 的单态定义（如 `Poll_i32`、`uya_tagged_Poll_i32`），且通过 arena 持久化 tagged 名避免重定义。**无 await 且返回 `!Future<T>` 的 @async_fn**：状态机形态为 `Future<!Future<T>>`，其 `struct uya_interface_*` / `struct uya_vtable_*` 在 `src/codegen/c99/function.uya` 中按需生成（不经过 `mono_instances`），并用 `is_struct_defined` 避免重复定义。以下为**目标**目录结构，后续按阶段拆分实现。
+**当前实现**：`lib/std/async.uya` 提供 **`struct Waker`**（最小 `wake/reset/is_woken` 语义，并可暂存一次 `fd + interest` I/O 注册请求）、**`union Poll<T>`**（Ready/Pending）、**`interface Future<T>`**、**`struct Future<T>`**（含 `state: Poll<T>`、`fn poll(...) Poll<T>`）、**`struct Task<T> : Future<T>`**（含 `task_ready`、`poll`）。`std.async.io` 当前已收敛到 **`Future<!usize>`** 主路径：`MemAsyncWriter` / `MemAsyncReader` 直接返回 `Ready(ok(n))`，`AsyncFd` 在 `poll()` 时确保 `O_NONBLOCK`，并将 `EAGAIN` / `EWOULDBLOCK` 映射为 `Poll.Pending`；此时 future 会把读/写关注记录到 `Waker`，由 `Scheduler` 通过 `EventLoop.register()/poll()/deregister()` 驱动下一轮唤醒。`Scheduler` 现在同时提供 `scheduler_run_i32_with_event_loop`、`scheduler_run_pair_i32_with_event_loop` 与固定容量 `TaskQueue_i32` / `scheduler_run_task_queue_i32_with_event_loop`：可让多个 `Future<!i32>` 共享一次 `EventLoop.poll()` 周期完成统一注册/唤醒验证。`LinuxEpoll` 当前也已在 `poll()` 命中后按 fd 查找已注册 `Waker` 并调用 `wake()`。编译器侧已补齐两处直接支撑队列的 codegen 能力：数组元素上的接口字段方法调用（如 `queue.slots[i].future.poll(...)`）可正确保留接口类型；结构体字段依赖收集也会跳过接口类型，避免误展开 `struct Future<T>` 模板。`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya`、`test_async_nested.uya`、`test_std_async_waker.uya`、`test_async_io.uya`、`test_async_fd.uya`、`test_async_copy.uya`、`test_std_async_event.uya`、`test_std_async_scheduler.uya` 已通过 `--c99` 与 `--uya --c99`。**@async_fn 中可直接 `return T`**：无 `@await` 时自动包装为 `Future<T>{ state: Poll<T>.Ready(expr) }`，poll 立即返回 Ready。Checker 对单态/泛型名做基名匹配（如 `Future<T>`、`Future_i32` 可解析为接口/结构体 `Future`），方法解析失败时回退到基名查找。**已知限制**：注解类型 `Future<Future<T>>` 上调用 `.poll` 尚可能报「结构体上不存在该方法」，待修复；当前可改用单层 `Future<T>` 或由调用方先 `try` 再 poll。编译器在结构体含泛型 union 字段时会先输出该 union 的单态定义（如 `Poll_i32`、`uya_tagged_Poll_i32`），且通过 arena 持久化 tagged 名避免重定义。**无 await 且返回 `!Future<T>` 的 @async_fn**：状态机形态为 `Future<!Future<T>>`，其 `struct uya_interface_*` / `struct uya_vtable_*` 在 `src/codegen/c99/function.uya` 中按需生成（不经过 `mono_instances`），并用 `is_struct_defined` 避免重复定义。以下为**目标**目录结构，后续按阶段拆分实现。
 
 ```
 std/async/
@@ -56,8 +56,9 @@ std/async/
 - 语言层已提供 `@error_id(err)`，可读取 `@syscall` 失败路径的 errno 数值
 - `AsyncFd` 已将 `EAGAIN` / `EWOULDBLOCK` 映射为 `Poll.Pending`，并通过 `Waker` 记录 `fd + interest`
 - `Scheduler` 已可在 `Pending` 时读取该 I/O 请求，调用 `EventLoop.register()/poll()/deregister()` 后再重试 future
+- `Scheduler` 已有单任务、双任务与固定容量任务队列入口，可让多个 future 共享一次 `EventLoop.poll()` 与唤醒周期
 - `LinuxEpoll.poll()` 已能在事件命中后唤醒对应 `Waker`
-- 后续主要剩余多任务共享事件循环、任务队列、跨线程唤醒等扩展
+- 后续主要剩余通用泛型任务队列、更多任务共享事件循环、跨线程唤醒等扩展
 
 ### 核心接口
 
@@ -147,7 +148,7 @@ fn fetch_and_write(reader: &AsyncReader, writer: &AsyncWriter) !Future<void> {
   - 已落地最小状态语义：`wake()`、`reset()`、`is_woken()`
   - 已可暂存单次 I/O interest（`fd + readable/writable`），供调度器读取并转交 `EventLoop`
   - `Scheduler` 可利用该状态在 `poll()` 内同步唤醒时直接重试，避免额外一次 `EventLoop.poll()`
-  - 任务队列、跨线程唤醒与更完整的唤醒安全性仍待后续实现
+  - 已有双任务与固定容量任务队列共享 `EventLoop` 的最小验证入口；通用泛型任务队列、跨线程唤醒与更完整的唤醒安全性仍待后续实现
 - **编译期验证**：
   - 编译期验证唤醒安全性（Waker 使用）
   - 确保 Waker 不会被错误使用或泄漏
@@ -209,11 +210,12 @@ fn fetch_and_write(reader: &AsyncReader, writer: &AsyncWriter) !Future<void> {
 
 ## 5. std.async.scheduler - 调度器
 
-- [ ] **Scheduler**：
+- [~] **Scheduler**：
   - 异步运行时调度器
   - 基于事件循环实现
   - 零堆分配，栈分配状态机
-  - 管理所有 `Task<T>` 的生命周期
+  - 当前已覆盖单任务、双任务与固定容量任务队列共享 `EventLoop` 的最小运行入口
+  - 后续管理所有 `Task<T>` 的生命周期
   - 集成 `EventLoop` 处理 I/O 事件
 
 **涉及**：新建 `std/async/scheduler.uya`

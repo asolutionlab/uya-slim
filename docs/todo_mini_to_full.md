@@ -899,7 +899,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
     - [x] `lib/std/async_event.uya`：`EventKind`、`interface EventLoop`、`struct LinuxEpoll : EventLoop`（`use libc.syscall`；`register`/`deregister` 当前返回 `!i32`，成功值为 `0`）
     - [x] `test_std_async_event.uya` 端到端通过（当前已覆盖 `LinuxEpoll.register()` + `poll()` 命中后 `Waker.wake()` 最小链路；codegen 已修复：err_union 先输出 payload 结构体、catch 推断 struct payload、union 前向声明、INT_MIN 用 @min）
   - [~] `std.async.channel` 模块：`Channel_i32` 单槽通道已完成；`MpscChannel_i32` 最小单槽/CAS 版本已落地（`test_async_channel.uya` 覆盖 send/recv 与满槽 Pending），通用/多槽 `MpscChannel<T>` 待实现
-  - [~] `std.async.scheduler` 模块：`Scheduler` 最小闭环已完成（`scheduler_new`、`scheduler_run`/`scheduler_run_i32`、`scheduler_run_i32_with_event_loop`、`scheduler_run_usize_with_event_loop`；`Pending` 时可驱动 `EventLoop.poll()`，若 `poll()` 内调用 `waker.wake()` 则当前轮直接重试；当 `Waker` 携带 I/O interest 时会代为 `register/poll/deregister`；`test_std_async_scheduler.uya` 通过），完整任务队列 / `Waker` 调度待实现
+  - [~] `std.async.scheduler` 模块：`Scheduler` 最小闭环已完成（`scheduler_new`、`scheduler_run`/`scheduler_run_i32`、`scheduler_run_i32_with_event_loop`、`scheduler_run_usize_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue_i32`、`scheduler_run_task_queue_i32_with_event_loop`；`Pending` 时可驱动 `EventLoop.poll()`，若 `poll()` 内调用 `waker.wake()` 则当前轮直接重试；当 `Waker` 携带 I/O interest 时会代为 `register/poll/deregister`；固定容量任务队列已验证“共享一个 EventLoop 单轮统一注册/轮询/唤醒”；同时 codegen 已修复“数组元素上的接口字段方法调用”和“结构体依赖收集误展开接口模板”这两个队列前置缺口；`test_std_async_scheduler.uya` 通过），通用泛型任务队列 / 更完整 `Waker` 调度待实现
   - [ ] `std.thread` 模块：`ThreadPool`, `async_compute<T>`
 
 - [~] **编译期验证**：
@@ -936,7 +936,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `test_async_channel.uya` - `Channel_i32` send/recv，`MpscChannel_i32` 单槽 CAS 抢占、满槽 Pending、消费后重发
   - [x] `test_block_on.uya` - block_on 同步运行 Future<!T> 直到 Ready
   - [x] `test_std_async_waker.uya` - `Waker` 的 `wake/reset/is_woken` 最小状态语义
-  - [x] `test_std_async_scheduler.uya` - `Scheduler`、`scheduler_run_i32`、`scheduler_run_i32_with_event_loop`（Pending 时驱动 `EventLoop.poll()`；同步 `wake()` 时直接重试）
+  - [x] `test_std_async_scheduler.uya` - `Scheduler`、`scheduler_run_i32`、`scheduler_run_i32_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue_i32`、`scheduler_run_task_queue_i32_with_event_loop`（Pending 时驱动 `EventLoop.poll()`；同步 `wake()` 时直接重试；双任务与固定容量任务队列共享 EventLoop 单轮唤醒）
   - [x] `test_interface_error_union_method.uya` - 接口方法与受约束泛型方法返回 `!T` 时，`try`/`catch` 类型推断正确
 
 **涉及**：Lexer、AST、Parser、Checker、Codegen（CPS 变换、状态机生成），uya-src。
@@ -1644,6 +1644,8 @@ lib/
 5. **阶段 4**：Windows 支持（可选）
 
 **详细设计内容**（包括系统调用层、跨平台方案、条件编译、核心库实现、--outlibc 功能等）请参见：[`docs/std_c_design.md`](./docs/std_c_design.md)
+
+**macOS 迁移详细待办**：见 [todo_macos_migration.md](todo_macos_migration.md)；构建链细化见 [todo_macos_phase1.md](todo_macos_phase1.md)；宿主平台抽象细化见 [todo_macos_phase2.md](todo_macos_phase2.md)；`@syscall/syscall/osal/runtime` 细化见 [todo_macos_phase3.md](todo_macos_phase3.md)；hosted 自举与主测试基线细化见 [todo_macos_phase4.md](todo_macos_phase4.md)；`pthread` Darwin 路线细化见 [todo_macos_phase5.md](todo_macos_phase5.md)；`--nostdlib` Darwin 路线细化见 [todo_macos_phase6.md](todo_macos_phase6.md)；`std.async` / `kqueue` 细化见 [todo_macos_phase7.md](todo_macos_phase7.md)；跨平台验收与文档收口见 [todo_macos_phase8.md](todo_macos_phase8.md)。
 
 ### 19.1 v0.3.0 实施计划（标准库基础设施）
 
@@ -2658,7 +2660,7 @@ interface IReadWriter {
 
 **后续路线**：
 - 状态机大小编译期计算与递归/间接递归分析
-- `Scheduler` 从当前“单任务 + EventLoop.register/poll/deregister + wake 重试”推进到完整 `EventLoop` / `Waker` 调度，并扩展到多任务共享事件循环
+- `Scheduler` 从当前“单任务 + 双任务/固定容量任务队列共享 EventLoop + register/poll/deregister + wake 重试”推进到完整 `EventLoop` / `Waker` 调度，并扩展到通用泛型任务队列
 - `Channel` 扩展到通用/多槽 `MpscChannel<T>`，并补齐 `std.thread` / `ThreadPool`
 - Send/Sync 推导与跨线程验证
 
@@ -2683,7 +2685,15 @@ interface IReadWriter {
 
 #### 3. 跨平台支持（v0.5.x）⭐⭐
 
-- macOS 支持（kqueue、Mach 系统调用）
+- macOS 支持（hosted 构建、自举、`@syscall`、`syscall/osal`、`pthread`、`--nostdlib`、`std.async`/`kqueue`），详见 [todo_macos_migration.md](todo_macos_migration.md)
+- macOS 构建链平台化（Phase 1），详见 [todo_macos_phase1.md](todo_macos_phase1.md)
+- macOS 宿主平台抽象（Phase 2），详见 [todo_macos_phase2.md](todo_macos_phase2.md)
+- macOS `@syscall` / `syscall` / `osal` / runtime（Phase 3），详见 [todo_macos_phase3.md](todo_macos_phase3.md)
+- macOS hosted 自举与主测试基线（Phase 4），详见 [todo_macos_phase4.md](todo_macos_phase4.md)
+- macOS `pthread` 与同步原语（Phase 5），详见 [todo_macos_phase5.md](todo_macos_phase5.md)
+- macOS `--nostdlib` Darwin 路线（Phase 6），详见 [todo_macos_phase6.md](todo_macos_phase6.md)
+- macOS `std.async` / `kqueue`（Phase 7），详见 [todo_macos_phase7.md](todo_macos_phase7.md)
+- macOS 跨平台验收与文档收口（Phase 8），详见 [todo_macos_phase8.md](todo_macos_phase8.md)
 - Windows 支持（IOCP、Win32 API）
 - ARM64 支持
 - RISC-V 支持（裸机）
@@ -2769,6 +2779,7 @@ interface IReadWriter {
 - 🎯 macOS / Windows 支持
 - 🎯 ARM64 / RISC-V 支持
 - 🎯 标准库：net + fs + time
+- 详细实施任务见 [todo_macos_migration.md](todo_macos_migration.md)
 
 ### v1.0.0（目标：2027）- 生产就绪
 - 🎯 语言规范完全实现
