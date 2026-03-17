@@ -4,6 +4,8 @@
 
 use std.json.encoder.JsonWriter;
 use std.json.encoder.json_write_byte;
+use std.json.encoder._J_LBRACE;
+use std.json.encoder._J_RBRACE;
 use std.json.errors;
 
 /// 生成 to_json 方法骨架：开头 `{`、结尾 `}` 由宏生成，中间由 body 填充。
@@ -11,9 +13,9 @@ use std.json.errors;
 export mc to_json_skeleton(body: stmt) struct {
     @mc_code(@mc_ast(
         fn to_json(self: &Self, w: &JsonWriter) void {
-            json_write_byte(w, 123);
+            json_write_byte(w, _J_LBRACE);
             ${body};
-            json_write_byte(w, 125);
+            json_write_byte(w, _J_RBRACE);
         }
     ));
 }
@@ -28,7 +30,7 @@ export mc to_json_reflect() struct {
 }
 
 /// 按结构体字段反射自动生成 from_json 关联函数（编译器展开）。
-/// 用法：StructName : ToJson { to_json_reflect(); from_json_reflect(); }
+/// 用法：StructName : ToJson { to_json_reflect(); from_json_reflect(); }（可选；仅标量字段时 from_json(T) 已支持无方法块合成）。
 /// 会生成顶层函数 StructName_from_json(arena, v) !StructName，支持字段类型同 to_json_reflect。
 export mc from_json_reflect() struct {
     @mc_code(@mc_ast(

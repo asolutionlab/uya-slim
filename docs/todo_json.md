@@ -75,10 +75,8 @@
 
 - [x] 宏 to_json_skeleton：`lib/std/json/macros.uya`，方法块内 `to_json_skeleton({ ... })` 生成 to_json 骨架（开头/结尾 `{` `}` 由宏生成）。
 - [x] 完整反射 to_json：`to_json_reflect()` 宏（方法块内无参调用），编译器按结构体字段自动生成 to_json；支持字段类型 i64、i32、f64、bool、JsonStrView；测试见 `tests/test_json_to_json_reflect.uya`。
-- [ ] **encode_to_to_json 宏 / to_json 单态展开（进行中）**  
-  - 已做：`encode_to_to_json` 改为库侧宏（`lib/std/json/macros.uya`），占位体 `error.BufferTooSmall as ! usize`；编译器在 `macro_expand` 中首参为类型名时用 `build_encode_to_to_json_block` 生成编码块，首参为类型形参 `T` 时不展开（保留调用）；单态体在 codegen 中经 `prepare_mono_body_expand_macros` 再展开；类型检查对 `try encode_to_to_json(...)` 特例放行；try 操作数为 block 时按 `!usize` 生成 C 类型。  
-  - 待做：codegen 对「块末为 if（error | value）、块作为 try 操作数」生成可赋给 `struct err_union_size_t` 的表达式（如三元或 err_union 构造），并修正 `return &buf[0:n]` 的切片类型（避免 uya_slice_void）。当前 `make check` 通过 545/547，未通过：`test_json_to_json_reflect`、`test_json_struct_roundtrip`（链接失败）。
-- [x] 宏 from_json：结构体方法块内 `from_json_reflect()` 由编译器展开；单态 `from_json<T>(arena, buffer)` 当 T 含 `_from_json_placeholder` 时使用合成 body（parse + match 按字段解码）；[x] 手写示例见 `json_object_find_index`、`user_from_json`。
+- [x] **encode_to_to_json 宏 / to_json 单态展开**：库侧宏占位体，编译器 `build_encode_to_to_json_block` 按类型名生成编码块；单态体经 `prepare_mono_body_expand_macros` 展开；`to_json<T>(arena, obj)` 已可用，测试见 `test_json_to_json_reflect`、`test_json_nested`、`test_json_array`。
+- [x] **宏 from_json**：单态 `from_json<T>(arena, buffer)` 当首类型实参为结构体时自动生成合成 body（parse + 按字段解码），无需方法块；含嵌套或数组成员的结构体暂不生成 body，沿用默认 `__decode_json`。手写时可用 `json_object_find_index`、`json_expect_*`。
 
 ### 3.2 测试
 
@@ -86,6 +84,7 @@
 - [x] 结构体 roundtrip 含「parse → from_json → 结构体 → to_json → parse」，验证有宏时无需手写、无宏时手写 to_json/from_json 对称（见 `test_json_struct_roundtrip.uya`）。
 - [x] `tests/test_json_from_json_errors.uya`：json_object_find_index 缺 key 返回 error.MissingField。
 - [x] `tests/test_json_from_json_wrong_type.uya`：from_json 字段类型不匹配时返回 error.WrongType。
+- [x] `tests/test_json_from_json_reflect.uya`：`from_json<T>` 反射往返（User、Record 等标量/多字段结构体，严格长度检查）。
 - [x] `errors.uya`：新增 WrongType，手写 from_json 时用于字段类型不符。
 - [x] `encoder.uya`：新增 json_expect_i64/str/bool/f64(v)，手写 from_json 时减少 match 样板；f64 接受 int_val 自动转 float。
 - [x] `tests/test_json_expect_helpers.uya`：覆盖四种 expect 辅助及类型不符时 WrongType。

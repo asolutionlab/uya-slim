@@ -11,6 +11,25 @@ use std.json.macros;
 use std.mem.arena.Arena;
 use std.mem.arena.arena_alloc;
 
+// JSON 语法字符（ASCII），便于阅读与维护
+const _J_QUOT: byte = 34;
+const _J_COLON: byte = 58;
+const _J_COMMA: byte = 44;
+const _J_LBRACK: byte = 91;
+const _J_RBRACK: byte = 93;
+export const _J_LBRACE: byte = 123;
+export const _J_RBRACE: byte = 125;
+const _J_BACKSLASH: byte = 92;
+const _J_N: byte = 110;
+const _J_R: byte = 114;
+const _J_T: byte = 116;
+const _J_U: byte = 117;
+const _J_L: byte = 108;
+const _J_E: byte = 101;
+const _J_F: byte = 102;
+const _J_A: byte = 97;
+const _J_S: byte = 115;
+
 export struct JsonWriter {
     buf: &byte,
     cap: usize,
@@ -47,24 +66,24 @@ export fn json_writer_init(w: &JsonWriter, buf: &byte, cap: usize) void {
 }
 
 export fn json_write_null(w: &JsonWriter) void {
-    write_byte(w, 110);
-    write_byte(w, 117);
-    write_byte(w, 108);
-    write_byte(w, 108);
+    write_byte(w, _J_N);
+    write_byte(w, _J_U);
+    write_byte(w, _J_L);
+    write_byte(w, _J_L);
 }
 
 export fn json_write_bool(w: &JsonWriter, v: bool) void {
     if v {
-        write_byte(w, 116);
-        write_byte(w, 114);
-        write_byte(w, 117);
-        write_byte(w, 101);
+        write_byte(w, _J_T);
+        write_byte(w, _J_R);
+        write_byte(w, _J_U);
+        write_byte(w, _J_E);
     } else {
-        write_byte(w, 102);
-        write_byte(w, 97);
-        write_byte(w, 108);
-        write_byte(w, 115);
-        write_byte(w, 101);
+        write_byte(w, _J_F);
+        write_byte(w, _J_A);
+        write_byte(w, _J_L);
+        write_byte(w, _J_S);
+        write_byte(w, _J_E);
     }
 }
 
@@ -132,25 +151,25 @@ export fn json_write_f64(w: &JsonWriter, v: f64) void {
 }
 
 export fn json_write_str_view(w: &JsonWriter, s: JsonStrView) void {
-    write_byte(w, 34);
+    write_byte(w, _J_QUOT);
     var i: usize = 0;
     while i < s.len {
         const b: byte = s.ptr[i];
-        if b == 34 { write_byte(w, 92); write_byte(w, 34); }
-        else if b == 92 { write_byte(w, 92); write_byte(w, 92); }
-        else if b == 10 { write_byte(w, 92); write_byte(w, 110); }
-        else if b == 13 { write_byte(w, 92); write_byte(w, 114); }
-        else if b == 9 { write_byte(w, 92); write_byte(w, 116); }
+        if b == _J_QUOT { write_byte(w, _J_BACKSLASH); write_byte(w, _J_QUOT); }
+        else if b == _J_BACKSLASH { write_byte(w, _J_BACKSLASH); write_byte(w, _J_BACKSLASH); }
+        else if b == 10 { write_byte(w, _J_BACKSLASH); write_byte(w, _J_N); }
+        else if b == 13 { write_byte(w, _J_BACKSLASH); write_byte(w, _J_R); }
+        else if b == 9 { write_byte(w, _J_BACKSLASH); write_byte(w, _J_T); }
         else { write_byte(w, b); }
         i = i + 1;
     }
-    write_byte(w, 34);
+    write_byte(w, _J_QUOT);
 }
 
 /// 写 JSON 键（双引号 + 转义键字节 + 双引号 + 冒号），供 to_json_reflect 等宏生成代码使用
 export fn json_write_key(w: &JsonWriter, ptr: &byte, len: usize) void {
     json_write_str_view(w, JsonStrView{ ptr: ptr, len: len });
-    write_byte(w, 58);
+    write_byte(w, _J_COLON);
 }
 
 fn write_value(w: &JsonWriter, v: &JsonValue) void {
@@ -162,26 +181,26 @@ fn write_value(w: &JsonWriter, v: &JsonValue) void {
         .float_val(x) => { json_write_f64(w, x); },
         .str(s) => { json_write_str_view(w, s); },
         .arr(a) => {
-            write_byte(w, 91);
+            write_byte(w, _J_LBRACK);
             var i: usize = 0;
             while i < a.len {
-                if i > 0 { write_byte(w, 44); }
+                if i > 0 { write_byte(w, _J_COMMA); }
                 write_value(w, &a.items[i]);
                 i = i + 1;
             }
-            write_byte(w, 93);
+            write_byte(w, _J_RBRACK);
         },
         .obj(o) => {
-            write_byte(w, 123);
+            write_byte(w, _J_LBRACE);
             var i: usize = 0;
             while i < o.len {
-                if i > 0 { write_byte(w, 44); }
+                if i > 0 { write_byte(w, _J_COMMA); }
                 json_write_str_view(w, o.pairs[i].key);
-                write_byte(w, 58);
+                write_byte(w, _J_COLON);
                 write_value(w, &o.pairs[i].value);
                 i = i + 1;
             }
-            write_byte(w, 125);
+            write_byte(w, _J_RBRACE);
         },
     }
 }
