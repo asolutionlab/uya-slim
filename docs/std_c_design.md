@@ -301,3 +301,37 @@ gcc -nostdlib -ffreestanding your_program.c libuya.o -o your_program -lgcc
 - 🎯 **接口抽象**：Writer, Reader, Clone, Eq, Ord
 - 🎯 **泛型容器**：Vec<T>, StringBuf
 - 🎯 **libc 薄封装**：调用 std 实现，零重复代码
+
+---
+
+## `std.target`：条件编译宏（需求）
+
+**目标**：在**编译期**按平台裁剪代码，使 Linux 产物不引用 Darwin 符号（反之亦然），从而用纯 Uya 替代编译器里为宿主差异而写的 C 垫片（如 `host_executable_path.c`）。
+
+### 必须区分的维度
+
+| 维度 | 含义 | 典型用途 |
+|------|------|----------|
+| **宿主（host）** | 正在构建 / 运行当前二进制（如 `bin/uya`）的操作系统与架构 | 编译器自身的 `get_compiler_dir`、`readdir`/`dirent` 布局 |
+| **目标（target）** | 用户程序或被编译代码的目标平台（`TARGET_OS` / `UYA_TARGET_OS_*`） | `@asm`、用户态 syscall 映射、`--outlibc` 产物 |
+
+`std.target` 的**首个落地用例**必须能表达 **host**，以便编译器源码在单仓库内维护、交叉构建时行为正确。
+
+### 首个用例（验收标准）
+
+1. **编译器宿主可执行路径**
+   - Linux（含 nostdlib）：`/proc/self/exe` + `readlink`（或等价 syscall）。
+   - Darwin：`_NSGetExecutablePath` + `realpath`（或等价）。
+   - 未选中的宿主分支**不得**进入链接单元（无未解析 Mach 符号出现在 Linux 上等）。
+
+2. **`struct dirent` 布局**
+   - Linux glibc x86_64：`d_type` / `d_name` 偏移与当前一致（如 18 / 19）。
+   - Darwin：`d_type` / `d_name` 偏移与 `sys/dirent.h` 一致（如 20 / 21）。
+   - 同上：仅生成当前 **host** 对应分支，避免运行时探测或 C 里的 `uya_host_dirent_layout()`。
+
+### 与现有能力的关系
+
+- `@asm_target()` 与运行期 `if @asm_target() == …` **不足以**替代上述需求（另一平台代码仍会进入语义/链接路径，除非整段删除）。
+- 实现 `std.target` 后，可将 `src/main.uya` 中宿主路径与目录扫描改为条件编译分支，并**删除**仅为此存在的宿主 C 垫片（在构建链全部改接 Uya 之后）。
+
+**跟踪**：路线图见 [`todo_mini_to_full.md`](./todo_mini_to_full.md) 中 `std.target` 条目。
