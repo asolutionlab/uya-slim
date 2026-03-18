@@ -9,15 +9,14 @@
 | `make uya-hosted` / `make b-hosted` | 目标：在 macOS + `clang` 上可跑通 |
 | `make from-c`（`backup/uya.c` 为 Linux nostdlib） | **不可用**：备份 C 内含 Linux x86_64 `_start`，需在 Mac 上从源码自举或换用将来提供的 Darwin/hosted 备份策略 |
 | `make uya`（`--nostdlib`） | **未实现**：见 Phase 6 |
-| 未设 `UYA_ROOT` 时编译器自找 `lib/` | **已实现（代码）**：`src/host_executable_path.c` + `uya_host_executable_path`；若可执行文件在 `<repo>/bin/uya`，则推导 `<repo>/lib/`。需在 macOS 真机冒烟确认。 |
+| 未设 `UYA_ROOT` 时编译器自找 `lib/` | **未实现**：依赖 Phase 2（`/proc/self/exe` → `_NSGetExecutablePath` 或 C 垫片） |
 
 ## 推荐冒烟步骤（macOS）
 
 1. **在 Linux 上**完成 `make backup`，将仓库（含 `backup/uya.c`）同步到 Mac；或在 Mac 上已有 `bin/uya`（hosted 构建产物）。
 2. 在仓库根目录：
    ```bash
-   # 可选：编译器在 bin/uya 时可省略（由 _NSGetExecutablePath 推导）
-   # export UYA_ROOT="$(pwd)/lib/"
+   export UYA_ROOT="$(pwd)/lib/"   # 必须，直到 Phase 2 落地
    make uya-hosted    # 或已有 bin/uya 则跳过
    make b-hosted
    ```

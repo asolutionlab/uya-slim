@@ -24,7 +24,7 @@
 满足以下条件即可视为 Phase 2 完成：
 
 - [ ] `src/main.uya` 的宿主逻辑不再依赖 Linux-only 的硬编码 GCC PATH
-- [x] `get_compiler_dir()` 拥有清晰的 Linux / Darwin 路径分支（`uya_host_executable_path` C 垫片：Linux readlink/syscall，macOS `_NSGetExecutablePath`）
+- [ ] `get_compiler_dir()` 拥有清晰的 Linux / Darwin 路径分支
 - [ ] `UYA_ROOT`、工具查找、默认路径推导逻辑被收敛到明确的 helper 中
 - [ ] `dirent` 访问不再散落在多个调用点依赖 magic offset（**部分**：已用常量 + `dirent_is_regular_file` / `dirent_may_be_regular_file`；布局仍为 Linux glibc，Darwin 适配见 Commit 4）
 - [x] build/run/test 生成的临时路径经过统一封装（`TMPDIR` + 回退 `/tmp`）
@@ -64,8 +64,8 @@
 
 **Commit 4 开始必须在 macOS 上做主验证**，因为这时要真正验证 Darwin 的宿主行为：
 
-- [ ] Darwin 路径发现分支（**代码已就绪**，待 macOS 真机验收）
-- [ ] Darwin 下 `UYA_ROOT` 推导（同上：无 `UYA_ROOT` 时由可执行路径去 `bin` → 上一级 + `lib/`）
+- [ ] Darwin 路径发现分支
+- [ ] Darwin 下 `UYA_ROOT` 推导
 - [ ] Darwin 下 build/run/test 临时路径（代码已走 `TMPDIR`，需在 macOS 上验收）
 - [ ] Darwin 下目录扫描和模块发现
 
@@ -94,7 +94,7 @@
   - [ ] `make check`
   - [ ] `make uya-hosted`（若已存在）
 - [x] 记录 `src/main.uya` 当前强 Linux 绑定点：
-  - [x] `get_compiler_dir()`：`uya_host_executable_path()`（Linux / macOS）；nostdlib Linux 为 syscall 链入
+  - [ ] `get_compiler_dir()` 使用 `/proc/self/exe`（Darwin 待 Commit 4）
   - [x] `dirent_*`：偏移已命名常量 + 语义 helper；**布局仍为 Linux**（Darwin 见 Commit 4）
   - [x] ~~`link_with_gcc`~~ → 已改为 `link_with_toolchain` + 环境变量
   - [x] 临时 C / run 可执行路径：`host_fill_temp_*`（`TMPDIR` 或 `/tmp`）
@@ -204,25 +204,25 @@
 
 ### 修改文件
 
-- [x] [../src/main.uya](../src/main.uya) — `uya_host_executable_path`
-- [x] [../src/host_executable_path.c](../src/host_executable_path.c) — `_NSGetExecutablePath` + `realpath`（Apple）；Linux hosted `readlink`；nostdlib syscall
-- [x] [../src/compile.sh](../src/compile.sh)、[../Makefile](../Makefile) — 链接时并入 `host_executable_path.c` / `.o`
+- [ ] [../src/main.uya](../src/main.uya)
 
 ### 任务清单
 
-- [x] Darwin：`uya_host_executable_path`（C 垫片）
-- [x] Linux：hosted / nostdlib 链入方式
-- [x] `get_uya_root` 仍基于 `get_compiler_dir` + 去 `bin` + `lib/`（与 Linux 一致）
+- [ ] 为 `get_compiler_dir()` 增加 Darwin 分支
+- [ ] 保留 Linux 分支与回退逻辑
+- [ ] 校准 `get_uya_root()` 的默认推导逻辑
+- [ ] 明确当 `UYA_ROOT` 缺失或路径获取失败时的报错与回退行为
 
 ### 验证
 
-- [x] Linux：`make check` / `make check-hosted`
-- [ ] macOS：`make from-c`（hosted `bin/uya.c`）/ `make uya-hosted` / 能定位 `lib/`
+- [ ] macOS：`make from-c`
+- [ ] macOS：`make uya-hosted`
+- [ ] macOS：编译器能正确定位 `lib/`
 
 ### 完成标准
 
-- [ ] Darwin 下编译器目录获取 **真机** 验收
-- [ ] Darwin 下 `UYA_ROOT` 推导 **真机** 验收
+- [ ] Darwin 下编译器目录获取真实可用
+- [ ] Darwin 下 `UYA_ROOT` 推导真实可用
 
 ---
 
