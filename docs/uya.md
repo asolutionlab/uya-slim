@@ -985,6 +985,7 @@ match result {
 - **字段赋值**：支持字段赋值 `obj.field = value`（如果 `obj` 是结构体类型）或 `ptr.field = value`（如果 `ptr` 是指向结构体的指针类型，自动解引用）
   - 示例：`point.x = 10;`、`ptr.x = 10;`（如果 `ptr` 是 `&Point` 类型）
 - 支持嵌套访问：`struct_var.field.subfield`、`struct_var.array_field[index]`（访问链从左到右求值）
+- **C99 后端**：字段链每一级按左值是否为指针类型生成 `.` 或 `->`（含方法体内 `self` 上的多级指针字段链；局部变量名在 C 中经关键字/保留名转义时，仍按实际类型选对操作符）。回归见 `tests/test_c99_pointer_access.uya`
 - **多维数组字段**：结构体字段可以是多维数组
   - 声明示例：`struct Matrix { data: [[f32: 4]: 4] }`（4x4 矩阵）
   - 访问语法：`struct_var.array_field[i][j]`（如果字段是多维数组）
