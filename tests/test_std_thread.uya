@@ -2,10 +2,33 @@
 
 use std.thread;
 use std.async;
+use std.async_event;
+use std.async_scheduler;
 use std.testing.assert_eq_i32;
+use libc.syscall;
 
 fn double_i32(v: i32) i32 {
     return v * 2;
+}
+
+fn sleep_briefly() void {
+    const req: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 10 * 1000 * 1000 };
+    var rem: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 0 };
+    _ = sys_nanosleep(&req, &rem) catch {};
+}
+
+fn delayed_double_i32(v: i32) i32 {
+    sleep_briefly();
+    return v * 2;
+}
+
+fn delayed_triple_i32(v: i32) i32 {
+    sleep_briefly();
+    return v * 3;
+}
+
+fn thread_test_epoll() !LinuxEpoll {
+    return linux_epoll_create(0);
 }
 
 test "thread_pool_new_normalizes_worker_count" {
@@ -50,4 +73,39 @@ test "async_compute_i32_reports_pending_before_ready" {
     try assert_eq_i32(first_pending, 1);
     try assert_eq_i32(saw_pending, 1);
     try assert_eq_i32(got, 42);
+}
+
+test "async_compute_i32_runs_with_scheduler_and_linux_epoll" {
+    const pool: ThreadPool = thread_pool_new(2);
+    var s: Scheduler = scheduler_new();
+    var loop_impl: LinuxEpoll = try thread_test_epoll();
+    defer {
+        _ = sys_close(loop_impl.epfd);
+    }
+    const loop: EventLoop = loop_impl;
+    const f: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 21);
+    const result: i32 = try scheduler_run_i32_with_event_loop(&s, loop, f, 50);
+    try assert_eq_i32(result, 42);
+}
+
+test "async_compute_i32_queue_runs_multiple_tasks_with_scheduler" {
+    const pool: ThreadPool = thread_pool_new(2);
+    var s: Scheduler = scheduler_new();
+    var loop_impl: LinuxEpoll = try thread_test_epoll();
+    defer {
+        _ = sys_close(loop_impl.epfd);
+    }
+    const loop: EventLoop = loop_impl;
+    var queue: TaskQueue_i32 = task_queue_i32_new();
+    const first_idx: i32 = try queue.push(async_compute_i32(&pool, &delayed_double_i32 as &void, 10));
+    const second_idx: i32 = try queue.push(async_compute_i32(&pool, &delayed_triple_i32 as &void, 7));
+    const completed: i32 = try scheduler_run_task_queue_i32_with_event_loop(&s, loop, &queue, 50);
+
+    try assert_eq_i32(first_idx, 0);
+    try assert_eq_i32(second_idx, 1);
+    try assert_eq_i32(completed, 2);
+    try assert_eq_i32(queue.result(0), 20);
+    try assert_eq_i32(queue.result(1), 21);
+    try assert_eq_i32(queue.is_done(0) as i32, 1);
+    try assert_eq_i32(queue.is_done(1) as i32, 1);
 }
