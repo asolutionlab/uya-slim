@@ -28,6 +28,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.struct_definition_count = 0;
     codegen.enum_definition_count = 0;
     codegen.function_declaration_count = 0;
+    codegen.reachable_function_decl_count = 0;
     codegen.global_variable_count = 0;
     codegen.local_variable_count = 0;
     codegen.current_depth = 0;
@@ -62,6 +63,11 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
 
     // 初始化泛型单态化相关字段
     codegen.mono_instance_count = 0;
+    ii = 0;
+    while ii < C99_MAX_MONO_INSTANCES {
+        codegen.reachable_mono_instances[ii] = 0;
+        ii = ii + 1;
+    }
     codegen.current_type_params = null;
     codegen.current_type_param_count = 0;
     codegen.current_type_args = null;
@@ -105,6 +111,11 @@ fn c99_codegen_set_mono_instances(codegen: &C99CodeGenerator, checker: &TypeChec
     }
     codegen.checker = checker;
     codegen.mono_instance_count = 0;
+    var ri: i32 = 0;
+    while ri < C99_MAX_MONO_INSTANCES {
+        codegen.reachable_mono_instances[ri] = 0;
+        ri = ri + 1;
+    }
 
     const count: i32 = checker.mono_instance_count;
     var i: i32 = 0;

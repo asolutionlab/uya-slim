@@ -213,11 +213,11 @@
 
 - **函数导出规则完善**：
   - **`fn`**：内部函数，生成的 C 代码添加 `static` 关键字（`static void foo(void)`）
-  - **`export fn`**：导出函数，生成的 C 代码不添加 `static`（`void foo(void)`），带 `uya_` 前缀（`uya_foo`）
+  - **`export fn`**：导出函数，若被当前编译单元的入口/测试/可达代码引用，则生成的 C 代码不添加 `static`（`void foo(void)`），带 `uya_` 前缀（`uya_foo`）
   - **`extern fn`**：外部 C 函数声明，生成的 C 代码为 `extern void foo(void);`
   - **`extern fn`**（有函数体）：Uya 实现的 C 兼容函数，生成的 C 代码为 `void foo(void) { ... }`（不带 `uya_` 前缀）
   - **`export extern fn`**（无函数体）：不生成任何代码，链接到 C 标准库的实现
-  - **`export extern fn`**（有函数体）：Uya 实现，生成的 C 代码为 `void foo(void) { ... }`（不带 `uya_` 前缀）
+  - **`export extern fn`**（有函数体）：Uya 实现，始终保留并生成 C 代码 `void foo(void) { ... }`（不带 `uya_` 前缀）
   - **设计目的**：
     - 明确函数可见性：内部函数使用 `static`，避免符号冲突
     - 符合 C 语言惯例：只有导出的函数才在全局命名空间

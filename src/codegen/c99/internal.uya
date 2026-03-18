@@ -26,6 +26,7 @@ const C99_MAX_ENUM_DEFINITIONS: i32 = 512;
 
 // 函数声明表大小
 const C99_MAX_FUNCTION_DECLS: i32 = 512;
+const C99_MAX_REACHABLE_FUNCTIONS: i32 = 1024;
 
 // 全局变量表大小
 const C99_MAX_GLOBAL_VARS: i32 = 512;
@@ -131,6 +132,8 @@ struct C99CodeGenerator {
     // 函数声明表
     function_declarations: [FunctionDeclaration: C99_MAX_FUNCTION_DECLS],
     function_declaration_count: i32,
+    reachable_function_decls: [&ASTNode: C99_MAX_REACHABLE_FUNCTIONS],
+    reachable_function_decl_count: i32,
     
     // 全局变量表
     global_variables: [GlobalVariable: C99_MAX_GLOBAL_VARS],
@@ -187,6 +190,7 @@ struct C99CodeGenerator {
     // 泛型单态化实例（从 TypeChecker 传入）
     mono_instances: [MonoInstanceCodegen: C99_MAX_MONO_INSTANCES],
     mono_instance_count: i32,
+    reachable_mono_instances: [i32: C99_MAX_MONO_INSTANCES],
     
     // 当前单态化上下文（生成泛型函数实例时使用）
     current_type_params: &TypeParam,    // 当前泛型的类型参数列表

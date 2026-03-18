@@ -1,0 +1,23 @@
+// 验证未使用的顶层函数不会继续输出到生成的 C 文件
+
+extern fn missing_runtime_symbol() i32;
+
+fn dead_internal() i32 {
+    return missing_runtime_symbol();
+}
+
+export fn dead_exported() i32 {
+    return missing_runtime_symbol();
+}
+
+export extern fn kept_c_api() i32 {
+    return 123;
+}
+
+fn live_helper() i32 {
+    return kept_c_api() - 123;
+}
+
+export fn main() i32 {
+    return live_helper();
+}
