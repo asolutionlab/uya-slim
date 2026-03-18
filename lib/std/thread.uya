@@ -582,6 +582,22 @@ struct AsyncComputeI32Future : Future<!i32> {
         return Poll<!i32>.Pending({});
     }
 
+    fn start_execution(self: &Self, waker: &Waker) Poll<!i32> {
+        const submitted_slot_idx: i32 = thread_pool_submit_slot_i32(self.pool, self.compute_fn, self.arg);
+        if submitted_slot_idx >= 0 {
+            self.slot_idx = submitted_slot_idx;
+            return self.progress_current_slot(waker);
+        }
+
+        const one_shot_result: !i32 = self.start_one_shot();
+        _ = one_shot_result catch {
+            const err_value: !i32 = one_shot_result as! i32;
+            return self.finish_with_pending_wake(err_value, waker);
+        };
+        waker.wake();
+        return Poll<!i32>.Pending({});
+    }
+
     fn start_one_shot(self: &Self) !i32 {
         var fds: [i32: 2] = [];
         _ = try sys_pipe2(&fds[0], O_NONBLOCK);
@@ -634,19 +650,7 @@ struct AsyncComputeI32Future : Future<!i32> {
                     return self.progress_current_slot(waker);
                 }
             } else {
-                const submitted_slot_idx: i32 = thread_pool_submit_slot_i32(self.pool, self.compute_fn, self.arg);
-                if submitted_slot_idx >= 0 {
-                    self.slot_idx = submitted_slot_idx;
-                    return self.progress_current_slot(waker);
-                }
-
-                const one_shot_result: !i32 = self.start_one_shot();
-                _ = one_shot_result catch {
-                    const err_value: !i32 = one_shot_result as! i32;
-                    return self.finish(err_value);
-                };
-                waker.wake();
-                return Poll<!i32>.Pending({});
+                return self.start_execution(waker);
             }
         }
 

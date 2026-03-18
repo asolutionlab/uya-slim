@@ -5035,7 +5035,7 @@ fn fetch() !Future<&[i8]> { ... }  // 正确
 - 线程池，用于 CPU 密集型异步任务
 - 当前最小实现提供 `thread_pool_new()` / `thread_pool_shutdown()`，在 Linux 上以可复用 worker 进程池承载计算
 - 共享状态中已包含固定任务槽位、共享 FIFO 队列与 `worker_idx` 绑定；worker 通过 slot 索引取任务并写回结果
-- 当共享槽位任务需要执行时，当前统一先进入共享 FIFO 队列；父进程负责唤醒空闲 worker 进入 drain 路径，而具体取队首 slot 与后续连续取活都由 worker 在共享队列中完成；父进程会按共享状态回刷本地 worker `busy/active_slot`；future 侧对 shared-slot 的提交与推进已下沉到池级 helper（如 `thread_pool_submit_slot_i32()`、`thread_pool_try_progress_slot()`、`thread_pool_try_kick_drain()`），并由 future 内部 helper 统一处理当前 slot 推进与完成后续唤醒，`poll()` 不再显式判断队首 slot；同时已有回归覆盖“queued slot 在 future 下次 poll 前已经完成”的 late-poll 绑定场景；队列满时才回退到 one-shot 子进程
+- 当共享槽位任务需要执行时，当前统一先进入共享 FIFO 队列；父进程负责唤醒空闲 worker 进入 drain 路径，而具体取队首 slot 与后续连续取活都由 worker 在共享队列中完成；父进程会按共享状态回刷本地 worker `busy/active_slot`；future 侧对 shared-slot 的提交与推进已下沉到池级 helper（如 `thread_pool_submit_slot_i32()`、`thread_pool_try_progress_slot()`、`thread_pool_try_kick_drain()`），并由 future 内部 helper 统一处理启动、当前 slot 推进与完成后续唤醒（如 `start_execution()`、`progress_current_slot()`、`finish_with_pending_wake()`），`poll()` 不再显式展开 shared-slot / one-shot 两条启动分支，也不再显式判断队首 slot；同时已有回归覆盖“queued slot 在 future 下次 poll 前已经完成”的 late-poll 绑定场景；队列满时才回退到 one-shot 子进程
 - 与异步运行时集成
 
 **`async_compute<T>`**：
