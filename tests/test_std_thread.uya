@@ -1,0 +1,39 @@
+// test_std_thread.uya - std.thread 最小功能测试
+
+use std.thread;
+use std.async;
+use std.testing.assert_eq_i32;
+
+fn double_i32(v: i32) i32 {
+    return v * 2;
+}
+
+test "thread_pool_new_normalizes_worker_count" {
+    const p0: ThreadPool = thread_pool_new(0);
+    const p1: ThreadPool = thread_pool_new(3);
+    try assert_eq_i32(p0.worker_count, 1);
+    try assert_eq_i32(p1.worker_count, 3);
+}
+
+test "async_compute_i32_runs_in_background_thread" {
+    const pool: ThreadPool = thread_pool_new(2);
+    const f: Future<!i32> = async_compute_i32(&pool, &double_i32 as &void, 21);
+    var w: Waker = Waker{};
+    var i: i32 = 0;
+    var got: i32 = 0 - 1;
+
+    while i < 200000 {
+        const p: Poll<!i32> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => {
+                got = ok_val catch { 0 - 2; };
+                i = 200000;
+            },
+            .Pending(_) => {
+                i = i + 1;
+            },
+        };
+    }
+
+    try assert_eq_i32(got, 42);
+}

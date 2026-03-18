@@ -1026,31 +1026,35 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
         const mod_obj: &ASTNode = callee.member_access_object;
         if mod_obj != null && mod_obj.type == ASTNodeType.AST_IDENTIFIER && mod_obj.identifier_name != null {
             const obj_name: &byte = mod_obj.identifier_name;
-            const ih: i32 = hash_string(obj_name);
-            var ii: i32 = ih & (IMPORT_TABLE_SIZE - 1);
-            var mi: i32 = 0;
-            while mi < IMPORT_TABLE_SIZE {
-                const sl: i32 = (ii + mi) & (IMPORT_TABLE_SIZE - 1);
-                const imp: &ImportedItem = checker.import_table.slots[sl];
-                if imp == null { break; }
-                if imp.item_type == (0 - 1) && str_equals(imp.local_name, obj_name) != 0 {
-                    // 模块限定调用
-                    callee.member_access_is_module_access = 1;
-                    callee.member_access_module_name = imp.module_name;
-                    const func_name: &byte = callee.member_access_field_name;
-                    if func_name != null {
-                        const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, func_name);
-                        if fn_decl != null {
-                            return type_from_ast(checker, fn_decl.fn_decl_return_type);
+            // 局部/参数变量优先于导入模块：避免变量名与模块别名同名时误判 module.func
+            const obj_symbol: &Symbol = symbol_table_lookup(checker, obj_name);
+            if obj_symbol == null {
+                const ih: i32 = hash_string(obj_name);
+                var ii: i32 = ih & (IMPORT_TABLE_SIZE - 1);
+                var mi: i32 = 0;
+                while mi < IMPORT_TABLE_SIZE {
+                    const sl: i32 = (ii + mi) & (IMPORT_TABLE_SIZE - 1);
+                    const imp: &ImportedItem = checker.import_table.slots[sl];
+                    if imp == null { break; }
+                    if imp.item_type == (0 - 1) && str_equals(imp.local_name, obj_name) != 0 {
+                        // 模块限定调用
+                        callee.member_access_is_module_access = 1;
+                        callee.member_access_module_name = imp.module_name;
+                        const func_name: &byte = callee.member_access_field_name;
+                        if func_name != null {
+                            const fn_decl: &ASTNode = find_fn_decl_from_program(checker.program_node, func_name);
+                            if fn_decl != null {
+                                return type_from_ast(checker, fn_decl.fn_decl_return_type);
+                            }
+                            const sig: &FunctionSignature = function_table_lookup(checker, func_name);
+                            if sig != null {
+                                return sig.return_type;
+                            }
                         }
-                        const sig: &FunctionSignature = function_table_lookup(checker, func_name);
-                        if sig != null {
-                            return sig.return_type;
-                        }
+                        return make_void_type();
                     }
-                    return make_void_type();
+                    mi = mi + 1;
                 }
-                mi = mi + 1;
             }
         }
         
