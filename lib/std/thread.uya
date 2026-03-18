@@ -62,19 +62,19 @@ struct ThreadTaskSlotI32 {
 }
 
 struct ThreadPoolSharedI32 {
+    pending_head: atomic i32,
+    pending_tail: atomic i32,
+    pending_count: atomic i32,
     slots: [ThreadTaskSlotI32: 16] = [],
+    pending_slots: [i32: 8] = [],
 }
 
 export struct ThreadPool {
     worker_count: i32,
     _started_workers: i32,
     _next_worker: i32,
-    _pending_head: i32,
-    _pending_tail: i32,
-    _pending_count: i32,
     _shared_state: &ThreadPoolSharedI32,
     _workers: [ThreadWorker: 8] = [],
-    _pending_slots: [i32: 8] = [],
 }
 
 fn thread_worker_set_nonblock(fd: i32) !i32 {
@@ -319,24 +319,36 @@ fn thread_pool_has_pending(pool: &ThreadPool) bool {
     if pool == null as &ThreadPool {
         return false;
     }
-    return pool._pending_count > 0;
+    if !thread_pool_has_shared_state(pool) {
+        return false;
+    }
+    return pool._shared_state.pending_count > 0;
+}
+
+fn thread_pool_pending_len(pool: &ThreadPool) i32 {
+    if pool == null as &ThreadPool || !thread_pool_has_shared_state(pool) {
+        return 0;
+    }
+    const pending_count: i32 = pool._shared_state.pending_count;
+    return pending_count;
 }
 
 fn thread_pool_enqueue_slot(pool: &ThreadPool, slot_idx: i32) i32 {
-    if pool == null as &ThreadPool || !thread_pool_slot_is_valid(slot_idx) || pool._pending_count >= THREAD_POOL_MAX_PENDING {
+    if pool == null as &ThreadPool || !thread_pool_slot_is_valid(slot_idx) || !thread_pool_has_shared_state(pool) {
         return 0;
     }
-    if pool._pending_tail >= 0 && pool._pending_tail < 8 {
-        pool._pending_slots[pool._pending_tail as usize] = slot_idx;
-        pool._pending_tail = pool._pending_tail + 1;
-        if pool._pending_tail >= 8 {
-            pool._pending_tail = 0;
+    if pool._shared_state.pending_count >= THREAD_POOL_MAX_PENDING {
+        return 0;
+    }
+    if pool._shared_state.pending_tail >= 0 && pool._shared_state.pending_tail < 8 {
+        pool._shared_state.pending_slots[pool._shared_state.pending_tail as usize] = slot_idx;
+        pool._shared_state.pending_tail = pool._shared_state.pending_tail + 1;
+        if pool._shared_state.pending_tail >= 8 {
+            pool._shared_state.pending_tail = 0;
         }
-        pool._pending_count = pool._pending_count + 1;
-        if thread_pool_has_shared_state(pool) {
-            if slot_idx >= 0 && slot_idx < 16 {
-                pool._shared_state.slots[slot_idx as usize].state = THREAD_SLOT_STATE_QUEUED;
-            }
+        pool._shared_state.pending_count = pool._shared_state.pending_count + 1;
+        if slot_idx >= 0 && slot_idx < 16 {
+            pool._shared_state.slots[slot_idx as usize].state = THREAD_SLOT_STATE_QUEUED;
         }
         return 1;
     }
@@ -344,27 +356,27 @@ fn thread_pool_enqueue_slot(pool: &ThreadPool, slot_idx: i32) i32 {
 }
 
 fn thread_pool_peek_slot(pool: &ThreadPool) i32 {
-    if pool == null as &ThreadPool || pool._pending_count <= 0 {
+    if pool == null as &ThreadPool || !thread_pool_has_shared_state(pool) || pool._shared_state.pending_count <= 0 {
         return 0 - 1;
     }
-    if pool._pending_head >= 0 && pool._pending_head < 8 {
-        return pool._pending_slots[pool._pending_head as usize];
+    if pool._shared_state.pending_head >= 0 && pool._shared_state.pending_head < 8 {
+        return pool._shared_state.pending_slots[pool._shared_state.pending_head as usize];
     }
     return 0 - 1;
 }
 
 fn thread_pool_pop_slot(pool: &ThreadPool) i32 {
-    if pool == null as &ThreadPool || pool._pending_count <= 0 {
+    if pool == null as &ThreadPool || !thread_pool_has_shared_state(pool) || pool._shared_state.pending_count <= 0 {
         return 0 - 1;
     }
-    if pool._pending_head >= 0 && pool._pending_head < 8 {
-        const slot_idx: i32 = pool._pending_slots[pool._pending_head as usize];
-        pool._pending_slots[pool._pending_head as usize] = 0;
-        pool._pending_head = pool._pending_head + 1;
-        if pool._pending_head >= 8 {
-            pool._pending_head = 0;
+    if pool._shared_state.pending_head >= 0 && pool._shared_state.pending_head < 8 {
+        const slot_idx: i32 = pool._shared_state.pending_slots[pool._shared_state.pending_head as usize];
+        pool._shared_state.pending_slots[pool._shared_state.pending_head as usize] = 0;
+        pool._shared_state.pending_head = pool._shared_state.pending_head + 1;
+        if pool._shared_state.pending_head >= 8 {
+            pool._shared_state.pending_head = 0;
         }
-        pool._pending_count = pool._pending_count - 1;
+        pool._shared_state.pending_count = pool._shared_state.pending_count - 1;
         return slot_idx;
     }
     return 0 - 1;
@@ -629,9 +641,6 @@ export fn thread_pool_new(worker_count: i32) ThreadPool {
         worker_count: normalized,
         _started_workers: 0,
         _next_worker: 0,
-        _pending_head: 0,
-        _pending_tail: 0,
-        _pending_count: 0,
         _shared_state: null as &ThreadPoolSharedI32,
     };
 }
@@ -641,7 +650,7 @@ export fn thread_pool_started_workers(pool: &ThreadPool) i32 {
 }
 
 export fn thread_pool_pending_count(pool: &ThreadPool) i32 {
-    return pool._pending_count;
+    return thread_pool_pending_len(pool);
 }
 
 export fn thread_pool_shutdown(pool: &ThreadPool) void {
@@ -681,9 +690,6 @@ export fn thread_pool_shutdown(pool: &ThreadPool) void {
 
     pool._started_workers = 0;
     pool._next_worker = 0;
-    pool._pending_head = 0;
-    pool._pending_tail = 0;
-    pool._pending_count = 0;
 }
 
 // 启动 i32 -> i32 计算，并返回底层 Future<!i32>。
