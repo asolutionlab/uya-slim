@@ -437,6 +437,34 @@ fn thread_pool_try_kick_drain(pool: &ThreadPool) !i32 {
     return 1;
 }
 
+fn thread_pool_try_progress_slot(pool: &ThreadPool, slot_idx: i32) !i32 {
+    if pool == null as &ThreadPool || !thread_pool_has_shared_state(pool) || !thread_pool_slot_is_valid(slot_idx) {
+        return 0;
+    }
+    if slot_idx >= 0 && slot_idx < 16 {
+        if pool._shared_state.slots[slot_idx as usize].state != THREAD_SLOT_STATE_QUEUED {
+            return 0;
+        }
+    }
+    const kick_result: !i32 = thread_pool_try_kick_drain(pool);
+    const kicked: i32 = kick_result catch {
+        return kick_result as! i32;
+    };
+    return kicked;
+}
+
+fn thread_pool_submit_slot_i32(pool: &ThreadPool, compute_fn: &void, arg: i32) i32 {
+    const slot_idx: i32 = thread_pool_reserve_slot(pool, compute_fn, arg);
+    if slot_idx < 0 {
+        return 0 - 1;
+    }
+    if thread_pool_enqueue_slot(pool, slot_idx) != 0 {
+        return slot_idx;
+    }
+    thread_pool_release_slot(pool, slot_idx);
+    return 0 - 1;
+}
+
 fn thread_pool_enqueue_slot(pool: &ThreadPool, slot_idx: i32) i32 {
     if pool == null as &ThreadPool || !thread_pool_slot_is_valid(slot_idx) || !thread_pool_has_shared_state(pool) {
         return 0;
@@ -582,36 +610,30 @@ struct AsyncComputeI32Future : Future<!i32> {
                 if self.try_bind_running_worker() != 0 {
                     return Poll<!i32>.Pending({});
                 }
-                if thread_pool_has_shared_state(self.pool) &&
-                   self.pool._shared_state.slots[self.slot_idx as usize].state == THREAD_SLOT_STATE_QUEUED {
-                    const kick_result: !i32 = thread_pool_try_kick_drain(self.pool);
-                    const kicked: i32 = kick_result catch {
-                        const err_value: !i32 = kick_result as! i32;
+                const progress_result: !i32 = thread_pool_try_progress_slot(self.pool, self.slot_idx);
+                const progressed: i32 = progress_result catch {
+                        const err_value: !i32 = progress_result as! i32;
                         return self.finish(err_value);
-                    };
-                    if kicked != 0 {
-                        waker.wake();
-                    }
+                };
+                if progressed != 0 {
+                    waker.wake();
                 }
                 if self.read_fd < 0 {
                     return Poll<!i32>.Pending({});
                 }
             } else {
-                const reserved_slot_idx: i32 = thread_pool_reserve_slot(self.pool, self.compute_fn, self.arg);
-                if reserved_slot_idx >= 0 {
-                    if thread_pool_enqueue_slot(self.pool, reserved_slot_idx) != 0 {
-                        self.slot_idx = reserved_slot_idx;
-                        const kick_result: !i32 = thread_pool_try_kick_drain(self.pool);
-                        const kicked: i32 = kick_result catch {
-                            const err_value: !i32 = kick_result as! i32;
-                            return self.finish(err_value);
-                        };
-                        if kicked != 0 {
-                            waker.wake();
-                        }
-                        return Poll<!i32>.Pending({});
+                const submitted_slot_idx: i32 = thread_pool_submit_slot_i32(self.pool, self.compute_fn, self.arg);
+                if submitted_slot_idx >= 0 {
+                    self.slot_idx = submitted_slot_idx;
+                    const progress_result: !i32 = thread_pool_try_progress_slot(self.pool, self.slot_idx);
+                    const progressed: i32 = progress_result catch {
+                        const err_value: !i32 = progress_result as! i32;
+                        return self.finish(err_value);
+                    };
+                    if progressed != 0 {
+                        waker.wake();
                     }
-                    thread_pool_release_slot(self.pool, reserved_slot_idx);
+                    return Poll<!i32>.Pending({});
                 }
 
                 const one_shot_result: !i32 = self.start_one_shot();
