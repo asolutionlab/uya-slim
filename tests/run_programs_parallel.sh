@@ -119,6 +119,7 @@ show_usage() {
     echo "  CC_TARGET_FLAGS='-target ...' 指定目标编译参数"
     echo "  TARGET_OS/TARGET_ARCH/TARGET_TRIPLE  目标平台（默认继承宿主）"
     echo "  TEST_PROFILE=hosted  选择 hosted 测试配置"
+    echo "  SKIP_DARWIN_DEFAULT=0  macOS 上不默认跳过 Linux syscall/async 用例"
     echo ""
     echo "参数:"
     echo "  无参数              运行所有测试"
@@ -454,6 +455,34 @@ SKIP_TESTS=()
 if [ -n "${SKIP_TESTS_EXTRA:-}" ]; then
     read -r -a SKIP_TESTS_EXTRA_ARR <<< "$SKIP_TESTS_EXTRA"
     SKIP_TESTS+=("${SKIP_TESTS_EXTRA_ARR[@]}")
+fi
+
+# macOS：在 syscall/osal/async Darwin 完成前默认跳过已知 Linux centric 用例（SKIP_DARWIN_DEFAULT=0 关闭）
+if [ "$HOST_OS" = "macos" ] && [ "${SKIP_DARWIN_DEFAULT:-1}" != "0" ]; then
+    SKIP_TESTS+=(
+        test_async_fd
+        test_std_async_event
+        test_osal
+        test_std_syscall
+        test_std_syscall_new
+        test_syscall_dir
+        test_syscall_error
+        test_syscall_exit
+        test_syscall_file
+        test_syscall_ioctl
+        test_syscall_layer
+        test_syscall_mem
+        test_syscall_module
+        test_syscall_process
+        test_syscall_thread
+        test_syscall_time
+        test_syscall_user
+        test_syscall_write
+    )
+    if [ "$ERRORS_ONLY" = false ]; then
+        echo "提示: 宿主为 macOS，已默认跳过 Linux syscall/async 相关用例（SKIP_DARWIN_DEFAULT=0 可关闭）"
+        echo ""
+    fi
 fi
 
 # 执行并行测试

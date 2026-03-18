@@ -163,6 +163,12 @@ echo "退出码：$?"  # 输出 42
    - `--nostdlib` 目前仍仅支持 Linux x86-64
    - Darwin / Windows / full cross-platform 仍需后续平台迁移文档逐步落地
 
+## 文档与阶段进度
+
+- 共享平台基础（Linux 可完成项）：[todo_platform_shared_foundation.md](todo_platform_shared_foundation.md)（已勾选同步）
+- macOS Phase 1：[todo_macos_phase1.md](todo_macos_phase1.md)
+- macOS 冒烟：[macos_hosted_smoke.md](macos_hosted_smoke.md)
+
 ## 相关文件
 
 - `bin/uya-wrapper.sh` - 包装脚本

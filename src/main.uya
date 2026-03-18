@@ -207,7 +207,8 @@ fn get_compiler_dir(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
             }
         }
     }
-    
+    // macOS 无 /proc/self/exe：Phase 2 将接 _NSGetExecutablePath 或小型 C 垫片；请先设置 UYA_ROOT 指向 lib/
+
     // 回退：使用当前目录
     if buffer_size > 1 {
         buffer[0] = 46 as byte;  // '.'
@@ -349,22 +350,79 @@ fn detect_main_function(filename: &byte) i32 {
     return 0;
 }
 
-// Linux x86_64 struct dirent 布局:
-// d_ino: i64 (offset 0, 8 bytes)
-// d_off: i64 (offset 8, 8 bytes)
-// d_reclen: u16 (offset 16, 2 bytes)
-// d_type: u8 (offset 18, 1 byte)
-// d_name: char[256] (offset 19)
-// Uya 的 Dirent struct 布局不匹配，使用手动偏移量访问
+// Linux glibc x86_64 struct dirent 布局（Darwin 不同，见 Phase 2 Commit 4/5）
+const DIRENT_OFF_D_TYPE: usize = 18;
+const DIRENT_OFF_D_NAME: usize = 19;
 
 fn dirent_get_type(entry_ptr: &byte) byte {
-    return entry_ptr[18];
+    return entry_ptr[DIRENT_OFF_D_TYPE];
 }
 
 fn dirent_get_name(entry_ptr: &byte) &byte {
     var p: &byte = entry_ptr;
-    p = p + 19;
+    p = p + DIRENT_OFF_D_NAME;
     return p;
+}
+
+// 是否为「普通文件」语义（.uya 扫描等，仅 DT_REG）
+fn dirent_is_regular_file(entry_ptr: &byte) i32 {
+    if dirent_get_type(entry_ptr) == DT_REG as byte {
+        return 1;
+    }
+    return 0;
+}
+
+// DT_REG 或 DT_UNKNOWN（NFS 等可能未知类型，需后续 stat）
+fn dirent_may_be_regular_file(entry_ptr: &byte) i32 {
+    const t: byte = dirent_get_type(entry_ptr);
+    if t == DT_REG as byte || t == DT_UNKNOWN as byte {
+        return 1;
+    }
+    return 0;
+}
+
+// 默认中间 C 路径：$TMPDIR/uya_output.c，否则 /tmp/uya_output.c（Darwin/Linux 通用）
+fn host_fill_temp_c_compile_path(buf: &byte, cap: usize) i32 {
+    if buf == null || cap < 24 {
+        return -1;
+    }
+    const tmpdir: *byte = getenv("TMPDIR" as *byte);
+    if tmpdir != null && tmpdir[0] != 0 {
+        const w: i32 = snprintf(buf as *byte, cap, "%s/uya_output.c" as *byte, tmpdir);
+        if w > 0 && (w as usize) < cap {
+            return 0;
+        }
+        return -1;
+    }
+    const w2: i32 = snprintf(buf as *byte, cap, "/tmp/uya_output.c" as *byte);
+    if w2 > 0 && (w2 as usize) < cap {
+        return 0;
+    }
+    return -1;
+}
+
+// run/test 临时可执行路径：$TMPDIR/uya_out<suffix> 或 /tmp/uya_out<suffix>
+fn host_fill_temp_run_exe_path(buf: &byte, cap: usize, exe_suffix: &byte) i32 {
+    if buf == null || cap < 32 {
+        return -1;
+    }
+    var suf: &byte = exe_suffix;
+    if suf == null {
+        suf = "" as *byte;
+    }
+    const tmpdir: *byte = getenv("TMPDIR" as *byte);
+    if tmpdir != null && tmpdir[0] != 0 {
+        const w: i32 = snprintf(buf as *byte, cap, "%s/uya_out%s" as *byte, tmpdir, suf as *byte);
+        if w > 0 && (w as usize) < cap {
+            return 0;
+        }
+        return -1;
+    }
+    const w2: i32 = snprintf(buf as *byte, cap, "/tmp/uya_out%s" as *byte, suf as *byte);
+    if w2 > 0 && (w2 as usize) < cap {
+        return 0;
+    }
+    return -1;
 }
 
 // 在目录中查找包含 main 函数的文件
@@ -385,7 +443,7 @@ fn find_main_files_in_dir(
     }
     var entry: *Dirent = readdir(dir);
     while entry != null && file_count[0] < max_files {
-        if dirent_get_type(entry as &byte) == 8 as byte {
+        if dirent_is_regular_file(entry as &byte) != 0 {
             const name: *byte = dirent_get_name(entry as &byte) as *byte;
             const name_len: usize = strlen(name);
             if name_len > 4 {
@@ -458,7 +516,7 @@ fn find_module_file(
             if dir != null {
                 var entry: *Dirent = readdir(dir);
                 while entry != null {
-                    if dirent_get_type(entry as &byte) == 8 as byte {
+                    if dirent_is_regular_file(entry as &byte) != 0 {
                         const name: *byte = dirent_get_name(entry as &byte) as *byte;
                         const name_len: usize = strlen(name);
                         if name_len > 4 {
@@ -776,7 +834,7 @@ fn collect_module_dependencies(
                     var pending_count: i32 = 0;
                     var entry: *Dirent = readdir(dir);
                     while entry != null && pending_count < max_files {
-                        if (dirent_get_type(entry as &byte) == DT_REG || dirent_get_type(entry as &byte) == DT_UNKNOWN) {
+                        if dirent_may_be_regular_file(entry as &byte) != 0 {
                             const name: *byte = dirent_get_name(entry as &byte) as *byte;
                             const nlen: usize = strlen(name);
                             if nlen > 4 && strcmp(name + (nlen - 4), ".uya" as *byte) == 0 {
@@ -851,7 +909,7 @@ fn collect_module_dependencies(
                     var pending_count: i32 = 0;
                     var entry: *Dirent = readdir(dir);
                     while entry != null && pending_count < max_files {
-                        if (dirent_get_type(entry as &byte) == DT_REG || dirent_get_type(entry as &byte) == DT_UNKNOWN) {
+                        if dirent_may_be_regular_file(entry as &byte) != 0 {
                             const name: *byte = dirent_get_name(entry as &byte) as *byte;
                             const nlen: usize = strlen(name);
                             if nlen > 4 && strcmp(name + (nlen - 4), ".uya" as *byte) == 0 {
@@ -937,7 +995,7 @@ fn collect_module_dependencies(
                     var pending_count: i32 = 0;
                     var entry: *Dirent = readdir(dir);
                     while entry != null && pending_count < max_files {
-                        if (dirent_get_type(entry as &byte) == DT_REG || dirent_get_type(entry as &byte) == DT_UNKNOWN) {
+                        if dirent_may_be_regular_file(entry as &byte) != 0 {
                             const name: *byte = dirent_get_name(entry as &byte) as *byte;
                             const nlen: usize = strlen(name);
                             if nlen > 4 && strcmp(name + (nlen - 4), ".uya" as *byte) == 0 {
@@ -1022,9 +1080,8 @@ fn collect_module_dependencies(
                     var pending_count: i32 = 0;
                     var entry: *Dirent = readdir(dir);
                     while entry != null && pending_count < max_files {
-                        const dt: byte = dirent_get_type(entry as &byte);
                         const name: *byte = dirent_get_name(entry as &byte) as *byte;
-                        if (dt == DT_REG || dt == DT_UNKNOWN) && strlen(name) > 4 {
+                        if dirent_may_be_regular_file(entry as &byte) != 0 && strlen(name) > 4 {
                             if strcmp(name + (strlen(name) - 4), ".uya" as *byte) == 0 {
                                 var fp: [byte: PATH_MAX] = [];
                                 const flen: i32 = snprintf(&fp[0], PATH_MAX, "%s%s" as *byte, &main_dir[0], name);
@@ -1124,7 +1181,7 @@ fn collect_module_dependencies(
                 var pending_count: i32 = 0;
                 var entry: *Dirent = readdir(dir);
                 while entry != null && pending_count < max_files {
-                    if dirent_get_type(entry as &byte) == 8 as byte {
+                    if dirent_is_regular_file(entry as &byte) != 0 {
                         const name: *byte = dirent_get_name(entry as &byte) as *byte;
                         const name_len: usize = strlen(name);
                         if name_len > 4 && strcmp(name + (name_len - 4), ".uya" as *byte) == 0 {
@@ -2047,9 +2104,7 @@ export fn main() i32 {
 
     // build 命令：如果没有指定 -o，使用默认输出 a.out
     if command == CommandType.COMMAND_BUILD && output_file_index < 0 {
-        // 生成临时 C 文件路径
-        const written: i32 = snprintf(&auto_output_path[0], PATH_MAX, "/tmp/uya_output.c" as *byte);
-        if written <= 0 || written >= PATH_MAX {
+        if host_fill_temp_c_compile_path(&auto_output_path[0], PATH_MAX) != 0 {
             fprintf(libc.stderr, "错误：无法生成临时输出路径\n" as *byte);
             return 1;
         }
@@ -2066,9 +2121,7 @@ export fn main() i32 {
             return 1;
         }
         
-        // 生成临时文件路径（使用固定路径，因为 getpid 在 nostdlib 模式下不可用）
-        const written: i32 = snprintf(&auto_output_path[0], PATH_MAX, "/tmp/uya_output.c" as *byte);
-        if written <= 0 || written >= PATH_MAX {
+        if host_fill_temp_c_compile_path(&auto_output_path[0], PATH_MAX) != 0 {
             fprintf(libc.stderr, "错误: 无法生成临时输出路径\n" as *byte);
             return 1;
         }
@@ -2083,8 +2136,7 @@ export fn main() i32 {
         if out_path != null && is_c_output(out_path as &byte) == 0 {
             // 输出不是 .c 文件，保存用户指定的路径，生成临时 C 文件路径
             user_output_path = out_path;
-            const written: i32 = snprintf(&auto_output_path[0], PATH_MAX, "/tmp/uya_output.c" as *byte);
-            if written <= 0 || written >= PATH_MAX {
+            if host_fill_temp_c_compile_path(&auto_output_path[0], PATH_MAX) != 0 {
                 fprintf(libc.stderr, "错误: 无法生成临时输出路径\n" as *byte);
                 return 1;
             }
@@ -2156,8 +2208,7 @@ export fn main() i32 {
         // 生成临时可执行文件路径
         var run_output: [byte: PATH_MAX] = [];
         const run_suffix: &byte = get_target_exe_suffix();
-        const run_written: i32 = snprintf(&run_output[0], PATH_MAX, "/tmp/uya_out%s" as *byte, run_suffix as *byte);
-        if run_written <= 0 || run_written >= PATH_MAX {
+        if host_fill_temp_run_exe_path(&run_output[0], PATH_MAX, run_suffix) != 0 {
             fprintf(libc.stderr, "错误：无法生成运行时输出路径\n" as *byte);
             return 1;
         }

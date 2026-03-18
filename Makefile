@@ -58,6 +58,12 @@ from-c:
 		CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" \
 		bash -c 'set -e; ulimit -s 32768 2>/dev/null || true; \
 		if grep -qF "__attribute__((naked)) void _start(void)" bin/uya.c 2>/dev/null \
+			&& [ "$$HOST_OS" = "macos" ]; then \
+			echo "错误: backup/uya.c 为 Linux nostdlib（含 x86_64 Linux _start），无法在 macOS 上 make from-c。"; \
+			echo "请从已构建的 hosted bin/uya 自举，或参见 docs/macos_hosted_smoke.md"; \
+			exit 1; \
+		fi; \
+		if grep -qF "__attribute__((naked)) void _start(void)" bin/uya.c 2>/dev/null \
 			&& [ "$$HOST_OS" = "linux" ] && [ "$$HOST_ARCH" = "x86_64" ]; then \
 			echo "备份 C 含 nostdlib _start，使用 crti.o + uya.o + crtn.o 链接（避免与 Scrt1 _start 冲突）..."; \
 			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS -c bin/uya.c -o bin/.from_c.o; \
@@ -384,4 +390,6 @@ help:
 	@echo "  make tests                           # 运行所有测试"
 	@echo "  make tests e                         # 运行所有测试，只显示错误"
 	@echo "  make clean && make from-c            # 清理后从备份恢复并构建"
+	@echo ""
+	@echo "macOS: hosted 主线见 docs/macos_hosted_smoke.md；备份 uya.c 为 Linux nostdlib 时 from-c 不可用。"
 

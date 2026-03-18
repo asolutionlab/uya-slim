@@ -26,8 +26,8 @@
 - [ ] `src/main.uya` 的宿主逻辑不再依赖 Linux-only 的硬编码 GCC PATH
 - [ ] `get_compiler_dir()` 拥有清晰的 Linux / Darwin 路径分支
 - [ ] `UYA_ROOT`、工具查找、默认路径推导逻辑被收敛到明确的 helper 中
-- [ ] `dirent` 访问不再散落在多个调用点依赖 magic offset
-- [ ] build/run/test 生成的临时路径经过统一封装
+- [ ] `dirent` 访问不再散落在多个调用点依赖 magic offset（**部分**：已用常量 + `dirent_is_regular_file` / `dirent_may_be_regular_file`；布局仍为 Linux glibc，Darwin 适配见 Commit 4）
+- [x] build/run/test 生成的临时路径经过统一封装（`TMPDIR` + 回退 `/tmp`）
 - [ ] macOS 上 hosted 路径能完成最小 build/run/test 验证
 - [ ] Linux 行为不回归
 
@@ -54,11 +54,11 @@
 
 在 Phase 2 中，Linux 侧推荐**做到 Commit 3 为止**：
 
-- [ ] Commit 1：抽取宿主路径与命令 helper
-- [ ] Commit 2：去掉 Linux-only GCC PATH 假设
-- [ ] Commit 3：封装 `dirent` 与临时路径逻辑
+- [ ] Commit 1：抽取宿主路径与命令 helper（**部分**：`get_compiler_dir`/`get_uya_root`/`link_with_toolchain` 已存在，进一步单点封装仍可做）
+- [x] Commit 2：去掉 Linux-only GCC PATH — **已完成**：`link_with_toolchain()` + `CC`/`CC_DRIVER`/`CC_TARGET_FLAGS`，无 `/usr/lib/gcc/...` 硬编码（与 Phase 1 重叠）
+- [x] Commit 3（Linux）：封装 `dirent` 与临时路径 — **已完成**：`DIRENT_OFF_*` + `dirent_is_regular_file` / `dirent_may_be_regular_file`；`host_fill_temp_c_compile_path` / `host_fill_temp_run_exe_path`（`TMPDIR` 回退 `/tmp`）。Darwin `dirent` 与路径真机验收仍属 Commit 4/5。
 
-做到这里，Linux 的主要职责已经完成：宿主逻辑收敛、接口抽象成型、Darwin 分支可插入。
+做到 Commit 2 后，Linux 上与**工具链**相关的宿主假设已对齐 Phase 1；Commit 1 仍可继续收敛。
 
 ### 从哪里开始必须切到 macOS
 
@@ -66,7 +66,7 @@
 
 - [ ] Darwin 路径发现分支
 - [ ] Darwin 下 `UYA_ROOT` 推导
-- [ ] Darwin 下 build/run/test 临时路径
+- [ ] Darwin 下 build/run/test 临时路径（代码已走 `TMPDIR`，需在 macOS 上验收）
 - [ ] Darwin 下目录扫描和模块发现
 
 ### Linux 可以继续做但不能算完成的事项
@@ -93,12 +93,11 @@
 - [ ] Linux 上执行：
   - [ ] `make check`
   - [ ] `make uya-hosted`（若已存在）
-- [ ] 记录 `src/main.uya` 当前强 Linux 绑定点：
-  - [ ] `get_compiler_dir()` 使用 `/proc/self/exe`
-  - [ ] `dirent_get_type()` / `dirent_get_name()` 使用 Linux x86-64 偏移
-  - [ ] `link_with_gcc()` 使用硬编码 PATH + `gcc`
-  - [ ] `/tmp/uya_output.c`
-  - [ ] `/tmp/uya_out`
+- [x] 记录 `src/main.uya` 当前强 Linux 绑定点：
+  - [ ] `get_compiler_dir()` 使用 `/proc/self/exe`（Darwin 待 Commit 4）
+  - [x] `dirent_*`：偏移已命名常量 + 语义 helper；**布局仍为 Linux**（Darwin 见 Commit 4）
+  - [x] ~~`link_with_gcc`~~ → 已改为 `link_with_toolchain` + 环境变量
+  - [x] 临时 C / run 可执行路径：`host_fill_temp_*`（`TMPDIR` 或 `/tmp`）
 
 ---
 
@@ -151,41 +150,15 @@
 
 ---
 
-## Commit 2：去掉 Linux-only 工具路径假设
+## Commit 2：去掉 Linux-only 工具路径假设 — **已在 Linux 完成**
 
-**建议提交名**：`host: remove hardcoded gcc path from main.uya`
+**实现名**：`link_with_toolchain()`（替代早期 `link_with_gcc` 设计）
 
-### 目标
+- [x] `CC` / `CC_DRIVER` / `CC_TARGET_FLAGS` / `TARGET_OS` / `TARGET_ARCH` / `TARGET_TRIPLE`
+- [x] 无 `/usr/lib/gcc/x86_64-linux-gnu/12` 等硬编码
+- [x] Linux：build / run / test 链接路径走同一套工具链
 
-- 解决 `src/main.uya` 里直接写死 `PATH=/usr/lib/gcc/... gcc ...` 的宿主假设
-- 让编译器在宿主命令层面与 Phase 1 的 `CC` 抽象一致
-
-### 修改文件
-
-- [ ] [../src/main.uya](../src/main.uya)
-
-### 任务清单
-
-- [ ] 将 `link_with_gcc()` 重命名为更中性的函数名，例如：
-  - [ ] `link_with_cc()`
-  - [ ] `link_with_host_cc()`
-- [ ] 不再硬编码 Linux GCC 安装路径
-- [ ] 工具选择优先级收敛为：
-  - [ ] `CC`
-  - [ ] 默认 `cc`
-  - [ ] 必要时保留清晰报错
-- [ ] 统一 build/run/test 路径中的宿主编译命令生成
-
-### 验证
-
-- [ ] Linux：build 模式仍可工作
-- [ ] Linux：run 模式仍可工作
-- [ ] Linux：test 模式仍可工作
-
-### 完成标准
-
-- [ ] `src/main.uya` 不再依赖 Linux GCC PATH
-- [ ] hosted 命令构建逻辑与 Phase 1 保持一致
+后续 Darwin 真机仅验证行为，不再改「有无硬编码 PATH」这一类问题。
 
 ---
 
@@ -196,35 +169,27 @@
 ### 目标
 
 - 把 Linux `dirent` 偏移访问从业务逻辑中隔离出去
-- 把 `/tmp/uya_output.c`、`/tmp/uya_out` 之类的路径生成收敛成单点逻辑
+- 把临时 C / run 可执行路径收敛成单点逻辑（POSIX：`TMPDIR`，否则 `/tmp`）
 
 ### 修改文件
 
-- [ ] [../src/main.uya](../src/main.uya)
+- [x] [../src/main.uya](../src/main.uya)（Linux 侧）
 
 ### 任务清单
 
-- [ ] 收敛 `dirent_get_type()` / `dirent_get_name()` 的调用点
-- [ ] 如有需要，新增目录扫描辅助函数，避免业务逻辑反复直接操作裸偏移
-- [ ] 抽取：
-  - [ ] `build_default_c_output_path()`
-  - [ ] `build_default_run_output_path()`
-  - [ ] 或等价 helper
-- [ ] 明确临时路径策略：
-  - [ ] 若沿用 `/tmp`，写清这是“过渡默认值”
-  - [ ] 若引入 `TMPDIR`，需保留回退到 `/tmp`
+- [x] `DIRENT_OFF_D_TYPE` / `DIRENT_OFF_D_NAME`；`dirent_is_regular_file`、`dirent_may_be_regular_file`
+- [x] `host_fill_temp_c_compile_path`、`host_fill_temp_run_exe_path`
+- [ ] Darwin：`dirent` 布局分支（Commit 4）
 
 ### 验证
 
-- [ ] Linux：模块发现不回归
-- [ ] Linux：目录遍历不回归
-- [ ] Linux：build/run/test 的默认输出路径不回归
+- [x] Linux：`make check-hosted`（模块发现、build/run/test）
 
-### 完成标准
+### 完成标准（Linux）
 
-- [ ] `dirent` 偏移不再散落于业务代码
-- [ ] 临时路径生成逻辑单点收敛
-- [ ] Darwin 分支具备清晰插入点
+- [x] 业务层不再写裸 `18`/`19` 或重复 `DT_REG||DT_UNKNOWN`
+- [x] 临时路径单点；无 `TMPDIR` 时回退 `/tmp`
+- [ ] Phase 2 全文「完成」仍以 macOS hosted 验收为准（Commit 4/5）
 
 ---
 
@@ -299,9 +264,8 @@
 
 ### Linux 每个提交后的最小回归
 
-- [ ] `make from-c`
-- [ ] `make uya-hosted`
-- [ ] 选择 1 个简单 build/run/test smoke 用例
+- [x] `make from-c` / `make uya-hosted` / `make check-hosted`（Phase 1 后基线）
+- [x] Commit 3（Linux）已落地；Darwin smoke 仍待 Commit 4+
 
 ### Darwin 首次 bring-up 验证
 

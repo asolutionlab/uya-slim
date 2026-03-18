@@ -32,6 +32,8 @@
 
 详细拆分见 [todo_platform_shared_foundation.md](todo_platform_shared_foundation.md)。
 
+**Linux 侧**：共享基础中可在 Linux 完成的条目已收敛（工具链变量、`main.uya` 宿主链接、`codegen` 目标宏、测试脚本）；Darwin/Windows **运行时**验收仍在各平台完成。
+
 这一主线负责把当前 Linux-only 的宿主假设、工具链假设和链接假设收敛成统一模型，核心文件包括：
 
 - [../Makefile](../Makefile)

@@ -2685,6 +2685,7 @@ interface IReadWriter {
 
 #### 3. 跨平台支持（v0.5.x）⭐⭐
 
+- 多平台共享基础（工具链/host/target/codegen 宏；**Linux 可完成项已同步** [todo_platform_shared_foundation.md](todo_platform_shared_foundation.md)）
 - macOS 支持（hosted 构建、自举、`@syscall`、`syscall/osal`、`pthread`、`--nostdlib`、`std.async`/`kqueue`），详见 [todo_macos_migration.md](todo_macos_migration.md)
 - macOS 构建链平台化（Phase 1），详见 [todo_macos_phase1.md](todo_macos_phase1.md)
 - macOS 宿主平台抽象（Phase 2），详见 [todo_macos_phase2.md](todo_macos_phase2.md)

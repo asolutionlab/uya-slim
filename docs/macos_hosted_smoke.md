@@ -1,0 +1,40 @@
+# macOS hosted 迁移与冒烟验证
+
+本文档配合 [todo_macos_phase1.md](todo_macos_phase1.md) Commit 5+ 与 Phase 2（宿主路径），说明在 **Darwin** 上如何先做 **hosted** 验证。
+
+## 当前限制（随迁移推进会缩小）
+
+| 能力 | 状态 |
+|------|------|
+| `make uya-hosted` / `make b-hosted` | 目标：在 macOS + `clang` 上可跑通 |
+| `make from-c`（`backup/uya.c` 为 Linux nostdlib） | **不可用**：备份 C 内含 Linux x86_64 `_start`，需在 Mac 上从源码自举或换用将来提供的 Darwin/hosted 备份策略 |
+| `make uya`（`--nostdlib`） | **未实现**：见 Phase 6 |
+| 未设 `UYA_ROOT` 时编译器自找 `lib/` | **未实现**：依赖 Phase 2（`/proc/self/exe` → `_NSGetExecutablePath` 或 C 垫片） |
+
+## 推荐冒烟步骤（macOS）
+
+1. **在 Linux 上**完成 `make backup`，将仓库（含 `backup/uya.c`）同步到 Mac；或在 Mac 上已有 `bin/uya`（hosted 构建产物）。
+2. 在仓库根目录：
+   ```bash
+   export UYA_ROOT="$(pwd)/lib/"   # 必须，直到 Phase 2 落地
+   make uya-hosted    # 或已有 bin/uya 则跳过
+   make b-hosted
+   ```
+3. 运行测试（默认会跳过部分 Linux 专用用例，见下）：
+   ```bash
+   TEST_PROFILE=hosted make tests-hosted
+   # 或强制跑全部（预期大量失败，直至 syscall/osal/async Darwin 完成）：
+   SKIP_DARWIN_DEFAULT=0 ./tests/run_programs_parallel.sh --uya --c99
+   ```
+
+## Darwin 默认跳过的测试
+
+环境变量 **`SKIP_DARWIN_DEFAULT=1`**（默认，在 `HOST_OS=macos` 时）：跳过依赖 Linux syscall / epoll / osal 等尚未在 Darwin 对齐的用例。列表在 `tests/run_programs_parallel.sh` 内维护，随平台能力扩展而缩减。
+
+设为 **`SKIP_DARWIN_DEFAULT=0`** 可关闭该过滤。
+
+## 相关文档
+
+- [todo_macos_migration.md](todo_macos_migration.md) — 总路线
+- [todo_macos_phase1.md](todo_macos_phase1.md) — Phase 1 构建链
+- [UYA_BUILD_RUN.md](UYA_BUILD_RUN.md) — 工具链与环境变量

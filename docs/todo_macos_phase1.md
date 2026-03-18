@@ -20,14 +20,16 @@
 
 ## 本阶段完成定义
 
-满足以下条件即可视为 Phase 1 完成：
+**Linux 上可宣称完成项**（真机验收见下表「Commit 5」）：
 
-- [ ] `Makefile` 不再把 hosted 路径写死为 `gcc`
-- [ ] `src/compile.sh` 的普通 hosted 编译/链接路径改为使用 `CC`
-- [ ] 测试脚本改为使用 `CC`
-- [ ] 存在 hosted 版自举入口，不依赖 `--nostdlib`
-- [ ] Darwin hosted 路径具备最小分支和清晰报错
-- [ ] Linux 现有 hosted 行为不回归
+- [x] `Makefile` 不再把 hosted 路径写死为 `gcc`（`CC` / `CC_DRIVER`）
+- [x] `src/compile.sh` 的普通 hosted 编译/链接路径使用 `CC_DRIVER`
+- [x] 测试脚本使用 `CC_DRIVER` / `CC_TARGET_FLAGS`（`run_programs_parallel.sh`、`run_cross_platform_tests.sh`）
+- [x] 存在 hosted 版自举入口（`uya-hosted` / `b-hosted` / `check-hosted`）
+- [x] Darwin：nostdlib 不误走 Linux CRT；`from-c` 在 macOS+Linux nostdlib 备份上明确报错；`macos_hosted_smoke.md` + 测试默认跳过列表
+- [x] Linux：`make check` / `make check-hosted` / `make backup` 路径可回归
+
+**仍须在 macOS 真机收口**：Commit 5 验证矩阵（`make uya-hosted`、最小程序等）。
 
 ---
 
@@ -37,64 +39,49 @@
 
 在 Phase 1 中，Linux 侧推荐**做到 Commit 4 为止**：
 
-- [ ] Commit 1：Makefile 引入 `CC`
-- [ ] Commit 2：`compile.sh` 的 hosted 路径改用 `CC`
-- [ ] Commit 3：新增 hosted 自举目标
-- [ ] Commit 4：测试脚本改用 `CC`
-
-做到这里，Linux 的主要职责已经完成：构建链抽象、hosted 主线分离、脚本去 `gcc` 绑定。
+- [x] Commit 1：Makefile 引入 `CC` / `CC_DRIVER` 等
+- [x] Commit 2：`compile.sh` hosted 路径改用 `CC_DRIVER`
+- [x] Commit 3：新增 hosted 自举目标
+- [x] Commit 4：测试脚本改用可配置编译器
 
 ### 从哪里开始必须切到 macOS
 
-**Commit 5 开始必须在 macOS 上做主验证**，因为这一提交的目标就是让 Darwin hosted 路径真正落地：
+**Commit 5 开始必须在 macOS 上做主验证**：
 
-- [ ] Darwin hosted 分支落位
-- [ ] Darwin 下 `make from-c`
-- [ ] Darwin 下 `make uya-hosted`
-- [ ] Darwin 下最小程序编译与运行
+- [x] Darwin hosted 脚手架（脚本/文档/报错路径）— **Linux 已写好**
+- [ ] macOS：`make from-c`（若未来提供 hosted 备份策略再测；当前 nostdlib 备份在 Mac 上 from-c 会报错，属预期）
+- [ ] macOS：`make uya-hosted` / 最小程序 / `--nostdlib` 清晰错误 — **待真机**
 
 ### Linux 可以继续做但不能算完成的事项
 
-以下内容即便在 Linux 上先写好代码，也**不能在 Linux 上宣布完成**：
+以下内容 **代码可在 Linux 准备**，**完成**以 macOS 验证为准：
 
-- [ ] Darwin 条件分支
-- [ ] Darwin 链接参数
-- [ ] Darwin 报错路径
-- [ ] Darwin hosted smoke 命令
-
-这些内容只能算“代码已准备”，真正完成必须以 macOS 真机验证为准。
+- Darwin 链接在真机上的实际行为
+- Darwin hosted smoke 全绿
 
 ### 一句话执行规则
 
-- **Commit 1-4**：可以在 Linux 上完成并回归
-- **Commit 5**：必须切到 macOS 做实现收口和验收
+- **Commit 1-4**：在 Linux 完成并回归 ✅
+- **Commit 5**：macOS 真机收口验证 ⏳
 
 ---
 
-## 明确不在本阶段做的事
+## 明确不在本阶段做的事（边界说明）
 
-- [ ] 不实现 Darwin `@syscall`
-- [ ] 不修改 `src/main.uya` 的宿主路径发现
-- [ ] 不修改 `lib/libc/syscall.uya`
-- [ ] 不修改 `lib/syscall/`
-- [ ] 不迁移 `osal`
-- [ ] 不迁移 `pthread`
-- [ ] 不实现 Darwin `--nostdlib`
-- [ ] 不实现 `kqueue`
+以下 **本阶段不实施**（转入后续 Phase）：
 
-若某个改动需要触碰上述内容，说明已经越过 Phase 1 边界，应回退到后续阶段处理。
+- 不实现 Darwin `@syscall`
+- 不修改 `src/main.uya` 的宿主路径发现（Phase 2）
+- 不修改 `lib/libc/syscall.uya`、`lib/syscall/`、`osal`、`pthread` 的 Darwin 语义
+- 不实现 Darwin `--nostdlib`、不实现 `kqueue`
 
 ---
 
-## 执行前检查
+## 执行前检查（Linux）
 
-- [ ] 先在 Linux 执行 `make check`
-- [ ] 若 `bin/uya` 不存在，先执行 `make from-c`
-- [ ] 记录当前 `gcc` 直接调用点：
-  - [ ] `Makefile`
-  - [ ] `src/compile.sh`
-  - [ ] `tests/run_programs_parallel.sh`
-  - [ ] `tests/run_cross_platform_tests.sh`
+- [x] `make check` 或 `make check-hosted`
+- [x] `bin/uya` 缺失时 `make from-c`（Linux x86_64 + nostdlib 备份）
+- [x] `gcc` 直接调用点已收敛：`Makefile`、`compile.sh`、两测试脚本均以 `CC_DRIVER` 为主
 
 ---
 
@@ -103,234 +90,51 @@
 | 提交 | 目标 | 主要文件 | 验证重点 |
 |------|------|----------|----------|
 | 1 | Makefile 引入 `CC` 抽象 | `Makefile` | `make from-c` |
-| 2 | `compile.sh` hosted 路径改用 `CC` | `src/compile.sh` | `./compile.sh --c99 -e` |
-| 3 | 新增 hosted 自举目标 | `Makefile` | `make uya-hosted` / `make b-hosted` |
-| 4 | 测试脚本改用 `CC` | `tests/run_programs_parallel.sh`、`tests/run_cross_platform_tests.sh` | 单文件测试 smoke |
-| 5 | Darwin hosted 分支落位 | `src/compile.sh`、`Makefile` | macOS smoke |
+| 2 | `compile.sh` hosted 路径 | `src/compile.sh` | `./compile.sh --c99 -e` |
+| 3 | hosted 自举目标 | `Makefile` | `make uya-hosted` / `b-hosted` |
+| 4 | 测试脚本 | 两 `tests/*.sh` | smoke |
+| 5 | Darwin 脚手架 + 真机验收 | `compile.sh`、`Makefile`、文档 | **macOS** |
 
 ---
 
-## Commit 1：Makefile 引入 `CC` 抽象
+## Commit 1～4（Linux）— 已完成
 
-**建议提交名**：`build: add configurable host compiler in Makefile`
+- Makefile：`CC`、`CC_DRIVER`、`HOST_*`、`TARGET_*`、`RUNTIME_MODE`、`LINK_MODE`、`TOOLCHAIN`、`ZIG`；`from-c` 对 Linux nostdlib 备份用 crti/crtn；`release` 等走 `CC_DRIVER`。
+- `compile.sh`：`CC_DRIVER`、`--nostdlib` 传编译器、hosted/nostdlib 分离、自举对比带 `--nostdlib`。
+- `uya-hosted` / `b-hosted` / `check-hosted`。
+- `run_programs_parallel.sh`：`CC_DRIVER`、macOS 默认跳过列表；`run_cross_platform_tests.sh`：同模型。
 
-### 目标
-
-- 先把顶层构建入口从 `gcc` 绑定解开
-- 仅处理“明显属于 hosted 路径”的调用
-- 尽量不改变现有目标语义
-
-### 修改文件
-
-- [ ] [../Makefile](../Makefile)
-
-### 任务清单
-
-- [ ] 新增 `CC ?= cc`
-- [ ] 审核 `Makefile` 中每个 `gcc` 调用点，按两类处理：
-  - [ ] hosted 路径：改用 `$(CC)`
-  - [ ] `--nostdlib` / Linux-only 路径：暂不改语义，只为后续留注释
-- [ ] 至少处理以下 hosted 场景：
-  - [ ] `from-c`
-  - [ ] `uya-std`
-  - [ ] `release`
-- [ ] 在注释中说明：
-  - [ ] hosted 构建优先通过 `CC`
-  - [ ] `uya` / `b` / `check` 仍保留现状，后续再拆 hosted 版目标
-
-### 验证
-
-- [ ] Linux：`make from-c`
-- [ ] Linux：`CC=cc make from-c`
-- [ ] Linux：`CC=gcc make from-c`
-
-### 完成标准
-
-- [ ] Makefile hosted 路径不再强依赖 `gcc`
-- [ ] Linux 行为不回归
-- [ ] `uya` / `b` / `check` 暂不被破坏
-
----
-
-## Commit 2：`compile.sh` hosted 路径改用 `CC`
-
-**建议提交名**：`build: use CC in hosted compile.sh path`
-
-### 目标
-
-- 把 `src/compile.sh` 的普通编译/链接路径改为使用可配置编译器
-- 暂时不改 `--nostdlib` 的平台语义
-
-### 修改文件
-
-- [ ] [../src/compile.sh](../src/compile.sh)
-
-### 任务清单
-
-- [ ] 引入 `CC_CMD="${CC:-cc}"` 或等价变量
-- [ ] 替换以下 hosted 路径中的 `gcc`：
-  - [ ] 从 `backup/uya.c` 恢复编译器
-  - [ ] 普通 `-e` 链接路径
-  - [ ] 非 `--nostdlib` 的生成/链接命令
-- [ ] 暂时保留 `--nostdlib` 路径的 Linux-only 逻辑，但补充注释：
-  - [ ] 当前仍是 Linux 特化
-  - [ ] Darwin 在 Phase 6 单独处理
-- [ ] 如有需要，抽取一个“生成 hosted link command”的辅助块，避免后续 Darwin 分支继续复制逻辑
-
-### 验证
-
-- [ ] Linux：`cd src && CC=cc ./compile.sh --c99 -e`
-- [ ] Linux：`cd src && CC=cc ./compile.sh --c99`
-- [ ] Linux：确认普通 `-e` 仍可生成可执行文件
-
-### 完成标准
-
-- [ ] hosted 路径统一通过 `CC` 链接
-- [ ] `--nostdlib` 路径仍保持原行为
-- [ ] 没有把 Darwin 逻辑提前混进 `_start` 分支
-
----
-
-## Commit 3：新增 hosted 自举目标
-
-**建议提交名**：`build: add hosted bootstrap targets`
-
-### 目标
-
-- 为后续 macOS bring-up 提供正式的 hosted 验证入口
-- 避免现有 `b` / `check` 始终强绑 `--nostdlib`
-
-### 修改文件
-
-- [ ] [../Makefile](../Makefile)
-
-### 任务清单
-
-- [ ] 新增 `uya-hosted`
-- [ ] 新增 `b-hosted`
-- [ ] 新增 `check-hosted`
-- [ ] 明确 hosted 目标语义：
-  - [ ] `uya-hosted`：普通链接构建编译器
-  - [ ] `b-hosted`：普通链接自举对比
-  - [ ] `check-hosted`：普通链接测试验证
-- [ ] 保持现有目标不变：
-  - [ ] `uya`
-  - [ ] `b`
-  - [ ] `check`
-- [ ] 在帮助信息中加入 hosted 目标说明
-
-### 验证
-
-- [ ] Linux：`make uya-hosted`
-- [ ] Linux：`make b-hosted`
-- [ ] Linux：`make check-hosted`
-
-### 完成标准
-
-- [ ] hosted 自举路径成为正式入口
-- [ ] 后续 macOS bring-up 可以不经过 `--nostdlib`
-
----
-
-## Commit 4：测试脚本改用 `CC`
-
-**建议提交名**：`test: make scripts use configurable compiler`
-
-### 目标
-
-- 去掉测试脚本对 `gcc` 的硬依赖
-- 为 Darwin 跳过列表和平台分组预留结构
-
-### 修改文件
-
-- [ ] [../tests/run_programs_parallel.sh](../tests/run_programs_parallel.sh)
-- [ ] [../tests/run_cross_platform_tests.sh](../tests/run_cross_platform_tests.sh)
-
-### 任务清单
-
-- [ ] `run_programs_parallel.sh`
-  - [ ] 引入 `CC=${CC:-cc}`
-  - [ ] 所有链接调用改用 `$CC`
-  - [ ] 预留 Darwin 跳过列表变量
-  - [ ] 预留平台检测辅助函数
-- [ ] `run_cross_platform_tests.sh`
-  - [ ] 引入 `CC=${CC:-cc}`
-  - [ ] 修复现有变量错误
-  - [ ] 使用统一平台检测结果进行编译
-
-### 验证
-
-- [ ] Linux：运行一个简单单文件测试
-- [ ] Linux：运行一个简单目录测试或 smoke 测试
-- [ ] Linux：`CC=cc` 与 `CC=gcc` 都能工作
-
-### 完成标准
-
-- [ ] 测试脚本不再把 `gcc` 作为唯一工具链
-- [ ] Darwin 平台测试分组有明确落点
+验证（Linux）：`make from-c`、`CC=cc`/`CC=gcc`、`make uya-hosted`、`make check-hosted`。
 
 ---
 
 ## Commit 5：Darwin hosted 分支落位
 
-**建议提交名**：`build: add darwin hosted path scaffold`
+### 任务清单（Linux 可完成部分）
 
-### 目标
-
-- 在不实现 Darwin `--nostdlib` 的前提下，让 hosted 路径能清晰进入 macOS smoke
-- 对暂不支持的路径给出明确错误，而不是误走 Linux 逻辑
-
-### 修改文件
-
-- [ ] [../src/compile.sh](../src/compile.sh)
-- [ ] [../Makefile](../Makefile)
-
-### 任务清单
-
-- [ ] 在 `compile.sh` 中增加 Darwin 检测
-- [ ] hosted 链接路径按 Darwin 分支选择参数
-- [ ] `--nostdlib` 在 Darwin 上先明确报“不支持/后续阶段实现”，避免误用 Linux `_start`
-- [ ] 在 Makefile 或帮助信息中补充说明：
-  - [ ] macOS 当前仅保证 hosted 路径
-  - [ ] `--nostdlib` 需要进入 Phase 6
-
-### 验证
-
-- [ ] macOS：`make from-c`
-- [ ] macOS：`make uya-hosted`
-- [ ] macOS：最小 hello world hosted 编译运行
-- [ ] macOS：Darwin 下调用 `--nostdlib` 时得到清晰错误
-
-### 完成标准
-
-- [ ] Darwin hosted path 能进入 smoke 验证
-- [ ] Darwin 不会误走 Linux `_start` / CRT 路径
+- [x] `compile.sh`：`TARGET_OS=macos` 与 nostdlib 拒绝误走 Linux
+- [x] hosted 在 Darwin 上为普通 `cc … .c -o`
+- [x] Makefile `from-c`：macOS + Linux nostdlib 备份时报错；`help` 指向 `macos_hosted_smoke.md`
+- [x] 测试脚本 Darwin 跳过列表；`macos_hosted_smoke.md`
+- [ ] **macOS 真机**：`uya-hosted`、`hello`、nostdlib 报错路径 — 收口
 
 ---
 
 ## 建议的最小验证矩阵
 
-### Linux 每个提交后的最小回归
+### Linux 回归（每个相关提交后）
 
-- [ ] `make from-c`
-- [ ] `make uya-hosted`（从 Commit 3 开始）
-- [ ] 选择 1 个简单测试文件跑通
+- [x] `make from-c`
+- [x] `make uya-hosted` / `make check-hosted`
 
-### Darwin 首次 bring-up 验证
+### Darwin 首次 bring-up
 
-- [ ] 从 Commit 5 开始执行
-- [ ] `make from-c`
-- [ ] `make uya-hosted`
-- [ ] 编译一个最小程序
-- [ ] 运行最小程序
+- [ ] 见 `docs/macos_hosted_smoke.md`
 
 ---
 
 ## 阶段结束后应立即进入的下一步
 
-Phase 1 完成后，必须立刻进入以下主线，不建议先碰 `--nostdlib`：
-
-1. [todo_macos_migration.md](todo_macos_migration.md) 的 Phase 2：宿主平台抽象
-2. [todo_macos_migration.md](todo_macos_migration.md) 的 Phase 3：`@syscall` / `syscall` / `osal` / runtime
-3. [todo_macos_migration.md](todo_macos_migration.md) 的 Phase 4：hosted 自举与主测试基线
-
+1. [todo_macos_migration.md](todo_macos_migration.md) Phase 2：宿主平台抽象
+2. Phase 3：`@syscall` / syscall / osal / runtime
+3. Phase 4：hosted 自举与主测试基线

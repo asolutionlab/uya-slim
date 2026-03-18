@@ -18,7 +18,8 @@ TEST_DIR="$PROJECT_ROOT/tests"
 BUILD_DIR="$PROJECT_ROOT/build/cross_platform"
 
 TOOLCHAIN="${TOOLCHAIN:-system}"
-ZIG="${ZIG:-~/zig/zig}"
+# 与 Makefile / run_programs_parallel.sh 一致，请用环境变量 ZIG 覆盖本机路径
+ZIG="${ZIG:-/home/winger/zig/zig}"
 CC="${CC:-cc}"
 if [ -z "${CC_DRIVER:-}" ]; then
     if [ "$TOOLCHAIN" = "zig" ]; then

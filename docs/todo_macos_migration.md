@@ -20,6 +20,7 @@
 
 执行前请同时阅读：
 
+- [macos_hosted_smoke.md](macos_hosted_smoke.md)（macOS 上 hosted 冒烟与 from-c 限制）
 - [todo_mini_to_full.md](todo_mini_to_full.md)
 - [todo_std_refactor.md](todo_std_refactor.md)
 - [std_async_design.md](std_async_design.md)
