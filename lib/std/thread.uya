@@ -399,6 +399,44 @@ fn thread_pool_pending_len(pool: &ThreadPool) i32 {
     return pending_count;
 }
 
+fn thread_pool_try_kick_drain(pool: &ThreadPool) !i32 {
+    if pool == null as &ThreadPool || !thread_pool_has_shared_state(pool) || pool._shared_state.pending_count <= 0 {
+        return 0;
+    }
+
+    const worker_result: !i32 = thread_pool_acquire_worker(pool);
+    const worker_idx: i32 = worker_result catch {
+        return worker_result as! i32;
+    };
+    if worker_idx < 0 || worker_idx >= 8 {
+        return 0;
+    }
+
+    if !thread_pool_has_pending(pool) {
+        thread_pool_release_worker(pool, worker_idx);
+        return 0;
+    }
+
+    var cmd: ThreadWorkerCommand = ThreadWorkerCommand{
+        slot_idx: THREAD_WORKER_DRAIN_QUEUE,
+        reserved: 0,
+    };
+    if worker_idx >= 0 && worker_idx < 8 {
+        const cmd_fd: i32 = pool._workers[worker_idx as usize].cmd_write_fd;
+        const write_result: !isize = sys_write(cmd_fd, (&cmd) as *const byte, @size_of(ThreadWorkerCommand));
+        const written: isize = write_result catch {
+            thread_pool_release_worker(pool, worker_idx);
+            return write_result as! i32;
+        };
+        if written != @size_of(ThreadWorkerCommand) as isize {
+            thread_pool_release_worker(pool, worker_idx);
+            return thread_generic_error_i32();
+        }
+    }
+
+    return 1;
+}
+
 fn thread_pool_enqueue_slot(pool: &ThreadPool, slot_idx: i32) i32 {
     if pool == null as &ThreadPool || !thread_pool_slot_is_valid(slot_idx) || !thread_pool_has_shared_state(pool) {
         return 0;
@@ -419,33 +457,6 @@ fn thread_pool_enqueue_slot(pool: &ThreadPool, slot_idx: i32) i32 {
         return 1;
     }
     return 0;
-}
-
-fn thread_pool_peek_slot(pool: &ThreadPool) i32 {
-    if pool == null as &ThreadPool || !thread_pool_has_shared_state(pool) || pool._shared_state.pending_count <= 0 {
-        return 0 - 1;
-    }
-    if pool._shared_state.pending_head >= 0 && pool._shared_state.pending_head < 8 {
-        return pool._shared_state.pending_slots[pool._shared_state.pending_head as usize];
-    }
-    return 0 - 1;
-}
-
-fn thread_pool_pop_slot(pool: &ThreadPool) i32 {
-    if pool == null as &ThreadPool || !thread_pool_has_shared_state(pool) || pool._shared_state.pending_count <= 0 {
-        return 0 - 1;
-    }
-    if pool._shared_state.pending_head >= 0 && pool._shared_state.pending_head < 8 {
-        const slot_idx: i32 = pool._shared_state.pending_slots[pool._shared_state.pending_head as usize];
-        pool._shared_state.pending_slots[pool._shared_state.pending_head as usize] = 0;
-        pool._shared_state.pending_head = pool._shared_state.pending_head + 1;
-        if pool._shared_state.pending_head >= 8 {
-            pool._shared_state.pending_head = 0;
-        }
-        pool._shared_state.pending_count = pool._shared_state.pending_count - 1;
-        return slot_idx;
-    }
-    return 0 - 1;
 }
 
 fn thread_shared_pop_slot(shared_state: &ThreadPoolSharedI32) i32 {
@@ -499,85 +510,6 @@ struct AsyncComputeI32Future : Future<!i32> {
         self.state = Poll<!i32>.Ready(result);
         self.done = 1;
         return self.state;
-    }
-
-    fn start_on_worker(self: &Self, worker_idx: i32, slot_idx: i32) !i32 {
-        if worker_idx < 0 || worker_idx >= 8 || !thread_pool_slot_is_valid(slot_idx) {
-            return thread_generic_error_i32();
-        }
-        if !thread_pool_has_shared_state(self.pool) {
-            return thread_generic_error_i32();
-        }
-
-        const pool_ref: &ThreadPool = self.pool;
-        var cmd: ThreadWorkerCommand = ThreadWorkerCommand{
-            slot_idx: slot_idx,
-            reserved: 0,
-        };
-        const cmd_fd: i32 = pool_ref._workers[worker_idx as usize].cmd_write_fd;
-        const write_result: !isize = sys_write(cmd_fd, (&cmd) as *const byte, @size_of(ThreadWorkerCommand));
-        const written: isize = write_result catch {
-            thread_pool_release_worker(self.pool, worker_idx);
-            return write_result as! i32;
-        };
-        if written != @size_of(ThreadWorkerCommand) as isize {
-            thread_pool_release_worker(self.pool, worker_idx);
-            return thread_generic_error_i32();
-        }
-
-        pool_ref._shared_state.slots[slot_idx as usize].state = THREAD_SLOT_STATE_RUNNING;
-        pool_ref._workers[worker_idx as usize].active_slot = slot_idx;
-        self.slot_idx = slot_idx;
-        self.worker_idx = worker_idx;
-        self.read_fd = pool_ref._workers[worker_idx as usize].result_read_fd;
-        self.child_pid = 0;
-        self.owns_read_fd = 0;
-        return 0;
-    }
-
-    fn start_queue_on_worker(self: &Self, worker_idx: i32, slot_idx: i32) !i32 {
-        if worker_idx < 0 || worker_idx >= 8 || !thread_pool_slot_is_valid(slot_idx) {
-            return thread_generic_error_i32();
-        }
-        if !thread_pool_has_shared_state(self.pool) {
-            return thread_generic_error_i32();
-        }
-
-        const pool_ref: &ThreadPool = self.pool;
-        if pool_ref._shared_state.slots[slot_idx as usize].state != THREAD_SLOT_STATE_QUEUED {
-            thread_pool_release_worker(self.pool, worker_idx);
-            return thread_generic_error_i32();
-        }
-
-        pool_ref._shared_state.slots[slot_idx as usize].worker_idx = worker_idx;
-        pool_ref._shared_state.slots[slot_idx as usize].state = THREAD_SLOT_STATE_RUNNING;
-        pool_ref._workers[worker_idx as usize].active_slot = slot_idx;
-
-        var cmd: ThreadWorkerCommand = ThreadWorkerCommand{
-            slot_idx: THREAD_WORKER_DRAIN_QUEUE,
-            reserved: 0,
-        };
-        const cmd_fd: i32 = pool_ref._workers[worker_idx as usize].cmd_write_fd;
-        const write_result: !isize = sys_write(cmd_fd, (&cmd) as *const byte, @size_of(ThreadWorkerCommand));
-        const written: isize = write_result catch {
-            pool_ref._shared_state.slots[slot_idx as usize].worker_idx = 0 - 1;
-            pool_ref._shared_state.slots[slot_idx as usize].state = THREAD_SLOT_STATE_QUEUED;
-            thread_pool_release_worker(self.pool, worker_idx);
-            return write_result as! i32;
-        };
-        if written != @size_of(ThreadWorkerCommand) as isize {
-            pool_ref._shared_state.slots[slot_idx as usize].worker_idx = 0 - 1;
-            pool_ref._shared_state.slots[slot_idx as usize].state = THREAD_SLOT_STATE_QUEUED;
-            thread_pool_release_worker(self.pool, worker_idx);
-            return thread_generic_error_i32();
-        }
-
-        self.slot_idx = slot_idx;
-        self.worker_idx = worker_idx;
-        self.read_fd = pool_ref._workers[worker_idx as usize].result_read_fd;
-        self.child_pid = 0;
-        self.owns_read_fd = 0;
-        return 0;
     }
 
     fn try_bind_running_worker(self: &Self) i32 {
@@ -650,19 +582,14 @@ struct AsyncComputeI32Future : Future<!i32> {
                 if self.try_bind_running_worker() != 0 {
                     return Poll<!i32>.Pending({});
                 }
-                const head_slot: i32 = thread_pool_peek_slot(self.pool);
-                if head_slot == self.slot_idx && self.pool._shared_state.slots[self.slot_idx as usize].state == THREAD_SLOT_STATE_QUEUED {
-                    const worker_result: !i32 = thread_pool_acquire_worker(self.pool);
-                    const worker_idx: i32 = worker_result catch {
-                        const err_value: !i32 = worker_result as! i32;
+                if thread_pool_has_shared_state(self.pool) &&
+                   self.pool._shared_state.slots[self.slot_idx as usize].state == THREAD_SLOT_STATE_QUEUED {
+                    const kick_result: !i32 = thread_pool_try_kick_drain(self.pool);
+                    const kicked: i32 = kick_result catch {
+                        const err_value: !i32 = kick_result as! i32;
                         return self.finish(err_value);
                     };
-                    if worker_idx >= 0 {
-                        const start_result: !i32 = self.start_queue_on_worker(worker_idx, self.slot_idx);
-                        _ = start_result catch {
-                            const err_value: !i32 = start_result as! i32;
-                            return self.finish(err_value);
-                        };
+                    if kicked != 0 {
                         waker.wake();
                     }
                 }
@@ -670,39 +597,16 @@ struct AsyncComputeI32Future : Future<!i32> {
                     return Poll<!i32>.Pending({});
                 }
             } else {
-                if thread_pool_has_pending(self.pool) {
-                    const queued_slot_idx: i32 = thread_pool_reserve_slot(self.pool, self.compute_fn, self.arg);
-                    if queued_slot_idx >= 0 && thread_pool_enqueue_slot(self.pool, queued_slot_idx) != 0 {
-                        self.slot_idx = queued_slot_idx;
-                        return Poll<!i32>.Pending({});
-                    }
-                    if queued_slot_idx >= 0 {
-                        thread_pool_release_slot(self.pool, queued_slot_idx);
-                    }
-                    const one_shot_result: !i32 = self.start_one_shot();
-                    _ = one_shot_result catch {
-                        const err_value: !i32 = one_shot_result as! i32;
-                        return self.finish(err_value);
-                    };
-                    waker.wake();
-                    return Poll<!i32>.Pending({});
-                }
-
                 const reserved_slot_idx: i32 = thread_pool_reserve_slot(self.pool, self.compute_fn, self.arg);
                 if reserved_slot_idx >= 0 {
                     if thread_pool_enqueue_slot(self.pool, reserved_slot_idx) != 0 {
                         self.slot_idx = reserved_slot_idx;
-                        const worker_result: !i32 = thread_pool_acquire_worker(self.pool);
-                        const worker_idx: i32 = worker_result catch {
-                            const err_value: !i32 = worker_result as! i32;
+                        const kick_result: !i32 = thread_pool_try_kick_drain(self.pool);
+                        const kicked: i32 = kick_result catch {
+                            const err_value: !i32 = kick_result as! i32;
                             return self.finish(err_value);
                         };
-                        if worker_idx >= 0 {
-                            const start_result: !i32 = self.start_queue_on_worker(worker_idx, reserved_slot_idx);
-                            _ = start_result catch {
-                                const err_value: !i32 = start_result as! i32;
-                                return self.finish(err_value);
-                            };
+                        if kicked != 0 {
                             waker.wake();
                         }
                         return Poll<!i32>.Pending({});
