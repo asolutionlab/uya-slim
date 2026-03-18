@@ -349,7 +349,7 @@ std.cfg(std.host_os == .hos_linux, {
 
 - 已在 `src/main.uya` 中用 `std.cfg` 裁剪 Linux 的 `/proc/self/exe` 路径分支。
 - 已将 `struct dirent` 的 `d_type` / `d_name` 偏移切到 `std.cfg(std.host_os == ...)` 编译期常量。
-- Darwin 上真实可执行路径解析（`_NSGetExecutablePath` + `realpath`）仍是后续补齐项。
+- Darwin 宿主：`get_compiler_dir` 在 `hos_macos` 分支用 `_NSGetExecutablePath` + `realpath`（仅该分支进 AST，Linux 产物无 Mach 符号）。
 
 ### 与现有能力的关系
 

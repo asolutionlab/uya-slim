@@ -1921,7 +1921,7 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 - [~] `std.cfg` / `std` 平台选择器 - 条件编译系统  
   - **当前接口**：`use std; std.cfg(std.host_os == .hos_linux, then, else)`（平台枚举变体见 `lib/std/platform.uya`，如 `hos_linux`、`tos_macos`、`ta_x86_64`）；平台值通过 `std.host_os` / `std.host_arch` / `std.target_os` / `std.target_arch` 暴露。  
   - **当前状态**：顶层 / 语句级 `std.cfg`、`HostOS` / `TargetArch` 等平台枚举、`src/main.uya` 中 Linux 宿主路径分支与 `dirent` 布局裁剪已落地。  
-  - **后续补齐**：Darwin 上真实可执行路径解析（`_NSGetExecutablePath` + `realpath`）仍待接入。  
+  - **Darwin**：`get_compiler_dir` 已接 `_NSGetExecutablePath` + `realpath`（`std.cfg(hos_macos)`，真机验收见 macOS 待办）。  
   - **设计文档**：[`docs/std_c_design.md`](./std_c_design.md) § `std.cfg` / `std` 平台选择器：条件编译（第一版）。
 - [~] `std.async.*` - 异步标准库（`std.async` / `std.async_event` / `std.async_channel` / `std.async_scheduler` 已有最小实现，详见 `std_async_design.md`）
 

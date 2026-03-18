@@ -250,7 +250,7 @@ flowchart TD
 - [ ] 修改 [../src/main.uya](../src/main.uya)：
   - [ ] 抽象 `get_compiler_dir()`
   - [ ] Linux 保留 `/proc/self/exe`
-  - [ ] Darwin 增加 `_NSGetExecutablePath` 或等价宿主路径机制
+  - [x] Darwin 增加 `_NSGetExecutablePath` 或等价宿主路径机制（`main.uya` + `std.cfg(hos_macos)`）
   - [ ] 保留 `argv0` / `UYA_ROOT` 回退逻辑
 
 ### 2.2 `UYA_ROOT` 和工具路径

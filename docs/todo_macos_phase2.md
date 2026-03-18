@@ -24,7 +24,7 @@
 满足以下条件即可视为 Phase 2 完成：
 
 - [ ] `src/main.uya` 的宿主逻辑不再依赖 Linux-only 的硬编码 GCC PATH
-- [ ] `get_compiler_dir()` 拥有清晰的 Linux / Darwin 路径分支
+- [x] `get_compiler_dir()` 拥有清晰的 Linux / Darwin 路径分支（Darwin：`_NSGetExecutablePath`+`realpath`，真机验收待 Commit 4）
 - [ ] `UYA_ROOT`、工具查找、默认路径推导逻辑被收敛到明确的 helper 中
 - [ ] `dirent` 访问不再散落在多个调用点依赖 magic offset（**部分**：已用常量 + `dirent_is_regular_file` / `dirent_may_be_regular_file`；布局仍为 Linux glibc，Darwin 适配见 Commit 4）
 - [x] build/run/test 生成的临时路径经过统一封装（`TMPDIR` + 回退 `/tmp`）

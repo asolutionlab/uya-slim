@@ -172,6 +172,40 @@ fn is_file(path: &byte) i32 {
     return 0;
 }
 
+// 仅 Darwin 宿主进 AST；Linux 自举时整段裁剪，不链接 _NSGetExecutablePath
+std.cfg(std.host_os == .hos_macos, {
+extern fn _NSGetExecutablePath(buf: *byte, bufsize: *u32) i32;
+extern fn realpath(path: *byte, resolved_path: *byte) *byte;
+fn main_darwin_get_compiler_dir(buffer: &byte, buffer_size: usize) i32 {
+    if buffer == null || buffer_size < 3 {
+        return -1;
+    }
+    var raw: [byte: PATH_MAX] = [];
+    var sz: u32 = (PATH_MAX - 1) as u32;
+    if _NSGetExecutablePath(&raw[0] as *byte, &sz) != 0 {
+        return -1;
+    }
+    raw[(PATH_MAX - 1) as usize] = 0 as byte;
+    var full: [byte: PATH_MAX] = [];
+    const rp: *byte = realpath(&raw[0] as *byte, &full[0] as *byte);
+    if rp == null {
+        return -1;
+    }
+    const last_slash: *byte = strrchr(&full[0] as *byte, 47);
+    if last_slash == null {
+        return -1;
+    }
+    const dir_len: usize = ptr_diff(last_slash, &full[0] as *byte);
+    if dir_len + 1 >= buffer_size {
+        return -1;
+    }
+    memcpy(buffer as *void, &full[0] as *void, dir_len);
+    buffer[dir_len] = 47 as byte;
+    buffer[dir_len + 1] = 0 as byte;
+    return 0;
+}
+}, {})
+
 // 获取编译器程序所在目录
 fn get_compiler_dir(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
     if argv0 == null || buffer == null || buffer_size == 0 {
@@ -208,8 +242,11 @@ fn get_compiler_dir(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
                 }
             }
         }
-    }, {})
-    // macOS 无 /proc/self/exe：Phase 2 将接 _NSGetExecutablePath 或小型 C 垫片；请先设置 UYA_ROOT 指向 lib/
+    }, std.cfg(std.host_os == .hos_macos, {
+        if main_darwin_get_compiler_dir(buffer, buffer_size) == 0 {
+            return 0;
+        }
+    }, {}))
 
     // 回退：使用当前目录
     if buffer_size > 1 {

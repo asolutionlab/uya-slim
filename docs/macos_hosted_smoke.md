@@ -9,7 +9,7 @@
 | `make uya-hosted` / `make b-hosted` | 目标：在 macOS + `clang` 上可跑通 |
 | `make from-c`（`backup/uya.c` 为 Linux nostdlib） | **不可用**：备份 C 内含 Linux x86_64 `_start`，需在 Mac 上从源码自举或换用将来提供的 Darwin/hosted 备份策略 |
 | `make uya`（`--nostdlib`） | **未实现**：见 Phase 6 |
-| 未设 `UYA_ROOT` 时编译器自找 `lib/` | **未实现**：依赖 Phase 2（`/proc/self/exe` → `_NSGetExecutablePath` 或 C 垫片） |
+| 未设 `UYA_ROOT` 时编译器自找 `lib/` | **代码已接**：Darwin 上 `_NSGetExecutablePath`+`realpath`（需 macOS 上跑通验收） |
 
 ## 推荐冒烟步骤（macOS）
 
