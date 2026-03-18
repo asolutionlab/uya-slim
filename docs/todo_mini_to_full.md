@@ -2629,6 +2629,7 @@ interface IReadWriter {
 
 - [x] **证明优化 Codegen 完善**：在 `src/codegen/c99/stmt.uya` 的 `gen_if_stmt` 中利用 `is_proved_safe`，当 if 条件恒为真时直接生成 then 分支（移除 if 包装），不保留条件；optimizer 已扩展支持 AST_BOOL/常量表达式，codegen 已完善
 - [x] **优化器递归 test 体**：在 `src/checker/optimizer.uya` 中为 `dead_code_elimination_pass` 和 `proof_optimization_pass` 添加 `AST_TEST_STMT` 递归
+- [x] **C99 顶层函数可达性裁剪**：在 `src/codegen/c99/main.uya` 中为顶层函数代码生成增加可达性收集与发射过滤，不再把未使用的 `fn` / `export fn` 无条件输出到生成的 C 文件；同时保留 `export extern`，并补充 `tests/test_function_reachability_codegen.uya` 与 `tests/verify_function_reachability_codegen.sh` 回归验证
 - 修复泛型接口中的 const 限定符警告
 - 完善错误信息提示
 - 性能优化（编译速度、生成代码质量）
