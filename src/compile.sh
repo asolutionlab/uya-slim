@@ -293,8 +293,27 @@ if [ ! -f "$COMPILER" ]; then
         if [ -f "$REPO_ROOT/bin/uya.c" ]; then
             echo "编译 bin/uya.c ..."
             echo "CFLAGS: $CFLAGS"
-            "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" "$REPO_ROOT/bin/uya.c" -o "$COMPILER" "${LDFLAGS_ARR[@]}"
-            if [ $? -eq 0 ]; then
+            HOST_EP_C="$UYA_SRC_DIR/host_executable_path.c"
+            if grep -qF "__attribute__((naked)) void _start(void)" "$REPO_ROOT/bin/uya.c" 2>/dev/null \
+                && [ "$HOST_OS" = "linux" ] && [ "$HOST_ARCH" = "x86_64" ]; then
+                REST_O="$REPO_ROOT/bin/.uya_restore.o"
+                HEP_O="$REPO_ROOT/bin/.host_executable_path.o"
+                "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -c "$REPO_ROOT/bin/uya.c" -o "$REST_O" \
+                    && "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -c -DUYA_HOST_EXE_PATH_SYSCALL "$HOST_EP_C" -o "$HEP_O" \
+                    || { echo -e "${RED}错误: 编译恢复用 .o 失败${NC}"; exit 1; }
+                CRTI="$("${CC_CMD[@]}" -print-file-name=crti.o 2>/dev/null)"
+                CRTN="$("${CC_CMD[@]}" -print-file-name=crtn.o 2>/dev/null)"
+                if [ -z "$CRTI" ] || [ "$CRTI" = "crti.o" ] || [ ! -f "$CRTI" ] || [ -z "$CRTN" ] || [ "$CRTN" = "crtn.o" ] || [ ! -f "$CRTN" ]; then
+                    echo -e "${RED}错误: 无法解析 crti.o/crtn.o${NC}"; rm -f "$REST_O" "$HEP_O"; exit 1
+                fi
+                "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -no-pie -nostdlib -static -o "$COMPILER" "$CRTI" "$REST_O" "$HEP_O" "$CRTN" "${LDFLAGS_ARR[@]}"
+                LINK_RC=$?
+                rm -f "$REST_O" "$HEP_O"
+            else
+                "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" "$REPO_ROOT/bin/uya.c" "$HOST_EP_C" -o "$COMPILER" "${LDFLAGS_ARR[@]}"
+                LINK_RC=$?
+            fi
+            if [ "${LINK_RC:-1}" -eq 0 ]; then
                 echo -e "${GREEN}✓ 编译器已从备份恢复: $COMPILER${NC}"
             else
                 echo -e "${RED}错误: 编译 bin/uya.c 失败${NC}"
@@ -586,6 +605,13 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                         exit 1
                     fi
 
+                    HEP_O="$BUILD_DIR/host_executable_path.o"
+                    HOST_EP_SRC="$UYA_SRC_DIR/host_executable_path.c"
+                    if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -c -DUYA_HOST_EXE_PATH_SYSCALL "$HOST_EP_SRC" -o "$HEP_O" 2>&1; then
+                        echo -e "${RED}✗ 编译 host_executable_path.o (nostdlib) 失败${NC}"
+                        exit 1
+                    fi
+
                     # 获取 crt 文件路径（仅 crti.o 和 crtn.o，不使用 crt1.o）
                     CRTI="$("${CC_CMD[@]}" -print-file-name=crti.o 2>/dev/null)"
                     CRTN="$("${CC_CMD[@]}" -print-file-name=crtn.o 2>/dev/null)"
@@ -597,11 +623,11 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                         exit 1
                     fi
 
-                    LINK_CMD=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -no-pie -nostdlib -static -o "$EXECUTABLE_FILE" "$CRTI" "$UYA_O" "$CRTN" "${LDFLAGS_ARR[@]}")
+                    LINK_CMD=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -no-pie -nostdlib -static -o "$EXECUTABLE_FILE" "$CRTI" "$UYA_O" "$HEP_O" "$CRTN" "${LDFLAGS_ARR[@]}")
                 else
                     # 普通模式：直接编译链接（stderr 使用 libc.stderr，无需 get_stderr 桥接）
                     # 注意：不使用 -static，避免 errno TLS 冲突
-                    LINK_CMD=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}" "$OUTPUT_FILE" -o "$EXECUTABLE_FILE" "${LDFLAGS_ARR[@]}")
+                    LINK_CMD=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}" "$OUTPUT_FILE" "$UYA_SRC_DIR/host_executable_path.c" -o "$EXECUTABLE_FILE" "${LDFLAGS_ARR[@]}")
                 fi
 
                 LINK_CMD_DESC="$(quote_cmd "${LINK_CMD[@]}")"

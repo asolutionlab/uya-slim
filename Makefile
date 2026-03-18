@@ -67,16 +67,17 @@ from-c:
 			&& [ "$$HOST_OS" = "linux" ] && [ "$$HOST_ARCH" = "x86_64" ]; then \
 			echo "备份 C 含 nostdlib _start，使用 crti.o + uya.o + crtn.o 链接（避免与 Scrt1 _start 冲突）..."; \
 			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS -c bin/uya.c -o bin/.from_c.o; \
+			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS -c -DUYA_HOST_EXE_PATH_SYSCALL src/host_executable_path.c -o bin/.host_executable_path.o; \
 			CRTI=$$($$CC_DRIVER $$CC_TARGET_FLAGS -print-file-name=crti.o); \
 			CRTN=$$($$CC_DRIVER $$CC_TARGET_FLAGS -print-file-name=crtn.o); \
 			if [ ! -f "$$CRTI" ] || [ "$$CRTI" = "crti.o" ] || [ ! -f "$$CRTN" ] || [ "$$CRTN" = "crtn.o" ]; then \
 				echo "错误: 当前工具链无法解析 crti.o/crtn.o，无法用 from-c 链接 nostdlib 版 uya.c"; exit 1; \
 			fi; \
 			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS -no-pie -nostdlib -static \
-				-o bin/uya "$$CRTI" bin/.from_c.o "$$CRTN" $$LDFLAGS; \
-			rm -f bin/.from_c.o; \
+				-o bin/uya "$$CRTI" bin/.from_c.o bin/.host_executable_path.o "$$CRTN" $$LDFLAGS; \
+			rm -f bin/.from_c.o bin/.host_executable_path.o; \
 		else \
-			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS bin/uya.c -o bin/uya $$LDFLAGS; \
+			$$CC_DRIVER $$CC_TARGET_FLAGS $$CFLAGS bin/uya.c src/host_executable_path.c -o bin/uya $$LDFLAGS; \
 		fi'
 	@echo ""
 	@echo "✓ 编译器构建完成: bin/uya"
@@ -317,7 +318,19 @@ release: backup
 	@echo "构建发布版本 (release)"
 	@echo "=========================================="
 	@echo "编译优化版本 bin/uya ..."
-	@$(CC_DRIVER) -std=c99 -O3 -fno-builtin -DNDEBUG bin/uya.c -o bin/uya $(LDFLAGS)
+	@HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" bash -c 'set -e; \
+	if grep -qF "__attribute__((naked)) void _start(void)" bin/uya.c 2>/dev/null \
+		&& [ "$$HOST_OS" = "linux" ] && [ "$$HOST_ARCH" = "x86_64" ]; then \
+		$(CC_DRIVER) $(CC_TARGET_FLAGS) -std=c99 -O3 -fno-builtin -DNDEBUG -c bin/uya.c -o bin/.rel.o; \
+		$(CC_DRIVER) $(CC_TARGET_FLAGS) -std=c99 -O3 -fno-builtin -DNDEBUG -c -DUYA_HOST_EXE_PATH_SYSCALL src/host_executable_path.c -o bin/.rel_hep.o; \
+		CRTI=$$($(CC_DRIVER) $(CC_TARGET_FLAGS) -print-file-name=crti.o); \
+		CRTN=$$($(CC_DRIVER) $(CC_TARGET_FLAGS) -print-file-name=crtn.o); \
+		$(CC_DRIVER) $(CC_TARGET_FLAGS) -std=c99 -O3 -fno-builtin -DNDEBUG -no-pie -nostdlib -static \
+			-o bin/uya $$CRTI bin/.rel.o bin/.rel_hep.o $$CRTN $(LDFLAGS); \
+		rm -f bin/.rel.o bin/.rel_hep.o; \
+	else \
+		$(CC_DRIVER) $(CC_TARGET_FLAGS) -std=c99 -O3 -fno-builtin -DNDEBUG bin/uya.c src/host_executable_path.c -o bin/uya $(LDFLAGS); \
+	fi'
 	@strip bin/uya
 	@echo ""
 	@echo "✓ 发布版本构建完成: bin/uya"

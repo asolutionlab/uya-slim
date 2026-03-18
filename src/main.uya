@@ -93,6 +93,9 @@ fn read_file_content(filename: &byte, buffer: &byte, buffer_size: usize) i32 {
 // 常量定义
 const PATH_MAX: usize = 4096;
 
+// 宿主可执行文件真实路径（src/host_executable_path.c：Linux / macOS）
+extern fn uya_host_executable_path(buf: &byte, cap: usize) i32;
+
 // 比较两个路径是否指向同一个文件（考虑路径格式差异）
 // 参数：path1 - 第一个路径
 //       path2 - 第二个路径
@@ -191,11 +194,9 @@ fn get_compiler_dir(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
         }
     }
     
-    // 尝试使用 readlink 获取真实路径（Linux）
+    // 宿主真实路径：Linux /proc/self/exe 或 macOS _NSGetExecutablePath（见 host_executable_path.c）
     var resolved_path: [byte: PATH_MAX] = [];
-    const len: i32 = readlink("/proc/self/exe" as *byte, &resolved_path[0], PATH_MAX - 1);
-    if len != -1 {
-        resolved_path[len as usize] = 0 as byte;
+    if uya_host_executable_path(&resolved_path[0], PATH_MAX) == 0 {
         const last_slash: *byte = strrchr(&resolved_path[0], 47);
         if last_slash != null {
             const dir_len: usize = ptr_diff(last_slash, &resolved_path[0] as *byte);
@@ -207,7 +208,6 @@ fn get_compiler_dir(argv0: &byte, buffer: &byte, buffer_size: usize) i32 {
             }
         }
     }
-    // macOS 无 /proc/self/exe：Phase 2 将接 _NSGetExecutablePath 或小型 C 垫片；请先设置 UYA_ROOT 指向 lib/
 
     // 回退：使用当前目录
     if buffer_size > 1 {
