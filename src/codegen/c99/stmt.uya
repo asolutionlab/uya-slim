@@ -1063,11 +1063,25 @@ fn gen_assign_non_array(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNod
     if is_atomic != 0 {
         gen_assign_atomic(codegen, dest, src);
     } else {
+        // export extern fn main 的第二个形参在 C 侧为 char **argv，saved_argv 为 uint8_t **，需显式转换
+        var is_argv_to_saved_argv: i32 = 0;
+        if dest.type == ASTNodeType.AST_IDENTIFIER && src.type == ASTNodeType.AST_IDENTIFIER {
+            const dn: &byte = dest.identifier_name;
+            const sn: &byte = src.identifier_name;
+            if dn != null && sn != null &&
+                strcmp(dn as *byte, "saved_argv" as *byte) == 0 &&
+                strcmp(sn as *byte, "argv" as *byte) == 0 {
+                is_argv_to_saved_argv = 1;
+            }
+        }
         c99_emit(codegen, "" as *byte);
         codegen.emitting_assign_lhs = 1;
         gen_expr(codegen, dest);
         codegen.emitting_assign_lhs = 0;
         fputs(" = " as *byte, codegen.output as *void);
+        if is_argv_to_saved_argv != 0 {
+            fputs("(uint8_t **)" as *byte, codegen.output as *void);
+        }
         gen_expr(codegen, src);
         c99_emit_semi_newline(codegen);
     }
@@ -1104,17 +1118,34 @@ fn gen_assign_atomic(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode) 
     }
 }
 
+fn emit_atomic_pointer_arg(codegen: &C99CodeGenerator, dest: &ASTNode, safe_name: &byte) &byte {
+    var dest_type_c: &byte = null;
+    if dest.type == ASTNodeType.AST_IDENTIFIER {
+        dest_type_c = get_identifier_type_c(codegen, dest.identifier_name);
+    } else {
+        dest_type_c = get_c_type_of_expr(codegen, dest);
+    }
+    const inner_type: &byte = get_atomic_inner_type_c(codegen, dest_type_c);
+    if inner_type != null {
+        fprintf(codegen.output as *void, "(%s *)&" as *byte, inner_type as *byte);
+    } else {
+        fputs("&" as *byte, codegen.output as *void);
+    }
+    if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
+        fputs(safe_name as *byte, codegen.output as *void);
+    } else {
+        fputs("(" as *byte, codegen.output as *void);
+        gen_expr(codegen, dest);
+        fputs(")" as *byte, codegen.output as *void);
+    }
+    return inner_type;
+}
+
 // 发射原子 store
 fn emit_atomic_store(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode, safe_name: &byte) void {
-    if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
-        c99_emit(codegen, "__atomic_store_n(&" as *byte);
-        fputs(safe_name as *byte, codegen.output as *void);
-        c99_emit_comma_space(codegen);
-    } else {
-        c99_emit(codegen, "__atomic_store_n(&" as *byte);
-        gen_expr(codegen, dest);
-        c99_emit_comma_space(codegen);
-    }
+    c99_emit(codegen, "__atomic_store_n(" as *byte);
+    _ = emit_atomic_pointer_arg(codegen, dest, safe_name);
+    c99_emit_comma_space(codegen);
     gen_expr(codegen, src);
     fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
 }
@@ -1122,27 +1153,15 @@ fn emit_atomic_store(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode, 
 // 生成原子复合赋值（+=/-= 硬件指令，*= / = / %= 用 compare-and-swap 循环，规范 13.3）
 fn gen_atomic_compound(codegen: &C99CodeGenerator, dest: &ASTNode, op: TokenType, right: &ASTNode, safe_name: &byte) void {
     if op == TokenType.TOKEN_PLUS {
-        if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
-            c99_emit(codegen, "__atomic_fetch_add(&" as *byte);
-            fputs(safe_name as *byte, codegen.output as *void);
-            c99_emit_comma_space(codegen);
-        } else {
-            c99_emit(codegen, "__atomic_fetch_add(&" as *byte);
-            gen_expr(codegen, dest);
-            c99_emit_comma_space(codegen);
-        }
+        c99_emit(codegen, "__atomic_fetch_add(" as *byte);
+        _ = emit_atomic_pointer_arg(codegen, dest, safe_name);
+        c99_emit_comma_space(codegen);
         gen_expr(codegen, right);
         fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
     } else if op == TokenType.TOKEN_MINUS {
-        if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
-            c99_emit(codegen, "__atomic_fetch_sub(&" as *byte);
-            fputs(safe_name as *byte, codegen.output as *void);
-            c99_emit_comma_space(codegen);
-        } else {
-            c99_emit(codegen, "__atomic_fetch_sub(&" as *byte);
-            gen_expr(codegen, dest);
-            c99_emit_comma_space(codegen);
-        }
+        c99_emit(codegen, "__atomic_fetch_sub(" as *byte);
+        _ = emit_atomic_pointer_arg(codegen, dest, safe_name);
+        c99_emit_comma_space(codegen);
         gen_expr(codegen, right);
         fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
     } else if op == TokenType.TOKEN_ASTERISK || op == TokenType.TOKEN_SLASH || op == TokenType.TOKEN_PERCENT {
@@ -1157,13 +1176,7 @@ fn gen_atomic_compound(codegen: &C99CodeGenerator, dest: &ASTNode, op: TokenType
         codegen.indent_level = codegen.indent_level + 1;
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "%s _uya_atomic_expected = __atomic_load_n(" as *byte, inner_type as *byte);
-        if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
-            fprintf(codegen.output as *void, "&%s" as *byte, safe_name as *byte);
-        } else {
-            fputs("&(" as *byte, codegen.output as *void);
-            gen_expr(codegen, dest);
-            fputs(")" as *byte, codegen.output as *void);
-        }
+        _ = emit_atomic_pointer_arg(codegen, dest, safe_name);
         fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
         c99_emit_indent(codegen);
         fprintf(codegen.output as *void, "%s _uya_atomic_desired;\n" as *byte, inner_type as *byte);
@@ -1184,13 +1197,7 @@ fn gen_atomic_compound(codegen: &C99CodeGenerator, dest: &ASTNode, op: TokenType
         fputs(";\n" as *byte, codegen.output as *void);
         c99_emit_indent(codegen);
         fputs("if (__atomic_compare_exchange_n(" as *byte, codegen.output as *void);
-        if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
-            fprintf(codegen.output as *void, "&%s" as *byte, safe_name as *byte);
-        } else {
-            fputs("&(" as *byte, codegen.output as *void);
-            gen_expr(codegen, dest);
-            fputs(")" as *byte, codegen.output as *void);
-        }
+        _ = emit_atomic_pointer_arg(codegen, dest, safe_name);
         fputs(", &_uya_atomic_expected, _uya_atomic_desired, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) break;\n" as *byte, codegen.output as *void);
         codegen.indent_level = codegen.indent_level - 1;
         c99_emit_indent(codegen);

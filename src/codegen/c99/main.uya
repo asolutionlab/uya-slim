@@ -873,6 +873,25 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("#else\n" as *byte, codegen.output as *void);
         fputs("  #define UYA_ASM_TARGET_X86_64_LINUX 0\n" as *byte, codegen.output as *void);
         fputs("#endif\n" as *byte, codegen.output as *void);
+        fputs("#define UYA_TARGET_PLATFORM UYA_ASM_TARGET_X86_64_LINUX\n" as *byte, codegen.output as *void);
+        fputs("#if defined(__linux__)\n" as *byte, codegen.output as *void);
+        fputs("  #define UYA_TARGET_OS_LINUX 1\n  #define UYA_TARGET_OS_DARWIN 0\n  #define UYA_TARGET_OS_WINDOWS 0\n" as *byte, codegen.output as *void);
+        fputs("#elif defined(__APPLE__)\n" as *byte, codegen.output as *void);
+        fputs("  #define UYA_TARGET_OS_LINUX 0\n  #define UYA_TARGET_OS_DARWIN 1\n  #define UYA_TARGET_OS_WINDOWS 0\n" as *byte, codegen.output as *void);
+        fputs("#elif defined(_WIN32)\n" as *byte, codegen.output as *void);
+        fputs("  #define UYA_TARGET_OS_LINUX 0\n  #define UYA_TARGET_OS_DARWIN 0\n  #define UYA_TARGET_OS_WINDOWS 1\n" as *byte, codegen.output as *void);
+        fputs("#else\n" as *byte, codegen.output as *void);
+        fputs("  #define UYA_TARGET_OS_LINUX 0\n  #define UYA_TARGET_OS_DARWIN 0\n  #define UYA_TARGET_OS_WINDOWS 0\n" as *byte, codegen.output as *void);
+        fputs("#endif\n" as *byte, codegen.output as *void);
+        fputs("#if defined(__x86_64__) || defined(_M_X64)\n" as *byte, codegen.output as *void);
+        fputs("  #define UYA_TARGET_ARCH_X86_64 1\n  #define UYA_TARGET_ARCH_ARM64 0\n  #define UYA_TARGET_ARCH_RISCV64 0\n" as *byte, codegen.output as *void);
+        fputs("#elif defined(__aarch64__) || defined(_M_ARM64)\n" as *byte, codegen.output as *void);
+        fputs("  #define UYA_TARGET_ARCH_X86_64 0\n  #define UYA_TARGET_ARCH_ARM64 1\n  #define UYA_TARGET_ARCH_RISCV64 0\n" as *byte, codegen.output as *void);
+        fputs("#elif defined(__riscv) && __riscv_xlen == 64\n" as *byte, codegen.output as *void);
+        fputs("  #define UYA_TARGET_ARCH_X86_64 0\n  #define UYA_TARGET_ARCH_ARM64 0\n  #define UYA_TARGET_ARCH_RISCV64 1\n" as *byte, codegen.output as *void);
+        fputs("#else\n" as *byte, codegen.output as *void);
+        fputs("  #define UYA_TARGET_ARCH_X86_64 0\n  #define UYA_TARGET_ARCH_ARM64 0\n  #define UYA_TARGET_ARCH_RISCV64 0\n" as *byte, codegen.output as *void);
+        fputs("#endif\n" as *byte, codegen.output as *void);
         c99_emit_newline(codegen);
         // 手动定义标准类型，避免包含标准库头文件
         fputs("// 标准类型定义（不依赖标准库头文件）\n" as *byte, codegen.output as *void);
@@ -1035,7 +1054,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         
         // 生成 _start 入口
         fputs("// _start - 自定义程序入口（无 C 标准库，内联汇编实现）\n" as *byte, codegen.output as *void);
-        fputs("extern int main(int argc, uint8_t **argv);\n" as *byte, codegen.output as *void);
+        if codegen.is_nostdlib != 0 {
+            fputs("extern int32_t main(int32_t argc, uint8_t **argv);\n" as *byte, codegen.output as *void);
+        } else {
+            fputs("extern int main(int argc, char **argv);\n" as *byte, codegen.output as *void);
+        }
         fputs("__attribute__((naked)) void _start(void) {\n" as *byte, codegen.output as *void);
         fputs("    __asm__ volatile (\n" as *byte, codegen.output as *void);
         fputs("        \"movq (%%rsp), %%rdi\\n\\t\"    /* argc */\n" as *byte, codegen.output as *void);
@@ -1481,7 +1504,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     c99_emit_close_brace_newline(codegen);
     
     fputs("#else\n" as *byte, codegen.output as *void);
-    fputs("#error \"@syscall currently only supports Linux x86-64\"\n" as *byte, codegen.output as *void);
+    fputs("#error \"@syscall requires a platform-specific backend; current implementation only supports Linux x86-64\"\n" as *byte, codegen.output as *void);
     fputs("#endif\n\n" as *byte, codegen.output as *void);
     
     // 第六步 e：收集所有单态化函数和方法返回类型的错误联合结构体
@@ -2241,9 +2264,17 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                         const p: &ASTNode = decl.fn_decl_params[pj];
                         if p != null && p.type == ASTNodeType.AST_VAR_DECL {
                             const pname: &byte = get_safe_c_identifier(codegen, p.var_decl_name);
-                            const ptype: &ASTNode = p.var_decl_type;
-                            const ptype_c: &byte = c99_type_to_c(codegen, ptype);
-                            format_param_type(codegen, ptype_c, pname, codegen.output as *void);
+                            if pj == 1 {
+                                if codegen.is_nostdlib != 0 {
+                                    fprintf(codegen.output as *void, "uint8_t **%s" as *byte, pname as *byte);
+                                } else {
+                                    fprintf(codegen.output as *void, "char **%s" as *byte, pname as *byte);
+                                }
+                            } else {
+                                const ptype: &ASTNode = p.var_decl_type;
+                                const ptype_c: &byte = c99_type_to_c(codegen, ptype);
+                                format_param_type(codegen, ptype_c, pname, codegen.output as *void);
+                            }
                             if pj < pcount - 1 {
                                 fputs(", " as *byte, codegen.output);
                             }

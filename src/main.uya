@@ -1414,32 +1414,107 @@ fn is_c_output(output_path: &byte) i32 {
     return 0;
 }
 
-// 调用 gcc 链接生成可执行文件
+fn get_env_or_default(name: &byte, fallback: &byte) &byte {
+    const value: *byte = getenv(name as *byte);
+    if value != null && value[0] != 0 {
+        return value as &byte;
+    }
+    return fallback;
+}
+
+fn resolve_cc_driver(buffer: &byte, buffer_size: i32) &byte {
+    const explicit_cc_driver: *byte = getenv("CC_DRIVER" as *byte);
+    if explicit_cc_driver != null && explicit_cc_driver[0] != 0 {
+        return explicit_cc_driver as &byte;
+    }
+
+    const toolchain: &byte = get_env_or_default("TOOLCHAIN" as *byte, "system" as *byte);
+    if strcmp(toolchain as *byte, "zig" as *byte) == 0 {
+        const zig: &byte = get_env_or_default("ZIG" as *byte, "/home/winger/zig/zig" as *byte);
+        const written: i32 = snprintf(buffer as *byte, buffer_size, "%s cc" as *byte, zig as *byte);
+        if written > 0 && written < buffer_size {
+            return buffer;
+        }
+    }
+
+    return get_env_or_default("CC" as *byte, "cc" as *byte);
+}
+
+fn target_matches_host_platform() i32 {
+    const target_os: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
+    const target_arch: &byte = get_env_or_default("TARGET_ARCH" as *byte, "x86_64" as *byte);
+    const host_os: &byte = get_env_or_default("HOST_OS" as *byte, target_os);
+    const host_arch: &byte = get_env_or_default("HOST_ARCH" as *byte, target_arch);
+    if strcmp(target_os as *byte, host_os as *byte) != 0 {
+        return 0;
+    }
+    if strcmp(target_arch as *byte, host_arch as *byte) != 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn get_target_exe_suffix() &byte {
+    const target_os: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
+    if strcmp(target_os as *byte, "windows" as *byte) == 0 {
+        const suffix: &byte = ".exe" as *byte;
+        return suffix;
+    }
+    const empty: &byte = "" as *byte;
+    return empty;
+}
+
+// 调用宿主工具链链接生成可执行文件
 // c_file: C 源代码文件路径
 // output: 输出可执行文件路径
 // is_nostdlib: 是否使用 --nostdlib 模式
 // 返回：0 成功，非 0 失败
-fn link_with_gcc(c_file: &byte, output: &byte, is_nostdlib: i32) i32 {
+fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32) i32 {
     var cmd: [byte: 4096] = [];
     var cmd_len: i32 = 0;
+    var cc_driver_buffer: [byte: PATH_MAX] = [];
+    const cc_driver: &byte = resolve_cc_driver(&cc_driver_buffer[0] as &byte, PATH_MAX);
+    const cflags: &byte = get_env_or_default("CFLAGS" as *byte, "-std=c99 -O2 -fno-builtin" as *byte);
+    const ldflags: &byte = get_env_or_default("LDFLAGS" as *byte, "" as *byte);
+    const target_os: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
+    const target_triple: &byte = get_env_or_default("TARGET_TRIPLE" as *byte, "" as *byte);
+    var target_flags: &byte = get_env_or_default("CC_TARGET_FLAGS" as *byte, "" as *byte);
+    var target_flags_buffer: [byte: 256] = [];
+
+    if target_flags[0] == 0 && target_triple[0] != 0 {
+        const target_flags_len: i32 = snprintf(&target_flags_buffer[0], 256, "-target %s" as *byte, target_triple as *byte);
+        if target_flags_len > 0 && target_flags_len < 256 {
+            target_flags = &target_flags_buffer[0];
+        }
+    }
 
     if is_nostdlib != 0 {
-        // --nostdlib 模式：零依赖静态链接
-        cmd_len = snprintf(&cmd[0], 4096, "PATH=/usr/lib/gcc/x86_64-linux-gnu/12:$PATH gcc -std=c99 -O2 -nostdlib -fno-builtin -static %s -o %s -lgcc" as *byte, c_file as *byte, output as *byte);
+        if strcmp(target_os as *byte, "linux" as *byte) != 0 {
+            fprintf(libc.stderr, "错误：当前 build/run/test 的 --nostdlib 路径仅支持 Linux 目标，当前 TARGET_OS=%s\n" as *byte, target_os as *byte);
+            return 1;
+        }
+        if target_flags[0] != 0 {
+            cmd_len = snprintf(&cmd[0], 4096, "%s %s %s -nostdlib -static %s -o %s -lgcc %s" as *byte, cc_driver as *byte, target_flags as *byte, cflags as *byte, c_file as *byte, output as *byte, ldflags as *byte);
+        } else {
+            cmd_len = snprintf(&cmd[0], 4096, "%s %s -nostdlib -static %s -o %s -lgcc %s" as *byte, cc_driver as *byte, cflags as *byte, c_file as *byte, output as *byte, ldflags as *byte);
+        }
     } else {
-        // 普通模式
-        cmd_len = snprintf(&cmd[0], 4096, "PATH=/usr/lib/gcc/x86_64-linux-gnu/12:$PATH gcc -std=c99 -O2 -fno-builtin %s -o %s" as *byte, c_file as *byte, output as *byte);
+        if target_flags[0] != 0 {
+            cmd_len = snprintf(&cmd[0], 4096, "%s %s %s %s -o %s %s" as *byte, cc_driver as *byte, target_flags as *byte, cflags as *byte, c_file as *byte, output as *byte, ldflags as *byte);
+        } else {
+            cmd_len = snprintf(&cmd[0], 4096, "%s %s %s -o %s %s" as *byte, cc_driver as *byte, cflags as *byte, c_file as *byte, output as *byte, ldflags as *byte);
+        }
     }
 
     if cmd_len <= 0 || cmd_len >= 4096 {
-        fprintf(libc.stderr, "错误：构建 gcc 命令失败\n" as *byte);
+        fprintf(libc.stderr, "错误：构建宿主链接命令失败\n" as *byte);
         return 1;
     }
 
-    fprintf(libc.stderr, "信息：调用 gcc 链接：%s\n" as *byte, &cmd[0] as *byte);
+    fprintf(libc.stderr, "信息：调用宿主工具链链接：%s\n" as *byte, &cmd[0] as *byte);
     const result: i32 = system(&cmd[0] as *byte);
     if result != 0 {
-        fprintf(libc.stderr, "错误：gcc 链接失败，返回码：%d\n" as *byte, result);
+        fprintf(libc.stderr, "错误：宿主工具链链接失败，返回码：%d\n" as *byte, result);
         return 1;
     }
     return 0;
@@ -2002,7 +2077,7 @@ export fn main() i32 {
     }
     
     // build 命令：如果指定了非 .c 输出，需要生成临时 C 文件
-    var user_output_path: *byte = null;  // 用户指定的输出路径（用于 gcc 链接）
+    var user_output_path: *byte = null;  // 用户指定的输出路径（用于宿主工具链链接）
     if command == CommandType.COMMAND_BUILD && output_file_index >= 0 {
         const out_path: *byte = get_argv(output_file_index);
         if out_path != null && is_c_output(out_path as &byte) == 0 {
@@ -2039,7 +2114,7 @@ export fn main() i32 {
         }
     }
 
-    // build 命令：如果输出不是 C 文件，调用 gcc 链接
+    // build 命令：如果输出不是 C 文件，调用宿主工具链链接
     // 条件：output_file_index == -2（自动生成 C 文件）或用户指定了非 .c 输出
     if command == CommandType.COMMAND_BUILD && is_output_c_file == 0 {
         // C 文件路径（auto_output_path 已设置）
@@ -2054,8 +2129,8 @@ export fn main() i32 {
             output = get_argv(output_file_index) as &byte;
         }
 
-        // 调用 gcc 链接
-        const link_result: i32 = link_with_gcc(c_file, output, is_nostdlib);
+        // 调用宿主工具链链接
+        const link_result: i32 = link_with_toolchain(c_file, output, is_nostdlib);
         if link_result != 0 {
             fprintf(libc.stderr, "错误：链接失败\n" as *byte);
             return 1;
@@ -2073,39 +2148,32 @@ export fn main() i32 {
             actual_output = get_argv(output_file_index) as &byte;
         }
 
+        if target_matches_host_platform() == 0 {
+            fprintf(libc.stderr, "错误：run/test 仅支持在宿主平台上运行当前目标；请改用 build 或调整 HOST_*/TARGET_*\n" as *byte);
+            return 1;
+        }
+
         // 生成临时可执行文件路径
         var run_output: [byte: PATH_MAX] = [];
-        const run_written: i32 = snprintf(&run_output[0], PATH_MAX, "/tmp/uya_out" as *byte);
+        const run_suffix: &byte = get_target_exe_suffix();
+        const run_written: i32 = snprintf(&run_output[0], PATH_MAX, "/tmp/uya_out%s" as *byte, run_suffix as *byte);
         if run_written <= 0 || run_written >= PATH_MAX {
             fprintf(libc.stderr, "错误：无法生成运行时输出路径\n" as *byte);
             return 1;
         }
 
-        // 调用 gcc 链接生成可执行文件
+        // 调用宿主工具链链接生成可执行文件
         fprintf(libc.stderr, "\n编译完成：%s\n" as *byte, actual_output as *byte);
-        
-        var gcc_cmd: [byte: 4096] = [];
-        var gcc_cmd_len: i32 = 0;
-        if is_nostdlib != 0 {
-            gcc_cmd_len = snprintf(&gcc_cmd[0], 4096, "PATH=/usr/lib/gcc/x86_64-linux-gnu/12:$PATH gcc -std=c99 -O2 -nostdlib -fno-builtin -static %s -o /tmp/uya_out -lgcc" as *byte, actual_output as *byte);
-        } else {
-            gcc_cmd_len = snprintf(&gcc_cmd[0], 4096, "PATH=/usr/lib/gcc/x86_64-linux-gnu/12:$PATH gcc -std=c99 -O2 %s -o /tmp/uya_out -lm" as *byte, actual_output as *byte);
-        }
-        
-        if gcc_cmd_len <= 0 || gcc_cmd_len >= 4096 {
-            fprintf(libc.stderr, "错误：构建 gcc 命令失败\n" as *byte);
-            return 1;
-        }
-        
-        const gcc_result: i32 = system(&gcc_cmd[0] as *byte);
-        if gcc_result != 0 {
-            fprintf(libc.stderr, "错误：gcc 链接失败，返回码：%d\n" as *byte, gcc_result);
+
+        const link_result: i32 = link_with_toolchain(actual_output, &run_output[0] as &byte, is_nostdlib);
+        if link_result != 0 {
+            fprintf(libc.stderr, "错误：宿主工具链链接失败\n" as *byte);
             return 1;
         }
 
         // 运行程序
         var run_cmd: [byte: 4096] = [];
-        var run_cmd_len: i32 = snprintf(&run_cmd[0], 4096, "/tmp/uya_out" as *byte);
+        var run_cmd_len: i32 = snprintf(&run_cmd[0], 4096, "%s" as *byte, &run_output[0] as *byte);
         const run_result: i32 = system(&run_cmd[0] as *byte);
         if run_result != 0 {
             fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, run_result);
@@ -2426,8 +2494,8 @@ fn generate_libc(output_dir: &byte) i32 {
 
     fprintf(libc.stderr, "信息: 已生成 %s 和 %s\n" as *byte, &header_path[0] as *byte, &source_path[0] as *byte);
     fprintf(libc.stderr, "信息: 使用方法:\n" as *byte);
-    fprintf(libc.stderr, "  gcc -c libuya.c -o libuya.o\n" as *byte);
-    fprintf(libc.stderr, "  gcc -nostdlib your_program.c libuya.o -o your_program -lgcc\n" as *byte);
+    fprintf(libc.stderr, "  ${CC:-cc} -c libuya.c -o libuya.o\n" as *byte);
+    fprintf(libc.stderr, "  ${CC:-cc} -nostdlib your_program.c libuya.o -o your_program -lgcc\n" as *byte);
 
     return 0;
 }

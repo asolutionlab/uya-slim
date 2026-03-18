@@ -2006,6 +2006,13 @@ fn get_atomic_inner_type_c(codegen: &C99CodeGenerator, type_c: &byte) &byte {
     if (inner_start[inner_len] as i32) != 41 {
         return null;
     }
+    var tail_idx: i32 = inner_len + 1;
+    while (inner_start[tail_idx] as i32) == 32 {
+        tail_idx = tail_idx + 1;
+    }
+    if (inner_start[tail_idx] as i32) != 0 {
+        return null;
+    }
     const buf: &byte = arena_alloc(codegen.arena, (inner_len + 1) as usize) as &byte;
     if buf == null {
         return null;

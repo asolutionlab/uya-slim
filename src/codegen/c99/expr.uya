@@ -244,23 +244,32 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         // 根据浮点字面量后缀生成对应的 C 代码格式
         const suffix: i32 = expr.float_literal_suffix;
         const val: f64 = expr.float_literal_value;
-        const truncated: i64 = val as i64;
+        var truncated: i64 = 0;
+        var truncated_valid: i32 = 0;
+        const i64_upper_exclusive: f64 = 9223372036854775808.0;
+        const i64_lower_inclusive: f64 = -9223372036854775808.0;
         const i32_max: i32 = 2147483647;
         const i32_min: i32 = 0 - i32_max - 1;
+
+        // 2^63 在 f64 中可精确表示，但它已经超出 i64 最大值，所以这里必须用 < 上界。
+        if val >= i64_lower_inclusive && val < i64_upper_exclusive {
+            truncated = val as i64;
+            truncated_valid = 1;
+        }
         
         if suffix == 10 {  // F32
             // f32 类型：使用 F 后缀
             fprintf(codegen.output as *void, "%.9gF" as *byte, val);
         } else if suffix == 11 {  // F64
             // f64 类型：使用普通格式
-            if val == (truncated as f64) && truncated >= i32_min as i64 && truncated <= i32_max as i64 {
+            if truncated_valid != 0 && val == (truncated as f64) && truncated >= i32_min as i64 && truncated <= i32_max as i64 {
                 fprintf(codegen.output as *void, "%d" as *byte, truncated as i32);
             } else {
                 fprintf(codegen.output as *void, "%.17g" as *byte, val);
             }
         } else {
             // 无后缀，默认 f64
-            if val == (truncated as f64) && truncated >= i32_min as i64 && truncated <= i32_max as i64 {
+            if truncated_valid != 0 && val == (truncated as f64) && truncated >= i32_min as i64 && truncated <= i32_max as i64 {
                 fprintf(codegen.output as *void, "%d" as *byte, truncated as i32);
             } else {
                 fprintf(codegen.output as *void, "%.17g" as *byte, val);
@@ -717,8 +726,9 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             const ref_name: &byte = get_c_name_for_identifier_ref(codegen, name);
             const type_c: &byte = get_identifier_type_c(codegen, name);
             // 如果是原子类型，生成原子 load
-            if type_c != null && strstr(type_c as *byte, "_Atomic" as *byte) != null {
-                fprintf(codegen.output as *void, "__atomic_load_n(&%s, __ATOMIC_SEQ_CST)" as *byte, ref_name as *byte);
+            const inner_type: &byte = get_atomic_inner_type_c(codegen, type_c);
+            if inner_type != null {
+                fprintf(codegen.output as *void, "__atomic_load_n((%s *)&%s, __ATOMIC_SEQ_CST)" as *byte, inner_type as *byte, ref_name as *byte);
             } else {
                 fprintf(codegen.output as *void, "%s" as *byte, ref_name as *byte);
             }

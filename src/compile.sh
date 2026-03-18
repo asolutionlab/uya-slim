@@ -4,9 +4,93 @@
 
 # 注意：不使用 set -e，因为我们需要捕获编译器的退出码并处理错误
 
-# 编译选项（可通过环境变量覆盖）
+# 共享平台/工具链模型（可通过环境变量覆盖）
 CFLAGS="${CFLAGS:--std=c99 -O0 -g -fno-builtin}"
 LDFLAGS="${LDFLAGS:-}"
+TOOLCHAIN="${TOOLCHAIN:-system}"
+ZIG="${ZIG:-/home/winger/zig/zig}"
+CC="${CC:-cc}"
+if [ -z "${CC_DRIVER:-}" ]; then
+    if [ "$TOOLCHAIN" = "zig" ]; then
+        CC_DRIVER="$ZIG cc"
+    else
+        CC_DRIVER="$CC"
+    fi
+fi
+CC_TARGET_FLAGS="${CC_TARGET_FLAGS:-}"
+RUNTIME_MODE="${RUNTIME_MODE:-hosted}"
+LINK_MODE="${LINK_MODE:-default}"
+
+normalize_os() {
+    case "$1" in
+        Linux|linux) echo "linux" ;;
+        Darwin|darwin|macos) echo "macos" ;;
+        MINGW*|MSYS*|CYGWIN*|mingw*|msys*|cygwin*|windows|win32) echo "windows" ;;
+        *) echo "$1" | tr '[:upper:]' '[:lower:]' ;;
+    esac
+}
+
+normalize_arch() {
+    case "$1" in
+        x86_64|amd64) echo "x86_64" ;;
+        aarch64|arm64) echo "arm64" ;;
+        riscv64) echo "riscv64" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+HOST_OS="${HOST_OS:-$(normalize_os "$(uname -s)")}"
+HOST_ARCH="${HOST_ARCH:-$(normalize_arch "$(uname -m)")}"
+TARGET_OS="${TARGET_OS:-$HOST_OS}"
+TARGET_ARCH="${TARGET_ARCH:-$HOST_ARCH}"
+TARGET_TRIPLE="${TARGET_TRIPLE:-}"
+
+HOST_OS="$(normalize_os "$HOST_OS")"
+HOST_ARCH="$(normalize_arch "$HOST_ARCH")"
+TARGET_OS="$(normalize_os "$TARGET_OS")"
+TARGET_ARCH="$(normalize_arch "$TARGET_ARCH")"
+
+if [ -n "$TARGET_TRIPLE" ] && [ -z "$CC_TARGET_FLAGS" ]; then
+    CC_TARGET_FLAGS="-target $TARGET_TRIPLE"
+fi
+
+if [ "$TOOLCHAIN" = "zig" ] && [ ! -x "$ZIG" ]; then
+    echo -e "${RED}错误: TOOLCHAIN=zig 但未找到可执行 zig: $ZIG${NC}"
+    exit 1
+fi
+
+TARGET_EXE_SUFFIX=""
+if [ "$TARGET_OS" = "windows" ]; then
+    TARGET_EXE_SUFFIX=".exe"
+fi
+
+CC_CMD=()
+if [ -n "$CC_DRIVER" ]; then
+    read -r -a CC_CMD <<< "$CC_DRIVER"
+fi
+if [ ${#CC_CMD[@]} -eq 0 ]; then
+    CC_CMD=("cc")
+fi
+
+if [ -n "$CC_TARGET_FLAGS" ]; then
+    read -r -a CC_TARGET_FLAGS_ARR <<< "$CC_TARGET_FLAGS"
+    CC_CMD+=("${CC_TARGET_FLAGS_ARR[@]}")
+fi
+
+CFLAGS_ARR=()
+if [ -n "$CFLAGS" ]; then
+    read -r -a CFLAGS_ARR <<< "$CFLAGS"
+fi
+
+LDFLAGS_ARR=()
+if [ -n "$LDFLAGS" ]; then
+    read -r -a LDFLAGS_ARR <<< "$LDFLAGS"
+fi
+
+quote_cmd() {
+    printf '%q ' "$@"
+    echo
+}
 
 # 脚本目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,6 +133,18 @@ usage() {
   --safety-proof      启用内存安全检查
   --stack-size KB     设置堆栈大小（KB），编译器启动时使用 setrlimit 设置
   --compiler PATH     指定编译器路径（默认: $COMPILER）
+
+共享工具链环境变量:
+  TOOLCHAIN          system / zig（默认: system）
+  ZIG                zig 可执行文件路径（默认: /home/winger/zig/zig）
+  CC                 默认宿主编译器（默认: cc）
+  CC_DRIVER          实际调用的 C 编译器命令，可为多词命令（如 "zig cc"）
+  CC_TARGET_FLAGS    目标平台额外参数（如 "-target x86_64-windows-gnu"）
+  HOST_OS/HOST_ARCH  宿主平台（默认自动探测）
+  TARGET_OS/TARGET_ARCH/TARGET_TRIPLE
+                     目标平台（默认继承宿主）
+  RUNTIME_MODE       hosted / nostdlib
+  LINK_MODE          default / static
 
 示例:
   $0                           # 使用默认设置编译（生成目标文件）
@@ -157,10 +253,35 @@ if [ "$BOOTSTRAP_COMPARE" = true ]; then
     GENERATE_EXEC=true
 fi
 
+if [ "$RUNTIME_MODE" = "nostdlib" ]; then
+    USE_NOSTDLIB=true
+fi
+if [ "$USE_NOSTDLIB" = true ]; then
+    RUNTIME_MODE="nostdlib"
+    if [ "$LINK_MODE" = "default" ]; then
+        LINK_MODE="static"
+    fi
+else
+    RUNTIME_MODE="hosted"
+fi
+
 # --nostdlib 选项需要生成可执行文件
 if [ "$USE_NOSTDLIB" = true ] && [ "$GENERATE_EXEC" != true ]; then
     echo -e "${RED}错误: --nostdlib 需要同时使用 -e 或 --exec 选项${NC}"
     exit 1
+fi
+
+# 显示共享平台/工具链配置
+if [ "$VERBOSE" = true ]; then
+    echo "共享平台模型:"
+    echo "  HOST_OS=$HOST_OS HOST_ARCH=$HOST_ARCH"
+    echo "  TARGET_OS=$TARGET_OS TARGET_ARCH=$TARGET_ARCH TARGET_TRIPLE=$TARGET_TRIPLE"
+    echo "  RUNTIME_MODE=$RUNTIME_MODE LINK_MODE=$LINK_MODE"
+    echo "  TOOLCHAIN=$TOOLCHAIN"
+    echo "  ZIG=$ZIG"
+    echo "  CC=$CC"
+    echo "  CC_DRIVER=$CC_DRIVER"
+    echo "  CC_TARGET_FLAGS=$CC_TARGET_FLAGS"
 fi
 
 # 检查编译器是否存在，如果不存在则从备份恢复
@@ -172,7 +293,7 @@ if [ ! -f "$COMPILER" ]; then
         if [ -f "$REPO_ROOT/bin/uya.c" ]; then
             echo "编译 bin/uya.c ..."
             echo "CFLAGS: $CFLAGS"
-            gcc $CFLAGS "$REPO_ROOT/bin/uya.c" -o "$COMPILER" $LDFLAGS
+            "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" "$REPO_ROOT/bin/uya.c" -o "$COMPILER" "${LDFLAGS_ARR[@]}"
             if [ $? -eq 0 ]; then
                 echo -e "${GREEN}✓ 编译器已从备份恢复: $COMPILER${NC}"
             else
@@ -355,6 +476,9 @@ fi
 if [ "$USE_C99" = true ]; then
     COMPILER_CMD+=(--c99)
 fi
+if [ "$USE_NOSTDLIB" = true ]; then
+    COMPILER_CMD+=(--nostdlib)
+fi
 if [ "$USE_LINE_DIRECTIVES" = true ]; then
     COMPILER_CMD+=(--line-directives)
 fi
@@ -416,7 +540,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
     EXECUTABLE_FILE=""
     if [ "$GENERATE_EXEC" = true ]; then
         mkdir -p "$BIN_DIR"
-        EXECUTABLE_FILE="$BIN_DIR/$OUTPUT_NAME"
+        EXECUTABLE_FILE="$BIN_DIR/$OUTPUT_NAME$TARGET_EXE_SUFFIX"
         
         # 检查可执行文件是否需要生成或重新链接（C99 时若 .c 比可执行文件新则需重新链接）
         # 在 --nostdlib 模式下，总是需要手动链接
@@ -442,73 +566,57 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             # std.runtime 提供 export extern "libc" fn main(argc, argv) 作为 C 入口
             # 用户 export fn main() 被编译为 main_main()
             if [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ]; then
+                LINK_CMD_DESC=""
                 if [ "$USE_NOSTDLIB" = true ]; then
-                    # --nostdlib 模式：将 _start 内联汇编嵌入生成的 C 代码
-                    UYA_O="$BUILD_DIR/uya.o"
-                    
-                    # 在 C 代码开头插入 _start 内联汇编
-                    UYA_C_NOSTDLIB="$BUILD_DIR/uya_nostdlib.c"
-                    cat > "$UYA_C_NOSTDLIB" << 'STARTCODE'
-/* _start - 自定义程序入口（无 C 标准库，内联汇编实现） */
-typedef signed char int8_t;
-typedef unsigned char uint8_t;
-extern int main(int argc, uint8_t **argv);
-__attribute__((naked)) void _start(void) {
-    __asm__ volatile (
-        "movq (%%rsp), %%rdi\n\t"    /* argc */
-        "leaq 8(%%rsp), %%rsi\n\t"   /* argv */
-        "call main\n\t"
-        "movq %%rax, %%rdi\n\t"
-        "movq $60, %%rax\n\t"        /* syscall exit */
-        "syscall\n\t"
-        "hlt\n\t"
-        : : : "memory"
-    );
-}
-
-STARTCODE
-                    cat "$OUTPUT_FILE" >> "$UYA_C_NOSTDLIB"
-                    
-                    if [ "$VERBOSE" = true ]; then
-                        echo "编译 $UYA_C_NOSTDLIB -> $UYA_O"
+                    if [ "$TARGET_OS" != "linux" ] || [ "$TARGET_ARCH" != "x86_64" ]; then
+                        echo -e "${RED}✗ 当前 --nostdlib 仅实现 Linux x86_64 路径${NC}"
+                        echo "目标平台: ${TARGET_OS}/${TARGET_ARCH}"
+                        echo "请先使用 hosted 路径，或为该目标平台单独实现 nostdlib 入口与链接策略"
+                        exit 1
                     fi
 
-                    if ! gcc $CFLAGS -c "$UYA_C_NOSTDLIB" -o "$UYA_O" 2>&1; then
-                        echo -e "${RED}✗ 编译 uya_nostdlib.c 失败${NC}"
+                    # --nostdlib：编译器在传入 --nostdlib 时已在生成 C 内含 _start 与 main 原型，勿再前置片段（否则重复定义 _start）
+                    UYA_O="$BUILD_DIR/uya.o"
+                    if [ "$VERBOSE" = true ]; then
+                        echo "编译 $OUTPUT_FILE -> $UYA_O (-nostdlib)"
+                    fi
+
+                    if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
+                        echo -e "${RED}✗ 编译 nostdlib 目标 C 失败${NC}"
                         exit 1
                     fi
 
                     # 获取 crt 文件路径（仅 crti.o 和 crtn.o，不使用 crt1.o）
-                    CRTI="$(gcc -print-file-name=crti.o)"
-                    CRTN="$(gcc -print-file-name=crtn.o)"
-
-                    # 链接（不使用 libc 和 libgcc，使用内嵌 _start）
-                    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"${EXECUTABLE_FILE}.exe\" \"$CRTI\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
-                    else
-                        LINK_CMD="gcc $CFLAGS -no-pie -nostdlib -static -o \"$EXECUTABLE_FILE\" \"$CRTI\" \"$UYA_O\" \"$CRTN\" $LDFLAGS"
+                    CRTI="$("${CC_CMD[@]}" -print-file-name=crti.o 2>/dev/null)"
+                    CRTN="$("${CC_CMD[@]}" -print-file-name=crtn.o 2>/dev/null)"
+                    if [ -z "$CRTI" ] || [ "$CRTI" = "crti.o" ] || [ ! -f "$CRTI" ] || [ -z "$CRTN" ] || [ "$CRTN" = "crtn.o" ] || [ ! -f "$CRTN" ]; then
+                        echo -e "${RED}✗ 当前工具链无法提供 Linux nostdlib 所需的 CRT 对象${NC}"
+                        echo "CC_DRIVER: $CC_DRIVER"
+                        echo "CC_TARGET_FLAGS: $CC_TARGET_FLAGS"
+                        echo "建议：使用支持 Linux x86_64 nostdlib 的工具链，或切换到 hosted 路径"
+                        exit 1
                     fi
+
+                    LINK_CMD=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -no-pie -nostdlib -static -o "$EXECUTABLE_FILE" "$CRTI" "$UYA_O" "$CRTN" "${LDFLAGS_ARR[@]}")
                 else
                     # 普通模式：直接编译链接（stderr 使用 libc.stderr，无需 get_stderr 桥接）
                     # 注意：不使用 -static，避免 errno TLS 冲突
-                    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        LINK_CMD="gcc $CFLAGS \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\" $LDFLAGS"
-                    else
-                        LINK_CMD="gcc $CFLAGS \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\" $LDFLAGS"
-                    fi
+                    LINK_CMD=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}" "$OUTPUT_FILE" -o "$EXECUTABLE_FILE" "${LDFLAGS_ARR[@]}")
                 fi
+
+                LINK_CMD_DESC="$(quote_cmd "${LINK_CMD[@]}")"
 
                 if [ "$VERBOSE" = true ]; then
-                    echo "执行链接命令: $LINK_CMD"
+                    echo "执行链接命令: $LINK_CMD_DESC"
                 fi
 
-                if eval "$LINK_CMD" 2>&1; then
+                if "${LINK_CMD[@]}" 2>&1; then
                     echo -e "${GREEN}✓ C99 可执行文件已生成: $EXECUTABLE_FILE${NC}"
                 else
                     echo -e "${RED}✗ 链接失败${NC}"
                     echo ""
                     echo "可以尝试手动链接："
-                    echo "  $LINK_CMD"
+                    echo "  $LINK_CMD_DESC"
                     exit 1
                 fi
             else
@@ -523,10 +631,10 @@ STARTCODE
                     echo "  2. 链接器执行失败（检查编译输出中的错误信息）"
                     echo ""
                     echo "可以尝试手动链接："
-                    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                        echo "  gcc $CFLAGS -no-pie -static \"$OUTPUT_FILE\" -o \"${EXECUTABLE_FILE}.exe\" $LDFLAGS"
+                    if [ "$USE_NOSTDLIB" = true ]; then
+                        echo "  ${CC_DRIVER} ${CC_TARGET_FLAGS} $CFLAGS -no-pie -nostdlib -static \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\" $LDFLAGS"
                     else
-                        echo "  gcc $CFLAGS -no-pie -static \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\" $LDFLAGS"
+                        echo "  ${CC_DRIVER} ${CC_TARGET_FLAGS} $CFLAGS \"$OUTPUT_FILE\" -o \"$EXECUTABLE_FILE\" $LDFLAGS"
                     fi
                 fi
                 exit 1
@@ -572,12 +680,17 @@ STARTCODE
             # 注意：移除 exec，直接调用可执行文件，避免可能的错误处理问题
             # 如果自举编译器段错误，可能是程序本身的问题，暂时跳过自举对比
             # 注意：Lexer 结构体包含 1MB 缓冲区，递归调用需要大栈空间
+            # 须与主编译一致：nostdlib 构建时自举对比也要 --nostdlib，否则 main(argv) C 签名不一致
+            BOOTSTRAP_UYA_FLAGS=(--c99)
+            if [ "$USE_NOSTDLIB" = true ]; then
+                BOOTSTRAP_UYA_FLAGS+=(--nostdlib)
+            fi
             if [ "$USE_AUTO_DEPS" = true ]; then
                 # 与主编译一致：传递 main.uya 和 entry.uya，确保依赖收集顺序相同
                 ENTRY_FILE="$REPO_ROOT/lib/std/runtime/entry/entry.uya"
-                (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_C" --c99) >"$BOOTSTRAP_LOG" 2>&1
+                (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
             else
-                (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_C" --c99) >"$BOOTSTRAP_LOG" 2>&1
+                (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
             fi
             BOOTSTRAP_EXIT=$?
             if [ "$BOOTSTRAP_EXIT" -ne 0 ]; then
@@ -625,11 +738,7 @@ STARTCODE
             echo "提示: 如果要生成可执行文件，使用 -e 或 --exec 选项："
             echo "  $0 -e"
             echo "或者手动链接："
-            if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-                echo "  gcc $CFLAGS -no-pie -static \"$OUTPUT_FILE\" -o \"${OUTPUT_FILE%.o}.exe\" $LDFLAGS"
-            else
-                echo "  gcc $CFLAGS -no-pie -static \"$OUTPUT_FILE\" -o \"${OUTPUT_FILE%.o}\" $LDFLAGS"
-            fi
+            echo "  ${CC_DRIVER} ${CC_TARGET_FLAGS} $CFLAGS \"$OUTPUT_FILE\" -o \"${OUTPUT_FILE%.o}${TARGET_EXE_SUFFIX}\" $LDFLAGS"
         fi
     else
         # 没有生成任何文件

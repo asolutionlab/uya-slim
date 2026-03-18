@@ -331,7 +331,7 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
 
     // 检查是否为标准 C main 函数（export extern fn main）
     var is_c_main: i32 = 0;
-    if is_main != 0 && fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_is_extern != 0 && extern_lib_name == null {
+    if is_main != 0 && fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_is_extern != 0 {
         is_c_main = 1;
     }
 
@@ -343,9 +343,17 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
             const param: &ASTNode = fn_decl.fn_decl_params[j];
             if param != null && param.type == ASTNodeType.AST_VAR_DECL {
                 const param_name: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
-                const param_type: &ASTNode = param.var_decl_type;
-                const param_type_c: &byte = c99_type_to_c(codegen, param_type);
-                format_param_type(codegen, param_type_c, param_name, codegen.output as *void);
+                if j == 1 {
+                    if codegen.is_nostdlib != 0 {
+                        fprintf(codegen.output, "uint8_t **%s" as *byte, param_name as *byte);
+                    } else {
+                        fprintf(codegen.output, "char **%s" as *byte, param_name as *byte);
+                    }
+                } else {
+                    const param_type: &ASTNode = param.var_decl_type;
+                    const param_type_c: &byte = c99_type_to_c(codegen, param_type);
+                    format_param_type(codegen, param_type_c, param_name, codegen.output as *void);
+                }
                 if j < param_count - 1 {
                     fputs(", " as *byte, codegen.output);
                 }
@@ -715,6 +723,12 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                 } else if param_type.type == ASTNodeType.AST_TYPE_SLICE {
                     // Slice 类型参数：通过指针传递（slice 是引用类型）
                     fprintf(codegen.output, "%s *%s" as *byte, param_type_c as *byte, param_name as *byte);
+                } else if is_c_main != 0 && i == 1 {
+                    if codegen.is_nostdlib != 0 {
+                        fprintf(codegen.output, "uint8_t **%s" as *byte, param_name as *byte);
+                    } else {
+                        fprintf(codegen.output, "char **%s" as *byte, param_name as *byte);
+                    }
                 } else {
                     // 对于 copy_type 函数，直接输出 const struct Type *，不调用 format_param_type
                     if is_copy_type != 0 && i == 0 {
@@ -842,21 +856,23 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         }
         i = i + 1;
     }
-    i = 0;
-    while i < param_count {
-        const param: &ASTNode = fn_decl.fn_decl_params[i];
-        if param != null && param.type == ASTNodeType.AST_VAR_DECL {
-            const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
-            if pname != null {
-                c99_emit_indent(codegen);
-                if param.var_decl_type != null && param.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY {
-                    fprintf(codegen.output as *void, "(void)%s_param;\n" as *byte, pname as *byte);
-                } else {
-                    fprintf(codegen.output as *void, "(void)%s;\n" as *byte, pname as *byte);
+    if fn_decl.fn_decl_is_naked == 0 {
+        i = 0;
+        while i < param_count {
+            const param: &ASTNode = fn_decl.fn_decl_params[i];
+            if param != null && param.type == ASTNodeType.AST_VAR_DECL {
+                const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
+                if pname != null {
+                    c99_emit_indent(codegen);
+                    if param.var_decl_type != null && param.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY {
+                        fprintf(codegen.output as *void, "(void)%s_param;\n" as *byte, pname as *byte);
+                    } else {
+                        fprintf(codegen.output as *void, "(void)%s;\n" as *byte, pname as *byte);
+                    }
                 }
             }
+            i = i + 1;
         }
-        i = i + 1;
     }
     
     // 生成函数体
@@ -883,7 +899,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     }
     
     // 如果返回类型是 !void 且函数体没有显式返回，添加默认返回语句
-    if has_return == 0 && return_type != null && return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+    if fn_decl.fn_decl_is_naked == 0 && has_return == 0 && return_type != null && return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
         const payload_node: &ASTNode = return_type.type_error_union_payload_type;
         var is_void_payload: i32 = 0;
         if payload_node == null {
@@ -901,7 +917,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         }
     }
     // 若返回类型非 void 且函数体末尾无 return，补兜底 return 避免 -Wreturn-type（缩进与 C 编译器一致）
-    if has_return == 0 && return_type != null {
+    if fn_decl.fn_decl_is_naked == 0 && has_return == 0 && return_type != null {
         var is_void: i32 = 0;
         if return_type.type == ASTNodeType.AST_TYPE_NAMED && return_type.type_named_name != null &&
             strcmp(return_type.type_named_name as *byte, "void" as *byte) == 0 {

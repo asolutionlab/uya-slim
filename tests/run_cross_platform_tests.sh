@@ -15,7 +15,69 @@ NC='\033[0m'
 # 项目根目录
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEST_DIR="$PROJECT_ROOT/tests"
-BUILD_DIR="$PROJECT_DIR/build/cross_platform"
+BUILD_DIR="$PROJECT_ROOT/build/cross_platform"
+
+TOOLCHAIN="${TOOLCHAIN:-system}"
+ZIG="${ZIG:-~/zig/zig}"
+CC="${CC:-cc}"
+if [ -z "${CC_DRIVER:-}" ]; then
+    if [ "$TOOLCHAIN" = "zig" ]; then
+        CC_DRIVER="$ZIG cc"
+    else
+        CC_DRIVER="$CC"
+    fi
+fi
+CC_TARGET_FLAGS="${CC_TARGET_FLAGS:-}"
+
+normalize_os() {
+    case "$1" in
+        Linux|linux) echo "linux" ;;
+        Darwin|darwin|macos) echo "macos" ;;
+        MINGW*|MSYS*|CYGWIN*|mingw*|msys*|cygwin*|windows|win32) echo "windows" ;;
+        *) echo "$1" | tr '[:upper:]' '[:lower:]' ;;
+    esac
+}
+
+normalize_arch() {
+    case "$1" in
+        x86_64|amd64) echo "x86_64" ;;
+        aarch64|arm64) echo "arm64" ;;
+        riscv64) echo "riscv64" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+HOST_OS="$(normalize_os "$(uname -s)")"
+HOST_ARCH="$(normalize_arch "$(uname -m)")"
+TARGET_OS="${TARGET_OS:-$HOST_OS}"
+TARGET_ARCH="${TARGET_ARCH:-$HOST_ARCH}"
+TARGET_TRIPLE="${TARGET_TRIPLE:-}"
+TARGET_OS="$(normalize_os "$TARGET_OS")"
+TARGET_ARCH="$(normalize_arch "$TARGET_ARCH")"
+
+CC_CMD=()
+if [ -n "$CC_DRIVER" ]; then
+    read -r -a CC_CMD <<< "$CC_DRIVER"
+fi
+if [ ${#CC_CMD[@]} -eq 0 ]; then
+    CC_CMD=("cc")
+fi
+if [ -n "$CC_TARGET_FLAGS" ]; then
+    read -r -a CC_TARGET_FLAGS_ARR <<< "$CC_TARGET_FLAGS"
+    CC_CMD+=("${CC_TARGET_FLAGS_ARR[@]}")
+elif [ -n "$TARGET_TRIPLE" ]; then
+    CC_CMD+=(-target "$TARGET_TRIPLE")
+fi
+
+TARGET_EXE_SUFFIX=""
+if [ "$TARGET_OS" = "windows" ]; then
+    TARGET_EXE_SUFFIX=".exe"
+fi
+
+CAN_RUN_TARGET=true
+if [ "$HOST_OS" != "$TARGET_OS" ] || [ "$HOST_ARCH" != "$TARGET_ARCH" ]; then
+    CAN_RUN_TARGET=false
+fi
 
 # 创建构建目录
 mkdir -p "$BUILD_DIR"
@@ -62,6 +124,38 @@ get_platform_enum() {
         riscv64_linux) echo "6" ;;
         *) echo "-1" ;;
     esac
+}
+
+compile_c_program() {
+    local exe_file="$1"
+    shift
+    "${CC_CMD[@]}" -o "$exe_file" "$@"
+}
+
+compile_c_optimized() {
+    local exe_file="$1"
+    shift
+    "${CC_CMD[@]}" -O2 -o "$exe_file" "$@"
+}
+
+run_or_skip_target() {
+    local exe_file="$1"
+    local success_message="$2"
+    local failure_message="$3"
+    local skip_message="$4"
+
+    if [ "$CAN_RUN_TARGET" != true ]; then
+        echo -e "${YELLOW}⊘ ${skip_message}${NC}"
+        return 0
+    fi
+
+    if "$exe_file"; then
+        echo -e "${GREEN}✓ ${success_message}${NC}"
+        return 0
+    fi
+
+    echo -e "${RED}✗ ${failure_message}${NC}"
+    return 1
 }
 
 # 测试平台检测
@@ -132,15 +226,12 @@ int main() {
 EOF
     
     # 编译并运行
-    local exe_file="$BUILD_DIR/test_platform_detect"
-    if gcc -o "$exe_file" "$test_file" 2>&1; then
-        if "$exe_file"; then
-            echo -e "${GREEN}✓ 平台检测测试通过${NC}"
+    local exe_file="$BUILD_DIR/test_platform_detect${TARGET_EXE_SUFFIX}"
+    if compile_c_program "$exe_file" "$test_file" 2>&1; then
+        if run_or_skip_target "$exe_file" "平台检测测试通过" "平台检测测试失败" "目标平台与宿主不同，已跳过 test_platform_detect 运行"; then
             return 0
-        else
-            echo -e "${RED}✗ 平台检测测试失败${NC}"
-            return 1
         fi
+        return 1
     else
         echo -e "${RED}✗ 编译失败${NC}"
         return 1
@@ -222,15 +313,12 @@ EOF
     fi
     
     # 编译并运行
-    local exe_file="$BUILD_DIR/test_platform_asm"
-    if gcc -o "$exe_file" "$test_file" 2>&1; then
-        if "$exe_file"; then
-            echo -e "${GREEN}✓ 平台特定指令测试通过${NC}"
+    local exe_file="$BUILD_DIR/test_platform_asm${TARGET_EXE_SUFFIX}"
+    if compile_c_program "$exe_file" "$test_file" 2>&1; then
+        if run_or_skip_target "$exe_file" "平台特定指令测试通过" "平台特定指令测试失败" "目标平台与宿主不同，已跳过 test_platform_asm 运行"; then
             return 0
-        else
-            echo -e "${RED}✗ 平台特定指令测试失败${NC}"
-            return 1
         fi
+        return 1
     else
         echo -e "${RED}✗ 编译失败${NC}"
         return 1
@@ -251,7 +339,7 @@ test_cross_platform_codegen() {
     fi
     
     local c_file="$BUILD_DIR/test_cross_platform.c"
-    local exe_file="$BUILD_DIR/test_cross_platform"
+    local exe_file="$BUILD_DIR/test_cross_platform${TARGET_EXE_SUFFIX}"
     
     # 编译 Uya 到 C
     if ! "$PROJECT_ROOT/bin/uya" --c99 "$uya_test" > "$c_file" 2>&1; then
@@ -260,19 +348,16 @@ test_cross_platform_codegen() {
     fi
     
     # 编译 C 到可执行文件
-    if ! gcc -O2 -o "$exe_file" "$c_file" -lm 2>&1; then
+    if ! compile_c_optimized "$exe_file" "$c_file" -lm 2>&1; then
         echo -e "${RED}✗ C 编译失败${NC}"
         return 1
     fi
     
     # 运行测试
-    if "$exe_file"; then
-        echo -e "${GREEN}✓ 跨平台代码生成测试通过${NC}"
+    if run_or_skip_target "$exe_file" "跨平台代码生成测试通过" "跨平台代码生成测试失败" "目标平台与宿主不同，已跳过 test_cross_platform 运行"; then
         return 0
-    else
-        echo -e "${RED}✗ 跨平台代码生成测试失败${NC}"
-        return 1
     fi
+    return 1
 }
 
 # 测试条件编译
@@ -318,15 +403,12 @@ int main() {
 EOF
     
     # 编译并运行
-    local exe_file="$BUILD_DIR/test_conditional"
-    if gcc -o "$exe_file" "$test_file" 2>&1; then
-        if "$exe_file"; then
-            echo -e "${GREEN}✓ 条件编译测试通过${NC}"
+    local exe_file="$BUILD_DIR/test_conditional${TARGET_EXE_SUFFIX}"
+    if compile_c_program "$exe_file" "$test_file" 2>&1; then
+        if run_or_skip_target "$exe_file" "条件编译测试通过" "条件编译测试失败" "目标平台与宿主不同，已跳过 test_conditional 运行"; then
             return 0
-        else
-            echo -e "${RED}✗ 条件编译测试失败${NC}"
-            return 1
         fi
+        return 1
     else
         echo -e "${RED}✗ 编译失败${NC}"
         return 1
@@ -348,7 +430,12 @@ main() {
     
     # 检测平台
     local platform=$(detect_platform)
-    echo -e "当前平台: ${GREEN}$platform${NC}\n"
+    echo -e "宿主平台: ${GREEN}${HOST_OS}/${HOST_ARCH}${NC}"
+    echo -e "目标平台: ${GREEN}${TARGET_OS}/${TARGET_ARCH}${NC}"
+    if [ -n "$TARGET_TRIPLE" ]; then
+        echo -e "目标三元组: ${GREEN}${TARGET_TRIPLE}${NC}"
+    fi
+    echo -e "平台枚举来源: ${GREEN}$platform${NC}\n"
     
     # 运行测试
     local failed=0
