@@ -1,9 +1,17 @@
 // lib/std/thread.uya - 线程与异步计算最小实现
 //
 // 模块路径：use std.thread
-// 当前提供：ThreadPool（配置占位）+ async_compute_i32（最小同步版本）
+// 当前提供：ThreadPool（配置占位）+ async_compute_i32（最小异步轮询版本）
 
 use std.async;
+use libc.syscall;
+
+const THREAD_ERR_EAGAIN: u32 = 11;
+const THREAD_ERR_EWOULDBLOCK: u32 = 11;
+
+fn thread_error_id_is_would_block(err_id: u32) bool {
+    return err_id == THREAD_ERR_EAGAIN || err_id == THREAD_ERR_EWOULDBLOCK;
+}
 
 // 通过内联汇编调用 i32(i32) 形式的函数指针。
 fn thread_call_i32(fn_ptr: &void, arg: i32) i32 {
@@ -19,6 +27,65 @@ export struct ThreadPool {
     worker_count: i32,
 }
 
+struct AsyncComputeI32Future : Future<!i32> {
+    read_fd: i32,
+    child_pid: i32,
+    first_poll: i32,
+    done: i32,
+    state: Poll<!i32>,
+
+    fn finish(self: &Self, result: !i32) Poll<!i32> {
+        if self.read_fd >= 0 {
+            _ = sys_close(self.read_fd);
+            self.read_fd = 0 - 1;
+        }
+        if self.child_pid > 0 {
+            var status: i32 = 0;
+            _ = sys_waitpid(self.child_pid, &status, 0);
+            self.child_pid = 0;
+        }
+        self.state = Poll<!i32>.Ready(result);
+        self.done = 1;
+        return self.state;
+    }
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        if self.done != 0 {
+            return self.state;
+        }
+
+        // 统一保证首次 poll 返回 Pending，给调度器一次显式重试机会。
+        if self.first_poll == 0 {
+            self.first_poll = 1;
+            waker.wake();
+            return Poll<!i32>.Pending({});
+        }
+
+        var value: i32 = 0;
+        const read_result: !isize = sys_read(self.read_fd, (&value) as *byte, @size_of(i32));
+        const n: isize = read_result catch |err| {
+            if thread_error_id_is_would_block(@error_id(err)) {
+                waker.wait_readable(self.read_fd);
+                return Poll<!i32>.Pending({});
+            }
+            const err_value: !i32 = read_result as! i32;
+            return self.finish(err_value);
+        };
+        if n == 0 {
+            const eof_result: !i32 = sys_close(0 - 1);
+            const eof_err: !i32 = eof_result as! i32;
+            return self.finish(eof_err);
+        }
+        if n != @size_of(i32) as isize {
+            const partial_result: !i32 = sys_close(0 - 1);
+            const partial_err: !i32 = partial_result as! i32;
+            return self.finish(partial_err);
+        }
+        const ok_value: !i32 = ok<i32>(value);
+        return self.finish(ok_value);
+    }
+}
+
 // 线程池最小构造：当前仅保留 worker_count 配置，后续扩展成持久 worker + 队列模型。
 export fn thread_pool_new(worker_count: i32) ThreadPool {
     if worker_count <= 0 {
@@ -28,10 +95,42 @@ export fn thread_pool_new(worker_count: i32) ThreadPool {
 }
 
 // 执行 i32 -> i32 计算，并返回 Future<!i32>。
-// 说明：当前为最小同步版本（立即 Ready），后续再替换为真正的线程池异步调度。
+// 说明：当前为最小异步轮询版本（fork + pipe 占位），后续可替换为真正线程池队列。
 export fn async_compute_i32(pool: &ThreadPool, compute_fn: &void, arg: i32) Future<!i32> {
     _ = pool;
-    const value: i32 = thread_call_i32(compute_fn, arg);
-    const ok_value: !i32 = ok<i32>(value);
-    return Future<!i32>{ state: Poll<!i32>.Ready(ok_value) };
+    var fds: [i32: 2] = [];
+    const pipe_result: !i32 = sys_pipe2(&fds[0], O_NONBLOCK);
+    _ = pipe_result catch {
+        const err_value: !i32 = pipe_result as! i32;
+        return Future<!i32>{ state: Poll<!i32>.Ready(err_value) };
+    };
+
+    const read_fd: i32 = fds[0];
+    const write_fd: i32 = fds[1];
+
+    const fork_result: !i64 = sys_fork();
+    const child_pid: i64 = fork_result catch {
+        _ = sys_close(read_fd);
+        _ = sys_close(write_fd);
+        const err_value: !i32 = fork_result as! i32;
+        return Future<!i32>{ state: Poll<!i32>.Ready(err_value) };
+    };
+
+    if child_pid == 0 {
+        _ = sys_close(read_fd);
+        const value: i32 = thread_call_i32(compute_fn, arg);
+        const write_result: !isize = sys_write(write_fd, (&value) as *const byte, @size_of(i32));
+        _ = write_result catch {};
+        _ = sys_close(write_fd);
+        sys_exit(0);
+    }
+
+    _ = sys_close(write_fd);
+    return AsyncComputeI32Future{
+        read_fd: read_fd,
+        child_pid: child_pid as i32,
+        first_poll: 0,
+        done: 0,
+        state: Poll<!i32>.Pending({}),
+    };
 }

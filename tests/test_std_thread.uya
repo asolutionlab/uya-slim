@@ -15,12 +15,23 @@ test "thread_pool_new_normalizes_worker_count" {
     try assert_eq_i32(p1.worker_count, 3);
 }
 
-test "async_compute_i32_runs_in_background_thread" {
+test "async_compute_i32_reports_pending_before_ready" {
     const pool: ThreadPool = thread_pool_new(2);
     const f: Future<!i32> = async_compute_i32(&pool, &double_i32 as &void, 21);
     var w: Waker = Waker{};
+    var first_pending: i32 = 0;
+    const p0: Poll<!i32> = f.poll(&w);
+    match p0 {
+        .Ready(_) => {
+            first_pending = 0;
+        },
+        .Pending(_) => {
+            first_pending = 1;
+        },
+    };
     var i: i32 = 0;
     var got: i32 = 0 - 1;
+    var saw_pending: i32 = 0;
 
     while i < 200000 {
         const p: Poll<!i32> = f.poll(&w);
@@ -30,10 +41,13 @@ test "async_compute_i32_runs_in_background_thread" {
                 i = 200000;
             },
             .Pending(_) => {
+                saw_pending = 1;
                 i = i + 1;
             },
         };
     }
 
+    try assert_eq_i32(first_pending, 1);
+    try assert_eq_i32(saw_pending, 1);
     try assert_eq_i32(got, 42);
 }
