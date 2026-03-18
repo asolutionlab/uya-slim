@@ -861,7 +861,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `union Poll<T>` 类型检查（`test_poll_std_async.uya` 覆盖）
   - [x] `interface Future<T>` 接口定义和实现检查（`test_async_future_interface_box.uya` 覆盖）
   - [x] 接口方法 / 受约束泛型方法返回 `!T` 的推断（`test_interface_error_union_method.uya` 覆盖 `EventLoop.poll()` / `counter.next()`）
-  - [~] 状态机大小编译期计算（当前已禁止直接递归与 async 调用环；完整大小/布局计算仍待实现）
+  - [~] 状态机大小编译期计算（当前已禁止直接递归与 async 调用环，并新增 `@await` 数量上限 32 / 参数捕获上限 16 的编译期校验；完整大小/布局计算仍待实现）
 
 - [~] **CPS 变换（Continuation-Passing Style）**：状态机生成
   - [x] 分析 `@async_fn` 函数体，识别所有 `@await` 点（单/多 `@await` 已稳定，`async_copy` 覆盖循环内场景）
@@ -869,7 +869,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 为每个 `@await` 点创建状态（state 0 起点，state 1..n 各 await 就绪后）
   - [x] 生成状态转换代码（poll 内 if state==k 分支，绑定变量在函数顶声明、块内赋值）
   - [x] 处理局部变量在状态间的保存和恢复（多 await 时在 poll 开头声明所有绑定变量）
-  - [ ] 计算状态机大小（编译期确定）
+  - [~] 计算状态机大小（编译期确定，当前先完成固定槽位上限校验）
 
 - [~] **Codegen**：异步编程代码生成（基础实现，C 实现与 uya-src 已同步）
   - [x] `@await` 表达式代码生成（已接入 `Poll<!T>` 最小状态机闭环）
@@ -903,7 +903,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [ ] `std.thread` 模块：`ThreadPool`, `async_compute<T>`
 
 - [~] **编译期验证**：
-  - [~] 状态机大小编译期计算（直接递归与 async 间接调用环已报错，完整大小/间接递归分析待实现）
+  - [~] 状态机大小编译期计算（直接递归与 async 间接调用环已报错；`@await` 超过 32 与参数超过 16 已在 checker 阶段报错；完整大小/间接递归分析待实现）
   - [ ] Send/Sync 约束推导（跨线程安全性）
   - [ ] 状态机转换正确性验证
   - [ ] 唤醒安全性验证（Waker 使用）
@@ -930,6 +930,8 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `error_await_operand_not_future.uya` - `@await` 操作数既非 `Future<!T>` 也非 `!Future<T>` 时应失败
   - [x] `error_async_recursive.uya` - 递归异步函数（应报错；当前先禁止直接递归，后续由状态机大小计算接管）
   - [x] `error_async_indirect_recursive.uya` - 异步函数形成调用环（如 ping/pong 互相 `@await`）应报错
+  - [x] `error_async_too_many_awaits.uya` - `@async_fn` 中 `@await` 超过当前状态机槽位上限（32）应报错
+  - [x] `error_async_too_many_params.uya` - `@async_fn` 参数超过当前状态机捕获上限（16）应报错
   - [x] `test_async_io.uya` - AsyncWriter/AsyncReader 接口与 MemAsyncWriter、MemAsyncReader
   - [x] `test_async_fd.uya` - AsyncFd 基于 fd 的 AsyncWriter/AsyncReader（含非阻塞 pipe 上 `EAGAIN -> Pending -> Ready`，以及通过 `Scheduler + EventLoop` 的最小唤醒链路）
   - [x] `test_async_copy.uya` - `async_copy` 覆盖循环内 `@await` 与 `MemAsyncReader`/`MemAsyncWriter`（当前走 `Future<!usize>` 主路径）

@@ -1,0 +1,54 @@
+// error_async_too_many_awaits.uya
+//
+// 预期：编译失败。当前 async 状态机 await 槽位上限为 32，
+// 超出后会在 checker 阶段报错，避免 codegen 静默截断。
+
+use std.async;
+
+fn ready(v: i32) Future<!i32> {
+    const p: Poll<!i32> = Poll<!i32>.Ready(ok<i32>(v));
+    return Future<!i32>{ state: p };
+}
+
+@async_fn
+fn too_many_awaits() Future<!i32> {
+    const a00: i32 = try @await ready(0);
+    const a01: i32 = try @await ready(1);
+    const a02: i32 = try @await ready(2);
+    const a03: i32 = try @await ready(3);
+    const a04: i32 = try @await ready(4);
+    const a05: i32 = try @await ready(5);
+    const a06: i32 = try @await ready(6);
+    const a07: i32 = try @await ready(7);
+    const a08: i32 = try @await ready(8);
+    const a09: i32 = try @await ready(9);
+    const a10: i32 = try @await ready(10);
+    const a11: i32 = try @await ready(11);
+    const a12: i32 = try @await ready(12);
+    const a13: i32 = try @await ready(13);
+    const a14: i32 = try @await ready(14);
+    const a15: i32 = try @await ready(15);
+    const a16: i32 = try @await ready(16);
+    const a17: i32 = try @await ready(17);
+    const a18: i32 = try @await ready(18);
+    const a19: i32 = try @await ready(19);
+    const a20: i32 = try @await ready(20);
+    const a21: i32 = try @await ready(21);
+    const a22: i32 = try @await ready(22);
+    const a23: i32 = try @await ready(23);
+    const a24: i32 = try @await ready(24);
+    const a25: i32 = try @await ready(25);
+    const a26: i32 = try @await ready(26);
+    const a27: i32 = try @await ready(27);
+    const a28: i32 = try @await ready(28);
+    const a29: i32 = try @await ready(29);
+    const a30: i32 = try @await ready(30);
+    const a31: i32 = try @await ready(31);
+    const a32: i32 = try @await ready(32);
+    return a00 + a01 + a02 + a03 + a04 + a05 + a06 + a07 + a08 + a09 + a10 +
+        a11 + a12 + a13 + a14 + a15 + a16 + a17 + a18 + a19 + a20 + a21 +
+        a22 + a23 + a24 + a25 + a26 + a27 + a28 + a29 + a30 + a31 + a32;
+}
+
+test "expect_compile_fail" {
+}
