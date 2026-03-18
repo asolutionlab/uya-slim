@@ -228,6 +228,31 @@ test "async_compute_i32_falls_back_when_pending_queue_is_full" {
     try assert_eq_i32(thread_pool_started_workers(&pool), 1);
 }
 
+test "async_compute_i32_worker_drains_shared_queue_after_completion" {
+    var pool: ThreadPool = thread_pool_new(1);
+    defer {
+        thread_pool_shutdown(&pool);
+    }
+
+    var first: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
+    var second: Future<!i32> = async_compute_i32(&pool, &delayed_triple_i32 as &void, 7);
+    var first_waker: Waker = Waker{};
+    var second_waker: Waker = Waker{};
+
+    _ = first.poll(&first_waker);
+    _ = second.poll(&second_waker);
+    _ = first.poll(&first_waker);
+    _ = second.poll(&second_waker);
+
+    try assert_eq_i32(thread_pool_pending_count(&pool), 1);
+    try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
+
+    // 第一个任务完成后，worker 应该直接从共享队列里接走第二个任务。
+    try assert_eq_i32(thread_pool_pending_count(&pool), 0);
+    try assert_eq_i32(try thread_test_drive_future_i32(second), 21);
+    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
+}
+
 test "async_compute_i32_runs_with_scheduler_and_linux_epoll" {
     var pool: ThreadPool = thread_pool_new(2);
     defer {

@@ -171,21 +171,40 @@ fn thread_worker_loop(cmd_read_fd: i32, result_write_fd: i32, shared_state: &Thr
             break;
         }
 
-        const fn_ptr: &void = (shared_state.slots[cmd.slot_idx as usize].fn_bits as usize) as &void;
-        const value: i32 = thread_call_i32(fn_ptr, shared_state.slots[cmd.slot_idx as usize].arg);
-        shared_state.slots[cmd.slot_idx as usize].result = value;
-        shared_state.slots[cmd.slot_idx as usize].state = THREAD_SLOT_STATE_DONE;
+        var active_slot: i32 = cmd.slot_idx;
+        while active_slot >= 0 {
+            if !thread_pool_slot_is_valid(active_slot) {
+                break;
+            }
+            if active_slot < 0 || active_slot >= 16 {
+                break;
+            }
 
-        var completed_slot: i32 = cmd.slot_idx;
-        const write_result: !isize = sys_write(result_write_fd, (&completed_slot) as *const byte, @size_of(i32));
-        const written: isize = write_result catch {
-            (0 - 1) as isize;
-        };
-        if written < 0 {
-            break;
-        }
-        if written != @size_of(i32) as isize {
-            break;
+            const slot_idx: i32 = active_slot;
+            if slot_idx >= 0 && slot_idx < 16 {
+                const fn_ptr: &void = (shared_state.slots[slot_idx as usize].fn_bits as usize) as &void;
+                const value: i32 = thread_call_i32(fn_ptr, shared_state.slots[slot_idx as usize].arg);
+                shared_state.slots[slot_idx as usize].result = value;
+                shared_state.slots[slot_idx as usize].state = THREAD_SLOT_STATE_DONE;
+
+                var completed_slot: i32 = slot_idx;
+                const write_result: !isize = sys_write(result_write_fd, (&completed_slot) as *const byte, @size_of(i32));
+                const written: isize = write_result catch {
+                    (0 - 1) as isize;
+                };
+                if written < 0 {
+                    break;
+                }
+                if written != @size_of(i32) as isize {
+                    break;
+                }
+
+                active_slot = thread_shared_pop_slot(shared_state);
+                const next_slot: i32 = active_slot;
+                if next_slot >= 0 && next_slot < 16 {
+                    shared_state.slots[next_slot as usize].state = THREAD_SLOT_STATE_RUNNING;
+                }
+            }
         }
     }
 
@@ -382,6 +401,23 @@ fn thread_pool_pop_slot(pool: &ThreadPool) i32 {
     return 0 - 1;
 }
 
+fn thread_shared_pop_slot(shared_state: &ThreadPoolSharedI32) i32 {
+    if shared_state == null as &ThreadPoolSharedI32 || shared_state.pending_count <= 0 {
+        return 0 - 1;
+    }
+    if shared_state.pending_head >= 0 && shared_state.pending_head < 8 {
+        const slot_idx: i32 = shared_state.pending_slots[shared_state.pending_head as usize];
+        shared_state.pending_slots[shared_state.pending_head as usize] = 0;
+        shared_state.pending_head = shared_state.pending_head + 1;
+        if shared_state.pending_head >= 8 {
+            shared_state.pending_head = 0;
+        }
+        shared_state.pending_count = shared_state.pending_count - 1;
+        return slot_idx;
+    }
+    return 0 - 1;
+}
+
 struct AsyncComputeI32Future : Future<!i32> {
     pool: &ThreadPool,
     compute_fn: &void,
@@ -452,6 +488,32 @@ struct AsyncComputeI32Future : Future<!i32> {
         return 0;
     }
 
+    fn try_bind_running_worker(self: &Self) i32 {
+        if self.slot_idx < 0 || !thread_pool_has_shared_state(self.pool) {
+            return 0;
+        }
+        const pool_ref: &ThreadPool = self.pool;
+        if pool_ref._shared_state.slots[self.slot_idx as usize].state != THREAD_SLOT_STATE_RUNNING {
+            return 0;
+        }
+
+        var worker_idx: i32 = 0;
+        while worker_idx < pool_ref._started_workers {
+            if worker_idx >= 0 && worker_idx < 8 {
+                if pool_ref._workers[worker_idx as usize].active != 0 &&
+                   pool_ref._workers[worker_idx as usize].active_slot == self.slot_idx {
+                    self.worker_idx = worker_idx;
+                    self.read_fd = pool_ref._workers[worker_idx as usize].result_read_fd;
+                    self.child_pid = 0;
+                    self.owns_read_fd = 0;
+                    return 1;
+                }
+            }
+            worker_idx = worker_idx + 1;
+        }
+        return 0;
+    }
+
     fn start_one_shot(self: &Self) !i32 {
         var fds: [i32: 2] = [];
         _ = try sys_pipe2(&fds[0], O_NONBLOCK);
@@ -497,6 +559,9 @@ struct AsyncComputeI32Future : Future<!i32> {
 
         if self.read_fd < 0 {
             if self.slot_idx >= 0 {
+                if self.try_bind_running_worker() != 0 {
+                    return Poll<!i32>.Pending({});
+                }
                 const head_slot: i32 = thread_pool_peek_slot(self.pool);
                 if head_slot == self.slot_idx {
                     const worker_result: !i32 = thread_pool_acquire_worker(self.pool);
