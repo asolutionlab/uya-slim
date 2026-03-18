@@ -5034,8 +5034,8 @@ fn fetch() !Future<&[i8]> { ... }  // 正确
 **`ThreadPool`**：
 - 线程池，用于 CPU 密集型异步任务
 - 当前最小实现提供 `thread_pool_new()` / `thread_pool_shutdown()`，在 Linux 上以可复用 worker 进程池承载计算
-- 共享状态中已包含固定任务槽位与共享 FIFO 队列；worker 通过 slot 索引取任务并写回结果
-- 当所有 worker 忙时，任务会先进入共享 FIFO 队列；父进程仍可按 FIFO 顺序为首个排队任务分发空闲 worker，而 worker 在完成当前 slot 后也会继续尝试从共享队列续取下一个 slot；队列满时才回退到 one-shot 子进程
+- 共享状态中已包含固定任务槽位、共享 FIFO 队列与 `worker_idx` 绑定；worker 通过 slot 索引取任务并写回结果
+- 当共享槽位任务需要执行时，当前统一先进入共享 FIFO 队列；父进程负责唤醒空闲 worker 进入 drain 路径，而具体取队首 slot 与后续连续取活都由 worker 在共享队列中完成；父进程会按共享状态回刷本地 worker `busy/active_slot`；队列满时才回退到 one-shot 子进程
 - 与异步运行时集成
 
 **`async_compute<T>`**：
