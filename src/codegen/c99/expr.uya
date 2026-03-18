@@ -2225,38 +2225,9 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             safe_field_name = ("f0" as *byte) as &byte;
         }
         
-        // 检查对象是否是指针类型（需要自动解引用）
-        var is_pointer: i32 = 0;
-        if object.type == ASTNodeType.AST_IDENTIFIER {
-            // 标识符：检查变量类型是否是指针
-            // 注意：需要使用 get_safe_c_identifier 转换名称，因为变量表中存储的是转换后的名称
-            const var_name: &byte = object.identifier_name;
-            if var_name != null {
-                const safe_name: &byte = get_safe_c_identifier(codegen, var_name);
-                is_pointer = is_identifier_pointer_type(codegen, safe_name);
-            }
-        } else if object.type == ASTNodeType.AST_MEMBER_ACCESS {
-            // 嵌套成员访问：检查嵌套访问的结果类型是否是指针
-            is_pointer = is_member_access_pointer_type(codegen, object);
-        } else if object.type == ASTNodeType.AST_ARRAY_ACCESS {
-            // 数组访问：检查数组元素类型是否是指针
-            // 例如：programs[i] 如果 programs 的类型是 [&ASTNode: 64]，那么 programs[i] 是指针类型
-            is_pointer = is_array_access_pointer_type(codegen, object);
-        } else if object.type == ASTNodeType.AST_UNARY_EXPR {
-            // 一元表达式：检查操作符
-            const op2: TokenType = object.unary_expr_op as TokenType;
-            if op2 == TokenType.TOKEN_AMPERSAND {
-                // &expr：取地址表达式的结果是指针，但这里访问的是 expr 的字段
-                // 实际上不应该发生这种情况，因为 &expr.field 在语法上不合法
-                // 但为了安全，我们假设不是指针
-                is_pointer = 0;
-            } else if op2 == TokenType.TOKEN_ASTERISK {
-                // *ptr：解引用表达式的结果是结构体本身，不是指针
-                // 所以应该使用 . 而不是 ->
-                is_pointer = 0;
-            }
-            // 其他一元操作符（!, -, +）不影响类型判断
-        }
+        // 统一基于对象表达式的结果类型决定使用 '.' 还是 '->'。
+        // 这样链式访问会自然递归成立，不再依赖局部特判。
+        const is_pointer: i32 = is_expr_pointer_type(codegen, object);
         
         if codegen.emitting_assign_lhs != 0 && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null &&
             strcmp(object.identifier_name as *byte, "self" as *byte) == 0 && codegen.current_method_struct_name != null {
