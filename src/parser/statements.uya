@@ -583,6 +583,10 @@ fn parser_parse_statement(parser: &Parser) &ASTNode {
         // 解析代码块语句
         return parser_parse_block(parser);
     }
+
+    if parser_peek_is_std_cfg_call(parser) != 0 {
+        return parser_parse_std_cfg_stmt(parser);
+    }
     
     // 解析表达式语句（表达式后加分号）
     // 注意：ASTNodeType.AST_EXPR_STMT 节点在 union 中没有对应的数据结构

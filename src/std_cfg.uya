@@ -1,0 +1,194 @@
+use libc;
+
+fn std_cfg_host_os_name() &byte {
+    const platform: i32 = @asm_target() as i32;
+    if platform == 0 || platform == 3 || platform == 6 {
+        return ("hos_linux" as *byte) as &byte;
+    }
+    if platform == 1 || platform == 4 {
+        return ("hos_macos" as *byte) as &byte;
+    }
+    if platform == 2 || platform == 5 {
+        return ("hos_windows" as *byte) as &byte;
+    }
+    return ("hos_unknown" as *byte) as &byte;
+}
+
+fn std_cfg_host_arch_name() &byte {
+    const platform: i32 = @asm_target() as i32;
+    if platform == 0 || platform == 1 || platform == 2 {
+        return ("ha_x86_64" as *byte) as &byte;
+    }
+    if platform == 3 || platform == 4 || platform == 5 {
+        return ("ha_arm64" as *byte) as &byte;
+    }
+    if platform == 6 {
+        return ("ha_riscv64" as *byte) as &byte;
+    }
+    return ("ha_unknown" as *byte) as &byte;
+}
+
+fn std_cfg_normalize_os_name(name: &byte) &byte {
+    if name == null {
+        return ("tos_unknown" as *byte) as &byte;
+    }
+    if strcmp(name as *byte, "darwin" as *byte) == 0 {
+        return ("macos" as *byte) as &byte;
+    }
+    return name;
+}
+
+fn std_cfg_map_target_os_token(tok: &byte) &byte {
+    if tok == null {
+        return ("tos_unknown" as *byte) as &byte;
+    }
+    if strcmp(tok as *byte, "linux" as *byte) == 0 {
+        return ("tos_linux" as *byte) as &byte;
+    }
+    if strcmp(tok as *byte, "macos" as *byte) == 0 || strcmp(tok as *byte, "darwin" as *byte) == 0 {
+        return ("tos_macos" as *byte) as &byte;
+    }
+    if strcmp(tok as *byte, "windows" as *byte) == 0 {
+        return ("tos_windows" as *byte) as &byte;
+    }
+    return ("tos_unknown" as *byte) as &byte;
+}
+
+fn std_cfg_target_os_name() &byte {
+    const raw: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
+    const norm: &byte = std_cfg_normalize_os_name(raw);
+    if strcmp(norm as *byte, "macos" as *byte) == 0 {
+        return ("tos_macos" as *byte) as &byte;
+    }
+    return std_cfg_map_target_os_token(norm);
+}
+
+fn std_cfg_target_arch_name() &byte {
+    const tok: &byte = get_env_or_default("TARGET_ARCH" as *byte, "x86_64" as *byte);
+    if tok == null {
+        return ("ta_unknown" as *byte) as &byte;
+    }
+    if strcmp(tok as *byte, "x86_64" as *byte) == 0 || strcmp(tok as *byte, "amd64" as *byte) == 0 {
+        return ("ta_x86_64" as *byte) as &byte;
+    }
+    if strcmp(tok as *byte, "arm64" as *byte) == 0 || strcmp(tok as *byte, "aarch64" as *byte) == 0 {
+        return ("ta_arm64" as *byte) as &byte;
+    }
+    if strcmp(tok as *byte, "riscv64" as *byte) == 0 {
+        return ("ta_riscv64" as *byte) as &byte;
+    }
+    return ("ta_unknown" as *byte) as &byte;
+}
+
+fn std_cfg_is_os_selector(selector: &byte) i32 {
+    if selector == null {
+        return 0;
+    }
+    if strcmp(selector as *byte, "host_os" as *byte) == 0 {
+        return 1;
+    }
+    if strcmp(selector as *byte, "target_os" as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn std_cfg_is_arch_selector(selector: &byte) i32 {
+    if selector == null {
+        return 0;
+    }
+    if strcmp(selector as *byte, "host_arch" as *byte) == 0 {
+        return 1;
+    }
+    if strcmp(selector as *byte, "target_arch" as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn std_cfg_is_valid_variant(selector: &byte, variant: &byte) i32 {
+    if selector == null || variant == null {
+        return 0;
+    }
+    if std_cfg_is_os_selector(selector) != 0 {
+        if strcmp(selector as *byte, "host_os" as *byte) == 0 {
+            if strcmp(variant as *byte, "hos_linux" as *byte) == 0 { return 1; }
+            if strcmp(variant as *byte, "hos_macos" as *byte) == 0 { return 1; }
+            if strcmp(variant as *byte, "hos_windows" as *byte) == 0 { return 1; }
+            if strcmp(variant as *byte, "hos_unknown" as *byte) == 0 { return 1; }
+            return 0;
+        }
+        if strcmp(variant as *byte, "tos_linux" as *byte) == 0 { return 1; }
+        if strcmp(variant as *byte, "tos_macos" as *byte) == 0 { return 1; }
+        if strcmp(variant as *byte, "tos_windows" as *byte) == 0 { return 1; }
+        if strcmp(variant as *byte, "tos_unknown" as *byte) == 0 { return 1; }
+        return 0;
+    }
+    if std_cfg_is_arch_selector(selector) != 0 {
+        if strcmp(selector as *byte, "host_arch" as *byte) == 0 {
+            if strcmp(variant as *byte, "ha_x86_64" as *byte) == 0 { return 1; }
+            if strcmp(variant as *byte, "ha_arm64" as *byte) == 0 { return 1; }
+            if strcmp(variant as *byte, "ha_riscv64" as *byte) == 0 { return 1; }
+            if strcmp(variant as *byte, "ha_unknown" as *byte) == 0 { return 1; }
+            return 0;
+        }
+        if strcmp(variant as *byte, "ta_x86_64" as *byte) == 0 { return 1; }
+        if strcmp(variant as *byte, "ta_arm64" as *byte) == 0 { return 1; }
+        if strcmp(variant as *byte, "ta_riscv64" as *byte) == 0 { return 1; }
+        if strcmp(variant as *byte, "ta_unknown" as *byte) == 0 { return 1; }
+        return 0;
+    }
+    return 0;
+}
+
+fn std_cfg_current_value(selector: &byte) &byte {
+    if selector == null {
+        return null;
+    }
+    if strcmp(selector as *byte, "host_os" as *byte) == 0 {
+        return std_cfg_host_os_name();
+    }
+    if strcmp(selector as *byte, "host_arch" as *byte) == 0 {
+        return std_cfg_host_arch_name();
+    }
+    if strcmp(selector as *byte, "target_os" as *byte) == 0 {
+        return std_cfg_target_os_name();
+    }
+    if strcmp(selector as *byte, "target_arch" as *byte) == 0 {
+        return std_cfg_target_arch_name();
+    }
+    return null;
+}
+
+fn std_cfg_selector_matches(selector: &byte, variant: &byte) i32 {
+    if std_cfg_is_valid_variant(selector, variant) == 0 {
+        return -1;
+    }
+    const current: &byte = std_cfg_current_value(selector);
+    if current == null {
+        return -1;
+    }
+    if strcmp(current as *byte, variant as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn std_cfg_selector_enum_name(selector: &byte) &byte {
+    if selector == null {
+        return null;
+    }
+    if strcmp(selector as *byte, "host_os" as *byte) == 0 {
+        return ("HostOS" as *byte) as &byte;
+    }
+    if strcmp(selector as *byte, "host_arch" as *byte) == 0 {
+        return ("HostArch" as *byte) as &byte;
+    }
+    if strcmp(selector as *byte, "target_os" as *byte) == 0 {
+        return ("TargetOS" as *byte) as &byte;
+    }
+    if strcmp(selector as *byte, "target_arch" as *byte) == 0 {
+        return ("TargetArch" as *byte) as &byte;
+    }
+    return null;
+}

@@ -325,12 +325,16 @@ const long result = uya_syscall1(60, 0);  // SYS_exit(0)
 ### 9.2 条件编译支持（v0.5.0+）
 
 ```uya
-// 使用 std.target 条件编译
-if @target.os == .linux {
+use std;
+
+// 使用 std.cfg 在编译期裁剪平台分支
+std.cfg(std.target_os == .tos_linux, {
     const SYS_write: i64 = 1;
-} else if @target.os == .macos {
+}, std.cfg(std.target_os == .tos_macos, {
     const SYS_write: i64 = 0x2000004;
-}
+}, {
+    const SYS_write: i64 = -1;
+}))
 ```
 
 ---

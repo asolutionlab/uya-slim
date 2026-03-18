@@ -1639,7 +1639,7 @@ lib/
 
 1. **阶段 0**：基础设施（`@syscall` 内置函数、错误类型）
 2. **阶段 1**：单平台验证（Linux x86-64 MVP）
-3. **阶段 2**：条件编译宏（`std.target` 模块）；**首个验收用例**：编译器 **host** 可执行路径解析 + **`dirent` 布局**（见 [`docs/std_c_design.md`](./std_c_design.md)「std.target：条件编译」）
+3. **阶段 2**：条件编译（`use std; std.cfg(...)` + `std.host_os/std.target_arch`）；**首个验收用例**：编译器 **host** 可执行路径解析 + **`dirent` 布局**（见 [`docs/std_c_design.md`](./std_c_design.md)「`std.cfg` / `std` 平台选择器：条件编译」）
 4. **阶段 3**：多平台扩展（macOS、ARM64）
 5. **阶段 4**：Windows 支持（可选）
 
@@ -1918,11 +1918,11 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 - [ ] `std.collections.map` - HashMap<K, V> 泛型容器
 - [ ] `std.bare_metal` - 裸机平台支持
 - [ ] `std.builtin` - 编译器内置运行时
-- [ ] `std.target` - 条件编译宏系统  
-  - **明确需求（首个用例）**：按 **宿主 host**（非仅用户代码 target）裁剪代码。  
-  - **验收 1**：`src/main.uya` 中编译器自身可执行路径 — Linux `readlink(/proc/self/exe)` vs Darwin `_NSGetExecutablePath`+`realpath`，未选中平台零符号泄漏。  
-  - **验收 2**：`readdir` 所用 `struct dirent` 的 `d_type`/`d_name` 偏移 — Linux vs Darwin 编译期常量，可去掉 `uya_host_dirent_layout` 类 C 运行时探测。  
-  - **设计文档**：[`docs/std_c_design.md`](./std_c_design.md) § `std.target`：条件编译宏（需求）。
+- [~] `std.cfg` / `std` 平台选择器 - 条件编译系统  
+  - **当前接口**：`use std; std.cfg(std.host_os == .hos_linux, then, else)`（平台枚举变体见 `lib/std/platform.uya`，如 `hos_linux`、`tos_macos`、`ta_x86_64`）；平台值通过 `std.host_os` / `std.host_arch` / `std.target_os` / `std.target_arch` 暴露。  
+  - **当前状态**：顶层 / 语句级 `std.cfg`、`HostOS` / `TargetArch` 等平台枚举、`src/main.uya` 中 Linux 宿主路径分支与 `dirent` 布局裁剪已落地。  
+  - **后续补齐**：Darwin 上真实可执行路径解析（`_NSGetExecutablePath` + `realpath`）仍待接入。  
+  - **设计文档**：[`docs/std_c_design.md`](./std_c_design.md) § `std.cfg` / `std` 平台选择器：条件编译（第一版）。
 - [~] `std.async.*` - 异步标准库（`std.async` / `std.async_event` / `std.async_channel` / `std.async_scheduler` 已有最小实现，详见 `std_async_design.md`）
 
 **详细实现方案**：

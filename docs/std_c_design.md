@@ -304,9 +304,25 @@ gcc -nostdlib -ffreestanding your_program.c libuya.o -o your_program -lgcc
 
 ---
 
-## `std.target`：条件编译宏（需求）
+## `std.cfg` / `std` 平台选择器：条件编译（第一版）
 
 **目标**：在**编译期**按平台裁剪代码，使 Linux 产物不引用 Darwin 符号（反之亦然），从而用纯 Uya 替代编译器里为宿主差异而写的 C 垫片（如 `host_executable_path.c`）。
+
+**当前接口**：
+
+```uya
+use std;
+
+std.cfg(std.host_os == .hos_linux, {
+    // 仅 Linux 保留
+}, {
+    // 非 Linux 分支
+})
+```
+
+- `std.cfg(cond, then, else)` 在语法分析阶段裁剪未命中分支；未选中分支不会进入依赖收集、符号收集或链接路径。
+- 当前支持的编译期平台选择器为：`std.host_os`、`std.host_arch`、`std.target_os`、`std.target_arch`。
+- `HostOS`、`HostArch`、`TargetOS`、`TargetArch` 枚举定义位于 `lib/std/platform.uya`（变体名带前缀如 `hos_linux`、`ta_x86_64`，避免合并进同一 C 翻译单元时枚举常量重名）；`std.host_os` / `std.target_arch` 等可在普通表达式中作为对应枚举值使用。
 
 ### 必须区分的维度
 
@@ -315,7 +331,7 @@ gcc -nostdlib -ffreestanding your_program.c libuya.o -o your_program -lgcc
 | **宿主（host）** | 正在构建 / 运行当前二进制（如 `bin/uya`）的操作系统与架构 | 编译器自身的 `get_compiler_dir`、`readdir`/`dirent` 布局 |
 | **目标（target）** | 用户程序或被编译代码的目标平台（`TARGET_OS` / `UYA_TARGET_OS_*`） | `@asm`、用户态 syscall 映射、`--outlibc` 产物 |
 
-`std.target` 的**首个落地用例**必须能表达 **host**，以便编译器源码在单仓库内维护、交叉构建时行为正确。
+第一版条件编译的**首个落地用例**必须能表达 **host**，以便编译器源码在单仓库内维护、交叉构建时行为正确。
 
 ### 首个用例（验收标准）
 
@@ -329,9 +345,15 @@ gcc -nostdlib -ffreestanding your_program.c libuya.o -o your_program -lgcc
    - Darwin：`d_type` / `d_name` 偏移与 `sys/dirent.h` 一致（如 20 / 21）。
    - 同上：仅生成当前 **host** 对应分支，避免运行时探测或 C 里的 `uya_host_dirent_layout()`。
 
+**当前实现状态**：
+
+- 已在 `src/main.uya` 中用 `std.cfg` 裁剪 Linux 的 `/proc/self/exe` 路径分支。
+- 已将 `struct dirent` 的 `d_type` / `d_name` 偏移切到 `std.cfg(std.host_os == ...)` 编译期常量。
+- Darwin 上真实可执行路径解析（`_NSGetExecutablePath` + `realpath`）仍是后续补齐项。
+
 ### 与现有能力的关系
 
 - `@asm_target()` 与运行期 `if @asm_target() == …` **不足以**替代上述需求（另一平台代码仍会进入语义/链接路径，除非整段删除）。
-- 实现 `std.target` 后，可将 `src/main.uya` 中宿主路径与目录扫描改为条件编译分支，并**删除**仅为此存在的宿主 C 垫片（在构建链全部改接 Uya 之后）。
+- 第一版 `std.cfg` 落地后，`src/main.uya` 已开始将宿主路径与目录扫描改为条件编译分支；后续可继续删除仅为此存在的宿主 C 垫片（在构建链全部改接 Uya 之后）。
 
-**跟踪**：路线图见 [`todo_mini_to_full.md`](./todo_mini_to_full.md) 中 `std.target` 条目。
+**跟踪**：路线图见 [`todo_mini_to_full.md`](./todo_mini_to_full.md) 中 `std.cfg` / 平台选择器条目。

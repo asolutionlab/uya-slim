@@ -30,6 +30,7 @@ struct Parser {
     arena: &Arena,            // Arena 分配器（用于分配 Token 和 AST 节点）
     context: ParserContext,  // 当前解析上下文
     pending_greater_token: &Token,  // 待处理的 > token（用于嵌套泛型 >> 拆分）
+    saw_use_std: i32,        // 当前文件中是否已显式出现 use std;
 }
 
 // 初始化 Parser
@@ -45,6 +46,7 @@ fn parser_init(parser: &Parser, lexer: &Lexer, arena: &Arena) i32 {
     parser.arena = arena;
     parser.context = ParserContext.PARSER_CONTEXT_NORMAL;  // 默认上下文
     parser.pending_greater_token = null;  // 初始化待处理的 > token
+    parser.saw_use_std = 0;
     
     // 获取第一个 Token
     parser.current_token = lexer_next_token(lexer, arena);
@@ -313,6 +315,362 @@ fn parser_get_filename(parser: &Parser) &byte {
     return null;
 }
 
+fn parser_note_use_std_import(parser: &Parser, node: &ASTNode) void {
+    if parser == null || node == null || node.type != ASTNodeType.AST_USE_STMT {
+        return;
+    }
+    if node.use_stmt_alias != null || node.use_stmt_item_name != null {
+        return;
+    }
+    if node.use_stmt_path_segment_count != 1 || node.use_stmt_path_segments == null {
+        return;
+    }
+    const seg0: &byte = node.use_stmt_path_segments[0];
+    if seg0 != null && strcmp(seg0 as *byte, "std" as *byte) == 0 {
+        parser.saw_use_std = 1;
+    }
+}
+
+fn parser_peek_is_std_cfg_call(parser: &Parser) i32 {
+    if parser == null || parser.lexer == null || parser.current_token == null {
+        return 0;
+    }
+    if parser.current_token.type != TokenType.TOKEN_IDENTIFIER || parser.current_token.value == null {
+        return 0;
+    }
+    if strcmp(parser.current_token.value as *byte, "std" as *byte) != 0 {
+        return 0;
+    }
+    const lexer: &Lexer = parser.lexer;
+    var saved_position: usize = lexer.position;
+    var saved_line: i32 = lexer.line;
+    var saved_column: i32 = lexer.column;
+    const dot_tok: &Token = lexer_next_token(lexer, parser.arena);
+    const name_tok: &Token = lexer_next_token(lexer, parser.arena);
+    const lparen_tok: &Token = lexer_next_token(lexer, parser.arena);
+    lexer.position = saved_position;
+    lexer.line = saved_line;
+    lexer.column = saved_column;
+    if dot_tok == null || name_tok == null || lparen_tok == null {
+        return 0;
+    }
+    if dot_tok.type != TokenType.TOKEN_DOT || lparen_tok.type != TokenType.TOKEN_LEFT_PAREN {
+        return 0;
+    }
+    if name_tok.type != TokenType.TOKEN_IDENTIFIER || name_tok.value == null {
+        return 0;
+    }
+    if strcmp(name_tok.value as *byte, "cfg" as *byte) != 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn parser_require_std_for_cfg(parser: &Parser) i32 {
+    if parser == null {
+        return 0;
+    }
+    if parser.saw_use_std != 0 {
+        return 1;
+    }
+    parser_report_syntax_error(parser, "使用 std.cfg 前必须先写 use std;" as *byte);
+    return 0;
+}
+
+fn parser_parse_std_cfg_predicate(parser: &Parser) i32 {
+    if parser == null || parser.current_token == null {
+        return -1;
+    }
+    if parser.current_token.type != TokenType.TOKEN_IDENTIFIER || parser.current_token.value == null ||
+        strcmp(parser.current_token.value as *byte, "std" as *byte) != 0 {
+        parser_report_syntax_error(parser, "std.cfg 的条件当前仅支持 std.host_os/std.host_arch/std.target_os/std.target_arch" as *byte);
+        return -1;
+    }
+    parser_consume(parser);  // std
+    if parser_expect(parser, TokenType.TOKEN_DOT) == null {
+        return -1;
+    }
+    if parser.current_token == null || parser.current_token.type != TokenType.TOKEN_IDENTIFIER || parser.current_token.value == null {
+        parser_report_syntax_error(parser, "std.cfg 条件缺少平台选择器" as *byte);
+        return -1;
+    }
+    const selector: &byte = parser.current_token.value;
+    parser_consume(parser);
+
+    var is_equal: i32 = 1;
+    if parser_match(parser, TokenType.TOKEN_EQUAL) != 0 {
+        parser_consume(parser);
+        is_equal = 1;
+    } else if parser_match(parser, TokenType.TOKEN_NOT_EQUAL) != 0 {
+        parser_consume(parser);
+        is_equal = 0;
+    } else {
+        parser_report_syntax_error(parser, "std.cfg 条件当前仅支持 == 或 !=" as *byte);
+        return -1;
+    }
+
+    if parser_expect(parser, TokenType.TOKEN_DOT) == null {
+        return -1;
+    }
+    if parser.current_token == null || parser.current_token.type != TokenType.TOKEN_IDENTIFIER || parser.current_token.value == null {
+        parser_report_syntax_error(parser, "std.cfg 条件缺少平台枚举变体名" as *byte);
+        return -1;
+    }
+    const variant: &byte = parser.current_token.value;
+    parser_consume(parser);
+
+    const matched: i32 = std_cfg_selector_matches(selector, variant);
+    if matched < 0 {
+        parser_report_syntax_error(parser, "std.cfg 条件包含未知的平台选择器或变体" as *byte);
+        return -1;
+    }
+    if is_equal != 0 {
+        return matched;
+    }
+    if matched != 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn parser_parse_cfg_decl_block(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null || parser_match(parser, TokenType.TOKEN_LEFT_BRACE) == 0 {
+        return null;
+    }
+    const line: i32 = parser.current_token.line;
+    const column: i32 = parser.current_token.column;
+    const block_program: &ASTNode = ast_new_node(ASTNodeType.AST_PROGRAM, line, column, parser.arena, parser_get_filename(parser));
+    if block_program == null {
+        return null;
+    }
+    var decls: & & ASTNode = null;
+    var decl_count: i32 = 0;
+    var decl_capacity: i32 = 0;
+    parser_consume(parser);  // 消费 '{'
+    while parser.current_token != null &&
+          parser_match(parser, TokenType.TOKEN_RIGHT_BRACE) == 0 &&
+          parser_match(parser, TokenType.TOKEN_EOF) == 0 {
+        const decl: &ASTNode = parser_parse_declaration(parser);
+        if decl == null {
+            return null;
+        }
+        if decl.type == ASTNodeType.AST_PROGRAM {
+            var inner_i: i32 = 0;
+            while inner_i < decl.program_decl_count {
+                const inner_decl: &ASTNode = decl.program_decls[inner_i];
+                if inner_decl != null {
+                    if decl_count >= decl_capacity {
+                        var new_capacity: i32 = 4;
+                        if decl_capacity != 0 {
+                            new_capacity = decl_capacity * 2;
+                        }
+                        const new_decls: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+                        if new_decls == null {
+                            return null;
+                        }
+                        var copy_i: i32 = 0;
+                        while copy_i < decl_count {
+                            if decls != null {
+                                new_decls[copy_i] = decls[copy_i];
+                            }
+                            copy_i = copy_i + 1;
+                        }
+                        decls = new_decls;
+                        decl_capacity = new_capacity;
+                    }
+                    if decls == null {
+                        return null;
+                    }
+                    decls[decl_count] = inner_decl;
+                    decl_count = decl_count + 1;
+                }
+                inner_i = inner_i + 1;
+            }
+        } else {
+            if decl_count >= decl_capacity {
+                var new_capacity2: i32 = 4;
+                if decl_capacity != 0 {
+                    new_capacity2 = decl_capacity * 2;
+                }
+                const new_decls2: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity2) as & & ASTNode;
+                if new_decls2 == null {
+                    return null;
+                }
+                var copy_i2: i32 = 0;
+                while copy_i2 < decl_count {
+                    if decls != null {
+                        new_decls2[copy_i2] = decls[copy_i2];
+                    }
+                    copy_i2 = copy_i2 + 1;
+                }
+                decls = new_decls2;
+                decl_capacity = new_capacity2;
+            }
+            if decls == null {
+                return null;
+            }
+            decls[decl_count] = decl;
+            decl_count = decl_count + 1;
+        }
+    }
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_BRACE) == null {
+        return null;
+    }
+    block_program.program_decls = decls;
+    block_program.program_decl_count = decl_count;
+    return block_program;
+}
+
+fn parser_parse_std_cfg_decl_arg(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    if parser_match(parser, TokenType.TOKEN_LEFT_BRACE) != 0 {
+        return parser_parse_cfg_decl_block(parser);
+    }
+    return parser_parse_declaration(parser);
+}
+
+fn parser_parse_std_cfg_decl(parser: &Parser) &ASTNode {
+    if parser == null || parser_peek_is_std_cfg_call(parser) == 0 {
+        return null;
+    }
+    if parser_require_std_for_cfg(parser) == 0 {
+        return null;
+    }
+    parser_consume(parser);  // std
+    if parser_expect(parser, TokenType.TOKEN_DOT) == null {
+        return null;
+    }
+    if parser.current_token == null || parser.current_token.type != TokenType.TOKEN_IDENTIFIER || parser.current_token.value == null ||
+        strcmp(parser.current_token.value as *byte, "cfg" as *byte) != 0 {
+        parser_report_syntax_error(parser, "顶层当前仅支持 std.cfg(...)" as *byte);
+        return null;
+    }
+    parser_consume(parser);  // cfg
+    if parser_expect(parser, TokenType.TOKEN_LEFT_PAREN) == null {
+        return null;
+    }
+    const take_then: i32 = parser_parse_std_cfg_predicate(parser);
+    if take_then < 0 {
+        return null;
+    }
+    if parser_expect(parser, TokenType.TOKEN_COMMA) == null {
+        return null;
+    }
+
+    var result: &ASTNode = null;
+    if take_then != 0 {
+        result = parser_parse_std_cfg_decl_arg(parser);
+        if result == null {
+            return null;
+        }
+        if parser_expect(parser, TokenType.TOKEN_COMMA) == null {
+            return null;
+        }
+        const saved_use_std: i32 = parser.saw_use_std;
+        const discarded: &ASTNode = parser_parse_std_cfg_decl_arg(parser);
+        if discarded == null {
+            return null;
+        }
+        parser.saw_use_std = saved_use_std;
+    } else {
+        const saved_use_std: i32 = parser.saw_use_std;
+        const discarded: &ASTNode = parser_parse_std_cfg_decl_arg(parser);
+        if discarded == null {
+            return null;
+        }
+        parser.saw_use_std = saved_use_std;
+        if parser_expect(parser, TokenType.TOKEN_COMMA) == null {
+            return null;
+        }
+        result = parser_parse_std_cfg_decl_arg(parser);
+        if result == null {
+            return null;
+        }
+    }
+
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null {
+        return null;
+    }
+    return result;
+}
+
+fn parser_parse_std_cfg_stmt_arg(parser: &Parser) &ASTNode {
+    if parser == null || parser.current_token == null {
+        return null;
+    }
+    if parser_match(parser, TokenType.TOKEN_LEFT_BRACE) != 0 {
+        return parser_parse_block(parser);
+    }
+    return parser_parse_statement(parser);
+}
+
+fn parser_parse_std_cfg_stmt(parser: &Parser) &ASTNode {
+    if parser == null || parser_peek_is_std_cfg_call(parser) == 0 {
+        return null;
+    }
+    if parser_require_std_for_cfg(parser) == 0 {
+        return null;
+    }
+    parser_consume(parser);  // std
+    if parser_expect(parser, TokenType.TOKEN_DOT) == null {
+        return null;
+    }
+    if parser.current_token == null || parser.current_token.type != TokenType.TOKEN_IDENTIFIER || parser.current_token.value == null ||
+        strcmp(parser.current_token.value as *byte, "cfg" as *byte) != 0 {
+        parser_report_syntax_error(parser, "语句位置当前仅支持 std.cfg(...)" as *byte);
+        return null;
+    }
+    parser_consume(parser);  // cfg
+    if parser_expect(parser, TokenType.TOKEN_LEFT_PAREN) == null {
+        return null;
+    }
+    const take_then: i32 = parser_parse_std_cfg_predicate(parser);
+    if take_then < 0 {
+        return null;
+    }
+    if parser_expect(parser, TokenType.TOKEN_COMMA) == null {
+        return null;
+    }
+
+    var result: &ASTNode = null;
+    if take_then != 0 {
+        result = parser_parse_std_cfg_stmt_arg(parser);
+        if result == null {
+            return null;
+        }
+        if parser_expect(parser, TokenType.TOKEN_COMMA) == null {
+            return null;
+        }
+        const saved_use_std: i32 = parser.saw_use_std;
+        const discarded: &ASTNode = parser_parse_std_cfg_stmt_arg(parser);
+        if discarded == null {
+            return null;
+        }
+        parser.saw_use_std = saved_use_std;
+    } else {
+        const saved_use_std: i32 = parser.saw_use_std;
+        const discarded: &ASTNode = parser_parse_std_cfg_stmt_arg(parser);
+        if discarded == null {
+            return null;
+        }
+        parser.saw_use_std = saved_use_std;
+        if parser_expect(parser, TokenType.TOKEN_COMMA) == null {
+            return null;
+        }
+        result = parser_parse_std_cfg_stmt_arg(parser);
+        if result == null {
+            return null;
+        }
+    }
+
+    if parser_expect(parser, TokenType.TOKEN_RIGHT_PAREN) == null {
+        return null;
+    }
+    return result;
+}
+
 // 解析类型（支持命名类型、指针类型和数组类型）
 
 // 解析声明（函数、结构体或变量声明）
@@ -323,12 +681,18 @@ fn parser_parse_declaration(parser: &Parser) &ASTNode {
     
     // 检查 use 语句
     if parser_match(parser, TokenType.TOKEN_USE) != 0 {
-        return parser_parse_use_stmt(parser);
+        const use_stmt: &ASTNode = parser_parse_use_stmt(parser);
+        parser_note_use_std_import(parser, use_stmt);
+        return use_stmt;
     }
     
     // 检查 test 语句（可以在顶层声明）
     if parser_match(parser, TokenType.TOKEN_TEST) != 0 {
         return parser_parse_statement(parser);
+    }
+
+    if parser_peek_is_std_cfg_call(parser) != 0 {
+        return parser_parse_std_cfg_decl(parser);
     }
     
     // 检查 export 关键字
@@ -567,8 +931,39 @@ fn parser_parse(parser: &Parser) &ASTNode {
             decl_capacity = new_capacity;
         }
         
-        decls[decl_count] = decl;
-        decl_count = decl_count + 1;
+        if decl.type == ASTNodeType.AST_PROGRAM {
+            var inner_i2: i32 = 0;
+            while inner_i2 < decl.program_decl_count {
+                const inner_decl2: &ASTNode = decl.program_decls[inner_i2];
+                if inner_decl2 != null {
+                    if decl_count >= decl_capacity {
+                        var new_capacity3: i32 = 0;
+                        if decl_capacity == 0 {
+                            new_capacity3 = 4;
+                        } else {
+                            new_capacity3 = decl_capacity * 2;
+                        }
+                        const new_decls3: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity3) as & & ASTNode;
+                        if new_decls3 == null {
+                            return null;
+                        }
+                        var copy_i3: i32 = 0;
+                        while copy_i3 < decl_count {
+                            new_decls3[copy_i3] = decls[copy_i3];
+                            copy_i3 = copy_i3 + 1;
+                        }
+                        decls = new_decls3;
+                        decl_capacity = new_capacity3;
+                    }
+                    decls[decl_count] = inner_decl2;
+                    decl_count = decl_count + 1;
+                }
+                inner_i2 = inner_i2 + 1;
+            }
+        } else {
+            decls[decl_count] = decl;
+            decl_count = decl_count + 1;
+        }
     }
     
     program.program_decls = decls;

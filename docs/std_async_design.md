@@ -230,7 +230,7 @@ fn fetch_and_write(reader: &AsyncReader, writer: &AsyncWriter) !Future<void> {
 | 4 | **std.async.io**（`AsyncWriter`, `AsyncReader`, `AsyncFd`） | ⭐⭐⭐⭐ | 阶段 2 + 3 |
 | 5 | **std.async.scheduler**（`Scheduler`） | ⭐⭐⭐ | 阶段 2 + 3 |
 | 6 | **std.async.channel**（`Channel<T>`, `MpscChannel<T>`） | ⭐⭐⭐ | 阶段 2 |
-| 7 | **多平台事件后端**（macOS kqueue, Windows IOCP） | ⭐⭐ | 阶段 3 + `std.target` |
+| 7 | **多平台事件后端**（macOS kqueue, Windows IOCP） | ⭐⭐ | 阶段 3 + `std.cfg` |
 
 **第一个里程碑**（最小可用）：
 完成阶段 1-4，可以在 Linux 上使用异步 I/O。

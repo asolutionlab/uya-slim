@@ -162,12 +162,17 @@ fn gen_enum_definition(codegen: &C99CodeGenerator, enum_decl: &ASTNode) i32 {
             const safe_variant_name: &byte = get_safe_c_identifier(codegen, variant.name);
             current_value = atoi(variant.value as *byte);
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "%s = %d" as *byte, safe_variant_name as *byte, current_value);
+            fputs(enum_name as *byte, codegen.output as *void);
+            fputc(95, codegen.output as *void);
+            fputs(safe_variant_name as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, " = %d" as *byte, current_value);
         } else {
             // 无显式值，使用当前值（从0开始或基于前一个值）
             const safe_variant_name2: &byte = get_safe_c_identifier(codegen, variant.name);
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "%s" as *byte, safe_variant_name2 as *byte);
+            fputs(enum_name as *byte, codegen.output as *void);
+            fputc(95, codegen.output as *void);
+            fputs(safe_variant_name2 as *byte, codegen.output as *void);
             // 当前值保持不变，供下一个变体使用（C中隐式递增）
         }
         

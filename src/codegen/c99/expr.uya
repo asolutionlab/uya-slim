@@ -2094,6 +2094,18 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         if expr.member_access_is_module_access != 0 {
             const module_name: &byte = expr.member_access_module_name;
             if module_name != null && field_name != null {
+                if strcmp(module_name as *byte, "std" as *byte) == 0 {
+                    const variant_name: &byte = std_cfg_current_value(field_name);
+                    const builtin_enum_name: &byte = std_cfg_selector_enum_name(field_name);
+                    if variant_name != null && builtin_enum_name != null {
+                        const safe_enum_name: &byte = get_safe_c_identifier(codegen, builtin_enum_name);
+                        const safe_variant_name: &byte = get_safe_c_identifier(codegen, variant_name);
+                        fputs(safe_enum_name as *byte, codegen.output as *void);
+                        fputc(95, codegen.output as *void);
+                        fputs(safe_variant_name as *byte, codegen.output as *void);
+                        return;
+                    }
+                }
                 // 生成模块前缀名称（module_name.item_name -> module_name_item_name）
                 var prefixed_name: [i8: NAME_BUF_SIZE] = [];
                 var pi: i32 = 0;
@@ -2132,6 +2144,18 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         
         // libc.stderr/stdin/stdout：输出裸名以匹配 C 标准（C 使用 stderr 而非 libc.stderr）
         if object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null {
+            if strcmp(object.identifier_name as *byte, "std" as *byte) == 0 && field_name != null {
+                const variant_name2: &byte = std_cfg_current_value(field_name);
+                const builtin_enum_name2: &byte = std_cfg_selector_enum_name(field_name);
+                if variant_name2 != null && builtin_enum_name2 != null {
+                    const safe_enum_name2: &byte = get_safe_c_identifier(codegen, builtin_enum_name2);
+                    const safe_variant_name2: &byte = get_safe_c_identifier(codegen, variant_name2);
+                    fputs(safe_enum_name2 as *byte, codegen.output as *void);
+                    fputc(95, codegen.output as *void);
+                    fputs(safe_variant_name2 as *byte, codegen.output as *void);
+                    return;
+                }
+            }
             if strcmp(object.identifier_name as *byte, "libc" as *byte) == 0 && field_name != null {
                 if strcmp(field_name as *byte, "stderr" as *byte) == 0 || strcmp(field_name as *byte, "stdin" as *byte) == 0 || strcmp(field_name as *byte, "stdout" as *byte) == 0 {
                     fprintf(codegen.output as *void, "%s" as *byte, field_name as *byte);
@@ -2171,9 +2195,12 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     // 是枚举类型，查找变体值
                     const enum_value: i32 = find_enum_variant_value(codegen, enum_decl, field_name);
                     if enum_value >= 0 {
-                        // 找到变体，直接输出枚举值名称（C中枚举值不需要前缀）
+                        // 找到变体，输出带枚举名前缀的 C 枚举值名称，避免跨枚举重名
+                        const safe_enum_name3: &byte = get_safe_c_identifier(codegen, enum_name);
                         const safe_variant_name: &byte = get_safe_c_identifier(codegen, field_name);
-                        fprintf(codegen.output as *void, "%s" as *byte, safe_variant_name as *byte);
+                        fputs(safe_enum_name3 as *byte, codegen.output as *void);
+                        fputc(95, codegen.output as *void);
+                        fputs(safe_variant_name as *byte, codegen.output as *void);
                         return;
                     }
                 }

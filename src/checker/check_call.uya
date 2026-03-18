@@ -986,6 +986,30 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
                 return result;
             }
         }
+        const ih: i32 = hash_string(obj.identifier_name);
+        var ii: i32 = ih & (IMPORT_TABLE_SIZE - 1);
+        var mi: i32 = 0;
+        while mi < IMPORT_TABLE_SIZE {
+            const sl: i32 = (ii + mi) & (IMPORT_TABLE_SIZE - 1);
+            const imp: &ImportedItem = checker.import_table.slots[sl];
+            if imp == null {
+                break;
+            }
+            if imp.item_type == (0 - 1) && str_equals(imp.local_name, obj.identifier_name) != 0 {
+                node.member_access_is_module_access = 1;
+                node.member_access_module_name = imp.module_name;
+                if imp.module_name != null && strcmp(imp.module_name as *byte, "std" as *byte) == 0 {
+                    const builtin_enum_name: &byte = std_cfg_selector_enum_name(node.member_access_field_name);
+                    if builtin_enum_name != null {
+                        result.kind = TypeKind.TYPE_ENUM;
+                        result.enum_name = builtin_enum_name;
+                        return result;
+                    }
+                }
+                break;
+            }
+            mi = mi + 1;
+        }
     }
     
     // 对象类型是枚举（变量）：只允许 T.member，不允许 变量.member

@@ -1229,6 +1229,12 @@ fn infer_member_access(checker: &TypeChecker, expr: &ASTNode) Type {
                     if imp.item_type == (0 - 1) && str_equals(imp.local_name, enum_name) != 0 {
                         expr.member_access_is_module_access = 1;
                         expr.member_access_module_name = imp.module_name;
+                        if imp.module_name != null && strcmp(imp.module_name as *byte, "std" as *byte) == 0 {
+                            const builtin_enum_name: &byte = std_cfg_selector_enum_name(expr.member_access_field_name);
+                            if builtin_enum_name != null {
+                                return make_named_type(TypeKind.TYPE_ENUM, builtin_enum_name);
+                            }
+                        }
                         return make_void_type();
                     }
                     i2 = i2 + 1;
