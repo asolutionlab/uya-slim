@@ -138,6 +138,7 @@ export const UYA_STDERR_FILENO: i64 = 2;
 // mmap 标志
 // ============================================================
 
+export const MAP_SHARED: i32 = 1;
 export const MAP_PRIVATE: i32 = 2;
 export const MAP_ANONYMOUS: i32 = 32;
 export const PROT_READ: i32 = 1;
