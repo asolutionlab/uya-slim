@@ -350,6 +350,13 @@ fn collect_inferred_simd_type_from_expr(codegen: &C99CodeGenerator, node: &ASTNo
     if node.type == ASTNodeType.AST_CALL_EXPR && node.simd_splat_target_type != null {
         c99_type_to_c(codegen, node.simd_splat_target_type);
     }
+    // 向量比较的类型为 @mask(N)，若未出现在 var/fn 签名中，须在此注册 uya_simd_mask_N（依赖 current_function_decl 解析局部/参数）
+    if node.type == ASTNodeType.AST_BINARY_EXPR {
+        const mask_ast: &ASTNode = c99_resolve_simd_type_ast_from_expr(codegen, node);
+        if mask_ast != null && mask_ast.type == ASTNodeType.AST_TYPE_MASK {
+            _ = c99_type_to_c(codegen, mask_ast);
+        }
+    }
 }
 
 // 递归收集 AST 中使用的切片类型、错误联合类型和 SIMD 类型，以便输出对应 struct
@@ -384,9 +391,15 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
             }
             j = j + 1;
         }
+        const saved_fn: &ASTNode = codegen.current_function_decl;
+        const saved_ret: &ASTNode = codegen.current_function_return_type;
+        codegen.current_function_decl = node;
+        codegen.current_function_return_type = node.fn_decl_return_type;
         if node.fn_decl_body != null {
             collect_slice_types_from_node(codegen, node.fn_decl_body);
         }
+        codegen.current_function_decl = saved_fn;
+        codegen.current_function_return_type = saved_ret;
         return;
     }
     if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {

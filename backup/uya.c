@@ -50370,11 +50370,24 @@ static __attribute__((unused)) void gen_catch_expr(struct C99CodeGenerator * cod
                                                                     payload_c = (uint8_t *)(uint8_t *)str1468;
                                                                 }
                                                             } else {
-                                                                uint8_t buf[128] = {0};
-                                                                snprintf((uint8_t *)(&buf[0]), 128, (const char *)str1269, rest);
-                                                                payload_c = c99_arena_strdup(codegen->arena, (uint8_t *)(&buf[0]));
-                                                                if ((payload_c == NULL)) {
-                                                                    payload_c = (uint8_t *)(uint8_t *)str1257;
+                                                                struct ASTNode * const alias_decl = find_type_alias_from_program(codegen->program_node, (uint8_t *)rest);
+                                                                if (((alias_decl != NULL) && (alias_decl->type_alias_name != NULL))) {
+                                                                    payload_c = get_safe_c_identifier(codegen, alias_decl->type_alias_name);
+                                                                    if ((payload_c == NULL)) {
+                                                                        uint8_t buf_a[128] = {0};
+                                                                        snprintf((uint8_t *)(&buf_a[0]), 128, (const char *)str1269, rest);
+                                                                        payload_c = c99_arena_strdup(codegen->arena, (uint8_t *)(&buf_a[0]));
+                                                                        if ((payload_c == NULL)) {
+                                                                            payload_c = (uint8_t *)(uint8_t *)str1257;
+                                                                        }
+                                                                    }
+                                                                } else {
+                                                                    uint8_t buf[128] = {0};
+                                                                    snprintf((uint8_t *)(&buf[0]), 128, (const char *)str1269, rest);
+                                                                    payload_c = c99_arena_strdup(codegen->arena, (uint8_t *)(&buf[0]));
+                                                                    if ((payload_c == NULL)) {
+                                                                        payload_c = (uint8_t *)(uint8_t *)str1257;
+                                                                    }
                                                                 }
                                                             }
                                                         }
@@ -54213,6 +54226,12 @@ static __attribute__((unused)) void collect_inferred_simd_type_from_expr(struct 
                 if (((node->type == ASTNodeType_AST_CALL_EXPR) && (node->simd_splat_target_type != NULL))) {
                     c99_type_to_c(codegen, node->simd_splat_target_type);
                 }
+                if ((node->type == ASTNodeType_AST_BINARY_EXPR)) {
+                    struct ASTNode * const mask_ast = c99_resolve_simd_type_ast_from_expr(codegen, node);
+                    if (((mask_ast != NULL) && (mask_ast->type == ASTNodeType_AST_TYPE_MASK))) {
+                        (void)(c99_type_to_c(codegen, mask_ast));
+                    }
+                }
             }
 
 static __attribute__((unused)) void collect_slice_types_from_node(struct C99CodeGenerator * codegen, struct ASTNode * node) {
@@ -54246,9 +54265,15 @@ static __attribute__((unused)) void collect_slice_types_from_node(struct C99Code
                         }
                         j = (j + 1);
                     }
+                    struct ASTNode * const saved_fn = codegen->current_function_decl;
+                    struct ASTNode * const saved_ret = codegen->current_function_return_type;
+                    codegen->current_function_decl = node;
+                    codegen->current_function_return_type = node->fn_decl_return_type;
                     if ((node->fn_decl_body != NULL)) {
                         collect_slice_types_from_node(codegen, node->fn_decl_body);
                     }
+                    codegen->current_function_decl = saved_fn;
+                    codegen->current_function_return_type = saved_ret;
                     return;
                 }
                 if (((node->type == ASTNodeType_AST_BLOCK) && (node->block_stmts != NULL))) {

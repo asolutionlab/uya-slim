@@ -3554,11 +3554,25 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                 payload_c = "void*" as &byte;
                             }
                         } else {
-                            var buf: [byte: 128] = [];
-                            snprintf(&buf[0] as *byte, 128, "struct %s" as *byte, rest);
-                            payload_c = c99_arena_strdup(codegen.arena, &buf[0] as &byte);
-                            if payload_c == null {
-                                payload_c = "int32_t" as &byte;
+                            // rest 如 Vec4i32：可能是 type alias（typedef 名），不是 C struct tag；err_union 字段类型与 c99_type_to_c 一致
+                            const alias_decl: &ASTNode = find_type_alias_from_program(codegen.program_node, rest as &byte);
+                            if alias_decl != null && alias_decl.type_alias_name != null {
+                                payload_c = get_safe_c_identifier(codegen, alias_decl.type_alias_name);
+                                if payload_c == null {
+                                    var buf_a: [byte: 128] = [];
+                                    snprintf(&buf_a[0] as *byte, 128, "struct %s" as *byte, rest);
+                                    payload_c = c99_arena_strdup(codegen.arena, &buf_a[0] as &byte);
+                                    if payload_c == null {
+                                        payload_c = "int32_t" as &byte;
+                                    }
+                                }
+                            } else {
+                                var buf: [byte: 128] = [];
+                                snprintf(&buf[0] as *byte, 128, "struct %s" as *byte, rest);
+                                payload_c = c99_arena_strdup(codegen.arena, &buf[0] as &byte);
+                                if payload_c == null {
+                                    payload_c = "int32_t" as &byte;
+                                }
                             }
                         }
                     }
