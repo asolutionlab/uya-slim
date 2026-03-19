@@ -5039,9 +5039,10 @@ fn fetch() !Future<&[i8]> { ... }  // 正确
 - 与异步运行时集成
 
 **`async_compute<T>`**：
-- 当前最小实现已提供 `async_compute_i32()` / `async_compute_usize()`，分别返回实现了 `Future<!i32>` / `Future<!usize>` 的具体 future 结构体；其底层共享同一个 raw core 状态机
+- 现已提供通用入口 `async_compute<T>() -> Future<!T>`；当前通过编译期类型分发接入 `i32` / `usize` 两条 concrete 后端
+- `async_compute_i32()` / `async_compute_usize()` 仍保留，并分别返回实现了 `Future<!i32>` / `Future<!usize>` 的具体 future 结构体；三者底层共享同一个 raw core 状态机
 - 将 CPU 密集型任务提交到线程池
-- 通用 `async_compute<T>` 后续扩展
+- 后续扩展更多可分发类型、以及 Send/Sync/跨线程验证
 
 ### 18.6 设计哲学
 
@@ -5628,6 +5629,7 @@ export struct TypeInfo {
     size: i32,
     align: i32,
     kind: i32,
+    type_id: i32,
     is_integer: bool,
     is_float: bool,
     is_bool: bool,

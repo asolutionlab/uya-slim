@@ -14,6 +14,7 @@ export struct TypeInfo {
     size: i32,
     align: i32,
     kind: i32,
+    type_id: i32,
     is_integer: bool,
     is_float: bool,
     is_bool: bool,

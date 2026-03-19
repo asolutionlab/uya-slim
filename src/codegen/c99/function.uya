@@ -2062,6 +2062,32 @@ fn get_mono_function_name(codegen: &C99CodeGenerator, generic_name: &byte, type_
         return generic_name;
     }
     snprintf(mono_name as *byte, name_len, "%s_%s" as *byte, safe_name as *byte, (&suffix[0]) as *byte);
+
+    // 若单态名与已有非泛型/显式特化函数的 C 符号冲突，则追加 _mono 避让。
+    if codegen.program_node != null {
+        const decl_count: i32 = codegen.program_node.program_decl_count;
+        var di: i32 = 0;
+        while di < decl_count {
+            const decl: &ASTNode = codegen.program_node.program_decls[di];
+            if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null {
+                var decl_c_name: &byte = get_c_name_for_global_function(codegen, decl.fn_decl_name, 1);
+                if decl.fn_decl_is_export != 0 && decl.filename != null && decl.fn_decl_extern_lib_name == null {
+                    decl_c_name = get_export_function_c_name(codegen, decl.fn_decl_name, decl.filename);
+                }
+                const decl_safe_name: &byte = get_safe_c_identifier(codegen, decl_c_name);
+                if decl_safe_name != null && strcmp(decl_safe_name as *byte, mono_name as *byte) == 0 {
+                    const mono_name2_len: usize = name_len + 5;
+                    const mono_name2: &byte = arena_alloc(codegen.arena, mono_name2_len) as &byte;
+                    if mono_name2 != null {
+                        snprintf(mono_name2 as *byte, mono_name2_len, "%s_mono" as *byte, mono_name as *byte);
+                        return mono_name2;
+                    }
+                    break;
+                }
+            }
+            di = di + 1;
+        }
+    }
     
     return mono_name;
 }

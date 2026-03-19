@@ -253,6 +253,7 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
     var is_array: i32 = 0;
     var is_void: i32 = 0;
     var kind: i32 = 0; // 0=unknown, 1=integer, 2=float, 3=bool, 4=pointer, 5=array, 6=struct, 7=void
+    var type_id: i32 = 16;
     
     const type_name_ptr: *byte = type_name as *byte;
     if type_name != null {
@@ -263,24 +264,41 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
            strcmp(type_name_ptr, "usize" as *byte) == 0 || strcmp(type_name_ptr, "byte" as *byte) == 0 {
             is_integer = 1;
             kind = 1;
+            if strcmp(type_name_ptr, "i8" as *byte) == 0 { type_id = 0; }
+            else if strcmp(type_name_ptr, "i16" as *byte) == 0 { type_id = 1; }
+            else if strcmp(type_name_ptr, "i32" as *byte) == 0 { type_id = 2; }
+            else if strcmp(type_name_ptr, "i64" as *byte) == 0 { type_id = 3; }
+            else if strcmp(type_name_ptr, "u8" as *byte) == 0 { type_id = 4; }
+            else if strcmp(type_name_ptr, "u16" as *byte) == 0 { type_id = 5; }
+            else if strcmp(type_name_ptr, "u32" as *byte) == 0 { type_id = 6; }
+            else if strcmp(type_name_ptr, "usize" as *byte) == 0 { type_id = 7; }
+            else if strcmp(type_name_ptr, "u64" as *byte) == 0 { type_id = 8; }
+            else if strcmp(type_name_ptr, "byte" as *byte) == 0 { type_id = 10; }
         } else if strcmp(type_name_ptr, "f32" as *byte) == 0 || strcmp(type_name_ptr, "f64" as *byte) == 0 {
             is_float = 1;
             kind = 2;
+            if strcmp(type_name_ptr, "f32" as *byte) == 0 { type_id = 11; }
+            else { type_id = 12; }
         } else if strcmp(type_name_ptr, "bool" as *byte) == 0 {
             is_bool = 1;
             kind = 3;
+            type_id = 9;
         } else if type_name[0] == 38 as i8 || type_name[0] == 42 as i8 {  // '&' = 38, '*' = 42
             is_pointer = 1;
             kind = 4;
+            type_id = 18;
         } else if type_name[0] == 91 as i8 {  // '[' = 91
             is_array = 1;
             kind = 5;
+            type_id = 19;
         } else if strcmp(type_name_ptr, "void" as *byte) == 0 {
             is_void = 1;
             kind = 7;
+            type_id = 13;
         } else {
             // 可能是结构体，kind = 6
             kind = 6;
+            type_id = 16;
         }
     }
     
@@ -290,9 +308,9 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
         return null;
     }
     
-    // 分配字段数组（最多 12：10 个基础 + field_count + fields）
-    const field_count_max: i32 = 12;
-    var field_count: i32 = 10;
+    // 分配字段数组（最多 13：11 个基础 + field_count + fields）
+    const field_count_max: i32 = 13;
+    var field_count: i32 = 11;
     const field_names: &(&byte) = arena_alloc(arena, (8 * field_count_max) as u64) as &(&byte);
     const field_values: &(&ASTNode) = arena_alloc(arena, (8 * field_count_max) as u64) as &(&ASTNode);
     if field_names == null || field_values == null {
@@ -312,23 +330,26 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
     field_names[3] = ("kind" as *byte) as &byte;
     field_values[3] = create_number_literal(kind as i64, arena, line, column);
     
-    field_names[4] = ("is_integer" as *byte) as &byte;
-    field_values[4] = create_bool_literal(is_integer, arena, line, column);
+    field_names[4] = ("type_id" as *byte) as &byte;
+    field_values[4] = create_number_literal(type_id as i64, arena, line, column);
     
-    field_names[5] = ("is_float" as *byte) as &byte;
-    field_values[5] = create_bool_literal(is_float, arena, line, column);
+    field_names[5] = ("is_integer" as *byte) as &byte;
+    field_values[5] = create_bool_literal(is_integer, arena, line, column);
     
-    field_names[6] = ("is_bool" as *byte) as &byte;
-    field_values[6] = create_bool_literal(is_bool, arena, line, column);
+    field_names[6] = ("is_float" as *byte) as &byte;
+    field_values[6] = create_bool_literal(is_float, arena, line, column);
     
-    field_names[7] = ("is_pointer" as *byte) as &byte;
-    field_values[7] = create_bool_literal(is_pointer, arena, line, column);
+    field_names[7] = ("is_bool" as *byte) as &byte;
+    field_values[7] = create_bool_literal(is_bool, arena, line, column);
     
-    field_names[8] = ("is_array" as *byte) as &byte;
-    field_values[8] = create_bool_literal(is_array, arena, line, column);
+    field_names[8] = ("is_pointer" as *byte) as &byte;
+    field_values[8] = create_bool_literal(is_pointer, arena, line, column);
     
-    field_names[9] = ("is_void" as *byte) as &byte;
-    field_values[9] = create_bool_literal(is_void, arena, line, column);
+    field_names[9] = ("is_array" as *byte) as &byte;
+    field_values[9] = create_bool_literal(is_array, arena, line, column);
+    
+    field_names[10] = ("is_void" as *byte) as &byte;
+    field_values[10] = create_bool_literal(is_void, arena, line, column);
     
     var n_fields: i32 = 0;
     var struct_decl: &ASTNode = null;
@@ -380,11 +401,11 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
             arr_lit.array_literal_elements = elements;
             arr_lit.array_literal_element_count = MAX_FIELDS;
             arr_lit.array_literal_repeat_count_expr = null;
-            field_names[10] = ("field_count" as *byte) as &byte;
-            field_values[10] = create_number_literal(n_fields as i64, arena, line, column);
-            field_names[11] = ("fields" as *byte) as &byte;
-            field_values[11] = arr_lit;
-            field_count = 12;
+            field_names[11] = ("field_count" as *byte) as &byte;
+            field_values[11] = create_number_literal(n_fields as i64, arena, line, column);
+            field_names[12] = ("fields" as *byte) as &byte;
+            field_values[12] = arr_lit;
+            field_count = 13;
         }
     }
     

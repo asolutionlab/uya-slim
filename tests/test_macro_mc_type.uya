@@ -58,6 +58,12 @@ test "test_bool_type" {
     try assert_eq_i32(bool_info.is_bool, true);
 }
 
+test "test_type_id_distinguishes_builtin_types" {
+    const i32_info: TypeInfo = get_type_info(i32);
+    const usize_info: TypeInfo = get_type_info(usize);
+    try assert_true(i32_info.type_id != usize_info.type_id);
+}
+
 test "test_struct_type_fields" {
     const point_info: TypeInfo = get_type_info(Point);
     try assert_eq_i32(point_info.field_count, 2);

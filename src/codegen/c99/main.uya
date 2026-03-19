@@ -1708,6 +1708,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             fputs("    int32_t size;\n" as *byte, codegen.output as *void);
             fputs("    int32_t align;\n" as *byte, codegen.output as *void);
             fputs("    int32_t kind;\n" as *byte, codegen.output as *void);
+            fputs("    int32_t type_id;\n" as *byte, codegen.output as *void);
             fputs("    bool is_integer;\n" as *byte, codegen.output as *void);
             fputs("    bool is_float;\n" as *byte, codegen.output as *void);
             fputs("    bool is_bool;\n" as *byte, codegen.output as *void);

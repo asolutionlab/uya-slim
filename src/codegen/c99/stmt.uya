@@ -191,6 +191,76 @@ fn emit_defer_cleanup(codegen: &C99CodeGenerator, emit_errdefer: i32) void {
     }
 }
 
+// 若表达式结果是实现了指定接口的 concrete struct，返回其结构体名；否则返回 null。
+fn get_expr_concrete_struct_for_interface(codegen: &C99CodeGenerator, expr: &ASTNode, interface_name: &byte) &byte {
+    if codegen == null || expr == null || interface_name == null {
+        return null;
+    }
+    if expr.type == ASTNodeType.AST_STRUCT_INIT && expr.struct_init_struct_name != null {
+        if struct_implements_interface_c99(codegen, expr.struct_init_struct_name, interface_name) != 0 {
+            return expr.struct_init_struct_name;
+        }
+        return null;
+    }
+    if expr.type == ASTNodeType.AST_IDENTIFIER && expr.identifier_name != null {
+        const arg_type_c: &byte = get_identifier_type_c(codegen, expr.identifier_name);
+        if arg_type_c == null {
+            return null;
+        }
+        var atc: &byte = arg_type_c;
+        if strncmp(atc as *byte, "const " as *byte, 6) == 0 {
+            atc = &arg_type_c[6] as &byte;
+        }
+        if strncmp(atc as *byte, "struct " as *byte, 7) != 0 || strstr(atc as *byte, "uya_interface_" as *byte) != null {
+            return null;
+        }
+        const start: &byte = &atc[7] as &byte;
+        var pos: i32 = 0;
+        while start[pos] != 0 && start[pos] != 32 && start[pos] != 42 {
+            pos = pos + 1;
+        }
+        if pos > 0 && codegen.arena != null {
+            const struct_name: &byte = arena_alloc(codegen.arena, (pos + 1) as usize) as &byte;
+            if struct_name != null {
+                memcpy(struct_name as *void, start as *void, pos as usize);
+                struct_name[pos] = 0;
+                if struct_implements_interface_c99(codegen, struct_name, interface_name) != 0 {
+                    return struct_name;
+                }
+            }
+        }
+        return null;
+    }
+
+    const expr_c: &byte = get_c_type_of_expr(codegen, expr);
+    if expr_c == null {
+        return null;
+    }
+    var expr_c2: &byte = expr_c;
+    if strncmp(expr_c2 as *byte, "const " as *byte, 6) == 0 {
+        expr_c2 = &expr_c2[6] as &byte;
+    }
+    if strncmp(expr_c2 as *byte, "struct " as *byte, 7) != 0 || strstr(expr_c2 as *byte, "uya_interface_" as *byte) != null {
+        return null;
+    }
+    const start2: &byte = &expr_c2[7] as &byte;
+    var pos2: i32 = 0;
+    while start2[pos2] != 0 && start2[pos2] != 32 && start2[pos2] != 42 {
+        pos2 = pos2 + 1;
+    }
+    if pos2 > 0 && codegen.arena != null {
+        const struct_name2: &byte = arena_alloc(codegen.arena, (pos2 + 1) as usize) as &byte;
+        if struct_name2 != null {
+            memcpy(struct_name2 as *void, start2 as *void, pos2 as usize);
+            struct_name2[pos2] = 0;
+            if struct_implements_interface_c99(codegen, struct_name2, interface_name) != 0 {
+                return struct_name2;
+            }
+        }
+    }
+    return null;
+}
+
 fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     if stmt == null {
         return;
@@ -273,6 +343,23 @@ fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     const condition: &ASTNode = stmt.if_stmt_condition;
     const then_branch: &ASTNode = stmt.if_stmt_then_branch;
     const else_branch: &ASTNode = stmt.if_stmt_else_branch;
+
+    // 单态化/宏展开后若条件已成常量，则直接裁剪分支，避免无效分支继续参与 C 类型检查。
+    if codegen != null && codegen.checker != null && condition != null {
+        const cond_value: i32 = checker_eval_const_expr(codegen.checker, condition);
+        if cond_value == 1 {
+            if then_branch != null {
+                gen_stmt(codegen, then_branch);
+            }
+            return;
+        }
+        if cond_value == 0 {
+            if else_branch != null {
+                gen_stmt(codegen, else_branch);
+            }
+            return;
+        }
+    }
 
     // 证明优化：条件恒为真时直接生成 then 分支，移除 if 包装
     if stmt.is_proved_safe != 0 && then_branch != null && then_branch.is_dead_code == 0 {
@@ -769,24 +856,31 @@ fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &A
         var did_interface_box: i32 = 0;
         if return_type != null && return_type.type == ASTNodeType.AST_TYPE_NAMED && return_type.type_named_name != null {
             const iface_decl: &ASTNode = find_interface_decl_c99(codegen, return_type.type_named_name);
-            if iface_decl != null && expr.type == ASTNodeType.AST_STRUCT_INIT && expr.struct_init_struct_name != null &&
-                struct_implements_interface_c99(codegen, expr.struct_init_struct_name, return_type.type_named_name) != 0 {
+            const struct_name_for_check: &byte = get_expr_concrete_struct_for_interface(codegen, expr, return_type.type_named_name);
+            if iface_decl != null && struct_name_for_check != null {
                 var iface_mono: &byte = return_type.type_named_name;
                 if return_type.type_named_type_arg_count > 0 && return_type.type_named_type_args != null {
                     iface_mono = get_mono_struct_name(codegen, return_type.type_named_name,
                         return_type.type_named_type_args, return_type.type_named_type_arg_count);
                 }
-                var struct_mono: &byte = expr.struct_init_struct_name;
+                var struct_mono: &byte = struct_name_for_check;
                 if expr.struct_init_type_arg_count > 0 && expr.struct_init_type_args != null {
-                    struct_mono = get_mono_struct_name(codegen, expr.struct_init_struct_name,
+                    struct_mono = get_mono_struct_name(codegen, struct_name_for_check,
                         expr.struct_init_type_args, expr.struct_init_type_arg_count);
                 }
                 const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono);
                 const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
+                codegen.needs_stdlib_h = 1;
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s _uya_ret = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&(" as *byte, ret_c as *byte, safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
+                fprintf(codegen.output as *void, "struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s));\n" as *byte,
+                    safe_struct as *byte, safe_struct as *byte, safe_struct as *byte);
+                c99_emit_indent(codegen);
+                fprintf(codegen.output as *void, "if (_uya_box != (void*)0) { *_uya_box = " as *byte);
                 gen_expr(codegen, expr);
-                fputs(") };\n" as *byte, codegen.output as *void);
+                fputs("; }\n" as *byte, codegen.output as *void);
+                c99_emit_indent(codegen);
+                fprintf(codegen.output as *void, "%s _uya_ret = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)_uya_box };\n" as *byte,
+                    ret_c as *byte, safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
                 did_interface_box = 1;
             }
         }
@@ -901,12 +995,7 @@ fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_typ
             if payload_node != null && payload_node.type == ASTNodeType.AST_TYPE_NAMED && payload_node.type_named_name != null {
                 const iface_decl: &ASTNode = find_interface_decl_c99(codegen, payload_node.type_named_name);
                 if iface_decl != null {
-                    var struct_name_for_check: &byte = null;
-                    if expr.type == ASTNodeType.AST_STRUCT_INIT && expr.struct_init_struct_name != null {
-                        if struct_implements_interface_c99(codegen, expr.struct_init_struct_name, payload_node.type_named_name) != 0 {
-                            struct_name_for_check = expr.struct_init_struct_name;
-                        }
-                    }
+                    const struct_name_for_check: &byte = get_expr_concrete_struct_for_interface(codegen, expr, payload_node.type_named_name);
                     if struct_name_for_check != null {
                         var iface_mono: &byte = payload_node.type_named_name;
                         if payload_node.type_named_type_arg_count > 0 && payload_node.type_named_type_args != null {
@@ -920,10 +1009,16 @@ fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_typ
                         }
                         const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono);
                         const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
-                        fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&(" as *byte,
-                            ret_c as *byte, ret_c as *byte, safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
+                        codegen.needs_stdlib_h = 1;
+                        fprintf(codegen.output as *void, "struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s));\n" as *byte,
+                            safe_struct as *byte, safe_struct as *byte, safe_struct as *byte);
+                        c99_emit_indent(codegen);
+                        fprintf(codegen.output as *void, "if (_uya_box != (void*)0) { *_uya_box = " as *byte);
                         gen_expr(codegen, expr);
-                        fputs(") } };\n" as *byte, codegen.output as *void);
+                        fputs("; }\n" as *byte, codegen.output as *void);
+                        c99_emit_indent(codegen);
+                        fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)_uya_box } };\n" as *byte,
+                            ret_c as *byte, ret_c as *byte, safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
                         did_box = 1;
                     }
                 }
@@ -1676,9 +1771,21 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             // 如果是，改为手动初始化，避免 gcc 生成错误的 memset 调用
             var is_empty_struct_init: i32 = 0;
             var struct_decl_for_empty_init: &ASTNode = null;
+            // 接口变量由 concrete struct-init 初始化时，需要走装箱逻辑，不能提前当作空结构体初始化吞掉。
+            var interface_struct_init_box: i32 = 0;
+            if var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                var_type.type_named_name != null && init_expr.type == ASTNodeType.AST_STRUCT_INIT {
+                const iface_decl_for_init: &ASTNode = find_interface_decl_c99(codegen, var_type.type_named_name);
+                if iface_decl_for_init != null {
+                    const concrete_struct_name: &byte = get_expr_concrete_struct_for_interface(codegen, init_expr, var_type.type_named_name);
+                    if concrete_struct_name != null {
+                        interface_struct_init_box = 1;
+                    }
+                }
+            }
             if init_expr.type == ASTNodeType.AST_STRUCT_INIT {
                 const field_count: i32 = init_expr.struct_init_field_count;
-                if field_count == 0 {
+                if field_count == 0 && interface_struct_init_box == 0 {
                     // 空结构体初始化：从初始化表达式中获取结构体名称
                     const struct_name: &byte = get_safe_c_identifier(codegen, init_expr.struct_init_struct_name);
                     if struct_name != null {
@@ -1780,35 +1887,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 if var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null {
                     const iface_decl: &ASTNode = find_interface_decl_c99(codegen, var_type.type_named_name);
                     if iface_decl != null && init_expr != null {
-                        var struct_name_for_check: &byte = null;
-                        if init_expr.type == ASTNodeType.AST_IDENTIFIER && init_expr.identifier_name != null {
-                            const arg_type_c: &byte = get_identifier_type_c(codegen, init_expr.identifier_name);
-                            if arg_type_c != null {
-                                var atc: &byte = arg_type_c;
-                                if strncmp(atc as *byte, "const " as *byte, 6) == 0 {
-                                    atc = &arg_type_c[6] as &byte;
-                                }
-                                if strncmp(atc as *byte, "struct " as *byte, 7) == 0 &&
-                                    strstr(atc as *byte, "uya_interface_" as *byte) == null {
-                                    var snbuf: [byte: SHORT_NAME_BUF_SIZE] = [];
-                                    const start: &byte = &atc[7] as &byte;
-                                    var pos: i32 = 0;
-                                    while start[pos] != 0 && start[pos] != 32 && start[pos] != 42 && pos < SHORT_NAME_BUF_SIZE - 1 {
-                                        snbuf[pos] = start[pos];
-                                        pos = pos + 1;
-                                    }
-                                    snbuf[pos] = 0;
-                                    if pos > 0 && struct_implements_interface_c99(codegen, &snbuf[0] as &byte, var_type.type_named_name) != 0 {
-                                        struct_name_for_check = &snbuf[0] as &byte;
-                                    }
-                                }
-                            }
-                        } else if init_expr.type == ASTNodeType.AST_STRUCT_INIT {
-                            const st_name: &byte = init_expr.struct_init_struct_name;
-                            if st_name != null && struct_implements_interface_c99(codegen, st_name, var_type.type_named_name) != 0 {
-                                struct_name_for_check = st_name;
-                            }
-                        }
+                        const struct_name_for_check: &byte = get_expr_concrete_struct_for_interface(codegen, init_expr, var_type.type_named_name);
 
                         if struct_name_for_check != null {
                             // 接口/结构体可能带类型实参：优先使用单态名（Future_i32）

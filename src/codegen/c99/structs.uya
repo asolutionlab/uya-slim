@@ -90,6 +90,29 @@ fn find_struct_decl_c99(codegen: &C99CodeGenerator, struct_name: &byte) &ASTNode
         }
         i = i + 1;
     }
+
+    // 泛型结构体单态名（如 Task_err_i32）回查到其模板声明。
+    i = 0;
+    while i < decl_count {
+        const decl: &ASTNode = codegen.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL &&
+            decl.struct_decl_name != null && is_generic_struct_c99(decl) != 0 {
+            var mi: i32 = 0;
+            while mi < codegen.mono_instance_count {
+                if codegen.mono_instances[mi].generic_name != null &&
+                    strcmp(codegen.mono_instances[mi].generic_name as *byte, decl.struct_decl_name as *byte) == 0 &&
+                    codegen.mono_instances[mi].is_function == 0 {
+                    const mono_name: &byte = get_mono_struct_name(codegen, decl.struct_decl_name,
+                        codegen.mono_instances[mi].type_args, codegen.mono_instances[mi].type_arg_count);
+                    if mono_name != null && strcmp(mono_name as *byte, struct_name as *byte) == 0 {
+                        return decl;
+                    }
+                }
+                mi = mi + 1;
+            }
+        }
+        i = i + 1;
+    }
     
     return null;
 }

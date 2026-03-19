@@ -4,6 +4,7 @@
 // 当前提供：ThreadPool（最小可复用 worker 池）+ async_compute_i32/async_compute_usize
 
 use std.async;
+use std.macro_typeinfo.TypeInfo;
 use libc.syscall;
 
 const THREAD_ERR_EAGAIN: u32 = 11;
@@ -36,6 +37,16 @@ fn thread_generic_error_i32() !i32 {
 fn thread_generic_error_usize() !usize {
     const close_result: !i32 = sys_close(0 - 1);
     return close_result as! usize;
+}
+
+mc thread_type_is_i32(T: type) expr {
+    const info: TypeInfo = @mc_type(T);
+    info.type_id == 2;
+}
+
+mc thread_type_is_usize(T: type) expr {
+    const info: TypeInfo = @mc_type(T);
+    info.type_id == 7;
 }
 
 // 通过内联汇编调用 i32(i32) 形式的函数指针。
@@ -924,4 +935,19 @@ fn thread_async_compute_usize_impl(pool: &ThreadPool, compute_fn: &void, arg: us
 // 说明：当前与 async_compute_i32 共享同一个 ThreadPool/共享 FIFO，只是任务槽位参数与结果按机器字宽传递。
 export fn async_compute_usize(pool: &ThreadPool, compute_fn: &void, arg: usize) AsyncComputeUsizeFuture {
     return thread_async_compute_usize_impl(pool, compute_fn, arg);
+}
+
+// 通用 async_compute<T> 顶层入口。
+// 依赖单态化后的常量条件裁剪，仅保留与 T 对应的 concrete future 分支。
+export fn async_compute<T>(pool: &ThreadPool, compute_fn: &void, arg: T) Future<!T> {
+    if thread_type_is_i32(T) {
+        const future_i32: AsyncComputeI32Future = async_compute_i32(pool, compute_fn, arg as i32);
+        return future_i32;
+    }
+    if thread_type_is_usize(T) {
+        const future_usize: AsyncComputeUsizeFuture = async_compute_usize(pool, compute_fn, arg as usize);
+        return future_usize;
+    }
+    const close_result: !i32 = sys_close(0 - 1);
+    return Future<!T>{ state: Poll<!T>.Ready(close_result as! T) };
 }
