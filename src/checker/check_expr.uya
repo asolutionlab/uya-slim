@@ -934,6 +934,53 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
     }
 }
 
+fn simd_get_vector_builtin_method(call_expr: &ASTNode) &byte {
+    if call_expr == null || call_expr.type != ASTNodeType.AST_CALL_EXPR || call_expr.call_expr_callee == null {
+        return null;
+    }
+    const callee: &ASTNode = call_expr.call_expr_callee;
+    if callee.type != ASTNodeType.AST_MEMBER_ACCESS || callee.member_access_object == null ||
+        callee.member_access_field_name == null {
+        return null;
+    }
+    const object: &ASTNode = callee.member_access_object;
+    if object.type != ASTNodeType.AST_IDENTIFIER || object.identifier_name == null {
+        return null;
+    }
+    if str_equals(object.identifier_name, "@vector" as *byte) == 0 {
+        return null;
+    }
+    return callee.member_access_field_name;
+}
+
+fn checker_resolve_simd_splat_expr(checker: &TypeChecker, expr: &ASTNode, expected_type: Type) i32 {
+    const method_name: &byte = simd_get_vector_builtin_method(expr);
+    if method_name == null || str_equals(method_name, "splat" as *byte) == 0 {
+        return 0;
+    }
+    if expected_type.kind != TypeKind.TYPE_VECTOR || expected_type.element_type == null {
+        checker_report_error(checker, expr, "@vector.splat 需要明确的目标向量类型上下文" as *byte);
+        return -1;
+    }
+    if expr.call_expr_arg_count != 1 || expr.call_expr_args == null || expr.call_expr_args[0] == null {
+        checker_report_error(checker, expr, "@vector.splat 需要恰好一个参数" as *byte);
+        return -1;
+    }
+    const arg: &ASTNode = expr.call_expr_args[0];
+    checker_check_node(checker, arg);
+    const arg_type: Type = checker_infer_type(checker, arg);
+    const elem_type: Type = expected_type.element_type[0];
+    if type_equals(arg_type, elem_type) == 0 && type_can_implicitly_convert(arg_type, elem_type) == 0 {
+        checker_report_error(checker, arg, "@vector.splat 的参数类型必须与目标向量元素类型兼容" as *byte);
+        return -1;
+    }
+    const target_ast: &ASTNode = type_to_ast(checker, &expected_type, expr.line, expr.column, expr.filename);
+    if target_ast != null {
+        expr.simd_splat_target_type = target_ast;
+    }
+    return 1;
+}
+
 // 检查表达式类型是否匹配预期类型
 // 参数：checker - TypeChecker 指针，expr - 表达式节点，expected_type - 预期类型
 // 返回：1 表示类型匹配，0 表示类型不匹配
@@ -942,6 +989,13 @@ fn checker_check_expr_type(checker: &TypeChecker, expr: &ASTNode, expected_type:
         return 0;
     }
     const expected_copy: Type = copy_type(&expected_type);
+    const simd_splat_resolved: i32 = checker_resolve_simd_splat_expr(checker, expr, copy_type(&expected_copy));
+    if simd_splat_resolved > 0 {
+        return 1;
+    }
+    if simd_splat_resolved < 0 {
+        return 0;
+    }
     const actual_type: Type = checker_infer_type(checker, expr);
     if type_equals(copy_type(&actual_type), copy_type(&expected_copy)) != 0 {
         return 1;
@@ -1015,6 +1069,30 @@ fn checker_check_expr_type(checker: &TypeChecker, expr: &ASTNode, expected_type:
 fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
     const callee: &ASTNode = expr.call_expr_callee;
     if callee == null {
+        return make_void_type();
+    }
+
+    const simd_method: &byte = simd_get_vector_builtin_method(expr);
+    if simd_method != null {
+        if str_equals(simd_method, "splat" as *byte) != 0 {
+            if expr.simd_splat_target_type == null {
+                return make_void_type();
+            }
+            return type_from_ast(checker, expr.simd_splat_target_type);
+        }
+        if str_equals(simd_method, "any" as *byte) != 0 || str_equals(simd_method, "all" as *byte) != 0 {
+            if expr.call_expr_arg_count != 1 || expr.call_expr_args == null || expr.call_expr_args[0] == null {
+                checker_report_error(checker, expr, "@vector.any/@vector.all 需要恰好一个参数" as *byte);
+                return make_void_type();
+            }
+            const arg_type: Type = checker_infer_type(checker, expr.call_expr_args[0]);
+            if arg_type.kind != TypeKind.TYPE_MASK {
+                checker_report_error(checker, expr.call_expr_args[0], "@vector.any/@vector.all 的参数必须是 @mask(N)" as *byte);
+                return make_void_type();
+            }
+            return make_bool_type();
+        }
+        checker_report_error(checker, expr, "@vector 目前仅支持 .splat/.any/.all" as *byte);
         return make_void_type();
     }
     

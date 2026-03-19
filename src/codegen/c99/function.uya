@@ -823,6 +823,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                 if param_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                     codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;  // 使用原始名称
                     codegen.local_variables[codegen.local_variable_count].type_c = array_type_c;
+                    codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
                     codegen.local_variable_count = codegen.local_variable_count + 1;
                 }
             } else {
@@ -850,6 +851,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                 if param_name != null && param_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                     codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;
                     codegen.local_variables[codegen.local_variable_count].type_c = param_type_c;
+                    codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
                     codegen.local_variable_count = codegen.local_variable_count + 1;
                 }
             }
@@ -1367,6 +1369,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 if ptype_c != null {
                     codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;
                     codegen.local_variables[codegen.local_variable_count].type_c = ptype_c;
+                    codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
                     codegen.local_variable_count = codegen.local_variable_count + 1;
                 }
             }
@@ -1925,6 +1928,7 @@ fn gen_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_nam
             if param_name != null && param_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                 codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;
                 codegen.local_variables[codegen.local_variable_count].type_c = param_type_c;
+                codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
                 codegen.local_variable_count = codegen.local_variable_count + 1;
             }
         }
@@ -2390,6 +2394,7 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
             if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                 codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;
                 codegen.local_variables[codegen.local_variable_count].type_c = c99_mono_type_to_c(codegen, param.var_decl_type);
+                codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
                 codegen.local_variables[codegen.local_variable_count].depth = codegen.current_depth;
                 codegen.local_variable_count = codegen.local_variable_count + 1;
             }
@@ -2628,6 +2633,7 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
             if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                 codegen.local_variables[codegen.local_variable_count].name = param.var_decl_name;
                 codegen.local_variables[codegen.local_variable_count].type_c = c99_type_to_c_with_self(codegen, param.var_decl_type, struct_name);
+                codegen.local_variables[codegen.local_variable_count].type_node = param.var_decl_type;
                 codegen.local_variables[codegen.local_variable_count].depth = codegen.current_depth;
                 codegen.local_variable_count = codegen.local_variable_count + 1;
             }

@@ -1405,6 +1405,7 @@ fn gen_destructure_decl(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         }
                         codegen.local_variables[codegen.local_variable_count].name = safe_name;
                         codegen.local_variables[codegen.local_variable_count].type_c = type_to_store;
+                        codegen.local_variables[codegen.local_variable_count].type_node = null;
                         codegen.local_variable_count = codegen.local_variable_count + 1;
                     }
                 }
@@ -1531,6 +1532,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             if stored_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                                 codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
                                 codegen.local_variables[codegen.local_variable_count].type_c = stored_type_c;
+                                codegen.local_variables[codegen.local_variable_count].type_node = stmt.var_decl_type;
                                 codegen.local_variable_count = codegen.local_variable_count + 1;
                             }
                             codegen.expected_type = saved_expected_type;
@@ -1583,6 +1585,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         if stored_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                             codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
                             codegen.local_variables[codegen.local_variable_count].type_c = stored_type_c;
+                            codegen.local_variables[codegen.local_variable_count].type_node = stmt.var_decl_type;
                             codegen.local_variable_count = codegen.local_variable_count + 1;
                         }
                         codegen.expected_type = saved_expected_type;
@@ -1618,6 +1621,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                     codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
                     codegen.local_variables[codegen.local_variable_count].type_c = "va_list" as *byte;
+                    codegen.local_variables[codegen.local_variable_count].type_node = stmt.var_decl_type;
                     codegen.local_variable_count = codegen.local_variable_count + 1;
                 }
                 // va_list 变量不由初始化表达式初始化，va_start 会初始化，必须提前返回
@@ -1635,6 +1639,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                     codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
                     codegen.local_variables[codegen.local_variable_count].type_c = "va_list" as *byte;
+                    codegen.local_variables[codegen.local_variable_count].type_node = stmt.var_decl_type;
                     codegen.local_variable_count = codegen.local_variable_count + 1;
                 }
                 // va_list 变量不由初始化表达式初始化，va_start 会初始化，必须提前返回
@@ -1706,8 +1711,9 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             type_to_store = type_c;
         }
         if var_name != null && type_to_store != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
-            codegen.local_variables[codegen.local_variable_count].name = var_name;
+            codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
             codegen.local_variables[codegen.local_variable_count].type_c = type_to_store;
+            codegen.local_variables[codegen.local_variable_count].type_node = stmt.var_decl_type;
             codegen.local_variable_count = codegen.local_variable_count + 1;
         }
         
@@ -2051,6 +2057,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             if stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                                 codegen.local_variables[codegen.local_variable_count].name = stmt.match_expr_arms[i].var_name;
                                 codegen.local_variables[codegen.local_variable_count].type_c = vtype;
+                                codegen.local_variables[codegen.local_variable_count].type_node = null;
                                 codegen.local_variable_count = codegen.local_variable_count + 1;
                             }
                         } else {
@@ -2110,6 +2117,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     if stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                         codegen.local_variables[codegen.local_variable_count].name = stmt.match_expr_arms[i].var_name;
                         codegen.local_variables[codegen.local_variable_count].type_c = m_type;
+                        codegen.local_variables[codegen.local_variable_count].type_node = null;
                         codegen.local_variable_count = codegen.local_variable_count + 1;
                     }
                 } else {

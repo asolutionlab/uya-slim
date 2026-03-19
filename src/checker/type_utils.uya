@@ -1187,6 +1187,71 @@ fn make_atomic_type(arena: &Arena, inner: &Type) Type {
     };
 }
 
+fn make_vector_type(arena: &Arena, element: &Type, lanes: i32) Type {
+    if arena == null || element == null || lanes <= 0 {
+        return make_void_type();
+    }
+    const elem_ptr: &Type = arena_alloc(arena, @size_of(Type)) as &Type;
+    if elem_ptr == null {
+        return make_void_type();
+    }
+    elem_ptr[0] = copy_type(element);
+    return Type {
+        kind: TypeKind.TYPE_VECTOR,
+        data: make_empty_type_data(),
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: elem_ptr,
+        array_size: lanes,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
+    };
+}
+
+fn make_mask_type(lanes: i32) Type {
+    if lanes <= 0 {
+        return make_void_type();
+    }
+    return Type {
+        kind: TypeKind.TYPE_MASK,
+        data: make_empty_type_data(),
+        enum_name: null,
+        interface_name: null,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: lanes,
+        slice_element_type: null,
+        slice_len: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
+    };
+}
+
 // 检查是否为 void 类型（通常表示错误）
 fn is_void_type(t: Type) i32 {
     if t.kind == TypeKind.TYPE_VOID {

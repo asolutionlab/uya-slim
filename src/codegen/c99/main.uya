@@ -343,6 +343,15 @@ fn collect_string_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode
     }
 }
 
+fn collect_inferred_simd_type_from_expr(codegen: &C99CodeGenerator, node: &ASTNode) void {
+    if codegen == null || node == null {
+        return;
+    }
+    if node.type == ASTNodeType.AST_CALL_EXPR && node.simd_splat_target_type != null {
+        c99_type_to_c(codegen, node.simd_splat_target_type);
+    }
+}
+
 // 递归收集 AST 中使用的切片类型、错误联合类型和 SIMD 类型，以便输出对应 struct
 fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if codegen == null || node == null {
@@ -478,8 +487,10 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
     if node.type == ASTNodeType.AST_BINARY_EXPR {
         collect_slice_types_from_node(codegen, node.binary_expr_left);
         collect_slice_types_from_node(codegen, node.binary_expr_right);
+        collect_inferred_simd_type_from_expr(codegen, node);
     } else if node.type == ASTNodeType.AST_UNARY_EXPR {
         collect_slice_types_from_node(codegen, node.unary_expr_operand);
+        collect_inferred_simd_type_from_expr(codegen, node);
     } else if node.type == ASTNodeType.AST_TRY_EXPR {
         collect_slice_types_from_node(codegen, node.try_expr_operand);
     } else if node.type == ASTNodeType.AST_MATCH_EXPR {
@@ -501,6 +512,7 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
             collect_slice_types_from_node(codegen, node.call_expr_args[i]);
             i = i + 1;
         }
+        collect_inferred_simd_type_from_expr(codegen, node);
     } else if node.type == ASTNodeType.AST_CAST_EXPR {
         collect_slice_types_from_node(codegen, node.cast_expr_expr);
         if node.cast_expr_target_type != null {

@@ -265,6 +265,31 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         checker_report_error(checker, node, "@async_fn 函数不允许直接递归调用（待 CPS/状态机大小计算实现）" as *byte);
         return result;
     }
+
+    const simd_method: &byte = simd_get_vector_builtin_method(node);
+    if simd_method != null {
+        if node.call_expr_arg_count != 1 || node.call_expr_args == null || node.call_expr_args[0] == null {
+            checker_report_error(checker, node, "@vector helper 需要恰好一个参数" as *byte);
+            return result;
+        }
+        checker_check_node(checker, node.call_expr_args[0]);
+        if str_equals(simd_method, "splat" as *byte) != 0 {
+            if node.simd_splat_target_type != null {
+                return type_from_ast(checker, node.simd_splat_target_type);
+            }
+            return result;
+        }
+        if str_equals(simd_method, "any" as *byte) != 0 || str_equals(simd_method, "all" as *byte) != 0 {
+            const arg_type: Type = checker_infer_type(checker, node.call_expr_args[0]);
+            if arg_type.kind != TypeKind.TYPE_MASK {
+                checker_report_error(checker, node.call_expr_args[0], "@vector.any/@vector.all 的参数必须是 @mask(N)" as *byte);
+                return result;
+            }
+            return make_bool_type();
+        }
+        checker_report_error(checker, node, "@vector 目前仅支持 .splat/.any/.all" as *byte);
+        return result;
+    }
     
     // 处理模块限定调用（module.func(args)）
     if callee != null && callee.type == ASTNodeType.AST_MEMBER_ACCESS {

@@ -1230,9 +1230,42 @@ fn c99_array_index_result_type_c(codegen: &C99CodeGenerator, array_type_c: &byte
     return result;
 }
 
+fn c99_simd_vector_builtin_method(call_expr: &ASTNode) &byte {
+    if call_expr == null || call_expr.type != ASTNodeType.AST_CALL_EXPR || call_expr.call_expr_callee == null {
+        return null;
+    }
+    const callee: &ASTNode = call_expr.call_expr_callee;
+    if callee.type != ASTNodeType.AST_MEMBER_ACCESS || callee.member_access_object == null ||
+        callee.member_access_field_name == null {
+        return null;
+    }
+    const object: &ASTNode = callee.member_access_object;
+    if object.type != ASTNodeType.AST_IDENTIFIER || object.identifier_name == null {
+        return null;
+    }
+    if str_equals(object.identifier_name, "@vector" as *byte) == 0 {
+        return null;
+    }
+    return callee.member_access_field_name;
+}
+
+fn c99_type_to_c_from_inferred_type(codegen: &C99CodeGenerator, inferred: Type, line: i32, column: i32, filename: &byte) &byte {
+    const inferred_ast: &ASTNode = type_to_ast(codegen.checker, &inferred, line, column, filename);
+    if inferred_ast == null {
+        return null;
+    }
+    return c99_type_to_c(codegen, inferred_ast);
+}
+
 fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
     if codegen == null || expr == null {
         return ("int32_t" as *byte) as &byte;
+    }
+    const simd_method: &byte = c99_simd_vector_builtin_method(expr);
+    if simd_method != null {
+        if str_equals(simd_method, "any" as *byte) != 0 || str_equals(simd_method, "all" as *byte) != 0 {
+            return ("bool" as *byte) as &byte;
+        }
     }
     if expr.type == ASTNodeType.AST_NUMBER {
         return ("int32_t" as *byte) as &byte;

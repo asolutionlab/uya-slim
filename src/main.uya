@@ -13,7 +13,9 @@ use checker;  // 包含 checker 目录下所有文件（包括 optimizer.uya）
 use codegen.c99;
 use std;
 // C 程序入口（提供 export extern fn main 调用 main_main）
-use std.runtime.entry;
+// 必须用别名：默认本地名为 entry，会与大量业务代码里的局部变量 entry（如 string_pool、readdir）冲突，
+// 导致 entry.xxx 被误判为模块成员访问，C 代码生成错误标识符（如 std_runtime_entry_hash）。
+use std.runtime.entry as uya_rt_entry;
 use libc;
 use libc.stdlib;  // clock, CLOCKS_PER_SEC
 use libc.syscall;  // sys_setrlimit, RLIMIT_STACK
