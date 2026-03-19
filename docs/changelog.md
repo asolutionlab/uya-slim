@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.4 - SIMD 一元运算规范与测试（2026-03-19）
+
+- **文档**：`uya.md` / `grammar_formal.md` 明确向量一元 `-`（整数/浮点元素）与一元 `~`（仅整数元素）。
+- **测试**：`test_simd_unary_ops.uya`。
+
 ### v0.49.3 - SIMD splat 对侧向量类型推断（2026-03-19）
 
 - **类型检查**：`checker_check_binary_expr` 在向量算术、比较、整数向量位运算与位移中，若一侧为 `@vector`、另一侧为未绑定目标的 `@vector.splat`，则从向量侧绑定 splat 目标类型。
