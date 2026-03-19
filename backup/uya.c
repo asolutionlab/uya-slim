@@ -4648,6 +4648,7 @@ static struct ASTNode * c99_resolve_simd_type_ast_from_type_node(struct C99CodeG
 static struct ASTNode * c99_resolve_struct_decl_from_type_node(struct C99CodeGenerator * codegen, struct ASTNode * type_node);
 static struct ASTNode * c99_resolve_struct_decl_for_member_object(struct C99CodeGenerator * codegen, struct ASTNode * object);
 static struct ASTNode * c99_find_var_decl_type_in_node(struct ASTNode * node, uint8_t * name);
+static int32_t c99_expr_is_vector_splat(struct ASTNode * expr);
 static struct ASTNode * c99_find_identifier_type_node(struct C99CodeGenerator * codegen, uint8_t * name);
 static struct ASTNode * c99_resolve_simd_type_ast_from_expr(struct C99CodeGenerator * codegen, struct ASTNode * expr);
 static int32_t c99_gen_simd_builtin_call(struct C99CodeGenerator * codegen, struct ASTNode * expr);
@@ -48825,6 +48826,21 @@ static __attribute__((unused)) struct ASTNode * c99_find_var_decl_type_in_node(s
                 return _uya_ret;
             }
 
+static __attribute__((unused)) int32_t c99_expr_is_vector_splat(struct ASTNode * expr) {
+                (void)expr;
+                if (((expr == NULL) || (expr->type != ASTNodeType_AST_CALL_EXPR))) {
+                    int32_t _uya_ret = 0;
+                    return _uya_ret;
+                }
+                uint8_t * const mn = c99_simd_vector_builtin_method(expr);
+                if (((mn == NULL) || (str_equals(mn, (uint8_t *)(uint8_t *)str724) == 0))) {
+                    int32_t _uya_ret = 0;
+                    return _uya_ret;
+                }
+                int32_t _uya_ret = 1;
+                return _uya_ret;
+            }
+
 static __attribute__((unused)) struct ASTNode * c99_find_identifier_type_node(struct C99CodeGenerator * codegen, uint8_t * name) {
                 (void)codegen;
                 (void)name;
@@ -48895,9 +48911,25 @@ static __attribute__((unused)) struct ASTNode * c99_resolve_simd_type_ast_from_e
                 }
                 if ((expr->type == ASTNodeType_AST_CALL_EXPR)) {
                     uint8_t * const method_name = c99_simd_vector_builtin_method(expr);
-                    if ((((method_name != NULL) && (str_equals(method_name, (uint8_t *)(uint8_t *)str724) != 0)) && (expr->simd_splat_target_type != NULL))) {
-                        struct ASTNode * _uya_ret = expr->simd_splat_target_type;
-                        return _uya_ret;
+                    if (((method_name != NULL) && (str_equals(method_name, (uint8_t *)(uint8_t *)str724) != 0))) {
+                        if ((expr->simd_splat_target_type != NULL)) {
+                            struct ASTNode * _uya_ret = expr->simd_splat_target_type;
+                            return _uya_ret;
+                        }
+                        if ((codegen->expected_type != NULL)) {
+                            struct ASTNode * const ex = c99_resolve_simd_type_ast_from_type_node(codegen, codegen->expected_type);
+                            if (((ex != NULL) && (ex->type == ASTNodeType_AST_TYPE_VECTOR))) {
+                                struct ASTNode * _uya_ret = ex;
+                                return _uya_ret;
+                            }
+                        }
+                        if ((codegen->current_function_return_type != NULL)) {
+                            struct ASTNode * const rt = c99_resolve_simd_type_ast_from_type_node(codegen, codegen->current_function_return_type);
+                            if (((rt != NULL) && (rt->type == ASTNodeType_AST_TYPE_VECTOR))) {
+                                struct ASTNode * _uya_ret = rt;
+                                return _uya_ret;
+                            }
+                        }
                     }
                 }
                 if (((expr->type == ASTNodeType_AST_UNARY_EXPR) && (expr->unary_expr_operand != NULL))) {
@@ -48905,8 +48937,14 @@ static __attribute__((unused)) struct ASTNode * c99_resolve_simd_type_ast_from_e
                     return _uya_ret;
                 }
                 if ((((expr->type == ASTNodeType_AST_BINARY_EXPR) && (expr->binary_expr_left != NULL)) && (expr->binary_expr_right != NULL))) {
-                    struct ASTNode * const left_type_ast = c99_resolve_simd_type_ast_from_expr(codegen, expr->binary_expr_left);
-                    struct ASTNode * const right_type_ast = c99_resolve_simd_type_ast_from_expr(codegen, expr->binary_expr_right);
+                    struct ASTNode * left_type_ast = c99_resolve_simd_type_ast_from_expr(codegen, expr->binary_expr_left);
+                    struct ASTNode * right_type_ast = c99_resolve_simd_type_ast_from_expr(codegen, expr->binary_expr_right);
+                    if ((((left_type_ast == NULL) && (right_type_ast != NULL)) && (c99_expr_is_vector_splat(expr->binary_expr_left) != 0))) {
+                        left_type_ast = right_type_ast;
+                    }
+                    if ((((right_type_ast == NULL) && (left_type_ast != NULL)) && (c99_expr_is_vector_splat(expr->binary_expr_right) != 0))) {
+                        right_type_ast = left_type_ast;
+                    }
                     if (((left_type_ast == NULL) || (right_type_ast == NULL))) {
                         struct ASTNode * _uya_ret = NULL;
                         return _uya_ret;
@@ -49021,8 +49059,14 @@ static __attribute__((unused)) int32_t c99_gen_simd_binary_expr(struct C99CodeGe
                     int32_t _uya_ret = 0;
                     return _uya_ret;
                 }
-                struct ASTNode * const left_type_ast = c99_resolve_simd_type_ast_from_expr(codegen, expr->binary_expr_left);
-                struct ASTNode * const right_type_ast = c99_resolve_simd_type_ast_from_expr(codegen, expr->binary_expr_right);
+                struct ASTNode * left_type_ast = c99_resolve_simd_type_ast_from_expr(codegen, expr->binary_expr_left);
+                struct ASTNode * right_type_ast = c99_resolve_simd_type_ast_from_expr(codegen, expr->binary_expr_right);
+                if ((((left_type_ast == NULL) && (right_type_ast != NULL)) && (c99_expr_is_vector_splat(expr->binary_expr_left) != 0))) {
+                    left_type_ast = right_type_ast;
+                }
+                if ((((right_type_ast == NULL) && (left_type_ast != NULL)) && (c99_expr_is_vector_splat(expr->binary_expr_right) != 0))) {
+                    right_type_ast = left_type_ast;
+                }
                 struct ASTNode * const result_type_ast = c99_resolve_simd_type_ast_from_expr(codegen, expr);
                 if (((((left_type_ast == NULL) || (right_type_ast == NULL)) || (result_type_ast == NULL)) || ((result_type_ast->type != ASTNodeType_AST_TYPE_VECTOR) && (result_type_ast->type != ASTNodeType_AST_TYPE_MASK)))) {
                     int32_t _uya_ret = 0;

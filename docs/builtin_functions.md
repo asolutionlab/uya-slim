@@ -1,8 +1,8 @@
 # Uya 内置函数使用文档
 
-> 版本：v0.49.6（2026-03-19）  
+> 版本：v0.49.7（2026-03-19）  
 > 此文档为 uya.md 的详细补充说明  
-> 语言规范：0.49.6  
+> 语言规范：0.49.7  
 > 所有内置函数均以 `@` 开头，由编译器识别，无需导入或声明；其实现阶段与运行时开销以各章节说明为准
 
 ---
@@ -1836,6 +1836,7 @@ fn buffer_info<T>() void {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v0.49.7 | 2026-03-19 | SIMD C99：`@vector.splat` 目标类型可从 expected_type / 返回类型 / 对侧向量解析；测试 `test_simd_splat_binary_context` |
 | v0.49.6 | 2026-03-19 | SIMD：有符号整数向量 `+|`/`-|`/`*|`，整数向量 `+%`/`-%`/`*%`；splat 推断；测试 `test_simd_vector_sat_wrap_i32`；负例 `error_simd_float_vector_plus_pipe`、`error_simd_u32_vector_plus_pipe` |
 | v0.49.5 | 2026-03-19 | SIMD：整数向量按通道 `%`；`@vector.splat` 可与取模表达式对侧向量对齐推断；测试 `test_simd_vector_mod_i32`；负例 `error_simd_float_vector_mod` |
 | v0.49.4 | 2026-03-19 | SIMD 一元 `-` / `~` 与向量规则在规范中写清；测试 `test_simd_unary_ops` |
@@ -1862,5 +1863,5 @@ fn buffer_info<T>() void {
 
 ---
 
-**本文档由 Uya 编译器团队维护，最后更新：2026-03-19（0.49.6）**
+**本文档由 Uya 编译器团队维护，最后更新：2026-03-19（0.49.7）**
 

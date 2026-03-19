@@ -8,6 +8,12 @@
 
 **发布日期：** 待定
 
+### v0.49.7 - SIMD splat 二元式 C99 类型解析补强（2026-03-19）
+
+- **C99 代码生成**：`c99_resolve_simd_type_ast_from_expr` 对 `@vector.splat` 增加 `expected_type` / `current_function_return_type` 回退；二元 SIMD 操作数在仅一侧能解析向量类型时将对侧 `splat` 对齐为该 `@vector`。
+- **测试**：`test_simd_splat_binary_context.uya`。
+- **文档**：规范 0.49.7（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`）。
+
 ### v0.49.6 - SIMD 向量饱和与包装运算（2026-03-19）
 
 - **类型检查**：相同类型的 `@vector(T, N)` 支持按通道 `+|`/`-|`/`*|`（`T` 须为有符号整数）、`+%`/`-%`/`*%`（`T` 须为整数，含无符号）。

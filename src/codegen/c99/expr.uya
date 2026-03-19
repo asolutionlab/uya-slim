@@ -2105,6 +2105,17 @@ fn c99_find_var_decl_type_in_node(node: &ASTNode, name: &byte) &ASTNode {
     return null;
 }
 
+fn c99_expr_is_vector_splat(expr: &ASTNode) i32 {
+    if expr == null || expr.type != ASTNodeType.AST_CALL_EXPR {
+        return 0;
+    }
+    const mn: &byte = c99_simd_vector_builtin_method(expr);
+    if mn == null || str_equals(mn, "splat" as *byte) == 0 {
+        return 0;
+    }
+    return 1;
+}
+
 fn c99_find_identifier_type_node(codegen: &C99CodeGenerator, name: &byte) &ASTNode {
     if codegen == null || name == null {
         return null;
@@ -2167,17 +2178,36 @@ fn c99_resolve_simd_type_ast_from_expr(codegen: &C99CodeGenerator, expr: &ASTNod
     }
     if expr.type == ASTNodeType.AST_CALL_EXPR {
         const method_name: &byte = c99_simd_vector_builtin_method(expr);
-        if method_name != null && str_equals(method_name, "splat" as *byte) != 0 &&
-            expr.simd_splat_target_type != null {
-            return expr.simd_splat_target_type;
+        if method_name != null && str_equals(method_name, "splat" as *byte) != 0 {
+            if expr.simd_splat_target_type != null {
+                return expr.simd_splat_target_type;
+            }
+            if codegen.expected_type != null {
+                const ex: &ASTNode = c99_resolve_simd_type_ast_from_type_node(codegen, codegen.expected_type);
+                if ex != null && ex.type == ASTNodeType.AST_TYPE_VECTOR {
+                    return ex;
+                }
+            }
+            if codegen.current_function_return_type != null {
+                const rt: &ASTNode = c99_resolve_simd_type_ast_from_type_node(codegen, codegen.current_function_return_type);
+                if rt != null && rt.type == ASTNodeType.AST_TYPE_VECTOR {
+                    return rt;
+                }
+            }
         }
     }
     if expr.type == ASTNodeType.AST_UNARY_EXPR && expr.unary_expr_operand != null {
         return c99_resolve_simd_type_ast_from_expr(codegen, expr.unary_expr_operand);
     }
     if expr.type == ASTNodeType.AST_BINARY_EXPR && expr.binary_expr_left != null && expr.binary_expr_right != null {
-        const left_type_ast: &ASTNode = c99_resolve_simd_type_ast_from_expr(codegen, expr.binary_expr_left);
-        const right_type_ast: &ASTNode = c99_resolve_simd_type_ast_from_expr(codegen, expr.binary_expr_right);
+        var left_type_ast: &ASTNode = c99_resolve_simd_type_ast_from_expr(codegen, expr.binary_expr_left);
+        var right_type_ast: &ASTNode = c99_resolve_simd_type_ast_from_expr(codegen, expr.binary_expr_right);
+        if left_type_ast == null && right_type_ast != null && c99_expr_is_vector_splat(expr.binary_expr_left) != 0 {
+            left_type_ast = right_type_ast;
+        }
+        if right_type_ast == null && left_type_ast != null && c99_expr_is_vector_splat(expr.binary_expr_right) != 0 {
+            right_type_ast = left_type_ast;
+        }
         if left_type_ast == null || right_type_ast == null {
             return null;
         }
@@ -2279,8 +2309,14 @@ fn c99_gen_simd_binary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
     if codegen == null || expr == null {
         return 0;
     }
-    const left_type_ast: &ASTNode = c99_resolve_simd_type_ast_from_expr(codegen, expr.binary_expr_left);
-    const right_type_ast: &ASTNode = c99_resolve_simd_type_ast_from_expr(codegen, expr.binary_expr_right);
+    var left_type_ast: &ASTNode = c99_resolve_simd_type_ast_from_expr(codegen, expr.binary_expr_left);
+    var right_type_ast: &ASTNode = c99_resolve_simd_type_ast_from_expr(codegen, expr.binary_expr_right);
+    if left_type_ast == null && right_type_ast != null && c99_expr_is_vector_splat(expr.binary_expr_left) != 0 {
+        left_type_ast = right_type_ast;
+    }
+    if right_type_ast == null && left_type_ast != null && c99_expr_is_vector_splat(expr.binary_expr_right) != 0 {
+        right_type_ast = left_type_ast;
+    }
     const result_type_ast: &ASTNode = c99_resolve_simd_type_ast_from_expr(codegen, expr);
     if left_type_ast == null || right_type_ast == null || result_type_ast == null ||
         (result_type_ast.type != ASTNodeType.AST_TYPE_VECTOR && result_type_ast.type != ASTNodeType.AST_TYPE_MASK) {
