@@ -2180,7 +2180,11 @@ fn gen_mono_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, ty
     // 返回类型（替换类型参数）
     const return_c: &byte = c99_mono_type_to_c(codegen, return_type);
     
-    fprintf(codegen.output as *void, "%s %s(" as *byte, return_c as *byte, mono_name as *byte);
+    if fn_decl.fn_decl_is_async != 0 && fn_decl.fn_decl_is_export == 0 {
+        fprintf(codegen.output as *void, "static __attribute__((unused)) %s %s(" as *byte, return_c as *byte, mono_name as *byte);
+    } else {
+        fprintf(codegen.output as *void, "%s %s(" as *byte, return_c as *byte, mono_name as *byte);
+    }
     
     // 参数列表
     var i: i32 = 0;
@@ -2267,6 +2271,41 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
     codegen.current_type_param_count = fn_decl.fn_decl_type_param_count;
     codegen.current_type_args = type_args;
     codegen.current_type_arg_count = type_arg_count;
+
+    // 泛型 @async_fn 也需要走 stage-B 状态机生成；否则会按普通函数落下 @await。
+    if fn_decl.fn_decl_is_async != 0 {
+        var use_stage_b: i32 = 0;
+        var effective_return_type: &ASTNode = return_type;
+        if return_type != null && return_type.type == ASTNodeType.AST_TYPE_NAMED &&
+            return_type.type_named_name != null &&
+            strcmp(return_type.type_named_name as *byte, "Future" as *byte) == 0 &&
+            return_type.type_named_type_arg_count == 1 &&
+            return_type.type_named_type_args != null {
+            const a0: &ASTNode = return_type.type_named_type_args[0];
+            if a0 != null && a0.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+                a0.type_error_union_payload_type != null {
+                use_stage_b = 1;
+            }
+        }
+        if use_stage_b == 0 && return_type != null && return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+            return_type.type_error_union_payload_type != null {
+            const pl: &ASTNode = return_type.type_error_union_payload_type;
+            if pl.type == ASTNodeType.AST_TYPE_NAMED && pl.type_named_name != null &&
+                strcmp(pl.type_named_name as *byte, "Future" as *byte) == 0 &&
+                pl.type_named_type_arg_count == 1 && pl.type_named_type_args != null {
+                use_stage_b = 1;
+                effective_return_type = pl;
+            }
+        }
+        if use_stage_b != 0 {
+            gen_async_function_stage_b(codegen, fn_decl, mono_name, return_type, effective_return_type);
+            codegen.current_type_params = saved_type_params;
+            codegen.current_type_param_count = saved_type_param_count;
+            codegen.current_type_args = saved_type_args;
+            codegen.current_type_arg_count = saved_type_arg_count;
+            return;
+        }
+    }
     
     // 生成 #line 指令
     emit_line_directive(codegen, fn_decl.line, fn_decl.filename);

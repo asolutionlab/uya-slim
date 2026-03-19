@@ -9,6 +9,11 @@ fn answer() Future<!i32> {
     return 42;
 }
 
+@async_fn
+fn generic_answer<T>(value: T) Future<!T> {
+    return value;
+}
+
 test "async_fn_basic_poll_ready" {
     const f: Future<!i32> = answer();
     const w: Waker = Waker{};
@@ -21,5 +26,19 @@ test "async_fn_basic_poll_ready" {
         },
     };
     try assert_eq_i32(result, 42);
+}
+
+test "generic_async_fn_basic_poll_ready" {
+    const f: Future<!i32> = generic_answer<i32>(23);
+    const w: Waker = Waker{};
+    const p: Poll<!i32> = f.poll(&w);
+    var result: i32 = 0 - 1;
+    match p {
+        .Pending(_) => { result = 0 - 2; },
+        .Ready(ok_val) => {
+            result = ok_val catch { 0 - 3; };
+        },
+    };
+    try assert_eq_i32(result, 23);
 }
 

@@ -51377,7 +51377,11 @@ static __attribute__((unused)) void gen_mono_function_prototype(struct C99CodeGe
                 codegen->current_type_args = type_args;
                 codegen->current_type_arg_count = type_arg_count;
                 uint8_t * const return_c = c99_mono_type_to_c(codegen, return_type);
-                fprintf((void *)codegen->output, (const char *)str1486, (uint8_t *)return_c, (uint8_t *)mono_name);
+                if (((fn_decl->fn_decl_is_async != 0) && (fn_decl->fn_decl_is_export == 0))) {
+                    fprintf((void *)codegen->output, (const char *)str1576, (uint8_t *)return_c, (uint8_t *)mono_name);
+                } else {
+                    fprintf((void *)codegen->output, (const char *)str1486, (uint8_t *)return_c, (uint8_t *)mono_name);
+                }
                 int32_t i = 0;
                 while ((i < param_count)) {
                     struct ASTNode * const param = params[i];
@@ -51450,6 +51454,31 @@ static __attribute__((unused)) void gen_mono_function(struct C99CodeGenerator * 
                 codegen->current_type_param_count = fn_decl->fn_decl_type_param_count;
                 codegen->current_type_args = type_args;
                 codegen->current_type_arg_count = type_arg_count;
+                if ((fn_decl->fn_decl_is_async != 0)) {
+                    int32_t use_stage_b = 0;
+                    struct ASTNode * effective_return_type = return_type;
+                    if (((((((return_type != NULL) && (return_type->type == ASTNodeType_AST_TYPE_NAMED)) && (return_type->type_named_name != NULL)) && (strcmp((uint8_t *)return_type->type_named_name, (uint8_t *)(uint8_t *)str786) == 0)) && (return_type->type_named_type_arg_count == 1)) && (return_type->type_named_type_args != NULL))) {
+                        struct ASTNode * const a0 = return_type->type_named_type_args[0];
+                        if ((((a0 != NULL) && (a0->type == ASTNodeType_AST_TYPE_ERROR_UNION)) && (a0->type_error_union_payload_type != NULL))) {
+                            use_stage_b = 1;
+                        }
+                    }
+                    if (((((use_stage_b == 0) && (return_type != NULL)) && (return_type->type == ASTNodeType_AST_TYPE_ERROR_UNION)) && (return_type->type_error_union_payload_type != NULL))) {
+                        struct ASTNode * const pl = return_type->type_error_union_payload_type;
+                        if ((((((pl->type == ASTNodeType_AST_TYPE_NAMED) && (pl->type_named_name != NULL)) && (strcmp((uint8_t *)pl->type_named_name, (uint8_t *)(uint8_t *)str786) == 0)) && (pl->type_named_type_arg_count == 1)) && (pl->type_named_type_args != NULL))) {
+                            use_stage_b = 1;
+                            effective_return_type = pl;
+                        }
+                    }
+                    if ((use_stage_b != 0)) {
+                        gen_async_function_stage_b(codegen, fn_decl, mono_name, return_type, effective_return_type);
+                        codegen->current_type_params = saved_type_params;
+                        codegen->current_type_param_count = saved_type_param_count;
+                        codegen->current_type_args = saved_type_args;
+                        codegen->current_type_arg_count = saved_type_arg_count;
+                        return;
+                    }
+                }
                 emit_line_directive(codegen, fn_decl->line, fn_decl->filename);
                 uint8_t * const return_c = c99_mono_type_to_c(codegen, return_type);
                 fprintf((void *)codegen->output, (const char *)str1486, (uint8_t *)return_c, (uint8_t *)mono_name);
