@@ -8,6 +8,13 @@
 
 **发布日期：** 待定
 
+### v0.49.5 - SIMD 整数向量取模（2026-03-19）
+
+- **类型检查 / C99 代码生成**：相同类型的整数元素 `@vector(T, N)` 支持按通道 `%`；浮点元素向量取模为编译错误。
+- **`@vector.splat` 推断**：取模表达式与算术/比较等一致，可从对侧 `@vector` 绑定 splat 目标类型。
+- **测试**：`test_simd_vector_mod_i32.uya`；负例 `error_simd_float_vector_mod.uya`（取代原「全向量取模均非法」的 `error_simd_vector_mod.uya`）。
+- **文档**：规范 0.49.5（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`）。
+
 ### v0.49.4 - SIMD 一元运算规范与测试（2026-03-19）
 
 - **文档**：`uya.md` / `grammar_formal.md` 明确向量一元 `-`（整数/浮点元素）与一元 `~`（仅整数元素）。

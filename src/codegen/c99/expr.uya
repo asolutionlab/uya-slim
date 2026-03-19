@@ -1932,6 +1932,8 @@ fn c99_emit_simd_binary_operator(codegen: &C99CodeGenerator, op: TokenType) void
         fputs(" * " as *byte, codegen.output as *void);
     } else if op == TokenType.TOKEN_SLASH {
         fputs(" / " as *byte, codegen.output as *void);
+    } else if op == TokenType.TOKEN_PERCENT {
+        fputs(" % " as *byte, codegen.output as *void);
     } else if op == TokenType.TOKEN_EQUAL {
         fputs(" == " as *byte, codegen.output as *void);
     } else if op == TokenType.TOKEN_NOT_EQUAL {

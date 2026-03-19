@@ -445,6 +445,7 @@ fn checker_check_binary_expr(checker: &TypeChecker, node: &ASTNode) Type {
 
     // SIMD：一侧为 @vector 另一侧为未绑定目标的 @vector.splat 时，从向量侧推断 splat
     if op == TokenType.TOKEN_PLUS || op == TokenType.TOKEN_MINUS || op == TokenType.TOKEN_ASTERISK || op == TokenType.TOKEN_SLASH ||
+        op == TokenType.TOKEN_PERCENT ||
         op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL || op == TokenType.TOKEN_LESS ||
         op == TokenType.TOKEN_GREATER || op == TokenType.TOKEN_LESS_EQUAL || op == TokenType.TOKEN_GREATER_EQUAL ||
         op == TokenType.TOKEN_AMPERSAND || op == TokenType.TOKEN_PIPE || op == TokenType.TOKEN_CARET ||
@@ -479,6 +480,22 @@ fn checker_check_binary_expr(checker: &TypeChecker, node: &ASTNode) Type {
             }
             if type_equals(left_type, right_type) == 0 {
                 checker_report_error(checker, node, "向量算术运算的两个操作数类型必须完全一致" as *byte);
+                return make_void_type();
+            }
+            return copy_type(&left_type);
+        }
+
+        if op == TokenType.TOKEN_PERCENT {
+            if left_type.kind != TypeKind.TYPE_VECTOR || right_type.kind != TypeKind.TYPE_VECTOR {
+                checker_report_error(checker, node, "向量取模 %% 要求左右操作数都是 @vector(T, N)" as *byte);
+                return make_void_type();
+            }
+            if type_equals(left_type, right_type) == 0 {
+                checker_report_error(checker, node, "向量取模 %% 的两个操作数类型必须完全一致" as *byte);
+                return make_void_type();
+            }
+            if simd_vector_has_integer_elements(left_type) == 0 {
+                checker_report_error(checker, node, "向量取模 %% 仅支持整数元素类型的 @vector(T, N)" as *byte);
                 return make_void_type();
             }
             return copy_type(&left_type);
