@@ -3622,7 +3622,7 @@ struct C99CodeGenerator {
     int32_t enum_definition_count;
     struct FunctionDeclaration function_declarations[512];
     int32_t function_declaration_count;
-    struct ASTNode * reachable_function_decls[1024];
+    struct ASTNode * reachable_function_decls[2048];
     int32_t reachable_function_decl_count;
     struct GlobalVariable global_variables[512];
     int32_t global_variable_count;
@@ -5281,7 +5281,7 @@ const int32_t C99_MAX_ENUM_DEFINITIONS = 512;
 
 const int32_t C99_MAX_FUNCTION_DECLS = 512;
 
-const int32_t C99_MAX_REACHABLE_FUNCTIONS = 1024;
+const int32_t C99_MAX_REACHABLE_FUNCTIONS = 2048;
 
 const int32_t C99_MAX_GLOBAL_VARS = 512;
 
@@ -10188,7 +10188,6 @@ uint8_t * strerror(int32_t errnum) {
     return _uya_ret;
 }
 
-
 double fabs(double x) {
     (void)x;
     if ((x < 0)) {
@@ -11691,9 +11690,6 @@ uint8_t * memchr(const uint8_t * s, int32_t c, size_t n) {
 }
 
 
-
-
-
 static __attribute__((unused)) void * _pthread_call_start(void * start_fn, void * start_arg) {
     (void)start_fn;
     (void)start_arg;
@@ -11832,7 +11828,6 @@ int32_t pthread_create(struct pthread_t * thread, const struct pthread_attr_t * 
     int32_t _uya_ret = 0;
     return _uya_ret;
 }
-
 
 int32_t pthread_join(struct pthread_t * thread, void * * retval) {
     (void)thread;
@@ -12083,7 +12078,6 @@ int32_t pthread_mutex_timedlock(struct pthread_mutex_t * mutex, const struct tim
     int32_t _uya_ret = 0;
     return _uya_ret;
 }
-
 
 struct pthread_t pthread_self() {
     struct err_union_int64_t tid = sys_getpid();
@@ -50787,19 +50781,25 @@ static __attribute__((unused)) struct ASTNode * find_function_decl_c99(struct C9
                     return _uya_ret;
                 }
                 const int32_t decl_count = codegen->program_node->program_decl_count;
+                struct ASTNode * first_match = NULL;
                 int32_t i = 0;
                 while ((i < decl_count)) {
                     struct ASTNode * const decl = codegen->program_node->program_decls[i];
                     if (((decl != NULL) && (decl->type == ASTNodeType_AST_FN_DECL))) {
                         uint8_t * const decl_name = decl->fn_decl_name;
                         if (((decl_name != NULL) && (strcmp((uint8_t *)decl_name, (uint8_t *)func_name) == 0))) {
-                            struct ASTNode * _uya_ret = decl;
-                            return _uya_ret;
+                            if ((decl->fn_decl_body != NULL)) {
+                                struct ASTNode * _uya_ret = decl;
+                                return _uya_ret;
+                            }
+                            if ((first_match == NULL)) {
+                                first_match = decl;
+                            }
                         }
                     }
                     i = (i + 1);
                 }
-                struct ASTNode * _uya_ret = NULL;
+                struct ASTNode * _uya_ret = first_match;
                 return _uya_ret;
             }
 

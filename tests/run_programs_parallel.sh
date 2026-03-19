@@ -29,6 +29,8 @@ COMPILER="$REPO_ROOT/bin/uya"
 TEST_DIR="$SCRIPT_DIR"
 BUILD_DIR="$TEST_DIR/build"
 ERRORS_ONLY=false
+# 为 true 时：不打印每条「通过」的 ✓ 行，其余输出与 ERRORS_ONLY=false 相同（供 make tests 默认使用）
+HIDE_PASS_OUTPUT=false
 USE_C99=true
 USE_UYA=false
 PARALLEL_JOBS=${PARALLEL_JOBS:-8}
@@ -106,7 +108,8 @@ show_usage() {
     echo ""
     echo "选项:"
     echo "  -h, --help          显示此帮助信息"
-    echo "  -e, --errors-only   只显示失败的测试"
+    echo "  -e, --errors-only   最小输出：仅失败时打印详情（不打印开头进度与全通过时的汇总等）"
+    echo "  --hide-pass         不打印每条通过的 ✓，其余输出与默认相同（失败项仍完整显示）"
     echo "  -j <N>              并行任务数（默认8）"
     echo "  --c99               使用 C99 后端（默认）"
     echo "  --uya               使用 src 编译的编译器"
@@ -131,7 +134,8 @@ show_usage() {
     echo "  $0 -j 4                               # 运行所有测试（并行，4线程）"
     echo "  $0 -j 1                               # 运行所有测试（单线程）"
     echo "  PARALLEL_JOBS=12 $0                    # 运行所有测试（并行，12线程）"
-    echo "  $0 -e                                 # 只显示失败的测试"
+    echo "  $0 -e                                 # 最小输出（仅失败详情）"
+    echo "  $0 --hide-pass                        # 保留进度/汇总，仅省略每条通过的 ✓"
     echo "  $0 test_global_var.uya               # 运行单个测试"
 }
 
@@ -157,6 +161,10 @@ while [ $# -gt 0 ]; do
             ;;
         -e|--errors-only)
             ERRORS_ONLY=true
+            shift
+            ;;
+        --hide-pass)
+            HIDE_PASS_OUTPUT=true
             shift
             ;;
         -j)
@@ -538,7 +546,7 @@ for test_item in "${multifile_tests[@]}"; do
     result=$(tr -d '\0' < "$result_file" 2>/dev/null || true)
     status="${result%%:*}"
     if [ "$status" = "PASS" ]; then
-        if [ "$ERRORS_ONLY" = false ]; then
+        if [ "$ERRORS_ONLY" = false ] && [ "$HIDE_PASS_OUTPUT" = false ]; then
             echo "  ✓ ${result#*:}"
         fi
         PASSED=$((PASSED + 1))
@@ -592,7 +600,7 @@ if [ ${#single_tests[@]} -gt 0 ]; then
             status="${result%%:*}"
             
             if [ "$status" = "PASS" ]; then
-                if [ "$ERRORS_ONLY" = false ]; then
+                if [ "$ERRORS_ONLY" = false ] && [ "$HIDE_PASS_OUTPUT" = false ]; then
                     echo "  ✓ ${result#*:}"
                 fi
                 PASSED=$((PASSED + 1))

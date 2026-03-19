@@ -164,8 +164,9 @@ b-hosted: uya-hosted
 	@echo "✓ hosted 自举验证完成"
 
 # 运行测试：默认使用 tests/run_programs_parallel.sh 并行测试（可 -j N 控制线程数）
+# 默认 --hide-pass：不打印每条通过的 ✓，其余输出与直接跑脚本相同
 # 用法: make tests [e] [其他参数]
-# 示例: make tests e
+# 示例: make tests e          # 最小输出（原 -e）
 #       make tests test_file.uya
 tests:
 	@HAS_E=$$(echo "$(MAKECMDGOALS)" | grep -qE '\be\b' && echo "yes" || echo "no"); \
@@ -177,7 +178,7 @@ tests:
 	if [ "$$HAS_E" = "yes" ]; then \
 		CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99 -e $$OTHER_ARGS; \
 	else \
-		CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99 $$OTHER_ARGS; \
+		CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99 --hide-pass $$OTHER_ARGS; \
 	fi; \
 	echo ""; \
 	echo "✓ 测试完成"
@@ -193,7 +194,7 @@ tests-hosted:
 	if [ "$$HAS_E" = "yes" ]; then \
 		CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 -e $$OTHER_ARGS; \
 	else \
-		CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 $$OTHER_ARGS; \
+		CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 --hide-pass $$OTHER_ARGS; \
 	fi; \
 	echo ""; \
 	echo "✓ hosted 测试完成"
@@ -208,7 +209,7 @@ tests-uya:
 	if [ "$$HAS_E" = "yes" ]; then \
 		CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99 -e; \
 	else \
-		CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99; \
+		CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99 --hide-pass; \
 	fi
 
 # 输出标准库为 C 代码（使用自举编译器）
@@ -386,11 +387,11 @@ help:
 	@echo "  make uya-safety    - 构建自举编译器（启用内存安全检查）"
 	@echo "  make b             - 自举验证：编译器编译自身，验证输出一致性"
 	@echo "  make b-hosted      - hosted 自举验证"
-	@echo "  make tests         - 运行测试套件（默认 tests/run_programs_parallel.sh 并行）"
-	@echo "  make tests-hosted  - 运行 hosted 主测试集"
-	@echo "  make tests e       - 运行所有测试，只显示失败的测试"
+	@echo "  make tests         - 运行测试套件（默认并行；不打印每条通过的 ✓，其余输出不变）"
+	@echo "  make tests-hosted  - 运行 hosted 主测试集（同上，默认 --hide-pass）"
+	@echo "  make tests e       - 运行所有测试，最小输出（仅失败详情，等同脚本 -e）"
 	@echo "  make tests-uya     - 快捷方式：测试自举编译器"
-	@echo "  make tests-uya e   - 快捷方式：测试自举编译器，只显示失败的测试"
+	@echo "  make tests-uya e   - 同上 + 最小输出（-e）"
 	@echo "  make outlibc       - 输出标准库为 C 代码（使用自举编译器）"
 	@echo "  make check         - 验证（自举 + 测试），不备份"
 	@echo "  make check-hosted  - hosted 验证（自举 + 测试），不备份"
@@ -403,8 +404,8 @@ help:
 	@echo "示例:"
 	@echo "  make from-c                          # 从 C99 代码构建（首次克隆后）"
 	@echo "  make uya && make b && make tests-uya # 完整构建和自举验证"
-	@echo "  make tests                           # 运行所有测试"
-	@echo "  make tests e                         # 运行所有测试，只显示错误"
+	@echo "  make tests                           # 运行所有测试（默认省略通过的 ✓）"
+	@echo "  make tests e                         # 运行所有测试，最小输出"
 	@echo "  make clean && make from-c            # 清理后从备份恢复并构建"
 	@echo ""
 	@echo "macOS: hosted 主线见 docs/macos_hosted_smoke.md；备份 uya.c 为 Linux nostdlib 时 from-c 不可用。"
