@@ -748,3 +748,90 @@ fn ast_merge_programs(programs: [&ASTNode: MAX_MERGE_PROGRAMS], count: i32, aren
     merged.program_decl_count = total_decl_count;
     return merged;
 }
+
+// std.cfg 等会把块展开为「仅含若干声明」的嵌套 AST_PROGRAM；checker 会递归检查，
+// 但 C99 codegen 只遍历顶层 program_decls，导致块内 fn 不生成 C、链接报未定义。
+// 合并后展平一层或多层嵌套：将子 AST_PROGRAM 内的声明提升到当前程序列表（递归）。
+
+fn ast_program_has_nested_program_child(program: &ASTNode) i32 {
+    if program == null || program.type != ASTNodeType.AST_PROGRAM {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < program.program_decl_count {
+        const d: &ASTNode = program.program_decls[i];
+        if d != null && d.type == ASTNodeType.AST_PROGRAM {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn ast_nested_program_leaf_decl_count(program: &ASTNode) i32 {
+    if program == null || program.type != ASTNodeType.AST_PROGRAM {
+        return 0;
+    }
+    var n: i32 = 0;
+    var i: i32 = 0;
+    while i < program.program_decl_count {
+        const d: &ASTNode = program.program_decls[i];
+        if d != null && d.type == ASTNodeType.AST_PROGRAM {
+            n = n + ast_nested_program_leaf_decl_count(d);
+        } else if d != null {
+            n = n + 1;
+        }
+        i = i + 1;
+    }
+    return n;
+}
+
+fn ast_nested_program_collect_decls(program: &ASTNode, out: & & ASTNode, write_pos: i32) i32 {
+    var pos: i32 = write_pos;
+    if program == null || program.type != ASTNodeType.AST_PROGRAM {
+        return pos;
+    }
+    var i: i32 = 0;
+    while i < program.program_decl_count {
+        const d: &ASTNode = program.program_decls[i];
+        if d != null && d.type == ASTNodeType.AST_PROGRAM {
+            pos = ast_nested_program_collect_decls(d, out, pos);
+        } else if d != null {
+            out[pos] = d;
+            pos = pos + 1;
+        }
+        i = i + 1;
+    }
+    return pos;
+}
+
+// 返回展平后的程序根节点（无嵌套子程序时返回原指针）
+fn ast_flatten_nested_program_decls(program: &ASTNode, arena: &Arena) &ASTNode {
+    if program == null || program.type != ASTNodeType.AST_PROGRAM || arena == null {
+        return program;
+    }
+    if ast_program_has_nested_program_child(program) == 0 {
+        return program;
+    }
+    const flat_count: i32 = ast_nested_program_leaf_decl_count(program);
+    if flat_count < 0 {
+        return program;
+    }
+    const decls: & & ASTNode = arena_alloc(arena, @size_of(&ASTNode) * flat_count as usize) as & & ASTNode;
+    if decls == null {
+        return program;
+    }
+    const end_pos: i32 = ast_nested_program_collect_decls(program, decls, 0);
+    // 计数与收集不一致时绝不采用展平结果。曾出现展平后 arena/AST 损坏，导致 libc 中部分静态辅助函数
+    // （如 _strftime_write）未生成定义却仍有调用。待查明 leaf_count 与 collect 分歧根因前，保守跳过展平。
+    if end_pos != flat_count {
+        return program;
+    }
+    const out: &ASTNode = ast_new_node(ASTNodeType.AST_PROGRAM, program.line, program.column, arena, program.filename);
+    if out == null {
+        return program;
+    }
+    out.program_decls = decls;
+    out.program_decl_count = end_pos;
+    return out;
+}

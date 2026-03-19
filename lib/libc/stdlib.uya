@@ -3,6 +3,8 @@
 // 说明：基于系统调用的标准库函数（零外部依赖，参考 musl 实现）
 // 注意：函数名与 C 标准库一致（malloc, free, exit, atoi 等）
 
+use std.runtime.saved_envp;
+
 // ============================================================
 // 内存分配函数（参考 musl 实现 - 空闲链表 + 块分割）
 // ============================================================
@@ -1152,11 +1154,39 @@ export extern "libc" fn readlink(path: &const byte, buf: &byte, bufsiz: usize) i
     return ret as i32;
 }
 
+fn env_lookup_value(entry: &byte, name: &const byte) &byte {
+    if entry == null || name == null || name[0] == 0 { return null; }
+
+    var i: usize = 0;
+    while name[i] != 0 {
+        if entry[i] == 0 || entry[i] != name[i] {
+            return null;
+        }
+        i = i + 1;
+    }
+
+    if entry[i] != 61 {  // '='
+        return null;
+    }
+
+    return @ptr_from_usize(@usize_from_ptr(entry as &void) + i + 1) as &byte;
+}
+
 // getenv - 获取环境变量
 // 返回：环境变量值的指针，未找到返回 null
 export extern "libc" fn getenv(name: &const byte) &byte {
-    if name == null { return null; }
-    // 简化实现：返回 null
+    if name == null || name[0] == 0 { return null; }
+    if saved_envp == null { return null; }
+
+    var i: usize = 0;
+    while saved_envp[i] != null {
+        const value: &byte = env_lookup_value(saved_envp[i], name);
+        if value != null {
+            return value;
+        }
+        i = i + 1;
+    }
+
     return null;
 }
 

@@ -26,7 +26,7 @@ const C99_MAX_ENUM_DEFINITIONS: i32 = 512;
 
 // 函数声明表大小
 const C99_MAX_FUNCTION_DECLS: i32 = 512;
-const C99_MAX_REACHABLE_FUNCTIONS: i32 = 1024;
+const C99_MAX_REACHABLE_FUNCTIONS: i32 = 2048;
 
 // 全局变量表大小
 const C99_MAX_GLOBAL_VARS: i32 = 512;
@@ -225,6 +225,7 @@ struct C99CodeGenerator {
     needs_string_h: i32,                 // 1 表示需要 #include <string.h>
     needs_stdio_h: i32,                   // 1 表示需要 #include <stdio.h>
     needs_stdlib_h: i32,                 // 1 表示需要 #include <stdlib.h>
+    needs_syscall_helpers: i32,          // 1 表示需要生成 uya_syscallN 辅助函数
     // 跟踪是否定义了与标准库冲突的函数（fopen, fclose, fread, fgetc, fprintf）
     has_stdio_conflicts: i32,             // 1 表示定义了与 stdio.h 冲突的函数
     

@@ -1176,7 +1176,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
             }
 
             // 未知的内置函数
-            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@va_copy、@async_fn、@await、@naked_fn、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@mc_source、@syscall、@ptr_from_usize、@usize_from_ptr、@error_id、@print、@println、@asm、@asm_target、@vector、@mask\n" as *byte, value);
+            fprintf(libc.stderr, "错误: 未知内置 @%s，支持：@size_of、@align_of、@len、@max、@min、@params、@va_start、@va_end、@va_arg、@va_copy、@src_name、@src_path、@src_line、@src_col、@func_name、@async_fn、@await、@naked_fn、@mc_eval、@mc_type、@mc_ast、@mc_code、@mc_error、@mc_get_env、@mc_source、@syscall、@ptr_from_usize、@usize_from_ptr、@error_id、@print、@println、@asm、@asm_target、@vector、@mask\n" as *byte, value);
             return null;
         }
         return null;

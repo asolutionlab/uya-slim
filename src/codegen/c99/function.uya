@@ -8,6 +8,8 @@
 // C 标准库函数（在 extern_decls.uya 中声明）
 
 // 查找函数声明
+// 若存在多个同名顶层 fn（如前向 extern 与后续带函数体的实现），优先返回带 body 的定义，
+// 否则可达性分析与代码生成会锚到无体的声明，导致实现既不生成原型也不生成定义（如 libc time 的 _strftime_write）。
 fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode {
     if codegen == null || func_name == null || codegen.program_node == null {
         return null;
@@ -16,18 +18,24 @@ fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode
     const decl_count: i32 = codegen.program_node.program_decl_count;
     
     var i: i32 = 0;
+    var stub: &ASTNode = null;
     while i < decl_count {
         const decl: &ASTNode = codegen.program_node.program_decls[i];
         if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
             const decl_name: &byte = decl.fn_decl_name;
             if decl_name != null && strcmp(decl_name as *byte, func_name as *byte) == 0 {
-                return decl;
+                if decl.fn_decl_body != null {
+                    return decl;
+                }
+                if stub == null {
+                    stub = decl;
+                }
             }
         }
         i = i + 1;
     }
     
-    return null;
+    return stub;
 }
 
 // 检查函数是否是 extern "libc" fn（用于决定字符串参数类型）

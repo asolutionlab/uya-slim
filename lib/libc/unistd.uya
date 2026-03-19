@@ -2,6 +2,8 @@
 // 版本：v0.4.0
 // 说明：基于 syscall 的 POSIX 标准函数
 
+use std.runtime.saved_envp;
+
 use libc.SYS_read;
 use libc.SYS_write;
 use libc.SYS_close;
@@ -148,8 +150,12 @@ export extern "libc" fn system(cmd: &const byte) i32 {
         const sh_path: &const byte = "/bin/sh";
         const sh_c: &const byte = "-c";
         var args: [&const byte: 4] = [sh_path, sh_c, cmd, null];
-        var env: [&const byte: 1] = [null];
-        execve(sh_path, &args[0] as & &byte, &env[0] as & &byte);
+        var empty_env: [&const byte: 1] = [null];
+        var envp: & &byte = &empty_env[0] as & &byte;
+        if saved_envp != null {
+            envp = saved_envp;
+        }
+        execve(sh_path, &args[0] as & &byte, envp);
         _exit(127);
     }
     if pid > 0 {

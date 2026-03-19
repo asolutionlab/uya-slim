@@ -1980,9 +1980,14 @@ fn compile_files(
     fprintf(libc.stderr, "=== 词法/语法分析完成，共 %d 个文件 ===\n" as *byte, all_file_count);
 
     fprintf(libc.stderr, "=== AST 合并阶段 ===\n" as *byte);
-    const merged_ast: &ASTNode = ast_merge_programs(programs, all_file_count, &arena);
+    var merged_ast: &ASTNode = ast_merge_programs(programs, all_file_count, &arena);
     if merged_ast == null {
         fprintf(libc.stderr, "错误: AST 合并失败\n" as *byte);
+        return 1;
+    }
+    merged_ast = ast_flatten_nested_program_decls(merged_ast, &arena);
+    if merged_ast == null {
+        fprintf(libc.stderr, "错误: AST 展平失败\n" as *byte);
         return 1;
     }
     merge_end_time = clock();

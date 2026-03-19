@@ -83,6 +83,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.needs_string_h = 0;
     codegen.needs_stdio_h = 0;
     codegen.needs_stdlib_h = 0;
+    codegen.needs_syscall_helpers = 0;
     // 初始化 has_stdio_conflicts 标志
     codegen.has_stdio_conflicts = 0;
     // 使用传入的 is_nostdlib 参数
