@@ -1,5 +1,8 @@
 # Uya 项目根目录 Makefile
 # 提供统一的构建和测试入口
+#
+# 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
+# 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
 .PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted tests tests-hosted tests-uya outlibc c e clean check check-hosted backup restore release install help
 
@@ -319,7 +322,15 @@ check: b
 		exit 1; \
 	fi
 	@echo ""
-	@echo "✓ 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪）"
+	@echo "验证 @syscall C99（Linux AArch64 / ARM32 交叉）..."
+	@ZIG="$(ZIG)" ./tests/verify_syscall_c99_cross.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ @syscall C99 交叉目标验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "✓ 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪 + @syscall C99）"
 
 # hosted 验证：普通链接自举 + 主测试 + 证明优化
 check-hosted: b-hosted
@@ -350,7 +361,15 @@ check-hosted: b-hosted
 		exit 1; \
 	fi
 	@echo ""
-	@echo "✓ hosted 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪）"
+	@echo "验证 @syscall C99（Linux AArch64 / ARM32 交叉）..."
+	@ZIG="$(ZIG)" ./tests/verify_syscall_c99_cross.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ @syscall C99 交叉目标验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "✓ hosted 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪 + @syscall C99）"
 
 # 备份（依赖 check 通过）
 backup: check

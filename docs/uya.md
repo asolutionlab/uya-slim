@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.12（完整版 · 2026-03-19）
+# Uya 语言规范 0.49.14（完整版 · 2026-03-19）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -53,6 +53,16 @@
 ---
 
 ## 规范变更
+
+### 0.49.14（2026-03-19）
+
+- **C99 `@syscall`**：在 **Linux ARM32（EABI，`__arm__` 且非 `__aarch64__`）** 下增加 **`#elif defined(__arm__) && !defined(__aarch64__) && defined(__linux__)`** 分支：`svc 0`，系统调用号在 **r7**，参数 **r0**–**r5**；内联汇编在 Thumb 下通过临时操作数保存/恢复 r7（与常见 musl 做法一致）。**x86_64** 与 **Linux AArch64** 路径不变。
+- **验证**：`tests/verify_syscall_c99_cross.sh`（`make check` / `make check-hosted`）；其中 ARM 目标对完整生成 C 与 gnueabihf 头文件可能 typedef 冲突，脚本仅抽出 ARM 分支片段做 **`zig cc -target arm-linux-gnueabihf -c`** 检查。
+
+### 0.49.13（2026-03-19）
+
+- **C99 `@syscall`**：生成 `uya_syscall0`…`uya_syscall6` 时，在 **Linux AArch64** 目标下增加 **`#elif (defined(__aarch64__) || defined(_M_ARM64)) && defined(__linux__)`** 分支（`svc 0`，`x8`=系统调用号，`x0`–`x5`=参数），便于 **`zig cc -target aarch64-linux-gnu`** 等交叉编译时不再落入唯一条 `#error`；**x86_64** 路径不变。
+- **验证**：`make check` / `make check-hosted`（含 `@syscall` 生成 C 的交叉目标检查，脚本见当前仓库 `tests/verify_syscall_c99_cross.sh`）。
 
 ### 0.49.12（2026-03-19）
 
@@ -6976,6 +6986,7 @@ bin/uya build main.uya -o main.c --c99 -e
 
 ### C.5 限制与注意
 
+- **`@syscall`（C99 后端）**：已支持生成 **Linux x86_64**、**Linux AArch64** 与 **Linux ARM32（EABI）** 的 `uya_syscall*` 内联实现；其余 OS/ABI 仍会触发 C 预处理 `#error`（见规范变更 0.49.14）。
 - **`--nostdlib` / 静态零依赖路径**：当前实现与测试主线以 **Linux x86_64** 为主；其他目标的 `_start`、链接与 syscall 封装可能未完备，见 [UYA_BUILD_RUN.md](./UYA_BUILD_RUN.md) 与平台相关 todo 文档。
 - **内联汇编 `@asm`**：指令与约束与目标 ISA 相关；交叉编译时需确保仅启用当前 **TARGET** 支持的指令，或使用 `@asm_target()` 等机制区分平台（见 [asm_api_reference.md](./asm_api_reference.md) 等）。
 - **标准库与系统调用**：`libc` / `syscall` / 异步等模块依赖目标 OS/ABI；交叉到嵌入式或非常规环境时需自行核对链接库与运行时。

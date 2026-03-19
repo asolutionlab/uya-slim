@@ -1,8 +1,8 @@
 # Uya 内置函数使用文档
 
-> 版本：v0.49.12（2026-03-19）  
+> 版本：v0.49.14（2026-03-19）  
 > 此文档为 uya.md 的详细补充说明  
-> 语言规范：0.49.12  
+> 语言规范：0.49.14  
 > 所有内置函数均以 `@` 开头，由编译器识别，无需导入或声明；其实现阶段与运行时开销以各章节说明为准
 
 ---
@@ -1836,6 +1836,8 @@ fn buffer_info<T>() void {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v0.49.14 | 2026-03-19 | C99 `@syscall`：`uya_syscall*` 增加 **Linux ARM32 EABI**（`svc 0`，r7 + r0–r5）；`verify_syscall_c99_cross.sh`（含 AArch64 全文件与 ARM 片段 `zig cc`） |
+| v0.49.13 | 2026-03-19 | C99 `@syscall`：`uya_syscall*` 增加 **Linux AArch64**（`svc 0`）；交叉 `aarch64-linux-gnu` 可编译；验证脚本现统一为 `verify_syscall_c99_cross.sh` |
 | v0.49.12 | 2026-03-19 | C99 SIMD：4×i32/f32 向量六种关系比较 → 掩码（SSE/标量）；4×u32 仅 `==`/`!=` 快路径；测试 `test_simd_sse_compare_ops` |
 | v0.49.11 | 2026-03-19 | 与 uya.md 同步：规范版本号；交叉编译见主文档 [附录 C](./uya.md#附录-c-交叉编译工具链) |
 | v0.49.10 | 2026-03-19 | C99 SIMD：x86_64+GCC/Clang+SSE2 下 4 宽向量部分运算 lowering 至 `uya_simd_sse_*`（`#else` 标量）；`@vector.splat`/一元 `-`（i32/f32×4）；测试 `test_simd_sse_lower_i32x4` |
@@ -1868,5 +1870,5 @@ fn buffer_info<T>() void {
 
 ---
 
-**本文档由 Uya 编译器团队维护，最后更新：2026-03-19（0.49.12）**
+**本文档由 Uya 编译器团队维护，最后更新：2026-03-19（0.49.14）**
 

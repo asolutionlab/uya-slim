@@ -8,6 +8,18 @@
 
 **发布日期：** 待定
 
+### v0.49.14 - C99 `@syscall`：Linux ARM32（EABI）分支（2026-03-19）
+
+- **C99**：`uya_syscall0`…`6` 增加 **`#elif __arm__ && !__aarch64__ && __linux__`**（`svc 0`，nr→**r7**，参数 **r0**–**r5**；Thumb 安全保存/恢复 r7）。
+- **验证**：`tests/verify_syscall_c99_cross.sh`（AArch64 整文件 + ARM 抽出片段 `zig cc arm-linux-gnueabihf`）；夹具 `tests/fixtures/syscall_c99_cross.uya`。
+- **文档**：规范 0.49.14；`uya.md` 附录 C 与规范变更同步。
+
+### v0.49.13 - C99 `@syscall`：Linux AArch64 分支（2026-03-19）
+
+- **C99**：`uya_syscall0`…`6` 增加 **`#elif (__aarch64__||_M_ARM64) && __linux__`**（`svc 0`），交叉 **`aarch64-linux-gnu`** 不再唯一条 `#error`。
+- **验证**：`make check`；夹具 `tests/fixtures/syscall_c99_cross.uya`（发布时脚本为 `verify_syscall_c99_aarch64.sh`，**0.49.14** 起合并为 `verify_syscall_c99_cross.sh`）。
+- **文档**：规范 0.49.13；`uya.md` 附录 C 补充 `@syscall` 说明。
+
 ### v0.49.12 - SIMD：C99 向量比较 lowering 扩展（2026-03-19）
 
 - **C99**：`uya_simd_sse_{eq,ne,lt,gt,le,ge}_{i32,f32}x4_mask` 及标量 `#else`；`expr.uya` 掩码分支映射六种比较；`u32`×4 仅 `==`/`!=` 走快路径。
