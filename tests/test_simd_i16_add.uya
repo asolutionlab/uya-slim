@@ -1,0 +1,14 @@
+// SIMD：@vector(i16, 4) 加法与比较
+type Vec4i16 = @vector(i16, 4);
+type Mask4 = @mask(4);
+
+export fn main() i32 {
+    const a: Vec4i16 = @vector.splat(100);
+    const b: Vec4i16 = @vector.splat(23);
+    const s: Vec4i16 = a + b;
+    const ok: Mask4 = s == @vector.splat(123);
+    if @vector.all(ok) == false {
+        return 1;
+    }
+    return 0;
+}
