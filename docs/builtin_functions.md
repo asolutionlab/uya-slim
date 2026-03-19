@@ -1,8 +1,8 @@
 # Uya 内置函数使用文档
 
-> 版本：v0.49.8（2026-03-19）  
+> 版本：v0.49.9（2026-03-19）  
 > 此文档为 uya.md 的详细补充说明  
-> 语言规范：0.49.8  
+> 语言规范：0.49.9  
 > 所有内置函数均以 `@` 开头，由编译器识别，无需导入或声明；其实现阶段与运行时开销以各章节说明为准
 
 ---
@@ -1651,7 +1651,7 @@ if @vector.any(lt) {
 
 **注意事项**：
 - `@vector.splat(x)` 的参数类型须与目标向量元素类型一致或可隐式转换；无后缀浮点字面量为 `f64`，填入 `f32` 向量须使用 `f32` 后缀（如 `1.0f32`）
-- `@vector.splat(x)` 的目标向量类型必须能由上下文唯一确定（含与同一代数/比较表达式中另一侧 `@vector` 操作数对齐推断，以及 **`return` 与函数返回 `@vector` / `!@vector` 成功载荷** 对齐推断，见 uya.md 0.49.8）
+- `@vector.splat(x)` 的目标向量类型必须能由上下文唯一确定（含与同一代数/比较表达式中另一侧 `@vector` 操作数对齐推断，以及 **`return` 与函数返回 `@vector` / `!@vector` 成功载荷** 对齐推断，见 uya.md 0.49.8、0.49.9）
 - 第一阶段允许标量回退 lowering，不承诺立刻映射真实硬件寄存器
 - 第一阶段不引入 `@vector.load`、`@vector.store`、`@vector.select`、`@vector.shuffle`、`@vector.reduce_*`
 
@@ -1836,6 +1836,7 @@ fn buffer_info<T>() void {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v0.49.9 | 2026-03-19 | C99：`catch` 反推载荷为向量类型别名时用 `typedef` 名；收集阶段预注册 `@mask(N)`（含仅出现在 `@vector.all(==)` 中的比较）；测试 `test_simd_return_splat_binary`（`catch`+`!Vec4i32`）、`test_simd_mask_inline_compare` |
 | v0.49.8 | 2026-03-19 | SIMD：`return`/`!T` 载荷为向量时类型检查绑定 splat；C99 `err_union` 输出含向量/掩码别名载荷；测试 `test_simd_return_splat_binary` |
 | v0.49.7 | 2026-03-19 | SIMD C99：`@vector.splat` 目标类型可从 expected_type / 返回类型 / 对侧向量解析；测试 `test_simd_splat_binary_context` |
 | v0.49.6 | 2026-03-19 | SIMD：有符号整数向量 `+|`/`-|`/`*|`，整数向量 `+%`/`-%`/`*%`；splat 推断；测试 `test_simd_vector_sat_wrap_i32`；负例 `error_simd_float_vector_plus_pipe`、`error_simd_u32_vector_plus_pipe` |
@@ -1864,5 +1865,5 @@ fn buffer_info<T>() void {
 
 ---
 
-**本文档由 Uya 编译器团队维护，最后更新：2026-03-19（0.49.8）**
+**本文档由 Uya 编译器团队维护，最后更新：2026-03-19（0.49.9）**
 

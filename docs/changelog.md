@@ -8,6 +8,13 @@
 
 **发布日期：** 待定
 
+### v0.49.9 - SIMD：C99 `catch` 向量别名载荷与掩码预收集（2026-03-19）
+
+- **C99**：`gen_catch_expr` 从 `struct err_union_<name>` 反推载荷时，若 `name` 为 `type` 别名（如 `Vec4i32` → `@vector`），成功分支中间变量使用与 `typedef` 一致的标识符，避免误生成 `struct Vec4i32`。
+- **C99**：切片/SIMD 收集遍历函数体时设置 `current_function_decl`；`collect_inferred_simd_type_from_expr` 对向量相等比较预注册 `@mask(N)`，避免仅出现在 `@vector.all( v == splat )` 中的掩码在 C 中不完整类型。
+- **测试**：`test_simd_return_splat_binary.uya`（`catch` + `!Vec4i32`）、`test_simd_mask_inline_compare.uya`。
+- **文档**：规范 0.49.9（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`）。
+
 ### v0.49.8 - SIMD：`return` 与 splat 类型检查及 `!向量` err_union C99（2026-03-19）
 
 - **类型检查**：`checker_simd_prep_expr_with_expected_vector` — 在推断 `return` 子表达式前，按函数返回 `@vector` 或 `!T` 载荷为 `@vector` 绑定其中 `@vector.splat`（含嵌套二元式双 splat）。
