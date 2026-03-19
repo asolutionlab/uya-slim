@@ -1,7 +1,8 @@
 // std.runtime.entry - C 程序入口
 // 版本：v0.2.2
-// 说明：提供 export extern "libc" fn main 作为 C 入口，应用程序需要 use 此模块
-// 模块路径：lib/std/runtime/entry/entry.uya → use std.runtime.entry;
+// 说明：提供 export extern "libc" fn main 作为 C 入口，调用用户 export fn main → main_main()
+// 使用 bin/uya / uya build / compile.sh 时：检测到 export fn main、fn main 或顶层 test 会自动加入本文件，用户源码无需 use std.runtime.entry
+// 模块路径：lib/std/runtime/entry/entry.uya（模块名 std.runtime.entry，供标准库内部 use）
 //
 use std;
 
@@ -10,7 +11,7 @@ use std;
 // 2. C main 保存参数到 std.runtime.saved_argc/saved_argv/saved_envp 后调用 main_main()
 //    （用户的 export fn main() 被编译为 main_main()）
 // 3. 用户通过 std.runtime.get_argc/get_argv 访问参数
-// 4. 所有 app（包括测试）都需要 use std.runtime.entry
+// 4. 用户 app 不需要 use 本模块；编译器自动注入本文件（见 main.uya compile_files）
 
 // 导入 std.runtime 的全局变量
 use std.runtime.saved_argc;

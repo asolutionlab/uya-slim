@@ -58,6 +58,7 @@
 
 - **C99 SIMD lowering（向量比较扩展）**：在 x86_64 SSE 快路径上，**4×`i32`** 支持 **`==` `!=` `<` `>` `<=` `>=`** → `@mask(4)`；**4×`f32`** 同样六种关系（`_mm_cmp*_ps`）；**4×`u32`** 仅 **`==` / `!=`** 走与按位一致的 `uya_simd_sse_*_i32x4_mask`，无符号有序比较仍逐通道标量。宿主 **`#else`** 为同名标量 `static inline`。
 - **测试**：`test_simd_sse_compare_ops.uya`。
+- **文档**：§5.1.1 勘误——使用 **`bin/uya` / `uya build` 等官方入口**时，编译器在检测到 **`export fn main`**、非导出的 **`fn main`** 或顶层 **`test "…"`** 时，会**自动**将 `std/runtime/entry/entry.uya` 加入编译单元；用户程序**不需要**、也**不应依赖**在源码中写 `use std.runtime.entry` 来引入该文件。仅在你**自行**只把 `app.uya` 交给其它工具链、且**未**走上述驱动时，才需手动把 `entry.uya` 列入输入（见下文说明）。
 
 ### 0.49.11（2026-03-19）
 
@@ -2600,9 +2601,13 @@ C Runtime → entry.uya::main() → main_main()
                               └─ 用户应用代码
 ```
 
-编译时需包含入口模块：
+**默认（推荐）**：使用 **`bin/uya`**、**`uya build` / `run` / `test`** 或 **`src/compile.sh`** 时，编译器会**自动**把标准库中的 **`entry.uya`** 加入输入列表，**无需**在用户源码里写 `use std.runtime.entry`（该 `use` 只存在于 `entry.uya` 等标准库模块内部，用于解析依赖）。
+
+**手动列出输入时**（例如仅用生成的 C 驱动、或自定义脚本且未调用上述入口）：需保证 `entry.uya` 参与编译，否则缺少 C 的 `main` 与 `main_main` 桥接。示例：
 ```bash
-bin/uya-c --c99 app.uya lib/std/runtime/entry/entry.uya -o app.c
+bin/uya --c99 app.uya …   # 推荐：由驱动自动加入 entry.uya
+# 若必须手写多文件列表：
+# bin/uya --c99 app.uya <UYA_ROOT>/std/runtime/entry/entry.uya -o app.c
 ```
 
 **签名选择**：

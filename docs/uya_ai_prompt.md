@@ -233,7 +233,7 @@ fn main() i32 { ... }
 ```
 
 **说明**：
-- `export fn main()` 生成 `main_main()`，由 `std.runtime.entry` 模块提供 C 入口
+- `export fn main()` 生成 `main_main()`，由 `std.runtime.entry`（`entry.uya`）提供 C `main` 并调用 `main_main()`；**`bin/uya` 等会自动加入该文件，用户源码无需 `use std.runtime.entry`**
 - `export extern fn main(argc, argv)` 生成标准 C `main()` 签名
 - `fn main()` 生成 `uya_main()`，向后兼容
 
