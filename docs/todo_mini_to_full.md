@@ -2734,8 +2734,8 @@ interface IReadWriter {
   - 编译期继续复用 `std.cfg(...)` / `@asm_target()`
   - 运行时 CPU 能力检测放在库内普通函数，不新增新的条件编译或目标特性内建
 - **阶段 4**：真实 SIMD lowering（🔄 已启动）
-  - ✅ **初版**：C99 在 x86_64 + GCC/Clang + SSE2 下对 **4×`i32`/`u32`/`f32`** 部分运算、`splat`、一元 `-`、**`i32`/`u32`/`f32` 六种向量比较**（`u32` 有序比较为 `uya_simd_sse_{lt,gt,le,ge}_u32x4_mask`）；`#else` 标量；见 `emit_simd_x86_sse_runtime_helpers`、`c99_simd_try_emit_x86_sse_*`
-  - 待办：ARM NEON、更多宽度、`load/store/select`、`shuffle/reduce`、ABI
+  - ✅ **初版**：C99 在 **x86_64 + SSE2**（`UYA_HAVE_SIMD_X86_SSE`）或 **ARM + NEON**（`UYA_HAVE_SIMD_ARM_NEON`，同名 `uya_simd_sse_*`）或 **`#else` 标量**下，对 **4×`i32`/`u32`/`f32`** 部分运算、`splat`、一元 `-`、**六种向量比较**；见 `emit_simd_x86_sse_runtime_helpers`、`c99_simd_try_emit_x86_sse_*`；验证 `verify_simd_c99_neon.sh`
+  - 待办：更多宽度、`load/store/select`、`shuffle/reduce`、ABI（**NEON**：✅ 与 SSE 同助手名的 `#elif UYA_HAVE_SIMD_ARM_NEON` 分支，见 0.49.16）
 
 **验证标准**：
 - 开发前与每轮修改后都执行 `make check`

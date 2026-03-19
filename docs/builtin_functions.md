@@ -1,8 +1,8 @@
 # Uya 内置函数使用文档
 
-> 版本：v0.49.15（2026-03-19）  
+> 版本：v0.49.16（2026-03-19）  
 > 此文档为 uya.md 的详细补充说明  
-> 语言规范：0.49.15  
+> 语言规范：0.49.16  
 > 所有内置函数均以 `@` 开头，由编译器识别，无需导入或声明；其实现阶段与运行时开销以各章节说明为准
 
 ---
@@ -1836,6 +1836,7 @@ fn buffer_info<T>() void {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v0.49.16 | 2026-03-19 | C99 SIMD：**ARM NEON** 分支（`UYA_HAVE_SIMD_ARM_NEON` + `arm_neon.h`），与 SSE 同名 `uya_simd_sse_*`；`verify_simd_c99_neon.sh` |
 | v0.49.15 | 2026-03-19 | C99 SIMD：4×`u32` **`<` `>` `<=` `>=`** → 掩码，`uya_simd_sse_{lt,gt,le,ge}_u32x4_mask`（SSE / `#else` 标量）；`test_simd_sse_compare_ops` 增补绕序用例 |
 | v0.49.14 | 2026-03-19 | C99 `@syscall`：`uya_syscall*` 增加 **Linux ARM32 EABI**（`svc 0`，r7 + r0–r5）；`verify_syscall_c99_cross.sh`（含 AArch64 全文件与 ARM 片段 `zig cc`） |
 | v0.49.13 | 2026-03-19 | C99 `@syscall`：`uya_syscall*` 增加 **Linux AArch64**（`svc 0`）；交叉 `aarch64-linux-gnu` 可编译；验证脚本现统一为 `verify_syscall_c99_cross.sh` |
@@ -1871,5 +1872,5 @@ fn buffer_info<T>() void {
 
 ---
 
-**本文档由 Uya 编译器团队维护，最后更新：2026-03-19（0.49.15）**
+**本文档由 Uya 编译器团队维护，最后更新：2026-03-19（0.49.16）**
 

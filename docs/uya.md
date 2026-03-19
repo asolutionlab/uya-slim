@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.15（完整版 · 2026-03-19）
+# Uya 语言规范 0.49.16（完整版 · 2026-03-19）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -53,6 +53,11 @@
 ---
 
 ## 规范变更
+
+### 0.49.16（2026-03-19）
+
+- **C99 SIMD lowering（ARM NEON）**：在 **`(GCC 或 Clang) && defined(__ARM_NEON)`** 时，生成的 C 在 **`#elif UYA_HAVE_SIMD_ARM_NEON`** 分支内 **`#include <arm_neon.h>`**，对既有 **`uya_simd_sse_*`** 助手名提供 **4×`i32`/`u32`/`f32`** 的 NEON 实现（与 x86_64 的 **`#if UYA_HAVE_SIMD_X86_SSE`** 择一；**`#else`** 仍为逐通道标量）。**`expr.uya` 调用名不变**（历史命名保留）。
+- **验证**：`tests/verify_simd_c99_neon.sh`（夹具 `tests/fixtures/simd_c99_neon.uya`；`zig cc` 对抽出之 NEON 片段做 **AArch64** 与 **arm-linux-gnueabihf + NEON** 交叉 `-c`，避免完整生成 C 与交叉 libc `stdint`  typedef 冲突）。
 
 ### 0.49.15（2026-03-19）
 
@@ -4669,6 +4674,7 @@ fn caller() void {
      - 基本算术、整数位运算、比较、掩码逻辑运算
      - `@vector.splat`、`@vector.any`、`@vector.all`
      - 语义正确的标量回退 lowering
+     - **C99 快路径**（阶段 4 起）：**x86_64 + SSE2**（`UYA_HAVE_SIMD_X86_SSE`）或 **ARM/AArch64 + NEON**（`UYA_HAVE_SIMD_ARM_NEON`，`<arm_neon.h>`）下，对 **4 通道** `i32`/`u32`/`f32` 的部分运算与向量比较通过同名 **`uya_simd_sse_*`** `static inline` 实现；否则为该名提供逐通道标量体。表达式内**不**使用预处理器分支（见规范变更 0.49.10、**0.49.16**）。
    - **第一阶段暂缓**：
      - 标量广播语法糖，如 `vec + 1`
      - `load/store/select/shuffle/reduce`

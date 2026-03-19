@@ -1,0 +1,27 @@
+// 夹具：触发 emit_simd_* 运行时助手，供 AArch64/ARM NEON 交叉编译 C 验证
+type Vec4i32 = @vector(i32, 4);
+type Vec4u32 = @vector(u32, 4);
+type Vec4f32 = @vector(f32, 4);
+type Mask4 = @mask(4);
+
+export fn main() i32 {
+    const a: Vec4i32 = @vector.splat(1);
+    const b: Vec4i32 = @vector.splat(2);
+    const c: Vec4i32 = a + b;
+    const m: Mask4 = c == @vector.splat(3);
+    if @vector.all(m) == false {
+        return 1;
+    }
+    const u: Vec4u32 = @vector.splat(1 as u32);
+    const mu: Mask4 = u < @vector.splat(2 as u32);
+    if @vector.all(mu) == false {
+        return 2;
+    }
+    const x: Vec4f32 = @vector.splat(1.0f32);
+    const y: Vec4f32 = @vector.splat(2.0f32);
+    const mf: Mask4 = x < y;
+    if @vector.all(mf) == false {
+        return 3;
+    }
+    return 0;
+}

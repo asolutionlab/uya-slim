@@ -8,6 +8,12 @@
 
 **发布日期：** 待定
 
+### v0.49.16 - SIMD：C99 ARM NEON 分支（2026-03-19）
+
+- **C99**：`emit_simd_*` 在 **`UYA_HAVE_SIMD_ARM_NEON`** 下输出与 SSE 同名的 **`uya_simd_sse_*`** NEON 实现（`<arm_neon.h>`）；`#if` / `#elif` / `#else` 三档（SSE / NEON / 标量）。
+- **验证**：`tests/verify_simd_c99_neon.sh`；夹具 `tests/fixtures/simd_c99_neon.uya`（`make check` / `make check-hosted`）。
+- **文档**：规范 0.49.16（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
 ### v0.49.15 - SIMD：4×`u32` 有序比较 C99 lowering（2026-03-19）
 
 - **C99**：`emit_simd_x86_sse_runtime_helpers` 增加 `uya_simd_sse_{lt,gt,le,ge}_u32x4_mask`（SSE：与 `0x80000000` 异或后有符号比较；`#else`：按 `uint32_t` 通道比较）；`expr.uya` 掩码分支为 `uint32_t` 的 `<` `>` `<=` `>=` 映射 fast_kind 107–110。
