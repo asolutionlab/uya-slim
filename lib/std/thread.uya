@@ -631,6 +631,40 @@ struct AsyncComputeI32Future : Future<!i32> {
         return 0;
     }
 
+    fn finish_from_raw_value(self: &Self, raw_value: i32, waker: &Waker) Poll<!i32> {
+        var value: i32 = raw_value;
+        if self.slot_idx >= 0 {
+            if !thread_pool_has_shared_state(self.pool) || !thread_pool_slot_is_valid(self.slot_idx) {
+                return self.finish_with_pending_wake(thread_generic_error_i32(), waker);
+            }
+            if raw_value != self.slot_idx {
+                return self.finish_with_pending_wake(thread_generic_error_i32(), waker);
+            }
+            const pool_ref: &ThreadPool = self.pool;
+            value = pool_ref._shared_state.slots[self.slot_idx as usize].result;
+        }
+
+        const ok_value: !i32 = ok<i32>(value);
+        return self.finish_with_pending_wake(ok_value, waker);
+    }
+
+    fn finish_from_read(self: &Self, waker: &Waker) Poll<!i32> {
+        var raw_value: i32 = 0;
+        const read_result: !isize = sys_read(self.read_fd, (&raw_value) as *byte, @size_of(i32));
+        const n: isize = read_result catch |err| {
+            if thread_error_id_is_would_block(@error_id(err)) {
+                waker.wait_readable(self.read_fd);
+                return Poll<!i32>.Pending({});
+            }
+            const err_value: !i32 = read_result as! i32;
+            return self.finish_with_pending_wake(err_value, waker);
+        };
+        if n != @size_of(i32) as isize {
+            return self.finish_with_pending_wake(thread_generic_error_i32(), waker);
+        }
+        return self.finish_from_raw_value(raw_value, waker);
+    }
+
     fn poll(self: &Self, waker: &Waker) Poll<!i32> {
         if self.done != 0 {
             return self.state;
@@ -655,37 +689,7 @@ struct AsyncComputeI32Future : Future<!i32> {
             }
         }
 
-        var raw_value: i32 = 0;
-        const read_result: !isize = sys_read(self.read_fd, (&raw_value) as *byte, @size_of(i32));
-        const n: isize = read_result catch |err| {
-            if thread_error_id_is_would_block(@error_id(err)) {
-                waker.wait_readable(self.read_fd);
-                return Poll<!i32>.Pending({});
-            }
-            const err_value: !i32 = read_result as! i32;
-            return self.finish_with_pending_wake(err_value, waker);
-        };
-        if n == 0 {
-            return self.finish_with_pending_wake(thread_generic_error_i32(), waker);
-        }
-        if n != @size_of(i32) as isize {
-            return self.finish_with_pending_wake(thread_generic_error_i32(), waker);
-        }
-
-        var value: i32 = raw_value;
-        if self.slot_idx >= 0 {
-            if !thread_pool_has_shared_state(self.pool) || !thread_pool_slot_is_valid(self.slot_idx) {
-                return self.finish_with_pending_wake(thread_generic_error_i32(), waker);
-            }
-            if raw_value != self.slot_idx {
-                return self.finish_with_pending_wake(thread_generic_error_i32(), waker);
-            }
-            const pool_ref: &ThreadPool = self.pool;
-            value = pool_ref._shared_state.slots[self.slot_idx as usize].result;
-        }
-
-        const ok_value: !i32 = ok<i32>(value);
-        return self.finish_with_pending_wake(ok_value, waker);
+        return self.finish_from_read(waker);
     }
 }
 
