@@ -1,0 +1,9 @@
+// SIMD 第一阶段不支持向量取模 %
+type Vec4i32 = @vector(i32, 4);
+
+export fn main() i32 {
+    const a: Vec4i32 = @vector.splat(7);
+    const b: Vec4i32 = @vector.splat(3);
+    const r: Vec4i32 = a % b;
+    return 0;
+}
