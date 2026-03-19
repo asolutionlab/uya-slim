@@ -11,8 +11,8 @@ fn consume_box(b: SimdBox) i32 {
     if @vector.all(b.flags) == false {
         return 5;
     }
-    const t3: Vec4i32 = @vector.splat(3);
-    const ok: Mask4 = b.data == t3;
+    // splat 目标类型由对侧向量表达式推断（checker：向量二元运算对侧绑定）
+    const ok: Mask4 = b.data == @vector.splat(3);
     if @vector.all(ok) == false {
         return 6;
     }
@@ -23,8 +23,7 @@ export fn main() i32 {
     const a: Vec4i32 = @vector.splat(1);
     const b: Vec4i32 = @vector.splat(2);
     const sum: Vec4i32 = a + b;
-    const t3: Vec4i32 = @vector.splat(3);
-    const m: Mask4 = sum == t3;
+    const m: Mask4 = sum == @vector.splat(3);
     var box: SimdBox = SimdBox{ data: sum, flags: m };
     if @vector.all(box.flags) == false {
         return 1;

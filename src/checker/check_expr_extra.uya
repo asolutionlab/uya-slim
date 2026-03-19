@@ -442,6 +442,22 @@ fn checker_check_binary_expr(checker: &TypeChecker, node: &ASTNode) Type {
     const op: TokenType = node.binary_expr_op as TokenType;
     var left_type: Type = checker_infer_type(checker, node.binary_expr_left);
     var right_type: Type = checker_infer_type(checker, node.binary_expr_right);
+
+    // SIMD：一侧为 @vector 另一侧为未绑定目标的 @vector.splat 时，从向量侧推断 splat
+    if op == TokenType.TOKEN_PLUS || op == TokenType.TOKEN_MINUS || op == TokenType.TOKEN_ASTERISK || op == TokenType.TOKEN_SLASH ||
+        op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL || op == TokenType.TOKEN_LESS ||
+        op == TokenType.TOKEN_GREATER || op == TokenType.TOKEN_LESS_EQUAL || op == TokenType.TOKEN_GREATER_EQUAL ||
+        op == TokenType.TOKEN_AMPERSAND || op == TokenType.TOKEN_PIPE || op == TokenType.TOKEN_CARET ||
+        op == TokenType.TOKEN_LSHIFT || op == TokenType.TOKEN_RSHIFT {
+        if left_type.kind == TypeKind.TYPE_VECTOR && right_type.kind != TypeKind.TYPE_VECTOR {
+            checker_simd_bind_splat_from_peer_if_needed(checker, node.binary_expr_right, copy_type(&left_type));
+            right_type = checker_infer_type(checker, node.binary_expr_right);
+        }
+        if right_type.kind == TypeKind.TYPE_VECTOR && left_type.kind != TypeKind.TYPE_VECTOR {
+            checker_simd_bind_splat_from_peer_if_needed(checker, node.binary_expr_left, copy_type(&right_type));
+            left_type = checker_infer_type(checker, node.binary_expr_left);
+        }
+    }
     
     // 从另一侧解析 max/min（TypeKind.TYPE_INT_LIMIT）的整数类型
     if left_type.kind == TypeKind.TYPE_INT_LIMIT && is_integer_type(right_type.kind) != 0 {

@@ -2728,7 +2728,7 @@ interface IReadWriter {
   - `src/lexer.uya` / `src/ast.uya` / `src/parser/types.uya`
   - `src/checker/types.uya` / `type_from_ast.uya` / `check_expr_extra.uya`
   - `src/codegen/c99/*` 先做语义正确的标量回退
-  - 测试：`test_simd_value_ops.uya`、`test_simd_fn_vector_return.uya`、`test_simd_struct_field_ops.uya`、`test_simd_splat_f32_suffix.uya` 与 `error_simd_*.uya`
+  - 测试：`test_simd_value_ops.uya`、`test_simd_fn_vector_return.uya`、`test_simd_struct_field_ops.uya`、`test_simd_splat_f32_suffix.uya`、`test_simd_splat_peer_infer.uya` 与 `error_simd_*.uya`
 - **阶段 3**：标准库性能试点
   - 在 `std.json` Stage 1 结构字符扫描中引入 AVX2/NEON 的 `@asm` 可选路径
   - 编译期继续复用 `std.cfg(...)` / `@asm_target()`

@@ -981,6 +981,21 @@ fn checker_resolve_simd_splat_expr(checker: &TypeChecker, expr: &ASTNode, expect
     return 1;
 }
 
+// 当 splat 尚无可从上下文解析的目标类型时，用对侧已知的 @vector(T,N) 绑定（如 a == @vector.splat(3)）
+fn checker_simd_bind_splat_from_peer_if_needed(checker: &TypeChecker, maybe_splat: &ASTNode, peer_vector: Type) void {
+    if checker == null || maybe_splat == null || peer_vector.kind != TypeKind.TYPE_VECTOR {
+        return;
+    }
+    const sm: &byte = simd_get_vector_builtin_method(maybe_splat);
+    if sm == null || str_equals(sm, "splat" as *byte) == 0 {
+        return;
+    }
+    if maybe_splat.simd_splat_target_type != null {
+        return;
+    }
+    _ = checker_resolve_simd_splat_expr(checker, maybe_splat, copy_type(&peer_vector));
+}
+
 // 检查表达式类型是否匹配预期类型
 // 参数：checker - TypeChecker 指针，expr - 表达式节点，expected_type - 预期类型
 // 返回：1 表示类型匹配，0 表示类型不匹配

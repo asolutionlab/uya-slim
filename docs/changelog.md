@@ -8,6 +8,12 @@
 
 **发布日期：** 待定
 
+### v0.49.3 - SIMD splat 对侧向量类型推断（2026-03-19）
+
+- **类型检查**：`checker_check_binary_expr` 在向量算术、比较、整数向量位运算与位移中，若一侧为 `@vector`、另一侧为未绑定目标的 `@vector.splat`，则从向量侧绑定 splat 目标类型。
+- **测试**：`test_simd_splat_peer_infer.uya`；`test_simd_struct_field_ops.uya` 恢复内联 `@vector.splat` 比较写法。
+- **文档**：规范 0.49.3（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`）。
+
 ### v0.49.2 - 浮点后缀解析与 SIMD 代码生成补强（2026-03-19）
 
 - **编译器**：`parse_float_literal_with_suffix` 正确识别以小写 `f32` / `f64` 结尾的浮点字面量（此前 `TOKEN_FLOAT` 路径会漏识后缀）。

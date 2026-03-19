@@ -4360,6 +4360,7 @@ static struct Type find_struct_field_type_with_substitution(struct TypeChecker *
 struct Type checker_check_expr_checker_infer_type(struct TypeChecker * checker, struct ASTNode * expr);
 static uint8_t * simd_get_vector_builtin_method(struct ASTNode * call_expr);
 static int32_t checker_resolve_simd_splat_expr(struct TypeChecker * checker, struct ASTNode * expr, struct Type expected_type);
+static void checker_simd_bind_splat_from_peer_if_needed(struct TypeChecker * checker, struct ASTNode * maybe_splat, struct Type peer_vector);
 static int32_t checker_check_expr_type(struct TypeChecker * checker, struct ASTNode * expr, struct Type expected_type);
 static struct Type infer_call_expr(struct TypeChecker * checker, struct ASTNode * expr);
 static struct Type infer_member_access(struct TypeChecker * checker, struct ASTNode * expr);
@@ -30120,6 +30121,23 @@ static __attribute__((unused)) int32_t checker_resolve_simd_splat_expr(struct Ty
     return _uya_ret;
 }
 
+static __attribute__((unused)) void checker_simd_bind_splat_from_peer_if_needed(struct TypeChecker * checker, struct ASTNode * maybe_splat, struct Type peer_vector) {
+    (void)checker;
+    (void)maybe_splat;
+    (void)peer_vector;
+    if ((((checker == NULL) || (maybe_splat == NULL)) || (peer_vector.kind != TypeKind_TYPE_VECTOR))) {
+        return;
+    }
+    uint8_t * const sm = simd_get_vector_builtin_method(maybe_splat);
+    if (((sm == NULL) || (str_equals(sm, (uint8_t *)(uint8_t *)str723) == 0))) {
+        return;
+    }
+    if ((maybe_splat->simd_splat_target_type != NULL)) {
+        return;
+    }
+    (void)(checker_resolve_simd_splat_expr(checker, maybe_splat, copy_type((&peer_vector))));
+}
+
 static __attribute__((unused)) int32_t checker_check_expr_type(struct TypeChecker * checker, struct ASTNode * expr, struct Type expected_type) {
     (void)checker;
     (void)expr;
@@ -31313,6 +31331,16 @@ static __attribute__((unused)) struct Type checker_check_binary_expr(struct Type
     const enum TokenType op = (enum TokenType)node->binary_expr_op;
     struct Type left_type = checker_check_expr_checker_infer_type(checker, node->binary_expr_left);
     struct Type right_type = checker_check_expr_checker_infer_type(checker, node->binary_expr_right);
+    if ((((((((((((((((op == TokenType_TOKEN_PLUS) || (op == TokenType_TOKEN_MINUS)) || (op == TokenType_TOKEN_ASTERISK)) || (op == TokenType_TOKEN_SLASH)) || (op == TokenType_TOKEN_EQUAL)) || (op == TokenType_TOKEN_NOT_EQUAL)) || (op == TokenType_TOKEN_LESS)) || (op == TokenType_TOKEN_GREATER)) || (op == TokenType_TOKEN_LESS_EQUAL)) || (op == TokenType_TOKEN_GREATER_EQUAL)) || (op == TokenType_TOKEN_AMPERSAND)) || (op == TokenType_TOKEN_PIPE)) || (op == TokenType_TOKEN_CARET)) || (op == TokenType_TOKEN_LSHIFT)) || (op == TokenType_TOKEN_RSHIFT))) {
+        if (((left_type.kind == TypeKind_TYPE_VECTOR) && (right_type.kind != TypeKind_TYPE_VECTOR))) {
+            checker_simd_bind_splat_from_peer_if_needed(checker, node->binary_expr_right, copy_type((&left_type)));
+            right_type = checker_check_expr_checker_infer_type(checker, node->binary_expr_right);
+        }
+        if (((right_type.kind == TypeKind_TYPE_VECTOR) && (left_type.kind != TypeKind_TYPE_VECTOR))) {
+            checker_simd_bind_splat_from_peer_if_needed(checker, node->binary_expr_left, copy_type((&right_type)));
+            left_type = checker_check_expr_checker_infer_type(checker, node->binary_expr_left);
+        }
+    }
     if (((left_type.kind == TypeKind_TYPE_INT_LIMIT) && (is_integer_type(right_type.kind) != 0))) {
         resolve_int_limit_node(node->binary_expr_left, copy_type((&right_type)));
         left_type = copy_type((&right_type));
