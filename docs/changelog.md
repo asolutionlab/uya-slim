@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.17 - SIMD：8×`i32`/`u32`/`f32` 双 x4 lowering（2026-03-19）
+
+- **C99**：`expr.uya` 对 **8 通道**向量/掩码复用 **`uya_simd_sse_*x4`** 两次（`&lanes[4]`）；`@vector.splat` / 一元 `-` 同步；测试 `test_simd_vec8_sse_chain.uya`。
+- **文档**：规范 0.49.17（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
 ### v0.49.16 - SIMD：C99 ARM NEON 分支（2026-03-19）
 
 - **C99**：`emit_simd_*` 在 **`UYA_HAVE_SIMD_ARM_NEON`** 下输出与 SSE 同名的 **`uya_simd_sse_*`** NEON 实现（`<arm_neon.h>`）；`#if` / `#elif` / `#else` 三档（SSE / NEON / 标量）。
