@@ -548,12 +548,13 @@ struct AsyncComputeI32Future : Future<!i32> {
         return result_poll;
     }
 
-    fn try_bind_running_worker(self: &Self) i32 {
+    fn try_bind_slot_worker(self: &Self) i32 {
         if self.slot_idx < 0 || !thread_pool_has_shared_state(self.pool) {
             return 0;
         }
         const pool_ref: &ThreadPool = self.pool;
-        if pool_ref._shared_state.slots[self.slot_idx as usize].state != THREAD_SLOT_STATE_RUNNING {
+        const slot_state: i32 = pool_ref._shared_state.slots[self.slot_idx as usize].state;
+        if slot_state != THREAD_SLOT_STATE_RUNNING && slot_state != THREAD_SLOT_STATE_DONE {
             return 0;
         }
 
@@ -643,7 +644,7 @@ struct AsyncComputeI32Future : Future<!i32> {
 
         if self.read_fd < 0 {
             if self.slot_idx >= 0 {
-                if self.try_bind_running_worker() != 0 {
+                if self.try_bind_slot_worker() != 0 {
                     return Poll<!i32>.Pending({});
                 }
                 if self.read_fd < 0 {

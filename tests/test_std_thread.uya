@@ -344,6 +344,10 @@ test "async_compute_i32_binds_completed_queued_slot_after_late_poll" {
     try assert_eq_i32(thread_pool_pending_count(&pool), 1);
     try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
 
+    // 给 worker 额外时间，尽量把 second 推进到 DONE，再测试 future 的迟绑定。
+    sleep_briefly();
+    sleep_briefly();
+
     // second 可能在这里已经被 worker drain 并完成，但 future 还没重新 poll 绑定结果 fd。
     try assert_eq_i32(thread_pool_pending_count(&pool), 0);
     try assert_eq_i32(try thread_test_drive_future_i32(second), 14);
