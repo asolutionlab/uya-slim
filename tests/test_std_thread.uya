@@ -31,6 +31,10 @@ fn double_usize(v: usize) usize {
     return v * (2 as usize);
 }
 
+fn double_u32(v: u32) u32 {
+    return v * (2 as u32);
+}
+
 fn delayed_add_five_usize(v: usize) usize {
     sleep_briefly();
     return v + (5 as usize);
@@ -72,6 +76,17 @@ fn thread_test_run_usize(pool: &ThreadPool, compute_fn: &void, arg: usize) !usiz
     return scheduler_run_usize_with_event_loop(&s, loop, f, 50);
 }
 
+fn thread_test_run_u32(pool: &ThreadPool, compute_fn: &void, arg: u32) !u32 {
+    var s: Scheduler = scheduler_new();
+    var loop_impl: LinuxEpoll = try thread_test_epoll();
+    defer {
+        _ = sys_close(loop_impl.epfd);
+    }
+    const loop: EventLoop = loop_impl;
+    const f: AsyncComputeU32Future = async_compute_u32(pool, compute_fn, arg);
+    return scheduler_run_u32_with_event_loop(&s, loop, f, 50);
+}
+
 fn thread_test_run_generic_i32(pool: &ThreadPool, compute_fn: &void, arg: i32) !i32 {
     var s: Scheduler = scheduler_new();
     var loop_impl: LinuxEpoll = try thread_test_epoll();
@@ -92,6 +107,17 @@ fn thread_test_run_generic_usize(pool: &ThreadPool, compute_fn: &void, arg: usiz
     const loop: EventLoop = loop_impl;
     const f: Future<!usize> = async_compute<usize>(pool, compute_fn, arg);
     return scheduler_run_usize_with_event_loop(&s, loop, f, 50);
+}
+
+fn thread_test_run_generic_u32(pool: &ThreadPool, compute_fn: &void, arg: u32) !u32 {
+    var s: Scheduler = scheduler_new();
+    var loop_impl: LinuxEpoll = try thread_test_epoll();
+    defer {
+        _ = sys_close(loop_impl.epfd);
+    }
+    const loop: EventLoop = loop_impl;
+    const f: Future<!u32> = async_compute<u32>(pool, compute_fn, arg);
+    return scheduler_run_u32_with_event_loop(&s, loop, f, 50);
 }
 
 fn thread_test_drive_future_usize(f: AsyncComputeUsizeFuture) !usize {
@@ -414,6 +440,27 @@ test "async_compute_generic_usize_runs_with_thread_pool" {
     }
 
     const result: usize = try thread_test_run_generic_usize(&pool, &double_usize as &void, 21 as usize);
+    try assert_eq_i32(result as i32, 42);
+}
+
+test "async_compute_u32_runs_with_thread_pool" {
+    var pool: ThreadPool = thread_pool_new(2);
+    defer {
+        thread_pool_shutdown(&pool);
+    }
+
+    const result: u32 = try thread_test_run_u32(&pool, &double_u32 as &void, 21 as u32);
+    try assert_eq_i32(result as i32, 42);
+    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
+}
+
+test "async_compute_generic_u32_runs_with_thread_pool" {
+    var pool: ThreadPool = thread_pool_new(2);
+    defer {
+        thread_pool_shutdown(&pool);
+    }
+
+    const result: u32 = try thread_test_run_generic_u32(&pool, &double_u32 as &void, 21 as u32);
     try assert_eq_i32(result as i32, 42);
 }
 

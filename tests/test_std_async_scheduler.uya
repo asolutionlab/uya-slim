@@ -10,6 +10,11 @@ fn ready(v: i32) Future<!i32> {
     return Future<!i32>{ state: p };
 }
 
+fn ready_u32(v: u32) Future<!u32> {
+    const p: Poll<!u32> = Poll<!u32>.Ready(ok<u32>(v));
+    return Future<!u32>{ state: p };
+}
+
 struct SchedulerFutureHolder {
     future: Future<!i32>,
 }
@@ -38,6 +43,12 @@ test "scheduler_run" {
     var s: Scheduler = scheduler_new();
     const result: i32 = try scheduler_run_i32(&s, add_async());
     try assert_eq_i32(result, 30);
+}
+
+test "scheduler_run_u32" {
+    var s: Scheduler = scheduler_new();
+    const result: u32 = try scheduler_run_u32(&s, ready_u32(12 as u32));
+    try assert_eq_i32(result as i32, 12);
 }
 
 test "interface_field_method_call_after_array_access" {

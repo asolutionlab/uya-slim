@@ -2657,6 +2657,7 @@ struct TypeInfo {
     int32_t size;
     int32_t align;
     int32_t kind;
+    int32_t type_id;
     bool is_integer;
     bool is_float;
     bool is_bool;

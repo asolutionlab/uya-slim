@@ -9,6 +9,11 @@ fn ready(v: i32) Future<!i32> {
     return Future<!i32>{ state: p };
 }
 
+fn ready_u32(v: u32) Future<!u32> {
+    const p: Poll<!u32> = Poll<!u32>.Ready(ok<u32>(v));
+    return Future<!u32>{ state: p };
+}
+
 @async_fn
 fn two_awaits() Future<!i32> {
     const a: i32 = try @await ready(1);
@@ -50,4 +55,10 @@ test "block_on_resets_waker_between_polls" {
     const result: i32 = block_on_i32(f) catch { 0 - 2; };
     try assert_eq_i32(result, 7);
     try assert_eq_i32(block_on_reset_poll_count, 2);
+}
+
+test "block_on_u32_runs_until_ready" {
+    const f: Future<!u32> = ready_u32(9 as u32);
+    const result: u32 = block_on_u32(f) catch { 0 as u32; };
+    try assert_eq_i32(result as i32, 9);
 }

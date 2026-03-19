@@ -1,7 +1,7 @@
 // lib/std/thread.uya - 线程与异步计算最小实现
 //
 // 模块路径：use std.thread
-// 当前提供：ThreadPool（最小可复用 worker 池）+ async_compute_i32/async_compute_usize
+// 当前提供：ThreadPool（最小可复用 worker 池）+ async_compute_i32/async_compute_u32/async_compute_usize
 
 use std.async;
 use std.macro_typeinfo.TypeInfo;
@@ -20,7 +20,8 @@ const THREAD_SLOT_STATE_DONE: i32 = 4;
 const THREAD_WORKER_STOP_SLOT: i32 = 0 - 1;
 const THREAD_WORKER_DRAIN_QUEUE: i32 = 0 - 2;
 const THREAD_TASK_KIND_I32: i32 = 1;
-const THREAD_TASK_KIND_USIZE: i32 = 2;
+const THREAD_TASK_KIND_U32: i32 = 2;
+const THREAD_TASK_KIND_USIZE: i32 = 3;
 
 fn thread_error_id_is_would_block(err_id: u32) bool {
     return err_id == THREAD_ERR_EAGAIN || err_id == THREAD_ERR_EWOULDBLOCK;
@@ -39,6 +40,15 @@ fn thread_generic_error_usize() !usize {
     return close_result as! usize;
 }
 
+fn thread_generic_error_u32() !u32 {
+    const close_result: !i32 = sys_close(0 - 1);
+    return close_result as! u32;
+}
+
+fn thread_ok_u32(value: u32) !u32 {
+    return value;
+}
+
 mc thread_type_is_i32(T: type) expr {
     const info: TypeInfo = @mc_type(T);
     info.type_id == 2;
@@ -47,6 +57,11 @@ mc thread_type_is_i32(T: type) expr {
 mc thread_type_is_usize(T: type) expr {
     const info: TypeInfo = @mc_type(T);
     info.type_id == 7;
+}
+
+mc thread_type_is_u32(T: type) expr {
+    const info: TypeInfo = @mc_type(T);
+    info.type_id == 6;
 }
 
 // 通过内联汇编调用 i32(i32) 形式的函数指针。
@@ -67,6 +82,16 @@ fn thread_call_usize(fn_ptr: &void, arg: usize) usize {
         "mov %2, %%rdi\n\tmov %1, %%rax\n\tcall *%%rax\n\tmov %%rax, %0" (fn_ptr, arg64, -> ret);
     } clobbers = ["rax", "rdi", "rcx", "r11", "memory"];
     return ret as usize;
+}
+
+// 通过内联汇编调用 u32(u32) 形式的函数指针。
+fn thread_call_u32(fn_ptr: &void, arg: u32) u32 {
+    var ret: i64 = 0;
+    const arg64: i64 = arg as i64;
+    @asm {
+        "mov %2, %%rdi\n\tmov %1, %%rax\n\tcall *%%rax\n\tmov %%rax, %0" (fn_ptr, arg64, -> ret);
+    } clobbers = ["rax", "rdi", "rcx", "r11", "memory"];
+    return ret as u32;
 }
 
 struct ThreadWorker {
@@ -226,6 +251,9 @@ fn thread_worker_loop(worker_idx: i32, cmd_read_fd: i32, result_write_fd: i32, s
                 var result_bits: usize = 0 as usize;
                 if shared_state.slots[slot_idx as usize].task_kind == THREAD_TASK_KIND_USIZE {
                     result_bits = thread_call_usize(fn_ptr, shared_state.slots[slot_idx as usize].arg_bits);
+                } else if shared_state.slots[slot_idx as usize].task_kind == THREAD_TASK_KIND_U32 {
+                    const value_u32: u32 = thread_call_u32(fn_ptr, shared_state.slots[slot_idx as usize].arg_bits as u32);
+                    result_bits = value_u32 as usize;
                 } else {
                     const value_i32: i32 = thread_call_i32(fn_ptr, shared_state.slots[slot_idx as usize].arg_bits as i32);
                     result_bits = value_i32 as usize;
@@ -511,6 +539,10 @@ fn thread_pool_submit_slot_usize(pool: &ThreadPool, compute_fn: &void, arg: usiz
     return thread_pool_submit_slot_raw(pool, compute_fn, THREAD_TASK_KIND_USIZE, arg);
 }
 
+fn thread_pool_submit_slot_u32(pool: &ThreadPool, compute_fn: &void, arg: u32) i32 {
+    return thread_pool_submit_slot_raw(pool, compute_fn, THREAD_TASK_KIND_U32, arg as usize);
+}
+
 fn thread_pool_enqueue_slot(pool: &ThreadPool, slot_idx: i32) i32 {
     if pool == null as &ThreadPool || !thread_pool_slot_is_valid(slot_idx) || !thread_pool_has_shared_state(pool) {
         return 0;
@@ -652,6 +684,9 @@ struct ThreadAsyncComputeCore {
             var value_bits: usize = 0 as usize;
             if self.task_kind == THREAD_TASK_KIND_USIZE {
                 value_bits = thread_call_usize(self.compute_fn, self.arg_bits);
+            } else if self.task_kind == THREAD_TASK_KIND_U32 {
+                const value_u32: u32 = thread_call_u32(self.compute_fn, self.arg_bits as u32);
+                value_bits = value_u32 as usize;
             } else {
                 const value_i32: i32 = thread_call_i32(self.compute_fn, self.arg_bits as i32);
                 value_bits = value_i32 as usize;
@@ -820,6 +855,52 @@ export struct AsyncComputeUsizeFuture : Future<!usize> {
     }
 }
 
+export struct AsyncComputeU32Future : Future<!u32> {
+    core: ThreadAsyncComputeCore,
+    done: i32,
+    state: Poll<!u32>,
+
+    fn finish(self: &Self, result: !u32) Poll<!u32> {
+        self.core.finish_cleanup();
+        self.state = Poll<!u32>.Ready(result);
+        self.done = 1;
+        return self.state;
+    }
+
+    fn finish_with_pending_wake(self: &Self, result: !u32, waker: &Waker) Poll<!u32> {
+        const result_poll: Poll<!u32> = self.finish(result);
+        if thread_pool_has_pending(self.core.pool) {
+            waker.wake();
+        }
+        return result_poll;
+    }
+
+    fn finish_from_raw_poll(self: &Self, raw_poll: Poll<!usize>, waker: &Waker) Poll<!u32> {
+        match raw_poll {
+            .Ready(raw_result) => {
+                const raw_value: usize = raw_result catch {
+                    const err_value: !u32 = raw_result as! u32;
+                    return self.finish_with_pending_wake(err_value, waker);
+                };
+                const ok_value: !u32 = thread_ok_u32(raw_value as u32);
+                return self.finish_with_pending_wake(ok_value, waker);
+            },
+            .Pending(_) => {
+                return Poll<!u32>.Pending({});
+            },
+        };
+    }
+
+    fn poll(self: &Self, waker: &Waker) Poll<!u32> {
+        if self.done != 0 {
+            return self.state;
+        }
+
+        const raw_poll: Poll<!usize> = self.core.poll_raw(waker);
+        return self.finish_from_raw_poll(raw_poll, waker);
+    }
+}
+
 // 线程池最小构造：当前使用懒启动 worker 池，队列中的任务负载放在固定共享槽位中。
 export fn thread_pool_new(worker_count: i32) ThreadPool {
     var normalized: i32 = worker_count;
@@ -937,6 +1018,29 @@ export fn async_compute_usize(pool: &ThreadPool, compute_fn: &void, arg: usize) 
     return thread_async_compute_usize_impl(pool, compute_fn, arg);
 }
 
+fn thread_async_compute_u32_impl(pool: &ThreadPool, compute_fn: &void, arg: u32) AsyncComputeU32Future {
+    return AsyncComputeU32Future{
+        core: ThreadAsyncComputeCore{
+            pool: pool,
+            compute_fn: compute_fn,
+            task_kind: THREAD_TASK_KIND_U32,
+            arg_bits: arg as usize,
+            slot_idx: 0 - 1,
+            worker_idx: 0 - 1,
+            read_fd: 0 - 1,
+            child_pid: 0,
+            owns_read_fd: 0,
+            first_poll: 0,
+        },
+        done: 0,
+        state: Poll<!u32>.Pending({}),
+    };
+}
+
+export fn async_compute_u32(pool: &ThreadPool, compute_fn: &void, arg: u32) AsyncComputeU32Future {
+    return thread_async_compute_u32_impl(pool, compute_fn, arg);
+}
+
 // 通用 async_compute<T> 顶层入口。
 // 依赖单态化后的常量条件裁剪，仅保留与 T 对应的 concrete future 分支。
 export fn async_compute<T>(pool: &ThreadPool, compute_fn: &void, arg: T) Future<!T> {
@@ -947,6 +1051,10 @@ export fn async_compute<T>(pool: &ThreadPool, compute_fn: &void, arg: T) Future<
     if thread_type_is_usize(T) {
         const future_usize: AsyncComputeUsizeFuture = async_compute_usize(pool, compute_fn, arg as usize);
         return future_usize;
+    }
+    if thread_type_is_u32(T) {
+        const future_u32: AsyncComputeU32Future = async_compute_u32(pool, compute_fn, arg as u32);
+        return future_u32;
     }
     const close_result: !i32 = sys_close(0 - 1);
     return Future<!T>{ state: Poll<!T>.Ready(close_result as! T) };

@@ -146,6 +146,20 @@ export fn block_on_i32(f: Future<!i32>) !i32 {
     }
 }
 
+/// block_on 的 u32 特化。
+export fn block_on_u32(f: Future<!u32>) !u32 {
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!u32> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => { },
+        };
+    }
+}
+
 /// block_on 的 usize 特化。
 export fn block_on_usize(f: Future<!usize>) !usize {
     var w: Waker = Waker{};
