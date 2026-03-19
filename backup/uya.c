@@ -4385,6 +4385,9 @@ struct Type checker_check_expr_checker_infer_type(struct TypeChecker * checker, 
 static uint8_t * simd_get_vector_builtin_method(struct ASTNode * call_expr);
 static int32_t checker_resolve_simd_splat_expr(struct TypeChecker * checker, struct ASTNode * expr, struct Type expected_type);
 static void checker_simd_bind_splat_from_peer_if_needed(struct TypeChecker * checker, struct ASTNode * maybe_splat, struct Type peer_vector);
+static int32_t checker_expr_is_unbound_vector_splat(struct ASTNode * expr);
+static int32_t checker_simd_binary_op_supports_splat_context_bind(enum TokenType op);
+static void checker_simd_prep_expr_with_expected_vector(struct TypeChecker * checker, struct ASTNode * expr, struct Type expected_vec);
 static int32_t checker_check_expr_type(struct TypeChecker * checker, struct ASTNode * expr, struct Type expected_type);
 static struct Type infer_call_expr(struct TypeChecker * checker, struct ASTNode * expr);
 static struct Type infer_member_access(struct TypeChecker * checker, struct ASTNode * expr);
@@ -4813,6 +4816,7 @@ static uint8_t * c99_make_simd_name_suffix(struct C99CodeGenerator * codegen, ui
 static void c99_register_simd_struct(struct C99CodeGenerator * codegen, uint8_t * name, struct ASTNode * element_type, int32_t lanes, int32_t is_mask);
 static uint8_t * c99_type_to_c(struct C99CodeGenerator * codegen, struct ASTNode * type_node);
 static void emit_pending_slice_structs(struct C99CodeGenerator * codegen);
+static int32_t c99_err_union_payload_is_emittable(struct C99CodeGenerator * codegen, struct ASTNode * payload_node);
 static void emit_pending_err_union_structs(struct C99CodeGenerator * codegen);
 static void emit_pending_simd_structs(struct C99CodeGenerator * codegen);
 static uint8_t * get_slice_struct_type_c(struct C99CodeGenerator * codegen, struct ASTNode * slice_expr);
@@ -30314,6 +30318,74 @@ static __attribute__((unused)) void checker_simd_bind_splat_from_peer_if_needed(
     (void)(checker_resolve_simd_splat_expr(checker, maybe_splat, copy_type((&peer_vector))));
 }
 
+static __attribute__((unused)) int32_t checker_expr_is_unbound_vector_splat(struct ASTNode * expr) {
+    (void)expr;
+    if (((expr == NULL) || (expr->type != ASTNodeType_AST_CALL_EXPR))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    uint8_t * const sm = simd_get_vector_builtin_method(expr);
+    if (((sm == NULL) || (str_equals(sm, (uint8_t *)(uint8_t *)str724) == 0))) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    if ((expr->simd_splat_target_type != NULL)) {
+        int32_t _uya_ret = 0;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 1;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) int32_t checker_simd_binary_op_supports_splat_context_bind(enum TokenType op) {
+    (void)op;
+    if (((((((((((((((((((((((op == TokenType_TOKEN_PLUS) || (op == TokenType_TOKEN_MINUS)) || (op == TokenType_TOKEN_ASTERISK)) || (op == TokenType_TOKEN_SLASH)) || (op == TokenType_TOKEN_PERCENT)) || (op == TokenType_TOKEN_PLUS_PIPE)) || (op == TokenType_TOKEN_MINUS_PIPE)) || (op == TokenType_TOKEN_ASTERISK_PIPE)) || (op == TokenType_TOKEN_PLUS_PERCENT)) || (op == TokenType_TOKEN_MINUS_PERCENT)) || (op == TokenType_TOKEN_ASTERISK_PERCENT)) || (op == TokenType_TOKEN_EQUAL)) || (op == TokenType_TOKEN_NOT_EQUAL)) || (op == TokenType_TOKEN_LESS)) || (op == TokenType_TOKEN_GREATER)) || (op == TokenType_TOKEN_LESS_EQUAL)) || (op == TokenType_TOKEN_GREATER_EQUAL)) || (op == TokenType_TOKEN_AMPERSAND)) || (op == TokenType_TOKEN_PIPE)) || (op == TokenType_TOKEN_CARET)) || (op == TokenType_TOKEN_LSHIFT)) || (op == TokenType_TOKEN_RSHIFT))) {
+        int32_t _uya_ret = 1;
+        return _uya_ret;
+    }
+    int32_t _uya_ret = 0;
+    return _uya_ret;
+}
+
+static __attribute__((unused)) void checker_simd_prep_expr_with_expected_vector(struct TypeChecker * checker, struct ASTNode * expr, struct Type expected_vec) {
+    (void)checker;
+    (void)expr;
+    (void)expected_vec;
+    if ((((checker == NULL) || (expr == NULL)) || (expected_vec.kind != TypeKind_TYPE_VECTOR))) {
+        return;
+    }
+    if ((expr->type == ASTNodeType_AST_BINARY_EXPR)) {
+        const enum TokenType op = (enum TokenType)expr->binary_expr_op;
+        if ((checker_simd_binary_op_supports_splat_context_bind(op) == 0)) {
+            return;
+        }
+        if ((expr->binary_expr_left != NULL)) {
+            checker_simd_prep_expr_with_expected_vector(checker, expr->binary_expr_left, copy_type((&expected_vec)));
+        }
+        if ((expr->binary_expr_right != NULL)) {
+            checker_simd_prep_expr_with_expected_vector(checker, expr->binary_expr_right, copy_type((&expected_vec)));
+        }
+        struct Type left_type = checker_check_expr_checker_infer_type(checker, expr->binary_expr_left);
+        struct Type right_type = checker_check_expr_checker_infer_type(checker, expr->binary_expr_right);
+        if (((left_type.kind == TypeKind_TYPE_VECTOR) && (right_type.kind != TypeKind_TYPE_VECTOR))) {
+            checker_simd_bind_splat_from_peer_if_needed(checker, expr->binary_expr_right, copy_type((&left_type)));
+            right_type = checker_check_expr_checker_infer_type(checker, expr->binary_expr_right);
+        }
+        if (((right_type.kind == TypeKind_TYPE_VECTOR) && (left_type.kind != TypeKind_TYPE_VECTOR))) {
+            checker_simd_bind_splat_from_peer_if_needed(checker, expr->binary_expr_left, copy_type((&right_type)));
+            left_type = checker_check_expr_checker_infer_type(checker, expr->binary_expr_left);
+        }
+        if (((((left_type.kind != TypeKind_TYPE_VECTOR) && (right_type.kind != TypeKind_TYPE_VECTOR)) && (checker_expr_is_unbound_vector_splat(expr->binary_expr_left) != 0)) && (checker_expr_is_unbound_vector_splat(expr->binary_expr_right) != 0))) {
+            (void)(checker_resolve_simd_splat_expr(checker, expr->binary_expr_left, copy_type((&expected_vec))));
+            (void)(checker_resolve_simd_splat_expr(checker, expr->binary_expr_right, copy_type((&expected_vec))));
+        }
+        return;
+    }
+    if ((checker_expr_is_unbound_vector_splat(expr) != 0)) {
+        (void)(checker_resolve_simd_splat_expr(checker, expr, copy_type((&expected_vec))));
+    }
+}
+
 static __attribute__((unused)) int32_t checker_check_expr_type(struct TypeChecker * checker, struct ASTNode * expr, struct Type expected_type) {
     (void)checker;
     (void)expr;
@@ -40466,6 +40538,13 @@ static __attribute__((unused)) int32_t checker_check_node(struct TypeChecker * c
                                                                                             return _uya_ret;
                                                                                         }
                                                                                         if ((node->return_stmt_expr != NULL)) {
+                                                                                            if ((checker->current_return_type.kind == TypeKind_TYPE_VECTOR)) {
+                                                                                                checker_simd_prep_expr_with_expected_vector(checker, node->return_stmt_expr, copy_type((&checker->current_return_type)));
+                                                                                            } else {
+                                                                                                if ((((checker->current_return_type.kind == TypeKind_TYPE_ERROR_UNION) && (checker->current_return_type.error_union_payload_type != NULL)) && (checker->current_return_type.error_union_payload_type[0].kind == TypeKind_TYPE_VECTOR))) {
+                                                                                                    checker_simd_prep_expr_with_expected_vector(checker, node->return_stmt_expr, copy_type((&checker->current_return_type.error_union_payload_type[0])));
+                                                                                                }
+                                                                                            }
                                                                                             struct Type expr_type = checker_check_expr_checker_infer_type(checker, node->return_stmt_expr);
                                                                                             if ((expr_type.kind == TypeKind_TYPE_ERROR)) {
                                                                                                 if ((checker->current_return_type.kind != TypeKind_TYPE_ERROR_UNION)) {
@@ -62125,6 +62204,34 @@ static __attribute__((unused)) void emit_pending_slice_structs(struct C99CodeGen
                 }
             }
 
+static __attribute__((unused)) int32_t c99_err_union_payload_is_emittable(struct C99CodeGenerator * codegen, struct ASTNode * payload_node) {
+                (void)codegen;
+                (void)payload_node;
+                if (((codegen == NULL) || (payload_node == NULL))) {
+                    int32_t _uya_ret = 0;
+                    return _uya_ret;
+                }
+                struct ASTNode * cur = payload_node;
+                int32_t depth = 0;
+                while ((depth < 32)) {
+                    if (((cur->type == ASTNodeType_AST_TYPE_VECTOR) || (cur->type == ASTNodeType_AST_TYPE_MASK))) {
+                        int32_t _uya_ret = 1;
+                        return _uya_ret;
+                    }
+                    if (((((cur->type == ASTNodeType_AST_TYPE_NAMED) && (cur->type_named_name != NULL)) && (cur->type_named_type_arg_count == 0)) && (codegen->program_node != NULL))) {
+                        struct ASTNode * const al = find_type_alias_from_program(codegen->program_node, cur->type_named_name);
+                        if (((al != NULL) && (al->type_alias_target_type != NULL))) {
+                            cur = al->type_alias_target_type;
+                            depth = (depth + 1);
+                            continue;
+                        }
+                    }
+                    break;
+                }
+                int32_t _uya_ret = 0;
+                return _uya_ret;
+            }
+
 static __attribute__((unused)) void emit_pending_err_union_structs(struct C99CodeGenerator * codegen) {
                 (void)codegen;
                 if ((codegen == NULL)) {
@@ -62158,8 +62265,12 @@ static __attribute__((unused)) void emit_pending_err_union_structs(struct C99Cod
                         if ((payload_node->type == ASTNodeType_AST_TYPE_ARRAY)) {
                             is_known_type = 1;
                         } else {
-                            if ((((((((((((((strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1268, 3) == 0) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str2047, 4) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str2028, 5) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1466, 6) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str2005, 4) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str717, 4) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str713, 4) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str376, 6) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str374, 4) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1460, 8) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1464, 9) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1463, 6) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1465, 7) == 0))) {
+                            if ((c99_err_union_payload_is_emittable(codegen, payload_node) != 0)) {
                                 is_known_type = 1;
+                            } else {
+                                if ((((((((((((((strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1268, 3) == 0) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str2047, 4) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str2028, 5) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1466, 6) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str2005, 4) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str717, 4) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str713, 4) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str376, 6) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str374, 4) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1460, 8) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1464, 9) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1463, 6) == 0)) || (strncmp((uint8_t *)payload_c, (uint8_t *)(uint8_t *)str1465, 7) == 0))) {
+                                    is_known_type = 1;
+                                }
                             }
                         }
                         if ((is_known_type == 0)) {

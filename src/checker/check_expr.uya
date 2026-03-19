@@ -996,6 +996,73 @@ fn checker_simd_bind_splat_from_peer_if_needed(checker: &TypeChecker, maybe_spla
     _ = checker_resolve_simd_splat_expr(checker, maybe_splat, copy_type(&peer_vector));
 }
 
+fn checker_expr_is_unbound_vector_splat(expr: &ASTNode) i32 {
+    if expr == null || expr.type != ASTNodeType.AST_CALL_EXPR {
+        return 0;
+    }
+    const sm: &byte = simd_get_vector_builtin_method(expr);
+    if sm == null || str_equals(sm, "splat" as *byte) == 0 {
+        return 0;
+    }
+    if expr.simd_splat_target_type != null {
+        return 0;
+    }
+    return 1;
+}
+
+fn checker_simd_binary_op_supports_splat_context_bind(op: TokenType) i32 {
+    if op == TokenType.TOKEN_PLUS || op == TokenType.TOKEN_MINUS || op == TokenType.TOKEN_ASTERISK || op == TokenType.TOKEN_SLASH ||
+        op == TokenType.TOKEN_PERCENT ||
+        op == TokenType.TOKEN_PLUS_PIPE || op == TokenType.TOKEN_MINUS_PIPE || op == TokenType.TOKEN_ASTERISK_PIPE ||
+        op == TokenType.TOKEN_PLUS_PERCENT || op == TokenType.TOKEN_MINUS_PERCENT || op == TokenType.TOKEN_ASTERISK_PERCENT ||
+        op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL || op == TokenType.TOKEN_LESS ||
+        op == TokenType.TOKEN_GREATER || op == TokenType.TOKEN_LESS_EQUAL || op == TokenType.TOKEN_GREATER_EQUAL ||
+        op == TokenType.TOKEN_AMPERSAND || op == TokenType.TOKEN_PIPE || op == TokenType.TOKEN_CARET ||
+        op == TokenType.TOKEN_LSHIFT || op == TokenType.TOKEN_RSHIFT {
+        return 1;
+    }
+    return 0;
+}
+
+// 函数返回类型为 @vector(T,N)（或 !@vector 的成功值）时，在推断 return 表达式前绑定其中 @vector.splat 的目标类型
+fn checker_simd_prep_expr_with_expected_vector(checker: &TypeChecker, expr: &ASTNode, expected_vec: Type) void {
+    if checker == null || expr == null || expected_vec.kind != TypeKind.TYPE_VECTOR {
+        return;
+    }
+    if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        const op: TokenType = expr.binary_expr_op as TokenType;
+        if checker_simd_binary_op_supports_splat_context_bind(op) == 0 {
+            return;
+        }
+        if expr.binary_expr_left != null {
+            checker_simd_prep_expr_with_expected_vector(checker, expr.binary_expr_left, copy_type(&expected_vec));
+        }
+        if expr.binary_expr_right != null {
+            checker_simd_prep_expr_with_expected_vector(checker, expr.binary_expr_right, copy_type(&expected_vec));
+        }
+        var left_type: Type = checker_infer_type(checker, expr.binary_expr_left);
+        var right_type: Type = checker_infer_type(checker, expr.binary_expr_right);
+        if left_type.kind == TypeKind.TYPE_VECTOR && right_type.kind != TypeKind.TYPE_VECTOR {
+            checker_simd_bind_splat_from_peer_if_needed(checker, expr.binary_expr_right, copy_type(&left_type));
+            right_type = checker_infer_type(checker, expr.binary_expr_right);
+        }
+        if right_type.kind == TypeKind.TYPE_VECTOR && left_type.kind != TypeKind.TYPE_VECTOR {
+            checker_simd_bind_splat_from_peer_if_needed(checker, expr.binary_expr_left, copy_type(&right_type));
+            left_type = checker_infer_type(checker, expr.binary_expr_left);
+        }
+        if left_type.kind != TypeKind.TYPE_VECTOR && right_type.kind != TypeKind.TYPE_VECTOR &&
+            checker_expr_is_unbound_vector_splat(expr.binary_expr_left) != 0 &&
+            checker_expr_is_unbound_vector_splat(expr.binary_expr_right) != 0 {
+            _ = checker_resolve_simd_splat_expr(checker, expr.binary_expr_left, copy_type(&expected_vec));
+            _ = checker_resolve_simd_splat_expr(checker, expr.binary_expr_right, copy_type(&expected_vec));
+        }
+        return;
+    }
+    if checker_expr_is_unbound_vector_splat(expr) != 0 {
+        _ = checker_resolve_simd_splat_expr(checker, expr, copy_type(&expected_vec));
+    }
+}
+
 // 检查表达式类型是否匹配预期类型
 // 参数：checker - TypeChecker 指针，expr - 表达式节点，expected_type - 预期类型
 // 返回：1 表示类型匹配，0 表示类型不匹配

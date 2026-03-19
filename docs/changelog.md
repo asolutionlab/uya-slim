@@ -8,6 +8,13 @@
 
 **发布日期：** 待定
 
+### v0.49.8 - SIMD：`return` 与 splat 类型检查及 `!向量` err_union C99（2026-03-19）
+
+- **类型检查**：`checker_simd_prep_expr_with_expected_vector` — 在推断 `return` 子表达式前，按函数返回 `@vector` 或 `!T` 载荷为 `@vector` 绑定其中 `@vector.splat`（含嵌套二元式双 splat）。
+- **C99**：`c99_err_union_payload_is_emittable` + `emit_pending_err_union_structs` — 对载荷为 `@vector`/`@mask` 或类型别名指向它们的错误联合输出完整 `struct err_union_*`。
+- **测试**：`test_simd_return_splat_binary.uya`。
+- **文档**：规范 0.49.8（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`）。
+
 ### v0.49.7 - SIMD splat 二元式 C99 类型解析补强（2026-03-19）
 
 - **C99 代码生成**：`c99_resolve_simd_type_ast_from_expr` 对 `@vector.splat` 增加 `expected_type` / `current_function_return_type` 回退；二元 SIMD 操作数在仅一侧能解析向量类型时将对侧 `splat` 对齐为该 `@vector`。

@@ -456,6 +456,15 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         
         if node.return_stmt_expr != null {
             // 有返回值的 return 语句
+            // SIMD：返回类型为 @vector 或 !@vector 时，先将 return 表达式中的 @vector.splat 按返回向量类型绑定（与变量初始化上下文一致）
+            if checker.current_return_type.kind == TypeKind.TYPE_VECTOR {
+                checker_simd_prep_expr_with_expected_vector(checker, node.return_stmt_expr, copy_type(&checker.current_return_type));
+            } else if checker.current_return_type.kind == TypeKind.TYPE_ERROR_UNION &&
+                checker.current_return_type.error_union_payload_type != null &&
+                checker.current_return_type.error_union_payload_type[0].kind == TypeKind.TYPE_VECTOR {
+                checker_simd_prep_expr_with_expected_vector(checker, node.return_stmt_expr,
+                    copy_type(&checker.current_return_type.error_union_payload_type[0]));
+            }
             const expr_type: Type = checker_infer_type(checker, node.return_stmt_expr);
             
             // 特殊处理：return error.X 仅当函数返回 !T 时合法
