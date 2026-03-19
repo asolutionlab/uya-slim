@@ -203,6 +203,21 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             get_or_add_error_id(checker, node.error_decl_name, node);
         }
         return 1;
+    } else if node.type == ASTNodeType.AST_TYPE_ALIAS {
+        if checker.scope_level > 0 {
+            checker_report_error(checker, node, "type 别名只能在顶层定义" as *byte);
+            return 0;
+        }
+        if node.type_alias_target_type == null {
+            checker_report_error(checker, node, "type 别名缺少目标类型" as *byte);
+            return 0;
+        }
+        const prev_errors: i32 = checker.error_count;
+        _ = type_from_ast(checker, node.type_alias_target_type);
+        if checker.error_count > prev_errors {
+            return 0;
+        }
+        return 1;
     } else if node.type == ASTNodeType.AST_STRUCT_DECL {
         // 检查结构体声明是否在顶层（只能通过AST_PROGRAM访问）
         // 如果不在顶层，报告错误

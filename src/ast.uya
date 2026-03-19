@@ -146,6 +146,8 @@ enum ASTNodeType {
     AST_TYPE_TUPLE,  // 元组类型（(T1, T2, ...)）
     AST_TYPE_ERROR_UNION,  // 错误联合类型 !T
     AST_TYPE_ATOMIC,   // 原子类型（atomic T）
+    AST_TYPE_VECTOR,   // SIMD 向量类型（@vector(T, N)）
+    AST_TYPE_MASK,     // SIMD 掩码类型（@mask(N)）
 }
 
 // 字符串插值段（用于 AST_STRING_INTERP）
@@ -438,6 +440,11 @@ struct ASTNode {
     print_expr: &ASTNode,    // 要打印的表达式
     // type_atomic（atomic T）
     type_atomic_inner_type: &ASTNode,
+    // type_vector（@vector(T, N)）
+    type_vector_element_type: &ASTNode,
+    type_vector_size_expr: &ASTNode,
+    // type_mask（@mask(N)）
+    type_mask_size_expr: &ASTNode,
     // 优化相关字段（v0.7.3 新增）
     is_optimized: i32,          // 是否已被优化（1=是，0=否）
     optimized_value: i32,       // 优化后的值（常量折叠）
@@ -663,6 +670,10 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.asm_clobber_count = 0;
     node.asm_clobbers_memory = 0;
     node.print_expr = null;
+    node.type_atomic_inner_type = null;
+    node.type_vector_element_type = null;
+    node.type_vector_size_expr = null;
+    node.type_mask_size_expr = null;
     node.extern_var_decl_name = null;
     node.extern_var_decl_var_type = null;
     node.extern_var_decl_init_expr = null;

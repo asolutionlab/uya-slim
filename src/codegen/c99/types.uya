@@ -76,6 +76,76 @@ fn c99_type_to_c_with_self_opt(codegen: &C99CodeGenerator, type_node: &ASTNode, 
 // 类型转换递归深度限制（防止 Future/Poll 等泛型导致的无限递归）
 const C99_TYPE_CONV_MAX_DEPTH: i32 = 64;
 
+fn c99_make_simd_name_suffix(codegen: &C99CodeGenerator, type_c: &byte) &byte {
+    if codegen == null || type_c == null {
+        return null;
+    }
+
+    var src: &byte = type_c;
+    if strncmp(src as *byte, "const " as *byte, 6) == 0 {
+        src = &src[6];
+    }
+    if strncmp(src as *byte, "struct " as *byte, 7) == 0 {
+        src = &src[7];
+    } else if strncmp(src as *byte, "enum " as *byte, 5) == 0 {
+        src = &src[5];
+    }
+
+    const buf: &byte = arena_alloc(codegen.arena, STRUCT_NAME_BUF_SIZE) as &byte;
+    if buf == null {
+        return null;
+    }
+
+    var i: i32 = 0;
+    var j: i32 = 0;
+    while src[i] != 0 && j < STRUCT_NAME_BUF_SIZE - 1 {
+        const c: byte = src[i];
+        if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 48 && c <= 57) || c == 95 {
+            buf[j] = c;
+            j = j + 1;
+        } else if c == 42 {
+            if j < STRUCT_NAME_BUF_SIZE - 4 {
+                buf[j] = 95;      // _
+                buf[j + 1] = 112; // p
+                buf[j + 2] = 116; // t
+                buf[j + 3] = 114; // r
+                j = j + 4;
+            }
+        } else if c == 32 || c == 45 {
+            if j > 0 && buf[j - 1] != 95 {
+                buf[j] = 95;
+                j = j + 1;
+            }
+        }
+        i = i + 1;
+    }
+    buf[j] = 0;
+    return buf;
+}
+
+fn c99_register_simd_struct(codegen: &C99CodeGenerator, name: &byte, element_type: &ASTNode, lanes: i32, is_mask: i32) void {
+    if codegen == null || name == null {
+        return;
+    }
+
+    var i: i32 = 0;
+    while i < codegen.simd_struct_count {
+        if codegen.simd_struct_names[i] != null && strcmp(codegen.simd_struct_names[i] as *byte, name as *byte) == 0 {
+            return;
+        }
+        i = i + 1;
+    }
+
+    if codegen.simd_struct_count < C99_MAX_SIMD_STRUCTS {
+        codegen.simd_struct_names[codegen.simd_struct_count] = name;
+        codegen.simd_struct_element_types[codegen.simd_struct_count] = element_type;
+        codegen.simd_struct_lane_counts[codegen.simd_struct_count] = lanes;
+        codegen.simd_struct_is_mask[codegen.simd_struct_count] = is_mask;
+        codegen.simd_struct_count = codegen.simd_struct_count + 1;
+        add_struct_definition(codegen, name);
+    }
+}
+
 // 类型映射函数
 fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
     if type_node == null {
@@ -533,6 +603,62 @@ fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
         }
         snprintf(result as *byte, len, "_Atomic(%s)" as *byte, inner_c as *byte);
         return result;
+    } else if type_node.type == ASTNodeType.AST_TYPE_VECTOR {
+        const element_type: &ASTNode = type_node.type_vector_element_type;
+        const size_expr: &ASTNode = type_node.type_vector_size_expr;
+        if element_type == null || size_expr == null {
+            return ("void" as *byte) as &byte;
+        }
+        var lanes: i32 = eval_const_expr(codegen, size_expr);
+        if lanes <= 0 {
+            lanes = 1;
+        }
+        const element_c: &byte = c99_type_to_c(codegen, element_type);
+        const suffix: &byte = c99_make_simd_name_suffix(codegen, element_c);
+        if suffix == null {
+            return ("void" as *byte) as &byte;
+        }
+        var name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
+        snprintf(&name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "uya_simd_vector_%s_%d" as *byte, suffix as *byte, lanes);
+        const name_copy: &byte = c99_arena_strdup(codegen.arena, &name_buf[0]);
+        if name_copy == null {
+            return ("void" as *byte) as &byte;
+        }
+        if is_struct_defined(codegen, name_copy) == 0 {
+            c99_register_simd_struct(codegen, name_copy, element_type, lanes, 0);
+        }
+        const len: i32 = strlen(name_copy as *byte) + 9;
+        const result: &byte = arena_alloc(codegen.arena, len) as &byte;
+        if result == null {
+            return ("void" as *byte) as &byte;
+        }
+        snprintf(result as *byte, len, "struct %s" as *byte, name_copy as *byte);
+        return result;
+    } else if type_node.type == ASTNodeType.AST_TYPE_MASK {
+        const size_expr: &ASTNode = type_node.type_mask_size_expr;
+        if size_expr == null {
+            return ("void" as *byte) as &byte;
+        }
+        var lanes: i32 = eval_const_expr(codegen, size_expr);
+        if lanes <= 0 {
+            lanes = 1;
+        }
+        var name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
+        snprintf(&name_buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "uya_simd_mask_%d" as *byte, lanes);
+        const name_copy: &byte = c99_arena_strdup(codegen.arena, &name_buf[0]);
+        if name_copy == null {
+            return ("void" as *byte) as &byte;
+        }
+        if is_struct_defined(codegen, name_copy) == 0 {
+            c99_register_simd_struct(codegen, name_copy, null, lanes, 1);
+        }
+        const len: i32 = strlen(name_copy as *byte) + 9;
+        const result: &byte = arena_alloc(codegen.arena, len) as &byte;
+        if result == null {
+            return ("void" as *byte) as &byte;
+        }
+        snprintf(result as *byte, len, "struct %s" as *byte, name_copy as *byte);
+        return result;
     } else if type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION {
         // 错误联合类型 !T -> struct { uint32_t error_id; T value; }
         // 注意：只收集类型信息，不立即输出结构体定义（延迟到 emit_pending_err_union_structs）
@@ -922,6 +1048,50 @@ fn emit_pending_err_union_structs(codegen: &C99CodeGenerator) void {
             }
         }
         fputs(" };\n" as *byte, codegen.output as *void);
+        mark_struct_defined(codegen, name);
+        i = i + 1;
+    }
+}
+
+fn emit_pending_simd_structs(codegen: &C99CodeGenerator) void {
+    if codegen == null {
+        return;
+    }
+
+    var i: i32 = 0;
+    while i < codegen.simd_struct_count {
+        const name: &byte = codegen.simd_struct_names[i];
+        const element_type: &ASTNode = codegen.simd_struct_element_types[i];
+        const lanes: i32 = codegen.simd_struct_lane_counts[i];
+        const is_mask: i32 = codegen.simd_struct_is_mask[i];
+        if name == null || lanes <= 0 {
+            i = i + 1;
+            continue;
+        }
+        if is_struct_defined(codegen, name) != 0 {
+            i = i + 1;
+            continue;
+        }
+
+        if is_mask != 0 {
+            fprintf(codegen.output as *void, "struct %s { bool lanes[%d]; };\n" as *byte, name as *byte, lanes);
+            mark_struct_defined(codegen, name);
+            i = i + 1;
+            continue;
+        }
+
+        if element_type == null {
+            i = i + 1;
+            continue;
+        }
+
+        const element_c: &byte = c99_type_to_c(codegen, element_type);
+        if element_c == null {
+            i = i + 1;
+            continue;
+        }
+
+        fprintf(codegen.output as *void, "struct %s { %s lanes[%d]; };\n" as *byte, name as *byte, element_c as *byte, lanes);
         mark_struct_defined(codegen, name);
         i = i + 1;
     }
