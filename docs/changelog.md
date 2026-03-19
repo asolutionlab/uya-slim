@@ -8,6 +8,12 @@
 
 **发布日期：** 待定
 
+### v0.49.15 - SIMD：4×`u32` 有序比较 C99 lowering（2026-03-19）
+
+- **C99**：`emit_simd_x86_sse_runtime_helpers` 增加 `uya_simd_sse_{lt,gt,le,ge}_u32x4_mask`（SSE：与 `0x80000000` 异或后有符号比较；`#else`：按 `uint32_t` 通道比较）；`expr.uya` 掩码分支为 `uint32_t` 的 `<` `>` `<=` `>=` 映射 fast_kind 107–110。
+- **测试**：`test_simd_sse_compare_ops.uya` 增补无符号绕序（`0xFFFFFFFEu32` vs `0xFFFFFFFFu32`、`0` vs `0xFFFFFFFFu32`）。
+- **文档**：规范 0.49.15（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
 ### v0.49.14 - C99 `@syscall`：Linux ARM32（EABI）分支（2026-03-19）
 
 - **C99**：`uya_syscall0`…`6` 增加 **`#elif __arm__ && !__aarch64__ && __linux__`**（`svc 0`，nr→**r7**，参数 **r0**–**r5**；Thumb 安全保存/恢复 r7）。

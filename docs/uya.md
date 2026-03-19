@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.14（完整版 · 2026-03-19）
+# Uya 语言规范 0.49.15（完整版 · 2026-03-19）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -54,6 +54,11 @@
 
 ## 规范变更
 
+### 0.49.15（2026-03-19）
+
+- **C99 SIMD lowering（4×`u32` 有序比较）**：在 x86_64 SSE 快路径上，**4×`u32`** 的 **`<` `>` `<=` `>=`** → `@mask(4)` 生成 `uya_simd_sse_{lt,gt,le,ge}_u32x4_mask`（与 `0x80000000` 异或后用 `_mm_cmplt_epi32` 等有符号内建实现无符号序关系；`<=`/`>=` 结合 `_mm_cmpeq_epi32`）；**`==` / `!=`** 仍走按位 `uya_simd_sse_{eq,ne}_i32x4_mask`。宿主 **`#else`** 为同名标量 `static inline`。
+- **测试**：`test_simd_sse_compare_ops.uya`（含 `0xFFFFFFFEu32` / `0xFFFFFFFFu32` 与 `0` / `0xFFFFFFFFu32` 绕序场景）。
+
 ### 0.49.14（2026-03-19）
 
 - **C99 `@syscall`**：在 **Linux ARM32（EABI，`__arm__` 且非 `__aarch64__`）** 下增加 **`#elif defined(__arm__) && !defined(__aarch64__) && defined(__linux__)`** 分支：`svc 0`，系统调用号在 **r7**，参数 **r0**–**r5**；内联汇编在 Thumb 下通过临时操作数保存/恢复 r7（与常见 musl 做法一致）。**x86_64** 与 **Linux AArch64** 路径不变。
@@ -66,7 +71,7 @@
 
 ### 0.49.12（2026-03-19）
 
-- **C99 SIMD lowering（向量比较扩展）**：在 x86_64 SSE 快路径上，**4×`i32`** 支持 **`==` `!=` `<` `>` `<=` `>=`** → `@mask(4)`；**4×`f32`** 同样六种关系（`_mm_cmp*_ps`）；**4×`u32`** 仅 **`==` / `!=`** 走与按位一致的 `uya_simd_sse_*_i32x4_mask`，无符号有序比较仍逐通道标量。宿主 **`#else`** 为同名标量 `static inline`。
+- **C99 SIMD lowering（向量比较扩展）**：在 x86_64 SSE 快路径上，**4×`i32`** 支持 **`==` `!=` `<` `>` `<=` `>=`** → `@mask(4)`；**4×`f32`** 同样六种关系（`_mm_cmp*_ps`）；**4×`u32`** 在 0.49.12 起 **`==` / `!=`** 走 `uya_simd_sse_{eq,ne}_i32x4_mask`；**有序比较** 在 **0.49.15** 起走 `uya_simd_sse_{lt,gt,le,ge}_u32x4_mask`（此前为逐通道标量）。宿主 **`#else`** 为同名标量 `static inline`。
 - **测试**：`test_simd_sse_compare_ops.uya`。
 - **文档**：§5.1.1 勘误——使用 **`bin/uya` / `uya build` 等官方入口**时，编译器在检测到 **`export fn main`**、非导出的 **`fn main`** 或顶层 **`test "…"`** 时，会**自动**将 `std/runtime/entry/entry.uya` 加入编译单元；用户程序**不需要**、也**不应依赖**在源码中写 `use std.runtime.entry` 来引入该文件。仅在你**自行**只把 `app.uya` 交给其它工具链、且**未**走上述驱动时，才需手动把 `entry.uya` 列入输入（见下文说明）。
 

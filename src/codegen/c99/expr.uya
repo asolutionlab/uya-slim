@@ -1956,7 +1956,7 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
         return 0;
     }
     var fast_kind: i32 = 0;
-    // 101–106：掩码 i32 比较；201–206：掩码 f32；u32 仅 101/102；10+：向量算术见下
+    // 101–106：掩码 i32；107–110：掩码 u32 有序比较；201–206：掩码 f32；10+：向量算术
     if result_type_ast.type == ASTNodeType.AST_TYPE_MASK {
         if left_type_ast == null || left_type_ast.type != ASTNodeType.AST_TYPE_VECTOR ||
             left_type_ast.type_vector_element_type == null {
@@ -1987,6 +1987,14 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
                 fast_kind = 101;
             } else if simd_op == TokenType.TOKEN_NOT_EQUAL {
                 fast_kind = 102;
+            } else if simd_op == TokenType.TOKEN_LESS {
+                fast_kind = 107;
+            } else if simd_op == TokenType.TOKEN_GREATER {
+                fast_kind = 108;
+            } else if simd_op == TokenType.TOKEN_LESS_EQUAL {
+                fast_kind = 109;
+            } else if simd_op == TokenType.TOKEN_GREATER_EQUAL {
+                fast_kind = 110;
             } else {
                 return 0;
             }
@@ -2081,6 +2089,18 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
             result_name as *byte, left_name as *byte, right_name as *byte);
     } else if fast_kind == 106 {
         fprintf(codegen.output as *void, "uya_simd_sse_ge_i32x4_mask(%s.lanes, %s.lanes, %s.lanes); " as *byte,
+            result_name as *byte, left_name as *byte, right_name as *byte);
+    } else if fast_kind == 107 {
+        fprintf(codegen.output as *void, "uya_simd_sse_lt_u32x4_mask(%s.lanes, %s.lanes, %s.lanes); " as *byte,
+            result_name as *byte, left_name as *byte, right_name as *byte);
+    } else if fast_kind == 108 {
+        fprintf(codegen.output as *void, "uya_simd_sse_gt_u32x4_mask(%s.lanes, %s.lanes, %s.lanes); " as *byte,
+            result_name as *byte, left_name as *byte, right_name as *byte);
+    } else if fast_kind == 109 {
+        fprintf(codegen.output as *void, "uya_simd_sse_le_u32x4_mask(%s.lanes, %s.lanes, %s.lanes); " as *byte,
+            result_name as *byte, left_name as *byte, right_name as *byte);
+    } else if fast_kind == 110 {
+        fprintf(codegen.output as *void, "uya_simd_sse_ge_u32x4_mask(%s.lanes, %s.lanes, %s.lanes); " as *byte,
             result_name as *byte, left_name as *byte, right_name as *byte);
     } else if fast_kind == 201 {
         fprintf(codegen.output as *void, "uya_simd_sse_eq_f32x4_mask(%s.lanes, %s.lanes, %s.lanes); " as *byte,
