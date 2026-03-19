@@ -539,20 +539,19 @@ fn thread_shared_pop_slot(shared_state: &ThreadPoolSharedState) i32 {
     return 0 - 1;
 }
 
-export struct AsyncComputeI32Future : Future<!i32> {
+struct ThreadAsyncComputeCore {
     pool: &ThreadPool,
     compute_fn: &void,
-    arg: i32,
+    task_kind: i32,
+    arg_bits: usize,
     slot_idx: i32,
     worker_idx: i32,
     read_fd: i32,
     child_pid: i32,
     owns_read_fd: i32,
     first_poll: i32,
-    done: i32,
-    state: Poll<!i32>,
 
-    fn finish(self: &Self, result: !i32) Poll<!i32> {
+    fn finish_cleanup(self: &Self) void {
         if self.worker_idx >= 0 {
             thread_pool_release_worker(self.pool, self.worker_idx);
             self.worker_idx = 0 - 1;
@@ -570,211 +569,6 @@ export struct AsyncComputeI32Future : Future<!i32> {
             _ = sys_waitpid(self.child_pid, &status, 0);
             self.child_pid = 0;
         }
-        self.state = Poll<!i32>.Ready(result);
-        self.done = 1;
-        return self.state;
-    }
-
-    fn finish_with_pending_wake(self: &Self, result: !i32, waker: &Waker) Poll<!i32> {
-        const result_poll: Poll<!i32> = self.finish(result);
-        if thread_pool_has_pending(self.pool) {
-            waker.wake();
-        }
-        return result_poll;
-    }
-
-    fn try_bind_slot_worker(self: &Self) i32 {
-        if self.slot_idx < 0 || !thread_pool_has_shared_state(self.pool) {
-            return 0;
-        }
-        const pool_ref: &ThreadPool = self.pool;
-        const slot_state: i32 = pool_ref._shared_state.slots[self.slot_idx as usize].state;
-        if slot_state != THREAD_SLOT_STATE_RUNNING && slot_state != THREAD_SLOT_STATE_DONE {
-            return 0;
-        }
-
-        const worker_idx: i32 = pool_ref._shared_state.slots[self.slot_idx as usize].worker_idx;
-        if worker_idx >= 0 && worker_idx < pool_ref._started_workers && worker_idx < 8 {
-            if pool_ref._workers[worker_idx as usize].active != 0 {
-                self.worker_idx = worker_idx;
-                self.read_fd = pool_ref._workers[worker_idx as usize].result_read_fd;
-                self.child_pid = 0;
-                self.owns_read_fd = 0;
-                return 1;
-            }
-        }
-        return 0;
-    }
-
-    fn progress_current_slot(self: &Self, waker: &Waker) Poll<!i32> {
-        const progress_result: !i32 = thread_pool_try_progress_slot(self.pool, self.slot_idx);
-        const progressed: i32 = progress_result catch {
-            const err_value: !i32 = progress_result as! i32;
-            return self.finish_with_pending_wake(err_value, waker);
-        };
-        if progressed != 0 {
-            waker.wake();
-        }
-        return Poll<!i32>.Pending({});
-    }
-
-    fn start_execution(self: &Self, waker: &Waker) Poll<!i32> {
-        const submitted_slot_idx: i32 = thread_pool_submit_slot_i32(self.pool, self.compute_fn, self.arg);
-        if submitted_slot_idx >= 0 {
-            self.slot_idx = submitted_slot_idx;
-            return self.progress_current_slot(waker);
-        }
-
-        const one_shot_result: !i32 = self.start_one_shot();
-        _ = one_shot_result catch {
-            const err_value: !i32 = one_shot_result as! i32;
-            return self.finish_with_pending_wake(err_value, waker);
-        };
-        waker.wake();
-        return Poll<!i32>.Pending({});
-    }
-
-    fn start_one_shot(self: &Self) !i32 {
-        var fds: [i32: 2] = [];
-        _ = try sys_pipe2(&fds[0], O_NONBLOCK);
-
-        const read_fd: i32 = fds[0];
-        const write_fd: i32 = fds[1];
-
-        const fork_result: !i64 = sys_fork();
-        const child_pid: i64 = fork_result catch {
-            _ = sys_close(read_fd);
-            _ = sys_close(write_fd);
-            return fork_result as! i32;
-        };
-
-        if child_pid == 0 {
-            _ = sys_close(read_fd);
-            const value: i32 = thread_call_i32(self.compute_fn, self.arg);
-            var value_bits: usize = value as usize;
-            const write_result: !isize = sys_write(write_fd, (&value_bits) as *const byte, @size_of(usize));
-            _ = write_result catch {};
-            _ = sys_close(write_fd);
-            sys_exit(0);
-        }
-
-        _ = sys_close(write_fd);
-        self.slot_idx = 0 - 1;
-        self.worker_idx = 0 - 1;
-        self.read_fd = read_fd;
-        self.child_pid = child_pid as i32;
-        self.owns_read_fd = 1;
-        return 0;
-    }
-
-    fn finish_from_raw_value(self: &Self, raw_value: usize, waker: &Waker) Poll<!i32> {
-        var value: i32 = raw_value as i32;
-        if self.slot_idx >= 0 {
-            if !thread_pool_has_shared_state(self.pool) || !thread_pool_slot_is_valid(self.slot_idx) {
-                return self.finish_with_pending_wake(thread_generic_error_i32(), waker);
-            }
-            if raw_value != self.slot_idx as usize {
-                return self.finish_with_pending_wake(thread_generic_error_i32(), waker);
-            }
-            const pool_ref: &ThreadPool = self.pool;
-            const slot_state: i32 = pool_ref._shared_state.slots[self.slot_idx as usize].state;
-            if slot_state != THREAD_SLOT_STATE_DONE {
-                return self.finish_with_pending_wake(thread_generic_error_i32(), waker);
-            }
-            value = pool_ref._shared_state.slots[self.slot_idx as usize].result_bits as i32;
-        }
-
-        const ok_value: !i32 = ok<i32>(value);
-        return self.finish_with_pending_wake(ok_value, waker);
-    }
-
-    fn finish_from_read(self: &Self, waker: &Waker) Poll<!i32> {
-        var raw_value: usize = 0 as usize;
-        const read_result: !isize = sys_read(self.read_fd, (&raw_value) as *byte, @size_of(usize));
-        const n: isize = read_result catch |err| {
-            if thread_error_id_is_would_block(@error_id(err)) {
-                waker.wait_readable(self.read_fd);
-                return Poll<!i32>.Pending({});
-            }
-            const err_value: !i32 = read_result as! i32;
-            return self.finish_with_pending_wake(err_value, waker);
-        };
-        if n != @size_of(usize) as isize {
-            return self.finish_with_pending_wake(thread_generic_error_i32(), waker);
-        }
-        return self.finish_from_raw_value(raw_value, waker);
-    }
-
-    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
-        if self.done != 0 {
-            return self.state;
-        }
-
-        if self.first_poll == 0 {
-            self.first_poll = 1;
-            waker.wake();
-            return Poll<!i32>.Pending({});
-        }
-
-        if self.read_fd < 0 {
-            if self.slot_idx >= 0 {
-                if self.try_bind_slot_worker() != 0 {
-                    return Poll<!i32>.Pending({});
-                }
-                if self.read_fd < 0 {
-                    return self.progress_current_slot(waker);
-                }
-            } else {
-                return self.start_execution(waker);
-            }
-        }
-
-        return self.finish_from_read(waker);
-    }
-}
-
-export struct AsyncComputeUsizeFuture : Future<!usize> {
-    pool: &ThreadPool,
-    compute_fn: &void,
-    arg: usize,
-    slot_idx: i32,
-    worker_idx: i32,
-    read_fd: i32,
-    child_pid: i32,
-    owns_read_fd: i32,
-    first_poll: i32,
-    done: i32,
-    state: Poll<!usize>,
-
-    fn finish(self: &Self, result: !usize) Poll<!usize> {
-        if self.worker_idx >= 0 {
-            thread_pool_release_worker(self.pool, self.worker_idx);
-            self.worker_idx = 0 - 1;
-        }
-        if self.slot_idx >= 0 {
-            thread_pool_release_slot(self.pool, self.slot_idx);
-            self.slot_idx = 0 - 1;
-        }
-        if self.owns_read_fd != 0 && self.read_fd >= 0 {
-            _ = sys_close(self.read_fd);
-            self.read_fd = 0 - 1;
-        }
-        if self.child_pid > 0 {
-            var status: i32 = 0;
-            _ = sys_waitpid(self.child_pid, &status, 0);
-            self.child_pid = 0;
-        }
-        self.state = Poll<!usize>.Ready(result);
-        self.done = 1;
-        return self.state;
-    }
-
-    fn finish_with_pending_wake(self: &Self, result: !usize, waker: &Waker) Poll<!usize> {
-        const result_poll: Poll<!usize> = self.finish(result);
-        if thread_pool_has_pending(self.pool) {
-            waker.wake();
-        }
-        return result_poll;
     }
 
     fn try_bind_slot_worker(self: &Self) i32 {
@@ -804,7 +598,7 @@ export struct AsyncComputeUsizeFuture : Future<!usize> {
         const progress_result: !i32 = thread_pool_try_progress_slot(self.pool, self.slot_idx);
         const progressed: i32 = progress_result catch {
             const err_value: !usize = progress_result as! usize;
-            return self.finish_with_pending_wake(err_value, waker);
+            return Poll<!usize>.Ready(err_value);
         };
         if progressed != 0 {
             waker.wake();
@@ -813,7 +607,7 @@ export struct AsyncComputeUsizeFuture : Future<!usize> {
     }
 
     fn start_execution(self: &Self, waker: &Waker) Poll<!usize> {
-        const submitted_slot_idx: i32 = thread_pool_submit_slot_usize(self.pool, self.compute_fn, self.arg);
+        const submitted_slot_idx: i32 = thread_pool_submit_slot_raw(self.pool, self.compute_fn, self.task_kind, self.arg_bits);
         if submitted_slot_idx >= 0 {
             self.slot_idx = submitted_slot_idx;
             return self.progress_current_slot(waker);
@@ -822,7 +616,7 @@ export struct AsyncComputeUsizeFuture : Future<!usize> {
         const one_shot_result: !i32 = self.start_one_shot();
         _ = one_shot_result catch {
             const err_value: !usize = one_shot_result as! usize;
-            return self.finish_with_pending_wake(err_value, waker);
+            return Poll<!usize>.Ready(err_value);
         };
         waker.wake();
         return Poll<!usize>.Pending({});
@@ -844,8 +638,14 @@ export struct AsyncComputeUsizeFuture : Future<!usize> {
 
         if child_pid == 0 {
             _ = sys_close(read_fd);
-            const value: usize = thread_call_usize(self.compute_fn, self.arg);
-            const write_result: !isize = sys_write(write_fd, (&value) as *const byte, @size_of(usize));
+            var value_bits: usize = 0 as usize;
+            if self.task_kind == THREAD_TASK_KIND_USIZE {
+                value_bits = thread_call_usize(self.compute_fn, self.arg_bits);
+            } else {
+                const value_i32: i32 = thread_call_i32(self.compute_fn, self.arg_bits as i32);
+                value_bits = value_i32 as usize;
+            }
+            const write_result: !isize = sys_write(write_fd, (&value_bits) as *const byte, @size_of(usize));
             _ = write_result catch {};
             _ = sys_close(write_fd);
             sys_exit(0);
@@ -860,25 +660,25 @@ export struct AsyncComputeUsizeFuture : Future<!usize> {
         return 0;
     }
 
-    fn finish_from_raw_value(self: &Self, raw_value: usize, waker: &Waker) Poll<!usize> {
+    fn finish_from_raw_value(self: &Self, raw_value: usize) Poll<!usize> {
         var value: usize = raw_value;
         if self.slot_idx >= 0 {
             if !thread_pool_has_shared_state(self.pool) || !thread_pool_slot_is_valid(self.slot_idx) {
-                return self.finish_with_pending_wake(thread_generic_error_usize(), waker);
+                return Poll<!usize>.Ready(thread_generic_error_usize());
             }
             if raw_value != self.slot_idx as usize {
-                return self.finish_with_pending_wake(thread_generic_error_usize(), waker);
+                return Poll<!usize>.Ready(thread_generic_error_usize());
             }
             const pool_ref: &ThreadPool = self.pool;
             const slot_state: i32 = pool_ref._shared_state.slots[self.slot_idx as usize].state;
             if slot_state != THREAD_SLOT_STATE_DONE {
-                return self.finish_with_pending_wake(thread_generic_error_usize(), waker);
+                return Poll<!usize>.Ready(thread_generic_error_usize());
             }
             value = pool_ref._shared_state.slots[self.slot_idx as usize].result_bits;
         }
 
         const ok_value: !usize = ok<usize>(value);
-        return self.finish_with_pending_wake(ok_value, waker);
+        return Poll<!usize>.Ready(ok_value);
     }
 
     fn finish_from_read(self: &Self, waker: &Waker) Poll<!usize> {
@@ -890,19 +690,15 @@ export struct AsyncComputeUsizeFuture : Future<!usize> {
                 return Poll<!usize>.Pending({});
             }
             const err_value: !usize = read_result as! usize;
-            return self.finish_with_pending_wake(err_value, waker);
+            return Poll<!usize>.Ready(err_value);
         };
         if n != @size_of(usize) as isize {
-            return self.finish_with_pending_wake(thread_generic_error_usize(), waker);
+            return Poll<!usize>.Ready(thread_generic_error_usize());
         }
-        return self.finish_from_raw_value(raw_value, waker);
+        return self.finish_from_raw_value(raw_value);
     }
 
-    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
-        if self.done != 0 {
-            return self.state;
-        }
-
+    fn poll_raw(self: &Self, waker: &Waker) Poll<!usize> {
         if self.first_poll == 0 {
             self.first_poll = 1;
             waker.wake();
@@ -923,6 +719,93 @@ export struct AsyncComputeUsizeFuture : Future<!usize> {
         }
 
         return self.finish_from_read(waker);
+    }
+}
+
+export struct AsyncComputeI32Future : Future<!i32> {
+    core: ThreadAsyncComputeCore,
+    done: i32,
+    state: Poll<!i32>,
+
+    fn finish(self: &Self, result: !i32) Poll<!i32> {
+        self.core.finish_cleanup();
+        self.state = Poll<!i32>.Ready(result);
+        self.done = 1;
+        return self.state;
+    }
+
+    fn finish_with_pending_wake(self: &Self, result: !i32, waker: &Waker) Poll<!i32> {
+        const result_poll: Poll<!i32> = self.finish(result);
+        if thread_pool_has_pending(self.core.pool) {
+            waker.wake();
+        }
+        return result_poll;
+    }
+
+    fn finish_from_raw_poll(self: &Self, raw_poll: Poll<!usize>, waker: &Waker) Poll<!i32> {
+        match raw_poll {
+            .Ready(raw_result) => {
+                const raw_value: usize = raw_result catch {
+                    const err_value: !i32 = raw_result as! i32;
+                    return self.finish_with_pending_wake(err_value, waker);
+                };
+                const ok_value: !i32 = ok<i32>(raw_value as i32);
+                return self.finish_with_pending_wake(ok_value, waker);
+            },
+            .Pending(_) => {
+                return Poll<!i32>.Pending({});
+            },
+        };
+    }
+
+    fn poll(self: &Self, waker: &Waker) Poll<!i32> {
+        if self.done != 0 {
+            return self.state;
+        }
+
+        const raw_poll: Poll<!usize> = self.core.poll_raw(waker);
+        return self.finish_from_raw_poll(raw_poll, waker);
+    }
+}
+
+export struct AsyncComputeUsizeFuture : Future<!usize> {
+    core: ThreadAsyncComputeCore,
+    done: i32,
+    state: Poll<!usize>,
+
+    fn finish(self: &Self, result: !usize) Poll<!usize> {
+        self.core.finish_cleanup();
+        self.state = Poll<!usize>.Ready(result);
+        self.done = 1;
+        return self.state;
+    }
+
+    fn finish_with_pending_wake(self: &Self, result: !usize, waker: &Waker) Poll<!usize> {
+        const result_poll: Poll<!usize> = self.finish(result);
+        if thread_pool_has_pending(self.core.pool) {
+            waker.wake();
+        }
+        return result_poll;
+    }
+
+    fn finish_from_raw_poll(self: &Self, raw_poll: Poll<!usize>, waker: &Waker) Poll<!usize> {
+        match raw_poll {
+            .Ready(raw_result) => {
+                return self.finish_with_pending_wake(raw_result, waker);
+            },
+            .Pending(_) => {
+                return Poll<!usize>.Pending({});
+            },
+        };
+    }
+
+    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        if self.done != 0 {
+            return self.state;
+        }
+
+        const raw_poll: Poll<!usize> = self.core.poll_raw(waker);
+        return self.finish_from_raw_poll(raw_poll, waker);
     }
 }
 
@@ -994,15 +877,18 @@ export fn thread_pool_shutdown(pool: &ThreadPool) void {
 // 启动 i32 -> i32 计算，并返回底层 Future<!i32>。
 fn thread_async_compute_i32_impl(pool: &ThreadPool, compute_fn: &void, arg: i32) AsyncComputeI32Future {
     return AsyncComputeI32Future{
-        pool: pool,
-        compute_fn: compute_fn,
-        arg: arg,
-        slot_idx: 0 - 1,
-        worker_idx: 0 - 1,
-        read_fd: 0 - 1,
-        child_pid: 0,
-        owns_read_fd: 0,
-        first_poll: 0,
+        core: ThreadAsyncComputeCore{
+            pool: pool,
+            compute_fn: compute_fn,
+            task_kind: THREAD_TASK_KIND_I32,
+            arg_bits: arg as usize,
+            slot_idx: 0 - 1,
+            worker_idx: 0 - 1,
+            read_fd: 0 - 1,
+            child_pid: 0,
+            owns_read_fd: 0,
+            first_poll: 0,
+        },
         done: 0,
         state: Poll<!i32>.Pending({}),
     };
@@ -1017,15 +903,18 @@ export fn async_compute_i32(pool: &ThreadPool, compute_fn: &void, arg: i32) Asyn
 // 启动 usize -> usize 计算，并返回底层 Future<!usize>。
 fn thread_async_compute_usize_impl(pool: &ThreadPool, compute_fn: &void, arg: usize) AsyncComputeUsizeFuture {
     return AsyncComputeUsizeFuture{
-        pool: pool,
-        compute_fn: compute_fn,
-        arg: arg,
-        slot_idx: 0 - 1,
-        worker_idx: 0 - 1,
-        read_fd: 0 - 1,
-        child_pid: 0,
-        owns_read_fd: 0,
-        first_poll: 0,
+        core: ThreadAsyncComputeCore{
+            pool: pool,
+            compute_fn: compute_fn,
+            task_kind: THREAD_TASK_KIND_USIZE,
+            arg_bits: arg,
+            slot_idx: 0 - 1,
+            worker_idx: 0 - 1,
+            read_fd: 0 - 1,
+            child_pid: 0,
+            owns_read_fd: 0,
+            first_poll: 0,
+        },
         done: 0,
         state: Poll<!usize>.Pending({}),
     };

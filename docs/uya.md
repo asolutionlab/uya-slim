@@ -5035,11 +5035,11 @@ fn fetch() !Future<&[i8]> { ... }  // 正确
 - 线程池，用于 CPU 密集型异步任务
 - 当前最小实现提供 `thread_pool_new()` / `thread_pool_shutdown()`，在 Linux 上以可复用 worker 进程池承载计算
 - 共享状态中已包含固定任务槽位、共享 FIFO 队列与 `worker_idx` 绑定；worker 通过 slot 索引取任务并写回结果
-- 当共享槽位任务需要执行时，当前统一先进入共享 FIFO 队列；父进程负责唤醒空闲 worker 进入 drain 路径，而具体取队首 slot 与后续连续取活都由 worker 在共享队列中完成；父进程会按共享状态回刷本地 worker `busy/active_slot`；共享槽位参数/结果当前统一按机器字宽 raw bits 传输，并由 `task_kind` 区分 `i32(i32)` 与 `usize(usize)` 两种最小调用路径；future 侧对 shared-slot 的提交与推进已下沉到池级 helper（如 `thread_pool_submit_slot_i32()`、`thread_pool_submit_slot_usize()`、`thread_pool_try_progress_slot()`、`thread_pool_try_kick_drain()`），并由 future 内部 helper 统一处理启动、当前 slot 推进、已绑定 fd 的结果读取与完成后续唤醒（如 `start_execution()`、`progress_current_slot()`、`finish_from_read()`、`finish_with_pending_wake()`），`poll()` 现在基本收敛成“未启动则 start、已提交未绑定则 bind/progress、已绑定则统一读结果”三段；同时 slot 即使已推进到 `DONE`，future 仍可迟绑定对应 worker 的结果 fd，相关 late-poll 回归也已显式拉长时序窗口覆盖；为了绕开当前 C99 路径里“函数直接返回 `Future` 接口对象”不稳的问题，当前对外导出的是 `AsyncComputeI32Future` / `AsyncComputeUsizeFuture` 具体 future 结构体（它们都实现 `Future<!T>`）；队列满时才回退到 one-shot 子进程
+- 当共享槽位任务需要执行时，当前统一先进入共享 FIFO 队列；父进程负责唤醒空闲 worker 进入 drain 路径，而具体取队首 slot 与后续连续取活都由 worker 在共享队列中完成；父进程会按共享状态回刷本地 worker `busy/active_slot`；共享槽位参数/结果当前统一按机器字宽 raw bits 传输，并由 `task_kind` 区分 `i32(i32)` 与 `usize(usize)` 两种最小调用路径；future 侧对 shared-slot 的提交与推进仍经池级 helper（如 `thread_pool_submit_slot_i32()`、`thread_pool_submit_slot_usize()`、`thread_pool_try_progress_slot()`、`thread_pool_try_kick_drain()`），但 one-shot / shared-slot / bind / read-result 的大部分状态机分支现在已经下沉到共享 `ThreadAsyncComputeCore` raw core 中，再由 `AsyncComputeI32Future` / `AsyncComputeUsizeFuture` 这两层 typed wrapper 把 `Poll<!usize>` 映射成各自的 `Poll<!T>`；因此 `poll()` 的 typed 层只保留结果转换与最终完成逻辑。同时 slot 即使已推进到 `DONE`，future 仍可迟绑定对应 worker 的结果 fd，相关 late-poll 回归也已显式拉长时序窗口覆盖；为了绕开当前 C99 路径里“函数直接返回 `Future` 接口对象”不稳的问题，当前对外导出的是 `AsyncComputeI32Future` / `AsyncComputeUsizeFuture` 具体 future 结构体（它们都实现 `Future<!T>`）；队列满时才回退到 one-shot 子进程
 - 与异步运行时集成
 
 **`async_compute<T>`**：
-- 当前最小实现已提供 `async_compute_i32()` / `async_compute_usize()`，分别返回实现了 `Future<!i32>` / `Future<!usize>` 的具体 future 结构体
+- 当前最小实现已提供 `async_compute_i32()` / `async_compute_usize()`，分别返回实现了 `Future<!i32>` / `Future<!usize>` 的具体 future 结构体；其底层共享同一个 raw core 状态机
 - 将 CPU 密集型任务提交到线程池
 - 通用 `async_compute<T>` 后续扩展
 
