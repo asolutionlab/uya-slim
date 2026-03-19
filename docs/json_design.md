@@ -16,7 +16,7 @@
 - **单次分配**：解析阶段使用 Arena，一次分配得到 Tape
 - **显式内存**：API 要求调用方传入 Arena 或预分配 buffer
 - **编译期序列化与反序列化**：宏 to_json、from_json 利用编译器反射实现自动结构体序列化/反序列化；**有宏之后结构体无需手写**。未提供宏或需细粒度控制时可手写；无运行时反射。
-- **可选 SIMD**：Phase 4 提供 AVX2/NEON 加速，标量路径始终可用
+- **可选 SIMD**：Phase 4 提供 AVX2/NEON 加速；当前实现载体为 `@asm` 试点，不依赖 `@vector` 语言内建；标量路径始终可用，未来可选用 `@vector` 真实 lowering 重写
 
 ---
 
@@ -29,7 +29,7 @@
 | 错误联合 `!T` | `parse()` 返回 `!JsonValue`；编码当前为 `encode_to` 返回 `!usize`、`encode_into_arena` 返回 `!JsonStrView`（避免 slice 返回值） |
 | 指针 / 视图 | 字符串用 `JsonStrView`(ptr+len)；理想为 `&[byte]`，受 slice codegen 限制当前用 ptr+len |
 | 无隐式分配 | API 显式要求传入 `&Arena` 或 buffer 容量 |
-| `@asm` | 可选 SIMD 分支（AVX2/NEON）用于结构字符扫描 |
+| `@asm` | 可选 SIMD 分支（AVX2/NEON）用于结构字符扫描；当前以 `@asm` 试点实现，与 `@vector` 语言内建并行，不互相依赖 |
 
 ---
 
@@ -130,7 +130,7 @@ struct JsonParser {
 
 ### 6.1 两阶段解析
 
-1. **Stage 1**：扫描结构字符 `{ } [ ] , : "`，构建结构索引（可选 SIMD）
+1. **Stage 1**：扫描结构字符 `{ } [ ] , : "`，构建结构索引（可选 SIMD；当前通过 `@asm` 试点实现，未来可选用 `@vector` 真实 lowering 重写）
 2. **Stage 2**：按需或一次性填充 Tape，所有指针指向 `input` 或 `arena`
 3. **数值解析**：手写整数/浮点解析（避免 strtod FFI），溢出/NaN/Inf 返回错误
 
@@ -232,7 +232,7 @@ lib/std/json/
 - **Arena**：依赖 `src/arena.uya` 或新增 `std.mem.arena`；若无则退化为 libc
 - **std.mem**：mem_copy 等
 - **std.string**：UTF-8 校验（可选）
-- **SIMD**：Phase 4 可选，标量必须能独立工作
+- **SIMD**：Phase 4 可选（当前为 `@asm` 试点，未来可选 `@vector` lowering），标量路径必须能独立工作
 
 ---
 
@@ -241,7 +241,7 @@ lib/std/json/
 | 阶段 | 目标 | 参考 |
 |------|------|------|
 | Phase 1（标量） | 0.2–0.5 GB/s | serde_json / RapidJSON |
-| Phase 4（SIMD） | 1–3 GB/s | simd-json / sonic-rs |
+| Phase 4（SIMD / `@asm` 试点） | 1–3 GB/s | simd-json / sonic-rs |
 | 编码 | 0.3–1 GB/s | 编译期 mc 宏或手写 to_json，无反射 |
 
 ### 10.1 Benchmark 方案
@@ -262,4 +262,4 @@ lib/std/json/
 | Go encoding/json | ~0.1–0.3 GB/s |
 | Java Jackson | ~0.05–0.2 GB/s |
 
-Uya 设计目标：Phase 1 接近 RapidJSON；Phase 4 接近 simd-json；明显优于 Go/Java。
+Uya 设计目标：Phase 1 接近 RapidJSON；Phase 4 的 `@asm` SIMD 试点接近 simd-json；未来若 `@vector` 真实 lowering 落地，可评估是否重写 Stage 1；整体性能应明显优于 Go/Java。

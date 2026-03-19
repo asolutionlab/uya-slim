@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.1 - SIMD 规范同步与版本更新（2026-03-19）
+
+- **语法规范版本**：`docs/uya.md`、`docs/grammar_formal.md`、`docs/grammar_quick.md`、`docs/builtin_functions.md` 同步更新为 0.49.1。
+- **SIMD 规范收口**：`@vector(T, N)`、`@mask(N)` 及 `@vector.splat`、`@vector.any`、`@vector.all` 的第一阶段语义已在规范与辅助文档中对齐。
+
 ### v0.49 - 字符串与字符字面量规范与实现（2026-03-17）
 
 - **字符串字面量**：规范明确可赋值给 `[byte: N]`、`&byte`、`*byte`；语义上自动带 `\0` 结尾（长度为可见字符数 + 1）。详见 uya.md §1.4、grammar_formal.md。

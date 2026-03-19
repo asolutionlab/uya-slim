@@ -1,6 +1,6 @@
 # Uya 语言正式语法规范（Formal BNF）
 
-> **版本**：与 [uya.md](./uya.md) 0.49 同步（2026-03-17）
+> **版本**：与 [uya.md](./uya.md) 0.49.1 同步（2026-03-19）
 
 本文档包含 Uya 语言的完整、无歧义的 BNF 语法定义，用于：
 - 编译器/解析器实现
@@ -131,6 +131,7 @@ enum_variant   = ID [ '=' NUM ]  # 枚举变体，可选显式赋值
 type           = base_type | pointer_type | array_type | slice_type 
                | struct_type | union_type | interface_type | enum_type | tuple_type
                | atomic_type | error_union_type | function_pointer_type | extern_type
+               | vector_type | mask_type
 
 base_type      = 'i8' | 'i16' | 'i32' | 'i64' | 'u8' | 'u16' | 'u32' | 'u64'
                | 'f32' | 'f64' | 'bool' | 'byte' | 'void' | 'usize'
@@ -147,7 +148,17 @@ atomic_type    = 'atomic' type
 error_union_type = '!' type  # 错误联合类型，表示 T | Error
 function_pointer_type = 'fn' '(' [ param_type_list ] ')' type  # 函数指针类型
 param_type_list = type { ',' type }  # 函数指针类型的参数类型列表（无参数名）
+vector_type    = '@vector' '(' type ',' NUM ')'
+mask_type      = '@mask' '(' NUM ')'
 ```
+
+**说明**：
+- `@vector(T, N)` 表示元素类型为 `T`、通道数为 `N` 的向量类型
+- `@mask(N)` 表示 `N` 通道的掩码类型
+- 第一阶段 `N` 仅允许字面量正整数
+- 第一阶段 `N` 必须为 2 的幂，建议限制为 `2`、`4`、`8`、`16`、`32`、`64`
+- `vector_type` 在语法层允许任意 `type` 作为第一个参数；语义层会进一步限制 `T` 必须为数值标量类型
+- 第一阶段不引入 `@vector<T>(N)`、`Vector(T, N)`、通用 const generics 或新的目标特性查询语法
 
 ### 变量声明
 
@@ -219,10 +230,30 @@ primary_expr   = ID | NUM | STRING | CHAR | 'true' | 'false' | 'null'
                | match_expr | '(' expr ')'
 builtin_expr   = '@' ('sizeof' | 'alignof' | 'len' | 'max' | 'min' | 'params' | 'va_start' | 'va_end' | 'va_arg' | 'va_copy' | 'asm')
                | '@' ('mc_type' | 'mc_eval' | 'mc_ast' | 'mc_code' | 'mc_error' | 'mc_get_env' | 'mc_source') '(' expr_list ')'
+               | vector_builtin_expr
                # @size_of(T)、@align_of(T)、@len(expr) 为调用形式；@max、@min 为值形式；@params 为函数体内参数元组；@va_start(&ap,last)、@va_end(&ap)、@va_arg(ap,Type)、@va_copy(&dest,src) 为可变参数栈访问（uya.md §5.4）；@asm 为内联汇编块（uya.md §19）
                # 宏系统内置（uya.md §25）：@mc_type(expr) 返回 TypeInfo；@mc_eval(expr) 编译时求值；@mc_ast(code)、@mc_code(ast)、@mc_error(msg)、@mc_get_env(name)；@mc_source(expr) 编译期将表达式序列化为字符串
+vector_builtin_expr
+               = '@vector' '.' 'splat' '(' expr ')'
+               | '@vector' '.' 'any'   '(' expr ')'
+               | '@vector' '.' 'all'   '(' expr ')'
 union_literal  = ID '.' ID '(' expr ')'  # 联合体创建，如 IntOrFloat.i(42)、NetworkPacket.ipv4([...])
 ```
+
+### SIMD 语义规则（第一阶段）
+
+- `@vector(T, N)` 与 `@vector(U, M)` 仅当 `T == U` 且 `N == M` 时类型相等
+- `@mask(N)` 与 `@mask(M)` 仅当 `N == M` 时类型相等
+- `@mask(N)` 不隐式转换为 `bool`
+- `@vector(T, N)` 不与标量类型隐式互转
+- 算术运算 `+`、`-`、`*`、`/` 可用于相同类型的 `@vector(T, N)`，结果类型保持不变
+- 位运算 `&`、`|`、`^`、`~`、`<<`、`>>` 仅适用于整数元素类型的 `@vector(T, N)`
+- 比较运算 `==`、`!=`、`<`、`<=`、`>`、`>=` 可用于相同类型的 `@vector(T, N)`，结果类型为 `@mask(N)`
+- 掩码运算 `&`、`|`、`^`、`!` 可用于 `@mask(N)`
+- `@vector.splat(x)` 通过上下文目标类型构造向量值
+- `@vector.any(m)` 与 `@vector.all(m)` 接受 `@mask(N)` 并返回 `bool`
+- 第一阶段不允许把 `@mask(N)` 直接作为 `if` / `while` 条件
+- 第一阶段不引入 `@vector.load`、`@vector.store`、`@vector.select`、`@vector.shuffle`、`@vector.reduce_*`
 
 ### 内联汇编
 

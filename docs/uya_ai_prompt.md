@@ -25,6 +25,7 @@ export use mc
 - 指针转换：`@ptr_from_usize`、`@usize_from_ptr`
 - 调试输出：`@print`、`@println`
 - 内联汇编（0.72 新增）：`@asm { ... }` - 类型安全的内联汇编块
+- SIMD 向量：`@vector(T, N)`、`@mask(N)`、`@vector.splat(x)`、`@vector.any(m)`、`@vector.all(m)`
 
 ## 类型系统
 
@@ -56,9 +57,19 @@ export use mc
 | `(T1, T2, ...)` | 字段顺序布局 | 元组类型，对齐=最大字段对齐 |
 | `fn(...) type` | 4/8 B（平台相关） | 函数指针类型，用于FFI回调 |
 | `!T` | max(sizeof(T), sizeof(错误标记)) | 错误联合类型，T\|Error |
+| `@vector(T, N)` | N·sizeof(T) | SIMD 向量类型，元素 `T`，通道 `N` |
+| `@mask(N)` | N 通道 | SIMD 掩码类型，向量比较结果，不隐式转 `bool` |
 
 **错误联合类型 `!T` 内存布局**：大小 = `max(sizeof(T), 4)` 字节（错误标记占 4 字节），对齐 = `max(alignof(T), 4)` 字节  
 - 无隐式转换，类型必须完全一致
+
+**SIMD 最小用法**：
+```uya
+type Vec4f32 = @vector(f32, 4);
+const zeros: @vector(i32, 4) = @vector.splat(0);
+const lt: @mask(4) = a < b;
+if @vector.any(lt) { /* ... */ }
+```
 
 ## 基本语法
 
@@ -1325,6 +1336,12 @@ fn my_printf(fmt: *byte, ...) i32 {
 // @print/@println - 调试输出（编译期打印）
 @println(x);  // 打印并换行
 @print(y);    // 打印不换行
+
+// @vector/@mask - SIMD 向量与掩码
+type Vec4i32 = @vector(i32, 4);
+const zeros: @vector(i32, 4) = @vector.splat(0);
+const lt: @mask(4) = a < b;
+if @vector.any(lt) { /* ... */ }
 ```
 
 ## 完整示例

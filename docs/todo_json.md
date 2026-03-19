@@ -94,7 +94,9 @@
 
 ---
 
-## Phase 4：SIMD 加速（可选）
+## Phase 4：SIMD 加速（可选，`@asm` 试点）
+
+当前实现载体明确为 `@asm`（AVX2/NEON 裸汇编或等价内联汇编路径），不依赖 `@vector` / `@mask` 的真实 SIMD lowering。`@vector` 语言内建落地后，可再评估是否用其重写 Stage 1 结构扫描。
 
 - [ ] 实现 Stage 1 结构字符扫描的 SIMD 分支（AVX2/NEON）
 - [ ] 运行时 CPU 检测，选择标量或 SIMD 路径
@@ -106,10 +108,12 @@
 
 - [ ] 获取 twitter.json、citm_catalog.json、canada.json（可选，用于大文件吞吐量；当前用内嵌负载）
 - [x] 编写 `tests/bench_json.uya`：内嵌 JSON 负载，parse/encode 循环 + `clock()` 测时，打印 ticks 与 parse_total_bytes（可用 CLOCKS_PER_SEC 换算 MB/s）
-- [x] 记录 Phase 1 基准：运行 `./tests/build/bench_json` 可见 parse/encode ticks；Phase 4 SIMD 后可对比 GB/s
+- [x] 记录 Phase 1 基准：运行 `./tests/build/bench_json` 可见 parse/encode ticks；Phase 4 `@asm` SIMD 试点后可对比 GB/s
 
 ---
 
 ## 与主待办集成
 
 - [x] 已在 [todo_mini_to_full.md](todo_mini_to_full.md) 第 38 项添加 **std.json** 条目
+- [x] 已在 [todo_mini_to_full.md](todo_mini_to_full.md) 增加 SIMD 语言内建 `@vector(T, N)` / `@mask(N)` 的长期路线
+- [x] 说明已统一：`std.json` Phase 4 为可选 `@asm` 试点，与 `@vector` 语言内建并行推进，不互相阻塞

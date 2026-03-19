@@ -18,6 +18,9 @@
 | **提交前必做** | **必须**执行 `make backup`，并将 `backup/uya.c` 一起提交（backup 包含自举+测试验证；否则 `make clean` 后无法恢复） |
 | **禁止** | 测试失败时提交代码；跳过 `make backup` 即提交 |
 
+**语法规范文档版本同步**：
+- 若修改 `docs/uya.md`、`docs/grammar_formal.md`、`docs/grammar_quick.md` 或 `docs/builtin_functions.md` 的语法/语义/内建说明，必须同步升级这组语法规范文档的版本号，并保持版本引用一致。
+
 详细规范见 [.codebuddy/rules/uya-dev-flow.mdc](../.codebuddy/rules/uya-dev-flow.mdc)。
 
 ---
@@ -78,7 +81,7 @@
 | 35 | **新标准库内存操作（std.mem）** | [x] **已完成**（lib/std/mem/mem.uya 已实现，包含 memcpy, memset, memmove, memcmp, memchr，测试用例通过） |
 | 36 | **新标准库字符串操作（std.string）** | [x] **已完成**（lib/std/string/string.uya 已实现，包含 strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr, strstr，测试用例通过） |
 | 37 | **新标准库文件 I/O（std.io）** | [x] **已完成**（lib/std/io/file.uya 和 lib/std/io/stream.uya 已实现，包含 fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush，测试用例通过） |
-| 38 | **新标准库 JSON（std.json）** | [x] Phase 1–3 已完成：解析器、编码器、`to_json<T>`/`from_json<T>` 反射（按结构体字段自动生成，无需方法块）；标量及多字段结构体往返测试通过；含嵌套/数组的 from_json 暂用默认实现。可选：Phase 4 SIMD、大文件 benchmark。详见 [todo_json.md](todo_json.md)、[json_design.md](json_design.md) |
+| 38 | **新标准库 JSON（std.json）** | [x] Phase 1–3 已完成：解析器、编码器、`to_json<T>`/`from_json<T>` 反射（按结构体字段自动生成，无需方法块）；标量及多字段结构体往返测试通过；含嵌套/数组的 from_json 暂用默认实现。可选：Phase 4 SIMD（`@asm` 试点，不依赖 `@vector` 语言内建）、大文件 benchmark。详见 [todo_json.md](todo_json.md)、[json_design.md](json_design.md) |
 | 39 | **新标准库 YAML（std.yaml）** | [ ] 高性能 YAML 编解码器，详见 [todo_yaml.md](todo_yaml.md)、[yaml_design.md](yaml_design.md) |
 | 40 | **新标准库 Protobuf（std.protobuf）** | [ ] 高性能 Protobuf 编解码器，详见 [todo_protobuf.md](todo_protobuf.md)、[protobuf_design.md](protobuf_design.md) |
 | 41 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
@@ -2707,7 +2710,46 @@ interface IReadWriter {
 - ARM64 支持
 - RISC-V 支持（裸机）
 
-#### 4. 编译器后端扩展（v0.6.x+）⭐
+#### 4. SIMD 语言内建与 lowering（v0.6.x+）⭐
+
+**目标**：将 `@vector(T, N)` / `@mask(N)` 正式纳入语言内建，先落最小语义与前端支持，再逐步接入真实 SIMD lowering。
+
+**第一阶段目标**：
+- `@vector(T, N)` / `@mask(N)` 进入 `docs/uya.md` 与 `docs/grammar_formal.md`
+- Parser / Checker / C99 Codegen 支持最小语义
+- 第一阶段仅保证语义正确，允许标量回退 lowering
+
+**实施路线**：
+- **阶段 1**：规范定稿
+  - `docs/uya.md`：增加 SIMD 规范正文
+  - `docs/grammar_formal.md`：增加 `vector_type` / `mask_type` / `vector_builtin_expr`
+  - 锁定第一阶段边界：基础算术、整数位运算、比较、掩码逻辑、`@vector.splat` / `@vector.any` / `@vector.all`
+- **阶段 2**：编译器最小落地
+  - `src/lexer.uya` / `src/ast.uya` / `src/parser/types.uya`
+  - `src/checker/types.uya` / `type_from_ast.uya` / `check_expr_extra.uya`
+  - `src/codegen/c99/*` 先做语义正确的标量回退
+- **阶段 3**：标准库性能试点
+  - 在 `std.json` Stage 1 结构字符扫描中引入 AVX2/NEON 的 `@asm` 可选路径
+  - 编译期继续复用 `std.cfg(...)` / `@asm_target()`
+  - 运行时 CPU 能力检测放在库内普通函数，不新增新的条件编译或目标特性内建
+- **阶段 4**：真实 SIMD lowering
+  - 将 `@vector` / `@mask` 接到真实 SIMD lowering
+  - 再逐步扩展 `load/store/select`
+  - 后续再评估 `shuffle/reduce`、广播、转换族与 ABI 细节
+
+**验证标准**：
+- 开发前与每轮修改后都执行 `make check`
+- 新增 `error_simd_*.uya` 与 `test_simd_*.uya`
+- 所有新增测试必须同时通过 `--c99` 与 `--uya --c99`
+- `std.json` SIMD 试点保留 benchmark，对比标量路径与 `@asm` 路径
+- 提交前执行 `make clean && make backup`
+
+**详细设计**：
+- 规范正文：`docs/uya.md`
+- 正式语法：`docs/grammar_formal.md`
+- JSON 试点：[`docs/todo_json.md`](./todo_json.md)、[`docs/json_design.md`](./json_design.md)
+
+#### 5. 编译器后端扩展（v0.6.x+）⭐
 
 - LLVM IR 后端（优化与多架构）
 - WebAssembly 后端
@@ -2789,6 +2831,11 @@ interface IReadWriter {
 - 🎯 ARM64 / RISC-V 支持
 - 🎯 标准库：net + fs + time
 - 详细实施任务见 [todo_macos_migration.md](todo_macos_migration.md)
+
+### v0.6.0（目标：2026 Q4+）- 低层能力里程碑
+- 🎯 SIMD 语言内建：`@vector(T, N)` / `@mask(N)`
+- 🎯 真实 SIMD lowering 与标量回退共存
+- 🎯 编译器后端扩展（LLVM IR / WebAssembly）
 
 ### v1.0.0（目标：2027）- 生产就绪
 - 🎯 语言规范完全实现
