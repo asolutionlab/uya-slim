@@ -1,6 +1,6 @@
 # Uya 语言正式语法规范（Formal BNF）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.1 同步（2026-03-19）
+> **版本**：与 [uya.md](./uya.md) 0.49.2 同步（2026-03-19）
 
 本文档包含 Uya 语言的完整、无歧义的 BNF 语法定义，用于：
 - 编译器/解析器实现
@@ -250,7 +250,7 @@ union_literal  = ID '.' ID '(' expr ')'  # 联合体创建，如 IntOrFloat.i(42
 - 位运算 `&`、`|`、`^`、`~`、`<<`、`>>` 仅适用于整数元素类型的 `@vector(T, N)`
 - 比较运算 `==`、`!=`、`<`、`<=`、`>`、`>=` 可用于相同类型的 `@vector(T, N)`，结果类型为 `@mask(N)`
 - 掩码运算 `&`、`|`、`^`、`!` 可用于 `@mask(N)`
-- `@vector.splat(x)` 通过上下文目标类型构造向量值
+- `@vector.splat(x)` 通过上下文目标类型构造向量值；参数类型须与元素类型 `T` 一致或可隐式转换；无后缀浮点字面量为 `f64`，`f32` 向量须使用 `f32` 后缀（如 `1.0f32`）
 - `@vector.any(m)` 与 `@vector.all(m)` 接受 `@mask(N)` 并返回 `bool`
 - 第一阶段不允许把 `@mask(N)` 直接作为 `if` / `while` 条件
 - 第一阶段不引入 `@vector.load`、`@vector.store`、`@vector.select`、`@vector.shuffle`、`@vector.reduce_*`

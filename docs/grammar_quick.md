@@ -1,6 +1,6 @@
 # Uya 语法速查手册（Quick Reference）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.1 同步（2026-03-19）
+> **版本**：与 [uya.md](./uya.md) 0.49.2 同步（2026-03-19）
 
 本文档是 Uya 语言的快速参考手册，包含精简语法定义、常用代码模式和速查表。
 
@@ -55,7 +55,7 @@ var y: i32 = 10;
 | **错误联合** | `!T` | `fn may_fail() !i32 { ... }`<br>`fn encode() !&[byte] { ... }` | 可能返回错误；可与切片组合为返回值 `!&[byte]` |
 | **原子类型** | `atomic T` | `value: atomic i32` | 原子类型 |
 | **函数指针** | `fn(...) type` | `type Func = fn(i32, i32) i32;` | 函数指针类型 |
-| **SIMD 向量/掩码** | `@vector(T, N)`<br>`@mask(N)` | `type Vec4f32 = @vector(f32, 4);`<br>`const lt: @mask(4) = a < b;`<br>`const zeros: @vector(i32, 4) = @vector.splat(0);` | SIMD 向量类型（元素 `T`，通道 `N`）与掩码类型；比较返回 `@mask(N)`，可用 `@vector.any` / `@vector.all` 转为 `bool` |
+| **SIMD 向量/掩码** | `@vector(T, N)`<br>`@mask(N)` | `type Vec4f32 = @vector(f32, 4);`<br>`const lt: @mask(4) = a < b;`<br>`const zeros: @vector(i32, 4) = @vector.splat(0);`<br>`const v: Vec4f32 = @vector.splat(1.0f32);` | SIMD 向量与掩码；`@vector.splat` 参数类型须与元素类型匹配（`f32` 向量用 `f32` 浮点后缀） |
 
 ---
 

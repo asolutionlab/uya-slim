@@ -1,8 +1,8 @@
 # Uya 内置函数使用文档
 
-> 版本：v0.49.1（2026-03-19）  
+> 版本：v0.49.2（2026-03-19）  
 > 此文档为 uya.md 的详细补充说明  
-> 语言规范：0.49.1  
+> 语言规范：0.49.2  
 > 所有内置函数均以 `@` 开头，由编译器识别，无需导入或声明；其实现阶段与运行时开销以各章节说明为准
 
 ---
@@ -1608,7 +1608,7 @@ fn unsafe_fetch_add(ptr: &i32, value: i32) i32 {
 
 ## 11. SIMD 向量内建
 
-> **状态**：规范已定稿，编译器实现待完成  
+> **状态**：规范已定稿；编译器已实现第一阶段（含 C99 标量回退、结构体字段上的向量/掩码成员访问代码生成）  
 > **参考**：规范 §16 内置函数、`docs/uya.md`
 
 ### @vector
@@ -1641,7 +1641,7 @@ type Vec4f32 = @vector(f32, 4);
 type Vec8i32 = @vector(i32, 8);
 
 const zeros: @vector(i32, 4) = @vector.splat(0);
-const ones: @vector(f32, 8) = @vector.splat(1.0);
+const ones: @vector(f32, 8) = @vector.splat(1.0f32);
 
 const lt: @mask(4) = a < b;
 if @vector.any(lt) {
@@ -1650,6 +1650,7 @@ if @vector.any(lt) {
 ```
 
 **注意事项**：
+- `@vector.splat(x)` 的参数类型须与目标向量元素类型一致或可隐式转换；无后缀浮点字面量为 `f64`，填入 `f32` 向量须使用 `f32` 后缀（如 `1.0f32`）
 - `@vector.splat(x)` 的目标向量类型必须能由上下文唯一确定
 - 第一阶段允许标量回退 lowering，不承诺立刻映射真实硬件寄存器
 - 第一阶段不引入 `@vector.load`、`@vector.store`、`@vector.select`、`@vector.shuffle`、`@vector.reduce_*`
@@ -1835,6 +1836,7 @@ fn buffer_info<T>() void {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v0.49.2 | 2026-03-19 | 浮点 `f32`/`f64` 后缀在 `TOKEN_FLOAT` 路径的解析修复；SIMD `@vector.splat` 与 `f32` 示例勘误；内置文档状态与实现阶段对齐 |
 | v0.49.1 | 2026-03-19 | 语法规范版本更新为 0.49.1；同步 `@vector(T, N)` / `@mask(N)` 的第一阶段语义与文档口径 |
 | v0.49 | 2026-03-17 | 新增 SIMD 向量内建：`@vector(T, N)`、`@mask(N)`、`@vector.splat`、`@vector.any`、`@vector.all`；第一阶段支持向量算术、整数位运算、比较与掩码逻辑 |
 | v0.48 | 2026-03-17 | 新增错误处理内置函数：`@error_id`；同步异步与 errno 读取说明 |
@@ -1856,5 +1858,5 @@ fn buffer_info<T>() void {
 
 ---
 
-**本文档由 Uya 编译器团队维护，最后更新：2026-03-19**
+**本文档由 Uya 编译器团队维护，最后更新：2026-03-19（0.49.2）**
 

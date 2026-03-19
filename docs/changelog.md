@@ -8,6 +8,13 @@
 
 **发布日期：** 待定
 
+### v0.49.2 - 浮点后缀解析与 SIMD 代码生成补强（2026-03-19）
+
+- **编译器**：`parse_float_literal_with_suffix` 正确识别以小写 `f32` / `f64` 结尾的浮点字面量（此前 `TOKEN_FLOAT` 路径会漏识后缀）。
+- **C99 代码生成**：`c99_resolve_simd_type_ast_from_expr` 支持 `AST_MEMBER_ACCESS`，结构体字段上的 SIMD 比较与 `@vector.all`/`any` 生成合法 C。
+- **测试**：`test_simd_struct_field_ops.uya`、`test_simd_splat_f32_suffix.uya`。
+- **文档**：规范版本 0.49.2；`@vector.splat` 与 `f32` 字面量说明及示例修正（见 `uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`）。
+
 ### v0.49.1 - SIMD 规范同步与版本更新（2026-03-19）
 
 - **语法规范版本**：`docs/uya.md`、`docs/grammar_formal.md`、`docs/grammar_quick.md`、`docs/builtin_functions.md` 同步更新为 0.49.1。

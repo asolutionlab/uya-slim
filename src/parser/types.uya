@@ -877,29 +877,42 @@ fn parse_float_literal_with_suffix(str: &byte, arena: &Arena, suffix: &i32) f64 
         len = len + 1;
     }
     
-    // 从后往前找后缀
+    // 从后往前找后缀。
+    // 浮点后缀为 f32 / f64（含数字），不能仅用「尾部连续字母」切片，否则会停在尾数字上。
     var suffix_start: usize = len;
-    var i: usize = len;
-    while i > 0 {
-        i = i - 1;
-        const c: byte = cleaned[i];
-        if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) {
-            suffix_start = i;
-        } else {
-            break;
+    if len >= 3 {
+        const a0: byte = cleaned[len - 3];
+        const a1: byte = cleaned[len - 2];
+        const a2: byte = cleaned[len - 1];
+        if a0 == 102 && a1 == 51 && a2 == 50 { // "f32"
+            suffix_start = len - 3;
+            suffix[0] = 10;  // F32
+        } else if a0 == 102 && a1 == 54 && a2 == 52 { // "f64"
+            suffix_start = len - 3;
+            suffix[0] = 11;  // F64
         }
     }
-    
-    // 检查是否有后缀
-    if suffix_start < len {
-        var suffix_len_var: i32 = 0;
-        suffix[0] = parse_literal_suffix(&cleaned[suffix_start], &suffix_len_var);
+    if suffix[0] == 0 {
+        var si: usize = len;
+        while si > 0 {
+            si = si - 1;
+            const c: byte = cleaned[si];
+            if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) {
+                suffix_start = si;
+            } else {
+                break;
+            }
+        }
+        if suffix_start < len {
+            var suffix_len_var: i32 = 0;
+            suffix[0] = parse_literal_suffix(&cleaned[suffix_start], &suffix_len_var);
+        }
     }
     
     // 复制数字部分（不含后缀）到临时缓冲区
     var temp: [byte: 256] = [0:256];
     var j: usize = 0;
-    i = 0;
+    var i: usize = 0;
     while i < suffix_start && j < 255 {
         temp[j] = cleaned[i];
         j = j + 1;

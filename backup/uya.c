@@ -4618,6 +4618,8 @@ static void gen_struct_memcmp_comparison(struct C99CodeGenerator * codegen, stru
 static uint8_t * c99_make_temp_name(struct C99CodeGenerator * codegen, uint8_t * prefix);
 static void c99_emit_simd_binary_operator(struct C99CodeGenerator * codegen, enum TokenType op);
 static struct ASTNode * c99_resolve_simd_type_ast_from_type_node(struct C99CodeGenerator * codegen, struct ASTNode * type_node);
+static struct ASTNode * c99_resolve_struct_decl_from_type_node(struct C99CodeGenerator * codegen, struct ASTNode * type_node);
+static struct ASTNode * c99_resolve_struct_decl_for_member_object(struct C99CodeGenerator * codegen, struct ASTNode * object);
 static struct ASTNode * c99_find_var_decl_type_in_node(struct ASTNode * node, uint8_t * name);
 static struct ASTNode * c99_find_identifier_type_node(struct C99CodeGenerator * codegen, uint8_t * name);
 static struct ASTNode * c99_resolve_simd_type_ast_from_expr(struct C99CodeGenerator * codegen, struct ASTNode * expr);
@@ -27963,23 +27965,39 @@ static __attribute__((unused)) double parse_float_literal_with_suffix(uint8_t * 
         len = (len + 1);
     }
     size_t suffix_start = len;
-    size_t i = len;
-    while ((i > 0)) {
-        i = (i - 1);
-        const uint8_t c = cleaned[i];
-        if ((((c >= 97) && (c <= 122)) || ((c >= 65) && (c <= 90)))) {
-            suffix_start = i;
+    if ((len >= 3)) {
+        const uint8_t a0 = cleaned[(len - 3)];
+        const uint8_t a1 = cleaned[(len - 2)];
+        const uint8_t a2 = cleaned[(len - 1)];
+        if ((((a0 == 102) && (a1 == 51)) && (a2 == 50))) {
+            suffix_start = (len - 3);
+            suffix[0] = 10;
         } else {
-            break;
+            if ((((a0 == 102) && (a1 == 54)) && (a2 == 52))) {
+                suffix_start = (len - 3);
+                suffix[0] = 11;
+            }
         }
     }
-    if ((suffix_start < len)) {
-        int32_t suffix_len_var = 0;
-        suffix[0] = parse_literal_suffix((&cleaned[suffix_start]), (&suffix_len_var));
+    if ((suffix[0] == 0)) {
+        size_t si = len;
+        while ((si > 0)) {
+            si = (si - 1);
+            const uint8_t c = cleaned[si];
+            if ((((c >= 97) && (c <= 122)) || ((c >= 65) && (c <= 90)))) {
+                suffix_start = si;
+            } else {
+                break;
+            }
+        }
+        if ((suffix_start < len)) {
+            int32_t suffix_len_var = 0;
+            suffix[0] = parse_literal_suffix((&cleaned[suffix_start]), (&suffix_len_var));
+        }
     }
     uint8_t temp[256] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     size_t j = 0;
-    i = 0;
+    size_t i = 0;
     while (((i < suffix_start) && (j < 255))) {
         temp[j] = cleaned[i];
         j = (j + 1);
@@ -48367,6 +48385,72 @@ static __attribute__((unused)) struct ASTNode * c99_resolve_simd_type_ast_from_t
                 return _uya_ret;
             }
 
+static __attribute__((unused)) struct ASTNode * c99_resolve_struct_decl_from_type_node(struct C99CodeGenerator * codegen, struct ASTNode * type_node) {
+                (void)codegen;
+                (void)type_node;
+                if (((codegen == NULL) || (type_node == NULL))) {
+                    struct ASTNode * _uya_ret = NULL;
+                    return _uya_ret;
+                }
+                struct ASTNode * cur = type_node;
+                int32_t guard = 0;
+                while (((cur != NULL) && (guard < 64))) {
+                    guard = (guard + 1);
+                    if (((cur->type != ASTNodeType_AST_TYPE_NAMED) || (cur->type_named_name == NULL))) {
+                        struct ASTNode * _uya_ret = NULL;
+                        return _uya_ret;
+                    }
+                    struct ASTNode * const sd = find_struct_decl_c99(codegen, cur->type_named_name);
+                    if ((sd != NULL)) {
+                        struct ASTNode * _uya_ret = sd;
+                        return _uya_ret;
+                    }
+                    if ((codegen->program_node == NULL)) {
+                        struct ASTNode * _uya_ret = NULL;
+                        return _uya_ret;
+                    }
+                    struct ASTNode * const alias = find_type_alias_from_program(codegen->program_node, cur->type_named_name);
+                    if (((alias != NULL) && (alias->type_alias_target_type != NULL))) {
+                        cur = alias->type_alias_target_type;
+                        continue;
+                    }
+                    struct ASTNode * _uya_ret = NULL;
+                    return _uya_ret;
+                }
+                struct ASTNode * _uya_ret = NULL;
+                return _uya_ret;
+            }
+
+static __attribute__((unused)) struct ASTNode * c99_resolve_struct_decl_for_member_object(struct C99CodeGenerator * codegen, struct ASTNode * object) {
+                (void)codegen;
+                (void)object;
+                if (((codegen == NULL) || (object == NULL))) {
+                    struct ASTNode * _uya_ret = NULL;
+                    return _uya_ret;
+                }
+                if ((object->type == ASTNodeType_AST_MEMBER_ACCESS)) {
+                    if (((object->member_access_object == NULL) || (object->member_access_field_name == NULL))) {
+                        struct ASTNode * _uya_ret = NULL;
+                        return _uya_ret;
+                    }
+                    struct ASTNode * const inner_struct = c99_resolve_struct_decl_for_member_object(codegen, object->member_access_object);
+                    if ((inner_struct == NULL)) {
+                        struct ASTNode * _uya_ret = NULL;
+                        return _uya_ret;
+                    }
+                    struct ASTNode * const ft = c99_find_struct_field_type(codegen, inner_struct, object->member_access_field_name);
+                    struct ASTNode * _uya_ret = c99_resolve_struct_decl_from_type_node(codegen, ft);
+                    return _uya_ret;
+                }
+                if (((object->type == ASTNodeType_AST_IDENTIFIER) && (object->identifier_name != NULL))) {
+                    struct ASTNode * const tn = c99_find_identifier_type_node(codegen, object->identifier_name);
+                    struct ASTNode * _uya_ret = c99_resolve_struct_decl_from_type_node(codegen, tn);
+                    return _uya_ret;
+                }
+                struct ASTNode * _uya_ret = NULL;
+                return _uya_ret;
+            }
+
 static __attribute__((unused)) struct ASTNode * c99_find_var_decl_type_in_node(struct ASTNode * node, uint8_t * name) {
                 (void)node;
                 (void)name;
@@ -48466,6 +48550,14 @@ static __attribute__((unused)) struct ASTNode * c99_resolve_simd_type_ast_from_e
                 if (((codegen == NULL) || (expr == NULL))) {
                     struct ASTNode * _uya_ret = NULL;
                     return _uya_ret;
+                }
+                if ((((expr->type == ASTNodeType_AST_MEMBER_ACCESS) && (expr->member_access_object != NULL)) && (expr->member_access_field_name != NULL))) {
+                    struct ASTNode * const st = c99_resolve_struct_decl_for_member_object(codegen, expr->member_access_object);
+                    if ((st != NULL)) {
+                        struct ASTNode * const ft = c99_find_struct_field_type(codegen, st, expr->member_access_field_name);
+                        struct ASTNode * _uya_ret = c99_resolve_simd_type_ast_from_type_node(codegen, ft);
+                        return _uya_ret;
+                    }
                 }
                 if (((expr->type == ASTNodeType_AST_IDENTIFIER) && (expr->identifier_name != NULL))) {
                     struct ASTNode * const type_node = c99_find_identifier_type_node(codegen, expr->identifier_name);
