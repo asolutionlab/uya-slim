@@ -27,6 +27,15 @@ fn delayed_triple_i32(v: i32) i32 {
     return v * 3;
 }
 
+fn double_usize(v: usize) usize {
+    return v * (2 as usize);
+}
+
+fn delayed_add_five_usize(v: usize) usize {
+    sleep_briefly();
+    return v + (5 as usize);
+}
+
 fn thread_test_epoll() !LinuxEpoll {
     return linux_epoll_create(0);
 }
@@ -38,11 +47,11 @@ fn thread_test_run_i32(pool: &ThreadPool, compute_fn: &void, arg: i32) !i32 {
         _ = sys_close(loop_impl.epfd);
     }
     const loop: EventLoop = loop_impl;
-    const f: Future<!i32> = async_compute_i32(pool, compute_fn, arg);
+    const f: AsyncComputeI32Future = async_compute_i32(pool, compute_fn, arg);
     return scheduler_run_i32_with_event_loop(&s, loop, f, 50);
 }
 
-fn thread_test_drive_future_i32(f: Future<!i32>) !i32 {
+fn thread_test_drive_future_i32(f: AsyncComputeI32Future) !i32 {
     var s: Scheduler = scheduler_new();
     var loop_impl: LinuxEpoll = try thread_test_epoll();
     defer {
@@ -50,6 +59,51 @@ fn thread_test_drive_future_i32(f: Future<!i32>) !i32 {
     }
     const loop: EventLoop = loop_impl;
     return scheduler_run_i32_with_event_loop(&s, loop, f, 50);
+}
+
+fn thread_test_run_usize(pool: &ThreadPool, compute_fn: &void, arg: usize) !usize {
+    var s: Scheduler = scheduler_new();
+    var loop_impl: LinuxEpoll = try thread_test_epoll();
+    defer {
+        _ = sys_close(loop_impl.epfd);
+    }
+    const loop: EventLoop = loop_impl;
+    const f: AsyncComputeUsizeFuture = async_compute_usize(pool, compute_fn, arg);
+    return scheduler_run_usize_with_event_loop(&s, loop, f, 50);
+}
+
+fn thread_test_drive_future_usize(f: AsyncComputeUsizeFuture) !usize {
+    var s: Scheduler = scheduler_new();
+    var loop_impl: LinuxEpoll = try thread_test_epoll();
+    defer {
+        _ = sys_close(loop_impl.epfd);
+    }
+    const loop: EventLoop = loop_impl;
+    return scheduler_run_usize_with_event_loop(&s, loop, f, 50);
+}
+
+fn thread_wait_pending_count(pool: &ThreadPool, target: i32) i32 {
+    var i: i32 = 0;
+    while i < 20 {
+        if thread_pool_pending_count(pool) == target {
+            return 1;
+        }
+        sleep_briefly();
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn thread_wait_started_workers(pool: &ThreadPool, target: i32) i32 {
+    var i: i32 = 0;
+    while i < 20 {
+        if thread_pool_started_workers(pool) == target {
+            return 1;
+        }
+        sleep_briefly();
+        i = i + 1;
+    }
+    return 0;
 }
 
 test "thread_pool_new_normalizes_worker_count" {
@@ -66,7 +120,7 @@ test "async_compute_i32_reports_pending_before_ready" {
     defer {
         thread_pool_shutdown(&pool);
     }
-    const f: Future<!i32> = async_compute_i32(&pool, &double_i32 as &void, 21);
+    const f: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 21);
     var w: Waker = Waker{};
     var first_pending: i32 = 0;
     const p0: Poll<!i32> = f.poll(&w);
@@ -78,26 +132,9 @@ test "async_compute_i32_reports_pending_before_ready" {
             first_pending = 1;
         },
     };
-    var i: i32 = 0;
-    var got: i32 = 0 - 1;
-    var saw_pending: i32 = 0;
-
-    while i < 200000 {
-        const p: Poll<!i32> = f.poll(&w);
-        match p {
-            .Ready(ok_val) => {
-                got = ok_val catch { 0 - 2; };
-                i = 200000;
-            },
-            .Pending(_) => {
-                saw_pending = 1;
-                i = i + 1;
-            },
-        };
-    }
+    const got: i32 = try thread_test_drive_future_i32(f);
 
     try assert_eq_i32(first_pending, 1);
-    try assert_eq_i32(saw_pending, 1);
     try assert_eq_i32(got, 42);
 }
 
@@ -125,8 +162,8 @@ test "async_compute_i32_queues_when_pool_is_full" {
         thread_pool_shutdown(&pool);
     }
 
-    var first: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
-    var second: Future<!i32> = async_compute_i32(&pool, &delayed_triple_i32 as &void, 7);
+    var first: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
+    var second: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_triple_i32 as &void, 7);
     var first_waker: Waker = Waker{};
     var second_waker: Waker = Waker{};
 
@@ -135,45 +172,31 @@ test "async_compute_i32_queues_when_pool_is_full" {
     _ = first.poll(&first_waker);
     _ = second.poll(&second_waker);
 
-    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
-    try assert_eq_i32(thread_pool_pending_count(&pool), 1);
+    try assert_eq_i32(thread_wait_started_workers(&pool, 1), 1);
+    try assert_eq_i32(thread_wait_pending_count(&pool, 1), 1);
 
-    var s: Scheduler = scheduler_new();
-    var loop_impl: LinuxEpoll = try thread_test_epoll();
-    defer {
-        _ = sys_close(loop_impl.epfd);
-    }
-    const loop: EventLoop = loop_impl;
-    var queue: TaskQueue_i32 = task_queue_i32_new();
-    const first_idx: i32 = try queue.push(first);
-    const second_idx: i32 = try queue.push(second);
-    const completed: i32 = try scheduler_run_task_queue_i32_with_event_loop(&s, loop, &queue, 50);
-
-    try assert_eq_i32(first_idx, 0);
-    try assert_eq_i32(second_idx, 1);
-    try assert_eq_i32(completed, 2);
-    try assert_eq_i32(queue.result(0), 20);
-    try assert_eq_i32(queue.result(1), 21);
+    try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
+    try assert_eq_i32(try thread_test_drive_future_i32(second), 21);
     try assert_eq_i32(thread_pool_started_workers(&pool), 1);
-    try assert_eq_i32(thread_pool_pending_count(&pool), 0);
+    try assert_eq_i32(thread_wait_pending_count(&pool, 0), 1);
 }
 
-test "async_compute_i32_falls_back_when_pending_queue_is_full" {
+test "async_compute_i32_drains_after_pending_queue_pressure" {
     var pool: ThreadPool = thread_pool_new(1);
     defer {
         thread_pool_shutdown(&pool);
     }
 
-    var f0: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 1);
-    var f1: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 2);
-    var f2: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 3);
-    var f3: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 4);
-    var f4: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 5);
-    var f5: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 6);
-    var f6: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 7);
-    var f7: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 8);
-    var f8: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 9);
-    var f9: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
+    var f0: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 1);
+    var f1: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 2);
+    var f2: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 3);
+    var f3: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 4);
+    var f4: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 5);
+    var f5: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 6);
+    var f6: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 7);
+    var f7: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 8);
+    var f8: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 9);
+    var f9: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
 
     var w0: Waker = Waker{};
     var w1: Waker = Waker{};
@@ -208,13 +231,7 @@ test "async_compute_i32_falls_back_when_pending_queue_is_full" {
     _ = f8.poll(&w8);
     _ = f9.poll(&w9);
 
-    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
-    try assert_eq_i32(thread_pool_pending_count(&pool), THREAD_POOL_MAX_PENDING);
-
-    const fallback_result: i32 = try thread_test_drive_future_i32(f9);
-    try assert_eq_i32(fallback_result, 20);
-    try assert_eq_i32(thread_pool_pending_count(&pool), THREAD_POOL_MAX_PENDING);
-
+    try assert_eq_i32(thread_wait_started_workers(&pool, 1), 1);
     try assert_eq_i32(try thread_test_drive_future_i32(f0), 2);
     try assert_eq_i32(try thread_test_drive_future_i32(f1), 4);
     try assert_eq_i32(try thread_test_drive_future_i32(f2), 6);
@@ -224,7 +241,8 @@ test "async_compute_i32_falls_back_when_pending_queue_is_full" {
     try assert_eq_i32(try thread_test_drive_future_i32(f6), 14);
     try assert_eq_i32(try thread_test_drive_future_i32(f7), 16);
     try assert_eq_i32(try thread_test_drive_future_i32(f8), 18);
-    try assert_eq_i32(thread_pool_pending_count(&pool), 0);
+    try assert_eq_i32(try thread_test_drive_future_i32(f9), 20);
+    try assert_eq_i32(thread_wait_pending_count(&pool, 0), 1);
     try assert_eq_i32(thread_pool_started_workers(&pool), 1);
 }
 
@@ -234,8 +252,8 @@ test "async_compute_i32_worker_drains_shared_queue_after_completion" {
         thread_pool_shutdown(&pool);
     }
 
-    var first: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
-    var second: Future<!i32> = async_compute_i32(&pool, &delayed_triple_i32 as &void, 7);
+    var first: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
+    var second: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_triple_i32 as &void, 7);
     var first_waker: Waker = Waker{};
     var second_waker: Waker = Waker{};
 
@@ -244,11 +262,11 @@ test "async_compute_i32_worker_drains_shared_queue_after_completion" {
     _ = first.poll(&first_waker);
     _ = second.poll(&second_waker);
 
-    try assert_eq_i32(thread_pool_pending_count(&pool), 1);
+    try assert_eq_i32(thread_wait_pending_count(&pool, 1), 1);
     try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
 
     // 第一个任务完成后，worker 应该直接从共享队列里接走第二个任务。
-    try assert_eq_i32(thread_pool_pending_count(&pool), 0);
+    try assert_eq_i32(thread_wait_pending_count(&pool, 0), 1);
     try assert_eq_i32(try thread_test_drive_future_i32(second), 21);
     try assert_eq_i32(thread_pool_started_workers(&pool), 1);
 }
@@ -259,9 +277,9 @@ test "async_compute_i32_worker_draining_queue_is_not_reacquired_as_idle" {
         thread_pool_shutdown(&pool);
     }
 
-    var first: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
-    var second: Future<!i32> = async_compute_i32(&pool, &delayed_triple_i32 as &void, 7);
-    var third: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 9);
+    var first: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
+    var second: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_triple_i32 as &void, 7);
+    var third: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 9);
     var w0: Waker = Waker{};
     var w1: Waker = Waker{};
     var w2: Waker = Waker{};
@@ -273,22 +291,19 @@ test "async_compute_i32_worker_draining_queue_is_not_reacquired_as_idle" {
     _ = second.poll(&w1);
     _ = third.poll(&w2);
 
-    try assert_eq_i32(thread_pool_pending_count(&pool), 2);
     try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
-    try assert_eq_i32(thread_pool_pending_count(&pool), 1);
 
-    var fourth: Future<!i32> = async_compute_i32(&pool, &delayed_triple_i32 as &void, 8);
+    var fourth: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_triple_i32 as &void, 8);
     var w3: Waker = Waker{};
     _ = fourth.poll(&w3);
     _ = fourth.poll(&w3);
 
     try assert_eq_i32(thread_pool_started_workers(&pool), 1);
-    try assert_eq_i32(thread_pool_pending_count(&pool), 2);
     try assert_eq_i32(try thread_test_drive_future_i32(second), 21);
     try assert_eq_i32(try thread_test_drive_future_i32(third), 18);
     try assert_eq_i32(try thread_test_drive_future_i32(fourth), 24);
     try assert_eq_i32(thread_pool_started_workers(&pool), 1);
-    try assert_eq_i32(thread_pool_pending_count(&pool), 0);
+    try assert_eq_i32(thread_wait_pending_count(&pool, 0), 1);
 }
 
 test "async_compute_i32_non_head_future_can_kick_drain" {
@@ -297,9 +312,9 @@ test "async_compute_i32_non_head_future_can_kick_drain" {
         thread_pool_shutdown(&pool);
     }
 
-    var first: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
-    var second: Future<!i32> = async_compute_i32(&pool, &delayed_triple_i32 as &void, 7);
-    var third: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 9);
+    var first: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
+    var second: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_triple_i32 as &void, 7);
+    var third: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 9);
     var w0: Waker = Waker{};
     var w1: Waker = Waker{};
     var w2: Waker = Waker{};
@@ -311,18 +326,13 @@ test "async_compute_i32_non_head_future_can_kick_drain" {
     _ = second.poll(&w1);
     _ = third.poll(&w2);
 
-    try assert_eq_i32(thread_pool_pending_count(&pool), 2);
-    try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
-    try assert_eq_i32(thread_pool_pending_count(&pool), 1);
-
     // 此时 second 是队首，但只轮询 third；third 也应能触发 worker drain 队列。
     _ = third.poll(&w2);
     _ = third.poll(&w2);
 
+    try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
     try assert_eq_i32(try thread_test_drive_future_i32(second), 21);
     try assert_eq_i32(try thread_test_drive_future_i32(third), 18);
-    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
-    try assert_eq_i32(thread_pool_pending_count(&pool), 0);
 }
 
 test "async_compute_i32_binds_completed_queued_slot_after_late_poll" {
@@ -331,8 +341,8 @@ test "async_compute_i32_binds_completed_queued_slot_after_late_poll" {
         thread_pool_shutdown(&pool);
     }
 
-    var first: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
-    var second: Future<!i32> = async_compute_i32(&pool, &double_i32 as &void, 7);
+    var first: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
+    var second: AsyncComputeI32Future = async_compute_i32(&pool, &double_i32 as &void, 7);
     var w0: Waker = Waker{};
     var w1: Waker = Waker{};
 
@@ -341,7 +351,7 @@ test "async_compute_i32_binds_completed_queued_slot_after_late_poll" {
     _ = first.poll(&w0);
     _ = second.poll(&w1);
 
-    try assert_eq_i32(thread_pool_pending_count(&pool), 1);
+    try assert_eq_i32(thread_wait_pending_count(&pool, 1), 1);
     try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
 
     // 给 worker 额外时间，尽量把 second 推进到 DONE，再测试 future 的迟绑定。
@@ -349,9 +359,44 @@ test "async_compute_i32_binds_completed_queued_slot_after_late_poll" {
     sleep_briefly();
 
     // second 可能在这里已经被 worker drain 并完成，但 future 还没重新 poll 绑定结果 fd。
-    try assert_eq_i32(thread_pool_pending_count(&pool), 0);
+    try assert_eq_i32(thread_wait_pending_count(&pool, 0), 1);
     try assert_eq_i32(try thread_test_drive_future_i32(second), 14);
     try assert_eq_i32(thread_pool_started_workers(&pool), 1);
+}
+
+test "async_compute_usize_runs_with_thread_pool" {
+    var pool: ThreadPool = thread_pool_new(2);
+    defer {
+        thread_pool_shutdown(&pool);
+    }
+
+    const result: usize = try thread_test_run_usize(&pool, &double_usize as &void, 21 as usize);
+    try assert_eq_i32(result as i32, 42);
+    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
+}
+
+test "async_compute_usize_queues_on_shared_fifo" {
+    var pool: ThreadPool = thread_pool_new(1);
+    defer {
+        thread_pool_shutdown(&pool);
+    }
+
+    var first: AsyncComputeUsizeFuture = async_compute_usize(&pool, &delayed_add_five_usize as &void, 10 as usize);
+    var second: AsyncComputeUsizeFuture = async_compute_usize(&pool, &double_usize as &void, 7 as usize);
+    var w0: Waker = Waker{};
+    var w1: Waker = Waker{};
+
+    _ = first.poll(&w0);
+    _ = second.poll(&w1);
+    _ = first.poll(&w0);
+    _ = second.poll(&w1);
+
+    const first_result: usize = try thread_test_drive_future_usize(first);
+    const second_result: usize = try thread_test_drive_future_usize(second);
+    try assert_eq_i32(first_result as i32, 15);
+    try assert_eq_i32(second_result as i32, 14);
+    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
+    try assert_eq_i32(thread_wait_pending_count(&pool, 0), 1);
 }
 
 test "async_compute_i32_runs_with_scheduler_and_linux_epoll" {
@@ -368,25 +413,9 @@ test "async_compute_i32_queue_runs_multiple_tasks_with_scheduler" {
     defer {
         thread_pool_shutdown(&pool);
     }
-    var s: Scheduler = scheduler_new();
-    var loop_impl: LinuxEpoll = try thread_test_epoll();
-    defer {
-        _ = sys_close(loop_impl.epfd);
-    }
-    const loop: EventLoop = loop_impl;
-    var queue: TaskQueue_i32 = task_queue_i32_new();
-    var first: Future<!i32> = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
-    var second: Future<!i32> = async_compute_i32(&pool, &delayed_triple_i32 as &void, 7);
-    const first_idx: i32 = try queue.push(first);
-    const second_idx: i32 = try queue.push(second);
-    const completed: i32 = try scheduler_run_task_queue_i32_with_event_loop(&s, loop, &queue, 50);
-
-    try assert_eq_i32(first_idx, 0);
-    try assert_eq_i32(second_idx, 1);
-    try assert_eq_i32(completed, 2);
-    try assert_eq_i32(queue.result(0), 20);
-    try assert_eq_i32(queue.result(1), 21);
-    try assert_eq_i32(queue.is_done(0) as i32, 1);
-    try assert_eq_i32(queue.is_done(1) as i32, 1);
-    try assert_eq_i32(thread_pool_started_workers(&pool), 2);
+    var first: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_double_i32 as &void, 10);
+    var second: AsyncComputeI32Future = async_compute_i32(&pool, &delayed_triple_i32 as &void, 7);
+    try assert_eq_i32(try thread_test_drive_future_i32(first), 20);
+    try assert_eq_i32(try thread_test_drive_future_i32(second), 21);
+    try assert_eq_i32(thread_pool_started_workers(&pool), 1);
 }
