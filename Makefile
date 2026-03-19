@@ -34,17 +34,21 @@ LDFLAGS ?=
 # BINDIR 语义：
 #   - 路径最后一段为 bin：视为「可执行目录」，如 /custom/bin → /custom/bin/uya、/custom/lib/
 #   - 否则视为「安装前缀」，如 out、/opt/uya → 前缀/bin/uya、前缀/lib/（与 ~/.local 布局一致）
-#       可显式覆盖 LIBDIR；若与上述布局不一致，请设置环境变量 UYA_ROOT
-PREFIX ?= /usr/local
+#       可显式覆盖 LIBDIR、DOCDIR；若与上述布局不一致，请设置环境变量 UYA_ROOT
+PREFIX ?= out
 BINDIR ?= $(PREFIX)/bin
 _BINDIR_NORM := $(patsubst %/,%,$(BINDIR))
 ifeq ($(notdir $(_BINDIR_NORM)),bin)
 INSTALL_BINDIR := $(_BINDIR_NORM)
 LIBDIR ?= $(patsubst %/,%,$(dir $(_BINDIR_NORM)))/lib
+INSTALL_PREFIX := $(patsubst %/,%,$(dir $(_BINDIR_NORM)))
 else
 INSTALL_BINDIR := $(_BINDIR_NORM)/bin
 LIBDIR ?= $(_BINDIR_NORM)/lib
+INSTALL_PREFIX := $(_BINDIR_NORM)
 endif
+# 文档：与仓库根目录一致为 前缀/docs/*.md（uya_ai_prompt.md 及文中显式引用的规范文档）
+DOCDIR ?= $(INSTALL_PREFIX)/docs
 # 打包时 DESTDIR 与相对 BINDIR（如 out）拼接须带 '/'，否则 /tmp/st + out → /tmp/stout
 ifneq ($(strip $(DESTDIR)),)
 INSTALL_DEST_ROOT := $(patsubst %/,%,$(DESTDIR))/
@@ -387,7 +391,13 @@ install:
 		if [ "$$base" = "build" ]; then continue; fi; \
 		cp -a "$$entry" "$(INSTALL_DEST_ROOT)$(LIBDIR)/"; \
 	done
-	@echo "✓ 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya + $(INSTALL_DEST_ROOT)$(LIBDIR)/"
+	@echo "安装文档 -> $(INSTALL_DEST_ROOT)$(DOCDIR)/"
+	@install -d "$(INSTALL_DEST_ROOT)$(DOCDIR)"
+	@for f in uya_ai_prompt.md uya.md grammar_formal.md builtin_functions.md union_memory_layout.md; do \
+		if [ ! -f "docs/$$f" ]; then echo "错误: 缺少 docs/$$f"; exit 1; fi; \
+		install -m 644 "docs/$$f" "$(INSTALL_DEST_ROOT)$(DOCDIR)/$$f"; \
+	done
+	@echo "✓ 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya + $(INSTALL_DEST_ROOT)$(LIBDIR)/ + $(INSTALL_DEST_ROOT)$(DOCDIR)/"
 
 # 从备份恢复 bin/uya.c
 restore:
@@ -444,7 +454,7 @@ help:
 	@echo "  make check-hosted  - hosted 验证（自举 + 测试），不备份"
 	@echo "  make backup        - 验证 + 备份 bin/uya.c"
 	@echo "  make release       - 发布版本：验证 + 备份 + -O3 优化构建 + strip"
-	@echo "  make install       - 安装 bin/uya + lib/ 标准库（缺则 from-c）；BINDIR/LIBDIR/DESTDIR"
+	@echo "  make install       - 安装 uya、lib/、前缀/docs/（AI 提示词与引用规范）；BINDIR/LIBDIR/DOCDIR/DESTDIR"
 	@echo "  make restore       - 从 backup/uya.c 恢复 bin/uya.c"
 	@echo "  make clean         - 清理所有构建产物"
 	@echo "  make help          - 显示此帮助信息"
@@ -459,6 +469,7 @@ help:
 	@echo "  make install BINDIR=out              # out/bin/uya + out/lib/（BINDIR 作前缀，同 PREFIX 布局）"
 	@echo "  make install BINDIR=/custom/bin      # 路径以 bin 结尾：可执行目录本身 + /custom/lib/"
 	@echo "  make install LIBDIR=/other/lib       # 显式标准库目录（通常需配合 export UYA_ROOT）"
+	@echo "  make install DOCDIR=/path/docs       # 显式文档目录（默认 前缀/docs）"
 	@echo ""
 	@echo "macOS: hosted 主线见 docs/macos_hosted_smoke.md；备份 uya.c 为 Linux nostdlib 时 from-c 不可用。"
 
