@@ -1,0 +1,9 @@
+// SIMD 第一阶段不支持向量饱和加 +|
+type Vec4i32 = @vector(i32, 4);
+
+export fn main() i32 {
+    const a: Vec4i32 = @vector.splat(1);
+    const b: Vec4i32 = @vector.splat(2);
+    const c: Vec4i32 = a +| b;
+    return 0;
+}
