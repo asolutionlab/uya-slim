@@ -1,7 +1,7 @@
 # Uya 项目根目录 Makefile
 # 提供统一的构建和测试入口
 
-.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted tests tests-hosted tests-uya outlibc c e clean check check-hosted backup restore release help
+.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted tests tests-hosted tests-uya outlibc c e clean check check-hosted backup restore release install help
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -24,6 +24,33 @@ CC_TARGET_FLAGS ?=
 # 编译选项（可通过环境变量覆盖）
 CFLAGS ?= -std=c99 -O0 -g -fno-builtin
 LDFLAGS ?=
+
+# 安装路径（install 目标）
+# 用法: make install
+#       make install PREFIX=$$HOME/.local
+#       make install BINDIR=/opt/bin
+#       make install BINDIR=out            # 前缀布局：out/bin/uya + out/lib/（与 PREFIX 一致）
+#       make install DESTDIR=/tmp/stage PREFIX=/usr   # 打包：安装到 /tmp/stage/usr/bin/uya
+# BINDIR 语义：
+#   - 路径最后一段为 bin：视为「可执行目录」，如 /custom/bin → /custom/bin/uya、/custom/lib/
+#   - 否则视为「安装前缀」，如 out、/opt/uya → 前缀/bin/uya、前缀/lib/（与 ~/.local 布局一致）
+#       可显式覆盖 LIBDIR；若与上述布局不一致，请设置环境变量 UYA_ROOT
+PREFIX ?= /usr/local
+BINDIR ?= $(PREFIX)/bin
+_BINDIR_NORM := $(patsubst %/,%,$(BINDIR))
+ifeq ($(notdir $(_BINDIR_NORM)),bin)
+INSTALL_BINDIR := $(_BINDIR_NORM)
+LIBDIR ?= $(patsubst %/,%,$(dir $(_BINDIR_NORM)))/lib
+else
+INSTALL_BINDIR := $(_BINDIR_NORM)/bin
+LIBDIR ?= $(_BINDIR_NORM)/lib
+endif
+# 打包时 DESTDIR 与相对 BINDIR（如 out）拼接须带 '/'，否则 /tmp/st + out → /tmp/stout
+ifneq ($(strip $(DESTDIR)),)
+INSTALL_DEST_ROOT := $(patsubst %/,%,$(DESTDIR))/
+else
+INSTALL_DEST_ROOT :=
+endif
 
 # 默认目标
 all: help
@@ -342,6 +369,26 @@ release: backup
 	@echo ""
 	@echo "优化选项: -O3 -fno-builtin -DNDEBUG"
 	@echo "已剥离调试符号 (strip)"
+
+# 安装编译器与标准库源码树（需系统 install(1)；标准库排除 lib/build）
+install:
+	@if [ ! -f bin/uya ]; then \
+		echo "bin/uya 不存在，先执行 from-c ..."; \
+		$(MAKE) from-c; \
+	fi
+	@echo "安装 uya -> $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya"
+	@install -d "$(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)"
+	@install -m 755 bin/uya "$(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya"
+	@echo "安装标准库 -> $(INSTALL_DEST_ROOT)$(LIBDIR)/"
+	@install -d "$(INSTALL_DEST_ROOT)$(LIBDIR)"
+	@for entry in lib/*; do \
+		if [ ! -e "$$entry" ]; then continue; fi; \
+		base=$$(basename "$$entry"); \
+		if [ "$$base" = "build" ]; then continue; fi; \
+		cp -a "$$entry" "$(INSTALL_DEST_ROOT)$(LIBDIR)/"; \
+	done
+	@echo "✓ 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya + $(INSTALL_DEST_ROOT)$(LIBDIR)/"
+
 # 从备份恢复 bin/uya.c
 restore:
 	@echo "从备份恢复 bin/uya.c ..."
@@ -397,6 +444,7 @@ help:
 	@echo "  make check-hosted  - hosted 验证（自举 + 测试），不备份"
 	@echo "  make backup        - 验证 + 备份 bin/uya.c"
 	@echo "  make release       - 发布版本：验证 + 备份 + -O3 优化构建 + strip"
+	@echo "  make install       - 安装 bin/uya + lib/ 标准库（缺则 from-c）；BINDIR/LIBDIR/DESTDIR"
 	@echo "  make restore       - 从 backup/uya.c 恢复 bin/uya.c"
 	@echo "  make clean         - 清理所有构建产物"
 	@echo "  make help          - 显示此帮助信息"
@@ -407,6 +455,10 @@ help:
 	@echo "  make tests                           # 运行所有测试（默认省略通过的 ✓）"
 	@echo "  make tests e                         # 运行所有测试，最小输出"
 	@echo "  make clean && make from-c            # 清理后从备份恢复并构建"
+	@echo '  make install PREFIX=$$HOME/.local   # ~/.local/bin/uya + ~/.local/lib/{std,libc,...}'
+	@echo "  make install BINDIR=out              # out/bin/uya + out/lib/（BINDIR 作前缀，同 PREFIX 布局）"
+	@echo "  make install BINDIR=/custom/bin      # 路径以 bin 结尾：可执行目录本身 + /custom/lib/"
+	@echo "  make install LIBDIR=/other/lib       # 显式标准库目录（通常需配合 export UYA_ROOT）"
 	@echo ""
 	@echo "macOS: hosted 主线见 docs/macos_hosted_smoke.md；备份 uya.c 为 Linux nostdlib 时 from-c 不可用。"
 

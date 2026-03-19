@@ -34,3 +34,5 @@ src/build/
 tests/build/
 build/
 a.out
+# make install BINDIR=out 等本地安装前缀
+out/
