@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.10（完整版 · 2026-03-19）
+# Uya 语言规范 0.49.12（完整版 · 2026-03-19）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -46,12 +46,22 @@
 - [25. 宏系统](#25-宏系统)
 - [附录 A. 完整示例](#附录-a-完整示例)
 - [附录 B. 扩展特性](#附录-b-扩展特性)
+- [附录 C. 交叉编译（工具链）](#附录-c-交叉编译工具链)
 - [术语表](#术语表)
 - [规范变更](#规范变更)
 
 ---
 
 ## 规范变更
+
+### 0.49.12（2026-03-19）
+
+- **C99 SIMD lowering（向量比较扩展）**：在 x86_64 SSE 快路径上，**4×`i32`** 支持 **`==` `!=` `<` `>` `<=` `>=`** → `@mask(4)`；**4×`f32`** 同样六种关系（`_mm_cmp*_ps`）；**4×`u32`** 仅 **`==` / `!=`** 走与按位一致的 `uya_simd_sse_*_i32x4_mask`，无符号有序比较仍逐通道标量。宿主 **`#else`** 为同名标量 `static inline`。
+- **测试**：`test_simd_sse_compare_ops.uya`。
+
+### 0.49.11（2026-03-19）
+
+- **文档**：新增 [附录 C. 交叉编译（工具链）](#附录-c-交叉编译工具链)，说明 `HOST_*` / `TARGET_*`、`TARGET_TRIPLE`、`CC_DRIVER` / `CC_TARGET_FLAGS`、`TOOLCHAIN=zig` 与 `make` / `compile.sh` / `uya build -e` 的关系；详述与限制见 [UYA_BUILD_RUN.md](./UYA_BUILD_RUN.md)。
 
 ### 0.49.10（2026-03-19）
 
@@ -6898,6 +6908,72 @@ const p: Pair<i32, i32> = c.wrap<i32>(100);  // U = i32
 - 泛型方法通过单态化实现，编译时生成专门函数
 - 方法类型参数与结构体类型参数独立，形成二级查找
 - `Self` 类型在方法内自动替换为当前结构体的单态化类型
+
+---
+
+## 附录 C. 交叉编译（工具链）
+
+本节描述 **Uya 编译器所在宿主** 与 **生成代码最终运行的目标平台** 不一致时的工具链用法，属于**实现与构建说明**，不改变语言语义。更完整的命令示例、包装脚本与注意事项见 **[UYA_BUILD_RUN.md](./UYA_BUILD_RUN.md)**。
+
+### C.1 模型
+
+1. **Uya 编译器**始终在 **宿主（host）** 上运行，将 `.uya` 编译为 **C99**。
+2. **链接与生成可执行文件**由 **C 编译器驱动**（`CC_DRIVER`）完成；交叉编译时，必须使用能针对**目标（target）** 产出对象文件与可执行文件的 C 工具链（如 `zig cc -target <triple>`、Clang `--target=…`、或专用交叉 `gcc`）。
+3. 编译器内部的 **`std.host_os` / `std.host_arch`** 等对应 **目标** 平台配置（由 `TARGET_OS` / `TARGET_ARCH` 等推导），用于条件编译与 `@asm_target()` 等；**宿主**仅影响「能否运行 `uya` 二进制」本身。
+
+### C.2 环境变量（与根目录 `Makefile`、`src/compile.sh` 一致）
+
+| 变量 | 含义 |
+|------|------|
+| `HOST_OS` / `HOST_ARCH` | 运行编译器的机器；默认由 `uname` 探测（OS 名会规范为 `linux` / `macos` / `windows` 等）。 |
+| `TARGET_OS` / `TARGET_ARCH` | 生成代码面向的平台；**默认等于宿主**，与宿主不同时即为交叉编译场景。 |
+| `TARGET_TRIPLE` | 可选。若设置且未设置 `CC_TARGET_FLAGS`，`compile.sh` 会为 C 驱动追加 **`-target <triple>`**（适用于 `zig cc` 等）。 |
+| `CC_DRIVER` | 实际调用的 C 编译器命令，可为多词（如 `zig cc`）。 |
+| `CC_TARGET_FLAGS` | 传给 C 驱动的额外参数（如 `-target aarch64-linux-gnu`）；若已手动设置，则不再根据 `TARGET_TRIPLE` 自动追加 `-target`。 |
+| `TOOLCHAIN` | `system`（默认 `cc`）或 `zig`（使用 `ZIG` 指向的 `zig cc`）。 |
+| `ZIG` | `zig` 可执行文件路径（项目默认值仅作示例，请按本机安装路径覆盖）。 |
+| `RUNTIME_MODE` | `hosted`（默认，链接 libc）或 `nostdlib`（独立运行时路径；**当前主要支持 Linux x86_64**，其余目标可能受限或未实现）。 |
+| `LINK_MODE` | 如 `default` / `static`，影响 `compile.sh` 链接行为（与 hosted 路径配合）。 |
+
+### C.3 构建 Uya 编译器自身（自举）
+
+在源码树中构建 `bin/uya` 时，将上述变量传给 `make`，再由 `make` 传入 `src/compile.sh`：
+
+```bash
+# 示例：使用 zig cc，目标为 Windows x86_64（宿主可为 Linux）
+TOOLCHAIN=zig ZIG=/path/to/zig \
+TARGET_OS=windows TARGET_ARCH=x86_64 \
+TARGET_TRIPLE=x86_64-windows-gnu \
+make uya-hosted
+```
+
+```bash
+# 示例：目标为 Apple Silicon macOS
+TOOLCHAIN=zig ZIG=/path/to/zig \
+TARGET_OS=macos TARGET_ARCH=arm64 \
+TARGET_TRIPLE=aarch64-macos-none \
+make uya-hosted
+```
+
+原生宿主构建仍可使用默认 `make uya` / `make uya-hosted`（系统 `cc` 或 `TOOLCHAIN=zig`）。
+
+### C.4 编译 Uya 应用程序
+
+使用已生成的 `bin/uya` 编译用户程序并**自动链接**时，需开启 **`-e`**（或包装脚本），使 `compile.sh` 在生成 `.c` 后调用 `CC_DRIVER`：
+
+```bash
+CC_DRIVER="/path/to/zig cc" \
+CC_TARGET_FLAGS="-target aarch64-linux-gnu" \
+bin/uya build main.uya -o main.c --c99 -e
+```
+
+若仅生成 C 而不链接，可不用 `-e`，再用自备的交叉工具链手动编译 `.c`。
+
+### C.5 限制与注意
+
+- **`--nostdlib` / 静态零依赖路径**：当前实现与测试主线以 **Linux x86_64** 为主；其他目标的 `_start`、链接与 syscall 封装可能未完备，见 [UYA_BUILD_RUN.md](./UYA_BUILD_RUN.md) 与平台相关 todo 文档。
+- **内联汇编 `@asm`**：指令与约束与目标 ISA 相关；交叉编译时需确保仅启用当前 **TARGET** 支持的指令，或使用 `@asm_target()` 等机制区分平台（见 [asm_api_reference.md](./asm_api_reference.md) 等）。
+- **标准库与系统调用**：`libc` / `syscall` / 异步等模块依赖目标 OS/ABI；交叉到嵌入式或非常规环境时需自行核对链接库与运行时。
 
 ---
 

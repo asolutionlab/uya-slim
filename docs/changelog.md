@@ -8,6 +8,17 @@
 
 **发布日期：** 待定
 
+### v0.49.12 - SIMD：C99 向量比较 lowering 扩展（2026-03-19）
+
+- **C99**：`uya_simd_sse_{eq,ne,lt,gt,le,ge}_{i32,f32}x4_mask` 及标量 `#else`；`expr.uya` 掩码分支映射六种比较；`u32`×4 仅 `==`/`!=` 走快路径。
+- **测试**：`test_simd_sse_compare_ops.uya`。
+- **文档**：规范 0.49.12（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
+### v0.49.11 - 文档：交叉编译（工具链）附录（2026-03-19）
+
+- **文档**：`uya.md` 新增 **附录 C. 交叉编译（工具链）**（`HOST_*` / `TARGET_*`、`TARGET_TRIPLE`、`CC_DRIVER` / `CC_TARGET_FLAGS`、`TOOLCHAIN=zig`、自举与应用编译示例、限制与引用 [UYA_BUILD_RUN.md](./UYA_BUILD_RUN.md)）。
+- **规范版本**：0.49.11（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md` 版本号同步）。
+
 ### v0.49.10 - SIMD：C99 x86_64 SSE 初版 lowering（2026-03-19）
 
 - **C99**：`emit_simd_x86_sse_runtime_helpers` 在含 `@vector/@mask` 的翻译单元中输出 `uya_simd_sse_*`（顶层 `#if UYA_HAVE_SIMD_X86_SSE`：SSE 内建；`#else`：逐通道标量）。`expr.uya` 对 4 宽 `i32`/`u32`/`f32` 向量与 `==`→掩码、`splat`、一元 `-` 生成对上述助手的调用（**不在** GNU `({ ... })` 内使用 `#if`）。
