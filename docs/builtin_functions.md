@@ -1,8 +1,8 @@
 # Uya 内置函数使用文档
 
-> 版本：v0.49.9（2026-03-19）  
+> 版本：v0.49.10（2026-03-19）  
 > 此文档为 uya.md 的详细补充说明  
-> 语言规范：0.49.9  
+> 语言规范：0.49.10  
 > 所有内置函数均以 `@` 开头，由编译器识别，无需导入或声明；其实现阶段与运行时开销以各章节说明为准
 
 ---
@@ -1836,6 +1836,7 @@ fn buffer_info<T>() void {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v0.49.10 | 2026-03-19 | C99 SIMD：x86_64+GCC/Clang+SSE2 下 4 宽向量部分运算 lowering 至 `uya_simd_sse_*`（`#else` 标量）；`@vector.splat`/一元 `-`（i32/f32×4）；测试 `test_simd_sse_lower_i32x4` |
 | v0.49.9 | 2026-03-19 | C99：`catch` 反推载荷为向量类型别名时用 `typedef` 名；收集阶段预注册 `@mask(N)`（含仅出现在 `@vector.all(==)` 中的比较）；测试 `test_simd_return_splat_binary`（`catch`+`!Vec4i32`）、`test_simd_mask_inline_compare` |
 | v0.49.8 | 2026-03-19 | SIMD：`return`/`!T` 载荷为向量时类型检查绑定 splat；C99 `err_union` 输出含向量/掩码别名载荷；测试 `test_simd_return_splat_binary` |
 | v0.49.7 | 2026-03-19 | SIMD C99：`@vector.splat` 目标类型可从 expected_type / 返回类型 / 对侧向量解析；测试 `test_simd_splat_binary_context` |
@@ -1865,5 +1866,5 @@ fn buffer_info<T>() void {
 
 ---
 
-**本文档由 Uya 编译器团队维护，最后更新：2026-03-19（0.49.9）**
+**本文档由 Uya 编译器团队维护，最后更新：2026-03-19（0.49.10）**
 

@@ -8,6 +8,12 @@
 
 **发布日期：** 待定
 
+### v0.49.10 - SIMD：C99 x86_64 SSE 初版 lowering（2026-03-19）
+
+- **C99**：`emit_simd_x86_sse_runtime_helpers` 在含 `@vector/@mask` 的翻译单元中输出 `uya_simd_sse_*`（顶层 `#if UYA_HAVE_SIMD_X86_SSE`：SSE 内建；`#else`：逐通道标量）。`expr.uya` 对 4 宽 `i32`/`u32`/`f32` 向量与 `==`→掩码、`splat`、一元 `-` 生成对上述助手的调用（**不在** GNU `({ ... })` 内使用 `#if`）。
+- **测试**：`test_simd_sse_lower_i32x4.uya`。
+- **文档**：规范 0.49.10（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`）。
+
 ### v0.49.9 - SIMD：C99 `catch` 向量别名载荷与掩码预收集（2026-03-19）
 
 - **C99**：`gen_catch_expr` 从 `struct err_union_<name>` 反推载荷时，若 `name` 为 `type` 别名（如 `Vec4i32` → `@vector`），成功分支中间变量使用与 `typedef` 一致的标识符，避免误生成 `struct Vec4i32`。

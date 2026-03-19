@@ -2728,15 +2728,14 @@ interface IReadWriter {
   - `src/lexer.uya` / `src/ast.uya` / `src/parser/types.uya`
   - `src/checker/types.uya` / `type_from_ast.uya` / `check_expr_extra.uya`
   - `src/codegen/c99/*` 先做语义正确的标量回退
-  - 测试：`test_simd_value_ops.uya`、`test_simd_unary_ops.uya`、`test_simd_div_f32_i32.uya`、`test_simd_f64_mul_div.uya`、`test_simd_vec8_i32.uya`、`test_simd_i16_add.uya`、`test_simd_mask_bitwise_shift.uya`、`test_simd_u32_basic.uya`、`test_simd_vector_mod_i32.uya`、`test_simd_vector_sat_wrap_i32.uya`、`test_simd_splat_binary_context.uya`、`test_simd_return_splat_binary.uya`（含 `catch`+`!Vec4i32` 载荷别名）、`test_simd_mask_inline_compare.uya`（不显式 `@mask` 类型）、`test_simd_fn_vector_return.uya`、`test_simd_struct_field_ops.uya`、`test_simd_splat_f32_suffix.uya`、`test_simd_splat_peer_infer.uya` 与 `error_simd_*.uya`（含 `error_simd_float_vector_mod.uya`、`error_simd_float_vector_plus_pipe.uya`、`error_simd_u32_vector_plus_pipe.uya`、`error_simd_float_vector_bitwise.uya`、`error_simd_float_vector_tilde.uya`、`error_simd_float_vector_shift.uya`、`error_simd_mask_logical_and.uya`、`error_simd_vector_mask_mix_and.uya`）
+  - 测试：`test_simd_value_ops.uya`、`test_simd_unary_ops.uya`、`test_simd_div_f32_i32.uya`、`test_simd_f64_mul_div.uya`、`test_simd_vec8_i32.uya`、`test_simd_i16_add.uya`、`test_simd_mask_bitwise_shift.uya`、`test_simd_u32_basic.uya`、`test_simd_vector_mod_i32.uya`、`test_simd_vector_sat_wrap_i32.uya`、`test_simd_splat_binary_context.uya`、`test_simd_return_splat_binary.uya`（含 `catch`+`!Vec4i32` 载荷别名）、`test_simd_mask_inline_compare.uya`（不显式 `@mask` 类型）、`test_simd_sse_lower_i32x4.uya`（x86_64 SSE lowering / 标量 `#else`）、`test_simd_fn_vector_return.uya`、`test_simd_struct_field_ops.uya`、`test_simd_splat_f32_suffix.uya`、`test_simd_splat_peer_infer.uya` 与 `error_simd_*.uya`（含 `error_simd_float_vector_mod.uya`、`error_simd_float_vector_plus_pipe.uya`、`error_simd_u32_vector_plus_pipe.uya`、`error_simd_float_vector_bitwise.uya`、`error_simd_float_vector_tilde.uya`、`error_simd_float_vector_shift.uya`、`error_simd_mask_logical_and.uya`、`error_simd_vector_mask_mix_and.uya`）
 - **阶段 3**：标准库性能试点
   - 在 `std.json` Stage 1 结构字符扫描中**优先**引入 `@vector`/`@mask` 路径，**可选**再补 AVX2/NEON `@asm` 分支
   - 编译期继续复用 `std.cfg(...)` / `@asm_target()`
   - 运行时 CPU 能力检测放在库内普通函数，不新增新的条件编译或目标特性内建
-- **阶段 4**：真实 SIMD lowering
-  - 将 `@vector` / `@mask` 接到真实 SIMD lowering
-  - 再逐步扩展 `load/store/select`
-  - 后续再评估 `shuffle/reduce`、广播、转换族与 ABI 细节
+- **阶段 4**：真实 SIMD lowering（🔄 已启动）
+  - ✅ **初版**：C99 在 x86_64 + GCC/Clang + SSE2 下对 **4×`i32`/`u32`/`f32`** 部分运算、`splat`、一元 `-`、`==`→`@mask(4)` 生成 SSE 内建路径；`#else` 标量；见 `emit_simd_x86_sse_runtime_helpers`、`c99_simd_try_emit_x86_sse_*`
+  - 待办：ARM NEON、更多宽度、比较运算符全集、`load/store/select`、`shuffle/reduce`、ABI
 
 **验证标准**：
 - 开发前与每轮修改后都执行 `make check`
