@@ -120,7 +120,7 @@
 |------|------|------|
 | 原子类型 `atomic T` | ✅ 完成 | 类型支持 + 代码生成 + 测试已覆盖 |
 | 异步编程 `@await` | 🔶 部分 | AST 支持，运行时未完成 |
-| SIMD 向量 `@vector(T,N)` / `@mask(N)` | 🔶 部分 | 规范 + 最小 Parser/Checker/C99 标量回退已实现；真实 lowering 待办；`std.json` Phase 4 **优先 `@vector`/`@mask`**，可选 `@asm`（见 `todo_json.md`） |
+| SIMD 向量 `@vector(T,N)` / `@mask(N)` | 🔶 部分 | 规范 + Parser/Checker/C99 标量 struct 回退（含算术/比较/位运算/取模/有符号饱和 `+|`等/整数包装 `+%` 等）；真实 lowering 待办；`std.json` Phase 4 **优先 `@vector`/`@mask`**，可选 `@asm`（见 `todo_json.md`） |
 | test 语句 | ✅ 完成 | 语法 + 收集 + 运行器 + 测试已覆盖 |
 
 ---

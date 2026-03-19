@@ -8,6 +8,14 @@
 
 **发布日期：** 待定
 
+### v0.49.6 - SIMD 向量饱和与包装运算（2026-03-19）
+
+- **类型检查**：相同类型的 `@vector(T, N)` 支持按通道 `+|`/`-|`/`*|`（`T` 须为有符号整数）、`+%`/`-%`/`*%`（`T` 须为整数，含无符号）。
+- **C99 代码生成**：`c99_emit_simd_lane_sat_wrap` + `c99_gen_simd_binary_expr` 分支，与标量 `__builtin_*_overflow` / 无符号包装转换一致。
+- **`@vector.splat` 推断**：饱和/包装二元表达式与算术、取模等一致，可从对侧向量绑定 splat。
+- **测试**：`test_simd_vector_sat_wrap_i32.uya`；负例 `error_simd_float_vector_plus_pipe.uya`、`error_simd_u32_vector_plus_pipe.uya`。
+- **文档**：规范 0.49.6（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`）。
+
 ### v0.49.5 - SIMD 整数向量取模（2026-03-19）
 
 - **类型检查 / C99 代码生成**：相同类型的整数元素 `@vector(T, N)` 支持按通道 `%`；浮点元素向量取模为编译错误。
