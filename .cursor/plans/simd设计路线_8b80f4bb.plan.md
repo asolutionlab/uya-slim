@@ -1,6 +1,6 @@
 ---
 name: SIMD设计路线
-overview: 将 `@vector(T, N)` / `@mask(N)` 正式纳入语言内建，先落最小语义与前端支持，再用 `std.json` 的 `@asm` 试点验证平台分发和性能，最后补齐真实 SIMD lowering。
+overview: 将 `@vector(T, N)` / `@mask(N)` 正式纳入语言内建，先落最小语义与前端支持；再将 `@vector` / `@mask` 接到真实 SIMD lowering；最后在 `std.json` 等场景以 `@vector`/`@mask` 为主做加速、`@asm` 可选补充，并保留 benchmark 与标量回退。
 todos:
   - id: spec-builtin
     content: 定稿 `@vector(T, N)` / `@mask(N)` 的语法、边界和第一阶段最小语义
@@ -8,11 +8,11 @@ todos:
   - id: frontend-core
     content: 实现 AST、Parser、Checker 与最小回退 codegen，先保证语义、自举和测试稳定
     status: pending
-  - id: json-asm-pilot
-    content: 以 std.json Stage 1 的 `@asm` SIMD 分支验证平台分发、运行时检测与 benchmark
-    status: pending
   - id: backend-simd-lowering
-    content: 在试点稳定后，把 `@vector` / `@mask` 接到真实 SIMD lowering，并保留标量回退
+    content: 把 `@vector` / `@mask` 接到真实 SIMD lowering，并保留标量回退
+    status: pending
+  - id: json-vector-asm-pilot
+    content: std.json Stage 1 优先 `@vector`/`@mask`；可选 `@asm`（AVX2/NEON）补充；运行时检测与 benchmark
     status: pending
   - id: verification
     content: 按仓库流程纳入 `make check`、双路径测试与提交前 `make clean && make backup`
@@ -27,7 +27,7 @@ isProject: false
 将 `@vector(T, N)` 与 `@mask(N)` 正式纳入语言内建，不再只作为远期候选。为了控制风险，采用“语义先落地、性能后兑现”的两段式计划：
 
 - 语言层先落最小类型系统与最小运算规则，优先保证 parser、checker、codegen、测试和自举稳定。
-- 性能验证先继续沿 `std.json` 的 `@asm` 试点推进，沿用现有 `std.cfg(...)` / `@asm_target()` 与库内运行时分发。
+- 性能验证在 **`std.json` 等库内优先用 `@vector`/`@mask`** 表达可向量化热点（当前即与标量 struct 回退共存；lowering 落地后自动获益）；**可选**再以 `@asm` 做平台裸指令补充，沿用现有 `std.cfg(...)` / `@asm_target()` 与库内运行时分发。
 - 不新增新的条件编译或目标特性内建。
 
 关键依据：
@@ -52,28 +52,28 @@ isProject: false
 - 类型系统：在 `[src/checker/types.uya](src/checker/types.uya)`、`[src/checker/type_from_ast.uya](src/checker/type_from_ast.uya)`、`[src/checker/check_expr_extra.uya](src/checker/check_expr_extra.uya)` 中加入 `TYPE_VECTOR` / `TYPE_MASK`、类型相等、比较结果、掩码运算与最小运算规则。
 - 最小内建辅助：第一版只补 `@vector.splat`、`@vector.any`、`@vector.all` 三个必要 helper，避免 `@mask(N)` 无法落到控制流外部消费。
 - Codegen 第一阶段优先做“保守正确”的回退 lowering：即使暂时不能映射到真实 SIMD，也先确保 `--c99`、`--uya --c99`、自举与测试可通过。
-- 暂缓 `load/store/select/shuffle/reduce/widen/truncate` 等高复杂度能力，等 Phase 4 再扩。
+- 暂缓 `load/store/select/shuffle/reduce/widen/truncate` 等高复杂度能力，等**阶段 3（真实 lowering）**稳定后再扩。
 
-## 阶段 3：标准库 `@asm` 性能试点
+## 阶段 3：真实 SIMD lowering 与语言扩展
 
-- 按现有路线，先在 `[docs/todo_json.md](docs/todo_json.md)` / `[docs/json_design.md](docs/json_design.md)` 的 JSON Stage 1 扫描路径做 AVX2/NEON 可选分支。
-- 要求保持标量后备始终可用，并补 benchmark 验收。
-- 编译期选路仅使用 `std.cfg(...)` / `@asm_target()`；运行时选路仅使用库内普通函数，不新增语言级 feature query。
-- 这一阶段的实现载体明确采用 `@asm`，先解决平台分发、CPU 检测、头文件/ABI/对齐与 benchmark，而不强行要求第一版 `@vector` 立即兑现为真实硬件寄存器 lowering。
-
-## 阶段 4：真实 SIMD lowering 与语言扩展
-
-- 在 Phase 3 稳定后，再把 `@vector` / `@mask` 接到真实 SIMD lowering，并始终保留标量回退路径。
+- 把 `@vector` / `@mask` 接到真实 SIMD lowering，并始终保留标量回退路径（库侧已用 `@vector` 表达的代码在此阶段后自动获益）。
 - 优先评估 `[src/codegen/c99/types.uya](src/codegen/c99/types.uya)`、`[src/codegen/c99/expr.uya](src/codegen/c99/expr.uya)`、`[src/codegen/c99/internal.uya](src/codegen/c99/internal.uya)` 的 lowering 接口，必要时补一层后端内部抽象。
 - 第二阶段再扩充 `load/store/select`，第三阶段再评估 `shuffle/reduce`、混合标量广播与更完整的转换族。
 - 即使进入真实 SIMD lowering，也继续沿用现有编译期/运行时分发方式，不扩展新的分支选择内建。
+
+## 阶段 4：标准库性能试点（`std.json` 优先 `@vector`，`@asm` 可选）
+
+- 在 `[docs/todo_json.md](docs/todo_json.md)` / `[docs/json_design.md](docs/json_design.md)` 的 JSON **Stage 1** 扫描路径中，**优先使用 `@vector`/`@mask`** 实现可向量化环；与阶段 2 的标量 struct 回退语义一致，无需等待阶段 3 即可编写与合并。
+- **可选**：对仍需平台裸指令或手工调优的片段，保留 **AVX2/NEON `@asm`** 分支。
+- 要求保持标量后备始终可用，并补 benchmark 验收（对比标量、`@vector` 与（若实现）`@asm`）。
+- 编译期选路仅使用 `std.cfg(...)` / `@asm_target()`；运行时选路仅使用库内普通函数，不新增语言级 feature query。
 
 ## 验证策略
 
 - 开发前先按仓库流程验证基线：执行 `make check`；若 `bin/uya` 缺失，则先 `make from-c`。
 - 按 TDD 增加 `error_simd_*.uya` 与 `test_simd_*.uya`；先让测试失败，再实现最小功能使其通过。
 - 每轮语言改动后都执行 `make check`，并同时覆盖 `--c99` 与 `--uya --c99`。
-- `std.json` 试点单独保留 benchmark，对比标量路径与 `@asm` SIMD 路径。
+- `std.json` 试点单独保留 benchmark，对比标量路径、`@vector` 路径与（可选）`@asm` 路径。
 - 准备提交时严格执行 `make clean && make backup`，不在测试失败或自举失败时推进提交。
 
 ## 规范草案
@@ -180,11 +180,11 @@ vector_builtin_expr
 - `extern` ABI、跨语言 ABI 稳定性、`@asm` 与 `@vector` 的直接互操作。
 - “直接映射硬件寄存器”的性能承诺；第一阶段只保证语义正确，不保证零成本。
 
-#### 与 Phase 3 的关系
+#### 与 `std.json` 阶段 4（库内试点）的关系
 
 - 第一阶段的 `@vector` / `@mask` 是语言语义落地。
-- Phase 3 的 `std.json` `@asm` 试点是性能与平台分发验证。
-- 两条线并行推进，但不互相阻塞：即使 `@vector` 尚未真实 lowering，`@asm` 试点也可以先完成性能验证。
+- **`std.json` Stage 1** 在路线图**阶段 4** 以 **`@vector`/`@mask` 为主**做加速实现；**可选** `@asm` 作补充。
+- 与**阶段 3（真实 lowering）**并行不阻塞：库代码可先用标量回退的 `@vector` 编写；lowering 落地后同一代码路径自动获益。
 
 ## 可落文档内容
 

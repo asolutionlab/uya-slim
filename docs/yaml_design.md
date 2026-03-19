@@ -29,7 +29,7 @@
 | 错误联合 `!T` | `parse()` 返回 `!YamlValue`，`encode()` 返回 `!&[byte]` |
 | 切片 `&[T]` | 字符串值返回 `&[byte]` 视图，直接指向输入 buffer |
 | 无隐式分配 | API 显式要求传入 `&Arena` 或 buffer 容量 |
-| `@asm` | Phase 4 可选 SIMD 分支（与 std.json 共用思路） |
+| `@vector`/`@mask`、`@asm` | 可选 SIMD（与 std.json 思路一致：优先 `@vector`，可选 `@asm`） |
 
 ---
 

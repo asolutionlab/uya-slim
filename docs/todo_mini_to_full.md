@@ -81,7 +81,7 @@
 | 35 | **新标准库内存操作（std.mem）** | [x] **已完成**（lib/std/mem/mem.uya 已实现，包含 memcpy, memset, memmove, memcmp, memchr，测试用例通过） |
 | 36 | **新标准库字符串操作（std.string）** | [x] **已完成**（lib/std/string/string.uya 已实现，包含 strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr, strstr，测试用例通过） |
 | 37 | **新标准库文件 I/O（std.io）** | [x] **已完成**（lib/std/io/file.uya 和 lib/std/io/stream.uya 已实现，包含 fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush，测试用例通过） |
-| 38 | **新标准库 JSON（std.json）** | [x] Phase 1–3 已完成：解析器、编码器、`to_json<T>`/`from_json<T>` 反射（按结构体字段自动生成，无需方法块）；标量及多字段结构体往返测试通过；含嵌套/数组的 from_json 暂用默认实现。可选：Phase 4 SIMD（`@asm` 试点，不依赖 `@vector` 语言内建）、大文件 benchmark。详见 [todo_json.md](todo_json.md)、[json_design.md](json_design.md) |
+| 38 | **新标准库 JSON（std.json）** | [x] Phase 1–3 已完成：解析器、编码器、`to_json<T>`/`from_json<T>` 反射（按结构体字段自动生成，无需方法块）；标量及多字段结构体往返测试通过；含嵌套/数组的 from_json 暂用默认实现。可选：Phase 4 SIMD（**优先 `@vector`/`@mask`**，可选 Phase 5 `@asm`）、大文件 benchmark。详见 [todo_json.md](todo_json.md)、[json_design.md](json_design.md) |
 | 39 | **新标准库 YAML（std.yaml）** | [ ] 高性能 YAML 编解码器，详见 [todo_yaml.md](todo_yaml.md)、[yaml_design.md](yaml_design.md) |
 | 40 | **新标准库 Protobuf（std.protobuf）** | [ ] 高性能 Protobuf 编解码器，详见 [todo_protobuf.md](todo_protobuf.md)、[protobuf_design.md](protobuf_design.md) |
 | 41 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
@@ -2730,7 +2730,7 @@ interface IReadWriter {
   - `src/codegen/c99/*` 先做语义正确的标量回退
   - 测试：`test_simd_value_ops.uya`、`test_simd_unary_ops.uya`、`test_simd_div_f32_i32.uya`、`test_simd_f64_mul_div.uya`、`test_simd_vec8_i32.uya`、`test_simd_i16_add.uya`、`test_simd_mask_bitwise_shift.uya`、`test_simd_u32_basic.uya`、`test_simd_fn_vector_return.uya`、`test_simd_struct_field_ops.uya`、`test_simd_splat_f32_suffix.uya`、`test_simd_splat_peer_infer.uya` 与 `error_simd_*.uya`（含 `error_simd_vector_mod.uya`、`error_simd_vector_plus_pipe.uya`、`error_simd_vector_plus_percent.uya`、`error_simd_vector_asterisk_pipe.uya`、`error_simd_float_vector_bitwise.uya`、`error_simd_float_vector_tilde.uya`、`error_simd_float_vector_shift.uya`、`error_simd_mask_logical_and.uya`、`error_simd_vector_mask_mix_and.uya`）
 - **阶段 3**：标准库性能试点
-  - 在 `std.json` Stage 1 结构字符扫描中引入 AVX2/NEON 的 `@asm` 可选路径
+  - 在 `std.json` Stage 1 结构字符扫描中**优先**引入 `@vector`/`@mask` 路径，**可选**再补 AVX2/NEON `@asm` 分支
   - 编译期继续复用 `std.cfg(...)` / `@asm_target()`
   - 运行时 CPU 能力检测放在库内普通函数，不新增新的条件编译或目标特性内建
 - **阶段 4**：真实 SIMD lowering
@@ -2742,7 +2742,7 @@ interface IReadWriter {
 - 开发前与每轮修改后都执行 `make check`
 - 新增 `error_simd_*.uya` 与 `test_simd_*.uya`
 - 所有新增测试必须同时通过 `--c99` 与 `--uya --c99`
-- `std.json` SIMD 试点保留 benchmark，对比标量路径与 `@asm` 路径
+- `std.json` SIMD 试点保留 benchmark，对比标量、`@vector` 与（可选）`@asm` 路径
 - 提交前执行 `make clean && make backup`
 
 **详细设计**：

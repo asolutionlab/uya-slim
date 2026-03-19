@@ -94,13 +94,20 @@
 
 ---
 
-## Phase 4：SIMD 加速（可选，`@asm` 试点）
+## Phase 4：SIMD 加速（可选，优先 `@vector`/`@mask`）
 
-当前实现载体明确为 `@asm`（AVX2/NEON 裸汇编或等价内联汇编路径），不依赖 `@vector` / `@mask` 的真实 SIMD lowering。`@vector` 语言内建落地后，可再评估是否用其重写 Stage 1 结构扫描。
+Stage 1 结构字符扫描等可向量化环**优先用 `@vector`/`@mask` 实现**，与当前 C99 标量 struct 回退语义一致；**真实 SIMD lowering** 落地后同一路径自动获益。标量路径必须始终保留。
 
-- [ ] 实现 Stage 1 结构字符扫描的 SIMD 分支（AVX2/NEON）
-- [ ] 运行时 CPU 检测，选择标量或 SIMD 路径
-- [ ] Benchmark 验证 1–3 GB/s 目标
+- [ ] 在 Stage 1 扫描中引入 `@vector`/`@mask` 加速路径（与标量路径可切换）
+- [ ] 运行时 CPU 检测或编译期 `@asm_target()`/`std.cfg` 选路，选择标量或向量路径
+- [ ] Benchmark：对比标量 vs `@vector` 路径吞吐量
+
+### Phase 5（可选）：`@asm` 补充（AVX2/NEON）
+
+当仍存在需裸指令或手工调优的片段时，可**额外**保留 `@asm` 分支；与 Phase 4 的 `@vector` 路径并存，benchmark 可三者对比。
+
+- [ ] （可选）AVX2/NEON `@asm` 热点补充
+- [ ] （可选）Benchmark 纳入 `@asm` 路径
 
 ---
 
@@ -108,7 +115,7 @@
 
 - [ ] 获取 twitter.json、citm_catalog.json、canada.json（可选，用于大文件吞吐量；当前用内嵌负载）
 - [x] 编写 `tests/bench_json.uya`：内嵌 JSON 负载，parse/encode 循环 + `clock()` 测时，打印 ticks 与 parse_total_bytes（可用 CLOCKS_PER_SEC 换算 MB/s）
-- [x] 记录 Phase 1 基准：运行 `./tests/build/bench_json` 可见 parse/encode ticks；Phase 4 `@asm` SIMD 试点后可对比 GB/s
+- [x] 记录 Phase 1 基准：运行 `./tests/build/bench_json` 可见 parse/encode ticks；Phase 4 `@vector`/`@mask` 路径与（可选）Phase 5 `@asm` 落地后可对比 GB/s
 
 ---
 
@@ -116,4 +123,4 @@
 
 - [x] 已在 [todo_mini_to_full.md](todo_mini_to_full.md) 第 38 项添加 **std.json** 条目
 - [x] 已在 [todo_mini_to_full.md](todo_mini_to_full.md) 增加 SIMD 语言内建 `@vector(T, N)` / `@mask(N)` 的长期路线
-- [x] 说明已统一：`std.json` Phase 4 为可选 `@asm` 试点，与 `@vector` 语言内建并行推进，不互相阻塞
+- [x] 说明已统一：`std.json` Phase 4 优先 `@vector`/`@mask`，可选 Phase 5 `@asm` 补充；与 SIMD 总路线图（仓库 `.cursor/plans/simd设计路线_8b80f4bb.plan.md`）阶段 3/4 对齐
