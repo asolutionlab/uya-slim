@@ -2715,19 +2715,20 @@ interface IReadWriter {
 **目标**：将 `@vector(T, N)` / `@mask(N)` 正式纳入语言内建，先落最小语义与前端支持，再逐步接入真实 SIMD lowering。
 
 **第一阶段目标**：
-- `@vector(T, N)` / `@mask(N)` 进入 `docs/uya.md` 与 `docs/grammar_formal.md`
-- Parser / Checker / C99 Codegen 支持最小语义
-- 第一阶段仅保证语义正确，允许标量回退 lowering
+- `@vector(T, N)` / `@mask(N)` 进入 `docs/uya.md` 与 `docs/grammar_formal.md`（✅ 已写入）
+- Parser / Checker / C99 Codegen 支持最小语义（✅ 值级运算 + `@vector.splat` / `any` / `all` + C99 标量回退）
+- 第一阶段仅保证语义正确，允许标量回退 lowering（✅ 当前实现）
 
 **实施路线**：
-- **阶段 1**：规范定稿
+- **阶段 1**：规范定稿（✅）
   - `docs/uya.md`：增加 SIMD 规范正文
   - `docs/grammar_formal.md`：增加 `vector_type` / `mask_type` / `vector_builtin_expr`
   - 锁定第一阶段边界：基础算术、整数位运算、比较、掩码逻辑、`@vector.splat` / `@vector.any` / `@vector.all`
-- **阶段 2**：编译器最小落地
+- **阶段 2**：编译器最小落地（✅ 第一阶段语义）
   - `src/lexer.uya` / `src/ast.uya` / `src/parser/types.uya`
   - `src/checker/types.uya` / `type_from_ast.uya` / `check_expr_extra.uya`
   - `src/codegen/c99/*` 先做语义正确的标量回退
+  - 测试：`test_simd_value_ops.uya`、`test_simd_fn_vector_return.uya` 与 `error_simd_*.uya`
 - **阶段 3**：标准库性能试点
   - 在 `std.json` Stage 1 结构字符扫描中引入 AVX2/NEON 的 `@asm` 可选路径
   - 编译期继续复用 `std.cfg(...)` / `@asm_target()`
