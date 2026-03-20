@@ -1155,6 +1155,15 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     fputs("  const int32_t *aa = (const int32_t *)a; const int32_t *bb = (const int32_t *)b; int32_t *rr = (int32_t *)r;\n" as *byte, codegen.output as *void);
     fputs("  int _i; for (_i = 0; _i < 4; _i++) rr[_i] = aa[_i] * bb[_i];\n" as *byte, codegen.output as *void);
     fputs("#endif\n}\n" as *byte, codegen.output as *void);
+    fputs("static inline void uya_simd_sse_mul_u32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+    fputs("#if defined(__SSE4_1__)\n" as *byte, codegen.output as *void);
+    fputs("  __m128i va = _mm_loadu_si128((const __m128i *)(const void *)a);\n" as *byte, codegen.output as *void);
+    fputs("  __m128i vb = _mm_loadu_si128((const __m128i *)(const void *)b);\n" as *byte, codegen.output as *void);
+    fputs("  _mm_storeu_si128((__m128i *)(void *)r, _mm_mullo_epi32(va, vb));\n" as *byte, codegen.output as *void);
+    fputs("#else\n" as *byte, codegen.output as *void);
+    fputs("  const uint32_t *aa = (const uint32_t *)a; const uint32_t *bb = (const uint32_t *)b; uint32_t *rr = (uint32_t *)r;\n" as *byte, codegen.output as *void);
+    fputs("  int _i; for (_i = 0; _i < 4; _i++) rr[_i] = aa[_i] * bb[_i];\n" as *byte, codegen.output as *void);
+    fputs("#endif\n}\n" as *byte, codegen.output as *void);
     fputs("static inline void uya_simd_sse_and_i32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
     fputs("  __m128i va = _mm_loadu_si128((const __m128i *)(const void *)a);\n" as *byte, codegen.output as *void);
     fputs("  __m128i vb = _mm_loadu_si128((const __m128i *)(const void *)b);\n" as *byte, codegen.output as *void);
@@ -1283,6 +1292,9 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     fputs("static inline void uya_simd_sse_mul_i32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
     fputs("  int32x4_t va = vld1q_s32((const int32_t *)a); int32x4_t vb = vld1q_s32((const int32_t *)b);\n" as *byte, codegen.output as *void);
     fputs("  vst1q_s32((int32_t *)r, vmulq_s32(va, vb));\n}\n" as *byte, codegen.output as *void);
+    fputs("static inline void uya_simd_sse_mul_u32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+    fputs("  uint32x4_t va = vld1q_u32((const uint32_t *)a); uint32x4_t vb = vld1q_u32((const uint32_t *)b);\n" as *byte, codegen.output as *void);
+    fputs("  vst1q_u32((uint32_t *)r, vmulq_u32(va, vb));\n}\n" as *byte, codegen.output as *void);
     fputs("static inline void uya_simd_sse_and_i32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
     fputs("  int32x4_t va = vld1q_s32((const int32_t *)a); int32x4_t vb = vld1q_s32((const int32_t *)b);\n" as *byte, codegen.output as *void);
     fputs("  vst1q_s32((int32_t *)r, vandq_s32(va, vb));\n}\n" as *byte, codegen.output as *void);
@@ -1381,6 +1393,9 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     fputs("  int _i; for (_i = 0; _i < 4; _i++) rr[_i] = aa[_i] - bb[_i];\n}\n" as *byte, codegen.output as *void);
     fputs("static inline void uya_simd_sse_mul_i32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
     fputs("  int32_t *rr = (int32_t *)r; const int32_t *aa = (const int32_t *)a; const int32_t *bb = (const int32_t *)b;\n" as *byte, codegen.output as *void);
+    fputs("  int _i; for (_i = 0; _i < 4; _i++) rr[_i] = aa[_i] * bb[_i];\n}\n" as *byte, codegen.output as *void);
+    fputs("static inline void uya_simd_sse_mul_u32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+    fputs("  uint32_t *rr = (uint32_t *)r; const uint32_t *aa = (const uint32_t *)a; const uint32_t *bb = (const uint32_t *)b;\n" as *byte, codegen.output as *void);
     fputs("  int _i; for (_i = 0; _i < 4; _i++) rr[_i] = aa[_i] * bb[_i];\n}\n" as *byte, codegen.output as *void);
     fputs("static inline void uya_simd_sse_and_i32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
     fputs("  int32_t *rr = (int32_t *)r; const int32_t *aa = (const int32_t *)a; const int32_t *bb = (const int32_t *)b;\n" as *byte, codegen.output as *void);

@@ -15,5 +15,12 @@ export fn main() i32 {
     if @vector.all(ok2) == false {
         return 2;
     }
+    // 高位无符号 ×：0x80000000 * 2 → 低 32 位为 0（与有符号 mul 语义不同类场景）
+    const hi: Vec4u32 = @vector.splat(0x80000000u32);
+    const two: Vec4u32 = @vector.splat(2u32);
+    const hz: Vec4u32 = hi * two;
+    if @vector.all(hz == @vector.splat(0u32)) == false {
+        return 3;
+    }
     return 0;
 }

@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.20 - SIMD：`4×u32` 向量 `*` C99 快路径（2026-03-19）
+
+- **C99**：`types.uya` 增加 **`uya_simd_sse_mul_u32x4`**（SSE4.1 / NEON `vmulq_u32` / 标量）；`expr.uya` **`fast_kind` 22**；`test_simd_u32_basic.uya` 增补高位无符号乘用例。
+- **文档**：规范 0.49.20（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
 ### v0.49.19 - SIMD：32×/64×`i32`/`u32`/`f32` 八/十六 x4 lowering（2026-03-19）
 
 - **C99**：`expr.uya` 增加 **`c99_simd_sse_x4_tile_lane_count_ok`**；**32 / 64** 通道与 **4/8/16** 同属 x4 分块快路径；测试 `test_simd_vec32_sse_chain.uya`、`test_simd_vec64_sse_chain.uya`。
