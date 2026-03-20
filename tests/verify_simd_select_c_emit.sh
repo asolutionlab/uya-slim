@@ -12,6 +12,8 @@ mkdir -p "$BUILD_DIR"
 no_sel_c="$BUILD_DIR/simd_emit_no_select.c"
 i32_only_c="$BUILD_DIR/simd_emit_select_i32_only.c"
 i32x2_only_c="$BUILD_DIR/simd_emit_select_i32x2_only.c"
+u32x2_only_c="$BUILD_DIR/simd_emit_select_u32x2_only.c"
+f32x2_only_c="$BUILD_DIR/simd_emit_select_f32x2_only.c"
 
 echo "验证：无 @vector.select 的 SIMD 程序不应输出 select 助手定义 ..."
 if ! "$COMPILER" --c99 "$SCRIPT_DIR/test_simd_sse_lower_i32x4.uya" -o "$no_sel_c" 2>&1; then
@@ -57,6 +59,48 @@ if grep -q 'static inline void uya_simd_sse_select_i32x4' "$i32x2_only_c"; then
     exit 1
 fi
 echo "  仅 i32×2 select 时无 x4 助手 ✓"
+
+echo "验证：仅 u32×2 select 时仅有 u32×2 助手、无 i32/f32×2 与 ×4 ..."
+if ! "$COMPILER" --c99 "$SCRIPT_DIR/test_simd_c99_select_emit_u32x2_only.uya" -o "$u32x2_only_c" 2>&1; then
+    echo "✗ 编译 test_simd_c99_select_emit_u32x2_only.uya 失败"
+    exit 1
+fi
+if ! grep -q 'static inline void uya_simd_sse_select_u32x2' "$u32x2_only_c"; then
+    echo "✗ 缺少 uya_simd_sse_select_u32x2 定义"
+    exit 1
+fi
+if grep -q 'static inline void uya_simd_sse_select_i32x2' "$u32x2_only_c"; then
+    echo "✗ 不应生成 uya_simd_sse_select_i32x2"
+    exit 1
+fi
+if grep -q 'static inline void uya_simd_sse_select_f32x2' "$u32x2_only_c"; then
+    echo "✗ 不应生成 uya_simd_sse_select_f32x2"
+    exit 1
+fi
+if grep 'static inline void uya_simd_sse_select_' "$u32x2_only_c" | grep -v select_u32x2; then
+    echo "✗ u32×2 专用程序只应含 select_u32x2 的 static inline 定义"
+    exit 1
+fi
+echo "  仅 u32×2 select 助手隔离 ✓"
+
+echo "验证：仅 f32×2 select 时仅有 f32×2 助手、无 ×4 ..."
+if ! "$COMPILER" --c99 "$SCRIPT_DIR/test_simd_c99_select_emit_f32x2_only.uya" -o "$f32x2_only_c" 2>&1; then
+    echo "✗ 编译 test_simd_c99_select_emit_f32x2_only.uya 失败"
+    exit 1
+fi
+if ! grep -q 'static inline void uya_simd_sse_select_f32x2' "$f32x2_only_c"; then
+    echo "✗ 缺少 uya_simd_sse_select_f32x2 定义"
+    exit 1
+fi
+if grep -q 'static inline void uya_simd_sse_select_f32x4' "$f32x2_only_c"; then
+    echo "✗ 仅 f32×2 时不应生成 uya_simd_sse_select_f32x4"
+    exit 1
+fi
+if grep 'static inline void uya_simd_sse_select_' "$f32x2_only_c" | grep -v select_f32x2; then
+    echo "✗ f32×2 专用程序只应含 select_f32x2 的 static inline 定义"
+    exit 1
+fi
+echo "  仅 f32×2 select 助手隔离 ✓"
 
 echo ""
 echo "✓ SIMD select C 按需生成验证通过"

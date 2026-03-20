@@ -110,6 +110,18 @@ export fn main() i32 {
     if @vector.all(sel2_i == v2i) == false {
         return 23;
     }
+    const m2u: Mask2 = v2u < @vector.splat(2 as u32);
+    const z2u: Vec2u32 = @vector.splat(0 as u32);
+    const sel2_u: Vec2u32 = @vector.select(m2u, v2u, z2u);
+    if @vector.all(sel2_u == v2u) == false {
+        return 24;
+    }
+    const m2f: Mask2 = v2f < @vector.splat(4.0f32);
+    const z2f: Vec2f32 = @vector.splat(0.0f32);
+    const sel2_f: Vec2f32 = @vector.select(m2f, v2f, z2f);
+    if @vector.all(sel2_f == v2f) == false {
+        return 25;
+    }
     // @vector.select x4：触发 uya_simd_*_select_{i32,u32,f32}x4（SSE / NEON / 标量三档）
     const sel_i: Vec4i32 = @vector.select(m, a, b);
     if @vector.all(sel_i == a) == false {
