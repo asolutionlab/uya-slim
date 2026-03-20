@@ -8,6 +8,12 @@
 
 **发布日期：** 待定
 
+### v0.49.36 - SIMD：`@vector.reduce_add`（2026-03-20）
+
+- **语言 / 检查 / C99**：新增 **`@vector.reduce_add(v)`**（**`v`** 为 **`@vector(T,N)`**，**`T`** 为 **`i8`–`i64`、`u8`–`u64`、`f32`、`f64`**；结果为标量 **`T`**，各通道按 **`+` 求和**；C99 为语句表达式内循环累加）。
+- **测试**：`test_simd_vector_reduce_add.uya`、`error_simd_vector_reduce_add_not_vector.uya`。
+- **文档**：规范 **0.49.36**（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`、`todo_mini_to_full.md`、`changelog.md`）。
+
 ### v0.49.35 - SIMD：`@vector.select`（2026-03-20）
 
 - **语言 / 检查 / C99**：新增 **`@vector.select(m, a, b)`**（**`m`** 为 **`@mask(N)`**，**`a`**/**`b`** 为相同 **`@vector(T,N)`**；逐通道混合；C99 为标量逐通道赋值）。

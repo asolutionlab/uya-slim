@@ -1,6 +1,6 @@
 # Uya 语法速查手册（Quick Reference）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.35 同步（2026-03-20）
+> **版本**：与 [uya.md](./uya.md) 0.49.36 同步（2026-03-20）
 
 本文档是 Uya 语言的快速参考手册，包含精简语法定义、常用代码模式和速查表。
 
@@ -55,7 +55,7 @@ var y: i32 = 10;
 | **错误联合** | `!T` | `fn may_fail() !i32 { ... }`<br>`fn encode() !&[byte] { ... }` | 可能返回错误；可与切片组合为返回值 `!&[byte]` |
 | **原子类型** | `atomic T` | `value: atomic i32` | 原子类型 |
 | **函数指针** | `fn(...) type` | `type Func = fn(i32, i32) i32;` | 函数指针类型 |
-| **SIMD 向量/掩码** | `@vector(T, N)`<br>`@mask(N)` | `type Vec4i32 = @vector(i32, 4);`<br>`const lt: @mask(4) = u < v;`<br>`const neg: Vec4i32 = -u;`<br>`const w: Vec4f32 = @vector.splat(1.0f32);`<br>`const chunk: @vector(u8,16) = @vector.load(&buf[i]);`<br>`@vector.store(&buf[0], w);`<br>`const mix: Vec4i32 = @vector.select(lt, a, b);` | 向量算术/比较/位运算；整数向量 `%`；有符号整数向量 `+|`/`-|`/`*|`；整数向量 `+%`/`-%`/`*%`；一元 `-`（整数/浮点元素）、`~`（仅整数元素）；`@vector.splat` / **`@vector.load` / `@vector.store` / `@vector.select`**（**0.49.33** / **0.49.34** / **0.49.35**；`load`/`select` 目标 `@vector` 由上下文确定；`store` 为 **`void`**） |
+| **SIMD 向量/掩码** | `@vector(T, N)`<br>`@mask(N)` | `type Vec4i32 = @vector(i32, 4);`<br>`const lt: @mask(4) = u < v;`<br>`const neg: Vec4i32 = -u;`<br>`const w: Vec4f32 = @vector.splat(1.0f32);`<br>`const chunk: @vector(u8,16) = @vector.load(&buf[i]);`<br>`@vector.store(&buf[0], w);`<br>`const mix: Vec4i32 = @vector.select(lt, a, b);`<br>`const s: i32 = @vector.reduce_add(u);` | 向量算术/比较/位运算；整数向量 `%`；有符号整数向量 `+|`/`-|`/`*|`；整数向量 `+%`/`-%`/`*%`；一元 `-`（整数/浮点元素）、`~`（仅整数元素）；`@vector.splat` / **`@vector.load` / `@vector.store` / `@vector.select` / `@vector.reduce_add`**（**0.49.33** / **0.49.34** / **0.49.35** / **0.49.36**；`load`/`select` 目标 `@vector` 由上下文确定；`store` 为 **`void`**；**`reduce_add`** 返回元素标量） |
 
 ---
 

@@ -1,8 +1,8 @@
 # Uya 内置函数使用文档
 
-> 版本：v0.49.35（2026-03-20）  
+> 版本：v0.49.36（2026-03-20）  
 > 此文档为 uya.md 的详细补充说明  
-> 语言规范：0.49.35  
+> 语言规范：0.49.36  
 > 所有内置函数均以 `@` 开头，由编译器识别，无需导入或声明；其实现阶段与运行时开销以各章节说明为准
 
 ---
@@ -1630,6 +1630,7 @@ fn unsafe_fetch_add(ptr: &i32, value: i32) i32 {
 - `@vector.load(ptr)`（**0.49.33**）：从 **`ptr`**（**`&T`**，与向量元素类型一致；**`byte`/`u8`** 匹配见 `uya.md`）按 **`sizeof(@vector(T,N))`** 读取内存得到向量；目标 **`@vector(T,N)`** 须由上下文确定；**调用方**须保证可读范围足够
 - `@vector.store(ptr, v)`（**0.49.34**）：将 **`v`**（**`@vector(T,N)`**）按 **`sizeof(@vector(T,N))`** 写入 **`ptr`**（**`&T`**，**`T`** 与 **`v`** 元素类型一致；**`byte`/`u8`** 同 **`load`**）；**结果为 `void`**；**调用方**须保证可写范围足够
 - `@vector.select(m, a, b)`（**0.49.35**）：**`m`** 为 **`@mask(N)`**，**`a`**、**`b`** 为**完全相同**的 **`@vector(T,N)`**，且 **`N`** 与掩码通道数一致；逐通道 **`m` 为真取 `a`，否则取 `b`**；结果为 **`@vector(T,N)`**；目标向量类型须由上下文确定（与 **`splat`** / **`load`** 相同）
+- `@vector.reduce_add(v)`（**0.49.36**）：**`v`** 为 **`@vector(T,N)`**，**`T`** 为 **`i8`–`i64`、`u8`–`u64`、`f32`、`f64`**；返回标量 **`T`**，为 **`v`** 各通道之和（**`+`** 与标量同语义，含整数包装/溢出）
 - `@vector.any(m)`：掩码任一通道为 true 时返回 `bool true`
 - `@vector.all(m)`：掩码所有通道为 true 时返回 `bool true`
 
@@ -1659,7 +1660,7 @@ if @vector.any(lt) {
 - `@vector.splat(x)` 的参数类型须与目标向量元素类型一致或可隐式转换；无后缀浮点字面量为 `f64`，填入 `f32` 向量须使用 `f32` 后缀（如 `1.0f32`）
 - `@vector.splat(x)` 的目标向量类型必须能由上下文唯一确定（含与同一代数/比较表达式中另一侧 `@vector` 操作数对齐推断，以及 **`return` 与函数返回 `@vector` / `!@vector` 成功载荷** 对齐推断，见 uya.md 0.49.8、0.49.9）
 - 第一阶段允许标量回退 lowering，不承诺立刻映射真实硬件寄存器
-- **`@vector.load` / `@vector.store` / `@vector.select`** 已于 **0.49.33** / **0.49.34** / **0.49.35** 纳入；第一阶段仍不引入 **`shuffle` / `reduce_*`**
+- **`@vector.load` / `@vector.store` / `@vector.select`** 已于 **0.49.33** / **0.49.34** / **0.49.35** 纳入；**`@vector.reduce_add`** 已于 **0.49.36** 纳入；第一阶段仍不引入 **`shuffle`** 及其它 **`reduce_*`**
 
 ---
 
@@ -1729,6 +1730,7 @@ const both: @mask(4) = lt & eq;
 | | `@vector.load` | ✓ | ✓ | 📋 规范支持（0.49.33） |
 | | `@vector.store` | ✓ | ✓ | 📋 规范支持（0.49.34） |
 | | `@vector.select` | ✓ | ✓ | 📋 规范支持（0.49.35） |
+| | `@vector.reduce_add` | ✓ | ✓ | 📋 规范支持（0.49.36） |
 | | `@vector.any` | ✓ | ✓ | 📋 规范支持 |
 | | `@vector.all` | ✓ | ✓ | 📋 规范支持 |
 
@@ -1845,6 +1847,7 @@ fn buffer_info<T>() void {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v0.49.36 | 2026-03-20 | **`@vector.reduce_add(v)`**（水平求和 → 标量 **`T`**；C99 语句表达式 + 循环）；`test_simd_vector_reduce_add.uya`、`error_simd_vector_reduce_add_not_vector.uya`；规范 **0.49.36** |
 | v0.49.35 | 2026-03-20 | **`@vector.select(m,a,b)`**（逐通道混合；C99 标量逐通道）；`test_simd_vector_select.uya`、`error_simd_vector_select_mask_lanes.uya`；规范 **0.49.35** |
 | v0.49.34 | 2026-03-20 | **`@vector.store(ptr,v)`**（**`__uya_memcpy`** 写回内存；**`void`**）；`test_simd_vector_store.uya`、`error_simd_vector_store_pointee_mismatch.uya`；规范 **0.49.34** |
 | v0.49.33 | 2026-03-20 | **`@vector.load`**（**`__uya_memcpy`** 装入向量）；**`std.json` `skip_ws`** **`@vector(u8,16)`** 块路径；`test_simd_vector_load.uya`、`error_simd_vector_load_pointee_mismatch.uya` |
@@ -1898,5 +1901,5 @@ fn buffer_info<T>() void {
 
 ---
 
-**本文档由 Uya 编译器团队维护，最后更新：2026-03-20（0.49.35）**
+**本文档由 Uya 编译器团队维护，最后更新：2026-03-20（0.49.36）**
 

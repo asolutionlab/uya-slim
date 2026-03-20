@@ -1,6 +1,6 @@
 # Uya 语言正式语法规范（Formal BNF）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.35 同步（2026-03-20）
+> **版本**：与 [uya.md](./uya.md) 0.49.36 同步（2026-03-20）
 
 本文档包含 Uya 语言的完整、无歧义的 BNF 语法定义，用于：
 - 编译器/解析器实现
@@ -238,6 +238,7 @@ vector_builtin_expr
                | '@vector' '.' 'load'  '(' expr ')'
                | '@vector' '.' 'store' '(' expr ',' expr ')'
                | '@vector' '.' 'select' '(' expr ',' expr ',' expr ')'
+               | '@vector' '.' 'reduce_add' '(' expr ')'
                | '@vector' '.' 'any'   '(' expr ')'
                | '@vector' '.' 'all'   '(' expr ')'
 union_literal  = ID '.' ID '(' expr ')'  # 联合体创建，如 IntOrFloat.i(42)、NetworkPacket.ipv4([...])
@@ -257,9 +258,10 @@ union_literal  = ID '.' ID '(' expr ')'  # 联合体创建，如 IntOrFloat.i(42
 - **`@vector.load(ptr)`**（**0.49.33**）：**`ptr`** 为 **`&T`**，与目标 **`@vector(T,N)`** 的元素类型匹配（**`byte`/`u8`** 互通规则同实现）；从 **`ptr`** 按向量大小装入向量值；目标类型上下文与 **`@vector.splat`** 相同；**不检查**缓冲区剩余长度
 - **`@vector.store(ptr, v)`**（**0.49.34**）：**`v`** 为 **`@vector(T,N)`**，**`ptr`** 为 **`&T`** 且与 **`v`** 元素类型匹配（**`byte`/`u8`** 规则同 **`load`**）；将 **`v`** 按向量大小写入 **`ptr`**；**`void`**；**不检查**可写范围长度
 - **`@vector.select(m, a, b)`**（**0.49.35**）：**`m`** 为 **`@mask(N)`**，**`a`**、**`b`** 为相同 **`@vector(T,N)`** 且 **`N`** 与 **`m`** 一致；通道 **`i`** 上 **`m`** 为真取 **`a`** 的分量，否则取 **`b`** 的分量；结果为 **`@vector(T,N)`**；目标类型上下文同 **`@vector.splat`** / **`load`**
+- **`@vector.reduce_add(v)`**（**0.49.36**）：**`v`** 为 **`@vector(T,N)`**，元素类型 **`T`** 为 **`i8`–`i64`、`u8`–`u64`、`f32`、`f64`**；结果为标量 **`T`**，为各通道之和（**`+`** 语义同标量）
 - `@vector.any(m)` 与 `@vector.all(m)` 接受 `@mask(N)` 并返回 `bool`
 - 第一阶段不允许把 `@mask(N)` 直接作为 `if` / `while` 条件
-- 第一阶段不引入 **`shuffle` / `reduce_*`**
+- 第一阶段不引入 **`shuffle`**；**`reduce_*`** 中仅纳入 **`@vector.reduce_add`**（**0.49.36**），其它 **`reduce_*`** 仍暂缓
 
 ### 内联汇编
 

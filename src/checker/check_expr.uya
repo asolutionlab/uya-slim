@@ -1389,7 +1389,24 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
         if str_equals(simd_method, "store" as *byte) != 0 {
             return make_void_type();
         }
-        checker_report_error(checker, expr, "@vector 目前仅支持 .splat/.load/.store/.select/.any/.all" as *byte);
+        if str_equals(simd_method, "reduce_add" as *byte) != 0 {
+            if expr.call_expr_arg_count != 1 || expr.call_expr_args == null || expr.call_expr_args[0] == null {
+                checker_report_error(checker, expr, "@vector.reduce_add 需要恰好一个参数" as *byte);
+                return make_void_type();
+            }
+            const vec_tr: Type = checker_infer_type(checker, expr.call_expr_args[0]);
+            if vec_tr.kind != TypeKind.TYPE_VECTOR || vec_tr.element_type == null {
+                checker_report_error(checker, expr.call_expr_args[0], "@vector.reduce_add 的参数须为 @vector(T,N)" as *byte);
+                return make_void_type();
+            }
+            const el_tr: Type = copy_type(&vec_tr.element_type[0]);
+            if simd_reduce_add_elem_ok(el_tr) == 0 {
+                checker_report_error(checker, expr.call_expr_args[0], "@vector.reduce_add 仅支持元素为整数或浮点的向量" as *byte);
+                return make_void_type();
+            }
+            return copy_type(&vec_tr.element_type[0]);
+        }
+        checker_report_error(checker, expr, "@vector 目前仅支持 .splat/.load/.store/.select/.reduce_add/.any/.all" as *byte);
         return make_void_type();
     }
     

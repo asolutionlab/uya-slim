@@ -28,7 +28,7 @@ export use type mc test as
 - 错误：`@error_id(expr)` — 从错误值取数值 ID（`u32`）
 - 调试：`@print`、`@println`
 - 内联汇编：`@asm { ... }`、`@asm_target()`
-- SIMD：`@vector(T, N)`、`@mask(N)`，以及 `@vector.splat(x)`、`@vector.load(ptr)`、`@vector.store(ptr, v)`、`@vector.select(m, a, b)`、`@vector.any(m)`、`@vector.all(m)` 等（详见规范 §16 / `docs/builtin_functions.md`）
+- SIMD：`@vector(T, N)`、`@mask(N)`，以及 `@vector.splat(x)`、`@vector.load(ptr)`、`@vector.store(ptr, v)`、`@vector.select(m, a, b)`、`@vector.reduce_add(v)`、`@vector.any(m)`、`@vector.all(m)` 等（详见规范 §16 / `docs/builtin_functions.md`）
 
 ## 类型系统
 
@@ -1501,8 +1501,8 @@ mc assert(cond) stmt {
 
 - **本文件**：`docs/uya.md` 的 AI 用压缩摘要，便于代码生成与问答。
 - **权威规范**：语义、BNF、与编译器一致性以 **`docs/uya.md`**、**`docs/grammar_formal.md`**、**`docs/builtin_functions.md`** 为准；冲突时以规范与测试为准。
-- **对应规范版本**：与 `docs/uya.md` 头部一致（当前 **0.49.35**）。
-- **更新日期**：2026-03-19
+- **对应规范版本**：与 `docs/uya.md` 头部一致（当前 **0.49.36**）。
+- **更新日期**：2026-03-20
 
 ### 自举编译器实现索引（摘要）
 

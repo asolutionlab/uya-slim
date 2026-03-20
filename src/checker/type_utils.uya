@@ -215,6 +215,20 @@ fn is_numeric_type(k: TypeKind) i32 {
     return 0;
 }
 
+// @vector.reduce_add：允许的向量元素类型（与 SIMD 第一阶段元素集一致，不含 bool/byte/usize）
+fn simd_reduce_add_elem_ok(elem: Type) i32 {
+    if elem.kind == TypeKind.TYPE_I8 || elem.kind == TypeKind.TYPE_I16 || elem.kind == TypeKind.TYPE_I32 || elem.kind == TypeKind.TYPE_I64 {
+        return 1;
+    }
+    if elem.kind == TypeKind.TYPE_U8 || elem.kind == TypeKind.TYPE_U16 || elem.kind == TypeKind.TYPE_U32 || elem.kind == TypeKind.TYPE_U64 {
+        return 1;
+    }
+    if elem.kind == TypeKind.TYPE_F32 || elem.kind == TypeKind.TYPE_F64 {
+        return 1;
+    }
+    return 0;
+}
+
 // ===== 约束检查 =====
 
 // 检查类型是否满足内置约束

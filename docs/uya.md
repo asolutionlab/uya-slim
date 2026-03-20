@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.35（完整版 · 2026-03-20）
+# Uya 语言规范 0.49.36（完整版 · 2026-03-20）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -53,6 +53,10 @@
 ---
 
 ## 规范变更
+
+### 0.49.36（2026-03-20）
+
+- **SIMD：`@vector.reduce_add(v)`**（阶段 4 / `reduce_*` 子集）：**`v`** 为 **`@vector(T,N)`**，**`T`** 为 **`i8`–`i64`、`u8`–`u64`、`f32`、`f64`**（与第一阶段向量元素集一致）；结果为标量 **`T`**，语义为 **`v.lanes[0] + v.lanes[1] + … + v.lanes[N-1]`**（按通道使用与标量 **`+`** 相同的包装/溢出规则）。**C99**：语句表达式内临时向量 + **`while` 循环**累加（不单独生成 SIMD 水平加助手）。**测试**：`test_simd_vector_reduce_add.uya`；负例 **`error_simd_vector_reduce_add_not_vector.uya`**。
 
 ### 0.49.35（2026-03-20）
 
@@ -4735,6 +4739,7 @@ fn caller() void {
      - **`@vector.load(ptr)`**（**0.49.33**）：从 **`ptr`** 指向地址**按向量内存大小**读取 **`@vector(T, N)`**；**`ptr`** 为 **`&T`**，且 **`T`** 与目标向量元素类型一致（**`byte`/`u8`** 匹配规则与实现一致）；**不检查**剩余缓冲区长度（与 C **`memcpy`** 调用方责任一致）。目标向量类型上下文与 **`@vector.splat`** 相同。
      - **`@vector.store(ptr, v)`**（**0.49.34**）：**`v`** 为 **`@vector(T, N)`**，**`ptr`** 为 **`&T`** 且 **`T`** 与 **`v`** 的元素类型一致（**`byte`/`u8`** 规则同 **`load`**）；按向量大小将 **`v`** 写入 **`ptr`**；**`void`**；**不检查**可写范围长度（调用方责任同 **`memcpy`**）。
      - **`@vector.select(m, a, b)`**（**0.49.35**）：**`m`** 为 **`@mask(N)`**，**`a`**、**`b`** 为相同 **`@vector(T, N)`** 且 **`N`** 与 **`m`** 一致；通道 **`i`** 上 **`m`** 为真取 **`a[i]`**，否则取 **`b[i]`**；结果为 **`@vector(T, N)`**；目标类型上下文同 **`@vector.splat`** / **`load`**
+     - **`@vector.reduce_add(v)`**（**0.49.36**）：**`v`** 为 **`@vector(T, N)`**，**`T`** 为 **`i8`…`u64` 或 `f32`/`f64`**；结果为标量 **`T`**，等于各通道之和（**`+`** 语义同标量）
      - `@vector.any(m)`：参数 `m` 必须是 `@mask(N)`，只要任一通道为 true 则返回 `bool true`
      - `@vector.all(m)`：参数 `m` 必须是 `@mask(N)`，仅当所有通道为 true 时返回 `bool true`
    - **示例**：
@@ -4750,12 +4755,12 @@ fn caller() void {
    - **第一阶段纳入范围**：
      - `@vector(T, N)`、`@mask(N)`
      - 基本算术、整数位运算、比较、掩码逻辑运算
-     - `@vector.splat`、**`@vector.load`**、**`@vector.store`**、**`@vector.select`**、`@vector.any`、`@vector.all`
+     - `@vector.splat`、**`@vector.load`**、**`@vector.store`**、**`@vector.select`**、**`@vector.reduce_add`**、`@vector.any`、`@vector.all`
      - 语义正确的标量回退 lowering
      - **C99 快路径**（阶段 4 起）：**x86_64 + SSE2**（`UYA_HAVE_SIMD_X86_SSE`）或 **ARM/AArch64 + NEON**（`UYA_HAVE_SIMD_ARM_NEON`，`<arm_neon.h>`）下，对 **`i32`/`u32`/`f32`**：**2 通道**走 **`*_i32x2` / `*_u32x2` / `*_f32x2`** 等（0.49.29，低 **64 位** 或 NEON **2 宽**）；**4 通道**走 **`*_x4`**（**`i32` 向量 `/` `%`**：`uya_simd_sse_div_i32x4`、`uya_simd_sse_rem_i32x4`，0.49.22–0.49.23；**`u32` 向量 `* / %`**：`uya_simd_sse_mul_u32x4`、`uya_simd_sse_div_u32x4`、`uya_simd_sse_rem_u32x4`，0.49.20–0.49.23；**`i32`/`u32` 向量 `<<` `>>`**：`uya_simd_sse_shl_i32x4`、`uya_simd_sse_shr_i32x4`、`uya_simd_sse_shl_u32x4`、`uya_simd_sse_shr_u32x4`，0.49.24）；**`f64` 向量 `+` / `-` / `* /` / 一元 `-`**：`uya_simd_sse_add_f64x2`、`uya_simd_sse_sub_f64x2`、`uya_simd_sse_mul_f64x2`、`uya_simd_sse_div_f64x2`、`uya_simd_sse_neg_f64x2`，0.49.25–0.49.28，支持 **2×/4×** 通道；**`i16` 向量 `+` / `-` / `*` 与六种比较、一元 `-`、`splat`**：`uya_simd_sse_add_i16x4`/`x8`、`sub_*`、`mul_*`、`eq`/`ne`/`lt`/`gt`/`le`/`ge` 的 **`_i16x4_mask` / `_i16x8_mask`**、`neg_i16x4`/`x8`、`splat_i16x4`/`x8`，0.49.26–0.49.28，**4×** 为 **64 位** SIMD 块、**8×** 为 **128 位**；**`u16` 向量 `+` / `-` / `*` 与六种比较、`splat`**：`add`/`sub`/`mul`/`eq`/`ne`/`lt`/`gt`/`le`/`ge` 的 **`_u16x4` / `_u16x8`** 与 **`splat_u16x4`/`x8`**，0.49.28）；**`i8`/`u8` 向量**（**2/4/8/16/32/64** 通道）算术·位运算·六种比较·**`splat`**·一元 `-`：**`*_i8x16`/`x8`/`x4`/`x2`**、**`*_u8x*`**（0.49.30）；**`i64`/`u64` 向量**与 **掩码**、**`splat`**、一元 `-`：**`*_i64x2`**、**`*_u64x2`** 按 **2 通道** 分块（0.49.30）；**8 / 16 / 32 / 64 通道**（`i32`/`u32`/`f32`）为 **2 / 4 / 8 / 16 次** 4 通道调用（连续 `lanes` 块）。否则为该名提供逐通道标量体。表达式内**不**使用预处理器分支（见规范变更 0.49.10、0.49.16、0.49.17、0.49.18、0.49.19、0.49.20、0.49.21、0.49.22、0.49.23、0.49.24、0.49.25、0.49.26、0.49.27、0.49.28、**0.49.29**、**0.49.30**）。
    - **第一阶段暂缓**：
      - 标量广播语法糖，如 `vec + 1`
-     - **`shuffle` / `reduce_*`**（**`@vector.load` / `@vector.store` / `@vector.select`** 已分别于 **0.49.33** / **0.49.34** / **0.49.35** 纳入，见规范变更）
+     - **`shuffle` / 其它 `reduce_*`**（**`@vector.reduce_add`** 已于 **0.49.36** 纳入；**`@vector.load` / `@vector.store` / `@vector.select`** 已分别于 **0.49.33** / **0.49.34** / **0.49.35** 纳入，见规范变更）
      - `widen/truncate/bitcast/convert`
      - 自动向量化
      - 新的目标特性查询内建
