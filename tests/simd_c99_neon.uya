@@ -4,6 +4,9 @@ type Vec4i16 = @vector(i16, 4);
 type Vec4u32 = @vector(u32, 4);
 type Vec4u16 = @vector(u16, 4);
 type Vec4f32 = @vector(f32, 4);
+type Vec2i32 = @vector(i32, 2);
+type Vec2u32 = @vector(u32, 2);
+type Vec2f32 = @vector(f32, 2);
 type Vec2f64 = @vector(f64, 2);
 type Mask4 = @mask(4);
 type Mask2 = @mask(2);
@@ -88,6 +91,18 @@ export fn main() i32 {
     const f2m: Mask2 = f2s == @vector.splat(2.5);
     if @vector.all(f2m) == false {
         return 16;
+    }
+    const v2i: Vec2i32 = @vector.splat(2) + @vector.splat(3);
+    if @vector.all(v2i == @vector.splat(5)) == false {
+        return 17;
+    }
+    const v2u: Vec2u32 = @vector.splat(7 as u32) % @vector.splat(3 as u32);
+    if @vector.all(v2u == @vector.splat(1 as u32)) == false {
+        return 18;
+    }
+    const v2f: Vec2f32 = @vector.splat(1.5f32) * @vector.splat(2.0f32);
+    if @vector.all(v2f == @vector.splat(3.0f32)) == false {
+        return 19;
     }
     return 0;
 }

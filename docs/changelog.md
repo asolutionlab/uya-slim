@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.29 - SIMD：`2×i32` / `2×u32` / `2×f32` 与 `@mask(2)` C99 快路径（2026-03-19）
+
+- **C99**：`types.uya`：`uya_simd_sse_*_i32x2`、`*_u32x2`、`*_f32x2` 及掩码（SSE/NEON/`#else`）；`expr.uya`：`c99_simd_sse_i32_u32_f32_two_or_x4_lane_ok`、分派 **`x2`**、`splat`/`一元-`；`test_simd_vec2_i32_u32_f32.uya`、夹具 **`simd_c99_neon.uya`**。
+- **文档**：规范 **0.49.29**（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
 ### v0.49.28 - SIMD：`f64` `+`/`-`/一元`-`；`i16`/`u16` 扩展比较与 `splat`；`4×i16` 安全 64 位块（2026-03-19）
 
 - **C99**：`types.uya` / `expr.uya`：`add_f64x2`、`sub_f64x2`、`neg_f64x2`；`i16`/`u16` 掩码六比较；`i16x4`/`u16x4` 与 `x8` 向量助手；`splat_i16*`、`splat_u16*`；`fast_kind` 39/40、41–43、112–122 等；`test_simd_i16_add.uya`、`test_simd_u16_basic.uya`、夹具 **`simd_c99_neon.uya`**。

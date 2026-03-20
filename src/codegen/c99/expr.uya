@@ -1949,110 +1949,285 @@ fn c99_simd_emit_sse_binary_fast_at(codegen: &C99CodeGenerator, fast_kind: i32, 
         snprintf(&pb[0] as *byte, SIMD_VEC_LANE_PTR_SZ, "&%s.lanes[%d]" as *byte, right_name as *byte, lane_off);
     }
     if fast_kind == 101 {
-        fprintf(codegen.output as *void, "uya_simd_sse_eq_i32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_i32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_i32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 102 {
-        fprintf(codegen.output as *void, "uya_simd_sse_ne_i32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_i32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_i32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 103 {
-        fprintf(codegen.output as *void, "uya_simd_sse_lt_i32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_i32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_i32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 104 {
-        fprintf(codegen.output as *void, "uya_simd_sse_gt_i32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_i32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_i32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 105 {
-        fprintf(codegen.output as *void, "uya_simd_sse_le_i32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_i32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_i32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 106 {
-        fprintf(codegen.output as *void, "uya_simd_sse_ge_i32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_i32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_i32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 107 {
-        fprintf(codegen.output as *void, "uya_simd_sse_lt_u32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_u32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_u32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 108 {
-        fprintf(codegen.output as *void, "uya_simd_sse_gt_u32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_u32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_u32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 109 {
-        fprintf(codegen.output as *void, "uya_simd_sse_le_u32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_u32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_u32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 110 {
-        fprintf(codegen.output as *void, "uya_simd_sse_ge_u32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_u32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_u32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 201 {
-        fprintf(codegen.output as *void, "uya_simd_sse_eq_f32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_f32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_f32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 202 {
-        fprintf(codegen.output as *void, "uya_simd_sse_ne_f32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_f32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_f32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 203 {
-        fprintf(codegen.output as *void, "uya_simd_sse_lt_f32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_f32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_f32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 204 {
-        fprintf(codegen.output as *void, "uya_simd_sse_le_f32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_f32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_f32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 205 {
-        fprintf(codegen.output as *void, "uya_simd_sse_gt_f32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_f32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_f32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 206 {
-        fprintf(codegen.output as *void, "uya_simd_sse_ge_f32x4_mask(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_f32x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_f32x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 10 || fast_kind == 20 {
-        fprintf(codegen.output as *void, "uya_simd_sse_add_i32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_i32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_i32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 11 || fast_kind == 21 {
-        fprintf(codegen.output as *void, "uya_simd_sse_sub_i32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_i32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_i32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 12 {
-        fprintf(codegen.output as *void, "uya_simd_sse_mul_i32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_i32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_i32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 16 {
-        fprintf(codegen.output as *void, "uya_simd_sse_div_i32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_i32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_i32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 17 {
-        fprintf(codegen.output as *void, "uya_simd_sse_rem_i32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_i32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_i32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 22 {
-        fprintf(codegen.output as *void, "uya_simd_sse_mul_u32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_u32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_u32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 26 {
-        fprintf(codegen.output as *void, "uya_simd_sse_div_u32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_u32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_u32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 27 {
-        fprintf(codegen.output as *void, "uya_simd_sse_rem_u32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_u32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_u32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 18 {
-        fprintf(codegen.output as *void, "uya_simd_sse_shl_i32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_i32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_i32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 19 {
-        fprintf(codegen.output as *void, "uya_simd_sse_shr_i32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_i32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_i32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 28 {
-        fprintf(codegen.output as *void, "uya_simd_sse_shl_u32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_u32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_u32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 29 {
-        fprintf(codegen.output as *void, "uya_simd_sse_shr_u32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_u32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_u32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 13 || fast_kind == 23 {
-        fprintf(codegen.output as *void, "uya_simd_sse_and_i32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_and_i32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_and_i32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 14 || fast_kind == 24 {
-        fprintf(codegen.output as *void, "uya_simd_sse_or_i32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_or_i32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_or_i32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 15 || fast_kind == 25 {
-        fprintf(codegen.output as *void, "uya_simd_sse_xor_i32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_xor_i32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_xor_i32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 30 {
-        fprintf(codegen.output as *void, "uya_simd_sse_add_f32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_f32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_f32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 31 {
-        fprintf(codegen.output as *void, "uya_simd_sse_sub_f32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_f32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_f32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 32 {
-        fprintf(codegen.output as *void, "uya_simd_sse_mul_f32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_f32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_f32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 33 {
-        fprintf(codegen.output as *void, "uya_simd_sse_div_f32x4(%s, %s, %s); " as *byte,
-            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        if lanes == 2 {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_f32x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_f32x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
     } else if fast_kind == 34 {
         fprintf(codegen.output as *void, "uya_simd_sse_mul_f64x2(%s, %s, %s); " as *byte,
             &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
@@ -2234,6 +2409,14 @@ fn c99_simd_sse_x4_tile_lane_count_ok(lanes: i32) i32 {
         return 1;
     }
     return 0;
+}
+
+// i32/u32/f32 向量与对应掩码：2 通道走 x2 助手，其余走 x4 分块
+fn c99_simd_sse_i32_u32_f32_two_or_x4_lane_ok(lanes: i32) i32 {
+    if lanes == 2 {
+        return 1;
+    }
+    return c99_simd_sse_x4_tile_lane_count_ok(lanes);
 }
 
 // x86_64 SSE / ARM NEON：4/8/16/32/64 宽（8=2×x4，16=4×x4，32=8×x4，64=16×x4）i32/u32/f32 部分二元式；返回 1 已输出助手调用；返回 0 时标量赋值
@@ -2460,7 +2643,7 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
             return 0;
         }
     } else {
-        if c99_simd_sse_x4_tile_lane_count_ok(lanes) == 0 {
+        if c99_simd_sse_i32_u32_f32_two_or_x4_lane_ok(lanes) == 0 {
             return 0;
         }
     }
@@ -2473,6 +2656,12 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
         fast_kind == 115 || fast_kind == 116 || fast_kind == 117 || fast_kind == 118 || fast_kind == 119 ||
         fast_kind == 120 || fast_kind == 121 || fast_kind == 122 {
         chunk_step = 8;
+    }
+    if lanes == 2 {
+        if (fast_kind >= 10 && fast_kind <= 33) || (fast_kind >= 101 && fast_kind <= 110) ||
+            (fast_kind >= 201 && fast_kind <= 206) {
+            chunk_step = 2;
+        }
     }
     while lane_chunk < lanes {
         c99_simd_emit_sse_binary_fast_at(codegen, fast_kind, result_name, left_name, right_name, lane_chunk, lanes);
@@ -2524,6 +2713,16 @@ fn c99_simd_try_emit_x86_sse_unary_minus(codegen: &C99CodeGenerator, result_type
             fprintf(codegen.output as *void, "uya_simd_sse_neg_i16x8(%s.lanes, %s.lanes); " as *byte,
                 result_name as *byte, operand_name as *byte);
         }
+        return 1;
+    }
+    if lanes == 2 && strcmp(vec_elem_c as *byte, "int32_t" as *byte) == 0 {
+        fprintf(codegen.output as *void, "uya_simd_sse_neg_i32x2(%s.lanes, %s.lanes); " as *byte,
+            result_name as *byte, operand_name as *byte);
+        return 1;
+    }
+    if lanes == 2 && strcmp(vec_elem_c as *byte, "float" as *byte) == 0 {
+        fprintf(codegen.output as *void, "uya_simd_sse_neg_f32x2(%s.lanes, %s.lanes); " as *byte,
+            result_name as *byte, operand_name as *byte);
         return 1;
     }
     if c99_simd_sse_x4_tile_lane_count_ok(lanes) == 0 {
@@ -2897,7 +3096,7 @@ fn c99_gen_simd_builtin_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
             return 0;
         }
         const elem_base: &byte = c99_type_c_skip_const(elem_c);
-        if c99_simd_sse_x4_tile_lane_count_ok(lanes) != 0 && elem_base != null &&
+        if c99_simd_sse_i32_u32_f32_two_or_x4_lane_ok(lanes) != 0 && elem_base != null &&
             (strcmp(elem_base as *byte, "int32_t" as *byte) == 0 || strcmp(elem_base as *byte, "uint32_t" as *byte) == 0 ||
             strcmp(elem_base as *byte, "float" as *byte) == 0) {
             const out_struct: &byte = c99_make_temp_name(codegen, "__uya_sp_o_" as &byte);
@@ -2909,22 +3108,42 @@ fn c99_gen_simd_builtin_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
             gen_expr(codegen, expr.call_expr_args[0]);
             fputs("); " as *byte, codegen.output as *void);
             fprintf(codegen.output as *void, "%s %s; " as *byte, result_c as *byte, out_struct as *byte);
+            var sp_step: i32 = 4;
+            if lanes == 2 {
+                sp_step = 2;
+            }
             var sp_off: i32 = 0;
             while sp_off < lanes {
                 if strcmp(elem_base as *byte, "float" as *byte) == 0 {
-                    if sp_off == 0 {
-                        fprintf(codegen.output as *void, "uya_simd_sse_splat_f32x4(%s.lanes, %s); " as *byte, out_struct as *byte, scalar_name as *byte);
+                    if lanes == 2 {
+                        if sp_off == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_f32x2(%s.lanes, %s); " as *byte, out_struct as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_f32x2(&%s.lanes[%d], %s); " as *byte, out_struct as *byte, sp_off, scalar_name as *byte);
+                        }
                     } else {
-                        fprintf(codegen.output as *void, "uya_simd_sse_splat_f32x4(&%s.lanes[%d], %s); " as *byte, out_struct as *byte, sp_off, scalar_name as *byte);
+                        if sp_off == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_f32x4(%s.lanes, %s); " as *byte, out_struct as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_f32x4(&%s.lanes[%d], %s); " as *byte, out_struct as *byte, sp_off, scalar_name as *byte);
+                        }
                     }
                 } else {
-                    if sp_off == 0 {
-                        fprintf(codegen.output as *void, "uya_simd_sse_splat_i32x4(%s.lanes, %s); " as *byte, out_struct as *byte, scalar_name as *byte);
+                    if lanes == 2 {
+                        if sp_off == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i32x2(%s.lanes, %s); " as *byte, out_struct as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i32x2(&%s.lanes[%d], %s); " as *byte, out_struct as *byte, sp_off, scalar_name as *byte);
+                        }
                     } else {
-                        fprintf(codegen.output as *void, "uya_simd_sse_splat_i32x4(&%s.lanes[%d], %s); " as *byte, out_struct as *byte, sp_off, scalar_name as *byte);
+                        if sp_off == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i32x4(%s.lanes, %s); " as *byte, out_struct as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i32x4(&%s.lanes[%d], %s); " as *byte, out_struct as *byte, sp_off, scalar_name as *byte);
+                        }
                     }
                 }
-                sp_off = sp_off + 4;
+                sp_off = sp_off + sp_step;
             }
             fprintf(codegen.output as *void, "%s; })" as *byte, out_struct as *byte);
             return 1;
