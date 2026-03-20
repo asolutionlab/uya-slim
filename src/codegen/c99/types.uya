@@ -1238,9 +1238,12 @@ fn c99_simd_need_emit_i32_u32_f32(codegen: &C99CodeGenerator, simd_emit_all: i32
 }
 
 // 是否需在 i32/u32/f32 SIMD 段末尾追加 select 助手（与 c99_gen_simd_builtin_call 中快路径配套）
-fn c99_simd_any_select_x4_needed(codegen: &C99CodeGenerator) i32 {
+fn c99_simd_any_select_helpers_needed(codegen: &C99CodeGenerator) i32 {
     if codegen == null {
         return 0;
+    }
+    if codegen.simd_emit_select_i32x2 != 0 || codegen.simd_emit_select_u32x2 != 0 || codegen.simd_emit_select_f32x2 != 0 {
+        return 1;
     }
     if codegen.simd_emit_select_i32x4 != 0 || codegen.simd_emit_select_u32x4 != 0 || codegen.simd_emit_select_f32x4 != 0 {
         return 1;
@@ -4806,10 +4809,35 @@ fn emit_simd_runtime_helpers_i32_u32_f32_x86_sse(codegen: &C99CodeGenerator) voi
     fputs("  _mm_storeu_ps((float *)r, _mm_div_ps(va, vb));\n}\n" as *byte, codegen.output as *void);
 }
 
-// i32/u32/f32 ×4 的 @vector.select 助手：按需输出（见 simd_emit_select_*x4、c99_simd_any_select_x4_needed）
+// i32/u32/f32 ×2/×4 的 @vector.select 助手：按需输出（见 simd_emit_select_*、c99_simd_any_select_helpers_needed）
 fn emit_simd_runtime_helpers_i32_u32_f32_select_x86_sse(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.output == null {
         return;
+    }
+    if codegen.simd_emit_select_i32x2 != 0 {
+        fputs("static inline void uya_simd_sse_select_i32x2(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+        fputs("  const bool *M = (const bool *)m;\n" as *byte, codegen.output as *void);
+        fputs("  __m128i mk = _mm_set_epi32(0, 0, -(int)M[1], -(int)M[0]);\n" as *byte, codegen.output as *void);
+        fputs("  __m128i va = _mm_loadl_epi64((const __m128i *)(const void *)a);\n" as *byte, codegen.output as *void);
+        fputs("  __m128i vb = _mm_loadl_epi64((const __m128i *)(const void *)b);\n" as *byte, codegen.output as *void);
+        fputs("  _mm_storel_epi64((__m128i *)(void *)r, _mm_or_si128(_mm_and_si128(va, mk), _mm_andnot_si128(mk, vb)));\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_select_u32x2 != 0 {
+        fputs("static inline void uya_simd_sse_select_u32x2(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+        fputs("  const bool *M = (const bool *)m;\n" as *byte, codegen.output as *void);
+        fputs("  __m128i mk = _mm_set_epi32(0, 0, -(int)M[1], -(int)M[0]);\n" as *byte, codegen.output as *void);
+        fputs("  __m128i va = _mm_loadl_epi64((const __m128i *)(const void *)a);\n" as *byte, codegen.output as *void);
+        fputs("  __m128i vb = _mm_loadl_epi64((const __m128i *)(const void *)b);\n" as *byte, codegen.output as *void);
+        fputs("  _mm_storel_epi64((__m128i *)(void *)r, _mm_or_si128(_mm_and_si128(va, mk), _mm_andnot_si128(mk, vb)));\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_select_f32x2 != 0 {
+        fputs("static inline void uya_simd_sse_select_f32x2(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+        fputs("  const bool *M = (const bool *)m;\n" as *byte, codegen.output as *void);
+        fputs("  __m128i mki = _mm_set_epi32(0, 0, -(int)M[1], -(int)M[0]);\n" as *byte, codegen.output as *void);
+        fputs("  __m128 mk = _mm_castsi128_ps(mki);\n" as *byte, codegen.output as *void);
+        fputs("  __m128 va = _mm_castsi128_ps(_mm_loadl_epi64((const __m128i *)(const void *)a));\n" as *byte, codegen.output as *void);
+        fputs("  __m128 vb = _mm_castsi128_ps(_mm_loadl_epi64((const __m128i *)(const void *)b));\n" as *byte, codegen.output as *void);
+        fputs("  _mm_storel_epi64((__m128i *)(void *)r, _mm_castps_si128(_mm_or_ps(_mm_and_ps(va, mk), _mm_andnot_ps(mk, vb))));\n}\n" as *byte, codegen.output as *void);
     }
     if codegen.simd_emit_select_i32x4 != 0 {
         fputs("static inline void uya_simd_sse_select_i32x4(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
@@ -5109,6 +5137,30 @@ fn emit_simd_runtime_helpers_i32_u32_f32_select_arm_neon(codegen: &C99CodeGenera
     if codegen == null || codegen.output == null {
         return;
     }
+    if codegen.simd_emit_select_i32x2 != 0 {
+        fputs("static inline void uya_simd_sse_select_i32x2(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+        fputs("  const bool *M = (const bool *)m;\n" as *byte, codegen.output as *void);
+        fputs("  uint32_t _mk[2] = { M[0] ? 0xFFFFFFFFu : 0u, M[1] ? 0xFFFFFFFFu : 0u };\n" as *byte, codegen.output as *void);
+        fputs("  uint32x2_t mk = vld1_u32(_mk);\n" as *byte, codegen.output as *void);
+        fputs("  int32x2_t va = vld1_s32((const int32_t *)a); int32x2_t vb = vld1_s32((const int32_t *)b);\n" as *byte, codegen.output as *void);
+        fputs("  vst1_s32((int32_t *)r, vbsl_s32(mk, va, vb));\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_select_u32x2 != 0 {
+        fputs("static inline void uya_simd_sse_select_u32x2(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+        fputs("  const bool *M = (const bool *)m;\n" as *byte, codegen.output as *void);
+        fputs("  uint32_t _mk[2] = { M[0] ? 0xFFFFFFFFu : 0u, M[1] ? 0xFFFFFFFFu : 0u };\n" as *byte, codegen.output as *void);
+        fputs("  uint32x2_t mk = vld1_u32(_mk);\n" as *byte, codegen.output as *void);
+        fputs("  uint32x2_t va = vld1_u32((const uint32_t *)a); uint32x2_t vb = vld1_u32((const uint32_t *)b);\n" as *byte, codegen.output as *void);
+        fputs("  vst1_u32((uint32_t *)r, vbsl_u32(mk, va, vb));\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_select_f32x2 != 0 {
+        fputs("static inline void uya_simd_sse_select_f32x2(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+        fputs("  const bool *M = (const bool *)m;\n" as *byte, codegen.output as *void);
+        fputs("  uint32_t _mk[2] = { M[0] ? 0xFFFFFFFFu : 0u, M[1] ? 0xFFFFFFFFu : 0u };\n" as *byte, codegen.output as *void);
+        fputs("  uint32x2_t mk = vld1_u32(_mk);\n" as *byte, codegen.output as *void);
+        fputs("  float32x2_t va = vld1_f32((const float *)a); float32x2_t vb = vld1_f32((const float *)b);\n" as *byte, codegen.output as *void);
+        fputs("  vst1_f32((float *)r, vbsl_f32(mk, va, vb));\n}\n" as *byte, codegen.output as *void);
+    }
     if codegen.simd_emit_select_i32x4 != 0 {
         fputs("static inline void uya_simd_sse_select_i32x4(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
         fputs("  const bool *M = (const bool *)m;\n" as *byte, codegen.output as *void);
@@ -5137,6 +5189,24 @@ fn emit_simd_runtime_helpers_i32_u32_f32_select_arm_neon(codegen: &C99CodeGenera
 fn emit_simd_runtime_helpers_i32_u32_f32_select_scalar(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.output == null {
         return;
+    }
+    if codegen.simd_emit_select_i32x2 != 0 {
+        fputs("static inline void uya_simd_sse_select_i32x2(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+        fputs("  int32_t *rr = (int32_t *)r; const bool *MM = (const bool *)m;\n" as *byte, codegen.output as *void);
+        fputs("  const int32_t *aa = (const int32_t *)a; const int32_t *bb = (const int32_t *)b;\n" as *byte, codegen.output as *void);
+        fputs("  int _i; for (_i = 0; _i < 2; _i++) rr[_i] = MM[_i] ? aa[_i] : bb[_i];\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_select_u32x2 != 0 {
+        fputs("static inline void uya_simd_sse_select_u32x2(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+        fputs("  uint32_t *rr = (uint32_t *)r; const bool *MM = (const bool *)m;\n" as *byte, codegen.output as *void);
+        fputs("  const uint32_t *aa = (const uint32_t *)a; const uint32_t *bb = (const uint32_t *)b;\n" as *byte, codegen.output as *void);
+        fputs("  int _i; for (_i = 0; _i < 2; _i++) rr[_i] = MM[_i] ? aa[_i] : bb[_i];\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_select_f32x2 != 0 {
+        fputs("static inline void uya_simd_sse_select_f32x2(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+        fputs("  float *rr = (float *)r; const bool *MM = (const bool *)m;\n" as *byte, codegen.output as *void);
+        fputs("  const float *aa = (const float *)a; const float *bb = (const float *)b;\n" as *byte, codegen.output as *void);
+        fputs("  int _i; for (_i = 0; _i < 2; _i++) rr[_i] = MM[_i] ? aa[_i] : bb[_i];\n}\n" as *byte, codegen.output as *void);
     }
     if codegen.simd_emit_select_i32x4 != 0 {
         fputs("static inline void uya_simd_sse_select_i32x4(void *r, const void *m, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
@@ -5296,7 +5366,7 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     fputs("#if UYA_HAVE_SIMD_X86_SSE\n" as *byte, codegen.output as *void);
     if c99_simd_need_emit_i32_u32_f32(codegen, simd_emit_all) != 0 {
         emit_simd_runtime_helpers_i32_u32_f32_x86_sse(codegen);
-        if c99_simd_any_select_x4_needed(codegen) != 0 {
+        if c99_simd_any_select_helpers_needed(codegen) != 0 {
             emit_simd_runtime_helpers_i32_u32_f32_select_x86_sse(codegen);
         }
     }
@@ -5344,7 +5414,7 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     }
     if c99_simd_need_emit_i32_u32_f32(codegen, simd_emit_all) != 0 {
         emit_simd_runtime_helpers_i32_u32_f32_arm_neon(codegen);
-        if c99_simd_any_select_x4_needed(codegen) != 0 {
+        if c99_simd_any_select_helpers_needed(codegen) != 0 {
             emit_simd_runtime_helpers_i32_u32_f32_select_arm_neon(codegen);
         }
     }
@@ -5568,7 +5638,7 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     fputs("static inline void uya_simd_sse_div_f32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
     fputs("  float *rr = (float *)r; const float *aa = (const float *)a; const float *bb = (const float *)b;\n" as *byte, codegen.output as *void);
     fputs("  int _i; for (_i = 0; _i < 4; _i++) rr[_i] = aa[_i] / bb[_i];\n}\n" as *byte, codegen.output as *void);
-    if c99_simd_any_select_x4_needed(codegen) != 0 {
+    if c99_simd_any_select_helpers_needed(codegen) != 0 {
         emit_simd_runtime_helpers_i32_u32_f32_select_scalar(codegen);
     }
     }

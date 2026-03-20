@@ -11,6 +11,7 @@ mkdir -p "$BUILD_DIR"
 
 no_sel_c="$BUILD_DIR/simd_emit_no_select.c"
 i32_only_c="$BUILD_DIR/simd_emit_select_i32_only.c"
+i32x2_only_c="$BUILD_DIR/simd_emit_select_i32x2_only.c"
 
 echo "验证：无 @vector.select 的 SIMD 程序不应输出 select 助手定义 ..."
 if ! "$COMPILER" --c99 "$SCRIPT_DIR/test_simd_sse_lower_i32x4.uya" -o "$no_sel_c" 2>&1; then
@@ -41,6 +42,21 @@ if grep -q 'static inline void uya_simd_sse_select_f32x4' "$i32_only_c"; then
     exit 1
 fi
 echo "  仅 i32×4 select 时无 u32/f32 助手 ✓"
+
+echo "验证：仅 i32×2 select 时生成 x2 助手、不生成 x4 select 定义 ..."
+if ! "$COMPILER" --c99 "$SCRIPT_DIR/test_simd_c99_select_emit_i32x2_only.uya" -o "$i32x2_only_c" 2>&1; then
+    echo "✗ 编译 test_simd_c99_select_emit_i32x2_only.uya 失败"
+    exit 1
+fi
+if ! grep -q 'static inline void uya_simd_sse_select_i32x2' "$i32x2_only_c"; then
+    echo "✗ 缺少 uya_simd_sse_select_i32x2 定义"
+    exit 1
+fi
+if grep -q 'static inline void uya_simd_sse_select_i32x4' "$i32x2_only_c"; then
+    echo "✗ 仅 2× 时不应生成 uya_simd_sse_select_i32x4"
+    exit 1
+fi
+echo "  仅 i32×2 select 时无 x4 助手 ✓"
 
 echo ""
 echo "✓ SIMD select C 按需生成验证通过"

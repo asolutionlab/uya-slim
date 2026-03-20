@@ -208,6 +208,9 @@ struct C99CodeGenerator {
     simd_max_lanes_u32: i32,
     simd_max_lanes_f32: i32,
     // @vector.select 4× 快路径助手：仅在实际生成 uya_simd_*_select_*x4 调用时置 1，缩小输出 C 体积
+    simd_emit_select_i32x2: i32,
+    simd_emit_select_u32x2: i32,
+    simd_emit_select_f32x2: i32,
     simd_emit_select_i32x4: i32,
     simd_emit_select_u32x4: i32,
     simd_emit_select_f32x4: i32,

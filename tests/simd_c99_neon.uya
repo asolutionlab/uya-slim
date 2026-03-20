@@ -104,6 +104,12 @@ export fn main() i32 {
     if @vector.all(v2f == @vector.splat(3.0f32)) == false {
         return 19;
     }
+    const m2: Mask2 = v2i == @vector.splat(5);
+    const z2i: Vec2i32 = @vector.splat(0);
+    const sel2_i: Vec2i32 = @vector.select(m2, v2i, z2i);
+    if @vector.all(sel2_i == v2i) == false {
+        return 23;
+    }
     // @vector.select x4：触发 uya_simd_*_select_{i32,u32,f32}x4（SSE / NEON / 标量三档）
     const sel_i: Vec4i32 = @vector.select(m, a, b);
     if @vector.all(sel_i == a) == false {

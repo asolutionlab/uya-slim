@@ -3858,24 +3858,37 @@ fn c99_collect_simd_select_emit_flags_from_call(codegen: &C99CodeGenerator, expr
         return;
     }
     const lanes_sel: i32 = eval_const_expr(codegen, target_sel.type_vector_size_expr);
-    if lanes_sel != 4 {
-        return;
-    }
     const elem_c: &byte = c99_type_to_c(codegen, target_sel.type_vector_element_type);
     const elem_base: &byte = c99_type_c_skip_const(elem_c);
     if elem_base == null {
         return;
     }
-    if strcmp(elem_base as *byte, "int32_t" as *byte) == 0 {
-        codegen.simd_emit_select_i32x4 = 1;
+    if lanes_sel == 4 {
+        if strcmp(elem_base as *byte, "int32_t" as *byte) == 0 {
+            codegen.simd_emit_select_i32x4 = 1;
+            return;
+        }
+        if strcmp(elem_base as *byte, "uint32_t" as *byte) == 0 {
+            codegen.simd_emit_select_u32x4 = 1;
+            return;
+        }
+        if strcmp(elem_base as *byte, "float" as *byte) == 0 {
+            codegen.simd_emit_select_f32x4 = 1;
+        }
         return;
     }
-    if strcmp(elem_base as *byte, "uint32_t" as *byte) == 0 {
-        codegen.simd_emit_select_u32x4 = 1;
-        return;
-    }
-    if strcmp(elem_base as *byte, "float" as *byte) == 0 {
-        codegen.simd_emit_select_f32x4 = 1;
+    if lanes_sel == 2 {
+        if strcmp(elem_base as *byte, "int32_t" as *byte) == 0 {
+            codegen.simd_emit_select_i32x2 = 1;
+            return;
+        }
+        if strcmp(elem_base as *byte, "uint32_t" as *byte) == 0 {
+            codegen.simd_emit_select_u32x2 = 1;
+            return;
+        }
+        if strcmp(elem_base as *byte, "float" as *byte) == 0 {
+            codegen.simd_emit_select_f32x2 = 1;
+        }
     }
 }
 
@@ -4123,11 +4136,19 @@ fn c99_gen_simd_builtin_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
         const elem_c_sel: &byte = c99_type_to_c(codegen, elem_ty_sel);
         const elem_base_sel: &byte = c99_type_c_skip_const(elem_c_sel);
         var use_sel_x4: i32 = 0;
+        var use_sel_x2: i32 = 0;
         if lanes_sel == 4 && elem_base_sel != null {
             if strcmp(elem_base_sel as *byte, "int32_t" as *byte) == 0 ||
                 strcmp(elem_base_sel as *byte, "uint32_t" as *byte) == 0 ||
                 strcmp(elem_base_sel as *byte, "float" as *byte) == 0 {
                 use_sel_x4 = 1;
+            }
+        }
+        if lanes_sel == 2 && elem_base_sel != null {
+            if strcmp(elem_base_sel as *byte, "int32_t" as *byte) == 0 ||
+                strcmp(elem_base_sel as *byte, "uint32_t" as *byte) == 0 ||
+                strcmp(elem_base_sel as *byte, "float" as *byte) == 0 {
+                use_sel_x2 = 1;
             }
         }
         if use_sel_x4 != 0 {
@@ -4144,11 +4165,26 @@ fn c99_gen_simd_builtin_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
                 }
             }
         } else {
-            var si: i32 = 0;
-            while si < lanes_sel {
-                fprintf(codegen.output as *void, "%s.lanes[%d] = %s.lanes[%d] ? %s.lanes[%d] : %s.lanes[%d]; " as *byte,
-                    out_nm as *byte, si, m_nm as *byte, si, a_nm as *byte, si, b_nm as *byte, si);
-                si = si + 1;
+            if use_sel_x2 != 0 {
+                if strcmp(elem_base_sel as *byte, "int32_t" as *byte) == 0 {
+                    fprintf(codegen.output as *void, "uya_simd_sse_select_i32x2(&%s, &%s, &%s, &%s); " as *byte,
+                        out_nm as *byte, m_nm as *byte, a_nm as *byte, b_nm as *byte);
+                } else {
+                    if strcmp(elem_base_sel as *byte, "uint32_t" as *byte) == 0 {
+                        fprintf(codegen.output as *void, "uya_simd_sse_select_u32x2(&%s, &%s, &%s, &%s); " as *byte,
+                            out_nm as *byte, m_nm as *byte, a_nm as *byte, b_nm as *byte);
+                    } else {
+                        fprintf(codegen.output as *void, "uya_simd_sse_select_f32x2(&%s, &%s, &%s, &%s); " as *byte,
+                            out_nm as *byte, m_nm as *byte, a_nm as *byte, b_nm as *byte);
+                    }
+                }
+            } else {
+                var si: i32 = 0;
+                while si < lanes_sel {
+                    fprintf(codegen.output as *void, "%s.lanes[%d] = %s.lanes[%d] ? %s.lanes[%d] : %s.lanes[%d]; " as *byte,
+                        out_nm as *byte, si, m_nm as *byte, si, a_nm as *byte, si, b_nm as *byte, si);
+                    si = si + 1;
+                }
             }
         }
         fprintf(codegen.output as *void, "%s; })" as *byte, out_nm as *byte);
