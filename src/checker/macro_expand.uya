@@ -431,6 +431,87 @@ fn macro_arena_strdup(arena: &Arena, src: &byte) &byte {
     return buf;
 }
 
+fn macro_i64_to_string(arena: &Arena, value: i64) &byte {
+    if arena == null {
+        return null;
+    }
+    var tmp: [byte: 32] = [];
+    var digit_count: i32 = 0;
+    var is_negative: i32 = 0;
+    var magnitude: u64 = 0;
+    if value < 0 {
+        is_negative = 1;
+        magnitude = (0 as u64) - (value as u64);
+    } else {
+        magnitude = value as u64;
+    }
+    if magnitude == 0 {
+        tmp[0] = 48;
+        digit_count = 1;
+    } else {
+        while magnitude > 0 && digit_count < 31 {
+            const digit: u64 = magnitude % (10 as u64);
+            tmp[digit_count] = (digit + (48 as u64)) as byte;
+            magnitude = magnitude / (10 as u64);
+            digit_count = digit_count + 1;
+        }
+    }
+    const total_len: i32 = digit_count + is_negative;
+    const buf: &byte = arena_alloc(arena, (total_len + 1) as u64) as &byte;
+    if buf == null {
+        return null;
+    }
+    var out_pos: i32 = 0;
+    if is_negative != 0 {
+        buf[0] = 45;
+        out_pos = 1;
+    }
+    var i: i32 = digit_count - 1;
+    while i >= 0 {
+        buf[out_pos] = tmp[i];
+        out_pos = out_pos + 1;
+        i = i - 1;
+    }
+    buf[out_pos] = 0;
+    return buf;
+}
+
+fn macro_concat2(arena: &Arena, a: &byte, b: &byte) &byte {
+    if arena == null || a == null || b == null {
+        return null;
+    }
+    const len_a: i32 = strlen(a as *byte);
+    const len_b: i32 = strlen(b as *byte);
+    const buf: &byte = arena_alloc(arena, (len_a + len_b + 1) as u64) as &byte;
+    if buf == null {
+        return null;
+    }
+    memcpy(buf as *void, a as *void, len_a as u64);
+    memcpy((buf + len_a) as *void, b as *void, (len_b + 1) as u64);
+    return buf;
+}
+
+fn macro_concat3(arena: &Arena, a: &byte, b: &byte, c: &byte) &byte {
+    if arena == null || a == null || b == null || c == null {
+        return null;
+    }
+    const ab: &byte = macro_concat2(arena, a, b);
+    if ab == null {
+        return null;
+    }
+    return macro_concat2(arena, ab, c);
+}
+
+fn macro_append_bytes(dst: &byte, pos: &i32, src: &byte) void {
+    if dst == null || pos == null || src == null {
+        return;
+    }
+    const len: i32 = strlen(src as *byte);
+    memcpy((dst + pos[0]) as *void, src as *void, len as u64);
+    pos[0] = pos[0] + len;
+    dst[pos[0]] = 0;
+}
+
 // 从 AST 节点提取字符串字面量指针（支持 AST_STRING 或 AST_CAST_EXPR 包装的字符串）
 fn get_string_literal_from_ast(node: &ASTNode) &byte {
     if node == null {
@@ -518,12 +599,7 @@ fn ast_expr_to_source_string(node: &ASTNode, arena: &Arena, filename: &byte) &by
         return macro_arena_strdup(arena, (node.identifier_name as *byte) as &byte);
     }
     if node.type == ASTNodeType.AST_NUMBER {
-        const buf: &byte = arena_alloc(arena, 24) as &byte;
-        if buf == null {
-            return null;
-        }
-        sprintf(buf as *byte, "%lld" as *byte, node.number_value_i64);
-        return buf;
+        return macro_i64_to_string(arena, node.number_value_i64);
     }
     if node.type == ASTNodeType.AST_FLOAT {
         const buf: &byte = arena_alloc(arena, 32) as &byte;
@@ -563,41 +639,22 @@ fn ast_expr_to_source_string(node: &ASTNode, arena: &Arena, filename: &byte) &by
         if left == null || right == null || op_s == null {
             return null;
         }
-        const total: i32 = strlen(left as *byte) + strlen(op_s as *byte) + strlen(right as *byte) + 1;
-        const buf: &byte = arena_alloc(arena, total as u64) as &byte;
-        if buf == null {
-            return null;
-        }
-        sprintf(buf as *byte, "%s%s%s" as *byte, left as *byte, op_s as *byte, right as *byte);
-        return buf;
+        return macro_concat3(arena, left, op_s, right);
     }
     if node.type == ASTNodeType.AST_UNARY_EXPR {
         const op_s: &byte = unary_op_to_source_string(node.unary_expr_op);
         const operand_s: &byte = ast_expr_to_source_string(node.unary_expr_operand, arena, filename);
-        if operand_s == null {
+        if op_s == null || operand_s == null {
             return null;
         }
-        const total: i32 = strlen(op_s as *byte) + strlen(operand_s as *byte) + 1;
-        const buf: &byte = arena_alloc(arena, total as u64) as &byte;
-        if buf == null {
-            return null;
-        }
-        sprintf(buf as *byte, "%s%s" as *byte, op_s as *byte, operand_s as *byte);
-        return buf;
+        return macro_concat2(arena, op_s, operand_s);
     }
     if node.type == ASTNodeType.AST_MEMBER_ACCESS {
         const obj: &byte = ast_expr_to_source_string(node.member_access_object, arena, filename);
         if obj == null || node.member_access_field_name == null {
             return null;
         }
-        const obj_len: i32 = strlen(obj as *byte);
-        const field_len: i32 = strlen(node.member_access_field_name as *byte);
-        const buf: &byte = arena_alloc(arena, (obj_len + field_len + 3) as u64) as &byte;
-        if buf == null {
-            return null;
-        }
-        sprintf(buf as *byte, "%s.%s" as *byte, obj as *byte, node.member_access_field_name as *byte);
-        return buf;
+        return macro_concat3(arena, obj, ("." as *byte) as &byte, node.member_access_field_name);
     }
     if node.type == ASTNodeType.AST_ARRAY_ACCESS {
         const arr: &byte = ast_expr_to_source_string(node.array_access_array, arena, filename);
@@ -605,13 +662,15 @@ fn ast_expr_to_source_string(node: &ASTNode, arena: &Arena, filename: &byte) &by
         if arr == null || idx == null {
             return null;
         }
-        const total: i32 = strlen(arr as *byte) + strlen(idx as *byte) + 4;
-        const buf: &byte = arena_alloc(arena, total as u64) as &byte;
-        if buf == null {
+        const arr_open: &byte = macro_concat2(arena, arr, ("[" as *byte) as &byte);
+        if arr_open == null {
             return null;
         }
-        sprintf(buf as *byte, "%s[%s]" as *byte, arr as *byte, idx as *byte);
-        return buf;
+        const mid: &byte = macro_concat2(arena, arr_open, idx);
+        if mid == null {
+            return null;
+        }
+        return macro_concat2(arena, mid, ("]" as *byte) as &byte);
     }
     if node.type == ASTNodeType.AST_CAST_EXPR {
         const expr_s: &byte = ast_expr_to_source_string(node.cast_expr_expr, arena, filename);
@@ -619,13 +678,7 @@ fn ast_expr_to_source_string(node: &ASTNode, arena: &Arena, filename: &byte) &by
         if expr_s == null || type_s == null {
             return null;
         }
-        const total: i32 = strlen(expr_s as *byte) + strlen(type_s as *byte) + 5;
-        const buf: &byte = arena_alloc(arena, total as u64) as &byte;
-        if buf == null {
-            return null;
-        }
-        sprintf(buf as *byte, "%s as %s" as *byte, expr_s as *byte, type_s as *byte);
-        return buf;
+        return macro_concat3(arena, expr_s, (" as " as *byte) as &byte, type_s);
     }
     if node.type == ASTNodeType.AST_CALL_EXPR {
         const callee: &byte = ast_expr_to_source_string(node.call_expr_callee, arena, filename);
@@ -647,22 +700,31 @@ fn ast_expr_to_source_string(node: &ASTNode, arena: &Arena, filename: &byte) &by
         if buf == null {
             return null;
         }
-        var pos: i32 = sprintf(buf as *byte, "%s(" as *byte, callee as *byte);
+        var pos: i32 = 0;
+        macro_append_bytes(buf, &pos, callee);
+        buf[pos] = 40 as i8;
+        pos = pos + 1;
+        buf[pos] = 0;
         i = 0;
         while i < node.call_expr_arg_count {
             if node.call_expr_args != null {
                 const arg: &byte = ast_expr_to_source_string(node.call_expr_args[i], arena, filename);
                 if arg != null {
                     if i > 0 {
-                        pos = pos + sprintf((buf + pos) as *byte, ", %s" as *byte, arg as *byte);
-                    } else {
-                        pos = pos + sprintf((buf + pos) as *byte, "%s" as *byte, arg as *byte);
+                        buf[pos] = 44 as i8;
+                        pos = pos + 1;
+                        buf[pos] = 32 as i8;
+                        pos = pos + 1;
+                        buf[pos] = 0;
                     }
+                    macro_append_bytes(buf, &pos, arg);
                 }
             }
             i = i + 1;
         }
-        pos = pos + sprintf((buf + pos) as *byte, ")" as *byte);
+        buf[pos] = 41 as i8;
+        pos = pos + 1;
+        buf[pos] = 0;
         return buf;
     }
     if node.type == ASTNodeType.AST_TYPE_NAMED {
@@ -1097,6 +1159,9 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
     } else if node.type == ASTNodeType.AST_TYPE_ARRAY {
         copy.type_array_element_type = deep_copy_ast_internal(node.type_array_element_type, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
         copy.type_array_size_expr = deep_copy_ast_internal(node.type_array_size_expr, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_TYPE_SLICE {
+        copy.type_slice_element_type = deep_copy_ast_internal(node.type_slice_element_type, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.type_slice_size_expr = deep_copy_ast_internal(node.type_slice_size_expr, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_CAST_EXPR {
         copy.cast_expr_expr = deep_copy_ast_internal(node.cast_expr_expr, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
         copy.cast_expr_target_type = deep_copy_ast_internal(node.cast_expr_target_type, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
@@ -1146,6 +1211,13 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
         }
         copy.mc_eval_operand = deep_copy_ast_internal(node.mc_eval_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_MC_CODE {
+        if node.mc_code_operand != null && node.mc_code_operand.type == ASTNodeType.AST_MC_AST &&
+           node.mc_code_operand.mc_ast_operand != null {
+            const expanded_code: &ASTNode = deep_copy_ast_internal(node.mc_code_operand.mc_ast_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+            if expanded_code != null {
+                return expanded_code;
+            }
+        }
         copy.mc_code_operand = deep_copy_ast_internal(node.mc_code_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_MC_AST {
         copy.mc_ast_operand = deep_copy_ast_internal(node.mc_ast_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
@@ -1175,6 +1247,8 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
             }
         }
         copy.mc_source_operand = deep_copy_ast_internal(node.mc_source_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+    } else if node.type == ASTNodeType.AST_ERROR_ID {
+        copy.error_id_operand = deep_copy_ast_internal(node.error_id_operand, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_STRUCT_INIT {
         copy.struct_init_struct_name = node.struct_init_struct_name;
         copy.struct_init_field_count = node.struct_init_field_count;
@@ -1190,6 +1264,15 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
                 }
             }
         }
+    } else if node.type == ASTNodeType.AST_SIZEOF {
+        // 宏展开深拷贝须保留 target，否则 gen_sizeof_expr 见 null 会退化为 sizeof(int)，导致 assert_eq(@size_of(f64),8) 等静默错误
+        copy.sizeof_expr_target = deep_copy_ast_internal(node.sizeof_expr_target, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.sizeof_expr_is_type = node.sizeof_expr_is_type;
+    } else if node.type == ASTNodeType.AST_ALIGNOF {
+        copy.alignof_expr_target = deep_copy_ast_internal(node.alignof_expr_target, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.alignof_expr_is_type = node.alignof_expr_is_type;
+    } else if node.type == ASTNodeType.AST_LEN {
+        copy.len_expr_array = deep_copy_ast_internal(node.len_expr_array, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
     } else if node.type == ASTNodeType.AST_ERROR_VALUE {
         copy.error_value_name = node.error_value_name;
     }
@@ -1805,6 +1888,34 @@ export fn deep_copy_ast_substitute_type_params(node: &ASTNode, type_params: &Typ
                 while j < node.type_named_type_arg_count {
                     copy.type_named_type_args[j] = deep_copy_ast_substitute_type_params(node.type_named_type_args[j], type_params, type_param_count, type_args, type_arg_count, arena, filename);
                     j = j + 1;
+                }
+            }
+        }
+    } else if node.type == ASTNodeType.AST_TYPE_ERROR_UNION && node.type_error_union_payload_type != null {
+        copy.type_error_union_payload_type = deep_copy_ast_substitute_type_params(node.type_error_union_payload_type, type_params, type_param_count, type_args, type_arg_count, arena, filename);
+    } else if node.type == ASTNodeType.AST_STRUCT_INIT && node.struct_init_struct_name != null {
+        copy.struct_init_struct_name = node.struct_init_struct_name;
+        copy.struct_init_field_count = node.struct_init_field_count;
+        if node.struct_init_type_args != null && node.struct_init_type_arg_count > 0 {
+            copy.struct_init_type_arg_count = node.struct_init_type_arg_count;
+            copy.struct_init_type_args = arena_alloc(arena, (@size_of(&ASTNode) * node.struct_init_type_arg_count) as u64) as &(&ASTNode);
+            if copy.struct_init_type_args != null {
+                var tj: i32 = 0;
+                while tj < node.struct_init_type_arg_count {
+                    copy.struct_init_type_args[tj] = deep_copy_ast_substitute_type_params(node.struct_init_type_args[tj], type_params, type_param_count, type_args, type_arg_count, arena, filename);
+                    tj = tj + 1;
+                }
+            }
+        }
+        if node.struct_init_field_count > 0 && node.struct_init_field_names != null && node.struct_init_field_values != null {
+            copy.struct_init_field_names = arena_alloc(arena, (@size_of(&byte) * node.struct_init_field_count) as u64) as &(&byte);
+            copy.struct_init_field_values = arena_alloc(arena, (@size_of(&ASTNode) * node.struct_init_field_count) as u64) as &(&ASTNode);
+            if copy.struct_init_field_names != null && copy.struct_init_field_values != null {
+                var fj: i32 = 0;
+                while fj < node.struct_init_field_count {
+                    copy.struct_init_field_names[fj] = node.struct_init_field_names[fj];
+                    copy.struct_init_field_values[fj] = deep_copy_ast_substitute_type_params(node.struct_init_field_values[fj], type_params, type_param_count, type_args, type_arg_count, arena, filename);
+                    fj = fj + 1;
                 }
             }
         }

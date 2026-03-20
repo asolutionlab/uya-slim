@@ -12,9 +12,10 @@ fn c99_type_to_c_with_self(codegen: &C99CodeGenerator, type_node: &ASTNode, self
     return c99_type_to_c_with_self_opt(codegen, type_node, self_struct_name, 0);
 }
 
-// const_self: 仅作为后备标志，实际上根据 is_ffi_pointer 决定是否添加 const
-//   &Self (is_ffi_pointer=0) -> const struct X *
-//   *Self (is_ffi_pointer=1) -> struct X *
+// const_self: 保留兼容参数；Self 的 const 语义应与普通指针一致，由 type_pointer_is_const 决定
+//   &Self -> struct X *
+//   &const Self -> const struct X *
+//   *Self / *const Self 同理
 // 联合体方法使用 struct uya_tagged_UnionName *，结构体方法使用 struct StructName *
 fn c99_type_to_c_with_self_opt(codegen: &C99CodeGenerator, type_node: &ASTNode, self_struct_name: &byte, const_self: i32) &byte {
     if type_node == null || self_struct_name == null {
@@ -28,11 +29,9 @@ fn c99_type_to_c_with_self_opt(codegen: &C99CodeGenerator, type_node: &ASTNode, 
         const pt: &ASTNode = type_node.type_pointer_pointed_type;
         if pt.type == ASTNodeType.AST_TYPE_NAMED && pt.type_named_name != null &&
             strcmp(pt.type_named_name as *byte, "Self" as *byte) == 0 {
-            // 根据 is_ffi_pointer 决定是否添加 const
-            // &Self (is_ffi_pointer=0) -> const struct X *
-            // *Self (is_ffi_pointer=1) -> struct X *
             var use_const: i32 = 0;
-            if type_node.type_pointer_is_ffi_pointer == 0 {
+            _ = const_self;
+            if type_node.type_pointer_is_const != 0 {
                 use_const = 1;
             }
             const safe: &byte = get_safe_c_identifier(codegen, self_struct_name);

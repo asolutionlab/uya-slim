@@ -114,6 +114,100 @@ fn collect_stdlib_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode
     }
 }
 
+fn collect_err_union_from_function_body(codegen: &C99CodeGenerator, fn_decl: &ASTNode, body: &ASTNode, mono_type_args: & & ASTNode, mono_type_arg_count: i32) void {
+    if codegen == null || fn_decl == null || body == null {
+        return;
+    }
+
+    const saved_decl: &ASTNode = codegen.current_function_decl;
+    const saved_return_type: &ASTNode = codegen.current_function_return_type;
+    const saved_type_params: &TypeParam = codegen.current_type_params;
+    const saved_type_param_count: i32 = codegen.current_type_param_count;
+    const saved_type_args: & & ASTNode = codegen.current_type_args;
+    const saved_type_arg_count: i32 = codegen.current_type_arg_count;
+
+    codegen.current_function_decl = fn_decl;
+    codegen.current_function_return_type = fn_decl.fn_decl_return_type;
+    codegen.current_type_params = fn_decl.fn_decl_type_params;
+    codegen.current_type_param_count = fn_decl.fn_decl_type_param_count;
+    codegen.current_type_args = mono_type_args;
+    codegen.current_type_arg_count = mono_type_arg_count;
+
+    var saved_checker_return_type: Type = make_void_type();
+    var saved_checker_in_function: i32 = 0;
+    var saved_checker_function_decl: &ASTNode = null;
+    var saved_checker_type_params: &TypeParam = null;
+    var saved_checker_type_param_count: i32 = 0;
+    var entered_checker_scope: i32 = 0;
+    if codegen.checker != null {
+        saved_checker_return_type = copy_type(&codegen.checker.current_return_type);
+        saved_checker_in_function = codegen.checker.in_function;
+        saved_checker_function_decl = codegen.checker.current_function_decl;
+        saved_checker_type_params = codegen.checker.current_type_params;
+        saved_checker_type_param_count = codegen.checker.current_type_param_count;
+
+        codegen.checker.current_function_decl = fn_decl;
+        codegen.checker.in_function = 1;
+        codegen.checker.current_type_params = fn_decl.fn_decl_type_params;
+        codegen.checker.current_type_param_count = fn_decl.fn_decl_type_param_count;
+        if fn_decl.fn_decl_return_type != null {
+            const fn_return_type: Type = type_from_ast(codegen.checker, fn_decl.fn_decl_return_type);
+            codegen.checker.current_return_type = copy_type(&fn_return_type);
+        } else {
+            codegen.checker.current_return_type = make_void_type();
+        }
+
+        if fn_decl.fn_decl_params != null && fn_decl.fn_decl_param_count > 0 {
+            checker_enter_scope(codegen.checker);
+            entered_checker_scope = 1;
+            var pi: i32 = 0;
+            while pi < fn_decl.fn_decl_param_count {
+                const param: &ASTNode = fn_decl.fn_decl_params[pi];
+                if param != null && param.type == ASTNodeType.AST_VAR_DECL &&
+                    param.var_decl_name != null && param.var_decl_type != null {
+                    const param_type: Type = type_from_ast(codegen.checker, param.var_decl_type);
+                    const param_symbol: &Symbol = arena_alloc(codegen.checker.arena, @size_of(Symbol)) as &Symbol;
+                    if param_symbol != null {
+                        param_symbol.name = param.var_decl_name;
+                        param_symbol.type = copy_type(&param_type);
+                        param_symbol.is_const = 1;
+                        param_symbol.is_initialized = 1;
+                        param_symbol.scope_level = codegen.checker.scope_level;
+                        param_symbol.line = param.line;
+                        param_symbol.column = param.column;
+                        param_symbol.pointee_of = null;
+                        param_symbol.decl_node = param;
+                        param_symbol.pointer_known_length = -1;
+                        param_symbol.pointer_length_param = null;
+                        symbol_table_insert(codegen.checker, param_symbol);
+                    }
+                }
+                pi = pi + 1;
+            }
+        }
+    }
+
+    collect_err_union_from_ast(codegen, body);
+
+    if codegen.checker != null {
+        if entered_checker_scope != 0 {
+            checker_exit_scope(codegen.checker);
+        }
+        codegen.checker.current_return_type = saved_checker_return_type;
+        codegen.checker.in_function = saved_checker_in_function;
+        codegen.checker.current_function_decl = saved_checker_function_decl;
+        codegen.checker.current_type_params = saved_checker_type_params;
+        codegen.checker.current_type_param_count = saved_checker_type_param_count;
+    }
+
+    codegen.current_function_decl = saved_decl;
+    codegen.current_function_return_type = saved_return_type;
+    codegen.current_type_params = saved_type_params;
+    codegen.current_type_param_count = saved_type_param_count;
+    codegen.current_type_args = saved_type_args;
+    codegen.current_type_arg_count = saved_type_arg_count;
+}
+
 // 递归收集函数体内 try 表达式的类型，提前注册 err_union_*，避免 from_json 等中嵌套 try 使用未定义类型
 fn collect_err_union_from_ast(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if codegen == null || node == null {
@@ -1119,7 +1213,8 @@ fn gen_test_runner(codegen: &C99CodeGenerator, tests: & & ASTNode, test_count: i
                 fputs("      struct err_union_void _test_result = " as *byte, codegen.output as *void);
                 fprintf(codegen.output as *void, "%s();\n" as *byte, func_name as *byte);
                 fputs("      int _after = _test_passed + _test_failed;\n" as *byte, codegen.output as *void);
-                fputs("      if (_test_result.error_id != 0) printf(\"ERROR\\n\");\n" as *byte, codegen.output as *void);
+                // try assert_* 失败时仅 error_id!=0，不会增加 _test_passed；须计入 _test_failed，否则 main_main 仍 return 0，脚本误判通过
+                fputs("      if (_test_result.error_id != 0) { printf(\"ERROR\\n\"); _test_failed = _test_failed + 1; }\n" as *byte, codegen.output as *void);
                 fputs("      else if (_after > _before) printf(\"OK\\n\"); else printf(\"FAILED\\n\"); }\n" as *byte, codegen.output as *void);
             }
         }
@@ -1894,6 +1989,23 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     codegen.test_count = test_count;
     collect_reachable_top_level_functions(codegen, ast);
     
+    // std.thread：宿主 C 间接调用单参函数指针（由 GCC/Clang 保证调用约定与栈对齐）。
+    // 使用 static 而非 static inline：在 -O2 下将该助手内联进部分调用点会触发错误优化（段错误）；
+    // 保持为翻译单元内普通 static 函数可避免有问题的跨过程内联。
+    fputs("// std.thread：宿主工具链间接调用（跨 -O0/-O2 稳定；见 lib/std/thread.uya）\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) int32_t uya_thread_call_i32(void *fn, int32_t arg) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef int32_t (*uya_thrd_fn_i32)(int32_t);\n" as *byte, codegen.output as *void);
+    fputs("    return ((uya_thrd_fn_i32)fn)(arg);\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) uint32_t uya_thread_call_u32(void *fn, uint32_t arg) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef uint32_t (*uya_thrd_fn_u32)(uint32_t);\n" as *byte, codegen.output as *void);
+    fputs("    return ((uya_thrd_fn_u32)fn)(arg);\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) size_t uya_thread_call_usize(void *fn, size_t arg) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef size_t (*uya_thrd_fn_usz)(size_t);\n" as *byte, codegen.output as *void);
+    fputs("    return ((uya_thrd_fn_usz)fn)(arg);\n" as *byte, codegen.output as *void);
+    fputs("}\n\n" as *byte, codegen.output as *void);
+    
     // 第七步 d：按需生成系统调用辅助函数（@syscall 内置函数支持）
     if codegen.needs_syscall_helpers != 0 {
         fputs("// 系统调用辅助函数：Linux x86-64（syscall）；AArch64（svc 0，x8/x0-x5）；ARM32 EABI（svc 0，r7 + 临时保存，r0-r5 参数）\n" as *byte, codegen.output as *void);
@@ -1901,72 +2013,57 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     
     // uya_syscall0 - 无参数
     fputs("static inline long uya_syscall0(long nr) {\n" as *byte, codegen.output as *void);
-    fputs("    register long rax __asm__(\"rax\") = nr;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return rax;\n" as *byte, codegen.output as *void);
+    fputs("    long ret;\n" as *byte, codegen.output as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
+    fputs("    return ret;\n" as *byte, codegen.output as *void);
     fputs("}\n\n" as *byte, codegen.output as *void);
     
     // uya_syscall1 - 1 个参数
     fputs("static inline long uya_syscall1(long nr, long a1) {\n" as *byte, codegen.output as *void);
-    fputs("    register long rax __asm__(\"rax\") = nr;\n" as *byte, codegen.output as *void);
-    fputs("    register long rdi __asm__(\"rdi\") = a1;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return rax;\n" as *byte, codegen.output as *void);
+    fputs("    long ret;\n" as *byte, codegen.output as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
+    fputs("    return ret;\n" as *byte, codegen.output as *void);
     fputs("}\n\n" as *byte, codegen.output as *void);
     
     // uya_syscall2 - 2 个参数
     fputs("static inline long uya_syscall2(long nr, long a1, long a2) {\n" as *byte, codegen.output as *void);
-    fputs("    register long rax __asm__(\"rax\") = nr;\n" as *byte, codegen.output as *void);
-    fputs("    register long rdi __asm__(\"rdi\") = a1;\n" as *byte, codegen.output as *void);
-    fputs("    register long rsi __asm__(\"rsi\") = a2;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return rax;\n" as *byte, codegen.output as *void);
+    fputs("    long ret;\n" as *byte, codegen.output as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
+    fputs("    return ret;\n" as *byte, codegen.output as *void);
     fputs("}\n\n" as *byte, codegen.output as *void);
     
     // uya_syscall3 - 3 个参数
     fputs("static inline long uya_syscall3(long nr, long a1, long a2, long a3) {\n" as *byte, codegen.output as *void);
-    fputs("    register long rax __asm__(\"rax\") = nr;\n" as *byte, codegen.output as *void);
-    fputs("    register long rdi __asm__(\"rdi\") = a1;\n" as *byte, codegen.output as *void);
-    fputs("    register long rsi __asm__(\"rsi\") = a2;\n" as *byte, codegen.output as *void);
-    fputs("    register long rdx __asm__(\"rdx\") = a3;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return rax;\n" as *byte, codegen.output as *void);
+    fputs("    long ret;\n" as *byte, codegen.output as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
+    fputs("    return ret;\n" as *byte, codegen.output as *void);
     fputs("}\n\n" as *byte, codegen.output as *void);
     
     // uya_syscall4 - 4 个参数
     fputs("static inline long uya_syscall4(long nr, long a1, long a2, long a3, long a4) {\n" as *byte, codegen.output as *void);
-    fputs("    register long rax __asm__(\"rax\") = nr;\n" as *byte, codegen.output as *void);
-    fputs("    register long rdi __asm__(\"rdi\") = a1;\n" as *byte, codegen.output as *void);
-    fputs("    register long rsi __asm__(\"rsi\") = a2;\n" as *byte, codegen.output as *void);
-    fputs("    register long rdx __asm__(\"rdx\") = a3;\n" as *byte, codegen.output as *void);
     fputs("    register long r10 __asm__(\"r10\") = a4;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx), \"r\"(r10) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return rax;\n" as *byte, codegen.output as *void);
+    fputs("    long ret;\n" as *byte, codegen.output as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3), \"r\"(r10) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
+    fputs("    return ret;\n" as *byte, codegen.output as *void);
     fputs("}\n\n" as *byte, codegen.output as *void);
     
     // uya_syscall5 - 5 个参数
     fputs("static inline long uya_syscall5(long nr, long a1, long a2, long a3, long a4, long a5) {\n" as *byte, codegen.output as *void);
-    fputs("    register long rax __asm__(\"rax\") = nr;\n" as *byte, codegen.output as *void);
-    fputs("    register long rdi __asm__(\"rdi\") = a1;\n" as *byte, codegen.output as *void);
-    fputs("    register long rsi __asm__(\"rsi\") = a2;\n" as *byte, codegen.output as *void);
-    fputs("    register long rdx __asm__(\"rdx\") = a3;\n" as *byte, codegen.output as *void);
     fputs("    register long r10 __asm__(\"r10\") = a4;\n" as *byte, codegen.output as *void);
     fputs("    register long r8 __asm__(\"r8\") = a5;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx), \"r\"(r10), \"r\"(r8) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return rax;\n" as *byte, codegen.output as *void);
+    fputs("    long ret;\n" as *byte, codegen.output as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3), \"r\"(r10), \"r\"(r8) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
+    fputs("    return ret;\n" as *byte, codegen.output as *void);
     fputs("}\n\n" as *byte, codegen.output as *void);
     
     // uya_syscall6 - 6 个参数
     fputs("static inline long uya_syscall6(long nr, long a1, long a2, long a3, long a4, long a5, long a6) {\n" as *byte, codegen.output as *void);
-    fputs("    register long rax __asm__(\"rax\") = nr;\n" as *byte, codegen.output as *void);
-    fputs("    register long rdi __asm__(\"rdi\") = a1;\n" as *byte, codegen.output as *void);
-    fputs("    register long rsi __asm__(\"rsi\") = a2;\n" as *byte, codegen.output as *void);
-    fputs("    register long rdx __asm__(\"rdx\") = a3;\n" as *byte, codegen.output as *void);
     fputs("    register long r10 __asm__(\"r10\") = a4;\n" as *byte, codegen.output as *void);
     fputs("    register long r8 __asm__(\"r8\") = a5;\n" as *byte, codegen.output as *void);
     fputs("    register long r9 __asm__(\"r9\") = a6;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=r\"(rax) : \"r\"(rax), \"r\"(rdi), \"r\"(rsi), \"r\"(rdx), \"r\"(r10), \"r\"(r8), \"r\"(r9) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return rax;\n" as *byte, codegen.output as *void);
+    fputs("    long ret;\n" as *byte, codegen.output as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3), \"r\"(r10), \"r\"(r8), \"r\"(r9) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
+    fputs("    return ret;\n" as *byte, codegen.output as *void);
     c99_emit_close_brace_newline(codegen);
     
         fputs("#elif (defined(__aarch64__) || defined(_M_ARM64)) && defined(__linux__)\n" as *byte, codegen.output as *void);
@@ -2245,6 +2342,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     }
     // 第六步 e2：遍历所有函数体中的 try 表达式，注册其类型（如 from_json 内层 !Point），便于后续 emit 时类型已定义
     if codegen.checker != null {
+        const from_json_decl: &ASTNode = find_function_decl_c99(codegen, "from_json" as *byte);
         var j: i32 = 0;
         while j < codegen.mono_instance_count {
             if codegen.mono_instances[j].generic_name != null && codegen.mono_instances[j].is_function != 0 &&
@@ -2254,7 +2352,12 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 if ta0 != null && ta0.type == ASTNodeType.AST_TYPE_NAMED && ta0.type_named_name != null {
                     const body_to_walk: &ASTNode = build_from_json_reflect_body(codegen.checker, ta0, 0, 0, null);
                     if body_to_walk != null {
-                        collect_err_union_from_ast(codegen, body_to_walk);
+                        if from_json_decl != null {
+                            collect_err_union_from_function_body(codegen, from_json_decl, body_to_walk,
+                                codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count);
+                        } else {
+                            collect_err_union_from_ast(codegen, body_to_walk);
+                        }
                     }
                     const struct_decl: &ASTNode = find_struct_decl_from_program(ast, ta0.type_named_name);
                     if struct_decl != null && struct_decl.struct_decl_fields != null && struct_decl.struct_decl_field_count > 0 {
@@ -2303,14 +2406,15 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                     decl.fn_decl_type_params, decl.fn_decl_type_param_count,
                                     codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count);
                                 if expanded != null {
-                                    collect_err_union_from_ast(codegen, expanded);
+                                    collect_err_union_from_function_body(codegen, decl, expanded,
+                                        codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count);
                                 }
                             }
                         }
                         j = j + 1;
                     }
                 } else {
-                    collect_err_union_from_ast(codegen, decl.fn_decl_body);
+                    collect_err_union_from_function_body(codegen, decl, decl.fn_decl_body, null, 0);
                 }
             }
             i = i + 1;

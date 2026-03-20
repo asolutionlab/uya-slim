@@ -56,5 +56,5 @@ test "strtod_small_exponent" {
 test "strtod_very_small_exponent" {
     // 10^-400 应该产生 0
     const result: f64 = strtod("1.0e-400", null);
-    try expect(fabs(result) < 1.0e-324);
+    try expect(result == 0.0);
 }

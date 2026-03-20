@@ -1,7 +1,7 @@
 // test_async_await.uya
 // try @await 基本使用：
 // - Ready Future：try @await 返回 !T 的成功值
-// - Pending Future：try @await 触发 error.AsyncPending（当前最小闭环语义）
+// - Pending Future：外层 future 首次 poll 返回 Pending，由状态机等待后续推进
 
 use std.async;
 use std.testing.assert_eq_i32;
@@ -24,15 +24,10 @@ fn await_ready_7() Future<!i32> {
 }
 
 @async_fn
-fn await_pending_should_error() Future<!i32> {
+fn await_pending_should_pending() Future<!i32> {
     const _x: i32 = try @await pending_i32();
     _ = _x;
     return 1;
-}
-
-fn call_pending_should_error() !void {
-    const _f: Future<!i32> = await_pending_should_error();
-    _ = _f;
 }
 
 test "async_await_ready_returns_value" {
@@ -47,11 +42,15 @@ test "async_await_ready_returns_value" {
     try assert_eq_i32(result, 7);
 }
 
-test "async_await_pending_propagates_error" {
-    var got_error: bool = false;
-    call_pending_should_error() catch {
-        got_error = true;
+test "async_await_pending_returns_pending" {
+    const f: Future<!i32> = await_pending_should_pending();
+    const w: Waker = Waker{};
+    const p: Poll<!i32> = f.poll(&w);
+    var seen_pending: bool = false;
+    match p {
+        .Ready(_) => { seen_pending = false; },
+        .Pending(_) => { seen_pending = true; },
     };
-    try expect(got_error);
+    try expect(seen_pending);
 }
 

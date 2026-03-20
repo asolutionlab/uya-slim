@@ -1569,6 +1569,33 @@ fn get_target_exe_suffix() &byte {
     return empty;
 }
 
+// 宿主 CFLAGS 是否处于 -O2/-O3/-Os（GCC 对部分 Uya 生成 C 的错误小函数内联可导致 SIGSEGV，见 std.thread 等测例）
+fn hosted_cflags_need_no_small_inline(cflags: &byte) i32 {
+    if cflags == null {
+        return 0;
+    }
+    if strstr(cflags as *byte, "-O2" as *byte) != null {
+        return 1;
+    }
+    if strstr(cflags as *byte, "-O3" as *byte) != null {
+        return 1;
+    }
+    if strstr(cflags as *byte, "-Os" as *byte) != null {
+        return 1;
+    }
+    return 0;
+}
+
+fn hosted_cflags_has_no_small_inline(cflags: &byte) i32 {
+    if cflags == null {
+        return 0;
+    }
+    if strstr(cflags as *byte, "fno-inline-small-functions" as *byte) != null {
+        return 1;
+    }
+    return 0;
+}
+
 // 调用宿主工具链链接生成可执行文件
 // c_file: C 源代码文件路径
 // output: 输出可执行文件路径
@@ -1579,7 +1606,17 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32) i32 {
     var cmd_len: i32 = 0;
     var cc_driver_buffer: [byte: PATH_MAX] = [];
     const cc_driver: &byte = resolve_cc_driver(&cc_driver_buffer[0] as &byte, PATH_MAX);
-    const cflags: &byte = get_env_or_default("CFLAGS" as *byte, "-std=c99 -O2 -fno-builtin" as *byte);
+    // 默认对齐仓库 Makefile 的 hosted CFLAGS，避免 uya build/run/test 与 make check 走出不同的宿主代码路径。
+    const cflags_env: &byte = get_env_or_default("CFLAGS" as *byte, "-std=c99 -O0 -g -fno-builtin" as *byte);
+    var cflags_buf: [byte: 2048] = [];
+    var cflags: &byte = cflags_env;
+    if hosted_cflags_need_no_small_inline(cflags_env) != 0 && hosted_cflags_has_no_small_inline(cflags_env) == 0 {
+        const wcf: i32 = snprintf(&cflags_buf[0] as *byte, 2048, "%s -fno-inline-small-functions" as *byte, cflags_env as *byte);
+        if wcf > 0 && wcf < 2048 {
+            cflags = &cflags_buf[0];
+            fprintf(libc.stderr, "信息：CFLAGS 含 -O2/-O3/-Os，已自动追加 -fno-inline-small-functions（规避宿主 GCC 对部分生成代码的错误小函数内联）\n" as *byte);
+        }
+    }
     const ldflags: &byte = get_env_or_default("LDFLAGS" as *byte, "" as *byte);
     const target_os: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
     const target_triple: &byte = get_env_or_default("TARGET_TRIPLE" as *byte, "" as *byte);
@@ -2384,32 +2421,40 @@ fn generate_libc(output_dir: &byte) i32 {
     fprintf(header_file, "/* syscall 内联函数（x86-64） */\n" as *byte);
     fprintf(header_file, "#ifdef __x86_64__\n" as *byte);
     fprintf(header_file, "static inline int64_t uya_syscall0(int64_t n) {\n" as *byte);
-    fprintf(header_file, "    register long rax __asm__(\"rax\") = n;\n" as *byte);
-    fprintf(header_file, "    __asm__ volatile(\"syscall\" : \"+r\"(rax) : : \"rcx\", \"r11\", \"memory\");\n" as *byte);
-    fprintf(header_file, "    return rax;\n" as *byte);
+    fprintf(header_file, "    long ret;\n" as *byte);
+    fprintf(header_file, "    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(n) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte);
+    fprintf(header_file, "    return ret;\n" as *byte);
     fprintf(header_file, "}\n" as *byte);
     fprintf(header_file, "static inline int64_t uya_syscall1(int64_t n, int64_t a1) {\n" as *byte);
-    fprintf(header_file, "    register long rax __asm__(\"rax\") = n;\n" as *byte);
-    fprintf(header_file, "    register long rdi __asm__(\"rdi\") = a1;\n" as *byte);
-    fprintf(header_file, "    __asm__ volatile(\"syscall\" : \"+r\"(rax) : \"r\"(rdi) : \"rcx\", \"r11\", \"memory\");\n" as *byte);
-    fprintf(header_file, "    return rax;\n" as *byte);
+    fprintf(header_file, "    long ret;\n" as *byte);
+    fprintf(header_file, "    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(n), \"D\"(a1) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte);
+    fprintf(header_file, "    return ret;\n" as *byte);
     fprintf(header_file, "}\n" as *byte);
     fprintf(header_file, "static inline int64_t uya_syscall2(int64_t n, int64_t a1, int64_t a2) {\n" as *byte);
-    fprintf(header_file, "    register long rax __asm__(\"rax\") = n;\n" as *byte);
-    fprintf(header_file, "    register long rdi __asm__(\"rdi\") = a1;\n" as *byte);
-    fprintf(header_file, "    register long rsi __asm__(\"rsi\") = a2;\n" as *byte);
-    fprintf(header_file, "    __asm__ volatile(\"syscall\" : \"+r\"(rax) : \"r\"(rdi), \"r\"(rsi) : \"rcx\", \"r11\", \"memory\");\n" as *byte);
-    fprintf(header_file, "    return rax;\n" as *byte);
+    fprintf(header_file, "    long ret;\n" as *byte);
+    fprintf(header_file, "    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(n), \"D\"(a1), \"S\"(a2) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte);
+    fprintf(header_file, "    return ret;\n" as *byte);
     fprintf(header_file, "}\n" as *byte);
     fprintf(header_file, "static inline int64_t uya_syscall3(int64_t n, int64_t a1, int64_t a2, int64_t a3) {\n" as *byte);
-    fprintf(header_file, "    register long rax __asm__(\"rax\") = n;\n" as *byte);
-    fprintf(header_file, "    register long rdi __asm__(\"rdi\") = a1;\n" as *byte);
-    fprintf(header_file, "    register long rsi __asm__(\"rsi\") = a2;\n" as *byte);
-    fprintf(header_file, "    register long rdx __asm__(\"rdx\") = a3;\n" as *byte);
-    fprintf(header_file, "    __asm__ volatile(\"syscall\" : \"+r\"(rax) : \"r\"(rdi), \"r\"(rsi), \"r\"(rdx) : \"rcx\", \"r11\", \"memory\");\n" as *byte);
-    fprintf(header_file, "    return rax;\n" as *byte);
+    fprintf(header_file, "    long ret;\n" as *byte);
+    fprintf(header_file, "    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(n), \"D\"(a1), \"S\"(a2), \"d\"(a3) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte);
+    fprintf(header_file, "    return ret;\n" as *byte);
     fprintf(header_file, "}\n" as *byte);
     fprintf(header_file, "#endif\n\n" as *byte);
+
+    fprintf(header_file, "/* std.thread：单参函数指针间接调用（与 codegen 前导一致；勿用 inline 以免 -O2 内联退化） */\n" as *byte);
+    fprintf(header_file, "static int32_t uya_thread_call_i32(void *fn, int32_t arg) {\n" as *byte);
+    fprintf(header_file, "    typedef int32_t (*uya_thrd_fn_i32)(int32_t);\n" as *byte);
+    fprintf(header_file, "    return ((uya_thrd_fn_i32)fn)(arg);\n" as *byte);
+    fprintf(header_file, "}\n" as *byte);
+    fprintf(header_file, "static uint32_t uya_thread_call_u32(void *fn, uint32_t arg) {\n" as *byte);
+    fprintf(header_file, "    typedef uint32_t (*uya_thrd_fn_u32)(uint32_t);\n" as *byte);
+    fprintf(header_file, "    return ((uya_thrd_fn_u32)fn)(arg);\n" as *byte);
+    fprintf(header_file, "}\n" as *byte);
+    fprintf(header_file, "static size_t uya_thread_call_usize(void *fn, size_t arg) {\n" as *byte);
+    fprintf(header_file, "    typedef size_t (*uya_thrd_fn_usz)(size_t);\n" as *byte);
+    fprintf(header_file, "    return ((uya_thrd_fn_usz)fn)(arg);\n" as *byte);
+    fprintf(header_file, "}\n\n" as *byte);
 
     // 函数声明（从各模块收集）
     fprintf(header_file, "/* 函数声明 */\n" as *byte);

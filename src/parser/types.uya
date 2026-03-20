@@ -796,6 +796,27 @@ fn parse_literal_suffix(str: &byte, suffix_len: &i32) i32 {
     return 0;  // NONE
 }
 
+// 整数字面量解析：按当前进制判断数字字符（与 lexer 一致）
+fn integer_literal_char_ok_for_base(c: byte, base: i32) i32 {
+    if base == 2 {
+        if c == 48 || c == 49 { return 1; }
+        return 0;
+    }
+    if base == 8 {
+        if c >= 48 && c <= 55 { return 1; }
+        return 0;
+    }
+    if base == 10 {
+        if c >= 48 && c <= 57 { return 1; }
+        return 0;
+    }
+    if base == 16 {
+        if (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102) { return 1; }
+        return 0;
+    }
+    return 0;
+}
+
 // 辅助函数：解析整数字面量（支持多进制、下划线和类型后缀）
 fn parse_integer_literal_with_suffix(str: &byte, arena: &Arena, suffix: &i32) i64 {
     suffix[0] = 0;  // LITERAL_SUFFIX_NONE
@@ -804,60 +825,50 @@ fn parse_integer_literal_with_suffix(str: &byte, arena: &Arena, suffix: &i32) i6
         return 0;
     }
     
-    // 首先检查后缀
     var len: usize = 0;
     while cleaned[len] != 0 {
         len = len + 1;
     }
     
-    // 从后往前找后缀
-    var suffix_start: usize = len;
-    var i: usize = len;
-    while i > 0 {
-        i = i - 1;
-        const c: byte = cleaned[i];
-        if (c >= 97 && c <= 122) || (c >= 65 && c <= 90) {
-            // 字母，可能是后缀的一部分
-            suffix_start = i;
-        } else {
-            break;
-        }
-    }
-    
-    // 检查是否有后缀
-    if suffix_start < len {
-        var suffix_len_var: i32 = 0;
-        suffix[0] = parse_literal_suffix(&cleaned[suffix_start], &suffix_len_var);
-        // 重置字符串长度为去除后缀后的长度
-        len = suffix_start;
-    }
-    
-    // 解析数字部分
+    // 先定进制与前缀后的数字起点；再向前扫描「属于数值的字符」，其余为类型后缀。
+    // 避免 0xFF 被误当成后缀「xFF」（旧逻辑从尾部吞字母会把 0x 的 x 与 FF 一并当后缀）。
     var base: i32 = 10;
-    var start_pos: usize = 0;
+    var digit_start: usize = 0;
     if len > 2 && cleaned[0] == 48 {
         if cleaned[1] == 120 || cleaned[1] == 88 {  // 0x
             base = 16;
-            start_pos = 2;
+            digit_start = 2;
         } else if cleaned[1] == 111 || cleaned[1] == 79 {  // 0o
             base = 8;
-            start_pos = 2;
+            digit_start = 2;
         } else if cleaned[1] == 98 || cleaned[1] == 66 {  // 0b
             base = 2;
-            start_pos = 2;
+            digit_start = 2;
         }
     }
     
-    // 复制数字部分到临时缓冲区
+    var num_end: usize = digit_start;
+    while num_end < len && integer_literal_char_ok_for_base(cleaned[num_end], base) != 0 {
+        num_end = num_end + 1;
+    }
+    
+    if num_end < len {
+        var suffix_len_var: i32 = 0;
+        suffix[0] = parse_literal_suffix(&cleaned[num_end], &suffix_len_var);
+    }
+    
     var temp: [byte: 256] = [0:256];
     var j: usize = 0;
-    i = start_pos;
-    while i < len && j < 255 {
+    var i: usize = digit_start;
+    while i < num_end && j < 255 {
         temp[j] = cleaned[i];
         j = j + 1;
         i = i + 1;
     }
     temp[j] = 0;
+    if j == 0 {
+        return 0;
+    }
     
     const result: i64 = strtoll(&temp[0] as &byte, null as * *byte, base);
     return result;

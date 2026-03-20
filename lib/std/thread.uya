@@ -64,34 +64,22 @@ mc thread_type_is_u32(T: type) expr {
     info.type_id == 6;
 }
 
-// 通过内联汇编调用 i32(i32) 形式的函数指针。
+// 由 C99 生成器在输出前导中注入 static inline uya_thread_call_*（见 codegen/c99/main.uya）：
+// 用宿主编译器做类型化间接调用，保证 -O2 下栈对齐与调用约定正确；勿在此处用 @asm call *%%rax。
+extern fn uya_thread_call_i32(fn_ptr: &void, arg: i32) i32;
+extern fn uya_thread_call_u32(fn_ptr: &void, arg: u32) u32;
+extern fn uya_thread_call_usize(fn_ptr: &void, arg: usize) usize;
+
 fn thread_call_i32(fn_ptr: &void, arg: i32) i32 {
-    var ret: i64 = 0;
-    const arg64: i64 = arg as i64;
-    @asm {
-        "mov %2, %%rdi\n\tmov %1, %%rax\n\tcall *%%rax\n\tmov %%rax, %0" (fn_ptr, arg64, -> ret);
-    } clobbers = ["rax", "rdi", "rcx", "r11", "memory"];
-    return ret as i32;
+    return uya_thread_call_i32(fn_ptr, arg);
 }
 
-// 通过内联汇编调用 usize(usize) 形式的函数指针。
 fn thread_call_usize(fn_ptr: &void, arg: usize) usize {
-    var ret: i64 = 0;
-    const arg64: i64 = arg as i64;
-    @asm {
-        "mov %2, %%rdi\n\tmov %1, %%rax\n\tcall *%%rax\n\tmov %%rax, %0" (fn_ptr, arg64, -> ret);
-    } clobbers = ["rax", "rdi", "rcx", "r11", "memory"];
-    return ret as usize;
+    return uya_thread_call_usize(fn_ptr, arg);
 }
 
-// 通过内联汇编调用 u32(u32) 形式的函数指针。
 fn thread_call_u32(fn_ptr: &void, arg: u32) u32 {
-    var ret: i64 = 0;
-    const arg64: i64 = arg as i64;
-    @asm {
-        "mov %2, %%rdi\n\tmov %1, %%rax\n\tcall *%%rax\n\tmov %%rax, %0" (fn_ptr, arg64, -> ret);
-    } clobbers = ["rax", "rdi", "rcx", "r11", "memory"];
-    return ret as u32;
+    return uya_thread_call_u32(fn_ptr, arg);
 }
 
 struct ThreadWorker {

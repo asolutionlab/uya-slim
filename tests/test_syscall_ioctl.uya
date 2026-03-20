@@ -37,11 +37,12 @@ test "sys_ioctl_on_terminal" {
         ws_ypixel: 0
     };
     
-    // 在标准输入上执行 ioctl
-    const result: i32 = try sys_ioctl(0, TIOCGWINSZ, &ws as i64);
-    // 如果不是终端，ioctl 会失败，这是正常的
-    // 我们不验证返回值，只确保调用不会崩溃
-    _ = result;
+    // 在标准输入上执行 ioctl；若当前环境不是终端，失败也是预期行为。
+    const result: i32 = sys_ioctl(0, TIOCGWINSZ, &ws as i64) catch {
+        try expect(true);
+        return;
+    };
+    try expect(result == 0);
 }
 
 test "sys_fcntl_getfl" {

@@ -208,8 +208,12 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                (val < i32_min as i64) || (val > i32_max as i64);
         
         if suffix == 7 || suffix == 5 || suffix == 6 {  // U32, U8, U16
-            // u8, u16, u32 类型：使用 U 后缀
-            fprintf(codegen.output as *void, "%dU" as *byte, val as i32);
+            // u8, u16：始终在 i32 正范围内；u32 可至 0xFFFFFFFF，不可 val as i32 再 %dU（如 0x80000000u32 会错成 (-U)）
+            if suffix == 7 && val > i32_max as i64 {
+                fprintf(codegen.output as *void, "((uint32_t)%lluULL)" as *byte, val);
+            } else {
+                fprintf(codegen.output as *void, "%dU" as *byte, val as i32);
+            }
         } else if suffix == 8 || suffix == 9 {  // U64, USIZE
             // u64, usize 类型：使用 ULL 后缀；超出 i32 时用高/低 32 位拼成 64 位
             if val < i32_min as i64 || val > i32_max as i64 {
@@ -244,36 +248,13 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         // 根据浮点字面量后缀生成对应的 C 代码格式
         const suffix: i32 = expr.float_literal_suffix;
         const val: f64 = expr.float_literal_value;
-        var truncated: i64 = 0;
-        var truncated_valid: i32 = 0;
-        const i64_upper_exclusive: f64 = 9223372036854775808.0;
-        const i64_lower_inclusive: f64 = -9223372036854775808.0;
-        const i32_max: i32 = 2147483647;
-        const i32_min: i32 = 0 - i32_max - 1;
-
-        // 2^63 在 f64 中可精确表示，但它已经超出 i64 最大值，所以这里必须用 < 上界。
-        if val >= i64_lower_inclusive && val < i64_upper_exclusive {
-            truncated = val as i64;
-            truncated_valid = 1;
-        }
-        
         if suffix == 10 {  // F32
-            // f32 类型：使用 F 后缀
-            fprintf(codegen.output as *void, "%.9gF" as *byte, val);
+            // 必须保持“浮点字面量”形态；像 123.0 若输出成 123，会在 printf("%f", ...) 这类可变参调用中错传成 int。
+            fprintf(codegen.output as *void, "%#.9gF" as *byte, val);
         } else if suffix == 11 {  // F64
-            // f64 类型：使用普通格式
-            if truncated_valid != 0 && val == (truncated as f64) && truncated >= i32_min as i64 && truncated <= i32_max as i64 {
-                fprintf(codegen.output as *void, "%d" as *byte, truncated as i32);
-            } else {
-                fprintf(codegen.output as *void, "%.17g" as *byte, val);
-            }
+            fprintf(codegen.output as *void, "%#.17g" as *byte, val);
         } else {
-            // 无后缀，默认 f64
-            if truncated_valid != 0 && val == (truncated as f64) && truncated >= i32_min as i64 && truncated <= i32_max as i64 {
-                fprintf(codegen.output as *void, "%d" as *byte, truncated as i32);
-            } else {
-                fprintf(codegen.output as *void, "%.17g" as *byte, val);
-            }
+            fprintf(codegen.output as *void, "%#.17g" as *byte, val);
         }
     } else if expr.type == ASTNodeType.AST_BOOL {
         if expr.bool_literal_value != 0 {
@@ -6359,29 +6340,50 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             fputs("0" as *byte, codegen.output as *void);
             return;
         }
-        const operand_union_c: &byte = get_c_type_of_expr(codegen, operand);
+        var operand_union_c: &byte = get_c_type_of_expr(codegen, operand);
         var operand_is_err_union: i32 = 0;
+        // union_c / payload_c 须先于下方「从函数声明补全 err_union」块使用，避免对未声明变量赋值
+        var union_c: &byte = ("int32_t" as *byte) as &byte;
+        var payload_c: &byte = ("int32_t" as *byte) as &byte;
         if operand_union_c != null && strstr(operand_union_c as *byte, "err_union_" as *byte) != null {
             operand_is_err_union = 1;
         }
-        var union_c: &byte = ("int32_t" as *byte) as &byte;
-        var payload_c: &byte = ("int32_t" as *byte) as &byte;
+        // 额外检查：操作数是否是函数调用，如果是，直接从函数声明获取返回类型
+        // 这修复了 get_c_type_of_expr 对某些函数调用返回 int32_t 的问题
+        if operand_is_err_union == 0 && operand != null && operand.type == ASTNodeType.AST_CALL_EXPR {
+            const callee: &ASTNode = operand.call_expr_callee;
+            if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER && callee.identifier_name != null {
+                const fn_decl: &ASTNode = find_function_decl_c99(codegen, callee.identifier_name);
+                if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL && fn_decl.fn_decl_return_type != null {
+                    const fn_return_type: &ASTNode = fn_decl.fn_decl_return_type;
+                    const fn_return_c: &byte = c99_type_to_c(codegen, fn_return_type);
+                    if fn_return_c != null && strstr(fn_return_c as *byte, "err_union_" as *byte) != null {
+                        // 找到了！函数返回错误联合类型
+                        operand_union_c = fn_return_c;
+                        operand_is_err_union = 1;
+                    }
+                }
+            }
+        }
         if operand_is_err_union != 0 {
             union_c = operand_union_c;
             if operand != null && operand.type == ASTNodeType.AST_CAST_EXPR && operand.cast_expr_is_force_cast != 0 && operand.cast_expr_target_type != null {
                 payload_c = c99_type_to_c(codegen, operand.cast_expr_target_type);
-            } else if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION && ret_type.type_error_union_payload_type != null {
-                payload_c = c99_type_to_c(codegen, ret_type.type_error_union_payload_type);
             } else {
+                var payload_inferred: i32 = 0;
                 // 从错误联合类型名称推断 payload 类型
                 if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_void" as *byte) == 0 {
                     payload_c = "void" as &byte;
+                    payload_inferred = 1;
                 } else if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_int32_t" as *byte) == 0 {
                     payload_c = "int32_t" as &byte;
+                    payload_inferred = 1;
                 } else if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_int64_t" as *byte) == 0 {
                     payload_c = "int64_t" as &byte;
+                    payload_inferred = 1;
                 } else if operand_union_c != null && strcmp(operand_union_c as *byte, "struct err_union_intptr_t" as *byte) == 0 {
                     payload_c = "intptr_t" as &byte;
+                    payload_inferred = 1;
                 } else if operand_union_c != null && strncmp(operand_union_c as *byte, "struct err_union_struct" as *byte, 23) == 0 {
                     // err_union_structLinuxEpoll -> payload "struct LinuxEpoll"
                     const rest: *byte = operand_union_c as *byte + 23;
@@ -6391,17 +6393,21 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     if payload_c == null {
                         payload_c = "int32_t" as &byte;
                     }
+                    payload_inferred = 1;
                 } else if operand_union_c != null && strncmp(operand_union_c as *byte, "struct err_union_" as *byte, 17) == 0 {
                     // err_union_LinuxEpoll 等 -> payload "struct LinuxEpoll"；err_union_Xptr -> payload "struct X *"
                     const rest: *byte = operand_union_c as *byte + 17;
                     if strcmp(rest, "int32_t" as *byte) == 0 || strcmp(rest, "int64_t" as *byte) == 0
+                        || strcmp(rest, "uint32_t" as *byte) == 0 || strcmp(rest, "uint64_t" as *byte) == 0
                         || strcmp(rest, "intptr_t" as *byte) == 0 || strcmp(rest, "void" as *byte) == 0
                         || strcmp(rest, "size_t" as *byte) == 0 || strcmp(rest, "uintptr_t" as *byte) == 0
                         || strcmp(rest, "ssize_t" as *byte) == 0 || strcmp(rest, "bool" as *byte) == 0
                         || strcmp(rest, "double" as *byte) == 0 {
                         payload_c = rest;
+                        payload_inferred = 1;
                     } else if strcmp(rest, "f64" as *byte) == 0 {
                         payload_c = ("double" as *byte) as &byte;
+                        payload_inferred = 1;
                     } else {
                         const rest_len: i32 = strlen(rest);
                         if rest_len >= 3 && rest[rest_len - 3] == 112 && rest[rest_len - 2] == 116 && rest[rest_len - 1] == 114 {
@@ -6417,6 +6423,7 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             if payload_c == null {
                                 payload_c = "void*" as &byte;
                             }
+                            payload_inferred = 1;
                         } else {
                             // rest 如 Vec4i32：可能是 type alias（typedef 名），不是 C struct tag；err_union 字段类型与 c99_type_to_c 一致
                             const alias_decl: &ASTNode = find_type_alias_from_program(codegen.program_node, rest as &byte);
@@ -6438,11 +6445,40 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                     payload_c = "int32_t" as &byte;
                                 }
                             }
+                            payload_inferred = 1;
                         }
                     }
-                } else {
+                }
+                if payload_inferred == 0 && ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+                    ret_type.type_error_union_payload_type != null && (operand == null || operand.type != ASTNodeType.AST_CALL_EXPR) {
+                    // 仅在无法从操作数错误联合本身恢复 payload 时，才退回外层函数返回类型。
+                    payload_c = c99_type_to_c(codegen, ret_type.type_error_union_payload_type);
+                    payload_inferred = 1;
+                }
+                if payload_inferred == 0 {
                     payload_c = "int32_t" as &byte;
                 }
+            }
+        } else if operand != null && operand.type == ASTNodeType.AST_CALL_EXPR {
+            // 操作数是函数调用，尝试从函数声明获取返回类型
+            const callee: &ASTNode = operand.call_expr_callee;
+            if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER && callee.identifier_name != null {
+                const fn_decl: &ASTNode = find_function_decl_c99(codegen, callee.identifier_name);
+                if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL && fn_decl.fn_decl_return_type != null {
+                    union_c = c99_type_to_c(codegen, fn_decl.fn_decl_return_type);
+                    const payload_node: &ASTNode = fn_decl.fn_decl_return_type.type_error_union_payload_type;
+                    if payload_node != null {
+                        payload_c = c99_type_to_c(codegen, payload_node);
+                    } else {
+                        payload_c = "void" as &byte;
+                    }
+                } else {
+                    fputs("0" as *byte, codegen.output as *void);
+                    return;
+                }
+            } else {
+                fputs("0" as *byte, codegen.output as *void);
+                return;
             }
         } else if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
             union_c = c99_type_to_c(codegen, ret_type);

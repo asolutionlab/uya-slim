@@ -37,8 +37,12 @@ test "sys_waitpid_nochild" {
     // waitpid WNOHANG 且没有子进程
     var status: i32 = 0;
     const WNOHANG: i32 = 1;  // Linux 中 WNOHANG = 1
-    const result: i32 = try sys_waitpid(-1, &status, WNOHANG);
-    // 应该返回 -1 并设置 ECHILD，但我们不验证具体错误码
+    _ = sys_waitpid(-1, &status, WNOHANG) catch {
+        try expect(true);
+        return;
+    };
+    // 没有子进程时，Linux 应返回 ECHILD；若走到这里，说明行为与预期不符。
+    try expect(false);
 }
 
 test "sys_exit_status" {
@@ -46,4 +50,5 @@ test "sys_exit_status" {
     // 这里只是演示正确的用法
     // sys_exit(0);
     // sys_exit(42);
+    try expect(true);
 }

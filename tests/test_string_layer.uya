@@ -118,7 +118,7 @@ test "strncat" {
     dest[2] = 0;
     
     const src: *byte = " world";
-    const result: &byte = strncat(&dest[0], src, 3);
+    const result: &byte = strncat(&dest[0], src, 4);
     try expect(result == &dest[0]);
     
     try expect(dest[0] == 'h');

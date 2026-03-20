@@ -76,13 +76,12 @@ export extern "libc" fn copysign(x: f64, y: f64) f64 {
 export extern "libc" fn fmod(x: f64, y: f64) f64 {
     if y == 0.0 { return NAN; }
     if isinf(x) != 0 { return NAN; }
+    if isinf(y) != 0 { return x; }
 
-    var result: f64 = x - (x / y) * y;
-    // 调整符号
-    if (result < 0.0) != (x < 0.0) {
-        result = result + y;
-    }
-    return result;
+    // C 的 fmod 使用 trunc(x / y) 而不是直接浮点乘回去；否则像 PI/2 对 2*PI 会被错误地约成 0。
+    const quotient: f64 = x / y;
+    const quotient_trunc: i64 = quotient as i64;
+    return x - (quotient_trunc as f64) * y;
 }
 
 // ============================================================

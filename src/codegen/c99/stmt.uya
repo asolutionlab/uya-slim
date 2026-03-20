@@ -2074,6 +2074,11 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                                 codegen.indent_level = codegen.indent_level - 1;
                             }
                             c99_emit(codegen, "}\n" as *byte);
+                            // 与上方「if (_uya_m._tag == …) {」处的 indent++ 对称；否则后续 else if 与块尾 } 错位，
+                            // 会把函数尾部的兜底 return 嵌进 while（如 block_on：Pending 时误 return {0}）。
+                            if bind != null {
+                                codegen.indent_level = codegen.indent_level - 1;
+                            }
                         } else {
                             gen_expr(codegen, stmt.match_expr_arms[i].result_expr);
                             c99_emit_semi_newline(codegen);

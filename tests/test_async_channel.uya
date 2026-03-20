@@ -53,7 +53,8 @@ test "mpsc_channel_second_send_pending_until_recv" {
     var ch: MpscChannel_i32 = mpsc_channel_i32_new();
     const wk: Waker = Waker{};
 
-    const first_send: Poll<usize> = ch.send(11).poll(&wk);
+    const first_send_future: Future<usize> = ch.send(11);
+    const first_send: Poll<usize> = first_send_future.poll(&wk);
     var first_ready: i32 = 0;
     match first_send {
         .Ready(_) => { first_ready = 1; },
@@ -61,7 +62,8 @@ test "mpsc_channel_second_send_pending_until_recv" {
     };
     try assert_eq_i32(first_ready, 1);
 
-    const second_send: Poll<usize> = ch.send(22).poll(&wk);
+    const second_send_future: Future<usize> = ch.send(22);
+    const second_send: Poll<usize> = second_send_future.poll(&wk);
     var second_pending: i32 = 0;
     match second_send {
         .Ready(_) => { },
@@ -69,7 +71,8 @@ test "mpsc_channel_second_send_pending_until_recv" {
     };
     try assert_eq_i32(second_pending, 1);
 
-    const first_recv: Poll<i32> = ch.recv().poll(&wk);
+    const first_recv_future: Future<i32> = ch.recv();
+    const first_recv: Poll<i32> = first_recv_future.poll(&wk);
     var first_value: i32 = 0;
     match first_recv {
         .Ready(v) => { first_value = v; },
@@ -77,7 +80,8 @@ test "mpsc_channel_second_send_pending_until_recv" {
     };
     try assert_eq_i32(first_value, 11);
 
-    const third_send: Poll<usize> = ch.send(22).poll(&wk);
+    const third_send_future: Future<usize> = ch.send(22);
+    const third_send: Poll<usize> = third_send_future.poll(&wk);
     var third_ready: i32 = 0;
     match third_send {
         .Ready(_) => { third_ready = 1; },
@@ -85,7 +89,8 @@ test "mpsc_channel_second_send_pending_until_recv" {
     };
     try assert_eq_i32(third_ready, 1);
 
-    const second_recv: Poll<i32> = ch.recv().poll(&wk);
+    const second_recv_future: Future<i32> = ch.recv();
+    const second_recv: Poll<i32> = second_recv_future.poll(&wk);
     var second_value: i32 = 0;
     match second_recv {
         .Ready(v) => { second_value = v; },

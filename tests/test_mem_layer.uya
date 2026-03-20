@@ -33,7 +33,7 @@ test "mem_copy_backward" {
     var src: [byte: 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
     var dest: [byte: 10] = [];
     
-    mem_copy_backward(&dest[9], &src[9], 10);
+    mem_copy_backward(&dest[0], &src[0], 10);
     
     var i: usize = 0;
     while i < 10 {

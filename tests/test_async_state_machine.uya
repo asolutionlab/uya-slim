@@ -12,7 +12,8 @@ struct FlipPending : Future<!i32> {
     fn poll(self: &Self, waker: &Waker) Poll<!i32> {
         _ = waker;
         if self.polled == 0 {
-            // 第一次：Pending
+            // 第一次：标记已轮询，然后返回 Pending。
+            self.polled = 1;
             return Poll<!i32>.Pending({});
         }
         // 第二次及以后：Ready(ok(7))
