@@ -27,5 +27,13 @@ export fn main() i32 {
         return 3;
     }
 
+    const two: Vec4i32 = @vector.splat(2);
+    const twov: Vec4i32 = @vector.splat(2);
+    const eight2: Vec4i32 = two << twov;
+    const ok_lshift: Mask4 = eight2 == @vector.splat(8);
+    if @vector.all(ok_lshift) == false {
+        return 4;
+    }
+
     return 0;
 }

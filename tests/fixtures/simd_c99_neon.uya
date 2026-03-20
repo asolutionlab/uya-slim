@@ -38,6 +38,22 @@ export fn main() i32 {
     if @vector.all(rmu == @vector.splat(2 as u32)) == false {
         return 7;
     }
+    const shl_i: Vec4i32 = @vector.splat(2) << @vector.splat(2);
+    if @vector.all(shl_i == @vector.splat(8)) == false {
+        return 8;
+    }
+    const shr_i: Vec4i32 = @vector.splat(8) >> @vector.splat(1);
+    if @vector.all(shr_i == @vector.splat(4)) == false {
+        return 9;
+    }
+    const shl_u: Vec4u32 = @vector.splat(2 as u32) << @vector.splat(2 as u32);
+    if @vector.all(shl_u == @vector.splat(8 as u32)) == false {
+        return 10;
+    }
+    const shr_u: Vec4u32 = @vector.splat(8 as u32) >> @vector.splat(1 as u32);
+    if @vector.all(shr_u == @vector.splat(4 as u32)) == false {
+        return 11;
+    }
     const x: Vec4f32 = @vector.splat(1.0f32);
     const y: Vec4f32 = @vector.splat(2.0f32);
     const mf: Mask4 = x < y;

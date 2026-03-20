@@ -2020,6 +2020,18 @@ fn c99_simd_emit_sse_binary_fast_at(codegen: &C99CodeGenerator, fast_kind: i32, 
     } else if fast_kind == 27 {
         fprintf(codegen.output as *void, "uya_simd_sse_rem_u32x4(%s, %s, %s); " as *byte,
             &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 18 {
+        fprintf(codegen.output as *void, "uya_simd_sse_shl_i32x4(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 19 {
+        fprintf(codegen.output as *void, "uya_simd_sse_shr_i32x4(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 28 {
+        fprintf(codegen.output as *void, "uya_simd_sse_shl_u32x4(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 29 {
+        fprintf(codegen.output as *void, "uya_simd_sse_shr_u32x4(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
     } else if fast_kind == 13 || fast_kind == 23 {
         fprintf(codegen.output as *void, "uya_simd_sse_and_i32x4(%s, %s, %s); " as *byte,
             &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
@@ -2155,6 +2167,10 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
                 fast_kind = 16;
             } else if simd_op == TokenType.TOKEN_PERCENT {
                 fast_kind = 17;
+            } else if simd_op == TokenType.TOKEN_LSHIFT {
+                fast_kind = 18;
+            } else if simd_op == TokenType.TOKEN_RSHIFT {
+                fast_kind = 19;
             } else if simd_op == TokenType.TOKEN_AMPERSAND {
                 fast_kind = 13;
             } else if simd_op == TokenType.TOKEN_PIPE {
@@ -2175,6 +2191,10 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
                 fast_kind = 26;
             } else if simd_op == TokenType.TOKEN_PERCENT {
                 fast_kind = 27;
+            } else if simd_op == TokenType.TOKEN_LSHIFT {
+                fast_kind = 28;
+            } else if simd_op == TokenType.TOKEN_RSHIFT {
+                fast_kind = 29;
             } else if simd_op == TokenType.TOKEN_AMPERSAND {
                 fast_kind = 23;
             } else if simd_op == TokenType.TOKEN_PIPE {
