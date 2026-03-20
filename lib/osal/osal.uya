@@ -381,7 +381,7 @@ export fn os_gettimeofday(tv: &TimeVal, tz: &void) !void {
     try sys_gettimeofday(tv, tz);
 }
 
-export fn os_clock_gettime(clock_id: i32) i32 {
+export fn os_clock_gettime(clock_id: i32) !i32 {
     var ts: TimeSpec = TimeSpec { tv_sec: 0, tv_nsec: 0 };
     try sys_clock_gettime(clock_id, &ts);
     return 0;
