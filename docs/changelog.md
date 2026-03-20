@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.23 - SIMD：`4×i32` / `4×u32` 向量 `%` C99 助手（2026-03-19）
+
+- **C99**：`types.uya` 增加 **`uya_simd_sse_rem_i32x4`**、**`uya_simd_sse_rem_u32x4`**；`expr.uya` **`fast_kind` 17 / 27**；`test_simd_u32_basic.uya`、**`simd_c99_neon.uya`** 夹具增补。
+- **文档**：规范 0.49.23（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
 ### v0.49.22 - SIMD：`4×i32` 向量 `/` C99 助手（2026-03-19）
 
 - **C99**：`types.uya` 增加 **`uya_simd_sse_div_i32x4`**；`expr.uya` **`fast_kind` 16**；`test_simd_div_f32_i32.uya`、夹具 **`simd_c99_neon.uya`** 增补用例。

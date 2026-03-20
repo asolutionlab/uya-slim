@@ -30,6 +30,14 @@ export fn main() i32 {
     if @vector.all(qru == @vector.splat(6 as u32)) == false {
         return 5;
     }
+    const rmi: Vec4i32 = @vector.splat(17) % @vector.splat(5);
+    if @vector.all(rmi == @vector.splat(2)) == false {
+        return 6;
+    }
+    const rmu: Vec4u32 = @vector.splat(17 as u32) % @vector.splat(5 as u32);
+    if @vector.all(rmu == @vector.splat(2 as u32)) == false {
+        return 7;
+    }
     const x: Vec4f32 = @vector.splat(1.0f32);
     const y: Vec4f32 = @vector.splat(2.0f32);
     const mf: Mask4 = x < y;
