@@ -20,6 +20,9 @@ i32x2x4_c="$BUILD_DIR/simd_emit_select_i32x2_i32x4.c"
 f32x2x4_c="$BUILD_DIR/simd_emit_select_f32x2_f32x4.c"
 u32x2x4_c="$BUILD_DIR/simd_emit_select_u32x2_u32x4.c"
 i32u32x4_c="$BUILD_DIR/simd_emit_select_i32x4_u32x4.c"
+i32f32x4_c="$BUILD_DIR/simd_emit_select_i32x4_f32x4.c"
+i32x2u32x4_c="$BUILD_DIR/simd_emit_select_i32x2_u32x4.c"
+i32x2f32x4_c="$BUILD_DIR/simd_emit_select_i32x2_f32x4.c"
 
 echo "验证：无 @vector.select 的 SIMD 程序不应输出 select 助手定义 ..."
 if ! "$COMPILER" --c99 "$SCRIPT_DIR/test_simd_sse_lower_i32x4.uya" -o "$no_sel_c" 2>&1; then
@@ -152,6 +155,63 @@ if grep 'static inline void uya_simd_sse_select_' "$i32u32x4_c" | grep -Ev 'sele
     exit 1
 fi
 echo "  i32×4 + u32×4 select 助手按需 ✓"
+
+echo "验证：i32×4 + f32×4 同程序仅生成二者、无 u32/×2 select ..."
+if ! "$COMPILER" --c99 "$SCRIPT_DIR/test_simd_c99_select_emit_i32x4_and_f32x4.uya" -o "$i32f32x4_c" 2>&1; then
+    echo "✗ 编译 test_simd_c99_select_emit_i32x4_and_f32x4.uya 失败"
+    exit 1
+fi
+if ! grep -q 'static inline void uya_simd_sse_select_i32x4' "$i32f32x4_c"; then
+    echo "✗ 缺少 uya_simd_sse_select_i32x4 定义"
+    exit 1
+fi
+if ! grep -q 'static inline void uya_simd_sse_select_f32x4' "$i32f32x4_c"; then
+    echo "✗ 缺少 uya_simd_sse_select_f32x4 定义"
+    exit 1
+fi
+if grep 'static inline void uya_simd_sse_select_' "$i32f32x4_c" | grep -Ev 'select_i32x4|select_f32x4'; then
+    echo "✗ i32×4+f32×4 程序只应含 select_i32x4 / select_f32x4 的 static inline 定义"
+    exit 1
+fi
+echo "  i32×4 + f32×4 select 助手按需 ✓"
+
+echo "验证：i32×2 + u32×4 同程序仅生成二者、无 f32/其它宽度 select ..."
+if ! "$COMPILER" --c99 "$SCRIPT_DIR/test_simd_c99_select_emit_i32x2_and_u32x4.uya" -o "$i32x2u32x4_c" 2>&1; then
+    echo "✗ 编译 test_simd_c99_select_emit_i32x2_and_u32x4.uya 失败"
+    exit 1
+fi
+if ! grep -q 'static inline void uya_simd_sse_select_i32x2' "$i32x2u32x4_c"; then
+    echo "✗ 缺少 uya_simd_sse_select_i32x2 定义"
+    exit 1
+fi
+if ! grep -q 'static inline void uya_simd_sse_select_u32x4' "$i32x2u32x4_c"; then
+    echo "✗ 缺少 uya_simd_sse_select_u32x4 定义"
+    exit 1
+fi
+if grep 'static inline void uya_simd_sse_select_' "$i32x2u32x4_c" | grep -Ev 'select_i32x2|select_u32x4'; then
+    echo "✗ i32×2+u32×4 程序只应含 select_i32x2 / select_u32x4 的 static inline 定义"
+    exit 1
+fi
+echo "  i32×2 + u32×4 select 助手按需 ✓"
+
+echo "验证：i32×2 + f32×4 同程序仅生成二者、无 u32/其它宽度 select ..."
+if ! "$COMPILER" --c99 "$SCRIPT_DIR/test_simd_c99_select_emit_i32x2_and_f32x4.uya" -o "$i32x2f32x4_c" 2>&1; then
+    echo "✗ 编译 test_simd_c99_select_emit_i32x2_and_f32x4.uya 失败"
+    exit 1
+fi
+if ! grep -q 'static inline void uya_simd_sse_select_i32x2' "$i32x2f32x4_c"; then
+    echo "✗ 缺少 uya_simd_sse_select_i32x2 定义"
+    exit 1
+fi
+if ! grep -q 'static inline void uya_simd_sse_select_f32x4' "$i32x2f32x4_c"; then
+    echo "✗ 缺少 uya_simd_sse_select_f32x4 定义"
+    exit 1
+fi
+if grep 'static inline void uya_simd_sse_select_' "$i32x2f32x4_c" | grep -Ev 'select_i32x2|select_f32x4'; then
+    echo "✗ i32×2+f32×4 程序只应含 select_i32x2 / select_f32x4 的 static inline 定义"
+    exit 1
+fi
+echo "  i32×2 + f32×4 select 助手按需 ✓"
 
 echo "验证：仅 i32×2 select 助手隔离 ..."
 if ! "$COMPILER" --c99 "$SCRIPT_DIR/test_simd_c99_select_emit_i32x2_only.uya" -o "$i32x2_only_c" 2>&1; then
