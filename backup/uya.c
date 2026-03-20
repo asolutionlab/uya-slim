@@ -1565,9 +1565,9 @@ static const char str1409[] = "__uya_sp_o_";
 static const char str1410[] = "%s %s = (";
 static const char str1411[] = "%s %s; ";
 static const char str1412[] = "uya_simd_sse_splat_f32x4(%s.lanes, %s); ";
-static const char str1413[] = "uya_simd_sse_splat_f32x4(&%s.lanes[4], %s); ";
+static const char str1413[] = "uya_simd_sse_splat_f32x4(&%s.lanes[%d], %s); ";
 static const char str1414[] = "uya_simd_sse_splat_i32x4(%s.lanes, %s); ";
-static const char str1415[] = "uya_simd_sse_splat_i32x4(&%s.lanes[4], %s); ";
+static const char str1415[] = "uya_simd_sse_splat_i32x4(&%s.lanes[%d], %s); ";
 static const char str1416[] = "%s; })";
 static const char str1417[] = "); (";
 static const char str1418[] = "%s){";
@@ -49219,7 +49219,7 @@ static __attribute__((unused)) int32_t c99_simd_try_emit_x86_sse_binary(struct C
                     int32_t _uya_ret = 0;
                     return _uya_ret;
                 }
-                if (((lanes != 4) && (lanes != 8))) {
+                if ((((lanes != 4) && (lanes != 8)) && (lanes != 16))) {
                     int32_t _uya_ret = 0;
                     return _uya_ret;
                 }
@@ -49432,7 +49432,7 @@ static __attribute__((unused)) int32_t c99_simd_try_emit_x86_sse_unary_minus(str
                 (void)result_name;
                 (void)operand_name;
                 (void)lanes;
-                if ((((((codegen == NULL) || (result_type_ast == NULL)) || (result_name == NULL)) || (operand_name == NULL)) || ((lanes != 4) && (lanes != 8)))) {
+                if ((((((codegen == NULL) || (result_type_ast == NULL)) || (result_name == NULL)) || (operand_name == NULL)) || (((lanes != 4) && (lanes != 8)) && (lanes != 16)))) {
                     int32_t _uya_ret = 0;
                     return _uya_ret;
                 }
@@ -49910,7 +49910,7 @@ static __attribute__((unused)) int32_t c99_gen_simd_builtin_call(struct C99CodeG
                         return _uya_ret;
                     }
                     uint8_t * const elem_base = c99_type_c_skip_const(elem_c);
-                    if (((((lanes == 4) || (lanes == 8)) && (elem_base != NULL)) && (((strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1257) == 0) || (strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1198) == 0)) || (strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1390) == 0)))) {
+                    if ((((((lanes == 4) || (lanes == 8)) || (lanes == 16)) && (elem_base != NULL)) && (((strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1257) == 0) || (strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1198) == 0)) || (strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1390) == 0)))) {
                         uint8_t * const out_struct = c99_make_temp_name(codegen, (uint8_t *)(uint8_t *)str1409);
                         if ((out_struct == NULL)) {
                             int32_t _uya_ret = 0;
@@ -49921,16 +49921,22 @@ static __attribute__((unused)) int32_t c99_gen_simd_builtin_call(struct C99CodeG
                         gen_expr(codegen, expr->call_expr_args[0]);
                         fputs((uint8_t *)(uint8_t *)str1235, (void *)codegen->output);
                         fprintf((void *)codegen->output, (const char *)str1411, (uint8_t *)result_c, (uint8_t *)out_struct);
-                        if ((strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1390) == 0)) {
-                            fprintf((void *)codegen->output, (const char *)str1412, (uint8_t *)out_struct, (uint8_t *)scalar_name);
-                            if ((lanes == 8)) {
-                                fprintf((void *)codegen->output, (const char *)str1413, (uint8_t *)out_struct, (uint8_t *)scalar_name);
+                        int32_t sp_off = 0;
+                        while ((sp_off < lanes)) {
+                            if ((strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1390) == 0)) {
+                                if ((sp_off == 0)) {
+                                    fprintf((void *)codegen->output, (const char *)str1412, (uint8_t *)out_struct, (uint8_t *)scalar_name);
+                                } else {
+                                    fprintf((void *)codegen->output, (const char *)str1413, (uint8_t *)out_struct, sp_off, (uint8_t *)scalar_name);
+                                }
+                            } else {
+                                if ((sp_off == 0)) {
+                                    fprintf((void *)codegen->output, (const char *)str1414, (uint8_t *)out_struct, (uint8_t *)scalar_name);
+                                } else {
+                                    fprintf((void *)codegen->output, (const char *)str1415, (uint8_t *)out_struct, sp_off, (uint8_t *)scalar_name);
+                                }
                             }
-                        } else {
-                            fprintf((void *)codegen->output, (const char *)str1414, (uint8_t *)out_struct, (uint8_t *)scalar_name);
-                            if ((lanes == 8)) {
-                                fprintf((void *)codegen->output, (const char *)str1415, (uint8_t *)out_struct, (uint8_t *)scalar_name);
-                            }
+                            sp_off = (sp_off + 4);
                         }
                         fprintf((void *)codegen->output, (const char *)str1416, (uint8_t *)out_struct);
                         int32_t _uya_ret = 1;
