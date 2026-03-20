@@ -1,8 +1,8 @@
 # Uya 内置函数使用文档
 
-> 版本：v0.49.36（2026-03-20）  
+> 版本：v0.49.37（2026-03-20）  
 > 此文档为 uya.md 的详细补充说明  
-> 语言规范：0.49.36  
+> 语言规范：0.49.37  
 > 所有内置函数均以 `@` 开头，由编译器识别，无需导入或声明；其实现阶段与运行时开销以各章节说明为准
 
 ---
@@ -1847,6 +1847,7 @@ fn buffer_info<T>() void {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v0.49.37 | 2026-03-20 | C99：**`reduce_add`** **`i32`/`u32`/`f32`** **`×2`/`×4`** 按需 **`uya_simd_*_reduce_add_*`**；收集阶段形参/块内局部与 **`c99_resolve_simd_type_ast_from_expr`** 一致；规范 **0.49.37** |
 | v0.49.36 | 2026-03-20 | **`@vector.reduce_add(v)`**（水平求和 → 标量 **`T`**；C99 语句表达式 + 循环）；`test_simd_vector_reduce_add.uya`、`error_simd_vector_reduce_add_not_vector.uya`；规范 **0.49.36** |
 | v0.49.35 | 2026-03-20 | **`@vector.select(m,a,b)`**（逐通道混合；C99 标量逐通道）；`test_simd_vector_select.uya`、`error_simd_vector_select_mask_lanes.uya`；规范 **0.49.35** |
 | v0.49.34 | 2026-03-20 | **`@vector.store(ptr,v)`**（**`__uya_memcpy`** 写回内存；**`void`**）；`test_simd_vector_store.uya`、`error_simd_vector_store_pointee_mismatch.uya`；规范 **0.49.34** |
@@ -1901,5 +1902,5 @@ fn buffer_info<T>() void {
 
 ---
 
-**本文档由 Uya 编译器团队维护，最后更新：2026-03-20（0.49.36）**
+**本文档由 Uya 编译器团队维护，最后更新：2026-03-20（0.49.37）**
 

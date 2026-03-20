@@ -359,6 +359,26 @@ fn collect_inferred_simd_type_from_expr(codegen: &C99CodeGenerator, node: &ASTNo
     }
 }
 
+// 收集阶段：将形参加入 local_variables，便于 c99_resolve_simd_type_ast_from_expr / reduce_add 等查找类型
+fn collect_slice_push_param_locals(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return;
+    }
+    var jp: i32 = 0;
+    while jp < fn_decl.fn_decl_param_count && fn_decl.fn_decl_params != null {
+        const pp: &ASTNode = fn_decl.fn_decl_params[jp];
+        if pp != null && pp.type == ASTNodeType.AST_VAR_DECL && pp.var_decl_name != null &&
+            pp.var_decl_type != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+            codegen.local_variables[codegen.local_variable_count].name = pp.var_decl_name;
+            codegen.local_variables[codegen.local_variable_count].type_c = null;
+            codegen.local_variables[codegen.local_variable_count].type_node = pp.var_decl_type;
+            codegen.local_variables[codegen.local_variable_count].depth = 0;
+            codegen.local_variable_count = codegen.local_variable_count + 1;
+        }
+        jp = jp + 1;
+    }
+}
+
 // 递归收集 AST 中使用的切片类型、错误联合类型和 SIMD 类型，以便输出对应 struct
 fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if codegen == null || node == null {
@@ -393,21 +413,44 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
         }
         const saved_fn: &ASTNode = codegen.current_function_decl;
         const saved_ret: &ASTNode = codegen.current_function_return_type;
+        const saved_lv_fn: i32 = codegen.local_variable_count;
         codegen.current_function_decl = node;
         codegen.current_function_return_type = node.fn_decl_return_type;
+        collect_slice_push_param_locals(codegen, node);
         if node.fn_decl_body != null {
             collect_slice_types_from_node(codegen, node.fn_decl_body);
         }
+        codegen.local_variable_count = saved_lv_fn;
         codegen.current_function_decl = saved_fn;
         codegen.current_function_return_type = saved_ret;
         return;
     }
     if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
-        var i: i32 = 0;
-        while i < node.block_stmt_count {
-            collect_slice_types_from_node(codegen, node.block_stmts[i]);
-            i = i + 1;
+        const saved_lv_blk: i32 = codegen.local_variable_count;
+        var bi: i32 = 0;
+        while bi < node.block_stmt_count {
+            const st: &ASTNode = node.block_stmts[bi];
+            if st != null && st.type == ASTNodeType.AST_VAR_DECL && st.var_decl_name != null &&
+                st.var_decl_type != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                if st.var_decl_type.type == ASTNodeType.AST_TYPE_SLICE || st.var_decl_type.type == ASTNodeType.AST_TYPE_ERROR_UNION ||
+                    st.var_decl_type.type == ASTNodeType.AST_TYPE_VECTOR || st.var_decl_type.type == ASTNodeType.AST_TYPE_MASK {
+                    c99_type_to_c(codegen, st.var_decl_type);
+                }
+                collect_slice_types_from_node(codegen, st.var_decl_type);
+                codegen.local_variables[codegen.local_variable_count].name = st.var_decl_name;
+                codegen.local_variables[codegen.local_variable_count].type_c = null;
+                codegen.local_variables[codegen.local_variable_count].type_node = st.var_decl_type;
+                codegen.local_variables[codegen.local_variable_count].depth = 0;
+                codegen.local_variable_count = codegen.local_variable_count + 1;
+                if st.var_decl_init != null {
+                    collect_slice_types_from_node(codegen, st.var_decl_init);
+                }
+            } else if st != null {
+                collect_slice_types_from_node(codegen, st);
+            }
+            bi = bi + 1;
         }
+        codegen.local_variable_count = saved_lv_blk;
         return;
     }
     if node.type == ASTNodeType.AST_IF_STMT {
@@ -488,10 +531,13 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
                     }
                     j = j + 1;
                 }
+                const saved_lv_m: i32 = codegen.local_variable_count;
+                collect_slice_push_param_locals(codegen, m);
                 // 收集函数体中的类型
                 if m.fn_decl_body != null {
                     collect_slice_types_from_node(codegen, m.fn_decl_body);
                 }
+                codegen.local_variable_count = saved_lv_m;
             }
             i = i + 1;
         }
@@ -527,6 +573,7 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
         }
         collect_inferred_simd_type_from_expr(codegen, node);
         c99_collect_simd_select_emit_flags_from_call(codegen, node);
+        c99_collect_simd_reduce_add_emit_flags_from_call(codegen, node);
     } else if node.type == ASTNodeType.AST_CAST_EXPR {
         collect_slice_types_from_node(codegen, node.cast_expr_expr);
         if node.cast_expr_target_type != null {

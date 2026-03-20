@@ -71,6 +71,12 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.simd_emit_select_i32x4 = 0;
     codegen.simd_emit_select_u32x4 = 0;
     codegen.simd_emit_select_f32x4 = 0;
+    codegen.simd_emit_reduce_add_i32x2 = 0;
+    codegen.simd_emit_reduce_add_u32x2 = 0;
+    codegen.simd_emit_reduce_add_f32x2 = 0;
+    codegen.simd_emit_reduce_add_i32x4 = 0;
+    codegen.simd_emit_reduce_add_u32x4 = 0;
+    codegen.simd_emit_reduce_add_f32x4 = 0;
     codegen.test_count = 0;  // 初始化测试计数为 0
     ii = 0;
     while ii < C99_MAX_DEFER_STACK {

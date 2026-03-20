@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.37 - C99：`@vector.reduce_add` 助手发射与收集阶段作用域（2026-03-20）
+
+- **C99**：**`i32`/`u32`/`f32`** 的 **`×2`/`×4`** **`@vector.reduce_add`** 与 **`@vector.select`** 助手在 **`c99_simd_need_emit_i32_u32_f32`** 中按 **`simd_emit_*`** 标志参与判定；收集遍历时为 **形参** 与 **块内局部** 建立 **`local_variables`** 视图，与 **`c99_resolve_simd_type_ast_from_expr`** 一致，修复 **`test_simd_vector_reduce_add`** 等场景的 **undefined reference**。
+- **文档**：规范 **0.49.37**（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`、`todo_mini_to_full.md`、`changelog.md`）。
+
 ### v0.49.36 - SIMD：`@vector.reduce_add`（2026-03-20）
 
 - **语言 / 检查 / C99**：新增 **`@vector.reduce_add(v)`**（**`v`** 为 **`@vector(T,N)`**，**`T`** 为 **`i8`–`i64`、`u8`–`u64`、`f32`、`f64`**；结果为标量 **`T`**，各通道按 **`+` 求和**；C99 为语句表达式内循环累加）。
