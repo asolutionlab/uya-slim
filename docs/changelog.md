@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.27 - SIMD：`4×/8×i16` 向量 `-` / `*` C99 快路径（2026-03-20）
+
+- **C99**：`types.uya` 增加 **`uya_simd_sse_sub_i16x8`**、**`uya_simd_sse_mul_i16x8`**（SSE2 `_mm_sub_epi16` / `_mm_mullo_epi16`，NEON `vsubq_s16` / `vmulq_s16`，标量）；`expr.uya` **`fast_kind` 37 / 38**；`test_simd_i16_add.uya`、夹具 **`simd_c99_neon.uya`** 增补。
+- **文档**：规范 0.49.27（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
 ### v0.49.26 - SIMD：`4×/8×i16` 向量 `+` / `==` C99 快路径（2026-03-19）
 
 - **C99**：`types.uya` 增加 **`uya_simd_sse_add_i16x8`**、**`uya_simd_sse_eq_i16x8_mask`**（SSE2 `__m128i` / NEON `int16x8_t` / 标量）；`expr.uya` **`fast_kind` 36 / 111**，支持 **4×/8×** 通道（4× 复用 8× 助手）；`test_simd_i16_add.uya` 验证通过。

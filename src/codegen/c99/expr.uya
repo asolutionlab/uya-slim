@@ -2062,6 +2062,12 @@ fn c99_simd_emit_sse_binary_fast_at(codegen: &C99CodeGenerator, fast_kind: i32, 
     } else if fast_kind == 36 {
         fprintf(codegen.output as *void, "uya_simd_sse_add_i16x8(%s, %s, %s); " as *byte,
             &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 37 {
+        fprintf(codegen.output as *void, "uya_simd_sse_sub_i16x8(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 38 {
+        fprintf(codegen.output as *void, "uya_simd_sse_mul_i16x8(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
     } else if fast_kind == 111 {
         fprintf(codegen.output as *void, "uya_simd_sse_eq_i16x8_mask(%s, %s, %s); " as *byte,
             &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
@@ -2244,6 +2250,10 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
         } else if strcmp(vec_elem_c as *byte, "int16_t" as *byte) == 0 {
             if simd_op == TokenType.TOKEN_PLUS {
                 fast_kind = 36;
+            } else if simd_op == TokenType.TOKEN_MINUS {
+                fast_kind = 37;
+            } else if simd_op == TokenType.TOKEN_ASTERISK {
+                fast_kind = 38;
             } else {
                 return 0;
             }
@@ -2254,7 +2264,7 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
         return 0;
     }
     var is_i16: i32 = 0;
-    if fast_kind == 36 || fast_kind == 111 {
+    if fast_kind == 36 || fast_kind == 37 || fast_kind == 38 || fast_kind == 111 {
         is_i16 = 1;
     }
     if is_f64 != 0 {
@@ -2274,7 +2284,7 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
     var chunk_step: i32 = 4;
     if fast_kind == 34 || fast_kind == 35 {
         chunk_step = 2;
-    } else if fast_kind == 36 || fast_kind == 111 {
+    } else if fast_kind == 36 || fast_kind == 37 || fast_kind == 38 || fast_kind == 111 {
         chunk_step = 8;
     }
     while lane_chunk < lanes {

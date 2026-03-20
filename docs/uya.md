@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.26（完整版 · 2026-03-19）
+# Uya 语言规范 0.49.27（完整版 · 2026-03-20）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -53,6 +53,10 @@
 ---
 
 ## 规范变更
+
+### 0.49.27（2026-03-20）
+
+- **SIMD**：新增 `4×/8×i16` 向量 `-` / `*` C99 快路径（`uya_simd_sse_sub_i16x8`、`uya_simd_sse_mul_i16x8`，SSE2 `__m128i` / NEON `int16x8_t` / 标量；4× 复用 8× 助手）。
 
 ### 0.49.26（2026-03-19）
 
@@ -4721,7 +4725,7 @@ fn caller() void {
      - 基本算术、整数位运算、比较、掩码逻辑运算
      - `@vector.splat`、`@vector.any`、`@vector.all`
      - 语义正确的标量回退 lowering
-     - **C99 快路径**（阶段 4 起）：**x86_64 + SSE2**（`UYA_HAVE_SIMD_X86_SSE`）或 **ARM/AArch64 + NEON**（`UYA_HAVE_SIMD_ARM_NEON`，`<arm_neon.h>`）下，对 **4 通道** `i32`/`u32`/`f32` 的部分运算与向量比较通过同名 **`uya_simd_sse_*`** `static inline` 实现（**`i32` 向量 `/` `%`**：`uya_simd_sse_div_i32x4`、`uya_simd_sse_rem_i32x4`，0.49.22–0.49.23；**`u32` 向量 `* / %`**：`uya_simd_sse_mul_u32x4`、`uya_simd_sse_div_u32x4`、`uya_simd_sse_rem_u32x4`，0.49.20–0.49.23；**`i32`/`u32` 向量 `<<` `>>`**：`uya_simd_sse_shl_i32x4`、`uya_simd_sse_shr_i32x4`、`uya_simd_sse_shl_u32x4`、`uya_simd_sse_shr_u32x4`，0.49.24；**`f64` 向量 `* /`**：`uya_simd_sse_mul_f64x2`、`uya_simd_sse_div_f64x2`，0.49.25，支持 **2×/4×** 通道；**`i16` 向量 `+` / `==`**：`uya_simd_sse_add_i16x8`、`uya_simd_sse_eq_i16x8_mask`，0.49.26，支持 **4×/8×** 通道）；**8 / 16 / 32 / 64 通道**为 **2 / 4 / 8 / 16 次** 4 通道调用（连续 `lanes` 块；**2 通道**仍为逐通道）。否则为该名提供逐通道标量体。表达式内**不**使用预处理器分支（见规范变更 0.49.10、0.49.16、0.49.17、0.49.18、0.49.19、0.49.20、0.49.21、0.49.22、0.49.23、0.49.24、0.49.25、**0.49.26**）。
+     - **C99 快路径**（阶段 4 起）：**x86_64 + SSE2**（`UYA_HAVE_SIMD_X86_SSE`）或 **ARM/AArch64 + NEON**（`UYA_HAVE_SIMD_ARM_NEON`，`<arm_neon.h>`）下，对 **4 通道** `i32`/`u32`/`f32` 的部分运算与向量比较通过同名 **`uya_simd_sse_*`** `static inline` 实现（**`i32` 向量 `/` `%`**：`uya_simd_sse_div_i32x4`、`uya_simd_sse_rem_i32x4`，0.49.22–0.49.23；**`u32` 向量 `* / %`**：`uya_simd_sse_mul_u32x4`、`uya_simd_sse_div_u32x4`、`uya_simd_sse_rem_u32x4`，0.49.20–0.49.23；**`i32`/`u32` 向量 `<<` `>>`**：`uya_simd_sse_shl_i32x4`、`uya_simd_sse_shr_i32x4`、`uya_simd_sse_shl_u32x4`、`uya_simd_sse_shr_u32x4`，0.49.24；**`f64` 向量 `* /`**：`uya_simd_sse_mul_f64x2`、`uya_simd_sse_div_f64x2`，0.49.25，支持 **2×/4×** 通道；**`i16` 向量 `+` / `-` / `*` / `==`**：`uya_simd_sse_add_i16x8`、`uya_simd_sse_sub_i16x8`、`uya_simd_sse_mul_i16x8`、`uya_simd_sse_eq_i16x8_mask`，0.49.26–0.49.27，支持 **4×/8×** 通道）；**8 / 16 / 32 / 64 通道**为 **2 / 4 / 8 / 16 次** 4 通道调用（连续 `lanes` 块；**2 通道**仍为逐通道）。否则为该名提供逐通道标量体。表达式内**不**使用预处理器分支（见规范变更 0.49.10、0.49.16、0.49.17、0.49.18、0.49.19、0.49.20、0.49.21、0.49.22、0.49.23、0.49.24、0.49.25、0.49.26、**0.49.27**）。
    - **第一阶段暂缓**：
      - 标量广播语法糖，如 `vec + 1`
      - `load/store/select/shuffle/reduce`

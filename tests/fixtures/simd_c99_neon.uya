@@ -1,5 +1,6 @@
 // 夹具：触发 emit_simd_* 运行时助手，供 AArch64/ARM NEON 交叉编译 C 验证
 type Vec4i32 = @vector(i32, 4);
+type Vec4i16 = @vector(i16, 4);
 type Vec4u32 = @vector(u32, 4);
 type Vec4f32 = @vector(f32, 4);
 type Mask4 = @mask(4);
@@ -53,6 +54,16 @@ export fn main() i32 {
     const shr_u: Vec4u32 = @vector.splat(8 as u32) >> @vector.splat(1 as u32);
     if @vector.all(shr_u == @vector.splat(4 as u32)) == false {
         return 11;
+    }
+    const i16a: Vec4i16 = @vector.splat(10);
+    const i16b: Vec4i16 = @vector.splat(3);
+    const i16s: Vec4i16 = i16a - i16b;
+    if @vector.all(i16s == @vector.splat(7)) == false {
+        return 12;
+    }
+    const i16m: Vec4i16 = i16b * @vector.splat(4);
+    if @vector.all(i16m == @vector.splat(12)) == false {
+        return 13;
     }
     const x: Vec4f32 = @vector.splat(1.0f32);
     const y: Vec4f32 = @vector.splat(2.0f32);
