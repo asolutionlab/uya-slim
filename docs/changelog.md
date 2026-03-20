@@ -8,6 +8,10 @@
 
 **发布日期：** 待定
 
+### v0.49.32 - SIMD：C99 运行库按需生成 i16/u16 与 f64 族（2026-03-20）
+
+- **C99**：`internal.uya` / `utils.uya` 增加 **`simd_max_lanes_{i16,u16,f64}`**（与既有 max_lanes 一并归零）；**`c99_simd_update_max_lanes_for_element`** 对 **`int16_t` / `uint16_t` / `double`** 更新；**`c99_simd_need_emit_f64`**、**`c99_simd_need_emit_i16_u16`**（与 **`simd_emit_all`** 配合：仅 `@mask` 时仍输出全套）。`types.uya` 将 **`f64`** 与 **`i16`/`u16`** 运行库从 **`emit_simd_x86_sse_runtime_helpers`** 拆成 **`emit_simd_runtime_helpers_f64_*`**、**`emit_simd_runtime_helpers_i16_u16_*`**（SSE / NEON / 标量各一），未使用对应元素类型时不生成。
+
 ### v0.49.31 - SIMD：C99 运行库按需生成 i8/u8/i64/u64 族（2026-03-19）
 
 - **C99**：`internal.uya` / `utils.uya` 增加 **`simd_vector_struct_reg_count`**、**`simd_max_lanes_{i8,u8,i64,u64}`**；`c99_register_simd_struct` 在注册向量时更新；**仅当**翻译单元出现上述元素类型的 `@vector`，或仅有 **`@mask`**（无法与向量元素类型关联）时，才在生成的 C 中输出 **`uya_simd_sse_*`** 的 **i8/u8/i64/u64** 大块（SSE / NEON / 标量三份）；否则省略以缩短生成 C 与编译时间。`emit_simd_x86_sse_runtime_helpers` 拆出 **`emit_simd_runtime_helpers_i8_u8_i64_u64_*`** 三个子函数。
