@@ -104,5 +104,19 @@ export fn main() i32 {
     if @vector.all(v2f == @vector.splat(3.0f32)) == false {
         return 19;
     }
+    // @vector.select x4：触发 uya_simd_*_select_{i32,u32,f32}x4（SSE / NEON / 标量三档）
+    const sel_i: Vec4i32 = @vector.select(m, a, b);
+    if @vector.all(sel_i == a) == false {
+        return 20;
+    }
+    const u_alt: Vec4u32 = @vector.splat(99 as u32);
+    const sel_u: Vec4u32 = @vector.select(mu, u, u_alt);
+    if @vector.all(sel_u == u) == false {
+        return 21;
+    }
+    const sel_f: Vec4f32 = @vector.select(mf, x, y);
+    if @vector.all(sel_f == x) == false {
+        return 22;
+    }
     return 0;
 }
