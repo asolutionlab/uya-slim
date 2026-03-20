@@ -590,7 +590,7 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 const symbol: &Symbol = symbol_table_lookup(checker, node.for_stmt_array.identifier_name);
                 if symbol != null && symbol.is_const != 0 {
                     // 引用迭代形式不能用于 const 变量
-                    checker_report_error(checker, node, "类型检查错误" as *byte);
+                    checker_report_error(checker, node, "for 引用迭代（for &x）不能使用 const 数组变量，请将数组改为 var" as *byte);
                 }
             }
             // 其他情况（如数组字面量）也允许引用迭代，但运行时可能出错

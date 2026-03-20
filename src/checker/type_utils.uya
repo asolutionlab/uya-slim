@@ -1599,3 +1599,15 @@ fn requires_memory_barrier(instr: &byte) i32 {
     }
     return 0;
 }
+
+// 报告「场景说明：期望某类型，推断为另一类型」（如 while 条件须为 bool、逻辑非操作数须为 bool）
+fn checker_report_error_type_kind_mismatch(checker: &TypeChecker, node: &ASTNode, scene: &byte, expected: Type, actual: Type) void {
+    if checker == null || checker.arena == null || scene == null {
+        return;
+    }
+    const exs: &byte = type_to_string(checker.arena, copy_type(&expected));
+    const acs: &byte = type_to_string(checker.arena, copy_type(&actual));
+    var buf: [byte: 384] = [];
+    snprintf(&buf[0] as *byte, 384 as usize, "%s：期望类型 %s，推断为 %s" as *byte, scene as *byte, exs as *byte, acs as *byte);
+    checker_report_error(checker, node, &buf[0] as &byte);
+}

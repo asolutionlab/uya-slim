@@ -238,7 +238,7 @@ fn checker_check_alignof(checker: &TypeChecker, node: &ASTNode) Type {
     // 如果 target 是表达式节点，验证表达式类型是否有效
     const target: &ASTNode = node.alignof_expr_target;
     if target == null {
-        checker_report_error(checker, node, "类型检查错误" as *byte);
+        checker_report_error(checker, node, "alignof 缺少目标（需要类型或表达式）" as *byte);
         return result;
     }
     
@@ -353,7 +353,7 @@ fn checker_check_struct_init(checker: &TypeChecker, node: &ASTNode) Type {
     
     const struct_name: &byte = node.struct_init_struct_name;
     if struct_name == null {
-        checker_report_error(checker, node, "类型检查错误" as *byte);
+        checker_report_error(checker, node, "结构体字面量缺少结构体名称" as *byte);
         return result;
     }
 
@@ -881,7 +881,11 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
         }
         // 逻辑非：操作数必须是bool
         if operand_type.kind != TypeKind.TYPE_BOOL {
-            checker_report_error(checker, node, "类型检查错误" as *byte);
+            var op_node: &ASTNode = node.unary_expr_operand;
+            if op_node == null {
+                op_node = node;
+            }
+            checker_report_error_type_kind_mismatch(checker, op_node, "逻辑非 !" as *byte, make_bool_type(), copy_type(&operand_type));
             return result;
         }
         result.kind = TypeKind.TYPE_BOOL;
@@ -896,7 +900,14 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
             return result;
         }
         if is_integer_type(operand_type.kind) == 0 && operand_type.kind != TypeKind.TYPE_F32 && operand_type.kind != TypeKind.TYPE_F64 {
-            checker_report_error(checker, node, "类型检查错误" as *byte);
+            var op_node2: &ASTNode = node.unary_expr_operand;
+            if op_node2 == null {
+                op_node2 = node;
+            }
+            const acs: &byte = type_to_string(checker.arena, copy_type(&operand_type));
+            var neg_buf: [byte: 384] = [];
+            snprintf(&neg_buf[0] as *byte, 384 as usize, "一元负号 -：操作数须为整数或浮点类型，推断为 %s" as *byte, acs as *byte);
+            checker_report_error(checker, op_node2, &neg_buf[0] as &byte);
             return result;
         }
         result = copy_type(&operand_type);
@@ -941,7 +952,7 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
         // 分配操作数类型结构（从Arena分配）
         const pointed_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if pointed_type_ptr == null {
-            checker_report_error(checker, node, "类型检查错误" as *byte);
+            checker_report_error(checker, node, "取地址 &：无法从 Arena 分配类型节点（内存不足）" as *byte);
             return result;
         }
         pointed_type_ptr[0] = copy_type(&operand_type);

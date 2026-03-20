@@ -4,6 +4,8 @@
 // ===== 错误报告状态 =====
 
 var last_checker_error_message: &byte = null;
+// 将动态/栈上格式化的错误文案拷入此处，供 get_last_checker_error() 与后续打印使用（避免悬空指针）
+var last_checker_error_storage: [byte: 512] = [];
 var reported_error_vars: [&byte: 32] = [];
 var reported_error_sizes: [i32: 32] = [];
 var reported_error_count: i32 = 0;
@@ -534,10 +536,28 @@ export fn checker_eval_const_expr_in_block(checker: &TypeChecker, expr: &ASTNode
 
 // ===== 错误报告函数 =====
 
+// 把 message 拷入 last_checker_error_storage，返回稳定指针（message 为 null 则返回 null）
+fn stash_checker_error_message(message: &byte) &byte {
+    if message == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < 511 {
+        const c: byte = message[i];
+        if c == 0 as byte {
+            break;
+        }
+        last_checker_error_storage[i] = c;
+        i = i + 1;
+    }
+    last_checker_error_storage[i] = 0 as byte;
+    return &last_checker_error_storage[0] as &byte;
+}
+
 // 报告类型检查错误
 fn checker_report_error(checker: &TypeChecker, node: &ASTNode, message: &byte) void {
     if checker != null {
-        last_checker_error_message = message;
+        last_checker_error_message = stash_checker_error_message(message);
         checker.error_count = checker.error_count + 1;
         if libc.stderr != null && message != null {
             var filename: &byte = "(unknown)" as *byte;
@@ -546,10 +566,11 @@ fn checker_report_error(checker: &TypeChecker, node: &ASTNode, message: &byte) v
             } else if checker.default_filename != null {
                 filename = checker.default_filename;
             }
+            const out_msg: &byte = last_checker_error_message;
             if node != null {
-                fprintf(libc.stderr, "%s:(%d:%d): 错误: %s\n" as *byte, filename, node.line, node.column, message as *byte);
+                fprintf(libc.stderr, "%s:(%d:%d): 错误: %s\n" as *byte, filename, node.line, node.column, out_msg as *byte);
             } else {
-                fprintf(libc.stderr, "%s: 错误: %s\n" as *byte, filename, message as *byte);
+                fprintf(libc.stderr, "%s: 错误: %s\n" as *byte, filename, out_msg as *byte);
             }
         }
     }

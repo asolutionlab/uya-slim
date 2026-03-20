@@ -926,13 +926,17 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
     } else if sig.is_varargs != 0 {
         // 可变参数函数：参数个数必须 >= 固定参数数量
         if node.call_expr_arg_count < sig.param_count {
-            checker_report_error(checker, node, "类型检查错误" as *byte);
+            var msg_buf: [byte: 256] = [];
+            snprintf(&msg_buf[0] as *byte, 256 as usize, "可变参数函数调用：至少需要 %d 个固定参数，实际传入 %d 个" as *byte, sig.param_count, node.call_expr_arg_count);
+            checker_report_error(checker, node, &msg_buf[0] as &byte);
             return result;
         }
     } else {
         // 普通函数：参数个数必须 == 固定参数数量
         if node.call_expr_arg_count != sig.param_count {
-            checker_report_error(checker, node, "类型检查错误" as *byte);
+            var msg_buf2: [byte: 256] = [];
+            snprintf(&msg_buf2[0] as *byte, 256 as usize, "函数调用：需要 %d 个参数，实际传入 %d 个" as *byte, sig.param_count, node.call_expr_arg_count);
+            checker_report_error(checker, node, &msg_buf2[0] as &byte);
             return result;
         }
     }

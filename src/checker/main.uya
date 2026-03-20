@@ -364,7 +364,11 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         // 检查条件类型（必须是bool）
         const cond_type: Type = checker_infer_type(checker, node.while_stmt_condition);
         if cond_type.kind != TypeKind.TYPE_BOOL {
-            checker_report_error(checker, node, "类型检查错误" as *byte);
+            var cond_node: &ASTNode = node.while_stmt_condition;
+            if cond_node == null {
+                cond_node = node;
+            }
+            checker_report_error_type_kind_mismatch(checker, cond_node, "while 条件" as *byte, make_bool_type(), cond_type);
         }
         
         // 路径敏感分析：保存当前约束状态

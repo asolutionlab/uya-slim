@@ -102,7 +102,7 @@ Stage 1 结构字符扫描等可向量化环**优先用 `@vector`/`@mask` 实现
 - [x] 其余热点（**`parser.uya`**）：**`parse_string`** / **对象键**扫描在不含 **`"`** / **`\\`** 的连续段上用 **`@vector(u8,16)`** 块推进；**`parse_number`** 在 ASCII 数字连续段上用同宽块推进（不足 16 字节或块内出现非目标字符时标量收尾；语义与原先一致）
 - [ ] 若仍有可量化热点再补 `@vector`/`@mask`（与标量路径并存）
 - [ ] 运行时 CPU 检测或编译期 `@asm_target()`/`std.cfg` 选路，选择标量或向量路径
-- [ ] Benchmark：对比标量 vs `@vector` 路径吞吐量
+- [x] Benchmark：**`bench_json`** 用 **`@syscall(gettimeofday)`** 墙钟微秒计时的 **MB/s**；含紧凑 JSON、**前导空白**、**长字符串** 三类 parse 负载，便于观察 **`skip_ws`/`parse_string`** 等 `@vector` 路径；与「纯标量解析器」二分对比需单独构建/开关（仍可选）
 
 ### Phase 5（可选）：`@asm` 补充（AVX2/NEON）
 
@@ -116,8 +116,8 @@ Stage 1 结构字符扫描等可向量化环**优先用 `@vector`/`@mask` 实现
 ## Benchmark
 
 - [ ] 获取 twitter.json、citm_catalog.json、canada.json（可选，用于大文件吞吐量；当前用内嵌负载）
-- [x] 编写 `tests/bench_json.uya`：内嵌 JSON 负载，parse/encode 循环 + `clock()` 测时，打印 ticks 与 parse_total_bytes（可用 CLOCKS_PER_SEC 换算 MB/s）
-- [x] 记录 Phase 1 基准：运行 `./tests/build/bench_json` 可见 parse/encode ticks；Phase 4 `@vector`/`@mask` 路径与（可选）Phase 5 `@asm` 落地后可对比 GB/s
+- [x] 编写 `tests/bench_json.uya`：内嵌 JSON 负载，parse/encode 循环 + **墙钟微秒**测时；打印 **usec** 与 **MB/s**（`USEC_PER_SEC=1_000_000`）；含 **紧凑** / **前导空白** / **长字符串** 三类 parse 场景
+- [x] 记录 Phase 1 基准：运行 `./tests/build/bench_json` 或程序测试 `bench_json.uya` 可见各场景吞吐；Phase 5 `@asm` 落地后可再对比
 
 ---
 
