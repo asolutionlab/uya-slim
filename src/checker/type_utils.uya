@@ -1611,3 +1611,22 @@ fn checker_report_error_type_kind_mismatch(checker: &TypeChecker, node: &ASTNode
     snprintf(&buf[0] as *byte, 384 as usize, "%s：期望类型 %s，推断为 %s" as *byte, scene as *byte, exs as *byte, acs as *byte);
     checker_report_error(checker, node, &buf[0] as &byte);
 }
+
+// 根据表达式推断实际类型，与 expected 对比报错（scene 为完整短句，如「联合体变体构造实参」）
+fn checker_report_expected_vs_inferred(checker: &TypeChecker, expr: &ASTNode, scene: &byte, expected: Type) void {
+    if checker == null || expr == null || scene == null || checker.arena == null {
+        return;
+    }
+    const actual: Type = checker_infer_type(checker, expr);
+    checker_report_error_type_kind_mismatch(checker, expr, scene, copy_type(&expected), copy_type(&actual));
+}
+
+// scene_prefix 如「函数调用」，param_index 从 1 起
+fn checker_report_param_mismatch_by_index(checker: &TypeChecker, arg: &ASTNode, scene_prefix: &byte, param_index: i32, expected: Type) void {
+    if arg == null || scene_prefix == null || checker == null {
+        return;
+    }
+    var sc: [byte: 128] = [];
+    snprintf(&sc[0] as *byte, 128 as usize, "%s第 %d 个参数" as *byte, scene_prefix as *byte, param_index);
+    checker_report_expected_vs_inferred(checker, arg, &sc[0] as &byte, expected);
+}

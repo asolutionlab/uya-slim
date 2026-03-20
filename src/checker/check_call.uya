@@ -445,7 +445,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                                 return result;
                             }
                             if checker_check_expr_type(checker, node.call_expr_args[0], copy_type(&variant_type)) == 0 {
-                                checker_report_error(checker, node, "联合体变体构造实参类型不匹配" as *byte);
+                                checker_report_expected_vs_inferred(checker, node.call_expr_args[0], "联合体变体构造实参" as *byte, copy_type(&variant_type));
                                 return result;
                             }
                         }
@@ -488,7 +488,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                     while j < expected_args && j < node.call_expr_arg_count {
                         const param_type: Type = type_from_ast(checker, msig.fn_decl_params[j + 1].var_decl_type);
                         if checker_check_expr_type(checker, node.call_expr_args[j], copy_type(&param_type)) == 0 {
-                            checker_report_error(checker, node, "接口方法调用参数类型不匹配" as *byte);
+                            checker_report_param_mismatch_by_index(checker, node.call_expr_args[j], "接口方法调用" as *byte, j + 1, copy_type(&param_type));
                             return result;
                         }
                         j = j + 1;
@@ -512,7 +512,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                 while j < expected_args && j < node.call_expr_arg_count {
                     const param_type: Type = type_from_ast(checker, m.fn_decl_params[j + 1].var_decl_type);
                     if checker_check_expr_type(checker, node.call_expr_args[j], copy_type(&param_type)) == 0 {
-                        checker_report_error(checker, node, "联合体方法调用参数类型不匹配" as *byte);
+                        checker_report_param_mismatch_by_index(checker, node.call_expr_args[j], "联合体方法调用" as *byte, j + 1, copy_type(&param_type));
                         return result;
                     }
                     j = j + 1;
@@ -612,8 +612,8 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                             param_type = substitute_generic_type(checker, param_type,
                                 type_params, type_param_count,
                                 type_args, type_arg_count);
-                            if checker_check_expr_type(checker, node.call_expr_args[j], param_type) == 0 {
-                                checker_report_error(checker, node, "泛型方法调用参数类型不匹配" as *byte);
+                            if checker_check_expr_type(checker, node.call_expr_args[j], copy_type(&param_type)) == 0 {
+                                checker_report_param_mismatch_by_index(checker, node.call_expr_args[j], "泛型方法调用" as *byte, j + 1, copy_type(&param_type));
                                 return result;
                             }
                         }
@@ -638,7 +638,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                 while j < expected_args && j < node.call_expr_arg_count {
                     const param_type: Type = type_from_ast(checker, m.fn_decl_params[j + 1].var_decl_type);
                     if checker_check_expr_type(checker, node.call_expr_args[j], copy_type(&param_type)) == 0 {
-                        checker_report_error(checker, node, "结构体方法调用参数类型不匹配" as *byte);
+                        checker_report_param_mismatch_by_index(checker, node.call_expr_args[j], "结构体方法调用" as *byte, j + 1, copy_type(&param_type));
                         return result;
                     }
                     j = j + 1;
@@ -672,7 +672,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                     while j < expected_args && j < node.call_expr_arg_count {
                         const param_type: Type = type_from_ast(checker, m_fallback.fn_decl_params[j + 1].var_decl_type);
                         if checker_check_expr_type(checker, node.call_expr_args[j], copy_type(&param_type)) == 0 {
-                            checker_report_error(checker, node, "方法调用参数类型不匹配" as *byte);
+                            checker_report_param_mismatch_by_index(checker, node.call_expr_args[j], "方法调用" as *byte, j + 1, copy_type(&param_type));
                             return result;
                         }
                         j = j + 1;
@@ -877,7 +877,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                     type_args, type_arg_count);
                 const arg: &ASTNode = node.call_expr_args[gi];
                 if arg != null && checker_check_expr_type(checker, arg, copy_type(&param_type)) == 0 {
-                    checker_report_error(checker, node, "泛型函数调用参数类型不匹配" as *byte);
+                    checker_report_param_mismatch_by_index(checker, arg, "泛型函数调用" as *byte, gi + 1, copy_type(&param_type));
                     return result;
                 }
             }
@@ -954,7 +954,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
     while i < check_count {
         const arg: &ASTNode = node.call_expr_args[i];
         if arg != null && checker_check_expr_type(checker, arg, copy_type(sig.param_types + i)) == 0 {
-            // 参数类型不匹配
+            checker_report_param_mismatch_by_index(checker, arg, "函数调用" as *byte, i + 1, copy_type(sig.param_types + i));
             return result;
         }
         i = i + 1;

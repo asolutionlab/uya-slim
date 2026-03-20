@@ -246,7 +246,7 @@ fn checker_check_alignof(checker: &TypeChecker, node: &ASTNode) Type {
         // target 是类型节点，验证类型是否有效
         const target_type: Type = type_from_ast(checker, target);
         if is_void_type(target_type) != 0 {
-            checker_report_error(checker, node, "类型检查错误" as *byte);
+            checker_report_error(checker, node, "alignof 的类型参数无效（无法解析为具体类型）" as *byte);
             return result;
         }
     } else {
