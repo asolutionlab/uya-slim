@@ -8,6 +8,12 @@
 
 **发布日期：** 待定
 
+### v0.49.35 - SIMD：`@vector.select`（2026-03-20）
+
+- **语言 / 检查 / C99**：新增 **`@vector.select(m, a, b)`**（**`m`** 为 **`@mask(N)`**，**`a`**/**`b`** 为相同 **`@vector(T,N)`**；逐通道混合；C99 为标量逐通道赋值）。
+- **测试**：`test_simd_vector_select.uya`、`error_simd_vector_select_mask_lanes.uya`。
+- **文档**：规范 **0.49.35**（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`、`todo_mini_to_full.md`、`changelog.md`）。
+
 ### v0.49.34 - SIMD：`@vector.store`（2026-03-20）
 
 - **语言 / 检查 / C99**：新增 **`@vector.store(ptr, v)`**（**`v`** 为 **`@vector(T,N)`**，**`ptr`** 为 **`&T`** 且元素类型匹配；**`void`**）；代码生成 **`__uya_memcpy((void*)ptr, &tmp, sizeof(...))`**。

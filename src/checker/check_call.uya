@@ -280,6 +280,22 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             result.kind = TypeKind.TYPE_VOID;
             return result;
         }
+        if str_equals(simd_method, "select" as *byte) != 0 {
+            if node.call_expr_arg_count != 3 || node.call_expr_args == null ||
+                node.call_expr_args[0] == null || node.call_expr_args[1] == null || node.call_expr_args[2] == null {
+                checker_report_error(checker, node, "@vector.select 需要恰好三个参数：掩码、真分支向量、假分支向量" as *byte);
+                return result;
+            }
+            checker_check_node(checker, node.call_expr_args[0]);
+            checker_check_node(checker, node.call_expr_args[1]);
+            checker_check_node(checker, node.call_expr_args[2]);
+            var void_exp: Type = make_void_type();
+            _ = checker_resolve_simd_select_expr(checker, node, void_exp);
+            if node.simd_splat_target_type != null {
+                return type_from_ast(checker, node.simd_splat_target_type);
+            }
+            return result;
+        }
         if node.call_expr_arg_count != 1 || node.call_expr_args == null || node.call_expr_args[0] == null {
             checker_report_error(checker, node, "@vector helper 需要恰好一个参数" as *byte);
             return result;
@@ -305,7 +321,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             }
             return result;
         }
-        checker_report_error(checker, node, "@vector 目前仅支持 .splat/.load/.store/.any/.all" as *byte);
+        checker_report_error(checker, node, "@vector 目前仅支持 .splat/.load/.store/.select/.any/.all" as *byte);
         return result;
     }
     

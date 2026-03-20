@@ -438,7 +438,7 @@ struct ASTNode {
     asm_clobbers_memory: i32,       // 是否修改内存（1=是）
     // print/println（@print/@println）
     print_expr: &ASTNode,    // 要打印的表达式
-    // simd helper（@vector.splat / @vector.load / @vector.store 共用：splat/load 为上下文目标 @vector(T,N)；store 为第二实参向量类型）
+    // simd helper（@vector.splat / @vector.load / @vector.store / @vector.select：splat/load/select 为结果 @vector(T,N) 的 AST；store 为第二实参向量类型）
     simd_splat_target_type: &ASTNode,
     // type_atomic（atomic T）
     type_atomic_inner_type: &ASTNode,

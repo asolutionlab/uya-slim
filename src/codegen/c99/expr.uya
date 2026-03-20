@@ -3826,6 +3826,17 @@ fn c99_expr_is_vector_load(expr: &ASTNode) i32 {
     return 1;
 }
 
+fn c99_expr_is_vector_select(expr: &ASTNode) i32 {
+    if expr == null || expr.type != ASTNodeType.AST_CALL_EXPR {
+        return 0;
+    }
+    const mn3: &byte = c99_simd_vector_builtin_method(expr);
+    if mn3 == null || str_equals(mn3, "select" as *byte) == 0 {
+        return 0;
+    }
+    return 1;
+}
+
 fn c99_find_identifier_type_node(codegen: &C99CodeGenerator, name: &byte) &ASTNode {
     if codegen == null || name == null {
         return null;
@@ -3922,6 +3933,23 @@ fn c99_resolve_simd_type_ast_from_expr(codegen: &C99CodeGenerator, expr: &ASTNod
                 }
             }
         }
+        if method_name != null && str_equals(method_name, "select" as *byte) != 0 {
+            if expr.simd_splat_target_type != null {
+                return expr.simd_splat_target_type;
+            }
+            if codegen.expected_type != null {
+                const exs: &ASTNode = c99_resolve_simd_type_ast_from_type_node(codegen, codegen.expected_type);
+                if exs != null && exs.type == ASTNodeType.AST_TYPE_VECTOR {
+                    return exs;
+                }
+            }
+            if codegen.current_function_return_type != null {
+                const rts: &ASTNode = c99_resolve_simd_type_ast_from_type_node(codegen, codegen.current_function_return_type);
+                if rts != null && rts.type == ASTNodeType.AST_TYPE_VECTOR {
+                    return rts;
+                }
+            }
+        }
     }
     if expr.type == ASTNodeType.AST_UNARY_EXPR && expr.unary_expr_operand != null {
         return c99_resolve_simd_type_ast_from_expr(codegen, expr.unary_expr_operand);
@@ -3939,6 +3967,12 @@ fn c99_resolve_simd_type_ast_from_expr(codegen: &C99CodeGenerator, expr: &ASTNod
             left_type_ast = right_type_ast;
         }
         if right_type_ast == null && left_type_ast != null && c99_expr_is_vector_load(expr.binary_expr_right) != 0 {
+            right_type_ast = left_type_ast;
+        }
+        if left_type_ast == null && right_type_ast != null && c99_expr_is_vector_select(expr.binary_expr_left) != 0 {
+            left_type_ast = right_type_ast;
+        }
+        if right_type_ast == null && left_type_ast != null && c99_expr_is_vector_select(expr.binary_expr_right) != 0 {
             right_type_ast = left_type_ast;
         }
         if left_type_ast == null || right_type_ast == null {
@@ -3992,6 +4026,64 @@ fn c99_gen_simd_builtin_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
         fputs("; __uya_memcpy((void*)(" as *byte, codegen.output as *void);
         gen_expr(codegen, expr.call_expr_args[0]);
         fprintf(codegen.output as *void, "), &%s, sizeof(%s)); 0; })" as *byte, tmp_st as *byte, tmp_st as *byte);
+        return 1;
+    }
+
+    if str_equals(method_name, "select" as *byte) != 0 {
+        if expr.call_expr_arg_count != 3 || expr.call_expr_args == null ||
+            expr.call_expr_args[0] == null || expr.call_expr_args[1] == null || expr.call_expr_args[2] == null {
+            return 0;
+        }
+        var target_sel: &ASTNode = expr.simd_splat_target_type;
+        if target_sel == null {
+            target_sel = c99_resolve_simd_type_ast_from_expr(codegen, expr.call_expr_args[1]);
+        }
+        if target_sel == null {
+            target_sel = c99_resolve_simd_type_ast_from_expr(codegen, expr.call_expr_args[2]);
+        }
+        if target_sel == null || target_sel.type != ASTNodeType.AST_TYPE_VECTOR ||
+            target_sel.type_vector_element_type == null || target_sel.type_vector_size_expr == null {
+            return 0;
+        }
+        const result_sel: &byte = c99_type_to_c(codegen, target_sel);
+        const lanes_sel: i32 = eval_const_expr(codegen, target_sel.type_vector_size_expr);
+        const m_nm: &byte = c99_make_temp_name(codegen, "__uya_simd_sel_m_" as &byte);
+        const a_nm: &byte = c99_make_temp_name(codegen, "__uya_simd_sel_a_" as &byte);
+        const b_nm: &byte = c99_make_temp_name(codegen, "__uya_simd_sel_b_" as &byte);
+        const out_nm: &byte = c99_make_temp_name(codegen, "__uya_simd_sel_o_" as &byte);
+        if result_sel == null || lanes_sel <= 0 || m_nm == null || a_nm == null || b_nm == null || out_nm == null {
+            return 0;
+        }
+        const mask_ast_sel: &ASTNode = c99_resolve_simd_type_ast_from_expr(codegen, expr.call_expr_args[0]);
+        if mask_ast_sel == null || mask_ast_sel.type != ASTNodeType.AST_TYPE_MASK || mask_ast_sel.type_mask_size_expr == null {
+            return 0;
+        }
+        const lanes_m: i32 = eval_const_expr(codegen, mask_ast_sel.type_mask_size_expr);
+        if lanes_m != lanes_sel {
+            return 0;
+        }
+        const mask_c2: &byte = c99_type_to_c(codegen, mask_ast_sel);
+        if mask_c2 == null {
+            return 0;
+        }
+        fputs("({ " as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "%s %s = " as *byte, mask_c2 as *byte, m_nm as *byte);
+        gen_expr(codegen, expr.call_expr_args[0]);
+        fputs("; " as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "%s %s = " as *byte, result_sel as *byte, a_nm as *byte);
+        gen_expr(codegen, expr.call_expr_args[1]);
+        fputs("; " as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "%s %s = " as *byte, result_sel as *byte, b_nm as *byte);
+        gen_expr(codegen, expr.call_expr_args[2]);
+        fputs("; " as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "%s %s; " as *byte, result_sel as *byte, out_nm as *byte);
+        var si: i32 = 0;
+        while si < lanes_sel {
+            fprintf(codegen.output as *void, "%s.lanes[%d] = %s.lanes[%d] ? %s.lanes[%d] : %s.lanes[%d]; " as *byte,
+                out_nm as *byte, si, m_nm as *byte, si, a_nm as *byte, si, b_nm as *byte, si);
+            si = si + 1;
+        }
+        fprintf(codegen.output as *void, "%s; })" as *byte, out_nm as *byte);
         return 1;
     }
 
