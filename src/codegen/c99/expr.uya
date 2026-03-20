@@ -3815,6 +3815,17 @@ fn c99_expr_is_vector_splat(expr: &ASTNode) i32 {
     return 1;
 }
 
+fn c99_expr_is_vector_load(expr: &ASTNode) i32 {
+    if expr == null || expr.type != ASTNodeType.AST_CALL_EXPR {
+        return 0;
+    }
+    const mn2: &byte = c99_simd_vector_builtin_method(expr);
+    if mn2 == null || str_equals(mn2, "load" as *byte) == 0 {
+        return 0;
+    }
+    return 1;
+}
+
 fn c99_find_identifier_type_node(codegen: &C99CodeGenerator, name: &byte) &ASTNode {
     if codegen == null || name == null {
         return null;
@@ -3894,6 +3905,23 @@ fn c99_resolve_simd_type_ast_from_expr(codegen: &C99CodeGenerator, expr: &ASTNod
                 }
             }
         }
+        if method_name != null && str_equals(method_name, "load" as *byte) != 0 {
+            if expr.simd_splat_target_type != null {
+                return expr.simd_splat_target_type;
+            }
+            if codegen.expected_type != null {
+                const exl: &ASTNode = c99_resolve_simd_type_ast_from_type_node(codegen, codegen.expected_type);
+                if exl != null && exl.type == ASTNodeType.AST_TYPE_VECTOR {
+                    return exl;
+                }
+            }
+            if codegen.current_function_return_type != null {
+                const rtl: &ASTNode = c99_resolve_simd_type_ast_from_type_node(codegen, codegen.current_function_return_type);
+                if rtl != null && rtl.type == ASTNodeType.AST_TYPE_VECTOR {
+                    return rtl;
+                }
+            }
+        }
     }
     if expr.type == ASTNodeType.AST_UNARY_EXPR && expr.unary_expr_operand != null {
         return c99_resolve_simd_type_ast_from_expr(codegen, expr.unary_expr_operand);
@@ -3905,6 +3933,12 @@ fn c99_resolve_simd_type_ast_from_expr(codegen: &C99CodeGenerator, expr: &ASTNod
             left_type_ast = right_type_ast;
         }
         if right_type_ast == null && left_type_ast != null && c99_expr_is_vector_splat(expr.binary_expr_right) != 0 {
+            right_type_ast = left_type_ast;
+        }
+        if left_type_ast == null && right_type_ast != null && c99_expr_is_vector_load(expr.binary_expr_left) != 0 {
+            left_type_ast = right_type_ast;
+        }
+        if right_type_ast == null && left_type_ast != null && c99_expr_is_vector_load(expr.binary_expr_right) != 0 {
             right_type_ast = left_type_ast;
         }
         if left_type_ast == null || right_type_ast == null {
@@ -4207,6 +4241,31 @@ fn c99_gen_simd_builtin_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
             i = i + 1;
         }
         fputs("} }; })" as *byte, codegen.output as *void);
+        return 1;
+    }
+
+    if str_equals(method_name, "load" as *byte) != 0 {
+        var target_ld: &ASTNode = expr.simd_splat_target_type;
+        if target_ld == null && codegen.expected_type != null {
+            target_ld = c99_resolve_simd_type_ast_from_type_node(codegen, codegen.expected_type);
+        }
+        if target_ld == null && codegen.current_function_return_type != null {
+            target_ld = c99_resolve_simd_type_ast_from_type_node(codegen, codegen.current_function_return_type);
+        }
+        if target_ld == null || target_ld.type != ASTNodeType.AST_TYPE_VECTOR ||
+            target_ld.type_vector_element_type == null || target_ld.type_vector_size_expr == null {
+            return 0;
+        }
+        const result_ld: &byte = c99_type_to_c(codegen, target_ld);
+        const lanes_ld: i32 = eval_const_expr(codegen, target_ld.type_vector_size_expr);
+        const tmp_ld: &byte = c99_make_temp_name(codegen, "__uya_simd_load_" as &byte);
+        if result_ld == null || tmp_ld == null || lanes_ld <= 0 {
+            return 0;
+        }
+        fputs("({ " as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "%s %s; __uya_memcpy(&%s, (const void*)(" as *byte, result_ld as *byte, tmp_ld as *byte, tmp_ld as *byte);
+        gen_expr(codegen, expr.call_expr_args[0]);
+        fprintf(codegen.output as *void, "), sizeof(%s)); %s; })" as *byte, tmp_ld as *byte, tmp_ld as *byte);
         return 1;
     }
 

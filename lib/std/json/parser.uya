@@ -14,6 +14,9 @@ const MAX_NESTING: usize = 256;
 const JSON_VALUE_ALLOC_SIZE: usize = 64;
 const JSON_KEY_VALUE_ALLOC_SIZE: usize = 48;
 
+type JsonWsVec16 = @vector(u8, 16);
+type JsonWsMask16 = @mask(16);
+
 struct ParseState {
     ptr: &byte,
     len: usize,
@@ -35,6 +38,15 @@ fn next(s: &ParseState) byte {
 }
 
 fn skip_ws(s: &ParseState) void {
+    while s.pos + 16 <= s.len {
+        const c: JsonWsVec16 = @vector.load(&s.ptr[s.pos]);
+        const w: JsonWsMask16 = (c == @vector.splat(32u8)) | (c == @vector.splat(9u8)) | (c == @vector.splat(10u8)) | (c == @vector.splat(13u8));
+        if @vector.all(w) {
+            s.pos = s.pos + 16;
+        } else {
+            break;
+        }
+    }
     while s.pos < s.len {
         const b: byte = s.ptr[s.pos];
         if b == 32 || b == 9 || b == 10 || b == 13 {

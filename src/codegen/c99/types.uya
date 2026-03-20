@@ -5672,6 +5672,9 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
         if str_equals(simd_method, "any" as *byte) != 0 || str_equals(simd_method, "all" as *byte) != 0 {
             return ("bool" as *byte) as &byte;
         }
+        if str_equals(simd_method, "load" as *byte) != 0 && expr.simd_splat_target_type != null {
+            return c99_type_to_c(codegen, expr.simd_splat_target_type);
+        }
     }
     if expr.type == ASTNodeType.AST_NUMBER {
         return ("int32_t" as *byte) as &byte;
@@ -7185,6 +7188,9 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
     if simd_method != null {
         if str_equals(simd_method, "any" as *byte) != 0 || str_equals(simd_method, "all" as *byte) != 0 {
             return ("bool" as *byte) as &byte;
+        }
+        if str_equals(simd_method, "load" as *byte) != 0 && expr.simd_splat_target_type != null {
+            return c99_type_to_c(codegen, expr.simd_splat_target_type);
         }
     }
     if expr.type == ASTNodeType.AST_NUMBER {

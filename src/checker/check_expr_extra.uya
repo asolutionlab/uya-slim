@@ -465,10 +465,12 @@ fn checker_check_binary_expr(checker: &TypeChecker, node: &ASTNode) Type {
         op == TokenType.TOKEN_LSHIFT || op == TokenType.TOKEN_RSHIFT {
         if left_type.kind == TypeKind.TYPE_VECTOR && right_type.kind != TypeKind.TYPE_VECTOR {
             checker_simd_bind_splat_from_peer_if_needed(checker, node.binary_expr_right, copy_type(&left_type));
+            checker_simd_bind_load_from_peer_if_needed(checker, node.binary_expr_right, copy_type(&left_type));
             right_type = checker_infer_type(checker, node.binary_expr_right);
         }
         if right_type.kind == TypeKind.TYPE_VECTOR && left_type.kind != TypeKind.TYPE_VECTOR {
             checker_simd_bind_splat_from_peer_if_needed(checker, node.binary_expr_left, copy_type(&right_type));
+            checker_simd_bind_load_from_peer_if_needed(checker, node.binary_expr_left, copy_type(&right_type));
             left_type = checker_infer_type(checker, node.binary_expr_left);
         }
     }

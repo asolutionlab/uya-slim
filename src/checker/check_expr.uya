@@ -953,6 +953,52 @@ fn simd_get_vector_builtin_method(call_expr: &ASTNode) &byte {
     return callee.member_access_field_name;
 }
 
+fn simd_load_pointee_ok_elem(pointee: Type, elem: Type) i32 {
+    if type_equals(pointee, elem) != 0 {
+        return 1;
+    }
+    if pointee.kind == TypeKind.TYPE_BYTE && elem.kind == TypeKind.TYPE_U8 {
+        return 1;
+    }
+    if pointee.kind == TypeKind.TYPE_U8 && elem.kind == TypeKind.TYPE_BYTE {
+        return 1;
+    }
+    return 0;
+}
+
+fn checker_resolve_simd_load_expr(checker: &TypeChecker, expr: &ASTNode, expected_type: Type) i32 {
+    const method_name: &byte = simd_get_vector_builtin_method(expr);
+    if method_name == null || str_equals(method_name, "load" as *byte) == 0 {
+        return 0;
+    }
+    if expected_type.kind != TypeKind.TYPE_VECTOR || expected_type.element_type == null {
+        checker_report_error(checker, expr, "@vector.load 需要明确的目标 @vector(T,N) 类型上下文" as *byte);
+        return -1;
+    }
+    if expr.call_expr_arg_count != 1 || expr.call_expr_args == null || expr.call_expr_args[0] == null {
+        checker_report_error(checker, expr, "@vector.load 需要恰好一个指针参数" as *byte);
+        return -1;
+    }
+    const arg: &ASTNode = expr.call_expr_args[0];
+    checker_check_node(checker, arg);
+    const arg_type: Type = checker_infer_type(checker, arg);
+    if arg_type.kind != TypeKind.TYPE_POINTER || arg_type.pointer_to == null {
+        checker_report_error(checker, arg, "@vector.load 的参数须为 &T（指向向量元素类型的指针）" as *byte);
+        return -1;
+    }
+    const pointee: Type = arg_type.pointer_to[0];
+    const elem: Type = expected_type.element_type[0];
+    if simd_load_pointee_ok_elem(pointee, elem) == 0 {
+        checker_report_error(checker, arg, "@vector.load 指针指向类型与向量元素类型不匹配" as *byte);
+        return -1;
+    }
+    const target_ast: &ASTNode = type_to_ast(checker, &expected_type, expr.line, expr.column, expr.filename);
+    if target_ast != null {
+        expr.simd_splat_target_type = target_ast;
+    }
+    return 1;
+}
+
 fn checker_resolve_simd_splat_expr(checker: &TypeChecker, expr: &ASTNode, expected_type: Type) i32 {
     const method_name: &byte = simd_get_vector_builtin_method(expr);
     if method_name == null || str_equals(method_name, "splat" as *byte) == 0 {
@@ -994,6 +1040,20 @@ fn checker_simd_bind_splat_from_peer_if_needed(checker: &TypeChecker, maybe_spla
         return;
     }
     _ = checker_resolve_simd_splat_expr(checker, maybe_splat, copy_type(&peer_vector));
+}
+
+fn checker_simd_bind_load_from_peer_if_needed(checker: &TypeChecker, maybe_load: &ASTNode, peer_vector: Type) void {
+    if checker == null || maybe_load == null || peer_vector.kind != TypeKind.TYPE_VECTOR {
+        return;
+    }
+    const lm: &byte = simd_get_vector_builtin_method(maybe_load);
+    if lm == null || str_equals(lm, "load" as *byte) == 0 {
+        return;
+    }
+    if maybe_load.simd_splat_target_type != null {
+        return;
+    }
+    _ = checker_resolve_simd_load_expr(checker, maybe_load, copy_type(&peer_vector));
 }
 
 fn checker_expr_is_unbound_vector_splat(expr: &ASTNode) i32 {
@@ -1044,10 +1104,12 @@ fn checker_simd_prep_expr_with_expected_vector(checker: &TypeChecker, expr: &AST
         var right_type: Type = checker_infer_type(checker, expr.binary_expr_right);
         if left_type.kind == TypeKind.TYPE_VECTOR && right_type.kind != TypeKind.TYPE_VECTOR {
             checker_simd_bind_splat_from_peer_if_needed(checker, expr.binary_expr_right, copy_type(&left_type));
+            checker_simd_bind_load_from_peer_if_needed(checker, expr.binary_expr_right, copy_type(&left_type));
             right_type = checker_infer_type(checker, expr.binary_expr_right);
         }
         if right_type.kind == TypeKind.TYPE_VECTOR && left_type.kind != TypeKind.TYPE_VECTOR {
             checker_simd_bind_splat_from_peer_if_needed(checker, expr.binary_expr_left, copy_type(&right_type));
+            checker_simd_bind_load_from_peer_if_needed(checker, expr.binary_expr_left, copy_type(&right_type));
             left_type = checker_infer_type(checker, expr.binary_expr_left);
         }
         if left_type.kind != TypeKind.TYPE_VECTOR && right_type.kind != TypeKind.TYPE_VECTOR &&
@@ -1060,6 +1122,12 @@ fn checker_simd_prep_expr_with_expected_vector(checker: &TypeChecker, expr: &AST
     }
     if checker_expr_is_unbound_vector_splat(expr) != 0 {
         _ = checker_resolve_simd_splat_expr(checker, expr, copy_type(&expected_vec));
+    }
+    if expr.type == ASTNodeType.AST_CALL_EXPR {
+        const sm_ld: &byte = simd_get_vector_builtin_method(expr);
+        if sm_ld != null && str_equals(sm_ld, "load" as *byte) != 0 && expr.simd_splat_target_type == null {
+            _ = checker_resolve_simd_load_expr(checker, expr, copy_type(&expected_vec));
+        }
     }
 }
 
@@ -1076,6 +1144,13 @@ fn checker_check_expr_type(checker: &TypeChecker, expr: &ASTNode, expected_type:
         return 1;
     }
     if simd_splat_resolved < 0 {
+        return 0;
+    }
+    const simd_load_resolved: i32 = checker_resolve_simd_load_expr(checker, expr, copy_type(&expected_copy));
+    if simd_load_resolved > 0 {
+        return 1;
+    }
+    if simd_load_resolved < 0 {
         return 0;
     }
     const actual_type: Type = checker_infer_type(checker, expr);
@@ -1174,7 +1249,13 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
             }
             return make_bool_type();
         }
-        checker_report_error(checker, expr, "@vector 目前仅支持 .splat/.any/.all" as *byte);
+        if str_equals(simd_method, "load" as *byte) != 0 {
+            if expr.simd_splat_target_type == null {
+                return make_void_type();
+            }
+            return type_from_ast(checker, expr.simd_splat_target_type);
+        }
+        checker_report_error(checker, expr, "@vector 目前仅支持 .splat/.load/.any/.all" as *byte);
         return make_void_type();
     }
     

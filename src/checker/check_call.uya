@@ -287,7 +287,13 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             }
             return make_bool_type();
         }
-        checker_report_error(checker, node, "@vector 目前仅支持 .splat/.any/.all" as *byte);
+        if str_equals(simd_method, "load" as *byte) != 0 {
+            if node.simd_splat_target_type != null {
+                return type_from_ast(checker, node.simd_splat_target_type);
+            }
+            return result;
+        }
+        checker_report_error(checker, node, "@vector 目前仅支持 .splat/.load/.any/.all" as *byte);
         return result;
     }
     

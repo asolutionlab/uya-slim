@@ -8,6 +8,13 @@
 
 **发布日期：** 待定
 
+### v0.49.33 - SIMD：`@vector.load` 与 `std.json` `skip_ws` 向量化（2026-03-20）
+
+- **语言 / 检查 / C99**：新增 **`@vector.load(ptr)`**（目标 **`@vector(T,N)`** 上下文与 **`@vector.splat`** 一致；**`&byte`/`&u8`** 与 **`u8`** 元素向量匹配）；代码生成 **`__uya_memcpy`** 装入 **`struct uya_simd_vector_*`**。
+- **标准库**：**`lib/std/json/parser.uya`** 的 **`skip_ws`** 在剩余长度 **≥16** 时用 **`@vector(u8,16)`** 检测全空白块并 **`pos += 16`**，否则回退原标量循环。
+- **测试**：`test_simd_vector_load.uya`、`error_simd_vector_load_pointee_mismatch.uya`。
+- **文档**：规范 **0.49.33**（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`、`todo_mini_to_full.md`、`todo_json.md`）。
+
 ### v0.49.32 - SIMD：C99 运行库按需生成 i16/u16 与 f64 族（2026-03-20）
 
 - **C99**：`internal.uya` / `utils.uya` 增加 **`simd_max_lanes_{i16,u16,f64}`**（与既有 max_lanes 一并归零）；**`c99_simd_update_max_lanes_for_element`** 对 **`int16_t` / `uint16_t` / `double`** 更新；**`c99_simd_need_emit_f64`**、**`c99_simd_need_emit_i16_u16`**（与 **`simd_emit_all`** 配合：仅 `@mask` 时仍输出全套）。`types.uya` 将 **`f64`** 与 **`i16`/`u16`** 运行库从 **`emit_simd_x86_sse_runtime_helpers`** 拆成 **`emit_simd_runtime_helpers_f64_*`**、**`emit_simd_runtime_helpers_i16_u16_*`**（SSE / NEON / 标量各一），未使用对应元素类型时不生成。
