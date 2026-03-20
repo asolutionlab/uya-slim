@@ -2734,8 +2734,8 @@ interface IReadWriter {
   - 编译期继续复用 `std.cfg(...)` / `@asm_target()`
   - 运行时 CPU 能力检测放在库内普通函数，不新增新的条件编译或目标特性内建
 - **阶段 4**：真实 SIMD lowering（🔄 已启动）
-  - ✅ **初版**：C99 在 **x86_64 + SSE2**（`UYA_HAVE_SIMD_X86_SSE`）或 **ARM + NEON**（`UYA_HAVE_SIMD_ARM_NEON`，同名 `uya_simd_sse_*`）或 **`#else` 标量**下，对 **2× / 4× / 8× / 16× / 32× / 64×**`i32`/`u32`/`f32`（**2×** 为 **`*_x2`**，0.49.29；8=2×x4 … 64=16×x4）部分运算、**`i32` 向量 `/` `%`**（`uya_simd_sse_div_i32x4`/`x2`、`rem_*`，0.49.22–0.49.23、0.49.29）、**`u32` 向量 `* / %`**（`mul`/`div`/`rem` **x4/x2**）、**`i32`/`u32` 向量 `<<` `>>`**（**x4/x2**）、**`f64` 向量 `+` / `-` / `* /` / 一元 `-`**（**2×/4×**）、**`i16`/`u16`（4×/8×）** 等；见 `emit_simd_x86_sse_runtime_helpers`、`c99_simd_try_emit_x86_sse_*`、`c99_simd_sse_x4_tile_lane_count_ok`、`c99_simd_sse_i32_u32_f32_two_or_x4_lane_ok`；验证 `verify_simd_c99_neon.sh`
-  - 待办：其他元素宽度（**i8/u8/i64/u64**）；**`load/store/select`、`shuffle/reduce`**（属语言/内建扩展，见 `uya.md` 第一阶段暂缓）；ABI（**NEON**：✅ 0.49.16；**多宽 x4 分块**：✅ 至 64；**`2×` i32/u32/f32**：✅ 0.49.29；其余同上 ✅）
+  - ✅ **初版**：C99 在 **x86_64 + SSE2**（`UYA_HAVE_SIMD_X86_SSE`）或 **ARM + NEON**（`UYA_HAVE_SIMD_ARM_NEON`，同名 `uya_simd_sse_*`）或 **`#else` 标量**下，对 **2× / 4× / 8× / 16× / 32× / 64×**`i32`/`u32`/`f32`（**2×** 为 **`*_x2`**，0.49.29；8=2×x4 … 64=16×x4）部分运算、**`i32` 向量 `/` `%`**（`uya_simd_sse_div_i32x4`/`x2`、`rem_*`，0.49.22–0.49.23、0.49.29）、**`u32` 向量 `* / %`**（`mul`/`div`/`rem` **x4/x2**）、**`i32`/`u32` 向量 `<<` `>>`**（**x4/x2**）、**`f64` 向量 `+` / `-` / `* /` / 一元 `-`**（**2×/4×**）、**`i16`/`u16`（4×/8×）**、**`i8`/`u8`（2/4/8/16/32/64）与 `i64`/`u64`（2 通道 `x2` 分块）**（0.49.30）等；见 `emit_simd_x86_sse_runtime_helpers`、`c99_simd_try_emit_x86_sse_*`、`c99_simd_sse_x4_tile_lane_count_ok`、`c99_simd_sse_i32_u32_f32_two_or_x4_lane_ok`、`scripts/gen_simd_i8_i64_helpers.py`；验证 `verify_simd_c99_neon.sh`
+  - 待办：**`load/store/select`、`shuffle/reduce`**（属语言/内建扩展，见 `uya.md` 第一阶段暂缓）；ABI（**NEON**：✅ 0.49.16；**多宽 x4 分块**：✅ 至 64；**`2×` i32/u32/f32**：✅ 0.49.29；**i8/u8/i64/u64 快路径**：✅ 0.49.30；其余同上 ✅）
 
 **验证标准**：
 - 开发前与每轮修改后都执行 `make check`

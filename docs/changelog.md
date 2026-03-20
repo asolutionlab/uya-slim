@@ -8,6 +8,15 @@
 
 **发布日期：** 待定
 
+### v0.49.31 - SIMD：C99 运行库按需生成 i8/u8/i64/u64 族（2026-03-19）
+
+- **C99**：`internal.uya` / `utils.uya` 增加 **`simd_vector_struct_reg_count`**、**`simd_max_lanes_{i8,u8,i64,u64}`**；`c99_register_simd_struct` 在注册向量时更新；**仅当**翻译单元出现上述元素类型的 `@vector`，或仅有 **`@mask`**（无法与向量元素类型关联）时，才在生成的 C 中输出 **`uya_simd_sse_*`** 的 **i8/u8/i64/u64** 大块（SSE / NEON / 标量三份）；否则省略以缩短生成 C 与编译时间。`emit_simd_x86_sse_runtime_helpers` 拆出 **`emit_simd_runtime_helpers_i8_u8_i64_u64_*`** 三个子函数。
+
+### v0.49.30 - SIMD：`i8`/`u8`/`i64`/`u64` 向量与掩码 C99 快路径（2026-03-19）
+
+- **C99**：`types.uya` 增补 **`uya_simd_sse_*_i8x16`/`x8`/`x4`/`x2`**、**`*_u8x*`**、**`*_i64x2`**、**`*_u64x2`**（SSE **`_mm_*_epi8` / `epi64`** 或小宽度零填充块、**NEON/`#else`** 标量同签名）；`scripts/gen_simd_i8_i64_helpers.py` 生成 **SSE** 与 **`portable`** 片段。`expr.uya`：**`fast_kind` 123–186**、**`c99_simd_sse_i8_u8_lane_ok`** / **`i64_u64`**、**i8/u8 变步长分块**、**`splat` / 一元 `-`**。**测试**：`test_simd_i8_u8_i64_sse.uya`。
+- **文档**：规范 **0.49.30**（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`、`todo_mini_to_full.md`）。
+
 ### v0.49.29 - SIMD：`2×i32` / `2×u32` / `2×f32` 与 `@mask(2)` C99 快路径（2026-03-19）
 
 - **C99**：`types.uya`：`uya_simd_sse_*_i32x2`、`*_u32x2`、`*_f32x2` 及掩码（SSE/NEON/`#else`）；`expr.uya`：`c99_simd_sse_i32_u32_f32_two_or_x4_lane_ok`、分派 **`x2`**、`splat`/`一元-`；`test_simd_vec2_i32_u32_f32.uya`、夹具 **`simd_c99_neon.uya`**。

@@ -2384,6 +2384,582 @@ fn c99_simd_emit_sse_binary_fast_at(codegen: &C99CodeGenerator, fast_kind: i32, 
             fprintf(codegen.output as *void, "uya_simd_sse_ge_u16x8_mask(%s, %s, %s); " as *byte,
                 &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
         }
+    } else if fast_kind == 123 {
+        const wi8a: i32 = lanes - lane_off;
+        if wi8a >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_i8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8a >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_i8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8a >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_i8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_i8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 124 {
+        const wi8s: i32 = lanes - lane_off;
+        if wi8s >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_i8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8s >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_i8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8s >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_i8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_i8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 125 {
+        const wi8m: i32 = lanes - lane_off;
+        if wi8m >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_i8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8m >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_i8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8m >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_i8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_i8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 126 {
+        const wi8d: i32 = lanes - lane_off;
+        if wi8d >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_i8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8d >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_i8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8d >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_i8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_i8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 127 {
+        const wi8r: i32 = lanes - lane_off;
+        if wi8r >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_i8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8r >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_i8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8r >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_i8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_i8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 128 {
+        const wi8l: i32 = lanes - lane_off;
+        if wi8l >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_i8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8l >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_i8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8l >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_i8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_i8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 129 {
+        const wi8h: i32 = lanes - lane_off;
+        if wi8h >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_i8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8h >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_i8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8h >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_i8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_i8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 130 {
+        const wi8n: i32 = lanes - lane_off;
+        if wi8n >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_and_i8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8n >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_and_i8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8n >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_and_i8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_and_i8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 131 {
+        const wi8o: i32 = lanes - lane_off;
+        if wi8o >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_or_i8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8o >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_or_i8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8o >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_or_i8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_or_i8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 132 {
+        const wi8x: i32 = lanes - lane_off;
+        if wi8x >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_xor_i8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8x >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_xor_i8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wi8x >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_xor_i8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_xor_i8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 133 {
+        const wu8a: i32 = lanes - lane_off;
+        if wu8a >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_u8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8a >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_u8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8a >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_u8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_add_u8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 134 {
+        const wu8s: i32 = lanes - lane_off;
+        if wu8s >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_u8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8s >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_u8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8s >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_u8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_sub_u8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 135 {
+        const wu8m: i32 = lanes - lane_off;
+        if wu8m >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_u8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8m >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_u8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8m >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_u8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_mul_u8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 136 {
+        const wu8d: i32 = lanes - lane_off;
+        if wu8d >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_u8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8d >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_u8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8d >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_u8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_div_u8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 137 {
+        const wu8r: i32 = lanes - lane_off;
+        if wu8r >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_u8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8r >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_u8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8r >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_u8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_rem_u8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 138 {
+        const wu8l: i32 = lanes - lane_off;
+        if wu8l >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_u8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8l >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_u8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8l >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_u8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_shl_u8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 139 {
+        const wu8h: i32 = lanes - lane_off;
+        if wu8h >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_u8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8h >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_u8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8h >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_u8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_shr_u8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 140 {
+        const wu8n: i32 = lanes - lane_off;
+        if wu8n >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_and_u8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8n >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_and_u8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8n >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_and_u8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_and_u8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 141 {
+        const wu8o: i32 = lanes - lane_off;
+        if wu8o >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_or_u8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8o >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_or_u8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8o >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_or_u8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_or_u8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 142 {
+        const wu8x: i32 = lanes - lane_off;
+        if wu8x >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_xor_u8x16(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8x >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_xor_u8x8(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8x >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_xor_u8x4(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_xor_u8x2(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 143 {
+        fprintf(codegen.output as *void, "uya_simd_sse_add_i64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 144 {
+        fprintf(codegen.output as *void, "uya_simd_sse_sub_i64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 145 {
+        fprintf(codegen.output as *void, "uya_simd_sse_mul_i64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 146 {
+        fprintf(codegen.output as *void, "uya_simd_sse_div_i64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 147 {
+        fprintf(codegen.output as *void, "uya_simd_sse_rem_i64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 148 {
+        fprintf(codegen.output as *void, "uya_simd_sse_shl_i64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 149 {
+        fprintf(codegen.output as *void, "uya_simd_sse_shr_i64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 150 {
+        fprintf(codegen.output as *void, "uya_simd_sse_and_i64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 151 {
+        fprintf(codegen.output as *void, "uya_simd_sse_or_i64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 152 {
+        fprintf(codegen.output as *void, "uya_simd_sse_xor_i64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 153 {
+        fprintf(codegen.output as *void, "uya_simd_sse_add_u64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 154 {
+        fprintf(codegen.output as *void, "uya_simd_sse_sub_u64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 155 {
+        fprintf(codegen.output as *void, "uya_simd_sse_mul_u64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 156 {
+        fprintf(codegen.output as *void, "uya_simd_sse_div_u64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 157 {
+        fprintf(codegen.output as *void, "uya_simd_sse_rem_u64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 158 {
+        fprintf(codegen.output as *void, "uya_simd_sse_shl_u64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 159 {
+        fprintf(codegen.output as *void, "uya_simd_sse_shr_u64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 160 {
+        fprintf(codegen.output as *void, "uya_simd_sse_and_u64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 161 {
+        fprintf(codegen.output as *void, "uya_simd_sse_or_u64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 162 {
+        fprintf(codegen.output as *void, "uya_simd_sse_xor_u64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 163 {
+        const wm8e: i32 = lanes - lane_off;
+        if wm8e >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_i8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8e >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_i8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8e >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_i8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_i8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 164 {
+        const wm8n: i32 = lanes - lane_off;
+        if wm8n >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_i8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8n >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_i8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8n >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_i8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_i8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 165 {
+        const wm8l: i32 = lanes - lane_off;
+        if wm8l >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_i8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8l >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_i8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8l >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_i8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_i8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 166 {
+        const wm8g: i32 = lanes - lane_off;
+        if wm8g >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_i8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8g >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_i8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8g >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_i8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_i8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 167 {
+        const wm8le: i32 = lanes - lane_off;
+        if wm8le >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_i8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8le >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_i8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8le >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_i8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_i8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 168 {
+        const wm8ge: i32 = lanes - lane_off;
+        if wm8ge >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_i8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8ge >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_i8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wm8ge >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_i8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_i8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 169 {
+        const wu8me: i32 = lanes - lane_off;
+        if wu8me >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_u8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8me >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_u8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8me >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_u8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_eq_u8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 170 {
+        const wu8mn: i32 = lanes - lane_off;
+        if wu8mn >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_u8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8mn >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_u8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8mn >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_u8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_ne_u8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 171 {
+        const wu8ml: i32 = lanes - lane_off;
+        if wu8ml >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_u8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8ml >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_u8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8ml >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_u8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_lt_u8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 172 {
+        const wu8mg: i32 = lanes - lane_off;
+        if wu8mg >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_u8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8mg >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_u8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8mg >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_u8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_gt_u8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 173 {
+        const wu8mle: i32 = lanes - lane_off;
+        if wu8mle >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_u8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8mle >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_u8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8mle >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_u8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_le_u8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 174 {
+        const wu8mge: i32 = lanes - lane_off;
+        if wu8mge >= 16 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_u8x16_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8mge >= 8 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_u8x8_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else if wu8mge >= 4 {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_u8x4_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        } else {
+            fprintf(codegen.output as *void, "uya_simd_sse_ge_u8x2_mask(%s, %s, %s); " as *byte,
+                &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+        }
+    } else if fast_kind == 175 {
+        fprintf(codegen.output as *void, "uya_simd_sse_eq_i64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 176 {
+        fprintf(codegen.output as *void, "uya_simd_sse_ne_i64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 177 {
+        fprintf(codegen.output as *void, "uya_simd_sse_lt_i64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 178 {
+        fprintf(codegen.output as *void, "uya_simd_sse_gt_i64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 179 {
+        fprintf(codegen.output as *void, "uya_simd_sse_le_i64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 180 {
+        fprintf(codegen.output as *void, "uya_simd_sse_ge_i64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 181 {
+        fprintf(codegen.output as *void, "uya_simd_sse_eq_u64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 182 {
+        fprintf(codegen.output as *void, "uya_simd_sse_ne_u64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 183 {
+        fprintf(codegen.output as *void, "uya_simd_sse_lt_u64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 184 {
+        fprintf(codegen.output as *void, "uya_simd_sse_gt_u64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 185 {
+        fprintf(codegen.output as *void, "uya_simd_sse_le_u64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 186 {
+        fprintf(codegen.output as *void, "uya_simd_sse_ge_u64x2_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
     }
 }
 
@@ -2413,6 +2989,22 @@ fn c99_simd_sse_x4_tile_lane_count_ok(lanes: i32) i32 {
 
 // i32/u32/f32 向量与对应掩码：2 通道走 x2 助手，其余走 x4 分块
 fn c99_simd_sse_i32_u32_f32_two_or_x4_lane_ok(lanes: i32) i32 {
+    if lanes == 2 {
+        return 1;
+    }
+    return c99_simd_sse_x4_tile_lane_count_ok(lanes);
+}
+
+// i8/u8：合法宽度 2/4/8/16/32/64（16 字节分块）
+fn c99_simd_sse_i8_u8_lane_ok(lanes: i32) i32 {
+    if lanes == 2 || lanes == 4 || lanes == 8 || lanes == 16 || lanes == 32 || lanes == 64 {
+        return 1;
+    }
+    return 0;
+}
+
+// i64/u64：仅 i64x2/u64x2 助手，按 2 通道分块
+fn c99_simd_sse_i64_u64_lane_ok(lanes: i32) i32 {
     if lanes == 2 {
         return 1;
     }
@@ -2517,6 +3109,70 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
             } else {
                 return 0;
             }
+        } else if strcmp(mask_elem_c as *byte, "int8_t" as *byte) == 0 {
+            if simd_op == TokenType.TOKEN_EQUAL {
+                fast_kind = 163;
+            } else if simd_op == TokenType.TOKEN_NOT_EQUAL {
+                fast_kind = 164;
+            } else if simd_op == TokenType.TOKEN_LESS {
+                fast_kind = 165;
+            } else if simd_op == TokenType.TOKEN_GREATER {
+                fast_kind = 166;
+            } else if simd_op == TokenType.TOKEN_LESS_EQUAL {
+                fast_kind = 167;
+            } else if simd_op == TokenType.TOKEN_GREATER_EQUAL {
+                fast_kind = 168;
+            } else {
+                return 0;
+            }
+        } else if strcmp(mask_elem_c as *byte, "uint8_t" as *byte) == 0 {
+            if simd_op == TokenType.TOKEN_EQUAL {
+                fast_kind = 169;
+            } else if simd_op == TokenType.TOKEN_NOT_EQUAL {
+                fast_kind = 170;
+            } else if simd_op == TokenType.TOKEN_LESS {
+                fast_kind = 171;
+            } else if simd_op == TokenType.TOKEN_GREATER {
+                fast_kind = 172;
+            } else if simd_op == TokenType.TOKEN_LESS_EQUAL {
+                fast_kind = 173;
+            } else if simd_op == TokenType.TOKEN_GREATER_EQUAL {
+                fast_kind = 174;
+            } else {
+                return 0;
+            }
+        } else if strcmp(mask_elem_c as *byte, "int64_t" as *byte) == 0 {
+            if simd_op == TokenType.TOKEN_EQUAL {
+                fast_kind = 175;
+            } else if simd_op == TokenType.TOKEN_NOT_EQUAL {
+                fast_kind = 176;
+            } else if simd_op == TokenType.TOKEN_LESS {
+                fast_kind = 177;
+            } else if simd_op == TokenType.TOKEN_GREATER {
+                fast_kind = 178;
+            } else if simd_op == TokenType.TOKEN_LESS_EQUAL {
+                fast_kind = 179;
+            } else if simd_op == TokenType.TOKEN_GREATER_EQUAL {
+                fast_kind = 180;
+            } else {
+                return 0;
+            }
+        } else if strcmp(mask_elem_c as *byte, "uint64_t" as *byte) == 0 {
+            if simd_op == TokenType.TOKEN_EQUAL {
+                fast_kind = 181;
+            } else if simd_op == TokenType.TOKEN_NOT_EQUAL {
+                fast_kind = 182;
+            } else if simd_op == TokenType.TOKEN_LESS {
+                fast_kind = 183;
+            } else if simd_op == TokenType.TOKEN_GREATER {
+                fast_kind = 184;
+            } else if simd_op == TokenType.TOKEN_LESS_EQUAL {
+                fast_kind = 185;
+            } else if simd_op == TokenType.TOKEN_GREATER_EQUAL {
+                fast_kind = 186;
+            } else {
+                return 0;
+            }
         } else {
             return 0;
         }
@@ -2618,6 +3274,102 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
             } else {
                 return 0;
             }
+        } else if strcmp(vec_elem_c as *byte, "int8_t" as *byte) == 0 {
+            if simd_op == TokenType.TOKEN_PLUS {
+                fast_kind = 123;
+            } else if simd_op == TokenType.TOKEN_MINUS {
+                fast_kind = 124;
+            } else if simd_op == TokenType.TOKEN_ASTERISK {
+                fast_kind = 125;
+            } else if simd_op == TokenType.TOKEN_SLASH {
+                fast_kind = 126;
+            } else if simd_op == TokenType.TOKEN_PERCENT {
+                fast_kind = 127;
+            } else if simd_op == TokenType.TOKEN_LSHIFT {
+                fast_kind = 128;
+            } else if simd_op == TokenType.TOKEN_RSHIFT {
+                fast_kind = 129;
+            } else if simd_op == TokenType.TOKEN_AMPERSAND {
+                fast_kind = 130;
+            } else if simd_op == TokenType.TOKEN_PIPE {
+                fast_kind = 131;
+            } else if simd_op == TokenType.TOKEN_CARET {
+                fast_kind = 132;
+            } else {
+                return 0;
+            }
+        } else if strcmp(vec_elem_c as *byte, "uint8_t" as *byte) == 0 {
+            if simd_op == TokenType.TOKEN_PLUS {
+                fast_kind = 133;
+            } else if simd_op == TokenType.TOKEN_MINUS {
+                fast_kind = 134;
+            } else if simd_op == TokenType.TOKEN_ASTERISK {
+                fast_kind = 135;
+            } else if simd_op == TokenType.TOKEN_SLASH {
+                fast_kind = 136;
+            } else if simd_op == TokenType.TOKEN_PERCENT {
+                fast_kind = 137;
+            } else if simd_op == TokenType.TOKEN_LSHIFT {
+                fast_kind = 138;
+            } else if simd_op == TokenType.TOKEN_RSHIFT {
+                fast_kind = 139;
+            } else if simd_op == TokenType.TOKEN_AMPERSAND {
+                fast_kind = 140;
+            } else if simd_op == TokenType.TOKEN_PIPE {
+                fast_kind = 141;
+            } else if simd_op == TokenType.TOKEN_CARET {
+                fast_kind = 142;
+            } else {
+                return 0;
+            }
+        } else if strcmp(vec_elem_c as *byte, "int64_t" as *byte) == 0 {
+            if simd_op == TokenType.TOKEN_PLUS {
+                fast_kind = 143;
+            } else if simd_op == TokenType.TOKEN_MINUS {
+                fast_kind = 144;
+            } else if simd_op == TokenType.TOKEN_ASTERISK {
+                fast_kind = 145;
+            } else if simd_op == TokenType.TOKEN_SLASH {
+                fast_kind = 146;
+            } else if simd_op == TokenType.TOKEN_PERCENT {
+                fast_kind = 147;
+            } else if simd_op == TokenType.TOKEN_LSHIFT {
+                fast_kind = 148;
+            } else if simd_op == TokenType.TOKEN_RSHIFT {
+                fast_kind = 149;
+            } else if simd_op == TokenType.TOKEN_AMPERSAND {
+                fast_kind = 150;
+            } else if simd_op == TokenType.TOKEN_PIPE {
+                fast_kind = 151;
+            } else if simd_op == TokenType.TOKEN_CARET {
+                fast_kind = 152;
+            } else {
+                return 0;
+            }
+        } else if strcmp(vec_elem_c as *byte, "uint64_t" as *byte) == 0 {
+            if simd_op == TokenType.TOKEN_PLUS {
+                fast_kind = 153;
+            } else if simd_op == TokenType.TOKEN_MINUS {
+                fast_kind = 154;
+            } else if simd_op == TokenType.TOKEN_ASTERISK {
+                fast_kind = 155;
+            } else if simd_op == TokenType.TOKEN_SLASH {
+                fast_kind = 156;
+            } else if simd_op == TokenType.TOKEN_PERCENT {
+                fast_kind = 157;
+            } else if simd_op == TokenType.TOKEN_LSHIFT {
+                fast_kind = 158;
+            } else if simd_op == TokenType.TOKEN_RSHIFT {
+                fast_kind = 159;
+            } else if simd_op == TokenType.TOKEN_AMPERSAND {
+                fast_kind = 160;
+            } else if simd_op == TokenType.TOKEN_PIPE {
+                fast_kind = 161;
+            } else if simd_op == TokenType.TOKEN_CARET {
+                fast_kind = 162;
+            } else {
+                return 0;
+            }
         } else {
             return 0;
         }
@@ -2634,6 +3386,14 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
         fast_kind == 119 || fast_kind == 120 || fast_kind == 121 || fast_kind == 122 {
         is_u16_simd = 1;
     }
+    var is_i8_u8_simd: i32 = 0;
+    if (fast_kind >= 123 && fast_kind <= 142) || (fast_kind >= 163 && fast_kind <= 174) {
+        is_i8_u8_simd = 1;
+    }
+    var is_i64_u64_simd: i32 = 0;
+    if (fast_kind >= 143 && fast_kind <= 162) || (fast_kind >= 175 && fast_kind <= 186) {
+        is_i64_u64_simd = 1;
+    }
     if is_f64 != 0 {
         if lanes != 2 && lanes != 4 {
             return 0;
@@ -2642,14 +3402,43 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
         if lanes != 4 && lanes != 8 {
             return 0;
         }
+    } else if is_i8_u8_simd != 0 {
+        if c99_simd_sse_i8_u8_lane_ok(lanes) == 0 {
+            return 0;
+        }
+    } else if is_i64_u64_simd != 0 {
+        if c99_simd_sse_i64_u64_lane_ok(lanes) == 0 {
+            return 0;
+        }
     } else {
         if c99_simd_sse_i32_u32_f32_two_or_x4_lane_ok(lanes) == 0 {
             return 0;
         }
     }
+    if is_i8_u8_simd != 0 {
+        var lc8: i32 = 0;
+        while lc8 < lanes {
+            c99_simd_emit_sse_binary_fast_at(codegen, fast_kind, result_name, left_name, right_name, lc8, lanes);
+            const rem8: i32 = lanes - lc8;
+            var st8: i32 = 16;
+            if rem8 < 16 {
+                st8 = 8;
+            }
+            if rem8 < 8 {
+                st8 = 4;
+            }
+            if rem8 < 4 {
+                st8 = 2;
+            }
+            lc8 = lc8 + st8;
+        }
+        return 1;
+    }
     var lane_chunk: i32 = 0;
     var chunk_step: i32 = 4;
     if fast_kind == 34 || fast_kind == 35 || fast_kind == 39 || fast_kind == 40 {
+        chunk_step = 2;
+    } else if is_i64_u64_simd != 0 {
         chunk_step = 2;
     } else if fast_kind == 36 || fast_kind == 37 || fast_kind == 38 || fast_kind == 41 || fast_kind == 42 ||
         fast_kind == 43 || fast_kind == 111 || fast_kind == 112 || fast_kind == 113 || fast_kind == 114 ||
@@ -2712,6 +3501,74 @@ fn c99_simd_try_emit_x86_sse_unary_minus(codegen: &C99CodeGenerator, result_type
         } else {
             fprintf(codegen.output as *void, "uya_simd_sse_neg_i16x8(%s.lanes, %s.lanes); " as *byte,
                 result_name as *byte, operand_name as *byte);
+        }
+        return 1;
+    }
+    if c99_simd_sse_i8_u8_lane_ok(lanes) != 0 &&
+        (strcmp(vec_elem_c as *byte, "int8_t" as *byte) == 0 || strcmp(vec_elem_c as *byte, "uint8_t" as *byte) == 0) {
+        var n8: i32 = 0;
+        while n8 < lanes {
+            var prn: [byte: 96] = [];
+            var pon: [byte: 96] = [];
+            if n8 == 0 {
+                snprintf(&prn[0] as *byte, SIMD_VEC_LANE_PTR_SZ, "%s.lanes" as *byte, result_name as *byte);
+                snprintf(&pon[0] as *byte, SIMD_VEC_LANE_PTR_SZ, "%s.lanes" as *byte, operand_name as *byte);
+            } else {
+                snprintf(&prn[0] as *byte, SIMD_VEC_LANE_PTR_SZ, "&%s.lanes[%d]" as *byte, result_name as *byte, n8);
+                snprintf(&pon[0] as *byte, SIMD_VEC_LANE_PTR_SZ, "&%s.lanes[%d]" as *byte, operand_name as *byte, n8);
+            }
+            const rn8: i32 = lanes - n8;
+            if strcmp(vec_elem_c as *byte, "int8_t" as *byte) == 0 {
+                if rn8 >= 16 {
+                    fprintf(codegen.output as *void, "uya_simd_sse_neg_i8x16(%s, %s); " as *byte, &prn[0] as *byte, &pon[0] as *byte);
+                    n8 = n8 + 16;
+                } else if rn8 >= 8 {
+                    fprintf(codegen.output as *void, "uya_simd_sse_neg_i8x8(%s, %s); " as *byte, &prn[0] as *byte, &pon[0] as *byte);
+                    n8 = n8 + 8;
+                } else if rn8 >= 4 {
+                    fprintf(codegen.output as *void, "uya_simd_sse_neg_i8x4(%s, %s); " as *byte, &prn[0] as *byte, &pon[0] as *byte);
+                    n8 = n8 + 4;
+                } else {
+                    fprintf(codegen.output as *void, "uya_simd_sse_neg_i8x2(%s, %s); " as *byte, &prn[0] as *byte, &pon[0] as *byte);
+                    n8 = n8 + 2;
+                }
+            } else {
+                if rn8 >= 16 {
+                    fprintf(codegen.output as *void, "uya_simd_sse_neg_u8x16(%s, %s); " as *byte, &prn[0] as *byte, &pon[0] as *byte);
+                    n8 = n8 + 16;
+                } else if rn8 >= 8 {
+                    fprintf(codegen.output as *void, "uya_simd_sse_neg_u8x8(%s, %s); " as *byte, &prn[0] as *byte, &pon[0] as *byte);
+                    n8 = n8 + 8;
+                } else if rn8 >= 4 {
+                    fprintf(codegen.output as *void, "uya_simd_sse_neg_u8x4(%s, %s); " as *byte, &prn[0] as *byte, &pon[0] as *byte);
+                    n8 = n8 + 4;
+                } else {
+                    fprintf(codegen.output as *void, "uya_simd_sse_neg_u8x2(%s, %s); " as *byte, &prn[0] as *byte, &pon[0] as *byte);
+                    n8 = n8 + 2;
+                }
+            }
+        }
+        return 1;
+    }
+    if c99_simd_sse_i64_u64_lane_ok(lanes) != 0 &&
+        (strcmp(vec_elem_c as *byte, "int64_t" as *byte) == 0 || strcmp(vec_elem_c as *byte, "uint64_t" as *byte) == 0) {
+        var n64: i32 = 0;
+        while n64 < lanes {
+            var pr6: [byte: 96] = [];
+            var po6: [byte: 96] = [];
+            if n64 == 0 {
+                snprintf(&pr6[0] as *byte, SIMD_VEC_LANE_PTR_SZ, "%s.lanes" as *byte, result_name as *byte);
+                snprintf(&po6[0] as *byte, SIMD_VEC_LANE_PTR_SZ, "%s.lanes" as *byte, operand_name as *byte);
+            } else {
+                snprintf(&pr6[0] as *byte, SIMD_VEC_LANE_PTR_SZ, "&%s.lanes[%d]" as *byte, result_name as *byte, n64);
+                snprintf(&po6[0] as *byte, SIMD_VEC_LANE_PTR_SZ, "&%s.lanes[%d]" as *byte, operand_name as *byte, n64);
+            }
+            if strcmp(vec_elem_c as *byte, "int64_t" as *byte) == 0 {
+                fprintf(codegen.output as *void, "uya_simd_sse_neg_i64x2(%s, %s); " as *byte, &pr6[0] as *byte, &po6[0] as *byte);
+            } else {
+                fprintf(codegen.output as *void, "uya_simd_sse_neg_u64x2(%s, %s); " as *byte, &pr6[0] as *byte, &po6[0] as *byte);
+            }
+            n64 = n64 + 2;
         }
         return 1;
     }
@@ -3203,6 +4060,136 @@ fn c99_gen_simd_builtin_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
                 }
             }
             fprintf(codegen.output as *void, "%s; })" as *byte, out_i16 as *byte);
+            return 1;
+        }
+        if c99_simd_sse_i8_u8_lane_ok(lanes) != 0 && elem_base != null &&
+            (strcmp(elem_base as *byte, "int8_t" as *byte) == 0 || strcmp(elem_base as *byte, "uint8_t" as *byte) == 0) {
+            const out_i8: &byte = c99_make_temp_name(codegen, "__uya_sp_o_" as &byte);
+            if out_i8 == null {
+                return 0;
+            }
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = (" as *byte, elem_c as *byte, scalar_name as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fputs("); " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s; " as *byte, result_c as *byte, out_i8 as *byte);
+            var sp8: i32 = 0;
+            while sp8 < lanes {
+                const rem_i8: i32 = lanes - sp8;
+                if strcmp(elem_base as *byte, "int8_t" as *byte) == 0 {
+                    if rem_i8 >= 16 {
+                        if sp8 == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i8x16(%s.lanes, %s); " as *byte,
+                                out_i8 as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i8x16(&%s.lanes[%d], %s); " as *byte,
+                                out_i8 as *byte, sp8, scalar_name as *byte);
+                        }
+                        sp8 = sp8 + 16;
+                    } else if rem_i8 >= 8 {
+                        if sp8 == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i8x8(%s.lanes, %s); " as *byte,
+                                out_i8 as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i8x8(&%s.lanes[%d], %s); " as *byte,
+                                out_i8 as *byte, sp8, scalar_name as *byte);
+                        }
+                        sp8 = sp8 + 8;
+                    } else if rem_i8 >= 4 {
+                        if sp8 == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i8x4(%s.lanes, %s); " as *byte,
+                                out_i8 as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i8x4(&%s.lanes[%d], %s); " as *byte,
+                                out_i8 as *byte, sp8, scalar_name as *byte);
+                        }
+                        sp8 = sp8 + 4;
+                    } else {
+                        if sp8 == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i8x2(%s.lanes, %s); " as *byte,
+                                out_i8 as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_i8x2(&%s.lanes[%d], %s); " as *byte,
+                                out_i8 as *byte, sp8, scalar_name as *byte);
+                        }
+                        sp8 = sp8 + 2;
+                    }
+                } else {
+                    if rem_i8 >= 16 {
+                        if sp8 == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_u8x16(%s.lanes, %s); " as *byte,
+                                out_i8 as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_u8x16(&%s.lanes[%d], %s); " as *byte,
+                                out_i8 as *byte, sp8, scalar_name as *byte);
+                        }
+                        sp8 = sp8 + 16;
+                    } else if rem_i8 >= 8 {
+                        if sp8 == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_u8x8(%s.lanes, %s); " as *byte,
+                                out_i8 as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_u8x8(&%s.lanes[%d], %s); " as *byte,
+                                out_i8 as *byte, sp8, scalar_name as *byte);
+                        }
+                        sp8 = sp8 + 8;
+                    } else if rem_i8 >= 4 {
+                        if sp8 == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_u8x4(%s.lanes, %s); " as *byte,
+                                out_i8 as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_u8x4(&%s.lanes[%d], %s); " as *byte,
+                                out_i8 as *byte, sp8, scalar_name as *byte);
+                        }
+                        sp8 = sp8 + 4;
+                    } else {
+                        if sp8 == 0 {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_u8x2(%s.lanes, %s); " as *byte,
+                                out_i8 as *byte, scalar_name as *byte);
+                        } else {
+                            fprintf(codegen.output as *void, "uya_simd_sse_splat_u8x2(&%s.lanes[%d], %s); " as *byte,
+                                out_i8 as *byte, sp8, scalar_name as *byte);
+                        }
+                        sp8 = sp8 + 2;
+                    }
+                }
+            }
+            fprintf(codegen.output as *void, "%s; })" as *byte, out_i8 as *byte);
+            return 1;
+        }
+        if c99_simd_sse_i64_u64_lane_ok(lanes) != 0 && elem_base != null &&
+            (strcmp(elem_base as *byte, "int64_t" as *byte) == 0 || strcmp(elem_base as *byte, "uint64_t" as *byte) == 0) {
+            const out_i64: &byte = c99_make_temp_name(codegen, "__uya_sp_o_" as &byte);
+            if out_i64 == null {
+                return 0;
+            }
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = (" as *byte, elem_c as *byte, scalar_name as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fputs("); " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s; " as *byte, result_c as *byte, out_i64 as *byte);
+            var sp64: i32 = 0;
+            while sp64 < lanes {
+                if strcmp(elem_base as *byte, "int64_t" as *byte) == 0 {
+                    if sp64 == 0 {
+                        fprintf(codegen.output as *void, "uya_simd_sse_splat_i64x2(%s.lanes, %s); " as *byte,
+                            out_i64 as *byte, scalar_name as *byte);
+                    } else {
+                        fprintf(codegen.output as *void, "uya_simd_sse_splat_i64x2(&%s.lanes[%d], %s); " as *byte,
+                            out_i64 as *byte, sp64, scalar_name as *byte);
+                    }
+                } else {
+                    if sp64 == 0 {
+                        fprintf(codegen.output as *void, "uya_simd_sse_splat_u64x2(%s.lanes, %s); " as *byte,
+                            out_i64 as *byte, scalar_name as *byte);
+                    } else {
+                        fprintf(codegen.output as *void, "uya_simd_sse_splat_u64x2(&%s.lanes[%d], %s); " as *byte,
+                            out_i64 as *byte, sp64, scalar_name as *byte);
+                    }
+                }
+                sp64 = sp64 + 2;
+            }
+            fprintf(codegen.output as *void, "%s; })" as *byte, out_i64 as *byte);
             return 1;
         }
         fputs("({ " as *byte, codegen.output as *void);
