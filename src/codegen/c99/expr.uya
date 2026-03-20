@@ -2053,6 +2053,12 @@ fn c99_simd_emit_sse_binary_fast_at(codegen: &C99CodeGenerator, fast_kind: i32, 
     } else if fast_kind == 33 {
         fprintf(codegen.output as *void, "uya_simd_sse_div_f32x4(%s, %s, %s); " as *byte,
             &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 34 {
+        fprintf(codegen.output as *void, "uya_simd_sse_mul_f64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 35 {
+        fprintf(codegen.output as *void, "uya_simd_sse_div_f64x2(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
     }
 }
 
@@ -2086,10 +2092,8 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
     if codegen == null || result_type_ast == null || result_name == null || left_name == null || right_name == null {
         return 0;
     }
-    if c99_simd_sse_x4_tile_lane_count_ok(lanes) == 0 {
-        return 0;
-    }
     var fast_kind: i32 = 0;
+    var is_f64: i32 = 0;
     // 101–106：掩码 i32；107–110：掩码 u32 有序比较；201–206：掩码 f32；10–17：i32 向量（16=÷，17=%）；20–27：u32 向量（22=×，26=÷，27=%）；30+：f32
     if result_type_ast.type == ASTNodeType.AST_TYPE_MASK {
         if left_type_ast == null || left_type_ast.type != ASTNodeType.AST_TYPE_VECTOR ||
@@ -2216,16 +2220,38 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
             } else {
                 return 0;
             }
+        } else if strcmp(vec_elem_c as *byte, "double" as *byte) == 0 {
+            is_f64 = 1;
+            if simd_op == TokenType.TOKEN_ASTERISK {
+                fast_kind = 34;
+            } else if simd_op == TokenType.TOKEN_SLASH {
+                fast_kind = 35;
+            } else {
+                return 0;
+            }
         } else {
             return 0;
         }
     } else {
         return 0;
     }
+    if is_f64 != 0 {
+        if lanes != 2 && lanes != 4 {
+            return 0;
+        }
+    } else {
+        if c99_simd_sse_x4_tile_lane_count_ok(lanes) == 0 {
+            return 0;
+        }
+    }
     var lane_chunk: i32 = 0;
+    var chunk_step: i32 = 4;
+    if fast_kind == 34 || fast_kind == 35 {
+        chunk_step = 2;
+    }
     while lane_chunk < lanes {
         c99_simd_emit_sse_binary_fast_at(codegen, fast_kind, result_name, left_name, right_name, lane_chunk);
-        lane_chunk = lane_chunk + 4;
+        lane_chunk = lane_chunk + chunk_step;
     }
     return 1;
 }

@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.25 - SIMD：`2×/4×f64` 向量 `*` / `/` C99 快路径（2026-03-19）
+
+- **C99**：`types.uya` 增加 **`uya_simd_sse_mul_f64x2`**、**`uya_simd_sse_div_f64x2`**（SSE2 `__m128d` / NEON `float64x2_t` / 标量）；`expr.uya` **`fast_kind` 34 / 35**，支持 **2×/4×** 通道（4× 为两次 2× 调用）；`test_simd_f64_mul_div.uya` 验证通过。
+- **文档**：规范 0.49.25（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
 ### v0.49.24 - SIMD：`4×i32` / `4×u32` 向量 `<<` / `>>` C99 助手（2026-03-19）
 
 - **C99**：`types.uya` 增加 **`uya_simd_sse_shl_i32x4`**、**`uya_simd_sse_shr_i32x4`**、**`uya_simd_sse_shl_u32x4`**、**`uya_simd_sse_shr_u32x4`**（三档均为标量逐通道位移）；`expr.uya` **`fast_kind` 18 / 19 / 28 / 29**；`test_simd_mask_bitwise_shift.uya` 增补左移用例；夹具 **`simd_c99_neon.uya`** 增补位移用例。

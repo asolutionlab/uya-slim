@@ -1273,6 +1273,12 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     fputs("static inline void uya_simd_sse_div_f32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
     fputs("  __m128 va = _mm_loadu_ps((const float *)a); __m128 vb = _mm_loadu_ps((const float *)b);\n" as *byte, codegen.output as *void);
     fputs("  _mm_storeu_ps((float *)r, _mm_div_ps(va, vb));\n}\n" as *byte, codegen.output as *void);
+    fputs("static inline void uya_simd_sse_mul_f64x2(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+    fputs("  __m128d va = _mm_loadu_pd((const double *)a); __m128d vb = _mm_loadu_pd((const double *)b);\n" as *byte, codegen.output as *void);
+    fputs("  _mm_storeu_pd((double *)r, _mm_mul_pd(va, vb));\n}\n" as *byte, codegen.output as *void);
+    fputs("static inline void uya_simd_sse_div_f64x2(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+    fputs("  __m128d va = _mm_loadu_pd((const double *)a); __m128d vb = _mm_loadu_pd((const double *)b);\n" as *byte, codegen.output as *void);
+    fputs("  _mm_storeu_pd((double *)r, _mm_div_pd(va, vb));\n}\n" as *byte, codegen.output as *void);
     fputs("static inline void uya_simd_sse_splat_f32x4(void *r, float s) {\n" as *byte, codegen.output as *void);
     fputs("  _mm_storeu_ps((float *)r, _mm_set1_ps(s));\n}\n" as *byte, codegen.output as *void);
     fputs("static inline void uya_simd_sse_neg_f32x4(void *r, const void *a) {\n" as *byte, codegen.output as *void);
@@ -1409,6 +1415,12 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     fputs("static inline void uya_simd_sse_div_f32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
     fputs("  float32x4_t va = vld1q_f32((const float *)a); float32x4_t vb = vld1q_f32((const float *)b);\n" as *byte, codegen.output as *void);
     fputs("  vst1q_f32((float *)r, vdivq_f32(va, vb));\n}\n" as *byte, codegen.output as *void);
+    fputs("static inline void uya_simd_sse_mul_f64x2(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+    fputs("  float64x2_t va = vld1q_f64((const double *)a); float64x2_t vb = vld1q_f64((const double *)b);\n" as *byte, codegen.output as *void);
+    fputs("  vst1q_f64((double *)r, vmulq_f64(va, vb));\n}\n" as *byte, codegen.output as *void);
+    fputs("static inline void uya_simd_sse_div_f64x2(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+    fputs("  float64x2_t va = vld1q_f64((const double *)a); float64x2_t vb = vld1q_f64((const double *)b);\n" as *byte, codegen.output as *void);
+    fputs("  vst1q_f64((double *)r, vdivq_f64(va, vb));\n}\n" as *byte, codegen.output as *void);
     fputs("static inline void uya_simd_sse_splat_f32x4(void *r, float s) {\n" as *byte, codegen.output as *void);
     fputs("  vst1q_f32((float *)r, vdupq_n_f32(s));\n}\n" as *byte, codegen.output as *void);
     fputs("static inline void uya_simd_sse_neg_f32x4(void *r, const void *a) {\n" as *byte, codegen.output as *void);
@@ -1525,6 +1537,12 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     fputs("static inline void uya_simd_sse_div_f32x4(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
     fputs("  float *rr = (float *)r; const float *aa = (const float *)a; const float *bb = (const float *)b;\n" as *byte, codegen.output as *void);
     fputs("  int _i; for (_i = 0; _i < 4; _i++) rr[_i] = aa[_i] / bb[_i];\n}\n" as *byte, codegen.output as *void);
+    fputs("static inline void uya_simd_sse_mul_f64x2(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+    fputs("  double *rr = (double *)r; const double *aa = (const double *)a; const double *bb = (const double *)b;\n" as *byte, codegen.output as *void);
+    fputs("  int _i; for (_i = 0; _i < 2; _i++) rr[_i] = aa[_i] * bb[_i];\n}\n" as *byte, codegen.output as *void);
+    fputs("static inline void uya_simd_sse_div_f64x2(void *r, const void *a, const void *b) {\n" as *byte, codegen.output as *void);
+    fputs("  double *rr = (double *)r; const double *aa = (const double *)a; const double *bb = (const double *)b;\n" as *byte, codegen.output as *void);
+    fputs("  int _i; for (_i = 0; _i < 2; _i++) rr[_i] = aa[_i] / bb[_i];\n}\n" as *byte, codegen.output as *void);
     fputs("static inline void uya_simd_sse_splat_f32x4(void *r, float s) {\n" as *byte, codegen.output as *void);
     fputs("  float *rr = (float *)r; int _i; for (_i = 0; _i < 4; _i++) rr[_i] = s;\n}\n" as *byte, codegen.output as *void);
     fputs("static inline void uya_simd_sse_neg_f32x4(void *r, const void *a) {\n" as *byte, codegen.output as *void);
