@@ -3837,6 +3837,48 @@ fn c99_expr_is_vector_select(expr: &ASTNode) i32 {
     return 1;
 }
 
+// 在 collect_slice_types_from_node 中调用（早于 emit_simd_x86_sse_runtime_helpers），按需标记 select 助手
+fn c99_collect_simd_select_emit_flags_from_call(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+    if codegen == null || expr == null || c99_expr_is_vector_select(expr) == 0 {
+        return;
+    }
+    if expr.call_expr_arg_count < 3 || expr.call_expr_args == null ||
+        expr.call_expr_args[1] == null || expr.call_expr_args[2] == null {
+        return;
+    }
+    var target_sel: &ASTNode = expr.simd_splat_target_type;
+    if target_sel == null {
+        target_sel = c99_resolve_simd_type_ast_from_expr(codegen, expr.call_expr_args[1]);
+    }
+    if target_sel == null {
+        target_sel = c99_resolve_simd_type_ast_from_expr(codegen, expr.call_expr_args[2]);
+    }
+    if target_sel == null || target_sel.type != ASTNodeType.AST_TYPE_VECTOR ||
+        target_sel.type_vector_element_type == null || target_sel.type_vector_size_expr == null {
+        return;
+    }
+    const lanes_sel: i32 = eval_const_expr(codegen, target_sel.type_vector_size_expr);
+    if lanes_sel != 4 {
+        return;
+    }
+    const elem_c: &byte = c99_type_to_c(codegen, target_sel.type_vector_element_type);
+    const elem_base: &byte = c99_type_c_skip_const(elem_c);
+    if elem_base == null {
+        return;
+    }
+    if strcmp(elem_base as *byte, "int32_t" as *byte) == 0 {
+        codegen.simd_emit_select_i32x4 = 1;
+        return;
+    }
+    if strcmp(elem_base as *byte, "uint32_t" as *byte) == 0 {
+        codegen.simd_emit_select_u32x4 = 1;
+        return;
+    }
+    if strcmp(elem_base as *byte, "float" as *byte) == 0 {
+        codegen.simd_emit_select_f32x4 = 1;
+    }
+}
+
 fn c99_find_identifier_type_node(codegen: &C99CodeGenerator, name: &byte) &ASTNode {
     if codegen == null || name == null {
         return null;

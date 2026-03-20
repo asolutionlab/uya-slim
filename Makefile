@@ -322,6 +322,14 @@ check: b
 		exit 1; \
 	fi
 	@echo ""
+	@echo "验证 SIMD @vector.select C 按需生成..."
+	@./tests/verify_simd_select_c_emit.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ SIMD select C 按需生成验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
 	@echo "验证 @syscall C99（Linux AArch64 / ARM32 交叉）..."
 	@ZIG="$(ZIG)" ./tests/verify_syscall_c99_cross.sh; \
 	VERIFY_EXIT=$$?; \
@@ -338,7 +346,7 @@ check: b
 		exit 1; \
 	fi
 	@echo ""
-	@echo "✓ 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪 + @syscall C99 + SIMD NEON）"
+	@echo "✓ 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪 + SIMD select C + @syscall C99 + SIMD NEON）"
 
 # hosted 验证：普通链接自举 + 主测试 + 证明优化
 check-hosted: b-hosted
@@ -369,6 +377,14 @@ check-hosted: b-hosted
 		exit 1; \
 	fi
 	@echo ""
+	@echo "验证 SIMD @vector.select C 按需生成..."
+	@./tests/verify_simd_select_c_emit.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ SIMD select C 按需生成验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
 	@echo "验证 @syscall C99（Linux AArch64 / ARM32 交叉）..."
 	@ZIG="$(ZIG)" ./tests/verify_syscall_c99_cross.sh; \
 	VERIFY_EXIT=$$?; \
@@ -385,7 +401,7 @@ check-hosted: b-hosted
 		exit 1; \
 	fi
 	@echo ""
-	@echo "✓ hosted 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪 + @syscall C99 + SIMD NEON）"
+	@echo "✓ hosted 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪 + SIMD select C + @syscall C99 + SIMD NEON）"
 
 # 备份（依赖 check 通过）
 backup: check

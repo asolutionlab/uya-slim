@@ -526,6 +526,7 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
             i = i + 1;
         }
         collect_inferred_simd_type_from_expr(codegen, node);
+        c99_collect_simd_select_emit_flags_from_call(codegen, node);
     } else if node.type == ASTNodeType.AST_CAST_EXPR {
         collect_slice_types_from_node(codegen, node.cast_expr_expr);
         if node.cast_expr_target_type != null {
