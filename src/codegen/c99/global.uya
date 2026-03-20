@@ -199,6 +199,27 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
             ai = ai + 1;
         }
     }
+    // await 绑定变量：输出为 s->_uya_bind_name
+    if codegen.async_state_var != null && codegen.async_bind_count > 0 {
+        var bi: i32 = 0;
+        while bi < codegen.async_bind_count && bi < 32 {
+            if codegen.async_bind_names[bi] != null &&
+                strcmp(codegen.async_bind_names[bi] as *byte, name as *byte) == 0 {
+                const s_len: i32 = strlen(codegen.async_state_var as *byte);
+                const n_len: i32 = strlen(name as *byte);
+                // 格式：s->_uya_bind_NAME（需要额外 8 字节 for "_uya_bind_")
+                const buf_len: i32 = s_len + 2 + 10 + n_len + 1;
+                const buf: &byte = arena_alloc(codegen.arena, buf_len as usize) as &byte;
+                if buf != null {
+                    snprintf(buf as *byte, buf_len, "%s->_uya_bind_%s" as *byte,
+                        codegen.async_state_var as *byte, name as *byte);
+                    return buf;
+                }
+                break;
+            }
+            bi = bi + 1;
+        }
+    }
     var i: i32 = 0;
     while i < codegen.global_variable_count {
         if global_var_name_matches(codegen, i, name) != 0 {

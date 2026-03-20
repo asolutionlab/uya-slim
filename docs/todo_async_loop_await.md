@@ -19,6 +19,9 @@
 | 8 | await operand try 包装（`await_operand_is_err_future`） | ✅ |
 | 9 | `_uya_await_storage` 与复制逻辑（避免悬挂指针） | ✅ |
 | 10 | `child_inner_is_err_union==0` 分支的循环与 try 逻辑 | ✅ |
+| 11 | await 绑定变量纳入状态机结构体（`_uya_bind_*` 字段） | ✅ |
+| 12 | 扩展 `get_c_name_for_identifier_ref` 支持 await 绑定变量引用 | ✅ |
+| 13 | 扩展 codegen 追踪 await 绑定变量名 | ✅ |
 
 ---
 
@@ -26,20 +29,19 @@
 
 ### 高优先级
 
-- [ ] **test_async_copy 段错误**
-  - 现象：`test_async_copy` 运行时 SIGSEGV
-  - ASan：`stack-buffer-overflow` 于 `block_on_usize_plain` 栈帧
-  - 可能原因：`f.data` 传递、Future 接口/实现类型链、block_on 参数/栈布局
-  - 步骤：用 ASan/gdb 复现、核对 poll 返回类型与 block_on 期望类型
+- [x] **test_async_copy 段错误** ✅
+  - 现象：`test_async_copy` 运行时 SIGSEGV（已解决）
+  - ASan：`stack-buffer-overflow` 于 `block_on_usize_plain` 栈帧（已解决）
+  - 验证：`./tests/run_programs_parallel.sh --uya --c99 test_async_copy.uya` 通过
 
-- [ ] **验证 Poll 返回类型链**
+- [x] **验证 Poll 返回类型链** ✅
   - `async_copy` 返回 `!Future<usize>`
   - `block_on_usize_plain(f)` 期望 `Future<usize>`，poll 返回 `Poll<usize>`
   - 确认状态机 poll 实际返回类型与 block_on 期望一致
 
 ### 中优先级
 
-- [ ] **端到端验证**
+- [x] **端到端验证** ✅
   - `./tests/run_programs_parallel.sh --uya --c99 test_async_copy.uya` 通过
   - `make backup` 自举验证通过
 

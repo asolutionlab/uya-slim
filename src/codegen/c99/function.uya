@@ -1338,7 +1338,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
     }
 
-    // 输出状态机 struct（含捕获参数）
+    // 输出状态机 struct（含捕获参数 + 所有 await 绑定变量）
+    // await 绑定变量必须存在结构体中，确保跨 poll 调用时值不丢失
     emit_line_directive(codegen, fn_decl.line, fn_decl.filename);
     fputs("struct " as *byte, codegen.output as *void);
     fprintf(codegen.output as *void, "%s" as *byte, async_struct as *byte);
@@ -1350,6 +1351,16 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     if async_loop_var_is_total != 0 {
         // 上次 read 返回的字节数：state==2 可能在后续 poll 调用中进入，局部 n 未定义，不能与 written 比较
         fputs(" size_t _uya_total; size_t _uya_read_n;" as *byte, codegen.output as *void);
+    }
+    // 输出所有 await 绑定变量到结构体（确保跨 poll 调用时值不丢失）
+    var bind_i: i32 = 0;
+    while bind_i < await_count {
+        const bind_c_type: &byte = c99_type_to_c(codegen, await_bind_types[bind_i]);
+        const bind_safe_name: &byte = get_safe_c_identifier(codegen, await_bind_names[bind_i]);
+        if bind_c_type != null && bind_safe_name != null {
+            fprintf(codegen.output as *void, " %s _uya_bind_%s;" as *byte, bind_c_type as *byte, bind_safe_name as *byte);
+        }
+        bind_i = bind_i + 1;
     }
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const params: & & ASTNode = fn_decl.fn_decl_params;
@@ -1373,6 +1384,13 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     if async_loop_var_is_total != 0 {
         codegen.async_loop_var_name = "total" as &byte;
         codegen.async_loop_var_c = "s->_uya_total" as &byte;
+    }
+    // 设置 await 绑定变量（poll 内 gen_expr 将绑定变量引用为 s->_uya_bind_name）
+    codegen.async_bind_count = await_count;
+    var bind_idx: i32 = 0;
+    while bind_idx < await_count && bind_idx < 32 {
+        codegen.async_bind_names[bind_idx] = await_bind_names[bind_idx];
+        bind_idx = bind_idx + 1;
     }
     codegen.async_param_count = 0;
     pi = 0;
@@ -1405,16 +1423,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     fprintf(codegen.output as *void, "static %s %s(void *self, struct Waker *waker) {\n" as *byte, poll_ret_c as *byte, poll_name as *byte);
     fprintf(codegen.output as *void, "    struct %s *s = (struct %s *)self;\n" as *byte, async_struct as *byte, async_struct as *byte);
     fprintf(codegen.output as *void, "    if (s == (void*)0) { return (%s){ ._tag = 0 }; }\n" as *byte, poll_ret_c as *byte);
-    // 多 await 时在函数开头声明所有绑定变量，供最后一态 ret_expr 使用
-    var decl_i: i32 = 0;
-    while decl_i < await_count {
-        const bind_c_decl: &byte = c99_type_to_c(codegen, await_bind_types[decl_i]);
-        const bind_safe_decl: &byte = get_safe_c_identifier(codegen, await_bind_names[decl_i]);
-        if bind_c_decl != null && bind_safe_decl != null {
-            fprintf(codegen.output as *void, "    %s %s;\n" as *byte, bind_c_decl as *byte, bind_safe_decl as *byte);
-        }
-        decl_i = decl_i + 1;
-    }
+    // await 绑定变量已在结构体中（_uya_bind_*），无需局部变量声明
     // state machine：state 0 = 起点；state 1..await_count = 各 await 就绪后
     fputs("    if (s->state == 0) {\n" as *byte, codegen.output as *void);
     if await_count > 0 {
@@ -1464,14 +1473,14 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             const cur_bind_type: &ASTNode = await_bind_types[state_k - 1];
             if cur_bind_name != null && cur_bind_type != null {
                 const bind_safe: &byte = get_safe_c_identifier(codegen, cur_bind_name);
-                fprintf(codegen.output as *void, "        %s = r.value;\n" as *byte, bind_safe as *byte);
+                fprintf(codegen.output as *void, "        s->_uya_bind_%s = r.value;\n" as *byte, bind_safe as *byte);
                 if async_loop_var_is_total != 0 && state_k == 1 {
-                    fprintf(codegen.output as *void, "        s->_uya_read_n = %s;\n" as *byte, bind_safe as *byte);
+                    fprintf(codegen.output as *void, "        s->_uya_read_n = s->_uya_bind_%s;\n" as *byte, bind_safe as *byte);
                 }
             }
             if async_loop_var_is_total != 0 && state_k == 1 {
                 // Ready 载荷为 err_union（如 !usize），须包装 .error_id/.value
-                fprintf(codegen.output as *void, "        if (n == 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = 0, .value = s->_uya_total } } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte);
+                fprintf(codegen.output as *void, "        if (s->_uya_bind_n == 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = 0, .value = s->_uya_total } } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte);
             }
             if state_k < await_count {
                 fputs("        s->state = " as *byte, codegen.output as *void);
@@ -1503,8 +1512,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 fputs(";\n" as *byte, codegen.output as *void);
             } else if async_loop_var_is_total != 0 {
                 // 循环回跳：total += written; if (written < n) return; else 回到 await 0
-                fprintf(codegen.output as *void, "        s->_uya_total = s->_uya_total + written;\n" as *byte);
-                fprintf(codegen.output as *void, "        if (written < s->_uya_read_n) { return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = 0, .value = s->_uya_total } } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte);
+                fprintf(codegen.output as *void, "        s->_uya_total = s->_uya_total + s->_uya_bind_written;\n" as *byte);
+                fprintf(codegen.output as *void, "        if (s->_uya_bind_written < s->_uya_read_n) { return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = 0, .value = s->_uya_total } } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte);
                 fprintf(codegen.output as *void, "        s->state = 1;\n" as *byte);
                 fputs("        s->await_fut = " as *byte, codegen.output as *void);
                 if await_operand_is_err_future != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
@@ -1598,13 +1607,13 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             const cur_bind_name2: &byte = await_bind_names[state_k - 1];
             if cur_bind_name2 != null {
                 const bind_safe2: &byte = get_safe_c_identifier(codegen, cur_bind_name2);
-                fprintf(codegen.output as *void, "        %s = p.u.Ready;\n" as *byte, bind_safe2 as *byte);
+                fprintf(codegen.output as *void, "        s->_uya_bind_%s = p.u.Ready;\n" as *byte, bind_safe2 as *byte);
                 if async_loop_var_is_total != 0 && state_k == 1 {
-                    fprintf(codegen.output as *void, "        s->_uya_read_n = %s;\n" as *byte, bind_safe2 as *byte);
+                    fprintf(codegen.output as *void, "        s->_uya_read_n = s->_uya_bind_%s;\n" as *byte, bind_safe2 as *byte);
                 }
             }
             if async_loop_var_is_total != 0 && state_k == 1 {
-                fprintf(codegen.output as *void, "        if (n == 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = s->_uya_total } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
+                fprintf(codegen.output as *void, "        if (s->_uya_bind_n == 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = s->_uya_total } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
             }
             if state_k < await_count {
                 fprintf(codegen.output as *void, "        s->state = %d;\n" as *byte, state_k + 1);
@@ -1627,8 +1636,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 }
                 fputs(";\n" as *byte, codegen.output as *void);
             } else if async_loop_var_is_total != 0 {
-                fprintf(codegen.output as *void, "        s->_uya_total = s->_uya_total + written;\n" as *byte);
-                fprintf(codegen.output as *void, "        if (written < s->_uya_read_n) { return (%s){ ._tag = 1, .u = (%s){ .Ready = s->_uya_total } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
+                fprintf(codegen.output as *void, "        s->_uya_total = s->_uya_total + s->_uya_bind_written;\n" as *byte);
+                fprintf(codegen.output as *void, "        if (s->_uya_bind_written < s->_uya_read_n) { return (%s){ ._tag = 1, .u = (%s){ .Ready = s->_uya_total } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
                 fprintf(codegen.output as *void, "        s->state = 1;\n" as *byte);
                 fputs("        s->await_fut = " as *byte, codegen.output as *void);
                 if await_operand_is_err_future != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
