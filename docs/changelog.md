@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.19 - SIMD：32×/64×`i32`/`u32`/`f32` 八/十六 x4 lowering（2026-03-19）
+
+- **C99**：`expr.uya` 增加 **`c99_simd_sse_x4_tile_lane_count_ok`**；**32 / 64** 通道与 **4/8/16** 同属 x4 分块快路径；测试 `test_simd_vec32_sse_chain.uya`、`test_simd_vec64_sse_chain.uya`。
+- **文档**：规范 0.49.19（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
 ### v0.49.18 - SIMD：16×`i32`/`u32`/`f32` 四 x4 lowering（2026-03-19）
 
 - **C99**：`expr.uya` 对 **16 通道**向量/掩码复用 **`uya_simd_sse_*x4`** 四次（`&lanes[4|8|12]`）；`splat` 用循环生成多次调用；测试 `test_simd_vec16_sse_chain.uya`。

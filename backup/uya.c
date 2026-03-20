@@ -5037,6 +5037,7 @@ static uint8_t * c99_make_temp_name(struct C99CodeGenerator * codegen, uint8_t *
 static uint8_t * c99_type_c_skip_const(uint8_t * elem_c);
 static void c99_simd_emit_sse_binary_fast_at(struct C99CodeGenerator * codegen, int32_t fast_kind, uint8_t * result_name, uint8_t * left_name, uint8_t * right_name, int32_t lane_off);
 static void c99_simd_emit_per_lane_binary_assign(struct C99CodeGenerator * codegen, uint8_t * result_name, uint8_t * left_name, uint8_t * right_name, int32_t lanes, enum TokenType simd_op);
+static int32_t c99_simd_sse_x4_tile_lane_count_ok(int32_t lanes);
 static int32_t c99_simd_try_emit_x86_sse_binary(struct C99CodeGenerator * codegen, struct ASTNode * result_type_ast, struct ASTNode * left_type_ast, enum TokenType simd_op, uint8_t * result_name, uint8_t * left_name, uint8_t * right_name, int32_t lanes);
 static int32_t c99_simd_try_emit_x86_sse_unary_minus(struct C99CodeGenerator * codegen, struct ASTNode * result_type_ast, uint8_t * result_name, uint8_t * operand_name, int32_t lanes);
 static void c99_emit_simd_binary_operator(struct C99CodeGenerator * codegen, enum TokenType op);
@@ -49206,6 +49207,16 @@ static __attribute__((unused)) void c99_simd_emit_per_lane_binary_assign(struct 
                 }
             }
 
+static __attribute__((unused)) int32_t c99_simd_sse_x4_tile_lane_count_ok(int32_t lanes) {
+                (void)lanes;
+                if ((((((lanes == 4) || (lanes == 8)) || (lanes == 16)) || (lanes == 32)) || (lanes == 64))) {
+                    int32_t _uya_ret = 1;
+                    return _uya_ret;
+                }
+                int32_t _uya_ret = 0;
+                return _uya_ret;
+            }
+
 static __attribute__((unused)) int32_t c99_simd_try_emit_x86_sse_binary(struct C99CodeGenerator * codegen, struct ASTNode * result_type_ast, struct ASTNode * left_type_ast, enum TokenType simd_op, uint8_t * result_name, uint8_t * left_name, uint8_t * right_name, int32_t lanes) {
                 (void)codegen;
                 (void)result_type_ast;
@@ -49219,7 +49230,7 @@ static __attribute__((unused)) int32_t c99_simd_try_emit_x86_sse_binary(struct C
                     int32_t _uya_ret = 0;
                     return _uya_ret;
                 }
-                if ((((lanes != 4) && (lanes != 8)) && (lanes != 16))) {
+                if ((c99_simd_sse_x4_tile_lane_count_ok(lanes) == 0)) {
                     int32_t _uya_ret = 0;
                     return _uya_ret;
                 }
@@ -49432,7 +49443,7 @@ static __attribute__((unused)) int32_t c99_simd_try_emit_x86_sse_unary_minus(str
                 (void)result_name;
                 (void)operand_name;
                 (void)lanes;
-                if ((((((codegen == NULL) || (result_type_ast == NULL)) || (result_name == NULL)) || (operand_name == NULL)) || (((lanes != 4) && (lanes != 8)) && (lanes != 16)))) {
+                if ((((((codegen == NULL) || (result_type_ast == NULL)) || (result_name == NULL)) || (operand_name == NULL)) || (c99_simd_sse_x4_tile_lane_count_ok(lanes) == 0))) {
                     int32_t _uya_ret = 0;
                     return _uya_ret;
                 }
@@ -49910,7 +49921,7 @@ static __attribute__((unused)) int32_t c99_gen_simd_builtin_call(struct C99CodeG
                         return _uya_ret;
                     }
                     uint8_t * const elem_base = c99_type_c_skip_const(elem_c);
-                    if ((((((lanes == 4) || (lanes == 8)) || (lanes == 16)) && (elem_base != NULL)) && (((strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1257) == 0) || (strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1198) == 0)) || (strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1390) == 0)))) {
+                    if ((((c99_simd_sse_x4_tile_lane_count_ok(lanes) != 0) && (elem_base != NULL)) && (((strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1257) == 0) || (strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1198) == 0)) || (strcmp((uint8_t *)elem_base, (uint8_t *)(uint8_t *)str1390) == 0)))) {
                         uint8_t * const out_struct = c99_make_temp_name(codegen, (uint8_t *)(uint8_t *)str1409);
                         if ((out_struct == NULL)) {
                             int32_t _uya_ret = 0;
