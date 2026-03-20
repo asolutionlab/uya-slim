@@ -9,3 +9,4 @@ alwaysApply: true
 - `make backup` 包含完整验证与备份；只有它成功后才允许提交。
 - 如果 `make clean` 后导致 `bin/uya` 缺失，也不能跳过 `make backup`。
 - 只要 `make backup`、自举验证或测试失败，就禁止提交。
+- **提交内容**：若 `make backup` 更新了自举种子，同一提交中必须包含 **`backup/uya.c`**（仓库内跟踪的 `uya.c`；`bin/uya.c` 在 `.gitignore` 中勿提交）。
