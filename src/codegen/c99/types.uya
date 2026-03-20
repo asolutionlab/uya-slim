@@ -160,6 +160,18 @@ fn c99_simd_update_max_lanes_for_element(codegen: &C99CodeGenerator, element_typ
         if lanes > codegen.simd_max_lanes_f64 {
             codegen.simd_max_lanes_f64 = lanes;
         }
+    } else if strcmp(ec as *byte, "int32_t" as *byte) == 0 {
+        if lanes > codegen.simd_max_lanes_i32 {
+            codegen.simd_max_lanes_i32 = lanes;
+        }
+    } else if strcmp(ec as *byte, "uint32_t" as *byte) == 0 {
+        if lanes > codegen.simd_max_lanes_u32 {
+            codegen.simd_max_lanes_u32 = lanes;
+        }
+    } else if strcmp(ec as *byte, "float" as *byte) == 0 {
+        if lanes > codegen.simd_max_lanes_f32 {
+            codegen.simd_max_lanes_f32 = lanes;
+        }
     }
 }
 
@@ -1207,6 +1219,19 @@ fn c99_simd_need_emit_i16_u16(codegen: &C99CodeGenerator, simd_emit_all: i32) i3
         return 1;
     }
     if codegen.simd_max_lanes_i16 > 0 || codegen.simd_max_lanes_u16 > 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn c99_simd_need_emit_i32_u32_f32(codegen: &C99CodeGenerator, simd_emit_all: i32) i32 {
+    if codegen == null {
+        return 0;
+    }
+    if simd_emit_all != 0 {
+        return 1;
+    }
+    if codegen.simd_max_lanes_i32 > 0 || codegen.simd_max_lanes_u32 > 0 || codegen.simd_max_lanes_f32 > 0 {
         return 1;
     }
     return 0;

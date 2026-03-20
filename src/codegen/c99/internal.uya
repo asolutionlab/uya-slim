@@ -204,6 +204,9 @@ struct C99CodeGenerator {
     simd_max_lanes_i16: i32,
     simd_max_lanes_u16: i32,
     simd_max_lanes_f64: i32,
+    simd_max_lanes_i32: i32,
+    simd_max_lanes_u32: i32,
+    simd_max_lanes_f32: i32,
     
     // 泛型单态化实例（从 TypeChecker 传入）
     mono_instances: [MonoInstanceCodegen: C99_MAX_MONO_INSTANCES],
