@@ -8,6 +8,12 @@
 
 **发布日期：** 待定
 
+### v0.49.34 - SIMD：`@vector.store`（2026-03-20）
+
+- **语言 / 检查 / C99**：新增 **`@vector.store(ptr, v)`**（**`v`** 为 **`@vector(T,N)`**，**`ptr`** 为 **`&T`** 且元素类型匹配；**`void`**）；代码生成 **`__uya_memcpy((void*)ptr, &tmp, sizeof(...))`**。
+- **测试**：`test_simd_vector_store.uya`、`error_simd_vector_store_pointee_mismatch.uya`。
+- **文档**：规范 **0.49.34**（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`、`todo_mini_to_full.md`）。
+
 ### v0.49.33 - SIMD：`@vector.load` 与 `std.json` `skip_ws` 向量化（2026-03-20）
 
 - **语言 / 检查 / C99**：新增 **`@vector.load(ptr)`**（目标 **`@vector(T,N)`** 上下文与 **`@vector.splat`** 一致；**`&byte`/`&u8`** 与 **`u8`** 元素向量匹配）；代码生成 **`__uya_memcpy`** 装入 **`struct uya_simd_vector_*`**。

@@ -268,6 +268,18 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
 
     const simd_method: &byte = simd_get_vector_builtin_method(node);
     if simd_method != null {
+        if str_equals(simd_method, "store" as *byte) != 0 {
+            if node.call_expr_arg_count != 2 || node.call_expr_args == null ||
+                node.call_expr_args[0] == null || node.call_expr_args[1] == null {
+                checker_report_error(checker, node, "@vector.store 需要恰好两个参数：指针与向量值" as *byte);
+                return result;
+            }
+            checker_check_node(checker, node.call_expr_args[0]);
+            checker_check_node(checker, node.call_expr_args[1]);
+            _ = checker_resolve_simd_store_expr(checker, node);
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
         if node.call_expr_arg_count != 1 || node.call_expr_args == null || node.call_expr_args[0] == null {
             checker_report_error(checker, node, "@vector helper 需要恰好一个参数" as *byte);
             return result;
@@ -293,7 +305,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             }
             return result;
         }
-        checker_report_error(checker, node, "@vector 目前仅支持 .splat/.load/.any/.all" as *byte);
+        checker_report_error(checker, node, "@vector 目前仅支持 .splat/.load/.store/.any/.all" as *byte);
         return result;
     }
     

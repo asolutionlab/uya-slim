@@ -1,8 +1,8 @@
 # Uya 内置函数使用文档
 
-> 版本：v0.49.33（2026-03-20）  
+> 版本：v0.49.34（2026-03-20）  
 > 此文档为 uya.md 的详细补充说明  
-> 语言规范：0.49.33  
+> 语言规范：0.49.34  
 > 所有内置函数均以 `@` 开头，由编译器识别，无需导入或声明；其实现阶段与运行时开销以各章节说明为准
 
 ---
@@ -1618,6 +1618,7 @@ fn unsafe_fetch_add(ptr: &i32, value: i32) i32 {
 @vector(T, N)
 @vector.splat(x)
 @vector.load(ptr)
+@vector.store(ptr, v)
 @vector.any(m)
 @vector.all(m)
 ```
@@ -1626,6 +1627,7 @@ fn unsafe_fetch_add(ptr: &i32, value: i32) i32 {
 - `@vector(T, N)`：SIMD 向量类型构造器，表示元素类型为 `T`、通道数为 `N` 的向量类型
 - `@vector.splat(x)`：用标量值 `x` 构造所有通道都相同的向量值
 - `@vector.load(ptr)`（**0.49.33**）：从 **`ptr`**（**`&T`**，与向量元素类型一致；**`byte`/`u8`** 匹配见 `uya.md`）按 **`sizeof(@vector(T,N))`** 读取内存得到向量；目标 **`@vector(T,N)`** 须由上下文确定；**调用方**须保证可读范围足够
+- `@vector.store(ptr, v)`（**0.49.34**）：将 **`v`**（**`@vector(T,N)`**）按 **`sizeof(@vector(T,N))`** 写入 **`ptr`**（**`&T`**，**`T`** 与 **`v`** 元素类型一致；**`byte`/`u8`** 同 **`load`**）；**结果为 `void`**；**调用方**须保证可写范围足够
 - `@vector.any(m)`：掩码任一通道为 true 时返回 `bool true`
 - `@vector.all(m)`：掩码所有通道为 true 时返回 `bool true`
 
@@ -1655,7 +1657,7 @@ if @vector.any(lt) {
 - `@vector.splat(x)` 的参数类型须与目标向量元素类型一致或可隐式转换；无后缀浮点字面量为 `f64`，填入 `f32` 向量须使用 `f32` 后缀（如 `1.0f32`）
 - `@vector.splat(x)` 的目标向量类型必须能由上下文唯一确定（含与同一代数/比较表达式中另一侧 `@vector` 操作数对齐推断，以及 **`return` 与函数返回 `@vector` / `!@vector` 成功载荷** 对齐推断，见 uya.md 0.49.8、0.49.9）
 - 第一阶段允许标量回退 lowering，不承诺立刻映射真实硬件寄存器
-- **`@vector.load`** 已于 **0.49.33** 纳入；第一阶段仍不引入 **`@vector.store` / `@vector.select` / `shuffle` / `reduce_*`**
+- **`@vector.load` / `@vector.store`** 已于 **0.49.33** / **0.49.34** 纳入；第一阶段仍不引入 **`@vector.select` / `shuffle` / `reduce_*`**
 
 ---
 
@@ -1723,6 +1725,7 @@ const both: @mask(4) = lt & eq;
 | | `@mask` | ✓ | - | 📋 规范支持 |
 | | `@vector.splat` | ✓ | ✓ | 📋 规范支持 |
 | | `@vector.load` | ✓ | ✓ | 📋 规范支持（0.49.33） |
+| | `@vector.store` | ✓ | ✓ | 📋 规范支持（0.49.34） |
 | | `@vector.any` | ✓ | ✓ | 📋 规范支持 |
 | | `@vector.all` | ✓ | ✓ | 📋 规范支持 |
 
@@ -1839,6 +1842,7 @@ fn buffer_info<T>() void {
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
+| v0.49.34 | 2026-03-20 | **`@vector.store(ptr,v)`**（**`__uya_memcpy`** 写回内存；**`void`**）；`test_simd_vector_store.uya`、`error_simd_vector_store_pointee_mismatch.uya`；规范 **0.49.34** |
 | v0.49.33 | 2026-03-20 | **`@vector.load`**（**`__uya_memcpy`** 装入向量）；**`std.json` `skip_ws`** **`@vector(u8,16)`** 块路径；`test_simd_vector_load.uya`、`error_simd_vector_load_pointee_mismatch.uya` |
 | v0.49.30 | 2026-03-19 | C99 SIMD：**`i8`/`u8`/`i64`/`u64`** 向量·掩码·**`splat`**·一元 `-`（`*_i8x16`/`x8`/`x4`/`x2`、`*_u8x*`、`*_i64x2`、`*_u64x2`）；`test_simd_i8_u8_i64_sse.uya` |
 | v0.49.29 | 2026-03-19 | C99 SIMD：**`2×i32`/`u32`/`f32`** 与 **`@mask(2)`** 快路径（`*_x2`）；`test_simd_vec2_i32_u32_f32.uya`、NEON 夹具 |
@@ -1890,5 +1894,5 @@ fn buffer_info<T>() void {
 
 ---
 
-**本文档由 Uya 编译器团队维护，最后更新：2026-03-20（0.49.33）**
+**本文档由 Uya 编译器团队维护，最后更新：2026-03-20（0.49.34）**
 

@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.33（完整版 · 2026-03-20）
+# Uya 语言规范 0.49.34（完整版 · 2026-03-20）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -53,6 +53,10 @@
 ---
 
 ## 规范变更
+
+### 0.49.34（2026-03-20）
+
+- **SIMD：`@vector.store(ptr, v)`**（阶段 4 扩展）：**`v`** 为 **`@vector(T,N)`**，**`ptr`** 为 **`&T`**，与 **`v`** 的元素类型匹配（**`byte`/`u8`** 互通规则与 **`@vector.load`** 一致）；将 **`v`** 的内存表示按 **`sizeof(@vector(T,N))`** 写入 **`ptr`** 所指地址；**结果为 `void`**，**不可**用于需要非 **`void`** 的上下文。**C99**：**`__uya_memcpy((void*)ptr, &v_tmp, sizeof(...))`**。**测试**：`test_simd_vector_store.uya`；负例 **`error_simd_vector_store_pointee_mismatch.uya`**。
 
 ### 0.49.33（2026-03-20）
 
@@ -4543,7 +4547,7 @@ fn caller() void {
 | `@naked_fn` | 函数属性 | 标记裸函数（无 prologue/epilogue），用于底层系统代码 |
 | `@await` | 表达式 | 等待异步操作完成（仅 `@async_fn` 内） |
 | `@asm` | `@asm { ... }` | 内联汇编块 |
-| `@vector` | `@vector(T, N)` / `@vector.splat(x)` / `@vector.any(m)` / `@vector.all(m)` | SIMD 向量类型构造器与第一阶段最小辅助内建 |
+| `@vector` | `@vector(T, N)` / `@vector.splat(x)` / `@vector.load(ptr)` / `@vector.store(ptr,v)` / `@vector.any(m)` / `@vector.all(m)` | SIMD 向量类型构造器与第一阶段最小辅助内建 |
 | `@mask` | `@mask(N)` | SIMD 掩码类型构造器 |
 
 **命名惯例**：
@@ -4725,6 +4729,7 @@ fn caller() void {
      - `@vector.splat(x)` 的参数类型须与目标 `@vector(T, N)` 的元素类型 `T` **一致**或满足现有**隐式转换**规则；无后缀浮点字面量默认为 `f64`，填入 `f32` 元素向量须写 `1.0f32` 等带 `f32` 后缀的字面量（或通过已标注为 `f32` 的变量传入）
      - 目标类型除显式标注、`const`/`var` 初始化、**`return`（期望类型为函数返回的 `@vector`，或 `!T` 时成功分支载荷为 `@vector`）** 等上下文外，还可由**同一代数/比较/取模/饱和/包装表达式中的另一侧** `@vector` 操作数推断（见规范变更 0.49.3、0.49.5、0.49.6、0.49.8）
      - **`@vector.load(ptr)`**（**0.49.33**）：从 **`ptr`** 指向地址**按向量内存大小**读取 **`@vector(T, N)`**；**`ptr`** 为 **`&T`**，且 **`T`** 与目标向量元素类型一致（**`byte`/`u8`** 匹配规则与实现一致）；**不检查**剩余缓冲区长度（与 C **`memcpy`** 调用方责任一致）。目标向量类型上下文与 **`@vector.splat`** 相同。
+     - **`@vector.store(ptr, v)`**（**0.49.34**）：**`v`** 为 **`@vector(T, N)`**，**`ptr`** 为 **`&T`** 且 **`T`** 与 **`v`** 的元素类型一致（**`byte`/`u8`** 规则同 **`load`**）；按向量大小将 **`v`** 写入 **`ptr`**；**`void`**；**不检查**可写范围长度（调用方责任同 **`memcpy`**）。
      - `@vector.any(m)`：参数 `m` 必须是 `@mask(N)`，只要任一通道为 true 则返回 `bool true`
      - `@vector.all(m)`：参数 `m` 必须是 `@mask(N)`，仅当所有通道为 true 时返回 `bool true`
    - **示例**：
@@ -4740,12 +4745,12 @@ fn caller() void {
    - **第一阶段纳入范围**：
      - `@vector(T, N)`、`@mask(N)`
      - 基本算术、整数位运算、比较、掩码逻辑运算
-     - `@vector.splat`、`@vector.any`、`@vector.all`
+     - `@vector.splat`、**`@vector.load`**、**`@vector.store`**、`@vector.any`、`@vector.all`
      - 语义正确的标量回退 lowering
      - **C99 快路径**（阶段 4 起）：**x86_64 + SSE2**（`UYA_HAVE_SIMD_X86_SSE`）或 **ARM/AArch64 + NEON**（`UYA_HAVE_SIMD_ARM_NEON`，`<arm_neon.h>`）下，对 **`i32`/`u32`/`f32`**：**2 通道**走 **`*_i32x2` / `*_u32x2` / `*_f32x2`** 等（0.49.29，低 **64 位** 或 NEON **2 宽**）；**4 通道**走 **`*_x4`**（**`i32` 向量 `/` `%`**：`uya_simd_sse_div_i32x4`、`uya_simd_sse_rem_i32x4`，0.49.22–0.49.23；**`u32` 向量 `* / %`**：`uya_simd_sse_mul_u32x4`、`uya_simd_sse_div_u32x4`、`uya_simd_sse_rem_u32x4`，0.49.20–0.49.23；**`i32`/`u32` 向量 `<<` `>>`**：`uya_simd_sse_shl_i32x4`、`uya_simd_sse_shr_i32x4`、`uya_simd_sse_shl_u32x4`、`uya_simd_sse_shr_u32x4`，0.49.24）；**`f64` 向量 `+` / `-` / `* /` / 一元 `-`**：`uya_simd_sse_add_f64x2`、`uya_simd_sse_sub_f64x2`、`uya_simd_sse_mul_f64x2`、`uya_simd_sse_div_f64x2`、`uya_simd_sse_neg_f64x2`，0.49.25–0.49.28，支持 **2×/4×** 通道；**`i16` 向量 `+` / `-` / `*` 与六种比较、一元 `-`、`splat`**：`uya_simd_sse_add_i16x4`/`x8`、`sub_*`、`mul_*`、`eq`/`ne`/`lt`/`gt`/`le`/`ge` 的 **`_i16x4_mask` / `_i16x8_mask`**、`neg_i16x4`/`x8`、`splat_i16x4`/`x8`，0.49.26–0.49.28，**4×** 为 **64 位** SIMD 块、**8×** 为 **128 位**；**`u16` 向量 `+` / `-` / `*` 与六种比较、`splat`**：`add`/`sub`/`mul`/`eq`/`ne`/`lt`/`gt`/`le`/`ge` 的 **`_u16x4` / `_u16x8`** 与 **`splat_u16x4`/`x8`**，0.49.28）；**`i8`/`u8` 向量**（**2/4/8/16/32/64** 通道）算术·位运算·六种比较·**`splat`**·一元 `-`：**`*_i8x16`/`x8`/`x4`/`x2`**、**`*_u8x*`**（0.49.30）；**`i64`/`u64` 向量**与 **掩码**、**`splat`**、一元 `-`：**`*_i64x2`**、**`*_u64x2`** 按 **2 通道** 分块（0.49.30）；**8 / 16 / 32 / 64 通道**（`i32`/`u32`/`f32`）为 **2 / 4 / 8 / 16 次** 4 通道调用（连续 `lanes` 块）。否则为该名提供逐通道标量体。表达式内**不**使用预处理器分支（见规范变更 0.49.10、0.49.16、0.49.17、0.49.18、0.49.19、0.49.20、0.49.21、0.49.22、0.49.23、0.49.24、0.49.25、0.49.26、0.49.27、0.49.28、**0.49.29**、**0.49.30**）。
    - **第一阶段暂缓**：
      - 标量广播语法糖，如 `vec + 1`
-     - **`@vector.store` / `@vector.select` / `shuffle` / `reduce`**（**`@vector.load`** 已于 **0.49.33** 纳入，见规范变更）
+     - **`@vector.select` / `shuffle` / `reduce`**（**`@vector.load` / `@vector.store`** 已于 **0.49.33** / **0.49.34** 纳入，见规范变更）
      - `widen/truncate/bitcast/convert`
      - 自动向量化
      - 新的目标特性查询内建
