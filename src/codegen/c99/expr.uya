@@ -4016,6 +4016,106 @@ fn c99_collect_simd_reduce_mul_emit_flags_from_call(codegen: &C99CodeGenerator, 
     }
 }
 
+fn c99_collect_simd_reduce_min_emit_flags_from_call(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+    if codegen == null || expr == null || c99_expr_is_vector_reduce_min(expr) == 0 {
+        return;
+    }
+    if expr.call_expr_arg_count < 1 || expr.call_expr_args == null || expr.call_expr_args[0] == null {
+        return;
+    }
+    var target_rmin: &ASTNode = expr.simd_splat_target_type;
+    if target_rmin == null {
+        target_rmin = c99_resolve_simd_type_ast_from_expr(codegen, expr.call_expr_args[0]);
+    }
+    if target_rmin == null || target_rmin.type != ASTNodeType.AST_TYPE_VECTOR ||
+        target_rmin.type_vector_element_type == null || target_rmin.type_vector_size_expr == null {
+        return;
+    }
+    const lanes_rmin: i32 = eval_const_expr(codegen, target_rmin.type_vector_size_expr);
+    const elem_c_rmin: &byte = c99_type_to_c(codegen, target_rmin.type_vector_element_type);
+    const elem_base_rmin: &byte = c99_type_c_skip_const(elem_c_rmin);
+    if elem_base_rmin == null {
+        return;
+    }
+    if lanes_rmin == 4 {
+        if strcmp(elem_base_rmin as *byte, "int32_t" as *byte) == 0 {
+            codegen.simd_emit_reduce_min_i32x4 = 1;
+            return;
+        }
+        if strcmp(elem_base_rmin as *byte, "uint32_t" as *byte) == 0 {
+            codegen.simd_emit_reduce_min_u32x4 = 1;
+            return;
+        }
+        if strcmp(elem_base_rmin as *byte, "float" as *byte) == 0 {
+            codegen.simd_emit_reduce_min_f32x4 = 1;
+        }
+        return;
+    }
+    if lanes_rmin == 2 {
+        if strcmp(elem_base_rmin as *byte, "int32_t" as *byte) == 0 {
+            codegen.simd_emit_reduce_min_i32x2 = 1;
+            return;
+        }
+        if strcmp(elem_base_rmin as *byte, "uint32_t" as *byte) == 0 {
+            codegen.simd_emit_reduce_min_u32x2 = 1;
+            return;
+        }
+        if strcmp(elem_base_rmin as *byte, "float" as *byte) == 0 {
+            codegen.simd_emit_reduce_min_f32x2 = 1;
+        }
+    }
+}
+
+fn c99_collect_simd_reduce_max_emit_flags_from_call(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+    if codegen == null || expr == null || c99_expr_is_vector_reduce_max(expr) == 0 {
+        return;
+    }
+    if expr.call_expr_arg_count < 1 || expr.call_expr_args == null || expr.call_expr_args[0] == null {
+        return;
+    }
+    var target_rmax: &ASTNode = expr.simd_splat_target_type;
+    if target_rmax == null {
+        target_rmax = c99_resolve_simd_type_ast_from_expr(codegen, expr.call_expr_args[0]);
+    }
+    if target_rmax == null || target_rmax.type != ASTNodeType.AST_TYPE_VECTOR ||
+        target_rmax.type_vector_element_type == null || target_rmax.type_vector_size_expr == null {
+        return;
+    }
+    const lanes_rmax: i32 = eval_const_expr(codegen, target_rmax.type_vector_size_expr);
+    const elem_c_rmax: &byte = c99_type_to_c(codegen, target_rmax.type_vector_element_type);
+    const elem_base_rmax: &byte = c99_type_c_skip_const(elem_c_rmax);
+    if elem_base_rmax == null {
+        return;
+    }
+    if lanes_rmax == 4 {
+        if strcmp(elem_base_rmax as *byte, "int32_t" as *byte) == 0 {
+            codegen.simd_emit_reduce_max_i32x4 = 1;
+            return;
+        }
+        if strcmp(elem_base_rmax as *byte, "uint32_t" as *byte) == 0 {
+            codegen.simd_emit_reduce_max_u32x4 = 1;
+            return;
+        }
+        if strcmp(elem_base_rmax as *byte, "float" as *byte) == 0 {
+            codegen.simd_emit_reduce_max_f32x4 = 1;
+        }
+        return;
+    }
+    if lanes_rmax == 2 {
+        if strcmp(elem_base_rmax as *byte, "int32_t" as *byte) == 0 {
+            codegen.simd_emit_reduce_max_i32x2 = 1;
+            return;
+        }
+        if strcmp(elem_base_rmax as *byte, "uint32_t" as *byte) == 0 {
+            codegen.simd_emit_reduce_max_u32x2 = 1;
+            return;
+        }
+        if strcmp(elem_base_rmax as *byte, "float" as *byte) == 0 {
+            codegen.simd_emit_reduce_max_f32x2 = 1;
+        }
+    }
+}
+
 fn c99_expr_is_vector_reduce_min(expr: &ASTNode) i32 {
     if expr == null || expr.type != ASTNodeType.AST_CALL_EXPR {
         return 0;
@@ -4055,27 +4155,78 @@ fn c99_gen_simd_reduce_min_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 
     const lanes_rmin: i32 = eval_const_expr(codegen, target_rmin.type_vector_size_expr);
     const elem_ty_rmin: &ASTNode = target_rmin.type_vector_element_type;
     const elem_c_rmin: &byte = c99_type_to_c(codegen, elem_ty_rmin);
-    const v_nm: &byte = c99_make_temp_name(codegen, "__uya_rmin_v_" as &byte);
-    const s_nm: &byte = c99_make_temp_name(codegen, "__uya_rmin_s_" as &byte);
-    const i_nm: &byte = c99_make_temp_name(codegen, "__uya_rmin_i_" as &byte);
-    if vec_c == null || lanes_rmin <= 0 || elem_c_rmin == null || v_nm == null || s_nm == null || i_nm == null {
+    var v_nm: &byte = c99_make_temp_name(codegen, "__uya_rmin_v_" as &byte);
+    var s_nm: &byte = c99_make_temp_name(codegen, "__uya_rmin_s_" as &byte);
+    if vec_c == null || lanes_rmin <= 0 || elem_c_rmin == null || v_nm == null || s_nm == null {
         return 0;
     }
-    fputs("({ " as *byte, codegen.output as *void);
-    fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
-    gen_expr(codegen, expr.call_expr_args[0]);
-    fputs("; " as *byte, codegen.output as *void);
-    fprintf(codegen.output as *void, "%s %s = %s.lanes[0]; " as *byte, elem_c_rmin as *byte, s_nm as *byte, v_nm as *byte);
-    fprintf(codegen.output as *void, "int %s = 1; " as *byte, i_nm as *byte);
-    fprintf(codegen.output as *void, "while (%s < %d) { " as *byte, i_nm as *byte, lanes_rmin);
-    fprintf(codegen.output as *void, "if (%s.lanes[%s] < %s) { %s = %s.lanes[%s]; } " as *byte,
-        v_nm as *byte, i_nm as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, i_nm as *byte);
-    fprintf(codegen.output as *void, "%s = %s + 1; } " as *byte, i_nm as *byte, i_nm as *byte);
-    fprintf(codegen.output as *void, "%s; })" as *byte, s_nm as *byte);
+    // i32/u32/f32 ×2/×4：优先 SSE helpers（SSE4.1 _mm_min_epi32 等在 helpers 内带条件编译）
+    if lanes_rmin == 2 {
+        if str_equals(elem_c_rmin, "int32_t") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_min_i32x2(&%s, &%s); %s; })" as *byte, elem_c_rmin as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+        if str_equals(elem_c_rmin, "uint32_t") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_min_u32x2(&%s, &%s); %s; })" as *byte, elem_c_rmin as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+        if str_equals(elem_c_rmin, "float") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_min_f32x2(&%s, &%s); %s; })" as *byte, elem_c_rmin as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+    }
+    if lanes_rmin == 4 {
+        if str_equals(elem_c_rmin, "int32_t") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_min_i32x4(&%s, &%s); %s; })" as *byte, elem_c_rmin as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+        if str_equals(elem_c_rmin, "uint32_t") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_min_u32x4(&%s, &%s); %s; })" as *byte, elem_c_rmin as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+        if str_equals(elem_c_rmin, "float") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_min_f32x4(&%s, &%s); %s; })" as *byte, elem_c_rmin as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+    }
+    // x8 或不支持类型：标量 while 循环
+    {
+        const i_nm: &byte = c99_make_temp_name(codegen, "__uya_rmin_i_" as &byte);
+        if i_nm == null { return 0; }
+        fputs("({ " as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+        gen_expr(codegen, expr.call_expr_args[0]);
+        fputs("; " as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "%s %s = %s.lanes[0]; " as *byte, elem_c_rmin as *byte, s_nm as *byte, v_nm as *byte);
+        fprintf(codegen.output as *void, "int %s = 1; " as *byte, i_nm as *byte);
+        fprintf(codegen.output as *void, "while (%s < %d) { " as *byte, i_nm as *byte, lanes_rmin);
+        fprintf(codegen.output as *void, "if (%s.lanes[%s] < %s) { %s = %s.lanes[%s]; } " as *byte,
+            v_nm as *byte, i_nm as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, i_nm as *byte);
+        fprintf(codegen.output as *void, "%s = %s + 1; } " as *byte, i_nm as *byte, i_nm as *byte);
+        fprintf(codegen.output as *void, "%s; })" as *byte, s_nm as *byte);
+    }
     return 1;
 }
 
-// @vector.reduce_max(v)：标量 while 循环取最大值
+// @vector.reduce_max(v)：SSE/NEON ×2/×4 fast path + 标量 fallback
 fn c99_gen_simd_reduce_max_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
     if expr.call_expr_arg_count != 1 || expr.call_expr_args == null || expr.call_expr_args[0] == null {
         return 0;
@@ -4092,23 +4243,74 @@ fn c99_gen_simd_reduce_max_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 
     const lanes_rmax: i32 = eval_const_expr(codegen, target_rmax.type_vector_size_expr);
     const elem_ty_rmax: &ASTNode = target_rmax.type_vector_element_type;
     const elem_c_rmax: &byte = c99_type_to_c(codegen, elem_ty_rmax);
-    const v_nm: &byte = c99_make_temp_name(codegen, "__uya_rmax_v_" as &byte);
-    const s_nm: &byte = c99_make_temp_name(codegen, "__uya_rmax_s_" as &byte);
-    const i_nm: &byte = c99_make_temp_name(codegen, "__uya_rmax_i_" as &byte);
-    if vec_c == null || lanes_rmax <= 0 || elem_c_rmax == null || v_nm == null || s_nm == null || i_nm == null {
+    var v_nm: &byte = c99_make_temp_name(codegen, "__uya_rmax_v_" as &byte);
+    var s_nm: &byte = c99_make_temp_name(codegen, "__uya_rmax_s_" as &byte);
+    if vec_c == null || lanes_rmax <= 0 || elem_c_rmax == null || v_nm == null || s_nm == null {
         return 0;
     }
-    fputs("({ " as *byte, codegen.output as *void);
-    fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
-    gen_expr(codegen, expr.call_expr_args[0]);
-    fputs("; " as *byte, codegen.output as *void);
-    fprintf(codegen.output as *void, "%s %s = %s.lanes[0]; " as *byte, elem_c_rmax as *byte, s_nm as *byte, v_nm as *byte);
-    fprintf(codegen.output as *void, "int %s = 1; " as *byte, i_nm as *byte);
-    fprintf(codegen.output as *void, "while (%s < %d) { " as *byte, i_nm as *byte, lanes_rmax);
-    fprintf(codegen.output as *void, "if (%s.lanes[%s] > %s) { %s = %s.lanes[%s]; } " as *byte,
-        v_nm as *byte, i_nm as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, i_nm as *byte);
-    fprintf(codegen.output as *void, "%s = %s + 1; } " as *byte, i_nm as *byte, i_nm as *byte);
-    fprintf(codegen.output as *void, "%s; })" as *byte, s_nm as *byte);
+    // i32/u32/f32 ×2/×4：优先 SSE helpers（SSE4.1 _mm_max_epi32 等在 helpers 内带条件编译）
+    if lanes_rmax == 2 {
+        if str_equals(elem_c_rmax, "int32_t") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_max_i32x2(&%s, &%s); %s; })" as *byte, elem_c_rmax as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+        if str_equals(elem_c_rmax, "uint32_t") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_max_u32x2(&%s, &%s); %s; })" as *byte, elem_c_rmax as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+        if str_equals(elem_c_rmax, "float") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_max_f32x2(&%s, &%s); %s; })" as *byte, elem_c_rmax as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+    }
+    if lanes_rmax == 4 {
+        if str_equals(elem_c_rmax, "int32_t") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_max_i32x4(&%s, &%s); %s; })" as *byte, elem_c_rmax as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+        if str_equals(elem_c_rmax, "uint32_t") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_max_u32x4(&%s, &%s); %s; })" as *byte, elem_c_rmax as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+        if str_equals(elem_c_rmax, "float") != 0 {
+            fputs("({ " as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+            gen_expr(codegen, expr.call_expr_args[0]);
+            fprintf(codegen.output as *void, "; %s %s; uya_simd_sse_reduce_max_f32x4(&%s, &%s); %s; })" as *byte, elem_c_rmax as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, s_nm as *byte);
+            return 1;
+        }
+    }
+    // x8 或不支持类型：标量 while 循环
+    {
+        const i_nm: &byte = c99_make_temp_name(codegen, "__uya_rmax_i_" as &byte);
+        if i_nm == null { return 0; }
+        fputs("({ " as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+        gen_expr(codegen, expr.call_expr_args[0]);
+        fputs("; " as *byte, codegen.output as *void);
+        fprintf(codegen.output as *void, "%s %s = %s.lanes[0]; " as *byte, elem_c_rmax as *byte, s_nm as *byte, v_nm as *byte);
+        fprintf(codegen.output as *void, "int %s = 1; " as *byte, i_nm as *byte);
+        fprintf(codegen.output as *void, "while (%s < %d) { " as *byte, i_nm as *byte, lanes_rmax);
+        fprintf(codegen.output as *void, "if (%s.lanes[%s] > %s) { %s = %s.lanes[%s]; } " as *byte,
+            v_nm as *byte, i_nm as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, i_nm as *byte);
+        fprintf(codegen.output as *void, "%s = %s + 1; } " as *byte, i_nm as *byte, i_nm as *byte);
+        fprintf(codegen.output as *void, "%s; })" as *byte, s_nm as *byte);
+    }
     return 1;
 }
 
