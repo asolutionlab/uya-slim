@@ -298,55 +298,78 @@ check: b
 	@echo "=========================================="
 	@echo "运行测试验证..."
 	@echo "=========================================="
-	@CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99; \
+	@CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" \
+		HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" \
+		TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" \
+		TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" \
+		RUNTIME_MODE=nostdlib LINK_MODE=static \
+		./tests/run_programs_parallel.sh --uya --c99 --hide-pass > /tmp/make_check_output.txt 2>&1; \
 	TEST_EXIT=$$?; \
-	if [ $$TEST_EXIT -ne 0 ]; then \
-		echo ""; \
-		echo "✗ 测试失败"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "验证证明优化..."
-	@./tests/verify_proof_optimization.sh; \
+	rm -f /tmp/uya_test_summary.txt; \
+	echo ""; \
+	echo "验证证明优化..."; \
+	./tests/verify_proof_optimization.sh > /tmp/verify_out.txt 2>&1 && \
+		grep -E "✓|✗|证明优化" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ 证明优化验证失败"; \
 		exit 1; \
-	fi
-	@echo ""
-	@echo "验证函数可达性裁剪..."
-	@./tests/verify_function_reachability_codegen.sh; \
+	fi; \
+	echo ""; \
+	echo "验证函数可达性裁剪..."; \
+	./tests/verify_function_reachability_codegen.sh > /tmp/verify_out.txt 2>&1 && \
+		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ 函数可达性裁剪验证失败"; \
 		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 SIMD @vector.select C 按需生成..."
-	@./tests/verify_simd_select_c_emit.sh; \
+	fi; \
+	echo ""; \
+	echo "验证 SIMD @vector.select C 按需生成..."; \
+	./tests/verify_simd_select_c_emit.sh > /tmp/verify_out.txt 2>&1 && \
+		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ SIMD select C 按需生成验证失败"; \
 		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 @syscall C99（Linux AArch64 / ARM32 交叉）..."
-	@ZIG="$(ZIG)" ./tests/verify_syscall_c99_cross.sh; \
+	fi; \
+	echo ""; \
+	echo "验证 @syscall C99（Linux AArch64 / ARM32 交叉）..."; \
+	ZIG="$(ZIG)" ./tests/verify_syscall_c99_cross.sh > /tmp/verify_out.txt 2>&1 && \
+		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ @syscall C99 交叉目标验证失败"; \
 		exit 1; \
-	fi
-	@echo ""
-	@echo "验证 SIMD C99（ARM NEON 片段交叉编译）..."
-	@ZIG="$(ZIG)" ./tests/verify_simd_c99_neon.sh; \
+	fi; \
+	echo ""; \
+	echo "验证 SIMD C99（ARM NEON 片段交叉编译）..."; \
+	ZIG="$(ZIG)" ./tests/verify_simd_c99_neon.sh > /tmp/verify_out.txt 2>&1 && \
+		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ SIMD C99 NEON 验证失败"; \
 		exit 1; \
-	fi
-	@echo ""
-	@echo "✓ 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪 + SIMD select C + @syscall C99 + SIMD NEON）"
+	fi; \
+	echo ""; \
+	echo "=========================================="; \
+	echo "测试结果："; \
+	echo "=========================================="; \
+	if [ $$TEST_EXIT -ne 0 ]; then \
+		echo "测试执行失败（退出码: $$TEST_EXIT）"; \
+		grep -E "FAIL|PASS|ERROR" /tmp/make_check_output.txt | tail -20; \
+		rm -f /tmp/make_check_output.txt /tmp/verify_out.txt; \
+		exit 1; \
+	fi; \
+	if [ -f /tmp/uya_test_summary.txt ]; then \
+		cat /tmp/uya_test_summary.txt; \
+		rm -f /tmp/uya_test_summary.txt; \
+	else \
+		grep -E "总计|通过|失败" /tmp/make_check_output.txt | tail -5; \
+	fi; \
+	rm -f /tmp/make_check_output.txt /tmp/verify_out.txt; \
+	echo ""; \
+	echo "✓ 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪 + SIMD select C + @syscall C99 + SIMD NEON）"
 
 # hosted 验证：普通链接自举 + 主测试 + 证明优化
 check-hosted: b-hosted

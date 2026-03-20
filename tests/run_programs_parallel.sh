@@ -207,7 +207,6 @@ fi
 if [ "$ERRORS_ONLY" = false ]; then
     echo "开始运行 Uya 测试程序（并行版本，${PARALLEL_JOBS} 线程）..."
     echo "使用编译器: $COMPILER"
-    echo "（Uya 自举编译器）"
     if [ -n "$TARGET_PATH" ]; then
         echo "目标: $TARGET_PATH"
     fi
@@ -632,6 +631,13 @@ if [ "$ERRORS_ONLY" = false ] || [ $FAILED -gt 0 ]; then
     NOT_COUNTED=$((TOTAL_TESTS - PASSED - FAILED))
     [ "$NOT_COUNTED" -gt 0 ] && echo "未计入: $NOT_COUNTED"
     echo "================================"
+    # 同步写入文件，供 make check 等上层脚本在所有输出结束后提取
+    {
+        echo "总计: $TOTAL_TESTS 个测试"
+        echo "通过: $PASSED"
+        echo "失败: $FAILED"
+        [ "$NOT_COUNTED" -gt 0 ] && echo "未计入: $NOT_COUNTED"
+    } > /tmp/uya_test_summary.txt
 fi
 
 if [ $FAILED -eq 0 ]; then
