@@ -30,7 +30,7 @@ std/async/
 │   ├── linux.uya   # epoll / io_uring
 │   ├── macos.uya   # kqueue
 │   └── windows.uya # IOCP
-├── channel.uya     # Channel<T>, MpscChannel<T>
+├── async_channel.uya # Channel<T>, MpscChannel<T>
 └── scheduler.uya   # Scheduler 事件循环调度器
 ```
 
@@ -196,17 +196,17 @@ fn fetch_and_write(reader: &AsyncReader, writer: &AsyncWriter) !Future<void> {
 
 ## 4. std.async.channel - 异步通道
 
-- [ ] **Channel\<T\>**：
-  - 异步通道，用于异步任务间通信
-  - 基于 `atomic T` 和 `union` 实现
-  - 零运行时锁，编译期验证并发安全
+- [x] **Channel\<T\>**：
+  - 单槽异步通道，用于异步任务间通信
+  - 当前提供 `send/recv -> Future<_>` 最小接口
+  - 兼容保留 `Channel_i32`、`Channel_usize`
 
-- [ ] **MpscChannel\<T\>**：
-  - 多生产者单消费者通道
-  - 基于原子操作实现
-  - 编译期验证 Send/Sync 约束
+- [x] **MpscChannel\<T\>**：
+  - 多生产者、单消费者、运行时容量版通道
+  - 当前以原子锁 + 环形队列实现，容量由调用方传入
+  - 已覆盖单槽 Pending 与多槽 FIFO/环回；Send/Sync 约束推导仍待后续实现
 
-**涉及**：新建 `std/async/channel.uya`
+**涉及**：`lib/std/async_channel.uya`、`lib/std/collections/ring_queue.uya`
 
 ## 5. std.async.scheduler - 调度器
 

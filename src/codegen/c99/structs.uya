@@ -2279,10 +2279,30 @@ fn gen_mono_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode,
                 return -1;
             }
             
-            // 使用单态化类型转换（c99_type_to_c 已支持单态化上下文中的类型替换）
-            const field_type_c: &byte = c99_type_to_c(codegen, field_type);
-            c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "%s %s;\n" as *byte, field_type_c as *byte, field_name as *byte);
+            var emit_field_type: &ASTNode = field_type;
+            const resolved_field_type: &ASTNode = substitute_type_arg(codegen, field_type);
+            if resolved_field_type != null {
+                emit_field_type = resolved_field_type;
+            }
+
+            if emit_field_type != null && emit_field_type.type == ASTNodeType.AST_TYPE_ARRAY {
+                const element_type: &ASTNode = emit_field_type.type_array_element_type;
+                const size_expr: &ASTNode = emit_field_type.type_array_size_expr;
+                const elem_type_c: &byte = c99_type_to_c(codegen, element_type);
+                var array_size: i32 = 1;
+                if size_expr != null {
+                    array_size = eval_const_expr(codegen, size_expr);
+                    if array_size <= 0 {
+                        array_size = 1;
+                    }
+                }
+                c99_emit_indent(codegen);
+                fprintf(codegen.output as *void, "%s %s[%d];\n" as *byte, elem_type_c as *byte, field_name as *byte, array_size);
+            } else {
+                const field_type_c: &byte = c99_type_to_c(codegen, emit_field_type);
+                c99_emit_indent(codegen);
+                fprintf(codegen.output as *void, "%s %s;\n" as *byte, field_type_c as *byte, field_name as *byte);
+            }
             fi = fi + 1;
         }
     }

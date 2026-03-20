@@ -1,0 +1,125 @@
+// lib/std/collections/ring_queue.uya - 环形队列
+//
+// 模块路径：use std.collections.ring_queue
+
+extern fn malloc(size: usize) &void;
+extern fn free(ptr: &void) void;
+
+error RingQueueFull;
+error RingQueueEmpty;
+error RingQueueInvalidCapacity;
+error RingQueueAllocFailed;
+
+fn ring_queue_next_index(idx: i32, capacity: i32) i32 {
+    const next: i32 = idx + 1;
+    if next >= capacity {
+        return 0;
+    }
+    return next;
+}
+
+export struct RingQueue<T> {
+    _head: i32,
+    _tail: i32,
+    _len: i32,
+    _capacity: i32,
+    _slot: &void,
+
+    fn len(self: &Self) i32 {
+        return self._len;
+    }
+
+    fn capacity(self: &Self) i32 {
+        return self._capacity;
+    }
+
+    fn is_empty(self: &Self) bool {
+        return self._len == 0;
+    }
+
+    fn is_full(self: &Self) bool {
+        return self._len >= self._capacity;
+    }
+
+    fn push(self: &Self, value: T) !i32 {
+        if self._capacity <= 0 {
+            return error.RingQueueInvalidCapacity;
+        }
+        if self._slot == null as &void {
+            return error.RingQueueAllocFailed;
+        }
+        if self.is_full() {
+            return error.RingQueueFull;
+        }
+
+        const slot: &T = self._slot as &T;
+        const idx: usize = self._tail as usize;
+        slot[idx] = value;
+        self._tail = ring_queue_next_index(self._tail, self._capacity);
+        self._len = self._len + 1;
+        return 0;
+    }
+
+    fn pop(self: &Self) !T {
+        if self._capacity <= 0 {
+            return error.RingQueueInvalidCapacity;
+        }
+        if self._slot == null as &void {
+            return error.RingQueueAllocFailed;
+        }
+        if self.is_empty() {
+            return error.RingQueueEmpty;
+        }
+
+        const slot: &T = self._slot as &T;
+        const idx: usize = self._head as usize;
+        const value: T = slot[idx];
+        self._head = ring_queue_next_index(self._head, self._capacity);
+        self._len = self._len - 1;
+        return value;
+    }
+
+    fn deinit(self: &Self) void {
+        if self._slot == null as &void {
+            self._head = 0;
+            self._tail = 0;
+            self._len = 0;
+            self._capacity = 0;
+            return;
+        }
+
+        while self._len > 0 {
+            {
+                const drained: T = self.pop() catch { break; };
+            }
+        }
+
+        free(self._slot);
+        self._slot = null as &void;
+        self._head = 0;
+        self._tail = 0;
+        self._len = 0;
+        self._capacity = 0;
+    }
+}
+
+export fn ring_queue_new<T>(capacity: i32) RingQueue<T> {
+    if capacity <= 0 {
+        return RingQueue<T>{ _head: 0, _tail: 0, _len: 0, _capacity: capacity, _slot: null as &void };
+    }
+
+    var sample: [T: 1] = [];
+    const alloc_size: usize = (@size_of(sample[0]) as usize) * (capacity as usize);
+    const slot_mem: &void = malloc(alloc_size);
+    if slot_mem == null as &void {
+        return RingQueue<T>{ _head: 0, _tail: 0, _len: 0, _capacity: capacity, _slot: null as &void };
+    }
+
+    return RingQueue<T>{
+        _head: 0,
+        _tail: 0,
+        _len: 0,
+        _capacity: capacity,
+        _slot: slot_mem,
+    };
+}

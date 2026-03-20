@@ -5645,14 +5645,21 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
 fn gen_sizeof_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const target: &ASTNode = expr.sizeof_expr_target;
         const is_type: i32 = expr.sizeof_expr_is_type;
+        var emit_target: &ASTNode = target;
+        if target != null && is_type != 0 {
+            const resolved_target: &ASTNode = substitute_type_arg(codegen, target);
+            if resolved_target != null {
+                emit_target = resolved_target;
+            }
+        }
         // @size_of 返回 i32，需要显式转换为 int32_t 避免无符号算术警告
         fputs("(int32_t)sizeof(" as *byte, codegen.output as *void);
-        if target == null {
+        if emit_target == null {
             fputs("int" as *byte, codegen.output as *void);
         } else if is_type != 0 {
             // 显式检查是否是结构体类型（即使在 c99_type_to_c 中查找失败）
-            if target.type == ASTNodeType.AST_TYPE_NAMED {
-                const name: &byte = target.type_named_name;
+            if emit_target.type == ASTNodeType.AST_TYPE_NAMED {
+                const name: &byte = emit_target.type_named_name;
                 if name != null && is_c_keyword(name) == 0 {
                     // 检查是否是结构体（检查是否在表中，不管是否已定义）
                     const safe_name: &byte = get_safe_c_identifier(codegen, name);
@@ -5681,20 +5688,20 @@ fn gen_sizeof_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             }
                             if found == 0 {
                                 // 不是结构体，使用默认类型转换
-                                const type_c: &byte = c99_type_to_c(codegen, target);
+                                const type_c: &byte = c99_type_to_c(codegen, emit_target);
                                 fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
                             }
                         } else {
-                            const type_c: &byte = c99_type_to_c(codegen, target);
+                            const type_c: &byte = c99_type_to_c(codegen, emit_target);
                             fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
                         }
                     }
                 } else {
-                    const type_c: &byte = c99_type_to_c(codegen, target);
+                    const type_c: &byte = c99_type_to_c(codegen, emit_target);
                     fprintf(codegen.output as *void, "%s" as *byte, type_c as *byte);
                 }
             } else {
-                const type_c: &byte = c99_type_to_c(codegen, target);
+                const type_c: &byte = c99_type_to_c(codegen, emit_target);
                 // 检查是否是数组指针类型（包含 [数字] *，且 * 在末尾）
                 const bracket: *byte = strchr(type_c as *byte, 91);  // '['
                 const asterisk: *byte = strrchr(type_c as *byte, 42);  // '*' 从后往前找最后一个 *
@@ -5906,9 +5913,20 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             saved_stp_count = codegen.struct_type_param_count;
             saved_sta = codegen.struct_type_args;
             saved_sta_count = codegen.struct_type_arg_count;
+            var resolved_init_args: & & ASTNode = expr.struct_init_type_args;
+            const resolved_count: i32 = expr.struct_init_type_arg_count;
+            const resolved_buf: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode) * resolved_count) as & & ASTNode;
+            if resolved_buf != null {
+                var rai: i32 = 0;
+                while rai < resolved_count {
+                    resolved_buf[rai] = substitute_type_arg(codegen, expr.struct_init_type_args[rai]);
+                    rai = rai + 1;
+                }
+                resolved_init_args = resolved_buf;
+            }
             codegen.struct_type_params = struct_decl.struct_decl_type_params;
             codegen.struct_type_param_count = struct_decl.struct_decl_type_param_count;
-            codegen.struct_type_args = expr.struct_init_type_args;
+            codegen.struct_type_args = resolved_init_args;
             codegen.struct_type_arg_count = expr.struct_init_type_arg_count;
         }
         
