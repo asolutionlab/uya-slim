@@ -486,6 +486,7 @@ if [ "$HOST_OS" = "macos" ] && [ "${SKIP_DARWIN_DEFAULT:-1}" != "0" ]; then
         test_syscall_time
         test_syscall_user
         test_syscall_write
+        syscall_c99_cross
     )
     if [ "$ERRORS_ONLY" = false ]; then
         echo "提示: 宿主为 macOS，已默认跳过 Linux syscall/async 相关用例（SKIP_DARWIN_DEFAULT=0 可关闭）"

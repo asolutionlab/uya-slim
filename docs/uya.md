@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.27（完整版 · 2026-03-20）
+# Uya 语言规范 0.49.28（完整版 · 2026-03-19）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -54,6 +54,10 @@
 
 ## 规范变更
 
+### 0.49.28（2026-03-19）
+
+- **SIMD**：**`2×/4×f64` 向量 `+` / `-` / 一元 `-`**（`uya_simd_sse_add_f64x2`、`sub_f64x2`、`neg_f64x2`）；**`4×/8×i16`** 增补 **六种比较**、**一元 `-`**、**`@vector.splat` 快路径**（**4×** 使用 **`_i16x4` / `_i16x4_mask`** 等 **64 位** 访存，**8×** 使用 **`_i16x8`**）；**`4×/8×u16` 向量 `+` / `-` / `*` 与六种比较、`splat`**（`**_u16x4` / `_u16x8`** 等，无符号比较在 SSE 上为 **0x8000 bias + 有符号比较**）。
+
 ### 0.49.27（2026-03-20）
 
 - **SIMD**：新增 `4×/8×i16` 向量 `-` / `*` C99 快路径（`uya_simd_sse_sub_i16x8`、`uya_simd_sse_mul_i16x8`，SSE2 `__m128i` / NEON `int16x8_t` / 标量；4× 复用 8× 助手）。
@@ -108,7 +112,7 @@
 ### 0.49.16（2026-03-19）
 
 - **C99 SIMD lowering（ARM NEON）**：在 **`(GCC 或 Clang) && defined(__ARM_NEON)`** 时，生成的 C 在 **`#elif UYA_HAVE_SIMD_ARM_NEON`** 分支内 **`#include <arm_neon.h>`**，对既有 **`uya_simd_sse_*`** 助手名提供 **4×`i32`/`u32`/`f32`** 的 NEON 实现（与 x86_64 的 **`#if UYA_HAVE_SIMD_X86_SSE`** 择一；**`#else`** 仍为逐通道标量）。**`expr.uya` 调用名不变**（历史命名保留）。
-- **验证**：`tests/verify_simd_c99_neon.sh`（夹具 `tests/fixtures/simd_c99_neon.uya`；`zig cc` 对抽出之 NEON 片段做 **AArch64** 与 **arm-linux-gnueabihf + NEON** 交叉 `-c`，避免完整生成 C 与交叉 libc `stdint`  typedef 冲突）。
+- **验证**：`tests/verify_simd_c99_neon.sh`（源 `tests/simd_c99_neon.uya`，与默认并行测试共用；`zig cc` 对抽出之 NEON 片段做 **AArch64** 与 **arm-linux-gnueabihf + NEON** 交叉 `-c`，避免完整生成 C 与交叉 libc `stdint`  typedef 冲突）。
 
 ### 0.49.15（2026-03-19）
 
@@ -4725,7 +4729,7 @@ fn caller() void {
      - 基本算术、整数位运算、比较、掩码逻辑运算
      - `@vector.splat`、`@vector.any`、`@vector.all`
      - 语义正确的标量回退 lowering
-     - **C99 快路径**（阶段 4 起）：**x86_64 + SSE2**（`UYA_HAVE_SIMD_X86_SSE`）或 **ARM/AArch64 + NEON**（`UYA_HAVE_SIMD_ARM_NEON`，`<arm_neon.h>`）下，对 **4 通道** `i32`/`u32`/`f32` 的部分运算与向量比较通过同名 **`uya_simd_sse_*`** `static inline` 实现（**`i32` 向量 `/` `%`**：`uya_simd_sse_div_i32x4`、`uya_simd_sse_rem_i32x4`，0.49.22–0.49.23；**`u32` 向量 `* / %`**：`uya_simd_sse_mul_u32x4`、`uya_simd_sse_div_u32x4`、`uya_simd_sse_rem_u32x4`，0.49.20–0.49.23；**`i32`/`u32` 向量 `<<` `>>`**：`uya_simd_sse_shl_i32x4`、`uya_simd_sse_shr_i32x4`、`uya_simd_sse_shl_u32x4`、`uya_simd_sse_shr_u32x4`，0.49.24；**`f64` 向量 `* /`**：`uya_simd_sse_mul_f64x2`、`uya_simd_sse_div_f64x2`，0.49.25，支持 **2×/4×** 通道；**`i16` 向量 `+` / `-` / `*` / `==`**：`uya_simd_sse_add_i16x8`、`uya_simd_sse_sub_i16x8`、`uya_simd_sse_mul_i16x8`、`uya_simd_sse_eq_i16x8_mask`，0.49.26–0.49.27，支持 **4×/8×** 通道）；**8 / 16 / 32 / 64 通道**为 **2 / 4 / 8 / 16 次** 4 通道调用（连续 `lanes` 块；**2 通道**仍为逐通道）。否则为该名提供逐通道标量体。表达式内**不**使用预处理器分支（见规范变更 0.49.10、0.49.16、0.49.17、0.49.18、0.49.19、0.49.20、0.49.21、0.49.22、0.49.23、0.49.24、0.49.25、0.49.26、**0.49.27**）。
+     - **C99 快路径**（阶段 4 起）：**x86_64 + SSE2**（`UYA_HAVE_SIMD_X86_SSE`）或 **ARM/AArch64 + NEON**（`UYA_HAVE_SIMD_ARM_NEON`，`<arm_neon.h>`）下，对 **4 通道** `i32`/`u32`/`f32` 的部分运算与向量比较通过同名 **`uya_simd_sse_*`** `static inline` 实现（**`i32` 向量 `/` `%`**：`uya_simd_sse_div_i32x4`、`uya_simd_sse_rem_i32x4`，0.49.22–0.49.23；**`u32` 向量 `* / %`**：`uya_simd_sse_mul_u32x4`、`uya_simd_sse_div_u32x4`、`uya_simd_sse_rem_u32x4`，0.49.20–0.49.23；**`i32`/`u32` 向量 `<<` `>>`**：`uya_simd_sse_shl_i32x4`、`uya_simd_sse_shr_i32x4`、`uya_simd_sse_shl_u32x4`、`uya_simd_sse_shr_u32x4`，0.49.24；**`f64` 向量 `+` / `-` / `* /` / 一元 `-`**：`uya_simd_sse_add_f64x2`、`uya_simd_sse_sub_f64x2`、`uya_simd_sse_mul_f64x2`、`uya_simd_sse_div_f64x2`、`uya_simd_sse_neg_f64x2`，0.49.25–0.49.28，支持 **2×/4×** 通道；**`i16` 向量 `+` / `-` / `*` 与六种比较、一元 `-`、`splat`**：`uya_simd_sse_add_i16x4`/`x8`、`sub_*`、`mul_*`、`eq`/`ne`/`lt`/`gt`/`le`/`ge` 的 **`_i16x4_mask` / `_i16x8_mask`**、`neg_i16x4`/`x8`、`splat_i16x4`/`x8`，0.49.26–0.49.28，**4×** 为 **64 位** SIMD 块、**8×** 为 **128 位**；**`u16` 向量 `+` / `-` / `*` 与六种比较、`splat`**：`add`/`sub`/`mul`/`eq`/`ne`/`lt`/`gt`/`le`/`ge` 的 **`_u16x4` / `_u16x8`** 与 **`splat_u16x4`/`x8`**，0.49.28）；**8 / 16 / 32 / 64 通道**为 **2 / 4 / 8 / 16 次** 4 通道调用（连续 `lanes` 块；**2 通道**仍为逐通道）。否则为该名提供逐通道标量体。表达式内**不**使用预处理器分支（见规范变更 0.49.10、0.49.16、0.49.17、0.49.18、0.49.19、0.49.20、0.49.21、0.49.22、0.49.23、0.49.24、0.49.25、0.49.26、0.49.27、**0.49.28**）。
    - **第一阶段暂缓**：
      - 标量广播语法糖，如 `vec + 1`
      - `load/store/select/shuffle/reduce`

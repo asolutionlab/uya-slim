@@ -1,9 +1,12 @@
-// 夹具：触发 emit_simd_* 运行时助手，供 AArch64/ARM NEON 交叉编译 C 验证
+// 触发 emit_simd_* 运行时助手：`verify_simd_c99_neon.sh` 交叉编译 NEON 片段；亦纳入 `run_programs_parallel` 默认套件
 type Vec4i32 = @vector(i32, 4);
 type Vec4i16 = @vector(i16, 4);
 type Vec4u32 = @vector(u32, 4);
+type Vec4u16 = @vector(u16, 4);
 type Vec4f32 = @vector(f32, 4);
+type Vec2f64 = @vector(f64, 2);
 type Mask4 = @mask(4);
+type Mask2 = @mask(2);
 
 export fn main() i32 {
     const a: Vec4i32 = @vector.splat(1);
@@ -70,6 +73,21 @@ export fn main() i32 {
     const mf: Mask4 = x < y;
     if @vector.all(mf) == false {
         return 3;
+    }
+    const u16a: Vec4u16 = @vector.splat(5 as u16);
+    const u16b: Vec4u16 = @vector.splat(2 as u16);
+    if @vector.all((u16a + u16b) == @vector.splat(7 as u16)) == false {
+        return 14;
+    }
+    if @vector.all(u16a > @vector.splat(1 as u16)) == false {
+        return 15;
+    }
+    const f2a: Vec2f64 = @vector.splat(2.0);
+    const f2b: Vec2f64 = @vector.splat(0.5);
+    const f2s: Vec2f64 = f2a + f2b;
+    const f2m: Mask2 = f2s == @vector.splat(2.5);
+    if @vector.all(f2m) == false {
+        return 16;
     }
     return 0;
 }

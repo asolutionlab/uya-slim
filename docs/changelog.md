@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.28 - SIMD：`f64` `+`/`-`/一元`-`；`i16`/`u16` 扩展比较与 `splat`；`4×i16` 安全 64 位块（2026-03-19）
+
+- **C99**：`types.uya` / `expr.uya`：`add_f64x2`、`sub_f64x2`、`neg_f64x2`；`i16`/`u16` 掩码六比较；`i16x4`/`u16x4` 与 `x8` 向量助手；`splat_i16*`、`splat_u16*`；`fast_kind` 39/40、41–43、112–122 等；`test_simd_i16_add.uya`、`test_simd_u16_basic.uya`、夹具 **`simd_c99_neon.uya`**。
+- **文档**：规范 **0.49.28**（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
 ### v0.49.27 - SIMD：`4×/8×i16` 向量 `-` / `*` C99 快路径（2026-03-20）
 
 - **C99**：`types.uya` 增加 **`uya_simd_sse_sub_i16x8`**、**`uya_simd_sse_mul_i16x8`**（SSE2 `_mm_sub_epi16` / `_mm_mullo_epi16`，NEON `vsubq_s16` / `vmulq_s16`，标量）；`expr.uya` **`fast_kind` 37 / 38**；`test_simd_i16_add.uya`、夹具 **`simd_c99_neon.uya`** 增补。
@@ -66,7 +71,7 @@
 ### v0.49.16 - SIMD：C99 ARM NEON 分支（2026-03-19）
 
 - **C99**：`emit_simd_*` 在 **`UYA_HAVE_SIMD_ARM_NEON`** 下输出与 SSE 同名的 **`uya_simd_sse_*`** NEON 实现（`<arm_neon.h>`）；`#if` / `#elif` / `#else` 三档（SSE / NEON / 标量）。
-- **验证**：`tests/verify_simd_c99_neon.sh`；夹具 `tests/fixtures/simd_c99_neon.uya`（`make check` / `make check-hosted`）。
+- **验证**：`tests/verify_simd_c99_neon.sh`；`tests/simd_c99_neon.uya`（`make check` / `make check-hosted`，与并行测试共用）。
 - **文档**：规范 0.49.16（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
 
 ### v0.49.15 - SIMD：4×`u32` 有序比较 C99 lowering（2026-03-19）
@@ -78,13 +83,13 @@
 ### v0.49.14 - C99 `@syscall`：Linux ARM32（EABI）分支（2026-03-19）
 
 - **C99**：`uya_syscall0`…`6` 增加 **`#elif __arm__ && !__aarch64__ && __linux__`**（`svc 0`，nr→**r7**，参数 **r0**–**r5**；Thumb 安全保存/恢复 r7）。
-- **验证**：`tests/verify_syscall_c99_cross.sh`（AArch64 整文件 + ARM 抽出片段 `zig cc arm-linux-gnueabihf`）；夹具 `tests/fixtures/syscall_c99_cross.uya`。
+- **验证**：`tests/verify_syscall_c99_cross.sh`（AArch64 整文件 + ARM 抽出片段 `zig cc arm-linux-gnueabihf`）；`tests/syscall_c99_cross.uya`（macOS 默认跳过并行运行）。
 - **文档**：规范 0.49.14；`uya.md` 附录 C 与规范变更同步。
 
 ### v0.49.13 - C99 `@syscall`：Linux AArch64 分支（2026-03-19）
 
 - **C99**：`uya_syscall0`…`6` 增加 **`#elif (__aarch64__||_M_ARM64) && __linux__`**（`svc 0`），交叉 **`aarch64-linux-gnu`** 不再唯一条 `#error`。
-- **验证**：`make check`；夹具 `tests/fixtures/syscall_c99_cross.uya`（发布时脚本为 `verify_syscall_c99_aarch64.sh`，**0.49.14** 起合并为 `verify_syscall_c99_cross.sh`）。
+- **验证**：`make check`；`tests/syscall_c99_cross.uya`（发布时脚本为 `verify_syscall_c99_aarch64.sh`，**0.49.14** 起合并为 `verify_syscall_c99_cross.sh`）。
 - **文档**：规范 0.49.13；`uya.md` 附录 C 补充 `@syscall` 说明。
 
 ### v0.49.12 - SIMD：C99 向量比较 lowering 扩展（2026-03-19）

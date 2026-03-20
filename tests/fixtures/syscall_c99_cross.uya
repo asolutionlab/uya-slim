@@ -1,5 +1,0 @@
-// 供 verify_syscall_c99_cross.sh 使用（不在 tests/ 根目录，避免被 run_programs_parallel 收集）
-export fn main() i32 {
-    _ = @syscall(1 as i64, 0 as i64);
-    return 0;
-}

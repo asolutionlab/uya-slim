@@ -20,5 +20,17 @@ export fn main() i32 {
     if @vector.all(ok3) == false {
         return 3;
     }
+    const n: Vec4i16 = -a;
+    if @vector.all(n == @vector.splat(-100)) == false {
+        return 4;
+    }
+    const ne_m: Mask4 = a != b;
+    if @vector.all(ne_m) == false {
+        return 5;
+    }
+    const lt_m: Mask4 = b < a;
+    if @vector.all(lt_m) == false {
+        return 6;
+    }
     return 0;
 }
