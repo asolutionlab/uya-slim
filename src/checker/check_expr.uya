@@ -1404,9 +1404,36 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
                 checker_report_error(checker, expr.call_expr_args[0], "@vector.reduce_add 仅支持元素为整数或浮点的向量" as *byte);
                 return make_void_type();
             }
+            const vec_for_ast2: Type = copy_type(&vec_tr);
+            const target_ast2: &ASTNode = type_to_ast(checker, &vec_for_ast2, expr.line, expr.column, expr.filename);
+            if target_ast2 != null {
+                expr.simd_splat_target_type = target_ast2;
+            }
             return copy_type(&vec_tr.element_type[0]);
         }
-        checker_report_error(checker, expr, "@vector 目前仅支持 .splat/.load/.store/.select/.reduce_add/.any/.all" as *byte);
+        if str_equals(simd_method, "reduce_mul" as *byte) != 0 {
+            if expr.call_expr_arg_count != 1 || expr.call_expr_args == null || expr.call_expr_args[0] == null {
+                checker_report_error(checker, expr, "@vector.reduce_mul 需要恰好一个参数" as *byte);
+                return make_void_type();
+            }
+            const vec_tr_rm: Type = checker_infer_type(checker, expr.call_expr_args[0]);
+            if vec_tr_rm.kind != TypeKind.TYPE_VECTOR || vec_tr_rm.element_type == null {
+                checker_report_error(checker, expr.call_expr_args[0], "@vector.reduce_mul 的参数须为 @vector(T,N)" as *byte);
+                return make_void_type();
+            }
+            const el_tr_rm: Type = copy_type(&vec_tr_rm.element_type[0]);
+            if simd_reduce_add_elem_ok(el_tr_rm) == 0 {
+                checker_report_error(checker, expr.call_expr_args[0], "@vector.reduce_mul 仅支持元素为整数或浮点的向量" as *byte);
+                return make_void_type();
+            }
+            const vec_for_ast_rm: Type = copy_type(&vec_tr_rm);
+            const target_ast_rm: &ASTNode = type_to_ast(checker, &vec_for_ast_rm, expr.line, expr.column, expr.filename);
+            if target_ast_rm != null {
+                expr.simd_splat_target_type = target_ast_rm;
+            }
+            return copy_type(&vec_tr_rm.element_type[0]);
+        }
+        checker_report_error(checker, expr, "@vector 目前仅支持 .splat/.load/.store/.select/.reduce_add/.reduce_mul/.any/.all" as *byte);
         return make_void_type();
     }
     

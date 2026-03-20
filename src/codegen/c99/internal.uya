@@ -221,6 +221,13 @@ struct C99CodeGenerator {
     simd_emit_reduce_add_i32x4: i32,
     simd_emit_reduce_add_u32x4: i32,
     simd_emit_reduce_add_f32x4: i32,
+    // @vector.reduce_mul 快路径助手：仅在实际生成 uya_simd_*_reduce_mul_*x4/x2 调用时置 1
+    simd_emit_reduce_mul_i32x2: i32,
+    simd_emit_reduce_mul_u32x2: i32,
+    simd_emit_reduce_mul_f32x2: i32,
+    simd_emit_reduce_mul_i32x4: i32,
+    simd_emit_reduce_mul_u32x4: i32,
+    simd_emit_reduce_mul_f32x4: i32,
     
     // 泛型单态化实例（从 TypeChecker 传入）
     mono_instances: [MonoInstanceCodegen: C99_MAX_MONO_INSTANCES],

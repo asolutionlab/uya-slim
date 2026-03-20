@@ -1247,6 +1247,12 @@ fn c99_simd_need_emit_i32_u32_f32(codegen: &C99CodeGenerator, simd_emit_all: i32
     if codegen.simd_emit_reduce_add_i32x4 != 0 || codegen.simd_emit_reduce_add_u32x4 != 0 || codegen.simd_emit_reduce_add_f32x4 != 0 {
         return 1;
     }
+    if codegen.simd_emit_reduce_mul_i32x2 != 0 || codegen.simd_emit_reduce_mul_u32x2 != 0 || codegen.simd_emit_reduce_mul_f32x2 != 0 {
+        return 1;
+    }
+    if codegen.simd_emit_reduce_mul_i32x4 != 0 || codegen.simd_emit_reduce_mul_u32x4 != 0 || codegen.simd_emit_reduce_mul_f32x4 != 0 {
+        return 1;
+    }
     return 0;
 }
 // 是否需在 i32/u32/f32 SIMD 段末尾追加 select 助手（与 c99_gen_simd_builtin_call 中快路径配套）
@@ -4944,6 +4950,67 @@ fn emit_simd_runtime_helpers_i32_u32_f32_reduce_add_x86_sse(codegen: &C99CodeGen
     }
 }
 
+// i32/u32/f32 ×2/×4 的 @vector.reduce_mul 助手（SSE2）
+fn emit_simd_runtime_helpers_i32_u32_f32_reduce_mul_x86_sse(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.output == null {
+        return;
+    }
+    if codegen.simd_emit_reduce_mul_i32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_i32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  __m128i x = _mm_loadu_si128((const __m128i *)(const void *)v);\n" as *byte, codegen.output as *void);
+        fputs("  __m128i t = _mm_shuffle_epi32(x, _MM_SHUFFLE(0, 0, 0, 1));\n" as *byte, codegen.output as *void);
+        fputs("  x = _mm_mullo_epi32(x, t);\n" as *byte, codegen.output as *void);
+        fputs("  *(int32_t *)r = _mm_cvtsi128_si32(x);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_u32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_u32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  __m128i x = _mm_loadu_si128((const __m128i *)(const void *)v);\n" as *byte, codegen.output as *void);
+        fputs("  __m128i t = _mm_shuffle_epi32(x, _MM_SHUFFLE(0, 0, 0, 1));\n" as *byte, codegen.output as *void);
+        fputs("  x = _mm_mullo_epi32(x, t);\n" as *byte, codegen.output as *void);
+        fputs("  *(uint32_t *)r = (uint32_t)_mm_cvtsi128_si32(x);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_f32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_f32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  __m128 x = _mm_castsi128_ps(_mm_loadl_epi64((const __m128i *)(const void *)v));\n" as *byte, codegen.output as *void);
+        fputs("  __m128 t = _mm_shuffle_ps(x, x, _MM_SHUFFLE(1, 1, 1, 1));\n" as *byte, codegen.output as *void);
+        fputs("  x = _mm_mul_ss(x, t);\n" as *byte, codegen.output as *void);
+        fputs("  *(float *)r = _mm_cvtss_f32(x);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_i32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_i32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("#if defined(__SSE4_1__)\n" as *byte, codegen.output as *void);
+        fputs("  __m128i x = _mm_loadu_si128((const __m128i *)(const void *)v);\n" as *byte, codegen.output as *void);
+        fputs("  __m128i t = _mm_shuffle_epi32(x, _MM_SHUFFLE(2, 3, 0, 1));\n" as *byte, codegen.output as *void);
+        fputs("  x = _mm_mullo_epi32(x, t);\n" as *byte, codegen.output as *void);
+        fputs("  t = _mm_shuffle_epi32(x, _MM_SHUFFLE(1, 0, 3, 2));\n" as *byte, codegen.output as *void);
+        fputs("  x = _mm_mullo_epi32(x, t);\n" as *byte, codegen.output as *void);
+        fputs("  *(int32_t *)r = _mm_cvtsi128_si32(x);\n" as *byte, codegen.output as *void);
+        fputs("#else\n" as *byte, codegen.output as *void);
+        fputs("  const int32_t *p = (const int32_t *)v; int32_t s = p[0]; int _i; for (_i = 1; _i < 4; _i++) s = s * p[_i]; *(int32_t *)r = s;\n" as *byte, codegen.output as *void);
+        fputs("#endif\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_u32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_u32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("#if defined(__SSE4_1__)\n" as *byte, codegen.output as *void);
+        fputs("  __m128i x = _mm_loadu_si128((const __m128i *)(const void *)v);\n" as *byte, codegen.output as *void);
+        fputs("  __m128i t = _mm_shuffle_epi32(x, _MM_SHUFFLE(2, 3, 0, 1));\n" as *byte, codegen.output as *void);
+        fputs("  x = _mm_mullo_epi32(x, t);\n" as *byte, codegen.output as *void);
+        fputs("  t = _mm_shuffle_epi32(x, _MM_SHUFFLE(1, 0, 3, 2));\n" as *byte, codegen.output as *void);
+        fputs("  x = _mm_mullo_epi32(x, t);\n" as *byte, codegen.output as *void);
+        fputs("  *(uint32_t *)r = (uint32_t)_mm_cvtsi128_si32(x);\n" as *byte, codegen.output as *void);
+        fputs("#else\n" as *byte, codegen.output as *void);
+        fputs("  const uint32_t *p = (const uint32_t *)v; uint32_t s = p[0]; int _i; for (_i = 1; _i < 4; _i++) s = s * p[_i]; *(uint32_t *)r = s;\n" as *byte, codegen.output as *void);
+        fputs("#endif\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_f32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_f32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  __m128 x = _mm_loadu_ps((const float *)v);\n" as *byte, codegen.output as *void);
+        fputs("  __m128 t = _mm_mul_ps(x, _mm_shuffle_ps(x, x, _MM_SHUFFLE(2, 3, 0, 1)));\n" as *byte, codegen.output as *void);
+        fputs("  t = _mm_mul_ps(t, _mm_shuffle_ps(t, t, _MM_SHUFFLE(1, 0, 3, 2)));\n" as *byte, codegen.output as *void);
+        fputs("  *(float *)r = _mm_cvtss_f32(t);\n}\n" as *byte, codegen.output as *void);
+    }
+}
+
 // ARM NEON：`#elif UYA_HAVE_SIMD_ARM_NEON` 下 i32/u32/f32 向量族整段（pred、x2、x4、f32x4 掩码）；由 emit_simd_x86_sse_runtime_helpers 在 c99_simd_need_emit_i32_u32_f32 为真时调用
 fn emit_simd_runtime_helpers_i32_u32_f32_arm_neon(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.output == null {
@@ -5306,6 +5373,86 @@ fn emit_simd_runtime_helpers_i32_u32_f32_reduce_add_arm_neon(codegen: &C99CodeGe
         fputs("  float32x2_t s = vpadd_f32(p, p);\n" as *byte, codegen.output as *void);
         fputs("  *(float *)r = vget_lane_f32(s, 0);\n}\n" as *byte, codegen.output as *void);
     }
+    // i32/u32/f32 ×2 的 @vector.reduce_mul 助手（ARM NEON）
+    if codegen.simd_emit_reduce_mul_i32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_i32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  int32x2_t t = vld1_s32((const int32_t *)v);\n" as *byte, codegen.output as *void);
+        fputs("  *(int32_t *)r = vget_lane_s32(t, 0) * vget_lane_s32(t, 1);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_u32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_u32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  uint32x2_t t = vld1_u32((const uint32_t *)v);\n" as *byte, codegen.output as *void);
+        fputs("  *(uint32_t *)r = vget_lane_u32(t, 0) * vget_lane_u32(t, 1);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_f32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_f32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  float32x2_t t = vld1_f32((const float *)v);\n" as *byte, codegen.output as *void);
+        fputs("  *(float *)r = vget_lane_f32(t, 0) * vget_lane_f32(t, 1);\n}\n" as *byte, codegen.output as *void);
+    }
+    // i32/u32/f32 ×4 的 @vector.reduce_mul 助手（ARM NEON）
+    if codegen.simd_emit_reduce_mul_i32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_i32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  int32x4_t x = vld1q_s32((const int32_t *)v);\n" as *byte, codegen.output as *void);
+        fputs("  int32x2_t p = vmul_s32(vget_low_s32(x), vget_high_s32(x));\n" as *byte, codegen.output as *void);
+        fputs("  int32x2_t s = vmul_s32(p, vext_s32(p, p, 1));\n" as *byte, codegen.output as *void);
+        fputs("  *(int32_t *)r = vget_lane_s32(s, 0);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_u32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_u32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  uint32x4_t x = vld1q_u32((const uint32_t *)v);\n" as *byte, codegen.output as *void);
+        fputs("  uint32x2_t p = vmul_u32(vget_low_u32(x), vget_high_u32(x));\n" as *byte, codegen.output as *void);
+        fputs("  uint32x2_t s = vmul_u32(p, vext_u32(p, p, 1));\n" as *byte, codegen.output as *void);
+        fputs("  *(uint32_t *)r = vget_lane_u32(s, 0);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_f32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_f32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  float32x4_t x = vld1q_f32((const float *)v);\n" as *byte, codegen.output as *void);
+        fputs("  float32x2_t p = vmul_f32(vget_low_f32(x), vget_high_f32(x));\n" as *byte, codegen.output as *void);
+        fputs("  float32x2_t s = vmul_f32(p, vext_f32(p, p, 1));\n" as *byte, codegen.output as *void);
+        fputs("  *(float *)r = vget_lane_f32(s, 0);\n}\n" as *byte, codegen.output as *void);
+    }
+}
+
+fn emit_simd_runtime_helpers_i32_u32_f32_reduce_mul_arm_neon(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.output == null {
+        return;
+    }
+    if codegen.simd_emit_reduce_mul_i32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_i32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  int32x2_t t = vld1_s32((const int32_t *)v);\n" as *byte, codegen.output as *void);
+        fputs("  *(int32_t *)r = vget_lane_s32(t, 0) * vget_lane_s32(t, 1);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_u32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_u32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  uint32x2_t t = vld1_u32((const uint32_t *)v);\n" as *byte, codegen.output as *void);
+        fputs("  *(uint32_t *)r = vget_lane_u32(t, 0) * vget_lane_u32(t, 1);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_f32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_f32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  float32x2_t t = vld1_f32((const float *)v);\n" as *byte, codegen.output as *void);
+        fputs("  *(float *)r = vget_lane_f32(t, 0) * vget_lane_f32(t, 1);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_i32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_i32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  int32x4_t x = vld1q_s32((const int32_t *)v);\n" as *byte, codegen.output as *void);
+        fputs("  int32x2_t p = vmul_s32(vget_low_s32(x), vget_high_s32(x));\n" as *byte, codegen.output as *void);
+        fputs("  int32x2_t s = vmul_s32(p, vext_s32(p, p, 1));\n" as *byte, codegen.output as *void);
+        fputs("  *(int32_t *)r = vget_lane_s32(s, 0);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_u32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_u32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  uint32x4_t x = vld1q_u32((const uint32_t *)v);\n" as *byte, codegen.output as *void);
+        fputs("  uint32x2_t p = vmul_u32(vget_low_u32(x), vget_high_u32(x));\n" as *byte, codegen.output as *void);
+        fputs("  uint32x2_t s = vmul_u32(p, vext_u32(p, p, 1));\n" as *byte, codegen.output as *void);
+        fputs("  *(uint32_t *)r = vget_lane_u32(s, 0);\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_f32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_f32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  float32x4_t x = vld1q_f32((const float *)v);\n" as *byte, codegen.output as *void);
+        fputs("  float32x2_t p = vmul_f32(vget_low_f32(x), vget_high_f32(x));\n" as *byte, codegen.output as *void);
+        fputs("  float32x2_t s = vmul_f32(p, vext_f32(p, p, 1));\n" as *byte, codegen.output as *void);
+        fputs("  *(float *)r = vget_lane_f32(s, 0);\n}\n" as *byte, codegen.output as *void);
+    }
 }
 
 fn emit_simd_runtime_helpers_i32_u32_f32_select_scalar(codegen: &C99CodeGenerator) void {
@@ -5378,6 +5525,39 @@ fn emit_simd_runtime_helpers_i32_u32_f32_reduce_add_scalar(codegen: &C99CodeGene
         fputs("static inline void uya_simd_sse_reduce_add_f32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
         fputs("  const float *p = (const float *)v; float s = p[0]; int _i; for (_i = 1; _i < 4; _i++) s = s + p[_i]; *(float *)r = s;\n}\n" as *byte, codegen.output as *void);
     }
+    // i32/u32/f32 ×2 的 @vector.reduce_mul 助手（标量）
+    if codegen.simd_emit_reduce_mul_i32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_i32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  const int32_t *p = (const int32_t *)v; *(int32_t *)r = p[0] * p[1];\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_u32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_u32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  const uint32_t *p = (const uint32_t *)v; *(uint32_t *)r = p[0] * p[1];\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_f32x2 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_f32x2(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  const float *p = (const float *)v; *(float *)r = p[0] * p[1];\n}\n" as *byte, codegen.output as *void);
+    }
+    // i32/u32/f32 ×4 的 @vector.reduce_mul 助手（标量）
+    if codegen.simd_emit_reduce_mul_i32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_i32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  const int32_t *p = (const int32_t *)v; int32_t s = p[0]; int _i; for (_i = 1; _i < 4; _i++) s = s * p[_i]; *(int32_t *)r = s;\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_u32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_u32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  const uint32_t *p = (const uint32_t *)v; uint32_t s = p[0]; int _i; for (_i = 1; _i < 4; _i++) s = s * p[_i]; *(uint32_t *)r = s;\n}\n" as *byte, codegen.output as *void);
+    }
+    if codegen.simd_emit_reduce_mul_f32x4 != 0 {
+        fputs("static inline void uya_simd_sse_reduce_mul_f32x4(void *r, const void *v) {\n" as *byte, codegen.output as *void);
+        fputs("  const float *p = (const float *)v; float s = p[0]; int _i; for (_i = 1; _i < 4; _i++) s = s * p[_i]; *(float *)r = s;\n}\n" as *byte, codegen.output as *void);
+    }
+    // scalar reduce_mul helpers 已在上方 reduce_add_scalar 中与 reduce_add helpers 一起输出
+    // 此函数保留为空（向后兼容），实际发射在 reduce_add_scalar 中一次性完成
+}
+
+// scalar reduce_mul helpers 已在上方 reduce_add_scalar 中与 reduce_add helpers 一起输出
+fn emit_simd_runtime_helpers_i32_u32_f32_reduce_mul_scalar(codegen: &C99CodeGenerator) void {
+    // no-op：helpers 已在 emit_simd_runtime_helpers_i32_u32_f32_reduce_add_scalar 中输出
 }
 
 fn emit_simd_runtime_helpers_i32_u32_f32_scalar_fallback(codegen: &C99CodeGenerator) void {
@@ -5525,6 +5705,10 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
         if c99_simd_any_reduce_add_helpers_needed(codegen) != 0 {
             emit_simd_runtime_helpers_i32_u32_f32_reduce_add_x86_sse(codegen);
         }
+        if codegen.simd_emit_reduce_mul_i32x2 != 0 || codegen.simd_emit_reduce_mul_u32x2 != 0 || codegen.simd_emit_reduce_mul_f32x2 != 0 ||
+            codegen.simd_emit_reduce_mul_i32x4 != 0 || codegen.simd_emit_reduce_mul_u32x4 != 0 || codegen.simd_emit_reduce_mul_f32x4 != 0 {
+            emit_simd_runtime_helpers_i32_u32_f32_reduce_mul_x86_sse(codegen);
+        }
     }
     if c99_simd_need_emit_i8_u8_i64_u64(codegen, simd_emit_all) != 0 {
         emit_simd_runtime_helpers_i8_u8_i64_u64_x86_sse(codegen);
@@ -5575,6 +5759,10 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
         }
         if c99_simd_any_reduce_add_helpers_needed(codegen) != 0 {
             emit_simd_runtime_helpers_i32_u32_f32_reduce_add_arm_neon(codegen);
+        }
+        if codegen.simd_emit_reduce_mul_i32x2 != 0 || codegen.simd_emit_reduce_mul_u32x2 != 0 || codegen.simd_emit_reduce_mul_f32x2 != 0 ||
+            codegen.simd_emit_reduce_mul_i32x4 != 0 || codegen.simd_emit_reduce_mul_u32x4 != 0 || codegen.simd_emit_reduce_mul_f32x4 != 0 {
+            emit_simd_runtime_helpers_i32_u32_f32_reduce_mul_arm_neon(codegen);
         }
     }
     if c99_simd_need_emit_f64(codegen, simd_emit_all) != 0 {
@@ -5802,6 +5990,10 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     }
     if c99_simd_any_reduce_add_helpers_needed(codegen) != 0 {
         emit_simd_runtime_helpers_i32_u32_f32_reduce_add_scalar(codegen);
+    }
+    if codegen.simd_emit_reduce_mul_i32x2 != 0 || codegen.simd_emit_reduce_mul_u32x2 != 0 || codegen.simd_emit_reduce_mul_f32x2 != 0 ||
+        codegen.simd_emit_reduce_mul_i32x4 != 0 || codegen.simd_emit_reduce_mul_u32x4 != 0 || codegen.simd_emit_reduce_mul_f32x4 != 0 {
+        emit_simd_runtime_helpers_i32_u32_f32_reduce_mul_scalar(codegen);
     }
     }
     if c99_simd_need_emit_f64(codegen, simd_emit_all) != 0 {
