@@ -146,17 +146,102 @@ bin/uya.c (新生成的 C99 代码)
 
 ## 3. 开发最佳实践
 
-### 3.1 修改代码前
+### 3.1 测试驱动开发（TDD）
+
+**TDD 核心原则**：红-绿-重构，小步迭代，测试先行。
+
+#### 开发流程
+
+```bash
+# 1. 红：先写测试，确认失败
+vim tests/programs/test_new_feature.uya
+make tests          # 新测试应该失败
+
+# 2. 绿：编写最小实现使测试通过
+vim src/related_module.uya
+make check          # 自举 + 测试全部通过
+
+# 3. 蓝（重构）：优化代码，保持测试通过
+# ...
+
+# 4. 备份
+make backup
+```
+
+#### 测试文件风格
+
+**使用 `test "name" {}` 风格**，不使用 `main` 函数：
+
+```uya
+// tests/programs/test_feature.uya
+
+// 单个测试用例
+test "basic_addition" {
+    const result: i32 = add(1, 2);
+    try assert_eq_i32(result, 3, "1 + 2 should equal 3");
+}
+
+// 多个测试用例
+test "addition_with_negative" {
+    const result: i32 = add(-1, 1);
+    try assert_eq_i32(result, 0, "-1 + 1 should equal 0");
+}
+
+test "addition_overflow" {
+    // 测试溢出情况
+    const result: i32 = try I32_MAX + 1;  // 预期失败
+}
+```
+
+#### 测试文件组织
+
+```
+tests/
+├── test_basic.uya          # 基础功能测试
+├── test_types.uya          # 类型系统测试
+├── test_simd_*.uya         # SIMD 相关测试
+└── bridge.c                # 测试运行器桥接（提供 main 函数）
+```
+
+#### 测试命名规范
+
+- 文件名：`test_<feature>.uya`
+- 测试名：描述性名称，说明测试什么
+- 格式：`test "描述性名称" { ... }`
+
+#### 测试返回值约定
+
+- 测试通过：返回 0
+- 测试失败：返回非 0
+
+#### SIMD 测试特殊要求
+
+**每个 SIMD 测试用例必须同时通过两种方式**：
+1. `--c99`：C 版编译器
+2. `--uya --c99`：自举版编译器
+
+两种都通过才算测试通过。
+
+```bash
+# 验证单测（两种方式）
+./tests/run_programs_parallel.sh --c99 test_simd_xxx.uya
+./tests/run_programs_parallel.sh --uya --c99 test_simd_xxx.uya
+```
+
+### 3.2 修改代码前
 
 ```bash
 # 1. 验证当前状态
-make tests-uya  # 应该 348/348 通过
+make check  # 确认自举和测试都通过
 
-# 2. 理解代码上下文
+# 2. 如果 bin/uya 不存在
+make from-c  # 从备份恢复并构建
+
+# 3. 理解代码上下文
 # 阅读相关源码，理解数据结构和控制流
 ```
 
-### 3.2 修改代码后
+### 3.3 修改代码后
 
 ```bash
 # 1. 构建新版本
@@ -166,20 +251,20 @@ make uya
 make b  # 必须通过！
 
 # 3. 运行测试
-make tests-uya  # 必须全部通过
+make tests  # 必须全部通过
 
-# 4. 验证通过后备份（可选但推荐）
+# 4. 验证通过后备份
 make backup  # 只有自举和测试都通过才会执行备份
 ```
 
-### 3.3 自举失败处理
+### 3.4 自举失败处理
 
 如果 `make b` 失败：
 1. 检查修改是否影响代码生成顺序
 2. 排序相关的输出必须稳定
 3. 确保 err_union 等类型按名称排序
 
-### 3.4 不要做的事
+### 3.5 不要做的事
 
 - ❌ 不要修改 `compiler-c/` 目录（已退役）
 - ❌ 不要跳过自举验证

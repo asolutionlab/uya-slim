@@ -78,6 +78,20 @@ tests/
 - 测试名：描述性名称，说明测试什么
 - 格式：`test "描述性名称" { ... }`
 
+### SIMD 测试特殊要求
+
+**每个 SIMD 测试用例必须同时通过两种方式**才算真正通过：
+
+```bash
+# 方式1：C 版编译器
+./tests/run_programs_parallel.sh --c99 test_simd_xxx.uya
+
+# 方式2：自举版编译器（两种都通过才算测试通过）
+./tests/run_programs_parallel.sh --uya --c99 test_simd_xxx.uya
+```
+
+原因：自举编译器 `bin/uya` 是从 `src/` 源码编译而来，需要确保两种编译器生成完全一致的 C 代码。
+
 ## 开发前准备
 
 ### 阅读语言规范
