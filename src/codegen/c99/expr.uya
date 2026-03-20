@@ -2008,6 +2008,9 @@ fn c99_simd_emit_sse_binary_fast_at(codegen: &C99CodeGenerator, fast_kind: i32, 
     } else if fast_kind == 22 {
         fprintf(codegen.output as *void, "uya_simd_sse_mul_u32x4(%s, %s, %s); " as *byte,
             &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 26 {
+        fprintf(codegen.output as *void, "uya_simd_sse_div_u32x4(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
     } else if fast_kind == 13 || fast_kind == 23 {
         fprintf(codegen.output as *void, "uya_simd_sse_and_i32x4(%s, %s, %s); " as *byte,
             &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
@@ -2066,7 +2069,7 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
         return 0;
     }
     var fast_kind: i32 = 0;
-    // 101–106：掩码 i32；107–110：掩码 u32 有序比较；201–206：掩码 f32；10–15：i32 向量；20–25：u32 向量（22=×）；30+：f32
+    // 101–106：掩码 i32；107–110：掩码 u32 有序比较；201–206：掩码 f32；10–15：i32 向量；20–26：u32 向量（22=×，26=÷）；30+：f32
     if result_type_ast.type == ASTNodeType.AST_TYPE_MASK {
         if left_type_ast == null || left_type_ast.type != ASTNodeType.AST_TYPE_VECTOR ||
             left_type_ast.type_vector_element_type == null {
@@ -2155,6 +2158,8 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
                 fast_kind = 21;
             } else if simd_op == TokenType.TOKEN_ASTERISK {
                 fast_kind = 22;
+            } else if simd_op == TokenType.TOKEN_SLASH {
+                fast_kind = 26;
             } else if simd_op == TokenType.TOKEN_AMPERSAND {
                 fast_kind = 23;
             } else if simd_op == TokenType.TOKEN_PIPE {

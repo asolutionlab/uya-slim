@@ -8,6 +8,11 @@
 
 **发布日期：** 待定
 
+### v0.49.21 - SIMD：`4×u32` 向量 `/` C99 助手（2026-03-19）
+
+- **C99**：`types.uya` 增加 **`uya_simd_sse_div_u32x4`**（三档均为 `uint32_t` 逐通道除）；`expr.uya` **`fast_kind` 26**；`test_simd_u32_basic.uya` 增补 `7/2→3`。
+- **文档**：规范 0.49.21（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`）。
+
 ### v0.49.20 - SIMD：`4×u32` 向量 `*` C99 快路径（2026-03-19）
 
 - **C99**：`types.uya` 增加 **`uya_simd_sse_mul_u32x4`**（SSE4.1 / NEON `vmulq_u32` / 标量）；`expr.uya` **`fast_kind` 22**；`test_simd_u32_basic.uya` 增补高位无符号乘用例。
