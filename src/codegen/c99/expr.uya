@@ -2059,6 +2059,12 @@ fn c99_simd_emit_sse_binary_fast_at(codegen: &C99CodeGenerator, fast_kind: i32, 
     } else if fast_kind == 35 {
         fprintf(codegen.output as *void, "uya_simd_sse_div_f64x2(%s, %s, %s); " as *byte,
             &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 36 {
+        fprintf(codegen.output as *void, "uya_simd_sse_add_i16x8(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
+    } else if fast_kind == 111 {
+        fprintf(codegen.output as *void, "uya_simd_sse_eq_i16x8_mask(%s, %s, %s); " as *byte,
+            &pr[0] as *byte, &pl[0] as *byte, &pb[0] as *byte);
     }
 }
 
@@ -2152,6 +2158,12 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
             } else {
                 return 0;
             }
+        } else if strcmp(mask_elem_c as *byte, "int16_t" as *byte) == 0 {
+            if simd_op == TokenType.TOKEN_EQUAL {
+                fast_kind = 111;
+            } else {
+                return 0;
+            }
         } else {
             return 0;
         }
@@ -2229,14 +2241,28 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
             } else {
                 return 0;
             }
+        } else if strcmp(vec_elem_c as *byte, "int16_t" as *byte) == 0 {
+            if simd_op == TokenType.TOKEN_PLUS {
+                fast_kind = 36;
+            } else {
+                return 0;
+            }
         } else {
             return 0;
         }
     } else {
         return 0;
     }
+    var is_i16: i32 = 0;
+    if fast_kind == 36 || fast_kind == 111 {
+        is_i16 = 1;
+    }
     if is_f64 != 0 {
         if lanes != 2 && lanes != 4 {
+            return 0;
+        }
+    } else if is_i16 != 0 {
+        if lanes != 4 && lanes != 8 {
             return 0;
         }
     } else {
@@ -2248,6 +2274,8 @@ fn c99_simd_try_emit_x86_sse_binary(codegen: &C99CodeGenerator, result_type_ast:
     var chunk_step: i32 = 4;
     if fast_kind == 34 || fast_kind == 35 {
         chunk_step = 2;
+    } else if fast_kind == 36 || fast_kind == 111 {
+        chunk_step = 8;
     }
     while lane_chunk < lanes {
         c99_simd_emit_sse_binary_fast_at(codegen, fast_kind, result_name, left_name, right_name, lane_chunk);
