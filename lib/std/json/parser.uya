@@ -85,6 +85,33 @@ fn is_digit(b: byte) bool {
     return b >= 48 && b <= 57;
 }
 
+// 连续 ASCII 数字 `0`–`9`：先 16 字节块（@vector），再标量收尾（与 skip_ws 同策略）
+fn skip_ascii_digits_vec16(s: &ParseState) void {
+    while s.pos + 16 <= s.len {
+        const c: JsonWsVec16 = @vector.load(&s.ptr[s.pos]);
+        const ge: JsonWsMask16 = c >= @vector.splat(48u8);
+        const le: JsonWsMask16 = c <= @vector.splat(57u8);
+        if @vector.all(ge & le) {
+            s.pos = s.pos + 16;
+        } else {
+            return;
+        }
+    }
+}
+
+// 字符串体中无 `"`、无 `\` 的连续段：块推进后仍由标量处理引号与转义
+fn skip_string_unescaped_run_vec16(s: &ParseState) void {
+    while s.pos + 16 <= s.len {
+        const c: JsonWsVec16 = @vector.load(&s.ptr[s.pos]);
+        const m: JsonWsMask16 = (c != @vector.splat(34u8)) & (c != @vector.splat(92u8));
+        if @vector.all(m) {
+            s.pos = s.pos + 16;
+        } else {
+            return;
+        }
+    }
+}
+
 fn parse_number(s: &ParseState) !JsonValue {
     const start: usize = s.pos;
     if s.pos >= s.len { return error.UnexpectedEof; }
@@ -97,12 +124,14 @@ fn parse_number(s: &ParseState) !JsonValue {
         }
     } else {
         if s.pos >= s.len || !is_digit(s.ptr[s.pos]) { return error.UnexpectedToken; }
+        skip_ascii_digits_vec16(s);
         while s.pos < s.len && is_digit(s.ptr[s.pos]) { s.pos = s.pos + 1; }
     }
     if s.pos < s.len && s.ptr[s.pos] == 46 {
         is_float = true;
         s.pos = s.pos + 1;
         if s.pos >= s.len || !is_digit(s.ptr[s.pos]) { return error.InvalidNumber; }
+        skip_ascii_digits_vec16(s);
         while s.pos < s.len && is_digit(s.ptr[s.pos]) { s.pos = s.pos + 1; }
     }
     if s.pos < s.len && (s.ptr[s.pos] == 101 || s.ptr[s.pos] == 69) {
@@ -110,6 +139,7 @@ fn parse_number(s: &ParseState) !JsonValue {
         s.pos = s.pos + 1;
         if s.pos < s.len && (s.ptr[s.pos] == 43 || s.ptr[s.pos] == 45) { s.pos = s.pos + 1; }
         if s.pos >= s.len || !is_digit(s.ptr[s.pos]) { return error.InvalidNumber; }
+        skip_ascii_digits_vec16(s);
         while s.pos < s.len && is_digit(s.ptr[s.pos]) { s.pos = s.pos + 1; }
     }
     if is_float {
@@ -167,6 +197,8 @@ fn parse_string(s: &ParseState) !JsonValue {
     s.pos = s.pos + 1;
     const start: usize = s.pos;
     while s.pos < s.len {
+        skip_string_unescaped_run_vec16(s);
+        if s.pos >= s.len { break; }
         const b: byte = s.ptr[s.pos];
         if b == 34 {
             const view: JsonStrView = JsonStrView{ ptr: &s.ptr[start], len: s.pos - start };
@@ -264,6 +296,9 @@ fn parse_object(s: &ParseState) !JsonValue {
         s.pos = s.pos + 1;
         const key_start: usize = s.pos;
         while s.pos < s.len && s.ptr[s.pos] != 34 {
+            skip_string_unescaped_run_vec16(s);
+            if s.pos >= s.len { break; }
+            if s.ptr[s.pos] == 34 { break; }
             if s.ptr[s.pos] == 92 { s.pos = s.pos + 1; if s.pos < s.len { s.pos = s.pos + 1; } }
             else { s.pos = s.pos + 1; }
         }
