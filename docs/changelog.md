@@ -13,9 +13,15 @@
 - **C99**：**`i32`/`u32`/`f32`** 的 **`×2`/`×4`** **`@vector.reduce_add`** 与 **`@vector.select`** 助手在 **`c99_simd_need_emit_i32_u32_f32`** 中按 **`simd_emit_*`** 标志参与判定；收集遍历时为 **形参** 与 **块内局部** 建立 **`local_variables`** 视图，与 **`c99_resolve_simd_type_ast_from_expr`** 一致，修复 **`test_simd_vector_reduce_add`** 等场景的 **undefined reference**。
 - **文档**：规范 **0.49.37**（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`、`todo_mini_to_full.md`、`changelog.md`）。
 
+### v0.49.39 - SIMD：`@vector.reduce_min` / `@vector.reduce_max`（2026-03-20）
+
+- **语言 / 检查 / C99**：新增 **`@vector.reduce_min(v)`** / **`@vector.reduce_max(v)`**（**`v`** 为 **`@vector(T,N)`**，**`T`** 为 **`i8`–`i64`、`u8`–`u64`、`f32`、`f64`**；结果为标量 **`T`**，分别为各通道最小值 / 最大值；C99 全部 **`while` 循环** scalar 回退）。
+- **测试**：`test_simd_vector_reduce_min_max.uya`。
+- **文档**：规范 **0.49.39**（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`、`todo_mini_to_full.md`、`changelog.md`）。
+
 ### v0.49.38 - SIMD：`@vector.reduce_mul`（2026-03-20）
 
-- **语言 / 检查 / C99**：新增 **`@vector.reduce_mul(v)``**（**`v`** 为 **`@vector(T,N)`**，**`T`** 为 **`i8`–`i64`、`u8`–`u64`、`f32`、`f64`**；结果为标量 **`T`**，各通道按 **`\*`** 累乘）；**`i32`/`u32`/`f32`** 的 **`×2`/`×4`** 发射 **`uya_simd_*_reduce_mul_*`** 助手（SSE2 `_mm_mul_*`，i32/u32 ×4 用 SSE4.1 `_mm_mullo_epi32`，无 SSE4.1 时自动回退标量循环）。
+- **语言 / 检查 / C99**：新增 **`@vector.reduce_mul(v)`**（**`v`** 为 **`@vector(T,N)`**，**`T`** 为 **`i8`–`i64`、`u8`–`u64`、`f32`、`f64`**；结果为标量 **`T`**，各通道按 **`\*`** 累乘）；**`i32`/`u32`/`f32`** 的 **`×2`/`×4`** 发射 **`uya_simd_*_reduce_mul_*`** 助手（SSE2 `_mm_mul_*`，i32/u32 ×4 用 SSE4.1 `_mm_mullo_epi32`，无 SSE4.1 时自动回退标量循环）。
 - **测试**：`test_simd_vector_reduce_mul.uya`。
 - **文档**：规范 **0.49.38**（`uya.md`、`grammar_formal.md`、`grammar_quick.md`、`builtin_functions.md`、`uya_ai_prompt.md`、`todo_mini_to_full.md`、`changelog.md`）。
 

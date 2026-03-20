@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.38（完整版 · 2026-03-20）
+# Uya 语言规范 0.49.39（完整版 · 2026-03-20）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -57,6 +57,10 @@
 ### 0.49.38（2026-03-20）
 
 - **SIMD：`@vector.reduce_mul(v)`**（阶段 4 / `reduce_*` 子集）：**`v`** 为 **`@vector(T,N)`**，**`T`** 为 **`i8`–`i64`、`u8`–`u64`、`f32`、`f64`**；结果为标量 **`T`**，语义为 **`v.lanes[0] * v.lanes[1] * … * v.lanes[N-1]`**（按通道使用与标量 **`\*`** 相同的包装/溢出规则）。**C99**：**`i32`/`u32`/`f32`** 的 **`×2`/`×4`** 发射 **`uya_simd_*_reduce_mul_*`** 助手（SSE2 `_mm_mul_*`；i32/u32 ×4 用 SSE4.1 `_mm_mullo_epi32`，无 SSE4.1 时自动回退标量循环）；其余类型用 **`while` 循环**累乘。**`×2`**：`f32` 用 SSE2 `_mm_mul_ss`，整数用标量；**`×4`**：`f32` 用 SSE2 `_mm_mul_ps`。**测试**：`test_simd_vector_reduce_mul.uya`。
+
+### 0.49.39（2026-03-20）
+
+- **SIMD：`@vector.reduce_min(v)` / `@vector.reduce_max(v)`**（阶段 4 / `reduce_*` 子集）：**`v`** 为 **`@vector(T,N)`**，**`T`** 为 **`i8`–`i64`、`u8`–`u64`、`f32`、`f64`**；结果为标量 **`T`**，分别为各通道的最小值 / 最大值。**C99**：全部 **`while` 循环** scalar 回退（SSE2 无水平 min/max，等效使用 SSE4.1 `_mm_min_epi32`/`_mm_max_epi32` 时需额外检测；其余与 `reduce_add` 一致的元素类型约束）。**测试**：`test_simd_vector_reduce_min_max.uya`。
 
 ### 0.49.37（2026-03-20）
 

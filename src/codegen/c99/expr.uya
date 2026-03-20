@@ -4016,6 +4016,102 @@ fn c99_collect_simd_reduce_mul_emit_flags_from_call(codegen: &C99CodeGenerator, 
     }
 }
 
+fn c99_expr_is_vector_reduce_min(expr: &ASTNode) i32 {
+    if expr == null || expr.type != ASTNodeType.AST_CALL_EXPR {
+        return 0;
+    }
+    const mn_rmin: &byte = c99_simd_vector_builtin_method(expr);
+    if mn_rmin == null || str_equals(mn_rmin, "reduce_min" as *byte) == 0 {
+        return 0;
+    }
+    return 1;
+}
+
+fn c99_expr_is_vector_reduce_max(expr: &ASTNode) i32 {
+    if expr == null || expr.type != ASTNodeType.AST_CALL_EXPR {
+        return 0;
+    }
+    const mn_rmax: &byte = c99_simd_vector_builtin_method(expr);
+    if mn_rmax == null || str_equals(mn_rmax, "reduce_max" as *byte) == 0 {
+        return 0;
+    }
+    return 1;
+}
+
+// @vector.reduce_min(v)：标量 while 循环取最小值
+fn c99_gen_simd_reduce_min_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
+    if expr.call_expr_arg_count != 1 || expr.call_expr_args == null || expr.call_expr_args[0] == null {
+        return 0;
+    }
+    var target_rmin: &ASTNode = expr.simd_splat_target_type;
+    if target_rmin == null {
+        target_rmin = c99_resolve_simd_type_ast_from_expr(codegen, expr.call_expr_args[0]);
+    }
+    if target_rmin == null || target_rmin.type != ASTNodeType.AST_TYPE_VECTOR ||
+        target_rmin.type_vector_element_type == null || target_rmin.type_vector_size_expr == null {
+        return 0;
+    }
+    const vec_c: &byte = c99_type_to_c(codegen, target_rmin);
+    const lanes_rmin: i32 = eval_const_expr(codegen, target_rmin.type_vector_size_expr);
+    const elem_ty_rmin: &ASTNode = target_rmin.type_vector_element_type;
+    const elem_c_rmin: &byte = c99_type_to_c(codegen, elem_ty_rmin);
+    const v_nm: &byte = c99_make_temp_name(codegen, "__uya_rmin_v_" as &byte);
+    const s_nm: &byte = c99_make_temp_name(codegen, "__uya_rmin_s_" as &byte);
+    const i_nm: &byte = c99_make_temp_name(codegen, "__uya_rmin_i_" as &byte);
+    if vec_c == null || lanes_rmin <= 0 || elem_c_rmin == null || v_nm == null || s_nm == null || i_nm == null {
+        return 0;
+    }
+    fputs("({ " as *byte, codegen.output as *void);
+    fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+    gen_expr(codegen, expr.call_expr_args[0]);
+    fputs("; " as *byte, codegen.output as *void);
+    fprintf(codegen.output as *void, "%s %s = %s.lanes[0]; " as *byte, elem_c_rmin as *byte, s_nm as *byte, v_nm as *byte);
+    fprintf(codegen.output as *void, "int %s = 1; " as *byte, i_nm as *byte);
+    fprintf(codegen.output as *void, "while (%s < %d) { " as *byte, i_nm as *byte, lanes_rmin);
+    fprintf(codegen.output as *void, "if (%s.lanes[%s] < %s) { %s = %s.lanes[%s]; } " as *byte,
+        v_nm as *byte, i_nm as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, i_nm as *byte);
+    fprintf(codegen.output as *void, "%s = %s + 1; } " as *byte, i_nm as *byte, i_nm as *byte);
+    fprintf(codegen.output as *void, "%s; })" as *byte, s_nm as *byte);
+    return 1;
+}
+
+// @vector.reduce_max(v)：标量 while 循环取最大值
+fn c99_gen_simd_reduce_max_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
+    if expr.call_expr_arg_count != 1 || expr.call_expr_args == null || expr.call_expr_args[0] == null {
+        return 0;
+    }
+    var target_rmax: &ASTNode = expr.simd_splat_target_type;
+    if target_rmax == null {
+        target_rmax = c99_resolve_simd_type_ast_from_expr(codegen, expr.call_expr_args[0]);
+    }
+    if target_rmax == null || target_rmax.type != ASTNodeType.AST_TYPE_VECTOR ||
+        target_rmax.type_vector_element_type == null || target_rmax.type_vector_size_expr == null {
+        return 0;
+    }
+    const vec_c: &byte = c99_type_to_c(codegen, target_rmax);
+    const lanes_rmax: i32 = eval_const_expr(codegen, target_rmax.type_vector_size_expr);
+    const elem_ty_rmax: &ASTNode = target_rmax.type_vector_element_type;
+    const elem_c_rmax: &byte = c99_type_to_c(codegen, elem_ty_rmax);
+    const v_nm: &byte = c99_make_temp_name(codegen, "__uya_rmax_v_" as &byte);
+    const s_nm: &byte = c99_make_temp_name(codegen, "__uya_rmax_s_" as &byte);
+    const i_nm: &byte = c99_make_temp_name(codegen, "__uya_rmax_i_" as &byte);
+    if vec_c == null || lanes_rmax <= 0 || elem_c_rmax == null || v_nm == null || s_nm == null || i_nm == null {
+        return 0;
+    }
+    fputs("({ " as *byte, codegen.output as *void);
+    fprintf(codegen.output as *void, "%s %s = " as *byte, vec_c as *byte, v_nm as *byte);
+    gen_expr(codegen, expr.call_expr_args[0]);
+    fputs("; " as *byte, codegen.output as *void);
+    fprintf(codegen.output as *void, "%s %s = %s.lanes[0]; " as *byte, elem_c_rmax as *byte, s_nm as *byte, v_nm as *byte);
+    fprintf(codegen.output as *void, "int %s = 1; " as *byte, i_nm as *byte);
+    fprintf(codegen.output as *void, "while (%s < %d) { " as *byte, i_nm as *byte, lanes_rmax);
+    fprintf(codegen.output as *void, "if (%s.lanes[%s] > %s) { %s = %s.lanes[%s]; } " as *byte,
+        v_nm as *byte, i_nm as *byte, s_nm as *byte, s_nm as *byte, v_nm as *byte, i_nm as *byte);
+    fprintf(codegen.output as *void, "%s = %s + 1; } " as *byte, i_nm as *byte, i_nm as *byte);
+    fprintf(codegen.output as *void, "%s; })" as *byte, s_nm as *byte);
+    return 1;
+}
+
 fn c99_find_identifier_type_node(codegen: &C99CodeGenerator, name: &byte) &ASTNode {
     if codegen == null || name == null {
         return null;
@@ -4519,6 +4615,14 @@ fn c99_gen_simd_builtin_call(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
 
     if str_equals(method_name, "reduce_mul" as *byte) != 0 {
         return c99_gen_simd_reduce_mul_call(codegen, expr);
+    }
+
+    if str_equals(method_name, "reduce_min" as *byte) != 0 {
+        return c99_gen_simd_reduce_min_call(codegen, expr);
+    }
+
+    if str_equals(method_name, "reduce_max" as *byte) != 0 {
+        return c99_gen_simd_reduce_max_call(codegen, expr);
     }
 
     if expr.call_expr_arg_count != 1 || expr.call_expr_args == null || expr.call_expr_args[0] == null {
