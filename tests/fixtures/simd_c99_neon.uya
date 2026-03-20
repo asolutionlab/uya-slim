@@ -17,6 +17,19 @@ export fn main() i32 {
     if @vector.all(mu) == false {
         return 2;
     }
+    const ten: Vec4i32 = @vector.splat(10);
+    const two_i: Vec4i32 = @vector.splat(2);
+    const qi: Vec4i32 = ten / two_i;
+    if @vector.all(qi == @vector.splat(5)) == false {
+        return 4;
+    }
+    const u3: Vec4u32 = @vector.splat(3 as u32);
+    const u4: Vec4u32 = @vector.splat(4 as u32);
+    const pm: Vec4u32 = u3 * u4;
+    const qru: Vec4u32 = pm / @vector.splat(2 as u32);
+    if @vector.all(qru == @vector.splat(6 as u32)) == false {
+        return 5;
+    }
     const x: Vec4f32 = @vector.splat(1.0f32);
     const y: Vec4f32 = @vector.splat(2.0f32);
     const mf: Mask4 = x < y;

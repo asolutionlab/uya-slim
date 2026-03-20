@@ -11,6 +11,12 @@ export fn main() i32 {
     if @vector.all(ok) == false {
         return 1;
     }
+    const neg: Vec4i32 = @vector.splat(-7);
+    const two: Vec4i32 = @vector.splat(2);
+    const qt: Vec4i32 = neg / two;
+    if @vector.all(qt == @vector.splat(-3)) == false {
+        return 3;
+    }
 
     const fn1: Vec4f32 = @vector.splat(1.5f32);
     const fn2: Vec4f32 = @vector.splat(0.5f32);
