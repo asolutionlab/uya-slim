@@ -862,7 +862,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 解析 `union Poll<T>` 类型定义（基于联合体泛型语法）
   - [x] 验证 `@await` 只能在 `@async_fn` 函数内使用
 
-- [~] **Checker**：异步编程类型检查（基础实现，C 实现与 uya-src 已同步）
+- [x] **Checker**：异步编程类型检查（基础实现，C 实现与 uya-src 已同步）
   - [x] `@async_fn` 函数必须返回 `Future<!T>` 或 `!Future<T>` 类型（`error_async_wrong_return.uya` 覆盖非法返回类型）
   - [x] `@await` 表达式操作数必须返回 `Future<!T>` 或 `!Future<T>` 类型（错误用例覆盖）
   - [x] `@await` 只能在 `@async_fn` 函数内使用
@@ -872,7 +872,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 接口方法 / 受约束泛型方法返回 `!T` 的推断（`test_interface_error_union_method.uya` 覆盖 `EventLoop.poll()` / `counter.next()`）
   - [x] 状态机大小编译期计算（已实现 `get_type_node_size_bytes()` 递归计算实际类型大小（基本类型、指针、数组、切片、元组、错误联合、具名 struct）；`@await` 上限 32 / 参数上限 16 已在 checker 阶段报错；估算 > 1024 字节时输出警告；栈分配优化暂未启用（待调度器存储期配合））
 
-- [~] **CPS 变换（Continuation-Passing Style）**：状态机生成
+- [x] **CPS 变换（Continuation-Passing Style）**：状态机生成
   - [x] 分析 `@async_fn` 函数体，识别所有 `@await` 点（单/多 `@await` 已稳定，`async_copy` 覆盖循环内场景）
   - [x] 将函数体转换为状态机结构（state + await_fut 单槽，多状态）
   - [x] 为每个 `@await` 点创建状态（state 0 起点，state 1..n 各 await 就绪后）
@@ -891,7 +891,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 生成 `interface Future<T>` vtable（`test_async_future_interface_box.uya` 覆盖）
   - [x] 处理错误传播（`!Future<T>` 中的错误联合；`test_async_error_propagation.uya` 覆盖）
 
-- [~] **标准类型定义**：核心异步类型
+- [x] **标准类型定义**：核心异步类型
   - [x] `union Poll<T>` 定义（Ready/Pending 两变体已在 `lib/std/async.uya` 落地）
   - [x] `interface Future<T>` 接口定义
   - [x] `struct Waker` 定义（`wake/reset/is_woken` 最小语义已落地）
@@ -917,7 +917,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 状态机转换正确性验证（`validate_async_function()` 验证 `@await` 在 `try` 内、`@await` 不在 `return` 之后、`@await` 不在循环条件中）
   - [ ] 唤醒安全性验证（Waker 使用）
 
-- [~] **测试用例**：
+- [x] **测试用例**：
   - [x] `test_async_fn_basic.uya` - 基本异步函数（poll 立即 Ready）
   - [x] `test_async_await_parse.uya` - @async_fn/@await 解析与 @await 上下文校验（仅允许在 async 函数内）
   - [x] `test_task_std_async.uya` - std.async 提供 Task<T>、Poll<T>、Future<T>，task_ready + poll 返回 Ready
