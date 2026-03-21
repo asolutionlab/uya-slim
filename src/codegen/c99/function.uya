@@ -1041,6 +1041,94 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     c99_emit_close_brace_newline(codegen);
 }
 
+// 从 AST 类型节点（&Type）计算字节大小（用于状态机估算）
+// 支持基本类型、结构体（递归字段）、数组、指针、切片，元组、错误联合
+// 返回值：> 0 表示已知大小，<= 0 表示未知（保守按 16B 估算，调用方处理）
+fn get_type_node_size_bytes(codegen: &C99CodeGenerator, type_node: &ASTNode) i32 {
+    if type_node == null || codegen == null {
+        return -1;
+    }
+    const t: &Type = type_node as &Type;
+    if t == null {
+        return -1;
+    }
+    const k: TypeKind = t.kind;
+    // 基本标量
+    if k == TypeKind.TYPE_I8 || k == TypeKind.TYPE_BOOL || k == TypeKind.TYPE_BYTE { return 1; }
+    if k == TypeKind.TYPE_I16 || k == TypeKind.TYPE_U16 { return 2; }
+    if k == TypeKind.TYPE_I32 || k == TypeKind.TYPE_U32 || k == TypeKind.TYPE_F32 { return 4; }
+    if k == TypeKind.TYPE_I64 || k == TypeKind.TYPE_U64 || k == TypeKind.TYPE_F64 || k == TypeKind.TYPE_USIZE { return 8; }
+    // 指针：64 位 8 字节
+    if k == TypeKind.TYPE_POINTER { return 8; }
+    // 原子类型
+    if k == TypeKind.TYPE_ATOMIC && t.atomic_inner_type != null {
+        return get_type_node_size_bytes(codegen, t.atomic_inner_type);
+    }
+    // 数组
+    if k == TypeKind.TYPE_ARRAY {
+        if t.element_type != null && t.array_size > 0 {
+            const esz: i32 = get_type_node_size_bytes(codegen, t.element_type);
+            if esz > 0 && t.array_size <= 0x7FFFFFFF / esz {
+                return esz * t.array_size;
+            }
+        }
+        return -1;
+    }
+    // 切片
+    if k == TypeKind.TYPE_SLICE { return 16; }
+    // 元组
+    if k == TypeKind.TYPE_TUPLE && t.tuple_count > 0 && t.tuple_element_types != null {
+        var total: i32 = 0;
+        var ti: i32 = 0;
+        while ti < t.tuple_count {
+            const et: &Type = &t.tuple_element_types[ti];
+            if et != null {
+                const es: i32 = get_type_node_size_bytes(codegen, et);
+                if es <= 0 { return -1; }
+                total = total + es;
+            }
+            ti = ti + 1;
+        }
+        return total;
+    }
+    // 错误联合：payload 大小（至少 4 字节 for error_id）
+    if k == TypeKind.TYPE_ERROR_UNION {
+        if t.error_union_payload_type != null {
+            const ps: i32 = get_type_node_size_bytes(codegen, t.error_union_payload_type);
+            if ps > 0 {
+                if ps >= 4 { return ps; } else { return 4; }
+            }
+        }
+        return 4;
+    }
+    // 具名类型：struct / union / error_union / interface
+    if k == TypeKind.TYPE_STRUCT || k == TypeKind.TYPE_UNION ||
+        k == TypeKind.TYPE_ERROR_UNION || k == TypeKind.TYPE_INTERFACE {
+        if t.struct_name == null {
+            return -1;
+        }
+        const decl: &ASTNode = find_struct_decl_c99(codegen, t.struct_name);
+        if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL {
+            var sz: i32 = 0;
+            if decl.struct_decl_fields != null {
+                var fi: i32 = 0;
+                while fi < decl.struct_decl_field_count {
+                    const field: &ASTNode = decl.struct_decl_fields[fi];
+                    if field != null && field.type == ASTNodeType.AST_VAR_DECL {
+                        const fsz: i32 = get_type_node_size_bytes(codegen, field.var_decl_type);
+                        if fsz <= 0 { return -1; }
+                        sz = sz + fsz;
+                    }
+                    fi = fi + 1;
+                }
+            }
+            return sz;
+        }
+        return -1;
+    }
+    return -1;
+}
+
 // 递归收集 await 点（进入 while/if/for/block 内部），使用 codegen.async_collect_* 存储结果
 fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_count: i32) void {
     if node == null || codegen.async_collect_count >= max_count {
@@ -1189,23 +1277,51 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             ci = ci + 1;
         }
     }
-    // 编译期计算状态机近似字节大小（保守估算）：
-    // - 接口指针（await_fut）= 16 字节（64 位 vtable+data）
+    // 编译期计算状态机字节大小（使用真实类型大小）
     // - state = 4 字节
-    // - 循环变量 = 16 字节（两个 size_t）
-    // - await 绑定：各绑定类型保守按 16 字节计
-    // - 参数：各参数类型保守按 16 字节计
-    // 结果存 codegen.async_state_size：> 0 && <= 256 则栈分配，否则堆分配
+    // - await_fut（vtable+data 接口）= 16 字节
+    // - 循环变量 = 16 字节
+    // - await 绑定：按实际绑定类型大小
+    // - 参数：按实际参数类型大小
+    // 结果存 codegen.async_state_size：> 0 && <= 256 则栈分配（暂未启用），否则堆分配
     {
         var est: i32 = 4 + 16;
         if has_await_loop != 0 {
             est = est + 16;
         }
-        est = est + (await_count * 16);
+        // await 绑定：按实际类型大小
+        var ai: i32 = 0;
+        while ai < await_count && ai < 32 {
+            const bind_type_node: &ASTNode = await_bind_types[ai];
+            if bind_type_node != null {
+                const sz: i32 = get_type_node_size_bytes(codegen, bind_type_node);
+                if sz > 0 {
+                    est = est + sz;
+                } else {
+                    est = est + 16;
+                }
+            } else {
+                est = est + 16;
+            }
+            ai = ai + 1;
+        }
+        // 参数：按实际类型大小
         {
             var pc: i32 = fn_decl.fn_decl_param_count;
             if pc > 16 { pc = 16; }
-            est = est + (pc * 16);
+            var pi2: i32 = 0;
+            while pi2 < pc {
+                const param: &ASTNode = fn_decl.fn_decl_params[pi2];
+                if param != null && param.type == ASTNodeType.AST_VAR_DECL {
+                    const sz: i32 = get_type_node_size_bytes(codegen, param.var_decl_type);
+                    if sz > 0 {
+                        est = est + sz;
+                    } else {
+                        est = est + 16;
+                    }
+                }
+                pi2 = pi2 + 1;
+            }
         }
         codegen.async_state_size = est;
     }
