@@ -55,6 +55,11 @@ const C99_STRING_INTERP_BUF_SIZE: i32 = 2048;
 const C99_STRING_INTERP_LIMIT: i32 = 2046;
 const C99_SUFFIX_BUF_SIZE: i32 = 512;
 
+// 声明缓存哈希表大小（应为 2 的幂以便用 & mask 取模）
+const C99_DECL_CACHE_BITS: i32 = 10;         // 1024 个槽
+const C99_DECL_CACHE_SIZE: i32 = 1024;       // 哈希表槽数
+const C99_DECL_CACHE_MASK: i32 = 1023;       // mask = SIZE - 1
+
 // ===== 类型定义 =====
 
 // 字符串常量表项
@@ -136,6 +141,15 @@ struct C99CodeGenerator {
     function_declaration_count: i32,
     reachable_function_decls: [&ASTNode: C99_MAX_REACHABLE_FUNCTIONS],
     reachable_function_decl_count: i32,
+
+    // 声明缓存（一次性构建，用于加速 find_*_c99 系列查找）
+    fn_decl_cache: [&ASTNode: C99_DECL_CACHE_SIZE],      // 函数名哈希缓存
+    struct_decl_cache: [&ASTNode: C99_DECL_CACHE_SIZE],   // 结构体名哈希缓存
+    enum_decl_cache: [&ASTNode: C99_DECL_CACHE_SIZE],     // 枚举名哈希缓存
+    type_alias_cache: [&ASTNode: C99_DECL_CACHE_SIZE],    // 类型别名哈希缓存
+    union_decl_cache: [&ASTNode: C99_DECL_CACHE_SIZE],    // 联合体名哈希缓存
+    macro_decl_cache: [&ASTNode: C99_DECL_CACHE_SIZE],    // 宏名哈希缓存
+    decl_cache_initialized: i32,                          // 缓存是否已构建（1=已构建）
     
     // 全局变量表
     global_variables: [GlobalVariable: C99_MAX_GLOBAL_VARS],

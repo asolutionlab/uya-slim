@@ -6,17 +6,51 @@
 
 // ===== 外部函数声明 =====
 // C 标准库函数（在 extern_decls.uya 中声明）
+// 哈希函数（来自 checker/symbols.uya）
+extern fn hash_string(str: &byte) i32;
 
 // 查找函数声明
 // 若存在多个同名顶层 fn（如前向 extern 与后续带函数体的实现），优先返回带 body 的定义，
 // 否则可达性分析与代码生成会锚到无体的声明，导致实现既不生成原型也不生成定义（如 libc time 的 _strftime_write）。
+// 策略：缓存命中时 O(1)，未命中或冲突时回退线性查找。
 fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode {
     if codegen == null || func_name == null || codegen.program_node == null {
         return null;
     }
-    
+
+    // 优先使用缓存（O(1)）
+    if codegen.decl_cache_initialized != 0 {
+        const h: i32 = (hash_string(func_name) & C99_DECL_CACHE_MASK) as i32;
+        const cached: &ASTNode = codegen.fn_decl_cache[h];
+        if cached != null && cached.type == ASTNodeType.AST_FN_DECL {
+            const cached_name: &byte = cached.fn_decl_name;
+            if cached_name != null && strcmp(cached_name as *byte, func_name as *byte) == 0 {
+                // 缓存命中且唯一，直接返回（优先有 body 的）
+                if cached.fn_decl_body != null {
+                    return cached;
+                }
+                // 有缓存但无 body，线性查找是否有同名的有 body 版本
+                const decl_count: i32 = codegen.program_node.program_decl_count;
+                var i: i32 = 0;
+                while i < decl_count {
+                    const decl: &ASTNode = codegen.program_node.program_decls[i];
+                    if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_body != null {
+                        const dn: &byte = decl.fn_decl_name;
+                        if dn != null && strcmp(dn as *byte, func_name as *byte) == 0 {
+                            return decl;
+                        }
+                    }
+                    i = i + 1;
+                }
+                // 缓存本身就是唯一匹配
+                return cached;
+            }
+        }
+    }
+
+    // 缓存未命中或冲突，线性查找
     const decl_count: i32 = codegen.program_node.program_decl_count;
-    
+
     var i: i32 = 0;
     var stub: &ASTNode = null;
     while i < decl_count {
@@ -34,7 +68,7 @@ fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode
         }
         i = i + 1;
     }
-    
+
     return stub;
 }
 

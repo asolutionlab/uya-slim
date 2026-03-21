@@ -120,6 +120,19 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.struct_type_arg_count = 0;
     codegen.type_conv_depth = 0;
 
+    // 初始化声明缓存（由 build_decl_caches 填充，这里仅重置）
+    codegen.decl_cache_initialized = 0;
+    ii = 0;
+    while ii < C99_DECL_CACHE_SIZE {
+        codegen.fn_decl_cache[ii] = null;
+        codegen.struct_decl_cache[ii] = null;
+        codegen.enum_decl_cache[ii] = null;
+        codegen.type_alias_cache[ii] = null;
+        codegen.union_decl_cache[ii] = null;
+        codegen.macro_decl_cache[ii] = null;
+        ii = ii + 1;
+    }
+
     // 初始化标准库头文件标志
     codegen.needs_string_h = 0;
     codegen.needs_stdio_h = 0;

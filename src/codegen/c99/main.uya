@@ -6,6 +6,10 @@
 // 注意：gen_function_prototype 和 gen_function 在 function.uya 中定义，
 //       由于 function.uya 在 main.uya 之前编译，函数已经可见
 
+// ===== 外部函数声明 =====
+// 哈希函数（来自 checker/symbols.uya）
+extern fn hash_string(str: &byte) i32;
+
 // 递归收集标准库函数调用，设置相应的标志
 fn collect_stdlib_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if codegen == null || node == null {
@@ -1063,9 +1067,60 @@ fn collect_reachable_top_level_functions_from_node(codegen: &C99CodeGenerator, n
     }
 }
 
+fn build_decl_caches(codegen: &C99CodeGenerator) void {
+    if codegen.program_node == null {
+        return;
+    }
+    const dc: i32 = codegen.program_node.program_decl_count;
+    var i: i32 = 0;
+    while i < C99_DECL_CACHE_SIZE {
+        codegen.fn_decl_cache[i] = null;
+        codegen.struct_decl_cache[i] = null;
+        codegen.enum_decl_cache[i] = null;
+        codegen.type_alias_cache[i] = null;
+        codegen.union_decl_cache[i] = null;
+        codegen.macro_decl_cache[i] = null;
+        i = i + 1;
+    }
+    i = 0;
+    while i < dc {
+        const decl: &ASTNode = codegen.program_node.program_decls[i];
+        if decl == null {
+            i = i + 1;
+            continue;
+        }
+        if decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null {
+            const h: i32 = (hash_string(decl.fn_decl_name) & C99_DECL_CACHE_MASK) as i32;
+            codegen.fn_decl_cache[h] = decl;
+        } else if decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_name != null {
+            const h: i32 = (hash_string(decl.struct_decl_name) & C99_DECL_CACHE_MASK) as i32;
+            codegen.struct_decl_cache[h] = decl;
+        } else if decl.type == ASTNodeType.AST_ENUM_DECL && decl.enum_decl_name != null {
+            const h: i32 = (hash_string(decl.enum_decl_name) & C99_DECL_CACHE_MASK) as i32;
+            codegen.enum_decl_cache[h] = decl;
+        } else if decl.type == ASTNodeType.AST_TYPE_ALIAS && decl.type_alias_name != null {
+            const h: i32 = (hash_string(decl.type_alias_name) & C99_DECL_CACHE_MASK) as i32;
+            codegen.type_alias_cache[h] = decl;
+        } else if decl.type == ASTNodeType.AST_UNION_DECL && decl.union_decl_name != null {
+            const h: i32 = (hash_string(decl.union_decl_name) & C99_DECL_CACHE_MASK) as i32;
+            codegen.union_decl_cache[h] = decl;
+        } else if decl.type == ASTNodeType.AST_MACRO_DECL && decl.macro_decl_name != null {
+            const h: i32 = (hash_string(decl.macro_decl_name) & C99_DECL_CACHE_MASK) as i32;
+            codegen.macro_decl_cache[h] = decl;
+        }
+        i = i + 1;
+    }
+    codegen.decl_cache_initialized = 1;
+}
+
 fn collect_reachable_top_level_functions(codegen: &C99CodeGenerator, ast: &ASTNode) void {
     if codegen == null || ast == null || ast.type != ASTNodeType.AST_PROGRAM {
         return;
+    }
+
+    // 构建声明缓存（一次性，哈希 O(1) 查找替代线性遍历）
+    if codegen.decl_cache_initialized == 0 {
+        build_decl_caches(codegen);
     }
 
     codegen.reachable_function_decl_count = 0;
