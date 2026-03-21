@@ -849,3 +849,126 @@ export fn scheduler_run_task_queue_i32_with_event_loop(self: &Scheduler, loop: E
     return completed;
 }
 
+// ============================================================
+// block_on 集成 EventLoop - 避免忙等待
+// ============================================================
+
+/// 使用 EventLoop 的 block_on：poll 返回 Pending 时注册 epoll，epoll_wait 阻塞等待
+/// 这避免了纯忙等待的 CPU 浪费
+export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms: i32) !T {
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!T> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! T;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! T;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! T;
+                    };
+                    continue;
+                }
+                // 没有 I/O 兴趣，纯等待
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! T;
+                };
+            },
+        };
+    }
+}
+
+/// block_on_with_event_loop 的 i32 特化
+export fn block_on_i32_with_event_loop(loop: EventLoop, f: Future<!i32>, timeout_ms: i32) !i32 {
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!i32> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! i32;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! i32;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! i32;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! i32;
+                };
+            },
+        };
+    }
+}
+
+/// block_on_with_event_loop 的 usize 特化
+export fn block_on_usize_with_event_loop(loop: EventLoop, f: Future<!usize>, timeout_ms: i32) !usize {
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!usize> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! usize;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! usize;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! usize;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! usize;
+                };
+            },
+        };
+    }
+}
+

@@ -41,6 +41,7 @@ export const SYS_getrlimit: i64 = 97;
 export const SYS_clone: i64 = 56;
 export const SYS_futex: i64 = 202;
 export const SYS_set_tid_address: i64 = 218;
+export const SYS_eventfd: i64 = 293;
 
 // CPU 调度（sched）
 export const SYS_sched_setaffinity: i64 = 203;

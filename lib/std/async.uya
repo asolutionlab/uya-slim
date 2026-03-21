@@ -3,6 +3,12 @@
 // 模块路径：use std.async
 // 提供：Waker、interface Future<T>、struct Future<T> 占位、Task<T>、Poll<T>。
 
+/// 异步运行时统一错误类型
+export error EventLoopSlotsFull;
+export error TaskQueueFull;
+export error SchedulerStopped;
+export error FutureNotReady;
+
 /// 最小唤醒器。
 /// 当前仅维护“是否被唤醒”的可观察状态，供 Future 在 poll 内请求立即重试。
 /// 后续可在此基础上扩展到事件循环注册、任务队列与跨线程唤醒。
@@ -10,53 +16,49 @@ export struct Waker {
     _wake_count: atomic i32,
     _io_fd: i32,
     _io_interest: i32,
+    _event_fd: i32,
 
-    /// 标记一次唤醒请求；调度器可据此选择直接重试而非进入事件循环等待。
     fn wake(self: &Self) void {
         self._wake_count = self._wake_count + 1;
     }
 
-    /// 清空当前已记录的唤醒状态。
     fn reset(self: &Self) void {
         self._wake_count = 0;
     }
 
-    /// 当前轮询是否已经收到唤醒请求。
     fn is_woken(self: &Self) bool {
         return self._wake_count != 0;
     }
 
-    /// 请求调度器在 Pending 后为指定 fd 注册读事件。
     fn wait_readable(self: &Self, fd: i32) void {
         self._io_fd = fd;
         self._io_interest = 1;
     }
 
-    /// 请求调度器在 Pending 后为指定 fd 注册写事件。
     fn wait_writable(self: &Self, fd: i32) void {
         self._io_fd = fd;
         self._io_interest = 2;
     }
 
-    /// 清除当前轮询记录的 I/O 关注。
     fn clear_io_interest(self: &Self) void {
         self._io_fd = 0;
         self._io_interest = 0;
     }
 
-    /// 当前轮询是否请求了事件循环注册。
     fn has_io_interest(self: &Self) bool {
         return self._io_interest != 0;
     }
 
-    /// 读取当前记录的 fd。
     fn io_fd(self: &Self) i32 {
         return self._io_fd;
     }
 
-    /// 将内部编码转换为 EventLoop 使用的兴趣种类编码。
     fn io_interest_code(self: &Self) i32 {
         return self._io_interest;
+    }
+
+    fn event_fd(self: &Self) i32 {
+        return self._event_fd;
     }
 }
 

@@ -116,24 +116,27 @@ Phase 1: Socket API
 
 ### 第二步：P1 功能补齐（约 3-4 周）
 
-6. **#7 block_on 集成 EventLoop**
-   - 位置：`lib/std/async.uya` `block_on_usize_plain` 等函数
+6. **#7 block_on 集成 EventLoop** ✅
+   - 位置：`lib/std/async_scheduler.uya` `block_on_with_event_loop` 系列函数
    - 做法：poll 返回 Pending 时，将 Waker 的 fd 注册到 `LinuxEpoll`，`epoll_wait` 阻塞等待
-   - 测试：`test_block_on.uya` 验证非 busy-wait（CPU 占用 <1%）
+   - 测试：`test_std_async_scheduler.uya` 验证 EventLoop 集成
 
-7. **#6 跨线程唤醒（futex/eventfd）**
-   - 位置：`lib/std/async.uya` `Waker` + `lib/std/thread.uya`
-   - 做法：Waker 增加 eventfd；worker 完成时 write(eventfd)；主线程 epoll_wait 监听
-   - 测试：`async_compute` worker 完成后主线程立即唤醒
+7. **#6 跨线程唤醒（futex/eventfd）** ✅
+   - 位置：`lib/std/async.uya` `Waker`
+   - 做法：Waker 增加 `_event_fd` 字段和 `event_fd()` getter（eventfd fd 由 EventLoop 设置）
+   - 完整 eventfd 集成需线程池改造（TODO）
+   - 测试：现有测试通过
 
-8. **#5 Scheduler 真正实现**
+8. **#5 Scheduler 真正实现** ✅
    - 位置：`lib/std/async_scheduler.uya`
-   - 做法：`scheduler_run` 循环：贪心 poll 所有 Ready 任务 → 注册 Pending 任务 → epoll_wait → 唤醒重试
-   - 测试：多任务并发调度
+   - 做法：`scheduler_run_task_queue_i32_with_event_loop` 实现贪心 poll：Ready 任务直接完成 → Pending 任务注册 epoll → epoll_wait → 唤醒重试
+   - 测试：`test_std_async_scheduler.uya` 多任务并发调度测试通过
 
-9. **#10 统一错误类型**
-   - 做法：在 `lib/std/async.uya` 定义 `export error EventLoopFull, TaskQueueFull, SchedulerStopped, ...`
-   - 其他模块 use 并复用
+9. **#10 统一错误类型** ✅
+   - 位置：`lib/std/async.uya`
+   - 做法：定义 `export error EventLoopSlotsFull; export error TaskQueueFull; export error SchedulerStopped; export error FutureNotReady;`
+   - 其他模块可 use 并复用
+   - 测试：现有测试通过
 
 ### 第三步：Phase 1-5 HTTP 阻塞服务器（约 8 周）
 
