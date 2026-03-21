@@ -1186,7 +1186,6 @@ fn validate_async_body(
     errors: &i32
 ) void {
     if node == null || errors == null { return; }
-    if seen_return != null && *seen_return != 0 { return; }
 
     if node.type == ASTNodeType.AST_BLOCK {
         if node.block_stmts != null {
@@ -1209,11 +1208,21 @@ fn validate_async_body(
             *errors = *errors + 1;
         }
     } else if node.type == ASTNodeType.AST_IF_STMT {
+        // if 分支：分别追踪，然后合并
+        // 若两个分支都 return，则 if 之后的代码 unreachable
+        var then_seen: i32 = 0;
+        var else_seen: i32 = 0;
         if node.if_stmt_then_branch != null {
-            validate_async_body(checker, node.if_stmt_then_branch, in_try, seen_return, errors);
+            validate_async_body(checker, node.if_stmt_then_branch, in_try, &then_seen, errors);
         }
         if node.if_stmt_else_branch != null {
-            validate_async_body(checker, node.if_stmt_else_branch, in_try, seen_return, errors);
+            validate_async_body(checker, node.if_stmt_else_branch, in_try, &else_seen, errors);
+        }
+        // 合并：只有两个分支都 return，if 之后的代码才 unreachable
+        if seen_return != null {
+            if then_seen != 0 && else_seen != 0 {
+                *seen_return = 1;
+            }
         }
     } else if node.type == ASTNodeType.AST_WHILE_STMT {
         if node.while_stmt_condition != null {
