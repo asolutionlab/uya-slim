@@ -311,6 +311,366 @@ export fn scheduler_run_u32_with_event_loop(self: &Scheduler, loop: EventLoop, f
     }
 }
 
+/// scheduler_run_with_event_loop 的 i64 特化。
+export fn scheduler_run_i64_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!i64>, timeout_ms: i32) !i64 {
+    _ = self;
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!i64> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! i64;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! i64;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! i64;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! i64;
+                };
+            },
+        };
+    }
+}
+
+/// scheduler_run_with_event_loop 的 u64 特化。
+export fn scheduler_run_u64_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!u64>, timeout_ms: i32) !u64 {
+    _ = self;
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!u64> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! u64;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! u64;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! u64;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! u64;
+                };
+            },
+        };
+    }
+}
+
+/// scheduler_run_with_event_loop 的 i16 特化。
+export fn scheduler_run_i16_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!i16>, timeout_ms: i32) !i16 {
+    _ = self;
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!i16> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! i16;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! i16;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! i16;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! i16;
+                };
+            },
+        };
+    }
+}
+
+/// scheduler_run_with_event_loop 的 u16 特化。
+export fn scheduler_run_u16_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!u16>, timeout_ms: i32) !u16 {
+    _ = self;
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!u16> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! u16;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! u16;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! u16;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! u16;
+                };
+            },
+        };
+    }
+}
+
+/// scheduler_run_with_event_loop 的 i8 特化。
+export fn scheduler_run_i8_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!i8>, timeout_ms: i32) !i8 {
+    _ = self;
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!i8> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! i8;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! i8;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! i8;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! i8;
+                };
+            },
+        };
+    }
+}
+
+/// scheduler_run_with_event_loop 的 u8 特化。
+export fn scheduler_run_u8_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!u8>, timeout_ms: i32) !u8 {
+    _ = self;
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!u8> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! u8;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! u8;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! u8;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! u8;
+                };
+            },
+        };
+    }
+}
+
+/// scheduler_run_with_event_loop 的 bool 特化。
+export fn scheduler_run_bool_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!bool>, timeout_ms: i32) !bool {
+    _ = self;
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!bool> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! bool;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! bool;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! bool;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! bool;
+                };
+            },
+        };
+    }
+}
+
+/// scheduler_run_with_event_loop 的 f32 特化。
+export fn scheduler_run_f32_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!f32>, timeout_ms: i32) !f32 {
+    _ = self;
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!f32> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! f32;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! f32;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! f32;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! f32;
+                };
+            },
+        };
+    }
+}
+
+/// scheduler_run_with_event_loop 的 f64 特化。
+export fn scheduler_run_f64_with_event_loop(self: &Scheduler, loop: EventLoop, f: Future<!f64>, timeout_ms: i32) !f64 {
+    _ = self;
+    var w: Waker = Waker{};
+    while true {
+        w.reset();
+        w.clear_io_interest();
+        const p: Poll<!f64> = f.poll(&w);
+        match p {
+            .Ready(ok_val) => { return ok_val; },
+            .Pending(_) => {
+                if w.is_woken() {
+                    continue;
+                }
+                if w.has_io_interest() {
+                    const fd: i32 = w.io_fd();
+                    const interest: EventKind = scheduler_event_kind_from_waker(&w);
+                    const reg_result: !i32 = loop.register(fd, interest, &w);
+                    _ = reg_result catch {
+                        return reg_result as! f64;
+                    };
+                    const poll_result: !i32 = loop.poll(timeout_ms);
+                    _ = poll_result catch {
+                        return poll_result as! f64;
+                    };
+                    const dereg_result: !i32 = loop.deregister(fd);
+                    _ = dereg_result catch {
+                        return dereg_result as! f64;
+                    };
+                    continue;
+                }
+                const poll_result: !i32 = loop.poll(timeout_ms);
+                _ = poll_result catch {
+                    return poll_result as! f64;
+                };
+            },
+        };
+    }
+}
+
 /// 使用共享 EventLoop 运行两个 i32 任务，直到二者都完成。
 /// 这是迈向通用任务队列前的最小多任务入口，可验证单轮统一注册/轮询/唤醒。
 export fn scheduler_run_pair_i32_with_event_loop(self: &Scheduler, loop: EventLoop, first: Future<!i32>, second: Future<!i32>, first_result: &i32, second_result: &i32, timeout_ms: i32) !i32 {
