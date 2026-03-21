@@ -138,6 +138,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.async_param_count = 0;
     codegen.async_loop_var_name = null;
     codegen.async_loop_var_c = null;
+    codegen.async_state_size = 0;
     ii = 0;
     while ii < 16 {
         codegen.async_param_names[ii] = null;

@@ -925,3 +925,244 @@ export fn bounds_check_pass(checker: &TypeChecker, node: &ASTNode) void {
         }
     }
 }
+
+// ============================================================
+// 编译期状态机大小计算（用于 @async_fn 验证）
+// ============================================================
+
+// 扩展类型字节大小计算：支持 struct/union/interface/error_union/atomic/slice
+// - 返回计算出的字节数（>= 0）
+// - 返回 -1 表示大小未知（复杂嵌套结构、多态接口等）
+// program_node：用于查找 struct/union 定义
+fn get_type_size_bytes_v2(t: &Type, program_node: &ASTNode) i32 {
+    if t == null {
+        return -1;
+    }
+    // 基础标量类型
+    if t.kind == TypeKind.TYPE_I8 || t.kind == TypeKind.TYPE_U8 || t.kind == TypeKind.TYPE_BOOL || t.kind == TypeKind.TYPE_BYTE {
+        return 1;
+    }
+    if t.kind == TypeKind.TYPE_I16 || t.kind == TypeKind.TYPE_U16 {
+        return 2;
+    }
+    if t.kind == TypeKind.TYPE_I32 || t.kind == TypeKind.TYPE_U32 || t.kind == TypeKind.TYPE_F32 {
+        return 4;
+    }
+    if t.kind == TypeKind.TYPE_I64 || t.kind == TypeKind.TYPE_U64 || t.kind == TypeKind.TYPE_F64 || t.kind == TypeKind.TYPE_USIZE {
+        return 8;
+    }
+    // 指针：64 位平台 8 字节
+    if t.kind == TypeKind.TYPE_POINTER {
+        return 8;
+    }
+    // 原子类型：内部类型大小
+    if t.kind == TypeKind.TYPE_ATOMIC {
+        const inner: &Type = type_get_atomic_inner(t);
+        if inner != null {
+            return get_type_size_bytes_v2(inner, program_node);
+        }
+        return -1;
+    }
+    // 固定大小数组
+    if t.kind == TypeKind.TYPE_ARRAY {
+        const elem_sz: i32 = get_type_size_bytes_v2(t.element_type, program_node);
+        if elem_sz > 0 && t.array_size > 0 && t.array_size <= 0x7FFFFFFF / elem_sz {
+            return elem_sz * t.array_size;
+        }
+        return -1;
+    }
+    // 切片：ptr + len（16 字节）
+    if t.kind == TypeKind.TYPE_SLICE {
+        return 16;
+    }
+    // 元组：递归求和
+    if t.kind == TypeKind.TYPE_TUPLE && t.tuple_count > 0 && t.tuple_element_types != null {
+        var total: i32 = 0;
+        var i: i32 = 0;
+        while i < t.tuple_count {
+            const ft: &Type = &t.tuple_element_types[i];
+            const fs: i32 = get_type_size_bytes_v2(ft, program_node);
+            if fs < 0 {
+                return -1;
+            }
+            total = total + fs;
+            i = i + 1;
+        }
+        return total;
+    }
+    // 错误联合：payload 大小（error_id 占 4 字节，i32 对齐）
+    if t.kind == TypeKind.TYPE_ERROR_UNION {
+        const payload: &Type = type_get_error_payload(t);
+        if payload != null {
+            const ps: i32 = get_type_size_bytes_v2(payload, program_node);
+            if ps < 0 {
+                return -1;
+            }
+            // 对齐到 4 字节边界
+            if ps < 4 {
+                return 4;
+            }
+            return ps;
+        }
+        return 4;
+    }
+    // 命名 struct：查找字段定义
+    if t.kind == TypeKind.TYPE_STRUCT && t.struct_name != null && program_node != null {
+        const decl: &ASTNode = find_struct_decl_from_program(program_node, t.struct_name as *byte);
+        if decl != null && decl.struct_decl_fields != null && decl.struct_decl_field_count > 0 {
+            return compute_struct_size(decl, program_node);
+        }
+        return -1;
+    }
+    // 命名 union：最大字段大小
+    if t.kind == TypeKind.TYPE_UNION && t.union_name != null && program_node != null {
+        const decl: &ASTNode = find_struct_decl_from_program(program_node, t.union_name as *byte);
+        if decl != null && decl.struct_decl_fields != null && decl.struct_decl_field_count > 0 {
+            return compute_union_size(decl, program_node);
+        }
+        return -1;
+    }
+    // 接口：vtable ptr + data ptr（16 字节）
+    if t.kind == TypeKind.TYPE_INTERFACE {
+        return 16;
+    }
+    // vararg、vector、mask 等未知大小
+    return -1;
+}
+
+// 计算 struct 总字节大小（字段求和），返回 -1 表示含未知大小字段
+fn compute_struct_size(decl: &ASTNode, program_node: &ASTNode) i32 {
+    if decl == null || decl.struct_decl_field_count <= 0 || decl.struct_decl_fields == null {
+        return 0;
+    }
+    var total: i32 = 0;
+    var i: i32 = 0;
+    while i < decl.struct_decl_field_count {
+        const field: &ASTNode = decl.struct_decl_fields[i];
+        if field == null {
+            i = i + 1;
+            continue;
+        }
+        const ft: &Type = &field.field_type;
+        const fs: i32 = get_type_size_bytes_v2(ft, program_node);
+        if fs < 0 {
+            return -1;
+        }
+        total = total + fs;
+        i = i + 1;
+    }
+    return total;
+}
+
+// 计算 union 最大字段字节大小，返回 -1 表示含未知大小字段
+fn compute_union_size(decl: &ASTNode, program_node: &ASTNode) i32 {
+    if decl == null || decl.struct_decl_field_count <= 0 || decl.struct_decl_fields == null {
+        return 0;
+    }
+    var max_sz: i32 = 0;
+    var i: i32 = 0;
+    while i < decl.struct_decl_field_count {
+        const field: &ASTNode = decl.struct_decl_fields[i];
+        if field == null {
+            i = i + 1;
+            continue;
+        }
+        const ft: &Type = &field.field_type;
+        const fs: i32 = get_type_size_bytes_v2(ft, program_node);
+        if fs < 0 {
+            return -1;
+        }
+        if fs > max_sz {
+            max_sz = fs;
+        }
+        i = i + 1;
+    }
+    return max_sz;
+}
+
+// 计算 @async_fn 状态机近似字节大小。
+// 返回值：
+//   >= 0  : 计算出的近似字节数
+//   -1    : 含未知大小字段，只能用堆分配
+//   -2    : 检测到错误（参数类型无法解析等）
+//
+// 状态机布局：
+//   1. state (i32)                         = 4 字节
+//   2. [条件] _uya_await_storage (Future<T>)  ≈ Future 内部 payload 大小
+//   3. await_fut (interface Future<T>)      = 16 字节（vtable + data）
+//   4. [条件] _uya_total + _uya_read_n      = 16 字节（两个 size_t）
+//   5. 每 await 一个 _uya_bind_<name>       = await_bind_types 各字段大小之和
+//   6. 每 captured param 一个字段           = 各参数类型大小之和
+fn compute_async_state_machine_size(
+    fn_decl: &ASTNode,
+    await_count: i32,
+    await_bind_types: [&ASTNode: 32],
+    has_await_loop: i32,
+    program_node: &ASTNode
+) i32 {
+    if fn_decl == null {
+        return -2;
+    }
+    // 1. state
+    var total: i32 = 4;
+    // 2. _uya_await_storage（仅在 await_operand_is_err_future 时存在）
+    //    该字段大小取决于 Future<T> 的 payload，即 error_union 负载大小。
+    //    保守估计：如果任意 await 的绑定类型含 Future 或无法计算，用 16 估算。
+    var has_future_storage: i32 = 0;
+    var ai: i32 = 0;
+    while ai < await_count && ai < 32 {
+        const bind_type_node: &ASTNode = await_bind_types[ai];
+        if bind_type_node != null {
+            const bt: &Type = &bind_type_node.field_type;
+            if bt != null && bt.kind == TypeKind.TYPE_STRUCT {
+                const bn: &byte = type_get_struct_name(bt);
+                if bn != null && strlen(bn as *byte) >= 6 &&
+                    strncmp(bn as *byte, "Future" as *byte, 6) == 0 {
+                    has_future_storage = 1;
+                }
+            }
+        }
+        ai = ai + 1;
+    }
+    if has_future_storage != 0 {
+        // 保守估计 await_fut interface 大小
+        total = total + 16;
+    }
+    // 3. await_fut interface
+    total = total + 16;
+    // 4. 循环内 await 的 total/read_n
+    if has_await_loop != 0 {
+        total = total + 16;
+    }
+    // 5. await 绑定变量
+    ai = 0;
+    while ai < await_count && ai < 32 {
+        const bind_type_node: &ASTNode = await_bind_types[ai];
+        if bind_type_node != null {
+            const bt: &Type = &bind_type_node.field_type;
+            const bs: i32 = get_type_size_bytes_v2(bt, program_node);
+            if bs < 0 {
+                return -1;
+            }
+            total = total + bs;
+        }
+        ai = ai + 1;
+    }
+    // 6. 捕获的参数
+    const param_count: i32 = fn_decl.fn_decl_param_count;
+    const params: & &ASTNode = fn_decl.fn_decl_params;
+    var pi: i32 = 0;
+    while pi < param_count && pi < 16 {
+        const param: &ASTNode = params[pi];
+        if param != null && param.type == ASTNodeType.AST_VAR_DECL {
+            const pt: &Type = &param.var_decl_type;
+            const ps: i32 = get_type_size_bytes_v2(pt, program_node);
+            if ps < 0 {
+                return -1;
+            }
+            total = total + ps;
+        }
+        pi = pi + 1;
+    }
+    return total;
+}
