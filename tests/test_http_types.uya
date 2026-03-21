@@ -1,0 +1,21 @@
+// test_http_types.uya - HTTP 类型测试
+
+use std.http.types;
+use std.testing.assert_eq_i32;
+
+test "method_enum" {
+    const m: Method = Method.GET;
+    _ = m;
+}
+
+test "status_enum" {
+    const s: Status = Status.OK;
+    _ = s;
+}
+
+test "constants" {
+    try assert_eq_i32(MAX_PATH_PARAMS, 8);
+    try assert_eq_i32(MAX_QUERY_PARAMS, 16);
+    try assert_eq_i32(MAX_URI_LENGTH, 256);
+    try assert_eq_i32(MAX_BODY_SIZE, 65536);
+}

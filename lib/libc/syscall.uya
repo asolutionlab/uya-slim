@@ -55,6 +55,33 @@ export const SYS_gettimeofday: i64 = 96;
 export const SYS_fcntl: i64 = 72;
 export const SYS_pipe2: i64 = 293;
 
+// Socket API（Linux）
+export const SYS_socket: i64 = 41;
+export const SYS_bind: i64 = 49;
+export const SYS_listen: i64 = 50;
+export const SYS_accept: i64 = 43;
+export const SYS_connect: i64 = 42;
+export const SYS_send: i64 = 44;
+export const SYS_recv: i64 = 45;
+export const SYS_shutdown: i64 = 48;
+export const SYS_setsockopt: i64 = 54;
+export const SYS_getsockopt: i64 = 55;
+export const SYS_getsockname: i64 = 51;
+export const SYS_getpeername: i64 = 52;
+
+// Socket 常用常量
+export const AF_INET: i32 = 2;
+export const AF_INET6: i32 = 10;
+export const SOCK_STREAM: i32 = 1;
+export const SOCK_DGRAM: i32 = 2;
+export const IPPROTO_TCP: i32 = 6;
+export const IPPROTO_UDP: i32 = 17;
+export const SHUT_RD: i32 = 0;
+export const SHUT_WR: i32 = 1;
+export const SHUT_RDWR: i32 = 2;
+export const SOL_SOCKET: i32 = 1;
+export const SO_REUSEADDR: i32 = 2;
+
 // 用户/组
 export const SYS_getuid: i64 = 102;
 export const SYS_getgid: i64 = 104;
@@ -567,4 +594,68 @@ export fn sys_gettid() !i32 {
 // 返回：父进程返回子进程 PID，子进程返回 0
 export fn sys_clone(flags: i64, child_stack: &void, ptid: &i32, ctid: &i32, tls: &void) !i64 {
     return @syscall(SYS_clone, flags, child_stack as i64, ptid as i64, ctid as i64, tls as i64);
+}
+
+// ============================================================
+// Socket API
+// ============================================================
+
+// sys_socket - 创建 socket
+export extern "libc" fn sys_socket(domain: i32, type: i32, protocol: i32) !i32 {
+    return @syscall(SYS_socket, domain as i64, type as i64, protocol as i64) as! i32;
+}
+
+// sys_bind - 绑定 socket 到地址
+export extern "libc" fn sys_bind(sockfd: i32, addr: *void, addrlen: u32) !i32 {
+    return @syscall(SYS_bind, sockfd as i64, addr as i64, addrlen as i64) as! i32;
+}
+
+// sys_listen - 监听 socket
+export extern "libc" fn sys_listen(sockfd: i32, backlog: i32) !i32 {
+    return @syscall(SYS_listen, sockfd as i64, backlog as i64) as! i32;
+}
+
+// sys_accept - 接受连接
+export extern "libc" fn sys_accept(sockfd: i32, addr: *void, addrlen: *u32) !i32 {
+    return @syscall(SYS_accept, sockfd as i64, addr as i64, addrlen as i64) as! i32;
+}
+
+// sys_connect - 连接远程 socket
+export extern "libc" fn sys_connect(sockfd: i32, addr: *void, addrlen: u32) !i32 {
+    return @syscall(SYS_connect, sockfd as i64, addr as i64, addrlen as i64) as! i32;
+}
+
+// sys_send - 发送数据
+export extern "libc" fn sys_send(sockfd: i32, buf: *const byte, len: usize, flags: i32) !isize {
+    return @syscall(SYS_send, sockfd as i64, buf as i64, len as i64, flags as i64) as! isize;
+}
+
+// sys_recv - 接收数据
+export extern "libc" fn sys_recv(sockfd: i32, buf: *byte, len: usize, flags: i32) !isize {
+    return @syscall(SYS_recv, sockfd as i64, buf as i64, len as i64, flags as i64) as! isize;
+}
+
+// sys_shutdown - 关闭 socket
+export extern "libc" fn sys_shutdown(sockfd: i32, how: i32) !i32 {
+    return @syscall(SYS_shutdown, sockfd as i64, how as i64) as! i32;
+}
+
+// sys_setsockopt - 设置 socket 选项
+export extern "libc" fn sys_setsockopt(sockfd: i32, level: i32, optname: i32, optval: *void, optlen: u32) !i32 {
+    return @syscall(SYS_setsockopt, sockfd as i64, level as i64, optname as i64, optval as i64, optlen as i64) as! i32;
+}
+
+// sys_getsockopt - 获取 socket 选项
+export extern "libc" fn sys_getsockopt(sockfd: i32, level: i32, optname: i32, optval: *void, optlen: *u32) !i32 {
+    return @syscall(SYS_getsockopt, sockfd as i64, level as i64, optname as i64, optval as i64, optlen as i64) as! i32;
+}
+
+// sys_getsockname - 获取本地 socket 地址
+export extern "libc" fn sys_getsockname(sockfd: i32, addr: *void, addrlen: *u32) !i32 {
+    return @syscall(SYS_getsockname, sockfd as i64, addr as i64, addrlen as i64) as! i32;
+}
+
+// sys_getpeername - 获取远程 socket 地址
+export extern "libc" fn sys_getpeername(sockfd: i32, addr: *void, addrlen: *u32) !i32 {
+    return @syscall(SYS_getpeername, sockfd as i64, addr as i64, addrlen as i64) as! i32;
 }

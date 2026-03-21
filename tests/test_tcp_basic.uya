@@ -1,0 +1,28 @@
+// test_tcp_basic.uya - TCP Socket API 基本测试
+
+use std.testing.assert_eq_i32;
+use std.testing.assert_eq_usize;
+use libc.syscall;
+
+test "tcp_socket_create" {
+    const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, 0);
+    try assert_eq_i32(fd >= 0 as i32, 1);
+    _ = try sys_close(fd);
+}
+
+test "tcp_socket_close" {
+    const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, 0);
+    const result: i32 = try sys_close(fd);
+    try assert_eq_i32(result, 0);
+}
+
+test "tcp_constants" {
+    try assert_eq_i32(AF_INET, 2);
+    try assert_eq_i32(AF_INET6, 10);
+    try assert_eq_i32(SOCK_STREAM, 1);
+    try assert_eq_i32(SOCK_DGRAM, 2);
+    try assert_eq_i32(IPPROTO_TCP, 6);
+    try assert_eq_i32(IPPROTO_UDP, 17);
+    try assert_eq_i32(SOL_SOCKET, 1);
+    try assert_eq_i32(SO_REUSEADDR, 2);
+}

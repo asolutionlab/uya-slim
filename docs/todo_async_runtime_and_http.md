@@ -142,16 +142,17 @@ Phase 1: Socket API
 
 参见 [todo_http.md](todo_http.md) Phase 1-5 详细任务。
 
-关键前置：Phase 1 Socket API 需在 `lib/libc/syscall.uya` 中添加：
-- `sys_socket(domain, type, protocol) -> i32`
-- `sys_bind(fd, addr, addr_len) -> i32`
-- `sys_listen(fd, backlog) -> i32`
-- `sys_accept(fd, addr, addr_len) -> i32`
-- `sys_connect(fd, addr, addr_len) -> i32`
-- `sys_send(fd, buf, len, flags) -> isize`
-- `sys_recv(fd, buf, len, flags) -> isize`
-- `sys_setsockopt(fd, level, optname, optval, optlen) -> i32`
-- `sys_getsockopt(fd, level, optname, optval, optlen) -> i32`
+**Phase 1：TCP 基础设施** ✅
+- Socket API 系统调用（socket/bind/listen/accept/connect/send/recv/shutdown/setsockopt/getsockopt）
+- Socket 常量（AF_INET/SOCK_STREAM/IPPROTO_TCP 等）
+- 测试：`test_tcp_basic.uya` 通过
+
+**Phase 2：http.types** ✅
+- 创建 `lib/std/http/` 目录和 `types.uya`
+- 错误类型、HTTP 方法枚举、状态码枚举、服务器模式枚举
+- 请求/响应/连接/Context 结构体
+- Handler/Middleware 接口
+- 测试：`test_http_types.uya` 通过
 
 ### 第四步：Phase 9-10 异步 HTTP 服务器（约 6 周）
 

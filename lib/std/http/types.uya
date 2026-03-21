@@ -1,0 +1,192 @@
+// lib/std/http/types.uya - HTTP 类型定义
+//
+// 模块路径：use std.http.types
+
+use std.async;
+use libc.syscall;
+
+// ============================================================
+// 错误类型
+// ============================================================
+
+export error InvalidRequest;
+export error MethodNotAllowed;
+export error URITooLong;
+export error HeaderTooLarge;
+export error PayloadTooLarge;
+export error TooManyParams;
+export error ValueTooLong;
+export error InvalidToken;
+export error InvalidBoundary;
+export error TooManyParts;
+export error ConnectionClosed;
+
+// ============================================================
+// 常量
+// ============================================================
+
+export const MAX_PATH_PARAMS: i32 = 8;
+export const MAX_QUERY_PARAMS: i32 = 16;
+export const MAX_HEADER_SIZE: i32 = 256;
+export const MAX_HEADER_VALUE_SIZE: i32 = 256;
+export const MAX_URI_LENGTH: i32 = 256;
+export const MAX_BODY_SIZE: i32 = 65536;
+export const MAX_MULTIPART_PARTS: i32 = 16;
+
+// ============================================================
+// HTTP 方法
+// ============================================================
+
+export enum Method {
+    GET,
+    POST,
+    PUT,
+    PATCH,
+    DELETE,
+    OPTIONS,
+    HEAD,
+}
+
+fn method_from_str(s: &const byte, len: usize) Method {
+    if len == 3 {
+        if s[0] == 'G' as byte && s[1] == 'E' as byte && s[2] == 'T' as byte {
+            return Method.GET;
+        }
+        if s[0] == 'P' as byte && s[1] == 'U' as byte && s[2] == 'T' as byte {
+            return Method.PUT;
+        }
+    }
+    if len == 4 {
+        if s[0] == 'P' as byte && s[1] == 'O' as byte && s[2] == 'S' as byte && s[3] == 'T' as byte {
+            return Method.POST;
+        }
+        if s[0] == 'D' as byte && s[1] == 'E' as byte && s[2] == 'L' as byte && s[3] == 'E' as byte {
+            return Method.DELETE;
+        }
+        if s[0] == 'H' as byte && s[1] == 'E' as byte && s[2] == 'A' as byte && s[3] == 'D' as byte {
+            return Method.HEAD;
+        }
+    }
+    if len == 6 {
+        if s[0] == 'P' as byte && s[1] == 'A' as byte && s[2] == 'T' as byte && s[3] == 'C' as byte && s[4] == 'H' as byte && s[5] == 0 as byte {
+            return Method.PATCH;
+        }
+    }
+    if len == 7 {
+        if s[0] == 'O' as byte && s[1] == 'P' as byte && s[2] == 'T' as byte && s[3] == 'I' as byte && s[4] == 'O' as byte && s[5] == 'N' as byte && s[6] == 'S' as byte {
+            return Method.OPTIONS;
+        }
+    }
+    return Method.GET;
+}
+
+// ============================================================
+// HTTP 状态码
+// ============================================================
+
+export enum Status {
+    OK = 200,
+    Created = 201,
+    NoContent = 204,
+    BadRequest = 400,
+    Unauthorized = 401,
+    Forbidden = 403,
+    NotFound = 404,
+    MethodNotAllowed = 405,
+    Conflict = 409,
+    PayloadTooLarge = 413,
+    URITooLong = 414,
+    InternalServerError = 500,
+    NotImplemented = 501,
+}
+
+// ============================================================
+// 服务器模式
+// ============================================================
+
+export enum ServerMode {
+    Blocking,
+    Epoll,
+    ThreadPool,
+}
+
+// ============================================================
+// 请求结构
+// ============================================================
+
+export struct Header {
+    name: [byte: MAX_HEADER_SIZE],
+    value: [byte: MAX_HEADER_VALUE_SIZE],
+}
+
+export struct Request {
+    method: Method,
+    path: [byte: MAX_URI_LENGTH],
+    path_params: [(&byte, &[byte]): MAX_PATH_PARAMS],
+    query: [(&byte, &[byte]): MAX_QUERY_PARAMS],
+    headers: [Header: MAX_HEADER_SIZE],
+    header_count: i32,
+    body: &[byte],
+}
+
+// ============================================================
+// 响应结构
+// ============================================================
+
+export struct Response {
+    status: Status,
+    headers: [Header: MAX_HEADER_SIZE],
+    header_count: i32,
+    body: &[byte],
+}
+
+// ============================================================
+// 连接结构
+// ============================================================
+
+export struct Conn {
+    fd: i32,
+
+    fn drop(self: Conn) void {
+        if self.fd >= 0 {
+            _ = try sys_close(self.fd);
+        }
+    }
+}
+
+// ============================================================
+// Context
+// ============================================================
+
+export struct Context {
+    request: Request,
+    response: Response,
+    conn: Conn,
+}
+
+// ============================================================
+// Handler 接口
+// ============================================================
+
+export interface Handler {
+    fn serve(self: &Self, ctx: &Context) !void;
+}
+
+// ============================================================
+// Middleware 接口
+// ============================================================
+
+export interface Middleware {
+    fn process(self: &Self, ctx: &Context, next: &Handler) !void;
+}
+
+// ============================================================
+// 服务器配置
+// ============================================================
+
+export struct ServerConfig {
+    mode: ServerMode,
+    max_connections: i32,
+    port: u16,
+    host: [byte: 64],
+}
