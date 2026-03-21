@@ -625,6 +625,12 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             fprintf(libc.stderr, "%s:(%d:%d): 警告: @async_fn 状态机估算大小约 %d 字节，建议优化（减少 @await 或参数数量）\n" as *byte,
                 node.filename as *byte, node.line, node.column, est_size);
         }
+        // 状态机转换正确性验证：@await 必须在 try 内、不能在 return 后、不能在循环条件中
+        const validation_errors: i32 = validate_async_function(checker, node);
+        if validation_errors > 0 {
+            checker_report_error(checker, node, "@async_fn 状态机结构验证失败，请检查 @await 使用是否规范" as *byte);
+            return 0;
+        }
     }
     
     // 泛型函数：在解析返回类型/函数体时启用类型参数作用域

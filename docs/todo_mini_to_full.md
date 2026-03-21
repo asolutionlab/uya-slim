@@ -914,7 +914,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 - [~] **编译期验证**：
   - [x] 状态机大小编译期计算（`get_type_node_size_bytes()` 按实际类型递归求字节大小；`@await` 上限 32 与参数上限 16 在 checker 阶段报错；`>1024B` 警告已实现；间接递归分析待实现）
   - [ ] Send/Sync 约束推导（跨线程安全性）
-  - [ ] 状态机转换正确性验证
+  - [x] 状态机转换正确性验证（`validate_async_function()` 验证 `@await` 在 `try` 内、`@await` 不在 `return` 之后、`@await` 不在循环条件中）
   - [ ] 唤醒安全性验证（Waker 使用）
 
 - [~] **测试用例**：

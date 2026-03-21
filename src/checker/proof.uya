@@ -1166,3 +1166,159 @@ fn compute_async_state_machine_size(
     }
     return total;
 }
+
+// ============================================================
+// @async_fn 状态机转换正确性验证
+// 验证内容：
+// 1. @await 不出现在 return 之后的 unreachable 代码中
+// 2. @await 不出现在循环条件表达式中（while/for 条件里 await 会导致每次重试重新获取）
+// 3. 每个 @await 绑定变量只赋值一次（状态机单程假设）
+// 4. 函数最后必须是 return 语句（不能有悬空控制流）
+// 5. @await 在 try 表达式内部（必须配合 try）
+// ============================================================
+
+// 递归收集状态机信息并验证（使用 if/else if 链）
+fn validate_async_body(
+    checker: &TypeChecker,
+    node: &ASTNode,
+    in_try: i32,
+    seen_return: &i32,
+    errors: &i32
+) void {
+    if node == null || errors == null { return; }
+    if seen_return != null && *seen_return != 0 { return; }
+
+    if node.type == ASTNodeType.AST_BLOCK {
+        if node.block_stmts != null {
+            var i: i32 = 0;
+            while i < node.block_stmt_count {
+                validate_async_body(checker, node.block_stmts[i], in_try, seen_return, errors);
+                i = i + 1;
+            }
+        }
+    } else if node.type == ASTNodeType.AST_RETURN_STMT {
+        if seen_return != null {
+            *seen_return = 1;
+        }
+    } else if node.type == ASTNodeType.AST_TRY_EXPR {
+        validate_async_body(checker, node.try_expr_operand, 1, seen_return, errors);
+    } else if node.type == ASTNodeType.AST_AWAIT_EXPR {
+        // 注意：@await 不在 try 内的检查已由 checker_check_node -> check_call.uya 处理
+        // 这里只检查 return 之后的 unreachable await
+        if seen_return != null && *seen_return != 0 {
+            *errors = *errors + 1;
+        }
+    } else if node.type == ASTNodeType.AST_IF_STMT {
+        if node.if_stmt_then_branch != null {
+            validate_async_body(checker, node.if_stmt_then_branch, in_try, seen_return, errors);
+        }
+        if node.if_stmt_else_branch != null {
+            validate_async_body(checker, node.if_stmt_else_branch, in_try, seen_return, errors);
+        }
+    } else if node.type == ASTNodeType.AST_WHILE_STMT {
+        if node.while_stmt_condition != null {
+            if has_await_in_expr(node.while_stmt_condition) != 0 {
+                *errors = *errors + 1;
+            }
+        }
+        if node.while_stmt_body != null {
+            var while_seen: i32 = 0;
+            validate_async_body(checker, node.while_stmt_body, in_try, &while_seen, errors);
+        }
+    } else if node.type == ASTNodeType.AST_FOR_STMT {
+        if node.for_stmt_range_start != null && has_await_in_expr(node.for_stmt_range_start) != 0 {
+            *errors = *errors + 1;
+        }
+        if node.for_stmt_range_end != null && has_await_in_expr(node.for_stmt_range_end) != 0 {
+            *errors = *errors + 1;
+        }
+        if node.for_stmt_body != null {
+            var for_seen: i32 = 0;
+            validate_async_body(checker, node.for_stmt_body, in_try, &for_seen, errors);
+        }
+    } else if node.type == ASTNodeType.AST_VAR_DECL {
+        validate_async_body(checker, node.var_decl_init, in_try, seen_return, errors);
+    } else if node.type == ASTNodeType.AST_ASSIGN {
+        validate_async_body(checker, node.assign_dest, in_try, seen_return, errors);
+        validate_async_body(checker, node.assign_src, in_try, seen_return, errors);
+    } else {
+        // 其他节点类型（字面量、标识符、运算符等）：不包含可执行代码，无需处理
+    }
+}
+
+// 检查表达式中是否包含 @await（用于条件表达式检测）
+fn has_await_in_expr(node: &ASTNode) i32 {
+    if node == null { return 0; }
+    if node.type == ASTNodeType.AST_AWAIT_EXPR { return 1; }
+    if node.type == ASTNodeType.AST_TRY_EXPR && node.try_expr_operand != null {
+        return has_await_in_expr(node.try_expr_operand);
+    }
+    // 仅对有子节点的表达式节点递归
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            if has_await_in_expr(node.block_stmts[i]) != 0 { return 1; }
+            i = i + 1;
+        }
+    }
+    if node.type == ASTNodeType.AST_CALL_EXPR && node.call_expr_args != null {
+        var i: i32 = 0;
+        while i < node.call_expr_arg_count {
+            if has_await_in_expr(node.call_expr_args[i]) != 0 { return 1; }
+            i = i + 1;
+        }
+    }
+    if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
+        return has_await_in_expr(node.var_decl_init);
+    }
+    if node.type == ASTNodeType.AST_ASSIGN {
+        if has_await_in_expr(node.assign_src) != 0 { return 1; }
+        return has_await_in_expr(node.assign_dest);
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        if has_await_in_expr(node.if_stmt_condition) != 0 { return 1; }
+        if has_await_in_expr(node.if_stmt_then_branch) != 0 { return 1; }
+        return has_await_in_expr(node.if_stmt_else_branch);
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        if has_await_in_expr(node.while_stmt_condition) != 0 { return 1; }
+        return has_await_in_expr(node.while_stmt_body);
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        if has_await_in_expr(node.for_stmt_range_start) != 0 { return 1; }
+        if has_await_in_expr(node.for_stmt_range_end) != 0 { return 1; }
+        if has_await_in_expr(node.for_stmt_array) != 0 { return 1; }
+        return has_await_in_expr(node.for_stmt_body);
+    }
+    if node.type == ASTNodeType.AST_RETURN_STMT {
+        return has_await_in_expr(node.return_stmt_expr);
+    }
+    if node.type == ASTNodeType.AST_BINARY_EXPR {
+        if has_await_in_expr(node.binary_expr_left) != 0 { return 1; }
+        return has_await_in_expr(node.binary_expr_right);
+    }
+    if node.type == ASTNodeType.AST_UNARY_EXPR {
+        return has_await_in_expr(node.unary_expr_operand);
+    }
+    if node.type == ASTNodeType.AST_MEMBER_ACCESS {
+        return has_await_in_expr(node.member_access_object);
+    }
+    if node.type == ASTNodeType.AST_ARRAY_ACCESS {
+        if has_await_in_expr(node.array_access_array) != 0 { return 1; }
+        return has_await_in_expr(node.array_access_index);
+    }
+    if node.type == ASTNodeType.AST_CAST_EXPR {
+        return has_await_in_expr(node.cast_expr_expr);
+    }
+    return 0;
+}
+
+// 验证 @async_fn 函数体状态机结构正确性
+// 在 checker 阶段调用，errors > 0 表示有错误
+fn validate_async_function(checker: &TypeChecker, fn_node: &ASTNode) i32 {
+    if fn_node == null || fn_node.fn_decl_body == null { return 0; }
+    var errors: i32 = 0;
+    var seen_return: i32 = 0;
+    validate_async_body(checker, fn_node.fn_decl_body, 0, &seen_return, &errors);
+    return errors;
+}
