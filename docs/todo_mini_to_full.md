@@ -895,7 +895,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `union Poll<T>` 定义（Ready/Pending 两变体已在 `lib/std/async.uya` 落地）
   - [x] `interface Future<T>` 接口定义
   - [x] `struct Waker` 定义（`wake/reset/is_woken` 最小语义已落地）
-  - [ ] 为内置类型提供异步支持
+  - [x] 为内置类型提供异步支持（`std.async` 已导出 `poll_ready_ok_i32` / `future_ready_ok_i32`、`poll_ready_ok_u32` / `future_ready_ok_u32`、`poll_ready_ok_usize` / `future_ready_ok_usize`，以及 `task_ready_ok_i32` / `task_ready_ok_u32` / `task_ready_ok_usize`；`test_task_std_async.uya` 覆盖）
 
 - [~] **标准库实现**（基于核心类型，详见 [`docs/std_async_design.md`](./std_async_design.md)）
   - [x] `lib/std/async.uya`：`struct Waker`、`union Poll<T>`（Ready/Pending）、`interface Future<T>`、`struct Future<T>`（`state: Poll<T>`、`fn poll(...) Poll<T>`）、`struct Task<T> : Future<T>`（`task_ready`、`poll`）、`block_on`
@@ -2854,4 +2854,4 @@ interface IReadWriter {
 
 ---
 
-*文档版本：v0.5.10（2026-03-19），565 个测试任务全部通过，内存安全证明已完成；异步最小闭环已打通：`Future<!T>` 主路径、单/多 `@await` 状态机、`Poll/Future/Waker`、`std.async` / `std.async_event` / `std.async_channel` / `std.async_scheduler` 基础实现均已落地；`std.thread` 通用 `async_compute<T>() -> Future<!T>`（当前覆盖 `i32` / `u32` / `usize`）已落地。*
+*文档版本：v0.5.11（2026-03-21），635 个测试任务全部通过，内存安全证明已完成；异步最小闭环已打通：`Future<!T>` 主路径、单/多 `@await` 状态机、`Poll/Future/Waker`、`std.async` / `std.async_event` / `std.async_channel` / `std.async_scheduler` 基础实现均已落地；`std.async` 已为 `i32` / `u32` / `usize` 提供 `poll_ready_ok_*` / `future_ready_ok_*` / `task_ready_ok_*` 导出；`std.thread` 通用 `async_compute<T>() -> Future<!T>`（当前覆盖 `i32` / `u32` / `usize`）已落地。*

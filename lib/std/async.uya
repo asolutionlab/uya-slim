@@ -95,15 +95,39 @@ export fn ok<T>(value: T) !T {
     return value;
 }
 
+/// 构造 Poll<!i32>.Ready(ok(value))，供自定义 `Future<!i32>` 的 Ready 路径复用。
+export fn poll_ready_ok_i32(value: i32) Poll<!i32> {
+    const ok_value: !i32 = ok<i32>(value);
+    const p: Poll<!i32> = Poll<!i32>.Ready(ok_value);
+    return p;
+}
+
+/// 构造已就绪的 `Future<!i32>`。
+export fn future_ready_ok_i32(value: i32) Future<!i32> {
+    return Future<!i32>{ state: poll_ready_ok_i32(value) };
+}
+
+/// 构造 Poll<!u32>.Ready(ok(value))。
+export fn poll_ready_ok_u32(value: u32) Poll<!u32> {
+    const ok_value: !u32 = ok<u32>(value);
+    const p: Poll<!u32> = Poll<!u32>.Ready(ok_value);
+    return p;
+}
+
+/// 构造已就绪的 `Future<!u32>`。
+export fn future_ready_ok_u32(value: u32) Future<!u32> {
+    return Future<!u32>{ state: poll_ready_ok_u32(value) };
+}
+
 /// 构造 Poll<!usize>.Ready(ok(value))，供异步 I/O ready 路径复用。
-fn poll_ready_ok_usize(value: usize) Poll<!usize> {
+export fn poll_ready_ok_usize(value: usize) Poll<!usize> {
     const ok_value: !usize = ok<usize>(value);
     const p: Poll<!usize> = Poll<!usize>.Ready(ok_value);
     return p;
 }
 
-/// 构造已就绪的 Future<!usize>。
-fn future_ready_ok_usize(value: usize) Future<!usize> {
+/// 构造已就绪的 `Future<!usize>`。
+export fn future_ready_ok_usize(value: usize) Future<!usize> {
     return Future<!usize>{ state: poll_ready_ok_usize(value) };
 }
 
@@ -114,8 +138,17 @@ export fn task_ready<T>(value: T) Task<T> {
 
 /// 创建已就绪任务：Ready(ok(value))，便于构造 Future<!T>。
 export fn task_ready_ok_i32(value: i32) Task<!i32> {
-    const ok_value: !i32 = ok<i32>(value);
-    return Task<!i32>{ state: Poll<!i32>.Ready(ok_value) };
+    return Task<!i32>{ state: poll_ready_ok_i32(value) };
+}
+
+/// 创建已就绪任务：`Ready(ok(value))`，`Future<!u32>` / `Task<!u32>` 路径。
+export fn task_ready_ok_u32(value: u32) Task<!u32> {
+    return Task<!u32>{ state: poll_ready_ok_u32(value) };
+}
+
+/// 创建已就绪任务：`Ready(ok(value))`，`Future<!usize>` / `Task<!usize>` 路径。
+export fn task_ready_ok_usize(value: usize) Task<!usize> {
+    return Task<!usize>{ state: poll_ready_ok_usize(value) };
 }
 
 /// 同步运行 Future<!T> 直到 Ready，返回 !T。Pending 时轮询直到就绪（忙等待，测试用）。
