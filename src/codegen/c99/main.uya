@@ -903,7 +903,13 @@ fn collect_reachable_top_level_functions_from_node(codegen: &C99CodeGenerator, n
         const callee: &ASTNode = node.call_expr_callee;
         if callee != null {
             if callee.type == ASTNodeType.AST_IDENTIFIER && callee.identifier_name != null {
-                const fn_decl: &ASTNode = find_function_decl_c99(codegen, callee.identifier_name);
+                var fn_decl: &ASTNode = null;
+                if node.call_expr_type_arg_count > 0 && node.call_expr_type_args != null {
+                    fn_decl = find_generic_fn_decl_for_mono_call(codegen, callee.identifier_name, node.call_expr_type_arg_count);
+                }
+                if fn_decl == null {
+                    fn_decl = find_function_decl_c99(codegen, callee.identifier_name);
+                }
                 mark_reachable_call_target(codegen, fn_decl, node.call_expr_type_arg_count);
             } else if callee.type == ASTNodeType.AST_MEMBER_ACCESS && callee.member_access_field_name != null &&
                 callee.member_access_is_module_access != 0 {
@@ -1831,6 +1837,18 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             if err_union_usize != null {
                 err_union_usize.type_error_union_payload_type = usize_type;
                 c99_type_to_c(codegen, err_union_usize);
+            }
+        }
+    }
+    // 预注册 !bool：std.async 的 ok<bool> 等单态原型在第七步才登记 err_union_bool，若仅靠后续 emit 会与 syscall 等生成顺序纠缠；在此与 !usize 一并提前输出定义
+    {
+        const bool_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, codegen.arena, null);
+        if bool_type != null {
+            bool_type.type_named_name = "bool" as &byte;
+            const err_union_b: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, 0, 0, codegen.arena, null);
+            if err_union_b != null {
+                err_union_b.type_error_union_payload_type = bool_type;
+                c99_type_to_c(codegen, err_union_b);
             }
         }
     }

@@ -1,4 +1,6 @@
 use std;
+// 确保 HostOS/TargetArch 的 C 枚举被发出（cfg 顶层 const 单独引用时 codegen 可能未输出枚举定义）
+use std.platform;
 
 std.cfg(std.host_os == .hos_linux, {
     const EXPECT_HOST_OS: HostOS = HostOS.hos_linux;

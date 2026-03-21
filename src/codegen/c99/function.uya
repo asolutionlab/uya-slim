@@ -52,6 +52,79 @@ fn is_extern_libc_function(codegen: &C99CodeGenerator, func_name: &byte) i32 {
     return 0;
 }
 
+// extern "libc" 规范：byte 在 FFI 中映射为 C 的 char。
+// 返回值：0 = 非 byte 指针；1 = char *；2 = const char *
+fn get_extern_libc_byte_mode_for_type(type_node: &ASTNode) i32 {
+    if type_node == null || type_node.type != ASTNodeType.AST_TYPE_POINTER {
+        return 0;
+    }
+    const pointed_type: &ASTNode = type_node.type_pointer_pointed_type;
+    if pointed_type == null || pointed_type.type != ASTNodeType.AST_TYPE_NAMED || pointed_type.type_named_name == null {
+        return 0;
+    }
+    if strcmp(pointed_type.type_named_name as *byte, "byte" as *byte) != 0 {
+        return 0;
+    }
+    if type_node.type_pointer_is_const != 0 {
+        return 2;
+    }
+    return 1;
+}
+
+fn get_extern_libc_c_type_override(type_node: &ASTNode) &byte {
+    const byte_mode: i32 = get_extern_libc_byte_mode_for_type(type_node);
+    if byte_mode == 2 {
+        return ("const char *" as *byte) as &byte;
+    }
+    if byte_mode == 1 {
+        return ("char *" as *byte) as &byte;
+    }
+    return null;
+}
+
+fn get_extern_libc_param_c_type(fn_decl: &ASTNode, param_index: i32) &byte {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || fn_decl.fn_decl_extern_lib_name == null ||
+        param_index < 0 || param_index >= fn_decl.fn_decl_param_count || fn_decl.fn_decl_params == null {
+        return null;
+    }
+    const param: &ASTNode = fn_decl.fn_decl_params[param_index];
+    if param == null || param.type != ASTNodeType.AST_VAR_DECL {
+        return null;
+    }
+    return get_extern_libc_c_type_override(param.var_decl_type);
+}
+
+fn get_extern_libc_return_c_type(fn_decl: &ASTNode) &byte {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || fn_decl.fn_decl_extern_lib_name == null {
+        return null;
+    }
+    return get_extern_libc_c_type_override(fn_decl.fn_decl_return_type);
+}
+
+fn should_skip_libc_syscall_stub(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL ||
+        fn_decl.fn_decl_extern_lib_name == null || fn_decl.fn_decl_name == null || fn_decl.filename == null ||
+        codegen.program_node == null || codegen.program_node.type != ASTNodeType.AST_PROGRAM {
+        return 0;
+    }
+    if strstr(fn_decl.filename as *byte, "libc/syscall" as *byte) == null {
+        return 0;
+    }
+    var di: i32 = 0;
+    const dc: i32 = codegen.program_node.program_decl_count;
+    while di < dc {
+        const d: &ASTNode = codegen.program_node.program_decls[di];
+        if d != null && d != fn_decl && d.type == ASTNodeType.AST_FN_DECL &&
+            d.fn_decl_name != null && strcmp(d.fn_decl_name as *byte, fn_decl.fn_decl_name as *byte) == 0 &&
+            d.fn_decl_body != null && d.fn_decl_extern_lib_name == null && d.filename != null &&
+            strstr(d.filename as *byte, "syscall/linux" as *byte) != null {
+            return 1;
+        }
+        di = di + 1;
+    }
+    return 0;
+}
+
 // 从文件名提取模块前缀（lib/libc/ -> libc_, lib/std/io/ -> std_io_）
 fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) &byte {
     if codegen == null || filename == null || codegen.arena == null {
@@ -296,6 +369,9 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
         return;
     }
+    if should_skip_libc_syscall_stub(codegen, fn_decl) != 0 {
+        return;
+    }
     
     // 设置当前函数声明（用于 format_param_type 中的 copy_type 检查）
     const saved_current_function_decl: &ASTNode = codegen.current_function_decl;
@@ -329,6 +405,10 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     // 返回类型（如果是数组类型，转换为指针类型）
     var return_c: &byte = convert_array_return_type(codegen, return_type);
     return_c = normalize_poll_return_type(codegen, return_c);
+    const libc_return_c: &byte = get_extern_libc_return_c_type(fn_decl);
+    if libc_return_c != null {
+        return_c = libc_return_c;
+    }
 
     // 特殊处理：main 函数需要重命名为 uya_main（符合 Uya 规范：main 函数无参数）
     // 注意：Uya Mini 不支持三元运算符，使用 if-else 代替
@@ -474,24 +554,9 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                 }
             }
             
-            // 对于 extern "libc" fn 的 byte 指针，仅 strlen 使用 const；sprintf/snprintf/vsprintf/vsnprintf 第一参可修改
-            // 与 C 版一致：其他保持 c99_type_to_c 的默认输出（uint8_t *）
-            var is_libc: i32 = is_extern_libc_function(codegen, fn_decl.fn_decl_name);
-            if is_libc != 0 && param_type.type == ASTNodeType.AST_TYPE_POINTER {
-                const pointed_type: &ASTNode = param_type.type_pointer_pointed_type;
-                if pointed_type != null && pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
-                    const pointed_name: &byte = pointed_type.type_named_name;
-                    if pointed_name != null && strcmp(pointed_name as *byte, "byte" as *byte) == 0 {
-                        if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "strlen" as *byte) == 0 {
-                            param_type_c = ("const uint8_t *" as *byte) as &byte;
-                        } else if fn_decl.fn_decl_name != null && ((strcmp(fn_decl.fn_decl_name as *byte, "sprintf" as *byte) == 0 ||
-                                   strcmp(fn_decl.fn_decl_name as *byte, "snprintf" as *byte) == 0 ||
-                                   strcmp(fn_decl.fn_decl_name as *byte, "vsprintf" as *byte) == 0 ||
-                                   strcmp(fn_decl.fn_decl_name as *byte, "vsnprintf" as *byte) == 0) && i == 0) {
-                            param_type_c = ("uint8_t *" as *byte) as &byte;
-                        }
-                    }
-                }
+            const libc_param_c: &byte = get_extern_libc_param_c_type(fn_decl, i);
+            if libc_param_c != null {
+                param_type_c = libc_param_c;
             }
             
             // 数组参数：在参数名后添加 _param 后缀，函数内部会创建副本
@@ -571,6 +636,12 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         return;
     }
 
+    // lib/libc/syscall.uya 的 export extern "libc" sys_* 与 lib/syscall/linux.uya 的 export sys_* C 符号均为 sys_*，
+    // 合并编译时只应保留 linux 实现，否则 C 报重复定义。
+    if should_skip_libc_syscall_stub(codegen, fn_decl) != 0 {
+        return;
+    }
+
     // @async_fn：
     // - 形式一（阶段 B）：返回 Future<!T> 或 !Future<T>，使用状态机生成 async
     // - 形式二（阶段 A 兼容）：其他返回类型走普通函数代码生成
@@ -618,6 +689,10 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     // 返回类型（如果是数组类型，转换为指针类型）
     var return_c: &byte = convert_array_return_type(codegen, return_type);
     return_c = normalize_poll_return_type(codegen, return_c);
+    const libc_return_c: &byte = get_extern_libc_return_c_type(fn_decl);
+    if libc_return_c != null {
+        return_c = libc_return_c;
+    }
     
     // 声明循环变量 i（在 if-else 之前声明，确保在所有分支都可见）
     var i: i32 = 0;
@@ -700,21 +775,9 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
                     param_type_c = ("const struct Type *" as *byte) as &byte;
                 }
                 
-                // 对于 extern "libc" fn 的 byte 指针，仅 strlen 使用 const；sprintf/snprintf 第一参可修改
-                var is_libc_def: i32 = is_extern_libc_function(codegen, orig_name);
-                if is_libc_def != 0 && param_type.type == ASTNodeType.AST_TYPE_POINTER {
-                    const pointed_type: &ASTNode = param_type.type_pointer_pointed_type;
-                    if pointed_type != null && pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
-                        const pointed_name: &byte = pointed_type.type_named_name;
-                        if pointed_name != null && strcmp(pointed_name as *byte, "byte" as *byte) == 0 {
-                            if orig_name != null && strcmp(orig_name as *byte, "strlen" as *byte) == 0 {
-                                param_type_c = ("const uint8_t *" as *byte) as &byte;
-                            } else if orig_name != null && ((strcmp(orig_name as *byte, "sprintf" as *byte) == 0 ||
-                                       strcmp(orig_name as *byte, "snprintf" as *byte) == 0) && i == 0) {
-                                param_type_c = ("uint8_t *" as *byte) as &byte;
-                            }
-                        }
-                    }
+                const libc_param_c: &byte = get_extern_libc_param_c_type(fn_decl, i);
+                if libc_param_c != null {
+                    param_type_c = libc_param_c;
                 }
                 
                 // 数组参数：在参数名后添加 _param 后缀，函数内部会创建副本
@@ -2056,9 +2119,62 @@ fn is_generic_function_c99(fn_decl: &ASTNode) i32 {
     return 0;
 }
 
+// 为泛型调用 ok<i32>(...) 解析应使用哪条顶层泛型 fn 声明（避免与同名 export 冲突，如 std.async 的 ok<T>）。
+// 优先：与当前正在生成的函数同文件的声明；其次：全程序唯一匹配；再次：首个匹配的 export。
+fn find_generic_fn_decl_for_mono_call(codegen: &C99CodeGenerator, func_name: &byte, type_arg_count: i32) &ASTNode {
+    if codegen == null || func_name == null || codegen.program_node == null ||
+        codegen.program_node.type != ASTNodeType.AST_PROGRAM {
+        return null;
+    }
+    const dc: i32 = codegen.program_node.program_decl_count;
+    if codegen.current_function_decl != null && codegen.current_function_decl.filename != null {
+        var i: i32 = 0;
+        while i < dc {
+            const d: &ASTNode = codegen.program_node.program_decls[i];
+            if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
+                strcmp(d.fn_decl_name as *byte, func_name as *byte) == 0 &&
+                d.fn_decl_type_param_count == type_arg_count &&
+                d.filename != null &&
+                strcmp(d.filename as *byte, codegen.current_function_decl.filename as *byte) == 0 {
+                return d;
+            }
+            i = i + 1;
+        }
+    }
+    var found: &ASTNode = null;
+    var nfound: i32 = 0;
+    var j: i32 = 0;
+    while j < dc {
+        const d2: &ASTNode = codegen.program_node.program_decls[j];
+        if d2 != null && d2.type == ASTNodeType.AST_FN_DECL && d2.fn_decl_name != null &&
+            strcmp(d2.fn_decl_name as *byte, func_name as *byte) == 0 &&
+            d2.fn_decl_type_param_count == type_arg_count {
+            nfound = nfound + 1;
+            found = d2;
+        }
+        j = j + 1;
+    }
+    if nfound == 1 {
+        return found;
+    }
+    var k: i32 = 0;
+    while k < dc {
+        const d3: &ASTNode = codegen.program_node.program_decls[k];
+        if d3 != null && d3.type == ASTNodeType.AST_FN_DECL && d3.fn_decl_name != null &&
+            strcmp(d3.fn_decl_name as *byte, func_name as *byte) == 0 &&
+            d3.fn_decl_type_param_count == type_arg_count &&
+            d3.fn_decl_is_export != 0 && d3.fn_decl_extern_lib_name == null {
+            return d3;
+        }
+        k = k + 1;
+    }
+    return find_function_decl_c99(codegen, func_name);
+}
+
 // 获取单态化函数名称
 // 例如：identity<i32> -> identity_i32
-fn get_mono_function_name(codegen: &C99CodeGenerator, generic_name: &byte, type_args: & & ASTNode, type_arg_count: i32) &byte {
+// fn_decl：该单态对应的泛型模板声明；null 时回退旧逻辑（易与同名 export 冲突）
+fn get_mono_function_name(codegen: &C99CodeGenerator, generic_name: &byte, type_args: & & ASTNode, type_arg_count: i32, fn_decl: &ASTNode) &byte {
     if codegen == null || generic_name == null || type_args == null || type_arg_count <= 0 {
         return generic_name;
     }
@@ -2084,10 +2200,19 @@ fn get_mono_function_name(codegen: &C99CodeGenerator, generic_name: &byte, type_
         suffix[suffix_len] = 0;
     }
     
-    // 分配并构建完整名称
-    // 注意：函数名要走模块前缀逻辑（例如 std.async.ok<i32> -> std_async_ok_i32）
-    const base_name: &byte = get_c_name_for_global_function(codegen, generic_name, 0);
-    const safe_name: &byte = get_safe_c_identifier(codegen, base_name);
+    // 基名：必须来自「本条」泛型声明所在文件，不能用 get_c_name_for_global_function(name,0)
+    // （否则会命中程序中第一个同名 export，如 std.async 的 ok<T> -> std_ok，与测试里私有 ok<T> 单态冲突）。
+    var safe_name: &byte = null;
+    if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL && fn_decl.filename != null {
+        if fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_extern_lib_name != null {
+            safe_name = get_safe_c_identifier(codegen, generic_name);
+        } else {
+            safe_name = get_safe_c_identifier(codegen, get_export_function_c_name(codegen, generic_name, fn_decl.filename));
+        }
+    } else {
+        const legacy_base: &byte = get_c_name_for_global_function(codegen, generic_name, 0);
+        safe_name = get_safe_c_identifier(codegen, legacy_base);
+    }
     const name_len: usize = (strlen(safe_name as *byte) as usize) + 1 + (suffix_len as usize) + 1;
     const mono_name: &byte = arena_alloc(codegen.arena, name_len) as &byte;
     if mono_name == null {
@@ -2255,7 +2380,7 @@ fn gen_mono_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, ty
     }
     
     const orig_name: &byte = fn_decl.fn_decl_name;
-    const mono_name: &byte = get_mono_function_name(codegen, orig_name, type_args, type_arg_count);
+    const mono_name: &byte = get_mono_function_name(codegen, orig_name, type_args, type_arg_count, fn_decl);
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
     const params: & & ASTNode = fn_decl.fn_decl_params;
     const param_count: i32 = fn_decl.fn_decl_param_count;
@@ -2325,7 +2450,7 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
     }
     
     const orig_name: &byte = fn_decl.fn_decl_name;
-    const mono_name: &byte = get_mono_function_name(codegen, orig_name, type_args, type_arg_count);
+    const mono_name: &byte = get_mono_function_name(codegen, orig_name, type_args, type_arg_count, fn_decl);
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
     const params: & & ASTNode = fn_decl.fn_decl_params;
     const param_count: i32 = fn_decl.fn_decl_param_count;
