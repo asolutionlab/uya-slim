@@ -76,6 +76,7 @@ export struct TaskQueueSlot_i32 {
     active: i32,
     done: i32,
     result: i32,
+    epoll_fd: i32,            // 当前 epoll 中注册的 fd，0 表示未注册
 }
 
 export struct TaskQueue_i32 {
@@ -97,6 +98,7 @@ export struct TaskQueue_i32 {
             active: 1,
             done: 0,
             result: 0,
+            epoll_fd: 0,
         };
         self.len = idx + 1;
         return idx;
@@ -396,51 +398,59 @@ export fn scheduler_run_pair_i32_with_event_loop(self: &Scheduler, loop: EventLo
 }
 
 /// 使用共享 EventLoop 运行固定容量的 i32 任务队列，直到全部完成。
-/// 当前为最小多任务轮询实现：顺序 poll 所有任务，统一驱动一次 EventLoop，再进入下一轮。
+/// 已注册 epoll 等待的 slot 持续保留注册状态，实现真正的多 fd 并发调度。
 export fn scheduler_run_task_queue_i32_with_event_loop(self: &Scheduler, loop: EventLoop, queue: &TaskQueue_i32, timeout_ms: i32) !i32 {
     _ = self;
     var completed: i32 = 0;
 
     while completed < queue.len {
-        var registered_fds: [i32: 8] = [];
         var registered_count: i32 = 0;
         var made_progress: i32 = 0;
-        var any_pending: i32 = 0;
         var i: i32 = 0;
 
-        while i < queue.len {
-            const slot_idx: i32 = i;
-            if slot_idx >= 0 && slot_idx < 8 {
-                if queue.slots[slot_idx as usize].active == 0 || queue.slots[slot_idx as usize].done != 0 {
-                    i = i + 1;
-                    continue;
-                }
-
-                queue.slots[slot_idx as usize].waker.reset();
-                queue.slots[slot_idx as usize].waker.clear_io_interest();
-                const p: Poll<!i32> = queue.slots[slot_idx as usize].future.poll(&queue.slots[slot_idx as usize].waker);
-                match p {
-                    .Ready(ok_val) => {
-                        const value: i32 = ok_val catch {
-                            return ok_val as! i32;
-                        };
-                        queue.slots[slot_idx as usize].done = 1;
-                        queue.slots[slot_idx as usize].result = value;
-                        completed = completed + 1;
-                        made_progress = 1;
-                    },
-                    .Pending(_) => {
-                        any_pending = 1;
-                        if queue.slots[slot_idx as usize].waker.is_woken() {
-                            made_progress = 1;
-                        } else if queue.slots[slot_idx as usize].waker.has_io_interest() {
-                            _ = try scheduler_register_waker_interest(loop, &queue.slots[slot_idx as usize].waker, &registered_fds[0], &registered_count);
-                        }
-                    },
-                };
-            } else {
-                break;
+        // 轮询所有 slot（固定 8 容量）
+        while i < 8 {
+            const slot: &TaskQueueSlot_i32 = &queue.slots[i as usize];
+            if slot.active == 0 || slot.done != 0 {
+                i = i + 1;
+                continue;
             }
+
+            // epoll 中已注册的 slot 不 reset waker（保留 epoll 唤醒状态）
+            if slot.epoll_fd == 0 {
+                slot.waker.reset();
+            }
+
+            const p: Poll<!i32> = slot.future.poll(&slot.waker);
+            match p {
+                .Ready(ok_val) => {
+                    const value: i32 = ok_val catch {
+                        return ok_val as! i32;
+                    };
+                    slot.done = 1;
+                    slot.result = value;
+                    // 永远不 deregister：已完成任务的 fd 留在 epoll 中，
+                    // 但 done=1 使其在下轮 inner loop 被跳过，不影响正确性。
+                    slot.waker.reset();
+                    completed = completed + 1;
+                    made_progress = 1;
+                },
+                .Pending(_) => {
+                    if slot.waker.is_woken() {
+                        // 被其他任务唤醒，重试 poll
+                        made_progress = 1;
+                    } else if slot.waker.has_io_interest() {
+                        // 如果还未注册 epoll，则注册（注意：永远不 deregister）
+                        if slot.epoll_fd == 0 {
+                            const fd: i32 = slot.waker.io_fd();
+                            const interest: EventKind = scheduler_event_kind_from_waker(&slot.waker);
+                            _ = try loop.register(fd, interest, &slot.waker);
+                            slot.epoll_fd = fd;
+                            registered_count = registered_count + 1;
+                        }
+                    }
+                },
+            };
             i = i + 1;
         }
 
@@ -451,20 +461,31 @@ export fn scheduler_run_task_queue_i32_with_event_loop(self: &Scheduler, loop: E
             continue;
         }
         if registered_count != 0 {
+            // 有 slot 注册了 fd，等待 epoll 唤醒
             const poll_result: !i32 = loop.poll(timeout_ms);
             _ = poll_result catch {
                 return poll_result as! i32;
             };
-            _ = try scheduler_deregister_registered_fds(loop, &registered_fds[0], registered_count);
+            // epoll 唤醒后，reset 所有已注册 slot 的 waker
+            var ri: i32 = 0;
+            while ri < 8 {
+                const rs: &TaskQueueSlot_i32 = &queue.slots[ri as usize];
+                if rs.active != 0 && rs.done == 0 && rs.epoll_fd != 0 {
+                    rs.waker.reset();
+                }
+                ri = ri + 1;
+            }
+            // 不注销 fd！保持注册状态直到任务完成
             continue;
         }
-        if any_pending != 0 {
-            const poll_result: !i32 = loop.poll(timeout_ms);
-            _ = poll_result catch {
-                return poll_result as! i32;
-            };
-        }
+
+        // 没有注册任何 fd，纯等待
+        const poll_result: !i32 = loop.poll(timeout_ms);
+        _ = poll_result catch {
+            return poll_result as! i32;
+        };
     }
 
     return completed;
 }
+
