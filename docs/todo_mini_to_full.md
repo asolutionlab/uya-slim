@@ -942,6 +942,8 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `error_async_indirect_recursive.uya` - 异步函数形成调用环（如 ping/pong 互相 `@await`）应报错
   - [x] `error_async_too_many_awaits.uya` - `@async_fn` 中 `@await` 超过当前状态机槽位上限（32）应报错
   - [x] `error_async_too_many_params.uya` - `@async_fn` 参数超过当前状态机捕获上限（16）应报错
+  - [x] `error_async_await_in_return.uya` - `@await` 在 `return` 之后（unreachable code）应报错
+  - [x] `error_async_await_in_while_cond.uya` - `@await` 在 `while`/`for` 循环条件表达式中应报错
   - [x] `test_async_io.uya` - AsyncWriter/AsyncReader 接口与 MemAsyncWriter、MemAsyncReader
   - [x] `test_async_fd.uya` - AsyncFd 基于 fd 的 AsyncWriter/AsyncReader（含非阻塞 pipe 上 `EAGAIN -> Pending -> Ready`，以及通过 `Scheduler + EventLoop` 的最小唤醒链路）
   - [x] `test_async_copy.uya` - `async_copy` 覆盖循环内 `@await` 与 `MemAsyncReader`/`MemAsyncWriter`（当前走 `Future<!usize>` 主路径）
