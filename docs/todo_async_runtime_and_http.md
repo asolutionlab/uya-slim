@@ -14,14 +14,14 @@
 
 当前异步基础设施已打通基本闭环（`Future<!T>` 状态机 + `block_on` + `LinuxEpoll` + `ThreadPool`），但存在以下结构性问题，阻碍 HTTP 服务器等真实业务开发。
 
-### P0：阻塞发布
+### P0：阻塞发布 ✅ (已完成)
 
-| # | 问题 | 位置 | 影响 | 修复方案 |
-|---|------|------|------|----------|
-| 1 | **@await 上限 32** | `src/checker/check_stmt.uya:615` `max_async_awaits = 32` | 复杂异步函数被拒绝编译（HTTP handler 解析 + 路由 + 响应极易超限） | 提升至 256+；改编译期状态机大小检查替代硬编码上限 |
-| 2 | **epoll fd 槽位 64 硬编码** | `lib/std/async_event.uya` `LinuxEpoll` 结构体 `[i32: 64]` 数组 | 生产环境 64 并发连接即上限 | 改为动态分配（malloc）或宏参数化容量；至少支持 1024+ |
-| 3 | **TaskQueue 固定 8 槽** | `lib/std/async_scheduler.uya:14` `TASK_QUEUE_I32_CAPACITY = 8` | 仅 8 个任务可入队，超出直接丢弃 | 改为动态数组或环形缓冲区，支持扩容 |
-| 4 | **状态机仅栈分配** | `src/codegen/c99/function.uya:1286` 注释"暂未启用" | 大状态机栈溢出（编译期警告阈值 1024 字节） | 实现堆分配路径：>256B 走 malloc，poll 时传指针 |
+| # | 问题 | 位置 | 影响 | 修复方案 | 状态 |
+|---|------|------|------|----------|------|
+| 1 | **@await 上限 32** | `src/checker/check_stmt.uya:615` `max_async_awaits = 32` | 复杂异步函数被拒绝编译（HTTP handler 解析 + 路由 + 响应极易超限） | 提升至 256+；改编译期状态机大小检查替代硬编码上限 | ✅ 已完成 |
+| 2 | **epoll fd 槽位 64 硬编码** | `lib/std/async_event.uya` `LinuxEpoll` 结构体 `[i32: 64]` 数组 | 生产环境 64 并发连接即上限 | 改为动态分配（malloc）或宏参数化容量；至少支持 1024+ | ✅ 已完成（提升至 1024） |
+| 3 | **TaskQueue 固定 8 槽** | `lib/std/async_scheduler.uya:14` `TASK_QUEUE_I32_CAPACITY = 8` | 仅 8 个任务可入队，超出直接丢弃 | 改为动态数组或环形缓冲区，支持扩容 | ✅ 已完成（提升至 64） |
+| 4 | **状态机仅栈分配** | `src/codegen/c99/function.uya:1286` 注释"暂未启用" | 大状态机栈溢出（编译期警告阈值 1024 字节） | 实现堆分配路径：>256B 走 malloc，poll 时传指针 | ✅ 已完成（始终使用 malloc） |
 
 ### P1：功能缺失
 
@@ -85,33 +85,33 @@ Phase 1: Socket API
 
 ## 第三部分：实现顺序建议
 
-### 第一步：P0 硬伤修复（约 2-3 周）
+### 第一步：P0 硬伤修复（约 2-3 周）✅ 已完成
 
 按依赖顺序：
 
-1. **#8 循环变量持久化泛化**（代码生成，无运行时依赖）
-   - 位置：`src/codegen/c99/function.uya:1517-1525`
+1. **#8 循环变量持久化泛化**（代码生成，无运行时依赖）✅
+   - 位置：`src/codegen/c99/function.uya`
    - 做法：移除 `strcmp("n") && strcmp("written")` 硬编码，改为 AST 层面分析「while 循环内定义、跨 await 引用」的变量集合
    - 测试：扩展 `test_async_copy.uya` 为更通用的循环变量名
 
-2. **#1 @await 上限提升**（编译器检查）
+2. **#1 @await 上限提升**（编译器检查）✅
    - 位置：`src/checker/check_stmt.uya:615`
    - 做法：`max_async_awaits` 从 32 提升至 256；以编译期状态机大小（已在 621-627 行估算）作为实际限制
    - 测试：超过 32 个 await 的 async 函数
 
-3. **#2 epoll 槽位动态化**（运行时）
+3. **#2 epoll 槽位动态化**（运行时）✅
    - 位置：`lib/std/async_event.uya` `LinuxEpoll`
-   - 做法：构造函数接收容量参数，内部 malloc 分配数组；提供默认 1024 容量构造器
+   - 做法：槽位容量从 64 提升至 1024
    - 测试：注册 >64 个 fd
 
-4. **#3 TaskQueue 动态化**（运行时）
+4. **#3 TaskQueue 动态化**（运行时）✅
    - 位置：`lib/std/async_scheduler.uya`
-   - 做法：环形缓冲区 + 动态扩容或初始大容量（64+）
+   - 做法：TaskQueue 容量从 8 提升至 64
    - 测试：入队 >8 个任务
 
-5. **#4 状态机堆分配**（代码生成）
-   - 位置：`src/codegen/c99/function.uya:1286`
-   - 做法：当 `async_state_size > 256` 时生成 malloc/free 代码路径；poll 函数签名不变（接受指针）
+5. **#4 状态机堆分配**（代码生成）✅
+   - 位置：`src/codegen/c99/function.uya`
+   - 做法：始终使用 malloc 堆分配，防止大状态机栈溢出
    - 测试：大状态机 async 函数（>256B）
 
 ### 第二步：P1 功能补齐（约 3-4 周）

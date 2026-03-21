@@ -35,7 +35,7 @@ fn epoll_interest_or_default(fd: i32, interest: EventKind) EpollEvent {
 
 fn linux_epoll_find_slot(self: &LinuxEpoll, fd: i32) i32 {
     var i: i32 = 0;
-    while i < 64 {
+    while i < 1024 {
         if self.slot_used[i] != 0 && self.slot_fds[i] == fd {
             return i;
         }
@@ -46,7 +46,7 @@ fn linux_epoll_find_slot(self: &LinuxEpoll, fd: i32) i32 {
 
 fn linux_epoll_alloc_slot(self: &LinuxEpoll) i32 {
     var i: i32 = 0;
-    while i < 64 {
+    while i < 1024 {
         if self.slot_used[i] == 0 {
             return i;
         }
@@ -62,12 +62,12 @@ export interface EventLoop {
     fn poll(self: &Self, timeout_ms: i32) !i32;
 }
 
-/// Linux epoll 事件循环实现
+/// Linux epoll 事件循环实现（默认1024容量）
 export struct LinuxEpoll : EventLoop {
     epfd: i32,
-    slot_used: [i32: 64] = [],
-    slot_fds: [i32: 64] = [],
-    slot_wakers: [usize: 64] = [],
+    slot_used: [i32: 1024] = [],
+    slot_fds: [i32: 1024] = [],
+    slot_wakers: [usize: 1024] = [],
 
     fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !i32 {
         var ev: EpollEvent = epoll_interest_or_default(fd, interest);
@@ -101,8 +101,8 @@ export struct LinuxEpoll : EventLoop {
     }
 
     fn poll(self: &Self, timeout_ms: i32) !i32 {
-        var events: [EpollEvent: 64] = [];
-        const n: i32 = try sys_epoll_wait(self.epfd, &events[0], 64, timeout_ms);
+        var events: [EpollEvent: 1024] = [];
+        const n: i32 = try sys_epoll_wait(self.epfd, &events[0], 1024, timeout_ms);
         var i: i32 = 0;
         while i < n {
             const fd: i32 = events[i].data as i32;
@@ -117,7 +117,7 @@ export struct LinuxEpoll : EventLoop {
     }
 }
 
-/// 创建 Linux epoll 实例（flags 传 0 或 EPOLL_CLOEXEC）
+/// 创建 Linux epoll 实例（flags 传 0 或 EPOLL_CLOEXEC，默认容量 1024）
 export fn linux_epoll_create(flags: i32) !LinuxEpoll {
     const fd: i32 = try sys_epoll_create1(flags);
     return LinuxEpoll{ epfd: fd };

@@ -11,7 +11,7 @@ use std.async_event;
 
 error TaskQueueFull;
 
-export const TASK_QUEUE_I32_CAPACITY: i32 = 8;
+export const TASK_QUEUE_I32_CAPACITY: i32 = 64;
 
 fn scheduler_event_kind_from_waker(w: &Waker) EventKind {
     const interest: i32 = w.io_interest_code();
@@ -50,7 +50,7 @@ fn scheduler_register_waker_interest(loop: EventLoop, w: &Waker, registered_fds:
     if scheduler_registered_fd_contains(registered_fds, *registered_count, fd) {
         return 1;
     }
-    if *registered_count < 0 || *registered_count >= 8 {
+    if *registered_count < 0 || *registered_count >= 64 {
         return 0;
     }
     registered_fds[*registered_count] = fd;
@@ -81,7 +81,7 @@ export struct TaskQueueSlot_i32 {
 
 export struct TaskQueue_i32 {
     len: i32,
-    slots: [TaskQueueSlot_i32: 8] = [],
+    slots: [TaskQueueSlot_i32: 64] = [],
 
     fn push(self: &Self, f: Future<!i32>) !i32 {
         if self.len >= TASK_QUEUE_I32_CAPACITY {
@@ -89,7 +89,7 @@ export struct TaskQueue_i32 {
         }
 
         const idx: i32 = self.len;
-        if idx < 0 || idx >= 8 {
+        if idx < 0 || idx >= 64 {
             return error.TaskQueueFull;
         }
         self.slots[idx as usize] = TaskQueueSlot_i32{
@@ -105,14 +105,14 @@ export struct TaskQueue_i32 {
     }
 
     fn result(self: &Self, idx: i32) i32 {
-        if idx < 0 || idx >= self.len || idx >= 8 {
+        if idx < 0 || idx >= self.len || idx >= 64 {
             return 0;
         }
         return self.slots[idx as usize].result;
     }
 
     fn is_done(self: &Self, idx: i32) bool {
-        if idx < 0 || idx >= self.len || idx >= 8 {
+        if idx < 0 || idx >= self.len || idx >= 64 {
             return false;
         }
         return self.slots[idx as usize].done != 0;
@@ -768,8 +768,8 @@ export fn scheduler_run_task_queue_i32_with_event_loop(self: &Scheduler, loop: E
         var made_progress: i32 = 0;
         var i: i32 = 0;
 
-        // 轮询所有 slot（固定 8 容量）
-        while i < 8 {
+        // 轮询所有 slot（固定 64 容量）
+        while i < 64 {
             const slot: &TaskQueueSlot_i32 = &queue.slots[i as usize];
             if slot.active == 0 || slot.done != 0 {
                 i = i + 1;
@@ -828,7 +828,7 @@ export fn scheduler_run_task_queue_i32_with_event_loop(self: &Scheduler, loop: E
             };
             // epoll 唤醒后，reset 所有已注册 slot 的 waker
             var ri: i32 = 0;
-            while ri < 8 {
+            while ri < 64 {
                 const rs: &TaskQueueSlot_i32 = &queue.slots[ri as usize];
                 if rs.active != 0 && rs.done == 0 && rs.epoll_fd != 0 {
                     rs.waker.reset();
