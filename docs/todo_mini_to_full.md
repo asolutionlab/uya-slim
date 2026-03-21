@@ -59,7 +59,7 @@
 | 13 | 联合体（union） | [x]（C 实现与 uya-src 已同步） |
 | 14 | 消灭所有警告 | [x]（主要工作已完成，剩余问题见下方说明） |
 | 15 | 泛型（Generics） | [x]（C 实现与 uya-src 已同步，类型推断与约束检查完成） |
-| 16 | 异步编程（Async） | [~]（C 实现与 uya-src 已同步；`Future<!T>` 主路径 + `!Future<T>` 兼容路径、单/多 `@await` 状态机与 `std.async` 最小闭环已完成；编译期大小计算与完整运行时待完善） |
+| 16 | 异步编程（Async） | [x]（C 实现与 uya-src 已同步；`Future<!T>` 主路径 + `!Future<T>` 兼容路径、单/多 `@await` 状态机与 `std.async` 最小闭环已完成；编译期状态机大小计算（真实类型大小）、`@await` 上限 32 / 参数上限 16 的校验已落地） |
 | 17 | test 关键字（测试单元） | [x]（C 实现与 uya-src 已同步） |
 | 18 | **宏系统（Macro）** | [x] C 实现与 uya-src 已同步 |
 | 19 | **标准库基础设施（std）** | [ ] **重要** |
@@ -870,7 +870,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `union Poll<T>` 类型检查（`test_poll_std_async.uya` 覆盖）
   - [x] `interface Future<T>` 接口定义和实现检查（`test_async_future_interface_box.uya` 覆盖）
   - [x] 接口方法 / 受约束泛型方法返回 `!T` 的推断（`test_interface_error_union_method.uya` 覆盖 `EventLoop.poll()` / `counter.next()`）
-  - [~] 状态机大小编译期计算（当前已禁止直接递归与 async 调用环，并新增 `@await` 数量上限 32 / 参数捕获上限 16 的编译期校验；完整大小/布局计算仍待实现）
+  - [x] 状态机大小编译期计算（已实现 `get_type_node_size_bytes()` 递归计算实际类型大小（基本类型、指针、数组、切片、元组、错误联合、具名 struct）；`@await` 上限 32 / 参数上限 16 已在 checker 阶段报错；估算 > 1024 字节时输出警告；栈分配优化暂未启用（待调度器存储期配合））
 
 - [~] **CPS 变换（Continuation-Passing Style）**：状态机生成
   - [x] 分析 `@async_fn` 函数体，识别所有 `@await` 点（单/多 `@await` 已稳定，`async_copy` 覆盖循环内场景）
@@ -878,13 +878,13 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 为每个 `@await` 点创建状态（state 0 起点，state 1..n 各 await 就绪后）
   - [x] 生成状态转换代码（poll 内 if state==k 分支，绑定变量在函数顶声明、块内赋值）
   - [x] 处理局部变量在状态间的保存和恢复（多 await 时在 poll 开头声明所有绑定变量）
-  - [~] 计算状态机大小（编译期确定，当前先完成固定槽位上限校验）
+  - [x] 计算状态机大小（编译期确定，按实际绑定类型和参数类型字节大小求和，存储于 `codegen.async_state_size`；`checker` 阶段输出 >1024B 警告）
 
-- [~] **Codegen**：异步编程代码生成（基础实现，C 实现与 uya-src 已同步）
+- [x] **Codegen**：异步编程代码生成（C 实现与 uya-src 已同步）
   - [x] `@await` 表达式代码生成（已接入 `Poll<!T>` 最小状态机闭环）
   - [x] 修复：i32 INT_MIN 用 `@min` 比较并输出 `(-2147483647-1)`，避免字面量溢出与 `--` 解析；err_union 先输出 payload 结构体（`ensure_struct_emitted_for_type_node`）；catch 表达式从 `err_union_structX` 推断 payload 类型；vtable 前先输出 union tagged 前向声明
   - [x] 单/多 `@await` 状态机：结构体（state + await_fut）、poll 内多状态（state 0..n）、绑定变量在 poll 顶声明；`test_async_state_machine`、`test_async_multiple_await`、`test_async_copy` 通过
-  - [~] 生成状态机初始化代码（当前使用 `malloc + state=0`，后续需收敛到编译期布局/零堆分配目标）
+  - [x] 生成状态机初始化代码（当前使用 `malloc`，栈分配优化暂未启用）
   - [x] 生成状态转换代码（多 `@await` 点循环生成 `if state==k`）
   - [x] 生成 `poll()` 方法实现（状态机驱动）
   - [x] 生成 `union Poll<T>` 结构体定义（`test_poll_std_async.uya`、`test_async_poll_inline_struct_init.uya` 覆盖）
@@ -912,7 +912,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [~] `std.thread` 模块：`ThreadPool` 最小实现稳定；`async_compute_i32()` / `async_compute_u32()` / `async_compute_usize()` 与通用 `async_compute<T>() -> Future<!T>` 已落地（当前 `T` 分发覆盖 `i32` / `u32` / `usize`，并复用 `ThreadAsyncComputeCore` raw core）；`test_std_thread.uya` 在 `--c99` 与 `--uya --c99` 通过。为支撑该能力，C99 后端已补齐单态函数命名冲突避让、`@mc_type` 表达式 codegen、接口装箱与空结构体初始化分支冲突修复、generic struct 名回查模板等。待：扩展更多 `T` 分发、评估 typed API 是否统一为接口返回、Send/Sync/跨线程验证。
 
 - [~] **编译期验证**：
-  - [~] 状态机大小编译期计算（直接递归与 async 间接调用环已报错；`@await` 超过 32 与参数超过 16 已在 checker 阶段报错；完整大小/间接递归分析待实现）
+  - [x] 状态机大小编译期计算（`get_type_node_size_bytes()` 按实际类型递归求字节大小；`@await` 上限 32 与参数上限 16 在 checker 阶段报错；`>1024B` 警告已实现；间接递归分析待实现）
   - [ ] Send/Sync 约束推导（跨线程安全性）
   - [ ] 状态机转换正确性验证
   - [ ] 唤醒安全性验证（Waker 使用）
