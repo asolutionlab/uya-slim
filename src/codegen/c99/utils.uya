@@ -349,12 +349,39 @@ fn emit_line_directive(codegen: &C99CodeGenerator, line: i32, filename: &byte) v
 }
 
 // 缩进输出
-fn c99_emit_indent(codegen: &C99CodeGenerator) void {
-    var i: i32 = 0;
-    while i < codegen.indent_level {
-        fputs("    " as *byte, codegen.output as *void);
-        i = i + 1;
+// 缩进缓存：避免循环调用 fputs
+var g_indent_spaces: [byte: 256] = [];
+var g_indent_spaces_init: i32 = 0;
+
+fn init_indent_spaces() void {
+    if g_indent_spaces_init == 0 {
+        var j: i32 = 0;
+        while j < 256 {
+            g_indent_spaces[j] = 32; // space
+            j = j + 1;
+        }
+        g_indent_spaces_init = 1;
     }
+}
+
+fn c99_emit_indent(codegen: &C99CodeGenerator) void {
+    if codegen.indent_level <= 0 {
+        return;
+    }
+    init_indent_spaces();
+    // 预先计算总空格数，避免循环
+    const total: i32 = codegen.indent_level * 4;
+    if total > 255 {
+        // 超过缓存大小，使用循环（很少见）
+        var i: i32 = 0;
+        while i < codegen.indent_level {
+            fputs("    " as *byte, codegen.output as *void);
+            i = i + 1;
+        }
+        return;
+    }
+    // 使用 fwrite 一次性写入，比循环 fputs 快
+    fwrite(&g_indent_spaces[0] as *void, 1, total, codegen.output as *void);
 }
 
 // 换行
