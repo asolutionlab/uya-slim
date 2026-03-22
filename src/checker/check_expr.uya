@@ -2267,21 +2267,30 @@ fn infer_print_expr(checker: &TypeChecker, expr: &ASTNode) Type {
         is_printable = 1;
     }
     if arg_type.kind == TypeKind.TYPE_SLICE {
-        if arg_type.slice_element_type != null && arg_type.slice_element_type.kind == TypeKind.TYPE_I8 {
-            is_printable = 1;
+        if arg_type.slice_element_type != null {
+            const se: TypeKind = arg_type.slice_element_type.kind;
+            if se == TypeKind.TYPE_I8 || se == TypeKind.TYPE_U8 || se == TypeKind.TYPE_BYTE {
+                is_printable = 1;
+            }
         }
     }
     if is_pointer_type(arg_type) != 0 {
-        if arg_type.pointer_to != null && arg_type.pointer_to.kind == TypeKind.TYPE_I8 {
-            is_printable = 1;
+        if arg_type.pointer_to != null {
+            const pk: TypeKind = arg_type.pointer_to.kind;
+            if pk == TypeKind.TYPE_I8 || pk == TypeKind.TYPE_U8 || pk == TypeKind.TYPE_BYTE {
+                is_printable = 1;
+            }
         }
         if arg_type.pointer_to == null {
             is_printable = 1;
         }
     }
     if arg_type.kind == TypeKind.TYPE_ARRAY {
-        if arg_type.element_type != null && arg_type.element_type.kind == TypeKind.TYPE_I8 {
-            is_printable = 1;
+        if arg_type.element_type != null {
+            const ek: TypeKind = arg_type.element_type.kind;
+            if ek == TypeKind.TYPE_I8 || ek == TypeKind.TYPE_U8 || ek == TypeKind.TYPE_BYTE {
+                is_printable = 1;
+            }
         }
     }
     if expr.print_expr.type == ASTNodeType.AST_STRING_INTERP {

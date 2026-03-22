@@ -6936,8 +6936,27 @@ fn gen_print_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     }
                 }
             } else if inner.type == ASTNodeType.AST_IDENTIFIER {
-                // 标识符：需要从符号表推断类型，这里简化处理
-                fmt = "%lld";
+                // 固定 i8/u8 数组在变量表中为 "const int8_t[N]" / "uint8_t[N]" 等，须用 %%s 而非 %%lld
+                var id_ty: &byte = null;
+                if inner.identifier_name != null {
+                    id_ty = get_identifier_type_c(codegen, inner.identifier_name);
+                }
+                if id_ty != null {
+                    var ip: *byte = id_ty as *byte;
+                    if strncmp(ip, "const " as *byte, 6) == 0 {
+                        ip = ip + 6;
+                    }
+                    if strncmp(ip, "int8_t" as *byte, 6) == 0 && ip[6] == 91 {
+                        fmt = "%s";
+                        need_cast = 1;
+                    } else if strncmp(ip, "uint8_t" as *byte, 7) == 0 && ip[7] == 91 {
+                        fmt = "%s";
+                        need_cast = 1;
+                    }
+                }
+                if fmt == null {
+                    fmt = "%lld";
+                }
             } else if inner.type == ASTNodeType.AST_BINARY_EXPR {
                 // 二元表达式：整数或浮点运算
                 fmt = "%lld";
