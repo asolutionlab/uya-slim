@@ -411,7 +411,51 @@ fn parser_parse_primary_expr(parser: &Parser) &ASTNode {
         node.string_literal_value = str_value;
         
         parser_consume(parser);
-        return node;
+        // 与数组字面量一致：允许 "hello"[0:3]（语义同固定 [byte:N] 再切片）
+        var result: &ASTNode = node;
+        while parser.current_token != null {
+            if parser_match(parser, TokenType.TOKEN_LEFT_BRACKET) != 0 {
+                const bracket_line: i32 = parser.current_token.line;
+                const bracket_column: i32 = parser.current_token.column;
+                parser_consume(parser);
+                const first_expr: &ASTNode = parser_parse_expression(parser);
+                if first_expr == null {
+                    return null;
+                }
+                if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_COLON {
+                    parser_consume(parser);
+                    const len_expr: &ASTNode = parser_parse_expression(parser);
+                    if len_expr == null {
+                        return null;
+                    }
+                    if parser_expect(parser, TokenType.TOKEN_RIGHT_BRACKET) == null {
+                        return null;
+                    }
+                    const slice_expr: &ASTNode = ast_new_node(ASTNodeType.AST_SLICE_EXPR, bracket_line, bracket_column, parser.arena, parser_get_filename(parser));
+                    if slice_expr == null {
+                        return null;
+                    }
+                    slice_expr.slice_expr_base = result;
+                    slice_expr.slice_expr_start_expr = first_expr;
+                    slice_expr.slice_expr_len_expr = len_expr;
+                    result = slice_expr;
+                } else {
+                    if parser_expect(parser, TokenType.TOKEN_RIGHT_BRACKET) == null {
+                        return null;
+                    }
+                    const array_access: &ASTNode = ast_new_node(ASTNodeType.AST_ARRAY_ACCESS, bracket_line, bracket_column, parser.arena, parser_get_filename(parser));
+                    if array_access == null {
+                        return null;
+                    }
+                    array_access.array_access_array = result;
+                    array_access.array_access_index = first_expr;
+                    result = array_access;
+                }
+            } else {
+                break;
+            }
+        }
+        return result;
     }
     
     // 解析字符字面量 'x' 或 '\n'（可赋给 byte）

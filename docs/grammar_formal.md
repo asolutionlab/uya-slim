@@ -1,6 +1,6 @@
 # Uya 语言正式语法规范（Formal BNF）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.40 同步（2026-03-22）
+> **版本**：与 [uya.md](./uya.md) 0.49.41 同步（2026-03-22）
 
 本文档包含 Uya 语言的完整、无歧义的 BNF 语法定义，用于：
 - 编译器/解析器实现
@@ -223,6 +223,7 @@ unary_expr     = ('!' | '-' | '~' | '&' | '*' | 'try') unary_expr | cast_expr
 cast_expr      = postfix_expr [ ('as' | 'as!') type ]
 postfix_expr   = primary_expr { '.' (ID | NUM) | '[' expr ']' | '(' arg_list ')' | slice_op | catch_op }
                 # '.' NUM 用于元组字段访问，如 tuple.0, tuple.1
+                # 0.49.41：STRING 为 primary_expr 时，可接 '[' expr ']'（下标）或 slice_op（与数组字面量、标识符一致），如 "hello"[0:3]、&"hello"[0:3]
 catch_op       = 'catch' [ '|' ID '|' ] '{' statements '}'
 primary_expr   = ID | NUM | STRING | CHAR | 'true' | 'false' | 'null'
                | builtin_expr
@@ -330,7 +331,7 @@ const target: @asm_target = @asm_target();
 
 ```
 range          = expr '..' [ expr ]
-slice_op       = '[' expr ':' expr ']'  // 切片操作，完整语法为 &expr[start:len]
+slice_op       = '[' expr ':' expr ']'  // 切片操作；典型为 &base[start:len]；base 可为标识符、数组字面量或 STRING（0.49.41）
 struct_literal = ID '{' field_init_list '}'
 field_init_list = [ field_init { ',' field_init } ]
 field_init     = ID ':' expr

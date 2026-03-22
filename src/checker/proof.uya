@@ -770,12 +770,17 @@ export fn check_slice_bounds(checker: &TypeChecker, array_expr: &ASTNode, start_
         return result;
     }
     
-    // 获取数组类型和大小
-    const array_type: Type = checker_infer_type(checker, array_expr);
-    if array_type.kind != TypeKind.TYPE_ARRAY {
-        return result;
+    // 字符串字面量：与 [byte:strlen+1] 一致（含结尾 0），供编译期切片边界检查
+    if array_expr.type == ASTNodeType.AST_STRING && array_expr.string_literal_value != null {
+        const sl: i32 = strlen(array_expr.string_literal_value as *byte) as i32;
+        result.array_size = sl + 1;
+    } else {
+        const array_type: Type = checker_infer_type(checker, array_expr);
+        if array_type.kind != TypeKind.TYPE_ARRAY {
+            return result;
+        }
+        result.array_size = array_type.array_size;
     }
-    result.array_size = array_type.array_size;
     
     // 检查起始位置
     if start_expr != null && is_constant_expression(checker, start_expr) != 0 {

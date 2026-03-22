@@ -6354,6 +6354,10 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
     if base.type == ASTNodeType.AST_SLICE_EXPR {
         return get_slice_struct_type_c(codegen, base);
     }
+    // 字符串字面量可切片为 &[byte]，C 侧为 uya_slice_uint8_t
+    if base.type == ASTNodeType.AST_STRING {
+        return ("struct uya_slice_uint8_t" as *byte) as &byte;
+    }
     if base.type == ASTNodeType.AST_IDENTIFIER {
         const type_c: &byte = get_identifier_type_c(codegen, base.identifier_name);
         if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
@@ -6368,6 +6372,9 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
             elem_simple = &elem_c[7];
         } else if strncmp(elem_c as *byte, "enum " as *byte, 5) == 0 {
             elem_simple = &elem_c[5];
+        }
+        if strncmp(elem_simple as *byte, "const " as *byte, 6) == 0 {
+            elem_simple = &elem_simple[6];
         }
         // void* 缓冲区常见于 &[byte]，用 uint8_t 得到 uya_slice_uint8_t，避免 uya_slice_void（无 ptr/len）
         if strcmp(elem_simple as *byte, "void" as *byte) == 0 {
@@ -7638,6 +7645,10 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
     if base.type == ASTNodeType.AST_SLICE_EXPR {
         return get_slice_struct_type_c(codegen, base);
     }
+    // 字符串字面量可切片为 &[byte]，C 侧为 uya_slice_uint8_t
+    if base.type == ASTNodeType.AST_STRING {
+        return ("struct uya_slice_uint8_t" as *byte) as &byte;
+    }
     if base.type == ASTNodeType.AST_IDENTIFIER {
         const type_c: &byte = get_identifier_type_c(codegen, base.identifier_name);
         if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
@@ -7652,6 +7663,9 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
             elem_simple = &elem_c[7];
         } else if strncmp(elem_c as *byte, "enum " as *byte, 5) == 0 {
             elem_simple = &elem_c[5];
+        }
+        if strncmp(elem_simple as *byte, "const " as *byte, 6) == 0 {
+            elem_simple = &elem_simple[6];
         }
         // void* 缓冲区常见于 &[byte]，用 uint8_t 得到 uya_slice_uint8_t，避免 uya_slice_void（无 ptr/len）
         if strcmp(elem_simple as *byte, "void" as *byte) == 0 {

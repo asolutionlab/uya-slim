@@ -26,7 +26,7 @@ export use type mc test as
 - 系统调用：`@syscall(nr, arg1, ..., arg6)`
 - 指针：`@ptr_from_usize`、`@usize_from_ptr`
 - 错误：`@error_id(expr)` — 从错误值取数值 ID（`u32`）
-- 调试：`@print`、`@println`
+- 调试：`@print`、`@println`（支持 **`byte`/`u8`/`i8`** 的 **`&[T]`**、**`[T:N]`**、**`*byte`** 及 **`"..."`**；**`[byte:N]`** / **`&[byte]`** 按 **`%s`** 打印，缓冲区须以 **`\\0`** 结尾，与 C 一致；详见 **`docs/builtin_functions.md`**）
 - 内联汇编：`@asm { ... }`、`@asm_target()`
 - SIMD：`@vector(T, N)`、`@mask(N)`，以及 `@vector.splat(x)`、`@vector.load(ptr)`、`@vector.store(ptr, v)`、`@vector.select(m, a, b)`、`@vector.reduce_add(v)`、`@vector.any(m)`、`@vector.all(m)` 等（详见规范 §16 / `docs/builtin_functions.md`）
 
@@ -51,7 +51,7 @@ export use type mc test as
 | `atomic T` | sizeof(T) | 原子类型 |
 | `[T: N]` | N·sizeof(T) | 固定数组，N为编译期常量 |
 | `[[T: N]: M]` | M·N·sizeof(T) | 多维数组，行优先存储 |
-| `&[T]` | 8/16 B（平台相关） | 切片引用（动态长度），指针(4/8B) + 长度(4/8B)；32位平台=8B，64位平台=16B |
+| `&[T]` | 8/16 B（平台相关） | 切片引用（动态长度），指针(4/8B) + 长度(4/8B)；32位平台=8B，64位平台=16B；**0.49.41**：可由 **`&"text"[start:len]`** 得到 **`&[byte]`**（逻辑基底长度为可见字符数+1，含 **`\\0`**） |
 | `&[T: N]` | 8/16 B（平台相关） | 切片引用（已知长度），指针(4/8B) + 长度(4/8B)；32位平台=8B，64位平台=16B |
 | `struct S { }` | 字段顺序布局 | 对齐=最大字段对齐，C内存布局 |
 | `union U { ... }` | 最大变体大小 | 对齐=最大变体对齐，编译期标签跟踪，与C union兼容 |
@@ -133,7 +133,7 @@ const f64v: f64 = 3.14f64;
 - ✅ 可以作为 FFI 函数参数（如果函数接受 `*byte`）：`some_function(null);`
 - ❌ 不支持将 `null` 赋值给 `*byte` 类型的变量（未来可能支持）
 
-**字符字面量**：`'a'`, `'x'`, `'\n'`, `'\t'`（0.43 新增）
+**字符字面量**：`'a'`, `'x'`, `'\n'`, `'\t'`, `'\r'` 等（0.43 新增；含 **`\\r`** → CR(13)）
 - 类型为 `byte`（无符号 8 位整数），**可赋值给 `byte` 类型**
 - 示例：`const c: byte = 'A';` → 值为 65
 
@@ -501,6 +501,9 @@ const tail: &[i32] = &arr[-3:3];           // 负数索引，从倒数第3个开
 // 从数组字面量直接创建切片（0.48 新增）
 const slice1: &[i32] = &[1, 2, 3];         // 从列表创建
 const slice2: &[i32] = &[0: 10];           // 从重复值创建
+
+// 字符串字面量后缀下标/切片（0.49.41）：逻辑长度为「可见字符数+1」（含末尾 \0）
+const sub: &[byte] = &"hello"[0:3];       // 与等长 [byte:N] 上 &buf[0:3] 一致
 ```
 
 ### 控制流
@@ -701,7 +704,7 @@ test "addition_with_negative" {
 ### 运算符
 
 **优先级表**（从高到低）：
-1. `()` `.` `[]` `[start:end]` - 调用、字段、下标、切片
+1. `()` `.` `[]` `[start:len]` - 调用、字段、下标、切片（含字符串字面量后缀 **`"…"[i]`** / **`"…"[start:len]`**，**0.49.41**）
 2. `-` `!` `~` - 一元运算符
 3. `*` `/` `%` `*|` `*%` - 乘除模、饱和乘法、包装乘法
 4. `+` `-` `+|` `-|` `+%` `-%` - 加减、饱和运算、包装运算
@@ -963,7 +966,7 @@ File {
 // 普通字符串字面量（类型 *byte；语义上自动带 \0 结尾）
 extern printf(fmt: *byte, ...) i32;
 printf("Hello\n");  // ✅ FFI 参数
-// 支持转义：\n \t \\ \" \0；不支持 \xHH、\uXXXX（未来支持）
+// 支持转义：\n \t \r \\ \" \0；不支持 \xHH、\uXXXX（未来支持）
 
 // 原始字符串字面量（无转义）
 printf(`C:\Users\name`);
@@ -973,7 +976,7 @@ printf(`C:\Users\name`);
 - ✅ 可赋值给 `[byte: N]`（当 可见字符数+1 ≤ N 时，按字节拷贝并以 `\0` 结尾）：`var buf: [byte: 8] = "hi";`
 - ✅ 可赋值给 `&byte` 或 `*byte`：`const s: *byte = "hello";`
 - ✅ 可作为 FFI 函数参数、与 `null` 比较
-- ❌ 不能用于数组索引等非 FFI 操作
+- ✅ **0.49.41**：可作**主表达式**接后缀，与数组字面量/标识符一致：**`"text"[i]`**（下标）、**`"text"[start:len]`**（切片操作数）；**`&"text"[start:len]`** 类型为 **`&[byte]`**。常量边界检查以 **`strlen(字面量)+1`** 为逻辑长度。
 
 **字符串插值**：
 ```uya
@@ -1348,7 +1351,8 @@ fn my_printf(fmt: *byte, ...) i32 {
 }
 // @va_copy(&dest, src) 见规范 §5.4 与 tests/test_va_list_builtin.uya
 
-// @print/@println - 调试输出（编译期打印）
+// @print/@println - 调试输出（编译期展开为 printf）
+// 支持：整数/浮点/bool、字面量 "..."、i8/u8/byte 的 &[T]/[T:N]、*byte 等；[byte:N]、&[byte] 变量走 %s（须 \0 结尾）
 @println(x);  // 打印并换行
 @print(y);    // 打印不换行
 
@@ -1501,8 +1505,8 @@ mc assert(cond) stmt {
 
 - **本文件**：`docs/uya.md` 的 AI 用压缩摘要，便于代码生成与问答。
 - **权威规范**：语义、BNF、与编译器一致性以 **`docs/uya.md`**、**`docs/grammar_formal.md`**、**`docs/builtin_functions.md`** 为准；冲突时以规范与测试为准。
-- **对应规范版本**：与 `docs/uya.md` 头部一致（当前 **0.49.39**）。
-- **更新日期**：2026-03-20
+- **对应规范版本**：与 `docs/uya.md` 头部一致（当前 **0.49.41**）。
+- **更新日期**：2026-03-22
 
 ### 自举编译器实现索引（摘要）
 
