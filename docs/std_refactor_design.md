@@ -281,15 +281,10 @@ fn parse_int(s: &const byte) !i32 {
     // 成功返回值，失败返回 error
 }
 
-// 类型安全：使用 union Option<T> 和 Result<T, E>
+// 类型安全：使用 union Option<T>
 union Option<T> {
     Some: T,
     None
-}
-
-union Result<T, E> {
-    Ok: T,
-    Err: E
 }
 
 // 接口抽象：使用 interface 定义行为
@@ -339,7 +334,6 @@ lib/
     ├── core/                    # 核心类型
     │   ├── error.uya           # 错误类型
     │   ├── option.uya          # Option<T>
-    │   ├── result.uya          # Result<T, E>
     │   └── traits.uya          # Clone, Eq, Ord, Hash, Display
     │
     ├── io/                      # I/O 抽象
@@ -551,7 +545,7 @@ std → libc → osal → syscall
 - **syscall**：返回原始错误码
 - **osal**：使用 error 定义（!T）
 - **libc**：转换为 C 风格（返回 -1/null）
-- **std**：保持 !T 或转换为 Result
+- **std**：保持 !T
 
 ### 4. 零重复实现
 
@@ -601,7 +595,7 @@ mem 层是独立的基础层，任何层都可以使用它：
 3. 添加 time/clock 支持
 
 ### Phase 5: std 层
-1. 实现核心类型（Option, Result, Error）
+1. 实现核心类型（Option, Error）
 2. 实现 I/O 抽象（Writer, Reader）
 3. 实现 HeapAllocator 调用 osal.mmap
 4. 实现泛型容器（Vec, StringBuf）

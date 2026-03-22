@@ -1577,6 +1577,11 @@ lib/
   }
   ```
 
+- [ ] **C99 codegen：`Vec<本地复合结构体>` / 嵌套 `Vec` 的 `err_union_*` 完整性**（标准库跟进项）
+  - **现象**：对含指针字段或特定单态的结构体，`err_union_Foo` 在 C 中可能未完整定义即被 `Vec_Foo_get` / `pop` 等使用，导致 gcc 失败；`Vec<Vec<T>>` 亦有生成顺序与类型名问题。
+  - **影响**：`lib/std/collections/hashmap.uya` 当前用 `HashMapChainBuf`（手写扩容）代替 `Vec<槽位>` 存冲突链；修复后可删重复逻辑并统一使用 `Vec`。
+  - **涉及**：`src/codegen/c99/`（错误联合与单态结构体 emit 顺序、泛型 `Vec` 单态方法生成）。
+
 - [ ] **std.collections.string_buf** - 字符串缓冲区
   ```uya
   struct StringBuf {
@@ -1904,7 +1909,6 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 |--------|------|------|------|
 | 6 | `std.core.error` | 错误类型定义 | [ ] |
 | 6 | `std.core.option` | Option<T> 类型 | [ ] |
-| 6 | `std.core.result` | Result<T, E> 类型 | [ ] |
 | 6 | `std.core.traits` | Clone/Eq/Ord/Hash/Display | [ ] |
 | 6 | `std.mem.allocator` | `IAllocator` + `MallocAllocator`（malloc）；HeapAllocator/mmap 等待扩展 ⭐ | [x] 部分 |
 | 6 | `std.mem.arena` | `Arena` bump + **`IAllocator`**；测试 `test_mem_arena.uya` | [x] 部分 |

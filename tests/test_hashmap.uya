@@ -1,21 +1,104 @@
-// test_hashmap.uya - HashMap 测试
+// test_hashmap.uya - HashMap 测试（HashMapChainBuf 桶内链 + 动态扩容桶数）
 
 use std.testing;
 
-use std.collections.hashmap;
+use std.mem.allocator.IAllocator;
+use std.mem.allocator.MallocAllocator;
+use std.mem.allocator.get_allocator;
+
 use std.collections.hashmap.HashMap;
-use std.collections.hashmap.hm_new;
-use std.collections.hashmap.hm_put;
-use std.collections.hashmap.hm_get;
-use std.collections.hashmap.hm_contains;
-use std.collections.hashmap.hm_len;
-use std.collections.hashmap.hm_deinit;
+use std.collections.hashmap.hashmap_new;
+
+var g_test_dealloc_count: i32 = 0;
+
+struct CountingMallocWrapper : IAllocator {
+    inner: &MallocAllocator,
+
+    fn alloc(self: &Self, size: usize) !&byte {
+        return self.inner.alloc(size);
+    },
+
+    fn dealloc(self: &Self, ptr: &byte) void {
+        g_test_dealloc_count = g_test_dealloc_count + 1;
+        self.inner.dealloc(ptr);
+    },
+
+    fn realloc(self: &Self, ptr: &byte, new_size: usize) !&byte {
+        return self.inner.realloc(ptr, new_size);
+    },
+}
+
+test "hashmap_put_null_key_fails" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var map: HashMap = hashmap_new(w);
+    var null_key: &byte = null;
+    var saw_err: bool = false;
+    _ = map.put(null_key, 1) catch {
+        saw_err = true;
+    };
+    try assert_true(saw_err);
+}
 
 test "hashmap_basic" {
-    var map: HashMap = hm_new();
-    defer { hm_deinit(&map); }
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var map: HashMap = hashmap_new(w);
+    try map.put("one", 1);
+    var v1: i32 = try map.get("one");
+    try assert_eq_i32(v1, 1);
+}
 
-    try hm_put(&map, "one", 1);
-    var v1: i32 = try hm_get(&map, "one");
-    assert_eq_i32(v1, 1);
+test "hashmap_drop_triggers_dealloc" {
+    g_test_dealloc_count = 0;
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    {
+        var map: HashMap = hashmap_new(w);
+        try map.put("a", 1);
+        try map.put("b", 2);
+        try map.put("c", 3);
+    }
+    // 外层桶 slab + 若干链缓冲；含 realloc 时 dealloc 次数不固定，只保证发生过释放
+    try assert_true(g_test_dealloc_count >= 1);
+}
+
+test "hashmap_drop_empty_zero_dealloc" {
+    g_test_dealloc_count = 0;
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    {
+        var _map: HashMap = hashmap_new(w);
+    }
+    try assert_eq_i32(g_test_dealloc_count, 0);
+}
+
+test "hashmap_collision_same_bucket" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var map: HashMap = hashmap_new(w);
+    // 故意同键多次 put 走更新分支
+    try map.put("same", 1);
+    try map.put("same", 2);
+    try assert_eq_i32(try map.get("same"), 2);
+    try assert_eq_i32(map.len(), 1);
+}
+
+test "hashmap_resize_many_keys" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var map: HashMap = hashmap_new(w);
+    try map.put("k00", 0);
+    try map.put("k01", 1);
+    try map.put("k02", 2);
+    try map.put("k03", 3);
+    try map.put("k04", 4);
+    try map.put("k05", 5);
+    try map.put("k06", 6);
+    try map.put("k07", 7);
+    try map.put("k08", 8);
+    try map.put("k09", 9);
+    try map.put("k10", 10);
+    try map.put("k11", 11);
+    try map.put("k12", 12);
+    try map.put("k13", 13);
+    try map.put("k14", 14);
+    try map.put("k15", 15);
+    try assert_eq_i32(map.len(), 16);
+    try assert_eq_i32(try map.get("k15"), 15);
+    try assert_eq_i32(try map.get("k00"), 0);
 }

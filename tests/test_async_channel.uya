@@ -2,6 +2,7 @@
 
 use std.async;
 use std.async_channel;
+use std.mem.allocator.g_allocator;
 use std.testing.assert_eq_i32;
 
 const SINGLE_SLOT_SIZE: i32 = 1;
@@ -31,9 +32,6 @@ test "channel_send_recv" {
 
 test "mpsc_channel_send_recv" {
     var ch: MpscChannel_i32 = mpsc_channel_i32_new(SINGLE_SLOT_SIZE);
-    defer {
-        ch.deinit();
-    }
     const wk: Waker = Waker{};
 
     const fw: Future<usize> = ch.send(7);
@@ -57,9 +55,6 @@ test "mpsc_channel_send_recv" {
 
 test "mpsc_channel_second_send_pending_until_recv" {
     var ch: MpscChannel_i32 = mpsc_channel_i32_new(SINGLE_SLOT_SIZE);
-    defer {
-        ch.deinit();
-    }
     const wk: Waker = Waker{};
 
     const first_send_future: Future<usize> = ch.send(11);
@@ -132,10 +127,7 @@ test "channel_generic_usize_send_recv" {
 }
 
 test "mpsc_channel_generic_u32_pending_until_recv" {
-    var ch: MpscChannel<u32> = mpsc_channel_new<u32>(SINGLE_SLOT_SIZE);
-    defer {
-        ch.deinit();
-    }
+    var ch: MpscChannel<u32> = mpsc_channel_new<u32>(g_allocator, SINGLE_SLOT_SIZE);
     const wk: Waker = Waker{};
 
     const first_send_future: Future<usize> = ch.send(13 as u32);
@@ -185,10 +177,7 @@ test "mpsc_channel_generic_u32_pending_until_recv" {
 }
 
 test "mpsc_channel_multi_slot_fifo_wraparound" {
-    var ch: MpscChannel<i32> = mpsc_channel_new<i32>(MULTI_SLOT_SIZE);
-    defer {
-        ch.deinit();
-    }
+    var ch: MpscChannel<i32> = mpsc_channel_new<i32>(g_allocator, MULTI_SLOT_SIZE);
     const wk: Waker = Waker{};
 
     const send1_future: Future<usize> = ch.send(1);

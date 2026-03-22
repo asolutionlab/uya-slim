@@ -4,12 +4,18 @@
 
 use std.async;
 use std.collections.ring_queue.RingQueue;
+use std.mem.allocator.IAllocator;
+use std.mem.allocator.g_allocator;
 
 // GCC 原子 CAS 内建；这里本地声明，避免引入整个 pthread 模块造成额外依赖。
 extern "libc" fn __atomic_compare_exchange_n(ptr: &atomic i32, expected: &i32, desired: i32, weak: i32, success_mem: i32, failure_mem: i32) i32;
-extern fn malloc(size: usize) &void;
-extern fn free(ptr: &void) void;
 const ATOMIC_SEQ_CST: i32 = 5;
+
+// 与 ring_queue.uya 中逻辑一致；不调用 `ring_queue_new`，避免合并 C 输出时函数定义顺序导致隐式声明。
+fn mpsc_ring_alloc_bytes(allocator: IAllocator, nbytes: usize) !&byte {
+    var p: &byte = try allocator.alloc(nbytes);
+    return p;
+}
 
 fn mpsc_channel_next_index(idx: i32, capacity: i32) i32 {
     const next: i32 = idx + 1;
@@ -71,7 +77,7 @@ export struct MpscChannel<T> {
             return Future<usize>{ state: Poll<usize>.Pending({}) };
         }
 
-        if self._queue._capacity <= 0 || self._queue._slot == null as &void {
+        if self._queue._capacity <= 0 || self._queue._slot == null {
             self._unlock();
             return Future<usize>{ state: Poll<usize>.Pending({}) };
         }
@@ -94,7 +100,7 @@ export struct MpscChannel<T> {
             return Future<T>{ state: Poll<T>.Pending({}) };
         }
 
-        if self._queue._capacity <= 0 || self._queue._slot == null as &void {
+        if self._queue._capacity <= 0 || self._queue._slot == null {
             self._unlock();
             return Future<T>{ state: Poll<T>.Pending({}) };
         }
@@ -110,47 +116,41 @@ export struct MpscChannel<T> {
         self._queue._len = self._queue._len - 1;
         self._unlock();
         return Future<T>{ state: Poll<T>.Ready(value) };
-    }
-
-    fn deinit(self: &Self) void {
-        // deinit 需要调用方保证此时没有并发 send/recv。
-        if self._queue._slot != null as &void {
-            const slot: &T = self._queue._slot as &T;
-            while self._queue._len > 0 {
-                const idx: usize = self._queue._head as usize;
-                {
-                    const drained: T = slot[idx];
-                }
-                self._queue._head = mpsc_channel_next_index(self._queue._head, self._queue._capacity);
-                self._queue._len = self._queue._len - 1;
-            }
-            free(self._queue._slot);
-        }
-
-        self._queue._slot = null as &void;
-        self._queue._head = 0;
-        self._queue._tail = 0;
-        self._queue._len = 0;
-        self._queue._capacity = 0;
-        self._lock = 0;
-    }
+    },
 }
 
-/// 创建泛型 MpscChannel<T>。
-export fn mpsc_channel_new<T>(capacity: i32) MpscChannel<T> {
+/// 创建泛型 MpscChannel<T>（使用传入的 `IAllocator` 分配环形缓冲区）。
+export fn mpsc_channel_new<T>(allocator: IAllocator, capacity: i32) MpscChannel<T> {
     if capacity <= 0 {
         return MpscChannel<T>{
             _lock: 0,
-            _queue: RingQueue<T>{ _head: 0, _tail: 0, _len: 0, _capacity: capacity, _slot: null as &void },
+            _queue: RingQueue<T>{
+                allocator: allocator,
+                _head: 0,
+                _tail: 0,
+                _len: 0,
+                _capacity: capacity,
+                _slot: null,
+            },
         };
     }
-
     var sample: [T: 1] = [];
     const alloc_size: usize = (@size_of(sample[0]) as usize) * (capacity as usize);
-    const slot_mem: &void = malloc(alloc_size);
+    const pb: !&byte = mpsc_ring_alloc_bytes(allocator, alloc_size);
+    const p: &byte = pb catch {
+        null as &byte;
+    };
+    // 勿使用中间 `RingQueue` 变量：C 后端会对复制后的临时值再 `drop`，会误释放已交给 `_queue` 的缓冲区。
     return MpscChannel<T>{
         _lock: 0,
-        _queue: RingQueue<T>{ _head: 0, _tail: 0, _len: 0, _capacity: capacity, _slot: slot_mem },
+        _queue: RingQueue<T>{
+            allocator: allocator,
+            _head: 0,
+            _tail: 0,
+            _len: 0,
+            _capacity: capacity,
+            _slot: p,
+        },
     };
 }
 
@@ -165,9 +165,9 @@ export fn channel_i32_new() Channel_i32 {
 /// 兼容旧 API：i32 MPSC 通道别名。
 export type MpscChannel_i32 = MpscChannel<i32>;
 
-/// 创建 MpscChannel_i32。
+/// 创建 MpscChannel_i32（使用全局 `g_allocator`）。
 export fn mpsc_channel_i32_new(capacity: i32) MpscChannel_i32 {
-    return mpsc_channel_new<i32>(capacity);
+    return mpsc_channel_new<i32>(g_allocator, capacity);
 }
 
 /// 兼容旧 API：usize 单槽通道别名。
@@ -181,7 +181,7 @@ export fn channel_usize_new() Channel_usize {
 /// 兼容旧 API：u32 MPSC 通道别名。
 export type MpscChannel_u32 = MpscChannel<u32>;
 
-/// 创建 MpscChannel_u32。
+/// 创建 MpscChannel_u32（使用全局 `g_allocator`）。
 export fn mpsc_channel_u32_new(capacity: i32) MpscChannel_u32 {
-    return mpsc_channel_new<u32>(capacity);
+    return mpsc_channel_new<u32>(g_allocator, capacity);
 }

@@ -2301,37 +2301,33 @@ fn error_examples() void {
 ### 4.5.14 完整示例
 
 ```uya
-// 定义联合体
-union Result {
-    ok: i32,
-    err: *byte
+// 定义联合体（示意：用标签区分两类负载，与「成功/失败」命名无关）
+union ValueOrMsg {
+    value: i32,
+    msg: *byte
 }
 
-// 处理方法
-fn process_result(result: Result) !i32 {
-    match result {
-        .ok(value) => {
-            printf("成功: %d\n", value);
-            return value;
+fn process_value_or_msg(u: ValueOrMsg) !i32 {
+    match u {
+        .value(n) => {
+            printf("数值: %d\n", n);
+            return n;
         },
-        .err(msg) => {
-            printf("错误: %s\n", msg);
+        .msg(s) => {
+            printf("消息: %s\n", s);
             return error.OperationFailed;
         }
     }
 }
 
-// 主函数
 fn main() !i32 {
-    const success = Result.ok(42);
-    const failure = Result.err("文件未找到");
-    
-    const value1 = try process_result(success);
-    const value2 = try process_result(failure) catch |e| {
+    const a = ValueOrMsg.value(42);
+    const b = ValueOrMsg.msg("提示信息");
+    const _ = try process_value_or_msg(a);
+    const _ = try process_value_or_msg(b) catch |e| {
         printf("捕获错误: %v\n", e);
         return 1;
     };
-    
     return 0;
 }
 ```

@@ -152,7 +152,11 @@ fn emit_drop_cleanup(codegen: &C99CodeGenerator, stmts: & & ASTNode, stmt_count:
             i = i - 1;
             continue;
         }
-        const drop_c: &byte = get_method_c_name(codegen, struct_name, "drop" as *byte);
+        var mono_for_drop: &byte = struct_name;
+        if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
+            mono_for_drop = get_mono_struct_name(codegen, struct_name, type_node.type_named_type_args, type_node.type_named_type_arg_count);
+        }
+        const drop_c: &byte = get_method_c_name(codegen, mono_for_drop, "drop" as *byte);
         const var_safe: &byte = get_safe_c_identifier(codegen, n.var_decl_name);
         if drop_c != null && var_safe != null {
             c99_emit(codegen, "/* drop */ " as *byte);
@@ -1951,8 +1955,12 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             if codegen.current_drop_scope >= 0 && var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null && type_has_drop_c99(codegen, var_type.type_named_name) != 0 && stmt.var_decl_was_moved == 0 {
                 const dd: i32 = codegen.current_drop_scope;
                 if codegen.drop_var_count[dd] < C99_MAX_DROP_VARS_PER_BLOCK {
+                    var mono_drop: &byte = var_type.type_named_name;
+                    if var_type.type_named_type_arg_count > 0 && var_type.type_named_type_args != null {
+                        mono_drop = get_mono_struct_name(codegen, var_type.type_named_name, var_type.type_named_type_args, var_type.type_named_type_arg_count);
+                    }
                     codegen.drop_var_safe[dd * C99_MAX_DROP_VARS_PER_BLOCK + codegen.drop_var_count[dd]] = var_name;
-                    codegen.drop_struct_name[dd * C99_MAX_DROP_VARS_PER_BLOCK + codegen.drop_var_count[dd]] = var_type.type_named_name;
+                    codegen.drop_struct_name[dd * C99_MAX_DROP_VARS_PER_BLOCK + codegen.drop_var_count[dd]] = mono_drop;
                     codegen.drop_var_count[dd] = codegen.drop_var_count[dd] + 1;
                 }
             }
@@ -1963,8 +1971,12 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             if codegen.current_drop_scope >= 0 && var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null && type_has_drop_c99(codegen, var_type.type_named_name) != 0 && stmt.var_decl_was_moved == 0 {
                 const dd: i32 = codegen.current_drop_scope;
                 if codegen.drop_var_count[dd] < C99_MAX_DROP_VARS_PER_BLOCK {
+                    var mono_drop2: &byte = var_type.type_named_name;
+                    if var_type.type_named_type_arg_count > 0 && var_type.type_named_type_args != null {
+                        mono_drop2 = get_mono_struct_name(codegen, var_type.type_named_name, var_type.type_named_type_args, var_type.type_named_type_arg_count);
+                    }
                     codegen.drop_var_safe[dd * C99_MAX_DROP_VARS_PER_BLOCK + codegen.drop_var_count[dd]] = var_name;
-                    codegen.drop_struct_name[dd * C99_MAX_DROP_VARS_PER_BLOCK + codegen.drop_var_count[dd]] = var_type.type_named_name;
+                    codegen.drop_struct_name[dd * C99_MAX_DROP_VARS_PER_BLOCK + codegen.drop_var_count[dd]] = mono_drop2;
                     codegen.drop_var_count[dd] = codegen.drop_var_count[dd] + 1;
                 }
             }

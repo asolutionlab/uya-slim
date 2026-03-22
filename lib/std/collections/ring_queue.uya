@@ -1,14 +1,19 @@
 // lib/std/collections/ring_queue.uya - 环形队列
-//
+// 说明：创建时传入 IAllocator；**drop** 排空元素并释放缓冲区（风格对齐 Vec / HashMap）
 // 模块路径：use std.collections.ring_queue
 
-extern fn malloc(size: usize) &void;
-extern fn free(ptr: &void) void;
+use std.mem.allocator.IAllocator;
 
 error RingQueueFull;
 error RingQueueEmpty;
 error RingQueueInvalidCapacity;
 error RingQueueAllocFailed;
+
+// 非泛型包装：避免在 `!RingQueue<T>` 内对 `allocator.alloc` 做 try 时 C 后端误用外层错误联合类型
+fn ring_queue_alloc_bytes(allocator: IAllocator, nbytes: usize) !&byte {
+    var p: &byte = try allocator.alloc(nbytes);
+    return p;
+}
 
 fn ring_queue_next_index(idx: i32, capacity: i32) i32 {
     const next: i32 = idx + 1;
@@ -19,11 +24,12 @@ fn ring_queue_next_index(idx: i32, capacity: i32) i32 {
 }
 
 export struct RingQueue<T> {
+    allocator: IAllocator,
     _head: i32,
     _tail: i32,
     _len: i32,
     _capacity: i32,
-    _slot: &void,
+    _slot: &byte,
 
     fn len(self: &Self) i32 {
         return self._len;
@@ -45,7 +51,7 @@ export struct RingQueue<T> {
         if self._capacity <= 0 {
             return error.RingQueueInvalidCapacity;
         }
-        if self._slot == null as &void {
+        if self._slot == null {
             return error.RingQueueAllocFailed;
         }
         if self.is_full() {
@@ -64,7 +70,7 @@ export struct RingQueue<T> {
         if self._capacity <= 0 {
             return error.RingQueueInvalidCapacity;
         }
-        if self._slot == null as &void {
+        if self._slot == null {
             return error.RingQueueAllocFailed;
         }
         if self.is_empty() {
@@ -79,47 +85,53 @@ export struct RingQueue<T> {
         return value;
     }
 
-    fn deinit(self: &Self) void {
-        if self._slot == null as &void {
-            self._head = 0;
-            self._tail = 0;
-            self._len = 0;
-            self._capacity = 0;
+    fn drop(self: RingQueue<T>) void {
+        if self._slot == null {
             return;
         }
-
-        while self._len > 0 {
+        var head: i32 = self._head;
+        var len: i32 = self._len;
+        const cap: i32 = self._capacity;
+        const slot: &T = self._slot as &T;
+        while len > 0 {
+            const idx: usize = head as usize;
             {
-                const drained: T = self.pop() catch { break; };
+                const drained: T = slot[idx];
+                _ = drained;
             }
+            head = ring_queue_next_index(head, cap);
+            len = len - 1;
         }
-
-        free(self._slot);
-        self._slot = null as &void;
-        self._head = 0;
-        self._tail = 0;
-        self._len = 0;
-        self._capacity = 0;
-    }
+        self.allocator.dealloc(self._slot);
+    },
 }
 
-export fn ring_queue_new<T>(capacity: i32) RingQueue<T> {
+/// 分配失败时 `_slot == null` 且 `capacity > 0`，`push` 将返回 `RingQueueAllocFailed`（避免 `!RingQueue<T>` 与 C 后端当前限制）。
+export fn ring_queue_new<T>(allocator: IAllocator, capacity: i32) RingQueue<T> {
     if capacity <= 0 {
-        return RingQueue<T>{ _head: 0, _tail: 0, _len: 0, _capacity: capacity, _slot: null as &void };
+        return RingQueue<T>{
+            allocator: allocator,
+            _head: 0,
+            _tail: 0,
+            _len: 0,
+            _capacity: capacity,
+            _slot: null,
+        };
     }
 
     var sample: [T: 1] = [];
     const alloc_size: usize = (@size_of(sample[0]) as usize) * (capacity as usize);
-    const slot_mem: &void = malloc(alloc_size);
-    if slot_mem == null as &void {
-        return RingQueue<T>{ _head: 0, _tail: 0, _len: 0, _capacity: capacity, _slot: null as &void };
-    }
+    const pb: !&byte = ring_queue_alloc_bytes(allocator, alloc_size);
+    const p: &byte = pb catch {
+        null as &byte;
+    };
 
     return RingQueue<T>{
+        allocator: allocator,
         _head: 0,
         _tail: 0,
         _len: 0,
         _capacity: capacity,
-        _slot: slot_mem,
+        _slot: p,
     };
 }

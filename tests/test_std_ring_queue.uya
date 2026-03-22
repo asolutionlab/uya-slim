@@ -1,5 +1,6 @@
 use std.collections.ring_queue.RingQueue;
 use std.collections.ring_queue.ring_queue_new;
+use std.mem.allocator.g_allocator;
 use std.testing.assert_eq_i32;
 
 const RING_SIZE: i32 = 4;
@@ -12,10 +13,7 @@ fn push_failed(q: &RingQueue<i32>, value: i32) bool {
 }
 
 test "ring_queue_runtime_capacity_wraparound" {
-    var q: RingQueue<i32> = ring_queue_new<i32>(RING_SIZE);
-    defer {
-        q.deinit();
-    }
+    var q: RingQueue<i32> = ring_queue_new<i32>(g_allocator, RING_SIZE);
 
     try assert_eq_i32(q.capacity(), RING_SIZE);
     try assert_eq_i32(q.len(), 0);

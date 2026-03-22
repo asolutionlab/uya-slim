@@ -22,7 +22,6 @@ lib/
 │   ├── core/                     # 核心类型和 trait（v0.6.0 Sprint 6）
 │   │   ├── error.uya             # 错误类型定义（使用 union）
 │   │   ├── option.uya            # Option<T> = union { Some: T, None }
-│   │   ├── result.uya            # Result<T, E> = union { Ok: T, Err: E }
 │   │   └── traits.uya            # 核心接口（Clone, Eq, Ord, Hash）
 │   ├── io/                       # I/O 抽象（v0.6.0 Sprint 7）
 │   │   ├── writer.uya            # interface Writer
@@ -144,7 +143,7 @@ libc/  →  std/  →  syscall/
 
 ### Sprint 6: std.core 核心类型
 
-**目标**：实现 Option<T>, Result<T, E>, Error 等核心类型
+**目标**：实现 Option<T>, Error 等核心类型
 
 ```uya
 // 错误类型定义
@@ -159,12 +158,6 @@ union Error {
 union Option<T> {
     Some: T,
     None
-}
-
-// Result<T, E> - 结果类型
-union Result<T, E: Error> {
-    Ok: T,
-    Err: E
 }
 
 // 核心接口
@@ -297,7 +290,7 @@ gcc -nostdlib -ffreestanding your_program.c libuya.o -o your_program -lgcc
 
 ## v0.6.0 新特性
 
-- 🎯 **类型安全**：std 使用 !T, Option<T>, Result<T, E>
+- 🎯 **类型安全**：std 使用 !T, Option<T>
 - 🎯 **接口抽象**：Writer, Reader, Clone, Eq, Ord
 - 🎯 **泛型容器**：Vec<T>, StringBuf
 - 🎯 **libc 薄封装**：调用 std 实现，零重复代码

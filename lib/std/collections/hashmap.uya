@@ -1,36 +1,141 @@
 // lib/std/collections/hashmap.uya - 通用 HashMap 实现
-// 版本：v0.1.0
-// 说明：使用桶式哈希表实现，支持字符串键
+// 版本：v0.3.1
+// 说明：字符串键；**IAllocator**；桶数按负载因子倍增；每桶冲突链为 `HashMapChainBuf`（手写扩容，首块容量 **8** 与 `Vec<T>` 对齐，避免 `Vec<本地复合类型>` 的 C `err_union` 缺陷）。
+// 桶表为连续内存中并排的 `HashMapChainBuf`（步长 `@size_of`）。
+// **键语义**：槽内存 `key_bits = @usize_from_ptr(key)`，查找用 `cstring_eq`；键所指以 null 结尾的字符串须在表存活期内保持有效；内容相同但指针不同视为不同键。
 // 模块路径：lib/std/collections/hashmap.uya → use std.collections.hashmap;
 
-extern fn malloc(size: usize) &void;
-extern fn free(ptr: &void) void;
+use std.mem.allocator.IAllocator;
 
 // ============================================================
 // 错误类型
 // ============================================================
 
 error HashMapKeyNotFound;
-error HashMapAllocationFailed;
+error HashMapNullKey;
+error HashMapChainIndex;
 
 // ============================================================
-// 常量定义
+// 常量
 // ============================================================
 
-const HASHMAP_BUCKET_COUNT: i32 = 16;
+const HASHMAP_INITIAL_BUCKETS: usize = 8;
 
 // ============================================================
-// HashMapEntry - 桶条目
+// 槽位与链缓冲（手动扩容，与 Vec 行为对齐）
 // ============================================================
 
-struct HashMapEntry {
-    key: &byte,
+struct HashMapSlot {
+    key_bits: usize,
     value: i32,
-    next: &HashMapEntry,
+}
+
+fn hashmap_slot_stride() usize {
+    var sample: [HashMapSlot: 1] = [];
+    return @size_of(sample[0]) as usize;
+}
+
+struct HashMapChainBuf {
+    allocator: IAllocator,
+    data: &byte,
+    len: usize,
+    cap: usize,
+
+    fn grow_if_needed(self: &Self) !void {
+        if self.len < self.cap {
+            return;
+        }
+        const esz: usize = hashmap_slot_stride();
+        var new_cap: usize = self.cap;
+        if new_cap == 0 {
+            new_cap = 8;
+        } else {
+            new_cap = self.cap * 2;
+        }
+        const new_bytes: usize = new_cap * esz;
+        if self.data == null {
+            const ar: !&byte = self.allocator.alloc(new_bytes);
+            var p: &byte = try ar;
+            self.data = p;
+            self.cap = new_cap;
+            return;
+        }
+        const rr: !&byte = self.allocator.realloc(self.data, new_bytes);
+        var np: &byte = try rr;
+        self.data = np;
+        self.cap = new_cap;
+    },
+
+    fn push(self: &Self, slot: HashMapSlot) !void {
+        try self.grow_if_needed();
+        const esz: usize = hashmap_slot_stride();
+        const dst: &HashMapSlot = @ptr_from_usize(@usize_from_ptr(self.data as &void) + self.len * esz) as &HashMapSlot;
+        dst.key_bits = slot.key_bits;
+        dst.value = slot.value;
+        self.len = self.len + 1;
+    },
+
+    fn set(self: &Self, i: usize, slot: HashMapSlot) !void {
+        if i >= self.len {
+            return error.HashMapChainIndex;
+        }
+        const esz: usize = hashmap_slot_stride();
+        const dst: &HashMapSlot = @ptr_from_usize(@usize_from_ptr(self.data as &void) + i * esz) as &HashMapSlot;
+        dst.key_bits = slot.key_bits;
+        dst.value = slot.value;
+    },
+
+    /// 调用方保证 `i < len`（与 `Vec::elem_ref` 相同约定）。
+    fn ref_at(self: &Self, i: usize) &HashMapSlot {
+        const esz: usize = hashmap_slot_stride();
+        return @ptr_from_usize(@usize_from_ptr(self.data as &void) + i * esz) as &HashMapSlot;
+    },
+
+    fn free_storage(self: &Self) void {
+        if self.data == null {
+            return;
+        }
+        self.allocator.dealloc(self.data);
+    },
+}
+
+fn hashmap_chain_new(allocator: IAllocator) HashMapChainBuf {
+    return HashMapChainBuf{
+        allocator: allocator,
+        data: null,
+        len: 0,
+        cap: 0,
+    };
 }
 
 // ============================================================
-// 辅助函数
+// 桶 slab：`HashMapChainBuf` 并排
+// ============================================================
+
+fn hashmap_chain_stride() usize {
+    var sample: [HashMapChainBuf: 1] = [];
+    return @size_of(sample[0]) as usize;
+}
+
+fn hashmap_chain_at(base: &byte, i: usize) &HashMapChainBuf {
+    const addr: usize = @usize_from_ptr(base as &void) + i * hashmap_chain_stride();
+    return @ptr_from_usize(addr) as &HashMapChainBuf;
+}
+
+fn hashmap_write_chain_buf(base: &byte, i: usize, v: HashMapChainBuf) void {
+    var slot: &HashMapChainBuf = hashmap_chain_at(base, i);
+    slot.allocator = v.allocator;
+    slot.data = v.data;
+    slot.len = v.len;
+    slot.cap = v.cap;
+}
+
+fn hashmap_key_ptr(key_bits: usize) &byte {
+    return @ptr_from_usize(key_bits) as &byte;
+}
+
+// ============================================================
+// 哈希与比较
 // ============================================================
 
 fn hash_cstring(s: &byte) u32 {
@@ -57,107 +162,172 @@ fn cstring_eq(a: &byte, b: &byte) i32 {
     return (a[i] == b[i]) as i32;
 }
 
-fn hash_bucket_idx(h: u32) i32 {
-    return (h as i32) & (HASHMAP_BUCKET_COUNT - 1);
+fn bucket_index(h: u32, bucket_count: usize) usize {
+    return (h as usize) & (bucket_count - 1);
+}
+
+fn hashmap_chain_find(chain: &HashMapChainBuf, key: &byte) i32 {
+    var i: usize = 0;
+    const n: usize = chain.len;
+    while i < n {
+        const sl: &HashMapSlot = chain.ref_at(i);
+        const sk: &byte = hashmap_key_ptr(sl.key_bits);
+        if cstring_eq(sk, key) != 0 {
+            return i as i32;
+        }
+        i = i + 1;
+    }
+    return -1;
 }
 
 // ============================================================
-// HashMap - 字符串键值映射
+// HashMap
 // ============================================================
 
 export struct HashMap {
-    buckets: [&HashMapEntry: HASHMAP_BUCKET_COUNT],
-    size: i32,
+    allocator: IAllocator,
+    bucket_count: usize,
+    _chains: &byte,
+    _len: i32,
 }
 
-// ============================================================
-// 构造函数和操作函数
-// ============================================================
-
-export fn hm_new() HashMap {
-    var buckets: [&HashMapEntry: HASHMAP_BUCKET_COUNT] = [];
+export fn hashmap_new(allocator: IAllocator) HashMap {
     return HashMap{
-        buckets: buckets,
-        size: 0,
+        allocator: allocator,
+        bucket_count: 0,
+        _chains: null,
+        _len: 0,
     };
 }
 
-export fn hm_put(self: &HashMap, key: &byte, value: i32) !void {
-    if key == null {
-        return;
-    }
-    const h: u32 = hash_cstring(key);
-    const idx: i32 = hash_bucket_idx(h);
-
-    var entry: &HashMapEntry = self.buckets[idx];
-    while entry != null {
-        if cstring_eq(entry.key, key) != 0 {
-            entry.value = value;
+HashMap {
+    fn ensure_buckets(self: &Self) !void {
+        if self.bucket_count != 0 {
             return;
         }
-        entry = entry.next;
-    }
-
-    const new_entry: &HashMapEntry = malloc(@size_of(HashMapEntry) as usize) as &HashMapEntry;
-    if new_entry == null {
-        return error.HashMapAllocationFailed;
-    }
-    new_entry.key = key;
-    new_entry.value = value;
-    new_entry.next = self.buckets[idx];
-    self.buckets[idx] = new_entry;
-    self.size = self.size + 1;
-}
-
-export fn hm_get(self: &HashMap, key: &byte) !i32 {
-    if key == null {
-        return error.HashMapKeyNotFound;
-    }
-    const h: u32 = hash_cstring(key);
-    const idx: i32 = hash_bucket_idx(h);
-
-    var entry: &HashMapEntry = self.buckets[idx];
-    while entry != null {
-        if cstring_eq(entry.key, key) != 0 {
-            return entry.value;
+        const stride: usize = hashmap_chain_stride();
+        const nbytes: usize = HASHMAP_INITIAL_BUCKETS * stride;
+        const raw: !&byte = self.allocator.alloc(nbytes);
+        var p: &byte = try raw;
+        self._chains = p;
+        self.bucket_count = HASHMAP_INITIAL_BUCKETS;
+        var i: usize = 0;
+        while i < HASHMAP_INITIAL_BUCKETS {
+            hashmap_write_chain_buf(self._chains, i, hashmap_chain_new(self.allocator));
+            i = i + 1;
         }
-        entry = entry.next;
     }
-    return error.HashMapKeyNotFound;
-}
 
-export fn hm_contains(self: &HashMap, key: &byte) i32 {
-    if key == null {
-        return 0;
+    fn resize_buckets(self: &Self) !void {
+        const old_n: usize = self.bucket_count;
+        const new_n: usize = old_n * 2;
+        const stride: usize = hashmap_chain_stride();
+        const raw: !&byte = self.allocator.alloc(new_n * stride);
+        var new_base: &byte = try raw;
+        var j: usize = 0;
+        while j < new_n {
+            hashmap_write_chain_buf(new_base, j, hashmap_chain_new(self.allocator));
+            j = j + 1;
+        }
+        var bi: usize = 0;
+        while bi < old_n {
+            const old_chain: &HashMapChainBuf = hashmap_chain_at(self._chains, bi);
+            var ei: usize = 0;
+            const elen: usize = old_chain.len;
+            while ei < elen {
+                const sl: &HashMapSlot = old_chain.ref_at(ei);
+                const sk: &byte = hashmap_key_ptr(sl.key_bits);
+                const nh: u32 = hash_cstring(sk);
+                const nidx: usize = bucket_index(nh, new_n);
+                const new_chain: &HashMapChainBuf = hashmap_chain_at(new_base, nidx);
+                try new_chain.push(HashMapSlot{ key_bits: sl.key_bits, value: sl.value });
+                ei = ei + 1;
+            }
+            bi = bi + 1;
+        }
+        bi = 0;
+        while bi < old_n {
+            const oc: &HashMapChainBuf = hashmap_chain_at(self._chains, bi);
+            oc.free_storage();
+            bi = bi + 1;
+        }
+        self.allocator.dealloc(self._chains);
+        self._chains = new_base;
+        self.bucket_count = new_n;
     }
-    const h: u32 = hash_cstring(key);
-    const idx: i32 = hash_bucket_idx(h);
 
-    var entry: &HashMapEntry = self.buckets[idx];
-    while entry != null {
-        if cstring_eq(entry.key, key) != 0 {
+    fn drop(self: HashMap) void {
+        if self._chains == null {
+            return;
+        }
+        var bi: usize = 0;
+        while bi < self.bucket_count {
+            const ch: &HashMapChainBuf = hashmap_chain_at(self._chains, bi);
+            ch.free_storage();
+            bi = bi + 1;
+        }
+        self.allocator.dealloc(self._chains);
+    }
+
+    fn put(self: &Self, key: &byte, value: i32) !void {
+        if key == null {
+            return error.HashMapNullKey;
+        }
+        try self.ensure_buckets();
+        const h: u32 = hash_cstring(key);
+        const bc: usize = self.bucket_count;
+        const idx: usize = bucket_index(h, bc);
+        const chain: &HashMapChainBuf = hashmap_chain_at(self._chains, idx);
+        const fi: i32 = hashmap_chain_find(chain, key);
+        const kb: usize = @usize_from_ptr(key as &void);
+        if fi >= 0 {
+            try chain.set(fi as usize, HashMapSlot{ key_bits: kb, value: value });
+            return;
+        }
+        try chain.push(HashMapSlot{ key_bits: kb, value: value });
+        self._len = self._len + 1;
+        const load: i32 = self._len * 4;
+        const cap_i: i32 = bc as i32;
+        if load > cap_i * 3 {
+            try self.resize_buckets();
+        }
+    }
+
+    fn get(self: &Self, key: &byte) !i32 {
+        if key == null {
+            return error.HashMapKeyNotFound;
+        }
+        if self.bucket_count == 0 {
+            return error.HashMapKeyNotFound;
+        }
+        const h: u32 = hash_cstring(key);
+        const idx: usize = bucket_index(h, self.bucket_count);
+        const chain: &HashMapChainBuf = hashmap_chain_at(self._chains, idx);
+        const fi: i32 = hashmap_chain_find(chain, key);
+        if fi < 0 {
+            return error.HashMapKeyNotFound;
+        }
+        const sl: &HashMapSlot = chain.ref_at(fi as usize);
+        return sl.value;
+    }
+
+    fn contains(self: &Self, key: &byte) i32 {
+        if key == null {
+            return 0;
+        }
+        if self.bucket_count == 0 {
+            return 0;
+        }
+        const h: u32 = hash_cstring(key);
+        const idx: usize = bucket_index(h, self.bucket_count);
+        const chain: &HashMapChainBuf = hashmap_chain_at(self._chains, idx);
+        if hashmap_chain_find(chain, key) >= 0 {
             return 1;
         }
-        entry = entry.next;
+        return 0;
     }
-    return 0;
-}
 
-export fn hm_len(self: &HashMap) i32 {
-    return self.size;
-}
-
-export fn hm_deinit(self: &HashMap) void {
-    var i: i32 = 0;
-    while i < HASHMAP_BUCKET_COUNT {
-        var entry: &HashMapEntry = self.buckets[i];
-        while entry != null {
-            const next: &HashMapEntry = entry.next;
-            free(entry as &void);
-            entry = next;
-        }
-        self.buckets[i] = null;
-        i = i + 1;
+    fn len(self: &Self) i32 {
+        return self._len;
     }
-    self.size = 0;
 }
