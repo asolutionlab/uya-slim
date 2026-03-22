@@ -550,7 +550,7 @@ fn read_number(lexer: &Lexer, arena: &Arena) &Token {
     return make_token(arena, TokenType.TOKEN_NUMBER, value, line, column);
 }
 
-// 读取字符串字面量（支持 \n \t \\ \" \0）
+// 读取字符串字面量（支持 \n \r \t \\ \" \0）
 fn read_string(lexer: &Lexer, arena: &Arena) &Token {
     const line: i32 = lexer.line;
     const column: i32 = lexer.column;
@@ -576,6 +576,8 @@ fn read_string(lexer: &Lexer, arena: &Arena) &Token {
             var escaped_value: byte = 0;
             if escape_char == 110 {
                 escaped_value = 10;
+            } else if escape_char == 114 {
+                escaped_value = 13;
             } else if escape_char == 116 {
                 escaped_value = 9;
             } else if escape_char == 92 {
@@ -688,6 +690,8 @@ fn read_string_char_into_buffer(lexer: &Lexer) i32 {
         var escaped: byte = 0;
         if e == 110 {
             escaped = 10;
+        } else if e == 114 {
+            escaped = 13;
         } else if e == 116 {
             escaped = 9;
         } else if e == 92 {
