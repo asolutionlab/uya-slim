@@ -550,7 +550,176 @@ fn read_number(lexer: &Lexer, arena: &Arena) &Token {
     return make_token(arena, TokenType.TOKEN_NUMBER, value, line, column);
 }
 
-// 读取字符串字面量（支持 \n \r \t \\ \" \0）
+// 十六进制数字 0-15，非法返回 -1
+fn hex_digit_value(ch: byte) i32 {
+    const cu: i32 = ch as i32;
+    if cu >= 48 && cu <= 57 {
+        return cu - 48;
+    }
+    if cu >= 65 && cu <= 70 {
+        return cu - 55;
+    }
+    if cu >= 97 && cu <= 102 {
+        return cu - 87;
+    }
+    return -1;
+}
+
+// 从当前位置读取两个十六进制数字 → 0..255；失败返回 -1
+fn read_hex_pair_lexer(lexer: &Lexer) i32 {
+    if lexer.position >= lexer.buffer_size {
+        return -1;
+    }
+    const h1: i32 = hex_digit_value(peek_char(lexer, 0));
+    if h1 < 0 {
+        return -1;
+    }
+    advance_char(lexer);
+    if lexer.position >= lexer.buffer_size {
+        return -1;
+    }
+    const h2: i32 = hex_digit_value(peek_char(lexer, 0));
+    if h2 < 0 {
+        return -1;
+    }
+    advance_char(lexer);
+    return h1 * 16 + h2;
+}
+
+// 从当前位置读取四个十六进制数字 → 0..65535；失败返回 -1
+fn read_hex_quad_lexer(lexer: &Lexer) i32 {
+    if lexer.position >= lexer.buffer_size {
+        return -1;
+    }
+    const a: i32 = hex_digit_value(peek_char(lexer, 0));
+    if a < 0 {
+        return -1;
+    }
+    advance_char(lexer);
+    if lexer.position >= lexer.buffer_size {
+        return -1;
+    }
+    const b: i32 = hex_digit_value(peek_char(lexer, 0));
+    if b < 0 {
+        return -1;
+    }
+    advance_char(lexer);
+    if lexer.position >= lexer.buffer_size {
+        return -1;
+    }
+    const c2: i32 = hex_digit_value(peek_char(lexer, 0));
+    if c2 < 0 {
+        return -1;
+    }
+    advance_char(lexer);
+    if lexer.position >= lexer.buffer_size {
+        return -1;
+    }
+    const d: i32 = hex_digit_value(peek_char(lexer, 0));
+    if d < 0 {
+        return -1;
+    }
+    advance_char(lexer);
+    return ((a * 16 + b) * 16 + c2) * 16 + d;
+}
+
+fn lexer_push_byte_string(lexer: &Lexer, b: byte) i32 {
+    if lexer.string_text_len >= (LEXER_STRING_INTERP_BUFFER_SIZE - 1) as usize {
+        return -1;
+    }
+    lexer.string_text_buffer[lexer.string_text_len] = b;
+    lexer.string_text_len = lexer.string_text_len + 1;
+    return 0;
+}
+
+// BMP 码点 UTF-8 写入缓冲区；拒绝 U+D800..U+DFFF
+fn lexer_append_utf8_bmp(lexer: &Lexer, cp: i32) i32 {
+    if cp < 0 || cp > 65535 {
+        return -1;
+    }
+    if cp >= 55296 && cp <= 57343 {
+        return -1;
+    }
+    if cp <= 127 {
+        return lexer_push_byte_string(lexer, cp as byte);
+    }
+    if cp <= 2047 {
+        if lexer.string_text_len + 2 >= (LEXER_STRING_INTERP_BUFFER_SIZE - 1) as usize {
+            return -1;
+        }
+        const c0: i32 = 192 | (cp >> 6);
+        const c1: i32 = 128 | (cp & 63);
+        lexer.string_text_buffer[lexer.string_text_len] = c0 as byte;
+        lexer.string_text_len = lexer.string_text_len + 1;
+        lexer.string_text_buffer[lexer.string_text_len] = c1 as byte;
+        lexer.string_text_len = lexer.string_text_len + 1;
+        return 0;
+    }
+    if lexer.string_text_len + 3 >= (LEXER_STRING_INTERP_BUFFER_SIZE - 1) as usize {
+        return -1;
+    }
+    const b0: i32 = 224 | (cp >> 12);
+    const b1: i32 = 128 | ((cp >> 6) & 63);
+    const b2: i32 = 128 | (cp & 63);
+    lexer.string_text_buffer[lexer.string_text_len] = b0 as byte;
+    lexer.string_text_len = lexer.string_text_len + 1;
+    lexer.string_text_buffer[lexer.string_text_len] = b1 as byte;
+    lexer.string_text_len = lexer.string_text_len + 1;
+    lexer.string_text_buffer[lexer.string_text_len] = b2 as byte;
+    lexer.string_text_len = lexer.string_text_len + 1;
+    return 0;
+}
+
+// 调用前已跳过 '\\'：读取并追加一个转义序列（含 \\xHH、\\uXXXX）
+fn lexer_append_escape(lexer: &Lexer) i32 {
+    if lexer.position >= lexer.buffer_size {
+        return -1;
+    }
+    const e: byte = peek_char(lexer, 0);
+    if e == 110 {
+        advance_char(lexer);
+        return lexer_push_byte_string(lexer, 10);
+    }
+    if e == 114 {
+        advance_char(lexer);
+        return lexer_push_byte_string(lexer, 13);
+    }
+    if e == 116 {
+        advance_char(lexer);
+        return lexer_push_byte_string(lexer, 9);
+    }
+    if e == 92 {
+        advance_char(lexer);
+        return lexer_push_byte_string(lexer, 92);
+    }
+    if e == 34 {
+        advance_char(lexer);
+        return lexer_push_byte_string(lexer, 34);
+    }
+    if e == 48 {
+        advance_char(lexer);
+        return lexer_push_byte_string(lexer, 0);
+    }
+    if e == 120 {
+        advance_char(lexer);
+        const hv: i32 = read_hex_pair_lexer(lexer);
+        if hv < 0 {
+            return -1;
+        }
+        return lexer_push_byte_string(lexer, hv as byte);
+    }
+    if e == 117 {
+        advance_char(lexer);
+        const qu: i32 = read_hex_quad_lexer(lexer);
+        if qu < 0 {
+            return -1;
+        }
+        return lexer_append_utf8_bmp(lexer, qu);
+    }
+    return -1;
+}
+
+// 读取字符串字面量（支持 \\n \\r \\t \\\\ \\" \\0 \\xHH \\uXXXX）
 fn read_string(lexer: &Lexer, arena: &Arena) &Token {
     const line: i32 = lexer.line;
     const column: i32 = lexer.column;
@@ -569,29 +738,9 @@ fn read_string(lexer: &Lexer, arena: &Arena) &Token {
         }
         if c == 92 {
             advance_char(lexer);
-            if lexer.string_text_len >= (LEXER_STRING_INTERP_BUFFER_SIZE - 1) as usize {
+            if lexer_append_escape(lexer) != 0 {
                 return null;
             }
-            const escape_char: byte = peek_char(lexer, 0);
-            var escaped_value: byte = 0;
-            if escape_char == 110 {
-                escaped_value = 10;
-            } else if escape_char == 114 {
-                escaped_value = 13;
-            } else if escape_char == 116 {
-                escaped_value = 9;
-            } else if escape_char == 92 {
-                escaped_value = 92;
-            } else if escape_char == 34 {
-                escaped_value = 34;
-            } else if escape_char == 48 {
-                escaped_value = 0;
-            } else {
-                return null;
-            }
-            lexer.string_text_buffer[lexer.string_text_len] = escaped_value;
-            lexer.string_text_len = lexer.string_text_len + 1;
-            advance_char(lexer);
         } else {
             if lexer.string_text_len >= (LEXER_STRING_INTERP_BUFFER_SIZE - 1) as usize {
                 return null;
@@ -645,10 +794,26 @@ fn read_char_literal(lexer: &Lexer, arena: &Arena, line: i32, column: i32) &Toke
             char_val = 13;
         } else if e == 34 {
             char_val = 34;
+        } else if e == 120 {
+            advance_char(lexer);
+            const hx: i32 = read_hex_pair_lexer(lexer);
+            if hx < 0 {
+                return null;
+            }
+            char_val = hx;
+        } else if e == 117 {
+            advance_char(lexer);
+            const hq: i32 = read_hex_quad_lexer(lexer);
+            if hq < 0 || hq > 255 {
+                return null;
+            }
+            char_val = hq;
         } else {
             return null;
         }
-        advance_char(lexer);
+        if e != 120 && e != 117 {
+            advance_char(lexer);
+        }
     } else {
         char_val = c as i32;
         advance_char(lexer);
@@ -683,33 +848,7 @@ fn read_string_char_into_buffer(lexer: &Lexer) i32 {
     const c: byte = peek_char(lexer, 0);
     if c == 92 {
         advance_char(lexer);
-        if lexer.position >= lexer.buffer_size {
-            return -1;
-        }
-        const e: byte = peek_char(lexer, 0);
-        var escaped: byte = 0;
-        if e == 110 {
-            escaped = 10;
-        } else if e == 114 {
-            escaped = 13;
-        } else if e == 116 {
-            escaped = 9;
-        } else if e == 92 {
-            escaped = 92;
-        } else if e == 34 {
-            escaped = 34;
-        } else if e == 48 {
-            escaped = 0;
-        } else {
-            return -1;
-        }
-        if lexer.string_text_len >= (LEXER_STRING_INTERP_BUFFER_SIZE - 1) as usize {
-            return -1;
-        }
-        lexer.string_text_buffer[lexer.string_text_len] = escaped;
-        lexer.string_text_len = lexer.string_text_len + 1;
-        advance_char(lexer);
-        return 0;
+        return lexer_append_escape(lexer);
     }
     if lexer.string_text_len >= (LEXER_STRING_INTERP_BUFFER_SIZE - 1) as usize {
         return -1;
@@ -868,6 +1007,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
                     return make_token(arena, TokenType.TOKEN_INTERP_TEXT, value3, lexer.line, lexer.column);
                 }
                 if read_string_char_into_buffer(lexer) != 0 {
+                    lexer.has_error = 1;
                     return null;
                 }
             }
@@ -897,6 +1037,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
             if char_tok != null {
                 return char_tok;
             }
+            lexer.has_error = 1;
             return make_token(arena, TokenType.TOKEN_EOF, null, line, column);
         }
         if c == 96 {

@@ -1,6 +1,6 @@
 # Uya 语言正式语法规范（Formal BNF）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.41 同步（2026-03-22）
+> **版本**：与 [uya.md](./uya.md) 0.49.42 同步（2026-03-22）
 
 本文档包含 Uya 语言的完整、无歧义的 BNF 语法定义，用于：
 - 编译器/解析器实现
@@ -460,7 +460,12 @@ int_suffix     = 'i8' | 'i16' | 'i32' | 'i64'
 
 float_suffix   = 'f32' | 'f64'
 exponent       = [eE] [+-]? [0-9] ( [0-9] | '_' )*
-STRING         = '"' { character | escape_sequence } '"' | '`' { character } '`'
+STRING         = '"' { string_char } '"' | '`' { character } '`'
+string_char    = [^"\\] | escape_sequence
+escape_sequence = '\\' ( 'n' | 'r' | 't' | '\\' | '"' | '0' | 'x' HEX HEX | 'u' HEX HEX HEX HEX )
+CHAR           = '\'' ( [^'\\] | escape_sequence_char ) '\''
+escape_sequence_char = '\\' ( 'n' | 'r' | 't' | '\\' | '\'' | '0' | '"' | 'x' HEX HEX | 'u' HEX HEX HEX HEX )
+HEX            = [0-9a-fA-F]
 TEXT           = [^${}]+
 ```
 
@@ -469,6 +474,7 @@ TEXT           = [^${}]+
 - 下划线 `_` 可出现在任意两个数字之间，不能出现在开头、结尾或连续出现
 - 下划线不能紧跟在进制前缀之后（如 `0x_FF` 非法）
 - 字符串字面量包括普通字符串 `"..."` 和原始字符串 `` `...` ``（无转义）；语义上自动带 `\0` 结尾；可赋值给 `[byte: N]`、`&byte`、`*byte`（详见 uya.md §1.4）
+- **`escape_sequence` / `escape_sequence_char`**（**0.49.42**）：**`\x`** 后须恰好两个 **`HEX`**；**`\u`** 后须恰好四个 **`HEX`**，按 UTF-8 展开（字符串）或要求值 **≤255**（字符，见 uya.md §1.4）
 - 字符字面量 `'x'` 类型为 `byte`，可赋值给 `byte`
 
 ### 可选特性（泛型和宏）
