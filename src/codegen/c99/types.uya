@@ -7141,6 +7141,7 @@ var g_c99_identifier_type_values: [&byte: C99_IDENTIFIER_TYPE_CACHE_SIZE] = [];
 var g_c99_identifier_type_functions: [&ASTNode: C99_IDENTIFIER_TYPE_CACHE_SIZE] = [];
 var g_c99_identifier_type_local_counts: [i32: C99_IDENTIFIER_TYPE_CACHE_SIZE] = [];
 var g_c99_identifier_type_global_counts: [i32: C99_IDENTIFIER_TYPE_CACHE_SIZE] = [];
+var g_c99_identifier_type_method_structs: [&byte: C99_IDENTIFIER_TYPE_CACHE_SIZE] = [];
 
 fn c99_identifier_type_cache_reset() void {
     var i: i32 = 0;
@@ -7150,6 +7151,7 @@ fn c99_identifier_type_cache_reset() void {
         g_c99_identifier_type_functions[i] = null;
         g_c99_identifier_type_local_counts[i] = 0;
         g_c99_identifier_type_global_counts[i] = 0;
+        g_c99_identifier_type_method_structs[i] = null;
         i = i + 1;
     }
     g_c99_identifier_type_cached_codegen = null;
@@ -7174,6 +7176,9 @@ fn c99_identifier_type_cache_slot(codegen: &C99CodeGenerator, name: &byte) i32 {
     if codegen != null {
         h = h + (codegen.local_variable_count * 17);
         h = h + (codegen.global_variable_count * 29);
+        if codegen.current_method_struct_name != null {
+            h = h + (hash_string(codegen.current_method_struct_name) * 37);
+        }
     }
     return (h & C99_IDENTIFIER_TYPE_CACHE_MASK) as i32;
 }
@@ -7188,7 +7193,10 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
         strcmp(g_c99_identifier_type_keys[slot] as *byte, name as *byte) == 0 &&
         g_c99_identifier_type_functions[slot] == codegen.current_function_decl &&
         g_c99_identifier_type_local_counts[slot] == codegen.local_variable_count &&
-        g_c99_identifier_type_global_counts[slot] == codegen.global_variable_count {
+        g_c99_identifier_type_global_counts[slot] == codegen.global_variable_count &&
+        (g_c99_identifier_type_method_structs[slot] == codegen.current_method_struct_name ||
+            (g_c99_identifier_type_method_structs[slot] != null && codegen.current_method_struct_name != null &&
+                strcmp(g_c99_identifier_type_method_structs[slot] as *byte, codegen.current_method_struct_name as *byte) == 0)) {
         return g_c99_identifier_type_values[slot];
     }
     var i: i32 = codegen.local_variable_count - 1;
@@ -7200,6 +7208,7 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
                 g_c99_identifier_type_functions[slot] = codegen.current_function_decl;
                 g_c99_identifier_type_local_counts[slot] = codegen.local_variable_count;
                 g_c99_identifier_type_global_counts[slot] = codegen.global_variable_count;
+                g_c99_identifier_type_method_structs[slot] = codegen.current_method_struct_name;
             }
             return codegen.local_variables[i].type_c;
         }
@@ -7216,6 +7225,7 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
                     g_c99_identifier_type_functions[slot] = codegen.current_function_decl;
                     g_c99_identifier_type_local_counts[slot] = codegen.local_variable_count;
                     g_c99_identifier_type_global_counts[slot] = codegen.global_variable_count;
+                    g_c99_identifier_type_method_structs[slot] = codegen.current_method_struct_name;
                 }
                 return codegen.local_variables[i].type_c;
             }
@@ -7231,6 +7241,7 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
                 g_c99_identifier_type_functions[slot] = codegen.current_function_decl;
                 g_c99_identifier_type_local_counts[slot] = codegen.local_variable_count;
                 g_c99_identifier_type_global_counts[slot] = codegen.global_variable_count;
+                g_c99_identifier_type_method_structs[slot] = codegen.current_method_struct_name;
             }
             return codegen.global_variables[i].type_c;
         }
