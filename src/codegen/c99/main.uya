@@ -1394,7 +1394,8 @@ fn gen_test_runner(codegen: &C99CodeGenerator, tests: & & ASTNode, test_count: i
                 fputs("      int _after = _test_passed + _test_failed;\n" as *byte, codegen.output as *void);
                 // try assert_* 失败时仅 error_id!=0，不会增加 _test_passed；须计入 _test_failed，否则 main_main 仍 return 0，脚本误判通过
                 fputs("      if (_test_result.error_id != 0) { printf(\"ERROR\\n\"); _test_failed = _test_failed + 1; }\n" as *byte, codegen.output as *void);
-                fputs("      else if (_after > _before) printf(\"OK\\n\"); else printf(\"FAILED\\n\"); }\n" as *byte, codegen.output as *void);
+                // 无 try assert 的成功用例不会改变 _test_passed；须计为 1 次通过，否则空体会误印 FAILED 且汇总全为 0
+                fputs("      else { if (_after == _before) { _test_passed = _test_passed + 1; } printf(\"OK\\n\"); } }\n" as *byte, codegen.output as *void);
             }
         }
         i = i + 1;
