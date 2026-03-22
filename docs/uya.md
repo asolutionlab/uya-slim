@@ -2376,8 +2376,9 @@ Uya 联合体设计完全符合「坚如磐石」哲学：
       - `lib/std/io/file.uya` 和 `lib/std/io/stream.uya` 都属于 `std.io` 模块 → 模块前缀 `std_io`
       - `lib/std/io/file.uya` 中的 `export fn fopen(...)` → `std_io_fopen(...)`
       - `lib/std/io/stream.uya` 中的 `export fn fgetc(...)` → `std_io_fgetc(...)`
-      - `lib/std/mem/mem.uya` 属于 `std.mem` 模块 → 模块前缀 `std_mem`
+      - `lib/std/mem/mem.uya`、`lib/std/mem/allocator.uya`、`lib/std/mem/arena.uya` 等同目录文件均属于 **`std.mem`** 模块 → 模块前缀 **`std_mem`**
       - `lib/std/mem/mem.uya` 中的 `export fn mem_copy(...)` → `std_mem_mem_copy(...)`
+      - `lib/std/mem/allocator.uya` 中的 `export fn get_allocator(...)` → `std_mem_get_allocator(...)`（示例）
       - 主模块（项目根目录）→ 模块前缀 `main`
       - 主模块 `main.uya` 中的 `export fn my_func(...)` → `main_my_func(...)`
       - **模块前缀提取规则**：

@@ -1,0 +1,21 @@
+// test_hashmap.uya - HashMap 测试
+
+use std.testing;
+
+use std.collections.hashmap;
+use std.collections.hashmap.HashMap;
+use std.collections.hashmap.hm_new;
+use std.collections.hashmap.hm_put;
+use std.collections.hashmap.hm_get;
+use std.collections.hashmap.hm_contains;
+use std.collections.hashmap.hm_len;
+use std.collections.hashmap.hm_deinit;
+
+test "hashmap_basic" {
+    var map: HashMap = hm_new();
+    defer { hm_deinit(&map); }
+
+    try hm_put(&map, "one", 1);
+    var v1: i32 = try hm_get(&map, "one");
+    assert_eq_i32(v1, 1);
+}

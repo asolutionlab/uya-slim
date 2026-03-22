@@ -8,6 +8,18 @@
 
 **发布日期：** 待定
 
+### 标准库：`std.mem.arena` 实现 `IAllocator`（2026-03-22）
+
+- **标准库**：**`lib/std/mem/arena.uya`** — **`export struct Arena : IAllocator`**；**`dealloc`** 为空操作；**`realloc`** 仅当目标为**当前最后一次 bump 块**时在缓冲区内原地缩/扩，否则 **`AllocInvalidPointer`**；内部字段 **`has_last` / `last_start` / `last_aligned`**（带默认值，现有 **`Arena{ buffer, size, used }`** 初始化方式不变）。
+- **测试**：**`tests/test_mem_arena.uya`**。
+- **文档**：**`docs/todo_std_refactor.md`**、**`docs/std_refactor_design.md`** v0.7.3。
+
+### 标准库：`std.mem.allocator` 与测试（2026-03-22）
+
+- **标准库**：**`lib/std/mem/allocator.uya`** — **`export interface IAllocator`**（`alloc` / `dealloc` / `realloc`，**`!&byte`**）、**`MallocAllocator`**（**`malloc` / `free` / `realloc`**）、**`g_allocator`**、**`get_allocator()`**；错误类型 **`AllocOutOfMemory`** 等。
+- **测试**：**`tests/test_mem_allocator.uya`**（纳入 **`make tests`**）。
+- **文档**：**`docs/todo_std_refactor.md`**（Phase 2 §2.1）、**`docs/std_refactor_design.md`**、**`docs/todo_mini_to_full.md`**（**`std.mem.allocator`** 勾选与 Sprint 表）、**`docs/libc_progress.md`**、**`docs/uya.md`**（模块前缀示例）。
+
 ### v0.49.37 - C99：`@vector.reduce_add` 助手发射与收集阶段作用域（2026-03-20）
 
 - **C99**：**`i32`/`u32`/`f32`** 的 **`×2`/`×4`** **`@vector.reduce_add`** 与 **`@vector.select`** 助手在 **`c99_simd_need_emit_i32_u32_f32`** 中按 **`simd_emit_*`** 标志参与判定；收集遍历时为 **形参** 与 **块内局部** 建立 **`local_variables`** 视图，与 **`c99_resolve_simd_type_ast_from_expr`** 一致，修复 **`test_simd_vector_reduce_add`** 等场景的 **undefined reference**。
@@ -431,7 +443,7 @@ export @naked_fn fn setjmp(env: &jmp_buf) i32 {
 
 1. **std 使用现代特性**
    - `!T` 错误处理替代裸指针返回
-   - `union Option<T>` / `union Result<T, E>` 类型安全
+   - `union Option<T>` 类型安全
    - `interface` 定义抽象（Writer, Reader, Clone, Eq）
    - 泛型容器（Vec<T>, StringBuf）
 
@@ -450,7 +462,7 @@ export @naked_fn fn setjmp(env: &jmp_buf) i32 {
 
 | Sprint | 内容 | 说明 |
 |--------|------|------|
-| 6 | std.core | Error, Option<T>, Result<T, E>, traits |
+| 6 | std.core | Error, Option<T>, traits |
 | 7 | std.io | Writer/Reader 接口，File 实现 |
 | 8 | std.string | 安全字符串操作（!T） |
 | 9 | std.collections | Vec<T>, StringBuf 泛型容器 |

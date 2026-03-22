@@ -234,18 +234,22 @@ lib/osal/
 |------|------|------|
 | std.io | `lib/std/io/file.uya` | 部分实现 |
 | std.io | `lib/std/io/stream.uya` | 部分实现 |
-| std.mem | `lib/std/mem/mem.uya` | 部分实现 |
+| std.mem | `lib/std/mem/mem.uya` | 部分实现（memcpy 等） |
+| std.mem | `lib/std/mem/allocator.uya` | **IAllocator + MallocAllocator**；测试 `tests/test_mem_allocator.uya` |
+| std.mem | `lib/std/mem/arena.uya` | **Arena : IAllocator**（bump；`realloc` 仅最后块）；测试 `tests/test_mem_arena.uya` |
 | std.string | `lib/std/string/string.uya` | 部分实现 |
 | std.runtime | `lib/std/runtime/runtime.uya` | 部分实现 |
 | std.testing | `lib/std/testing/testing.uya` | 部分实现 |
 
 **待实现**：
 
-- [ ] `Option<T>` / `Result<T, E>` 类型
+- [ ] `Option<T>` 类型
 - [ ] `interface Writer` / `Reader`
 - [ ] `Vec<T>` / `StringBuf` 容器
-- [ ] `IAllocator` 接口
-- [ ] `HeapAllocator` / `ArenaAllocator`
+- [x] `IAllocator` 接口（**`lib/std/mem/allocator.uya`**，`MallocAllocator` 实现）
+- [ ] `HeapAllocator`（mmap，设计见 `std_refactor_design.md`）
+- [x] **`Arena` + `IAllocator`**（**`lib/std/mem/arena.uya`**）
+- [ ] **`FixedBufferAllocator`**（与 **`Arena`** 命名/能力进一步对齐待办）
 
 ---
 
@@ -279,7 +283,7 @@ lib/osal/
 
 ### Phase 5: std 层
 
-1. 实现核心类型（Option, Result）
+1. 实现核心类型（Option）
 2. 实现 I/O 抽象（Writer, Reader）
 3. 实现分配器（HeapAllocator）
 4. 实现容器（Vec, StringBuf）

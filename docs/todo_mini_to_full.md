@@ -1230,7 +1230,7 @@ make check          # 自举 + 测试
 1. **std 使用 Uya 现代特性**
    - `!T` 错误处理替代裸指针返回
    - `interface` 定义抽象（Writer, Reader, Iterator）
-   - `union Option<T>` / `union Result<T, E>` 类型安全
+   - `union Option<T>` 类型安全
    - 泛型容器（Vec<T>, HashMap<K, V>）
    - `mc` 宏实现编译期优化
 
@@ -1253,7 +1253,6 @@ lib/
 │   ├── core/                     # 核心类型和 trait
 │   │   ├── error.uya             # 错误类型定义（使用 union）
 │   │   ├── option.uya            # Option<T> = union { Some: T, None }
-│   │   ├── result.uya            # Result<T, E> = union { Ok: T, Err: E }
 │   │   └── traits.uya            # 核心接口（Clone, Eq, Ord, Hash）
 │   ├── io/                       # I/O 抽象（使用 interface）
 │   │   ├── writer.uya            # interface Writer { write(&Self, &[u8]) !usize }
@@ -1284,7 +1283,7 @@ lib/
 
 ### 19.0.2 Sprint 6: std.core 核心类型（1 周）⭐⭐⭐⭐⭐
 
-**目标**：实现 Option<T>, Result<T, E>, Error 等核心类型
+**目标**：实现 Option<T>, Error 等核心类型
 
 - [ ] **std.core.error** - 错误类型
   ```uya
@@ -1312,19 +1311,6 @@ lib/
   fn is_none<T>(self: &Option<T>) bool;
   fn unwrap<T>(self: &Option<T>) !T;  // None 时返回错误
   fn unwrap_or<T>(self: &Option<T>, default: T) T;
-  ```
-
-- [ ] **std.core.result** - Result<T, E> 类型
-  ```uya
-  union Result<T, E: Error> {
-      Ok: T,
-      Err: E
-  }
-  
-  fn is_ok<T, E>(self: &Result<T, E>) bool;
-  fn is_err<T, E>(self: &Result<T, E>) bool;
-  fn unwrap<T, E>(self: &Result<T, E>) !T;
-  fn unwrap_err<T, E>(self: &Result<T, E>) !E;
   ```
 
 - [ ] **std.core.traits** - 核心接口
@@ -1355,9 +1341,11 @@ lib/
   }
   ```
 
-- [ ] **std.mem.allocator** - Zig 风格 IAllocator 接口（v0.6.0 重点）⭐⭐⭐⭐⭐
+- [x] **std.mem.allocator** - **`IAllocator` + `MallocAllocator`**（hosted，malloc/realloc/free）⭐⭐⭐⭐⭐
   
-  **设计理念**：借鉴 Zig 的分配器设计，提供可插拔、类型安全的内存分配接口。
+  **当前落地**（2026-03）：**`lib/std/mem/allocator.uya`**；**`export interface IAllocator`**（`alloc` / `dealloc` / `realloc`，**`!&byte`**）；**`MallocAllocator`**、**`g_allocator`**、**`get_allocator()`**；测试 **`tests/test_mem_allocator.uya`**。文档：**`docs/todo_std_refactor.md`** §2.1、**`docs/std_refactor_design.md`**（v0.7.2）。
+  
+  **设计理念（延续 v0.6.0）**：借鉴 Zig 的分配器设计，提供可插拔、类型安全的内存分配接口。下列代码块为**早期草图**，与当前源码在返回类型（`&byte` vs `&void`）、错误表示（`error` vs `union`）及方法集上**不完全一致**；扩展 **`HeapAllocator`（mmap）**、**`alloc_zeroed` / `resize` / `create` / `destroy`** 等待办。
   
   ```uya
   // std/mem/allocator.uya
@@ -1649,7 +1637,7 @@ lib/
 - ✅ **零外部依赖**：直接使用系统调用，不依赖任何 C 库
 - ✅ **单文件输出**：`--outlibc` 生成单个 .c 和 .h 文件
 - ✅ **可替代 musl/glibc**：兼容 C ABI，可作为 libc 使用
-- ✅ **类型安全**：std 使用 !T, Option<T>, Result<T, E>
+- ✅ **类型安全**：std 使用 !T, Option<T>
 - ✅ **泛型容器**：Vec<T>, HashMap<K, V>
 
 **实施路线**：
@@ -1918,8 +1906,8 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 | 6 | `std.core.option` | Option<T> 类型 | [ ] |
 | 6 | `std.core.result` | Result<T, E> 类型 | [ ] |
 | 6 | `std.core.traits` | Clone/Eq/Ord/Hash/Display | [ ] |
-| 6 | `std.mem.allocator` | Zig 风格 IAllocator 接口 ⭐ | [ ] |
-| 6 | `std.mem.arena` | ArenaAllocator | [ ] |
+| 6 | `std.mem.allocator` | `IAllocator` + `MallocAllocator`（malloc）；HeapAllocator/mmap 等待扩展 ⭐ | [x] 部分 |
+| 6 | `std.mem.arena` | `Arena` bump + **`IAllocator`**；测试 `test_mem_arena.uya` | [x] 部分 |
 | 6 | `std.mem.fixed_buf` | FixedBufferAllocator | [ ] |
 | 7 | `std.io.writer` | Writer 接口 | [ ] |
 | 7 | `std.io.reader` | Reader 接口 | [ ] |

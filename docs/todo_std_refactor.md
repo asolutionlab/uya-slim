@@ -200,6 +200,14 @@ export fn my_func(s: &byte) void;
 - [x] 实现字符串操作（纯内存）：`strlen`、`strnlen`、`strcmp`、`strncmp`、`strcpy`、`strncpy`、`strcat`、`strncat`、`strchr`、`strrchr`；无外部依赖；测试先行，`make check` 通过。
 - [x] 验证：编译通过、无循环依赖、被依赖方（如后续 libc）可引用。
 
+### 2.1 std.mem 分配器（已落地，hosted）
+
+- [x] **`lib/std/mem/allocator.uya`**：`export interface IAllocator`（`alloc` / `dealloc` / `realloc`，`!&byte`）；**`MallocAllocator`** 基于 **`extern fn malloc/realloc/free`**；**`g_allocator`**、**`get_allocator()`**。
+- [x] 错误类型：`AllocError`、`AllocOutOfMemory`、`AllocInvalidSize`、`AllocInvalidPointer`（与设计中 union 式命名不同，以源码为准）。
+- [x] 测试：**`tests/test_mem_allocator.uya`**（`test "..." {}`），覆盖分配/释放、`alloc(0)` 错误、`dealloc(null)`、`realloc` 扩容与空指针语义等；纳入 **`make tests`**。
+- [x] **`lib/std/mem/arena.uya`**：**`export struct Arena : IAllocator`**（`alloc` / `dealloc` 空操作 / **`realloc`** 仅对**最后一次 bump** 原地缩扩；否则 **`AllocInvalidPointer`** / OOM）；保留 **`arena_init`**、**`arena_alloc`**、**`arena_reset`**；测试 **`tests/test_mem_arena.uya`**。
+- [ ] **后续**：设计文档中的 **`HeapAllocator`（osal mmap）**、独立命名的 **`ArenaAllocator` / `FixedBufferAllocator`** 仍属 Phase 5 / v0.6.0 计划，与当前 **`MallocAllocator`**、**`Arena`** 并存。
+
 ---
 
 ## Phase 3：osal 层（已完成：2026-03-05）
@@ -246,9 +254,9 @@ export fn my_func(s: &byte) void;
 
 ## Phase 5：std 层
 
-- [ ] 在现有 `lib/std/` 基础上对齐设计文档：核心类型（Option、Result、Error）、traits（Clone、Eq、Ord、Hash、Display）等；测试先行，`make check` 通过。
+- [ ] 在现有 `lib/std/` 基础上对齐设计文档：核心类型（Option、Error）、traits（Clone、Eq、Ord、Hash、Display）等；测试先行，`make check` 通过。
 - [ ] I/O 抽象：`interface Writer`、`interface Reader`，`struct File : Writer, Reader`；依赖 libc 或 osal；测试先行，`make check` 通过。
-- [ ] HeapAllocator：调用 `osal.os_mmap`/`osal.os_munmap` 实现；实现 `IAllocator` 或等价接口；测试先行，`make check` 通过。
+- [ ] HeapAllocator：调用 `osal.os_mmap`/`osal.os_munmap` 实现；实现 **`IAllocator`**（与已落地的 **`MallocAllocator`** 同属接口，可替换全局策略）；测试先行，`make check` 通过。
 - [ ] 泛型容器：Vec、StringBuf 等（按设计文档）；测试先行，`make check` 通过。
 - [ ] 验证：自举与测试通过；依赖 libc（及可选 osal），不反向依赖。
 

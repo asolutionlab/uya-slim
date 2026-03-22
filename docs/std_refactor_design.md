@@ -1,4 +1,4 @@
-# 标准库重构设计文档 v0.7.1
+# 标准库重构设计文档 v0.7.3
 
 ## 概述
 
@@ -21,7 +21,7 @@
 | **mem** | `lib/mem/`（mem.uya + string.uya），无依赖 | ✅ 已完成：`lib/mem/mem.uya` 存在，纯内存/字符串操作已实现 |
 | **osal** | `lib/osal/`，仅依赖 syscall | ✅ 已完成（2026-03-05）：`lib/osal/osal.uya`，统一 API + !T |
 | **libc** | `lib/libc/`，依赖 osal + mem，薄封装 C 签名 | ⚠️ **未按设计重构**：当前 libc 仍为**零外部依赖**（直接使用 `@syscall` 等），未 `use osal` / `use mem`；Phase 4 因编译器跨层导入冲突暂时搁置 |
-| **std** | `lib/std/`，依赖 libc（及可选 osal） | 🔲 部分存在：`lib/std/` 下有 runtime、io、mem、string、testing 等，尚未对齐设计中的 Option/Result、Writer/Reader、HeapAllocator、Vec 等 |
+| **std** | `lib/std/`，依赖 libc（及可选 osal） | 🔲 部分存在：`lib/std/` 下有 runtime、io、mem、string、testing 等；**`lib/std/mem/allocator.uya`** 已提供 **`IAllocator` + `MallocAllocator`（malloc）** 与测试 **`tests/test_mem_allocator.uya`**；尚未对齐设计中的 Option、Writer/Reader、**mmap 版 HeapAllocator**、Vec 等 |
 
 **依赖现状**：  
 - syscall、mem、osal 已按设计独立存在且无循环依赖。  
@@ -351,10 +351,10 @@ lib/
     │   └── string.uya          # 安全字符串函数
     │
     ├── mem/                     # 内存操作
-    │   ├── allocator.uya       # IAllocator 接口
-    │   ├── heap.uya            # HeapAllocator（调用 osal.mmap）
-    │   ├── arena.uya           # ArenaAllocator
-    │   └── fixed_buf.uya       # FixedBufferAllocator
+    │   ├── allocator.uya       # IAllocator 接口 + MallocAllocator（✅ 已落地，malloc/free/realloc）
+    │   ├── heap.uya            # HeapAllocator（调用 osal.mmap，计划中）
+    │   ├── arena.uya           # Arena：bump + IAllocator（realloc 仅最后一块原地；dealloc 空操作）
+    │   └── fixed_buf.uya       # FixedBufferAllocator（计划中）
     │
     ├── collections/             # 泛型容器
     │   ├── vec.uya             # Vec<T>
@@ -366,6 +366,17 @@ lib/
     └── runtime/                 # 运行时
         └── runtime.uya          # panic, entry
 ```
+
+### std.mem.allocator（已落地）
+
+| 项 | 说明 |
+|----|------|
+| **源码** | `lib/std/mem/allocator.uya` → **`use std.mem.allocator;`** |
+| **接口** | **`export interface IAllocator`**：`alloc` / `dealloc` / `realloc`，成功类型为 **`!&byte`**（与设计草稿中 `!&void` 不同，以源码为准） |
+| **实现** | **`MallocAllocator`**：封装 **`extern fn` `malloc` / `free` / `realloc`**；全局 **`g_allocator`**、**`get_allocator()`** |
+| **错误** | **`error`**：`AllocError`、`AllocOutOfMemory`、`AllocInvalidSize`、`AllocInvalidPointer` |
+| **测试** | **`tests/test_mem_allocator.uya`**（`make tests`） |
+| **后续** | 本节下文 **`HeapAllocator`（mmap）** 仍为计划；与 **`MallocAllocator`** 可并存，按场景选用实现 **`IAllocator`** |
 
 ## 依赖关系详解
 
