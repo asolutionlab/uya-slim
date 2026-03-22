@@ -535,32 +535,19 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
         } else {
             // 结构体、接口或枚举类型
             const safe_name: &byte = get_safe_c_identifier(codegen, name);
-            
-            // 检查是否是接口类型（struct uya_interface_InterfaceName）
-            if codegen.program_node != null {
-                const decl_count: i32 = codegen.program_node.program_decl_count;
-                var i: i32 = 0;
-                while i < decl_count {
-                    const decl: &ASTNode = codegen.program_node.program_decls[i];
-                    if decl != null && decl.type == ASTNodeType.AST_INTERFACE_DECL {
-                        const iface_name: &byte = decl.interface_decl_name;
-                        if iface_name != null {
-                            const safe_iface: &byte = get_safe_c_identifier(codegen, iface_name);
-                            if strcmp(safe_iface as *byte, safe_name as *byte) == 0 {
-                                const len: i32 = strlen(safe_name as *byte) + 24;
-                                const buf: &byte = arena_alloc(codegen.arena, len) as &byte;
-                                if buf != null {
-                                    snprintf(buf as *byte, len, "struct uya_interface_%s" as *byte, safe_name as *byte);
-                                    return buf;
-                                }
-                                return ("void" as *byte) as &byte;
-                            }
-                        }
-                    }
-                    i = i + 1;
+
+            // 检查是否是接口类型（使用带缓存的 find_interface_decl_c99）
+            const iface_decl: &ASTNode = find_interface_decl_c99(codegen, name);
+            if iface_decl != null {
+                const len: i32 = strlen(safe_name as *byte) + 24;
+                const buf: &byte = arena_alloc(codegen.arena, len) as &byte;
+                if buf != null {
+                    snprintf(buf as *byte, len, "struct uya_interface_%s" as *byte, safe_name as *byte);
+                    return buf;
                 }
+                return ("void" as *byte) as &byte;
             }
-            
+
             // 检查是否是联合体类型：extern union 用 union Name，普通联合体用 struct uya_tagged_Name
             {
                 const ud: &ASTNode = find_union_decl_c99(codegen, name);

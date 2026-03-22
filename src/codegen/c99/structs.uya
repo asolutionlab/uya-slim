@@ -856,11 +856,25 @@ fn struct_implements_interface_c99(codegen: &C99CodeGenerator, struct_name: &byt
     return 0;
 }
 
-// 查找接口声明
+// 查找接口声明（带缓存优化）
 fn find_interface_decl_c99(codegen: &C99CodeGenerator, interface_name: &byte) &ASTNode {
     if codegen == null || interface_name == null || codegen.program_node == null {
         return null;
     }
+    // 使用缓存（O(1) 查找）
+    if codegen.decl_cache_initialized == 0 {
+        build_decl_caches(codegen);
+    }
+    if codegen.decl_cache_initialized != 0 {
+        const h: i32 = (hash_string(interface_name) & C99_DECL_CACHE_MASK) as i32;
+        const cached: &ASTNode = codegen.interface_decl_cache[h];
+        if cached != null && cached.type == ASTNodeType.AST_INTERFACE_DECL &&
+            cached.interface_decl_name != null &&
+            strcmp(cached.interface_decl_name as *byte, interface_name as *byte) == 0 {
+            return cached;
+        }
+    }
+    // 缓存未命中，线性查找
     const decl_count: i32 = codegen.program_node.program_decl_count;
     var i: i32 = 0;
     while i < decl_count {

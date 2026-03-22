@@ -149,6 +149,7 @@ struct C99CodeGenerator {
     type_alias_cache: [&ASTNode: C99_DECL_CACHE_SIZE],    // 类型别名哈希缓存
     union_decl_cache: [&ASTNode: C99_DECL_CACHE_SIZE],    // 联合体名哈希缓存
     macro_decl_cache: [&ASTNode: C99_DECL_CACHE_SIZE],    // 宏名哈希缓存
+    interface_decl_cache: [&ASTNode: C99_DECL_CACHE_SIZE], // 接口名哈希缓存
     decl_cache_initialized: i32,                          // 缓存是否已构建（1=已构建）
     
     // 全局变量表

@@ -1123,6 +1123,7 @@ fn reset_decl_caches(codegen: &C99CodeGenerator) void {
         codegen.type_alias_cache[i] = null;
         codegen.union_decl_cache[i] = null;
         codegen.macro_decl_cache[i] = null;
+        codegen.interface_decl_cache[i] = null;
         i = i + 1;
     }
     codegen.decl_cache_initialized = 0;
@@ -1155,6 +1156,9 @@ fn cache_decl_for_lookup(codegen: &C99CodeGenerator, decl: &ASTNode) void {
     } else if decl.type == ASTNodeType.AST_MACRO_DECL && decl.macro_decl_name != null {
         const h: i32 = (hash_string(decl.macro_decl_name) & C99_DECL_CACHE_MASK) as i32;
         codegen.macro_decl_cache[h] = decl;
+    } else if decl.type == ASTNodeType.AST_INTERFACE_DECL && decl.interface_decl_name != null {
+        const h: i32 = (hash_string(decl.interface_decl_name) & C99_DECL_CACHE_MASK) as i32;
+        codegen.interface_decl_cache[h] = decl;
     }
 }
 
@@ -2850,14 +2854,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                     if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_body != null {
                                         // 跳过泛型方法（它们通过方法单态化机制处理）
                                         if m.fn_decl_type_param_count > 0 {
+                                            // 预先计算 expected_prefix（在外层循环中只计算一次）
+                                            var expected_prefix: [byte: NAME_BUF_SIZE] = [];
+                                            var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, mono_name as *byte, m.fn_decl_name as *byte);
                                             // 为泛型方法生成单态化定义
                                             var mi: i32 = 0;
                                             while mi < codegen.mono_instance_count {
                                                 if codegen.mono_instances[mi].generic_name != null && codegen.mono_instances[mi].is_function != 0 {
                                                     // 检查单态化实例名称是否匹配 "StructName_method_name" 格式
-                                                    var expected_prefix: [byte: NAME_BUF_SIZE] = [];
-                                                    var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, mono_name as *byte, m.fn_decl_name as *byte);
-                                                    
                                                     const gn: &byte = codegen.mono_instances[mi].generic_name;
                                                     if gn != null && strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 {
                                                         gen_mono_method_function(codegen, m, mono_name,
@@ -2893,14 +2897,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                         if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_body != null {
                             // 检查是否是泛型方法
                             if m.fn_decl_type_param_count > 0 {
+                                // 预先计算 expected_prefix（在外层循环中只计算一次）
+                                var expected_prefix: [byte: NAME_BUF_SIZE] = [];
+                                var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, struct_name as *byte, m.fn_decl_name as *byte);
                                 // 泛型方法：为每个单态化实例生成定义
                                 var k: i32 = 0;
                                 while k < codegen.mono_instance_count {
                                     if codegen.mono_instances[k].generic_name != null && codegen.mono_instances[k].is_function != 0 {
                                         // 检查单态化实例名称是否匹配 "StructName_method_name" 格式
-                                        var expected_prefix: [byte: NAME_BUF_SIZE] = [];
-                                        var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s_" as *byte, struct_name as *byte, m.fn_decl_name as *byte);
-                                        
                                         const gn: &byte = codegen.mono_instances[k].generic_name;
                                         if gn != null && strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 {
                                             gen_mono_method_function(codegen, m, struct_name,
