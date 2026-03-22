@@ -2705,27 +2705,91 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
     if body == null {
         return;
     }
+    // async_compute<T> 单态：宏 thread_type_is_*(T) 在 C 体生成阶段无法可靠折叠，展开体会落回错误分支。
+    // 直接调用 std_thread_async_compute_future_new_<T>（与 lib 中 thread_async_compute_future_new<T> 对应）再装箱为 Future<!T>。
     if orig_name != null && strcmp(orig_name as *byte, "async_compute" as *byte) == 0 &&
         type_arg_count == 1 && type_args[0] != null &&
         type_args[0].type == ASTNodeType.AST_TYPE_NAMED && type_args[0].type_named_name != null {
-        var concrete_fn_c: &byte = null;
+        var concrete_new_c: &byte = null;
         var concrete_struct_c: &byte = null;
         var concrete_vtable_c: &byte = null;
+        var task_kind_val: i32 = 0;
+        var arg_bits_c: &byte = null;
         const type_name: &byte = type_args[0].type_named_name;
         if strcmp(type_name as *byte, "i32" as *byte) == 0 {
-            concrete_fn_c = "std_async_compute_i32" as &byte;
-            concrete_struct_c = "AsyncComputeI32Future" as &byte;
-            concrete_vtable_c = "uya_vtable_Future_err_i32_AsyncComputeI32Future" as &byte;
+            concrete_new_c = "std_thread_async_compute_future_new_i32" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_i32" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_i32_AsyncComputeFuture_i32" as &byte;
+            task_kind_val = 1;
+            arg_bits_c = "(size_t)arg" as &byte;
         } else if strcmp(type_name as *byte, "usize" as *byte) == 0 {
-            concrete_fn_c = "std_async_compute_usize" as &byte;
-            concrete_struct_c = "AsyncComputeUsizeFuture" as &byte;
-            concrete_vtable_c = "uya_vtable_Future_err_usize_AsyncComputeUsizeFuture" as &byte;
+            concrete_new_c = "std_thread_async_compute_future_new_usize" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_usize" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_usize_AsyncComputeFuture_usize" as &byte;
+            task_kind_val = 3;
+            arg_bits_c = "arg" as &byte;
         } else if strcmp(type_name as *byte, "u32" as *byte) == 0 {
-            concrete_fn_c = "std_async_compute_u32" as &byte;
-            concrete_struct_c = "AsyncComputeU32Future" as &byte;
-            concrete_vtable_c = "uya_vtable_Future_err_u32_AsyncComputeU32Future" as &byte;
+            concrete_new_c = "std_thread_async_compute_future_new_u32" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_u32" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_u32_AsyncComputeFuture_u32" as &byte;
+            task_kind_val = 2;
+            arg_bits_c = "(size_t)arg" as &byte;
+        } else if strcmp(type_name as *byte, "i64" as *byte) == 0 {
+            concrete_new_c = "std_thread_async_compute_future_new_i64" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_i64" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_i64_AsyncComputeFuture_i64" as &byte;
+            task_kind_val = 4;
+            arg_bits_c = "(size_t)arg" as &byte;
+        } else if strcmp(type_name as *byte, "u64" as *byte) == 0 {
+            concrete_new_c = "std_thread_async_compute_future_new_u64" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_u64" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_u64_AsyncComputeFuture_u64" as &byte;
+            task_kind_val = 5;
+            arg_bits_c = "(size_t)arg" as &byte;
+        } else if strcmp(type_name as *byte, "i16" as *byte) == 0 {
+            concrete_new_c = "std_thread_async_compute_future_new_i16" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_i16" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_i16_AsyncComputeFuture_i16" as &byte;
+            task_kind_val = 6;
+            arg_bits_c = "(size_t)arg" as &byte;
+        } else if strcmp(type_name as *byte, "u16" as *byte) == 0 {
+            concrete_new_c = "std_thread_async_compute_future_new_u16" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_u16" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_u16_AsyncComputeFuture_u16" as &byte;
+            task_kind_val = 7;
+            arg_bits_c = "(size_t)arg" as &byte;
+        } else if strcmp(type_name as *byte, "i8" as *byte) == 0 {
+            concrete_new_c = "std_thread_async_compute_future_new_i8" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_i8" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_i8_AsyncComputeFuture_i8" as &byte;
+            task_kind_val = 8;
+            arg_bits_c = "(size_t)arg" as &byte;
+        } else if strcmp(type_name as *byte, "u8" as *byte) == 0 {
+            concrete_new_c = "std_thread_async_compute_future_new_u8" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_u8" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_u8_AsyncComputeFuture_u8" as &byte;
+            task_kind_val = 9;
+            arg_bits_c = "(size_t)arg" as &byte;
+        } else if strcmp(type_name as *byte, "bool" as *byte) == 0 {
+            concrete_new_c = "std_thread_async_compute_future_new_bool" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_bool" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_bool_AsyncComputeFuture_bool" as &byte;
+            task_kind_val = 10;
+            arg_bits_c = "(size_t)(arg ? 1 : 0)" as &byte;
+        } else if strcmp(type_name as *byte, "f32" as *byte) == 0 {
+            concrete_new_c = "std_thread_async_compute_future_new_f32" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_f32" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_f32_AsyncComputeFuture_f32" as &byte;
+            task_kind_val = 11;
+            arg_bits_c = "thread_f32_arg_bits(arg)" as &byte;
+        } else if strcmp(type_name as *byte, "f64" as *byte) == 0 {
+            concrete_new_c = "std_thread_async_compute_future_new_f64" as &byte;
+            concrete_struct_c = "AsyncComputeFuture_f64" as &byte;
+            concrete_vtable_c = "uya_vtable_Future_err_f64_AsyncComputeFuture_f64" as &byte;
+            task_kind_val = 12;
+            arg_bits_c = "thread_f64_arg_bits(arg)" as &byte;
         }
-        if concrete_fn_c != null && concrete_struct_c != null && concrete_vtable_c != null {
+        if concrete_new_c != null && concrete_struct_c != null && concrete_vtable_c != null && arg_bits_c != null {
             const saved_type_params2: &TypeParam = codegen.current_type_params;
             const saved_type_param_count2: i32 = codegen.current_type_param_count;
             const saved_type_args2: & & ASTNode = codegen.current_type_args;
@@ -2764,24 +2828,8 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
                 fputs("..." as *byte, codegen.output as *void);
             }
             fputs(") {\n" as *byte, codegen.output as *void);
-            fprintf(codegen.output as *void, "    struct %s _uya_tmp = %s(" as *byte, concrete_struct_c as *byte, concrete_fn_c as *byte);
-            ai = 0;
-            while ai < param_count {
-                const param3: &ASTNode = params[ai];
-                if param3 == null || param3.type != ASTNodeType.AST_VAR_DECL || param3.var_decl_name == null {
-                    ai = ai + 1;
-                    continue;
-                }
-                const pname3: &byte = get_safe_c_identifier(codegen, param3.var_decl_name);
-                if pname3 != null {
-                    fprintf(codegen.output as *void, "%s" as *byte, pname3 as *byte);
-                    if ai < param_count - 1 {
-                        c99_emit_comma_space(codegen);
-                    }
-                }
-                ai = ai + 1;
-            }
-            fputs(");\n" as *byte, codegen.output as *void);
+            fprintf(codegen.output as *void, "    struct %s _uya_tmp = %s(pool, compute_fn, %d, %s);\n" as *byte,
+                concrete_struct_c as *byte, concrete_new_c as *byte, task_kind_val, arg_bits_c as *byte);
             fprintf(codegen.output as *void, "    struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s));\n" as *byte,
                 concrete_struct_c as *byte, concrete_struct_c as *byte, concrete_struct_c as *byte);
             fprintf(codegen.output as *void, "    if (_uya_box != (void*)0) { *_uya_box = _uya_tmp; }\n" as *byte);

@@ -867,6 +867,89 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
     }
 }
 
+// `thread_type_is_*` 与 std.thread 中 @mc 分发一致，供下方折叠判断使用。
+fn c99_thread_type_is_expected_type_name(callee_name: &byte) &byte {
+    if callee_name == null {
+        return null;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_i32" as *byte) == 0 {
+        return "i32" as &byte;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_usize" as *byte) == 0 {
+        return "usize" as &byte;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_u32" as *byte) == 0 {
+        return "u32" as &byte;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_i64" as *byte) == 0 {
+        return "i64" as &byte;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_u64" as *byte) == 0 {
+        return "u64" as &byte;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_i16" as *byte) == 0 {
+        return "i16" as &byte;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_u16" as *byte) == 0 {
+        return "u16" as &byte;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_i8" as *byte) == 0 {
+        return "i8" as &byte;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_u8" as *byte) == 0 {
+        return "u8" as &byte;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_bool" as *byte) == 0 {
+        return "bool" as &byte;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_f32" as *byte) == 0 {
+        return "f32" as &byte;
+    }
+    if strcmp(callee_name as *byte, "thread_type_is_f64" as *byte) == 0 {
+        return "f64" as &byte;
+    }
+    return null;
+}
+
+// 泛型结构体方法内 `thread_type_is_*(T)`：在 C 端折叠为 0/1（顶层泛型 fn 由优化器裁剪，方法体不经该路径）。
+fn c99_emit_thread_type_is_on_struct_type_param(codegen: &C99CodeGenerator, callee_name: &byte, arg0: &ASTNode) i32 {
+    if codegen == null || callee_name == null || arg0 == null || arg0.type != ASTNodeType.AST_IDENTIFIER {
+        return 0;
+    }
+    const want: &byte = c99_thread_type_is_expected_type_name(callee_name);
+    if want == null {
+        return 0;
+    }
+    if codegen.struct_type_params == null || codegen.struct_type_args == null {
+        return 0;
+    }
+    if codegen.struct_type_param_count <= 0 || codegen.struct_type_arg_count != codegen.struct_type_param_count {
+        return 0;
+    }
+    const arg_id: &byte = arg0.identifier_name;
+    if arg_id == null {
+        return 0;
+    }
+    var pi: i32 = 0;
+    while pi < codegen.struct_type_param_count {
+        if codegen.struct_type_params[pi].name != null &&
+            strcmp(codegen.struct_type_params[pi].name as *byte, arg_id as *byte) == 0 {
+            const conc: &ASTNode = codegen.struct_type_args[pi];
+            if conc != null && conc.type == ASTNodeType.AST_TYPE_NAMED && conc.type_named_name != null {
+                if strcmp(conc.type_named_name as *byte, want as *byte) == 0 {
+                    fputs("1" as *byte, codegen.output as *void);
+                } else {
+                    fputs("0" as *byte, codegen.output as *void);
+                }
+                return 1;
+            }
+            return 0;
+        }
+        pi = pi + 1;
+    }
+    return 0;
+}
+
 // 生成调用表达式
 fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const callee: &ASTNode = expr.call_expr_callee;
@@ -876,6 +959,11 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         var callee_name: &byte = null;
         if callee != null && callee.type == ASTNodeType.AST_IDENTIFIER {
             callee_name = callee.identifier_name;
+        }
+
+        if callee_name != null && arg_count == 1 && args != null && args[0] != null &&
+            c99_emit_thread_type_is_on_struct_type_param(codegen, callee_name, args[0]) != 0 {
+            return;
         }
 
         if c99_gen_simd_builtin_call(codegen, expr) != 0 {
@@ -1369,6 +1457,8 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             } else if obj_type_c != null && strstr(obj_type_c as *byte, "uya_interface_" as *byte) == null {
                 var base: *byte = obj_type_c as *byte;
                 if strncmp(base, "const " as *byte, 6) == 0 { base = base + 6; }
+                var struct_name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
+                var slen: i32 = 0;
                 if strncmp(base, "struct " as *byte, 7) == 0 {
                     const start: *byte = base + 7;
                     var end: *byte = strchr(start, 32);
@@ -1377,15 +1467,33 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     if asterisk != null && asterisk < end { end = asterisk; }
                     while end > start && ((end - 1)[0] == 32 || (end - 1)[0] == 9) { end = end - 1; }
                     if end > start {
-                var struct_name_buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
-                const slen: i32 = (end - start) as i32;
-                if slen > 0 && slen < STRUCT_NAME_BUF_SIZE {
+                        slen = (end - start) as i32;
+                        if slen > 0 && slen < STRUCT_NAME_BUF_SIZE {
                             var k: i32 = 0;
                             while k < slen {
                                 struct_name_buf[k] = start[k];
                                 k = k + 1;
                             }
                             struct_name_buf[slen] = 0;
+                        } else {
+                            slen = 0;
+                        }
+                    }
+                } else if codegen.program_node != null {
+                    const ms_td: &byte = resolve_typedef_to_mono_struct_name_if_generic(codegen, base);
+                    if ms_td != null {
+                        var p2: i32 = 0;
+                        while ms_td[p2] != 0 && p2 < STRUCT_NAME_BUF_SIZE - 1 {
+                            struct_name_buf[p2] = ms_td[p2];
+                            p2 = p2 + 1;
+                        }
+                        struct_name_buf[p2] = 0;
+                        if p2 > 0 {
+                            slen = p2;
+                        }
+                    }
+                }
+                if slen > 0 && slen < STRUCT_NAME_BUF_SIZE {
                             const union_decl: &ASTNode = find_union_decl_by_tagged_c99(codegen, &struct_name_buf[0]);
                             if union_decl != null {
                                 const method_fn: &ASTNode = find_method_in_union_c99(codegen, union_decl.union_decl_name, method_name);
@@ -1469,8 +1577,6 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                     }
                                 }
                             }
-                        }
-                    }
                 }
             }
         }
@@ -1723,6 +1829,14 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                     snbuf[pos] = 0;
                                     if pos > 0 && struct_implements_interface_c99(codegen, &snbuf[0] as &byte, param_type_name) != 0 {
                                         struct_name_for_check = &snbuf[0] as &byte;
+                                    }
+                                }
+                                // typedef：与 stmt / 成员调用共用 resolve（支持 `Foo *` 等的首标识符提取）
+                                if struct_name_for_check == null && codegen.program_node != null &&
+                                    strstr(atc as *byte, "uya_interface_" as *byte) == null {
+                                    const ms_box: &byte = resolve_typedef_to_mono_struct_name_if_generic(codegen, atc);
+                                    if ms_box != null && struct_implements_interface_c99(codegen, ms_box, param_type_name) != 0 {
+                                        struct_name_for_check = ms_box;
                                     }
                                 }
                             }

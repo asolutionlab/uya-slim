@@ -1113,6 +1113,50 @@ fn build_decl_caches(codegen: &C99CodeGenerator) void {
     codegen.decl_cache_initialized = 1;
 }
 
+// AsyncComputeFuture<T> 单态方法体会调用 ok<T>；可达性从 AST 模板收集时只能看到 ok<T>（T 未解析），
+// 导致各 std_ok_* 单态未标记为可达。对每个已注册的具体 AsyncComputeFuture 单态，将载荷类型相同的
+// ok<...> 单态标记为可达（checker 侧需另有显式 ok<T> 注册，如 lib 中 thread_ok_bool 对 ok<bool>）。
+fn mark_ok_mono_reachable_for_async_compute_futures(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.checker == null || codegen.program_node == null {
+        return;
+    }
+    const ac_decl: &ASTNode = find_struct_decl_c99(codegen, "AsyncComputeFuture" as &byte);
+    if ac_decl == null || ac_decl.type != ASTNodeType.AST_STRUCT_DECL {
+        return;
+    }
+    var i: i32 = 0;
+    while i < codegen.mono_instance_count {
+        const inst: MonoInstanceCodegen = codegen.mono_instances[i];
+        if inst.generic_name == null || inst.is_function != 0 ||
+            strcmp(inst.generic_name as *byte, "AsyncComputeFuture" as *byte) != 0 ||
+            inst.type_args == null || inst.type_arg_count != 1 {
+            i = i + 1;
+            continue;
+        }
+        if has_unresolved_mono_type_args(ac_decl, inst.type_args, inst.type_arg_count) != 0 {
+            i = i + 1;
+            continue;
+        }
+        const payload_t: Type = type_from_ast(codegen.checker, inst.type_args[0]);
+        var j: i32 = 0;
+        while j < codegen.mono_instance_count {
+            const inst_ok: MonoInstanceCodegen = codegen.mono_instances[j];
+            if inst_ok.generic_name == null || inst_ok.is_function == 0 ||
+                strcmp(inst_ok.generic_name as *byte, "ok" as *byte) != 0 ||
+                inst_ok.type_args == null || inst_ok.type_arg_count != 1 {
+                j = j + 1;
+                continue;
+            }
+            const ok_t: Type = type_from_ast(codegen.checker, inst_ok.type_args[0]);
+            if type_equals(copy_type(&payload_t), copy_type(&ok_t)) != 0 {
+                codegen.reachable_mono_instances[j] = 1;
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
 fn collect_reachable_top_level_functions(codegen: &C99CodeGenerator, ast: &ASTNode) void {
     if codegen == null || ast == null || ast.type != ASTNodeType.AST_PROGRAM {
         return;
@@ -1160,6 +1204,7 @@ fn collect_reachable_top_level_functions(codegen: &C99CodeGenerator, ast: &ASTNo
         }
         i = i + 1;
     }
+    mark_ok_mono_reachable_for_async_compute_futures(codegen);
 }
 
 fn should_emit_top_level_function_decl(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
@@ -2077,6 +2122,23 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("static __attribute__((__unused__)) size_t uya_thread_call_usize(void *fn, size_t arg) {\n" as *byte, codegen.output as *void);
     fputs("    typedef size_t (*uya_thrd_fn_usz)(size_t);\n" as *byte, codegen.output as *void);
     fputs("    return ((uya_thrd_fn_usz)fn)(arg);\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("// f32/f64：槽位内仍为 u32/u64 位模式；间接调用须用真实 float/double 调用约定（不可伪装成整数函数指针）。\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) uint32_t uya_thread_call_f32(void *fn, uint32_t arg_bits) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef float (*uya_thrd_fn_f32)(float);\n" as *byte, codegen.output as *void);
+    fputs("    union { uint32_t u; float f; } a;\n" as *byte, codegen.output as *void);
+    fputs("    union { uint32_t u; float f; } out;\n" as *byte, codegen.output as *void);
+    fputs("    a.u = arg_bits;\n" as *byte, codegen.output as *void);
+    fputs("    out.f = ((uya_thrd_fn_f32)fn)(a.f);\n" as *byte, codegen.output as *void);
+    fputs("    return out.u;\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) uint64_t uya_thread_call_f64(void *fn, uint64_t arg_bits) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef double (*uya_thrd_fn_f64)(double);\n" as *byte, codegen.output as *void);
+    fputs("    union { uint64_t u; double d; } a;\n" as *byte, codegen.output as *void);
+    fputs("    union { uint64_t u; double d; } out;\n" as *byte, codegen.output as *void);
+    fputs("    a.u = arg_bits;\n" as *byte, codegen.output as *void);
+    fputs("    out.d = ((uya_thrd_fn_f64)fn)(a.d);\n" as *byte, codegen.output as *void);
+    fputs("    return out.u;\n" as *byte, codegen.output as *void);
     fputs("}\n\n" as *byte, codegen.output as *void);
     
     // 第七步 d：按需生成系统调用辅助函数（@syscall 内置函数支持）

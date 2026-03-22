@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.39（完整版 · 2026-03-20）
+# Uya 语言规范 0.49.40（完整版 · 2026-03-22）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -53,6 +53,10 @@
 ---
 
 ## 规范变更
+
+### 0.49.40（2026-03-22）
+
+- **标准库 `std.thread`**：对外仅保留 **`async_compute<T>(pool, compute_fn, arg) -> Future<!T>`** 作为线程池计算任务入口；已移除 12 个 **`async_compute_i32` / `async_compute_usize` / …** 特化导出（**破坏性变更**）。**`AsyncComputeI32Future`** 等 **typedef** 仍为 **`AsyncComputeFuture<T>`** 的别名。**C99**：**`async_compute<T>`** 单态仍由专用路径生成（因 **`thread_type_is_*(T)`** 在 C 体阶段无法可靠折叠，不能仅靠展开 Uya 函数体）；现改为调用 **`std_thread_async_compute_future_new_<T>`** 再装箱 **`Future<!T>`**，与 **`thread_async_compute_future_new<T>`** 语义一致。**测试**：**`test_std_thread.uya`**、**`test_async_compute_types.uya`** 已改用泛型入口。
 
 ### 0.49.38（2026-03-20）
 
@@ -5294,14 +5298,14 @@ fn fetch() !Future<&[i8]> { ... }  // 正确
 - 线程池，用于 CPU 密集型异步任务
 - 当前最小实现提供 `thread_pool_new()` / `thread_pool_shutdown()`，在 Linux 上以可复用 worker 进程池承载计算
 - 共享状态中已包含固定任务槽位、共享 FIFO 队列与 `worker_idx` 绑定；worker 通过 slot 索引取任务并写回结果
-- 当共享槽位任务需要执行时，当前统一先进入共享 FIFO 队列；父进程负责唤醒空闲 worker 进入 drain 路径，而具体取队首 slot 与后续连续取活都由 worker 在共享队列中完成；父进程会按共享状态回刷本地 worker `busy/active_slot`；共享槽位参数/结果当前统一按机器字宽 raw bits 传输，并由 `task_kind` 区分 `i32(i32)` / `u32(u32)` / `usize(usize)` 三种最小调用路径；future 侧对 shared-slot 的提交与推进仍经池级 helper（如 `thread_pool_submit_slot_i32()`、`thread_pool_submit_slot_u32()`、`thread_pool_submit_slot_usize()`、`thread_pool_try_progress_slot()`、`thread_pool_try_kick_drain()`），但 one-shot / shared-slot / bind / read-result 的大部分状态机分支现在已经下沉到共享 `ThreadAsyncComputeCore` raw core 中，再由 `AsyncComputeI32Future` / `AsyncComputeU32Future` / `AsyncComputeUsizeFuture` 这三层 typed wrapper 把 `Poll<!usize>` 映射成各自的 `Poll<!T>`；因此 `poll()` 的 typed 层只保留结果转换与最终完成逻辑。同时 slot 即使已推进到 `DONE`，future 仍可迟绑定对应 worker 的结果 fd，相关 late-poll 回归也已显式拉长时序窗口覆盖；为了绕开当前 C99 路径里“函数直接返回 `Future` 接口对象”不稳的问题，当前对外导出的是 `AsyncComputeI32Future` / `AsyncComputeU32Future` / `AsyncComputeUsizeFuture` 具体 future 结构体（它们都实现 `Future<!T>`）；队列满时才回退到 one-shot 子进程
+- 当共享槽位任务需要执行时，当前统一先进入共享 FIFO 队列；父进程负责唤醒空闲 worker 进入 drain 路径，而具体取队首 slot 与后续连续取活都由 worker 在共享队列中完成；父进程会按共享状态回刷本地 worker `busy/active_slot`；共享槽位参数/结果按 **raw bits** 传输，并由 **`task_kind`** 区分多种标量 **`T`**（含整数、`bool`、`f32`/`f64` 等）的调用路径；future 侧对 shared-slot 的提交与推进仍经池级 helper（如 **`thread_pool_submit_slot_*()`**、**`thread_pool_try_progress_slot()`**、**`thread_pool_try_kick_drain()`**），one-shot / shared-slot / bind / read-result 的大部分状态机在共享 **`ThreadAsyncComputeCore`** 中实现，再由泛型 **`AsyncComputeFuture<T>`**（及 **`AsyncComputeI32Future`** 等 typedef）把内部轮询映射为 **`Poll<!T>`**；slot 已到 **`DONE`** 后 future 仍可迟绑定 worker 结果 fd（late-poll 回归已覆盖）。队列满时回退 one-shot 子进程
 - 与异步运行时集成
 
 **`async_compute<T>`**：
-- 现已提供通用入口 `async_compute<T>() -> Future<!T>`；当前通过编译期类型分发接入 `i32` / `u32` / `usize` 三条 concrete 后端
-- `async_compute_i32()` / `async_compute_u32()` / `async_compute_usize()` 仍保留，并分别返回实现了 `Future<!i32>` / `Future<!u32>` / `Future<!usize>` 的具体 future 结构体；底层共享同一个 raw core 状态机
+- **唯一**对外入口：`async_compute<T>(pool, compute_fn, arg) -> Future<!T>`（装箱后的 **`Future<!T>`** 接口对象）；编译期按 **`T`** 分发到 **`i32`/`u32`/`usize`/`i64`/`u64`/`i16`/`u16`/`i8`/`u8`/`bool`/`f32`/`f64`** 等已支持载荷（未支持类型在编译期落入错误路径）
+- **`AsyncComputeI32Future`** 等 typedef 仍为 **`AsyncComputeFuture<T>`** 的别名，便于在类型标注中使用具体 future 结构体；**不再**提供 **`async_compute_i32`** 等特化函数
 - 将 CPU 密集型任务提交到线程池
-- 后续扩展更多可分发类型、以及 Send/Sync/跨线程验证
+- 后续：Send/Sync/跨线程验证等
 
 ### 18.6 设计哲学
 

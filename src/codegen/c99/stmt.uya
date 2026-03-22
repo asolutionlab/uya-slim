@@ -211,22 +211,29 @@ fn get_expr_concrete_struct_for_interface(codegen: &C99CodeGenerator, expr: &AST
         if strncmp(atc as *byte, "const " as *byte, 6) == 0 {
             atc = &arg_type_c[6] as &byte;
         }
-        if strncmp(atc as *byte, "struct " as *byte, 7) != 0 || strstr(atc as *byte, "uya_interface_" as *byte) != null {
-            return null;
-        }
-        const start: &byte = &atc[7] as &byte;
-        var pos: i32 = 0;
-        while start[pos] != 0 && start[pos] != 32 && start[pos] != 42 {
-            pos = pos + 1;
-        }
-        if pos > 0 && codegen.arena != null {
-            const struct_name: &byte = arena_alloc(codegen.arena, (pos + 1) as usize) as &byte;
-            if struct_name != null {
-                memcpy(struct_name as *void, start as *void, pos as usize);
-                struct_name[pos] = 0;
-                if struct_implements_interface_c99(codegen, struct_name, interface_name) != 0 {
-                    return struct_name;
+        if strncmp(atc as *byte, "struct " as *byte, 7) == 0 && strstr(atc as *byte, "uya_interface_" as *byte) == null {
+            const start: &byte = &atc[7] as &byte;
+            var pos: i32 = 0;
+            while start[pos] != 0 && start[pos] != 32 && start[pos] != 42 {
+                pos = pos + 1;
+            }
+            if pos > 0 && codegen.arena != null {
+                const struct_name: &byte = arena_alloc(codegen.arena, (pos + 1) as usize) as &byte;
+                if struct_name != null {
+                    memcpy(struct_name as *void, start as *void, pos as usize);
+                    struct_name[pos] = 0;
+                    if struct_implements_interface_c99(codegen, struct_name, interface_name) != 0 {
+                        return struct_name;
+                    }
                 }
+            }
+        }
+        // typedef / 类型别名：局部变量 C 类型常为 `AsyncComputeI64Future`（无 `struct ` 前缀），
+        // 经 resolve_typedef_to_mono_struct_name_if_generic 取单态名（与 expr 装箱/成员调用共用）。
+        if codegen.program_node != null && strstr(atc as *byte, "uya_interface_" as *byte) == null {
+            const ms_res: &byte = resolve_typedef_to_mono_struct_name_if_generic(codegen, atc);
+            if ms_res != null && struct_implements_interface_c99(codegen, ms_res, interface_name) != 0 {
+                return ms_res;
             }
         }
         return null;

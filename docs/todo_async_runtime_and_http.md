@@ -1,5 +1,7 @@
 # 异步运行时完善与 HTTP 服务器实现 — 综合待办
 
+**最后更新**：2026-03-22 — `f32`/`f64` 已并入 `AsyncComputeFuture<T>`；C99 泛型方法内 `thread_type_is_*(T)` 折叠；前导 `uya_thread_call_f32`/`f64` 以 **u32/u64 位模式** 与槽位对接，内部用 **union** 转 `float`/`double`，并以 **`float(*)(float)` / `double(*)(double)`** 间接调用（**不可**伪装成 `uint32_t(*)(uint32_t)` 等整型 ABI，否则 `async_compute` 浮点用例会错）。
+
 **关联文档**：
 - [todo_async_loop_await.md](todo_async_loop_await.md) — 循环内 await 实现细节
 - [todo_http.md](todo_http.md) — HTTP 框架实现待办（Phase 1-9 详细任务）
@@ -36,12 +38,25 @@
 
 ### P2：架构改进
 
-| # | 问题 | 修复方案 |
-|---|------|----------|
-| 11 | `async_compute<T>` 需 12 个特化函数（i32/u32/usize/i64/u64/i16/u16/i8/u8/bool/f32/f64） | 改用 `void*` + 类型擦除，或等编译器支持真正的泛型 |
-| 12 | `ThreadPool` worker 数量硬编码 8 | 改为构造参数，支持 `ThreadPool::new(n_workers)` |
-| 13 | 无超时/取消机制 | 在 `Poll<T>` 增加 `Cancelled` 状态；`Task<T>` 添加 `cancel` 方法 |
-| 14 | 无异步 I/O 原语 | 实现 `AsyncFd`（非当前空壳）：epoll 注册 + 非阻塞 read/write + 自动状态机调度 |
+| # | 问题 | 修复方案 | 状态 |
+|---|------|----------|------|
+| 11 | `async_compute<T>` 曾需 12 套重复 `Future` 实现 | 改用 `void*` + 类型擦除，或编译器泛型 + 单一 `AsyncComputeFuture<T>` | **已完成 API 收敛**：`AsyncComputeFuture<T>` 覆盖 **含 f32/f64** 的全部载荷；**仅**导出 **`async_compute<T>`**（已删 12 个 **`async_compute_*`**）；typedef 别名仍可用。 |
+| 12 | `ThreadPool` worker 数量硬编码 8 | 改为构造参数，支持 `ThreadPool::new(n_workers)` | 待办 |
+| 13 | 无超时/取消机制 | 在 `Poll<T>` 增加 `Cancelled` 状态；`Task<T>` 添加 `cancel` 方法 | 待办 |
+| 14 | 无异步 I/O 原语 | 实现 `AsyncFd`（非当前空壳）：epoll 注册 + 非阻塞 read/write + 自动状态机调度 | 待办（`std.async.io` 已有最小路径，见 `todo_mini_to_full`） |
+
+### P1.5：编译器 / C99（与 `Future<!T>`、`std.thread` typedef 相关）✅ 近期已闭环
+
+以下项已在 `src/codegen/c99/`（`structs.uya`、`stmt.uya`、`expr.uya`、`main.uya` 等）与 `lib/std/thread.uya` 落地，`test_std_thread.uya`、`test_async_compute_types.uya` 与全量 `--uya --c99` 通过：
+
+- 泛型 `AsyncComputeFuture<T>` **不**再按「非泛型 struct」生成占位 interface vtable；`Future<!T>` 单态与 `Poll<!T>` 的 `err_*` 命名一致。
+- **接口实参装箱**：实参变量 C 类型为 **typedef**（如 `AsyncComputeI32Future`）时，经 `find_type_alias_from_program` → `get_mono_struct_name` 再生成 `struct uya_interface_Future_err_*` 装箱。
+- **成员方法调用**：`f.poll(&w)` 在接收者类型无 `struct ` 前缀时，从类型串解析标识符并走别名解析，生成 `uya_AsyncComputeFuture_*_poll`（修复误生成 `unknown(...)`）。
+- **`ok<bool>` / `ok<f32>` / `ok<f64>` 单态**：`finish_from_raw_poll` 按 `T` 分发时由 `thread_ok_bool` / `thread_ok_f32` / `thread_ok_f64` 内显式 `ok<...>` 锚定；codegen 保留 `mark_ok_mono_reachable_for_async_compute_futures`。
+- **泛型方法 + `thread_type_is_*(T)`**：`gen_call_expr` 在 `struct_type_args` 上下文中将调用折叠为字面量 `0`/`1`（勿从方法体抽泛型顶层 helper，否则 C 可达性不生成）。
+- **宿主线程浮点调用**：`src/codegen/c99/main.uya` 注入的 `uya_thread_call_f32`/`f64` 必须与真实 **`float`/`double` 调用约定**一致；槽位仍为整型位模式仅作存储与传递。
+
+**后续清理（非阻塞）**：✅ 已抽取 typedef 解析助手；✅ 已移除 `ok_bool_force` 等冗余；✅ 已移除 12 个 **`async_compute_*`** 导出；**`async_compute<T>`** C99 单态走 **`std_thread_async_compute_future_new_<T>`** + 装箱（**勿**仅靠宏展开体：`thread_type_is_*` 在 C 端不折叠会落回错误分支）。
 
 ---
 
@@ -184,6 +199,6 @@ make check && make backup
 | 风险 | 说明 | 缓解 |
 |------|------|------|
 | 栈大小 | 状态机栈分配 + 深层调用可能溢出 | 参考 `docs/STACK_SIZE.md`；P0 #4 解决堆分配 |
-| 泛型限制 | Uya 泛型尚不完全，async_compute 需手写特化 | 等 vtable 接口完善后类型擦除 |
+| 泛型限制 | 曾阻碍 `Future<!T>` + typedef 与 `ok<bool>` 单态 | **已缓解**：`AsyncComputeFuture<T>` 泛型体 + C99 装箱/成员调用修复；对外仅 **`async_compute<T>`**（含 f32/f64）；typedef 别名保留 |
 | Linux 专属 | epoll/eventfd 仅 Linux；跨平台需 kqueue/iocp | 当前专注 Linux；设计时抽象 EventLoop 接口 |
 | 估计偏差 | HTTP 解析器边界情况可能超预期 | Phase 3 预留 2 周缓冲 |

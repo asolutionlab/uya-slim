@@ -1415,7 +1415,9 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
 
             // ===== 情况 A：非泛型 struct 实现了泛型接口实例（如 Getter<i32>）=====
             // iface_name 中带 '<...>'，需要把 T 替换成具体类型，否则会生成含 T 的 C 签名导致链接失败。
-            if is_generic_interface_c99(iface_decl) != 0 && lt != null {
+            // 泛型结构体（如 AsyncComputeFuture<T>: Future<!T>）不得走此分支：否则会生成
+            // uya_vtable_Future_err_T_AsyncComputeFuture 等非法占位（应由下方 mono_instances 单态生成）。
+            if is_generic_interface_c99(iface_decl) != 0 && lt != null && is_generic_struct_c99(decl) == 0 {
                 // 解析 `<...>` 内的类型参数（仅支持简单命名类型，足够覆盖测试用例）
                 const gt: *byte = strrchr(iface_name as *byte, 62);  // '>'
                 if gt != null && gt > lt {
@@ -1582,7 +1584,27 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                     if decl.struct_decl_type_param_count > 0 && decl.struct_decl_type_params != null {
                         mono_struct = get_mono_struct_name(codegen, struct_name, inst.type_args, inst.type_arg_count);
                     }
-                    const mono_iface: &byte = get_mono_struct_name(codegen, iface_decl.interface_decl_name, inst.type_args, iface_decl.interface_decl_type_param_count);
+                    // AsyncComputeFuture<T> : Future<!T> — Future 的单态实参应为 !T（如 err_i64），不能直接用 T（i64）。
+                    var iface_mono_args_ptr: & & ASTNode = inst.type_args;
+                    var iface_mono_arg_count: i32 = iface_decl.interface_decl_type_param_count;
+                    if struct_name != null && strcmp(struct_name as *byte, "AsyncComputeFuture" as *byte) == 0 &&
+                        iface_decl.interface_decl_name != null &&
+                        strcmp(iface_decl.interface_decl_name as *byte, "Future" as *byte) == 0 &&
+                        decl.struct_decl_type_param_count == 1 && inst.type_arg_count == 1 &&
+                        iface_decl.interface_decl_type_param_count == 1 &&
+                        inst.type_args != null && inst.type_args[0] != null && codegen.arena != null {
+                        const eu_wrap: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, decl.line, decl.column, codegen.arena, decl.filename);
+                        if eu_wrap != null {
+                            eu_wrap.type_error_union_payload_type = inst.type_args[0];
+                            const ap2: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+                            if ap2 != null {
+                                ap2[0] = eu_wrap;
+                                iface_mono_args_ptr = ap2;
+                                iface_mono_arg_count = 1;
+                            }
+                        }
+                    }
+                    const mono_iface: &byte = get_mono_struct_name(codegen, iface_decl.interface_decl_name, iface_mono_args_ptr, iface_mono_arg_count);
                     const safe_mono_struct: &byte = get_safe_c_identifier(codegen, mono_struct);
                     const safe_mono_iface: &byte = get_safe_c_identifier(codegen, mono_iface);
                     if safe_mono_struct == null || safe_mono_iface == null {
@@ -1596,8 +1618,8 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                     const saved_sac: i32 = codegen.struct_type_arg_count;
                     codegen.struct_type_params = iface_decl.interface_decl_type_params;
                     codegen.struct_type_param_count = iface_decl.interface_decl_type_param_count;
-                    codegen.struct_type_args = inst.type_args;
-                    codegen.struct_type_arg_count = iface_decl.interface_decl_type_param_count;
+                    codegen.struct_type_args = iface_mono_args_ptr;
+                    codegen.struct_type_arg_count = iface_mono_arg_count;
 
                     // 确保该泛型接口实例的 interface/vtable struct 已定义（即便未显式作为类型出现）
                     const iface_struct_len: i32 = strlen(safe_mono_iface as *byte) + 32;
@@ -2104,6 +2126,80 @@ fn get_mono_union_name(codegen: &C99CodeGenerator, generic_name: &byte, type_arg
     }
     snprintf(mono_name as *byte, name_len, "%s_%s" as *byte, safe_name as *byte, suffix as *byte);
     return mono_name;
+}
+
+// 从已去掉 leading `const ` 的 C 类型串提取首个 typedef 标识符（遇空格、制表、* 结束）。
+// 若以 `struct ` 开头则返回 0，由调用方走 struct 前缀分支。
+fn c99_extract_first_typedef_ident(type_c: &byte, out: &byte, out_max: i32) i32 {
+    if type_c == null || out == null || out_max < 2 {
+        return 0;
+    }
+    var p: *byte = type_c as *byte;
+    while p[0] == 32 || p[0] == 9 {
+        p = p + 1;
+    }
+    if strncmp(p as *byte, "struct " as *byte, 7) == 0 {
+        return 0;
+    }
+    var q: *byte = p;
+    while q[0] != 0 && q[0] != 32 && q[0] != 9 && q[0] != 42 {
+        q = q + 1;
+    }
+    const n: i32 = (q - p) as i32;
+    if n <= 0 || n >= out_max {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < n {
+        out[i] = p[i];
+        i = i + 1;
+    }
+    out[n] = 0;
+    return n;
+}
+
+// typedef（如 AsyncComputeI32Future）→ 别名目标为泛型 struct 时，返回 arena 分配的单态 struct 名；否则 null。
+fn resolve_typedef_to_mono_struct_name_if_generic(codegen: &C99CodeGenerator, type_c_strip_const: &byte) &byte {
+    if codegen == null || type_c_strip_const == null || codegen.program_node == null || codegen.arena == null {
+        return null;
+    }
+    var key: [byte: C99_GENERIC_NAME_BUF_SIZE] = [];
+    const kl: i32 = c99_extract_first_typedef_ident(type_c_strip_const, &key[0] as &byte, C99_GENERIC_NAME_BUF_SIZE);
+    if kl <= 0 {
+        return null;
+    }
+    const alias_decl: &ASTNode = find_type_alias_from_program(codegen.program_node, &key[0] as &byte);
+    if alias_decl == null || alias_decl.type != ASTNodeType.AST_TYPE_ALIAS ||
+        alias_decl.type_alias_target_type == null {
+        return null;
+    }
+    const targ: &ASTNode = alias_decl.type_alias_target_type;
+    if targ.type != ASTNodeType.AST_TYPE_NAMED || targ.type_named_name == null {
+        return null;
+    }
+    const base_sn: &byte = targ.type_named_name;
+    const decl_s: &ASTNode = find_struct_decl_c99(codegen, base_sn);
+    if decl_s == null || decl_s.type != ASTNodeType.AST_STRUCT_DECL ||
+        is_generic_struct_c99(decl_s) == 0 ||
+        targ.type_named_type_arg_count <= 0 || targ.type_named_type_args == null {
+        return null;
+    }
+    const ms: &byte = get_mono_struct_name(codegen, base_sn,
+        targ.type_named_type_args, targ.type_named_type_arg_count);
+    if ms == null {
+        return null;
+    }
+    const pos_ms: i32 = strlen(ms as *byte) as i32;
+    if pos_ms <= 0 || pos_ms >= C99_GENERIC_NAME_BUF_SIZE {
+        return null;
+    }
+    const copy_ms: &byte = arena_alloc(codegen.arena, (pos_ms + 1) as usize) as &byte;
+    if copy_ms == null {
+        return null;
+    }
+    memcpy(copy_ms as *void, ms as *void, pos_ms as usize);
+    copy_ms[pos_ms] = 0;
+    return copy_ms;
 }
 
 // 辅助函数：在程序 AST 中查找结构体声明
