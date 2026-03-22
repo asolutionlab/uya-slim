@@ -7,6 +7,67 @@
 // ===== 外部函数声明 =====
 // C 标准库函数（在 extern_decls.uya 中声明）
 
+extern fn hash_string(str: &byte) i32;
+
+const C99_SAFE_IDENT_CACHE_BITS: i32 = 11;
+const C99_SAFE_IDENT_CACHE_SIZE: i32 = 2048;
+const C99_SAFE_IDENT_CACHE_MASK: i32 = 2047;
+const C99_STRING_CONST_CACHE_BITS: i32 = 12;
+const C99_STRING_CONST_CACHE_SIZE: i32 = 4096;
+const C99_STRING_CONST_CACHE_MASK: i32 = 4095;
+
+var g_c99_utils_cached_codegen: &C99CodeGenerator = null;
+var g_c99_safe_ident_keys: [&byte: C99_SAFE_IDENT_CACHE_SIZE] = [];
+var g_c99_safe_ident_values: [&byte: C99_SAFE_IDENT_CACHE_SIZE] = [];
+var g_c99_string_const_keys: [&byte: C99_STRING_CONST_CACHE_SIZE] = [];
+var g_c99_string_const_values: [&byte: C99_STRING_CONST_CACHE_SIZE] = [];
+
+fn c99_utils_reset_caches(codegen: &C99CodeGenerator) void {
+    var i: i32 = 0;
+    while i < C99_SAFE_IDENT_CACHE_SIZE {
+        g_c99_safe_ident_keys[i] = null;
+        g_c99_safe_ident_values[i] = null;
+        i = i + 1;
+    }
+    i = 0;
+    while i < C99_STRING_CONST_CACHE_SIZE {
+        g_c99_string_const_keys[i] = null;
+        g_c99_string_const_values[i] = null;
+        i = i + 1;
+    }
+    g_c99_utils_cached_codegen = codegen;
+}
+
+fn c99_utils_cache_ensure(codegen: &C99CodeGenerator) void {
+    if codegen == null {
+        return;
+    }
+    if g_c99_utils_cached_codegen == codegen {
+        return;
+    }
+    c99_utils_reset_caches(codegen);
+}
+
+fn c99_safe_ident_cache_store(codegen: &C99CodeGenerator, name: &byte, safe_name: &byte) void {
+    if codegen == null || name == null || safe_name == null {
+        return;
+    }
+    c99_utils_cache_ensure(codegen);
+    const slot: i32 = (hash_string(name) & C99_SAFE_IDENT_CACHE_MASK) as i32;
+    g_c99_safe_ident_keys[slot] = name;
+    g_c99_safe_ident_values[slot] = safe_name;
+}
+
+fn c99_string_const_cache_store(codegen: &C99CodeGenerator, value: &byte, const_name: &byte) void {
+    if codegen == null || value == null || const_name == null {
+        return;
+    }
+    c99_utils_cache_ensure(codegen);
+    const slot: i32 = (hash_string(value) & C99_STRING_CONST_CACHE_MASK) as i32;
+    g_c99_string_const_keys[slot] = value;
+    g_c99_string_const_values[slot] = const_name;
+}
+
 // 创建 C99 代码生成器
 // is_nostdlib: 1=使用 syscall，0=使用标准库
 // freestanding: 1=不包含头文件，0=按需包含头文件
@@ -16,6 +77,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     }
 
     // 初始化字段
+    c99_utils_reset_caches(codegen);
     codegen.arena = arena;
     codegen.checker = null;
     codegen.output = output;
@@ -461,17 +523,28 @@ fn get_safe_c_identifier(codegen: &C99CodeGenerator, name: &byte) &byte {
     if name == null {
         return null;
     }
+    c99_utils_cache_ensure(codegen);
+    const slot: i32 = (hash_string(name) & C99_SAFE_IDENT_CACHE_MASK) as i32;
+    const cached_key: &byte = g_c99_safe_ident_keys[slot];
+    if cached_key != null && strcmp(cached_key as *byte, name as *byte) == 0 {
+        return g_c99_safe_ident_values[slot];
+    }
     if strchr(name as *byte, 33) != null || strchr(name as *byte, 60) != null {
-        return sanitize_type_name_for_c(codegen, name);
+        const sanitized: &byte = sanitize_type_name_for_c(codegen, name);
+        c99_safe_ident_cache_store(codegen, name, sanitized);
+        return sanitized;
     }
     if is_c_keyword(name) == 0 && is_c_reserved_name(name) == 0 {
+        c99_safe_ident_cache_store(codegen, name, name);
         return name;
     }
     
     var buf: [byte: STRUCT_NAME_BUF_SIZE] = [];
     if is_c_reserved_name(name) != 0 {
         snprintf(&buf[0] as *byte, STRUCT_NAME_BUF_SIZE, "uya_%s" as *byte, name as *byte);
-        return c99_arena_strdup(codegen.arena, &buf[0] as &byte);
+        const reserved_safe: &byte = c99_arena_strdup(codegen.arena, &buf[0] as &byte);
+        c99_safe_ident_cache_store(codegen, name, reserved_safe);
+        return reserved_safe;
     }
     var prefix: i32 = 1;
     while prefix <= 3 {
@@ -485,12 +558,15 @@ fn get_safe_c_identifier(codegen: &C99CodeGenerator, name: &byte) &byte {
         
         // 检查这个名称是否已经用作关键字（理论上应该不会冲突）
         if is_c_keyword(&buf[0] as &byte) == 0 {
-            return c99_arena_strdup(codegen.arena, &buf[0] as &byte);
+            const safe_name: &byte = c99_arena_strdup(codegen.arena, &buf[0] as &byte);
+            c99_safe_ident_cache_store(codegen, name, safe_name);
+            return safe_name;
         }
         prefix = prefix + 1;
     }
     
     // 如果仍然冲突，返回原名称（虽然可能导致编译错误）
+    c99_safe_ident_cache_store(codegen, name, name);
     return name;
 }
 
@@ -499,11 +575,18 @@ fn add_string_constant(codegen: &C99CodeGenerator, value: &byte) &byte {
     if value == null {
         return null;
     }
+    c99_utils_cache_ensure(codegen);
+    const slot: i32 = (hash_string(value) & C99_STRING_CONST_CACHE_MASK) as i32;
+    const cached_key: &byte = g_c99_string_const_keys[slot];
+    if cached_key != null && strcmp(cached_key as *byte, value as *byte) == 0 {
+        return g_c99_string_const_values[slot];
+    }
     // 检查是否已存在相同的字符串常量
     var i: i32 = 0;
     while i < codegen.string_constant_count {
         if codegen.string_constants[i].value != null &&
            strcmp(codegen.string_constants[i].value as *byte, value as *byte) == 0 {
+            c99_string_const_cache_store(codegen, value, codegen.string_constants[i].name);
             return codegen.string_constants[i].name;
         }
         i = i + 1;
@@ -522,8 +605,9 @@ fn add_string_constant(codegen: &C99CodeGenerator, value: &byte) &byte {
     codegen.string_constants[codegen.string_constant_count].name = c99_arena_strdup(codegen.arena, &name_buf[0] as &byte);
     codegen.string_constants[codegen.string_constant_count].value = value;  // 注意：value 应该已经在 Arena 中
     codegen.string_constant_count = codegen.string_constant_count + 1;
-    
-    return codegen.string_constants[codegen.string_constant_count - 1].name;
+    const const_name: &byte = codegen.string_constants[codegen.string_constant_count - 1].name;
+    c99_string_const_cache_store(codegen, value, const_name);
+    return const_name;
 }
 
 // 查找字符串常量（不添加新的）
@@ -531,10 +615,17 @@ fn find_string_constant(codegen: &C99CodeGenerator, value: &byte) &byte {
     if value == null {
         return null;
     }
+    c99_utils_cache_ensure(codegen);
+    const slot: i32 = (hash_string(value) & C99_STRING_CONST_CACHE_MASK) as i32;
+    const cached_key: &byte = g_c99_string_const_keys[slot];
+    if cached_key != null && strcmp(cached_key as *byte, value as *byte) == 0 {
+        return g_c99_string_const_values[slot];
+    }
     var i: i32 = 0;
     while i < codegen.string_constant_count {
         if codegen.string_constants[i].value != null && 
            strcmp(codegen.string_constants[i].value as *byte, value as *byte) == 0 {
+            c99_string_const_cache_store(codegen, value, codegen.string_constants[i].name);
             return codegen.string_constants[i].name;
         }
         i = i + 1;

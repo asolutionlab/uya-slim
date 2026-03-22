@@ -76,6 +76,18 @@ fn find_struct_decl_c99(codegen: &C99CodeGenerator, struct_name: &byte) &ASTNode
     if codegen == null || struct_name == null || codegen.program_node == null {
         return null;
     }
+    if codegen.decl_cache_initialized == 0 {
+        build_decl_caches(codegen);
+    }
+    if codegen.decl_cache_initialized != 0 {
+        const h: i32 = (hash_string(struct_name) & C99_DECL_CACHE_MASK) as i32;
+        const cached: &ASTNode = codegen.struct_decl_cache[h];
+        if cached != null && cached.type == ASTNodeType.AST_STRUCT_DECL &&
+            cached.struct_decl_name != null &&
+            strcmp(cached.struct_decl_name as *byte, struct_name as *byte) == 0 {
+            return cached;
+        }
+    }
     
     const decl_count: i32 = codegen.program_node.program_decl_count;
     
@@ -121,6 +133,18 @@ fn find_struct_decl_c99(codegen: &C99CodeGenerator, struct_name: &byte) &ASTNode
 fn find_union_decl_c99(codegen: &C99CodeGenerator, union_name: &byte) &ASTNode {
     if codegen == null || union_name == null || codegen.program_node == null {
         return null;
+    }
+    if codegen.decl_cache_initialized == 0 {
+        build_decl_caches(codegen);
+    }
+    if codegen.decl_cache_initialized != 0 {
+        const h: i32 = (hash_string(union_name) & C99_DECL_CACHE_MASK) as i32;
+        const cached: &ASTNode = codegen.union_decl_cache[h];
+        if cached != null && cached.type == ASTNodeType.AST_UNION_DECL &&
+            cached.union_decl_name != null &&
+            strcmp(cached.union_decl_name as *byte, union_name as *byte) == 0 {
+            return cached;
+        }
     }
     const decl_count: i32 = codegen.program_node.program_decl_count;
     var i: i32 = 0;

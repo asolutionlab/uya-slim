@@ -118,6 +118,60 @@ fn collect_stdlib_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode
     }
 }
 
+fn is_stdio_conflict_name(name: &byte) i32 {
+    if name == null {
+        return 0;
+    }
+    if strcmp(name as *byte, ("fopen" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("fclose" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("fread" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("fwrite" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("fgetc" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("fputc" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("fputs" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("fprintf" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("fflush" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("printf" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("puts" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("fgets" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("fscanf" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("scanf" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("snprintf" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("sprintf" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("vprintf" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("vfprintf" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("vsprintf" as *byte) as &byte) == 0 ||
+        strcmp(name as *byte, ("vsnprintf" as *byte) as &byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn precollect_codegen_decl(codegen: &C99CodeGenerator, decl: &ASTNode, collect_hosted_flags: i32) void {
+    if codegen == null || decl == null {
+        return;
+    }
+    if collect_hosted_flags != 0 {
+        if decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_body != null {
+            if is_stdio_conflict_name(decl.fn_decl_name) != 0 {
+                codegen.has_stdio_conflicts = 1;
+            }
+            collect_stdlib_functions_from_node(codegen, decl.fn_decl_body);
+            if decl.fn_decl_is_async != 0 {
+                codegen.needs_stdlib_h = 1;
+            }
+        }
+        if decl.type == ASTNodeType.AST_STRUCT_DECL {
+            collect_stdlib_functions_from_node(codegen, decl);
+        }
+    }
+    if decl.type == ASTNodeType.AST_USE_STMT || decl.type == ASTNodeType.AST_MACRO_DECL {
+        return;
+    }
+    collect_string_constants_from_decl(codegen, decl);
+    collect_slice_types_from_node(codegen, decl);
+}
+
 fn collect_err_union_from_function_body(codegen: &C99CodeGenerator, fn_decl: &ASTNode, body: &ASTNode, mono_type_args: & & ASTNode, mono_type_arg_count: i32) void {
     if codegen == null || fn_decl == null || body == null {
         return;
@@ -710,6 +764,21 @@ fn collect_slice_types_from_node(codegen: &C99CodeGenerator, node: &ASTNode) voi
 
 // 递归收集所有测试语句（使用固定大小数组，最多 1000 个测试）
 const MAX_TESTS: i32 = 1000;
+
+fn append_collected_test(tests: & & ASTNode, test_count: &i32, test_node: &ASTNode) i32 {
+    if tests == null || test_count == null || test_node == null {
+        return 0;
+    }
+    var count: i32 = (&test_count[0])[0];
+    if count >= MAX_TESTS {
+        return 0;
+    }
+    tests[count] = test_node;
+    count = count + 1;
+    (&test_count[0])[0] = count;
+    return 1;
+}
+
 fn collect_tests_from_node(codegen: &C99CodeGenerator, node: &ASTNode, tests: & & ASTNode, test_count: &i32) i32 {
     if codegen == null || node == null || tests == null || test_count == null {
         return 0;
@@ -723,11 +792,7 @@ fn collect_tests_from_node(codegen: &C99CodeGenerator, node: &ASTNode, tests: & 
     }
     
     if node.type == ASTNodeType.AST_TEST_STMT {
-        // 添加到测试列表
-        tests[count] = node;
-        count = count + 1;
-        // 通过数组访问设置值
-        (&test_count[0])[0] = count;
+        append_collected_test(tests, test_count, node);
     }
     
     // 递归处理子节点
@@ -1067,11 +1132,10 @@ fn collect_reachable_top_level_functions_from_node(codegen: &C99CodeGenerator, n
     }
 }
 
-fn build_decl_caches(codegen: &C99CodeGenerator) void {
-    if codegen.program_node == null {
+fn reset_decl_caches(codegen: &C99CodeGenerator) void {
+    if codegen == null {
         return;
     }
-    const dc: i32 = codegen.program_node.program_decl_count;
     var i: i32 = 0;
     while i < C99_DECL_CACHE_SIZE {
         codegen.fn_decl_cache[i] = null;
@@ -1082,32 +1146,49 @@ fn build_decl_caches(codegen: &C99CodeGenerator) void {
         codegen.macro_decl_cache[i] = null;
         i = i + 1;
     }
-    i = 0;
+    codegen.decl_cache_initialized = 0;
+}
+
+fn cache_decl_for_lookup(codegen: &C99CodeGenerator, decl: &ASTNode) void {
+    if codegen == null || decl == null {
+        return;
+    }
+    if decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null {
+        const h: i32 = (hash_string(decl.fn_decl_name) & C99_DECL_CACHE_MASK) as i32;
+        const cached_fn: &ASTNode = codegen.fn_decl_cache[h];
+        if cached_fn == null || cached_fn.fn_decl_body == null || decl.fn_decl_body != null {
+            codegen.fn_decl_cache[h] = decl;
+        }
+        return;
+    }
+    if decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_name != null {
+        const h: i32 = (hash_string(decl.struct_decl_name) & C99_DECL_CACHE_MASK) as i32;
+        codegen.struct_decl_cache[h] = decl;
+    } else if decl.type == ASTNodeType.AST_ENUM_DECL && decl.enum_decl_name != null {
+        const h: i32 = (hash_string(decl.enum_decl_name) & C99_DECL_CACHE_MASK) as i32;
+        codegen.enum_decl_cache[h] = decl;
+    } else if decl.type == ASTNodeType.AST_TYPE_ALIAS && decl.type_alias_name != null {
+        const h: i32 = (hash_string(decl.type_alias_name) & C99_DECL_CACHE_MASK) as i32;
+        codegen.type_alias_cache[h] = decl;
+    } else if decl.type == ASTNodeType.AST_UNION_DECL && decl.union_decl_name != null {
+        const h: i32 = (hash_string(decl.union_decl_name) & C99_DECL_CACHE_MASK) as i32;
+        codegen.union_decl_cache[h] = decl;
+    } else if decl.type == ASTNodeType.AST_MACRO_DECL && decl.macro_decl_name != null {
+        const h: i32 = (hash_string(decl.macro_decl_name) & C99_DECL_CACHE_MASK) as i32;
+        codegen.macro_decl_cache[h] = decl;
+    }
+}
+
+fn build_decl_caches(codegen: &C99CodeGenerator) void {
+    if codegen.program_node == null {
+        return;
+    }
+    const dc: i32 = codegen.program_node.program_decl_count;
+    reset_decl_caches(codegen);
+    var i: i32 = 0;
     while i < dc {
         const decl: &ASTNode = codegen.program_node.program_decls[i];
-        if decl == null {
-            i = i + 1;
-            continue;
-        }
-        if decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null {
-            const h: i32 = (hash_string(decl.fn_decl_name) & C99_DECL_CACHE_MASK) as i32;
-            codegen.fn_decl_cache[h] = decl;
-        } else if decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_name != null {
-            const h: i32 = (hash_string(decl.struct_decl_name) & C99_DECL_CACHE_MASK) as i32;
-            codegen.struct_decl_cache[h] = decl;
-        } else if decl.type == ASTNodeType.AST_ENUM_DECL && decl.enum_decl_name != null {
-            const h: i32 = (hash_string(decl.enum_decl_name) & C99_DECL_CACHE_MASK) as i32;
-            codegen.enum_decl_cache[h] = decl;
-        } else if decl.type == ASTNodeType.AST_TYPE_ALIAS && decl.type_alias_name != null {
-            const h: i32 = (hash_string(decl.type_alias_name) & C99_DECL_CACHE_MASK) as i32;
-            codegen.type_alias_cache[h] = decl;
-        } else if decl.type == ASTNodeType.AST_UNION_DECL && decl.union_decl_name != null {
-            const h: i32 = (hash_string(decl.union_decl_name) & C99_DECL_CACHE_MASK) as i32;
-            codegen.union_decl_cache[h] = decl;
-        } else if decl.type == ASTNodeType.AST_MACRO_DECL && decl.macro_decl_name != null {
-            const h: i32 = (hash_string(decl.macro_decl_name) & C99_DECL_CACHE_MASK) as i32;
-            codegen.macro_decl_cache[h] = decl;
-        }
+        cache_decl_for_lookup(codegen, decl);
         i = i + 1;
     }
     codegen.decl_cache_initialized = 1;
@@ -1157,14 +1238,16 @@ fn mark_ok_mono_reachable_for_async_compute_futures(codegen: &C99CodeGenerator) 
     }
 }
 
-fn collect_reachable_top_level_functions(codegen: &C99CodeGenerator, ast: &ASTNode) void {
-    if codegen == null || ast == null || ast.type != ASTNodeType.AST_PROGRAM {
+fn collect_reachable_top_level_functions(codegen: &C99CodeGenerator, ast: &ASTNode, tests: & & ASTNode, test_count: &i32) void {
+    if codegen == null || ast == null || ast.type != ASTNodeType.AST_PROGRAM || tests == null || test_count == null {
         return;
     }
 
-    // 构建声明缓存（一次性，哈希 O(1) 查找替代线性遍历）
+    var seed_decl_cache_inline: i32 = 0;
     if codegen.decl_cache_initialized == 0 {
-        build_decl_caches(codegen);
+        reset_decl_caches(codegen);
+        codegen.decl_cache_initialized = 1;
+        seed_decl_cache_inline = 1;
     }
 
     codegen.reachable_function_decl_count = 0;
@@ -1179,7 +1262,13 @@ fn collect_reachable_top_level_functions(codegen: &C99CodeGenerator, ast: &ASTNo
     while i < ast.program_decl_count {
         const decl: &ASTNode = ast.program_decls[i];
         if decl != null {
+            if seed_decl_cache_inline != 0 {
+                cache_decl_for_lookup(codegen, decl);
+            }
             if decl.type == ASTNodeType.AST_FN_DECL {
+                if decl.fn_decl_body != null {
+                    collect_tests_from_node(codegen, decl.fn_decl_body, tests, test_count);
+                }
                 const is_main: i32 = (decl.fn_decl_name != null &&
                     strcmp(decl.fn_decl_name as *byte, "main" as *byte) == 0) as i32;
                 const keep_export_extern: i32 = (decl.fn_decl_is_export != 0 &&
@@ -1193,6 +1282,7 @@ fn collect_reachable_top_level_functions(codegen: &C99CodeGenerator, ast: &ASTNo
                     mark_top_level_function_reachable(codegen, decl);
                 }
             } else if decl.type == ASTNodeType.AST_TEST_STMT {
+                append_collected_test(tests, test_count, decl);
                 collect_reachable_top_level_functions_from_node(codegen, decl.test_stmt_body);
             } else if decl.type == ASTNodeType.AST_VAR_DECL {
                 collect_reachable_top_level_functions_from_node(codegen, decl.var_decl_init);
@@ -1388,6 +1478,16 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("//\n" as *byte, codegen.output as *void);
     }
 
+    const decl_count: i32 = ast.program_decl_count;
+    var precollect_i: i32 = 0;
+    while precollect_i < decl_count {
+        const decl: &ASTNode = ast.program_decls[precollect_i];
+        if decl != null {
+            precollect_codegen_decl(codegen, decl, (is_std_lib == 0) as i32);
+        }
+        precollect_i = precollect_i + 1;
+    }
+
     if is_std_lib != 0 {
         // 标准库模式：零依赖，自己定义所有类型
         fputs("// 零依赖标准库：自己定义所有类型（用于 --nostdlib 编译）\n" as *byte, codegen.output as *void);
@@ -1439,61 +1539,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         // 注意：标准库模式不使用 __uya_memcpy/__uya_memcmp，因为标准库自己实现了 memcpy/memcmp
     } else {
         // 普通模式：使用标准库头文件
-        // 先检查是否定义了与标准库冲突的函数，并预扫描 AST 收集 needs_string_h
-        var check_i: i32 = 0;
-        const check_decl_count: i32 = ast.program_decl_count;
-        while check_i < check_decl_count {
-            const check_decl: &ASTNode = ast.program_decls[check_i];
-            if check_decl == null {
-                check_i = check_i + 1;
-                continue;
-            }
-            
-            // 检查是否定义了与标准库冲突的函数（仅限有实现的函数，extern 声明不冲突）
-            if check_decl.type == ASTNodeType.AST_FN_DECL && check_decl.fn_decl_body != null {
-                const fn_name: &byte = check_decl.fn_decl_name;
-                // 检查是否定义了与 stdio.h 冲突的函数
-                if fn_name != null && (
-                    strcmp(fn_name as *byte, ("fopen" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fclose" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fread" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fwrite" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fgetc" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fputc" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fputs" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fprintf" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fflush" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("printf" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("puts" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fgets" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("fscanf" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("scanf" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("snprintf" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("sprintf" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("vprintf" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("vfprintf" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("vsprintf" as *byte) as &byte) == 0 ||
-                    strcmp(fn_name as *byte, ("vsnprintf" as *byte) as &byte) == 0) {
-                    codegen.has_stdio_conflicts = 1;
-                }
-            }
-            
-            // 预扫描结构体声明，检测空结构体或数组字段（会使用 memset）
-            if check_decl.type == ASTNodeType.AST_STRUCT_DECL {
-                collect_stdlib_functions_from_node(codegen, check_decl);
-            }
-            
-            // 预扫描函数体，检测标准库函数调用
-            if check_decl.type == ASTNodeType.AST_FN_DECL && check_decl.fn_decl_body != null {
-                collect_stdlib_functions_from_node(codegen, check_decl.fn_decl_body);
-                if check_decl.fn_decl_is_async != 0 {
-                    codegen.needs_stdlib_h = 1;
-                }
-            }
-            
-            check_i = check_i + 1;
-        }
-        
+        // hosted 头文件需求、字符串常量和切片/SIMD 类型已在统一预收集阶段完成
         // 必须在首个 #include 之前定义，以便 unistd.h 声明 readlink 等 POSIX 函数
         fputs("#ifndef _POSIX_C_SOURCE\n#define _POSIX_C_SOURCE 200809L\n#endif\n" as *byte, codegen.output as *void);
         c99_emit_newline(codegen);
@@ -1600,7 +1646,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         var has_mem_functions: i32 = 0;
         var has_string_functions: i32 = 0;
         var mi: i32 = 0;
-        while mi < check_decl_count {
+        while mi < decl_count {
             const md: &ASTNode = ast.program_decls[mi];
             if md != null && md.type == ASTNodeType.AST_FN_DECL && md.fn_decl_body != null {
                 const mn: &byte = md.fn_decl_name;
@@ -1623,7 +1669,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         // 检测是否定义了与 stdlib.h 冲突的函数（labs, strtoul, qsort, bsearch 等）
         var has_stdlib_conflicts: i32 = 0;
         var si: i32 = 0;
-        while si < check_decl_count {
+        while si < decl_count {
             const sd: &ASTNode = ast.program_decls[si];
             if sd != null && sd.type == ASTNodeType.AST_FN_DECL && sd.fn_decl_body != null {
                 const sn: &byte = sd.fn_decl_name;
@@ -1652,7 +1698,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         var has_own_readdir: i32 = 0;
         var has_own_closedir: i32 = 0;
         var di: i32 = 0;
-        while di < check_decl_count {
+        while di < decl_count {
             const d: &ASTNode = ast.program_decls[di];
             if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_body != null {
                 const n: &byte = d.fn_decl_name;
@@ -1744,29 +1790,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     mark_struct_defined(codegen, ("err_union_void" as *byte) as &byte);
     c99_emit_newline(codegen);
     
-    // 第一步：收集所有字符串常量（从全局变量初始化和函数体）
-    const decl_count: i32 = ast.program_decl_count;
-    
+    // 第一步：输出预收集阶段得到的字符串常量定义（在所有其他代码之前）
     var i: i32 = 0;
-    while i < decl_count {
-        const decl: &ASTNode = ast.program_decls[i];
-        if decl != null {
-            // 跳过 use 语句（模块导入，不需要生成代码）
-            if decl.type == ASTNodeType.AST_USE_STMT {
-                i = i + 1;
-                continue;
-            }
-            // 跳过宏声明（宏在 checker 阶段已展开，不需要生成代码）
-            if decl.type == ASTNodeType.AST_MACRO_DECL {
-                i = i + 1;
-                continue;
-            }
-            collect_string_constants_from_decl(codegen, decl);
-        }
-        i = i + 1;
-    }
-    
-    // 第二步：输出字符串常量定义（在所有其他代码之前）
     emit_string_constants(codegen);
     c99_emit_newline(codegen);
     
@@ -1908,12 +1933,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     }
     c99_emit_newline(codegen);
     
-    // 第六步 a：收集所有使用的切片类型（含结构体字段中的 &[T]）
-    i = 0;
-    while i < decl_count {
-        collect_slice_types_from_node(codegen, ast.program_decls[i]);
-        i = i + 1;
-    }
+    // 第六步 a：切片/SIMD/err_union 类型已在统一预收集阶段完成
     // 第六步 b：生成切片结构体（&[T] -> struct uya_slice_X），必须在用户结构体之前
     emit_pending_slice_structs(codegen);
     if codegen.slice_struct_count > 0 {
@@ -2070,42 +2090,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     }
     var test_count: i32 = 0;
     
-    // 从程序顶层声明中收集测试语句
-    i = 0;
-    while i < decl_count {
-        const decl: &ASTNode = ast.program_decls[i];
-        if decl == null {
-            i = i + 1;
-            continue;
-        }
-        if decl.type == ASTNodeType.AST_USE_STMT {
-            i = i + 1;
-            continue;
-        }
-        // 跳过宏声明（宏在 checker 阶段已展开，不需要生成代码）
-        if decl.type == ASTNodeType.AST_MACRO_DECL {
-            i = i + 1;
-            continue;
-        }
-        
-        // 顶层测试语句
-        if decl.type == ASTNodeType.AST_TEST_STMT {
-            if test_count < MAX_TESTS {
-                tests_array[test_count] = decl;
-                test_count = test_count + 1;
-            }
-        }
-        
-        // 从函数体内收集测试（包括嵌套块中的测试）
-        if decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_body != null {
-            collect_tests_from_node(codegen, decl.fn_decl_body, tests_array, &test_count);
-        }
-        i = i + 1;
-    }
+    collect_reachable_top_level_functions(codegen, ast, tests_array, &test_count);
     
     // 将测试计数保存到 codegen 中，以便 gen_function 可以判断是否需要调用 uya_run_tests()
     codegen.test_count = test_count;
-    collect_reachable_top_level_functions(codegen, ast);
     
     // std.thread：宿主 C 间接调用单参函数指针（由 GCC/Clang 保证调用约定与栈对齐）。
     // 使用 static 而非 static inline：在 -O2 下将该助手内联进部分调用点会触发错误优化（段错误）；

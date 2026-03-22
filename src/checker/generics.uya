@@ -1,6 +1,96 @@
 // checker/generics.uya - 泛型单态化
 // 从 checker/main.uya 拆分
 
+const MONO_INSTANCE_INDEX_BITS: i32 = 10;
+const MONO_INSTANCE_INDEX_SIZE: i32 = 1024;
+const MONO_INSTANCE_INDEX_MASK: i32 = 1023;
+
+var g_mono_index_cached_checker: &TypeChecker = null;
+var g_mono_index_initialized: i32 = 0;
+var g_mono_index_heads: [i32: MONO_INSTANCE_INDEX_SIZE] = [];
+var g_mono_index_next: [i32: MAX_MONO_INSTANCES] = [];
+
+fn mono_instance_index_reset() void {
+    var i: i32 = 0;
+    while i < MONO_INSTANCE_INDEX_SIZE {
+        g_mono_index_heads[i] = 0;
+        i = i + 1;
+    }
+    i = 0;
+    while i < MAX_MONO_INSTANCES {
+        g_mono_index_next[i] = 0;
+        i = i + 1;
+    }
+    g_mono_index_cached_checker = null;
+    g_mono_index_initialized = 0;
+}
+
+fn mono_instance_index_slot(generic_name: &byte, is_function: i32) i32 {
+    var h: i32 = hash_string(generic_name);
+    if is_function != 0 {
+        h = h + 97;
+    }
+    return (h & MONO_INSTANCE_INDEX_MASK) as i32;
+}
+
+fn mono_instance_index_link(checker: &TypeChecker, idx: i32) void {
+    if checker == null || idx < 0 || idx >= checker.mono_instance_count || idx >= MAX_MONO_INSTANCES {
+        return;
+    }
+    const inst: &MonoInstance = &checker.mono_instances[idx];
+    if inst.generic_name == null {
+        return;
+    }
+    const slot: i32 = mono_instance_index_slot(inst.generic_name, inst.is_function);
+    g_mono_index_next[idx] = g_mono_index_heads[slot];
+    g_mono_index_heads[slot] = idx + 1;
+}
+
+fn mono_instance_index_ensure(checker: &TypeChecker) void {
+    if checker == null {
+        return;
+    }
+    if g_mono_index_initialized != 0 && g_mono_index_cached_checker == checker {
+        return;
+    }
+    mono_instance_index_reset();
+    g_mono_index_cached_checker = checker;
+    var i: i32 = 0;
+    while i < checker.mono_instance_count && i < MAX_MONO_INSTANCES {
+        mono_instance_index_link(checker, i);
+        i = i + 1;
+    }
+    g_mono_index_initialized = 1;
+}
+
+fn mono_instance_type_args_match(checker: &TypeChecker, inst: &MonoInstance,
+                                 type_arg_nodes: & & ASTNode, type_arg_count: i32) i32 {
+    if checker == null || inst == null || type_arg_nodes == null {
+        return 0;
+    }
+    var same_nodes: i32 = 1;
+    var j: i32 = 0;
+    while j < type_arg_count {
+        if inst.type_arg_nodes == null || inst.type_arg_nodes[j] != type_arg_nodes[j] {
+            same_nodes = 0;
+            break;
+        }
+        j = j + 1;
+    }
+    if same_nodes != 0 {
+        return 1;
+    }
+    j = 0;
+    while j < type_arg_count {
+        const arg_type: Type = type_from_ast(checker, type_arg_nodes[j]);
+        if inst.type_args == null || type_equals(copy_type(&inst.type_args[j]), copy_type(&arg_type)) == 0 {
+            return 0;
+        }
+        j = j + 1;
+    }
+    return 1;
+}
+
 // ===== 单态化实例注册 =====
 
 // 注册泛型单态化实例
@@ -10,33 +100,24 @@ fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
     if checker == null || generic_name == null || checker.mono_instance_count >= MAX_MONO_INSTANCES {
         return -1;
     }
+    mono_instance_index_ensure(checker);
     
     // 检查是否已存在相同实例
-    var i: i32 = 0;
-    const inst_count: i32 = checker.mono_instance_count;
-    while i < inst_count {
-        if i < MAX_MONO_INSTANCES {
-            const inst: &MonoInstance = &checker.mono_instances[i];
+    const slot: i32 = mono_instance_index_slot(generic_name, is_function);
+    var entry: i32 = g_mono_index_heads[slot];
+    while entry != 0 {
+        const current_idx: i32 = entry - 1;
+        if current_idx >= 0 && current_idx < checker.mono_instance_count && current_idx < MAX_MONO_INSTANCES {
+            const inst: &MonoInstance = &checker.mono_instances[current_idx];
             if inst.generic_name != null &&
                 str_equals(inst.generic_name, generic_name) != 0 &&
                 inst.is_function == is_function &&
-                inst.type_arg_count == type_arg_count {
-                // 比较类型实参
-                var is_match: i32 = 1;
-                var j: i32 = 0;
-                while j < type_arg_count && is_match != 0 {
-                    const arg_type: Type = type_from_ast(checker, type_arg_nodes[j]);
-                    if inst.type_args != null && type_equals(copy_type(&inst.type_args[j]), copy_type(&arg_type)) == 0 {
-                        is_match = 0;
-                    }
-                    j = j + 1;
-                }
-                if is_match != 0 {
-                    return 0;  // 已存在相同实例
-                }
+                inst.type_arg_count == type_arg_count &&
+                mono_instance_type_args_match(checker, inst, type_arg_nodes, type_arg_count) != 0 {
+                return 0;
             }
         }
-        i = i + 1;
+        entry = g_mono_index_next[current_idx];
     }
     
     // 注册新实例
@@ -98,6 +179,7 @@ fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
         }
         k = k + 1;
     }
+    mono_instance_index_link(checker, idx);
     
     return 0;
 }

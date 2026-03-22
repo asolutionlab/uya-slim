@@ -993,6 +993,57 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
 }
 
 // 类型检查主函数
+fn checker_update_project_root_from_fn_decl(checker: &TypeChecker, decl: &ASTNode) void {
+    if checker == null || decl == null || checker.project_root_dir != null ||
+        decl.type != ASTNodeType.AST_FN_DECL || decl.fn_decl_name == null ||
+        str_equals(decl.fn_decl_name, "main" as *byte) == 0 || decl.filename == null {
+        return;
+    }
+    const filename: &byte = decl.filename;
+    var last_slash: *byte = strrchr(filename as *byte, 47);
+    if last_slash == null {
+        last_slash = strrchr(filename as *byte, 92);
+    }
+    if last_slash != null {
+        const dir_len: usize = ptr_diff(last_slash, filename as *byte) as usize + 1;
+        const root_dir: &byte = arena_alloc(checker.arena, dir_len + 1) as &byte;
+        if root_dir == null {
+            return;
+        }
+        memcpy(root_dir as *void, filename as *void, dir_len);
+        root_dir[dir_len] = 0;
+        checker.project_root_dir = root_dir;
+        return;
+    }
+    const root_dir: &byte = arena_alloc(checker.arena, 1) as &byte;
+    if root_dir != null {
+        root_dir[0] = 0;
+        checker.project_root_dir = root_dir;
+    }
+}
+
+fn checker_prepass_top_level_decls(checker: &TypeChecker, ast: &ASTNode) i32 {
+    if checker == null || ast == null || ast.type != ASTNodeType.AST_PROGRAM {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < ast.program_decl_count {
+        const decl: &ASTNode = ast.program_decls[i];
+        if decl != null {
+            if decl.type == ASTNodeType.AST_FN_DECL {
+                if checker_register_fn_decl(checker, decl) == 0 {
+                    return 0;
+                }
+                checker_update_project_root_from_fn_decl(checker, decl);
+            } else if decl.type == ASTNodeType.AST_VAR_DECL {
+                checker_register_var_decl(checker, decl);
+            }
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
 // 实现两遍检查机制：
 // 第一遍：收集所有函数声明（解决函数循环依赖问题）
 // 第二遍：检查所有声明（包括函数体、结构体、变量等）
@@ -1003,60 +1054,9 @@ fn checker_check(checker: &TypeChecker, ast: &ASTNode) i32 {
     
     checker.program_node = ast;
     checker.error_count = 0;
-    
-    // 第一遍（1）：收集所有函数声明（只注册函数签名，不检查函数体）
-    // 同时识别包含 main 函数的文件并提取项目根目录
-    var i: i32 = 0;
-    while i < ast.program_decl_count {
-        const decl: &ASTNode = ast.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
-            if checker_register_fn_decl(checker, decl) == 0 {
-                return -1;  // 注册失败，返回错误
-            }
-            
-            // 识别包含 main 函数的文件，设置项目根目录
-            if checker.project_root_dir == null && 
-               decl.fn_decl_name != null && 
-               str_equals(decl.fn_decl_name, "main" as *byte) != 0 &&
-               decl.filename != null {
-                // 提取文件所在目录作为项目根目录
-                const filename: &byte = decl.filename;
-                var last_slash: *byte = strrchr(filename as *byte, 47);  // '/'
-                if last_slash == null {
-                    last_slash = strrchr(filename as *byte, 92);  // '\'
-                }
-                
-                if last_slash != null {
-                    // 分配内存存储目录路径（包括末尾的 '/'）
-                    const dir_len: usize = ptr_diff(last_slash, filename as *byte) as usize + 1;
-                    const root_dir: &byte = arena_alloc(checker.arena, dir_len + 1) as &byte;
-                    if root_dir != null {
-                        var root_dir_ptr: &byte = root_dir;
-                        memcpy(root_dir_ptr as *void, filename as *void, dir_len);
-                        root_dir_ptr[dir_len] = 0;  // '\0'
-                        checker.project_root_dir = root_dir;
-                    }
-                } else {
-                    // 文件在根目录，项目根目录为空字符串（表示当前目录）
-                    const root_dir: &byte = arena_alloc(checker.arena, 1) as &byte;
-                    if root_dir != null {
-                        var root_dir_ptr: &byte = root_dir;
-                        root_dir_ptr[0] = 0;  // '\0'
-                        checker.project_root_dir = root_dir;
-                    }
-                }
-            }
-        }
-        i = i + 1;
-    }
-    // 第一遍（2）：注册所有顶层变量，使函数体中的全局变量引用能正确解析
-    i = 0;
-    while i < ast.program_decl_count {
-        const decl: &ASTNode = ast.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_VAR_DECL {
-            checker_register_var_decl(checker, decl);
-        }
-        i = i + 1;
+    reset_program_lookup_caches();
+    if checker_prepass_top_level_decls(checker, ast) == 0 {
+        return -1;
     }
     
     // 模块系统：建立模块导出表（在检查之前）
@@ -1065,10 +1065,12 @@ fn checker_check(checker: &TypeChecker, ast: &ASTNode) i32 {
     // 宏展开：在类型检查前展开所有宏调用
     var ast_ptr: &ASTNode = ast;
     expand_macros_in_node_simple(checker, &ast_ptr);
+    checker.program_node = ast_ptr;
+    reset_program_lookup_caches();
     
     // 第二遍：检查所有声明（包括函数体、结构体、变量等）
     // 此时所有函数都已被注册，函数体中的函数调用可以正确解析
-    checker_check_node(checker, ast);
+    checker_check_node(checker, ast_ptr);
     
     // 模块系统：在所有 use 语句处理完后，检测循环依赖
     detect_circular_dependencies(checker);

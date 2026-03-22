@@ -2,6 +2,55 @@
 // 从 checker.uya 拆分
 // 类型定义在 types.uya 中
 
+fn checker_check_program_node(checker: &TypeChecker, node: &ASTNode) i32 {
+    if checker == null || node == null || node.type != ASTNodeType.AST_PROGRAM {
+        return 0;
+    }
+    const decl_bytes: usize = @size_of(&ASTNode) * (node.program_decl_count as usize);
+    const var_decls: & & ASTNode = arena_alloc(checker.arena, decl_bytes) as & & ASTNode;
+    const use_decls: & & ASTNode = arena_alloc(checker.arena, decl_bytes) as & & ASTNode;
+    const other_decls: & & ASTNode = arena_alloc(checker.arena, decl_bytes) as & & ASTNode;
+    if var_decls == null || use_decls == null || other_decls == null {
+        return 0;
+    }
+    var var_count: i32 = 0;
+    var use_count: i32 = 0;
+    var other_count: i32 = 0;
+    var i: i32 = 0;
+    while i < node.program_decl_count {
+        const decl: &ASTNode = node.program_decls[i];
+        if decl != null {
+            if decl.type == ASTNodeType.AST_VAR_DECL {
+                var_decls[var_count] = decl;
+                var_count = var_count + 1;
+            } else if decl.type == ASTNodeType.AST_USE_STMT {
+                use_decls[use_count] = decl;
+                use_count = use_count + 1;
+            } else {
+                other_decls[other_count] = decl;
+                other_count = other_count + 1;
+            }
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while i < var_count {
+        checker_check_node(checker, var_decls[i]);
+        i = i + 1;
+    }
+    i = 0;
+    while i < use_count {
+        checker_check_node(checker, use_decls[i]);
+        i = i + 1;
+    }
+    i = 0;
+    while i < other_count {
+        checker_check_node(checker, other_decls[i]);
+        i = i + 1;
+    }
+    return 1;
+}
+
 // 返回：1 表示检查通过，0 表示检查失败
 // 注意：这是一个简化版本，包含所有主要节点类型的检查
 fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
@@ -10,34 +59,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
     }
     
     if node.type == ASTNodeType.AST_PROGRAM {
-        // 第二遍：先检查所有顶层变量声明，使后续检查函数体时全局变量已在符号表中
-        var i: i32 = 0;
-        while i < node.program_decl_count {
-            const decl: &ASTNode = node.program_decls[i];
-            if decl != null && decl.type == ASTNodeType.AST_VAR_DECL {
-                checker_check_node(checker, decl);
-            }
-            i = i + 1;
-        }
-        // 先处理所有 use 语句，使导入的函数/项在检查函数体前已注册
-        i = 0;
-        while i < node.program_decl_count {
-            const decl: &ASTNode = node.program_decls[i];
-            if decl != null && decl.type == ASTNodeType.AST_USE_STMT {
-                checker_check_node(checker, decl);
-            }
-            i = i + 1;
-        }
-        // 再检查其余声明（结构体、枚举、函数等，不含 use）
-        i = 0;
-        while i < node.program_decl_count {
-            const decl: &ASTNode = node.program_decls[i];
-            if decl != null && decl.type != ASTNodeType.AST_VAR_DECL && decl.type != ASTNodeType.AST_USE_STMT {
-                checker_check_node(checker, decl);
-            }
-            i = i + 1;
-        }
-        return 1;
+        return checker_check_program_node(checker, node);
     } else if node.type == ASTNodeType.AST_INTERFACE_DECL {
         if checker.scope_level > 0 {
             checker_report_error(checker, node, "接口声明只能在顶层" as *byte);

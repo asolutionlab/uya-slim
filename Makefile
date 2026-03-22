@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted tests tests-hosted tests-uya outlibc c e clean check check-hosted backup restore release install help
+.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted bench-compile-stats tests tests-hosted tests-uya outlibc c e clean check check-hosted backup restore release install help
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -196,6 +196,10 @@ b-hosted: uya-hosted
 	@bash -c 'ulimit -s 32768 && cd src && CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e -b'
 	@echo ""
 	@echo "✓ hosted 自举验证完成"
+
+# 抓取编译器 CompileStats，便于对比 parse/check/codegen/total 耗时
+bench-compile-stats:
+	@bash scripts/bench_compile_stats.sh $(ARGS)
 
 # 运行测试：默认使用 tests/run_programs_parallel.sh 并行测试（可 -j N 控制线程数）
 # 默认 --hide-pass：不打印每条通过的 ✓，其余输出与直接跑脚本相同
@@ -518,6 +522,7 @@ help:
 	@echo "  make uya-safety    - 构建自举编译器（启用内存安全检查）"
 	@echo "  make b             - 自举验证：编译器编译自身，验证输出一致性"
 	@echo "  make b-hosted      - hosted 自举验证"
+	@echo "  make bench-compile-stats ARGS='--runs 3' - 抓取 CompileStats 基准数据"
 	@echo "  make tests         - 运行测试套件（默认并行；不打印每条通过的 ✓，其余输出不变）"
 	@echo "  make tests-hosted  - 运行 hosted 主测试集（同上，默认 --hide-pass）"
 	@echo "  make tests e       - 运行所有测试，最小输出（仅失败详情，等同脚本 -e）"
