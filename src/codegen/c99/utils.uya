@@ -14,6 +14,10 @@ extern fn fputc(c: i32, stream: *void) i32;
 extern fn fprintf(stream: *void, format: *byte, ...) i32;
 extern fn fputs(s: *byte, stream: *void) i32;
 extern fn fwrite(ptr: *void, size: usize, nmemb: usize, stream: *void) usize;
+extern fn rename(oldpath: *byte, newpath: *byte) i32;
+extern fn unlink(path: *byte) i32;
+extern fn fflush(stream: *void) i32;
+extern fn fread(ptr: *void, size: usize, nmemb: usize, stream: *void) usize;
 
 extern fn hash_string(str: &byte) i32;
 extern fn c99_ident_ref_cache_reset() void;
@@ -104,6 +108,12 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
             if part2_handle != null { fclose(part2_handle as *void); }
             return -1;
         }
+        var pj: i32 = 0;
+        while pj < 1023 && path2[pj] != 0 as byte {
+            codegen.split_part2_path[pj] = path2[pj];
+            pj = pj + 1;
+        }
+        codegen.split_part2_path[pj] = 0 as byte;
     } else {
         if out_file == null {
             return -1;
@@ -127,6 +137,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
         codegen.split_part2_out = null;
         codegen.split_body_started = 0;
         codegen.split_dir = null;
+        codegen.split_part2_path[0] = 0 as byte;
     }
     codegen.indent_level = 0;
     codegen.module_name = module_name;
@@ -370,13 +381,113 @@ export fn c99_split_begin_body(codegen: &C99CodeGenerator) void {
         return;
     }
     const p2: &void = codegen.split_part2_out;
-    fputs("\n/* --- uya_part2.c: 接续 uya_part1.c（由 Makefile cat 合并后再 gcc -c） */\n" as *byte, p2 as *void);
+    fputs("\n/* --- uya_part2.c: 与 uya_part1.c 分 TU 编译后链接（见 Makefile） */\n" as *byte, p2 as *void);
     fputc(10, p2 as *void);
     codegen.emit_stream = p2;
     codegen.split_body_started = 1;
 }
 
-// 生成 split 目录下的 Makefile（make -j 并行编译 uya_part*.c）
+// 在关闭 FILE 之前：将 uya_part2.c 重写为「全部字符串 extern + 原内容」，供 uya_part1.o + uya_part2.o 分编译
+export fn c99_split_finish_part2_externs(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.split_enabled == 0 || codegen.split_body_started == 0 {
+        return;
+    }
+    if codegen.split_part2_path[0] == 0 as byte {
+        return;
+    }
+    _ = fflush(codegen.output as *void);
+    _ = fflush(codegen.split_part2_out as *void);
+    _ = fclose(codegen.split_part2_out as *void);
+    codegen.split_part2_out = null;
+    var tmp_path: [byte: 1100] = [];
+    const tlen: i32 = snprintf(&tmp_path[0] as *byte, 1100, "%s.tmp" as *byte, &codegen.split_part2_path[0] as *byte);
+    if tlen <= 0 || tlen >= 1100 {
+        return;
+    }
+    const out_wr: *void = fopen(&tmp_path[0] as *byte, "wb" as *byte);
+    const in_rd: *void = fopen(&codegen.split_part2_path[0] as *byte, "rb" as *byte);
+    if out_wr == null || in_rd == null {
+        if out_wr != null { _ = fclose(out_wr as *void); }
+        if in_rd != null { _ = fclose(in_rd as *void); }
+        return;
+    }
+    fputs("// 与 uya_part1.c 中字符串符号链接；由 Uya 在分 TU 模式下自动生成\n" as *byte, out_wr as *void);
+    var si: i32 = 0;
+    while si < codegen.string_constant_count {
+        if codegen.string_constants[si].name != null {
+            fprintf(out_wr as *void, "extern const char %s[];\n" as *byte, codegen.string_constants[si].name as *byte);
+        }
+        si = si + 1;
+    }
+    fputc(10, out_wr as *void);
+    var copy_buf: [byte: 16384] = [];
+    var done: i32 = 0;
+    while done == 0 {
+        const nread: usize = fread(&copy_buf[0] as *void, 1 as usize, 16384 as usize, in_rd as *void);
+        if nread == 0 as usize {
+            done = 1;
+        } else {
+            _ = fwrite(&copy_buf[0] as *void, 1 as usize, nread, out_wr as *void);
+        }
+    }
+    _ = fclose(in_rd as *void);
+    _ = fclose(out_wr as *void);
+    _ = unlink(&codegen.split_part2_path[0] as *byte);
+    _ = rename(&tmp_path[0] as *byte, &codegen.split_part2_path[0] as *byte);
+}
+
+// 列出合并 AST 中各声明的 filename（去重），供按源文件镜像拆分时参考
+export fn c99_write_mirror_manifest(codegen: &C99CodeGenerator, program: &ASTNode) void {
+    if codegen == null || codegen.split_enabled == 0 || codegen.split_dir == null {
+        return;
+    }
+    if program == null || program.type != ASTNodeType.AST_PROGRAM {
+        return;
+    }
+    var mp: [byte: 1024] = [];
+    const mpl: i32 = snprintf(&mp[0] as *byte, 1024, "%s/mirror_manifest.txt" as *byte, codegen.split_dir as *byte);
+    if mpl <= 0 || mpl >= 1024 {
+        return;
+    }
+    const mf: *void = fopen(&mp[0] as *byte, "w" as *byte);
+    if mf == null {
+        return;
+    }
+    fputs("# 合并 AST 中出现的源文件路径（去重），一行一个；用于后续按目录镜像拆分为多 .c\n" as *byte, mf as *void);
+    var uniq: [[byte: 512]: 128] = [];
+    var uniq_count: i32 = 0;
+    var di: i32 = 0;
+    while di < program.program_decl_count {
+        const decl: &ASTNode = program.program_decls[di];
+        if decl != null && decl.filename != null {
+            const fnm: &byte = decl.filename;
+            var found: i32 = 0;
+            var u: i32 = 0;
+            while u < uniq_count {
+                if strcmp(&uniq[u][0] as *byte, fnm as *byte) == 0 {
+                    found = 1;
+                    u = uniq_count;
+                }
+                u = u + 1;
+            }
+            if found == 0 && uniq_count < 128 {
+                var z: i32 = 0;
+                while z < 511 && fnm[z] != 0 as byte {
+                    uniq[uniq_count][z] = fnm[z];
+                    z = z + 1;
+                }
+                uniq[uniq_count][z] = 0 as byte;
+                fputs(&uniq[uniq_count][0] as *byte, mf as *void);
+                fputc(10, mf as *void);
+                uniq_count = uniq_count + 1;
+            }
+        }
+        di = di + 1;
+    }
+    _ = fclose(mf as *void);
+}
+
+// 生成 split 目录下的 Makefile（make -j 并行编译 uya_part1.o + uya_part2.o）
 export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.split_enabled == 0 || codegen.split_dir == null {
         return;
@@ -392,14 +503,13 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
     }
     fputs("# Generated by Uya --split-c-dir\n" as *byte, mf);
     fputs("CC ?= cc\nCFLAGS ?= -std=c99 -Wall -Wextra -pedantic -g\nLDFLAGS ?=\n" as *byte, mf);
-    fputs("MERGED := uya_split_all.c\n" as *byte, mf);
-    fputs("OBJS := uya_split_all.o\n" as *byte, mf);
+    fputs("OBJS := uya_part1.o uya_part2.o\n" as *byte, mf);
     fputs(".PHONY: all clean\n" as *byte, mf);
     fputs("all: $(UYA_OUT)\n" as *byte, mf);
     fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)\n" as *byte, mf);
-    fputs("$(MERGED): uya_part1.c uya_part2.c\n\tcat uya_part1.c uya_part2.c > $(MERGED)\n" as *byte, mf);
-    fputs("uya_split_all.o: $(MERGED)\n\t$(CC) -c $(CFLAGS) $(MERGED) -o uya_split_all.o\n" as *byte, mf);
-    fputs("clean:\n\trm -f $(MERGED) $(OBJS) $(UYA_OUT)\n" as *byte, mf);
+    fputs("uya_part1.o: uya_part1.c\n\t$(CC) -c $(CFLAGS) uya_part1.c -o uya_part1.o\n" as *byte, mf);
+    fputs("uya_part2.o: uya_part2.c\n\t$(CC) -c $(CFLAGS) uya_part2.c -o uya_part2.o\n" as *byte, mf);
+    fputs("clean:\n\trm -f $(OBJS) $(UYA_OUT)\n" as *byte, mf);
     _ = fclose(mf);
 }
 

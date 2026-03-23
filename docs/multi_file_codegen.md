@@ -4,7 +4,11 @@
 
 在 C99 后端将生成代码拆成 **`uya_part1.c`**（前导、头文件与依赖、`const char` 字符串池）与 **`uya_part2.c`**（其余生成代码），并在输出目录写入 **`Makefile`**。
 
-链接前用 **`cat uya_part1.c uya_part2.c > uya_split_all.c`** 合并为**与单文件模式顺序一致**的翻译单元，再 **`gcc -c uya_split_all.c`** 与链接。这样可保留两份源码便于阅读/增量，同时避免多 TU 下 `static`/前向声明顺序问题；真正的「多路 `gcc -c` 并行」需后续引入共享头或按 `.uya` 镜像拆分。
+**链接**：分别 **`gcc -c uya_part1.c`**、**`gcc -c uya_part2.c`** 得到 **`uya_part1.o`**、**`uya_part2.o`**，再链接为可执行文件。生成结束后会将 **`uya_part2.c` 重写**为在文件开头插入对 part1 中全部字符串符号的 **`extern`** 声明（与延迟追加到 part1 的字符串常量一致），便于两个翻译单元独立编译。
+
+**`make -j`**：Makefile 中 **`uya_part1.o`** 与 **`uya_part2.o`** 为两条独立规则，可与其它目标并行（并行度由 **`UYA_GCC_JOBS`** 等控制）。
+
+**`mirror_manifest.txt`**：同一目录下写入合并 AST 中各声明的 **`filename`**（去重，一行一个），供后续实现「按源 `.uya` 目录镜像」多 `.c` 时参考；当前 **尚未** 把函数体按文件拆到多个 `.c`（需 codegen 按 `filename` 切换输出流 + 共享头）。
 
 默认单文件 `uya.c` / 单条 `gcc` 路径不变；仅当指定本选项时启用上述多文件路径。
 
@@ -18,7 +22,7 @@ uya build <输入.uya ...> --split-c-dir <目录> -o <可执行文件> --c99
 export UYA_SPLIT_C_DIR=/path/to/uyacache
 ```
 
-- **`<目录>`**：将创建/使用 `uya_part1.c`、`uya_part2.c`、`Makefile`。
+- **`<目录>`**：将创建/使用 `uya_part1.c`、`uya_part2.c`、`Makefile`，以及 **`mirror_manifest.txt`**（声明路径清单）。
 - **`-o`**：最终可执行文件路径，传给 `make UYA_OUT=...`。
 - **并行度**：`make -j` 的任务数由环境变量 **`UYA_GCC_JOBS`** 控制（默认在实现中为 `4`，若未设置）。
 

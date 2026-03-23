@@ -2948,6 +2948,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             prof_simd_ms, prof_ms_precollect, prof_ms_header, prof_ms_step1_typedef, prof_ms_step6_mid, prof_ms_step6e_tail, prof_ms_prelude, body_ms, total_ms);
     }
     
+    c99_split_finish_part2_externs(codegen);
+    c99_write_mirror_manifest(codegen, ast);
     c99_write_split_makefile(codegen);
     return 0;
 }

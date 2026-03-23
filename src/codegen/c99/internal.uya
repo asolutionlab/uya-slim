@@ -321,7 +321,9 @@ struct C99CodeGenerator {
     split_enabled: i32,
     split_part2_out: &void,
     split_body_started: i32,
-    split_dir: &byte
+    split_dir: &byte,
+    // uya_part2.c 磁盘路径（用于分 TU 链接前插入 extern 字符串声明）
+    split_part2_path: [byte: 1024]
 }
 
 // ===== 函数声明 =====
