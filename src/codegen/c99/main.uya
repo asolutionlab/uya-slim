@@ -1122,6 +1122,16 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     var prof_t0: clock_t = 0;
     var prof_simd_ms: i64 = 0;
     var prof_ms_prelude: i64 = 0;
+    var prof_ms_precollect: i64 = 0;
+    var prof_ms_header: i64 = 0;
+    var prof_ms_step1_typedef: i64 = 0;
+    var prof_ms_step6_mid: i64 = 0;
+    var prof_ms_step6e_tail: i64 = 0;
+    var t_precollect_start: clock_t = 0;
+    var t_mk1: clock_t = 0;
+    var t_mk2: clock_t = 0;
+    var t_mk3: clock_t = 0;
+    var t_mk4: clock_t = 0;
     if prof_codegen != 0 {
         prof_t0 = clock();
     }
@@ -1171,6 +1181,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     }
 
     const decl_count: i32 = ast.program_decl_count;
+    if prof_codegen != 0 {
+        t_precollect_start = clock();
+    }
     var precollect_i: i32 = 0;
     while precollect_i < decl_count {
         const decl: &ASTNode = ast.program_decls[precollect_i];
@@ -1178,6 +1191,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             precollect_codegen_decl(codegen, decl, (is_std_lib == 0) as i32);
         }
         precollect_i = precollect_i + 1;
+    }
+    if prof_codegen != 0 {
+        t_mk1 = clock();
+        prof_ms_precollect = ((t_mk1 as i64) - (t_precollect_start as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
     }
 
     if is_std_lib != 0 {
@@ -1481,6 +1498,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("struct err_union_void { uint32_t error_id; };\n" as *byte, codegen.output as *void);
     mark_struct_defined(codegen, ("err_union_void" as *byte) as &byte);
     c99_emit_newline(codegen);
+    if prof_codegen != 0 {
+        t_mk2 = clock();
+        prof_ms_header = ((t_mk2 as i64) - (t_mk1 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
+    }
     
     // 第一步：输出预收集阶段得到的字符串常量定义（在所有其他代码之前）
     var i: i32 = 0;
@@ -1624,6 +1645,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         i = i + 1;
     }
     c99_emit_newline(codegen);
+    if prof_codegen != 0 {
+        t_mk3 = clock();
+        prof_ms_step1_typedef = ((t_mk3 as i64) - (t_mk2 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
+    }
     
     // 第六步 a：切片/SIMD/err_union 类型已在统一预收集阶段完成
     // 第六步 b：生成切片结构体（&[T] -> struct uya_slice_X），必须在用户结构体之前
@@ -2052,6 +2077,10 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("#error \"@syscall C99 backend: supported Linux targets are x86-64, AArch64, and ARM32 EABI. Other OS/arch need a backend.\"\n" as *byte, codegen.output as *void);
         fputs("#endif\n\n" as *byte, codegen.output as *void);
     }
+    if prof_codegen != 0 {
+        t_mk4 = clock();
+        prof_ms_step6_mid = ((t_mk4 as i64) - (t_mk3 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
+    }
     
     // 第六步 e：收集所有单态化函数和方法返回类型的错误联合结构体
     // 必须在生成单态化函数原型之前收集
@@ -2279,6 +2308,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     if prof_codegen != 0 {
         const t_prelude_end: clock_t = clock();
         prof_ms_prelude = ((t_prelude_end as i64) - (prof_t0 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
+        prof_ms_step6e_tail = ((t_prelude_end as i64) - (t_mk4 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
     }
     
     // 第七步：生成所有函数的前向声明（解决相互递归调用）
@@ -2913,7 +2943,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         if body_ms < 0 {
             body_ms = 0;
         }
-        fprintf(libc.stderr, "[UYA_PROFILE_CODEGEN] simd_ms=%ld prelude_ms=%ld body_ms=%ld total_ms=%ld\n" as *byte, prof_simd_ms, prof_ms_prelude, body_ms, total_ms);
+        fprintf(libc.stderr, "[UYA_PROFILE_CODEGEN] simd_ms=%ld precollect_ms=%ld header_ms=%ld step1_typedef_ms=%ld step6_mid_ms=%ld step6e_tail_ms=%ld prelude_ms=%ld body_ms=%ld total_ms=%ld\n" as *byte,
+            prof_simd_ms, prof_ms_precollect, prof_ms_header, prof_ms_step1_typedef, prof_ms_step6_mid, prof_ms_step6e_tail, prof_ms_prelude, body_ms, total_ms);
     }
     
     return 0;

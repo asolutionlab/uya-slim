@@ -6,6 +6,67 @@
 
 // ===== 外部函数声明 =====
 // C 标准库函数（在 extern_decls.uya 中声明）
+extern fn hash_string(str: &byte) i32;
+
+// get_c_name_for_identifier_ref 缓存：与 lookup_identifier_type_c_impl 相同的上下文键 + async 字段
+const C99_IDENT_REF_CACHE_SIZE: i32 = 4096;
+const C99_IDENT_REF_CACHE_MASK: i32 = 4095;
+
+var g_c99_ident_ref_cached_codegen: &C99CodeGenerator = null;
+var g_c99_ident_ref_keys: [&byte: C99_IDENT_REF_CACHE_SIZE] = [];
+var g_c99_ident_ref_values: [&byte: C99_IDENT_REF_CACHE_SIZE] = [];
+var g_c99_ident_ref_functions: [&ASTNode: C99_IDENT_REF_CACHE_SIZE] = [];
+var g_c99_ident_ref_local_counts: [i32: C99_IDENT_REF_CACHE_SIZE] = [];
+var g_c99_ident_ref_global_counts: [i32: C99_IDENT_REF_CACHE_SIZE] = [];
+var g_c99_ident_ref_method_structs: [&byte: C99_IDENT_REF_CACHE_SIZE] = [];
+var g_c99_ident_ref_async_sv: [&byte: C99_IDENT_REF_CACHE_SIZE] = [];
+var g_c99_ident_ref_async_pc: [i32: C99_IDENT_REF_CACHE_SIZE] = [];
+var g_c99_ident_ref_async_bc: [i32: C99_IDENT_REF_CACHE_SIZE] = [];
+var g_c99_ident_ref_async_loop: [&byte: C99_IDENT_REF_CACHE_SIZE] = [];
+
+export fn c99_ident_ref_cache_reset() void {
+    var i: i32 = 0;
+    while i < C99_IDENT_REF_CACHE_SIZE {
+        g_c99_ident_ref_keys[i] = null;
+        g_c99_ident_ref_values[i] = null;
+        g_c99_ident_ref_functions[i] = null;
+        g_c99_ident_ref_local_counts[i] = 0;
+        g_c99_ident_ref_global_counts[i] = 0;
+        g_c99_ident_ref_method_structs[i] = null;
+        g_c99_ident_ref_async_sv[i] = null;
+        g_c99_ident_ref_async_pc[i] = 0;
+        g_c99_ident_ref_async_bc[i] = 0;
+        g_c99_ident_ref_async_loop[i] = null;
+        i = i + 1;
+    }
+    g_c99_ident_ref_cached_codegen = null;
+}
+
+fn c99_ident_ref_cache_ensure(codegen: &C99CodeGenerator) void {
+    if codegen == null {
+        return;
+    }
+    if g_c99_ident_ref_cached_codegen == codegen {
+        return;
+    }
+    c99_ident_ref_cache_reset();
+    g_c99_ident_ref_cached_codegen = codegen;
+}
+
+fn c99_ident_ref_cache_slot(codegen: &C99CodeGenerator, name: &byte) i32 {
+    var h: i32 = hash_string(name);
+    if codegen != null && codegen.current_function_decl != null {
+        h = h + ((@usize_from_ptr(codegen.current_function_decl as &void) & 65535usize) as i32);
+    }
+    if codegen != null {
+        h = h + (codegen.local_variable_count * 17);
+        h = h + (codegen.global_variable_count * 29);
+        if codegen.current_method_struct_name != null {
+            h = h + (hash_string(codegen.current_method_struct_name) * 37);
+        }
+    }
+    return (h & C99_IDENT_REF_CACHE_MASK) as i32;
+}
 
 fn gen_global_init_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
     if expr == null {
@@ -220,14 +281,47 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
             bi = bi + 1;
         }
     }
+    c99_ident_ref_cache_ensure(codegen);
+    const slot: i32 = c99_ident_ref_cache_slot(codegen, name);
+    if g_c99_ident_ref_keys[slot] != null &&
+        strcmp(g_c99_ident_ref_keys[slot] as *byte, name as *byte) == 0 &&
+        g_c99_ident_ref_functions[slot] == codegen.current_function_decl &&
+        g_c99_ident_ref_local_counts[slot] == codegen.local_variable_count &&
+        g_c99_ident_ref_global_counts[slot] == codegen.global_variable_count &&
+        (g_c99_ident_ref_method_structs[slot] == codegen.current_method_struct_name ||
+            (g_c99_ident_ref_method_structs[slot] != null && codegen.current_method_struct_name != null &&
+                strcmp(g_c99_ident_ref_method_structs[slot] as *byte, codegen.current_method_struct_name as *byte) == 0)) &&
+        g_c99_ident_ref_async_sv[slot] == codegen.async_state_var &&
+        g_c99_ident_ref_async_pc[slot] == codegen.async_param_count &&
+        g_c99_ident_ref_async_bc[slot] == codegen.async_bind_count &&
+        (g_c99_ident_ref_async_loop[slot] == codegen.async_loop_var_name ||
+            (g_c99_ident_ref_async_loop[slot] != null && codegen.async_loop_var_name != null &&
+                strcmp(g_c99_ident_ref_async_loop[slot] as *byte, codegen.async_loop_var_name as *byte) == 0)) {
+        return g_c99_ident_ref_values[slot];
+    }
     var i: i32 = 0;
+    var result: &byte = null;
     while i < codegen.global_variable_count {
         if global_var_name_matches(codegen, i, name) != 0 {
-            return codegen.global_variables[i].name;
+            result = codegen.global_variables[i].name;
+            break;
         }
         i = i + 1;
     }
-    return get_safe_c_identifier(codegen, name);
+    if result == null {
+        result = get_safe_c_identifier(codegen, name);
+    }
+    g_c99_ident_ref_keys[slot] = name;
+    g_c99_ident_ref_values[slot] = result;
+    g_c99_ident_ref_functions[slot] = codegen.current_function_decl;
+    g_c99_ident_ref_local_counts[slot] = codegen.local_variable_count;
+    g_c99_ident_ref_global_counts[slot] = codegen.global_variable_count;
+    g_c99_ident_ref_method_structs[slot] = codegen.current_method_struct_name;
+    g_c99_ident_ref_async_sv[slot] = codegen.async_state_var;
+    g_c99_ident_ref_async_pc[slot] = codegen.async_param_count;
+    g_c99_ident_ref_async_bc[slot] = codegen.async_bind_count;
+    g_c99_ident_ref_async_loop[slot] = codegen.async_loop_var_name;
+    return result;
 }
 
 // 生成 extern 变量声明

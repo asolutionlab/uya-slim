@@ -56,9 +56,10 @@ const C99_STRING_INTERP_LIMIT: i32 = 2046;
 const C99_SUFFIX_BUF_SIZE: i32 = 512;
 
 // 声明缓存哈希表大小（应为 2 的幂以便用 & mask 取模）
-const C99_DECL_CACHE_BITS: i32 = 10;         // 1024 个槽
-const C99_DECL_CACHE_SIZE: i32 = 1024;       // 哈希表槽数
-const C99_DECL_CACHE_MASK: i32 = 1023;       // mask = SIZE - 1
+// 4096 槽：降低自举等大程序中 find_*_c99 哈希冲突后的线性扫描代价
+const C99_DECL_CACHE_BITS: i32 = 12;         // 4096 个槽
+const C99_DECL_CACHE_SIZE: i32 = 4096;       // 哈希表槽数
+const C99_DECL_CACHE_MASK: i32 = 4095;       // mask = SIZE - 1
 
 // ===== 类型定义 =====
 

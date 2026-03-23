@@ -6,6 +6,7 @@
 
 // ===== 外部函数声明 =====
 // C 标准库函数（在 extern_decls.uya 中声明）
+extern fn c99_ident_ref_cache_reset() void;
 
 // 方法参数类型映射：将 Self 替换为 struct_name，用于生成结构体方法签名
 fn c99_type_to_c_with_self(codegen: &C99CodeGenerator, type_node: &ASTNode, self_struct_name: &byte) &byte {
@@ -7179,6 +7180,7 @@ fn c99_identifier_type_cache_reset() void {
         i = i + 1;
     }
     g_c99_identifier_type_cached_codegen = null;
+    c99_ident_ref_cache_reset();
 }
 
 fn c99_identifier_type_cache_ensure(codegen: &C99CodeGenerator) void {
