@@ -38,8 +38,8 @@ export extern "libc" fn memmove(dest: *byte, src: *const byte, n: usize) *byte {
     if dest == null || src == null || n == 0 {
         return dest;
     }
-    // 检查是否重叠
-    if dest < src as *byte {
+    // 检查是否重叠（用整数地址比较，避免 void* 与 uint8_t* 直接比较触发 GCC -Werror）
+    if @usize_from_ptr(dest as &void) < @usize_from_ptr(src as &void) {
         // 从前往后复制
         var i: usize = 0;
         while i < n {

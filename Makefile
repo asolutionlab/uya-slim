@@ -25,7 +25,7 @@ endif
 CC_TARGET_FLAGS ?=
 
 # 编译选项（可通过环境变量覆盖）
-CFLAGS ?= -std=c99 -O0 -g -fno-builtin
+CFLAGS ?= -std=c99 -O0 -g -fno-builtin -Werror
 LDFLAGS ?=
 
 # 安装路径（install 目标）
@@ -510,8 +510,8 @@ help:
 	@echo "  LDFLAGS  = $(LDFLAGS)"
 	@echo ""
 	@echo "用法示例:"
-	@echo "  CFLAGS='-std=c99 -O0 -g' make from-c    # 使用调试选项构建"
-	@echo "  CFLAGS='-std=c99 -O2' make uya          # 使用 O2 优化构建"
+	@echo "  CFLAGS='-std=c99 -O0 -g -fno-builtin' make from-c    # 覆盖默认（默认含 -Werror）"
+	@echo "  CFLAGS='-std=c99 -O2 -fno-builtin -Werror' make uya   # 使用 O2 优化构建"
 	@echo "  TOOLCHAIN=zig ZIG=$(ZIG) make uya-hosted # 使用 zig cc hosted 构建"
 	@echo ""
 	@echo "可用目标:"

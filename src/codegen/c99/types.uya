@@ -7250,7 +7250,7 @@ fn get_atomic_inner_type_c(codegen: &C99CodeGenerator, type_c: &byte) &byte {
     if type_c == null {
         return null;
     }
-    if strstr(type_c as *byte, "_Atomic(" as *byte) != type_c as *byte {
+    if (strstr(type_c as *byte, "_Atomic(" as *byte) as *void) != (type_c as *void) {
         return null;
     }
     const inner_start: &byte = (type_c as &byte) + 8;
