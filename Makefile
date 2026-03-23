@@ -320,12 +320,12 @@ check: b
 		exit 1; \
 	fi; \
 	echo ""; \
-	echo "验证函数可达性裁剪..."; \
+	echo "验证默认顶层函数发射..."; \
 	./tests/verify_function_reachability_codegen.sh > /tmp/verify_out.txt 2>&1 && \
 		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ 函数可达性裁剪验证失败"; \
+		echo "✗ 默认顶层函数发射验证失败"; \
 		exit 1; \
 	fi; \
 	echo ""; \
@@ -373,7 +373,7 @@ check: b
 	fi; \
 	rm -f /tmp/make_check_output.txt /tmp/verify_out.txt; \
 	echo ""; \
-	echo "✓ 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪 + SIMD select C + @syscall C99 + SIMD NEON）"
+	echo "✓ 验证通过（自举 + 测试 + 证明优化 + 默认顶层函数发射 + SIMD select C + @syscall C99 + SIMD NEON）"
 
 # hosted 验证：普通链接自举 + 主测试 + 证明优化
 check-hosted: b-hosted
@@ -396,11 +396,11 @@ check-hosted: b-hosted
 		exit 1; \
 	fi
 	@echo ""
-	@echo "验证函数可达性裁剪..."
+	@echo "验证默认顶层函数发射..."
 	@./tests/verify_function_reachability_codegen.sh; \
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ 函数可达性裁剪验证失败"; \
+		echo "✗ 默认顶层函数发射验证失败"; \
 		exit 1; \
 	fi
 	@echo ""
@@ -428,7 +428,7 @@ check-hosted: b-hosted
 		exit 1; \
 	fi
 	@echo ""
-	@echo "✓ hosted 验证通过（自举 + 测试 + 证明优化 + 函数可达性裁剪 + SIMD select C + @syscall C99 + SIMD NEON）"
+	@echo "✓ hosted 验证通过（自举 + 测试 + 证明优化 + 默认顶层函数发射 + SIMD select C + @syscall C99 + SIMD NEON）"
 
 # 备份（依赖 check 通过）
 backup: check

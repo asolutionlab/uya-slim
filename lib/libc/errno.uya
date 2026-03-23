@@ -2,6 +2,8 @@
 // 版本：v0.4.0
 // 说明：C 标准库错误处理函数，零外部依赖
 
+use libc.write_bytes_fd;
+
 // ============================================================
 // 错误码常量（参考 musl arch/generic/bits/errno.h）
 // ============================================================
@@ -310,9 +312,7 @@ export extern "libc" fn strerror(errnum: i32) &byte {
 // perror - 输出错误信息到 stderr
 // ============================================================
 
-// 使用 write_bytes_fd 直接写入文件描述符 2（stderr）
-// 注意：参数顺序是 buf, n, fd
-extern fn write_bytes_fd(buf: &const byte, n: usize, fd: i64) i64;
+// 使用 write_bytes_fd 直接写入文件描述符 2（stderr）（实现见 libc.stdio）
 
 // 辅助函数：计算字符串长度
 fn _errno_strlen(s: &byte) usize {

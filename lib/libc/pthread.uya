@@ -14,11 +14,13 @@ use libc.FUTEX_WAKE;
 use libc.gettimeofday;
 use libc.sched_setaffinity;
 use libc.sched_getaffinity;
+use libc.sys_exit;
+use libc.sys_waitpid;
+use libc.sys_getpid;
 
-// 前向声明：使用 libc.stdlib 的 malloc/free 与 libc.syscall 的 sys_exit
+// 前向声明：使用 libc.stdlib 的 malloc/free（sys_* 由 use libc 导入）
 extern fn malloc(size: usize) &void;
 extern fn free(ptr: &void) void;
-extern "libc" fn sys_exit(status: i32) void;
 
 // GCC/Clang 内建：原子 CAS，用于 mutex（零库依赖）
 extern "libc" fn __atomic_compare_exchange_n(ptr: &i32, expected: &i32, desired: i32, weak: i32, success_mem: i32, failure_mem: i32) i32;
@@ -249,7 +251,6 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
 // 说明：
 // - 当前忽略 retval，仅等待线程退出并回收其栈内存
 // - 分离线程不能 join
-extern "libc" fn sys_waitpid(pid: i32, status: &i32, options: i32) !i32;
 
 export extern "libc" fn pthread_join(thread: &pthread_t, retval: & &void) i32 {
     _ = retval;
@@ -508,7 +509,6 @@ export extern "libc" fn pthread_mutex_timedlock(mutex: &pthread_mutex_t, abstime
 
 // pthread_self - 获取当前线程 ID
 // 使用 SYS_getpid（当前 clone 实现创建的是进程，与 fork 类似）
-extern "libc" fn sys_getpid() !i64;
 
 export extern "libc" fn pthread_self() pthread_t {
     const tid: !i64 = sys_getpid();

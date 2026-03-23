@@ -827,35 +827,6 @@ fn mark_mono_instances_reachable_by_name(codegen: &C99CodeGenerator, generic_nam
     }
 }
 
-fn module_name_matches_filename_prefix(codegen: &C99CodeGenerator, module_name: &byte, filename: &byte) i32 {
-    if codegen == null || module_name == null || filename == null {
-        return 0;
-    }
-    const decl_prefix: &byte = get_module_prefix_from_filename(codegen, filename);
-    if decl_prefix == null || decl_prefix[0] == 0 {
-        return 0;
-    }
-    var expected_prefix: [byte: NAME_BUF_SIZE] = [];
-    var pos: i32 = 0;
-    var p: &byte = module_name;
-    while p[0] != 0 && pos < NAME_BUF_SIZE - 2 {
-        if p[0] == 46 {
-            expected_prefix[pos] = 95;
-        } else {
-            expected_prefix[pos] = p[0];
-        }
-        pos = pos + 1;
-        p = p + 1;
-    }
-    if pos >= NAME_BUF_SIZE - 1 {
-        return 0;
-    }
-    expected_prefix[pos] = 95;
-    pos = pos + 1;
-    expected_prefix[pos] = 0;
-    return (strcmp(&expected_prefix[0] as *byte, decl_prefix as *byte) == 0) as i32;
-}
-
 fn is_library_source_file(filename: &byte) i32 {
     if filename == null {
         return 0;
@@ -867,25 +838,6 @@ fn is_library_source_file(filename: &byte) i32 {
         return 1;
     }
     return 0;
-}
-
-fn find_function_decl_for_module_call_c99(codegen: &C99CodeGenerator, module_name: &byte, func_name: &byte) &ASTNode {
-    if codegen == null || module_name == null || func_name == null || codegen.program_node == null {
-        return null;
-    }
-    var i: i32 = 0;
-    while i < codegen.program_node.program_decl_count {
-        const decl: &ASTNode = codegen.program_node.program_decls[i];
-        if decl != null && decl.type == ASTNodeType.AST_FN_DECL &&
-            decl.fn_decl_name != null &&
-            strcmp(decl.fn_decl_name as *byte, func_name as *byte) == 0 &&
-            decl.filename != null &&
-            module_name_matches_filename_prefix(codegen, module_name, decl.filename) != 0 {
-            return decl;
-        }
-        i = i + 1;
-    }
-    return find_function_decl_c99(codegen, func_name);
 }
 
 fn mark_top_level_function_reachable(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
@@ -902,212 +854,6 @@ fn mark_top_level_function_reachable(codegen: &C99CodeGenerator, fn_decl: &ASTNo
     codegen.reachable_function_decl_count = codegen.reachable_function_decl_count + 1;
     if fn_decl.fn_decl_type_param_count > 0 {
         mark_mono_instances_reachable_by_name(codegen, fn_decl.fn_decl_name, -1);
-    }
-    if fn_decl.fn_decl_body != null {
-        const saved_decl: &ASTNode = codegen.current_function_decl;
-        const saved_return_type: &ASTNode = codegen.current_function_return_type;
-        const saved_type_params: &TypeParam = codegen.current_type_params;
-        const saved_type_param_count: i32 = codegen.current_type_param_count;
-        const saved_type_args: & & ASTNode = codegen.current_type_args;
-        const saved_type_arg_count: i32 = codegen.current_type_arg_count;
-
-        codegen.current_function_decl = fn_decl;
-        codegen.current_function_return_type = fn_decl.fn_decl_return_type;
-        codegen.current_type_params = fn_decl.fn_decl_type_params;
-        codegen.current_type_param_count = fn_decl.fn_decl_type_param_count;
-        codegen.current_type_args = null;
-        codegen.current_type_arg_count = 0;
-        collect_reachable_top_level_functions_from_node(codegen, fn_decl.fn_decl_body);
-
-        codegen.current_function_decl = saved_decl;
-        codegen.current_function_return_type = saved_return_type;
-        codegen.current_type_params = saved_type_params;
-        codegen.current_type_param_count = saved_type_param_count;
-        codegen.current_type_args = saved_type_args;
-        codegen.current_type_arg_count = saved_type_arg_count;
-    }
-}
-
-fn mark_reachable_call_target(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_arg_count: i32) void {
-    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
-        return;
-    }
-    if fn_decl.fn_decl_type_param_count > 0 {
-        if type_arg_count > 0 {
-            mark_mono_instances_reachable_by_name(codegen, fn_decl.fn_decl_name, type_arg_count);
-        } else {
-            mark_mono_instances_reachable_by_name(codegen, fn_decl.fn_decl_name, -1);
-        }
-    }
-    mark_top_level_function_reachable(codegen, fn_decl);
-}
-
-fn collect_reachable_top_level_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
-    if codegen == null || node == null {
-        return;
-    }
-
-    if node.type == ASTNodeType.AST_CALL_EXPR {
-        const callee: &ASTNode = node.call_expr_callee;
-        if callee != null {
-            if callee.type == ASTNodeType.AST_IDENTIFIER && callee.identifier_name != null {
-                var fn_decl: &ASTNode = null;
-                if node.call_expr_type_arg_count > 0 && node.call_expr_type_args != null {
-                    fn_decl = find_generic_fn_decl_for_mono_call(codegen, callee.identifier_name, node.call_expr_type_arg_count);
-                }
-                if fn_decl == null {
-                    fn_decl = find_function_decl_c99(codegen, callee.identifier_name);
-                }
-                mark_reachable_call_target(codegen, fn_decl, node.call_expr_type_arg_count);
-            } else if callee.type == ASTNodeType.AST_MEMBER_ACCESS && callee.member_access_field_name != null &&
-                callee.member_access_is_module_access != 0 {
-                const fn_decl: &ASTNode = find_function_decl_for_module_call_c99(codegen,
-                    callee.member_access_module_name,
-                    callee.member_access_field_name);
-                mark_reachable_call_target(codegen, fn_decl, node.call_expr_type_arg_count);
-            }
-            collect_reachable_top_level_functions_from_node(codegen, callee);
-        }
-        if node.call_expr_args != null {
-            var i: i32 = 0;
-            while i < node.call_expr_arg_count {
-                collect_reachable_top_level_functions_from_node(codegen, node.call_expr_args[i]);
-                i = i + 1;
-            }
-        }
-        return;
-    }
-
-    if node.type == ASTNodeType.AST_IDENTIFIER && node.identifier_name != null {
-        const fn_decl: &ASTNode = find_function_decl_c99(codegen, node.identifier_name);
-        if fn_decl != null {
-            mark_reachable_call_target(codegen, fn_decl, -1);
-        }
-        return;
-    }
-
-    if node.type == ASTNodeType.AST_MEMBER_ACCESS &&
-        node.member_access_is_module_access != 0 &&
-        node.member_access_field_name != null {
-        const fn_decl: &ASTNode = find_function_decl_for_module_call_c99(codegen,
-            node.member_access_module_name,
-            node.member_access_field_name);
-        if fn_decl != null {
-            mark_reachable_call_target(codegen, fn_decl, -1);
-        }
-        return;
-    }
-
-    if node.type == ASTNodeType.AST_PROGRAM && node.program_decls != null {
-        var i: i32 = 0;
-        while i < node.program_decl_count {
-            collect_reachable_top_level_functions_from_node(codegen, node.program_decls[i]);
-            i = i + 1;
-        }
-    } else if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
-        var i: i32 = 0;
-        while i < node.block_stmt_count {
-            collect_reachable_top_level_functions_from_node(codegen, node.block_stmts[i]);
-            i = i + 1;
-        }
-    } else if node.type == ASTNodeType.AST_IF_STMT {
-        collect_reachable_top_level_functions_from_node(codegen, node.if_stmt_condition);
-        collect_reachable_top_level_functions_from_node(codegen, node.if_stmt_then_branch);
-        collect_reachable_top_level_functions_from_node(codegen, node.if_stmt_else_branch);
-    } else if node.type == ASTNodeType.AST_WHILE_STMT {
-        collect_reachable_top_level_functions_from_node(codegen, node.while_stmt_condition);
-        collect_reachable_top_level_functions_from_node(codegen, node.while_stmt_body);
-    } else if node.type == ASTNodeType.AST_FOR_STMT {
-        collect_reachable_top_level_functions_from_node(codegen, node.for_stmt_range_start);
-        collect_reachable_top_level_functions_from_node(codegen, node.for_stmt_range_end);
-        collect_reachable_top_level_functions_from_node(codegen, node.for_stmt_array);
-        collect_reachable_top_level_functions_from_node(codegen, node.for_stmt_body);
-    } else if node.type == ASTNodeType.AST_VAR_DECL {
-        collect_reachable_top_level_functions_from_node(codegen, node.var_decl_init);
-        collect_reachable_top_level_functions_from_node(codegen, node.var_decl_type);
-    } else if node.type == ASTNodeType.AST_EXTERN_VAR_DECL {
-        collect_reachable_top_level_functions_from_node(codegen, node.extern_var_decl_init_expr);
-    } else if node.type == ASTNodeType.AST_RETURN_STMT {
-        collect_reachable_top_level_functions_from_node(codegen, node.return_stmt_expr);
-    } else if node.type == ASTNodeType.AST_ASSIGN {
-        collect_reachable_top_level_functions_from_node(codegen, node.assign_dest);
-        collect_reachable_top_level_functions_from_node(codegen, node.assign_src);
-    } else if node.type == ASTNodeType.AST_BINARY_EXPR {
-        collect_reachable_top_level_functions_from_node(codegen, node.binary_expr_left);
-        collect_reachable_top_level_functions_from_node(codegen, node.binary_expr_right);
-    } else if node.type == ASTNodeType.AST_UNARY_EXPR {
-        collect_reachable_top_level_functions_from_node(codegen, node.unary_expr_operand);
-    } else if node.type == ASTNodeType.AST_MATCH_EXPR {
-        collect_reachable_top_level_functions_from_node(codegen, node.match_expr_expr);
-        if node.match_expr_arms != null {
-            var i: i32 = 0;
-            while i < node.match_expr_arm_count {
-                collect_reachable_top_level_functions_from_node(codegen, node.match_expr_arms[i].result_expr);
-                i = i + 1;
-            }
-        }
-    } else if node.type == ASTNodeType.AST_MEMBER_ACCESS {
-        collect_reachable_top_level_functions_from_node(codegen, node.member_access_object);
-    } else if node.type == ASTNodeType.AST_ARRAY_ACCESS {
-        collect_reachable_top_level_functions_from_node(codegen, node.array_access_array);
-        collect_reachable_top_level_functions_from_node(codegen, node.array_access_index);
-    } else if node.type == ASTNodeType.AST_STRUCT_INIT {
-        var i: i32 = 0;
-        while i < node.struct_init_field_count {
-            collect_reachable_top_level_functions_from_node(codegen, node.struct_init_field_values[i]);
-            i = i + 1;
-        }
-    } else if node.type == ASTNodeType.AST_ARRAY_LITERAL && node.array_literal_elements != null {
-        collect_reachable_top_level_functions_from_node(codegen, node.array_literal_repeat_count_expr);
-        var i: i32 = 0;
-        while i < node.array_literal_element_count {
-            collect_reachable_top_level_functions_from_node(codegen, node.array_literal_elements[i]);
-            i = i + 1;
-        }
-    } else if node.type == ASTNodeType.AST_TUPLE_LITERAL && node.tuple_literal_elements != null {
-        var i: i32 = 0;
-        while i < node.tuple_literal_element_count {
-            collect_reachable_top_level_functions_from_node(codegen, node.tuple_literal_elements[i]);
-            i = i + 1;
-        }
-    } else if node.type == ASTNodeType.AST_CAST_EXPR {
-        collect_reachable_top_level_functions_from_node(codegen, node.cast_expr_expr);
-        collect_reachable_top_level_functions_from_node(codegen, node.cast_expr_target_type);
-    } else if node.type == ASTNodeType.AST_TRY_EXPR {
-        collect_reachable_top_level_functions_from_node(codegen, node.try_expr_operand);
-    } else if node.type == ASTNodeType.AST_AWAIT_EXPR {
-        collect_reachable_top_level_functions_from_node(codegen, node.await_expr_operand);
-    } else if node.type == ASTNodeType.AST_CATCH_EXPR {
-        collect_reachable_top_level_functions_from_node(codegen, node.catch_expr_operand);
-        collect_reachable_top_level_functions_from_node(codegen, node.catch_expr_catch_block);
-    } else if node.type == ASTNodeType.AST_SLICE_EXPR {
-        collect_reachable_top_level_functions_from_node(codegen, node.slice_expr_base);
-        collect_reachable_top_level_functions_from_node(codegen, node.slice_expr_start_expr);
-        collect_reachable_top_level_functions_from_node(codegen, node.slice_expr_len_expr);
-    } else if node.type == ASTNodeType.AST_TEST_STMT {
-        collect_reachable_top_level_functions_from_node(codegen, node.test_stmt_body);
-    } else if node.type == ASTNodeType.AST_FN_DECL {
-        collect_reachable_top_level_functions_from_node(codegen, node.fn_decl_body);
-    } else if node.type == ASTNodeType.AST_METHOD_BLOCK && node.method_block_methods != null {
-        var i: i32 = 0;
-        while i < node.method_block_method_count {
-            collect_reachable_top_level_functions_from_node(codegen, node.method_block_methods[i]);
-            i = i + 1;
-        }
-    } else if node.type == ASTNodeType.AST_STRUCT_DECL && node.struct_decl_methods != null {
-        var i: i32 = 0;
-        while i < node.struct_decl_method_count {
-            collect_reachable_top_level_functions_from_node(codegen, node.struct_decl_methods[i]);
-            i = i + 1;
-        }
-    } else if node.type == ASTNodeType.AST_SYSCALL {
-        codegen.needs_syscall_helpers = 1;
-        collect_reachable_top_level_functions_from_node(codegen, node.syscall_number);
-        var i: i32 = 0;
-        while i < node.syscall_arg_count {
-            collect_reachable_top_level_functions_from_node(codegen, node.syscall_args[i]);
-            i = i + 1;
-        }
     }
 }
 
@@ -1177,51 +923,9 @@ fn build_decl_caches(codegen: &C99CodeGenerator) void {
     codegen.decl_cache_initialized = 1;
 }
 
-// AsyncComputeFuture<T> 单态方法体会调用 ok<T>；可达性从 AST 模板收集时只能看到 ok<T>（T 未解析），
-// 导致各 std_ok_* 单态未标记为可达。对每个已注册的具体 AsyncComputeFuture 单态，将载荷类型相同的
-// ok<...> 单态标记为可达（checker 侧需另有显式 ok<T> 注册，如 lib 中 thread_ok_bool 对 ok<bool>）。
-fn mark_ok_mono_reachable_for_async_compute_futures(codegen: &C99CodeGenerator) void {
-    if codegen == null || codegen.checker == null || codegen.program_node == null {
-        return;
-    }
-    const ac_decl: &ASTNode = find_struct_decl_c99(codegen, "AsyncComputeFuture" as &byte);
-    if ac_decl == null || ac_decl.type != ASTNodeType.AST_STRUCT_DECL {
-        return;
-    }
-    var i: i32 = 0;
-    while i < codegen.mono_instance_count {
-        const inst: MonoInstanceCodegen = codegen.mono_instances[i];
-        if inst.generic_name == null || inst.is_function != 0 ||
-            strcmp(inst.generic_name as *byte, "AsyncComputeFuture" as *byte) != 0 ||
-            inst.type_args == null || inst.type_arg_count != 1 {
-            i = i + 1;
-            continue;
-        }
-        if has_unresolved_mono_type_args(ac_decl, inst.type_args, inst.type_arg_count) != 0 {
-            i = i + 1;
-            continue;
-        }
-        const payload_t: Type = type_from_ast(codegen.checker, inst.type_args[0]);
-        var j: i32 = 0;
-        while j < codegen.mono_instance_count {
-            const inst_ok: MonoInstanceCodegen = codegen.mono_instances[j];
-            if inst_ok.generic_name == null || inst_ok.is_function == 0 ||
-                strcmp(inst_ok.generic_name as *byte, "ok" as *byte) != 0 ||
-                inst_ok.type_args == null || inst_ok.type_arg_count != 1 {
-                j = j + 1;
-                continue;
-            }
-            const ok_t: Type = type_from_ast(codegen.checker, inst_ok.type_args[0]);
-            if type_equals(copy_type(&payload_t), copy_type(&ok_t)) != 0 {
-                codegen.reachable_mono_instances[j] = 1;
-            }
-            j = j + 1;
-        }
-        i = i + 1;
-    }
-}
-
-fn collect_reachable_top_level_functions(codegen: &C99CodeGenerator, ast: &ASTNode, tests: & & ASTNode, test_count: &i32) void {
+// 准备 codegen：收集测试、标记所有顶层函数为可发射，并启用 syscall 辅助与全部函数类单态。
+// 不再做调用图可达性遍历（原 collect_reachable_top_level_functions_from_node）。
+fn prepare_codegen_tests_and_emit_flags(codegen: &C99CodeGenerator, ast: &ASTNode, tests: & & ASTNode, test_count: &i32) void {
     if codegen == null || ast == null || ast.type != ASTNodeType.AST_PROGRAM || tests == null || test_count == null {
         return;
     }
@@ -1234,10 +938,14 @@ fn collect_reachable_top_level_functions(codegen: &C99CodeGenerator, ast: &ASTNo
     }
 
     codegen.reachable_function_decl_count = 0;
-    codegen.needs_syscall_helpers = 0;
+    codegen.needs_syscall_helpers = 1;
     var i: i32 = 0;
     while i < codegen.mono_instance_count {
-        codegen.reachable_mono_instances[i] = 0;
+        if codegen.mono_instances[i].is_function != 0 {
+            codegen.reachable_mono_instances[i] = 1;
+        } else {
+            codegen.reachable_mono_instances[i] = 0;
+        }
         i = i + 1;
     }
 
@@ -1252,49 +960,26 @@ fn collect_reachable_top_level_functions(codegen: &C99CodeGenerator, ast: &ASTNo
                 if decl.fn_decl_body != null {
                     collect_tests_from_node(codegen, decl.fn_decl_body, tests, test_count);
                 }
-                const is_main: i32 = (decl.fn_decl_name != null &&
-                    strcmp(decl.fn_decl_name as *byte, "main" as *byte) == 0) as i32;
-                const keep_export_extern: i32 = (decl.fn_decl_is_export != 0 &&
-                    decl.fn_decl_is_extern != 0 &&
-                    decl.fn_decl_body != null) as i32;
-                const keep_library_export: i32 = (decl.fn_decl_is_export != 0 &&
-                    decl.fn_decl_is_extern == 0 &&
-                    decl.filename != null &&
-                    is_library_source_file(decl.filename) != 0) as i32;
-                if is_main != 0 || keep_export_extern != 0 || keep_library_export != 0 {
-                    mark_top_level_function_reachable(codegen, decl);
-                }
+                mark_top_level_function_reachable(codegen, decl);
             } else if decl.type == ASTNodeType.AST_TEST_STMT {
                 append_collected_test(tests, test_count, decl);
-                collect_reachable_top_level_functions_from_node(codegen, decl.test_stmt_body);
+                collect_tests_from_node(codegen, decl.test_stmt_body, tests, test_count);
             } else if decl.type == ASTNodeType.AST_VAR_DECL {
-                collect_reachable_top_level_functions_from_node(codegen, decl.var_decl_init);
+                collect_tests_from_node(codegen, decl.var_decl_init, tests, test_count);
             } else if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
-                collect_reachable_top_level_functions_from_node(codegen, decl.extern_var_decl_init_expr);
-            } else if decl.type == ASTNodeType.AST_METHOD_BLOCK || decl.type == ASTNodeType.AST_STRUCT_DECL {
-                collect_reachable_top_level_functions_from_node(codegen, decl);
+                collect_tests_from_node(codegen, decl.extern_var_decl_init_expr, tests, test_count);
             }
         }
         i = i + 1;
     }
-    mark_ok_mono_reachable_for_async_compute_futures(codegen);
 }
 
 fn should_emit_top_level_function_decl(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
     if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
         return 0;
     }
-    if fn_decl.fn_decl_name != null && strcmp(fn_decl.fn_decl_name as *byte, "main" as *byte) == 0 {
-        return 1;
-    }
-    if fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_is_extern != 0 {
-        return 1;
-    }
-    if fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_is_extern == 0 &&
-        fn_decl.filename != null && is_library_source_file(fn_decl.filename) != 0 {
-        return 1;
-    }
-    return is_top_level_function_reachable(codegen, fn_decl);
+    // 默认发射所有顶层函数声明（与 prepare_codegen 标记全体一致；不再按可达性裁剪）
+    return 1;
 }
 
 // 从测试描述字符串生成安全的函数名（使用哈希避免中文问题）
@@ -2074,7 +1759,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     }
     var test_count: i32 = 0;
     
-    collect_reachable_top_level_functions(codegen, ast, tests_array, &test_count);
+    prepare_codegen_tests_and_emit_flags(codegen, ast, tests_array, &test_count);
     
     // 将测试计数保存到 codegen 中，以便 gen_function 可以判断是否需要调用 uya_run_tests()
     codegen.test_count = test_count;
@@ -2094,6 +1779,34 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("static __attribute__((__unused__)) size_t uya_thread_call_usize(void *fn, size_t arg) {\n" as *byte, codegen.output as *void);
     fputs("    typedef size_t (*uya_thrd_fn_usz)(size_t);\n" as *byte, codegen.output as *void);
     fputs("    return ((uya_thrd_fn_usz)fn)(arg);\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) int64_t uya_thread_call_i64(void *fn, int64_t arg) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef int64_t (*uya_thrd_fn_i64)(int64_t);\n" as *byte, codegen.output as *void);
+    fputs("    return ((uya_thrd_fn_i64)fn)(arg);\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) uint64_t uya_thread_call_u64(void *fn, uint64_t arg) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef uint64_t (*uya_thrd_fn_u64)(uint64_t);\n" as *byte, codegen.output as *void);
+    fputs("    return ((uya_thrd_fn_u64)fn)(arg);\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) int16_t uya_thread_call_i16(void *fn, int16_t arg) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef int16_t (*uya_thrd_fn_i16)(int16_t);\n" as *byte, codegen.output as *void);
+    fputs("    return ((uya_thrd_fn_i16)fn)(arg);\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) uint16_t uya_thread_call_u16(void *fn, uint16_t arg) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef uint16_t (*uya_thrd_fn_u16)(uint16_t);\n" as *byte, codegen.output as *void);
+    fputs("    return ((uya_thrd_fn_u16)fn)(arg);\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) int8_t uya_thread_call_i8(void *fn, int8_t arg) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef int8_t (*uya_thrd_fn_i8)(int8_t);\n" as *byte, codegen.output as *void);
+    fputs("    return ((uya_thrd_fn_i8)fn)(arg);\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) uint8_t uya_thread_call_u8(void *fn, uint8_t arg) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef uint8_t (*uya_thrd_fn_u8)(uint8_t);\n" as *byte, codegen.output as *void);
+    fputs("    return ((uya_thrd_fn_u8)fn)(arg);\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("static __attribute__((__unused__)) int32_t uya_thread_call_bool(void *fn, int32_t arg) {\n" as *byte, codegen.output as *void);
+    fputs("    typedef int32_t (*uya_thrd_fn_bool)(int32_t);\n" as *byte, codegen.output as *void);
+    fputs("    return ((uya_thrd_fn_bool)fn)(arg);\n" as *byte, codegen.output as *void);
     fputs("}\n" as *byte, codegen.output as *void);
     fputs("// f32/f64：槽位内仍为 u32/u64 位模式；间接调用须用真实 float/double 调用约定（不可伪装成整数函数指针）。\n" as *byte, codegen.output as *void);
     fputs("static __attribute__((__unused__)) uint32_t uya_thread_call_f32(void *fn, uint32_t arg_bits) {\n" as *byte, codegen.output as *void);

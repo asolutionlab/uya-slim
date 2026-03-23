@@ -1,13 +1,12 @@
-// 验证未使用的顶层函数不会继续输出到生成的 C 文件
-
-extern fn missing_runtime_symbol() i32;
+// 验证默认代码生成策略：全部顶层函数会输出到生成的 C（不做可达性裁剪）
+// 未从 main 调用的函数体使用常量返回值，便于测试程序链接（若引用未解析符号则链接失败）。
 
 fn dead_internal() i32 {
-    return missing_runtime_symbol();
+    return 7;
 }
 
 export fn dead_exported() i32 {
-    return missing_runtime_symbol();
+    return 8;
 }
 
 export extern fn kept_c_api() i32 {

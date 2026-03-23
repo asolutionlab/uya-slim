@@ -938,8 +938,8 @@ export fn bounds_check_pass(checker: &TypeChecker, node: &ASTNode) void {
 // 扩展类型字节大小计算：支持 struct/union/interface/error_union/atomic/slice
 // - 返回计算出的字节数（>= 0）
 // - 返回 -1 表示大小未知（复杂嵌套结构、多态接口等）
-// program_node：用于查找 struct/union 定义
-fn get_type_size_bytes_v2(t: &Type, program_node: &ASTNode) i32 {
+// program_node：用于查找 struct/union 定义；checker：从 AST 字段解析 Type 时需要
+fn get_type_size_bytes_v2(checker: &TypeChecker, t: &Type, program_node: &ASTNode) i32 {
     if t == null {
         return -1;
     }
@@ -964,13 +964,13 @@ fn get_type_size_bytes_v2(t: &Type, program_node: &ASTNode) i32 {
     if t.kind == TypeKind.TYPE_ATOMIC {
         const inner: &Type = type_get_atomic_inner(t);
         if inner != null {
-            return get_type_size_bytes_v2(inner, program_node);
+            return get_type_size_bytes_v2(checker, inner, program_node);
         }
         return -1;
     }
     // 固定大小数组
     if t.kind == TypeKind.TYPE_ARRAY {
-        const elem_sz: i32 = get_type_size_bytes_v2(t.element_type, program_node);
+        const elem_sz: i32 = get_type_size_bytes_v2(checker, t.element_type, program_node);
         if elem_sz > 0 && t.array_size > 0 && t.array_size <= 0x7FFFFFFF / elem_sz {
             return elem_sz * t.array_size;
         }
@@ -986,7 +986,7 @@ fn get_type_size_bytes_v2(t: &Type, program_node: &ASTNode) i32 {
         var i: i32 = 0;
         while i < t.tuple_count {
             const ft: &Type = &t.tuple_element_types[i];
-            const fs: i32 = get_type_size_bytes_v2(ft, program_node);
+            const fs: i32 = get_type_size_bytes_v2(checker, ft, program_node);
             if fs < 0 {
                 return -1;
             }
@@ -999,7 +999,7 @@ fn get_type_size_bytes_v2(t: &Type, program_node: &ASTNode) i32 {
     if t.kind == TypeKind.TYPE_ERROR_UNION {
         const payload: &Type = type_get_error_payload(t);
         if payload != null {
-            const ps: i32 = get_type_size_bytes_v2(payload, program_node);
+            const ps: i32 = get_type_size_bytes_v2(checker, payload, program_node);
             if ps < 0 {
                 return -1;
             }
@@ -1015,7 +1015,7 @@ fn get_type_size_bytes_v2(t: &Type, program_node: &ASTNode) i32 {
     if t.kind == TypeKind.TYPE_STRUCT && t.struct_name != null && program_node != null {
         const decl: &ASTNode = find_struct_decl_from_program(program_node, t.struct_name as *byte);
         if decl != null && decl.struct_decl_fields != null && decl.struct_decl_field_count > 0 {
-            return compute_struct_size(decl, program_node);
+            return compute_struct_size(checker, decl, program_node);
         }
         return -1;
     }
@@ -1023,7 +1023,7 @@ fn get_type_size_bytes_v2(t: &Type, program_node: &ASTNode) i32 {
     if t.kind == TypeKind.TYPE_UNION && t.union_name != null && program_node != null {
         const decl: &ASTNode = find_struct_decl_from_program(program_node, t.union_name as *byte);
         if decl != null && decl.struct_decl_fields != null && decl.struct_decl_field_count > 0 {
-            return compute_union_size(decl, program_node);
+            return compute_union_size(checker, decl, program_node);
         }
         return -1;
     }
@@ -1036,7 +1036,7 @@ fn get_type_size_bytes_v2(t: &Type, program_node: &ASTNode) i32 {
 }
 
 // 计算 struct 总字节大小（字段求和），返回 -1 表示含未知大小字段
-fn compute_struct_size(decl: &ASTNode, program_node: &ASTNode) i32 {
+fn compute_struct_size(checker: &TypeChecker, decl: &ASTNode, program_node: &ASTNode) i32 {
     if decl == null || decl.struct_decl_field_count <= 0 || decl.struct_decl_fields == null {
         return 0;
     }
@@ -1044,12 +1044,12 @@ fn compute_struct_size(decl: &ASTNode, program_node: &ASTNode) i32 {
     var i: i32 = 0;
     while i < decl.struct_decl_field_count {
         const field: &ASTNode = decl.struct_decl_fields[i];
-        if field == null {
+        if field == null || field.type != ASTNodeType.AST_VAR_DECL || field.var_decl_type == null {
             i = i + 1;
             continue;
         }
-        const ft: &Type = &field.field_type;
-        const fs: i32 = get_type_size_bytes_v2(ft, program_node);
+        const ft: Type = type_from_ast(checker, field.var_decl_type);
+        const fs: i32 = get_type_size_bytes_v2(checker, &ft, program_node);
         if fs < 0 {
             return -1;
         }
@@ -1060,7 +1060,7 @@ fn compute_struct_size(decl: &ASTNode, program_node: &ASTNode) i32 {
 }
 
 // 计算 union 最大字段字节大小，返回 -1 表示含未知大小字段
-fn compute_union_size(decl: &ASTNode, program_node: &ASTNode) i32 {
+fn compute_union_size(checker: &TypeChecker, decl: &ASTNode, program_node: &ASTNode) i32 {
     if decl == null || decl.struct_decl_field_count <= 0 || decl.struct_decl_fields == null {
         return 0;
     }
@@ -1068,12 +1068,12 @@ fn compute_union_size(decl: &ASTNode, program_node: &ASTNode) i32 {
     var i: i32 = 0;
     while i < decl.struct_decl_field_count {
         const field: &ASTNode = decl.struct_decl_fields[i];
-        if field == null {
+        if field == null || field.type != ASTNodeType.AST_VAR_DECL || field.var_decl_type == null {
             i = i + 1;
             continue;
         }
-        const ft: &Type = &field.field_type;
-        const fs: i32 = get_type_size_bytes_v2(ft, program_node);
+        const ft: Type = type_from_ast(checker, field.var_decl_type);
+        const fs: i32 = get_type_size_bytes_v2(checker, &ft, program_node);
         if fs < 0 {
             return -1;
         }
@@ -1099,6 +1099,7 @@ fn compute_union_size(decl: &ASTNode, program_node: &ASTNode) i32 {
 //   5. 每 await 一个 _uya_bind_<name>       = await_bind_types 各字段大小之和
 //   6. 每 captured param 一个字段           = 各参数类型大小之和
 fn compute_async_state_machine_size(
+    checker: &TypeChecker,
     fn_decl: &ASTNode,
     await_count: i32,
     await_bind_types: [&ASTNode: 32],
@@ -1118,9 +1119,9 @@ fn compute_async_state_machine_size(
     while ai < await_count && ai < 32 {
         const bind_type_node: &ASTNode = await_bind_types[ai];
         if bind_type_node != null {
-            const bt: &Type = &bind_type_node.field_type;
-            if bt != null && bt.kind == TypeKind.TYPE_STRUCT {
-                const bn: &byte = type_get_struct_name(bt);
+            const bt: Type = type_from_ast(checker, bind_type_node);
+            if bt.kind == TypeKind.TYPE_STRUCT {
+                const bn: &byte = type_get_struct_name(&bt);
                 if bn != null && strlen(bn as *byte) >= 6 &&
                     strncmp(bn as *byte, "Future" as *byte, 6) == 0 {
                     has_future_storage = 1;
@@ -1144,8 +1145,8 @@ fn compute_async_state_machine_size(
     while ai < await_count && ai < 32 {
         const bind_type_node: &ASTNode = await_bind_types[ai];
         if bind_type_node != null {
-            const bt: &Type = &bind_type_node.field_type;
-            const bs: i32 = get_type_size_bytes_v2(bt, program_node);
+            const bt: Type = type_from_ast(checker, bind_type_node);
+            const bs: i32 = get_type_size_bytes_v2(checker, &bt, program_node);
             if bs < 0 {
                 return -1;
             }
@@ -1159,9 +1160,9 @@ fn compute_async_state_machine_size(
     var pi: i32 = 0;
     while pi < param_count && pi < 16 {
         const param: &ASTNode = params[pi];
-        if param != null && param.type == ASTNodeType.AST_VAR_DECL {
-            const pt: &Type = &param.var_decl_type;
-            const ps: i32 = get_type_size_bytes_v2(pt, program_node);
+        if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+            const pt: Type = type_from_ast(checker, param.var_decl_type);
+            const ps: i32 = get_type_size_bytes_v2(checker, &pt, program_node);
             if ps < 0 {
                 return -1;
             }

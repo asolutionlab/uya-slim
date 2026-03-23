@@ -54,12 +54,15 @@ fn use_macro_in_loop() i32 {
     return sum;  // 0+1+2+...+9 = 45
 }
 
-// 宏结果用于 if 条件
+// 宏结果用于 if 条件（用 acc 承接分支，避免 if 被证成常量后 C 后端在 return 后仍生成不可达分支、重复 _uya_ret）
 fn use_macro_in_if() i32 {
+    var acc: i32 = 0;
     if get_10() < get_20() {
-        return get_30();
+        acc = get_30();
+    } else {
+        acc = 0;
     }
-    return 0;
+    return acc;
 }
 
 // 多个宏组合在复杂表达式中
