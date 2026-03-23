@@ -1,6 +1,6 @@
 # C99 热路径 Benchmark 记录
 
-**更新日期**：2026-03-22
+**更新日期**：2026-03-23
 
 ## 复现入口
 
@@ -25,7 +25,21 @@ cd src && ./compile.sh --c99 -e -v --nostdlib
 - `生成耗时`
 - `总耗时`
 
-## 对比基线
+## 复现环境（本轮）
+
+| 项 | 值 |
+|----|-----|
+| 仓库 commit | `6d5f8198e8bb61e0e2a75df35b168add41ef38db` |
+| 内核 / 架构 | `Linux ... 6.12.65-amd64 ... x86_64 GNU/Linux`（主机名略） |
+| 默认构建 | `CFLAGS ?= -std=c99 -O0 -g -fno-builtin -Werror`（见根目录 `Makefile`） |
+
+## 本轮实现（与「生成耗时」相关）
+
+- **SIMD**：`emit_simd_x86_sse_runtime_helpers` 中取消 `simd_vector_struct_reg_count==0 → simd_emit_all=1` 全开；对「仅有 mask、且各 lane 族均为 0」场景由 `c99_simd_mask_only_ensure_lane_flags` 将 i32/u32/f32 族至少标为 4 lane，使 `c99_simd_need_emit_*` 按需发射。
+- **可选子计时**：设置环境变量 `UYA_PROFILE_CODEGEN` 为非空时，在 **stderr** 打印一行：`[UYA_PROFILE_CODEGEN] simd_ms=... rest_ms=... total_ms=...`（`clock()`，与主程序「生成耗时」同语义）。
+- **libc stdio**：`fflush` 实际调用 `flush_buffer`；`fclose` 在关闭 fd 前刷新缓冲。**未**合并 `fopen` 槽位重置（在自举对比中曾导致生成 C 损坏，已回退）。**未**在 `main` 中调用 `setvbuf`、**未**为 `FILE` 增加 1MiB 用户缓冲：在自举验证中，`main` 侧 `setvbuf` 或 `fopen` 槽位重置曾与损坏的 `uya.c` 同时出现；1MiB `ext_buf` 路径亦未再启用，待后续单独隔离原因后再做。
+
+## 对比基线（历史）
 
 本轮热路径收束前的基线样本：
 
@@ -36,37 +50,32 @@ cd src && ./compile.sh --c99 -e -v --nostdlib
 | codegen | 13766 |
 | total | 17476 |
 
-## 当前结果
+## 当前结果（默认 `-O0` 构建的 `bin/uya`）
 
-单次样本（`make bench-compile-stats`）：
-
-| 阶段 | 当前（ms） |
-|------|-----------:|
-| parse | 840 |
-| check | 1692 |
-| codegen | 14534 |
-| total | 17303 |
-
-三次平均（`make bench-compile-stats ARGS="--runs 3"`）：
+三次平均（`make bench-compile-stats ARGS="--runs 3"`，2026-03-23）：
 
 | 阶段 | 当前平均（ms） |
 |------|---------------:|
-| parse | 796 |
-| check | 1714 |
-| codegen | 14959 |
-| total | 17690 |
+| parse | 542 |
+| check | 695 |
+| codegen | 3477 |
+| total | 4872 |
 
-## 基线 vs 当前三次平均
+**说明**：`codegen` 列对应 stderr「生成耗时」，为 `clock()` 计量的 CPU 时间量级，不是纯磁盘 I/O wall time。
 
-| 阶段 | 基线（ms） | 当前平均（ms） | 变化（ms） | 变化比例 |
-|------|-----------:|---------------:|-----------:|---------:|
-| parse | 927 | 796 | -131 | -14.1% |
-| check | 2589 | 1714 | -875 | -33.8% |
-| codegen | 13766 | 14959 | +1193 | +8.7% |
-| total | 17476 | 17690 | +214 | +1.2% |
+## 可选：`-O2` 编译 `bin/uya`（工具链优化，非算法改动）
 
-## 结论
+仅用于对比「二进制优化」对数字的影响，**不**替代 codegen 算法优化：
 
-- 当前这轮收束明确改善了 `parse` 与 `check`。
-- `codegen` 仍是主瓶颈，而且在这组样本里仍有回升。
-- 后续继续压缩 `codegen` 时，应优先盯住函数体内部类型查询、递归表达式判型与剩余重复逻辑，而不是再增加新的预收集成本。
+```bash
+CFLAGS='-std=c99 -O2 -g -fno-builtin -Werror' make from-c
+make bench-compile-stats ARGS="--runs 3"
+```
+
+同机同脚本下样本：codegen 三次平均约 **2919 ms**（总耗时约 **4000 ms**），仍高于 1s 目标。
+
+## 结论与 KPI
+
+- 默认 `-O0` 下 **codegen ≈ 3.5s**，**未达到**「同一基准下 codegen &lt; 1000ms」的激进 KPI。
+- 主要收益来自 **SIMD 辅助 C 按需发射**；`UYA_PROFILE_CODEGEN` 便于区分 SIMD 块与其余 codegen 时间。
+- 进一步压缩需第二梯队（如类型/表达式热路径、arena 小分配等），或接受 `-O2` 等工具链优化并单独记账。

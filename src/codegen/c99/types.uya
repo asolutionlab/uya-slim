@@ -274,6 +274,38 @@ fn c99_simd_update_max_lanes_for_element(codegen: &C99CodeGenerator, element_typ
     }
 }
 
+// 仅有 mask SIMD 结构体、且尚未记录任何 lane 族时，不再使用 simd_emit_all=1 全开辅助函数；
+// 至少保证 i32/u32/f32 族（常见比较/掩码）按需输出。
+fn c99_simd_mask_only_ensure_lane_flags(codegen: &C99CodeGenerator) void {
+    if codegen == null {
+        return;
+    }
+    if codegen.simd_struct_count <= 0 {
+        return;
+    }
+    if codegen.simd_vector_struct_reg_count != 0 {
+        return;
+    }
+    if codegen.simd_max_lanes_i8 > 0 || codegen.simd_max_lanes_u8 > 0 {
+        return;
+    }
+    if codegen.simd_max_lanes_i64 > 0 || codegen.simd_max_lanes_u64 > 0 {
+        return;
+    }
+    if codegen.simd_max_lanes_i16 > 0 || codegen.simd_max_lanes_u16 > 0 {
+        return;
+    }
+    if codegen.simd_max_lanes_f64 > 0 {
+        return;
+    }
+    if codegen.simd_max_lanes_i32 > 0 || codegen.simd_max_lanes_u32 > 0 || codegen.simd_max_lanes_f32 > 0 {
+        return;
+    }
+    codegen.simd_max_lanes_i32 = 4;
+    codegen.simd_max_lanes_u32 = 4;
+    codegen.simd_max_lanes_f32 = 4;
+}
+
 fn c99_register_simd_struct(codegen: &C99CodeGenerator, name: &byte, element_type: &ASTNode, lanes: i32, is_mask: i32) void {
     if codegen == null || name == null {
         return;
@@ -5987,10 +6019,8 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.output == null || codegen.simd_struct_count <= 0 {
         return;
     }
-    var simd_emit_all: i32 = 0;
-    if codegen.simd_vector_struct_reg_count == 0 && codegen.simd_struct_count > 0 {
-        simd_emit_all = 1;
-    }
+    c99_simd_mask_only_ensure_lane_flags(codegen);
+    const simd_emit_all: i32 = 0;
     fputs("// SIMD lowering：x86_64 SSE 或 ARM NEON（GCC/Clang）；否则标量 static inline\n" as *byte, codegen.output as *void);
     fputs("#if (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(_M_X64)) && defined(__SSE2__)\n" as *byte, codegen.output as *void);
     fputs("#include <emmintrin.h>\n#include <xmmintrin.h>\n" as *byte, codegen.output as *void);

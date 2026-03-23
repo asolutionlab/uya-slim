@@ -10,6 +10,21 @@
 // 哈希函数（来自 checker/symbols.uya）
 extern fn hash_string(str: &byte) i32;
 
+use libc.stdlib;
+use libc.time;
+use libc;
+
+fn c99_want_profile_codegen() i32 {
+    const p: &byte = getenv("UYA_PROFILE_CODEGEN" as &byte);
+    if p == null {
+        return 0;
+    }
+    if p[0] == 0 as byte {
+        return 0;
+    }
+    return 1;
+}
+
 // 递归收集标准库函数调用，设置相应的标志
 fn collect_stdlib_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if codegen == null || node == null {
@@ -1103,6 +1118,13 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 保存程序节点引用
     codegen.program_node = ast;
     
+    var prof_codegen: i32 = c99_want_profile_codegen();
+    var prof_t0: clock_t = 0;
+    var prof_simd_ms: i64 = 0;
+    if prof_codegen != 0 {
+        prof_t0 = clock();
+    }
+    
     // 检测是否在生成标准库（用于 --outlibc）
     // 通过检查输出文件名是否包含 "libuya" 来判断
     var is_std_lib: i32 = 0;
@@ -1610,7 +1632,15 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     }
     emit_pending_simd_structs(codegen);
     if codegen.simd_struct_count > 0 {
+        var t_simd0: clock_t = 0;
+        if prof_codegen != 0 {
+            t_simd0 = clock();
+        }
         emit_simd_x86_sse_runtime_helpers(codegen);
+        if prof_codegen != 0 {
+            const t_simd1: clock_t = clock();
+            prof_simd_ms = ((t_simd1 as i64) - (t_simd0 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
+        }
         c99_emit_newline(codegen);
     }
     // 第六步 b1：生成接口结构体与 vtable 结构体（vtable 常量在方法前向声明之后生成）
@@ -2870,6 +2900,16 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     
     // 输出宏展开等阶段才加入的字符串常量（如 encode_to_to_json 中的 "id"/"name"）
     emit_pending_string_constants(codegen);
+    
+    if prof_codegen != 0 {
+        const t1: clock_t = clock();
+        const total_ms: i64 = ((t1 as i64) - (prof_t0 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
+        var rest_ms: i64 = total_ms - prof_simd_ms;
+        if rest_ms < 0 {
+            rest_ms = 0;
+        }
+        fprintf(libc.stderr, "[UYA_PROFILE_CODEGEN] simd_ms=%ld rest_ms=%ld total_ms=%ld\n" as *byte, prof_simd_ms, rest_ms, total_ms);
+    }
     
     return 0;
 }
