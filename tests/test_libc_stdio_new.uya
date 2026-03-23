@@ -4,8 +4,6 @@
 use std.testing.assert_eq_i32;
 use std.testing.expect;
 
-extern fn strcmp(s1: &const byte, s2: &const byte) i32;
-
 // ============================================================
 // sscanf 测试 - 使用数字验证
 // ============================================================

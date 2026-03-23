@@ -1629,6 +1629,10 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
             // 注册单态化实例
             register_mono_instance(checker, callee.identifier_name, 
                 expr.call_expr_type_args, expr.call_expr_type_arg_count, 1);
+            // 与 check_call 一致：为返回类型中的泛型 struct/union 注册单态，避免仅生成函数体却缺少结构体定义
+            register_mono_from_return_type_ast(checker, fn_decl.fn_decl_return_type,
+                fn_decl.fn_decl_type_params, fn_decl.fn_decl_type_param_count,
+                expr.call_expr_type_args, expr.call_expr_type_arg_count);
             
             // 返回替换后的返回类型
             const return_type: Type = type_from_ast(checker, fn_decl.fn_decl_return_type);

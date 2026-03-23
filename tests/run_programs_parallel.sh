@@ -4,14 +4,14 @@
 # 使用并行执行加速测试
 #
 # 用法:
-#   ./run_programs_parallel.sh                    # 运行所有测试（并行，默认8线程）
+#   ./run_programs_parallel.sh                    # 运行所有测试（并行，默认同 CPU 核数）
 #   ./run_programs_parallel.sh -j 4               # 运行所有测试（4线程）
 #   ./run_programs_parallel.sh -j 1               # 运行所有测试（单线程，等同于原版）
 #   ./run_programs_parallel.sh <文件或目录>        # 运行指定的测试文件或目录
 #   ./run_programs_parallel.sh test_file.uya      # 运行单个测试文件
 #
 # 环境变量:
-#   PARALLEL_JOBS=N   # 设置并行任务数（默认8）
+#   PARALLEL_JOBS=N   # 设置并行任务数（未设置时默认 CPU 核数，见 nproc/sysctl）
 #
 # 快速验证单个测试（在项目根目录下执行）:
 #   ./tests/run_programs_parallel.sh test_global_var.uya
@@ -33,7 +33,8 @@ ERRORS_ONLY=false
 HIDE_PASS_OUTPUT=false
 USE_C99=true
 USE_UYA=false
-PARALLEL_JOBS=${PARALLEL_JOBS:-8}
+_DEFAULT_PARALLEL_JOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 8)
+PARALLEL_JOBS=${PARALLEL_JOBS:-$_DEFAULT_PARALLEL_JOBS}
 TEST_PROFILE="${TEST_PROFILE:-default}"
 TOOLCHAIN="${TOOLCHAIN:-system}"
 ZIG="${ZIG:-/home/winger/zig/zig}"
@@ -110,12 +111,12 @@ show_usage() {
     echo "  -h, --help          显示此帮助信息"
     echo "  -e, --errors-only   最小输出：仅失败时打印详情（不打印开头进度与全通过时的汇总等）"
     echo "  --hide-pass         不打印每条通过的 ✓，其余输出与默认相同（失败项仍完整显示）"
-    echo "  -j <N>              并行任务数（默认8）"
+    echo "  -j <N>              并行任务数（默认 CPU 核数）"
     echo "  --c99               使用 C99 后端（默认）"
     echo "  --uya               使用 src 编译的编译器"
     echo ""
     echo "环境变量:"
-    echo "  PARALLEL_JOBS=N     并行任务数（覆盖 -j 选项）"
+    echo "  PARALLEL_JOBS=N     并行任务数（命令行 -j 可再覆盖此环境变量）"
     echo "  TOOLCHAIN=zig       使用 zig cc 作为统一工具链"
     echo "  ZIG=/path/to/zig    指定 zig 可执行文件路径"
     echo "  CC_DRIVER='zig cc'  指定测试链接器命令"
@@ -130,7 +131,7 @@ show_usage() {
     echo "  <目录>              运行指定目录下的所有测试"
     echo ""
     echo "示例:"
-    echo "  $0                                    # 运行所有测试（并行，8线程）"
+    echo "  $0                                    # 运行所有测试（并行，默认同 CPU 核数）"
     echo "  $0 -j 4                               # 运行所有测试（并行，4线程）"
     echo "  $0 -j 1                               # 运行所有测试（单线程）"
     echo "  PARALLEL_JOBS=12 $0                    # 运行所有测试（并行，12线程）"

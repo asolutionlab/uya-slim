@@ -799,26 +799,20 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         return result;
     }
     
-    const sig: &FunctionSignature = function_table_lookup(checker, callee.identifier_name);
-    if sig == null {
-        // 函数未定义：放宽检查，允许通过（不报错）
-        // 这在编译器自举时很常见，因为函数可能尚未定义或存在前向引用
-        return result;
-    }
-    
-    // 检查是否是泛型函数调用
-    const fn_decl_for_generic: &ASTNode = find_fn_decl_from_program(checker.program_node, callee.identifier_name);
-    if fn_decl_for_generic != null && fn_decl_for_generic.fn_decl_type_param_count > 0 {
+    // 泛型函数调用必须先处理：部分实现未录入 function_table（sig 为空），
+    // 若在此处提前 return 会跳过 register_mono_from_return_type_ast，导致 C 后端缺结构体定义。
+    const fn_decl_for_generic_early: &ASTNode = find_fn_decl_from_program(checker.program_node, callee.identifier_name);
+    if fn_decl_for_generic_early != null && fn_decl_for_generic_early.fn_decl_type_param_count > 0 {
         // 泛型函数调用
-        const type_param_count: i32 = fn_decl_for_generic.fn_decl_type_param_count;
-        const type_params: &TypeParam = fn_decl_for_generic.fn_decl_type_params;
+        const type_param_count: i32 = fn_decl_for_generic_early.fn_decl_type_param_count;
+        const type_params: &TypeParam = fn_decl_for_generic_early.fn_decl_type_params;
         var type_args: & &ASTNode = node.call_expr_type_args;
         var type_arg_count: i32 = node.call_expr_type_arg_count;
         
         // 类型推断：如果调用时没有提供类型参数，尝试从实参类型推断
         if type_arg_count == 0 && type_param_count > 0 {
             // 首先检查参数个数
-            if node.call_expr_arg_count != fn_decl_for_generic.fn_decl_param_count {
+            if node.call_expr_arg_count != fn_decl_for_generic_early.fn_decl_param_count {
                 checker_report_error(checker, node, "泛型函数调用参数个数不匹配" as *byte);
                 return result;
             }
@@ -837,8 +831,8 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             
             // 遍历函数参数，推断类型参数
             var infer_i: i32 = 0;
-            while infer_i < fn_decl_for_generic.fn_decl_param_count {
-                const param: &ASTNode = fn_decl_for_generic.fn_decl_params[infer_i];
+            while infer_i < fn_decl_for_generic_early.fn_decl_param_count {
+                const param: &ASTNode = fn_decl_for_generic_early.fn_decl_params[infer_i];
                 if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
                     const param_type_node: &ASTNode = param.var_decl_type;
                     // 检查参数类型是否直接是类型参数（如 a: T）
@@ -966,19 +960,19 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         // 注册单态化实例
         register_mono_instance(checker, callee.identifier_name, type_args, type_arg_count, 1);
         // 额外注册返回类型中出现的泛型类型实例（struct/union）
-        register_mono_from_return_type_ast(checker, fn_decl_for_generic.fn_decl_return_type,
+        register_mono_from_return_type_ast(checker, fn_decl_for_generic_early.fn_decl_return_type,
             type_params, type_param_count, type_args, type_arg_count);
         
         // 检查参数个数
-        if node.call_expr_arg_count != fn_decl_for_generic.fn_decl_param_count {
+        if node.call_expr_arg_count != fn_decl_for_generic_early.fn_decl_param_count {
             checker_report_error(checker, node, "泛型函数调用参数个数不匹配" as *byte);
             return result;
         }
         
         // 检查参数类型（使用类型替换）
         var gi: i32 = 0;
-        while gi < fn_decl_for_generic.fn_decl_param_count {
-            const param: &ASTNode = fn_decl_for_generic.fn_decl_params[gi];
+        while gi < fn_decl_for_generic_early.fn_decl_param_count {
+            const param: &ASTNode = fn_decl_for_generic_early.fn_decl_params[gi];
             if param != null && param.type == ASTNodeType.AST_VAR_DECL {
                 var param_type: Type = type_from_ast(checker, param.var_decl_type);
                 // 替换泛型参数为具体类型
@@ -995,10 +989,17 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         }
         
         // 返回替换后的返回类型
-        const return_type: Type = type_from_ast(checker, fn_decl_for_generic.fn_decl_return_type);
+        const return_type: Type = type_from_ast(checker, fn_decl_for_generic_early.fn_decl_return_type);
         return substitute_generic_type(checker, return_type,
             type_params, type_param_count,
             type_args, type_arg_count);
+    }
+
+    const sig: &FunctionSignature = function_table_lookup(checker, callee.identifier_name);
+    if sig == null {
+        // 函数未定义：放宽检查，允许通过（不报错）
+        // 这在编译器自举时很常见，因为函数可能尚未定义或存在前向引用
+        return result;
     }
 
     // 显式写了 <...> 但未能解析到泛型声明：仍注册单态化实例，避免 codegen 生成调用却缺少定义。
