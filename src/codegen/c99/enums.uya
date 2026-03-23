@@ -154,7 +154,7 @@ fn gen_enum_definition(codegen: &C99CodeGenerator, enum_decl: &ASTNode) i32 {
     
     // 输出枚举定义
     c99_emit_indent(codegen);
-    fprintf(codegen.output as *void, "enum %s {\n" as *byte, enum_name as *byte);
+    fprintf(codegen.emit_stream as *void, "enum %s {\n" as *byte, enum_name as *byte);
     codegen.indent_level = codegen.indent_level + 1;
     
     const variants: &EnumVariant = enum_decl.enum_decl_variants;
@@ -174,23 +174,23 @@ fn gen_enum_definition(codegen: &C99CodeGenerator, enum_decl: &ASTNode) i32 {
             const safe_variant_name: &byte = get_safe_c_identifier(codegen, variant.name);
             current_value = atoi(variant.value as *byte);
             c99_emit_indent(codegen);
-            fputs(enum_name as *byte, codegen.output as *void);
-            fputc(95, codegen.output as *void);
-            fputs(safe_variant_name as *byte, codegen.output as *void);
-            fprintf(codegen.output as *void, " = %d" as *byte, current_value);
+            fputs(enum_name as *byte, codegen.emit_stream as *void);
+            fputc(95, codegen.emit_stream as *void);
+            fputs(safe_variant_name as *byte, codegen.emit_stream as *void);
+            fprintf(codegen.emit_stream as *void, " = %d" as *byte, current_value);
         } else {
             // 无显式值，使用当前值（从0开始或基于前一个值）
             const safe_variant_name2: &byte = get_safe_c_identifier(codegen, variant.name);
             c99_emit_indent(codegen);
-            fputs(enum_name as *byte, codegen.output as *void);
-            fputc(95, codegen.output as *void);
-            fputs(safe_variant_name2 as *byte, codegen.output as *void);
+            fputs(enum_name as *byte, codegen.emit_stream as *void);
+            fputc(95, codegen.emit_stream as *void);
+            fputs(safe_variant_name2 as *byte, codegen.emit_stream as *void);
             // 当前值保持不变，供下一个变体使用（C中隐式递增）
         }
         
         // 添加逗号（除非是最后一个）
         if i < variant_count - 1 {
-            fputs("," as *byte, codegen.output as *void);
+            fputs("," as *byte, codegen.emit_stream as *void);
         }
         c99_emit_newline(codegen);
         
@@ -204,7 +204,7 @@ fn gen_enum_definition(codegen: &C99CodeGenerator, enum_decl: &ASTNode) i32 {
     
     codegen.indent_level = codegen.indent_level - 1;
     c99_emit_indent(codegen);
-    fputs("};\n" as *byte, codegen.output as *void);
+    fputs("};\n" as *byte, codegen.emit_stream as *void);
     
     // 标记为已定义
     mark_enum_defined(codegen, enum_name);

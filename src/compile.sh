@@ -92,6 +92,26 @@ quote_cmd() {
     echo
 }
 
+# 与 src/main.uya 中 link_split_with_make 对齐：多文件 C（UYA_SPLIT_C_DIR）下用 Makefile 链接
+run_uya_split_make_link() {
+    local split_dir="$1"
+    local out_exe="$2"
+    local ld_use="$LDFLAGS"
+    if [ "$USE_NOSTDLIB" = true ]; then
+        if [ "$TARGET_OS" != "linux" ] || [ "$TARGET_ARCH" != "x86_64" ]; then
+            echo -e "${RED}✗ UYA_SPLIT_C_DIR 与 --nostdlib 组合仅支持 Linux x86_64${NC}"
+            return 1
+        fi
+        ld_use="$LDFLAGS -nostdlib -static -lgcc"
+    fi
+    local jobs="${UYA_GCC_JOBS:-4}"
+    if [ "$VERBOSE" = true ]; then
+        echo "多文件 C 链接: env -u MAKEFLAGS … make -C \"$split_dir\" -j$jobs UYA_OUT=\"$out_exe\" …"
+    fi
+    # 避免在外层 make -j 时子 make 继承 jobserver 导致死锁（与 src/main.uya link_split_with_make 一致）
+    env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS make -C "$split_dir" -j"$jobs" UYA_OUT="$out_exe" CC="$CC_DRIVER" CFLAGS="$CFLAGS" LDFLAGS="$ld_use"
+}
+
 # 脚本目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 项目根目录
@@ -126,7 +146,7 @@ usage() {
   -n, --name NAME     指定输出文件名（默认: $OUTPUT_NAME）
   -c, --clean         清理输出目录后再编译
   -e, --exec          生成可执行文件（自动链接）
-  -b, --bootstrap-compare  自举验证：用编译器再编译自身，对比两次 C 输出是否一致（需 --c99，建议与 -e 同用）
+  -b, --bootstrap-compare  自举验证：默认 diff 两次 C；见 UYA_SPLIT_C_DIR / UYA_BOOTSTRAP_COMPARE_BIN（需 --c99，建议与 -e 同用）
   --c99               使用 C99 后端生成 C 代码（输出文件后缀为 .c 时自动启用）
   --line-directives    启用 #line 指令生成（C99 后端，默认禁用）
   --nostdlib          链接时不使用标准库（仅在使用 -e 时有效）
@@ -145,6 +165,9 @@ usage() {
                      目标平台（默认继承宿主）
   RUNTIME_MODE       hosted / nostdlib
   LINK_MODE          default / static
+  UYA_SPLIT_C_DIR    若设置：C99 多文件输出目录（uya_part1/2.c + Makefile），链接走 make -j
+  UYA_GCC_JOBS       上述 make 的并行度（默认 4）
+  UYA_BOOTSTRAP_COMPARE_BIN  设为 1/true 时，-b 用 cmp 比较两次可执行文件而非 diff C
 
 示例:
   $0                           # 使用默认设置编译（生成目标文件）
@@ -549,6 +572,8 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             NEED_LINK=true
         elif [ ! -f "$EXECUTABLE_FILE" ]; then
             NEED_LINK=true
+        elif [ "$USE_C99" = true ] && [ -n "${UYA_SPLIT_C_DIR:-}" ] && [ -f "${UYA_SPLIT_C_DIR}/uya_part1.c" ] && [ -f "$EXECUTABLE_FILE" ] && [ "${UYA_SPLIT_C_DIR}/uya_part1.c" -nt "$EXECUTABLE_FILE" ]; then
+            NEED_LINK=true
         elif [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ] && [ -f "$EXECUTABLE_FILE" ] && [ "$OUTPUT_FILE" -nt "$EXECUTABLE_FILE" ]; then
             NEED_LINK=true
         fi
@@ -565,7 +590,16 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             # 方案 C：双入口，不再需要 bridge.c
             # std.runtime 提供 export extern "libc" fn main(argc, argv) 作为 C 入口
             # 用户 export fn main() 被编译为 main_main()
-            if [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ]; then
+            if [ "$USE_C99" = true ] && [ -n "${UYA_SPLIT_C_DIR:-}" ] && [ -f "${UYA_SPLIT_C_DIR}/Makefile" ]; then
+                LINK_CMD_DESC="make -C ${UYA_SPLIT_C_DIR} -j\${UYA_GCC_JOBS:-4} UYA_OUT=${EXECUTABLE_FILE} CC=${CC_DRIVER} ..."
+                if run_uya_split_make_link "$UYA_SPLIT_C_DIR" "$EXECUTABLE_FILE"; then
+                    echo -e "${GREEN}✓ C99 可执行文件已生成（多文件 C / make）: $EXECUTABLE_FILE${NC}"
+                else
+                    echo -e "${RED}✗ 多文件 C 链接失败${NC}"
+                    echo "  可尝试: $LINK_CMD_DESC"
+                    exit 1
+                fi
+            elif [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ]; then
                 LINK_CMD_DESC=""
                 if [ "$USE_NOSTDLIB" = true ]; then
                     if [ "$TARGET_OS" != "linux" ] || [ "$TARGET_ARCH" != "x86_64" ]; then
@@ -624,6 +658,9 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                 echo -e "${RED}✗ 可执行文件生成失败${NC}"
                 echo "预期可执行文件路径: $EXECUTABLE_FILE"
                 echo "目标文件路径: $OUTPUT_FILE"
+                if [ "$USE_C99" = true ] && [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
+                    echo "提示: 已设置 UYA_SPLIT_C_DIR=${UYA_SPLIT_C_DIR}，但未找到 ${UYA_SPLIT_C_DIR}/Makefile（代码生成是否成功？）"
+                fi
                 if [ -f "$OUTPUT_FILE" ]; then
                     echo ""
                     echo "目标文件已生成，但链接失败。可能的原因："
@@ -658,39 +695,65 @@ if [ $COMPILER_EXIT -eq 0 ]; then
         echo "类型: 可执行文件"
         if [ -f "$OUTPUT_FILE" ]; then
             echo "目标文件: $OUTPUT_FILE（中间文件，可删除）"
+        elif [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
+            echo "多文件 C 输出目录: ${UYA_SPLIT_C_DIR}（uya_part1.c / uya_part2.c + Makefile）"
         fi
 
-        # 自举对比：用自举编译器再编译自身，与 C 编译器输出的 C 文件对比
-        if [ "$BOOTSTRAP_COMPARE" = true ] && [ -f "$EXECUTABLE_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
+        # 自举对比：默认 diff 两次 C；UYA_SPLIT_C_DIR 或 UYA_BOOTSTRAP_COMPARE_BIN 时改为 cmp 两次可执行文件
+        if [ "$BOOTSTRAP_COMPARE" = true ] && [ -f "$EXECUTABLE_FILE" ]; then
+            BOOTSTRAP_BIN_COMPARE=false
+            case "${UYA_BOOTSTRAP_COMPARE_BIN:-}" in
+                1|true|yes|YES) BOOTSTRAP_BIN_COMPARE=true ;;
+            esac
+            if [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
+                BOOTSTRAP_BIN_COMPARE=true
+            fi
+            if [ "$BOOTSTRAP_BIN_COMPARE" != true ] && [ ! -f "$OUTPUT_FILE" ]; then
+                echo ""
+                echo -e "${YELLOW}跳过自举对比：未生成单文件 C（$OUTPUT_FILE），且未启用二进制对比${NC}"
+            else
             echo ""
             echo "=========================================="
-            echo "自举对比：用自举编译器编译自身，对比 C 输出"
+            if [ "$BOOTSTRAP_BIN_COMPARE" = true ]; then
+                echo "自举对比：用自举编译器编译自身，对比可执行文件（cmp）"
+            else
+                echo "自举对比：用自举编译器编译自身，对比 C 输出（diff）"
+            fi
             echo "=========================================="
             BOOTSTRAP_C="$BUILD_DIR/compiler_bootstrap.c"
+            BOOTSTRAP_EXE="$BUILD_DIR/uya_bootstrap_compare${TARGET_EXE_SUFFIX}"
+            BOOTSTRAP_SPLIT_DIR="${BUILD_DIR}/bootstrap_split_c"
             if [ "$VERBOSE" = true ]; then
                 echo "自举编译器: $EXECUTABLE_FILE"
-                # 自举对比：使用自动依赖收集模式
                 echo "输入路径: $INPUT_PATH"
-                echo "C 编译器输出: $OUTPUT_FILE"
-                echo "自举输出: $BOOTSTRAP_C"
+                if [ "$BOOTSTRAP_BIN_COMPARE" != true ]; then
+                    echo "C 编译器输出: $OUTPUT_FILE"
+                fi
+                echo "自举输出 C: $BOOTSTRAP_C"
+                echo "自举对比可执行文件: $BOOTSTRAP_EXE"
             fi
             BOOTSTRAP_LOG=$(mktemp)
-            # 自举编译器栈上大数组多，增大栈限制（与 C 版行为一致，参考 src/main.c ARENA/LEXER 等）
-            # 使用相同的输入方式，让自举编译器也自动收集依赖（或使用相同的文件列表）
-            # 注意：移除 exec，直接调用可执行文件，避免可能的错误处理问题
-            # 如果自举编译器段错误，可能是程序本身的问题，暂时跳过自举对比
-            # 注意：Lexer 结构体包含 1MB 缓冲区，递归调用需要大栈空间
-            # 须与主编译一致：nostdlib 构建时自举对比也要 --nostdlib，否则 main(argv) C 签名不一致
             BOOTSTRAP_UYA_FLAGS=(--c99)
             if [ "$USE_NOSTDLIB" = true ]; then
                 BOOTSTRAP_UYA_FLAGS+=(--nostdlib)
             fi
+            if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
+                rm -rf "$BOOTSTRAP_SPLIT_DIR"
+                mkdir -p "$BOOTSTRAP_SPLIT_DIR"
+            fi
             if [ "$USE_AUTO_DEPS" = true ]; then
-                # 与主编译一致：传递 main.uya 和 entry.uya，确保依赖收集顺序相同
                 ENTRY_FILE="$REPO_ROOT/lib/std/runtime/entry/entry.uya"
-                (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
+                if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
+                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" UYA_SPLIT_C_DIR="$BOOTSTRAP_SPLIT_DIR" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
+                else
+                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
+                fi
             else
-                (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
+                if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
+                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" UYA_SPLIT_C_DIR="$BOOTSTRAP_SPLIT_DIR" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
+                else
+                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
+                fi
             fi
             BOOTSTRAP_EXIT=$?
             if [ "$BOOTSTRAP_EXIT" -ne 0 ]; then
@@ -704,11 +767,54 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                 echo -e "${YELLOW}注意: 自举编译器可能存在问题，跳过自举对比${NC}"
                 echo "这可能是由于自举编译器生成的代码有 bug，需要进一步调试"
                 rm -f "$BOOTSTRAP_LOG"
-                # 不退出，允许继续执行（自举对比失败不应该阻止编译成功）
-                # exit 1
             else
                 rm -f "$BOOTSTRAP_LOG"
-                if [ -f "$BOOTSTRAP_C" ]; then
+                if [ "$BOOTSTRAP_BIN_COMPARE" = true ]; then
+                    rm -f "$BOOTSTRAP_EXE"
+                    if [ -n "${UYA_SPLIT_C_DIR:-}" ] && [ -f "${BOOTSTRAP_SPLIT_DIR}/Makefile" ]; then
+                        if ! run_uya_split_make_link "$BOOTSTRAP_SPLIT_DIR" "$BOOTSTRAP_EXE"; then
+                            echo -e "${RED}✗ 自举阶段多文件 C 链接失败${NC}"
+                            exit 1
+                        fi
+                    elif [ -f "$BOOTSTRAP_C" ]; then
+                        if [ "$USE_NOSTDLIB" = true ]; then
+                            if [ "$TARGET_OS" != "linux" ] || [ "$TARGET_ARCH" != "x86_64" ]; then
+                                echo -e "${RED}✗ 二进制自举对比暂不支持当前平台的 --nostdlib${NC}"
+                                exit 1
+                            fi
+                            UYA_O_B="$BUILD_DIR/uya_bootstrap.o"
+                            if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -c "$BOOTSTRAP_C" -o "$UYA_O_B" 2>&1; then
+                                echo -e "${RED}✗ 自举 C 编译为 .o 失败${NC}"
+                                exit 1
+                            fi
+                            CRTI="$("${CC_CMD[@]}" -print-file-name=crti.o 2>/dev/null)"
+                            CRTN="$("${CC_CMD[@]}" -print-file-name=crtn.o 2>/dev/null)"
+                            if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -no-pie -nostdlib -static -o "$BOOTSTRAP_EXE" "$CRTI" "$UYA_O_B" "$CRTN" "${LDFLAGS_ARR[@]}" 2>&1; then
+                                echo -e "${RED}✗ 自举可执行文件链接失败${NC}"
+                                exit 1
+                            fi
+                        else
+                            if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" "$BOOTSTRAP_C" -o "$BOOTSTRAP_EXE" "${LDFLAGS_ARR[@]}" 2>&1; then
+                                echo -e "${RED}✗ 自举可执行文件链接失败${NC}"
+                                exit 1
+                            fi
+                        fi
+                    else
+                        echo -e "${RED}✗ 自举未生成可供链接的输出${NC}"
+                        exit 1
+                    fi
+                    if cmp -s "$EXECUTABLE_FILE" "$BOOTSTRAP_EXE"; then
+                        echo -e "${GREEN}✓ 自举对比一致：主编译器与自举编译器生成的可执行文件字节相同（cmp）${NC}"
+                    else
+                        echo -e "${RED}✗ 自举对比不一致：两次可执行文件不同${NC}"
+                        echo "  主编译器: $EXECUTABLE_FILE"
+                        echo "  自举编译器: $BOOTSTRAP_EXE"
+                        if command -v sha256sum >/dev/null 2>&1; then
+                            sha256sum "$EXECUTABLE_FILE" "$BOOTSTRAP_EXE"
+                        fi
+                        exit 1
+                    fi
+                elif [ -f "$BOOTSTRAP_C" ] && [ -f "$OUTPUT_FILE" ]; then
                     if diff -q "$OUTPUT_FILE" "$BOOTSTRAP_C" >/dev/null 2>&1; then
                         echo -e "${GREEN}✓ 自举对比一致：C 编译器与自举编译器生成的 C 文件完全一致${NC}"
                     else
@@ -720,6 +826,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                         exit 1
                     fi
                 fi
+            fi
             fi
         fi
     elif [ -f "$OUTPUT_FILE" ]; then

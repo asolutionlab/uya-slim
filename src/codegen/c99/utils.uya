@@ -6,6 +6,14 @@
 
 // ===== 外部函数声明 =====
 // C 标准库函数（在 extern_decls.uya 中声明）
+extern fn mkdir(pathname: *byte, mode: i32) i32;
+extern fn fopen(filename: *byte, mode: *byte) *void;
+extern fn fclose(stream: *void) i32;
+extern fn snprintf(buf: *byte, size: usize, format: *byte, ...) i32;
+extern fn fputc(c: i32, stream: *void) i32;
+extern fn fprintf(stream: *void, format: *byte, ...) i32;
+extern fn fputs(s: *byte, stream: *void) i32;
+extern fn fwrite(ptr: *void, size: usize, nmemb: usize, stream: *void) usize;
 
 extern fn hash_string(str: &byte) i32;
 extern fn c99_ident_ref_cache_reset() void;
@@ -70,11 +78,36 @@ fn c99_string_const_cache_store(codegen: &C99CodeGenerator, value: &byte, const_
 }
 
 // 创建 C99 代码生成器
+// split_root: 非空时启用多文件输出（uya_part1.c + uya_part2.c），忽略 output（可传 null）
 // is_nostdlib: 1=使用 syscall，0=使用标准库
 // freestanding: 1=不包含头文件，0=按需包含头文件
-fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, module_name: &byte, emit_line_directives: i32, is_nostdlib: i32, stack_size: i32) i32 {
-    if codegen == null || arena == null || output == null || module_name == null {
+fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, module_name: &byte, emit_line_directives: i32, is_nostdlib: i32, stack_size: i32, split_root: &byte) i32 {
+    if codegen == null || arena == null || module_name == null {
         return -1;
+    }
+
+    var out_file: &void = output;
+    var part2_handle: &void = null;
+    if split_root != null && split_root[0] != 0 as byte {
+        _ = mkdir(split_root as *byte, 493);
+        var path1: [byte: 1024] = [];
+        var path2: [byte: 1024] = [];
+        const n1: i32 = snprintf(&path1[0] as *byte, 1024, "%s/uya_part1.c" as *byte, split_root as *byte);
+        const n2: i32 = snprintf(&path2[0] as *byte, 1024, "%s/uya_part2.c" as *byte, split_root as *byte);
+        if n1 <= 0 || n1 >= 1024 || n2 <= 0 || n2 >= 1024 {
+            return -1;
+        }
+        out_file = fopen(&path1[0] as *byte, "w" as *byte);
+        part2_handle = fopen(&path2[0] as *byte, "w" as *byte);
+        if out_file == null || part2_handle == null {
+            if out_file != null { fclose(out_file as *void); }
+            if part2_handle != null { fclose(part2_handle as *void); }
+            return -1;
+        }
+    } else {
+        if out_file == null {
+            return -1;
+        }
     }
 
     // 初始化字段
@@ -82,7 +115,19 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     c99_ident_ref_cache_reset();
     codegen.arena = arena;
     codegen.checker = null;
-    codegen.output = output;
+    codegen.output = out_file;
+    codegen.emit_stream = out_file;
+    if split_root != null && split_root[0] != 0 as byte {
+        codegen.split_enabled = 1;
+        codegen.split_part2_out = part2_handle;
+        codegen.split_body_started = 0;
+        codegen.split_dir = c99_arena_strdup(arena, split_root);
+    } else {
+        codegen.split_enabled = 0;
+        codegen.split_part2_out = null;
+        codegen.split_body_started = 0;
+        codegen.split_dir = null;
+    }
     codegen.indent_level = 0;
     codegen.module_name = module_name;
 
@@ -301,16 +346,67 @@ fn c99_get_or_add_error_id(codegen: &C99CodeGenerator, name: &byte) i32 {
     return h as i32;
 }
 
-// 释放资源（不关闭输出文件）
+// 释放资源；多文件模式下关闭由本生成器打开的 FILE*
 fn c99_codegen_free(codegen: &C99CodeGenerator) void {
-    // 当前没有动态分配的资源需要释放
-    // codegen 参数未使用，但保留以保持接口一致性
+    if codegen == null {
+        return;
+    }
+    if codegen.split_enabled != 0 {
+        if codegen.output != null {
+            _ = fclose(codegen.output as *void);
+            codegen.output = null;
+        }
+        if codegen.split_part2_out != null {
+            _ = fclose(codegen.split_part2_out as *void);
+            codegen.split_part2_out = null;
+        }
+        codegen.emit_stream = null;
+    }
+}
+
+// split 模式下在 part1 写完字符串常量后切换到 part2，并写入跨 TU 可见的字符串 extern
+export fn c99_split_begin_body(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.split_enabled == 0 || codegen.split_part2_out == null {
+        return;
+    }
+    const p2: &void = codegen.split_part2_out;
+    fputs("\n/* --- uya_part2.c: 接续 uya_part1.c（由 Makefile cat 合并后再 gcc -c） */\n" as *byte, p2 as *void);
+    fputc(10, p2 as *void);
+    codegen.emit_stream = p2;
+    codegen.split_body_started = 1;
+}
+
+// 生成 split 目录下的 Makefile（make -j 并行编译 uya_part*.c）
+export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.split_enabled == 0 || codegen.split_dir == null {
+        return;
+    }
+    var mkpath: [byte: 1024] = [];
+    const mklen: i32 = snprintf(&mkpath[0] as *byte, 1024, "%s/Makefile" as *byte, codegen.split_dir as *byte);
+    if mklen <= 0 || mklen >= 1024 {
+        return;
+    }
+    const mf: *void = fopen(&mkpath[0] as *byte, "w" as *byte);
+    if mf == null {
+        return;
+    }
+    fputs("# Generated by Uya --split-c-dir\n" as *byte, mf);
+    fputs("CC ?= cc\nCFLAGS ?= -std=c99 -Wall -Wextra -pedantic -g\nLDFLAGS ?=\n" as *byte, mf);
+    fputs("MERGED := uya_split_all.c\n" as *byte, mf);
+    fputs("OBJS := uya_split_all.o\n" as *byte, mf);
+    fputs(".PHONY: all clean\n" as *byte, mf);
+    fputs("all: $(UYA_OUT)\n" as *byte, mf);
+    fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)\n" as *byte, mf);
+    fputs("$(MERGED): uya_part1.c uya_part2.c\n\tcat uya_part1.c uya_part2.c > $(MERGED)\n" as *byte, mf);
+    fputs("uya_split_all.o: $(MERGED)\n\t$(CC) -c $(CFLAGS) $(MERGED) -o uya_split_all.o\n" as *byte, mf);
+    fputs("clean:\n\trm -f $(MERGED) $(OBJS) $(UYA_OUT)\n" as *byte, mf);
+    _ = fclose(mf);
 }
 
 // 生成 #line 指令（用于调试，让C编译器错误信息指向原始Uya源文件）
 // 优化：只在行号或文件名变化时才生成，避免重复
 fn emit_line_directive(codegen: &C99CodeGenerator, line: i32, filename: &byte) void {
-    if codegen == null || codegen.output as *void == null {
+    if codegen == null || codegen.emit_stream as *void == null {
         return;
     }
     
@@ -335,18 +431,18 @@ fn emit_line_directive(codegen: &C99CodeGenerator, line: i32, filename: &byte) v
     
     if filename != null && filename[0] != 0 {
         // 转义文件名中的特殊字符（如引号、反斜杠）
-        fprintf(codegen.output as *void, "#line %d \"" as *byte, line);
+        fprintf(codegen.emit_stream as *void, "#line %d \"" as *byte, line);
         var p: &byte = filename;
         while p[0] != 0 {
             if p[0] == 92 || p[0] == 34 {  // '\' 或 '"'
-                fputc(92, codegen.output as *void);  // '\\'
+                fputc(92, codegen.emit_stream as *void);  // '\\'
             }
-            fputc(p[0] as i32, codegen.output as *void);
+            fputc(p[0] as i32, codegen.emit_stream as *void);
             p = p + 1;
         }
-        fputs("\"\n" as *byte, codegen.output as *void);
+        fputs("\"\n" as *byte, codegen.emit_stream as *void);
     } else {
-        fprintf(codegen.output as *void, "#line %d\n" as *byte, line);
+        fprintf(codegen.emit_stream as *void, "#line %d\n" as *byte, line);
     }
 }
 
@@ -377,33 +473,33 @@ fn c99_emit_indent(codegen: &C99CodeGenerator) void {
         // 超过缓存大小，使用循环（很少见）
         var i: i32 = 0;
         while i < codegen.indent_level {
-            fputs("    " as *byte, codegen.output as *void);
+            fputs("    " as *byte, codegen.emit_stream as *void);
             i = i + 1;
         }
         return;
     }
     // 使用 fwrite 一次性写入，比循环 fputs 快
-    fwrite(&g_indent_spaces[0] as *void, 1, total, codegen.output as *void);
+    fwrite(&g_indent_spaces[0] as *void, 1, total, codegen.emit_stream as *void);
 }
 
 // 换行
 fn c99_emit_newline(codegen: &C99CodeGenerator) void {
-    fputc(10, codegen.output as *void);  // '\n'
+    fputc(10, codegen.emit_stream as *void);  // '\n'
 }
 
 // 分号换行
 fn c99_emit_semi_newline(codegen: &C99CodeGenerator) void {
-    fputs(";\n" as *byte, codegen.output as *void);
+    fputs(";\n" as *byte, codegen.emit_stream as *void);
 }
 
 // 逗号空格
 fn c99_emit_comma_space(codegen: &C99CodeGenerator) void {
-    fputs(", " as *byte, codegen.output as *void);
+    fputs(", " as *byte, codegen.emit_stream as *void);
 }
 
 // 右花括号换行
 fn c99_emit_close_brace_newline(codegen: &C99CodeGenerator) void {
-    fputs("}\n" as *byte, codegen.output as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
 }
 
 // 简单输出（带缩进处理）
@@ -414,7 +510,7 @@ fn c99_emit(codegen: &C99CodeGenerator, str: &byte) void {
     c99_emit_indent(codegen);
     
     // 输出字符串（使用 fputs）
-    fputs(str as *byte, codegen.output as *void);
+    fputs(str as *byte, codegen.emit_stream as *void);
 }
 
 // 简单的字符串复制到 Arena（用于 C99 代码生成器）
@@ -693,12 +789,16 @@ fn emit_string_constants(codegen: &C99CodeGenerator) void {
         return;
     }
     
-    fputs("\n// 字符串常量（char 类型以满足 -Wformat= 对 fprintf/snprintf 格式参数的要求）\n" as *byte, codegen.output as *void);
+    fputs("\n// 字符串常量（char 类型以满足 -Wformat= 对 fprintf/snprintf 格式参数的要求）\n" as *byte, codegen.emit_stream as *void);
     var i: i32 = 0;
     while i < codegen.string_constant_count {
-        fprintf(codegen.output as *void, "static const char %s[] = \"" as *byte, codegen.string_constants[i].name as *byte);
-        escape_string_for_c(codegen.output, codegen.string_constants[i].value);
-        fputs("\";\n" as *byte, codegen.output as *void);
+        if codegen.split_enabled != 0 {
+            fprintf(codegen.emit_stream as *void, "const char %s[] = \"" as *byte, codegen.string_constants[i].name as *byte);
+        } else {
+            fprintf(codegen.emit_stream as *void, "static const char %s[] = \"" as *byte, codegen.string_constants[i].name as *byte);
+        }
+        escape_string_for_c(codegen.emit_stream, codegen.string_constants[i].value);
+        fputs("\";\n" as *byte, codegen.emit_stream as *void);
         i = i + 1;
     }
     codegen.string_constants_emitted_count = codegen.string_constant_count;
@@ -709,17 +809,26 @@ export fn emit_pending_string_constants(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.string_constant_count <= codegen.string_constants_emitted_count {
         return;
     }
-    fputs("\n// 延迟字符串常量（宏展开等）\n" as *byte, codegen.output as *void);
+    const saved: &void = codegen.emit_stream;
+    if codegen.split_enabled != 0 && codegen.split_body_started != 0 {
+        codegen.emit_stream = codegen.output;
+    }
+    fputs("\n// 延迟字符串常量（宏展开等）\n" as *byte, codegen.emit_stream as *void);
     var i: i32 = codegen.string_constants_emitted_count;
     while i < codegen.string_constant_count {
         if codegen.string_constants[i].value != null {
-            fprintf(codegen.output as *void, "static const char %s[] = \"" as *byte, codegen.string_constants[i].name as *byte);
-            escape_string_for_c(codegen.output, codegen.string_constants[i].value);
-            fputs("\";\n" as *byte, codegen.output as *void);
+            if codegen.split_enabled != 0 {
+                fprintf(codegen.emit_stream as *void, "const char %s[] = \"" as *byte, codegen.string_constants[i].name as *byte);
+            } else {
+                fprintf(codegen.emit_stream as *void, "static const char %s[] = \"" as *byte, codegen.string_constants[i].name as *byte);
+            }
+            escape_string_for_c(codegen.emit_stream, codegen.string_constants[i].value);
+            fputs("\";\n" as *byte, codegen.emit_stream as *void);
         }
         i = i + 1;
     }
     codegen.string_constants_emitted_count = codegen.string_constant_count;
+    codegen.emit_stream = saved;
 }
 
 // 评估编译时常量表达式（返回 -1 表示无法评估）
@@ -919,9 +1028,9 @@ fn emit_printf_fmt_inline(codegen: &C99CodeGenerator, interp: &ASTNode) void {
     if off >= 0 && off < C99_STRING_INTERP_BUF_SIZE {
         buf[off] = 0;
     }
-    fputc(34, codegen.output as *void);
-    escape_string_for_c(codegen.output, &buf[0] as &byte);
-    fputc(34, codegen.output as *void);
+    fputc(34, codegen.emit_stream as *void);
+    escape_string_for_c(codegen.emit_stream, &buf[0] as &byte);
+    fputc(34, codegen.emit_stream as *void);
 }
 
 // 收集表达式中的字符串常量（不生成代码）

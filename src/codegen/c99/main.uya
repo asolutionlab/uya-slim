@@ -1056,13 +1056,13 @@ fn gen_test_function(codegen: &C99CodeGenerator, test_stmt: &ASTNode) void {
     
     // 生成函数定义：返回 struct err_union_void
     emit_line_directive(codegen, test_stmt.line, test_stmt.filename);
-    fprintf(codegen.output as *void, "static struct err_union_void %s(void) {\n" as *byte, func_name as *byte);
+    fprintf(codegen.emit_stream as *void, "static struct err_union_void %s(void) {\n" as *byte, func_name as *byte);
     
     // 生成函数体
     gen_stmt(codegen, body);
     
     // 函数结尾返回成功（空的 err_union_void）
-    fputs("    return (struct err_union_void){ .error_id = 0 };\n" as *byte, codegen.output as *void);
+    fputs("    return (struct err_union_void){ .error_id = 0 };\n" as *byte, codegen.emit_stream as *void);
     
     // 恢复之前的返回类型
     codegen.current_function_return_type = saved_return_type;
@@ -1076,7 +1076,7 @@ fn gen_test_runner(codegen: &C99CodeGenerator, tests: & & ASTNode, test_count: i
         return;
     }
     
-    fputs("static void uya_run_tests(void) {\n" as *byte, codegen.output as *void);
+    fputs("static void uya_run_tests(void) {\n" as *byte, codegen.emit_stream as *void);
     
     var i: i32 = 0;
     while i < test_count {
@@ -1086,16 +1086,16 @@ fn gen_test_runner(codegen: &C99CodeGenerator, tests: & & ASTNode, test_count: i
             const description: &byte = test_node.test_stmt_description;
             if func_name != null {
                 // 输出测试名称
-                fprintf(codegen.output as *void, "    printf(\"  TEST: %s ... \");\n" as *byte, description as *byte);
+                fprintf(codegen.emit_stream as *void, "    printf(\"  TEST: %s ... \");\n" as *byte, description as *byte);
                 // 记录测试前的计数
-                fputs("    { int _before = _test_passed + _test_failed;\n" as *byte, codegen.output as *void);
-                fputs("      struct err_union_void _test_result = " as *byte, codegen.output as *void);
-                fprintf(codegen.output as *void, "%s();\n" as *byte, func_name as *byte);
-                fputs("      int _after = _test_passed + _test_failed;\n" as *byte, codegen.output as *void);
+                fputs("    { int _before = _test_passed + _test_failed;\n" as *byte, codegen.emit_stream as *void);
+                fputs("      struct err_union_void _test_result = " as *byte, codegen.emit_stream as *void);
+                fprintf(codegen.emit_stream as *void, "%s();\n" as *byte, func_name as *byte);
+                fputs("      int _after = _test_passed + _test_failed;\n" as *byte, codegen.emit_stream as *void);
                 // try assert_* 失败时仅 error_id!=0，不会增加 _test_passed；须计入 _test_failed，否则 main_main 仍 return 0，脚本误判通过
-                fputs("      if (_test_result.error_id != 0) { printf(\"ERROR\\n\"); _test_failed = _test_failed + 1; }\n" as *byte, codegen.output as *void);
+                fputs("      if (_test_result.error_id != 0) { printf(\"ERROR\\n\"); _test_failed = _test_failed + 1; }\n" as *byte, codegen.emit_stream as *void);
                 // 无 try assert 的成功用例不会改变 _test_passed；须计为 1 次通过，否则空体会误印 FAILED 且汇总全为 0
-                fputs("      else { if (_after == _before) { _test_passed = _test_passed + 1; } printf(\"OK\\n\"); } }\n" as *byte, codegen.output as *void);
+                fputs("      else { if (_after == _before) { _test_passed = _test_passed + 1; } printf(\"OK\\n\"); } }\n" as *byte, codegen.emit_stream as *void);
             }
         }
         i = i + 1;
@@ -1169,15 +1169,15 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     }
     
     // 输出文件头
-    fputs("// C99 代码由 Uya Mini 编译器生成\n" as *byte, codegen.output as *void);
-    fputs("// 使用 -std=c99 编译\n" as *byte, codegen.output as *void);
-    fputs("//\n" as *byte, codegen.output as *void);
+    fputs("// C99 代码由 Uya Mini 编译器生成\n" as *byte, codegen.emit_stream as *void);
+    fputs("// 使用 -std=c99 编译\n" as *byte, codegen.emit_stream as *void);
+    fputs("//\n" as *byte, codegen.emit_stream as *void);
     
     // 输出堆栈大小提示（如果指定了）
     if codegen.stack_size > 0 {
-        fprintf(codegen.output as *void, "// 堆栈大小提示：此程序需要至少 %d KB 的堆栈空间\n" as *byte, codegen.stack_size);
-        fprintf(codegen.output as *void, "// 编译时请使用：ulimit -s %d\n" as *byte, codegen.stack_size);
-        fputs("//\n" as *byte, codegen.output as *void);
+        fprintf(codegen.emit_stream as *void, "// 堆栈大小提示：此程序需要至少 %d KB 的堆栈空间\n" as *byte, codegen.stack_size);
+        fprintf(codegen.emit_stream as *void, "// 编译时请使用：ulimit -s %d\n" as *byte, codegen.stack_size);
+        fputs("//\n" as *byte, codegen.emit_stream as *void);
     }
 
     const decl_count: i32 = ast.program_decl_count;
@@ -1199,155 +1199,155 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
 
     if is_std_lib != 0 {
         // 标准库模式：零依赖，自己定义所有类型
-        fputs("// 零依赖标准库：自己定义所有类型（用于 --nostdlib 编译）\n" as *byte, codegen.output as *void);
+        fputs("// 零依赖标准库：自己定义所有类型（用于 --nostdlib 编译）\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         // 定义基本类型
-        fputs("// 基本整数类型\n" as *byte, codegen.output as *void);
-        fputs("typedef signed char int8_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned char uint8_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef short int16_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned short uint16_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef int int32_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned int uint32_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef long long int64_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned long long uint64_t;\n" as *byte, codegen.output as *void);
+        fputs("// 基本整数类型\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef signed char int8_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef unsigned char uint8_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef short int16_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef unsigned short uint16_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef int int32_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef unsigned int uint32_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef long long int64_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef unsigned long long uint64_t;\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         // size_t 和 ptrdiff_t
-        fputs("// size_t 和 ptrdiff_t\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned long size_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef long ptrdiff_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef long intptr_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned long uintptr_t;\n" as *byte, codegen.output as *void);
+        fputs("// size_t 和 ptrdiff_t\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef unsigned long size_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef long ptrdiff_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef long intptr_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef unsigned long uintptr_t;\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         // bool 类型
-        fputs("// bool 类型\n" as *byte, codegen.output as *void);
-        fputs("typedef uint8_t bool;\n" as *byte, codegen.output as *void);
-        fputs("#define true ((bool)1)\n" as *byte, codegen.output as *void);
-        fputs("#define false ((bool)0)\n" as *byte, codegen.output as *void);
+        fputs("// bool 类型\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef uint8_t bool;\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define true ((bool)1)\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define false ((bool)0)\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         // NULL 定义
-        fputs("// NULL 定义\n" as *byte, codegen.output as *void);
-        fputs("#define NULL ((void*)0)\n" as *byte, codegen.output as *void);
+        fputs("// NULL 定义\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define NULL ((void*)0)\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         // offsetof 宏（用于 alignof）
-        fputs("// offsetof 宏（C99 兼容）\n" as *byte, codegen.output as *void);
-        fputs("#define offsetof(type, member) ((size_t) &((type *)0)->member)\n" as *byte, codegen.output as *void);
+        fputs("// offsetof 宏（C99 兼容）\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define offsetof(type, member) ((size_t) &((type *)0)->member)\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         // C99 兼容的 alignof 宏（使用 offsetof 技巧）
-        fputs("// C99 兼容的 alignof 实现\n" as *byte, codegen.output as *void);
-        fputs("#define uya_alignof(type) offsetof(struct { char c; type t; }, t)\n" as *byte, codegen.output as *void);
+        fputs("// C99 兼容的 alignof 实现\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define uya_alignof(type) offsetof(struct { char c; type t; }, t)\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         // va_list 相关（使用 __builtin_va_list 以支持可变参数）
-        fputs("// va_list 支持（可变参数函数）\n" as *byte, codegen.output as *void);
-        fputs("typedef __builtin_va_list va_list;\n" as *byte, codegen.output as *void);
-        fputs("#define va_start(v, l) __builtin_va_start(v, l)\n" as *byte, codegen.output as *void);
-        fputs("#define va_end(v) __builtin_va_end(v)\n" as *byte, codegen.output as *void);
-        fputs("#define va_arg(v, l) __builtin_va_arg(v, l)\n" as *byte, codegen.output as *void);
-        fputs("#define va_copy(d, s) __builtin_va_copy(d, s)\n" as *byte, codegen.output as *void);
+        fputs("// va_list 支持（可变参数函数）\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef __builtin_va_list va_list;\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define va_start(v, l) __builtin_va_start(v, l)\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define va_end(v) __builtin_va_end(v)\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define va_arg(v, l) __builtin_va_arg(v, l)\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define va_copy(d, s) __builtin_va_copy(d, s)\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         // 注意：标准库模式不使用 __uya_memcpy/__uya_memcmp，因为标准库自己实现了 memcpy/memcmp
     } else {
         // 普通模式：使用标准库头文件
         // hosted 头文件需求、字符串常量和切片/SIMD 类型已在统一预收集阶段完成
         // 必须在首个 #include 之前定义，以便 unistd.h 声明 readlink 等 POSIX 函数
-        fputs("#ifndef _POSIX_C_SOURCE\n#define _POSIX_C_SOURCE 200809L\n#endif\n" as *byte, codegen.output as *void);
+        fputs("#ifndef _POSIX_C_SOURCE\n#define _POSIX_C_SOURCE 200809L\n#endif\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         // @asm_target 平台检测宏定义
         // 平台枚举值：x86_64_linux=0, x86_64_macos=1, x86_64_windows=2, arm64_linux=3, arm64_macos=4, arm64_windows=5, riscv64_linux=6
-        fputs("// @asm_target 平台检测\n" as *byte, codegen.output as *void);
-        fputs("#if defined(__x86_64__) || defined(_M_X64)\n" as *byte, codegen.output as *void);
-        fputs("  #if defined(__linux__)\n" as *byte, codegen.output as *void);
-        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 0\n" as *byte, codegen.output as *void);
-        fputs("  #elif defined(__APPLE__)\n" as *byte, codegen.output as *void);
-        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 1\n" as *byte, codegen.output as *void);
-        fputs("  #elif defined(_WIN32)\n" as *byte, codegen.output as *void);
-        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 2\n" as *byte, codegen.output as *void);
-        fputs("  #else\n" as *byte, codegen.output as *void);
-        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 0\n" as *byte, codegen.output as *void);
-        fputs("  #endif\n" as *byte, codegen.output as *void);
-        fputs("#elif defined(__aarch64__) || defined(_M_ARM64)\n" as *byte, codegen.output as *void);
-        fputs("  #if defined(__linux__)\n" as *byte, codegen.output as *void);
-        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 3\n" as *byte, codegen.output as *void);
-        fputs("  #elif defined(__APPLE__)\n" as *byte, codegen.output as *void);
-        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 4\n" as *byte, codegen.output as *void);
-        fputs("  #elif defined(_WIN32)\n" as *byte, codegen.output as *void);
-        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 5\n" as *byte, codegen.output as *void);
-        fputs("  #else\n" as *byte, codegen.output as *void);
-        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 3\n" as *byte, codegen.output as *void);
-        fputs("  #endif\n" as *byte, codegen.output as *void);
-        fputs("#elif defined(__riscv) && __riscv_xlen == 64\n" as *byte, codegen.output as *void);
-        fputs("  #define UYA_ASM_TARGET_X86_64_LINUX 6\n" as *byte, codegen.output as *void);
-        fputs("#else\n" as *byte, codegen.output as *void);
-        fputs("  #define UYA_ASM_TARGET_X86_64_LINUX 0\n" as *byte, codegen.output as *void);
-        fputs("#endif\n" as *byte, codegen.output as *void);
-        fputs("#define UYA_TARGET_PLATFORM UYA_ASM_TARGET_X86_64_LINUX\n" as *byte, codegen.output as *void);
-        fputs("#if defined(__linux__)\n" as *byte, codegen.output as *void);
-        fputs("  #define UYA_TARGET_OS_LINUX 1\n  #define UYA_TARGET_OS_DARWIN 0\n  #define UYA_TARGET_OS_WINDOWS 0\n" as *byte, codegen.output as *void);
-        fputs("#elif defined(__APPLE__)\n" as *byte, codegen.output as *void);
-        fputs("  #define UYA_TARGET_OS_LINUX 0\n  #define UYA_TARGET_OS_DARWIN 1\n  #define UYA_TARGET_OS_WINDOWS 0\n" as *byte, codegen.output as *void);
-        fputs("#elif defined(_WIN32)\n" as *byte, codegen.output as *void);
-        fputs("  #define UYA_TARGET_OS_LINUX 0\n  #define UYA_TARGET_OS_DARWIN 0\n  #define UYA_TARGET_OS_WINDOWS 1\n" as *byte, codegen.output as *void);
-        fputs("#else\n" as *byte, codegen.output as *void);
-        fputs("  #define UYA_TARGET_OS_LINUX 0\n  #define UYA_TARGET_OS_DARWIN 0\n  #define UYA_TARGET_OS_WINDOWS 0\n" as *byte, codegen.output as *void);
-        fputs("#endif\n" as *byte, codegen.output as *void);
-        fputs("#if defined(__x86_64__) || defined(_M_X64)\n" as *byte, codegen.output as *void);
-        fputs("  #define UYA_TARGET_ARCH_X86_64 1\n  #define UYA_TARGET_ARCH_ARM64 0\n  #define UYA_TARGET_ARCH_RISCV64 0\n" as *byte, codegen.output as *void);
-        fputs("#elif defined(__aarch64__) || defined(_M_ARM64)\n" as *byte, codegen.output as *void);
-        fputs("  #define UYA_TARGET_ARCH_X86_64 0\n  #define UYA_TARGET_ARCH_ARM64 1\n  #define UYA_TARGET_ARCH_RISCV64 0\n" as *byte, codegen.output as *void);
-        fputs("#elif defined(__riscv) && __riscv_xlen == 64\n" as *byte, codegen.output as *void);
-        fputs("  #define UYA_TARGET_ARCH_X86_64 0\n  #define UYA_TARGET_ARCH_ARM64 0\n  #define UYA_TARGET_ARCH_RISCV64 1\n" as *byte, codegen.output as *void);
-        fputs("#else\n" as *byte, codegen.output as *void);
-        fputs("  #define UYA_TARGET_ARCH_X86_64 0\n  #define UYA_TARGET_ARCH_ARM64 0\n  #define UYA_TARGET_ARCH_RISCV64 0\n" as *byte, codegen.output as *void);
-        fputs("#endif\n" as *byte, codegen.output as *void);
+        fputs("// @asm_target 平台检测\n" as *byte, codegen.emit_stream as *void);
+        fputs("#if defined(__x86_64__) || defined(_M_X64)\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #if defined(__linux__)\n" as *byte, codegen.emit_stream as *void);
+        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 0\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #elif defined(__APPLE__)\n" as *byte, codegen.emit_stream as *void);
+        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 1\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #elif defined(_WIN32)\n" as *byte, codegen.emit_stream as *void);
+        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 2\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #else\n" as *byte, codegen.emit_stream as *void);
+        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 0\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #endif\n" as *byte, codegen.emit_stream as *void);
+        fputs("#elif defined(__aarch64__) || defined(_M_ARM64)\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #if defined(__linux__)\n" as *byte, codegen.emit_stream as *void);
+        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 3\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #elif defined(__APPLE__)\n" as *byte, codegen.emit_stream as *void);
+        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 4\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #elif defined(_WIN32)\n" as *byte, codegen.emit_stream as *void);
+        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 5\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #else\n" as *byte, codegen.emit_stream as *void);
+        fputs("    #define UYA_ASM_TARGET_X86_64_LINUX 3\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #endif\n" as *byte, codegen.emit_stream as *void);
+        fputs("#elif defined(__riscv) && __riscv_xlen == 64\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #define UYA_ASM_TARGET_X86_64_LINUX 6\n" as *byte, codegen.emit_stream as *void);
+        fputs("#else\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #define UYA_ASM_TARGET_X86_64_LINUX 0\n" as *byte, codegen.emit_stream as *void);
+        fputs("#endif\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define UYA_TARGET_PLATFORM UYA_ASM_TARGET_X86_64_LINUX\n" as *byte, codegen.emit_stream as *void);
+        fputs("#if defined(__linux__)\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #define UYA_TARGET_OS_LINUX 1\n  #define UYA_TARGET_OS_DARWIN 0\n  #define UYA_TARGET_OS_WINDOWS 0\n" as *byte, codegen.emit_stream as *void);
+        fputs("#elif defined(__APPLE__)\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #define UYA_TARGET_OS_LINUX 0\n  #define UYA_TARGET_OS_DARWIN 1\n  #define UYA_TARGET_OS_WINDOWS 0\n" as *byte, codegen.emit_stream as *void);
+        fputs("#elif defined(_WIN32)\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #define UYA_TARGET_OS_LINUX 0\n  #define UYA_TARGET_OS_DARWIN 0\n  #define UYA_TARGET_OS_WINDOWS 1\n" as *byte, codegen.emit_stream as *void);
+        fputs("#else\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #define UYA_TARGET_OS_LINUX 0\n  #define UYA_TARGET_OS_DARWIN 0\n  #define UYA_TARGET_OS_WINDOWS 0\n" as *byte, codegen.emit_stream as *void);
+        fputs("#endif\n" as *byte, codegen.emit_stream as *void);
+        fputs("#if defined(__x86_64__) || defined(_M_X64)\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #define UYA_TARGET_ARCH_X86_64 1\n  #define UYA_TARGET_ARCH_ARM64 0\n  #define UYA_TARGET_ARCH_RISCV64 0\n" as *byte, codegen.emit_stream as *void);
+        fputs("#elif defined(__aarch64__) || defined(_M_ARM64)\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #define UYA_TARGET_ARCH_X86_64 0\n  #define UYA_TARGET_ARCH_ARM64 1\n  #define UYA_TARGET_ARCH_RISCV64 0\n" as *byte, codegen.emit_stream as *void);
+        fputs("#elif defined(__riscv) && __riscv_xlen == 64\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #define UYA_TARGET_ARCH_X86_64 0\n  #define UYA_TARGET_ARCH_ARM64 0\n  #define UYA_TARGET_ARCH_RISCV64 1\n" as *byte, codegen.emit_stream as *void);
+        fputs("#else\n" as *byte, codegen.emit_stream as *void);
+        fputs("  #define UYA_TARGET_ARCH_X86_64 0\n  #define UYA_TARGET_ARCH_ARM64 0\n  #define UYA_TARGET_ARCH_RISCV64 0\n" as *byte, codegen.emit_stream as *void);
+        fputs("#endif\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         if codegen.freestanding == 0 {
-            fputs("#include <stddef.h>\n" as *byte, codegen.output as *void);
+            fputs("#include <stddef.h>\n" as *byte, codegen.emit_stream as *void);
         }
         // 手动定义标准类型，避免包含标准库头文件
-        fputs("// 标准类型定义（不依赖标准库头文件）\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned char uint8_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned short uint16_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned int uint32_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned long long uint64_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef signed char int8_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef signed short int16_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef signed int int32_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef signed long long int64_t;\n" as *byte, codegen.output as *void);
+        fputs("// 标准类型定义（不依赖标准库头文件）\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef unsigned char uint8_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef unsigned short uint16_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef unsigned int uint32_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef unsigned long long uint64_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef signed char int8_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef signed short int16_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef signed int int32_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef signed long long int64_t;\n" as *byte, codegen.emit_stream as *void);
         if codegen.freestanding != 0 {
-            fputs("typedef unsigned long size_t;\n" as *byte, codegen.output as *void);
+            fputs("typedef unsigned long size_t;\n" as *byte, codegen.emit_stream as *void);
         }
-        fputs("typedef signed long ssize_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef unsigned long uintptr_t;\n" as *byte, codegen.output as *void);
-        fputs("typedef signed long intptr_t;\n" as *byte, codegen.output as *void);
+        fputs("typedef signed long ssize_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef unsigned long uintptr_t;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef signed long intptr_t;\n" as *byte, codegen.emit_stream as *void);
         if codegen.freestanding != 0 {
-            fputs("typedef signed long ptrdiff_t;\n" as *byte, codegen.output as *void);
+            fputs("typedef signed long ptrdiff_t;\n" as *byte, codegen.emit_stream as *void);
         }
-        fputs("#ifndef NULL\n#define NULL ((void *)0)\n#endif\n" as *byte, codegen.output as *void);
-        fputs("#ifndef offsetof\n#define offsetof(type, member) ((size_t)&((type *)0)->member)\n#endif\n" as *byte, codegen.output as *void);
-        fputs("#ifndef true\n#define true 1\n#endif\n" as *byte, codegen.output as *void);
-        fputs("#ifndef false\n#define false 0\n#endif\n" as *byte, codegen.output as *void);
-        fputs("typedef _Bool bool;\n" as *byte, codegen.output as *void);
+        fputs("#ifndef NULL\n#define NULL ((void *)0)\n#endif\n" as *byte, codegen.emit_stream as *void);
+        fputs("#ifndef offsetof\n#define offsetof(type, member) ((size_t)&((type *)0)->member)\n#endif\n" as *byte, codegen.emit_stream as *void);
+        fputs("#ifndef true\n#define true 1\n#endif\n" as *byte, codegen.emit_stream as *void);
+        fputs("#ifndef false\n#define false 0\n#endif\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef _Bool bool;\n" as *byte, codegen.emit_stream as *void);
         // 兼容 async 阶段 B：Future<!i32>/Task<!i32> 的 Poll<!i32> 返回类型别名
         // 说明：struct uya_tagged_Poll_err_i32 在 union Poll<!i32> 的单态实例定义中给出，此处只做前向声明与 typedef。
-        fputs("struct uya_tagged_Poll_err_i32;\n" as *byte, codegen.output as *void);
-        fputs("typedef struct uya_tagged_Poll_err_i32 uya_tagged_Poll_T;\n" as *byte, codegen.output as *void);
+        fputs("struct uya_tagged_Poll_err_i32;\n" as *byte, codegen.emit_stream as *void);
+        fputs("typedef struct uya_tagged_Poll_err_i32 uya_tagged_Poll_T;\n" as *byte, codegen.emit_stream as *void);
         // va_list 支持（可变参数函数）
-        fputs("typedef __builtin_va_list va_list;\n" as *byte, codegen.output as *void);
-        fputs("#define va_start(v, l) __builtin_va_start(v, l)\n" as *byte, codegen.output as *void);
-        fputs("#define va_end(v) __builtin_va_end(v)\n" as *byte, codegen.output as *void);
-        fputs("#define va_arg(v, l) __builtin_va_arg(v, l)\n" as *byte, codegen.output as *void);
-        fputs("#define va_copy(d, s) __builtin_va_copy(d, s)\n" as *byte, codegen.output as *void);
+        fputs("typedef __builtin_va_list va_list;\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define va_start(v, l) __builtin_va_start(v, l)\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define va_end(v) __builtin_va_end(v)\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define va_arg(v, l) __builtin_va_arg(v, l)\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define va_copy(d, s) __builtin_va_copy(d, s)\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         // 如果定义了文件 I/O 函数（fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush），不包含 <stdio.h>
         // 避免与标准库声明冲突。自举编译时强制与 C 编译器一致。
         // freestanding 模式下不包含任何标准库头文件
         if codegen.freestanding == 0 {
             if codegen.has_stdio_conflicts == 0 && is_bootstrap == 0 {
-                fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);  // for standard I/O functions (printf, puts, etc.)
+                fputs("#include <stdio.h>\n" as *byte, codegen.emit_stream as *void);  // for standard I/O functions (printf, puts, etc.)
             }
             // 添加 sys/resource.h 用于 setrlimit（堆栈大小设置）
             if codegen.stack_size > 0 {
-                fputs("#include <sys/resource.h>\n" as *byte, codegen.output as *void);  // for setrlimit
+                fputs("#include <sys/resource.h>\n" as *byte, codegen.emit_stream as *void);  // for setrlimit
             }
         }
         // 不包含 stdlib.h，避免间接引入 stdio.h 导致 fprintf 与 built-in 冲突；exit/malloc 等由 libc 通过 syscall 实现
@@ -1373,7 +1373,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             mi = mi + 1;
         }
         if codegen.freestanding == 0 && codegen.needs_string_h != 0 && has_string_functions == 0 && has_mem_functions == 0 && is_bootstrap == 0 {
-            fputs("#include <string.h>\n" as *byte, codegen.output as *void);
+            fputs("#include <string.h>\n" as *byte, codegen.emit_stream as *void);
         }
         // 检测是否定义了与 stdlib.h 冲突的函数（labs, strtoul, qsort, bsearch 等）
         var has_stdlib_conflicts: i32 = 0;
@@ -1395,11 +1395,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         }
         // 如果使用了 stdlib 函数（exit, malloc, free 等）且没有冲突，包含 <stdlib.h>
         if codegen.freestanding == 0 && codegen.needs_stdlib_h != 0 && has_stdlib_conflicts == 0 && is_bootstrap == 0 {
-            fputs("#include <stdlib.h>\n" as *byte, codegen.output as *void);
+            fputs("#include <stdlib.h>\n" as *byte, codegen.emit_stream as *void);
         }
         // 如果使用了 stdio 函数（printf, fprintf 等）且没有冲突，包含 <stdio.h>
         if codegen.freestanding == 0 && codegen.needs_stdio_h != 0 && codegen.has_stdio_conflicts == 0 && is_bootstrap == 0 {
-            fputs("#include <stdio.h>\n" as *byte, codegen.output as *void);
+            fputs("#include <stdio.h>\n" as *byte, codegen.emit_stream as *void);
         }
         // 不包含 sys/stat.h、unistd.h，避免间接引入 stdio.h 导致 fprintf 等与 built-in 冲突；stat/readlink 由 libc 通过 syscall 实现
         // 若本程序定义了 opendir/readdir/closedir（如 stdlib），不声明系统符号，避免与生成的 uya_opendir 等冲突
@@ -1424,78 +1424,78 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             di = di + 1;
         }
         if has_own_opendir == 0 && is_bootstrap == 0 && codegen.freestanding == 0 {
-            fputs("extern void *opendir(const char *);\n" as *byte, codegen.output as *void);
+            fputs("extern void *opendir(const char *);\n" as *byte, codegen.emit_stream as *void);
         }
         if has_own_readdir == 0 && is_bootstrap == 0 && codegen.freestanding == 0 {
-            fputs("extern void *readdir(void *);\n" as *byte, codegen.output as *void);
+            fputs("extern void *readdir(void *);\n" as *byte, codegen.emit_stream as *void);
         }
         if has_own_closedir == 0 && is_bootstrap == 0 && codegen.freestanding == 0 {
-            fputs("extern int closedir(void *);\n" as *byte, codegen.output as *void);
+            fputs("extern int closedir(void *);\n" as *byte, codegen.emit_stream as *void);
         }
         c99_emit_newline(codegen);
         // C99 兼容的 alignof 宏（使用 offsetof 技巧）
-        fputs("// C99 兼容的 alignof 实现\n" as *byte, codegen.output as *void);
-        fputs("#define uya_alignof(type) offsetof(struct { char c; type t; }, t)\n" as *byte, codegen.output as *void);
+        fputs("// C99 兼容的 alignof 实现\n" as *byte, codegen.emit_stream as *void);
+        fputs("#define uya_alignof(type) offsetof(struct { char c; type t; }, t)\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         // 内置 memcpy/memcmp 实现（避免与用户定义的 memcpy/memcmp 冲突）
-        fputs("static inline void *__uya_memcpy(void *dest, const void *src, size_t n) {\n" as *byte, codegen.output as *void);
-        fputs("    char *d = (char *)dest; const char *s = (const char *)src;\n" as *byte, codegen.output as *void);
-        fputs("    for (size_t i = 0; i < n; i++) d[i] = s[i];\n" as *byte, codegen.output as *void);
-        fputs("    return dest;\n" as *byte, codegen.output as *void);
+        fputs("static inline void *__uya_memcpy(void *dest, const void *src, size_t n) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    char *d = (char *)dest; const char *s = (const char *)src;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    for (size_t i = 0; i < n; i++) d[i] = s[i];\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return dest;\n" as *byte, codegen.emit_stream as *void);
         c99_emit_close_brace_newline(codegen);
-        fputs("static inline int __uya_memcmp(const void *s1, const void *s2, size_t n) {\n" as *byte, codegen.output as *void);
-        fputs("    const unsigned char *a = (const unsigned char *)s1, *b = (const unsigned char *)s2;\n" as *byte, codegen.output as *void);
-        fputs("    for (size_t i = 0; i < n; i++) { if (a[i] != b[i]) return a[i] - b[i]; } return 0;\n" as *byte, codegen.output as *void);
-        fputs("}\n\n" as *byte, codegen.output as *void);
+        fputs("static inline int __uya_memcmp(const void *s1, const void *s2, size_t n) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    const unsigned char *a = (const unsigned char *)s1, *b = (const unsigned char *)s2;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    for (size_t i = 0; i < n; i++) { if (a[i] != b[i]) return a[i] - b[i]; } return 0;\n" as *byte, codegen.emit_stream as *void);
+        fputs("}\n\n" as *byte, codegen.emit_stream as *void);
     }
 
     // --nostdlib 模式：生成 _start 入口和辅助函数
     if codegen.is_nostdlib != 0 {
         // 添加 syscall write 和 strlen 辅助函数
-        fputs("// syscall write - 写入文件描述符\n" as *byte, codegen.output as *void);
-        fputs("static long uya_write(int fd, const char *buf, unsigned long len) {\n" as *byte, codegen.output as *void);
-        fputs("    long ret;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile (\"syscall\" : \"=a\"(ret) : \"a\"(1), \"D\"(fd), \"S\"(buf), \"d\"(len) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.output as *void);
-        fputs("    return ret;\n" as *byte, codegen.output as *void);
-        fputs("}\n\n" as *byte, codegen.output as *void);
+        fputs("// syscall write - 写入文件描述符\n" as *byte, codegen.emit_stream as *void);
+        fputs("static long uya_write(int fd, const char *buf, unsigned long len) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    long ret;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile (\"syscall\" : \"=a\"(ret) : \"a\"(1), \"D\"(fd), \"S\"(buf), \"d\"(len) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return ret;\n" as *byte, codegen.emit_stream as *void);
+        fputs("}\n\n" as *byte, codegen.emit_stream as *void);
         
-        fputs("// strlen - 计算字符串长度\n" as *byte, codegen.output as *void);
-        fputs("static unsigned long uya_strlen(const char *s) {\n" as *byte, codegen.output as *void);
-        fputs("    unsigned long len = 0;\n" as *byte, codegen.output as *void);
-        fputs("    while (s[len]) len++;\n" as *byte, codegen.output as *void);
-        fputs("    return len;\n" as *byte, codegen.output as *void);
-        fputs("}\n\n" as *byte, codegen.output as *void);
+        fputs("// strlen - 计算字符串长度\n" as *byte, codegen.emit_stream as *void);
+        fputs("static unsigned long uya_strlen(const char *s) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    unsigned long len = 0;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    while (s[len]) len++;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return len;\n" as *byte, codegen.emit_stream as *void);
+        fputs("}\n\n" as *byte, codegen.emit_stream as *void);
         
         // 生成 _start 入口
-        fputs("// _start - 自定义程序入口（无 C 标准库，内联汇编实现）\n" as *byte, codegen.output as *void);
+        fputs("// _start - 自定义程序入口（无 C 标准库，内联汇编实现）\n" as *byte, codegen.emit_stream as *void);
         if codegen.is_nostdlib != 0 {
-            fputs("extern int32_t main(int32_t argc, uint8_t **argv);\n" as *byte, codegen.output as *void);
+            fputs("extern int32_t main(int32_t argc, uint8_t **argv);\n" as *byte, codegen.emit_stream as *void);
         } else {
-            fputs("extern int main(int argc, char **argv);\n" as *byte, codegen.output as *void);
+            fputs("extern int main(int argc, char **argv);\n" as *byte, codegen.emit_stream as *void);
         }
-        fputs("__attribute__((naked)) void _start(void) {\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile (\n" as *byte, codegen.output as *void);
-        fputs("        \"movq (%%rsp), %%rdi\\n\\t\"    /* argc */\n" as *byte, codegen.output as *void);
-        fputs("        \"leaq 8(%%rsp), %%rsi\\n\\t\"   /* argv */\n" as *byte, codegen.output as *void);
-        fputs("        \"call main\\n\\t\"\n" as *byte, codegen.output as *void);
-        fputs("        \"movq %%rax, %%rdi\\n\\t\"\n" as *byte, codegen.output as *void);
-        fputs("        \"movq $60, %%rax\\n\\t\"        /* syscall exit */\n" as *byte, codegen.output as *void);
-        fputs("        \"syscall\\n\\t\"\n" as *byte, codegen.output as *void);
-        fputs("        \"hlt\\n\\t\"\n" as *byte, codegen.output as *void);
-        fputs("        : : : \"memory\"\n" as *byte, codegen.output as *void);
-        fputs("    );\n" as *byte, codegen.output as *void);
-        fputs("}\n\n" as *byte, codegen.output as *void);
+        fputs("__attribute__((naked)) void _start(void) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile (\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"movq (%%rsp), %%rdi\\n\\t\"    /* argc */\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"leaq 8(%%rsp), %%rsi\\n\\t\"   /* argv */\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"call main\\n\\t\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"movq %%rax, %%rdi\\n\\t\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"movq $60, %%rax\\n\\t\"        /* syscall exit */\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"syscall\\n\\t\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"hlt\\n\\t\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : : : \"memory\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("    );\n" as *byte, codegen.emit_stream as *void);
+        fputs("}\n\n" as *byte, codegen.emit_stream as *void);
     }
     
     // 生成错误联合类型结构体（用于 @syscall 和其他错误联合类型）
-    fputs("// 错误联合类型（用于 !i64 等）\n" as *byte, codegen.output as *void);
-    fputs("struct err_union_int64_t { uint32_t error_id; int64_t value; };\n" as *byte, codegen.output as *void);
+    fputs("// 错误联合类型（用于 !i64 等）\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct err_union_int64_t { uint32_t error_id; int64_t value; };\n" as *byte, codegen.emit_stream as *void);
     mark_struct_defined(codegen, ("err_union_int64_t" as *byte) as &byte);
     // 常用错误联合：!i32
-    fputs("struct err_union_int32_t { uint32_t error_id; int32_t value; };\n" as *byte, codegen.output as *void);
+    fputs("struct err_union_int32_t { uint32_t error_id; int32_t value; };\n" as *byte, codegen.emit_stream as *void);
     mark_struct_defined(codegen, ("err_union_int32_t" as *byte) as &byte);
     // 生成 err_union_void 用于 test "name" {} 语句
-    fputs("struct err_union_void { uint32_t error_id; };\n" as *byte, codegen.output as *void);
+    fputs("struct err_union_void { uint32_t error_id; };\n" as *byte, codegen.emit_stream as *void);
     mark_struct_defined(codegen, ("err_union_void" as *byte) as &byte);
     c99_emit_newline(codegen);
     if prof_codegen != 0 {
@@ -1506,6 +1506,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 第一步：输出预收集阶段得到的字符串常量定义（在所有其他代码之前）
     var i: i32 = 0;
     emit_string_constants(codegen);
+    c99_split_begin_body(codegen);
     c99_emit_newline(codegen);
     
     // 第三步：注册所有错误声明（用于 return error.X 等）
@@ -1566,11 +1567,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     
     // 第五步：生成所有结构体的前向声明（解决相互依赖）
     // 首先添加内置 TypeInfo 的前向声明（用于 @mc_type）
-    fputs("struct TypeInfo;\n" as *byte, codegen.output as *void);
+    fputs("struct TypeInfo;\n" as *byte, codegen.emit_stream as *void);
     i = 0;
     while i < codegen.struct_definition_count {
         if is_struct_defined(codegen, codegen.struct_definitions[i].name) == 0 {
-            fprintf(codegen.output as *void, "struct %s;\n" as *byte, codegen.struct_definitions[i].name as *byte);
+            fprintf(codegen.emit_stream as *void, "struct %s;\n" as *byte, codegen.struct_definitions[i].name as *byte);
         }
         i = i + 1;
     }
@@ -1630,16 +1631,16 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 }
                 // current 现在是基础元素类型
                 const base_type_c: &byte = c99_type_to_c(codegen, current);
-                fprintf(codegen.output as *void, "typedef %s %s" as *byte, base_type_c as *byte, alias_name as *byte);
+                fprintf(codegen.emit_stream as *void, "typedef %s %s" as *byte, base_type_c as *byte, alias_name as *byte);
                 var d: i32 = 0;
                 while d < dim_count {
-                    fprintf(codegen.output as *void, "[%d]" as *byte, dims[d]);
+                    fprintf(codegen.emit_stream as *void, "[%d]" as *byte, dims[d]);
                     d = d + 1;
                 }
                 c99_emit_semi_newline(codegen);
             } else {
                 const target_type_c: &byte = c99_type_to_c(codegen, target_type);
-                fprintf(codegen.output as *void, "typedef %s %s;\n" as *byte, target_type_c as *byte, alias_name as *byte);
+                fprintf(codegen.emit_stream as *void, "typedef %s %s;\n" as *byte, target_type_c as *byte, alias_name as *byte);
             }
         }
         i = i + 1;
@@ -1750,27 +1751,27 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         if user_defined_typeinfo == 0 && is_struct_defined(codegen, ("TypeInfo" as *byte) as &byte) == 0 {
             // 生成内置 FieldInfo（@mc_type 结构体字段反射）
             if is_struct_defined(codegen, ("FieldInfo" as *byte) as &byte) == 0 {
-                fputs("// 内置 FieldInfo（由 TypeInfo.fields 使用）\n" as *byte, codegen.output as *void);
-                fputs("struct FieldInfo { int8_t *name; int8_t *type_name; };\n\n" as *byte, codegen.output as *void);
+                fputs("// 内置 FieldInfo（由 TypeInfo.fields 使用）\n" as *byte, codegen.emit_stream as *void);
+                fputs("struct FieldInfo { int8_t *name; int8_t *type_name; };\n\n" as *byte, codegen.emit_stream as *void);
                 mark_struct_defined(codegen, ("FieldInfo" as *byte) as &byte);
             }
             // 生成内置 TypeInfo 结构体（含 field_count、fields 以支持结构体字段反射）
-            fputs("// 内置 TypeInfo 结构体（由 @mc_type 使用）\n" as *byte, codegen.output as *void);
-            fputs("struct TypeInfo {\n" as *byte, codegen.output as *void);
-            fputs("    int8_t * name;\n" as *byte, codegen.output as *void);
-            fputs("    int32_t size;\n" as *byte, codegen.output as *void);
-            fputs("    int32_t align;\n" as *byte, codegen.output as *void);
-            fputs("    int32_t kind;\n" as *byte, codegen.output as *void);
-            fputs("    int32_t type_id;\n" as *byte, codegen.output as *void);
-            fputs("    bool is_integer;\n" as *byte, codegen.output as *void);
-            fputs("    bool is_float;\n" as *byte, codegen.output as *void);
-            fputs("    bool is_bool;\n" as *byte, codegen.output as *void);
-            fputs("    bool is_pointer;\n" as *byte, codegen.output as *void);
-            fputs("    bool is_array;\n" as *byte, codegen.output as *void);
-            fputs("    bool is_void;\n" as *byte, codegen.output as *void);
-            fputs("    int32_t field_count;\n" as *byte, codegen.output as *void);
-            fputs("    struct FieldInfo fields[64];\n" as *byte, codegen.output as *void);
-            fputs("};\n\n" as *byte, codegen.output as *void);
+            fputs("// 内置 TypeInfo 结构体（由 @mc_type 使用）\n" as *byte, codegen.emit_stream as *void);
+            fputs("struct TypeInfo {\n" as *byte, codegen.emit_stream as *void);
+            fputs("    int8_t * name;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    int32_t size;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    int32_t align;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    int32_t kind;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    int32_t type_id;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    bool is_integer;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    bool is_float;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    bool is_bool;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    bool is_pointer;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    bool is_array;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    bool is_void;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    int32_t field_count;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    struct FieldInfo fields[64];\n" as *byte, codegen.emit_stream as *void);
+            fputs("};\n\n" as *byte, codegen.emit_stream as *void);
             mark_struct_defined(codegen, ("TypeInfo" as *byte) as &byte);
         }
     }
@@ -1823,259 +1824,259 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // std.thread：宿主 C 间接调用单参函数指针（由 GCC/Clang 保证调用约定与栈对齐）。
     // 使用 static 而非 static inline：在 -O2 下将该助手内联进部分调用点会触发错误优化（段错误）；
     // 保持为翻译单元内普通 static 函数可避免有问题的跨过程内联。
-    fputs("// std.thread：宿主工具链间接调用（跨 -O0/-O2 稳定；见 lib/std/thread.uya）\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) int32_t uya_thread_call_i32(void *fn, int32_t arg) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef int32_t (*uya_thrd_fn_i32)(int32_t);\n" as *byte, codegen.output as *void);
-    fputs("    return ((uya_thrd_fn_i32)fn)(arg);\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) uint32_t uya_thread_call_u32(void *fn, uint32_t arg) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef uint32_t (*uya_thrd_fn_u32)(uint32_t);\n" as *byte, codegen.output as *void);
-    fputs("    return ((uya_thrd_fn_u32)fn)(arg);\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) size_t uya_thread_call_usize(void *fn, size_t arg) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef size_t (*uya_thrd_fn_usz)(size_t);\n" as *byte, codegen.output as *void);
-    fputs("    return ((uya_thrd_fn_usz)fn)(arg);\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) int64_t uya_thread_call_i64(void *fn, int64_t arg) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef int64_t (*uya_thrd_fn_i64)(int64_t);\n" as *byte, codegen.output as *void);
-    fputs("    return ((uya_thrd_fn_i64)fn)(arg);\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) uint64_t uya_thread_call_u64(void *fn, uint64_t arg) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef uint64_t (*uya_thrd_fn_u64)(uint64_t);\n" as *byte, codegen.output as *void);
-    fputs("    return ((uya_thrd_fn_u64)fn)(arg);\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) int16_t uya_thread_call_i16(void *fn, int16_t arg) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef int16_t (*uya_thrd_fn_i16)(int16_t);\n" as *byte, codegen.output as *void);
-    fputs("    return ((uya_thrd_fn_i16)fn)(arg);\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) uint16_t uya_thread_call_u16(void *fn, uint16_t arg) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef uint16_t (*uya_thrd_fn_u16)(uint16_t);\n" as *byte, codegen.output as *void);
-    fputs("    return ((uya_thrd_fn_u16)fn)(arg);\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) int8_t uya_thread_call_i8(void *fn, int8_t arg) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef int8_t (*uya_thrd_fn_i8)(int8_t);\n" as *byte, codegen.output as *void);
-    fputs("    return ((uya_thrd_fn_i8)fn)(arg);\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) uint8_t uya_thread_call_u8(void *fn, uint8_t arg) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef uint8_t (*uya_thrd_fn_u8)(uint8_t);\n" as *byte, codegen.output as *void);
-    fputs("    return ((uya_thrd_fn_u8)fn)(arg);\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) int32_t uya_thread_call_bool(void *fn, int32_t arg) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef int32_t (*uya_thrd_fn_bool)(int32_t);\n" as *byte, codegen.output as *void);
-    fputs("    return ((uya_thrd_fn_bool)fn)(arg);\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
-    fputs("// f32/f64：槽位内仍为 u32/u64 位模式；间接调用须用真实 float/double 调用约定（不可伪装成整数函数指针）。\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) uint32_t uya_thread_call_f32(void *fn, uint32_t arg_bits) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef float (*uya_thrd_fn_f32)(float);\n" as *byte, codegen.output as *void);
-    fputs("    union { uint32_t u; float f; } a;\n" as *byte, codegen.output as *void);
-    fputs("    union { uint32_t u; float f; } out;\n" as *byte, codegen.output as *void);
-    fputs("    a.u = arg_bits;\n" as *byte, codegen.output as *void);
-    fputs("    out.f = ((uya_thrd_fn_f32)fn)(a.f);\n" as *byte, codegen.output as *void);
-    fputs("    return out.u;\n" as *byte, codegen.output as *void);
-    fputs("}\n" as *byte, codegen.output as *void);
-    fputs("static __attribute__((__unused__)) uint64_t uya_thread_call_f64(void *fn, uint64_t arg_bits) {\n" as *byte, codegen.output as *void);
-    fputs("    typedef double (*uya_thrd_fn_f64)(double);\n" as *byte, codegen.output as *void);
-    fputs("    union { uint64_t u; double d; } a;\n" as *byte, codegen.output as *void);
-    fputs("    union { uint64_t u; double d; } out;\n" as *byte, codegen.output as *void);
-    fputs("    a.u = arg_bits;\n" as *byte, codegen.output as *void);
-    fputs("    out.d = ((uya_thrd_fn_f64)fn)(a.d);\n" as *byte, codegen.output as *void);
-    fputs("    return out.u;\n" as *byte, codegen.output as *void);
-    fputs("}\n\n" as *byte, codegen.output as *void);
+    fputs("// std.thread：宿主工具链间接调用（跨 -O0/-O2 稳定；见 lib/std/thread.uya）\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) int32_t uya_thread_call_i32(void *fn, int32_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef int32_t (*uya_thrd_fn_i32)(int32_t);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ((uya_thrd_fn_i32)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) uint32_t uya_thread_call_u32(void *fn, uint32_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef uint32_t (*uya_thrd_fn_u32)(uint32_t);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ((uya_thrd_fn_u32)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) size_t uya_thread_call_usize(void *fn, size_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef size_t (*uya_thrd_fn_usz)(size_t);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ((uya_thrd_fn_usz)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) int64_t uya_thread_call_i64(void *fn, int64_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef int64_t (*uya_thrd_fn_i64)(int64_t);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ((uya_thrd_fn_i64)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) uint64_t uya_thread_call_u64(void *fn, uint64_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef uint64_t (*uya_thrd_fn_u64)(uint64_t);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ((uya_thrd_fn_u64)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) int16_t uya_thread_call_i16(void *fn, int16_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef int16_t (*uya_thrd_fn_i16)(int16_t);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ((uya_thrd_fn_i16)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) uint16_t uya_thread_call_u16(void *fn, uint16_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef uint16_t (*uya_thrd_fn_u16)(uint16_t);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ((uya_thrd_fn_u16)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) int8_t uya_thread_call_i8(void *fn, int8_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef int8_t (*uya_thrd_fn_i8)(int8_t);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ((uya_thrd_fn_i8)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) uint8_t uya_thread_call_u8(void *fn, uint8_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef uint8_t (*uya_thrd_fn_u8)(uint8_t);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ((uya_thrd_fn_u8)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) int32_t uya_thread_call_bool(void *fn, int32_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef int32_t (*uya_thrd_fn_bool)(int32_t);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ((uya_thrd_fn_bool)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("// f32/f64：槽位内仍为 u32/u64 位模式；间接调用须用真实 float/double 调用约定（不可伪装成整数函数指针）。\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) uint32_t uya_thread_call_f32(void *fn, uint32_t arg_bits) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef float (*uya_thrd_fn_f32)(float);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    union { uint32_t u; float f; } a;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    union { uint32_t u; float f; } out;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    a.u = arg_bits;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    out.f = ((uya_thrd_fn_f32)fn)(a.f);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return out.u;\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("static __attribute__((__unused__)) uint64_t uya_thread_call_f64(void *fn, uint64_t arg_bits) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    typedef double (*uya_thrd_fn_f64)(double);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    union { uint64_t u; double d; } a;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    union { uint64_t u; double d; } out;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    a.u = arg_bits;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    out.d = ((uya_thrd_fn_f64)fn)(a.d);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return out.u;\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n\n" as *byte, codegen.emit_stream as *void);
     
     // 第七步 d：按需生成系统调用辅助函数（@syscall 内置函数支持）
     if codegen.needs_syscall_helpers != 0 {
-        fputs("// 系统调用辅助函数：Linux x86-64（syscall）；AArch64（svc 0，x8/x0-x5）；ARM32 EABI（svc 0，r7 + 临时保存，r0-r5 参数）\n" as *byte, codegen.output as *void);
-        fputs("#if defined(__x86_64__) || defined(_M_X64)\n" as *byte, codegen.output as *void);
+        fputs("// 系统调用辅助函数：Linux x86-64（syscall）；AArch64（svc 0，x8/x0-x5）；ARM32 EABI（svc 0，r7 + 临时保存，r0-r5 参数）\n" as *byte, codegen.emit_stream as *void);
+        fputs("#if defined(__x86_64__) || defined(_M_X64)\n" as *byte, codegen.emit_stream as *void);
     
     // uya_syscall0 - 无参数
-    fputs("static inline long uya_syscall0(long nr) {\n" as *byte, codegen.output as *void);
-    fputs("    long ret;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return ret;\n" as *byte, codegen.output as *void);
-    fputs("}\n\n" as *byte, codegen.output as *void);
+    fputs("static inline long uya_syscall0(long nr) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    long ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n\n" as *byte, codegen.emit_stream as *void);
     
     // uya_syscall1 - 1 个参数
-    fputs("static inline long uya_syscall1(long nr, long a1) {\n" as *byte, codegen.output as *void);
-    fputs("    long ret;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return ret;\n" as *byte, codegen.output as *void);
-    fputs("}\n\n" as *byte, codegen.output as *void);
+    fputs("static inline long uya_syscall1(long nr, long a1) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    long ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n\n" as *byte, codegen.emit_stream as *void);
     
     // uya_syscall2 - 2 个参数
-    fputs("static inline long uya_syscall2(long nr, long a1, long a2) {\n" as *byte, codegen.output as *void);
-    fputs("    long ret;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return ret;\n" as *byte, codegen.output as *void);
-    fputs("}\n\n" as *byte, codegen.output as *void);
+    fputs("static inline long uya_syscall2(long nr, long a1, long a2) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    long ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n\n" as *byte, codegen.emit_stream as *void);
     
     // uya_syscall3 - 3 个参数
-    fputs("static inline long uya_syscall3(long nr, long a1, long a2, long a3) {\n" as *byte, codegen.output as *void);
-    fputs("    long ret;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return ret;\n" as *byte, codegen.output as *void);
-    fputs("}\n\n" as *byte, codegen.output as *void);
+    fputs("static inline long uya_syscall3(long nr, long a1, long a2, long a3) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    long ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n\n" as *byte, codegen.emit_stream as *void);
     
     // uya_syscall4 - 4 个参数
-    fputs("static inline long uya_syscall4(long nr, long a1, long a2, long a3, long a4) {\n" as *byte, codegen.output as *void);
-    fputs("    register long r10 __asm__(\"r10\") = a4;\n" as *byte, codegen.output as *void);
-    fputs("    long ret;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3), \"r\"(r10) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return ret;\n" as *byte, codegen.output as *void);
-    fputs("}\n\n" as *byte, codegen.output as *void);
+    fputs("static inline long uya_syscall4(long nr, long a1, long a2, long a3, long a4) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    register long r10 __asm__(\"r10\") = a4;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    long ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3), \"r\"(r10) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n\n" as *byte, codegen.emit_stream as *void);
     
     // uya_syscall5 - 5 个参数
-    fputs("static inline long uya_syscall5(long nr, long a1, long a2, long a3, long a4, long a5) {\n" as *byte, codegen.output as *void);
-    fputs("    register long r10 __asm__(\"r10\") = a4;\n" as *byte, codegen.output as *void);
-    fputs("    register long r8 __asm__(\"r8\") = a5;\n" as *byte, codegen.output as *void);
-    fputs("    long ret;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3), \"r\"(r10), \"r\"(r8) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return ret;\n" as *byte, codegen.output as *void);
-    fputs("}\n\n" as *byte, codegen.output as *void);
+    fputs("static inline long uya_syscall5(long nr, long a1, long a2, long a3, long a4, long a5) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    register long r10 __asm__(\"r10\") = a4;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    register long r8 __asm__(\"r8\") = a5;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    long ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3), \"r\"(r10), \"r\"(r8) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n\n" as *byte, codegen.emit_stream as *void);
     
     // uya_syscall6 - 6 个参数
-    fputs("static inline long uya_syscall6(long nr, long a1, long a2, long a3, long a4, long a5, long a6) {\n" as *byte, codegen.output as *void);
-    fputs("    register long r10 __asm__(\"r10\") = a4;\n" as *byte, codegen.output as *void);
-    fputs("    register long r8 __asm__(\"r8\") = a5;\n" as *byte, codegen.output as *void);
-    fputs("    register long r9 __asm__(\"r9\") = a6;\n" as *byte, codegen.output as *void);
-    fputs("    long ret;\n" as *byte, codegen.output as *void);
-    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3), \"r\"(r10), \"r\"(r8), \"r\"(r9) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.output as *void);
-    fputs("    return ret;\n" as *byte, codegen.output as *void);
+    fputs("static inline long uya_syscall6(long nr, long a1, long a2, long a3, long a4, long a5, long a6) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    register long r10 __asm__(\"r10\") = a4;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    register long r8 __asm__(\"r8\") = a5;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    register long r9 __asm__(\"r9\") = a6;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    long ret;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    __asm__ volatile(\"syscall\" : \"=a\"(ret) : \"a\"(nr), \"D\"(a1), \"S\"(a2), \"d\"(a3), \"r\"(r10), \"r\"(r8), \"r\"(r9) : \"rcx\", \"r11\", \"cc\", \"memory\");\n" as *byte, codegen.emit_stream as *void);
+    fputs("    return ret;\n" as *byte, codegen.emit_stream as *void);
     c99_emit_close_brace_newline(codegen);
     
-        fputs("#elif (defined(__aarch64__) || defined(_M_ARM64)) && defined(__linux__)\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall0(long nr) {\n" as *byte, codegen.output as *void);
-        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.output as *void);
-        fputs("    register long x0 __asm__(\"x0\");\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\"svc 0\" : \"=r\"(x0) : \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.output as *void);
-        fputs("    return x0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall1(long nr, long a1) {\n" as *byte, codegen.output as *void);
-        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.output as *void);
-        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.output as *void);
-        fputs("    return x0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall2(long nr, long a1, long a2) {\n" as *byte, codegen.output as *void);
-        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.output as *void);
-        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    register long x1 __asm__(\"x1\") = a2;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x1), \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.output as *void);
-        fputs("    return x0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall3(long nr, long a1, long a2, long a3) {\n" as *byte, codegen.output as *void);
-        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.output as *void);
-        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    register long x1 __asm__(\"x1\") = a2;\n" as *byte, codegen.output as *void);
-        fputs("    register long x2 __asm__(\"x2\") = a3;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x1), \"r\"(x2), \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.output as *void);
-        fputs("    return x0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall4(long nr, long a1, long a2, long a3, long a4) {\n" as *byte, codegen.output as *void);
-        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.output as *void);
-        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    register long x1 __asm__(\"x1\") = a2;\n" as *byte, codegen.output as *void);
-        fputs("    register long x2 __asm__(\"x2\") = a3;\n" as *byte, codegen.output as *void);
-        fputs("    register long x3 __asm__(\"x3\") = a4;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x1), \"r\"(x2), \"r\"(x3), \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.output as *void);
-        fputs("    return x0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall5(long nr, long a1, long a2, long a3, long a4, long a5) {\n" as *byte, codegen.output as *void);
-        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.output as *void);
-        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    register long x1 __asm__(\"x1\") = a2;\n" as *byte, codegen.output as *void);
-        fputs("    register long x2 __asm__(\"x2\") = a3;\n" as *byte, codegen.output as *void);
-        fputs("    register long x3 __asm__(\"x3\") = a4;\n" as *byte, codegen.output as *void);
-        fputs("    register long x4 __asm__(\"x4\") = a5;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x1), \"r\"(x2), \"r\"(x3), \"r\"(x4), \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.output as *void);
-        fputs("    return x0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall6(long nr, long a1, long a2, long a3, long a4, long a5, long a6) {\n" as *byte, codegen.output as *void);
-        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.output as *void);
-        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    register long x1 __asm__(\"x1\") = a2;\n" as *byte, codegen.output as *void);
-        fputs("    register long x2 __asm__(\"x2\") = a3;\n" as *byte, codegen.output as *void);
-        fputs("    register long x3 __asm__(\"x3\") = a4;\n" as *byte, codegen.output as *void);
-        fputs("    register long x4 __asm__(\"x4\") = a5;\n" as *byte, codegen.output as *void);
-        fputs("    register long x5 __asm__(\"x5\") = a6;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x1), \"r\"(x2), \"r\"(x3), \"r\"(x4), \"r\"(x5), \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.output as *void);
-        fputs("    return x0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("#elif defined(__arm__) && !defined(__aarch64__) && defined(__linux__)\n" as *byte, codegen.output as *void);
-        fputs("/* ARM32 Linux EABI：nr→r7；参数 r0-r5；Thumb 下用临时寄存器保存/恢复 r7（与 musl 思路一致） */\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall0(long nr) {\n" as *byte, codegen.output as *void);
-        fputs("    register long r0 __asm__(\"r0\");\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\n" as *byte, codegen.output as *void);
-        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.output as *void);
-        fputs("        : \"=r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.output as *void);
-        fputs("        : [sc_nr]\"r\"(nr)\n" as *byte, codegen.output as *void);
-        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.output as *void);
-        fputs("    );\n" as *byte, codegen.output as *void);
-        fputs("    return r0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall1(long nr, long a1) {\n" as *byte, codegen.output as *void);
-        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\n" as *byte, codegen.output as *void);
-        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.output as *void);
-        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.output as *void);
-        fputs("        : [sc_nr]\"r\"(nr)\n" as *byte, codegen.output as *void);
-        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.output as *void);
-        fputs("    );\n" as *byte, codegen.output as *void);
-        fputs("    return r0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall2(long nr, long a1, long a2) {\n" as *byte, codegen.output as *void);
-        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    register long r1 __asm__(\"r1\") = a2;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\n" as *byte, codegen.output as *void);
-        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.output as *void);
-        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.output as *void);
-        fputs("        : [sc_nr]\"r\"(nr), \"r\"(r1)\n" as *byte, codegen.output as *void);
-        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.output as *void);
-        fputs("    );\n" as *byte, codegen.output as *void);
-        fputs("    return r0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall3(long nr, long a1, long a2, long a3) {\n" as *byte, codegen.output as *void);
-        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    register long r1 __asm__(\"r1\") = a2;\n" as *byte, codegen.output as *void);
-        fputs("    register long r2 __asm__(\"r2\") = a3;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\n" as *byte, codegen.output as *void);
-        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.output as *void);
-        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.output as *void);
-        fputs("        : [sc_nr]\"r\"(nr), \"r\"(r1), \"r\"(r2)\n" as *byte, codegen.output as *void);
-        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.output as *void);
-        fputs("    );\n" as *byte, codegen.output as *void);
-        fputs("    return r0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall4(long nr, long a1, long a2, long a3, long a4) {\n" as *byte, codegen.output as *void);
-        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    register long r1 __asm__(\"r1\") = a2;\n" as *byte, codegen.output as *void);
-        fputs("    register long r2 __asm__(\"r2\") = a3;\n" as *byte, codegen.output as *void);
-        fputs("    register long r3 __asm__(\"r3\") = a4;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\n" as *byte, codegen.output as *void);
-        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.output as *void);
-        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.output as *void);
-        fputs("        : [sc_nr]\"r\"(nr), \"r\"(r1), \"r\"(r2), \"r\"(r3)\n" as *byte, codegen.output as *void);
-        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.output as *void);
-        fputs("    );\n" as *byte, codegen.output as *void);
-        fputs("    return r0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall5(long nr, long a1, long a2, long a3, long a4, long a5) {\n" as *byte, codegen.output as *void);
-        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    register long r1 __asm__(\"r1\") = a2;\n" as *byte, codegen.output as *void);
-        fputs("    register long r2 __asm__(\"r2\") = a3;\n" as *byte, codegen.output as *void);
-        fputs("    register long r3 __asm__(\"r3\") = a4;\n" as *byte, codegen.output as *void);
-        fputs("    register long r4 __asm__(\"r4\") = a5;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\n" as *byte, codegen.output as *void);
-        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.output as *void);
-        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.output as *void);
-        fputs("        : [sc_nr]\"r\"(nr), \"r\"(r1), \"r\"(r2), \"r\"(r3), \"r\"(r4)\n" as *byte, codegen.output as *void);
-        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.output as *void);
-        fputs("    );\n" as *byte, codegen.output as *void);
-        fputs("    return r0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("static inline long uya_syscall6(long nr, long a1, long a2, long a3, long a4, long a5, long a6) {\n" as *byte, codegen.output as *void);
-        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.output as *void);
-        fputs("    register long r1 __asm__(\"r1\") = a2;\n" as *byte, codegen.output as *void);
-        fputs("    register long r2 __asm__(\"r2\") = a3;\n" as *byte, codegen.output as *void);
-        fputs("    register long r3 __asm__(\"r3\") = a4;\n" as *byte, codegen.output as *void);
-        fputs("    register long r4 __asm__(\"r4\") = a5;\n" as *byte, codegen.output as *void);
-        fputs("    register long r5 __asm__(\"r5\") = a6;\n" as *byte, codegen.output as *void);
-        fputs("    __asm__ volatile(\n" as *byte, codegen.output as *void);
-        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.output as *void);
-        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.output as *void);
-        fputs("        : [sc_nr]\"r\"(nr), \"r\"(r1), \"r\"(r2), \"r\"(r3), \"r\"(r4), \"r\"(r5)\n" as *byte, codegen.output as *void);
-        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.output as *void);
-        fputs("    );\n" as *byte, codegen.output as *void);
-        fputs("    return r0;\n}\n\n" as *byte, codegen.output as *void);
-        fputs("#else\n" as *byte, codegen.output as *void);
-        fputs("#error \"@syscall C99 backend: supported Linux targets are x86-64, AArch64, and ARM32 EABI. Other OS/arch need a backend.\"\n" as *byte, codegen.output as *void);
-        fputs("#endif\n\n" as *byte, codegen.output as *void);
+        fputs("#elif (defined(__aarch64__) || defined(_M_ARM64)) && defined(__linux__)\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall0(long nr) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x0 __asm__(\"x0\");\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\"svc 0\" : \"=r\"(x0) : \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return x0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall1(long nr, long a1) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return x0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall2(long nr, long a1, long a2) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x1 __asm__(\"x1\") = a2;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x1), \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return x0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall3(long nr, long a1, long a2, long a3) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x1 __asm__(\"x1\") = a2;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x2 __asm__(\"x2\") = a3;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x1), \"r\"(x2), \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return x0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall4(long nr, long a1, long a2, long a3, long a4) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x1 __asm__(\"x1\") = a2;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x2 __asm__(\"x2\") = a3;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x3 __asm__(\"x3\") = a4;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x1), \"r\"(x2), \"r\"(x3), \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return x0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall5(long nr, long a1, long a2, long a3, long a4, long a5) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x1 __asm__(\"x1\") = a2;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x2 __asm__(\"x2\") = a3;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x3 __asm__(\"x3\") = a4;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x4 __asm__(\"x4\") = a5;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x1), \"r\"(x2), \"r\"(x3), \"r\"(x4), \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return x0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall6(long nr, long a1, long a2, long a3, long a4, long a5, long a6) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x8 __asm__(\"x8\") = nr;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x0 __asm__(\"x0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x1 __asm__(\"x1\") = a2;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x2 __asm__(\"x2\") = a3;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x3 __asm__(\"x3\") = a4;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x4 __asm__(\"x4\") = a5;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long x5 __asm__(\"x5\") = a6;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\"svc 0\" : \"+r\"(x0) : \"r\"(x1), \"r\"(x2), \"r\"(x3), \"r\"(x4), \"r\"(x5), \"r\"(x8) : \"memory\", \"cc\");\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return x0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("#elif defined(__arm__) && !defined(__aarch64__) && defined(__linux__)\n" as *byte, codegen.emit_stream as *void);
+        fputs("/* ARM32 Linux EABI：nr→r7；参数 r0-r5；Thumb 下用临时寄存器保存/恢复 r7（与 musl 思路一致） */\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall0(long nr) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r0 __asm__(\"r0\");\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"=r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : [sc_nr]\"r\"(nr)\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("    );\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return r0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall1(long nr, long a1) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : [sc_nr]\"r\"(nr)\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("    );\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return r0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall2(long nr, long a1, long a2) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r1 __asm__(\"r1\") = a2;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : [sc_nr]\"r\"(nr), \"r\"(r1)\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("    );\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return r0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall3(long nr, long a1, long a2, long a3) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r1 __asm__(\"r1\") = a2;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r2 __asm__(\"r2\") = a3;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : [sc_nr]\"r\"(nr), \"r\"(r1), \"r\"(r2)\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("    );\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return r0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall4(long nr, long a1, long a2, long a3, long a4) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r1 __asm__(\"r1\") = a2;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r2 __asm__(\"r2\") = a3;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r3 __asm__(\"r3\") = a4;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : [sc_nr]\"r\"(nr), \"r\"(r1), \"r\"(r2), \"r\"(r3)\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("    );\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return r0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall5(long nr, long a1, long a2, long a3, long a4, long a5) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r1 __asm__(\"r1\") = a2;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r2 __asm__(\"r2\") = a3;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r3 __asm__(\"r3\") = a4;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r4 __asm__(\"r4\") = a5;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : [sc_nr]\"r\"(nr), \"r\"(r1), \"r\"(r2), \"r\"(r3), \"r\"(r4)\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("    );\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return r0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("static inline long uya_syscall6(long nr, long a1, long a2, long a3, long a4, long a5, long a6) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r0 __asm__(\"r0\") = a1;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r1 __asm__(\"r1\") = a2;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r2 __asm__(\"r2\") = a3;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r3 __asm__(\"r3\") = a4;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r4 __asm__(\"r4\") = a5;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    register long r5 __asm__(\"r5\") = a6;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    __asm__ volatile(\n" as *byte, codegen.emit_stream as *void);
+        fputs("        \"mov %[sc_tmp], r7\\n\\tmov r7, %[sc_nr]\\n\\tsvc 0\\n\\tmov r7, %[sc_tmp]\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"+r\"(r0), [sc_tmp]\"=&r\"((int){0})\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : [sc_nr]\"r\"(nr), \"r\"(r1), \"r\"(r2), \"r\"(r3), \"r\"(r4), \"r\"(r5)\n" as *byte, codegen.emit_stream as *void);
+        fputs("        : \"memory\", \"cc\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("    );\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return r0;\n}\n\n" as *byte, codegen.emit_stream as *void);
+        fputs("#else\n" as *byte, codegen.emit_stream as *void);
+        fputs("#error \"@syscall C99 backend: supported Linux targets are x86-64, AArch64, and ARM32 EABI. Other OS/arch need a backend.\"\n" as *byte, codegen.emit_stream as *void);
+        fputs("#endif\n\n" as *byte, codegen.emit_stream as *void);
     }
     if prof_codegen != 0 {
         t_mk4 = clock();
@@ -2503,12 +2504,12 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             if test_node != null && test_node.type == ASTNodeType.AST_TEST_STMT {
                 const func_name: &byte = get_test_function_name(codegen, test_node.test_stmt_description);
                 if func_name != null {
-                    fprintf(codegen.output as *void, "static struct err_union_void %s(void);\n" as *byte, func_name as *byte);
+                    fprintf(codegen.emit_stream as *void, "static struct err_union_void %s(void);\n" as *byte, func_name as *byte);
                 }
             }
             i = i + 1;
         }
-        fputs("static void uya_run_tests(void);\n" as *byte, codegen.output as *void);
+        fputs("static void uya_run_tests(void);\n" as *byte, codegen.emit_stream as *void);
         c99_emit_newline(codegen);
         
         // 生成测试计数变量（必须在 uya_run_tests 定义之前）
@@ -2536,14 +2537,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         
         // 如果没有导入 std.testing，需要定义测试计数变量
         if has_std_testing == 0 {
-            fputs("static int32_t _test_passed = 0;\n" as *byte, codegen.output as *void);
-            fputs("static int32_t _test_failed = 0;\n" as *byte, codegen.output as *void);
+            fputs("static int32_t _test_passed = 0;\n" as *byte, codegen.emit_stream as *void);
+            fputs("static int32_t _test_failed = 0;\n" as *byte, codegen.emit_stream as *void);
             c99_emit_newline(codegen);
         }
     }
     
     // 前向声明：stdin/stdout/stderr 的存储（&_stdin 等）在 export 变量初始化中引用
-    fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, codegen.output as *void);
+    fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, codegen.emit_stream as *void);
     
     // 第九步 a：先生成所有常量（确保在函数之前定义）
     i = 0;
@@ -2854,7 +2855,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     main_c_name = "uya_main" as *byte;
                 }
                 if is_c_main != 0 {
-                    fprintf(codegen.output as *void, "%s main(" as *byte, return_c as *byte);
+                    fprintf(codegen.emit_stream as *void, "%s main(" as *byte, return_c as *byte);
                     var pj: i32 = 0;
                     const pcount: i32 = decl.fn_decl_param_count;
                     while pj < pcount {
@@ -2863,33 +2864,33 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                             const pname: &byte = get_safe_c_identifier(codegen, p.var_decl_name);
                             if pj == 1 {
                                 if codegen.is_nostdlib != 0 {
-                                    fprintf(codegen.output as *void, "uint8_t **%s" as *byte, pname as *byte);
+                                    fprintf(codegen.emit_stream as *void, "uint8_t **%s" as *byte, pname as *byte);
                                 } else {
-                                    fprintf(codegen.output as *void, "char **%s" as *byte, pname as *byte);
+                                    fprintf(codegen.emit_stream as *void, "char **%s" as *byte, pname as *byte);
                                 }
                             } else {
                                 const ptype: &ASTNode = p.var_decl_type;
                                 const ptype_c: &byte = c99_type_to_c(codegen, ptype);
-                                format_param_type(codegen, ptype_c, pname, codegen.output as *void);
+                                format_param_type(codegen, ptype_c, pname, codegen.emit_stream as *void);
                             }
                             if pj < pcount - 1 {
-                                fputs(", " as *byte, codegen.output);
+                                fputs(", " as *byte, codegen.emit_stream as *void);
                             }
                         }
                         pj = pj + 1;
                     }
-                    fputs(") {\n" as *byte, codegen.output);
+                    fputs(") {\n" as *byte, codegen.emit_stream as *void);
                     
                     // 在 C main 函数开始处立即设置堆栈大小（在变量声明之前）
                     if is_c_main == 0 && codegen.stack_size > 0 {
-                        fprintf(codegen.output as *void, "    { struct rlimit rlim = { %dUL, %dUL }; if (setrlimit(RLIMIT_STACK, &rlim) != 0) { /* 忽略错误 */ } }\n" as *byte, codegen.stack_size * 1024, codegen.stack_size * 1024);
+                        fprintf(codegen.emit_stream as *void, "    { struct rlimit rlim = { %dUL, %dUL }; if (setrlimit(RLIMIT_STACK, &rlim) != 0) { /* 忽略错误 */ } }\n" as *byte, codegen.stack_size * 1024, codegen.stack_size * 1024);
                     }
                 } else {
-                    fprintf(codegen.output as *void, "%s %s(void) {\n" as *byte, return_c as *byte, main_c_name as *byte);
+                    fprintf(codegen.emit_stream as *void, "%s %s(void) {\n" as *byte, return_c as *byte, main_c_name as *byte);
                     
                     // 在 C main 函数开始处立即设置堆栈大小（在变量声明之前）
                     if is_c_main == 0 && codegen.stack_size > 0 {
-                        fprintf(codegen.output as *void, "    { struct rlimit rlim = { %dUL, %dUL }; if (setrlimit(RLIMIT_STACK, &rlim) != 0) { /* 忽略错误 */ } }\n" as *byte, codegen.stack_size * 1024, codegen.stack_size * 1024);
+                        fprintf(codegen.emit_stream as *void, "    { struct rlimit rlim = { %dUL, %dUL }; if (setrlimit(RLIMIT_STACK, &rlim) != 0) { /* 忽略错误 */ } }\n" as *byte, codegen.stack_size * 1024, codegen.stack_size * 1024);
                     }
                 }
 
@@ -2899,7 +2900,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
 
                 // 如果有测试，在函数体开始处调用测试运行器（仅 uya_main）
                 if test_count > 0 && is_app_main == 0 && is_c_main == 0 {
-                    fputs("    uya_run_tests();\n" as *byte, codegen.output as *void);
+                    fputs("    uya_run_tests();\n" as *byte, codegen.emit_stream as *void);
                 }
 
                 // 生成函数体（使用 gen_stmt 触发 gen_block_stmt 的完整逻辑，包括 defer 和 drop 清理）
@@ -2923,13 +2924,13 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // std.runtime.entry 的 main 会调用 main_main()
     if has_user_main == 0 && test_count > 0 {
         // 测试计数变量已在第八步 c 中定义
-        fputs("int32_t main_main(void) {\n" as *byte, codegen.output as *void);
-        fprintf(codegen.output as *void, "    printf(\"\\n=== Running %d tests ===\\n\");\n" as *byte, test_count);
-        fputs("    uya_run_tests();\n" as *byte, codegen.output as *void);
-        fputs("    printf(\"\\n=== Results ===\\n\");\n" as *byte, codegen.output as *void);
-        fputs("    printf(\"  Passed: %d\\n\", _test_passed);\n" as *byte, codegen.output as *void);
-        fputs("    printf(\"  Failed: %d\\n\", _test_failed);\n" as *byte, codegen.output as *void);
-        fputs("    return _test_failed;\n" as *byte, codegen.output as *void);
+        fputs("int32_t main_main(void) {\n" as *byte, codegen.emit_stream as *void);
+        fprintf(codegen.emit_stream as *void, "    printf(\"\\n=== Running %d tests ===\\n\");\n" as *byte, test_count);
+        fputs("    uya_run_tests();\n" as *byte, codegen.emit_stream as *void);
+        fputs("    printf(\"\\n=== Results ===\\n\");\n" as *byte, codegen.emit_stream as *void);
+        fputs("    printf(\"  Passed: %d\\n\", _test_passed);\n" as *byte, codegen.emit_stream as *void);
+        fputs("    printf(\"  Failed: %d\\n\", _test_failed);\n" as *byte, codegen.emit_stream as *void);
+        fputs("    return _test_failed;\n" as *byte, codegen.emit_stream as *void);
         c99_emit_close_brace_newline(codegen);
     }
     
@@ -2947,6 +2948,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             prof_simd_ms, prof_ms_precollect, prof_ms_header, prof_ms_step1_typedef, prof_ms_step6_mid, prof_ms_step6e_tail, prof_ms_prelude, body_ms, total_ms);
     }
     
+    c99_write_split_makefile(codegen);
     return 0;
 }
 

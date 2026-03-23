@@ -119,7 +119,7 @@ fn emit_current_block_drops(codegen: &C99CodeGenerator) void {
         const var_safe: &byte = codegen.drop_var_safe[d * C99_MAX_DROP_VARS_PER_BLOCK + i];
         if drop_c != null && var_safe != null {
             c99_emit(codegen, "/* drop */ " as *byte);
-            fprintf(codegen.output as *void, "%s(%s);\n" as *byte, drop_c as *byte, var_safe as *byte);
+            fprintf(codegen.emit_stream as *void, "%s(%s);\n" as *byte, drop_c as *byte, var_safe as *byte);
         }
         i = i - 1;
     }
@@ -160,7 +160,7 @@ fn emit_drop_cleanup(codegen: &C99CodeGenerator, stmts: & & ASTNode, stmt_count:
         const var_safe: &byte = get_safe_c_identifier(codegen, n.var_decl_name);
         if drop_c != null && var_safe != null {
             c99_emit(codegen, "/* drop */ " as *byte);
-            fprintf(codegen.output as *void, "%s(%s);\n" as *byte, drop_c as *byte, var_safe as *byte);
+            fprintf(codegen.emit_stream as *void, "%s(%s);\n" as *byte, drop_c as *byte, var_safe as *byte);
         }
         i = i - 1;
     }
@@ -323,15 +323,15 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     const temp_name_idx: i32 = codegen.interp_temp_counter;
                     codegen.interp_temp_counter = codegen.interp_temp_counter + 1;
                     c99_emit_indent(codegen);
-                    fprintf(codegen.output as *void, "char __uya_interp_%d[%d];\n" as *byte, temp_name_idx, inner.string_interp_computed_size);
+                    fprintf(codegen.emit_stream as *void, "char __uya_interp_%d[%d];\n" as *byte, temp_name_idx, inner.string_interp_computed_size);
                     var name_buf: [byte: 32] = [];
                     snprintf(&name_buf[0] as *byte, 32, "__uya_interp_%d" as *byte, temp_name_idx);
                     c99_emit_string_interp_fill(codegen, inner, &name_buf[0] as &byte);
                     c99_emit_indent(codegen);
                     if stmt.type == ASTNodeType.AST_PRINTLN {
-                        fprintf(codegen.output as *void, "printf(\"%%s\\n\", __uya_interp_%d);\n" as *byte, temp_name_idx);
+                        fprintf(codegen.emit_stream as *void, "printf(\"%%s\\n\", __uya_interp_%d);\n" as *byte, temp_name_idx);
                     } else {
-                        fprintf(codegen.output as *void, "printf(\"%%s\", __uya_interp_%d);\n" as *byte, temp_name_idx);
+                        fprintf(codegen.emit_stream as *void, "printf(\"%%s\", __uya_interp_%d);\n" as *byte, temp_name_idx);
                     }
                     return;
                 }
@@ -396,9 +396,9 @@ fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     // 如果 else 是死代码，只生成 then 分支
     if else_is_dead != 0 {
         c99_emit_indent(codegen);
-        fputs("if (" as *byte, codegen.output as *void);
+        fputs("if (" as *byte, codegen.emit_stream as *void);
         gen_expr(codegen, condition);
-        fputs(") {\n" as *byte, codegen.output as *void);
+        fputs(") {\n" as *byte, codegen.emit_stream as *void);
         codegen.indent_level = codegen.indent_level + 1;
         if then_is_dead == 0 {
             gen_stmt(codegen, then_branch);
@@ -411,9 +411,9 @@ fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
 
     // 正常生成 if 语句
     c99_emit_indent(codegen);
-    fputs("if (" as *byte, codegen.output as *void);
+    fputs("if (" as *byte, codegen.emit_stream as *void);
     gen_expr(codegen, condition);
-    fputs(") {\n" as *byte, codegen.output as *void);
+    fputs(") {\n" as *byte, codegen.emit_stream as *void);
     codegen.indent_level = codegen.indent_level + 1;
     if then_is_dead == 0 {
         gen_stmt(codegen, then_branch);
@@ -421,7 +421,7 @@ fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     codegen.indent_level = codegen.indent_level - 1;
     c99_emit(codegen, "}" as *byte);
     if else_branch != null && else_is_dead == 0 {
-        fputs(" else {\n" as *byte, codegen.output as *void);
+        fputs(" else {\n" as *byte, codegen.emit_stream as *void);
         codegen.indent_level = codegen.indent_level + 1;
         gen_stmt(codegen, else_branch);
         codegen.indent_level = codegen.indent_level - 1;
@@ -436,9 +436,9 @@ fn gen_while_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     const body: &ASTNode = stmt.while_stmt_body;
     
     c99_emit_indent(codegen);
-    fputs("while (" as *byte, codegen.output as *void);
+    fputs("while (" as *byte, codegen.emit_stream as *void);
     gen_expr(codegen, condition);
-    fputs(") {\n" as *byte, codegen.output as *void);
+    fputs(") {\n" as *byte, codegen.emit_stream as *void);
     codegen.indent_level = codegen.indent_level + 1;
     gen_stmt(codegen, body);
     codegen.indent_level = codegen.indent_level - 1;
@@ -478,43 +478,43 @@ fn gen_for_range(codegen: &C99CodeGenerator, stmt: &ASTNode, body2: &ASTNode) vo
         range_type_c = "int32_t" as *byte;
     }
     c99_emit_indent(codegen);
-    fputs("{\n" as *byte, codegen.output as *void);
+    fputs("{\n" as *byte, codegen.emit_stream as *void);
     codegen.indent_level = codegen.indent_level + 1;
     c99_emit_indent(codegen);
-    fputs("// for range\n" as *byte, codegen.output as *void);
+    fputs("// for range\n" as *byte, codegen.emit_stream as *void);
     if end_expr != null {
         if stmt.for_stmt_var_name != null {
             const var_name_range: &byte = get_safe_c_identifier(codegen, stmt.for_stmt_var_name);
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "%s %s = " as *byte, range_type_c as *byte, var_name_range as *byte);
+            fprintf(codegen.emit_stream as *void, "%s %s = " as *byte, range_type_c as *byte, var_name_range as *byte);
             gen_expr(codegen, start_expr);
             c99_emit_semi_newline(codegen);
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "%s _uya_end = " as *byte, range_type_c as *byte);
+            fprintf(codegen.emit_stream as *void, "%s _uya_end = " as *byte, range_type_c as *byte);
             gen_expr(codegen, end_expr);
             c99_emit_semi_newline(codegen);
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "for (; %s < _uya_end; %s++) {\n" as *byte, var_name_range as *byte, var_name_range as *byte);
+            fprintf(codegen.emit_stream as *void, "for (; %s < _uya_end; %s++) {\n" as *byte, var_name_range as *byte, var_name_range as *byte);
         } else {
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "%s _uya_s = " as *byte, range_type_c as *byte);
+            fprintf(codegen.emit_stream as *void, "%s _uya_s = " as *byte, range_type_c as *byte);
             gen_expr(codegen, start_expr);
             c99_emit_semi_newline(codegen);
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "%s _uya_e = " as *byte, range_type_c as *byte);
+            fprintf(codegen.emit_stream as *void, "%s _uya_e = " as *byte, range_type_c as *byte);
             gen_expr(codegen, end_expr);
             c99_emit_semi_newline(codegen);
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "for (%s _uya_i = _uya_s; _uya_i < _uya_e; _uya_i++) {\n" as *byte, range_type_c as *byte);
+            fprintf(codegen.emit_stream as *void, "for (%s _uya_i = _uya_s; _uya_i < _uya_e; _uya_i++) {\n" as *byte, range_type_c as *byte);
         }
     } else {
         const vname: &byte = get_safe_c_identifier(codegen, stmt.for_stmt_var_name);
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s %s = " as *byte, range_type_c as *byte, vname as *byte);
+        fprintf(codegen.emit_stream as *void, "%s %s = " as *byte, range_type_c as *byte, vname as *byte);
         gen_expr(codegen, start_expr);
         c99_emit_semi_newline(codegen);
         c99_emit_indent(codegen);
-        fputs("while (1) {\n" as *byte, codegen.output as *void);
+        fputs("while (1) {\n" as *byte, codegen.emit_stream as *void);
     }
     codegen.indent_level = codegen.indent_level + 1;
     gen_stmt(codegen, body2);
@@ -541,18 +541,18 @@ fn gen_for_array(codegen: &C99CodeGenerator, stmt: &ASTNode, body2: &ASTNode) vo
     }
     
     c99_emit_indent(codegen);
-    fputs("{\n" as *byte, codegen.output as *void);
+    fputs("{\n" as *byte, codegen.emit_stream as *void);
     codegen.indent_level = codegen.indent_level + 1;
     c99_emit_indent(codegen);
-    fputs("// for loop - array traversal\n" as *byte, codegen.output as *void);
+    fputs("// for loop - array traversal\n" as *byte, codegen.emit_stream as *void);
     c99_emit_indent(codegen);
-    fputs("size_t _len = sizeof(" as *byte, codegen.output as *void);
+    fputs("size_t _len = sizeof(" as *byte, codegen.emit_stream as *void);
     gen_expr(codegen, array);
-    fputs(") / sizeof(" as *byte, codegen.output as *void);
+    fputs(") / sizeof(" as *byte, codegen.emit_stream as *void);
     gen_expr(codegen, array);
-    fputs("[0]);\n" as *byte, codegen.output as *void);
+    fputs("[0]);\n" as *byte, codegen.emit_stream as *void);
     c99_emit_indent(codegen);
-    fputs("for (size_t _i = 0; _i < _len; _i++) {\n" as *byte, codegen.output as *void);
+    fputs("for (size_t _i = 0; _i < _len; _i++) {\n" as *byte, codegen.emit_stream as *void);
     codegen.indent_level = codegen.indent_level + 1;
     
     if is_ref != 0 {
@@ -619,29 +619,29 @@ fn gen_for_iterator(codegen: &C99CodeGenerator, stmt: &ASTNode, body2: &ASTNode,
     }
     
     c99_emit_indent(codegen);
-    fputs("{\n" as *byte, codegen.output as *void);
+    fputs("{\n" as *byte, codegen.emit_stream as *void);
     codegen.indent_level = codegen.indent_level + 1;
     c99_emit_indent(codegen);
-    fputs("// for loop - iterator interface\n" as *byte, codegen.output as *void);
+    fputs("// for loop - iterator interface\n" as *byte, codegen.emit_stream as *void);
     
     c99_emit_indent(codegen);
-    fprintf(codegen.output as *void, "%s _uya_iter = " as *byte, iter_type_c as *byte);
+    fprintf(codegen.emit_stream as *void, "%s _uya_iter = " as *byte, iter_type_c as *byte);
     gen_expr(codegen, array);
     c99_emit_semi_newline(codegen);
     
     c99_emit_indent(codegen);
-    fputs("while (1) {\n" as *byte, codegen.output as *void);
+    fputs("while (1) {\n" as *byte, codegen.emit_stream as *void);
     codegen.indent_level = codegen.indent_level + 1;
     
     const next_cname: &byte = get_method_c_name(codegen, &struct_name_buf[0], "next" as *byte);
     if next_cname != null {
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "struct err_union_void _uya_next_result = %s(&_uya_iter);\n" as *byte, next_cname as *byte);
+        fprintf(codegen.emit_stream as *void, "struct err_union_void _uya_next_result = %s(&_uya_iter);\n" as *byte, next_cname as *byte);
         c99_emit_indent(codegen);
-        fputs("if (_uya_next_result.error_id != 0) {\n" as *byte, codegen.output as *void);
+        fputs("if (_uya_next_result.error_id != 0) {\n" as *byte, codegen.emit_stream as *void);
         codegen.indent_level = codegen.indent_level + 1;
         c99_emit_indent(codegen);
-        fputs("break;  // error.IterEnd\n" as *byte, codegen.output as *void);
+        fputs("break;  // error.IterEnd\n" as *byte, codegen.emit_stream as *void);
         codegen.indent_level = codegen.indent_level - 1;
         c99_emit_indent(codegen);
         c99_emit_close_brace_newline(codegen);
@@ -650,7 +650,7 @@ fn gen_for_iterator(codegen: &C99CodeGenerator, stmt: &ASTNode, body2: &ASTNode,
     const value_cname: &byte = get_method_c_name(codegen, &struct_name_buf[0], "value" as *byte);
     if value_cname != null && var_name2 != null {
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s %s = %s(&_uya_iter);\n" as *byte, value_type_c as *byte, var_name2 as *byte, value_cname as *byte);
+        fprintf(codegen.emit_stream as *void, "%s %s = %s(&_uya_iter);\n" as *byte, value_type_c as *byte, var_name2 as *byte, value_cname as *byte);
     }
     
     gen_stmt(codegen, body2);
@@ -679,14 +679,14 @@ fn gen_for_array_ref(codegen: &C99CodeGenerator, array: &ASTNode, var_name2: &by
             temp_buf[j] = 0;
         }
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s *%s = &" as *byte, &temp_buf[0] as *byte, var_name2 as *byte);
+        fprintf(codegen.emit_stream as *void, "%s *%s = &" as *byte, &temp_buf[0] as *byte, var_name2 as *byte);
         gen_expr(codegen, array);
-        fputs("[_i];\n" as *byte, codegen.output as *void);
+        fputs("[_i];\n" as *byte, codegen.emit_stream as *void);
     } else {
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s *%s = &" as *byte, elem_type_c as *byte, var_name2 as *byte);
+        fprintf(codegen.emit_stream as *void, "%s *%s = &" as *byte, elem_type_c as *byte, var_name2 as *byte);
         gen_expr(codegen, array);
-        fputs("[_i];\n" as *byte, codegen.output as *void);
+        fputs("[_i];\n" as *byte, codegen.emit_stream as *void);
     }
 }
 
@@ -705,16 +705,16 @@ fn gen_for_array_value(codegen: &C99CodeGenerator, array: &ASTNode, var_name2: &
             temp_buf2[j2] = 0;
         }
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s %s%s;\n" as *byte, &temp_buf2[0] as *byte, var_name2 as *byte, bracket2);
+        fprintf(codegen.emit_stream as *void, "%s %s%s;\n" as *byte, &temp_buf2[0] as *byte, var_name2 as *byte, bracket2);
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "__uya_memcpy(%s, " as *byte, var_name2 as *byte);
+        fprintf(codegen.emit_stream as *void, "__uya_memcpy(%s, " as *byte, var_name2 as *byte);
         gen_expr(codegen, array);
-        fprintf(codegen.output as *void, "[_i], sizeof(%s));\n" as *byte, var_name2 as *byte);
+        fprintf(codegen.emit_stream as *void, "[_i], sizeof(%s));\n" as *byte, var_name2 as *byte);
     } else {
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s %s = " as *byte, elem_type_c as *byte, var_name2 as *byte);
+        fprintf(codegen.emit_stream as *void, "%s %s = " as *byte, elem_type_c as *byte, var_name2 as *byte);
         gen_expr(codegen, array);
-        fputs("[_i];\n" as *byte, codegen.output as *void);
+        fputs("[_i];\n" as *byte, codegen.emit_stream as *void);
     }
 }
 
@@ -756,14 +756,14 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         }
         if payload_void != 0 {
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "return (%s){ .error_id = %dU };\n" as *byte, ret_c as *byte, id);
+            fprintf(codegen.emit_stream as *void, "return (%s){ .error_id = %dU };\n" as *byte, ret_c as *byte, id);
         } else {
             const payload_c: &byte = c99_type_to_c(codegen, payload_node);
             c99_emit_indent(codegen);
             if payload_c != null && (strncmp(payload_c as *byte, "struct " as *byte, 7) == 0 || strncmp(payload_c as *byte, "union " as *byte, 6) == 0) {
-                fprintf(codegen.output as *void, "return (%s){ .error_id = %dU, .value = (%s){0} };\n" as *byte, ret_c as *byte, id, payload_c as *byte);
+                fprintf(codegen.emit_stream as *void, "return (%s){ .error_id = %dU, .value = (%s){0} };\n" as *byte, ret_c as *byte, id, payload_c as *byte);
             } else {
-                fprintf(codegen.output as *void, "return (%s){ .error_id = %dU, .value = 0 };\n" as *byte, ret_c as *byte, id);
+                fprintf(codegen.emit_stream as *void, "return (%s){ .error_id = %dU, .value = 0 };\n" as *byte, ret_c as *byte, id);
             }
         }
         return;
@@ -815,9 +815,9 @@ fn gen_return_array(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &AS
     if struct_name != null {
         gen_array_wrapper_struct(codegen, return_type, struct_name);
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s _uya_ret = (struct %s) { .data = " as *byte, ret_c as *byte, struct_name as *byte);
+        fprintf(codegen.emit_stream as *void, "%s _uya_ret = (struct %s) { .data = " as *byte, ret_c as *byte, struct_name as *byte);
         if expr.type == ASTNodeType.AST_ARRAY_LITERAL {
-            fputc(123, codegen.output as *void);
+            fputc(123, codegen.emit_stream as *void);
             const element_count: i32 = expr.array_literal_element_count;
             const repeat_count_expr: &ASTNode = expr.array_literal_repeat_count_expr;
             if repeat_count_expr != null && element_count >= 1 {
@@ -837,16 +837,16 @@ fn gen_return_array(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &AS
                     i = i + 1;
                 }
             } else {
-                fputs("0" as *byte, codegen.output as *void);
+                fputs("0" as *byte, codegen.emit_stream as *void);
             }
-            fputc(125, codegen.output as *void);
+            fputc(125, codegen.emit_stream as *void);
         } else {
             gen_expr(codegen, expr);
         }
-        fputs(" };\n" as *byte, codegen.output as *void);
+        fputs(" };\n" as *byte, codegen.emit_stream as *void);
     } else {
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
+        fprintf(codegen.emit_stream as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
         gen_expr(codegen, expr);
         c99_emit_semi_newline(codegen);
     }
@@ -883,14 +883,14 @@ fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &A
                 const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
                 codegen.needs_stdlib_h = 1;
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s));\n" as *byte,
+                fprintf(codegen.emit_stream as *void, "struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s));\n" as *byte,
                     safe_struct as *byte, safe_struct as *byte, safe_struct as *byte);
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "if (_uya_box != (void*)0) { *_uya_box = " as *byte);
+                fprintf(codegen.emit_stream as *void, "if (_uya_box != (void*)0) { *_uya_box = " as *byte);
                 gen_expr(codegen, expr);
-                fputs("; }\n" as *byte, codegen.output as *void);
+                fputs("; }\n" as *byte, codegen.emit_stream as *void);
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s _uya_ret = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)_uya_box };\n" as *byte,
+                fprintf(codegen.emit_stream as *void, "%s _uya_ret = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)_uya_box };\n" as *byte,
                     ret_c as *byte, safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
                 did_interface_box = 1;
             }
@@ -905,11 +905,11 @@ fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &A
             }
             c99_emit_indent(codegen);
             if need_deref != 0 {
-                fprintf(codegen.output as *void, "%s _uya_ret = *(" as *byte, ret_c as *byte);
+                fprintf(codegen.emit_stream as *void, "%s _uya_ret = *(" as *byte, ret_c as *byte);
                 gen_expr(codegen, expr);
                 c99_emit(codegen, ");\n" as *byte);
             } else {
-                fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
+                fprintf(codegen.emit_stream as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
                 gen_expr(codegen, expr);
                 c99_emit_semi_newline(codegen);
             }
@@ -924,9 +924,9 @@ fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &A
         }
         c99_emit_indent(codegen);
         if is_err_union_void != 0 {
-            fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0 };\n" as *byte, ret_c as *byte, ret_c as *byte);
+            fprintf(codegen.emit_stream as *void, "%s _uya_ret = (%s){ .error_id = 0 };\n" as *byte, ret_c as *byte, ret_c as *byte);
         } else {
-            fprintf(codegen.output as *void, "%s _uya_ret = 0;\n" as *byte, ret_c as *byte);
+            fprintf(codegen.emit_stream as *void, "%s _uya_ret = 0;\n" as *byte, ret_c as *byte);
         }
     }
 }
@@ -959,7 +959,7 @@ fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_typ
         gen_return_error_union_expr(codegen, expr, payload_node, ret_c, payload_void);
     } else if payload_void != 0 {
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0 };\n" as *byte, ret_c as *byte, ret_c as *byte);
+        fprintf(codegen.emit_stream as *void, "%s _uya_ret = (%s){ .error_id = 0 };\n" as *byte, ret_c as *byte, ret_c as *byte);
     } else {
         // @async_fn 中 return T：生成 Future<T>{ state: Poll<T>.Ready(expr) }，仅当表达式为标量 T（非结构体字面量）时包装
         var is_async_return_value: i32 = 0;
@@ -988,17 +988,17 @@ fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_typ
                 const future_mono: &byte = get_mono_struct_name(codegen, "Future" as &byte, payload_node.type_named_type_args, 1);
                 const safe_future: &byte = get_safe_c_identifier(codegen, future_mono);
                 // interface mono = Future_i32（同名），C 侧的 interface struct 为 uya_interface_Future_i32
-                fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&((struct %s){ .state = ((struct uya_tagged_%s){ ._tag = 1, .u = (union %s){ .Ready = " as *byte,
+                fprintf(codegen.emit_stream as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&((struct %s){ .state = ((struct uya_tagged_%s){ ._tag = 1, .u = (union %s){ .Ready = " as *byte,
                     ret_c as *byte, ret_c as *byte,
                     safe_future as *byte, safe_future as *byte, safe_future as *byte,
                     safe_future as *byte, poll_safe as *byte, poll_safe as *byte);
                 gen_expr(codegen, expr);
-                fputs(" } }) }) } };\n" as *byte, codegen.output as *void);
+                fputs(" } }) }) } };\n" as *byte, codegen.emit_stream as *void);
             } else {
                 const payload_c: &byte = c99_type_to_c(codegen, payload_node);
-                fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = (%s){ .state = ((struct uya_tagged_%s){ ._tag = 1, .u = (union %s){ .Ready = " as *byte, ret_c as *byte, ret_c as *byte, payload_c as *byte, poll_safe as *byte, poll_safe as *byte);
+                fprintf(codegen.emit_stream as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = (%s){ .state = ((struct uya_tagged_%s){ ._tag = 1, .u = (union %s){ .Ready = " as *byte, ret_c as *byte, ret_c as *byte, payload_c as *byte, poll_safe as *byte, poll_safe as *byte);
                 gen_expr(codegen, expr);
-                fputs(" } }) } };\n" as *byte, codegen.output as *void);
+                fputs(" } }) } };\n" as *byte, codegen.emit_stream as *void);
             }
         } else {
             // 若 payload 是接口类型且 expr 是实现该接口的结构体值，则返回时装箱
@@ -1021,14 +1021,14 @@ fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_typ
                         const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono);
                         const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
                         codegen.needs_stdlib_h = 1;
-                        fprintf(codegen.output as *void, "struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s));\n" as *byte,
+                        fprintf(codegen.emit_stream as *void, "struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s));\n" as *byte,
                             safe_struct as *byte, safe_struct as *byte, safe_struct as *byte);
                         c99_emit_indent(codegen);
-                        fprintf(codegen.output as *void, "if (_uya_box != (void*)0) { *_uya_box = " as *byte);
+                        fprintf(codegen.emit_stream as *void, "if (_uya_box != (void*)0) { *_uya_box = " as *byte);
                         gen_expr(codegen, expr);
-                        fputs("; }\n" as *byte, codegen.output as *void);
+                        fputs("; }\n" as *byte, codegen.emit_stream as *void);
                         c99_emit_indent(codegen);
-                        fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)_uya_box } };\n" as *byte,
+                        fprintf(codegen.emit_stream as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = (struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)_uya_box } };\n" as *byte,
                             ret_c as *byte, ret_c as *byte, safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
                         did_box = 1;
                     }
@@ -1043,13 +1043,13 @@ fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_typ
                     need_deref = 1;
                 }
                 if need_deref != 0 {
-                    fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = *(" as *byte, ret_c as *byte, ret_c as *byte);
+                    fprintf(codegen.emit_stream as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = *(" as *byte, ret_c as *byte, ret_c as *byte);
                     gen_expr(codegen, expr);
-                    fputs(") };\n" as *byte, codegen.output as *void);
+                    fputs(") };\n" as *byte, codegen.emit_stream as *void);
                 } else {
-                    fprintf(codegen.output as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = " as *byte, ret_c as *byte, ret_c as *byte);
+                    fprintf(codegen.emit_stream as *void, "%s _uya_ret = (%s){ .error_id = 0, .value = " as *byte, ret_c as *byte, ret_c as *byte);
                     gen_expr(codegen, expr);
-                    fputs(" };\n" as *byte, codegen.output as *void);
+                    fputs(" };\n" as *byte, codegen.emit_stream as *void);
                 }
             }
         }
@@ -1079,14 +1079,14 @@ fn gen_return_error_union_expr(codegen: &C99CodeGenerator, expr: &ASTNode, paylo
     }
     if needs_conversion != 0 && payload_void == 0 {
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "struct err_union_%s _uya_tmp = " as *byte, expr_payload_c as *byte);
+        fprintf(codegen.emit_stream as *void, "struct err_union_%s _uya_tmp = " as *byte, expr_payload_c as *byte);
         gen_expr(codegen, expr);
         c99_emit_semi_newline(codegen);
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s _uya_ret = (_uya_tmp.error_id == 0) ? (%s){ .error_id = 0, .value = (%s)_uya_tmp.value } : (%s){ .error_id = _uya_tmp.error_id };\n" as *byte, ret_c as *byte, ret_c as *byte, ret_payload_c as *byte, ret_c as *byte);
+        fprintf(codegen.emit_stream as *void, "%s _uya_ret = (_uya_tmp.error_id == 0) ? (%s){ .error_id = 0, .value = (%s)_uya_tmp.value } : (%s){ .error_id = _uya_tmp.error_id };\n" as *byte, ret_c as *byte, ret_c as *byte, ret_payload_c as *byte, ret_c as *byte);
     } else {
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
+        fprintf(codegen.emit_stream as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
         gen_expr(codegen, expr);
         c99_emit_semi_newline(codegen);
     }
@@ -1100,7 +1100,7 @@ fn gen_assign_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     if dest.type == ASTNodeType.AST_UNDERSCORE {
         c99_emit(codegen, "(void)(" as *byte);
         gen_expr(codegen, src);
-        fputs(");\n" as *byte, codegen.output as *void);
+        fputs(");\n" as *byte, codegen.emit_stream as *void);
         return;
     }
     
@@ -1111,9 +1111,9 @@ fn gen_assign_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         gen_expr(codegen, dest);
         c99_emit_comma_space(codegen);
         gen_expr(codegen, src);
-        fputs(", sizeof(" as *byte, codegen.output as *void);
+        fputs(", sizeof(" as *byte, codegen.emit_stream as *void);
         gen_expr(codegen, dest);
-        fputs("));\n" as *byte, codegen.output as *void);
+        fputs("));\n" as *byte, codegen.emit_stream as *void);
     } else {
         gen_assign_non_array(codegen, dest, src);
     }
@@ -1184,9 +1184,9 @@ fn gen_assign_non_array(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNod
         codegen.emitting_assign_lhs = 1;
         gen_expr(codegen, dest);
         codegen.emitting_assign_lhs = 0;
-        fputs(" = " as *byte, codegen.output as *void);
+        fputs(" = " as *byte, codegen.emit_stream as *void);
         if is_argv_to_saved_argv != 0 {
-            fputs("(uint8_t **)" as *byte, codegen.output as *void);
+            fputs("(uint8_t **)" as *byte, codegen.emit_stream as *void);
         }
         gen_expr(codegen, src);
         c99_emit_semi_newline(codegen);
@@ -1233,16 +1233,16 @@ fn emit_atomic_pointer_arg(codegen: &C99CodeGenerator, dest: &ASTNode, safe_name
     }
     const inner_type: &byte = get_atomic_inner_type_c(codegen, dest_type_c);
     if inner_type != null {
-        fprintf(codegen.output as *void, "(%s *)&" as *byte, inner_type as *byte);
+        fprintf(codegen.emit_stream as *void, "(%s *)&" as *byte, inner_type as *byte);
     } else {
-        fputs("&" as *byte, codegen.output as *void);
+        fputs("&" as *byte, codegen.emit_stream as *void);
     }
     if safe_name != null && strcmp(safe_name as *byte, "" as *byte) != 0 {
-        fputs(safe_name as *byte, codegen.output as *void);
+        fputs(safe_name as *byte, codegen.emit_stream as *void);
     } else {
-        fputs("(" as *byte, codegen.output as *void);
+        fputs("(" as *byte, codegen.emit_stream as *void);
         gen_expr(codegen, dest);
-        fputs(")" as *byte, codegen.output as *void);
+        fputs(")" as *byte, codegen.emit_stream as *void);
     }
     return inner_type;
 }
@@ -1253,7 +1253,7 @@ fn emit_atomic_store(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode, 
     _ = emit_atomic_pointer_arg(codegen, dest, safe_name);
     c99_emit_comma_space(codegen);
     gen_expr(codegen, src);
-    fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
+    fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.emit_stream as *void);
 }
 
 // 生成原子复合赋值（+=/-= 硬件指令，*= / = / %= 用 compare-and-swap 循环，规范 13.3）
@@ -1263,13 +1263,13 @@ fn gen_atomic_compound(codegen: &C99CodeGenerator, dest: &ASTNode, op: TokenType
         _ = emit_atomic_pointer_arg(codegen, dest, safe_name);
         c99_emit_comma_space(codegen);
         gen_expr(codegen, right);
-        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
+        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.emit_stream as *void);
     } else if op == TokenType.TOKEN_MINUS {
         c99_emit(codegen, "__atomic_fetch_sub(" as *byte);
         _ = emit_atomic_pointer_arg(codegen, dest, safe_name);
         c99_emit_comma_space(codegen);
         gen_expr(codegen, right);
-        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
+        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.emit_stream as *void);
     } else if op == TokenType.TOKEN_ASTERISK || op == TokenType.TOKEN_SLASH || op == TokenType.TOKEN_PERCENT {
         const dest_type_c: &byte = get_c_type_of_expr(codegen, dest);
         const inner_type: &byte = get_atomic_inner_type_c(codegen, dest_type_c);
@@ -1278,39 +1278,39 @@ fn gen_atomic_compound(codegen: &C99CodeGenerator, dest: &ASTNode, op: TokenType
             return;
         }
         c99_emit_indent(codegen);
-        fputs("{\n" as *byte, codegen.output as *void);
+        fputs("{\n" as *byte, codegen.emit_stream as *void);
         codegen.indent_level = codegen.indent_level + 1;
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s _uya_atomic_expected = __atomic_load_n(" as *byte, inner_type as *byte);
+        fprintf(codegen.emit_stream as *void, "%s _uya_atomic_expected = __atomic_load_n(" as *byte, inner_type as *byte);
         _ = emit_atomic_pointer_arg(codegen, dest, safe_name);
-        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.output as *void);
+        fputs(", __ATOMIC_SEQ_CST);\n" as *byte, codegen.emit_stream as *void);
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s _uya_atomic_desired;\n" as *byte, inner_type as *byte);
+        fprintf(codegen.emit_stream as *void, "%s _uya_atomic_desired;\n" as *byte, inner_type as *byte);
         c99_emit_indent(codegen);
-        fputs("for (;;) {\n" as *byte, codegen.output as *void);
+        fputs("for (;;) {\n" as *byte, codegen.emit_stream as *void);
         codegen.indent_level = codegen.indent_level + 1;
         c99_emit_indent(codegen);
-        fputs("_uya_atomic_desired = _uya_atomic_expected " as *byte, codegen.output as *void);
+        fputs("_uya_atomic_desired = _uya_atomic_expected " as *byte, codegen.emit_stream as *void);
         if op == TokenType.TOKEN_ASTERISK {
-            fputs("* " as *byte, codegen.output as *void);
+            fputs("* " as *byte, codegen.emit_stream as *void);
         } else if op == TokenType.TOKEN_SLASH {
-            fputs("/ " as *byte, codegen.output as *void);
+            fputs("/ " as *byte, codegen.emit_stream as *void);
         } else {
-            fputc(37, codegen.output as *void);
-            fputs(" " as *byte, codegen.output as *void);
+            fputc(37, codegen.emit_stream as *void);
+            fputs(" " as *byte, codegen.emit_stream as *void);
         }
         gen_expr(codegen, right);
-        fputs(";\n" as *byte, codegen.output as *void);
+        fputs(";\n" as *byte, codegen.emit_stream as *void);
         c99_emit_indent(codegen);
-        fputs("if (__atomic_compare_exchange_n(" as *byte, codegen.output as *void);
+        fputs("if (__atomic_compare_exchange_n(" as *byte, codegen.emit_stream as *void);
         _ = emit_atomic_pointer_arg(codegen, dest, safe_name);
-        fputs(", &_uya_atomic_expected, _uya_atomic_desired, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) break;\n" as *byte, codegen.output as *void);
+        fputs(", &_uya_atomic_expected, _uya_atomic_desired, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) break;\n" as *byte, codegen.emit_stream as *void);
         codegen.indent_level = codegen.indent_level - 1;
         c99_emit_indent(codegen);
-        fputs("}\n" as *byte, codegen.output as *void);
+        fputs("}\n" as *byte, codegen.emit_stream as *void);
         codegen.indent_level = codegen.indent_level - 1;
         c99_emit_indent(codegen);
-        fputs("}\n" as *byte, codegen.output as *void);
+        fputs("}\n" as *byte, codegen.emit_stream as *void);
     } else {
         emit_atomic_store(codegen, dest, right, safe_name);
     }
@@ -1398,12 +1398,12 @@ fn gen_destructure_decl(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 if safe_name != null {
                     if is_const != 0 {
                         c99_emit(codegen, "const " as *byte);
-                        fprintf(codegen.output as *void, "%s %s = " as *byte, elem_type_c as *byte, safe_name as *byte);
+                        fprintf(codegen.emit_stream as *void, "%s %s = " as *byte, elem_type_c as *byte, safe_name as *byte);
                     } else {
-                        fprintf(codegen.output as *void, "%s %s = " as *byte, elem_type_c as *byte, safe_name as *byte);
+                        fprintf(codegen.emit_stream as *void, "%s %s = " as *byte, elem_type_c as *byte, safe_name as *byte);
                     }
                     gen_expr(codegen, init);
-                    fprintf(codegen.output as *void, ".f%d;\n" as *byte, i);
+                    fprintf(codegen.emit_stream as *void, ".f%d;\n" as *byte, i);
                     if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                         var type_to_store: &byte = elem_type_c;
                         if is_const != 0 && elem_type_c != null {
@@ -1454,9 +1454,9 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         }
         if need_pragma_missing_braces != 0 {
             c99_emit_indent(codegen);
-            fputs("#pragma GCC diagnostic push\n" as *byte, codegen.output as *void);
+            fputs("#pragma GCC diagnostic push\n" as *byte, codegen.emit_stream as *void);
             c99_emit_indent(codegen);
-            fputs("#pragma GCC diagnostic ignored \"-Wmissing-braces\"\n" as *byte, codegen.output as *void);
+            fputs("#pragma GCC diagnostic ignored \"-Wmissing-braces\"\n" as *byte, codegen.emit_stream as *void);
         }
         
         // 计算类型字符串
@@ -1504,10 +1504,10 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         const n: i32 = var_type.type_array_size_expr.number_value;
                         if n > 0 && n <= 64 {
                             c99_emit_indent(codegen);
-                            fprintf(codegen.output as *void, "%s %s%s = {0};\n" as *byte, base_type as *byte, var_name as *byte, dimensions);
+                            fprintf(codegen.emit_stream as *void, "%s %s%s = {0};\n" as *byte, base_type as *byte, var_name as *byte, dimensions);
                             type_c = null;
                             c99_emit_indent(codegen);
-                            fputs("{\n" as *byte, codegen.output as *void);
+                            fputs("{\n" as *byte, codegen.emit_stream as *void);
                             codegen.indent_level = codegen.indent_level + 1;
                             const try_operand: &ASTNode = init_expr.try_expr_operand;
                             const eu_node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, stmt.line, stmt.column, codegen.arena, stmt.filename);
@@ -1518,28 +1518,28 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             }
                             if union_c != null {
                                 c99_emit_indent(codegen);
-                                fprintf(codegen.output as *void, "%s _uya_try_arr_tmp = " as *byte, union_c as *byte);
+                                fprintf(codegen.emit_stream as *void, "%s _uya_try_arr_tmp = " as *byte, union_c as *byte);
                                 const saved_block_union: &byte = codegen.expected_block_union_type;
                                 codegen.expected_block_union_type = union_c;
                                 gen_expr(codegen, try_operand);
                                 codegen.expected_block_union_type = saved_block_union;
-                                fputs(";\n" as *byte, codegen.output as *void);
+                                fputs(";\n" as *byte, codegen.emit_stream as *void);
                                 var ret_union_c: &byte = ("void" as *byte) as &byte;
                                 if codegen.current_function_return_type != null && codegen.current_function_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
                                     ret_union_c = c99_type_to_c(codegen, codegen.current_function_return_type);
                                 }
                                 c99_emit_indent(codegen);
-                                fprintf(codegen.output as *void, "if (_uya_try_arr_tmp.error_id != 0) return (%s){ .error_id = _uya_try_arr_tmp.error_id };\n" as *byte, ret_union_c as *byte);
+                                fprintf(codegen.emit_stream as *void, "if (_uya_try_arr_tmp.error_id != 0) return (%s){ .error_id = _uya_try_arr_tmp.error_id };\n" as *byte, ret_union_c as *byte);
                                 var ci: i32 = 0;
                                 while ci < n {
                                     c99_emit_indent(codegen);
-                                    fprintf(codegen.output as *void, "%s[%d] = _uya_try_arr_tmp.value[%d];\n" as *byte, var_name as *byte, ci, ci);
+                                    fprintf(codegen.emit_stream as *void, "%s[%d] = _uya_try_arr_tmp.value[%d];\n" as *byte, var_name as *byte, ci, ci);
                                     ci = ci + 1;
                                 }
                             }
                             codegen.indent_level = codegen.indent_level - 1;
                             c99_emit_indent(codegen);
-                            fputs("}\n" as *byte, codegen.output as *void);
+                            fputs("}\n" as *byte, codegen.emit_stream as *void);
                             if stored_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                                 codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
                                 codegen.local_variables[codegen.local_variable_count].type_c = stored_type_c;
@@ -1554,9 +1554,9 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     // 生成数组声明：const base_type var_name dimensions（字符串插值初始化时不使用 const）
                     c99_emit_indent(codegen);
                     if is_const != 0 && is_string_interp_init == 0 {
-                        fprintf(codegen.output as *void, "const %s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
+                        fprintf(codegen.emit_stream as *void, "const %s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
                     } else {
-                        fprintf(codegen.output as *void, "%s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
+                        fprintf(codegen.emit_stream as *void, "%s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
                     }
                     type_c = null; // 已处理，避免后续重复输出
                     // 数组声明后必须立即输出初始化，否则会与下一条语句拼接（常见于 var ap_buf; var ap; 连续声明）
@@ -1567,31 +1567,31 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         } else if init_expr.type == ASTNodeType.AST_IDENTIFIER {
                             c99_emit_semi_newline(codegen);
                             c99_emit_indent(codegen);
-                            fprintf(codegen.output as *void, "__uya_memcpy(%s, " as *byte, var_name as *byte);
+                            fprintf(codegen.emit_stream as *void, "__uya_memcpy(%s, " as *byte, var_name as *byte);
                             gen_expr(codegen, init_expr);
-                            fprintf(codegen.output as *void, ", sizeof(%s));\n" as *byte, var_name as *byte);
+                            fprintf(codegen.emit_stream as *void, ", sizeof(%s));\n" as *byte, var_name as *byte);
                         } else if init_expr.type == ASTNodeType.AST_CALL_EXPR {
                             c99_emit_semi_newline(codegen);
                             c99_emit_indent(codegen);
-                            fprintf(codegen.output as *void, "__uya_memcpy(%s, " as *byte, var_name as *byte);
+                            fprintf(codegen.emit_stream as *void, "__uya_memcpy(%s, " as *byte, var_name as *byte);
                             gen_expr(codegen, init_expr);
-                            fputs(".data, sizeof(" as *byte, codegen.output as *void);
-                            fprintf(codegen.output as *void, "%s));\n" as *byte, var_name as *byte);
+                            fputs(".data, sizeof(" as *byte, codegen.emit_stream as *void);
+                            fprintf(codegen.emit_stream as *void, "%s));\n" as *byte, var_name as *byte);
                         } else if init_expr.type == ASTNodeType.AST_STRING {
                             // 数组用字符串字面量初始化：直接输出字符串字面量
-                            fputs(" = \"" as *byte, codegen.output as *void);
+                            fputs(" = \"" as *byte, codegen.emit_stream as *void);
                             const str_val: &byte = init_expr.string_literal_value;
                             if str_val != null {
-                                escape_string_for_c(codegen.output, str_val);
+                                escape_string_for_c(codegen.emit_stream, str_val);
                             }
-                            fputs("\";\n" as *byte, codegen.output as *void);
+                            fputs("\";\n" as *byte, codegen.emit_stream as *void);
                         } else {
-                            fputs(" = " as *byte, codegen.output as *void);
+                            fputs(" = " as *byte, codegen.emit_stream as *void);
                             gen_expr(codegen, init_expr);
                             c99_emit_semi_newline(codegen);
                         }
                         if need_pragma_missing_braces != 0 {
-                            fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
+                            fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.emit_stream as *void);
                         }
                         if stored_type_c != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                             codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
@@ -1609,10 +1609,10 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             if type_c != null {
                 if is_const != 0 && is_string_interp_init == 0 {
                     c99_emit_indent(codegen);
-                    fprintf(codegen.output as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
+                    fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
                 } else {
                     c99_emit_indent(codegen);
-                    fprintf(codegen.output as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
+                    fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
                 }
             }
         } else {
@@ -1628,7 +1628,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             if is_va_list_builtin != 0 {
                 // va_list 类型变量：生成 va_list ap; 不初始化（va_start 会初始化）
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "va_list %s;\n" as *byte, var_name as *byte);
+                fprintf(codegen.emit_stream as *void, "va_list %s;\n" as *byte, var_name as *byte);
                 if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                     codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
                     codegen.local_variables[codegen.local_variable_count].type_c = "va_list" as *byte;
@@ -1637,7 +1637,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
                 // va_list 变量不由初始化表达式初始化，va_start 会初始化，必须提前返回
                 if need_pragma_missing_braces != 0 {
-                    fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
+                    fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.emit_stream as *void);
                 }
                 codegen.expected_type = saved_expected_type;
                 return;
@@ -1646,7 +1646,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             const use_va_list: i32 = should_use_va_list(codegen, var_type, stmt.var_decl_name, type_c);
             if use_va_list != 0 {
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "va_list %s;\n" as *byte, var_name as *byte);
+                fprintf(codegen.emit_stream as *void, "va_list %s;\n" as *byte, var_name as *byte);
                 if codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                     codegen.local_variables[codegen.local_variable_count].name = stmt.var_decl_name;
                     codegen.local_variables[codegen.local_variable_count].type_c = "va_list" as *byte;
@@ -1655,7 +1655,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
                 // va_list 变量不由初始化表达式初始化，va_start 会初始化，必须提前返回
                 if need_pragma_missing_braces != 0 {
-                    fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
+                    fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.emit_stream as *void);
                 }
                 codegen.expected_type = saved_expected_type;
                 return;
@@ -1681,9 +1681,9 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 // Uya checker 已确保 const 语义，C 层面不需要重复约束
                 c99_emit_indent(codegen);
                 if strstr(type_c as *byte, "struct " as *byte) != null {
-                    fprintf(codegen.output as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
+                    fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
                 } else {
-                    fprintf(codegen.output as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
+                    fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
                     // 存储类型字符串：const T（用于变量表）
                     const str_len4: i32 = strlen(type_c as *byte) + 7; // "const " + null
                     stored_type_c_for_pointer = arena_alloc(codegen.arena, str_len4) as &byte;
@@ -1693,7 +1693,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
             } else {
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
+                fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
             }
         
         // *关键修改*：在生成初始化表达式之前，先将变量添加到局部变量表
@@ -1740,23 +1740,23 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 const cur_fn: &ASTNode = codegen.current_function_decl;
                 const params: & & ASTNode = cur_fn.fn_decl_params;
                 const n: i32 = cur_fn.fn_decl_param_count;
-                fputs(" = {" as *byte, codegen.output as *void);
+                fputs(" = {" as *byte, codegen.emit_stream as *void);
                 var i: i32 = 0;
                 while i < n {
-                    fprintf(codegen.output as *void, ".f%d = " as *byte, i);
+                    fprintf(codegen.emit_stream as *void, ".f%d = " as *byte, i);
                     const p: &ASTNode = params[i];
                     if p != null && p.type == ASTNodeType.AST_VAR_DECL && p.var_decl_name != null {
                         const pname: &byte = get_safe_c_identifier(codegen, p.var_decl_name);
-                        fprintf(codegen.output as *void, "%s" as *byte, pname as *byte);
+                        fprintf(codegen.emit_stream as *void, "%s" as *byte, pname as *byte);
                     } else {
-                        fputs("0" as *byte, codegen.output as *void);
+                        fputs("0" as *byte, codegen.emit_stream as *void);
                     }
                     if i < n - 1 {
                         c99_emit_comma_space(codegen);
                     }
                     i = i + 1;
                 }
-                fputs("};\n" as *byte, codegen.output as *void);
+                fputs("};\n" as *byte, codegen.emit_stream as *void);
             } else {
             // 元组变量用元组字面量初始化：用 { .f0 = e0, .f1 = e1 } 避免 C 匿名结构体类型不兼容
             var is_tuple_init: i32 = 0;
@@ -1767,19 +1767,19 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 const n: i32 = init_expr.tuple_literal_element_count;
                 const elements: & & ASTNode = init_expr.tuple_literal_elements;
                 if n > 0 && elements != null {
-                    fputs(" = { " as *byte, codegen.output as *void);
+                    fputs(" = { " as *byte, codegen.emit_stream as *void);
                     var i: i32 = 0;
                     while i < n {
-                        fprintf(codegen.output as *void, ".f%d = " as *byte, i);
+                        fprintf(codegen.emit_stream as *void, ".f%d = " as *byte, i);
                         gen_expr(codegen, elements[i]);
                         if i < n - 1 {
                             c99_emit_comma_space(codegen);
                         }
                         i = i + 1;
                     }
-                    fputs(" };\n" as *byte, codegen.output as *void);
+                    fputs(" };\n" as *byte, codegen.emit_stream as *void);
                 } else {
-                    fputs(" = " as *byte, codegen.output as *void);
+                    fputs(" = " as *byte, codegen.emit_stream as *void);
                     gen_expr(codegen, init_expr);
                     c99_emit_semi_newline(codegen);
                 }
@@ -1860,22 +1860,22 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 c99_emit_semi_newline(codegen);
                 // 然后使用 memcpy 从结构体中提取数组
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "__uya_memcpy(%s" as *byte, var_name as *byte);
+                fprintf(codegen.emit_stream as *void, "__uya_memcpy(%s" as *byte, var_name as *byte);
                 c99_emit_comma_space(codegen);
                 gen_expr(codegen, init_expr);
-                fputs(".data, sizeof(" as *byte, codegen.output as *void);
-                fprintf(codegen.output as *void, "%s" as *byte, var_name as *byte);
-                fputs("));\n" as *byte, codegen.output as *void);
+                fputs(".data, sizeof(" as *byte, codegen.emit_stream as *void);
+                fprintf(codegen.emit_stream as *void, "%s" as *byte, var_name as *byte);
+                fputs("));\n" as *byte, codegen.emit_stream as *void);
             } else if needs_memcpy != 0 {
                 // 数组初始化：使用memcpy
                 c99_emit_semi_newline(codegen);
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "__uya_memcpy(%s" as *byte, var_name as *byte);
+                fprintf(codegen.emit_stream as *void, "__uya_memcpy(%s" as *byte, var_name as *byte);
                 c99_emit_comma_space(codegen);
                 gen_expr(codegen, init_expr);
-                fputs(", sizeof(" as *byte, codegen.output as *void);
-                fprintf(codegen.output as *void, "%s" as *byte, var_name as *byte);
-                fputs("));\n" as *byte, codegen.output as *void);
+                fputs(", sizeof(" as *byte, codegen.emit_stream as *void);
+                fprintf(codegen.emit_stream as *void, "%s" as *byte, var_name as *byte);
+                fputs("));\n" as *byte, codegen.emit_stream as *void);
             } else if is_string_interp_init != 0 {
                 c99_emit_semi_newline(codegen);
                 c99_emit_string_interp_fill(codegen, init_expr, var_name);
@@ -1883,7 +1883,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 gen_var_decl_struct_init_memcpy(codegen, var_name, init_expr);
             } else {
                 // 普通初始化（pragma 已在声明开头输出）
-                fputs(" = " as *byte, codegen.output as *void);
+                fputs(" = " as *byte, codegen.emit_stream as *void);
                 
                 // 检查是否是字符串常量（@func_name、@src_name、@src_path）赋值给指针类型
                 // 字符串常量是 const char * 类型，但变量可能是 uint8_t * const，需要类型转换
@@ -1896,7 +1896,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
                 
                 if needs_cast != 0 {
-                    fputs("(uint8_t *)" as *byte, codegen.output as *void);
+                    fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
                 }
 
                 // 装箱：当变量类型是接口，且初始化表达式是实现了该接口的结构体值时，生成 vtable+data
@@ -1921,10 +1921,10 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             }
                             const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono);
                             const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
-                            fprintf(codegen.output as *void, "(struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&(" as *byte,
+                            fprintf(codegen.emit_stream as *void, "(struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&(" as *byte,
                                 safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
                             gen_expr(codegen, init_expr);
-                            fputs(") }" as *byte, codegen.output as *void);
+                            fputs(") }" as *byte, codegen.emit_stream as *void);
                             did_box = 1;
                         }
                     }
@@ -1940,9 +1940,9 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         need_slice_deref_init = 1;
                     }
                     if need_slice_deref_init != 0 {
-                        fputs("*(" as *byte, codegen.output as *void);
+                        fputs("*(" as *byte, codegen.emit_stream as *void);
                         gen_expr(codegen, init_expr);
-                        fputs(")" as *byte, codegen.output as *void);
+                        fputs(")" as *byte, codegen.emit_stream as *void);
                     } else {
                         gen_expr(codegen, init_expr);
                     }
@@ -1950,7 +1950,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 c99_emit_semi_newline(codegen);
             }
             if need_pragma_missing_braces != 0 {
-                fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.output as *void);
+                fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.emit_stream as *void);
             }
             if codegen.current_drop_scope >= 0 && var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null && type_has_drop_c99(codegen, var_type.type_named_name) != 0 && stmt.var_decl_was_moved == 0 {
                 const dd: i32 = codegen.current_drop_scope;
@@ -1997,7 +1997,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         c99_emit(codegen, "{\n" as *byte);
         codegen.indent_level = codegen.indent_level + 1;
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "%s _uya_m = " as *byte, m_type as *byte);
+        fprintf(codegen.emit_stream as *void, "%s _uya_m = " as *byte, m_type as *byte);
         gen_expr(codegen, match_expr);
         c99_emit_semi_newline(codegen);
         var first: i32 = 1;
@@ -2012,15 +2012,15 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 c99_emit_indent(codegen);
                 if stmt.match_expr_arms[i].literal_is_bool != 0 {
                     if stmt.match_expr_arms[i].literal_int_value != 0 {
-                        fprintf(codegen.output as *void, "%sif (_uya_m == 1) " as *byte, prefix as *byte);
+                        fprintf(codegen.emit_stream as *void, "%sif (_uya_m == 1) " as *byte, prefix as *byte);
                     } else {
-                        fprintf(codegen.output as *void, "%sif (_uya_m == 0) " as *byte, prefix as *byte);
+                        fprintf(codegen.emit_stream as *void, "%sif (_uya_m == 0) " as *byte, prefix as *byte);
                     }
                 } else {
-                    fprintf(codegen.output as *void, "%sif (_uya_m == %d) " as *byte, prefix as *byte, stmt.match_expr_arms[i].literal_int_value);
+                    fprintf(codegen.emit_stream as *void, "%sif (_uya_m == %d) " as *byte, prefix as *byte, stmt.match_expr_arms[i].literal_int_value);
                 }
                 if stmt.match_expr_arms[i].result_is_block != 0 {
-                    fputs("{\n" as *byte, codegen.output as *void);
+                    fputs("{\n" as *byte, codegen.emit_stream as *void);
                     codegen.indent_level = codegen.indent_level + 1;
                     gen_stmt(codegen, stmt.match_expr_arms[i].result_expr);
                     codegen.indent_level = codegen.indent_level - 1;
@@ -2069,10 +2069,10 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         }
                         if bind != null {
                             c99_emit_indent(codegen);
-                            fprintf(codegen.output as *void, "%sif (_uya_m._tag == %d) {\n" as *byte, prefix as *byte, idx);
+                            fprintf(codegen.emit_stream as *void, "%sif (_uya_m._tag == %d) {\n" as *byte, prefix as *byte, idx);
                             codegen.indent_level = codegen.indent_level + 1;
                             c99_emit_indent(codegen);
-                            fprintf(codegen.output as *void, "%s %s = _uya_m.u.%s;\n" as *byte, vtype as *byte, bind as *byte, vname as *byte);
+                            fprintf(codegen.emit_stream as *void, "%s %s = _uya_m.u.%s;\n" as *byte, vtype as *byte, bind as *byte, vname as *byte);
                             if stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                                 codegen.local_variables[codegen.local_variable_count].name = stmt.match_expr_arms[i].var_name;
                                 codegen.local_variables[codegen.local_variable_count].type_c = vtype;
@@ -2081,11 +2081,11 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                             }
                         } else {
                             c99_emit_indent(codegen);
-                            fprintf(codegen.output as *void, "%sif (_uya_m._tag == %d) " as *byte, prefix as *byte, idx);
+                            fprintf(codegen.emit_stream as *void, "%sif (_uya_m._tag == %d) " as *byte, prefix as *byte, idx);
                         }
                         if stmt.match_expr_arms[i].result_is_block != 0 {
                             if bind == null {
-                                fputs("{\n" as *byte, codegen.output as *void);
+                                fputs("{\n" as *byte, codegen.emit_stream as *void);
                                 codegen.indent_level = codegen.indent_level + 1;
                             }
                             gen_stmt(codegen, stmt.match_expr_arms[i].result_expr);
@@ -2119,12 +2119,12 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
                 c99_emit_indent(codegen);
                 if ev >= 0 {
-                    fprintf(codegen.output as *void, "%sif (_uya_m == %d) " as *byte, prefix as *byte, ev);
+                    fprintf(codegen.emit_stream as *void, "%sif (_uya_m == %d) " as *byte, prefix as *byte, ev);
                 } else {
-                    fprintf(codegen.output as *void, "%sif (0) " as *byte, prefix as *byte);
+                    fprintf(codegen.emit_stream as *void, "%sif (0) " as *byte, prefix as *byte);
                 }
                 if stmt.match_expr_arms[i].result_is_block != 0 {
-                    fputs("{\n" as *byte, codegen.output as *void);
+                    fputs("{\n" as *byte, codegen.emit_stream as *void);
                     codegen.indent_level = codegen.indent_level + 1;
                     gen_stmt(codegen, stmt.match_expr_arms[i].result_expr);
                     codegen.indent_level = codegen.indent_level - 1;
@@ -2137,7 +2137,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 const v: &byte = get_safe_c_identifier(codegen, stmt.match_expr_arms[i].var_name);
                 c99_emit_indent(codegen);
                 if v != null {
-                    fprintf(codegen.output as *void, "%s{ %s %s = _uya_m;\n" as *byte, prefix as *byte, m_type as *byte, v as *byte);
+                    fprintf(codegen.emit_stream as *void, "%s{ %s %s = _uya_m;\n" as *byte, prefix as *byte, m_type as *byte, v as *byte);
                     if stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                         codegen.local_variables[codegen.local_variable_count].name = stmt.match_expr_arms[i].var_name;
                         codegen.local_variables[codegen.local_variable_count].type_c = m_type;
@@ -2145,7 +2145,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         codegen.local_variable_count = codegen.local_variable_count + 1;
                     }
                 } else {
-                    fprintf(codegen.output as *void, "%s{\n" as *byte, prefix as *byte);
+                    fprintf(codegen.emit_stream as *void, "%s{\n" as *byte, prefix as *byte);
                 }
                 codegen.indent_level = codegen.indent_level + 1;
                 if stmt.match_expr_arms[i].result_is_block != 0 {
@@ -2161,7 +2161,7 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 c99_emit(codegen, "}\n" as *byte);
             } else if stmt.match_expr_arms[i].kind == MatchPatternKind.MATCH_PAT_WILDCARD || stmt.match_expr_arms[i].kind == MatchPatternKind.MATCH_PAT_ELSE {
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s{\n" as *byte, prefix as *byte);
+                fprintf(codegen.emit_stream as *void, "%s{\n" as *byte, prefix as *byte);
                 codegen.indent_level = codegen.indent_level + 1;
                 if stmt.match_expr_arms[i].result_is_block != 0 {
                     gen_stmt(codegen, stmt.match_expr_arms[i].result_expr);
@@ -2177,9 +2177,9 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     id = 1;
                 }
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%sif (_uya_m.error_id == %uU) " as *byte, prefix as *byte, id as u32);
+                fprintf(codegen.emit_stream as *void, "%sif (_uya_m.error_id == %uU) " as *byte, prefix as *byte, id as u32);
                 if stmt.match_expr_arms[i].result_is_block != 0 {
-                    fputs("{\n" as *byte, codegen.output as *void);
+                    fputs("{\n" as *byte, codegen.emit_stream as *void);
                     codegen.indent_level = codegen.indent_level + 1;
                     gen_stmt(codegen, stmt.match_expr_arms[i].result_expr);
                     codegen.indent_level = codegen.indent_level - 1;
@@ -2216,7 +2216,7 @@ fn gen_var_decl_empty_struct_init(codegen: &C99CodeGenerator, var_name: &byte, s
                     // 如果有默认值，使用默认值
                     if default_value != null {
                         c99_emit_indent(codegen);
-                        fprintf(codegen.output as *void, "%s.%s = " as *byte, var_name as *byte, field_name as *byte);
+                        fprintf(codegen.emit_stream as *void, "%s.%s = " as *byte, var_name as *byte, field_name as *byte);
                         gen_expr(codegen, default_value);
                         c99_emit_semi_newline(codegen);
                     } else {
@@ -2224,15 +2224,15 @@ fn gen_var_decl_empty_struct_init(codegen: &C99CodeGenerator, var_name: &byte, s
                         if field_type.type == ASTNodeType.AST_TYPE_POINTER {
                             // 指针类型：初始化为 NULL
                             c99_emit_indent(codegen);
-                            fprintf(codegen.output as *void, "%s.%s = NULL;\n" as *byte, var_name as *byte, field_name as *byte);
+                            fprintf(codegen.emit_stream as *void, "%s.%s = NULL;\n" as *byte, var_name as *byte, field_name as *byte);
                         } else if field_type.type == ASTNodeType.AST_TYPE_ARRAY {
                             // 数组类型：使用 __builtin_memset 清零
                             c99_emit_indent(codegen);
-                            fprintf(codegen.output as *void, "__builtin_memset(%s.%s, 0, sizeof(%s.%s));\n" as *byte, var_name as *byte, field_name as *byte, var_name as *byte, field_name as *byte);
+                            fprintf(codegen.emit_stream as *void, "__builtin_memset(%s.%s, 0, sizeof(%s.%s));\n" as *byte, var_name as *byte, field_name as *byte, var_name as *byte, field_name as *byte);
                         } else {
                             // 其他类型（整数、浮点数等）：初始化为 0
                             c99_emit_indent(codegen);
-                            fprintf(codegen.output as *void, "%s.%s = 0;\n" as *byte, var_name as *byte, field_name as *byte);
+                            fprintf(codegen.emit_stream as *void, "%s.%s = 0;\n" as *byte, var_name as *byte, field_name as *byte);
                         }
                     }
                 }
@@ -2242,36 +2242,36 @@ fn gen_var_decl_empty_struct_init(codegen: &C99CodeGenerator, var_name: &byte, s
     } else {
         // 空结构体（AST 无字段）：使用 __builtin_memset 零初始化
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "__builtin_memset((void *)&%s, 0, sizeof(%s));\n" as *byte, var_name as *byte, var_name as *byte);
+        fprintf(codegen.emit_stream as *void, "__builtin_memset((void *)&%s, 0, sizeof(%s));\n" as *byte, var_name as *byte, var_name as *byte);
     }
 }
 
 // 生成结构体初始化（包含数组字段需要 memcpy）
 fn gen_var_decl_struct_init_memcpy(codegen: &C99CodeGenerator, var_name: &byte, init_expr: &ASTNode) void {
     // 结构体初始化包含数组字段：先声明变量，然后使用复合字面量初始化非数组字段，最后用memcpy复制数组字段
-    fputs(" = " as *byte, codegen.output as *void);
+    fputs(" = " as *byte, codegen.emit_stream as *void);
     
     // 生成复合字面量，但数组字段使用空初始化
     const struct_name: &byte = get_safe_c_identifier(codegen, init_expr.struct_init_struct_name);
     const struct_decl: &ASTNode = find_struct_decl_c99(codegen, struct_name);
     const field_count: i32 = init_expr.struct_init_field_count;
     
-    fprintf(codegen.output as *void, "(struct %s){" as *byte, struct_name as *byte);
+    fprintf(codegen.emit_stream as *void, "(struct %s){" as *byte, struct_name as *byte);
     var i: i32 = 0;
     while i < field_count {
         const safe_field_name: &byte = get_safe_c_identifier(codegen, init_expr.struct_init_field_names[i]);
         const field_type: &ASTNode = c99_find_struct_field_type(codegen, struct_decl, init_expr.struct_init_field_names[i]);
         const field_value: &ASTNode = init_expr.struct_init_field_values[i];
         
-        fprintf(codegen.output as *void, ".%s = " as *byte, safe_field_name as *byte);
+        fprintf(codegen.emit_stream as *void, ".%s = " as *byte, safe_field_name as *byte);
         
         // 如果是数组字段且初始化值是标识符，使用空初始化（后续用memcpy填充）；元素为聚合用 {{0}}，否则 {0}
         if field_type != null && field_type.type == ASTNodeType.AST_TYPE_ARRAY && 
             field_value != null && field_value.type == ASTNodeType.AST_IDENTIFIER {
             if array_element_is_aggregate_c99(codegen, field_type) != 0 {
-                fputs("{{0}}" as *byte, codegen.output as *void);
+                fputs("{{0}}" as *byte, codegen.emit_stream as *void);
             } else {
-                fputs("{0}" as *byte, codegen.output as *void);
+                fputs("{0}" as *byte, codegen.emit_stream as *void);
             }
         } else {
             gen_expr(codegen, field_value);
@@ -2282,7 +2282,7 @@ fn gen_var_decl_struct_init_memcpy(codegen: &C99CodeGenerator, var_name: &byte, 
         }
         i = i + 1;
     }
-    fputs("};\n" as *byte, codegen.output as *void);
+    fputs("};\n" as *byte, codegen.emit_stream as *void);
     
     // 使用memcpy复制数组字段
     i = 0;
@@ -2295,9 +2295,9 @@ fn gen_var_decl_struct_init_memcpy(codegen: &C99CodeGenerator, var_name: &byte, 
             field_value != null && field_value.type == ASTNodeType.AST_IDENTIFIER {
             const safe_field_name: &byte = get_safe_c_identifier(codegen, field_name);
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "__uya_memcpy(%s.%s, " as *byte, var_name as *byte, safe_field_name as *byte);
+            fprintf(codegen.emit_stream as *void, "__uya_memcpy(%s.%s, " as *byte, var_name as *byte, safe_field_name as *byte);
             gen_expr(codegen, field_value);
-            fprintf(codegen.output as *void, ", sizeof(%s.%s));\n" as *byte, var_name as *byte, safe_field_name as *byte);
+            fprintf(codegen.emit_stream as *void, ", sizeof(%s.%s));\n" as *byte, var_name as *byte, safe_field_name as *byte);
         }
         i = i + 1;
     }
@@ -2341,14 +2341,14 @@ fn gen_var_decl_void_type(codegen: &C99CodeGenerator, init_expr: &ASTNode) i32 {
             if operand_is_err_union != 0 {
                 const union_c: &byte = operand_union_c;
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s _uya_catch_tmp = " as *byte, union_c as *byte);
+                fprintf(codegen.emit_stream as *void, "%s _uya_catch_tmp = " as *byte, union_c as *byte);
                 gen_expr(codegen, operand);
-                fputs("; if (_uya_catch_tmp.error_id != 0) {\n" as *byte, codegen.output as *void);
+                fputs("; if (_uya_catch_tmp.error_id != 0) {\n" as *byte, codegen.emit_stream as *void);
                 codegen.indent_level = codegen.indent_level + 1;
                 if err_name != null {
                     const safe: &byte = get_safe_c_identifier(codegen, err_name);
                     c99_emit_indent(codegen);
-                    fprintf(codegen.output as *void, "%s %s = _uya_catch_tmp;\n" as *byte, union_c as *byte, safe as *byte);
+                    fprintf(codegen.emit_stream as *void, "%s %s = _uya_catch_tmp;\n" as *byte, union_c as *byte, safe as *byte);
                 }
                 var i: i32 = 0;
                 while i < block.block_stmt_count {
@@ -2368,9 +2368,9 @@ fn gen_var_decl_void_type(codegen: &C99CodeGenerator, init_expr: &ASTNode) i32 {
     
     // 普通情况：生成 (void)(expr);
     c99_emit_indent(codegen);
-    fputs("(void)(" as *byte, codegen.output as *void);
+    fputs("(void)(" as *byte, codegen.emit_stream as *void);
     gen_expr(codegen, init_expr);
-    fputs(");\n" as *byte, codegen.output as *void);
+    fputs(");\n" as *byte, codegen.emit_stream as *void);
     return 1;
 }
 
@@ -2435,7 +2435,7 @@ fn emit_pointer_const_decl(codegen: &C99CodeGenerator, var_name: &byte, type_c: 
             if j >= 0 && j < TEMP_BUF_SIZE {
                 temp_buf[j] = 0;
             }
-            fprintf(codegen.output as *void, "%s(* const %s)%s" as *byte, &temp_buf[0] as *byte, var_name as *byte, bracket);
+            fprintf(codegen.emit_stream as *void, "%s(* const %s)%s" as *byte, &temp_buf[0] as *byte, var_name as *byte, bracket);
             // 存储类型字符串：T (* const)[N]（用于变量表）
             const total_len: i32 = prefix_len + suffix_len + 10; // "(* const)" + null
             var stored_type: &byte = arena_alloc(arena, total_len) as &byte;
@@ -2457,7 +2457,7 @@ fn emit_pointer_const_decl(codegen: &C99CodeGenerator, var_name: &byte, type_c: 
     
     // 普通指针：T * -> T * const var_name
     c99_emit_indent(codegen);
-    fprintf(codegen.output as *void, "%s const %s" as *byte, type_c as *byte, var_name as *byte);
+    fprintf(codegen.emit_stream as *void, "%s const %s" as *byte, type_c as *byte, var_name as *byte);
     // 存储类型字符串：T * const（用于变量表）
     const str_len: i32 = strlen(type_c as *byte) + 7; // " const" + null
     var stored_type2: &byte = arena_alloc(arena, str_len) as &byte;

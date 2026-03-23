@@ -60,6 +60,10 @@ const ARENA_BUFFER_SIZE: i32 = 64 * 1024 * 1024;  // 64MB 初始
 // 最大输入文件数
 const MAX_INPUT_FILES: i32 = 64;
 
+// --split-c-dir / UYA_SPLIT_C_DIR：多文件 C 输出目录；非空时链接阶段走 make -j
+var g_split_c_dir: [byte: PATH_MAX] = [];
+var g_split_c_dir_active: i32 = 0;
+
 // 全局缓冲区（替代 C 的 static 数组，零初始化）
 var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
 var file_buffer: [byte: FILE_BUFFER_SIZE] = [];
@@ -316,6 +320,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  --nostdlib           完全独立模式：无标准库依赖，使用 syscall\n" as *byte);
     fprintf(libc.stderr, "  -o <文件>            指定输出文件名\n" as *byte);
     fprintf(libc.stderr, "  --stack-size <KB>    设置堆栈大小（KB），默认 65536 (64MB)\n" as *byte);
+    fprintf(libc.stderr, "  --split-c-dir <dir>  多文件 C 输出（uya_part1/2.c + Makefile），链接用 make -j（UYA_GCC_JOBS）\n" as *byte);
     fprintf(libc.stderr, "  -h, --help           显示此帮助信息\n" as *byte);
     fprintf(libc.stderr, "\n说明:\n" as *byte);
     fprintf(libc.stderr, "  - 可以指定单个文件或目录，编译器会自动解析模块依赖\n" as *byte);
@@ -1358,6 +1363,8 @@ fn parse_args(
     run_arg_start[0] = -1;
     is_nostdlib[0] = 0;  // 默认不启用 nostdlib
     stack_size[0] = 0;  // 默认自动设置堆栈大小
+    g_split_c_dir_active = 0;
+    g_split_c_dir[0] = 0 as byte;
 
     // 检测子命令
     const first_arg: *byte = get_argv(1);
@@ -1456,6 +1463,22 @@ fn parse_args(
                 i = i + 1;
             } else {
                 fprintf(libc.stderr, "错误：--stack-size 选项需要指定堆栈大小（KB）\n" as *byte);
+                return -1;
+            }
+        } else if strcmp(arg, "--split-c-dir" as *byte) == 0 {
+            if i + 1 < argc {
+                const sd: *byte = get_argv(i + 1);
+                if sd != null {
+                    const sl: usize = strlen(sd);
+                    if sl > 0 && sl < PATH_MAX - 1 {
+                        strcpy(&g_split_c_dir[0] as *byte, sd);
+                        g_split_c_dir[sl] = 0 as byte;
+                        g_split_c_dir_active = 1;
+                    }
+                }
+                i = i + 1;
+            } else {
+                fprintf(libc.stderr, "错误：--split-c-dir 需要指定目录路径\n" as *byte);
                 return -1;
             }
         } else {
@@ -1596,12 +1619,66 @@ fn hosted_cflags_has_no_small_inline(cflags: &byte) i32 {
     return 0;
 }
 
+// 多文件 C：在 split 目录下执行 make -j（UYA_GCC_JOBS）链接 UYA_OUT
+fn link_split_with_make(split_dir: &byte, output_exe: &byte, is_nostdlib: i32) i32 {
+    if split_dir == null || split_dir[0] == 0 as byte || output_exe == null {
+        return 1;
+    }
+    if is_nostdlib != 0 {
+        const target_os: &byte = get_env_or_default("TARGET_OS" as *byte, "linux" as *byte);
+        if strcmp(target_os as *byte, "linux" as *byte) != 0 {
+            fprintf(libc.stderr, "错误：--nostdlib 多文件链接仅支持 Linux 目标，当前 TARGET_OS=%s\n" as *byte, target_os as *byte);
+            return 1;
+        }
+    }
+    var cc_driver_buffer: [byte: PATH_MAX] = [];
+    const cc_driver: &byte = resolve_cc_driver(&cc_driver_buffer[0] as &byte, PATH_MAX);
+    const cflags_env: &byte = get_env_or_default("CFLAGS" as *byte, "-std=c99 -O0 -g -fno-builtin" as *byte);
+    var cflags_buf: [byte: 2048] = [];
+    var cflags: &byte = cflags_env;
+    if hosted_cflags_need_no_small_inline(cflags_env) != 0 && hosted_cflags_has_no_small_inline(cflags_env) == 0 {
+        const wcf: i32 = snprintf(&cflags_buf[0] as *byte, 2048, "%s -fno-inline-small-functions" as *byte, cflags_env as *byte);
+        if wcf > 0 && wcf < 2048 {
+            cflags = &cflags_buf[0];
+        }
+    }
+    var ld_buf: [byte: 2048] = [];
+    const ld_env: &byte = get_env_or_default("LDFLAGS" as *byte, "" as *byte);
+    var ld_use: &byte = ld_env;
+    if is_nostdlib != 0 {
+        const wld: i32 = snprintf(&ld_buf[0] as *byte, 2048, "%s -nostdlib -static -lgcc" as *byte, ld_env as *byte);
+        if wld > 0 && wld < 2048 {
+            ld_use = &ld_buf[0];
+        }
+    }
+    const jobs_env: &byte = get_env_or_default("UYA_GCC_JOBS" as *byte, "4" as *byte);
+    // 嵌套 make 时清除 GNU make jobserver 变量，避免在「外层 make -j」下子 make 与父 make 争用令牌而卡死
+    var cmd: [byte: 8192] = [];
+    const cmd_len: i32 = snprintf(&cmd[0] as *byte, 8192,
+        "env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS make -C \"%s\" -j%s UYA_OUT=\"%s\" CC=\"%s\" CFLAGS=\"%s\" LDFLAGS=\"%s\"" as *byte,
+        split_dir as *byte, jobs_env as *byte, output_exe as *byte, cc_driver as *byte, cflags as *byte, ld_use as *byte);
+    if cmd_len <= 0 || cmd_len >= 8192 {
+        fprintf(libc.stderr, "错误：构建 make 链接命令失败\n" as *byte);
+        return 1;
+    }
+    fprintf(libc.stderr, "信息：多文件 C 链接：%s\n" as *byte, &cmd[0] as *byte);
+    const result: i32 = system(&cmd[0] as *byte);
+    if result != 0 {
+        fprintf(libc.stderr, "错误：make 链接失败，返回码：%d\n" as *byte, result);
+        return 1;
+    }
+    return 0;
+}
+
 // 调用宿主工具链链接生成可执行文件
 // c_file: C 源代码文件路径
 // output: 输出可执行文件路径
 // is_nostdlib: 是否使用 --nostdlib 模式
 // 返回：0 成功，非 0 失败
 fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32) i32 {
+    if g_split_c_dir_active != 0 {
+        return link_split_with_make(&g_split_c_dir[0] as &byte, output, is_nostdlib);
+    }
     var cmd: [byte: 4096] = [];
     var cmd_len: i32 = 0;
     var cc_driver_buffer: [byte: PATH_MAX] = [];
@@ -1677,7 +1754,8 @@ fn compile_files(
     opt_level: i32,
     output_path_override: &byte,
     is_nostdlib: i32,
-    stack_size: i32
+    stack_size: i32,
+    split_c_dir: &byte
 ) i32 {
     
     // 初始化临时 Arena（用于依赖收集，使用全局缓冲区避免栈溢出）
@@ -2098,15 +2176,20 @@ fn compile_files(
     fprintf(libc.stderr, "模块名: %s\n" as *byte, module_name);
 
     // C99 后端：生成 C 源代码（与 C 版本保持一致，直接使用 C99 后端）
-    const out_file: *void = fopen(actual_output, "w" as *byte);
-    if out_file == null {
-        fprintf(libc.stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, actual_output);
-        return 1;
+    var out_file: *void = null;
+    if split_c_dir == null || split_c_dir[0] == 0 as byte {
+        out_file = fopen(actual_output, "w" as *byte);
+        if out_file == null {
+            fprintf(libc.stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, actual_output);
+            return 1;
+        }
     }
     var c99_codegen: C99CodeGenerator = C99CodeGenerator { };
-    if c99_codegen_new(&c99_codegen, &arena, out_file, module_name as &byte, emit_line_directives, is_nostdlib, stack_size) != 0 {
+    if c99_codegen_new(&c99_codegen, &arena, out_file as &void, module_name as &byte, emit_line_directives, is_nostdlib, stack_size, split_c_dir) != 0 {
         fprintf(libc.stderr, "错误: C99CodeGenerator 初始化失败\n" as *byte);
-        fclose(out_file);
+        if out_file != null {
+            fclose(out_file);
+        }
         return 1;
     }
     // 设置单态化实例（从 TypeChecker 传入）
@@ -2114,11 +2197,15 @@ fn compile_files(
     if c99_codegen_generate(&c99_codegen, merged_ast, actual_output as &byte) != 0 {
         fprintf(libc.stderr, "错误: C99 代码生成失败\n" as *byte);
         c99_codegen_free(&c99_codegen);
-        fclose(out_file);
+        if out_file != null {
+            fclose(out_file);
+        }
         return 1;
     }
     c99_codegen_free(&c99_codegen);
-    fclose(out_file);
+    if out_file != null {
+        fclose(out_file);
+    }
     codegen_end_time = clock();
 
     // 计算各阶段耗时（毫秒）
@@ -2167,6 +2254,17 @@ export fn main() i32 {
 
     if parse_args(&command, &input_file_indices[0], &input_file_count, &output_file_index, &backend, &emit_line_directives, &enable_safety_proof, &opt_level, &outlibc_index, &run_arg_start, &is_nostdlib, &stack_size) != 0 {
         return 1;
+    }
+    if g_split_c_dir_active == 0 {
+        const env_split: *byte = getenv("UYA_SPLIT_C_DIR" as *byte);
+        if env_split != null && env_split[0] != 0 {
+            const el: usize = strlen(env_split);
+            if el > 0 && el < PATH_MAX - 1 {
+                strcpy(&g_split_c_dir[0] as *byte, env_split);
+                g_split_c_dir[el] = 0 as byte;
+                g_split_c_dir_active = 1;
+            }
+        }
     }
 
     // 设置堆栈大小（如果指定了，使用传入值；否则使用默认 16MB）
@@ -2241,7 +2339,11 @@ export fn main() i32 {
         output_path_for_compile = &auto_output_path[0];
     }
 
-    const result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size);
+    var split_c_arg: &byte = null;
+    if g_split_c_dir_active != 0 {
+        split_c_arg = &g_split_c_dir[0] as &byte;
+    }
+    const result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg);
     if result != 0 {
         return result;
     }

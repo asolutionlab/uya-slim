@@ -437,7 +437,7 @@ fn gen_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode) i32 {
         return -1;
     }
     c99_emit_indent(codegen);
-    fprintf(codegen.output as *void, "union %s {\n" as *byte, union_name as *byte);
+    fprintf(codegen.emit_stream as *void, "union %s {\n" as *byte, union_name as *byte);
     codegen.indent_level = codegen.indent_level + 1;
     var i: i32 = 0;
     while i < n {
@@ -451,7 +451,7 @@ fn gen_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode) i32 {
             }
             if vname != null && vtype != null {
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s %s;\n" as *byte, vtype as *byte, vname as *byte);
+                fprintf(codegen.emit_stream as *void, "%s %s;\n" as *byte, vtype as *byte, vname as *byte);
             }
         }
         i = i + 1;
@@ -460,7 +460,7 @@ fn gen_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode) i32 {
     c99_emit(codegen, "};\n" as *byte);
     if union_decl.union_decl_is_extern == 0 {
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "struct uya_tagged_%s { int _tag; union %s u; };\n" as *byte, union_name as *byte, union_name as *byte);
+        fprintf(codegen.emit_stream as *void, "struct uya_tagged_%s { int _tag; union %s u; };\n" as *byte, union_name as *byte, union_name as *byte);
     }
     if key != null {
         mark_struct_defined(codegen, key);
@@ -503,7 +503,7 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
     codegen.struct_type_param_count = union_decl.union_decl_type_param_count;
     codegen.struct_type_arg_count = type_arg_count;
     c99_emit_indent(codegen);
-    fprintf(codegen.output as *void, "union %s {\n" as *byte, union_name as *byte);
+    fprintf(codegen.emit_stream as *void, "union %s {\n" as *byte, union_name as *byte);
     codegen.indent_level = codegen.indent_level + 1;
     var i: i32 = 0;
     while i < n {
@@ -517,7 +517,7 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
             }
             if vname != null && vtype != null {
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s %s;\n" as *byte, vtype as *byte, vname as *byte);
+                fprintf(codegen.emit_stream as *void, "%s %s;\n" as *byte, vtype as *byte, vname as *byte);
             }
         }
         i = i + 1;
@@ -526,7 +526,7 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
     c99_emit(codegen, "};\n" as *byte);
     if union_decl.union_decl_is_extern == 0 {
         c99_emit_indent(codegen);
-        fprintf(codegen.output as *void, "struct uya_tagged_%s { int _tag; union %s u; };\n" as *byte, union_name as *byte, union_name as *byte);
+        fprintf(codegen.emit_stream as *void, "struct uya_tagged_%s { int _tag; union %s u; };\n" as *byte, union_name as *byte, union_name as *byte);
         var tagged_buf2: [byte: 128] = [0: 128];
         var blen2: i32 = snprintf(&tagged_buf2[0] as *byte, 128, "uya_tagged_%s" as *byte, union_name as *byte);
         if blen2 > 0 && blen2 < 128 {
@@ -1205,7 +1205,7 @@ fn emit_union_tagged_forward_decls(codegen: &C99CodeGenerator) void {
                         if mono_name != null {
                             const safe: &byte = get_safe_c_identifier(codegen, mono_name);
                             if safe != null {
-                                fprintf(codegen.output as *void, "struct uya_tagged_%s;\n" as *byte, safe as *byte);
+                                fprintf(codegen.emit_stream as *void, "struct uya_tagged_%s;\n" as *byte, safe as *byte);
                             }
                         }
                         break;
@@ -1215,7 +1215,7 @@ fn emit_union_tagged_forward_decls(codegen: &C99CodeGenerator) void {
             } else {
                 const safe: &byte = get_safe_c_identifier(codegen, decl.union_decl_name);
                 if safe != null {
-                    fprintf(codegen.output as *void, "struct uya_tagged_%s;\n" as *byte, safe as *byte);
+                    fprintf(codegen.emit_stream as *void, "struct uya_tagged_%s;\n" as *byte, safe as *byte);
                 }
             }
         }
@@ -1266,8 +1266,8 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
             continue;
         }
         const safe_iface: &byte = get_safe_c_identifier(codegen, iface_name);
-        fprintf(codegen.output as *void, "struct uya_interface_%s { void *vtable; void *data; };\n" as *byte, safe_iface as *byte);
-        fprintf(codegen.output as *void, "struct uya_vtable_%s {\n" as *byte, safe_iface as *byte);
+        fprintf(codegen.emit_stream as *void, "struct uya_interface_%s { void *vtable; void *data; };\n" as *byte, safe_iface as *byte);
+        fprintf(codegen.emit_stream as *void, "struct uya_vtable_%s {\n" as *byte, safe_iface as *byte);
         codegen.indent_level = codegen.indent_level + 1;
         
         // 使用 collect_interface_method_sigs 收集所有方法（包括组合接口的方法）
@@ -1286,7 +1286,7 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
             const mname: &byte = get_safe_c_identifier(codegen, msig.fn_decl_name);
             const pc: i32 = msig.fn_decl_param_count;
             c99_emit_indent(codegen);
-            fprintf(codegen.output as *void, "%s (*%s)(void *self" as *byte, ret_c as *byte, mname as *byte);
+            fprintf(codegen.emit_stream as *void, "%s (*%s)(void *self" as *byte, ret_c as *byte, mname as *byte);
             var k: i32 = 1;
             while k < pc && msig.fn_decl_params != null {
                 const p: &ASTNode = msig.fn_decl_params[k];
@@ -1295,14 +1295,14 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
                     continue;
                 }
                 const pt_c: &byte = c99_type_to_c(codegen, p.var_decl_type);
-                fprintf(codegen.output as *void, ", %s" as *byte, pt_c as *byte);
+                fprintf(codegen.emit_stream as *void, ", %s" as *byte, pt_c as *byte);
                 k = k + 1;
             }
-            fputs(");\n" as *byte, codegen.output as *void);
+            fputs(");\n" as *byte, codegen.emit_stream as *void);
             j = j + 1;
         }
         codegen.indent_level = codegen.indent_level - 1;
-        fputs("};\n" as *byte, codegen.output as *void);
+        fputs("};\n" as *byte, codegen.emit_stream as *void);
         i = i + 1;
     }
 
@@ -1346,8 +1346,8 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
             codegen.struct_type_args = inst.type_args;
             codegen.struct_type_arg_count = inst.type_arg_count;
 
-            fprintf(codegen.output as *void, "struct uya_interface_%s { void *vtable; void *data; };\n" as *byte, safe_mono_iface as *byte);
-            fprintf(codegen.output as *void, "struct uya_vtable_%s {\n" as *byte, safe_mono_iface as *byte);
+            fprintf(codegen.emit_stream as *void, "struct uya_interface_%s { void *vtable; void *data; };\n" as *byte, safe_mono_iface as *byte);
+            fprintf(codegen.emit_stream as *void, "struct uya_vtable_%s {\n" as *byte, safe_mono_iface as *byte);
             codegen.indent_level = codegen.indent_level + 1;
 
             // 收集方法签名（不包含 composed 泛型接口的单态展开；Future<T> 无 composed，足够）
@@ -1365,7 +1365,7 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
                 const mname: &byte = get_safe_c_identifier(codegen, msig.fn_decl_name);
                 const pc: i32 = msig.fn_decl_param_count;
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s (*%s)(void *self" as *byte, ret_c as *byte, mname as *byte);
+                fprintf(codegen.emit_stream as *void, "%s (*%s)(void *self" as *byte, ret_c as *byte, mname as *byte);
                 var k: i32 = 1;
                 while k < pc && msig.fn_decl_params != null {
                     const p: &ASTNode = msig.fn_decl_params[k];
@@ -1374,14 +1374,14 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
                         continue;
                     }
                     const pt_c: &byte = c99_type_to_c(codegen, p.var_decl_type);
-                    fprintf(codegen.output as *void, ", %s" as *byte, pt_c as *byte);
+                    fprintf(codegen.emit_stream as *void, ", %s" as *byte, pt_c as *byte);
                     k = k + 1;
                 }
-                fputs(");\n" as *byte, codegen.output as *void);
+                fputs(");\n" as *byte, codegen.emit_stream as *void);
                 j = j + 1;
             }
             codegen.indent_level = codegen.indent_level - 1;
-            fputs("};\n" as *byte, codegen.output as *void);
+            fputs("};\n" as *byte, codegen.emit_stream as *void);
 
             // 标记已定义，避免后续重复输出
             const iface_struct_len: i32 = strlen(safe_mono_iface as *byte) + 32;
@@ -1515,8 +1515,8 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                                 snprintf(iface_struct_name2 as *byte, iface_struct_len2, "uya_interface_%s" as *byte, safe_mono_iface as *byte);
                                 snprintf(vtable_struct_name2 as *byte, iface_struct_len2, "uya_vtable_%s" as *byte, safe_mono_iface as *byte);
                                 if is_struct_defined(codegen, iface_struct_name2) == 0 {
-                                    fprintf(codegen.output as *void, "struct uya_interface_%s { void *vtable; void *data; };\n" as *byte, safe_mono_iface as *byte);
-                                    fprintf(codegen.output as *void, "struct uya_vtable_%s {\n" as *byte, safe_mono_iface as *byte);
+                                    fprintf(codegen.emit_stream as *void, "struct uya_interface_%s { void *vtable; void *data; };\n" as *byte, safe_mono_iface as *byte);
+                                    fprintf(codegen.emit_stream as *void, "struct uya_vtable_%s {\n" as *byte, safe_mono_iface as *byte);
                                     codegen.indent_level = codegen.indent_level + 1;
                                     var sigsA: [&ASTNode: C99_MAX_INTERFACE_METHODS] = [];
                                     const scA: i32 = collect_interface_method_sigs(codegen, iface_decl.interface_decl_name, &sigsA[0], C99_MAX_INTERFACE_METHODS);
@@ -1529,21 +1529,21 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                                             const mnA: &byte = get_safe_c_identifier(codegen, msigA.fn_decl_name);
                                             const pcA: i32 = msigA.fn_decl_param_count;
                                             c99_emit_indent(codegen);
-                                            fprintf(codegen.output as *void, "%s (*%s)(void *self" as *byte, retA as *byte, mnA as *byte);
+                                            fprintf(codegen.emit_stream as *void, "%s (*%s)(void *self" as *byte, retA as *byte, mnA as *byte);
                                             var pkA: i32 = 1;
                                             while pkA < pcA && msigA.fn_decl_params != null {
                                                 const pA: &ASTNode = msigA.fn_decl_params[pkA];
                                                 if pA != null && pA.type == ASTNodeType.AST_VAR_DECL {
-                                                    fprintf(codegen.output as *void, ", %s" as *byte, c99_type_to_c(codegen, pA.var_decl_type) as *byte);
+                                                    fprintf(codegen.emit_stream as *void, ", %s" as *byte, c99_type_to_c(codegen, pA.var_decl_type) as *byte);
                                                 }
                                                 pkA = pkA + 1;
                                             }
-                                            fputs(");\n" as *byte, codegen.output as *void);
+                                            fputs(");\n" as *byte, codegen.emit_stream as *void);
                                         }
                                         sjA = sjA + 1;
                                     }
                                     codegen.indent_level = codegen.indent_level - 1;
-                                    fputs("};\n" as *byte, codegen.output as *void);
+                                    fputs("};\n" as *byte, codegen.emit_stream as *void);
                                     mark_struct_defined(codegen, iface_struct_name2);
                                     mark_struct_defined(codegen, vtable_struct_name2);
                                 }
@@ -1552,7 +1552,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                             // 生成 vtable 常量：uya_vtable_<ifaceMono>_<Struct>
                             var all_sigsA2: [&ASTNode: 128] = [];
                             const sig_countA2: i32 = collect_interface_method_sigs(codegen, iface_decl.interface_decl_name, &all_sigsA2[0], 128);
-                            fprintf(codegen.output as *void, "static const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
+                            fprintf(codegen.emit_stream as *void, "static const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
                                     safe_mono_iface as *byte, safe_mono_iface as *byte, safe_struct as *byte);
                             var kA: i32 = 0;
                             while kA < sig_countA2 && kA < C99_MAX_INTERFACE_METHODS {
@@ -1571,22 +1571,22 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                                     var retA2: &byte = convert_array_return_type(codegen, msigA2.fn_decl_return_type);
                                     retA2 = normalize_poll_return_type(codegen, retA2);
                                     const pcA2: i32 = msigA2.fn_decl_param_count;
-                                    fprintf(codegen.output as *void, "(%s (*)(void *self" as *byte, retA2 as *byte);
+                                    fprintf(codegen.emit_stream as *void, "(%s (*)(void *self" as *byte, retA2 as *byte);
                                     var kiA2: i32 = 1;
                                     while kiA2 < pcA2 && msigA2.fn_decl_params != null {
                                         const pkA2: &ASTNode = msigA2.fn_decl_params[kiA2];
                                         if pkA2 != null && pkA2.type == ASTNodeType.AST_VAR_DECL {
-                                            fprintf(codegen.output as *void, ", %s" as *byte, c99_type_to_c(codegen, pkA2.var_decl_type) as *byte);
+                                            fprintf(codegen.emit_stream as *void, ", %s" as *byte, c99_type_to_c(codegen, pkA2.var_decl_type) as *byte);
                                         }
                                         kiA2 = kiA2 + 1;
                                     }
-                                    fprintf(codegen.output as *void, "))&%s" as *byte, cnameA as *byte);
+                                    fprintf(codegen.emit_stream as *void, "))&%s" as *byte, cnameA as *byte);
                                 } else {
-                                    fputs("NULL" as *byte, codegen.output as *void);
+                                    fputs("NULL" as *byte, codegen.emit_stream as *void);
                                 }
                                 kA = kA + 1;
                             }
-                            fputs(" };\n" as *byte, codegen.output as *void);
+                            fputs(" };\n" as *byte, codegen.emit_stream as *void);
 
                             codegen.struct_type_params = saved_sp;
                             codegen.struct_type_param_count = saved_spc;
@@ -1667,8 +1667,8 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                         snprintf(iface_struct_name as *byte, iface_struct_len, "uya_interface_%s" as *byte, safe_mono_iface as *byte);
                         snprintf(vtable_struct_name as *byte, iface_struct_len, "uya_vtable_%s" as *byte, safe_mono_iface as *byte);
                         if is_struct_defined(codegen, iface_struct_name) == 0 {
-                            fprintf(codegen.output as *void, "struct uya_interface_%s { void *vtable; void *data; };\n" as *byte, safe_mono_iface as *byte);
-                            fprintf(codegen.output as *void, "struct uya_vtable_%s {\n" as *byte, safe_mono_iface as *byte);
+                            fprintf(codegen.emit_stream as *void, "struct uya_interface_%s { void *vtable; void *data; };\n" as *byte, safe_mono_iface as *byte);
+                            fprintf(codegen.emit_stream as *void, "struct uya_vtable_%s {\n" as *byte, safe_mono_iface as *byte);
                             codegen.indent_level = codegen.indent_level + 1;
                             var sigs0: [&ASTNode: C99_MAX_INTERFACE_METHODS] = [];
                             const sc0: i32 = collect_interface_method_sigs(codegen, iface_decl.interface_decl_name, &sigs0[0], C99_MAX_INTERFACE_METHODS);
@@ -1681,21 +1681,21 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                                     const mn0: &byte = get_safe_c_identifier(codegen, msig0.fn_decl_name);
                                     const pc0: i32 = msig0.fn_decl_param_count;
                                     c99_emit_indent(codegen);
-                                    fprintf(codegen.output as *void, "%s (*%s)(void *self" as *byte, ret0 as *byte, mn0 as *byte);
+                                    fprintf(codegen.emit_stream as *void, "%s (*%s)(void *self" as *byte, ret0 as *byte, mn0 as *byte);
                                     var pk0: i32 = 1;
                                     while pk0 < pc0 && msig0.fn_decl_params != null {
                                         const p0: &ASTNode = msig0.fn_decl_params[pk0];
                                         if p0 != null && p0.type == ASTNodeType.AST_VAR_DECL {
-                                            fprintf(codegen.output as *void, ", %s" as *byte, c99_type_to_c(codegen, p0.var_decl_type) as *byte);
+                                            fprintf(codegen.emit_stream as *void, ", %s" as *byte, c99_type_to_c(codegen, p0.var_decl_type) as *byte);
                                         }
                                         pk0 = pk0 + 1;
                                     }
-                                    fputs(");\n" as *byte, codegen.output as *void);
+                                    fputs(");\n" as *byte, codegen.emit_stream as *void);
                                 }
                                 sj = sj + 1;
                             }
                             codegen.indent_level = codegen.indent_level - 1;
-                            fputs("};\n" as *byte, codegen.output as *void);
+                            fputs("};\n" as *byte, codegen.emit_stream as *void);
                             mark_struct_defined(codegen, iface_struct_name);
                             mark_struct_defined(codegen, vtable_struct_name);
                         }
@@ -1703,7 +1703,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
 
                     var all_sigs2: [&ASTNode: 128] = [];
                     const sig_count2: i32 = collect_interface_method_sigs(codegen, iface_decl.interface_decl_name, &all_sigs2[0], 128);
-                    fprintf(codegen.output as *void, "static const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
+                    fprintf(codegen.emit_stream as *void, "static const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
                             safe_mono_iface as *byte, safe_mono_iface as *byte, safe_mono_struct as *byte);
                     var k: i32 = 0;
                     while k < sig_count2 && k < C99_MAX_INTERFACE_METHODS {
@@ -1722,22 +1722,22 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                             var ret_c: &byte = convert_array_return_type(codegen, msig.fn_decl_return_type);
                             ret_c = normalize_poll_return_type(codegen, ret_c);
                             const pc: i32 = msig.fn_decl_param_count;
-                            fprintf(codegen.output as *void, "(%s (*)(void *self" as *byte, ret_c as *byte);
+                            fprintf(codegen.emit_stream as *void, "(%s (*)(void *self" as *byte, ret_c as *byte);
                             var ki: i32 = 1;
                             while ki < pc && msig.fn_decl_params != null {
                                 const pk: &ASTNode = msig.fn_decl_params[ki];
                                 if pk != null && pk.type == ASTNodeType.AST_VAR_DECL {
-                                    fprintf(codegen.output as *void, ", %s" as *byte, c99_type_to_c(codegen, pk.var_decl_type) as *byte);
+                                    fprintf(codegen.emit_stream as *void, ", %s" as *byte, c99_type_to_c(codegen, pk.var_decl_type) as *byte);
                                 }
                                 ki = ki + 1;
                             }
-                            fprintf(codegen.output as *void, "))&%s" as *byte, cname as *byte);
+                            fprintf(codegen.emit_stream as *void, "))&%s" as *byte, cname as *byte);
                         } else {
-                            fputs("NULL" as *byte, codegen.output as *void);
+                            fputs("NULL" as *byte, codegen.emit_stream as *void);
                         }
                         k = k + 1;
                     }
-                    fputs(" };\n" as *byte, codegen.output as *void);
+                    fputs(" };\n" as *byte, codegen.emit_stream as *void);
 
                     codegen.struct_type_params = saved_sp;
                     codegen.struct_type_param_count = saved_spc;
@@ -1752,7 +1752,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                 var all_sigs2: [&ASTNode: 128] = [];
                 const sig_count2: i32 = collect_interface_method_sigs(codegen, iface_base, &all_sigs2[0], 128);
                 
-                fprintf(codegen.output as *void, "static const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
+                fprintf(codegen.emit_stream as *void, "static const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
                         safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
                 var k: i32 = 0;
                 while k < sig_count2 && k < C99_MAX_INTERFACE_METHODS {
@@ -1770,22 +1770,22 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                     if impl != null && cname != null {
                         const ret_c: &byte = convert_array_return_type(codegen, msig.fn_decl_return_type);
                         const pc: i32 = msig.fn_decl_param_count;
-                        fprintf(codegen.output as *void, "(%s (*)(void *self" as *byte, ret_c as *byte);
+                        fprintf(codegen.emit_stream as *void, "(%s (*)(void *self" as *byte, ret_c as *byte);
                         var ki: i32 = 1;
                         while ki < pc && msig.fn_decl_params != null {
                             const pk: &ASTNode = msig.fn_decl_params[ki];
                             if pk != null && pk.type == ASTNodeType.AST_VAR_DECL {
-                                fprintf(codegen.output as *void, ", %s" as *byte, c99_type_to_c(codegen, pk.var_decl_type) as *byte);
+                                fprintf(codegen.emit_stream as *void, ", %s" as *byte, c99_type_to_c(codegen, pk.var_decl_type) as *byte);
                             }
                             ki = ki + 1;
                         }
-                        fprintf(codegen.output as *void, "))&%s" as *byte, cname as *byte);
+                        fprintf(codegen.emit_stream as *void, "))&%s" as *byte, cname as *byte);
                     } else {
-                        fputs("NULL" as *byte, codegen.output as *void);
+                        fputs("NULL" as *byte, codegen.emit_stream as *void);
                     }
                     k = k + 1;
                 }
-                fputs(" };\n" as *byte, codegen.output as *void);
+                fputs(" };\n" as *byte, codegen.emit_stream as *void);
             }
             j = j + 1;
         }
@@ -1837,7 +1837,7 @@ fn gen_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode) i32 
     
     // 输出结构体定义
     c99_emit_indent(codegen);
-    fprintf(codegen.output as *void, "struct %s {\n" as *byte, struct_name as *byte);
+    fprintf(codegen.emit_stream as *void, "struct %s {\n" as *byte, struct_name as *byte);
     codegen.indent_level = codegen.indent_level + 1;
     
     // 生成字段
@@ -1846,7 +1846,7 @@ fn gen_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode) i32 
     // 如果是空结构体，添加一个占位符字段以确保大小为 1（符合 Uya 规范）
     if field_count == 0 {
         c99_emit_indent(codegen);
-        fputs("char _empty;\n" as *byte, codegen.output as *void);
+        fputs("char _empty;\n" as *byte, codegen.emit_stream as *void);
     } else {
         var i: i32 = 0;
         while i < field_count {
@@ -1880,11 +1880,11 @@ fn gen_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode) i32 
                 }
                 
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s %s[%d];\n" as *byte, elem_type_c as *byte, field_name as *byte, array_size);
+                fprintf(codegen.emit_stream as *void, "%s %s[%d];\n" as *byte, elem_type_c as *byte, field_name as *byte, array_size);
             } else {
                 const field_type_c: &byte = c99_type_to_c(codegen, field_type);
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s %s;\n" as *byte, field_type_c as *byte, field_name as *byte);
+                fprintf(codegen.emit_stream as *void, "%s %s;\n" as *byte, field_type_c as *byte, field_name as *byte);
             }
             
             i = i + 1;
@@ -1893,7 +1893,7 @@ fn gen_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode) i32 
     
     codegen.indent_level = codegen.indent_level - 1;
     c99_emit_indent(codegen);
-    fputs("};\n" as *byte, codegen.output as *void);
+    fputs("};\n" as *byte, codegen.emit_stream as *void);
     
     // 标记为已定义
     mark_struct_defined(codegen, struct_name);
@@ -2381,13 +2381,13 @@ fn gen_mono_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode,
     add_struct_definition(codegen, mono_name);
     
     // 输出结构体定义
-    fprintf(codegen.output as *void, "struct %s {\n" as *byte, mono_name as *byte);
+    fprintf(codegen.emit_stream as *void, "struct %s {\n" as *byte, mono_name as *byte);
     codegen.indent_level = codegen.indent_level + 1;
     
     // 生成字段（field_count 和 fi 已在前面定义）
     if field_count == 0 {
         c99_emit_indent(codegen);
-        fputs("char _empty;\n" as *byte, codegen.output as *void);
+        fputs("char _empty;\n" as *byte, codegen.emit_stream as *void);
     } else {
         fi = 0;
         while fi < field_count {
@@ -2431,18 +2431,18 @@ fn gen_mono_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode,
                     }
                 }
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s %s[%d];\n" as *byte, elem_type_c as *byte, field_name as *byte, array_size);
+                fprintf(codegen.emit_stream as *void, "%s %s[%d];\n" as *byte, elem_type_c as *byte, field_name as *byte, array_size);
             } else {
                 const field_type_c: &byte = c99_type_to_c(codegen, emit_field_type);
                 c99_emit_indent(codegen);
-                fprintf(codegen.output as *void, "%s %s;\n" as *byte, field_type_c as *byte, field_name as *byte);
+                fprintf(codegen.emit_stream as *void, "%s %s;\n" as *byte, field_type_c as *byte, field_name as *byte);
             }
             fi = fi + 1;
         }
     }
     
     codegen.indent_level = codegen.indent_level - 1;
-    fputs("};\n" as *byte, codegen.output as *void);
+    fputs("};\n" as *byte, codegen.emit_stream as *void);
     
     // 标记为已定义
     mark_struct_defined(codegen, mono_name);

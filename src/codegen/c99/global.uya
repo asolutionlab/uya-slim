@@ -76,22 +76,22 @@ fn gen_global_init_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
     if expr.type == ASTNodeType.AST_STRUCT_INIT {
         // 对于全局作用域，生成标准初始化器列表，不使用复合字面量
         const field_count: i32 = expr.struct_init_field_count;
-        fputc(123, codegen.output as *void);  // '{'
+        fputc(123, codegen.emit_stream as *void);  // '{'
         var i: i32 = 0;
         while i < field_count {
             const safe_field_name: &byte = get_safe_c_identifier(codegen, expr.struct_init_field_names[i]);
-            fprintf(codegen.output as *void, ".%s = " as *byte, safe_field_name as *byte);
+            fprintf(codegen.emit_stream as *void, ".%s = " as *byte, safe_field_name as *byte);
             gen_global_init_expr(codegen, expr.struct_init_field_values[i]);
             if i < field_count - 1 {
                 c99_emit_comma_space(codegen);
             }
             i = i + 1;
         }
-        fputc(125, codegen.output as *void);  // '}'
+        fputc(125, codegen.emit_stream as *void);  // '}'
     } else if expr.type == ASTNodeType.AST_ARRAY_LITERAL {
         const element_count: i32 = expr.array_literal_element_count;
         const repeat_count_expr: &ASTNode = expr.array_literal_repeat_count_expr;
-        fputc(123, codegen.output as *void);  // '{'
+        fputc(123, codegen.emit_stream as *void);  // '{'
         if repeat_count_expr != null && element_count >= 1 {
             var nn: i32 = eval_const_expr(codegen, repeat_count_expr);
             if nn <= 0 {
@@ -116,9 +116,9 @@ fn gen_global_init_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             }
         } else {
             // 空数组字面量：生成 0 避免 ISO C 警告
-            fputs("0" as *byte, codegen.output as *void);
+            fputs("0" as *byte, codegen.emit_stream as *void);
         }
-        fputc(125, codegen.output as *void);  // '}'
+        fputc(125, codegen.emit_stream as *void);  // '}'
     } else {
         // 对于其他表达式类型（数字、布尔值、字符串等），使用标准生成方式
         gen_expr(codegen, expr);
@@ -167,41 +167,41 @@ fn gen_global_var(codegen: &C99CodeGenerator, var_decl: &ASTNode) void {
                 
                 // 生成数组声明：const base_type var_name dimensions
                 if is_const != 0 {
-                    fprintf(codegen.output as *void, "const %s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
+                    fprintf(codegen.emit_stream as *void, "const %s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
                 } else {
-                    fprintf(codegen.output as *void, "%s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
+                    fprintf(codegen.emit_stream as *void, "%s %s%s" as *byte, base_type as *byte, var_name as *byte, dimensions);
                 }
                 type_c = base_type;  // 保存基类型用于后续使用
             } else {
                 // 分配失败，回退到简单处理
                 type_c = full_type_c;
                 if is_const != 0 {
-                    fprintf(codegen.output as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
+                    fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
                 } else {
-                    fprintf(codegen.output as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
+                    fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
                 }
             }
         } else {
             // 没有找到 '['，可能是错误情况，回退到简单处理
             type_c = full_type_c;
             if is_const != 0 {
-                fprintf(codegen.output as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
+                fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
             } else {
-                fprintf(codegen.output as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
+                fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
             }
         }
     } else {
         type_c = c99_type_to_c(codegen, var_type);
         if is_const != 0 {
-            fprintf(codegen.output as *void, "const %s %s", type_c as *byte, var_name as *byte);
+            fprintf(codegen.emit_stream as *void, "const %s %s", type_c as *byte, var_name as *byte);
         } else {
-            fprintf(codegen.output as *void, "%s %s", type_c as *byte, var_name as *byte);
+            fprintf(codegen.emit_stream as *void, "%s %s", type_c as *byte, var_name as *byte);
         }
     }
     
     // 初始化表达式（使用全局作用域兼容的生成方式）
     if init_expr != null {
-        fputs(" = " as *byte, codegen.output as *void);
+        fputs(" = " as *byte, codegen.emit_stream as *void);
         gen_global_init_expr(codegen, init_expr);
     }
     
@@ -372,20 +372,20 @@ fn gen_extern_var_decl(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if is_extern != 0 && init_expr == null {
         // extern 声明（无初始化）
         if is_const != 0 {
-            fprintf(codegen.output as *void, "extern const %s %s;\n" as *byte, type_c as *byte, name as *byte);
+            fprintf(codegen.emit_stream as *void, "extern const %s %s;\n" as *byte, type_c as *byte, name as *byte);
         } else {
-            fprintf(codegen.output as *void, "extern %s %s;\n" as *byte, type_c as *byte, name as *byte);
+            fprintf(codegen.emit_stream as *void, "extern %s %s;\n" as *byte, type_c as *byte, name as *byte);
         }
     } else {
         // 变量定义（有初始化）
         if is_const != 0 {
-            fprintf(codegen.output as *void, "const %s %s" as *byte, type_c as *byte, name as *byte);
+            fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, name as *byte);
         } else {
-            fprintf(codegen.output as *void, "%s %s" as *byte, type_c as *byte, name as *byte);
+            fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, name as *byte);
         }
 
         if init_expr != null {
-            fputs(" = " as *byte, codegen.output as *void);
+            fputs(" = " as *byte, codegen.emit_stream as *void);
             gen_global_init_expr(codegen, init_expr);
         }
 
