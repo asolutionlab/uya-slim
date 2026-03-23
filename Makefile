@@ -26,7 +26,7 @@ CC_TARGET_FLAGS ?=
 
 # 编译选项（可通过环境变量覆盖）
 # 默认 -O2：加快自举编译器与 codegen 性能；调试可用 CFLAGS='-std=c99 -O0 -g ...' 覆盖
-CFLAGS ?= -std=c99 -O2 -g -fno-builtin -Werror
+CFLAGS ?= -std=c99 -O2 -fno-builtin -Werror
 LDFLAGS ?=
 
 # 并行程序测试 worker 数（默认 CPU 核数；可覆盖：make tests UYA_TEST_JOBS=4）
