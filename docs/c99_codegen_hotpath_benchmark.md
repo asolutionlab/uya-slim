@@ -52,6 +52,8 @@ cd src && ./compile.sh --c99 -e -v --nostdlib
 
 ## 当前结果（默认 `-O0` 构建的 `bin/uya`）
 
+**测试硬件**（与下表同次测量，2026-03-23）：Intel Core **i7-14700**（Raptor Lake，1 插槽，**20C / 28T**，x86_64）；系统内存约 **32 GiB**（`free` 报告总计 31Gi）；单 NUMA。未记录固定电源策略与后台负载，**数值会随睿频、温度与其它进程占用波动**。
+
 三次平均（`make bench-compile-stats ARGS="--runs 3"`，2026-03-23）：
 
 | 阶段 | 当前平均（ms） |
