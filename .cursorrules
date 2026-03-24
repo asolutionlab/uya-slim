@@ -68,7 +68,7 @@
 ### 开发完成
 
 - **提交前必须**：`make check` 通过
-- **完整验证**：`make backup`（依赖 check 通过，备份 bin/uya.c）
+- **完整验证**：`make backup-all`（`backup` 多文件目录 + `backup-seed` 单文件 `backup/uya.c`）
 - ❌ **禁止**：测试失败时提交代码
 
 ---

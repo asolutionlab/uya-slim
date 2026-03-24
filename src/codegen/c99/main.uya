@@ -1458,7 +1458,12 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     }
 
     // --nostdlib 模式：生成 _start 入口和辅助函数
+    // 镜像多 TU：勿写入 uya_part1_types.h（否则每个 .c 含入后链接期重复定义 _start）；仅写入 uya_common.c
     if codegen.is_nostdlib != 0 {
+        const saved_nostdlib_emit: &void = codegen.emit_stream;
+        if codegen.split_mirror != 0 && codegen.split_common_out != null {
+            codegen.emit_stream = codegen.split_common_out;
+        }
         // 添加 syscall write 和 strlen 辅助函数
         fputs("// syscall write - 写入文件描述符\n" as *byte, codegen.emit_stream as *void);
         fputs("static long uya_write(int fd, const char *buf, unsigned long len) {\n" as *byte, codegen.emit_stream as *void);
@@ -1493,6 +1498,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("        : : : \"memory\"\n" as *byte, codegen.emit_stream as *void);
         fputs("    );\n" as *byte, codegen.emit_stream as *void);
         fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+        codegen.emit_stream = saved_nostdlib_emit;
     }
     
     // 生成错误联合类型结构体（用于 @syscall 和其他错误联合类型）

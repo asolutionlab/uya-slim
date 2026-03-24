@@ -155,7 +155,8 @@ make check      # 一键验证（自举 + 测试）
 开发完成后，执行备份：
 
 ```bash
-make backup     # 验证 + 备份（依赖 check 通过）
+make backup-all # 验证 + backup/uyacache + backup/uya.c（提交前完整备份）
+make backup-seed # 仅单文件种子（无 check；通常配合 backup 使用）
 ```
 
 ### 分步验证（可选）
@@ -163,7 +164,7 @@ make backup     # 验证 + 备份（依赖 check 通过）
 如果需要单独验证某个步骤：
 
 ```bash
-make uya        # 构建自举编译器 + 更新 bin/uya.c
+make uya        # 构建自举编译器（多文件 C；单文件 bin/uya.c 见 make backup-seed）
 make b          # 自举验证
 make tests  # 测试验证
 ```
@@ -173,7 +174,9 @@ make tests  # 测试验证
 | 命令 | 说明 |
 |------|------|
 | `make check` | 验证（自举 + 测试）（**推荐**） |
-| `make backup` | 验证 + 备份 |
+| `make backup` | 验证 + 备份 `backup/uyacache`（多文件） |
+| `make backup-seed` | 单文件 C → `bin/uya.c`、`backup/uya.c` |
+| `make backup-all` | `backup` + `backup-seed` |
 | `make uya` | 构建自举编译器 |
 | `make b` | 自举验证 |
 | `make tests` | 测试验证 |
@@ -185,12 +188,10 @@ make tests  # 测试验证
 
 ### 备份条件
 
-**只有 `make backup` 才会备份**，且必须满足：
-1. 自举验证通过（`make b`）
-2. 测试全部通过（`make tests`）
+**`make backup`** 依赖 **`make check`**（含 `make uya` + 测试）。**`make backup-seed`** 单独重编单文件种子；**`make backup-all`** 为二者组合。
 
 ```bash
-make backup     # 验证通过后备份（推荐：开发完成后执行）
+make backup-all # 验证通过 + 多文件与单文件种子（推荐：开发完成后提交前）
 ```
 
 ### 自动恢复
@@ -201,7 +202,7 @@ make backup     # 验证通过后备份（推荐：开发完成后执行）
 
 ```bash
 make check      # 验证（自举 + 测试）
-make backup     # 验证 + 备份
+make backup-all # 验证 + 多文件与单文件备份
 make restore    # 从备份恢复 bin/uya.c
 make clean && make from-c  # 清理后从备份恢复构建
 ```

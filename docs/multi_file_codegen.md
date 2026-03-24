@@ -35,15 +35,21 @@
 
 **`export var` / `export const`（`AST_EXTERN_VAR_DECL`）**：镜像时在 `uya_common.c` 中生成与其它 `.c` 中定义一致的全局名，并在 `get_c_name_for_identifier_ref` 中按合并 program 解析，避免仅 `AST_VAR_DECL` 路径下前缀不一致。
 
-**已知限制**：镜像模式仍在完善中；部分宿主程序在链接成功后可能出现运行时异常（需与单文件 `--c99` 对照排查）。自举与 `make check` 以单文件 / 非镜像路径为准。
+**已知限制**：镜像模式仍在完善中；部分宿主程序在链接成功后可能出现运行时异常（需与单文件 `--c99` 对照排查）。**`make check`** 在 **`make uya`（多文件自举）** 通过后跑测试；**`make b`** 验证多文件 C 输出一致性。
 
-**不要用镜像 split 编译整个编译器树**：`uya build src/main.uya --split-c-dir= … --c99` 在**默认镜像**下可能因工程规模在 `make -C .uyacache` 阶段暴露问题；**开发/自举编译器请用无 split 的单文件路径**，例如 `uya build src/main.uya -o out --c99`。验证多文件生成可用 `bash tests/split_c_smoke.sh` 等小用例。
+**手动** `uya build src/main.uya --split-c-dir= … --c99` 在**默认镜像**下可能因工程规模在 `make -C .uyacache` 阶段暴露问题；**根 Makefile 的 `make uya`** 已统一 **`UYA_MULTI_FILE_C=1`** 与清空 split 相关环境。小用例验证多文件生成可用 **`bash tests/split_c_smoke.sh`** 等。
 
 若需**仅**两文件 split 以对照旧行为，可 **`export UYA_SPLIT_C_MIRROR=0`** 再 `uya build`。
 
-**与 `make uya` / `make b`：**若在 shell 里 `export UYA_SPLIT_C_DIR` / `UYA_SPLIT_C_MIRROR`，会导致生成多文件 C 而不写 `src/build/uya.c`，`cp` 种子失败。Makefile 在调用 `compile.sh` 的自举目标中已设置 **`UYA_SPLIT_C=0`** 并**清空** `UYA_SPLIT_C_DIR` / `UYA_SPLIT_C_MIRROR`，保证始终产出单文件 `uya.c` 并更新 `bin/uya.c`；需要多文件输出时请用 `uya build ...` 单独运行（默认已是多文件），勿依赖全局 `export` 跑 `make uya`。
+**与 `make uya` / `make b`：**若在 shell 里 `export UYA_SPLIT_C_DIR` / `UYA_SPLIT_C_MIRROR`，会覆盖 Makefile 内清空逻辑，可能导致意外路径。根 Makefile 在调用 `compile.sh` 的自举目标中**清空** `UYA_SPLIT_C_DIR` / `UYA_SPLIT_C_MIRROR`，并设置 **`UYA_MULTI_FILE_C=1`**：C99 且 `-e` 时 **`-o`** 指向 **`bin/uya`**，在 **`src/.uyacache`** 生成多文件 C 并由 **`make -C .uyacache`** 链接。多文件模式下通常**不**生成 **`src/build/uya.c`**；需要单文件 **`bin/uya.c`** / **`backup/uya.c`** 时执行 **`make backup-seed`**（**`UYA_SINGLE_FILE_C=1`**、**`UYA_SPLIT_C=0`**、清空 **`UYA_MULTI_FILE_C`**）。
 
-自举与 `make check` 仍以**单文件** `uya.c` / 测试用 **`-o` 指定 `.c`** 为准；日常 `uya build -o app --c99` 默认可并行多文件编译。
+- **`make backup`**：依赖 **`make check`**，将 **`src/.uyacache`** 复制为 **`backup/uyacache`**（多文件备份）。
+- **`make backup-seed`**：单文件重编译，更新 **`bin/uya.c`** 与 **`backup/uya.c`**（**`from-c` / `release`** 仍用单文件种子）。
+- **`make backup-all`**：**`backup` + `backup-seed`**（提交前完整备份）。
+
+**`compile.sh`** 支持 **`UYA_MULTI_FILE_C=1`** 与 **`UYA_SINGLE_FILE_C=1`**，二者互斥时以后者为准（见脚本内逻辑）。
+
+自举 **`make check`** 在 **`make uya`（多文件）** 之后跑测试；日常 **`uya build -o app --c99`** 默认可并行多文件编译。
 
 ## 用法
 

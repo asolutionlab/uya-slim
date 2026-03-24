@@ -5,8 +5,8 @@ alwaysApply: true
 
 # 提交前验证流程
 
-- 准备提交时，必须按顺序执行：`make clean`，然后 `make backup`。
-- `make backup` 包含完整验证与备份；只有它成功后才允许提交。
-- 如果 `make clean` 后导致 `bin/uya` 缺失，也不能跳过 `make backup`。
-- 只要 `make backup`、自举验证或测试失败，就禁止提交。
-- **提交内容**：若 `make backup` 更新了自举种子，同一提交中必须包含 **`backup/uya.c`**（仓库内跟踪的 `uya.c`；`bin/uya.c` 在 `.gitignore` 中勿提交）。
+- 准备提交时，必须按顺序执行：`make clean`，然后 `make backup-all`。
+- `make backup-all`（`backup` 多文件目录 + `backup-seed` 单文件种子）包含完整验证与备份；只有它成功后才允许提交。
+- 如果 `make clean` 后导致 `bin/uya` 缺失，也不能跳过 `make backup-all`。
+- 只要 `make backup-all`、自举验证或测试失败，就禁止提交。
+- **提交内容**：若 `make backup-seed` 更新了自举种子，同一提交中必须包含 **`backup/uya.c`**（仓库内跟踪的 `uya.c`；`bin/uya.c` 在 `.gitignore` 中勿提交）。多文件产物见 **`backup/uyacache`**（按需纳入版本控制）。

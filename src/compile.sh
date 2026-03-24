@@ -174,6 +174,8 @@ usage() {
   RUNTIME_MODE       hosted / nostdlib
   LINK_MODE          default / static
   UYA_SPLIT_C_DIR    若设置：C99 多文件输出目录 + Makefile，链接走 make -j（默认镜像多 .c；UYA_SPLIT_C_MIRROR=0 为 part1+part2）
+  UYA_MULTI_FILE_C   C99 且 -e 时：设为 1/true 则 -o 指向可执行文件，默认多文件 .uyacache（make uya）
+  UYA_SINGLE_FILE_C  设为 1/true 则强制单文件 build/<name>.c（make backup 种子；与编译器 --no-split-c 同类效果）
   UYA_GCC_JOBS       上述 make 的并行度（默认 4）
   UYA_BOOTSTRAP_COMPARE_BIN  设为 1/true 时，-b 用 cmp 比较两次可执行文件而非 diff C
 
@@ -359,6 +361,20 @@ fi
 # 创建输出目录
 mkdir -p "$BUILD_DIR"
 
+# C99 + -e：UYA_MULTI_FILE_C=1 时编译器 -o 指向 bin/<name>（非 .c），触发默认多文件 .uyacache
+# UYA_SINGLE_FILE_C=1 时强制单文件 build/<name>.c（与 main.uya 一致，用于 make backup 等）
+MULTI_FILE_C=0
+if [ "$USE_C99" = true ] && [ "$GENERATE_EXEC" = true ]; then
+    case "${UYA_SINGLE_FILE_C:-}" in
+        1|true|yes|YES) ;;
+        *)
+            if [ "${UYA_MULTI_FILE_C:-}" = "1" ] || [ "${UYA_MULTI_FILE_C:-}" = "true" ]; then
+                MULTI_FILE_C=1
+            fi
+            ;;
+    esac
+fi
+
 # 输出文件路径
 OUTPUT_FILE="$BUILD_DIR/$OUTPUT_NAME"
 
@@ -367,9 +383,31 @@ if [[ "$OUTPUT_NAME" == *.c ]]; then
     USE_C99=true
 fi
 
-# 如果使用 C99 后端但输出文件不是 .c 后缀，添加 .c 后缀
+# 如果使用 C99 后端但输出文件不是 .c 后缀，默认单文件时为 build/<name>.c；多文件模式不写该单文件
 if [ "$USE_C99" = true ] && [[ "$OUTPUT_NAME" != *.c ]]; then
-    OUTPUT_FILE="$BUILD_DIR/${OUTPUT_NAME}.c"
+    if [ "$MULTI_FILE_C" = "1" ]; then
+        OUTPUT_FILE=""
+    else
+        OUTPUT_FILE="$BUILD_DIR/${OUTPUT_NAME}.c"
+    fi
+fi
+
+mkdir -p "$BIN_DIR"
+EXECUTABLE_FILE="$BIN_DIR/$OUTPUT_NAME$TARGET_EXE_SUFFIX"
+COMPILER_OUTPUT_FOR_UYA="$OUTPUT_FILE"
+# 多文件自举：-o 与正在运行的 bin/uya 同一路径时，打开写会截断/覆盖可执行文件，导致编译失败。改用临时名再 mv。
+MULTI_FILE_OUT_STAGING=""
+if [ "$MULTI_FILE_C" = "1" ]; then
+    COMPILER_OUTPUT_FOR_UYA="$EXECUTABLE_FILE"
+    if [ -f "$COMPILER" ]; then
+        _cr="$(realpath "$COMPILER" 2>/dev/null || echo "$COMPILER")"
+        _out="$(realpath "$COMPILER_OUTPUT_FOR_UYA" 2>/dev/null || echo "$COMPILER_OUTPUT_FOR_UYA")"
+        if [ "$_cr" = "$_out" ]; then
+            MULTI_FILE_OUT_STAGING=1
+            EXECUTABLE_FILE="${BIN_DIR}/${OUTPUT_NAME}.build${TARGET_EXE_SUFFIX}"
+            COMPILER_OUTPUT_FOR_UYA="$EXECUTABLE_FILE"
+        fi
+    fi
 fi
 
 # 检查是否使用自动依赖收集模式
@@ -478,7 +516,11 @@ echo "Uya Mini 自举编译（自动依赖收集）"
 echo "=========================================="
 echo "编译器: $COMPILER"
 echo "源代码目录: $UYA_SRC_DIR"
-echo "输出文件: $OUTPUT_FILE"
+if [ "$MULTI_FILE_C" = "1" ]; then
+    echo "编译器 -o: $COMPILER_OUTPUT_FOR_UYA（多文件 C，默认 .uyacache）"
+else
+    echo "输出文件: $OUTPUT_FILE"
+fi
 echo "输入路径: $INPUT_PATH"
 echo ""
 echo "注意: 编译器将自动收集所有模块依赖"
@@ -499,10 +541,10 @@ export UYA_ROOT="$REPO_ROOT/lib/"
 if [ "$USE_AUTO_DEPS" = true ]; then
     # 使用自动依赖收集模式：传递主文件和 C 入口模块
     ENTRY_FILE="$REPO_ROOT/lib/std/runtime/entry/entry.uya"
-    COMPILER_CMD=("$COMPILER" "$INPUT_PATH" "$ENTRY_FILE" -o "$OUTPUT_FILE")
+    COMPILER_CMD=("$COMPILER" "$INPUT_PATH" "$ENTRY_FILE" -o "$COMPILER_OUTPUT_FOR_UYA")
 else
     # 使用手动文件列表模式：传递所有文件
-    COMPILER_CMD=("$COMPILER" "${FULL_PATHS[@]}" -o "$OUTPUT_FILE")
+    COMPILER_CMD=("$COMPILER" "${FULL_PATHS[@]}" -o "$COMPILER_OUTPUT_FOR_UYA")
 fi
 if [ "$USE_C99" = true ]; then
     COMPILER_CMD+=(--c99)
@@ -566,23 +608,23 @@ if [ $COMPILER_EXIT -eq 0 ]; then
     echo -e "${GREEN}✓ 编译成功！${NC}"
     echo ""
     
-    # 确定实际生成的文件路径
-    # 最终可执行文件输出到 bin/ 目录
-    EXECUTABLE_FILE=""
+    # 确定实际生成的文件路径（EXECUTABLE_FILE 在解析 OUTPUT 时已设）
     if [ "$GENERATE_EXEC" = true ]; then
         mkdir -p "$BIN_DIR"
-        EXECUTABLE_FILE="$BIN_DIR/$OUTPUT_NAME$TARGET_EXE_SUFFIX"
         
-        # 检查可执行文件是否需要生成或重新链接（C99 时若 .c 比可执行文件新则需重新链接）
-        # 在 --nostdlib 模式下，总是需要手动链接
+        # 检查可执行文件是否需要由本脚本补充链接（多文件 C 时编译器已链接则跳过）
         NEED_LINK=false
-        if [ "$USE_NOSTDLIB" = true ]; then
+        if [ "$MULTI_FILE_C" = "1" ]; then
+            if [ ! -f "$EXECUTABLE_FILE" ]; then
+                NEED_LINK=true
+            fi
+        elif [ "$USE_NOSTDLIB" = true ]; then
             NEED_LINK=true
         elif [ ! -f "$EXECUTABLE_FILE" ]; then
             NEED_LINK=true
         elif [ "$USE_C99" = true ] && [ -n "${UYA_SPLIT_C_DIR:-}" ] && [ -f "${UYA_SPLIT_C_DIR}/uya_part1.c" ] && [ -f "$EXECUTABLE_FILE" ] && [ "${UYA_SPLIT_C_DIR}/uya_part1.c" -nt "$EXECUTABLE_FILE" ]; then
             NEED_LINK=true
-        elif [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ] && [ -f "$EXECUTABLE_FILE" ] && [ "$OUTPUT_FILE" -nt "$EXECUTABLE_FILE" ]; then
+        elif [ "$USE_C99" = true ] && [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ] && [ -f "$EXECUTABLE_FILE" ] && [ "$OUTPUT_FILE" -nt "$EXECUTABLE_FILE" ]; then
             NEED_LINK=true
         fi
         if [ "$NEED_LINK" = true ]; then
@@ -607,7 +649,16 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                     echo "  可尝试: $LINK_CMD_DESC"
                     exit 1
                 fi
-            elif [ "$USE_C99" = true ] && [ -f "$OUTPUT_FILE" ]; then
+            elif [ "$USE_C99" = true ] && [ "$MULTI_FILE_C" = "1" ] && [ -f ".uyacache/Makefile" ]; then
+                LINK_CMD_DESC="make -C .uyacache -j\${UYA_GCC_JOBS:-4} UYA_OUT=${EXECUTABLE_FILE} ..."
+                if run_uya_split_make_link ".uyacache" "$EXECUTABLE_FILE"; then
+                    echo -e "${GREEN}✓ C99 可执行文件已生成（默认 .uyacache / make）: $EXECUTABLE_FILE${NC}"
+                else
+                    echo -e "${RED}✗ 默认多文件 C 链接失败${NC}"
+                    echo "  可尝试: $LINK_CMD_DESC"
+                    exit 1
+                fi
+            elif [ "$USE_C99" = true ] && [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
                 LINK_CMD_DESC=""
                 if [ "$USE_NOSTDLIB" = true ]; then
                     if [ "$TARGET_OS" != "linux" ] || [ "$TARGET_ARCH" != "x86_64" ]; then
@@ -687,6 +738,13 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                 exit 1
             fi
         fi
+        # 多文件自举：-o 曾指向 bin/uya.build，成功后移回 bin/uya
+        if [ "$MULTI_FILE_C" = "1" ] && [ -n "${MULTI_FILE_OUT_STAGING:-}" ]; then
+            if [ -f "${BIN_DIR}/${OUTPUT_NAME}.build${TARGET_EXE_SUFFIX}" ]; then
+                mv -f "${BIN_DIR}/${OUTPUT_NAME}.build${TARGET_EXE_SUFFIX}" "${BIN_DIR}/${OUTPUT_NAME}${TARGET_EXE_SUFFIX}"
+            fi
+            EXECUTABLE_FILE="${BIN_DIR}/${OUTPUT_NAME}${TARGET_EXE_SUFFIX}"
+        fi
         
         # 检查文件是否可执行
         if [ ! -x "$EXECUTABLE_FILE" ]; then
@@ -703,19 +761,21 @@ if [ $COMPILER_EXIT -eq 0 ]; then
         file_size=$(du -h "$EXECUTABLE_FILE" 2>/dev/null | cut -f1 || echo "未知")
         echo "文件大小: $file_size"
         echo "类型: 可执行文件"
-        if [ -f "$OUTPUT_FILE" ]; then
+        if [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
             echo "目标文件: $OUTPUT_FILE（中间文件，可删除）"
         elif [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
             echo "多文件 C 输出目录: ${UYA_SPLIT_C_DIR}（Makefile + uya_part1.c；默认镜像为多 .c，UYA_SPLIT_C_MIRROR=0 时为 uya_part2.c）"
+        elif [ "$MULTI_FILE_C" = "1" ] && [ -d ".uyacache" ]; then
+            echo "多文件 C 输出目录: .uyacache（默认镜像；UYA_SPLIT_C_MIRROR=0 时为 uya_part1+part2）"
         fi
 
-        # 自举对比：默认 diff 两次 C；UYA_SPLIT_C_DIR 或 UYA_BOOTSTRAP_COMPARE_BIN 时改为 cmp 两次可执行文件
+        # 自举对比：默认 diff 两次 C；UYA_SPLIT_C_DIR / UYA_MULTI_FILE_C / UYA_BOOTSTRAP_COMPARE_BIN 时改为 cmp 两次可执行文件
         if [ "$BOOTSTRAP_COMPARE" = true ] && [ -f "$EXECUTABLE_FILE" ]; then
             BOOTSTRAP_BIN_COMPARE=false
             case "${UYA_BOOTSTRAP_COMPARE_BIN:-}" in
                 1|true|yes|YES) BOOTSTRAP_BIN_COMPARE=true ;;
             esac
-            if [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
+            if [ -n "${UYA_SPLIT_C_DIR:-}" ] || [ "$MULTI_FILE_C" = "1" ]; then
                 BOOTSTRAP_BIN_COMPARE=true
             fi
             if [ "$BOOTSTRAP_BIN_COMPARE" != true ] && [ ! -f "$OUTPUT_FILE" ]; then
@@ -840,7 +900,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             fi
             fi
         fi
-    elif [ -f "$OUTPUT_FILE" ]; then
+    elif [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
         # 只生成了目标文件
         echo ""
         echo "输出文件: $OUTPUT_FILE"
