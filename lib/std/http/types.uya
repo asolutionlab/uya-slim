@@ -67,8 +67,8 @@ fn method_from_str(s: &const byte, len: usize) Method {
             return Method.HEAD;
         }
     }
-    if len == 6 {
-        if s[0] == 'P' as byte && s[1] == 'A' as byte && s[2] == 'T' as byte && s[3] == 'C' as byte && s[4] == 'H' as byte && s[5] == 0 as byte {
+    if len == 5 {
+        if s[0] == 'P' as byte && s[1] == 'A' as byte && s[2] == 'T' as byte && s[3] == 'C' as byte && s[4] == 'H' as byte {
             return Method.PATCH;
         }
     }
@@ -114,19 +114,49 @@ export enum ServerMode {
 // 请求结构
 // ============================================================
 
+/// Query / path_param 键值对（键与值均为指向原始缓冲区的切片视图）
+export struct HttpKvSlice {
+    key: &[byte],
+    value: &[byte],
+}
+
 export struct Header {
     name: [byte: MAX_HEADER_SIZE],
+    name_len: usize,
     value: [byte: MAX_HEADER_VALUE_SIZE],
+    value_len: usize,
 }
 
 export struct Request {
     method: Method,
     path: [byte: MAX_URI_LENGTH],
-    path_params: [(&byte, &[byte]): MAX_PATH_PARAMS],
-    query: [(&byte, &[byte]): MAX_QUERY_PARAMS],
+    path_len: i32,
+    path_params: [HttpKvSlice: MAX_PATH_PARAMS],
+    path_param_count: i32,
+    query: [HttpKvSlice: MAX_QUERY_PARAMS],
+    query_count: i32,
     headers: [Header: MAX_HEADER_SIZE],
     header_count: i32,
     body: &[byte],
+}
+
+/// multipart/form-data 单段视图（切片生命周期与 Request.body 一致）
+export struct MultipartPart {
+    name: &[byte],
+    filename: &[byte],
+    content_type: &[byte],
+    body: &[byte],
+}
+
+export struct MultipartView {
+    parts: [MultipartPart: MAX_MULTIPART_PARTS],
+    part_count: i32,
+}
+
+/// HTTP 解析结果：请求视图 + 在输入缓冲区内消耗的字节数（Keep-alive 下一轮从 buf.ptr + consumed 起解析）
+export struct ParseResult {
+    request: Request,
+    consumed: usize,
 }
 
 // ============================================================
@@ -190,3 +220,42 @@ export struct ServerConfig {
     port: u16,
     host: [byte: 64],
 }
+
+// ============================================================
+// 方法解析与 Header 辅助
+// ============================================================
+
+export fn parse_method_bytes(s: &[byte]) !Method {
+    const len: usize = s.len;
+    if len == 3 {
+        if s.ptr[0] == 'G' as byte && s.ptr[1] == 'E' as byte && s.ptr[2] == 'T' as byte {
+            return Method.GET;
+        }
+        if s.ptr[0] == 'P' as byte && s.ptr[1] == 'U' as byte && s.ptr[2] == 'T' as byte {
+            return Method.PUT;
+        }
+    }
+    if len == 4 {
+        if s.ptr[0] == 'P' as byte && s.ptr[1] == 'O' as byte && s.ptr[2] == 'S' as byte && s.ptr[3] == 'T' as byte {
+            return Method.POST;
+        }
+        if s.ptr[0] == 'D' as byte && s.ptr[1] == 'E' as byte && s.ptr[2] == 'L' as byte && s.ptr[3] == 'E' as byte {
+            return Method.DELETE;
+        }
+        if s.ptr[0] == 'H' as byte && s.ptr[1] == 'E' as byte && s.ptr[2] == 'A' as byte && s.ptr[3] == 'D' as byte {
+            return Method.HEAD;
+        }
+    }
+    if len == 5 {
+        if s.ptr[0] == 'P' as byte && s.ptr[1] == 'A' as byte && s.ptr[2] == 'T' as byte && s.ptr[3] == 'C' as byte && s.ptr[4] == 'H' as byte {
+            return Method.PATCH;
+        }
+    }
+    if len == 7 {
+        if s.ptr[0] == 'O' as byte && s.ptr[1] == 'P' as byte && s.ptr[2] == 'T' as byte && s.ptr[3] == 'I' as byte && s.ptr[4] == 'O' as byte && s.ptr[5] == 'N' as byte && s.ptr[6] == 'S' as byte {
+            return Method.OPTIONS;
+        }
+    }
+    return error.InvalidRequest;
+}
+

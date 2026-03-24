@@ -1,0 +1,107 @@
+// test_http_parse.uya - HTTP 解析测试
+
+use std.http.types;
+use std.http.parse;
+use std.testing.assert_eq_i32;
+use std.testing.assert_eq_u64;
+
+fn slice_eq(a: &[byte], b: &[byte]) bool {
+    if a.len != b.len {
+        return false;
+    }
+    var i: usize = 0;
+    while i < a.len {
+        if a.ptr[i] != b.ptr[i] {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+test "parse_get_simple" {
+    var raw: [byte: 256] = [];
+    var r: usize = 0;
+    const line: &[byte] = &"GET /hello HTTP/1.1\r\nHost: x\r\n\r\n"[0: 32];
+    var i: usize = 0;
+    while i < line.len {
+        raw[r] = line.ptr[i];
+        r = r + 1;
+        i = i + 1;
+    }
+    const buf: &[byte] = raw[0: r];
+    const pr: ParseResult = try parse(buf);
+    try assert_eq_i32(pr.request.method as i32, Method.GET as i32);
+    try assert_eq_i32(pr.request.path_len, 6);
+    try assert_eq_u64(pr.consumed as u64, buf.len as u64);
+}
+
+test "parse_post_body" {
+    var raw: [byte: 512] = [];
+    const head: &[byte] = &"POST /api HTTP/1.1\r\nContent-Length: 4\r\n\r\n"[0: 41];
+    const body: &[byte] = &"abcd"[0: 4];
+    var r: usize = 0;
+    var i: usize = 0;
+    while i < head.len {
+        raw[r] = head.ptr[i];
+        r = r + 1;
+        i = i + 1;
+    }
+    i = 0;
+    while i < body.len {
+        raw[r] = body.ptr[i];
+        r = r + 1;
+        i = i + 1;
+    }
+    const buf: &[byte] = raw[0: r];
+    const pr: ParseResult = try parse(buf);
+    try assert_eq_i32(pr.request.method as i32, Method.POST as i32);
+    try assert_eq_u64(pr.request.body.len as u64, 4 as u64);
+    try assert_eq_i32(pr.request.body.ptr[0] as i32, 97);
+}
+
+test "parse_query" {
+    var raw: [byte: 256] = [];
+    const line: &[byte] = &"GET /p?a=1&b=two HTTP/1.1\r\n\r\n"[0: 29];
+    var r: usize = 0;
+    var i: usize = 0;
+    while i < line.len {
+        raw[r] = line.ptr[i];
+        r = r + 1;
+        i = i + 1;
+    }
+    const buf: &[byte] = raw[0: r];
+    const pr: ParseResult = try parse(buf);
+    try assert_eq_i32(pr.request.query_count, 2);
+}
+
+test "parse_consumed_keepalive" {
+    var raw: [byte: 256] = [];
+    const r1: &[byte] = &"GET /a HTTP/1.1\r\n\r\n"[0: 19];
+    const r2: &[byte] = &"GET /b HTTP/1.1\r\n\r\n"[0: 19];
+    var r: usize = 0;
+    var i: usize = 0;
+    while i < r1.len {
+        raw[r] = r1.ptr[i];
+        r = r + 1;
+        i = i + 1;
+    }
+    i = 0;
+    while i < r2.len {
+        raw[r] = r2.ptr[i];
+        r = r + 1;
+        i = i + 1;
+    }
+    const buf: &[byte] = raw[0: r];
+    const pr1: ParseResult = try parse(buf);
+    try assert_eq_u64(pr1.consumed as u64, 19 as u64);
+    var raw2: [byte: 256] = [];
+    var j: usize = 0;
+    while j + pr1.consumed < r {
+        raw2[j] = raw[pr1.consumed + j];
+        j = j + 1;
+    }
+    const rest: &[byte] = raw2[0: j];
+    const pr2: ParseResult = try parse(rest);
+    try assert_eq_i32(pr2.request.path_len, 2);
+}

@@ -150,6 +150,11 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
             if decl.type == ASTNodeType.AST_VAR_DECL && decl.var_decl_init != null {
                 return checker_eval_const_expr(checker, decl.var_decl_init);
             }
+            // export const x: T = v; 解析为 AST_EXTERN_VAR_DECL（非 C extern）
+            if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL && decl.extern_var_decl_init_expr != null &&
+                decl.extern_var_decl_is_extern == 0 {
+                return checker_eval_const_expr(checker, decl.extern_var_decl_init_expr);
+            }
         }
         
         if checker.program_node == null {
@@ -172,6 +177,16 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
                 }
                 return -1;
             }
+            if decl != null && decl.type == ASTNodeType.AST_EXTERN_VAR_DECL &&
+               decl.extern_var_decl_name != null &&
+               strcmp(decl.extern_var_decl_name as *byte, expr.identifier_name as *byte) == 0 &&
+               decl.extern_var_decl_is_const != 0 {
+                const init_ex: &ASTNode = decl.extern_var_decl_init_expr;
+                if init_ex != null {
+                    return checker_eval_const_expr(checker, init_ex);
+                }
+                return -1;
+            }
             i = i + 1;
         }
         return -1;
@@ -179,9 +194,14 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
         var base_expr: &ASTNode = expr.member_access_object;
         if base_expr != null && base_expr.type == ASTNodeType.AST_IDENTIFIER && base_expr.identifier_name != null {
             const symbol: &Symbol = symbol_table_lookup(checker, base_expr.identifier_name);
-            if symbol != null && symbol.is_const != 0 && symbol.decl_node != null &&
-                symbol.decl_node.type == ASTNodeType.AST_VAR_DECL && symbol.decl_node.var_decl_init != null {
-                base_expr = symbol.decl_node.var_decl_init;
+            if symbol != null && symbol.is_const != 0 && symbol.decl_node != null {
+                const sdn: &ASTNode = symbol.decl_node;
+                if sdn.type == ASTNodeType.AST_VAR_DECL && sdn.var_decl_init != null {
+                    base_expr = sdn.var_decl_init;
+                } else if sdn.type == ASTNodeType.AST_EXTERN_VAR_DECL && sdn.extern_var_decl_init_expr != null &&
+                    sdn.extern_var_decl_is_extern == 0 {
+                    base_expr = sdn.extern_var_decl_init_expr;
+                }
             }
         }
         if base_expr != null && base_expr.type == ASTNodeType.AST_MC_TYPE {

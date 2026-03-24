@@ -950,6 +950,48 @@ fn c99_emit_thread_type_is_on_struct_type_param(codegen: &C99CodeGenerator, call
     return 0;
 }
 
+// 形参 &[T]：C 侧均为按值 struct uya_slice_*（含仅有 extern 声明的函数，手写 C 须与此一致）。
+fn c99_fn_decl_slice_param_pass_by_value(fn_decl: &ASTNode, param_index: i32) i32 {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return 0;
+    }
+    if param_index < 0 || param_index >= fn_decl.fn_decl_param_count {
+        return 0;
+    }
+    const param: &ASTNode = fn_decl.fn_decl_params[param_index];
+    if param == null || param.type != ASTNodeType.AST_VAR_DECL || param.var_decl_type == null {
+        return 0;
+    }
+    const pt: &ASTNode = param.var_decl_type;
+    // 解析器里 &[T] 为 AST_TYPE_SLICE；少数路径可能为 POINTER->SLICE
+    if pt.type == ASTNodeType.AST_TYPE_SLICE {
+        return 1;
+    }
+    if pt.type == ASTNodeType.AST_TYPE_POINTER && pt.type_pointer_pointed_type != null &&
+        pt.type_pointer_pointed_type.type == ASTNodeType.AST_TYPE_SLICE {
+        return 1;
+    }
+    return 0;
+}
+
+// 调用实参：对按值 slice ABI，将 &expr（expr 为切片值）生成为 expr。
+fn c99_emit_call_arg_expr(codegen: &C99CodeGenerator, fn_decl: &ASTNode, param_index: i32, arg: &ASTNode) void {
+    if arg != null && arg.type == ASTNodeType.AST_UNARY_EXPR &&
+        (arg.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND &&
+        c99_fn_decl_slice_param_pass_by_value(fn_decl, param_index) != 0 {
+        const operand: &ASTNode = arg.unary_expr_operand;
+        if operand != null {
+            const op_ty: &byte = get_c_type_of_expr(codegen, operand);
+            if op_ty != null && strstr(op_ty as *byte, "uya_slice_" as *byte) != null &&
+                strchr(op_ty as *byte, 42) == null {
+                gen_expr(codegen, operand);
+                return;
+            }
+        }
+    }
+    gen_expr(codegen, arg);
+}
+
 // 生成调用表达式
 fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const callee: &ASTNode = expr.call_expr_callee;
@@ -1135,7 +1177,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 } else if expr.call_expr_args[ai] != null && expr.call_expr_args[ai].type == ASTNodeType.AST_STRING {
                     fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
                 }
-                gen_expr(codegen, expr.call_expr_args[ai]);
+                c99_emit_call_arg_expr(codegen, fn_decl, ai, expr.call_expr_args[ai]);
                 ai = ai + 1;
             }
             fputc(41, codegen.emit_stream as *void);
@@ -1493,7 +1535,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                                 if expr.call_expr_args[i] != null && expr.call_expr_args[i].type == ASTNodeType.AST_STRING {
                                                     fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
                                                 }
-                                                gen_expr(codegen, expr.call_expr_args[i]);
+                                                c99_emit_call_arg_expr(codegen, method_fn, i + 1, expr.call_expr_args[i]);
                                             }
                                             i = i + 1;
                                         }
@@ -1546,7 +1588,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                                 if expr.call_expr_args[i] != null && expr.call_expr_args[i].type == ASTNodeType.AST_STRING {
                                                     fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
                                                 }
-                                                gen_expr(codegen, expr.call_expr_args[i]);
+                                                c99_emit_call_arg_expr(codegen, method_fn, i + 1, expr.call_expr_args[i]);
                                             }
                                             i = i + 1;
                                         }
@@ -1591,7 +1633,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
                         }
                     }
-                    gen_expr(codegen, expr.call_expr_args[i]);
+                    c99_emit_call_arg_expr(codegen, fn_decl, i, expr.call_expr_args[i]);
                 }
                 i = i + 1;
             }
@@ -1851,7 +1893,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     // strtol 和 strtod 的第二个参数如果是 null as * *byte，生成 (const uint8_t **)NULL 匹配 libc 签名
                     fputs("(const uint8_t **)NULL" as *byte, codegen.emit_stream as *void);
                 } else {
-                    gen_expr(codegen, expr.call_expr_args[i]);
+                    c99_emit_call_arg_expr(codegen, fn_decl, i, expr.call_expr_args[i]);
                 }
             }
             }
@@ -6830,7 +6872,7 @@ fn gen_slice_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const base: &ASTNode = expr.slice_expr_base;
         const start_expr: &ASTNode = expr.slice_expr_start_expr;
         const len_expr: &ASTNode = expr.slice_expr_len_expr;
-        const slice_type_c: &byte = get_c_type_of_expr(codegen, expr);
+        const slice_type_c: &byte = get_slice_struct_type_c(codegen, expr);
         var slice_type_str: &byte = ("struct uya_slice_int32_t" as *byte) as &byte;
         if slice_type_c != null {
             slice_type_str = slice_type_c;
@@ -6843,9 +6885,14 @@ fn gen_slice_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         } else if base.type == ASTNodeType.AST_IDENTIFIER {
             const type_c: &byte = get_identifier_type_c(codegen, base.identifier_name);
             if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
-                fputc(40, codegen.emit_stream as *void);
-                gen_expr(codegen, base);
-                fputs(").ptr + " as *byte, codegen.emit_stream as *void);
+                if strchr(type_c as *byte, 42) != null {
+                    gen_expr(codegen, base);
+                    fputs("->ptr + " as *byte, codegen.emit_stream as *void);
+                } else {
+                    fputc(40, codegen.emit_stream as *void);
+                    gen_expr(codegen, base);
+                    fputs(").ptr + " as *byte, codegen.emit_stream as *void);
+                }
             } else {
                 // byte 切片 .ptr 需 uint8_t*；arena_alloc 等常为 void*，C99 禁止 void* 算术，用 (uint8_t *) 避免 -Wpointer-arith
                 var need_uint8_cast: i32 = 0;

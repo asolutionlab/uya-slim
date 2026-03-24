@@ -340,6 +340,15 @@ check: uya
 		exit 1; \
 	fi; \
 	echo ""; \
+	echo "验证切片形参 C99 按值与调用约定..."; \
+	./tests/verify_slice_param_c99_emit.sh > /tmp/verify_out.txt 2>&1 && \
+		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ 切片形参 C99 验证失败"; \
+		exit 1; \
+	fi; \
+	echo ""; \
 	echo "验证 @syscall C99（Linux AArch64 / ARM32 交叉）..."; \
 	ZIG="$(ZIG)" ./tests/verify_syscall_c99_cross.sh > /tmp/verify_out.txt 2>&1 && \
 		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
@@ -375,7 +384,7 @@ check: uya
 	fi; \
 	rm -f /tmp/make_check_output.txt /tmp/verify_out.txt; \
 	echo ""; \
-	echo "✓ 验证通过（自举 + 测试 + 证明优化 + 默认顶层函数发射 + SIMD select C + @syscall C99 + SIMD NEON）"
+	echo "✓ 验证通过（自举 + 测试 + 证明优化 + 默认顶层函数发射 + SIMD select C + 切片形参 C99 + @syscall C99 + SIMD NEON）"
 
 # hosted 验证：普通链接自举 + 主测试 + 证明优化
 check-hosted: b-hosted

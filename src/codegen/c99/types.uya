@@ -6392,6 +6392,14 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
     if base.type == ASTNodeType.AST_IDENTIFIER {
         const type_c: &byte = get_identifier_type_c(codegen, base.identifier_name);
         if type_c != null && strstr(type_c as *byte, "uya_slice_" as *byte) != null {
+            if strchr(type_c as *byte, 42) != null {
+                if strstr(type_c as *byte, "uint8" as *byte) != null {
+                    return ("struct uya_slice_uint8_t" as *byte) as &byte;
+                }
+                if strstr(type_c as *byte, "int32" as *byte) != null {
+                    return ("struct uya_slice_int32_t" as *byte) as &byte;
+                }
+            }
             return type_c;
         }
         const elem_c: &byte = get_array_element_type(codegen, base);

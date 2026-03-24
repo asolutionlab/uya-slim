@@ -1500,7 +1500,14 @@ fn eval_const_expr(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
     if expr == null {
         return -1;
     }
-    
+    // 与 checker_eval_const_expr 一致：符号表解析 export const（含跨文件），否则 [T: MAX_N] 在 C 中退化为 [1]
+    if codegen != null && codegen.checker != null {
+        const ck: i32 = checker_eval_const_expr(codegen.checker, expr);
+        if ck != -1 {
+            return ck;
+        }
+    }
+
     if expr.type == ASTNodeType.AST_NUMBER {
         return expr.number_value as i32;
     } else if expr.type == ASTNodeType.AST_FLOAT {
@@ -1528,17 +1535,23 @@ fn eval_const_expr(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
             if decl != null && decl.type == ASTNodeType.AST_VAR_DECL {
                 const var_name: &byte = decl.var_decl_name;
                 if var_name != null && strcmp(var_name as *byte, const_name as *byte) == 0 {
-                    // 找到常量变量，检查是否为 const
                     if decl.var_decl_is_const != 0 {
-                        // 递归评估初始值表达式
-                        // 注意：这里不检查循环引用，因为常量应该是编译时确定的简单表达式
                         const init_expr: &ASTNode = decl.var_decl_init;
                         if init_expr != null {
-                            // 如果初始值也是标识符，递归查找（支持常量链）
                             return eval_const_expr(codegen, init_expr);
                         }
+                        return -1;
                     }
-                    break;
+                }
+            } else if decl != null && decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+                const ex_name: &byte = decl.extern_var_decl_name;
+                if ex_name != null && strcmp(ex_name as *byte, const_name as *byte) == 0 &&
+                    decl.extern_var_decl_is_const != 0 {
+                    const ex_init: &ASTNode = decl.extern_var_decl_init_expr;
+                    if ex_init != null {
+                        return eval_const_expr(codegen, ex_init);
+                    }
+                    return -1;
                 }
             }
             i = i + 1;
