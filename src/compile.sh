@@ -807,20 +807,21 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             if [ "$USE_NOSTDLIB" = true ]; then
                 BOOTSTRAP_UYA_FLAGS+=(--nostdlib)
             fi
-            if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
+            # 多文件自举：须与主编译一致（-o 为可执行文件 + UYA_SPLIT_C_DIR）；勿用 -o *.c，否则会走单文件 C 与主编译多文件不一致
+            if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && { [ -n "${UYA_SPLIT_C_DIR:-}" ] || [ "$MULTI_FILE_C" = "1" ]; }; then
                 rm -rf "$BOOTSTRAP_SPLIT_DIR"
                 mkdir -p "$BOOTSTRAP_SPLIT_DIR"
             fi
             if [ "$USE_AUTO_DEPS" = true ]; then
                 ENTRY_FILE="$REPO_ROOT/lib/std/runtime/entry/entry.uya"
-                if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
-                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" UYA_SPLIT_C_DIR="$BOOTSTRAP_SPLIT_DIR" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
+                if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && { [ -n "${UYA_SPLIT_C_DIR:-}" ] || [ "$MULTI_FILE_C" = "1" ]; }; then
+                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" UYA_SPLIT_C_DIR="$BOOTSTRAP_SPLIT_DIR" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_EXE" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
                 else
                     (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "$INPUT_PATH" "$ENTRY_FILE" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
                 fi
             else
-                if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
-                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" UYA_SPLIT_C_DIR="$BOOTSTRAP_SPLIT_DIR" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
+                if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && { [ -n "${UYA_SPLIT_C_DIR:-}" ] || [ "$MULTI_FILE_C" = "1" ]; }; then
+                    (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" UYA_SPLIT_C_DIR="$BOOTSTRAP_SPLIT_DIR" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_EXE" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
                 else
                     (ulimit -s 65536 2>/dev/null || true; UYA_ROOT="$UYA_ROOT" "$EXECUTABLE_FILE" "${FULL_PATHS[@]}" -o "$BOOTSTRAP_C" "${BOOTSTRAP_UYA_FLAGS[@]}") >"$BOOTSTRAP_LOG" 2>&1
                 fi
@@ -841,7 +842,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                 rm -f "$BOOTSTRAP_LOG"
                 if [ "$BOOTSTRAP_BIN_COMPARE" = true ]; then
                     rm -f "$BOOTSTRAP_EXE"
-                    if [ -n "${UYA_SPLIT_C_DIR:-}" ] && [ -f "${BOOTSTRAP_SPLIT_DIR}/Makefile" ]; then
+                    if { [ -n "${UYA_SPLIT_C_DIR:-}" ] || [ "$MULTI_FILE_C" = "1" ]; } && [ -f "${BOOTSTRAP_SPLIT_DIR}/Makefile" ]; then
                         if ! run_uya_split_make_link "$BOOTSTRAP_SPLIT_DIR" "$BOOTSTRAP_EXE"; then
                             echo -e "${RED}✗ 自举阶段多文件 C 链接失败${NC}"
                             exit 1
