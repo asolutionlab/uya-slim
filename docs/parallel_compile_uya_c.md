@@ -51,13 +51,13 @@ make from-c CFLAGS='-std=c99 -O2 -g -fno-builtin -Werror -flto=auto -fuse-linker
 
 需要 **Uya 编译器在 C99 后端直接输出多个 `.c` 文件**（或一个 `.h` + 多个 `.c`），由 `make -j` 分别 `gcc -c`。这是**编译器功能改动**，不是对现有 `uya.c` 做文本拆分能安全替代。
 
-**现已支持（实验性）**：`uya build ... --split-c-dir <dir>`（或 `UYA_SPLIT_C_DIR`），生成 `uya_part1.c` / `uya_part2.c` + `Makefile`，链接阶段走 `make -j`。说明见 [`multi_file_codegen.md`](multi_file_codegen.md)。
+**现已支持（实验性）**：C99 默认在 **`.uyacache`** 多文件输出；也可用 `uya build ... --split-c-dir <dir>`（或 `UYA_SPLIT_C_DIR`）指定目录。生成 `Makefile` 与多份 `.c`，链接阶段走 `make -j`。说明见 [`multi_file_codegen.md`](multi_file_codegen.md)。
 
 ## 与 `make` 并行的关系
 
 `make -j` 能并行的是**多个**编译目标；若目标只有一个 `uya.c` → 一个二进制，**make 并行无法并行化单个 gcc 进程**。
 
-启用 **`--split-c-dir`** 且存在多份 `.c` 目标时，`make -j` 才能并行执行多次 `gcc -c`。
+默认或启用 **`--split-c-dir`** / **`UYA_SPLIT_C_DIR`** 且存在多份 `.c` 目标时，`make -j` 才能并行执行多次 `gcc -c`。
 
 ---
 

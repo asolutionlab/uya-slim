@@ -61,8 +61,21 @@ const ARENA_BUFFER_SIZE: i32 = 64 * 1024 * 1024;  // 64MB 初始
 const MAX_INPUT_FILES: i32 = 64;
 
 // --split-c-dir / UYA_SPLIT_C_DIR：多文件 C 输出目录；非空时链接阶段走 make -j
+// C99 且非「显式 -o xxx.c」时默认目录 .uyacache（与显式 --split-c-dir 省略路径一致）；UYA_SPLIT_C=0 或 --no-split-c 可关闭
 var g_split_c_dir: [byte: PATH_MAX] = [];
 var g_split_c_dir_active: i32 = 0;
+// 命令行 --no-split-c：强制单文件 C，忽略默认多文件、UYA_SPLIT_C_DIR 与 --split-c-dir
+var g_split_c_disabled_cli: i32 = 0;
+
+fn split_c_set_default_dir() void {
+    const def: *byte = ".uyacache" as *byte;
+    const sl: usize = strlen(def);
+    if sl > 0 && sl < PATH_MAX - 1 {
+        strcpy(&g_split_c_dir[0] as *byte, def);
+        g_split_c_dir[sl] = 0 as byte;
+        g_split_c_dir_active = 1;
+    }
+}
 
 // 全局缓冲区（替代 C 的 static 数组，零初始化）
 var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
@@ -320,7 +333,11 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  --nostdlib           完全独立模式：无标准库依赖，使用 syscall\n" as *byte);
     fprintf(libc.stderr, "  -o <文件>            指定输出文件名\n" as *byte);
     fprintf(libc.stderr, "  --stack-size <KB>    设置堆栈大小（KB），默认 65536 (64MB)\n" as *byte);
-    fprintf(libc.stderr, "  --split-c-dir <dir>  多文件 C 输出（uya_part1/2.c + Makefile），链接用 make -j（UYA_GCC_JOBS）\n" as *byte);
+    fprintf(libc.stderr, "  --split-c-dir [<dir>]  多文件 C 输出；省略或 --split-c-dir= 时目录默认为 .uyacache\n" as *byte);
+    fprintf(libc.stderr, "  --split-c-dir=<dir>  同上（合并写法；空路径等价于默认 .uyacache）\n" as *byte);
+    fprintf(libc.stderr, "  --no-split-c         关闭多文件 C（单文件/临时 .c；忽略 UYA_SPLIT_C_DIR 与 --split-c-dir）\n" as *byte);
+    fprintf(libc.stderr, "  C99 默认多文件输出到 .uyacache（显式 -o xxx.c 或 UYA_SPLIT_C=0|false|no|off 时为单文件）\n" as *byte);
+    fprintf(libc.stderr, "  多文件布局：默认镜像分 TU（一源一 .c，便于 make -j）；UYA_SPLIT_C_MIRROR=0|false|no|off 时用 uya_part1+part2\n" as *byte);
     fprintf(libc.stderr, "  -h, --help           显示此帮助信息\n" as *byte);
     fprintf(libc.stderr, "\n说明:\n" as *byte);
     fprintf(libc.stderr, "  - 可以指定单个文件或目录，编译器会自动解析模块依赖\n" as *byte);
@@ -1365,6 +1382,7 @@ fn parse_args(
     stack_size[0] = 0;  // 默认自动设置堆栈大小
     g_split_c_dir_active = 0;
     g_split_c_dir[0] = 0 as byte;
+    g_split_c_disabled_cli = 0;
 
     // 检测子命令
     const first_arg: *byte = get_argv(1);
@@ -1465,21 +1483,57 @@ fn parse_args(
                 fprintf(libc.stderr, "错误：--stack-size 选项需要指定堆栈大小（KB）\n" as *byte);
                 return -1;
             }
+        } else if strcmp(arg, "--no-split-c" as *byte) == 0 {
+            g_split_c_disabled_cli = 1;
+            g_split_c_dir_active = 0;
+            g_split_c_dir[0] = 0 as byte;
+        } else if strncmp(arg as &const byte, "--split-c-dir=" as &const byte, 14) == 0 {
+            if g_split_c_disabled_cli != 0 {
+                fprintf(libc.stderr, "警告: 已指定 --no-split-c，忽略 --split-c-dir\n" as *byte);
+            } else {
+                // --split-c-dir=<path>：单 argv，避免被误判为未知选项后仅靠 UYA_SPLIT_C_DIR 生效
+                var k: i32 = 14;
+                var sl: usize = 0;
+                while arg[k] != 0 as byte && sl < PATH_MAX - 2 {
+                    g_split_c_dir[sl] = arg[k];
+                    sl = sl + 1;
+                    k = k + 1;
+                }
+                g_split_c_dir[sl] = 0 as byte;
+                if sl > 0 {
+                    g_split_c_dir_active = 1;
+                } else {
+                    split_c_set_default_dir();
+                }
+            }
         } else if strcmp(arg, "--split-c-dir" as *byte) == 0 {
-            if i + 1 < argc {
-                const sd: *byte = get_argv(i + 1);
-                if sd != null {
-                    const sl: usize = strlen(sd);
-                    if sl > 0 && sl < PATH_MAX - 1 {
-                        strcpy(&g_split_c_dir[0] as *byte, sd);
-                        g_split_c_dir[sl] = 0 as byte;
-                        g_split_c_dir_active = 1;
+            if g_split_c_disabled_cli != 0 {
+                fprintf(libc.stderr, "警告: 已指定 --no-split-c，忽略 --split-c-dir\n" as *byte);
+                if i + 1 < argc {
+                    const sd_skip: *byte = get_argv(i + 1);
+                    if sd_skip != null && sd_skip[0] != 45 as byte {
+                        i = i + 1;
                     }
                 }
-                i = i + 1;
             } else {
-                fprintf(libc.stderr, "错误：--split-c-dir 需要指定目录路径\n" as *byte);
-                return -1;
+                if i + 1 < argc {
+                    const sd: *byte = get_argv(i + 1);
+                    if sd != null {
+                        const sl: usize = strlen(sd);
+                        if sl > 0 && sl < PATH_MAX - 1 {
+                            strcpy(&g_split_c_dir[0] as *byte, sd);
+                            g_split_c_dir[sl] = 0 as byte;
+                            g_split_c_dir_active = 1;
+                        } else {
+                            split_c_set_default_dir();
+                        }
+                    } else {
+                        split_c_set_default_dir();
+                    }
+                    i = i + 1;
+                } else {
+                    split_c_set_default_dir();
+                }
             }
         } else {
             const c: byte = arg[0];
@@ -1538,6 +1592,28 @@ fn is_c_output(output_path: &byte) i32 {
     if len < 2 { return 0; }
     if output_path[len - 2] == 46 as byte && output_path[len - 1] == 99 as byte {
         return 1;
+    }
+    return 0;
+}
+
+// UYA_SPLIT_C=0|false|no|off 或 UYA_SINGLE_FILE_C=1|true|yes 时关闭 C99 默认多文件输出（Makefile 自举等）
+fn env_disables_auto_split_c() i32 {
+    const ns: *byte = getenv("UYA_SPLIT_C" as *byte);
+    if ns != null && ns[0] != 0 as byte {
+        if strcmp(ns, "0" as *byte) == 0 ||
+            strcmp(ns, "false" as *byte) == 0 ||
+            strcmp(ns, "no" as *byte) == 0 ||
+            strcmp(ns, "off" as *byte) == 0 {
+            return 1;
+        }
+    }
+    const sf: *byte = getenv("UYA_SINGLE_FILE_C" as *byte);
+    if sf != null && sf[0] != 0 as byte {
+        if strcmp(sf, "1" as *byte) == 0 ||
+            strcmp(sf, "true" as *byte) == 0 ||
+            strcmp(sf, "yes" as *byte) == 0 {
+            return 1;
+        }
     }
     return 0;
 }
@@ -2185,7 +2261,20 @@ fn compile_files(
         }
     }
     var c99_codegen: C99CodeGenerator = C99CodeGenerator { };
-    if c99_codegen_new(&c99_codegen, &arena, out_file as &void, module_name as &byte, emit_line_directives, is_nostdlib, stack_size, split_c_dir) != 0 {
+    var split_mirror_flag: i32 = 0;
+    if split_c_dir != null && split_c_dir[0] != 0 as byte {
+        split_mirror_flag = 1;
+        const smg: *byte = getenv("UYA_SPLIT_C_MIRROR" as *byte);
+        if smg != null && smg[0] != 0 as byte {
+            if strcmp(smg as *byte, "0" as *byte) == 0 ||
+               strcmp(smg as *byte, "false" as *byte) == 0 ||
+               strcmp(smg as *byte, "no" as *byte) == 0 ||
+               strcmp(smg as *byte, "off" as *byte) == 0 {
+                split_mirror_flag = 0;
+            }
+        }
+    }
+    if c99_codegen_new(&c99_codegen, &arena, out_file as &void, module_name as &byte, emit_line_directives, is_nostdlib, stack_size, split_c_dir, split_mirror_flag) != 0 {
         fprintf(libc.stderr, "错误: C99CodeGenerator 初始化失败\n" as *byte);
         if out_file != null {
             fclose(out_file);
@@ -2255,7 +2344,7 @@ export fn main() i32 {
     if parse_args(&command, &input_file_indices[0], &input_file_count, &output_file_index, &backend, &emit_line_directives, &enable_safety_proof, &opt_level, &outlibc_index, &run_arg_start, &is_nostdlib, &stack_size) != 0 {
         return 1;
     }
-    if g_split_c_dir_active == 0 {
+    if g_split_c_dir_active == 0 && g_split_c_disabled_cli == 0 {
         const env_split: *byte = getenv("UYA_SPLIT_C_DIR" as *byte);
         if env_split != null && env_split[0] != 0 {
             const el: usize = strlen(env_split);
@@ -2330,6 +2419,20 @@ export fn main() i32 {
             }
             output_file_index = -2;  // 标记为自动生成的路径
             backend = BackendType.BACKEND_C99;
+        }
+    }
+
+    // C99 且非显式 -o xxx.c 时默认多文件输出到 .uyacache（与省略路径的 --split-c-dir 一致；UYA_SPLIT_C=0 / --no-split-c 等可关闭）
+    if g_split_c_dir_active == 0 && g_split_c_disabled_cli == 0 && backend == BackendType.BACKEND_C99 {
+        var explicit_single_c: i32 = 0;
+        if output_file_index >= 0 {
+            const outp: *byte = get_argv(output_file_index);
+            if outp != null && is_c_output(outp as &byte) != 0 {
+                explicit_single_c = 1;
+            }
+        }
+        if explicit_single_c == 0 && env_disables_auto_split_c() == 0 {
+            split_c_set_default_dir();
         }
     }
     

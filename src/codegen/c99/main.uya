@@ -1132,6 +1132,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     var t_mk2: clock_t = 0;
     var t_mk3: clock_t = 0;
     var t_mk4: clock_t = 0;
+    var saved_has_std_testing: i32 = 0;
     if prof_codegen != 0 {
         prof_t0 = clock();
     }
@@ -1195,6 +1196,13 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     if prof_codegen != 0 {
         t_mk1 = clock();
         prof_ms_precollect = ((t_mk1 as i64) - (t_precollect_start as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
+    }
+
+    // 镜像多 TU：须在 precollect 之后打开各 .c，以便根据 has_stdio_conflicts 写入 stdin/stdout/stderr 前向声明
+    if codegen.split_enabled != 0 && codegen.split_mirror != 0 {
+        if c99_split_mirror_prepare(codegen, ast) != 0 {
+            return -1;
+        }
     }
 
     if is_std_lib != 0 {
@@ -1503,11 +1511,13 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         prof_ms_header = ((t_mk2 as i64) - (t_mk1 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
     }
     
-    // 第一步：输出预收集阶段得到的字符串常量定义（在所有其他代码之前）
+    // 第一步：字符串池与 uya_common（镜像模式延后到第六步 d2 之后，使枚举/typedef/结构体等先写入 uya_part1_types.h）
     var i: i32 = 0;
-    emit_string_constants(codegen);
-    c99_split_begin_body(codegen);
-    c99_emit_newline(codegen);
+    if codegen.split_mirror == 0 {
+        emit_string_constants(codegen);
+        c99_split_begin_body(codegen);
+        c99_emit_newline(codegen);
+    }
     
     // 第三步：注册所有错误声明（用于 return error.X 等）
     i = 0;
@@ -1808,6 +1818,20 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         i = i + 1;
     }
     
+    // 镜像：关闭类型头文件，再写 uya_part1.c 字符串池并进入 uya_common.c（此前 emit_stream 指向 uya_part1_types.h）
+    if codegen.split_mirror != 0 && codegen.split_part1_types_h != null {
+        _ = fflush(codegen.split_part1_types_h as *void);
+        _ = fclose(codegen.split_part1_types_h as *void);
+        codegen.split_part1_types_h = null;
+        codegen.emit_stream = codegen.output;
+        fputs("#include \"uya_part1_types.h\"\n\n" as *byte, codegen.output as *void);
+    }
+    if codegen.split_mirror != 0 {
+        emit_string_constants(codegen);
+        c99_split_begin_body(codegen);
+        c99_emit_newline(codegen);
+    }
+    
     // 第七步 c：收集所有测试语句
     // 使用 Arena 分配数组（固定大小数组不能作为可变参数传递）
     const tests_array: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode) * MAX_TESTS) as & & ASTNode;
@@ -1885,6 +1909,19 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     
     // 第七步 d：按需生成系统调用辅助函数（@syscall 内置函数支持）
     if codegen.needs_syscall_helpers != 0 {
+        const saved_syscall_emit: &void = codegen.emit_stream;
+        // 镜像分 TU：syscall 仅写入 uya_common 会导致 lib/libc/pthread.c 等 TU 无 uya_syscall*；追加到已关闭的 uya_part1_types.h 供全 TU 含入
+        if codegen.split_mirror != 0 && codegen.split_dir != null {
+            var apath: [byte: 1024] = [];
+            const al: i32 = snprintf(&apath[0] as *byte, 1024, "%s/uya_part1_types.h" as *byte, codegen.split_dir as *byte);
+            if al > 0 && al < 1024 {
+                const ah: *void = fopen(&apath[0] as *byte, "a" as *byte);
+                if ah != null {
+                    fputs("\n\n/* mirror split: syscall helpers (appended to uya_part1_types.h for all TUs) */\n" as *byte, ah as *void);
+                    codegen.emit_stream = ah as &void;
+                }
+            }
+        }
         fputs("// 系统调用辅助函数：Linux x86-64（syscall）；AArch64（svc 0，x8/x0-x5）；ARM32 EABI（svc 0，r7 + 临时保存，r0-r5 参数）\n" as *byte, codegen.emit_stream as *void);
         fputs("#if defined(__x86_64__) || defined(_M_X64)\n" as *byte, codegen.emit_stream as *void);
     
@@ -2077,6 +2114,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("#else\n" as *byte, codegen.emit_stream as *void);
         fputs("#error \"@syscall C99 backend: supported Linux targets are x86-64, AArch64, and ARM32 EABI. Other OS/arch need a backend.\"\n" as *byte, codegen.emit_stream as *void);
         fputs("#endif\n\n" as *byte, codegen.emit_stream as *void);
+        if codegen.split_mirror != 0 && codegen.emit_stream != saved_syscall_emit {
+            _ = fflush(codegen.emit_stream as *void);
+            _ = fclose(codegen.emit_stream as *void);
+            codegen.emit_stream = saved_syscall_emit;
+        }
     }
     if prof_codegen != 0 {
         t_mk4 = clock();
@@ -2312,7 +2354,21 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         prof_ms_step6e_tail = ((t_prelude_end as i64) - (t_mk4 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
     }
     
+    // 镜像分 TU：第七步函数原型写入 uya_split_protos.h（各镜像 .c 首行 #include）
+    if codegen.split_mirror != 0 && codegen.split_dir != null {
+        var pp: [byte: 1024] = [];
+        const pl: i32 = snprintf(&pp[0] as *byte, 1024, "%s/uya_split_protos.h" as *byte, codegen.split_dir as *byte);
+        if pl > 0 && pl < 1024 {
+            const pf: *void = fopen(&pp[0] as *byte, "w" as *byte);
+            if pf != null {
+                fputs("#ifndef UYA_SPLIT_PROTOS_H\n#define UYA_SPLIT_PROTOS_H\n#include \"uya_part1_types.h\"\n\n" as *byte, pf as *void);
+                codegen.split_protos_out = pf as &void;
+            }
+        }
+    }
+    
     // 第七步：生成所有函数的前向声明（解决相互递归调用）
+    c99_mirror_emit_common(codegen);
     i = 0;
     while i < decl_count {
         const decl: &ASTNode = ast.program_decls[i];
@@ -2492,7 +2548,18 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         i = i + 1;
     }
     
+    if codegen.split_mirror != 0 && codegen.split_protos_out != null {
+        fputs("\n#endif /* UYA_SPLIT_PROTOS_H */\n" as *byte, codegen.split_protos_out as *void);
+        _ = fflush(codegen.split_protos_out as *void);
+        _ = fclose(codegen.split_protos_out as *void);
+        codegen.split_protos_out = null;
+        if codegen.split_common_out != null {
+            codegen.emit_stream = codegen.split_common_out;
+        }
+    }
+    
     // 第八步 b：生成 vtable 常量（依赖方法前向声明）
+    c99_mirror_emit_extern_const_fwd(codegen, ast);
     emit_vtable_constants(codegen);
     c99_emit_newline(codegen);
     
@@ -2541,16 +2608,20 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             fputs("static int32_t _test_failed = 0;\n" as *byte, codegen.emit_stream as *void);
             c99_emit_newline(codegen);
         }
+        saved_has_std_testing = has_std_testing;
     }
     
-    // 前向声明：stdin/stdout/stderr 的存储（&_stdin 等）在 export 变量初始化中引用
-    fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, codegen.emit_stream as *void);
+    // 前向声明：stdin/stdout/stderr（单文件或非镜像分 TU）。镜像模式已在各镜像 .c 头中写入，避免仅落入 uya_common.c
+    if codegen.split_mirror == 0 {
+        fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, codegen.emit_stream as *void);
+    }
     
     // 第九步 a：先生成所有常量（确保在函数之前定义）
     i = 0;
     while i < decl_count {
         const decl: &ASTNode = ast.program_decls[i];
         if decl != null {
+            c99_mirror_emit_for_node(codegen, decl);
             // 跳过 use 语句（模块导入，不需要生成代码）
             if decl.type == ASTNodeType.AST_USE_STMT {
                 i = i + 1;
@@ -2579,6 +2650,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     while i < decl_count {
         const decl: &ASTNode = ast.program_decls[i];
         if decl != null && decl.type == ASTNodeType.AST_VAR_DECL && decl.var_decl_is_const == 0 && decl.var_decl_is_export == 0 {
+            c99_mirror_emit_for_node(codegen, decl);
             gen_global_var(codegen, decl);
             c99_emit_newline(codegen);
         }
@@ -2590,6 +2662,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     while i < decl_count {
         const decl: &ASTNode = ast.program_decls[i];
         if decl != null {
+            c99_mirror_emit_for_node(codegen, decl);
             // 跳过 use 语句（模块导入，不需要生成代码）
             if decl.type == ASTNodeType.AST_USE_STMT {
                 i = i + 1;
@@ -2632,6 +2705,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                 while j < decl.struct_decl_method_count {
                                     const m: &ASTNode = decl.struct_decl_methods[j];
                                     if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_body != null {
+                                        c99_mirror_emit_for_node(codegen, m);
                                         // 跳过泛型方法（它们通过方法单态化机制处理）
                                         if m.fn_decl_type_param_count > 0 {
                                             // 预先计算 expected_prefix（在外层循环中只计算一次）
@@ -2675,6 +2749,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     while j < decl.struct_decl_method_count {
                         const m: &ASTNode = decl.struct_decl_methods[j];
                         if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_body != null {
+                            c99_mirror_emit_for_node(codegen, m);
                             // 检查是否是泛型方法
                             if m.fn_decl_type_param_count > 0 {
                                 // 预先计算 expected_prefix（在外层循环中只计算一次）
@@ -2710,6 +2785,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 while j < decl.union_decl_method_count {
                     const m: &ASTNode = decl.union_decl_methods[j];
                     if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_body != null {
+                        c99_mirror_emit_for_node(codegen, m);
                         gen_method_function(codegen, m, union_name);
                         c99_emit_newline(codegen);
                     }
@@ -2771,6 +2847,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     while j < decl.method_block_method_count {
                         const m: &ASTNode = decl.method_block_methods[j];
                         if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_body != null {
+                            c99_mirror_emit_for_node(codegen, m);
                             // 检查是否是泛型方法
                             if m.fn_decl_type_param_count > 0 {
                                 // 泛型方法：为每个单态化实例生成代码
@@ -2809,8 +2886,14 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         i = i + 1;
     }
     
-    // 第十步：生成测试函数和运行器
+    // 第十步：生成测试函数和运行器（镜像模式下全部在 uya_common.c，以便 static 测试函数与运行器同 TU）
     if test_count > 0 {
+        c99_mirror_emit_common(codegen);
+        if codegen.split_mirror != 0 && saved_has_std_testing != 0 {
+            fputs("extern int32_t _test_passed;\n" as *byte, codegen.emit_stream as *void);
+            fputs("extern int32_t _test_failed;\n" as *byte, codegen.emit_stream as *void);
+            c99_emit_newline(codegen);
+        }
         i = 0;
         while i < test_count {
             gen_test_function(codegen, tests_array[i]);
@@ -2845,6 +2928,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 if is_c_main == 0 {
                     has_user_main = 1;
                 }
+                c99_mirror_emit_for_node(codegen, decl);
                 emit_line_directive(codegen, decl.line, decl.filename);
                 var return_c: &byte = convert_array_return_type(codegen, decl.fn_decl_return_type);
                 return_c = normalize_poll_return_type(codegen, return_c);
@@ -2923,6 +3007,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 如果没有用户 main 函数但有 test 语句，生成 main_main 调用测试运行器
     // std.runtime.entry 的 main 会调用 main_main()
     if has_user_main == 0 && test_count > 0 {
+        c99_mirror_emit_common(codegen);
         // 测试计数变量已在第八步 c 中定义
         fputs("int32_t main_main(void) {\n" as *byte, codegen.emit_stream as *void);
         fprintf(codegen.emit_stream as *void, "    printf(\"\\n=== Running %d tests ===\\n\");\n" as *byte, test_count);

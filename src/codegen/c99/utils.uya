@@ -18,6 +18,8 @@ extern fn rename(oldpath: *byte, newpath: *byte) i32;
 extern fn unlink(path: *byte) i32;
 extern fn fflush(stream: *void) i32;
 extern fn fread(ptr: *void, size: usize, nmemb: usize, stream: *void) usize;
+extern fn getcwd(buf: *byte, size: usize) *byte;
+extern fn strstr(haystack: *byte, needle: *byte) *byte;
 
 extern fn hash_string(str: &byte) i32;
 extern fn c99_ident_ref_cache_reset() void;
@@ -82,38 +84,64 @@ fn c99_string_const_cache_store(codegen: &C99CodeGenerator, value: &byte, const_
 }
 
 // 创建 C99 代码生成器
-// split_root: 非空时启用多文件输出（uya_part1.c + uya_part2.c），忽略 output（可传 null）
+// split_root: 非空时启用多文件输出（uya_part1.c + uya_part2.c 或镜像多 .c），忽略 output（可传 null）
+// split_mirror: 1=镜像分 TU（--split-c-dir 时默认开启）：uya_common.c + 按源路径镜像 .c（无 uya_part2.c）；0=uya_part1+part2
 // is_nostdlib: 1=使用 syscall，0=使用标准库
 // freestanding: 1=不包含头文件，0=按需包含头文件
-fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, module_name: &byte, emit_line_directives: i32, is_nostdlib: i32, stack_size: i32, split_root: &byte) i32 {
+fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, module_name: &byte, emit_line_directives: i32, is_nostdlib: i32, stack_size: i32, split_root: &byte, split_mirror: i32) i32 {
     if codegen == null || arena == null || module_name == null {
         return -1;
     }
 
     var out_file: &void = output;
     var part2_handle: &void = null;
+    var types_h: &void = null;
     if split_root != null && split_root[0] != 0 as byte {
         _ = mkdir(split_root as *byte, 493);
         var path1: [byte: 1024] = [];
         var path2: [byte: 1024] = [];
         const n1: i32 = snprintf(&path1[0] as *byte, 1024, "%s/uya_part1.c" as *byte, split_root as *byte);
-        const n2: i32 = snprintf(&path2[0] as *byte, 1024, "%s/uya_part2.c" as *byte, split_root as *byte);
-        if n1 <= 0 || n1 >= 1024 || n2 <= 0 || n2 >= 1024 {
+        if n1 <= 0 || n1 >= 1024 {
             return -1;
         }
         out_file = fopen(&path1[0] as *byte, "w" as *byte);
-        part2_handle = fopen(&path2[0] as *byte, "w" as *byte);
-        if out_file == null || part2_handle == null {
-            if out_file != null { fclose(out_file as *void); }
-            if part2_handle != null { fclose(part2_handle as *void); }
+        if out_file == null {
             return -1;
         }
-        var pj: i32 = 0;
-        while pj < 1023 && path2[pj] != 0 as byte {
-            codegen.split_part2_path[pj] = path2[pj];
-            pj = pj + 1;
+        if split_mirror != 0 {
+            var pth: [byte: 1024] = [];
+            const nth: i32 = snprintf(&pth[0] as *byte, 1024, "%s/uya_part1_types.h" as *byte, split_root as *byte);
+            if nth > 0 && nth < 1024 {
+                types_h = fopen(&pth[0] as *byte, "w" as *byte) as &void;
+                if types_h == null {
+                    _ = fclose(out_file as *void);
+                    return -1;
+                }
+            } else {
+                _ = fclose(out_file as *void);
+                return -1;
+            }
         }
-        codegen.split_part2_path[pj] = 0 as byte;
+        if split_mirror == 0 {
+            const n2: i32 = snprintf(&path2[0] as *byte, 1024, "%s/uya_part2.c" as *byte, split_root as *byte);
+            if n2 <= 0 || n2 >= 1024 {
+                _ = fclose(out_file as *void);
+                return -1;
+            }
+            part2_handle = fopen(&path2[0] as *byte, "w" as *byte);
+            if part2_handle == null {
+                _ = fclose(out_file as *void);
+                return -1;
+            }
+            var pj: i32 = 0;
+            while pj < 1023 && path2[pj] != 0 as byte {
+                codegen.split_part2_path[pj] = path2[pj];
+                pj = pj + 1;
+            }
+            codegen.split_part2_path[pj] = 0 as byte;
+        } else {
+            codegen.split_part2_path[0] = 0 as byte;
+        }
     } else {
         if out_file == null {
             return -1;
@@ -127,18 +155,38 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &Arena, output: &void, mod
     codegen.checker = null;
     codegen.output = out_file;
     codegen.emit_stream = out_file;
+    if split_root != null && split_root[0] != 0 as byte && split_mirror != 0 && types_h != null {
+        codegen.split_part1_types_h = types_h;
+        codegen.emit_stream = types_h;
+    }
     if split_root != null && split_root[0] != 0 as byte {
         codegen.split_enabled = 1;
         codegen.split_part2_out = part2_handle;
         codegen.split_body_started = 0;
         codegen.split_dir = c99_arena_strdup(arena, split_root);
+        if split_mirror != 0 {
+            codegen.split_mirror = 1;
+        } else {
+            codegen.split_mirror = 0;
+        }
     } else {
         codegen.split_enabled = 0;
         codegen.split_part2_out = null;
         codegen.split_body_started = 0;
         codegen.split_dir = null;
         codegen.split_part2_path[0] = 0 as byte;
+        codegen.split_mirror = 0;
     }
+    var sm_init: i32 = 0;
+    while sm_init < 128 {
+        codegen.split_mirror_keys[sm_init] = null;
+        codegen.split_mirror_handles[sm_init] = null;
+        sm_init = sm_init + 1;
+    }
+    codegen.split_mirror_count = 0;
+    codegen.split_mirror_lcp = 0;
+    codegen.split_common_out = null;
+    codegen.split_protos_out = null;
     codegen.indent_level = 0;
     codegen.module_name = module_name;
 
@@ -371,13 +419,405 @@ fn c99_codegen_free(codegen: &C99CodeGenerator) void {
             _ = fclose(codegen.split_part2_out as *void);
             codegen.split_part2_out = null;
         }
+        if codegen.split_mirror != 0 {
+            if codegen.split_part1_types_h != null {
+                _ = fclose(codegen.split_part1_types_h as *void);
+                codegen.split_part1_types_h = null;
+            }
+            if codegen.split_common_out != null {
+                _ = fclose(codegen.split_common_out as *void);
+                codegen.split_common_out = null;
+            }
+            if codegen.split_protos_out != null {
+                _ = fclose(codegen.split_protos_out as *void);
+                codegen.split_protos_out = null;
+            }
+            var mci: i32 = 0;
+            while mci < codegen.split_mirror_count {
+                if codegen.split_mirror_handles[mci] != null {
+                    _ = fclose(codegen.split_mirror_handles[mci] as *void);
+                    codegen.split_mirror_handles[mci] = null;
+                }
+                mci = mci + 1;
+            }
+        }
         codegen.emit_stream = null;
     }
 }
 
-// split 模式下在 part1 写完字符串常量后切换到 part2，并写入跨 TU 可见的字符串 extern
+// 递归创建路径上的目录（path 为目录路径，不含末尾文件名时也可）
+fn c99_mkdir_p_chain(path: &byte) void {
+    if path == null {
+        return;
+    }
+    var buf: [byte: 1024] = [];
+    var j: i32 = 0;
+    while j < 1023 && path[j] != 0 as byte {
+        buf[j] = path[j];
+        j = j + 1;
+    }
+    buf[j] = 0 as byte;
+    var i: i32 = 0;
+    while i < j {
+        if buf[i] == 47 as byte && i > 0 {
+            buf[i] = 0 as byte;
+            _ = mkdir(&buf[0] as *byte, 493);
+            buf[i] = 47 as byte;
+        }
+        i = i + 1;
+    }
+    _ = mkdir(&buf[0] as *byte, 493);
+}
+
+// 为即将创建的文件路径创建父目录
+fn c99_mkdir_p_for_file(file_path: &byte) void {
+    if file_path == null {
+        return;
+    }
+    var buf: [byte: 1024] = [];
+    var j: i32 = 0;
+    while j < 1023 && file_path[j] != 0 as byte {
+        buf[j] = file_path[j];
+        j = j + 1;
+    }
+    buf[j] = 0 as byte;
+    var k: i32 = j - 1;
+    while k > 0 && buf[k] != 47 as byte {
+        k = k - 1;
+    }
+    if k <= 0 {
+        return;
+    }
+    buf[k] = 0 as byte;
+    c99_mkdir_p_chain(&buf[0] as &byte);
+}
+
+fn c99_mirror_lcp_len(uniq: [[byte: 512]: 128], count: i32) i32 {
+    if count <= 0 {
+        return 0;
+    }
+    var minlen: i32 = 511;
+    var ui: i32 = 0;
+    while ui < count {
+        var len: i32 = 0;
+        while len < 511 && uniq[ui][len] != 0 as byte {
+            len = len + 1;
+        }
+        if len < minlen {
+            minlen = len;
+        }
+        ui = ui + 1;
+    }
+    var pos: i32 = 0;
+    while pos < minlen {
+        const ch: byte = uniq[0][pos];
+        var same: i32 = 1;
+        var u2: i32 = 1;
+        while u2 < count {
+            if uniq[u2][pos] != ch {
+                same = 0;
+                u2 = count;
+            }
+            u2 = u2 + 1;
+        }
+        if same == 0 {
+            break;
+        }
+        pos = pos + 1;
+    }
+    while pos > 0 && uniq[0][pos - 1] != 47 as byte {
+        pos = pos - 1;
+    }
+    return pos;
+}
+
+// 由完整 .uya 路径与 LCP 得到相对路径的 .c 路径（写入 out_rel）
+fn c99_mirror_rel_c_from_key(src: &byte, lcp: i32, out_rel: &byte, max_out: i32) i32 {
+    if src == null || out_rel == null || max_out < 5 {
+        return -1;
+    }
+    var rel_uya: [byte: 512] = [];
+    var ri: i32 = 0;
+    while ri < 511 && src[lcp + ri] != 0 as byte {
+        rel_uya[ri] = src[lcp + ri];
+        ri = ri + 1;
+    }
+    rel_uya[ri] = 0 as byte;
+    if ri == 0 {
+        var bn: i32 = 0;
+        var bi: i32 = 0;
+        while bi < 511 && src[bi] != 0 as byte {
+            bn = bi;
+            bi = bi + 1;
+        }
+        while bn >= 0 && src[bn] != 47 as byte {
+            bn = bn - 1;
+        }
+        var t: i32 = 0;
+        while t < 511 && src[bn + 1 + t] != 0 as byte {
+            rel_uya[t] = src[bn + 1 + t];
+            t = t + 1;
+        }
+        rel_uya[t] = 0 as byte;
+    }
+    return c99_copy_uya_rel_to_c(&rel_uya[0] as &byte, out_rel, max_out);
+}
+
+fn c99_copy_uya_rel_to_c(rel_uya: &byte, out_rel: &byte, max_out: i32) i32 {
+    if rel_uya == null || out_rel == null || max_out < 5 {
+        return -1;
+    }
+    var i: i32 = 0;
+    while i < max_out - 1 && rel_uya[i] != 0 as byte {
+        out_rel[i] = rel_uya[i];
+        i = i + 1;
+    }
+    out_rel[i] = 0 as byte;
+    if i >= 5 && out_rel[i - 4] == 46 as byte && out_rel[i - 3] == 117 as byte &&
+       out_rel[i - 2] == 121 as byte && out_rel[i - 1] == 97 as byte {
+        out_rel[i - 4] = 46 as byte;
+        out_rel[i - 3] = 99 as byte;
+        out_rel[i - 2] = 0 as byte;
+        return 0;
+    }
+    return -1;
+}
+
+// 将 decl.filename 规范为绝对路径（与 cwd 拼接相对路径），供镜像 LCP 与 filename 匹配一致
+fn c99_mirror_normalize_one_path(src: &byte, out: &byte, max_out: i32) i32 {
+    if src == null || out == null || max_out < 2 {
+        return -1;
+    }
+    if src[0] == 47 as byte {
+        var i: i32 = 0;
+        while i < max_out - 1 && src[i] != 0 as byte {
+            out[i] = src[i];
+            i = i + 1;
+        }
+        out[i] = 0 as byte;
+        return 0;
+    }
+    var cwd_buf: [byte: 4096] = [];
+    const cw: *byte = getcwd(&cwd_buf[0] as *byte, 4096 as usize);
+    if cw == null {
+        return -1;
+    }
+    const wl: i32 = snprintf(out as *byte, max_out as usize, "%s/%s" as *byte, cw as *byte, src as *byte);
+    if wl <= 0 || wl >= max_out {
+        return -1;
+    }
+    return 0;
+}
+
+// 打开 uya_common.c 与各镜像 .c，写入 #include "uya_strings_extern.h"
+export fn c99_split_mirror_prepare(codegen: &C99CodeGenerator, program: &ASTNode) i32 {
+    if codegen == null || codegen.split_enabled == 0 || codegen.split_mirror == 0 || codegen.split_dir == null {
+        return 0;
+    }
+    if program == null || program.type != ASTNodeType.AST_PROGRAM {
+        return -1;
+    }
+    var uniq: [[byte: 512]: 128] = [];
+    var uniq_count: i32 = 0;
+    var di: i32 = 0;
+    while di < program.program_decl_count {
+        const decl: &ASTNode = program.program_decls[di];
+        if decl != null && decl.filename != null {
+            const fnm: &byte = decl.filename;
+            var found: i32 = 0;
+            var u: i32 = 0;
+            while u < uniq_count {
+                if strcmp(&uniq[u][0] as *byte, fnm as *byte) == 0 {
+                    found = 1;
+                    u = uniq_count;
+                }
+                u = u + 1;
+            }
+            if found == 0 && uniq_count < 128 {
+                var skip_entry: i32 = 0;
+                var tmp_norm: [byte: 512] = [];
+                if c99_mirror_normalize_one_path(fnm, &tmp_norm[0] as &byte, 512) == 0 {
+                    if strstr(&tmp_norm[0] as *byte, "runtime/entry/entry.uya" as *byte) != null {
+                        skip_entry = 1;
+                    }
+                    // tests/*.uya 单独成 .c 时缺少跨 TU 的函数原型；放入 uya_common.c
+                    if strstr(&tmp_norm[0] as *byte, "/tests/" as *byte) != null ||
+                        strstr(&tmp_norm[0] as *byte, "tests/test" as *byte) != null {
+                        skip_entry = 1;
+                    }
+                    // runtime/runtime.uya 依赖 static inline 的 syscall 助手（与 uya_common 同 TU）；单独 .o 会链接失败
+                    if strstr(&tmp_norm[0] as *byte, "runtime/runtime.uya" as *byte) != null {
+                        skip_entry = 1;
+                    }
+                }
+                if skip_entry == 0 {
+                    var z: i32 = 0;
+                    while z < 511 && fnm[z] != 0 as byte {
+                        uniq[uniq_count][z] = fnm[z];
+                        z = z + 1;
+                    }
+                    uniq[uniq_count][z] = 0 as byte;
+                    uniq_count = uniq_count + 1;
+                }
+            }
+        }
+        di = di + 1;
+    }
+    var nui: i32 = 0;
+    while nui < uniq_count {
+        var merged: [byte: 512] = [];
+        if c99_mirror_normalize_one_path(&uniq[nui][0] as &byte, &merged[0] as &byte, 512) != 0 {
+            return -1;
+        }
+        var nz: i32 = 0;
+        while nz < 511 && merged[nz] != 0 as byte {
+            uniq[nui][nz] = merged[nz];
+            nz = nz + 1;
+        }
+        uniq[nui][nz] = 0 as byte;
+        nui = nui + 1;
+    }
+    const lcp: i32 = c99_mirror_lcp_len(uniq, uniq_count);
+    codegen.split_mirror_lcp = lcp;
+    var ci: i32 = 0;
+    while ci < uniq_count {
+        const src: &byte = &uniq[ci][0] as &byte;
+        var rel_c_buf: [byte: 512] = [];
+        if c99_mirror_rel_c_from_key(src, lcp, &rel_c_buf[0] as &byte, 512) != 0 {
+            return -1;
+        }
+        const key_copy: &byte = c99_arena_strdup(codegen.arena, src);
+        if key_copy == null {
+            return -1;
+        }
+        codegen.split_mirror_keys[ci] = key_copy;
+        var fullp: [byte: 1024] = [];
+        const fl: i32 = snprintf(&fullp[0] as *byte, 1024, "%s/%s" as *byte, codegen.split_dir as *byte, &rel_c_buf[0] as *byte);
+        if fl <= 0 || fl >= 1024 {
+            return -1;
+        }
+        c99_mkdir_p_for_file(&fullp[0] as &byte);
+        const fh: *void = fopen(&fullp[0] as *byte, "w" as *byte);
+        if fh == null {
+            return -1;
+        }
+        fputs("#include \"uya_split_protos.h\"\n#include \"uya_mirror_globals.h\"\n#include \"uya_strings_extern.h\"\n\n" as *byte, fh as *void);
+        var is_libc_stdio_unit: i32 = 0;
+        var tmp_stdio: [byte: 512] = [];
+        if c99_mirror_normalize_one_path(src, &tmp_stdio[0] as &byte, 512) == 0 {
+            if strstr(&tmp_stdio[0] as *byte, "libc/stdio.uya" as *byte) != null {
+                is_libc_stdio_unit = 1;
+            }
+        }
+        if codegen.freestanding == 0 {
+            // 与 lib/libc/time.uya 一致：clock_t 为 u64；勿 #include <time.h>（会与 extern const int64_t CLOCKS_PER_SEC 宏冲突）
+            fputs("typedef uint64_t clock_t;\n" as *byte, fh as *void);
+            fputs("int32_t std_runtime_get_argc(void);\n" as *byte, fh as *void);
+            fputs("uint8_t *std_runtime_get_argv(int32_t index);\n" as *byte, fh as *void);
+            fputs("extern char *getenv(const char *);\n" as *byte, fh as *void);
+            fputs("extern const uint32_t S_IFMT;\nextern const uint32_t S_IFDIR;\nextern const uint32_t S_IFREG;\n" as *byte, fh as *void);
+            fputs("extern const uint8_t DT_REG;\nextern const uint8_t DT_UNKNOWN;\nextern const uint8_t DT_DIR;\n" as *byte, fh as *void);
+            fputs("extern const int64_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, fh as *void);
+            if codegen.has_stdio_conflicts != 0 {
+                fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, fh as *void);
+                // lib/libc/stdio.uya 镜像 .c 内定义 struct FILE * stdin = (&_stdin)，不能与 #define stdin 共存
+                if is_libc_stdio_unit == 0 {
+                    fputs("#define stdin (&_stdin)\n#define stdout (&_stdout)\n#define stderr (&_stderr)\n" as *byte, fh as *void);
+                }
+            }
+        }
+        fputs("\n" as *byte, fh as *void);
+        codegen.split_mirror_handles[ci] = fh as &void;
+        ci = ci + 1;
+    }
+    codegen.split_mirror_count = uniq_count;
+    var comp: [byte: 1024] = [];
+    const cl: i32 = snprintf(&comp[0] as *byte, 1024, "%s/uya_common.c" as *byte, codegen.split_dir as *byte);
+    if cl <= 0 || cl >= 1024 {
+        return -1;
+    }
+    const ch: *void = fopen(&comp[0] as *byte, "w" as *byte);
+    if ch == null {
+        return -1;
+    }
+    fputs("#include \"uya_split_protos.h\"\n#include \"uya_mirror_globals.h\"\n#include \"uya_strings_extern.h\"\n\n" as *byte, ch as *void);
+    if codegen.freestanding == 0 {
+        fputs("typedef uint64_t clock_t;\n" as *byte, ch as *void);
+        fputs("int32_t std_runtime_get_argc(void);\n" as *byte, ch as *void);
+        fputs("uint8_t *std_runtime_get_argv(int32_t index);\n" as *byte, ch as *void);
+        fputs("extern char *getenv(const char *);\n" as *byte, ch as *void);
+        fputs("extern const uint32_t S_IFMT;\nextern const uint32_t S_IFDIR;\nextern const uint32_t S_IFREG;\n" as *byte, ch as *void);
+        fputs("extern const uint8_t DT_REG;\nextern const uint8_t DT_UNKNOWN;\nextern const uint8_t DT_DIR;\n" as *byte, ch as *void);
+        fputs("extern const int64_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, ch as *void);
+        if codegen.has_stdio_conflicts != 0 {
+            fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, ch as *void);
+            fputs("#define stdin (&_stdin)\n#define stdout (&_stdout)\n#define stderr (&_stderr)\n" as *byte, ch as *void);
+        }
+    }
+    fputs("\n" as *byte, ch as *void);
+    codegen.split_common_out = ch as &void;
+    return 0;
+}
+
+export fn c99_mirror_emit_common(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.split_mirror == 0 {
+        return;
+    }
+    if codegen.split_protos_out != null {
+        codegen.emit_stream = codegen.split_protos_out;
+    } else if codegen.split_common_out != null {
+        codegen.emit_stream = codegen.split_common_out;
+    }
+}
+
+export fn c99_mirror_emit_for_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
+    if codegen == null || codegen.split_mirror == 0 {
+        return;
+    }
+    if codegen.split_common_out == null {
+        return;
+    }
+    if node == null || node.filename == null {
+        codegen.emit_stream = codegen.split_common_out;
+        return;
+    }
+    const fnm: &byte = node.filename;
+    var norm_fnm: [byte: 512] = [];
+    if c99_mirror_normalize_one_path(fnm, &norm_fnm[0] as &byte, 512) != 0 {
+        codegen.emit_stream = codegen.split_common_out;
+        return;
+    }
+    var ix: i32 = 0;
+    while ix < codegen.split_mirror_count {
+        if codegen.split_mirror_keys[ix] != null && strcmp(codegen.split_mirror_keys[ix] as *byte, &norm_fnm[0] as *byte) == 0 {
+            if codegen.split_mirror_handles[ix] != null {
+                codegen.emit_stream = codegen.split_mirror_handles[ix];
+            } else {
+                codegen.emit_stream = codegen.split_common_out;
+            }
+            return;
+        }
+        ix = ix + 1;
+    }
+    codegen.emit_stream = codegen.split_common_out;
+}
+
+// split 模式下在 part1 写完字符串常量后切换到 part2（或 uya_common.c），并写入跨 TU 可见的字符串 extern
 export fn c99_split_begin_body(codegen: &C99CodeGenerator) void {
-    if codegen == null || codegen.split_enabled == 0 || codegen.split_part2_out == null {
+    if codegen == null || codegen.split_enabled == 0 {
+        return;
+    }
+    if codegen.split_mirror != 0 {
+        if codegen.split_common_out == null {
+            return;
+        }
+        fputs("\n/* --- uya_common.c: 类型与辅助代码（与 uya_part1.c 分 TU 链接） */\n" as *byte, codegen.split_common_out as *void);
+        fputc(10, codegen.split_common_out as *void);
+        codegen.emit_stream = codegen.split_common_out;
+        codegen.split_body_started = 1;
+        return;
+    }
+    if codegen.split_part2_out == null {
         return;
     }
     const p2: &void = codegen.split_part2_out;
@@ -387,15 +827,45 @@ export fn c99_split_begin_body(codegen: &C99CodeGenerator) void {
     codegen.split_body_started = 1;
 }
 
-// 在关闭 FILE 之前：将 uya_part2.c 重写为「全部字符串 extern + 原内容」，供 uya_part1.o + uya_part2.o 分编译
+// 在关闭 FILE 之前：将 uya_part2.c 重写为「全部字符串 extern + 原内容」，或镜像模式下写入 uya_strings_extern.h
 export fn c99_split_finish_part2_externs(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.split_enabled == 0 || codegen.split_body_started == 0 {
+        return;
+    }
+    _ = fflush(codegen.output as *void);
+    if codegen.split_mirror != 0 {
+        if codegen.split_common_out != null {
+            _ = fflush(codegen.split_common_out as *void);
+        }
+        var mfi: i32 = 0;
+        while mfi < codegen.split_mirror_count {
+            if codegen.split_mirror_handles[mfi] != null {
+                _ = fflush(codegen.split_mirror_handles[mfi] as *void);
+            }
+            mfi = mfi + 1;
+        }
+        var hp: [byte: 1024] = [];
+        const hl: i32 = snprintf(&hp[0] as *byte, 1024, "%s/uya_strings_extern.h" as *byte, codegen.split_dir as *byte);
+        if hl > 0 && hl < 1024 {
+            const hw: *void = fopen(&hp[0] as *byte, "w" as *byte);
+            if hw != null {
+                fputs("// 由 Uya 镜像分 TU 模式生成：与 uya_part1.c 中字符串定义链接\n" as *byte, hw as *void);
+                var si: i32 = 0;
+                while si < codegen.string_constant_count {
+                    if codegen.string_constants[si].name != null {
+                        fprintf(hw as *void, "extern const char %s[];\n" as *byte, codegen.string_constants[si].name as *byte);
+                    }
+                    si = si + 1;
+                }
+                fputc(10, hw as *void);
+                _ = fclose(hw as *void);
+            }
+        }
         return;
     }
     if codegen.split_part2_path[0] == 0 as byte {
         return;
     }
-    _ = fflush(codegen.output as *void);
     _ = fflush(codegen.split_part2_out as *void);
     _ = fclose(codegen.split_part2_out as *void);
     codegen.split_part2_out = null;
@@ -487,7 +957,7 @@ export fn c99_write_mirror_manifest(codegen: &C99CodeGenerator, program: &ASTNod
     _ = fclose(mf as *void);
 }
 
-// 生成 split 目录下的 Makefile（make -j 并行编译 uya_part1.o + uya_part2.o）
+// 生成 split 目录下的 Makefile（make -j 并行编译多 .o）
 export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.split_enabled == 0 || codegen.split_dir == null {
         return;
@@ -502,13 +972,67 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
         return;
     }
     fputs("# Generated by Uya --split-c-dir\n" as *byte, mf);
-    fputs("CC ?= cc\nCFLAGS ?= -std=c99 -Wall -Wextra -pedantic -g\nLDFLAGS ?=\n" as *byte, mf);
+    fputs("CC ?= cc\nCFLAGS ?= -std=c99 -Wall -Wextra -pedantic -g -I.\nLDFLAGS ?=\n" as *byte, mf);
+    if codegen.split_mirror != 0 {
+        fputs("OBJS := uya_part1.o uya_common.o" as *byte, mf);
+        const klcp: i32 = codegen.split_mirror_lcp;
+        var oi: i32 = 0;
+        while oi < codegen.split_mirror_count {
+            if codegen.split_mirror_keys[oi] != null {
+                var cpath: [byte: 512] = [];
+                var opath: [byte: 512] = [];
+                if c99_mirror_rel_c_from_key(codegen.split_mirror_keys[oi], klcp, &cpath[0] as &byte, 512) == 0 {
+                    var pi2: i32 = 0;
+                    while pi2 < 511 && cpath[pi2] != 0 as byte {
+                        opath[pi2] = cpath[pi2];
+                        pi2 = pi2 + 1;
+                    }
+                    if pi2 >= 3 && opath[pi2 - 2] == 46 as byte && opath[pi2 - 1] == 99 as byte {
+                        opath[pi2 - 1] = 111 as byte;
+                        opath[pi2] = 0 as byte;
+                    }
+                    fputc(32, mf as *void);
+                    fputs(&opath[0] as *byte, mf as *void);
+                }
+            }
+            oi = oi + 1;
+        }
+        fputc(10, mf as *void);
+        fputs(".PHONY: all clean\n" as *byte, mf);
+        fputs("all: $(UYA_OUT)\n" as *byte, mf);
+        fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)\n" as *byte, mf);
+        fputs("uya_part1.o: uya_part1.c uya_part1_types.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. uya_part1.c -o uya_part1.o\n" as *byte, mf);
+        fputs("uya_common.o: uya_common.c uya_split_protos.h uya_mirror_globals.h uya_part1_types.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. uya_common.c -o uya_common.o\n" as *byte, mf);
+        var ri: i32 = 0;
+        while ri < codegen.split_mirror_count {
+            if codegen.split_mirror_keys[ri] != null {
+                var cpr: [byte: 512] = [];
+                if c99_mirror_rel_c_from_key(codegen.split_mirror_keys[ri], klcp, &cpr[0] as &byte, 512) == 0 {
+                    var opr: [byte: 512] = [];
+                    var qi2: i32 = 0;
+                    while qi2 < 511 && cpr[qi2] != 0 as byte {
+                        opr[qi2] = cpr[qi2];
+                        qi2 = qi2 + 1;
+                    }
+                    if qi2 >= 3 && opr[qi2 - 2] == 46 as byte && opr[qi2 - 1] == 99 as byte {
+                        opr[qi2 - 1] = 111 as byte;
+                        opr[qi2] = 0 as byte;
+                    }
+                    fprintf(mf as *void, "%s: %s uya_split_protos.h uya_mirror_globals.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. %s -o %s\n" as *byte, &opr[0] as *byte, &cpr[0] as *byte, &cpr[0] as *byte, &opr[0] as *byte);
+                }
+            }
+            ri = ri + 1;
+        }
+        fputs("clean:\n\trm -f $(OBJS) $(UYA_OUT)\n" as *byte, mf);
+        _ = fclose(mf);
+        return;
+    }
     fputs("OBJS := uya_part1.o uya_part2.o\n" as *byte, mf);
     fputs(".PHONY: all clean\n" as *byte, mf);
     fputs("all: $(UYA_OUT)\n" as *byte, mf);
     fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)\n" as *byte, mf);
-    fputs("uya_part1.o: uya_part1.c\n\t$(CC) -c $(CFLAGS) uya_part1.c -o uya_part1.o\n" as *byte, mf);
-    fputs("uya_part2.o: uya_part2.c\n\t$(CC) -c $(CFLAGS) uya_part2.c -o uya_part2.o\n" as *byte, mf);
+    fputs("uya_part1.o: uya_part1.c\n\t$(CC) -c $(CFLAGS) -I. uya_part1.c -o uya_part1.o\n" as *byte, mf);
+    fputs("uya_part2.o: uya_part2.c\n\t$(CC) -c $(CFLAGS) -I. uya_part2.c -o uya_part2.o\n" as *byte, mf);
     fputs("clean:\n\trm -f $(OBJS) $(UYA_OUT)\n" as *byte, mf);
     _ = fclose(mf);
 }

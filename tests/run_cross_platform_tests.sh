@@ -343,7 +343,7 @@ test_cross_platform_codegen() {
     local exe_file="$BUILD_DIR/test_cross_platform${TARGET_EXE_SUFFIX}"
     
     # 编译 Uya 到 C
-    if ! "$PROJECT_ROOT/bin/uya" --c99 "$uya_test" > "$c_file" 2>&1; then
+    if ! "$PROJECT_ROOT/bin/uya" --c99 "$uya_test" -o "$c_file" 2>&1; then
         echo -e "${RED}✗ Uya 编译失败${NC}"
         return 1
     fi

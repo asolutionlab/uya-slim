@@ -92,6 +92,14 @@ quote_cmd() {
     echo
 }
 
+# 与 bin/uya（main.uya）一致：UYA_SPLIT_C 表示开启且非关闭值、且未指定 UYA_SPLIT_C_DIR 时，默认 .uyacache
+if [ -z "${UYA_SPLIT_C_DIR:-}" ] && [ -n "${UYA_SPLIT_C:-}" ]; then
+    case "$UYA_SPLIT_C" in
+        0|false|no|off) ;;
+        *) export UYA_SPLIT_C_DIR=".uyacache" ;;
+    esac
+fi
+
 # 与 src/main.uya 中 link_split_with_make 对齐：多文件 C（UYA_SPLIT_C_DIR）下用 Makefile 链接
 run_uya_split_make_link() {
     local split_dir="$1"
@@ -165,7 +173,7 @@ usage() {
                      目标平台（默认继承宿主）
   RUNTIME_MODE       hosted / nostdlib
   LINK_MODE          default / static
-  UYA_SPLIT_C_DIR    若设置：C99 多文件输出目录（uya_part1/2.c + Makefile），链接走 make -j
+  UYA_SPLIT_C_DIR    若设置：C99 多文件输出目录 + Makefile，链接走 make -j（默认镜像多 .c；UYA_SPLIT_C_MIRROR=0 为 part1+part2）
   UYA_GCC_JOBS       上述 make 的并行度（默认 4）
   UYA_BOOTSTRAP_COMPARE_BIN  设为 1/true 时，-b 用 cmp 比较两次可执行文件而非 diff C
 
@@ -611,6 +619,8 @@ if [ $COMPILER_EXIT -eq 0 ]; then
 
                     # --nostdlib：编译器在传入 --nostdlib 时已在生成 C 内含 _start 与 main 原型，勿再前置片段（否则重复定义 _start）
                     UYA_O="$BUILD_DIR/uya.o"
+                    # make clean 会删掉 src/build；若中间有步骤未重建目录，此处保证存在（避免 cc 无法创建 .o）
+                    mkdir -p "$BUILD_DIR"
                     if [ "$VERBOSE" = true ]; then
                         echo "编译 $OUTPUT_FILE -> $UYA_O (-nostdlib)"
                     fi
@@ -696,7 +706,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
         if [ -f "$OUTPUT_FILE" ]; then
             echo "目标文件: $OUTPUT_FILE（中间文件，可删除）"
         elif [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
-            echo "多文件 C 输出目录: ${UYA_SPLIT_C_DIR}（uya_part1.c / uya_part2.c + Makefile）"
+            echo "多文件 C 输出目录: ${UYA_SPLIT_C_DIR}（Makefile + uya_part1.c；默认镜像为多 .c，UYA_SPLIT_C_MIRROR=0 时为 uya_part2.c）"
         fi
 
         # 自举对比：默认 diff 两次 C；UYA_SPLIT_C_DIR 或 UYA_BOOTSTRAP_COMPARE_BIN 时改为 cmp 两次可执行文件
@@ -783,6 +793,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                                 exit 1
                             fi
                             UYA_O_B="$BUILD_DIR/uya_bootstrap.o"
+                            mkdir -p "$BUILD_DIR"
                             if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -c "$BOOTSTRAP_C" -o "$UYA_O_B" 2>&1; then
                                 echo -e "${RED}✗ 自举 C 编译为 .o 失败${NC}"
                                 exit 1
