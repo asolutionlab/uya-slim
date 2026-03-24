@@ -81,9 +81,9 @@
 
 ### 4.1 Router
 
-- [ ] `router.uya`：路由表 (method, path_pattern) -> Handler；容量由常量限定（如 MAX_ROUTES），不用字面常数
-- [ ] 路径参数：`/users/:id`、`/posts/:postId/comments/:commentId`；匹配时写入 path_params
-- [ ] 404：路径未匹配；405：路径匹配但方法不允许
+- [x] `router.uya`：路由表 `(method, path_pattern)` 条目 + `router_find_route` 返回命中下标；容量由 `MAX_ROUTES` 限定；首版不存 `Handler`（由调用方按下标映射）
+- [x] 路径参数：`/users/:id` 等；`router_apply_path_params` 写入 `Request.path_params`
+- [x] 404：`router_find_route` 返回 `-1`；405：返回 `-2`（存在同路径模式但方法不符）
 
 ### 4.2 资源组（可选）
 
@@ -91,7 +91,7 @@
 
 ### 4.3 测试
 
-- [ ] `tests/test_http_router.uya`：注册、匹配、path_params 提取、404/405
+- [x] `tests/test_http_router.uya`：注册、匹配、path_params 提取、404/405
 
 ---
 

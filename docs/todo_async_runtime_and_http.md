@@ -1,6 +1,6 @@
 # 异步运行时完善与 HTTP 服务器实现 — 综合待办
 
-**最后更新**：2026-03-22 — `f32`/`f64` 已并入 `AsyncComputeFuture<T>`；C99 泛型方法内 `thread_type_is_*(T)` 折叠；前导 `uya_thread_call_f32`/`f64` 以 **u32/u64 位模式** 与槽位对接，内部用 **union** 转 `float`/`double`，并以 **`float(*)(float)` / `double(*)(double)`** 间接调用（**不可**伪装成 `uint32_t(*)(uint32_t)` 等整型 ABI，否则 `async_compute` 浮点用例会错）。
+**最后更新**：2026-03-24 — Phase 4 `lib/std/http/router.uya` 已落地：`router_find_route` 返回命中下标 / `-1`（404）/ `-2`（405）、`path_matches_pattern` / `router_apply_path_params`、`MAX_ROUTES` 与 `RouterFull`；测试 `tests/test_http_router.uya`。此前：2026-03-22 — `f32`/`f64` 已并入 `AsyncComputeFuture<T>`；C99 泛型方法内 `thread_type_is_*(T)` 折叠；前导 `uya_thread_call_f32`/`f64` 以 **u32/u64 位模式** 与槽位对接，内部用 **union** 转 `float`/`double`，并以 **`float(*)(float)` / `double(*)(double)`** 间接调用（**不可**伪装成 `uint32_t(*)(uint32_t)` 等整型 ABI，否则 `async_compute` 浮点用例会错）。
 
 **关联文档**：
 - [todo_async_loop_await.md](todo_async_loop_await.md) — 循环内 await 实现细节
@@ -168,6 +168,15 @@ Phase 1: Socket API
 - 请求/响应/连接/Context 结构体
 - Handler/Middleware 接口
 - 测试：`test_http_types.uya` 通过
+
+**Phase 3：http.parse** ✅
+- `parse.uya`：请求行、头部、body、Keep-alive `ParseResult`、multipart 等
+- 测试：`test_http_parse.uya` 等
+
+**Phase 4：http.router** ✅
+- `router.uya`：`Router` / `RouteEntry`、`router_add`、`router_find_route`（命中下标；`-1` 未匹配；`-2` 路径有模式但方法不允许）、`path_matches_pattern`、`router_apply_path_params`；`types.uya` 中 `MAX_ROUTES` 与 `RouterFull` 错误
+- 首版路由表不存 `Handler`（避免接口装箱）；命中下标后由业务自行映射处理函数
+- 测试：`test_http_router.uya`
 
 ### 第四步：Phase 9-10 异步 HTTP 服务器（约 6 周）
 

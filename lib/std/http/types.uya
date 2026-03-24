@@ -20,6 +20,7 @@ export error InvalidToken;
 export error InvalidBoundary;
 export error TooManyParts;
 export error ConnectionClosed;
+export error RouterFull;
 
 // ============================================================
 // 常量
@@ -32,6 +33,8 @@ export const MAX_HEADER_VALUE_SIZE: i32 = 256;
 export const MAX_URI_LENGTH: i32 = 256;
 export const MAX_BODY_SIZE: i32 = 65536;
 export const MAX_MULTIPART_PARTS: i32 = 16;
+/// 路由表最大条数（与 RouteEntry 数组一致，勿在业务代码中写死字面量）
+export const MAX_ROUTES: i32 = 32;
 
 // ============================================================
 // HTTP 方法

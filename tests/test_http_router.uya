@@ -1,0 +1,79 @@
+// test_http_router.uya — HTTP 路由匹配与 path 参数
+
+use std.http.types;
+use std.http.router;
+use std.testing.assert_eq_i32;
+
+fn slice_eq(a: &[byte], b: &[byte]) bool {
+    if a.len != b.len {
+        return false;
+    }
+    var i: usize = 0;
+    while i < a.len {
+        if a.ptr[i] != b.ptr[i] {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+test "path_matches_literal" {
+    const ok: bool = path_matches_pattern(&"/a/b"[0: 4], &"/a/b"[0: 4]);
+    if !ok {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "path_matches_params" {
+    const ok: bool = path_matches_pattern(&"/users/42"[0: 9], &"/users/:id"[0: 10]);
+    if !ok {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "path_mismatch_segment_count" {
+    const bad: bool = path_matches_pattern(&"/users"[0: 6], &"/users/:id"[0: 10]);
+    if bad {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "router_find_hit_and_404_405" {
+    var rt: Router = router_new();
+    try router_add(&rt, Method.GET, &"/users/:id"[0: 10]);
+    const idx0: i32 = router_find_route(&rt, Method.GET, &"/users/7"[0: 8]);
+    try assert_eq_i32(idx0, 0);
+    const n404: i32 = router_find_route(&rt, Method.GET, &"/other"[0: 6]);
+    try assert_eq_i32(n404, -1);
+    try router_add(&rt, Method.POST, &"/api"[0: 4]);
+    const n405: i32 = router_find_route(&rt, Method.GET, &"/api"[0: 4]);
+    try assert_eq_i32(n405, -2);
+}
+
+test "router_apply_path_params" {
+    var raw: [byte: 4] = [];
+    const empty: &[byte] = raw[0: 0];
+    var req: Request = Request{
+        method: Method.GET,
+        path: [],
+        path_len: 0,
+        path_params: [],
+        path_param_count: 0,
+        query: [],
+        query_count: 0,
+        headers: [],
+        header_count: 0,
+        body: empty,
+    };
+    const path: &[byte] = &"/users/42"[0: 9];
+    const pat: &[byte] = &"/users/:id"[0: 10];
+    try router_apply_path_params(&req, path, pat);
+    try assert_eq_i32(req.path_param_count, 1);
+    if !slice_eq(req.path_params[0].key, &"id"[0: 2]) {
+        try assert_eq_i32(0, 1);
+    }
+    if !slice_eq(req.path_params[0].value, &"42"[0: 2]) {
+        try assert_eq_i32(0, 1);
+    }
+}

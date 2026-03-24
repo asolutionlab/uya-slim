@@ -18,4 +18,5 @@ test "constants" {
     try assert_eq_i32(MAX_QUERY_PARAMS, 16);
     try assert_eq_i32(MAX_URI_LENGTH, 256);
     try assert_eq_i32(MAX_BODY_SIZE, 65536);
+    try assert_eq_i32(MAX_ROUTES, 32);
 }
