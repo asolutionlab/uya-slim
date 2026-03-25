@@ -246,7 +246,7 @@ export fn main() i32 {
     if strcmp(first_arg, "-v" as *byte) == 0 || 
        strcmp(first_arg, "--version" as *byte) == 0 ||
        strcmp(first_arg, "version" as *byte) == 0 {
-        fprintf(libc.stderr, "Uya v0.7.4\n" as *byte);
+        fprintf(libc.stderr, "Uya v0.8.0\n" as *byte);
         return 0;
     }
     

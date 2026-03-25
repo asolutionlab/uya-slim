@@ -1,5 +1,28 @@
 # Uya 变更日志
 
+## v0.8.0 - 里程碑：异步运行时、std.http、多文件 C99 与工具链
+
+> 发布日期：2026-03-25
+
+### 概要
+
+自 **v0.7.4** 起的里程碑版本（**~379** 次提交），`make check` **658** 项测试通过。
+
+### 新特性与重大改进
+
+- **异步运行时**：`@async_fn` 状态机大小与转换验证、多 fd 调度、`MpscChannel` / `RingQueue`、`ThreadPool` 扩展；泛型异步与 C99 单态修复。
+- **std.http**：TCP、解析、路由、阻塞服务器、Keep-alive / 流水线、multipart、JWT（HS256 + `exp`）与 SHA-256（无 OpenSSL）；压测程序与 Go 对照基准。
+- **C99 后端**：默认多文件输出与镜像 TU、`--no-split-c`；切片形参按值；vtable 与自举对比修复；codegen/SIMD 性能与缓存。
+- **工具链**：`--nostdlib` 与 Makefile/种子流程；`build` / `run` / `test` 子命令；默认更大堆栈、默认 `--safety-proof`；字符串 `\xHH` / `\uXXXX` 转义。
+- **标准库**：`IAllocator` / `Arena`、`Vec` / `HashMap` 等与分配器协同；`std.json` 编码写路径优化。
+
+### 文档与发布
+
+- 新增 `docs/releases/RELEASE_v0.8.0.md`
+- 编译器 `--version` / 帮助中的版本字符串更新为 **v0.8.0**
+
+---
+
 ## v0.7.4 - P1/P2 可选任务实现
 
 > 发布日期：2026-02-24

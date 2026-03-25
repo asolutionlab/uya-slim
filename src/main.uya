@@ -311,7 +311,7 @@ fn print_usage(program_name: &byte) void {
     var name: &byte = program_name;
     if name == null { name = "uya" as *byte; }
     fprintf(libc.stderr, "Uya 编译器 - 零GC系统编程语言\n" as *byte);
-    fprintf(libc.stderr, "版本：v0.7.4\n" as *byte);
+    fprintf(libc.stderr, "版本：v0.8.0\n" as *byte);
     fprintf(libc.stderr, "\n用法:\n" as *byte);
     fprintf(libc.stderr, "  %s build <文件> [-o <输出>] [选项]  编译为可执行文件\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run <文件> [选项] [-- <参数>...]  编译并运行\n" as *byte, name as *byte);
