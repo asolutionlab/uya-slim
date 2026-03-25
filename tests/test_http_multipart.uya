@@ -77,3 +77,53 @@ test "parse_multipart_boundary_len_over_200" {
         }
     }
 }
+
+test "parse_multipart_too_many_parts" {
+    var raw: [byte: 900] = [];
+    var r: usize = 0;
+    const open: &[byte] = &"--b\r\n"[0: 5];
+    var oi: usize = 0;
+    while oi < open.len {
+        raw[r] = open.ptr[oi];
+        r = r + 1;
+        oi = oi + 1;
+    }
+    const pfx: &[byte] = &"Content-Disposition: form-data; name=\""[0: 38];
+    const sfx: &[byte] = &"\"\r\n\r\nz\r\n--b\r\n"[0: 13];
+    var pi: i32 = 0;
+    while pi < 16 {
+        var hi: usize = 0;
+        while hi < pfx.len {
+            raw[r] = pfx.ptr[hi];
+            r = r + 1;
+            hi = hi + 1;
+        }
+        var nc: byte = 0 as byte;
+        if pi < 10 {
+            nc = (48 + pi) as byte;
+        } else {
+            nc = (97 + (pi - 10)) as byte;
+        }
+        raw[r] = nc;
+        r = r + 1;
+        var ti: usize = 0;
+        while ti < sfx.len {
+            raw[r] = sfx.ptr[ti];
+            r = r + 1;
+            ti = ti + 1;
+        }
+        pi = pi + 1;
+    }
+    // 16 段已写满；再追加一字节使下一轮 `while pos < body.len` 成立，从而在 `part_count >= 16` 时返回 TooManyParts
+    raw[r] = 'C' as byte;
+    r = r + 1;
+    const buf: &[byte] = raw[0: r];
+    const boundary: &[byte] = &"b"[0: 1];
+    const p: !MultipartView = parse_multipart(buf, boundary);
+    match p {
+        error.TooManyParts => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}
