@@ -1,6 +1,6 @@
 # 异步运行时完善与 HTTP 服务器实现 — 综合待办
 
-**最后更新**：2026-03-25 — ThreadPool `THREAD_POOL_MAX_WORKERS` / `THREAD_POOL_MAX_PENDING` 提升至 32，与 `_workers` / `pending_slots` 数组对齐；此前 2026-03-24 — Phase 4 `lib/std/http/router.uya` 已落地：`router_find_route` 返回命中下标 / `-1`（404）/ `-2`（405）、`path_matches_pattern` / `router_apply_path_params`、`MAX_ROUTES` 与 `RouterFull`；测试 `tests/test_http_router.uya`。此前：2026-03-22 — `f32`/`f64` 已并入 `AsyncComputeFuture<T>`；C99 泛型方法内 `thread_type_is_*(T)` 折叠；前导 `uya_thread_call_f32`/`f64` 以 **u32/u64 位模式** 与槽位对接，内部用 **union** 转 `float`/`double`，并以 **`float(*)(float)` / `double(*)(double)`** 间接调用（**不可**伪装成 `uint32_t(*)(uint32_t)` 等整型 ABI，否则 `async_compute` 浮点用例会错）。
+**最后更新**：2026-03-25 — HTTP Phase 5：`IncompleteRequest` + `find_crlf_or_incomplete` / 体未收齐时流式续读；`http_conn_read_parse`、`http_connbuf_shift`、`HTTP_CONN_READ_CAP` 与多 `recv` 的 `http_recv_parse_request`；测试 `http_keepalive_pipeline_two_requests`、`parse_post_body_incomplete`。此前同日 — ThreadPool `THREAD_POOL_MAX_WORKERS` / `THREAD_POOL_MAX_PENDING` 提升至 32；此前 2026-03-24 — Phase 4 `lib/std/http/router.uya` 已落地：`router_find_route` 返回命中下标 / `-1`（404）/ `-2`（405）、`path_matches_pattern` / `router_apply_path_params`、`MAX_ROUTES` 与 `RouterFull`；测试 `tests/test_http_router.uya`。此前：2026-03-22 — `f32`/`f64` 已并入 `AsyncComputeFuture<T>`；C99 泛型方法内 `thread_type_is_*(T)` 折叠；前导 `uya_thread_call_f32`/`f64` 以 **u32/u64 位模式** 与槽位对接，内部用 **union** 转 `float`/`double`，并以 **`float(*)(float)` / `double(*)(double)`** 间接调用（**不可**伪装成 `uint32_t(*)(uint32_t)` 等整型 ABI，否则 `async_compute` 浮点用例会错）。
 
 **关联文档**：
 - [todo_async_loop_await.md](todo_async_loop_await.md) — 循环内 await 实现细节
@@ -177,6 +177,11 @@ Phase 1: Socket API
 - `router.uya`：`Router` / `RouteEntry`、`router_add`、`router_find_route`（命中下标；`-1` 未匹配；`-2` 路径有模式但方法不允许）、`path_matches_pattern`、`router_apply_path_params`；`types.uya` 中 `MAX_ROUTES` 与 `RouterFull` 错误
 - 首版路由表不存 `Handler`（避免接口装箱）；命中下标后由业务自行映射处理函数
 - 测试：`test_http_router.uya`
+
+**Phase 5：http.server（进行中）**
+- `server.uya`：`http_conn_read_parse`（`IncompleteRequest` 时续读）、`http_connbuf_shift`（已消耗字节前移）、`HTTP_CONN_READ_CAP` 与 `http_recv_parse_request` 内部多 `recv`
+- `parse.uya`：首行/头部行末无完整 CRLF 或 body 未收齐时返回 `error.IncompleteRequest`（`find_crlf_or_incomplete`）
+- 测试：`test_http_server.uya`（含流水线 Keep-alive 双 GET）、`parse_post_body_incomplete`
 
 ### 第四步：Phase 9-10 异步 HTTP 服务器（约 6 周）
 

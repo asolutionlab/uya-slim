@@ -102,8 +102,8 @@
 - [x] `server.uya`：`HttpServer`、`ServerConfig`；`http_server_listen` / `http_server_accept` / `http_server_close`（`ServerMode.Blocking` + 127.0.0.1；`port==0` 时 `getsockname` 填端口）
 - [x] `http_recv_parse_request`（单次 read ≤8KiB + `parse`）、`http_send_response`（`text/plain` + `Content-Length`）、`http_tcp_connect_loopback`（测试用）
 - [ ] 首版路线图：阻塞 accept + 每连接一线程；当前标准库为原语级 API，无自动「每连接一线程」封装
-- [ ] 每连接：读 buffer -> parse -> `router`/Handler -> 写 Response；Keep-alive 多轮 parse
-- [ ] 错误路径：parse 失败 / Handler 错误 -> 统一 4xx/5xx（当前测试仅覆盖 200 路由）
+- [x] 每连接：读 buffer -> parse -> `router`/Handler -> 写 Response；Keep-alive 多轮 parse（`http_conn_read_parse` + `http_connbuf_shift` + `IncompleteRequest` / 多次 `recv`）
+- [ ] 错误路径：parse 失败 / Handler 错误 -> 统一 4xx/5xx（`http_send_response` 已支持 400/404/405/500；测试仍侧重 200 成功路径）
 
 ### 5.2 epoll 预留
 
@@ -125,7 +125,7 @@
 ### 6.1 覆盖
 
 - [ ] 所有 !T 错误路径有测试（parse、router、get_header、get_bearer_token）
-- [ ] 多请求 Keep-alive 测试
+- [x] 多请求 Keep-alive 测试（`tests/test_http_server.uya` 流水线双 GET + `parse_post_body_incomplete`）
 - [ ] 预期编译失败：`error_http_*.uya`（若有）
 
 ### 6.2 示例

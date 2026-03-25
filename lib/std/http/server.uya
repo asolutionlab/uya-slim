@@ -7,6 +7,8 @@ use std.http.parse;
 use libc.syscall;
 
 const HTTP_RECV_BUF: usize = 8192;
+/// 单次连接读缓冲上限：须覆盖 `MAX_BODY_SIZE` 量级请求体 + 头（与 `parse` 一致）
+export const HTTP_CONN_READ_CAP: usize = (65536 + 4096) as usize;
 
 export struct HttpServer {
     listen_fd: i32,
@@ -83,15 +85,59 @@ export fn http_tcp_connect_loopback(port: u16) !i32 {
     return fd;
 }
 
-/// 从连接读取并解析至多一个 HTTP 请求（单次 recv 至多 8KiB，适合 GET/小请求）
-export fn http_recv_parse_request(conn_fd: i32) !ParseResult {
-    var buf: [byte: HTTP_RECV_BUF] = [];
-    const n: isize = try sys_read(conn_fd, &buf[0] as *byte, HTTP_RECV_BUF);
-    if n <= 0 {
-        return error.ConnectionClosed;
+/// 去掉已解析的 `consumed` 字节，将剩余数据前移，供 Keep-alive 同缓冲区内解析下一请求。
+export fn http_connbuf_shift(base: &byte, filled: &usize, consumed: usize) void {
+    if consumed >= *filled {
+        *filled = 0;
+        return;
     }
-    const total: usize = n as usize;
-    return parse(buf[0: total]);
+    const rem: usize = *filled - consumed;
+    var i: usize = 0;
+    while i < rem {
+        base[i] = base[consumed + i];
+        i = i + 1;
+    }
+    *filled = rem;
+}
+
+/// 在调用方持有的缓冲上读满至少一个完整请求；`filled` 为已有字节数（入参/出参）。
+export fn http_conn_read_parse(conn_fd: i32, base: &byte, cap: usize, filled: &usize) !ParseResult {
+    while true {
+        const cur: usize = *filled;
+        if cur > cap {
+            return error.PayloadTooLarge;
+        }
+        const sl: &[byte] = base[0: cur];
+        const p: !ParseResult = parse(sl);
+        match p {
+            error.IncompleteRequest => {
+                if cur >= cap {
+                    return error.PayloadTooLarge;
+                }
+                var room: usize = cap - cur;
+                var chunk: usize = HTTP_RECV_BUF;
+                if chunk > room {
+                    chunk = room;
+                }
+                const dst: *byte = @ptr_from_usize(@usize_from_ptr(base as &void) + cur) as *byte;
+                const n: isize = try sys_read(conn_fd, dst, chunk);
+                if n <= 0 {
+                    return error.ConnectionClosed;
+                }
+                *filled = cur + (n as usize);
+            }
+            pr => {
+                return pr;
+            }
+        }
+    }
+}
+
+/// 从连接读取并解析至多一个完整请求（内部缓冲，可多次 `recv` 直至 `parse` 成功）。
+export fn http_recv_parse_request(conn_fd: i32) !ParseResult {
+    var buf: [byte: HTTP_CONN_READ_CAP] = [];
+    var filled: usize = 0;
+    return http_conn_read_parse(conn_fd, &buf[0] as &byte, HTTP_CONN_READ_CAP, &filled);
 }
 
 fn copy_slice_into_hdr(hdr: &byte, start: usize, s: &[byte]) usize {

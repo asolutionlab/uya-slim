@@ -75,6 +75,26 @@ test "parse_query" {
     try assert_eq_i32(pr.request.query_count, 2);
 }
 
+test "parse_post_body_incomplete" {
+    var raw: [byte: 256] = [];
+    const head: &[byte] = &"POST /api HTTP/1.1\r\nContent-Length: 4\r\n\r\n"[0: 41];
+    var r: usize = 0;
+    var i: usize = 0;
+    while i < head.len {
+        raw[r] = head.ptr[i];
+        r = r + 1;
+        i = i + 1;
+    }
+    const buf: &[byte] = raw[0: r];
+    const p: !ParseResult = parse(buf);
+    match p {
+        error.IncompleteRequest => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}
+
 test "parse_consumed_keepalive" {
     var raw: [byte: 256] = [];
     const r1: &[byte] = &"GET /a HTTP/1.1\r\n\r\n"[0: 19];

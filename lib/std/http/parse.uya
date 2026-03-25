@@ -48,6 +48,21 @@ fn find_crlf(buf: &[byte], start: usize) !usize {
     return error.InvalidRequest;
 }
 
+/// 与 `find_crlf` 相同，但在缓冲区末尾仍未见到完整 `\r\n` 时返回 `IncompleteRequest`（流式读入更多字节后再解析）。
+fn find_crlf_or_incomplete(buf: &[byte], start: usize) !usize {
+    var i: usize = start;
+    while i + 1 < buf.len {
+        if buf.ptr[i] == 13 as byte && buf.ptr[i + 1] == 10 as byte {
+            return i;
+        }
+        i = i + 1;
+    }
+    if buf.len > start {
+        return error.IncompleteRequest;
+    }
+    return error.InvalidRequest;
+}
+
 fn parse_first_line(buf: &[byte], line_start: usize, line_end: usize) !FirstLineParts {
     var sp1: usize = line_start;
     while sp1 < line_end && buf.ptr[sp1] != ' ' as byte {
@@ -252,10 +267,10 @@ fn find_content_length(req: &Request) usize {
 
 /// 解析 HTTP/1.1 请求；`request.body` 为指向 `buf` 内部子切片；`consumed` 为本请求在 `buf` 中占用字节数。
 export fn parse(buf: &[byte]) !ParseResult {
-    if buf.len < 2 {
-        return error.InvalidRequest;
+    if buf.len == 0 {
+        return error.IncompleteRequest;
     }
-    const line1_end: usize = try find_crlf(buf, 0);
+    const line1_end: usize = try find_crlf_or_incomplete(buf, 0);
     const fl: FirstLineParts = try parse_first_line(buf, 0, line1_end);
     const method_slice: &[byte] = buf[fl.method_start: fl.method_len];
     const method: Method = try parse_method_bytes(&method_slice);
@@ -275,7 +290,7 @@ export fn parse(buf: &[byte]) !ParseResult {
     try set_path_and_query(buf, fl.uri_start, fl.uri_len, &req);
     var pos: usize = line1_end + 2;
     while pos < buf.len {
-        const le: usize = try find_crlf(buf, pos);
+        const le: usize = try find_crlf_or_incomplete(buf, pos);
         if le == pos {
             pos = le + 2;
             break;
@@ -294,7 +309,7 @@ export fn parse(buf: &[byte]) !ParseResult {
         return error.PayloadTooLarge;
     }
     if body_start + content_length > buf.len {
-        return error.InvalidRequest;
+        return error.IncompleteRequest;
     }
     req.body = buf[body_start: content_length];
     const consumed: usize = body_start + content_length;

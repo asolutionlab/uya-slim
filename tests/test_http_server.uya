@@ -35,7 +35,7 @@ fn response_has_subslice(hay: &[byte], needle: &[byte]) bool {
 
 fn run_client_loopback(port: u16) void {
     const conn_res: !i32 = http_tcp_connect_loopback(port);
-    const cfd: i32 = conn_res catch { -1 };
+    const cfd: i32 = conn_res catch { 0 - 1 };
     if cfd < 0 {
         sys_exit(1);
     }
@@ -44,7 +44,7 @@ fn run_client_loopback(port: u16) void {
     var rb: [byte: 512] = [];
     var total: usize = 0;
     while total < 512 {
-        const n: isize = sys_read(cfd, &rb[total] as *byte, 512 - total) catch { -1 };
+        const n: isize = sys_read(cfd, &rb[total] as *byte, 512 - total) catch { 0 - 1 };
         if n <= 0 {
             break;
         }
@@ -67,6 +67,57 @@ fn run_client_loopback(port: u16) void {
     sys_exit(0);
 }
 
+fn run_client_pipeline_two_gets(port: u16) void {
+    const conn_res: !i32 = http_tcp_connect_loopback(port);
+    const cfd: i32 = conn_res catch { 0 - 1 };
+    if cfd < 0 {
+        sys_exit(1);
+    }
+    const r1: &[byte] = &"GET / HTTP/1.1\r\nHost: x\r\n\r\n"[0: 27];
+    const r2: &[byte] = &"GET /b HTTP/1.1\r\nHost: x\r\n\r\n"[0: 28];
+    var req: [byte: 64] = [0: 64];
+    var p: usize = 0;
+    var i: usize = 0;
+    while i < r1.len {
+        req[p] = r1.ptr[i];
+        p = p + 1;
+        i = i + 1;
+    }
+    i = 0;
+    while i < r2.len {
+        req[p] = r2.ptr[i];
+        p = p + 1;
+        i = i + 1;
+    }
+    _ = sys_write(cfd, &req[0] as *const byte, p);
+    var rb: [byte: 512] = [0: 512];
+    var total: usize = 0;
+    var saw_one: i32 = 0;
+    var saw_two: i32 = 0;
+    while total < 512 {
+        const n: isize = sys_read(cfd, &rb[total] as *byte, 512 - total) catch { 0 - 1 };
+        if n <= 0 {
+            break;
+        }
+        total = total + (n as usize);
+        const got: &[byte] = rb[0: total];
+        if response_has_subslice(got, &"one"[0: 3]) {
+            saw_one = 1;
+        }
+        if response_has_subslice(got, &"two"[0: 3]) {
+            saw_two = 1;
+        }
+        if saw_one != 0 && saw_two != 0 {
+            break;
+        }
+    }
+    _ = sys_close(cfd);
+    if saw_one == 0 || saw_two == 0 {
+        sys_exit(5);
+    }
+    sys_exit(0);
+}
+
 test "http_blocking_listen_accept_get" {
     var cfg: ServerConfig = ServerConfig{
         mode: ServerMode.Blocking,
@@ -83,7 +134,7 @@ test "http_blocking_listen_accept_get" {
         try assert_eq_i32(0, 1);
     }
 
-    var empty_raw: [byte: 4] = [];
+    var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
     const empty_body: &[byte] = empty_raw[0: 0];
     var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
     var rt: Router = router_new();
@@ -94,6 +145,58 @@ test "http_blocking_listen_accept_get" {
     const idx: i32 = router_find_route_request(&rt, Method.GET, &pr.request);
     if idx == 0 {
         _ = http_send_response(sfd, Status.OK, &"ok"[0: 2]) catch {};
+    } else {
+        _ = http_send_response(sfd, Status.NotFound, empty_body) catch {};
+    }
+    _ = sys_close(sfd);
+
+    var st: i32 = 0;
+    _ = try sys_waitpid(child_pid, &st, 0);
+    if (st & 0xff) != 0 {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32((st >> 8) & 0xff, 0);
+    http_server_close(&srv);
+}
+
+test "http_keepalive_pipeline_two_requests" {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 8,
+        port: 0,
+        host: [],
+    };
+    const srv: HttpServer = try http_server_listen(&cfg);
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        run_client_pipeline_two_gets(srv.port);
+    }
+    if child_pid <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+
+    var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
+    const empty_body: &[byte] = empty_raw[0: 0];
+    var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
+    var rt: Router = router_new();
+    _ = try router_add(&rt, Method.GET, &"/"[0: 1]);
+    _ = try router_add(&rt, Method.GET, &"/b"[0: 2]);
+    const conn: Conn = try http_server_accept(&srv_tmp);
+    const sfd: i32 = conn.fd;
+    var buf: [byte: 8192] = [];
+    var filled: usize = 0;
+    const pr1: ParseResult = try http_conn_read_parse(sfd, &buf[0] as &byte, 8192, &filled);
+    const idx1: i32 = router_find_route_request(&rt, Method.GET, &pr1.request);
+    if idx1 == 0 {
+        _ = http_send_response(sfd, Status.OK, &"one"[0: 3]) catch {};
+    } else {
+        _ = http_send_response(sfd, Status.NotFound, empty_body) catch {};
+    }
+    http_connbuf_shift(&buf[0] as &byte, &filled, pr1.consumed);
+    const pr2: ParseResult = try http_conn_read_parse(sfd, &buf[0] as &byte, 8192, &filled);
+    const idx2: i32 = router_find_route_request(&rt, Method.GET, &pr2.request);
+    if idx2 == 1 {
+        _ = http_send_response(sfd, Status.OK, &"two"[0: 3]) catch {};
     } else {
         _ = http_send_response(sfd, Status.NotFound, empty_body) catch {};
     }

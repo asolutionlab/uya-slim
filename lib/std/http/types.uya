@@ -20,6 +20,7 @@ export error InvalidToken;
 export error InvalidBoundary;
 export error TooManyParts;
 export error ConnectionClosed;
+export error IncompleteRequest;
 export error RouterFull;
 
 // ============================================================
