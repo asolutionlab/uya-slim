@@ -91,6 +91,87 @@ fn segment_span_pat_known_entry(e: &RouteEntry, pat_len: usize, which: usize) Se
     return SegSpan{ start: 0, end: 0 };
 }
 
+fn segment_count_req_path(req: &Request) usize {
+    const s_len: usize = req.path_len as usize;
+    var c: usize = 0;
+    var i: usize = 0;
+    while i < s_len {
+        if req.path[i] == '/' as byte {
+            i = i + 1;
+            continue;
+        }
+        c = c + 1;
+        while i < s_len && req.path[i] != '/' as byte {
+            i = i + 1;
+        }
+    }
+    return c;
+}
+
+fn segment_span_req_path(req: &Request, which: usize) SegSpan {
+    const s_len: usize = req.path_len as usize;
+    var c: usize = 0;
+    var i: usize = 0;
+    while i < s_len {
+        if req.path[i] == '/' as byte {
+            i = i + 1;
+            continue;
+        }
+        if c == which {
+            const start: usize = i;
+            while i < s_len && req.path[i] != '/' as byte {
+                i = i + 1;
+            }
+            return SegSpan{ start: start, end: i };
+        }
+        c = c + 1;
+        while i < s_len && req.path[i] != '/' as byte {
+            i = i + 1;
+        }
+    }
+    return SegSpan{ start: 0, end: 0 };
+}
+
+fn pat_literal_eq_path_req(e: &RouteEntry, ps: SegSpan, req: &Request, qs: SegSpan) bool {
+    const plen: usize = ps.end - ps.start;
+    const qlen: usize = qs.end - qs.start;
+    if plen != qlen {
+        return false;
+    }
+    var i: usize = 0;
+    while i < plen {
+        if e.pattern[ps.start + i] != req.path[qs.start + i] {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn path_matches_pattern_request_entry(req: &Request, e: &RouteEntry) bool {
+    const pl: usize = e.pattern_len as usize;
+    if segment_count_req_path(req) != segment_count_pat_entry(e, pl) {
+        return false;
+    }
+    const n: usize = segment_count_req_path(req);
+    var si: usize = 0;
+    while si < n {
+        const ps: SegSpan = segment_span_pat_known_entry(e, pl, si);
+        const qs: SegSpan = segment_span_req_path(req, si);
+        if ps.end > ps.start && e.pattern[ps.start] == ':' as byte {
+            if qs.end <= qs.start {
+                return false;
+            }
+        } else {
+            if !pat_literal_eq_path_req(e, ps, req, qs) {
+                return false;
+            }
+        }
+        si = si + 1;
+    }
+    return true;
+}
+
 fn slice_bytes_eq(a: &[byte], b: &[byte]) bool {
     if a.len != b.len {
         return false;
@@ -250,6 +331,25 @@ export fn router_find_route(r: &Router, method: Method, path: &[byte]) i32 {
     var ri: i32 = 0;
     while ri < r.count {
         if path_matches_pattern_entry(path, &r.entries[ri]) {
+            if r.entries[ri].method == method {
+                return ri;
+            }
+            path_matched_wrong_method = 1;
+        }
+        ri = ri + 1;
+    }
+    if path_matched_wrong_method != 0 {
+        return -2;
+    }
+    return -1;
+}
+
+/// 与 `router_find_route` 相同，路径来自 `Request.path`（避免对定长 path 数组做切片）
+export fn router_find_route_request(r: &Router, method: Method, req: &Request) i32 {
+    var path_matched_wrong_method: i32 = 0;
+    var ri: i32 = 0;
+    while ri < r.count {
+        if path_matches_pattern_request_entry(req, &r.entries[ri]) {
             if r.entries[ri].method == method {
                 return ri;
             }

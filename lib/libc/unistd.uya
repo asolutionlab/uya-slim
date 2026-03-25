@@ -128,9 +128,9 @@ export extern "libc" fn _exit(status: i32) void {
     // 不会执行到这里
 }
 
-// waitpid - 等待子进程状态
+// waitpid - 等待子进程状态（Linux x86_64：syscall 61 为 wait4，须传 rusage=NULL）
 export extern "libc" fn waitpid(pid: i32, status: &i32, options: i32) i32 {
-    const result: !i64 = @syscall(SYS_waitpid, pid as i64, status as i64, options as i64);
+    const result: !i64 = @syscall(SYS_waitpid, pid as i64, status as i64, options as i64, 0 as i64);
     const ret: i64 = result catch {
         errno = ECHILD;
         return 0 - 1;

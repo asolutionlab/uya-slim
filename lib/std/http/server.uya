@@ -1,0 +1,154 @@
+// lib/std/http/server.uya — 阻塞式 HTTP 服务最小原语（Phase 5）
+//
+// 模块路径：use std.http.server
+
+use std.http.types;
+use std.http.parse;
+use libc.syscall;
+
+const HTTP_RECV_BUF: usize = 8192;
+
+export struct HttpServer {
+    listen_fd: i32,
+    port: u16,
+}
+
+fn htons_host_to_be(p: u16) u16 {
+    return ((p & (0xFF as u16)) << 8) | ((p >> 8) & (0xFF as u16));
+}
+
+fn fill_sockaddr_loopback_16(port_host: u16, out: &byte) void {
+    var i: usize = 0;
+    while i < 16 {
+        out[i] = 0;
+        i = i + 1;
+    }
+    out[0] = 2;
+    out[1] = 0;
+    const pnet: u16 = htons_host_to_be(port_host);
+    out[2] = (pnet & 0xFF) as byte;
+    out[3] = ((pnet >> 8) & 0xFF) as byte;
+    out[4] = 127;
+    out[5] = 0;
+    out[6] = 0;
+    out[7] = 1;
+}
+
+fn read_port_from_sockaddr_16(addr: &byte) u16 {
+    const pnet: u16 = addr[2] as u16 | ((addr[3] as u16) << 8);
+    return ((pnet & (0xFF as u16)) << 8) | ((pnet >> 8) & (0xFF as u16));
+}
+
+/// 绑定 `127.0.0.1`；`cfg.port == 0` 时由内核分配端口，可从返回的 `HttpServer.port` 读取。
+export fn http_server_listen(cfg: &ServerConfig) !HttpServer {
+    if cfg.mode != ServerMode.Blocking {
+        return error.InvalidRequest;
+    }
+    const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    var one: i32 = 1;
+    _ = try sys_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one as &void, 4 as u32);
+    var addr: [byte: 16] = [];
+    fill_sockaddr_loopback_16(cfg.port, &addr[0] as &byte);
+    _ = try sys_bind(fd, &addr[0] as &void, 16 as u32);
+    _ = try sys_listen(fd, 128);
+    var port_out: u16 = cfg.port;
+    if cfg.port == 0 {
+        var alen: u32 = 16;
+        var out: [byte: 16] = [];
+        _ = try sys_getsockname(fd, &out[0] as &void, &alen);
+        port_out = read_port_from_sockaddr_16(&out[0] as &byte);
+    }
+    return HttpServer{ listen_fd: fd, port: port_out };
+}
+
+export fn http_server_close(srv: &HttpServer) void {
+    if srv.listen_fd >= 0 {
+        _ = sys_close(srv.listen_fd) catch {};
+    }
+}
+
+export fn http_server_accept(srv: &HttpServer) !Conn {
+    var alen: u32 = 16;
+    var peer: [byte: 16] = [];
+    const cfd: i32 = try sys_accept(srv.listen_fd, &peer[0] as &void, &alen);
+    return Conn{ fd: cfd };
+}
+
+/// 客户端连接本机 `127.0.0.1:port`（测试或工具用）
+export fn http_tcp_connect_loopback(port: u16) !i32 {
+    const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    var addr: [byte: 16] = [];
+    fill_sockaddr_loopback_16(port, &addr[0] as &byte);
+    _ = try sys_connect(fd, &addr[0] as &void, 16 as u32);
+    return fd;
+}
+
+/// 从连接读取并解析至多一个 HTTP 请求（单次 recv 至多 8KiB，适合 GET/小请求）
+export fn http_recv_parse_request(conn_fd: i32) !ParseResult {
+    var buf: [byte: HTTP_RECV_BUF] = [];
+    const n: isize = try sys_read(conn_fd, &buf[0] as *byte, HTTP_RECV_BUF);
+    if n <= 0 {
+        return error.ConnectionClosed;
+    }
+    const total: usize = n as usize;
+    return parse(buf[0: total]);
+}
+
+fn copy_slice_into_hdr(hdr: &byte, start: usize, s: &[byte]) usize {
+    var pos: usize = start;
+    var i: usize = 0;
+    while i < s.len {
+        hdr[pos] = s.ptr[i];
+        pos = pos + 1;
+        i = i + 1;
+    }
+    return pos;
+}
+
+fn append_usize_dec_hdr(hdr: &byte, start: usize, n: usize) usize {
+    var pos: usize = start;
+    if n == 0 {
+        hdr[pos] = '0' as byte;
+        return pos + 1;
+    }
+    var tmp: [byte: 24] = [];
+    var t: usize = 0;
+    var x: usize = n;
+    while x > 0 && t < 24 {
+        tmp[t] = ((x % 10) as u32 + 48) as byte;
+        t = t + 1;
+        x = x / 10;
+    }
+    while t > 0 {
+        t = t - 1;
+        if t >= 0 && t < 24 {
+            hdr[pos] = tmp[t];
+        }
+        pos = pos + 1;
+    }
+    return pos;
+}
+
+/// 发送 `HTTP/1.1` 响应（`Content-Type: text/plain`）
+export fn http_send_response(conn_fd: i32, status: Status, body: &[byte]) !void {
+    var hdr: [byte: 512] = [];
+    var pos: usize = 0;
+    if status == Status.OK {
+        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 200 OK\r\n"[0: 17]);
+    } else if status == Status.BadRequest {
+        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 400 Bad Request\r\n"[0: 26]);
+    } else if status == Status.NotFound {
+        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 404 Not Found\r\n"[0: 23]);
+    } else if status == Status.MethodNotAllowed {
+        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 405 Method Not Allowed\r\n"[0: 35]);
+    } else {
+        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 500 Internal Server Error\r\n"[0: 37]);
+    }
+    pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"Content-Length: "[0: 16]);
+    pos = append_usize_dec_hdr(&hdr[0] as &byte, pos, body.len);
+    pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"\r\nContent-Type: text/plain\r\n\r\n"[0: 33]);
+    _ = try sys_write(conn_fd, &hdr[0] as *const byte, pos);
+    if body.len > 0 {
+        _ = try sys_write(conn_fd, body.ptr, body.len);
+    }
+}

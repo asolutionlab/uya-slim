@@ -68,7 +68,8 @@ const SYS_rt_sigaction: i64 = 13;
 const SYS_rt_sigprocmask: i64 = 14;
 const SYS_rt_sigpending: i64 = 127;
 const SYS_rt_sigsuspend: i64 = 130;
-const SYS_kill: i64 = 62;
+/// 与 libc.syscall 中 SYS_kill 同号；本模块单独命名，避免合并 C 时重复定义 const SYS_kill
+const SYS_kill_sig: i64 = 62;
 const SYS_tgkill: i64 = 234;
 const SYS_alarm: i64 = 37;
 const SYS_pause: i64 = 34;
@@ -179,7 +180,7 @@ export extern "libc" fn kill(pid: i32, signum: i32) i32 {
         return -1;
     }
     
-    var result: !i64 = @syscall(SYS_kill, pid, signum);
+    var result: !i64 = @syscall(SYS_kill_sig, pid, signum);
     var ret: i64 = result catch { return -1; };
     
     if ret < 0 {

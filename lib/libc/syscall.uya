@@ -25,6 +25,7 @@ export const SYS_getppid: i64 = 110;
 export const SYS_fork: i64 = 57;
 export const SYS_execve: i64 = 59;
 export const SYS_exit: i64 = 60;
+// Linux x86_64 上 61 为 wait4(pid, wstatus, options, rusage)；需 4 参，rusage 可为 NULL。
 export const SYS_waitpid: i64 = 61;
 export const SYS_kill: i64 = 62;
 export const SYS_getcwd: i64 = 79;
@@ -311,8 +312,9 @@ export extern "libc" fn sys_kill(pid: i64, sig: i32) !i32 {
 }
 
 // sys_waitpid - 等待子进程/线程退出（用于 pthread_join 等）
+// 底层为 wait4：第四参 rusage 传 0（不要资源用量）。
 export extern "libc" fn sys_waitpid(pid: i32, status: &i32, options: i32) !i32 {
-    return @syscall(SYS_waitpid, pid as i64, status as i64, options as i64) as! i32;
+    return @syscall(SYS_waitpid, pid as i64, status as i64, options as i64, 0 as i64) as! i32;
 }
 
 // sys_futex - futex 系统调用（用于 mutex/cond，零依赖）

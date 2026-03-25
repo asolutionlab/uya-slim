@@ -230,7 +230,7 @@ export fn sys_kill(pid: i64, sig: i32) !i32 {
 }
 
 export fn sys_waitpid(pid: i32, status: &i32, options: i32) !i32 {
-    return @syscall(SYS_waitpid, pid as i64, status as i64, options as i64) as! i32;
+    return @syscall(SYS_waitpid, pid as i64, status as i64, options as i64, 0 as i64) as! i32;
 }
 
 export fn sys_futex(uaddr: &i32, op: i32, val: i32, timeout: &void) i32 {

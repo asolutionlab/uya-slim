@@ -99,19 +99,24 @@
 
 ### 5.1 Server
 
-- [ ] `server.uya`：ServerConfig、Server；listen、accept 循环
-- [ ] 首版：阻塞 accept + 每连接一线程；Conn RAII（drop 关闭 fd）
-- [ ] 每连接：读 buffer -> parse -> router.serve(ctx) -> 写 Response；Keep-alive 时剩余数据下一轮 parse
-- [ ] 错误路径：parse 失败 / Handler 错误 -> 4xx/5xx 响应并发送
+- [x] `server.uya`：`HttpServer`、`ServerConfig`；`http_server_listen` / `http_server_accept` / `http_server_close`（`ServerMode.Blocking` + 127.0.0.1；`port==0` 时 `getsockname` 填端口）
+- [x] `http_recv_parse_request`（单次 read ≤8KiB + `parse`）、`http_send_response`（`text/plain` + `Content-Length`）、`http_tcp_connect_loopback`（测试用）
+- [ ] 首版路线图：阻塞 accept + 每连接一线程；当前标准库为原语级 API，无自动「每连接一线程」封装
+- [ ] 每连接：读 buffer -> parse -> `router`/Handler -> 写 Response；Keep-alive 多轮 parse
+- [ ] 错误路径：parse 失败 / Handler 错误 -> 统一 4xx/5xx（当前测试仅覆盖 200 路由）
 
 ### 5.2 epoll 预留
 
-- [ ] ServerConfig.mode 含 ServerMode.Epoll；server.uya 中预留 run_epoll_loop 或条件分支（首版不实现）
+- [ ] `ServerConfig.mode` 已含 `ServerMode.Epoll`；`server.uya` 中 `Blocking` 以外仍返回错误，未实现 `run_epoll_loop`
 
 ### 5.3 测试与示例
 
-- [ ] `tests/test_http_server.uya`：本地 listen、发请求、校验响应（plaintext、简单 JSON）
+- [x] `tests/test_http_server.uya`：fork 子进程作客户端，父进程 accept → parse → `router_find_route_request` → 响应；校验 plaintext（`--safety-proof` + `make check`）
 - [ ] `examples/http_server.uya` 或 `tests/programs/http_echo.uya`：最小可运行示例
+
+### 5.4 相关修复（syscall）
+
+- [x] Linux x86_64：`SYS_waitpid`(61) 实为 `wait4`，`sys_waitpid` / `libc.unistd.waitpid` 已改为四参（`rusage=NULL`），避免 `wait` 后异常崩溃（影响 `pthread_join` 等）
 
 ---
 
