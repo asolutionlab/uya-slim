@@ -2481,14 +2481,15 @@ fn substitute_type_arg(codegen: &C99CodeGenerator, type_node: &ASTNode) &ASTNode
         return type_node;
     }
 
-    // 对于命名类型，先检查是否是当前函数/方法或外层结构体的类型参数
+    // 对于命名类型：先函数/方法形参，再结构体/联合体单态形参。
+    // （c99_type_to_c_uncached 仍「先 struct 再 current」以固定 Poll<!T> 等字段 C 类型；substitute 用于单态函数体/签名时，
+    //  若残留 Future vtable 的 struct_type_*（如 T→!i32），不得抢占本函数的 T→i32，否则 AsyncComputeFuture<T> 会变成 err 双包。）
     if type_node.type == ASTNodeType.AST_TYPE_NAMED && type_node.type_named_name != null {
         const name: &byte = type_node.type_named_name;
         var i: i32 = 0;
         while i < codegen.current_type_param_count {
             if codegen.current_type_params[i].name != null &&
                 strcmp(codegen.current_type_params[i].name as *byte, name as *byte) == 0 {
-                // 找到匹配的类型参数，返回对应的类型实参
                 if codegen.current_type_args != null && i < codegen.current_type_arg_count {
                     return codegen.current_type_args[i];
                 }

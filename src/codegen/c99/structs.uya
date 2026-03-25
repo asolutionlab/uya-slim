@@ -385,8 +385,35 @@ fn variant_c_type_from_tagged_suffix(codegen: &C99CodeGenerator, union_decl: &AS
         if strcmp(inner as *byte, "i32" as *byte) == 0 {
             return ("struct err_union_int32_t" as *byte) as &byte;
         }
+        if strcmp(inner as *byte, "u32" as *byte) == 0 {
+            return ("struct err_union_uint32_t" as *byte) as &byte;
+        }
         if strcmp(inner as *byte, "i64" as *byte) == 0 {
             return ("struct err_union_int64_t" as *byte) as &byte;
+        }
+        if strcmp(inner as *byte, "u64" as *byte) == 0 {
+            return ("struct err_union_uint64_t" as *byte) as &byte;
+        }
+        if strcmp(inner as *byte, "i16" as *byte) == 0 {
+            return ("struct err_union_int16_t" as *byte) as &byte;
+        }
+        if strcmp(inner as *byte, "u16" as *byte) == 0 {
+            return ("struct err_union_uint16_t" as *byte) as &byte;
+        }
+        if strcmp(inner as *byte, "i8" as *byte) == 0 {
+            return ("struct err_union_int8_t" as *byte) as &byte;
+        }
+        if strcmp(inner as *byte, "u8" as *byte) == 0 {
+            return ("struct err_union_uint8_t" as *byte) as &byte;
+        }
+        if strcmp(inner as *byte, "bool" as *byte) == 0 {
+            return ("struct err_union_bool" as *byte) as &byte;
+        }
+        if strcmp(inner as *byte, "f32" as *byte) == 0 {
+            return ("struct err_union_float" as *byte) as &byte;
+        }
+        if strcmp(inner as *byte, "f64" as *byte) == 0 {
+            return ("struct err_union_double" as *byte) as &byte;
         }
         if strcmp(inner as *byte, "usize" as *byte) == 0 || strcmp(inner as *byte, "size_t" as *byte) == 0 {
             return ("struct err_union_size_t" as *byte) as &byte;
@@ -394,6 +421,60 @@ fn variant_c_type_from_tagged_suffix(codegen: &C99CodeGenerator, union_decl: &AS
         if strcmp(inner as *byte, "void" as *byte) == 0 {
             return ("struct err_union_void" as *byte) as &byte;
         }
+    }
+    return null;
+}
+
+// Poll<T> 单态名 Poll_i32 等（无 err_）：Ready 载荷为 T 本身，与 Poll<!T> 的 err_union_* 不同。
+fn poll_ready_plain_c_from_poll_mono_union_name(union_name: &byte) &byte {
+    if union_name == null || strncmp(union_name as *byte, "Poll_" as *byte, 5) != 0 {
+        return null;
+    }
+    const suf: &byte = &union_name[5] as &byte;
+    if strncmp(suf as *byte, "err_" as *byte, 4) == 0 {
+        return null;
+    }
+    if strcmp(suf as *byte, "i8" as *byte) == 0 {
+        return ("int8_t" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "i16" as *byte) == 0 {
+        return ("int16_t" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "i32" as *byte) == 0 {
+        return ("int32_t" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "i64" as *byte) == 0 {
+        return ("int64_t" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "u8" as *byte) == 0 {
+        return ("uint8_t" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "u16" as *byte) == 0 {
+        return ("uint16_t" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "u32" as *byte) == 0 {
+        return ("uint32_t" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "u64" as *byte) == 0 {
+        return ("uint64_t" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "usize" as *byte) == 0 || strcmp(suf as *byte, "size_t" as *byte) == 0 {
+        return ("size_t" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "isize" as *byte) == 0 {
+        return ("intptr_t" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "bool" as *byte) == 0 {
+        return ("bool" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "f32" as *byte) == 0 {
+        return ("float" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "f64" as *byte) == 0 {
+        return ("double" as *byte) as &byte;
+    }
+    if strcmp(suf as *byte, "void" as *byte) == 0 {
+        return ("char" as *byte) as &byte;
     }
     return null;
 }
@@ -494,6 +575,15 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
     if n <= 0 || variants == null {
         return -1;
     }
+    // 整段屏蔽外层泛型函数的 current_type_*（见下 append_type_arg_suffix 与 c99_type_to_c 均先 struct 再 current）。
+    const saved_outer_ctp: &TypeParam = codegen.current_type_params;
+    const saved_outer_ctpc: i32 = codegen.current_type_param_count;
+    const saved_outer_cta: & & ASTNode = codegen.current_type_args;
+    const saved_outer_ctac: i32 = codegen.current_type_arg_count;
+    codegen.current_type_params = null;
+    codegen.current_type_param_count = 0;
+    codegen.current_type_args = null;
+    codegen.current_type_arg_count = 0;
     var saved_struct_type_params: &TypeParam = codegen.struct_type_params;
     var saved_struct_type_args: & & ASTNode = codegen.struct_type_args;
     var saved_struct_type_param_count: i32 = codegen.struct_type_param_count;
@@ -502,6 +592,7 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
     codegen.struct_type_args = type_args;
     codegen.struct_type_param_count = union_decl.union_decl_type_param_count;
     codegen.struct_type_arg_count = type_arg_count;
+    c99_type_to_c_reset_cache();
     c99_emit_indent(codegen);
     fprintf(codegen.emit_stream as *void, "union %s {\n" as *byte, union_name as *byte);
     codegen.indent_level = codegen.indent_level + 1;
@@ -510,7 +601,23 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
         const v: &ASTNode = variants[i];
         if v != null && v.type == ASTNodeType.AST_VAR_DECL && v.var_decl_name != null && v.var_decl_type != null {
             const vname: &byte = get_safe_c_identifier(codegen, v.var_decl_name);
-            var vtype: &byte = c99_type_to_c(codegen, v.var_decl_type);
+            // 每个变体求值前再清空：上一变体（如 Pending）的 c99_type_to_c 递归可能临时恢复外层函数形参。
+            codegen.current_type_params = null;
+            codegen.current_type_param_count = 0;
+            codegen.current_type_args = null;
+            codegen.current_type_arg_count = 0;
+            var vtype: &byte = null;
+            // Poll<!T>.Ready：C 名单态后缀（union_name）与 c99_type_to_c(T) 在部分调用上下文中会不一致，按后缀解析 err_union_* 与 finish 侧一致。
+            if orig_name != null && strcmp(orig_name as *byte, "Poll" as *byte) == 0 &&
+                vname != null && strcmp(vname as *byte, "Ready" as *byte) == 0 && union_name != null {
+                vtype = variant_c_type_from_tagged_suffix(codegen, union_decl, union_name);
+                if vtype == null {
+                    vtype = poll_ready_plain_c_from_poll_mono_union_name(union_name);
+                }
+            }
+            if vtype == null {
+                vtype = c99_type_to_c(codegen, v.var_decl_type);
+            }
             if vtype != null && v.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED && v.var_decl_type.type_named_name != null &&
                 strcmp(v.var_decl_type.type_named_name as *byte, "void" as *byte) == 0 {
                 vtype = "char" as &byte;
@@ -541,6 +648,10 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
     codegen.struct_type_args = saved_struct_type_args;
     codegen.struct_type_param_count = saved_struct_type_param_count;
     codegen.struct_type_arg_count = saved_struct_type_arg_count;
+    codegen.current_type_params = saved_outer_ctp;
+    codegen.current_type_param_count = saved_outer_ctpc;
+    codegen.current_type_args = saved_outer_cta;
+    codegen.current_type_arg_count = saved_outer_ctac;
     return 0;
 }
 
@@ -1422,6 +1533,26 @@ fn c99_emit_vtable_var_open(codegen: &C99CodeGenerator, vtable_externs_out: &voi
     }
 }
 
+// 在已设置「接口/联合体」struct_type_* 的上下文中解析接口方法返回类型（如 Poll<T> 的 T）。
+// 暂时屏蔽外层泛型函数的 current_type_*，避免与接口形参同名（如 block_on<T> 与 Future<T>）时 append_type_arg_suffix 错绑到 i32。
+fn convert_array_return_type_iface_vtable(codegen: &C99CodeGenerator, ret_type: &ASTNode) &byte {
+    const saved_tp: &TypeParam = codegen.current_type_params;
+    const saved_tpc: i32 = codegen.current_type_param_count;
+    const saved_ta: & & ASTNode = codegen.current_type_args;
+    const saved_tac: i32 = codegen.current_type_arg_count;
+    codegen.current_type_params = null;
+    codegen.current_type_param_count = 0;
+    codegen.current_type_args = null;
+    codegen.current_type_arg_count = 0;
+    var ret: &byte = convert_array_return_type(codegen, ret_type);
+    codegen.current_type_params = saved_tp;
+    codegen.current_type_param_count = saved_tpc;
+    codegen.current_type_args = saved_ta;
+    codegen.current_type_arg_count = saved_tac;
+    ret = normalize_poll_return_type(codegen, ret);
+    return ret;
+}
+
 // 生成各 struct:interface 的 vtable 常量（需在方法前向声明之后调用）
 fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.program_node == null {
@@ -1504,12 +1635,31 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                             if name_buf != null {
                                 memcpy(name_buf as *void, start as *void, len as usize);
                                 name_buf[len] = 0;
-                                const tn: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, codegen.arena, null);
-                                if tn != null {
-                                    tn.type_named_name = name_buf;
-                                    tn.type_named_type_args = null;
-                                    tn.type_named_type_arg_count = 0;
-                                    args[arg_count] = tn;
+                                var type_arg_node: &ASTNode = null;
+                                // Future<!usize> 等：尖括号内为 !Payload，须建成错误联合类型节点，不能当作名为 "!usize" 的命名类型
+                                if len > 1 && (name_buf[0] as i32) == 33 {
+                                    const inner_n: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, codegen.arena, null);
+                                    if inner_n != null {
+                                        inner_n.type_named_name = &name_buf[1] as &byte;
+                                        inner_n.type_named_type_args = null;
+                                        inner_n.type_named_type_arg_count = 0;
+                                        const eu_n: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, 0, 0, codegen.arena, null);
+                                        if eu_n != null {
+                                            eu_n.type_error_union_payload_type = inner_n;
+                                            type_arg_node = eu_n;
+                                        }
+                                    }
+                                } else {
+                                    const tn: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, codegen.arena, null);
+                                    if tn != null {
+                                        tn.type_named_name = name_buf;
+                                        tn.type_named_type_args = null;
+                                        tn.type_named_type_arg_count = 0;
+                                        type_arg_node = tn;
+                                    }
+                                }
+                                if type_arg_node != null {
+                                    args[arg_count] = type_arg_node;
                                     arg_count = arg_count + 1;
                                 }
                             }
@@ -1554,8 +1704,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                                     while sjA < scA && sjA < C99_MAX_INTERFACE_METHODS {
                                         const msigA: &ASTNode = sigsA[sjA];
                                         if msigA != null && msigA.type == ASTNodeType.AST_FN_DECL {
-                                            var retA: &byte = convert_array_return_type(codegen, msigA.fn_decl_return_type);
-                                            retA = normalize_poll_return_type(codegen, retA);
+                                            const retA: &byte = convert_array_return_type_iface_vtable(codegen, msigA.fn_decl_return_type);
                                             const mnA: &byte = get_safe_c_identifier(codegen, msigA.fn_decl_name);
                                             const pcA: i32 = msigA.fn_decl_param_count;
                                             c99_emit_indent(codegen);
@@ -1597,8 +1746,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                                     c99_emit_comma_space(codegen);
                                 }
                                 if implA != null && cnameA != null {
-                                    var retA2: &byte = convert_array_return_type(codegen, msigA2.fn_decl_return_type);
-                                    retA2 = normalize_poll_return_type(codegen, retA2);
+                                    const retA2: &byte = convert_array_return_type_iface_vtable(codegen, msigA2.fn_decl_return_type);
                                     const pcA2: i32 = msigA2.fn_decl_param_count;
                                     fprintf(codegen.emit_stream as *void, "(%s (*)(void *self" as *byte, retA2 as *byte);
                                     var kiA2: i32 = 1;
@@ -1705,8 +1853,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                             while sj < sc0 && sj < C99_MAX_INTERFACE_METHODS {
                                 const msig0: &ASTNode = sigs0[sj];
                                 if msig0 != null && msig0.type == ASTNodeType.AST_FN_DECL {
-                                    var ret0: &byte = convert_array_return_type(codegen, msig0.fn_decl_return_type);
-                                    ret0 = normalize_poll_return_type(codegen, ret0);
+                                    const ret0: &byte = convert_array_return_type_iface_vtable(codegen, msig0.fn_decl_return_type);
                                     const mn0: &byte = get_safe_c_identifier(codegen, msig0.fn_decl_name);
                                     const pc0: i32 = msig0.fn_decl_param_count;
                                     c99_emit_indent(codegen);
@@ -1747,8 +1894,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                             c99_emit_comma_space(codegen);
                         }
                         if impl != null && cname != null {
-                            var ret_c: &byte = convert_array_return_type(codegen, msig.fn_decl_return_type);
-                            ret_c = normalize_poll_return_type(codegen, ret_c);
+                            const ret_c: &byte = convert_array_return_type_iface_vtable(codegen, msig.fn_decl_return_type);
                             const pc: i32 = msig.fn_decl_param_count;
                             fprintf(codegen.emit_stream as *void, "(%s (*)(void *self" as *byte, ret_c as *byte);
                             var ki: i32 = 1;
@@ -2025,11 +2171,11 @@ fn append_type_arg_suffix(codegen: &C99CodeGenerator, type_arg: &ASTNode,
         var type_name: &byte = type_arg.type_named_name;
         
         // 在单态化上下文中替换类型参数（如 T → i32）
-        // 二级查找：先查找方法的类型参数，再查找结构体的类型参数
+        // 先函数/方法形参，再结构体/联合体单态形参（与 substitute_type_arg 一致；避免残留 Future vtable 的 struct_type_* 把 T 解成 !i32，单态名成 AsyncComputeFuture_err_i32）。
+        // c99_type_to_c_uncached 命名类型「裸 T」仍先 struct 再 current，用于 Poll<!T> 等字段；后缀拼接走本函数，二者分工。
         var resolved_type: &ASTNode = type_arg;
         var found: i32 = 0;
         
-        // 第一级：查找方法的类型参数
         if codegen.current_type_params != null && codegen.current_type_param_count > 0 {
             var tp_idx: i32 = 0;
             while tp_idx < codegen.current_type_param_count && tp_idx < codegen.current_type_arg_count {
@@ -2037,7 +2183,7 @@ fn append_type_arg_suffix(codegen: &C99CodeGenerator, type_arg: &ASTNode,
                     strcmp(codegen.current_type_params[tp_idx].name as *byte, type_name as *byte) == 0 {
                     if codegen.current_type_args != null && codegen.current_type_args[tp_idx] != null {
                         resolved_type = codegen.current_type_args[tp_idx];
-                        if resolved_type.type == ASTNodeType.AST_TYPE_NAMED && 
+                        if resolved_type.type == ASTNodeType.AST_TYPE_NAMED &&
                            resolved_type.type_named_name != null {
                             type_name = resolved_type.type_named_name;
                         }
@@ -2049,7 +2195,6 @@ fn append_type_arg_suffix(codegen: &C99CodeGenerator, type_arg: &ASTNode,
             }
         }
         
-        // 第二级：查找结构体的类型参数
         if found == 0 && codegen.struct_type_params != null && codegen.struct_type_param_count > 0 {
             var sp_idx: i32 = 0;
             while sp_idx < codegen.struct_type_param_count && sp_idx < codegen.struct_type_arg_count {

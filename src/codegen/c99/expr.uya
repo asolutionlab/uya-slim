@@ -6747,6 +6747,16 @@ fn gen_cast_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const target_type: &ASTNode = expr.cast_expr_target_type;
         const is_force_cast: i32 = expr.cast_expr_is_force_cast;
         const type_c: &byte = c99_type_to_c(codegen, target_type);
+        // as! 写入 err_union.value 须用载荷的 C 类型；目标在 AST 中可能是 T 或 !T（后者时 type_c 为 struct err_union_*）
+        var payload_for_val: &ASTNode = target_type;
+        if target_type != null && target_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+            target_type.type_error_union_payload_type != null {
+            payload_for_val = target_type.type_error_union_payload_type;
+        }
+        var value_field_c: &byte = c99_mono_type_to_c(codegen, payload_for_val);
+        if payload_for_val == null {
+            value_field_c = type_c;
+        }
         if is_force_cast != 0 {
             // as! 强转：返回 !T。当源为 !i64 等错误联合时，需解包再包装
             const src_union_c: &byte = get_c_type_of_expr(codegen, src_expr);
@@ -6771,7 +6781,7 @@ fn gen_cast_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 fputs("if (_uya_asbang_src.error_id != 0) { " as *byte, codegen.emit_stream as *void);
                 fputs("_uya_asbang.error_id = _uya_asbang_src.error_id; _uya_asbang.value = 0; " as *byte, codegen.emit_stream as *void);
                 fputs("} else { _uya_asbang.error_id = 0; " as *byte, codegen.emit_stream as *void);
-                fprintf(codegen.emit_stream as *void, "_uya_asbang.value = (%s)(_uya_asbang_src.value); " as *byte, type_c as *byte);
+                fprintf(codegen.emit_stream as *void, "_uya_asbang.value = (%s)(_uya_asbang_src.value); " as *byte, value_field_c as *byte);
                 fputs("} _uya_asbang; })" as *byte, codegen.emit_stream as *void);
             } else if src_is_err_union != 0 && is_void != 0 {
                 fprintf(codegen.emit_stream as *void, "({ %s _uya_asbang_src = " as *byte, src_union_c as *byte);
@@ -6781,7 +6791,7 @@ fn gen_cast_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             } else {
                 fprintf(codegen.emit_stream as *void, "({ %s _uya_asbang = { .error_id = 0" as *byte, union_c as *byte);
                 if is_void == 0 {
-                    fprintf(codegen.emit_stream as *void, ", .value = (%s)(" as *byte, type_c as *byte);
+                    fprintf(codegen.emit_stream as *void, ", .value = (%s)(" as *byte, value_field_c as *byte);
                     gen_expr(codegen, src_expr);
                     fputs(") }; _uya_asbang; })" as *byte, codegen.emit_stream as *void);
                 } else {

@@ -336,6 +336,11 @@ fn c99_register_simd_struct(codegen: &C99CodeGenerator, name: &byte, element_typ
 
 // 类型映射函数
 fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
+    // 处于「泛型 struct/union 单态」上下文时禁用缓存：键含 struct_type_args 指针，
+    // 若调用方复用同一块实参数组缓冲区，或键与嵌套递归交错，会误命中（如 Poll<!u32>.Ready 成 err_union_int32_t）。
+    if codegen != null && codegen.struct_type_param_count > 0 {
+        return c99_type_to_c_uncached(codegen, type_node);
+    }
     const cached: &byte = c99_type_to_c_cache_lookup(codegen, type_node);
     if cached != null {
         return cached;
@@ -354,33 +359,11 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
     }
     
     // 在单态化上下文中，先进行类型参数替换
-    // 二级查找：先查找方法的类型参数，再查找结构体的类型参数
+    // 二级查找：先结构体/联合体单态形参，再泛型函数形参（Poll<T>.Ready 的 T 不得被外层 block_on<T> 等同名形参抢占）
     if type_node.type == ASTNodeType.AST_TYPE_NAMED && type_node.type_named_name != null {
         const tp_name: &byte = type_node.type_named_name;
         
-        // 第一级：查找方法的类型参数
-        if codegen.current_type_params != null && codegen.current_type_param_count > 0 {
-            var tpi: i32 = 0;
-            while tpi < codegen.current_type_param_count {
-                if codegen.current_type_params[tpi].name != null &&
-                    strcmp(codegen.current_type_params[tpi].name as *byte, tp_name as *byte) == 0 {
-                    // 找到匹配的类型参数，使用对应的类型实参
-                    if codegen.current_type_args != null && tpi < codegen.current_type_arg_count {
-                        // 防止无限递归：如果替换后的类型实参和当前节点相同，跳过
-                        if codegen.current_type_args[tpi] == type_node {
-                            return tp_name;  // 返回原始名称，避免无限递归
-                        }
-                        codegen.type_conv_depth = codegen.type_conv_depth + 1;
-                        const r: &byte = c99_type_to_c(codegen, codegen.current_type_args[tpi]);
-                        codegen.type_conv_depth = codegen.type_conv_depth - 1;
-                        return r;
-                    }
-                }
-                tpi = tpi + 1;
-            }
-        }
-        
-        // 第二级：查找结构体的类型参数
+        // 第一级：查找结构体/联合体的类型参数（单态定义体、嵌套泛型字段）
         if codegen.struct_type_params != null && codegen.struct_type_param_count > 0 {
             var spi: i32 = 0;
             while spi < codegen.struct_type_param_count {
@@ -399,6 +382,26 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                 spi = spi + 1;
             }
         }
+        
+        // 第二级：查找方法的类型参数
+        if codegen.current_type_params != null && codegen.current_type_param_count > 0 {
+            var tpi: i32 = 0;
+            while tpi < codegen.current_type_param_count {
+                if codegen.current_type_params[tpi].name != null &&
+                    strcmp(codegen.current_type_params[tpi].name as *byte, tp_name as *byte) == 0 {
+                    if codegen.current_type_args != null && tpi < codegen.current_type_arg_count {
+                        if codegen.current_type_args[tpi] == type_node {
+                            return tp_name;
+                        }
+                        codegen.type_conv_depth = codegen.type_conv_depth + 1;
+                        const r: &byte = c99_type_to_c(codegen, codegen.current_type_args[tpi]);
+                        codegen.type_conv_depth = codegen.type_conv_depth - 1;
+                        return r;
+                    }
+                }
+                tpi = tpi + 1;
+            }
+        }
     }
     
     // 处理复合类型中的类型参数替换（指针类型）
@@ -410,24 +413,8 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             var found_in_struct: i32 = 0;
             var inner_c: &byte = null;
             
-            // 第一级：查找方法的类型参数
-            if codegen.current_type_params != null && codegen.current_type_param_count > 0 {
-                var tpj: i32 = 0;
-                while tpj < codegen.current_type_param_count {
-                    if codegen.current_type_params[tpj].name != null &&
-                        strcmp(codegen.current_type_params[tpj].name as *byte, inner_name as *byte) == 0 {
-                        if codegen.current_type_args != null && tpj < codegen.current_type_arg_count {
-                            inner_c = c99_type_to_c(codegen, codegen.current_type_args[tpj]);
-                            found_in_method = 1;
-                            break;
-                        }
-                    }
-                    tpj = tpj + 1;
-                }
-            }
-            
-            // 第二级：查找结构体的类型参数
-            if found_in_method == 0 && codegen.struct_type_params != null && codegen.struct_type_param_count > 0 {
+            // 先结构体/联合体单态形参，再方法/函数形参（与命名类型分支一致）
+            if codegen.struct_type_params != null && codegen.struct_type_param_count > 0 {
                 var spj: i32 = 0;
                 while spj < codegen.struct_type_param_count {
                     if codegen.struct_type_params[spj].name != null &&
@@ -439,6 +426,21 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                         }
                     }
                     spj = spj + 1;
+                }
+            }
+            
+            if found_in_struct == 0 && codegen.current_type_params != null && codegen.current_type_param_count > 0 {
+                var tpj: i32 = 0;
+                while tpj < codegen.current_type_param_count {
+                    if codegen.current_type_params[tpj].name != null &&
+                        strcmp(codegen.current_type_params[tpj].name as *byte, inner_name as *byte) == 0 {
+                        if codegen.current_type_args != null && tpj < codegen.current_type_arg_count {
+                            inner_c = c99_type_to_c(codegen, codegen.current_type_args[tpj]);
+                            found_in_method = 1;
+                            break;
+                        }
+                    }
+                    tpj = tpj + 1;
                 }
             }
             
@@ -7221,22 +7223,31 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
     if codegen == null || name == null {
         return null;
     }
-    c99_identifier_type_cache_ensure(codegen);
-    const slot: i32 = c99_identifier_type_cache_slot(codegen, name);
-    if g_c99_identifier_type_keys[slot] != null &&
-        strcmp(g_c99_identifier_type_keys[slot] as *byte, name as *byte) == 0 &&
-        g_c99_identifier_type_functions[slot] == codegen.current_function_decl &&
-        g_c99_identifier_type_local_counts[slot] == codegen.local_variable_count &&
-        g_c99_identifier_type_global_counts[slot] == codegen.global_variable_count &&
-        (g_c99_identifier_type_method_structs[slot] == codegen.current_method_struct_name ||
-            (g_c99_identifier_type_method_structs[slot] != null && codegen.current_method_struct_name != null &&
-                strcmp(g_c99_identifier_type_method_structs[slot] as *byte, codegen.current_method_struct_name as *byte) == 0)) {
-        return g_c99_identifier_type_values[slot];
+    // 泛型单态或泛型结构体上下文中不得使用标识符类型缓存：同一模板函数/方法的多份实例
+    // 共享 current_function_decl 且局部变量个数模式易相同，会误命中另一实例的缓存（如 block_on_i32 的 p 与 block_on_u32 的 p）。
+    var use_ident_cache: i32 = 1;
+    if codegen.current_type_param_count > 0 || codegen.struct_type_param_count > 0 {
+        use_ident_cache = 0;
+    }
+    var slot: i32 = 0;
+    if use_ident_cache != 0 {
+        c99_identifier_type_cache_ensure(codegen);
+        slot = c99_identifier_type_cache_slot(codegen, name);
+        if g_c99_identifier_type_keys[slot] != null &&
+            strcmp(g_c99_identifier_type_keys[slot] as *byte, name as *byte) == 0 &&
+            g_c99_identifier_type_functions[slot] == codegen.current_function_decl &&
+            g_c99_identifier_type_local_counts[slot] == codegen.local_variable_count &&
+            g_c99_identifier_type_global_counts[slot] == codegen.global_variable_count &&
+            (g_c99_identifier_type_method_structs[slot] == codegen.current_method_struct_name ||
+                (g_c99_identifier_type_method_structs[slot] != null && codegen.current_method_struct_name != null &&
+                    strcmp(g_c99_identifier_type_method_structs[slot] as *byte, codegen.current_method_struct_name as *byte) == 0)) {
+            return g_c99_identifier_type_values[slot];
+        }
     }
     var i: i32 = codegen.local_variable_count - 1;
     while i >= 0 {
         if strcmp(codegen.local_variables[i].name as *byte, name as *byte) == 0 {
-            if codegen.local_variables[i].type_c != null {
+            if use_ident_cache != 0 && codegen.local_variables[i].type_c != null {
                 g_c99_identifier_type_keys[slot] = name;
                 g_c99_identifier_type_values[slot] = codegen.local_variables[i].type_c;
                 g_c99_identifier_type_functions[slot] = codegen.current_function_decl;
@@ -7253,7 +7264,7 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
         i = codegen.local_variable_count - 1;
         while i >= 0 {
             if strcmp(codegen.local_variables[i].name as *byte, safe_name as *byte) == 0 {
-                if codegen.local_variables[i].type_c != null {
+                if use_ident_cache != 0 && codegen.local_variables[i].type_c != null {
                     g_c99_identifier_type_keys[slot] = name;
                     g_c99_identifier_type_values[slot] = codegen.local_variables[i].type_c;
                     g_c99_identifier_type_functions[slot] = codegen.current_function_decl;
@@ -7269,7 +7280,7 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
     i = 0;
     while i < codegen.global_variable_count {
         if global_var_name_matches(codegen, i, name) != 0 {
-            if codegen.global_variables[i].type_c != null {
+            if use_ident_cache != 0 && codegen.global_variables[i].type_c != null {
                 g_c99_identifier_type_keys[slot] = name;
                 g_c99_identifier_type_values[slot] = codegen.global_variables[i].type_c;
                 g_c99_identifier_type_functions[slot] = codegen.current_function_decl;

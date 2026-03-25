@@ -17,7 +17,7 @@ test "task_ready_poll_returns_ready" {
 }
 
 test "task_ready_ok_i32_poll_returns_ok_branch" {
-    const t: Task<!i32> = task_ready_ok_i32(17);
+    const t: Task<!i32> = task_ready_ok<i32>(17);
     const w: Waker = Waker{};
     const p: Poll<!i32> = t.poll(&w);
     var result: i32 = 0 - 3;
@@ -29,7 +29,7 @@ test "task_ready_ok_i32_poll_returns_ok_branch" {
 }
 
 test "task_ready_ok_u32_poll_returns_ok_branch" {
-    const t: Task<!u32> = task_ready_ok_u32(99 as u32);
+    const t: Task<!u32> = task_ready_ok<u32>(99 as u32);
     const w: Waker = Waker{};
     const p: Poll<!u32> = t.poll(&w);
     var result: u32 = 0 as u32;
@@ -41,7 +41,7 @@ test "task_ready_ok_u32_poll_returns_ok_branch" {
 }
 
 test "task_ready_ok_usize_poll_returns_ok_branch" {
-    const t: Task<!usize> = task_ready_ok_usize(1001 as usize);
+    const t: Task<!usize> = task_ready_ok<usize>(1001 as usize);
     const w: Waker = Waker{};
     const p: Poll<!usize> = t.poll(&w);
     var result: usize = 0 as usize;
@@ -56,7 +56,7 @@ struct PollReadyOkI32Probe : Future<!i32> {
     fn poll(self: &Self, waker: &Waker) Poll<!i32> {
         _ = self;
         _ = waker;
-        return poll_ready_ok_i32(55);
+        return poll_ready_ok<i32>(55);
     }
 }
 
@@ -73,7 +73,8 @@ test "poll_ready_ok_i32_helper_in_poll" {
 }
 
 test "future_ready_ok_i32_block_on" {
-    const f: Future<!i32> = future_ready_ok_i32(88);
-    const result: i32 = block_on_i32(f) catch { 0 - 1; };
+    const f: Future<!i32> = future_ready_ok<i32>(88);
+    const bo: !i32 = block_on<i32>(f);
+    const result: i32 = bo catch { 0 - 1; };
     try assert_eq_i32(result, 88);
 }

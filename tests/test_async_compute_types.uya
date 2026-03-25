@@ -53,7 +53,7 @@ test "async_compute_specific_i64" {
     }
     const loop: EventLoop = loop_impl;
     const boxed: Future<!i64> = async_compute<i64>(&pool, &double_i64 as &void, 21 as i64);
-    const result: i64 = try scheduler_run_i64_with_event_loop(&s, loop, boxed, 200);
+    const result: i64 = try scheduler_run_with_event_loop<i64>(&s, loop, boxed, 200);
     try assert_eq_i64(result, 42 as i64);
 }
 
@@ -69,7 +69,7 @@ test "async_compute_specific_u64" {
     }
     const loop: EventLoop = loop_impl;
     const boxed: Future<!u64> = async_compute<u64>(&pool, &double_u64 as &void, 21 as u64);
-    const result: u64 = try scheduler_run_u64_with_event_loop(&s, loop, boxed, 200);
+    const result: u64 = try scheduler_run_with_event_loop<u64>(&s, loop, boxed, 200);
     try assert_eq_i32(result as i32, 42 as i32);
 }
 
@@ -85,7 +85,7 @@ test "async_compute_specific_i16" {
     }
     const loop: EventLoop = loop_impl;
     const boxed: Future<!i16> = async_compute<i16>(&pool, &double_i16 as &void, 21 as i16);
-    const result: i16 = try scheduler_run_i16_with_event_loop(&s, loop, boxed, 200);
+    const result: i16 = try scheduler_run_with_event_loop<i16>(&s, loop, boxed, 200);
     try assert_eq_i32(result as i32, 42 as i32);
 }
 
@@ -101,7 +101,7 @@ test "async_compute_specific_u16" {
     }
     const loop: EventLoop = loop_impl;
     const boxed: Future<!u16> = async_compute<u16>(&pool, &double_u16 as &void, 21 as u16);
-    const result: u16 = try scheduler_run_u16_with_event_loop(&s, loop, boxed, 200);
+    const result: u16 = try scheduler_run_with_event_loop<u16>(&s, loop, boxed, 200);
     try assert_eq_i32(result as i32, 42 as i32);
 }
 
@@ -117,7 +117,7 @@ test "async_compute_specific_i8" {
     }
     const loop: EventLoop = loop_impl;
     const boxed: Future<!i8> = async_compute<i8>(&pool, &double_i8 as &void, 21 as i8);
-    const result: i8 = try scheduler_run_i8_with_event_loop(&s, loop, boxed, 200);
+    const result: i8 = try scheduler_run_with_event_loop<i8>(&s, loop, boxed, 200);
     try assert_eq_i32(result as i32, 42 as i32);
 }
 
@@ -133,7 +133,7 @@ test "async_compute_specific_u8" {
     }
     const loop: EventLoop = loop_impl;
     const boxed: Future<!u8> = async_compute<u8>(&pool, &double_u8 as &void, 21 as u8);
-    const result: u8 = try scheduler_run_u8_with_event_loop(&s, loop, boxed, 200);
+    const result: u8 = try scheduler_run_with_event_loop<u8>(&s, loop, boxed, 200);
     try assert_eq_i32(result as i32, 42 as i32);
 }
 
@@ -149,7 +149,7 @@ test "async_compute_specific_bool" {
     }
     const loop: EventLoop = loop_impl;
     const boxed: Future<!bool> = async_compute<bool>(&pool, &bool_not as &void, false);
-    const result: bool = try scheduler_run_bool_with_event_loop(&s, loop, boxed, 200);
+    const result: bool = try scheduler_run_with_event_loop<bool>(&s, loop, boxed, 200);
     try assert_eq_i32(result as i32, 1 as i32);
 }
 
@@ -165,7 +165,7 @@ test "async_compute_specific_f32" {
     }
     const loop: EventLoop = loop_impl;
     const boxed: Future<!f32> = async_compute<f32>(&pool, &double_f32 as &void, 21.0f32);
-    const result: f32 = try scheduler_run_f32_with_event_loop(&s, loop, boxed, 200);
+    const result: f32 = try scheduler_run_with_event_loop<f32>(&s, loop, boxed, 200);
     try assert_true(result == 42.0f32);
 }
 
@@ -181,7 +181,7 @@ test "async_compute_specific_f64" {
     }
     const loop: EventLoop = loop_impl;
     const boxed: Future<!f64> = async_compute<f64>(&pool, &double_f64 as &void, 21.0);
-    const result: f64 = try scheduler_run_f64_with_event_loop(&s, loop, boxed, 200);
+    const result: f64 = try scheduler_run_with_event_loop<f64>(&s, loop, boxed, 200);
     try assert_true(result == 42.0);
 }
 
@@ -197,7 +197,7 @@ test "async_compute_generic_f32" {
     }
     const loop: EventLoop = loop_impl;
     const f: Future<!f32> = async_compute<f32>(&pool, &double_f32 as &void, 10.0f32);
-    const result: f32 = try scheduler_run_f32_with_event_loop(&s, loop, f, 200);
+    const result: f32 = try scheduler_run_with_event_loop<f32>(&s, loop, f, 200);
     try assert_true(result == 20.0f32);
 }
 
@@ -213,6 +213,6 @@ test "async_compute_generic_f64" {
     }
     const loop: EventLoop = loop_impl;
     const f: Future<!f64> = async_compute<f64>(&pool, &double_f64 as &void, 10.0);
-    const result: f64 = try scheduler_run_f64_with_event_loop(&s, loop, f, 200);
+    const result: f64 = try scheduler_run_with_event_loop<f64>(&s, loop, f, 200);
     try assert_true(result == 20.0);
 }

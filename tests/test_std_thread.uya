@@ -61,7 +61,8 @@ fn thread_test_run_i32(pool: &ThreadPool, compute_fn: &void, arg: i32) !i32 {
     }
     const loop: EventLoop = loop_impl;
     const f: Future<!i32> = async_compute<i32>(pool, compute_fn, arg);
-    return scheduler_run_i32_with_event_loop(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    const out: !i32 = scheduler_run_with_event_loop<i32>(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    return out;
 }
 
 fn thread_test_drive_future_i32(f: Future<!i32>) !i32 {
@@ -71,7 +72,8 @@ fn thread_test_drive_future_i32(f: Future<!i32>) !i32 {
         _ = sys_close(loop_impl.epfd);
     }
     const loop: EventLoop = loop_impl;
-    return scheduler_run_i32_with_event_loop(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    const out: !i32 = scheduler_run_with_event_loop<i32>(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    return out;
 }
 
 fn thread_test_run_usize(pool: &ThreadPool, compute_fn: &void, arg: usize) !usize {
@@ -82,7 +84,8 @@ fn thread_test_run_usize(pool: &ThreadPool, compute_fn: &void, arg: usize) !usiz
     }
     const loop: EventLoop = loop_impl;
     const f: Future<!usize> = async_compute<usize>(pool, compute_fn, arg);
-    return scheduler_run_usize_with_event_loop(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    const out: !usize = scheduler_run_with_event_loop<usize>(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    return out;
 }
 
 fn thread_test_run_u32(pool: &ThreadPool, compute_fn: &void, arg: u32) !u32 {
@@ -93,7 +96,8 @@ fn thread_test_run_u32(pool: &ThreadPool, compute_fn: &void, arg: u32) !u32 {
     }
     const loop: EventLoop = loop_impl;
     const f: Future<!u32> = async_compute<u32>(pool, compute_fn, arg);
-    return scheduler_run_u32_with_event_loop(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    const out: !u32 = scheduler_run_with_event_loop<u32>(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    return out;
 }
 
 fn thread_test_run_generic_i32(pool: &ThreadPool, compute_fn: &void, arg: i32) !i32 {
@@ -104,7 +108,8 @@ fn thread_test_run_generic_i32(pool: &ThreadPool, compute_fn: &void, arg: i32) !
     }
     const loop: EventLoop = loop_impl;
     const f: Future<!i32> = async_compute<i32>(pool, compute_fn, arg);
-    return scheduler_run_i32_with_event_loop(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    const out: !i32 = scheduler_run_with_event_loop<i32>(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    return out;
 }
 
 fn thread_test_run_generic_usize(pool: &ThreadPool, compute_fn: &void, arg: usize) !usize {
@@ -115,7 +120,8 @@ fn thread_test_run_generic_usize(pool: &ThreadPool, compute_fn: &void, arg: usiz
     }
     const loop: EventLoop = loop_impl;
     const f: Future<!usize> = async_compute<usize>(pool, compute_fn, arg);
-    return scheduler_run_usize_with_event_loop(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    const out: !usize = scheduler_run_with_event_loop<usize>(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    return out;
 }
 
 fn thread_test_run_generic_u32(pool: &ThreadPool, compute_fn: &void, arg: u32) !u32 {
@@ -126,7 +132,8 @@ fn thread_test_run_generic_u32(pool: &ThreadPool, compute_fn: &void, arg: u32) !
     }
     const loop: EventLoop = loop_impl;
     const f: Future<!u32> = async_compute<u32>(pool, compute_fn, arg);
-    return scheduler_run_u32_with_event_loop(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    const out: !u32 = scheduler_run_with_event_loop<u32>(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    return out;
 }
 
 fn thread_test_drive_future_usize(f: Future<!usize>) !usize {
@@ -136,7 +143,8 @@ fn thread_test_drive_future_usize(f: Future<!usize>) !usize {
         _ = sys_close(loop_impl.epfd);
     }
     const loop: EventLoop = loop_impl;
-    return scheduler_run_usize_with_event_loop(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    const out: !usize = scheduler_run_with_event_loop<usize>(&s, loop, f, THREAD_TEST_TIMEOUT_MS);
+    return out;
 }
 
 fn thread_wait_pending_count(pool: &ThreadPool, target: i32) i32 {

@@ -41,13 +41,13 @@ fn add_async() Future<!i32> {
 
 test "scheduler_run" {
     var s: Scheduler = scheduler_new();
-    const result: i32 = try scheduler_run_i32(&s, add_async());
+    const result: i32 = try scheduler_run<i32>(&s, add_async());
     try assert_eq_i32(result, 30);
 }
 
 test "scheduler_run_u32" {
     var s: Scheduler = scheduler_new();
-    const result: u32 = try scheduler_run_u32(&s, ready_u32(12 as u32));
+    const result: u32 = try scheduler_run<u32>(&s, ready_u32(12 as u32));
     try assert_eq_i32(result as i32, 12);
 }
 
@@ -260,7 +260,7 @@ test "scheduler_run_with_event_loop_polls_pending_future" {
     var s: Scheduler = scheduler_new();
     const loop: EventLoop = test_event_loop();
     const f: Future<!i32> = pending_then_ready_future();
-    const result: i32 = try scheduler_run_i32_with_event_loop(&s, loop, f, 0);
+    const result: i32 = try scheduler_run_with_event_loop<i32>(&s, loop, f, 0);
 
     try assert_eq_i32(result, 99);
     try assert_eq_i32(scheduler_loop_poll_count, 1);
@@ -273,7 +273,7 @@ test "scheduler_run_with_event_loop_skips_poll_when_woken" {
     var s: Scheduler = scheduler_new();
     const loop: EventLoop = test_event_loop();
     const f: Future<!i32> = wake_then_ready_future();
-    const result: i32 = try scheduler_run_i32_with_event_loop(&s, loop, f, 0);
+    const result: i32 = try scheduler_run_with_event_loop<i32>(&s, loop, f, 0);
 
     try assert_eq_i32(result, 123);
     try assert_eq_i32(scheduler_wake_poll_count, 2);

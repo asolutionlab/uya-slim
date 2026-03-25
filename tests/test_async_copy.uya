@@ -9,6 +9,7 @@ test "async_copy" {
     var w: MemAsyncWriter = mem_async_writer_new();
     var buf: [byte: 4] = [];
     const f: Future<!usize> = async_copy(&r, &w, &buf[0], 4);
-    const total: usize = block_on_usize(f) catch { 0 as usize; };
+    const bo: !usize = block_on<usize>(f);
+    const total: usize = bo catch { 0 as usize; };
     try assert_eq_i32(total as i32, 8);
 }

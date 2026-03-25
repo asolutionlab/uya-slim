@@ -12,7 +12,8 @@ test "loop_var_persist_generic_names" {
 
     // 使用不同的变量名：bytes_read 和 bytes_written（而非 n/written）
     const f: Future<!usize> = async_copy_generic(&r, &w, &buf[0], 4);
-    const total: usize = block_on_usize(f) catch { 0 as usize; };
+    const bo: !usize = block_on<usize>(f);
+    const total: usize = bo catch { 0 as usize; };
     try assert_eq_i32(total as i32, 8);
 }
 

@@ -149,7 +149,7 @@ fn test_async_fd_read_with_event_loop_wakes() !void {
     var scheduler: Scheduler = scheduler_new();
     const loop: EventLoop = AsyncFdWakeLoop{};
     const f: Future<!usize> = af.read(&buf[0], 4);
-    const read_count: usize = try scheduler_run_usize_with_event_loop(&scheduler, loop, f, 50);
+    const read_count: usize = try scheduler_run_with_event_loop<usize>(&scheduler, loop, f, 50);
     try assert_eq_i32(read_count as i32, 4);
     try assert_eq_i32(async_fd_mock_registered_fd, read_fd);
     try assert_eq_i32(async_fd_mock_register_count, 1);

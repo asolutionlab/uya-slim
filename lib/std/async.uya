@@ -97,40 +97,16 @@ export fn ok<T>(value: T) !T {
     return value;
 }
 
-/// 构造 Poll<!i32>.Ready(ok(value))，供自定义 `Future<!i32>` 的 Ready 路径复用。
-export fn poll_ready_ok_i32(value: i32) Poll<!i32> {
-    const ok_value: !i32 = ok<i32>(value);
-    const p: Poll<!i32> = Poll<!i32>.Ready(ok_value);
+/// 构造 Poll<!T>.Ready(ok(value))，供自定义 `Future<!T>` 的 Ready 路径复用。
+export fn poll_ready_ok<T>(value: T) Poll<!T> {
+    const ok_value: !T = ok<T>(value);
+    const p: Poll<!T> = Poll<!T>.Ready(ok_value);
     return p;
 }
 
-/// 构造已就绪的 `Future<!i32>`。
-export fn future_ready_ok_i32(value: i32) Future<!i32> {
-    return Future<!i32>{ state: poll_ready_ok_i32(value) };
-}
-
-/// 构造 Poll<!u32>.Ready(ok(value))。
-export fn poll_ready_ok_u32(value: u32) Poll<!u32> {
-    const ok_value: !u32 = ok<u32>(value);
-    const p: Poll<!u32> = Poll<!u32>.Ready(ok_value);
-    return p;
-}
-
-/// 构造已就绪的 `Future<!u32>`。
-export fn future_ready_ok_u32(value: u32) Future<!u32> {
-    return Future<!u32>{ state: poll_ready_ok_u32(value) };
-}
-
-/// 构造 Poll<!usize>.Ready(ok(value))，供异步 I/O ready 路径复用。
-export fn poll_ready_ok_usize(value: usize) Poll<!usize> {
-    const ok_value: !usize = ok<usize>(value);
-    const p: Poll<!usize> = Poll<!usize>.Ready(ok_value);
-    return p;
-}
-
-/// 构造已就绪的 `Future<!usize>`。
-export fn future_ready_ok_usize(value: usize) Future<!usize> {
-    return Future<!usize>{ state: poll_ready_ok_usize(value) };
+/// 构造已就绪的 `Future<!T>`。
+export fn future_ready_ok<T>(value: T) Future<!T> {
+    return Future<!T>{ state: poll_ready_ok<T>(value) };
 }
 
 /// 创建已就绪任务。poll 时立即返回 Ready(value)。
@@ -139,18 +115,8 @@ export fn task_ready<T>(value: T) Task<T> {
 }
 
 /// 创建已就绪任务：Ready(ok(value))，便于构造 Future<!T>。
-export fn task_ready_ok_i32(value: i32) Task<!i32> {
-    return Task<!i32>{ state: poll_ready_ok_i32(value) };
-}
-
-/// 创建已就绪任务：`Ready(ok(value))`，`Future<!u32>` / `Task<!u32>` 路径。
-export fn task_ready_ok_u32(value: u32) Task<!u32> {
-    return Task<!u32>{ state: poll_ready_ok_u32(value) };
-}
-
-/// 创建已就绪任务：`Ready(ok(value))`，`Future<!usize>` / `Task<!usize>` 路径。
-export fn task_ready_ok_usize(value: usize) Task<!usize> {
-    return Task<!usize>{ state: poll_ready_ok_usize(value) };
+export fn task_ready_ok<T>(value: T) Task<!T> {
+    return Task<!T>{ state: poll_ready_ok<T>(value) };
 }
 
 /// 同步运行 Future<!T> 直到 Ready，返回 !T。Pending 时轮询直到就绪（忙等待，测试用）。
@@ -167,60 +133,107 @@ export fn block_on<T>(f: Future<!T>) !T {
     }
 }
 
-/// block_on 的 i32 特化，便于无需显式泛型参数的调用。
-export fn block_on_i32(f: Future<!i32>) !i32 {
+/// 同步运行 Future<T>（无 `!`）直到 Ready，直接返回 T。
+export fn block_on_plain<T>(f: Future<T>) T {
     var w: Waker = Waker{};
     while true {
         w.reset();
         w.clear_io_interest();
-        const p: Poll<!i32> = f.poll(&w);
-        match p {
-            .Ready(ok_val) => { return ok_val; },
-            .Pending(_) => { },
-        };
-    }
-}
-
-/// block_on 的 u32 特化。
-export fn block_on_u32(f: Future<!u32>) !u32 {
-    var w: Waker = Waker{};
-    while true {
-        w.reset();
-        w.clear_io_interest();
-        const p: Poll<!u32> = f.poll(&w);
-        match p {
-            .Ready(ok_val) => { return ok_val; },
-            .Pending(_) => { },
-        };
-    }
-}
-
-/// block_on 的 usize 特化。
-export fn block_on_usize(f: Future<!usize>) !usize {
-    var w: Waker = Waker{};
-    while true {
-        w.reset();
-        w.clear_io_interest();
-        const p: Poll<!usize> = f.poll(&w);
-        match p {
-            .Ready(ok_val) => { return ok_val; },
-            .Pending(_) => { },
-        };
-    }
-}
-
-/// block_on 的 Future<usize> 特化（无错误传播，直接返回 usize）。
-export fn block_on_usize_plain(f: Future<usize>) usize {
-    var w: Waker = Waker{};
-    while true {
-        w.reset();
-        w.clear_io_interest();
-        const p: Poll<usize> = f.poll(&w);
+        const p: Poll<T> = f.poll(&w);
         match p {
             .Ready(n) => { return n; },
             .Pending(_) => { },
         };
     }
+}
+
+// 结构体内联方法当前不在类型检查阶段遍历函数体，泛型调用不会注册单态；经顶层转发以生成 C 单态符号。
+fn async_future_ready_ok_usize(value: usize) Future<!usize> {
+    const r: Future<!usize> = future_ready_ok<usize>(value);
+    return r;
+}
+
+fn async_poll_ready_ok_i32(value: i32) Poll<!i32> {
+    const r: Poll<!i32> = poll_ready_ok<i32>(value);
+    return r;
+}
+fn async_poll_ready_ok_u32(value: u32) Poll<!u32> {
+    const r: Poll<!u32> = poll_ready_ok<u32>(value);
+    return r;
+}
+fn async_poll_ready_ok_i64(value: i64) Poll<!i64> {
+    const r: Poll<!i64> = poll_ready_ok<i64>(value);
+    return r;
+}
+fn async_poll_ready_ok_u64(value: u64) Poll<!u64> {
+    const r: Poll<!u64> = poll_ready_ok<u64>(value);
+    return r;
+}
+fn async_poll_ready_ok_i16(value: i16) Poll<!i16> {
+    const r: Poll<!i16> = poll_ready_ok<i16>(value);
+    return r;
+}
+fn async_poll_ready_ok_u16(value: u16) Poll<!u16> {
+    const r: Poll<!u16> = poll_ready_ok<u16>(value);
+    return r;
+}
+fn async_poll_ready_ok_i8(value: i8) Poll<!i8> {
+    const r: Poll<!i8> = poll_ready_ok<i8>(value);
+    return r;
+}
+fn async_poll_ready_ok_u8(value: u8) Poll<!u8> {
+    const r: Poll<!u8> = poll_ready_ok<u8>(value);
+    return r;
+}
+fn async_poll_ready_ok_bool(value: bool) Poll<!bool> {
+    const r: Poll<!bool> = poll_ready_ok<bool>(value);
+    return r;
+}
+fn async_poll_ready_ok_f32(value: f32) Poll<!f32> {
+    const r: Poll<!f32> = poll_ready_ok<f32>(value);
+    return r;
+}
+fn async_poll_ready_ok_f64(value: f64) Poll<!f64> {
+    const r: Poll<!f64> = poll_ready_ok<f64>(value);
+    return r;
+}
+
+fn async_poll_ready_ok_usize(value: usize) Poll<!usize> {
+    const r: Poll<!usize> = poll_ready_ok<usize>(value);
+    return r;
+}
+
+// 注册常用 `ok<T>` 单态，供 poll_ready / 线程异步计算等生成的 C 链接（勿调用对应 `std_ok_*` 以免递归）。
+fn async_registry_ok_monos() void {
+    const k_i32: !i32 = ok<i32>(0);
+    const k_u32: !u32 = ok<u32>(0);
+    const k_i64: !i64 = ok<i64>(0);
+    const k_u64: !u64 = ok<u64>(0);
+    const k_i16: !i16 = ok<i16>(0);
+    const k_u16: !u16 = ok<u16>(0);
+    const k_i8: !i8 = ok<i8>(0);
+    const k_u8: !u8 = ok<u8>(0);
+    const k_bool: !bool = ok<bool>(0);
+    const k_f32: !f32 = ok<f32>(0.0);
+    const k_f64: !f64 = ok<f64>(0.0);
+    const k_usize: !usize = ok<usize>(0);
+    if k_i32.error_id != 0 && k_u32.error_id != 0 && k_i64.error_id != 0 && k_u64.error_id != 0 &&
+        k_i16.error_id != 0 && k_u16.error_id != 0 && k_i8.error_id != 0 && k_u8.error_id != 0 &&
+        k_bool.error_id != 0 && k_f32.error_id != 0 && k_f64.error_id != 0 && k_usize.error_id != 0 {
+    }
+    // 强制发出 std_poll_ready_ok_*（future_ready_ok/task_ready_ok 等会调用；结构体 poll 内直接 poll_ready_ok 不注册单态）
+    _ = async_poll_ready_ok_i32(0);
+    _ = async_poll_ready_ok_u32(0);
+    _ = async_poll_ready_ok_i64(0);
+    _ = async_poll_ready_ok_u64(0);
+    _ = async_poll_ready_ok_i16(0);
+    _ = async_poll_ready_ok_u16(0);
+    _ = async_poll_ready_ok_i8(0);
+    _ = async_poll_ready_ok_u8(0);
+    _ = async_poll_ready_ok_bool(false);
+    _ = async_poll_ready_ok_f32(0.0);
+    _ = async_poll_ready_ok_f64(0.0);
+    _ = async_poll_ready_ok_usize(0);
 }
 
 // ============================================================
@@ -246,12 +259,12 @@ export struct MemAsyncWriter : AsyncWriter {
     fn write(self: &Self, data: &const byte, count: usize) Future<!usize> {
         _ = self;
         _ = data;
-        return future_ready_ok_usize(count);
+        return async_future_ready_ok_usize(count);
     }
 
     fn flush(self: &Self) Future<!usize> {
         _ = self;
-        return future_ready_ok_usize(0);
+        return async_future_ready_ok_usize(0);
     }
 }
 
@@ -277,7 +290,7 @@ export struct MemAsyncReader : AsyncReader {
             i = i + 1;
         }
         self._pos = self._pos + avail;
-        return future_ready_ok_usize(avail);
+        return async_future_ready_ok_usize(avail);
     }
 }
 
@@ -346,7 +359,7 @@ struct AsyncFdWriteFuture : Future<!usize> {
             const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
             return p;
         };
-        return poll_ready_ok_usize(n as usize);
+        return async_poll_ready_ok_usize(n as usize);
     }
 }
 
@@ -381,7 +394,7 @@ struct AsyncFdReadFuture : Future<!usize> {
             const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
             return p;
         };
-        return poll_ready_ok_usize(n as usize);
+        return async_poll_ready_ok_usize(n as usize);
     }
 }
 
@@ -396,7 +409,7 @@ export struct AsyncFd : AsyncWriter, AsyncReader {
 
     fn flush(self: &Self) Future<!usize> {
         _ = self;
-        return future_ready_ok_usize(0);
+        return async_future_ready_ok_usize(0);
     }
 
     fn read(self: &Self, buf: &byte, count: usize) Future<!usize> {

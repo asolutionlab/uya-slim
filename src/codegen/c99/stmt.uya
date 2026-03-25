@@ -1466,7 +1466,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         if var_type.type == ASTNodeType.AST_TYPE_ARRAY {
             // 使用 c99_type_to_c 来处理数组类型（包括多维数组）
             // 它会返回正确的格式，如 "int32_t[3][2]" 对于 [[i32: 2]: 3]
-            type_c = c99_type_to_c(codegen, var_type);
+            type_c = c99_mono_type_to_c(codegen, var_type);
             
             // 保存完整的类型字符串（包括 const 和维度）用于存储到变量表
             if type_c != null {
@@ -1616,8 +1616,8 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
             }
         } else {
-            // 非数组类型
-            type_c = c99_type_to_c(codegen, var_type);
+            // 非数组类型（单态函数内需替换类型参数，否则 Poll<!T> 等会退化为错误 C 类型）
+            type_c = c99_mono_type_to_c(codegen, var_type);
             // 检查是否是 va_list 类型（内置类型）
             var is_va_list_builtin: i32 = 0;
             if var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null {
@@ -2042,9 +2042,24 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         const saved_sa: & & ASTNode = codegen.struct_type_args;
                         const saved_spc: i32 = codegen.struct_type_param_count;
                         const saved_sac: i32 = codegen.struct_type_arg_count;
-                        if set_union_mono_context_from_tagged_type(codegen, union_decl, m_type) != 0 { }
+                        var union_mono_ctx_set: i32 = 0;
+                        if set_union_mono_context_from_tagged_type(codegen, union_decl, m_type) != 0 {
+                            union_mono_ctx_set = 1;
+                        }
+                        // 已设置联合体单态上下文时，暂时屏蔽外层泛型函数的形参（如 block_on<T> 与 Poll<T> 同名 T，
+                        // substitute 否则会先把 T 换成 i32，使 Ready 载荷错成标量而非 !T）。
+                        const saved_fn_tp: &TypeParam = codegen.current_type_params;
+                        const saved_fn_tpc: i32 = codegen.current_type_param_count;
+                        const saved_fn_ta: & & ASTNode = codegen.current_type_args;
+                        const saved_fn_tac: i32 = codegen.current_type_arg_count;
+                        if union_mono_ctx_set != 0 {
+                            codegen.current_type_params = null;
+                            codegen.current_type_param_count = 0;
+                            codegen.current_type_args = null;
+                            codegen.current_type_arg_count = 0;
+                        }
                         if vnode != null && vnode.type == ASTNodeType.AST_VAR_DECL && vnode.var_decl_type != null {
-                            vtype = c99_type_to_c(codegen, vnode.var_decl_type);
+                            vtype = c99_mono_type_to_c(codegen, vnode.var_decl_type);
                             if vtype != null && vnode.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED &&
                                 vnode.var_decl_type.type_named_name != null && vnode.var_decl_type.type_named_type_arg_count == 0 &&
                                 strcmp(vtype as *byte, vnode.var_decl_type.type_named_name as *byte) == 0 &&
@@ -2056,6 +2071,25 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                                     if fallback_c != null {
                                         vtype = fallback_c;
                                     }
+                                }
+                            }
+                        }
+                        if union_mono_ctx_set != 0 {
+                            codegen.current_type_params = saved_fn_tp;
+                            codegen.current_type_param_count = saved_fn_tpc;
+                            codegen.current_type_args = saved_fn_ta;
+                            codegen.current_type_arg_count = saved_fn_tac;
+                        }
+                        // Ready 载荷：以 match 表达式的 tagged C 类型后缀为准（修复 Poll<!u32> 等与外层泛型形参同名时代换错误）
+                        if stmt.match_expr_arms[i].variant_name != null &&
+                            strcmp(stmt.match_expr_arms[i].variant_name as *byte, "Ready" as *byte) == 0 &&
+                            m_type != null {
+                            const p_ready: *byte = strstr(m_type as *byte, "uya_tagged_" as *byte);
+                            if p_ready != null {
+                                const suf_ready: &byte = &p_ready[11] as &byte;
+                                const vt_ready: &byte = variant_c_type_from_tagged_suffix(codegen, union_decl, suf_ready);
+                                if vt_ready != null {
+                                    vtype = vt_ready;
                                 }
                             }
                         }
