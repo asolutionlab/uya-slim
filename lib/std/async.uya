@@ -303,7 +303,7 @@ export @async_fn fn async_copy(reader: &MemAsyncReader, writer: &MemAsyncWriter,
 }
 
 // ============================================================
-// AsyncFd - 基于文件描述符的异步 I/O - 基于文件描述符的异步 I/O（同步实现，待扩展非阻塞）
+// AsyncFd - 基于文件描述符的异步 I/O（poll 内设 O_NONBLOCK；EAGAIN 时 Pending + waker）
 // ============================================================
 
 use libc.syscall;

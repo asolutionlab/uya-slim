@@ -1,6 +1,6 @@
 # 异步运行时完善与 HTTP 服务器实现 — 综合待办
 
-**最后更新**：2026-03-24 — Phase 4 `lib/std/http/router.uya` 已落地：`router_find_route` 返回命中下标 / `-1`（404）/ `-2`（405）、`path_matches_pattern` / `router_apply_path_params`、`MAX_ROUTES` 与 `RouterFull`；测试 `tests/test_http_router.uya`。此前：2026-03-22 — `f32`/`f64` 已并入 `AsyncComputeFuture<T>`；C99 泛型方法内 `thread_type_is_*(T)` 折叠；前导 `uya_thread_call_f32`/`f64` 以 **u32/u64 位模式** 与槽位对接，内部用 **union** 转 `float`/`double`，并以 **`float(*)(float)` / `double(*)(double)`** 间接调用（**不可**伪装成 `uint32_t(*)(uint32_t)` 等整型 ABI，否则 `async_compute` 浮点用例会错）。
+**最后更新**：2026-03-25 — ThreadPool `THREAD_POOL_MAX_WORKERS` / `THREAD_POOL_MAX_PENDING` 提升至 32，与 `_workers` / `pending_slots` 数组对齐；此前 2026-03-24 — Phase 4 `lib/std/http/router.uya` 已落地：`router_find_route` 返回命中下标 / `-1`（404）/ `-2`（405）、`path_matches_pattern` / `router_apply_path_params`、`MAX_ROUTES` 与 `RouterFull`；测试 `tests/test_http_router.uya`。此前：2026-03-22 — `f32`/`f64` 已并入 `AsyncComputeFuture<T>`；C99 泛型方法内 `thread_type_is_*(T)` 折叠；前导 `uya_thread_call_f32`/`f64` 以 **u32/u64 位模式** 与槽位对接，内部用 **union** 转 `float`/`double`，并以 **`float(*)(float)` / `double(*)(double)`** 间接调用（**不可**伪装成 `uint32_t(*)(uint32_t)` 等整型 ABI，否则 `async_compute` 浮点用例会错）。
 
 **关联文档**：
 - [todo_async_loop_await.md](todo_async_loop_await.md) — 循环内 await 实现细节
@@ -41,7 +41,7 @@
 | # | 问题 | 修复方案 | 状态 |
 |---|------|----------|------|
 | 11 | `async_compute<T>` 曾需 12 套重复 `Future` 实现 | 改用 `void*` + 类型擦除，或编译器泛型 + 单一 `AsyncComputeFuture<T>` | **已完成 API 收敛**：`AsyncComputeFuture<T>` 覆盖 **含 f32/f64** 的全部载荷；**仅**导出 **`async_compute<T>`**（已删 12 个 **`async_compute_*`**）；typedef 别名仍可用。 |
-| 12 | `ThreadPool` worker 数量硬编码 8 | 改为构造参数，支持 `ThreadPool::new(n_workers)` | 待办 |
+| 12 | `ThreadPool` worker / pending 曾硬编码 8 | `thread_pool_new(n)` 已存在；**已**将 `THREAD_POOL_MAX_WORKERS` / `THREAD_POOL_MAX_PENDING` 与数组维度提升至 **32**，边界比较改用常量 | **部分完成**（仍固定上限数组，非动态扩容） |
 | 13 | 无超时/取消机制 | 在 `Poll<T>` 增加 `Cancelled` 状态；`Task<T>` 添加 `cancel` 方法 | 待办 |
 | 14 | 无异步 I/O 原语 | 实现 `AsyncFd`（非当前空壳）：epoll 注册 + 非阻塞 read/write + 自动状态机调度 | 待办（`std.async.io` 已有最小路径，见 `todo_mini_to_full`） |
 

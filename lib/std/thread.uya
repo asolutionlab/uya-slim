@@ -9,8 +9,9 @@ use libc.syscall;
 
 const THREAD_ERR_EAGAIN: u32 = 11;
 const THREAD_ERR_EWOULDBLOCK: u32 = 11;
-export const THREAD_POOL_MAX_WORKERS: i32 = 8;
-export const THREAD_POOL_MAX_PENDING: i32 = 8;
+// 须与 ThreadPool._workers、ThreadPoolSharedState.pending_slots 数组维度一致
+export const THREAD_POOL_MAX_WORKERS: i32 = 32;
+export const THREAD_POOL_MAX_PENDING: i32 = 32;
 const THREAD_POOL_MAX_TASK_SLOTS: i32 = 16;
 const THREAD_SLOT_STATE_FREE: i32 = 0;
 const THREAD_SLOT_STATE_READY: i32 = 1;
@@ -314,7 +315,7 @@ struct ThreadPoolSharedState {
     pending_tail: atomic i32,
     pending_count: atomic i32,
     slots: [ThreadTaskSlotRaw: 16] = [],
-    pending_slots: [i32: 8] = [],
+    pending_slots: [i32: 32] = [],
 }
 
 export struct ThreadPool {
@@ -322,7 +323,7 @@ export struct ThreadPool {
     _started_workers: i32,
     _next_worker: i32,
     _shared_state: &ThreadPoolSharedState,
-    _workers: [ThreadWorker: 8] = [],
+    _workers: [ThreadWorker: 32] = [],
 }
 
 fn thread_worker_set_nonblock(fd: i32) !i32 {
@@ -551,7 +552,7 @@ fn thread_pool_try_acquire_idle_worker(pool: &ThreadPool) i32 {
     var offset: i32 = 0;
     while offset < pool._started_workers {
         const idx: i32 = (pool._next_worker + offset) % pool._started_workers;
-        if idx >= 0 && idx < 8 {
+        if idx >= 0 && idx < THREAD_POOL_MAX_WORKERS {
             if pool._workers[idx as usize].active != 0 && pool._workers[idx as usize].busy == 0 {
                 pool._workers[idx as usize].busy = 1;
                 pool._workers[idx as usize].active_slot = 0 - 1;
@@ -571,10 +572,10 @@ fn thread_pool_refresh_worker_state(pool: &ThreadPool, worker_idx: i32) void {
     if pool == null as &ThreadPool || !thread_pool_has_shared_state(pool) {
         return;
     }
-    if worker_idx < 0 || worker_idx >= pool._started_workers || worker_idx >= 8 {
+    if worker_idx < 0 || worker_idx >= pool._started_workers || worker_idx >= THREAD_POOL_MAX_WORKERS {
         return;
     }
-    if worker_idx >= 0 && worker_idx < 8 {
+    if worker_idx >= 0 && worker_idx < THREAD_POOL_MAX_WORKERS {
         if pool._workers[worker_idx as usize].active == 0 {
             return;
         }
@@ -585,7 +586,7 @@ fn thread_pool_refresh_worker_state(pool: &ThreadPool, worker_idx: i32) void {
         const slot_state: i32 = pool._shared_state.slots[slot_idx as usize].state;
         if (slot_state == THREAD_SLOT_STATE_RUNNING || slot_state == THREAD_SLOT_STATE_DONE) &&
            pool._shared_state.slots[slot_idx as usize].worker_idx == worker_idx {
-            if worker_idx >= 0 && worker_idx < 8 {
+            if worker_idx >= 0 && worker_idx < THREAD_POOL_MAX_WORKERS {
                 pool._workers[worker_idx as usize].busy = 1;
                 pool._workers[worker_idx as usize].active_slot = slot_idx;
             }
@@ -594,7 +595,7 @@ fn thread_pool_refresh_worker_state(pool: &ThreadPool, worker_idx: i32) void {
         slot_idx = slot_idx + 1;
     }
 
-    if worker_idx >= 0 && worker_idx < 8 {
+    if worker_idx >= 0 && worker_idx < THREAD_POOL_MAX_WORKERS {
         pool._workers[worker_idx as usize].busy = 0;
         pool._workers[worker_idx as usize].active_slot = 0 - 1;
     }
@@ -619,7 +620,7 @@ fn thread_pool_acquire_worker(pool: &ThreadPool) !i32 {
 
         const new_idx: i32 = pool._started_workers;
         _ = try thread_pool_spawn_worker(pool, new_idx);
-        if new_idx >= 0 && new_idx < 8 {
+        if new_idx >= 0 && new_idx < THREAD_POOL_MAX_WORKERS {
             pool._workers[new_idx as usize].busy = 1;
             pool._workers[new_idx as usize].active_slot = 0 - 1;
             pool._next_worker = 0;
@@ -634,10 +635,10 @@ fn thread_pool_release_worker(pool: &ThreadPool, worker_idx: i32) void {
     if pool == null as &ThreadPool {
         return;
     }
-    if worker_idx < 0 || worker_idx >= pool._started_workers || worker_idx >= 8 {
+    if worker_idx < 0 || worker_idx >= pool._started_workers || worker_idx >= THREAD_POOL_MAX_WORKERS {
         return;
     }
-    if worker_idx >= 0 && worker_idx < 8 {
+    if worker_idx >= 0 && worker_idx < THREAD_POOL_MAX_WORKERS {
         if pool._workers[worker_idx as usize].active == 0 {
             return;
         }
@@ -672,7 +673,7 @@ fn thread_pool_try_kick_drain(pool: &ThreadPool) !i32 {
     const worker_idx: i32 = worker_result catch {
         return worker_result as! i32;
     };
-    if worker_idx < 0 || worker_idx >= 8 {
+    if worker_idx < 0 || worker_idx >= THREAD_POOL_MAX_WORKERS {
         return 0;
     }
 
@@ -685,7 +686,7 @@ fn thread_pool_try_kick_drain(pool: &ThreadPool) !i32 {
         slot_idx: THREAD_WORKER_DRAIN_QUEUE,
         reserved: 0,
     };
-    if worker_idx >= 0 && worker_idx < 8 {
+    if worker_idx >= 0 && worker_idx < THREAD_POOL_MAX_WORKERS {
         const cmd_fd: i32 = pool._workers[worker_idx as usize].cmd_write_fd;
         const write_result: !isize = sys_write(cmd_fd, (&cmd) as *const byte, @size_of(ThreadWorkerCommand));
         const written: isize = write_result catch {
@@ -748,10 +749,10 @@ fn thread_pool_enqueue_slot(pool: &ThreadPool, slot_idx: i32) i32 {
     if pool._shared_state.pending_count >= THREAD_POOL_MAX_PENDING {
         return 0;
     }
-    if pool._shared_state.pending_tail >= 0 && pool._shared_state.pending_tail < 8 {
+    if pool._shared_state.pending_tail >= 0 && pool._shared_state.pending_tail < THREAD_POOL_MAX_PENDING {
         pool._shared_state.pending_slots[pool._shared_state.pending_tail as usize] = slot_idx;
         pool._shared_state.pending_tail = pool._shared_state.pending_tail + 1;
-        if pool._shared_state.pending_tail >= 8 {
+        if pool._shared_state.pending_tail >= THREAD_POOL_MAX_PENDING {
             pool._shared_state.pending_tail = 0;
         }
         pool._shared_state.pending_count = pool._shared_state.pending_count + 1;
@@ -767,11 +768,11 @@ fn thread_shared_pop_slot(shared_state: &ThreadPoolSharedState) i32 {
     if shared_state == null as &ThreadPoolSharedState || shared_state.pending_count <= 0 {
         return 0 - 1;
     }
-    if shared_state.pending_head >= 0 && shared_state.pending_head < 8 {
+    if shared_state.pending_head >= 0 && shared_state.pending_head < THREAD_POOL_MAX_PENDING {
         const slot_idx: i32 = shared_state.pending_slots[shared_state.pending_head as usize];
         shared_state.pending_slots[shared_state.pending_head as usize] = 0;
         shared_state.pending_head = shared_state.pending_head + 1;
-        if shared_state.pending_head >= 8 {
+        if shared_state.pending_head >= THREAD_POOL_MAX_PENDING {
             shared_state.pending_head = 0;
         }
         shared_state.pending_count = shared_state.pending_count - 1;
@@ -823,7 +824,7 @@ struct ThreadAsyncComputeCore {
         }
 
         const worker_idx: i32 = pool_ref._shared_state.slots[self.slot_idx as usize].worker_idx;
-        if worker_idx >= 0 && worker_idx < pool_ref._started_workers && worker_idx < 8 {
+        if worker_idx >= 0 && worker_idx < pool_ref._started_workers && worker_idx < THREAD_POOL_MAX_WORKERS {
             if pool_ref._workers[worker_idx as usize].active != 0 {
                 self.worker_idx = worker_idx;
                 self.read_fd = pool_ref._workers[worker_idx as usize].result_read_fd;
@@ -1077,7 +1078,7 @@ export fn thread_pool_pending_count(pool: &ThreadPool) i32 {
 export fn thread_pool_shutdown(pool: &ThreadPool) void {
     var i: i32 = 0;
     while i < pool._started_workers {
-        if i >= 0 && i < 8 {
+        if i >= 0 && i < THREAD_POOL_MAX_WORKERS {
             if pool._workers[i as usize].active != 0 {
                 var cmd: ThreadWorkerCommand = ThreadWorkerCommand{ slot_idx: THREAD_WORKER_STOP_SLOT, reserved: 0 };
                 _ = sys_write(pool._workers[i as usize].cmd_write_fd, (&cmd) as *const byte, @size_of(ThreadWorkerCommand)) catch {};
