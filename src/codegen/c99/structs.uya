@@ -1404,10 +1404,40 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
     }
 }
 
+// 镜像分 TU：vtable 若在 uya_common.c 中用 static，其它镜像 .c 无法链接；需外链 + uya_vtable_externs.h 声明。
+fn c99_emit_vtable_var_open(codegen: &C99CodeGenerator, vtable_externs_out: &void, iface_safe: &byte, struct_safe: &byte) void {
+    if iface_safe == null || struct_safe == null {
+        return;
+    }
+    if codegen.split_mirror != 0 {
+        if vtable_externs_out != null {
+            fprintf(vtable_externs_out as *void, "extern const struct uya_vtable_%s uya_vtable_%s_%s;\n" as *byte,
+                iface_safe as *byte, iface_safe as *byte, struct_safe as *byte);
+        }
+        fprintf(codegen.emit_stream as *void, "const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
+            iface_safe as *byte, iface_safe as *byte, struct_safe as *byte);
+    } else {
+        fprintf(codegen.emit_stream as *void, "static const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
+            iface_safe as *byte, iface_safe as *byte, struct_safe as *byte);
+    }
+}
+
 // 生成各 struct:interface 的 vtable 常量（需在方法前向声明之后调用）
 fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
     if codegen == null || codegen.program_node == null {
         return;
+    }
+    var vtable_externs_out: &void = null;
+    if codegen.split_mirror != 0 && codegen.split_dir != null && codegen.split_dir[0] != 0 as byte {
+        var vepath: [byte: 1024] = [];
+        const vel: i32 = snprintf(&vepath[0] as *byte, 1024, "%s/uya_vtable_externs.h" as *byte, codegen.split_dir as *byte);
+        if vel > 0 && vel < 1024 {
+            const veh: *void = fopen(&vepath[0] as *byte, "w" as *byte);
+            if veh != null {
+                fputs("#ifndef UYA_VTABLE_EXTERNS_H\n#define UYA_VTABLE_EXTERNS_H\n\n" as *byte, veh as *void);
+                vtable_externs_out = veh as &void;
+            }
+        }
     }
     const decl_count: i32 = codegen.program_node.program_decl_count;
     var i: i32 = 0;
@@ -1552,8 +1582,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                             // 生成 vtable 常量：uya_vtable_<ifaceMono>_<Struct>
                             var all_sigsA2: [&ASTNode: 128] = [];
                             const sig_countA2: i32 = collect_interface_method_sigs(codegen, iface_decl.interface_decl_name, &all_sigsA2[0], 128);
-                            fprintf(codegen.emit_stream as *void, "static const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
-                                    safe_mono_iface as *byte, safe_mono_iface as *byte, safe_struct as *byte);
+                            c99_emit_vtable_var_open(codegen, vtable_externs_out, safe_mono_iface, safe_struct);
                             var kA: i32 = 0;
                             while kA < sig_countA2 && kA < C99_MAX_INTERFACE_METHODS {
                                 const msigA2: &ASTNode = all_sigsA2[kA];
@@ -1703,8 +1732,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
 
                     var all_sigs2: [&ASTNode: 128] = [];
                     const sig_count2: i32 = collect_interface_method_sigs(codegen, iface_decl.interface_decl_name, &all_sigs2[0], 128);
-                    fprintf(codegen.emit_stream as *void, "static const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
-                            safe_mono_iface as *byte, safe_mono_iface as *byte, safe_mono_struct as *byte);
+                    c99_emit_vtable_var_open(codegen, vtable_externs_out, safe_mono_iface, safe_mono_struct);
                     var k: i32 = 0;
                     while k < sig_count2 && k < C99_MAX_INTERFACE_METHODS {
                         const msig: &ASTNode = all_sigs2[k];
@@ -1752,8 +1780,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                 var all_sigs2: [&ASTNode: 128] = [];
                 const sig_count2: i32 = collect_interface_method_sigs(codegen, iface_base, &all_sigs2[0], 128);
                 
-                fprintf(codegen.emit_stream as *void, "static const struct uya_vtable_%s uya_vtable_%s_%s = { " as *byte,
-                        safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
+                c99_emit_vtable_var_open(codegen, vtable_externs_out, safe_iface, safe_struct);
                 var k: i32 = 0;
                 while k < sig_count2 && k < C99_MAX_INTERFACE_METHODS {
                     const msig: &ASTNode = all_sigs2[k];
@@ -1790,6 +1817,10 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
             j = j + 1;
         }
         i = i + 1;
+    }
+    if vtable_externs_out != null {
+        fputs("\n#endif /* UYA_VTABLE_EXTERNS_H */\n" as *byte, vtable_externs_out as *void);
+        _ = fclose(vtable_externs_out as *void);
     }
 }
 

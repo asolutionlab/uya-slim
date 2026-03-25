@@ -463,15 +463,34 @@ backup-seed:
 	@echo "✓ backup/uya.c 与 bin/uya.c 已更新（单文件种子）"
 
 # 验证 + 多文件备份 + 单文件种子（提交前完整备份）
-backup-all: backup backup-seed
+backup-all:backup backup-seed
 
 # 发布版本：验证 + 多文件备份 + 单文件种子 + 构建优化版本
-release: backup-all
+# 与 from-c 一致：Linux x86_64 的 nostdlib 种子含裸 _start，不可直接 cc uya.c（会与 Scrt1 _start 冲突），须 crti + .o + crtn 链接
+release: clean from-c uya b check backup-seed
 	@echo "=========================================="
 	@echo "构建发布版本 (release)"
 	@echo "=========================================="
 	@echo "编译优化版本 bin/uya ..."
-	@$(CC_DRIVER) -std=c99 -O3 -fno-builtin -DNDEBUG bin/uya.c -o bin/uya $(LDFLAGS)
+	@HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" \
+		CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" \
+		LDFLAGS="$(LDFLAGS)" \
+		bash -c 'set -e; ulimit -s 32768 2>/dev/null || true; \
+		if grep -qF "__attribute__((naked)) void _start(void)" bin/uya.c 2>/dev/null \
+			&& [ "$$HOST_OS" = "linux" ] && [ "$$HOST_ARCH" = "x86_64" ]; then \
+			echo "nostdlib 种子：-O3 -DNDEBUG，crti.o + uya.o + crtn.o 链接（同 from-c）..."; \
+			$$CC_DRIVER $$CC_TARGET_FLAGS -std=c99 -O3 -fno-builtin -DNDEBUG -c bin/uya.c -o bin/.release.o; \
+			CRTI=$$($$CC_DRIVER $$CC_TARGET_FLAGS -print-file-name=crti.o); \
+			CRTN=$$($$CC_DRIVER $$CC_TARGET_FLAGS -print-file-name=crtn.o); \
+			if [ ! -f "$$CRTI" ] || [ "$$CRTI" = "crti.o" ] || [ ! -f "$$CRTN" ] || [ "$$CRTN" = "crtn.o" ]; then \
+				echo "错误: 无法解析 crti.o/crtn.o，无法链接 nostdlib 版 release"; exit 1; \
+			fi; \
+			$$CC_DRIVER $$CC_TARGET_FLAGS -no-pie -nostdlib -static \
+				-o bin/uya "$$CRTI" bin/.release.o "$$CRTN" $$LDFLAGS; \
+			rm -f bin/.release.o; \
+		else \
+			$$CC_DRIVER $$CC_TARGET_FLAGS -std=c99 -O3 -fno-builtin -DNDEBUG bin/uya.c -o bin/uya $$LDFLAGS; \
+		fi'
 	@strip bin/uya
 	@echo ""
 	@echo "✓ 发布版本构建完成: bin/uya"
@@ -562,7 +581,7 @@ help:
 	@echo "  make backup        - 验证 + 备份多文件 C 目录 backup/uyacache（与 make uya 一致）"
 	@echo "  make backup-seed   - 单文件 C 重编译，更新 bin/uya.c 与 backup/uya.c（from-c / release 用）"
 	@echo "  make backup-all    - backup + backup-seed（提交前完整备份）"
-	@echo "  make release       - 发布版本：backup-all + -O3 优化构建 + strip"
+	@echo "  make release       - 发布：clean+自举验证+backup-seed 后 -O3 -DNDEBUG 重链（nostdlib 种子同 from-c 用 crti/crtn）+ strip"
 	@echo "  make install       - 安装 uya、lib/、前缀/docs/（AI 提示词与引用规范）；BINDIR/LIBDIR/DOCDIR/DESTDIR"
 	@echo "  make restore       - 从 backup/uya.c 恢复 bin/uya.c"
 	@echo "  make clean         - 清理所有构建产物"
