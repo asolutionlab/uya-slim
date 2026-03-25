@@ -214,3 +214,139 @@ test "parse_content_length_payload_too_large" {
         }
     }
 }
+
+test "parse_header_line_overall_too_long" {
+    var raw: [byte: 600] = [];
+    var r: usize = 0;
+    const fl: &[byte] = &"GET /x HTTP/1.1\r\n"[0: 17];
+    var fi: usize = 0;
+    while fi < fl.len {
+        raw[r] = fl.ptr[fi];
+        r = r + 1;
+        fi = fi + 1;
+    }
+    var j: usize = 0;
+    while j < 515 {
+        raw[r] = 'y' as byte;
+        r = r + 1;
+        j = j + 1;
+    }
+    raw[r] = 13 as byte;
+    r = r + 1;
+    raw[r] = 10 as byte;
+    r = r + 1;
+    raw[r] = 13 as byte;
+    r = r + 1;
+    raw[r] = 10 as byte;
+    r = r + 1;
+    const buf: &[byte] = raw[0: r];
+    const p: !ParseResult = parse(buf);
+    match p {
+        error.HeaderTooLarge => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}
+
+test "parse_header_name_too_long" {
+    var raw: [byte: 320] = [];
+    var r: usize = 0;
+    const fl: &[byte] = &"GET /x HTTP/1.1\r\n"[0: 17];
+    var fi: usize = 0;
+    while fi < fl.len {
+        raw[r] = fl.ptr[fi];
+        r = r + 1;
+        fi = fi + 1;
+    }
+    var j: usize = 0;
+    while j < 257 {
+        raw[r] = 'n' as byte;
+        r = r + 1;
+        j = j + 1;
+    }
+    const mid: &[byte] = &": v\r\n\r\n"[0: 6];
+    var mi: usize = 0;
+    while mi < mid.len {
+        raw[r] = mid.ptr[mi];
+        r = r + 1;
+        mi = mi + 1;
+    }
+    const buf: &[byte] = raw[0: r];
+    const p: !ParseResult = parse(buf);
+    match p {
+        error.HeaderTooLarge => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}
+
+test "parse_header_value_too_long" {
+    var raw: [byte: 320] = [];
+    var r: usize = 0;
+    const fl: &[byte] = &"GET /x HTTP/1.1\r\nX:"[0: 19];
+    var fi: usize = 0;
+    while fi < fl.len {
+        raw[r] = fl.ptr[fi];
+        r = r + 1;
+        fi = fi + 1;
+    }
+    var j: usize = 0;
+    while j < 257 {
+        raw[r] = 'v' as byte;
+        r = r + 1;
+        j = j + 1;
+    }
+    raw[r] = 13 as byte;
+    r = r + 1;
+    raw[r] = 10 as byte;
+    r = r + 1;
+    raw[r] = 13 as byte;
+    r = r + 1;
+    raw[r] = 10 as byte;
+    r = r + 1;
+    const buf: &[byte] = raw[0: r];
+    const p: !ParseResult = parse(buf);
+    match p {
+        error.HeaderTooLarge => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}
+
+test "parse_too_many_headers" {
+    var raw: [byte: 1400] = [];
+    var r: usize = 0;
+    const fl: &[byte] = &"GET /x HTTP/1.1\r\n"[0: 17];
+    var fi: usize = 0;
+    while fi < fl.len {
+        raw[r] = fl.ptr[fi];
+        r = r + 1;
+        fi = fi + 1;
+    }
+    var h: i32 = 0;
+    const hl: &[byte] = &"X:1\r\n"[0: 5];
+    while h < 257 {
+        var hi: usize = 0;
+        while hi < hl.len {
+            raw[r] = hl.ptr[hi];
+            r = r + 1;
+            hi = hi + 1;
+        }
+        h = h + 1;
+    }
+    raw[r] = 13 as byte;
+    r = r + 1;
+    raw[r] = 10 as byte;
+    r = r + 1;
+    const buf: &[byte] = raw[0: r];
+    const p: !ParseResult = parse(buf);
+    match p {
+        error.HeaderTooLarge => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}

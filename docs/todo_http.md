@@ -71,8 +71,8 @@
 
 ### 3.3 测试
 
-- [ ] `tests/test_http_parse.uya`：GET/POST、path、query、headers、body、边界与错误（InvalidRequest、URITooLong、HeaderTooLarge、PayloadTooLarge）
-- [ ] `tests/test_http_multipart.uya`：multipart/form-data 解析、boundary、part name/filename/body、TooManyParts/InvalidBoundary
+- [x] `tests/test_http_parse.uya`：GET/POST、path、query、headers、body、Keep-alive；多种错误（`InvalidRequest`、`URITooLong`、`HeaderTooLarge`、`PayloadTooLarge`、`IncompleteRequest`）
+- [x] `tests/test_http_multipart.uya`：`extract_multipart_boundary`（含引号）、缺失 boundary、`parse_multipart` 单段、boundary 过长
 
 ---
 
@@ -123,9 +123,9 @@
 
 ### 6.1 覆盖
 
-- [ ] 所有 !T 错误路径有测试（parse、router、get_header、get_bearer_token）（已部分覆盖：含 `parse_uri_path_too_long`、`parse_unknown_method_invalid_request`、`parse_content_length_payload_too_large`、`router_add_router_full`、`router_add_pattern_uri_too_long` 等）
+- [ ] 所有 !T 错误路径有测试（parse、router、get_header、get_bearer_token）（已部分覆盖：含 `parse_header_*`、`parse_too_many_headers`、`test_http_multipart`、`router_add_*` 等）
 - [x] 多请求 Keep-alive 测试（`tests/test_http_server.uya` 流水线双 GET + `parse_post_body_incomplete`）
-- [ ] 预期编译失败：`error_http_*.uya`（若有）
+- [x] 预期编译失败：`tests/error_http_request_get_header_type.uya`（少传 `request_get_header` 参数）
 
 ### 6.2 示例
 
@@ -185,4 +185,4 @@
 
 ## 与主待办集成
 
-- [ ] 在 [todo_mini_to_full.md](todo_mini_to_full.md) 中添加 **std.http** 条目（若尚未存在）
+- [x] 在 [todo_mini_to_full.md](todo_mini_to_full.md) 标准库表中已增加 **38.1 std.http** 条目

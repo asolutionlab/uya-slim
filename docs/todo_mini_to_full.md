@@ -82,6 +82,7 @@
 | 36 | **新标准库字符串操作（std.string）** | [x] **已完成**（lib/std/string/string.uya 已实现，包含 strlen, strcmp, strncmp, strcpy, strncpy, strcat, strchr, strrchr, strstr，测试用例通过） |
 | 37 | **新标准库文件 I/O（std.io）** | [x] **已完成**（lib/std/io/file.uya 和 lib/std/io/stream.uya 已实现，包含 fopen, fclose, fread, fwrite, fgetc, fputc, fputs, fprintf, fflush，测试用例通过） |
 | 38 | **新标准库 JSON（std.json）** | [x] Phase 1–3 已完成：解析器、编码器、`to_json<T>`/`from_json<T>` 反射（按结构体字段自动生成，无需方法块）；标量及多字段结构体往返测试通过；含嵌套/数组的 from_json 暂用默认实现。可选：Phase 4 SIMD（**优先 `@vector`/`@mask`**，可选 Phase 5 `@asm`）、大文件 benchmark。详见 [todo_json.md](todo_json.md)、[json_design.md](json_design.md) |
+| 38.1 | **新标准库 HTTP（std.http）** | [~] `lib/std/http/`：`types` / `parse` / `router` / `server`（阻塞、Keep-alive）；路线图与测试要求见 [todo_http.md](todo_http.md)、[readme.md](../readme.md) §标准库 HTTP |
 | 39 | **新标准库 YAML（std.yaml）** | [ ] 高性能 YAML 编解码器，详见 [todo_yaml.md](todo_yaml.md)、[yaml_design.md](yaml_design.md) |
 | 40 | **新标准库 Protobuf（std.protobuf）** | [ ] 高性能 Protobuf 编解码器，详见 [todo_protobuf.md](todo_protobuf.md)、[protobuf_design.md](protobuf_design.md) |
 | 41 | **统一命令行接口（build/run/test）** | [ ] **进行中**（详见 tests/MIGRATION_TODO.md） |
