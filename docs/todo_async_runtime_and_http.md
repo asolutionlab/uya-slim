@@ -174,14 +174,14 @@ Phase 1: Socket API
 - 测试：`test_http_parse.uya` 等
 
 **Phase 4：http.router** ✅
-- `router.uya`：`Router` / `RouteEntry`、`router_add`、`router_find_route`（命中下标；`-1` 未匹配；`-2` 路径有模式但方法不允许）、`path_matches_pattern`、`router_apply_path_params`；`types.uya` 中 `MAX_ROUTES` 与 `RouterFull` 错误
+- `router.uya`：`Router` / `RouteEntry`、`router_add`、`router_find_route`（命中下标；`-1` 未匹配；`-2` 路径有模式但方法不允许）、`path_matches_pattern`、`router_apply_path_params`、`router_apply_path_params_request`（从 `Request.path`/`path_len` 切片，避免手写 `path_copy`）；`types.uya` 中 `MAX_ROUTES` 与 `RouterFull` 错误
 - 首版路由表不存 `Handler`（避免接口装箱）；命中下标后由业务自行映射处理函数
 - 测试：`test_http_router.uya`
 
 **Phase 5：http.server（进行中）**
 - `server.uya`：`http_conn_read_parse`（`IncompleteRequest` 时续读）、`http_connbuf_shift`（已消耗字节前移）、`HTTP_CONN_READ_CAP` 与 `http_recv_parse_request` 内部多 `recv`
 - `parse.uya`：首行/头部行末无完整 CRLF 或 body 未收齐时返回 `error.IncompleteRequest`（`find_crlf_or_incomplete`）
-- 测试：`test_http_server.uya`（含流水线双 GET、`POST+GET`→`201`/`204`、`http_parse_error_returns_400`）、`parse_post_body_incomplete`；`http_send_response` 支持 `Created`/`NoContent` 状态行
+- 测试：`test_http_server.uya`（含流水线双 GET、`POST+GET`→`201`/`204`、`path_param+query`、`http_parse_error_returns_400`）、`parse_post_body_incomplete`；`http_send_response` 支持 `Created`/`NoContent` 状态行
 - 示例：`examples/http_server.uya`（`try` + `match`：`pr`/成功分支放在各 `error.*` 之后，避免 C 代码 `else` 悬空）
 
 ### 第四步：Phase 9-10 异步 HTTP 服务器（约 6 周）

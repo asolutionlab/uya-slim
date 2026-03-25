@@ -130,7 +130,7 @@
 
 ### 6.2 示例
 
-- [x] REST 场景测试：`http_pipeline_post_created_get_no_content`（流水线 POST→`201 Created`+body、GET→`204 No Content`）；path_params/query 组合示例仍可选补充
+- [x] REST 场景测试：`http_pipeline_post_created_get_no_content`（流水线 POST→`201 Created`+body、GET→`204 No Content`）；`http_get_path_param_and_query`（`GET /item/99?q=v` + `router_apply_path_params_request`，`path_params[].value` 指向 `Request.path`）
 - [ ] 在 [http_framework_design.md](http_framework_design.md) 或 README 的 HTTP 小节中注明：TDD、`make check`、`--uya --c99` 要求
 
 ---

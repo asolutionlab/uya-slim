@@ -288,6 +288,18 @@ export fn router_apply_path_params(req: &Request, path: &[byte], pattern: &[byte
     }
 }
 
+/// 使用 `req.path` / `req.path_len` 作为路径缓冲区调用 `router_apply_path_params`；
+/// `path_params[].value` 指向 `req.path` 内子区间（与 `parse` 得到的 Request 同生命周期）。
+export fn router_apply_path_params_request(req: &Request, pattern: &[byte]) !void {
+    const plen: usize = req.path_len as usize;
+    if plen > MAX_URI_LENGTH as usize {
+        return error.InvalidRequest;
+    }
+    const path_base: &byte = &req.path[0] as &byte;
+    const path_sl: &[byte] = path_base[0: plen];
+    try router_apply_path_params(req, path_sl, pattern);
+}
+
 export struct RouteEntry {
     method: Method,
     pattern: [byte: MAX_URI_LENGTH],

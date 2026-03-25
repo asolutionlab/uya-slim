@@ -77,3 +77,36 @@ test "router_apply_path_params" {
         try assert_eq_i32(0, 1);
     }
 }
+
+test "router_apply_path_params_request" {
+    var raw: [byte: 4] = [];
+    const empty: &[byte] = raw[0: 0];
+    var req: Request = Request{
+        method: Method.GET,
+        path: [],
+        path_len: 0,
+        path_params: [],
+        path_param_count: 0,
+        query: [],
+        query_count: 0,
+        headers: [],
+        header_count: 0,
+        body: empty,
+    };
+    const want: &[byte] = &"/users/42"[0: 9];
+    var i: usize = 0;
+    while i < want.len {
+        req.path[i] = want.ptr[i];
+        i = i + 1;
+    }
+    req.path_len = want.len as i32;
+    const pat: &[byte] = &"/users/:id"[0: 10];
+    try router_apply_path_params_request(&req, pat);
+    try assert_eq_i32(req.path_param_count, 1);
+    if !slice_eq(req.path_params[0].key, &"id"[0: 2]) {
+        try assert_eq_i32(0, 1);
+    }
+    if !slice_eq(req.path_params[0].value, &"42"[0: 2]) {
+        try assert_eq_i32(0, 1);
+    }
+}

@@ -33,6 +33,20 @@ fn response_has_subslice(hay: &[byte], needle: &[byte]) bool {
     return false;
 }
 
+fn slice_eq_bytes(a: &[byte], b: &[byte]) bool {
+    if a.len != b.len {
+        return false;
+    }
+    var i: usize = 0;
+    while i < a.len {
+        if a.ptr[i] != b.ptr[i] {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
 fn run_client_loopback(port: u16) void {
     const conn_res: !i32 = http_tcp_connect_loopback(port);
     const cfd: i32 = conn_res catch { 0 - 1 };
@@ -397,6 +411,95 @@ test "http_pipeline_post_created_get_no_content" {
     const idx2: i32 = router_find_route_request(&rt, Method.GET, &pr2.request);
     if idx2 == 1 {
         _ = http_send_response(sfd, Status.NoContent, empty_body) catch {};
+    } else {
+        _ = http_send_response(sfd, Status.NotFound, empty_body) catch {};
+    }
+    _ = sys_close(sfd);
+
+    var st: i32 = 0;
+    _ = try sys_waitpid(child_pid, &st, 0);
+    if (st & 0xff) != 0 {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32((st >> 8) & 0xff, 0);
+    http_server_close(&srv);
+}
+
+fn run_client_get_item_with_query(port: u16) void {
+    const conn_res: !i32 = http_tcp_connect_loopback(port);
+    const cfd: i32 = conn_res catch { 0 - 1 };
+    if cfd < 0 {
+        sys_exit(1);
+    }
+    const req: &[byte] = &"GET /item/99?q=v HTTP/1.1\r\nHost: x\r\n\r\n"[0: 38];
+    _ = sys_write(cfd, req.ptr, req.len);
+    var rb: [byte: 320] = [];
+    var total: usize = 0;
+    while total < 320 {
+        const n: isize = sys_read(cfd, &rb[total] as *byte, 320 - total) catch { 0 - 1 };
+        if n <= 0 {
+            break;
+        }
+        total = total + (n as usize);
+        if response_has_subslice(rb[0: total], &"200"[0: 3]) && response_has_subslice(rb[0: total], &"ok"[0: 2]) {
+            break;
+        }
+    }
+    _ = sys_close(cfd);
+    if total == 0 {
+        sys_exit(7);
+    }
+    if !response_has_subslice(rb[0: total], &"200"[0: 3]) {
+        sys_exit(8);
+    }
+    if !response_has_subslice(rb[0: total], &"ok"[0: 2]) {
+        sys_exit(9);
+    }
+    sys_exit(0);
+}
+
+test "http_get_path_param_and_query" {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 8,
+        port: 0,
+        host: [],
+    };
+    const srv: HttpServer = try http_server_listen(&cfg);
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        run_client_get_item_with_query(srv.port);
+    }
+    if child_pid <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+
+    var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
+    const empty_body: &[byte] = empty_raw[0: 0];
+    var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
+    var rt: Router = router_new();
+    _ = try router_add(&rt, Method.GET, &"/item/:id"[0: 9]);
+    const conn: Conn = try http_server_accept(&srv_tmp);
+    const sfd: i32 = conn.fd;
+    var pr: ParseResult = try http_recv_parse_request(sfd);
+    const idx: i32 = router_find_route_request(&rt, Method.GET, &pr.request);
+    if idx == 0 {
+        try router_apply_path_params_request(&pr.request, &"/item/:id"[0: 9]);
+        try assert_eq_i32(pr.request.path_param_count, 1);
+        try assert_eq_i32(pr.request.query_count, 1);
+        if !slice_eq_bytes(pr.request.path_params[0].key, &"id"[0: 2]) {
+            try assert_eq_i32(0, 1);
+        }
+        if !slice_eq_bytes(pr.request.path_params[0].value, &"99"[0: 2]) {
+            try assert_eq_i32(0, 1);
+        }
+        if !slice_eq_bytes(pr.request.query[0].key, &"q"[0: 1]) {
+            try assert_eq_i32(0, 1);
+        }
+        if !slice_eq_bytes(pr.request.query[0].value, &"v"[0: 1]) {
+            try assert_eq_i32(0, 1);
+        }
+        _ = http_send_response(sfd, Status.OK, &"ok"[0: 2]) catch {};
     } else {
         _ = http_send_response(sfd, Status.NotFound, empty_body) catch {};
     }
