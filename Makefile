@@ -367,6 +367,15 @@ check: uya
 		exit 1; \
 	fi; \
 	echo ""; \
+	echo "验证 benchmarks/http_bench.uya C99..."; \
+	./tests/verify_http_bench_compile.sh > /tmp/verify_out.txt 2>&1 && \
+		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ http_bench C99 验证失败"; \
+		exit 1; \
+	fi; \
+	echo ""; \
 	echo "=========================================="; \
 	echo "测试结果："; \
 	echo "=========================================="; \
@@ -384,7 +393,7 @@ check: uya
 	fi; \
 	rm -f /tmp/make_check_output.txt /tmp/verify_out.txt; \
 	echo ""; \
-	echo "✓ 验证通过（自举 + 测试 + 证明优化 + 默认顶层函数发射 + SIMD select C + 切片形参 C99 + @syscall C99 + SIMD NEON）"
+	echo "✓ 验证通过（自举 + 测试 + 证明优化 + 默认顶层函数发射 + SIMD select C + 切片形参 C99 + @syscall C99 + SIMD NEON + http_bench C99）"
 
 # hosted 验证：普通链接自举 + 主测试 + 证明优化
 check-hosted: b-hosted

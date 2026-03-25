@@ -146,7 +146,7 @@
 - [x] `jwt_verify_hs256(token, secret, payload_out) !usize`（HS256 验签，payload 写入缓冲区）
 - [x] `jwt_decode_unverified(token, payload_out) !usize`（不验签）
 - [x] `jwt_sign_hs256(payload, secret, token_out) !usize`（签发 HS256）
-- [ ] `has_expired(payload: &[byte]) bool`（可选；首版未实现）
+- [x] `jwt_payload_is_expired(payload, now_unix_sec) !bool`（解析 JSON 根对象、`exp` 为整数；无 `exp` 视为未过期；`now >= exp` 为已过期；与 `has_expired` 等价语义由调用方传入当前 Unix 秒）
 
 ### 7.3 依赖
 
@@ -162,7 +162,7 @@
 
 ### 8.1 基准程序
 
-- [ ] `benchmarks/http_bench.uya` 或等价：plaintext、简单 JSON、path 参数；body 档位 1KB/10KB/100KB
+- [x] `benchmarks/http_bench.uya`：`GET /`（plaintext `hello`）、`GET /json`、`GET /item/:id`（body 为 id）、`GET /payload1k|10k|100k`（`make check` 含 `tests/verify_http_bench_compile.sh`）；`--once` 冒烟；默认 `127.0.0.1:8876` + Keep-alive
 - [ ] 记录 QPS、p50/p95/p99 延迟、并发连接数、内存（RSS/每连接）
 
 ### 8.2 环境与脚本

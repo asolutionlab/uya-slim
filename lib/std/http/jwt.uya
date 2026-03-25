@@ -4,6 +4,12 @@
 
 use std.http.types;
 use std.crypto.sha256;
+use std.mem.arena.Arena;
+use std.mem.arena.arena_init;
+use std.json.value.JsonValue;
+use std.json.parser.parse;
+use std.json.encoder.json_str_view_eq;
+use std.json.encoder.json_expect_i64;
 
 const JWT_MAX_PAYLOAD_RAW: usize = 512;
 const JWT_MAX_SIGNING: usize = 768;
@@ -237,6 +243,38 @@ export fn jwt_verify_hs256(token: &[byte], secret: &[byte], payload_out: &[byte]
     }
     const pay_b64: &[byte] = token[d1 + 1: d2 - (d1 + 1)];
     return decode_base64url(pay_b64, payload_out);
+}
+
+/// 已解码的 JWT payload（UTF-8 JSON 对象字节）。`now_unix_sec` 为当前 Unix 秒（由调用方提供，便于测试）。
+/// 无 `exp` 字段视为未过期（返回 `false`）。`exp` 须为 JSON 整数；解析失败或根非对象则 `InvalidToken`。
+export fn jwt_payload_is_expired(payload: &[byte], now_unix_sec: i64) !bool {
+    if payload.len > JWT_MAX_PAYLOAD_RAW {
+        return error.InvalidToken;
+    }
+    var arena_buf: [byte: 2048] = [];
+    var a: Arena = Arena{ buffer: null, size: 0, used: 0 };
+    arena_init(&a, &arena_buf[0], 2048);
+    const v: JsonValue = parse(&a, payload.ptr, payload.len) catch { return error.InvalidToken; };
+    match v {
+        .obj(o) => {
+            var exp_k: [byte: 3] = [];
+            exp_k[0] = 'e' as byte;
+            exp_k[1] = 'x' as byte;
+            exp_k[2] = 'p' as byte;
+            var i: usize = 0;
+            while i < o.len {
+                if json_str_view_eq(o.pairs[i].key, &exp_k[0], 3) {
+                    const exp_sec: i64 = json_expect_i64(&o.pairs[i].value) catch { return error.InvalidToken; };
+                    return now_unix_sec >= exp_sec;
+                }
+                i = i + 1;
+            }
+            return false;
+        }
+        else => {
+            return error.InvalidToken;
+        }
+    }
 }
 
 /// 签发 HS256 JWT；`token_out` 须足够大（建议 ≥ `JWT_MAX_TOKEN`）；返回写入长度。

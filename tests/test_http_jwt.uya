@@ -76,3 +76,57 @@ test "jwt_malformed_no_dots" {
         }
     }
 }
+
+test "jwt_payload_exp_missing_not_expired" {
+    const p: &[byte] = &"{\"x\":1}"[0: 7];
+    const is_exp: bool = try jwt_payload_is_expired(p, 2000000000);
+    if is_exp {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "jwt_payload_exp_future_not_expired" {
+    const p: &[byte] = &"{\"exp\":2000000000}"[0: 18];
+    const is_exp: bool = try jwt_payload_is_expired(p, 1000);
+    if is_exp {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "jwt_payload_exp_past_is_expired" {
+    const p: &[byte] = &"{\"exp\":1000}"[0: 12];
+    const is_exp: bool = try jwt_payload_is_expired(p, 2000000000);
+    if !is_exp {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "jwt_payload_exp_at_boundary_expired" {
+    const p: &[byte] = &"{\"exp\":1000}"[0: 12];
+    const is_exp: bool = try jwt_payload_is_expired(p, 1000);
+    if !is_exp {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "jwt_payload_exp_wrong_type" {
+    const p: &[byte] = &"{\"exp\":\"x\"}"[0: 11];
+    const r: !bool = jwt_payload_is_expired(p, 0);
+    match r {
+        error.InvalidToken => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}
+
+test "jwt_payload_exp_not_object" {
+    const p: &[byte] = &"[1]"[0: 3];
+    const r: !bool = jwt_payload_is_expired(p, 0);
+    match r {
+        error.InvalidToken => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}

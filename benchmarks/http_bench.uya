@@ -1,0 +1,270 @@
+// benchmarks/http_bench.uya — HTTP 压测用服务端（供 wrk 等工具；Keep-alive）
+//
+// 路由：
+//   GET /              → plaintext "hello"
+//   GET /json          → {"ok":true}
+//   GET /item/:id      → body 为路径参数 id 字节
+//   GET /payload1k     → 1024 字节 'a'
+//   GET /payload10k    → 10240 字节 'a'
+//   GET /payload100k   → 102400 字节 'a'
+//
+// 默认监听 127.0.0.1:8876。传参 `--once` 时只 accept 一次、处理首个完整请求后退出 0（便于冒烟）。
+//
+// 构建：仓库根目录
+//   bin/uya --c99 benchmarks/http_bench.uya -o /tmp/http_bench.c && cc -std=c99 -no-pie -o /tmp/http_bench /tmp/http_bench.c -lm
+// 压测示例：/tmp/http_bench &  sleep 0.1 && wrk -t4 -c64 -d10s http://127.0.0.1:8876/
+
+use std.http.types;
+use std.http.router;
+use std.http.server;
+use std.runtime.get_argc;
+use std.runtime.get_argv;
+use libc.syscall;
+
+const BENCH_PORT: u16 = 8876;
+
+fn fill_a(dst: &byte, n: usize) void {
+    var i: usize = 0;
+    while i < n {
+        dst[i] = 'a' as byte;
+        i = i + 1;
+    }
+}
+
+fn argv_is_once() bool {
+    if get_argc() < 2 {
+        return false;
+    }
+    const p: &byte = get_argv(1);
+    if p == null {
+        return false;
+    }
+    const dash: byte = '-' as byte;
+    if p[0] != dash || p[1] != dash {
+        return false;
+    }
+    if p[2] != 'o' as byte {
+        return false;
+    }
+    if p[3] != 'n' as byte {
+        return false;
+    }
+    if p[4] != 'c' as byte {
+        return false;
+    }
+    if p[5] != 'e' as byte {
+        return false;
+    }
+    return p[6] == 0 as byte;
+}
+
+fn register_routes(rt: &Router) !void {
+    _ = try router_add(rt, Method.GET, &"/"[0: 1]);
+    _ = try router_add(rt, Method.GET, &"/json"[0: 5]);
+    _ = try router_add(rt, Method.GET, &"/item/:id"[0: 9]);
+    _ = try router_add(rt, Method.GET, &"/payload1k"[0: 10]);
+    _ = try router_add(rt, Method.GET, &"/payload10k"[0: 11]);
+    _ = try router_add(rt, Method.GET, &"/payload100k"[0: 12]);
+}
+
+fn send_bad(sfd: i32) void {
+    var z: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
+    const empty: &[byte] = z[0: 0];
+    _ = http_send_response(sfd, Status.BadRequest, empty) catch {};
+}
+
+fn dispatch(sfd: i32, rt: &Router, pr: &ParseResult) void {
+    var z: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
+    const empty: &[byte] = z[0: 0];
+    const idx: i32 = router_find_route_request(rt, pr.request.method, &pr.request);
+    if idx == -1 {
+        _ = http_send_response(sfd, Status.NotFound, empty) catch {};
+        return;
+    }
+    if idx == -2 {
+        _ = http_send_response(sfd, Status.MethodNotAllowed, empty) catch {};
+        return;
+    }
+    if idx == 0 {
+        _ = http_send_response(sfd, Status.OK, &"hello"[0: 5]) catch {};
+        return;
+    }
+    if idx == 1 {
+        _ = http_send_response(sfd, Status.OK, &"{\"ok\":true}"[0: 11]) catch {};
+        return;
+    }
+    if idx == 2 {
+        _ = router_apply_path_params_request(&pr.request, &"/item/:id"[0: 9]) catch {};
+        if pr.request.path_param_count < 1 {
+            send_bad(sfd);
+            return;
+        }
+        _ = http_send_response(sfd, Status.OK, pr.request.path_params[0].value) catch {};
+        return;
+    }
+    if idx == 3 {
+        var slab: [byte: 1024] = [];
+        fill_a(&slab[0] as &byte, 1024);
+        const sb: &byte = &slab[0] as &byte;
+        const b: &[byte] = sb[0: 1024];
+        _ = http_send_response(sfd, Status.OK, b) catch {};
+        return;
+    }
+    if idx == 4 {
+        var slab10: [byte: 10240] = [];
+        fill_a(&slab10[0] as &byte, 10240);
+        const sb10: &byte = &slab10[0] as &byte;
+        const b2: &[byte] = sb10[0: 10240];
+        _ = http_send_response(sfd, Status.OK, b2) catch {};
+        return;
+    }
+    if idx == 5 {
+        var slab100: [byte: 102400] = [];
+        fill_a(&slab100[0] as &byte, 102400);
+        const sb100: &byte = &slab100[0] as &byte;
+        const b3: &[byte] = sb100[0: 102400];
+        _ = http_send_response(sfd, Status.OK, b3) catch {};
+        return;
+    }
+    _ = http_send_response(sfd, Status.NotFound, empty) catch {};
+}
+
+fn match_parse_err(sfd: i32) void {
+    send_bad(sfd);
+}
+
+fn serve_one_round(sfd: i32, rt: &Router, base: &byte, cap: usize, filled: &usize) !void {
+    const pr: ParseResult = try http_conn_read_parse(sfd, base, cap, filled);
+    dispatch(sfd, rt, &pr);
+    http_connbuf_shift(base, filled, pr.consumed);
+}
+
+fn serve_connection(sfd: i32, rt: &Router) void {
+    var buf: [byte: 8192] = [];
+    var filled: usize = 0;
+    while true {
+        const rv: !void = serve_one_round(sfd, rt, &buf[0] as &byte, 8192, &filled);
+        match rv {
+            error.ConnectionClosed => {
+                break;
+            }
+            error.InvalidRequest => {
+                match_parse_err(sfd);
+                break;
+            }
+            error.IncompleteRequest => {
+                match_parse_err(sfd);
+                break;
+            }
+            error.PayloadTooLarge => {
+                match_parse_err(sfd);
+                break;
+            }
+            error.URITooLong => {
+                match_parse_err(sfd);
+                break;
+            }
+            error.HeaderTooLarge => {
+                match_parse_err(sfd);
+                break;
+            }
+            error.TooManyParams => {
+                match_parse_err(sfd);
+                break;
+            }
+            error.ValueTooLong => {
+                match_parse_err(sfd);
+                break;
+            }
+            else => {
+                var _ok: i32 = 0;
+                _ = _ok;
+            }
+        }
+    }
+    _ = sys_close(sfd) catch {};
+}
+
+fn run_once_handle(cfd: i32, rt: &Router) !void {
+    const pr: ParseResult = try http_recv_parse_request(cfd);
+    dispatch(cfd, rt, &pr);
+}
+
+fn run_once(rt: &Router) !void {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 8,
+        port: BENCH_PORT,
+        host: [],
+    };
+    const srv: HttpServer = try http_server_listen(&cfg);
+    var srv_copy: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
+    const conn: Conn = try http_server_accept(&srv_copy);
+    const cfd: i32 = conn.fd;
+    const ro: !void = run_once_handle(cfd, rt);
+    match ro {
+        error.InvalidRequest => {
+            send_bad(cfd);
+        }
+        error.IncompleteRequest => {
+            send_bad(cfd);
+        }
+        error.ConnectionClosed => {
+        }
+        error.PayloadTooLarge => {
+            send_bad(cfd);
+        }
+        error.URITooLong => {
+            send_bad(cfd);
+        }
+        error.HeaderTooLarge => {
+            send_bad(cfd);
+        }
+        error.TooManyParams => {
+            send_bad(cfd);
+        }
+        error.ValueTooLong => {
+            send_bad(cfd);
+        }
+        else => {
+            var _ok2: i32 = 0;
+            _ = _ok2;
+        }
+    }
+    _ = sys_close(cfd) catch {};
+    http_server_close(&srv);
+}
+
+fn bench_main() i32 {
+    var rt: Router = router_new();
+    register_routes(&rt) catch {
+        return 1;
+    };
+    if argv_is_once() {
+        run_once(&rt) catch {
+            return 1;
+        };
+        return 0;
+    }
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 128,
+        port: BENCH_PORT,
+        host: [],
+    };
+    const srv: HttpServer = http_server_listen(&cfg) catch {
+        return 1;
+    };
+    while true {
+        var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
+        const conn: Conn = http_server_accept(&srv_tmp) catch {
+            return 1;
+        };
+        serve_connection(conn.fd, &rt);
+    }
+    return 0;
+}
+
+export fn main() i32 {
+    return bench_main();
+}
