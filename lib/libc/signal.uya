@@ -128,9 +128,10 @@ export extern "libc" fn signal(signum: i32, handler: &void) &void {
         _signal_handlers[signum as usize] = handler;
         
         // 使用 rt_sigaction 注册内核级别的信号处理
+        // sa_restorer 为 null 时不要置 SA_RESTORER（与 Linux uapi / glibc 行为一致）。
         var sa: sigaction = sigaction{
             sa_handler: handler,
-            sa_flags: 0x04000000,  // SA_RESTORER
+            sa_flags: 0,
             sa_restorer: null,
             sa_mask: 0,
         };

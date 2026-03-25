@@ -81,6 +81,54 @@ fn run_client_loopback(port: u16) void {
     sys_exit(0);
 }
 
+/// 模拟 `ab -k`：HTTP/1.0 + `Connection: keep-alive`；首包响应须含 `Connection: keep-alive`，否则客户端常不发送下一请求。
+fn run_client_http10_keepalive_two_rounds(port: u16) void {
+    const conn_res: !i32 = http_tcp_connect_loopback(port);
+    const cfd: i32 = conn_res catch { 0 - 1 };
+    if cfd < 0 {
+        sys_exit(1);
+    }
+    const r1: &[byte] = &"GET / HTTP/1.0\r\nHost: x\r\nConnection: keep-alive\r\n\r\n"[0: 51];
+    _ = sys_write(cfd, r1.ptr, r1.len);
+    var rb: [byte: 512] = [];
+    var total: usize = 0;
+    while total < 512 {
+        const n: isize = sys_read(cfd, &rb[total] as *byte, 512 - total) catch { 0 - 1 };
+        if n <= 0 {
+            break;
+        }
+        total = total + (n as usize);
+        const got: &[byte] = rb[0: total];
+        if response_has_subslice(got, &"200"[0: 3]) && response_has_subslice(got, &"keep-alive"[0: 10]) {
+            break;
+        }
+    }
+    if total == 0 {
+        sys_exit(2);
+    }
+    const got1: &[byte] = rb[0: total];
+    if !response_has_subslice(got1, &"keep-alive"[0: 10]) {
+        sys_exit(3);
+    }
+    _ = sys_write(cfd, r1.ptr, r1.len);
+    var total2: usize = 0;
+    while total2 < 512 {
+        const n2: isize = sys_read(cfd, &rb[total2] as *byte, 512 - total2) catch { 0 - 1 };
+        if n2 <= 0 {
+            break;
+        }
+        total2 = total2 + (n2 as usize);
+        if response_has_subslice(rb[0: total2], &"200"[0: 3]) {
+            break;
+        }
+    }
+    _ = sys_close(cfd);
+    if total2 == 0 {
+        sys_exit(4);
+    }
+    sys_exit(0);
+}
+
 fn run_client_pipeline_two_gets(port: u16) void {
     const conn_res: !i32 = http_tcp_connect_loopback(port);
     const cfd: i32 = conn_res catch { 0 - 1 };
@@ -306,6 +354,57 @@ test "http_keepalive_pipeline_two_requests" {
         _ = http_send_response(sfd, Status.OK, &"two"[0: 3]) catch {};
     } else {
         _ = http_send_response(sfd, Status.NotFound, empty_body) catch {};
+    }
+    _ = sys_close(sfd);
+
+    var st: i32 = 0;
+    _ = try sys_waitpid(child_pid, &st, 0);
+    if (st & 0xff) != 0 {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32((st >> 8) & 0xff, 0);
+    http_server_close(&srv);
+}
+
+test "http_http10_keepalive_response_echoes_connection" {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 8,
+        port: 0,
+        host: [],
+    };
+    const srv: HttpServer = try http_server_listen(&cfg);
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        run_client_http10_keepalive_two_rounds(srv.port);
+    }
+    if child_pid <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+
+    var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
+    const empty_body: &[byte] = empty_raw[0: 0];
+    var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
+    var rt: Router = router_new();
+    _ = try router_add(&rt, Method.GET, &"/"[0: 1]);
+    const conn: Conn = try http_server_accept(&srv_tmp);
+    const sfd: i32 = conn.fd;
+    var buf: [byte: 8192] = [];
+    var filled: usize = 0;
+    const pr1: ParseResult = try http_conn_read_parse(sfd, &buf[0] as &byte, 8192, &filled);
+    const idx1: i32 = router_find_route_request(&rt, Method.GET, &pr1.request);
+    if idx1 == 0 {
+        _ = http_send_response_for_request(sfd, Status.OK, &"hi"[0: 2], &pr1.request) catch {};
+    } else {
+        _ = http_send_response_for_request(sfd, Status.NotFound, empty_body, &pr1.request) catch {};
+    }
+    http_connbuf_shift(&buf[0] as &byte, &filled, pr1.consumed);
+    const pr2: ParseResult = try http_conn_read_parse(sfd, &buf[0] as &byte, 8192, &filled);
+    const idx2: i32 = router_find_route_request(&rt, Method.GET, &pr2.request);
+    if idx2 == 0 {
+        _ = http_send_response_for_request(sfd, Status.OK, &"hi"[0: 2], &pr2.request) catch {};
+    } else {
+        _ = http_send_response_for_request(sfd, Status.NotFound, empty_body, &pr2.request) catch {};
     }
     _ = sys_close(sfd);
 

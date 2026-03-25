@@ -516,3 +516,56 @@ test "parse_http11_connection_close_not_persistent" {
         try assert_eq_i32(0, 1);
     }
 }
+
+test "http10_session_followup_no_connection_header_stays_persistent" {
+    const line1: &[byte] = &"GET / HTTP/1.0\r\nHost: x\r\nConnection: keep-alive\r\n\r\n"[0: 51];
+    const line2: &[byte] = &"GET / HTTP/1.0\r\nHost: x\r\n\r\n"[0: 27];
+    var raw1: [byte: 64] = [];
+    var raw2: [byte: 40] = [];
+    var i: usize = 0;
+    while i < line1.len {
+        raw1[i] = line1.ptr[i];
+        i = i + 1;
+    }
+    i = 0;
+    while i < line2.len {
+        raw2[i] = line2.ptr[i];
+        i = i + 1;
+    }
+    const pr1: ParseResult = try parse(raw1[0: line1.len]);
+    if !request_wants_persistent_with_session(&pr1.request, false) {
+        try assert_eq_i32(0, 1);
+    }
+    const pr2: ParseResult = try parse(raw2[0: line2.len]);
+    if !request_wants_persistent_with_session(&pr2.request, true) {
+        try assert_eq_i32(0, 1);
+    }
+    if request_wants_persistent_with_session(&pr2.request, false) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "http10_session_followup_other_connection_token_stays_persistent" {
+    const line1: &[byte] = &"GET / HTTP/1.0\r\nHost: x\r\nConnection: keep-alive\r\n\r\n"[0: 51];
+    const line2: &[byte] = &"GET / HTTP/1.0\r\nHost: x\r\nConnection: TE\r\n\r\n"[0: 43];
+    var raw1: [byte: 64] = [];
+    var raw2: [byte: 64] = [];
+    var i: usize = 0;
+    while i < line1.len {
+        raw1[i] = line1.ptr[i];
+        i = i + 1;
+    }
+    i = 0;
+    while i < line2.len {
+        raw2[i] = line2.ptr[i];
+        i = i + 1;
+    }
+    const pr1: ParseResult = try parse(raw1[0: line1.len]);
+    if !request_wants_persistent_with_session(&pr1.request, false) {
+        try assert_eq_i32(0, 1);
+    }
+    const pr2: ParseResult = try parse(raw2[0: line2.len]);
+    if !request_wants_persistent_with_session(&pr2.request, true) {
+        try assert_eq_i32(0, 1);
+    }
+}

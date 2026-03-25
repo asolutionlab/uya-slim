@@ -221,6 +221,7 @@ export interface Middleware {
 
 export struct ServerConfig {
     mode: ServerMode,
+    /// 阻塞式 `http_server_listen` 中用作 `listen(2)` backlog 的提示（实现侧会夹在 \[128, 8192\]）。
     max_connections: i32,
     port: u16,
     host: [byte: 64],
@@ -353,6 +354,32 @@ export fn request_wants_persistent_connection(req: &Request) bool {
         return true;
     }
     return header_value_has_connection_token_ci(val, &"keep-alive"[0: 10]);
+}
+
+/// 在 **同一 TCP 连接** 上已跑过至少一轮 HTTP/1.0 Keep-Alive 时，部分客户端（如 **ab -k**）后续请求可能 **不再带 Connection**；严格 `request_wants_persistent_connection` 会把「无头」判为不保持，服务端提前 `close` 而客户端仍等响应 → 并发 -k 时卡死。
+/// `http10_session_keep_alive`：本连接上是否已以 HTTP/1.0 且「应保持」成功应答过（由调用方在每轮末尾维护）。
+export fn request_wants_persistent_with_session(req: &Request, http10_session_keep_alive: bool) bool {
+    const strict: bool = request_wants_persistent_connection(req);
+    if strict {
+        return true;
+    }
+    if req.http11 {
+        return false;
+    }
+    if !http10_session_keep_alive {
+        return false;
+    }
+    const val: &[byte] = request_get_header(req, &"Connection"[0: 10]) catch {
+        return true;
+    };
+    if header_value_has_connection_token_ci(val, &"close"[0: 5]) {
+        return false;
+    }
+    if header_value_has_connection_token_ci(val, &"keep-alive"[0: 10]) {
+        return true;
+    }
+    // 已协商 Keep-Alive 的 HTTP/1.0 连接：除显式 close 外默认续持（空值、TE 等令牌与部分 ab -k 后续包兼容；避免误关连接触发每请求新 TCP+fork）。
+    return true;
 }
 
 /// 读取 `Authorization: Bearer <token>`（`Bearer` 与空格大小写不敏感按字节比较）；`token` 不得为空。

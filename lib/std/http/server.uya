@@ -15,6 +15,19 @@ export struct HttpServer {
     port: u16,
 }
 
+/// 循环 `write` 直至写满 `total` 字节。流式套接字上单次 `write` 可能短写；只写一部分会导致对端按 `Content-Length` 永远阻塞。
+fn sys_write_all_conn(fd: i32, base: &byte, total: usize) !void {
+    var off: usize = 0;
+    while off < total {
+        const p: *const byte = @ptr_from_usize(@usize_from_ptr(base as &void) + off) as *const byte;
+        const n: isize = try sys_write(fd, p, total - off);
+        if n <= 0 {
+            return error.ConnectionClosed;
+        }
+        off = off + (n as usize);
+    }
+}
+
 fn htons_host_to_be(p: u16) u16 {
     return ((p & (0xFF as u16)) << 8) | ((p >> 8) & (0xFF as u16));
 }
@@ -41,6 +54,18 @@ fn read_port_from_sockaddr_16(addr: &byte) u16 {
     return ((pnet & (0xFF as u16)) << 8) | ((pnet >> 8) & (0xFF as u16));
 }
 
+/// `listen(2)` 的 backlog：`cfg.max_connections` 为提示值，夹在 \[128, 8192\]（内核仍可能按 `somaxconn` 再截断）。
+fn http_listen_backlog(cfg_max: i32) i32 {
+    var b: i32 = cfg_max;
+    if b < 128 {
+        b = 128;
+    }
+    if b > 8192 {
+        b = 8192;
+    }
+    return b;
+}
+
 /// 绑定 `127.0.0.1`；`cfg.port == 0` 时由内核分配端口，可从返回的 `HttpServer.port` 读取。
 export fn http_server_listen(cfg: &ServerConfig) !HttpServer {
     if cfg.mode != ServerMode.Blocking {
@@ -52,7 +77,7 @@ export fn http_server_listen(cfg: &ServerConfig) !HttpServer {
     var addr: [byte: 16] = [];
     fill_sockaddr_loopback_16(cfg.port, &addr[0] as &byte);
     _ = try sys_bind(fd, &addr[0] as &void, 16 as u32);
-    _ = try sys_listen(fd, 128);
+    _ = try sys_listen(fd, http_listen_backlog(cfg.max_connections));
     var port_out: u16 = cfg.port;
     if cfg.port == 0 {
         var alen: u32 = 16;
@@ -73,6 +98,8 @@ export fn http_server_accept(srv: &HttpServer) !Conn {
     var alen: u32 = 16;
     var peer: [byte: 16] = [];
     const cfd: i32 = try sys_accept(srv.listen_fd, &peer[0] as &void, &alen);
+    var nd: i32 = 1;
+    _ = sys_setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &nd as &void, 4 as u32) catch {};
     return Conn{ fd: cfd };
 }
 
@@ -82,6 +109,8 @@ export fn http_tcp_connect_loopback(port: u16) !i32 {
     var addr: [byte: 16] = [];
     fill_sockaddr_loopback_16(port, &addr[0] as &byte);
     _ = try sys_connect(fd, &addr[0] as &void, 16 as u32);
+    var nd: i32 = 1;
+    _ = sys_setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &nd as &void, 4 as u32) catch {};
     return fd;
 }
 
@@ -175,7 +204,8 @@ fn append_usize_dec_hdr(hdr: &byte, start: usize, n: usize) usize {
     return pos;
 }
 
-fn http_send_response_impl(conn_fd: i32, status: Status, body: &[byte], close_after: bool) !void {
+/// `emit_keep_alive`：在 **不关连接** 且客户端为 **HTTP/1.0** 并协商 Keep-Alive 时须为真，以便回显 `Connection: keep-alive`（`ab -k` 等依赖此，否则会卡在等待下一请求）。
+fn http_send_response_impl(conn_fd: i32, status: Status, body: &[byte], close_after: bool, emit_keep_alive: bool) !void {
     var hdr: [byte: 512] = [];
     var pos: usize = 0;
     if status == Status.OK {
@@ -187,37 +217,53 @@ fn http_send_response_impl(conn_fd: i32, status: Status, body: &[byte], close_af
     } else if status == Status.BadRequest {
         pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 400 Bad Request\r\n"[0: 26]);
     } else if status == Status.NotFound {
-        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 404 Not Found\r\n"[0: 23]);
+        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 404 Not Found\r\n"[0: 24]);
     } else if status == Status.MethodNotAllowed {
-        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 405 Method Not Allowed\r\n"[0: 35]);
+        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 405 Method Not Allowed\r\n"[0: 33]);
     } else {
-        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 500 Internal Server Error\r\n"[0: 37]);
+        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 500 Internal Server Error\r\n"[0: 36]);
     }
     pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"Content-Length: "[0: 16]);
     pos = append_usize_dec_hdr(&hdr[0] as &byte, pos, body.len);
     if close_after {
         pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n"[0: 49]);
+    } else if emit_keep_alive {
+        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"\r\nContent-Type: text/plain\r\nConnection: keep-alive\r\n\r\n"[0: 54]);
     } else {
         pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"\r\nContent-Type: text/plain\r\n\r\n"[0: 30]);
     }
-    _ = try sys_write(conn_fd, &hdr[0] as *const byte, pos);
-    if body.len > 0 {
-        _ = try sys_write(conn_fd, body.ptr, body.len);
+    // 头+小体一次 write，避免 Keep-alive 下双 write 与 Nagle/delayed ACK 叠加的停顿（ab -k 等）。
+    const room: usize = 512 - pos;
+    if body.len <= room {
+        var bi: usize = 0;
+        while bi < body.len {
+            hdr[pos + bi] = body.ptr[bi];
+            bi = bi + 1;
+        }
+        try sys_write_all_conn(conn_fd, &hdr[0] as &byte, pos + body.len);
+        return;
     }
+    try sys_write_all_conn(conn_fd, &hdr[0] as &byte, pos);
+    try sys_write_all_conn(conn_fd, body.ptr as &byte, body.len);
 }
 
 /// 发送 `HTTP/1.1` 响应（`Content-Type: text/plain`）；未声明 `Connection` 时客户端可按 HTTP/1.1 默认保持连接（便于 Keep-alive 测试）。
 export fn http_send_response(conn_fd: i32, status: Status, body: &[byte]) !void {
-    try http_send_response_impl(conn_fd, status, body, false);
+    try http_send_response_impl(conn_fd, status, body, false, false);
 }
 
 /// 同上，但带 `Connection: close`（无 `Request` 上下文时用于错误响应等）。
 export fn http_send_response_close(conn_fd: i32, status: Status, body: &[byte]) !void {
-    try http_send_response_impl(conn_fd, status, body, true);
+    try http_send_response_impl(conn_fd, status, body, true, false);
 }
 
-/// 按请求的 HTTP 版本与 `Connection` 头决定是否附加 `Connection: close`（与 `request_wants_persistent_connection` 相反）。
+/// 使用调用方算好的 `persist`（可与 `request_wants_persistent_with_session` 配合，兼容 ab -k 等省略后续 Connection 的行为）。
+export fn http_send_response_for_request_persist(conn_fd: i32, status: Status, body: &[byte], req: &Request, persist: bool) !void {
+    const emit_ka: bool = persist && !req.http11;
+    try http_send_response_impl(conn_fd, status, body, !persist, emit_ka);
+}
+
+/// 按请求的 HTTP 版本与 `Connection` 头决定是否附加 `Connection: close`；HTTP/1.0 且保持连接时回显 `Connection: keep-alive`。
 export fn http_send_response_for_request(conn_fd: i32, status: Status, body: &[byte], req: &Request) !void {
-    const persist: bool = request_wants_persistent_connection(req);
-    try http_send_response_impl(conn_fd, status, body, !persist);
+    try http_send_response_for_request_persist(conn_fd, status, body, req, request_wants_persistent_connection(req));
 }

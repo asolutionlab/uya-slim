@@ -82,6 +82,8 @@ export const SHUT_WR: i32 = 1;
 export const SHUT_RDWR: i32 = 2;
 export const SOL_SOCKET: i32 = 1;
 export const SO_REUSEADDR: i32 = 2;
+/// Linux `TCP_NODELAY`（`setsockopt` 级别 `IPPROTO_TCP`）。
+export const TCP_NODELAY: i32 = 1;
 
 // 用户/组
 export const SYS_getuid: i64 = 102;

@@ -26,6 +26,7 @@ if ! "$COMPILER" --c99 --safety-proof "$SRC" -o "$OUT_C" >/dev/null 2>&1; then
 fi
 
 CC_CMD="${CC_DRIVER:-${CC:-cc}}"
+# 与 release 构建一致默认 -O2；若遇回归可用 CFLAGS='... -O1' 覆盖
 CFLAGS_USE="${CFLAGS:--std=c99 -O2 -fno-builtin -Werror}"
 if ! $CC_CMD $CC_TARGET_FLAGS $CFLAGS_USE -std=c99 -no-pie -c "$OUT_C" -o "$OUT_O" 2>&1; then
     echo "✗ cc 编译 http_bench 生成的 C 失败"
