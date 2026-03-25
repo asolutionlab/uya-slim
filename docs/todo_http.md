@@ -100,7 +100,7 @@
 ### 5.1 Server
 
 - [x] `server.uya`：`HttpServer`、`ServerConfig`；`http_server_listen` / `http_server_accept` / `http_server_close`（`ServerMode.Blocking` + 127.0.0.1；`port==0` 时 `getsockname` 填端口）
-- [x] `http_recv_parse_request`（单次 read ≤8KiB + `parse`）、`http_send_response`（`text/plain` + `Content-Length`）、`http_tcp_connect_loopback`（测试用）
+- [x] `http_recv_parse_request`（内部多 `recv` + `parse`）、`http_send_response`（`text/plain` + `Content-Length`；状态行含 200/201/204/400/404/405/500）、`http_tcp_connect_loopback`（测试用）
 - [ ] 首版路线图：阻塞 accept + 每连接一线程；当前标准库为原语级 API，无自动「每连接一线程」封装
 - [x] 每连接：读 buffer -> parse -> `router`/Handler -> 写 Response；Keep-alive 多轮 parse（`http_conn_read_parse` + `http_connbuf_shift` + `IncompleteRequest` / 多次 `recv`）
 - [x] 错误路径（解析）：非法方法等导致 `!ParseResult` 时服务端可回 `400`（`http_parse_error_returns_400`）；Handler 层统一 5xx 仍待扩展
@@ -130,7 +130,7 @@
 
 ### 6.2 示例
 
-- [ ] REST 示例：GET/POST 资源、path_params、query、Status.Created/NoContent
+- [x] REST 场景测试：`http_pipeline_post_created_get_no_content`（流水线 POST→`201 Created`+body、GET→`204 No Content`）；path_params/query 组合示例仍可选补充
 - [ ] 在 [http_framework_design.md](http_framework_design.md) 或 README 的 HTTP 小节中注明：TDD、`make check`、`--uya --c99` 要求
 
 ---

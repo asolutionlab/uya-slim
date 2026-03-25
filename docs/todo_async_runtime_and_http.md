@@ -181,7 +181,7 @@ Phase 1: Socket API
 **Phase 5：http.server（进行中）**
 - `server.uya`：`http_conn_read_parse`（`IncompleteRequest` 时续读）、`http_connbuf_shift`（已消耗字节前移）、`HTTP_CONN_READ_CAP` 与 `http_recv_parse_request` 内部多 `recv`
 - `parse.uya`：首行/头部行末无完整 CRLF 或 body 未收齐时返回 `error.IncompleteRequest`（`find_crlf_or_incomplete`）
-- 测试：`test_http_server.uya`（含流水线 Keep-alive 双 GET、`http_parse_error_returns_400`）、`parse_post_body_incomplete`
+- 测试：`test_http_server.uya`（含流水线双 GET、`POST+GET`→`201`/`204`、`http_parse_error_returns_400`）、`parse_post_body_incomplete`；`http_send_response` 支持 `Created`/`NoContent` 状态行
 - 示例：`examples/http_server.uya`（`try` + `match`：`pr`/成功分支放在各 `error.*` 之后，避免 C 代码 `else` 悬空）
 
 ### 第四步：Phase 9-10 异步 HTTP 服务器（约 6 周）

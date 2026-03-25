@@ -181,6 +181,10 @@ export fn http_send_response(conn_fd: i32, status: Status, body: &[byte]) !void 
     var pos: usize = 0;
     if status == Status.OK {
         pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 200 OK\r\n"[0: 17]);
+    } else if status == Status.Created {
+        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 201 Created\r\n"[0: 22]);
+    } else if status == Status.NoContent {
+        pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 204 No Content\r\n"[0: 25]);
     } else if status == Status.BadRequest {
         pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"HTTP/1.1 400 Bad Request\r\n"[0: 26]);
     } else if status == Status.NotFound {
