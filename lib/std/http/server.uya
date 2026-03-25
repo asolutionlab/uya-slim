@@ -196,7 +196,7 @@ export fn http_send_response(conn_fd: i32, status: Status, body: &[byte]) !void 
     }
     pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"Content-Length: "[0: 16]);
     pos = append_usize_dec_hdr(&hdr[0] as &byte, pos, body.len);
-    pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"\r\nContent-Type: text/plain\r\n\r\n"[0: 33]);
+    pos = copy_slice_into_hdr(&hdr[0] as &byte, pos, &"\r\nContent-Type: text/plain\r\n\r\n"[0: 30]);
     _ = try sys_write(conn_fd, &hdr[0] as *const byte, pos);
     if body.len > 0 {
         _ = try sys_write(conn_fd, body.ptr, body.len);
