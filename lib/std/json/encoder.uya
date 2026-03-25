@@ -48,12 +48,17 @@ fn write_byte(w: &JsonWriter, b: byte) void {
     w.used = w.used + 1;
 }
 
+// 连续写入：一次容量判定后拷贝（json_write_str_view 向量段每 16 字节调用，避免逐字节 write_byte）
 fn write_bytes(w: &JsonWriter, ptr: &byte, len: usize) void {
+    if w.overflow { return; }
+    if len == 0 { return; }
+    if w.used + len > w.cap { w.overflow = true; return; }
     var i: usize = 0;
     while i < len {
-        write_byte(w, ptr[i]);
+        w.buf[w.used + i] = ptr[i];
         i = i + 1;
     }
+    w.used = w.used + len;
 }
 
 /// 写单个字节（用于手写 to_json 时写 `{` `}` `"` `:` `,` 等）

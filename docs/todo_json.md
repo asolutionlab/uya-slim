@@ -44,6 +44,7 @@
 ### 2.1 JsonWriter
 
 - [x] `encoder.uya`：`JsonWriter` 结构体（buf、cap、used、overflow）
+- [x] 内部 `write_bytes`：单次 `used + len` 容量检查后连续写入（配合 `json_write_str_view` 的 16 字节向量段，避免逐字节 `write_byte`）
 - [x] `json_write_null`、`json_write_bool`、`json_write_i64`、`json_write_f64`
 - [x] `json_write_str_view`（转义 `\"\\\n\r\t`）
 - [x] `json_write_value` 递归写入 JsonValue（含数组、对象）
