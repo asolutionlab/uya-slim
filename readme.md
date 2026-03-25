@@ -141,6 +141,18 @@ fn main() i32 {
 }
 ```
 
+## 标准库 HTTP（实验性）
+
+`lib/std/http/` 提供阻塞式解析、路由与最小服务器原语（`types` / `parse` / `router` / `server`）。示例见根目录 [`examples/http_server.uya`](examples/http_server.uya)。
+
+开发与回归要求：
+
+- 新用例按 **TDD**：先写 `tests/test_http_*.uya`（`test "..." {}` 风格），再改实现。
+- 合并前跑通 **`make check`**（自举 + 全量测试）。
+- HTTP 相关程序/测试须同时通过 **`./tests/run_programs_parallel.sh --c99`** 与 **`--uya --c99`**（与仓库内其他 `std` 测试一致）。
+
+详细路线图见 [`docs/todo_http.md`](docs/todo_http.md)、[`docs/http_framework_design.md`](docs/http_framework_design.md)。
+
 ## 设计哲学
 
 ### 核心思想

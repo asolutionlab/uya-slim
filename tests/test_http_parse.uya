@@ -143,3 +143,74 @@ test "parse_then_request_get_header" {
         try assert_eq_i32(0, 1);
     }
 }
+
+test "parse_uri_path_too_long" {
+    var raw: [byte: 640] = [];
+    var r: usize = 0;
+    const pref: &[byte] = &"GET "[0: 4];
+    var pi: usize = 0;
+    while pi < pref.len {
+        raw[r] = pref.ptr[pi];
+        r = r + 1;
+        pi = pi + 1;
+    }
+    raw[r] = '/' as byte;
+    r = r + 1;
+    var j: usize = 0;
+    while j < 256 {
+        raw[r] = 'a' as byte;
+        r = r + 1;
+        j = j + 1;
+    }
+    const suf: &[byte] = &" HTTP/1.1\r\n\r\n"[0: 14];
+    var si: usize = 0;
+    while si < suf.len {
+        raw[r] = suf.ptr[si];
+        r = r + 1;
+        si = si + 1;
+    }
+    const buf: &[byte] = raw[0: r];
+    const p: !ParseResult = parse(buf);
+    match p {
+        error.URITooLong => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}
+
+test "parse_unknown_method_invalid_request" {
+    var raw: [byte: 64] = [];
+    const line: &[byte] = &"QUACK /x HTTP/1.1\r\n\r\n"[0: 21];
+    var i: usize = 0;
+    while i < line.len {
+        raw[i] = line.ptr[i];
+        i = i + 1;
+    }
+    const buf: &[byte] = raw[0: line.len];
+    const p: !ParseResult = parse(buf);
+    match p {
+        error.InvalidRequest => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}
+
+test "parse_content_length_payload_too_large" {
+    var raw: [byte: 128] = [];
+    const line: &[byte] = &"GET /x HTTP/1.1\r\nContent-Length: 70000\r\n\r\n"[0: 42];
+    var i: usize = 0;
+    while i < line.len {
+        raw[i] = line.ptr[i];
+        i = i + 1;
+    }
+    const buf: &[byte] = raw[0: line.len];
+    const p: !ParseResult = parse(buf);
+    match p {
+        error.PayloadTooLarge => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}

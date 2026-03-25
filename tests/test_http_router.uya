@@ -111,6 +111,56 @@ test "router_apply_path_params_request" {
     }
 }
 
+test "router_add_pattern_uri_too_long" {
+    var rt: Router = router_new();
+    var longpat: [byte: 300] = [];
+    longpat[0] = '/' as byte;
+    var li: usize = 1;
+    while li < 257 {
+        longpat[li] = 'a' as byte;
+        li = li + 1;
+    }
+    const lb: &byte = &longpat[0] as &byte;
+    const e: !void = router_add(&rt, Method.GET, lb[0: 257]);
+    match e {
+        error.URITooLong => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}
+
+test "router_add_router_full" {
+    var rt: Router = router_new();
+    var buf: [byte: 8] = [];
+    var k: i32 = 0;
+    while k < MAX_ROUTES {
+        buf[0] = '/' as byte;
+        const n: i32 = k + 1;
+        var plen: usize = 1;
+        if n < 10 {
+            buf[plen] = (48 + n) as byte;
+            plen = plen + 1;
+        } else {
+            buf[plen] = (48 + (n / 10)) as byte;
+            plen = plen + 1;
+            buf[plen] = (48 + (n % 10)) as byte;
+            plen = plen + 1;
+        }
+        const pb: &byte = &buf[0] as &byte;
+        const psl: &[byte] = pb[0: plen];
+        try router_add(&rt, Method.GET, psl);
+        k = k + 1;
+    }
+    const last: !void = router_add(&rt, Method.GET, &"/z"[0: 2]);
+    match last {
+        error.RouterFull => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}
+
 test "router_apply_path_params_request_path_too_long" {
     var raw: [byte: 4] = [];
     const empty: &[byte] = raw[0: 0];

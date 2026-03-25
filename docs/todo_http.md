@@ -123,14 +123,14 @@
 
 ### 6.1 覆盖
 
-- [ ] 所有 !T 错误路径有测试（parse、router、get_header、get_bearer_token）（已部分覆盖：`parse_method_bytes_invalid`、`parse_post_body_incomplete`、`request_get_header_missing`、`get_bearer_token_*`、`router_apply_path_params_request_path_too_long`）
+- [ ] 所有 !T 错误路径有测试（parse、router、get_header、get_bearer_token）（已部分覆盖：含 `parse_uri_path_too_long`、`parse_unknown_method_invalid_request`、`parse_content_length_payload_too_large`、`router_add_router_full`、`router_add_pattern_uri_too_long` 等）
 - [x] 多请求 Keep-alive 测试（`tests/test_http_server.uya` 流水线双 GET + `parse_post_body_incomplete`）
 - [ ] 预期编译失败：`error_http_*.uya`（若有）
 
 ### 6.2 示例
 
 - [x] REST 场景测试：`http_pipeline_post_created_get_no_content`（流水线 POST→`201 Created`+body、GET→`204 No Content`）；`http_get_path_param_and_query`（`GET /item/99?q=v` + `router_apply_path_params_request`，`path_params[].value` 指向 `Request.path`）
-- [ ] 在 [http_framework_design.md](http_framework_design.md) 或 README 的 HTTP 小节中注明：TDD、`make check`、`--uya --c99` 要求
+- [x] 在 [readme.md](../readme.md) 已增加「标准库 HTTP（实验性）」小节（TDD、`make check`、`--uya --c99`）；设计文档仍见 [http_framework_design.md](http_framework_design.md)
 
 ---
 
