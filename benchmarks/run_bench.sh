@@ -17,8 +17,12 @@ GO_SRC="${SCRIPT_DIR}/http_bench.go"
 UYA_SRC="${SCRIPT_DIR}/http_bench.uya"
 
 # 编译输出
-UYA_EXEC="/tmp/http_bench_uya"
 GO_EXEC="/tmp/http_bench_go"
+UYA_EXEC="/tmp/http_bench_uya"
+
+# Uya 使用临时目录避免 .uyacache 污染项目目录
+UYA_TMP_DIR="/tmp/uyuabench_$$"
+UYACACHE_DIR="${UYA_TMP_DIR}/.uyacache"
 
 # wrk 参数（与文档一致）
 WRK_THREADS=4
@@ -43,45 +47,49 @@ check_dep() {
     fi
 }
 
-# 解析 wrk 输出
+# 解析 wrk 输出，返回格式: req|count|dur|p50|p95|p99|rps
+# - req: 总请求数
+# - count: 耗时（秒）
+# - dur: p50 延迟
+# - p50: p50 延迟（备用）
+# - p95: p95 延迟
+# - p99: p99 延迟
+# - rps: QPS
 parse_wrk() {
     local output="$1"
-    local requests=0
-    local duration=0
+    local req=0
+    local count=0
+    local dur=0
     local p50=0
     local p95=0
     local p99=0
-    local requests_per_sec=0
+    local rps=0
 
-    # 解析 Requests/sec
-    requests_per_sec=$(echo "$output" | grep "Requests/sec:" | awk '{print $2}' | head -1)
+    # 解析 Requests/sec（可能有多个空格）
+    rps=$(echo "$output" | grep "Requests/sec:" | sed 's/.*Requests\/sec: *//' | awk '{print $1}' | head -1)
+    if [ -z "$rps" ]; then rps=0; fi
 
     # 解析总请求数
-    requests=$(echo "$output" | grep "requests in" | awk '{print $1}' | head -1)
+    req=$(echo "$output" | grep "requests in" | awk '{print $1}' | head -1)
+    if [ -z "$req" ]; then req=0; fi
 
-    # 解析耗时
-    duration=$(echo "$output" | grep "requests in" | awk '{print $4}' | sed 's/s//' | head -1)
+    # 解析耗时（秒）
+    count=$(echo "$output" | grep "requests in" | awk '{print $4}' | sed 's/s//' | sed 's/,//' | head -1)
+    if [ -z "$count" ]; then count=0; fi
 
     # 解析延迟百分位 (Latency Distribution)
-    # wrk 输出格式: "50.00%  <latency>    95.00%  <latency>    99.00%  <latency>"
-    local lat_line=$(echo "$output" | grep -A 1 "Latency Distribution")
-    if [ -n "$lat_line" ]; then
-        p50=$(echo "$output" | awk '/50\.00%/{print $2}' | sed 's/[a-zA-Z]//g' | head -1)
-        p95=$(echo "$output" | awk '/95\.00%/{print $2}' | sed 's/[a-zA-Z]//g' | head -1)
-        p99=$(echo "$output" | awk '/99\.00%/{print $2}' | sed 's/[a-zA-Z]//g' | head -1)
-    else
-        # 备选：直接从 Latency 行解析
-        p50=$(echo "$output" | grep "50%" | awk '{print $2}' | sed 's/[a-zA-Z]//g' | head -1)
-        p95=$(echo "$output" | grep "95%" | awk '{print $2}' | sed 's/[a-zA-Z]//g' | head -1)
-        p99=$(echo "$output" | grep "99%" | awk '{print $2}' | sed 's/[a-zA-Z]//g' | head -1)
-    fi
+    dur=$(echo "$output" | grep "50.00%" | head -1 | awk '{print $2}' | sed 's/[a-zA-Z]//g')
+    p95=$(echo "$output" | grep "95.00%" | head -1 | awk '{print $2}' | sed 's/[a-zA-Z]//g')
+    p99=$(echo "$output" | grep "99.00%" | head -1 | awk '{print $2}' | sed 's/[a-zA-Z]//g')
 
     # 如果百分位为空，尝试解析 Avg/Stdev/Max
-    if [ -z "$p50" ]; then
-        p50=$(echo "$output" | grep "Latency" | awk '{print $2}' | sed 's/[a-zA-Z]//g' | head -1)
+    if [ -z "$dur" ] || [ "$dur" = "0" ]; then
+        dur=$(echo "$output" | grep "Latency" | head -1 | awk '{print $2}' | sed 's/[a-zA-Z]//g')
     fi
+    if [ -z "$p95" ]; then p95=0; fi
+    if [ -z "$p99" ]; then p99=0; fi
 
-    echo "$requests|$duration|$p50|$p95|$p99|$requests_per_sec"
+    echo "$req|$count|$dur|$p50|$p95|$p99|$rps"
 }
 
 # 解析延迟值（带单位）
@@ -104,16 +112,17 @@ parse_latency() {
     fi
 }
 
-# 编译 Uya 版本
+# 编译 Uya 版本（预编译到临时目录，避免 .uyacache 污染项目目录）
 build_uya() {
     log_info "编译 Uya HTTP 服务器..."
     if [ ! -f "$UYA_BIN" ]; then
         log_err "找不到 Uya 编译器: $UYA_BIN"
         exit 1
     fi
-    rm -f /tmp/http_bench_uya.c
-    "$UYA_BIN" --c99 "$UYA_SRC" -o /tmp/http_bench_uya.c
-    cc -std=c99 -no-pie -O2 -o "$UYA_EXEC" /tmp/http_bench_uya.c -lm
+    # 创建临时目录
+    mkdir -p "$UYA_TMP_DIR"
+    # 使用 --split-c-dir 指定输出目录，避免污染项目目录
+    "$UYA_BIN" build "$UYA_SRC" -o "$UYA_EXEC" --split-c-dir="$UYACACHE_DIR"
     log_info "Uya 版本编译完成: $UYA_EXEC"
 }
 
@@ -135,28 +144,24 @@ run_benchmark() {
     local port="$3"
     local url="$4"
 
-    log_info "--- $name 基准测试 ---"
+    echo "--- $name 基准测试 ---" >&2
 
     # 启动服务器
-    if [ "$name" = "Uya" ]; then
-        "$exec" &
-    else
-        "$exec" &
-    fi
+    "$exec" &
     local pid=$!
-    sleep 0.5  # 等待服务器启动
+    sleep 1  # 等待服务器启动
 
     # 检查服务器是否运行
     if ! kill -0 "$pid" 2>/dev/null; then
-        log_err "$name 服务器启动失败"
+        echo "ERROR: $name 服务器启动失败" >&2
         return 1
     fi
 
     # 运行 wrk
-    log_info "运行 wrk -t${WRK_THREADS} -c${WRK_CONNECTIONS} -d${WRK_DURATION} $url"
+    echo "运行 wrk -t${WRK_THREADS} -c${WRK_CONNECTIONS} -d${WRK_DURATION} $url" >&2
     local output
     output=$(wrk -t"$WRK_THREADS" -c"$WRK_CONNECTIONS" -d"$WRK_DURATION" "$url" 2>&1)
-    echo "$output"
+    echo "$output" >&2
 
     # 解析结果
     local parsed
@@ -168,17 +173,17 @@ run_benchmark() {
     wait "$pid" 2>/dev/null || true
 
     # 输出结果摘要
-    echo ""
-    log_info "$name 结果:"
-    echo "  QPS: ${rps:-0}"
-    echo "  总请求: ${count:-0}"
-    echo "  耗时: ${dur:-0}s"
-    echo "  p50: ${p50:-0}us"
-    echo "  p95: ${p95:-0}us"
-    echo "  p99: ${p99:-0}us"
-    echo ""
+    echo "" >&2
+    echo "$name 结果:" >&2
+    echo "  QPS: ${rps:-0}" >&2
+    echo "  总请求: ${count:-0}" >&2
+    echo "  耗时: ${dur:-0}s" >&2
+    echo "  p50: ${p50:-0}us" >&2
+    echo "  p95: ${p95:-0}us" >&2
+    echo "  p99: ${p99:-0}us" >&2
+    echo "" >&2
 
-    # 返回结果供后续处理
+    # 返回结果供后续处理（只有这一行被捕获）
     echo "$name|$req|$count|$dur|$p50|$p95|$p99|$rps"
 }
 
@@ -284,11 +289,13 @@ main() {
     sleep 1
     go_result=$(run_benchmark "Go" "$GO_EXEC" "$PORT" "$URL")
 
-    # 提取 QPS
+    # 提取 QPS（result 格式：name|req|count|dur|p50|p95|p99|rps）
     local uya_rps
     local go_rps
     uya_rps=$(echo "$uya_result" | awk -F'|' '{print $8}')
     go_rps=$(echo "$go_result" | awk -F'|' '{print $8}')
+    if [ -z "$uya_rps" ]; then uya_rps=0; fi
+    if [ -z "$go_rps" ]; then go_rps=0; fi
 
     # 对比
     echo "=========================================="
@@ -305,7 +312,8 @@ main() {
     fi
 
     # 清理
-    rm -f /tmp/http_bench_uya.c "$UYA_EXEC" "$GO_EXEC"
+    rm -f "$GO_EXEC"
+    rm -rf "$UYA_TMP_DIR"
 
     log_info "基准测试完成"
 }

@@ -168,9 +168,9 @@
 ### 8.2 环境与脚本
 
 - [x] `benchmarks/run_bench.sh`：运行 wrk 并解析输出，对比 Uya/Go QPS；`--baseline` 保存到 `baseline.json`
-- [x] `benchmarks/baseline.json`：基线数据模板（含测试机配置：Intel i7-14700/31GB/Deepin 25）
-- [ ] 运行 `./run_bench.sh --baseline` 获取实际基线数据
-- [ ] 文档记录：CPU、内存、OS、编译器；wrk 使用 keep-alive
+- [x] `benchmarks/baseline.json`：基线数据（含测试机配置：Intel i7-14700/31GB/Deepin 25）
+- [x] 运行 `./run_bench.sh --baseline` 获取实际基线数据
+- [x] 文档记录：CPU、内存、OS、编译器；wrk 使用 keep-alive
 - [ ] 回归允许 ±5%；CI 或文档中说明如何复现
 
 ---

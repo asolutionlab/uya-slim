@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-03-25T00:00:00+00:00",
+  "timestamp": "2026-03-25T20:06:50+08:00",
   "machine": {
     "cpu": "Intel(R) Core(TM) i7-14700 (20C/28T)",
     "memory_gb": 31,
@@ -15,30 +15,8 @@
   },
   "results": {
     "root": {
-      "uya_qps": 0,
-      "go_qps": 0,
-      "notes": "Run ./run_bench.sh --baseline to populate"
-    },
-    "json": {
-      "uya_qps": 0,
-      "go_qps": 0
-    },
-    "item_id": {
-      "uya_qps": 0,
-      "go_qps": 0
-    },
-    "payload1k": {
-      "uya_qps": 0,
-      "go_qps": 0
-    },
-    "payload10k": {
-      "uya_qps": 0,
-      "go_qps": 0
-    },
-    "payload100k": {
-      "uya_qps": 0,
-      "go_qps": 0
+      "uya_qps": 9941.19,
+      "go_qps": 144501.89
     }
-  },
-  "notes": "Baseline for HTTP framework v0.8.0"
+  }
 }
