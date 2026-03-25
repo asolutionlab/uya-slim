@@ -26,12 +26,12 @@ extern fn free(ptr: &void) void;
 extern "libc" fn __atomic_compare_exchange_n(ptr: &i32, expected: &i32, desired: i32, weak: i32, success_mem: i32, failure_mem: i32) i32;
 const ATOMIC_SEQ_CST: i32 = 5;
 
-// pthread 使用的栈大小（1 MiB）
-const PTHREAD_STACK_SIZE: usize = 1024 * 1024;
+// pthread 使用的栈大小（8 MiB）
+const PTHREAD_STACK_SIZE: usize = 8 * 1024 * 1024;
 
-// clone 标志：仅使用 SIGCHLD（行为类似 fork，满足当前测试需求）
+// clone 标志：需要设置 CLONE_VM 共享内存空间，否则子进程有独立的内存副本
 // 参考：man 2 clone，低 7 位为子进程退出时发送给父进程的信号
-const CLONE_FLAGS_SIGCHLD: i64 = 17;  // SIGCHLD
+const CLONE_FLAGS: i64 = 0x00000100 | 17;  // CLONE_VM | SIGCHLD
 
 // 子线程启动时从父进程继承的入口与参数（clone 后子进程可见）
 var _pthread_start_fn: &void = null;
@@ -225,12 +225,21 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     _pthread_start_arg = arg;
 
     // 调用内核 SYS_clone：flags=SIGCHLD，child_stack=top，其余参数为 0
-    const clone_ret: !i64 = @syscall(SYS_clone, CLONE_FLAGS_SIGCHLD, top as i64, 0, 0, 0);
-    const tid: i64 = clone_ret catch {
+    // 使用内联汇编直接调用，避免 libc syscall 函数在子进程中崩溃
+    var tid: i64 = 0;
+    const nr: i64 = SYS_clone;
+    const flags: i64 = CLONE_FLAGS;
+    const stack_top: i64 = top as i64;
+    @asm {
+        "mov %4, %%rax\n\tmov %5, %%rdi\n\tmov %6, %%rsi\n\txor %%rdx, %%rdx\n\txor %%r10, %%r10\n\txor %%r8, %%r8\n\tsyscall\n\tmov %%rax, %0" 
+        (nr, flags, stack_top, 0 as i64, 0 as i64, 0 as i64, -> tid);
+    } clobbers = ["rdi", "rsi", "rdx", "r10", "r8", "rcx", "r11", "memory"];
+    
+    if tid < 0 {
         _ = pthread_mutex_unlock(&_pthread_create_mutex);
         free(stack_mem);
         return 1;
-    };
+    }
 
     if tid == 0 {
         // 子线程路径：通过 @asm 间接调用用户入口函数（子进程有独立内存副本，无需 unlock）

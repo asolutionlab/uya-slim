@@ -16,7 +16,7 @@
 // 高并发（如 ab -c 500）需足够 `listen` backlog：`ServerConfig.max_connections` 会传给 `listen(2)`（见 `http_server_listen`）。
 // 响应 Connection 由 `request_wants_persistent_with_session` + `http_send_response_for_request_persist` 决定（兼容 ab -k：HTTP/1.0 后续请求常省略 Connection 头）。
 // 若本响应不应保持连接（含请求含 `close` 令牌），发完响应后 `serve_connection` 会结束循环并 `sys_close`。
-// `ab -c>1` 时每条连接 `fork` 子进程 `serve_connection`；父进程关闭 dup 的 cfd。子进程回收建议 `waitpid(-1,,WNOHANG)`，勿依赖对 `SIGCHLD` 的 `SIG_IGN`（与僵尸进程语义相关）。
+// 常驻模式：父进程只 `accept`；每连接 `fork` 子进程 `serve_connection` 后 `sys_exit`（父关闭 dup 的 cfd）。`-k` 高并发时任意「固定 worker 数 + 每线程先 accept 再长时间 serve」都会占满线程/积压 backlog；进程池无此上限（受 `ulimit -u` 等约束）。子进程回收：`waitpid(-1,,WNOHANG)`，勿依赖对 `SIGCHLD` 的 `SIG_IGN`（与僵尸语义相关）。
 use std.http.types;
 use std.http.router;
 use std.http.server;
@@ -29,14 +29,20 @@ use libc.unistd;
 const BENCH_PORT: u16 = 8876;
 const WAIT_WNOHANG: i32 = 1;
 
+var g_bench_router: Router = Router{ entries: [], count: 0 };
+// 预填充响应体（只读共享），避免 /payload* 在热路径上做大栈分配，改善 wrk 等工具下的 p99 尾延迟
+var g_payload1k: [byte: 1024] = [];
+var g_payload10k: [byte: 10240] = [];
+var g_payload100k: [byte: 102400] = [];
+
 fn reap_exited_children() void {
     var st: i32 = 0;
     while true {
-        const w: !i32 = sys_waitpid(0 - 1, &st, WAIT_WNOHANG);
-        const pid: i32 = w catch {
+        const w: i32 = waitpid(0 - 1, &st, WAIT_WNOHANG);
+        if w == 0 {
             return;
-        };
-        if pid == 0 {
+        }
+        if w < 0 {
             return;
         }
     }
@@ -75,6 +81,12 @@ fn argv_is_once() bool {
         return false;
     }
     return p[6] == 0 as byte;
+}
+
+fn bench_init_payload_slabs() void {
+    fill_a(&g_payload1k[0] as &byte, 1024);
+    fill_a(&g_payload10k[0] as &byte, 10240);
+    fill_a(&g_payload100k[0] as &byte, 102400);
 }
 
 fn register_routes(rt: &Router) !void {
@@ -122,25 +134,19 @@ fn dispatch(sfd: i32, rt: &Router, pr: &ParseResult, persist: bool) void {
         return;
     }
     if idx == 3 {
-        var slab: [byte: 1024] = [];
-        fill_a(&slab[0] as &byte, 1024);
-        const sb: &byte = &slab[0] as &byte;
+        const sb: &byte = &g_payload1k[0] as &byte;
         const b: &[byte] = sb[0: 1024];
         _ = http_send_response_for_request_persist(sfd, Status.OK, b, &pr.request, persist) catch {};
         return;
     }
     if idx == 4 {
-        var slab10: [byte: 10240] = [];
-        fill_a(&slab10[0] as &byte, 10240);
-        const sb10: &byte = &slab10[0] as &byte;
+        const sb10: &byte = &g_payload10k[0] as &byte;
         const b2: &[byte] = sb10[0: 10240];
         _ = http_send_response_for_request_persist(sfd, Status.OK, b2, &pr.request, persist) catch {};
         return;
     }
     if idx == 5 {
-        var slab100: [byte: 102400] = [];
-        fill_a(&slab100[0] as &byte, 102400);
-        const sb100: &byte = &slab100[0] as &byte;
+        const sb100: &byte = &g_payload100k[0] as &byte;
         const b3: &[byte] = sb100[0: 102400];
         _ = http_send_response_for_request_persist(sfd, Status.OK, b3, &pr.request, persist) catch {};
         return;
@@ -152,7 +158,6 @@ fn match_parse_err(sfd: i32) void {
     send_bad(sfd);
 }
 
-/// 处理一轮请求；`http10_sess` 表示本连接上是否已建立 HTTP/1.0 Keep-Alive（供 `request_wants_persistent_with_session`）。
 fn serve_one_round(sfd: i32, rt: &Router, base: &byte, cap: usize, filled: &usize, out_persist: &bool, http10_sess: &bool) !void {
     const pr: ParseResult = try http_conn_read_parse(sfd, base, cap, filled);
     const persist: bool = request_wants_persistent_with_session(&pr.request, *http10_sess);
@@ -213,6 +218,41 @@ fn serve_connection(sfd: i32, rt: &Router) void {
     _ = sys_close(sfd) catch {};
 }
 
+fn configure_accepted_fd(cfd: i32) void {
+    var nd: i32 = 1;
+    _ = sys_setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &nd as &void, 4 as u32) catch {};
+    var tv: TimeVal = TimeVal{ tv_sec: 30, tv_usec: 0 };
+    _ = sys_setsockopt(cfd, SOL_SOCKET, SO_RCVTIMEO, &tv as &void, 16 as u32) catch {};
+}
+
+fn bench_parent_accept_fork_loop(listen_fd: i32) void {
+    while true {
+        reap_exited_children();
+        var peer: [byte: 16] = [];
+        var alen: u32 = 16;
+        const cfd_result: !i32 = sys_accept(listen_fd, &peer[0] as &void, &alen);
+        if cfd_result.error_id != 0 {
+            continue;
+        }
+        const cfd: i32 = cfd_result.value;
+        if cfd < 0 {
+            continue;
+        }
+        const child: i32 = fork();
+        if child == 0 {
+            _ = sys_close(listen_fd) catch {};
+            configure_accepted_fd(cfd);
+            serve_connection(cfd, &g_bench_router);
+            sys_exit(0);
+        }
+        if child < 0 {
+            _ = sys_close(cfd) catch {};
+            continue;
+        }
+        _ = sys_close(cfd) catch {};
+    }
+}
+
 fn run_once_handle(cfd: i32, rt: &Router) !void {
     const pr: ParseResult = try http_recv_parse_request(cfd);
     const persist: bool = request_wants_persistent_connection(&pr.request);
@@ -266,12 +306,13 @@ fn run_once(rt: &Router) !void {
 
 fn bench_main() i32 {
     _ = signal(SIGPIPE, SIG_IGN as &void);
-    var rt: Router = router_new();
-    register_routes(&rt) catch {
+    g_bench_router = router_new();
+    register_routes(&g_bench_router) catch {
         return 1;
     };
+    bench_init_payload_slabs();
     if argv_is_once() {
-        run_once(&rt) catch {
+        run_once(&g_bench_router) catch {
             return 1;
         };
         return 0;
@@ -285,25 +326,7 @@ fn bench_main() i32 {
     const srv: HttpServer = http_server_listen(&cfg) catch {
         return 1;
     };
-    while true {
-        reap_exited_children();
-        var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
-        const conn: Conn = http_server_accept(&srv_tmp) catch {
-            return 1;
-        };
-        const cfd: i32 = conn.fd;
-        const child: i32 = fork();
-        if child == 0 {
-            _ = sys_close(srv.listen_fd) catch {};
-            serve_connection(cfd, &rt);
-            sys_exit(0);
-        }
-        if child < 0 {
-            _ = sys_close(cfd) catch {};
-            continue;
-        }
-        _ = sys_close(cfd) catch {};
-    }
+    bench_parent_accept_fork_loop(srv.listen_fd);
     return 0;
 }
 

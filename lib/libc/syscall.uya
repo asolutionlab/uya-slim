@@ -82,8 +82,20 @@ export const SHUT_WR: i32 = 1;
 export const SHUT_RDWR: i32 = 2;
 export const SOL_SOCKET: i32 = 1;
 export const SO_REUSEADDR: i32 = 2;
+/// Linux `SO_REUSEPORT`：多 `listen` 同一端口时分流新连接（压测 worker 模型用）。
+export const SO_REUSEPORT: i32 = 15;
 /// Linux `TCP_NODELAY`（`setsockopt` 级别 `IPPROTO_TCP`）。
 export const TCP_NODELAY: i32 = 1;
+/// Socket 接收超时（秒）
+export const SO_RCVTIMEO: i32 = 20;
+/// Socket 发送超时（秒）
+export const SO_SNDTIMEO: i32 = 21;
+
+// 时间结构体（用于 setsockopt 的 SO_RCVTIMEO/SO_SNDTIMEO）
+export struct TimeVal {
+    tv_sec: i64,
+    tv_usec: i64,
+}
 
 // 用户/组
 export const SYS_getuid: i64 = 102;
