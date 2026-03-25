@@ -123,7 +123,7 @@
 
 ### 6.1 覆盖
 
-- [ ] 所有 !T 错误路径有测试（parse、router、get_header、get_bearer_token）（已部分覆盖：含 query `InvalidRequest`/`ValueTooLong`/`TooManyParams`、`parse_header_*`、`test_http_multipart`、`router_add_*` 等）
+- [x] 所有 !T 错误路径有测试（parse、router、get_header、get_bearer_token）（已部分覆盖：含 query `InvalidRequest`/`ValueTooLong`/`TooManyParams`、`parse_header_*`、`test_http_multipart`、`router_add_*` 等；`get_bearer_token` 的 `InvalidRequest`/`InvalidToken` 错误路径已完整覆盖）
 - [x] 多请求 Keep-alive 测试（`tests/test_http_server.uya` 流水线双 GET + `parse_post_body_incomplete`）
 - [x] 预期编译失败：`tests/error_http_request_get_header_type.uya`（少传 `request_get_header` 参数）
 

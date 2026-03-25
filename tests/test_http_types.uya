@@ -201,3 +201,43 @@ test "get_bearer_token_invalid_scheme" {
         }
     }
 }
+
+test "get_bearer_token_empty_token" {
+    var raw: [byte: 4] = [];
+    const empty: &[byte] = raw[0: 0];
+    var req: Request = Request{
+        method: Method.GET,
+        http11: true,
+        path: [],
+        path_len: 0,
+        path_params: [],
+        path_param_count: 0,
+        query: [],
+        query_count: 0,
+        headers: [],
+        header_count: 0,
+        body: empty,
+    };
+    const auth_name: &[byte] = &"Authorization"[0: 13];
+    var ni: usize = 0;
+    while ni < auth_name.len {
+        req.headers[0].name[ni] = auth_name.ptr[ni];
+        ni = ni + 1;
+    }
+    req.headers[0].name_len = auth_name.len;
+    const auth_val: &[byte] = &"Bearer "[0: 7];
+    var vi: usize = 0;
+    while vi < auth_val.len {
+        req.headers[0].value[vi] = auth_val.ptr[vi];
+        vi = vi + 1;
+    }
+    req.headers[0].value_len = auth_val.len;
+    req.header_count = 1;
+    const t: !&[byte] = get_bearer_token(&req);
+    match t {
+        error.InvalidToken => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}
