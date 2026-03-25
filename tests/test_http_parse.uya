@@ -34,6 +34,12 @@ test "parse_get_simple" {
     try assert_eq_i32(pr.request.method as i32, Method.GET as i32);
     try assert_eq_i32(pr.request.path_len, 6);
     try assert_eq_u64(pr.consumed as u64, buf.len as u64);
+    if !pr.request.http11 {
+        try assert_eq_i32(0, 1);
+    }
+    if !request_wants_persistent_connection(&pr.request) {
+        try assert_eq_i32(0, 1);
+    }
 }
 
 test "parse_post_body" {
@@ -464,4 +470,49 @@ test "parse_query_sixteen_params_ok" {
     const buf: &[byte] = raw[0: line.len];
     const pr: ParseResult = try parse(buf);
     try assert_eq_i32(pr.request.query_count, 16);
+}
+
+test "parse_http10_default_no_persistent" {
+    const line: &[byte] = &"GET / HTTP/1.0\r\nHost: x\r\n\r\n"[0: 27];
+    var raw: [byte: 64] = [];
+    var i: usize = 0;
+    while i < line.len {
+        raw[i] = line.ptr[i];
+        i = i + 1;
+    }
+    const pr: ParseResult = try parse(raw[0: line.len]);
+    if pr.request.http11 {
+        try assert_eq_i32(0, 1);
+    }
+    if request_wants_persistent_connection(&pr.request) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "parse_http10_keep_alive_persistent" {
+    const line: &[byte] = &"GET / HTTP/1.0\r\nHost: x\r\nConnection: keep-alive\r\n\r\n"[0: 51];
+    var raw: [byte: 80] = [];
+    var i: usize = 0;
+    while i < line.len {
+        raw[i] = line.ptr[i];
+        i = i + 1;
+    }
+    const pr: ParseResult = try parse(raw[0: line.len]);
+    if !request_wants_persistent_connection(&pr.request) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "parse_http11_connection_close_not_persistent" {
+    const line: &[byte] = &"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"[0: 46];
+    var raw: [byte: 64] = [];
+    var i: usize = 0;
+    while i < line.len {
+        raw[i] = line.ptr[i];
+        i = i + 1;
+    }
+    const pr: ParseResult = try parse(raw[0: line.len]);
+    if request_wants_persistent_connection(&pr.request) {
+        try assert_eq_i32(0, 1);
+    }
 }

@@ -132,6 +132,8 @@ export struct Header {
 
 export struct Request {
     method: Method,
+    /// 请求行是否为 `HTTP/1.1`（否则为 `HTTP/1.0`）；由解析器填写。
+    http11: bool,
     path: [byte: MAX_URI_LENGTH],
     path_len: i32,
     path_params: [HttpKvSlice: MAX_PATH_PARAMS],
@@ -296,6 +298,61 @@ export fn request_get_header(req: &Request, name: &[byte]) !&[byte] {
         hi = hi + 1;
     }
     return error.InvalidRequest;
+}
+
+/// `Connection` 头按逗号分列后，是否存在与 `tok` 大小写不敏感的令牌（忽略两侧 OWS）。
+fn header_value_has_connection_token_ci(value: &[byte], tok: &[byte]) bool {
+    var i: usize = 0;
+    while i < value.len {
+        while i < value.len && (value.ptr[i] == ' ' as byte || value.ptr[i] == 9 as byte) {
+            i = i + 1;
+        }
+        const t0: usize = i;
+        while i < value.len && value.ptr[i] != ',' as byte {
+            i = i + 1;
+        }
+        var t1: usize = i;
+        while t1 > t0 && (value.ptr[t1 - 1] == ' ' as byte || value.ptr[t1 - 1] == 9 as byte) {
+            t1 = t1 - 1;
+        }
+        var ts: usize = t0;
+        while ts < t1 && (value.ptr[ts] == ' ' as byte || value.ptr[ts] == 9 as byte) {
+            ts = ts + 1;
+        }
+        if ts < t1 && (t1 - ts) == tok.len {
+            var eq: bool = true;
+            var k: usize = 0;
+            while k < tok.len {
+                if http_byte_to_lower_ty(value.ptr[ts + k]) != http_byte_to_lower_ty(tok.ptr[k]) {
+                    eq = false;
+                    break;
+                }
+                k = k + 1;
+            }
+            if eq {
+                return true;
+            }
+        }
+        if i < value.len && value.ptr[i] == ',' as byte {
+            i = i + 1;
+        }
+    }
+    return false;
+}
+
+/// 本响应后是否应保持连接（与是否应在响应中加 `Connection: close` 相反）。
+/// 规则：`Connection: close` → 否；无 `Connection` 时 1.1 默认为是、1.0 默认为否；1.0 须显式 `keep-alive` 才是。
+export fn request_wants_persistent_connection(req: &Request) bool {
+    const val: &[byte] = request_get_header(req, &"Connection"[0: 10]) catch {
+        return req.http11;
+    };
+    if header_value_has_connection_token_ci(val, &"close"[0: 5]) {
+        return false;
+    }
+    if req.http11 {
+        return true;
+    }
+    return header_value_has_connection_token_ci(val, &"keep-alive"[0: 10]);
 }
 
 /// 读取 `Authorization: Bearer <token>`（`Bearer` 与空格大小写不敏感按字节比较）；`token` 不得为空。

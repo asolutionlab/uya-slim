@@ -9,6 +9,7 @@ struct FirstLineParts {
     method_len: usize,
     uri_start: usize,
     uri_len: usize,
+    http11: bool,
 }
 
 struct NameSpan {
@@ -63,6 +64,32 @@ fn find_crlf_or_incomplete(buf: &[byte], start: usize) !usize {
     return error.InvalidRequest;
 }
 
+fn parse_http_version_minor_is_one(buf: &[byte], ver_start: usize, line_end: usize) !bool {
+    var i: usize = ver_start;
+    while i < line_end && (buf.ptr[i] == ' ' as byte || buf.ptr[i] == 9 as byte) {
+        i = i + 1;
+    }
+    if i + 8 > line_end {
+        return error.InvalidRequest;
+    }
+    const pref: &[byte] = &"HTTP/1."[0: 7];
+    var j: usize = 0;
+    while j < 7 {
+        if http_byte_to_lower(buf.ptr[i + j]) != http_byte_to_lower(pref.ptr[j]) {
+            return error.InvalidRequest;
+        }
+        j = j + 1;
+    }
+    const minor: byte = buf.ptr[i + 7];
+    if minor == '1' as byte {
+        return true;
+    }
+    if minor == '0' as byte {
+        return false;
+    }
+    return error.InvalidRequest;
+}
+
 fn parse_first_line(buf: &[byte], line_start: usize, line_end: usize) !FirstLineParts {
     var sp1: usize = line_start;
     while sp1 < line_end && buf.ptr[sp1] != ' ' as byte {
@@ -78,11 +105,13 @@ fn parse_first_line(buf: &[byte], line_start: usize, line_end: usize) !FirstLine
     if sp2 >= line_end {
         return error.InvalidRequest;
     }
+    const http11: bool = try parse_http_version_minor_is_one(buf, sp2 + 1, line_end);
     return FirstLineParts{
         method_start: line_start,
         method_len: sp1 - line_start,
         uri_start: sp1 + 1,
         uri_len: sp2 - (sp1 + 1),
+        http11: http11,
     };
 }
 
@@ -276,6 +305,7 @@ export fn parse(buf: &[byte]) !ParseResult {
     const method: Method = try parse_method_bytes(&method_slice);
     var req: Request = Request{
         method: Method.GET,
+        http11: true,
         path: [],
         path_len: 0,
         path_params: [],
@@ -287,6 +317,7 @@ export fn parse(buf: &[byte]) !ParseResult {
         body: buf[0: 0],
     };
     req.method = method;
+    req.http11 = fl.http11;
     try set_path_and_query(buf, fl.uri_start, fl.uri_len, &req);
     var pos: usize = line1_end + 2;
     while pos < buf.len {

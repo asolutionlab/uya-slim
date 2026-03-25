@@ -13,6 +13,8 @@
 // 构建：仓库根目录
 //   bin/uya --c99 benchmarks/http_bench.uya -o /tmp/http_bench.c && cc -std=c99 -no-pie -o /tmp/http_bench /tmp/http_bench.c -lm
 // 压测示例：/tmp/http_bench &  sleep 0.1 && wrk -t4 -c64 -d10s http://127.0.0.1:8876/
+// 响应是否带 `Connection: close` 由请求行版本与 `Connection` 头决定（`http_send_response_for_request`）。
+// 若本响应不应保持连接（含请求含 `close` 令牌），发完响应后 `serve_connection` 会结束循环并 `sys_close`。
 
 use std.http.types;
 use std.http.router;
@@ -70,7 +72,7 @@ fn register_routes(rt: &Router) !void {
 fn send_bad(sfd: i32) void {
     var z: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
     const empty: &[byte] = z[0: 0];
-    _ = http_send_response(sfd, Status.BadRequest, empty) catch {};
+    _ = http_send_response_close(sfd, Status.BadRequest, empty) catch {};
 }
 
 fn dispatch(sfd: i32, rt: &Router, pr: &ParseResult) void {
@@ -78,19 +80,19 @@ fn dispatch(sfd: i32, rt: &Router, pr: &ParseResult) void {
     const empty: &[byte] = z[0: 0];
     const idx: i32 = router_find_route_request(rt, pr.request.method, &pr.request);
     if idx == -1 {
-        _ = http_send_response(sfd, Status.NotFound, empty) catch {};
+        _ = http_send_response_for_request(sfd, Status.NotFound, empty, &pr.request) catch {};
         return;
     }
     if idx == -2 {
-        _ = http_send_response(sfd, Status.MethodNotAllowed, empty) catch {};
+        _ = http_send_response_for_request(sfd, Status.MethodNotAllowed, empty, &pr.request) catch {};
         return;
     }
     if idx == 0 {
-        _ = http_send_response(sfd, Status.OK, &"hello"[0: 5]) catch {};
+        _ = http_send_response_for_request(sfd, Status.OK, &"hello"[0: 5], &pr.request) catch {};
         return;
     }
     if idx == 1 {
-        _ = http_send_response(sfd, Status.OK, &"{\"ok\":true}"[0: 11]) catch {};
+        _ = http_send_response_for_request(sfd, Status.OK, &"{\"ok\":true}"[0: 11], &pr.request) catch {};
         return;
     }
     if idx == 2 {
@@ -99,7 +101,7 @@ fn dispatch(sfd: i32, rt: &Router, pr: &ParseResult) void {
             send_bad(sfd);
             return;
         }
-        _ = http_send_response(sfd, Status.OK, pr.request.path_params[0].value) catch {};
+        _ = http_send_response_for_request(sfd, Status.OK, pr.request.path_params[0].value, &pr.request) catch {};
         return;
     }
     if idx == 3 {
@@ -107,7 +109,7 @@ fn dispatch(sfd: i32, rt: &Router, pr: &ParseResult) void {
         fill_a(&slab[0] as &byte, 1024);
         const sb: &byte = &slab[0] as &byte;
         const b: &[byte] = sb[0: 1024];
-        _ = http_send_response(sfd, Status.OK, b) catch {};
+        _ = http_send_response_for_request(sfd, Status.OK, b, &pr.request) catch {};
         return;
     }
     if idx == 4 {
@@ -115,7 +117,7 @@ fn dispatch(sfd: i32, rt: &Router, pr: &ParseResult) void {
         fill_a(&slab10[0] as &byte, 10240);
         const sb10: &byte = &slab10[0] as &byte;
         const b2: &[byte] = sb10[0: 10240];
-        _ = http_send_response(sfd, Status.OK, b2) catch {};
+        _ = http_send_response_for_request(sfd, Status.OK, b2, &pr.request) catch {};
         return;
     }
     if idx == 5 {
@@ -123,27 +125,30 @@ fn dispatch(sfd: i32, rt: &Router, pr: &ParseResult) void {
         fill_a(&slab100[0] as &byte, 102400);
         const sb100: &byte = &slab100[0] as &byte;
         const b3: &[byte] = sb100[0: 102400];
-        _ = http_send_response(sfd, Status.OK, b3) catch {};
+        _ = http_send_response_for_request(sfd, Status.OK, b3, &pr.request) catch {};
         return;
     }
-    _ = http_send_response(sfd, Status.NotFound, empty) catch {};
+    _ = http_send_response_for_request(sfd, Status.NotFound, empty, &pr.request) catch {};
 }
 
 fn match_parse_err(sfd: i32) void {
     send_bad(sfd);
 }
 
-fn serve_one_round(sfd: i32, rt: &Router, base: &byte, cap: usize, filled: &usize) !void {
+/// 处理一轮请求；成功时写入 `*out_persist`：是否与 `request_wants_persistent_connection` 一致（本连接是否应继续读下一请求）。
+fn serve_one_round(sfd: i32, rt: &Router, base: &byte, cap: usize, filled: &usize, out_persist: &bool) !void {
     const pr: ParseResult = try http_conn_read_parse(sfd, base, cap, filled);
     dispatch(sfd, rt, &pr);
     http_connbuf_shift(base, filled, pr.consumed);
+    *out_persist = request_wants_persistent_connection(&pr.request);
 }
 
 fn serve_connection(sfd: i32, rt: &Router) void {
     var buf: [byte: 8192] = [];
     var filled: usize = 0;
+    var persist: bool = false;
     while true {
-        const rv: !void = serve_one_round(sfd, rt, &buf[0] as &byte, 8192, &filled);
+        const rv: !void = serve_one_round(sfd, rt, &buf[0] as &byte, 8192, &filled, &persist);
         match rv {
             error.ConnectionClosed => {
                 break;
@@ -177,8 +182,9 @@ fn serve_connection(sfd: i32, rt: &Router) void {
                 break;
             }
             else => {
-                var _ok: i32 = 0;
-                _ = _ok;
+                if !persist {
+                    break;
+                }
             }
         }
     }

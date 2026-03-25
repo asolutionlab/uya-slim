@@ -50,6 +50,7 @@ test "request_get_header_ci" {
     const empty: &[byte] = raw[0: 0];
     var req: Request = Request{
         method: Method.GET,
+        http11: true,
         path: [],
         path_len: 0,
         path_params: [],
@@ -79,6 +80,7 @@ test "request_get_header_missing" {
     const empty: &[byte] = raw[0: 0];
     var req: Request = Request{
         method: Method.GET,
+        http11: true,
         path: [],
         path_len: 0,
         path_params: [],
@@ -103,6 +105,7 @@ test "get_bearer_token_ok_ci" {
     const empty: &[byte] = raw[0: 0];
     var req: Request = Request{
         method: Method.GET,
+        http11: true,
         path: [],
         path_len: 0,
         path_params: [],
@@ -139,6 +142,7 @@ test "get_bearer_token_missing_authorization" {
     const empty: &[byte] = raw[0: 0];
     var req: Request = Request{
         method: Method.GET,
+        http11: true,
         path: [],
         path_len: 0,
         path_params: [],
@@ -163,6 +167,7 @@ test "get_bearer_token_invalid_scheme" {
     const empty: &[byte] = raw[0: 0];
     var req: Request = Request{
         method: Method.GET,
+        http11: true,
         path: [],
         path_len: 0,
         path_params: [],
