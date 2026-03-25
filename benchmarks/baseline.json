@@ -1,0 +1,44 @@
+{
+  "timestamp": "2026-03-25T00:00:00+00:00",
+  "machine": {
+    "cpu": "Intel(R) Core(TM) i7-14700 (20C/28T)",
+    "memory_gb": 31,
+    "os": "Deepin 25 (crimson)",
+    "kernel": "6.12.65-amd64-desktop-rolling",
+    "cc": "Deepin 12.3.0-17deepin15",
+    "go": "1.24.2"
+  },
+  "wrk_params": {
+    "threads": 4,
+    "connections": 64,
+    "duration": "10s"
+  },
+  "results": {
+    "root": {
+      "uya_qps": 0,
+      "go_qps": 0,
+      "notes": "Run ./run_bench.sh --baseline to populate"
+    },
+    "json": {
+      "uya_qps": 0,
+      "go_qps": 0
+    },
+    "item_id": {
+      "uya_qps": 0,
+      "go_qps": 0
+    },
+    "payload1k": {
+      "uya_qps": 0,
+      "go_qps": 0
+    },
+    "payload10k": {
+      "uya_qps": 0,
+      "go_qps": 0
+    },
+    "payload100k": {
+      "uya_qps": 0,
+      "go_qps": 0
+    }
+  },
+  "notes": "Baseline for HTTP framework v0.8.0"
+}
