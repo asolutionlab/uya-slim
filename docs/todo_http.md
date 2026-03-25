@@ -138,23 +138,23 @@
 
 ### 7.1 工具与解析
 
-- [ ] `jwt.uya`：Base64URL 解码（decode_base64url）
-- [ ] JWT 三段解析：header.payload.signature；不依赖 get_bearer_token
+- [x] `lib/std/http/jwt.uya`：Base64URL 编解码（`decode_base64url` / `b64url_encode`）
+- [x] JWT 三段解析：header.payload.signature；不依赖 `get_bearer_token`
 
 ### 7.2 API
 
-- [ ] verify(token: &[byte], secret: &[byte]) !&[byte]（HS256 验签，返回 raw payload）
-- [ ] decode(token: &[byte]) !&[byte]（不验签）
-- [ ] sign(payload: &[byte], secret: &[byte]) !&[byte]（签发 HS256）
-- [ ] has_expired(payload: &[byte]) bool（可选；首版可不实现）
+- [x] `jwt_verify_hs256(token, secret, payload_out) !usize`（HS256 验签，payload 写入缓冲区）
+- [x] `jwt_decode_unverified(token, payload_out) !usize`（不验签）
+- [x] `jwt_sign_hs256(payload, secret, token_out) !usize`（签发 HS256）
+- [ ] `has_expired(payload: &[byte]) bool`（可选；首版未实现）
 
 ### 7.3 依赖
 
-- [ ] HMAC-SHA256：FFI（libc/OpenSSL）或最小自实现；文档注明选择
+- [x] HMAC-SHA256：`lib/std/crypto/sha256.uya`（SHA-256）+ `jwt.uya` 内 HMAC；无 OpenSSL
 
 ### 7.4 测试
 
-- [ ] `tests/test_http_jwt.uya`：verify、decode、sign、无效 token 返回 InvalidToken
+- [x] `tests/test_http_jwt.uya`：sign/verify 往返、decode、错误密钥、畸形 token → `InvalidToken`
 
 ---
 

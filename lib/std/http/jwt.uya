@@ -1,0 +1,290 @@
+// lib/std/http/jwt.uya — JWT HS256（自含 SHA-256 / HMAC-SHA256，无 OpenSSL）
+//
+// 模块路径：use std.http.jwt
+
+use std.http.types;
+use std.crypto.sha256;
+
+const JWT_MAX_PAYLOAD_RAW: usize = 512;
+const JWT_MAX_SIGNING: usize = 768;
+const JWT_MAX_TOKEN: usize = 2048;
+
+fn b64url_val(c: byte) !i32 {
+    if c >= 'A' as byte && c <= 'Z' as byte {
+        return (c as i32) - 65;
+    }
+    if c >= 'a' as byte && c <= 'z' as byte {
+        return (c as i32) - 71;
+    }
+    if c >= '0' as byte && c <= '9' as byte {
+        return (c as i32) + 4;
+    }
+    if c == '-' as byte {
+        return 62;
+    }
+    if c == '_' as byte {
+        return 63;
+    }
+    return error.InvalidToken;
+}
+
+fn b64url_enc_ch(v: i32) byte {
+    if v < 26 {
+        return (65 + v) as byte;
+    }
+    if v < 52 {
+        return (71 + v) as byte;
+    }
+    if v < 62 {
+        return (v - 4) as byte;
+    }
+    if v == 62 {
+        return '-' as byte;
+    }
+    return '_' as byte;
+}
+
+/// Base64URL 解码到 `out`；成功返回写入字节数。
+export fn decode_base64url(src: &[byte], out: &[byte]) !usize {
+    if src.len == 0 {
+        return error.InvalidToken;
+    }
+    var bits: u32 = 0;
+    var bitc: i32 = 0;
+    var w: usize = 0;
+    var si: usize = 0;
+    while si < src.len {
+        const v: i32 = try b64url_val(src.ptr[si]);
+        bits = (bits << 6) | (v as u32);
+        bitc = bitc + 6;
+        if bitc >= 8 {
+            bitc = bitc - 8;
+            if w >= out.len {
+                return error.InvalidToken;
+            }
+            const by: byte = ((bits >> bitc) & 0xffu32) as byte;
+            out.ptr[w] = by;
+            w = w + 1;
+        }
+        si = si + 1;
+    }
+    return w;
+}
+
+fn b64url_encode(src: &[byte], out: &[byte]) !usize {
+    var wi: usize = 0;
+    var si: usize = 0;
+    while si + 3 <= src.len {
+        const b0: i32 = src.ptr[si] as i32;
+        const b1: i32 = src.ptr[si + 1] as i32;
+        const b2: i32 = src.ptr[si + 2] as i32;
+        const tri: i32 = (b0 << 16) | (b1 << 8) | b2;
+        if wi + 4 > out.len {
+            return error.InvalidToken;
+        }
+        out.ptr[wi] = b64url_enc_ch((tri >> 18) & 63);
+        out.ptr[wi + 1] = b64url_enc_ch((tri >> 12) & 63);
+        out.ptr[wi + 2] = b64url_enc_ch((tri >> 6) & 63);
+        out.ptr[wi + 3] = b64url_enc_ch(tri & 63);
+        wi = wi + 4;
+        si = si + 3;
+    }
+    const rem: usize = src.len - si;
+    if rem == 0 {
+        return wi;
+    }
+    if rem == 1 {
+        const b0: i32 = src.ptr[si] as i32;
+        const tri: i32 = b0 << 16;
+        if wi + 2 > out.len {
+            return error.InvalidToken;
+        }
+        out.ptr[wi] = b64url_enc_ch((tri >> 18) & 63);
+        out.ptr[wi + 1] = b64url_enc_ch((tri >> 12) & 63);
+        return wi + 2;
+    }
+    const b0a: i32 = src.ptr[si] as i32;
+    const b1a: i32 = src.ptr[si + 1] as i32;
+    const tri2: i32 = (b0a << 16) | (b1a << 8);
+    if wi + 3 > out.len {
+        return error.InvalidToken;
+    }
+    out.ptr[wi] = b64url_enc_ch((tri2 >> 18) & 63);
+    out.ptr[wi + 1] = b64url_enc_ch((tri2 >> 12) & 63);
+    out.ptr[wi + 2] = b64url_enc_ch((tri2 >> 6) & 63);
+    return wi + 3;
+}
+
+fn hmac_sha256(key: &[byte], msg: &[byte], mac_out: &[byte]) void {
+    var kbuf: [byte: 64] = [];
+    if key.len > 64 {
+        var kd: [byte: 32] = [];
+        sha256_digest(key, kd[0: 32]);
+        var ki: usize = 0;
+        while ki < 32 {
+            kbuf[ki] = kd[ki];
+            ki = ki + 1;
+        }
+        while ki < 64 {
+            kbuf[ki] = 0 as byte;
+            ki = ki + 1;
+        }
+    } else {
+        var kj: usize = 0;
+        while kj < key.len {
+            kbuf[kj] = key.ptr[kj];
+            kj = kj + 1;
+        }
+        while kj < 64 {
+            kbuf[kj] = 0 as byte;
+            kj = kj + 1;
+        }
+    }
+    var inner: [byte: 64 + JWT_MAX_SIGNING] = [];
+    var ii: usize = 0;
+    while ii < 64 {
+        inner[ii] = (kbuf[ii] ^ 0x36) as byte;
+        ii = ii + 1;
+    }
+    var mj: usize = 0;
+    while mj < msg.len && mj < JWT_MAX_SIGNING {
+        inner[64 + mj] = msg.ptr[mj];
+        mj = mj + 1;
+    }
+    var ih: [byte: 32] = [];
+    sha256_digest(inner[0: 64 + mj], ih[0: 32]);
+    var outer: [byte: 96] = [];
+    var oi: usize = 0;
+    while oi < 64 {
+        outer[oi] = (kbuf[oi] ^ 0x5c) as byte;
+        oi = oi + 1;
+    }
+    var hi: usize = 0;
+    while hi < 32 {
+        outer[64 + hi] = ih[hi];
+        hi = hi + 1;
+    }
+    sha256_digest(outer[0: 96], mac_out[0: 32]);
+}
+
+fn bytes_eq_ct(a: &[byte], b: &[byte]) bool {
+    if a.len != b.len {
+        return false;
+    }
+    var x: u32 = 0;
+    var i: usize = 0;
+    while i < a.len {
+        x = x | ((a.ptr[i] ^ b.ptr[i]) as u32);
+        i = i + 1;
+    }
+    return x == 0;
+}
+
+fn find_dot(s: &[byte], start: usize) !usize {
+    var i: usize = start;
+    while i < s.len {
+        if s.ptr[i] == '.' as byte {
+            return i;
+        }
+        i = i + 1;
+    }
+    return error.InvalidToken;
+}
+
+/// 不校验签名；将 **payload 段** Base64URL 解码写入 `payload_out`，返回解码长度。
+export fn jwt_decode_unverified(token: &[byte], payload_out: &[byte]) !usize {
+    const d1: usize = try find_dot(token, 0);
+    const d2: usize = try find_dot(token, d1 + 1);
+    if d2 >= token.len {
+        return error.InvalidToken;
+    }
+    var k: usize = d2 + 1;
+    while k < token.len {
+        if token.ptr[k] == '.' as byte {
+            return error.InvalidToken;
+        }
+        k = k + 1;
+    }
+    const pay_b64: &[byte] = token[d1 + 1: d2 - (d1 + 1)];
+    return decode_base64url(pay_b64, payload_out);
+}
+
+/// HS256 验签；成功则解码 payload 写入 `payload_out`，返回解码长度。
+export fn jwt_verify_hs256(token: &[byte], secret: &[byte], payload_out: &[byte]) !usize {
+    const d1: usize = try find_dot(token, 0);
+    const d2: usize = try find_dot(token, d1 + 1);
+    const sig_b64: &[byte] = token[d2 + 1: token.len - (d2 + 1)];
+    if sig_b64.len == 0 {
+        return error.InvalidToken;
+    }
+    var k: usize = d2 + 1;
+    while k < token.len {
+        if token.ptr[k] == '.' as byte {
+            return error.InvalidToken;
+        }
+        k = k + 1;
+    }
+    const signing: &[byte] = token[0: d2];
+    var mac: [byte: 32] = [];
+    hmac_sha256(secret, signing, mac[0: 32]);
+    var sig_bin: [byte: 48] = [];
+    const sig_len: usize = try decode_base64url(sig_b64, sig_bin[0: 48]);
+    if sig_len != 32 {
+        return error.InvalidToken;
+    }
+    if !bytes_eq_ct(mac[0: 32], sig_bin[0: 32]) {
+        return error.InvalidToken;
+    }
+    const pay_b64: &[byte] = token[d1 + 1: d2 - (d1 + 1)];
+    return decode_base64url(pay_b64, payload_out);
+}
+
+/// 签发 HS256 JWT；`token_out` 须足够大（建议 ≥ `JWT_MAX_TOKEN`）；返回写入长度。
+export fn jwt_sign_hs256(payload: &[byte], secret: &[byte], token_out: &[byte]) !usize {
+    if payload.len > JWT_MAX_PAYLOAD_RAW {
+        return error.InvalidToken;
+    }
+    const hdr_b64: &[byte] = &"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"[0: 36];
+    var pay_b64: [byte: 700] = [];
+    const plen: usize = try b64url_encode(payload, pay_b64[0: 700]);
+    const signing_len: usize = hdr_b64.len + 1 + plen;
+    if signing_len > JWT_MAX_SIGNING {
+        return error.InvalidToken;
+    }
+    var signing: [byte: JWT_MAX_SIGNING] = [];
+    var si: usize = 0;
+    while si < hdr_b64.len {
+        signing[si] = hdr_b64.ptr[si];
+        si = si + 1;
+    }
+    signing[si] = '.' as byte;
+    si = si + 1;
+    var pj: usize = 0;
+    while pj < plen {
+        signing[si] = pay_b64[pj];
+        si = si + 1;
+        pj = pj + 1;
+    }
+    var mac: [byte: 32] = [];
+    hmac_sha256(secret, signing[0: si], mac[0: 32]);
+    var sig_b64: [byte: 64] = [];
+    const slen: usize = try b64url_encode(mac[0: 32], sig_b64[0: 64]);
+    const total: usize = si + 1 + slen;
+    if total > token_out.len {
+        return error.InvalidToken;
+    }
+    var ti: usize = 0;
+    while ti < si {
+        token_out.ptr[ti] = signing[ti];
+        ti = ti + 1;
+    }
+    token_out.ptr[ti] = '.' as byte;
+    ti = ti + 1;
+    var sj: usize = 0;
+    while sj < slen {
+        token_out.ptr[ti] = sig_b64[sj];
+        ti = ti + 1;
+        sj = sj + 1;
+    }
+    return ti;
+}
