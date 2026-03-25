@@ -1,0 +1,61 @@
+// examples/http_server.uya — 阻塞式 HTTP 最小示例（单连接、一次请求）
+//
+// 构建运行（仓库根目录）:
+//   bin/uya --c99 examples/http_server.uya -o /tmp/http_server.c && cc -std=c99 -no-pie -o /tmp/http_server /tmp/http_server.c -lm
+// 另开终端: curl -v http://127.0.0.1:8765/
+//
+// 固定端口 8765；若占用请改 `cfg.port` 后重新编译。
+
+use std.http.types;
+use std.http.server;
+use libc.syscall;
+
+fn http_demo_run() !i32 {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 1,
+        port: 8765,
+        host: [],
+    };
+    const srv: HttpServer = try http_server_listen(&cfg);
+    const conn: Conn = try http_server_accept(&srv);
+    const sfd: i32 = conn.fd;
+    var eraw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
+    const empty: &[byte] = eraw[0: 0];
+    const prx: !ParseResult = http_recv_parse_request(sfd);
+    match prx {
+        error.InvalidRequest => {
+            _ = http_send_response(sfd, Status.BadRequest, empty) catch {};
+        }
+        error.IncompleteRequest => {
+            _ = http_send_response(sfd, Status.BadRequest, empty) catch {};
+        }
+        error.ConnectionClosed => {
+        }
+        error.PayloadTooLarge => {
+            _ = http_send_response(sfd, Status.BadRequest, empty) catch {};
+        }
+        error.URITooLong => {
+            _ = http_send_response(sfd, Status.BadRequest, empty) catch {};
+        }
+        error.HeaderTooLarge => {
+            _ = http_send_response(sfd, Status.BadRequest, empty) catch {};
+        }
+        error.TooManyParams => {
+            _ = http_send_response(sfd, Status.BadRequest, empty) catch {};
+        }
+        error.ValueTooLong => {
+            _ = http_send_response(sfd, Status.BadRequest, empty) catch {};
+        }
+        pr => {
+            _ = try http_send_response(sfd, Status.OK, &"hello"[0: 5]);
+        }
+    }
+    _ = sys_close(sfd);
+    http_server_close(&srv);
+    return 0;
+}
+
+export fn main() i32 {
+    return http_demo_run() catch { 1 };
+}

@@ -90,12 +90,12 @@ fn run_client_pipeline_two_gets(port: u16) void {
         i = i + 1;
     }
     _ = sys_write(cfd, &req[0] as *const byte, p);
-    var rb: [byte: 512] = [0: 512];
+    var rb: [byte: 640] = [];
     var total: usize = 0;
     var saw_one: i32 = 0;
     var saw_two: i32 = 0;
-    while total < 512 {
-        const n: isize = sys_read(cfd, &rb[total] as *byte, 512 - total) catch { 0 - 1 };
+    while total < 640 {
+        const n: isize = sys_read(cfd, &rb[total] as *byte, 640 - total) catch { 0 - 1 };
         if n <= 0 {
             break;
         }
@@ -114,6 +114,36 @@ fn run_client_pipeline_two_gets(port: u16) void {
     _ = sys_close(cfd);
     if saw_one == 0 || saw_two == 0 {
         sys_exit(5);
+    }
+    sys_exit(0);
+}
+
+fn run_client_invalid_method_expect_400(port: u16) void {
+    const conn_res: !i32 = http_tcp_connect_loopback(port);
+    const cfd: i32 = conn_res catch { 0 - 1 };
+    if cfd < 0 {
+        sys_exit(1);
+    }
+    const req: &[byte] = &"FOO / HTTP/1.1\r\nHost: x\r\n\r\n"[0: 27];
+    _ = sys_write(cfd, req.ptr, req.len);
+    var rb: [byte: 256] = [];
+    var total: usize = 0;
+    while total < 256 {
+        const n: isize = sys_read(cfd, &rb[total] as *byte, 256 - total) catch { 0 - 1 };
+        if n <= 0 {
+            break;
+        }
+        total = total + (n as usize);
+        if response_has_subslice(rb[0: total], &"400"[0: 3]) {
+            break;
+        }
+    }
+    _ = sys_close(cfd);
+    if total == 0 {
+        sys_exit(2);
+    }
+    if !response_has_subslice(rb[0: total], &"400"[0: 3]) {
+        sys_exit(3);
     }
     sys_exit(0);
 }
@@ -147,6 +177,69 @@ test "http_blocking_listen_accept_get" {
         _ = http_send_response(sfd, Status.OK, &"ok"[0: 2]) catch {};
     } else {
         _ = http_send_response(sfd, Status.NotFound, empty_body) catch {};
+    }
+    _ = sys_close(sfd);
+
+    var st: i32 = 0;
+    _ = try sys_waitpid(child_pid, &st, 0);
+    if (st & 0xff) != 0 {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32((st >> 8) & 0xff, 0);
+    http_server_close(&srv);
+}
+
+test "http_parse_error_returns_400" {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 8,
+        port: 0,
+        host: [],
+    };
+    const srv: HttpServer = try http_server_listen(&cfg);
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        run_client_invalid_method_expect_400(srv.port);
+    }
+    if child_pid <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+
+    var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
+    const empty_body: &[byte] = empty_raw[0: 0];
+    var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
+    const conn: Conn = try http_server_accept(&srv_tmp);
+    const sfd: i32 = conn.fd;
+    const recv_res: !ParseResult = http_recv_parse_request(sfd);
+    match recv_res {
+        error.InvalidRequest => {
+            _ = http_send_response(sfd, Status.BadRequest, empty_body) catch {};
+        }
+        error.IncompleteRequest => {
+            try assert_eq_i32(0, 1);
+        }
+        error.ConnectionClosed => {
+            try assert_eq_i32(0, 1);
+        }
+        error.PayloadTooLarge => {
+            _ = http_send_response(sfd, Status.BadRequest, empty_body) catch {};
+        }
+        error.URITooLong => {
+            _ = http_send_response(sfd, Status.BadRequest, empty_body) catch {};
+        }
+        error.HeaderTooLarge => {
+            _ = http_send_response(sfd, Status.BadRequest, empty_body) catch {};
+        }
+        error.TooManyParams => {
+            _ = http_send_response(sfd, Status.BadRequest, empty_body) catch {};
+        }
+        error.ValueTooLong => {
+            _ = http_send_response(sfd, Status.BadRequest, empty_body) catch {};
+        }
+        pr => {
+            _ = http_send_response(sfd, Status.OK, &"ok"[0: 2]) catch {};
+            try assert_eq_i32(0, 1);
+        }
     }
     _ = sys_close(sfd);
 
