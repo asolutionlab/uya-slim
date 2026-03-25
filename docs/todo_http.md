@@ -45,13 +45,12 @@
 
 - [ ] Handler 接口：`fn serve(self: &Self, ctx: &Context) !void`
 - [ ] Middleware 接口：`fn process(self: &Self, ctx: &Context, next: Handler) !void`（首版仅类型）
-- [ ] Request.get_header(self: &Self, name: &[byte]) !&[byte]（name 为 header 名切片，语法规范 slice_type）
-- [ ] get_bearer_token(req: &Request) !&[byte]（在 types 或同模块，避免 jwt 循环依赖）
+- [x] `request_get_header(req, name)` / `get_bearer_token(req)`（`lib/std/http/types.uya`；头名大小写不敏感；Bearer 前缀大小写不敏感；测试见 `test_http_types.uya`、`parse_then_request_get_header`）
 - [ ] ServerConfig：mode、max_connections
 
 ### 2.5 测试
 
-- [ ] `tests/test_http_types.uya`：枚举、Request/Response/Context 构造、get_header、get_bearer_token、path_params/query 边界
+- [x] `tests/test_http_types.uya`：枚举、常量、`parse_method_bytes` 失败、`request_get_header` / `get_bearer_token` 成功与错误路径
 
 ---
 
@@ -124,7 +123,7 @@
 
 ### 6.1 覆盖
 
-- [ ] 所有 !T 错误路径有测试（parse、router、get_header、get_bearer_token）
+- [ ] 所有 !T 错误路径有测试（parse、router、get_header、get_bearer_token）（已部分覆盖：`parse_method_bytes_invalid`、`parse_post_body_incomplete`、`request_get_header_missing`、`get_bearer_token_*`、`router_apply_path_params_request_path_too_long`）
 - [x] 多请求 Keep-alive 测试（`tests/test_http_server.uya` 流水线双 GET + `parse_post_body_incomplete`）
 - [ ] 预期编译失败：`error_http_*.uya`（若有）
 

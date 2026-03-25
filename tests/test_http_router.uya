@@ -110,3 +110,28 @@ test "router_apply_path_params_request" {
         try assert_eq_i32(0, 1);
     }
 }
+
+test "router_apply_path_params_request_path_too_long" {
+    var raw: [byte: 4] = [];
+    const empty: &[byte] = raw[0: 0];
+    var req: Request = Request{
+        method: Method.GET,
+        path: [],
+        path_len: 300,
+        path_params: [],
+        path_param_count: 0,
+        query: [],
+        query_count: 0,
+        headers: [],
+        header_count: 0,
+        body: empty,
+    };
+    const pat: &[byte] = &"/a"[0: 2];
+    const e: !void = router_apply_path_params_request(&req, pat);
+    match e {
+        error.InvalidRequest => {}
+        else => {
+            try assert_eq_i32(0, 1);
+        }
+    }
+}

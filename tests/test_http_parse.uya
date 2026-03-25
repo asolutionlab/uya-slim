@@ -125,3 +125,21 @@ test "parse_consumed_keepalive" {
     const pr2: ParseResult = try parse(rest);
     try assert_eq_i32(pr2.request.path_len, 2);
 }
+
+test "parse_then_request_get_header" {
+    var raw: [byte: 256] = [];
+    var r: usize = 0;
+    const line: &[byte] = &"GET /z HTTP/1.1\r\nX-Test: hi\r\n\r\n"[0: 33];
+    var i: usize = 0;
+    while i < line.len {
+        raw[r] = line.ptr[i];
+        r = r + 1;
+        i = i + 1;
+    }
+    const buf: &[byte] = raw[0: r];
+    const pr: ParseResult = try parse(buf);
+    const hv: &[byte] = try request_get_header(&pr.request, &"x-test"[0: 6]);
+    if hv.len != 2 || hv.ptr[0] != 'h' as byte || hv.ptr[1] != 'i' as byte {
+        try assert_eq_i32(0, 1);
+    }
+}

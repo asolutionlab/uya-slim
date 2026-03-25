@@ -2,7 +2,6 @@
 //
 // 模块路径：use std.http.types
 
-use std.async;
 use libc.syscall;
 
 // ============================================================
@@ -261,5 +260,62 @@ export fn parse_method_bytes(s: &[byte]) !Method {
         }
     }
     return error.InvalidRequest;
+}
+
+fn http_byte_to_lower_ty(c: byte) byte {
+    if c >= 'A' as byte && c <= 'Z' as byte {
+        return (c as i32 + 32) as byte;
+    }
+    return c;
+}
+
+fn request_header_name_eq_ci(h: &Header, name: &[byte]) bool {
+    if h.name_len != name.len {
+        return false;
+    }
+    var i: usize = 0;
+    while i < name.len {
+        if http_byte_to_lower_ty(h.name[i]) != http_byte_to_lower_ty(name.ptr[i]) {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+/// 按 **HTTP 头名大小写不敏感** 查找；值切片指向 `req.headers` 内缓冲区（与 `Request` 同生命周期）。
+/// 未找到时返回 `error.InvalidRequest`。
+export fn request_get_header(req: &Request, name: &[byte]) !&[byte] {
+    var hi: i32 = 0;
+    while hi < req.header_count {
+        const h: &Header = &req.headers[hi];
+        if request_header_name_eq_ci(h, name) {
+            const vb: &byte = &h.value[0] as &byte;
+            return vb[0: h.value_len];
+        }
+        hi = hi + 1;
+    }
+    return error.InvalidRequest;
+}
+
+/// 读取 `Authorization: Bearer <token>`（`Bearer` 与空格大小写不敏感按字节比较）；`token` 不得为空。
+/// 缺少头或格式不符时返回 `InvalidRequest` / `InvalidToken`。
+export fn get_bearer_token(req: &Request) !&[byte] {
+    const auth: &[byte] = try request_get_header(req, &"Authorization"[0: 13]);
+    if auth.len < 7 {
+        return error.InvalidToken;
+    }
+    const prefix: &[byte] = &"Bearer "[0: 7];
+    var i: usize = 0;
+    while i < 7 {
+        if http_byte_to_lower_ty(auth.ptr[i]) != http_byte_to_lower_ty(prefix.ptr[i]) {
+            return error.InvalidToken;
+        }
+        i = i + 1;
+    }
+    if auth.len <= 7 {
+        return error.InvalidToken;
+    }
+    return auth[7: auth.len - 7];
 }
 
