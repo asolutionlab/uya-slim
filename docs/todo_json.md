@@ -61,6 +61,7 @@
 
 ### 2.4 测试
 
+- [x] `tests/test_json_encode_long_str.uya`：长 ASCII 字符串与「向量段末遇换行」编码
 - [x] `tests/test_json_encode_basic.uya`：null、bool、数字、字符串编码
 - [x] `tests/test_json_encode_array.uya`：空数组、[1,2]
 - [x] `tests/test_json_encode_object.uya`：空对象、{\"a\":1}
@@ -100,8 +101,8 @@ Stage 1 结构字符扫描等可向量化环**优先用 `@vector`/`@mask` 实现
 
 - [x] 在 **`skip_ws`** 中引入 **`@vector(u8,16)`/`@mask(16)`** 块扫描（**0.49.33**，剩余不足 16 字节或块内非全空白时回退标量循环）
 - [x] 其余热点（**`parser.uya`**）：**`parse_string`** / **对象键**扫描在不含 **`"`** / **`\\`** 的连续段上用 **`@vector(u8,16)`** 块推进；**`parse_number`** 在 ASCII 数字连续段上用同宽块推进（不足 16 字节或块内出现非目标字符时标量收尾；语义与原先一致）
-- [ ] 若仍有可量化热点再补 `@vector`/`@mask`（与标量路径并存）
-- [ ] 运行时 CPU 检测或编译期 `@asm_target()`/`std.cfg` 选路，选择标量或向量路径
+- [x] 编码器 `json_write_str_view`：连续段无 `"` `\` `\n` `\r` `\t` 时用 `@vector(u8,16)` 块 + `write_bytes`（与 parser 对称）；测试 `tests/test_json_encode_long_str.uya`
+- [ ] 运行时 CPU 检测或编译期 `@asm_target()`/`std.cfg` 选路，选择标量或向量路径（**当前**：各热点均为「16 字节 `@vector.all` 成功则前进，否则标量」，无整段重复实现；若某目标上向量 IR 有额外开销再考虑 `std.cfg` 拆路径）
 - [x] Benchmark：**`bench_json`** 用 **`@syscall(gettimeofday)`** 墙钟微秒计时的 **MB/s**；含紧凑 JSON、**前导空白**、**长字符串** 三类 parse 负载，便于观察 **`skip_ws`/`parse_string`** 等 `@vector` 路径；与「纯标量解析器」二分对比需单独构建/开关（仍可选）
 
 ### Phase 5（可选）：`@asm` 补充（AVX2/NEON）
@@ -115,7 +116,7 @@ Stage 1 结构字符扫描等可向量化环**优先用 `@vector`/`@mask` 实现
 
 ## Benchmark
 
-- [ ] 获取 twitter.json、citm_catalog.json、canada.json（可选，用于大文件吞吐量；当前用内嵌负载）
+- [x] 标准大文件样本（可选）：`tests/scripts/fetch_json_benchmark_data.sh` 从 simdjson `jsonexamples` 拉取 twitter/canada/citm_catalog 至 `tests/data/json/`（`*.json` 已 `.gitignore`）；`bench_json` 仍以内嵌负载为主，本地可自行接读入
 - [x] 编写 `tests/bench_json.uya`：内嵌 JSON 负载，parse/encode 循环 + **墙钟微秒**测时；打印 **usec** 与 **MB/s**（`USEC_PER_SEC=1_000_000`）；含 **紧凑** / **前导空白** / **长字符串** 三类 parse 场景
 - [x] 记录 Phase 1 基准：运行 `./tests/build/bench_json` 或程序测试 `bench_json.uya` 可见各场景吞吐；Phase 5 `@asm` 落地后可再对比
 

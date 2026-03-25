@@ -246,7 +246,7 @@ lib/std/json/
 
 ### 10.1 Benchmark 方案
 
-- **数据集**：twitter.json、citm_catalog.json、canada.json
+- **数据集**：twitter.json、citm_catalog.json、canada.json（可选：`tests/scripts/fetch_json_benchmark_data.sh` 下载至 `tests/data/json/`；`tests/bench_json.uya` 当前为内嵌小负载）
 - **方法**：单线程、热缓存、多次运行取中位数，单位 GB/s
 
 ---

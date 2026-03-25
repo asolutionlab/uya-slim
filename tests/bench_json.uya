@@ -3,7 +3,7 @@
 // 含三类 parse 场景：小对象、前导空白（exercise skip_ws）、长字符串（exercise parse_string 块路径）。
 // 运行：编译后执行；测试脚本以退出码 0 判定通过。
 //
-// 参考：docs/todo_json.md Benchmark / Phase 4。
+// 参考：docs/todo_json.md Benchmark / Phase 4。可选大文件：tests/scripts/fetch_json_benchmark_data.sh → tests/data/json/
 // 不用 clock()：生成的 C 对 bench 内 extern clock 不产出原型，会触发 -Wimplicit-function-declaration。
 // 用 Linux x86-64 gettimeofday 直接 @syscall，避免 use libc.syscall（会连带拉入 stdio/stdlib 大模块导致类型检查失败）。
 
@@ -48,6 +48,7 @@ const BUF_WS_CAP: usize = 88;
 const BUF_STR_CAP: usize = 104;
 const PARSE_WS_ITER: i32 = 30000;
 const PARSE_STR_ITER: i32 = 20000;
+const ENCODE_STR_ITER: i32 = 25000;
 
 const MB_F: f64 = 1048576.0;
 
@@ -172,6 +173,26 @@ export fn main() i32 {
     const str_mbs: f64 = (str_total_bytes as f64) / (str_sec * MB_F);
     printf("bench_json: long-str parse %d x %zu bytes => %ld usec (%.4f MB/s)\n" as *byte,
            PARSE_STR_ITER, str_len, str_ticks, str_mbs);
+
+    // --- 长字符串 JsonValue 编码（json_write_str_view 向量安全段）---
+    const str_val: JsonValue = parse(&a, &buf_str[0], str_len) catch { return 9; };
+    const enc_str_len: usize = encode_to(&str_val, &out_buf[0], 256) catch { return 10; };
+    start = bench_usec_now();
+    i = 0;
+    while i < ENCODE_STR_ITER {
+        const _es: usize = encode_to(&str_val, &out_buf[0], 256) catch { return 11; };
+        i = i + 1;
+    }
+    end = bench_usec_now();
+    const enc_str_ticks: i64 = end - start;
+    const enc_str_total: i64 = (enc_str_len as i64) * (ENCODE_STR_ITER as i64);
+    var enc_str_sec: f64 = 1.0;
+    if enc_str_ticks > 0 {
+        enc_str_sec = (enc_str_ticks as f64) / (USEC_PER_SEC as f64);
+    }
+    const enc_str_mbs: f64 = (enc_str_total as f64) / (enc_str_sec * MB_F);
+    printf("bench_json: long-str encode %d x ~%zu B out => %ld usec (%.4f MB/s)\n" as *byte,
+           ENCODE_STR_ITER, enc_str_len, enc_str_ticks, enc_str_mbs);
 
     return 0;
 }

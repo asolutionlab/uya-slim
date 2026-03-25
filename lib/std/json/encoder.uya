@@ -30,6 +30,10 @@ const _J_F: byte = 102;
 const _J_A: byte = 97;
 const _J_S: byte = 115;
 
+// 字符串编码：连续无需转义的 ASCII 段用 16 字节块扫描（与 parser 中 skip_string_unescaped 对称；遇 `"` `\` `\n` `\r` `\t` 回退标量）
+type JsonEscVec16 = @vector(u8, 16);
+type JsonEscMask16 = @mask(16);
+
 export struct JsonWriter {
     buf: &byte,
     cap: usize,
@@ -154,6 +158,17 @@ export fn json_write_str_view(w: &JsonWriter, s: JsonStrView) void {
     write_byte(w, _J_QUOT);
     var i: usize = 0;
     while i < s.len {
+        while i + 16 <= s.len {
+            const c: JsonEscVec16 = @vector.load(&s.ptr[i]);
+            const m: JsonEscMask16 = (c != @vector.splat(34u8)) & (c != @vector.splat(92u8)) & (c != @vector.splat(10u8)) & (c != @vector.splat(13u8)) & (c != @vector.splat(9u8));
+            if @vector.all(m) {
+                write_bytes(w, &s.ptr[i], 16);
+                i = i + 16;
+            } else {
+                break;
+            }
+        }
+        if i >= s.len { break; }
         const b: byte = s.ptr[i];
         if b == _J_QUOT { write_byte(w, _J_BACKSLASH); write_byte(w, _J_QUOT); }
         else if b == _J_BACKSLASH { write_byte(w, _J_BACKSLASH); write_byte(w, _J_BACKSLASH); }
