@@ -20,7 +20,7 @@ fn hash_string(str: &byte) i32 {
 // ===== 初始化函数 =====
 
 // 初始化 TypeChecker
-fn checker_init(checker: &TypeChecker, arena: &Arena, default_filename: &byte) i32 {
+fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: &byte) i32 {
     if checker == null || arena == null {
         return -1;
     }
@@ -416,7 +416,7 @@ fn str_equals(s1: &byte, s2: &byte) i32 {
 
 // 字符串池：查找或插入字符串
 // 如果字符串已存在，返回现有指针；否则创建新条目
-fn string_pool_intern(pool: &StringPool, arena: &Arena, str: &byte) &byte {
+fn string_pool_intern(pool: &StringPool, arena: &CompilerArena, str: &byte) &byte {
     if pool == null || arena == null || str == null {
         return str;
     }
@@ -446,13 +446,13 @@ fn string_pool_intern(pool: &StringPool, arena: &Arena, str: &byte) &byte {
 
     // 创建新条目
     const n: usize = strlen(str as *byte) + 1;
-    const new_str: &byte = arena_alloc(arena, n) as &byte;
+    const new_str: &byte = compiler_arena_alloc(arena, n) as &byte;
     if new_str == null {
         return str;
     }
     memcpy(new_str as *void, str as *void, n);
 
-    const new_entry: &StringPoolEntry = arena_alloc(arena, @size_of(StringPoolEntry) as usize) as &StringPoolEntry;
+    const new_entry: &StringPoolEntry = compiler_arena_alloc(arena, @size_of(StringPoolEntry) as usize) as &StringPoolEntry;
     if new_entry == null {
         return new_str;
     }
@@ -466,12 +466,12 @@ fn string_pool_intern(pool: &StringPool, arena: &Arena, str: &byte) &byte {
 }
 
 // 从 Arena 复制字符串（不使用字符串池）
-fn checker_arena_strdup(arena: &Arena, src: &byte) &byte {
+fn checker_arena_strdup(arena: &CompilerArena, src: &byte) &byte {
     if arena == null || src == null {
         return null;
     }
     const n: usize = strlen(src as *byte) + 1;
-    const result: &byte = arena_alloc(arena, n) as &byte;
+    const result: &byte = compiler_arena_alloc(arena, n) as &byte;
     if result == null {
         return null;
     }

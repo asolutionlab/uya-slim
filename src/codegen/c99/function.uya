@@ -195,7 +195,7 @@ fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) 
         if last_slash != null {
             const slash_pos: usize = ptr_diff(last_slash as *byte, rel as *byte) as usize;
             const total_len: usize = 4 + slash_pos + 2;
-            const prefix: &byte = arena_alloc(codegen.arena, total_len) as &byte;
+            const prefix: &byte = compiler_arena_alloc(codegen.arena, total_len) as &byte;
             if prefix != null {
                 strcpy(prefix as *byte, "std_" as *byte);
                 memcpy((prefix as *byte + 4) as *void, rel as *void, slash_pos);
@@ -234,7 +234,7 @@ fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) 
         if rel_len > 4 && strcmp((rel as *byte + (rel_len - 4)) as *byte, ".uya" as *byte) == 0 {
             base_len = rel_len - 4;
         }
-        const prefix: &byte = arena_alloc(codegen.arena, base_len + 2) as &byte;
+        const prefix: &byte = compiler_arena_alloc(codegen.arena, base_len + 2) as &byte;
         if prefix != null {
             memcpy(prefix as *void, rel as *void, base_len);
             prefix[base_len] = 95 as byte;
@@ -264,7 +264,7 @@ fn get_export_function_c_name(codegen: &C99CodeGenerator, name: &byte, filename:
     const safe_name: &byte = get_safe_c_identifier(codegen, name);
     const prefix_len: usize = strlen(prefix as *byte);
     const name_len: usize = strlen(safe_name as *byte);
-    const result: &byte = arena_alloc(codegen.arena, prefix_len + name_len + 1) as &byte;
+    const result: &byte = compiler_arena_alloc(codegen.arena, prefix_len + name_len + 1) as &byte;
     if result == null {
         return safe_name;
     }
@@ -314,7 +314,7 @@ fn get_c_name_for_global_constant(codegen: &C99CodeGenerator, name: &byte, filen
                 const safe_name: &byte = get_safe_c_identifier(codegen, name);
                 const prefix_len: usize = strlen(prefix as *byte);
                 const name_len: usize = strlen(safe_name as *byte);
-                const result: &byte = arena_alloc(codegen.arena, prefix_len + name_len + 1) as &byte;
+                const result: &byte = compiler_arena_alloc(codegen.arena, prefix_len + name_len + 1) as &byte;
                 if result != null {
                     strcpy(result as *byte, prefix as *byte);
                     strcpy((result as *byte + prefix_len) as *byte, safe_name as *byte);
@@ -1288,7 +1288,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     }
 
     // 生成单态名：Future_T / Future_err_T、Poll_T / Poll_err_T
-    const type_args: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+    const type_args: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
     if type_args == null {
         return;
     }
@@ -1304,7 +1304,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         var slot_tc: i32 = effective_return_type.type_named_type_arg_count;
         const arg0: &ASTNode = effective_return_type.type_named_type_args[0];
         if arg0 != null && arg0.type == ASTNodeType.AST_TYPE_ERROR_UNION && arg0.type_error_union_payload_type != null {
-            const one_arg: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode) * 2) as & & ASTNode;
+            const one_arg: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode) * 2) as & & ASTNode;
             if one_arg != null {
                 one_arg[0] = arg0.type_error_union_payload_type;
                 slot_ta = one_arg;
@@ -1323,9 +1323,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         const inner_poll_mono: &byte = get_mono_union_name(codegen, "Poll" as &byte, effective_return_type.type_named_type_args, effective_return_type.type_named_type_arg_count);
         if inner_poll_mono != null {
             const inner_poll_safe: &byte = get_safe_c_identifier(codegen, inner_poll_mono);
-            const ipr: &byte = arena_alloc(codegen.arena, 128) as &byte;
+            const ipr: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
             if ipr != null { snprintf(ipr as *byte, 128, "struct uya_tagged_%s" as *byte, inner_poll_safe as *byte); inner_poll_ret_c = ipr; }
-            const ipu: &byte = arena_alloc(codegen.arena, 128) as &byte;
+            const ipu: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
             if ipu != null { snprintf(ipu as *byte, 128, "union %s" as *byte, inner_poll_safe as *byte); inner_poll_union_c = ipu; }
         }
     }
@@ -1411,7 +1411,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     // 兼容无 await 判断：type_args_poll / 无-await 分支用 await_count == 0
 
     // poll 返回类型：无 await 且返回 !Future<T> 时为 Poll<!Future<T>>，否则为 Poll<inner>
-    const type_args_poll: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+    const type_args_poll: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
     var safe_poll: &byte = get_safe_c_identifier(codegen, get_mono_union_name(codegen, "Poll" as &byte, type_args, 1));
     var poll_ret_c: &byte = null;
     var poll_union_c: &byte = null;
@@ -1449,12 +1449,12 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             const poll_full_mono: &byte = get_mono_union_name(codegen, "Poll" as &byte, type_args_poll, 1);
             if poll_full_mono != null {
                 safe_poll = get_safe_c_identifier(codegen, poll_full_mono);
-                const pbuf_full: &byte = arena_alloc(codegen.arena, 256) as &byte;
+                const pbuf_full: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
                 if pbuf_full != null {
                     snprintf(pbuf_full as *byte, 256, "struct uya_tagged_%s" as *byte, safe_poll as *byte);
                     poll_ret_c = pbuf_full;
                 }
-                const ubuf_full: &byte = arena_alloc(codegen.arena, 256) as &byte;
+                const ubuf_full: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
                 if ubuf_full != null {
                     snprintf(ubuf_full as *byte, 256, "union %s" as *byte, safe_poll as *byte);
                     poll_union_c = ubuf_full;
@@ -1474,12 +1474,12 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
     }
     if poll_ret_c == null {
-        const pbuf: &byte = arena_alloc(codegen.arena, 256) as &byte;
+        const pbuf: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
         if pbuf != null {
             snprintf(pbuf as *byte, 256, "struct uya_tagged_%s" as *byte, safe_poll as *byte);
             poll_ret_c = pbuf;
         }
-        const ubuf2: &byte = arena_alloc(codegen.arena, 256) as &byte;
+        const ubuf2: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
         if ubuf2 != null {
             snprintf(ubuf2 as *byte, 256, "union %s" as *byte, safe_poll as *byte);
             poll_union_c = ubuf2;
@@ -1513,7 +1513,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
         if caller_returns_future_literal != 0 && await_bind_types[0] != null && await_bind_types[0].type == ASTNodeType.AST_TYPE_NAMED &&
             await_bind_types[0].type_named_name != null && strcmp(await_bind_types[0].type_named_name as *byte, "Future" as *byte) == 0 {
-            const pay_ta: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+            const pay_ta: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
             if pay_ta != null { pay_ta[0] = full_return_type.type_error_union_payload_type; child_ta = pay_ta; child_ta_count = 1; }
         }
         if child_ta != null && child_ta_count > 0 {
@@ -1523,13 +1523,13 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 const cps: &byte = get_safe_c_identifier(codegen, child_poll_mono);
                 const cfs: &byte = get_safe_c_identifier(codegen, child_future_mono);
                 if cps != null && cfs != null {
-                    const cpr: &byte = arena_alloc(codegen.arena, 128) as &byte;
-                    const cpu: &byte = arena_alloc(codegen.arena, 128) as &byte;
+                    const cpr: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
+                    const cpu: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
                     if cpr != null { snprintf(cpr as *byte, 128, "struct uya_tagged_%s" as *byte, cps as *byte); child_poll_ret_c = cpr; }
                     if cpu != null { snprintf(cpu as *byte, 128, "union %s" as *byte, cps as *byte); child_poll_union_c = cpu; }
                     child_vtable_safe = cfs;
                     child_inner_is_err_union = 0;
-                    const slot_buf: &byte = arena_alloc(codegen.arena, 64) as &byte;
+                    const slot_buf: &byte = compiler_arena_alloc(codegen.arena, 64) as &byte;
                     if slot_buf != null && concrete_future_safe != null {
                         snprintf(slot_buf as *byte, 64, "struct uya_interface_%s" as *byte, concrete_future_safe as *byte);
                         state_slot_iface_c = slot_buf;
@@ -1549,7 +1549,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         var slot_type_count: i32 = effective_return_type.type_named_type_arg_count;
         const pay0: &ASTNode = effective_return_type.type_named_type_args[0];
         if pay0 != null && pay0.type == ASTNodeType.AST_TYPE_ERROR_UNION && pay0.type_error_union_payload_type != null {
-            const one_arg: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode) * 2) as & & ASTNode;
+            const one_arg: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode) * 2) as & & ASTNode;
             if one_arg != null {
                 one_arg[0] = pay0.type_error_union_payload_type;
                 slot_type_args = one_arg;
@@ -1560,7 +1560,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         if slot_mono != null {
             const slot_safe: &byte = get_safe_c_identifier(codegen, slot_mono);
             if slot_safe != null {
-                const slot_buf2: &byte = arena_alloc(codegen.arena, 64) as &byte;
+                const slot_buf2: &byte = compiler_arena_alloc(codegen.arena, 64) as &byte;
                 if slot_buf2 != null {
                     snprintf(slot_buf2 as *byte, 64, "struct uya_interface_%s" as *byte, slot_safe as *byte);
                     state_slot_iface_c = slot_buf2;
@@ -1584,9 +1584,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     }
 
     // async 状态机 struct 名
-    const async_struct: &byte = arena_alloc(codegen.arena, 128) as &byte;
-    const poll_name: &byte = arena_alloc(codegen.arena, 256) as &byte;
-    const vtable_name: &byte = arena_alloc(codegen.arena, 256) as &byte;
+    const async_struct: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
+    const poll_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+    const vtable_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
     if async_struct == null || poll_name == null || vtable_name == null {
         return;
     }
@@ -1649,7 +1649,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
 
     // 若 poll 内会用到子 future 的 vtable，在 poll 前输出该 vtable 结构体定义（否则 ->poll 会报未定义类型），并标记已定义避免后续重复
     if await_count > 0 && child_poll_ret_c != null {
-        const vtable_struct_buf: &byte = arena_alloc(codegen.arena, 128) as &byte;
+        const vtable_struct_buf: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
         if vtable_struct_buf != null {
             snprintf(vtable_struct_buf as *byte, 128, "uya_vtable_%s" as *byte, child_vtable_safe as *byte);
             if is_struct_defined(codegen, vtable_struct_buf) == 0 {
@@ -2157,11 +2157,11 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     // 返回 !Future<T> 时 vtable 类型为 Future<!Future<T>>，需先给出完整定义再定义常量（否则 C 报 incomplete type）。
     // 有 await 时由 1174 块输出；无 await 时此处输出。使用 arena 存储名称以保证 mark_struct_defined 的持久性。
     if return_future_err_union != 0 && vtable_future_safe != null && poll_ret_c != null {
-    const vtable_struct_name: &byte = arena_alloc(codegen.arena, 128) as &byte;
+    const vtable_struct_name: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
     if vtable_struct_name != null {
         snprintf(vtable_struct_name as *byte, 128, "uya_vtable_%s" as *byte, vtable_future_safe as *byte);
         if is_struct_defined(codegen, vtable_struct_name) == 0 {
-            const iface_struct_name: &byte = arena_alloc(codegen.arena, 128) as &byte;
+            const iface_struct_name: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
             if iface_struct_name != null {
                 snprintf(iface_struct_name as *byte, 128, "uya_interface_%s" as *byte, vtable_future_safe as *byte);
                 fprintf(codegen.emit_stream as *void, "struct uya_interface_%s { void *vtable; void *data; };\n" as *byte, vtable_future_safe as *byte);
@@ -2522,7 +2522,7 @@ fn get_mono_function_name(codegen: &C99CodeGenerator, generic_name: &byte, type_
         safe_name = get_safe_c_identifier(codegen, legacy_base);
     }
     const name_len: usize = (strlen(safe_name as *byte) as usize) + 1 + (suffix_len as usize) + 1;
-    const mono_name: &byte = arena_alloc(codegen.arena, name_len) as &byte;
+    const mono_name: &byte = compiler_arena_alloc(codegen.arena, name_len) as &byte;
     if mono_name == null {
         return generic_name;
     }
@@ -2542,7 +2542,7 @@ fn get_mono_function_name(codegen: &C99CodeGenerator, generic_name: &byte, type_
                 const decl_safe_name: &byte = get_safe_c_identifier(codegen, decl_c_name);
                 if decl_safe_name != null && strcmp(decl_safe_name as *byte, mono_name as *byte) == 0 {
                     const mono_name2_len: usize = name_len + 5;
-                    const mono_name2: &byte = arena_alloc(codegen.arena, mono_name2_len) as &byte;
+                    const mono_name2: &byte = compiler_arena_alloc(codegen.arena, mono_name2_len) as &byte;
                     if mono_name2 != null {
                         snprintf(mono_name2 as *byte, mono_name2_len, "%s_mono" as *byte, mono_name as *byte);
                         return mono_name2;
@@ -2592,7 +2592,7 @@ fn substitute_type_arg(codegen: &C99CodeGenerator, type_node: &ASTNode) &ASTNode
 
         if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
             const arg_count: i32 = type_node.type_named_type_arg_count;
-            const args: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode) * arg_count) as & & ASTNode;
+            const args: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode) * arg_count) as & & ASTNode;
             var changed: i32 = 0;
             if args != null {
                 i = 0;

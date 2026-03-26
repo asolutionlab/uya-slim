@@ -43,7 +43,7 @@ struct HygieneCopyState {
 struct MacroExpandContext {
     bindings: &MacroParamBinding,  // 参数绑定数组
     binding_count: i32,            // 绑定数量
-    arena: &Arena,                 // Arena 分配器
+    arena: &CompilerArena,                 // Arena 分配器
     checker: &TypeChecker,         // 类型检查器（用于报告错误）
     hygiene_enabled: i32,          // 是否启用卫生重命名
     hygiene_expansion_id: i32,     // 本次宏展开的唯一编号
@@ -68,7 +68,7 @@ fn find_param_binding(ctx: &MacroExpandContext, name: &byte) &ASTNode {
 }
 
 // 创建数字字面量 AST 节点
-fn create_number_literal(value: i64, arena: &Arena, line: i32, column: i32) &ASTNode {
+fn create_number_literal(value: i64, arena: &CompilerArena, line: i32, column: i32) &ASTNode {
     const node: &ASTNode = ast_new_node(ASTNodeType.AST_NUMBER, line, column, arena, null);
     if node == null {
         return null;
@@ -79,7 +79,7 @@ fn create_number_literal(value: i64, arena: &Arena, line: i32, column: i32) &AST
 }
 
 // 创建布尔字面量 AST 节点
-fn create_bool_literal(value: i32, arena: &Arena, line: i32, column: i32) &ASTNode {
+fn create_bool_literal(value: i32, arena: &CompilerArena, line: i32, column: i32) &ASTNode {
     const node: &ASTNode = ast_new_node(ASTNodeType.AST_BOOL, line, column, arena, null);
     if node == null {
         return null;
@@ -93,7 +93,7 @@ fn create_bool_literal(value: i32, arena: &Arena, line: i32, column: i32) &ASTNo
 }
 
 // 创建字符串字面量 AST 节点
-fn create_string_literal(value: &byte, arena: &Arena, line: i32, column: i32) &ASTNode {
+fn create_string_literal(value: &byte, arena: &CompilerArena, line: i32, column: i32) &ASTNode {
     const node: &ASTNode = ast_new_node(ASTNodeType.AST_STRING, line, column, arena, null);
     if node == null {
         return null;
@@ -103,7 +103,7 @@ fn create_string_literal(value: &byte, arena: &Arena, line: i32, column: i32) &A
 }
 
 // 创建 null 字面量 AST 节点（用于指针字段占位）
-fn create_null_identifier(arena: &Arena, line: i32, column: i32) &ASTNode {
+fn create_null_identifier(arena: &CompilerArena, line: i32, column: i32) &ASTNode {
     const node: &ASTNode = ast_new_node(ASTNodeType.AST_IDENTIFIER, line, column, arena, null);
     if node == null {
         return null;
@@ -113,7 +113,7 @@ fn create_null_identifier(arena: &Arena, line: i32, column: i32) &ASTNode {
 }
 
 // 创建带类型转换的字符串字面量 AST 节点（string as *i8）；value 为 null 时返回 null 字面量
-fn create_string_as_ptr(value: &byte, arena: &Arena, line: i32, column: i32) &ASTNode {
+fn create_string_as_ptr(value: &byte, arena: &CompilerArena, line: i32, column: i32) &ASTNode {
     if value == null {
         return create_null_identifier(arena, line, column);
     }
@@ -149,7 +149,7 @@ fn create_string_as_ptr(value: &byte, arena: &Arena, line: i32, column: i32) &AS
 }
 
 // 获取类型名称字符串
-fn get_type_name_from_ast(type_node: &ASTNode, arena: &Arena) &byte {
+fn get_type_name_from_ast(type_node: &ASTNode, arena: &CompilerArena) &byte {
     if type_node == null {
         return ("unknown" as *byte) as &byte;
     }
@@ -167,7 +167,7 @@ fn get_type_name_from_ast(type_node: &ASTNode, arena: &Arena) &byte {
     } else if type_node.type == ASTNodeType.AST_TYPE_POINTER {
         const inner: &byte = get_type_name_from_ast(type_node.type_pointer_pointed_type, arena);
         const inner_len: i32 = strlen(inner as *byte);
-        const buf: &byte = arena_alloc(arena, (inner_len + 3) as u64) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, (inner_len + 3) as u64) as &byte;
         if buf != null {
             buf[0] = 38 as i8;  // '&' 字符的 ASCII 码
             memcpy((buf + 1) as *void, inner as *void, inner_len as u64);
@@ -178,7 +178,7 @@ fn get_type_name_from_ast(type_node: &ASTNode, arena: &Arena) &byte {
     } else if type_node.type == ASTNodeType.AST_TYPE_ARRAY {
         const inner: &byte = get_type_name_from_ast(type_node.type_array_element_type, arena);
         const inner_len: i32 = strlen(inner as *byte);
-        const buf: &byte = arena_alloc(arena, (inner_len + 16) as u64) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, (inner_len + 16) as u64) as &byte;
         if buf != null {
             sprintf(buf as *byte, "[%s: ?]" as *byte, inner);
             return buf;
@@ -187,7 +187,7 @@ fn get_type_name_from_ast(type_node: &ASTNode, arena: &Arena) &byte {
     } else if type_node.type == ASTNodeType.AST_TYPE_SLICE {
         const inner: &byte = get_type_name_from_ast(type_node.type_slice_element_type, arena);
         const inner_len: i32 = strlen(inner as *byte);
-        const buf: &byte = arena_alloc(arena, (inner_len + 8) as u64) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, (inner_len + 8) as u64) as &byte;
         if buf != null {
             sprintf(buf as *byte, "&[%s]" as *byte, inner);
             return buf;
@@ -230,7 +230,7 @@ fn get_type_size_from_name(name: &byte) i32 {
 
 // 创建 TypeInfo 结构体字面量 AST 节点
 // checker 非 null 时，对结构体类型会填充 field_count 与 fields（用于宏内泛型序列化等）
-fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column: i32, checker: &TypeChecker) &ASTNode {
+fn create_type_info_struct(type_node: &ASTNode, arena: &CompilerArena, line: i32, column: i32, checker: &TypeChecker) &ASTNode {
     if type_node == null || arena == null {
         return null;
     }
@@ -311,8 +311,8 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
     // 分配字段数组（最多 13：11 个基础 + field_count + fields）
     const field_count_max: i32 = 13;
     var field_count: i32 = 11;
-    const field_names: &(&byte) = arena_alloc(arena, (8 * field_count_max) as u64) as &(&byte);
-    const field_values: &(&ASTNode) = arena_alloc(arena, (8 * field_count_max) as u64) as &(&ASTNode);
+    const field_names: &(&byte) = compiler_arena_alloc(arena, (8 * field_count_max) as u64) as &(&byte);
+    const field_values: &(&ASTNode) = compiler_arena_alloc(arena, (8 * field_count_max) as u64) as &(&ASTNode);
     if field_names == null || field_values == null {
         return null;
     }
@@ -363,14 +363,14 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
         }
     }
     const MAX_FIELDS: i32 = 64;
-    const elements: &(&ASTNode) = arena_alloc(arena, (8 * MAX_FIELDS) as u64) as &(&ASTNode);
+    const elements: &(&ASTNode) = compiler_arena_alloc(arena, (8 * MAX_FIELDS) as u64) as &(&ASTNode);
     if elements != null {
         var ei: i32 = 0;
         while ei < MAX_FIELDS {
             var fi_init: &ASTNode = ast_new_node(ASTNodeType.AST_STRUCT_INIT, line, column, arena, null);
             if fi_init != null {
-                const fn_arr: &(&byte) = arena_alloc(arena, 16) as &(&byte);
-                const fv_arr: &(&ASTNode) = arena_alloc(arena, 16) as &(&ASTNode);
+                const fn_arr: &(&byte) = compiler_arena_alloc(arena, 16) as &(&byte);
+                const fv_arr: &(&ASTNode) = compiler_arena_alloc(arena, 16) as &(&ASTNode);
                 if fn_arr != null && fv_arr != null {
                     fn_arr[0] = ("name" as *byte) as &byte;
                     fn_arr[1] = ("type_name" as *byte) as &byte;
@@ -418,12 +418,12 @@ fn create_type_info_struct(type_node: &ASTNode, arena: &Arena, line: i32, column
 }
 
 // 将字符串复制到 arena，返回指向 arena 内副本的指针（用于宏展开期持久化；与 parser 的 arena_strdup 重名故加前缀）
-fn macro_arena_strdup(arena: &Arena, src: &byte) &byte {
+fn macro_arena_strdup(arena: &CompilerArena, src: &byte) &byte {
     if src == null || arena == null {
         return null;
     }
     const len: i32 = strlen(src as *byte);
-    const buf: &byte = arena_alloc(arena, (len + 1) as u64) as &byte;
+    const buf: &byte = compiler_arena_alloc(arena, (len + 1) as u64) as &byte;
     if buf == null {
         return null;
     }
@@ -431,7 +431,7 @@ fn macro_arena_strdup(arena: &Arena, src: &byte) &byte {
     return buf;
 }
 
-fn macro_i64_to_string(arena: &Arena, value: i64) &byte {
+fn macro_i64_to_string(arena: &CompilerArena, value: i64) &byte {
     if arena == null {
         return null;
     }
@@ -457,7 +457,7 @@ fn macro_i64_to_string(arena: &Arena, value: i64) &byte {
         }
     }
     const total_len: i32 = digit_count + is_negative;
-    const buf: &byte = arena_alloc(arena, (total_len + 1) as u64) as &byte;
+    const buf: &byte = compiler_arena_alloc(arena, (total_len + 1) as u64) as &byte;
     if buf == null {
         return null;
     }
@@ -476,13 +476,13 @@ fn macro_i64_to_string(arena: &Arena, value: i64) &byte {
     return buf;
 }
 
-fn macro_concat2(arena: &Arena, a: &byte, b: &byte) &byte {
+fn macro_concat2(arena: &CompilerArena, a: &byte, b: &byte) &byte {
     if arena == null || a == null || b == null {
         return null;
     }
     const len_a: i32 = strlen(a as *byte);
     const len_b: i32 = strlen(b as *byte);
-    const buf: &byte = arena_alloc(arena, (len_a + len_b + 1) as u64) as &byte;
+    const buf: &byte = compiler_arena_alloc(arena, (len_a + len_b + 1) as u64) as &byte;
     if buf == null {
         return null;
     }
@@ -491,7 +491,7 @@ fn macro_concat2(arena: &Arena, a: &byte, b: &byte) &byte {
     return buf;
 }
 
-fn macro_concat3(arena: &Arena, a: &byte, b: &byte, c: &byte) &byte {
+fn macro_concat3(arena: &CompilerArena, a: &byte, b: &byte, c: &byte) &byte {
     if arena == null || a == null || b == null || c == null {
         return null;
     }
@@ -563,7 +563,7 @@ fn unary_op_to_source_string(op: i32) &byte {
 }
 
 // 类型节点转源码字符串（仅支持简单类型名、指针）
-fn type_to_source_string(type_node: &ASTNode, arena: &Arena) &byte {
+fn type_to_source_string(type_node: &ASTNode, arena: &CompilerArena) &byte {
     if type_node == null || arena == null {
         return null;
     }
@@ -576,7 +576,7 @@ fn type_to_source_string(type_node: &ASTNode, arena: &Arena) &byte {
             return null;
         }
         const inner_len: i32 = strlen(inner as *byte);
-        const buf: &byte = arena_alloc(arena, (inner_len + 3) as u64) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, (inner_len + 3) as u64) as &byte;
         if buf == null {
             return null;
         }
@@ -588,7 +588,7 @@ fn type_to_source_string(type_node: &ASTNode, arena: &Arena) &byte {
 }
 
 // 将表达式 AST 序列化为源码形式字符串，写入 arena 并返回指针；不支持的类型返回 null
-fn ast_expr_to_source_string(node: &ASTNode, arena: &Arena, filename: &byte) &byte {
+fn ast_expr_to_source_string(node: &ASTNode, arena: &CompilerArena, filename: &byte) &byte {
     if node == null || arena == null {
         return null;
     }
@@ -602,7 +602,7 @@ fn ast_expr_to_source_string(node: &ASTNode, arena: &Arena, filename: &byte) &by
         return macro_i64_to_string(arena, node.number_value_i64);
     }
     if node.type == ASTNodeType.AST_FLOAT {
-        const buf: &byte = arena_alloc(arena, 32) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, 32) as &byte;
         if buf == null {
             return null;
         }
@@ -622,7 +622,7 @@ fn ast_expr_to_source_string(node: &ASTNode, arena: &Arena, filename: &byte) &by
         }
         const raw: &byte = (node.string_literal_value as *byte) as &byte;
         const len: i32 = strlen(raw as *byte);
-        const buf: &byte = arena_alloc(arena, (len + 3) as u64) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, (len + 3) as u64) as &byte;
         if buf == null {
             return null;
         }
@@ -696,7 +696,7 @@ fn ast_expr_to_source_string(node: &ASTNode, arena: &Arena, filename: &byte) &by
             }
             i = i + 1;
         }
-        const buf: &byte = arena_alloc(arena, (parts_len + 1) as u64) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, (parts_len + 1) as u64) as &byte;
         if buf == null {
             return null;
         }
@@ -774,7 +774,7 @@ fn get_typeinfo_field_count_from_ast(type_info_ast: &ASTNode) i32 {
 }
 
 // 从 TypeInfo 结构体字面量 AST 中读取第 index 个 FieldInfo 的 name 和 type_name，复制到 arena 并通过 out_name、out_type_name 返回；成功返回 1，失败返回 0
-fn get_typeinfo_field_name_type_from_ast(type_info_ast: &ASTNode, index: i32, arena: &Arena, out_name: &(&byte), out_type_name: &(&byte)) i32 {
+fn get_typeinfo_field_name_type_from_ast(type_info_ast: &ASTNode, index: i32, arena: &CompilerArena, out_name: &(&byte), out_type_name: &(&byte)) i32 {
     if type_info_ast == null || arena == null || out_name == null || out_type_name == null {
         return 0;
     }
@@ -843,7 +843,7 @@ fn get_typeinfo_field_name_type_from_ast(type_info_ast: &ASTNode, index: i32, ar
 }
 
 // 从字符串创建标识符 AST 节点（name_ptr 须指向 arena 内已持久化的字符串）
-fn create_identifier_from_string(name_ptr: &byte, arena: &Arena, line: i32, column: i32) &ASTNode {
+fn create_identifier_from_string(name_ptr: &byte, arena: &CompilerArena, line: i32, column: i32) &ASTNode {
     if name_ptr == null || arena == null {
         return null;
     }
@@ -856,7 +856,7 @@ fn create_identifier_from_string(name_ptr: &byte, arena: &Arena, line: i32, colu
 }
 
 // 从类型名字符串创建 AST_TYPE_NAMED 节点（type_name_ptr 须指向 arena 内已持久化的字符串；仅简单类型名）
-fn create_type_named_from_string(type_name_ptr: &byte, arena: &Arena, line: i32, column: i32) &ASTNode {
+fn create_type_named_from_string(type_name_ptr: &byte, arena: &CompilerArena, line: i32, column: i32) &ASTNode {
     if type_name_ptr == null || arena == null {
         return null;
     }
@@ -934,7 +934,7 @@ fn create_hygiene_name(ctx: &MacroExpandContext, original_name: &byte) &byte {
     ctx.hygiene_next_local_id = ctx.hygiene_next_local_id + 1;
     const name_len: i32 = strlen(original_name as *byte);
     const buf_len: i32 = name_len + 48;
-    const buf: &byte = arena_alloc(ctx.arena, buf_len as u64) as &byte;
+    const buf: &byte = compiler_arena_alloc(ctx.arena, buf_len as u64) as &byte;
     if buf == null {
         return original_name;
     }
@@ -1028,7 +1028,7 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
         copy.call_expr_callee = deep_copy_ast_internal(node.call_expr_callee, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
         copy.call_expr_arg_count = node.call_expr_arg_count;
         if node.call_expr_args != null && node.call_expr_arg_count > 0 {
-            copy.call_expr_args = arena_alloc(ctx.arena, @size_of(&ASTNode) * node.call_expr_arg_count) as & & ASTNode;
+            copy.call_expr_args = compiler_arena_alloc(ctx.arena, @size_of(&ASTNode) * node.call_expr_arg_count) as & & ASTNode;
             if copy.call_expr_args != null {
                 var i: i32 = 0;
                 while i < node.call_expr_arg_count {
@@ -1074,7 +1074,7 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
     } else if node.type == ASTNodeType.AST_BLOCK {
         copy.block_stmt_count = node.block_stmt_count;
         if node.block_stmts != null && node.block_stmt_count > 0 {
-            copy.block_stmts = arena_alloc(ctx.arena, @size_of(&ASTNode) * node.block_stmt_count) as & & ASTNode;
+            copy.block_stmts = compiler_arena_alloc(ctx.arena, @size_of(&ASTNode) * node.block_stmt_count) as & & ASTNode;
             if copy.block_stmts != null {
                 hygiene_enter_scope(state);
                 var i: i32 = 0;
@@ -1175,7 +1175,7 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
         copy.fn_decl_is_export = node.fn_decl_is_export;
         hygiene_enter_scope(state);
         if node.fn_decl_params != null && node.fn_decl_param_count > 0 {
-            copy.fn_decl_params = arena_alloc(ctx.arena, @size_of(&ASTNode) * node.fn_decl_param_count) as & & ASTNode;
+            copy.fn_decl_params = compiler_arena_alloc(ctx.arena, @size_of(&ASTNode) * node.fn_decl_param_count) as & & ASTNode;
             if copy.fn_decl_params != null {
                 var i: i32 = 0;
                 while i < node.fn_decl_param_count {
@@ -1254,8 +1254,8 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
         copy.struct_init_struct_name = node.struct_init_struct_name;
         copy.struct_init_field_count = node.struct_init_field_count;
         if node.struct_init_field_names != null && node.struct_init_field_values != null && node.struct_init_field_count > 0 {
-            copy.struct_init_field_names = arena_alloc(ctx.arena, 8 * node.struct_init_field_count) as &(&byte);
-            copy.struct_init_field_values = arena_alloc(ctx.arena, 8 * node.struct_init_field_count) as &(&ASTNode);
+            copy.struct_init_field_names = compiler_arena_alloc(ctx.arena, 8 * node.struct_init_field_count) as &(&byte);
+            copy.struct_init_field_values = compiler_arena_alloc(ctx.arena, 8 * node.struct_init_field_count) as &(&ASTNode);
             if copy.struct_init_field_names != null && copy.struct_init_field_values != null {
                 var i: i32 = 0;
                 while i < node.struct_init_field_count {
@@ -1332,7 +1332,7 @@ fn expand_for_over_typeinfo_fields_once(for_stmt: &ASTNode, ctx: &MacroExpandCon
         return null;
     }
     block.block_stmt_count = n;
-    block.block_stmts = arena_alloc(ctx.arena, @size_of(&ASTNode) * n) as & & ASTNode;
+    block.block_stmts = compiler_arena_alloc(ctx.arena, @size_of(&ASTNode) * n) as & & ASTNode;
     if block.block_stmts == null {
         return null;
     }
@@ -1362,7 +1362,7 @@ fn expand_body_for_over_typeinfo_fields(body: &ASTNode, ctx: &MacroExpandContext
     if n <= 0 || body.block_stmts == null {
         return body;
     }
-    const new_stmts: &(&ASTNode) = arena_alloc(ctx.arena, @size_of(&ASTNode) * n) as & & ASTNode;
+    const new_stmts: &(&ASTNode) = compiler_arena_alloc(ctx.arena, @size_of(&ASTNode) * n) as & & ASTNode;
     if new_stmts == null {
         return body;
     }
@@ -1506,7 +1506,7 @@ fn deep_copy_ast_with_params(node: &ASTNode, ctx: &MacroExpandContext, filename:
 }
 
 // 深拷贝 AST 节点（简化版本，仅支持基本节点类型）
-fn deep_copy_ast_simple(node: &ASTNode, arena: &Arena, filename: &byte) &ASTNode {
+fn deep_copy_ast_simple(node: &ASTNode, arena: &CompilerArena, filename: &byte) &ASTNode {
     if node == null || arena == null {
         return null;
     }
@@ -1541,7 +1541,7 @@ fn deep_copy_ast_simple(node: &ASTNode, arena: &Arena, filename: &byte) &ASTNode
         copy.call_expr_callee = deep_copy_ast_simple(node.call_expr_callee, arena, filename);
         copy.call_expr_arg_count = node.call_expr_arg_count;
         if node.call_expr_args != null && node.call_expr_arg_count > 0 {
-            copy.call_expr_args = arena_alloc(arena, @size_of(&ASTNode) * node.call_expr_arg_count) as & & ASTNode;
+            copy.call_expr_args = compiler_arena_alloc(arena, @size_of(&ASTNode) * node.call_expr_arg_count) as & & ASTNode;
             if copy.call_expr_args != null {
                 var i: i32 = 0;
                 while i < node.call_expr_arg_count {
@@ -1630,7 +1630,7 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
     const MAX_LOCAL_BINDINGS: i32 = 64;
     if local_binding_count > 0 {
         const total_bindings: i32 = ctx.binding_count + local_binding_count;
-        const all_bindings: &MacroParamBinding = arena_alloc(ctx.arena, @size_of(MacroParamBinding) * total_bindings) as &MacroParamBinding;
+        const all_bindings: &MacroParamBinding = compiler_arena_alloc(ctx.arena, @size_of(MacroParamBinding) * total_bindings) as &MacroParamBinding;
         if all_bindings != null {
             var k: i32 = 0;
             while k < ctx.binding_count {
@@ -1786,7 +1786,7 @@ fn extract_macro_output_with_params(body: &ASTNode, ctx: &MacroExpandContext, fi
 }
 
 // 从宏体提取输出表达式（简化版本，仅支持 @mc_code(@mc_ast(expr))）
-fn extract_macro_output_simple(body: &ASTNode, arena: &Arena, filename: &byte) &ASTNode {
+fn extract_macro_output_simple(body: &ASTNode, arena: &CompilerArena, filename: &byte) &ASTNode {
     if body == null || body.type != ASTNodeType.AST_BLOCK {
         return null;
     }
@@ -1816,7 +1816,7 @@ fn extract_macro_output_simple(body: &ASTNode, arena: &Arena, filename: &byte) &
 }
 
 // 深拷贝 AST 并将类型形参标识符替换为对应的类型实参节点（供 codegen 生成单态函数体前使用）。
-export fn deep_copy_ast_substitute_type_params(node: &ASTNode, type_params: &TypeParam, type_param_count: i32, type_args: & & ASTNode, type_arg_count: i32, arena: &Arena, filename: &byte) &ASTNode {
+export fn deep_copy_ast_substitute_type_params(node: &ASTNode, type_params: &TypeParam, type_param_count: i32, type_args: & & ASTNode, type_arg_count: i32, arena: &CompilerArena, filename: &byte) &ASTNode {
     if node == null || arena == null {
         return null;
     }
@@ -1838,7 +1838,7 @@ export fn deep_copy_ast_substitute_type_params(node: &ASTNode, type_params: &Typ
         copy.identifier_name = node.identifier_name;
     } else if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null && node.block_stmt_count > 0 {
         copy.block_stmt_count = node.block_stmt_count;
-        copy.block_stmts = arena_alloc(arena, (@size_of(&ASTNode) * node.block_stmt_count) as u64) as &(&ASTNode);
+        copy.block_stmts = compiler_arena_alloc(arena, (@size_of(&ASTNode) * node.block_stmt_count) as u64) as &(&ASTNode);
         if copy.block_stmts != null {
             var j: i32 = 0;
             while j < node.block_stmt_count {
@@ -1853,7 +1853,7 @@ export fn deep_copy_ast_substitute_type_params(node: &ASTNode, type_params: &Typ
         copy.call_expr_type_args = null;
         copy.call_expr_type_arg_count = 0;
         if node.call_expr_args != null && node.call_expr_arg_count > 0 {
-            copy.call_expr_args = arena_alloc(arena, (@size_of(&ASTNode) * node.call_expr_arg_count) as u64) as &(&ASTNode);
+            copy.call_expr_args = compiler_arena_alloc(arena, (@size_of(&ASTNode) * node.call_expr_arg_count) as u64) as &(&ASTNode);
             if copy.call_expr_args != null {
                 var j: i32 = 0;
                 while j < node.call_expr_arg_count {
@@ -1883,7 +1883,7 @@ export fn deep_copy_ast_substitute_type_params(node: &ASTNode, type_params: &Typ
         copy.type_named_name = node.type_named_name;
         if node.type_named_type_args != null && node.type_named_type_arg_count > 0 {
             copy.type_named_type_arg_count = node.type_named_type_arg_count;
-            copy.type_named_type_args = arena_alloc(arena, (@size_of(&ASTNode) * node.type_named_type_arg_count) as u64) as &(&ASTNode);
+            copy.type_named_type_args = compiler_arena_alloc(arena, (@size_of(&ASTNode) * node.type_named_type_arg_count) as u64) as &(&ASTNode);
             if copy.type_named_type_args != null {
                 var j: i32 = 0;
                 while j < node.type_named_type_arg_count {
@@ -1899,7 +1899,7 @@ export fn deep_copy_ast_substitute_type_params(node: &ASTNode, type_params: &Typ
         copy.struct_init_field_count = node.struct_init_field_count;
         if node.struct_init_type_args != null && node.struct_init_type_arg_count > 0 {
             copy.struct_init_type_arg_count = node.struct_init_type_arg_count;
-            copy.struct_init_type_args = arena_alloc(arena, (@size_of(&ASTNode) * node.struct_init_type_arg_count) as u64) as &(&ASTNode);
+            copy.struct_init_type_args = compiler_arena_alloc(arena, (@size_of(&ASTNode) * node.struct_init_type_arg_count) as u64) as &(&ASTNode);
             if copy.struct_init_type_args != null {
                 var tj: i32 = 0;
                 while tj < node.struct_init_type_arg_count {
@@ -1909,8 +1909,8 @@ export fn deep_copy_ast_substitute_type_params(node: &ASTNode, type_params: &Typ
             }
         }
         if node.struct_init_field_count > 0 && node.struct_init_field_names != null && node.struct_init_field_values != null {
-            copy.struct_init_field_names = arena_alloc(arena, (@size_of(&byte) * node.struct_init_field_count) as u64) as &(&byte);
-            copy.struct_init_field_values = arena_alloc(arena, (@size_of(&ASTNode) * node.struct_init_field_count) as u64) as &(&ASTNode);
+            copy.struct_init_field_names = compiler_arena_alloc(arena, (@size_of(&byte) * node.struct_init_field_count) as u64) as &(&byte);
+            copy.struct_init_field_values = compiler_arena_alloc(arena, (@size_of(&ASTNode) * node.struct_init_field_count) as u64) as &(&ASTNode);
             if copy.struct_init_field_names != null && copy.struct_init_field_values != null {
                 var fj: i32 = 0;
                 while fj < node.struct_init_field_count {
@@ -1986,11 +1986,11 @@ fn count_encode_field_stmts(checker: &TypeChecker, struct_decl: &ASTNode) i32 {
     return total;
 }
 
-fn build_json_write_byte_stmt(addr_w: &ASTNode, byte_value: i64, arena: &Arena, line: i32, column: i32, filename: &byte) &ASTNode {
+fn build_json_write_byte_stmt(addr_w: &ASTNode, byte_value: i64, arena: &CompilerArena, line: i32, column: i32, filename: &byte) &ASTNode {
     if addr_w == null || arena == null { return null; }
     const s_json_write_byte: &byte = macro_arena_strdup(arena, ("json_write_byte" as *byte) as &byte);
     if s_json_write_byte == null { return null; }
-    const args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
+    const args: &(&ASTNode) = compiler_arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
     if args == null { return null; }
     args[0] = addr_w;
     args[1] = create_number_literal(byte_value, arena, line, column);
@@ -2005,11 +2005,11 @@ fn build_json_write_byte_stmt(addr_w: &ASTNode, byte_value: i64, arena: &Arena, 
     return call_stmt;
 }
 
-fn build_json_write_key_stmt(addr_w: &ASTNode, key_name: &byte, arena: &Arena, line: i32, column: i32, filename: &byte) &ASTNode {
+fn build_json_write_key_stmt(addr_w: &ASTNode, key_name: &byte, arena: &CompilerArena, line: i32, column: i32, filename: &byte) &ASTNode {
     if addr_w == null || key_name == null || arena == null { return null; }
     const s_json_write_key: &byte = macro_arena_strdup(arena, ("json_write_key" as *byte) as &byte);
     if s_json_write_key == null { return null; }
-    const key_args: &(&ASTNode) = arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
+    const key_args: &(&ASTNode) = compiler_arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
     if key_args == null { return null; }
     key_args[0] = addr_w;
     key_args[1] = create_string_literal(key_name, arena, line, column);
@@ -2025,14 +2025,14 @@ fn build_json_write_key_stmt(addr_w: &ASTNode, key_name: &byte, arena: &Arena, l
     return call_key;
 }
 
-fn build_json_write_scalar_stmt(type_name: &byte, value_expr: &ASTNode, addr_w: &ASTNode, arena: &Arena, line: i32, column: i32, filename: &byte) &ASTNode {
+fn build_json_write_scalar_stmt(type_name: &byte, value_expr: &ASTNode, addr_w: &ASTNode, arena: &CompilerArena, line: i32, column: i32, filename: &byte) &ASTNode {
     if type_name == null || value_expr == null || addr_w == null || arena == null { return null; }
     const s_json_write_i64: &byte = macro_arena_strdup(arena, ("json_write_i64" as *byte) as &byte);
     const s_json_write_str_view: &byte = macro_arena_strdup(arena, ("json_write_str_view" as *byte) as &byte);
     const s_json_write_bool: &byte = macro_arena_strdup(arena, ("json_write_bool" as *byte) as &byte);
     const s_json_write_f64: &byte = macro_arena_strdup(arena, ("json_write_f64" as *byte) as &byte);
     if s_json_write_i64 == null || s_json_write_str_view == null || s_json_write_bool == null || s_json_write_f64 == null { return null; }
-    const write_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
+    const write_args: &(&ASTNode) = compiler_arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
     if write_args == null { return null; }
     write_args[0] = addr_w;
     write_args[1] = value_expr;
@@ -2055,7 +2055,7 @@ fn build_json_write_value_stmt(checker: &TypeChecker, type_node: &ASTNode, value
     if checker == null || checker.arena == null || type_node == null || value_expr == null || addr_w == null {
         return null;
     }
-    const arena: &Arena = checker.arena;
+    const arena: &CompilerArena = checker.arena;
     var safe_name_hint: &byte = name_hint;
     if safe_name_hint == null {
         safe_name_hint = ("value" as *byte) as &byte;
@@ -2106,7 +2106,7 @@ fn build_json_write_value_stmt(checker: &TypeChecker, type_node: &ASTNode, value
         const elem_stmt: &ASTNode = build_json_write_value_stmt(checker, elem_type, elem_expr, addr_w, child_hint, line, column, filename);
         if elem_stmt == null { return null; }
 
-        const loop_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 2) as u64) as &(&ASTNode);
+        const loop_body_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * 2) as u64) as &(&ASTNode);
         if loop_body_stmts == null { return null; }
         loop_body_stmts[0] = if_comma;
         loop_body_stmts[1] = elem_stmt;
@@ -2131,7 +2131,7 @@ fn build_json_write_value_stmt(checker: &TypeChecker, type_node: &ASTNode, value
         array_for.for_stmt_is_ref = 0;
         array_for.for_stmt_body = loop_body;
 
-        const block_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 3) as u64) as &(&ASTNode);
+        const block_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * 3) as u64) as &(&ASTNode);
         if block_stmts == null { return null; }
         block_stmts[0] = build_json_write_byte_stmt(addr_w, 91, arena, line, column, filename);
         block_stmts[1] = array_for;
@@ -2201,7 +2201,7 @@ fn build_json_write_value_stmt(checker: &TypeChecker, type_node: &ASTNode, value
         const elem_stmt: &ASTNode = build_json_write_value_stmt(checker, elem_type, elem_expr, addr_w, child_hint, line, column, filename);
         if elem_stmt == null { return null; }
 
-        const loop_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 2) as u64) as &(&ASTNode);
+        const loop_body_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * 2) as u64) as &(&ASTNode);
         if loop_body_stmts == null { return null; }
         loop_body_stmts[0] = if_comma;
         loop_body_stmts[1] = elem_stmt;
@@ -2223,7 +2223,7 @@ fn build_json_write_value_stmt(checker: &TypeChecker, type_node: &ASTNode, value
         slice_for.for_stmt_is_ref = 0;
         slice_for.for_stmt_body = loop_body;
 
-        const block_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 3) as u64) as &(&ASTNode);
+        const block_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * 3) as u64) as &(&ASTNode);
         if block_stmts == null { return null; }
         block_stmts[0] = build_json_write_byte_stmt(addr_w, 91, arena, line, column, filename);
         block_stmts[1] = slice_for;
@@ -2243,7 +2243,7 @@ fn build_json_write_value_stmt(checker: &TypeChecker, type_node: &ASTNode, value
     if strcmp(type_name as *byte, "JsonStrView" as *byte) == 0 { is_json_str_view = 1; }
     if inner_decl != null && inner_decl.struct_decl_fields != null && inner_decl.struct_decl_field_count > 0 && is_json_str_view == 0 {
         const stmt_count: i32 = 2 + count_encode_field_stmts(checker, inner_decl);
-        const stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * stmt_count) as u64) as &(&ASTNode);
+        const stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * stmt_count) as u64) as &(&ASTNode);
         if stmts == null { return null; }
         var idx: i32 = 0;
         stmts[idx] = build_json_write_byte_stmt(addr_w, 123, arena, line, column, filename);
@@ -2303,7 +2303,7 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
        value_arg == null || buf_arg == null || cap_arg == null || checker.arena == null {
         return null;
     }
-    const arena: &Arena = checker.arena;
+    const arena: &CompilerArena = checker.arena;
     const type_name: &byte = type_arg.type_named_name as &byte;
     const struct_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, type_name);
     if struct_decl == null || struct_decl.struct_decl_fields == null || struct_decl.struct_decl_field_count <= 0 {
@@ -2334,7 +2334,7 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
     addr_w.unary_expr_op = unary_addr;
     addr_w.unary_expr_operand = id_w;
 
-    const json_writer_init_args: &(&ASTNode) = arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
+    const json_writer_init_args: &(&ASTNode) = compiler_arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
     if json_writer_init_args == null { return null; }
     json_writer_init_args[0] = addr_w;
     json_writer_init_args[1] = buf_arg;
@@ -2348,8 +2348,8 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
     call_init.call_expr_type_args = null;
     call_init.call_expr_type_arg_count = 0;
 
-    const fn_names_json: &(&byte) = arena_alloc(arena, (4 * 8) as u64) as &(&byte);
-    const fn_vals_json: &(&ASTNode) = arena_alloc(arena, (4 * 8) as u64) as &(&ASTNode);
+    const fn_names_json: &(&byte) = compiler_arena_alloc(arena, (4 * 8) as u64) as &(&byte);
+    const fn_vals_json: &(&ASTNode) = compiler_arena_alloc(arena, (4 * 8) as u64) as &(&ASTNode);
     if fn_names_json == null || fn_vals_json == null { return null; }
     fn_names_json[0] = s_buf;
     fn_vals_json[0] = buf_arg;
@@ -2389,7 +2389,7 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
 
     const field_stmts: i32 = count_encode_field_stmts(checker, struct_decl);
     const stmt_count: i32 = 5 + field_stmts;
-    const stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * stmt_count) as u64) as &(&ASTNode);
+    const stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * stmt_count) as u64) as &(&ASTNode);
     if stmts == null { return null; }
     var idx: i32 = 0;
     stmts[idx] = var_w;
@@ -2466,7 +2466,7 @@ fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, valu
     if checker == null || checker.arena == null || type_node == null || value_expr == null {
         return null;
     }
-    const arena: &Arena = checker.arena;
+    const arena: &CompilerArena = checker.arena;
     const unary_amp: i32 = (TokenType.TOKEN_AMPERSAND) as i32;
     var safe_name_hint: &byte = name_hint;
     if safe_name_hint == null {
@@ -2573,7 +2573,7 @@ fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, valu
         if assign_elem == null { return null; }
         assign_elem.assign_dest = arr_access;
         assign_elem.assign_src = elem_decode;
-        const loop_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 1) as u64) as &(&ASTNode);
+        const loop_body_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * 1) as u64) as &(&ASTNode);
         if loop_body_stmts == null { return null; }
         loop_body_stmts[0] = assign_elem;
         const loop_body: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, arena, filename);
@@ -2597,7 +2597,7 @@ fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, valu
         arr_for.for_stmt_is_ref = 0;
         arr_for.for_stmt_body = loop_body;
 
-        const arr_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 4) as u64) as &(&ASTNode);
+        const arr_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * 4) as u64) as &(&ASTNode);
         if arr_stmts == null { return null; }
         arr_stmts[0] = if_stmt;
         arr_stmts[1] = var_arr;
@@ -2609,7 +2609,7 @@ fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, valu
         arr_block.block_stmts = arr_stmts;
         arr_block.block_stmt_count = 4;
 
-        const arms_arr: &ASTMatchArm = arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
+        const arms_arr: &ASTMatchArm = compiler_arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
         if arms_arr == null { return null; }
         arms_arr[0].kind = MatchPatternKind.MATCH_PAT_UNION;
         arms_arr[0].variant_name = s_arr;
@@ -2680,7 +2680,7 @@ fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, valu
         bytes_expr.binary_expr_left = a_len;
         bytes_expr.binary_expr_right = sizeof_as_usize;
 
-        const alloc_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
+        const alloc_args: &(&ASTNode) = compiler_arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
         if alloc_args == null { return null; }
         alloc_args[0] = create_identifier_from_string(s_ar, arena, line, column);
         alloc_args[1] = bytes_expr;
@@ -2735,7 +2735,7 @@ fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, valu
         if assign_elem == null { return null; }
         assign_elem.assign_dest = ptr_i;
         assign_elem.assign_src = elem_decode;
-        const loop_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 1) as u64) as &(&ASTNode);
+        const loop_body_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * 1) as u64) as &(&ASTNode);
         if loop_body_stmts == null { return null; }
         loop_body_stmts[0] = assign_elem;
         const loop_body: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line, column, arena, filename);
@@ -2790,7 +2790,7 @@ fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, valu
         var_slice.var_decl_init = addr_slice_expr;
         var_slice.var_decl_is_const = 1;
 
-        const slice_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 4) as u64) as &(&ASTNode);
+        const slice_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * 4) as u64) as &(&ASTNode);
         if slice_stmts == null { return null; }
         slice_stmts[0] = var_ptr;
         slice_stmts[1] = slice_for;
@@ -2802,7 +2802,7 @@ fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, valu
         slice_block.block_stmts = slice_stmts;
         slice_block.block_stmt_count = 4;
 
-        const arms_slice: &ASTMatchArm = arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
+        const arms_slice: &ASTMatchArm = compiler_arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
         if arms_slice == null { return null; }
         arms_slice[0].kind = MatchPatternKind.MATCH_PAT_UNION;
         arms_slice[0].variant_name = s_arr;
@@ -2837,7 +2837,7 @@ fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, valu
         if o_inner_name == null { return null; }
         const nested_block: &ASTNode = build_decode_struct_expr(checker, inner_decl, type_name, o_inner_name, line, column, filename);
         if nested_block == null { return null; }
-        const arms_nested: &ASTMatchArm = arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
+        const arms_nested: &ASTMatchArm = compiler_arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
         if arms_nested == null { return null; }
         arms_nested[0].kind = MatchPatternKind.MATCH_PAT_UNION;
         arms_nested[0].variant_name = s_obj;
@@ -2868,7 +2868,7 @@ fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, valu
     if strcmp(type_name as *byte, "JsonStrView" as *byte) == 0 { expect_callee = s_json_expect_str; }
     else if strcmp(type_name as *byte, "bool" as *byte) == 0 { expect_callee = s_json_expect_bool; }
     else if strcmp(type_name as *byte, "f64" as *byte) == 0 { expect_callee = s_json_expect_f64; }
-    const expect_args: &(&ASTNode) = arena_alloc(arena, (1 * 8) as u64) as &(&ASTNode);
+    const expect_args: &(&ASTNode) = compiler_arena_alloc(arena, (1 * 8) as u64) as &(&ASTNode);
     if expect_args == null { return null; }
     expect_args[0] = addr_value;
     const call_expect: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line, column, arena, filename);
@@ -2891,7 +2891,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
     if checker == null || struct_decl == null || struct_decl.struct_decl_fields == null || struct_decl.struct_decl_field_count <= 0 || checker.arena == null {
         return null;
     }
-    const arena: &Arena = checker.arena;
+    const arena: &CompilerArena = checker.arena;
     const line_off: i32 = 0;
     const col_off: i32 = 0;
     const n_fields: i32 = struct_decl.struct_decl_field_count;
@@ -2921,9 +2921,9 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
     addr_obj.unary_expr_operand = id_obj;
 
     const inner_stmt_count: i32 = 2 * n_fields + 1;
-    const field_names: &(&byte) = arena_alloc(arena, (n_fields * 8) as u64) as &(&byte);
-    const field_values: &(&ASTNode) = arena_alloc(arena, (n_fields * 8) as u64) as &(&ASTNode);
-    const inner_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * (inner_stmt_count + 4)) as u64) as &(&ASTNode);
+    const field_names: &(&byte) = compiler_arena_alloc(arena, (n_fields * 8) as u64) as &(&byte);
+    const field_values: &(&ASTNode) = compiler_arena_alloc(arena, (n_fields * 8) as u64) as &(&ASTNode);
+    const inner_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * (inner_stmt_count + 4)) as u64) as &(&ASTNode);
     if field_names == null || field_values == null || inner_stmts == null { return null; }
     var inner_idx: i32 = 0;
     var field_val_idx: i32 = 0;
@@ -2949,7 +2949,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
         const key_str: &ASTNode = create_string_literal(fname, arena, line + line_off, column + col_off);
         const key_len_node: &ASTNode = create_number_literal(key_len as i64, arena, line + line_off, column + col_off);
         if key_str == null || key_len_node == null { fi = fi + 1; continue; }
-        const find_args: &(&ASTNode) = arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
+        const find_args: &(&ASTNode) = compiler_arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
         if find_args == null { fi = fi + 1; continue; }
         find_args[0] = addr_obj;
         find_args[1] = key_str;
@@ -3044,7 +3044,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
 
             const id_ar: &ASTNode = create_identifier_from_string(s_ar, arena, line + line_off, column + col_off);
             if id_ar == null { fi = fi + 1; continue; }
-            const alloc_args: &(&ASTNode) = arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
+            const alloc_args: &(&ASTNode) = compiler_arena_alloc(arena, (2 * 8) as u64) as &(&ASTNode);
             if alloc_args == null { fi = fi + 1; continue; }
             alloc_args[0] = id_ar;
             alloc_args[1] = bytes_expr;
@@ -3103,7 +3103,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
             assign_elem.assign_dest = ptr_i;
             assign_elem.assign_src = elem_decode;
 
-            const loop_body_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 1) as u64) as &(&ASTNode);
+            const loop_body_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * 1) as u64) as &(&ASTNode);
             if loop_body_stmts == null { fi = fi + 1; continue; }
             loop_body_stmts[0] = assign_elem;
             const loop_body: &ASTNode = ast_new_node(ASTNodeType.AST_BLOCK, line + line_off, column + col_off, arena, filename);
@@ -3159,7 +3159,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
             const id_slice_final: &ASTNode = create_identifier_from_string(slice_var_name, arena, line + line_off, column + col_off);
             if id_slice_final == null { fi = fi + 1; continue; }
 
-            const slice_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * 4) as u64) as &(&ASTNode);
+            const slice_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * 4) as u64) as &(&ASTNode);
             if slice_stmts == null { fi = fi + 1; continue; }
             slice_stmts[0] = var_ptr;
             slice_stmts[1] = slice_for;
@@ -3170,7 +3170,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
             slice_block.block_stmts = slice_stmts;
             slice_block.block_stmt_count = 4;
 
-            const arms_slice: &ASTMatchArm = arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
+            const arms_slice: &ASTMatchArm = compiler_arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
             if arms_slice == null { fi = fi + 1; continue; }
             arms_slice[0].kind = MatchPatternKind.MATCH_PAT_UNION;
             arms_slice[0].variant_name = macro_arena_strdup(arena, ("arr" as *byte) as &byte);
@@ -3226,7 +3226,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
             if_stmt.if_stmt_then_branch = return_err;
             if_stmt.if_stmt_else_branch = null;
             var arr_block_len: i32 = 2 + arr_size + 1;
-            const arr_stmts: &(&ASTNode) = arena_alloc(arena, (@size_of(&ASTNode) * (arr_block_len + 2)) as u64) as &(&ASTNode);
+            const arr_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (@size_of(&ASTNode) * (arr_block_len + 2)) as u64) as &(&ASTNode);
             if arr_stmts == null { fi = fi + 1; continue; }
             var arr_idx: i32 = 0;
             arr_stmts[arr_idx] = if_stmt;
@@ -3281,7 +3281,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
             if arr_block == null { return null; }
             arr_block.block_stmts = arr_stmts;
             arr_block.block_stmt_count = arr_idx;
-            const arms_arr: &ASTMatchArm = arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
+            const arms_arr: &ASTMatchArm = compiler_arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
             if arms_arr == null { fi = fi + 1; continue; }
             arms_arr[0].kind = MatchPatternKind.MATCH_PAT_UNION;
             arms_arr[0].variant_name = macro_arena_strdup(arena, ("arr" as *byte) as &byte);
@@ -3309,7 +3309,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
                 if o_inner_name == null { fi = fi + 1; continue; }
                 const nested_block: &ASTNode = build_decode_struct_expr(checker, inner_decl, ftype, o_inner_name, line + line_off, column + col_off, filename);
                 if nested_block == null { fi = fi + 1; continue; }
-                const arms_nested: &ASTMatchArm = arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
+                const arms_nested: &ASTMatchArm = compiler_arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
                 if arms_nested == null { fi = fi + 1; continue; }
                 arms_nested[0].kind = MatchPatternKind.MATCH_PAT_UNION;
                 arms_nested[0].variant_name = s_obj;
@@ -3332,7 +3332,7 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
                 if strcmp(ftype as *byte, "JsonStrView" as *byte) == 0 { expect_callee = s_json_expect_str; }
                 else if strcmp(ftype as *byte, "bool" as *byte) == 0 { expect_callee = s_json_expect_bool; }
                 else if strcmp(ftype as *byte, "f64" as *byte) == 0 { expect_callee = s_json_expect_f64; }
-                const expect_args: &(&ASTNode) = arena_alloc(arena, (1 * 8) as u64) as &(&ASTNode);
+                const expect_args: &(&ASTNode) = compiler_arena_alloc(arena, (1 * 8) as u64) as &(&ASTNode);
                 if expect_args == null { fi = fi + 1; continue; }
                 expect_args[0] = addr_value;
                 const call_expect: &ASTNode = ast_new_node(ASTNodeType.AST_CALL_EXPR, line + line_off, column + col_off, arena, filename);
@@ -3386,7 +3386,7 @@ export fn build_from_json_reflect_body(checker: &TypeChecker, type_arg: &ASTNode
     if checker == null || type_arg == null || type_arg.type != ASTNodeType.AST_TYPE_NAMED || type_arg.type_named_name == null || checker.arena == null {
         return null;
     }
-    const arena: &Arena = checker.arena;
+    const arena: &CompilerArena = checker.arena;
     const type_name: &byte = type_arg.type_named_name as &byte;
     const struct_decl: &ASTNode = find_struct_decl_from_program(checker.program_node, type_name);
     if struct_decl == null || struct_decl.struct_decl_fields == null || struct_decl.struct_decl_field_count <= 0 {
@@ -3433,7 +3433,7 @@ export fn build_from_json_reflect_body(checker: &TypeChecker, type_arg: &ASTNode
     buf_len.member_access_field_name = s_len;
     buf_len.member_access_is_module_access = 0;
     buf_len.member_access_module_name = null;
-    const parse_args: &(&ASTNode) = arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
+    const parse_args: &(&ASTNode) = compiler_arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
     if parse_args == null { return null; }
     parse_args[0] = id_ar;
     parse_args[1] = buf_ptr;
@@ -3464,7 +3464,7 @@ export fn build_from_json_reflect_body(checker: &TypeChecker, type_arg: &ASTNode
     const inner_block: &ASTNode = build_decode_struct_expr(checker, struct_decl, type_name, s_o, line + line_off, column + col_off, filename);
     if inner_block == null { return null; }
 
-    const arms: &ASTMatchArm = arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
+    const arms: &ASTMatchArm = compiler_arena_alloc(arena, (2 * @size_of(ASTMatchArm)) as u64) as &ASTMatchArm;
     if arms == null { return null; }
     arms[0].kind = MatchPatternKind.MATCH_PAT_UNION;
     arms[0].literal_expr = null;
@@ -3499,7 +3499,7 @@ export fn build_from_json_reflect_body(checker: &TypeChecker, type_arg: &ASTNode
     if return_stmt == null { return null; }
     return_stmt.return_stmt_expr = match_expr;
 
-    const outer_stmts: &(&ASTNode) = arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
+    const outer_stmts: &(&ASTNode) = compiler_arena_alloc(arena, (3 * 8) as u64) as &(&ASTNode);
     if outer_stmts == null { return null; }
     outer_stmts[0] = var_v;
     outer_stmts[1] = return_stmt;
@@ -3568,7 +3568,7 @@ fn expand_macros_in_node_simple(checker: &TypeChecker, node_ptr: & & ASTNode) vo
                     
                     if param_count > 0 && arg_count > 0 {
                         // 分配绑定数组
-                        const bindings: &MacroParamBinding = arena_alloc(checker.arena, @size_of(MacroParamBinding) * param_count) as &MacroParamBinding;
+                        const bindings: &MacroParamBinding = compiler_arena_alloc(checker.arena, @size_of(MacroParamBinding) * param_count) as &MacroParamBinding;
                         if bindings != null {
                             var binding_count: i32 = 0;
                             var i: i32 = 0;
@@ -3700,7 +3700,7 @@ fn expand_macros_in_node_simple(checker: &TypeChecker, node_ptr: & & ASTNode) vo
                                 };
                                 
                                 if param_count > 0 && arg_count > 0 {
-                                    const bindings: &MacroParamBinding = arena_alloc(checker.arena, @size_of(MacroParamBinding) * param_count) as &MacroParamBinding;
+                                    const bindings: &MacroParamBinding = compiler_arena_alloc(checker.arena, @size_of(MacroParamBinding) * param_count) as &MacroParamBinding;
                                     if bindings != null {
                                         var binding_count: i32 = 0;
                                         var j: i32 = 0;

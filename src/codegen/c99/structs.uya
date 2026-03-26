@@ -1170,7 +1170,7 @@ fn get_method_c_name(codegen: &C99CodeGenerator, struct_name: &byte, method_name
         return null;
     }
     const len: i32 = 5 + strlen(safe_s as *byte) + 1 + strlen(safe_m as *byte) + 1;
-    const buf: &byte = arena_alloc(codegen.arena, len) as &byte;
+    const buf: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
     if buf == null {
         return null;
     }
@@ -1496,8 +1496,8 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
 
             // 标记已定义，避免后续重复输出
             const iface_struct_len: i32 = strlen(safe_mono_iface as *byte) + 32;
-            const iface_struct_name: &byte = arena_alloc(codegen.arena, iface_struct_len as usize) as &byte;
-            const vtable_struct_name: &byte = arena_alloc(codegen.arena, iface_struct_len as usize) as &byte;
+            const iface_struct_name: &byte = compiler_arena_alloc(codegen.arena, iface_struct_len as usize) as &byte;
+            const vtable_struct_name: &byte = compiler_arena_alloc(codegen.arena, iface_struct_len as usize) as &byte;
             if iface_struct_name != null && vtable_struct_name != null {
                 snprintf(iface_struct_name as *byte, iface_struct_len, "uya_interface_%s" as *byte, safe_mono_iface as *byte);
                 snprintf(vtable_struct_name as *byte, iface_struct_len, "uya_vtable_%s" as *byte, safe_mono_iface as *byte);
@@ -1598,7 +1598,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
             const lt: *byte = strchr(iface_name as *byte, 60);  // '<'
             if lt != null {
                 const base_len: i32 = ptr_diff(lt, iface_name as *byte);
-                const buf: &byte = arena_alloc(codegen.arena, (base_len + 1) as usize) as &byte;
+                const buf: &byte = compiler_arena_alloc(codegen.arena, (base_len + 1) as usize) as &byte;
                 if buf != null {
                     memcpy(buf as *void, iface_name as *void, base_len as usize);
                     buf[base_len] = 0;
@@ -1631,7 +1631,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                         while end > start && (*(end - 1) == 32 || *(end - 1) == 9 || *(end - 1) == 10 || *(end - 1) == 13) { end = end - 1; }
                         const len: i32 = ptr_diff(end, start);
                         if len > 0 {
-                            const name_buf: &byte = arena_alloc(codegen.arena, (len + 1) as usize) as &byte;
+                            const name_buf: &byte = compiler_arena_alloc(codegen.arena, (len + 1) as usize) as &byte;
                             if name_buf != null {
                                 memcpy(name_buf as *void, start as *void, len as usize);
                                 name_buf[len] = 0;
@@ -1689,8 +1689,8 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
 
                             // 确保该泛型接口实例的 interface/vtable struct 已定义
                             const iface_struct_len2: i32 = strlen(safe_mono_iface as *byte) + 32;
-                            const iface_struct_name2: &byte = arena_alloc(codegen.arena, iface_struct_len2 as usize) as &byte;
-                            const vtable_struct_name2: &byte = arena_alloc(codegen.arena, iface_struct_len2 as usize) as &byte;
+                            const iface_struct_name2: &byte = compiler_arena_alloc(codegen.arena, iface_struct_len2 as usize) as &byte;
+                            const vtable_struct_name2: &byte = compiler_arena_alloc(codegen.arena, iface_struct_len2 as usize) as &byte;
                             if iface_struct_name2 != null && vtable_struct_name2 != null {
                                 snprintf(iface_struct_name2 as *byte, iface_struct_len2, "uya_interface_%s" as *byte, safe_mono_iface as *byte);
                                 snprintf(vtable_struct_name2 as *byte, iface_struct_len2, "uya_vtable_%s" as *byte, safe_mono_iface as *byte);
@@ -1811,7 +1811,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                         const eu_wrap: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, decl.line, decl.column, codegen.arena, decl.filename);
                         if eu_wrap != null {
                             eu_wrap.type_error_union_payload_type = inst.type_args[0];
-                            const ap2: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+                            const ap2: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
                             if ap2 != null {
                                 ap2[0] = eu_wrap;
                                 iface_mono_args_ptr = ap2;
@@ -1838,8 +1838,8 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
 
                     // 确保该泛型接口实例的 interface/vtable struct 已定义（即便未显式作为类型出现）
                     const iface_struct_len: i32 = strlen(safe_mono_iface as *byte) + 32;
-                    const iface_struct_name: &byte = arena_alloc(codegen.arena, iface_struct_len as usize) as &byte;
-                    const vtable_struct_name: &byte = arena_alloc(codegen.arena, iface_struct_len as usize) as &byte;
+                    const iface_struct_name: &byte = compiler_arena_alloc(codegen.arena, iface_struct_len as usize) as &byte;
+                    const vtable_struct_name: &byte = compiler_arena_alloc(codegen.arena, iface_struct_len as usize) as &byte;
                     if iface_struct_name != null && vtable_struct_name != null {
                         snprintf(iface_struct_name as *byte, iface_struct_len, "uya_interface_%s" as *byte, safe_mono_iface as *byte);
                         snprintf(vtable_struct_name as *byte, iface_struct_len, "uya_vtable_%s" as *byte, safe_mono_iface as *byte);
@@ -2302,7 +2302,7 @@ fn get_mono_struct_name(codegen: &C99CodeGenerator, generic_name: &byte, type_ar
     // 分配并构建完整名称
     const safe_name: &byte = get_safe_c_identifier(codegen, generic_name);
     const name_len: i32 = (strlen(safe_name as *byte) as i32) + 1 + suffix_len + 1;
-    const mono_name: &byte = arena_alloc(codegen.arena, name_len as usize) as &byte;
+    const mono_name: &byte = compiler_arena_alloc(codegen.arena, name_len as usize) as &byte;
     if mono_name == null {
         return generic_name;
     }
@@ -2334,7 +2334,7 @@ fn get_mono_union_name(codegen: &C99CodeGenerator, generic_name: &byte, type_arg
     }
     const safe_name: &byte = get_safe_c_identifier(codegen, generic_name);
     const name_len: i32 = (strlen(safe_name as *byte) as i32) + 1 + suffix_len + 1;
-    const mono_name: &byte = arena_alloc(codegen.arena, name_len as usize) as &byte;
+    const mono_name: &byte = compiler_arena_alloc(codegen.arena, name_len as usize) as &byte;
     if mono_name == null {
         return generic_name;
     }
@@ -2407,7 +2407,7 @@ fn resolve_typedef_to_mono_struct_name_if_generic(codegen: &C99CodeGenerator, ty
     if pos_ms <= 0 || pos_ms >= C99_GENERIC_NAME_BUF_SIZE {
         return null;
     }
-    const copy_ms: &byte = arena_alloc(codegen.arena, (pos_ms + 1) as usize) as &byte;
+    const copy_ms: &byte = compiler_arena_alloc(codegen.arena, (pos_ms + 1) as usize) as &byte;
     if copy_ms == null {
         return null;
     }

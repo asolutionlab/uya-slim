@@ -5,7 +5,7 @@
 
 // ===== 模块导入（按依赖顺序）=====
 // use main：收集主文件所在目录下所有 .uya（arena, extern_decls, ast, lexer, parser, checker, str_utils）
-// 否则单文件依赖收集不会自动包含同目录文件，生成的 C 会缺少 ASTNode/Arena 等类型定义导致链接失败。
+// 否则单文件依赖收集不会自动包含同目录文件，生成的 C 会缺少 ASTNode/CompilerArena 等类型定义导致链接失败。
 use main;
 use parser;
 use checker;  // 包含 checker 目录下所有文件（包括 optimizer.uya）
@@ -627,7 +627,7 @@ fn find_module_file(
 
 // 从 AST 中提取 use 语句的模块路径
 // 辅助函数：将 segments[0..count) 连接为 "a.b.c" 形式
-fn join_segments_alloc(segs: &(&byte), count: i32, arena: &Arena) &byte {
+fn join_segments_alloc(segs: &(&byte), count: i32, arena: &CompilerArena) &byte {
     var total_len: usize = 0;
     var j: i32 = 0;
     while j < count {
@@ -638,7 +638,7 @@ fn join_segments_alloc(segs: &(&byte), count: i32, arena: &Arena) &byte {
         j = j + 1;
     }
     if total_len == 0 { return null; }
-    const buf: &byte = arena_alloc(arena, total_len + 1) as &byte;
+    const buf: &byte = compiler_arena_alloc(arena, total_len + 1) as &byte;
     if buf == null { return null; }
     var dst: &byte = buf;
     j = 0;
@@ -662,7 +662,7 @@ fn extract_use_modules(
     module_count: &i32,
     project_root: &byte,
     uya_root: &byte,
-    arena: &Arena
+    arena: &CompilerArena
 ) i32 {
     if ast == null || ast.type != ASTNodeType.AST_PROGRAM || modules == null || module_count == null || arena == null {
         return -1;
@@ -746,7 +746,7 @@ fn collect_module_dependencies(
     max_processed: i32,
     project_root: &byte,
     uya_root: &byte,
-    arena: &Arena
+    arena: &CompilerArena
 ) i32 {
     if filename == null || file_list == null || processed_files == null || processed_count == null || arena == null {
         return -1;
@@ -773,30 +773,30 @@ fn collect_module_dependencies(
     processed_count[0] = processed_count[0] + 1;
 
     // 保存 arena 偏移量，用于解析后回滚释放 AST 内存
-    const arena_save_offset: usize = arena_save(arena);
+    const arena_save_offset: usize = compiler_arena_save(arena);
 
     // 读取文件并解析 AST
     const file_size: i32 = read_file_content(filename, &file_buffer[0], FILE_BUFFER_SIZE as usize);
     if file_size < 0 {
-        arena_restore(arena, arena_save_offset);
+        compiler_arena_restore(arena, arena_save_offset);
         return -1;
     }
 
     var lexer: Lexer = Lexer { buffer: [], buffer_size: 0 as usize, position: 0 as usize, line: 1, column: 1, filename: null, string_mode: 0, interp_depth: 0, pending_interp_open: 0, reading_spec: 0, string_text_len: 0 };
     if lexer_init(&lexer, &file_buffer[0], file_size as usize, filename, arena) != 0 {
-        arena_restore(arena, arena_save_offset);
+        compiler_arena_restore(arena, arena_save_offset);
         return -1;
     }
 
     var parser: Parser = Parser { lexer: null, current_token: null, arena: null, context: ParserContext.PARSER_CONTEXT_NORMAL };
     if parser_init(&parser, &lexer, arena) != 0 {
-        arena_restore(arena, arena_save_offset);
+        compiler_arena_restore(arena, arena_save_offset);
         return -1;
     }
 
     const ast: &ASTNode = parser_parse(&parser);
     if ast == null || ast.type != ASTNodeType.AST_PROGRAM {
-        arena_restore(arena, arena_save_offset);
+        compiler_arena_restore(arena, arena_save_offset);
         return -1;
     }
 
@@ -804,7 +804,7 @@ fn collect_module_dependencies(
     var modules: [&byte: MAX_INPUT_FILES] = [];
     var module_count: i32 = 0;
     if extract_use_modules(ast, &modules[0], MAX_INPUT_FILES, &module_count, project_root, uya_root, arena) != 0 {
-        arena_restore(arena, arena_save_offset);
+        compiler_arena_restore(arena, arena_save_offset);
         return -1;
     }
 
@@ -824,7 +824,7 @@ fn collect_module_dependencies(
     }
 
     // 回滚 arena，释放 AST 内存（依赖收集阶段不需要保留 AST）
-    arena_restore(arena, arena_save_offset);
+    compiler_arena_restore(arena, arena_save_offset);
 
     // 对于每个模块，查找文件并递归处理
     i = 0;
@@ -848,7 +848,7 @@ fn collect_module_dependencies(
                     j = j + 1;
                 }
                 if in_list == 0 && current_size < max_files {
-                    const path_copy: &byte = arena_alloc(arena, strlen(&single_file[0]) + 1) as &byte;
+                    const path_copy: &byte = compiler_arena_alloc(arena, strlen(&single_file[0]) + 1) as &byte;
                     if path_copy != null {
                         strcpy(path_copy as *byte, &single_file[0]);
                         file_list[current_size] = path_copy;
@@ -932,7 +932,7 @@ fn collect_module_dependencies(
                                         }
                                     }
                                     if in_list == 0 {
-                                        const path_copy: &byte = arena_alloc(arena, strlen(&fp[0]) + 1) as &byte;
+                                        const path_copy: &byte = compiler_arena_alloc(arena, strlen(&fp[0]) + 1) as &byte;
                                         if path_copy != null {
                                             strcpy(path_copy as *byte, &fp[0]);
                                             pending[pending_count] = path_copy;
@@ -1017,7 +1017,7 @@ fn collect_module_dependencies(
                                             }
                                         }
                                         if in_proc == 0 {
-                                            const path_copy: &byte = arena_alloc(arena, strlen(&fp[0]) + 1) as &byte;
+                                            const path_copy: &byte = compiler_arena_alloc(arena, strlen(&fp[0]) + 1) as &byte;
                                             if path_copy != null {
                                                 strcpy(path_copy as *byte, &fp[0]);
                                                 pending[pending_count] = path_copy;
@@ -1092,7 +1092,7 @@ fn collect_module_dependencies(
                                         }
                                     }
                                     if in_list == 0 {
-                                        const path_copy: &byte = arena_alloc(arena, strlen(&fp[0]) + 1) as &byte;
+                                        const path_copy: &byte = compiler_arena_alloc(arena, strlen(&fp[0]) + 1) as &byte;
                                         if path_copy != null {
                                             strcpy(path_copy as *byte, &fp[0]);
                                             pending[pending_count] = path_copy;
@@ -1176,7 +1176,7 @@ fn collect_module_dependencies(
                                             j = j + 1;
                                         }
                                         if in_proc == 0 {
-                                            const path_copy: &byte = arena_alloc(arena, strlen(&fp[0]) + 1) as &byte;
+                                            const path_copy: &byte = compiler_arena_alloc(arena, strlen(&fp[0]) + 1) as &byte;
                                             if path_copy != null {
                                                 strcpy(path_copy as *byte, &fp[0]);
                                                 pending[pending_count] = path_copy;
@@ -1279,7 +1279,7 @@ fn collect_module_dependencies(
                                     }
                                 }
                                 if already_added == 0 {
-                                    const path_copy: &byte = arena_alloc(arena, strlen(&full_path[0]) + 1) as &byte;
+                                    const path_copy: &byte = compiler_arena_alloc(arena, strlen(&full_path[0]) + 1) as &byte;
                                     if path_copy != null {
                                         strcpy(path_copy as *byte, &full_path[0]);
                                         pending[pending_count] = path_copy;
@@ -1321,7 +1321,7 @@ fn collect_module_dependencies(
                 j = j + 1;
             }
             if already_added == 0 && current_size < max_files {
-                const path_copy: &byte = arena_alloc(arena, strlen(&module_file[0]) + 1) as &byte;
+                const path_copy: &byte = compiler_arena_alloc(arena, strlen(&module_file[0]) + 1) as &byte;
                 if path_copy != null {
                     strcpy(path_copy as *byte, &module_file[0]);
                     file_list[current_size] = path_copy;
@@ -1718,6 +1718,14 @@ fn link_split_with_make(split_dir: &byte, output_exe: &byte, is_nostdlib: i32) i
             cflags = &cflags_buf[0];
         }
     }
+    // -nostdlib 无 libc：禁用栈保护，避免未定义的 __stack_chk_fail
+    var cflags_nsd_buf: [byte: 2048] = [];
+    if is_nostdlib != 0 {
+        const wns: i32 = snprintf(&cflags_nsd_buf[0] as *byte, 2048, "%s -fno-stack-protector" as *byte, cflags as *byte);
+        if wns > 0 && wns < 2048 {
+            cflags = &cflags_nsd_buf[0];
+        }
+    }
     var ld_buf: [byte: 2048] = [];
     const ld_env: &byte = get_env_or_default("LDFLAGS" as *byte, "" as *byte);
     var ld_use: &byte = ld_env;
@@ -1768,6 +1776,14 @@ fn link_with_toolchain(c_file: &byte, output: &byte, is_nostdlib: i32) i32 {
         if wcf > 0 && wcf < 2048 {
             cflags = &cflags_buf[0];
             fprintf(libc.stderr, "信息：CFLAGS 含 -O2/-O3/-Os，已自动追加 -fno-inline-small-functions（规避宿主 GCC 对部分生成代码的错误小函数内联）\n" as *byte);
+        }
+    }
+    // -nostdlib 无 libc：禁用栈保护，避免未定义的 __stack_chk_fail
+    var cflags_nsd2_buf: [byte: 2048] = [];
+    if is_nostdlib != 0 {
+        const wns2: i32 = snprintf(&cflags_nsd2_buf[0] as *byte, 2048, "%s -fno-stack-protector" as *byte, cflags as *byte);
+        if wns2 > 0 && wns2 < 2048 {
+            cflags = &cflags_nsd2_buf[0];
         }
     }
     const ldflags: &byte = get_env_or_default("LDFLAGS" as *byte, "" as *byte);
@@ -1835,8 +1851,8 @@ fn compile_files(
 ) i32 {
     
     // 初始化临时 Arena（用于依赖收集，使用全局缓冲区避免栈溢出）
-    var temp_arena: Arena = Arena { buffer: null, size: 0 as usize, offset: 0 as usize };
-    arena_init(&temp_arena, &temp_arena_buffer[0], 16 * 1024 * 1024);
+    var temp_arena: CompilerArena = CompilerArena { buffer: null, size: 0 as usize, offset: 0 as usize };
+    compiler_arena_init(&temp_arena, &temp_arena_buffer[0], 16 * 1024 * 1024);
     
     // 获取 UYA_ROOT 和编译器目录
     var uya_root_base: [byte: PATH_MAX] = [];
@@ -2029,7 +2045,7 @@ fn compile_files(
                     j = j + 1;
                 }
                 if already_in_list == 0 && resolved_count < MAX_INPUT_FILES {
-                    const entry_copy: &byte = arena_alloc(&temp_arena, entry_len + 1) as &byte;
+                    const entry_copy: &byte = compiler_arena_alloc(&temp_arena, entry_len + 1) as &byte;
                     if entry_copy != null {
                         strcpy(entry_copy as *byte, &entry_path[0]);
                         resolved_files[resolved_count] = entry_copy;
@@ -2125,8 +2141,8 @@ fn compile_files(
     var check_end_time: i64 = 0;
     var codegen_end_time: i64 = 0;
 
-    var arena: Arena = Arena { buffer: null, size: 0 as usize, offset: 0 as usize, first_chunk: null, current_chunk: null, total_allocated: 0 as usize };
-    arena_init(&arena, &arena_buffer[0], ARENA_BUFFER_SIZE as usize);
+    var arena: CompilerArena = CompilerArena { buffer: null, size: 0 as usize, offset: 0 as usize, first_chunk: null, current_chunk: null, total_allocated: 0 as usize };
+    compiler_arena_init(&arena, &arena_buffer[0], ARENA_BUFFER_SIZE as usize);
 
     var programs: [&ASTNode: MAX_INPUT_FILES] = [];
 

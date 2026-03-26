@@ -950,7 +950,7 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
         }
         
         // 分配操作数类型结构（从Arena分配）
-        const pointed_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const pointed_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if pointed_type_ptr == null {
             checker_report_error(checker, node, "取地址 &：无法从 Arena 分配类型节点（内存不足）" as *byte);
             return result;
@@ -1006,7 +1006,7 @@ fn checker_update_project_root_from_fn_decl(checker: &TypeChecker, decl: &ASTNod
     }
     if last_slash != null {
         const dir_len: usize = ptr_diff(last_slash, filename as *byte) as usize + 1;
-        const root_dir: &byte = arena_alloc(checker.arena, dir_len + 1) as &byte;
+        const root_dir: &byte = compiler_arena_alloc(checker.arena, dir_len + 1) as &byte;
         if root_dir == null {
             return;
         }
@@ -1015,7 +1015,7 @@ fn checker_update_project_root_from_fn_decl(checker: &TypeChecker, decl: &ASTNod
         checker.project_root_dir = root_dir;
         return;
     }
-    const root_dir: &byte = arena_alloc(checker.arena, 1) as &byte;
+    const root_dir: &byte = compiler_arena_alloc(checker.arena, 1) as &byte;
     if root_dir != null {
         root_dir[0] = 0;
         checker.project_root_dir = root_dir;

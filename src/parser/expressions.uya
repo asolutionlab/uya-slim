@@ -402,7 +402,7 @@ fn parser_parse_rel_expr(parser: &Parser) &ASTNode {
                             if type_arg_capacity != 0 {
                                 new_capacity = type_arg_capacity * 2;
                             }
-                            const new_type_args: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+                            const new_type_args: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
                             if new_type_args == null {
                                 return null;
                             }
@@ -436,7 +436,7 @@ fn parser_parse_rel_expr(parser: &Parser) &ASTNode {
                     const rshift_token: &Token = parser.current_token;
                     parser_consume(parser);
                     
-                    const fake_greater: &Token = arena_alloc(parser.arena, @size_of(Token)) as &Token;
+                    const fake_greater: &Token = compiler_arena_alloc(parser.arena, @size_of(Token)) as &Token;
                     if fake_greater != null {
                         fake_greater.type = TokenType.TOKEN_GREATER;
                         fake_greater.value = ">" as *byte;
@@ -480,7 +480,7 @@ fn parser_parse_rel_expr(parser: &Parser) &ASTNode {
                             if arg_capacity != 0 {
                                 new_capacity = arg_capacity * 2;
                             }
-                            const new_args: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+                            const new_args: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
                             if new_args == null {
                                 return null;
                             }

@@ -46,7 +46,7 @@ fn parser_parse_interface(parser: &Parser) &ASTNode {
                 } else {
                     new_cap = type_param_capacity * 2;
                 }
-                const new_params: &TypeParam = arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
+                const new_params: &TypeParam = compiler_arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
                 if new_params == null {
                     return null;
                 }
@@ -94,7 +94,7 @@ fn parser_parse_interface(parser: &Parser) &ASTNode {
                         } else {
                             new_cap2 = constraint_capacity * 2;
                         }
-                        const new_constraints: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
+                        const new_constraints: & & byte = compiler_arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
                         if new_constraints == null {
                             return null;
                         }
@@ -186,7 +186,7 @@ fn parser_parse_interface(parser: &Parser) &ASTNode {
                 } else {
                     new_cap2 = composed_cap * 2;
                 }
-                const new_composed: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
+                const new_composed: & & byte = compiler_arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
                 if new_composed == null {
                     return null;
                 }
@@ -257,7 +257,7 @@ fn parser_parse_interface(parser: &Parser) &ASTNode {
                 } else {
                     new_cap = param_cap * 2;
                 }
-                const new_p: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                const new_p: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
                 if new_p == null {
                     return null;
                 }
@@ -325,7 +325,7 @@ fn parser_parse_interface(parser: &Parser) &ASTNode {
             } else {
                 new_cap = sig_cap * 2;
             }
-            const new_sigs: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+            const new_sigs: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
             if new_sigs == null {
                 return null;
             }
@@ -427,7 +427,7 @@ fn parser_parse_method_block(parser: &Parser, struct_name: &byte) &ASTNode {
                         if arg_cap != 0 {
                             new_cap = arg_cap * 2;
                         }
-                        const new_args: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                        const new_args: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
                         if new_args == null {
                             return null;
                         }
@@ -478,7 +478,7 @@ fn parser_parse_method_block(parser: &Parser, struct_name: &byte) &ASTNode {
             } else {
                 new_cap = method_cap * 2;
             }
-            const new_m: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+            const new_m: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
             if new_m == null {
                 return null;
             }
@@ -594,7 +594,7 @@ fn parser_parse_struct(parser: &Parser) &ASTNode {
                 } else {
                     new_cap = type_param_capacity * 2;
                 }
-                const new_params: &TypeParam = arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
+                const new_params: &TypeParam = compiler_arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
                 if new_params == null {
                     return null;
                 }
@@ -647,7 +647,7 @@ fn parser_parse_struct(parser: &Parser) &ASTNode {
                         } else {
                             new_cap2 = constraint_capacity * 2;
                         }
-                        const new_constraints: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
+                        const new_constraints: & & byte = compiler_arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
                         if new_constraints == null {
                             return null;
                         }
@@ -728,7 +728,7 @@ fn parser_parse_struct(parser: &Parser) &ASTNode {
                 } else {
                     new_cap = iface_capacity * 2;
                 }
-                const new_ifaces: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap) as & & byte;
+                const new_ifaces: & & byte = compiler_arena_alloc(parser.arena, @size_of(&byte) * new_cap) as & & byte;
                 if new_ifaces == null {
                     return null;
                 }
@@ -869,7 +869,7 @@ fn parser_parse_struct(parser: &Parser) &ASTNode {
                 } else {
                     new_cap = method_capacity * 2;
                 }
-                const new_methods: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                const new_methods: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
                 if new_methods == null {
                     return null;
                 }
@@ -963,7 +963,7 @@ fn parser_parse_struct(parser: &Parser) &ASTNode {
                         } else {
                             new_capacity = field_capacity * 2;
                         }
-            const new_fields: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+            const new_fields: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
             if new_fields == null {
                 // 注意：Uya 版本简化错误报告
                 return null;
@@ -1054,7 +1054,7 @@ fn parser_parse_union_body(parser: &Parser, line: i32, column: i32, is_extern: i
                 } else {
                     new_cap = type_param_capacity * 2;
                 }
-                const new_params: &TypeParam = arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
+                const new_params: &TypeParam = compiler_arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
                 if new_params == null {
                     return null;
                 }
@@ -1117,7 +1117,7 @@ fn parser_parse_union_body(parser: &Parser, line: i32, column: i32, is_extern: i
                 } else {
                     new_cap = method_capacity * 2;
                 }
-                const new_m: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                const new_m: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
                 if new_m == null {
                     return null;
                 }
@@ -1179,7 +1179,7 @@ fn parser_parse_union_body(parser: &Parser, line: i32, column: i32, is_extern: i
             } else {
                 new_cap = variant_capacity * 2;
             }
-            const new_v: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+            const new_v: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
             if new_v == null {
                 return null;
             }
@@ -1409,9 +1409,9 @@ fn parser_parse_macro(parser: &Parser) &ASTNode {
                 if param_capacity != 0 {
                     new_capacity = param_capacity * 2;
                 }
-                const new_params: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+                const new_params: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
                 if new_params == null {
-                    fprintf(libc.stderr, "错误: Arena 内存不足，无法分配宏参数数组\n" as *byte);
+                    fprintf(libc.stderr, "错误: CompilerArena 内存不足，无法分配宏参数数组\n" as *byte);
                     return null;
                 }
                 
@@ -1577,7 +1577,7 @@ fn parser_parse_enum(parser: &Parser) &ASTNode {
                         } else {
                             new_capacity = variant_capacity * 2;
                         }
-            const new_variants: &EnumVariant = arena_alloc(parser.arena, @size_of(EnumVariant) * new_capacity) as &EnumVariant;
+            const new_variants: &EnumVariant = compiler_arena_alloc(parser.arena, @size_of(EnumVariant) * new_capacity) as &EnumVariant;
             if new_variants == null {
                 return null;
             }
@@ -1753,7 +1753,7 @@ fn parser_parse_function(parser: &Parser) &ASTNode {
                 } else {
                     new_cap = fn_type_param_capacity * 2;
                 }
-                const new_params: &TypeParam = arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
+                const new_params: &TypeParam = compiler_arena_alloc(parser.arena, @size_of(TypeParam) * new_cap) as &TypeParam;
                 if new_params == null {
                     return null;
                 }
@@ -1803,7 +1803,7 @@ fn parser_parse_function(parser: &Parser) &ASTNode {
                         } else {
                             new_cap2 = fn_constraint_capacity * 2;
                         }
-                        const new_constraints: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
+                        const new_constraints: & & byte = compiler_arena_alloc(parser.arena, @size_of(&byte) * new_cap2) as & & byte;
                         if new_constraints == null {
                             return null;
                         }
@@ -1938,7 +1938,7 @@ fn parser_parse_function(parser: &Parser) &ASTNode {
                         } else {
                             new_capacity = param_capacity * 2;
                         }
-                const new_params: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+                const new_params: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
                 if new_params == null {
                     // 注意：Uya 版本简化错误报告
                     return null;
@@ -2269,7 +2269,7 @@ fn parser_parse_extern_function_after_extern(parser: &Parser, extern_lib_name: &
                         } else {
                             new_capacity = param_capacity * 2;
                         }
-                const new_params: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+                const new_params: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
                 if new_params == null {
                     return null;
                 }
@@ -2401,7 +2401,7 @@ fn parser_parse_use_stmt(parser: &Parser) &ASTNode {
             } else {
                 new_capacity = new_capacity * 2;
             }
-            const new_segments: & & byte = arena_alloc(parser.arena, (@size_of(&byte) as usize) * (new_capacity as usize)) as & & byte;
+            const new_segments: & & byte = compiler_arena_alloc(parser.arena, (@size_of(&byte) as usize) * (new_capacity as usize)) as & & byte;
             if new_segments == null {
                 return null;
             }

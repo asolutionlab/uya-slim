@@ -61,7 +61,7 @@ fn parser_parse_block(parser: &Parser) &ASTNode {
                         } else {
                             new_capacity = stmt_capacity * 2;
                         }
-            const new_stmts: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+            const new_stmts: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
             if new_stmts == null {
                 // 注意：Uya 版本简化错误报告
                 return null;
@@ -269,7 +269,7 @@ fn parser_parse_statement(parser: &Parser) &ASTNode {
             if block == null {
                 return null;
             }
-            const stmts: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode)) as & & ASTNode;
+            const stmts: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode)) as & & ASTNode;
             if stmts == null {
                 return null;
             }
@@ -308,7 +308,7 @@ fn parser_parse_statement(parser: &Parser) &ASTNode {
                 if block == null {
                     return null;
                 }
-                const stmts: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode)) as & & ASTNode;
+                const stmts: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode)) as & & ASTNode;
                 if stmts == null {
                     return null;
                 }
@@ -447,7 +447,7 @@ fn parser_parse_statement(parser: &Parser) &ASTNode {
         if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_LEFT_PAREN {
             parser_consume(parser);  // 消费 '('
             
-            var names: & & byte = arena_alloc(parser.arena, @size_of(&byte) * 16) as & & byte;
+            var names: & & byte = compiler_arena_alloc(parser.arena, @size_of(&byte) * 16) as & & byte;
             if names == null {
                 return null;
             }
@@ -471,7 +471,7 @@ fn parser_parse_statement(parser: &Parser) &ASTNode {
                 parser_consume(parser);  // 消费标识符
                 if count >= cap {
                     const new_cap: i32 = cap * 2;
-                    const new_names: & & byte = arena_alloc(parser.arena, @size_of(&byte) * new_cap) as & & byte;
+                    const new_names: & & byte = compiler_arena_alloc(parser.arena, @size_of(&byte) * new_cap) as & & byte;
                     if new_names == null {
                         return null;
                     }

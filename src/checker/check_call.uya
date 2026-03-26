@@ -30,7 +30,7 @@ fn substitute_type_ast_for_mono(checker: &TypeChecker,
         // 嵌套泛型：Foo<T> 的 T 也要替换
         if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
             const cnt: i32 = type_node.type_named_type_arg_count;
-            const new_args: & & ASTNode = arena_alloc(checker.arena, (@size_of(&ASTNode)) * (cnt as usize)) as & & ASTNode;
+            const new_args: & & ASTNode = compiler_arena_alloc(checker.arena, (@size_of(&ASTNode)) * (cnt as usize)) as & & ASTNode;
             if new_args == null {
                 return type_node;
             }
@@ -87,7 +87,7 @@ fn register_mono_from_return_type_ast(checker: &TypeChecker,
     if ret_type.type == ASTNodeType.AST_TYPE_NAMED && ret_type.type_named_name != null &&
         ret_type.type_named_type_arg_count > 0 && ret_type.type_named_type_args != null {
         const cnt: i32 = ret_type.type_named_type_arg_count;
-        const new_args: & & ASTNode = arena_alloc(checker.arena, (@size_of(&ASTNode)) * (cnt as usize)) as & & ASTNode;
+        const new_args: & & ASTNode = compiler_arena_alloc(checker.arena, (@size_of(&ASTNode)) * (cnt as usize)) as & & ASTNode;
         if new_args == null {
             return;
         }
@@ -563,7 +563,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                         result.union_name = union_decl.union_decl_name;
                         if object != null && object.type == ASTNodeType.AST_TYPE_NAMED && object.type_named_type_arg_count > 0 && object.type_named_type_args != null {
                             const count: i32 = object.type_named_type_arg_count;
-                            const ta: &Type = arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
+                            const ta: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
                             if ta != null {
                                 var tai: i32 = 0;
                                 while tai < count {
@@ -818,7 +818,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             }
             
             // 分配推断类型数组（每个类型参数一个槽）
-            const inferred_types: &Type = arena_alloc(checker.arena, type_param_count * 32) as &Type;
+            const inferred_types: &Type = compiler_arena_alloc(checker.arena, type_param_count * 32) as &Type;
             if inferred_types == null {
                 return result;
             }
@@ -880,7 +880,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             }
             
             // 创建类型实参 AST 节点数组
-            const inferred_type_args: & &ASTNode = arena_alloc(checker.arena, type_param_count * 8) as & &ASTNode;
+            const inferred_type_args: & &ASTNode = compiler_arena_alloc(checker.arena, type_param_count * 8) as & &ASTNode;
             if inferred_type_args == null {
                 return result;
             }
@@ -918,7 +918,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                 // 复制类型名到 arena
                 if type_name != null {
                     const name_len: i32 = strlen(type_name as *byte) as i32;
-                    const name_copy: &byte = arena_alloc(checker.arena, name_len + 1) as &byte;
+                    const name_copy: &byte = compiler_arena_alloc(checker.arena, name_len + 1) as &byte;
                     if name_copy == null {
                         return result;
                     }
@@ -1244,7 +1244,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
                 // 返回 &ASTNode 类型（数组元素类型）
                 result.kind = TypeKind.TYPE_POINTER;
                 // 注意：Uya 不支持指针运算，需要使用数组访问
-                const pointed_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+                const pointed_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
                 if pointed_type_ptr != null {
                     pointed_type_ptr[0].kind = TypeKind.TYPE_STRUCT;
                     pointed_type_ptr[0].struct_name = "ASTNode" as *byte;

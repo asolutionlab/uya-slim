@@ -7,9 +7,9 @@ fn checker_check_program_node(checker: &TypeChecker, node: &ASTNode) i32 {
         return 0;
     }
     const decl_bytes: usize = @size_of(&ASTNode) * (node.program_decl_count as usize);
-    const var_decls: & & ASTNode = arena_alloc(checker.arena, decl_bytes) as & & ASTNode;
-    const use_decls: & & ASTNode = arena_alloc(checker.arena, decl_bytes) as & & ASTNode;
-    const other_decls: & & ASTNode = arena_alloc(checker.arena, decl_bytes) as & & ASTNode;
+    const var_decls: & & ASTNode = compiler_arena_alloc(checker.arena, decl_bytes) as & & ASTNode;
+    const use_decls: & & ASTNode = compiler_arena_alloc(checker.arena, decl_bytes) as & & ASTNode;
+    const other_decls: & & ASTNode = compiler_arena_alloc(checker.arena, decl_bytes) as & & ASTNode;
     if var_decls == null || use_decls == null || other_decls == null {
         return 0;
     }
@@ -445,7 +445,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             
             // 构造 !void 类型
             var error_void_type: Type = Type{ kind: TypeKind.TYPE_ERROR_UNION };
-            const void_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+            const void_type: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
             if void_type != null {
                 void_type.kind = TypeKind.TYPE_VOID;
                 error_void_type.error_union_payload_type = void_type;
@@ -770,7 +770,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 error_union_payload_type: null, error_error_id: 0
             };
             checker_enter_scope(checker);
-            const sym: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+            const sym: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
             if sym != null {
                 sym.name = node.catch_expr_err_name;
                 sym.type = err_type;

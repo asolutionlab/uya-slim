@@ -505,7 +505,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 total_len = total_len + strlen(et as *byte) + 24;
                 i = i + 1;
             }
-            const type_buf: &byte = arena_alloc(codegen.arena, total_len) as &byte;
+            const type_buf: &byte = compiler_arena_alloc(codegen.arena, total_len) as &byte;
             if type_buf == null {
                 fputs("(struct { int32_t f0; }){ .f0 = 0 }" as *byte, codegen.emit_stream as *void);
             } else {
@@ -552,7 +552,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 }
                 i = i + 1;
             }
-            const type_buf: &byte = arena_alloc(codegen.arena, total_len) as &byte;
+            const type_buf: &byte = compiler_arena_alloc(codegen.arena, total_len) as &byte;
             if type_buf == null {
                 fputs("(struct { int32_t f0; }){ .f0 = 0 }" as *byte, codegen.emit_stream as *void);
             } else {
@@ -646,7 +646,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     if is_struct_in_table(codegen, safe_name) != 0 {
                         // 结构体类型
                         const str_len: i32 = strlen(safe_name as *byte) + 8;  // "struct " + name + '\0'
-                        const buf: &byte = arena_alloc(codegen.arena, str_len) as &byte;
+                        const buf: &byte = compiler_arena_alloc(codegen.arena, str_len) as &byte;
                         if buf != null {
                             snprintf(buf as *byte, str_len, "struct %s" as *byte, safe_name as *byte);
                             type_c = buf;
@@ -683,7 +683,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         if bracket != null {
             // 数组类型：提取元素类型（数组的对齐值等于元素类型的对齐值）
             const elem_len: i32 = ptr_diff(bracket, type_c as *byte);
-            const elem_type: &byte = arena_alloc(codegen.arena, elem_len + 1) as &byte;
+            const elem_type: &byte = compiler_arena_alloc(codegen.arena, elem_len + 1) as &byte;
             if elem_type != null {
                 memcpy(elem_type as *void, type_c as *void, elem_len);
                 elem_type[elem_len] = 0;
@@ -1294,7 +1294,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                         const suffix: &byte = &us[1] as &byte;
                                         const need: i32 = 6 + strlen(suffix as *byte) + 1;
                                         if need > 0 && need < 128 {
-                                            const buf: &byte = arena_alloc(codegen.arena, need as usize) as &byte;
+                                            const buf: &byte = compiler_arena_alloc(codegen.arena, need as usize) as &byte;
                                             if buf != null {
                                                 snprintf(buf as *byte, need, "Poll_%s" as *byte, suffix as *byte);
                                                 uname = get_safe_c_identifier(codegen, buf);
@@ -1332,7 +1332,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                                 }
                                             }
                                             if param_idx >= 0 && param_idx < ret_type.type_named_type_arg_count && ret_type.type_named_type_args != null {
-                                                const one_arg: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+                                                const one_arg: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
                                                 if one_arg != null {
                                                     one_arg[0] = ret_type.type_named_type_args[param_idx];
                                                     const mono: &byte = get_mono_union_name(codegen, obj.identifier_name, one_arg, 1);
@@ -1380,7 +1380,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                     const suffix: &byte = &us[1] as &byte;
                                     const need: i32 = 6 + strlen(suffix as *byte) + 1;
                                     if need > 0 && need < 128 {
-                                        const buf: &byte = arena_alloc(codegen.arena, need as usize) as &byte;
+                                        const buf: &byte = compiler_arena_alloc(codegen.arena, need as usize) as &byte;
                                         if buf != null {
                                             snprintf(buf as *byte, need, "Poll_%s" as *byte, suffix as *byte);
                                             uname = get_safe_c_identifier(codegen, buf);
@@ -5730,7 +5730,7 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         var safe_field_name: &byte = null;
         if field_name[0] >= 48 && field_name[0] <= 57 {
             const idx: i32 = atoi(field_name as *byte);
-            const buf: &byte = arena_alloc(codegen.arena, 16) as &byte;
+            const buf: &byte = compiler_arena_alloc(codegen.arena, 16) as &byte;
             if buf != null {
                 snprintf(buf as *byte, 16, "f%d" as *byte, idx);
                 safe_field_name = buf;
@@ -6042,7 +6042,7 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             saved_sta_count = codegen.struct_type_arg_count;
             var resolved_init_args: & & ASTNode = expr.struct_init_type_args;
             const resolved_count: i32 = expr.struct_init_type_arg_count;
-            const resolved_buf: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode) * resolved_count) as & & ASTNode;
+            const resolved_buf: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode) * resolved_count) as & & ASTNode;
             if resolved_buf != null {
                 var rai: i32 = 0;
                 while rai < resolved_count {
@@ -6125,7 +6125,7 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             if tmp != null {
                                 tmp.type_named_name = field.var_decl_type.type_named_name;
                                 const n: i32 = field.var_decl_type.type_named_type_arg_count;
-                                const args: & & ASTNode = arena_alloc(codegen.arena, @size_of(&ASTNode) * n) as & & ASTNode;
+                                const args: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode) * n) as & & ASTNode;
                                 if args != null {
                                     var ai: i32 = 0;
                                     while ai < n {
@@ -6259,7 +6259,7 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 if (expr.match_expr_arms[k].kind == MatchPatternKind.MATCH_PAT_ELSE || expr.match_expr_arms[k].kind == MatchPatternKind.MATCH_PAT_WILDCARD) &&
                     res_k != null && res_k.type == ASTNodeType.AST_ERROR_VALUE {
                     const payload_name: &byte = &res_type[7];
-                    const buf: &byte = arena_alloc(codegen.arena, (16 + strlen(payload_name as *byte)) as usize) as &byte;
+                    const buf: &byte = compiler_arena_alloc(codegen.arena, (16 + strlen(payload_name as *byte)) as usize) as &byte;
                     if buf != null {
                         snprintf(buf as *byte, 64, "struct err_union_%s" as *byte, payload_name as *byte);
                         res_type = buf;
@@ -6445,7 +6445,7 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         err_union_type = res_type;
                     } else if strncmp(res_type as *byte, "struct " as *byte, 7) == 0 {
                         const payload_name: &byte = &res_type[7];
-                        const buf: &byte = arena_alloc(codegen.arena, (16 + strlen(payload_name as *byte)) as usize) as &byte;
+                        const buf: &byte = compiler_arena_alloc(codegen.arena, (16 + strlen(payload_name as *byte)) as usize) as &byte;
                         if buf != null {
                             snprintf(buf as *byte, 64, "struct err_union_%s" as *byte, payload_name as *byte);
                             use_err_union = 1;
@@ -7168,7 +7168,7 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                     const try_ast: &ASTNode = type_to_ast(codegen.checker, &payload_type, expr.line, expr.column, expr.filename);
                                     if try_ast != null { try_union_c = c99_type_to_c(codegen, try_ast); }
                                 } else if payload_type.kind != TypeKind.TYPE_VOID {
-                                    const payload_ptr: &Type = arena_alloc(codegen.checker.arena, @size_of(Type)) as &Type;
+                                    const payload_ptr: &Type = compiler_arena_alloc(codegen.checker.arena, @size_of(Type)) as &Type;
                                     if payload_ptr != null {
                                         payload_ptr[0] = payload_type;
                                         const eu_type: Type = make_error_union_type(codegen.checker.arena, payload_ptr);

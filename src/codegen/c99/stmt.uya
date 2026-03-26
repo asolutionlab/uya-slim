@@ -222,7 +222,7 @@ fn get_expr_concrete_struct_for_interface(codegen: &C99CodeGenerator, expr: &AST
                 pos = pos + 1;
             }
             if pos > 0 && codegen.arena != null {
-                const struct_name: &byte = arena_alloc(codegen.arena, (pos + 1) as usize) as &byte;
+                const struct_name: &byte = compiler_arena_alloc(codegen.arena, (pos + 1) as usize) as &byte;
                 if struct_name != null {
                     memcpy(struct_name as *void, start as *void, pos as usize);
                     struct_name[pos] = 0;
@@ -260,7 +260,7 @@ fn get_expr_concrete_struct_for_interface(codegen: &C99CodeGenerator, expr: &AST
         pos2 = pos2 + 1;
     }
     if pos2 > 0 && codegen.arena != null {
-        const struct_name2: &byte = arena_alloc(codegen.arena, (pos2 + 1) as usize) as &byte;
+        const struct_name2: &byte = compiler_arena_alloc(codegen.arena, (pos2 + 1) as usize) as &byte;
         if struct_name2 != null {
             memcpy(struct_name2 as *void, start2 as *void, pos2 as usize);
             struct_name2[pos2] = 0;
@@ -1579,7 +1579,7 @@ fn gen_destructure_decl(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         var type_to_store: &byte = elem_type_c;
                         if is_const != 0 && elem_type_c != null {
                             const str_len: i32 = strlen(elem_type_c as *byte) + 8;
-                            const buf: &byte = arena_alloc(codegen.arena, str_len) as &byte;
+                            const buf: &byte = compiler_arena_alloc(codegen.arena, str_len) as &byte;
                             if buf != null {
                                 snprintf(buf as *byte, str_len, "const %s" as *byte, elem_type_c as *byte);
                                 type_to_store = buf;
@@ -1644,7 +1644,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 const type_len: i32 = strlen(type_c as *byte);
                 if is_const != 0 {
                     // 为 "const " 前缀分配空间
-                    stored_type_c = arena_alloc(codegen.arena, type_len + 7) as &byte;
+                    stored_type_c = compiler_arena_alloc(codegen.arena, type_len + 7) as &byte;
                     if stored_type_c != null {
                         snprintf(stored_type_c as *byte, type_len + 7, "const %s" as *byte, type_c as *byte);
                     }
@@ -1660,7 +1660,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             if first_bracket != null {
                 // 找到第一个 '['，分割基类型和维度
                 const base_len: i32 = ptr_diff(first_bracket, type_c as *byte);
-                const base_type: &byte = arena_alloc(codegen.arena, base_len + 1) as &byte;
+                const base_type: &byte = compiler_arena_alloc(codegen.arena, base_len + 1) as &byte;
                 if base_type != null {
                     memcpy(base_type as *void, type_c as *void, base_len);
                     base_type[base_len] = 0;
@@ -1857,7 +1857,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                     fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
                     // 存储类型字符串：const T（用于变量表）
                     const str_len4: i32 = strlen(type_c as *byte) + 7; // "const " + null
-                    stored_type_c_for_pointer = arena_alloc(codegen.arena, str_len4) as &byte;
+                    stored_type_c_for_pointer = compiler_arena_alloc(codegen.arena, str_len4) as &byte;
                     if stored_type_c_for_pointer != null {
                         snprintf(stored_type_c_for_pointer as *byte, str_len4, "const %s" as *byte, type_c as *byte);
                     }
@@ -1878,7 +1878,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             // 如果 stored_type_c_for_pointer 为 NULL（arena_alloc 失败），但类型是指针且是 const，
             // 手动构造类型字符串：T * const
             const str_len4: i32 = strlen(type_c as *byte) + 7; // " const" + null
-            const manual_type: &byte = arena_alloc(codegen.arena, str_len4) as &byte;
+            const manual_type: &byte = compiler_arena_alloc(codegen.arena, str_len4) as &byte;
             if manual_type != null {
                 snprintf(manual_type as *byte, str_len4, "%s const" as *byte, type_c as *byte);
                 type_to_store = manual_type;
@@ -2646,7 +2646,7 @@ fn should_use_va_list(codegen: &C99CodeGenerator, var_type: &ASTNode, var_name: 
 
 // 发射指针类型 const 变量声明
 // 返回存储的类型字符串
-fn emit_pointer_const_decl(codegen: &C99CodeGenerator, var_name: &byte, type_c: &byte, arena: &Arena) &byte {
+fn emit_pointer_const_decl(codegen: &C99CodeGenerator, var_name: &byte, type_c: &byte, arena: &CompilerArena) &byte {
     // 检查是否是指向数组的指针类型（格式：T (*)[N]）
     const open_paren: *byte = strstr(type_c as *byte, "(*" as *byte);
     if open_paren != null {
@@ -2671,7 +2671,7 @@ fn emit_pointer_const_decl(codegen: &C99CodeGenerator, var_name: &byte, type_c: 
             fprintf(codegen.emit_stream as *void, "%s(* const %s)%s" as *byte, &temp_buf[0] as *byte, var_name as *byte, bracket);
             // 存储类型字符串：T (* const)[N]（用于变量表）
             const total_len: i32 = prefix_len + suffix_len + 10; // "(* const)" + null
-            var stored_type: &byte = arena_alloc(arena, total_len) as &byte;
+            var stored_type: &byte = compiler_arena_alloc(arena, total_len) as &byte;
             if stored_type != null {
                 var temp_buf2: [byte: TEMP_BUF_SIZE] = [];
                 j = 0;
@@ -2693,7 +2693,7 @@ fn emit_pointer_const_decl(codegen: &C99CodeGenerator, var_name: &byte, type_c: 
     fprintf(codegen.emit_stream as *void, "%s const %s" as *byte, type_c as *byte, var_name as *byte);
     // 存储类型字符串：T * const（用于变量表）
     const str_len: i32 = strlen(type_c as *byte) + 7; // " const" + null
-    var stored_type2: &byte = arena_alloc(arena, str_len) as &byte;
+    var stored_type2: &byte = compiler_arena_alloc(arena, str_len) as &byte;
     if stored_type2 != null {
         snprintf(stored_type2 as *byte, str_len, "%s const" as *byte, type_c as *byte);
     }

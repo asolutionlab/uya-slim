@@ -11,7 +11,7 @@ fn make_empty_type_data() TypeData {
 // ===== 类型转换 =====
 
 // 将 Type 转换为字符串表示
-fn type_to_string(arena: &Arena, type: Type) &byte {
+fn type_to_string(arena: &CompilerArena, type: Type) &byte {
     if arena == null {
         return "unknown" as &byte;
     }
@@ -74,7 +74,7 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
             return "&?" as &byte;
         }
         const inner: &byte = type_to_string(arena, type.pointer_to[0]);
-        const buf: &byte = arena_alloc(arena, strlen(inner as *byte) + 3) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, strlen(inner as *byte) + 3) as &byte;
         if buf != null {
             if type.is_ffi_pointer != 0 {
                 sprintf(buf as *byte, "*%s" as *byte, inner as *byte);
@@ -90,7 +90,7 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
             return "[?]" as &byte;
         }
         const inner: &byte = type_to_string(arena, type.element_type[0]);
-        const buf: &byte = arena_alloc(arena, strlen(inner as *byte) + 24) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, strlen(inner as *byte) + 24) as &byte;
         if buf != null {
             sprintf(buf as *byte, "[%s: %d]" as *byte, inner as *byte, type.array_size);
             return buf;
@@ -102,7 +102,7 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
             return "&[?]" as &byte;
         }
         const inner: &byte = type_to_string(arena, type.slice_element_type[0]);
-        const buf: &byte = arena_alloc(arena, strlen(inner as *byte) + 8) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, strlen(inner as *byte) + 8) as &byte;
         if buf != null {
             sprintf(buf as *byte, "&[%s]" as *byte, inner as *byte);
             return buf;
@@ -114,7 +114,7 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
             return "!?" as &byte;
         }
         const inner: &byte = type_to_string(arena, type.error_union_payload_type[0]);
-        const buf: &byte = arena_alloc(arena, strlen(inner as *byte) + 2) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, strlen(inner as *byte) + 2) as &byte;
         if buf != null {
             sprintf(buf as *byte, "!%s" as *byte, inner as *byte);
             return buf;
@@ -135,7 +135,7 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
             return "atomic ?" as &byte;
         }
         const inner: &byte = type_to_string(arena, type.atomic_inner_type[0]);
-        const buf: &byte = arena_alloc(arena, strlen(inner as *byte) + 8) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, strlen(inner as *byte) + 8) as &byte;
         if buf != null {
             sprintf(buf as *byte, "atomic %s" as *byte, inner as *byte);
             return buf;
@@ -147,7 +147,7 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
             return "@vector(?, ?)" as &byte;
         }
         const inner: &byte = type_to_string(arena, type.element_type[0]);
-        const buf: &byte = arena_alloc(arena, strlen(inner as *byte) + 32) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, strlen(inner as *byte) + 32) as &byte;
         if buf != null {
             sprintf(buf as *byte, "@vector(%s, %d)" as *byte, inner as *byte, type.array_size);
             return buf;
@@ -155,7 +155,7 @@ fn type_to_string(arena: &Arena, type: Type) &byte {
         return "@vector(?, ?)" as &byte;
     }
     if type.kind == TypeKind.TYPE_MASK {
-        const buf: &byte = arena_alloc(arena, 24) as &byte;
+        const buf: &byte = compiler_arena_alloc(arena, 24) as &byte;
         if buf != null {
             sprintf(buf as *byte, "@mask(%d)" as *byte, type.array_size);
             return buf;
@@ -1013,7 +1013,7 @@ fn make_usize_type() Type {
 // 创建指针类型
 // pointee: 指向的类型（需从 arena 分配）
 // is_ffi: 1 表示 FFI 指针 (*T)，0 表示引用 (&T)
-fn make_pointer_type(arena: &Arena, pointee: &Type, is_ffi: i32) Type {
+fn make_pointer_type(arena: &CompilerArena, pointee: &Type, is_ffi: i32) Type {
     if arena == null || pointee == null {
         return make_void_type();
     }
@@ -1048,7 +1048,7 @@ fn make_pointer_type(arena: &Arena, pointee: &Type, is_ffi: i32) Type {
 // 创建数组类型
 // element: 元素类型（需从 arena 分配）
 // size: 数组大小
-fn make_array_type(arena: &Arena, element: &Type, size: i32) Type {
+fn make_array_type(arena: &CompilerArena, element: &Type, size: i32) Type {
     if arena == null || element == null {
         return make_void_type();
     }
@@ -1082,7 +1082,7 @@ fn make_array_type(arena: &Arena, element: &Type, size: i32) Type {
 
 // 创建切片类型
 // element: 元素类型（需从 arena 分配）
-fn make_slice_type(arena: &Arena, element: &Type) Type {
+fn make_slice_type(arena: &CompilerArena, element: &Type) Type {
     if arena == null || element == null {
         return make_void_type();
     }
@@ -1157,7 +1157,7 @@ fn make_named_type(kind: TypeKind, name: &byte) Type {
 
 // 创建错误联合类型
 // payload: 负载类型（需从 arena 分配）；codegen 用其从 match 成功臂推导 try 的 !T
-export fn make_error_union_type(arena: &Arena, payload: &Type) Type {
+export fn make_error_union_type(arena: &CompilerArena, payload: &Type) Type {
     if arena == null || payload == null {
         return make_void_type();
     }
@@ -1191,7 +1191,7 @@ export fn make_error_union_type(arena: &Arena, payload: &Type) Type {
 
 // 创建原子类型
 // inner: 内部类型（需从 arena 分配）
-fn make_atomic_type(arena: &Arena, inner: &Type) Type {
+fn make_atomic_type(arena: &CompilerArena, inner: &Type) Type {
     if arena == null || inner == null {
         return make_void_type();
     }
@@ -1223,11 +1223,11 @@ fn make_atomic_type(arena: &Arena, inner: &Type) Type {
     };
 }
 
-fn make_vector_type(arena: &Arena, element: &Type, lanes: i32) Type {
+fn make_vector_type(arena: &CompilerArena, element: &Type, lanes: i32) Type {
     if arena == null || element == null || lanes <= 0 {
         return make_void_type();
     }
-    const elem_ptr: &Type = arena_alloc(arena, @size_of(Type)) as &Type;
+    const elem_ptr: &Type = compiler_arena_alloc(arena, @size_of(Type)) as &Type;
     if elem_ptr == null {
         return make_void_type();
     }

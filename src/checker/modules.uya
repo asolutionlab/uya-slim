@@ -91,7 +91,7 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
             }
             
             // 分配内存并构建模块路径
-            const module_name: &byte = arena_alloc(checker.arena, total_len + 1) as &byte;
+            const module_name: &byte = compiler_arena_alloc(checker.arena, total_len + 1) as &byte;
             if module_name == null {
                 return null;
             }
@@ -208,7 +208,7 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
         }
         if module_len > 0 {
             const total_len: usize = 4 + module_len;
-            const module_name: &byte = arena_alloc(checker.arena, total_len + 1) as &byte;
+            const module_name: &byte = compiler_arena_alloc(checker.arena, total_len + 1) as &byte;
             if module_name != null {
                 strcpy(module_name as *byte, "std." as *byte);
                 memcpy((module_name as *byte + 4) as *void, relative_path as *void, module_len);
@@ -291,7 +291,7 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
         if module_len_c > 0 {
             // 构建模块路径：std.c.xxx
             const total_len_c: usize = 6 + module_len_c; // "std.c." + 路径长度
-            const module_name_c: &byte = arena_alloc(checker.arena, total_len_c + 1) as &byte;
+            const module_name_c: &byte = compiler_arena_alloc(checker.arena, total_len_c + 1) as &byte;
             if module_name_c != null {
                 strcpy(module_name_c as *byte, "std.c." as *byte);
                 memcpy((module_name_c as *byte + 6) as *void, relative_path_c as *void, module_len_c);
@@ -346,7 +346,7 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
             }
             
             if module_len > 0 {
-                const module_name_uya: &byte = arena_alloc(checker.arena, module_len + 1) as &byte;
+                const module_name_uya: &byte = compiler_arena_alloc(checker.arena, module_len + 1) as &byte;
                 if module_name_uya != null {
                     memcpy(module_name_uya as *void, relative_path_uya as *void, module_len);
                     module_name_uya[module_len] = 0;
@@ -439,7 +439,7 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
     }
     
     // 分配内存并构建模块路径
-    const module_name: &byte = arena_alloc(checker.arena, total_len + 1) as &byte;
+    const module_name: &byte = compiler_arena_alloc(checker.arena, total_len + 1) as &byte;
     if module_name == null {
         return null;
     }
@@ -497,7 +497,7 @@ fn find_or_create_module(checker: &TypeChecker, module_name: &byte, filename: &b
         }
         if module == null {
             // 找到空槽位，创建新模块
-            module = arena_alloc(checker.arena, @size_of(ModuleInfo)) as &ModuleInfo;
+            module = compiler_arena_alloc(checker.arena, @size_of(ModuleInfo)) as &ModuleInfo;
             if module == null {
                 return null;
             }
@@ -592,7 +592,7 @@ fn build_module_exports(checker: &TypeChecker, program: &ASTNode) void {
         if is_export != 0 && item_name != null {
             // 扩展导出数组
             const new_count: i32 = module.export_count + 1;
-            const new_exports: &ExportedItem = arena_alloc(checker.arena, @size_of(ExportedItem) * new_count) as &ExportedItem;
+            const new_exports: &ExportedItem = compiler_arena_alloc(checker.arena, @size_of(ExportedItem) * new_count) as &ExportedItem;
             if new_exports == null {
                 i = i + 1;
                 continue;  // Arena 内存不足
@@ -653,7 +653,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
             i = i + 1;
         }
         if total_len > 0 {
-            const buf: &byte = arena_alloc(checker.arena, total_len + 1) as &byte;
+            const buf: &byte = compiler_arena_alloc(checker.arena, total_len + 1) as &byte;
             if buf != null {
                 var dst: &byte = buf;
                 i = 0;
@@ -690,7 +690,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                 if last_slash_check != null {
                     const dir_len_check: usize = ptr_diff(last_slash_check, node.filename as *byte) as usize + 1;
                     if dir_len_check < PATH_MAX {
-                        project_root_for_check = arena_alloc(checker.arena, dir_len_check + 1) as &byte;
+                        project_root_for_check = compiler_arena_alloc(checker.arena, dir_len_check + 1) as &byte;
                         if project_root_for_check != null {
                             memcpy(project_root_for_check as *void, node.filename as *void, dir_len_check);
                             project_root_for_check[dir_len_check] = 0;
@@ -796,7 +796,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
         }
         var full_path: &byte = null;
         if full_total > 0 {
-            full_path = arena_alloc(checker.arena, full_total + 1) as &byte;
+            full_path = compiler_arena_alloc(checker.arena, full_total + 1) as &byte;
             if full_path != null {
                 var dst: &byte = full_path;
                 i = 0;
@@ -840,7 +840,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                     if last_slash != null {
                         const dir_len: usize = ptr_diff(last_slash, node.filename as *byte) as usize + 1;
                         if dir_len < PATH_MAX {
-                            project_root_from_file = arena_alloc(checker.arena, dir_len + 1) as &byte;
+                            project_root_from_file = compiler_arena_alloc(checker.arena, dir_len + 1) as &byte;
                             if project_root_from_file != null {
                                 memcpy(project_root_from_file as *void, node.filename as *void, dir_len);
                                 project_root_from_file[dir_len] = 0;
@@ -940,7 +940,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                     i = i + 1;
                 }
                 if strip_total > 0 {
-                    const sbuf: &byte = arena_alloc(checker.arena, strip_total + 1) as &byte;
+                    const sbuf: &byte = compiler_arena_alloc(checker.arena, strip_total + 1) as &byte;
                     if sbuf != null {
                         var sdst: &byte = sbuf;
                         i = 0;
@@ -1032,7 +1032,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                 if dep_exists == 0 {
                     // 添加新依赖
                     const new_count: i32 = current_module.dependency_count + 1;
-                    const new_deps: &ModuleDependency = arena_alloc(checker.arena, @size_of(ModuleDependency) * new_count) as &ModuleDependency;
+                    const new_deps: &ModuleDependency = compiler_arena_alloc(checker.arena, @size_of(ModuleDependency) * new_count) as &ModuleDependency;
                     if new_deps != null {
                         if current_module.dependencies != null && current_module.dependency_count > 0 {
                             memcpy(new_deps as *void, current_module.dependencies as *void, @size_of(ModuleDependency) * current_module.dependency_count);
@@ -1067,7 +1067,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
             return 0;
         }
         
-        const import: &ImportedItem = arena_alloc(checker.arena, @size_of(ImportedItem)) as &ImportedItem;
+        const import: &ImportedItem = compiler_arena_alloc(checker.arena, @size_of(ImportedItem)) as &ImportedItem;
         if import == null { return 0; }
         import.local_name = local_name;
         import.original_name = null;
@@ -1125,7 +1125,7 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
             // item_type 保持 0
         }
         
-        const import: &ImportedItem = arena_alloc(checker.arena, @size_of(ImportedItem)) as &ImportedItem;
+        const import: &ImportedItem = compiler_arena_alloc(checker.arena, @size_of(ImportedItem)) as &ImportedItem;
         if import == null { return 0; }
         if alias != null {
             import.local_name = alias;

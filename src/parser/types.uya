@@ -52,7 +52,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
         
         if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_COMMA {
             // 元组类型：(T1, T2, ...)
-            var elements: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * 16) as & & ASTNode;
+            var elements: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * 16) as & & ASTNode;
             if elements == null {
                 return null;
             }
@@ -69,7 +69,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
                 }
                 if count >= cap {
                     const new_cap: i32 = cap * 2;
-                    const new_elements: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                    const new_elements: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
                     if new_elements == null {
                         return null;
                     }
@@ -398,7 +398,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
             raw_len = raw_len + 1;
         }
 
-        const type_name: &byte = arena_alloc(parser.arena, raw_len + 2) as &byte;
+        const type_name: &byte = compiler_arena_alloc(parser.arena, raw_len + 2) as &byte;
         if type_name == null {
             return null;
         }
@@ -434,7 +434,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
                     if type_arg_cap != 0 {
                         new_cap = type_arg_cap * 2;
                     }
-                    const new_type_args: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                    const new_type_args: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
                     if new_type_args == null {
                         return null;
                     }
@@ -464,7 +464,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
                 const rshift_token: &Token = parser.current_token;
                 parser_consume(parser);
 
-                const fake_greater: &Token = arena_alloc(parser.arena, @size_of(Token)) as &Token;
+                const fake_greater: &Token = compiler_arena_alloc(parser.arena, @size_of(Token)) as &Token;
                 if fake_greater != null {
                     fake_greater.type = TokenType.TOKEN_GREATER;
                     fake_greater.value = ">" as *byte;
@@ -558,7 +558,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
                     if type_arg_cap != 0 {
                         new_cap = type_arg_cap * 2;
                     }
-                    const new_type_args: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                    const new_type_args: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
                     if new_type_args == null {
                         return null;
                     }
@@ -591,7 +591,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
                 parser_consume(parser);  // 消费 >>
                 
                 // 创建一个新的 > token 并放回 token 流
-                const fake_greater: &Token = arena_alloc(parser.arena, @size_of(Token)) as &Token;
+                const fake_greater: &Token = compiler_arena_alloc(parser.arena, @size_of(Token)) as &Token;
                 if fake_greater != null {
                     fake_greater.type = TokenType.TOKEN_GREATER;
                     fake_greater.value = ">" as *byte;
@@ -648,7 +648,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
                     if arg_cap != 0 {
                         new_cap = arg_cap * 2;
                     }
-                    const new_args: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
+                    const new_args: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_cap) as & & ASTNode;
                     if new_args == null {
                         return null;
                     }
@@ -700,7 +700,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
 use libc.atoi;
 
 // 辅助函数：移除字符串中的下划线
-fn remove_underscores(str: &byte, arena: &Arena) &byte {
+fn remove_underscores(str: &byte, arena: &CompilerArena) &byte {
     if str == null {
         return null;
     }
@@ -716,7 +716,7 @@ fn remove_underscores(str: &byte, arena: &Arena) &byte {
         }
         i = i + 1;
     }
-    const result: &byte = arena_alloc(arena, len + 1) as &byte;
+    const result: &byte = compiler_arena_alloc(arena, len + 1) as &byte;
     if result == null {
         return null;
     }
@@ -830,7 +830,7 @@ fn integer_literal_char_ok_for_base(c: byte, base: i32) i32 {
 }
 
 // 辅助函数：解析整数字面量（支持多进制、下划线和类型后缀）
-fn parse_integer_literal_with_suffix(str: &byte, arena: &Arena, suffix: &i32) i64 {
+fn parse_integer_literal_with_suffix(str: &byte, arena: &CompilerArena, suffix: &i32) i64 {
     suffix[0] = 0;  // LITERAL_SUFFIX_NONE
     const cleaned: &byte = remove_underscores(str, arena);
     if cleaned == null {
@@ -887,7 +887,7 @@ fn parse_integer_literal_with_suffix(str: &byte, arena: &Arena, suffix: &i32) i6
 }
 
 // 辅助函数：解析浮点字面量（支持下划线和类型后缀）
-fn parse_float_literal_with_suffix(str: &byte, arena: &Arena, suffix: &i32) f64 {
+fn parse_float_literal_with_suffix(str: &byte, arena: &CompilerArena, suffix: &i32) f64 {
     suffix[0] = 0;  // LITERAL_SUFFIX_NONE
     const cleaned: &byte = remove_underscores(str, arena);
     if cleaned == null {
@@ -947,14 +947,14 @@ fn parse_float_literal_with_suffix(str: &byte, arena: &Arena, suffix: &i32) f64 
 }
 
 // 辅助函数：解析整数字面量（支持多进制和下划线）- 兼容旧接口
-fn parse_integer_literal(str: &byte, arena: &Arena) i32 {
+fn parse_integer_literal(str: &byte, arena: &CompilerArena) i32 {
     var suffix: i32 = 0;  // LITERAL_SUFFIX_NONE
     const result: i64 = parse_integer_literal_with_suffix(str, arena, &suffix);
     return result as i32;
 }
 
 // 辅助函数：解析浮点字面量（支持下划线）- 兼容旧接口
-fn parse_float_literal(str: &byte, arena: &Arena) f64 {
+fn parse_float_literal(str: &byte, arena: &CompilerArena) f64 {
     var suffix: i32 = 0;  // LITERAL_SUFFIX_NONE
     return parse_float_literal_with_suffix(str, arena, &suffix);
 }

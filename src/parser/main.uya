@@ -6,8 +6,8 @@
 // 注意：Uya 不支持函数前向声明，函数必须在使用前定义
 
 // Lexer 函数前向声明（确保生成的 C 中在 parser_init 之前有声明，避免隐式声明）
-extern fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token;
-extern fn lexer_init(lexer: &Lexer, source: &byte, source_len: usize, filename: &byte, arena: &Arena) i32;
+extern fn lexer_next_token(lexer: &Lexer, arena: &CompilerArena) &Token;
+extern fn lexer_init(lexer: &Lexer, source: &byte, source_len: usize, filename: &byte, arena: &CompilerArena) i32;
 // 标准库函数（用于错误报告）
 use libc;
 
@@ -27,7 +27,7 @@ enum ParserContext {
 struct Parser {
     lexer: &Lexer,           // 词法分析器指针（由调用者提供，不分配）
     current_token: &Token,    // 当前 Token（从 Arena 分配）
-    arena: &Arena,            // Arena 分配器（用于分配 Token 和 AST 节点）
+    arena: &CompilerArena,            // Arena 分配器（用于分配 Token 和 AST 节点）
     context: ParserContext,  // 当前解析上下文
     pending_greater_token: &Token,  // 待处理的 > token（用于嵌套泛型 >> 拆分）
     saw_use_std: i32,        // 当前文件中是否已显式出现 use std;
@@ -37,7 +37,7 @@ struct Parser {
 // 参数：parser - Parser 结构体指针（由调用者提供），lexer - Lexer 指针，arena - Arena 分配器
 // 返回：成功返回 0，失败返回 -1
 // 注意：Parser 结构体由调用者在栈上或静态分配，此函数只负责初始化
-fn parser_init(parser: &Parser, lexer: &Lexer, arena: &Arena) i32 {
+fn parser_init(parser: &Parser, lexer: &Lexer, arena: &CompilerArena) i32 {
     if parser == null || lexer == null || arena == null {
         return -1;
     }
@@ -162,13 +162,13 @@ fn parser_expect_var_init(parser: &Parser, type_node: &ASTNode) &Token {
 // 注意：需要 extern 函数 strlen 和 memcpy
 // 这些函数在 extern_decls.uya 中已声明，这里不需要重复声明
 
-fn arena_strdup(arena: &Arena, src: &byte) &byte {
+fn arena_strdup(arena: &CompilerArena, src: &byte) &byte {
     if arena == null || src == null {
         return null;
     }
 
     const str_len: usize = strlen(src as *byte) + 1;
-    const result: &byte = arena_alloc(arena, str_len) as &byte;
+    const result: &byte = compiler_arena_alloc(arena, str_len) as &byte;
     if result == null {
         return null;
     }
@@ -464,7 +464,7 @@ fn parser_parse_cfg_decl_block(parser: &Parser) &ASTNode {
                         if decl_capacity != 0 {
                             new_capacity = decl_capacity * 2;
                         }
-                        const new_decls: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+                        const new_decls: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
                         if new_decls == null {
                             return null;
                         }
@@ -492,7 +492,7 @@ fn parser_parse_cfg_decl_block(parser: &Parser) &ASTNode {
                 if decl_capacity != 0 {
                     new_capacity2 = decl_capacity * 2;
                 }
-                const new_decls2: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity2) as & & ASTNode;
+                const new_decls2: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity2) as & & ASTNode;
                 if new_decls2 == null {
                     return null;
                 }
@@ -913,7 +913,7 @@ fn parser_parse(parser: &Parser) &ASTNode {
                         } else {
                             new_capacity = decl_capacity * 2;
                         }
-            const new_decls: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
+            const new_decls: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity) as & & ASTNode;
             if new_decls == null {
                 return null;
             }
@@ -943,7 +943,7 @@ fn parser_parse(parser: &Parser) &ASTNode {
                         } else {
                             new_capacity3 = decl_capacity * 2;
                         }
-                        const new_decls3: & & ASTNode = arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity3) as & & ASTNode;
+                        const new_decls3: & & ASTNode = compiler_arena_alloc(parser.arena, @size_of(&ASTNode) * new_capacity3) as & & ASTNode;
                         if new_decls3 == null {
                             return null;
                         }

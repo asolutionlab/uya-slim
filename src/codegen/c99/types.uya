@@ -37,7 +37,7 @@ fn c99_type_to_c_with_self_opt(codegen: &C99CodeGenerator, type_node: &ASTNode, 
             }
             const safe: &byte = get_safe_c_identifier(codegen, self_struct_name);
             var len: i32 = strlen(safe as *byte) + 32;
-            const buf: &byte = arena_alloc(codegen.arena, len as usize) as &byte;
+            const buf: &byte = compiler_arena_alloc(codegen.arena, len as usize) as &byte;
             if buf != null {
                 if is_union != 0 {
                     if use_const != 0 {
@@ -60,7 +60,7 @@ fn c99_type_to_c_with_self_opt(codegen: &C99CodeGenerator, type_node: &ASTNode, 
         const safe: &byte = get_safe_c_identifier(codegen, self_struct_name);
         var len: i32 = strlen(safe as *byte) + 8;
         if is_union != 0 { len = strlen(safe as *byte) + 22; }
-        const buf: &byte = arena_alloc(codegen.arena, len) as &byte;
+        const buf: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
         if buf != null {
             if is_union != 0 {
                 snprintf(buf as *byte, len, "struct uya_tagged_%s" as *byte, safe as *byte);
@@ -191,7 +191,7 @@ fn c99_make_simd_name_suffix(codegen: &C99CodeGenerator, type_c: &byte) &byte {
         src = &src[5];
     }
 
-    const buf: &byte = arena_alloc(codegen.arena, STRUCT_NAME_BUF_SIZE) as &byte;
+    const buf: &byte = compiler_arena_alloc(codegen.arena, STRUCT_NAME_BUF_SIZE) as &byte;
     if buf == null {
         return null;
     }
@@ -446,7 +446,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             
             if (found_in_method != 0 || found_in_struct != 0) && inner_c != null {
                 const len: i32 = strlen(inner_c as *byte) + 4;
-                const buf: &byte = arena_alloc(codegen.arena, len) as &byte;
+                const buf: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
                 if buf != null {
                     snprintf(buf as *byte, len, "%s *" as *byte, inner_c as *byte);
                     return buf;
@@ -471,7 +471,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                     type_node.type_named_type_args,
                     type_node.type_named_type_arg_count);
                 const mn_len_i: i32 = (strlen(mono_name_i as *byte) as i32) + 24;
-                const buf_i: &byte = arena_alloc(codegen.arena, mn_len_i as usize) as &byte;
+                const buf_i: &byte = compiler_arena_alloc(codegen.arena, mn_len_i as usize) as &byte;
                 if buf_i != null {
                     snprintf(buf_i as *byte, mn_len_i, "struct uya_interface_%s" as *byte, mono_name_i as *byte);
                     return buf_i;
@@ -484,7 +484,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                     type_node.type_named_type_args,
                     type_node.type_named_type_arg_count);
                 const mn_len: i32 = (strlen(mono_name as *byte) as i32) + 24;
-                const buf: &byte = arena_alloc(codegen.arena, mn_len as usize) as &byte;
+                const buf: &byte = compiler_arena_alloc(codegen.arena, mn_len as usize) as &byte;
                 if buf != null {
                     snprintf(buf as *byte, mn_len, "struct uya_tagged_%s" as *byte, mono_name as *byte);
                     return buf;
@@ -495,7 +495,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                 type_node.type_named_type_args,
                 type_node.type_named_type_arg_count);
             const mn_len: i32 = (strlen(mono_name as *byte) as i32) + 8;  // "struct " + name + '\0'
-            const buf: &byte = arena_alloc(codegen.arena, mn_len as usize) as &byte;
+            const buf: &byte = compiler_arena_alloc(codegen.arena, mn_len as usize) as &byte;
             if buf != null {
                 snprintf(buf as *byte, mn_len, "struct %s" as *byte, mono_name as *byte);
                 return buf;
@@ -575,7 +575,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             const iface_decl: &ASTNode = find_interface_decl_c99(codegen, name);
             if iface_decl != null {
                 const len: i32 = strlen(safe_name as *byte) + 24;
-                const buf: &byte = arena_alloc(codegen.arena, len) as &byte;
+                const buf: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
                 if buf != null {
                     snprintf(buf as *byte, len, "struct uya_interface_%s" as *byte, safe_name as *byte);
                     return buf;
@@ -589,14 +589,14 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                 if ud != null {
                     if ud.union_decl_is_extern != 0 {
                         const len_ext: i32 = strlen(safe_name as *byte) + 10;
-                        const buf_ext: &byte = arena_alloc(codegen.arena, len_ext) as &byte;
+                        const buf_ext: &byte = compiler_arena_alloc(codegen.arena, len_ext) as &byte;
                         if buf_ext != null {
                             snprintf(buf_ext as *byte, len_ext, "union %s" as *byte, safe_name as *byte);
                             return buf_ext;
                         }
                     } else {
                         const len_u: i32 = strlen(safe_name as *byte) + 22;
-                        const buf_u: &byte = arena_alloc(codegen.arena, len_u) as &byte;
+                        const buf_u: &byte = compiler_arena_alloc(codegen.arena, len_u) as &byte;
                         if buf_u != null {
                             snprintf(buf_u as *byte, len_u, "struct uya_tagged_%s" as *byte, safe_name as *byte);
                             return buf_u;
@@ -612,7 +612,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                 // 使用 arena 分配器来分配字符串，避免 static 缓冲区被覆盖
                 // "struct " (7 chars) + name + '\0' = strlen(safe_name) + 8
                 const str_len: i32 = strlen(safe_name as *byte) + 8;
-                const buf: &byte = arena_alloc(codegen.arena, str_len) as &byte;
+                const buf: &byte = compiler_arena_alloc(codegen.arena, str_len) as &byte;
                 if buf != null {
                     snprintf(buf as *byte, str_len, "struct %s" as *byte, safe_name as *byte);
                     return buf;
@@ -634,7 +634,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                             if strcmp(safe_struct_name as *byte, safe_name as *byte) == 0 {
                                 // 找到结构体声明，添加 struct 前缀
                                 const len2: i32 = strlen(safe_name as *byte) + 8; // "struct " + name + '\0'
-                                const buf2: &byte = arena_alloc(codegen.arena, len2) as &byte;
+                                const buf2: &byte = compiler_arena_alloc(codegen.arena, len2) as &byte;
                                 if buf2 != null {
                                     snprintf(buf2 as *byte, len2, "struct %s" as *byte, safe_name as *byte);
                                     return buf2;
@@ -652,7 +652,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                 // 使用 arena 分配器来分配字符串
                 // "enum " (5 chars) + name + '\0' = strlen(safe_name) + 6
                 const len3: i32 = strlen(safe_name as *byte) + 6;
-                const buf3: &byte = arena_alloc(codegen.arena, len3) as &byte;
+                const buf3: &byte = compiler_arena_alloc(codegen.arena, len3) as &byte;
                 if buf3 != null {
                     snprintf(buf3 as *byte, len3, "enum %s" as *byte, safe_name as *byte);
                     return buf3;
@@ -674,7 +674,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
                             if strcmp(safe_enum_name as *byte, safe_name as *byte) == 0 {
                                 // 找到枚举声明，添加 enum 前缀
                                 const len4: i32 = strlen(safe_name as *byte) + 6; // "enum " + name + '\0'
-                                const buf4: &byte = arena_alloc(codegen.arena, len4) as &byte;
+                                const buf4: &byte = compiler_arena_alloc(codegen.arena, len4) as &byte;
                                 if buf4 != null {
                                     snprintf(buf4 as *byte, len4, "enum %s" as *byte, safe_name as *byte);
                                     return buf4;
@@ -710,7 +710,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
         // 确保缓冲区足够大：pointee_type + "const " (6) + " *" (2) + null (1)
         // 增加额外的安全边距，确保不会截断
         const str_len: i32 = strlen(pointee_type as *byte) + extra_len + 8;  // 额外 8 字节安全边距
-        const result: &byte = arena_alloc(codegen.arena, str_len) as &byte;
+        const result: &byte = compiler_arena_alloc(codegen.arena, str_len) as &byte;
         if result == null {
             return ("void*" as *byte) as &byte;
         }
@@ -727,7 +727,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             if is_const != 0 {
                 total_len = base_len + dims_len + 15; // " const (*)" + null
             }
-            const arr_ptr: &byte = arena_alloc(codegen.arena, total_len) as &byte;
+            const arr_ptr: &byte = compiler_arena_alloc(codegen.arena, total_len) as &byte;
             if arr_ptr == null {
                 if is_const != 0 {
                     snprintf(result as *byte, str_len, "const %s *" as *byte, pointee_type as *byte);
@@ -784,7 +784,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
         const inner_c: &byte = c99_type_to_c(codegen, inner_type);
         const inner_len: i32 = strlen(inner_c as *byte);
         const len: i32 = inner_len + 12;  // "_Atomic()" + inner type + null
-        const result: &byte = arena_alloc(codegen.arena, len) as &byte;
+        const result: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
         if result == null {
             return ("void" as *byte) as &byte;
         }
@@ -815,7 +815,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             c99_register_simd_struct(codegen, name_copy, element_type, lanes, 0);
         }
         const len: i32 = strlen(name_copy as *byte) + 9;
-        const result: &byte = arena_alloc(codegen.arena, len) as &byte;
+        const result: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
         if result == null {
             return ("void" as *byte) as &byte;
         }
@@ -840,7 +840,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             c99_register_simd_struct(codegen, name_copy, null, lanes, 1);
         }
         const len: i32 = strlen(name_copy as *byte) + 9;
-        const result: &byte = arena_alloc(codegen.arena, len) as &byte;
+        const result: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
         if result == null {
             return ("void" as *byte) as &byte;
         }
@@ -919,7 +919,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             }
         }
         const len: i32 = strlen(name_copy as *byte) + 9;
-        const result: &byte = arena_alloc(codegen.arena, len) as &byte;
+        const result: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
         if result == null {
             return ("void" as *byte) as &byte;
         }
@@ -975,7 +975,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             // 维度按顺序输出：外层维度在前，内层维度在后
             // 例如：[[i32: 2]: 3] -> dims = [3, 2] -> int32_t[3][2]
             const total_len: i32 = strlen(base_type as *byte) + dim_count * 16 + 1;  // 足够空间
-            const result: &byte = arena_alloc(codegen.arena, total_len) as &byte;
+            const result: &byte = compiler_arena_alloc(codegen.arena, total_len) as &byte;
             if result == null {
                 return ("void" as *byte) as &byte;
             }
@@ -996,7 +996,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             
             // 分配缓冲区
             const buf_len: i32 = strlen(element_c as *byte) + 32;  // 元素类型 + "[%d]" + null
-            const result: &byte = arena_alloc(codegen.arena, buf_len) as &byte;
+            const result: &byte = compiler_arena_alloc(codegen.arena, buf_len) as &byte;
             if result == null {
                 return ("void" as *byte) as &byte;
             }
@@ -1067,7 +1067,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
         }
         if is_struct_defined(codegen, safe) != 0 {
             const len: i32 = strlen(safe as *byte) + 9;
-            const result: &byte = arena_alloc(codegen.arena, len) as &byte;
+            const result: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
             if result == null {
                 return ("void" as *byte) as &byte;
             }
@@ -1090,7 +1090,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             add_struct_definition(codegen, safe);
         }
         const len2: i32 = strlen(safe as *byte) + 9;
-        const result2: &byte = arena_alloc(codegen.arena, len2) as &byte;
+        const result2: &byte = compiler_arena_alloc(codegen.arena, len2) as &byte;
         if result2 == null {
             return ("void" as *byte) as &byte;
         }
@@ -1110,7 +1110,7 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
             total_len = total_len + strlen(et as *byte) + 24;
             i = i + 1;
         }
-        const result: &byte = arena_alloc(codegen.arena, total_len) as &byte;
+        const result: &byte = compiler_arena_alloc(codegen.arena, total_len) as &byte;
         if result == null {
             return ("void" as *byte) as &byte;
         }
@@ -6428,7 +6428,7 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
             return ("struct uya_slice_int32_t" as *byte) as &byte;
         }
         const len: i32 = strlen(safe as *byte) + 9;
-        const result: &byte = arena_alloc(codegen.arena, len) as &byte;
+        const result: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
         if result == null {
             return ("struct uya_slice_int32_t" as *byte) as &byte;
         }
@@ -6474,7 +6474,7 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
                             const safe_m: &byte = get_safe_c_identifier(codegen, &name_buf_m[0]);
                             if safe_m != null {
                                 const len_m: i32 = strlen(safe_m as *byte) + 9;
-                                const result_m: &byte = arena_alloc(codegen.arena, len_m) as &byte;
+                                const result_m: &byte = compiler_arena_alloc(codegen.arena, len_m) as &byte;
                                 if result_m != null {
                                     snprintf(result_m as *byte, len_m, "struct %s" as *byte, safe_m as *byte);
                                     return result_m;
@@ -6511,7 +6511,7 @@ fn c99_array_index_result_type_c(codegen: &C99CodeGenerator, array_type_c: &byte
     const suffix: &byte = &right_bracket[1] as &byte;
     const suffix_len: i32 = strlen(suffix as *byte) as i32;
     const result_len: i32 = prefix_len + suffix_len + 1;
-    const result: &byte = arena_alloc(codegen.arena, result_len as usize) as &byte;
+    const result: &byte = compiler_arena_alloc(codegen.arena, result_len as usize) as &byte;
     if result == null {
         return null;
     }
@@ -6650,7 +6650,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
             while len > 0 && (ptr_type[len - 1] == 32 || ptr_type[len - 1] == 9) {
                 len = len - 1;
             }
-            const buf: &byte = arena_alloc(codegen.arena, (len + 1) as usize) as &byte;
+            const buf: &byte = compiler_arena_alloc(codegen.arena, (len + 1) as usize) as &byte;
             if buf == null {
                 return ("int32_t" as *byte) as &byte;
             }
@@ -6682,7 +6682,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                             const prefix: &byte = "struct uya_slice_" as *byte;
                             const prefix_len: i32 = strlen(prefix);
                             const elem_len: i32 = strlen(elem_type_c as *byte);
-                            const slice_type: &byte = arena_alloc(codegen.arena, (prefix_len + elem_len + 1) as usize) as &byte;
+                            const slice_type: &byte = compiler_arena_alloc(codegen.arena, (prefix_len + elem_len + 1) as usize) as &byte;
                             if slice_type != null {
                                 memcpy(slice_type as *void, prefix as *void, prefix_len as usize);
                                 memcpy((slice_type as *byte + prefix_len as i32) as *void, elem_type_c as *void, (elem_len + 1) as usize);
@@ -6705,7 +6705,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
             const prefix: &byte = "struct uya_slice_" as *byte;
             const prefix_len: i32 = strlen(prefix);
             const elem_len: i32 = strlen(elem_type_c as *byte);
-            const slice_type: &byte = arena_alloc(codegen.arena, (prefix_len + elem_len + 1) as usize) as &byte;
+            const slice_type: &byte = compiler_arena_alloc(codegen.arena, (prefix_len + elem_len + 1) as usize) as &byte;
             if slice_type != null {
                 memcpy(slice_type as *void, prefix as *void, prefix_len as usize);
                 memcpy((slice_type as *byte + prefix_len as i32) as *void, elem_type_c as *void, (elem_len + 1) as usize);
@@ -6761,7 +6761,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                 len = len - 1;
             }
             if len > 0 {
-                const elem_type: &byte = arena_alloc(codegen.arena, (len + 1) as usize) as &byte;
+                const elem_type: &byte = compiler_arena_alloc(codegen.arena, (len + 1) as usize) as &byte;
                 if elem_type != null {
                     memcpy(elem_type as *void, base_c as *void, len as usize);
                     elem_type[len] = 0 as byte;
@@ -6892,7 +6892,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                     if (expr.match_expr_arms[k].kind == MatchPatternKind.MATCH_PAT_ELSE || expr.match_expr_arms[k].kind == MatchPatternKind.MATCH_PAT_WILDCARD) &&
                         res_k != null && res_k.type == ASTNodeType.AST_ERROR_VALUE {
                         const payload_name: &byte = &first_t[7];
-                        const buf: &byte = arena_alloc(codegen.arena, (16 + strlen(payload_name as *byte)) as usize) as &byte;
+                        const buf: &byte = compiler_arena_alloc(codegen.arena, (16 + strlen(payload_name as *byte)) as usize) as &byte;
                         if buf != null {
                             snprintf(buf as *byte, 64, "struct err_union_%s" as *byte, payload_name as *byte);
                             return buf;
@@ -6913,7 +6913,7 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
             const name: &byte = expr.struct_init_struct_name;
             const safe: &byte = get_safe_c_identifier(codegen, name);
             if safe != null {
-                const buf: &byte = arena_alloc(codegen.arena, (8 + strlen(safe as *byte)) as usize) as &byte;
+                const buf: &byte = compiler_arena_alloc(codegen.arena, (8 + strlen(safe as *byte)) as usize) as &byte;
                 if buf != null {
                     snprintf(buf as *byte, 64, "struct %s" as *byte, safe as *byte);
                     return buf;
@@ -7029,7 +7029,7 @@ fn is_member_access_pointer_type(codegen: &C99CodeGenerator, member_access: &AST
                     name_len = name_len - 1;
                 }
                 if name_len > 0 {
-                    const name_buf: &byte = arena_alloc(codegen.arena, name_len + 1) as &byte;
+                    const name_buf: &byte = compiler_arena_alloc(codegen.arena, name_len + 1) as &byte;
                     if name_buf != null {
                         memcpy(name_buf as *void, start as *void, name_len);
                         name_buf[name_len] = 0;
@@ -7108,7 +7108,7 @@ fn is_member_access_pointer_type(codegen: &C99CodeGenerator, member_access: &AST
                 const asterisk2: *byte = strchr(start2 as *byte, 42);  // '*'
                 if asterisk2 != null {
                     const len2: i32 = ptr_diff(asterisk2, start2 as *byte);
-                    const name_buf2: &byte = arena_alloc(codegen.arena, len2 + 1) as &byte;
+                    const name_buf2: &byte = compiler_arena_alloc(codegen.arena, len2 + 1) as &byte;
                     if name_buf2 != null {
                         memcpy(name_buf2 as *void, start2 as *void, len2);
                         name_buf2[len2] = 0;
@@ -7319,7 +7319,7 @@ fn get_atomic_inner_type_c(codegen: &C99CodeGenerator, type_c: &byte) &byte {
     if (inner_start[tail_idx] as i32) != 0 {
         return null;
     }
-    const buf: &byte = arena_alloc(codegen.arena, (inner_len + 1) as usize) as &byte;
+    const buf: &byte = compiler_arena_alloc(codegen.arena, (inner_len + 1) as usize) as &byte;
     if buf == null {
         return null;
     }
@@ -7486,7 +7486,7 @@ fn convert_array_return_type(codegen: &C99CodeGenerator, return_type: &ASTNode) 
     
     // 返回结构体类型
     const str_len: i32 = strlen(struct_name as *byte) + 8;  // "struct " + name + '\0'
-    const result: &byte = arena_alloc(codegen.arena, str_len) as &byte;
+    const result: &byte = compiler_arena_alloc(codegen.arena, str_len) as &byte;
     if result == null {
         return ("void" as *byte) as &byte;
     }
@@ -7550,7 +7550,7 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
                         // 例如：int32_t[3][2] -> int32_t[2]
                         const base_len: i32 = first_bracket_offset;
                         const inner_dims_len: i32 = strlen(second_bracket);
-                        const elem_type: &byte = arena_alloc(codegen.arena, base_len + inner_dims_len + 1) as &byte;
+                        const elem_type: &byte = compiler_arena_alloc(codegen.arena, base_len + inner_dims_len + 1) as &byte;
                         if elem_type == null {
                             return null;
                         }
@@ -7561,7 +7561,7 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
                     } else {
                         // 单层数组：提取基类型
                         const base_len: i32 = ptr_diff(first_bracket, type_c as *byte);
-                        const elem_type2: &byte = arena_alloc(codegen.arena, base_len + 1) as &byte;
+                        const elem_type2: &byte = compiler_arena_alloc(codegen.arena, base_len + 1) as &byte;
                         if elem_type2 == null {
                             return null;
                         }
@@ -7578,7 +7578,7 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
                         base_len_p = base_len_p - 1;
                     }
                     if base_len_p > 0 {
-                        const elem_p: &byte = arena_alloc(codegen.arena, (base_len_p + 1) as usize) as &byte;
+                        const elem_p: &byte = compiler_arena_alloc(codegen.arena, (base_len_p + 1) as usize) as &byte;
                         if elem_p != null {
                             memcpy(elem_p as *void, type_c as *void, base_len_p as usize);
                             elem_p[base_len_p] = 0;
@@ -7611,7 +7611,7 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
                         // 例如：int32_t[3][2] -> int32_t[2]
                         const base_len2: i32 = first_bracket2_offset;
                         const inner_dims_len2: i32 = strlen(second_bracket2);
-                        const elem_type3: &byte = arena_alloc(codegen.arena, base_len2 + inner_dims_len2 + 1) as &byte;
+                        const elem_type3: &byte = compiler_arena_alloc(codegen.arena, base_len2 + inner_dims_len2 + 1) as &byte;
                         if elem_type3 == null {
                             return null;
                         }
@@ -7622,7 +7622,7 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
                     } else {
                         // 单层数组：提取基类型
                         const len2: i32 = ptr_diff(first_bracket2, type_c2 as *byte);
-                        const elem_type4: &byte = arena_alloc(codegen.arena, len2 + 1) as &byte;
+                        const elem_type4: &byte = compiler_arena_alloc(codegen.arena, len2 + 1) as &byte;
                         if elem_type4 == null {
                             return null;
                         }
@@ -7658,7 +7658,7 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
                 if p != null {
                     const p_offset: i32 = ptr_diff(p, type_c as *byte);
                     const suffix_len: i32 = strlen(&type_c[p_offset + 10] as *byte) + 1;
-                    const elem: &byte = arena_alloc(codegen.arena, suffix_len) as &byte;
+                    const elem: &byte = compiler_arena_alloc(codegen.arena, suffix_len) as &byte;
                     if elem != null {
                         memcpy(elem as *byte, &type_c[p_offset + 10] as *byte, suffix_len);
                         return elem;
@@ -7852,7 +7852,7 @@ fn is_array_access_pointer_type(codegen: &C99CodeGenerator, array_access: &ASTNo
                     name_len = name_len - 1;
                 }
                 if name_len > 0 {
-                    const name_buf: &byte = arena_alloc(codegen.arena, name_len + 1) as &byte;
+                    const name_buf: &byte = compiler_arena_alloc(codegen.arena, name_len + 1) as &byte;
                     if name_buf != null {
                         memcpy(name_buf as *void, start as *void, name_len);
                         name_buf[name_len] = 0;

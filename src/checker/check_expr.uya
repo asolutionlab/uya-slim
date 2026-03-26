@@ -246,13 +246,13 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         return result;
     } else if expr.type == ASTNodeType.AST_SRC_NAME || expr.type == ASTNodeType.AST_SRC_PATH {
         // @src_name/@src_path 返回 &[i8] 类型（切片类型）
-        const slice_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const slice_type: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if slice_type == null {
             return make_void_type();
         }
         slice_type.kind = TypeKind.TYPE_SLICE;
         
-        const element_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const element_type: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if element_type == null {
             return make_void_type();
         }
@@ -273,13 +273,13 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             return make_void_type();
         }
         
-        const slice_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const slice_type: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if slice_type == null {
             return make_void_type();
         }
         slice_type.kind = TypeKind.TYPE_SLICE;
         
-        const element_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const element_type: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if element_type == null {
             return make_void_type();
         }
@@ -478,7 +478,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         
         // 分配指向的类型结构（从Arena分配）
         // 注意：Uya 不支持指针运算，需要使用数组访问
-        const pointed_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const pointed_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if pointed_type_ptr == null {
             return make_void_type();
         }
@@ -514,7 +514,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             i = i + 1;
         }
         expr.string_interp_computed_size = total;
-        const i8_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const i8_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if i8_ptr == null {
             return make_void_type();
         }
@@ -544,7 +544,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             result.tuple_count = 0;
             return result;
         }
-        const elem_types: &Type = arena_alloc(checker.arena, @size_of(Type) * cur_fn.fn_decl_param_count) as &Type;
+        const elem_types: &Type = compiler_arena_alloc(checker.arena, @size_of(Type) * cur_fn.fn_decl_param_count) as &Type;
         if elem_types == null {
             return make_void_type();
         }
@@ -764,7 +764,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         if elem == null {
             return make_void_type();
         }
-        const element_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const element_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if element_type_ptr == null {
             return make_void_type();
         }
@@ -786,7 +786,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         // 记录结构体类型实参（用于泛型结构体的类型比较/推断）
         if expr.struct_init_type_arg_count > 0 && expr.struct_init_type_args != null {
             const count_ta: i32 = expr.struct_init_type_arg_count;
-            const ta: &Type = arena_alloc(checker.arena, (@size_of(Type)) * (count_ta as usize)) as &Type;
+            const ta: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count_ta as usize)) as &Type;
             if ta != null {
                 var ti: i32 = 0;
                 while ti < count_ta {
@@ -827,7 +827,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         if n <= 0 || elements == null {
             return make_void_type();
         }
-        const element_types: &Type = arena_alloc(checker.arena, @size_of(Type) * n as usize) as &Type;
+        const element_types: &Type = compiler_arena_alloc(checker.arena, @size_of(Type) * n as usize) as &Type;
         if element_types == null {
             return make_void_type();
         }
@@ -859,7 +859,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             if is_void_type(element_type) != 0 {
                 return make_void_type();
             }
-            const element_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+            const element_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
             if element_type_ptr == null {
                 return make_void_type();
             }
@@ -879,7 +879,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             return make_void_type();
         }
         
-        const element_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const element_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if element_type_ptr == null {
             return make_void_type();
         }
@@ -913,7 +913,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             return target_type;
         }
         // as! 强转：返回 !T（错误联合类型）
-        const payload_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const payload_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if payload_ptr == null {
             return make_void_type();
         }
@@ -1292,7 +1292,7 @@ fn checker_check_expr_type(checker: &TypeChecker, expr: &ASTNode, expected_type:
             const need: i32 = sl + 1;
             if expected_copy.array_size < need {
                 const msg_cap: usize = 256;
-                const msg_buf: &byte = arena_alloc(checker.arena, msg_cap) as &byte;
+                const msg_buf: &byte = compiler_arena_alloc(checker.arena, msg_cap) as &byte;
                 if msg_buf != null {
                     sprintf(msg_buf as *byte,
                         "[byte:N] 容量不足：至少需要 N>=%d（含结尾 0；本字面可见 %d 字节），当前 N=%d" as *byte,
@@ -1828,7 +1828,7 @@ fn infer_member_access(checker: &TypeChecker, expr: &ASTNode) Type {
                 if str_equals(field_name, ("name" as *byte) as &byte) != 0 {
                     // name: *i8 (FFI 指针)
                     var result: Type = Type { kind: TypeKind.TYPE_POINTER, enum_name: null, struct_name: null, pointer_to: null, is_ffi_pointer: 1, element_type: null, array_size: 0, slice_element_type: null, slice_len: 0, tuple_element_types: null, tuple_count: 0, error_union_payload_type: null, error_error_id: 0 };
-                    const inner_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+                    const inner_type: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
                     if inner_type != null {
                         inner_type[0] = make_i32_type();  // I8 类型简化为 I32
                         result.pointer_to = inner_type;
@@ -1900,7 +1900,7 @@ fn infer_match_expr(checker: &TypeChecker, expr: &ASTNode) Type {
                               (v.var_decl_type.type_named_type_arg_count == 0 || v.var_decl_type.type_named_type_args == null))) {
                             variant_type = copy_type(&expr_type.union_type_args[0]);
                         }
-                        const sym: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+                        const sym: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
                         if sym != null {
                             sym.name = arm.var_name;
                             sym.type = copy_type(&variant_type);
@@ -2040,7 +2040,7 @@ fn infer_syscall(checker: &TypeChecker, expr: &ASTNode) Type {
     }
     
     // 3. 返回类型：!i64（错误联合类型）
-    const payload_type: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+    const payload_type: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
     if payload_type == null {
         return make_void_type();
     }
@@ -2209,7 +2209,7 @@ fn infer_unary_expr(checker: &TypeChecker, expr: &ASTNode) Type {
             return make_void_type();
         }
         
-        const pointed_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const pointed_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if pointed_type_ptr == null {
             return make_void_type();
         }
@@ -2408,7 +2408,7 @@ fn infer_catch_expr(checker: &TypeChecker, expr: &ASTNode) Type {
             error_union_payload_type: null, error_error_id: 0 
         };
         checker_enter_scope(checker);
-        const sym: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+        const sym: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
         if sym != null {
             sym.name = expr.catch_expr_err_name;
             sym.type = err_type;

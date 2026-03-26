@@ -301,11 +301,11 @@ fn is_keyword(str: &byte) TokenType {
 }
 
 // 从 Arena 复制指定长度的字符串（含结尾 null）
-fn arena_copy_str(arena: &Arena, start: &byte, n: usize) &byte {
+fn arena_copy_str(arena: &CompilerArena, start: &byte, n: usize) &byte {
     if arena == null || start == null {
         return null;
     }
-    const result: &byte = arena_alloc(arena, n + 1) as &byte;
+    const result: &byte = compiler_arena_alloc(arena, n + 1) as &byte;
     if result == null {
         return null;
     }
@@ -319,11 +319,11 @@ fn arena_copy_str(arena: &Arena, start: &byte, n: usize) &byte {
 }
 
 // 创建 Token
-fn make_token(arena: &Arena, type: TokenType, value: &byte, line: i32, column: i32) &Token {
+fn make_token(arena: &CompilerArena, type: TokenType, value: &byte, line: i32, column: i32) &Token {
     if arena == null {
         return null;
     }
-    const token: &Token = arena_alloc(arena, @size_of(Token)) as &Token;
+    const token: &Token = compiler_arena_alloc(arena, @size_of(Token)) as &Token;
     if token == null {
         return null;
     }
@@ -335,7 +335,7 @@ fn make_token(arena: &Arena, type: TokenType, value: &byte, line: i32, column: i
 }
 
 // 读取标识符或关键字
-fn read_identifier_or_keyword(lexer: &Lexer, arena: &Arena) &Token {
+fn read_identifier_or_keyword(lexer: &Lexer, arena: &CompilerArena) &Token {
     const start_index: usize = lexer.position;
     const line: i32 = lexer.line;
     const column: i32 = lexer.column;
@@ -405,7 +405,7 @@ fn is_valid_digit_for_base(c: byte, base: i32) i32 {
 
 // 读取数字字面量（整数或浮点数）
 // 支持十六进制（0x/0X）、八进制（0o/0O）、二进制（0b/0B）和下划线分隔符
-fn read_number(lexer: &Lexer, arena: &Arena) &Token {
+fn read_number(lexer: &Lexer, arena: &CompilerArena) &Token {
     const start_index: usize = lexer.position;
     const line: i32 = lexer.line;
     const column: i32 = lexer.column;
@@ -720,7 +720,7 @@ fn lexer_append_escape(lexer: &Lexer) i32 {
 }
 
 // 读取字符串字面量（支持 \\n \\r \\t \\\\ \\" \\0 \\xHH \\uXXXX）
-fn read_string(lexer: &Lexer, arena: &Arena) &Token {
+fn read_string(lexer: &Lexer, arena: &CompilerArena) &Token {
     const line: i32 = lexer.line;
     const column: i32 = lexer.column;
     advance_char(lexer);
@@ -754,7 +754,7 @@ fn read_string(lexer: &Lexer, arena: &Arena) &Token {
         return null;
     }
     advance_char(lexer);
-    const value: &byte = arena_alloc(arena, lexer.string_text_len + 1) as &byte;
+    const value: &byte = compiler_arena_alloc(arena, lexer.string_text_len + 1) as &byte;
     if value == null {
         return null;
     }
@@ -768,7 +768,7 @@ fn read_string(lexer: &Lexer, arena: &Arena) &Token {
 }
 
 // 读取字符字面量 'x' 或 '\n' 等，返回 TOKEN_CHAR，token.value 为 ASCII 值的十进制字符串（如 "99"）
-fn read_char_literal(lexer: &Lexer, arena: &Arena, line: i32, column: i32) &Token {
+fn read_char_literal(lexer: &Lexer, arena: &CompilerArena, line: i32, column: i32) &Token {
     if lexer.position >= lexer.buffer_size {
         return null;
     }
@@ -827,7 +827,7 @@ fn read_char_literal(lexer: &Lexer, arena: &Arena, line: i32, column: i32) &Toke
     if n < 0 || n >= 8 {
         return null;
     }
-    const value: &byte = arena_alloc(arena, (n + 1) as u64) as &byte;
+    const value: &byte = compiler_arena_alloc(arena, (n + 1) as u64) as &byte;
     if value == null {
         return null;
     }
@@ -860,7 +860,7 @@ fn read_string_char_into_buffer(lexer: &Lexer) i32 {
 }
 
 // 获取下一个 Token
-fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
+fn lexer_next_token(lexer: &Lexer, arena: &CompilerArena) &Token {
     if lexer == null || arena == null {
         return null;
     }
@@ -1364,7 +1364,7 @@ fn lexer_next_token(lexer: &Lexer, arena: &Arena) &Token {
 // 初始化 Lexer
 // 参数：lexer - 由调用者提供，source - 源代码，source_len - 长度，filename - 文件名（存 Arena），arena - Arena
 // 返回：成功 0，失败 -1
-fn lexer_init(lexer: &Lexer, source: &byte, source_len: usize, filename: &byte, arena: &Arena) i32 {
+fn lexer_init(lexer: &Lexer, source: &byte, source_len: usize, filename: &byte, arena: &CompilerArena) i32 {
     if lexer == null || source == null || arena == null {
         return -1;
     }
@@ -1395,7 +1395,7 @@ fn lexer_init(lexer: &Lexer, source: &byte, source_len: usize, filename: &byte, 
             n = n + 1;
         }
         n = n + 1;
-        const filename_copy: &byte = arena_alloc(arena, n) as &byte;
+        const filename_copy: &byte = compiler_arena_alloc(arena, n) as &byte;
         if filename_copy == null {
             return -1;
         }

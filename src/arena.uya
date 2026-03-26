@@ -17,7 +17,7 @@ struct ArenaChunk {
 
 // Arena 分配器结构体
 // v2.0: 扩展支持动态增长
-struct Arena {
+struct CompilerArena {
     buffer: &byte,           // 静态缓冲区指针
     size: usize,             // 静态缓冲区大小（字节）
     offset: usize,           // 当前分配位置（bump pointer）
@@ -39,7 +39,7 @@ fn align_size(size: usize, align: usize) usize {
 }
 
 // 初始化 Arena 分配器
-fn arena_init(arena: &Arena, buffer: &byte, size: usize) void {
+fn compiler_arena_init(arena: &CompilerArena, buffer: &byte, size: usize) void {
     if arena == null || buffer == null {
         return;
     }
@@ -52,9 +52,9 @@ fn arena_init(arena: &Arena, buffer: &byte, size: usize) void {
 }
 
 // 从 Arena 分配内存（支持动态增长）
-fn arena_alloc(arena: &Arena, size: usize) &byte {
+fn compiler_arena_alloc(arena: &CompilerArena, size: usize) &byte {
     if arena == null {
-        fprintf(libc.stderr, "错误: Arena 分配失败（arena 为 null）\n" as *byte);
+        fprintf(libc.stderr, "错误: CompilerArena 分配失败（arena 为 null）\n" as *byte);
         exit(1);
     }
     
@@ -92,7 +92,7 @@ fn arena_alloc(arena: &Arena, size: usize) &byte {
     // 分配 chunk 结构
     const chunk_mem: &byte = malloc(@size_of(ArenaChunk)) as &byte;
     if chunk_mem == null {
-        fprintf(libc.stderr, "错误: Arena 无法分配 chunk 结构\n" as *byte);
+        fprintf(libc.stderr, "错误: CompilerArena 无法分配 chunk 结构\n" as *byte);
         exit(1);
     }
     const new_chunk: &ArenaChunk = chunk_mem as &ArenaChunk;
@@ -100,7 +100,7 @@ fn arena_alloc(arena: &Arena, size: usize) &byte {
     // 分配 chunk 缓冲区
     const buffer_mem: &byte = malloc(chunk_size) as &byte;
     if buffer_mem == null {
-        fprintf(libc.stderr, "错误: Arena 无法分配 chunk 缓冲区 (%zu 字节)\n" as *byte, chunk_size);
+        fprintf(libc.stderr, "错误: CompilerArena 无法分配 chunk 缓冲区 (%zu 字节)\n" as *byte, chunk_size);
         exit(1);
     }
     
@@ -132,7 +132,7 @@ fn arena_alloc(arena: &Arena, size: usize) &byte {
 }
 
 // 重置 Arena（不释放内存，可复用）
-fn arena_reset(arena: &Arena) void {
+fn compiler_arena_reset(arena: &CompilerArena) void {
     if arena == null {
         return;
     }
@@ -149,7 +149,7 @@ fn arena_reset(arena: &Arena) void {
 }
 
 // 释放 Arena 的所有动态内存
-fn arena_free_all(arena: &Arena) void {
+fn compiler_arena_free_all(arena: &CompilerArena) void {
     if arena == null {
         return;
     }
@@ -172,7 +172,7 @@ fn arena_free_all(arena: &Arena) void {
 }
 
 // 保存 Arena 状态
-fn arena_save(arena: &Arena) usize {
+fn compiler_arena_save(arena: &CompilerArena) usize {
     if arena == null {
         return 0;
     }
@@ -180,7 +180,7 @@ fn arena_save(arena: &Arena) usize {
 }
 
 // 恢复 Arena 状态
-fn arena_restore(arena: &Arena, offset: usize) void {
+fn compiler_arena_restore(arena: &CompilerArena, offset: usize) void {
     if arena == null {
         return;
     }
@@ -190,7 +190,7 @@ fn arena_restore(arena: &Arena, offset: usize) void {
 }
 
 // 获取总分配量
-fn arena_total_allocated(arena: &Arena) usize {
+fn compiler_arena_total_allocated(arena: &CompilerArena) usize {
     if arena == null {
         return 0;
     }

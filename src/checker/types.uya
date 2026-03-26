@@ -276,7 +276,7 @@ struct MonoInstance {
 }
 
 struct TypeChecker {
-    arena: &Arena,
+    arena: &CompilerArena,
     symbol_table: SymbolTable,
     function_table: FunctionTable,
     module_table: ModuleTable,

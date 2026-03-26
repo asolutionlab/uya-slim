@@ -676,7 +676,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                         echo "编译 $OUTPUT_FILE -> $UYA_O (-nostdlib)"
                     fi
 
-                    if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
+                    if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -fno-stack-protector -c "$OUTPUT_FILE" -o "$UYA_O" 2>&1; then
                         echo -e "${RED}✗ 编译 nostdlib 目标 C 失败${NC}"
                         exit 1
                     fi
@@ -692,7 +692,7 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                         exit 1
                     fi
 
-                    LINK_CMD=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -no-pie -nostdlib -static -o "$EXECUTABLE_FILE" "$CRTI" "$UYA_O" "$CRTN" "${LDFLAGS_ARR[@]}")
+                    LINK_CMD=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -fno-stack-protector -no-pie -nostdlib -static -o "$EXECUTABLE_FILE" "$CRTI" "$UYA_O" "$CRTN" "${LDFLAGS_ARR[@]}")
                 else
                     # 普通模式：直接编译链接（stderr 使用 libc.stderr，无需 get_stderr 桥接）
                     # 注意：不使用 -static，避免 errno TLS 冲突
@@ -855,13 +855,13 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                             fi
                             UYA_O_B="$BUILD_DIR/uya_bootstrap.o"
                             mkdir -p "$BUILD_DIR"
-                            if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -c "$BOOTSTRAP_C" -o "$UYA_O_B" 2>&1; then
+                            if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -fno-stack-protector -c "$BOOTSTRAP_C" -o "$UYA_O_B" 2>&1; then
                                 echo -e "${RED}✗ 自举 C 编译为 .o 失败${NC}"
                                 exit 1
                             fi
                             CRTI="$("${CC_CMD[@]}" -print-file-name=crti.o 2>/dev/null)"
                             CRTN="$("${CC_CMD[@]}" -print-file-name=crtn.o 2>/dev/null)"
-                            if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -no-pie -nostdlib -static -o "$BOOTSTRAP_EXE" "$CRTI" "$UYA_O_B" "$CRTN" "${LDFLAGS_ARR[@]}" 2>&1; then
+                            if ! "${CC_CMD[@]}" "${CFLAGS_ARR[@]}" -fno-stack-protector -no-pie -nostdlib -static -o "$BOOTSTRAP_EXE" "$CRTI" "$UYA_O_B" "$CRTN" "${LDFLAGS_ARR[@]}" 2>&1; then
                                 echo -e "${RED}✗ 自举可执行文件链接失败${NC}"
                                 exit 1
                             fi

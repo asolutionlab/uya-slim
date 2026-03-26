@@ -37,7 +37,7 @@ fn checker_check_destructure_decl(checker: &TypeChecker, node: &ASTNode) i32 {
         if name != null && str_equals(name, "_" as *byte) != 0 {
             // 忽略 "_"，不加入符号表
         } else if name != null {
-            const symbol: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+            const symbol: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
             if symbol == null {
                 return 1;
             }
@@ -173,7 +173,7 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     } else {
         // 将变量添加到符号表（顶层且已第一遍注册时跳过插入）
         if checker.scope_level != 0 || existing == null || existing.scope_level != 0 || existing.line != node.line || existing.column != node.column {
-            const symbol: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+            const symbol: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
             if symbol == null {
                 return 1;
             }
@@ -329,7 +329,7 @@ fn checker_register_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     if existing != null && existing.scope_level == 0 {
         return 1;
     }
-    const symbol: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+    const symbol: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
     if symbol == null {
         return 0;
     }
@@ -384,7 +384,7 @@ fn checker_register_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     const return_type: Type = type_from_ast(checker, node.fn_decl_return_type);
     
     // 创建函数签名
-    const sig: &FunctionSignature = arena_alloc(checker.arena, @size_of(FunctionSignature)) as &FunctionSignature;
+    const sig: &FunctionSignature = compiler_arena_alloc(checker.arena, @size_of(FunctionSignature)) as &FunctionSignature;
     if sig == null {
         checker_report_error(checker, node, "Arena 内存不足，无法注册函数声明" as *byte);
         return 0;
@@ -404,7 +404,7 @@ fn checker_register_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     
     // 分配参数类型数组
     if sig.param_count > 0 {
-        sig.param_types = arena_alloc(checker.arena, @size_of(Type) * (sig.param_count as usize)) as &Type;
+        sig.param_types = compiler_arena_alloc(checker.arena, @size_of(Type) * (sig.param_count as usize)) as &Type;
         if sig.param_types == null {
             checker_report_error(checker, node, "Arena 内存不足，无法分配参数类型" as *byte);
             return 0;
@@ -510,7 +510,7 @@ fn checker_check_extern_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     }
 
     // 将变量添加到符号表
-    const symbol: &Symbol = arena_alloc(checker.arena, @size_of(Symbol) as usize) as &Symbol;
+    const symbol: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol) as usize) as &Symbol;
     if symbol == null {
         return 1;
     }
@@ -673,7 +673,7 @@ fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                 const param_type: Type = type_from_ast(checker, param.var_decl_type);
                 
                 // 将参数添加到符号表
-                const param_symbol: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+                const param_symbol: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
                 if param_symbol != null {
                     param_symbol.name = param.var_decl_name;
                     param_symbol.type = copy_type(&param_type);

@@ -28,7 +28,7 @@ fn check_match_expr_node(checker: &TypeChecker, node: &ASTNode) i32 {
         }
         checker_enter_scope(checker);
         if arm.kind == MatchPatternKind.MATCH_PAT_BIND && arm.var_name != null {
-            const sym: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+            const sym: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
             if sym != null {
                 sym.name = arm.var_name;
                 sym.type = copy_type(&expr_type);
@@ -77,7 +77,7 @@ fn check_match_expr_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 if found == 0 {
                     checker_report_error(checker, node, "match 联合体模式中的变体不存在于该联合体类型" as *byte);
                 } else if arm.var_name != null && str_equals(arm.var_name, "_" as *byte) == 0 {
-                    const sym: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+                    const sym: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
                     if sym != null {
                         sym.name = arm.var_name;
                         sym.type = copy_type(&variant_type);
@@ -423,7 +423,7 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
         checker_enter_scope(checker);
         checker.loop_depth = checker.loop_depth + 1;
         if node.for_stmt_var_name != null {
-            const loop_var: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+            const loop_var: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
             if loop_var != null {
                 loop_var.name = node.for_stmt_var_name;
                 loop_var.type = start_type;
@@ -511,7 +511,7 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     
                     // 添加循环变量到符号表
                     if node.for_stmt_var_name != null {
-                        const loop_var: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+                        const loop_var: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
                         if loop_var != null {
                             loop_var.name = node.for_stmt_var_name;
                             loop_var.type = var_type;
@@ -638,7 +638,7 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
             // 引用迭代：变量类型为 &T（指向元素的指针）
             // 注意：Uya 不支持指针解引用，需要使用数组访问
             // 注意：Uya 不支持指针运算，需要使用数组访问
-            const element_type_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+            const element_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
             if element_type_ptr == null {
                 checker_report_error(checker, node, "类型检查错误：内存分配失败" as *byte);
                 checker_enter_scope(checker);
@@ -674,7 +674,7 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
         }
         
         // 添加循环变量到符号表（var，可修改）
-        const loop_var: &Symbol = arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+        const loop_var: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
         if loop_var == null {
             // 内存分配失败：放宽检查，允许通过（不报错），继续检查循环体
         } else {

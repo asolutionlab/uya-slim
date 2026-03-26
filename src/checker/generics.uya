@@ -129,7 +129,7 @@ fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
     while generic_name[name_len] != 0 {
         name_len = name_len + 1;
     }
-    const name_copy: &byte = arena_alloc(checker.arena, (name_len + 1) as usize) as &byte;
+    const name_copy: &byte = compiler_arena_alloc(checker.arena, (name_len + 1) as usize) as &byte;
     if name_copy == null {
         checker.mono_instance_count = idx;
         return -1;
@@ -147,7 +147,7 @@ fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
     }
     
     // 分配类型实参数组
-    const type_args_mem: &Type = arena_alloc(checker.arena, (@size_of(Type)) * (type_arg_count as usize)) as &Type;
+    const type_args_mem: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (type_arg_count as usize)) as &Type;
     if idx >= 0 && idx < MAX_MONO_INSTANCES {
         checker.mono_instances[idx].type_args = type_args_mem;
     }
@@ -157,7 +157,7 @@ fn register_mono_instance(checker: &TypeChecker, generic_name: &byte,
     }
     
     // 保存 AST 节点数组
-    const type_arg_nodes_mem: & & ASTNode = arena_alloc(checker.arena, (@size_of(&ASTNode)) * (type_arg_count as usize)) as & & ASTNode;
+    const type_arg_nodes_mem: & & ASTNode = compiler_arena_alloc(checker.arena, (@size_of(&ASTNode)) * (type_arg_count as usize)) as & & ASTNode;
     if idx >= 0 && idx < MAX_MONO_INSTANCES {
         checker.mono_instances[idx].type_arg_nodes = type_arg_nodes_mem;
     }
@@ -207,7 +207,7 @@ fn substitute_generic_type(checker: &TypeChecker, type: Type,
         const inner: Type = substitute_generic_type(checker, type.pointer_to[0],
                                                      type_params, type_param_count,
                                                      type_args, type_arg_count);
-        const inner_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const inner_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if inner_ptr != null {
             inner_ptr[0] = copy_type(&inner);
             var result: Type = copy_type(&type);
@@ -226,7 +226,7 @@ fn substitute_generic_type(checker: &TypeChecker, type: Type,
         const inner: Type = substitute_generic_type(checker, type.element_type[0],
                                                      type_params, type_param_count,
                                                      type_args, type_arg_count);
-        const inner_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const inner_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if inner_ptr != null {
             inner_ptr[0] = copy_type(&inner);
             var result: Type = copy_type(&type);
@@ -239,7 +239,7 @@ fn substitute_generic_type(checker: &TypeChecker, type: Type,
         const inner: Type = substitute_generic_type(checker, type.slice_element_type[0],
                                                      type_params, type_param_count,
                                                      type_args, type_arg_count);
-        const inner_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const inner_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if inner_ptr != null {
             inner_ptr[0] = copy_type(&inner);
             var result: Type = copy_type(&type);
@@ -252,7 +252,7 @@ fn substitute_generic_type(checker: &TypeChecker, type: Type,
         const inner: Type = substitute_generic_type(checker, type.error_union_payload_type[0],
                                                      type_params, type_param_count,
                                                      type_args, type_arg_count);
-        const inner_ptr: &Type = arena_alloc(checker.arena, @size_of(Type)) as &Type;
+        const inner_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
         if inner_ptr != null {
             inner_ptr[0] = copy_type(&inner);
             var result: Type = copy_type(&type);
