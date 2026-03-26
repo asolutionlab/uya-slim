@@ -10,6 +10,7 @@ use std.http.server.fill_sockaddr_loopback_16;
 use std.http.server.http_listen_backlog;
 use std.http.server.read_port_from_sockaddr_16;
 use libc.syscall;
+use libc.errno;
 
 export error EpollSlotsFull;
 export error AcceptFailed;
@@ -167,7 +168,7 @@ export fn epoll_server_listen_set_nonblocking(srv: &EpollServer) !void {
     _ = try epoll_server_fd_set_nonblocking(srv.listen_fd);
 }
 
-/// 非阻塞 `accept` 一次并注册客户端（须配合非阻塞监听套接字）；无挂起连接时返回 `error.ReadWouldBlock`（与 `read(2)` 的 `EAGAIN` 共用判别）
+/// 非阻塞 `accept` 一次并注册客户端（须配合非阻塞监听套接字）；无挂起连接时返回 `error.ReadWouldBlock`（与 `read(2)` 的 `EAGAIN` 共用判别）；`EINTR` 时重试 `accept`。
 export fn epoll_server_try_accept_register_nb(srv: &EpollServer) !usize {
     const s: i32 = epoll_find_free_slot(srv);
     if s < 0 {
@@ -176,18 +177,23 @@ export fn epoll_server_try_accept_register_nb(srv: &EpollServer) !usize {
     const slot: usize = s as usize;
     var alen: u32 = 16;
     var peer: [byte: 16] = [];
-    const acc: !i32 = sys_accept(srv.listen_fd, &peer[0] as &void, &alen);
-    const cfd: i32 = acc catch |err| {
-        const eid: i32 = @error_id(err) as i32;
-        if eid == 11 {
-            return error.ReadWouldBlock;
-        }
-        _ = err;
-        return error.AcceptFailed;
-    };
-    try epoll_register_client_fd(srv, slot, cfd);
-    _ = try epoll_server_fd_set_nonblocking(cfd);
-    return slot;
+    while true {
+        const acc: !i32 = sys_accept(srv.listen_fd, &peer[0] as &void, &alen);
+        const cfd: i32 = acc catch |err| {
+            const eid: i32 = @error_id(err) as i32;
+            if eid == EAGAIN {
+                return error.ReadWouldBlock;
+            }
+            if eid == EINTR {
+                continue;
+            }
+            _ = err;
+            return error.AcceptFailed;
+        };
+        try epoll_register_client_fd(srv, slot, cfd);
+        _ = try epoll_server_fd_set_nonblocking(cfd);
+        return slot;
+    }
 }
 
 /// 在监听已为非阻塞的前提下，连续 `accept` 并注册直至 `EAGAIN`；返回本次接受的连接数

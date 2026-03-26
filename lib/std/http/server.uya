@@ -5,6 +5,7 @@
 use std.http.types;
 use std.http.parse;
 use libc.syscall;
+use libc.errno;
 
 const HTTP_RECV_BUF: usize = 8192;
 /// 单次连接读缓冲上限：须覆盖 `MAX_BODY_SIZE` 量级请求体 + 头（与 `parse` 一致）
@@ -28,23 +29,29 @@ fn sys_write_all_conn(fd: i32, base: &byte, total: usize) !void {
     }
 }
 
-/// 非阻塞写：将 `base[0:total]` 尽量写入 `conn_fd`；`written` 入参为已发送字节数（首次传 `0`），返回时若成功则已达 `total`。遇 `EAGAIN`/`EWOULDBLOCK` 时返回 `error.ReadWouldBlock`（与读侧共用），`*written` 为已成功发送的字节数，可 `epoll_wait` 可写后再调用续传。
+/// 非阻塞写：将 `base[0:total]` 尽量写入 `conn_fd`；`written` 入参为已发送字节数（首次传 `0`），返回时若成功则已达 `total`。遇 `EAGAIN`/`EWOULDBLOCK` 时返回 `error.ReadWouldBlock`（与读侧共用）；遇 `EINTR` 时重试写。`*written` 为已成功发送的字节数，可 `epoll_wait` 可写后再调用续传。
 export fn http_write_all_nonblocking(conn_fd: i32, base: &byte, total: usize, written: &usize) !void {
     while *written < total {
         const rem: usize = total - *written;
         const p: *const byte = @ptr_from_usize(@usize_from_ptr(base as &void) + *written) as *const byte;
-        const wr: !isize = sys_write(conn_fd, p, rem);
-        const n: isize = wr catch |err| {
-            const eid: i32 = @error_id(err) as i32;
-            if eid == 11 {
-                return error.ReadWouldBlock;
+        while true {
+            const wr: !isize = sys_write(conn_fd, p, rem);
+            const n: isize = wr catch |err| {
+                const eid: i32 = @error_id(err) as i32;
+                if eid == EAGAIN {
+                    return error.ReadWouldBlock;
+                }
+                if eid == EINTR {
+                    continue;
+                }
+                return error.ConnectionClosed;
+            };
+            if n <= 0 {
+                return error.ConnectionClosed;
             }
-            return error.ConnectionClosed;
-        };
-        if n <= 0 {
-            return error.ConnectionClosed;
+            *written = *written + (n as usize);
+            break;
         }
-        *written = *written + (n as usize);
     }
 }
 
@@ -182,7 +189,7 @@ export fn http_conn_read_parse(conn_fd: i32, base: &byte, cap: usize, filled: &u
     }
 }
 
-/// 与 `http_conn_read_parse` 相同，但套接字须为 **非阻塞**：`read(2)` 遇 `EAGAIN`/`EWOULDBLOCK` 时返回 `error.ReadWouldBlock`（由 `@error_id` 与 Linux errno 11 对齐），便于在 epoll 可读后再调用。
+/// 与 `http_conn_read_parse` 相同，但套接字须为 **非阻塞**：`read(2)` 遇 `EAGAIN`/`EWOULDBLOCK` 时返回 `error.ReadWouldBlock`；遇 `EINTR` 时自动重试同一读。
 export fn http_conn_read_parse_nonblocking(conn_fd: i32, base: &byte, cap: usize, filled: &usize) !ParseResult {
     while true {
         const cur: usize = *filled;
@@ -202,19 +209,24 @@ export fn http_conn_read_parse_nonblocking(conn_fd: i32, base: &byte, cap: usize
                     chunk = room;
                 }
                 const dst: *byte = @ptr_from_usize(@usize_from_ptr(base as &void) + cur) as *byte;
-                const rr: !isize = sys_read(conn_fd, dst, chunk);
-                const n: isize = rr catch |err| {
-                    const eid: i32 = @error_id(err) as i32;
-                    // Linux 下非阻塞 read 的 EAGAIN/EWOULDBLOCK 与 syscall 负 errno 对齐为 11
-                    if eid == 11 {
-                        return error.ReadWouldBlock;
+                while true {
+                    const rr: !isize = sys_read(conn_fd, dst, chunk);
+                    const n: isize = rr catch |err| {
+                        const eid: i32 = @error_id(err) as i32;
+                        if eid == EAGAIN {
+                            return error.ReadWouldBlock;
+                        }
+                        if eid == EINTR {
+                            continue;
+                        }
+                        return error.ConnectionClosed;
+                    };
+                    if n <= 0 {
+                        return error.ConnectionClosed;
                     }
-                    return error.ConnectionClosed;
-                };
-                if n <= 0 {
-                    return error.ConnectionClosed;
+                    *filled = cur + (n as usize);
+                    break;
                 }
-                *filled = cur + (n as usize);
             }
             pr => {
                 return pr;
