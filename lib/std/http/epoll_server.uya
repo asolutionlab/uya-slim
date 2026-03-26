@@ -13,9 +13,10 @@ use libc.syscall;
 
 export error EpollSlotsFull;
 
-/// 同时挂接的连接槽上限（与每槽 ~8KiB 读缓冲相乘后须可安全置于典型线程栈上）
+/// 同时挂接的连接槽上限（与每槽读缓冲相乘后须可安全置于典型线程栈上）
 export const EPOLL_SERVER_MAX_SLOTS: usize = 64;
-const EPOLL_SERVER_BUF_SIZE: usize = 8192;
+/// 与 `EpollConnection.buf` 长度一致；`http_conn_read_parse` 的 `cap` 须与此相同（大于典型 GET 流水线，小于 `HTTP_CONN_READ_CAP`）
+export const EPOLL_SERVER_IO_CAP: usize = 8192;
 
 /// epoll 连接状态
 export enum ConnState {
@@ -29,7 +30,7 @@ export enum ConnState {
 export struct EpollConnection {
     fd: i32,
     state: ConnState,
-    buf: [byte: EPOLL_SERVER_BUF_SIZE],
+    buf: [byte: EPOLL_SERVER_IO_CAP],
     buf_len: usize,
     buf_pos: usize,
     wants_persist: bool,
@@ -86,6 +87,18 @@ fn epoll_find_free_slot(srv: &EpollServer) i32 {
     var i: usize = 0;
     while i < EPOLL_SERVER_MAX_SLOTS {
         if srv.connections[i].fd < 0 {
+            return i as i32;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+/// 由 epoll 事件中的连接 fd 查找槽位；未找到返回 `-1`
+export fn epoll_server_slot_for_fd(srv: &EpollServer, cfd: i32) i32 {
+    var i: usize = 0;
+    while i < EPOLL_SERVER_MAX_SLOTS {
+        if srv.connections[i].fd == cfd {
             return i as i32;
         }
         i = i + 1;

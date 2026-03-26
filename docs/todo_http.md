@@ -106,7 +106,7 @@
 
 ### 5.2 epoll 预留
 
-- [x] `std.http.epoll_server`（`lib/std/http/epoll_server.uya`）：`ServerMode.Epoll` 下 `epoll_server_listen`（`port==0` 时 `getsockname`）、`listen_fd` 已加入 epoll（`EPOLLIN`）、`epoll_server_wait_events` / `epoll_server_poll`、`epoll_server_event_is_listen`、`epoll_server_accept_register`（客户端 fd 再入 epoll）、`epoll_server_release_slot`、`epoll_server_accept` / `epoll_server_close`；槽位满返回 `error.EpollSlotsFull`；槽位上限 `EPOLL_SERVER_MAX_SLOTS`（默认 64）控制栈占用
+- [x] `std.http.epoll_server`（`lib/std/http/epoll_server.uya`）：`ServerMode.Epoll` 下 `epoll_server_listen`（`port==0` 时 `getsockname`）、`listen_fd` 已加入 epoll（`EPOLLIN`）、`epoll_server_wait_events` / `epoll_server_poll`、`epoll_server_event_is_listen`、`epoll_server_slot_for_fd`、`epoll_server_accept_register`（客户端 fd 再入 epoll）、`epoll_server_release_slot`、`epoll_server_accept` / `epoll_server_close`；`EPOLL_SERVER_IO_CAP` 与槽内 `buf` 一致，供 `http_conn_read_parse`；槽位满返回 `error.EpollSlotsFull`；`EPOLL_SERVER_MAX_SLOTS`（默认 64）控制栈占用
 - [ ] `server.uya` 阻塞 API 仍仅 `Blocking`；完整 `run_epoll_loop`（客户端 fd 注册、`http_conn_read_parse`、路由与 Keep-alive 多轮）待办
 
 ### 5.3 测试与示例
