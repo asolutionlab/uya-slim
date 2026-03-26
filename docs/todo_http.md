@@ -99,14 +99,14 @@
 ### 5.1 Server
 
 - [x] `server.uya`：`HttpServer`、`ServerConfig`；`http_server_listen` / `http_server_accept` / `http_server_close`（`ServerMode.Blocking` + 127.0.0.1；`port==0` 时 `getsockname` 填端口）
-- [x] `http_recv_parse_request`（内部多 `recv` + `parse`）、`http_conn_read_parse_nonblocking`（`EAGAIN`→`error.ReadWouldBlock`，与 epoll 配合）、`http_send_response`（`text/plain` + `Content-Length`；状态行含 200/201/204/400/404/405/500）、`http_tcp_connect_loopback`（测试用）
+- [x] `http_recv_parse_request`（内部多 `recv` + `parse`）、`http_conn_read_parse_nonblocking`（`EAGAIN`→`error.ReadWouldBlock`，与 epoll 配合）、`http_write_all_nonblocking`（非阻塞短写续传，写侧 `EAGAIN` 同样映射 `ReadWouldBlock`）、`http_send_response`（`text/plain` + `Content-Length`；状态行含 200/201/204/400/404/405/500）、`http_tcp_connect_loopback`（测试用）
 - [ ] 首版路线图：阻塞 accept + 每连接一线程；当前标准库为原语级 API，无自动「每连接一线程」封装
 - [x] 每连接：读 buffer -> parse -> `router`/Handler -> 写 Response；Keep-alive 多轮 parse（`http_conn_read_parse` + `http_connbuf_shift` + `IncompleteRequest` / 多次 `recv`）
 - [x] 错误路径（解析）：非法方法等导致 `!ParseResult` 时服务端可回 `400`（`http_parse_error_returns_400`）；Handler 层统一 5xx 仍待扩展
 
 ### 5.2 epoll 预留
 
-- [x] `std.http.epoll_server`（`lib/std/http/epoll_server.uya`）：`ServerMode.Epoll` 下 `epoll_server_listen`（`port==0` 时 `getsockname`）、`listen_fd` 已加入 epoll（`EPOLLIN`）、`epoll_server_wait_events` / `epoll_server_poll`、`epoll_server_event_is_listen`、`epoll_server_slot_for_fd`、`epoll_server_accept_register` / `epoll_server_accept_register_nb`、`epoll_server_listen_set_nonblocking`、`epoll_server_try_accept_register_nb`（无挂起连接时 `error.ReadWouldBlock`；其它 `accept` 失败 `error.AcceptFailed`）、`epoll_server_drain_listen_accepts_nb`（循环 `accept` 至 `EAGAIN`）、`epoll_server_release_slot`、`epoll_server_accept` / `epoll_server_close`；`EPOLL_SERVER_IO_CAP` 与槽内 `buf` 一致，供 `http_conn_read_parse`；槽位满返回 `error.EpollSlotsFull`；`EPOLL_SERVER_MAX_SLOTS`（默认 64）控制栈占用
+- [x] `std.http.epoll_server`（`lib/std/http/epoll_server.uya`）：`ServerMode.Epoll` 下 `epoll_server_listen`（`port==0` 时 `getsockname`）、`listen_fd` 已加入 epoll（`EPOLLIN`）、`epoll_server_wait_events` / `epoll_server_poll`、`epoll_server_event_is_listen`、`epoll_server_slot_for_fd`、`epoll_server_ctl_mod`（`EPOLL_CTL_MOD`，如 `EPOLLIN|EPOLLOUT`）、`epoll_server_accept_register` / `epoll_server_accept_register_nb`、`epoll_server_listen_set_nonblocking`、`epoll_server_try_accept_register_nb`（无挂起连接时 `error.ReadWouldBlock`；其它 `accept` 失败 `error.AcceptFailed`）、`epoll_server_drain_listen_accepts_nb`（循环 `accept` 至 `EAGAIN`）、`epoll_server_release_slot`、`epoll_server_accept` / `epoll_server_close`；`EPOLL_SERVER_IO_CAP` 与槽内 `buf` 一致，供 `http_conn_read_parse`；槽位满返回 `error.EpollSlotsFull`；`EPOLL_SERVER_MAX_SLOTS`（默认 64）控制栈占用
 - [ ] `server.uya` 阻塞 API 仍仅 `Blocking`；完整 `run_epoll_loop`（客户端 fd 注册、`http_conn_read_parse`、路由与 Keep-alive 多轮）待办
 
 ### 5.3 测试与示例

@@ -84,6 +84,8 @@ export const SOL_SOCKET: i32 = 1;
 export const SO_REUSEADDR: i32 = 2;
 /// Linux `SO_REUSEPORT`：多 `listen` 同一端口时分流新连接（压测 worker 模型用）。
 export const SO_REUSEPORT: i32 = 15;
+/// Linux `SO_SNDBUF`：发送缓冲区大小提示（内核可能按页对齐加倍；用于测试非阻塞写遇满缓冲 `EAGAIN`）。
+export const SO_SNDBUF: i32 = 7;
 /// Linux `TCP_NODELAY`（`setsockopt` 级别 `IPPROTO_TCP`）。
 export const TCP_NODELAY: i32 = 1;
 /// Socket 接收超时（秒）

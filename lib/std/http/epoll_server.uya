@@ -142,6 +142,12 @@ export fn epoll_server_event_is_listen(srv: &EpollServer, ev: &EpollEvent) bool 
     return (ev.data as i32) == srv.listen_fd;
 }
 
+/// 修改已注册 fd 的 epoll 关注事件（如 `EPOLLIN | EPOLLOUT`，用于非阻塞写遇 `ReadWouldBlock` 后等待可写）
+export fn epoll_server_ctl_mod(srv: &EpollServer, cfd: i32, events: u32) !void {
+    var ev: EpollEvent = EpollEvent{ events: events, _pad: 0, data: cfd as u64 };
+    _ = try sys_epoll_ctl(srv.epfd, EPOLL_CTL_MOD, cfd, &ev);
+}
+
 /// 在已有监听可读事件的前提下 `accept`，将客户端 fd 以 `EPOLLIN` 加入同一 epoll（`data` 为连接 fd）
 export fn epoll_server_accept_register(srv: &EpollServer) !usize {
     const s: i32 = epoll_find_free_slot(srv);

@@ -181,6 +181,45 @@ fn run_epoll_client_pipeline_two_gets(port: u16) void {
     sys_exit(0);
 }
 
+fn run_epoll_client_get_then_slow_read(port: u16) void {
+    const conn_res: !i32 = http_tcp_connect_loopback(port);
+    const cfd: i32 = conn_res catch {
+        0 - 1
+    };
+    if cfd < 0 {
+        sys_exit(1);
+    }
+    const req: &[byte] = &"GET / HTTP/1.1\r\nHost: x\r\n\r\n"[0: 27];
+    _ = sys_write(cfd, req.ptr, req.len);
+    var buf: [byte: 8192] = [];
+    var total: usize = 0;
+    var iter: i32 = 0;
+    while iter < 1024 {
+        var rem: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 0 };
+        const tick: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 2000000 };
+        _ = sys_nanosleep(&tick, &rem) catch {};
+        const n: isize = sys_read(cfd, &buf[0] as *byte, 128) catch {
+            0 - 1
+        };
+        if n < 0 {
+            sys_exit(2);
+        }
+        if n == 0 {
+            break;
+        }
+        total = total + (n as usize);
+        if total >= 5200 {
+            break;
+        }
+        iter = iter + 1;
+    }
+    _ = sys_close(cfd);
+    if total < 3000 {
+        sys_exit(3);
+    }
+    sys_exit(0);
+}
+
 test "epoll_server_listen_port_zero_and_close" {
     var cfg: ServerConfig = ServerConfig{
         mode: ServerMode.Epoll,
@@ -558,6 +597,98 @@ test "epoll_drain_listen_accepts_two_connections" {
         }
         si = si + 1;
     }
+    var st: i32 = 0;
+    _ = try sys_waitpid(child_pid, &st, 0);
+    if (st & 0xff) != 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32((st >> 8) & 0xff, 0);
+    epoll_server_close(&srv);
+}
+
+test "epoll_nonblocking_write_epollout_then_finish" {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Epoll,
+        port: 0,
+        max_connections: 8,
+        host: [],
+    };
+    var srv: EpollServer = try epoll_server_listen(&cfg);
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        run_epoll_client_get_then_slow_read(srv.port);
+    }
+    if child_pid < 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    var evs: [EpollEvent: 8] = [];
+    var n: i32 = try epoll_server_wait_events(&srv, 8000, &evs[0], 8);
+    if n <= 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    var found_listen: i32 = 0;
+    var j: i32 = 0;
+    while j < n {
+        if j >= 0 && j < 8 {
+            if epoll_server_event_is_listen(&srv, &evs[j as usize]) {
+                found_listen = 1;
+                break;
+            }
+        }
+        j = j + 1;
+    }
+    if found_listen == 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    const slot: usize = try epoll_server_accept_register_nb(&srv);
+    n = try epoll_server_wait_events(&srv, 8000, &evs[0], 8);
+    if n <= 0 {
+        epoll_server_release_slot(&srv, slot);
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    _ = try epoll_read_request_until_done(&srv, slot, &evs[0]);
+    const cfd: i32 = srv.connections[slot].fd;
+    var sndlow: i32 = 4096;
+    _ = try sys_setsockopt(cfd, SOL_SOCKET, SO_SNDBUF, &sndlow as &void, 4 as u32);
+    const HLEN: usize = 67;
+    const hpref: &[byte] = &"HTTP/1.1 200 OK\r\nContent-Length: 5000\r\nContent-Type: text/plain\r\n\r\n"[0: 67];
+    var resp: [byte: 5100] = [];
+    var ri: usize = 0;
+    while ri < HLEN {
+        if ri < hpref.len {
+            resp[ri] = hpref.ptr[ri];
+        }
+        ri = ri + 1;
+    }
+    var bj: usize = 0;
+    while bj < 5000 {
+        const pos: usize = HLEN + bj;
+        if pos < 5100 {
+            resp[pos] = 'a' as byte;
+        }
+        bj = bj + 1;
+    }
+    const resp_len: usize = HLEN + 5000;
+    var written: usize = 0;
+    while written < resp_len {
+        _ = http_write_all_nonblocking(cfd, &resp[0] as &byte, resp_len, &written) catch |err| {
+            if @error_id(err) == @error_id(error.ReadWouldBlock) {
+                _ = try epoll_server_ctl_mod(&srv, cfd, (EPOLLIN | EPOLLOUT) as u32);
+                _ = try epoll_server_wait_events(&srv, 8000, &evs[0], 8);
+                continue;
+            }
+            epoll_server_release_slot(&srv, slot);
+            epoll_server_close(&srv);
+            try assert_eq_i32(0, 1);
+        };
+    }
+    _ = try epoll_server_ctl_mod(&srv, cfd, EPOLLIN as u32);
+    epoll_server_release_slot(&srv, slot);
     var st: i32 = 0;
     _ = try sys_waitpid(child_pid, &st, 0);
     if (st & 0xff) != 0 {

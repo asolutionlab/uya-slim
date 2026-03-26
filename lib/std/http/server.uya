@@ -28,6 +28,26 @@ fn sys_write_all_conn(fd: i32, base: &byte, total: usize) !void {
     }
 }
 
+/// 非阻塞写：将 `base[0:total]` 尽量写入 `conn_fd`；`written` 入参为已发送字节数（首次传 `0`），返回时若成功则已达 `total`。遇 `EAGAIN`/`EWOULDBLOCK` 时返回 `error.ReadWouldBlock`（与读侧共用），`*written` 为已成功发送的字节数，可 `epoll_wait` 可写后再调用续传。
+export fn http_write_all_nonblocking(conn_fd: i32, base: &byte, total: usize, written: &usize) !void {
+    while *written < total {
+        const rem: usize = total - *written;
+        const p: *const byte = @ptr_from_usize(@usize_from_ptr(base as &void) + *written) as *const byte;
+        const wr: !isize = sys_write(conn_fd, p, rem);
+        const n: isize = wr catch |err| {
+            const eid: i32 = @error_id(err) as i32;
+            if eid == 11 {
+                return error.ReadWouldBlock;
+            }
+            return error.ConnectionClosed;
+        };
+        if n <= 0 {
+            return error.ConnectionClosed;
+        }
+        *written = *written + (n as usize);
+    }
+}
+
 fn htons_host_to_be(p: u16) u16 {
     return ((p & (0xFF as u16)) << 8) | ((p >> 8) & (0xFF as u16));
 }
