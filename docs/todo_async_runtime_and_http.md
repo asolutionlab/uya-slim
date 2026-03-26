@@ -186,9 +186,9 @@ Phase 1: Socket API
 - 示例：`examples/http_server.uya`（`try` + `match`：`pr`/成功分支放在各 `error.*` 之后，避免 C 代码 `else` 悬空）
 
 **Phase 9（HTTP epoll，进行中）**
-- `lib/std/http/epoll_server.uya`：`epoll_server_listen` / `epoll_server_poll` / `epoll_server_accept` / `epoll_server_close`；`EPOLL_SERVER_MAX_SLOTS=64` 控制栈占用（勿在连接结构体内嵌完整 `Request`）
-- 测试：`tests/test_epoll_server.uya`（`--c99` 与 `--uya --c99`）
-- 待办：客户端连接 `epoll_ctl`、非阻塞读写、与 `http_conn_read_parse` + 路由的完整事件循环
+- `lib/std/http/epoll_server.uya`：`epoll_server_listen` / `epoll_server_wait_events` / `epoll_server_accept_register`（accept 后客户端 `EPOLLIN`）/ `epoll_server_release_slot` / `epoll_server_close`；`EPOLL_SERVER_MAX_SLOTS=64`；`error.EpollSlotsFull`
+- 测试：`tests/test_epoll_server.uya`（含 `epoll_one_get_route_ok`：poll→accept_register→poll→`http_recv_parse_request`+路由+响应；`--safety-proof`）
+- 待办：单线程内完整 `run` 循环（多连接交错）、非阻塞 + `http_conn_read_parse` 与 epoll 协同、Keep-alive
 
 ### 第四步：Phase 9-10 异步 HTTP 服务器（约 6 周）
 
