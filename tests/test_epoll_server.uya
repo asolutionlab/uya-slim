@@ -494,6 +494,80 @@ test "epoll_nonblocking_read_would_block_then_get" {
     epoll_server_close(&srv);
 }
 
+test "epoll_drain_listen_accepts_two_connections" {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Epoll,
+        port: 0,
+        max_connections: 16,
+        host: [],
+    };
+    var srv: EpollServer = try epoll_server_listen(&cfg);
+    _ = try epoll_server_listen_set_nonblocking(&srv);
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        const r1: !i32 = http_tcp_connect_loopback(srv.port);
+        const c1: i32 = r1 catch {
+            0 - 1
+        };
+        const r2: !i32 = http_tcp_connect_loopback(srv.port);
+        const c2: i32 = r2 catch {
+            0 - 1
+        };
+        if c1 < 0 || c2 < 0 {
+            sys_exit(1);
+        }
+        var rem: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 0 };
+        const nap: TimeSpec = TimeSpec{ tv_sec: 1, tv_nsec: 0 };
+        _ = sys_nanosleep(&nap, &rem) catch {};
+        _ = sys_close(c1);
+        _ = sys_close(c2);
+        sys_exit(0);
+    }
+    if child_pid < 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    var evs: [EpollEvent: 8] = [];
+    var n: i32 = try epoll_server_wait_events(&srv, 8000, &evs[0], 8);
+    if n <= 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    var found_listen: i32 = 0;
+    var j: i32 = 0;
+    while j < n {
+        if j >= 0 && j < 8 {
+            if epoll_server_event_is_listen(&srv, &evs[j as usize]) {
+                found_listen = 1;
+                break;
+            }
+        }
+        j = j + 1;
+    }
+    if found_listen == 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    const drained: usize = try epoll_server_drain_listen_accepts_nb(&srv);
+    try assert_eq_i32(drained as i32, 2);
+    try assert_eq_i32(srv.connection_count as i32, 2);
+    var si: usize = 0;
+    while si < EPOLL_SERVER_MAX_SLOTS {
+        if srv.connections[si].fd >= 0 {
+            epoll_server_release_slot(&srv, si);
+        }
+        si = si + 1;
+    }
+    var st: i32 = 0;
+    _ = try sys_waitpid(child_pid, &st, 0);
+    if (st & 0xff) != 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32((st >> 8) & 0xff, 0);
+    epoll_server_close(&srv);
+}
+
 test "conn_state_enum_discriminants" {
     try assert_eq_i32(ConnState.Recv as i32, 0);
     try assert_eq_i32(ConnState.Closed as i32, 3);
