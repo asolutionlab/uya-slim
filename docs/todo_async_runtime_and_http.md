@@ -188,7 +188,8 @@ Phase 1: Socket API
 **Phase 9（HTTP epoll，进行中）**
 - `lib/std/http/epoll_server.uya`：`epoll_server_listen` / `epoll_server_wait_events` / `epoll_server_accept_register`（accept 后客户端 `EPOLLIN`）/ `epoll_server_release_slot` / `epoll_server_close`；`EPOLL_SERVER_MAX_SLOTS=64`；`error.EpollSlotsFull`
 - 测试：`tests/test_epoll_server.uya`（含 `epoll_one_get_route_ok`、`epoll_pipeline_two_gets_slot_buffer`：槽位缓冲 + `http_conn_read_parse` / `http_connbuf_shift` 流水线双 GET，对齐阻塞版 `http_keepalive_pipeline_two_requests`；`--safety-proof`）
-- 待办：单线程内通用 `run` 循环封装、多连接交错、非阻塞 fd + `EAGAIN` 与 epoll 协同
+- 非阻塞：`http_conn_read_parse_nonblocking`、`epoll_server_fd_set_nonblocking`、`epoll_server_accept_register_nb`；测试 `epoll_nonblocking_read_would_block_then_get`
+- 待办：单线程内通用 `run` 循环封装、多连接交错
 
 ### 第四步：Phase 9-10 异步 HTTP 服务器（约 6 周）
 

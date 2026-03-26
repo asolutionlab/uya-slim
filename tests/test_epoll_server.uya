@@ -69,6 +69,63 @@ fn run_epoll_client_get_ok(port: u16) void {
     sys_exit(0);
 }
 
+fn run_epoll_client_sleep_then_get(port: u16) void {
+    const conn_res: !i32 = http_tcp_connect_loopback(port);
+    const cfd: i32 = conn_res catch {
+        0 - 1
+    };
+    if cfd < 0 {
+        sys_exit(1);
+    }
+    var rem: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 0 };
+    const req_sleep: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 200000000 };
+    _ = sys_nanosleep(&req_sleep, &rem) catch {};
+    const req: &[byte] = &"GET / HTTP/1.1\r\nHost: x\r\n\r\n"[0: 27];
+    _ = sys_write(cfd, req.ptr, req.len);
+    var rb: [byte: 512] = [];
+    var total: usize = 0;
+    while total < 512 {
+        const n: isize = sys_read(cfd, &rb[total] as *byte, 512 - total) catch {
+            0 - 1
+        };
+        if n <= 0 {
+            break;
+        }
+        total = total + (n as usize);
+        if response_has_subslice(rb[0: total], &"200"[0: 3]) && response_has_subslice(rb[0: total], &"ok"[0: 2]) {
+            break;
+        }
+    }
+    _ = sys_close(cfd);
+    if total == 0 {
+        sys_exit(2);
+    }
+    const got: &[byte] = rb[0: total];
+    if !response_has_subslice(got, &"200"[0: 3]) {
+        sys_exit(3);
+    }
+    if !response_has_subslice(got, &"ok"[0: 2]) {
+        sys_exit(4);
+    }
+    sys_exit(0);
+}
+
+/// 遇 `ReadWouldBlock` 时 `epoll_wait` 再读，直至得到完整 `ParseResult`
+fn epoll_read_request_until_done(srv: &EpollServer, slot: usize, evs: &EpollEvent) !ParseResult {
+    const cfd: i32 = srv.connections[slot].fd;
+    while true {
+        const st: !ParseResult = http_conn_read_parse_nonblocking(cfd, &srv.connections[slot].buf[0] as &byte, EPOLL_SERVER_IO_CAP, &srv.connections[slot].buf_len);
+        match st {
+            error.ReadWouldBlock => {
+                _ = try epoll_server_wait_events(srv, 8000, evs, 8);
+            }
+            pr => {
+                return pr;
+            }
+        }
+    }
+}
+
 fn run_epoll_client_pipeline_two_gets(port: u16) void {
     const conn_res: !i32 = http_tcp_connect_loopback(port);
     const cfd: i32 = conn_res catch {
@@ -356,6 +413,73 @@ test "epoll_pipeline_two_gets_slot_buffer" {
     const idx2: i32 = router_find_route_request(&rt, Method.GET, &pr2.request);
     if idx2 == 1 {
         _ = http_send_response(cfd, Status.OK, &"two"[0: 3]) catch {};
+    } else {
+        _ = http_send_response(cfd, Status.NotFound, empty_body) catch {};
+    }
+    epoll_server_release_slot(&srv, slot);
+    var st: i32 = 0;
+    _ = try sys_waitpid(child_pid, &st, 0);
+    if (st & 0xff) != 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32((st >> 8) & 0xff, 0);
+    epoll_server_close(&srv);
+}
+
+test "epoll_nonblocking_read_would_block_then_get" {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Epoll,
+        port: 0,
+        max_connections: 8,
+        host: [],
+    };
+    var srv: EpollServer = try epoll_server_listen(&cfg);
+    var rt: Router = router_new();
+    _ = try router_add(&rt, Method.GET, &"/"[0: 1]);
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        run_epoll_client_sleep_then_get(srv.port);
+    }
+    if child_pid < 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    var evs: [EpollEvent: 8] = [];
+    var n: i32 = try epoll_server_wait_events(&srv, 8000, &evs[0], 8);
+    if n <= 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    var found_listen: i32 = 0;
+    var j: i32 = 0;
+    while j < n {
+        if j >= 0 && j < 8 {
+            if epoll_server_event_is_listen(&srv, &evs[j as usize]) {
+                found_listen = 1;
+                break;
+            }
+        }
+        j = j + 1;
+    }
+    if found_listen == 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    const slot: usize = try epoll_server_accept_register_nb(&srv);
+    n = try epoll_server_wait_events(&srv, 8000, &evs[0], 8);
+    if n <= 0 {
+        epoll_server_release_slot(&srv, slot);
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    const pr: ParseResult = try epoll_read_request_until_done(&srv, slot, &evs[0]);
+    var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
+    const empty_body: &[byte] = empty_raw[0: 0];
+    const cfd: i32 = srv.connections[slot].fd;
+    const idx: i32 = router_find_route_request(&rt, Method.GET, &pr.request);
+    if idx == 0 {
+        _ = http_send_response(cfd, Status.OK, &"ok"[0: 2]) catch {};
     } else {
         _ = http_send_response(cfd, Status.NotFound, empty_body) catch {};
     }

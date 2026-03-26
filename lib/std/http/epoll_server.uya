@@ -94,6 +94,12 @@ fn epoll_find_free_slot(srv: &EpollServer) i32 {
     return -1;
 }
 
+/// 将套接字设为非阻塞（`O_NONBLOCK`），供 `http_conn_read_parse_nonblocking` 与 epoll 配合使用
+export fn epoll_server_fd_set_nonblocking(fd: i32) !void {
+    const fl: i32 = try sys_fcntl(fd, F_GETFL, 0);
+    _ = try sys_fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+}
+
 /// 由 epoll 事件中的连接 fd 查找槽位；未找到返回 `-1`
 export fn epoll_server_slot_for_fd(srv: &EpollServer, cfd: i32) i32 {
     var i: usize = 0;
@@ -142,6 +148,13 @@ export fn epoll_server_accept_register(srv: &EpollServer) !usize {
     var ev_c: EpollEvent = EpollEvent{ events: EPOLLIN as u32, _pad: 0, data: cfd as u64 };
     _ = try sys_epoll_ctl(srv.epfd, EPOLL_CTL_ADD, cfd, &ev_c);
     srv.connection_count = srv.connection_count + 1;
+    return slot;
+}
+
+/// 同 `epoll_server_accept_register`，并对客户端 fd 设置 `O_NONBLOCK`
+export fn epoll_server_accept_register_nb(srv: &EpollServer) !usize {
+    const slot: usize = try epoll_server_accept_register(srv);
+    _ = try epoll_server_fd_set_nonblocking(srv.connections[slot].fd);
     return slot;
 }
 

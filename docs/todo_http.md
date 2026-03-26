@@ -99,7 +99,7 @@
 ### 5.1 Server
 
 - [x] `server.uya`：`HttpServer`、`ServerConfig`；`http_server_listen` / `http_server_accept` / `http_server_close`（`ServerMode.Blocking` + 127.0.0.1；`port==0` 时 `getsockname` 填端口）
-- [x] `http_recv_parse_request`（内部多 `recv` + `parse`）、`http_send_response`（`text/plain` + `Content-Length`；状态行含 200/201/204/400/404/405/500）、`http_tcp_connect_loopback`（测试用）
+- [x] `http_recv_parse_request`（内部多 `recv` + `parse`）、`http_conn_read_parse_nonblocking`（`EAGAIN`→`error.ReadWouldBlock`，与 epoll 配合）、`http_send_response`（`text/plain` + `Content-Length`；状态行含 200/201/204/400/404/405/500）、`http_tcp_connect_loopback`（测试用）
 - [ ] 首版路线图：阻塞 accept + 每连接一线程；当前标准库为原语级 API，无自动「每连接一线程」封装
 - [x] 每连接：读 buffer -> parse -> `router`/Handler -> 写 Response；Keep-alive 多轮 parse（`http_conn_read_parse` + `http_connbuf_shift` + `IncompleteRequest` / 多次 `recv`）
 - [x] 错误路径（解析）：非法方法等导致 `!ParseResult` 时服务端可回 `400`（`http_parse_error_returns_400`）；Handler 层统一 5xx 仍待扩展

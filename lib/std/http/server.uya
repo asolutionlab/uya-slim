@@ -162,6 +162,47 @@ export fn http_conn_read_parse(conn_fd: i32, base: &byte, cap: usize, filled: &u
     }
 }
 
+/// 与 `http_conn_read_parse` 相同，但套接字须为 **非阻塞**：`read(2)` 遇 `EAGAIN`/`EWOULDBLOCK` 时返回 `error.ReadWouldBlock`（由 `@error_id` 与 Linux errno 11 对齐），便于在 epoll 可读后再调用。
+export fn http_conn_read_parse_nonblocking(conn_fd: i32, base: &byte, cap: usize, filled: &usize) !ParseResult {
+    while true {
+        const cur: usize = *filled;
+        if cur > cap {
+            return error.PayloadTooLarge;
+        }
+        const sl: &[byte] = base[0: cur];
+        const p: !ParseResult = parse(sl);
+        match p {
+            error.IncompleteRequest => {
+                if cur >= cap {
+                    return error.PayloadTooLarge;
+                }
+                var room: usize = cap - cur;
+                var chunk: usize = HTTP_RECV_BUF;
+                if chunk > room {
+                    chunk = room;
+                }
+                const dst: *byte = @ptr_from_usize(@usize_from_ptr(base as &void) + cur) as *byte;
+                const rr: !isize = sys_read(conn_fd, dst, chunk);
+                const n: isize = rr catch |err| {
+                    const eid: i32 = @error_id(err) as i32;
+                    // Linux 下非阻塞 read 的 EAGAIN/EWOULDBLOCK 与 syscall 负 errno 对齐为 11
+                    if eid == 11 {
+                        return error.ReadWouldBlock;
+                    }
+                    return error.ConnectionClosed;
+                };
+                if n <= 0 {
+                    return error.ConnectionClosed;
+                }
+                *filled = cur + (n as usize);
+            }
+            pr => {
+                return pr;
+            }
+        }
+    }
+}
+
 /// 从连接读取并解析至多一个完整请求（内部缓冲，可多次 `recv` 直至 `parse` 成功）。
 export fn http_recv_parse_request(conn_fd: i32) !ParseResult {
     var buf: [byte: HTTP_CONN_READ_CAP] = [];
