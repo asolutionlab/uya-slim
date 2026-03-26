@@ -1,0 +1,117 @@
+// lib/std/http/epoll_server.uya — epoll 多路复用 HTTP 服务器（Phase 9）
+//
+// 模块路径：use std.http.epoll_server
+//
+// 注意：单连接缓冲为固定大小；槽位数须保持较小，避免在栈上分配数 MiB 的 EpollServer（测试与 Handler 栈空间有限）。
+
+use std.http.types;
+use std.http.server;
+use std.http.server.fill_sockaddr_loopback_16;
+use std.http.server.http_listen_backlog;
+use std.http.server.read_port_from_sockaddr_16;
+use libc.syscall;
+
+/// 同时挂接的连接槽上限（与每槽 ~8KiB 读缓冲相乘后须可安全置于典型线程栈上）
+export const EPOLL_SERVER_MAX_SLOTS: usize = 64;
+const EPOLL_SERVER_BUF_SIZE: usize = 8192;
+
+/// epoll 连接状态
+export enum ConnState {
+    Recv,
+    Parse,
+    Write,
+    Closed,
+}
+
+/// 单个连接上下文（解析结果在读到完整请求后再写入栈上局部变量，不内嵌 Request）
+export struct EpollConnection {
+    fd: i32,
+    state: ConnState,
+    buf: [byte: EPOLL_SERVER_BUF_SIZE],
+    buf_len: usize,
+    buf_pos: usize,
+    wants_persist: bool,
+}
+
+/// epoll HTTP 服务器
+export struct EpollServer {
+    listen_fd: i32,
+    epfd: i32,
+    port: u16,
+    connections: [EpollConnection: EPOLL_SERVER_MAX_SLOTS],
+    connection_count: usize,
+}
+
+/// 创建 epoll HTTP 服务器（仅支持 ServerMode.Epoll）；`listen_fd` 已加入 epoll（可读 = 可 `accept`）
+export fn epoll_server_listen(cfg: &ServerConfig) !EpollServer {
+    if cfg.mode != ServerMode.Epoll {
+        return error.InvalidRequest;
+    }
+    const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    var one: i32 = 1;
+    _ = try sys_setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one as &void, 4 as u32);
+    var addr: [byte: 16] = [];
+    fill_sockaddr_loopback_16(cfg.port, &addr[0] as &byte);
+    _ = try sys_bind(fd, &addr[0] as &void, 16 as u32);
+    _ = try sys_listen(fd, http_listen_backlog(cfg.max_connections));
+    var port_out: u16 = cfg.port;
+    if cfg.port == 0 {
+        var alen: u32 = 16;
+        var out: [byte: 16] = [];
+        _ = try sys_getsockname(fd, &out[0] as &void, &alen);
+        port_out = read_port_from_sockaddr_16(&out[0] as &byte);
+    }
+    const epfd: i32 = try sys_epoll_create1(EPOLL_CLOEXEC);
+    var ev_listen: EpollEvent = EpollEvent{ events: EPOLLIN as u32, _pad: 0, data: fd as u64 };
+    _ = try sys_epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev_listen);
+    var srv: EpollServer = EpollServer{
+        listen_fd: fd,
+        epfd: epfd,
+        port: port_out,
+        connections: [],
+        connection_count: 0,
+    };
+    var i: usize = 0;
+    while i < EPOLL_SERVER_MAX_SLOTS {
+        srv.connections[i].fd = -1;
+        srv.connections[i].state = ConnState.Closed;
+        i = i + 1;
+    }
+    return srv;
+}
+
+/// `epoll_wait` 一次；仅注册了 `listen_fd` 时，返回值 >0 表示可 `epoll_server_accept`
+export fn epoll_server_poll(srv: &EpollServer, timeout_ms: i32) !i32 {
+    var events: [EpollEvent: 8] = [];
+    return sys_epoll_wait(srv.epfd, &events[0], 8, timeout_ms);
+}
+
+/// 从监听套接字接受一条 TCP 连接（与 `http_server_accept` 语义一致）
+export fn epoll_server_accept(srv: &EpollServer) !Conn {
+    var alen: u32 = 16;
+    var peer: [byte: 16] = [];
+    const cfd: i32 = try sys_accept(srv.listen_fd, &peer[0] as &void, &alen);
+    var nd: i32 = 1;
+    _ = sys_setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, &nd as &void, 4 as u32) catch {};
+    return Conn{ fd: cfd };
+}
+
+/// 关闭 epoll 服务器
+export fn epoll_server_close(srv: &EpollServer) void {
+    var i: usize = 0;
+    while i < EPOLL_SERVER_MAX_SLOTS {
+        if srv.connections[i].fd >= 0 {
+            _ = sys_close(srv.connections[i].fd) catch {};
+        }
+        i = i + 1;
+    }
+    if srv.listen_fd >= 0 {
+        _ = sys_epoll_ctl_del(srv.epfd, srv.listen_fd) catch {};
+    }
+    if srv.epfd >= 0 {
+        _ = sys_close(srv.epfd) catch {};
+    }
+    if srv.listen_fd >= 0 {
+        _ = sys_close(srv.listen_fd) catch {};
+    }
+}

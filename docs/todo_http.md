@@ -106,7 +106,8 @@
 
 ### 5.2 epoll 预留
 
-- [ ] `ServerConfig.mode` 已含 `ServerMode.Epoll`；`server.uya` 中 `Blocking` 以外仍返回错误，未实现 `run_epoll_loop`
+- [x] `std.http.epoll_server`（`lib/std/http/epoll_server.uya`）：`ServerMode.Epoll` 下 `epoll_server_listen`（`port==0` 时 `getsockname`）、`listen_fd` 已加入 epoll（`EPOLLIN`）、`epoll_server_poll` / `epoll_server_accept` / `epoll_server_close`；槽位上限 `EPOLL_SERVER_MAX_SLOTS`（默认 64）避免 `EpollServer` 栈上过大
+- [ ] `server.uya` 阻塞 API 仍仅 `Blocking`；完整 `run_epoll_loop`（客户端 fd 注册、`http_conn_read_parse`、路由与 Keep-alive 多轮）待办
 
 ### 5.3 测试与示例
 
@@ -177,7 +178,7 @@
 
 ## Phase 9/10：后续迭代
 
-- [ ] ServerMode.Epoll 多路复用实现
+- [ ] ServerMode.Epoll 多路复用实现（首步：`epoll_server` 监听侧 poll+accept 已落地，见 5.2 与 `tests/test_epoll_server.uya`；待：连接级 epoll、非阻塞 I/O、与 `http_conn_read_parse`/路由闭环）
 - [ ] 中间件实现：logging、CORS、jwt_auth（包装 Handler，401/403 语义见设计文档）
 - [ ] 异步 Handler、线程池模式（ThreadPool）
 - [ ] http.client（可选）

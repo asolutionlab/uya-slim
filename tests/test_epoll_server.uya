@@ -1,0 +1,71 @@
+// tests/test_epoll_server.uya — epoll 监听 + poll + accept（栈上 EpollServer 须保持较小）
+
+use std.http.epoll_server;
+use std.http.types;
+use std.http.server;
+use std.testing.assert_eq_i32;
+use libc.unistd;
+use libc.syscall;
+
+test "epoll_server_listen_port_zero_and_close" {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Epoll,
+        port: 0,
+        max_connections: 8,
+        host: [],
+    };
+    var srv: EpollServer = try epoll_server_listen(&cfg);
+    if srv.port == 0 {
+        try assert_eq_i32(0, 1);
+    }
+    if srv.listen_fd < 0 {
+        try assert_eq_i32(0, 1);
+    }
+    epoll_server_close(&srv);
+}
+
+test "epoll_poll_then_accept" {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Epoll,
+        port: 0,
+        max_connections: 8,
+        host: [],
+    };
+    var srv: EpollServer = try epoll_server_listen(&cfg);
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        const conn_res: !i32 = http_tcp_connect_loopback(srv.port);
+        const cfd: i32 = conn_res catch {
+            0 - 1
+        };
+        if cfd < 0 {
+            sys_exit(1);
+        }
+        _ = sys_close(cfd);
+        sys_exit(0);
+    }
+    if child_pid < 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    const n: i32 = try epoll_server_poll(&srv, 8000);
+    if n <= 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    var conn: Conn = try epoll_server_accept(&srv);
+    _ = sys_close(conn.fd);
+    var st: i32 = 0;
+    _ = try sys_waitpid(child_pid, &st, 0);
+    if (st & 0xff) != 0 {
+        epoll_server_close(&srv);
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32((st >> 8) & 0xff, 0);
+    epoll_server_close(&srv);
+}
+
+test "conn_state_enum_discriminants" {
+    try assert_eq_i32(ConnState.Recv as i32, 0);
+    try assert_eq_i32(ConnState.Closed as i32, 3);
+}

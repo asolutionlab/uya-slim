@@ -32,7 +32,7 @@ fn htons_host_to_be(p: u16) u16 {
     return ((p & (0xFF as u16)) << 8) | ((p >> 8) & (0xFF as u16));
 }
 
-fn fill_sockaddr_loopback_16(port_host: u16, out: &byte) void {
+export fn fill_sockaddr_loopback_16(port_host: u16, out: &byte) void {
     var i: usize = 0;
     while i < 16 {
         out[i] = 0;
@@ -49,13 +49,13 @@ fn fill_sockaddr_loopback_16(port_host: u16, out: &byte) void {
     out[7] = 1;
 }
 
-fn read_port_from_sockaddr_16(addr: &byte) u16 {
+export fn read_port_from_sockaddr_16(addr: &byte) u16 {
     const pnet: u16 = addr[2] as u16 | ((addr[3] as u16) << 8);
     return ((pnet & (0xFF as u16)) << 8) | ((pnet >> 8) & (0xFF as u16));
 }
 
 /// `listen(2)` 的 backlog：`cfg.max_connections` 为提示值，夹在 \[128, 8192\]（内核仍可能按 `somaxconn` 再截断）。
-fn http_listen_backlog(cfg_max: i32) i32 {
+export fn http_listen_backlog(cfg_max: i32) i32 {
     var b: i32 = cfg_max;
     if b < 128 {
         b = 128;

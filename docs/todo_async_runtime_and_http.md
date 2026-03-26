@@ -185,6 +185,11 @@ Phase 1: Socket API
 - 测试：`test_http_server.uya`（含流水线双 GET、`POST+GET`→`201`/`204`、`path_param+query`、`http_parse_error_returns_400`）、`parse_post_body_incomplete`；`http_send_response` 支持 `Created`/`NoContent` 状态行
 - 示例：`examples/http_server.uya`（`try` + `match`：`pr`/成功分支放在各 `error.*` 之后，避免 C 代码 `else` 悬空）
 
+**Phase 9（HTTP epoll，进行中）**
+- `lib/std/http/epoll_server.uya`：`epoll_server_listen` / `epoll_server_poll` / `epoll_server_accept` / `epoll_server_close`；`EPOLL_SERVER_MAX_SLOTS=64` 控制栈占用（勿在连接结构体内嵌完整 `Request`）
+- 测试：`tests/test_epoll_server.uya`（`--c99` 与 `--uya --c99`）
+- 待办：客户端连接 `epoll_ctl`、非阻塞读写、与 `http_conn_read_parse` + 路由的完整事件循环
+
 ### 第四步：Phase 9-10 异步 HTTP 服务器（约 6 周）
 
 依赖第二步 P1 修复完成 + Phase 5 阻塞服务器通过。
