@@ -220,7 +220,9 @@ tests:
 	else \
 		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99 --hide-pass $$OTHER_ARGS; \
 	fi; \
+	TS=$$?; \
 	echo ""; \
+	if [ $$TS -ne 0 ]; then echo "✗ 测试失败（退出码 $$TS）"; exit $$TS; fi; \
 	echo "✓ 测试完成"
 
 # hosted 主测试集：为 Darwin/Windows 预留的普通链接测试主线
@@ -236,7 +238,9 @@ tests-hosted:
 	else \
 		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 --hide-pass $$OTHER_ARGS; \
 	fi; \
+	TS=$$?; \
 	echo ""; \
+	if [ $$TS -ne 0 ]; then echo "✗ hosted 测试失败（退出码 $$TS）"; exit $$TS; fi; \
 	echo "✓ hosted 测试完成"
 
 # 快捷目标：测试自举编译器（默认 tests/run_programs_parallel.sh 并行）
@@ -250,7 +254,9 @@ tests-uya:
 		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99 -e; \
 	else \
 		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static ./tests/run_programs_parallel.sh --uya --c99 --hide-pass; \
-	fi
+	fi; \
+	TS=$$?; \
+	if [ $$TS -ne 0 ]; then echo "✗ 测试失败（退出码 $$TS）"; exit $$TS; fi
 
 # 输出标准库为 C 代码（使用自举编译器）
 outlibc: uya
@@ -381,7 +387,9 @@ check: uya
 	echo "=========================================="; \
 	if [ $$TEST_EXIT -ne 0 ]; then \
 		echo "测试执行失败（退出码: $$TEST_EXIT）"; \
-		grep -E "FAIL|PASS|ERROR" /tmp/make_check_output.txt | tail -20; \
+		grep -E "FAIL:|❌|失败:|编译失败|链接失败|未计入" /tmp/make_check_output.txt | tail -40 || true; \
+		echo "--- 日志尾部（便于定位）---"; \
+		tail -60 /tmp/make_check_output.txt; \
 		rm -f /tmp/make_check_output.txt /tmp/verify_out.txt; \
 		exit 1; \
 	fi; \

@@ -225,7 +225,6 @@ test "http_blocking_listen_accept_get" {
     if child_pid <= 0 {
         try assert_eq_i32(0, 1);
     }
-
     var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
     const empty_body: &[byte] = empty_raw[0: 0];
     var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
@@ -266,7 +265,6 @@ test "http_parse_error_returns_400" {
     if child_pid <= 0 {
         try assert_eq_i32(0, 1);
     }
-
     var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
     const empty_body: &[byte] = empty_raw[0: 0];
     var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
@@ -329,7 +327,6 @@ test "http_keepalive_pipeline_two_requests" {
     if child_pid <= 0 {
         try assert_eq_i32(0, 1);
     }
-
     var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
     const empty_body: &[byte] = empty_raw[0: 0];
     var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
@@ -381,7 +378,6 @@ test "http_http10_keepalive_response_echoes_connection" {
     if child_pid <= 0 {
         try assert_eq_i32(0, 1);
     }
-
     var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
     const empty_body: &[byte] = empty_raw[0: 0];
     var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
@@ -487,7 +483,6 @@ test "http_pipeline_post_created_get_no_content" {
     if child_pid <= 0 {
         try assert_eq_i32(0, 1);
     }
-
     var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
     const empty_body: &[byte] = empty_raw[0: 0];
     var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
@@ -572,7 +567,6 @@ test "http_get_path_param_and_query" {
     if child_pid <= 0 {
         try assert_eq_i32(0, 1);
     }
-
     var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
     const empty_body: &[byte] = empty_raw[0: 0];
     var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };

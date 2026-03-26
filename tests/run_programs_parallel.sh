@@ -561,33 +561,32 @@ for test_item in "${multifile_tests[@]}"; do
     rm -f "$result_file"
 done
 
-# 使用 xargs 并行执行单文件测试
+# 并行执行单文件测试
+# 注意：非交互式 bash 下 jobs(1) 通常不列出后台任务，用「jobs | wc -l」限流会恒为 0，等于一次性启动全部用例。
+# 必须用显式计数 + wait 限制并发（每满 PARALLEL_JOBS 个后台任务 wait 一轮）。
 if [ ${#single_tests[@]} -gt 0 ]; then
     if [ "$ERRORS_ONLY" = false ]; then
         echo ""
         echo "开始并行执行 ${#single_tests[@]} 个单文件测试（$PARALLEL_JOBS 线程）..."
     fi
     
-    # 使用 xargs -P 并行执行
+    running_batch=0
     for test_item in "${single_tests[@]}"; do
         base_name=$(basename "$test_item" .uya)
         result_file="$BUILD_DIR/parallel_results/${base_name}.result"
         
-        # 清空结果文件
         > "$result_file"
         
-        # 在后台运行测试
         (
             run_single_test "$test_item" "$result_file"
         ) &
         
-        # 控制并发数
-        if [ $(jobs -r | wc -l) -ge "$PARALLEL_JOBS" ]; then
-            wait -n 2>/dev/null || true
+        running_batch=$((running_batch + 1))
+        if [ "$running_batch" -ge "$PARALLEL_JOBS" ]; then
+            wait
+            running_batch=0
         fi
     done
-    
-    # 等待所有后台任务完成
     wait
     
     # 收集结果
@@ -613,6 +612,13 @@ if [ ${#single_tests[@]} -gt 0 ]; then
                 FAILED=$((FAILED + 1))
             fi
             
+            rm -f "$result_file"
+        else
+            if [ "$ERRORS_ONLY" = true ]; then
+                echo "测试: $base_name"
+            fi
+            echo "  ❌ $base_name:无测试结果或结果文件为空（子进程可能崩溃或未写入）"
+            FAILED=$((FAILED + 1))
             rm -f "$result_file"
         fi
     done
