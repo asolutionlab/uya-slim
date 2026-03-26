@@ -7,8 +7,8 @@ use std.testing.assert_true;
 test "test_escape_sequences" {
     // 测试各种转义序列 - 验证编译器正确处理
     const newline: [byte: 7] = "hello\n";
-    const tab: [byte: 9] = "tab\ttest\n";
-    const backslash: [byte: 15] = "backslash\\test\n";
+    const tab: [byte: 10] = "tab\ttest\n";
+    const backslash: [byte: 16] = "backslash\\test\n";
     const quote: [byte: 12] = "quote\"test\n";
     
     // 验证转义字符位置

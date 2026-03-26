@@ -1,6 +1,6 @@
 # Uya 语言正式语法规范（Formal BNF）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.42 同步（2026-03-22）
+> **版本**：与 [uya.md](./uya.md) 0.49.43 同步（2026-03-26）
 
 本文档包含 Uya 语言的完整、无歧义的 BNF 语法定义，用于：
 - 编译器/解析器实现
@@ -137,7 +137,7 @@ base_type      = 'i8' | 'i16' | 'i32' | 'i64' | 'u8' | 'u16' | 'u32' | 'u64'
                | 'f32' | 'f64' | 'bool' | 'byte' | 'void' | 'usize'
 pointer_type   = '&' [ 'const' ] type | '*' [ 'const' ] type  # 0.42 新增 &const T 和 *const T
 array_type     = '[' type ':' NUM ']'
-slice_type     = '&[' type ']' | '&[' type ';' NUM ']'
+slice_type     = '&[' [ 'const' ] type ']' | '&[' [ 'const' ] type ';' NUM ']'  # 0.49.43：元素只读 & [ const T ]（如 &[const byte]）
 struct_type    = ID [ '<' type_arg_list '>' ]
 union_type     = ID [ '<' type_arg_list '>' ] | 'union' ID  # 联合体类型；'union' ID 用于外部 C 联合体
 interface_type = ID [ '<' type_arg_list '>' ]
@@ -153,6 +153,7 @@ mask_type      = '@mask' '(' NUM ')'
 ```
 
 **说明**：
+- **`&[const T]`**（**0.49.43**）：切片元素只读；字符串字面量赋给切片类型时须为 **`&[const byte]`**（或带长度形参的 **`&[const byte: N]`**），见 uya.md 规范变更 0.49.43
 - `@vector(T, N)` 表示元素类型为 `T`、通道数为 `N` 的向量类型
 - `@mask(N)` 表示 `N` 通道的掩码类型
 - 第一阶段 `N` 仅允许字面量正整数
@@ -473,7 +474,7 @@ TEXT           = [^${}]+
 - 整数字面量默认类型为 `i32`，浮点字面量默认类型为 `f64`
 - 下划线 `_` 可出现在任意两个数字之间，不能出现在开头、结尾或连续出现
 - 下划线不能紧跟在进制前缀之后（如 `0x_FF` 非法）
-- 字符串字面量包括普通字符串 `"..."` 和原始字符串 `` `...` ``（无转义）；语义上自动带 `\0` 结尾；可赋值给 `[byte: N]`、`&byte`、`*byte`（详见 uya.md §1.4）
+- 字符串字面量包括普通字符串 `"..."` 和原始字符串 `` `...` ``（无转义）；语义上自动带 `\0` 结尾；可初始化/赋值给 `[byte: N]`、**`&[const byte]`**（**0.49.43**）、`&byte`、`*byte`（详见 uya.md 文件与词法·字符串字面量）；**赋值语句左值**可为标识符或**成员访问链**（**`a.b.c = "..."`**）
 - **`escape_sequence` / `escape_sequence_char`**（**0.49.42**）：**`\x`** 后须恰好两个 **`HEX`**；**`\u`** 后须恰好四个 **`HEX`**，按 UTF-8 展开（字符串）或要求值 **≤255**（字符，见 uya.md §1.4）
 - 字符字面量 `'x'` 类型为 `byte`，可赋值给 `byte`
 

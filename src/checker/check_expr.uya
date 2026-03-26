@@ -20,6 +20,7 @@ fn copy_type(t: &Type) Type {
         array_size: t.array_size,
         slice_element_type: t.slice_element_type,
         slice_len: t.slice_len,
+        slice_element_is_const: t.slice_element_is_const,
         tuple_element_types: t.tuple_element_types,
         tuple_count: t.tuple_count,
         error_union_payload_type: t.error_union_payload_type,
@@ -186,6 +187,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         array_size: 0,
         slice_element_type: null,
         slice_len: 0,
+        slice_element_is_const: 0,
         tuple_element_types: null,
         tuple_count: 0,
         error_union_payload_type: null,
@@ -773,6 +775,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         result.kind = TypeKind.TYPE_SLICE;
         result.slice_element_type = element_type_ptr;
         result.slice_len = -1;
+        result.slice_element_is_const = 0;
         return result;
     } else if expr.type == ASTNodeType.AST_STRUCT_INIT {
         // 结构体字面量：返回结构体类型
@@ -1278,8 +1281,65 @@ fn checker_check_expr_type(checker: &TypeChecker, expr: &ASTNode, expected_type:
     if simd_sel_resolved < 0 {
         return 0;
     }
+    // 字符串字面量 -> [byte:N] 初始化/赋值；-> &[const byte] / &[const byte:N] 切片赋值（重指向）
+    if expr.type == ASTNodeType.AST_STRING && expr.string_literal_value != null {
+        if expected_copy.kind == TypeKind.TYPE_ARRAY && expected_copy.element_type != null &&
+            expected_copy.element_type[0].kind == TypeKind.TYPE_BYTE {
+            var sl: i32 = 0;
+            while expr.string_literal_value[sl] != 0 {
+                sl = sl + 1;
+            }
+            const need: i32 = sl + 1;
+            if expected_copy.array_size < need {
+                const msg_cap: usize = 256;
+                const msg_buf: &byte = arena_alloc(checker.arena, msg_cap) as &byte;
+                if msg_buf != null {
+                    sprintf(msg_buf as *byte,
+                        "[byte:N] 容量不足：至少需要 N>=%d（含结尾 0；本字面可见 %d 字节），当前 N=%d" as *byte,
+                        need, sl, expected_copy.array_size);
+                    checker_report_error(checker, expr, msg_buf);
+                } else {
+                    checker_report_error(checker, expr, "字符串字面量过长，无法装入 byte 数组（需含结尾 0）" as *byte);
+                }
+                return 0;
+            }
+            return 1;
+        }
+        if expected_copy.kind == TypeKind.TYPE_SLICE && expected_copy.slice_element_type != null &&
+            expected_copy.slice_element_type[0].kind == TypeKind.TYPE_BYTE {
+            if expected_copy.slice_element_is_const == 0 {
+                checker_report_error(checker, expr, "字符串字面量赋值给切片须使用 &[const byte] 或 &[const byte:N]" as *byte);
+                return 0;
+            }
+            var sl2: i32 = 0;
+            while expr.string_literal_value[sl2] != 0 {
+                sl2 = sl2 + 1;
+            }
+            if expected_copy.slice_len >= 0 && sl2 > expected_copy.slice_len {
+                checker_report_error(checker, expr, "字符串可见字节数超过 &[const byte:N] 的 N" as *byte);
+                return 0;
+            }
+            return 1;
+        }
+    }
     const actual_type: Type = checker_infer_type(checker, expr);
     if type_equals(copy_type(&actual_type), copy_type(&expected_copy)) != 0 {
+        return 1;
+    }
+    // &[const byte] / &[const byte:N] <- 字符串子切片 &"..."[a:b]（推断为 &[byte]，此处放宽）
+    if expr.type == ASTNodeType.AST_SLICE_EXPR && expr.slice_expr_base != null &&
+        expr.slice_expr_base.type == ASTNodeType.AST_STRING &&
+        expected_copy.kind == TypeKind.TYPE_SLICE && expected_copy.slice_element_type != null &&
+        expected_copy.slice_element_type[0].kind == TypeKind.TYPE_BYTE &&
+        expected_copy.slice_element_is_const != 0 {
+        if expected_copy.slice_len >= 0 && expr.slice_expr_len_expr != null &&
+            is_constant_expression(checker, expr.slice_expr_len_expr) != 0 {
+            const len_v: i32 = checker_eval_const_expr(checker, expr.slice_expr_len_expr);
+            if len_v > expected_copy.slice_len {
+                checker_report_error(checker, expr, "切片长度超过 &[const byte:N] 的 N" as *byte);
+                return 0;
+            }
+        }
         return 1;
     }
     // 结构体实现接口时，可装箱为接口类型（赋值/传参）

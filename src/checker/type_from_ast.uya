@@ -140,6 +140,7 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
         array_size: 0,
         slice_element_type: null,
         slice_len: 0,
+        slice_element_is_const: 0,
         tuple_element_types: null,
         tuple_count: 0,
         error_union_payload_type: null,
@@ -270,6 +271,7 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
         result.kind = TypeKind.TYPE_SLICE;
         result.slice_element_type = elem_type_ptr;
         result.slice_len = slice_len;
+        result.slice_element_is_const = type_node.type_slice_element_const;
         return result;
     }
     
@@ -664,6 +666,7 @@ export fn type_to_ast(checker: &TypeChecker, t: &Type, line: i32, column: i32, f
         if node == null { return null; }
         node.type_slice_element_type = elem_ast;
         node.type_slice_size_expr = null;
+        node.type_slice_element_const = t.slice_element_is_const;
         return node;
     }
     if t.kind == TypeKind.TYPE_VECTOR {

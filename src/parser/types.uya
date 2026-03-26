@@ -114,6 +114,11 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
         if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_LEFT_BRACKET {
             // &&[T] - 指向切片的指针
             parser_consume(parser);  // 消费 '['
+            var slice_elem_const_and: i32 = 0;
+            if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_CONST {
+                parser_consume(parser);
+                slice_elem_const_and = 1;
+            }
             const element_type: &ASTNode = parser_parse_type(parser);
             if element_type == null {
                 return null;
@@ -128,6 +133,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
             }
             slice_type.type_slice_element_type = element_type;
             slice_type.type_slice_size_expr = null;
+            slice_type.type_slice_element_const = slice_elem_const_and;
             // 再创建外层指针
             const outer_ptr: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_POINTER, line, column, parser.arena, parser_get_filename(parser));
             if outer_ptr == null {
@@ -188,6 +194,11 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
         // 切片类型 &[T] 或 &[T: N]：& 后紧跟 [
         if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_LEFT_BRACKET {
             parser_consume(parser);  // 消费 '['
+            var slice_elem_const2: i32 = 0;
+            if parser.current_token != null && parser.current_token.type == TokenType.TOKEN_CONST {
+                parser_consume(parser);
+                slice_elem_const2 = 1;
+            }
             const element_type: &ASTNode = parser_parse_type(parser);
             if element_type == null {
                 return null;
@@ -209,6 +220,7 @@ fn parser_parse_type(parser: &Parser) &ASTNode {
             }
             slice_type.type_slice_element_type = element_type;
             slice_type.type_slice_size_expr = size_expr;
+            slice_type.type_slice_element_const = slice_elem_const2;
             return slice_type;
         }
         

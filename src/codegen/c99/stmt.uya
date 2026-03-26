@@ -1092,6 +1092,104 @@ fn gen_return_error_union_expr(codegen: &C99CodeGenerator, expr: &ASTNode, paylo
     }
 }
 
+// 字符串字面量可见字节数（不含结尾 0）
+fn c99_string_literal_visible_len(s: &byte) i32 {
+    if s == null {
+        return 0;
+    }
+    var n: i32 = 0;
+    while s[n] != 0 {
+        n = n + 1;
+    }
+    return n;
+}
+
+fn assign_dest_type_c_for_string_assign(codegen: &C99CodeGenerator, dest: &ASTNode) &byte {
+    if codegen == null || dest == null {
+        return null;
+    }
+    if dest.type == ASTNodeType.AST_IDENTIFIER {
+        return get_identifier_type_c(codegen, dest.identifier_name);
+    }
+    if dest.type == ASTNodeType.AST_MEMBER_ACCESS {
+        return get_c_type_of_expr(codegen, dest);
+    }
+    return null;
+}
+
+fn assign_dest_is_byte_array_c(codegen: &C99CodeGenerator, dest: &ASTNode) i32 {
+    const tc: &byte = assign_dest_type_c_for_string_assign(codegen, dest);
+    if tc == null {
+        return 0;
+    }
+    if strchr(tc as *byte, 91) == null {
+        return 0;
+    }
+    if strstr(tc as *byte, "uint8_t" as *byte) == null {
+        return 0;
+    }
+    return 1;
+}
+
+fn assign_dest_is_byte_slice_c(codegen: &C99CodeGenerator, dest: &ASTNode) i32 {
+    const tc: &byte = assign_dest_type_c_for_string_assign(codegen, dest);
+    if tc == null {
+        return 0;
+    }
+    if strstr(tc as *byte, "uya_slice_uint8" as *byte) == null {
+        return 0;
+    }
+    return 1;
+}
+
+fn gen_assign_string_to_byte_array(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode) void {
+    if codegen == null || dest == null || src == null || src.type != ASTNodeType.AST_STRING {
+        return;
+    }
+    const vis: i32 = c99_string_literal_visible_len(src.string_literal_value);
+    const copy_len: i32 = vis + 1;
+    c99_emit_indent(codegen);
+    fputs("memset(" as *byte, codegen.emit_stream as *void);
+    codegen.emitting_assign_lhs = 1;
+    gen_expr(codegen, dest);
+    codegen.emitting_assign_lhs = 0;
+    fputs(", 0, sizeof(" as *byte, codegen.emit_stream as *void);
+    codegen.emitting_assign_lhs = 1;
+    gen_expr(codegen, dest);
+    codegen.emitting_assign_lhs = 0;
+    fputs("));\n" as *byte, codegen.emit_stream as *void);
+    c99_emit_indent(codegen);
+    fputs("__uya_memcpy(" as *byte, codegen.emit_stream as *void);
+    codegen.emitting_assign_lhs = 1;
+    gen_expr(codegen, dest);
+    codegen.emitting_assign_lhs = 0;
+    fputs(", " as *byte, codegen.emit_stream as *void);
+    gen_expr(codegen, src);
+    fputs(", " as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "%d);\n" as *byte, copy_len);
+}
+
+fn gen_assign_string_to_byte_slice(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode) void {
+    if codegen == null || dest == null || src == null || src.type != ASTNodeType.AST_STRING {
+        return;
+    }
+    const vis: i32 = c99_string_literal_visible_len(src.string_literal_value);
+    c99_emit_indent(codegen);
+    codegen.emitting_assign_lhs = 1;
+    gen_expr(codegen, dest);
+    codegen.emitting_assign_lhs = 0;
+    fputs(".ptr = " as *byte, codegen.emit_stream as *void);
+    gen_expr(codegen, src);
+    c99_emit_semi_newline(codegen);
+    c99_emit_indent(codegen);
+    codegen.emitting_assign_lhs = 1;
+    gen_expr(codegen, dest);
+    codegen.emitting_assign_lhs = 0;
+    fputs(".len = (size_t)" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "%d" as *byte, vis);
+    c99_emit_semi_newline(codegen);
+}
+
 // 生成赋值语句
 fn gen_assign_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     const dest: &ASTNode = stmt.assign_dest;
@@ -1102,6 +1200,18 @@ fn gen_assign_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         gen_expr(codegen, src);
         fputs(");\n" as *byte, codegen.emit_stream as *void);
         return;
+    }
+    
+    if src != null && src.type == ASTNodeType.AST_STRING &&
+        (dest.type == ASTNodeType.AST_IDENTIFIER || dest.type == ASTNodeType.AST_MEMBER_ACCESS) {
+        if assign_dest_is_byte_array_c(codegen, dest) != 0 {
+            gen_assign_string_to_byte_array(codegen, dest, src);
+            return;
+        }
+        if assign_dest_is_byte_slice_c(codegen, dest) != 0 {
+            gen_assign_string_to_byte_slice(codegen, dest, src);
+            return;
+        }
     }
     
     var is_array_assign: i32 = check_assign_is_array(codegen, dest);
@@ -1931,6 +2041,27 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
 
                 if did_box == 0 {
+                    var did_string_slice_init: i32 = 0;
+                    if var_type != null && var_type.type == ASTNodeType.AST_TYPE_SLICE &&
+                        var_type.type_slice_element_const != 0 &&
+                        var_type.type_slice_element_type != null &&
+                        var_type.type_slice_element_type.type == ASTNodeType.AST_TYPE_NAMED &&
+                        var_type.type_slice_element_type.type_named_name != null &&
+                        strcmp(var_type.type_slice_element_type.type_named_name as *byte, "byte" as *byte) == 0 &&
+                        init_expr != null && init_expr.type == ASTNodeType.AST_STRING {
+                        const vis_sl: i32 = c99_string_literal_visible_len(init_expr.string_literal_value);
+                        const slc_ty: &byte = c99_type_to_c(codegen, var_type);
+                        if slc_ty != null {
+                            fputc(40, codegen.emit_stream as *void);
+                            fputs(slc_ty as *byte, codegen.emit_stream as *void);
+                            fputs("){ .ptr = " as *byte, codegen.emit_stream as *void);
+                            gen_expr(codegen, init_expr);
+                            fputs(", .len = (size_t)" as *byte, codegen.emit_stream as *void);
+                            fprintf(codegen.emit_stream as *void, "%d }" as *byte, vis_sl);
+                            did_string_slice_init = 1;
+                        }
+                    }
+                    if did_string_slice_init == 0 {
                     var need_slice_deref_init: i32 = 0;
                     if var_type != null && var_type.type == ASTNodeType.AST_TYPE_SLICE &&
                         init_expr.type == ASTNodeType.AST_UNARY_EXPR &&
@@ -1945,6 +2076,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                         fputs(")" as *byte, codegen.emit_stream as *void);
                     } else {
                         gen_expr(codegen, init_expr);
+                    }
                     }
                 }
                 c99_emit_semi_newline(codegen);

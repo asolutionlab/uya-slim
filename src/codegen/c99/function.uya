@@ -2571,6 +2571,7 @@ fn substitute_type_arg(codegen: &C99CodeGenerator, type_node: &ASTNode) &ASTNode
             if new_slice != null {
                 new_slice.type_slice_element_type = slice_substituted;
                 new_slice.type_slice_size_expr = type_node.type_slice_size_expr;
+                new_slice.type_slice_element_const = type_node.type_slice_element_const;
                 return new_slice;
             }
         }

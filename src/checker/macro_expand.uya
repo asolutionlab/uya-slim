@@ -1162,6 +1162,7 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
     } else if node.type == ASTNodeType.AST_TYPE_SLICE {
         copy.type_slice_element_type = deep_copy_ast_internal(node.type_slice_element_type, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
         copy.type_slice_size_expr = deep_copy_ast_internal(node.type_slice_size_expr, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
+        copy.type_slice_element_const = node.type_slice_element_const;
     } else if node.type == ASTNodeType.AST_CAST_EXPR {
         copy.cast_expr_expr = deep_copy_ast_internal(node.cast_expr_expr, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);
         copy.cast_expr_target_type = deep_copy_ast_internal(node.cast_expr_target_type, ctx, filename, state, loop_var_name, current_name, current_type_name, enable_field_subst);

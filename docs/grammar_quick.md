@@ -1,6 +1,6 @@
 # Uya 语法速查手册（Quick Reference）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.42 同步（2026-03-22）
+> **版本**：与 [uya.md](./uya.md) 0.49.43 同步（2026-03-26）
 
 本文档是 Uya 语言的快速参考手册，包含精简语法定义、常用代码模式和速查表。
 
@@ -49,8 +49,8 @@ var y: i32 = 10;
 | **整数** | `i8` `i16` `i32` `i64`<br>`u8` `u16` `u32` `u64` `usize` | `const x: i32 = 42;`<br>`const hex: i32 = 0xFF;`<br>`const oct: i32 = 0o755;`<br>`const bin: i32 = 0b1010;`<br>`const big: i32 = 1_000_000;`<br>`const small: i8 = 100i8;`<br>`const mask: u8 = 0xFFu8;` | 有符号/无符号整数<br>支持十六进制 (`0xFF`)、八进制 (`0o755`)、二进制 (`0b1010`)<br>支持下划线分隔符 (`1_000_000`)<br>支持类型后缀：`i8/i16/i32/i64/u8/u16/u32/u64/usize`（如 `100i8`、`0xFFu8`） |
 | **浮点** | `f32` `f64` | `const pi: f64 = 3.14;`<br>`const e: f64 = 2.718_281_828;`<br>`const v32: f32 = 1.5f32;` | 单/双精度浮点数<br>支持下划线分隔符<br>支持类型后缀：`f32`/`f64`（如 `1.5f32`、`3.14f64`） |
 | **布尔** | `bool` | `const flag: bool = true;` | 布尔值 |
-| **数组** | `[T: N]` | `const arr: [i32: 5] = [1,2,3,4,5];`<br>`var buf: [byte: 8] = "hi";`<br>`var buf: [i32: 100] = [];` | 固定长度数组；字符串字面量可初始化 `[byte: N]`（自动 `\0` 结尾）；`[]` 表示未初始化 |
-| **切片** | `&[T]` `&[T: N]` | `const slice: &[i32] = &arr[2:5];`<br>`const sub: &[byte] = &"hello"[0:3];`（**0.49.41**） | 动态/已知长度切片；字符串字面量可接 **`[start:len]`** 再取 **`&`** 得 **`&[byte]`** |
+| **数组** | `[T: N]` | `const arr: [i32: 5] = [1,2,3,4,5];`<br>`var buf: [byte: 8] = "hi"; buf = "xy";`<br>`var buf: [i32: 100] = [];` | 固定长度数组；字符串字面量可初始化/赋值 **`[byte: N]`**（**`N ≥` 可见字节+1**，自动 `\0`）；左值可为 **`obj.f` / `a.b.c`**（**0.49.43**）；`[]` 表示未初始化 |
+| **切片** | `&[T]` `&[const T]` `&[T: N]` | `const slice: &[i32] = &arr[2:5];`<br>`const sub: &[byte] = &"hello"[0:3];`（**0.49.41**）<br>`var s: &[const byte] = "hi";`（**0.49.43**） | 动态/已知长度切片；字面量子区间仍用 **`&"..."[i:j]`**；字符串字面量赋给切片须 **`&[const byte]`**（**0.49.43**） |
 | **指针** | `&T` `&const T` `*T` `*const T` | `const ptr: &i32 = &x;`<br>`const s: &byte = "hello";`<br>`const p: *byte = "hi";` | Uya指针/只读指针/FFI指针；字符串字面量可赋给 `&byte`/`*byte`（自动 `\0` 结尾） |
 | **结构体** | `StructName`<br>`StructName<T>` | `const p: Point = Point{x: 1.0, y: 2.0};`<br>`const vec: Vec<i32> = ...;` | 结构体类型，支持泛型参数 |
 | **联合体** | `UnionName` | `const v: IntOrFloat = IntOrFloat.i(42);` | 标签联合体，编译期证明安全 |

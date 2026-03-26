@@ -838,10 +838,14 @@ export extern "libc" fn fprintf(stream: &FILE, format: &const byte, ...) i32 {
 struct _FmtContext {
     buf: &byte,           // 输出缓冲区
     buf_pos: usize,       // 当前位置
-    buf_max: usize,       // 最大容量
+    buf_max: usize,       // 可写区间 [0, buf_max)（不含 buf_max）
     stream: &FILE,        // 输出流（null 表示写入缓冲区）
     total_len: usize,     // 不计截断时“应写”字符数（用于 snprintf 返回值）
 }
+
+// vsnprintf(buf, 0, ...) 时传入 buf_size==0：不写入缓冲区（仅累计 total_len）
+// vsprintf 若传 buf_size==0 会得到 buf_max==0，无法写入且不会追加 '\\0'，故须使用足够大的名义容量
+const _VSPRINTF_BUF_CAP: usize = 2147483647;
 
 // C99 格式说明符 flags
 const _FMT_MINUS: i32 = 1;
@@ -1161,6 +1165,7 @@ fn _vfprintf_impl(stream: &FILE, format: &const byte, ap: va_list, use_buf: i32,
         if buf_size > 0 {
             ctx.buf_max = buf_size - 1;
         } else {
+            // 仅 vsnprintf(..., n=0, ...)：不写入；勿用于 vsprintf（见 _VSPRINTF_BUF_CAP）
             ctx.buf_max = 0;
         }
     }
@@ -1706,7 +1711,7 @@ export extern "libc" fn vsprintf(buf: &byte, format: &const byte, ap: va_list) i
     if buf == null || format == null {
         return 0 - 1;
     }
-    return _vfprintf_impl(null, format, ap, 1, buf, 0);
+    return _vfprintf_impl(null, format, ap, 1, buf, _VSPRINTF_BUF_CAP);
 }
 
 // vsnprintf - 格式化到字符串（带长度限制，接收 va_list 参数）

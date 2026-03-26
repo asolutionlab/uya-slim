@@ -167,6 +167,7 @@ struct Type {
     array_size: i32,
     slice_element_type: &Type,
     slice_len: i32,
+    slice_element_is_const: i32,
     tuple_element_types: &Type,
     tuple_count: i32,
     error_union_payload_type: &Type,

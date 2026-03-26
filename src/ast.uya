@@ -397,9 +397,10 @@ struct ASTNode {
     // type_array
     type_array_element_type: &ASTNode,
     type_array_size_expr: &ASTNode,
-    // type_slice（&[T] 或 &[T: N]）
+    // type_slice（&[T] 或 &[T: N]）；type_slice_element_const=1 表示 &[const T]
     type_slice_element_type: &ASTNode,
     type_slice_size_expr: &ASTNode,
+    type_slice_element_const: i32,
     // type_tuple（(T1, T2, ...)）
     type_tuple_element_types: & & ASTNode,
     type_tuple_element_count: i32,
@@ -647,6 +648,7 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &Arena, filena
     node.type_array_size_expr = null;
     node.type_slice_element_type = null;
     node.type_slice_size_expr = null;
+    node.type_slice_element_const = 0;
     node.type_tuple_element_types = null;
     node.type_tuple_element_count = 0;
     node.type_error_union_payload_type = null;
