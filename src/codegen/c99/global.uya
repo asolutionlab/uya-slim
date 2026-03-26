@@ -25,6 +25,7 @@ var g_c99_ident_ref_method_structs: [&byte: C99_IDENT_REF_CACHE_SIZE] = [];
 var g_c99_ident_ref_async_sv: [&byte: C99_IDENT_REF_CACHE_SIZE] = [];
 var g_c99_ident_ref_async_pc: [i32: C99_IDENT_REF_CACHE_SIZE] = [];
 var g_c99_ident_ref_async_bc: [i32: C99_IDENT_REF_CACHE_SIZE] = [];
+var g_c99_ident_ref_async_lc: [i32: C99_IDENT_REF_CACHE_SIZE] = [];
 var g_c99_ident_ref_async_loop: [&byte: C99_IDENT_REF_CACHE_SIZE] = [];
 
 export fn c99_ident_ref_cache_reset() void {
@@ -39,6 +40,7 @@ export fn c99_ident_ref_cache_reset() void {
         g_c99_ident_ref_async_sv[i] = null;
         g_c99_ident_ref_async_pc[i] = 0;
         g_c99_ident_ref_async_bc[i] = 0;
+        g_c99_ident_ref_async_lc[i] = 0;
         g_c99_ident_ref_async_loop[i] = null;
         i = i + 1;
     }
@@ -263,6 +265,31 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
             ai = ai + 1;
         }
     }
+    // return 前顶层局部（状态机字段 _uya_loc_*）
+    if codegen.async_state_var != null && codegen.async_local_count > 0 {
+        var li: i32 = 0;
+        while li < codegen.async_local_count && li < 16 {
+            if codegen.async_local_names[li] != null &&
+                strcmp(codegen.async_local_names[li] as *byte, name as *byte) == 0 {
+                const loc_safe: &byte = get_safe_c_identifier(codegen, codegen.async_local_names[li]);
+                if loc_safe != null {
+                    const s_len: i32 = strlen(codegen.async_state_var as *byte);
+                    const pfx: &byte = "_uya_loc_" as &byte;
+                    const plen: i32 = strlen(pfx as *byte);
+                    const nl: i32 = strlen(loc_safe as *byte);
+                    const buf_len: i32 = s_len + 2 + plen + nl + 1;
+                    const buf2: &byte = arena_alloc(codegen.arena, buf_len as usize) as &byte;
+                    if buf2 != null {
+                        snprintf(buf2 as *byte, buf_len, "%s->_uya_loc_%s" as *byte,
+                            codegen.async_state_var as *byte, loc_safe as *byte);
+                        return buf2;
+                    }
+                }
+                break;
+            }
+            li = li + 1;
+        }
+    }
     // await 绑定变量：输出为 s->_uya_bind_name
     if codegen.async_state_var != null && codegen.async_bind_count > 0 {
         var bi: i32 = 0;
@@ -297,6 +324,7 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
         g_c99_ident_ref_async_sv[slot] == codegen.async_state_var &&
         g_c99_ident_ref_async_pc[slot] == codegen.async_param_count &&
         g_c99_ident_ref_async_bc[slot] == codegen.async_bind_count &&
+        g_c99_ident_ref_async_lc[slot] == codegen.async_local_count &&
         (g_c99_ident_ref_async_loop[slot] == codegen.async_loop_var_name ||
             (g_c99_ident_ref_async_loop[slot] != null && codegen.async_loop_var_name != null &&
                 strcmp(g_c99_ident_ref_async_loop[slot] as *byte, codegen.async_loop_var_name as *byte) == 0)) {
@@ -344,6 +372,7 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
     g_c99_ident_ref_async_sv[slot] = codegen.async_state_var;
     g_c99_ident_ref_async_pc[slot] = codegen.async_param_count;
     g_c99_ident_ref_async_bc[slot] = codegen.async_bind_count;
+    g_c99_ident_ref_async_lc[slot] = codegen.async_local_count;
     g_c99_ident_ref_async_loop[slot] = codegen.async_loop_var_name;
     return result;
 }

@@ -795,9 +795,29 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     if ret_c == null {
         ret_c = "int32_t" as *byte;
     }
-    
+    // block_on_plain<T>：match 内曾清空 current_type_args，c99_type_to_c(T) 可能错成 err_union_*；
+    // Ready 绑定为标量时以标识符实际 C 类型作为 _uya_ret（与单态原型一致）
+    var plain_scalar_ret_override: i32 = 0;
+    if expr != null && expr.type == ASTNodeType.AST_IDENTIFIER && codegen.current_function_decl != null &&
+        codegen.current_function_decl.fn_decl_name != null {
+        const fnm_bo: &byte = codegen.current_function_decl.fn_decl_name;
+        if strstr(fnm_bo as *byte, "block_on_plain" as *byte) != null {
+            const expr_tc_bo: &byte = get_identifier_type_c(codegen, expr.identifier_name);
+            if expr_tc_bo != null && strstr(expr_tc_bo as *byte, "err_union_" as *byte) == null &&
+                ret_c != null && strstr(ret_c as *byte, "err_union_" as *byte) != null {
+                plain_scalar_ret_override = 1;
+                ret_c = expr_tc_bo;
+            }
+        }
+    }
+
     // 1. 先将返回值计算到临时变量 _uya_ret
-    if is_array_return != 0 && expr != null {
+    if plain_scalar_ret_override != 0 && expr != null {
+        c99_emit_indent(codegen);
+        fprintf(codegen.emit_stream as *void, "%s _uya_ret = " as *byte, ret_c as *byte);
+        gen_expr(codegen, expr);
+        c99_emit_semi_newline(codegen);
+    } else if is_array_return != 0 && expr != null {
         gen_return_array(codegen, expr, return_type, ret_c);
     } else {
         gen_return_normal(codegen, expr, return_type, ret_c);
@@ -807,6 +827,47 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     emit_defer_cleanup(codegen, is_error_return);
     // 3. 返回临时变量
     c99_emit(codegen, "return _uya_ret;\n" as *byte);
+}
+
+// 无 await 且函数返回 !Future<T>：包装器须在 malloc 状态机之前执行同步前言（如 if b==0 { return error }）。
+// 否则 collect_awaits 只保留最后一条 return 作为 ret_expr，前言中的 return error 永远不会出现在 C 中。
+fn emit_async_err_future_wrapper_prelude(codegen: &C99CodeGenerator, fn_decl: &ASTNode, body: &ASTNode, full_return_type: &ASTNode) void {
+    if codegen == null || fn_decl == null || body == null || full_return_type == null {
+        return;
+    }
+    if body.type != ASTNodeType.AST_BLOCK || body.block_stmts == null {
+        return;
+    }
+    const n: i32 = body.block_stmt_count;
+    if n < 2 {
+        return;
+    }
+    const last: &ASTNode = body.block_stmts[n - 1];
+    if last == null || last.type != ASTNodeType.AST_RETURN_STMT {
+        return;
+    }
+    const saved_rt: &ASTNode = codegen.current_function_return_type;
+    const saved_decl: &ASTNode = codegen.current_function_decl;
+    const saved_lv: i32 = codegen.local_variable_count;
+    const saved_depth: i32 = codegen.current_depth;
+    const saved_indent: i32 = codegen.indent_level;
+    codegen.current_function_return_type = full_return_type;
+    codegen.current_function_decl = fn_decl;
+    codegen.current_depth = 1;
+    codegen.indent_level = 1;
+    var ii: i32 = 0;
+    while ii < n - 1 {
+        const st: &ASTNode = body.block_stmts[ii];
+        if st != null {
+            gen_stmt(codegen, st);
+        }
+        ii = ii + 1;
+    }
+    codegen.current_function_return_type = saved_rt;
+    codegen.current_function_decl = saved_decl;
+    codegen.local_variable_count = saved_lv;
+    codegen.current_depth = saved_depth;
+    codegen.indent_level = saved_indent;
 }
 
 // 生成数组返回值
@@ -2222,6 +2283,12 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                                 const vt_ready: &byte = variant_c_type_from_tagged_suffix(codegen, union_decl, suf_ready);
                                 if vt_ready != null {
                                     vtype = vt_ready;
+                                } else {
+                                    // Poll<i32> 等无 err_ 后缀：Ready 载荷为标量 T，非 err_union（与 structs.uya emit union 一致）
+                                    const vt_plain: &byte = poll_ready_plain_c_from_poll_mono_union_name(suf_ready);
+                                    if vt_plain != null {
+                                        vtype = vt_plain;
+                                    }
                                 }
                             }
                         }

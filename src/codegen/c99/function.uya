@@ -1185,6 +1185,72 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
     }
 }
 
+// try @await 形式的 var 声明由 async_collect_* 单独捕获，此处跳过
+fn c99_var_decl_init_is_try_await_bind(init: &ASTNode) i32 {
+    if init == null {
+        return 0;
+    }
+    if init.type != ASTNodeType.AST_TRY_EXPR {
+        return 0;
+    }
+    if init.try_expr_operand == null {
+        return 0;
+    }
+    if init.try_expr_operand.type != ASTNodeType.AST_AWAIT_EXPR {
+        return 0;
+    }
+    return 1;
+}
+
+// 收集函数体顶层、第一个 return 之前的 const/var（用于 poll 内 ret_expr 引用）
+fn collect_async_pre_return_locals(codegen: &C99CodeGenerator, body: &ASTNode) void {
+    codegen.async_local_count = 0;
+    if codegen == null || body == null || body.type != ASTNodeType.AST_BLOCK {
+        return;
+    }
+    var si: i32 = 0;
+    while si < body.block_stmt_count && codegen.async_local_count < 16 {
+        const st: &ASTNode = body.block_stmts[si];
+        if st == null {
+            si = si + 1;
+            continue;
+        }
+        if st.type == ASTNodeType.AST_RETURN_STMT {
+            break;
+        }
+        if st.type == ASTNodeType.AST_VAR_DECL && st.var_decl_name != null &&
+            st.var_decl_type != null && st.var_decl_init != null &&
+            c99_var_decl_init_is_try_await_bind(st.var_decl_init) == 0 {
+            codegen.async_local_names[codegen.async_local_count] = st.var_decl_name;
+            codegen.async_local_types[codegen.async_local_count] = st.var_decl_type;
+            codegen.async_local_inits[codegen.async_local_count] = st.var_decl_init;
+            codegen.async_local_count = codegen.async_local_count + 1;
+        }
+        si = si + 1;
+    }
+}
+
+fn emit_async_pre_return_local_inits(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.async_state_var == null || codegen.async_local_count <= 0 {
+        return;
+    }
+    var li: i32 = 0;
+    while li < codegen.async_local_count && li < 16 {
+        const orig: &byte = codegen.async_local_names[li];
+        const ie: &ASTNode = codegen.async_local_inits[li];
+        if orig != null && ie != null {
+            const ls: &byte = get_safe_c_identifier(codegen, orig);
+            if ls != null {
+                fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = " as *byte,
+                    codegen.async_state_var as *byte, ls as *byte);
+                gen_expr(codegen, ie);
+                fputs(";\n" as *byte, codegen.emit_stream as *void);
+            }
+        }
+        li = li + 1;
+    }
+}
+
 // ===== async stage-B codegen（单 @await 最小状态机）=====
 // full_return_type: 函数声明的返回类型（可为 !Future<T> 或 Future<!T>）
 // effective_return_type: 用于状态机的 Future 类型（Future<T> 或 Future<!T>）
@@ -1292,6 +1358,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             await_bind_types[ci] = codegen.async_collect_types[ci];
             ci = ci + 1;
         }
+        collect_async_pre_return_locals(codegen, body);
     }
     // 编译期计算状态机字节大小（使用真实类型大小）
     // - state = 4 字节
@@ -1617,6 +1684,15 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
         bind_i = bind_i + 1;
     }
+    var loc_i: i32 = 0;
+    while loc_i < codegen.async_local_count && loc_i < 16 {
+        const ltype_c: &byte = c99_type_to_c(codegen, codegen.async_local_types[loc_i]);
+        const lname_safe: &byte = get_safe_c_identifier(codegen, codegen.async_local_names[loc_i]);
+        if ltype_c != null && lname_safe != null {
+            fprintf(codegen.emit_stream as *void, " %s _uya_loc_%s;" as *byte, ltype_c as *byte, lname_safe as *byte);
+        }
+        loc_i = loc_i + 1;
+    }
     const param_count: i32 = fn_decl.fn_decl_param_count;
     const params: & & ASTNode = fn_decl.fn_decl_params;
     var pi: i32 = 0;
@@ -1711,6 +1787,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
         fputs(";\n" as *byte, codegen.emit_stream as *void);
     } else {
+        emit_async_pre_return_local_inits(codegen);
         fputs("        s->state = 2;\n" as *byte, codegen.emit_stream as *void);
     }
     fputs("    }\n" as *byte, codegen.emit_stream as *void);
@@ -1807,6 +1884,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
             } else {
                 // 最后一态：用 ret_expr 计算返回值。若函数返回 !Future<T> 则 ok 为 full_return_type，value 需 Future 装箱
+                emit_async_pre_return_local_inits(codegen);
                 fputs("        s->state = " as *byte, codegen.emit_stream as *void);
                 fprintf(codegen.emit_stream as *void, "%d;\n" as *byte, await_count + 1);
                 var is_return_future_err: i32 = 0;
@@ -2067,6 +2145,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     // 清除 async 参数捕获
     codegen.async_state_var = null;
     codegen.async_param_count = 0;
+    codegen.async_local_count = 0;
     codegen.async_loop_var_name = null;
     codegen.async_loop_var_c = null;
     pi = 0;
@@ -2129,6 +2208,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         pi = pi + 1;
     }
     fputs(") {\n" as *byte, codegen.emit_stream as *void);
+    if await_count == 0 && return_future_err_union != 0 && body != null {
+        emit_async_err_future_wrapper_prelude(codegen, fn_decl, body, full_return_type);
+    }
     // 状态机分配：始终使用 malloc 堆分配，避免大状态机（>256B）栈溢出
     // 栈分配路径（<=64B 估算）暂未启用
     fprintf(codegen.emit_stream as *void, "    struct %s *s = (struct %s *)malloc(sizeof(struct %s));\n" as *byte, async_struct as *byte, async_struct as *byte, async_struct as *byte);
