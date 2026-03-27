@@ -127,7 +127,8 @@ export fn epoll_server_slot_for_fd(srv: &EpollServer, cfd: i32) i32 {
     return -1;
 }
 
-/// `epoll_wait`；`events_out` 指向可容纳 `max_events` 个 `EpollEvent` 的连续内存首元素
+/// `epoll_wait`；`events_out` 指向可容纳 `max_events` 个 `EpollEvent` 的连续内存首元素。
+/// `timeout_ms`：Linux 下 `0` 为立即返回，`-1` 为无限等待直至有事件，正数为毫秒上限。
 export fn epoll_server_wait_events(srv: &EpollServer, timeout_ms: i32, events_out: &EpollEvent, max_events: i32) !i32 {
     return sys_epoll_wait(srv.epfd, events_out, max_events, timeout_ms);
 }

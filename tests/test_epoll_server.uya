@@ -8,8 +8,9 @@ use std.testing.assert_eq_i32;
 use libc.unistd;
 use libc.syscall;
 
-/// `make check` / `make release` 时与其它用例并行（数十编译+进程），8s epoll 超时易因调度饥饿偶发失败。
-const EPOLL_TEST_WAIT_MS: i32 = 30000;
+/// Linux `epoll_wait(2)`：`timeout == -1` 表示等到有就绪事件再返回（由内核唤醒，非忙等）。
+/// 不用大正数毫秒上限，避免 CI/高并行下调度慢时「到点无事件」误失败；若子进程未连上则会挂起直至外层超时。
+const EPOLL_TEST_EPOLL_TIMEOUT_MS: i32 = 0 - 1;
 
 fn response_has_subslice(hay: &[byte], needle: &[byte]) bool {
     if needle.len == 0 || hay.len < needle.len {
@@ -120,7 +121,7 @@ fn epoll_read_request_until_done(srv: &EpollServer, slot: usize, evs: &EpollEven
         const st: !ParseResult = http_conn_read_parse_nonblocking(cfd, &srv.connections[slot].buf[0] as &byte, EPOLL_SERVER_IO_CAP, &srv.connections[slot].buf_len);
         match st {
             error.ReadWouldBlock => {
-                _ = try epoll_server_wait_events(srv, EPOLL_TEST_WAIT_MS, evs, 8);
+                _ = try epoll_server_wait_events(srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, evs, 8);
             }
             pr => {
                 return pr;
@@ -265,7 +266,7 @@ test "epoll_poll_listen_register_then_readable" {
         try assert_eq_i32(0, 1);
     }
     var evs: [EpollEvent: 8] = [];
-    const n1: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+    const n1: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
     if n1 <= 0 {
         epoll_server_close(&srv);
         try assert_eq_i32(0, 1);
@@ -286,7 +287,7 @@ test "epoll_poll_listen_register_then_readable" {
         try assert_eq_i32(0, 1);
     }
     const slot: usize = try epoll_server_accept_register(&srv);
-    const n2: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+    const n2: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
     if n2 <= 0 {
         epoll_server_release_slot(&srv, slot);
         epoll_server_close(&srv);
@@ -322,7 +323,7 @@ test "epoll_one_get_route_ok" {
         try assert_eq_i32(0, 1);
     }
     var evs: [EpollEvent: 8] = [];
-    var n: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+    var n: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
     if n <= 0 {
         epoll_server_close(&srv);
         try assert_eq_i32(0, 1);
@@ -343,7 +344,7 @@ test "epoll_one_get_route_ok" {
         try assert_eq_i32(0, 1);
     }
     const slot: usize = try epoll_server_accept_register(&srv);
-    n = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+    n = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
     if n <= 0 {
         epoll_server_release_slot(&srv, slot);
         epoll_server_close(&srv);
@@ -390,7 +391,7 @@ test "epoll_pipeline_two_gets_slot_buffer" {
         try assert_eq_i32(0, 1);
     }
     var evs: [EpollEvent: 8] = [];
-    var n: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+    var n: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
     if n <= 0 {
         epoll_server_close(&srv);
         try assert_eq_i32(0, 1);
@@ -415,7 +416,7 @@ test "epoll_pipeline_two_gets_slot_buffer" {
         epoll_server_close(&srv);
         try assert_eq_i32(0, 1);
     }
-    n = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+    n = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
     if n <= 0 {
         epoll_server_release_slot(&srv, slot);
         epoll_server_close(&srv);
@@ -488,7 +489,7 @@ test "epoll_nonblocking_read_would_block_then_get" {
         try assert_eq_i32(0, 1);
     }
     var evs: [EpollEvent: 8] = [];
-    var n: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+    var n: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
     if n <= 0 {
         epoll_server_close(&srv);
         try assert_eq_i32(0, 1);
@@ -509,7 +510,7 @@ test "epoll_nonblocking_read_would_block_then_get" {
         try assert_eq_i32(0, 1);
     }
     const slot: usize = try epoll_server_accept_register_nb(&srv);
-    n = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+    n = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
     if n <= 0 {
         epoll_server_release_slot(&srv, slot);
         epoll_server_close(&srv);
@@ -570,7 +571,7 @@ test "epoll_drain_listen_accepts_two_connections" {
         try assert_eq_i32(0, 1);
     }
     var evs: [EpollEvent: 8] = [];
-    var n: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+    var n: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
     if n <= 0 {
         epoll_server_close(&srv);
         try assert_eq_i32(0, 1);
@@ -627,7 +628,7 @@ test "epoll_nonblocking_write_epollout_then_finish" {
         try assert_eq_i32(0, 1);
     }
     var evs: [EpollEvent: 8] = [];
-    var n: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+    var n: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
     if n <= 0 {
         epoll_server_close(&srv);
         try assert_eq_i32(0, 1);
@@ -648,7 +649,7 @@ test "epoll_nonblocking_write_epollout_then_finish" {
         try assert_eq_i32(0, 1);
     }
     const slot: usize = try epoll_server_accept_register_nb(&srv);
-    n = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+    n = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
     if n <= 0 {
         epoll_server_release_slot(&srv, slot);
         epoll_server_close(&srv);
@@ -682,7 +683,7 @@ test "epoll_nonblocking_write_epollout_then_finish" {
         _ = http_write_all_nonblocking(cfd, &resp[0] as &byte, resp_len, &written) catch |err| {
             if @error_id(err) == @error_id(error.ReadWouldBlock) {
                 _ = try epoll_server_ctl_mod(&srv, cfd, (EPOLLIN | EPOLLOUT) as u32);
-                _ = try epoll_server_wait_events(&srv, EPOLL_TEST_WAIT_MS, &evs[0], 8);
+                _ = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
                 continue;
             }
             epoll_server_release_slot(&srv, slot);
