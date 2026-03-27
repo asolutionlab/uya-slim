@@ -186,7 +186,7 @@ Phase 1: Socket API
 - 示例：`examples/http_server.uya`（`try` + `match`：`pr`/成功分支放在各 `error.*` 之后，避免 C 代码 `else` 悬空）
 
 **Phase 9（HTTP epoll，进行中）**
-- `lib/std/http/epoll_server.uya`：`epoll_server_listen` / `epoll_server_wait_events` / `epoll_server_accept_register`（accept 后客户端 `EPOLLIN`）/ `epoll_server_release_slot` / `epoll_server_close`；`EPOLL_SERVER_MAX_SLOTS=64`；`error.EpollSlotsFull`
+- `lib/std/http/epoll_server.uya`：`epoll_server_listen` / `epoll_server_wait_events` / `epoll_server_accept_register`（accept 后客户端 `EPOLLIN`）/ `epoll_server_release_slot` / `epoll_server_close`；`EPOLL_SERVER_MAX_SLOTS=512`；`error.EpollSlotsFull`
 - 测试：`tests/test_epoll_server.uya`（含 `epoll_one_get_route_ok`、`epoll_pipeline_two_gets_slot_buffer`：槽位缓冲 + `http_conn_read_parse` / `http_connbuf_shift` 流水线双 GET，对齐阻塞版 `http_keepalive_pipeline_two_requests`；`--safety-proof`）
 - 非阻塞：`http_conn_read_parse_nonblocking`、`epoll_server_fd_set_nonblocking`、`epoll_server_accept_register_nb`；测试 `epoll_nonblocking_read_would_block_then_get`
 - 待办：单线程内通用 `run` 循环封装、多连接交错

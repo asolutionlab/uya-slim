@@ -1186,6 +1186,49 @@ fn c99_err_union_payload_is_emittable(codegen: &C99CodeGenerator, payload_node: 
     return 0;
 }
 
+/// `match` 在 `!T` 上成功臂 `x =>`：返回载荷的 C 类型名（生成 `T x = _uya_m.value`）。
+/// `struct err_union_void` 或非 err_union 返回 null，沿用「整包 err_union 绑定」旧行为。
+fn c99_err_union_match_bind_payload_c(codegen: &C99CodeGenerator, union_full_c: &byte) &byte {
+    if codegen == null || union_full_c == null {
+        return null;
+    }
+    if strstr(union_full_c as *byte, "err_union_" as *byte) == null {
+        return null;
+    }
+    if strcmp(union_full_c as *byte, "struct err_union_void" as *byte) == 0 {
+        return null;
+    }
+    if strcmp(union_full_c as *byte, "struct err_union_int32_t" as *byte) == 0 {
+        return "int32_t" as &byte;
+    }
+    if strcmp(union_full_c as *byte, "struct err_union_int64_t" as *byte) == 0 {
+        return "int64_t" as &byte;
+    }
+    var bi: i32 = 0;
+    while bi < codegen.err_union_struct_count {
+        const name: &byte = codegen.err_union_struct_names[bi];
+        if name == null {
+            bi = bi + 1;
+            continue;
+        }
+        var sbuf: [byte: 192] = [];
+        snprintf(&sbuf[0] as *byte, 192, "struct %s" as *byte, name as *byte);
+        if strcmp(&sbuf[0] as *byte, union_full_c as *byte) == 0 {
+            const pn: &ASTNode = codegen.err_union_payload_types[bi];
+            if pn == null {
+                return null;
+            }
+            if pn.type == ASTNodeType.AST_TYPE_NAMED && pn.type_named_name != null &&
+                strcmp(pn.type_named_name as *byte, "void" as *byte) == 0 {
+                return null;
+            }
+            return c99_type_to_c(codegen, pn);
+        }
+        bi = bi + 1;
+    }
+    return null;
+}
+
 // 输出所有待生成的错误联合结构体
 fn emit_pending_err_union_structs(codegen: &C99CodeGenerator) void {
     if codegen == null {

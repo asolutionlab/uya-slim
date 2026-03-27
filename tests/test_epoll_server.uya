@@ -1,4 +1,4 @@
-// tests/test_epoll_server.uya — epoll 监听 + poll + accept（栈上 EpollServer 须保持较小）
+// tests/test_epoll_server.uya - epoll listen/poll/accept (EpollServer on stack is large; parallel test runner raises stack limit)
 
 use std.http.epoll_server;
 use std.http.types;
@@ -231,7 +231,14 @@ test "epoll_server_listen_port_zero_and_close" {
         max_connections: 8,
         host: [],
     };
-    var srv: EpollServer = try epoll_server_listen(&cfg);
+    var srv: EpollServer = EpollServer{
+        listen_fd: -1,
+        epfd: -1,
+        port: 0,
+        connections: [],
+        connection_count: 0,
+    };
+    try epoll_server_listen_into(&cfg, &srv);
     if srv.port == 0 {
         try assert_eq_i32(0, 1);
     }
@@ -248,7 +255,14 @@ test "epoll_poll_listen_register_then_readable" {
         max_connections: 8,
         host: [],
     };
-    var srv: EpollServer = try epoll_server_listen(&cfg);
+    var srv: EpollServer = EpollServer{
+        listen_fd: -1,
+        epfd: -1,
+        port: 0,
+        connections: [],
+        connection_count: 0,
+    };
+    try epoll_server_listen_into(&cfg, &srv);
     const child_pid: i32 = fork();
     if child_pid == 0 {
         const conn_res: !i32 = http_tcp_connect_loopback(srv.port);
@@ -311,7 +325,14 @@ test "epoll_one_get_route_ok" {
         max_connections: 8,
         host: [],
     };
-    var srv: EpollServer = try epoll_server_listen(&cfg);
+    var srv: EpollServer = EpollServer{
+        listen_fd: -1,
+        epfd: -1,
+        port: 0,
+        connections: [],
+        connection_count: 0,
+    };
+    try epoll_server_listen_into(&cfg, &srv);
     var rt: Router = router_new();
     _ = try router_add(&rt, Method.GET, &"/"[0: 1]);
     const child_pid: i32 = fork();
@@ -378,7 +399,14 @@ test "epoll_pipeline_two_gets_slot_buffer" {
         max_connections: 8,
         host: [],
     };
-    var srv: EpollServer = try epoll_server_listen(&cfg);
+    var srv: EpollServer = EpollServer{
+        listen_fd: -1,
+        epfd: -1,
+        port: 0,
+        connections: [],
+        connection_count: 0,
+    };
+    try epoll_server_listen_into(&cfg, &srv);
     var rt: Router = router_new();
     _ = try router_add(&rt, Method.GET, &"/"[0: 1]);
     _ = try router_add(&rt, Method.GET, &"/b"[0: 2]);
@@ -477,7 +505,14 @@ test "epoll_nonblocking_read_would_block_then_get" {
         max_connections: 8,
         host: [],
     };
-    var srv: EpollServer = try epoll_server_listen(&cfg);
+    var srv: EpollServer = EpollServer{
+        listen_fd: -1,
+        epfd: -1,
+        port: 0,
+        connections: [],
+        connection_count: 0,
+    };
+    try epoll_server_listen_into(&cfg, &srv);
     var rt: Router = router_new();
     _ = try router_add(&rt, Method.GET, &"/"[0: 1]);
     const child_pid: i32 = fork();
@@ -544,7 +579,14 @@ test "epoll_drain_listen_accepts_two_connections" {
         max_connections: 16,
         host: [],
     };
-    var srv: EpollServer = try epoll_server_listen(&cfg);
+    var srv: EpollServer = EpollServer{
+        listen_fd: -1,
+        epfd: -1,
+        port: 0,
+        connections: [],
+        connection_count: 0,
+    };
+    try epoll_server_listen_into(&cfg, &srv);
     _ = try epoll_server_listen_set_nonblocking(&srv);
     const child_pid: i32 = fork();
     if child_pid == 0 {
@@ -618,7 +660,14 @@ test "epoll_nonblocking_write_epollout_then_finish" {
         max_connections: 8,
         host: [],
     };
-    var srv: EpollServer = try epoll_server_listen(&cfg);
+    var srv: EpollServer = EpollServer{
+        listen_fd: -1,
+        epfd: -1,
+        port: 0,
+        connections: [],
+        connection_count: 0,
+    };
+    try epoll_server_listen_into(&cfg, &srv);
     const child_pid: i32 = fork();
     if child_pid == 0 {
         run_epoll_client_get_then_slow_read(srv.port);
