@@ -6416,7 +6416,16 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 fputs("; " as *byte, codegen.emit_stream as *void);
             } else if expr.match_expr_arms[i].kind == MatchPatternKind.MATCH_PAT_BIND {
                 const v: &byte = get_safe_c_identifier(codegen, expr.match_expr_arms[i].var_name);
-                if v != null {
+                const bind_payload: &byte = c99_err_union_match_bind_payload_c(codegen, m_type);
+                if v != null && bind_payload != null {
+                    fprintf(codegen.emit_stream as *void, "%sif (_uya_m.error_id == 0U) { %s %s = _uya_m.value; _uya_r = " as *byte, prefix as *byte, bind_payload as *byte, v as *byte);
+                    if expr.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                        codegen.local_variables[codegen.local_variable_count].name = expr.match_expr_arms[i].var_name;
+                        codegen.local_variables[codegen.local_variable_count].type_c = bind_payload;
+                        codegen.local_variables[codegen.local_variable_count].type_node = null;
+                        codegen.local_variable_count = codegen.local_variable_count + 1;
+                    }
+                } else if v != null {
                     fprintf(codegen.emit_stream as *void, "%s{ %s %s = _uya_m; _uya_r = " as *byte, prefix as *byte, m_type as *byte, v as *byte);
                     if expr.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                         codegen.local_variables[codegen.local_variable_count].name = expr.match_expr_arms[i].var_name;

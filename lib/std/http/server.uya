@@ -55,6 +55,29 @@ export fn http_write_all_nonblocking(conn_fd: i32, base: &byte, total: usize, wr
     }
 }
 
+/// 在 **非阻塞** 套接字上丢弃内核接收队列中的数据（`read` 直至 `EAGAIN` 或 `0`/错误）。
+/// 用于 `close` 前降低 Linux 上因接收队列仍有字节被丢弃而使对端看到 RST 的概率。
+export fn http_discard_socket_recv_nb(conn_fd: i32) void {
+    var junk: [byte: 4096] = [];
+    const chunk: usize = 4096;
+    while true {
+        const rr: !isize = sys_read(conn_fd, &junk[0] as *byte, chunk);
+        const n: isize = rr catch |err| {
+            const eid: i32 = @error_id(err) as i32;
+            if eid == EAGAIN {
+                return;
+            }
+            if eid == EINTR {
+                continue;
+            }
+            return;
+        };
+        if n <= 0 {
+            return;
+        }
+    }
+}
+
 fn htons_host_to_be(p: u16) u16 {
     return ((p & (0xFF as u16)) << 8) | ((p >> 8) & (0xFF as u16));
 }
@@ -165,6 +188,7 @@ export fn http_conn_read_parse(conn_fd: i32, base: &byte, cap: usize, filled: &u
         }
         const sl: &[byte] = base[0: cur];
         const p: !ParseResult = parse(sl);
+        // 须含 `else`：`match` 若只列 `IncompleteRequest` 与 `pr`（成功）两类，C 后端会对其它错误（如 InvalidRequest）生成空分支并在 while 中空转。
         match p {
             error.IncompleteRequest => {
                 if cur >= cap {
@@ -182,8 +206,8 @@ export fn http_conn_read_parse(conn_fd: i32, base: &byte, cap: usize, filled: &u
                 }
                 *filled = cur + (n as usize);
             }
-            pr => {
-                return pr;
+            else => {
+                return p;
             }
         }
     }
@@ -228,8 +252,8 @@ export fn http_conn_read_parse_nonblocking(conn_fd: i32, base: &byte, cap: usize
                     break;
                 }
             }
-            pr => {
-                return pr;
+            else => {
+                return p;
             }
         }
     }

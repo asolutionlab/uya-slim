@@ -2368,8 +2368,22 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 }
             } else if stmt.match_expr_arms[i].kind == MatchPatternKind.MATCH_PAT_BIND {
                 const v: &byte = get_safe_c_identifier(codegen, stmt.match_expr_arms[i].var_name);
+                const bind_payload: &byte = c99_err_union_match_bind_payload_c(codegen, m_type);
+                var bind_err_union_ok: i32 = 0;
                 c99_emit_indent(codegen);
-                if v != null {
+                if v != null && bind_payload != null {
+                    fprintf(codegen.emit_stream as *void, "%sif (_uya_m.error_id == 0U) {\n" as *byte, prefix as *byte);
+                    codegen.indent_level = codegen.indent_level + 1;
+                    c99_emit_indent(codegen);
+                    fprintf(codegen.emit_stream as *void, "%s %s = _uya_m.value;\n" as *byte, bind_payload as *byte, v as *byte);
+                    if stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
+                        codegen.local_variables[codegen.local_variable_count].name = stmt.match_expr_arms[i].var_name;
+                        codegen.local_variables[codegen.local_variable_count].type_c = bind_payload;
+                        codegen.local_variables[codegen.local_variable_count].type_node = null;
+                        codegen.local_variable_count = codegen.local_variable_count + 1;
+                    }
+                    bind_err_union_ok = 1;
+                } else if v != null {
                     fprintf(codegen.emit_stream as *void, "%s{ %s %s = _uya_m;\n" as *byte, prefix as *byte, m_type as *byte, v as *byte);
                     if stmt.match_expr_arms[i].var_name != null && codegen.local_variable_count < C99_MAX_LOCAL_VARS {
                         codegen.local_variables[codegen.local_variable_count].name = stmt.match_expr_arms[i].var_name;
@@ -2380,7 +2394,9 @@ fn gen_match_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 } else {
                     fprintf(codegen.emit_stream as *void, "%s{\n" as *byte, prefix as *byte);
                 }
-                codegen.indent_level = codegen.indent_level + 1;
+                if bind_err_union_ok == 0 {
+                    codegen.indent_level = codegen.indent_level + 1;
+                }
                 if stmt.match_expr_arms[i].result_is_block != 0 {
                     gen_stmt(codegen, stmt.match_expr_arms[i].result_expr);
                 } else {
