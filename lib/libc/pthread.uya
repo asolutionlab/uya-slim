@@ -231,7 +231,7 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     const flags: i64 = CLONE_FLAGS;
     const stack_top: i64 = top as i64;
     @asm {
-        "mov %4, %%rax\n\tmov %5, %%rdi\n\tmov %6, %%rsi\n\txor %%rdx, %%rdx\n\txor %%r10, %%r10\n\txor %%r8, %%r8\n\tsyscall\n\tmov %%rax, %0" 
+        "mov %1, %%rax\n\tmov %2, %%rdi\n\tmov %3, %%rsi\n\txor %%rdx, %%rdx\n\txor %%r10, %%r10\n\txor %%r8, %%r8\n\tsyscall\n\tmov %%rax, %0"
         (nr, flags, stack_top, 0 as i64, 0 as i64, 0 as i64, -> tid);
     } clobbers = ["rdi", "rsi", "rdx", "r10", "r8", "rcx", "r11", "memory"];
     
