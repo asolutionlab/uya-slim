@@ -10,34 +10,34 @@
 
 ### 1.1 前置依赖
 
-- [ ] std.json Phase 1 已具备可用的 parse、JsonValue、Arena
-- [ ] 确认 Arena 接口：`arena_alloc` / `arena_reset` 或等效
+- [x] std.json Phase 1 已具备可用的 parse、JsonValue、Arena
+- [x] 确认 Arena 接口：`arena_alloc` / `arena_reset` 或等效
 
 ### 1.2 扩展 JSON 词法/语法
 
-- [ ] 无引号 key：`key: value` 中 key 可为 bare word
-- [ ] YAML 布尔字面量：`yes`、`no`、`true`、`false`、`on`、`off`
-- [ ] 复用 JSON 的 `null`、数字、字符串、数组、对象解析
+- [x] 无引号 key：`key: value` 中 key 可为 bare word
+- [x] YAML 布尔字面量：`yes`、`no`、`true`、`false`、`on`、`off`（标量带词边界，避免 `none`/`offer` 等误匹配）
+- [x] 与 std.json 同构的 `null`、数字、字符串、数组、对象解析逻辑（实现于 `parser.uya`，未直接 `use` json.parse 以免类型不一致）
 
 ### 1.3 数据结构
 
-- [ ] 创建 `lib/std/yaml/` 目录
-- [ ] `error.uya`：定义 YAML 错误（InvalidUtf8、InvalidEscape、InvalidScalar、UnexpectedToken、UnexpectedEof、InvalidIndent、NumberOverflow、InvalidNumber、NestingTooDeep 等）
-- [ ] `value.uya`：`YamlValue` union、`YamlArray`、`YamlKeyValue`、`YamlObject` 结构体（与 JsonValue 结构对称）
+- [x] 创建 `lib/std/yaml/` 目录
+- [x] `errors.uya`：YAML 解析错误（InvalidUtf8、InvalidEscape、InvalidScalar、UnexpectedToken、UnexpectedEof、InvalidIndent、NumberOverflow、InvalidNumber、NestingTooDeep）
+- [x] `value.uya`：`YamlValue`、`YamlStrView`、`YamlArray`、`YamlKeyValue`、`YamlObject`（与 JsonValue 对称；变体名为 `y_str`/`y_arr`/`y_obj`，避免与 `JsonValue` 的 `str`/`arr`/`obj` C 字段同名导致合并编译 match 错型）
 
 ### 1.4 解析器
 
-- [ ] `parser.uya`：实现 `parse(arena, input) !YamlValue`
-  - [ ] 优先调用 std.json 解析（Flow 与 JSON 兼容部分）
-  - [ ] 扩展词法处理无引号 key、yes/no 等
+- [x] `parser.uya`：实现 `parse(arena, ptr, len) !YamlValue`（与 json.parse 签名一致）
+  - [ ] 优先调用 std.json 解析（当前为同构手写扩展，后续可选接 json 再转 YamlValue）
+  - [x] 扩展词法：无引号 key、`yes`/`no`/`on`/`off`、`null`/`true`/`false` 词边界
   - [ ] 错误位置报告（行/列或偏移）
 
 ### 1.5 测试
 
-- [ ] `tests/test_yaml_parse_flow_basic.uya`：null、bool（含 yes/no）、数字、字符串
-- [ ] `tests/test_yaml_parse_flow_array.uya`：空数组、嵌套数组
-- [ ] `tests/test_yaml_parse_flow_object.uya`：无引号 key、嵌套对象
-- [ ] `tests/error_yaml_*.uya`：预期解析失败用例（Tab 缩进、非法字符等）
+- [x] `tests/test_yaml_parse_flow_basic.uya`：null、bool（含 yes/no/on/off）、数字、字符串
+- [x] `tests/test_yaml_parse_flow_array.uya`：空数组、嵌套数组
+- [x] `tests/test_yaml_parse_flow_object.uya`：无引号 key、引号 key、嵌套对象
+- [x] `tests/test_yaml_parse_invalid.uya`：预期解析失败（尾随垃圾、空 key；`error_*.uya` 在本仓库表示**编译期**失败，故运行时失败用 `test_*`）
 
 ---
 
@@ -45,31 +45,31 @@
 
 ### 2.1 YamlWriter
 
-- [ ] `encoder.uya`：`YamlWriter` 结构体（buffer + 写入位置）
-- [ ] `write_null`、`write_bool`、`write_i64`、`write_f64`
-- [ ] `write_string`（转义处理）
-- [ ] `write_array_start`、`write_array_end`、`write_object_start`、`write_object_end`
-- [ ] 支持 Flow 风格输出（默认）
+- [x] `encoder.uya`：`YamlWriter`（buf/cap/used/overflow/style）
+- [x] `yaml_write_null`、`yaml_write_bool`、`yaml_write_i32`、`yaml_write_i64`、`yaml_write_f64`
+- [x] `yaml_write_str_view`（双引号 + 转义，与 JSON 一致）
+- [x] `yaml_write_array_start`/`end`、`yaml_write_object_start`/`end`、`yaml_write_comma`
+- [x] Flow 输出；对象 key 在安全字符集内可无引号
 
 ### 2.2 基础类型 ToYaml
 
-- [ ] `impl.uya`：为 i32、i64、f64、bool、`&[byte]` 实现 ToYaml（若接口可用）或提供 `yaml_write_*` 函数
+- [x] `impl.uya`：`ToYaml` 接口（标量用 `yaml_write_*`）
 
 ### 2.3 API
 
-- [ ] `encode_to(value, buf, cap, style) !usize`
-- [ ] `encode(arena, value, style) !&[byte]`
-- [ ] `YamlEncodeStyle`：Flow / Block（Phase 3 实现 Block）
+- [x] `yaml_encode_to(value, buf, cap, style) !usize`（设计名 `encode_to`；与 `std.json.encoder.encode_to` 合并冲突故加前缀）
+- [x] `yaml_encode` / `yaml_encode_into_arena`
+- [x] `YamlEncodeStyle`：`Flow` / `Block`
 
 ### 2.4 与 std.json 互操作
 
-- [ ] `convert.uya`：`yaml_value_to_json_value`、`json_value_to_yaml_value`
+- [x] `convert.uya`：`yaml_value_to_json_value`、`json_value_to_yaml_value`
 
 ### 2.5 测试
 
-- [ ] `tests/test_yaml_encode_basic.uya`：基础类型 roundtrip
-- [ ] `tests/test_yaml_encode_flow.uya`：Flow 风格 encode
-- [ ] `tests/test_yaml_json_convert.uya`：YamlValue ↔ JsonValue 转换
+- [x] `tests/test_yaml_encode_basic.uya`
+- [x] `tests/test_yaml_encode_flow.uya`
+- [x] `tests/test_yaml_json_convert.uya`
 
 ---
 
@@ -77,51 +77,52 @@
 
 ### 3.1 Block 解析
 
-- [ ] Block 映射：`key: value` + 缩进栈
-- [ ] Block 序列：`- item` 列表
-- [ ] 缩进规则：仅空格，Tab 报错
-- [ ] 扩展 `parse` 支持 Block 风格输入
+- [x] Block 映射：`key: value` + 缩进栈
+- [x] Block 序列：`- item` 列表
+- [x] 缩进规则：仅空格，Tab 报错
+- [x] 扩展 `parse` 支持 Block 风格输入
 
 ### 3.2 块标量
 
-- [ ] `|` 字面量块
-- [ ] `>` 折叠块
+- [x] `|` 字面量块
+- [x] `>` 折叠块
 
 ### 3.3 Block 编码
 
-- [ ] `YamlEncodeStyle.Block` 输出
-- [ ] 块标量编码
+- [x] `YamlEncodeStyle.Block` 输出
+- [x] 块标量编码（多行字符串用 `|`）
 
 ### 3.4 多文档
 
-- [ ] `parse_multi(arena, input) !&[YamlValue]`
-- [ ] `---` 分隔符解析
+- [x] `parse_multi(arena, input) !&[YamlValue]`
+- [x] `---` 分隔符解析（上一文档在分隔行处截断）
 
 ### 3.5 测试
 
-- [ ] `tests/test_yaml_parse_block.uya`
-- [ ] `tests/test_yaml_parse_block_scalar.uya`
-- [ ] `tests/test_yaml_parse_multi.uya`
-- [ ] `tests/error_yaml_tab.uya`：Tab 缩进预期失败
+- [x] `tests/test_yaml_parse_block.uya`
+- [x] `tests/test_yaml_parse_block_scalar.uya`
+- [x] `tests/test_yaml_parse_multi.uya`
+- [x] `tests/test_yaml_tab_indent.uya`：Tab 缩进解析失败（`error_*` 保留给编译期失败）
 
 ---
 
 ## Phase 4：锚点/别名（可选，带安全限制）
 
-- [ ] 解析 `&anchor`、`*alias`
-- [ ] 深度上限（如 64）、别名引用次数上限（如 1024）
-- [ ] 超出限制报 `AnchorTooDeep` 或 `AnchorOverflow`
-- [ ] 编码时可选输出锚点
-- [ ] 测试 YAML 炸弹防护
+- [x] 解析 `&anchor`、`*alias`（Flow 与 Block 行内值，锚点名 ASCII `[a-zA-Z0-9_-]+`）
+- [x] 深度上限（`MAX_ANCHOR_DEFINE_DEPTH` 64）、别名解引用次数上限（`MAX_ALIAS_RESOLUTIONS` 1024）、锚点表上限（`MAX_ANCHORS` 64）
+- [x] 超出限制报 `AnchorTooDeep`、`AnchorOverflow`；未定义别名 `UnknownAlias`
+- [x] 编码：`YamlEncodeStyle.FlowAnchors`（当前与 Flow 同路径，占位待图序列化输出 `&`/`*`）
+- [x] 测试：`test_yaml_parse_anchor_flow`、`test_yaml_parse_anchor_block`、`test_yaml_anchor_limits`、`test_yaml_encode_flow_anchors`
 
 ---
 
 ## Benchmark
 
-- [ ] 获取 YAML 官方测试矩阵或 RapidYAML 仓库典型 YAML 文件
-- [ ] Flow 风格可与 JSON benchmark 共用部分数据集
-- [ ] 编写 `tests/bench_yaml.uya` 或独立 benchmark 脚本
-- [ ] 记录 Phase 1 / Phase 4 吞吐量（GB/s）
+- [ ] **数据集**
+  - [ ] Flow：可与 `bench_json` 内嵌负载同构（把 key 去引号、`true`/`yes` 等 YAML 字面量），或从 [yaml-test-suite](https://github.com/yaml/yaml-test-suite) / RapidYAML  fixtures 选小文件放 `tests/data/yaml/`（大文件可 `.gitignore`，用脚本拉取）
+  - [ ] Block / 块标量 / 多文档 / 锚点：单独准备短样例（缩进栈、`|/>`、`---`、`&`/`*`），避免与纯 Flow 混测失真
+- [ ] **实现**：新增 `tests/bench_yaml.uya`，对齐 `tests/bench_json.uya`——`@syscall(gettimeofday)` 墙钟微秒、`arena_reset` 每轮、打印 **usec** 与 **MB/s**（`MB_F = 1048576.0`，与 json 一致）；覆盖 **parse**、**encode**（`yaml_encode_to`，`Flow` / `Block` 可分两节或开关）
+- [ ] **记录**：在本文档或 `yaml_design.md` 附录记下当前机器上 Phase 1（Flow）与含 Block/锚点样例的吞吐（MB/s），便于回归对比；优化 `@vector` 后再跑一轮
 
 ---
 

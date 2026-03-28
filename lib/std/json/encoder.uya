@@ -192,7 +192,7 @@ export fn json_write_key(w: &JsonWriter, ptr: &byte, len: usize) void {
     write_byte(w, _J_COLON);
 }
 
-fn write_value(w: &JsonWriter, v: &JsonValue) void {
+fn json_encode_value_inner(w: &JsonWriter, v: &JsonValue) void {
     const val: JsonValue = v[0];
     match val {
         .json_null(_) => { json_write_null(w); },
@@ -205,7 +205,7 @@ fn write_value(w: &JsonWriter, v: &JsonValue) void {
             var i: usize = 0;
             while i < a.len {
                 if i > 0 { write_byte(w, _J_COMMA); }
-                write_value(w, &a.items[i]);
+                json_encode_value_inner(w, &a.items[i]);
                 i = i + 1;
             }
             write_byte(w, _J_RBRACK);
@@ -217,7 +217,7 @@ fn write_value(w: &JsonWriter, v: &JsonValue) void {
                 if i > 0 { write_byte(w, _J_COMMA); }
                 json_write_str_view(w, o.pairs[i].key);
                 write_byte(w, _J_COLON);
-                write_value(w, &o.pairs[i].value);
+                json_encode_value_inner(w, &o.pairs[i].value);
                 i = i + 1;
             }
             write_byte(w, _J_RBRACE);
@@ -226,7 +226,7 @@ fn write_value(w: &JsonWriter, v: &JsonValue) void {
 }
 
 fn json_write_value(w: &JsonWriter, v: &JsonValue) void {
-    write_value(w, v);
+    json_encode_value_inner(w, v);
 }
 
 /// JsonValue 树编码到缓冲区（供测试与兼容用；结构体请用 to_json）
