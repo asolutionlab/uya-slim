@@ -1,0 +1,380 @@
+// benchmarks/http_bench_async.uya — 简化版 epoll HTTP 服务器
+//
+// 构建：
+//   bin/uya build benchmarks/http_bench_async.uya -o /tmp/http_bench_async.c --c99 && cc -std=c99 -no-pie -O2 -o /tmp/http_bench_async /tmp/http_bench_async.c -lm
+
+use libc.syscall;
+use libc.signal;
+
+const PORT: u16 = 8876;
+const BACKLOG: i32 = 128;
+const MAX_CONNECTIONS: usize = 32;
+const READ_BUF_SIZE: usize = 2048;
+const MAX_PATH_LEN: usize = 256;
+
+const CONN_STATE_READING: i32 = 0;
+const CONN_STATE_CLOSED: i32 = 3;
+
+const EPOLLIN_VAL: u32 = 1;
+const EPOLLERR_VAL: u32 = 8;
+const EPOLLHUP_VAL: u32 = 16;
+const EPOLL_CTL_DEL: u32 = 2;
+const SIGPIPE: i32 = 13;
+const SIG_IGN: usize = 1;
+
+struct Connection {
+    fd: i32,
+    state: i32,
+    buf: [byte: READ_BUF_SIZE],
+    buf_len: usize,
+    path_len: usize,
+}
+
+var g_connections: [Connection: MAX_CONNECTIONS] = [];
+var g_listen_fd: i32 = -1;
+var g_epfd: i32 = -1;
+
+var g_hello_body: [byte: 5] = [];
+var g_json_body: [byte: 11] = [];
+var g_http200: [byte: 17] = [];
+var g_content_len: [byte: 16] = [];
+var g_crlfcrlf: [byte: 4] = [];
+var g_payload1k: [byte: 1024] = [];
+
+fn init_payloads() void {
+    g_hello_body[0] = 'h' as byte; g_hello_body[1] = 'e' as byte;
+    g_hello_body[2] = 'l' as byte; g_hello_body[3] = 'l' as byte;
+    g_hello_body[4] = 'o' as byte;
+    g_json_body[0] = '{' as byte; g_json_body[1] = '"' as byte;
+    g_json_body[2] = 'o' as byte; g_json_body[3] = 'k' as byte;
+    g_json_body[4] = '"' as byte; g_json_body[5] = ':' as byte;
+    g_json_body[6] = 't' as byte; g_json_body[7] = 'r' as byte;
+    g_json_body[8] = 'u' as byte; g_json_body[9] = 'e' as byte;
+    g_json_body[10] = '}' as byte;
+    g_http200[0] = 'H' as byte; g_http200[1] = 'T' as byte; g_http200[2] = 'T' as byte;
+    g_http200[3] = 'P' as byte; g_http200[4] = '/' as byte; g_http200[5] = '1' as byte;
+    g_http200[6] = '.' as byte; g_http200[7] = '1' as byte; g_http200[8] = ' ' as byte;
+    g_http200[9] = '2' as byte; g_http200[10] = '0' as byte; g_http200[11] = '0' as byte;
+    g_http200[12] = ' ' as byte; g_http200[13] = 'O' as byte; g_http200[14] = 'K' as byte;
+    g_http200[15] = '\r' as byte; g_http200[16] = '\n' as byte;
+    g_content_len[0] = 'C' as byte; g_content_len[1] = 'o' as byte; g_content_len[2] = 'n' as byte;
+    g_content_len[3] = 't' as byte; g_content_len[4] = 'e' as byte; g_content_len[5] = 'n' as byte;
+    g_content_len[6] = 't' as byte; g_content_len[7] = '-' as byte; g_content_len[8] = 'L' as byte;
+    g_content_len[9] = 'e' as byte; g_content_len[10] = 'n' as byte; g_content_len[11] = 'g' as byte;
+    g_content_len[12] = 't' as byte; g_content_len[13] = 'h' as byte; g_content_len[14] = ':' as byte;
+    g_content_len[15] = ' ' as byte;
+    g_crlfcrlf[0] = '\r' as byte; g_crlfcrlf[1] = '\n' as byte;
+    g_crlfcrlf[2] = '\r' as byte; g_crlfcrlf[3] = '\n' as byte;
+    var i: usize = 0;
+    while i < 1024 { g_payload1k[i] = 'a' as byte; i = i + 1; }
+}
+
+fn find_crlf(buf: &byte, len: usize) bool {
+    var i: usize = 0;
+    while i + 1 < len {
+        if buf[i] == '\r' as byte && buf[i + 1] == '\n' as byte {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+fn parse_request(conn: &Connection) i32 {
+    if conn.buf_len < 10 { return 0; }
+    if conn.buf[0] != 'G' as byte || conn.buf[1] != 'E' as byte ||
+       conn.buf[2] != 'T' as byte || conn.buf[3] != ' ' as byte {
+        return 0;
+    }
+    var path_end: usize = 4;
+    while path_end < conn.buf_len && conn.buf[path_end] != ' ' as byte {
+        path_end = path_end + 1;
+    }
+    if path_end >= conn.buf_len { return 0; }
+    const plen: usize = path_end - 4;
+    if plen == 0 || plen > MAX_PATH_LEN - 1 { return 0; }
+    const off: usize = READ_BUF_SIZE - MAX_PATH_LEN;
+    var i: usize = 0;
+    while i < plen {
+        conn.buf[off + i] = conn.buf[4 + i];
+        i = i + 1;
+    }
+    conn.path_len = plen;
+    return 1;
+}
+
+fn dispatch_and_send(conn: &Connection, fd: i32) void {
+    const off: usize = READ_BUF_SIZE - MAX_PATH_LEN;
+    const plen: usize = conn.path_len;
+    const base: &byte = &conn.buf[off] as &byte;
+
+    var body_ptr: &byte = &g_hello_body[0] as &byte;
+    var body_len: usize = 0;
+
+    if plen == 1 && base[0] == '/' as byte {
+        body_ptr = &g_hello_body[0] as &byte;
+        body_len = 5;
+    } else if plen == 5 && base[0] == '/' as byte &&
+              base[1] == 'j' as byte && base[2] == 's' as byte &&
+              base[3] == 'o' as byte && base[4] == 'n' as byte {
+        body_ptr = &g_json_body[0] as &byte;
+        body_len = 11;
+    } else if plen > 6 && base[0] == '/' as byte &&
+              base[1] == 'i' as byte && base[2] == 't' as byte &&
+              base[3] == 'e' as byte && base[4] == 'm' as byte &&
+              base[5] == '/' as byte {
+        const id_off: usize = 6;
+        const id_len: usize = plen - id_off;
+        if id_len > 0 && id_len < 256 {
+            body_ptr = &base[id_off] as &byte;
+            body_len = id_len;
+        }
+    } else if plen == 10 && base[0] == '/' as byte &&
+              base[1] == 'p' as byte && base[2] == 'a' as byte &&
+              base[3] == 'y' as byte && base[4] == 'l' as byte &&
+              base[5] == 'o' as byte && base[6] == 'a' as byte &&
+              base[7] == 'd' as byte && base[8] == '1' as byte &&
+              base[9] == 'k' as byte {
+        body_ptr = &g_payload1k[0] as &byte;
+        body_len = 1024;
+    }
+
+    var hdr: [byte: 256] = [];
+    var pos: usize = 0;
+    var i: usize = 0;
+    while i < 17 { hdr[pos] = g_http200[i]; pos = pos + 1; i = i + 1; }
+    i = 0;
+    while i < 16 { hdr[pos] = g_content_len[i]; pos = pos + 1; i = i + 1; }
+    pos = pos + fmt_usize(&hdr[pos] as &byte, body_len);
+    i = 0;
+    while i < 4 { hdr[pos] = g_crlfcrlf[i]; pos = pos + 1; i = i + 1; }
+
+    var sent: usize = 0;
+    while sent < pos {
+        const nw: !isize = sys_write(fd, &hdr[sent] as *byte, pos - sent);
+        if nw.error_id != 0 { return; }
+        const w: isize = nw.value;
+        if w <= 0 { return; }
+        sent = sent + (w as usize);
+    }
+    sent = 0;
+    while sent < body_len {
+        const nw: !isize = sys_write(fd, &body_ptr[sent] as *byte, body_len - sent);
+        if nw.error_id != 0 { return; }
+        const w: isize = nw.value;
+        if w <= 0 { return; }
+        sent = sent + (w as usize);
+    }
+}
+
+fn fmt_usize(buf: &byte, n: usize) usize {
+    if n == 0 { buf[0] = '0' as byte; return 1; }
+    var tmp: [byte: 24] = [];
+    var t: usize = 0;
+    var x: usize = n;
+    while x > 0 {
+        tmp[t] = ((x % 10) as u32 + 48) as byte;
+        t = t + 1;
+        x = x / 10;
+    }
+    var i: usize = 0;
+    while i < t { buf[i] = tmp[t - 1 - i]; i = i + 1; }
+    return t;
+}
+
+fn close_fd(fd: i32) void {
+    _ = sys_close(fd);
+}
+
+fn find_free_slot() i32 {
+    var i: usize = 0;
+    while i < MAX_CONNECTIONS {
+        if g_connections[i].fd < 0 { return i as i32; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn find_slot_by_fd(fd: i32) i32 {
+    var i: usize = 0;
+    while i < MAX_CONNECTIONS {
+        if g_connections[i].fd == fd { return i as i32; }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn init_conn(slot: usize, fd: i32) void {
+    g_connections[slot].fd = fd;
+    g_connections[slot].state = CONN_STATE_READING;
+    g_connections[slot].buf_len = 0;
+    g_connections[slot].path_len = 0;
+}
+
+fn release_slot(slot: usize) void {
+    const fd: i32 = g_connections[slot].fd;
+    if fd >= 0 {
+        // 先从 epoll 注销
+        var ev: EpollEvent = EpollEvent{ events: 0, _pad: 0, data: fd as u64 };
+        _ = sys_epoll_ctl(g_epfd, EPOLL_CTL_DEL as i32, fd, &ev);
+        close_fd(fd);
+    }
+    g_connections[slot].fd = -1;
+    g_connections[slot].state = CONN_STATE_CLOSED;
+}
+
+fn handle_read(slot: usize) void {
+    const fd: i32 = g_connections[slot].fd;
+    if fd < 0 || g_connections[slot].state == CONN_STATE_CLOSED { return; }
+    var conn: &Connection = &g_connections[slot];
+    const nr: !isize = sys_read(fd, &conn.buf[conn.buf_len] as *byte, READ_BUF_SIZE - conn.buf_len);
+    if nr.error_id != 0 { release_slot(slot); return; }
+    const n: isize = nr.value;
+    if n <= 0 { release_slot(slot); return; }
+    conn.buf_len = conn.buf_len + (n as usize);
+    if find_crlf(&conn.buf[0] as &byte, conn.buf_len) {
+        if parse_request(conn) != 0 { dispatch_and_send(conn, fd); }
+        // 不立即关闭连接，以便支持 keep-alive
+        // 重置缓冲区和路径长度以便读取下一个请求
+        conn.buf_len = 0;
+        conn.path_len = 0;
+    }
+    // 如果缓冲区满了但没有完整请求，关闭连接
+    if conn.buf_len >= READ_BUF_SIZE {
+        release_slot(slot);
+    }
+}
+
+fn set_nonblocking(fd: i32) void {
+    // F_SETFL = 4, O_NONBLOCK = 2048
+    const flags: !i32 = sys_fcntl(fd, 4, 2048);
+}
+
+fn main_loop() void {
+    var i: usize = 0;
+    while i < MAX_CONNECTIONS {
+        g_connections[i].fd = -1;
+        g_connections[i].state = CONN_STATE_CLOSED;
+        i = i + 1;
+    }
+    const efd: !i32 = sys_epoll_create1(0);
+    if efd.error_id != 0 { return; }
+    g_epfd = efd.value;
+    const lfd: !i32 = sys_socket(2, 1, 6);
+    if lfd.error_id != 0 { return; }
+    g_listen_fd = lfd.value;
+    // 设置 listen socket 为非阻塞
+    set_nonblocking(g_listen_fd);
+    var one: i32 = 1;
+    _ = sys_setsockopt(g_listen_fd, 1, 2, &one as &void, 4);
+    var addr: [byte: 16] = [];
+    addr[0] = 2;
+    addr[1] = 0;
+    addr[2] = ((PORT >> 8) & 0xff) as byte;
+    addr[3] = (PORT & 0xff) as byte;
+    addr[4] = 127;
+    addr[7] = 1;
+    const br: !i32 = sys_bind(g_listen_fd, &addr[0] as &void, 16);
+    if br.error_id != 0 { _ = sys_close(g_listen_fd); return; }
+    _ = sys_listen(g_listen_fd, BACKLOG);
+    var ev: EpollEvent = EpollEvent{ events: EPOLLIN_VAL, _pad: 0, data: g_listen_fd as u64 };
+    const cr: !i32 = sys_epoll_ctl(g_epfd, 1, g_listen_fd, &ev);
+    if cr.error_id != 0 { _ = sys_close(g_listen_fd); return; }
+    var events: [EpollEvent: 64] = [];
+    while true {
+        const nw: !i32 = sys_epoll_wait(g_epfd, &events[0], 64, 100);
+        if nw.error_id != 0 { continue; }
+        const nevents: i32 = nw.value;
+        if nevents <= 0 { continue; }
+        var ei: i32 = 0;
+        while ei < nevents {
+            const e: &EpollEvent = &events[ei as usize];
+            const fd: i32 = e.data as i32;
+            const evts: u32 = e.events as u32;
+            if fd == g_listen_fd {
+                if (evts & EPOLLIN_VAL) != 0 as u32 {
+                    // 循环接受所有等待的连接
+                    while true {
+                        const ar: !i32 = sys_accept(g_listen_fd, null, 0);
+                        if ar.error_id != 0 { break; }
+                        const cfd: i32 = ar.value;
+                        set_nonblocking(cfd);
+                        const slot: i32 = find_free_slot();
+                        if slot >= 0 {
+                            init_conn(slot as usize, cfd);
+                            var ev_c: EpollEvent = EpollEvent{ events: EPOLLIN_VAL, _pad: 0, data: cfd as u64 };
+                            const cr2: !i32 = sys_epoll_ctl(g_epfd, 1, cfd, &ev_c);
+                            if cr2.error_id != 0 { close_fd(cfd); g_connections[slot as usize].fd = -1; }
+                        } else {
+                            close_fd(cfd);
+                        }
+                    }
+                }
+            } else {
+                const si: i32 = find_slot_by_fd(fd);
+                if si >= 0 {
+                    if (evts & EPOLLERR_VAL) != 0 as u32 ||
+                       (evts & EPOLLHUP_VAL) != 0 as u32 ||
+                       (evts & EPOLLIN_VAL) != 0 as u32 {
+                        handle_read(si as usize);
+                    }
+                }
+            }
+            ei = ei + 1;
+        }
+    }
+}
+
+fn argv_is_once() bool {
+    if get_argc() < 2 { return false; }
+    const p: &byte = get_argv(1);
+    if p == null { return false; }
+    if p[0] != '-' as byte || p[1] != '-' as byte { return false; }
+    if p[2] != 'o' as byte || p[3] != 'n' as byte ||
+       p[4] != 'c' as byte || p[5] != 'e' as byte { return false; }
+    return p[6] == 0 as byte;
+}
+
+fn run_once() void {
+    const fd: !i32 = sys_socket(2, 1, 6);
+    if fd.error_id != 0 { return; }
+    const listen_fd: i32 = fd.value;
+    var one: i32 = 1;
+    _ = sys_setsockopt(listen_fd, 1, 2, &one as &void, 4);
+    var addr: [byte: 16] = [];
+    addr[0] = 2;
+    addr[1] = 0;
+    addr[2] = ((PORT >> 8) & 0xff) as byte;
+    addr[3] = (PORT & 0xff) as byte;
+    addr[4] = 127;
+    addr[7] = 1;
+    _ = sys_bind(listen_fd, &addr[0] as &void, 16);
+    _ = sys_listen(listen_fd, 1);
+    const ar: !i32 = sys_accept(listen_fd, null, 0);
+    if ar.error_id != 0 { close_fd(listen_fd); return; }
+    const cfd: i32 = ar.value;
+    close_fd(listen_fd);
+    var buf: [byte: READ_BUF_SIZE] = [];
+    var total: usize = 0;
+    while total < READ_BUF_SIZE {
+        const nr: !isize = sys_read(cfd, &buf[total] as *byte, READ_BUF_SIZE - total);
+        if nr.error_id != 0 { close_fd(cfd); return; }
+        const n: isize = nr.value;
+        if n <= 0 { break; }
+        total = total + (n as usize);
+        if find_crlf(&buf[0] as &byte, total) { break; }
+    }
+    var conn: Connection = Connection{
+        fd: cfd, state: CONN_STATE_READING, buf: buf, buf_len: total, path_len: 0,
+    };
+    if parse_request(&conn) != 0 { dispatch_and_send(&conn, cfd); }
+    close_fd(cfd);
+}
+
+export fn main() i32 {
+    _ = signal(SIGPIPE, SIG_IGN as &void);
+    init_payloads();
+    if argv_is_once() { run_once(); }
+    else { main_loop(); }
+    return 0;
+}

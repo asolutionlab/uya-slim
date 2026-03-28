@@ -15,10 +15,12 @@ cd "$SCRIPT_DIR"
 UYA_BIN="${SCRIPT_DIR}/../bin/uya"
 GO_SRC="${SCRIPT_DIR}/http_bench.go"
 UYA_SRC="${SCRIPT_DIR}/http_bench.uya"
+C_SRC="${SCRIPT_DIR}/http_bench.c"
 
 # 编译输出
 GO_EXEC="/tmp/http_bench_go"
 UYA_EXEC="/tmp/http_bench_uya"
+C_EXEC="/tmp/http_bench_c"
 
 # Uya 使用临时目录避免 .uyacache 污染项目目录
 UYA_TMP_DIR="/tmp/uyuabench_$$"
@@ -137,6 +139,17 @@ build_go() {
     log_info "Go 版本编译完成: $GO_EXEC"
 }
 
+# 编译 C 版本
+build_c() {
+    log_info "编译 C HTTP 服务器..."
+    if [ ! -f "$C_SRC" ]; then
+        log_err "找不到 C 源文件: $C_SRC"
+        exit 1
+    fi
+    cc -O3 -Wall -Wextra -pthread -o "$C_EXEC" "$C_SRC"
+    log_info "C 版本编译完成: $C_EXEC"
+}
+
 # 运行服务器并执行基准测试
 run_benchmark() {
     local name="$1"
@@ -228,6 +241,7 @@ run_route_benchmark() {
 save_baseline() {
     local uya_root_rps="$1"
     local go_root_rps="$2"
+    local c_root_rps="$3"
     local timestamp
     timestamp=$(date -Iseconds)
 
@@ -252,7 +266,8 @@ save_baseline() {
   "results": {
     "root": {
       "uya_qps": ${uya_root_rps:-0},
-      "go_qps": ${go_root_rps:-0}
+      "go_qps": ${go_root_rps:-0},
+      "c_qps": ${c_root_rps:-0}
     }
   }
 }
@@ -272,6 +287,7 @@ main() {
     # 编译
     build_uya
     build_go
+    build_c
 
     # 测试端口
     local PORT=8876
@@ -284,35 +300,41 @@ main() {
     # 运行基准测试
     local uya_result
     local go_result
+    local c_result
 
     uya_result=$(run_benchmark "Uya" "$UYA_EXEC" "$PORT" "$URL")
     sleep 1
     go_result=$(run_benchmark "Go" "$GO_EXEC" "$PORT" "$URL")
+    sleep 1
+    c_result=$(run_benchmark "C" "$C_EXEC" "$PORT" "$URL")
 
     # 提取 QPS（result 格式：name|req|count|dur|p50|p95|p99|rps）
     local uya_rps
     local go_rps
+    local c_rps
     uya_rps=$(echo "$uya_result" | awk -F'|' '{print $8}')
     go_rps=$(echo "$go_result" | awk -F'|' '{print $8}')
+    c_rps=$(echo "$c_result" | awk -F'|' '{print $8}')
     if [ -z "$uya_rps" ]; then uya_rps=0; fi
     if [ -z "$go_rps" ]; then go_rps=0; fi
+    if [ -z "$c_rps" ]; then c_rps=0; fi
 
     # 对比
     echo "=========================================="
     log_info "基准测试对比结果"
     echo "=========================================="
-    printf "| %-20s | %-15s | %-15s |\n" "指标" "Uya" "Go"
-    echo "|--------------------|-----------------|-----------------|"
-    printf "| %-20s | %-15s | %-15s |\n" "QPS" "${uya_rps:-0}" "${go_rps:-0}"
+    printf "| %-20s | %-15s | %-15s | %-15s |\n" "指标" "Uya" "Go" "C"
+    echo "|--------------------|-----------------|-----------------|-----------------|"
+    printf "| %-20s | %-15s | %-15s | %-15s |\n" "QPS" "${uya_rps:-0}" "${go_rps:-0}" "${c_rps:-0}"
     echo "=========================================="
 
     # 保存基线（如果指定）
     if [ "$1" = "--baseline" ]; then
-        save_baseline "$uya_rps" "$go_rps"
+        save_baseline "$uya_rps" "$go_rps" "$c_rps"
     fi
 
     # 清理
-    rm -f "$GO_EXEC"
+    rm -f "$GO_EXEC" "$C_EXEC"
     rm -rf "$UYA_TMP_DIR"
 
     log_info "基准测试完成"

@@ -18,11 +18,11 @@ export union EventKind {
 /// 将 EventKind 转为 epoll 事件掩码（仅 Linux 实现使用）
 fn event_kind_to_epoll(k: EventKind) i32 {
     match k {
-        .Readable(_) => { return EPOLLIN; },
-        .Writable(_) => { return EPOLLOUT; },
-        .ReadWrite(_) => { return EPOLLIN | EPOLLOUT; },
+        .Readable(_) => { return EPOLLIN as i32; },
+        .Writable(_) => { return EPOLLOUT as i32; },
+        .ReadWrite(_) => { return (EPOLLIN | EPOLLOUT) as i32; },
     };
-    return 0;
+    return 0 as i32;
 }
 
 fn epoll_interest_or_default(fd: i32, interest: EventKind) EpollEvent {

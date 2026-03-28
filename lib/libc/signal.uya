@@ -380,18 +380,6 @@ const ATEXIT_MAX: usize = 32;
 var _atexit_handlers: [&void: ATEXIT_MAX] = [null: ATEXIT_MAX];
 var _atexit_count: usize = 0;
 
-// atexit - 注册程序退出时调用的函数
-export extern "libc" fn atexit(func: &void) i32 {
-    if _atexit_count >= ATEXIT_MAX {
-        return -1;
-    }
-    
-    _atexit_handlers[_atexit_count] = func;
-    _atexit_count = _atexit_count + 1;
-    
-    return 0;
-}
-
 // 内部函数：调用所有注册的退出处理函数
 fn _call_atexit_handlers() void {
     var i: i32 = (_atexit_count - 1) as i32;
