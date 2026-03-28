@@ -171,7 +171,8 @@ fn main_loop() void {
             if lfd.error_id != 0 { return; }
             const listen_fd: i32 = lfd.value;
             var reuse: i32 = 1;
-            _ = sys_setsockopt(listen_fd, 1, 2, &reuse as &void, 4);
+            _ = sys_setsockopt(listen_fd, 1, 2, &reuse as &void, 4);  // SO_REUSEADDR
+            _ = sys_setsockopt(listen_fd, 1, 15, &reuse as &void, 4); // SO_REUSEPORT
             var addr: [byte: 16] = [];
             addr[0] = 2;
             addr[1] = 0;
