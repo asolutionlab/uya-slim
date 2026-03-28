@@ -8,6 +8,7 @@ use libc.signal;
 
 const PORT: u16 = 8876;
 const BACKLOG: i32 = 1024;
+const NUM_PROCESSES: usize = 44;
 const READ_BUF_SIZE: usize = 2048;
 const MAX_PATH_LEN: usize = 256;
 
@@ -159,26 +160,38 @@ fn handle_client(cfd: i32) void {
 }
 
 fn main_loop() void {
-    const lfd: !i32 = sys_socket(2, 1, 6);
-    if lfd.error_id != 0 { return; }
-    const listen_fd: i32 = lfd.value;
-    var one: i32 = 1;
-    _ = sys_setsockopt(listen_fd, 1, 2, &one as &void, 4);
-    var addr: [byte: 16] = [];
-    addr[0] = 2;
-    addr[1] = 0;
-    addr[2] = ((PORT >> 8) & 0xff) as byte;
-    addr[3] = (PORT & 0xff) as byte;
-    addr[4] = 127;
-    addr[7] = 1;
-    const br: !i32 = sys_bind(listen_fd, &addr[0] as &void, 16);
-    if br.error_id != 0 { close_fd(listen_fd); return; }
-    _ = sys_listen(listen_fd, BACKLOG);
-    while true {
-        const ar: !i32 = sys_accept(listen_fd, null, 0);
-        if ar.error_id != 0 { continue; }
-        handle_client(ar.value);
+    var i: usize = 0;
+    while i < NUM_PROCESSES {
+        const pid_r: !i64 = sys_fork();
+        if pid_r.error_id != 0 { i = i + 1; continue; }
+        const pid: i64 = pid_r.value;
+        if pid == 0 {
+            // 子进程：创建自己的 socket
+            const lfd: !i32 = sys_socket(2, 1, 6);
+            if lfd.error_id != 0 { return; }
+            const listen_fd: i32 = lfd.value;
+            var reuse: i32 = 1;
+            _ = sys_setsockopt(listen_fd, 1, 2, &reuse as &void, 4);
+            var addr: [byte: 16] = [];
+            addr[0] = 2;
+            addr[1] = 0;
+            addr[2] = ((PORT >> 8) & 0xff) as byte;
+            addr[3] = (PORT & 0xff) as byte;
+            addr[4] = 127;
+            addr[7] = 1;
+            const br: !i32 = sys_bind(listen_fd, &addr[0] as &void, 16);
+            if br.error_id != 0 { close_fd(listen_fd); return; }
+            _ = sys_listen(listen_fd, BACKLOG);
+            while true {
+                const ar: !i32 = sys_accept(listen_fd, null, 0);
+                if ar.error_id != 0 { continue; }
+                handle_client(ar.value);
+            }
+        }
+        i = i + 1;
     }
+    // 父进程等待子进程
+    while true { }
 }
 
 fn argv_is_once() bool {
