@@ -10,35 +10,34 @@
 
 ### 1.1 前置依赖
 
-- [ ] 确认 Arena 可用性：与 std.json 共用
-- [ ] std.mem：mem_copy 等
+- [x] Arena：`std.mem.arena` 已与 std.json / std.yaml 等共用（`arena_alloc` / `arena_reset`）
+- [x] `std.mem.mem_copy` 等基础例程（见 `lib/std/mem/mem.uya`）
 
 ### 1.2 Wire 层
 
-- [ ] 创建 `lib/std/protobuf/` 目录
-- [ ] `error.uya`：TruncatedInput、InvalidVarint、InvalidTag、UnknownWireType、FieldNumberOverflow、RecursionLimit
-- [ ] `wire.uya`：varint 编解码
-- [ ] `wire.uya`：zigzag（sint32/sint64）编解码
-- [ ] `wire.uya`：tag 解析（field_number、wire_type）
+- [x] 创建 `lib/std/protobuf/` 目录
+- [x] `errors.uya`：TruncatedInput、InvalidVarint、InvalidTag、UnknownWireType、FieldNumberOverflow、RecursionLimit、BufferTooSmall、InvalidBool（模块名 **`errors`**，避免与关键字 `error` 冲突）
+- [x] `wire.uya`：varint 读、tag 拆分/校验、`skip_field`、fixed32/fixed64 读、zigzag（sint32/sint64）
+- [x] `encode.uya`：`PbWriter` + varint/tag/fixed 写（与 wire 对称）
 
 ### 1.3 基础类型编解码
 
-- [ ] `impl.uya`：int32、int64、uint32、uint64、sint32、sint64、bool、fixed32、fixed64、float、double
-- [ ] `impl.uya`：string、bytes（length-delimited，零拷贝）
-- [ ] proto3 默认值：decode 时缺失字段填充 0、""、false
+- [x] `impl.uya`：f32/f64 与 u32/u64 位模式（`memcpy`，避免 union 与 err_union C 生成冲突）、`pb_read_f32`/`pb_read_f64`
+- [x] string/bytes：`DemoUser.name` 为 `PbStrView`（length-delimited，零拷贝指向输入）
+- [x] proto3 默认值：`decode_demo_user` 缺省 id=0、name len=0、active=false
 
 ### 1.4 单层 message
 
-- [ ] `decode.uya`：`decode(arena, input) !T`，需 T 实现 ProtobufDecode 或手写 decode 函数
-- [ ] `encode.uya`：`encode_to(value, buf, cap) !usize`、`encode(arena, value) !&[byte]`
-- [ ] 若宏可用：`impl_protobuf!(User, 1 -> id, 2 -> name)`；否则提供手写 decode_/encode_ 示例
+- [x] `decode.uya`：`decode_demo_user(arena, ptr, len) !DemoUser`（手写示例；未知 field 跳过）
+- [x] `encode.uya`：`encode_demo_user_to`、`encode_demo_user_into_arena`（Arena 分配输出）、`encode_demo_user_size`
+- [ ] 泛型 `decode<T>` / 宏 `impl_protobuf!`（延至后续）
 
 ### 1.5 测试
 
-- [ ] `tests/test_protobuf_wire.uya`：varint、zigzag、tag 编解码
-- [ ] `tests/test_protobuf_decode_basic.uya`：单层 message，标量 + string/bytes
-- [ ] `tests/test_protobuf_encode_basic.uya`：encode roundtrip
-- [ ] `tests/error_protobuf_*.uya`：TruncatedInput、InvalidVarint 等预期失败
+- [x] `tests/test_protobuf_wire.uya`：varint、zigzag、tag、fixed、float 位模式
+- [x] `tests/test_protobuf_decode_basic.uya`：单层 message，标量 + string 视图
+- [x] `tests/test_protobuf_encode_basic.uya`：encode ↔ decode roundtrip（含负 int64 varint）
+- [x] `tests/test_protobuf_decode_errors.uya`：截断 varint、超长 varint、field 0、非法 bool
 
 ---
 
@@ -46,47 +45,50 @@
 
 ### 2.1 嵌套 message
 
-- [ ] 递归 decode/encode 嵌套 message
-- [ ] 嵌套深度限制（RecursionLimit）
+- [x] 递归 decode：`decode_demo_outer` / `decode_demo_inner_d`（子 message 为 length-delimited）
+- [x] 嵌套深度：`wire.PB_MAX_NEST_DEPTH`（64），超界 `RecursionLimit`
 
 ### 2.2 repeated
 
-- [ ] repeated 标量、repeated message
-- [ ] 同 field 多次出现合并为 `ptr: &T, len: usize`（Arena 分配）
-- [ ] packed repeated
+- [x] repeated int32：`DemoIntList` + `decode_demo_int_list`（合并 field 1 的 VARINT 与 LEN packed 载荷）
+- [x] repeated message：`DemoInnerList` + `decode_demo_inner_list`（Arena 分配 `PbI32Strip`，与 `DemoInner` 单字段布局一致）
+- [x] packed 编码：`encode_demo_int_list_packed_to`；解析与多次非 packed 写入合并
 
 ### 2.3 测试
 
-- [ ] `tests/test_protobuf_nested.uya`
-- [ ] `tests/test_protobuf_repeated.uya`
-- [ ] `tests/test_protobuf_packed.uya`
+- [x] `tests/test_protobuf_nested.uya`
+- [x] `tests/test_protobuf_repeated.uya`
+- [x] `tests/test_protobuf_packed.uya`
 
 ---
 
 ## Phase 3：高级特性
 
-- [ ] map（wire 等价 repeated message）
-- [ ] oneof（union + tag）
-- [ ] enum（varint）
-- [ ] optional
-- [ ] 测试：`tests/test_protobuf_map.uya`、`test_protobuf_oneof.uya`
+- [x] map（wire 等价 repeated message）
+- [x] oneof（union + tag）
+- [x] enum（varint）
+- [x] optional
+- [x] 测试：`tests/test_protobuf_map.uya`、`test_protobuf_oneof.uya`
 
 ---
 
 ## Phase 4：动态解析（可选）
 
-- [ ] `PbValue`、`PbField`、`PbMessage` 结构
-- [ ] `decode_dynamic(arena, input) !PbMessage`
-- [ ] unknown fields 跳过
-- [ ] 与 typed decode 共用 wire 层
+- [x] `PbValue`、`PbField`、`PbMessage` 结构（`dynamic.uya`；`PbValue` 为扁平 kind + 载荷，对齐 C 后端）
+- [x] `decode_dynamic(arena, ptr, len) !PbMessage`（两遍扫描：计数字段 + Arena 填充）
+- [x] 非法 wire type 与 typed 路径一致，由 `wire` 层报错（动态解析不吞未知 wire）
+- [x] 与 typed decode 共用 `wire`（`pb_read_varint_u64`、`pb_skip_field`、`pb_read_fixed32_u32` / `pb_read_fixed64_u64` 等）
+- [x] 测试：`tests/test_protobuf_dynamic.uya`
 
 ---
 
 ## Benchmark
 
-- [ ] 获取 protobuf 官方 benchmark 消息、addressbook 数据
-- [ ] 编写 `tests/bench_protobuf.uya` 或独立 benchmark 脚本
-- [ ] 记录 Phase 1/2 解码、编码吞吐量（GB/s）
+- [x] **数据集**
+  - [x] 内嵌小 message 字节（与 `test_protobuf_encode_basic` / `test_protobuf_packed` 对齐），便于 CI 稳定对比
+  - [ ] 可选：`protocolbuffers/protobuf` 仓库内 benchmark 用例、或教程 **addressbook** 生成的二进制样本，放 `tests/data/protobuf/`（大文件可 `.gitignore`，本地脚本拉取/生成）
+- [x] **实现**：`tests/bench_protobuf.uya`，对齐 `tests/bench_json.uya`——`@syscall(gettimeofday)` 墙钟微秒、decode 每轮 **`arena_reset`**、打印 **usec** 与 **MB/s**（`MB_F = 1048576.0`）；分节：**wire tag/varint 扫描**、**DemoUser encode/decode**、**packed `DemoIntList` encode/decode**
+- [x] **记录**：见 `docs/protobuf_design.md` §13（示例一次运行数据；换机/优化后请重跑 `./tests/build/bench_protobuf.bin` 更新）
 
 ---
 

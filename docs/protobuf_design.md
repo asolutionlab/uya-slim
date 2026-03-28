@@ -105,21 +105,16 @@ impl_protobuf!(User, 1 -> id, 2 -> name);
 
 ### 5.2 动态解析 PbMessage（可选）
 
-```uya
-union PbValue {
-    varint: u64,
-    fixed64: u64,
-    fixed32: u32,
-    len_delimited: &[byte],  // string/bytes/嵌套 message
-}
+逻辑模型可用 `union PbValue` 表达；**Uya 标准库实现**（`lib/std/protobuf/dynamic.uya`）采用**扁平 `PbValue`**（`kind` 与 wire type 一致 + `u64_v` / `u32_v` / `len_ptr`+`len_len`），避免 `struct` 内嵌 `union` 在 C99 后端上的不完整类型问题。
 
+```uya
 struct PbField {
     field_num: u32,
     value: PbValue,
 }
 
 struct PbMessage {
-    fields: &PbField,  // Arena 分配
+    fields: &PbField,  // Arena 分配；`len == 0` 时为 null
     len: usize,
 }
 ```
@@ -127,7 +122,7 @@ struct PbMessage {
 ### 5.3 访问方式
 
 - 类型化：直接访问 `user.id`、`user.name`
-- 动态：`pb_message_get_field(msg, field_num)` 返回 `PbValue`
+- 动态：`pb_message_find_field(msg, field_num) !PbValue`（首个匹配；同号重复字段在 `fields` 中各占一条，与 wire 出现次数一致）
 
 ---
 
@@ -183,6 +178,8 @@ error {
     UnknownWireType,
     FieldNumberOverflow,
     RecursionLimit,
+    BufferTooSmall,
+    InvalidBool,
 }
 ```
 
@@ -216,7 +213,7 @@ fn encode(arena: &Arena, value: &T) !&[byte];
 lib/std/protobuf/
   protobuf.uya     # 模块入口，重导出
   wire.uya         # varint、zigzag、tag 编解码
-  error.uya        # 错误定义
+  errors.uya       # 错误定义（模块 std.protobuf.errors；避免文件名 error 与关键字冲突）
   decode.uya       # decode、decode_dynamic
   encode.uya       # encode、encode_to、PbWriter
   impl.uya         # 基础类型编解码（i32、i64、bool、&[byte] 等）
@@ -256,3 +253,18 @@ lib/std/protobuf/
 | Java Protobuf | Java | 0.05–0.2 GB/s | 类似 |
 
 Uya 目标：Phase 1 接近 prost，力争 upb 的 1/2–2/3；明显优于 Go/Java。
+
+---
+
+## 13. 内嵌基准（`tests/bench_protobuf.uya`）
+
+- **计时**：Linux x86-64 `gettimeofday` 微秒，吞吐按处理字节 × 轮次 / 耗时换算 **MB/s**（`MB_F = 1048576.0`），与 `bench_json` 一致。
+- **场景**：128 B 负载上重复 **wire 扫描**（64×「field1 varint 1」）；**`DemoUser`** 与 `test_protobuf_encode_basic` 同构；**packed `DemoIntList`** 8×`i32` 与 repeated 测试对齐。
+- **示例一次运行**（本地 Linux x86_64，2026-03-28，单线程，热缓存，非正式中位数）：
+  - wire scan 80000×128 B → **~70 MB/s**
+  - `decode_demo_user` 50000×18 B → **~137 MB/s**
+  - `encode_demo_user_to` 50000×~18 B → **~138 MB/s**
+  - `decode_demo_int_list` packed 40000×10 B → **~23 MB/s**
+  - `encode_demo_int_list_packed_to` 50000×~10 B → **~48 MB/s**
+
+优化 `@vector` / 热循环后可再执行 `./tests/build/bench_protobuf.bin`（需先由测试脚本编译出该二进制）对比更新上表。
