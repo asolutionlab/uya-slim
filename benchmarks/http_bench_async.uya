@@ -7,31 +7,12 @@ use libc.syscall;
 use libc.signal;
 
 const PORT: u16 = 8876;
-const BACKLOG: i32 = 128;
-const MAX_CONNECTIONS: usize = 32;
+const BACKLOG: i32 = 1024;
 const READ_BUF_SIZE: usize = 2048;
 const MAX_PATH_LEN: usize = 256;
 
-const CONN_STATE_READING: i32 = 0;
-const CONN_STATE_CLOSED: i32 = 3;
-
-const EPOLLIN_VAL: u32 = 1;
-const EPOLLERR_VAL: u32 = 8;
-const EPOLLHUP_VAL: u32 = 16;
 const SIGPIPE: i32 = 13;
 const SIG_IGN: usize = 1;
-
-struct Connection {
-    fd: i32,
-    state: i32,
-    buf: [byte: READ_BUF_SIZE],
-    buf_len: usize,
-    path_len: usize,
-}
-
-var g_connections: [Connection: MAX_CONNECTIONS] = [];
-var g_listen_fd: i32 = -1;
-var g_epfd: i32 = -1;
 
 var g_hello_body: [byte: 5] = [];
 var g_json_body: [byte: 11] = [];
@@ -79,93 +60,6 @@ fn find_crlf(buf: &byte, len: usize) bool {
     return false;
 }
 
-fn parse_request(conn: &Connection) i32 {
-    if conn.buf_len < 10 { return 0; }
-    if conn.buf[0] != 'G' as byte || conn.buf[1] != 'E' as byte ||
-       conn.buf[2] != 'T' as byte || conn.buf[3] != ' ' as byte {
-        return 0;
-    }
-    var path_end: usize = 4;
-    while path_end < conn.buf_len && conn.buf[path_end] != ' ' as byte {
-        path_end = path_end + 1;
-    }
-    if path_end >= conn.buf_len { return 0; }
-    const plen: usize = path_end - 4;
-    if plen == 0 || plen > MAX_PATH_LEN - 1 { return 0; }
-    const off: usize = READ_BUF_SIZE - MAX_PATH_LEN;
-    var i: usize = 0;
-    while i < plen {
-        conn.buf[off + i] = conn.buf[4 + i];
-        i = i + 1;
-    }
-    conn.path_len = plen;
-    return 1;
-}
-
-fn dispatch_and_send(conn: &Connection, fd: i32) void {
-    const off: usize = READ_BUF_SIZE - MAX_PATH_LEN;
-    const plen: usize = conn.path_len;
-    const base: &byte = &conn.buf[off] as &byte;
-
-    var body_ptr: &byte = &g_hello_body[0] as &byte;
-    var body_len: usize = 0;
-
-    if plen == 1 && base[0] == '/' as byte {
-        body_ptr = &g_hello_body[0] as &byte;
-        body_len = 5;
-    } else if plen == 5 && base[0] == '/' as byte &&
-              base[1] == 'j' as byte && base[2] == 's' as byte &&
-              base[3] == 'o' as byte && base[4] == 'n' as byte {
-        body_ptr = &g_json_body[0] as &byte;
-        body_len = 11;
-    } else if plen > 6 && base[0] == '/' as byte &&
-              base[1] == 'i' as byte && base[2] == 't' as byte &&
-              base[3] == 'e' as byte && base[4] == 'm' as byte &&
-              base[5] == '/' as byte {
-        const id_off: usize = 6;
-        const id_len: usize = plen - id_off;
-        if id_len > 0 && id_len < 256 {
-            body_ptr = &base[id_off] as &byte;
-            body_len = id_len;
-        }
-    } else if plen == 10 && base[0] == '/' as byte &&
-              base[1] == 'p' as byte && base[2] == 'a' as byte &&
-              base[3] == 'y' as byte && base[4] == 'l' as byte &&
-              base[5] == 'o' as byte && base[6] == 'a' as byte &&
-              base[7] == 'd' as byte && base[8] == '1' as byte &&
-              base[9] == 'k' as byte {
-        body_ptr = &g_payload1k[0] as &byte;
-        body_len = 1024;
-    }
-
-    var hdr: [byte: 256] = [];
-    var pos: usize = 0;
-    var i: usize = 0;
-    while i < 17 { hdr[pos] = g_http200[i]; pos = pos + 1; i = i + 1; }
-    i = 0;
-    while i < 16 { hdr[pos] = g_content_len[i]; pos = pos + 1; i = i + 1; }
-    pos = pos + fmt_usize(&hdr[pos] as &byte, body_len);
-    i = 0;
-    while i < 4 { hdr[pos] = g_crlfcrlf[i]; pos = pos + 1; i = i + 1; }
-
-    var sent: usize = 0;
-    while sent < pos {
-        const nw: !isize = sys_write(fd, &hdr[sent] as *byte, pos - sent);
-        if nw.error_id != 0 { return; }
-        const w: isize = nw.value;
-        if w <= 0 { return; }
-        sent = sent + (w as usize);
-    }
-    sent = 0;
-    while sent < body_len {
-        const nw: !isize = sys_write(fd, &body_ptr[sent] as *byte, body_len - sent);
-        if nw.error_id != 0 { return; }
-        const w: isize = nw.value;
-        if w <= 0 { return; }
-        sent = sent + (w as usize);
-    }
-}
-
 fn fmt_usize(buf: &byte, n: usize) usize {
     if n == 0 { buf[0] = '0' as byte; return 1; }
     var tmp: [byte: 24] = [];
@@ -185,87 +79,91 @@ fn close_fd(fd: i32) void {
     _ = sys_close(fd);
 }
 
-fn find_free_slot() i32 {
+fn handle_client(cfd: i32) void {
+    var buf: [byte: READ_BUF_SIZE] = [];
+    var total: usize = 0;
+    while total < READ_BUF_SIZE {
+        const nr: !isize = sys_read(cfd, &buf[total] as *byte, READ_BUF_SIZE - total);
+        if nr.error_id != 0 { close_fd(cfd); return; }
+        const n: isize = nr.value;
+        if n <= 0 { break; }
+        total = total + (n as usize);
+        if find_crlf(&buf[0] as &byte, total) { break; }
+    }
+    if total < 10 { close_fd(cfd); return; }
+    if buf[0] != 'G' as byte || buf[1] != 'E' as byte ||
+       buf[2] != 'T' as byte || buf[3] != ' ' as byte {
+        close_fd(cfd); return;
+    }
+    var path_end: usize = 4;
+    while path_end < total && buf[path_end] != ' ' as byte { path_end = path_end + 1; }
+    if path_end >= total { close_fd(cfd); return; }
+    const plen: usize = path_end - 4;
+    if plen == 0 || plen > MAX_PATH_LEN - 1 { close_fd(cfd); return; }
+
+    const off: usize = READ_BUF_SIZE - MAX_PATH_LEN;
     var i: usize = 0;
-    while i < MAX_CONNECTIONS {
-        if g_connections[i].fd < 0 { return i as i32; }
-        i = i + 1;
-    }
-    return -1;
-}
+    while i < plen { buf[off + i] = buf[4 + i]; i = i + 1; }
 
-fn find_slot_by_fd(fd: i32) i32 {
-    var i: usize = 0;
-    while i < MAX_CONNECTIONS {
-        if g_connections[i].fd == fd { return i as i32; }
-        i = i + 1;
-    }
-    return -1;
-}
+    const base: &byte = &buf[off] as &byte;
+    var body_ptr: &byte = &g_hello_body[0] as &byte;
+    var body_len: usize = 0;
 
-fn init_conn(slot: usize, fd: i32) void {
-    g_connections[slot].fd = fd;
-    g_connections[slot].state = CONN_STATE_READING;
-    g_connections[slot].buf_len = 0;
-    g_connections[slot].path_len = 0;
-}
-
-fn release_slot(slot: usize) void {
-    const fd: i32 = g_connections[slot].fd;
-    if fd >= 0 {
-        // 先从 epoll 注销
-        var ev: EpollEvent = EpollEvent{ events: 0, _pad: 0, data: fd as u64 };
-        _ = sys_epoll_ctl(g_epfd, EPOLL_CTL_DEL, fd, &ev);
-        close_fd(fd);
+    if plen == 1 && base[0] == '/' as byte {
+        body_ptr = &g_hello_body[0] as &byte; body_len = 5;
+    } else if plen == 5 && base[0] == '/' as byte &&
+              base[1] == 'j' as byte && base[2] == 's' as byte &&
+              base[3] == 'o' as byte && base[4] == 'n' as byte {
+        body_ptr = &g_json_body[0] as &byte; body_len = 11;
+    } else if plen > 6 && base[0] == '/' as byte &&
+              base[1] == 'i' as byte && base[2] == 't' as byte &&
+              base[3] == 'e' as byte && base[4] == 'm' as byte &&
+              base[5] == '/' as byte {
+        body_ptr = &base[6] as &byte; body_len = plen - 6;
+    } else if plen == 10 && base[0] == '/' as byte &&
+              base[1] == 'p' as byte && base[2] == 'a' as byte &&
+              base[3] == 'y' as byte && base[4] == 'l' as byte &&
+              base[5] == 'o' as byte && base[6] == 'a' as byte &&
+              base[7] == 'd' as byte && base[8] == '1' as byte &&
+              base[9] == 'k' as byte {
+        body_ptr = &g_payload1k[0] as &byte; body_len = 1024;
     }
-    g_connections[slot].fd = -1;
-    g_connections[slot].state = CONN_STATE_CLOSED;
-}
 
-fn handle_read(slot: usize) void {
-    const fd: i32 = g_connections[slot].fd;
-    if fd < 0 || g_connections[slot].state == CONN_STATE_CLOSED { return; }
-    var conn: &Connection = &g_connections[slot];
-    const nr: !isize = sys_read(fd, &conn.buf[conn.buf_len] as *byte, READ_BUF_SIZE - conn.buf_len);
-    if nr.error_id != 0 { release_slot(slot); return; }
-    const n: isize = nr.value;
-    if n <= 0 { release_slot(slot); return; }
-    conn.buf_len = conn.buf_len + (n as usize);
-    if find_crlf(&conn.buf[0] as &byte, conn.buf_len) {
-        if parse_request(conn) != 0 { dispatch_and_send(conn, fd); }
-        // 不立即关闭连接，以便支持 keep-alive
-        // 重置缓冲区和路径长度以便读取下一个请求
-        conn.buf_len = 0;
-        conn.path_len = 0;
-    }
-    // 如果缓冲区满了但没有完整请求，关闭连接
-    if conn.buf_len >= READ_BUF_SIZE {
-        release_slot(slot);
-    }
-}
+    var hdr: [byte: 128] = [];
+    var pos: usize = 0;
+    i = 0;
+    while i < 17 { hdr[pos] = g_http200[i]; pos = pos + 1; i = i + 1; }
+    i = 0;
+    while i < 16 { hdr[pos] = g_content_len[i]; pos = pos + 1; i = i + 1; }
+    pos = pos + fmt_usize(&hdr[pos] as &byte, body_len);
+    i = 0;
+    while i < 4 { hdr[pos] = g_crlfcrlf[i]; pos = pos + 1; i = i + 1; }
 
-fn set_nonblocking(fd: i32) void {
-    // F_SETFL = 4, O_NONBLOCK = 2048
-    const flags: !i32 = sys_fcntl(fd, 4, 2048);
+    var sent: usize = 0;
+    while sent < pos {
+        const nw: !isize = sys_write(cfd, &hdr[sent] as *byte, pos - sent);
+        if nw.error_id != 0 { close_fd(cfd); return; }
+        const w: isize = nw.value;
+        if w <= 0 { close_fd(cfd); return; }
+        sent = sent + (w as usize);
+    }
+    sent = 0;
+    while sent < body_len {
+        const nw: !isize = sys_write(cfd, &body_ptr[sent] as *byte, body_len - sent);
+        if nw.error_id != 0 { close_fd(cfd); return; }
+        const w: isize = nw.value;
+        if w <= 0 { close_fd(cfd); return; }
+        sent = sent + (w as usize);
+    }
+    close_fd(cfd);
 }
 
 fn main_loop() void {
-    var i: usize = 0;
-    while i < MAX_CONNECTIONS {
-        g_connections[i].fd = -1;
-        g_connections[i].state = CONN_STATE_CLOSED;
-        i = i + 1;
-    }
-    const efd: !i32 = sys_epoll_create1(0);
-    if efd.error_id != 0 { return; }
-    g_epfd = efd.value;
     const lfd: !i32 = sys_socket(2, 1, 6);
     if lfd.error_id != 0 { return; }
-    g_listen_fd = lfd.value;
-    // 设置 listen socket 为非阻塞
-    set_nonblocking(g_listen_fd);
+    const listen_fd: i32 = lfd.value;
     var one: i32 = 1;
-    _ = sys_setsockopt(g_listen_fd, 1, 2, &one as &void, 4);
+    _ = sys_setsockopt(listen_fd, 1, 2, &one as &void, 4);
     var addr: [byte: 16] = [];
     addr[0] = 2;
     addr[1] = 0;
@@ -273,54 +171,13 @@ fn main_loop() void {
     addr[3] = (PORT & 0xff) as byte;
     addr[4] = 127;
     addr[7] = 1;
-    const br: !i32 = sys_bind(g_listen_fd, &addr[0] as &void, 16);
-    if br.error_id != 0 { _ = sys_close(g_listen_fd); return; }
-    _ = sys_listen(g_listen_fd, BACKLOG);
-    var ev: EpollEvent = EpollEvent{ events: EPOLLIN_VAL, _pad: 0, data: g_listen_fd as u64 };
-    const cr: !i32 = sys_epoll_ctl(g_epfd, 1, g_listen_fd, &ev);
-    if cr.error_id != 0 { _ = sys_close(g_listen_fd); return; }
-    var events: [EpollEvent: 64] = [];
+    const br: !i32 = sys_bind(listen_fd, &addr[0] as &void, 16);
+    if br.error_id != 0 { close_fd(listen_fd); return; }
+    _ = sys_listen(listen_fd, BACKLOG);
     while true {
-        const nw: !i32 = sys_epoll_wait(g_epfd, &events[0], 64, 100);
-        if nw.error_id != 0 { continue; }
-        const nevents: i32 = nw.value;
-        if nevents <= 0 { continue; }
-        var ei: i32 = 0;
-        while ei < nevents {
-            const e: &EpollEvent = &events[ei as usize];
-            const fd: i32 = e.data as i32;
-            const evts: u32 = e.events as u32;
-            if fd == g_listen_fd {
-                if (evts & EPOLLIN_VAL) != 0 as u32 {
-                    // 循环接受所有等待的连接
-                    while true {
-                        const ar: !i32 = sys_accept(g_listen_fd, null, 0);
-                        if ar.error_id != 0 { break; }
-                        const cfd: i32 = ar.value;
-                        set_nonblocking(cfd);
-                        const slot: i32 = find_free_slot();
-                        if slot >= 0 {
-                            init_conn(slot as usize, cfd);
-                            var ev_c: EpollEvent = EpollEvent{ events: EPOLLIN_VAL, _pad: 0, data: cfd as u64 };
-                            const cr2: !i32 = sys_epoll_ctl(g_epfd, 1, cfd, &ev_c);
-                            if cr2.error_id != 0 { close_fd(cfd); g_connections[slot as usize].fd = -1; }
-                        } else {
-                            close_fd(cfd);
-                        }
-                    }
-                }
-            } else {
-                const si: i32 = find_slot_by_fd(fd);
-                if si >= 0 {
-                    if (evts & EPOLLERR_VAL) != 0 as u32 ||
-                       (evts & EPOLLHUP_VAL) != 0 as u32 ||
-                       (evts & EPOLLIN_VAL) != 0 as u32 {
-                        handle_read(si as usize);
-                    }
-                }
-            }
-            ei = ei + 1;
-        }
+        const ar: !i32 = sys_accept(listen_fd, null, 0);
+        if ar.error_id != 0 { continue; }
+        handle_client(ar.value);
     }
 }
 
@@ -351,23 +208,7 @@ fn run_once() void {
     _ = sys_listen(listen_fd, 1);
     const ar: !i32 = sys_accept(listen_fd, null, 0);
     if ar.error_id != 0 { close_fd(listen_fd); return; }
-    const cfd: i32 = ar.value;
-    close_fd(listen_fd);
-    var buf: [byte: READ_BUF_SIZE] = [];
-    var total: usize = 0;
-    while total < READ_BUF_SIZE {
-        const nr: !isize = sys_read(cfd, &buf[total] as *byte, READ_BUF_SIZE - total);
-        if nr.error_id != 0 { close_fd(cfd); return; }
-        const n: isize = nr.value;
-        if n <= 0 { break; }
-        total = total + (n as usize);
-        if find_crlf(&buf[0] as &byte, total) { break; }
-    }
-    var conn: Connection = Connection{
-        fd: cfd, state: CONN_STATE_READING, buf: buf, buf_len: total, path_len: 0,
-    };
-    if parse_request(&conn) != 0 { dispatch_and_send(&conn, cfd); }
-    close_fd(cfd);
+    handle_client(ar.value);
 }
 
 export fn main() i32 {
