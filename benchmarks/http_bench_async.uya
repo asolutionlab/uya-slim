@@ -435,42 +435,66 @@ fn handle_client(cfd: i32) void {
 }
 
 fn main_loop() void {
+    // 主进程：创建 listen socket
+    const lfd: !i32 = sys_socket(2, 1, 6);
+    if lfd.error_id != 0 { return; }
+    const listen_fd: i32 = lfd.value;
+    var reuse: i32 = 1;
+    _ = sys_setsockopt(listen_fd, 1, 2, &reuse as &void, 4);  // SO_REUSEADDR
+    _ = sys_setsockopt(listen_fd, 1, 15, &reuse as &void, 4); // SO_REUSEPORT
+    var addr: [byte: 16] = [];
+    addr[0] = 2;
+    addr[1] = 0;
+    addr[2] = ((PORT >> 8) & 0xff) as byte;
+    addr[3] = (PORT & 0xff) as byte;
+    addr[4] = 127;
+    addr[7] = 1;
+    const br: !i32 = sys_bind(listen_fd, &addr[0] as &void, 16);
+    if br.error_id != 0 { close_fd(listen_fd); return; }
+    _ = sys_listen(listen_fd, BACKLOG);
+
+    // 创建 NUM_PROCESSES 个子进程
     var i: usize = 0;
     while i < NUM_PROCESSES {
         const pid_r: !i64 = sys_fork();
         if pid_r.error_id != 0 { i = i + 1; continue; }
         const pid: i64 = pid_r.value;
         if pid == 0 {
-            // 子进程：创建自己的 socket 并 accept
-            const lfd: !i32 = sys_socket(2, 1, 6);
-            if lfd.error_id != 0 { return; }
-            const listen_fd: i32 = lfd.value;
-            var reuse: i32 = 1;
-            _ = sys_setsockopt(listen_fd, 1, 2, &reuse as &void, 4);  // SO_REUSEADDR
-            _ = sys_setsockopt(listen_fd, 1, 15, &reuse as &void, 4); // SO_REUSEPORT
-            var addr: [byte: 16] = [];
-            addr[0] = 2;
-            addr[1] = 0;
-            addr[2] = ((PORT >> 8) & 0xff) as byte;
-            addr[3] = (PORT & 0xff) as byte;
-            addr[4] = 127;
-            addr[7] = 1;
-            const br: !i32 = sys_bind(listen_fd, &addr[0] as &void, 16);
-            if br.error_id != 0 { close_fd(listen_fd); return; }
-            _ = sys_listen(listen_fd, BACKLOG);
+            // 子进程：关闭 listen_fd，创建自己的
+            close_fd(listen_fd);
+            const lfd2: !i32 = sys_socket(2, 1, 6);
+            if lfd2.error_id != 0 { return; }
+            const listen_fd2: i32 = lfd2.value;
+            var reuse2: i32 = 1;
+            _ = sys_setsockopt(listen_fd2, 1, 2, &reuse2 as &void, 4);
+            _ = sys_setsockopt(listen_fd2, 1, 15, &reuse2 as &void, 4);
+            var addr2: [byte: 16] = [];
+            addr2[0] = 2; addr2[1] = 0;
+            addr2[2] = ((PORT >> 8) & 0xff) as byte;
+            addr2[3] = (PORT & 0xff) as byte;
+            addr2[4] = 127; addr2[7] = 1;
+            const br2: !i32 = sys_bind(listen_fd2, &addr2[0] as &void, 16);
+            if br2.error_id != 0 { close_fd(listen_fd2); return; }
+            _ = sys_listen(listen_fd2, BACKLOG);
             while true {
-                const ar: !i32 = sys_accept(listen_fd, null, 0);
+                const ar: !i32 = sys_accept(listen_fd2, null, 0);
                 if ar.error_id != 0 { continue; }
-                // 禁用 Nagle 算法，减少延迟
                 var nodelay: i32 = 1;
-                _ = sys_setsockopt(ar.value, 6, 1, &nodelay as &void, 4);  // TCP_NODELAY
+                _ = sys_setsockopt(ar.value, 6, 1, &nodelay as &void, 4);
                 handle_client(ar.value);
             }
         }
         i = i + 1;
     }
-    // 父进程退出，让子进程运行
-    return;
+
+    // 主进程自己也 accept 并处理连接
+    while true {
+        const ar: !i32 = sys_accept(listen_fd, null, 0);
+        if ar.error_id != 0 { continue; }
+        var nodelay: i32 = 1;
+        _ = sys_setsockopt(ar.value, 6, 1, &nodelay as &void, 4);
+        handle_client(ar.value);
+    }
 }
 
 fn argv_is_once() bool {
