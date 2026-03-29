@@ -1035,7 +1035,7 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
         fputc(10, mf as *void);
         fputs(".PHONY: all clean\n" as *byte, mf);
         fputs("all: $(UYA_OUT)\n" as *byte, mf);
-        fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)\n" as *byte, mf);
+        fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS) -lm\n" as *byte, mf);
         fputs("uya_part1.o: uya_part1.c uya_part1_types.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. uya_part1.c -o uya_part1.o\n" as *byte, mf);
         fputs("uya_common.o: uya_common.c uya_split_protos.h uya_mirror_globals.h uya_part1_types.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. uya_common.c -o uya_common.o\n" as *byte, mf);
         var ri: i32 = 0;
@@ -1065,7 +1065,7 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
     fputs("OBJS := uya_part1.o uya_part2.o\n" as *byte, mf);
     fputs(".PHONY: all clean\n" as *byte, mf);
     fputs("all: $(UYA_OUT)\n" as *byte, mf);
-    fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS)\n" as *byte, mf);
+    fputs("$(UYA_OUT): $(OBJS)\n\t$(CC) $(OBJS) -o $(UYA_OUT) $(LDFLAGS) -lm\n" as *byte, mf);
     fputs("uya_part1.o: uya_part1.c\n\t$(CC) -c $(CFLAGS) -I. uya_part1.c -o uya_part1.o\n" as *byte, mf);
     fputs("uya_part2.o: uya_part2.c\n\t$(CC) -c $(CFLAGS) -I. uya_part2.c -o uya_part2.o\n" as *byte, mf);
     fputs("clean:\n\trm -f $(OBJS) $(UYA_OUT)\n" as *byte, mf);

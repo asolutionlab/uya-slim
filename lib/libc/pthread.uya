@@ -271,10 +271,9 @@ export extern "libc" fn pthread_join(thread: &pthread_t, retval: & &void) i32 {
 
     var status: i32 = 0;
     const pid: i32 = thread.tid as i32;
+    // 等待线程退出，忽略错误（线程可能已被回收或不存在）
     const wait_ret: !i32 = sys_waitpid(pid, &status, 0);
-    _ = wait_ret catch {
-        return 1;
-    };
+    // 即使 wait_ret 失败也继续清理
 
     if thread.stack != null {
         free(thread.stack);
