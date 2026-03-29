@@ -124,8 +124,17 @@ fn gen_global_init_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             fputs("0" as *byte, codegen.emit_stream as *void);
         }
         fputc(125, codegen.emit_stream as *void);  // '}'
+    } else if expr.type == ASTNodeType.AST_STRING {
+        // 全局数组用字符串字面量初始化：直接输出字符串字面量
+        if expr.string_literal_value != null {
+            fputc(34, codegen.emit_stream as *void);  // '"'
+            escape_string_for_c(codegen.emit_stream, expr.string_literal_value);
+            fputc(34, codegen.emit_stream as *void);  // '"'
+        } else {
+            fputs("\"\"" as *byte, codegen.emit_stream as *void);
+        }
     } else {
-        // 对于其他表达式类型（数字、布尔值、字符串等），使用标准生成方式
+        // 对于其他表达式类型（数字、布尔值等），使用标准生成方式
         gen_expr(codegen, expr);
     }
 }
