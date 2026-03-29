@@ -14,19 +14,15 @@ const MAX_PATH_LEN: usize = 256;
 
 // BufferStream 结构体
 struct BufferStream {
-    fd: i32,
-    buf: [byte: 4096],
-    buf_len: usize,
-    buf_pos: usize,
+    fd: i32 = 0,
+    buf: [byte: 4096] = [],
+    buf_len: usize = 0,
+    buf_pos: usize = 0,
 }
 
 // 初始化 BufferStream
 fn stream_init(fd: i32) BufferStream {
-    var s: BufferStream = [0: 1];
-    s.fd = fd;
-    s.buf_len = 0;
-    s.buf_pos = 0;
-    return s;
+    return BufferStream{ fd: fd };
 }
 
 // 查找缓冲区中是否有完整的分隔符（从 buf_pos 开始查找）
@@ -437,8 +433,8 @@ fn main_loop() void {
         }
         i = i + 1;
     }
-    // 父进程等待子进程
-    while true { }
+    // 父进程退出，让子进程运行
+    return;
 }
 
 fn argv_is_once() bool {
