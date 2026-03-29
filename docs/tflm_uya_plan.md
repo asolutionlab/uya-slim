@@ -13,9 +13,9 @@
 
 ## 约定
 
-- **库根目录**：`lib/tflm/`。**模块路径**：`UYA_ROOT=lib/` 时，`lib/tflm/common.uya` → `use tflm.common`，`lib/tflm/kernels/conv.uya` → `use tflm.kernels.conv`。
+- **库根目录**：`lib/tflm/`。**模块路径**：`UYA_ROOT=lib/` 时须为 `lib/tflm/<名>/<名>.uya` → `use tflm.<名>`（例：`lib/tflm/common/common.uya` → `use tflm.common`，`lib/tflm/kernels/kernels.uya` → `use tflm.kernels`）。
 - **测试位置**：`tests/` 根目录，文件命名 `test_tflm_*.uya`；需通过 `--c99` 与 `--uya --c99`（见 [.cursorrules](../.cursorrules)）。
-- **验证**：所有 `test_tflm_*.uya` 需通过 `./tests/run_programs_parallel.sh --c99` 与 `--uya --c99`。
+- **验证**：所有 `test_tflm_*.uya` 需通过 `./tests/run_programs_parallel.sh --c99` 与 `--uya --c99`（`test_tflm_cmsis` 额外链接 `tests/tflm_cmsis_host_stub.c`，脚本与 `tests/Makefile` 已配置）。
 
 ---
 

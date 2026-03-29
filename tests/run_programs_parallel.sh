@@ -288,6 +288,8 @@ link_generated_test_output() {
         extra_c_file="$SCRIPT_DIR/external_functions.c"
     elif [ "$base_name" = "test_abi_calling_convention" ]; then
         extra_c_file="$SCRIPT_DIR/test_abi_helpers.c"
+    elif [ "$base_name" = "test_tflm_cmsis" ]; then
+        extra_c_file="$SCRIPT_DIR/tflm_cmsis_host_stub.c"
     fi
 
     link_cmd+=(-o "$exe_file" "$output_file")

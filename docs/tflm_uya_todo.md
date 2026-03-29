@@ -6,24 +6,24 @@
 
 ## 阶段 1：MVP（模型 + 内存 + 解释器 + 基础算子）
 
-- [ ] **common.uya**：定义错误码（`error.ModelTooShort`、`error.VersionMismatch`、`error.ModelCorrupted`、`error.OpNotSupported`、`error.ArenaExhausted`、`error.InvalidAlignment`、`error.DimensionMismatch`、`error.BufferTooSmall` 等）、`Context` 类型（或放在 context.uya）、`PrepareFn`/`EvalFn` 类型别名、`BuiltinOperator` 枚举、`TFLITE_VERSION` 等常量。
-- [ ] **model.uya**：最小 FlatBuffer 解析（`ModelHeader`、`load_model(data: &[u8]) !&const ModelHeader`）；子图/算子/张量访问接口（可先写死偏移或手写常量）。
-- [ ] **arena.uya**：`ArenaAllocator`、`align_forward`、`allocate(allocator, size, alignment) !&void`。可选：在 `allocate` 内检查 `alignment != 0` 且为 2 的幂，否则返回 `error.InvalidAlignment`。
-- [ ] **tensor.uya**：张量视图结构体（dims、dim_count、type、**data 为指向首元素的指针** &byte 或 &void，可选 bytes 字段）；与 TFLite 语义一致；FFI 传参使用 `tensor.data as *i8`。
-- [ ] **resolver.uya**：`OpResolver`（prepare/eval 函数指针数组）、`register_op`、`find(...) !(PrepareFn, EvalFn)`（返回元组，调用方解构为 prepare/eval）。
-- [ ] **interpreter.uya**：`Interpreter`、`Context`、`invoke(interpreter) !void` 主循环；`get_subgraph`、`get_operator`、`fill_context` 等辅助。
-- [ ] **kernels**：至少实现 Conv2D、DepthwiseConv2D、FullyConnected、Softmax 的 prepare/eval（可先纯 Uya 实现，不依赖 CMSIS-NN）。
-- [ ] **测试**：`test_tflm_model.uya`、`test_tflm_arena.uya`、`test_tflm_interpreter.uya`（最小单算子模型）；全部通过 `--c99` 与 `--uya --c99`。
+- [x] **common**（`lib/tflm/common/common.uya`）：错误码（含 `ResolverFull`）、`Context`、`BuiltinOperator`、`TFLITE_VERSION`。（当前 Uya 无法在结构体中存放 `fn(...) !void` 数组，故未定义 `PrepareFn`/`EvalFn` 类型别名；见 resolver / interpreter 说明。）
+- [x] **model**（`lib/tflm/model/model.uya`）：Phase 1 **线性 stub** `ModelPlan` + `load_model_plan` / `model_plan_opcode_at`（固定小端头 + opcode 列表）；**非**完整 FlatBuffer，后续可替换为真 `.tflite` 解析。
+- [x] **arena**（`lib/tflm/arena/arena.uya`）：`ArenaAllocator`、`align_forward`、`arena_allocate`（返回 `&byte`）、`arena_reset`；非法非 2 幂 alignment → `InvalidAlignment`。
+- [x] **tensor**（`lib/tflm/tensor/tensor.uya`）：`TensorView`（`data: &byte`、`bytes`、`TensorType`、`tensor_elem_count`）。
+- [x] **resolver**（`lib/tflm/resolver/resolver.uya`）：`OpResolver` 仅存已注册 `BuiltinOperator`；`register_op`、`resolver_has`。（函数指针表待语言支持后对齐设计文档 §5.1。）
+- [x] **interpreter**（`lib/tflm/interpreter/interpreter.uya`）：`Interpreter`、`invoke`；在 `invoke` 内对算子 **match 分发** 至 `kernels` 的 prepare/eval。
+- [x] **kernels**（`lib/tflm/kernels/kernels.uya`）：Conv2D（1×1）、DepthwiseConv2D（3×3 valid）、FullyConnected（i32）、Softmax（f32 + `libc exp`）的 prepare/eval。
+- [x] **测试**：`test_tflm_model.uya`、`test_tflm_arena.uya`、`test_tflm_interpreter.uya`；`make check`（`--c99` + `--uya --c99` + `--safety-proof`）通过。
 
-**验收**：能加载最小 .tflite 模型、分配 Arena、注册并执行至少一个算子，输出与预期一致。
+**验收**：stub 模型加载、Arena 分配与对齐校验、注册算子后 `invoke` 跑通 **FullyConnected**；同测文件内对 Conv / Depthwise / Softmax 做直接 eval smoke。**模块路径**：`lib/tflm/<模块>/<模块>.uya` → `use tflm.<模块>`（与 `std.protobuf.*` 同级规则）。
 
 ---
 
 ## 阶段 2：优化与扩展
 
-- [ ] **CMSIS-NN 集成**：在 `kernels/conv.uya`（或 `backend/arm.uya`）中 `extern` 声明并包装 `arm_convolve_HWC_q7_basic` 等；Uya 侧做边界检查后通过 `&buf[0] as *i8` 传参。
-- [ ] **更多算子**：Pooling、Activation、Reshape 等按 TFLite BuiltinOperator 逐步添加。
-- [ ] **量化**：int8 量化参数与 requantize 逻辑完善；饱和运算与规范对齐（若使用 `+|`、`+%` 等）。
+- [x] **CMSIS-NN 集成**：`lib/tflm/backend/backend.uya` 中 `extern` + `tflm_arm_conv_hwc_q7_basic` 包装 `arm_convolve_HWC_q7_basic`；边界检查后 `&buf[0] as *i8` 等传参。CI 主机用 `tests/tflm_cmsis_host_stub.c`（`test_tflm_cmsis` 在 `run_programs_parallel.sh` / `tests/Makefile` 中额外链接）；真机替换为 CMSIS-NN。
+- [x] **更多算子**：`AVERAGE_POOL_2D` / `MAX_POOL_2D`（2×2、stride 2、valid、HWC i32）、`RELU`（i32/f32）、`RESHAPE`（同类型、同元素数 memcpy）；`BuiltinOperator` 与 `interpreter` 分发已对齐 TFLite 枚举值（1 / 17 / 19 / 22）。
+- [x] **量化**：`lib/tflm/quant/quant.uya` 提供 `quant_sat_i32_to_i8`、`quant_mul_i32_shift_sat`；`TensorType.tt_int8` 与 `tensor_elem_byte_size` 供后续 int8 算子接表。
 - [ ] **测试**：与 TFLite 转换的 .tflite 模型对比（相同输入下输出一致），可选。
 
 **验收**：在目标 MCU（如 Cortex-M4）上跑通带 CMSIS-NN 的 Conv2D，代码体积与延迟可接受。

@@ -54,6 +54,8 @@ else \
         gcc --std=c99 -no-pie "$$output_file" external_functions.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
     elif [ "$$base_name" = "test_abi_calling_convention" ]; then \
         gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/test_abi_helpers.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
+    elif [ "$$base_name" = "test_tflm_cmsis" ]; then \
+        gcc --std=c99 -no-pie "$$output_file" $(TEST_DIR)/tflm_cmsis_host_stub.c -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
     else \
         gcc --std=c99 -no-pie "$$output_file" -o "$(BUILD_DIR)/$$base_name" 2>/dev/null && link_ok=1; \
     fi; \

@@ -55,24 +55,18 @@
 
 ```
 lib/tflm/
-├── common.uya           # 错误码、BuiltinOperator 枚举、常量
-├── model.uya            # FlatBuffer 模型解析（只读视图）
-├── arena.uya            # ArenaAllocator
-├── tensor.uya           # 张量视图（形状、类型、数据指针）
-├── resolver.uya         # OpResolver / MicroMutableOpResolver 等价
-├── interpreter.uya      # Interpreter、Context
-├── kernels/
-│   ├── conv.uya         # Conv2D（含 CMSIS-NN 包装）
-│   ├── depthwise_conv.uya
-│   ├── fully_connected.uya
-│   ├── softmax.uya      # Softmax
-│   └── ...
-└── (可选) backend/
-    ├── arm.uya          # Cortex-M CMSIS-NN 后端
-    └── generic.uya      # 纯 Uya 通用实现
+├── common/common.uya    # 错误码、BuiltinOperator、Context、常量
+├── model/model.uya      # Phase 1：线性 stub ModelPlan（可演进为 FlatBuffer）
+├── arena/arena.uya      # ArenaAllocator
+├── tensor/tensor.uya    # TensorView
+├── resolver/resolver.uya
+├── interpreter/interpreter.uya
+├── kernels/kernels.uya  # Phase 1～2：Conv / Depthwise / FC / Softmax + Pool / ReLU / Reshape
+├── quant/quant.uya      # int8 饱和与 mul+shift 辅助
+└── backend/backend.uya  # CMSIS-NN FFI（如 arm_convolve_HWC_q7_basic）；主机测试见 tests/tflm_cmsis_host_stub.c
 ```
 
-- 模块路径：`UYA_ROOT=lib/` 时，`lib/tflm/common.uya` → `use tflm.common`，`lib/tflm/kernels/conv.uya` → `use tflm.kernels.conv`。
+- 模块路径：`UYA_ROOT=lib/` 时，**须**「一层子目录 + 同名 `.uya`」以便解析为 `tflm.common`、`tflm.kernels` 等（与 `std.protobuf.*` 相同规则）。例：`lib/tflm/common/common.uya` → `use tflm.common`；`lib/tflm/kernels/kernels.uya` → `use tflm.kernels`。
 - 测试：`tests/test_tflm_model.uya`、`tests/test_tflm_arena.uya`、`tests/test_tflm_interpreter.uya` 等，需通过 `--c99` 与 `--uya --c99`。
 
 ---
@@ -186,7 +180,7 @@ fn allocate(
 
 - **依赖**：`Context` 类型及 `PrepareFn`/`EvalFn` 类型别名建议放在 **common.uya** 或独立 **context.uya** 中定义，resolver.uya 与 interpreter.uya 均依赖该模块，避免循环依赖。
 - TFLM 的 `MicroMutableOpResolver` 等价：按 `BuiltinOperator` 查找并返回「准备」与「执行」函数。
-- 方案 A（轻量）：用函数指针数组 + 枚举数组，无接口 vtable；适合 MCU，8/16 字节 per-op。
+- 方案 A（轻量）：用函数指针数组 + 枚举数组，无接口 vtable；适合 MCU，8/16 字节 per-op。**Phase 1 现状**：当前 Uya 在 `struct` 字段中尚不能稳定使用 `fn(...) !void` 数组与对应类型别名，故 `OpResolver` 仅记录已注册 `BuiltinOperator`，`invoke` 内以 `match`/分支调用各 `kernels` 的 prepare/eval；待编译器支持后再收敛为设计中的函数指针表。
 
 ```uya
 const MAX_OPS: u32 = 64;

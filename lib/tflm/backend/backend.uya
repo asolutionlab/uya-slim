@@ -1,0 +1,109 @@
+// tflm.backend - CMSIS-NN 风格卷积 FFI（主机测试链 tflm_cmsis_host_stub.c）
+// 模块路径：lib/tflm/backend/backend.uya → use tflm.backend;
+
+use tflm.common;
+
+extern fn arm_convolve_HWC_q7_basic(
+    im_in: *i8,
+    dim_im_in: u16,
+    ch_im_in: u16,
+    wt: *i8,
+    ch_im_out: u16,
+    dim_kernel: u16,
+    padding: u16,
+    stride: u16,
+    bias: *i8,
+    bias_shift: u16,
+    out_shift: u16,
+    im_out: *i8,
+    dim_im_out: u16,
+    buffer_a: *void,
+    buffer_b: *i8,
+) i32;
+
+fn i32_to_u16_dim(x: i32) !u16 {
+    if x <= 0 {
+        return error.DimensionMismatch;
+    }
+    if x > 65535 {
+        return error.DimensionMismatch;
+    }
+    return x as u16;
+}
+
+fn i32_to_u16_shift(x: i32) !u16 {
+    if x < 0 {
+        return error.DimensionMismatch;
+    }
+    if x > 65535 {
+        return error.DimensionMismatch;
+    }
+    return x as u16;
+}
+
+fn conv_square_out_dim(dim: i32, k: i32, p: i32, s: i32) !i32 {
+    const num: i32 = dim + 2 * p - k;
+    if num < 0 || s <= 0 {
+        return error.DimensionMismatch;
+    }
+    if num % s != 0 {
+        return error.DimensionMismatch;
+    }
+    return num / s + 1;
+}
+
+export fn tflm_arm_conv_hwc_q7_basic(
+    im_in: &byte,
+    im_bytes: usize,
+    dim_im: i32,
+    ch_in: i32,
+    wt: &byte,
+    wt_bytes: usize,
+    ch_out: i32,
+    dim_k: i32,
+    pad: i32,
+    stride: i32,
+    bias: &byte,
+    bias_bytes: usize,
+    bias_shift: i32,
+    out_shift: i32,
+    im_out: &byte,
+    out_bytes: usize,
+    scratch_a: &byte,
+    scratch_a_bytes: usize,
+    scratch_b: &byte,
+    scratch_b_bytes: usize,
+) !void {
+    const d_out: i32 = try conv_square_out_dim(dim_im, dim_k, pad, stride);
+    const in_elems: usize = (dim_im as usize) * (dim_im as usize) * (ch_in as usize);
+    const out_elems: usize = (d_out as usize) * (d_out as usize) * (ch_out as usize);
+    const w_elems: usize = (dim_k as usize) * (dim_k as usize) * (ch_in as usize) * (ch_out as usize);
+    if im_bytes < in_elems || out_bytes < out_elems || wt_bytes < w_elems {
+        return error.BufferTooSmall;
+    }
+    if bias_bytes < (ch_out as usize) || scratch_a_bytes < 4 || scratch_b_bytes < 4 {
+        return error.BufferTooSmall;
+    }
+    const bias_shift_u: u16 = try i32_to_u16_shift(bias_shift);
+    const out_shift_u: u16 = try i32_to_u16_shift(out_shift);
+    const st: i32 = arm_convolve_HWC_q7_basic(
+        &im_in[0] as *i8,
+        try i32_to_u16_dim(dim_im),
+        try i32_to_u16_dim(ch_in),
+        &wt[0] as *i8,
+        try i32_to_u16_dim(ch_out),
+        try i32_to_u16_dim(dim_k),
+        try i32_to_u16_shift(pad),
+        try i32_to_u16_dim(stride),
+        &bias[0] as *i8,
+        bias_shift_u,
+        out_shift_u,
+        &im_out[0] as *i8,
+        try i32_to_u16_dim(d_out),
+        &scratch_a[0] as *void,
+        &scratch_b[0] as *i8,
+    );
+    if st != 0 {
+        return error.DimensionMismatch;
+    }
+}
