@@ -121,57 +121,50 @@ fn stream_available(s: &BufferStream) usize {
 const SIGPIPE: i32 = 13;
 const SIG_IGN: usize = 1;
 
-var g_hello_body: [byte: 5] = [];
-var g_json_body: [byte: 11] = [];
-var g_http200: [byte: 17] = [];
-var g_http200ka: [byte: 17] = [];
-var g_content_len: [byte: 16] = [];
-var g_crlfcrlf: [byte: 4] = [];
-var g_connection_ka: [byte: 24] = [];
+var g_hello_body: [byte: 6] = [];
+var g_json_body: [byte: 12] = [];
+var g_http200: [byte: 18] = [];
+var g_http200ka: [byte: 18] = [];
+var g_content_len: [byte: 17] = [];
+var g_crlfcrlf: [byte: 5] = [];
+var g_connection_ka: [byte: 25] = [];
 var g_payload1k: [byte: 1024] = [];
 
 fn init_payloads() void {
-    g_hello_body[0] = 'h' as byte; g_hello_body[1] = 'e' as byte;
-    g_hello_body[2] = 'l' as byte; g_hello_body[3] = 'l' as byte;
-    g_hello_body[4] = 'o' as byte;
-    g_json_body[0] = '{' as byte; g_json_body[1] = '"' as byte;
-    g_json_body[2] = 'o' as byte; g_json_body[3] = 'k' as byte;
-    g_json_body[4] = '"' as byte; g_json_body[5] = ':' as byte;
-    g_json_body[6] = 't' as byte; g_json_body[7] = 'r' as byte;
-    g_json_body[8] = 'u' as byte; g_json_body[9] = 'e' as byte;
-    g_json_body[10] = '}' as byte;
-    g_http200[0] = 'H' as byte; g_http200[1] = 'T' as byte; g_http200[2] = 'T' as byte;
-    g_http200[3] = 'P' as byte; g_http200[4] = '/' as byte; g_http200[5] = '1' as byte;
-    g_http200[6] = '.' as byte; g_http200[7] = '1' as byte; g_http200[8] = ' ' as byte;
-    g_http200[9] = '2' as byte; g_http200[10] = '0' as byte; g_http200[11] = '0' as byte;
-    g_http200[12] = ' ' as byte; g_http200[13] = 'O' as byte; g_http200[14] = 'K' as byte;
-    g_http200[15] = '\r' as byte; g_http200[16] = '\n' as byte;
-    g_http200ka[0] = 'H' as byte; g_http200ka[1] = 'T' as byte; g_http200ka[2] = 'T' as byte;
-    g_http200ka[3] = 'P' as byte; g_http200ka[4] = '/' as byte; g_http200ka[5] = '1' as byte;
-    g_http200ka[6] = '.' as byte; g_http200ka[7] = '1' as byte; g_http200ka[8] = ' ' as byte;
-    g_http200ka[9] = '2' as byte; g_http200ka[10] = '0' as byte; g_http200ka[11] = '0' as byte;
-    g_http200ka[12] = ' ' as byte; g_http200ka[13] = 'O' as byte; g_http200ka[14] = 'K' as byte;
-    g_http200ka[15] = '\r' as byte; g_http200ka[16] = '\n' as byte;
-    g_connection_ka[0] = 'C' as byte; g_connection_ka[1] = 'o' as byte;
-    g_connection_ka[2] = 'n' as byte; g_connection_ka[3] = 'n' as byte;
-    g_connection_ka[4] = 'e' as byte; g_connection_ka[5] = 'c' as byte;
-    g_connection_ka[6] = 't' as byte; g_connection_ka[7] = 'i' as byte;
-    g_connection_ka[8] = 'o' as byte; g_connection_ka[9] = 'n' as byte;
-    g_connection_ka[10] = ':' as byte; g_connection_ka[11] = ' ' as byte;
-    g_connection_ka[12] = 'k' as byte; g_connection_ka[13] = 'e' as byte;
-    g_connection_ka[14] = 'e' as byte; g_connection_ka[15] = 'p' as byte;
-    g_connection_ka[16] = '-' as byte; g_connection_ka[17] = 'a' as byte;
-    g_connection_ka[18] = 'l' as byte; g_connection_ka[19] = 'i' as byte;
-    g_connection_ka[20] = 'v' as byte; g_connection_ka[21] = 'e' as byte;
-    g_connection_ka[22] = '\r' as byte; g_connection_ka[23] = '\n' as byte;
-    g_content_len[0] = 'C' as byte; g_content_len[1] = 'o' as byte; g_content_len[2] = 'n' as byte;
-    g_content_len[3] = 't' as byte; g_content_len[4] = 'e' as byte; g_content_len[5] = 'n' as byte;
-    g_content_len[6] = 't' as byte; g_content_len[7] = '-' as byte; g_content_len[8] = 'L' as byte;
-    g_content_len[9] = 'e' as byte; g_content_len[10] = 'n' as byte; g_content_len[11] = 'g' as byte;
-    g_content_len[12] = 't' as byte; g_content_len[13] = 'h' as byte; g_content_len[14] = ':' as byte;
-    g_content_len[15] = ' ' as byte;
-    g_crlfcrlf[0] = '\r' as byte; g_crlfcrlf[1] = '\n' as byte;
-    g_crlfcrlf[2] = '\r' as byte; g_crlfcrlf[3] = '\n' as byte;
+    g_hello_body[0] = 'h'; g_hello_body[1] = 'e'; g_hello_body[2] = 'l';
+    g_hello_body[3] = 'l'; g_hello_body[4] = 'o';
+    g_json_body[0] = '{'; g_json_body[1] = '"'; g_json_body[2] = 'o';
+    g_json_body[3] = 'k'; g_json_body[4] = '"'; g_json_body[5] = ':';
+    g_json_body[6] = 't'; g_json_body[7] = 'r'; g_json_body[8] = 'u';
+    g_json_body[9] = 'e'; g_json_body[10] = '}';
+    g_http200[0] = 'H'; g_http200[1] = 'T'; g_http200[2] = 'T';
+    g_http200[3] = 'P'; g_http200[4] = '/'; g_http200[5] = '1';
+    g_http200[6] = '.'; g_http200[7] = '1'; g_http200[8] = ' ';
+    g_http200[9] = '2'; g_http200[10] = '0'; g_http200[11] = '0';
+    g_http200[12] = ' '; g_http200[13] = 'O'; g_http200[14] = 'K';
+    g_http200[15] = '\r'; g_http200[16] = '\n';
+    g_http200ka[0] = 'H'; g_http200ka[1] = 'T'; g_http200ka[2] = 'T';
+    g_http200ka[3] = 'P'; g_http200ka[4] = '/'; g_http200ka[5] = '1';
+    g_http200ka[6] = '.'; g_http200ka[7] = '1'; g_http200ka[8] = ' ';
+    g_http200ka[9] = '2'; g_http200ka[10] = '0'; g_http200ka[11] = '0';
+    g_http200ka[12] = ' '; g_http200ka[13] = 'O'; g_http200ka[14] = 'K';
+    g_http200ka[15] = '\r'; g_http200ka[16] = '\n';
+    g_connection_ka[0] = 'C'; g_connection_ka[1] = 'o'; g_connection_ka[2] = 'n';
+    g_connection_ka[3] = 'n'; g_connection_ka[4] = 'e'; g_connection_ka[5] = 'c';
+    g_connection_ka[6] = 't'; g_connection_ka[7] = 'i'; g_connection_ka[8] = 'o';
+    g_connection_ka[9] = 'n'; g_connection_ka[10] = ':'; g_connection_ka[11] = ' ';
+    g_connection_ka[12] = 'k'; g_connection_ka[13] = 'e'; g_connection_ka[14] = 'e';
+    g_connection_ka[15] = 'p'; g_connection_ka[16] = '-'; g_connection_ka[17] = 'a';
+    g_connection_ka[18] = 'l'; g_connection_ka[19] = 'i'; g_connection_ka[20] = 'v';
+    g_connection_ka[21] = 'e'; g_connection_ka[22] = '\r'; g_connection_ka[23] = '\n';
+    g_content_len[0] = 'C'; g_content_len[1] = 'o'; g_content_len[2] = 'n';
+    g_content_len[3] = 't'; g_content_len[4] = 'e'; g_content_len[5] = 'n';
+    g_content_len[6] = 't'; g_content_len[7] = '-'; g_content_len[8] = 'L';
+    g_content_len[9] = 'e'; g_content_len[10] = 'n'; g_content_len[11] = 'g';
+    g_content_len[12] = 't'; g_content_len[13] = 'h'; g_content_len[14] = ':';
+    g_content_len[15] = ' ';
+    g_crlfcrlf[0] = '\r'; g_crlfcrlf[1] = '\n';
+    g_crlfcrlf[2] = '\r'; g_crlfcrlf[3] = '\n';
     var i: usize = 0;
     while i < 1024 { g_payload1k[i] = 'a' as byte; i = i + 1; }
 }
@@ -207,6 +200,11 @@ fn close_fd(fd: i32) void {
 }
 
 fn handle_client(cfd: i32) void {
+    // 设置读取超时 10 秒 (struct timeval 是 8 字节)
+    var tv: [byte: 8] = [];
+    tv[0] = 10; tv[1] = 0;  // tv_sec = 10 (little endian)
+    _ = sys_setsockopt(cfd, 1, 20, &tv[0] as &void, 8);  // SOL_SOCKET=1, SO_RCVTIMEO=20
+
     var s: BufferStream = stream_init(cfd);
     var crlf: [byte: 4] = [];
     crlf[0] = '\r' as byte; crlf[1] = '\n' as byte;
@@ -325,7 +323,7 @@ fn handle_client(cfd: i32) void {
             // HTTP/1.0 默认 close，HTTP/1.1 默认 keep-alive
             // 检查请求行中的 HTTP 版本
             var http11: bool = false;
-            if avail > 14 && data[avail-2] == '\n' as byte && data[avail-1] == '\r' as byte {
+            if avail > 14 && data[avail-2] == '\r' as byte && data[avail-1] == '\n' as byte {
                 // 查找 HTTP/1.1 或 HTTP/1.0
                 var j: usize = 0;
                 while j < avail - 14 {
@@ -348,13 +346,14 @@ fn handle_client(cfd: i32) void {
         // 5. 跳过已处理的 header
         stream_skip(&s, hdr_len);
 
-        // 6. 如果有 Content-Length，读取完整的 body
+        // 6. 如果有 Content-Length，读取并跳过完整的 body
         if content_length > 0 {
-            const body_start: usize = stream_available(&s);
-            if body_start < content_length {
-                const need: usize = content_length - body_start;
+            const body_in_buf: usize = stream_available(&s);
+            if body_in_buf < content_length {
+                const need: usize = content_length - body_in_buf;
                 const got: usize = read_exact(&s, need);
-                if got != content_length { close_fd(cfd); return; }
+                if got != need { close_fd(cfd); return; }
+                // read_exact 已经移动了 buf_pos，不需要再 skip
             } else {
                 stream_skip(&s, content_length);
             }
