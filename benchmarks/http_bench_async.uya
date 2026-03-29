@@ -271,6 +271,7 @@ fn handle_client(cfd: i32) void {
 
         // 4. 解析 Connection 头（不区分大小写）
         var wants_close: bool = true;
+        var has_connection: bool = false;
         i = 0;
         while i + 12 < avail {
             // 查找 "connection:" 或 "Connection:" 头（不区分大小写）
@@ -290,6 +291,7 @@ fn handle_client(cfd: i32) void {
                 while val_start < avail && (data[val_start] == ' ' as byte || data[val_start] == '\t' as byte) {
                     val_start = val_start + 1;
                 }
+                has_connection = true;
                 // 检查 "keep-alive" 或 "Keep-Alive"
                 if val_start + 9 < avail &&
                    (data[val_start] == 'k' as byte || data[val_start] == 'K' as byte) &&
@@ -304,9 +306,43 @@ fn handle_client(cfd: i32) void {
                    (data[val_start+9] == 'e' as byte || data[val_start+9] == 'E' as byte) {
                     wants_close = false;
                 }
+                // 检查 "close"
+                if val_start + 4 < avail &&
+                   (data[val_start] == 'c' as byte || data[val_start] == 'C' as byte) &&
+                   (data[val_start+1] == 'l' as byte || data[val_start+1] == 'L' as byte) &&
+                   (data[val_start+2] == 'o' as byte || data[val_start+2] == 'O' as byte) &&
+                   (data[val_start+3] == 's' as byte || data[val_start+3] == 'S' as byte) &&
+                   (data[val_start+4] == 'e' as byte || data[val_start+4] == 'E' as byte) {
+                    wants_close = true;
+                }
                 break;
             }
             i = i + 1;
+        }
+
+        // 如果没有 Connection 头，根据 HTTP 版本决定
+        if !has_connection {
+            // HTTP/1.0 默认 close，HTTP/1.1 默认 keep-alive
+            // 检查请求行中的 HTTP 版本
+            var http11: bool = false;
+            if avail > 14 && data[avail-2] == '\n' as byte && data[avail-1] == '\r' as byte {
+                // 查找 HTTP/1.1 或 HTTP/1.0
+                var j: usize = 0;
+                while j < avail - 14 {
+                    if j + 8 < avail &&
+                       data[j] == 'H' as byte && data[j+1] == 'T' as byte &&
+                       data[j+2] == 'T' as byte && data[j+3] == 'P' as byte &&
+                       data[j+4] == '/' as byte &&
+                       data[j+5] == '1' as byte && data[j+6] == '.' as byte {
+                        if data[j+7] == '1' as byte {
+                            http11 = true;
+                        }
+                        break;
+                    }
+                    j = j + 1;
+                }
+            }
+            wants_close = !http11;  // HTTP/1.0 默认 close，HTTP/1.1 默认 keep-alive
         }
 
         // 5. 跳过已处理的 header
@@ -405,7 +441,7 @@ fn main_loop() void {
         if pid_r.error_id != 0 { i = i + 1; continue; }
         const pid: i64 = pid_r.value;
         if pid == 0 {
-            // 子进程：创建自己的 socket
+            // 子进程：创建自己的 socket 并 accept
             const lfd: !i32 = sys_socket(2, 1, 6);
             if lfd.error_id != 0 { return; }
             const listen_fd: i32 = lfd.value;
