@@ -85,7 +85,7 @@ build_uya_async() {
         log_err "找不到 Uya 编译器: $UYA_BIN"
         exit 1
     fi
-    "$UYA_BIN" build "$UYA_ASYNC_SRC" -o /tmp/http_bench_async.c --c99 2>&1 | tail -3
+    "$UYA_BIN" build "$UYA_ASYNC_SRC" -o /tmp/http_bench_async.c --c99 >/dev/null 2>&1
     cc -std=c99 -no-pie -O2 -o "$UYA_ASYNC_EXEC" /tmp/http_bench_async.c -lm
     log_info "Uya async 版本编译完成: $UYA_ASYNC_EXEC"
 }
@@ -143,9 +143,11 @@ run_benchmark() {
     parsed=$(parse_wrk "$output")
     IFS='|' read -r req count dur p50 p95 p99 rps <<< "$parsed"
 
-    # 清理服务器
-    kill "$pid" 2>/dev/null || true
-    wait "$pid" 2>/dev/null || true
+    # 清理服务器（Uya async 会 fork 子进程，需要用 pkill）
+    pkill -9 -f "http_bench_async" 2>/dev/null || true
+    pkill -9 -f "http_bench_go" 2>/dev/null || true
+    pkill -9 -f "http_bench_c" 2>/dev/null || true
+    sleep 1
 
     # 输出结果摘要
     echo "" >&2
