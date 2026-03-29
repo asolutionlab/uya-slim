@@ -32,7 +32,7 @@
 
 ## 阶段 3：可选扩展
 
-- [ ] **多后端**：编译期选择 ARM vs 通用实现（依赖 `TARGET_ARCH` 或宏/构建系统，见设计文档 §7）。
+- [x] **多后端**：`lib/tflm/backend/backend.uya`（纯 Uya 通用实现）为默认路径；`lib/tflm/backend/arm.uya` 为 ARM CMSIS-NN extern 声明占位（文档占位）；调用方按目标选择 `use tflm.backend`（通用）或 `use tflm.backend.arm`（ARM CMSIS-NN）。
 - [ ] **工具链**：内存使用分析（编译期或运行时峰值）、算子融合等，按需规划。
 - [ ] **@offset_of**：若 Uya 增加该内置，用于 FlatBuffer 偏移编译期验证；当前用手写常量或运行时检查。
 

@@ -63,7 +63,11 @@ lib/tflm/
 ├── interpreter/interpreter.uya
 ├── kernels/kernels.uya  # Phase 1～2：Conv / Depthwise / FC / Softmax + Pool / ReLU / Reshape
 ├── quant/quant.uya      # int8 饱和与 mul+shift 辅助
-└── backend/backend.uya  # CMSIS-NN FFI（如 arm_convolve_HWC_q7_basic）；主机测试见 tests/tflm_cmsis_host_stub.c
+└── backend/
+    ├── backend.uya      # 默认纯 Uya 通用实现（host / RISC-V / 通用 ARM）
+    └── arm.uya          # ARM CMSIS-NN extern 声明占位（真机需替换链接库）
+    # 编译期选择：use tflm.backend（默认通用）或 use tflm.backend.arm（ARM CMSIS-NN）
+    # 文档：§7「多后端与编译期选择」
 ```
 
 - 模块路径：`UYA_ROOT=lib/` 时，**须**「一层子目录 + 同名 `.uya`」以便解析为 `tflm.common`、`tflm.kernels` 等（与 `std.protobuf.*` 相同规则）。例：`lib/tflm/common/common.uya` → `use tflm.common`；`lib/tflm/kernels/kernels.uya` → `use tflm.kernels`。
@@ -326,13 +330,20 @@ fn conv2d_cmsis_wrapper(ctx: &Context) !void {
 
 ---
 
-## 7. 多后端与编译期选择（可选）
+## 7. 多后端与编译期选择（Phase 3 完成）
 
-- 目标：按目标架构选择不同实现（如 ARM 用 CMSIS-NN，RISC-V 用纯 Uya）。
-- Uya 有 `if` 表达式（`const x = if cond { a } else { b };`），但**当前规范未定义** `TARGET_ARCH` 或等价内置；实现方式可选：
-  - 宏 + `@mc_get_env("UYA_TARGET_ARCH")` 或自定义编译选项；
-  - 或未来编译器提供类似 `@asm_target()` 的编译目标查询。
-- 设计上标注为「需编译器/构建系统支持」；首版可用单后端（generic 或 arm）条件编译（如通过不同 `use` 或宏展开不同模块）。
+- 目标：按目标架构选择不同实现（ARM 用 CMSIS-NN，x86_64 / RISC-V 用纯 Uya）。
+- **当前实现**（Phase 3）：
+  - `lib/tflm/backend/backend.uya`：默认纯 Uya 通用实现（`use tflm.backend`），覆盖 Conv2D/Depthwise/FC 等标准路径；亦可直接 `use tflm.backend.arm`。
+  - `lib/tflm/backend/arm.uya`：ARM CMSIS-NN extern 声明占位（仅含 `extern fn arm_convolve_HWC_q7_basic` 声明，无 Uya 实现体）；ARM 目标可 `use tflm.backend.arm` 并在 C 链接阶段替换为 CMSIS-NN 库。
+- **选择方式**（调用方源码层）：
+  ```uya
+  use tflm.backend;        // 默认：纯 Uya 通用实现（host / RISC-V）
+  // 或
+  use tflm.backend.arm;     // ARM CMSIS-NN（需链接 CMSIS-NN 库）
+  ```
+- 约束：Uya 当前 `use` 机制不支持运行时动态派发（无函数指针数组）；不同后端共用 `BuiltinOperator` 枚举值，调用方按目标编译期选择 `use` 路径即可。
+- `@asm_target()` 可查询编译期平台（x86_64=0/1/2、arm64=3/4/5、riscv64=6），但 `std.cfg` 目前为运行时条件表达式，不能直接用于 `use` 静态路径选择；未来可扩展 `std.cfg` 支持编译期路径剪枝或宏 `@mc_if(cfg(...))` 实现真正的条件编译。
 
 ---
 

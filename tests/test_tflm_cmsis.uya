@@ -1,6 +1,6 @@
-// TFLM 阶段 2：CMSIS-NN FFI 包装（主机链 tflm_cmsis_host_stub.c）
+// TFLM 阶段 2+3：CMSIS-NN FFI（backend.uya 纯 Uya 实现；arm.uya 为 ARM CMSIS-NN 文档占位）
 use std.runtime.entry;
-use tflm.backend.tflm_arm_conv_hwc_q7_basic;
+use tflm.backend;
 
 export fn main() i32 {
     var im: [byte: 4] = [];
