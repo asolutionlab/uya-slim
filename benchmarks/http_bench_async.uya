@@ -8,9 +8,119 @@ use libc.signal;
 
 const PORT: u16 = 8876;
 const BACKLOG: i32 = 1024;
-const NUM_PROCESSES: usize = 44;
+const NUM_PROCESSES: usize = 64;
 const READ_BUF_SIZE: usize = 2048;
 const MAX_PATH_LEN: usize = 256;
+
+// BufferStream 结构体
+struct BufferStream {
+    fd: i32,
+    buf: [byte: 4096],
+    buf_len: usize,
+    buf_pos: usize,
+}
+
+// 初始化 BufferStream
+fn stream_init(fd: i32) BufferStream {
+    var s: BufferStream = [0: 1];
+    s.fd = fd;
+    s.buf_len = 0;
+    s.buf_pos = 0;
+    return s;
+}
+
+// 查找缓冲区中是否有完整的分隔符（从 buf_pos 开始查找）
+fn find_in_buf(buf: &byte, buf_pos: usize, buf_len: usize, delim: &byte, delim_len: usize) usize {
+    if delim_len == 0 || buf_len - buf_pos < delim_len { return 0; }
+    var i: usize = buf_pos;
+    while i + delim_len <= buf_len {
+        var found: bool = true;
+        var j: usize = 0;
+        while j < delim_len {
+            if buf[i + j] != delim[j] {
+                found = false;
+                break;
+            }
+            j = j + 1;
+        }
+        if found { return i + delim_len; }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// 读取直到遇到指定分隔符（包含分隔符），返回总读取字节数（包括分隔符）
+// 返回 0 表示出错或连接关闭
+fn read_until(s: &BufferStream, delim: &byte, delim_len: usize) usize {
+    while true {
+        // 先在缓冲区中查找
+        const found: usize = find_in_buf(&s.buf[0] as &byte, s.buf_pos, s.buf_len, delim, delim_len);
+        if found > 0 {
+            // 找到分隔符，返回从 buf_pos 到 found 的总长度
+            return found - s.buf_pos;
+        }
+
+        // 没有找到，先压缩缓冲区（移动数据到开头）
+        if s.buf_pos > 0 {
+            var i: usize = 0;
+            while i < s.buf_len - s.buf_pos {
+                s.buf[i] = s.buf[s.buf_pos + i];
+                i = i + 1;
+            }
+            s.buf_len = s.buf_len - s.buf_pos;
+            s.buf_pos = 0;
+        }
+
+        // 如果缓冲区满了也没找到分隔符，报错
+        if s.buf_len >= 4096 { return 0; }
+
+        // 填充数据
+        const nr: !isize = sys_read(s.fd, &s.buf[s.buf_len] as *byte, 4096 - s.buf_len);
+        if nr.error_id != 0 { return 0; }
+        const n: isize = nr.value;
+        if n <= 0 { return 0; }
+        s.buf_len = s.buf_len + (n as usize);
+    }
+}
+
+// 读取指定长度的字节，返回实际读取的字节数
+fn read_exact(s: &BufferStream, len: usize) usize {
+    while s.buf_len - s.buf_pos < len {
+        // 先压缩缓冲区
+        if s.buf_pos > 0 {
+            var i: usize = 0;
+            while i < s.buf_len - s.buf_pos {
+                s.buf[i] = s.buf[s.buf_pos + i];
+                i = i + 1;
+            }
+            s.buf_len = s.buf_len - s.buf_pos;
+            s.buf_pos = 0;
+        }
+
+        const nr: !isize = sys_read(s.fd, &s.buf[s.buf_len] as *byte, 4096 - s.buf_len);
+        if nr.error_id != 0 { return 0; }
+        const n: isize = nr.value;
+        if n <= 0 { return 0; }
+        s.buf_len = s.buf_len + (n as usize);
+    }
+    s.buf_pos = s.buf_pos + len;
+    return len;
+}
+
+// 获取缓冲区内可用的数据指针
+fn stream_data(s: &BufferStream) &byte {
+    return &s.buf[s.buf_pos] as &byte;
+}
+
+// 跳过指定字节
+fn stream_skip(s: &BufferStream, len: usize) void {
+    s.buf_pos = s.buf_pos + len;
+}
+
+// 获取已缓冲的数据长度
+fn stream_available(s: &BufferStream) usize {
+    return s.buf_len - s.buf_pos;
+}
 
 const SIGPIPE: i32 = 13;
 const SIG_IGN: usize = 1;
@@ -18,8 +128,10 @@ const SIG_IGN: usize = 1;
 var g_hello_body: [byte: 5] = [];
 var g_json_body: [byte: 11] = [];
 var g_http200: [byte: 17] = [];
+var g_http200ka: [byte: 17] = [];
 var g_content_len: [byte: 16] = [];
 var g_crlfcrlf: [byte: 4] = [];
+var g_connection_ka: [byte: 24] = [];
 var g_payload1k: [byte: 1024] = [];
 
 fn init_payloads() void {
@@ -38,6 +150,24 @@ fn init_payloads() void {
     g_http200[9] = '2' as byte; g_http200[10] = '0' as byte; g_http200[11] = '0' as byte;
     g_http200[12] = ' ' as byte; g_http200[13] = 'O' as byte; g_http200[14] = 'K' as byte;
     g_http200[15] = '\r' as byte; g_http200[16] = '\n' as byte;
+    g_http200ka[0] = 'H' as byte; g_http200ka[1] = 'T' as byte; g_http200ka[2] = 'T' as byte;
+    g_http200ka[3] = 'P' as byte; g_http200ka[4] = '/' as byte; g_http200ka[5] = '1' as byte;
+    g_http200ka[6] = '.' as byte; g_http200ka[7] = '1' as byte; g_http200ka[8] = ' ' as byte;
+    g_http200ka[9] = '2' as byte; g_http200ka[10] = '0' as byte; g_http200ka[11] = '0' as byte;
+    g_http200ka[12] = ' ' as byte; g_http200ka[13] = 'O' as byte; g_http200ka[14] = 'K' as byte;
+    g_http200ka[15] = '\r' as byte; g_http200ka[16] = '\n' as byte;
+    g_connection_ka[0] = 'C' as byte; g_connection_ka[1] = 'o' as byte;
+    g_connection_ka[2] = 'n' as byte; g_connection_ka[3] = 'n' as byte;
+    g_connection_ka[4] = 'e' as byte; g_connection_ka[5] = 'c' as byte;
+    g_connection_ka[6] = 't' as byte; g_connection_ka[7] = 'i' as byte;
+    g_connection_ka[8] = 'o' as byte; g_connection_ka[9] = 'n' as byte;
+    g_connection_ka[10] = ':' as byte; g_connection_ka[11] = ' ' as byte;
+    g_connection_ka[12] = 'k' as byte; g_connection_ka[13] = 'e' as byte;
+    g_connection_ka[14] = 'e' as byte; g_connection_ka[15] = 'p' as byte;
+    g_connection_ka[16] = '-' as byte; g_connection_ka[17] = 'a' as byte;
+    g_connection_ka[18] = 'l' as byte; g_connection_ka[19] = 'i' as byte;
+    g_connection_ka[20] = 'v' as byte; g_connection_ka[21] = 'e' as byte;
+    g_connection_ka[22] = '\r' as byte; g_connection_ka[23] = '\n' as byte;
     g_content_len[0] = 'C' as byte; g_content_len[1] = 'o' as byte; g_content_len[2] = 'n' as byte;
     g_content_len[3] = 't' as byte; g_content_len[4] = 'e' as byte; g_content_len[5] = 'n' as byte;
     g_content_len[6] = 't' as byte; g_content_len[7] = '-' as byte; g_content_len[8] = 'L' as byte;
@@ -81,82 +211,195 @@ fn close_fd(fd: i32) void {
 }
 
 fn handle_client(cfd: i32) void {
-    var buf: [byte: READ_BUF_SIZE] = [];
-    var total: usize = 0;
-    while total < READ_BUF_SIZE {
-        const nr: !isize = sys_read(cfd, &buf[total] as *byte, READ_BUF_SIZE - total);
-        if nr.error_id != 0 { close_fd(cfd); return; }
-        const n: isize = nr.value;
-        if n <= 0 { break; }
-        total = total + (n as usize);
-        if find_crlf(&buf[0] as &byte, total) { break; }
-    }
-    if total < 10 { close_fd(cfd); return; }
-    if buf[0] != 'G' as byte || buf[1] != 'E' as byte ||
-       buf[2] != 'T' as byte || buf[3] != ' ' as byte {
-        close_fd(cfd); return;
-    }
-    var path_end: usize = 4;
-    while path_end < total && buf[path_end] != ' ' as byte { path_end = path_end + 1; }
-    if path_end >= total { close_fd(cfd); return; }
-    const plen: usize = path_end - 4;
-    if plen == 0 || plen > MAX_PATH_LEN - 1 { close_fd(cfd); return; }
+    var s: BufferStream = stream_init(cfd);
+    var crlf: [byte: 4] = [];
+    crlf[0] = '\r' as byte; crlf[1] = '\n' as byte;
+    crlf[2] = '\r' as byte; crlf[3] = '\n' as byte;
 
-    const off: usize = READ_BUF_SIZE - MAX_PATH_LEN;
-    var i: usize = 0;
-    while i < plen { buf[off + i] = buf[4 + i]; i = i + 1; }
+    while true {
+        // 1. 读取直到 \r\n\r\n
+        const hdr_len: usize = read_until(&s, &crlf[0] as &byte, 4);
+        if hdr_len == 0 { close_fd(cfd); return; }
 
-    const base: &byte = &buf[off] as &byte;
-    var body_ptr: &byte = &g_hello_body[0] as &byte;
-    var body_len: usize = 0;
+        // 2. 获取头部数据并解析
+        const data: &byte = stream_data(&s);
+        const avail: usize = stream_available(&s);
+        if avail < 14 { close_fd(cfd); return; }
 
-    if plen == 1 && base[0] == '/' as byte {
-        body_ptr = &g_hello_body[0] as &byte; body_len = 5;
-    } else if plen == 5 && base[0] == '/' as byte &&
-              base[1] == 'j' as byte && base[2] == 's' as byte &&
-              base[3] == 'o' as byte && base[4] == 'n' as byte {
-        body_ptr = &g_json_body[0] as &byte; body_len = 11;
-    } else if plen > 6 && base[0] == '/' as byte &&
-              base[1] == 'i' as byte && base[2] == 't' as byte &&
-              base[3] == 'e' as byte && base[4] == 'm' as byte &&
-              base[5] == '/' as byte {
-        body_ptr = &base[6] as &byte; body_len = plen - 6;
-    } else if plen == 10 && base[0] == '/' as byte &&
-              base[1] == 'p' as byte && base[2] == 'a' as byte &&
-              base[3] == 'y' as byte && base[4] == 'l' as byte &&
-              base[5] == 'o' as byte && base[6] == 'a' as byte &&
-              base[7] == 'd' as byte && base[8] == '1' as byte &&
-              base[9] == 'k' as byte {
-        body_ptr = &g_payload1k[0] as &byte; body_len = 1024;
+        // 解析请求行
+        if data[0] != 'G' as byte || data[1] != 'E' as byte ||
+           data[2] != 'T' as byte || data[3] != ' ' as byte {
+            close_fd(cfd); return;
+        }
+
+        // 找到路径结束
+        var path_end: usize = 4;
+        while path_end < avail && data[path_end] != ' ' as byte { path_end = path_end + 1; }
+        if path_end >= avail { close_fd(cfd); return; }
+        const plen: usize = path_end - 4;
+        if plen == 0 || plen > MAX_PATH_LEN - 1 { close_fd(cfd); return; }
+
+        // 3. 解析 Content-Length（不区分大小写）
+        var content_length: usize = 0;
+        var i: usize = 0;
+        while i + 15 < avail {
+            // 查找 "content-length:" 或 "Content-Length:" 头（不区分大小写）
+            if (data[i] == 'C' as byte || data[i] == 'c' as byte) &&
+               (data[i+1] == 'O' as byte || data[i+1] == 'o' as byte) &&
+               (data[i+2] == 'N' as byte || data[i+2] == 'n' as byte) &&
+               (data[i+3] == 'T' as byte || data[i+3] == 't' as byte) &&
+               (data[i+4] == 'E' as byte || data[i+4] == 'e' as byte) &&
+               (data[i+5] == 'N' as byte || data[i+5] == 'n' as byte) &&
+               (data[i+6] == 'T' as byte || data[i+6] == 't' as byte) &&
+               data[i+7] == '-' as byte &&
+               (data[i+8] == 'L' as byte || data[i+8] == 'l' as byte) &&
+               (data[i+9] == 'E' as byte || data[i+9] == 'e' as byte) &&
+               (data[i+10] == 'N' as byte || data[i+10] == 'n' as byte) &&
+               (data[i+11] == 'G' as byte || data[i+11] == 'g' as byte) &&
+               (data[i+12] == 'T' as byte || data[i+12] == 't' as byte) &&
+               (data[i+13] == 'H' as byte || data[i+13] == 'h' as byte) &&
+               data[i+14] == ':' as byte {
+                // 解析数字
+                var val_start: usize = i + 15;
+                while val_start < avail && (data[val_start] == ' ' as byte || data[val_start] == '\t' as byte) {
+                    val_start = val_start + 1;
+                }
+                while val_start < avail && data[val_start] >= '0' as byte && data[val_start] <= '9' as byte {
+                    content_length = content_length * 10 + ((data[val_start] as i32) - 48) as usize;
+                    val_start = val_start + 1;
+                }
+                break;
+            }
+            i = i + 1;
+        }
+
+        // 4. 解析 Connection 头（不区分大小写）
+        var wants_close: bool = true;
+        i = 0;
+        while i + 12 < avail {
+            // 查找 "connection:" 或 "Connection:" 头（不区分大小写）
+            if (data[i] == 'C' as byte || data[i] == 'c' as byte) &&
+               (data[i+1] == 'O' as byte || data[i+1] == 'o' as byte) &&
+               (data[i+2] == 'N' as byte || data[i+2] == 'n' as byte) &&
+               (data[i+3] == 'N' as byte || data[i+3] == 'n' as byte) &&
+               (data[i+4] == 'E' as byte || data[i+4] == 'e' as byte) &&
+               (data[i+5] == 'C' as byte || data[i+5] == 'c' as byte) &&
+               (data[i+6] == 'T' as byte || data[i+6] == 't' as byte) &&
+               (data[i+7] == 'I' as byte || data[i+7] == 'i' as byte) &&
+               (data[i+8] == 'O' as byte || data[i+8] == 'o' as byte) &&
+               (data[i+9] == 'N' as byte || data[i+9] == 'n' as byte) &&
+               data[i+10] == ':' as byte {
+                // 找到 Connection 头，检查值（忽略大小写）
+                var val_start: usize = i + 11;
+                while val_start < avail && (data[val_start] == ' ' as byte || data[val_start] == '\t' as byte) {
+                    val_start = val_start + 1;
+                }
+                // 检查 "keep-alive" 或 "Keep-Alive"
+                if val_start + 9 < avail &&
+                   (data[val_start] == 'k' as byte || data[val_start] == 'K' as byte) &&
+                   (data[val_start+1] == 'e' as byte || data[val_start+1] == 'E' as byte) &&
+                   (data[val_start+2] == 'e' as byte || data[val_start+2] == 'E' as byte) &&
+                   (data[val_start+3] == 'p' as byte || data[val_start+3] == 'P' as byte) &&
+                   data[val_start+4] == '-' as byte &&
+                   (data[val_start+5] == 'a' as byte || data[val_start+5] == 'A' as byte) &&
+                   (data[val_start+6] == 'l' as byte || data[val_start+6] == 'L' as byte) &&
+                   (data[val_start+7] == 'i' as byte || data[val_start+7] == 'I' as byte) &&
+                   (data[val_start+8] == 'v' as byte || data[val_start+8] == 'V' as byte) &&
+                   (data[val_start+9] == 'e' as byte || data[val_start+9] == 'E' as byte) {
+                    wants_close = false;
+                }
+                break;
+            }
+            i = i + 1;
+        }
+
+        // 5. 跳过已处理的 header
+        stream_skip(&s, hdr_len);
+
+        // 6. 如果有 Content-Length，读取完整的 body
+        if content_length > 0 {
+            const body_start: usize = stream_available(&s);
+            if body_start < content_length {
+                const need: usize = content_length - body_start;
+                const got: usize = read_exact(&s, need);
+                if got != content_length { close_fd(cfd); return; }
+            } else {
+                stream_skip(&s, content_length);
+            }
+        }
+
+        // 7. 确定响应内容
+        var body_ptr: &byte = &g_hello_body[0] as &byte;
+        var body_len: usize = 5;
+
+        if plen == 1 && data[4] == '/' as byte {
+            body_ptr = &g_hello_body[0] as &byte; body_len = 5;
+        } else if plen == 5 && data[4] == '/' as byte &&
+                  data[5] == 'j' as byte && data[6] == 's' as byte &&
+                  data[7] == 'o' as byte && data[8] == 'n' as byte {
+            body_ptr = &g_json_body[0] as &byte; body_len = 11;
+        } else if plen > 6 && data[4] == '/' as byte &&
+                  data[5] == 'i' as byte && data[6] == 't' as byte &&
+                  data[7] == 'e' as byte && data[8] == 'm' as byte &&
+                  data[9] == '/' as byte {
+            body_ptr = &data[10] as &byte; body_len = plen - 6;
+        } else if plen == 10 && data[4] == '/' as byte &&
+                  data[5] == 'p' as byte && data[6] == 'a' as byte &&
+                  data[7] == 'y' as byte && data[8] == 'l' as byte &&
+                  data[9] == 'o' as byte && data[10] == 'a' as byte &&
+                  data[11] == 'd' as byte && data[12] == '1' as byte &&
+                  data[13] == 'k' as byte {
+            body_ptr = &g_payload1k[0] as &byte; body_len = 1024;
+        }
+
+        // 8. 发送响应
+        var hdr: [byte: 128] = [];
+        var pos: usize = 0;
+        var j: usize = 0;
+        while j < 17 { hdr[pos] = g_http200ka[j]; pos = pos + 1; j = j + 1; }
+        if wants_close {
+            // Connection: close
+            hdr[pos] = 'C' as byte; hdr[pos+1] = 'o' as byte;
+            hdr[pos+2] = 'n' as byte; hdr[pos+3] = 'n' as byte;
+            hdr[pos+4] = 'e' as byte; hdr[pos+5] = 'c' as byte;
+            hdr[pos+6] = 't' as byte; hdr[pos+7] = 'i' as byte;
+            hdr[pos+8] = 'o' as byte; hdr[pos+9] = 'n' as byte;
+            hdr[pos+10] = ':' as byte; hdr[pos+11] = ' ' as byte;
+            hdr[pos+12] = 'c' as byte; hdr[pos+13] = 'l' as byte;
+            hdr[pos+14] = 'o' as byte; hdr[pos+15] = 's' as byte;
+            hdr[pos+16] = 'e' as byte; hdr[pos+17] = '\r' as byte;
+            hdr[pos+18] = '\n' as byte;
+            pos = pos + 19;
+        } else {
+            j = 0;
+            while j < 24 { hdr[pos] = g_connection_ka[j]; pos = pos + 1; j = j + 1; }
+        }
+        j = 0;
+        while j < 16 { hdr[pos] = g_content_len[j]; pos = pos + 1; j = j + 1; }
+        pos = pos + fmt_usize(&hdr[pos] as &byte, body_len);
+        j = 0;
+        while j < 4 { hdr[pos] = g_crlfcrlf[j]; pos = pos + 1; j = j + 1; }
+
+        var sent: usize = 0;
+        while sent < pos {
+            const nw: !isize = sys_write(cfd, &hdr[sent] as *byte, pos - sent);
+            if nw.error_id != 0 { close_fd(cfd); return; }
+            const w: isize = nw.value;
+            if w <= 0 { close_fd(cfd); return; }
+            sent = sent + (w as usize);
+        }
+        sent = 0;
+        while sent < body_len {
+            const nw: !isize = sys_write(cfd, &body_ptr[sent] as *byte, body_len - sent);
+            if nw.error_id != 0 { close_fd(cfd); return; }
+            const w: isize = nw.value;
+            if w <= 0 { close_fd(cfd); return; }
+            sent = sent + (w as usize);
+        }
+
+        // 9. 如果是 close，关闭连接
+        if wants_close { close_fd(cfd); return; }
     }
-
-    var hdr: [byte: 128] = [];
-    var pos: usize = 0;
-    i = 0;
-    while i < 17 { hdr[pos] = g_http200[i]; pos = pos + 1; i = i + 1; }
-    i = 0;
-    while i < 16 { hdr[pos] = g_content_len[i]; pos = pos + 1; i = i + 1; }
-    pos = pos + fmt_usize(&hdr[pos] as &byte, body_len);
-    i = 0;
-    while i < 4 { hdr[pos] = g_crlfcrlf[i]; pos = pos + 1; i = i + 1; }
-
-    var sent: usize = 0;
-    while sent < pos {
-        const nw: !isize = sys_write(cfd, &hdr[sent] as *byte, pos - sent);
-        if nw.error_id != 0 { close_fd(cfd); return; }
-        const w: isize = nw.value;
-        if w <= 0 { close_fd(cfd); return; }
-        sent = sent + (w as usize);
-    }
-    sent = 0;
-    while sent < body_len {
-        const nw: !isize = sys_write(cfd, &body_ptr[sent] as *byte, body_len - sent);
-        if nw.error_id != 0 { close_fd(cfd); return; }
-        const w: isize = nw.value;
-        if w <= 0 { close_fd(cfd); return; }
-        sent = sent + (w as usize);
-    }
-    close_fd(cfd);
 }
 
 fn main_loop() void {
@@ -186,6 +429,9 @@ fn main_loop() void {
             while true {
                 const ar: !i32 = sys_accept(listen_fd, null, 0);
                 if ar.error_id != 0 { continue; }
+                // 禁用 Nagle 算法，减少延迟
+                var nodelay: i32 = 1;
+                _ = sys_setsockopt(ar.value, 6, 1, &nodelay as &void, 4);  // TCP_NODELAY
                 handle_client(ar.value);
             }
         }
