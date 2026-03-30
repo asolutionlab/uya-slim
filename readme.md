@@ -270,14 +270,14 @@ fn increment(counter: *Counter) void {
 }
 ```
 
-## 当前状态（v0.8.0）
+## 当前状态（v0.8.1）
 
 - **自举编译器**：已完成自举，所有测试通过。编译器能编译自身，输出 C99 代码（默认多文件至 `.uyacache`，可用 `--no-split-c` 单文件）。
 - **开发模式**：仅维护 `src/` 目录的自举编译器。
 - **快速构建**：`gcc -std=c99 -O3 -fno-builtin bin/uya.c -o bin/uya` 即可从 C99 代码构建编译器。
 - **内存验证**：Valgrind 验证通过，无内存泄漏，无内存错误。
 - **语言规范**：完整版见 [docs/uya.md](./docs/uya.md)。
-- **最新特性**：异步运行时与状态机验证、`std.http`（含 JWT/SHA-256）、C99 多文件输出与 codegen 性能、`--nostdlib`、更大默认堆栈与默认安全证明；延续 v0.7.x 的越界检测与 @asm 优化框架等。
+- **最新特性**：在 v0.8.0 里程碑之上，延续 **TFLM 标准库与多后端**、**epoll / 非阻塞 HTTP**、异步压测与 pthread / nostdlib 稳定性修复等；仍含异步运行时、`std.http`（JWT/SHA-256）、C99 多文件输出、`--nostdlib` 与 v0.7.x 起的越界检测与 @asm 优化框架。
 
 ## 文档
 
@@ -306,7 +306,7 @@ fn increment(counter: *Counter) void {
 
 ---
 
-**注意**：语言规范为完整版（0.72）；**v0.8.0** 为当前里程碑发行线。完整特性与未来计划见 [docs/uya.md](./docs/uya.md) 与 [docs/releases/RELEASE_v0.8.0.md](./docs/releases/RELEASE_v0.8.0.md)。
+**注意**：语言规范为完整版（0.72）；当前 **补丁发行**为 **v0.8.1**（v0.8.0 里程碑线），说明见 [docs/releases/RELEASE_v0.8.1.md](./docs/releases/RELEASE_v0.8.1.md)；里程碑总览见 [docs/releases/RELEASE_v0.8.0.md](./docs/releases/RELEASE_v0.8.0.md) 与 [docs/uya.md](./docs/uya.md)。
 
 **许可证**：本项目采用 [MIT 许可证](./LICENSE)。Copyright (c) 2025-2026 Uya 语言项目
 

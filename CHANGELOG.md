@@ -1,5 +1,20 @@
 # Uya 变更日志
 
+## v0.8.1 - v0.8.0 发行线补丁：TFLM、epoll HTTP、压测与稳定性
+
+> 发布日期：2026-03-30
+
+### 概要
+
+自 **v0.8.0** 起的**补丁版本**，在同一发行线下合并 TFLM 标准库与多后端（含 CMSIS-NN）、`std.http` 非阻塞与 epoll 路径、`http_bench_async` 与基准脚本、全局数组字符串字面量初始化、编译器与 pthread / nostdlib / 自举对比等修复；`make check` **697** 项测试通过。详见 [docs/releases/RELEASE_v0.8.1.md](./docs/releases/RELEASE_v0.8.1.md)。
+
+### 文档与版本字符串
+
+- 新增 `docs/releases/RELEASE_v0.8.1.md`
+- 编译器帮助中的版本字符串更新为 **v0.8.1**
+
+---
+
 ## v0.8.0 - 里程碑：异步运行时、std.http、多文件 C99 与工具链
 
 > 发布日期：2026-03-25
