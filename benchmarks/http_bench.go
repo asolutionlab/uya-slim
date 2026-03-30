@@ -1,4 +1,5 @@
 // benchmarks/http_bench.go — 与 http_bench.uya 对齐的 Go 参考服务端（同端口、同路由、同响应体长度）
+// Rust 对照：benchmarks/http_bench_tokio（Tokio + Hyper）
 //
 // 路由与体大小（与 Uya 版一致）：
 //   GET /              → "hello"（5 字节）

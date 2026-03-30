@@ -165,10 +165,11 @@
 
 - [x] `benchmarks/http_bench.uya`：`GET /`（plaintext `hello`）、`GET /json`、`GET /item/:id`（body 为 id）、`GET /payload1k|10k|100k`（`make check` 含 `tests/verify_http_bench_compile.sh`）；`--once` 冒烟；默认 `127.0.0.1:8876` + Keep-alive
 - [x] `benchmarks/http_bench.go`：Go 参考服务端（与 Uya 版路由/响应一致）
+- [x] `benchmarks/http_bench_tokio`：Rust Tokio + Hyper 对照服务端（路由与 Go 版一致；`cargo` 可用时 `run_bench.sh` 会参与 wrk 对比）
 
 ### 8.2 环境与脚本
 
-- [x] `benchmarks/run_bench.sh`：运行 wrk 并解析输出，对比 Uya/Go QPS；`--baseline` 保存到 `baseline.json`
+- [x] `benchmarks/run_bench.sh`：运行 wrk 并解析输出，对比 Uya-async/Go/C（及可选 Tokio）QPS；`--baseline` 保存到 `baseline.json`（含 `tokio_qps` 字段）
 - [x] `benchmarks/baseline.json`：基线数据（含测试机配置：Intel i7-14700/31GB/Deepin 25）
 - [x] 运行 `./run_bench.sh --baseline` 获取实际基线数据
 - [x] 文档记录：CPU、内存、OS、编译器；wrk 使用 keep-alive

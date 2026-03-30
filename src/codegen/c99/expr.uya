@@ -3872,7 +3872,12 @@ fn c99_resolve_struct_decl_for_member_object(codegen: &C99CodeGenerator, object:
     }
     if object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null {
         const tn: &ASTNode = c99_find_identifier_type_node(codegen, object.identifier_name);
-        return c99_resolve_struct_decl_from_type_node(codegen, tn);
+        var cur_type: &ASTNode = tn;
+        while cur_type != null && cur_type.type == ASTNodeType.AST_TYPE_POINTER &&
+            cur_type.type_pointer_pointed_type != null {
+            cur_type = cur_type.type_pointer_pointed_type;
+        }
+        return c99_resolve_struct_decl_from_type_node(codegen, cur_type);
     }
     return null;
 }
@@ -5748,6 +5753,22 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         // 这样链式访问会自然递归成立，不再依赖局部特判。
         const is_pointer: i32 = is_expr_pointer_type(codegen, object);
         
+        // 原子结构体成员：读值须 __atomic_load_n；取址/原子 store 首参时由 atomic_member_plain_lvalue 抑制
+        var field_atomic_load_inner: &byte = null;
+        if codegen.atomic_member_plain_lvalue == 0 && codegen.emitting_assign_lhs == 0 {
+            const struct_decl_ma: &ASTNode = c99_resolve_struct_decl_for_member_object(codegen, object);
+            if struct_decl_ma != null {
+                const ft_ma: &ASTNode = c99_find_struct_field_type(codegen, struct_decl_ma, field_name);
+                if ft_ma != null && ft_ma.type == ASTNodeType.AST_TYPE_ATOMIC {
+                    const ftc_ma: &byte = c99_type_to_c(codegen, ft_ma);
+                    field_atomic_load_inner = get_atomic_inner_type_c(codegen, ftc_ma);
+                }
+            }
+        }
+        if field_atomic_load_inner != null {
+            fprintf(codegen.emit_stream as *void, "__atomic_load_n((%s *)&(" as *byte, field_atomic_load_inner as *byte);
+        }
+        
         if codegen.emitting_assign_lhs != 0 && object.type == ASTNodeType.AST_IDENTIFIER && object.identifier_name != null &&
             strcmp(object.identifier_name as *byte, "self" as *byte) == 0 && codegen.current_method_struct_name != null {
             const safe_struct: &byte = get_safe_c_identifier(codegen, codegen.current_method_struct_name);
@@ -5765,6 +5786,9 @@ fn gen_member_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         } else {
             // 非指针类型使用 . 操作符
             fprintf(codegen.emit_stream as *void, ".%s" as *byte, safe_field_name as *byte);
+        }
+        if field_atomic_load_inner != null {
+            fputs("), __ATOMIC_SEQ_CST)" as *byte, codegen.emit_stream as *void);
         }
 }
 
@@ -7342,6 +7366,18 @@ fn gen_unary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             return;
         }
         
+        // & 作用于原子成员：gen_expr 内需裸左值（标志仅在 gen_expr(operand) 前后置位，避免早退泄漏）
+        var amp_atomic_member_plain: i32 = 0;
+        if op == TokenType.TOKEN_AMPERSAND && operand.type == ASTNodeType.AST_MEMBER_ACCESS && operand.member_access_is_module_access == 0 {
+            const st_amp: &ASTNode = c99_resolve_struct_decl_for_member_object(codegen, operand.member_access_object);
+            if st_amp != null && operand.member_access_field_name != null {
+                const ft_amp: &ASTNode = c99_find_struct_field_type(codegen, st_amp, operand.member_access_field_name);
+                if ft_amp != null && ft_amp.type == ASTNodeType.AST_TYPE_ATOMIC {
+                    amp_atomic_member_plain = 1;
+                }
+            }
+        }
+        
         // 特殊处理：& 作用于原子类型变量，直接取地址（不生成原子 load）
         // 例如：&value（value 是 atomic i32）应该生成 &value 而不是 &__atomic_load_n(&value, ...)
         if op == TokenType.TOKEN_AMPERSAND && operand.type == ASTNodeType.AST_IDENTIFIER {
@@ -7382,7 +7418,13 @@ fn gen_unary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         } else {
             fputs("+" as *byte, codegen.emit_stream as *void); // 默认
         }
+        if amp_atomic_member_plain != 0 {
+            codegen.atomic_member_plain_lvalue = 1;
+        }
         gen_expr(codegen, operand);
+        if amp_atomic_member_plain != 0 {
+            codegen.atomic_member_plain_lvalue = 0;
+        }
         fputc(41, codegen.emit_stream as *void);  // ')'
 }
 

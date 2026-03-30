@@ -1412,7 +1412,9 @@ fn emit_atomic_pointer_arg(codegen: &C99CodeGenerator, dest: &ASTNode, safe_name
         fputs(safe_name as *byte, codegen.emit_stream as *void);
     } else {
         fputs("(" as *byte, codegen.emit_stream as *void);
+        codegen.atomic_member_plain_lvalue = 1;
         gen_expr(codegen, dest);
+        codegen.atomic_member_plain_lvalue = 0;
         fputs(")" as *byte, codegen.emit_stream as *void);
     }
     return inner_type;

@@ -39,7 +39,7 @@
 #define MAX_EVENTS 4096
 #define BUF_SIZE 8192
 #define MAX_PATH 256
-#define DEFAULT_THREADS 4
+#define DEFAULT_THREADS 44
 
 // 预定义的 payload
 static const char payload_1k[1024] = {[0 ... 1023] = 'a'};

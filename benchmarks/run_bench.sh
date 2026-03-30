@@ -5,7 +5,7 @@
 #
 # --baseline: 保存结果到 baseline.json（用于回归对比）
 #
-# 依赖: wrk, cc, go, bin/uya
+# 依赖: wrk, cc, go, cargo（可选 Rust Tokio 对照）, bin/uya
 
 set -e
 
@@ -21,6 +21,8 @@ C_SRC="${SCRIPT_DIR}/http_bench.c"
 GO_EXEC="/tmp/http_bench_go"
 UYA_ASYNC_EXEC="/tmp/http_bench_async"
 C_EXEC="/tmp/http_bench_c"
+TOKIO_DIR="${SCRIPT_DIR}/http_bench_tokio"
+TOKIO_EXEC="/tmp/http_bench_tokio"
 
 # wrk 参数（与文档一致）
 WRK_THREADS=4
@@ -101,6 +103,23 @@ build_go() {
     log_info "Go 版本编译完成: $GO_EXEC"
 }
 
+# 编译 Rust Tokio 版本（与 http_bench.go 路由一致）
+build_tokio() {
+    if ! command -v cargo &> /dev/null; then
+        log_warn "未找到 cargo，跳过 Tokio 版本编译与压测"
+        return 1
+    fi
+    if [ ! -f "${TOKIO_DIR}/Cargo.toml" ]; then
+        log_warn "未找到 ${TOKIO_DIR}/Cargo.toml，跳过 Tokio"
+        return 1
+    fi
+    log_info "编译 Rust Tokio HTTP 服务器..."
+    (cd "$TOKIO_DIR" && cargo build --release -q)
+    cp "${TOKIO_DIR}/target/release/http_bench_tokio" "$TOKIO_EXEC"
+    log_info "Tokio 版本编译完成: $TOKIO_EXEC"
+    return 0
+}
+
 # 编译 C 版本
 build_c() {
     log_info "编译 C HTTP 服务器..."
@@ -147,6 +166,7 @@ run_benchmark() {
     pkill -9 -f "http_bench_async" 2>/dev/null || true
     pkill -9 -f "http_bench_go" 2>/dev/null || true
     pkill -9 -f "http_bench_c" 2>/dev/null || true
+    pkill -9 -f "http_bench_tokio" 2>/dev/null || true
     sleep 1
 
     # 输出结果摘要
@@ -168,6 +188,7 @@ save_baseline() {
     local uya_root_rps="$1"
     local go_root_rps="$2"
     local c_root_rps="$3"
+    local tokio_root_rps="$4"
     local timestamp
     timestamp=$(date -Iseconds)
 
@@ -193,7 +214,8 @@ save_baseline() {
     "root": {
       "uya_async_qps": ${uya_root_rps:-0},
       "go_qps": ${go_root_rps:-0},
-      "c_qps": ${c_root_rps:-0}
+      "c_qps": ${c_root_rps:-0},
+      "tokio_qps": ${tokio_root_rps:-0}
     }
   }
 }
@@ -214,6 +236,10 @@ main() {
     build_uya_async
     build_go
     build_c
+    local have_tokio=0
+    if build_tokio; then
+        have_tokio=1
+    fi
 
     # 测试端口
     local PORT=8876
@@ -227,12 +253,20 @@ main() {
     local uya_result
     local go_result
     local c_result
+    local tokio_result
+    local tokio_rps=0
 
     uya_result=$(run_benchmark "Uya-async" "$UYA_ASYNC_EXEC" "$PORT" "$URL")
     sleep 1
     go_result=$(run_benchmark "Go" "$GO_EXEC" "$PORT" "$URL")
     sleep 1
     c_result=$(run_benchmark "C" "$C_EXEC" "$PORT" "$URL")
+    sleep 1
+    if [ "$have_tokio" -eq 1 ]; then
+        tokio_result=$(run_benchmark "Tokio" "$TOKIO_EXEC" "$PORT" "$URL")
+        tokio_rps=$(echo "$tokio_result" | awk -F'|' '{print $8}')
+        if [ -z "$tokio_rps" ]; then tokio_rps=0; fi
+    fi
 
     # 提取 QPS
     local uya_rps
@@ -249,18 +283,24 @@ main() {
     echo "=========================================="
     log_info "基准测试对比结果"
     echo "=========================================="
-    printf "| %-20s | %-15s | %-15s | %-15s |\n" "指标" "Uya-async" "Go" "C"
-    echo "|--------------------|-----------------|-----------------|-----------------|"
-    printf "| %-20s | %-15s | %-15s | %-15s |\n" "QPS" "${uya_rps:-0}" "${go_rps:-0}" "${c_rps:-0}"
+    if [ "$have_tokio" -eq 1 ]; then
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s |\n" "指标" "Uya-async" "Go" "C" "Tokio"
+        echo "|--------------------|--------------|--------------|--------------|--------------|"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s |\n" "QPS" "${uya_rps:-0}" "${go_rps:-0}" "${c_rps:-0}" "${tokio_rps:-0}"
+    else
+        printf "| %-20s | %-15s | %-15s | %-15s |\n" "指标" "Uya-async" "Go" "C"
+        echo "|--------------------|-----------------|-----------------|-----------------|"
+        printf "| %-20s | %-15s | %-15s | %-15s |\n" "QPS" "${uya_rps:-0}" "${go_rps:-0}" "${c_rps:-0}"
+    fi
     echo "=========================================="
 
     # 保存基线（如果指定）
     if [ "$1" = "--baseline" ]; then
-        save_baseline "$uya_rps" "$go_rps" "$c_rps"
+        save_baseline "$uya_rps" "$go_rps" "$c_rps" "${tokio_rps:-0}"
     fi
 
     # 清理
-    rm -f "$GO_EXEC" "$C_EXEC" "$UYA_ASYNC_EXEC"
+    rm -f "$GO_EXEC" "$C_EXEC" "$UYA_ASYNC_EXEC" "$TOKIO_EXEC"
 
     log_info "基准测试完成"
 }

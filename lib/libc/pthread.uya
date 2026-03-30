@@ -17,6 +17,7 @@ use libc.sched_getaffinity;
 use libc.sys_exit;
 use libc.sys_waitpid;
 use libc.sys_getpid;
+use libc.sys_gettid;
 
 // 前向声明：使用 libc.stdlib 的 malloc/free（sys_* 由 use libc 导入）
 extern fn malloc(size: usize) &void;
@@ -92,6 +93,14 @@ export struct pthread_cond_t {
 
 // 保护条件变量内部状态的全局 mutex
 var _cond_mutex: pthread_mutex_t = pthread_mutex_t{ state: 0 };
+
+// 每槽存待取消的目标 TID（0=无）；索引 tid%4096。testcancel 仅当 pending==gettid() 才退出，避免同槽碰撞误杀。
+// 勿在 pthread_create/join 写此数组：当前 C 后端在该路径写该 BSS 会生成错误代码（首帧 create 段错误）。
+var _pthread_cancel_target: [i32: 4096] = [];
+
+fn _pthread_cancel_index(tid: i64) usize {
+    return ((tid as u64) % 4096 as u64) as usize;
+}
 
 // timeval 结构体（用于 gettimeofday）
 struct timeval {
@@ -247,12 +256,12 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
         sys_exit(0);
     }
 
-    // 父线程路径：释放 create 临界区，再记录线程 ID 与栈信息
-    _ = pthread_mutex_unlock(&_pthread_create_mutex);
+    // 父线程路径：先完整写入 *thread，再 unlock。避免临界区已结束而句柄尚未发布，导致其它核对 TID/sched_* 见到未初始化或撕裂的 pthread_t。
     thread.tid = tid;
     thread.stack = stack_mem;
     thread.stack_size = stack_size;
     thread.detached = detached;
+    _ = pthread_mutex_unlock(&_pthread_create_mutex);
     return 0;
 }
 
@@ -264,8 +273,16 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
 export extern "libc" fn pthread_join(thread: &pthread_t, retval: & &void) i32 {
     _ = retval;
 
-    // 检查是否已分离
+    // 分离线程：POSIX 规定 join 返回 EINVAL，但仍需 waitpid 回收子进程并释放栈，否则僵尸 + 泄漏会导致后续 create/测试偶发崩溃
     if thread.detached != 0 {
+        var status_d: i32 = 0;
+        const pid_d: i32 = thread.tid as i32;
+        _ = sys_waitpid(pid_d, &status_d, 0);
+        if thread.stack != null {
+            free(thread.stack);
+        }
+        thread.stack = null as &void;
+        thread.stack_size = 0;
         return 22; // EINVAL
     }
 
@@ -278,6 +295,8 @@ export extern "libc" fn pthread_join(thread: &pthread_t, retval: & &void) i32 {
     if thread.stack != null {
         free(thread.stack);
     }
+    thread.stack = null as &void;
+    thread.stack_size = 0;
     return 0;
 }
 
@@ -515,16 +534,15 @@ export extern "libc" fn pthread_mutex_timedlock(mutex: &pthread_mutex_t, abstime
     return 0;
 }
 
-// pthread_self - 获取当前线程 ID
-// 使用 SYS_getpid（当前 clone 实现创建的是进程，与 fork 类似）
-
+// pthread_self - 获取当前线程 ID（须与 SYS_gettid 一致，供 sched_* / cancel 与 clone 返回值对齐）
 export extern "libc" fn pthread_self() pthread_t {
-    const tid: !i64 = sys_getpid();
-    const tid_val: i64 = tid catch { return pthread_t{ tid: -1, stack: null, stack_size: 0 }; };
+    const tid32: !i32 = sys_gettid();
+    const tid_val: i64 = (tid32 catch { return pthread_t{ tid: -1, stack: null, stack_size: 0, detached: 0 }; }) as i64;
     return pthread_t{
         tid: tid_val,
         stack: null,
         stack_size: 0,
+        detached: 0,
     };
 }
 
@@ -940,66 +958,35 @@ export const PTHREAD_CANCEL_DISABLE: i32 = 1;  // 取消禁止
 export const PTHREAD_CANCEL_DEFERRED: i32 = 0;     // 延迟取消（默认）
 export const PTHREAD_CANCEL_ASYNCHRONOUS: i32 = 1; // 异步取消
 
-// 线程取消请求标志（元素按 atomic i32 访问，缓冲区本身保持普通指针）
-// 这样可避免“指向 atomic 的指针”在不同宿主 C 编译器下出现不一致行为。
-var _pthread_cancel_flags: &i32 = null as &i32;
-var _pthread_cancel_count: usize = 0;
-var _pthread_cancel_lock: pthread_mutex_t = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
-
-// 获取线程在取消标志数组中的索引
-// 简化实现：使用 tid 对 1024 取模作为索引
-fn _pthread_cancel_index(tid: i64) usize {
-    return ((tid as usize) % 1024 as usize);
-}
-
 // pthread_cancel - 请求取消线程
 // 说明：向目标线程发送取消请求，目标线程的取消状态决定如何处理
 export extern "libc" fn pthread_cancel(thread: &pthread_t) i32 {
     if thread == null {
         return 22; // EINVAL
     }
-    
-    // 初始化取消标志数组（首次调用时）
-    _ = pthread_mutex_lock(&_pthread_cancel_lock);
-    if _pthread_cancel_flags == null {
-        _pthread_cancel_flags = malloc(1024 * @size_of(i32)) as &i32;
-        if _pthread_cancel_flags != null {
-            // 初始化为0
-            var i: usize = 0;
-            while i < 1024 {
-                var ptr: &i32 = _pthread_cancel_flags + i;
-                ptr[0] = 0;
-                i = i + 1;
-            }
-        }
-    }
-    _ = pthread_mutex_unlock(&_pthread_cancel_lock);
-    
-    if _pthread_cancel_flags == null {
-        return 12; // ENOMEM
-    }
-    
-    // 设置目标线程的取消标志
+
+    const tid32: i32 = thread.tid as i32;
     const idx: usize = _pthread_cancel_index(thread.tid);
-    *((_pthread_cancel_flags + idx) as &atomic i32) = 1;
-    
+    if idx < @len(_pthread_cancel_target) {
+        _pthread_cancel_target[idx] = tid32;
+    } else {
+        return 22; // EINVAL（防御性边界，--safety-proof 下索引需与访问同分支）
+    }
+
     return 0;
 }
 
 // pthread_testcancel - 检查取消请求
 // 说明：检查当前线程是否有未处理的取消请求，如果有则退出线程
+// 使用 gettid：与 clone 返回给父进程的值一致；getpid 在线程组内相同，会导致槽位与 pthread_cancel 不一致
 export extern "libc" fn pthread_testcancel() void {
-    if _pthread_cancel_flags == null {
-        return; // 没有初始化，直接返回
-    }
-    
-    const tid: i64 = sys_getpid() catch { return; };
-    const idx: usize = _pthread_cancel_index(tid);
-    
-    // 检查是否有取消请求
-    if *((_pthread_cancel_flags + idx) as &atomic i32) != 0 {
-        // 有取消请求，退出线程（直接使用 -1 而不是 PTHREAD_CANCELED，避免指针转换警告）
-        sys_exit(-1);
+    const tid32: i32 = sys_gettid() catch { return; };
+    const idx: usize = _pthread_cancel_index(tid32 as i64);
+    if idx < @len(_pthread_cancel_target) {
+        const pending: i32 = _pthread_cancel_target[idx];
+        if pending != 0 && pending == tid32 {
+            sys_exit(-1);
+        }
     }
 }
 
@@ -1494,6 +1481,7 @@ export extern "libc" fn CPU_COUNT(set: &cpu_set_t) i32 {
 }
 
 // pthread_setaffinity_np - 设置线程 CPU 亲和性（GNU 扩展）
+// Linux：sched_setaffinity 的目标须为仍存在的任务；对已退出/无效 TID 行为未定义，调用方须保证（如 join 前或测试里保持子线程存活）。
 // 参数：
 // - thread: 目标线程
 // - cpusetsize: CPU 集合大小（sizeof(cpu_set_t)）
@@ -1507,10 +1495,14 @@ export extern "libc" fn pthread_setaffinity_np(thread: &pthread_t, cpusetsize: u
     }
     
     const tid: i64 = thread.tid;
+    if tid <= 0 {
+        return 22; // EINVAL，避免对无效 TID 调 sched_* 引发未定义行为
+    }
     return sched_setaffinity(tid, cpusetsize, cpuset as &void);
 }
 
 // pthread_getaffinity_np - 获取线程 CPU 亲和性（GNU 扩展）
+// 同上，目标 task 须仍存在；tid<=0 时返回 EINVAL。
 export extern "libc" fn pthread_getaffinity_np(thread: &pthread_t, cpusetsize: usize, cpuset: &cpu_set_t) i32 {
     if thread == null || cpuset == null {
         return 22; // EINVAL
@@ -1520,5 +1512,8 @@ export extern "libc" fn pthread_getaffinity_np(thread: &pthread_t, cpusetsize: u
     }
     
     const tid: i64 = thread.tid;
+    if tid <= 0 {
+        return 22; // EINVAL
+    }
     return sched_getaffinity(tid, cpusetsize, cpuset as &void);
 }

@@ -110,6 +110,23 @@ fn read_file_content(filename: &byte, buffer: &byte, buffer_size: usize) i32 {
     return bytes_read as i32;
 }
 
+// system(3) 返回值为 wait 状态字；转为与 shell 类似的退出码（段错误等为 128+信号，便于压测与 if 判断）
+fn exit_code_from_system_status(wstatus: i32) i32 {
+    if wstatus < 0 {
+        return 1;
+    }
+    const low: i32 = wstatus & 0x7f;
+    const code: i32 = (wstatus >> 8) & 0xff;
+    if low == 0 {
+        return code;
+    }
+    const sig: i32 = low & 0x7f;
+    if sig == 0 {
+        return 1;
+    }
+    return 128 + sig;
+}
+
 // 常量定义
 const PATH_MAX: usize = 4096;
 
@@ -2537,11 +2554,11 @@ export fn main() i32 {
         var run_cmd: [byte: 4096] = [];
         var run_cmd_len: i32 = snprintf(&run_cmd[0], 4096, "%s" as *byte, &run_output[0] as *byte);
         const run_result: i32 = system(&run_cmd[0] as *byte);
-        if run_result != 0 {
-            fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, run_result);
+        const child_exit: i32 = exit_code_from_system_status(run_result);
+        if child_exit != 0 {
+            fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, child_exit);
         }
-        
-        return 0;
+        return child_exit;
     }
     
     return 0;
