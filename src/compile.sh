@@ -120,6 +120,35 @@ run_uya_split_make_link() {
     env -u MAKEFLAGS -u MFLAGS -u GNUMAKEFLAGS make -C "$split_dir" -j"$jobs" UYA_OUT="$out_exe" CC="$CC_DRIVER" CFLAGS="$CFLAGS" LDFLAGS="$ld_use"
 }
 
+# 多文件自举对比：主编译产物在 src/.uyacache/…，自举产物在 src/build/bootstrap_split_c/…。
+# 若 CFLAGS 含 -g，GCC 写入的 DWARF 含绝对路径，两目录路径长度不同会使 .debug_* 与 .note.gnu.build-id 不同，
+# 但 .text/.rodata 等一致。此处剥离符号与调试段并去掉 build-id 后再 cmp，用于验证「可执行代码一致」。
+uya_bootstrap_cmp_exe_normalized() {
+    local a="$1" b="$2"
+    if ! command -v strip >/dev/null 2>&1; then
+        return 1
+    fi
+    local t1 t2 nb1 nb2
+    t1=$(mktemp)
+    t2=$(mktemp)
+    nb1=$(mktemp)
+    nb2=$(mktemp)
+    cp -f "$a" "$t1" && cp -f "$b" "$t2"
+    strip "$t1" "$t2" 2>/dev/null || true
+    if command -v objcopy >/dev/null 2>&1; then
+        if objcopy --remove-section=.note.gnu.build-id "$t1" "$nb1" 2>/dev/null; then
+            mv -f "$nb1" "$t1"
+        fi
+        if objcopy --remove-section=.note.gnu.build-id "$t2" "$nb2" 2>/dev/null; then
+            mv -f "$nb2" "$t2"
+        fi
+    fi
+    local rc=1
+    cmp -s "$t1" "$t2" && rc=0
+    rm -f "$t1" "$t2" "$nb1" "$nb2"
+    return "$rc"
+}
+
 # 脚本目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # 项目根目录
@@ -154,7 +183,7 @@ usage() {
   -n, --name NAME     指定输出文件名（默认: $OUTPUT_NAME）
   -c, --clean         清理输出目录后再编译
   -e, --exec          生成可执行文件（自动链接）
-  -b, --bootstrap-compare  自举验证：默认 diff 两次 C；见 UYA_SPLIT_C_DIR / UYA_BOOTSTRAP_COMPARE_BIN（需 --c99，建议与 -e 同用）
+  -b, --bootstrap-compare  自举验证：单文件 diff C；多文件 cmp 可执行文件（含 -g 时若输出目录不同，整文件 cmp 失败后会再剥离调试与 build-id 后 cmp）
   --c99               使用 C99 后端生成 C 代码（输出文件后缀为 .c 时自动启用）
   --line-directives    启用 #line 指令生成（C99 后端，默认禁用）
   --nostdlib          链接时不使用标准库（仅在使用 -e 时有效）
@@ -877,6 +906,8 @@ if [ $COMPILER_EXIT -eq 0 ]; then
                     fi
                     if cmp -s "$EXECUTABLE_FILE" "$BOOTSTRAP_EXE"; then
                         echo -e "${GREEN}✓ 自举对比一致：主编译器与自举编译器生成的可执行文件字节相同（cmp）${NC}"
+                    elif uya_bootstrap_cmp_exe_normalized "$EXECUTABLE_FILE" "$BOOTSTRAP_EXE"; then
+                        echo -e "${GREEN}✓ 自举对比一致：剥离调试信息与 build-id 后可执行文件相同（多文件 + -g 时 DWARF 源路径因输出目录不同而变化，整文件 cmp 可能失败）${NC}"
                     else
                         echo -e "${RED}✗ 自举对比不一致：两次可执行文件不同${NC}"
                         echo "  主编译器: $EXECUTABLE_FILE"
