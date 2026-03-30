@@ -613,28 +613,39 @@ test "epoll_drain_listen_accepts_two_connections" {
         try assert_eq_i32(0, 1);
     }
     var evs: [EpollEvent: 8] = [];
-    var n: i32 = try epoll_server_wait_events(&srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, &evs[0], 8);
-    if n <= 0 {
-        epoll_server_close(&srv);
-        try assert_eq_i32(0, 1);
-    }
-    var found_listen: i32 = 0;
-    var j: i32 = 0;
-    while j < n {
-        if j >= 0 && j < 8 {
-            if epoll_server_event_is_listen(&srv, &evs[j as usize]) {
-                found_listen = 1;
-                break;
-            }
+    // 两次 connect 可能未同时进入 accept 队列；单次 wait+drain 可能只拿到 1 条
+    const drain_wait_ms: i32 = 200;
+    const drain_max_iters: i32 = 50;
+    var total_drained: usize = 0;
+    var di: i32 = 0;
+    var n: i32 = 0;
+    while total_drained < 2 && di < drain_max_iters {
+        di = di + 1;
+        n = try epoll_server_wait_events(&srv, drain_wait_ms, &evs[0], 8);
+        if n <= 0 {
+            continue;
         }
-        j = j + 1;
+        var found_listen: i32 = 0;
+        var j: i32 = 0;
+        while j < n {
+            if j >= 0 && j < 8 {
+                if epoll_server_event_is_listen(&srv, &evs[j as usize]) {
+                    found_listen = 1;
+                    break;
+                }
+            }
+            j = j + 1;
+        }
+        if found_listen == 0 {
+            continue;
+        }
+        const d: usize = try epoll_server_drain_listen_accepts_nb(&srv);
+        total_drained = total_drained + d;
     }
-    if found_listen == 0 {
+    if total_drained != 2 {
         epoll_server_close(&srv);
-        try assert_eq_i32(0, 1);
+        try assert_eq_i32(total_drained as i32, 2);
     }
-    const drained: usize = try epoll_server_drain_listen_accepts_nb(&srv);
-    try assert_eq_i32(drained as i32, 2);
     try assert_eq_i32(srv.connection_count as i32, 2);
     var si: usize = 0;
     while si < EPOLL_SERVER_MAX_SLOTS {

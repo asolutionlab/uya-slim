@@ -7,8 +7,13 @@ UYA="${UYA:-./bin/uya}"
 N="${1:-100}"
 failed=0
 for i in $(seq 1 "$N"); do
-  if ! "$UYA" test tests/test_pthread.uya >/dev/null 2>&1; then
-    echo "fail at iteration $i (exit $?)"
+  # 勿用 `if ! cmd` 后读 $?`：bash 中 then 分支里 $? 常为 0，并非 cmd 的退出码
+  set +e
+  "$UYA" test tests/test_pthread.uya >/dev/null 2>&1
+  ec=$?
+  set -e
+  if [[ "$ec" -ne 0 ]]; then
+    echo "fail at iteration $i (exit $ec)"
     failed=1
     break
   fi
