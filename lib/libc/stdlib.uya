@@ -8,6 +8,10 @@
 
 use std.runtime.saved_envp;
 
+use libc.sys_stat;
+use libc.sys_readlink;
+use libc.SYS_kill;
+
 // ============================================================
 // calloc / realloc（malloc/free 来自同模块的 heap.uya）
 // ============================================================
@@ -914,16 +918,10 @@ export extern "libc" fn stat(path: &const byte, buf: &Stat) i32 {
         return 0 - 1;
     }
     
-    // 调用 stat 系统调用
-    const result: !i64 = @syscall(SYS_stat, path as i64, buf as i64);
-    const ret: i64 = result catch {
+    const result: !i32 = sys_stat(path as *const byte, buf);
+    result catch {
         return 0 - 1;
     };
-    
-    if ret < 0 {
-        return 0 - 1;
-    }
-    
     return 0;
 }
 
@@ -934,16 +932,13 @@ export extern "libc" fn readlink(path: &const byte, buf: &byte, bufsiz: usize) i
         return 0 - 1;
     }
     
-    // 调用 readlink 系统调用
-    const result: !i64 = @syscall(SYS_readlink, path as i64, buf as i64, bufsiz as i64);
-    const ret: i64 = result catch {
+    const result: !isize = sys_readlink(path as *const byte, buf as *byte, bufsiz);
+    const ret: isize = result catch {
         return 0 - 1;
     };
-    
     if ret < 0 {
         return 0 - 1;
     }
-    
     return ret as i32;
 }
 

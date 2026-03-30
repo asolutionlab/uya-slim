@@ -18,6 +18,7 @@ use libc.sys_exit;
 use libc.sys_waitpid;
 use libc.sys_getpid;
 use libc.sys_gettid;
+use libc.SYS_sched_yield;
 
 // 前向声明：使用 libc.stdlib 的 malloc/free（sys_* 由 use libc 导入）
 extern fn malloc(size: usize) &void;
@@ -717,8 +718,6 @@ export extern "libc" fn pthread_cond_broadcast(cond: &pthread_cond_t) i32 {
 // 说明：
 // - 使用 SYS_sched_yield 系统调用
 // - 提示调度器切换到其他线程
-const SYS_sched_yield: i64 = 24;
-
 export extern "libc" fn pthread_yield() i32 {
     const ret: !i64 = @syscall(SYS_sched_yield, 0, 0, 0, 0, 0, 0);
     _ = ret catch {

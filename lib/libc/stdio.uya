@@ -187,9 +187,9 @@ export extern "libc" fn put_char_fd(c: i32, fd: i64) i32 {
     }
 }
 
-// write_bytes - 向标准输出写入 n 个字节
+// write_stdout_bytes - 向标准输出写入 n 个字节（与 std.json 等模块合并单 C 时避免与内部 write_bytes 撞名）
 // 返回：写入的字节数，失败返回 -1
-export extern "libc" fn write_bytes(buf: &const byte, n: usize) i64 {
+export extern "libc" fn write_stdout_bytes(buf: &const byte, n: usize) i64 {
     return write_bytes_fd(buf, n, STDOUT);
 }
 
@@ -219,14 +219,14 @@ export extern "libc" fn write_bytes_fd(buf: &const byte, n: usize, fd: i64) i64 
 // 返回：0 成功，-1 失败
 export extern "libc" fn put_str_len(s: &const byte, len: usize) i32 {
     // 写入字符串内容
-    const result: i64 = write_bytes(s, len);
+    const result: i64 = write_stdout_bytes(s, len);
     if result < 0 {
         return 0 - 1;
     }
     
     // 写入换行符
     var newline: byte = 10 as byte;
-    const nl_result: i64 = write_bytes(&newline, 1);
+    const nl_result: i64 = write_stdout_bytes(&newline, 1);
     if nl_result < 0 {
         return 0 - 1;
     }
@@ -369,7 +369,7 @@ export extern "libc" fn i64_to_str(value: i64, buf: &byte) usize {
 export extern "libc" fn print_i32(value: i32) usize {
     var buf: [byte: 12] = [];
     const len: usize = i32_to_str(value, &buf[0] as &byte);
-    _ = write_bytes(&buf[0] as &byte, len);
+    _ = write_stdout_bytes(&buf[0] as &byte, len);
     return len;
 }
 
@@ -378,7 +378,7 @@ export extern "libc" fn print_i32(value: i32) usize {
 export extern "libc" fn print_i64(value: i64) usize {
     var buf: [byte: 21] = [];
     const len: usize = i64_to_str(value, &buf[0] as &byte);
-    _ = write_bytes(&buf[0] as &byte, len);
+    _ = write_stdout_bytes(&buf[0] as &byte, len);
     return len;
 }
 

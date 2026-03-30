@@ -20,9 +20,11 @@ std.cfg(std.target_arch == .ta_x86_64, {
     const EXPECT_TARGET_ARCH: TargetArch = TargetArch.ta_arm64;
 }, std.cfg(std.target_arch == .ta_riscv64, {
     const EXPECT_TARGET_ARCH: TargetArch = TargetArch.ta_riscv64;
+}, std.cfg(std.target_arch == .ta_arm, {
+    const EXPECT_TARGET_ARCH: TargetArch = TargetArch.ta_arm;
 }, {
     const EXPECT_TARGET_ARCH: TargetArch = TargetArch.ta_unknown;
-})))
+}))))
 
 fn statement_cfg_value() i32 {
     std.cfg(std.host_os == .hos_linux, {

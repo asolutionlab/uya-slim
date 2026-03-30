@@ -349,6 +349,21 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     }
 }
 
+// 仅对字面量布尔/数字（及外层 cast）允许在 gen_if_stmt 中按常量裁剪分支。
+// 含 strcmp 等调用的条件若被误当作常量求值为 0，会静默丢掉 then（单文件 C 曾缺失 ta_arm 等分支）。
+fn if_condition_safe_for_codegen_const_fold(cond: &ASTNode) i32 {
+    if cond == null {
+        return 0;
+    }
+    if cond.type == ASTNodeType.AST_BOOL || cond.type == ASTNodeType.AST_NUMBER {
+        return 1;
+    }
+    if cond.type == ASTNodeType.AST_CAST_EXPR && cond.cast_expr_expr != null {
+        return if_condition_safe_for_codegen_const_fold(cond.cast_expr_expr);
+    }
+    return 0;
+}
+
 // 生成 if 语句
 fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     const condition: &ASTNode = stmt.if_stmt_condition;
@@ -357,18 +372,20 @@ fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
 
     // 单态化/宏展开后若条件已成常量，则直接裁剪分支，避免无效分支继续参与 C 类型检查。
     if codegen != null && codegen.checker != null && condition != null {
-        const cond_value: i32 = checker_eval_const_expr(codegen.checker, condition);
-        if cond_value == 1 {
-            if then_branch != null {
-                gen_stmt(codegen, then_branch);
+        if if_condition_safe_for_codegen_const_fold(condition) != 0 {
+            const cond_value: i32 = checker_eval_const_expr(codegen.checker, condition);
+            if cond_value == 1 {
+                if then_branch != null {
+                    gen_stmt(codegen, then_branch);
+                }
+                return;
             }
-            return;
-        }
-        if cond_value == 0 {
-            if else_branch != null {
-                gen_stmt(codegen, else_branch);
+            if cond_value == 0 {
+                if else_branch != null {
+                    gen_stmt(codegen, else_branch);
+                }
+                return;
             }
-            return;
         }
     }
 
@@ -386,6 +403,11 @@ fn gen_if_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     }
     if else_branch != null {
         else_is_dead = else_branch.is_dead_code;
+    }
+
+    // 无 else 时若仅 then 被标死，仍生成 then：误标会导致整段 if 被跳过（单文件 C 曾丢失 std_cfg 的 ARM32/ta_arm 分支）。
+    if then_is_dead != 0 && else_branch == null {
+        then_is_dead = 0;
     }
 
     // 如果 then 和 else 都是死代码，跳过整个 if 语句

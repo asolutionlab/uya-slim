@@ -13,14 +13,15 @@ use libc.SYS_getppid;
 use libc.SYS_fork;
 use libc.SYS_execve;
 use libc.SYS_exit;
-use libc.SYS_access;
-use libc.SYS_unlink;
-use libc.SYS_mkdir;
-use libc.SYS_rmdir;
 use libc.SYS_chdir;
 use libc.SYS_getcwd;
 use libc.SYS_dup;
 use libc.SYS_dup2;
+use libc.sys_access;
+use libc.sys_unlink;
+use libc.sys_mkdir;
+use libc.sys_rmdir;
+use libc.sys_dup2;
 use libc.errno;
 
 // ============================================================
@@ -177,7 +178,7 @@ export const W_OK: i32 = 2;  // 可写
 export const X_OK: i32 = 1;  // 可执行
 
 export extern "libc" fn access(pathname: &const byte, mode: i32) i32 {
-    const result: !i64 = @syscall(SYS_access, pathname as i64, mode as i64);
+    const result: !i32 = sys_access(pathname as *const byte, mode);
     result catch {
         errno = ENOENT;
         return 0 - 1;
@@ -187,7 +188,7 @@ export extern "libc" fn access(pathname: &const byte, mode: i32) i32 {
 
 // unlink - 删除文件
 export extern "libc" fn unlink(pathname: &const byte) i32 {
-    const result: !i64 = @syscall(SYS_unlink, pathname as i64);
+    const result: !i32 = sys_unlink(pathname as *const byte);
     result catch {
         errno = ENOENT;
         return 0 - 1;
@@ -197,7 +198,7 @@ export extern "libc" fn unlink(pathname: &const byte) i32 {
 
 // mkdir - 创建目录
 export extern "libc" fn mkdir(pathname: &const byte, mode: i32) i32 {
-    const result: !i64 = @syscall(SYS_mkdir, pathname as i64, mode as i64);
+    const result: !i32 = sys_mkdir(pathname as *const byte, mode);
     result catch {
         errno = ENOENT;
         return 0 - 1;
@@ -207,7 +208,7 @@ export extern "libc" fn mkdir(pathname: &const byte, mode: i32) i32 {
 
 // rmdir - 删除目录
 export extern "libc" fn rmdir(pathname: &const byte) i32 {
-    const result: !i64 = @syscall(SYS_rmdir, pathname as i64);
+    const result: !i32 = sys_rmdir(pathname as *const byte);
     result catch {
         errno = ENOENT;
         return 0 - 1;
@@ -254,12 +255,12 @@ export extern "libc" fn dup(oldfd: i32) i32 {
 
 // dup2 - 复制文件描述符到指定位置
 export extern "libc" fn dup2(oldfd: i32, newfd: i32) i32 {
-    const result: !i64 = @syscall(SYS_dup2, oldfd as i64, newfd as i64);
-    const ret: i64 = result catch {
+    const result: !i32 = sys_dup2(oldfd, newfd);
+    const ret: i32 = result catch {
         errno = EBADF;
         return 0 - 1;
     };
-    return ret as i32;
+    return ret;
 }
 
 // ============================================================

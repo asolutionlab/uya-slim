@@ -22,6 +22,7 @@ export enum TargetOS {
 
 export enum TargetArch {
     ta_x86_64,
+    ta_arm,
     ta_arm64,
     ta_riscv64,
     ta_unknown,

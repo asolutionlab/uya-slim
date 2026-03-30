@@ -71,6 +71,13 @@ fn std_cfg_target_arch_name() &byte {
     if strcmp(tok as *byte, "x86_64" as *byte) == 0 || strcmp(tok as *byte, "amd64" as *byte) == 0 {
         return ("ta_x86_64" as *byte) as &byte;
     }
+    if strcmp(tok as *byte, "arm" as *byte) == 0 || strcmp(tok as *byte, "armv7" as *byte) == 0 ||
+        strcmp(tok as *byte, "armv7l" as *byte) == 0 || strcmp(tok as *byte, "armv7-a" as *byte) == 0 ||
+        strcmp(tok as *byte, "armv6" as *byte) == 0 || strcmp(tok as *byte, "armv6l" as *byte) == 0 ||
+        strcmp(tok as *byte, "armv5" as *byte) == 0 || strcmp(tok as *byte, "armv5te" as *byte) == 0 ||
+        strcmp(tok as *byte, "arm-linux-gnueabi" as *byte) == 0 || strcmp(tok as *byte, "arm-linux-gnueabihf" as *byte) == 0 {
+        return ("ta_arm" as *byte) as &byte;
+    }
     if strcmp(tok as *byte, "arm64" as *byte) == 0 || strcmp(tok as *byte, "aarch64" as *byte) == 0 {
         return ("ta_arm64" as *byte) as &byte;
     }
@@ -133,6 +140,7 @@ fn std_cfg_is_valid_variant(selector: &byte, variant: &byte) i32 {
             return 0;
         }
         if strcmp(variant as *byte, "ta_x86_64" as *byte) == 0 { return 1; }
+        if strcmp(variant as *byte, "ta_arm" as *byte) == 0 { return 1; }
         if strcmp(variant as *byte, "ta_arm64" as *byte) == 0 { return 1; }
         if strcmp(variant as *byte, "ta_riscv64" as *byte) == 0 { return 1; }
         if strcmp(variant as *byte, "ta_unknown" as *byte) == 0 { return 1; }

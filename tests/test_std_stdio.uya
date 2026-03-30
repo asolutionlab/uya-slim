@@ -2,7 +2,7 @@
 use std.runtime.entry;
 // 测试 lib/libc 标准库模块（通过 use 导入）
 
-use libc.write_bytes;
+use libc.write_stdout_bytes;
 use libc.i32_to_str;
 use libc.put_char;
 
@@ -89,7 +89,7 @@ fn test_write_bytes() i32 {
     msg[0] = 79 as byte;   // 'O'
     msg[1] = 75 as byte;   // 'K'
     msg[2] = 10 as byte;   // '\n'
-    const written: i64 = write_bytes(&msg[0] as &byte, 3);
+    const written: i64 = write_stdout_bytes(&msg[0] as &byte, 3);
     if written != 3 {
         return 1;
     }
