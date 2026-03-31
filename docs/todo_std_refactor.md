@@ -195,7 +195,7 @@ export fn my_func(s: &byte) void;
 
 ## Phase 2：mem 层
 
-- [x] 建立 `lib/mem/`，新增 `mem.uya`（包含内存和字符串操作）。
+- [x] 建立 `lib/mem/`，**`mem.uya`（内存原语）+ `string.uya`（字符串原语）**（同属模块 `mem`，`use mem.*` 不变）。
 - [x] 实现内存操作：`copy`、`copy_backward`、`set`、`zero`、`compare`、`memcmp`、`memset`、`memchr`；保证无系统调用依赖；测试先行，`make check` 通过。
 - [x] 实现字符串操作（纯内存）：`strlen`、`strnlen`、`strcmp`、`strncmp`、`strcpy`、`strncpy`、`strcat`、`strncat`、`strchr`、`strrchr`；无外部依赖；测试先行，`make check` 通过。
 - [x] 验证：编译通过、无循环依赖、被依赖方（如后续 libc）可引用。
@@ -205,8 +205,8 @@ export fn my_func(s: &byte) void;
 - [x] **`lib/std/mem/allocator.uya`**：`export interface IAllocator`（`alloc` / `dealloc` / `realloc`，`!&byte`）；**`MallocAllocator`** 基于 **`extern fn malloc/realloc/free`**；**`g_allocator`**、**`get_allocator()`**。
 - [x] 错误类型：`AllocError`、`AllocOutOfMemory`、`AllocInvalidSize`、`AllocInvalidPointer`（与设计中 union 式命名不同，以源码为准）。
 - [x] 测试：**`tests/test_mem_allocator.uya`**（`test "..." {}`），覆盖分配/释放、`alloc(0)` 错误、`dealloc(null)`、`realloc` 扩容与空指针语义等；纳入 **`make tests`**。
-- [x] **`lib/std/mem/arena.uya`**：**`export struct Arena : IAllocator`**（`alloc` / `dealloc` 空操作 / **`realloc`** 仅对**最后一次 bump** 原地缩扩；否则 **`AllocInvalidPointer`** / OOM）；保留 **`arena_init`**、**`arena_alloc`**、**`arena_reset`**；测试 **`tests/test_mem_arena.uya`**。
-- [ ] **后续**：设计文档中的 **`HeapAllocator`（osal mmap）**、独立命名的 **`ArenaAllocator` / `FixedBufferAllocator`** 仍属 Phase 5 / v0.6.0 计划，与当前 **`MallocAllocator`**、**`Arena`** 并存。
+- [x] **`lib/std/mem/arena.uya`**：**`export struct Arena : IAllocator`**（`alloc` / `dealloc` 空操作 / **`realloc`** 仅对**最后一次 bump** 原地缩扩；否则 **`AllocInvalidPointer`** / OOM）；保留 **`arena_init`**、**`arena_alloc`**、**`arena_reset`**；测试 **`tests/test_mem_arena.uya`**。设计名 **ArenaAllocator / FixedBufferAllocator** 在注释中与 **`Arena`** 对齐；独立类型别名待编译器对结构体别名 + `IAllocator` 单态 C 输出完善后再做。
+- [x] **`lib/std/mem/heap.uya`**：**`HeapAllocator : IAllocator`**，基于 **`osal.os_mmap` / `osal.os_munmap`**（匿名私有映射 + 首部 `usize` 记录映射总长）；**`g_heap_allocator`**、**`get_heap_allocator()`**；测试 **`tests/test_mem_heap.uya`**。
 
 ---
 

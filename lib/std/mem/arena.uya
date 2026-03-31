@@ -126,3 +126,6 @@ export fn arena_reset(arena: &Arena) void {
     arena.last_start = 0;
     arena.last_aligned = 0;
 }
+
+// 设计文档中的 ArenaAllocator / FixedBufferAllocator 与上述 Arena 为同一概念（固定缓冲 bump + IAllocator）。
+// 当前编译器对「结构体类型别名」在 C 字面量/接口单态上尚有边角，故不另导出名；请直接使用 Arena + arena_init。
