@@ -160,3 +160,34 @@ test "string_buf_pop_empty_error" {
         },
     }
 }
+
+test "string_buf_set_and_contains_byte" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var sb: StringBuf = string_buf_new(w);
+    try sb.append_slice("abc");
+    try assert_eq_bool(sb.contains_byte(98), true);
+    try assert_eq_bool(sb.contains_byte(120), false);
+    try sb.set_byte(1, 90);
+    const b1r: !byte = sb.get_byte(1);
+    var b1: byte = try b1r;
+    try assert_eq_i32(b1 as i32, 90);
+    try assert_eq_bool(sb.contains_byte(98), false);
+    try assert_eq_bool(sb.contains_byte(90), true);
+    var got_err: bool = false;
+    _ = sb.set_byte(3, 0) catch {
+        got_err = true;
+    };
+    try assert_eq_bool(got_err, true);
+}
+
+test "string_buf_compat_aliases" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var sb: StringBuf = string_buf_new(w);
+    try sb.push(65);
+    try sb.push_str("bc" as &const byte);
+    const s: &[const byte] = sb.as_str();
+    try assert_eq_i32(s.len as i32, 3);
+    try assert_eq_i32(s.ptr[0] as i32, 65);
+    try assert_eq_i32(s.ptr[1] as i32, 98);
+    try assert_eq_i32(s.ptr[2] as i32, 99);
+}

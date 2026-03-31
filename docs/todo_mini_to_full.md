@@ -1588,17 +1588,26 @@ lib/
   - **影响**：`lib/std/collections/hashmap.uya` 当前用 `HashMapChainBuf`（手写扩容）代替 `Vec<槽位>` 存冲突链；修复后可删重复逻辑并统一使用 `Vec`。
   - **涉及**：`src/codegen/c99/`（错误联合与单态结构体 emit 顺序、泛型 `Vec` 单态方法生成）。
 
-- [ ] **std.collections.string_buf** - 字符串缓冲区
+- [x] **std.collections.string_buf** - 字符串缓冲区（已落地：内联 `byte` 缓冲实现，避免嵌套 `Vec<byte>` 触发 C99 后端发射顺序问题）
   ```uya
   struct StringBuf {
-      buf: Vec<u8>,
+      data: &byte,
+      len: usize,
+      cap: usize,
       
       fn new() StringBuf;
-      fn from(s: &const byte) !StringBuf;
       fn push(self: &Self, c: byte) !void;
       fn push_str(self: &Self, s: &const byte) !void;
-      fn as_str(self: &Self) &[i8];
+      fn as_str(self: &Self) &[const byte];
+      fn append_slice(self: &Self, s: &[const byte]) !void;
       fn clear(self: &Self) void;
+      fn is_empty(self: &Self) bool;
+      fn pop_byte(self: &Self) !byte;
+      fn truncate(self: &Self, new_len: usize) !void;
+      fn starts_with(self: &Self, prefix: &[const byte]) bool;
+      fn ends_with(self: &Self, suffix: &[const byte]) bool;
+      fn contains_byte(self: &Self, b: byte) bool;
+      fn set_byte(self: &Self, i: usize, b: byte) !void;
   }
   ```
 
@@ -1924,7 +1933,7 @@ static inline long uya_syscall3(long nr, long a1, long a2, long a3) {
 | 7 | `std.io.file` | File 实现（重构） | [ ] |
 | 8 | `std.string` | 安全字符串操作（!T） | [ ] |
 | 9 | `std.collections.vec` | Vec<T> 泛型容器 | [ ] |
-| 9 | `std.collections.string_buf` | StringBuf | [ ] |
+| 9 | `std.collections.string_buf` | StringBuf | [x] |
 | 10 | `libc.*` | 薄封装（调用 std） | [ ] |
 
 **长期计划**：

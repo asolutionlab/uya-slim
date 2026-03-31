@@ -234,10 +234,15 @@ struct Vec<T> {
 }
 
 struct StringBuf {
-    buf: Vec<u8>,
+    data: &byte,
+    len: usize,
+    cap: usize,
     
+    fn push(self: &Self, c: byte) !void;
     fn push_str(self: &Self, s: &const byte) !void;
-    fn as_str(self: &Self) &[i8];
+    fn as_str(self: &Self) &[const byte];
+    fn append_slice(self: &Self, s: &[const byte]) !void;
+    fn clear(self: &Self) void;
 }
 ```
 

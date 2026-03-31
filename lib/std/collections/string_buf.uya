@@ -59,6 +59,17 @@ export struct StringBuf {
         self._len = self._len + 1;
     },
 
+    /// 兼容 API：等价于 push_byte。
+    /// 参数：
+    /// - self: 当前缓冲区实例。
+    /// - c: 待追加字节。
+    /// 返回：
+    /// - ok: 追加成功。
+    /// - error: 扩容阶段来自分配器的错误。
+    fn push(self: &Self, c: byte) !void {
+        try self.push_byte(c);
+    },
+
     /// 追加一段只读切片内容。
     /// 参数：
     /// - self: 当前缓冲区实例。
@@ -88,6 +99,17 @@ export struct StringBuf {
         try self.append_slice(s[0: n]);
     },
 
+    /// 兼容 API：等价于 append_cstr。
+    /// 参数：
+    /// - self: 当前缓冲区实例。
+    /// - s: 以 '\\0' 终止的字节串指针。
+    /// 返回：
+    /// - ok: 追加成功。
+    /// - error: 追加过程中来自分配器的错误。
+    fn push_str(self: &Self, s: &const byte) !void {
+        try self.append_cstr(s);
+    },
+
     /// 当前已使用长度（字节数）。
     /// 参数：
     /// - self: 当前缓冲区实例。
@@ -104,6 +126,15 @@ export struct StringBuf {
     /// - 指向 [0, len) 的只读切片视图。
     fn as_slice(self: &Self) &[const byte] {
         return self.data[0: self._len];
+    },
+
+    /// 兼容 API：返回当前内容只读视图（零拷贝）。
+    /// 参数：
+    /// - self: 当前缓冲区实例。
+    /// 返回：
+    /// - 当前内容切片视图。
+    fn as_str(self: &Self) &[const byte] {
+        return self.as_slice();
     },
 
     /// 判断当前内容是否以前缀 `prefix` 开头。
@@ -147,6 +178,24 @@ export struct StringBuf {
             i = i + 1;
         }
         return true;
+    },
+
+    /// 判断当前内容是否包含指定字节。
+    /// 参数：
+    /// - self: 当前缓冲区实例。
+    /// - b: 待查找字节。
+    /// 返回：
+    /// - true: 至少存在一个匹配字节。
+    /// - false: 未找到匹配字节。
+    fn contains_byte(self: &Self, b: byte) bool {
+        var i: usize = 0;
+        while i < self._len {
+            if self.data[i] == b {
+                return true;
+            }
+            i = i + 1;
+        }
+        return false;
     },
 
     /// 当前分配容量（字节），与 `Vec.cap` 对齐。
@@ -254,6 +303,22 @@ export struct StringBuf {
         return buf[i];
     },
 
+    /// 按下标写入字节；越界时返回 `error.StringBufIndexOutOfBounds`。
+    /// 参数：
+    /// - self: 当前缓冲区实例。
+    /// - i: 目标下标。
+    /// - b: 待写入字节。
+    /// 返回：
+    /// - ok: 写入成功。
+    /// - error.StringBufIndexOutOfBounds: i >= len。
+    fn set_byte(self: &Self, i: usize, b: byte) !void {
+        if i >= self._len {
+            return error.StringBufIndexOutOfBounds;
+        }
+        const buf: &byte = self.data;
+        buf[i] = b;
+    },
+
     /// 释放底层缓冲区（若 data 为 null 则无操作）。
     /// 参数：
     /// - self: 按值传入的缓冲区实例。
@@ -280,3 +345,4 @@ export fn string_buf_new(allocator: IAllocator) StringBuf {
         _cap: 0,
     };
 }
+
