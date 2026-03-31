@@ -41,6 +41,35 @@ export struct Vec<T> {
         self._cap = new_cap;
     },
 
+    fn try_reserve(self: &Self, additional: usize) !void {
+        const need: usize = self._len + additional;
+        if self._cap >= need {
+            return;
+        }
+        var sample: [T: 1] = [];
+        const esz: usize = @size_of(sample[0]) as usize;
+        var new_cap: usize = self._cap;
+        if new_cap == 0 {
+            new_cap = 8;
+        }
+        while new_cap < need {
+            new_cap = new_cap * 2;
+        }
+        const new_bytes: usize = new_cap * esz;
+        if self.data == null {
+            const ar: !&byte = self.allocator.alloc(new_bytes);
+            var p: &byte = try ar;
+            self.data = p as &T;
+            self._cap = new_cap;
+            return;
+        }
+        const old_ptr: &byte = self.data as &byte;
+        const rr: !&byte = self.allocator.realloc(old_ptr, new_bytes);
+        var np: &byte = try rr;
+        self.data = np as &T;
+        self._cap = new_cap;
+    },
+
     fn push(self: &Self, value: T) !void {
         try self.grow_if_needed();
         const buf: &T = self.data;

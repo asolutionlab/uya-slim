@@ -1714,6 +1714,18 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
         }
     }
+    // 预注册 !byte：Vec<byte>.pop/get 等单态原型会返回 !byte（C 为 err_union_uint8_t），需在类型头阶段先定义
+    {
+        const byte_type: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, codegen.arena, null);
+        if byte_type != null {
+            byte_type.type_named_name = "byte" as &byte;
+            const err_union_byte: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, 0, 0, codegen.arena, null);
+            if err_union_byte != null {
+                err_union_byte.type_error_union_payload_type = byte_type;
+                c99_type_to_c(codegen, err_union_byte);
+            }
+        }
+    }
     // 第六步 b2：生成错误联合结构体（!T -> struct err_union_X），必须在用户结构体之前
     emit_pending_err_union_structs(codegen);
     if codegen.err_union_struct_count > 0 {
