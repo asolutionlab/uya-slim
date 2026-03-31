@@ -92,3 +92,19 @@ test "string_buf_drop_one_dealloc" {
     }
     try assert_eq_i32(g_string_buf_dealloc_count, 1);
 }
+
+test "string_buf_is_empty_and_pop_byte" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var sb: StringBuf = string_buf_new(w);
+    try assert_eq_bool(sb.is_empty(), true);
+    try sb.push_byte(65);
+    try sb.push_byte(66);
+    try assert_eq_bool(sb.is_empty(), false);
+    const b1r: !byte = sb.pop_byte();
+    var b1: byte = try b1r;
+    try assert_eq_i32(b1 as i32, 66);
+    const b0r: !byte = sb.pop_byte();
+    var b0: byte = try b0r;
+    try assert_eq_i32(b0 as i32, 65);
+    try assert_eq_bool(sb.is_empty(), true);
+}

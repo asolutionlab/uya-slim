@@ -6,6 +6,7 @@ use mem.strlen;
 use std.mem.allocator.IAllocator;
 
 error StringBufIndexOutOfBounds;
+error StringBufEmpty;
 
 export struct StringBuf {
     allocator: IAllocator,
@@ -97,6 +98,19 @@ export struct StringBuf {
 
     fn clear(self: &Self) void {
         self._len = 0;
+    },
+
+    fn is_empty(self: &Self) bool {
+        return self._len == 0;
+    },
+
+    fn pop_byte(self: &Self) !byte {
+        if self._len == 0 {
+            return error.StringBufEmpty;
+        }
+        self._len = self._len - 1;
+        const buf: &byte = self.data;
+        return buf[self._len];
     },
 
     fn get_byte(self: &Self, i: usize) !byte {
