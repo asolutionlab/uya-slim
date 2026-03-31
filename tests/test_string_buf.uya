@@ -56,12 +56,24 @@ test "string_buf_append_slice_and_clear" {
     try assert_eq_i32(sb.len() as i32, 0);
 }
 
+test "string_buf_cap_and_try_reserve" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var sb: StringBuf = string_buf_new(w);
+    try assert_eq_i32(sb.cap() as i32, 0);
+    try sb.try_reserve(10);
+    try assert_eq_i32(sb.len() as i32, 0);
+    try assert_eq_i32(sb.cap() as i32, 16);
+    try sb.push_byte(1);
+    try assert_eq_i32(sb.len() as i32, 1);
+    try assert_eq_i32(sb.cap() as i32, 16);
+}
+
 test "string_buf_drop_one_dealloc" {
     g_string_buf_dealloc_count = 0;
     var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
     {
         var sb: StringBuf = string_buf_new(w);
-        try sb.append_cstr("x");
+        try sb.append_cstr("x" as &const byte);
     }
     try assert_eq_i32(g_string_buf_dealloc_count, 1);
 }

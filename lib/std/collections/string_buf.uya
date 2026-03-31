@@ -61,6 +61,38 @@ export struct StringBuf {
         return self._len;
     },
 
+    /// 当前分配容量（字节），与 `Vec.cap` 对齐。
+    fn cap(self: &Self) usize {
+        return self._cap;
+    },
+
+    /// 保证 `cap >= len + additional`（不改变 `len`）；已足够时无操作。
+    fn try_reserve(self: &Self, additional: usize) !void {
+        const need: usize = self._len + additional;
+        if self._cap >= need {
+            return;
+        }
+        var new_cap: usize = self._cap;
+        if new_cap == 0 {
+            new_cap = 8;
+        }
+        while new_cap < need {
+            new_cap = new_cap * 2;
+        }
+        const new_bytes: usize = new_cap;
+        if self.data == null {
+            const ar: !&byte = self.allocator.alloc(new_bytes);
+            var p: &byte = try ar;
+            self.data = p;
+            self._cap = new_cap;
+            return;
+        }
+        const rr: !&byte = self.allocator.realloc(self.data, new_bytes);
+        var np: &byte = try rr;
+        self.data = np;
+        self._cap = new_cap;
+    },
+
     fn clear(self: &Self) void {
         self._len = 0;
     },
