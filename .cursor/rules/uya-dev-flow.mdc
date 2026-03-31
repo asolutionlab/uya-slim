@@ -16,14 +16,15 @@ provider:
 # 1. 先写测试放在 tests/，使用 test "name" {} 风格）
 vim tests/test_new_feature.uya
 
-# 2. 运行测试，确认失败（红）
-make tests  # 新测试应该失败
+# 2. 快速回归，确认失败（红）
+./bin/uya test tests/test_new_feature.uya  # 新测试应该失败（更快）
 
 # 3. 编写最小代码使测试通过（绿）
 vim src/related_module.uya
 
-# 4. 验证状态
-make check
+# 4. 快速回归验证
+./bin/uya test tests/test_new_feature.uya
+# 阶段收口/提交前再执行 make check
 ```
 
 #### TDD 核心原则
@@ -134,13 +135,20 @@ if [ ! -f bin/uya ]; then
     make from-c  # 从 C99 代码构建
 fi
 
-# 验证当前状态（自举 + 测试）
-make check
+# 开发阶段默认快速基线（优先跑本次要改动的测试）
+./bin/uya test tests/test_xxx.uya
+# 阶段收口/提交前必须 make check
 ```
 
 ## 开发后验证（推荐流程）
 
-**使用 `make check` 作为主要验证命令**，它会自动执行：
+**开发阶段默认使用快速回归**：
+
+```bash
+./bin/uya test tests/test_xxx.uya
+```
+
+**阶段收口 / 提交前使用 `make check` 完整验证**，它会自动执行：
 
 ```bash
 make check      # 一键验证（自举 + 测试）
@@ -173,6 +181,7 @@ make tests  # 测试验证
 
 | 命令 | 说明 |
 |------|------|
+| `./bin/uya test tests/test_xxx.uya` | 开发阶段快速回归（**默认**） |
 | `make check` | 验证（自举 + 测试）（**推荐**） |
 | `make backup` | 验证 + 备份 `backup/uyacache`（多文件） |
 | `make backup-seed` | 单文件 C → `bin/uya.c`、`backup/uya.c` |

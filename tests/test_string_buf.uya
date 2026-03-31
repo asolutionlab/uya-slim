@@ -119,3 +119,44 @@ test "string_buf_as_slice_view" {
     try assert_eq_i32(s.ptr[1] as i32, 121);
     try assert_eq_i32(s.ptr[2] as i32, 122);
 }
+
+test "string_buf_truncate_ok_and_error" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var sb: StringBuf = string_buf_new(w);
+    try sb.append_slice("abcd");
+    try sb.truncate(2);
+    try assert_eq_i32(sb.len() as i32, 2);
+    const b0r: !byte = sb.get_byte(0);
+    const b1r: !byte = sb.get_byte(1);
+    var b0: byte = try b0r;
+    var b1: byte = try b1r;
+    try assert_eq_i32(b0 as i32, 97);
+    try assert_eq_i32(b1 as i32, 98);
+    var got_err: bool = false;
+    _ = sb.truncate(3) catch {
+        got_err = true;
+    };
+    try assert_eq_bool(got_err, true);
+}
+
+test "string_buf_starts_with_and_ends_with" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var sb: StringBuf = string_buf_new(w);
+    try sb.append_slice("hello_uya");
+    try assert_eq_bool(sb.starts_with("hello"), true);
+    try assert_eq_bool(sb.starts_with("ello"), false);
+    try assert_eq_bool(sb.ends_with("uya"), true);
+    try assert_eq_bool(sb.ends_with("uyaa"), false);
+}
+
+test "string_buf_pop_empty_error" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var sb: StringBuf = string_buf_new(w);
+    const r: !byte = sb.pop_byte();
+    match r {
+        error.StringBufEmpty => {},
+        else => {
+            try assert_eq_i32(0, 1);
+        },
+    }
+}
