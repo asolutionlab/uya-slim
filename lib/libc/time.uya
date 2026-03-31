@@ -29,21 +29,11 @@ export type clock_t = u64;
 // 系统调用定义
 // ============================================================
 
-use libc.SYS_time;
 use libc.SYS_gettimeofday;
-
-const SYS_time: i64 = 83;
 
 // ============================================================
 // 时间获取函数
 // ============================================================
-
-// time - 获取当前日历时间（自 Unix 纪元以来的秒数）
-export extern "libc" fn time(timer: &time_t) time_t {
-    var result: !i64 = @syscall(SYS_time, timer as i64);
-    var t: i64 = result catch { return -1 as time_t; };
-    return t as time_t;
-}
 
 // gettimeofday - 获取更精确的时间（秒 + 微秒）
 struct timeval {
@@ -60,6 +50,21 @@ export extern "libc" fn gettimeofday(tv: &timeval, tz: &timezone) i32 {
     var result: !i64 = @syscall(SYS_gettimeofday, tv as i64, tz as i64);
     var ret: i64 = result catch { return -1; };
     return ret as i32;
+}
+
+// time - 获取当前日历时间（自 Unix 纪元以来的秒数）
+// 实现为 gettimeofday 的 tv_sec，避免误用固定 SYS_time 编号：例如 x86_64 上 83 为 mkdir 而非 time（201），会导致失败、上层误用时间戳 "0"
+export extern "libc" fn time(timer: &time_t) time_t {
+    var tv: timeval = timeval{ tv_sec: 0, tv_usec: 0 };
+    var tz: timezone = timezone{ tz_minuteswest: 0, tz_dsttime: 0 };
+    if gettimeofday(&tv, &tz) != 0 {
+        return -1 as time_t;
+    }
+    const t: time_t = tv.tv_sec as time_t;
+    if timer != null {
+        timer[0] = t;
+    }
+    return t;
 }
 
 // clock - 获取处理器时间（简化实现，返回自程序启动以来的时钟滴答数）
