@@ -2188,7 +2188,12 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     if fn_decl.fn_decl_is_export != 0 {
         fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, wrapper_ret_c as *byte, func_c_name as *byte);
     } else {
-        fprintf(codegen.emit_stream as *void, "static __attribute__((unused)) %s %s(" as *byte, wrapper_ret_c as *byte, func_c_name as *byte);
+        // 多文件 C（split）：与 gen_function_prototype / 普通函数定义一致，不加 static，避免 uya_split_protos.h 中非 static 声明与本定义冲突
+        if codegen.split_enabled == 0 {
+            fprintf(codegen.emit_stream as *void, "static __attribute__((unused)) %s %s(" as *byte, wrapper_ret_c as *byte, func_c_name as *byte);
+        } else {
+            fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, wrapper_ret_c as *byte, func_c_name as *byte);
+        }
     }
     pi = 0;
     var first_param: i32 = 1;
@@ -2710,7 +2715,7 @@ fn gen_mono_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, ty
     // 返回类型（替换类型参数）
     const return_c: &byte = c99_mono_type_to_c(codegen, return_type);
     
-    if fn_decl.fn_decl_is_async != 0 && fn_decl.fn_decl_is_export == 0 {
+    if fn_decl.fn_decl_is_async != 0 && fn_decl.fn_decl_is_export == 0 && codegen.split_enabled == 0 {
         fprintf(codegen.emit_stream as *void, "static __attribute__((unused)) %s %s(" as *byte, return_c as *byte, mono_name as *byte);
     } else {
         fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, mono_name as *byte);
@@ -2870,7 +2875,11 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
             if fn_decl.fn_decl_is_export != 0 {
                 fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c2 as *byte, mono_name as *byte);
             } else {
-                fprintf(codegen.emit_stream as *void, "static __attribute__((unused)) %s %s(" as *byte, return_c2 as *byte, mono_name as *byte);
+                if codegen.split_enabled == 0 {
+                    fprintf(codegen.emit_stream as *void, "static __attribute__((unused)) %s %s(" as *byte, return_c2 as *byte, mono_name as *byte);
+                } else {
+                    fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c2 as *byte, mono_name as *byte);
+                }
             }
             var ai: i32 = 0;
             while ai < param_count {

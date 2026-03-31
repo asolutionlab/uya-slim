@@ -422,3 +422,13 @@ export fn async_fd_new(fd: i32) AsyncFd {
     return AsyncFd{ fd: fd };
 }
 
+/// 返回具体 `AsyncFdReadFuture`，供 `@await` 路径使用（对接口方法 `AsyncReader.read` 的直接 `@await` 在 C 代码生成阶段可能无法识别）。
+export fn async_fd_read_future(fd: i32, buf: &byte, count: usize) Future<!usize> {
+    return AsyncFdReadFuture{ fd: fd, buf: buf, count: count };
+}
+
+/// 同上，写侧；配合 `async_fd_read_future` 用于 `@async_fn` 内 `try @await`。
+export fn async_fd_write_future(fd: i32, data: &const byte, count: usize) Future<!usize> {
+    return AsyncFdWriteFuture{ fd: fd, data: data, count: count };
+}
+
