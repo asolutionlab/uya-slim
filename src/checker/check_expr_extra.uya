@@ -999,6 +999,10 @@ fn checker_update_project_root_from_fn_decl(checker: &TypeChecker, decl: &ASTNod
         str_equals(decl.fn_decl_name, "main" as *byte) == 0 || decl.filename == null {
         return;
     }
+    // std.runtime.entry：export extern fn main — 不要用其所在目录覆盖项目根
+    if decl.fn_decl_is_extern != 0 {
+        return;
+    }
     const filename: &byte = decl.filename;
     var last_slash: *byte = strrchr(filename as *byte, 47);
     if last_slash == null {

@@ -16,8 +16,8 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
     // 如果项目根目录已设置，检查文件是否在项目根目录下
     if checker.project_root_dir != null {
         const root_len: usize = strlen(checker.project_root_dir as *byte);
-        // 检查 filename 是否以 project_root_dir 开头
-        if strncmp(filename as *byte, checker.project_root_dir as *byte, root_len) == 0 {
+        // root_len==0 时 strncmp 恒为相等，会把任意路径误判为「在项目根下」
+        if root_len > 0 && strncmp(filename as *byte, checker.project_root_dir as *byte, root_len) == 0 {
             // 文件在项目根目录下，检查是否在根目录的直接子目录中
             const relative_path: &byte = (filename as *byte + root_len) as &byte;
             var first_slash: *byte = strchr(relative_path as *byte, 47);  // '/'
@@ -586,6 +586,11 @@ fn build_module_exports(checker: &TypeChecker, program: &ASTNode) void {
             is_export = decl.var_decl_is_export;
             item_name = decl.var_decl_name;
             item_type = 10;  // 变量/常量
+        } else if decl.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+            // export const / export var（解析为 AST_EXTERN_VAR_DECL，见 parser/main.uya）
+            is_export = decl.extern_var_decl_is_export;
+            item_name = decl.extern_var_decl_name;
+            item_type = 10;
         }
         
         // 如果是导出项，添加到模块的导出列表
