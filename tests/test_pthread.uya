@@ -2,6 +2,7 @@
 
 use std.runtime.entry;
 use libc.pthread;
+use libc.syscall;
 use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
 use std.testing.test_pass;
@@ -423,7 +424,11 @@ fn test_pthread_affinity() !void {
         _ = pthread_join(&th, null as & &void);
     }
 
+    // 纯 yield 在部分调度下父线程易忙等占满 CPU；每次先短睡再 yield，让出时间片，便于子线程跑到入口并写入 _affinity_started。
     while _affinity_started == 0 {
+        var nap: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 1_000_000 };
+        var rem: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 0 };
+        _ = sys_nanosleep(&nap, &rem) catch {};
         _ = pthread_yield();
     }
 

@@ -7,7 +7,9 @@
 // - 目前仅实现最小子集，满足 tests/test_pthread.uya
 
 // 依赖 libc.syscall：SYS_clone、futex、waitpid、sched
+use std;
 use libc.SYS_clone;
+use libc.sys_clone;
 use libc.sys_futex;
 use libc.FUTEX_WAIT;
 use libc.FUTEX_WAKE;
@@ -39,14 +41,22 @@ const CLONE_FLAGS: i64 = 0x00000100 | 17;  // CLONE_VM | SIGCHLD
 var _pthread_start_fn: &void = null;
 var _pthread_start_arg: &void = null;
 
+// 由 C99 生成器注入 uya_thread_call_usize（与 std.thread 相同）；非 x86_64 用其按平台调用约定间接调用
+extern fn uya_thread_call_usize(fn_ptr: &void, arg: usize) usize;
+
 // 通过 @asm 间接调用函数指针 start_fn(start_arg)，x86-64 调用约定：rdi=arg，返回值在 rax
 // 输出用 i64 存指针，再转回 &void（@asm 输出仅允许整数）
 fn _pthread_call_start(start_fn: &void, start_arg: &void) &void {
-    var ret: i64 = 0;
-    @asm {
-        "mov %2, %%rdi\n\tmov %1, %%rax\n\tcall *%%rax\n\tmov %%rax, %0" (start_fn, start_arg, -> ret);
-    } clobbers = ["rax", "rdi", "rcx", "r11", "memory"];
-    return (ret as usize) as &void;
+    std.cfg(std.target_arch == .ta_x86_64, {
+        var ret: i64 = 0;
+        @asm {
+            "mov %2, %%rdi\n\tmov %1, %%rax\n\tcall *%%rax\n\tmov %%rax, %0" (start_fn, start_arg, -> ret);
+        } clobbers = ["rax", "rdi", "rcx", "r11", "memory"];
+        return (ret as usize) as &void;
+    }, {
+        const r: usize = uya_thread_call_usize(start_fn, start_arg as usize);
+        return r as &void;
+    })
 }
 
 // pthread_t - 线程标识
@@ -234,16 +244,22 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     _pthread_start_fn = start_routine;
     _pthread_start_arg = arg;
 
-    // 调用内核 SYS_clone：flags=SIGCHLD，child_stack=top，其余参数为 0
-    // 使用内联汇编直接调用，避免 libc syscall 函数在子进程中崩溃
+    // x86_64：内联汇编直接 syscall；ARM 等：libc.sys_clone（@syscall 按架构生成正确约定）
     var tid: i64 = 0;
-    const nr: i64 = SYS_clone;
     const flags: i64 = CLONE_FLAGS;
-    const stack_top: i64 = top as i64;
-    @asm {
-        "mov %1, %%rax\n\tmov %2, %%rdi\n\tmov %3, %%rsi\n\txor %%rdx, %%rdx\n\txor %%r10, %%r10\n\txor %%r8, %%r8\n\tsyscall\n\tmov %%rax, %0"
-        (nr, flags, stack_top, 0 as i64, 0 as i64, 0 as i64, -> tid);
-    } clobbers = ["rdi", "rsi", "rdx", "r10", "r8", "rcx", "r11", "memory"];
+    std.cfg(std.target_arch == .ta_x86_64, {
+        const nr: i64 = SYS_clone;
+        const stack_top: i64 = top as i64;
+        @asm {
+            "mov %1, %%rax\n\tmov %2, %%rdi\n\tmov %3, %%rsi\n\txor %%rdx, %%rdx\n\txor %%r10, %%r10\n\txor %%r8, %%r8\n\tsyscall\n\tmov %%rax, %0"
+            (nr, flags, stack_top, 0 as i64, 0 as i64, 0 as i64, -> tid);
+        } clobbers = ["rdi", "rsi", "rdx", "r10", "r8", "rcx", "r11", "memory"];
+    }, {
+        const cl: !i64 = sys_clone(flags, top, null, null, null);
+        tid = cl catch {
+            (0 - 1) as i64;
+        };
+    })
     
     if tid < 0 {
         _ = pthread_mutex_unlock(&_pthread_create_mutex);

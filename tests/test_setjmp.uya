@@ -11,6 +11,9 @@ use libc.sigjmp_buf;
 use libc.sigsetjmp;
 use libc._setjmp;
 use libc._JB_SIZE;
+use libc._JB_SIG_SIZE;
+use libc.jmp_buf_size;
+use libc.sigjmp_buf_size;
 
 test "jmp_buf_size" {
     var actual_size: usize = @size_of(jmp_buf);
@@ -53,6 +56,20 @@ test "_setjmp_basic" {
 
 test "const_jb_size" {
     try expect(_JB_SIZE == 8);
+}
+
+test "const_jb_sig_size" {
+    try expect(_JB_SIG_SIZE == 16);
+}
+
+test "jmp_buf_size_fn_matches_layout" {
+    try expect(jmp_buf_size() == 64);
+    try expect(jmp_buf_size() == @size_of(jmp_buf));
+}
+
+test "sigjmp_buf_size_fn_matches_layout" {
+    try expect(sigjmp_buf_size() == 128);
+    try expect(sigjmp_buf_size() == @size_of(sigjmp_buf));
 }
 
 test "jmp_buf_data_access" {

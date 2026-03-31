@@ -38,6 +38,7 @@ UYA_TEST_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || e
 #       make install BINDIR=/opt/bin
 #       make install BINDIR=out            # 前缀布局：out/bin/uya + out/lib/（与 PREFIX 一致）
 #       make install DESTDIR=/tmp/stage PREFIX=/usr   # 打包：安装到 /tmp/stage/usr/bin/uya
+#       make install TESTSDIR=/path/tests             # 显式测试树目录（默认 前缀/tests）
 # BINDIR 语义：
 #   - 路径最后一段为 bin：视为「可执行目录」，如 /custom/bin → /custom/bin/uya、/custom/lib/
 #   - 否则视为「安装前缀」，如 out、/opt/uya → 前缀/bin/uya、前缀/lib/（与 ~/.local 布局一致）
@@ -56,6 +57,8 @@ INSTALL_PREFIX := $(_BINDIR_NORM)
 endif
 # 文档：与仓库根目录一致为 前缀/docs/*.md（uya_ai_prompt.md 及文中显式引用的规范文档）
 DOCDIR ?= $(INSTALL_PREFIX)/docs
+# 测试套件源码树：与仓库 tests/ 一致，安装到 前缀/tests/
+TESTSDIR ?= $(INSTALL_PREFIX)/tests
 # 打包时 DESTDIR 与相对 BINDIR（如 out）拼接须带 '/'，否则 /tmp/st + out → /tmp/stout
 ifneq ($(strip $(DESTDIR)),)
 INSTALL_DEST_ROOT := $(patsubst %/,%,$(DESTDIR))/
@@ -516,7 +519,7 @@ release: clean from-c uya b check backup-seed
 	@echo "优化选项: -O3 -fno-builtin -DNDEBUG"
 	@echo "已剥离调试符号 (strip)"
 
-# 安装编译器与标准库源码树（需系统 install(1)；标准库排除 lib/build）
+# 安装编译器、标准库源码树与 tests/（需系统 install(1)；标准库排除 lib/build）
 install:
 	@if [ ! -f bin/uya ]; then \
 		echo "bin/uya 不存在，先执行 from-c ..."; \
@@ -539,7 +542,12 @@ install:
 		if [ ! -f "docs/$$f" ]; then echo "错误: 缺少 docs/$$f"; exit 1; fi; \
 		install -m 644 "docs/$$f" "$(INSTALL_DEST_ROOT)$(DOCDIR)/$$f"; \
 	done
-	@echo "✓ 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya + $(INSTALL_DEST_ROOT)$(LIBDIR)/ + $(INSTALL_DEST_ROOT)$(DOCDIR)/"
+	@echo "安装测试树 -> $(INSTALL_DEST_ROOT)$(TESTSDIR)/"
+	@if [ ! -d tests ]; then echo "错误: tests 目录不存在"; exit 1; fi
+	@rm -rf "$(INSTALL_DEST_ROOT)$(TESTSDIR)"
+	@install -d "$(INSTALL_DEST_ROOT)$(TESTSDIR)"
+	@cp -a tests/. "$(INSTALL_DEST_ROOT)$(TESTSDIR)/"
+	@echo "✓ 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya + $(INSTALL_DEST_ROOT)$(LIBDIR)/ + $(INSTALL_DEST_ROOT)$(DOCDIR)/ + $(INSTALL_DEST_ROOT)$(TESTSDIR)/"
 
 # 从备份恢复 bin/uya.c
 restore:
@@ -599,7 +607,7 @@ help:
 	@echo "  make backup-seed   - 单文件 C 重编译，更新 bin/uya.c 与 backup/uya.c（from-c / release 用）"
 	@echo "  make backup-all    - backup + backup-seed（提交前完整备份）"
 	@echo "  make release       - 发布：clean+自举验证+backup-seed 后 -O3 -DNDEBUG 重链（nostdlib 种子同 from-c 用 crti/crtn）+ strip"
-	@echo "  make install       - 安装 uya、lib/、前缀/docs/（AI 提示词与引用规范）；BINDIR/LIBDIR/DOCDIR/DESTDIR"
+	@echo "  make install       - 安装 uya、lib/、前缀/docs/、前缀/tests/；BINDIR/LIBDIR/DOCDIR/TESTSDIR/DESTDIR"
 	@echo "  make restore       - 从 backup/uya.c 恢复 bin/uya.c"
 	@echo "  make clean         - 清理所有构建产物"
 	@echo "  make help          - 显示此帮助信息"
@@ -615,6 +623,7 @@ help:
 	@echo "  make install BINDIR=/custom/bin      # 路径以 bin 结尾：可执行目录本身 + /custom/lib/"
 	@echo "  make install LIBDIR=/other/lib       # 显式标准库目录（通常需配合 export UYA_ROOT）"
 	@echo "  make install DOCDIR=/path/docs       # 显式文档目录（默认 前缀/docs）"
+	@echo "  make install TESTSDIR=/path/tests    # 显式测试目录（默认 前缀/tests）"
 	@echo ""
 	@echo "macOS: hosted 主线见 docs/macos_hosted_smoke.md；备份 uya.c 为 Linux nostdlib 时 from-c 不可用。"
 
