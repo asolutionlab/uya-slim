@@ -1,4 +1,4 @@
-# libc 开发进度与改进计划 v0.8.1
+# libc 开发进度与改进计划 v0.8.2
 
 **整合版本**：基于 std_refactor_design.md v0.7.1 架构  
 **日期**：2026-03-12（stdio _vfprintf_impl C99 兼容）  

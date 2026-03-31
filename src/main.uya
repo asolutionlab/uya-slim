@@ -12,13 +12,10 @@ use checker;  // 包含 checker 目录下所有文件（包括 optimizer.uya）
 // C99 代码生成（子目录，整体导入该目录模块）
 use codegen.c99;
 use std;
-// C 程序入口（提供 export extern fn main 调用 main_main）
-// 必须用别名：默认本地名为 entry，会与大量业务代码里的局部变量 entry（如 string_pool、readdir）冲突，
-// 导致 entry.xxx 被误判为模块成员访问，C 代码生成错误标识符（如 std_runtime_entry_hash）。
-use std.runtime.entry as uya_rt_entry;
+// C 程序入口由编译器自动注入 std.runtime.entry；此处仅导入堆栈上限设置（避免与局部名 entry 冲突）
+use std.runtime.entry.set_process_stack_limit_bytes;
 use libc;
 use libc.stdlib;  // clock, CLOCKS_PER_SEC
-use libc.syscall;  // sys_setrlimit, RLIMIT_STACK
 use libc.unistd;  // system
 
 // ===== 计时函数 =====
@@ -328,7 +325,7 @@ fn print_usage(program_name: &byte) void {
     var name: &byte = program_name;
     if name == null { name = "uya" as *byte; }
     fprintf(libc.stderr, "Uya 编译器 - 零GC系统编程语言\n" as *byte);
-    fprintf(libc.stderr, "版本：v0.8.1\n" as *byte);
+    fprintf(libc.stderr, "版本：v0.8.2\n" as *byte);
     fprintf(libc.stderr, "\n用法:\n" as *byte);
     fprintf(libc.stderr, "  %s build <文件> [-o <输出>] [选项]  编译为可执行文件\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run <文件> [选项] [-- <参数>...]  编译并运行\n" as *byte, name as *byte);
@@ -2389,16 +2386,9 @@ export fn main() i32 {
         }
     }
 
-    // 设置堆栈大小（如果指定了，使用传入值；否则使用默认 16MB）
+    // 主线程堆栈上限（与 --stack-size 一致，默认 65536 KB）
     if stack_size > 0 {
-        // 将 KB 转换为字节
-        const stack_bytes: u64 = stack_size as u64 * 1024;
-        var rlim: RLimit = RLimit {
-            rlim_cur: stack_bytes,
-            rlim_max: stack_bytes
-        };
-        // 忽略错误，因为可能没有权限设置
-        _ = sys_setrlimit(RLIMIT_STACK, &rlim);
+        set_process_stack_limit_bytes(stack_size as u64 * 1024);
     }
 
     // --outlibc 模式

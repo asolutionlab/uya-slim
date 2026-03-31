@@ -1,5 +1,5 @@
 // std.runtime.entry - C 程序入口
-// 版本：v0.2.2
+// 版本：v0.2.3
 // 说明：提供 export extern "libc" fn main 作为 C 入口，调用用户 export fn main → main_main()
 // 使用 bin/uya / uya build / compile.sh 时：检测到 export fn main、fn main 或顶层 test 会自动加入本文件，用户源码无需 use std.runtime.entry
 // 模块路径：lib/std/runtime/entry/entry.uya（模块名 std.runtime.entry，供标准库内部 use）
@@ -11,7 +11,8 @@ use std;
 // 2. C main 保存参数到 std.runtime.saved_argc/saved_argv/saved_envp 后调用 main_main()
 //    （用户的 export fn main() 被编译为 main_main()）
 // 3. 用户通过 std.runtime.get_argc/get_argv 访问参数
-// 4. 用户 app 不需要 use 本模块；编译器自动注入本文件（见 main.uya compile_files）
+// 4. 需要更大主线程栈：use std.runtime.entry.set_process_stack_limit_bytes; 并在 main 开头调用
+// 5. 用户 app 通常不需手写 use 本模块；编译器自动注入本文件（见 main.uya compile_files）
 
 // 导入 std.runtime 的全局变量
 use std.runtime.saved_argc;
@@ -35,25 +36,24 @@ extern fn setrlimit(resource: i32, rlim: &const EntryRLimit) i32;
 
 const ENTRY_RLIMIT_STACK: i32 = 3;
 
-// C main 函数：保存参数并调用应用程序主程序
-// export extern "libc" 生成裸函数名（无模块前缀），作为程序入口
-export extern fn main(argc: i32, argv: & &byte) i32 {
-    // 在调用 main_main 之前设置堆栈大小为 16MB
-    // 这确保在 Uya 代码执行之前就有足够的堆栈空间
-    
+// 将主线程 RLIMIT_STACK 软/硬上限设为 limit_bytes。应在 main_main 开头尽早调用；设置失败时忽略。
+// 与 _uya_exit 相同：用语句级 std.cfg，避免顶层 cfg 块内 fn 不生成 C
+export fn set_process_stack_limit_bytes(limit_bytes: u64) void {
     var rlim: EntryRLimit = EntryRLimit {
-        rlim_cur: 16 * 1024 * 1024,  // 16MB
-        rlim_max: 16 * 1024 * 1024
+        rlim_cur: limit_bytes,
+        rlim_max: limit_bytes
     };
-
-    // 与 _uya_exit 相同：用语句级 std.cfg，避免顶层 cfg 块内 fn 不生成 C
     std.cfg(std.target_arch == .ta_x86_64, {
         const SYS_setrlimit: i64 = 160;
         _ = @syscall(SYS_setrlimit, ENTRY_RLIMIT_STACK as i64, &rlim as i64);
     }, {
         _ = setrlimit(ENTRY_RLIMIT_STACK, &rlim);
     })
+}
 
+// C main 函数：保存参数并调用应用程序主程序
+// export extern "libc" 生成裸函数名（无模块前缀），作为程序入口
+export extern fn main(argc: i32, argv: & &byte) i32 {
     // 保存命令行参数到 std.runtime 的全局变量
     saved_argc = argc;
     saved_argv = argv;

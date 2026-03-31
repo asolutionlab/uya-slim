@@ -1,5 +1,20 @@
 # Uya 变更日志
 
+## v0.8.2 - 主线程栈上限改为应用显式设置
+
+> 发布日期：2026-03-31
+
+### 概要
+
+**v0.8.x** 补丁：`std.runtime.entry` 不再在 C `main` 中固定提高 `RLIMIT_STACK`；新增 **`set_process_stack_limit_bytes`**，应用按需调用；编译器在 **`main_main`** 内根据 **`--stack-size`** 调用该函数；`make check` **698** 项测试通过。详见 [docs/releases/RELEASE_v0.8.2.md](./docs/releases/RELEASE_v0.8.2.md)。
+
+### 文档与版本字符串
+
+- 新增 `docs/releases/RELEASE_v0.8.2.md`
+- 编译器帮助中的版本字符串更新为 **v0.8.2**
+
+---
+
 ## v0.8.1 - v0.8.0 发行线补丁：TFLM、epoll HTTP、压测与稳定性
 
 > 发布日期：2026-03-30
