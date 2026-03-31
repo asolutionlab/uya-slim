@@ -45,6 +45,8 @@ export struct StringBuf {
     },
 
     fn append_slice(self: &Self, s: &[const byte]) !void {
+        // 预留一次容量，避免按字节 push 触发多次扩容。
+        try self.try_reserve(s.len);
         var i: usize = 0;
         while i < s.len {
             try self.push_byte(s.ptr[i]);

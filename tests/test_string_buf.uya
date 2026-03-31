@@ -9,11 +9,14 @@ use std.mem.allocator.MallocAllocator;
 use std.mem.allocator.get_allocator;
 
 var g_string_buf_dealloc_count: i32 = 0;
+var g_string_buf_alloc_count: i32 = 0;
+var g_string_buf_realloc_count: i32 = 0;
 
 struct CountingMallocWrapper : IAllocator {
     inner: &MallocAllocator,
 
     fn alloc(self: &Self, size: usize) !&byte {
+        g_string_buf_alloc_count = g_string_buf_alloc_count + 1;
         return self.inner.alloc(size);
     },
 
@@ -23,6 +26,7 @@ struct CountingMallocWrapper : IAllocator {
     },
 
     fn realloc(self: &Self, ptr: &byte, new_size: usize) !&byte {
+        g_string_buf_realloc_count = g_string_buf_realloc_count + 1;
         return self.inner.realloc(ptr, new_size);
     },
 }
@@ -66,6 +70,17 @@ test "string_buf_cap_and_try_reserve" {
     try sb.push_byte(1);
     try assert_eq_i32(sb.len() as i32, 1);
     try assert_eq_i32(sb.cap() as i32, 16);
+}
+
+test "string_buf_append_slice_pre_reserve_no_realloc" {
+    g_string_buf_alloc_count = 0;
+    g_string_buf_realloc_count = 0;
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var sb: StringBuf = string_buf_new(w);
+    try sb.append_slice("01234567890123456789");
+    try assert_eq_i32(sb.len() as i32, 20);
+    try assert_eq_i32(g_string_buf_alloc_count, 1);
+    try assert_eq_i32(g_string_buf_realloc_count, 0);
 }
 
 test "string_buf_drop_one_dealloc" {
