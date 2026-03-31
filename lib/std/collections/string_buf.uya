@@ -1,49 +1,17 @@
 // lib/std/collections/string_buf.uya - 可增长字节缓冲
-// 内联容量与 Vec<byte> 相同语义；**不内嵌 Vec<byte>**，避免当前 C 后端对「结构体字段含泛型 Vec」发射不完整。
+// 基于 Vec<byte> 封装，保持字节级 API 与字符串操作便利性。
 // 模块路径：use std.collections.string_buf;
 
 use mem.strlen;
 use std.mem.allocator.IAllocator;
+use std.collections.vec.Vec;
 
 error StringBufIndexOutOfBounds;
 error StringBufEmpty;
 error StringBufTruncateOutOfBounds;
 
 export struct StringBuf {
-    allocator: IAllocator,
-    data: &byte,
-    _len: usize,
-    _cap: usize,
-
-    /// 若容量不足则按 2 倍策略扩容（0 -> 8）。
-    /// 参数：
-    /// - self: 当前缓冲区实例。
-    /// 返回：
-    /// - ok: 已确保存在至少 1 字节可写容量。
-    /// - error: 底层分配器 alloc/realloc 返回的错误。
-    fn grow_if_needed(self: &Self) !void {
-        if self._len < self._cap {
-            return;
-        }
-        var new_cap: usize = self._cap;
-        if new_cap == 0 {
-            new_cap = 8;
-        } else {
-            new_cap = self._cap * 2;
-        }
-        const new_bytes: usize = new_cap;
-        if self.data == null {
-            const ar: !&byte = self.allocator.alloc(new_bytes);
-            var p: &byte = try ar;
-            self.data = p;
-            self._cap = new_cap;
-            return;
-        }
-        const rr: !&byte = self.allocator.realloc(self.data, new_bytes);
-        var np: &byte = try rr;
-        self.data = np;
-        self._cap = new_cap;
-    },
+    buf: Vec<byte>,
 
     /// 追加单个字节到末尾。
     /// 参数：
@@ -53,10 +21,7 @@ export struct StringBuf {
     /// - ok: 追加成功，len 增加 1。
     /// - error: 扩容阶段来自分配器的错误。
     fn push_byte(self: &Self, b: byte) !void {
-        try self.grow_if_needed();
-        const buf: &byte = self.data;
-        buf[self._len] = b;
-        self._len = self._len + 1;
+        try self.buf.push(b);
     },
 
     /// 兼容 API：等价于 push_byte。
@@ -78,11 +43,10 @@ export struct StringBuf {
     /// - ok: 追加成功，len 增加 s.len。
     /// - error: 预留容量或写入过程中来自分配器的错误。
     fn append_slice(self: &Self, s: &[const byte]) !void {
-        // 预留一次容量，避免按字节 push 触发多次扩容。
         try self.try_reserve(s.len);
         var i: usize = 0;
         while i < s.len {
-            try self.push_byte(s.ptr[i]);
+            try self.buf.push(s.ptr[i]);
             i = i + 1;
         }
     },
@@ -116,7 +80,7 @@ export struct StringBuf {
     /// 返回：
     /// - 当前有效字节数。
     fn len(self: &Self) usize {
-        return self._len;
+        return self.buf.len();
     },
 
     /// 以只读切片视图返回当前内容（零拷贝）。
@@ -125,7 +89,8 @@ export struct StringBuf {
     /// 返回：
     /// - 指向 [0, len) 的只读切片视图。
     fn as_slice(self: &Self) &[const byte] {
-        return self.data[0: self._len];
+        const p: &byte = self.buf.data as &byte;
+        return p[0: self.buf._len];
     },
 
     /// 兼容 API：返回当前内容只读视图（零拷贝）。
@@ -145,12 +110,12 @@ export struct StringBuf {
     /// - true: 当前内容以前缀开头。
     /// - false: 不匹配。
     fn starts_with(self: &Self, prefix: &[const byte]) bool {
-        if prefix.len > self._len {
+        if prefix.len > self.buf._len {
             return false;
         }
         var i: usize = 0;
         while i < prefix.len {
-            if self.data[i] != prefix.ptr[i] {
+            if self.buf.data[i] != prefix.ptr[i] {
                 return false;
             }
             i = i + 1;
@@ -166,13 +131,13 @@ export struct StringBuf {
     /// - true: 当前内容以后缀结尾。
     /// - false: 不匹配。
     fn ends_with(self: &Self, suffix: &[const byte]) bool {
-        if suffix.len > self._len {
+        if suffix.len > self.buf._len {
             return false;
         }
-        const start: usize = self._len - suffix.len;
+        const start: usize = self.buf._len - suffix.len;
         var i: usize = 0;
         while i < suffix.len {
-            if self.data[start + i] != suffix.ptr[i] {
+            if self.buf.data[start + i] != suffix.ptr[i] {
                 return false;
             }
             i = i + 1;
@@ -189,8 +154,8 @@ export struct StringBuf {
     /// - false: 未找到匹配字节。
     fn contains_byte(self: &Self, b: byte) bool {
         var i: usize = 0;
-        while i < self._len {
-            if self.data[i] == b {
+        while i < self.buf._len {
+            if self.buf.data[i] == b {
                 return true;
             }
             i = i + 1;
@@ -204,7 +169,7 @@ export struct StringBuf {
     /// 返回：
     /// - 当前可容纳的总字节数。
     fn cap(self: &Self) usize {
-        return self._cap;
+        return self.buf.cap();
     },
 
     /// 保证 `cap >= len + additional`（不改变 `len`）；已足够时无操作。
@@ -215,29 +180,7 @@ export struct StringBuf {
     /// - ok: 容量满足需求。
     /// - error: 底层分配器 alloc/realloc 返回的错误。
     fn try_reserve(self: &Self, additional: usize) !void {
-        const need: usize = self._len + additional;
-        if self._cap >= need {
-            return;
-        }
-        var new_cap: usize = self._cap;
-        if new_cap == 0 {
-            new_cap = 8;
-        }
-        while new_cap < need {
-            new_cap = new_cap * 2;
-        }
-        const new_bytes: usize = new_cap;
-        if self.data == null {
-            const ar: !&byte = self.allocator.alloc(new_bytes);
-            var p: &byte = try ar;
-            self.data = p;
-            self._cap = new_cap;
-            return;
-        }
-        const rr: !&byte = self.allocator.realloc(self.data, new_bytes);
-        var np: &byte = try rr;
-        self.data = np;
-        self._cap = new_cap;
+        try self.buf.try_reserve(additional);
     },
 
     /// 清空内容（长度设为 0，保留已分配容量）。
@@ -246,7 +189,7 @@ export struct StringBuf {
     /// 返回：
     /// - 无返回值。
     fn clear(self: &Self) void {
-        self._len = 0;
+        self.buf.clear();
     },
 
     /// 将长度截断到 `new_len`；若 `new_len > len` 返回错误。
@@ -257,10 +200,10 @@ export struct StringBuf {
     /// - ok: 截断成功。
     /// - error.StringBufTruncateOutOfBounds: new_len 超过当前 len。
     fn truncate(self: &Self, new_len: usize) !void {
-        if new_len > self._len {
+        if new_len > self.buf._len {
             return error.StringBufTruncateOutOfBounds;
         }
-        self._len = new_len;
+        self.buf._len = new_len;
     },
 
     /// 是否为空（`len == 0`）。
@@ -270,7 +213,7 @@ export struct StringBuf {
     /// - true: 当前为空。
     /// - false: 当前非空。
     fn is_empty(self: &Self) bool {
-        return self._len == 0;
+        return self.buf._len == 0;
     },
 
     /// 弹出末尾字节；为空时返回 `error.StringBufEmpty`。
@@ -280,12 +223,12 @@ export struct StringBuf {
     /// - ok(byte): 末尾字节值，len 减少 1。
     /// - error.StringBufEmpty: 当前为空，无法弹出。
     fn pop_byte(self: &Self) !byte {
-        if self._len == 0 {
+        if self.buf._len == 0 {
             return error.StringBufEmpty;
         }
-        self._len = self._len - 1;
-        const buf: &byte = self.data;
-        return buf[self._len];
+        self.buf._len = self.buf._len - 1;
+        const p: &byte = self.buf.data as &byte;
+        return p[self.buf._len];
     },
 
     /// 按下标读取字节；越界时返回 `error.StringBufIndexOutOfBounds`。
@@ -296,11 +239,11 @@ export struct StringBuf {
     /// - ok(byte): 下标 i 对应字节。
     /// - error.StringBufIndexOutOfBounds: i >= len。
     fn get_byte(self: &Self, i: usize) !byte {
-        if i >= self._len {
+        if i >= self.buf._len {
             return error.StringBufIndexOutOfBounds;
         }
-        const buf: &byte = self.data;
-        return buf[i];
+        const p: &byte = self.buf.data as &byte;
+        return p[i];
     },
 
     /// 按下标写入字节；越界时返回 `error.StringBufIndexOutOfBounds`。
@@ -312,23 +255,21 @@ export struct StringBuf {
     /// - ok: 写入成功。
     /// - error.StringBufIndexOutOfBounds: i >= len。
     fn set_byte(self: &Self, i: usize, b: byte) !void {
-        if i >= self._len {
+        if i >= self.buf._len {
             return error.StringBufIndexOutOfBounds;
         }
-        const buf: &byte = self.data;
-        buf[i] = b;
+        const p: &byte = self.buf.data as &byte;
+        p[i] = b;
     },
 
-    /// 释放底层缓冲区（若 data 为 null 则无操作）。
+    /// 释放底层缓冲区（若空则无操作）。
     /// 参数：
     /// - self: 按值传入的缓冲区实例。
     /// 返回：
     /// - 无返回值。
     fn drop(self: StringBuf) void {
-        if self.data == null {
-            return;
-        }
-        self.allocator.dealloc(self.data);
+        // 由后端自动对字段按逆序执行 drop。
+        // 这里留空，避免对按值接收者字段触发重复/错误调用。
     },
 }
 
@@ -339,10 +280,12 @@ export struct StringBuf {
 /// - 新建的空缓冲区（len=0, cap=0）。
 export fn string_buf_new(allocator: IAllocator) StringBuf {
     return StringBuf{
-        allocator: allocator,
-        data: null,
-        _len: 0,
-        _cap: 0,
+        buf: Vec<byte>{
+            allocator: allocator,
+            data: null,
+            _len: 0,
+            _cap: 0,
+        },
     };
 }
 

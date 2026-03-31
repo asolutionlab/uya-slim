@@ -2360,12 +2360,23 @@ fn gen_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_nam
                     fi = fi - 1;
                     continue;
                 }
-                const field_type_name: &byte = ft.type_named_name;
-                if type_has_drop_c99(codegen, field_type_name) == 0 {
+                var drop_type_name: &byte = ft.type_named_name;
+                if ft.type_named_type_args != null && ft.type_named_type_arg_count > 0 {
+                    const mono_field_name: &byte = get_mono_struct_name(
+                        codegen,
+                        ft.type_named_name,
+                        ft.type_named_type_args,
+                        ft.type_named_type_arg_count
+                    );
+                    if mono_field_name != null {
+                        drop_type_name = mono_field_name;
+                    }
+                }
+                if drop_type_name == null || type_has_drop_c99(codegen, drop_type_name) == 0 {
                     fi = fi - 1;
                     continue;
                 }
-                const drop_c: &byte = get_method_c_name(codegen, field_type_name, "drop" as *byte);
+                const drop_c: &byte = get_method_c_name(codegen, drop_type_name, "drop" as *byte);
                 const field_safe: &byte = get_safe_c_identifier(codegen, field.var_decl_name);
                 if drop_c != null && field_safe != null {
                     c99_emit_indent(codegen);

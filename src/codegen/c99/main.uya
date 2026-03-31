@@ -842,6 +842,24 @@ fn mark_mono_instances_reachable_by_name(codegen: &C99CodeGenerator, generic_nam
     }
 }
 
+// 泛型函数实例名可能是原始名（vec_new）或导出 C 名（std_collections_vec_new）。
+// 这里统一做匹配，避免跨模块调用时仅注册导出名导致单态实例漏发射。
+fn c99_mono_fn_name_matches_decl(codegen: &C99CodeGenerator, inst_name: &byte, fn_decl: &ASTNode) i32 {
+    if codegen == null || inst_name == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || fn_decl.fn_decl_name == null {
+        return 0;
+    }
+    if strcmp(inst_name as *byte, fn_decl.fn_decl_name as *byte) == 0 {
+        return 1;
+    }
+    if fn_decl.fn_decl_is_export != 0 && fn_decl.fn_decl_extern_lib_name == null && fn_decl.filename != null {
+        const exported_name: &byte = get_export_function_c_name(codegen, fn_decl.fn_decl_name, fn_decl.filename);
+        if exported_name != null && strcmp(inst_name as *byte, exported_name as *byte) == 0 {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 fn is_library_source_file(filename: &byte) i32 {
     if filename == null {
         return 0;
@@ -2155,8 +2173,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 var found: i32 = 0;
                 while k < decl_count && found == 0 {
                     const decl: &ASTNode = ast.program_decls[k];
-                    if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null &&
-                        strcmp(decl.fn_decl_name as *byte, gn as *byte) == 0 {
+                    if decl != null && decl.type == ASTNodeType.AST_FN_DECL &&
+                        c99_mono_fn_name_matches_decl(codegen, gn, decl) != 0 {
                         if has_unresolved_mono_type_args(decl, codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count) != 0 {
                             found = 1;
                             break;
@@ -2339,7 +2357,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                     j = 0;
                     while j < codegen.mono_instance_count {
                         if codegen.mono_instances[j].generic_name != null &&
-                            strcmp(codegen.mono_instances[j].generic_name as *byte, decl.fn_decl_name as *byte) == 0 &&
+                            c99_mono_fn_name_matches_decl(codegen, codegen.mono_instances[j].generic_name, decl) != 0 &&
                             codegen.mono_instances[j].is_function != 0 &&
                             has_unresolved_mono_type_args(decl, codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count) == 0 {
                             if strcmp(decl.fn_decl_name as *byte, "from_json" as *byte) != 0 {
@@ -2401,7 +2419,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 var j: i32 = 0;
                 while j < codegen.mono_instance_count {
                     if codegen.mono_instances[j].generic_name != null &&
-                        strcmp(codegen.mono_instances[j].generic_name as *byte, fn_name as *byte) == 0 &&
+                        c99_mono_fn_name_matches_decl(codegen, codegen.mono_instances[j].generic_name, decl) != 0 &&
                         codegen.mono_instances[j].is_function != 0 &&
                         codegen.reachable_mono_instances[j] != 0 &&
                         has_unresolved_mono_type_args(decl, codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count) == 0 {
@@ -2836,7 +2854,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                         var j: i32 = 0;
                         while j < codegen.mono_instance_count {
                             if codegen.mono_instances[j].generic_name != null &&
-                                strcmp(codegen.mono_instances[j].generic_name as *byte, func_name as *byte) == 0 &&
+                                c99_mono_fn_name_matches_decl(codegen, codegen.mono_instances[j].generic_name, decl) != 0 &&
                                 codegen.mono_instances[j].is_function != 0 &&
                                 codegen.reachable_mono_instances[j] != 0 &&
                                 has_unresolved_mono_type_args(decl, codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count) == 0 {
