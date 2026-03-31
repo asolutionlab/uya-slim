@@ -1,0 +1,67 @@
+// test_string_buf.uya - StringBuf：追加、清空、与 Vec 一致的 drop 释放
+
+use std.testing;
+
+use std.collections.string_buf.StringBuf;
+use std.collections.string_buf.string_buf_new;
+use std.mem.allocator.IAllocator;
+use std.mem.allocator.MallocAllocator;
+use std.mem.allocator.get_allocator;
+
+var g_string_buf_dealloc_count: i32 = 0;
+
+struct CountingMallocWrapper : IAllocator {
+    inner: &MallocAllocator,
+
+    fn alloc(self: &Self, size: usize) !&byte {
+        return self.inner.alloc(size);
+    },
+
+    fn dealloc(self: &Self, ptr: &byte) void {
+        g_string_buf_dealloc_count = g_string_buf_dealloc_count + 1;
+        self.inner.dealloc(ptr);
+    },
+
+    fn realloc(self: &Self, ptr: &byte, new_size: usize) !&byte {
+        return self.inner.realloc(ptr, new_size);
+    },
+}
+
+test "string_buf_append_cstr_and_bytes" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var sb: StringBuf = string_buf_new(w);
+    const hi: *const byte = "Hi" as *const byte;
+    try sb.append_cstr(hi as &const byte);
+    try assert_eq_i32(sb.len() as i32, 2);
+    const b0r: !byte = sb.get_byte(0);
+    const b1r: !byte = sb.get_byte(1);
+    var b0: byte = try b0r;
+    var b1: byte = try b1r;
+    try assert_eq_i32(b0 as i32, 72);
+    try assert_eq_i32(b1 as i32, 105);
+    try sb.push_byte(33);
+    try assert_eq_i32(sb.len() as i32, 3);
+    const b2r: !byte = sb.get_byte(2);
+    var b2: byte = try b2r;
+    try assert_eq_i32(b2 as i32, 33);
+}
+
+test "string_buf_append_slice_and_clear" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var sb: StringBuf = string_buf_new(w);
+    // 字符串字面量可由类型检查接受为 &[const byte]；C 后端须生成按值 uya_slice（见 c99_emit_call_arg_expr）
+    try sb.append_slice("abcd");
+    try assert_eq_i32(sb.len() as i32, 4);
+    sb.clear();
+    try assert_eq_i32(sb.len() as i32, 0);
+}
+
+test "string_buf_drop_one_dealloc" {
+    g_string_buf_dealloc_count = 0;
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    {
+        var sb: StringBuf = string_buf_new(w);
+        try sb.append_cstr("x");
+    }
+    try assert_eq_i32(g_string_buf_dealloc_count, 1);
+}

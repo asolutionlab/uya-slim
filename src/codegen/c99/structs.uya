@@ -1968,6 +1968,7 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
         fputs("\n#endif /* UYA_VTABLE_EXTERNS_H */\n" as *byte, vtable_externs_out as *void);
         _ = fclose(vtable_externs_out as *void);
     }
+    emit_pending_slice_structs(codegen);
 }
 
 // 查找结构体字段类型（C99 版本，返回 ASTNode）

@@ -974,6 +974,70 @@ fn c99_fn_decl_slice_param_pass_by_value(fn_decl: &ASTNode, param_index: i32) i3
     return 0;
 }
 
+// 形参 AST 是否为 &[const byte]（与 checker 中字符串字面量可传 slice 一致）
+fn c99_param_type_ast_is_const_byte_slice(param_type_ast: &ASTNode) i32 {
+    if param_type_ast == null {
+        return 0;
+    }
+    var slice_ty: &ASTNode = param_type_ast;
+    if param_type_ast.type == ASTNodeType.AST_TYPE_POINTER && param_type_ast.type_pointer_pointed_type != null &&
+        param_type_ast.type_pointer_pointed_type.type == ASTNodeType.AST_TYPE_SLICE {
+        slice_ty = param_type_ast.type_pointer_pointed_type;
+    }
+    if slice_ty.type != ASTNodeType.AST_TYPE_SLICE {
+        return 0;
+    }
+    if slice_ty.type_slice_element_const == 0 {
+        return 0;
+    }
+    const et: &ASTNode = slice_ty.type_slice_element_type;
+    if et == null || et.type != ASTNodeType.AST_TYPE_NAMED || et.type_named_name == null {
+        return 0;
+    }
+    if strcmp(et.type_named_name as *byte, "byte" as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+// 字符串字面量实参在对应形参为 &[const byte] 且按值 slice ABI 时，生成复合字面量而非裸指针（与 checker_check_expr_type 一致）
+fn c99_string_literal_passes_as_const_byte_slice_value(callee_fn: &ASTNode, param_index: i32, arg: &ASTNode) i32 {
+    if callee_fn == null || arg == null || arg.type != ASTNodeType.AST_STRING || arg.string_literal_value == null {
+        return 0;
+    }
+    if callee_fn.type != ASTNodeType.AST_FN_DECL || param_index < 0 || param_index >= callee_fn.fn_decl_param_count {
+        return 0;
+    }
+    const p: &ASTNode = callee_fn.fn_decl_params[param_index];
+    if p == null || p.type != ASTNodeType.AST_VAR_DECL || p.var_decl_type == null {
+        return 0;
+    }
+    if c99_fn_decl_slice_param_pass_by_value(callee_fn, param_index) == 0 {
+        return 0;
+    }
+    return c99_param_type_ast_is_const_byte_slice(p.var_decl_type);
+}
+
+// 输出与 gen_expr(AST_STRING) 相同的 (uint8_t *) 指针表达式（不含外层 slice 复合字面量）
+fn c99_emit_string_literal_uint8_ptr_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+    if codegen == null || expr == null || expr.type != ASTNodeType.AST_STRING {
+        fputs("(uint8_t *)\"\"" as *byte, codegen.emit_stream as *void);
+        return;
+    }
+    if expr.string_literal_value == null {
+        fputs("(uint8_t *)\"\"" as *byte, codegen.emit_stream as *void);
+        return;
+    }
+    const str_const: &byte = find_string_constant(codegen, expr.string_literal_value);
+    if str_const != null {
+        fprintf(codegen.emit_stream as *void, "(uint8_t *)%s" as *byte, str_const as *byte);
+    } else {
+        fputs("(uint8_t *)\"" as *byte, codegen.emit_stream as *void);
+        escape_string_for_c(codegen.emit_stream, expr.string_literal_value);
+        fputc(34, codegen.emit_stream as *void);
+    }
+}
+
 // 调用实参：对按值 slice ABI，将 &expr（expr 为切片值）生成为 expr。
 fn c99_emit_call_arg_expr(codegen: &C99CodeGenerator, fn_decl: &ASTNode, param_index: i32, arg: &ASTNode) void {
     if arg != null && arg.type == ASTNodeType.AST_UNARY_EXPR &&
@@ -988,6 +1052,17 @@ fn c99_emit_call_arg_expr(codegen: &C99CodeGenerator, fn_decl: &ASTNode, param_i
                 return;
             }
         }
+    }
+    if fn_decl != null && arg != null && arg.type == ASTNodeType.AST_STRING &&
+        c99_string_literal_passes_as_const_byte_slice_value(fn_decl, param_index, arg) != 0 {
+        var sl: i32 = 0;
+        while arg.string_literal_value[sl] != 0 {
+            sl = sl + 1;
+        }
+        fputs("(struct uya_slice_uint8_t){ .ptr = " as *byte, codegen.emit_stream as *void);
+        c99_emit_string_literal_uint8_ptr_expr(codegen, arg);
+        fprintf(codegen.emit_stream as *void, ", .len = (size_t)%d }" as *byte, sl);
+        return;
     }
     gen_expr(codegen, arg);
 }
@@ -1175,7 +1250,9 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         fputs("(const char *)" as *byte, codegen.emit_stream as *void);
                     }
                 } else if expr.call_expr_args[ai] != null && expr.call_expr_args[ai].type == ASTNodeType.AST_STRING {
-                    fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                    if c99_string_literal_passes_as_const_byte_slice_value(fn_decl, ai, expr.call_expr_args[ai]) == 0 {
+                        fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                    }
                 }
                 c99_emit_call_arg_expr(codegen, fn_decl, ai, expr.call_expr_args[ai]);
                 ai = ai + 1;
@@ -1533,7 +1610,9 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                                 fputs(codegen.interp_arg_temp_names[i] as *byte, codegen.emit_stream as *void);
                                             } else {
                                                 if expr.call_expr_args[i] != null && expr.call_expr_args[i].type == ASTNodeType.AST_STRING {
-                                                    fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                                                    if c99_string_literal_passes_as_const_byte_slice_value(method_fn, i + 1, expr.call_expr_args[i]) == 0 {
+                                                        fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                                                    }
                                                 }
                                                 c99_emit_call_arg_expr(codegen, method_fn, i + 1, expr.call_expr_args[i]);
                                             }
@@ -1586,7 +1665,9 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                                 fputs(codegen.interp_arg_temp_names[i] as *byte, codegen.emit_stream as *void);
                                             } else {
                                                 if expr.call_expr_args[i] != null && expr.call_expr_args[i].type == ASTNodeType.AST_STRING {
-                                                    fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                                                    if c99_string_literal_passes_as_const_byte_slice_value(method_fn, i + 1, expr.call_expr_args[i]) == 0 {
+                                                        fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                                                    }
                                                 }
                                                 c99_emit_call_arg_expr(codegen, method_fn, i + 1, expr.call_expr_args[i]);
                                             }
@@ -1629,7 +1710,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         const libc_param_c: &byte = get_extern_libc_param_c_type(fn_decl, i);
                         if libc_param_c != null {
                             fputs("(const char *)" as *byte, codegen.emit_stream as *void);
-                        } else {
+                        } else if c99_string_literal_passes_as_const_byte_slice_value(fn_decl, i, expr.call_expr_args[i]) == 0 {
                             fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
                         }
                     }
@@ -1773,7 +1854,14 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 }
             }
             
-            if is_string_arg != 0 || is_byte_ptr_arg != 0 {
+            var apply_string_byte_ptr_cast: i32 = 0;
+            if is_string_arg != 0 {
+                if fn_decl == null || expr.call_expr_args[i] == null ||
+                   c99_string_literal_passes_as_const_byte_slice_value(fn_decl, i, expr.call_expr_args[i]) == 0 {
+                    apply_string_byte_ptr_cast = 1;
+                }
+            }
+            if is_byte_ptr_arg != 0 || apply_string_byte_ptr_cast != 0 {
                 // sys_read 的 buf 参数（i==1）为写入目标，必须用 (uint8_t *) 避免 -Wdiscarded-qualifiers
                 // sys_open 的 pathname（i==0）：C 版不添加 cast，与 C 输出一致
                 const libc_param_c: &byte = get_extern_libc_param_c_type(fn_decl, i);

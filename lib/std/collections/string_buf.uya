@@ -1,0 +1,91 @@
+// lib/std/collections/string_buf.uya - 可增长字节缓冲
+// 内联容量与 Vec<byte> 相同语义；**不内嵌 Vec<byte>**，避免当前 C 后端对「结构体字段含泛型 Vec」发射不完整。
+// 模块路径：use std.collections.string_buf;
+
+use mem.strlen;
+use std.mem.allocator.IAllocator;
+
+error StringBufIndexOutOfBounds;
+
+export struct StringBuf {
+    allocator: IAllocator,
+    data: &byte,
+    _len: usize,
+    _cap: usize,
+
+    fn grow_if_needed(self: &Self) !void {
+        if self._len < self._cap {
+            return;
+        }
+        var new_cap: usize = self._cap;
+        if new_cap == 0 {
+            new_cap = 8;
+        } else {
+            new_cap = self._cap * 2;
+        }
+        const new_bytes: usize = new_cap;
+        if self.data == null {
+            const ar: !&byte = self.allocator.alloc(new_bytes);
+            var p: &byte = try ar;
+            self.data = p;
+            self._cap = new_cap;
+            return;
+        }
+        const rr: !&byte = self.allocator.realloc(self.data, new_bytes);
+        var np: &byte = try rr;
+        self.data = np;
+        self._cap = new_cap;
+    },
+
+    fn push_byte(self: &Self, b: byte) !void {
+        try self.grow_if_needed();
+        const buf: &byte = self.data;
+        buf[self._len] = b;
+        self._len = self._len + 1;
+    },
+
+    fn append_slice(self: &Self, s: &[const byte]) !void {
+        var i: usize = 0;
+        while i < s.len {
+            try self.push_byte(s.ptr[i]);
+            i = i + 1;
+        }
+    },
+
+    fn append_cstr(self: &Self, s: &const byte) !void {
+        const n: usize = strlen(s);
+        try self.append_slice(s[0: n]);
+    },
+
+    fn len(self: &Self) usize {
+        return self._len;
+    },
+
+    fn clear(self: &Self) void {
+        self._len = 0;
+    },
+
+    fn get_byte(self: &Self, i: usize) !byte {
+        if i >= self._len {
+            return error.StringBufIndexOutOfBounds;
+        }
+        const buf: &byte = self.data;
+        return buf[i];
+    },
+
+    fn drop(self: StringBuf) void {
+        if self.data == null {
+            return;
+        }
+        self.allocator.dealloc(self.data);
+    },
+}
+
+export fn string_buf_new(allocator: IAllocator) StringBuf {
+    return StringBuf{
+        allocator: allocator,
+        data: null,
+        _len: 0,
+        _cap: 0,
+    };
+}

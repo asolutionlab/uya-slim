@@ -461,6 +461,7 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     // export extern fn main：生成裸名 main 的前向声明，不带模块前缀
     if is_c_main != 0 {
         var j: i32 = 0;
+        c99_preregister_slices_top_level_fn(codegen, fn_decl);
         fprintf(codegen.emit_stream, "extern %s main(" as *byte, return_c as *byte);
         while j < param_count {
             const param: &ASTNode = fn_decl.fn_decl_params[j];
@@ -531,6 +532,7 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
             return;
         }
     }
+    c99_preregister_slices_top_level_fn(codegen, fn_decl);
     if is_extern != 0 {
         fprintf(codegen.emit_stream, "extern %s %s(" as *byte, return_c as *byte, func_name as *byte);
     } else {
@@ -728,6 +730,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     if libc_return_c != null {
         return_c = libc_return_c;
     }
+    c99_preregister_slices_top_level_fn(codegen, fn_decl);
     
     // 声明循环变量 i（在 if-else 之前声明，确保在所有分支都可见）
     var i: i32 = 0;
@@ -2260,6 +2263,7 @@ fn gen_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_na
     }
     var return_c: &byte = convert_array_return_type(codegen, fn_decl.fn_decl_return_type);
     return_c = normalize_poll_return_type(codegen, return_c);
+    c99_preregister_slices_method(codegen, fn_decl, struct_name);
     const params: & & ASTNode = fn_decl.fn_decl_params;
     const param_count: i32 = fn_decl.fn_decl_param_count;
     fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, c_name as *byte);
@@ -2296,6 +2300,7 @@ fn gen_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_nam
     const params: & & ASTNode = fn_decl.fn_decl_params;
     const param_count: i32 = fn_decl.fn_decl_param_count;
     emit_line_directive(codegen, fn_decl.line, fn_decl.filename);
+    c99_preregister_slices_method(codegen, fn_decl, struct_name);
     fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, c_name as *byte);
     var i: i32 = 0;
     while i < param_count {
@@ -2688,6 +2693,63 @@ fn c99_mono_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
     return r;
 }
 
+// 在输出函数原型/定义的形参列表之前：遍历返回类型与各形参，令 c99_type_to_c 登记所有 uya_slice_*，
+// 再一次性 emit_pending_slice_structs。禁止在已向 emit_stream 写出 `foo(` 之后调用 emit_pending，
+// 否则完整 struct 定义会插入参数表中间，破坏 C 语法。
+fn c99_preregister_slices_top_level_fn(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return;
+    }
+    if fn_decl.fn_decl_return_type != null {
+        _ = c99_type_to_c(codegen, fn_decl.fn_decl_return_type);
+    }
+    var pi: i32 = 0;
+    while pi < fn_decl.fn_decl_param_count {
+        const p: &ASTNode = fn_decl.fn_decl_params[pi];
+        if p != null && p.type == ASTNodeType.AST_VAR_DECL && p.var_decl_type != null {
+            _ = c99_type_to_c(codegen, p.var_decl_type);
+        }
+        pi = pi + 1;
+    }
+    emit_pending_slice_structs(codegen);
+}
+
+fn c99_preregister_slices_method(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_name: &byte) void {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || struct_name == null {
+        return;
+    }
+    if fn_decl.fn_decl_return_type != null {
+        _ = c99_type_to_c_with_self_opt(codegen, fn_decl.fn_decl_return_type, struct_name, 0);
+    }
+    var pi: i32 = 0;
+    while pi < fn_decl.fn_decl_param_count {
+        const p: &ASTNode = fn_decl.fn_decl_params[pi];
+        if p != null && p.type == ASTNodeType.AST_VAR_DECL && p.var_decl_type != null {
+            _ = c99_type_to_c_with_self_opt(codegen, p.var_decl_type, struct_name, 0);
+        }
+        pi = pi + 1;
+    }
+    emit_pending_slice_structs(codegen);
+}
+
+fn c99_preregister_slices_mono_fn(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return;
+    }
+    if fn_decl.fn_decl_return_type != null {
+        _ = c99_mono_type_to_c(codegen, fn_decl.fn_decl_return_type);
+    }
+    var pi: i32 = 0;
+    while pi < fn_decl.fn_decl_param_count {
+        const p: &ASTNode = fn_decl.fn_decl_params[pi];
+        if p != null && p.type == ASTNodeType.AST_VAR_DECL && p.var_decl_type != null {
+            _ = c99_mono_type_to_c(codegen, p.var_decl_type);
+        }
+        pi = pi + 1;
+    }
+    emit_pending_slice_structs(codegen);
+}
+
 // 生成单态化函数原型
 fn gen_mono_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: & & ASTNode, type_arg_count: i32) void {
     if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || type_args == null {
@@ -2713,6 +2775,7 @@ fn gen_mono_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, ty
     codegen.current_type_arg_count = type_arg_count;
     
     // 返回类型（替换类型参数）
+    c99_preregister_slices_mono_fn(codegen, fn_decl);
     const return_c: &byte = c99_mono_type_to_c(codegen, return_type);
     
     if fn_decl.fn_decl_is_async != 0 && fn_decl.fn_decl_is_export == 0 && codegen.split_enabled == 0 {
@@ -2733,7 +2796,6 @@ fn gen_mono_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, ty
         const param_name: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
         const param_type: &ASTNode = param.var_decl_type;
         const param_type_c: &byte = c99_mono_type_to_c(codegen, param_type);
-        
         format_param_type(codegen, param_type_c, param_name, codegen.emit_stream);
         if i < param_count - 1 {
             c99_emit_comma_space(codegen);
@@ -2991,8 +3053,8 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
     emit_line_directive(codegen, fn_decl.line, fn_decl.filename);
     
     // 返回类型（替换类型参数）
+    c99_preregister_slices_mono_fn(codegen, fn_decl);
     const return_c: &byte = c99_mono_type_to_c(codegen, return_type);
-    
     fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, mono_name as *byte);
     
     // 参数列表
@@ -3007,7 +3069,6 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
         const param_name: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
         const param_type: &ASTNode = param.var_decl_type;
         const param_type_c: &byte = c99_mono_type_to_c(codegen, param_type);
-        
         format_param_type(codegen, param_type_c, param_name, codegen.emit_stream);
         if i < param_count - 1 {
             c99_emit_comma_space(codegen);
@@ -3165,6 +3226,7 @@ fn gen_mono_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, stru
     codegen.current_type_arg_count = type_arg_count;
     
     // 使用 c99_type_to_c_with_self 来正确处理 Self 类型
+    c99_preregister_slices_method(codegen, fn_decl, struct_name);
     const return_c: &byte = c99_type_to_c_with_self(codegen, fn_decl.fn_decl_return_type, struct_name);
     const params: & & ASTNode = fn_decl.fn_decl_params;
     const param_count: i32 = fn_decl.fn_decl_param_count;
@@ -3181,7 +3243,6 @@ fn gen_mono_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, stru
         
         const param_name: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
         const param_type_c: &byte = c99_type_to_c_with_self(codegen, param.var_decl_type, struct_name);
-        
         format_param_type(codegen, param_type_c, param_name, codegen.emit_stream);
         if i < param_count - 1 {
             c99_emit_comma_space(codegen);
@@ -3240,8 +3301,8 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
     emit_line_directive(codegen, fn_decl.line, fn_decl.filename);
     
     // 使用 c99_type_to_c_with_self 来正确处理 Self 类型
+    c99_preregister_slices_method(codegen, fn_decl, struct_name);
     const return_c: &byte = c99_type_to_c_with_self(codegen, return_type, struct_name);
-    
     fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, mono_method_name as *byte);
     
     var i: i32 = 0;
@@ -3254,7 +3315,6 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
         
         const param_name: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
         const param_type_c: &byte = c99_type_to_c_with_self(codegen, param.var_decl_type, struct_name);
-        
         format_param_type(codegen, param_type_c, param_name, codegen.emit_stream);
         if i < param_count - 1 {
             c99_emit_comma_space(codegen);

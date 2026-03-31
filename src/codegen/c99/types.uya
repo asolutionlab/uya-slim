@@ -1133,8 +1133,8 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
     }
 }
 
-// 输出所有待生成的切片结构体
-fn emit_pending_slice_structs(codegen: &C99CodeGenerator) void {
+// 输出所有待生成的切片结构体（在函数/方法原型、vtable 字段等使用按值 struct uya_slice_* 之前须先调用，否则 C 会报形参列表内不完整类型）
+export fn emit_pending_slice_structs(codegen: &C99CodeGenerator) void {
     if codegen == null {
         return;
     }
