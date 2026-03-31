@@ -64,6 +64,10 @@ export struct StringBuf {
         return self._len;
     },
 
+    fn as_slice(self: &Self) &[const byte] {
+        return self.data[0: self._len];
+    },
+
     /// 当前分配容量（字节），与 `Vec.cap` 对齐。
     fn cap(self: &Self) usize {
         return self._cap;

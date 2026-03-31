@@ -108,3 +108,14 @@ test "string_buf_is_empty_and_pop_byte" {
     try assert_eq_i32(b0 as i32, 65);
     try assert_eq_bool(sb.is_empty(), true);
 }
+
+test "string_buf_as_slice_view" {
+    var w: CountingMallocWrapper = CountingMallocWrapper{ inner: get_allocator() };
+    var sb: StringBuf = string_buf_new(w);
+    try sb.append_slice("xyz");
+    const s: &[const byte] = sb.as_slice();
+    try assert_eq_i32(s.len as i32, 3);
+    try assert_eq_i32(s.ptr[0] as i32, 120);
+    try assert_eq_i32(s.ptr[1] as i32, 121);
+    try assert_eq_i32(s.ptr[2] as i32, 122);
+}
