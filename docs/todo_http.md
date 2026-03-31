@@ -164,6 +164,7 @@
 ### 8.1 基准程序
 
 - [x] `benchmarks/http_bench.uya`：`GET /`（plaintext `hello`）、`GET /json`、`GET /item/:id`（body 为 id）、`GET /payload1k|10k|100k`（`make check` 含 `tests/verify_http_bench_compile.sh`）；`--once` 冒烟；默认 `127.0.0.1:8876` + Keep-alive
+- [~] `benchmarks/http_bench_async_epoll.uya`：单线程 epoll + `@async_fn` 示例 bench（`make check` 含 `tests/verify_http_bench_async_epoll_compile.sh`，**仅 C99 编译**）。**运行时**正确响应依赖编译器在嵌套循环内 **await 之间发出语句**（当前缺口见 [todo_async_loop_await.md](todo_async_loop_await.md)）；仅 bind IPv4 时 `localhost` 先试 `::1` 可能拒连属预期。
 - [x] `benchmarks/http_bench.go`：Go 参考服务端（与 Uya 版路由/响应一致）
 - [x] `benchmarks/http_bench_tokio`：Rust Tokio + Hyper 对照服务端（路由与 Go 版一致；`cargo` 可用时 `run_bench.sh` 会参与 wrk 对比）
 

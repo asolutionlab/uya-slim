@@ -845,6 +845,11 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 - 标准库已有最小模块：`std.async`、`std.async_event`、`std.async_channel`、`std.async_scheduler`
 - 与最终目标仍有差距：状态机当前仍通过 `malloc` 分配，`Scheduler` 仍是单任务轮询模型，`Waker` 仅提供 `wake/reset/is_woken` 最小语义，非阻塞 I/O/Send/Sync 证明尚未完成
 
+**已知语义缺口（2026-03-31，`http_bench_async_epoll`）**：
+- `@async_fn` 在**嵌套 `while`** 且多个 `try @await` 之间存在解析、组包等语句时，当前 C 状态机可能**不发出**这些语句，导致对已连接客户端 **`write` 长度为 0**、HTTP **Empty reply**。根因与修复任务见 [todo_async_loop_await.md](todo_async_loop_await.md)（待办「嵌套 `while` 内多个 `try @await` 之间的语句…」）。
+- `benchmarks/http_bench_async_epoll.uya`：`make check` 中的 verify 脚本仅保证 **C99 可编译**；**端到端 `curl` 成功**依赖上述 codegen 修复。
+- 服务只监听 **IPv4 `127.0.0.1`** 时，`curl http://localhost:…` 先试 **IPv6 `::1`** 出现「拒绝连接」属预期，与 Empty reply 不是同一类问题。
+
 - [x] **Lexer**：识别异步编程语法（C 实现与 uya-src 已同步）
   - [x] 识别 `@async_fn` 函数属性（`@` 后跟 `async_fn`）
   - [x] 识别 `@await` 关键字（`@` 后跟 `await`）
