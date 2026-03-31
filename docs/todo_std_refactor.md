@@ -14,7 +14,7 @@
 | 2     | mem 层     | 已完成   | 纯内存操作层，独立基础层 |
 | 3     | osal 层    | 已完成   | 操作系统抽象层，依赖 syscall（2026-03-05 完成） |
 | 4     | libc 层    | 未开始   | C 兼容层，依赖 osal + mem |
-| 5     | std 层     | 未开始   | Uya 原生风格层，依赖 libc（及可选 osal） |
+| 5     | std 层     | 进行中   | Uya 原生风格层；I/O（`File`+`Reader`/`Writer` 导出）已部分落地，见下文 Phase 5 |
 
 **依赖与顺序**：syscall 无依赖；mem 无依赖；osal 仅依赖 syscall；libc 依赖 osal + mem；std 依赖 libc（及可选 osal）。执行顺序必须 Phase 1 → 2 → 3 → 4 → 5，避免跨层依赖。
 
@@ -255,7 +255,7 @@ export fn my_func(s: &byte) void;
 ## Phase 5：std 层
 
 - [ ] 在现有 `lib/std/` 基础上对齐设计文档：核心类型（Option、Error）、traits（Clone、Eq、Ord、Hash、Display）等；测试先行，`make check` 通过。
-- [ ] I/O 抽象：`interface Writer`、`interface Reader`，`struct File : Writer, Reader`；依赖 libc 或 osal；测试先行，`make check` 通过。
+- [x] I/O 抽象（部分）：已导出 **`std.io.reader.Reader`**、**`std.io.writer.Writer`**；**`std.io.File`** + **`file_open` / `file_close` / `file_read` / `file_write`**（基于 **`libc.sys_*`**，与编译器依赖一致，避免拉入 `lib/syscall/linux.uya` 破坏多文件 C 的 err_union 顺序）。**`struct File : Reader, Writer`** 待编译器/单态稳定后再接；测试 **`tests/test_std_io_file.uya`**，`make check` 通过。
 - [ ] HeapAllocator：调用 `osal.os_mmap`/`osal.os_munmap` 实现；实现 **`IAllocator`**（与已落地的 **`MallocAllocator`** 同属接口，可替换全局策略）；测试先行，`make check` 通过。
 - [ ] 泛型容器：Vec、StringBuf 等（按设计文档）；测试先行，`make check` 通过。
 - [ ] 验证：自举与测试通过；依赖 libc（及可选 osal），不反向依赖。

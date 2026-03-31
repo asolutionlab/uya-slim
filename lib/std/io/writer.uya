@@ -1,7 +1,5 @@
-// lib/std/io/writer.uya - I/O 写入器接口
+// lib/std/io/writer.uya - I/O 写入器接口（模块 std.io.writer）
 
-// Writer 接口定义（使用 Uya 接口语法）
-interface Writer {
-    // 将数据写入缓冲区
+export interface Writer {
     fn write(self: &Self, buf: &const byte, count: usize) !usize;
 }
