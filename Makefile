@@ -530,6 +530,7 @@ release: clean from-c uya b check backup-seed
 	@echo "已剥离调试符号 (strip)"
 
 # 安装编译器、标准库源码树与 tests/（需系统 install(1)；标准库排除 lib/build）
+# tests 安装会排除常见中间目录与二进制产物（避免将本地测试构建垃圾安装到目标目录）
 install:
 	@if [ ! -f bin/uya ]; then \
 		echo "bin/uya 不存在，先执行 from-c ..."; \
@@ -557,6 +558,12 @@ install:
 	@rm -rf "$(INSTALL_DEST_ROOT)$(TESTSDIR)"
 	@install -d "$(INSTALL_DEST_ROOT)$(TESTSDIR)"
 	@cp -a tests/. "$(INSTALL_DEST_ROOT)$(TESTSDIR)/"
+	@rm -rf "$(INSTALL_DEST_ROOT)$(TESTSDIR)/programs/build" \
+		"$(INSTALL_DEST_ROOT)$(TESTSDIR)/build" \
+		"$(INSTALL_DEST_ROOT)$(TESTSDIR)/.uyacache"
+	@find "$(INSTALL_DEST_ROOT)$(TESTSDIR)" -type f \( \
+		-name '*.o' -o -name '*.obj' -o -name '*.a' -o -name '*.so' -o -name '*.dylib' -o -name '*.exe' -o -name '*.out' \
+	\) -delete
 	@echo "✓ 安装完成: $(INSTALL_DEST_ROOT)$(INSTALL_BINDIR)/uya + $(INSTALL_DEST_ROOT)$(LIBDIR)/ + $(INSTALL_DEST_ROOT)$(DOCDIR)/ + $(INSTALL_DEST_ROOT)$(TESTSDIR)/"
 
 # 从备份恢复 bin/uya.c
