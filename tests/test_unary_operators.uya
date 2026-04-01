@@ -9,6 +9,14 @@ struct Point {
     y: i32,
 }
 
+fn unary_call_true() bool {
+    return true;
+}
+
+fn unary_call_false() bool {
+    return false;
+}
+
 test "logical not" {
     var bool_val1: bool = true;
     var result1: bool = !bool_val1;
@@ -30,6 +38,25 @@ test "logical not in conditional" {
     if !false {
         // expected
     } else {
+        try expect(false);
+    }
+}
+
+test "logical not on call expr" {
+    var r1: bool = !unary_call_true();
+    try expect(r1 == false);
+
+    var r2: bool = !unary_call_false();
+    try expect(r2 == true);
+}
+
+test "logical not on call expr in if" {
+    if !unary_call_false() {
+        // expected
+    } else {
+        try expect(false);
+    }
+    if !unary_call_true() {
         try expect(false);
     }
 }

@@ -132,7 +132,7 @@ fn segment_span_req_path(req: &Request, which: usize) SegSpan {
     return SegSpan{ start: 0, end: 0 };
 }
 
-fn pat_literal_eq_path_req(e: &RouteEntry, ps: SegSpan, req: &Request, qs: SegSpan) bool {
+fn pat_literal_eq_path_req(e: &RouteEntry, ps: &SegSpan, req: &Request, qs: &SegSpan) bool {
     const plen: usize = ps.end - ps.start;
     const qlen: usize = qs.end - qs.start;
     if plen != qlen {
@@ -163,7 +163,7 @@ fn path_matches_pattern_request_entry(req: &Request, e: &RouteEntry) bool {
                 return false;
             }
         } else {
-            if !pat_literal_eq_path_req(e, ps, req, qs) {
+            if !pat_literal_eq_path_req(e, &ps, req, &qs) {
                 return false;
             }
         }
@@ -186,7 +186,7 @@ fn slice_bytes_eq(a: &[byte], b: &[byte]) bool {
     return true;
 }
 
-fn pat_literal_eq_path(e: &RouteEntry, ps: SegSpan, path: &[byte], qs: SegSpan) bool {
+fn pat_literal_eq_path(e: &RouteEntry, ps: &SegSpan, path: &[byte], qs: &SegSpan) bool {
     const plen: usize = ps.end - ps.start;
     const qlen: usize = qs.end - qs.start;
     if plen != qlen {
@@ -247,7 +247,7 @@ fn path_matches_pattern_entry(path: &[byte], e: &RouteEntry) bool {
                 return false;
             }
         } else {
-            if !pat_literal_eq_path(e, ps, path, qs) {
+            if !pat_literal_eq_path(e, &ps, path, &qs) {
                 return false;
             }
         }
