@@ -517,6 +517,104 @@ fn find_or_create_module(checker: &TypeChecker, module_name: &byte, filename: &b
     return null;  // 哈希表已满
 }
 
+fn append_module_export(
+    checker: &TypeChecker,
+    module: &ModuleInfo,
+    module_name: &byte,
+    item_name: &byte,
+    item_type: i32,
+    decl: &ASTNode
+) i32 {
+    if checker == null || module == null || module_name == null || item_name == null || decl == null {
+        return 0;
+    }
+
+    const new_count: i32 = module.export_count + 1;
+    const new_exports: &ExportedItem = compiler_arena_alloc(checker.arena, @size_of(ExportedItem) * new_count) as &ExportedItem;
+    if new_exports == null {
+        return 0;
+    }
+
+    if module.exports != null && module.export_count > 0 {
+        memcpy(new_exports as *void, module.exports as *void, @size_of(ExportedItem) * module.export_count);
+    }
+
+    const last_idx: i32 = module.export_count;
+    new_exports[last_idx].name = item_name;
+    new_exports[last_idx].decl_node = decl;
+    new_exports[last_idx].module_name = module_name;
+    new_exports[last_idx].item_type = item_type;
+
+    module.exports = new_exports;
+    module.export_count = new_count;
+    return 1;
+}
+
+// 为项目内 `dir/file.uya` 生成兼容别名 `dir.file`。
+// 这样既兼容目录模块（dir.*），也支持文件模式导入（dir.file.*）。
+fn build_project_file_module_alias(checker: &TypeChecker, filename: &byte, dir_module_name: &byte) &byte {
+    if checker == null || filename == null || dir_module_name == null || checker.project_root_dir == null {
+        return null;
+    }
+
+    const root_len: usize = strlen(checker.project_root_dir as *byte);
+    if root_len == 0 || strncmp(filename as *byte, checker.project_root_dir as *byte, root_len) != 0 {
+        return null;
+    }
+
+    const relative_path: &byte = (filename as *byte + root_len) as &byte;
+    var last_slash: *byte = strrchr(relative_path as *byte, 47);
+    if last_slash == null {
+        last_slash = strrchr(relative_path as *byte, 92);
+    }
+    if last_slash == null {
+        return null;
+    }
+
+    const file_name: &byte = (last_slash + 1) as &byte;
+    const file_len_all: usize = strlen(file_name as *byte);
+    if file_len_all <= 4 {
+        return null;
+    }
+    if strcmp((file_name as *byte + (file_len_all - 4)) as *byte, ".uya" as *byte) != 0 {
+        return null;
+    }
+
+    const file_base_len: usize = file_len_all - 4;
+    if file_base_len == 0 {
+        return null;
+    }
+    if file_base_len == 4 && strncmp(file_name as *byte, "main" as *byte, 4) == 0 {
+        return null;
+    }
+
+    var dir_last_start: &byte = relative_path;
+    var p: &byte = relative_path;
+    while (p as *byte) < last_slash {
+        if p[0] == 47 || p[0] == 92 {
+            dir_last_start = &p[1];
+        }
+        p = &p[1];
+    }
+    const dir_last_len: usize = ptr_diff(last_slash, dir_last_start as *byte) as usize;
+    if dir_last_len == file_base_len && strncmp(dir_last_start as *byte, file_name as *byte, file_base_len) == 0 {
+        return null;
+    }
+
+    const dir_module_len: usize = strlen(dir_module_name as *byte);
+    const total_len: usize = dir_module_len + 1 + file_base_len;
+    const alias_name: &byte = compiler_arena_alloc(checker.arena, total_len + 1) as &byte;
+    if alias_name == null {
+        return null;
+    }
+
+    memcpy(alias_name as *void, dir_module_name as *void, dir_module_len);
+    alias_name[dir_module_len] = 46;
+    memcpy((alias_name as *byte + dir_module_len + 1) as *void, file_name as *void, file_base_len);
+    alias_name[total_len] = 0;
+    return alias_name;
+}
+
 // 建立模块导出表（遍历所有声明，收集 export 标记的项）
 fn build_module_exports(checker: &TypeChecker, program: &ASTNode) void {
     if checker == null || program == null || program.type != ASTNodeType.AST_PROGRAM {
@@ -595,28 +693,18 @@ fn build_module_exports(checker: &TypeChecker, program: &ASTNode) void {
         
         // 如果是导出项，添加到模块的导出列表
         if is_export != 0 && item_name != null {
-            // 扩展导出数组
-            const new_count: i32 = module.export_count + 1;
-            const new_exports: &ExportedItem = compiler_arena_alloc(checker.arena, @size_of(ExportedItem) * new_count) as &ExportedItem;
-            if new_exports == null {
+            if append_module_export(checker, module, module_name, item_name, item_type, decl) == 0 {
                 i = i + 1;
-                continue;  // Arena 内存不足
+                continue;
             }
-            
-            // 复制旧导出项
-            if module.exports != null && module.export_count > 0 {
-                memcpy(new_exports as *void, module.exports as *void, @size_of(ExportedItem) * module.export_count);
+
+            const alias_module_name: &byte = build_project_file_module_alias(checker, filename, module_name);
+            if alias_module_name != null && str_equals(alias_module_name, module_name) == 0 {
+                const alias_module: &ModuleInfo = find_or_create_module(checker, alias_module_name, filename);
+                if alias_module != null {
+                    append_module_export(checker, alias_module, alias_module_name, item_name, item_type, decl);
+                }
             }
-            
-            // 添加新导出项
-            const last_idx: i32 = module.export_count;
-            new_exports[last_idx].name = item_name;
-            new_exports[last_idx].decl_node = decl;
-            new_exports[last_idx].module_name = module_name;
-            new_exports[last_idx].item_type = item_type;
-            
-            module.exports = new_exports;
-            module.export_count = new_count;
         }
         
         i = i + 1;

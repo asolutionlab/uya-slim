@@ -74,15 +74,48 @@ fn find_function_decl_c99(codegen: &C99CodeGenerator, func_name: &byte) &ASTNode
 }
 
 // 检查函数是否是 extern "libc" fn（用于决定字符串参数类型）
+fn should_use_raw_libc_symbol_name(codegen: &C99CodeGenerator, fn_decl: &ASTNode) i32 {
+    if fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || fn_decl.fn_decl_extern_lib_name == null {
+        return 0;
+    }
+    // extern "libc" 无函数体：链接系统 libc，必须保持原始符号名。
+    if fn_decl.fn_decl_body == null {
+        return 1;
+    }
+    // --nostdlib 下保留原始 libc 名。
+    if codegen != null && codegen.is_nostdlib != 0 {
+        return 1;
+    }
+
+    // hosted 模式：仅对与系统 stdlib 原型冲突的符号改为模块前缀名。
+    const name: &byte = fn_decl.fn_decl_name;
+    if name != null {
+        if strcmp(name as *byte, "atol" as *byte) == 0 ||
+            strcmp(name as *byte, "strtod" as *byte) == 0 ||
+            strcmp(name as *byte, "strtol" as *byte) == 0 ||
+            strcmp(name as *byte, "labs" as *byte) == 0 ||
+            strcmp(name as *byte, "div" as *byte) == 0 ||
+            strcmp(name as *byte, "ldiv" as *byte) == 0 ||
+            strcmp(name as *byte, "lldiv" as *byte) == 0 ||
+            strcmp(name as *byte, "strtoll" as *byte) == 0 ||
+            strcmp(name as *byte, "strtoull" as *byte) == 0 ||
+            strcmp(name as *byte, "strtoul" as *byte) == 0 ||
+            strcmp(name as *byte, "qsort" as *byte) == 0 ||
+            strcmp(name as *byte, "bsearch" as *byte) == 0 {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+// 检查函数是否按 extern "libc" 原始名调用（用于模块限定调用名生成）
 fn is_extern_libc_function(codegen: &C99CodeGenerator, func_name: &byte) i32 {
     if codegen == null || func_name == null {
         return 0;
     }
     const fn_decl: &ASTNode = find_function_decl_c99(codegen, func_name);
-    if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL {
-        if fn_decl.fn_decl_extern_lib_name != null {
-            return 1;
-        }
+    if should_use_raw_libc_symbol_name(codegen, fn_decl) != 0 {
+        return 1;
     }
     return 0;
 }
@@ -273,7 +306,7 @@ fn get_export_function_c_name(codegen: &C99CodeGenerator, name: &byte, filename:
     return result;
 }
 
-// 全局函数在 C 中的名称（export 函数带模块前缀，但 extern "libc" fn 除外）
+// 全局函数在 C 中的名称（export 函数带模块前缀；仅原始 libc 符号名保持裸名）
 fn get_c_name_for_global_function(codegen: &C99CodeGenerator, name: &byte, for_definition: i32) &byte {
     if name == null {
         return get_safe_c_identifier(codegen, (" " as *byte) as &byte);
@@ -285,8 +318,8 @@ fn get_c_name_for_global_function(codegen: &C99CodeGenerator, name: &byte, for_d
             if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_name != null &&
                strcmp(d.fn_decl_name as *byte, name as *byte) == 0 &&
                d.fn_decl_is_export != 0 && d.filename != null {
-                // extern "libc" fn 不添加模块前缀
-                if d.fn_decl_extern_lib_name != null {
+                // 仅原始 libc 符号使用裸名（例如 extern "libc" 无函数体，或 --nostdlib 下带函数体）
+                if should_use_raw_libc_symbol_name(codegen, d) != 0 {
                     return get_safe_c_identifier(codegen, name);
                 }
                 return get_export_function_c_name(codegen, name, d.filename);
@@ -414,9 +447,11 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     
     const extern_lib_name: &byte = fn_decl.fn_decl_extern_lib_name;  // extern "libc" fn 的库名
     
-    // extern "libc" fn 不添加模块前缀，直接使用原始函数名
+    const use_raw_libc_name: i32 = should_use_raw_libc_symbol_name(codegen, fn_decl);
+    // hosted 下 extern "libc" 带函数体改为模块前缀名，避免与系统 libc 原型冲突
     var func_name: &byte = get_c_name_for_global_function(codegen, fn_decl.fn_decl_name, 1);
-    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null && extern_lib_name == null {
+    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null &&
+        (extern_lib_name == null || use_raw_libc_name == 0) {
         func_name = get_export_function_c_name(codegen, fn_decl.fn_decl_name, fn_decl.filename);
     }
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;
@@ -658,9 +693,11 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     const orig_name: &byte = fn_decl.fn_decl_name;
     const extern_lib_name: &byte = fn_decl.fn_decl_extern_lib_name;  // extern "libc" fn 的库名
     
-    // extern "libc" fn 不添加模块前缀，直接使用原始函数名
+    const use_raw_libc_name: i32 = should_use_raw_libc_symbol_name(codegen, fn_decl);
+    // hosted 下 extern "libc" 带函数体改为模块前缀名，避免与系统 libc 原型冲突
     var func_name: &byte = get_c_name_for_global_function(codegen, orig_name, 1);
-    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null && extern_lib_name == null {
+    if fn_decl.fn_decl_is_export != 0 && fn_decl.filename != null &&
+        (extern_lib_name == null || use_raw_libc_name == 0) {
         func_name = get_export_function_c_name(codegen, orig_name, fn_decl.filename);
     }
     const return_type: &ASTNode = fn_decl.fn_decl_return_type;

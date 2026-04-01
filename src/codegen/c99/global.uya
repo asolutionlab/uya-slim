@@ -362,8 +362,21 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
             }
             if pdecl != null && pdecl.type == ASTNodeType.AST_EXTERN_VAR_DECL && pdecl.extern_var_decl_name != null &&
                 strcmp(pdecl.extern_var_decl_name as *byte, name as *byte) == 0 {
-                // export var / export const 等使用 AST_EXTERN_VAR_DECL，符号名与 gen_extern_var_decl 一致（无模块前缀）
-                result = get_safe_c_identifier(codegen, pdecl.extern_var_decl_name);
+                // 与 gen_extern_var_decl 保持一致：仅 lib/libc 与 lib/syscall 的导出变量使用模块前缀名。
+                var use_prefixed_name: i32 = 0;
+                if pdecl.extern_var_decl_is_export != 0 && pdecl.filename != null {
+                    if strstr(pdecl.filename as *byte, "/lib/libc/" as *byte) != null ||
+                        strstr(pdecl.filename as *byte, "\\lib\\libc\\" as *byte) != null ||
+                        strstr(pdecl.filename as *byte, "/lib/syscall/" as *byte) != null ||
+                        strstr(pdecl.filename as *byte, "\\lib\\syscall\\" as *byte) != null {
+                        use_prefixed_name = 1;
+                    }
+                }
+                if use_prefixed_name != 0 {
+                    result = get_c_name_for_global_constant(codegen, pdecl.extern_var_decl_name, pdecl.filename, pdecl.extern_var_decl_is_export);
+                } else {
+                    result = get_safe_c_identifier(codegen, pdecl.extern_var_decl_name);
+                }
                 pdi = codegen.program_node.program_decl_count;
             }
             pdi = pdi + 1;
@@ -404,6 +417,19 @@ fn gen_extern_var_decl(codegen: &C99CodeGenerator, node: &ASTNode) void {
     const is_extern: i32 = node.extern_var_decl_is_extern;
     const is_export: i32 = node.extern_var_decl_is_export;
     const extern_lib_name: &byte = node.extern_var_decl_extern_lib_name;
+    var use_prefixed_name: i32 = 0;
+    if is_export != 0 && node.filename != null {
+        if strstr(node.filename as *byte, "/lib/libc/" as *byte) != null ||
+            strstr(node.filename as *byte, "\\lib\\libc\\" as *byte) != null ||
+            strstr(node.filename as *byte, "/lib/syscall/" as *byte) != null ||
+            strstr(node.filename as *byte, "\\lib\\syscall\\" as *byte) != null {
+            use_prefixed_name = 1;
+        }
+    }
+    var var_name: &byte = name;
+    if use_prefixed_name != 0 {
+        var_name = get_c_name_for_global_constant(codegen, name, node.filename, is_export);
+    }
 
     if name == null || var_type == null {
         return;
@@ -412,7 +438,7 @@ fn gen_extern_var_decl(codegen: &C99CodeGenerator, node: &ASTNode) void {
     // 检查变量是否已经生成过（避免重复定义）
     var i: i32 = 0;
     while i < codegen.global_variable_count {
-        if codegen.global_variables[i].name != null && str_equals(codegen.global_variables[i].name, name) != 0 {
+        if codegen.global_variables[i].name != null && str_equals(codegen.global_variables[i].name, var_name) != 0 {
             return;  // 已生成，跳过
         }
         i = i + 1;
@@ -434,16 +460,16 @@ fn gen_extern_var_decl(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if is_extern != 0 && init_expr == null {
         // extern 声明（无初始化）
         if is_const != 0 {
-            fprintf(codegen.emit_stream as *void, "extern const %s %s;\n" as *byte, type_c as *byte, name as *byte);
+            fprintf(codegen.emit_stream as *void, "extern const %s %s;\n" as *byte, type_c as *byte, var_name as *byte);
         } else {
-            fprintf(codegen.emit_stream as *void, "extern %s %s;\n" as *byte, type_c as *byte, name as *byte);
+            fprintf(codegen.emit_stream as *void, "extern %s %s;\n" as *byte, type_c as *byte, var_name as *byte);
         }
     } else {
         // 变量定义（有初始化）
         if is_const != 0 {
-            fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, name as *byte);
+            fprintf(codegen.emit_stream as *void, "const %s %s" as *byte, type_c as *byte, var_name as *byte);
         } else {
-            fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, name as *byte);
+            fprintf(codegen.emit_stream as *void, "%s %s" as *byte, type_c as *byte, var_name as *byte);
         }
 
         if init_expr != null {
@@ -455,7 +481,7 @@ fn gen_extern_var_decl(codegen: &C99CodeGenerator, node: &ASTNode) void {
 
         // 添加到全局变量表
         if codegen.global_variable_count < C99_MAX_GLOBAL_VARS {
-            codegen.global_variables[codegen.global_variable_count].name = name;
+            codegen.global_variables[codegen.global_variable_count].name = var_name;
             codegen.global_variables[codegen.global_variable_count].original_name = name;
             codegen.global_variables[codegen.global_variable_count].type_c = type_c;
             codegen.global_variables[codegen.global_variable_count].is_const = is_const;
@@ -526,8 +552,9 @@ export fn c99_mirror_emit_extern_const_fwd(codegen: &C99CodeGenerator, program: 
                     di = di + 1;
                     continue;
                 }
-                // stdlib 与 time 均导出 CLOCKS_PER_SEC：C 中同名只能保留一种；镜像前向只保留非 clock_t（与单文件 uya.c 一致）
-                if cname != null && strcmp(cname as *byte, "CLOCKS_PER_SEC" as *byte) == 0 && strstr(tc as *byte, "clock_t" as *byte) != null {
+                // 某些项目会同时给 CLOCKS_PER_SEC 生成不同底层类型（如 int64_t 与 clock_t），
+                // 镜像前向声明中统一跳过，避免同名异型冲突。
+                if cname != null && strstr(cname as *byte, "CLOCKS_PER_SEC" as *byte) != null {
                     di = di + 1;
                     continue;
                 }
@@ -552,7 +579,15 @@ export fn c99_mirror_emit_extern_const_fwd(codegen: &C99CodeGenerator, program: 
                 di = di + 1;
                 continue;
             }
-            const cname: &byte = get_safe_c_identifier(codegen, decl.extern_var_decl_name);
+            var cname: &byte = get_safe_c_identifier(codegen, decl.extern_var_decl_name);
+            if decl.extern_var_decl_is_export != 0 && decl.filename != null {
+                if strstr(decl.filename as *byte, "/lib/libc/" as *byte) != null ||
+                    strstr(decl.filename as *byte, "\\lib\\libc\\" as *byte) != null ||
+                    strstr(decl.filename as *byte, "/lib/syscall/" as *byte) != null ||
+                    strstr(decl.filename as *byte, "\\lib\\syscall\\" as *byte) != null {
+                    cname = get_c_name_for_global_constant(codegen, decl.extern_var_decl_name, decl.filename, decl.extern_var_decl_is_export);
+                }
+            }
             const tc: &byte = c99_type_to_c(codegen, decl.extern_var_decl_var_type);
             if codegen.has_stdio_conflicts != 0 && cname != null &&
                 (strcmp(cname as *byte, "stdin" as *byte) == 0 || strcmp(cname as *byte, "stdout" as *byte) == 0 ||
@@ -560,7 +595,12 @@ export fn c99_mirror_emit_extern_const_fwd(codegen: &C99CodeGenerator, program: 
                 di = di + 1;
                 continue;
             }
-            if cname != null && strcmp(cname as *byte, "CLOCKS_PER_SEC" as *byte) == 0 && strstr(tc as *byte, "clock_t" as *byte) != null {
+            // libc/stdlib 的 RAND_MAX 与系统 stdlib.h 宏同名；镜像前向声明中跳过避免冲突。
+            if cname != null && strcmp(cname as *byte, "RAND_MAX" as *byte) == 0 {
+                di = di + 1;
+                continue;
+            }
+            if cname != null && strstr(cname as *byte, "CLOCKS_PER_SEC" as *byte) != null {
                 di = di + 1;
                 continue;
             }
