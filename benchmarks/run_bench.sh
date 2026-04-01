@@ -33,6 +33,8 @@ TOKIO_EXEC="/tmp/http_bench_tokio"
 WRK_THREADS=4
 WRK_CONNECTIONS=64
 WRK_DURATION=10s
+AB_KEEPALIVE_REQUESTS=20000
+AB_KEEPALIVE_CONCURRENCY=100
 
 # 颜色输出
 RED='\033[0;31m'
@@ -248,6 +250,70 @@ run_benchmark_safe() {
     return 0
 }
 
+run_keepalive_probe() {
+    local name="$1"
+    local exec="$2"
+    local port="$3"
+    local url="$4"
+
+    echo "--- $name Keep-Alive 验证（ab -k）---" >&2
+
+    local server_log="/tmp/http_bench_${name//[^a-zA-Z0-9_]/_}.keepalive.log"
+    rm -f "$server_log"
+    "$exec" >"$server_log" 2>&1 &
+    local pid=$!
+    sleep 2
+
+    if ! kill -0 "$pid" 2>/dev/null; then
+        echo "ERROR: $name Keep-Alive 验证服务启动失败" >&2
+        if [ -f "$server_log" ]; then
+            echo "---- $name Keep-Alive 启动日志 ----" >&2
+            sed -n '1,80p' "$server_log" >&2
+            echo "-----------------------" >&2
+        fi
+        return 1
+    fi
+
+    local output
+    output=$(ab -k -n "$AB_KEEPALIVE_REQUESTS" -c "$AB_KEEPALIVE_CONCURRENCY" "$url" 2>&1 || true)
+    echo "$output" >&2
+
+    local ka
+    local failed
+    local rps
+    ka=$(echo "$output" | awk '/Keep-Alive requests/ {print $3}' | tr -d '\r\n ')
+    failed=$(echo "$output" | awk '/Failed requests/ {print $3}' | tr -d '\r\n ')
+    rps=$(echo "$output" | awk '/Requests per second/ {print $4}' | tr -d '\r\n ')
+    if [ -z "$ka" ]; then ka=0; fi
+    if [ -z "$failed" ]; then failed=0; fi
+    if [ -z "$rps" ]; then rps=0; fi
+
+    pkill -9 -f "http_bench_async" 2>/dev/null || true
+    pkill -9 -f "http_bench_async_epoll" 2>/dev/null || true
+    pkill -9 -f "http_bench_go" 2>/dev/null || true
+    pkill -9 -f "http_bench_c" 2>/dev/null || true
+    pkill -9 -f "http_bench_tokio" 2>/dev/null || true
+    sleep 1
+
+    echo "$name Keep-Alive 结果: keep_alive=${ka}, failed=${failed}, rps=${rps}" >&2
+    echo "$name|$ka|$failed|$rps"
+}
+
+run_keepalive_probe_safe() {
+    local name="$1"
+    local exec="$2"
+    local port="$3"
+    local url="$4"
+    local result
+    if result=$(run_keepalive_probe "$name" "$exec" "$port" "$url"); then
+        echo "$result"
+        return 0
+    fi
+    log_err "$name Keep-Alive 验证失败，按 0 计入结果"
+    echo "$name|0|0|0"
+    return 0
+}
+
 # 生成 baseline.json
 save_baseline() {
     local uya_root_rps="$1"
@@ -353,18 +419,82 @@ main() {
     if [ -z "$go_rps" ]; then go_rps=0; fi
     if [ -z "$c_rps" ]; then c_rps=0; fi
 
-    # 对比
-    echo "=========================================="
-    log_info "基准测试对比结果"
+    echo ""
+    log_info "Keep-Alive 对比（ab -k -n${AB_KEEPALIVE_REQUESTS} -c${AB_KEEPALIVE_CONCURRENCY}）"
+    local uya_ka_result
+    local uya_epoll_ka_result
+    local go_ka_result
+    local c_ka_result
+    local tokio_ka_result
+    local tokio_ka=0
+    local tokio_ka_failed=0
+    local tokio_ka_rps=0
+    local uya_ka
+    local uya_epoll_ka
+    local go_ka
+    local c_ka
+    local uya_ka_failed
+    local uya_epoll_ka_failed
+    local go_ka_failed
+    local c_ka_failed
+    local uya_ka_rps
+    local uya_epoll_ka_rps
+    local go_ka_rps
+    local c_ka_rps
+    uya_ka_result=$(run_keepalive_probe_safe "Uya-async" "$UYA_ASYNC_EXEC" "$PORT" "$URL")
+    uya_epoll_ka_result=$(run_keepalive_probe_safe "Uya-async-epoll" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL")
+    go_ka_result=$(run_keepalive_probe_safe "Go" "$GO_EXEC" "$PORT" "$URL")
+    c_ka_result=$(run_keepalive_probe_safe "C" "$C_EXEC" "$PORT" "$URL")
+    if [ "$have_tokio" -eq 1 ]; then
+        tokio_ka_result=$(run_keepalive_probe_safe "Tokio" "$TOKIO_EXEC" "$PORT" "$URL")
+        tokio_ka=$(echo "$tokio_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
+        tokio_ka_failed=$(echo "$tokio_ka_result" | awk -F'|' '{print $3}' | tr -d '\r\n ')
+        tokio_ka_rps=$(echo "$tokio_ka_result" | awk -F'|' '{print $4}' | tr -d '\r\n ')
+        if [ -z "$tokio_ka" ]; then tokio_ka=0; fi
+        if [ -z "$tokio_ka_failed" ]; then tokio_ka_failed=0; fi
+        if [ -z "$tokio_ka_rps" ]; then tokio_ka_rps=0; fi
+    fi
+    uya_ka=$(echo "$uya_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
+    uya_epoll_ka=$(echo "$uya_epoll_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
+    go_ka=$(echo "$go_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
+    c_ka=$(echo "$c_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
+    uya_ka_failed=$(echo "$uya_ka_result" | awk -F'|' '{print $3}' | tr -d '\r\n ')
+    uya_epoll_ka_failed=$(echo "$uya_epoll_ka_result" | awk -F'|' '{print $3}' | tr -d '\r\n ')
+    go_ka_failed=$(echo "$go_ka_result" | awk -F'|' '{print $3}' | tr -d '\r\n ')
+    c_ka_failed=$(echo "$c_ka_result" | awk -F'|' '{print $3}' | tr -d '\r\n ')
+    uya_ka_rps=$(echo "$uya_ka_result" | awk -F'|' '{print $4}' | tr -d '\r\n ')
+    uya_epoll_ka_rps=$(echo "$uya_epoll_ka_result" | awk -F'|' '{print $4}' | tr -d '\r\n ')
+    go_ka_rps=$(echo "$go_ka_result" | awk -F'|' '{print $4}' | tr -d '\r\n ')
+    c_ka_rps=$(echo "$c_ka_result" | awk -F'|' '{print $4}' | tr -d '\r\n ')
+    if [ -z "$uya_ka" ]; then uya_ka=0; fi
+    if [ -z "$uya_epoll_ka" ]; then uya_epoll_ka=0; fi
+    if [ -z "$go_ka" ]; then go_ka=0; fi
+    if [ -z "$c_ka" ]; then c_ka=0; fi
+    if [ -z "$uya_ka_failed" ]; then uya_ka_failed=0; fi
+    if [ -z "$uya_epoll_ka_failed" ]; then uya_epoll_ka_failed=0; fi
+    if [ -z "$go_ka_failed" ]; then go_ka_failed=0; fi
+    if [ -z "$c_ka_failed" ]; then c_ka_failed=0; fi
+    if [ -z "$uya_ka_rps" ]; then uya_ka_rps=0; fi
+    if [ -z "$uya_epoll_ka_rps" ]; then uya_epoll_ka_rps=0; fi
+    if [ -z "$go_ka_rps" ]; then go_ka_rps=0; fi
+    if [ -z "$c_ka_rps" ]; then c_ka_rps=0; fi
+
+    log_info "统一对比结果"
     echo "=========================================="
     if [ "$have_tokio" -eq 1 ]; then
         printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "指标" "Uya-async" "Uya-epoll" "Go" "C" "Tokio"
         echo "|--------------------|--------------|--------------|--------------|--------------|--------------|"
-        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "QPS" "${uya_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}" "${tokio_rps:-0}"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "QPS(wrk)" "${uya_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}" "${tokio_rps:-0}"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-Req(ab -k)" "${uya_ka}" "${uya_epoll_ka}" "${go_ka}" "${c_ka}" "${tokio_ka}"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-Failed" "${uya_ka_failed}" "${uya_epoll_ka_failed}" "${go_ka_failed}" "${c_ka_failed}" "${tokio_ka_failed}"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-RPS(ab -k)" "${uya_ka_rps}" "${uya_epoll_ka_rps}" "${go_ka_rps}" "${c_ka_rps}" "${tokio_ka_rps}"
     else
         printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "指标" "Uya-async" "Uya-epoll" "Go" "C"
         echo "|--------------------|----------------|----------------|----------------|----------------|"
-        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "QPS" "${uya_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "QPS(wrk)" "${uya_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "KA-Req(ab -k)" "${uya_ka}" "${uya_epoll_ka}" "${go_ka}" "${c_ka}"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "KA-Failed" "${uya_ka_failed}" "${uya_epoll_ka_failed}" "${go_ka_failed}" "${c_ka_failed}"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "KA-RPS(ab -k)" "${uya_ka_rps}" "${uya_epoll_ka_rps}" "${go_ka_rps}" "${c_ka_rps}"
     fi
     echo "=========================================="
 
