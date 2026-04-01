@@ -46,6 +46,7 @@ const C99_MAX_SIMD_STRUCTS: i32 = 128;
 const C99_MAX_MONO_INSTANCES: i32 = 1024;
 const C99_CHECKER_MAX_MONO_INSTANCES: i32 = 512;  // checker.mono_instances 数组大小
 const C99_MAX_ERROR_IDS: i32 = 256;
+const C99_ASYNC_MAX_AWAITS: i32 = 4096;
 const C99_GENERIC_NAME_BUF_SIZE: i32 = 128;
 const C99_MAX_INTERFACE_METHODS: i32 = 128;
 const C99_TYPE_ARG_BUF_SIZE: i32 = 256;
@@ -308,12 +309,14 @@ struct C99CodeGenerator {
     async_param_count: i32,               // 捕获参数数量
     async_loop_var_name: &byte,           // 循环内持久化变量名（如 "total"），null 表示无
     async_loop_var_c: &byte,              // 对应的 C 表达式（如 "s->_uya_total"）
-    async_bind_names: [&byte: 256],        // await 绑定变量名（如 "n", "written"）
+    async_bind_names: [&byte: C99_ASYNC_MAX_AWAITS], // await 绑定变量名（如 "n", "written"）
     async_bind_count: i32,               // await 绑定变量数量
-    async_collect_operands: [&ASTNode: 256],
-    async_collect_names: [&byte: 256],
-    async_collect_types: [&ASTNode: 256],
-    async_collect_count: i32, // 实际支持最多 256 个 await
+    async_collect_operands: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    async_collect_names: [&byte: C99_ASYNC_MAX_AWAITS],
+    async_collect_types: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    async_collect_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    async_collect_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS],
+    async_collect_count: i32, // 实际支持最多 C99_ASYNC_MAX_AWAITS 个 await
     async_collect_ret_expr: &ASTNode,
     async_collect_has_loop: i32,
     async_state_size: i32,  // 编译期计算的状态机近似字节数；<=0 表示未知或需堆分配

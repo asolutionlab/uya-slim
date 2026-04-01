@@ -318,6 +318,11 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &CompilerArena, output: &v
     // async 状态机参数捕获
     codegen.async_state_var = null;
     codegen.async_param_count = 0;
+    codegen.async_bind_count = 0;
+    codegen.async_collect_count = 0;
+    codegen.async_collect_ret_expr = null;
+    codegen.async_collect_has_loop = 0;
+    codegen.async_local_count = 0;
     codegen.async_loop_var_name = null;
     codegen.async_loop_var_c = null;
     codegen.async_state_size = 0;

@@ -15,11 +15,16 @@ cd "$SCRIPT_DIR"
 UYA_BIN="${SCRIPT_DIR}/../bin/uya"
 GO_SRC="${SCRIPT_DIR}/http_bench.go"
 UYA_ASYNC_SRC="${SCRIPT_DIR}/http_bench_async.uya"
+UYA_ASYNC_EPOLL_SRC="${SCRIPT_DIR}/http_bench_async_epoll.uya"
+UYA_ASYNC_ENTRY="http_bench_async.uya"
+UYA_ASYNC_EPOLL_ENTRY="http_bench_async_epoll.uya"
 C_SRC="${SCRIPT_DIR}/http_bench.c"
+export UYA_ROOT="${UYA_ROOT:-${SCRIPT_DIR}/../lib/}"
 
 # 编译输出
 GO_EXEC="/tmp/http_bench_go"
 UYA_ASYNC_EXEC="/tmp/http_bench_async"
+UYA_ASYNC_EPOLL_EXEC="/tmp/http_bench_async_epoll"
 C_EXEC="/tmp/http_bench_c"
 TOKIO_DIR="${SCRIPT_DIR}/http_bench_tokio"
 TOKIO_EXEC="/tmp/http_bench_tokio"
@@ -87,9 +92,46 @@ build_uya_async() {
         log_err "找不到 Uya 编译器: $UYA_BIN"
         exit 1
     fi
-    "$UYA_BIN" build "$UYA_ASYNC_SRC" -o /tmp/http_bench_async.c --c99 >/dev/null 2>&1
-    cc -std=c99 -no-pie -O2 -o "$UYA_ASYNC_EXEC" /tmp/http_bench_async.c -lm
+    if [ ! -f "$UYA_ASYNC_SRC" ]; then
+        log_err "找不到 Uya async 源文件: $UYA_ASYNC_SRC"
+        exit 1
+    fi
+    if ! "$UYA_BIN" build "$UYA_ASYNC_ENTRY" -o /tmp/http_bench_async.c --c99 >/tmp/uya_async_build.log 2>&1; then
+        log_err "Uya async 编译失败，日志:"
+        cat /tmp/uya_async_build.log >&2
+        exit 1
+    fi
+    if ! cc -std=c99 -no-pie -O2 -fno-builtin -o "$UYA_ASYNC_EXEC" /tmp/http_bench_async.c -lm >/tmp/uya_async_cc.log 2>&1; then
+        log_err "Uya async C 编译失败，日志:"
+        cat /tmp/uya_async_cc.log >&2
+        exit 1
+    fi
     log_info "Uya async 版本编译完成: $UYA_ASYNC_EXEC"
+}
+
+# 编译 Uya async epoll 版本
+build_uya_async_epoll() {
+    log_info "编译 Uya async epoll HTTP 服务器..."
+    if [ ! -f "$UYA_BIN" ]; then
+        log_err "找不到 Uya 编译器: $UYA_BIN"
+        exit 1
+    fi
+    if [ ! -f "$UYA_ASYNC_EPOLL_SRC" ]; then
+        log_err "找不到 Uya async epoll 源文件: $UYA_ASYNC_EPOLL_SRC"
+        exit 1
+    fi
+    # 这里使用 --c99 直出路径，和 verify_http_bench_async_epoll_runtime.sh 保持一致，避免 build 子命令路径差异
+    if ! "$UYA_BIN" --c99 "$UYA_ASYNC_EPOLL_ENTRY" -o /tmp/http_bench_async_epoll.c >/tmp/uya_async_epoll_build.log 2>&1; then
+        log_err "Uya async epoll 编译失败，日志:"
+        cat /tmp/uya_async_epoll_build.log >&2
+        exit 1
+    fi
+    if ! cc -std=c99 -no-pie -O2 -fno-builtin -o "$UYA_ASYNC_EPOLL_EXEC" /tmp/http_bench_async_epoll.c -lm >/tmp/uya_async_epoll_cc.log 2>&1; then
+        log_err "Uya async epoll C 编译失败，日志:"
+        cat /tmp/uya_async_epoll_cc.log >&2
+        exit 1
+    fi
+    log_info "Uya async epoll 版本编译完成: $UYA_ASYNC_EPOLL_EXEC"
 }
 
 # 编译 Go 版本
@@ -141,13 +183,20 @@ run_benchmark() {
     echo "--- $name 基准测试 ---" >&2
 
     # 启动服务器
-    "$exec" &
+    local server_log="/tmp/http_bench_${name//[^a-zA-Z0-9_]/_}.server.log"
+    rm -f "$server_log"
+    "$exec" >"$server_log" 2>&1 &
     local pid=$!
     sleep 2
 
     # 检查服务器是否运行
     if ! kill -0 "$pid" 2>/dev/null; then
         echo "ERROR: $name 服务器启动失败" >&2
+        if [ -f "$server_log" ]; then
+            echo "---- $name 启动日志 ----" >&2
+            sed -n '1,80p' "$server_log" >&2
+            echo "-----------------------" >&2
+        fi
         return 1
     fi
 
@@ -164,6 +213,7 @@ run_benchmark() {
 
     # 清理服务器（Uya async 会 fork 子进程，需要用 pkill）
     pkill -9 -f "http_bench_async" 2>/dev/null || true
+    pkill -9 -f "http_bench_async_epoll" 2>/dev/null || true
     pkill -9 -f "http_bench_go" 2>/dev/null || true
     pkill -9 -f "http_bench_c" 2>/dev/null || true
     pkill -9 -f "http_bench_tokio" 2>/dev/null || true
@@ -183,12 +233,28 @@ run_benchmark() {
     echo "$name|$req|$count|$dur|$p50|$p95|$p99|$rps"
 }
 
+run_benchmark_safe() {
+    local name="$1"
+    local exec="$2"
+    local port="$3"
+    local url="$4"
+    local result
+    if result=$(run_benchmark "$name" "$exec" "$port" "$url"); then
+        echo "$result"
+        return 0
+    fi
+    log_err "$name 基准测试失败，按 0 计入结果"
+    echo "$name|0|0|0|0|0|0|0"
+    return 0
+}
+
 # 生成 baseline.json
 save_baseline() {
     local uya_root_rps="$1"
-    local go_root_rps="$2"
-    local c_root_rps="$3"
-    local tokio_root_rps="$4"
+    local uya_epoll_root_rps="$2"
+    local go_root_rps="$3"
+    local c_root_rps="$4"
+    local tokio_root_rps="$5"
     local timestamp
     timestamp=$(date -Iseconds)
 
@@ -213,6 +279,7 @@ save_baseline() {
   "results": {
     "root": {
       "uya_async_qps": ${uya_root_rps:-0},
+        "uya_async_epoll_qps": ${uya_epoll_root_rps:-0},
       "go_qps": ${go_root_rps:-0},
       "c_qps": ${c_root_rps:-0},
       "tokio_qps": ${tokio_root_rps:-0}
@@ -234,6 +301,7 @@ main() {
 
     # 编译
     build_uya_async
+    build_uya_async_epoll
     build_go
     build_c
     local have_tokio=0
@@ -253,17 +321,20 @@ main() {
     local uya_result
     local go_result
     local c_result
+    local uya_epoll_result
     local tokio_result
     local tokio_rps=0
 
-    uya_result=$(run_benchmark "Uya-async" "$UYA_ASYNC_EXEC" "$PORT" "$URL")
+    uya_result=$(run_benchmark_safe "Uya-async" "$UYA_ASYNC_EXEC" "$PORT" "$URL")
     sleep 1
-    go_result=$(run_benchmark "Go" "$GO_EXEC" "$PORT" "$URL")
+    uya_epoll_result=$(run_benchmark_safe "Uya-async-epoll" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL")
     sleep 1
-    c_result=$(run_benchmark "C" "$C_EXEC" "$PORT" "$URL")
+    go_result=$(run_benchmark_safe "Go" "$GO_EXEC" "$PORT" "$URL")
+    sleep 1
+    c_result=$(run_benchmark_safe "C" "$C_EXEC" "$PORT" "$URL")
     sleep 1
     if [ "$have_tokio" -eq 1 ]; then
-        tokio_result=$(run_benchmark "Tokio" "$TOKIO_EXEC" "$PORT" "$URL")
+        tokio_result=$(run_benchmark_safe "Tokio" "$TOKIO_EXEC" "$PORT" "$URL")
         tokio_rps=$(echo "$tokio_result" | awk -F'|' '{print $8}')
         if [ -z "$tokio_rps" ]; then tokio_rps=0; fi
     fi
@@ -272,10 +343,13 @@ main() {
     local uya_rps
     local go_rps
     local c_rps
-    uya_rps=$(echo "$uya_result" | awk -F'|' '{print $8}')
-    go_rps=$(echo "$go_result" | awk -F'|' '{print $8}')
-    c_rps=$(echo "$c_result" | awk -F'|' '{print $8}')
+    local uya_epoll_rps
+    uya_rps=$(echo "$uya_result" | awk -F'|' '{print $8}' | tr -d '\r\n ')
+    uya_epoll_rps=$(echo "$uya_epoll_result" | awk -F'|' '{print $8}' | tr -d '\r\n ')
+    go_rps=$(echo "$go_result" | awk -F'|' '{print $8}' | tr -d '\r\n ')
+    c_rps=$(echo "$c_result" | awk -F'|' '{print $8}' | tr -d '\r\n ')
     if [ -z "$uya_rps" ]; then uya_rps=0; fi
+    if [ -z "$uya_epoll_rps" ]; then uya_epoll_rps=0; fi
     if [ -z "$go_rps" ]; then go_rps=0; fi
     if [ -z "$c_rps" ]; then c_rps=0; fi
 
@@ -284,23 +358,23 @@ main() {
     log_info "基准测试对比结果"
     echo "=========================================="
     if [ "$have_tokio" -eq 1 ]; then
-        printf "| %-20s | %-12s | %-12s | %-12s | %-12s |\n" "指标" "Uya-async" "Go" "C" "Tokio"
-        echo "|--------------------|--------------|--------------|--------------|--------------|"
-        printf "| %-20s | %-12s | %-12s | %-12s | %-12s |\n" "QPS" "${uya_rps:-0}" "${go_rps:-0}" "${c_rps:-0}" "${tokio_rps:-0}"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "指标" "Uya-async" "Uya-epoll" "Go" "C" "Tokio"
+        echo "|--------------------|--------------|--------------|--------------|--------------|--------------|"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "QPS" "${uya_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}" "${tokio_rps:-0}"
     else
-        printf "| %-20s | %-15s | %-15s | %-15s |\n" "指标" "Uya-async" "Go" "C"
-        echo "|--------------------|-----------------|-----------------|-----------------|"
-        printf "| %-20s | %-15s | %-15s | %-15s |\n" "QPS" "${uya_rps:-0}" "${go_rps:-0}" "${c_rps:-0}"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "指标" "Uya-async" "Uya-epoll" "Go" "C"
+        echo "|--------------------|----------------|----------------|----------------|----------------|"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "QPS" "${uya_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}"
     fi
     echo "=========================================="
 
     # 保存基线（如果指定）
     if [ "$1" = "--baseline" ]; then
-        save_baseline "$uya_rps" "$go_rps" "$c_rps" "${tokio_rps:-0}"
+        save_baseline "$uya_rps" "$uya_epoll_rps" "$go_rps" "$c_rps" "${tokio_rps:-0}"
     fi
 
     # 清理
-    rm -f "$GO_EXEC" "$C_EXEC" "$UYA_ASYNC_EXEC" "$TOKIO_EXEC"
+    rm -f "$GO_EXEC" "$C_EXEC" "$UYA_ASYNC_EXEC" "$UYA_ASYNC_EPOLL_EXEC" "$TOKIO_EXEC"
 
     log_info "基准测试完成"
 }
