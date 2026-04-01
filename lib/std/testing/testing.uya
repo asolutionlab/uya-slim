@@ -140,10 +140,47 @@ export fn test_fail(name: &const byte) void {
     _test_failed = _test_failed + 1;
 }
 
+fn _print_i32_decimal(value: i32) void {
+    var digits: [byte: 16] = [];
+    var temp: i32 = value;
+    var len: usize = 0;
+
+    if temp == 0 {
+        digits[0] = 48 as byte;
+        digits[1] = 0 as byte;
+        printf("%s" as *byte, &digits[0]);
+        return;
+    }
+
+    if temp < 0 {
+        printf("-" as *byte);
+        temp = 0 - temp;
+    }
+
+    while temp > 0 {
+        digits[len] = (48 + (temp % 10)) as byte;
+        len = len + 1;
+        temp = temp / 10;
+    }
+
+    var out: [byte: 16] = [];
+    var i: usize = 0;
+    while i < len {
+        out[i] = digits[len - 1 - i];
+        i = i + 1;
+    }
+    out[len] = 0 as byte;
+    printf("%s" as *byte, &out[0]);
+}
+
 export fn test_suite_end() i32 {
     printf("\n=== Results ===\n");
-    printf("  Passed:  %d\n", _test_passed);
-    printf("  Failed:  %d\n", _test_failed);
+    printf("  Passed:  " as *byte);
+    _print_i32_decimal(_test_passed);
+    printf("\n" as *byte);
+    printf("  Failed:  " as *byte);
+    _print_i32_decimal(_test_failed);
+    printf("\n" as *byte);
     printf("==================\n");
     return _test_failed;
 }

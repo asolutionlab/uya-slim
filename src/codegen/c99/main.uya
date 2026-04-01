@@ -40,12 +40,45 @@ fn collect_stdlib_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode
                 if codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
                     const decl: &ASTNode = find_function_decl_c99(codegen, callee_name);
                     if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_extern_lib_name != null {
-                        // 有 extern "libc" 声明：根据参数/返回类型在 gen_call_expr 中设置 needs_*_h
-                        // 此处不再按名字猜测
+                        // 有 extern "libc" 声明：预收集阶段也按函数名补头文件需求，避免仅靠后续 gen_call_expr 过晚设置
+                        if is_string_function(callee_name) != 0 {
+                            codegen.needs_string_h = 1;
+                        } else if strcmp(callee_name as *byte, "malloc" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "free" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "calloc" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "realloc" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "abs" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "labs" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "strtoul" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "qsort" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "bsearch" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "exit" as *byte) == 0 {
+                            codegen.needs_stdlib_h = 1;
+                        } else if strcmp(callee_name as *byte, "printf" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "fprintf" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "sprintf" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "snprintf" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "vprintf" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "vfprintf" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "vsprintf" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "vsnprintf" as *byte) == 0 {
+                            codegen.needs_stdio_h = 1;
+                        }
                     } else {
                         // 无声明或非 extern "libc"：fallback 到名字检测
                         if is_string_function(callee_name) != 0 {
                             codegen.needs_string_h = 1;
+                        } else if strcmp(callee_name as *byte, "malloc" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "free" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "calloc" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "realloc" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "abs" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "labs" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "strtoul" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "qsort" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "bsearch" as *byte) == 0 ||
+                            strcmp(callee_name as *byte, "exit" as *byte) == 0 {
+                            codegen.needs_stdlib_h = 1;
                         }
                     }
                 }
@@ -56,10 +89,45 @@ fn collect_stdlib_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode
             // extern "libc" 函数的头文件检测由 gen_call_expr 驱动，此处仅处理非 extern 的模块调用
             if codegen.program_node != null && codegen.program_node.type == ASTNodeType.AST_PROGRAM {
                 const decl: &ASTNode = find_function_decl_c99(codegen, callee.member_access_field_name);
-                if decl == null || decl.type != ASTNodeType.AST_FN_DECL || decl.fn_decl_extern_lib_name == null {
+                if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_extern_lib_name != null {
+                    if is_string_function(callee.member_access_field_name) != 0 {
+                        codegen.needs_string_h = 1;
+                    } else if strcmp(callee.member_access_field_name as *byte, "malloc" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "free" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "calloc" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "realloc" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "abs" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "labs" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "strtoul" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "qsort" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "bsearch" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "exit" as *byte) == 0 {
+                        codegen.needs_stdlib_h = 1;
+                    } else if strcmp(callee.member_access_field_name as *byte, "printf" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "fprintf" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "sprintf" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "snprintf" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "vprintf" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "vfprintf" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "vsprintf" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "vsnprintf" as *byte) == 0 {
+                        codegen.needs_stdio_h = 1;
+                    }
+                } else {
                     // 无声明或非 extern "libc" 的模块调用：fallback 到名字检测
                     if is_string_function(callee.member_access_field_name) != 0 {
                         codegen.needs_string_h = 1;
+                    } else if strcmp(callee.member_access_field_name as *byte, "malloc" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "free" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "calloc" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "realloc" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "abs" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "labs" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "strtoul" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "qsort" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "bsearch" as *byte) == 0 ||
+                        strcmp(callee.member_access_field_name as *byte, "exit" as *byte) == 0 {
+                        codegen.needs_stdlib_h = 1;
                     }
                 }
             }
@@ -157,6 +225,9 @@ fn precollect_codegen_decl(codegen: &C99CodeGenerator, decl: &ASTNode, collect_h
         }
         if decl.type == ASTNodeType.AST_STRUCT_DECL {
             collect_stdlib_functions_from_node(codegen, decl);
+        }
+        if decl.type == ASTNodeType.AST_TEST_STMT && decl.test_stmt_body != null {
+            collect_stdlib_functions_from_node(codegen, decl.test_stmt_body);
         }
     }
     if decl.type == ASTNodeType.AST_USE_STMT || decl.type == ASTNodeType.AST_MACRO_DECL {
@@ -1371,6 +1442,15 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             if codegen.has_stdio_conflicts == 0 && is_bootstrap == 0 {
                 fputs("#include <stdio.h>\n" as *byte, codegen.emit_stream as *void);  // for standard I/O functions (printf, puts, etc.)
             }
+            if is_bootstrap == 0 {
+                fputs("#include <math.h>\n" as *byte, codegen.emit_stream as *void);
+                // 避免与 lib/libc/math.uya 里同名常量冲突（INFINITY/NAN/HUGE_VAL*）
+                fputs("#ifdef INFINITY\n#undef INFINITY\n#endif\n" as *byte, codegen.emit_stream as *void);
+                fputs("#ifdef NAN\n#undef NAN\n#endif\n" as *byte, codegen.emit_stream as *void);
+                fputs("#ifdef HUGE_VAL\n#undef HUGE_VAL\n#endif\n" as *byte, codegen.emit_stream as *void);
+                fputs("#ifdef HUGE_VALF\n#undef HUGE_VALF\n#endif\n" as *byte, codegen.emit_stream as *void);
+                fputs("#ifdef HUGE_VALL\n#undef HUGE_VALL\n#endif\n" as *byte, codegen.emit_stream as *void);
+            }
             // 添加 sys/resource.h 用于 setrlimit（堆栈大小设置）
             if codegen.stack_size > 0 {
                 fputs("#include <sys/resource.h>\n" as *byte, codegen.emit_stream as *void);  // for setrlimit
@@ -1432,22 +1512,64 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         var has_own_opendir: i32 = 0;
         var has_own_readdir: i32 = 0;
         var has_own_closedir: i32 = 0;
+        var has_decl_malloc: i32 = 0;
+        var has_decl_free: i32 = 0;
+        var has_decl_realloc: i32 = 0;
+        var has_decl_calloc: i32 = 0;
+        var has_decl_clock: i32 = 0;
+        var has_impl_malloc: i32 = 0;
+        var has_impl_free: i32 = 0;
+        var has_impl_realloc: i32 = 0;
+        var has_impl_calloc: i32 = 0;
+        var has_impl_clock: i32 = 0;
         var di: i32 = 0;
         while di < decl_count {
             const d: &ASTNode = ast.program_decls[di];
-            if d != null && d.type == ASTNodeType.AST_FN_DECL && d.fn_decl_body != null {
+            if d != null && d.type == ASTNodeType.AST_FN_DECL {
                 const n: &byte = d.fn_decl_name;
                 if n != null {
-                    if strcmp(n as *byte, "opendir" as *byte) == 0 {
+                    if strcmp(n as *byte, "malloc" as *byte) == 0 {
+                        has_decl_malloc = 1;
+                        if d.fn_decl_body != null { has_impl_malloc = 1; }
+                    } else if strcmp(n as *byte, "free" as *byte) == 0 {
+                        has_decl_free = 1;
+                        if d.fn_decl_body != null { has_impl_free = 1; }
+                    } else if strcmp(n as *byte, "realloc" as *byte) == 0 {
+                        has_decl_realloc = 1;
+                        if d.fn_decl_body != null { has_impl_realloc = 1; }
+                    } else if strcmp(n as *byte, "calloc" as *byte) == 0 {
+                        has_decl_calloc = 1;
+                        if d.fn_decl_body != null { has_impl_calloc = 1; }
+                    } else if strcmp(n as *byte, "clock" as *byte) == 0 {
+                        has_decl_clock = 1;
+                        if d.fn_decl_body != null { has_impl_clock = 1; }
+                    } else if d.fn_decl_body != null && strcmp(n as *byte, "opendir" as *byte) == 0 {
                         has_own_opendir = 1;
-                    } else if strcmp(n as *byte, "readdir" as *byte) == 0 {
+                    } else if d.fn_decl_body != null && strcmp(n as *byte, "readdir" as *byte) == 0 {
                         has_own_readdir = 1;
-                    } else if strcmp(n as *byte, "closedir" as *byte) == 0 {
+                    } else if d.fn_decl_body != null && strcmp(n as *byte, "closedir" as *byte) == 0 {
                         has_own_closedir = 1;
                     }
                 }
             }
             di = di + 1;
+        }
+        if is_bootstrap == 0 && codegen.freestanding == 0 {
+            if has_decl_malloc != 0 && has_impl_malloc == 0 {
+                fputs("extern void *malloc(size_t);\n" as *byte, codegen.emit_stream as *void);
+            }
+            if has_decl_free != 0 && has_impl_free == 0 {
+                fputs("extern void free(void *);\n" as *byte, codegen.emit_stream as *void);
+            }
+            if has_decl_realloc != 0 && has_impl_realloc == 0 {
+                fputs("extern void *realloc(void *, size_t);\n" as *byte, codegen.emit_stream as *void);
+            }
+            if has_decl_calloc != 0 && has_impl_calloc == 0 {
+                fputs("extern void *calloc(size_t, size_t);\n" as *byte, codegen.emit_stream as *void);
+            }
+            if has_decl_clock != 0 && has_impl_clock == 0 {
+                fputs("extern int64_t clock(void);\n" as *byte, codegen.emit_stream as *void);
+            }
         }
         if has_own_opendir == 0 && is_bootstrap == 0 && codegen.freestanding == 0 {
             fputs("extern void *opendir(const char *);\n" as *byte, codegen.emit_stream as *void);
@@ -1496,6 +1618,108 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("    while (s[len]) len++;\n" as *byte, codegen.emit_stream as *void);
         fputs("    return len;\n" as *byte, codegen.emit_stream as *void);
         fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+
+        fputs("// 打印 i32（--nostdlib 下避免依赖 printf 的 %d）\n" as *byte, codegen.emit_stream as *void);
+        fputs("static void uya_print_i32(int32_t value) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    char digits[16];\n" as *byte, codegen.emit_stream as *void);
+        fputs("    char out[16];\n" as *byte, codegen.emit_stream as *void);
+        fputs("    unsigned long len = 0;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    int32_t temp = value;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    if (temp == 0) { (void)uya_write(1, \"0\", 1); return; }\n" as *byte, codegen.emit_stream as *void);
+        fputs("    if (temp < 0) { (void)uya_write(1, \"-\", 1); temp = -temp; }\n" as *byte, codegen.emit_stream as *void);
+        fputs("    while (temp > 0) { digits[len++] = (char)('0' + (temp % 10)); temp /= 10; }\n" as *byte, codegen.emit_stream as *void);
+        fputs("    for (unsigned long i = 0; i < len; i++) out[i] = digits[len - 1 - i];\n" as *byte, codegen.emit_stream as *void);
+        fputs("    (void)uya_write(1, out, len);\n" as *byte, codegen.emit_stream as *void);
+        fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+
+        // 仅在未引入完整 libc 运行时时，补齐 --nostdlib 基础符号
+        // 避免与 lib/libc/stdio.uya、lib/libc/heap.uya 的实现重复定义
+        var has_printf_impl: i32 = 0;
+        var has_malloc_impl: i32 = 0;
+        var has_free_impl: i32 = 0;
+        var has_realloc_impl: i32 = 0;
+        var has_full_libc_runtime: i32 = 0;
+        var ns_i: i32 = 0;
+        while ns_i < decl_count {
+            const ns_decl: &ASTNode = ast.program_decls[ns_i];
+            if ns_decl != null && ns_decl.type == ASTNodeType.AST_FN_DECL &&
+                ns_decl.fn_decl_name != null && ns_decl.fn_decl_body != null {
+                if strcmp(ns_decl.fn_decl_name as *byte, "printf" as *byte) == 0 {
+                    has_printf_impl = 1;
+                } else if strcmp(ns_decl.fn_decl_name as *byte, "malloc" as *byte) == 0 {
+                    has_malloc_impl = 1;
+                } else if strcmp(ns_decl.fn_decl_name as *byte, "free" as *byte) == 0 {
+                    has_free_impl = 1;
+                } else if strcmp(ns_decl.fn_decl_name as *byte, "realloc" as *byte) == 0 {
+                    has_realloc_impl = 1;
+                } else if strcmp(ns_decl.fn_decl_name as *byte, "vfprintf" as *byte) == 0 ||
+                    strcmp(ns_decl.fn_decl_name as *byte, "calloc" as *byte) == 0 {
+                    has_full_libc_runtime = 1;
+                }
+            }
+            ns_i = ns_i + 1;
+        }
+
+        if has_full_libc_runtime == 0 {
+            if has_malloc_impl == 0 || has_free_impl == 0 || has_realloc_impl == 0 {
+                fputs("// brk syscall - 最小堆实现\n" as *byte, codegen.emit_stream as *void);
+                fputs("static unsigned long uya_brk(unsigned long addr) {\n" as *byte, codegen.emit_stream as *void);
+                fputs("    unsigned long ret;\n" as *byte, codegen.emit_stream as *void);
+                fputs("    __asm__ volatile (\"syscall\" : \"=a\"(ret) : \"a\"(12), \"D\"(addr) : \"rcx\", \"r11\", \"memory\");\n" as *byte, codegen.emit_stream as *void);
+                fputs("    return ret;\n" as *byte, codegen.emit_stream as *void);
+                fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+                fputs("static unsigned char *uya_heap_cur = (unsigned char *)0;\n" as *byte, codegen.emit_stream as *void);
+                fputs("static unsigned char *uya_heap_end = (unsigned char *)0;\n\n" as *byte, codegen.emit_stream as *void);
+            }
+
+            if has_malloc_impl == 0 {
+                fputs("void *malloc(size_t size) {\n" as *byte, codegen.emit_stream as *void);
+                fputs("    if (size == 0) size = 1;\n" as *byte, codegen.emit_stream as *void);
+                fputs("    size = (size + 15UL) & ~15UL;\n" as *byte, codegen.emit_stream as *void);
+                fputs("    if (uya_heap_cur == (unsigned char *)0) {\n" as *byte, codegen.emit_stream as *void);
+                fputs("        unsigned long cur = uya_brk(0);\n" as *byte, codegen.emit_stream as *void);
+                fputs("        if (cur == 0) return (void *)0;\n" as *byte, codegen.emit_stream as *void);
+                fputs("        uya_heap_cur = (unsigned char *)cur;\n" as *byte, codegen.emit_stream as *void);
+                fputs("        uya_heap_end = (unsigned char *)cur;\n" as *byte, codegen.emit_stream as *void);
+                fputs("    }\n" as *byte, codegen.emit_stream as *void);
+                fputs("    unsigned long need = (unsigned long)uya_heap_cur + size;\n" as *byte, codegen.emit_stream as *void);
+                fputs("    if ((unsigned char *)need > uya_heap_end) {\n" as *byte, codegen.emit_stream as *void);
+                fputs("        unsigned long target = need;\n" as *byte, codegen.emit_stream as *void);
+                fputs("        unsigned long got = uya_brk(target);\n" as *byte, codegen.emit_stream as *void);
+                fputs("        if (got < target) return (void *)0;\n" as *byte, codegen.emit_stream as *void);
+                fputs("        uya_heap_end = (unsigned char *)got;\n" as *byte, codegen.emit_stream as *void);
+                fputs("    }\n" as *byte, codegen.emit_stream as *void);
+                fputs("    void *p = (void *)uya_heap_cur;\n" as *byte, codegen.emit_stream as *void);
+                fputs("    uya_heap_cur += size;\n" as *byte, codegen.emit_stream as *void);
+                fputs("    return p;\n" as *byte, codegen.emit_stream as *void);
+                fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+            }
+
+            if has_free_impl == 0 {
+                fputs("void free(void *ptr) { (void)ptr; }\n\n" as *byte, codegen.emit_stream as *void);
+            }
+
+            if has_realloc_impl == 0 {
+                fputs("void *realloc(void *ptr, size_t new_size) {\n" as *byte, codegen.emit_stream as *void);
+                fputs("    if (ptr == (void *)0) return malloc(new_size);\n" as *byte, codegen.emit_stream as *void);
+                fputs("    if (new_size == 0) { free(ptr); return (void *)0; }\n" as *byte, codegen.emit_stream as *void);
+                fputs("    void *np = malloc(new_size);\n" as *byte, codegen.emit_stream as *void);
+                fputs("    if (np == (void *)0) return (void *)0;\n" as *byte, codegen.emit_stream as *void);
+                fputs("    __uya_memcpy(np, ptr, new_size);\n" as *byte, codegen.emit_stream as *void);
+                fputs("    return np;\n" as *byte, codegen.emit_stream as *void);
+                fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+            }
+
+            if has_printf_impl == 0 {
+                fputs("int32_t printf(uint8_t *fmt, ...) {\n" as *byte, codegen.emit_stream as *void);
+                fputs("    if (fmt == (uint8_t *)0) return -1;\n" as *byte, codegen.emit_stream as *void);
+                fputs("    unsigned long n = uya_strlen((const char *)fmt);\n" as *byte, codegen.emit_stream as *void);
+                fputs("    long w = uya_write(1, (const char *)fmt, n);\n" as *byte, codegen.emit_stream as *void);
+                fputs("    if (w < 0) return -1;\n" as *byte, codegen.emit_stream as *void);
+                fputs("    return (int32_t)w;\n" as *byte, codegen.emit_stream as *void);
+                fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+            }
+        }
         
         // 生成 _start 入口
         fputs("// _start - 自定义程序入口（无 C 标准库，内联汇编实现）\n" as *byte, codegen.emit_stream as *void);
@@ -3046,11 +3270,23 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         c99_mirror_emit_common(codegen);
         // 测试计数变量已在第八步 c 中定义
         fputs("int32_t main_main(void) {\n" as *byte, codegen.emit_stream as *void);
+        if codegen.freestanding == 0 && codegen.stack_size > 0 {
+            fprintf(codegen.emit_stream as *void, "    { struct rlimit rlim = { %dUL, %dUL }; if (setrlimit(RLIMIT_STACK, &rlim) != 0) { /* 忽略错误 */ } }\n" as *byte, codegen.stack_size * 1024, codegen.stack_size * 1024);
+        }
         fprintf(codegen.emit_stream as *void, "    printf(\"\\n=== Running %d tests ===\\n\");\n" as *byte, test_count);
         fputs("    uya_run_tests();\n" as *byte, codegen.emit_stream as *void);
         fputs("    printf(\"\\n=== Results ===\\n\");\n" as *byte, codegen.emit_stream as *void);
-        fputs("    printf(\"  Passed: %d\\n\", _test_passed);\n" as *byte, codegen.emit_stream as *void);
-        fputs("    printf(\"  Failed: %d\\n\", _test_failed);\n" as *byte, codegen.emit_stream as *void);
+        if codegen.is_nostdlib != 0 {
+            fputs("    printf(\"  Passed: \");\n" as *byte, codegen.emit_stream as *void);
+            fputs("    uya_print_i32(_test_passed);\n" as *byte, codegen.emit_stream as *void);
+            fputs("    printf(\"\\n\");\n" as *byte, codegen.emit_stream as *void);
+            fputs("    printf(\"  Failed: \");\n" as *byte, codegen.emit_stream as *void);
+            fputs("    uya_print_i32(_test_failed);\n" as *byte, codegen.emit_stream as *void);
+            fputs("    printf(\"\\n\");\n" as *byte, codegen.emit_stream as *void);
+        } else {
+            fputs("    printf(\"  Passed: %d\\n\", _test_passed);\n" as *byte, codegen.emit_stream as *void);
+            fputs("    printf(\"  Failed: %d\\n\", _test_failed);\n" as *byte, codegen.emit_stream as *void);
+        }
         fputs("    return _test_failed;\n" as *byte, codegen.emit_stream as *void);
         c99_emit_close_brace_newline(codegen);
     }

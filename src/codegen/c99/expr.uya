@@ -71,7 +71,7 @@ fn unsigned_type_for_wrapping(type_c: &byte) &byte {
 // 根据 C 类型字符串生成整数极值字面量（用于饱和运算）
 fn gen_saturate_limit_from_type_c(codegen: &C99CodeGenerator, type_c: &byte, is_max: i32) void {
     if type_c == null {
-        if is_max != 0 { fputs("2147483647" as *byte, codegen.emit_stream as *void); } else { fputs("(-2147483647-1)" as *byte, codegen.emit_stream as *void); }
+        if is_max != 0 { fputs("2147483647LL" as *byte, codegen.emit_stream as *void); } else { fputs("(-2147483647LL-1LL)" as *byte, codegen.emit_stream as *void); }
         return;
     }
     if strstr(type_c as *byte, "int8" as *byte) != null {
@@ -83,14 +83,14 @@ fn gen_saturate_limit_from_type_c(codegen: &C99CodeGenerator, type_c: &byte, is_
         return;
     }
     if strstr(type_c as *byte, "int32" as *byte) != null {
-        if is_max != 0 { fputs("2147483647" as *byte, codegen.emit_stream as *void); } else { fputs("(-2147483647-1)" as *byte, codegen.emit_stream as *void); }
+        if is_max != 0 { fputs("2147483647LL" as *byte, codegen.emit_stream as *void); } else { fputs("(-2147483647LL-1LL)" as *byte, codegen.emit_stream as *void); }
         return;
     }
     if strstr(type_c as *byte, "int64" as *byte) != null {
         if is_max != 0 { fputs("9223372036854775807LL" as *byte, codegen.emit_stream as *void); } else { fputs("(-9223372036854775807LL-1LL)" as *byte, codegen.emit_stream as *void); }
         return;
     }
-    if is_max != 0 { fputs("2147483647" as *byte, codegen.emit_stream as *void); } else { fputs("(-2147483647-1)" as *byte, codegen.emit_stream as *void); }
+    if is_max != 0 { fputs("2147483647LL" as *byte, codegen.emit_stream as *void); } else { fputs("(-2147483647LL-1LL)" as *byte, codegen.emit_stream as *void); }
 }
 
 // 根据整数类型与 max/min 生成 C 极值字面量（resolved_kind 为 TypeKind 值）
@@ -105,7 +105,7 @@ fn gen_int_limit_literal(codegen: &C99CodeGenerator, is_max: i32, resolved_kind:
     } else if k == TypeKind.TYPE_I16 {
         if is_max != 0 { fputs("32767" as *byte, codegen.emit_stream as *void); } else { fputs("(-32768)" as *byte, codegen.emit_stream as *void); }
     } else if k == TypeKind.TYPE_I32 {
-        if is_max != 0 { fputs("2147483647" as *byte, codegen.emit_stream as *void); } else { fputs("(-2147483647-1)" as *byte, codegen.emit_stream as *void); }
+        if is_max != 0 { fputs("2147483647LL" as *byte, codegen.emit_stream as *void); } else { fputs("(-2147483647LL-1LL)" as *byte, codegen.emit_stream as *void); }
     } else if k == TypeKind.TYPE_I64 {
         if is_max != 0 { fputs("9223372036854775807LL" as *byte, codegen.emit_stream as *void); } else { fputs("(-9223372036854775807LL-1LL)" as *byte, codegen.emit_stream as *void); }
     } else if k == TypeKind.TYPE_U8 || k == TypeKind.TYPE_BYTE {
@@ -239,7 +239,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             // i8, i16, i32 或无后缀：C 中 INT_MIN 用 (-2147483647-1)；用 @min 比较避免字面量溢出
             const i32_min_val: i32 = @min;
             if (val as i32) == i32_min_val {
-                fputs("(-2147483647-1)" as *byte, codegen.emit_stream as *void);
+                fputs("(-2147483647LL-1LL)" as *byte, codegen.emit_stream as *void);
             } else {
                 fprintf(codegen.emit_stream as *void, "%d" as *byte, val as i32);
             }
@@ -1598,6 +1598,12 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                     const cname: &byte = get_method_c_name(codegen, union_decl.union_decl_name, method_name);
                                     if cname != null {
                                         var prefix: &byte = "&" as *byte;
+                                        if method_fn.fn_decl_param_count > 0 && method_fn.fn_decl_params != null &&
+                                            method_fn.fn_decl_params[0] != null && method_fn.fn_decl_params[0].type == ASTNodeType.AST_VAR_DECL &&
+                                            method_fn.fn_decl_params[0].var_decl_type != null &&
+                                            method_fn.fn_decl_params[0].var_decl_type.type != ASTNodeType.AST_TYPE_POINTER {
+                                            prefix = "" as *byte;
+                                        }
                                         if strchr(obj_type_c as *byte, 42) != null { prefix = "" as *byte; }
                                         fprintf(codegen.emit_stream as *void, "%s(%s(" as *byte, cname as *byte, prefix);
                                         gen_expr(codegen, obj);
@@ -1653,6 +1659,12 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                     }
                                     if cname != null {
                                         var prefix: &byte = "&" as *byte;
+                                        if method_fn.fn_decl_param_count > 0 && method_fn.fn_decl_params != null &&
+                                            method_fn.fn_decl_params[0] != null && method_fn.fn_decl_params[0].type == ASTNodeType.AST_VAR_DECL &&
+                                            method_fn.fn_decl_params[0].var_decl_type != null &&
+                                            method_fn.fn_decl_params[0].var_decl_type.type != ASTNodeType.AST_TYPE_POINTER {
+                                            prefix = "" as *byte;
+                                        }
                                         if strchr(obj_type_c as *byte, 42) != null { prefix = "" as *byte; }
                                         fprintf(codegen.emit_stream as *void, "%s(%s(" as *byte, cname as *byte, prefix);
                                         gen_expr(codegen, obj);
@@ -6357,6 +6369,24 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         if codegen.expected_block_union_type != null && strstr(codegen.expected_block_union_type as *byte, "err_union_" as *byte) != null {
             res_type = codegen.expected_block_union_type;
             need_err_union_wrap = 1;
+        } else {
+            const mt: &byte = get_c_type_of_expr(codegen, expr);
+            if mt != null {
+                res_type = mt;
+            }
+        }
+        if codegen.expected_block_union_type == null || strstr(codegen.expected_block_union_type as *byte, "err_union_" as *byte) == null {
+            if res_type == null || strcmp(res_type as *byte, "void" as *byte) == 0 {
+                res_type = "int32_t" as &byte;
+            }
+        }
+        if codegen.expected_block_union_type == null || strstr(codegen.expected_block_union_type as *byte, "err_union_" as *byte) == null {
+            if res_type != null && strcmp(res_type as *byte, "int32_t" as *byte) == 0 && expr.match_expr_arm_count > 0 {
+                const t: &byte = get_c_type_of_expr(codegen, expr.match_expr_arms[0].result_expr);
+                if t != null && strcmp(t as *byte, "int32_t" as *byte) != 0 {
+                    res_type = t;
+                }
+            }
         } else if expr.match_expr_arm_count > 0 {
             const t: &byte = get_c_type_of_expr(codegen, expr.match_expr_arms[0].result_expr);
             if t != null && strcmp(t as *byte, "int32_t" as *byte) != 0 {
@@ -6459,6 +6489,7 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             fprintf(codegen.emit_stream as *void, "%sif (_uya_m%s_tag == %d) _uya_r = " as *byte, prefix as &byte, acc as &byte, idx);
                         }
                         var wrap_array_payload: i32 = 0;
+                        var wrap_array_src_name: &byte = null;
                         if need_err_union_wrap != 0 && res_type != null {
                             const wrap_result: &ASTNode = expr.match_expr_arms[i].result_expr;
                             if wrap_result != null && wrap_result.type == ASTNodeType.AST_BLOCK && wrap_result.block_stmts != null {
@@ -6485,6 +6516,7 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                             str_equals(ws.var_decl_name, last_expr.identifier_name) != 0 &&
                                             ws.var_decl_type != null && ws.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY {
                                             wrap_array_payload = 1;
+                                            wrap_array_src_name = last_expr.identifier_name;
                                             break;
                                         }
                                         wi = wi + 1;
@@ -6492,12 +6524,44 @@ fn gen_match_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                 }
                             }
                             if wrap_array_payload != 0 {
-                                fprintf(codegen.emit_stream as *void, "({ %s _uya_wrap = (%s){ .error_id = 0 }; __uya_memcpy(_uya_wrap.value, " as *byte, res_type as *byte, res_type as *byte);
-                                gen_expr(codegen, expr.match_expr_arms[i].result_expr);
-                                fputs(", sizeof(_uya_wrap.value)); _uya_wrap; })" as *byte, codegen.emit_stream as *void);
+                                if wrap_result != null && wrap_result.type == ASTNodeType.AST_BLOCK &&
+                                    wrap_result.block_stmts != null && wrap_array_src_name != null {
+                                    fprintf(codegen.emit_stream as *void, "({ %s _uya_wrap = (%s){ .error_id = 0 }; " as *byte, res_type as *byte, res_type as *byte);
+                                    var bi: i32 = 0;
+                                    while bi < wrap_result.block_stmt_count {
+                                        const bs: &ASTNode = wrap_result.block_stmts[bi];
+                                        // 末尾数组标识符仅作为块结果，不作为独立语句发射
+                                        if bs != null && bs.type == ASTNodeType.AST_IDENTIFIER &&
+                                            bs.identifier_name != null && str_equals(bs.identifier_name, wrap_array_src_name) != 0 {
+                                            bi = bi + 1;
+                                            continue;
+                                        }
+                                        if bs != null {
+                                            gen_stmt(codegen, bs);
+                                        }
+                                        bi = bi + 1;
+                                    }
+                                    fprintf(codegen.emit_stream as *void, "__uya_memcpy(_uya_wrap.value, %s, sizeof(_uya_wrap.value)); _uya_wrap; })" as *byte, wrap_array_src_name as *byte);
+                                } else {
+                                    // 兜底：保持旧路径
+                                    fprintf(codegen.emit_stream as *void, "({ %s _uya_wrap = (%s){ .error_id = 0 }; __uya_memcpy(_uya_wrap.value, " as *byte, res_type as *byte, res_type as *byte);
+                                    gen_expr(codegen, expr.match_expr_arms[i].result_expr);
+                                    fputs(", sizeof(_uya_wrap.value)); _uya_wrap; })" as *byte, codegen.emit_stream as *void);
+                                }
+                            } else if wrap_result != null && wrap_result.type == ASTNodeType.AST_ERROR_VALUE {
+                                fprintf(codegen.emit_stream as *void, "(%s){ .error_id = " as *byte, res_type as *byte);
+                                gen_expr(codegen, wrap_result);
+                                fputs(" } " as *byte, codegen.emit_stream as *void);
                             } else {
                                 fprintf(codegen.emit_stream as *void, "(%s){ .error_id = 0, .value = " as *byte, res_type as *byte);
+                                const wrap_payload_c: &byte = c99_err_union_match_bind_payload_c(codegen, res_type);
+                                if wrap_payload_c != null {
+                                    fprintf(codegen.emit_stream as *void, "(%s)(" as *byte, wrap_payload_c as *byte);
+                                }
                                 gen_expr(codegen, expr.match_expr_arms[i].result_expr);
+                                if wrap_payload_c != null {
+                                    fputs(")" as *byte, codegen.emit_stream as *void);
+                                }
                                 fputs(" } " as *byte, codegen.emit_stream as *void);
                             }
                         } else {
@@ -6769,13 +6833,11 @@ fn gen_catch_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         } else {
             is_void_payload = 0;
         }
-        if is_void_payload != 0 {
-            // !void 类型：不需要声明结果变量
-            fprintf(codegen.emit_stream as *void, "({ %s _uya_catch_tmp = " as *byte, union_c as *byte);
-        } else {
-            fprintf(codegen.emit_stream as *void, "({ %s _uya_catch_result; %s _uya_catch_tmp = " as *byte, payload_c as *byte, union_c as *byte);
-        }
+        fprintf(codegen.emit_stream as *void, "({ %s _uya_catch_tmp = " as *byte, union_c as *byte);
         gen_expr(codegen, operand);
+        if is_void_payload == 0 {
+            fputs("; __typeof__(_uya_catch_tmp.value) _uya_catch_result" as *byte, codegen.emit_stream as *void);
+        }
         fputs("; if (_uya_catch_tmp.error_id != 0) {\n" as *byte, codegen.emit_stream as *void);
         codegen.indent_level = codegen.indent_level + 1;
         if err_name != null {
@@ -7486,7 +7548,7 @@ fn gen_unary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             const nv: i64 = operand.number_value;
             const i32_min_val: i32 = @min;
             if (nv as i32) == i32_min_val {
-                fputs("(-2147483647-1)" as *byte, codegen.emit_stream as *void);
+                fputs("(-2147483647LL-1LL)" as *byte, codegen.emit_stream as *void);
                 return;
             }
         }

@@ -269,7 +269,6 @@ export struct StringBuf {
     /// - 无返回值。
     fn drop(self: StringBuf) void {
         // 由后端自动对字段按逆序执行 drop。
-        // 这里留空，避免对按值接收者字段触发重复/错误调用。
     },
 }
 

@@ -317,6 +317,7 @@ check: uya
 		HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" \
 		TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" \
 		TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" \
+		CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" \
 		RUNTIME_MODE=nostdlib LINK_MODE=static \
 		./tests/run_programs_parallel.sh --uya --c99 --hide-pass > /tmp/make_check_output.txt 2>&1; \
 	TEST_EXIT=$$?; \

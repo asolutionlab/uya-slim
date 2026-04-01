@@ -1015,6 +1015,9 @@ fn deep_copy_ast_internal(node: &ASTNode, ctx: &MacroExpandContext, filename: &b
         copy.string_literal_value = node.string_literal_value;
     } else if node.type == ASTNodeType.AST_CHAR {
         copy.char_literal_value = node.char_literal_value;
+    } else if node.type == ASTNodeType.AST_INT_LIMIT {
+        copy.int_limit_is_max = node.int_limit_is_max;
+        copy.int_limit_resolved_kind = node.int_limit_resolved_kind;
     } else if node.type == ASTNodeType.AST_IDENTIFIER {
         copy.identifier_name = node.identifier_name;
     } else if node.type == ASTNodeType.AST_BINARY_EXPR {
@@ -1528,6 +1531,9 @@ fn deep_copy_ast_simple(node: &ASTNode, arena: &CompilerArena, filename: &byte) 
         copy.string_literal_value = node.string_literal_value;
     } else if node.type == ASTNodeType.AST_CHAR {
         copy.char_literal_value = node.char_literal_value;
+    } else if node.type == ASTNodeType.AST_INT_LIMIT {
+        copy.int_limit_is_max = node.int_limit_is_max;
+        copy.int_limit_resolved_kind = node.int_limit_resolved_kind;
     } else if node.type == ASTNodeType.AST_IDENTIFIER {
         copy.identifier_name = node.identifier_name;
     } else if node.type == ASTNodeType.AST_BINARY_EXPR {

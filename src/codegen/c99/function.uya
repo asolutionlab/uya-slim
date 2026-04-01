@@ -1911,14 +1911,14 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                         codegen.current_function_return_type = effective_return_type;
                         if ret_expr != null {
                             if is_future_literal != 0 {
-                                fprintf(codegen.emit_stream as *void, "({ struct %s _uya_f = " as *byte, concrete_future_safe as *byte);
+                                fprintf(codegen.emit_stream as *void, "({ struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s)); if (_uya_box != (void*)0) { *_uya_box = " as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte);
                                 gen_expr(codegen, ret_expr);
-                                fprintf(codegen.emit_stream as *void, "; (%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&_uya_f }; })" as *byte, iface_c as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte);
+                                fprintf(codegen.emit_stream as *void, "; } (%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)_uya_box }; })" as *byte, iface_c as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte);
                             } else {
-                                fprintf(codegen.emit_stream as *void, "({ struct %s _uya_f = (struct %s){ .state = (%s){ ._tag = 1, .u = (%s){ .Ready = " as *byte,
-                                    concrete_future_safe as *byte, concrete_future_safe as *byte, inner_poll_ret_c as *byte, inner_poll_union_c as *byte);
+                                fprintf(codegen.emit_stream as *void, "({ struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s)); if (_uya_box != (void*)0) { *_uya_box = (struct %s){ .state = (%s){ ._tag = 1, .u = (%s){ .Ready = " as *byte,
+                                    concrete_future_safe as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte, inner_poll_ret_c as *byte, inner_poll_union_c as *byte);
                                 gen_expr(codegen, ret_expr);
-                                fprintf(codegen.emit_stream as *void, " } } }; (%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&_uya_f }; })" as *byte, iface_c as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte);
+                                fprintf(codegen.emit_stream as *void, " } } }; } (%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)_uya_box }; })" as *byte, iface_c as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte);
                             }
                         } else {
                             fprintf(codegen.emit_stream as *void, "(%s){ .vtable = (void*)0, .data = (void*)0 }" as *byte, iface_c as *byte);
@@ -2091,14 +2091,14 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                     codegen.current_function_return_type = effective_return_type;
                     if ret_expr != null {
                         if no_await_is_future_literal != 0 {
-                            fprintf(codegen.emit_stream as *void, "({ struct %s _uya_f = " as *byte, concrete_future_safe as *byte);
+                            fprintf(codegen.emit_stream as *void, "({ struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s)); if (_uya_box != (void*)0) { *_uya_box = " as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte);
                             gen_expr(codegen, ret_expr);
-                            fprintf(codegen.emit_stream as *void, "; (%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&_uya_f }; })" as *byte, iface_c as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte);
+                            fprintf(codegen.emit_stream as *void, "; } (%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)_uya_box }; })" as *byte, iface_c as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte);
                         } else {
-                            fprintf(codegen.emit_stream as *void, "({ struct %s _uya_f = (struct %s){ .state = (%s){ ._tag = 1, .u = (%s){ .Ready = " as *byte,
-                                concrete_future_safe as *byte, concrete_future_safe as *byte, inner_poll_ret_c as *byte, inner_poll_union_c as *byte);
+                            fprintf(codegen.emit_stream as *void, "({ struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s)); if (_uya_box != (void*)0) { *_uya_box = (struct %s){ .state = (%s){ ._tag = 1, .u = (%s){ .Ready = " as *byte,
+                                concrete_future_safe as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte, inner_poll_ret_c as *byte, inner_poll_union_c as *byte);
                             gen_expr(codegen, ret_expr);
-                            fprintf(codegen.emit_stream as *void, " } } }; (%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)&_uya_f }; })" as *byte, iface_c as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte);
+                            fprintf(codegen.emit_stream as *void, " } } }; } (%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)_uya_box }; })" as *byte, iface_c as *byte, concrete_future_safe as *byte, concrete_future_safe as *byte);
                         }
                     } else {
                         fprintf(codegen.emit_stream as *void, "(%s){ .vtable = (void*)0, .data = (void*)0 }" as *byte, iface_c as *byte);
@@ -2188,7 +2188,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             need_wrap = 1;
         }
     }
-    if fn_decl.fn_decl_is_export != 0 {
+    if fn_decl.fn_decl_is_export != 0 || codegen.split_enabled != 0 {
         fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, wrapper_ret_c as *byte, func_c_name as *byte);
     } else {
         // 多文件 C（split）：与 gen_function_prototype / 普通函数定义一致，不加 static，避免 uya_split_protos.h 中非 static 声明与本定义冲突
