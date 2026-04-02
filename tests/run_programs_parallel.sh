@@ -341,6 +341,13 @@ run_compiled_test_args() {
             echo "PASS:$base_name:预期编译失败" > "$result_file"
         else
             echo "FAIL:$base_name:编译失败(退出码:$compiler_exit)" > "$result_file"
+            # 并行任务的 stdout 可能交错，但在 CI 里能直接看到“具体报错行/信息”
+            # 额外把完整输出写入 log 便于二次定位。
+            local log_file="$BUILD_DIR/parallel_results/${base_name}.compiler_output.log"
+            echo "$compiler_output" > "$log_file" 2>/dev/null || true
+            echo "----- compiler output begin: $base_name (exit:$compiler_exit) -----"
+            echo "$compiler_output"
+            echo "----- compiler output end: $base_name -----"
         fi
         return
     fi
