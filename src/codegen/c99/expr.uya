@@ -128,7 +128,7 @@ fn c99_emit_string_interp_fill(codegen: &C99CodeGenerator, expr: &ASTNode, buf_n
         return;
     }
     const n: i32 = expr.string_interp_segment_count;
-    if n <= 0 || expr.string_interp_computed_size <= 0 {
+    if n <= 0 {
         return;
     }
     const fill_id: i32 = codegen.interp_fill_counter;
@@ -166,8 +166,32 @@ fn c99_emit_string_interp_fill(codegen: &C99CodeGenerator, expr: &ASTNode, buf_n
                     k = k + 1;
                 }
             } else {
-                fmt_buf[1] = 100;
-                j = 2;
+                // 默认插值格式：数值为 %d，但对字节指针/切片按 C 字符串 %s 输出。
+                // 注意：插值段最终通过 sprintf("%<fmt>", <expr>) 填入缓冲，因此这里要同时决定格式与参数形态。
+                const expr_c: &byte = get_c_type_of_expr(codegen, seg.expr);
+                var is_slice_u8: i32 = 0;
+                var is_byte_ptr: i32 = 0;
+
+                if expr_c != null && strstr(expr_c as *byte, "uya_slice_" as *byte) != null {
+                    // slice 在 C 中为 struct { .ptr, .len }，gen_print_expr 当前默认不对其做特殊处理，
+                    // 这里把默认格式改为 %s 并在 sprintf 参数处传入 `.ptr`。
+                    is_slice_u8 = 1;
+                } else if expr_c != null && strstr(expr_c as *byte, "*" as *byte) != null {
+                    // 指向字节的指针：const unsigned char* / const uint8_t* 等
+                    if strstr(expr_c as *byte, "uint8_t" as *byte) != null ||
+                       strstr(expr_c as *byte, "int8_t" as *byte) != null ||
+                       strstr(expr_c as *byte, "unsigned char" as *byte) != null {
+                        is_byte_ptr = 1;
+                    }
+                }
+
+                if is_slice_u8 != 0 || is_byte_ptr != 0 {
+                    fmt_buf[1] = 115; // 's'
+                    j = 2;
+                } else {
+                    fmt_buf[1] = 100; // 'd'
+                    j = 2;
+                }
             }
             if j >= 0 && j < FMT_BUF_SIZE {
                 fmt_buf[j] = 0;
@@ -175,7 +199,25 @@ fn c99_emit_string_interp_fill(codegen: &C99CodeGenerator, expr: &ASTNode, buf_n
             // 直接内联输出格式字符串
             c99_emit_indent(codegen);
             fprintf(codegen.emit_stream as *void, "_off_%d += sprintf(%s + _off_%d, \"%s\", " as *byte, fill_id, buf_name as *byte, fill_id, &fmt_buf[0] as *byte);
-            gen_expr(codegen, seg.expr);
+
+            // 按最终 fmt（此处仅处理默认 %s）决定 sprintf 参数应输出成何种表达式。
+            if fmt_buf[1] == 115 { // 's'
+                const expr_c3: &byte = get_c_type_of_expr(codegen, seg.expr);
+                if expr_c3 != null && strstr(expr_c3 as *byte, "uya_slice_" as *byte) != null {
+                    // slice struct
+                    fputs("(char *)(( " as *byte, codegen.emit_stream as *void);
+                    fputs(expr_c3 as *byte, codegen.emit_stream as *void);
+                    fputs(")" as *byte, codegen.emit_stream as *void);
+                    gen_expr(codegen, seg.expr);
+                    fputs(").ptr" as *byte, codegen.emit_stream as *void);
+                } else {
+                    // byte pointer
+                    fputs("(char *)" as *byte, codegen.emit_stream as *void);
+                    gen_expr(codegen, seg.expr);
+                }
+            } else {
+                gen_expr(codegen, seg.expr);
+            }
             fputs(");\n" as *byte, codegen.emit_stream as *void);
         }
         i = i + 1;
@@ -7172,6 +7214,44 @@ fn gen_print_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             const inner: &ASTNode = expr.print_expr;
             var fmt: &byte = null;
             var need_cast: i32 = 0;  // 是否需要 (char *) 转换
+
+            // 表达式场景（例如：const printed: i32 = @println("x=${s}");）
+            // 需要自己生成插值缓冲区；否则 gen_expr(AST_STRING_INTERP) 会在 string_interp_buf 为空时返回 (char*)0。
+            if inner.type == ASTNodeType.AST_STRING_INTERP && inner.string_interp_segment_count > 0 {
+                const temp_name_idx: i32 = codegen.interp_temp_counter;
+                codegen.interp_temp_counter = codegen.interp_temp_counter + 1;
+
+                var interp_size: i32 = inner.string_interp_computed_size;
+                if interp_size <= 0 {
+                    interp_size = 256;
+                }
+
+                // 使用 GCC statement-expression（({ ... })）让它在表达式位置也能返回值。
+                fputs("({" as *byte, codegen.emit_stream as *void);
+                fprintf(codegen.emit_stream as *void, "char __uya_interp_%d[%d];\n" as *byte, temp_name_idx, interp_size);
+
+                var name_buf: [byte: 32] = [];
+                snprintf(&name_buf[0] as *byte, 32, "__uya_interp_%d" as *byte, temp_name_idx);
+                c99_emit_string_interp_fill(codegen, inner, &name_buf[0] as &byte);
+
+                if codegen.is_nostdlib != 0 {
+                    // nostdlib 只支持写入字节；println 多写一个 '\n'
+                    fprintf(codegen.emit_stream as *void,
+                        "int __uya_interp_res = uya_write(1, (char *)__uya_interp_%d, uya_strlen((char *)__uya_interp_%d));\n" as *byte,
+                        temp_name_idx, temp_name_idx);
+                    if expr.type == ASTNodeType.AST_PRINTLN {
+                        fputs("uya_write(1, \"\\n\", 1);\n" as *byte, codegen.emit_stream as *void);
+                    }
+                    fputs("__uya_interp_res; })" as *byte, codegen.emit_stream as *void);
+                } else {
+                    if expr.type == ASTNodeType.AST_PRINTLN {
+                        fprintf(codegen.emit_stream as *void, "printf(\"%%s\\n\", __uya_interp_%d); })" as *byte, temp_name_idx);
+                    } else {
+                        fprintf(codegen.emit_stream as *void, "printf(\"%%s\", __uya_interp_%d); })" as *byte, temp_name_idx);
+                    }
+                }
+                return;
+            }
 
             // 根据表达式类型确定格式字符串
             if inner.type == ASTNodeType.AST_NUMBER {

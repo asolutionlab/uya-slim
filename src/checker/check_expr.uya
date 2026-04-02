@@ -37,6 +37,25 @@ fn copy_type(t: &Type) Type {
 
 // 插值格式说明符对应类型的最大输出宽度
 fn checker_interp_format_max_width(t: Type, spec: &byte) i32 {
+    // 字符串插值支持：对 &[const byte] / &[byte] 这种 slice，默认按 C 字符串 %s 输出
+    if t.kind == TypeKind.TYPE_SLICE {
+        // 如用户显式提供了格式说明符（如 :x / :d），当前仅实现默认 ${expr} 这条路径
+        if spec != null && spec[0] != 0 {
+            return -1;
+        }
+        if t.slice_element_type != null {
+            const ek: TypeKind = t.slice_element_type.kind;
+            if ek == TypeKind.TYPE_BYTE || ek == TypeKind.TYPE_I8 || ek == TypeKind.TYPE_U8 {
+                if t.slice_len > 0 {
+                    // slice_len 对应插值缓冲上限；要求 slice 包含终止 NUL 时语义正确
+                    return t.slice_len;
+                }
+                // 未知长度时给一个保守上界，避免 -1
+                return 18;
+            }
+        }
+        return -1;
+    }
     if t.kind == TypeKind.TYPE_I32 || t.kind == TypeKind.TYPE_U32 {
         if spec != null {
             var i: i32 = 0;

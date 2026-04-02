@@ -319,11 +319,16 @@ fn gen_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             // 特殊处理 @print/@println 中的字符串插值
             if (stmt.type == ASTNodeType.AST_PRINT || stmt.type == ASTNodeType.AST_PRINTLN) && stmt.print_expr != null {
                 const inner: &ASTNode = stmt.print_expr;
-                if inner.type == ASTNodeType.AST_STRING_INTERP && inner.string_interp_computed_size > 0 {
+                if inner.type == ASTNodeType.AST_STRING_INTERP && inner.string_interp_segment_count > 0 {
                     const temp_name_idx: i32 = codegen.interp_temp_counter;
                     codegen.interp_temp_counter = codegen.interp_temp_counter + 1;
+                    var interp_size: i32 = inner.string_interp_computed_size;
+                    if interp_size <= 0 {
+                        // computed_size 未必在所有阶段都可靠；给一个保守上限，保证插值填充能运行。
+                        interp_size = 256;
+                    }
                     c99_emit_indent(codegen);
-                    fprintf(codegen.emit_stream as *void, "char __uya_interp_%d[%d];\n" as *byte, temp_name_idx, inner.string_interp_computed_size);
+                    fprintf(codegen.emit_stream as *void, "char __uya_interp_%d[%d];\n" as *byte, temp_name_idx, interp_size);
                     var name_buf: [byte: 32] = [];
                     snprintf(&name_buf[0] as *byte, 32, "__uya_interp_%d" as *byte, temp_name_idx);
                     c99_emit_string_interp_fill(codegen, inner, &name_buf[0] as &byte);
