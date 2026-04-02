@@ -6,6 +6,7 @@
 // 模块路径：lib/std/collections/hashmap.uya → use std.collections.hashmap;
 
 use std.mem.allocator.IAllocator;
+use std.collections.vec.Vec;
 
 // ============================================================
 // 错误类型
@@ -329,5 +330,56 @@ HashMap {
 
     fn len(self: &Self) i32 {
         return self._len;
+    }
+
+    /// 将 HashMap 中所有 value 写入到 `out`（不保证顺序）。
+    /// 参数：
+    /// - self: 当前 HashMap 实例。
+    /// - out: 目标 Vec，会在写入前先 `clear()`。
+    /// 返回：
+    /// - 无：扩容/分配失败将作为错误返回。
+    fn values_vec(self: &Self, out: &Vec<i32>) !void {
+        out.clear();
+        if self.bucket_count == 0 || self._chains == null {
+            return;
+        }
+
+        var bi: usize = 0;
+        while bi < self.bucket_count {
+            const chain: &HashMapChainBuf = hashmap_chain_at(self._chains, bi);
+            var ei: usize = 0;
+            while ei < chain.len {
+                const sl: &HashMapSlot = chain.ref_at(ei);
+                try out.push(sl.value);
+                ei = ei + 1;
+            }
+            bi = bi + 1;
+        }
+    }
+
+    /// 将 HashMap 中所有 key 的地址位写入到 `out`（不保证顺序）。
+    /// 注意：当前为了避免 `Vec<&byte>` 的后端生成问题，这里返回 key 指针的地址位（`usize`）。
+    /// 参数：
+    /// - self: 当前 HashMap 实例。
+    /// - out: 目标 Vec，会在写入前先 `clear()`。
+    /// 返回：
+    /// - 无：扩容/分配失败将作为错误返回。
+    fn keys_vec(self: &Self, out: &Vec<usize>) !void {
+        out.clear();
+        if self.bucket_count == 0 || self._chains == null {
+            return;
+        }
+
+        var bi: usize = 0;
+        while bi < self.bucket_count {
+            const chain: &HashMapChainBuf = hashmap_chain_at(self._chains, bi);
+            var ei: usize = 0;
+            while ei < chain.len {
+                const sl: &HashMapSlot = chain.ref_at(ei);
+                try out.push(sl.key_bits);
+                ei = ei + 1;
+            }
+            bi = bi + 1;
+        }
     }
 }
