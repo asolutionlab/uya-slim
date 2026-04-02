@@ -28,9 +28,9 @@ extern fn free(ptr: &void) void;
 
 // GCC/Clang 内建：原子 CAS，用于 mutex（零库依赖）
 extern "libc" fn __atomic_compare_exchange_n(ptr: &i32, expected: &i32, desired: i32, weak: i32, success_mem: i32, failure_mem: i32) i32;
-const ATOMIC_SEQ_CST: i32 = 5;
 
 // pthread 使用的栈大小（8 MiB）
+const PTHREAD_ATOMIC_SEQ_CST: i32 = 5;
 const PTHREAD_STACK_SIZE: usize = 8 * 1024 * 1024;
 
 // clone 标志：需要设置 CLONE_VM 共享内存空间，否则子进程有独立的内存副本
@@ -333,7 +333,7 @@ export extern "libc" fn pthread_detach(thread: &pthread_t) i32 {
 
     // 标记为分离
     var expected: i32 = 0;
-    if __atomic_compare_exchange_n((&thread.detached) as &i32, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+    if __atomic_compare_exchange_n((&thread.detached) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
         return 0;
     }
     return 22; // EINVAL
@@ -350,13 +350,13 @@ export extern "libc" fn pthread_once(once_control: &pthread_once_t, init_routine
 
     // 检查是否已初始化
     var expected: i32 = 2;
-    if __atomic_compare_exchange_n((&once_control.state) as &i32, &expected, 2, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+    if __atomic_compare_exchange_n((&once_control.state) as &i32, &expected, 2, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
         return;
     }
 
     // CAS 将状态从 0（未初始化）设置为 1（正在初始化）
     expected = 0;
-    if __atomic_compare_exchange_n((&once_control.state) as &i32, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+    if __atomic_compare_exchange_n((&once_control.state) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
         // 成功设置状态为 1，执行初始化函数
         _pthread_call_start(init_routine, null);
         // 设置状态为 2（已初始化）
@@ -450,7 +450,7 @@ export extern "libc" fn pthread_mutex_lock(mutex: &pthread_mutex_t) i32 {
         }
         // 未持有，尝试获取
         var expected: i32 = 0;
-        while __atomic_compare_exchange_n((&mutex.state) as &i32, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+        while __atomic_compare_exchange_n((&mutex.state) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) == 0 {
             sys_futex((&mutex.state) as &i32, FUTEX_WAIT, 1, null);
             expected = 0;
         }
@@ -460,7 +460,7 @@ export extern "libc" fn pthread_mutex_lock(mutex: &pthread_mutex_t) i32 {
     
     // 普通锁：简单 CAS
     var expected: i32 = 0;
-    while __atomic_compare_exchange_n((&mutex.state) as &i32, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+    while __atomic_compare_exchange_n((&mutex.state) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) == 0 {
         sys_futex((&mutex.state) as &i32, FUTEX_WAIT, 1, null);
         expected = 0;
     }
@@ -510,7 +510,7 @@ export extern "libc" fn pthread_mutex_trylock(mutex: &pthread_mutex_t) i32 {
         }
         // 未持有，尝试获取
         var expected: i32 = 0;
-        if __atomic_compare_exchange_n((&mutex.state) as &i32, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+        if __atomic_compare_exchange_n((&mutex.state) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
             mutex.owner = tid;
             return 0;
         }
@@ -519,7 +519,7 @@ export extern "libc" fn pthread_mutex_trylock(mutex: &pthread_mutex_t) i32 {
     
     // 普通锁：简单 CAS
     var expected: i32 = 0;
-    if __atomic_compare_exchange_n((&mutex.state) as &i32, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+    if __atomic_compare_exchange_n((&mutex.state) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
         return 0;
     }
     return 16; // EBUSY
@@ -545,7 +545,7 @@ export extern "libc" fn pthread_mutex_timedlock(mutex: &pthread_mutex_t, abstime
     // 简化实现：仅尝试一次 CAS
     // TODO: 完整实现需要 futex 超时支持
     var expected: i32 = 0;
-    if __atomic_compare_exchange_n((&mutex.state) as &i32, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+    if __atomic_compare_exchange_n((&mutex.state) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
         return 110; // ETIMEDOUT
     }
     return 0;
@@ -604,7 +604,7 @@ export extern "libc" fn pthread_cond_wait(cond: &pthread_cond_t, mutex: &pthread
     // 增加 waiters 计数（使用原子操作）
     var expected: i32 = cond.waiters;
     var new_val: i32 = expected + 1;
-    while __atomic_compare_exchange_n((&cond.waiters) as &i32, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+    while __atomic_compare_exchange_n((&cond.waiters) as &i32, &expected, new_val, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) == 0 {
         new_val = expected + 1;
     }
 
@@ -623,7 +623,7 @@ export extern "libc" fn pthread_cond_wait(cond: &pthread_cond_t, mutex: &pthread
     // 减少 waiters 计数
     expected = cond.waiters;
     new_val = expected - 1;
-    while __atomic_compare_exchange_n((&cond.waiters) as &i32, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+    while __atomic_compare_exchange_n((&cond.waiters) as &i32, &expected, new_val, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) == 0 {
         new_val = expected - 1;
     }
 
@@ -668,7 +668,7 @@ export extern "libc" fn pthread_cond_timedwait(cond: &pthread_cond_t, mutex: &pt
     // 增加 waiters 计数（使用原子操作）
     var expected: i32 = cond.waiters;
     var new_val: i32 = expected + 1;
-    while __atomic_compare_exchange_n((&cond.waiters) as &i32, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+    while __atomic_compare_exchange_n((&cond.waiters) as &i32, &expected, new_val, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) == 0 {
         new_val = expected + 1;
     }
 
@@ -687,7 +687,7 @@ export extern "libc" fn pthread_cond_timedwait(cond: &pthread_cond_t, mutex: &pt
     // 减少 waiters 计数
     expected = cond.waiters;
     new_val = expected - 1;
-    while __atomic_compare_exchange_n((&cond.waiters) as &i32, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+    while __atomic_compare_exchange_n((&cond.waiters) as &i32, &expected, new_val, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) == 0 {
         new_val = expected - 1;
     }
 
@@ -775,7 +775,7 @@ export extern "libc" fn pthread_spin_lock(lock: &pthread_spinlock_t) i32 {
         return 22; // EINVAL
     }
     var expected: i32 = 0;
-    while __atomic_compare_exchange_n((&lock.lock) as &i32, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+    while __atomic_compare_exchange_n((&lock.lock) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) == 0 {
         // 忙等待，定期让出 CPU
         _ = pthread_yield();
         expected = 0;
@@ -798,7 +798,7 @@ export extern "libc" fn pthread_spin_trylock(lock: &pthread_spinlock_t) i32 {
         return 22; // EINVAL
     }
     var expected: i32 = 0;
-    if __atomic_compare_exchange_n((&lock.lock) as &i32, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+    if __atomic_compare_exchange_n((&lock.lock) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
         return 0;
     }
     return 16; // EBUSY
@@ -855,7 +855,7 @@ export extern "libc" fn pthread_rwlock_rdlock(rwlock: &pthread_rwlock_t) i32 {
             // 尝试增加读者计数
             var expected: i32 = rwlock.readers;
             var new_val: i32 = expected + 1;
-            if __atomic_compare_exchange_n((&rwlock.readers) as &i32, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+            if __atomic_compare_exchange_n((&rwlock.readers) as &i32, &expected, new_val, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
                 return 0; // 成功获取读锁
             }
         }
@@ -879,7 +879,7 @@ export extern "libc" fn pthread_rwlock_tryrdlock(rwlock: &pthread_rwlock_t) i32 
     // 尝试增加读者计数
     var expected: i32 = rwlock.readers;
     var new_val: i32 = expected + 1;
-    if __atomic_compare_exchange_n((&rwlock.readers) as &i32, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+    if __atomic_compare_exchange_n((&rwlock.readers) as &i32, &expected, new_val, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
         return 0; // 成功
     }
     return 16; // EBUSY
@@ -900,7 +900,7 @@ export extern "libc" fn pthread_rwlock_wrlock(rwlock: &pthread_rwlock_t) i32 {
         if rwlock.readers == 0 && rwlock.writer == 0 {
             // 尝试设置写者标志
             var expected: i32 = 0;
-            if __atomic_compare_exchange_n((&rwlock.writer) as &i32, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+            if __atomic_compare_exchange_n((&rwlock.writer) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
                 rwlock.writer_tid = tid;
                 return 0; // 成功获取写锁
             }
@@ -926,7 +926,7 @@ export extern "libc" fn pthread_rwlock_trywrlock(rwlock: &pthread_rwlock_t) i32 
     
     // 尝试设置写者标志
     var expected: i32 = 0;
-    if __atomic_compare_exchange_n((&rwlock.writer) as &i32, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) != 0 {
+    if __atomic_compare_exchange_n((&rwlock.writer) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
         rwlock.writer_tid = tid;
         return 0; // 成功
     }
@@ -952,7 +952,7 @@ export extern "libc" fn pthread_rwlock_unlock(rwlock: &pthread_rwlock_t) i32 {
     // 释放读锁（减少读者计数）
     var expected: i32 = rwlock.readers;
     var new_val: i32 = expected - 1;
-    while __atomic_compare_exchange_n((&rwlock.readers) as &i32, &expected, new_val, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+    while __atomic_compare_exchange_n((&rwlock.readers) as &i32, &expected, new_val, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) == 0 {
         if expected == 0 {
             return 1; // 错误：没有读锁
         }
