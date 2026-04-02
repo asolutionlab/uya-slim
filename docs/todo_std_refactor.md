@@ -254,7 +254,7 @@ export fn my_func(s: &byte) void;
 
 ## Phase 5：std 层
 
-- [ ] 在现有 `lib/std/` 基础上对齐设计文档：核心类型（Option、Error）、traits（Clone、Eq、Ord、Hash、Display）等；测试先行，`make check` 通过。
+- [x] 在现有 `lib/std/` 基础上对齐设计文档：核心类型（`std.core.option.Option`、`std.core.error` 错误标签包装）与 traits（`Clone/Eq/Ord/Hash/Display` 接口）已就绪；新增 `tests/test_option_core.uya`，并完成 `make check`。
 - [x] I/O 抽象（部分）：已导出 **`std.io.reader.Reader`**、**`std.io.writer.Writer`**；**`std.io.File`** + **`file_open` / `file_close` / `file_read` / `file_write`**（基于 **`libc.sys_*`**，与编译器依赖一致，避免拉入 `lib/syscall/linux.uya` 破坏多文件 C 的 err_union 顺序）。**`struct File : Reader, Writer`** 待编译器/单态稳定后再接；测试 **`tests/test_std_io_file.uya`**，`make check` 通过。
 - [x] HeapAllocator（与 Phase 2.1 一致）：**`lib/std/mem/heap.uya`** 已用 **`osal.os_mmap` / `osal.os_munmap`** 实现 **`IAllocator`**；**`tests/test_mem_heap.uya`**。
 - [x] 泛型容器（部分）：**`Vec<T>`**（**`lib/std/collections/vec.uya`** + **`tests/test_vec.uya`**）；**`StringBuf`**（**`lib/std/collections/string_buf.uya`**，内联 `byte` 缓冲、**不内嵌 `Vec<byte>`**，避免 C 后端对嵌套泛型 `Vec` 字段发射不完整；**`tests/test_string_buf.uya`**）。
