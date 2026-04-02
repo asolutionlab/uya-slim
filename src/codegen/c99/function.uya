@@ -2112,7 +2112,14 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 }
                 fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, state_k + 1);
                 fputs("        s->await_fut = " as *byte, codegen.emit_stream as *void);
-                if await_operand_is_err_future != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                // 与 child_inner_is_err_union!=0 分支一致：按「下一段 await」的绑定类型决定是否对 !Future<T> 做 try 解包
+                var next_await_is_err_future2: i32 = await_operand_is_err_future;
+                if next_await_is_err_future2 == 0 && await_bind_types[state_k] != null && await_bind_types[state_k].type == ASTNodeType.AST_TYPE_NAMED &&
+                    await_bind_types[state_k].type_named_name != null &&
+                    strcmp(await_bind_types[state_k].type_named_name as *byte, "Future" as *byte) == 0 {
+                    next_await_is_err_future2 = 1;
+                }
+                if next_await_is_err_future2 != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
                     const operand_union_c4: &byte = c99_type_to_c(codegen, full_return_type);
                     if operand_union_c4 != null {
                         fprintf(codegen.emit_stream as *void, "({ %s _uya_await_tmp = " as *byte, operand_union_c4 as *byte);
