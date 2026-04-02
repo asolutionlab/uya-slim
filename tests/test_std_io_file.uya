@@ -3,6 +3,7 @@
 use std.testing;
 
 use std.io.File;
+use std.io.file;
 use std.io.file_close;
 use std.io.file_open;
 use std.io.file_read;
