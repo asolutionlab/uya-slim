@@ -68,8 +68,8 @@ export extern "libc" fn time(timer: &time_t) time_t {
 }
 
 // clock - 获取处理器时间（简化实现，返回自程序启动以来的时钟滴答数）
-// 注意：CLOCKS_PER_SEC 定义为 1000000
-export const CLOCKS_PER_SEC: clock_t = 1000000;
+// 注意：为避免与 libc.stdlib 中常量类型冲突，CLOCKS_PER_SEC 统一为 i64。
+export const CLOCKS_PER_SEC: i64 = 1000000;
 
 var _clock_start: clock_t = 0;
 

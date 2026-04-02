@@ -720,14 +720,14 @@ export fn c99_split_mirror_prepare(codegen: &C99CodeGenerator, program: &ASTNode
             if codegen.has_stdio_conflicts == 0 {
                 fputs("#include <stdio.h>\n" as *byte, fh as *void);
             }
-            // 与 lib/libc/time.uya 一致：clock_t 为 u64；勿 #include <time.h>（会与 CLOCKS_PER_SEC 宏冲突）
+            // 与 lib/libc/time.uya / libc.stdlib 常量类型保持一致，避免 CLOCKS_PER_SEC 类型冲突。
             fputs("typedef uint64_t clock_t;\n" as *byte, fh as *void);
             fputs("int32_t std_runtime_get_argc(void);\n" as *byte, fh as *void);
             fputs("uint8_t *std_runtime_get_argv(int32_t index);\n" as *byte, fh as *void);
             fputs("extern char *getenv(const char *);\n" as *byte, fh as *void);
             fputs("extern const uint32_t S_IFMT;\nextern const uint32_t S_IFDIR;\nextern const uint32_t S_IFREG;\n" as *byte, fh as *void);
             fputs("extern const uint8_t DT_REG;\nextern const uint8_t DT_UNKNOWN;\nextern const uint8_t DT_DIR;\n" as *byte, fh as *void);
-            fputs("extern const clock_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, fh as *void);
+            fputs("extern const int64_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, fh as *void);
             if codegen.has_stdio_conflicts != 0 {
                 fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, fh as *void);
                 // lib/libc/stdio.uya 镜像 .c 内定义 struct FILE * stdin = (&_stdin)，不能与 #define stdin 共存
@@ -747,7 +747,7 @@ export fn c99_split_mirror_prepare(codegen: &C99CodeGenerator, program: &ASTNode
             fputs("extern char *getenv(const char *);\n" as *byte, fh as *void);
             fputs("extern const uint32_t S_IFMT;\nextern const uint32_t S_IFDIR;\nextern const uint32_t S_IFREG;\n" as *byte, fh as *void);
             fputs("extern const uint8_t DT_REG;\nextern const uint8_t DT_UNKNOWN;\nextern const uint8_t DT_DIR;\n" as *byte, fh as *void);
-            fputs("extern const clock_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, fh as *void);
+            fputs("extern const int64_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, fh as *void);
         }
         fputs("\n" as *byte, fh as *void);
         codegen.split_mirror_handles[ci] = fh as &void;
@@ -774,7 +774,7 @@ export fn c99_split_mirror_prepare(codegen: &C99CodeGenerator, program: &ASTNode
         fputs("extern char *getenv(const char *);\n" as *byte, ch as *void);
         fputs("extern const uint32_t S_IFMT;\nextern const uint32_t S_IFDIR;\nextern const uint32_t S_IFREG;\n" as *byte, ch as *void);
         fputs("extern const uint8_t DT_REG;\nextern const uint8_t DT_UNKNOWN;\nextern const uint8_t DT_DIR;\n" as *byte, ch as *void);
-        fputs("extern const clock_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, ch as *void);
+        fputs("extern const int64_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, ch as *void);
         if codegen.has_stdio_conflicts != 0 {
             fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, ch as *void);
             fputs("#define stdin (&_stdin)\n#define stdout (&_stdout)\n#define stderr (&_stderr)\n" as *byte, ch as *void);
@@ -788,7 +788,7 @@ export fn c99_split_mirror_prepare(codegen: &C99CodeGenerator, program: &ASTNode
         fputs("extern char *getenv(const char *);\n" as *byte, ch as *void);
         fputs("extern const uint32_t S_IFMT;\nextern const uint32_t S_IFDIR;\nextern const uint32_t S_IFREG;\n" as *byte, ch as *void);
         fputs("extern const uint8_t DT_REG;\nextern const uint8_t DT_UNKNOWN;\nextern const uint8_t DT_DIR;\n" as *byte, ch as *void);
-        fputs("extern const clock_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, ch as *void);
+        fputs("extern const int64_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, ch as *void);
     }
     fputs("\n" as *byte, ch as *void);
     codegen.split_common_out = ch as &void;
