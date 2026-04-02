@@ -4,6 +4,8 @@
 
 **实现约定**：每项任务均需「先写测试（或注明沿用现有测试）→ 实现 → `make check`」；大函数/深嵌套按 uya-dev-flow 规则拆分（函数 ≤50 行、嵌套 ≤3 层）。
 
+**与仓库同步**（2026-04-02）：总览与 Phase 3 测试数、Phase 1.9 行数与当前 `lib/` 一致；Phase 4 区分「已有 `lib/libc/` 基线」与「按设计的大规模 libc 层重构」。
+
 ---
 
 ## 总览表
@@ -13,8 +15,8 @@
 | 1     | syscall 层 | 已完成   | 系统调用层，包含测试和迁移计划 |
 | 2     | mem 层     | 已完成   | 纯内存操作层，独立基础层 |
 | 3     | osal 层    | 已完成   | 操作系统抽象层，依赖 syscall（2026-03-05 完成） |
-| 4     | libc 层    | 未开始   | C 兼容层，依赖 osal + mem |
-| 5     | std 层     | 进行中   | Uya 原生风格层；I/O（`File`+`Reader`/`Writer` 导出）已部分落地，见下文 Phase 5 |
+| 4     | libc 层    | 基线已有，重构暂缓 | **`lib/libc/`** 已有多模块薄封装（`string`/`stdio`/`syscall`/…）；与 mem 分工、跨层导入无冲突的「统一 libc 层」**重构**仍搁置，见 §Phase 4 |
+| 5     | std 层     | 已完成   | Uya 原生风格层；Phase 5 条目已收口；另含 json/yaml/protobuf/http/async 等扩展模块，见 `lib/std/` |
 
 **依赖与顺序**：syscall 无依赖；mem 无依赖；osal 仅依赖 syscall；libc 依赖 osal + mem；std 依赖 libc（及可选 osal）。执行顺序必须 Phase 1 → 2 → 3 → 4 → 5，避免跨层依赖。
 
@@ -150,9 +152,9 @@ export fn my_func(s: &byte) void;
 
 #### 迁移方案分析
 
-**当前状态**：
-- `lib/libc/syscall.uya`（515 行）：旧实现，使用 `export extern "libc" fn`，提供 C 兼容接口
-- `lib/syscall/linux.uya`（432 行）：新实现，使用 `export fn`，作为 osal 层的基础
+**当前状态**（行数以仓库为准，会随提交变化）：
+- `lib/libc/syscall.uya`（约 1100+ 行）：使用 `export extern "libc" fn` 等，提供 C 兼容封装
+- `lib/syscall/linux.uya`（约 500+ 行）：使用 `export fn`，作为 syscall/osal 层的基础
 
 **使用情况**：
 - 测试文件（13 个）：`test_syscall_*.uya`、`test_std_syscall*.uya` 使用 `libc.sys_*`
@@ -220,7 +222,7 @@ export fn my_func(s: &byte) void;
 - [x] 实现时间抽象：`os_sleep`、`os_gettimeofday`、`os_clock_gettime`；测试先行，`make check` 通过。
 - [x] 实现目录操作：`os_mkdir`、`os_rmdir`、`os_chdir`、`os_getcwd`、`os_access`、`os_unlink`、`os_rename`、`os_readlink`、`os_getdents64`；测试先行，`make check` 通过。
 - [x] 实现其他功能：`os_dup`、`os_dup2`、`os_fcntl`、`os_ioctl`、`os_getuid`、`os_getgid`、`os_geteuid`、`os_getegid`、`os_setuid`、`os_setgid`、`os_getrlimit`、`os_setrlimit`；测试先行，`make check` 通过。
-- [x] 验证：仅依赖 syscall，不依赖 libc/std；`make check` 通过（所有 496 个测试通过）。
+- [x] 验证：仅依赖 syscall，不依赖 libc/std；`make check` 通过（测试数以当前 CI/本地 `make check` 输出为准，2026-04-02 基线约 713）。
 
 ### osal 跨平台实现策略
 
@@ -232,6 +234,8 @@ export fn my_func(s: &byte) void;
 ---
 
 ## Phase 4：libc 层（暂时搁置）
+
+**仓库现状（与「未开始」区分）**：`lib/libc/` 下已有 **`ctype`/`errno`/`heap`/`math`/`mem`/`pthread`/`setjmp`/`signal`/`stdarg`/`stdio`/`stdlib`/`string`/`syscall`/`time`/`unistd`/`wchar`** 等模块，编译器与标准测试依赖这些基线。**搁置**的是：按 `std_refactor_design` 将 libc 与 `lib/mem` 职责彻底分清、并消除 `lib/libc/mem.uya` `use mem` 时的跨层命名冲突那一轮**重构**，而非从零实现 libc 目录。
 
 **当前问题**（2026-03-05 发现）：
 - lib/mem/mem.uya 同时导出内部函数（如 `mem_copy`）和 libc 兼容函数（如 `export extern "libc" fn memcmp`）
@@ -259,7 +263,7 @@ export fn my_func(s: &byte) void;
 - [x] HeapAllocator（与 Phase 2.1 一致）：**`lib/std/mem/heap.uya`** 已用 **`osal.os_mmap` / `osal.os_munmap`** 实现 **`IAllocator`**；**`tests/test_mem_heap.uya`**。
 - [x] 泛型容器（部分）：**`Vec<T>`**（**`lib/std/collections/vec.uya`** + **`tests/test_vec.uya`**）；**`StringBuf`**（**`lib/std/collections/string_buf.uya`**，内联 `byte` 缓冲、**不内嵌 `Vec<byte>`**，避免 C 后端对嵌套泛型 `Vec` 字段发射不完整；**`tests/test_string_buf.uya`**）。
 - [x] 泛型容器：其余容器与设计对齐（如与 `Vec` 组合的更高层 API）；`HashMap` 通过 `values_vec/keys_vec` 将数据填充到调用方 `Vec`，并配套 `tests/test_hashmap.uya`。
-- [ ] 验证：自举与测试通过；依赖 libc（及可选 osal），不反向依赖。
+- [x] 验证：自举与测试通过；`lib/std` 仅向下依赖 **`libc`**、**`mem`**、**`syscall`**、**`osal`**（如 `HeapAllocator` 用 `osal`+`syscall` 常量），**`mem` / `osal` / `syscall` 不 `use std`**；`lib/libc` 中少数 shim 仍 `use std.runtime`（argv/env），为已知例外。2026-04-02：`make check` 通过（713/713）。
 
 ---
 
