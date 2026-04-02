@@ -331,6 +331,157 @@ fn collect_err_union_from_function_body(codegen: &C99CodeGenerator, fn_decl: &AS
     codegen.current_type_arg_count = saved_type_arg_count;
 }
 
+fn preregister_err_union_from_fn_signature(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return;
+    }
+    if fn_decl.fn_decl_return_type != null {
+        const ret_c: &byte = c99_type_to_c(codegen, fn_decl.fn_decl_return_type);
+        if ret_c != null {}
+    }
+    if fn_decl.fn_decl_params == null || fn_decl.fn_decl_param_count <= 0 {
+        return;
+    }
+    var pi: i32 = 0;
+    while pi < fn_decl.fn_decl_param_count {
+        const param: &ASTNode = fn_decl.fn_decl_params[pi];
+        if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+            const param_c: &byte = c99_type_to_c(codegen, param.var_decl_type);
+            if param_c != null {}
+        }
+        pi = pi + 1;
+    }
+}
+
+fn preregister_err_union_from_mono_signature(codegen: &C99CodeGenerator, fn_decl: &ASTNode, mono_type_args: & & ASTNode, mono_type_arg_count: i32) void {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return;
+    }
+    const saved_type_params: &TypeParam = codegen.current_type_params;
+    const saved_type_param_count: i32 = codegen.current_type_param_count;
+    const saved_type_args: & & ASTNode = codegen.current_type_args;
+    const saved_type_arg_count: i32 = codegen.current_type_arg_count;
+    codegen.current_type_params = fn_decl.fn_decl_type_params;
+    codegen.current_type_param_count = fn_decl.fn_decl_type_param_count;
+    codegen.current_type_args = mono_type_args;
+    codegen.current_type_arg_count = mono_type_arg_count;
+    if fn_decl.fn_decl_return_type != null {
+        const ret_c: &byte = c99_mono_type_to_c(codegen, fn_decl.fn_decl_return_type);
+        if ret_c != null {}
+    }
+    codegen.current_type_params = saved_type_params;
+    codegen.current_type_param_count = saved_type_param_count;
+    codegen.current_type_args = saved_type_args;
+    codegen.current_type_arg_count = saved_type_arg_count;
+}
+
+fn preregister_err_union_from_method_signature(codegen: &C99CodeGenerator, fn_decl: &ASTNode, owner_type_name: &byte) void {
+    if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL || owner_type_name == null {
+        return;
+    }
+    if fn_decl.fn_decl_return_type != null {
+        // 先走通用类型转换，确保 Future<usize>/Poll<usize> 这类与 Self 无关的返回类型被登记。
+        const ret_plain_c: &byte = c99_type_to_c(codegen, fn_decl.fn_decl_return_type);
+        if ret_plain_c != null {}
+        const ret_c: &byte = c99_type_to_c_with_self_opt(codegen, fn_decl.fn_decl_return_type, owner_type_name, 0);
+        if ret_c != null {}
+    }
+}
+
+fn preregister_err_union_from_mono_struct_method_signature(codegen: &C99CodeGenerator, fn_decl: &ASTNode, owner_type_name: &byte,
+    struct_decl: &ASTNode, mono_type_args: & & ASTNode, mono_type_arg_count: i32) void {
+    if codegen == null || fn_decl == null || owner_type_name == null || struct_decl == null {
+        return;
+    }
+    const saved_stp: &TypeParam = codegen.struct_type_params;
+    const saved_stpc: i32 = codegen.struct_type_param_count;
+    const saved_sta: & & ASTNode = codegen.struct_type_args;
+    const saved_stac: i32 = codegen.struct_type_arg_count;
+    const saved_tp: &TypeParam = codegen.current_type_params;
+    const saved_tpc: i32 = codegen.current_type_param_count;
+    const saved_ta: & & ASTNode = codegen.current_type_args;
+    const saved_tac: i32 = codegen.current_type_arg_count;
+    codegen.struct_type_params = struct_decl.struct_decl_type_params;
+    codegen.struct_type_param_count = struct_decl.struct_decl_type_param_count;
+    codegen.struct_type_args = mono_type_args;
+    codegen.struct_type_arg_count = mono_type_arg_count;
+    codegen.current_type_params = struct_decl.struct_decl_type_params;
+    codegen.current_type_param_count = struct_decl.struct_decl_type_param_count;
+    codegen.current_type_args = mono_type_args;
+    codegen.current_type_arg_count = mono_type_arg_count;
+    preregister_err_union_from_method_signature(codegen, fn_decl, owner_type_name);
+    codegen.current_type_params = saved_tp;
+    codegen.current_type_param_count = saved_tpc;
+    codegen.current_type_args = saved_ta;
+    codegen.current_type_arg_count = saved_tac;
+    codegen.struct_type_params = saved_stp;
+    codegen.struct_type_param_count = saved_stpc;
+    codegen.struct_type_args = saved_sta;
+    codegen.struct_type_arg_count = saved_stac;
+}
+
+fn preregister_named_generic_1arg(codegen: &C99CodeGenerator, base_name: &byte, arg_name: &byte) void {
+    if codegen == null || base_name == null || arg_name == null {
+        return;
+    }
+    const arg_t: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, codegen.arena, null);
+    if arg_t == null {
+        return;
+    }
+    arg_t.type_named_name = arg_name;
+    const t: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, codegen.arena, null);
+    if t == null {
+        return;
+    }
+    t.type_named_name = base_name;
+    const args: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+    if args == null {
+        return;
+    }
+    args[0] = arg_t;
+    t.type_named_type_args = args;
+    t.type_named_type_arg_count = 1;
+    const tc: &byte = c99_type_to_c(codegen, t);
+    if tc != null {}
+}
+
+fn c99_codegen_ensure_mono_struct_1arg(codegen: &C99CodeGenerator, generic_name: &byte, arg_name: &byte) void {
+    if codegen == null || generic_name == null || arg_name == null {
+        return;
+    }
+    var i: i32 = 0;
+    while i < codegen.mono_instance_count {
+        const inst: MonoInstanceCodegen = codegen.mono_instances[i];
+        if inst.is_function == 0 && inst.generic_name != null &&
+            strcmp(inst.generic_name as *byte, generic_name as *byte) == 0 &&
+            inst.type_arg_count == 1 && inst.type_args != null && inst.type_args[0] != null &&
+            inst.type_args[0].type == ASTNodeType.AST_TYPE_NAMED && inst.type_args[0].type_named_name != null &&
+            strcmp(inst.type_args[0].type_named_name as *byte, arg_name as *byte) == 0 {
+            return;
+        }
+        i = i + 1;
+    }
+    if codegen.mono_instance_count >= C99_MAX_MONO_INSTANCES {
+        return;
+    }
+    const arg_t: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, codegen.arena, null);
+    if arg_t == null {
+        return;
+    }
+    arg_t.type_named_name = arg_name;
+    const args: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+    if args == null {
+        return;
+    }
+    args[0] = arg_t;
+    const idx: i32 = codegen.mono_instance_count;
+    codegen.mono_instances[idx].generic_name = generic_name;
+    codegen.mono_instances[idx].is_function = 0;
+    codegen.mono_instances[idx].type_arg_count = 1;
+    codegen.mono_instances[idx].type_args = args;
+    codegen.mono_instance_count = idx + 1;
+}
+
 // 递归收集函数体内 try 表达式的类型，提前注册 err_union_*，避免 from_json 等中嵌套 try 使用未定义类型
 fn collect_err_union_from_ast(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if codegen == null || node == null {
@@ -1968,6 +2119,16 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
         }
     }
+    // 预注册 Future<i32>/Future<u32>：async_channel + async_scheduler 组合下，方法原型会引用对应接口类型，
+    // 需在 split 头阶段先确保相关 Future/Poll 结构体与接口结构体可见。
+    c99_codegen_ensure_mono_struct_1arg(codegen, "Future" as &byte, "usize" as &byte);
+    c99_codegen_ensure_mono_struct_1arg(codegen, "Future" as &byte, "i32" as &byte);
+    c99_codegen_ensure_mono_struct_1arg(codegen, "Future" as &byte, "u32" as &byte);
+    c99_codegen_ensure_mono_struct_1arg(codegen, "Poll" as &byte, "usize" as &byte);
+    c99_codegen_ensure_mono_struct_1arg(codegen, "Poll" as &byte, "i32" as &byte);
+    c99_codegen_ensure_mono_struct_1arg(codegen, "Poll" as &byte, "u32" as &byte);
+    preregister_named_generic_1arg(codegen, "Future" as &byte, "i32" as &byte);
+    preregister_named_generic_1arg(codegen, "Future" as &byte, "u32" as &byte);
     // 第六步 b2：生成错误联合结构体（!T -> struct err_union_X），必须在用户结构体之前
     emit_pending_err_union_structs(codegen);
     if codegen.err_union_struct_count > 0 {
@@ -2385,7 +2546,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         prof_ms_step6_mid = ((t_mk4 as i64) - (t_mk3 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
     }
     
-    // 第六步 e：收集所有单态化函数和方法返回类型的错误联合结构体
+    // 第六步 e：收集所有单态化函数和方法签名（返回/参数）中的错误联合结构体
     // 必须在生成单态化函数原型之前收集
     {
         var j: i32 = 0;
@@ -2403,27 +2564,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                             found = 1;
                             break;
                         }
-                        // 收集返回类型的错误联合结构体
-                        if decl.fn_decl_return_type != null {
-                            // 临时设置单态化上下文
-                            const saved_type_params: &TypeParam = codegen.current_type_params;
-                            const saved_type_param_count: i32 = codegen.current_type_param_count;
-                            const saved_type_args: & & ASTNode = codegen.current_type_args;
-                            const saved_type_arg_count: i32 = codegen.current_type_arg_count;
-                            
-                            codegen.current_type_params = decl.fn_decl_type_params;
-                            codegen.current_type_param_count = decl.fn_decl_type_param_count;
-                            codegen.current_type_args = codegen.mono_instances[j].type_args;
-                            codegen.current_type_arg_count = codegen.mono_instances[j].type_arg_count;
-                            
-                            const return_c: &byte = c99_mono_type_to_c(codegen, decl.fn_decl_return_type);
-                            if return_c != null {}  // 使用 return_c 触发错误联合结构体收集
-                            
-                            codegen.current_type_params = saved_type_params;
-                            codegen.current_type_param_count = saved_type_param_count;
-                            codegen.current_type_args = saved_type_args;
-                            codegen.current_type_arg_count = saved_type_arg_count;
-                        }
+                        preregister_err_union_from_mono_signature(codegen, decl,
+                            codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count);
                         found = 1;
                     }
                     k = k + 1;
@@ -2449,27 +2591,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                         var expected_prefix: [byte: NAME_BUF_SIZE] = [];
                                         var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s" as *byte, type_name as *byte, m.fn_decl_name as *byte);
                                         if strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 && (gn[prefix_len] == 95 || gn[prefix_len] == 0) {
-                                            // 找到匹配的方法
-                                            if m.fn_decl_return_type != null {
-                                                // 临时设置单态化上下文
-                                                const saved_type_params: &TypeParam = codegen.current_type_params;
-                                                const saved_type_param_count: i32 = codegen.current_type_param_count;
-                                                const saved_type_args: & & ASTNode = codegen.current_type_args;
-                                                const saved_type_arg_count: i32 = codegen.current_type_arg_count;
-                                                
-                                                codegen.current_type_params = m.fn_decl_type_params;
-                                                codegen.current_type_param_count = m.fn_decl_type_param_count;
-                                                codegen.current_type_args = codegen.mono_instances[j].type_args;
-                                                codegen.current_type_arg_count = codegen.mono_instances[j].type_arg_count;
-                                                
-                                                const return_c: &byte = c99_mono_type_to_c(codegen, m.fn_decl_return_type);
-                                                if return_c != null {}  // 使用 return_c 触发错误联合结构体收集
-                                                
-                                                codegen.current_type_params = saved_type_params;
-                                                codegen.current_type_param_count = saved_type_param_count;
-                                                codegen.current_type_args = saved_type_args;
-                                                codegen.current_type_arg_count = saved_type_arg_count;
-                                            }
+                                            preregister_err_union_from_mono_signature(codegen, m,
+                                                codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count);
                                             found = 1;
                                         }
                                     }
@@ -2488,27 +2611,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                                         var expected_prefix: [byte: NAME_BUF_SIZE] = [];
                                         var prefix_len: i32 = snprintf(&expected_prefix[0] as *byte, NAME_BUF_SIZE, "%s_%s" as *byte, struct_name as *byte, m.fn_decl_name as *byte);
                                         if strncmp(gn as *byte, &expected_prefix[0] as *byte, prefix_len) == 0 && (gn[prefix_len] == 95 || gn[prefix_len] == 0) {
-                                            // 找到匹配的方法
-                                            if m.fn_decl_return_type != null {
-                                                // 临时设置单态化上下文
-                                                const saved_type_params: &TypeParam = codegen.current_type_params;
-                                                const saved_type_param_count: i32 = codegen.current_type_param_count;
-                                                const saved_type_args: & & ASTNode = codegen.current_type_args;
-                                                const saved_type_arg_count: i32 = codegen.current_type_arg_count;
-                                                
-                                                codegen.current_type_params = m.fn_decl_type_params;
-                                                codegen.current_type_param_count = m.fn_decl_type_param_count;
-                                                codegen.current_type_args = codegen.mono_instances[j].type_args;
-                                                codegen.current_type_arg_count = codegen.mono_instances[j].type_arg_count;
-                                                
-                                                const return_c: &byte = c99_mono_type_to_c(codegen, m.fn_decl_return_type);
-                                                if return_c != null {}  // 使用 return_c 触发错误联合结构体收集
-                                                
-                                                codegen.current_type_params = saved_type_params;
-                                                codegen.current_type_param_count = saved_type_param_count;
-                                                codegen.current_type_args = saved_type_args;
-                                                codegen.current_type_arg_count = saved_type_arg_count;
-                                            }
+                                            preregister_err_union_from_mono_signature(codegen, m,
+                                                codegen.mono_instances[j].type_args, codegen.mono_instances[j].type_arg_count);
                                             found = 1;
                                         }
                                     }
@@ -2522,6 +2626,68 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
             j = j + 1;
         }
+    }
+    // 第六步 e1：收集泛型结构体单态化实例的方法签名（返回/参数）中的错误联合与接口类型
+    {
+        var mi: i32 = 0;
+        while mi < codegen.mono_instance_count {
+            if codegen.mono_instances[mi].generic_name != null && codegen.mono_instances[mi].is_function == 0 {
+                var di: i32 = 0;
+                while di < decl_count {
+                    const decl: &ASTNode = ast.program_decls[di];
+                    if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_name != null &&
+                        strcmp(decl.struct_decl_name as *byte, codegen.mono_instances[mi].generic_name as *byte) == 0 &&
+                        has_unresolved_mono_type_args(decl, codegen.mono_instances[mi].type_args, codegen.mono_instances[mi].type_arg_count) == 0 {
+                        const mono_name: &byte = get_mono_struct_name(codegen, decl.struct_decl_name,
+                            codegen.mono_instances[mi].type_args, codegen.mono_instances[mi].type_arg_count);
+                        var mj: i32 = 0;
+                        while mj < decl.struct_decl_method_count {
+                            const m: &ASTNode = decl.struct_decl_methods[mj];
+                            if m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_type_param_count == 0 {
+                                preregister_err_union_from_mono_struct_method_signature(codegen, m, mono_name, decl,
+                                    codegen.mono_instances[mi].type_args, codegen.mono_instances[mi].type_arg_count);
+                            }
+                            mj = mj + 1;
+                        }
+                    }
+                    di = di + 1;
+                }
+            }
+            mi = mi + 1;
+        }
+    }
+    // 第六步 e1.5：收集非泛型函数/方法签名（返回/参数）中的错误联合结构体
+    i = 0;
+    while i < decl_count {
+        const decl: &ASTNode = ast.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
+            if is_generic_function_c99(decl) == 0 {
+                preregister_err_union_from_fn_signature(codegen, decl);
+            }
+        } else if decl != null && decl.type == ASTNodeType.AST_METHOD_BLOCK {
+            var owner_name: &byte = decl.method_block_struct_name;
+            if owner_name == null {
+                owner_name = decl.method_block_union_name;
+            }
+            var mi: i32 = 0;
+            while mi < decl.method_block_method_count {
+                const m: &ASTNode = decl.method_block_methods[mi];
+                if owner_name != null && m != null && m.type == ASTNodeType.AST_FN_DECL && m.fn_decl_type_param_count == 0 {
+                    preregister_err_union_from_method_signature(codegen, m, owner_name);
+                }
+                mi = mi + 1;
+            }
+        } else if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_methods != null {
+            var mi2: i32 = 0;
+            while mi2 < decl.struct_decl_method_count {
+                const m2: &ASTNode = decl.struct_decl_methods[mi2];
+                if m2 != null && m2.type == ASTNodeType.AST_FN_DECL && m2.fn_decl_type_param_count == 0 {
+                    preregister_err_union_from_method_signature(codegen, m2, decl.struct_decl_name);
+                }
+                mi2 = mi2 + 1;
+            }
+        }
+        i = i + 1;
     }
     // 第六步 e2：遍历所有函数体中的 try 表达式，注册其类型（如 from_json 内层 !Point），便于后续 emit 时类型已定义
     if codegen.checker != null {

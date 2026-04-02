@@ -199,7 +199,7 @@ fn fetch_and_write(reader: &AsyncReader, writer: &AsyncWriter) !Future<void> {
 - [x] **Channel\<T\>**：
   - 单槽异步通道，用于异步任务间通信
   - 当前提供 `send/recv -> Future<_>` 最小接口
-  - 兼容保留 `Channel_i32`、`Channel_usize`
+  - 仅保留泛型入口（不再维护 `Channel_i32` / `Channel_usize` 兼容别名）
 
 - [x] **MpscChannel\<T\>**：
   - 多生产者、单消费者、运行时容量版通道

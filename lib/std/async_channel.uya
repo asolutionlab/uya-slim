@@ -154,34 +154,3 @@ export fn mpsc_channel_new<T>(allocator: IAllocator, capacity: i32) MpscChannel<
     };
 }
 
-/// 兼容旧 API：i32 单槽通道别名。
-export type Channel_i32 = Channel<i32>;
-
-/// 创建 Channel_i32。
-export fn channel_i32_new() Channel_i32 {
-    return channel_new<i32>();
-}
-
-/// 兼容旧 API：i32 MPSC 通道别名。
-export type MpscChannel_i32 = MpscChannel<i32>;
-
-/// 创建 MpscChannel_i32（使用全局 `g_allocator`）。
-export fn mpsc_channel_i32_new(capacity: i32) MpscChannel_i32 {
-    return mpsc_channel_new<i32>(g_allocator, capacity);
-}
-
-/// 兼容旧 API：usize 单槽通道别名。
-export type Channel_usize = Channel<usize>;
-
-/// 创建 Channel_usize。
-export fn channel_usize_new() Channel_usize {
-    return channel_new<usize>();
-}
-
-/// 兼容旧 API：u32 MPSC 通道别名。
-export type MpscChannel_u32 = MpscChannel<u32>;
-
-/// 创建 MpscChannel_u32（使用全局 `g_allocator`）。
-export fn mpsc_channel_u32_new(capacity: i32) MpscChannel_u32 {
-    return mpsc_channel_new<u32>(g_allocator, capacity);
-}

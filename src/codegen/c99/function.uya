@@ -341,7 +341,8 @@ fn get_c_name_for_global_constant(codegen: &C99CodeGenerator, name: &byte, filen
         const is_std_stream: i32 = (strcmp(name as *byte, "stderr" as *byte) == 0) ||
                                    (strcmp(name as *byte, "stdin" as *byte) == 0) ||
                                    (strcmp(name as *byte, "stdout" as *byte) == 0);
-        if is_std_stream == 0 {
+        const is_clocks_per_sec: i32 = (strcmp(name as *byte, "CLOCKS_PER_SEC" as *byte) == 0);
+        if is_std_stream == 0 && is_clocks_per_sec == 0 {
             const prefix: &byte = get_module_prefix_from_filename(codegen, filename);
             if prefix != null && prefix[0] != 0 {
                 const safe_name: &byte = get_safe_c_identifier(codegen, name);

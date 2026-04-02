@@ -9,7 +9,7 @@ const SINGLE_SLOT_SIZE: i32 = 1;
 const MULTI_SLOT_SIZE: i32 = 4;
 
 test "channel_send_recv" {
-    var ch: Channel_i32 = channel_i32_new();
+    var ch: Channel<i32> = channel_new<i32>();
     const fw: Future<usize> = ch.send(42);
     const wk: Waker = Waker{};
     const pw: Poll<usize> = fw.poll(&wk);
@@ -31,7 +31,7 @@ test "channel_send_recv" {
 }
 
 test "mpsc_channel_send_recv" {
-    var ch: MpscChannel_i32 = mpsc_channel_i32_new(SINGLE_SLOT_SIZE);
+    var ch: MpscChannel<i32> = mpsc_channel_new<i32>(g_allocator, SINGLE_SLOT_SIZE);
     const wk: Waker = Waker{};
 
     const fw: Future<usize> = ch.send(7);
@@ -54,7 +54,7 @@ test "mpsc_channel_send_recv" {
 }
 
 test "mpsc_channel_second_send_pending_until_recv" {
-    var ch: MpscChannel_i32 = mpsc_channel_i32_new(SINGLE_SLOT_SIZE);
+    var ch: MpscChannel<i32> = mpsc_channel_new<i32>(g_allocator, SINGLE_SLOT_SIZE);
     const wk: Waker = Waker{};
 
     const first_send_future: Future<usize> = ch.send(11);

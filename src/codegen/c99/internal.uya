@@ -19,7 +19,7 @@ use libc.atoi;
 const C99_MAX_STRING_CONSTANTS: i32 = 4096;
 
 // 结构体定义表大小
-const C99_MAX_STRUCT_DEFINITIONS: i32 = 512;
+const C99_MAX_STRUCT_DEFINITIONS: i32 = 1024;
 
 // 枚举定义表大小
 const C99_MAX_ENUM_DEFINITIONS: i32 = 512;

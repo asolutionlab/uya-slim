@@ -913,7 +913,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
     - [x] epoll 系统调用层：`lib/syscall/linux.uya` 与 `lib/libc/syscall.uya` 已添加 `SYS_epoll_*`、`EpollEvent`、`EPOLLET`、`sys_epoll_create1`/`sys_epoll_ctl`/`sys_epoll_wait`；`test_epoll_syscall.uya` 通过 `--c99` 与 `--uya --c99`
     - [x] `lib/std/async_event.uya`：`EventKind`、`interface EventLoop`、`struct LinuxEpoll : EventLoop`（`use libc.syscall`；`register`/`deregister` 当前返回 `!i32`，成功值为 `0`）
     - [x] `test_std_async_event.uya` 端到端通过（当前已覆盖 `LinuxEpoll.register()` + `poll()` 命中后 `Waker.wake()` 最小链路；codegen 已修复：err_union 先输出 payload 结构体、catch 推断 struct payload、union 前向声明、INT_MIN 用 @min）
-  - [x] `std.async.channel` 模块：泛型 `Channel<T>` 与运行时容量版 `MpscChannel<T>` 已落地，兼容保留 `Channel_i32`、`Channel_usize`、`MpscChannel_i32`、`MpscChannel_u32`；新增 `std.collections.ring_queue.RingQueue<T>` 作为可复用环形队列容器。`test_async_channel.uya` 已覆盖 generic send/recv、单槽容量下的 CAS 抢占/满槽 Pending、以及多槽容量下的 FIFO/环回；`test_std_ring_queue.uya` 已独立覆盖运行时容量、满队列与环回行为。为支撑该能力，C99 后端补齐了泛型 `@size_of(T)` 在单态化代码中的替换。当前释放路径先通过显式 `deinit()` 收口；根因是“泛型 drop / 泛型类型跨模块调用泛型清理方法”的 codegen 仍有缺口，已单列到前面的泛型 RAII 待办
+  - [x] `std.async.channel` 模块：泛型 `Channel<T>` 与运行时容量版 `MpscChannel<T>` 已落地（旧兼容别名入口已移除）；新增 `std.collections.ring_queue.RingQueue<T>` 作为可复用环形队列容器。`test_async_channel.uya` 已覆盖 generic send/recv、单槽容量下的 CAS 抢占/满槽 Pending、以及多槽容量下的 FIFO/环回；`test_std_ring_queue.uya` 已独立覆盖运行时容量、满队列与环回行为。为支撑该能力，C99 后端补齐了泛型 `@size_of(T)` 在单态化代码中的替换。当前释放路径先通过显式 `deinit()` 收口；根因是“泛型 drop / 泛型类型跨模块调用泛型清理方法”的 codegen 仍有缺口，已单列到前面的泛型 RAII 待办
   - [x] `std.async.scheduler` 模块：`Scheduler` 最小闭环已完成（`scheduler_new`、`scheduler_run`/`scheduler_run_i32`/`scheduler_run_u32`、`scheduler_run_i32_with_event_loop`/`scheduler_run_u32_with_event_loop`/`scheduler_run_usize_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue_i32`、`scheduler_run_task_queue_i32_with_event_loop`；`Pending` 时可驱动 `EventLoop.poll()`，若 `poll()` 内调用 `waker.wake()` 则当前轮直接重试；当 `Waker` 携带 I/O interest 时会代为 `register/poll/deregister`；固定容量任务队列已验证“共享一个 EventLoop 单轮统一注册/轮询/唤醒”；同时 codegen 已修复“数组元素上的接口字段方法调用”和“结构体依赖收集误展开接口模板”这两个队列前置缺口；`test_std_async_scheduler.uya` 通过），通用泛型任务队列 / 更完整 `Waker` 调度待实现
   - [x] `test_async_multi_fd_concurrent.uya` - 多 fd 并发调度：`MockEventLoop` + `WokenReadyFuture` 模拟 epoll 唤醒；验证多任务并发完成；`TaskQueueSlot_i32.epoll_fd` 持久化注册状态，`Waker.reset()` 仅在未注册时调用，完成任务不 deregister
   - [x] `test_async_compute_types.uya` - 验证 `async_compute<T>` 新增类型（`i64`/`u64`/`i16`/`u16`/`i8`/`u8`/`bool`）通过 `scheduler_run_*_with_event_loop` 正确运行
@@ -955,7 +955,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `test_async_io.uya` - AsyncWriter/AsyncReader 接口与 MemAsyncWriter、MemAsyncReader
   - [x] `test_async_fd.uya` - AsyncFd 基于 fd 的 AsyncWriter/AsyncReader（含非阻塞 pipe 上 `EAGAIN -> Pending -> Ready`，以及通过 `Scheduler + EventLoop` 的最小唤醒链路）
   - [x] `test_async_copy.uya` - `async_copy` 覆盖循环内 `@await` 与 `MemAsyncReader`/`MemAsyncWriter`（当前走 `Future<!usize>` 主路径）
-  - [x] `test_async_channel.uya` - `Channel<T>` / `MpscChannel<T>` generic send/recv、单槽容量下的 CAS 抢占/满槽 Pending、以及多槽容量下的 FIFO/环回（兼容覆盖 `Channel_i32` / `MpscChannel_i32` 入口）
+  - [x] `test_async_channel.uya` - `Channel<T>` / `MpscChannel<T>` generic send/recv、单槽容量下的 CAS 抢占/满槽 Pending、以及多槽容量下的 FIFO/环回
   - [x] `test_std_ring_queue.uya` - `RingQueue<T>` 运行时容量、满队列拒绝与出队后再入队的环回顺序
   - [x] `test_block_on.uya` - block_on 同步运行 Future<!T> 直到 Ready
   - [x] `test_std_async_waker.uya` - `Waker` 的 `wake/reset/is_woken` 最小状态语义

@@ -148,6 +148,12 @@ export extern "libc" fn put_char(c: i32) i32 {
     return put_char_fd(c, STDOUT);
 }
 
+// putchar - C 兼容名称（供编译器将 printf 常量折叠为 putchar 调用时链接到本实现）
+// 返回：写入的字符（成功）或 -1（失败）
+export extern "libc" fn putchar(c: i32) i32 {
+    return put_char(c);
+}
+
 // put_char_fd - 吐定文件描述符写入一个字符
 // 返回：写入的字符（成功）或 -1（失败）
 export extern "libc" fn put_char_fd(c: i32, fd: i64) i32 {
