@@ -469,6 +469,19 @@ fn checker_check_extern_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
         return 1;
     }
 
+    // E4002: --mode container 禁止用户代码中的 extern 声明
+    if checker.container_mode != 0 && node.extern_var_decl_is_extern != 0 {
+        var is_stdlib_ev: i32 = 0;
+        if node.filename != null {
+            if strstr(node.filename as *byte, "lib/std/" as *byte) != null { is_stdlib_ev = 1; }
+            if strstr(node.filename as *byte, "lib/libc/" as *byte) != null { is_stdlib_ev = 1; }
+        }
+        if is_stdlib_ev == 0 {
+            checker_report_error(checker, node, "E4002: 容器模式禁止使用 extern 声明（--mode container）" as *byte);
+            return 0;
+        }
+    }
+
     // 获取变量类型
     const var_type: Type = type_from_ast(checker, node.extern_var_decl_var_type);
 
@@ -547,6 +560,28 @@ fn checker_check_extern_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
 fn checker_check_fn_decl(checker: &TypeChecker, node: &ASTNode) i32 {
     if checker == null || node == null || node.type != ASTNodeType.AST_FN_DECL {
         return 0;
+    }
+    // E4002: --mode container 禁止用户代码中的 extern fn
+    if checker.container_mode != 0 && node.fn_decl_is_extern != 0 {
+        // 跳过标准库文件（路径含 lib/std/ 或 lib/libc/）
+        var is_stdlib: i32 = 0;
+        if node.filename != null {
+            if strstr(node.filename as *byte, "lib/std/" as *byte) != null {
+                is_stdlib = 1;
+            }
+            if strstr(node.filename as *byte, "lib/libc/" as *byte) != null {
+                is_stdlib = 1;
+            }
+        }
+        // 允许 export extern fn main（容器入口）
+        var is_main: i32 = 0;
+        if node.fn_decl_name != null && str_equals(node.fn_decl_name, "main" as *byte) != 0 {
+            is_main = 1;
+        }
+        if is_stdlib == 0 && is_main == 0 {
+            checker_report_error(checker, node, "E4002: 容器模式禁止使用 extern fn（--mode container）" as *byte);
+            return 0;
+        }
     }
     if node.fn_decl_name != null && str_equals(node.fn_decl_name, "drop" as *byte) != 0 &&
         node.fn_decl_param_count == 1 && node.fn_decl_params != null && node.fn_decl_params[0] != null {

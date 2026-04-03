@@ -64,6 +64,9 @@ var g_split_c_dir_active: i32 = 0;
 // 命令行 --no-split-c：强制单文件 C，忽略默认多文件、UYA_SPLIT_C_DIR 与 --split-c-dir
 var g_split_c_disabled_cli: i32 = 0;
 
+// --mode container: 容器模式，禁止 @asm(E4001) / extern(E4002) / 物理地址(E4003)
+var g_container_mode: i32 = 0;
+
 fn split_c_set_default_dir() void {
     const def: *byte = ".uyacache" as *byte;
     const sl: usize = strlen(def);
@@ -1518,6 +1521,16 @@ fn parse_args(
             opt_level[0] = 3;
         } else if strcmp(arg, "--nostdlib" as *byte) == 0 {
             is_nostdlib[0] = 1;
+        } else if strcmp(arg, "--mode" as *byte) == 0 {
+            if i + 1 < argc {
+                i = i + 1;
+                const mode_arg: *byte = get_argv(i);
+                if mode_arg != null && strcmp(mode_arg, "container" as *byte) == 0 {
+                    g_container_mode = 1;
+                } else if mode_arg != null && strcmp(mode_arg, "kernel" as *byte) == 0 {
+                    g_container_mode = 0;
+                }
+            }
         } else if strcmp(arg, "--outlibc" as *byte) == 0 {
             if i + 1 < argc {
                 outlibc_index[0] = i + 1;
@@ -2304,7 +2317,8 @@ fn compile_files(
     }
     // 设置内存安全证明开关
     checker.enable_safety_proof = enable_safety_proof;
-    
+    checker.container_mode = g_container_mode;
+
     if checker_check(&checker, merged_ast) != 0 {
         fprintf(libc.stderr, "错误: 类型检查失败（错误数量: %d）\n" as *byte, checker_get_error_count(&checker));
         const err_msg: &byte = get_last_checker_error();
