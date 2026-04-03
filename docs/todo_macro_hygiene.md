@@ -2,76 +2,76 @@
 
 **参考**：[macro_hygiene_design.md](macro_hygiene_design.md)（详细设计）、[uya.md](uya.md) §25 宏系统
 
+**当前状态**：Phase 1-3 已完成，Phase 4（文档）部分完成。实现位于 `src/checker/macro_expand.uya`，测试位于 `tests/test_macro_hygiene.uya`（6/6 通过）。
+
 实现时遵循项目 TDD 流程：先添加测试（或先实现再补测）→ 实现代码 → `make check` 验证。
 
 ---
 
-## Phase 1：数据结构与预处理
+## Phase 1：数据结构与预处理 ✅
 
 ### 1.1 上下文与旁表
 
-- [ ] 在 [src/checker/macro_expand.uya](../src/checker/macro_expand.uya) 中定义 `HygieneUseEntry`、`HygieneBindingEntry`（或等价结构），字段见设计文档 §3.1。
-- [ ] 扩展 `MacroExpandContext`：增加 `hygiene_use_sites`、`hygiene_use_count`、`hygiene_binding_sites`、`hygiene_binding_count`、`hygiene_rename_map`、`hygiene_rename_count`（类型与设计文档 §3.2–§3.3 一致）。
+- [x] 在 [src/checker/macro_expand.uya](../src/checker/macro_expand.uya) 中定义 `HygieneCopyState`（scope_names/scope_renamed_names/scope_entry_count/scope_starts/scope_depth），字段见 macro_expand.uya:34-51。
+- [x] 扩展 `MacroExpandContext`：增加 `hygiene_enabled`、`hygiene_expansion_id`、`hygiene_next_local_id`。
 
 ### 1.2 收集 local_binding 声明节点
 
-- [ ] 实现 `collect_local_binding_decls(body: &ASTNode, arena: &Arena)`（或等价签名）：遍历宏体顶层，对 `const x = @mc_eval(...)` 和 `const x = @mc_type(...)` 收集**声明节点本身**，返回节点集合（可用固定大小数组或 arena 分配的表）。
-- [ ] 可选：在 `extract_macro_output_with_params` 内复用该函数，替代内联的 local_bindings 收集逻辑，避免重复。
+- [x] 实现 local_bindings 收集：在 `extract_macro_output_with_params` 内对 `const x = @mc_eval(...)` 和 `const x = @mc_type(...)` 收集声明节点，与宏参数合并传入深拷贝。
 
-### 1.3 build_hygiene_data
+### 1.3 卫生名称生成与作用域管理
 
-- [ ] 从 `macro_decl.macro_decl_params[i].var_decl_name` 收集 `param_names`，在两处展开入口调用 `build_hygiene_data` 时传入。
-- [ ] 实现 `build_hygiene_data(body, param_names, local_binding_decls, arena, expansion_id)`（或通过 ctx 传入 param 名）：
-  - [ ] 第一遍：遍历宏体 AST，收集所有绑定点（var_decl / for_stmt / fn_decl_params / catch_expr_err_name）；若**绑定节点**不在 `local_binding_decls` 且名字不在 `param_names`，则分配 binding_id，写入 binding_sites，生成 `name__hyg_<expansion_id>_<binding_id>` 写入 rename_map。
-  - [ ] 明确 `fn_decl_name` 首版**不**参与 hygiene，避免改写宏输出的可见函数/方法名。
-  - [ ] 第二遍：作用域解析，对整棵 AST 中每个 `AST_IDENTIFIER` 解析到 binding_id / 参数 / 自由名，写入 use_sites。
-- [ ] 作用域规则：BLOCK、FN_DECL、FOR、CATCH 压栈；FN_DECL 先处理 params 再处理 body；FOR 与 CATCH 的进入/绑定顺序严格对齐现有类型检查器。
+- [x] 实现 `create_hygiene_name(ctx, original_name)`：生成 `<name>__hyg_<expansion_id>_<local_id>` 格式的唯一名称（macro_expand.uya:929）。
+- [x] 实现作用域管理函数：`hygiene_enter_scope`、`hygiene_exit_scope`、`hygiene_add_binding`、`hygiene_lookup_binding`（macro_expand.uya:884-927）。
+- [x] 实现 `init_hygiene_copy_state`（macro_expand.uya:945）。
 
 ### 1.4 expansion_id
 
-- [ ] 确定 expansion_id 来源：在 TypeChecker 上增加 `macro_expansion_counter` 并在每次展开前递增，或在 macro_expand 模块内用静态变量。
-- [ ] 两处展开入口（见下）在调用 `build_hygiene_data` 前取得并传入 expansion_id，并在本次展开后递增（若用 checker 字段则先取后增）。
+- [x] 使用 macro_expand 模块内静态变量 `macro_hygiene_expansion_counter`（macro_expand.uya:53），每次展开前通过 `next_macro_hygiene_expansion_id()` 递增。
 
-### 1.5 两处展开入口调用 build_hygiene_data
+### 1.5 两处展开入口启用卫生
 
-- [ ] **AST_CALL_EXPR 路径**（expand_macros_in_node_simple 内，约 2755–2778 行）：在构建好 `ctx.bindings` 后，先得到 `local_binding_decls`（调用 `collect_local_binding_decls`），再调用 `build_hygiene_data(...)`，将结果填入 `ctx` 的 hygiene 字段，再调用 `extract_macro_output_with_params`。
-- [ ] **AST_METHOD_BLOCK 路径**（约 2862–2912 行）：对 struct 返回宏，在构建好 `ctx.bindings` 后同样调用 `collect_local_binding_decls` 与 `build_hygiene_data(...)`，将结果填入 `ctx`，再调用 `extract_macro_output_with_params`。
+- [x] **AST_CALL_EXPR 路径**（~line 3570）：设置 `hygiene_enabled: 1`，获取 expansion_id，初始化 `hygiene_next_local_id: 0`。
+- [x] **AST_METHOD_BLOCK 路径**（~line 3703）：同上，设置 `hygiene_enabled: 1`。
 
 ### 1.6 merged_ctx 传递 hygiene
 
-- [ ] 在 `extract_macro_output_with_params` 中，`merged_ctx = *ctx` 之后，确保 `merged_ctx` 的 hygiene 相关字段与 `ctx` 一致（指针拷贝即可，不置空）。
+- [x] 在 `extract_macro_output_with_params` 中，`merged_ctx = *ctx` 后 hygiene 相关字段随结构体拷贝传递。
 
 ---
 
-## Phase 2：拷贝时应用卫生
+## Phase 2：拷贝时应用卫生 ✅
 
-### 2.1 deep_copy_ast_with_params
+### 2.1 deep_copy_ast_with_params / deep_copy_ast_internal
 
-- [ ] **前置判断**：仅当 `ctx.hygiene_use_sites != null`（或约定的“已启用卫生”条件）时才进行 use_sites/binding_sites 查找；否则保持当前逻辑（只做参数替换）。
-- [ ] **AST_IDENTIFIER**：若启用卫生，在 use_sites 中查当前节点；binding_id == -1 则 find_param_binding 并替换；binding_id >= 0 则 copy.identifier_name = rename_map[binding_id]（并保证 binding_id < hygiene_rename_count）；-2 或未查到则保留 node.identifier_name。
-- [ ] **AST_VAR_DECL**：若启用卫生且在 binding_sites 中查到该 node，则 copy.var_decl_name = rename_map[binding_id]；否则保持 node.var_decl_name。
-- [ ] **AST_FOR_STMT**：若启用卫生且在 binding_sites 中查到该 for 节点（对应循环变量），则 copy.for_stmt_var_name = rename_map[binding_id]；否则保持原名。
-- [ ] **AST_FN_DECL**：保持 `fn_decl_name` 原样。fn_decl_params 的拷贝在递归时走 AST_VAR_DECL 分支，已由上面处理。
-- [ ] **AST_CATCH_EXPR**：若启用卫生且在 binding_sites 中查到该 catch 节点（对应错误变量），则 copy.catch_expr_err_name = rename_map[binding_id]；否则保持原名。
+采用了与设计文档不同但等效的实现方案：不使用预计算的 use_sites/binding_sites 查找表，而是在 AST 深拷贝过程中直接进行作用域跟踪和名称重命名。
+
+- [x] **前置判断**：通过 `macro_ctx_has_hygiene(ctx)` 检查 `ctx.hygiene_enabled`（macro_expand.uya:871）。
+- [x] **AST_IDENTIFIER**（lines 972-977）：若启用卫生，通过 `hygiene_lookup_binding` 在当前作用域中查找；找到则替换为重命名后的名称；未找到则保留原名。
+- [x] **AST_VAR_DECL**（lines 1117-1130）：若启用卫生且变量名非 `self`，通过 `create_hygiene_name` 生成唯一名称，调用 `hygiene_add_binding` 记录映射。
+- [x] **AST_FOR_STMT**（lines 1098-1114）：若启用卫生，循环变量通过 `create_hygiene_name` 重命名，进入新作用域处理循环体，退出作用域。
+- [x] **AST_FN_DECL**（lines 1173-1191）：`fn_decl_name` 保持原样不参与卫生。函数参数通过递归走 AST_VAR_DECL 分支处理。
+- [x] **AST_CATCH_EXPR**（lines 1194-1206）：若启用卫生，错误变量重命名，进入新作用域处理 catch 块，退出作用域。
+- [x] **AST_BLOCK**（lines 1077-1090）：进入/退出作用域，维护正确的嵌套层级。
 
 ### 2.2 deep_copy_ast_with_field_subst
 
-- [ ] 在拷贝 AST_IDENTIFIER、AST_VAR_DECL、AST_FOR_STMT、AST_CATCH_EXPR、AST_FN_DECL 的参数节点时，应用与 `deep_copy_ast_with_params` 相同的“是否启用卫生 + use_sites/binding_sites 查找 + rename_map”逻辑，保证 for info.fields 展开后的块内标识符也卫生。
-- [ ] （可选）实现 `lookup_use_sites(ctx, node)` / `lookup_binding_sites(ctx, node)` 等辅助，在 `deep_copy_ast_with_params` 与 `deep_copy_ast_with_field_subst` 中共用，避免重复线性查找。
+- [x] `for info.fields` 展开也使用卫生（通过 deep_copy_ast_with_field_subst 调用，macro_expand.uya:1290）。
 
 ---
 
-## Phase 3：测试
+## Phase 3：测试 ✅
 
-### 3.1 新增测试
+### 3.1 测试用例
 
-- [ ] 新增 `tests/test_macro_hygiene.uya`：
-  - [ ] 用例 1：宏体内声明 `var tmp` 并使用 `tmp`，调用处也有 `tmp`；断言展开后宏生成的代码与调用处 `tmp` 不冲突（例如返回值或副作用符合预期）。
-  - [ ] 用例 2：宏体内有 `var x`，调用处传入实参且也有外层 `x`；断言宏参数仍被实参替换、宏内 `x` 被重命名、调用处对 `x` 的引用仍指向外层。
-  - [ ] 用例 3：宏体内 `catch |err| { ... }` 与调用处同名 `err` 不互相干扰，验证 catch 绑定点纳入 hygiene。
-  - [ ] 用例 4：顶层有 `const info = @mc_type(T)`，内层再声明同名 `var info`；断言内层 `info` 仍被重命名，验证 `local_bindings` 排除按节点而非按名字工作。
-  - [ ] 用例 5：同一宏在同一文件内展开两次，两次展开中宏内局部变量互不影响（例如两次各声明并使用的局部变量不互相覆盖）；通过返回值或可观测行为验证（如两次调用各自返回预期值、无互相干扰）。
-- [ ] 运行 `make check` 与 `./tests/run_programs_parallel.sh --uya --c99 test_macro*.uya`，确保所有现有宏测试仍通过。
+- [x] 新增 `tests/test_macro_hygiene.uya`，包含 6 则测试用例（比原计划多 1 则）：
+  - [x] 用例 1 `macro_hygiene_local_var_not_shadow_callsite`：宏体内 `var tmp` 不覆盖调用处的 `tmp`。
+  - [x] 用例 2 `macro_hygiene_param_still_reads_outer_name`：宏参数仍被实参替换，宏内 `x` 被重命名，调用处 `x` 不受影响。
+  - [x] 用例 3 `macro_hygiene_catch_err_not_shadow_callsite`：宏体内 `catch |err|` 与调用处同名 `err` 不互相干扰。
+  - [x] 用例 4 `macro_hygiene_local_bindings_exclude_by_node`：`const info = @mc_type(T)` 排除按节点而非按名字工作，内层 `var info` 仍被重命名。
+  - [x] 用例 5 `macro_hygiene_for_loop_var_does_not_capture_dest`：for 循环变量 `i` 不干扰参数表达式中的 `counts[i]`。
+  - [x] 用例 6 `macro_hygiene_unique_names_per_expansion`：同一宏展开两次，各自局部变量互不影响。
+- [x] 所有现有宏测试仍通过。
 
 ---
 
@@ -79,23 +79,23 @@
 
 ### 4.1 语言规范
 
-- [ ] 在 [docs/uya.md](uya.md) 宏系统章节（§25）中增加“卫生宏”小节：说明宏体内引入的变量/循环变量/函数参数/`catch` 错误变量会做卫生重命名，避免与调用处名字捕获；宏参数与 `const x = @mc_eval/@mc_type` 的语义不变；`fn_decl_name` 首版保持原样；生成名格式可注明（如 `__hyg_<expansion>_<id>`）。
+- [ ] 在 [docs/uya.md](uya.md) 宏系统章节（§25）中增加"卫生宏"小节：说明宏体内引入的变量/循环变量/函数参数/`catch` 错误变量会做卫生重命名，避免与调用处名字捕获；宏参数与 `const x = @mc_eval/@mc_type` 的语义不变；`fn_decl_name` 首版保持原样；生成名格式可注明（如 `__hyg_<expansion>_<id>`）。
 
 ### 4.2 语法规范文档
 
-- [ ] 在 [docs/grammar_formal.md](grammar_formal.md) 中补充卫生宏相关说明：宏展开阶段对宏体内绑定的标识符进行卫生重命名的语义规则（可与 uya.md §25 对应）；若要宣称生成名“绝不与用户代码冲突”，需同步保留 `__hyg_` 前缀，否则仅表述为实现约定。
-- [ ] 若 [docs/grammar_quick.md](grammar_quick.md) 有宏系统速查，可增加一句“宏为卫生宏，宏内引入的名字不与调用处冲突”的说明。
+- [ ] 在 [docs/grammar_formal.md](grammar_formal.md) 中补充卫生宏相关说明：宏展开阶段对宏体内绑定的标识符进行卫生重命名的语义规则（可与 uya.md §25 对应）；若要宣称生成名"绝不与用户代码冲突"，需同步保留 `__hyg_` 前缀，否则仅表述为实现约定。
+- [ ] 若 [docs/grammar_quick.md](grammar_quick.md) 有宏系统速查，可增加一句"宏为卫生宏，宏内引入的名字不与调用处冲突"的说明。
 
 ### 4.3 与主待办集成
 
-- [ ] 在 [docs/todo_mini_to_full.md](todo_mini_to_full.md) 中增加“卫生宏”已实现项（或链接到本 todo），便于主待办跟踪。
+- [ ] 在 [docs/todo_mini_to_full.md](todo_mini_to_full.md) 中增加"卫生宏"已实现项（或链接到本 todo），便于主待办跟踪。
 
 ---
 
 ## 验收清单
 
-- [ ] 现有所有宏测试（test_macro*.uya）通过。
-- [ ] test_macro_hygiene.uya 中五则用例通过。
+- [x] 现有所有宏测试（test_macro*.uya）通过。
+- [x] test_macro_hygiene.uya 中六则用例通过。
 - [ ] uya.md §25 包含卫生宏说明。
 - [ ] grammar_formal.md（及可选 grammar_quick.md）已更新卫生宏相关描述。
-- [ ] make check 通过。
+- [x] make check 通过。

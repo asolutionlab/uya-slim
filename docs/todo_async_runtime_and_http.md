@@ -27,15 +27,15 @@
 
 ### P1：功能缺失
 
-| # | 问题 | 位置 | 影响 | 修复方案 |
-|---|------|------|------|----------|
-| 5 | **Scheduler 空壳** | `lib/std/async_scheduler.uya` `export struct Scheduler {}` | 所有调度方法退化为 `block_on`，无法多任务协作 | 实现 `scheduler_run`：任务队列 + epoll 事件循环 + 贪心 poll |
-| 6 | **无跨线程唤醒** | `lib/std/async.uya` `Waker` 仅有 atomic 计数 | `async_compute` worker 完成后主线程无法被唤醒，只能 busy-wait | 添加 futex 或 eventfd 唤醒机制；`LinuxEpoll` 增加 wakeup fd |
-| 7 | **block_on busy-wait** | `lib/std/async.uya` `block_on_*` 系列函数 | CPU 100% 占用，无法用于生产 | 集成 EventLoop：poll 返回 Pending 时注册 epoll，epoll_wait 等待唤醒 |
-| 8 | **循环变量持久化硬编码** | `src/codegen/c99/function.uya:1517-1525` `strcmp("n") && strcmp("written")` | 仅 `n`+`written` 组合被识别为循环变量；其他变量名在 await 后值丢失 | 移除名称检查，改为基于「循环内定义 + 跨 await 引用」的作用域分析 |
-| 8a | **嵌套循环内 await 之间语句不发射** | `collect_awaits_recursive` + `function.uya` 线性状态机 poll | `http_bench_async_epoll`：首包 read 后未执行解析/组包即进入 write，`g_cli_hdr_len` 为 0 → **Empty reply**；verify 脚本仅测编译 | 在 await 边界发出完整语句与副作用；与上表第 8 条同属「完整控制流语义」类问题；细节见 [todo_async_loop_await.md](todo_async_loop_await.md) |
-| 9 | **Waker 单 fd** | `lib/std/async.uya:12` `_io_fd: i32` | 无法同时关注读+写或多个 fd | 改为数组或链表；单 fd 时退化为当前行为 |
-| 10 | **错误类型不一致** | `async_event` 用 `EventLoopSlotsFull`，`async_scheduler` 用 `TaskQueueFull`，`block_on` 无错误类型 | 调用方难以统一错误处理 | 定义 `std.async.Error` 枚举，统一所有异步错误 |
+| # | 问题 | 位置 | 影响 | 修复方案 | 状态 |
+|---|------|------|------|----------|------|
+| 5 | **Scheduler 空壳** | `lib/std/async_scheduler.uya` | 所有调度方法退化为 `block_on`，无法多任务协作 | 实现 `scheduler_run`：任务队列 + epoll 事件循环 + 贪心 poll | ✅ 已完成（`scheduler_run_task_queue_i32_with_event_loop`） |
+| 6 | **无跨线程唤醒** | `lib/std/async.uya` `Waker` | `async_compute` worker 完成后主线程无法被唤醒，只能 busy-wait | 添加 futex 或 eventfd 唤醒机制；`LinuxEpoll` 增加 wakeup fd | ✅ 已完成（eventfd） |
+| 7 | **block_on busy-wait** | `lib/std/async.uya` `block_on_*` 系列函数 | CPU 100% 占用，无法用于生产 | 集成 EventLoop：poll 返回 Pending 时注册 epoll，epoll_wait 等待唤醒 | ✅ 已完成（`block_on_with_event_loop`） |
+| 8 | **循环变量持久化硬编码** | `src/codegen/c99/function.uya` | 仅 `n`+`written` 组合被识别为循环变量；其他变量名在 await 后值丢失 | 移除名称检查，改为基于「循环内定义 + 跨 await 引用」的作用域分析 | ⚠️ 部分完成（仅 n/written/total） |
+| 8a | **嵌套循环内 await 之间语句不发射** | `collect_awaits_recursive` + `function.uya` 线性状态机 poll | `http_bench_async_epoll`：首包 read 后未执行解析/组包即进入 write，`g_cli_hdr_len` 为 0 → **Empty reply** | 在 await 边界发出完整语句与副作用；细节见 [todo_async_loop_await.md](todo_async_loop_await.md) | 🔴 未修复 |
+| 9 | **Waker 单 fd** | `lib/std/async.uya:12` `_io_fd: i32` | 无法同时关注读+写或多个 fd | 改为数组或链表；单 fd 时退化为当前行为 | 待办 |
+| 10 | **错误类型不一致** | `async_event`/`async_scheduler` | 调用方难以统一错误处理 | 定义 `std.async.Error` 枚举，统一所有异步错误 | ✅ 已完成（`EventLoopSlotsFull` 等已统一） |
 
 ### P2：架构改进
 
@@ -81,21 +81,21 @@ Phase 1: Socket API
 
 ### 里程碑
 
-| 阶段 | 内容 | 前置依赖 | 预计工时 |
-|------|------|----------|----------|
-| **Phase 1** | TCP Socket 封装（libc/syscall 层） | 无 | 1 周 |
-| **Phase 2** | HTTP 类型定义（Request/Response/Context/Handler） | 无 | 1 周 |
-| **Phase 3** | HTTP 解析器（请求行 + 头部 + body + multipart） | Phase 2 | 2 周 |
-| **Phase 4** | 路由器（路径匹配 + 参数提取 + 404/405） | Phase 2 | 1 周 |
-| **Phase 5** | 阻塞式 HTTP 服务器（accept + 每连接一线程） | Phase 1-4 | 2 周 |
-| **Phase 6** | 测试完善 + 示例应用 | Phase 5 | 1 周 |
-| **Phase 7** | JWT 认证 | Phase 5 | 1.5 周 |
-| **Phase 8** | 性能基准 | Phase 5 | 1 周 |
-| **Phase 9** | epoll 多路复用服务器 | P0 硬伤修复 + Phase 5 | 3 周 |
-| **Phase 10** | 中间件 + 异步 Handler + http.client | Phase 9 + P1 修复 | 3 周 |
+| 阶段 | 内容 | 前置依赖 | 状态 |
+|------|------|----------|------|
+| **Phase 1** | TCP Socket 封装（libc/syscall 层） | 无 | ✅ 完成 |
+| **Phase 2** | HTTP 类型定义（Request/Response/Context/Handler） | 无 | ✅ 完成 |
+| **Phase 3** | HTTP 解析器（请求行 + 头部 + body + multipart） | Phase 2 | ✅ 完成 |
+| **Phase 4** | 路由器（路径匹配 + 参数提取 + 404/405） | Phase 2 | ✅ 完成 |
+| **Phase 5** | 阻塞式 HTTP 服务器（accept + 原语级 API） | Phase 1-4 | ✅ 完成 |
+| **Phase 6** | 测试完善 + 示例应用 | Phase 5 | ✅ 完成 |
+| **Phase 7** | JWT 认证（HS256） | Phase 5 | ✅ 完成 |
+| **Phase 8** | 性能基准（wrk 对比 Uya/Go/Tokio） | Phase 5 | ✅ 完成 |
+| **Phase 9** | epoll 多路复用服务器 | P0 硬伤修复 + Phase 5 | ⚠️ 基础落地（`epoll_server.uya` 已有 accept/slot/event 原语；`run_epoll_loop` 闭环待 P1 #8a 修复） |
+| **Phase 10** | 中间件 + 异步 Handler + http.client | Phase 9 + P1 修复 | 📋 待开始 |
 
-**阻塞服务器里程碑**（Phase 1-6）：约 8 周
-**完整异步服务器**（Phase 9-10）：约 17 周
+**阻塞服务器里程碑**（Phase 1-8）：✅ 已完成
+**完整异步服务器**（Phase 9-10）：⚠️ 被 P1 #8a（嵌套循环 await 语句不发射）阻塞
 
 ---
 

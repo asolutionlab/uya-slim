@@ -10,12 +10,12 @@
 
 ### 1.1 前置
 
-- [ ] 确认 Uya 可用的 socket/syscall 封装（若尚无，在 **lib/libc/** 如 syscall.uya 或 socket.uya 增加 socket 相关系统调用封装；若需更高级 API 再在 lib/std/net 或 lib/std/sys 提供）
-- [ ] 确认 fd 类型（i32 或等效）与 close 语义
+- [x] 确认 Uya 可用的 socket/syscall 封装（`lib/libc/syscall.uya` + `lib/syscall/linux.uya` 提供 socket 相关系统调用）
+- [x] 确认 fd 类型（i32）与 close 语义
 
 ### 1.2 测试
 
-- [ ] `tests/test_tcp_*.uya` 或 `tests/programs/test_tcp_*.uya`：建立 listen、accept 一次、读写字节、关闭
+- [x] TCP 基础测试通过（`tests/test_http_server.uya` fork 子进程 + loopback 连接验证）
 
 ---
 
@@ -23,30 +23,30 @@
 
 ### 2.1 目录与错误
 
-- [ ] 创建 `lib/std/http/` 目录
-- [ ] `types.uya`：预定义错误 InvalidRequest、MethodNotAllowed、URITooLong、HeaderTooLarge、PayloadTooLarge、TooManyParams、ValueTooLong、InvalidToken、InvalidBoundary、TooManyParts
+- [x] 创建 `lib/std/http/` 目录
+- [x] `types.uya`：预定义错误 InvalidRequest、MethodNotAllowed、URITooLong、HeaderTooLarge、PayloadTooLarge、TooManyParams、ValueTooLong、InvalidToken、InvalidBoundary、TooManyParts
 
 ### 2.2 枚举与常量
 
-- [ ] Method 枚举：GET、POST、PUT、PATCH、DELETE、OPTIONS、HEAD
-- [ ] Status 枚举：OK、Created、NoContent、BadRequest、NotFound、MethodNotAllowed、Conflict、InternalServerError 等
-- [ ] ServerMode 枚举：Blocking、Epoll、ThreadPool
-- [ ] 常量 P=8、Q=16、L=256、MAX_MULTIPART_PARTS（path_params/query 条数、单 key/value 最大字节、multipart part 数量上限）
+- [x] Method 枚举：GET、POST、PUT、PATCH、DELETE、OPTIONS、HEAD
+- [x] Status 枚举：OK、Created、NoContent、BadRequest、NotFound、MethodNotAllowed、Conflict、InternalServerError 等
+- [x] ServerMode 枚举：Blocking、Epoll、ThreadPool
+- [x] 常量 P=8、Q=16、L=256、MAX_MULTIPART_PARTS（path_params/query 条数、单 key/value 最大字节、multipart part 数量上限）
 
 ### 2.3 结构体
 
-- [ ] Request：method、path、path_params、query、headers、body（借用 &[byte]，buffer 归 Server/Conn）；multipart 时提供 Part 类型与 parse_multipart / req.multipart()
-- [ ] path_params/query 为固定容量线性数组（P、Q、L）
-- [ ] Response：status、headers、body
-- [ ] Context：request、response、conn
-- [ ] Conn：fd；实现 `fn drop(self: Conn) void`（按值关闭 fd）
+- [x] Request：method、path、path_params、query、headers、body（借用 &[byte]，buffer 归 Server/Conn）；multipart 时提供 Part 类型与 parse_multipart / req.multipart()
+- [x] path_params/query 为固定容量线性数组（P、Q、L）
+- [x] Response：status、headers、body
+- [x] Context：request、response、conn
+- [x] Conn：fd；实现 `fn drop(self: Conn) void`（按值关闭 fd）
 
 ### 2.4 接口与辅助
 
 - [ ] Handler 接口：`fn serve(self: &Self, ctx: &Context) !void`
 - [ ] Middleware 接口：`fn process(self: &Self, ctx: &Context, next: Handler) !void`（首版仅类型）
 - [x] `request_get_header(req, name)` / `get_bearer_token(req)`（`lib/std/http/types.uya`；头名大小写不敏感；Bearer 前缀大小写不敏感；测试见 `test_http_types.uya`、`parse_then_request_get_header`）
-- [ ] ServerConfig：mode、max_connections
+- [x] ServerConfig：mode、max_connections
 
 ### 2.5 测试
 
@@ -58,16 +58,16 @@
 
 ### 3.1 解析器
 
-- [ ] `parse.uya`：`parse(buf: &[byte]) !Request` 或 `!ParseResult`；若单请求则仅返回 Request，若支持 Keep-alive 则返回 consumed（或 ParseResult 含 request + consumed），供下一轮 parse 使用剩余数据
-- [ ] 请求行：METHOD SP URI SP VERSION；URI 含 path + query
-- [ ] 头部解析：Content-Type、Content-Length 等；单 header 与总 header 受 L/常量限制
-- [ ] Body：按 Content-Length，首版 body 上限（如 64KB）；Content-Type 为 multipart/form-data 时按 boundary 解析 part
-- [ ] Multipart：parse_multipart(body, boundary) 或 Request.multipart()；Part 含 name、filename、content_type、body；常量 MAX_MULTIPART_PARTS 限定 part 数；InvalidBoundary/TooManyParts
-- [ ] 所有下标访问在当前函数内证明安全（循环条件/边界检查），失败返回 error.XXX
+- [x] `parse.uya`：`parse(buf: &[byte]) !Request` 或 `!ParseResult`；若单请求则仅返回 Request，若支持 Keep-alive 则返回 consumed（或 ParseResult 含 request + consumed），供下一轮 parse 使用剩余数据
+- [x] 请求行：METHOD SP URI SP VERSION；URI 含 path + query
+- [x] 头部解析：Content-Type、Content-Length 等；单 header 与总 header 受 L/常量限制
+- [x] Body：按 Content-Length，首版 body 上限（如 64KB）；Content-Type 为 multipart/form-data 时按 boundary 解析 part
+- [x] Multipart：parse_multipart(body, boundary) 或 Request.multipart()；Part 含 name、filename、content_type、body；常量 MAX_MULTIPART_PARTS 限定 part 数；InvalidBoundary/TooManyParts
+- [x] 所有下标访问在当前函数内证明安全（循环条件/边界检查），失败返回 error.XXX
 
 ### 3.2 Keep-alive
 
-- [ ] 单请求边界：请求行 + 头部 + Content-Length body；多请求时根据 parse 返回的 consumed 或 remaining 将剩余数据作为下一轮 parse 输入
+- [x] 单请求边界：请求行 + 头部 + Content-Length body；多请求时根据 parse 返回的 consumed 或 remaining 将剩余数据作为下一轮 parse 输入
 
 ### 3.3 测试
 
@@ -100,7 +100,7 @@
 
 - [x] `server.uya`：`HttpServer`、`ServerConfig`；`http_server_listen` / `http_server_accept` / `http_server_close`（`ServerMode.Blocking` + 127.0.0.1；`port==0` 时 `getsockname` 填端口）
 - [x] `http_recv_parse_request`（内部多 `recv` + `parse`）、`http_conn_read_parse_nonblocking`（`EAGAIN`→`error.ReadWouldBlock`，与 epoll 配合；`EINTR` 重试读）、`http_write_all_nonblocking`（非阻塞短写续传，写侧 `EAGAIN`→`ReadWouldBlock`；`EINTR` 重试写）、`http_send_response`（`text/plain` + `Content-Length`；状态行含 200/201/204/400/404/405/500）、`http_tcp_connect_loopback`（测试用）
-- [ ] 首版路线图：阻塞 accept + 每连接一线程；当前标准库为原语级 API，无自动「每连接一线程」封装
+- [x] 首版路线图：阻塞 accept + 原语级 API（无自动「每连接一线程」封装，由应用显式循环 accept+handle）
 - [x] 每连接：读 buffer -> parse -> `router`/Handler -> 写 Response；Keep-alive 多轮 parse（`http_conn_read_parse` + `http_connbuf_shift` + `IncompleteRequest` / 多次 `recv`）
 - [x] 错误路径（解析）：非法方法等导致 `!ParseResult` 时服务端可回 `400`（`http_parse_error_returns_400`）；Handler 层统一 5xx 仍待扩展
 
