@@ -1231,6 +1231,9 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
         }
     } else if node.type == ASTNodeType.AST_RETURN_STMT {
         codegen.async_collect_ret_expr = node.return_stmt_expr;
+        // TODO(Bug C): return try @await inner(...) 需要收集为 await 点
+        // 且 emit 侧需要拆分为「设置子 Future → 等待 → Ready 时 return」
+        // 当前仅记录 ret_expr，emit 侧仍走同步路径
     }
 }
 
