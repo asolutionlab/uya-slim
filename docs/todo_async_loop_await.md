@@ -58,10 +58,67 @@
 - [x] **扩展循环变量持久化** ✅
   - 已移除 `n`+`written`+`total` 硬编码；所有函数体顶层 `var` 通过 `async_local_*`（`s->_uya_loc_*`）通用持久化
 
+### 🔴 async 状态机 lowering 缺陷（2026-04-03 分析）
+
+**根本问题**：`collect_awaits_recursive`（function.uya:1195）只识别一种 await 模式：
+```
+const x: T = try @await expr;   // ← 唯一被收集的模式（line 1218-1231）
+```
+对以下场景均未正确 lowering，emit 侧生成无效 C 或丢失语义：
+
+- [ ] **Bug A：两个连续 while+@await 写循环**
+  - 现象：第一个循环结束后，第二个循环的状态转移失败 → 运行时挂死
+  - TDD：`tests/test_async_bug_a_two_while.uya.pending`
+  - 典型场景：先写 header 再写 body（HTTP 客户端）
+  ```uya
+  while woff < hdr_len {
+      const wn = try @await write(fd, hdr_ptr, hdr_len - woff);
+      woff += wn;
+  }
+  while boff < body_len {   // ← 第二个循环的状态转移丢失
+      const bn = try @await write(fd, body_ptr, body_len - boff);
+      boff += bn;
+  }
+  ```
+
+- [ ] **Bug B：await 循环间的同步代码被吃掉**
+  - 现象：第一个 await 循环结束后的 parse/malloc 等同步语句不进入状态机 → 运行时挂死
+  - TDD：`tests/test_async_bug_b_sync_between.uya.pending`
+  - 典型场景：读 header → 同步解析 → 读 body
+  ```uya
+  while !header_done {
+      const rn = try @await read(fd, buf, cap);
+      // ... set header_done
+  }
+  const meta = try parse_meta(...);   // ← 此段被吃掉
+  while copied < body_len {
+      const rn2 = try @await read(fd, ...);
+  }
+  ```
+
+- [ ] **Bug C：`return try @await inner_async_fn(...)` 生成非法 C**
+  - 现象：gcc 编译失败 — `inner_async` 被当作同步函数调用
+  - TDD：`tests/test_async_bug_c_tail_await.uya.pending`
+  - 根因：`AST_RETURN_STMT` 分支（line 1232-1234）仅记录 `ret_expr`，不递归检查内部 `@await`
+  - 修复需要：collect 侧收集 await 点 **且** emit 侧拆分为「设置子 Future → 等待 → Ready 时 return 结果」
+
+- [ ] **Bug D：分裂点附近局部变量与表达式**（与 A/B 叠加时更易触发）
+  - `xxx undeclared`：恢复点在 if 内声明的变量未提升到状态结构体
+  - `break not within loop`：内层 while 在状态机展开后错位
+  - 切片表达式在分裂后生成错误类型
+  - 建议：所有 resume 后仍可读的局部变量，提升到状态结构体
+
+**修复方向**：
+1. `collect_awaits_recursive` 扩展识别 return/assign/bare expr 中的 @await
+2. emit 侧对每个 await 点生成完整状态转移（保存变量 → 设子 Future → Pending → Resume → 恢复变量 → 继续后续语句）
+3. 连续 while 循环需各自独立的状态编号
+4. 所有跨 await 可达的局部变量提升到 `s->_uya_loc_*`
+
+**验收**：三个 .pending 测试文件恢复为 .uya 后全量 `make tests e` 通过
+
 ### 低优先级
 
 - [ ] 文档与注释补充
-- [ ] 边界情况测试（多 await、嵌套循环等）
 
 ---
 

@@ -33,7 +33,7 @@
 | 6 | **无跨线程唤醒** | `lib/std/async.uya` `Waker` | `async_compute` worker 完成后主线程无法被唤醒，只能 busy-wait | 添加 futex 或 eventfd 唤醒机制；`LinuxEpoll` 增加 wakeup fd | ✅ 已完成（eventfd） |
 | 7 | **block_on busy-wait** | `lib/std/async.uya` `block_on_*` 系列函数 | CPU 100% 占用，无法用于生产 | 集成 EventLoop：poll 返回 Pending 时注册 epoll，epoll_wait 等待唤醒 | ✅ 已完成（`block_on_with_event_loop`） |
 | 8 | **循环变量持久化硬编码** | `src/codegen/c99/function.uya` | 仅 `n`+`written` 组合被识别为循环变量；其他变量名在 await 后值丢失 | 移除名称检查，改为基于「循环内定义 + 跨 await 引用」的作用域分析 | ⚠️ 部分完成（仅 n/written/total） |
-| 8a | **嵌套循环内 await 之间语句不发射** | `collect_awaits_recursive` + `function.uya` 线性状态机 poll | `http_bench_async_epoll`：首包 read 后未执行解析/组包即进入 write，`g_cli_hdr_len` 为 0 → **Empty reply** | 在 await 边界发出完整语句与副作用；细节见 [todo_async_loop_await.md](todo_async_loop_await.md) | 🔴 未修复 |
+| 8a | **async 状态机 lowering 缺陷（4 个子问题）** | `collect_awaits_recursive` + emit | Bug A: 连续 while+await 循环状态转移失败；Bug B: await 间同步代码被吃掉；Bug C: `return try @await` 生成非法 C；Bug D: 分裂点局部变量丢失 | 重构 collect+emit：扩展 await 模式识别、独立状态编号、变量提升；TDD 测试已就位 `.pending` | 🔴 未修复（根因已分析，TDD 已写） |
 | 9 | **Waker 单 fd** | `lib/std/async.uya:12` `_io_fd: i32` | 无法同时关注读+写或多个 fd | 改为数组或链表；单 fd 时退化为当前行为 | 待办 |
 | 10 | **错误类型不一致** | `async_event`/`async_scheduler` | 调用方难以统一错误处理 | 定义 `std.async.Error` 枚举，统一所有异步错误 | ✅ 已完成（`EventLoopSlotsFull` 等已统一） |
 
