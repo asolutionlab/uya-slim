@@ -1230,10 +1230,25 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
             }
         }
     } else if node.type == ASTNodeType.AST_RETURN_STMT {
-        codegen.async_collect_ret_expr = node.return_stmt_expr;
-        // TODO(Bug C): return try @await inner(...) 需要收集为 await 点
-        // 且 emit 侧需要拆分为「设置子 Future → 等待 → Ready 时 return」
-        // 当前仅记录 ret_expr，emit 侧仍走同步路径
+        // Bug C fix: 检查 return try @await inner(...) 模式
+        const ret_expr: &ASTNode = node.return_stmt_expr;
+        if ret_expr != null && ret_expr.type == ASTNodeType.AST_TRY_EXPR && ret_expr.try_expr_operand != null {
+            const ret_op: &ASTNode = ret_expr.try_expr_operand;
+            if ret_op.type == ASTNodeType.AST_AWAIT_EXPR && ret_op.await_expr_operand != null && codegen.async_collect_count < max_count {
+                // 收集为 await 点，bind_name = null 表示 "return await"
+                codegen.async_collect_operands[codegen.async_collect_count] = ret_op.await_expr_operand;
+                codegen.async_collect_names[codegen.async_collect_count] = null;
+                codegen.async_collect_types[codegen.async_collect_count] = null;
+                codegen.async_collect_blocks[codegen.async_collect_count] = parent_block;
+                codegen.async_collect_stmt_indices[codegen.async_collect_count] = parent_stmt_index;
+                codegen.async_collect_enclosing_while[codegen.async_collect_count] = enclosing_while;
+                codegen.async_collect_count = codegen.async_collect_count + 1;
+                // ret_expr 设为 null，表示返回值由最后一个 await 的 Ready 值提供
+                codegen.async_collect_ret_expr = null;
+                return;
+            }
+        }
+        codegen.async_collect_ret_expr = ret_expr;
     }
 }
 
@@ -2854,6 +2869,14 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 fputs("        if (s->await_fut.data != (void*)0) { free((void*)s->await_fut.data); }\n" as *byte, codegen.emit_stream as *void);
             }
             fputs("        s->await_fut.data = (void*)0; s->await_fut.vtable = (void*)0;\n" as *byte, codegen.emit_stream as *void);
+            // Bug C: "return try @await" — 最后一个 await 且无 bind name：直接 return Ready(r.value)
+            if state_k == await_count && cur_bind_name == null && ret_expr == null {
+                fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = 0, .value = r.value } } };\n" as *byte,
+                    poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte);
+                fputs("    }\n" as *byte, codegen.emit_stream as *void);
+                state_k = state_k + 1;
+                continue;
+            }
             if state_k < await_count {
                 c99_emit_async_poll_not_last_transition(codegen, fn_decl, body, state_k, await_count, await_operands, await_blocks, await_stmt_indices, await_bind_types, poll_ret_c, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
             } else if codegen.async_collect_enclosing_while[state_k - 1] != null &&
@@ -2862,8 +2885,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 // while 内多 await：通用循环回跳
                 c99_emit_async_while_multi_loopback(codegen, fn_decl, body, codegen.async_collect_enclosing_while[state_k - 1], state_k, await_count, await_operands, await_blocks, await_stmt_indices, await_bind_types, poll_ret_c, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
             } else {
-                // 最后一态：用 ret_expr 计算返回值。若函数返回 !Future<T> 则 ok 为 full_return_type，value 需 Future 装箱
-                // 不在此处重放顶层局部初值：多 await 路径下 hdr/meta 等已在前面状态写入 _uya_loc_*，重放会破坏状态（如 meta=0、malloc(0)）。
+                // 最后一态：用 ret_expr 计算返回值
                 fputs("        s->state = " as *byte, codegen.emit_stream as *void);
                 fprintf(codegen.emit_stream as *void, "%d;\n" as *byte, await_count + 1);
                 c99_emit_async_tail_stmts_after_last_await(codegen, await_blocks, await_stmt_indices, await_count);
