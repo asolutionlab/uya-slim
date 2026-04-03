@@ -634,8 +634,7 @@ export @async_fn fn http1_request_async(req: &Http1AsyncRequest) Future<!Http1As
 
     var rb: [byte: 8192] = [];
     var filled: usize = 0;
-    var body_start: usize = 0;
-    while true {
+    while !header_complete_raw(&rb[0] as &byte, filled) {
         if filled >= 8192 {
             _ = sys_close(fd) catch {};
             return try http1_async_err_header_large();
@@ -647,12 +646,8 @@ export @async_fn fn http1_request_async(req: &Http1AsyncRequest) Future<!Http1As
             return err_resp;
         }
         filled = filled + rn;
-        if !header_complete_raw(&rb[0] as &byte, filled) {
-            continue;
-        }
-        body_start = try find_header_body_start_raw(&rb[0] as &byte, filled);
-        break;
     }
+    const body_start: usize = try find_header_body_start_raw(&rb[0] as &byte, filled);
 
     const meta: ParsedRespMeta = try parse_response_meta_raw(&rb[0] as &byte, body_start - 4);
     const initial_body: usize = filled - body_start;
