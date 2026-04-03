@@ -1454,6 +1454,24 @@ fn c99_async_min_await_index_in_stmt_tree(stmt_root: &ASTNode, await_blocks: [&A
     return best;
 }
 
+/// Bug A: 在 fn_body 中找到 needle_while 的位置，搜索其之后的语句中最小 await index
+fn c99_async_find_next_await_after_while(needle_while: &ASTNode, fn_body: &ASTNode, await_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS], await_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS], await_count: i32) i32 {
+    if needle_while == null || fn_body == null || fn_body.type != ASTNodeType.AST_BLOCK || fn_body.block_stmts == null {
+        return -1;
+    }
+    var wi: i32 = -1;
+    var si: i32 = 0;
+    while si < fn_body.block_stmt_count {
+        const ch: &ASTNode = fn_body.block_stmts[si];
+        if ch != null && @usize_from_ptr(ch as &void) == @usize_from_ptr(needle_while as &void) {
+            wi = si;
+        }
+        si = si + 1;
+    }
+    if wi < 0 { return -1; }
+    return c99_async_min_await_from_block_range(fn_body, wi + 1, fn_body.block_stmt_count, await_blocks, await_stmt_indices, await_count);
+}
+
 fn c99_async_min_await_from_block_range(pb: &ASTNode, lo: i32, hi: i32, await_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS], await_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS], await_count: i32) i32 {
     var best: i32 = -1;
     if pb == null || pb.type != ASTNodeType.AST_BLOCK || pb.block_stmts == null || lo < 0 {
@@ -1694,11 +1712,13 @@ fn c99_emit_async_while_multi_loopback(
         // while 退出后的过渡
         var pb_slot: [&ASTNode: 1] = [null];
         var ix_slot: [i32: 1] = [-1];
-        if c99_async_find_while_parent_block(Wloop, fn_body, pb_slot, ix_slot) != 0 {
-            c99_emit_async_while_exit_transition(codegen, fn_body, Wloop, pb_slot[0], ix_slot[0], await_count, await_blocks, await_stmt_indices, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c, poll_ret_c);
+        // Bug A fix: 搜索 while 之后的 await 并生成状态转移
+        const merge_min_loop: i32 = c99_async_find_next_await_after_while(Wloop, fn_body, await_blocks, await_stmt_indices, await_count);
+        if merge_min_loop >= 0 {
+            c99_emit_async_goto_await_state(codegen, merge_min_loop, poll_ret_c, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
         } else {
+            // 循环后无更多 await — 跳转到结束状态（由外层 state loop 生成 return Ready）
             fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, await_count + 1);
-            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
         }
         fputs("        }\n" as *byte, codegen.emit_stream as *void);
     }
@@ -1750,7 +1770,13 @@ fn c99_emit_async_poll_not_last_transition(
         c99_emit_async_arm_await_index(codegen, cur_ai, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
         fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
         fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
-        c99_emit_async_while_exit_transition(codegen, fn_body, Wloop, pb_slot[0], ix_slot[0], await_count, await_blocks, await_stmt_indices, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c, poll_ret_c);
+        // Bug A fix: 直接搜索 while 后的 await（避免定长数组传值问题）
+        const merge_min_nlt: i32 = c99_async_find_next_await_after_while(Wloop, fn_body, await_blocks, await_stmt_indices, await_count);
+        if merge_min_nlt >= 0 {
+            c99_emit_async_goto_await_state(codegen, merge_min_nlt, poll_ret_c, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
+        } else {
+            fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, await_count + 1);
+        }
         fputs("        }\n" as *byte, codegen.emit_stream as *void);
         return;
     }
@@ -3052,6 +3078,20 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
         fputs("    }\n" as *byte, codegen.emit_stream as *void);
         state_k = state_k + 1;
+    }
+
+    // Bug A: 终态 — while 循环退出后 s->state = await_count+1 到达这里
+    if await_count > 0 && has_await_loop != 0 {
+        fprintf(codegen.emit_stream as *void, "    if (s->state == %d) {\n" as *byte, await_count + 1);
+        c99_emit_async_tail_stmts_after_last_await(codegen, await_blocks, await_stmt_indices, await_count);
+        if ret_expr != null {
+            fprintf(codegen.emit_stream as *void, "        { %s ok = (%s){ .error_id = 0, .value = " as *byte, ready_payload_c as *byte, ready_payload_c as *byte);
+            gen_expr(codegen, ret_expr);
+            fprintf(codegen.emit_stream as *void, " };\n        return (%s){ ._tag = 1, .u = (%s){ .Ready = ok } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
+        } else {
+            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = 0, .value = 0 } } };\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte);
+        }
+        fputs("    }\n" as *byte, codegen.emit_stream as *void);
     }
 
     // 无 await：计算返回值并返回 Ready(ok)
