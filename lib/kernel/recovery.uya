@@ -1,0 +1,134 @@
+// Microcontainer crash recovery and fuse (circuit breaker)
+// Spec: docs/microcontainer/update_recovery.md
+//
+// Window: 60 seconds, threshold: 3 crashes → fuse blown
+// Fuse: no auto-restart, needs explicit reset or new image
+
+use kernel.errors;
+
+// ── Constants ──
+
+export const CRASH_WINDOW_SEC: i64 = 60;
+export const CRASH_FUSE_THRESHOLD: u32 = 3;
+export const HEALTH_PROBE_MS: u32 = 100;
+export const MAX_CRASH_LOG: u32 = 16;
+
+// ── Crash Log Entry ──
+
+export struct CrashLogEntry {
+    timestamp: i64,
+    container_id: u32,
+    fault_code: u32,
+    pc: u32,
+    sp: u32,
+    restart_count: u32,
+}
+
+// ── Per-Container Recovery State ──
+
+export struct ContainerRecovery {
+    crash_count: u32,
+    window_start: i64,      // timestamp of first crash in current window
+    fused: u32,             // 1 = fuse blown (circuit breaker open)
+    total_restarts: u32,
+}
+
+// ── Recovery Manager ──
+
+export const MAX_CONTAINERS: u32 = 8;
+
+export struct RecoveryManager {
+    states: [ContainerRecovery: 8],
+    log: [CrashLogEntry: 16],
+    log_head: u32,
+    log_count: u32,
+}
+
+export fn recovery_init(r: &RecoveryManager) void {
+    r.log_head = 0;
+    r.log_count = 0;
+    var i: u32 = 0;
+    while i < @len(r.states) {
+        r.states[i].crash_count = 0;
+        r.states[i].window_start = 0;
+        r.states[i].fused = 0;
+        r.states[i].total_restarts = 0;
+        i = i + 1;
+    }
+}
+
+// ── Record a crash ──
+
+export fn recovery_record_crash(r: &RecoveryManager, cid: u32, now: i64, fault_code: u32) void {
+    if cid >= 0 && cid < @len(r.states) {
+        // Check if current window expired
+        if now - r.states[cid].window_start > CRASH_WINDOW_SEC {
+            r.states[cid].crash_count = 0;
+            r.states[cid].window_start = now;
+        }
+
+        r.states[cid].crash_count = r.states[cid].crash_count + 1;
+
+        if r.states[cid].crash_count >= CRASH_FUSE_THRESHOLD {
+            r.states[cid].fused = 1;
+        }
+
+        // Write to crash log (circular)
+        const restarts: u32 = r.states[cid].total_restarts;
+        if r.log_head >= 0 && r.log_head < 16 {
+            r.log[r.log_head].timestamp = now;
+            r.log[r.log_head].container_id = cid;
+            r.log[r.log_head].fault_code = fault_code;
+            r.log[r.log_head].pc = 0;
+            r.log[r.log_head].sp = 0;
+            r.log[r.log_head].restart_count = restarts;
+        }
+        r.log_head = (r.log_head + 1) % MAX_CRASH_LOG;
+        if r.log_count < MAX_CRASH_LOG {
+            r.log_count = r.log_count + 1;
+        }
+    }
+}
+
+// ── Should this container auto-restart? ──
+
+export fn recovery_should_restart(r: &RecoveryManager, cid: u32) i32 {
+    if cid >= 0 && cid < 8 {
+        if r.states[cid].fused != 0 { return 0; }
+        return 1;
+    }
+    return 0;
+}
+
+// ── Mark container as restarted ──
+
+export fn recovery_mark_restarted(r: &RecoveryManager, cid: u32) void {
+    if cid >= 0 && cid < 8 {
+        r.states[cid].total_restarts = r.states[cid].total_restarts + 1;
+    }
+}
+
+// ── Reset fuse (explicit recovery command) ──
+
+export fn recovery_reset_fuse(r: &RecoveryManager, cid: u32) void {
+    if cid >= 0 && cid < 8 {
+        r.states[cid].fused = 0;
+        r.states[cid].crash_count = 0;
+    }
+}
+
+// ── Query state ──
+
+export fn recovery_is_fused(r: &RecoveryManager, cid: u32) i32 {
+    if cid >= 0 && cid < 8 {
+        return r.states[cid].fused as i32;
+    }
+    return 0;
+}
+
+export fn recovery_crash_count(r: &RecoveryManager, cid: u32) u32 {
+    if cid >= 0 && cid < 8 {
+        return r.states[cid].crash_count;
+    }
+    return 0;
+}

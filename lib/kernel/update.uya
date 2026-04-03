@@ -1,0 +1,222 @@
+// Microcontainer dual-slot hot update with atomic commit
+// Spec: docs/microcontainer/update_recovery.md
+//
+// Each container has two image slots (A/B). Update writes to non-active slot,
+// validates, then atomically commits. On failure: rollback to previous slot.
+// On boot: select slot with highest valid generation.
+
+use kernel.errors;
+use kernel.image;
+
+// ── Slot States ──
+
+export const SLOT_INACTIVE: u32 = 0;
+export const SLOT_UPDATING: u32 = 1;
+export const SLOT_ACTIVE: u32 = 2;
+export const SLOT_INVALID: u32 = 3;
+
+// ── Slot Metadata ──
+
+export const MAX_IMAGE_SIZE: usize = 45056;  // 44KB (code 24KB + data 20KB + header)
+
+export struct SlotMeta {
+    generation: u32,       // monotonically increasing
+    state: u32,            // INACTIVE/UPDATING/ACTIVE/INVALID
+    image_len: u32,        // actual image size in bytes
+    crc32: u32,            // CRC32 of this metadata record
+}
+
+export struct ImageSlot {
+    meta: SlotMeta,
+    data: [byte: 45056],   // image bytes
+}
+
+export struct DualSlot {
+    slots: [ImageSlot: 2],
+    active: u32,           // 0 or 1: which slot is active
+    next_generation: u32,  // next generation number to assign
+}
+
+// ── CRC32 (simple implementation for metadata integrity) ──
+
+fn crc32_byte(crc: u32, b: byte) u32 {
+    var c: u32 = crc ^ (b as u32);
+    var i: i32 = 0;
+    while i < 8 {
+        if (c & 1u32) != 0 {
+            c = (c >> 1) ^ 3988292384u32;  // 0xEDB88320
+        } else {
+            c = c >> 1;
+        }
+        i = i + 1;
+    }
+    return c;
+}
+
+export fn crc32_compute(data: &[byte]) u32 {
+    var crc: u32 = 4294967295u32;  // 0xFFFFFFFF
+    var i: usize = 0;
+    while i < data.len {
+        crc = crc32_byte(crc, data.ptr[i]);
+        i = i + 1;
+    }
+    return crc ^ 4294967295u32;
+}
+
+// ── Metadata CRC ──
+
+fn meta_compute_crc(meta: &SlotMeta) u32 {
+    // CRC over generation + state + image_len (12 bytes)
+    var buf: [byte: 12] = [];
+    buf[0] = (meta.generation & 255u32) as byte;
+    buf[1] = ((meta.generation >> 8) & 255u32) as byte;
+    buf[2] = ((meta.generation >> 16) & 255u32) as byte;
+    buf[3] = ((meta.generation >> 24) & 255u32) as byte;
+    buf[4] = (meta.state & 255u32) as byte;
+    buf[5] = ((meta.state >> 8) & 255u32) as byte;
+    buf[6] = ((meta.state >> 16) & 255u32) as byte;
+    buf[7] = ((meta.state >> 24) & 255u32) as byte;
+    buf[8] = (meta.image_len & 255u32) as byte;
+    buf[9] = ((meta.image_len >> 8) & 255u32) as byte;
+    buf[10] = ((meta.image_len >> 16) & 255u32) as byte;
+    buf[11] = ((meta.image_len >> 24) & 255u32) as byte;
+    return crc32_compute(buf[0: 12]);
+}
+
+fn meta_is_valid(meta: &SlotMeta) i32 {
+    if meta.crc32 == meta_compute_crc(meta) { return 1; }
+    return 0;
+}
+
+// ── Init ──
+
+export fn dualslot_init(ds: &DualSlot) void {
+    ds.active = 0;
+    ds.next_generation = 1;
+    var i: i32 = 0;
+    while i < 2 {
+        ds.slots[i].meta.generation = 0;
+        ds.slots[i].meta.state = SLOT_INACTIVE;
+        ds.slots[i].meta.image_len = 0;
+        ds.slots[i].meta.crc32 = 0;
+        i = i + 1;
+    }
+}
+
+// ── Stage: write new image to non-active slot ──
+
+export fn update_stage(ds: &DualSlot, new_image: &[byte]) !void {
+    if new_image.len > MAX_IMAGE_SIZE {
+        return error.TooLarge;
+    }
+
+    // Target slot = 1 - active
+    var target: u32 = 0;
+    if ds.active == 0 { target = 1; }
+
+    if target < @len(ds.slots) {
+        // Mark as updating
+        ds.slots[target].meta.state = SLOT_UPDATING;
+        ds.slots[target].meta.image_len = new_image.len as u32;
+
+        // Copy image data
+        var i: usize = 0;
+        while i < new_image.len && i < @len(ds.slots[target].data) {
+            ds.slots[target].data[i] = new_image.ptr[i];
+            i = i + 1;
+        }
+
+        // Validate image (3-stage) — pass input slice directly since data was copied
+        try image_validate(new_image);
+    }
+}
+
+// ── Commit: atomic slot switch ──
+
+export fn update_commit(ds: &DualSlot) !void {
+    var target: u32 = 0;
+    if ds.active == 0 { target = 1; }
+
+    if target < @len(ds.slots) {
+        if ds.slots[target].meta.state != SLOT_UPDATING {
+            return error.InvalidState;
+        }
+
+        // Atomic commit sequence:
+        // 1. Assign generation
+        const gen: u32 = ds.next_generation;
+        ds.slots[target].meta.generation = gen;
+
+        // 2. Mark new slot active
+        ds.slots[target].meta.state = SLOT_ACTIVE;
+
+        // 3. Compute metadata CRC
+        ds.slots[target].meta.crc32 = meta_compute_crc(&ds.slots[target].meta);
+
+        // 4. Mark old slot inactive
+        const old: u32 = ds.active;
+        if old < @len(ds.slots) {
+            ds.slots[old].meta.state = SLOT_INACTIVE;
+            ds.slots[old].meta.crc32 = meta_compute_crc(&ds.slots[old].meta);
+        }
+
+        // 5. Switch active pointer
+        ds.active = target;
+        ds.next_generation = gen + 1;
+    }
+}
+
+// ── Rollback: revert to previous slot ──
+
+export fn update_rollback(ds: &DualSlot) void {
+    var target: u32 = 0;
+    if ds.active == 0 { target = 1; }
+
+    if target < @len(ds.slots) {
+        ds.slots[target].meta.state = SLOT_INVALID;
+        ds.slots[target].meta.crc32 = meta_compute_crc(&ds.slots[target].meta);
+    }
+}
+
+// ── Boot select: pick highest valid generation ──
+
+export fn update_boot_select(ds: &DualSlot) u32 {
+    const v0: i32 = meta_is_valid(&ds.slots[0].meta);
+    const v1: i32 = meta_is_valid(&ds.slots[1].meta);
+    var s0_active: i32 = 0; if ds.slots[0].meta.state == SLOT_ACTIVE { s0_active = 1; }
+    var s1_active: i32 = 0; if ds.slots[1].meta.state == SLOT_ACTIVE { s1_active = 1; }
+
+    if v0 != 0 && s0_active != 0 && v1 != 0 && s1_active != 0 {
+        // Both valid and active: pick higher generation
+        if ds.slots[1].meta.generation > ds.slots[0].meta.generation {
+            ds.active = 1;
+            return 1;
+        }
+        ds.active = 0;
+        return 0;
+    }
+    if v0 != 0 && s0_active != 0 {
+        ds.active = 0;
+        return 0;
+    }
+    if v1 != 0 && s1_active != 0 {
+        ds.active = 1;
+        return 1;
+    }
+    // No valid active slot — default to 0
+    ds.active = 0;
+    return 0;
+}
+
+// ── Get active image slice ──
+
+export fn update_get_active_len(ds: &DualSlot) !u32 {
+    const idx: u32 = ds.active;
+    if idx >= 0 && idx < 2 {
+        if ds.slots[idx].meta.state != SLOT_ACTIVE {
+            return error.InvalidState;
+        }
+        return ds.slots[idx].meta.image_len;
+    }
+    return error.InvalidState;
+}
