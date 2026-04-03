@@ -334,6 +334,12 @@ struct C99CodeGenerator {
     async_poll_try_propagate_type: &ASTNode,
     async_poll_ret_c: &byte,
     async_poll_union_c: &byte,
+    // while 内多 await 间语句发射：1=gen_stmt 遇 return 时生成 Poll::Ready 包装
+    async_emit_poll_return: i32,
+    // Ready 载荷的 C 类型（如 "struct err_union_usize"），用于 gen_return_stmt 内 Poll 包装
+    async_poll_ready_payload_c: &byte,
+    // Ready 载荷是否为 error union（1=是：return expr 需包装为 { .error_id=0, .value=expr }）
+    async_poll_inner_is_err_union: i32,
 
     // 多文件 C 输出（--split-c-dir）：part1=前导+字符串常量，part2=其余；emit_stream 指向当前写入目标
     emit_stream: &void,

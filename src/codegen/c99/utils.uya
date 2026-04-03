@@ -341,6 +341,9 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &CompilerArena, output: &v
     codegen.async_poll_try_propagate_type = null;
     codegen.async_poll_ret_c = null;
     codegen.async_poll_union_c = null;
+    codegen.async_emit_poll_return = 0;
+    codegen.async_poll_ready_payload_c = null;
+    codegen.async_poll_inner_is_err_union = 0;
     ii = 0;
     while ii < 16 {
         codegen.async_param_names[ii] = null;
