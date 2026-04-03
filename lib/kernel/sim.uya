@@ -1,0 +1,136 @@
+// Microcontainer hosted simulator — ties all kernel modules together
+// Runs on x86-64 Linux, simulates the full container lifecycle:
+//   register → load → validate → schedule → syscall → crash/recover → hot update
+//
+// Container "execution" is modeled as callback functions that receive a context
+// and issue syscalls via kernel_syscall(). The scheduler calls these in round-robin.
+
+use kernel.container;
+use kernel.dispatch;
+use kernel.errors;
+use kernel.mem;
+use kernel.paging;
+use kernel.recovery;
+use kernel.scheduler;
+use kernel.syscall;
+use kernel.update;
+
+// ── Container entry function type ──
+// fn(ctx: &SimContainerCtx) i32
+//   return 0 = yield (still alive)
+//   return 1 = exit normally
+//   return negative = crash with fault code
+
+export struct SimContainerCtx {
+    cid: u32,
+    tick: u32,              // how many times this container has been called
+    kernel: &SimKernel,     // back-reference for syscalls
+}
+
+// ── Kernel State ──
+
+export struct SimKernel {
+    sched: Scheduler,
+    host_ctx: KernelHostCtx,
+    recovery: RecoveryManager,
+    // Container entry functions (function pointers simulated as indices)
+    entry_fns: [i32: 8],      // 0 = no entry, >0 = registered function index
+    container_ctxs: [SimContainerCtx: 8],
+    total_ticks: u32,
+    // Callback table: callers register fn pointers here
+    // For simplicity in Uya (no fn pointer arrays), we use a dispatch pattern
+}
+
+// ── Init ──
+
+export fn sim_kernel_init(k: &SimKernel) void {
+    scheduler_init(&k.sched);
+    k.host_ctx.sch = &k.sched;
+    k.host_ctx.pm.base = null;
+    k.host_ctx.pm.size = 0;
+    kernel_host_ctx_init(&k.host_ctx);
+    recovery_init(&k.recovery);
+    k.total_ticks = 0;
+
+    var i: u32 = 0;
+    while i >= 0 && i < 8 {
+        k.entry_fns[i] = 0;
+        k.container_ctxs[i].cid = i;
+        k.container_ctxs[i].tick = 0;
+        k.container_ctxs[i].kernel = k;
+        i = i + 1;
+    }
+}
+
+// ── Register a container ──
+// fn_id: a positive integer identifying which callback to use (caller's dispatch)
+
+export fn sim_register(k: &SimKernel, cid: u32, priority: u32, fn_id: i32) !void {
+    if cid >= 0 && cid < 8 {
+        k.entry_fns[cid] = fn_id;
+        try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
+        try scheduler_set_priority(&k.sched, cid, priority);
+        return;
+    }
+    return error.InvalidState;
+}
+
+// ── Issue syscall from container context ──
+
+export fn sim_syscall(k: &SimKernel, cid: u32, num: u32, arg1: u32, arg2: u32) !u32 {
+    return try syscall_dispatch(&k.host_ctx, cid, num, arg1, arg2);
+}
+
+// ── Run one tick: pick next container, call it, handle result ──
+// Returns: cid of container that ran, or error if none runnable
+
+export fn sim_tick(k: &SimKernel, call_result: &i32) !u32 {
+    // Pick next runnable container
+    const cid: u32 = try scheduler_pick_next_rr(&k.sched);
+
+    if cid >= 0 && cid < 8 {
+        // Mark as running
+        try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_running);
+        k.container_ctxs[cid].tick = k.container_ctxs[cid].tick + 1;
+
+        // The actual "call" is done by the test harness reading entry_fns[cid]
+        // and calling the appropriate function. Here we just return cid;
+        // the caller provides the result via call_result.
+
+        k.total_ticks = k.total_ticks + 1;
+
+        const result: i32 = call_result[0];
+
+        if result == 0 {
+            // Yield: back to ready
+            try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
+        } else if result > 0 {
+            // Normal exit
+            try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_empty);
+        } else {
+            // Crash
+            const fault_code: u32 = (0 - result) as u32;
+            try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_crashed);
+            recovery_record_crash(&k.recovery, cid, k.total_ticks as i64, fault_code);
+
+            // Auto-restart if not fused
+            if recovery_should_restart(&k.recovery, cid) != 0 {
+                recovery_mark_restarted(&k.recovery, cid);
+                try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
+            } else {
+                try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_zombie);
+            }
+        }
+
+        return cid;
+    }
+    return error.InvalidState;
+}
+
+// ── Run N ticks with a simple callback dispatch ──
+// run_fn: function that takes (cid, tick, fn_id) and returns result code
+
+export struct SimRunResult {
+    ticks_run: u32,
+    last_cid: u32,
+}

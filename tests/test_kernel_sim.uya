@@ -1,0 +1,198 @@
+// End-to-end integration test for microcontainer simulator
+
+use kernel.container;
+use kernel.dispatch;
+use kernel.errors;
+use kernel.recovery;
+use kernel.scheduler;
+use kernel.sim;
+use kernel.syscall;
+use std.testing.assert_eq_i32;
+
+// ── Test: single container runs and yields ──
+
+test "sim_single_container_yields" {
+    var k: SimKernel = SimKernel{
+        sched: Scheduler{ slots: [], rr_cursor: 0 },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
+        entry_fns: [],
+        container_ctxs: [],
+        total_ticks: 0,
+    };
+    sim_kernel_init(&k);
+
+    // Register container 0 with fn_id=1
+    try sim_register(&k, 0, 128, 1);
+
+    // Run 3 ticks, container yields each time (result=0)
+    var result: i32 = 0;
+    const cid0: u32 = try sim_tick(&k, &result);
+    try assert_eq_i32(cid0 as i32, 0);
+
+    const cid1: u32 = try sim_tick(&k, &result);
+    try assert_eq_i32(cid1 as i32, 0);
+
+    const cid2: u32 = try sim_tick(&k, &result);
+    try assert_eq_i32(cid2 as i32, 0);
+
+    try assert_eq_i32(k.total_ticks as i32, 3);
+}
+
+// ── Test: two containers round-robin ──
+
+test "sim_two_containers_round_robin" {
+    var k: SimKernel = SimKernel{
+        sched: Scheduler{ slots: [], rr_cursor: 0 },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
+        entry_fns: [],
+        container_ctxs: [],
+        total_ticks: 0,
+    };
+    sim_kernel_init(&k);
+
+    try sim_register(&k, 0, 128, 1);
+    try sim_register(&k, 1, 128, 2);
+
+    var result: i32 = 0;
+
+    // Tick 1: should pick container 0
+    const t1: u32 = try sim_tick(&k, &result);
+    try assert_eq_i32(t1 as i32, 0);
+
+    // Tick 2: should pick container 1 (round-robin)
+    const t2: u32 = try sim_tick(&k, &result);
+    try assert_eq_i32(t2 as i32, 1);
+
+    // Tick 3: back to container 0
+    const t3: u32 = try sim_tick(&k, &result);
+    try assert_eq_i32(t3 as i32, 0);
+
+    // Tick 4: container 1
+    const t4: u32 = try sim_tick(&k, &result);
+    try assert_eq_i32(t4 as i32, 1);
+}
+
+// ── Test: container normal exit removes from schedule ──
+
+test "sim_container_exit" {
+    var k: SimKernel = SimKernel{
+        sched: Scheduler{ slots: [], rr_cursor: 0 },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
+        entry_fns: [],
+        container_ctxs: [],
+        total_ticks: 0,
+    };
+    sim_kernel_init(&k);
+
+    try sim_register(&k, 0, 128, 1);
+    try sim_register(&k, 1, 128, 2);
+
+    // Container 0 runs and exits (result=1)
+    var exit_result: i32 = 1;
+    var yield_result: i32 = 0;
+
+    const t1: u32 = try sim_tick(&k, &exit_result);
+    try assert_eq_i32(t1 as i32, 0);
+
+    // Now only container 1 should run
+    const t2: u32 = try sim_tick(&k, &yield_result);
+    try assert_eq_i32(t2 as i32, 1);
+
+    const t3: u32 = try sim_tick(&k, &yield_result);
+    try assert_eq_i32(t3 as i32, 1);  // still container 1, 0 is gone
+}
+
+// ── Test: container crash → auto-restart ──
+
+test "sim_container_crash_restart" {
+    var k: SimKernel = SimKernel{
+        sched: Scheduler{ slots: [], rr_cursor: 0 },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
+        entry_fns: [],
+        container_ctxs: [],
+        total_ticks: 0,
+    };
+    sim_kernel_init(&k);
+
+    try sim_register(&k, 0, 128, 1);
+
+    // Crash (result=-1)
+    var crash_result: i32 = -1;
+    var yield_result: i32 = 0;
+
+    const t1: u32 = try sim_tick(&k, &crash_result);
+    try assert_eq_i32(t1 as i32, 0);
+
+    // Should auto-restart (not fused yet), container runs again
+    const t2: u32 = try sim_tick(&k, &yield_result);
+    try assert_eq_i32(t2 as i32, 0);
+
+    try assert_eq_i32(recovery_crash_count(&k.recovery, 0) as i32, 1);
+}
+
+// ── Test: 3 crashes → fuse → zombie ──
+
+test "sim_container_fuse_zombie" {
+    var k: SimKernel = SimKernel{
+        sched: Scheduler{ slots: [], rr_cursor: 0 },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
+        entry_fns: [],
+        container_ctxs: [],
+        total_ticks: 0,
+    };
+    sim_kernel_init(&k);
+
+    try sim_register(&k, 0, 128, 1);
+
+    var crash_result: i32 = -1;
+
+    // 3 crashes within window
+    try sim_tick(&k, &crash_result);  // crash 1, auto-restart
+    try sim_tick(&k, &crash_result);  // crash 2, auto-restart
+    try sim_tick(&k, &crash_result);  // crash 3, fuse → zombie
+
+    // Now should be fused
+    try assert_eq_i32(recovery_is_fused(&k.recovery, 0), 1);
+
+    // No more runnable containers
+    var no_run: i32 = 0;
+    const next: u32 = scheduler_pick_next_rr(&k.sched) catch |err| {
+        no_run = 1;
+        0u32;
+    };
+    try assert_eq_i32(no_run, 1);
+}
+
+// ── Test: syscall from container context ──
+
+test "sim_syscall_yield" {
+    var k: SimKernel = SimKernel{
+        sched: Scheduler{ slots: [], rr_cursor: 0 },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
+        entry_fns: [],
+        container_ctxs: [],
+        total_ticks: 0,
+    };
+    sim_kernel_init(&k);
+
+    try sim_register(&k, 0, 128, 1);
+
+    // Manually set to running (as if scheduled)
+    try scheduler_set_slot_state(&k.sched, 0, ContainerState.cs_running);
+
+    // Issue SYS_YIELD
+    const ret: u32 = try sim_syscall(&k, 0, SYS_YIELD, 0, 0);
+    try assert_eq_i32(ret as i32, 0);
+
+    // Should be back to ready
+    const st: ContainerState = try scheduler_get_slot_state(&k.sched, 0);
+    var is_ready: i32 = 0;
+    if st == ContainerState.cs_ready { is_ready = 1; }
+    try assert_eq_i32(is_ready, 1);
+}
