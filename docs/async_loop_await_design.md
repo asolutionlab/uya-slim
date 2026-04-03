@@ -1,8 +1,8 @@
 # 循环内 await 代码生成设计文档
 
-**版本**：v0.1  
-**状态**：实现中  
-**相关**：[std_async_design.md](std_async_design.md)、[todo_mini_to_full.md](todo_mini_to_full.md) §16 异步编程
+**版本**：v0.2  
+**状态**：通用 lowering 主路径已落地（维护/补洞）  
+**相关**：[std_async_design.md](std_async_design.md)、[todo_mini_to_full.md](todo_mini_to_full.md) §16 异步编程、[plan_async_coroutine_transform.md](plan_async_coroutine_transform.md)
 
 ---
 
@@ -26,9 +26,9 @@
 ```
 
 需要支持：
-- **递归收集**：在 while / if / for / block 内递归收集所有 await 点
-- **循环回跳**：状态机在完成一轮 read→write 后回到 read，而非线性结束
-- **持久化变量**：`total` 等跨 await 的变量需存于状态结构体
+- **递归收集**：在 while / if / for / block 内递归收集所有 await 点，并记录每个点外层的 `while` / `for`（内层循环优先）
+- **循环回跳**：完成一轮循环体内的 await 后回到下一轮条件/迭代头，而非线性结束
+- **持久化变量**：跨 await 仍可达的局部变量与参数存于状态结构体（`_uya_loc_*`、绑定字段等）；**不再**依赖 `n`+`written`+`_uya_total` 特判
 
 ### 1.2 设计目标
 
@@ -53,17 +53,18 @@
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│ 状态机生成                                                                │
-│  • state 0：起点，设置 await_fut = operand[0]                             │
-│  • state 1..n：poll await_fut → 绑定变量 → 下一 await 或循环回跳或返回     │
-│  • async_loop_var_is_total：n/written 模式 → total 持久化 + 循环回跳       │
+│ 状态机生成（`gen_async_function_stage_b` + `emit_async_segment` 等）        │
+│  • 按 await 点划分 segment；段内直接 `gen_stmt` / `gen_expr`               │
+│  • 分裂点：设子 Future、`state`、`_uya_bind_*`，`return Pending`            │
+│  • `while` / `for` 内含 await：`emit_async_while_*` / `emit_async_for_*`   │
+│    与 `emit_async_continuation` 中回跳或退出到下一状态                     │
 └─────────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ C 输出                                                                    │
-│  struct uya_async_xxx { state; _uya_await_storage; await_fut; _uya_total; … }│
-│  static Poll_xxx poll(...) { if state==0 {...} if state==1 {...} ... }    │
+│  struct uya_async_xxx { state; await_fut; _uya_bind_*; _uya_loc_*; … }     │
+│  static Poll_xxx poll(...) { if state==0 {...} if state==1 {...} ... }     │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -75,18 +76,18 @@
 
 | 阶段 | 说明 |
 |------|------|
-| **collect_awaits_recursive** | 递归遍历 block / while / if / for，收集 `try @await expr` 的 operand、绑定名、绑定类型 |
+| **collect_awaits_recursive** | 递归遍历 block / while / if / for，收集 `try @await expr` 的 operand、绑定名、绑定类型；填充 `enclosing_while` / `enclosing_for` |
 | **has_await_loop** | 当任一 await 在循环（while/for）内时置 1 |
-| **async_loop_var_is_total** | 当 `await_count==2` 且绑定名为 `n`、`written` 时，启用 `_uya_total` 与循环回跳 |
+| **async_loop_var_is_total** | （历史）已移除特判路径；累加器等由顶层 `var` → `_uya_loc_*` 通用提升 |
 
-### 3.2 状态机结构体
+### 3.2 状态机结构体（示意）
 
 ```c
 struct uya_async_std_async_copy {
     int32_t state;
-    struct Future_usize _uya_await_storage;      // 仅当 await_operand_is_err_future 时存在
+    struct Future_usize _uya_await_storage;      // 仅当需要避免 operand 悬挂时存在
     struct uya_interface_Future_usize await_fut;
-    size_t _uya_total;                           // 仅当 async_loop_var_is_total 时存在
+    size_t _uya_loc_total;                       // 示例：原局部 total 提升为状态字段
     struct MemAsyncReader * reader;
     struct MemAsyncWriter * writer;
     uint8_t * buf;
@@ -99,7 +100,7 @@ struct uya_async_std_async_copy {
 | `state` | 当前状态：0=起点，1..n=各 await 就绪后 |
 | `_uya_await_storage` | 存储 sync 方法返回的 Future 值，避免 compound literal 悬挂指针 |
 | `await_fut` | 当前 poll 的 child future（接口 fat 指针） |
-| `_uya_total` | 循环内累加量，供 `return total` 使用 |
+| `_uya_loc_*` | 原函数体内需跨 await 存活的 `var`（含循环累加器等） |
 
 ### 3.3 类型与 try 判定
 
@@ -155,24 +156,20 @@ fn collect_awaits_recursive(...) void {
 
 **原因**：sync 方法（如 `MemAsyncReader.read`）返回的 Future 的 `.data` 指向函数内 compound literal，函数返回后失效；复制到 `_uya_await_storage` 后由状态机持有，生命周期正确。
 
-### 4.5 循环回跳逻辑
+### 4.5 循环回跳逻辑（`while`）
 
-当 `async_loop_var_is_total` 且完成第二个 await（written）后：
+- 由 `emit_async_while_with_await`、`emit_async_while_loopback_or_exit` 等与 `emit_async_continuation` 协作完成：resume 后先执行 await 之后的语句，再根据条件回到循环头或落到循环外下一 segment。
+- 内层 `while` 与外层 `for` 同时存在时，收集层用 `enclosing_while` 优先，避免错误归属。
 
-```c
-s->_uya_total = s->_uya_total + written;
-if (written < n) { return Ready(ok); }  // 提前返回
-s->state = 1;
-s->await_fut = reader.read(...);        // 回到第一个 await
-return Pending;
-```
+### 4.6 `for` 循环内含 await
 
-该逻辑需同时存在于 `child_inner_is_err_union != 0` 与 `== 0` 两个分支。
+- **范围 `for`**：循环变量、上界（及丢弃元素时的内部计数）写入状态机合成字段（如 `__uya_fe_*`），与 `while` 类似地做「条件 → 段内代码 → await 分裂 → continuation 回跳或退出」。
+- **定长数组 `for`**：合成索引/长度；**元素变量**需进入 `_uya_loc_*`（或等价字段），以便跨 await 绑定；元素类型在 hoist 阶段可从函数体 AST / 形参类型回退解析（`c99_async_for_array_elem_type_c` 等）。
+- **未覆盖**：迭代器 `for`、`for` 使用 `&` 绑定元素与 `@async_fn` 组合（需后续 lowering 或明确编译错误）。
 
-### 4.6 total 变量映射
+### 4.7 标识符重写
 
-- 在 `get_c_name_for_identifier_ref` 中，当 `async_loop_var_is_total` 时，将 `"total"` 映射为 `"s->_uya_total"`
-- 确保 `return total` 生成 `return Ready(Ok(Future::Ready(s->_uya_total)))` 等正确代码
+- `get_c_name_for_identifier_ref`：将 `async_local_names` 中的名字映射为 `s->_uya_loc_*`；await 绑定映射为 `s->_uya_bind_*`。
 
 ---
 
@@ -186,13 +183,13 @@ state 0 ────────────────────────
     ▼                                                                  │
 state 1 (poll reader)                                                  │
     │ n = p.u.Ready                                                    │
-    │ if n==0 return Ready(total)                                      │
+    │ if n==0 return Ready(s->_uya_loc_total)                          │
     │ await_fut = try writer.write();  state=2                         │
     ▼                                                                  │
 state 2 (poll writer)                                                  │
     │ written = p.u.Ready                                              │
     │ total += written                                                 │
-    │ if written<n return Ready(total)                                 │
+    │ if written<n return Ready(s->_uya_loc_total)                     │
     │ await_fut = try reader.read();  state=1 ─────────────────────────┘
     │ return Pending
 ```
@@ -203,9 +200,11 @@ state 2 (poll writer)                                                  │
 
 | 问题 | 状态 | 说明 |
 |------|------|------|
-| test_async_copy 段错误 | 🔴 待查 | AddressSanitizer 报告 stack-buffer-overflow，可能与 block_on 栈布局或 f.data 传递有关 |
-| Poll 返回类型 | ⚠️ 待确认 | `block_on_usize_plain` 期望 `Poll<usize>`，当前可能返回 `Poll<!Future<usize>>`，需核对类型链 |
-| 通用 n/written 模式 | 📋 计划 | 目前仅识别 `n`+`written` 绑定名，更通用的循环变量持久化可扩展 |
+| test_async_copy / block_on | ✅ 已修 | 历史 ASan 问题已处理；保持 `test_async_copy.uya` 回归 |
+| Poll / `Future<!T>` 类型链 | ✅ 主路径已对齐 | 详见 `test_async_state_machine.uya` 等 |
+| 循环变量持久化 | ✅ 通用提升 | 顶层 `var` → `_uya_loc_*`，不再依赖 `n`+`written` 特判 |
+| await 循环间同步语句 | ⚠️ 待办 | `tests/test_async_bug_b_sync_between.uya.pending` |
+| 迭代器 `for`、`for` 的 `&` 元素绑定 + `@async_fn` | ❌ 未支持 | 与同步 `for` 能力对齐后再做 |
 
 ---
 
@@ -213,8 +212,9 @@ state 2 (poll writer)                                                  │
 
 | 路径 | 职责 |
 |------|------|
-| `src/codegen/c99/function.uya` | `collect_awaits_recursive`、`gen_async_function_stage_b`、状态机生成 |
-| `src/codegen/c99/internal.uya` | `async_collect_*`、`async_loop_var_*` 收集接口 |
-| `src/codegen/c99/global.uya` | `get_c_name_for_identifier_ref` 对 `total` 的映射 |
-| `lib/std/async.uya` | `async_copy` 定义 |
-| `tests/test_async_copy.uya` | 测试入口 |
+| `src/codegen/c99/function.uya` | `collect_awaits_recursive`、`gen_async_function_stage_b`、`emit_async_*`、状态机生成 |
+| `src/codegen/c99/internal.uya` | `async_collect_*`、缓冲区（含 `async_collect_enclosing_for`） |
+| `src/codegen/c99/async_transform.uya` | 与 async 变换相关的辅助（若存在） |
+| `src/codegen/c99/global.uya` | `get_c_name_for_identifier_ref` |
+| `lib/std/async.uya` | `async_copy` 等 |
+| `tests/test_async_copy.uya`、`tests/test_async_for_await.uya`、`tests/test_async_bug_*.uya` | 回归 |

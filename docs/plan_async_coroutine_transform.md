@@ -2,11 +2,18 @@
 
 ## Context
 
-当前 `@async_fn` 的状态机在 C99 codegen 层通过模式匹配 AST 形状生成（`gen_async_function_stage_b`，~800 行）。只支持 `const x = try @await expr` 单一模式，导致 Bug A（连续 while 循环）、Bug B（await 间同步代码丢失）、Bug C（return try @await）、Bug D（分裂点变量丢失）。
+早期 `@async_fn` 状态机在 C99 codegen 层大量依赖模式匹配 AST 形状，易漏语句与错状态转移（Bug A/B/C/D）。
 
-**目标**：用通用算法替换 `gen_async_function_stage_b` 的内部实现，支持 `@async_fn` 中任意 Uya 控制流（while/for/if/break/continue/return + @await 任意组合）。
+**目标**：用通用算法驱动 `gen_async_function_stage_b` 的 poll 体，支持 `@async_fn` 中常见控制流与 `@await` 的组合。
 
-**策略**：不改 parser/checker，不创建新 AST 节点。在 C codegen 层用「递归段发射」算法直接输出 C 代码。保持相同的外部接口（状态结构体 + poll 函数 + wrapper + vtable）。
+**策略**：不改 parser/checker，不创建新 AST 节点。在 C codegen 层用「递归段发射」与 await 点收集（含循环嵌套信息）直接输出 C 代码。保持相同的外部接口（状态结构体 + poll 函数 + wrapper + vtable）。
+
+### 当前进度（2026-04）
+
+- **已落地**：`emit_async_segment` / `emit_async_continuation` 路径下的通用 lowering；`while` / `if` 内含 `try @await`；**范围 `for`** 与**定长数组 `for`** 内含 `try @await`（状态字段保存循环变量/索引/上界等，resume 后回跳或退出与 `while` 对称）。
+- **回归测试**：`tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_c_tail_await.uya`、`tests/test_async_for_await.uya` 等。
+- **仍不支持或需 checker/codegen 明确报错**：迭代器形式 `for obj |v|` 与 `@await` 组合；`for |&x|` 与 `@await` 组合（与同步 `for` 能力对齐后再扩展）。
+- **部分历史待办**：await 循环之间的同步语句（原 Bug B）若仍有场景未覆盖，见 `tests/test_async_bug_b_sync_between.uya.pending` 与 [todo_async_loop_await.md](todo_async_loop_await.md)。
 
 ---
 
@@ -166,7 +173,7 @@ if (cond) {  // 回跳
 |------|------|
 | `src/codegen/c99/function.uya` | 替换 state 循环为通用算法，删除旧辅助函数 |
 | `src/codegen/c99/async_transform.uya` | 扩展：添加 `emit_async_segment` 等函数 |
-| `src/codegen/c99/internal.uya` | 无变化（async_local_* 字段保留） |
+| `src/codegen/c99/internal.uya` | `async_collect_enclosing_for[]` 等与 await 嵌套循环相关的收集缓冲区 |
 | `src/codegen/c99/global.uya` | 无变化（`get_c_name_for_identifier_ref` 保留） |
 | `src/codegen/c99/stmt.uya` | 无变化（`gen_stmt` 保留） |
 | `src/codegen/c99/expr.uya` | 无变化（`gen_expr` 保留） |
@@ -182,9 +189,10 @@ if (cond) {  // 回跳
 
 ## 验证
 
-1. **Bug A 测试**：`test_async_bug_a_two_while.uya.pending` → 恢复为 `.uya`，通过
-2. **Bug B 测试**：`test_async_bug_b_sync_between.uya.pending` → 恢复为 `.uya`，通过
-3. **Bug C 测试**：`test_async_bug_c_tail_await.uya`（已通过，不回归）
-4. **现有 async 测试**：`test_async_while_multi_await.uya`、`test_async_copy.uya` 等不回归
-5. **全量回归**：`make tests e` 通过
-6. **自举**：`make b` 一致
+1. **Bug A**：`tests/test_async_bug_a_two_while.uya` 通过
+2. **Bug B**：`tests/test_async_bug_b_sync_between.uya.pending` 恢复为 `.uya` 后应通过（待办）
+3. **Bug C**：`tests/test_async_bug_c_tail_await.uya` 通过
+4. **`for` + await**：`tests/test_async_for_await.uya`（范围 + 定长数组）
+5. **现有 async 测试**：`test_async_while_multi_await.uya`、`test_async_copy.uya` 等不回归
+6. **全量回归**：`make check` / `make tests` 通过
+7. **自举**：`./compile.sh --c99 -b` 一致

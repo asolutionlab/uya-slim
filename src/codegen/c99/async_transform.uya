@@ -7,8 +7,9 @@
 // 4. 为每个段生成 C 代码，段之间通过 state 字段跳转
 //
 // 与旧方案的区别：不逐模式匹配 AST 形状，而是通用地处理任意控制流。
-
-use std.testing;
+//
+// 注意：不可 use std.testing —— 本文件属于编译器自身源码，自举时会被编译，
+// 引入 testing 框架会导致 AST 合并阶段 segfault。
 
 // ── 段（Segment）描述 ──
 
@@ -162,7 +163,7 @@ export fn stmt_contains_await(node: &ASTNode) i32 {
     }
 
     if node.type == ASTNodeType.AST_ASSIGN {
-        if node.assign_value != null && stmt_contains_await(node.assign_value) != 0 { return 1; }
+        if node.assign_src != null && stmt_contains_await(node.assign_src) != 0 { return 1; }
     }
 
     return 0;

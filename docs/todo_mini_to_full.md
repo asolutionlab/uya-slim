@@ -840,14 +840,16 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 - 兼容期：同时支持 `Future<!T>` 与 `!Future<T>`；以 `Future<!T>` + `Poll.Pending` 作为状态机主路径，逐步清理 `error.AsyncPending` 控制流与旧签名。
 - 正统期：统一到 `Future<!T>`（或等价设计），让 Pending 走 `Poll.Pending`，让错误传播走 `!T`（或 `Poll<ErrUnion>`），移除 `!Future<T>` 兼容层。
 
-**当前实现状态（2026-03）**：
+**当前实现状态（2026-03，2026-04 增补）**：
 - 已完成最小闭环：`@async_fn` / `try @await`、`Future<!T>` 的 `poll` 状态机、单/多 `@await`、基础错误传播、`block_on`
+- **循环**：`while` / `if` 内含 await 的通用 lowering；**范围 `for` 与定长数组 `for` 内含 await**（`tests/test_async_for_await.uya`）
 - 标准库已有最小模块：`std.async`、`std.async_event`、`std.async_channel`、`std.async_scheduler`
 - 与最终目标仍有差距：状态机当前仍通过 `malloc` 分配，`Scheduler` 仍是单任务轮询模型，`Waker` 仅提供 `wake/reset/is_woken` 最小语义，非阻塞 I/O/Send/Sync 证明尚未完成
 
-**已知语义缺口（2026-03-31，`http_bench_async_epoll`）**：
-- `@async_fn` 在**嵌套 `while`** 且多个 `try @await` 之间存在解析、组包等语句时，当前 C 状态机可能**不发出**这些语句，导致对已连接客户端 **`write` 长度为 0**、HTTP **Empty reply**。根因与修复任务见 [todo_async_loop_await.md](todo_async_loop_await.md)（待办「嵌套 `while` 内多个 `try @await` 之间的语句…」）。
-- `benchmarks/http_bench_async_epoll.uya`：`make check` 中的 verify 脚本仅保证 **C99 可编译**；**端到端 `curl` 成功**依赖上述 codegen 修复。
+**已知语义缺口（更新至 2026-04）**：
+- **已缓解**：连续 `while` 内多 await（Bug A）、`return try @await`（Bug C）、**范围/定长数组 `for` 内 await** 等已由通用段发射路径覆盖；见 `tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_c_tail_await.uya`、`tests/test_async_for_await.uya` 与 [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md)。
+- **仍须关注**：多个 `try @await` **循环之间**的同步语句若未完整进入状态机，仍可能导致类似 HTTP **Empty reply**（Bug B，见 `tests/test_async_bug_b_sync_between.uya.pending`、[todo_async_loop_await.md](todo_async_loop_await.md)）。
+- `benchmarks/http_bench_async_epoll.uya`：`make check` 中的 verify 脚本多仅保证 **C99 可编译**；**端到端 `curl` 成功**依赖 await 间及循环间语句完整发射。
 - 服务只监听 **IPv4 `127.0.0.1`** 时，`curl http://localhost:…` 先试 **IPv6 `::1`** 出现「拒绝连接」属预期，与 Empty reply 不是同一类问题。
 
 - [x] **Lexer**：识别异步编程语法（C 实现与 uya-src 已同步）

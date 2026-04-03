@@ -22,6 +22,7 @@
 | 11 | await 绑定变量纳入状态机结构体（`_uya_bind_*` 字段） | ✅ |
 | 12 | 扩展 `get_c_name_for_identifier_ref` 支持 await 绑定变量引用 | ✅ |
 | 13 | 扩展 codegen 追踪 await 绑定变量名 | ✅ |
+| 14 | `for`（范围 / 定长数组）内 `try @await`：收集 `enclosing_for`、发射回跳/退出（`emit_async_for_*`） | ✅ |
 
 ---
 
@@ -58,17 +59,15 @@
 - [x] **扩展循环变量持久化** ✅
   - 已移除 `n`+`written`+`total` 硬编码；所有函数体顶层 `var` 通过 `async_local_*`（`s->_uya_loc_*`）通用持久化
 
-### 🔴 async 状态机 lowering 缺陷（2026-04-03 分析）
+### async 状态机 lowering（2026-04-03 分析，2026-04 起陆续修复）
 
-**根本问题**：`collect_awaits_recursive`（function.uya:1195）只识别一种 await 模式：
-```
-const x: T = try @await expr;   // ← 唯一被收集的模式（line 1218-1231）
-```
-对以下场景均未正确 lowering，emit 侧生成无效 C 或丢失语义：
+**历史根因**：收集与 emit 若只覆盖单一 await 形状或硬编码循环模式，会出现漏语句、错状态号、非法 C。
 
-- [ ] **Bug A：两个连续 while+@await 写循环**
+**当前主路径**：`collect_awaits_recursive` 记录 `enclosing_while` / `enclosing_for`；poll 体由通用段发射与 `emit_async_continuation` 补全（详见 [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md)）。
+
+- [x] **Bug A：两个连续 while+@await 写循环**
   - 现象：第一个循环结束后，第二个循环的状态转移失败 → 运行时挂死
-  - TDD：`tests/test_async_bug_a_two_while.uya.pending`
+  - 回归：`tests/test_async_bug_a_two_while.uya`
   - 典型场景：先写 header 再写 body（HTTP 客户端）
   ```uya
   while woff < hdr_len {
@@ -96,11 +95,9 @@ const x: T = try @await expr;   // ← 唯一被收集的模式（line 1218-1231
   }
   ```
 
-- [ ] **Bug C：`return try @await inner_async_fn(...)` 生成非法 C**
+- [x] **Bug C：`return try @await inner_async_fn(...)` 生成非法 C**
   - 现象：gcc 编译失败 — `inner_async` 被当作同步函数调用
-  - TDD：`tests/test_async_bug_c_tail_await.uya.pending`
-  - 根因：`AST_RETURN_STMT` 分支（line 1232-1234）仅记录 `ret_expr`，不递归检查内部 `@await`
-  - 修复需要：collect 侧收集 await 点 **且** emit 侧拆分为「设置子 Future → 等待 → Ready 时 return 结果」
+  - 回归：`tests/test_async_bug_c_tail_await.uya`
 
 - [ ] **Bug D：分裂点附近局部变量与表达式**（与 A/B 叠加时更易触发）
   - `xxx undeclared`：恢复点在 if 内声明的变量未提升到状态结构体
@@ -108,17 +105,16 @@ const x: T = try @await expr;   // ← 唯一被收集的模式（line 1218-1231
   - 切片表达式在分裂后生成错误类型
   - 建议：所有 resume 后仍可读的局部变量，提升到状态结构体
 
-**修复方向**：
-1. `collect_awaits_recursive` 扩展识别 return/assign/bare expr 中的 @await
-2. emit 侧对每个 await 点生成完整状态转移（保存变量 → 设子 Future → Pending → Resume → 恢复变量 → 继续后续语句）
-3. 连续 while 循环需各自独立的状态编号
-4. 所有跨 await 可达的局部变量提升到 `s->_uya_loc_*`
+**仍建议关注的方向**：
+1. collect/emit 覆盖更多 await 出现位置（assign、bare expr 等）若仍有缺口
+2. Bug B 场景全绿：`tests/test_async_bug_b_sync_between.uya.pending` → `.uya`
+3. 迭代器 `for` / `for |&x|` 与 `@async_fn` 组合的 lowering 或明确诊断
 
-**验收**：三个 .pending 测试文件恢复为 .uya 后全量 `make tests e` 通过
+**验收**：Bug B 测试转正后全量 `make check` 通过
 
 ### 低优先级
 
-- [ ] 文档与注释补充
+- [x] 计划/设计文档与待办同步（本文件、[plan_async_coroutine_transform.md](plan_async_coroutine_transform.md)、[async_loop_await_design.md](async_loop_await_design.md)）
 
 ---
 
@@ -151,8 +147,12 @@ make backup
 
 | 测试文件 | 说明 |
 |----------|------|
-| `test_async_copy.uya` | 循环内 await（async_copy），目标通过 |
-| `test_async_io.uya` | AsyncReader/AsyncWriter 基础，应保持通过 |
-| `test_block_on.uya` | block_on 基础，应保持通过 |
-| `test_async_multiple_await.uya` | 多 await 线性，应保持通过 |
-| `benchmarks/http_bench_async_epoll.uya` | epoll + `@async_fn` bench；**运行时 HTTP** 正确性依赖「await 间语句发射」修复；`tests/verify_http_bench_async_epoll_compile.sh` 仅编译 |
+| `test_async_copy.uya` | 循环内 await（async_copy） |
+| `test_async_for_await.uya` | 范围 `for` + 定长数组 `for` 内含 `try @await` |
+| `test_async_bug_a_two_while.uya` | 连续两个 `while` 内 await |
+| `test_async_bug_c_tail_await.uya` | `return try @await` |
+| `test_async_bug_b_sync_between.uya.pending` | await 循环间同步语句（待转正） |
+| `test_async_io.uya` | AsyncReader/AsyncWriter 基础 |
+| `test_block_on.uya` | block_on 基础 |
+| `test_async_multiple_await.uya` | 多 await 线性 |
+| `benchmarks/http_bench_async_epoll.uya` | epoll + `@async_fn` bench；端到端 HTTP 依赖 await 间语句完整发射；verify 脚本多仅编译 |
