@@ -341,6 +341,9 @@ struct C99CodeGenerator {
     // Ready 载荷是否为 error union（1=是：return expr 需包装为 { .error_id=0, .value=expr }）
     async_poll_inner_is_err_union: i32,
 
+    // --mode container：生成指针访问边界检查
+    container_mode: i32,
+
     // 多文件 C 输出（--split-c-dir）：part1=前导+字符串常量，part2=其余；emit_stream 指向当前写入目标
     emit_stream: &void,
     split_enabled: i32,

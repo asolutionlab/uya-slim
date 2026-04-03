@@ -2402,6 +2402,7 @@ fn compile_files(
     }
     // 设置单态化实例（从 TypeChecker 传入）
     c99_codegen_set_mono_instances(&c99_codegen, &checker);
+    c99_codegen.container_mode = g_container_mode;
     if c99_codegen_generate(&c99_codegen, merged_ast, actual_output as &byte) != 0 {
         fprintf(libc.stderr, "错误: C99 代码生成失败\n" as *byte);
         c99_codegen_free(&c99_codegen);
