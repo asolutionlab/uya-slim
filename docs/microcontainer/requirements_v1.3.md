@@ -349,3 +349,48 @@
 - CH32V003 仍作为规范基线，不因新平台引入而放宽安全规则。
 - ESP32 按无 MMU 兼容路径实现，优先保证行为一致性。
 - RV1106 支持 `baremetal_compat` 与 `linux_hosted` 双路径，但容器安全语义保持一致。
+
+---
+
+## 附录 B: x86-64 模拟实现状态（2026-04-03）
+
+在移植到真机前，所有核心逻辑已在 x86-64 Linux 上实现并通过测试验证。
+
+### 内核模块（`lib/kernel/`）
+
+| 模块 | 文件 | 功能 |
+|------|------|------|
+| errors | errors.uya | 15 个 export error（通用/内存/设备/调度/镜像/页表） |
+| mem | mem.uya | 页池管理（alloc/free）+ 物理内存模拟 |
+| paging | paging.uya | 128 项单级页表、PTE 构造、mmu_translate 翻译+权限+A/D 位 |
+| container | container.uya | 容器控制块 CCB + 7 状态生命周期 |
+| scheduler | scheduler.uya | 轮转调度器（后续可升级为 256 级位图优先级） |
+| syscall | syscall.uya | 4 个系统调用号常量 |
+| dispatch | dispatch.uya | Syscall 分发 + PRINT/ALLOC/IO/YIELD 实现 |
+| layout | layout.uya | 512KB 物理内存布局常量 |
+| image | image.uya | 三阶段镜像校验（SHA-256 + 结构 + RV32 指令策略） |
+| rv32_scan | rv32_scan.uya | RV32I/C 指令策略扫描（拒绝 mret/sret/wfi/csr*/fence.i） |
+| update | update.uya | 双槽 A/B 热更新 + CRC32 元数据 + boot_select |
+| recovery | recovery.uya | 60 秒窗口 3 次崩溃熔断 + crash log 环形缓冲 |
+| sim | sim.uya | 集成模拟器主循环（注册容器、调度、syscall、崩溃恢复） |
+
+### 编译器改动
+
+| 改动 | 说明 |
+|------|------|
+| `--mode container/kernel` | CLI 参数，控制容器模式静态检查 |
+| E4001 | 容器模式禁止 `@asm`（用户代码） |
+| E4002 | 容器模式禁止 `extern fn/var`（用户代码） |
+| E4003 | 容器模式禁止整数字面量→指针转换 |
+| `lib/kernel/` 模块发现 | `kernel.xxx` 自动解析为 `lib/kernel/xxx.uya` |
+| `@len` 安全证明传播 | if 块内嵌套数组访问的约束传播修复 |
+
+### 测试覆盖
+
+共 9 个测试文件，40+ 测试用例覆盖：页表翻译/权限/调度轮转/syscall 分发/镜像三阶段/RV32 指令策略/双槽热更新/崩溃熔断/集成端到端。
+
+### 待完成
+
+- Codegen `mmu_translate` 自动注入：推迟至交叉编译目标（x86-64 模拟中宿主指针为 64 位，无法直接用 32 位虚拟地址翻译）
+- 真机移植：CH32V003 trap entry + 上下文切换 + 中断处理
+- 多平台适配：ESP32 / RV1106
