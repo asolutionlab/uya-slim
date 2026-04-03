@@ -207,6 +207,8 @@ struct C99CodeGenerator {
     err_union_struct_names: [&byte: C99_MAX_ERR_UNION_STRUCTS],
     err_union_payload_types: [&ASTNode: C99_MAX_ERR_UNION_STRUCTS],
     err_union_struct_count: i32,
+    // 与 err_union_struct_names 同下标：是否已在 emit_pending_err_union_structs 中输出完整 struct err_union_* { ... }
+    err_union_body_emitted: [i32: C99_MAX_ERR_UNION_STRUCTS],
 
     // 待输出的 SIMD 结构体（@vector/@mask -> struct uya_simd_*）
     simd_struct_names: [&byte: C99_MAX_SIMD_STRUCTS],
@@ -316,6 +318,8 @@ struct C99CodeGenerator {
     async_collect_types: [&ASTNode: C99_ASYNC_MAX_AWAITS],
     async_collect_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS],
     async_collect_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS],
+    // try @await 所在的最内层 while（无则 null），用于 while+单 await 循环回跳与退出
+    async_collect_enclosing_while: [&ASTNode: C99_ASYNC_MAX_AWAITS],
     async_collect_count: i32, // 实际支持最多 C99_ASYNC_MAX_AWAITS 个 await
     async_collect_ret_expr: &ASTNode,
     async_collect_has_loop: i32,
@@ -324,7 +328,12 @@ struct C99CodeGenerator {
     async_local_names: [&byte: 16],
     async_local_types: [&ASTNode: 16],
     async_local_inits: [&ASTNode: 16],
+    async_local_root_stmt: [i32: 16],
     async_local_count: i32,
+    // poll 内 try 传播：语义上为 Future 的 inner（如 !T），错误须 return Poll.Ready(err) 而非裸 err_union
+    async_poll_try_propagate_type: &ASTNode,
+    async_poll_ret_c: &byte,
+    async_poll_union_c: &byte,
 
     // 多文件 C 输出（--split-c-dir）：part1=前导+字符串常量，part2=其余；emit_stream 指向当前写入目标
     emit_stream: &void,

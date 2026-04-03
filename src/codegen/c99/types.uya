@@ -334,6 +334,50 @@ fn c99_register_simd_struct(codegen: &C99CodeGenerator, name: &byte, element_typ
     }
 }
 
+/// 发出 C 结构体成员声明片段：` 基底类型 字段名[dim]...;`
+/// 参数：`name_prefix` 可为 null（仅输出 `name_suffix`）；`name_suffix` 为字段名主体。
+/// 说明：`c99_type_to_c` 对定长数组返回 `T[N]`，用于变量声明时若写成 `T[N] ident` 非法，须 `T ident[N]`。
+fn c99_emit_struct_field_decl_fragment(codegen: &C99CodeGenerator, type_node: &ASTNode, name_prefix: &byte, name_suffix: &byte) void {
+    if codegen == null || type_node == null || name_suffix == null {
+        return;
+    }
+    var t: &ASTNode = type_node;
+    var dims: [i32: 10] = [];
+    var dim_count: i32 = 0;
+    while t != null && t.type == ASTNodeType.AST_TYPE_ARRAY && dim_count < 10 {
+        var sz: i32 = 1;
+        if t.type_array_size_expr != null {
+            sz = eval_const_expr(codegen, t.type_array_size_expr);
+            if sz <= 0 {
+                sz = 1;
+            }
+        }
+        dims[dim_count] = sz;
+        dim_count = dim_count + 1;
+        t = t.type_array_element_type;
+    }
+    if t == null {
+        return;
+    }
+    const base_c: &byte = c99_type_to_c(codegen, t);
+    if base_c == null {
+        return;
+    }
+    fputs(" " as *byte, codegen.emit_stream as *void);
+    fputs(base_c as *byte, codegen.emit_stream as *void);
+    fputs(" " as *byte, codegen.emit_stream as *void);
+    if name_prefix != null {
+        fputs(name_prefix as *byte, codegen.emit_stream as *void);
+    }
+    fputs(name_suffix as *byte, codegen.emit_stream as *void);
+    var di: i32 = 0;
+    while di < dim_count {
+        fprintf(codegen.emit_stream as *void, "[%d]" as *byte, dims[di]);
+        di = di + 1;
+    }
+    fputs(";" as *byte, codegen.emit_stream as *void);
+}
+
 // 类型映射函数
 fn c99_type_to_c(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte {
     // 处于「泛型 struct/union 单态」上下文时禁用缓存：键含 struct_type_args 指针，
@@ -911,12 +955,23 @@ fn c99_type_to_c_uncached(codegen: &C99CodeGenerator, type_node: &ASTNode) &byte
         if is_struct_defined(codegen, name_copy) == 0 {
             // 添加到结构体定义表（标记为已注册，但不输出定义）
             add_struct_definition(codegen, name_copy);
-            // 添加到待输出列表
-            if codegen.err_union_struct_count < C99_MAX_ERR_UNION_STRUCTS {
-                codegen.err_union_struct_names[codegen.err_union_struct_count] = name_copy;
-                codegen.err_union_payload_types[codegen.err_union_struct_count] = payload_node;
-                codegen.err_union_struct_count = codegen.err_union_struct_count + 1;
+        }
+        // 待输出列表：去重追加。勿依赖 is_struct_defined：若仅有前向声明或其它路径先 mark_struct_defined，仍须输出完整定义，否则各 TU 仅见 incomplete type
+        var dup_eu: i32 = 0;
+        var ei: i32 = 0;
+        while ei < codegen.err_union_struct_count {
+            if codegen.err_union_struct_names[ei] != null && strcmp(name_copy as *byte, codegen.err_union_struct_names[ei] as *byte) == 0 {
+                dup_eu = 1;
+                ei = codegen.err_union_struct_count;
+            } else {
+                ei = ei + 1;
             }
+        }
+        if dup_eu == 0 && codegen.err_union_struct_count < C99_MAX_ERR_UNION_STRUCTS {
+            codegen.err_union_struct_names[codegen.err_union_struct_count] = name_copy;
+            codegen.err_union_payload_types[codegen.err_union_struct_count] = payload_node;
+            codegen.err_union_body_emitted[codegen.err_union_struct_count] = 0;
+            codegen.err_union_struct_count = codegen.err_union_struct_count + 1;
         }
         const len: i32 = strlen(name_copy as *byte) + 9;
         const result: &byte = compiler_arena_alloc(codegen.arena, len) as &byte;
@@ -1245,8 +1300,21 @@ fn emit_pending_err_union_structs(codegen: &C99CodeGenerator) void {
         // 若 payload 为联合体或结构体，先输出其定义，避免 err_union 中引用不完整类型（如 !JsonValue）
         ensure_union_emitted_for_type_node(codegen, payload_node);
         ensure_struct_emitted_for_type_node(codegen, payload_node);
-        // 检查是否已定义（可能已被其他路径输出）
+        if codegen.err_union_body_emitted[i] != 0 {
+            i = i + 1;
+            continue;
+        }
+        // main.uya 在第六步 b2 之前已 fputs 完整定义（见「错误联合类型（用于 !i64 等）」）；pending 中仍会登记这些 !T，勿重复写入 types 头
+        if strcmp(name as *byte, "err_union_int64_t" as *byte) == 0 ||
+            strcmp(name as *byte, "err_union_int32_t" as *byte) == 0 ||
+            strcmp(name as *byte, "err_union_void" as *byte) == 0 {
+            codegen.err_union_body_emitted[i] = 1;
+            i = i + 1;
+            continue;
+        }
+        // 其他已在别处生成完整 struct 体（defined==1）的 err_union_*：跳过，避免与硬编码或前序 emit 重复
         if is_struct_defined(codegen, name) != 0 {
+            codegen.err_union_body_emitted[i] = 1;
             i = i + 1;
             continue;
         }
@@ -1260,6 +1328,21 @@ fn emit_pending_err_union_structs(codegen: &C99CodeGenerator) void {
             i = i + 1;
             continue;
         }
+        var value_field_c: &byte = payload_c;
+        if is_void == 0 && payload_node.type == ASTNodeType.AST_TYPE_NAMED && payload_node.type_named_name != null {
+            const sdv: &ASTNode = find_struct_decl_c99(codegen, payload_node.type_named_name);
+            if sdv != null && strncmp(payload_c as *byte, "struct" as *byte, 6) != 0 {
+                const snv: &byte = get_safe_c_identifier(codegen, payload_node.type_named_name);
+                if snv != null && strcmp(payload_c as *byte, snv as *byte) == 0 {
+                    var sbuf: [byte: STRUCT_NAME_BUF_SIZE] = [];
+                    snprintf(&sbuf[0] as *byte, STRUCT_NAME_BUF_SIZE, "struct %s" as *byte, snv as *byte);
+                    const dup_vf: &byte = c99_arena_strdup(codegen.arena, &sbuf[0] as &byte);
+                    if dup_vf != null {
+                        value_field_c = dup_vf;
+                    }
+                }
+            }
+        }
         // 跳过泛型类型参数（未知类型名称），它们会在单态化时被正确处理
         // 检查 payload_c 是否以已知前缀开头，如果不是则跳过
         if is_void == 0 {
@@ -1272,6 +1355,38 @@ fn emit_pending_err_union_structs(codegen: &C99CodeGenerator) void {
                 strcmp(payload_node.type_named_name as *byte, "bool" as *byte) == 0 {
                 // !bool：c99_type_to_c 在部分上下文中可能非 "bool" 前缀，必须按 AST 放行，否则不输出 struct err_union_bool 导致链接失败
                 is_known_type = 1;
+            } else if payload_node.type == ASTNodeType.AST_TYPE_NAMED && payload_node.type_named_name != null &&
+                (strcmp(payload_node.type_named_name as *byte, "isize" as *byte) == 0 ||
+                 strcmp(payload_node.type_named_name as *byte, "usize" as *byte) == 0) {
+                // !isize/!usize：载荷 C 名可能因映射或别名与 strncmp 前缀表不一致，按 AST 直接放行
+                is_known_type = 1;
+            } else if payload_node.type == ASTNodeType.AST_TYPE_NAMED && payload_node.type_named_name != null {
+                const sd_named: &ASTNode = find_struct_decl_c99(codegen, payload_node.type_named_name);
+                if sd_named != null && payload_c != null && strncmp(payload_c as *byte, "struct" as *byte, 6) != 0 {
+                    const safe_n: &byte = get_safe_c_identifier(codegen, payload_node.type_named_name);
+                    if safe_n != null && strcmp(payload_c as *byte, safe_n as *byte) == 0 {
+                        // 具名结构体载荷：c99_mono_type_to_c 可能给出 "LinuxEpoll" 而非 "struct LinuxEpoll"，避免误判为未知而跳过完整 err_union 定义
+                        is_known_type = 1;
+                    }
+                }
+                if is_known_type == 0 {
+                    if strncmp(payload_c as *byte, "int" as *byte, 3) == 0 ||
+                       strncmp(payload_c as *byte, "uint" as *byte, 4) == 0 ||
+                       strncmp(payload_c as *byte, "float" as *byte, 5) == 0 ||
+                       strncmp(payload_c as *byte, "double" as *byte, 6) == 0 ||
+                       strncmp(payload_c as *byte, "char" as *byte, 4) == 0 ||
+                       strncmp(payload_c as *byte, "void" as *byte, 4) == 0 ||
+                       strncmp(payload_c as *byte, "bool" as *byte, 4) == 0 ||
+                       strncmp(payload_c as *byte, "_Bool" as *byte, 5) == 0 ||
+                       strncmp(payload_c as *byte, "struct" as *byte, 6) == 0 ||
+                       strncmp(payload_c as *byte, "enum" as *byte, 4) == 0 ||
+                       strncmp(payload_c as *byte, "intptr_t" as *byte, 8) == 0 ||
+                       strncmp(payload_c as *byte, "uintptr_t" as *byte, 9) == 0 ||
+                       strncmp(payload_c as *byte, "size_t" as *byte, 6) == 0 ||
+                       strncmp(payload_c as *byte, "ssize_t" as *byte, 7) == 0 {
+                        is_known_type = 1;
+                    }
+                }
             } else {
                 if strncmp(payload_c as *byte, "int" as *byte, 3) == 0 ||
                    strncmp(payload_c as *byte, "uint" as *byte, 4) == 0 ||
@@ -1303,14 +1418,15 @@ fn emit_pending_err_union_structs(codegen: &C99CodeGenerator) void {
                 if elem_c != null && arr_size > 0 {
                     fprintf(codegen.emit_stream as *void, " %s value[%d];" as *byte, elem_c as *byte, arr_size);
                 } else {
-                    fprintf(codegen.emit_stream as *void, " %s value;" as *byte, payload_c as *byte);
+                    fprintf(codegen.emit_stream as *void, " %s value;" as *byte, value_field_c as *byte);
                 }
             } else {
-                fprintf(codegen.emit_stream as *void, " %s value;" as *byte, payload_c as *byte);
+                fprintf(codegen.emit_stream as *void, " %s value;" as *byte, value_field_c as *byte);
             }
         }
         fputs(" };\n" as *byte, codegen.emit_stream as *void);
         mark_struct_defined(codegen, name);
+        codegen.err_union_body_emitted[i] = 1;
         i = i + 1;
     }
 }
@@ -6447,7 +6563,13 @@ fn get_slice_struct_type_c(codegen: &C99CodeGenerator, slice_expr: &ASTNode) &by
             }
             return type_c;
         }
-        const elem_c: &byte = get_array_element_type(codegen, base);
+        var elem_c: &byte = get_array_element_type(codegen, base);
+        if elem_c == null && type_c != null && strchr(type_c as *byte, 42) != null {
+            if strstr(type_c as *byte, "uint8_t" as *byte) != null || strstr(type_c as *byte, "int8_t" as *byte) != null ||
+                strstr(type_c as *byte, "char" as *byte) != null {
+                return ("struct uya_slice_uint8_t" as *byte) as &byte;
+            }
+        }
         if elem_c == null {
             return ("struct uya_slice_int32_t" as *byte) as &byte;
         }
@@ -7272,6 +7394,9 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
     if codegen.current_type_param_count > 0 || codegen.struct_type_param_count > 0 {
         use_ident_cache = 0;
     }
+    if codegen.async_state_var != null {
+        use_ident_cache = 0;
+    }
     var slot: i32 = 0;
     if use_ident_cache != 0 {
         c99_identifier_type_cache_ensure(codegen);
@@ -7301,6 +7426,20 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
             return codegen.local_variables[i].type_c;
         }
         i = i - 1;
+    }
+    // @async_fn poll 内：顶层 const/var 已提升为 s->_uya_loc_*，须从 async_local_types 取 C 类型（否则切片/mem_base 等退化为 int32 slice）
+    if codegen.async_state_var != null && codegen.async_local_count > 0 {
+        var ali: i32 = 0;
+        while ali < codegen.async_local_count && ali < 16 {
+            if codegen.async_local_names[ali] != null &&
+                strcmp(codegen.async_local_names[ali] as *byte, name as *byte) == 0 {
+                if codegen.async_local_types[ali] != null {
+                    return c99_type_to_c(codegen, codegen.async_local_types[ali]);
+                }
+                return null;
+            }
+            ali = ali + 1;
+        }
     }
     const safe_name: &byte = get_safe_c_identifier(codegen, name);
     if safe_name != null && strcmp(safe_name as *byte, name as *byte) != 0 {

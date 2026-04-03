@@ -1,0 +1,274 @@
+// test_http1_async_client.uya — `http1_async_get` / `http1_async_post` + epoll 驱动 Future 的端到端（fork 子进程跑客户端）
+
+use std.http.types;
+use std.http.router;
+use std.http.server;
+use std.http.http1_async;
+use libc.unistd;
+use libc.syscall;
+use std.testing.assert_eq_i32;
+
+fn response_has_subslice(hay: &[byte], needle: &[byte]) bool {
+    if needle.len == 0 || hay.len < needle.len {
+        return false;
+    }
+    var i: usize = 0;
+    while i + needle.len <= hay.len {
+        var j: usize = 0;
+        var ok: bool = true;
+        while j < needle.len {
+            if hay.ptr[i + j] != needle.ptr[j] {
+                ok = false;
+                break;
+            }
+            j = j + 1;
+        }
+        if ok {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+// 与 lib/std/http/http1_async.uya 中同名辅助函数区分，避免多 TU 链接时符号重复
+fn client_append_u16_dec_buf(out: &byte, start: usize, n: u16) usize {
+    var pos: usize = start;
+    if n == 0 {
+        out[pos] = (48 as byte);
+        return pos + 1;
+    }
+    var tmp: [byte: 6] = [];
+    var t: usize = 0;
+    var x: u16 = n;
+    while x > 0 && t < 6 {
+        tmp[t] = (((x % 10) as u32 + 48) as byte);
+        x = x / 10;
+        t = t + 1;
+    }
+    while t > 0 {
+        t = t - 1;
+        if t >= 0 && t < 6 {
+            out[pos] = tmp[t];
+            pos = pos + 1;
+        }
+    }
+    return pos;
+}
+
+fn run_client_http1_async_get_inner(port: u16) !Http1AsyncResponse {
+    var buf: [byte: 80] = [0: 80];
+    const prefix: &[byte] = &"http://127.0.0.1:"[0: 17];
+    var i: usize = 0;
+    while i < prefix.len {
+        buf[i] = prefix.ptr[i];
+        i = i + 1;
+    }
+    var pos: usize = prefix.len;
+    pos = client_append_u16_dec_buf(&buf[0] as &byte, pos, port);
+    buf[pos] = '/' as byte;
+    pos = pos + 1;
+    const url: &[byte] = buf[0: pos];
+    return try http1_async_get(url, null);
+}
+
+fn run_client_http1_async_get(port: u16) void {
+    const res: !Http1AsyncResponse = run_client_http1_async_get_inner(port);
+    match res {
+        error.InvalidRequest => {
+            sys_exit(1);
+        }
+        error.IncompleteRequest => {
+            sys_exit(1);
+        }
+        error.HeaderTooLarge => {
+            sys_exit(1);
+        }
+        error.PayloadTooLarge => {
+            sys_exit(1);
+        }
+        error.ConnectionClosed => {
+            sys_exit(1);
+        }
+        error.HttpChunkedNotSupported => {
+            sys_exit(1);
+        }
+        error.URITooLong => {
+            sys_exit(1);
+        }
+        r => {
+            if r.status != 200 {
+                http1_async_response_free(&r);
+                sys_exit(2);
+            }
+            if !response_has_subslice(r.body, &"ok"[0: 2]) {
+                http1_async_response_free(&r);
+                sys_exit(3);
+            }
+            http1_async_response_free(&r);
+            sys_exit(0);
+        }
+    }
+}
+
+fn run_client_http1_async_post_inner(port: u16) !Http1AsyncResponse {
+    var buf: [byte: 96] = [0: 96];
+    const prefix: &[byte] = &"http://127.0.0.1:"[0: 17];
+    var i: usize = 0;
+    while i < prefix.len {
+        buf[i] = prefix.ptr[i];
+        i = i + 1;
+    }
+    var pos: usize = prefix.len;
+    pos = client_append_u16_dec_buf(&buf[0] as &byte, pos, port);
+    buf[pos] = '/' as byte;
+    pos = pos + 1;
+    const post_lit: &[byte] = &"post"[0: 4];
+    var j: usize = 0;
+    while j < post_lit.len {
+        buf[pos] = post_lit.ptr[j];
+        pos = pos + 1;
+        j = j + 1;
+    }
+    const url: &[byte] = buf[0: pos];
+
+    var payload: [byte: 8] = [0: 8];
+    const hello: &[byte] = &"hello"[0: 5];
+    var k: usize = 0;
+    while k < hello.len {
+        payload[k] = hello.ptr[k];
+        k = k + 1;
+    }
+    const body_sl: &[byte] = payload[0: 5];
+    const ct: &[byte] = &"text/plain"[0: 10];
+    var z: [byte: 1] = [0 as byte];
+    const empty: &[byte] = z[0: 0];
+    var req_ov: Http1AsyncRequest = Http1AsyncRequest{
+        method: Method.POST,
+        host: empty,
+        port: 0,
+        path: empty,
+        body: body_sl,
+        content_type: ct,
+    };
+    return try http1_async_post(url, &req_ov);
+}
+
+fn run_client_http1_async_post(port: u16) void {
+    const res: !Http1AsyncResponse = run_client_http1_async_post_inner(port);
+    match res {
+        error.InvalidRequest => {
+            sys_exit(1);
+        }
+        error.IncompleteRequest => {
+            sys_exit(1);
+        }
+        error.HeaderTooLarge => {
+            sys_exit(1);
+        }
+        error.PayloadTooLarge => {
+            sys_exit(1);
+        }
+        error.ConnectionClosed => {
+            sys_exit(1);
+        }
+        error.HttpChunkedNotSupported => {
+            sys_exit(1);
+        }
+        error.URITooLong => {
+            sys_exit(1);
+        }
+        r => {
+            if r.status != 200 {
+                http1_async_response_free(&r);
+                sys_exit(2);
+            }
+            if !response_has_subslice(r.body, &"ok"[0: 2]) {
+                http1_async_response_free(&r);
+                sys_exit(3);
+            }
+            http1_async_response_free(&r);
+            sys_exit(0);
+        }
+    }
+}
+
+test "http1_async_get_loopback" {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 8,
+        port: 0,
+        host: [],
+    };
+    const srv: HttpServer = try http_server_listen(&cfg);
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        run_client_http1_async_get(srv.port);
+    }
+    if child_pid <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+    var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
+    const empty_body: &[byte] = empty_raw[0: 0];
+    var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
+    var rt: Router = router_new();
+    _ = try router_add(&rt, Method.GET, &"/"[0: 1]);
+    const conn: Conn = try http_server_accept(&srv_tmp);
+    const sfd: i32 = conn.fd;
+    const pr: ParseResult = try http_recv_parse_request(sfd);
+    const idx: i32 = router_find_route_request(&rt, Method.GET, &pr.request);
+    if idx == 0 {
+        _ = http_send_response_close(sfd, Status.OK, &"ok"[0: 2]) catch {};
+    } else {
+        _ = http_send_response_close(sfd, Status.NotFound, empty_body) catch {};
+    }
+    _ = sys_close(sfd);
+
+    var st: i32 = 0;
+    _ = try sys_waitpid(child_pid, &st, 0);
+    if (st & 0xff) != 0 {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32((st >> 8) & 0xff, 0);
+    http_server_close(&srv);
+}
+
+test "http1_async_post_loopback" {
+    var cfg: ServerConfig = ServerConfig{
+        mode: ServerMode.Blocking,
+        max_connections: 8,
+        port: 0,
+        host: [],
+    };
+    const srv: HttpServer = try http_server_listen(&cfg);
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        run_client_http1_async_post(srv.port);
+    }
+    if child_pid <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+    var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
+    const empty_body: &[byte] = empty_raw[0: 0];
+    var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
+    var rt: Router = router_new();
+    _ = try router_add(&rt, Method.POST, &"/post"[0: 5]);
+    const conn: Conn = try http_server_accept(&srv_tmp);
+    const sfd: i32 = conn.fd;
+    const pr: ParseResult = try http_recv_parse_request(sfd);
+    const idx: i32 = router_find_route_request(&rt, Method.POST, &pr.request);
+    if idx == 0 {
+        _ = http_send_response_close(sfd, Status.OK, &"ok"[0: 2]) catch {};
+    } else {
+        _ = http_send_response_close(sfd, Status.NotFound, empty_body) catch {};
+    }
+    _ = sys_close(sfd);
+
+    var st: i32 = 0;
+    _ = try sys_waitpid(child_pid, &st, 0);
+    if (st & 0xff) != 0 {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32((st >> 8) & 0xff, 0);
+    http_server_close(&srv);
+}

@@ -375,7 +375,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "\n用法:\n" as *byte);
     fprintf(libc.stderr, "  %s build <文件> [-o <输出>] [选项]  编译为可执行文件\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run <文件> [选项] [-- <参数>...]  编译并运行\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s test <文件> [选项]               编译测试并运行\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s test <文件> [选项]               编译测试并运行（子进程栈：--stack-size 或默认 65536 KB）\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s --outlibc <目录>                 生成独立 libc\n" as *byte, name as *byte);
     fprintf(libc.stderr, "\n示例:\n" as *byte);
     fprintf(libc.stderr, "  %s build main.uya -o myapp\n" as *byte, name as *byte);
@@ -388,7 +388,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  --no-line-directives 禁用 #line 指令生成\n" as *byte);
     fprintf(libc.stderr, "  --opt=<0-3>          优化级别（0=禁用, 1=默认, 2=+证明优化, 3=+内联）\n" as *byte);
     fprintf(libc.stderr, "  -O0, -O1, -O2, -O3   优化级别（简写形式）\n" as *byte);
-    fprintf(libc.stderr, "  --safety-proof       启用内存安全证明（默认启用）\n" as *byte);
+    fprintf(libc.stderr, "  --safety-proof       启用内存安全证明（默认已启用；自举脚本对编译器源码会传 --no-safety-proof）\n" as *byte);
     fprintf(libc.stderr, "  --no-safety-proof    禁用内存安全证明\n" as *byte);
     fprintf(libc.stderr, "  --nostdlib           完全独立模式：无标准库依赖，使用 syscall\n" as *byte);
     fprintf(libc.stderr, "  -o <文件>            指定输出文件名\n" as *byte);
@@ -1186,12 +1186,15 @@ fn collect_module_dependencies(
             i = i + 1;
             continue;
         }
-        // use main：收集入口文件所在目录下所有 .uya，排序后加入（与 C 编译器一致）
+        // use main：收集主工程目录下所有 .uya，排序后加入（与 C 编译器一致）
         if strcmp(&module_names_stack[i][0] as *byte, "main" as *byte) == 0 {
-            var proc_cnt: i32 = processed_count[0];
-            if processed_count[0] > 0 && processed_files[0] != null {
+            var main_dir: [byte: PATH_MAX] = [];
+            var dir_src: &byte = null;
+            // 优先 project_root（主文件所在目录，一般为 src/），避免双输入时 processed_files[0] 为 entry 路径而误扫子目录
+            if project_root != null && strlen(project_root) > 0 {
+                dir_src = project_root;
+            } else if processed_count[0] > 0 && processed_files[0] != null {
                 const entry_file: &byte = processed_files[0];
-                var main_dir: [byte: PATH_MAX] = [];
                 const slash: *byte = strrchr(entry_file as *byte, 47);
                 if slash != null {
                     const dlen: usize = (slash as i64 - entry_file as i64 + 1) as usize;
@@ -1204,7 +1207,10 @@ fn collect_module_dependencies(
                 } else {
                     strcpy(&main_dir[0], "." as *byte);
                 }
-                const dir: *DIR = opendir(&main_dir[0]);
+                dir_src = &main_dir[0] as &byte;
+            }
+            if dir_src != null {
+                const dir: *DIR = opendir(dir_src as *byte);
                 if dir != null {
                     var pending: [&byte: MAX_INPUT_FILES] = [];
                     var pending_count: i32 = 0;
@@ -1214,7 +1220,7 @@ fn collect_module_dependencies(
                         if dirent_may_be_regular_file(entry as &byte) != 0 && strlen(name) > 4 {
                             if strcmp(name + (strlen(name) - 4), ".uya" as *byte) == 0 {
                                 var fp: [byte: PATH_MAX] = [];
-                                const flen: i32 = snprintf(&fp[0], PATH_MAX, "%s%s" as *byte, &main_dir[0], name);
+                                const flen: i32 = snprintf(&fp[0], PATH_MAX, "%s%s" as *byte, dir_src, name);
                                 if flen > 0 && flen < PATH_MAX as i32 {
                                     var in_list: i32 = 0;
                                     var j: i32 = 0;
@@ -1434,7 +1440,7 @@ fn parse_args(
     output_file_index[0] = -1;
     backend_type[0] = BackendType.BACKEND_LLVM;
     emit_line_directives[0] = 0;
-    enable_safety_proof[0] = 0;  // 默认禁用内存安全证明（使用 --safety-proof 启用）
+    enable_safety_proof[0] = 1;  // 默认启用（compile.sh 自举编译编译器时传 --no-safety-proof）
     opt_level[0] = 1;  // 默认优化级别 1
     outlibc_index[0] = -1;
     run_arg_start[0] = -1;
@@ -2429,7 +2435,7 @@ export fn main() i32 {
     var output_file_index: i32 = -1;
     var backend: BackendType = BackendType.BACKEND_LLVM;
     var emit_line_directives: i32 = 0;
-    var enable_safety_proof: i32 = 0;
+    var enable_safety_proof: i32 = 1;
     var opt_level: i32 = 1;
     var outlibc_index: i32 = -1;
     var command: CommandType = CommandType.COMMAND_BUILD;
@@ -2443,6 +2449,13 @@ export fn main() i32 {
     if parse_args(&command, &input_file_indices[0], &input_file_count, &output_file_index, &backend, &emit_line_directives, &enable_safety_proof, &opt_level, &outlibc_index, &run_arg_start, &is_nostdlib, &stack_size) != 0 {
         return 1;
     }
+    // parse_args 中 stack_size=0 表示未传 --stack-size。编译器进程须尽快抬高主线程栈（与默认 65536 KB 一致），否则大依赖编译易栈溢出（段错误）。
+    // 传给 compile_files 的 stack_size 仍保留 0：不在生成 C 里注入 setrlimit/resource.h（曾与生成类型、系统头冲突）；run/test 子进程由 sh ulimit；显式 --stack-size 仅保留文件头提示注释。
+    var eff_compiler_stack_kb: i32 = stack_size;
+    if eff_compiler_stack_kb <= 0 {
+        eff_compiler_stack_kb = 65536;
+    }
+    set_process_stack_limit_bytes(eff_compiler_stack_kb as u64 * 1024);
     if g_split_c_dir_active == 0 && g_split_c_disabled_cli == 0 {
         const env_split: *byte = getenv("UYA_SPLIT_C_DIR" as *byte);
         if env_split != null && env_split[0] != 0 {
@@ -2453,11 +2466,6 @@ export fn main() i32 {
                 g_split_c_dir_active = 1;
             }
         }
-    }
-
-    // 主线程堆栈上限（与 --stack-size 一致，默认 65536 KB）
-    if stack_size > 0 {
-        set_process_stack_limit_bytes(stack_size as u64 * 1024);
     }
 
     // --outlibc 模式
@@ -2609,9 +2617,21 @@ export fn main() i32 {
             return 1;
         }
 
-        // 运行程序
+        // 运行程序（test：经 sh 设置 ulimit -s，避免大栈编译出的测试体在默认栈下段错误）
+        var eff_run_stack_kb: i32 = stack_size;
+        if eff_run_stack_kb <= 0 {
+            eff_run_stack_kb = 65536;
+        }
         var run_cmd: [byte: 4096] = [];
-        var run_cmd_len: i32 = snprintf(&run_cmd[0], 4096, "%s" as *byte, &run_output[0] as *byte);
+        var run_cmd_len: i32 = 0;
+        if command == CommandType.COMMAND_TEST {
+            run_cmd_len = snprintf(&run_cmd[0], 4096,
+                "/bin/sh -c 'ulimit -s %d && exec \"$1\"' sh \"%s\"" as *byte,
+                eff_run_stack_kb,
+                &run_output[0] as *byte);
+        } else {
+            run_cmd_len = snprintf(&run_cmd[0], 4096, "%s" as *byte, &run_output[0] as *byte);
+        }
         const run_result: i32 = system(&run_cmd[0] as *byte);
         const child_exit: i32 = exit_code_from_system_status(run_result);
         if child_exit != 0 {

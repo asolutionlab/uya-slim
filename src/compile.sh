@@ -187,7 +187,8 @@ usage() {
   --c99               使用 C99 后端生成 C 代码（输出文件后缀为 .c 时自动启用）
   --line-directives    启用 #line 指令生成（C99 后端，默认禁用）
   --nostdlib          链接时不使用标准库（仅在使用 -e 时有效）
-  --safety-proof      启用内存安全检查
+  --safety-proof      启用内存安全检查（传给 uya；uya 默认已开，自举时一般不需）
+  --no-safety-proof   禁用内存安全检查（默认：向 uya 传此选项，便于自举编译尚未全量过证的编译器源码）
   --stack-size KB     设置堆栈大小（KB），编译器启动时使用 setrlimit 设置
   --compiler PATH     指定编译器路径（默认: $COMPILER）
 
@@ -233,7 +234,7 @@ BOOTSTRAP_COMPARE=false
 USE_C99=false
 USE_LINE_DIRECTIVES=false
 USE_NOSTDLIB=false
-USE_SAFETY_PROOF=false  # 默认禁用内存安全证明（可通过 --safety-proof 启用）
+USE_SAFETY_PROOF=false  # 默认向 uya 传 --no-safety-proof（uya 默认开证明；自举编译器源码需关）
 
 # 解析命令行选项
 while [[ $# -gt 0 ]]; do
@@ -275,6 +276,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --safety-proof)
             USE_SAFETY_PROOF=true
+            shift
+            ;;
+        --no-safety-proof)
+            USE_SAFETY_PROOF=false
             shift
             ;;
         --stack-size)
@@ -568,9 +573,9 @@ export UYA_ROOT="$REPO_ROOT/lib/"
 
 # 执行编译
 if [ "$USE_AUTO_DEPS" = true ]; then
-    # 使用自动依赖收集模式：传递主文件和 C 入口模块
-    ENTRY_FILE="$REPO_ROOT/lib/std/runtime/entry/entry.uya"
-    COMPILER_CMD=("$COMPILER" "$INPUT_PATH" "$ENTRY_FILE" -o "$COMPILER_OUTPUT_FOR_UYA")
+    # 自动依赖：仅传主文件。entry.uya 由 compile_files 在检测到 export fn main 时注入；
+    # 若此处再传 entry.uya，processed_files[0] 可能先为 entry 路径，use main 会误扫 lib/.../entry/ 而非 src/，导致合并为空、链接缺 main。
+    COMPILER_CMD=("$COMPILER" "$INPUT_PATH" -o "$COMPILER_OUTPUT_FOR_UYA")
 else
     # 使用手动文件列表模式：传递所有文件
     COMPILER_CMD=("$COMPILER" "${FULL_PATHS[@]}" -o "$COMPILER_OUTPUT_FOR_UYA")
@@ -586,6 +591,8 @@ if [ "$USE_LINE_DIRECTIVES" = true ]; then
 fi
 if [ "$USE_SAFETY_PROOF" = true ]; then
     COMPILER_CMD+=(--safety-proof)
+else
+    COMPILER_CMD+=(--no-safety-proof)
 fi
 # 不传递 -exec 给编译器：自举编译器使用 std.runtime 提供 main()，若用 -exec 会链接 bridge.c 导致重复 main 和 uya_main 未定义。
 # 可执行文件由本脚本在编译成功后统一链接生成（见下方 LINK_CMD）。
@@ -835,6 +842,12 @@ if [ $COMPILER_EXIT -eq 0 ]; then
             BOOTSTRAP_UYA_FLAGS=(--c99)
             if [ "$USE_NOSTDLIB" = true ]; then
                 BOOTSTRAP_UYA_FLAGS+=(--nostdlib)
+            fi
+            # 与主编译 COMPILER_CMD 一致：默认自举编译编译器源码须关证明
+            if [ "$USE_SAFETY_PROOF" = true ]; then
+                BOOTSTRAP_UYA_FLAGS+=(--safety-proof)
+            else
+                BOOTSTRAP_UYA_FLAGS+=(--no-safety-proof)
             fi
             # 多文件自举：须与主编译一致（-o 为可执行文件 + UYA_SPLIT_C_DIR）；勿用 -o *.c，否则会走单文件 C 与主编译多文件不一致
             if [ "$BOOTSTRAP_BIN_COMPARE" = true ] && { [ -n "${UYA_SPLIT_C_DIR:-}" ] || [ "$MULTI_FILE_C" = "1" ]; }; then

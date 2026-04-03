@@ -26,29 +26,42 @@ use std.runtime.saved_envp;
 // 声明应用程序主入口（由编译器从 export fn main() 生成为 main_main）
 extern fn main_main() i32;
 
-// setrlimit 需要的类型（在函数外定义）
+// 与内核 rlimit 布局一致；仅用 @syscall，勿声明 extern setrlimit（会与 libc 原型冲突）
 struct EntryRLimit {
     rlim_cur: u64,
     rlim_max: u64
 }
 
-extern fn setrlimit(resource: i32, rlim: &const EntryRLimit) i32;
-
 const ENTRY_RLIMIT_STACK: i32 = 3;
 
 // 将主线程 RLIMIT_STACK 软/硬上限设为 limit_bytes。应在 main_main 开头尽早调用；设置失败时忽略。
-// 与 _uya_exit 相同：用语句级 std.cfg，避免顶层 cfg 块内 fn 不生成 C
+// Linux：仅用 @syscall，syscall 号按 arch 与 lib/libc/syscall.uya 一致；不 use libc（避免 entry 与种子/依赖环）；非 Linux 暂不设置。
 export fn set_process_stack_limit_bytes(limit_bytes: u64) void {
     var rlim: EntryRLimit = EntryRLimit {
         rlim_cur: limit_bytes,
         rlim_max: limit_bytes
     };
-    std.cfg(std.target_arch == .ta_x86_64, {
-        const SYS_setrlimit: i64 = 160;
-        _ = @syscall(SYS_setrlimit, ENTRY_RLIMIT_STACK as i64, &rlim as i64);
-    }, {
-        _ = setrlimit(ENTRY_RLIMIT_STACK, &rlim);
-    })
+    std.cfg(std.target_os == .tos_linux, {
+        std.cfg(std.target_arch == .ta_x86_64, {
+            const SYS_setrlimit: i64 = 160;
+            _ = @syscall(SYS_setrlimit, ENTRY_RLIMIT_STACK as i64, &rlim as i64);
+        }, {
+            std.cfg(std.target_arch == .ta_arm64, {
+                const SYS_setrlimit: i64 = 164;
+                _ = @syscall(SYS_setrlimit, ENTRY_RLIMIT_STACK as i64, &rlim as i64);
+            }, {
+                std.cfg(std.target_arch == .ta_arm, {
+                    const SYS_setrlimit: i64 = 75;
+                    _ = @syscall(SYS_setrlimit, ENTRY_RLIMIT_STACK as i64, &rlim as i64);
+                }, {
+                    std.cfg(std.target_arch == .ta_riscv64, {
+                        const SYS_setrlimit: i64 = 164;
+                        _ = @syscall(SYS_setrlimit, ENTRY_RLIMIT_STACK as i64, &rlim as i64);
+                    }, {})
+                })
+            })
+        })
+    }, {})
 }
 
 // C main 函数：保存参数并调用应用程序主程序

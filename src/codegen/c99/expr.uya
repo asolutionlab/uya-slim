@@ -7000,6 +7000,73 @@ fn gen_array_access(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         fputc(93, codegen.emit_stream as *void);  // ']'
 }
 
+/// as! 从 !S 包成 !T 时，error_id==0 分支是否可用 C 强转 _uya_asbang_src.value → T.value（标量/同类型可以；标量→结构体或不同结构体不可以，须写 {0}）。
+fn c99_asbang_err_success_allows_value_cast(codegen: &C99CodeGenerator, src_expr: &ASTNode, dest_payload_ast: &ASTNode, line: i32, col: i32, filename: &byte) i32 {
+    if codegen == null || codegen.checker == null || src_expr == null || dest_payload_ast == null {
+        return 0;
+    }
+    const dc: &byte = c99_mono_type_to_c(codegen, dest_payload_ast);
+    if dc == null {
+        return 0;
+    }
+    var dc_struct: i32 = 0;
+    if strncmp(dc as *byte, "struct " as *byte, 7) == 0 {
+        dc_struct = 1;
+    }
+    const st: Type = checker_infer_type(codegen.checker, src_expr);
+    var sc: &byte = null;
+    if st.kind == TypeKind.TYPE_ERROR_UNION && st.error_union_payload_type != null {
+        const spl: Type = st.error_union_payload_type[0];
+        sc = c99_type_to_c_from_inferred_type(codegen, spl, line, col, filename);
+    }
+    // catch 等上下文中推断可能非 !T，回退：仅当 C 名为已知标量 err_union_*（避免把 !Http1AsyncResponse 当标量）
+    if sc == null {
+        const src_union_c: &byte = get_c_type_of_expr(codegen, src_expr);
+        if src_union_c == null || strstr(src_union_c as *byte, "err_union_" as *byte) == null {
+            return 0;
+        }
+        var prim_src: i32 = 0;
+        if strstr(src_union_c as *byte, "err_union_int32_t" as *byte) != null ||
+            strstr(src_union_c as *byte, "err_union_int64_t" as *byte) != null ||
+            strstr(src_union_c as *byte, "err_union_intptr_t" as *byte) != null ||
+            strstr(src_union_c as *byte, "err_union_size_t" as *byte) != null ||
+            strstr(src_union_c as *byte, "err_union_ssize_t" as *byte) != null ||
+            strstr(src_union_c as *byte, "err_union_uint32_t" as *byte) != null ||
+            strstr(src_union_c as *byte, "err_union_uint64_t" as *byte) != null ||
+            strstr(src_union_c as *byte, "err_union_uint8_t" as *byte) != null ||
+            strstr(src_union_c as *byte, "err_union_int16_t" as *byte) != null ||
+            strstr(src_union_c as *byte, "err_union_uint16_t" as *byte) != null ||
+            strstr(src_union_c as *byte, "err_union_bool" as *byte) != null {
+            prim_src = 1;
+        }
+        if prim_src == 0 {
+            return 0;
+        }
+        if dc_struct != 0 {
+            return 0;
+        }
+        return 1;
+    }
+    if strcmp(sc as *byte, dc as *byte) == 0 {
+        return 1;
+    }
+    var sc_struct: i32 = 0;
+    if strncmp(sc as *byte, "struct " as *byte, 7) == 0 {
+        sc_struct = 1;
+    }
+    if dc_struct != 0 && strcmp(sc as *byte, dc as *byte) != 0 {
+        return 0;
+    }
+    if sc_struct != 0 && strcmp(sc as *byte, dc as *byte) != 0 {
+        return 0;
+    }
+    // int32_t 与 i32 映射的 C 字符串可能不同（如 int vs int32_t），但同属非聚合，仍可强转源 .value
+    if sc_struct == 0 && dc_struct == 0 {
+        return 1;
+    }
+    return 0;
+}
+
 // 生成类型转换表达式
 fn gen_cast_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const src_expr: &ASTNode = expr.cast_expr_expr;
@@ -7034,13 +7101,20 @@ fn gen_cast_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 is_void = 1;
             }
             if src_is_err_union != 0 && is_void == 0 {
+                const allow_val_cast: i32 = c99_asbang_err_success_allows_value_cast(codegen, src_expr, payload_for_val, expr.line, expr.column, expr.filename);
                 fprintf(codegen.emit_stream as *void, "({ %s _uya_asbang_src = " as *byte, src_union_c as *byte);
                 gen_expr(codegen, src_expr);
                 fprintf(codegen.emit_stream as *void, "; %s _uya_asbang; " as *byte, union_c as *byte);
                 fputs("if (_uya_asbang_src.error_id != 0) { " as *byte, codegen.emit_stream as *void);
-                fputs("_uya_asbang.error_id = _uya_asbang_src.error_id; _uya_asbang.value = 0; " as *byte, codegen.emit_stream as *void);
+                fputs("_uya_asbang.error_id = _uya_asbang_src.error_id; " as *byte, codegen.emit_stream as *void);
+                fprintf(codegen.emit_stream as *void, "_uya_asbang.value = (%s){0}; " as *byte, value_field_c as *byte);
                 fputs("} else { _uya_asbang.error_id = 0; " as *byte, codegen.emit_stream as *void);
-                fprintf(codegen.emit_stream as *void, "_uya_asbang.value = (%s)(_uya_asbang_src.value); " as *byte, value_field_c as *byte);
+                // 成功分支：同载荷 C 类型或数值互转可用强转；!i32 as! !Http1AsyncResponse 等须写 {0}，禁止 (struct T)(int32_t)。
+                if allow_val_cast != 0 {
+                    fprintf(codegen.emit_stream as *void, "_uya_asbang.value = (%s)(_uya_asbang_src.value); " as *byte, value_field_c as *byte);
+                } else {
+                    fprintf(codegen.emit_stream as *void, "_uya_asbang.value = (%s){0}; " as *byte, value_field_c as *byte);
+                }
                 fputs("} _uya_asbang; })" as *byte, codegen.emit_stream as *void);
             } else if src_is_err_union != 0 && is_void != 0 {
                 fprintf(codegen.emit_stream as *void, "({ %s _uya_asbang_src = " as *byte, src_union_c as *byte);
@@ -7102,11 +7176,13 @@ fn gen_cast_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         }
 }
 
-// 生成数组字面量
-fn gen_array_literal(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+/// 生成数组字面量内部（不含外层花括号），供 gen_array_literal 与 async 状态机 memcpy 等复用。
+fn gen_array_literal_contents(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        if expr == null {
+            return;
+        }
         const element_count: i32 = expr.array_literal_element_count;
         const repeat_count_expr: &ASTNode = expr.array_literal_repeat_count_expr;
-        fputc(123, codegen.emit_stream as *void);  // '{'
         if repeat_count_expr != null && element_count >= 1 {
             var nn: i32 = eval_const_expr(codegen, repeat_count_expr);
             if nn <= 0 {
@@ -7133,6 +7209,12 @@ fn gen_array_literal(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             // 空数组字面量：生成 {0}
             fputs("0" as *byte, codegen.emit_stream as *void);
         }
+}
+
+// 生成数组字面量
+fn gen_array_literal(codegen: &C99CodeGenerator, expr: &ASTNode) void {
+        fputc(123, codegen.emit_stream as *void);  // '{'
+        gen_array_literal_contents(codegen, expr);
         fputc(125, codegen.emit_stream as *void);  // '}'
 }
 
@@ -7357,10 +7439,33 @@ fn gen_print_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         }
 }
 
+/// try 错误分支的 return 右侧表达式：普通函数为 err_union；async poll 内须包成 Poll.Ready。
+/// kind：0 为仅传播 error_id（.value 由复合字面量零初始化）；1 为整包 _uya_try_tmp（如 !void）。
+fn c99_try_emit_error_return_value(codegen: &C99CodeGenerator, ret_union_c: &byte, kind: i32) void {
+    if codegen.async_state_var != null && codegen.async_poll_ret_c != null && codegen.async_poll_union_c != null {
+        if kind != 0 {
+            fprintf(codegen.emit_stream as *void, "(%s){ ._tag = 1, .u = (%s){ .Ready = _uya_try_tmp } }" as *byte,
+                codegen.async_poll_ret_c as *byte, codegen.async_poll_union_c as *byte);
+        } else {
+            fprintf(codegen.emit_stream as *void, "(%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = _uya_try_tmp.error_id } } }" as *byte,
+                codegen.async_poll_ret_c as *byte, codegen.async_poll_union_c as *byte, ret_union_c as *byte);
+        }
+    } else {
+        if kind != 0 {
+            fputs("_uya_try_tmp" as *byte, codegen.emit_stream as *void);
+        } else {
+            fprintf(codegen.emit_stream as *void, "(%s){ .error_id = _uya_try_tmp.error_id }" as *byte, ret_union_c as *byte);
+        }
+    }
+}
+
 // 生成 try 表达式
 fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const operand: &ASTNode = expr.try_expr_operand;
-        const ret_type: &ASTNode = codegen.current_function_return_type;
+        var try_ret_type: &ASTNode = codegen.current_function_return_type;
+        if codegen.async_state_var != null && codegen.async_poll_try_propagate_type != null {
+            try_ret_type = codegen.async_poll_try_propagate_type;
+        }
         if operand == null {
             fputs("0" as *byte, codegen.emit_stream as *void);
             return;
@@ -7385,8 +7490,8 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         
         // 检查返回类型是否是 !void
         var ret_is_void: i32 = 0;
-        if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION && ret_type.type_error_union_payload_type != null {
-            const payload: &ASTNode = ret_type.type_error_union_payload_type;
+        if try_ret_type != null && try_ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION && try_ret_type.type_error_union_payload_type != null {
+            const payload: &ASTNode = try_ret_type.type_error_union_payload_type;
             if payload.type == ASTNodeType.AST_TYPE_NAMED && payload.type_named_name != null {
                 if strcmp(payload.type_named_name as *byte, "void" as *byte) == 0 {
                     ret_is_void = 1;
@@ -7400,9 +7505,9 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             operand_is_void = 1;
         }
         
-        if operand_is_err_union == 0 || ret_type == null || ret_type.type != ASTNodeType.AST_TYPE_ERROR_UNION {
-            if ret_type != null && ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
-                var union_c: &byte = c99_type_to_c(codegen, ret_type);
+        if operand_is_err_union == 0 || try_ret_type == null || try_ret_type.type != ASTNodeType.AST_TYPE_ERROR_UNION {
+            if try_ret_type != null && try_ret_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                var union_c: &byte = c99_type_to_c(codegen, try_ret_type);
                 var try_payload_ast: &ASTNode = null;
                 if codegen.checker != null {
                     var try_union_c: &byte = null;
@@ -7493,17 +7598,20 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         union_c = try_union_c;
                     }
                 }
-                const ret_union_c: &byte = c99_type_to_c(codegen, ret_type);
+                const ret_union_c: &byte = c99_type_to_c(codegen, try_ret_type);
                 fprintf(codegen.emit_stream as *void, "({ %s _uya_try_tmp = " as *byte, union_c as *byte);
                 const saved_expected_block: &byte = codegen.expected_block_union_type;
                 codegen.expected_block_union_type = union_c;
                 gen_expr(codegen, operand);
                 codegen.expected_block_union_type = saved_expected_block;
                 if ret_is_void != 0 {
-                    fputs("; if (_uya_try_tmp.error_id != 0) return _uya_try_tmp; })" as *byte, codegen.emit_stream as *void);
+                    fputs("; if (_uya_try_tmp.error_id != 0) return " as *byte, codegen.emit_stream as *void);
+                    c99_try_emit_error_return_value(codegen, ret_union_c, 1);
+                    fputs("; })" as *byte, codegen.emit_stream as *void);
                 } else {
                     fputs("; if (_uya_try_tmp.error_id != 0) return " as *byte, codegen.emit_stream as *void);
-                    fprintf(codegen.emit_stream as *void, "(%s){ .error_id = _uya_try_tmp.error_id }; " as *byte, ret_union_c as *byte);
+                    c99_try_emit_error_return_value(codegen, ret_union_c, 0);
+                    fputs("; " as *byte, codegen.emit_stream as *void);
                     if try_payload_ast != null && try_payload_ast.type == ASTNodeType.AST_TYPE_ARRAY && try_payload_ast.type_array_element_type != null &&
                         try_payload_ast.type_array_size_expr != null && try_payload_ast.type_array_size_expr.type == ASTNodeType.AST_NUMBER {
                         const elem_c: &byte = c99_type_to_c(codegen, try_payload_ast.type_array_element_type);
@@ -7530,7 +7638,7 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             }
             return;
         }
-        const ret_union_c: &byte = c99_type_to_c(codegen, ret_type);
+        const ret_union_c2: &byte = c99_type_to_c(codegen, try_ret_type);
         fprintf(codegen.emit_stream as *void, "({ %s _uya_try_tmp = " as *byte, operand_union_c as *byte);
         const saved_expected_block: &byte = codegen.expected_block_union_type;
         codegen.expected_block_union_type = operand_union_c;
@@ -7539,10 +7647,14 @@ fn gen_try_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         // 错误传播时需转换为函数返回类型
         if operand_is_void != 0 {
             // 操作数是 !void，没有值可解包
-            fprintf(codegen.emit_stream as *void, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id }; })" as *byte, ret_union_c as *byte);
+            fputs("; if (_uya_try_tmp.error_id != 0) return " as *byte, codegen.emit_stream as *void);
+            c99_try_emit_error_return_value(codegen, ret_union_c2, 0);
+            fputs("; })" as *byte, codegen.emit_stream as *void);
         } else {
             // 操作数有值，需要解包。即使函数返回 !void，try 表达式本身也需要返回解包的值
-            fprintf(codegen.emit_stream as *void, "; if (_uya_try_tmp.error_id != 0) return (%s){ .error_id = _uya_try_tmp.error_id }; _uya_try_tmp.value; })" as *byte, ret_union_c as *byte);
+            fputs("; if (_uya_try_tmp.error_id != 0) return " as *byte, codegen.emit_stream as *void);
+            c99_try_emit_error_return_value(codegen, ret_union_c2, 0);
+            fputs("; _uya_try_tmp.value; })" as *byte, codegen.emit_stream as *void);
         }
 }
 

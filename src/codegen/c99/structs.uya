@@ -421,6 +421,18 @@ fn variant_c_type_from_tagged_suffix(codegen: &C99CodeGenerator, union_decl: &AS
         if strcmp(inner as *byte, "void" as *byte) == 0 {
             return ("struct err_union_void" as *byte) as &byte;
         }
+        // err_MyStruct：具名载荷 !MyStruct -> struct err_union_MyStruct（与 c99_type_to_c 命名一致）
+        if inner[0] != 0 {
+            const safe_in: &byte = get_safe_c_identifier(codegen, inner);
+            if safe_in != null {
+                var ebuf: [byte: 192] = [];
+                snprintf(&ebuf[0] as *byte, 192, "struct err_union_%s" as *byte, safe_in as *byte);
+                const dup_nm: &byte = c99_arena_strdup(codegen.arena, &ebuf[0] as &byte);
+                if dup_nm != null {
+                    return dup_nm;
+                }
+            }
+        }
     }
     return null;
 }
@@ -558,7 +570,25 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
     if orig_name == null || type_args == null || type_arg_count <= 0 {
         return -1;
     }
-    const mono_name: &byte = get_mono_union_name(codegen, orig_name, type_args, type_arg_count);
+    // 在清空外层 current_type_* 之前，将实参中的形参（如泛型 @async_fn 内 Poll 的 T）替换为具体类型，
+    // 否则 get_mono_union_name 得到 Poll_T，且变体 Ready 字段会被写成 C 非法的 `T Ready`（宿主 cc 报 unknown type name 'T'）。
+    const subst_buf: & & ASTNode = compiler_arena_alloc(codegen.arena, (@size_of(&ASTNode) * type_arg_count) as usize) as & & ASTNode;
+    if subst_buf == null {
+        return -1;
+    }
+    var si_sub: i32 = 0;
+    while si_sub < type_arg_count {
+        if type_args[si_sub] != null {
+            subst_buf[si_sub] = substitute_type_arg(codegen, type_args[si_sub]);
+        } else {
+            subst_buf[si_sub] = null;
+        }
+        si_sub = si_sub + 1;
+    }
+    if has_unresolved_mono_type_args(union_decl, subst_buf, type_arg_count) != 0 {
+        return 0;
+    }
+    const mono_name: &byte = get_mono_union_name(codegen, orig_name, subst_buf, type_arg_count);
     const union_name: &byte = get_safe_c_identifier(codegen, mono_name);
     if union_name == null {
         return -1;
@@ -589,7 +619,7 @@ fn gen_mono_union_definition(codegen: &C99CodeGenerator, union_decl: &ASTNode, t
     var saved_struct_type_param_count: i32 = codegen.struct_type_param_count;
     var saved_struct_type_arg_count: i32 = codegen.struct_type_arg_count;
     codegen.struct_type_params = union_decl.union_decl_type_params;
-    codegen.struct_type_args = type_args;
+    codegen.struct_type_args = subst_buf;
     codegen.struct_type_param_count = union_decl.union_decl_type_param_count;
     codegen.struct_type_arg_count = type_arg_count;
     c99_type_to_c_reset_cache();
@@ -1055,6 +1085,42 @@ fn find_interface_decl_c99(codegen: &C99CodeGenerator, interface_name: &byte) &A
             }
         }
         i = i + 1;
+    }
+    return null;
+}
+
+/// 在接口及组合接口中查找方法签名（与 checker lookup 语义一致，供 codegen 解析 Future 操作数 C 类型）
+fn c99_find_interface_method_sig(codegen: &C99CodeGenerator, interface_name: &byte, method_name: &byte) &ASTNode {
+    if codegen == null || interface_name == null || method_name == null {
+        return null;
+    }
+    const iface: &ASTNode = find_interface_decl_c99(codegen, interface_name);
+    if iface == null || iface.type != ASTNodeType.AST_INTERFACE_DECL {
+        return null;
+    }
+    if iface.interface_decl_method_sigs != null {
+        var i: i32 = 0;
+        while i < iface.interface_decl_method_sig_count {
+            const msig: &ASTNode = iface.interface_decl_method_sigs[i];
+            if msig != null && msig.type == ASTNodeType.AST_FN_DECL && msig.fn_decl_name != null &&
+                strcmp(msig.fn_decl_name as *byte, method_name as *byte) == 0 {
+                return msig;
+            }
+            i = i + 1;
+        }
+    }
+    if iface.interface_decl_composed_interfaces != null {
+        var j: i32 = 0;
+        while j < iface.interface_decl_composed_count {
+            const composed_name: &byte = iface.interface_decl_composed_interfaces[j];
+            if composed_name != null {
+                const found: &ASTNode = c99_find_interface_method_sig(codegen, composed_name, method_name);
+                if found != null {
+                    return found;
+                }
+            }
+            j = j + 1;
+        }
     }
     return null;
 }

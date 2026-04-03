@@ -9,6 +9,10 @@
 // 哈希函数（来自 checker/symbols.uya）
 extern fn hash_string(str: &byte) i32;
 extern fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type;
+extern fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type;
+extern fn type_to_ast(checker: &TypeChecker, t: &Type, line: i32, column: i32, filename: &byte) &ASTNode;
+// expr.uya 在 compile.sh 中晚于 function.uya，需前向声明
+extern fn gen_array_literal_contents(codegen: &C99CodeGenerator, expr: &ASTNode) void;
 
 // 查找函数声明
 // 若存在多个同名顶层 fn（如前向 extern 与后续带函数体的实现），优先返回带 body 的定义，
@@ -1187,29 +1191,30 @@ fn get_type_node_size_bytes(codegen: &C99CodeGenerator, type_ast: &ASTNode) i32 
 }
 
 // 递归收集 await 点（进入 while/if/for/block 内部），使用 codegen.async_collect_* 存储结果
-fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_count: i32, parent_block: &ASTNode, parent_stmt_index: i32) void {
+// enclosing_while：当前语句所在最内层 while 结点（用于 while+单 await 状态机）
+fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_count: i32, parent_block: &ASTNode, parent_stmt_index: i32, enclosing_while: &ASTNode) void {
     if node == null || codegen.async_collect_count >= max_count {
         return;
     }
     if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
         var i: i32 = 0;
         while i < node.block_stmt_count && codegen.async_collect_count < max_count {
-            collect_awaits_recursive(node.block_stmts[i], codegen, max_count, node, i);
+            collect_awaits_recursive(node.block_stmts[i], codegen, max_count, node, i, enclosing_while);
             i = i + 1;
         }
     } else if node.type == ASTNodeType.AST_WHILE_STMT && node.while_stmt_body != null {
         codegen.async_collect_has_loop = 1;
-        collect_awaits_recursive(node.while_stmt_body, codegen, max_count, null, -1);
+        collect_awaits_recursive(node.while_stmt_body, codegen, max_count, null, -1, node);
     } else if node.type == ASTNodeType.AST_IF_STMT {
         if node.if_stmt_then_branch != null {
-            collect_awaits_recursive(node.if_stmt_then_branch, codegen, max_count, null, -1);
+            collect_awaits_recursive(node.if_stmt_then_branch, codegen, max_count, null, -1, enclosing_while);
         }
         if node.if_stmt_else_branch != null {
-            collect_awaits_recursive(node.if_stmt_else_branch, codegen, max_count, null, -1);
+            collect_awaits_recursive(node.if_stmt_else_branch, codegen, max_count, null, -1, enclosing_while);
         }
     } else if node.type == ASTNodeType.AST_FOR_STMT && node.for_stmt_body != null {
         codegen.async_collect_has_loop = 1;
-        collect_awaits_recursive(node.for_stmt_body, codegen, max_count, null, -1);
+        collect_awaits_recursive(node.for_stmt_body, codegen, max_count, null, -1, enclosing_while);
     } else if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
         const init: &ASTNode = node.var_decl_init;
         if init.type == ASTNodeType.AST_TRY_EXPR && init.try_expr_operand != null {
@@ -1220,6 +1225,7 @@ fn collect_awaits_recursive(node: &ASTNode, codegen: &C99CodeGenerator, max_coun
                 codegen.async_collect_types[codegen.async_collect_count] = node.var_decl_type;
                 codegen.async_collect_blocks[codegen.async_collect_count] = parent_block;
                 codegen.async_collect_stmt_indices[codegen.async_collect_count] = parent_stmt_index;
+                codegen.async_collect_enclosing_while[codegen.async_collect_count] = enclosing_while;
                 codegen.async_collect_count = codegen.async_collect_count + 1;
             }
         }
@@ -1245,7 +1251,665 @@ fn c99_var_decl_init_is_try_await_bind(init: &ASTNode) i32 {
     return 1;
 }
 
-// 收集函数体顶层、第一个 return 之前的 const/var（用于 poll 内 ret_expr 引用）
+fn c99_async_stmt_contains_await_point(root_stmt: &ASTNode, ab: &ASTNode, asi: i32) i32 {
+    if root_stmt == null || ab == null {
+        return 0;
+    }
+    if root_stmt.type == ASTNodeType.AST_BLOCK && root_stmt.block_stmts != null {
+        if @usize_from_ptr(root_stmt as &void) == @usize_from_ptr(ab as &void) {
+            if asi >= 0 && asi < root_stmt.block_stmt_count {
+                const at: &ASTNode = root_stmt.block_stmts[asi];
+                if at != null && at.type == ASTNodeType.AST_VAR_DECL && at.var_decl_init != null &&
+                    c99_var_decl_init_is_try_await_bind(at.var_decl_init) != 0 {
+                    return 1;
+                }
+            }
+        }
+        var bi: i32 = 0;
+        while bi < root_stmt.block_stmt_count {
+            const ch: &ASTNode = root_stmt.block_stmts[bi];
+            if ch != null && c99_async_stmt_contains_await_point(ch, ab, asi) != 0 {
+                return 1;
+            }
+            bi = bi + 1;
+        }
+    } else if root_stmt.type == ASTNodeType.AST_WHILE_STMT && root_stmt.while_stmt_body != null {
+        return c99_async_stmt_contains_await_point(root_stmt.while_stmt_body, ab, asi);
+    } else if root_stmt.type == ASTNodeType.AST_IF_STMT {
+        if root_stmt.if_stmt_then_branch != null && c99_async_stmt_contains_await_point(root_stmt.if_stmt_then_branch, ab, asi) != 0 {
+            return 1;
+        }
+        if root_stmt.if_stmt_else_branch != null && c99_async_stmt_contains_await_point(root_stmt.if_stmt_else_branch, ab, asi) != 0 {
+            return 1;
+        }
+    } else if root_stmt.type == ASTNodeType.AST_FOR_STMT && root_stmt.for_stmt_body != null {
+        return c99_async_stmt_contains_await_point(root_stmt.for_stmt_body, ab, asi);
+    }
+    return 0;
+}
+
+fn c99_async_try_await_count_under_stmt(root: &ASTNode) i32 {
+    if root == null {
+        return 0;
+    }
+    if root.type == ASTNodeType.AST_BLOCK && root.block_stmts != null {
+        var n: i32 = 0;
+        var bi: i32 = 0;
+        while bi < root.block_stmt_count {
+            const ch: &ASTNode = root.block_stmts[bi];
+            if ch != null {
+                if ch.type == ASTNodeType.AST_VAR_DECL && ch.var_decl_init != null &&
+                    c99_var_decl_init_is_try_await_bind(ch.var_decl_init) != 0 {
+                    n = n + 1;
+                } else {
+                    n = n + c99_async_try_await_count_under_stmt(ch);
+                }
+            }
+            bi = bi + 1;
+        }
+        return n;
+    }
+    if root.type == ASTNodeType.AST_WHILE_STMT && root.while_stmt_body != null {
+        return c99_async_try_await_count_under_stmt(root.while_stmt_body);
+    }
+    if root.type == ASTNodeType.AST_IF_STMT {
+        var t: i32 = 0;
+        if root.if_stmt_then_branch != null {
+            t = t + c99_async_try_await_count_under_stmt(root.if_stmt_then_branch);
+        }
+        if root.if_stmt_else_branch != null {
+            t = t + c99_async_try_await_count_under_stmt(root.if_stmt_else_branch);
+        }
+        return t;
+    }
+    if root.type == ASTNodeType.AST_FOR_STMT && root.for_stmt_body != null {
+        return c99_async_try_await_count_under_stmt(root.for_stmt_body);
+    }
+    return 0;
+}
+
+fn c99_async_stmt_tree_has_continue_break(st: &ASTNode) i32 {
+    if st == null {
+        return 0;
+    }
+    if st.type == ASTNodeType.AST_CONTINUE_STMT || st.type == ASTNodeType.AST_BREAK_STMT {
+        return 1;
+    }
+    if st.type == ASTNodeType.AST_IF_STMT {
+        var a: i32 = 0;
+        if st.if_stmt_then_branch != null {
+            a = a + c99_async_stmt_tree_has_continue_break(st.if_stmt_then_branch);
+        }
+        if st.if_stmt_else_branch != null {
+            a = a + c99_async_stmt_tree_has_continue_break(st.if_stmt_else_branch);
+        }
+        return a;
+    }
+    if st.type == ASTNodeType.AST_WHILE_STMT && st.while_stmt_body != null {
+        return c99_async_stmt_tree_has_continue_break(st.while_stmt_body);
+    }
+    if st.type == ASTNodeType.AST_FOR_STMT && st.for_stmt_body != null {
+        return c99_async_stmt_tree_has_continue_break(st.for_stmt_body);
+    }
+    if st.type == ASTNodeType.AST_BLOCK && st.block_stmts != null {
+        var bi: i32 = 0;
+        while bi < st.block_stmt_count {
+            if st.block_stmts[bi] != null && c99_async_stmt_tree_has_continue_break(st.block_stmts[bi]) != 0 {
+                return 1;
+            }
+            bi = bi + 1;
+        }
+    }
+    return 0;
+}
+
+fn c99_async_while_post_await_has_continue_break(W: &ASTNode, await_si: i32) i32 {
+    if W == null || W.type != ASTNodeType.AST_WHILE_STMT || W.while_stmt_body == null {
+        return 0;
+    }
+    const wb: &ASTNode = W.while_stmt_body;
+    if wb.type != ASTNodeType.AST_BLOCK || wb.block_stmts == null {
+        return 0;
+    }
+    var psi: i32 = await_si + 1;
+    while psi < wb.block_stmt_count {
+        const pst: &ASTNode = wb.block_stmts[psi];
+        if pst != null && c99_async_stmt_tree_has_continue_break(pst) != 0 {
+            return 1;
+        }
+        psi = psi + 1;
+    }
+    return 0;
+}
+
+fn c99_async_find_while_parent_block(needle_while: &ASTNode, stmt: &ASTNode, out_pb: [&ASTNode: 1], out_ix: [i32: 1]) i32 {
+    if needle_while == null || stmt == null {
+        return 0;
+    }
+    if stmt.type == ASTNodeType.AST_BLOCK && stmt.block_stmts != null {
+        var i: i32 = 0;
+        while i < stmt.block_stmt_count {
+            const ch: &ASTNode = stmt.block_stmts[i];
+            if ch != null && @usize_from_ptr(ch as &void) == @usize_from_ptr(needle_while as &void) {
+                out_pb[0] = stmt;
+                out_ix[0] = i;
+                return 1;
+            }
+            i = i + 1;
+        }
+        i = 0;
+        while i < stmt.block_stmt_count {
+            const ch2: &ASTNode = stmt.block_stmts[i];
+            if ch2 != null && c99_async_find_while_parent_block(needle_while, ch2, out_pb, out_ix) != 0 {
+                return 1;
+            }
+            i = i + 1;
+        }
+    } else if stmt.type == ASTNodeType.AST_WHILE_STMT && stmt.while_stmt_body != null {
+        if c99_async_find_while_parent_block(needle_while, stmt.while_stmt_body, out_pb, out_ix) != 0 {
+            return 1;
+        }
+    } else if stmt.type == ASTNodeType.AST_IF_STMT {
+        if stmt.if_stmt_then_branch != null && c99_async_find_while_parent_block(needle_while, stmt.if_stmt_then_branch, out_pb, out_ix) != 0 {
+            return 1;
+        }
+        if stmt.if_stmt_else_branch != null && c99_async_find_while_parent_block(needle_while, stmt.if_stmt_else_branch, out_pb, out_ix) != 0 {
+            return 1;
+        }
+    } else if stmt.type == ASTNodeType.AST_FOR_STMT && stmt.for_stmt_body != null {
+        return c99_async_find_while_parent_block(needle_while, stmt.for_stmt_body, out_pb, out_ix);
+    }
+    return 0;
+}
+
+fn c99_async_min_await_index_in_stmt_tree(stmt_root: &ASTNode, await_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS], await_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS], await_count: i32) i32 {
+    var best: i32 = -1;
+    var j: i32 = 0;
+    while j < await_count {
+        if await_blocks[j] != null && c99_async_stmt_contains_await_point(stmt_root, await_blocks[j], await_stmt_indices[j]) != 0 {
+            if best < 0 || j < best {
+                best = j;
+            }
+        }
+        j = j + 1;
+    }
+    return best;
+}
+
+fn c99_async_min_await_from_block_range(pb: &ASTNode, lo: i32, hi: i32, await_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS], await_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS], await_count: i32) i32 {
+    var best: i32 = -1;
+    if pb == null || pb.type != ASTNodeType.AST_BLOCK || pb.block_stmts == null || lo < 0 {
+        return -1;
+    }
+    var si: i32 = lo;
+    while si < hi && si < pb.block_stmt_count {
+        const st: &ASTNode = pb.block_stmts[si];
+        if st != null {
+            const m: i32 = c99_async_min_await_index_in_stmt_tree(st, await_blocks, await_stmt_indices, await_count);
+            if m >= 0 && (best < 0 || m < best) {
+                best = m;
+            }
+        }
+        si = si + 1;
+    }
+    return best;
+}
+
+fn c99_emit_async_while_post_assign_stmts(codegen: &C99CodeGenerator, W: &ASTNode, await_block: &ASTNode, await_si: i32) void {
+    if W == null || W.while_stmt_body == null {
+        return;
+    }
+    const wb: &ASTNode = W.while_stmt_body;
+    if wb.type != ASTNodeType.AST_BLOCK || wb.block_stmts == null {
+        return;
+    }
+    var psi: i32 = await_si + 1;
+    while psi < wb.block_stmt_count {
+        const pst: &ASTNode = wb.block_stmts[psi];
+        if pst != null {
+            if pst.type == ASTNodeType.AST_VAR_DECL && pst.var_decl_init != null &&
+                c99_var_decl_init_is_try_await_bind(pst.var_decl_init) != 0 {
+                // skip
+            } else if pst.type == ASTNodeType.AST_ASSIGN || pst.type == ASTNodeType.AST_VAR_DECL {
+                gen_stmt(codegen, pst);
+            }
+        }
+        psi = psi + 1;
+    }
+}
+
+fn c99_emit_async_arm_await_index(
+    codegen: &C99CodeGenerator,
+    j: i32,
+    await_operands: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    await_bind_types: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    fn_decl: &ASTNode,
+    await_operand_is_err_future: i32,
+    full_return_type: &ASTNode,
+    concrete_future_safe: &byte,
+    state_slot_iface_c: &byte
+) void {
+    if j < 0 || j >= C99_ASYNC_MAX_AWAITS {
+        return;
+    }
+    var next_await_is_err_future: i32 = await_operand_is_err_future;
+    if next_await_is_err_future == 0 && await_bind_types[j] != null && await_bind_types[j].type == ASTNodeType.AST_TYPE_NAMED &&
+        await_bind_types[j].type_named_name != null &&
+        strcmp(await_bind_types[j].type_named_name as *byte, "Future" as *byte) == 0 {
+        next_await_is_err_future = 1;
+    }
+    if next_await_is_err_future != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+        const operand_union_c2: &byte = c99_type_to_c(codegen, full_return_type);
+        if operand_union_c2 != null {
+            fprintf(codegen.emit_stream as *void, "        ({ %s _uya_await_tmp = " as *byte, operand_union_c2 as *byte);
+            gen_expr(codegen, await_operands[j]);
+            if concrete_future_safe != null && state_slot_iface_c != null {
+                fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->_uya_await_storage = *(struct %s *)_uya_await_tmp.value.data; s->await_fut.vtable = (void*)_uya_await_tmp.value.vtable; s->await_fut.data = (void*)&s->_uya_await_storage; });\n" as *byte, concrete_future_safe as *byte);
+            } else {
+                fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->await_fut.vtable = (void*)_uya_await_tmp.value.vtable; s->await_fut.data = _uya_await_tmp.value.data; });\n" as *byte);
+            }
+        } else {
+            c99_emit_await_fut_assign_from_expr(codegen, await_operands[j], fn_decl);
+        }
+    } else {
+        c99_emit_await_fut_assign_from_expr(codegen, await_operands[j], fn_decl);
+    }
+}
+
+fn c99_emit_async_goto_await_state(
+    codegen: &C99CodeGenerator,
+    target_j: i32,
+    poll_ret_c: &byte,
+    await_operands: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    await_bind_types: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    fn_decl: &ASTNode,
+    await_operand_is_err_future: i32,
+    full_return_type: &ASTNode,
+    concrete_future_safe: &byte,
+    state_slot_iface_c: &byte
+) void {
+    if target_j < 0 {
+        return;
+    }
+    fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, target_j + 1);
+    c99_emit_async_arm_await_index(codegen, target_j, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
+    fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
+}
+
+fn c99_emit_async_while_exit_transition(
+    codegen: &C99CodeGenerator,
+    fn_body: &ASTNode,
+    W: &ASTNode,
+    parent_pb: &ASTNode,
+    while_si: i32,
+    await_count: i32,
+    await_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    await_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS],
+    await_operands: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    await_bind_types: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    fn_decl: &ASTNode,
+    await_operand_is_err_future: i32,
+    full_return_type: &ASTNode,
+    concrete_future_safe: &byte,
+    state_slot_iface_c: &byte,
+    poll_ret_c: &byte
+) void {
+    if parent_pb == null || parent_pb.type != ASTNodeType.AST_BLOCK || parent_pb.block_stmts == null {
+        return;
+    }
+    const next_si: i32 = while_si + 1;
+    if next_si >= parent_pb.block_stmt_count {
+        fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, await_count + 1);
+        fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
+        return;
+    }
+    const nxt: &ASTNode = parent_pb.block_stmts[next_si];
+    if nxt != null && nxt.type == ASTNodeType.AST_IF_STMT && nxt.if_stmt_condition != null {
+        var then_min: i32 = -1;
+        if nxt.if_stmt_then_branch != null {
+            then_min = c99_async_min_await_index_in_stmt_tree(nxt.if_stmt_then_branch, await_blocks, await_stmt_indices, await_count);
+        }
+        var else_min: i32 = -1;
+        if nxt.if_stmt_else_branch != null {
+            else_min = c99_async_min_await_index_in_stmt_tree(nxt.if_stmt_else_branch, await_blocks, await_stmt_indices, await_count);
+        } else {
+            const after_if: i32 = next_si + 1;
+            else_min = c99_async_min_await_from_block_range(parent_pb, after_if, parent_pb.block_stmt_count, await_blocks, await_stmt_indices, await_count);
+        }
+        fputs("        if (" as *byte, codegen.emit_stream as *void);
+        gen_expr(codegen, nxt.if_stmt_condition);
+        fputs(") {\n" as *byte, codegen.emit_stream as *void);
+        if then_min >= 0 {
+            c99_emit_async_goto_await_state(codegen, then_min, poll_ret_c, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
+        } else {
+            fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, await_count + 1);
+            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
+        }
+        fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
+        if else_min >= 0 {
+            c99_emit_async_goto_await_state(codegen, else_min, poll_ret_c, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
+        } else {
+            fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, await_count + 1);
+            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
+        }
+        fputs("        }\n" as *byte, codegen.emit_stream as *void);
+        return;
+    }
+    const merge_min: i32 = c99_async_min_await_from_block_range(parent_pb, next_si, parent_pb.block_stmt_count, await_blocks, await_stmt_indices, await_count);
+    if merge_min >= 0 {
+        c99_emit_async_goto_await_state(codegen, merge_min, poll_ret_c, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
+    } else {
+        fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, await_count + 1);
+        fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
+    }
+}
+
+/// 非最后一态：从刚完成的 await 转到下一态（含 while 单 await 回跳、while 后紧跟 if 的分叉）
+fn c99_emit_async_poll_not_last_transition(
+    codegen: &C99CodeGenerator,
+    fn_decl: &ASTNode,
+    fn_body: &ASTNode,
+    state_k: i32,
+    await_count: i32,
+    await_operands: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    await_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    await_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS],
+    await_bind_types: [&ASTNode: C99_ASYNC_MAX_AWAITS],
+    poll_ret_c: &byte,
+    await_operand_is_err_future: i32,
+    full_return_type: &ASTNode,
+    concrete_future_safe: &byte,
+    state_slot_iface_c: &byte
+) void {
+    const cur_ai: i32 = state_k - 1;
+    const next_idx: i32 = state_k;
+    if cur_ai < 0 || next_idx >= await_count {
+        return;
+    }
+    const Wloop: &ASTNode = codegen.async_collect_enclosing_while[cur_ai];
+    var use_while_loop: i32 = 0;
+    if Wloop != null && Wloop.type == ASTNodeType.AST_WHILE_STMT && Wloop.while_stmt_condition != null &&
+        Wloop.while_stmt_body != null &&
+        c99_async_try_await_count_under_stmt(Wloop.while_stmt_body) == 1 &&
+        await_blocks[cur_ai] != null &&
+        c99_async_stmt_contains_await_point(Wloop.while_stmt_body, await_blocks[cur_ai], await_stmt_indices[cur_ai]) != 0 &&
+        c99_async_while_post_await_has_continue_break(Wloop, await_stmt_indices[cur_ai]) == 0 {
+        use_while_loop = 1;
+    }
+    var pb_slot: [&ASTNode: 1] = [null];
+    var ix_slot: [i32: 1] = [-1];
+    if use_while_loop != 0 && c99_async_find_while_parent_block(Wloop, fn_body, pb_slot, ix_slot) == 0 {
+        use_while_loop = 0;
+    }
+    if use_while_loop != 0 {
+        c99_emit_async_while_post_assign_stmts(codegen, Wloop, await_blocks[cur_ai], await_stmt_indices[cur_ai]);
+        fputs("        if (" as *byte, codegen.emit_stream as *void);
+        gen_expr(codegen, Wloop.while_stmt_condition);
+        fputs(") {\n" as *byte, codegen.emit_stream as *void);
+        fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, state_k);
+        c99_emit_async_arm_await_index(codegen, cur_ai, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
+        fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
+        fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
+        c99_emit_async_while_exit_transition(codegen, fn_body, Wloop, pb_slot[0], ix_slot[0], await_count, await_blocks, await_stmt_indices, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c, poll_ret_c);
+        fputs("        }\n" as *byte, codegen.emit_stream as *void);
+        return;
+    }
+    const cur_idx: i32 = state_k - 1;
+    var same_collect_block: i32 = 0;
+    if await_blocks[cur_idx] != null && await_blocks[next_idx] != null &&
+        @usize_from_ptr(await_blocks[cur_idx] as &void) == @usize_from_ptr(await_blocks[next_idx] as &void) {
+        same_collect_block = 1;
+    }
+    if cur_idx >= 0 && next_idx < await_count &&
+        same_collect_block != 0 &&
+        await_blocks[cur_idx].type == ASTNodeType.AST_BLOCK &&
+        await_stmt_indices[cur_idx] >= 0 && await_stmt_indices[next_idx] >= 0 &&
+        await_stmt_indices[cur_idx] < await_stmt_indices[next_idx] {
+        var si_mid: i32 = await_stmt_indices[cur_idx] + 1;
+        while si_mid < await_stmt_indices[next_idx] && si_mid < await_blocks[cur_idx].block_stmt_count {
+            const st_mid: &ASTNode = await_blocks[cur_idx].block_stmts[si_mid];
+            if st_mid != null {
+                if st_mid.type == ASTNodeType.AST_VAR_DECL && st_mid.var_decl_init != null &&
+                    c99_var_decl_init_is_try_await_bind(st_mid.var_decl_init) != 0 {
+                    // skip
+                } else if st_mid.type == ASTNodeType.AST_ASSIGN ||
+                    st_mid.type == ASTNodeType.AST_VAR_DECL {
+                    gen_stmt(codegen, st_mid);
+                }
+            }
+            si_mid = si_mid + 1;
+        }
+    }
+    fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, state_k + 1);
+    c99_emit_async_arm_await_index(codegen, next_idx, await_operands, await_bind_types, fn_decl, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
+}
+
+/// 从 @await 操作数表达式推断「子 Future」的单类型实参 T（即 `Future<T>` / `!Future<T>` 中的 T），并转为 AST，供 Poll<T>/vtable 单态化。
+/// 说明：多段 await 时每段子 Future 的 T 可能不同（如 `!usize` vs `!Http1AsyncResponse`），不能统一用函数返回的 inner。
+fn c99_async_operand_future_inner_ast(codegen: &C99CodeGenerator, operand: &ASTNode, fn_decl: &ASTNode) &ASTNode {
+    if operand == null || codegen == null || codegen.checker == null || fn_decl == null {
+        return null;
+    }
+    var ot: Type = checker_infer_type(codegen.checker, operand);
+    if ot.kind == TypeKind.TYPE_ERROR_UNION && ot.error_union_payload_type != null {
+        const pl: Type = ot.error_union_payload_type[0];
+        if pl.kind == TypeKind.TYPE_INTERFACE && pl.interface_name != null &&
+            (str_equals(pl.interface_name, "Future" as *byte) != 0 ||
+             (strlen(pl.interface_name as *byte) >= 6 && strncmp(pl.interface_name as *byte, "Future" as *byte, 6) == 0)) {
+            if pl.interface_type_arg_count >= 1 && pl.interface_type_args != null {
+                var inner_u: Type = pl.interface_type_args[0];
+                return type_to_ast(codegen.checker, &inner_u, fn_decl.line, fn_decl.column, fn_decl.filename);
+            }
+        }
+        if pl.kind == TypeKind.TYPE_STRUCT && pl.struct_name != null &&
+            (str_equals(pl.struct_name, "Future" as *byte) != 0 ||
+             (strlen(pl.struct_name as *byte) >= 6 && strncmp(pl.struct_name as *byte, "Future" as *byte, 6) == 0)) {
+            if pl.struct_type_arg_count >= 1 && pl.struct_type_args != null {
+                var inner_s: Type = pl.struct_type_args[0];
+                return type_to_ast(codegen.checker, &inner_s, fn_decl.line, fn_decl.column, fn_decl.filename);
+            }
+        }
+    }
+    if ot.kind == TypeKind.TYPE_INTERFACE && ot.interface_name != null &&
+        (str_equals(ot.interface_name, "Future" as *byte) != 0 ||
+         (strlen(ot.interface_name as *byte) >= 6 && strncmp(ot.interface_name as *byte, "Future" as *byte, 6) == 0)) {
+        if ot.interface_type_arg_count >= 1 && ot.interface_type_args != null {
+            var inner_f: Type = ot.interface_type_args[0];
+            return type_to_ast(codegen.checker, &inner_f, fn_decl.line, fn_decl.column, fn_decl.filename);
+        }
+    }
+    if ot.kind == TypeKind.TYPE_STRUCT && ot.struct_name != null &&
+        (str_equals(ot.struct_name, "Future" as *byte) != 0 ||
+         (strlen(ot.struct_name as *byte) >= 6 && strncmp(ot.struct_name as *byte, "Future" as *byte, 6) == 0)) {
+        if ot.struct_type_arg_count >= 1 && ot.struct_type_args != null {
+            var inner_g: Type = ot.struct_type_args[0];
+            return type_to_ast(codegen.checker, &inner_g, fn_decl.line, fn_decl.column, fn_decl.filename);
+        }
+    }
+    return null;
+}
+
+/// 将 Future 表达式赋给状态机的 await_fut（vtable+data），避免不同 Future 单态结构体之间不兼容。
+fn c99_emit_await_fut_assign_from_expr(codegen: &C99CodeGenerator, operand: &ASTNode, fn_decl: &ASTNode) void {
+    if operand == null || codegen == null || codegen.checker == null || fn_decl == null {
+        return;
+    }
+    const ot: Type = checker_infer_type(codegen.checker, operand);
+    var tc: &byte = c99_type_to_c_from_inferred_type(codegen, ot, fn_decl.line, fn_decl.column, fn_decl.filename);
+    if operand.type == ASTNodeType.AST_CALL_EXPR && operand.call_expr_callee != null {
+        const cal: &ASTNode = operand.call_expr_callee;
+        if cal.type == ASTNodeType.AST_IDENTIFIER && cal.identifier_name != null {
+            const fd_ret: &ASTNode = find_function_decl_c99(codegen, cal.identifier_name);
+            if fd_ret != null && fd_ret.fn_decl_return_type != null {
+                const t_fn: &byte = c99_type_to_c(codegen, fd_ret.fn_decl_return_type);
+                if t_fn != null {
+                    tc = t_fn;
+                }
+            }
+        }
+        // 成员调用：始终用语义上的方法返回类型求 C 名，避免 `||`/`&&` 优先级导致未进入补全分支而 abort
+        if cal.type == ASTNodeType.AST_MEMBER_ACCESS && cal.member_access_object != null && cal.member_access_field_name != null {
+            const ot_obj: Type = checker_infer_type(codegen.checker, cal.member_access_object);
+            var mfn: &ASTNode = null;
+            if ot_obj.kind == TypeKind.TYPE_STRUCT && ot_obj.struct_name != null {
+                mfn = find_method_in_struct_c99(codegen, ot_obj.struct_name, cal.member_access_field_name);
+            } else if ot_obj.kind == TypeKind.TYPE_POINTER && ot_obj.pointer_to != null {
+                const pt: Type = ot_obj.pointer_to[0];
+                if pt.kind == TypeKind.TYPE_STRUCT && pt.struct_name != null {
+                    mfn = find_method_in_struct_c99(codegen, pt.struct_name, cal.member_access_field_name);
+                } else if pt.kind == TypeKind.TYPE_INTERFACE && pt.interface_name != null {
+                    mfn = c99_find_interface_method_sig(codegen, pt.interface_name, cal.member_access_field_name);
+                }
+            } else if ot_obj.kind == TypeKind.TYPE_INTERFACE && ot_obj.interface_name != null {
+                mfn = c99_find_interface_method_sig(codegen, ot_obj.interface_name, cal.member_access_field_name);
+            }
+            if mfn != null && mfn.fn_decl_return_type != null {
+                const tm: &byte = c99_type_to_c(codegen, mfn.fn_decl_return_type);
+                if tm != null {
+                    tc = tm;
+                }
+            }
+            // checker_infer_type(接收者) 在部分上下文中得不到 struct 名；用 C 类型串回查声明（与 get_c_type_of_expr 路径一致）
+            if (tc == null || strcmp(tc as *byte, "void" as *byte) == 0) && cal.member_access_object != null {
+                const obj_c_fb: &byte = get_c_type_of_expr(codegen, cal.member_access_object);
+                if obj_c_fb != null {
+                    const sdecl_fb: &ASTNode = find_struct_decl_from_type_c(codegen, obj_c_fb);
+                    if sdecl_fb != null && sdecl_fb.struct_decl_name != null {
+                        const mfn2: &ASTNode = find_method_in_struct_c99(codegen, sdecl_fb.struct_decl_name, cal.member_access_field_name);
+                        if mfn2 != null && mfn2.fn_decl_return_type != null {
+                            const tm2: &byte = c99_type_to_c(codegen, mfn2.fn_decl_return_type);
+                            if tm2 != null {
+                                tc = tm2;
+                            }
+                        }
+                        if (tc == null || strcmp(tc as *byte, "void" as *byte) == 0) && sdecl_fb.struct_decl_interface_names != null {
+                            var ii: i32 = 0;
+                            while ii < sdecl_fb.struct_decl_interface_count {
+                                const inm: &byte = sdecl_fb.struct_decl_interface_names[ii];
+                                if inm != null {
+                                    const mif: &ASTNode = c99_find_interface_method_sig(codegen, inm, cal.member_access_field_name);
+                                    if mif != null && mif.fn_decl_return_type != null {
+                                        const tm3: &byte = c99_type_to_c(codegen, mif.fn_decl_return_type);
+                                        if tm3 != null {
+                                            tc = tm3;
+                                            ii = sdecl_fb.struct_decl_interface_count;
+                                        }
+                                    }
+                                }
+                                ii = ii + 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if tc == null || strcmp(tc as *byte, "void" as *byte) == 0 {
+        fputs("        abort(); /* await_fut: missing C type for Future operand */\n" as *byte, codegen.emit_stream as *void);
+        return;
+    }
+    fputs("        { " as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "%s _uya_await_slot_tmp = " as *byte, tc as *byte);
+    gen_expr(codegen, operand);
+    fputs("; s->await_fut.vtable = (void*)_uya_await_slot_tmp.vtable; s->await_fut.data = _uya_await_slot_tmp.data; }\n" as *byte, codegen.emit_stream as *void);
+}
+
+fn c99_async_subtree_contains_block_node(node: &ASTNode, target: &ASTNode) i32 {
+    if node == null || target == null {
+        return 0;
+    }
+    if @usize_from_ptr(node as &void) == @usize_from_ptr(target as &void) {
+        return 1;
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT && node.while_stmt_body != null {
+        if c99_async_subtree_contains_block_node(node.while_stmt_body, target) != 0 {
+            return 1;
+        }
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        if node.if_stmt_then_branch != null && c99_async_subtree_contains_block_node(node.if_stmt_then_branch, target) != 0 {
+            return 1;
+        }
+        if node.if_stmt_else_branch != null && c99_async_subtree_contains_block_node(node.if_stmt_else_branch, target) != 0 {
+            return 1;
+        }
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT && node.for_stmt_body != null {
+        if c99_async_subtree_contains_block_node(node.for_stmt_body, target) != 0 {
+            return 1;
+        }
+    }
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var bi: i32 = 0;
+        while bi < node.block_stmt_count {
+            const ch: &ASTNode = node.block_stmts[bi];
+            if ch != null && c99_async_subtree_contains_block_node(ch, target) != 0 {
+                return 1;
+            }
+            bi = bi + 1;
+        }
+    }
+    return 0;
+}
+
+/// 第一个 await 所在「函数体顶层语句」下标：memcpy 仅应对 root_stmt < 此下标的定长数组在 state 0 执行（避免误初始化 try/结构体等）。
+fn c99_async_root_stmt_index_of_first_await(body: &ASTNode, await_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS], await_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS], await_count: i32) i32 {
+    if body == null || body.type != ASTNodeType.AST_BLOCK || await_count <= 0 {
+        return -1;
+    }
+    const inner: &ASTNode = await_blocks[0];
+    if inner == null {
+        return -1;
+    }
+    if @usize_from_ptr(inner as &void) == @usize_from_ptr(body as &void) {
+        const ix: i32 = await_stmt_indices[0];
+        if ix >= 0 {
+            return ix;
+        }
+        return -1;
+    }
+    var ri: i32 = 0;
+    while ri < body.block_stmt_count {
+        const st: &ASTNode = body.block_stmts[ri];
+        if st != null && c99_async_subtree_contains_block_node(st, inner) != 0 {
+            return ri;
+        }
+        ri = ri + 1;
+    }
+    return -1;
+}
+
+/// 若最后一个 await 与 return 同在函数体顶层，去掉「该 await 声明行之后」提升的 _uya_loc_*（由最后一态 gen_stmt 处理，避免与 s->_uya_loc_x 重名）。
+fn c99_async_trim_locals_after_last_await_root(codegen: &C99CodeGenerator, body: &ASTNode, await_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS], await_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS], await_count: i32) void {
+    if codegen == null || body == null || await_count <= 0 {
+        return;
+    }
+    const lb: &ASTNode = await_blocks[await_count - 1];
+    if lb == null || @usize_from_ptr(lb as &void) != @usize_from_ptr(body as &void) {
+        return;
+    }
+    const last_ix: i32 = await_stmt_indices[await_count - 1];
+    if last_ix < 0 {
+        return;
+    }
+    var w: i32 = 0;
+    var r: i32 = 0;
+    while r < codegen.async_local_count && r < 16 {
+        if codegen.async_local_root_stmt[r] <= last_ix {
+            if w != r {
+                codegen.async_local_names[w] = codegen.async_local_names[r];
+                codegen.async_local_types[w] = codegen.async_local_types[r];
+                codegen.async_local_inits[w] = codegen.async_local_inits[r];
+                codegen.async_local_root_stmt[w] = codegen.async_local_root_stmt[r];
+            }
+            w = w + 1;
+        }
+        r = r + 1;
+    }
+    codegen.async_local_count = w;
+}
+
+// 收集函数体顶层、第一个顶层 return 之前的 const/var（非 try @await 绑定），记入 async_local_* 并记录根语句下标。
 fn collect_async_pre_return_locals(codegen: &C99CodeGenerator, body: &ASTNode) void {
     codegen.async_local_count = 0;
     if codegen == null || body == null || body.type != ASTNodeType.AST_BLOCK {
@@ -1267,7 +1931,110 @@ fn collect_async_pre_return_locals(codegen: &C99CodeGenerator, body: &ASTNode) v
             codegen.async_local_names[codegen.async_local_count] = st.var_decl_name;
             codegen.async_local_types[codegen.async_local_count] = st.var_decl_type;
             codegen.async_local_inits[codegen.async_local_count] = st.var_decl_init;
+            codegen.async_local_root_stmt[codegen.async_local_count] = si;
             codegen.async_local_count = codegen.async_local_count + 1;
+        }
+        si = si + 1;
+    }
+}
+
+/// state==0 且存在 await 时：对「第一个 await 所在顶层语句之前」的提升局部做完整初始化（含 try connect / build_headers 等；定长数组仍用 memcpy）。
+/// 仅包含 root_stmt < cut_root 的项，避免把 meta=0、malloc(body_total) 等后置语句误写入 state 0。
+fn emit_async_state0_pre_first_await_local_inits(codegen: &C99CodeGenerator, cut_root: i32) void {
+    if codegen == null || codegen.async_state_var == null || codegen.async_local_count <= 0 || cut_root < 0 {
+        return;
+    }
+    var li: i32 = 0;
+    while li < codegen.async_local_count && li < 16 {
+        if codegen.async_local_root_stmt[li] >= cut_root {
+            li = li + 1;
+            continue;
+        }
+        const orig: &byte = codegen.async_local_names[li];
+        const ie: &ASTNode = codegen.async_local_inits[li];
+        const ltype: &ASTNode = codegen.async_local_types[li];
+        if orig != null && ie != null {
+            const ls: &byte = get_safe_c_identifier(codegen, orig);
+            if ls != null {
+                if ltype != null && ltype.type == ASTNodeType.AST_TYPE_ARRAY &&
+                    ltype.type_array_element_type != null && ie.type == ASTNodeType.AST_ARRAY_LITERAL {
+                    const elem_c: &byte = c99_type_to_c(codegen, ltype.type_array_element_type);
+                    if elem_c != null {
+                        var lit_len: i32 = ie.array_literal_element_count;
+                        if ie.array_literal_repeat_count_expr != null && ie.array_literal_element_count >= 1 {
+                            const rep_n: i32 = eval_const_expr(codegen, ie.array_literal_repeat_count_expr);
+                            if rep_n >= 0 {
+                                lit_len = rep_n;
+                            }
+                        }
+                        const arr_n: i32 = eval_const_expr(codegen, ltype.type_array_size_expr);
+                        if arr_n > 0 && lit_len >= 0 && lit_len < arr_n {
+                            fprintf(codegen.emit_stream as *void,
+                                "        __builtin_memset((void *)&%s->_uya_loc_%s, 0, sizeof(%s->_uya_loc_%s));\n" as *byte,
+                                codegen.async_state_var as *byte, ls as *byte, codegen.async_state_var as *byte, ls as *byte);
+                            if lit_len > 0 {
+                                fprintf(codegen.emit_stream as *void, "        memcpy(%s->_uya_loc_%s, (const " as *byte,
+                                    codegen.async_state_var as *byte, ls as *byte);
+                                fputs(elem_c as *byte, codegen.emit_stream as *void);
+                                fputs("[]){" as *byte, codegen.emit_stream as *void);
+                                gen_array_literal_contents(codegen, ie);
+                                fprintf(codegen.emit_stream as *void,
+                                    "}, ((size_t)(%d)) * sizeof(%s->_uya_loc_%s[0]));\n" as *byte,
+                                    lit_len, codegen.async_state_var as *byte, ls as *byte);
+                            }
+                        } else {
+                            fprintf(codegen.emit_stream as *void, "        memcpy(%s->_uya_loc_%s, (const " as *byte,
+                                codegen.async_state_var as *byte, ls as *byte);
+                            fputs(elem_c as *byte, codegen.emit_stream as *void);
+                            fputs("[]){" as *byte, codegen.emit_stream as *void);
+                            gen_array_literal_contents(codegen, ie);
+                            fprintf(codegen.emit_stream as *void, "}, sizeof(%s->_uya_loc_%s));\n" as *byte,
+                                codegen.async_state_var as *byte, ls as *byte);
+                        }
+                    }
+                } else {
+                    fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = " as *byte,
+                        codegen.async_state_var as *byte, ls as *byte);
+                    gen_expr(codegen, ie);
+                    fputs(";\n" as *byte, codegen.emit_stream as *void);
+                }
+            }
+        }
+        li = li + 1;
+    }
+}
+
+/// 在最后一态、计算 ret_expr 之前，发射「最后一个 await 声明之后 → return 之前」块内语句（const/var/赋值），与相邻 await 之间的补丁路径一致。
+fn c99_emit_async_tail_stmts_after_last_await(codegen: &C99CodeGenerator, await_blocks: [&ASTNode: C99_ASYNC_MAX_AWAITS], await_stmt_indices: [i32: C99_ASYNC_MAX_AWAITS], await_count: i32) void {
+    if codegen == null || await_count <= 0 {
+        return;
+    }
+    const last_bi: i32 = await_count - 1;
+    if last_bi < 0 || last_bi >= C99_ASYNC_MAX_AWAITS {
+        return;
+    }
+    const tb: &ASTNode = await_blocks[last_bi];
+    const start_si: i32 = await_stmt_indices[last_bi];
+    if tb == null || tb.type != ASTNodeType.AST_BLOCK || start_si < 0 {
+        return;
+    }
+    var si: i32 = start_si + 1;
+    while si < tb.block_stmt_count {
+        const st: &ASTNode = tb.block_stmts[si];
+        if st == null {
+            si = si + 1;
+            continue;
+        }
+        if st.type == ASTNodeType.AST_RETURN_STMT {
+            break;
+        }
+        if st.type == ASTNodeType.AST_VAR_DECL && st.var_decl_init != null &&
+            c99_var_decl_init_is_try_await_bind(st.var_decl_init) != 0 {
+            si = si + 1;
+            continue;
+        }
+        if st.type == ASTNodeType.AST_ASSIGN || st.type == ASTNodeType.AST_VAR_DECL {
+            gen_stmt(codegen, st);
         }
         si = si + 1;
     }
@@ -1281,9 +2048,50 @@ fn emit_async_pre_return_local_inits(codegen: &C99CodeGenerator) void {
     while li < codegen.async_local_count && li < 16 {
         const orig: &byte = codegen.async_local_names[li];
         const ie: &ASTNode = codegen.async_local_inits[li];
+        const ltype: &ASTNode = codegen.async_local_types[li];
         if orig != null && ie != null {
             const ls: &byte = get_safe_c_identifier(codegen, orig);
             if ls != null {
+                // 定长数组提升为状态机字段后不能 s->_uya_loc_x = { ... }，用 memcpy + 复合字面量
+                if ltype != null && ltype.type == ASTNodeType.AST_TYPE_ARRAY &&
+                    ltype.type_array_element_type != null && ie.type == ASTNodeType.AST_ARRAY_LITERAL {
+                    const elem_c: &byte = c99_type_to_c(codegen, ltype.type_array_element_type);
+                    if elem_c != null {
+                        var lit_len2: i32 = ie.array_literal_element_count;
+                        if ie.array_literal_repeat_count_expr != null && ie.array_literal_element_count >= 1 {
+                            const rep_n2: i32 = eval_const_expr(codegen, ie.array_literal_repeat_count_expr);
+                            if rep_n2 >= 0 {
+                                lit_len2 = rep_n2;
+                            }
+                        }
+                        const arr_n2: i32 = eval_const_expr(codegen, ltype.type_array_size_expr);
+                        if arr_n2 > 0 && lit_len2 >= 0 && lit_len2 < arr_n2 {
+                            fprintf(codegen.emit_stream as *void,
+                                "        __builtin_memset((void *)&%s->_uya_loc_%s, 0, sizeof(%s->_uya_loc_%s));\n" as *byte,
+                                codegen.async_state_var as *byte, ls as *byte, codegen.async_state_var as *byte, ls as *byte);
+                            if lit_len2 > 0 {
+                                fprintf(codegen.emit_stream as *void, "        memcpy(%s->_uya_loc_%s, (const " as *byte,
+                                    codegen.async_state_var as *byte, ls as *byte);
+                                fputs(elem_c as *byte, codegen.emit_stream as *void);
+                                fputs("[]){" as *byte, codegen.emit_stream as *void);
+                                gen_array_literal_contents(codegen, ie);
+                                fprintf(codegen.emit_stream as *void,
+                                    "}, ((size_t)(%d)) * sizeof(%s->_uya_loc_%s[0]));\n" as *byte,
+                                    lit_len2, codegen.async_state_var as *byte, ls as *byte);
+                            }
+                        } else {
+                            fprintf(codegen.emit_stream as *void, "        memcpy(%s->_uya_loc_%s, (const " as *byte,
+                                codegen.async_state_var as *byte, ls as *byte);
+                            fputs(elem_c as *byte, codegen.emit_stream as *void);
+                            fputs("[]){" as *byte, codegen.emit_stream as *void);
+                            gen_array_literal_contents(codegen, ie);
+                            fprintf(codegen.emit_stream as *void, "}, sizeof(%s->_uya_loc_%s));\n" as *byte,
+                                codegen.async_state_var as *byte, ls as *byte);
+                        }
+                        li = li + 1;
+                        continue;
+                    }
+                }
                 fprintf(codegen.emit_stream as *void, "        %s->_uya_loc_%s = " as *byte,
                     codegen.async_state_var as *byte, ls as *byte);
                 gen_expr(codegen, ie);
@@ -1341,6 +2149,10 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     var vtable_future_safe: &byte = safe_future;
     const iface_c: &byte = c99_type_to_c(codegen, effective_return_type);
     const inner_err_c: &byte = c99_type_to_c(codegen, inner);
+    var outer_err_payload_value_c: &byte = null;
+    if inner.type == ASTNodeType.AST_TYPE_ERROR_UNION && inner.type_error_union_payload_type != null {
+        outer_err_payload_value_c = c99_type_to_c(codegen, inner.type_error_union_payload_type);
+    }
     var concrete_future_safe: &byte = safe_future;
     if effective_return_type.type_named_type_args != null && effective_return_type.type_named_type_arg_count >= 1 {
         var slot_ta: & & ASTNode = effective_return_type.type_named_type_args;
@@ -1388,11 +2200,17 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     var ret_expr: &ASTNode = null;
     var has_await_loop: i32 = 0;
     var async_loop_var_is_total: i32 = 0;
+    var async_cut_root: i32 = -1;
     if body != null {
         codegen.async_collect_count = 0;
         codegen.async_collect_ret_expr = null;
         codegen.async_collect_has_loop = 0;
-        collect_awaits_recursive(body, codegen, MAX_AWAITS, null, -1);
+        var ewz: i32 = 0;
+        while ewz < C99_ASYNC_MAX_AWAITS {
+            codegen.async_collect_enclosing_while[ewz] = null;
+            ewz = ewz + 1;
+        }
+        collect_awaits_recursive(body, codegen, MAX_AWAITS, null, -1, null);
         await_count = codegen.async_collect_count;
         ret_expr = codegen.async_collect_ret_expr;
         has_await_loop = codegen.async_collect_has_loop;
@@ -1406,6 +2224,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             ci = ci + 1;
         }
         collect_async_pre_return_locals(codegen, body);
+        c99_async_trim_locals_after_last_await_root(codegen, body, await_blocks, await_stmt_indices, await_count);
+        async_cut_root = c99_async_root_stmt_index_of_first_await(body, await_blocks, await_stmt_indices, await_count);
     }
     // 编译期计算状态机字节大小（使用真实类型大小）
     // - state = 4 字节
@@ -1487,7 +2307,11 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             if poll_inner == null && full_return_type != null && full_return_type.type_error_union_payload_type != null {
                 poll_inner = full_return_type.type_error_union_payload_type;
             }
-            type_args_poll[0] = poll_inner;
+            if poll_inner != null {
+                type_args_poll[0] = substitute_type_arg(codegen, poll_inner);
+            } else {
+                type_args_poll[0] = poll_inner;
+            }
             const poll_type_node: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_NAMED, 0, 0, codegen.arena, null);
             const poll_union_decl: &ASTNode = find_union_decl_c99(codegen, "Poll" as &byte);
             if poll_union_decl != null {
@@ -1694,15 +2518,50 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
     }
 
-    // 若 poll 内会用到子 future 的 vtable，在 poll 前输出该 vtable 结构体定义（否则 ->poll 会报未定义类型），并标记已定义避免后续重复
-    if await_count > 0 && child_poll_ret_c != null {
-        const vtable_struct_buf: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
-        if vtable_struct_buf != null {
-            snprintf(vtable_struct_buf as *byte, 128, "uya_vtable_%s" as *byte, child_vtable_safe as *byte);
-            if is_struct_defined(codegen, vtable_struct_buf) == 0 {
-                fprintf(codegen.emit_stream as *void, "struct uya_vtable_%s { %s (*poll)(void *self, struct Waker *); };\n" as *byte,
-                    child_vtable_safe as *byte, child_poll_ret_c as *byte);
-                mark_struct_defined(codegen, vtable_struct_buf);
+    // 若 poll 内会用到子 future 的 vtable：多段 await 时每段 Future<T> 的 T 可能不同，须为每个操作数对应的 Poll<T> 输出一次 vtable 声明
+    if await_count > 0 {
+        var vti: i32 = 0;
+        while vti < await_count {
+            const vop: &ASTNode = await_operands[vti];
+            const vinner_ast: &ASTNode = c99_async_operand_future_inner_ast(codegen, vop, fn_decl);
+            if vinner_ast != null {
+                const poll_ud_v: &ASTNode = find_union_decl_c99(codegen, "Poll" as &byte);
+                const ta_v: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+                if ta_v != null && poll_ud_v != null {
+                    ta_v[0] = vinner_ast;
+                    gen_mono_union_definition(codegen, poll_ud_v, ta_v, 1);
+                    const pm_v: &byte = get_mono_union_name(codegen, "Poll" as &byte, ta_v, 1);
+                    const pms_v: &byte = get_safe_c_identifier(codegen, pm_v);
+                    const pr_v: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+                    if pr_v != null && pms_v != null {
+                        snprintf(pr_v as *byte, 256, "struct uya_tagged_%s" as *byte, pms_v as *byte);
+                        const fm_v: &byte = get_mono_struct_name(codegen, "Future" as &byte, ta_v, 1);
+                        const fms_v: &byte = get_safe_c_identifier(codegen, fm_v);
+                        if fms_v != null {
+                            const vtable_vbuf: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
+                            if vtable_vbuf != null {
+                                snprintf(vtable_vbuf as *byte, 128, "uya_vtable_%s" as *byte, fms_v as *byte);
+                                if is_struct_defined(codegen, vtable_vbuf) == 0 {
+                                    fprintf(codegen.emit_stream as *void, "struct uya_vtable_%s { %s (*poll)(void *self, struct Waker *); };\n" as *byte,
+                                        fms_v as *byte, pr_v as *byte);
+                                    mark_struct_defined(codegen, vtable_vbuf);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            vti = vti + 1;
+        }
+        if child_poll_ret_c != null && child_vtable_safe != null {
+            const vtable_fallback: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
+            if vtable_fallback != null {
+                snprintf(vtable_fallback as *byte, 128, "uya_vtable_%s" as *byte, child_vtable_safe as *byte);
+                if is_struct_defined(codegen, vtable_fallback) == 0 {
+                    fprintf(codegen.emit_stream as *void, "struct uya_vtable_%s { %s (*poll)(void *self, struct Waker *); };\n" as *byte,
+                        child_vtable_safe as *byte, child_poll_ret_c as *byte);
+                    mark_struct_defined(codegen, vtable_fallback);
+                }
             }
         }
     }
@@ -1716,7 +2575,11 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     if await_count > 0 && concrete_future_safe != null && await_operand_is_err_future != 0 {
         fprintf(codegen.emit_stream as *void, "struct %s _uya_await_storage; " as *byte, concrete_future_safe as *byte);
     }
-    fprintf(codegen.emit_stream as *void, "%s await_fut;" as *byte, state_slot_iface_c as *byte);
+    if await_count > 0 {
+        fputs("struct { void *vtable; void *data; } await_fut;" as *byte, codegen.emit_stream as *void);
+    } else {
+        fprintf(codegen.emit_stream as *void, "%s await_fut;" as *byte, state_slot_iface_c as *byte);
+    }
     if async_loop_var_is_total != 0 {
         // 上次 read 返回的字节数：state==2 可能在后续 poll 调用中进入，局部 n 未定义，不能与 written 比较
         fputs(" size_t _uya_total; size_t _uya_read_n;" as *byte, codegen.emit_stream as *void);
@@ -1724,19 +2587,17 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     // 输出所有 await 绑定变量到结构体（确保跨 poll 调用时值不丢失）
     var bind_i: i32 = 0;
     while bind_i < await_count {
-        const bind_c_type: &byte = c99_type_to_c(codegen, await_bind_types[bind_i]);
         const bind_safe_name: &byte = get_safe_c_identifier(codegen, await_bind_names[bind_i]);
-        if bind_c_type != null && bind_safe_name != null {
-            fprintf(codegen.emit_stream as *void, " %s _uya_bind_%s;" as *byte, bind_c_type as *byte, bind_safe_name as *byte);
+        if await_bind_types[bind_i] != null && bind_safe_name != null {
+            c99_emit_struct_field_decl_fragment(codegen, await_bind_types[bind_i], "_uya_bind_" as &byte, bind_safe_name);
         }
         bind_i = bind_i + 1;
     }
     var loc_i: i32 = 0;
     while loc_i < codegen.async_local_count && loc_i < 16 {
-        const ltype_c: &byte = c99_type_to_c(codegen, codegen.async_local_types[loc_i]);
         const lname_safe: &byte = get_safe_c_identifier(codegen, codegen.async_local_names[loc_i]);
-        if ltype_c != null && lname_safe != null {
-            fprintf(codegen.emit_stream as *void, " %s _uya_loc_%s;" as *byte, ltype_c as *byte, lname_safe as *byte);
+        if codegen.async_local_types[loc_i] != null && lname_safe != null {
+            c99_emit_struct_field_decl_fragment(codegen, codegen.async_local_types[loc_i], "_uya_loc_" as &byte, lname_safe);
         }
         loc_i = loc_i + 1;
     }
@@ -1746,10 +2607,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     while pi < param_count && pi < 16 {
         const param: &ASTNode = params[pi];
         if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null && param.var_decl_name != null {
-            const ptype_c: &byte = c99_type_to_c(codegen, param.var_decl_type);
             const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
-            if ptype_c != null && pname != null {
-                fprintf(codegen.emit_stream as *void, " %s %s;" as *byte, ptype_c as *byte, pname as *byte);
+            if pname != null {
+                c99_emit_struct_field_decl_fragment(codegen, param.var_decl_type, null, pname);
             }
         }
         pi = pi + 1;
@@ -1759,6 +2619,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     // 设置 async 参数捕获（poll 内 gen_expr 将参数引用为 s->param）
     const async_s: &byte = "s" as *byte;
     codegen.async_state_var = async_s;
+    codegen.async_poll_try_propagate_type = inner;
+    codegen.async_poll_ret_c = poll_ret_c;
+    codegen.async_poll_union_c = poll_union_c;
     if async_loop_var_is_total != 0 && loop_var_name != null {
         codegen.async_loop_var_name = loop_var_name;
         codegen.async_loop_var_c = "s->_uya_total" as &byte;
@@ -1808,31 +2671,30 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         if async_loop_var_is_total != 0 {
             fputs("        s->_uya_total = 0;\n" as *byte, codegen.emit_stream as *void);
         }
+        emit_async_state0_pre_first_await_local_inits(codegen, async_cut_root);
         fputs("        s->state = 1;\n" as *byte, codegen.emit_stream as *void);
-        fputs("        s->await_fut = " as *byte, codegen.emit_stream as *void);
         if await_operand_is_err_future != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
             concrete_future_safe != null && state_slot_iface_c != null {
             const operand_union_c: &byte = c99_type_to_c(codegen, full_return_type);
             if operand_union_c != null {
-                fprintf(codegen.emit_stream as *void, "({ %s _uya_await_tmp = " as *byte, operand_union_c as *byte);
+                fprintf(codegen.emit_stream as *void, "        ({ %s _uya_await_tmp = " as *byte, operand_union_c as *byte);
                 gen_expr(codegen, await_operands[0]);
-                fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->_uya_await_storage = *(struct %s *)_uya_await_tmp.value.data; s->await_fut = (%s){ .vtable = _uya_await_tmp.value.vtable, .data = (void*)&s->_uya_await_storage }; })" as *byte, concrete_future_safe as *byte, state_slot_iface_c as *byte);
+                fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->_uya_await_storage = *(struct %s *)_uya_await_tmp.value.data; s->await_fut.vtable = (void*)_uya_await_tmp.value.vtable; s->await_fut.data = (void*)&s->_uya_await_storage; });\n" as *byte, concrete_future_safe as *byte);
             } else {
-                gen_expr(codegen, await_operands[0]);
+                c99_emit_await_fut_assign_from_expr(codegen, await_operands[0], fn_decl);
             }
         } else if await_operand_is_err_future != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
             const operand_union_c: &byte = c99_type_to_c(codegen, full_return_type);
             if operand_union_c != null {
-                fprintf(codegen.emit_stream as *void, "({ %s _uya_await_tmp = " as *byte, operand_union_c as *byte);
+                fprintf(codegen.emit_stream as *void, "        ({ %s _uya_await_tmp = " as *byte, operand_union_c as *byte);
                 gen_expr(codegen, await_operands[0]);
-                fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); _uya_await_tmp.value; })" as *byte);
+                fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->await_fut.vtable = (void*)_uya_await_tmp.value.vtable; s->await_fut.data = _uya_await_tmp.value.data; });\n" as *byte);
             } else {
-                gen_expr(codegen, await_operands[0]);
+                c99_emit_await_fut_assign_from_expr(codegen, await_operands[0], fn_decl);
             }
         } else {
-            gen_expr(codegen, await_operands[0]);
+            c99_emit_await_fut_assign_from_expr(codegen, await_operands[0], fn_decl);
         }
-        fputs(";\n" as *byte, codegen.emit_stream as *void);
     } else {
         emit_async_pre_return_local_inits(codegen);
         fputs("        s->state = 2;\n" as *byte, codegen.emit_stream as *void);
@@ -1841,13 +2703,64 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
 
     var state_k: i32 = 1;
     while state_k <= await_count {
+        var seg_poll_ret_c: &byte = child_poll_ret_c;
+        var seg_poll_union_c: &byte = child_poll_union_c;
+        var seg_vtable_safe: &byte = child_vtable_safe;
+        var seg_inner_is_err: i32 = child_inner_is_err_union;
+        var seg_ready_payload_c: &byte = ready_payload_c;
+        const seg_op: &ASTNode = await_operands[state_k - 1];
+        const seg_inner_ast: &ASTNode = c99_async_operand_future_inner_ast(codegen, seg_op, fn_decl);
+        if seg_inner_ast != null {
+            const poll_ud_seg: &ASTNode = find_union_decl_c99(codegen, "Poll" as &byte);
+            const ta_seg: & & ASTNode = compiler_arena_alloc(codegen.arena, @size_of(&ASTNode)) as & & ASTNode;
+            if ta_seg != null && poll_ud_seg != null {
+                ta_seg[0] = seg_inner_ast;
+                gen_mono_union_definition(codegen, poll_ud_seg, ta_seg, 1);
+                const pm_seg: &byte = get_mono_union_name(codegen, "Poll" as &byte, ta_seg, 1);
+                const pms_seg: &byte = get_safe_c_identifier(codegen, pm_seg);
+                if pms_seg != null {
+                    const pr_seg: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+                    const pu_seg: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+                    if pr_seg != null { snprintf(pr_seg as *byte, 256, "struct uya_tagged_%s" as *byte, pms_seg as *byte); seg_poll_ret_c = pr_seg; }
+                    if pu_seg != null { snprintf(pu_seg as *byte, 256, "union %s" as *byte, pms_seg as *byte); seg_poll_union_c = pu_seg; }
+                }
+                const fm_seg: &byte = get_mono_struct_name(codegen, "Future" as &byte, ta_seg, 1);
+                const fms_seg: &byte = get_safe_c_identifier(codegen, fm_seg);
+                if fms_seg != null { seg_vtable_safe = fms_seg; }
+            }
+            if seg_inner_ast.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+                seg_inner_is_err = 1;
+            } else {
+                seg_inner_is_err = 0;
+            }
+            const seg_rpc: &byte = c99_type_to_c(codegen, seg_inner_ast);
+            if seg_rpc != null { seg_ready_payload_c = seg_rpc; }
+        }
         fprintf(codegen.emit_stream as *void, "    if (s->state == %d) {\n" as *byte, state_k);
+        // 仅 Ready 为 err_union（!T）时按操作数单态化 Poll/ vtable；否则沿用全局 child_*（如 try @await !Future<Future<i32>> 解包后 poll 为 Poll<i32>，绑定类型仍可为 Future<i32>）
+        var poll_line_ret: &byte = child_poll_ret_c;
+        var poll_line_vt: &byte = child_vtable_safe;
+        if seg_inner_is_err != 0 && seg_inner_ast != null {
+            poll_line_ret = seg_poll_ret_c;
+            poll_line_vt = seg_vtable_safe;
+        }
         fprintf(codegen.emit_stream as *void, "        %s p = ((struct uya_vtable_%s *)s->await_fut.vtable)->poll(s->await_fut.data, waker);\n" as *byte,
-            child_poll_ret_c as *byte, child_vtable_safe as *byte);
+            poll_line_ret as *byte, poll_line_vt as *byte);
         fprintf(codegen.emit_stream as *void, "        if (p._tag == 0) { return (%s){ ._tag = 0 }; }\n" as *byte, poll_ret_c as *byte);
-        if child_inner_is_err_union != 0 {
-            fprintf(codegen.emit_stream as *void, "        %s r = p.u.Ready;\n" as *byte, ready_payload_c as *byte);
-            fprintf(codegen.emit_stream as *void, "        if (r.error_id != 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = r } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
+        if seg_inner_is_err != 0 {
+            fprintf(codegen.emit_stream as *void, "        %s r = p.u.Ready;\n" as *byte, seg_ready_payload_c as *byte);
+            var seg_err_use_bridge: i32 = 0;
+            if seg_inner_ast != null && seg_ready_payload_c != null && ready_payload_c != null &&
+                outer_err_payload_value_c != null &&
+                strcmp(seg_ready_payload_c as *byte, ready_payload_c as *byte) != 0 {
+                seg_err_use_bridge = 1;
+            }
+            if seg_err_use_bridge != 0 {
+                fprintf(codegen.emit_stream as *void, "        if (r.error_id != 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = r.error_id, .value = (%s){0} } } }; }\n" as *byte,
+                    poll_ret_c as *byte, poll_union_c as *byte, ready_payload_c as *byte, outer_err_payload_value_c as *byte);
+            } else {
+                fprintf(codegen.emit_stream as *void, "        if (r.error_id != 0) { return (%s){ ._tag = 1, .u = (%s){ .Ready = r } }; }\n" as *byte, poll_ret_c as *byte, poll_union_c as *byte);
+            }
             const cur_bind_name: &byte = await_bind_names[state_k - 1];
             const cur_bind_type: &ASTNode = await_bind_types[state_k - 1];
             if cur_bind_name != null && cur_bind_type != null {
@@ -1875,64 +2788,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 }
             }
             if state_k < await_count {
-                // 同一块内相邻 await 之间的普通语句必须在推进下一个 await 前执行
-                const cur_idx: i32 = state_k - 1;
-                const next_idx: i32 = state_k;
-                var same_collect_block: i32 = 0;
-                if await_blocks[cur_idx] != null && await_blocks[next_idx] != null &&
-                    @usize_from_ptr(await_blocks[cur_idx] as &void) == @usize_from_ptr(await_blocks[next_idx] as &void) {
-                    same_collect_block = 1;
-                }
-                if cur_idx >= 0 && next_idx < await_count &&
-                    same_collect_block != 0 &&
-                    await_blocks[cur_idx].type == ASTNodeType.AST_BLOCK &&
-                    await_stmt_indices[cur_idx] >= 0 && await_stmt_indices[next_idx] >= 0 &&
-                    await_stmt_indices[cur_idx] < await_stmt_indices[next_idx] {
-                    var si_mid: i32 = await_stmt_indices[cur_idx] + 1;
-                    while si_mid < await_stmt_indices[next_idx] && si_mid < await_blocks[cur_idx].block_stmt_count {
-                        const st_mid: &ASTNode = await_blocks[cur_idx].block_stmts[si_mid];
-                        if st_mid != null {
-                            if st_mid.type == ASTNodeType.AST_VAR_DECL && st_mid.var_decl_init != null &&
-                                c99_var_decl_init_is_try_await_bind(st_mid.var_decl_init) != 0 {
-                                // await 绑定声明由状态机处理，这里跳过
-                            } else if st_mid.type == ASTNodeType.AST_ASSIGN ||
-                                st_mid.type == ASTNodeType.AST_VAR_DECL {
-                                // 仅发射无控制流的语句，避免在 poll 状态分支内引入 return/break/continue
-                                gen_stmt(codegen, st_mid);
-                            } else {
-                                // 控制流语句暂不在该轻量补丁路径处理
-                            }
-                        }
-                        si_mid = si_mid + 1;
-                    }
-                }
-                fputs("        s->state = " as *byte, codegen.emit_stream as *void);
-                var next_state: i32 = state_k + 1;
-                fprintf(codegen.emit_stream as *void, "%d;\n" as *byte, next_state);
-                fputs("        s->await_fut = " as *byte, codegen.emit_stream as *void);
-                var next_await_is_err_future: i32 = await_operand_is_err_future;
-                if next_await_is_err_future == 0 && await_bind_types[state_k] != null && await_bind_types[state_k].type == ASTNodeType.AST_TYPE_NAMED &&
-                    await_bind_types[state_k].type_named_name != null &&
-                    strcmp(await_bind_types[state_k].type_named_name as *byte, "Future" as *byte) == 0 {
-                    next_await_is_err_future = 1;
-                }
-                if next_await_is_err_future != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
-                    const operand_union_c2: &byte = c99_type_to_c(codegen, full_return_type);
-                    if operand_union_c2 != null {
-                        fprintf(codegen.emit_stream as *void, "({ %s _uya_await_tmp = " as *byte, operand_union_c2 as *byte);
-                        gen_expr(codegen, await_operands[state_k]);
-                        if concrete_future_safe != null && state_slot_iface_c != null {
-                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->_uya_await_storage = *(struct %s *)_uya_await_tmp.value.data; s->await_fut = (%s){ .vtable = _uya_await_tmp.value.vtable, .data = (void*)&s->_uya_await_storage }; })" as *byte, concrete_future_safe as *byte, state_slot_iface_c as *byte);
-                        } else {
-                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); _uya_await_tmp.value; })" as *byte);
-                        }
-                    } else {
-                        gen_expr(codegen, await_operands[state_k]);
-                    }
-                } else {
-                    gen_expr(codegen, await_operands[state_k]);
-                }
-                fputs(";\n" as *byte, codegen.emit_stream as *void);
+                c99_emit_async_poll_not_last_transition(codegen, fn_decl, body, state_k, await_count, await_operands, await_blocks, await_stmt_indices, await_bind_types, poll_ret_c, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
             } else if async_loop_var_is_total != 0 {
                 // 循环回跳：total += written; if (written < n) return; else 回到 await 0
                 // 使用实际的绑定名
@@ -1947,30 +2803,29 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                     }
                 }
                 fprintf(codegen.emit_stream as *void, "        s->state = 1;\n" as *byte);
-                fputs("        s->await_fut = " as *byte, codegen.emit_stream as *void);
                 if await_operand_is_err_future != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
                     const operand_union_c3: &byte = c99_type_to_c(codegen, full_return_type);
                     if operand_union_c3 != null {
-                        fprintf(codegen.emit_stream as *void, "({ %s _uya_await_tmp = " as *byte, operand_union_c3 as *byte);
+                        fprintf(codegen.emit_stream as *void, "        ({ %s _uya_await_tmp = " as *byte, operand_union_c3 as *byte);
                         gen_expr(codegen, await_operands[0]);
                         if concrete_future_safe != null && state_slot_iface_c != null {
-                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->_uya_await_storage = *(struct %s *)_uya_await_tmp.value.data; s->await_fut = (%s){ .vtable = _uya_await_tmp.value.vtable, .data = (void*)&s->_uya_await_storage }; })" as *byte, concrete_future_safe as *byte, state_slot_iface_c as *byte);
+                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->_uya_await_storage = *(struct %s *)_uya_await_tmp.value.data; s->await_fut.vtable = (void*)_uya_await_tmp.value.vtable; s->await_fut.data = (void*)&s->_uya_await_storage; });\n" as *byte, concrete_future_safe as *byte);
                         } else {
-                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); _uya_await_tmp.value; })" as *byte);
+                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->await_fut.vtable = (void*)_uya_await_tmp.value.vtable; s->await_fut.data = _uya_await_tmp.value.data; });\n" as *byte);
                         }
                     } else {
-                        gen_expr(codegen, await_operands[0]);
+                        c99_emit_await_fut_assign_from_expr(codegen, await_operands[0], fn_decl);
                     }
                 } else {
-                    gen_expr(codegen, await_operands[0]);
+                    c99_emit_await_fut_assign_from_expr(codegen, await_operands[0], fn_decl);
                 }
-                fputs(";\n" as *byte, codegen.emit_stream as *void);
                 fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
             } else {
                 // 最后一态：用 ret_expr 计算返回值。若函数返回 !Future<T> 则 ok 为 full_return_type，value 需 Future 装箱
-                emit_async_pre_return_local_inits(codegen);
+                // 不在此处重放顶层局部初值：多 await 路径下 hdr/meta 等已在前面状态写入 _uya_loc_*，重放会破坏状态（如 meta=0、malloc(0)）。
                 fputs("        s->state = " as *byte, codegen.emit_stream as *void);
                 fprintf(codegen.emit_stream as *void, "%d;\n" as *byte, await_count + 1);
+                c99_emit_async_tail_stmts_after_last_await(codegen, await_blocks, await_stmt_indices, await_count);
                 var is_return_future_err: i32 = 0;
                 if return_future_err_union != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
                     full_return_type.type_error_union_payload_type != null {
@@ -2079,63 +2934,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 }
             }
             if state_k < await_count {
-                // 同一块内相邻 await 之间的普通语句必须在推进下一个 await 前执行
-                const cur_idx2: i32 = state_k - 1;
-                const next_idx2: i32 = state_k;
-                var same_collect_block2: i32 = 0;
-                if await_blocks[cur_idx2] != null && await_blocks[next_idx2] != null &&
-                    @usize_from_ptr(await_blocks[cur_idx2] as &void) == @usize_from_ptr(await_blocks[next_idx2] as &void) {
-                    same_collect_block2 = 1;
-                }
-                if cur_idx2 >= 0 && next_idx2 < await_count &&
-                    same_collect_block2 != 0 &&
-                    await_blocks[cur_idx2].type == ASTNodeType.AST_BLOCK &&
-                    await_stmt_indices[cur_idx2] >= 0 && await_stmt_indices[next_idx2] >= 0 &&
-                    await_stmt_indices[cur_idx2] < await_stmt_indices[next_idx2] {
-                    var si_mid2: i32 = await_stmt_indices[cur_idx2] + 1;
-                    while si_mid2 < await_stmt_indices[next_idx2] && si_mid2 < await_blocks[cur_idx2].block_stmt_count {
-                        const st_mid2: &ASTNode = await_blocks[cur_idx2].block_stmts[si_mid2];
-                        if st_mid2 != null {
-                            if st_mid2.type == ASTNodeType.AST_VAR_DECL && st_mid2.var_decl_init != null &&
-                                c99_var_decl_init_is_try_await_bind(st_mid2.var_decl_init) != 0 {
-                                // await 绑定声明由状态机处理，这里跳过
-                            } else if st_mid2.type == ASTNodeType.AST_ASSIGN ||
-                                st_mid2.type == ASTNodeType.AST_VAR_DECL {
-                                // 仅发射无控制流的语句，避免在 poll 状态分支内引入 return/break/continue
-                                gen_stmt(codegen, st_mid2);
-                            } else {
-                                // 控制流语句暂不在该轻量补丁路径处理
-                            }
-                        }
-                        si_mid2 = si_mid2 + 1;
-                    }
-                }
-                fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, state_k + 1);
-                fputs("        s->await_fut = " as *byte, codegen.emit_stream as *void);
-                // 与 child_inner_is_err_union!=0 分支一致：按「下一段 await」的绑定类型决定是否对 !Future<T> 做 try 解包
-                var next_await_is_err_future2: i32 = await_operand_is_err_future;
-                if next_await_is_err_future2 == 0 && await_bind_types[state_k] != null && await_bind_types[state_k].type == ASTNodeType.AST_TYPE_NAMED &&
-                    await_bind_types[state_k].type_named_name != null &&
-                    strcmp(await_bind_types[state_k].type_named_name as *byte, "Future" as *byte) == 0 {
-                    next_await_is_err_future2 = 1;
-                }
-                if next_await_is_err_future2 != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
-                    const operand_union_c4: &byte = c99_type_to_c(codegen, full_return_type);
-                    if operand_union_c4 != null {
-                        fprintf(codegen.emit_stream as *void, "({ %s _uya_await_tmp = " as *byte, operand_union_c4 as *byte);
-                        gen_expr(codegen, await_operands[state_k]);
-                        if concrete_future_safe != null && state_slot_iface_c != null {
-                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->_uya_await_storage = *(struct %s *)_uya_await_tmp.value.data; s->await_fut = (%s){ .vtable = _uya_await_tmp.value.vtable, .data = (void*)&s->_uya_await_storage }; })" as *byte, concrete_future_safe as *byte, state_slot_iface_c as *byte);
-                        } else {
-                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); _uya_await_tmp.value; })" as *byte);
-                        }
-                    } else {
-                        gen_expr(codegen, await_operands[state_k]);
-                    }
-                } else {
-                    gen_expr(codegen, await_operands[state_k]);
-                }
-                fputs(";\n" as *byte, codegen.emit_stream as *void);
+                c99_emit_async_poll_not_last_transition(codegen, fn_decl, body, state_k, await_count, await_operands, await_blocks, await_stmt_indices, await_bind_types, poll_ret_c, await_operand_is_err_future, full_return_type, concrete_future_safe, state_slot_iface_c);
             } else if async_loop_var_is_total != 0 {
                 // 循环回跳：使用实际的绑定名
                 const first_bind_name: &byte = await_bind_names[0];
@@ -2149,24 +2948,22 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                     }
                 }
                 fprintf(codegen.emit_stream as *void, "        s->state = 1;\n" as *byte);
-                fputs("        s->await_fut = " as *byte, codegen.emit_stream as *void);
                 if await_operand_is_err_future != 0 && full_return_type != null && full_return_type.type == ASTNodeType.AST_TYPE_ERROR_UNION {
                     const operand_union_c5: &byte = c99_type_to_c(codegen, full_return_type);
                     if operand_union_c5 != null {
-                        fprintf(codegen.emit_stream as *void, "({ %s _uya_await_tmp = " as *byte, operand_union_c5 as *byte);
+                        fprintf(codegen.emit_stream as *void, "        ({ %s _uya_await_tmp = " as *byte, operand_union_c5 as *byte);
                         gen_expr(codegen, await_operands[0]);
                         if concrete_future_safe != null && state_slot_iface_c != null {
-                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->_uya_await_storage = *(struct %s *)_uya_await_tmp.value.data; s->await_fut = (%s){ .vtable = _uya_await_tmp.value.vtable, .data = (void*)&s->_uya_await_storage }; })" as *byte, concrete_future_safe as *byte, state_slot_iface_c as *byte);
+                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->_uya_await_storage = *(struct %s *)_uya_await_tmp.value.data; s->await_fut.vtable = (void*)_uya_await_tmp.value.vtable; s->await_fut.data = (void*)&s->_uya_await_storage; });\n" as *byte, concrete_future_safe as *byte);
                         } else {
-                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); _uya_await_tmp.value; })" as *byte);
+                            fprintf(codegen.emit_stream as *void, "; if (_uya_await_tmp.error_id != 0) abort(); s->await_fut.vtable = (void*)_uya_await_tmp.value.vtable; s->await_fut.data = _uya_await_tmp.value.data; });\n" as *byte);
                         }
                     } else {
-                        gen_expr(codegen, await_operands[0]);
+                        c99_emit_await_fut_assign_from_expr(codegen, await_operands[0], fn_decl);
                     }
                 } else {
-                    gen_expr(codegen, await_operands[0]);
+                    c99_emit_await_fut_assign_from_expr(codegen, await_operands[0], fn_decl);
                 }
-                fputs(";\n" as *byte, codegen.emit_stream as *void);
                 fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
             } else {
                 var last_ret_is_future_literal: i32 = 0;
@@ -2178,6 +2975,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                     const last_ret_c: &byte = c99_type_to_c(codegen, full_return_type);
                     if last_ret_c != null {
                         fprintf(codegen.emit_stream as *void, "        s->state = %d;\n" as *byte, await_count + 1);
+                        c99_emit_async_tail_stmts_after_last_await(codegen, await_blocks, await_stmt_indices, await_count);
                         fprintf(codegen.emit_stream as *void, "        %s ok = (%s){ .error_id = 0, .value = " as *byte, last_ret_c as *byte, last_ret_c as *byte);
                         codegen.current_function_return_type = effective_return_type;
                         fprintf(codegen.emit_stream as *void, "({ struct %s _uya_f = " as *byte, concrete_future_safe as *byte);
@@ -2188,6 +2986,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                     } else {
                         fputs("        s->state = " as *byte, codegen.emit_stream as *void);
                         fprintf(codegen.emit_stream as *void, "%d;\n" as *byte, await_count + 1);
+                        c99_emit_async_tail_stmts_after_last_await(codegen, await_blocks, await_stmt_indices, await_count);
                         fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = " as *byte, poll_ret_c as *byte, poll_union_c as *byte);
                         if ret_expr != null { gen_expr(codegen, ret_expr); } else { fputs("0" as *byte, codegen.emit_stream as *void); }
                         codegen.current_function_return_type = null;
@@ -2196,6 +2995,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 } else {
                     fputs("        s->state = " as *byte, codegen.emit_stream as *void);
                     fprintf(codegen.emit_stream as *void, "%d;\n" as *byte, await_count + 1);
+                    c99_emit_async_tail_stmts_after_last_await(codegen, await_blocks, await_stmt_indices, await_count);
                     codegen.current_function_return_type = effective_return_type;
                     fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 1, .u = (%s){ .Ready = " as *byte, poll_ret_c as *byte, poll_union_c as *byte);
                     if ret_expr != null {
@@ -2306,6 +3106,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
 
     // 清除 async 参数捕获
     codegen.async_state_var = null;
+    codegen.async_poll_try_propagate_type = null;
+    codegen.async_poll_ret_c = null;
+    codegen.async_poll_union_c = null;
     codegen.async_param_count = 0;
     codegen.async_bind_count = 0;
     codegen.async_local_count = 0;
