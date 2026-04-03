@@ -334,7 +334,11 @@ run_compiled_test_args() {
     local exe_file=""
     local exit_code=0
 
-    compiler_output=$("$COMPILER" --c99 $safety_proof_arg "$@" -o "$output_file" 2>&1)
+    local extra_args=""
+    if [[ "$base_name" =~ ^error_container_mode_ ]]; then
+        extra_args="--mode container"
+    fi
+    compiler_output=$("$COMPILER" --c99 $safety_proof_arg $extra_args "$@" -o "$output_file" 2>&1)
     compiler_exit=$?
     if [ $compiler_exit -ne 0 ]; then
         if [ "$expect_fail" = true ]; then

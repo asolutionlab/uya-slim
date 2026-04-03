@@ -790,6 +790,31 @@ fn checker_check_cast_expr(checker: &TypeChecker, node: &ASTNode) void {
         return;
     }
     
+    // E4003: --mode container 禁止整数字面量转指针（物理地址直接访问）
+    if checker.container_mode != 0 {
+        if is_integer_type(source_type.kind) != 0 && target_type.kind == TypeKind.TYPE_POINTER {
+            // 检查源是否为常量（字面量或 const 标识符）
+            var is_const_addr: i32 = 0;
+            if expr.type == ASTNodeType.AST_NUMBER { is_const_addr = 1; }
+            if expr.type == ASTNodeType.AST_IDENTIFIER {
+                const ev: i32 = checker_eval_const_expr(checker, expr);
+                if ev >= 0 { is_const_addr = 1; }
+            }
+            if is_const_addr != 0 {
+                // 跳过标准库
+                var is_stdlib_e3: i32 = 0;
+                if node.filename != null {
+                    if strstr(node.filename as *byte, "lib/std/" as *byte) != null { is_stdlib_e3 = 1; }
+                    if strstr(node.filename as *byte, "lib/libc/" as *byte) != null { is_stdlib_e3 = 1; }
+                }
+                if is_stdlib_e3 == 0 {
+                    checker_report_error(checker, node, "E4003: 容器模式禁止整数字面量转指针（物理地址访问）" as *byte);
+                    return;
+                }
+            }
+        }
+    }
+
     // 验证类型转换是否合法
     // 1. 任意整数类型之间（含 byte）
     if is_integer_type(source_type.kind) != 0 && is_integer_type(target_type.kind) != 0 {
