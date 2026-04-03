@@ -18,7 +18,8 @@
 ### 1.2 范围
 
 - **本期**：服务端（types、parse、router、server、jwt）；首版 server 为阻塞 accept + 每连接一线程，不依赖 async 模块。
-- **后续**：epoll 多路复用、中间件实现、异步 Handler、http.client、与 std.json 集成。
+- **补充**：实验性 HTTP/1.1 客户端已在 `lib/std/http/http1_async.uya` 落地，`http1_async_get/post` 通过 nonblocking socket + `epoll` readiness 运行；正式 `http.client` API 仍可继续抽象与收敛。
+- **后续**：epoll 多路复用、中间件实现、异步 Handler、统一 `http.client`、与 std.json 集成。
 
 ### 1.3 模块与目录
 

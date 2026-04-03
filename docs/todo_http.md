@@ -183,7 +183,7 @@
 - [ ] ServerMode.Epoll 多路复用实现（首步：`epoll_server` 监听侧 poll+accept 已落地，见 5.2 与 `tests/test_epoll_server.uya`；待：连接级 epoll、非阻塞 I/O、与 `http_conn_read_parse`/路由闭环）
 - [ ] 中间件实现：logging、CORS、jwt_auth（包装 Handler，401/403 语义见设计文档）
 - [ ] 异步 Handler、线程池模式（ThreadPool）
-- [ ] http.client（可选）
+- [~] http.client（可选；已有实验性 `lib/std/http/http1_async.uya`，提供 `http1_async_get/post`，通过 nonblocking socket + epoll readiness 完成 connect/read/write）
 - [ ] 与 std.json 集成（请求/响应 JSON 序列化）
 
 ---
