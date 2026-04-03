@@ -1,0 +1,159 @@
+// syscall 分发桩与 SYS_YIELD → 调度状态（无宿主 MMU：pm.base == null）
+
+use kernel.container;
+use kernel.dispatch;
+use kernel.mem;
+use kernel.scheduler;
+use kernel.syscall;
+use std.testing.assert_eq_i32;
+
+fn setup_null_mm_ctx(sch: &Scheduler) KernelHostCtx {
+    return KernelHostCtx{
+        sch: sch,
+        pts: [],
+        pm: PhysMem{ base: null, size: 0 },
+        pool: PagePool{ used: [], count: 0, used_count: 0 },
+        alloc_pages: [],
+    };
+}
+
+test "dispatch_yield_demotes_running_to_ready" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+    try scheduler_set_slot_state(&sch, 1, ContainerState.cs_running);
+
+    var ctx: KernelHostCtx = setup_null_mm_ctx(&sch);
+    kernel_host_ctx_init(&ctx);
+
+    const r: u32 = try syscall_dispatch(&ctx, 1, SYS_YIELD, 0, 0);
+    try assert_eq_i32(r as i32, 0);
+
+    const st: ContainerState = try scheduler_get_slot_state(&sch, 1);
+    var is_ready: i32 = 0;
+    if st == ContainerState.cs_ready {
+        is_ready = 1;
+    }
+    try assert_eq_i32(is_ready, 1);
+}
+
+test "dispatch_yield_ready_unchanged" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+    try scheduler_set_slot_state(&sch, 0, ContainerState.cs_ready);
+
+    var ctx: KernelHostCtx = setup_null_mm_ctx(&sch);
+    kernel_host_ctx_init(&ctx);
+
+    _ = try syscall_dispatch(&ctx, 0, SYS_YIELD, 0, 0);
+    const st: ContainerState = try scheduler_get_slot_state(&sch, 0);
+    var ok: i32 = 0;
+    if st == ContainerState.cs_ready {
+        ok = 1;
+    }
+    try assert_eq_i32(ok, 1);
+}
+
+test "dispatch_yield_bad_args" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var ctx: KernelHostCtx = setup_null_mm_ctx(&sch);
+    kernel_host_ctx_init(&ctx);
+
+    var bad: i32 = 0;
+    _ = syscall_dispatch(&ctx, 0, SYS_YIELD, 1, 0) catch |err| {
+        bad = 1;
+        0u32;
+    };
+    try assert_eq_i32(bad, 1);
+}
+
+test "dispatch_print_too_large" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var ctx: KernelHostCtx = setup_null_mm_ctx(&sch);
+    kernel_host_ctx_init(&ctx);
+
+    var bad: i32 = 0;
+    _ = syscall_dispatch(&ctx, 0, SYS_PRINT, 0, 257) catch |err| {
+        bad = 1;
+        0u32;
+    };
+    try assert_eq_i32(bad, 1);
+}
+
+test "dispatch_alloc_stub_no_host_mm" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var ctx: KernelHostCtx = setup_null_mm_ctx(&sch);
+    kernel_host_ctx_init(&ctx);
+
+    var nomem: i32 = 0;
+    _ = syscall_dispatch(&ctx, 0, SYS_ALLOC, 4096, 0) catch |err| {
+        nomem = 1;
+        0u32;
+    };
+    try assert_eq_i32(nomem, 1);
+
+    var inv: i32 = 0;
+    _ = syscall_dispatch(&ctx, 0, SYS_ALLOC, 0, 0) catch |err| {
+        inv = 1;
+        0u32;
+    };
+    try assert_eq_i32(inv, 1);
+}
+
+test "dispatch_io_denied_unknown_op" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var ctx: KernelHostCtx = setup_null_mm_ctx(&sch);
+    kernel_host_ctx_init(&ctx);
+
+    var denied: i32 = 0;
+    _ = syscall_dispatch(&ctx, 0, SYS_IO, 0, 0) catch |err| {
+        denied = 1;
+        0u32;
+    };
+    try assert_eq_i32(denied, 1);
+
+    var unk: i32 = 0;
+    _ = syscall_dispatch(&ctx, 0, 99, 0, 0) catch |err| {
+        unk = 1;
+        0u32;
+    };
+    try assert_eq_i32(unk, 1);
+}
+
+test "dispatch_yield_then_scheduler_can_pick_peer" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+    try scheduler_set_slot_state(&sch, 0, ContainerState.cs_running);
+    try scheduler_set_slot_state(&sch, 3, ContainerState.cs_ready);
+    sch.rr_cursor = 1;
+
+    var ctx: KernelHostCtx = setup_null_mm_ctx(&sch);
+    kernel_host_ctx_init(&ctx);
+
+    _ = try syscall_dispatch(&ctx, 0, SYS_YIELD, 0, 0);
+
+    const next: u32 = try scheduler_pick_next_rr(&sch);
+    try assert_eq_i32(next as i32, 3);
+}
+
+test "dispatch_invalid_caller_slot" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var ctx: KernelHostCtx = setup_null_mm_ctx(&sch);
+    kernel_host_ctx_init(&ctx);
+
+    var bad: i32 = 0;
+    _ = syscall_dispatch(&ctx, 8, SYS_YIELD, 0, 0) catch |err| {
+        bad = 1;
+        0u32;
+    };
+    try assert_eq_i32(bad, 1);
+}

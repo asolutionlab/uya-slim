@@ -1,0 +1,156 @@
+// 宿主机模拟：syscall 分发（调度 + 可选 MMU/页池）
+// Spec: docs/microcontainer/syscall_abi.md §4
+
+use kernel.container;
+use kernel.errors;
+use kernel.mem;
+use kernel.paging;
+use kernel.scheduler;
+use kernel.syscall;
+
+/// 单次 SYS_PRINT 允许的最大长度（ABI 默认 256B）
+export const SYSCALL_PRINT_MAX: u32 = 256;
+
+/// 单槽在宿主机桩上允许通过 `SYS_ALLOC` 映射的页数上限
+export const KERNEL_HOST_MAX_PAGES_PER_SLOT: u32 = 2;
+
+/// 与 paging MMU 页大小一致的字面量（避免分包 C 跨单元 const）
+const DISPATCH_PAGE_BYTES: u32 = 65536;
+
+/// 宿主机内核上下文：`pm.base == null` 时 `PRINT`/`ALLOC` 走仅校验的桩路径。
+export struct KernelHostCtx {
+    sch: &Scheduler,
+    pts: [PageTable: 8],
+    pm: PhysMem,
+    pool: PagePool,
+    alloc_pages: [u32: 8],
+}
+
+/// 功能说明：初始化 8 张页表、页池与每槽已分配页计数；不修改 `sch`/`pm`（由调用方先填）。
+/// 参数：`ctx` — 上下文（须已设置 `sch` 指向有效调度器）。
+/// 返回：无返回值。
+export fn kernel_host_ctx_init(ctx: &KernelHostCtx) void {
+    var j: u32 = 0;
+    while j < 8u32 {
+        pt_init(&ctx.pts[j]);
+        ctx.alloc_pages[j] = 0;
+        j = j + 1;
+    }
+    page_pool_init(&ctx.pool, 8u32);
+}
+
+fn kernel_host_mm_enabled(ctx: &KernelHostCtx) i32 {
+    if ctx.pm.base == null {
+        return 0;
+    }
+    return 1;
+}
+
+fn kernel_host_pt_ref(ctx: &KernelHostCtx, slot: u32) &PageTable {
+    if slot == 0u32 {
+        return &ctx.pts[0];
+    }
+    if slot == 1u32 {
+        return &ctx.pts[1];
+    }
+    if slot == 2u32 {
+        return &ctx.pts[2];
+    }
+    if slot == 3u32 {
+        return &ctx.pts[3];
+    }
+    if slot == 4u32 {
+        return &ctx.pts[4];
+    }
+    if slot == 5u32 {
+        return &ctx.pts[5];
+    }
+    if slot == 6u32 {
+        return &ctx.pts[6];
+    }
+    return &ctx.pts[7];
+}
+
+/// 功能说明：按调用号分发；`SYS_YIELD` 更新调度状态；`PRINT`/`ALLOC` 在启用 MMU 时做翻译与页池映射。
+/// 参数：`ctx` — 宿主机上下文；`caller_slot` — 0..7；`num` / `arg1` / `arg2` — ABI 参数。
+/// 返回：成功时的返回值；失败为 `!` 各错误联合成员（含 `PageFault`/`PagePermission` 等）。
+export fn syscall_dispatch(ctx: &KernelHostCtx, caller_slot: u32, num: u32, arg1: u32, arg2: u32) !u32 {
+    var c: u32 = caller_slot;
+    if c >= 8u32 {
+        return error.InvalidState;
+    }
+    if num == SYS_YIELD {
+        return try syscall_handle_yield(ctx.sch, c, arg1, arg2);
+    }
+    if num == SYS_PRINT {
+        return try syscall_handle_print(ctx, c, arg1, arg2);
+    }
+    if num == SYS_ALLOC {
+        return try syscall_handle_alloc(ctx, c, arg1, arg2);
+    }
+    if num == SYS_IO {
+        return try syscall_handle_io_stub();
+    }
+    return error.OpDenied;
+}
+
+fn syscall_handle_yield(sch: &Scheduler, caller_slot: u32, arg1: u32, arg2: u32) !u32 {
+    if arg1 != 0u32 {
+        return error.InvalidFlags;
+    }
+    if arg2 != 0u32 {
+        return error.InvalidFlags;
+    }
+    const st: ContainerState = try scheduler_get_slot_state(sch, caller_slot);
+    if st == ContainerState.cs_running {
+        try scheduler_set_slot_state(sch, caller_slot, ContainerState.cs_ready);
+    }
+    return 0u32;
+}
+
+fn syscall_handle_print(ctx: &KernelHostCtx, caller_slot: u32, vaddr: u32, len: u32) !u32 {
+    if len > SYSCALL_PRINT_MAX {
+        return error.TooLarge;
+    }
+    if len == 0u32 {
+        return 0u32;
+    }
+    if kernel_host_mm_enabled(ctx) == 0 {
+        return 0u32;
+    }
+    const pt: &PageTable = kernel_host_pt_ref(ctx, caller_slot);
+    _ = try mmu_translate_ptr(pt, &ctx.pm, vaddr, len, ACCESS_R);
+    return len;
+}
+
+fn syscall_handle_alloc(ctx: &KernelHostCtx, caller_slot: u32, size: u32, flags: u32) !u32 {
+    if flags != 0u32 {
+        return error.InvalidFlags;
+    }
+    if size == 0u32 {
+        return error.InvalidSize;
+    }
+    if kernel_host_mm_enabled(ctx) == 0 {
+        return error.NoMemory;
+    }
+    if size > DISPATCH_PAGE_BYTES {
+        return error.TooLarge;
+    }
+    var t: u32 = caller_slot;
+    if t < 8u32 {
+        if ctx.alloc_pages[t] >= KERNEL_HOST_MAX_PAGES_PER_SLOT {
+            return error.QuotaExceeded;
+        }
+        const ppn: u32 = try page_alloc(&ctx.pool);
+        const pt: &PageTable = kernel_host_pt_ref(ctx, caller_slot);
+        const vpn: u32 = try pt_find_free_vpn(pt);
+        try pt_map(pt, vpn, ppn, PTE_R | PTE_W | PTE_U);
+        ctx.alloc_pages[t] = ctx.alloc_pages[t] + 1u32;
+        return (vpn << 16);
+    }
+    return error.InvalidState;
+}
+
+fn syscall_handle_io_stub() !u32 {
+    return error.DevDenied;
+}

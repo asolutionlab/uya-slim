@@ -1,0 +1,132 @@
+// 启用 pm.base 时：SYS_PRINT 走 MMU；SYS_ALLOC 走页池 + 页表
+
+use kernel.dispatch;
+use kernel.mem;
+use kernel.paging;
+use kernel.scheduler;
+use kernel.syscall;
+use std.testing.assert_eq_i32;
+
+test "host_print_mmu_mapped_returns_len" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var backing: [byte: 65536] = [];
+    backing[0] = 65;
+    backing[1] = 66;
+    backing[2] = 67;
+    backing[3] = 0;
+
+    var ctx: KernelHostCtx = KernelHostCtx{
+        sch: &sch,
+        pts: [],
+        pm: PhysMem{ base: &backing[0], size: 65536 },
+        pool: PagePool{ used: [], count: 0, used_count: 0 },
+        alloc_pages: [],
+    };
+    kernel_host_ctx_init(&ctx);
+
+    try pt_map(&ctx.pts[0], 0, 0, PTE_R | PTE_U);
+
+    const n: u32 = try syscall_dispatch(&ctx, 0, SYS_PRINT, 0, 4);
+    try assert_eq_i32(n as i32, 4);
+}
+
+test "host_print_unmapped_page_fault" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var backing: [byte: 65536] = [];
+    var ctx: KernelHostCtx = KernelHostCtx{
+        sch: &sch,
+        pts: [],
+        pm: PhysMem{ base: &backing[0], size: 65536 },
+        pool: PagePool{ used: [], count: 0, used_count: 0 },
+        alloc_pages: [],
+    };
+    kernel_host_ctx_init(&ctx);
+
+    var fault: i32 = 0;
+    _ = syscall_dispatch(&ctx, 0, SYS_PRINT, 0, 1) catch |err| {
+        fault = 1;
+        0u32;
+    };
+    try assert_eq_i32(fault, 1);
+}
+
+test "host_alloc_maps_first_page" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var backing: [byte: 524288] = [];
+    var ctx: KernelHostCtx = KernelHostCtx{
+        sch: &sch,
+        pts: [],
+        pm: PhysMem{ base: &backing[0], size: 524288 },
+        pool: PagePool{ used: [], count: 0, used_count: 0 },
+        alloc_pages: [],
+    };
+    kernel_host_ctx_init(&ctx);
+
+    const va: u32 = try syscall_dispatch(&ctx, 0, SYS_ALLOC, 4096, 0);
+    try assert_eq_i32(va as i32, 0);
+
+    const ptr: &byte = try mmu_translate_ptr(&ctx.pts[0], &ctx.pm, 0, 4, ACCESS_W);
+    ptr[0] = 7;
+    try assert_eq_i32(backing[0] as i32, 7);
+}
+
+test "host_alloc_quota_third_fails" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var backing: [byte: 524288] = [];
+    var ctx: KernelHostCtx = KernelHostCtx{
+        sch: &sch,
+        pts: [],
+        pm: PhysMem{ base: &backing[0], size: 524288 },
+        pool: PagePool{ used: [], count: 0, used_count: 0 },
+        alloc_pages: [],
+    };
+    kernel_host_ctx_init(&ctx);
+
+    _ = try syscall_dispatch(&ctx, 0, SYS_ALLOC, 1, 0);
+    _ = try syscall_dispatch(&ctx, 0, SYS_ALLOC, 1, 0);
+
+    var q: i32 = 0;
+    _ = syscall_dispatch(&ctx, 0, SYS_ALLOC, 1, 0) catch |err| {
+        q = 1;
+        0u32;
+    };
+    try assert_eq_i32(q, 1);
+}
+
+test "host_alloc_size_over_one_page" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var backing: [byte: 524288] = [];
+    var ctx: KernelHostCtx = KernelHostCtx{
+        sch: &sch,
+        pts: [],
+        pm: PhysMem{ base: &backing[0], size: 524288 },
+        pool: PagePool{ used: [], count: 0, used_count: 0 },
+        alloc_pages: [],
+    };
+    kernel_host_ctx_init(&ctx);
+
+    var big: i32 = 0;
+    _ = syscall_dispatch(&ctx, 0, SYS_ALLOC, 65537, 0) catch |err| {
+        big = 1;
+        0u32;
+    };
+    try assert_eq_i32(big, 1);
+}
+
+test "paging_pt_find_free_skips_valid" {
+    var pt: PageTable = PageTable{ entries: [] };
+    pt_init(&pt);
+    try pt_map(&pt, 0, 0, PTE_R | PTE_U);
+    const v: u32 = try pt_find_free_vpn(&pt);
+    try assert_eq_i32(v as i32, 1);
+}
