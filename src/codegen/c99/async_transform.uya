@@ -1,0 +1,192 @@
+// 通用 @async_fn 协程变换：将 async 函数体线性化为状态机段
+//
+// 算法：
+// 1. 递归遍历函数体 AST，标记所有 @await 分裂点
+// 2. 将函数体分割为 N+1 个段（N = await 数）
+// 3. 每个段 = 两个相邻 await 之间的代码（含控制流）
+// 4. 为每个段生成 C 代码，段之间通过 state 字段跳转
+//
+// 与旧方案的区别：不逐模式匹配 AST 形状，而是通用地处理任意控制流。
+
+use std.testing;
+
+// ── 段（Segment）描述 ──
+
+export const MAX_SEGMENTS: i32 = 258;   // max 256 awaits + entry + exit
+export const MAX_LOCALS: i32 = 32;
+
+export struct AwaitPoint {
+    operand: &ASTNode,         // Future 表达式
+    bind_name: &byte,          // 绑定变量名（null = return await）
+    bind_type: &ASTNode,       // 绑定变量类型节点
+    parent_block: &ASTNode,    // 所在 block
+    stmt_index: i32,           // 在 block 中的语句索引
+    enclosing_while: &ASTNode, // 所在的 while 循环（null = 不在循环内）
+    enclosing_for: &ASTNode,   // 所在的 for 循环
+    is_return_await: i32,      // 1 = return try @await
+    segment_after: i32,        // 此 await Ready 后执行的段编号
+}
+
+// ── 收集所有 await 点（通用递归，支持任意嵌套）──
+
+export fn async_collect_all_awaits(
+    node: &ASTNode,
+    points: &[AwaitPoint],
+    count: &i32,
+    max_count: i32,
+    parent_block: &ASTNode,
+    stmt_index: i32,
+    enclosing_while: &ASTNode,
+    enclosing_for: &ASTNode
+) void {
+    if node == null || count[0] >= max_count {
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count && count[0] < max_count {
+            async_collect_all_awaits(node.block_stmts[i], points, count, max_count, node, i, enclosing_while, enclosing_for);
+            i = i + 1;
+        }
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_WHILE_STMT && node.while_stmt_body != null {
+        async_collect_all_awaits(node.while_stmt_body, points, count, max_count, null, -1, node, enclosing_for);
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_FOR_STMT && node.for_stmt_body != null {
+        async_collect_all_awaits(node.for_stmt_body, points, count, max_count, null, -1, enclosing_while, node);
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_IF_STMT {
+        if node.if_stmt_then_branch != null {
+            async_collect_all_awaits(node.if_stmt_then_branch, points, count, max_count, null, -1, enclosing_while, enclosing_for);
+        }
+        if node.if_stmt_else_branch != null {
+            async_collect_all_awaits(node.if_stmt_else_branch, points, count, max_count, null, -1, enclosing_while, enclosing_for);
+        }
+        return;
+    }
+
+    // const x = try @await expr;
+    if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
+        const init: &ASTNode = node.var_decl_init;
+        if init.type == ASTNodeType.AST_TRY_EXPR && init.try_expr_operand != null {
+            const op: &ASTNode = init.try_expr_operand;
+            if op.type == ASTNodeType.AST_AWAIT_EXPR && op.await_expr_operand != null {
+                const idx: i32 = count[0];
+                if idx >= 0 && idx < max_count {
+                    points.ptr[idx].operand = op.await_expr_operand;
+                    points.ptr[idx].bind_name = node.var_decl_name;
+                    points.ptr[idx].bind_type = node.var_decl_type;
+                    points.ptr[idx].parent_block = parent_block;
+                    points.ptr[idx].stmt_index = stmt_index;
+                    points.ptr[idx].enclosing_while = enclosing_while;
+                    points.ptr[idx].enclosing_for = enclosing_for;
+                    points.ptr[idx].is_return_await = 0;
+                    points.ptr[idx].segment_after = idx + 1;
+                    count[0] = idx + 1;
+                }
+            }
+        }
+        return;
+    }
+
+    // return try @await expr;
+    if node.type == ASTNodeType.AST_RETURN_STMT && node.return_stmt_expr != null {
+        const ret_expr: &ASTNode = node.return_stmt_expr;
+        if ret_expr.type == ASTNodeType.AST_TRY_EXPR && ret_expr.try_expr_operand != null {
+            const op: &ASTNode = ret_expr.try_expr_operand;
+            if op.type == ASTNodeType.AST_AWAIT_EXPR && op.await_expr_operand != null {
+                const idx: i32 = count[0];
+                if idx >= 0 && idx < max_count {
+                    points.ptr[idx].operand = op.await_expr_operand;
+                    points.ptr[idx].bind_name = null;
+                    points.ptr[idx].bind_type = null;
+                    points.ptr[idx].parent_block = parent_block;
+                    points.ptr[idx].stmt_index = stmt_index;
+                    points.ptr[idx].enclosing_while = enclosing_while;
+                    points.ptr[idx].enclosing_for = enclosing_for;
+                    points.ptr[idx].is_return_await = 1;
+                    points.ptr[idx].segment_after = -1; // return: 无后续段
+                    count[0] = idx + 1;
+                }
+            }
+        }
+        return;
+    }
+}
+
+// ── 判断语句是否包含 @await ──
+
+export fn stmt_contains_await(node: &ASTNode) i32 {
+    if node == null { return 0; }
+
+    if node.type == ASTNodeType.AST_AWAIT_EXPR { return 1; }
+
+    if node.type == ASTNodeType.AST_TRY_EXPR && node.try_expr_operand != null {
+        return stmt_contains_await(node.try_expr_operand);
+    }
+
+    if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
+        return stmt_contains_await(node.var_decl_init);
+    }
+
+    if node.type == ASTNodeType.AST_RETURN_STMT && node.return_stmt_expr != null {
+        return stmt_contains_await(node.return_stmt_expr);
+    }
+
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            if stmt_contains_await(node.block_stmts[i]) != 0 { return 1; }
+            i = i + 1;
+        }
+    }
+
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        if node.while_stmt_body != null && stmt_contains_await(node.while_stmt_body) != 0 { return 1; }
+    }
+
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        if node.for_stmt_body != null && stmt_contains_await(node.for_stmt_body) != 0 { return 1; }
+    }
+
+    if node.type == ASTNodeType.AST_IF_STMT {
+        if node.if_stmt_then_branch != null && stmt_contains_await(node.if_stmt_then_branch) != 0 { return 1; }
+        if node.if_stmt_else_branch != null && stmt_contains_await(node.if_stmt_else_branch) != 0 { return 1; }
+    }
+
+    if node.type == ASTNodeType.AST_ASSIGN {
+        if node.assign_value != null && stmt_contains_await(node.assign_value) != 0 { return 1; }
+    }
+
+    return 0;
+}
+
+// ── 判断语句是否为 try @await 绑定（应跳过，由段转移处理）──
+
+export fn is_await_bind_stmt(node: &ASTNode) i32 {
+    if node == null { return 0; }
+    if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
+        const init: &ASTNode = node.var_decl_init;
+        if init.type == ASTNodeType.AST_TRY_EXPR && init.try_expr_operand != null {
+            if init.try_expr_operand.type == ASTNodeType.AST_AWAIT_EXPR {
+                return 1;
+            }
+        }
+    }
+    if node.type == ASTNodeType.AST_RETURN_STMT && node.return_stmt_expr != null {
+        const re: &ASTNode = node.return_stmt_expr;
+        if re.type == ASTNodeType.AST_TRY_EXPR && re.try_expr_operand != null {
+            if re.try_expr_operand.type == ASTNodeType.AST_AWAIT_EXPR {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
