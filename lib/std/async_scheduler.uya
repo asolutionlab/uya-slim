@@ -41,9 +41,12 @@ fn scheduler_register_waker_interest(loop: EventLoop, w: &Waker, registered_fds:
     }
 
     const fd: i32 = w.io_fd();
+    if fd < 0 {
+        return 0;
+    }
     const interest: EventKind = scheduler_event_kind_from_waker(w);
     const reg_result: !i32 = loop.register(fd, interest, w);
-    _ = reg_result catch {
+    _ = reg_result catch |err| {
         return reg_result as! i32;
     };
 
@@ -62,7 +65,7 @@ fn scheduler_deregister_registered_fds(loop: EventLoop, registered_fds: &i32, re
     var i: i32 = 0;
     while i < registered_count {
         const dereg_result: !i32 = loop.deregister(registered_fds[i]);
-        _ = dereg_result catch {
+        _ = dereg_result catch |err| {
             return dereg_result as! i32;
         };
         i = i + 1;
@@ -164,6 +167,14 @@ export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f:
                 }
                 if w.has_io_interest() {
                     const fd: i32 = w.io_fd();
+                    if fd < 0 {
+                        w.clear_io_interest();
+                        const poll_result_nf: !i32 = loop.poll(timeout_ms);
+                        _ = poll_result_nf catch {
+                            return poll_result_nf as! T;
+                        };
+                        continue;
+                    }
                     const interest: EventKind = scheduler_event_kind_from_waker(&w);
                     const reg_result: !i32 = loop.register(fd, interest, &w);
                     _ = reg_result catch {
@@ -386,6 +397,14 @@ export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms
                 }
                 if w.has_io_interest() {
                     const fd: i32 = w.io_fd();
+                    if fd < 0 {
+                        w.clear_io_interest();
+                        const poll_result_nf: !i32 = loop.poll(timeout_ms);
+                        _ = poll_result_nf catch {
+                            return poll_result_nf as! T;
+                        };
+                        continue;
+                    }
                     const interest: EventKind = scheduler_event_kind_from_waker(&w);
                     const reg_result: !i32 = loop.register(fd, interest, &w);
                     _ = reg_result catch {
@@ -410,4 +429,3 @@ export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms
         };
     }
 }
-

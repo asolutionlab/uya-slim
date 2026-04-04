@@ -28,6 +28,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 COMPILER="$REPO_ROOT/bin/uya"
 TEST_DIR="$SCRIPT_DIR"
 BUILD_DIR="$TEST_DIR/build"
+NETWORK_SKIP_MARKER="${TMPDIR:-/tmp}/uya_allow_skip_network"
 ERRORS_ONLY=false
 # 为 true 时：不打印每条「通过」的 ✓ 行，其余输出与 ERRORS_ONLY=false 相同（供 make tests 默认使用）
 HIDE_PASS_OUTPUT=false
@@ -151,6 +152,17 @@ mkdir -p "$BUILD_DIR"
 mkdir -p "$BUILD_DIR/multifile"
 mkdir -p "$BUILD_DIR/cross_deps"
 mkdir -p "$BUILD_DIR/parallel_results"
+
+cleanup_network_skip_marker() {
+    rm -f "$NETWORK_SKIP_MARKER"
+}
+trap cleanup_network_skip_marker EXIT
+
+if [ "${ALLOW_SKIP_NETWORK:-}" = "1" ]; then
+    : > "$NETWORK_SKIP_MARKER"
+else
+    rm -f "$NETWORK_SKIP_MARKER"
+fi
 
 # 解析命令行参数
 TARGET_PATH=""

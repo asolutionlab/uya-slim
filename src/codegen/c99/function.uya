@@ -1354,6 +1354,55 @@ fn c99_async_operand_future_inner_ast(codegen: &C99CodeGenerator, operand: &ASTN
             return type_to_ast(codegen.checker, &inner_g, fn_decl.line, fn_decl.column, fn_decl.filename);
         }
     }
+    if operand.type == ASTNodeType.AST_CALL_EXPR && operand.call_expr_callee != null {
+        const cal: &ASTNode = operand.call_expr_callee;
+        if cal.type == ASTNodeType.AST_IDENTIFIER && cal.identifier_name != null {
+            const fd_ret: &ASTNode = find_function_decl_c99(codegen, cal.identifier_name);
+            if fd_ret != null && fd_ret.fn_decl_return_type != null {
+                const inner_decl: &ASTNode = c99_async_future_inner_ast_from_return_type(codegen, fd_ret.fn_decl_return_type, fn_decl);
+                if inner_decl != null {
+                    return inner_decl;
+                }
+            }
+        }
+        if cal.type == ASTNodeType.AST_MEMBER_ACCESS && cal.member_access_object != null && cal.member_access_field_name != null {
+            const ot_obj: Type = checker_infer_type(codegen.checker, cal.member_access_object);
+            var mfn: &ASTNode = null;
+            if ot_obj.kind == TypeKind.TYPE_STRUCT && ot_obj.struct_name != null {
+                mfn = find_method_in_struct_c99(codegen, ot_obj.struct_name, cal.member_access_field_name);
+            } else if ot_obj.kind == TypeKind.TYPE_POINTER && ot_obj.pointer_to != null {
+                const pt: Type = ot_obj.pointer_to[0];
+                if pt.kind == TypeKind.TYPE_STRUCT && pt.struct_name != null {
+                    mfn = find_method_in_struct_c99(codegen, pt.struct_name, cal.member_access_field_name);
+                } else if pt.kind == TypeKind.TYPE_INTERFACE && pt.interface_name != null {
+                    mfn = c99_find_interface_method_sig(codegen, pt.interface_name, cal.member_access_field_name);
+                }
+            } else if ot_obj.kind == TypeKind.TYPE_INTERFACE && ot_obj.interface_name != null {
+                mfn = c99_find_interface_method_sig(codegen, ot_obj.interface_name, cal.member_access_field_name);
+            }
+            if mfn != null && mfn.fn_decl_return_type != null {
+                const inner_decl2: &ASTNode = c99_async_future_inner_ast_from_return_type(codegen, mfn.fn_decl_return_type, fn_decl);
+                if inner_decl2 != null {
+                    return inner_decl2;
+                }
+            }
+            if (mfn == null || mfn.fn_decl_return_type == null) && cal.member_access_object != null {
+                const obj_c_fb: &byte = get_c_type_of_expr(codegen, cal.member_access_object);
+                if obj_c_fb != null {
+                    const sdecl_fb: &ASTNode = find_struct_decl_from_type_c(codegen, obj_c_fb);
+                    if sdecl_fb != null && sdecl_fb.struct_decl_name != null {
+                        const mfn3: &ASTNode = find_method_in_struct_c99(codegen, sdecl_fb.struct_decl_name, cal.member_access_field_name);
+                        if mfn3 != null && mfn3.fn_decl_return_type != null {
+                            const inner_decl3: &ASTNode = c99_async_future_inner_ast_from_return_type(codegen, mfn3.fn_decl_return_type, fn_decl);
+                            if inner_decl3 != null {
+                                return inner_decl3;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     return null;
 }
 
@@ -1440,6 +1489,45 @@ fn c99_emit_await_fut_assign_from_expr(codegen: &C99CodeGenerator, operand: &AST
     fprintf(codegen.emit_stream as *void, "%s _uya_await_slot_tmp = " as *byte, tc as *byte);
     gen_expr(codegen, operand);
     fputs("; s->await_fut.vtable = (void*)_uya_await_slot_tmp.vtable; s->await_fut.data = _uya_await_slot_tmp.data; }\n" as *byte, codegen.emit_stream as *void);
+}
+
+fn c99_async_future_inner_ast_from_return_type(codegen: &C99CodeGenerator, ret_type: &ASTNode, fn_decl: &ASTNode) &ASTNode {
+    if codegen == null || codegen.checker == null || ret_type == null || fn_decl == null {
+        return null;
+    }
+    const rt: Type = type_from_ast(codegen.checker, ret_type);
+    if rt.kind == TypeKind.TYPE_INTERFACE && rt.interface_name != null &&
+        (str_equals(rt.interface_name, "Future" as *byte) != 0 ||
+         (strlen(rt.interface_name as *byte) >= 6 && strncmp(rt.interface_name as *byte, "Future" as *byte, 6) == 0)) {
+        if rt.interface_type_arg_count >= 1 && rt.interface_type_args != null {
+            return type_to_ast(codegen.checker, &rt.interface_type_args[0], fn_decl.line, fn_decl.column, fn_decl.filename);
+        }
+    }
+    if rt.kind == TypeKind.TYPE_STRUCT && rt.struct_name != null &&
+        (str_equals(rt.struct_name, "Future" as *byte) != 0 ||
+         (strlen(rt.struct_name as *byte) >= 6 && strncmp(rt.struct_name as *byte, "Future" as *byte, 6) == 0)) {
+        if rt.struct_type_arg_count >= 1 && rt.struct_type_args != null {
+            return type_to_ast(codegen.checker, &rt.struct_type_args[0], fn_decl.line, fn_decl.column, fn_decl.filename);
+        }
+    }
+    if rt.kind == TypeKind.TYPE_ERROR_UNION && rt.error_union_payload_type != null {
+        const pl: Type = rt.error_union_payload_type[0];
+        if pl.kind == TypeKind.TYPE_INTERFACE && pl.interface_name != null &&
+            (str_equals(pl.interface_name, "Future" as *byte) != 0 ||
+             (strlen(pl.interface_name as *byte) >= 6 && strncmp(pl.interface_name as *byte, "Future" as *byte, 6) == 0)) {
+            if pl.interface_type_arg_count >= 1 && pl.interface_type_args != null {
+                return type_to_ast(codegen.checker, &pl.interface_type_args[0], fn_decl.line, fn_decl.column, fn_decl.filename);
+            }
+        }
+        if pl.kind == TypeKind.TYPE_STRUCT && pl.struct_name != null &&
+            (str_equals(pl.struct_name, "Future" as *byte) != 0 ||
+             (strlen(pl.struct_name as *byte) >= 6 && strncmp(pl.struct_name as *byte, "Future" as *byte, 6) == 0)) {
+            if pl.struct_type_arg_count >= 1 && pl.struct_type_args != null {
+                return type_to_ast(codegen.checker, &pl.struct_type_args[0], fn_decl.line, fn_decl.column, fn_decl.filename);
+            }
+        }
+    }
+    return null;
 }
 
 fn c99_async_subtree_contains_block_node(node: &ASTNode, target: &ASTNode) i32 {
@@ -1538,6 +1626,51 @@ fn c99_async_trim_locals_after_last_await_root(codegen: &C99CodeGenerator, body:
 }
 
 // 收集函数体顶层、第一个顶层 return 之前的 const/var（非 try @await 绑定），记入 async_local_* 并记录根语句下标。
+fn c99_async_collect_locals_recursive(codegen: &C99CodeGenerator, fn_body: &ASTNode, node: &ASTNode, parent_block: &ASTNode, parent_stmt_index: i32) void {
+    if codegen == null || node == null || codegen.async_local_count >= 16 {
+        return;
+    }
+    var nested_block_root_si: i32 = 2147483647;
+    if fn_body != null && parent_block != null && @usize_from_ptr(parent_block as &void) == @usize_from_ptr(fn_body as &void) {
+        nested_block_root_si = parent_stmt_index;
+    }
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var bi: i32 = 0;
+        while bi < node.block_stmt_count && codegen.async_local_count < 16 {
+            c99_async_collect_locals_recursive(codegen, fn_body, node.block_stmts[bi], node, bi);
+            bi = bi + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        if node.if_stmt_then_branch != null {
+            c99_async_collect_locals_recursive(codegen, fn_body, node.if_stmt_then_branch, null, -1);
+        }
+        if node.if_stmt_else_branch != null {
+            c99_async_collect_locals_recursive(codegen, fn_body, node.if_stmt_else_branch, null, -1);
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT && node.while_stmt_body != null {
+        c99_async_collect_locals_recursive(codegen, fn_body, node.while_stmt_body, null, -1);
+        return;
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT && node.for_stmt_body != null {
+        c99_async_collect_locals_recursive(codegen, fn_body, node.for_stmt_body, null, -1);
+        return;
+    }
+    if node.type != ASTNodeType.AST_VAR_DECL || node.var_decl_name == null || node.var_decl_type == null ||
+        node.var_decl_init == null || c99_var_decl_init_is_try_await_bind(node.var_decl_init) != 0 {
+        return;
+    }
+    var root_si: i32 = nested_block_root_si;
+    const before_count: i32 = codegen.async_local_count;
+    c99_async_try_append_hoist_local(codegen, node.var_decl_name, node.var_decl_type, root_si);
+    if codegen.async_local_count > before_count {
+        codegen.async_local_inits[codegen.async_local_count - 1] = node.var_decl_init;
+    }
+}
+
 fn collect_async_pre_return_locals(codegen: &C99CodeGenerator, body: &ASTNode) void {
     codegen.async_local_count = 0;
     if codegen == null || body == null || body.type != ASTNodeType.AST_BLOCK {
@@ -1553,15 +1686,7 @@ fn collect_async_pre_return_locals(codegen: &C99CodeGenerator, body: &ASTNode) v
         if st.type == ASTNodeType.AST_RETURN_STMT {
             break;
         }
-        if st.type == ASTNodeType.AST_VAR_DECL && st.var_decl_name != null &&
-            st.var_decl_type != null && st.var_decl_init != null &&
-            c99_var_decl_init_is_try_await_bind(st.var_decl_init) == 0 {
-            codegen.async_local_names[codegen.async_local_count] = st.var_decl_name;
-            codegen.async_local_types[codegen.async_local_count] = st.var_decl_type;
-            codegen.async_local_inits[codegen.async_local_count] = st.var_decl_init;
-            codegen.async_local_root_stmt[codegen.async_local_count] = si;
-            codegen.async_local_count = codegen.async_local_count + 1;
-        }
+        c99_async_collect_locals_recursive(codegen, body, st, body, si);
         si = si + 1;
     }
 }
@@ -2022,7 +2147,13 @@ fn emit_async_after_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) i32 {
     if c99_find_stmt_in_block_tree(stmt, codegen.async_fn_body, &parent_block[0], &stmt_si[0]) == 0 {
         return 1;
     }
-    return emit_async_segment(codegen, parent_block[0], stmt_si[0] + 1, parent_block[0].block_stmt_count);
+    const r: i32 = emit_async_segment(codegen, parent_block[0], stmt_si[0] + 1, parent_block[0].block_stmt_count);
+    if r != 0 &&
+        parent_block[0] != null &&
+        @usize_from_ptr(parent_block[0] as &void) != @usize_from_ptr(codegen.async_fn_body as &void) {
+        return emit_async_continue_in_parent(codegen, parent_block[0]);
+    }
+    return r;
 }
 
 // 递归查找 child_block 的父控制流语句（if/while/for），返回父 block + 父语句索引
@@ -2077,7 +2208,13 @@ fn emit_async_continue_in_parent(codegen: &C99CodeGenerator, child_block: &ASTNo
     if c99_find_parent_of_block(child_block, codegen.async_fn_body, &parent_blk[0], &stmt_idx[0]) == 0 {
         return 1;
     }
-    return emit_async_segment(codegen, parent_blk[0], stmt_idx[0] + 1, parent_blk[0].block_stmt_count);
+    const r: i32 = emit_async_segment(codegen, parent_blk[0], stmt_idx[0] + 1, parent_blk[0].block_stmt_count);
+    if r != 0 &&
+        parent_blk[0] != null &&
+        @usize_from_ptr(parent_blk[0] as &void) != @usize_from_ptr(codegen.async_fn_body as &void) {
+        return emit_async_continue_in_parent(codegen, parent_blk[0]);
+    }
+    return r;
 }
 
 // while 循环退出后回跳或继续
@@ -2123,11 +2260,13 @@ fn emit_async_while_with_await(codegen: &C99CodeGenerator, while_stmt: &ASTNode,
     if is_while_true != 0 {
         // while true：直接进入循环体
         emit_async_segment(codegen, wbody, 0, wbody.block_stmt_count);
+        fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
     } else {
         fputs("        if (" as *byte, codegen.emit_stream as *void);
         gen_expr(codegen, wcond);
         fputs(") {\n" as *byte, codegen.emit_stream as *void);
         emit_async_segment(codegen, wbody, 0, wbody.block_stmt_count);
+        fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
         fputs("        } else {\n" as *byte, codegen.emit_stream as *void);
         const r: i32 = emit_async_segment(codegen, parent_block, while_si + 1, parent_to_si);
         if r != 0 {
@@ -2424,6 +2563,7 @@ fn emit_async_if_with_await(codegen: &C99CodeGenerator, if_stmt: &ASTNode, if_si
         if then_br != null && then_br.type == ASTNodeType.AST_BLOCK {
             emit_async_segment(codegen, then_br, 0, then_br.block_stmt_count);
         }
+        emit_async_segment(codegen, parent_block, if_si + 1, parent_to_si);
     } else {
         // then 分支无 await：同步执行全部语句，然后 fallthrough 到 if 后代码
         if then_br != null && then_br.type == ASTNodeType.AST_BLOCK && then_br.block_stmts != null {
@@ -2440,6 +2580,7 @@ fn emit_async_if_with_await(codegen: &C99CodeGenerator, if_stmt: &ASTNode, if_si
         if else_br != null && else_br.type == ASTNodeType.AST_BLOCK {
             emit_async_segment(codegen, else_br, 0, else_br.block_stmt_count);
         }
+        emit_async_segment(codegen, parent_block, if_si + 1, parent_to_si);
     } else {
         // else 分支无 await（或无 else）：同步执行，然后 fallthrough 到 if 后代码
         if else_br != null && else_br.type == ASTNodeType.AST_BLOCK && else_br.block_stmts != null {
@@ -2558,6 +2699,16 @@ fn emit_async_segment(codegen: &C99CodeGenerator, block: &ASTNode, from_si: i32,
             c99_stmt_tree_has_await(stmt.for_stmt_body) != 0 {
             emit_async_for_with_await(codegen, stmt, si, block, to_si);
             return 0;
+        }
+        // 嵌套 block 含 await：递归 lower，保留块内同步语句与局部变量
+        if stmt.type == ASTNodeType.AST_BLOCK && stmt.block_stmts != null &&
+            c99_stmt_tree_has_await(stmt) != 0 {
+            const nested_r: i32 = emit_async_segment(codegen, stmt, 0, stmt.block_stmt_count);
+            if nested_r == 0 {
+                return 0;
+            }
+            si = si + 1;
+            continue;
         }
         // if 含 await：分支递归段发射
         if stmt.type == ASTNodeType.AST_IF_STMT {
@@ -4760,4 +4911,3 @@ fn gen_mono_method_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struc
     codegen.current_type_args = saved_type_args;
     codegen.current_type_arg_count = saved_type_arg_count;
 }
-

@@ -1705,6 +1705,15 @@ fn get_env_or_default(name: &byte, fallback: &byte) &byte {
     return fallback;
 }
 
+fn sync_test_network_skip_marker() void {
+    const allow: *byte = getenv("ALLOW_SKIP_NETWORK" as *byte);
+    if allow != null && allow[0] == '1' as byte && allow[1] == 0 {
+        _ = system("/bin/sh -c ': > /tmp/uya_allow_skip_network'" as *byte);
+    } else {
+        _ = system("/bin/sh -c 'rm -f /tmp/uya_allow_skip_network'" as *byte);
+    }
+}
+
 fn resolve_cc_driver(buffer: &byte, buffer_size: i32) &byte {
     const explicit_cc_driver: *byte = getenv("CC_DRIVER" as *byte);
     if explicit_cc_driver != null && explicit_cc_driver[0] != 0 {
@@ -2640,6 +2649,7 @@ export fn main() i32 {
         var run_cmd: [byte: 4096] = [];
         var run_cmd_len: i32 = 0;
         if command == CommandType.COMMAND_TEST {
+            sync_test_network_skip_marker();
             run_cmd_len = snprintf(&run_cmd[0], 4096,
                 "/bin/sh -c 'ulimit -s %d && exec \"$1\"' sh \"%s\"" as *byte,
                 eff_run_stack_kb,
@@ -2649,6 +2659,9 @@ export fn main() i32 {
         }
         const run_result: i32 = system(&run_cmd[0] as *byte);
         const child_exit: i32 = exit_code_from_system_status(run_result);
+        if command == CommandType.COMMAND_TEST {
+            _ = system("/bin/sh -c 'rm -f /tmp/uya_allow_skip_network'" as *byte);
+        }
         if child_exit != 0 {
             fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, child_exit);
         }
@@ -2980,4 +2993,3 @@ fn generate_libc(output_dir: &byte) i32 {
 
     return 0;
 }
-

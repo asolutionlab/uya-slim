@@ -1,5 +1,5 @@
 // test_http1_async_client.uya — `http1_async_get` / `http1_async_post` async 测试。
-// 目前保留坏 URL 冒烟；回环端到端在当前环境里受 socket 限制，暂作为占位测试。
+// 保留坏 URL 冒烟；另外补了回环端到端测试，覆盖 HTTP 客户端 + async lowering。
 
 use std.http.types;
 use std.http.router;
@@ -51,6 +51,45 @@ fn slice_eq_bytes(a: &[byte], b: &[byte]) bool {
 
 fn write_stderr_msg(msg: &[byte]) void {
     _ = sys_write(2, msg.ptr, msg.len);
+}
+
+fn write_err_kind(prefix: &[byte], err_id: u32) void {
+    write_stderr_msg(prefix);
+    if err_id == @error_id(error.InvalidRequest) {
+        write_stderr_msg(&"InvalidRequest"[0: 14]);
+    } else if err_id == @error_id(error.ConnectionClosed) {
+        write_stderr_msg(&"ConnectionClosed"[0: 16]);
+    } else if err_id == @error_id(error.HeaderTooLarge) {
+        write_stderr_msg(&"HeaderTooLarge"[0: 14]);
+    } else if err_id == @error_id(error.PayloadTooLarge) {
+        write_stderr_msg(&"PayloadTooLarge"[0: 15]);
+    } else if err_id == @error_id(error.ReadWouldBlock) {
+        write_stderr_msg(&"ReadWouldBlock"[0: 14]);
+    } else if err_id == @error_id(error.HttpChunkedNotSupported) {
+        write_stderr_msg(&"HttpChunkedNotSupported"[0: 23]);
+    } else if err_id == @error_id(error.EventLoopSlotsFull) {
+        write_stderr_msg(&"EventLoopSlotsFull"[0: 18]);
+    } else if err_id == @error_id(error.TaskQueueFull) {
+        write_stderr_msg(&"TaskQueueFull"[0: 13]);
+    } else {
+        write_stderr_msg(&"other"[0: 5]);
+    }
+}
+
+fn write_u16_dec_msg(prefix: &[byte], value: u16) void {
+    var buf: [byte: 16] = [];
+    write_stderr_msg(prefix);
+    const end: usize = client_append_u16_dec_buf(&buf[0] as &byte, 0, value);
+    write_stderr_msg(buf[0: end]);
+}
+
+fn http_loopback_tests_supported() bool {
+    const probe: !i32 = sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    const fd: i32 = probe catch {
+        return false;
+    };
+    _ = sys_close(fd);
+    return true;
 }
 
 // 与 lib/std/http/http1_async.uya 中同名辅助函数区分，避免多 TU 链接时符号重复
@@ -174,13 +213,17 @@ fn run_async_get_client(port: u16) void {
     };
     const fut: Future<!Http1AsyncResponse> = http1_async_get(url, null);
     const out: !Http1AsyncResponse = block_on_with_event_loop<Http1AsyncResponse>(&loop, fut, 1000);
-    const resp: Http1AsyncResponse = out catch {
+    const resp: Http1AsyncResponse = out catch |err| {
         write_stderr_msg(&"client:get:block_on\n"[0: 20]);
+        write_err_kind(&"client:get:block_on err="[0: 24], @error_id(err));
+        write_stderr_msg(&"\n"[0: 1]);
         sys_exit(12);
         return;
     };
     if resp.status != 200 {
         write_stderr_msg(&"client:get:status\n"[0: 18]);
+        write_u16_dec_msg(&"client:get:status value="[0: 24], resp.status as u16);
+        write_stderr_msg(&"\n"[0: 1]);
         http1_async_response_free(&resp);
         sys_exit(13);
     }
@@ -227,13 +270,17 @@ fn run_async_post_client(port: u16) void {
     };
     const fut: Future<!Http1AsyncResponse> = http1_async_post(url, &req_ov);
     const out: !Http1AsyncResponse = block_on_with_event_loop<Http1AsyncResponse>(&loop, fut, 1000);
-    const resp: Http1AsyncResponse = out catch {
+    const resp: Http1AsyncResponse = out catch |err| {
         write_stderr_msg(&"client:post:block_on\n"[0: 21]);
+        write_err_kind(&"client:post:block_on err="[0: 25], @error_id(err));
+        write_stderr_msg(&"\n"[0: 1]);
         sys_exit(22);
         return;
     };
     if resp.status != 201 {
         write_stderr_msg(&"client:post:status\n"[0: 19]);
+        write_u16_dec_msg(&"client:post:status value="[0: 25], resp.status as u16);
+        write_stderr_msg(&"\n"[0: 1]);
         http1_async_response_free(&resp);
         sys_exit(23);
     }
@@ -358,7 +405,17 @@ test "http1_async_post_invalid_url" {
 }
 
 test "http1_async_get_loopback_roundtrip" {
+    if !http_loopback_tests_supported() {
+        write_stderr_msg(&"skip:http1_loopback\n"[0: 20]);
+        return;
+    }
+    try async_http1_get_server_roundtrip();
 }
 
 test "http1_async_post_loopback_roundtrip" {
+    if !http_loopback_tests_supported() {
+        write_stderr_msg(&"skip:http1_loopback\n"[0: 20]);
+        return;
+    }
+    try async_http1_post_server_roundtrip();
 }

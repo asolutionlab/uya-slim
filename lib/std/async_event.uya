@@ -4,6 +4,7 @@
 // 设计见 docs/std_async_design.md 阶段 3（std.async.event）。
 
 use std.async;
+use libc.errno;
 use libc.syscall;
 
 error EventLoopSlotsFull;
@@ -73,7 +74,10 @@ export struct LinuxEpoll : EventLoop {
         var ev: EpollEvent = epoll_interest_or_default(fd, interest);
         var slot: i32 = linux_epoll_find_slot(self, fd);
         if slot >= 0 {
-            _ = try sys_epoll_ctl(self.epfd, EPOLL_CTL_MOD, fd, &ev);
+            const mod_result: !i32 = sys_epoll_ctl(self.epfd, EPOLL_CTL_MOD, fd, &ev);
+            _ = mod_result catch |err| {
+                return mod_result as! i32;
+            };
             self.slot_wakers[slot] = (waker as &void) as usize;
             return 0;
         }
@@ -82,7 +86,20 @@ export struct LinuxEpoll : EventLoop {
         if slot < 0 {
             return error.EventLoopSlotsFull;
         }
-        _ = try sys_epoll_ctl(self.epfd, EPOLL_CTL_ADD, fd, &ev);
+        const add_result: !i32 = sys_epoll_ctl(self.epfd, EPOLL_CTL_ADD, fd, &ev);
+        _ = add_result catch |err| {
+            if (@error_id(err) as i32) == EEXIST {
+                const mod_result: !i32 = sys_epoll_ctl(self.epfd, EPOLL_CTL_MOD, fd, &ev);
+                _ = mod_result catch |mod_err| {
+                    return mod_result as! i32;
+                };
+                self.slot_used[slot] = 1;
+                self.slot_fds[slot] = fd;
+                self.slot_wakers[slot] = (waker as &void) as usize;
+                return 0;
+            }
+            return add_result as! i32;
+        };
         self.slot_used[slot] = 1;
         self.slot_fds[slot] = fd;
         self.slot_wakers[slot] = (waker as &void) as usize;
@@ -90,7 +107,10 @@ export struct LinuxEpoll : EventLoop {
     }
 
     fn deregister(self: &Self, fd: i32) !i32 {
-        _ = try sys_epoll_ctl_del(self.epfd, fd);
+        const del_result: !i32 = sys_epoll_ctl_del(self.epfd, fd);
+        _ = del_result catch |err| {
+            return del_result as! i32;
+        };
         const slot: i32 = linux_epoll_find_slot(self, fd);
         if slot >= 0 {
             self.slot_used[slot] = 0;
@@ -102,7 +122,10 @@ export struct LinuxEpoll : EventLoop {
 
     fn poll(self: &Self, timeout_ms: i32) !i32 {
         var events: [EpollEvent: 1024] = [];
-        const n: i32 = try sys_epoll_wait(self.epfd, &events[0], 1024, timeout_ms);
+        const wait_result: !i32 = sys_epoll_wait(self.epfd, &events[0], 1024, timeout_ms);
+        const n: i32 = wait_result catch |err| {
+            return wait_result as! i32;
+        };
         var i: i32 = 0;
         while i < n {
             const fd: i32 = events[i].data as i32;

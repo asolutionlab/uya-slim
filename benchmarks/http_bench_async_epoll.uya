@@ -610,16 +610,12 @@ fn fmt_usize_dec(buf: &byte, n: usize) usize {
         t = t + 1;
         x = x / 10;
     }
-    var o: usize = 0;
-    var tt: usize = t;
-    while tt > 0 {
-        tt = tt - 1;
-        if tt < 24 {
-            buf[o] = tmp[tt];
-            o = o + 1;
-        }
+    var i: usize = 0;
+    while i < t {
+        buf[i] = tmp[t - 1 - i];
+        i = i + 1;
     }
-    return o;
+    return t;
 }
 
 /// 仅写响应头到 hdr_buf，返回头部长度（含结尾 \r\n\r\n）

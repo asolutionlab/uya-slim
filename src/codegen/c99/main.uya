@@ -1327,15 +1327,13 @@ fn gen_test_runner(codegen: &C99CodeGenerator, tests: & & ASTNode, test_count: i
             if func_name != null {
                 // 输出测试名称
                 fprintf(codegen.emit_stream as *void, "    printf(\"  TEST: %s ... \");\n" as *byte, description as *byte);
-                // 记录测试前的计数
-                fputs("    { int _before = _test_passed + _test_failed;\n" as *byte, codegen.emit_stream as *void);
+                // 运行测试并分别统计测试用例与断言
+                fputs("    {\n" as *byte, codegen.emit_stream as *void);
                 fputs("      struct err_union_void _test_result = " as *byte, codegen.emit_stream as *void);
                 fprintf(codegen.emit_stream as *void, "%s();\n" as *byte, func_name as *byte);
-                fputs("      int _after = _test_passed + _test_failed;\n" as *byte, codegen.emit_stream as *void);
                 // try assert_* 失败时仅 error_id!=0，不会增加 _test_passed；须计入 _test_failed，否则 main_main 仍 return 0，脚本误判通过
                 fputs("      if (_test_result.error_id != 0) { printf(\"ERROR\\n\"); _test_failed = _test_failed + 1; }\n" as *byte, codegen.emit_stream as *void);
-                // 无 try assert 的成功用例不会改变 _test_passed；须计为 1 次通过，否则空体会误印 FAILED 且汇总全为 0
-                fputs("      else { if (_after == _before) { _test_passed = _test_passed + 1; } printf(\"OK\\n\"); } }\n" as *byte, codegen.emit_stream as *void);
+                fputs("      else { _test_case_passed = _test_case_passed + 1; printf(\"OK\\n\"); } }\n" as *byte, codegen.emit_stream as *void);
             }
         }
         i = i + 1;
@@ -3036,6 +3034,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         if has_std_testing == 0 {
             fputs("static int32_t _test_passed = 0;\n" as *byte, codegen.emit_stream as *void);
             fputs("static int32_t _test_failed = 0;\n" as *byte, codegen.emit_stream as *void);
+            fputs("static int32_t _test_case_passed = 0;\n" as *byte, codegen.emit_stream as *void);
             c99_emit_newline(codegen);
         }
         saved_has_std_testing = has_std_testing;
@@ -3322,6 +3321,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         if codegen.split_mirror != 0 && saved_has_std_testing != 0 {
             fputs("extern int32_t _test_passed;\n" as *byte, codegen.emit_stream as *void);
             fputs("extern int32_t _test_failed;\n" as *byte, codegen.emit_stream as *void);
+            fputs("extern int32_t _test_case_passed;\n" as *byte, codegen.emit_stream as *void);
             c99_emit_newline(codegen);
         }
         i = 0;
@@ -3434,15 +3434,19 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("    uya_run_tests();\n" as *byte, codegen.emit_stream as *void);
         fputs("    printf(\"\\n=== Results ===\\n\");\n" as *byte, codegen.emit_stream as *void);
         if codegen.is_nostdlib != 0 {
-            fputs("    printf(\"  Passed: \");\n" as *byte, codegen.emit_stream as *void);
-            fputs("    uya_print_i32(_test_passed);\n" as *byte, codegen.emit_stream as *void);
+            fputs("    printf(\"  Tests Passed:       \");\n" as *byte, codegen.emit_stream as *void);
+            fputs("    uya_print_i32(_test_case_passed);\n" as *byte, codegen.emit_stream as *void);
             fputs("    printf(\"\\n\");\n" as *byte, codegen.emit_stream as *void);
-            fputs("    printf(\"  Failed: \");\n" as *byte, codegen.emit_stream as *void);
+            fputs("    printf(\"  Tests Failed:       \");\n" as *byte, codegen.emit_stream as *void);
             fputs("    uya_print_i32(_test_failed);\n" as *byte, codegen.emit_stream as *void);
             fputs("    printf(\"\\n\");\n" as *byte, codegen.emit_stream as *void);
+            fputs("    printf(\"  Assertions Passed:  \");\n" as *byte, codegen.emit_stream as *void);
+            fputs("    uya_print_i32(_test_passed);\n" as *byte, codegen.emit_stream as *void);
+            fputs("    printf(\"\\n\");\n" as *byte, codegen.emit_stream as *void);
         } else {
-            fputs("    printf(\"  Passed: %d\\n\", _test_passed);\n" as *byte, codegen.emit_stream as *void);
-            fputs("    printf(\"  Failed: %d\\n\", _test_failed);\n" as *byte, codegen.emit_stream as *void);
+            fputs("    printf(\"  Tests Passed:       %d\\n\", _test_case_passed);\n" as *byte, codegen.emit_stream as *void);
+            fputs("    printf(\"  Tests Failed:       %d\\n\", _test_failed);\n" as *byte, codegen.emit_stream as *void);
+            fputs("    printf(\"  Assertions Passed:  %d\\n\", _test_passed);\n" as *byte, codegen.emit_stream as *void);
         }
         fputs("    return _test_failed;\n" as *byte, codegen.emit_stream as *void);
         c99_emit_close_brace_newline(codegen);
@@ -3467,5 +3471,4 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     c99_write_split_makefile(codegen);
     return 0;
 }
-
 

@@ -1,0 +1,31 @@
+// Bug D: 嵌套 block 中的局部变量必须跨 await 保持可见
+
+use std.async;
+use std.testing.assert_eq_i32;
+
+var g_bug_d_nested_value: i32 = 0;
+
+fn ready_i32(v: i32) Future<!i32> {
+    return Future<!i32>{ state: Poll<!i32>.Ready(ok<i32>(v)) };
+}
+
+@async_fn
+fn nested_block_capture(flag: i32) Future<!i32> {
+    if flag != 0 {
+        {
+            var base: i32 = flag + 10;
+            const a: i32 = try @await ready_i32(7);
+            g_bug_d_nested_value = base + a;
+        }
+    }
+    return 0;
+}
+
+test "bug_d_nested_block_keeps_local_across_await" {
+    g_bug_d_nested_value = 0;
+    const f: Future<!i32> = nested_block_capture(1);
+    const bo: !i32 = block_on<i32>(f);
+    const v: i32 = bo catch { -1; };
+    try assert_eq_i32(v, 0);
+    try assert_eq_i32(g_bug_d_nested_value, 18);
+}

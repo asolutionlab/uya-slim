@@ -10,8 +10,11 @@ COMPILER="$REPO_ROOT/bin/uya"
 export UYA_ROOT="$REPO_ROOT/lib/"
 OUT_C="$SCRIPT_DIR/build/syscall_c99_cross_verify.c"
 ZIG="${ZIG:-/home/winger/zig/zig}"
+ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$SCRIPT_DIR/build/.zig-cache-global}"
+ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$SCRIPT_DIR/build/.zig-cache-local}"
 
 mkdir -p "$SCRIPT_DIR/build"
+mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
 
 if [ ! -x "$COMPILER" ]; then
 	echo "✗ 未找到 $COMPILER（请先 make uya 或 make from-c）"
@@ -47,7 +50,7 @@ fi
 
 if [ -x "$ZIG" ]; then
 	echo "  （可选）zig cc -target aarch64-linux-gnu -c 编译生成的 C..."
-	if ! "$ZIG" cc -target aarch64-linux-gnu -c -std=c99 -fno-builtin -o "${OUT_C%.c}.aarch64.o" "$OUT_C" 2>&1; then
+	if ! env ZIG_GLOBAL_CACHE_DIR="$ZIG_GLOBAL_CACHE_DIR" ZIG_LOCAL_CACHE_DIR="$ZIG_LOCAL_CACHE_DIR" "$ZIG" cc -target aarch64-linux-gnu -c -std=c99 -fno-builtin -o "${OUT_C%.c}.aarch64.o" "$OUT_C" 2>&1; then
 		echo "✗ zig cc aarch64-linux-gnu 交叉编译失败（检查 ZIG= 路径）"
 		exit 1
 	fi
@@ -63,7 +66,7 @@ arm {
 ' "$OUT_C" | sed '1s/^#elif /#if /' > "$ARM_SNIP"
 	printf '\n#endif\n' >> "$ARM_SNIP"
 	echo "  （可选）zig cc -target arm-linux-gnueabihf -c 编译 ARM @syscall 片段..."
-	if ! "$ZIG" cc -target arm-linux-gnueabihf -c -std=c99 -fno-builtin -o "${OUT_C%.c}.arm.o" "$ARM_SNIP" 2>&1; then
+	if ! env ZIG_GLOBAL_CACHE_DIR="$ZIG_GLOBAL_CACHE_DIR" ZIG_LOCAL_CACHE_DIR="$ZIG_LOCAL_CACHE_DIR" "$ZIG" cc -target arm-linux-gnueabihf -c -std=c99 -fno-builtin -o "${OUT_C%.c}.arm.o" "$ARM_SNIP" 2>&1; then
 		echo "✗ zig cc arm-linux-gnueabihf 编译 ARM 片段失败（检查 ZIG= 路径）"
 		exit 1
 	fi

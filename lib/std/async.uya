@@ -431,4 +431,3 @@ export fn async_fd_read_future(fd: i32, buf: &byte, count: usize) Future<!usize>
 export fn async_fd_write_future(fd: i32, data: &const byte, count: usize) Future<!usize> {
     return AsyncFdWriteFuture{ fd: fd, data: data, count: count };
 }
-

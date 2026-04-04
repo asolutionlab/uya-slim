@@ -10,8 +10,11 @@ COMPILER="$REPO_ROOT/bin/uya"
 export UYA_ROOT="$REPO_ROOT/lib/"
 OUT_C="$SCRIPT_DIR/build/simd_c99_neon_verify.c"
 ZIG="${ZIG:-/home/winger/zig/zig}"
+ZIG_GLOBAL_CACHE_DIR="${ZIG_GLOBAL_CACHE_DIR:-$SCRIPT_DIR/build/.zig-cache-global}"
+ZIG_LOCAL_CACHE_DIR="${ZIG_LOCAL_CACHE_DIR:-$SCRIPT_DIR/build/.zig-cache-local}"
 
 mkdir -p "$SCRIPT_DIR/build"
+mkdir -p "$ZIG_GLOBAL_CACHE_DIR" "$ZIG_LOCAL_CACHE_DIR"
 
 if [ ! -x "$COMPILER" ]; then
 	echo "✗ 未找到 $COMPILER（请先 make uya 或 make from-c）"
@@ -48,14 +51,14 @@ if [ -x "$ZIG" ]; then
 		echo "#endif"
 	} > "$SNIP_A64"
 	echo "  （可选）zig cc -target aarch64-linux-gnu -c 编译 NEON 片段..."
-	if ! "$ZIG" cc -target aarch64-linux-gnu -c -std=c99 -fno-builtin -o "${SNIP_A64%.c}.o" "$SNIP_A64" 2>&1; then
+	if ! env ZIG_GLOBAL_CACHE_DIR="$ZIG_GLOBAL_CACHE_DIR" ZIG_LOCAL_CACHE_DIR="$ZIG_LOCAL_CACHE_DIR" "$ZIG" cc -target aarch64-linux-gnu -c -std=c99 -fno-builtin -o "${SNIP_A64%.c}.o" "$SNIP_A64" 2>&1; then
 		echo "✗ zig cc aarch64-linux-gnu 编译 NEON 片段失败（检查 ZIG= 路径）"
 		exit 1
 	fi
 	echo "  ✓ AArch64 Linux 交叉编译 NEON 助手片段通过"
 	cp "$SNIP_A64" "$SNIP_ARM"
 	echo "  （可选）zig cc -target arm-linux-gnueabihf -mfpu=neon -c..."
-	if ! "$ZIG" cc -target arm-linux-gnueabihf -mfpu=neon -c -std=c99 -fno-builtin -o "${SNIP_ARM%.c}.o" "$SNIP_ARM" 2>&1; then
+	if ! env ZIG_GLOBAL_CACHE_DIR="$ZIG_GLOBAL_CACHE_DIR" ZIG_LOCAL_CACHE_DIR="$ZIG_LOCAL_CACHE_DIR" "$ZIG" cc -target arm-linux-gnueabihf -mfpu=neon -c -std=c99 -fno-builtin -o "${SNIP_ARM%.c}.o" "$SNIP_ARM" 2>&1; then
 		echo "✗ zig cc arm-linux-gnueabihf (NEON) 编译 NEON 片段失败"
 		exit 1
 	fi

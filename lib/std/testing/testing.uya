@@ -16,6 +16,7 @@ error AssertionFailed;
 
 export var _test_passed: i32 = 0;
 export var _test_failed: i32 = 0;
+export var _test_case_passed: i32 = 0;
 
 // ============================================================
 // 断言宏 - 失败时打印 @mc_source(对应参数)，便于调试
@@ -128,11 +129,12 @@ export fn test_suite_begin(name: &const byte) void {
     printf("\n=== Test Suite: %s ===\n", name);
     _test_passed = 0;
     _test_failed = 0;
+    _test_case_passed = 0;
 }
 
 export fn test_pass(name: &const byte) void {
     printf("  TEST: %s ... OK\n", name);
-    _test_passed = _test_passed + 1;
+    _test_case_passed = _test_case_passed + 1;
 }
 
 export fn test_fail(name: &const byte) void {
@@ -175,11 +177,14 @@ fn _print_i32_decimal(value: i32) void {
 
 export fn test_suite_end() i32 {
     printf("\n=== Results ===\n");
-    printf("  Passed:  " as *byte);
-    _print_i32_decimal(_test_passed);
+    printf("  Tests Passed:       " as *byte);
+    _print_i32_decimal(_test_case_passed);
     printf("\n" as *byte);
-    printf("  Failed:  " as *byte);
+    printf("  Tests Failed:       " as *byte);
     _print_i32_decimal(_test_failed);
+    printf("\n" as *byte);
+    printf("  Assertions Passed:  " as *byte);
+    _print_i32_decimal(_test_passed);
     printf("\n" as *byte);
     printf("==================\n");
     return _test_failed;

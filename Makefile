@@ -324,72 +324,104 @@ check: uya
 	rm -f /tmp/uya_test_summary.txt; \
 	echo ""; \
 	echo "验证证明优化..."; \
-	./tests/verify_proof_optimization.sh > /tmp/verify_out.txt 2>&1 && \
+	if ./tests/verify_proof_optimization.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "✓|✗|证明优化" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-	VERIFY_EXIT=$$?; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ 证明优化验证失败"; \
 		exit 1; \
 	fi; \
 	echo ""; \
 	echo "验证默认顶层函数发射..."; \
-	./tests/verify_function_reachability_codegen.sh > /tmp/verify_out.txt 2>&1 && \
+	if ./tests/verify_function_reachability_codegen.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-	VERIFY_EXIT=$$?; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ 默认顶层函数发射验证失败"; \
 		exit 1; \
 	fi; \
 	echo ""; \
 	echo "验证 SIMD @vector.select C 按需生成..."; \
-	./tests/verify_simd_select_c_emit.sh > /tmp/verify_out.txt 2>&1 && \
+	if ./tests/verify_simd_select_c_emit.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-	VERIFY_EXIT=$$?; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ SIMD select C 按需生成验证失败"; \
 		exit 1; \
 	fi; \
 	echo ""; \
 	echo "验证切片形参 C99 按值与调用约定..."; \
-	./tests/verify_slice_param_c99_emit.sh > /tmp/verify_out.txt 2>&1 && \
+	if ./tests/verify_slice_param_c99_emit.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-	VERIFY_EXIT=$$?; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ 切片形参 C99 验证失败"; \
 		exit 1; \
 	fi; \
 	echo ""; \
 	echo "验证 @syscall C99（Linux AArch64 / ARM32 交叉）..."; \
-	ZIG="$(ZIG)" ./tests/verify_syscall_c99_cross.sh > /tmp/verify_out.txt 2>&1 && \
+	if ZIG="$(ZIG)" ./tests/verify_syscall_c99_cross.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-	VERIFY_EXIT=$$?; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ @syscall C99 交叉目标验证失败"; \
 		exit 1; \
 	fi; \
 	echo ""; \
 	echo "验证 SIMD C99（ARM NEON 片段交叉编译）..."; \
-	ZIG="$(ZIG)" ./tests/verify_simd_c99_neon.sh > /tmp/verify_out.txt 2>&1 && \
+	if ZIG="$(ZIG)" ./tests/verify_simd_c99_neon.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-	VERIFY_EXIT=$$?; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ SIMD C99 NEON 验证失败"; \
 		exit 1; \
 	fi; \
 	echo ""; \
 	echo "验证 benchmarks/http_bench.uya C99..."; \
-	./tests/verify_http_bench_compile.sh > /tmp/verify_out.txt 2>&1 && \
+	if ./tests/verify_http_bench_compile.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-	VERIFY_EXIT=$$?; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ http_bench C99 验证失败"; \
 		exit 1; \
 	fi; \
 	echo ""; \
 	echo "验证 benchmarks/http_bench_async_epoll.uya C99..."; \
-	./tests/verify_http_bench_async_epoll_compile.sh > /tmp/verify_out.txt 2>&1 && \
+	if ./tests/verify_http_bench_async_epoll_compile.sh > /tmp/verify_out.txt 2>&1; then \
 		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-	VERIFY_EXIT=$$?; \
+		VERIFY_EXIT=0; \
+	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ http_bench_async_epoll C99 验证失败"; \
 		exit 1; \
@@ -490,6 +522,7 @@ backup-seed:
 	@cp src/build/uya.c bin/uya.c
 	@mkdir -p backup
 	@cp bin/uya.c backup/uya.c
+	@$(MAKE) from-c >/dev/null
 	@echo "✓ backup/uya.c 与 bin/uya.c 已更新（单文件种子）"
 
 # 验证 + 多文件备份 + 单文件种子（提交前完整备份）
@@ -643,4 +676,3 @@ help:
 	@echo "  make install TESTSDIR=/path/tests    # 显式测试目录（默认 前缀/tests）"
 	@echo ""
 	@echo "macOS: hosted 主线见 docs/macos_hosted_smoke.md；备份 uya.c 为 Linux nostdlib 时 from-c 不可用。"
-

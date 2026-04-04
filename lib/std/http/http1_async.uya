@@ -9,6 +9,7 @@
 //
 // 命名沿用 Http1Async* 类型名，便于调用方类型不变。
 
+use libc;
 use std.http.types;
 use std.http.server;
 use std.http.router;
@@ -238,7 +239,7 @@ struct Http1ConnectFuture : Future<!i32> {
         }
 
         const connect_result: !i32 = sys_connect(self.fd, &self.addr[0] as &void, 16 as u32);
-        const connected_fd: i32 = connect_result catch |err| {
+        _ = connect_result catch |err| {
             const eid: i32 = @error_id(err) as i32;
             if eid == EAGAIN || eid == EWOULDBLOCK || eid == EINPROGRESS || eid == EALREADY {
                 waker.wait_writable(self.fd);
@@ -256,7 +257,7 @@ struct Http1ConnectFuture : Future<!i32> {
 
         var nd2: i32 = 1;
         _ = sys_setsockopt(self.fd, IPPROTO_TCP, TCP_NODELAY, &nd2 as &void, 4 as u32) catch {};
-        return Poll<!i32>.Ready(ok<i32>(connected_fd));
+        return Poll<!i32>.Ready(ok<i32>(self.fd));
     }
 }
 
@@ -604,6 +605,10 @@ fn http1_async_err_invalid() !Http1AsyncResponse {
 /// 在 nonblocking 套接字上完成整次 HTTP/1.1 请求与响应体读取（由 epoll readiness 驱动的短写/短读循环）。
 export @async_fn fn http1_request_async(req: &Http1AsyncRequest) Future<!Http1AsyncResponse> {
     const fd: i32 = try @await http1_connect_for_host_future(req.host, req.port);
+    if fd < 0 {
+        const err_resp: Http1AsyncResponse = try http1_async_err_invalid();
+        return err_resp;
+    }
 
     var hdr: [byte: 4096] = [];
     const hdr_len: usize = try build_request_headers(req, &hdr[0] as &byte, 4096);
@@ -723,9 +728,7 @@ export @async_fn fn http1_request_async(req: &Http1AsyncRequest) Future<!Http1As
     }
 
     _ = sys_close(fd) catch {};
-    const mem_base: &byte = mem as &byte;
-    const body_sl: &[byte] = slice_from_raw(mem_base, body_total);
-    return Http1AsyncResponse{ status: meta.status, body: body_sl, body_storage: mem };
+    return Http1AsyncResponse{ status: meta.status, body: slice_from_raw(mem as &byte, body_total), body_storage: mem };
 }
 
 /// 同步封装：`linux_epoll_create` + `block_on_with_event_loop<Http1AsyncResponse>` 驱动 `http1_request_async`。
@@ -748,26 +751,28 @@ fn http1_async_empty_body_slice() &[byte] {
     return z[0: 0];
 }
 
-/// `GET`：先 parse URL，再 `@await` 统一的 epoll-ready HTTP/1 请求 Future。
-export @async_fn fn http1_async_get(url: &[byte], req: &Http1AsyncRequest) Future<!Http1AsyncResponse> {
-    const pu: ParsedHttpUrl = try parse_http_url_full(url);
-    var r: Http1AsyncRequest = Http1AsyncRequest{
-        method: Method.GET,
+fn http1_async_request_from_url(method: Method, pu: ParsedHttpUrl, req: &Http1AsyncRequest) Http1AsyncRequest {
+    var body: &[byte] = http1_async_empty_body_slice();
+    var content_type: &[byte] = http1_async_empty_body_slice();
+    if req != null {
+        const r0: Http1AsyncRequest = *req;
+        body = r0.body;
+        content_type = r0.content_type;
+    }
+    return Http1AsyncRequest{
+        method: method,
         host: pu.host,
         port: pu.port,
         path: pu.path,
-        body: http1_async_empty_body_slice(),
-        content_type: http1_async_empty_body_slice(),
+        body: body,
+        content_type: content_type,
     };
-    if req != null {
-        const r0: Http1AsyncRequest = *req;
-        r.body = r0.body;
-        r.content_type = r0.content_type;
-    }
-    r.method = Method.GET;
-    r.host = pu.host;
-    r.port = pu.port;
-    r.path = pu.path;
+}
+
+/// `GET`：先 parse URL，再 `@await` 统一的 epoll-ready HTTP/1 请求 Future。
+export @async_fn fn http1_async_get(url: &[byte], req: &Http1AsyncRequest) Future<!Http1AsyncResponse> {
+    const pu: ParsedHttpUrl = try parse_http_url_full(url);
+    const r: Http1AsyncRequest = http1_async_request_from_url(Method.GET, pu, req);
     const resp: Http1AsyncResponse = try @await http1_request_async(&r);
     return resp;
 }
@@ -775,23 +780,7 @@ export @async_fn fn http1_async_get(url: &[byte], req: &Http1AsyncRequest) Futur
 /// `POST`：先 parse URL，再 `@await` 统一的 epoll-ready HTTP/1 请求 Future。
 export @async_fn fn http1_async_post(url: &[byte], req: &Http1AsyncRequest) Future<!Http1AsyncResponse> {
     const pu: ParsedHttpUrl = try parse_http_url_full(url);
-    var r: Http1AsyncRequest = Http1AsyncRequest{
-        method: Method.POST,
-        host: pu.host,
-        port: pu.port,
-        path: pu.path,
-        body: http1_async_empty_body_slice(),
-        content_type: http1_async_empty_body_slice(),
-    };
-    if req != null {
-        const r0: Http1AsyncRequest = *req;
-        r.body = r0.body;
-        r.content_type = r0.content_type;
-    }
-    r.method = Method.POST;
-    r.host = pu.host;
-    r.port = pu.port;
-    r.path = pu.path;
+    const r: Http1AsyncRequest = http1_async_request_from_url(Method.POST, pu, req);
     const resp: Http1AsyncResponse = try @await http1_request_async(&r);
     return resp;
 }
