@@ -267,14 +267,20 @@ fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, target_arch_r
     const gcc: &byte = resolve_microapp_target_gcc(target_arch_raw, &gcc_buf[0] as &byte, PATH_MAX);
     const target_triple: &byte = microapp_target_default_triple(target_arch_raw);
     var obj_path: [byte: PATH_MAX] = [];
+    var exe_path: [byte: PATH_MAX] = [];
     var cmd: [byte: 8192] = [];
     const obj_len: i32 = snprintf(&obj_path[0] as *byte, PATH_MAX, "%s.obj" as *byte, text_bin_path as *byte);
     if obj_len <= 0 || obj_len >= PATH_MAX {
         fprintf(libc.stderr, "错误: 无法生成 microapp 中间目标文件路径\n" as *byte);
         return 1;
     }
+    const exe_len: i32 = snprintf(&exe_path[0] as *byte, PATH_MAX, "%s.elf" as *byte, text_bin_path as *byte);
+    if exe_len <= 0 || exe_len >= PATH_MAX {
+        fprintf(libc.stderr, "错误: 无法生成 microapp 链接输出路径\n" as *byte);
+        return 1;
+    }
 
-    const compile_flags: &byte = get_env_or_default("MICROAPP_TARGET_CFLAGS" as *byte, "-std=c99 -O0 -g -fno-builtin -fno-stack-protector -fno-pie" as *byte);
+    const compile_flags: &byte = get_env_or_default("MICROAPP_TARGET_CFLAGS" as *byte, "-std=c99 -Os -fomit-frame-pointer -fno-builtin -fno-stack-protector -fno-pie -ffunction-sections -fdata-sections -flto" as *byte);
     const compile_len: i32 = snprintf(&cmd[0] as *byte, 8192, "%s %s -c %s -o %s" as *byte, gcc as *byte, compile_flags as *byte, c_file as *byte, &obj_path[0] as *byte);
     if compile_len <= 0 || compile_len >= 8192 {
         fprintf(libc.stderr, "错误: 无法生成 microapp 目标 gcc 编译命令\n" as *byte);
@@ -288,8 +294,21 @@ fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, target_arch_r
         return 1;
     }
 
+    const link_flags: &byte = get_env_or_default("MICROAPP_TARGET_LDFLAGS" as *byte, "-no-pie -Wl,--gc-sections -flto" as *byte);
+    const link_len: i32 = snprintf(&cmd[0] as *byte, 8192, "%s %s %s -o %s" as *byte, gcc as *byte, link_flags as *byte, &obj_path[0] as *byte, &exe_path[0] as *byte);
+    if link_len <= 0 || link_len >= 8192 {
+        fprintf(libc.stderr, "错误: 无法生成 microapp 目标 gcc 链接命令\n" as *byte);
+        return 1;
+    }
+    fprintf(libc.stderr, "信息：microapp 目标 gcc 链接：%s\n" as *byte, &cmd[0] as *byte);
+    result = system(&cmd[0] as *byte);
+    if result != 0 {
+        fprintf(libc.stderr, "错误: microapp 目标 gcc 链接失败，返回码：%d\n" as *byte, result);
+        return 1;
+    }
+
     const objcopy_env: &byte = get_env_or_default("OBJCOPY" as *byte, "objcopy" as *byte);
-    const dump_len: i32 = snprintf(&cmd[0] as *byte, 8192, "%s -O binary --only-section=.text %s %s" as *byte, objcopy_env as *byte, &obj_path[0] as *byte, text_bin_path as *byte);
+    const dump_len: i32 = snprintf(&cmd[0] as *byte, 8192, "%s -O binary --only-section=.text %s %s" as *byte, objcopy_env as *byte, &exe_path[0] as *byte, text_bin_path as *byte);
     if dump_len <= 0 || dump_len >= 8192 {
         fprintf(libc.stderr, "错误: 无法生成 microapp 代码段导出命令\n" as *byte);
         return 1;
@@ -781,6 +800,8 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  --safety-proof       启用内存安全证明（默认已启用；自举脚本对编译器源码会传 --no-safety-proof）\n" as *byte);
     fprintf(libc.stderr, "  --no-safety-proof    禁用内存安全证明\n" as *byte);
     fprintf(libc.stderr, "  --nostdlib           完全独立模式：无标准库依赖，使用 syscall\n" as *byte);
+    fprintf(libc.stderr, "  MICROAPP_TARGET_CFLAGS  microapp 目标 gcc 编译旗标；默认 -std=c99 -Os -fomit-frame-pointer -fno-builtin -fno-stack-protector -fno-pie -ffunction-sections -fdata-sections -flto（不含 -g）\n" as *byte);
+    fprintf(libc.stderr, "  MICROAPP_TARGET_LDFLAGS microapp 目标 gcc 链接旗标；默认 -no-pie -Wl,--gc-sections -flto\n" as *byte);
     fprintf(libc.stderr, "  -o <文件>            指定输出文件名\n" as *byte);
     fprintf(libc.stderr, "  --stack-size <KB>    设置堆栈大小（KB），默认 65536 (64MB)\n" as *byte);
     fprintf(libc.stderr, "  --split-c-dir [<dir>]  多文件 C 输出；省略或 --split-c-dir= 时目录默认为 .uyacache\n" as *byte);

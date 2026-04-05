@@ -1,4 +1,5 @@
 use std.runtime.entry;
+use std.runtime;
 use kernel.mem;
 use kernel.scheduler;
 use kernel.sim;
@@ -7,6 +8,19 @@ use libc.FILE;
 use libc.fopen;
 use libc.fread;
 use libc.fclose;
+
+const MAX_LOADER_IMAGE_SIZE: usize = 2097152;  // 2 MiB
+
+fn resolve_uapp_path() &byte {
+    const default_path: &byte = "examples/microapp/microcontainer_hello.uapp\0" as &byte;
+    if get_argc() > 1 {
+        const arg_path: *byte = get_argv(1);
+        if arg_path != null && arg_path[0] != 0 as byte {
+            return arg_path as &byte;
+        }
+    }
+    return default_path;
+}
 
 export fn main() i32 {
     var kernel: SimKernel = SimKernel{
@@ -26,12 +40,13 @@ export fn main() i32 {
     kernel.host_ctx.pm.base = &backing[0];
     kernel.host_ctx.pm.size = 65536;
 
-    var img: [byte: 128] = [];
-    const fp: &FILE = fopen("examples/microapp/microcontainer_hello.uapp\0" as &byte, "rb\0" as &byte);
+    const uapp_path: &byte = resolve_uapp_path();
+    var img: [byte: MAX_LOADER_IMAGE_SIZE] = [];
+    const fp: &FILE = fopen(uapp_path as *byte, "rb\0" as &byte);
     if fp == null {
         return 1;
     }
-    const n: usize = fread(&img[0], 1 as usize, 128 as usize, fp);
+    const n: usize = fread(&img[0], 1 as usize, MAX_LOADER_IMAGE_SIZE as usize, fp);
     _ = fclose(fp);
     if n < IMAGE_HEADER_SIZE as usize {
         return 2;

@@ -31,7 +31,7 @@
 - 已实现 `image_validate()` 对 `.uapp` 做完整性、结构、指令策略验证
 - 已具备模拟加载路径 `sim_load_image()`
 - 已有 `examples/microapp/microcontainer_hello.uapp` 可被加载执行
-- 现阶段 `microapp` 的 `code` 由目标 gcc 编译出的 `.text` 提供，目标架构由 `MICROAPP_TARGET_ARCH` 决定，默认是 `x86_64`，`MICROAPP_TARGET_GCC` 优先于 `TARGET_GCC`，可覆盖具体工具链
+- 现阶段 `microapp` 的 `code` 由目标 gcc 编译并链接后的 `.text` 提供，目标架构由 `MICROAPP_TARGET_ARCH` 决定，默认是 `x86_64`，`MICROAPP_TARGET_GCC` 优先于 `TARGET_GCC`，可覆盖具体工具链；默认 `MICROAPP_TARGET_CFLAGS` 使用 `-Os -fomit-frame-pointer -ffunction-sections -fdata-sections -flto` 且不含 `-g`，默认 `MICROAPP_TARGET_LDFLAGS` 使用 `-no-pie -Wl,--gc-sections -flto`，以优先控制镜像体积
 - 默认目标三元组映射当前覆盖 `rv32 / x86_64 / aarch64 / xtensa`，对应的默认 gcc 分别是：
   - `riscv32-unknown-elf-gcc`
   - `x86_64-linux-gnu-gcc`
@@ -60,7 +60,7 @@
 
 - `examples/microapp/microcontainer_hello_build.uya`
 
-示例 loader 也已经改为从 `.uapp` 读取并走加载验证链：
+示例 loader 也已经改为从命令行读取 `.uapp` 路径并走加载验证链，未传参时默认回退到示例镜像：
 
 - `examples/microapp/microcontainer_hello_load.uya`
 
@@ -161,8 +161,8 @@ app.uya / microapp.uya
 
 这部分应与：
 
-- [requirements_v1.3.md](/home/winger/uya-asm/docs/microcontainer/requirements_v1.3.md)
-- [syscall_abi.md](/home/winger/uya-asm/docs/microcontainer/syscall_abi.md)
+- [requirements_v1.3.md](../../docs/microcontainer/requirements_v1.3.md)
+- [syscall_abi.md](../../docs/microcontainer/syscall_abi.md)
 
 保持一致。
 
@@ -268,8 +268,8 @@ app.uya / microapp.uya
 
 这一行为必须与：
 
-- [image_validation.md](/home/winger/uya-asm/docs/microcontainer/image_validation.md)
-- [image.uya](/home/winger/uya-asm/lib/kernel/image.uya)
+- [image_validation.md](../../docs/microcontainer/image_validation.md)
+- [image.uya](../../lib/kernel/image.uya)
 
 中的校验语义严格一致。
 
@@ -337,6 +337,14 @@ uya verify-image examples/microapp/microcontainer_hello.uapp
 ```
 
 这样可以降低镜像格式开发期的排错成本。
+
+示例 loader 的运行方式现在也更通用了：
+
+```bash
+uya run examples/microapp/microcontainer_hello_load.uya -- path/to/your.uapp
+```
+
+如果不传路径，它会继续默认读取 `examples/microapp/microcontainer_hello.uapp`。
 
 ---
 

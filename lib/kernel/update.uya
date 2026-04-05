@@ -16,8 +16,9 @@ export const SLOT_ACTIVE: u32 = 2;
 export const SLOT_INVALID: u32 = 3;
 
 // ── Slot Metadata ──
-
-export const MAX_IMAGE_SIZE: usize = 45056;  // 44KB (code 24KB + data 20KB + header)
+// Keep the dual-slot image budget comfortably above current microapp images.
+// This only constrains hot-update slot storage.
+export const MAX_UPDATE_IMAGE_SIZE: usize = 1048576;  // 1 MiB
 
 export struct SlotMeta {
     generation: u32,       // monotonically increasing
@@ -28,7 +29,7 @@ export struct SlotMeta {
 
 export struct ImageSlot {
     meta: SlotMeta,
-    data: [byte: 45056],   // image bytes
+    data: [byte: MAX_UPDATE_IMAGE_SIZE],   // image bytes
 }
 
 export struct DualSlot {
@@ -106,7 +107,7 @@ export fn dualslot_init(ds: &DualSlot) void {
 // ── Stage: write new image to non-active slot ──
 
 export fn update_stage(ds: &DualSlot, new_image: &[byte]) !void {
-    if new_image.len > MAX_IMAGE_SIZE {
+    if new_image.len > MAX_UPDATE_IMAGE_SIZE {
         return error.TooLarge;
     }
 

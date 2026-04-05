@@ -10,7 +10,7 @@
 
 ### 实际项目结构
 ```
-/home/winger/uya-asm/
+../
 ├── src/                    # 编译器源代码（Uya 自举）
 │   ├── lexer.uya          # 词法分析器（43.38 KB）
 │   ├── ast.uya            # AST 节点定义（26.26 KB）

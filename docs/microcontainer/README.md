@@ -6,14 +6,14 @@
 
 ## 核心文档
 
-- [requirements_v1.3.md](/home/winger/uya-asm/docs/microcontainer/requirements_v1.3.md)
-- [image_validation.md](/home/winger/uya-asm/docs/microcontainer/image_validation.md)
-- [syscall_abi.md](/home/winger/uya-asm/docs/microcontainer/syscall_abi.md)
-- [update_recovery.md](/home/winger/uya-asm/docs/microcontainer/update_recovery.md)
-- [platform_impl.md](/home/winger/uya-asm/docs/microcontainer/platform_impl.md)
-- [benchmark_plan.md](/home/winger/uya-asm/docs/microcontainer/benchmark_plan.md)
-- [source_to_uapp_pipeline.md](/home/winger/uya-asm/docs/microcontainer/source_to_uapp_pipeline.md)
-- [microapp_source_template.md](/home/winger/uya-asm/docs/microcontainer/microapp_source_template.md)
+- [requirements_v1.3.md](../../docs/microcontainer/requirements_v1.3.md)
+- [image_validation.md](../../docs/microcontainer/image_validation.md)
+- [syscall_abi.md](../../docs/microcontainer/syscall_abi.md)
+- [update_recovery.md](../../docs/microcontainer/update_recovery.md)
+- [platform_impl.md](../../docs/microcontainer/platform_impl.md)
+- [benchmark_plan.md](../../docs/microcontainer/benchmark_plan.md)
+- [source_to_uapp_pipeline.md](../../docs/microcontainer/source_to_uapp_pipeline.md)
+- [microapp_source_template.md](../../docs/microcontainer/microapp_source_template.md)
 
 ---
 
@@ -24,7 +24,9 @@
 - `payload code`：`target_arch` 指定的目标架构载荷码
 - `.uapp`：最终加载器消费的镜像文件
 - 当前 `.uapp` 可以由 `build --app microapp ... -o xxx.uapp` 直接生成，也可以先产 `.pobj` 再用 `pack-image` 打包；宿主示例仍保留用于对照和调试
-- 当前 microapp 路径里，`payload code` 默认由 `MICROAPP_TARGET_ARCH` 决定目标架构；`MICROAPP_TARGET_GCC` 和 `TARGET_GCC` 都可以显式覆盖具体 gcc，前者优先级更高；默认是 `x86_64-linux-gnu-gcc`
+- 示例 loader 现在可通过命令行参数接收任意 `.uapp` 路径，默认仍回退到示例镜像
+- 热更新槽容量与示例 loader 读取缓冲已经拆成两个独立上限，便于后续分别调优
+- 当前 microapp 路径里，`payload code` 默认由 `MICROAPP_TARGET_ARCH` 决定目标架构；`MICROAPP_TARGET_GCC` 和 `TARGET_GCC` 都可以显式覆盖具体 gcc，前者优先级更高；`MICROAPP_TARGET_CFLAGS` 默认是 `-std=c99 -Os -fomit-frame-pointer -fno-builtin -fno-stack-protector -fno-pie -ffunction-sections -fdata-sections -flto`，不含 `-g`；`MICROAPP_TARGET_LDFLAGS` 默认是 `-no-pie -Wl,--gc-sections -flto`；默认 gcc 是 `x86_64-linux-gnu-gcc`
 
 默认目标三元组映射：
 
@@ -39,6 +41,6 @@
 
 建议先看：
 
-1. [requirements_v1.3.md](/home/winger/uya-asm/docs/microcontainer/requirements_v1.3.md)
-2. [image_validation.md](/home/winger/uya-asm/docs/microcontainer/image_validation.md)
-3. [source_to_uapp_pipeline.md](/home/winger/uya-asm/docs/microcontainer/source_to_uapp_pipeline.md)
+1. [requirements_v1.3.md](../../docs/microcontainer/requirements_v1.3.md)
+2. [image_validation.md](../../docs/microcontainer/image_validation.md)
+3. [source_to_uapp_pipeline.md](../../docs/microcontainer/source_to_uapp_pipeline.md)

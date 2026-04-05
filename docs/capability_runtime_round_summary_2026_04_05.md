@@ -60,29 +60,29 @@
 
 截至本轮结束，`lib/std/runtime/capability/` 已形成一条比较完整的最小骨架，目前目录下共有 **15** 个文件：
 
-- [capability.uya](/home/winger/uya-asm/lib/std/runtime/capability/capability.uya)
-- [types.uya](/home/winger/uya-asm/lib/std/runtime/capability/types.uya)
-- [manifest.uya](/home/winger/uya-asm/lib/std/runtime/capability/manifest.uya)
-- [policy.uya](/home/winger/uya-asm/lib/std/runtime/capability/policy.uya)
-- [abi.uya](/home/winger/uya-asm/lib/std/runtime/capability/abi.uya)
-- [registry.uya](/home/winger/uya-asm/lib/std/runtime/capability/registry.uya)
-- [loader.uya](/home/winger/uya-asm/lib/std/runtime/capability/loader.uya)
-- [hostapi.uya](/home/winger/uya-asm/lib/std/runtime/capability/hostapi.uya)
-- [backend.uya](/home/winger/uya-asm/lib/std/runtime/capability/backend.uya)
-- [fake_backend.uya](/home/winger/uya-asm/lib/std/runtime/capability/fake_backend.uya)
-- [native_backend.uya](/home/winger/uya-asm/lib/std/runtime/capability/native_backend.uya)
-- [wamr_backend.uya](/home/winger/uya-asm/lib/std/runtime/capability/wamr_backend.uya)
-- [adapter.uya](/home/winger/uya-asm/lib/std/runtime/capability/adapter.uya)
-- [manager.uya](/home/winger/uya-asm/lib/std/runtime/capability/manager.uya)
-- [benchmark.uya](/home/winger/uya-asm/lib/std/runtime/capability/benchmark.uya)
+- [capability.uya](../lib/std/runtime/capability/capability.uya)
+- [types.uya](../lib/std/runtime/capability/types.uya)
+- [manifest.uya](../lib/std/runtime/capability/manifest.uya)
+- [policy.uya](../lib/std/runtime/capability/policy.uya)
+- [abi.uya](../lib/std/runtime/capability/abi.uya)
+- [registry.uya](../lib/std/runtime/capability/registry.uya)
+- [loader.uya](../lib/std/runtime/capability/loader.uya)
+- [hostapi.uya](../lib/std/runtime/capability/hostapi.uya)
+- [backend.uya](../lib/std/runtime/capability/backend.uya)
+- [fake_backend.uya](../lib/std/runtime/capability/fake_backend.uya)
+- [native_backend.uya](../lib/std/runtime/capability/native_backend.uya)
+- [wamr_backend.uya](../lib/std/runtime/capability/wamr_backend.uya)
+- [adapter.uya](../lib/std/runtime/capability/adapter.uya)
+- [manager.uya](../lib/std/runtime/capability/manager.uya)
+- [benchmark.uya](../lib/std/runtime/capability/benchmark.uya)
 
 能力层相关测试与脚本也已经存在：
 
-- [test_capability_runtime_compat.uya](/home/winger/uya-asm/tests/test_capability_runtime_compat.uya)
-- [bench_capability_runtime.uya](/home/winger/uya-asm/tests/bench_capability_runtime.uya)
-- [run_capability_runtime_compat.sh](/home/winger/uya-asm/tests/run_capability_runtime_compat.sh)
-- [run_capability_runtime_benchmark.sh](/home/winger/uya-asm/tests/run_capability_runtime_benchmark.sh)
-- [compare_capability_runtime_benchmark.py](/home/winger/uya-asm/tests/compare_capability_runtime_benchmark.py)
+- [test_capability_runtime_compat.uya](../tests/test_capability_runtime_compat.uya)
+- [bench_capability_runtime.uya](../tests/bench_capability_runtime.uya)
+- [run_capability_runtime_compat.sh](../tests/run_capability_runtime_compat.sh)
+- [run_capability_runtime_benchmark.sh](../tests/run_capability_runtime_benchmark.sh)
+- [compare_capability_runtime_benchmark.py](../tests/compare_capability_runtime_benchmark.py)
 
 ---
 
@@ -90,10 +90,10 @@
 
 本轮围绕 capability runtime 补了几份关键设计文档：
 
-- [capability_manifest.md](/home/winger/uya-asm/docs/capability_manifest.md)
+- [capability_manifest.md](../docs/capability_manifest.md)
   - 定义能力包协议、资源限制、权限、签名、触发器
 
-- [capability_backend_compat.md](/home/winger/uya-asm/docs/capability_backend_compat.md)
+- [capability_backend_compat.md](../docs/capability_backend_compat.md)
   - 定义 `WAMR / Native Uya` 共存时的最大兼容层
   - 明确统一 backend interface、Host API、benchmark 口径
 
@@ -111,10 +111,10 @@
 
 这一层主要由以下文件承载：
 
-- [manifest.uya](/home/winger/uya-asm/lib/std/runtime/capability/manifest.uya)
-- [types.uya](/home/winger/uya-asm/lib/std/runtime/capability/types.uya)
-- [policy.uya](/home/winger/uya-asm/lib/std/runtime/capability/policy.uya)
-- [abi.uya](/home/winger/uya-asm/lib/std/runtime/capability/abi.uya)
+- [manifest.uya](../lib/std/runtime/capability/manifest.uya)
+- [types.uya](../lib/std/runtime/capability/types.uya)
+- [policy.uya](../lib/std/runtime/capability/policy.uya)
+- [abi.uya](../lib/std/runtime/capability/abi.uya)
 
 当前已固定的关键元素包括：
 
@@ -133,9 +133,9 @@
 
 这一层主要由以下文件承载：
 
-- [registry.uya](/home/winger/uya-asm/lib/std/runtime/capability/registry.uya)
-- [loader.uya](/home/winger/uya-asm/lib/std/runtime/capability/loader.uya)
-- [manager.uya](/home/winger/uya-asm/lib/std/runtime/capability/manager.uya)
+- [registry.uya](../lib/std/runtime/capability/registry.uya)
+- [loader.uya](../lib/std/runtime/capability/loader.uya)
+- [manager.uya](../lib/std/runtime/capability/manager.uya)
 
 当前已经具备最小闭环：
 
@@ -151,11 +151,11 @@
 
 这一层主要由以下文件承载：
 
-- [backend.uya](/home/winger/uya-asm/lib/std/runtime/capability/backend.uya)
-- [adapter.uya](/home/winger/uya-asm/lib/std/runtime/capability/adapter.uya)
-- [fake_backend.uya](/home/winger/uya-asm/lib/std/runtime/capability/fake_backend.uya)
-- [native_backend.uya](/home/winger/uya-asm/lib/std/runtime/capability/native_backend.uya)
-- [wamr_backend.uya](/home/winger/uya-asm/lib/std/runtime/capability/wamr_backend.uya)
+- [backend.uya](../lib/std/runtime/capability/backend.uya)
+- [adapter.uya](../lib/std/runtime/capability/adapter.uya)
+- [fake_backend.uya](../lib/std/runtime/capability/fake_backend.uya)
+- [native_backend.uya](../lib/std/runtime/capability/native_backend.uya)
+- [wamr_backend.uya](../lib/std/runtime/capability/wamr_backend.uya)
 
 当前状态是：
 
@@ -168,9 +168,9 @@
 
 这一层主要由以下文件承载：
 
-- [benchmark.uya](/home/winger/uya-asm/lib/std/runtime/capability/benchmark.uya)
-- [bench_capability_runtime.uya](/home/winger/uya-asm/tests/bench_capability_runtime.uya)
-- [compare_capability_runtime_benchmark.py](/home/winger/uya-asm/tests/compare_capability_runtime_benchmark.py)
+- [benchmark.uya](../lib/std/runtime/capability/benchmark.uya)
+- [bench_capability_runtime.uya](../tests/bench_capability_runtime.uya)
+- [compare_capability_runtime_benchmark.py](../tests/compare_capability_runtime_benchmark.py)
 
 这说明项目已经从“只讨论架构”进入了“准备对比两个后端”的阶段。
 
@@ -216,7 +216,7 @@
 
 通过脚本：
 
-- [run_capability_runtime_compat.sh](/home/winger/uya-asm/tests/run_capability_runtime_compat.sh)
+- [run_capability_runtime_compat.sh](../tests/run_capability_runtime_compat.sh)
 
 可以跑通：
 
