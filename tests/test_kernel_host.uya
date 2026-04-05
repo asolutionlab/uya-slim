@@ -23,6 +23,9 @@ test "host_print_mmu_mapped_returns_len" {
         pm: PhysMem{ base: &backing[0], size: 65536 },
         pool: PagePool{ used: [], count: 0, used_count: 0 },
         alloc_pages: [],
+        io_allowed_devices: [],
+        io_allowed_ops: [],
+        io_available_devices: 0,
     };
     kernel_host_ctx_init(&ctx);
 
@@ -43,6 +46,9 @@ test "host_print_unmapped_page_fault" {
         pm: PhysMem{ base: &backing[0], size: 65536 },
         pool: PagePool{ used: [], count: 0, used_count: 0 },
         alloc_pages: [],
+        io_allowed_devices: [],
+        io_allowed_ops: [],
+        io_available_devices: 0,
     };
     kernel_host_ctx_init(&ctx);
 
@@ -65,6 +71,9 @@ test "host_alloc_maps_first_page" {
         pm: PhysMem{ base: &backing[0], size: 524288 },
         pool: PagePool{ used: [], count: 0, used_count: 0 },
         alloc_pages: [],
+        io_allowed_devices: [],
+        io_allowed_ops: [],
+        io_available_devices: 0,
     };
     kernel_host_ctx_init(&ctx);
 
@@ -87,6 +96,9 @@ test "host_alloc_quota_third_fails" {
         pm: PhysMem{ base: &backing[0], size: 524288 },
         pool: PagePool{ used: [], count: 0, used_count: 0 },
         alloc_pages: [],
+        io_allowed_devices: [],
+        io_allowed_ops: [],
+        io_available_devices: 0,
     };
     kernel_host_ctx_init(&ctx);
 
@@ -112,6 +124,9 @@ test "host_alloc_size_over_one_page" {
         pm: PhysMem{ base: &backing[0], size: 524288 },
         pool: PagePool{ used: [], count: 0, used_count: 0 },
         alloc_pages: [],
+        io_allowed_devices: [],
+        io_allowed_ops: [],
+        io_available_devices: 0,
     };
     kernel_host_ctx_init(&ctx);
 

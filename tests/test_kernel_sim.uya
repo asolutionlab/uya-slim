@@ -14,7 +14,7 @@ use std.testing.assert_eq_i32;
 test "sim_single_container_yields" {
     var k: SimKernel = SimKernel{
         sched: Scheduler{ slots: [], rr_cursor: 0 },
-        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
         recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
         entry_fns: [],
         container_ctxs: [],
@@ -44,7 +44,7 @@ test "sim_single_container_yields" {
 test "sim_two_containers_round_robin" {
     var k: SimKernel = SimKernel{
         sched: Scheduler{ slots: [], rr_cursor: 0 },
-        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
         recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
         entry_fns: [],
         container_ctxs: [],
@@ -74,12 +74,31 @@ test "sim_two_containers_round_robin" {
     try assert_eq_i32(t4 as i32, 1);
 }
 
+test "sim_higher_priority_container_runs_first" {
+    var k: SimKernel = SimKernel{
+        sched: Scheduler{ slots: [], rr_cursor: 0 },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
+        recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
+        entry_fns: [],
+        container_ctxs: [],
+        total_ticks: 0,
+    };
+    sim_kernel_init(&k);
+
+    try sim_register(&k, 0, 160, 1);
+    try sim_register(&k, 1, 12, 2);
+
+    var result: i32 = 0;
+    const first: u32 = try sim_tick(&k, &result);
+    try assert_eq_i32(first as i32, 1);
+}
+
 // ── Test: container normal exit removes from schedule ──
 
 test "sim_container_exit" {
     var k: SimKernel = SimKernel{
         sched: Scheduler{ slots: [], rr_cursor: 0 },
-        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
         recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
         entry_fns: [],
         container_ctxs: [],
@@ -110,7 +129,7 @@ test "sim_container_exit" {
 test "sim_container_crash_restart" {
     var k: SimKernel = SimKernel{
         sched: Scheduler{ slots: [], rr_cursor: 0 },
-        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
         recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
         entry_fns: [],
         container_ctxs: [],
@@ -139,7 +158,7 @@ test "sim_container_crash_restart" {
 test "sim_container_fuse_zombie" {
     var k: SimKernel = SimKernel{
         sched: Scheduler{ slots: [], rr_cursor: 0 },
-        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
         recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
         entry_fns: [],
         container_ctxs: [],
@@ -173,7 +192,7 @@ test "sim_container_fuse_zombie" {
 test "sim_syscall_yield" {
     var k: SimKernel = SimKernel{
         sched: Scheduler{ slots: [], rr_cursor: 0 },
-        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [] },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
         recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
         entry_fns: [],
         container_ctxs: [],

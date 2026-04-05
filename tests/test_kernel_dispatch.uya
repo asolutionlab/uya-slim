@@ -14,6 +14,9 @@ fn setup_null_mm_ctx(sch: &Scheduler) KernelHostCtx {
         pm: PhysMem{ base: null, size: 0 },
         pool: PagePool{ used: [], count: 0, used_count: 0 },
         alloc_pages: [],
+        io_allowed_devices: [],
+        io_allowed_ops: [],
+        io_available_devices: 0,
     };
 }
 
@@ -125,6 +128,37 @@ test "dispatch_io_denied_unknown_op" {
         0u32;
     };
     try assert_eq_i32(unk, 1);
+}
+
+test "dispatch_io_allowed_device_and_op_succeeds" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var ctx: KernelHostCtx = setup_null_mm_ctx(&sch);
+    kernel_host_ctx_init(&ctx);
+    try kernel_host_allow_io_device(&ctx, 0, 2);
+    try kernel_host_allow_io_op(&ctx, 0, 1);
+    try kernel_host_set_io_device_available(&ctx, 2, 1);
+
+    const ret: u32 = try syscall_dispatch(&ctx, 0, SYS_IO, 2, 1);
+    try assert_eq_i32(ret as i32, 0);
+}
+
+test "dispatch_io_unavailable_device_fails" {
+    var sch: Scheduler = Scheduler{ slots: [], rr_cursor: 0 };
+    scheduler_init(&sch);
+
+    var ctx: KernelHostCtx = setup_null_mm_ctx(&sch);
+    kernel_host_ctx_init(&ctx);
+    try kernel_host_allow_io_device(&ctx, 0, 3);
+    try kernel_host_allow_io_op(&ctx, 0, 0);
+
+    var unavailable: i32 = 0;
+    _ = syscall_dispatch(&ctx, 0, SYS_IO, 3, 0) catch |err| {
+        unavailable = 1;
+        0u32;
+    };
+    try assert_eq_i32(unavailable, 1);
 }
 
 test "dispatch_yield_then_scheduler_can_pick_peer" {

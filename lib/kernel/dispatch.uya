@@ -24,6 +24,9 @@ export struct KernelHostCtx {
     pm: PhysMem,
     pool: PagePool,
     alloc_pages: [u32: 8],
+    io_allowed_devices: [u32: 8],
+    io_allowed_ops: [u32: 8],
+    io_available_devices: u32,
 }
 
 /// 功能说明：初始化 8 张页表、页池与每槽已分配页计数；不修改 `sch`/`pm`（由调用方先填）。
@@ -34,9 +37,46 @@ export fn kernel_host_ctx_init(ctx: &KernelHostCtx) void {
     while j < 8u32 {
         pt_init(&ctx.pts[j]);
         ctx.alloc_pages[j] = 0;
+        ctx.io_allowed_devices[j] = 0u32;
+        ctx.io_allowed_ops[j] = 0u32;
         j = j + 1;
     }
+    ctx.io_available_devices = 0u32;
     page_pool_init(&ctx.pool, 8u32);
+}
+
+export fn kernel_host_allow_io_device(ctx: &KernelHostCtx, slot: u32, device_id: u32) !void {
+    if slot >= 8u32 {
+        return error.InvalidState;
+    }
+    if device_id >= 32u32 {
+        return error.DevDenied;
+    }
+    const allowed: &u32 = kernel_host_io_devices_ref(ctx, slot);
+    allowed[0] = allowed[0] | (1u32 << (device_id as i32));
+}
+
+export fn kernel_host_allow_io_op(ctx: &KernelHostCtx, slot: u32, operation: u32) !void {
+    if slot >= 8u32 {
+        return error.InvalidState;
+    }
+    if operation >= 32u32 {
+        return error.OpDenied;
+    }
+    const allowed: &u32 = kernel_host_io_ops_ref(ctx, slot);
+    allowed[0] = allowed[0] | (1u32 << (operation as i32));
+}
+
+export fn kernel_host_set_io_device_available(ctx: &KernelHostCtx, device_id: u32, available: u32) !void {
+    if device_id >= 32u32 {
+        return error.DevDenied;
+    }
+    const bit: u32 = 1u32 << (device_id as i32);
+    if available != 0u32 {
+        ctx.io_available_devices = ctx.io_available_devices | bit;
+    } else {
+        ctx.io_available_devices = ctx.io_available_devices & ~bit;
+    }
 }
 
 fn kernel_host_mm_enabled(ctx: &KernelHostCtx) i32 {
@@ -71,6 +111,56 @@ fn kernel_host_pt_ref(ctx: &KernelHostCtx, slot: u32) &PageTable {
     return &ctx.pts[7];
 }
 
+fn kernel_host_io_devices_ref(ctx: &KernelHostCtx, slot: u32) &u32 {
+    if slot == 0u32 {
+        return &ctx.io_allowed_devices[0];
+    }
+    if slot == 1u32 {
+        return &ctx.io_allowed_devices[1];
+    }
+    if slot == 2u32 {
+        return &ctx.io_allowed_devices[2];
+    }
+    if slot == 3u32 {
+        return &ctx.io_allowed_devices[3];
+    }
+    if slot == 4u32 {
+        return &ctx.io_allowed_devices[4];
+    }
+    if slot == 5u32 {
+        return &ctx.io_allowed_devices[5];
+    }
+    if slot == 6u32 {
+        return &ctx.io_allowed_devices[6];
+    }
+    return &ctx.io_allowed_devices[7];
+}
+
+fn kernel_host_io_ops_ref(ctx: &KernelHostCtx, slot: u32) &u32 {
+    if slot == 0u32 {
+        return &ctx.io_allowed_ops[0];
+    }
+    if slot == 1u32 {
+        return &ctx.io_allowed_ops[1];
+    }
+    if slot == 2u32 {
+        return &ctx.io_allowed_ops[2];
+    }
+    if slot == 3u32 {
+        return &ctx.io_allowed_ops[3];
+    }
+    if slot == 4u32 {
+        return &ctx.io_allowed_ops[4];
+    }
+    if slot == 5u32 {
+        return &ctx.io_allowed_ops[5];
+    }
+    if slot == 6u32 {
+        return &ctx.io_allowed_ops[6];
+    }
+    return &ctx.io_allowed_ops[7];
+}
+
 /// 功能说明：按调用号分发；`SYS_YIELD` 更新调度状态；`PRINT`/`ALLOC` 在启用 MMU 时做翻译与页池映射。
 /// 参数：`ctx` — 宿主机上下文；`caller_slot` — 0..7；`num` / `arg1` / `arg2` — ABI 参数。
 /// 返回：成功时的返回值；失败为 `!` 各错误联合成员（含 `PageFault`/`PagePermission` 等）。
@@ -89,7 +179,7 @@ export fn syscall_dispatch(ctx: &KernelHostCtx, caller_slot: u32, num: u32, arg1
         return try syscall_handle_alloc(ctx, c, arg1, arg2);
     }
     if num == SYS_IO {
-        return try syscall_handle_io_stub();
+        return try syscall_handle_io(ctx, c, arg1, arg2);
     }
     return error.OpDenied;
 }
@@ -151,6 +241,28 @@ fn syscall_handle_alloc(ctx: &KernelHostCtx, caller_slot: u32, size: u32, flags:
     return error.InvalidState;
 }
 
-fn syscall_handle_io_stub() !u32 {
-    return error.DevDenied;
+fn syscall_handle_io(ctx: &KernelHostCtx, caller_slot: u32, device_id: u32, operation: u32) !u32 {
+    if caller_slot >= 8u32 {
+        return error.InvalidState;
+    }
+    if device_id >= 32u32 {
+        return error.DevDenied;
+    }
+    if operation >= 32u32 {
+        return error.OpDenied;
+    }
+    const device_bit: u32 = 1u32 << (device_id as i32);
+    const op_bit: u32 = 1u32 << (operation as i32);
+    const allowed_devices: u32 = kernel_host_io_devices_ref(ctx, caller_slot)[0];
+    const allowed_ops: u32 = kernel_host_io_ops_ref(ctx, caller_slot)[0];
+    if (allowed_devices & device_bit) == 0u32 {
+        return error.DevDenied;
+    }
+    if (allowed_ops & op_bit) == 0u32 {
+        return error.OpDenied;
+    }
+    if (ctx.io_available_devices & device_bit) == 0u32 {
+        return error.DevUnavailable;
+    }
+    return 0u32;
 }
