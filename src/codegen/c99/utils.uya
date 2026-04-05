@@ -305,6 +305,7 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &CompilerArena, output: &v
         codegen.type_alias_cache[ii] = null;
         codegen.union_decl_cache[ii] = null;
         codegen.macro_decl_cache[ii] = null;
+        codegen.interface_decl_cache[ii] = null;
         ii = ii + 1;
     }
 

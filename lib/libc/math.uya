@@ -1011,7 +1011,7 @@ export extern "libc" fn ipow(base: i64, exp: i32) i64 {
 // ============================================================
 
 // gcd - 最大公约数
-export extern "libc" fn gcd(a: i64, b: i64) i64 {
+export extern "libc" fn math_gcd(a: i64, b: i64) i64 {
     var x: i64 = a;
     var y: i64 = b;
     
@@ -1028,13 +1028,13 @@ export extern "libc" fn gcd(a: i64, b: i64) i64 {
 }
 
 // lcm - 最小公倍数
-export extern "libc" fn lcm(a: i64, b: i64) i64 {
+export extern "libc" fn math_lcm(a: i64, b: i64) i64 {
     if a == 0 || b == 0 { return 0; }
-    return (a / gcd(a, b)) * b;
+    return (a / math_gcd(a, b)) * b;
 }
 
 // factorial - 阶乘
-export extern "libc" fn factorial(n: u64) u64 {
+export extern "libc" fn math_factorial(n: u64) u64 {
     if n > 20 { return 0; }  // 溢出
     
     var result: u64 = 1;
