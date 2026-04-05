@@ -1,0 +1,10 @@
+// std.runtime.capability - 穿戴设备能力运行时模块入口
+// 模块路径：lib/std/runtime/capability/ → use std.runtime.capability;
+//
+// 子模块：
+//   use std.runtime.capability.types;
+//   use std.runtime.capability.manifest;
+//   use std.runtime.capability.policy;
+//   use std.runtime.capability.abi;
+//   use std.runtime.capability.registry;
+
