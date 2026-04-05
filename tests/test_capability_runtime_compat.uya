@@ -9,6 +9,11 @@ use std.testing.test_suite_end;
 use std.runtime.capability.abi.CapabilityStatusCode;
 use std.runtime.capability.abi.CapabilityExecutionContext;
 use std.runtime.capability.abi.capability_execution_context_init;
+use std.runtime.capability.adapter.CapabilityBackendAdapter;
+use std.runtime.capability.adapter.capability_backend_adapter_default;
+use std.runtime.capability.adapter.capability_backend_adapter_init;
+use std.runtime.capability.adapter.capability_backend_adapter_invoke;
+use std.runtime.capability.adapter.capability_backend_adapter_load_module;
 use std.runtime.capability.backend.CapabilityBackendMetrics;
 use std.runtime.capability.backend.CapabilityBackendConfig;
 use std.runtime.capability.backend.CapabilityBackendSession;
@@ -188,6 +193,81 @@ fn test_capability_wamr_backend_negative_trigger_maps_invalid_argument() !void {
     const status: CapabilityStatusCode = try capability_wamr_backend_invoke(&backend, &session, -1);
 
     try assert_true(status == CapabilityStatusCode.InvalidArgument);
+}
+
+fn test_capability_backend_adapter_dispatches_fake_backend() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var adapter: CapabilityBackendAdapter = capability_backend_adapter_default();
+    try capability_backend_adapter_init(&adapter, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.Fake,
+        host_api: &host,
+    });
+
+    var manifest: CapabilityManifest = make_valid_manifest('g' as byte, CapabilityBackendKind.Fake);
+    var payload: [byte: 1] = [];
+    payload[0] = 'x' as byte;
+
+    var session: CapabilityBackendSession = try capability_backend_adapter_load_module(&adapter, &payload[0] as &const byte, 1 as usize, manifest);
+    const status: CapabilityStatusCode = try capability_backend_adapter_invoke(&adapter, &session, 0);
+
+    try assert_true(session.kind == CapabilityBackendKind.Fake);
+    try assert_true(status == CapabilityStatusCode.Ok);
+}
+
+fn test_capability_backend_adapter_dispatches_wamr_backend() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var adapter: CapabilityBackendAdapter = capability_backend_adapter_default();
+    try capability_backend_adapter_init(&adapter, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.Wamr,
+        host_api: &host,
+    });
+
+    var manifest: CapabilityManifest = make_valid_manifest('h' as byte, CapabilityBackendKind.Wamr);
+    var payload: [byte: 4] = [];
+    payload[0] = 0 as byte;
+    payload[1] = 'a' as byte;
+    payload[2] = 's' as byte;
+    payload[3] = 'm' as byte;
+
+    var session: CapabilityBackendSession = try capability_backend_adapter_load_module(&adapter, &payload[0] as &const byte, 4 as usize, manifest);
+    const status: CapabilityStatusCode = try capability_backend_adapter_invoke(&adapter, &session, 0);
+
+    try assert_true(session.kind == CapabilityBackendKind.Wamr);
+    try assert_true(status == CapabilityStatusCode.Ok);
+}
+
+fn test_capability_backend_adapter_rejects_kind_mismatch() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var adapter: CapabilityBackendAdapter = capability_backend_adapter_default();
+    try capability_backend_adapter_init(&adapter, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.Fake,
+        host_api: &host,
+    });
+
+    var manifest: CapabilityManifest = make_valid_manifest('j' as byte, CapabilityBackendKind.Wamr);
+    var payload: [byte: 1] = [];
+    payload[0] = 'x' as byte;
+
+    var saw: bool = false;
+    _ = capability_backend_adapter_load_module(&adapter, &payload[0] as &const byte, 1 as usize, manifest) catch {
+        saw = true;
+        return;
+    };
+    try assert_true(saw);
+}
+
+fn test_capability_backend_adapter_rejects_unsupported_backend() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var adapter: CapabilityBackendAdapter = capability_backend_adapter_default();
+
+    var saw: bool = false;
+    _ = capability_backend_adapter_init(&adapter, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.NativeUya,
+        host_api: &host,
+    }) catch {
+        saw = true;
+    };
+    try assert_true(saw);
 }
 
 fn test_capability_loader_install_records_installed_entry() !void {
@@ -467,6 +547,10 @@ export fn main() i32 {
     run_test("wamr backend load and invoke", test_capability_wamr_backend_load_and_invoke);
     run_test("wamr backend invalid payload rejected", test_capability_wamr_backend_invalid_payload_rejected);
     run_test("wamr backend negative trigger invalid argument", test_capability_wamr_backend_negative_trigger_maps_invalid_argument);
+    run_test("backend adapter dispatches fake backend", test_capability_backend_adapter_dispatches_fake_backend);
+    run_test("backend adapter dispatches wamr backend", test_capability_backend_adapter_dispatches_wamr_backend);
+    run_test("backend adapter rejects kind mismatch", test_capability_backend_adapter_rejects_kind_mismatch);
+    run_test("backend adapter rejects unsupported backend", test_capability_backend_adapter_rejects_unsupported_backend);
     run_test("loader install records installed entry", test_capability_loader_install_records_installed_entry);
     run_test("loader install rejects invalid manifest", test_capability_loader_install_rejects_invalid_manifest);
     run_test("loader activate transitions to active", test_capability_loader_activate_transitions_to_active);
