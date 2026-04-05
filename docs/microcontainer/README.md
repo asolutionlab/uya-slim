@@ -13,6 +13,7 @@
 - [platform_impl.md](/home/winger/uya-asm/docs/microcontainer/platform_impl.md)
 - [benchmark_plan.md](/home/winger/uya-asm/docs/microcontainer/benchmark_plan.md)
 - [source_to_uimg_pipeline.md](/home/winger/uya-asm/docs/microcontainer/source_to_uimg_pipeline.md)
+- [microapp_source_template.md](/home/winger/uya-asm/docs/microcontainer/microapp_source_template.md)
 
 ---
 

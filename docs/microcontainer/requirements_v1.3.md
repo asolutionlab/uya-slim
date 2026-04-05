@@ -101,7 +101,7 @@
 编译时必须显式指定：
 
 - `--mode kernel`
-- `--mode container`
+- `--app microapp`
 
 同一源码可在两种模式下生成不同安全级别产物。
 
@@ -248,7 +248,7 @@
 ### 9.2 模式化生成策略
 
 - `kernel` 模式生成直接访存
-- `container` 模式生成翻译包装与权限检查
+- `microapp` 模式生成翻译包装与权限检查；对外可理解为在 normal app 基础上启用更严格约束
 
 ### 9.3 编译选项约束
 
@@ -300,7 +300,7 @@
 
 ### 12.1 编译器侧
 
-- `--mode kernel/container`
+- `--mode kernel` / `--app microapp`
 - `E4001/E4002/E4003`
 - 容器态自动插桩（翻译、边界检查）
 
@@ -393,7 +393,7 @@
 | errors | errors.uya | 15 个 export error（通用/内存/设备/调度/镜像/页表） |
 | mem | mem.uya | 页池管理（alloc/free）+ 物理内存模拟 |
 | paging | paging.uya | 128 项单级页表、PTE 构造、mmu_translate 翻译+权限+A/D 位 |
-| container | container.uya | 容器控制块 CCB + 7 状态生命周期 |
+| microapp | microapp.uya | 微应用控制块 + 运行时生命周期 |
 | scheduler | scheduler.uya | 轮转调度器（后续可升级为 256 级位图优先级） |
 | syscall | syscall.uya | 4 个系统调用号常量 |
 | dispatch | dispatch.uya | Syscall 分发 + PRINT/ALLOC/IO/YIELD 实现 |
@@ -408,7 +408,7 @@
 
 | 改动 | 说明 |
 |------|------|
-| `--mode container/kernel` | CLI 参数，控制容器模式静态检查 |
+| `--app microapp` / `--mode kernel` | CLI 参数，控制微应用/内核模式静态检查 |
 | E4001 | 容器模式禁止 `@asm`（用户代码） |
 | E4002 | 容器模式禁止 `extern fn/var`（用户代码） |
 | E4003 | 容器模式禁止整数字面量→指针转换 |

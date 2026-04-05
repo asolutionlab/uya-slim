@@ -61,7 +61,7 @@
 本文档中的“真正编译链”指的是：
 
 1. 开发者编写微应用源码
-2. 编译器以 `container` / `microapp` 受限模式分析源码
+2. 编译器以 `normal app` / `microapp` 语义分析源码
 3. 编译器直接生成 `target_arch` 指定架构的载荷码与元数据
 4. 打包器把代码段、只读数据段、重定位信息、权限位图等封装为 `.uimg`
 5. 生成的 `.uimg` 可直接通过 `image_validate()` 验证，并进入加载执行链
@@ -90,8 +90,8 @@
 ```text
 app.uya
   -> parse / typecheck
-  -> container-mode semantic check
-  -> container-safe lowering
+  -> normal-app / microapp semantic check
+  -> microapp-safe lowering
   -> codegen(target_arch)
   -> payload code + rodata + reloc + caps
   -> payload_obj
@@ -137,7 +137,7 @@ app.uya
 
 建议由编译器在显式模式下启用：
 
-- `--mode container`
+- `--app microapp`
 
 或未来更面向产品的别名：
 
@@ -294,13 +294,13 @@ app.uya
 ### 6.1 最小目标命令
 
 ```bash
-uya build --mode container examples/microcontainer_hello.uya -o examples/microcontainer_hello.uimg
+uya build --app microapp examples/microcontainer_hello.uya -o examples/microcontainer_hello.uimg
 ```
 
 这条命令背后可以拆成两步：
 
 ```bash
-uya compile --mode container examples/microcontainer_hello.uya -o build/hello.pobj
+uya compile --app microapp examples/microcontainer_hello.uya -o build/hello.pobj
 uya pack-image build/hello.pobj -o examples/microcontainer_hello.uimg
 ```
 
@@ -516,7 +516,7 @@ uya verify-image examples/microcontainer_hello.uimg
 当满足下面条件时，可以认为“源码 -> `.uimg` 编译链”已经初步成立：
 
 1. 开发者只需编写 `.uya` 源码，不需要手工拼镜像头
-2. 编译器能在 `--mode container` 下产出 `payload_obj`
+2. 编译器能在 `--app microapp` 下产出 `payload_obj`
 3. packer 能把 `payload_obj` 打包为 `.uimg`
 4. 生成的 `.uimg` 默认通过 `image_validate()`
 5. 示例镜像能通过 `sim_load_image()` 正常运行
@@ -535,7 +535,7 @@ uya verify-image examples/microcontainer_hello.uimg
 
 当前还缺：
 
-- 源码级 `container` 编译产物定义
+- 源码级 `microapp` 编译产物定义
 - `payload_obj` 中间层
 - 通用 `.uimg` packer
 - 从源码直接产出 `.uimg` 的正式命令入口

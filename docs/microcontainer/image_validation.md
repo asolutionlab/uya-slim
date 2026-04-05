@@ -31,7 +31,7 @@
 - `reloc_count`
 - `sha256`
 - `required_caps_bitmap`
-- `build_mode`（必须为 `container`）
+- `build_mode`（当前内部仍使用容器镜像位；对外可理解为 normal app 的镜像模式）
 - `target_arch`（如 `rv32` / `x86_64` / `aarch64` / `xtensa`）
 
 ---
@@ -151,7 +151,7 @@
 - 非法符号引用拒绝加载
 - 热更新中断注入后自动回滚
 
-所有测试均需在 `--mode container` 产物上执行。
+所有测试均需在 `--app microapp` 产物上执行。
 
 ---
 
