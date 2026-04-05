@@ -11,4 +11,5 @@
 //   use std.runtime.capability.hostapi;
 //   use std.runtime.capability.backend;
 //   use std.runtime.capability.fake_backend;
+//   use std.runtime.capability.wamr_backend;
 //   use std.runtime.capability.benchmark;

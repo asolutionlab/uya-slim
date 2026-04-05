@@ -41,6 +41,10 @@ use std.runtime.capability.types.CapabilityBackendKind;
 use std.runtime.capability.types.CapabilityPermissionId;
 use std.runtime.capability.types.CapabilityState;
 use std.runtime.capability.types.CAPABILITY_MAX_REGISTRY_ENTRIES;
+use std.runtime.capability.wamr_backend.CapabilityWamrBackend;
+use std.runtime.capability.wamr_backend.capability_wamr_backend_init;
+use std.runtime.capability.wamr_backend.capability_wamr_backend_invoke;
+use std.runtime.capability.wamr_backend.capability_wamr_backend_load_module;
 
 fn make_valid_manifest(id0: byte, backend_kind: CapabilityBackendKind) CapabilityManifest {
     var manifest: CapabilityManifest = capability_manifest_init();
@@ -116,6 +120,74 @@ fn test_capability_fake_backend_load_and_invoke() !void {
 
     try assert_true(session.kind == CapabilityBackendKind.Fake);
     try assert_true(status == CapabilityStatusCode.Ok);
+}
+
+fn test_capability_wamr_backend_load_and_invoke() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var backend: CapabilityWamrBackend = CapabilityWamrBackend{};
+
+    try capability_wamr_backend_init(&backend, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.Wamr,
+        host_api: &host,
+    });
+
+    var manifest: CapabilityManifest = make_valid_manifest('w' as byte, CapabilityBackendKind.Wamr);
+    var payload: [byte: 4] = [];
+    payload[0] = 0 as byte;
+    payload[1] = 'a' as byte;
+    payload[2] = 's' as byte;
+    payload[3] = 'm' as byte;
+
+    var session: CapabilityBackendSession = try capability_wamr_backend_load_module(&backend, &payload[0] as &const byte, 4 as usize, manifest);
+    const status: CapabilityStatusCode = try capability_wamr_backend_invoke(&backend, &session, 0);
+
+    try assert_true(session.kind == CapabilityBackendKind.Wamr);
+    try assert_true(status == CapabilityStatusCode.Ok);
+}
+
+fn test_capability_wamr_backend_invalid_payload_rejected() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var backend: CapabilityWamrBackend = CapabilityWamrBackend{};
+
+    try capability_wamr_backend_init(&backend, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.Wamr,
+        host_api: &host,
+    });
+
+    const manifest: CapabilityManifest = make_valid_manifest('m' as byte, CapabilityBackendKind.Wamr);
+    var payload: [byte: 3] = [];
+    payload[0] = 'b' as byte;
+    payload[1] = 'a' as byte;
+    payload[2] = 'd' as byte;
+
+    var saw: bool = false;
+    _ = capability_wamr_backend_load_module(&backend, &payload[0] as &const byte, 3 as usize, manifest) catch {
+        saw = true;
+        return;
+    };
+    try assert_true(saw);
+}
+
+fn test_capability_wamr_backend_negative_trigger_maps_invalid_argument() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var backend: CapabilityWamrBackend = CapabilityWamrBackend{};
+
+    try capability_wamr_backend_init(&backend, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.Wamr,
+        host_api: &host,
+    });
+
+    var manifest: CapabilityManifest = make_valid_manifest('t' as byte, CapabilityBackendKind.Wamr);
+    var payload: [byte: 4] = [];
+    payload[0] = 0 as byte;
+    payload[1] = 'a' as byte;
+    payload[2] = 's' as byte;
+    payload[3] = 'm' as byte;
+
+    var session: CapabilityBackendSession = try capability_wamr_backend_load_module(&backend, &payload[0] as &const byte, 4 as usize, manifest);
+    const status: CapabilityStatusCode = try capability_wamr_backend_invoke(&backend, &session, -1);
+
+    try assert_true(status == CapabilityStatusCode.InvalidArgument);
 }
 
 fn test_capability_loader_install_records_installed_entry() !void {
@@ -392,6 +464,9 @@ export fn main() i32 {
     run_test("permission declare grant require", test_capability_permission_declare_grant_require);
     run_test("permission undeclared grant error", test_capability_permission_grant_undeclared_is_error);
     run_test("fake backend load and invoke", test_capability_fake_backend_load_and_invoke);
+    run_test("wamr backend load and invoke", test_capability_wamr_backend_load_and_invoke);
+    run_test("wamr backend invalid payload rejected", test_capability_wamr_backend_invalid_payload_rejected);
+    run_test("wamr backend negative trigger invalid argument", test_capability_wamr_backend_negative_trigger_maps_invalid_argument);
     run_test("loader install records installed entry", test_capability_loader_install_records_installed_entry);
     run_test("loader install rejects invalid manifest", test_capability_loader_install_rejects_invalid_manifest);
     run_test("loader activate transitions to active", test_capability_loader_activate_transitions_to_active);
