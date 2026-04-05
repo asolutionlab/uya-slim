@@ -30,11 +30,11 @@
 - 已定义微容器镜像格式与加载期三重验证规范
 - 已实现 `image_validate()` 对 `.uapp` 做完整性、结构、指令策略验证
 - 已具备模拟加载路径 `sim_load_image()`
-- 已有 `examples/microcontainer_hello.uapp` 可被加载执行
+- 已有 `examples/microapp/microcontainer_hello.uapp` 可被加载执行
 
 但当前还**没有**打通真正的“微应用源码直接编译为 `.uapp`”链路。
 
-当前示例镜像 `examples/microcontainer_hello.uapp` 的真实来源是手工构造逻辑，而不是正式的源码级打包链。
+当前示例镜像 `examples/microapp/microcontainer_hello.uapp` 的真实来源是手工构造逻辑，而不是正式的源码级打包链。
 
 ### 2.1 当前实现进度
 
@@ -46,11 +46,11 @@
 
 同时，示例 builder 已经从手工拼镜像改成调用 `payload_pack_to_uapp()`：
 
-- `examples/microcontainer_hello_build.uya`
+- `examples/microapp/microcontainer_hello_build.uya`
 
 示例 loader 也已经改为从 `.uapp` 读取并走加载验证链：
 
-- `examples/microcontainer_hello_load.uya`
+- `examples/microapp/microcontainer_hello_load.uya`
 
 这意味着本文档中的“pack”阶段已经有了可运行的第一版实现，而不只是目标规划。
 
@@ -190,7 +190,7 @@ app.uya / microapp.uya
 
 例如：
 
-- `microcontainer_hello_build.uya` 编译出来的是宿主工具 native 码
+- `examples/microapp/microcontainer_hello_build.uya` 编译出来的是宿主工具 native 码
   - 而 `.uapp` 内部的 `code` 段，才是面向 `target_arch` 的载荷码
 
 当前仓库的加载与验证主要围绕 `rv32`，但长期设计不应把 `.uapp` 限死为 `rv32`；`target_arch` 应该决定载荷 ISA。
@@ -290,14 +290,14 @@ app.uya / microapp.uya
 ### 6.1 最小目标命令
 
 ```bash
-uya build --app microapp examples/microcontainer_hello.uya -o examples/microcontainer_hello.uapp
+uya build --app microapp examples/microapp/microcontainer_hello.uya -o examples/microapp/microcontainer_hello.uapp
 ```
 
 这条命令背后可以拆成两步：
 
 ```bash
-uya compile --app microapp examples/microcontainer_hello.uya -o build/hello.pobj
-uya pack-image build/hello.pobj -o examples/microcontainer_hello.uapp
+uya compile --app microapp examples/microapp/microcontainer_hello.uya -o build/hello.pobj
+uya pack-image build/hello.pobj -o examples/microapp/microcontainer_hello.uapp
 ```
 
 其中：
@@ -310,8 +310,8 @@ uya pack-image build/hello.pobj -o examples/microcontainer_hello.uapp
 建议额外支持：
 
 ```bash
-uya inspect-image examples/microcontainer_hello.uapp
-uya verify-image examples/microcontainer_hello.uapp
+uya inspect-image examples/microapp/microcontainer_hello.uapp
+uya verify-image examples/microapp/microcontainer_hello.uapp
 ```
 
 这样可以降低镜像格式开发期的排错成本。
@@ -369,8 +369,8 @@ uya verify-image examples/microcontainer_hello.uapp
 
 例如：
 
-- `microcontainer_hello_build.uya`
-- `microcontainer_hello_load.uya`
+- `examples/microapp/microcontainer_hello_build.uya`
+- `examples/microapp/microcontainer_hello_load.uya`
 
 这类源码编译出来的是宿主环境 native 程序。
 

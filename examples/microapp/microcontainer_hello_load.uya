@@ -1,0 +1,50 @@
+use std.runtime.entry;
+use kernel.mem;
+use kernel.scheduler;
+use kernel.sim;
+use kernel.image;
+use libc.FILE;
+use libc.fopen;
+use libc.fread;
+use libc.fclose;
+
+export fn main() i32 {
+    var kernel: SimKernel = SimKernel{
+        sched: Scheduler{ slots: [], rr_cursor: 0 },
+        host_ctx: KernelHostCtx{ sch: null, pts: [], pm: PhysMem{ base: null, size: 0 }, pool: PagePool{ used: [], count: 0, used_count: 0 }, alloc_pages: [], io_allowed_devices: [], io_allowed_ops: [], io_available_devices: 0 },
+        recovery: RecoveryManager{ states: [], log: [], log_head: 0, log_count: 0 },
+        entry_fns: [],
+        container_ctxs: [],
+        total_ticks: 0,
+        loaded_image_headers: [],
+        loaded_image_ppn: [],
+        loaded_image_valid: [],
+    };
+    sim_kernel_init(&kernel);
+
+    var backing: [byte: 65536] = [];
+    kernel.host_ctx.pm.base = &backing[0];
+    kernel.host_ctx.pm.size = 65536;
+
+    var img: [byte: 128] = [];
+    const fp: &FILE = fopen("examples/microapp/microcontainer_hello.uapp\0" as &byte, "rb\0" as &byte);
+    if fp == null {
+        return 1;
+    }
+    const n: usize = fread(&img[0], 1 as usize, 128 as usize, fp);
+    _ = fclose(fp);
+    if n < IMAGE_HEADER_SIZE as usize {
+        return 2;
+    }
+
+    sim_load_image(&kernel, 0u32, 16u32, img[0: n]) catch {
+        return 3;
+    };
+    const cid: u32 = sim_tick_loaded(&kernel) catch {
+        return 4;
+    };
+    if cid != 0u32 {
+        return 5;
+    }
+    return 0;
+}

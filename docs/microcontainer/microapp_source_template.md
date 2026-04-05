@@ -24,4 +24,4 @@ export fn main() i32 {
 
 - 这份模板现在主要用于说明源码层的意图。
 - 真正的 `source(.uya) -> payload_obj -> .uapp` 链路已经开始落地，但编译器的完整微应用后端仍在继续完善。
-- 当前可以先把 `microcontainer_hello_build.uya` 看成“镜像打包器示例”，把这份模板看成“未来微应用源码入口”。
+- 当前可以先把 `examples/microapp/microcontainer_hello_build.uya` 看成“镜像打包器示例”，把这份模板看成“未来微应用源码入口”。
