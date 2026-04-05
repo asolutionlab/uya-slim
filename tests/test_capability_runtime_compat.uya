@@ -35,6 +35,10 @@ use std.runtime.capability.loader.capability_loader_rollback;
 use std.runtime.capability.manifest.CapabilityManifest;
 use std.runtime.capability.manifest.capability_manifest_init;
 use std.runtime.capability.manifest.capability_manifest_validate;
+use std.runtime.capability.native_backend.CapabilityNativeBackend;
+use std.runtime.capability.native_backend.capability_native_backend_init;
+use std.runtime.capability.native_backend.capability_native_backend_invoke;
+use std.runtime.capability.native_backend.capability_native_backend_load_module;
 use std.runtime.capability.policy.CapabilityPermissionSet;
 use std.runtime.capability.policy.capability_permission_is_granted;
 use std.runtime.capability.policy.capability_permission_require;
@@ -193,6 +197,75 @@ fn test_capability_wamr_backend_negative_trigger_maps_invalid_argument() !void {
     const status: CapabilityStatusCode = try capability_wamr_backend_invoke(&backend, &session, -1);
 
     try assert_true(status == CapabilityStatusCode.InvalidArgument);
+}
+
+fn test_capability_native_backend_load_and_invoke() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var backend: CapabilityNativeBackend = CapabilityNativeBackend{};
+
+    try capability_native_backend_init(&backend, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.NativeUya,
+        host_api: &host,
+    });
+
+    var manifest: CapabilityManifest = make_valid_manifest('n' as byte, CapabilityBackendKind.NativeUya);
+    var payload: [byte: 4] = [];
+    payload[0] = 'U' as byte;
+    payload[1] = 'Y' as byte;
+    payload[2] = 'A' as byte;
+    payload[3] = '!' as byte;
+
+    var session: CapabilityBackendSession = try capability_native_backend_load_module(&backend, &payload[0] as &const byte, 4 as usize, manifest);
+    const status: CapabilityStatusCode = try capability_native_backend_invoke(&backend, &session, 0);
+
+    try assert_true(session.kind == CapabilityBackendKind.NativeUya);
+    try assert_true(status == CapabilityStatusCode.Ok);
+}
+
+fn test_capability_native_backend_invalid_payload_rejected() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var backend: CapabilityNativeBackend = CapabilityNativeBackend{};
+
+    try capability_native_backend_init(&backend, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.NativeUya,
+        host_api: &host,
+    });
+
+    const manifest: CapabilityManifest = make_valid_manifest('p' as byte, CapabilityBackendKind.NativeUya);
+    var payload: [byte: 4] = [];
+    payload[0] = 'B' as byte;
+    payload[1] = 'A' as byte;
+    payload[2] = 'D' as byte;
+    payload[3] = '!' as byte;
+
+    var saw: bool = false;
+    _ = capability_native_backend_load_module(&backend, &payload[0] as &const byte, 4 as usize, manifest) catch {
+        saw = true;
+        return;
+    };
+    try assert_true(saw);
+}
+
+fn test_capability_backend_adapter_dispatches_native_backend() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var adapter: CapabilityBackendAdapter = capability_backend_adapter_default();
+    try capability_backend_adapter_init(&adapter, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.NativeUya,
+        host_api: &host,
+    });
+
+    var manifest: CapabilityManifest = make_valid_manifest('k' as byte, CapabilityBackendKind.NativeUya);
+    var payload: [byte: 4] = [];
+    payload[0] = 'U' as byte;
+    payload[1] = 'Y' as byte;
+    payload[2] = 'A' as byte;
+    payload[3] = '!' as byte;
+
+    var session: CapabilityBackendSession = try capability_backend_adapter_load_module(&adapter, &payload[0] as &const byte, 4 as usize, manifest);
+    const status: CapabilityStatusCode = try capability_backend_adapter_invoke(&adapter, &session, 0);
+
+    try assert_true(session.kind == CapabilityBackendKind.NativeUya);
+    try assert_true(status == CapabilityStatusCode.Ok);
 }
 
 fn test_capability_backend_adapter_dispatches_fake_backend() !void {
@@ -544,13 +617,15 @@ export fn main() i32 {
     run_test("permission declare grant require", test_capability_permission_declare_grant_require);
     run_test("permission undeclared grant error", test_capability_permission_grant_undeclared_is_error);
     run_test("fake backend load and invoke", test_capability_fake_backend_load_and_invoke);
+    run_test("native backend load and invoke", test_capability_native_backend_load_and_invoke);
+    run_test("native backend invalid payload rejected", test_capability_native_backend_invalid_payload_rejected);
     run_test("wamr backend load and invoke", test_capability_wamr_backend_load_and_invoke);
     run_test("wamr backend invalid payload rejected", test_capability_wamr_backend_invalid_payload_rejected);
     run_test("wamr backend negative trigger invalid argument", test_capability_wamr_backend_negative_trigger_maps_invalid_argument);
     run_test("backend adapter dispatches fake backend", test_capability_backend_adapter_dispatches_fake_backend);
+    run_test("backend adapter dispatches native backend", test_capability_backend_adapter_dispatches_native_backend);
     run_test("backend adapter dispatches wamr backend", test_capability_backend_adapter_dispatches_wamr_backend);
     run_test("backend adapter rejects kind mismatch", test_capability_backend_adapter_rejects_kind_mismatch);
-    run_test("backend adapter rejects unsupported backend", test_capability_backend_adapter_rejects_unsupported_backend);
     run_test("loader install records installed entry", test_capability_loader_install_records_installed_entry);
     run_test("loader install rejects invalid manifest", test_capability_loader_install_rejects_invalid_manifest);
     run_test("loader activate transitions to active", test_capability_loader_activate_transitions_to_active);

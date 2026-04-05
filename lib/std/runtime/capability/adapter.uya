@@ -9,6 +9,10 @@ use std.runtime.capability.fake_backend.capability_fake_backend_init;
 use std.runtime.capability.fake_backend.capability_fake_backend_invoke;
 use std.runtime.capability.fake_backend.capability_fake_backend_load_module;
 use std.runtime.capability.manifest.CapabilityManifest;
+use std.runtime.capability.native_backend.CapabilityNativeBackend;
+use std.runtime.capability.native_backend.capability_native_backend_init;
+use std.runtime.capability.native_backend.capability_native_backend_invoke;
+use std.runtime.capability.native_backend.capability_native_backend_load_module;
 use std.runtime.capability.wamr_backend.CapabilityWamrBackend;
 use std.runtime.capability.wamr_backend.capability_wamr_backend_init;
 use std.runtime.capability.wamr_backend.capability_wamr_backend_invoke;
@@ -20,6 +24,7 @@ export error CapabilityBackendKindMismatch;
 export struct CapabilityBackendAdapter {
     kind: CapabilityBackendKind,
     fake: CapabilityFakeBackend,
+    native: CapabilityNativeBackend,
     wamr: CapabilityWamrBackend,
 }
 
@@ -27,6 +32,7 @@ export fn capability_backend_adapter_default() CapabilityBackendAdapter {
     return CapabilityBackendAdapter{
         kind: CapabilityBackendKind.Invalid,
         fake: CapabilityFakeBackend{},
+        native: CapabilityNativeBackend{},
         wamr: CapabilityWamrBackend{},
     };
 }
@@ -44,6 +50,13 @@ export fn capability_backend_adapter_init(adapter: &CapabilityBackendAdapter, co
     if config.kind == CapabilityBackendKind.Wamr {
         try capability_wamr_backend_init(&adapter.wamr, CapabilityBackendConfig{
             kind: CapabilityBackendKind.Wamr,
+            host_api: config.host_api,
+        });
+        return;
+    }
+    if config.kind == CapabilityBackendKind.NativeUya {
+        try capability_native_backend_init(&adapter.native, CapabilityBackendConfig{
+            kind: CapabilityBackendKind.NativeUya,
             host_api: config.host_api,
         });
         return;
@@ -67,6 +80,9 @@ export fn capability_backend_adapter_load_module(adapter: &CapabilityBackendAdap
     if adapter.kind == CapabilityBackendKind.Wamr {
         return try capability_wamr_backend_load_module(&adapter.wamr, payload, payload_len, manifest);
     }
+    if adapter.kind == CapabilityBackendKind.NativeUya {
+        return try capability_native_backend_load_module(&adapter.native, payload, payload_len, manifest);
+    }
 
     return error.CapabilityBackendUnsupported;
 }
@@ -77,6 +93,9 @@ export fn capability_backend_adapter_invoke(adapter: &CapabilityBackendAdapter, 
     }
     if adapter.kind == CapabilityBackendKind.Wamr {
         return try capability_wamr_backend_invoke(&adapter.wamr, session, trigger_id);
+    }
+    if adapter.kind == CapabilityBackendKind.NativeUya {
+        return try capability_native_backend_invoke(&adapter.native, session, trigger_id);
     }
 
     return error.CapabilityBackendUnsupported;
