@@ -78,3 +78,7 @@ export fn capability_wamr_backend_load_module(backend: &CapabilityWamrBackend, p
 export fn capability_wamr_backend_invoke(backend: &CapabilityWamrBackend, session: &CapabilityBackendSession, trigger_id: i32) !CapabilityStatusCode {
     return try backend.invoke(session, trigger_id);
 }
+
+export fn capability_wamr_backend_destroy(backend: &CapabilityWamrBackend, session: &CapabilityBackendSession) void {
+    backend.destroy(session);
+}

@@ -41,6 +41,7 @@ use std.runtime.capability.manager.capability_manager_install;
 use std.runtime.capability.manager.capability_manager_invoke;
 use std.runtime.capability.manager.capability_manager_load;
 use std.runtime.capability.manager.capability_manager_rollback;
+use std.runtime.capability.manager.capability_manager_unload;
 use std.runtime.capability.manifest.CapabilityManifest;
 use std.runtime.capability.manifest.capability_manifest_init;
 use std.runtime.capability.manifest.capability_manifest_validate;
@@ -441,6 +442,55 @@ fn test_capability_manager_disable_and_rollback_delegate_to_loader() !void {
     try assert_true(manager.registry.entries[index].state == CapabilityState.Disabled);
 }
 
+fn test_capability_manager_unload_clears_loaded_session() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var manager: CapabilityManager = capability_manager_default();
+    try capability_manager_init(&manager, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.NativeUya,
+        host_api: &host,
+    });
+
+    const manifest: CapabilityManifest = make_valid_manifest('u' as byte, CapabilityBackendKind.NativeUya);
+    const index: i32 = try capability_manager_install(&manager, manifest);
+    var payload: [byte: 4] = [];
+    payload[0] = 'U' as byte;
+    payload[1] = 'Y' as byte;
+    payload[2] = 'A' as byte;
+    payload[3] = '!' as byte;
+
+    try capability_manager_load(&manager, index, &payload[0] as &const byte, 4 as usize);
+    try capability_manager_activate(&manager, index);
+    try capability_manager_unload(&manager, index);
+
+    try assert_true(manager.session_loaded[index] == false);
+    try assert_true(manager.registry.entries[index].state == CapabilityState.Disabled);
+
+    var invoke_failed: bool = false;
+    _ = capability_manager_invoke(&manager, index, 0) catch {
+        invoke_failed = true;
+        return;
+    };
+    try assert_true(invoke_failed);
+}
+
+fn test_capability_manager_unload_requires_loaded_session() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var manager: CapabilityManager = capability_manager_default();
+    try capability_manager_init(&manager, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.Fake,
+        host_api: &host,
+    });
+
+    const manifest: CapabilityManifest = make_valid_manifest('v' as byte, CapabilityBackendKind.Fake);
+    const index: i32 = try capability_manager_install(&manager, manifest);
+
+    var saw: bool = false;
+    _ = capability_manager_unload(&manager, index) catch {
+        saw = true;
+    };
+    try assert_true(saw);
+}
+
 fn test_capability_loader_install_records_installed_entry() !void {
     var registry: CapabilityRegistry = capability_registry_init();
     const manifest: CapabilityManifest = make_valid_manifest('i' as byte, CapabilityBackendKind.NativeUya);
@@ -728,6 +778,8 @@ export fn main() i32 {
     run_test("manager invoke requires load and active", test_capability_manager_invoke_requires_load_and_active);
     run_test("manager invoke non ok marks failed", test_capability_manager_invoke_non_ok_marks_failed);
     run_test("manager disable and rollback delegate", test_capability_manager_disable_and_rollback_delegate_to_loader);
+    run_test("manager unload clears loaded session", test_capability_manager_unload_clears_loaded_session);
+    run_test("manager unload requires loaded session", test_capability_manager_unload_requires_loaded_session);
     run_test("loader install records installed entry", test_capability_loader_install_records_installed_entry);
     run_test("loader install rejects invalid manifest", test_capability_loader_install_rejects_invalid_manifest);
     run_test("loader activate transitions to active", test_capability_loader_activate_transitions_to_active);

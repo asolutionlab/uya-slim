@@ -5,15 +5,18 @@ use std.runtime.capability.backend.CapabilityBackendConfig;
 use std.runtime.capability.backend.CapabilityBackendKind;
 use std.runtime.capability.backend.CapabilityBackendSession;
 use std.runtime.capability.fake_backend.CapabilityFakeBackend;
+use std.runtime.capability.fake_backend.capability_fake_backend_destroy;
 use std.runtime.capability.fake_backend.capability_fake_backend_init;
 use std.runtime.capability.fake_backend.capability_fake_backend_invoke;
 use std.runtime.capability.fake_backend.capability_fake_backend_load_module;
 use std.runtime.capability.manifest.CapabilityManifest;
 use std.runtime.capability.native_backend.CapabilityNativeBackend;
+use std.runtime.capability.native_backend.capability_native_backend_destroy;
 use std.runtime.capability.native_backend.capability_native_backend_init;
 use std.runtime.capability.native_backend.capability_native_backend_invoke;
 use std.runtime.capability.native_backend.capability_native_backend_load_module;
 use std.runtime.capability.wamr_backend.CapabilityWamrBackend;
+use std.runtime.capability.wamr_backend.capability_wamr_backend_destroy;
 use std.runtime.capability.wamr_backend.capability_wamr_backend_init;
 use std.runtime.capability.wamr_backend.capability_wamr_backend_invoke;
 use std.runtime.capability.wamr_backend.capability_wamr_backend_load_module;
@@ -96,6 +99,23 @@ export fn capability_backend_adapter_invoke(adapter: &CapabilityBackendAdapter, 
     }
     if adapter.kind == CapabilityBackendKind.NativeUya {
         return try capability_native_backend_invoke(&adapter.native, session, trigger_id);
+    }
+
+    return error.CapabilityBackendUnsupported;
+}
+
+export fn capability_backend_adapter_destroy_session(adapter: &CapabilityBackendAdapter, session: &CapabilityBackendSession) !void {
+    if adapter.kind == CapabilityBackendKind.Fake {
+        capability_fake_backend_destroy(&adapter.fake, session);
+        return;
+    }
+    if adapter.kind == CapabilityBackendKind.Wamr {
+        capability_wamr_backend_destroy(&adapter.wamr, session);
+        return;
+    }
+    if adapter.kind == CapabilityBackendKind.NativeUya {
+        capability_native_backend_destroy(&adapter.native, session);
+        return;
     }
 
     return error.CapabilityBackendUnsupported;

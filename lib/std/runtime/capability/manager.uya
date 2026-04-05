@@ -3,6 +3,7 @@
 use std.runtime.capability.abi.CapabilityStatusCode;
 use std.runtime.capability.adapter.CapabilityBackendAdapter;
 use std.runtime.capability.adapter.capability_backend_adapter_default;
+use std.runtime.capability.adapter.capability_backend_adapter_destroy_session;
 use std.runtime.capability.adapter.capability_backend_adapter_init;
 use std.runtime.capability.adapter.capability_backend_adapter_invoke;
 use std.runtime.capability.adapter.capability_backend_adapter_load_module;
@@ -100,4 +101,15 @@ export fn capability_manager_disable(manager: &CapabilityManager, index: i32) !v
 
 export fn capability_manager_rollback(manager: &CapabilityManager, index: i32) !void {
     try capability_loader_rollback(&manager.registry, index);
+}
+
+export fn capability_manager_unload(manager: &CapabilityManager, index: i32) !void {
+    try capability_manager_require_entry(manager, index);
+    if manager.session_loaded[index] == false {
+        return error.CapabilityManagerNotLoaded;
+    }
+
+    try capability_backend_adapter_destroy_session(&manager.adapter, &manager.sessions[index]);
+    manager.session_loaded[index] = false;
+    try capability_loader_disable(&manager.registry, index);
 }

@@ -78,3 +78,7 @@ export fn capability_native_backend_load_module(backend: &CapabilityNativeBacken
 export fn capability_native_backend_invoke(backend: &CapabilityNativeBackend, session: &CapabilityBackendSession, trigger_id: i32) !CapabilityStatusCode {
     return try backend.invoke(session, trigger_id);
 }
+
+export fn capability_native_backend_destroy(backend: &CapabilityNativeBackend, session: &CapabilityBackendSession) void {
+    backend.destroy(session);
+}
