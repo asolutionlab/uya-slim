@@ -2,6 +2,8 @@
 
 use std.testing.assert_true;
 use std.testing.assert_eq_i32;
+use std.testing.assert_eq_i64;
+use std.testing.assert_eq_u64;
 use std.testing.run_test;
 use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
@@ -20,6 +22,11 @@ use std.runtime.capability.backend.CapabilityBackendSession;
 use std.runtime.capability.benchmark.CapabilityBenchmarkCase;
 use std.runtime.capability.benchmark.CapabilityBenchmarkCaseKind;
 use std.runtime.capability.benchmark.CapabilityBenchmarkResult;
+use std.runtime.capability.benchmark.capability_benchmark_backend_name;
+use std.runtime.capability.benchmark.capability_benchmark_case_latency_us;
+use std.runtime.capability.benchmark.capability_benchmark_case_name;
+use std.runtime.capability.benchmark.capability_benchmark_relative_ratio;
+use std.runtime.capability.benchmark.capability_benchmark_run_manager_case;
 use std.runtime.capability.benchmark.capability_benchmark_result_from_session;
 use std.runtime.capability.fake_backend.CapabilityFakeBackend;
 use std.runtime.capability.fake_backend.capability_fake_backend_init;
@@ -758,6 +765,101 @@ fn test_capability_benchmark_result_reflects_session() !void {
     try assert_eq_i32(result.metrics.timeout_count as i32, 1);
 }
 
+fn test_capability_benchmark_manager_invoke_loop_fake() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    const manifest: CapabilityManifest = make_valid_manifest('y' as byte, CapabilityBackendKind.Fake);
+    var payload: [byte: 1] = [];
+    payload[0] = 'x' as byte;
+
+    const result: CapabilityBenchmarkResult = try capability_benchmark_run_manager_case(
+        CapabilityBenchmarkCase{
+            backend: CapabilityBackendKind.Fake,
+            case_kind: CapabilityBenchmarkCaseKind.InvokeLoop,
+            iterations: 4,
+            payload_size: 0 as usize,
+        },
+        CapabilityBackendConfig{
+            kind: CapabilityBackendKind.Fake,
+            host_api: &host,
+        },
+        manifest,
+        &payload[0] as &const byte,
+        1 as usize,
+        0,
+    );
+
+    try assert_true(result.status_ok);
+    try assert_true(result.case_info.backend == CapabilityBackendKind.Fake);
+    try assert_true(result.case_info.case_kind == CapabilityBenchmarkCaseKind.InvokeLoop);
+    try assert_eq_i32(result.case_info.payload_size as i32, 1);
+    try assert_eq_i32(result.case_info.iterations, 4);
+    try assert_eq_i32(result.metrics.failure_count as i32, 0);
+    try assert_eq_i32(result.metrics.timeout_count as i32, 0);
+    try assert_true(result.metrics.p99_invoke_us >= result.metrics.avg_invoke_us);
+}
+
+fn test_capability_benchmark_manager_failure_propagates_status() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    const manifest: CapabilityManifest = make_valid_manifest('z' as byte, CapabilityBackendKind.Wamr);
+    var payload: [byte: 4] = [];
+    payload[0] = 0 as byte;
+    payload[1] = 'a' as byte;
+    payload[2] = 's' as byte;
+    payload[3] = 'm' as byte;
+
+    const result: CapabilityBenchmarkResult = try capability_benchmark_run_manager_case(
+        CapabilityBenchmarkCase{
+            backend: CapabilityBackendKind.Wamr,
+            case_kind: CapabilityBenchmarkCaseKind.InvokeCold,
+            iterations: 1,
+            payload_size: 0 as usize,
+        },
+        CapabilityBackendConfig{
+            kind: CapabilityBackendKind.Wamr,
+            host_api: &host,
+        },
+        manifest,
+        &payload[0] as &const byte,
+        4 as usize,
+        -1,
+    );
+
+    try assert_true(result.status_ok == false);
+    try assert_true(result.case_info.backend == CapabilityBackendKind.Wamr);
+    try assert_eq_u64(result.metrics.failure_count as u64, 1u64);
+    try assert_eq_u64(result.metrics.timeout_count as u64, 0u64);
+}
+
+fn test_capability_benchmark_name_helpers() !void {
+    try assert_true(capability_benchmark_backend_name(CapabilityBackendKind.Fake)[0] == 'f' as byte);
+    try assert_true(capability_benchmark_backend_name(CapabilityBackendKind.Wamr)[0] == 'w' as byte);
+    try assert_true(capability_benchmark_case_name(CapabilityBenchmarkCaseKind.InvokeLoop)[0] == 'i' as byte);
+    try assert_true(capability_benchmark_case_name(CapabilityBenchmarkCaseKind.PermissionDenied)[0] == 'p' as byte);
+}
+
+fn test_capability_benchmark_latency_and_ratio_helpers() !void {
+    const result: CapabilityBenchmarkResult = CapabilityBenchmarkResult{
+        case_info: CapabilityBenchmarkCase{
+            backend: CapabilityBackendKind.NativeUya,
+            case_kind: CapabilityBenchmarkCaseKind.InvokeWarm,
+            iterations: 10,
+            payload_size: 4 as usize,
+        },
+        status_ok: true,
+        metrics: CapabilityBackendMetrics{
+            install_us: 10u64,
+            activate_us: 20u64,
+            first_invoke_us: 30u64,
+            avg_invoke_us: 40u64,
+            p99_invoke_us: 50u64,
+        },
+    };
+
+    try assert_eq_u64(capability_benchmark_case_latency_us(&result), 40u64);
+    try assert_eq_i64((capability_benchmark_relative_ratio(20u64, 50u64) * 100.0) as i64, 250);
+    try assert_eq_i64((capability_benchmark_relative_ratio(0u64, 50u64) * 100.0) as i64, 0);
+}
+
 export fn main() i32 {
     test_suite_begin("Capability Runtime Compat Tests");
     run_test("manifest defaults valid", test_capability_manifest_defaults_are_valid);
@@ -793,5 +895,9 @@ export fn main() i32 {
     run_test("hostapi time_now requires permission", test_capability_hostapi_time_now_requires_permission);
     run_test("hostapi log and kv permissions", test_capability_hostapi_log_and_kv_permissions);
     run_test("benchmark result reflects session", test_capability_benchmark_result_reflects_session);
+    run_test("benchmark manager invoke loop fake", test_capability_benchmark_manager_invoke_loop_fake);
+    run_test("benchmark manager failure propagates status", test_capability_benchmark_manager_failure_propagates_status);
+    run_test("benchmark name helpers", test_capability_benchmark_name_helpers);
+    run_test("benchmark latency and ratio helpers", test_capability_benchmark_latency_and_ratio_helpers);
     return test_suite_end();
 }

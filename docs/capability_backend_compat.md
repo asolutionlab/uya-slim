@@ -250,6 +250,36 @@ Native Uya 后端通过固定 ABI 或宿主调用表映射到同名能力。
 7. 接入 `Native Uya backend`
 8. 使用同一组 case 做对比
 
+当前最小 benchmark harness 入口：
+
+- `lib/std/runtime/capability/benchmark.uya`：`capability_benchmark_run_manager_case`
+- `tests/bench_capability_runtime.uya`
+- `tests/run_capability_runtime_benchmark.sh`
+
+当前 benchmark 运行约定：
+
+- 默认输出控制台摘要，并写出 `build/capability_runtime_benchmark.csv`
+- 默认写出 `build/capability_runtime_benchmark.json`
+- 可通过 `tests/run_capability_runtime_benchmark.sh --baseline <history.json|history.csv>` 读取历史结果
+- 基线比对默认使用 `--regression-threshold-pct 5.0` 与 `--min-regression-us 2` 过滤微小抖动
+- 可通过 `--fail-on-regression` 在存在超阈值 regression 时返回非零退出码
+- 可通过 `--fail-metrics <csv>` 指定哪些 metric 参与失败判定
+- 可通过 `--ignore-metrics <csv>` 从失败判定集合中排除 metric
+- 启用基线比对后，会额外写出 `build/capability_runtime_benchmark_compare.csv`
+- 启用基线比对后，会额外写出 `build/capability_runtime_benchmark_compare.json`
+- compare 输出以 `backend + case` 对齐，并对 `latency_us`、`install_us`、`activate_us`、`first_invoke_us`、`avg_invoke_us`、`p99_invoke_us`、`failure_count`、`timeout_count` 给出百分比变化
+- 百分比大于 `0` 记为 regression，小于 `0` 记为 improvement，等于 `0` 记为 stable
+- compare 结果额外包含 `exceeds_threshold`，用于区分纯波动和应拦截的回退
+- compare 结果额外包含 `monitored_for_failure`，用于标记该 metric 是否参与 CI 失败判定
+- 当前默认失败判定集合是 `latency_us,p99_invoke_us,failure_count,timeout_count`
+
+当前基准覆盖：
+
+- `InvokeLoop`：`Fake` / `WAMR` / `Native Uya` 横向对比
+- `InvokeWarm`：先给 warm path 留单独观测点
+- `PermissionDenied`：先覆盖失败语义是否稳定落到结果结构
+- 导出：运行 benchmark 后会生成 `build/capability_runtime_benchmark.csv` 与 `build/capability_runtime_benchmark.json`
+
 ---
 
 ## 12. 成功标准
@@ -260,4 +290,3 @@ Native Uya 后端通过固定 ABI 或宿主调用表映射到同名能力。
 - 同一 manifest 可切换 backend
 - 同一业务 case 可在两个 backend 上运行
 - 同一套 benchmark 可直接产出对比数据
-
