@@ -81,6 +81,10 @@ var g_prebuilt_root_close_len: usize = 0;
 var g_prebuilt_json_ka_len: usize = 0;
 var g_prebuilt_json_close_len: usize = 0;
 
+fn u64_to_i32(v: u64) !i32 {
+    return v as! i32;
+}
+
 fn fill_a(dst: &byte, n: usize) void {
     var i: usize = 0;
     while i < n {
@@ -731,11 +735,11 @@ fn bench_recv_kernel_to_connbuf_nb(srv: &EpollServer, slot: usize) void {
         while true {
             const rr: !isize = sys_read(cfd, dst, chunk);
             const n: isize = rr catch |err| {
-                const eid: i32 = @error_id(err) as i32;
-                if eid == EAGAIN {
+                const eid: u32 = @error_id(err);
+                if eid == (EAGAIN as u32) {
                     return;
                 }
-                if eid == EINTR {
+                if eid == (EINTR as u32) {
                     continue;
                 }
                 bench_slot_close(srv, slot);
@@ -834,7 +838,15 @@ fn bench_epoll_main_loop(srv: &EpollServer, rt: &Router) void {
                 if epoll_server_event_is_listen(srv, ev) {
                     listen_pending = true;
                 } else {
-                    const cfd: i32 = ev.data as i32;
+                    var cfd: i32 = 0;
+                    match u64_to_i32(ev.data) {
+                        error._ => {
+                            continue;
+                        }
+                        v => {
+                            cfd = v;
+                        }
+                    }
                     const sidx: i32 = epoll_server_slot_for_fd(srv, cfd);
                     if sidx >= 0 {
                         bench_handle_client_event(srv, sidx as usize, rt, ev);
