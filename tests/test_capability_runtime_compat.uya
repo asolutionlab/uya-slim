@@ -7,13 +7,21 @@ use std.testing.test_suite_begin;
 use std.testing.test_suite_end;
 
 use std.runtime.capability.abi.CapabilityStatusCode;
+use std.runtime.capability.abi.CapabilityExecutionContext;
+use std.runtime.capability.abi.capability_execution_context_init;
+use std.runtime.capability.backend.CapabilityBackendMetrics;
 use std.runtime.capability.backend.CapabilityBackendConfig;
 use std.runtime.capability.backend.CapabilityBackendSession;
+use std.runtime.capability.benchmark.CapabilityBenchmarkCase;
+use std.runtime.capability.benchmark.CapabilityBenchmarkCaseKind;
+use std.runtime.capability.benchmark.CapabilityBenchmarkResult;
+use std.runtime.capability.benchmark.capability_benchmark_result_from_session;
 use std.runtime.capability.fake_backend.CapabilityFakeBackend;
 use std.runtime.capability.fake_backend.capability_fake_backend_init;
 use std.runtime.capability.fake_backend.capability_fake_backend_invoke;
 use std.runtime.capability.fake_backend.capability_fake_backend_load_module;
 use std.runtime.capability.hostapi.CapabilityHostApi;
+use std.runtime.capability.hostapi.CapabilityHostTime;
 use std.runtime.capability.loader.capability_loader_activate;
 use std.runtime.capability.loader.capability_loader_disable;
 use std.runtime.capability.loader.capability_loader_fail;
@@ -44,6 +52,15 @@ fn make_valid_manifest(id0: byte, backend_kind: CapabilityBackendKind) Capabilit
     manifest.entry[3] = 'n' as byte;
     manifest.backend_kind = backend_kind;
     return manifest;
+}
+
+fn make_ctx_with_permission(permission: CapabilityPermissionId, grant: bool) CapabilityExecutionContext {
+    var ctx: CapabilityExecutionContext = capability_execution_context_init(1u32, capability_manifest_init().limits);
+    capability_permission_set_declare(&ctx.permissions, permission);
+    if grant {
+        _ = capability_permission_set_grant(&ctx.permissions, permission) catch {};
+    }
+    return ctx;
 }
 
 fn test_capability_manifest_defaults_are_valid() !void {
@@ -167,6 +184,116 @@ fn test_capability_loader_rollback_disables_failed_entry() !void {
     try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Disabled);
 }
 
+fn test_capability_hostapi_time_now_requires_permission() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var denied_ctx: CapabilityExecutionContext = capability_execution_context_init(1u32, capability_manifest_init().limits);
+
+    var denied: bool = false;
+    const denied_time: CapabilityHostTime = host.time_now(&denied_ctx) catch {
+        denied = true;
+        CapabilityHostTime{};
+    };
+
+    try assert_true(denied);
+    try assert_eq_i32(denied_time.epoch_sec as i32, 0);
+
+    var granted_ctx: CapabilityExecutionContext = make_ctx_with_permission(CapabilityPermissionId.TimeRead, true);
+    const granted_time: CapabilityHostTime = host.time_now(&granted_ctx) catch {
+        return error.AssertionFailed;
+    };
+    try assert_eq_i32(granted_time.epoch_sec as i32, 0);
+    try assert_eq_i32(granted_time.epoch_ms as i32, 0);
+}
+
+fn test_capability_hostapi_log_and_kv_permissions() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    const msg: &[byte] = &"hi"[0: 2];
+    const key: &[byte] = &"k"[0: 1];
+    const value: &[byte] = &"v"[0: 1];
+
+    var log_denied_ctx: CapabilityExecutionContext = capability_execution_context_init(1u32, capability_manifest_init().limits);
+    var log_denied: bool = false;
+    _ = host.log_write(&log_denied_ctx, 1, msg.ptr) catch {
+        log_denied = true;
+    };
+    try assert_true(log_denied);
+
+    var log_granted_ctx: CapabilityExecutionContext = make_ctx_with_permission(CapabilityPermissionId.LogWrite, true);
+    _ = host.log_write(&log_granted_ctx, 1, msg.ptr) catch {
+        return error.AssertionFailed;
+    };
+
+    var kv_read_denied_ctx: CapabilityExecutionContext = capability_execution_context_init(1u32, capability_manifest_init().limits);
+    var kv_read_denied: bool = false;
+    const kv_read_value: i32 = host.kv_get(&kv_read_denied_ctx, key.ptr) catch {
+        kv_read_denied = true;
+        -1;
+    };
+    try assert_true(kv_read_denied);
+    try assert_eq_i32(kv_read_value, -1);
+
+    var kv_read_granted_ctx: CapabilityExecutionContext = make_ctx_with_permission(CapabilityPermissionId.StorageKvRead, true);
+    const kv_read_granted_value: i32 = host.kv_get(&kv_read_granted_ctx, key.ptr) catch {
+        return error.AssertionFailed;
+    };
+    try assert_eq_i32(kv_read_granted_value, 0);
+
+    var kv_write_denied_ctx: CapabilityExecutionContext = capability_execution_context_init(1u32, capability_manifest_init().limits);
+    var kv_write_denied: bool = false;
+    _ = host.kv_set(&kv_write_denied_ctx, key.ptr, value.ptr) catch {
+        kv_write_denied = true;
+    };
+    try assert_true(kv_write_denied);
+
+    var kv_write_granted_ctx: CapabilityExecutionContext = make_ctx_with_permission(CapabilityPermissionId.StorageKvWrite, true);
+    _ = host.kv_set(&kv_write_granted_ctx, key.ptr, value.ptr) catch {
+        return error.AssertionFailed;
+    };
+}
+
+fn test_capability_benchmark_result_reflects_session() !void {
+    const case_info: CapabilityBenchmarkCase = CapabilityBenchmarkCase{
+        backend: CapabilityBackendKind.Fake,
+        case_kind: CapabilityBenchmarkCaseKind.InvokeWarm,
+        iterations: 100,
+        payload_size: 256 as usize,
+    };
+    const manifest: CapabilityManifest = make_valid_manifest('b' as byte, CapabilityBackendKind.Fake);
+    const metrics: CapabilityBackendMetrics = CapabilityBackendMetrics{
+        install_us: 11u64,
+        activate_us: 22u64,
+        first_invoke_us: 33u64,
+        avg_invoke_us: 44u64,
+        p99_invoke_us: 55u64,
+        host_call_overhead_us: 66u64,
+        failure_count: 2u32,
+        timeout_count: 1u32,
+    };
+    const session: CapabilityBackendSession = CapabilityBackendSession{
+        kind: CapabilityBackendKind.Fake,
+        manifest: manifest,
+        ctx: capability_execution_context_init(7u32, manifest.limits),
+        status: CapabilityStatusCode.Ok,
+        metrics: metrics,
+    };
+
+    const result: CapabilityBenchmarkResult = capability_benchmark_result_from_session(case_info, &session);
+
+    try assert_true(result.status_ok);
+    try assert_true(result.case_info.backend == CapabilityBackendKind.Fake);
+    try assert_true(result.case_info.case_kind == CapabilityBenchmarkCaseKind.InvokeWarm);
+    try assert_eq_i32(result.case_info.iterations, 100);
+    try assert_eq_i32(result.case_info.payload_size as i32, 256);
+    try assert_eq_i32(result.metrics.install_us as i32, 11);
+    try assert_eq_i32(result.metrics.activate_us as i32, 22);
+    try assert_eq_i32(result.metrics.first_invoke_us as i32, 33);
+    try assert_eq_i32(result.metrics.avg_invoke_us as i32, 44);
+    try assert_eq_i32(result.metrics.p99_invoke_us as i32, 55);
+    try assert_eq_i32(result.metrics.host_call_overhead_us as i32, 66);
+    try assert_eq_i32(result.metrics.failure_count as i32, 2);
+    try assert_eq_i32(result.metrics.timeout_count as i32, 1);
+}
+
 export fn main() i32 {
     test_suite_begin("Capability Runtime Compat Tests");
     run_test("manifest defaults valid", test_capability_manifest_defaults_are_valid);
@@ -179,5 +306,8 @@ export fn main() i32 {
     run_test("loader activate transitions to active", test_capability_loader_activate_transitions_to_active);
     run_test("loader disable marks disabled", test_capability_loader_disable_marks_disabled);
     run_test("loader rollback disables failed entry", test_capability_loader_rollback_disables_failed_entry);
+    run_test("hostapi time_now requires permission", test_capability_hostapi_time_now_requires_permission);
+    run_test("hostapi log and kv permissions", test_capability_hostapi_log_and_kv_permissions);
+    run_test("benchmark result reflects session", test_capability_benchmark_result_reflects_session);
     return test_suite_end();
 }
