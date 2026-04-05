@@ -87,12 +87,12 @@ export const RLIMIT_STACK: i32 = 3;
 // 文件相关
 // ============================================================
 
-const O_RDONLY: i32 = 0;
-const O_WRONLY: i32 = 1;
-const O_RDWR: i32 = 2;
-const O_CREAT: i32 = 64;
-const O_TRUNC: i32 = 512;
-const O_APPEND: i32 = 1024;
+const O_RDONLY: i64 = 0;
+const O_WRONLY: i64 = 1;
+const O_RDWR: i64 = 2;
+const O_CREAT: i64 = 64;
+const O_TRUNC: i64 = 512;
+const O_APPEND: i64 = 1024;
 
 // ============================================================
 // 内存保护常量
@@ -161,8 +161,8 @@ struct OSStat {
 // 文件操作
 // ============================================================
 
-export fn os_open(path: &const byte, flags: i32, mode: u32) !i32 {
-    const fd: i32 = try sys_open(path, flags, mode as i32);
+export fn os_open(path: &const byte, flags: i64, mode: u32) !i32 {
+    const fd: i32 = try sys_open(path, flags as i32, mode as i32);
     return fd;
 }
 

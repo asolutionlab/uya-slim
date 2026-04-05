@@ -20,11 +20,6 @@ int test_ffi_ptr(void* ptr) {
     return 2;  // 简单返回 2
 }
 
-int puts(const char* s) {
-    printf("%s", s);
-    return 1;
-}
-
 // 为 test_pointer_cast.uya 提供的外部函数实现
 int process_data(void* data) {
     return 3;  // 简单返回 3
