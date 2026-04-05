@@ -32,6 +32,15 @@ use std.runtime.capability.loader.capability_loader_disable;
 use std.runtime.capability.loader.capability_loader_fail;
 use std.runtime.capability.loader.capability_loader_install;
 use std.runtime.capability.loader.capability_loader_rollback;
+use std.runtime.capability.manager.CapabilityManager;
+use std.runtime.capability.manager.capability_manager_activate;
+use std.runtime.capability.manager.capability_manager_default;
+use std.runtime.capability.manager.capability_manager_disable;
+use std.runtime.capability.manager.capability_manager_init;
+use std.runtime.capability.manager.capability_manager_install;
+use std.runtime.capability.manager.capability_manager_invoke;
+use std.runtime.capability.manager.capability_manager_load;
+use std.runtime.capability.manager.capability_manager_rollback;
 use std.runtime.capability.manifest.CapabilityManifest;
 use std.runtime.capability.manifest.capability_manifest_init;
 use std.runtime.capability.manifest.capability_manifest_validate;
@@ -329,18 +338,107 @@ fn test_capability_backend_adapter_rejects_kind_mismatch() !void {
     try assert_true(saw);
 }
 
-fn test_capability_backend_adapter_rejects_unsupported_backend() !void {
+fn test_capability_manager_install_load_activate_invoke_fake() !void {
     var host: CapabilityHostApi = CapabilityHostApi{};
-    var adapter: CapabilityBackendAdapter = capability_backend_adapter_default();
+    var manager: CapabilityManager = capability_manager_default();
+    try capability_manager_init(&manager, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.Fake,
+        host_api: &host,
+    });
 
-    var saw: bool = false;
-    _ = capability_backend_adapter_init(&adapter, CapabilityBackendConfig{
+    const manifest: CapabilityManifest = make_valid_manifest('m' as byte, CapabilityBackendKind.Fake);
+    const index: i32 = try capability_manager_install(&manager, manifest);
+    var payload: [byte: 1] = [];
+    payload[0] = 'x' as byte;
+
+    try capability_manager_load(&manager, index, &payload[0] as &const byte, 1 as usize);
+    try capability_manager_activate(&manager, index);
+    const status: CapabilityStatusCode = try capability_manager_invoke(&manager, index, 0);
+
+    try assert_true(status == CapabilityStatusCode.Ok);
+    try assert_true(manager.registry.entries[index].state == CapabilityState.Active);
+    try assert_true(manager.registry.entries[index].last_status == CapabilityStatusCode.Ok);
+}
+
+fn test_capability_manager_invoke_requires_load_and_active() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var manager: CapabilityManager = capability_manager_default();
+    try capability_manager_init(&manager, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.Fake,
+        host_api: &host,
+    });
+
+    const manifest: CapabilityManifest = make_valid_manifest('o' as byte, CapabilityBackendKind.Fake);
+    const index: i32 = try capability_manager_install(&manager, manifest);
+    var payload: [byte: 1] = [];
+    payload[0] = 'x' as byte;
+
+    var invoke_before_load_failed: bool = false;
+    _ = capability_manager_invoke(&manager, index, 0) catch {
+        invoke_before_load_failed = true;
+        return;
+    };
+    try assert_true(invoke_before_load_failed);
+
+    try capability_manager_load(&manager, index, &payload[0] as &const byte, 1 as usize);
+
+    var invoke_before_activate_failed: bool = false;
+    _ = capability_manager_invoke(&manager, index, 0) catch {
+        invoke_before_activate_failed = true;
+        return;
+    };
+    try assert_true(invoke_before_activate_failed);
+}
+
+fn test_capability_manager_invoke_non_ok_marks_failed() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var manager: CapabilityManager = capability_manager_default();
+    try capability_manager_init(&manager, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.Wamr,
+        host_api: &host,
+    });
+
+    const manifest: CapabilityManifest = make_valid_manifest('r' as byte, CapabilityBackendKind.Wamr);
+    const index: i32 = try capability_manager_install(&manager, manifest);
+    var payload: [byte: 4] = [];
+    payload[0] = 0 as byte;
+    payload[1] = 'a' as byte;
+    payload[2] = 's' as byte;
+    payload[3] = 'm' as byte;
+
+    try capability_manager_load(&manager, index, &payload[0] as &const byte, 4 as usize);
+    try capability_manager_activate(&manager, index);
+
+    const status: CapabilityStatusCode = try capability_manager_invoke(&manager, index, -1);
+    try assert_true(status == CapabilityStatusCode.InvalidArgument);
+    try assert_true(manager.registry.entries[index].state == CapabilityState.Failed);
+    try assert_true(manager.registry.entries[index].last_status == CapabilityStatusCode.InvalidArgument);
+}
+
+fn test_capability_manager_disable_and_rollback_delegate_to_loader() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var manager: CapabilityManager = capability_manager_default();
+    try capability_manager_init(&manager, CapabilityBackendConfig{
         kind: CapabilityBackendKind.NativeUya,
         host_api: &host,
-    }) catch {
-        saw = true;
-    };
-    try assert_true(saw);
+    });
+
+    const manifest: CapabilityManifest = make_valid_manifest('s' as byte, CapabilityBackendKind.NativeUya);
+    const index: i32 = try capability_manager_install(&manager, manifest);
+    var payload: [byte: 4] = [];
+    payload[0] = 'U' as byte;
+    payload[1] = 'Y' as byte;
+    payload[2] = 'A' as byte;
+    payload[3] = '!' as byte;
+
+    try capability_manager_load(&manager, index, &payload[0] as &const byte, 4 as usize);
+    try capability_manager_activate(&manager, index);
+    try capability_manager_disable(&manager, index);
+    try assert_true(manager.registry.entries[index].state == CapabilityState.Disabled);
+
+    try capability_loader_fail(&manager.registry, index, CapabilityStatusCode.InvalidArgument);
+    try capability_manager_rollback(&manager, index);
+    try assert_true(manager.registry.entries[index].state == CapabilityState.Disabled);
 }
 
 fn test_capability_loader_install_records_installed_entry() !void {
@@ -626,6 +724,10 @@ export fn main() i32 {
     run_test("backend adapter dispatches native backend", test_capability_backend_adapter_dispatches_native_backend);
     run_test("backend adapter dispatches wamr backend", test_capability_backend_adapter_dispatches_wamr_backend);
     run_test("backend adapter rejects kind mismatch", test_capability_backend_adapter_rejects_kind_mismatch);
+    run_test("manager install load activate invoke fake", test_capability_manager_install_load_activate_invoke_fake);
+    run_test("manager invoke requires load and active", test_capability_manager_invoke_requires_load_and_active);
+    run_test("manager invoke non ok marks failed", test_capability_manager_invoke_non_ok_marks_failed);
+    run_test("manager disable and rollback delegate", test_capability_manager_disable_and_rollback_delegate_to_loader);
     run_test("loader install records installed entry", test_capability_loader_install_records_installed_entry);
     run_test("loader install rejects invalid manifest", test_capability_loader_install_rejects_invalid_manifest);
     run_test("loader activate transitions to active", test_capability_loader_activate_transitions_to_active);

@@ -11,6 +11,7 @@
 //   use std.runtime.capability.hostapi;
 //   use std.runtime.capability.backend;
 //   use std.runtime.capability.adapter;
+//   use std.runtime.capability.manager;
 //   use std.runtime.capability.fake_backend;
 //   use std.runtime.capability.native_backend;
 //   use std.runtime.capability.wamr_backend;
