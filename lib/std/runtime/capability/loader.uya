@@ -1,0 +1,55 @@
+// std.runtime.capability.loader - 安装、激活、禁用、回滚骨架
+
+use std.runtime.capability.abi.CapabilityStatusCode;
+use std.runtime.capability.manifest.CapabilityManifest;
+use std.runtime.capability.manifest.capability_manifest_validate;
+use std.runtime.capability.registry.CapabilityRegistry;
+use std.runtime.capability.registry.capability_registry_add;
+use std.runtime.capability.registry.capability_registry_disable;
+use std.runtime.capability.types.CapabilityState;
+
+export error CapabilityLoaderRejected;
+export error CapabilityLoaderInvalidState;
+
+export fn capability_loader_install(registry: &CapabilityRegistry, manifest: CapabilityManifest) !i32 {
+    try capability_manifest_validate(&manifest);
+    return try capability_registry_add(registry, manifest);
+}
+
+export fn capability_loader_activate(registry: &CapabilityRegistry, index: i32) !void {
+    if index < 0 || index >= registry.count {
+        return error.CapabilityLoaderInvalidState;
+    }
+    if !registry.entries[index].in_use {
+        return error.CapabilityLoaderInvalidState;
+    }
+
+    registry.entries[index].state = CapabilityState.Active;
+    registry.entries[index].last_status = CapabilityStatusCode.Ok;
+}
+
+export fn capability_loader_disable(registry: &CapabilityRegistry, index: i32) !void {
+    try capability_registry_disable(registry, index);
+}
+
+export fn capability_loader_fail(registry: &CapabilityRegistry, index: i32, status: CapabilityStatusCode) !void {
+    if index < 0 || index >= registry.count {
+        return error.CapabilityLoaderInvalidState;
+    }
+    registry.entries[index].state = CapabilityState.Failed;
+    registry.entries[index].last_status = status;
+}
+
+export fn capability_loader_rollback(registry: &CapabilityRegistry, index: i32) !void {
+    if index < 0 || index >= registry.count {
+        return error.CapabilityLoaderInvalidState;
+    }
+    if !registry.entries[index].in_use {
+        return error.CapabilityLoaderInvalidState;
+    }
+
+    // MVP 阶段先定义“回滚”最小语义：禁用当前失败版本，具体旧版本恢复逻辑后续补充。
+    registry.entries[index].state = CapabilityState.Disabled;
+    registry.entries[index].last_status = CapabilityStatusCode.Disabled;
+}
+

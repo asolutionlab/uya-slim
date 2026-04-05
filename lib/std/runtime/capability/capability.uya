@@ -7,4 +7,5 @@
 //   use std.runtime.capability.policy;
 //   use std.runtime.capability.abi;
 //   use std.runtime.capability.registry;
-
+//   use std.runtime.capability.loader;
+//   use std.runtime.capability.hostapi;
