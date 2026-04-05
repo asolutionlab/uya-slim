@@ -23,6 +23,8 @@ export fn main() i32 {
 ## 说明
 
 - 这份模板现在主要用于说明源码层的意图。
-- 真正的 `source(.uya) -> payload_obj -> .uapp` 链路已经开始落地，但编译器的完整微应用后端仍在继续完善。
-- 当前 `build --app microapp` 还不会直接产出 `.uapp`；现在可用的最短路径仍是 `examples/microapp/microcontainer_hello_build.uya` 这样的宿主打包器示例。
+- 真正的 `source(.uya) -> payload_obj -> .uapp` 链路已经开始落地，并且 `build --app microapp -o xxx.uapp` 现在可以直接走通。
+- 现阶段 `microapp` 的 `code` 来源是目标 gcc 的 `.text` 输出，目标架构由 `MICROAPP_TARGET_ARCH` 决定，默认是 `x86_64`；`MICROAPP_TARGET_GCC` 优先于 `TARGET_GCC`，都可显式指定具体工具链。
+- 默认目标三元组映射和编译器选择见 `README.md`，目前按 `rv32 / x86_64 / aarch64 / xtensa` 预置。
+- 当前仍保留 `payload_obj` 作为中间边界，便于单独测试和调试；它现在还会携带源文件路径等 provenance 信息，宿主打包器示例也仍然可用。
 - 这份模板可以先看成“未来微应用源码入口”，而不是当前 `build` 的直接产物入口。

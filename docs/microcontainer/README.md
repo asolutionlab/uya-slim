@@ -20,10 +20,18 @@
 ## 术语边界
 
 - `microapp.uya`：微应用源码文件（开发入口）
-- `payload_obj`：编译器与打包器之间的中间产物
+- `payload_obj`：编译器与打包器之间的中间产物，当前会保留源文件路径等 provenance 信息
 - `payload code`：`target_arch` 指定的目标架构载荷码
 - `.uapp`：最终加载器消费的镜像文件
-- 当前 `.uapp` 主要由 `examples/microapp/microcontainer_hello_build.uya` 这类宿主打包器示例生成；`build --app microapp` 还没有直接接入 `.uapp` pack 后端
+- 当前 `.uapp` 可以由 `build --app microapp ... -o xxx.uapp` 直接生成，也可以先产 `.pobj` 再用 `pack-image` 打包；宿主示例仍保留用于对照和调试
+- 当前 microapp 路径里，`payload code` 默认由 `MICROAPP_TARGET_ARCH` 决定目标架构；`MICROAPP_TARGET_GCC` 和 `TARGET_GCC` 都可以显式覆盖具体 gcc，前者优先级更高；默认是 `x86_64-linux-gnu-gcc`
+
+默认目标三元组映射：
+
+- `rv32` -> `riscv32-unknown-elf`
+- `x86_64` -> `x86_64-linux-gnu`
+- `aarch64` -> `aarch64-linux-gnu`
+- `xtensa` -> `xtensa-unknown-elf`
 
 ---
 

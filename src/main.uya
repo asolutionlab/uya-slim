@@ -11,6 +11,8 @@ use parser;
 use checker;  // 包含 checker 目录下所有文件（包括 optimizer.uya）
 // C99 代码生成（子目录，整体导入该目录模块）
 use codegen.c99;
+use kernel.image;
+use kernel.payload;
 use std;
 // C 程序入口由编译器自动注入 std.runtime.entry；此处仅导入堆栈上限设置（避免与局部名 entry 冲突）
 use std.runtime.entry.set_process_stack_limit_bytes;
@@ -44,6 +46,7 @@ enum CommandType {
     COMMAND_BUILD,   // uya build - 编译为可执行文件
     COMMAND_RUN,     // uya run - 编译并运行
     COMMAND_TEST,    // uya test - 编译测试并运行
+    COMMAND_PACK_IMAGE, // uya pack-image - 将 .pobj 打包为 .uapp
     COMMAND_OUTLIBC  // uya --outlibc - 生成独立 libc
 }
 
@@ -80,9 +83,384 @@ fn split_c_set_default_dir() void {
     }
 }
 
+fn is_pobj_output(path: &byte) i32 {
+    if path == null {
+        return 0;
+    }
+    const len: usize = strlen(path as *byte);
+    if len < 5 {
+        return 0;
+    }
+    if strcmp((path as *byte) + (len - 5), ".pobj" as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+fn is_uapp_output(path: &byte) i32 {
+    if path == null {
+        return 0;
+    }
+    const len: usize = strlen(path as *byte);
+    if len < 5 {
+        return 0;
+    }
+    if strcmp((path as *byte) + (len - 5), ".uapp" as *byte) == 0 {
+        return 1;
+    }
+    return 0;
+}
+
+const POBJ_MAGIC: u32 = 0x4A424F50;  // "POBJ"
+const POBJ_HEADER_SIZE: u32 = 40;
+const POBJ_VERSION: u16 = 5;
+const POBJ_BUILD_MODE_MICROAPP: u32 = 1;
+const MICROAPP_TARGET_ARCH_RV32_RAW: u32 = 1u32;
+const MICROAPP_TARGET_ARCH_X86_64_RAW: u32 = 2u32;
+const MICROAPP_TARGET_ARCH_AARCH64_RAW: u32 = 3u32;
+const MICROAPP_TARGET_ARCH_XTENSA_RAW: u32 = 4u32;
+
+fn read_u16_le_at(buf: &byte, off: usize) u16 {
+    const b0: u16 = buf[off] as u16;
+    const b1: u16 = buf[off + 1] as u16;
+    return b0 | (b1 << 8);
+}
+
+fn read_u32_le_at(buf: &byte, off: usize) u32 {
+    const b0: u32 = buf[off] as u32;
+    const b1: u32 = buf[off + 1] as u32;
+    const b2: u32 = buf[off + 2] as u32;
+    const b3: u32 = buf[off + 3] as u32;
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+}
+
+fn write_u16_le_at(buf: &byte, off: usize, val: u16) void {
+    buf[off] = (val & 255u16) as byte;
+    buf[off + 1] = ((val >> 8) & 255u16) as byte;
+}
+
+fn write_u32_le_at(buf: &byte, off: usize, val: u32) void {
+    buf[off] = (val & 255u32) as byte;
+    buf[off + 1] = ((val >> 8) & 255u32) as byte;
+    buf[off + 2] = ((val >> 16) & 255u32) as byte;
+    buf[off + 3] = ((val >> 24) & 255u32) as byte;
+}
+
+fn hex_nibble(c: byte) i32 {
+    if c >= 48 as byte && c <= 57 as byte {
+        return (c - 48 as byte) as i32;
+    }
+    if c >= 97 as byte && c <= 102 as byte {
+        return 10 + (c - 97 as byte) as i32;
+    }
+    if c >= 65 as byte && c <= 70 as byte {
+        return 10 + (c - 65 as byte) as i32;
+    }
+    return -1;
+}
+
+fn w16_file(fp: &FILE, val: u16) void {
+    var b0: byte = (val & 255u16) as byte;
+    var b1: byte = ((val >> 8) & 255u16) as byte;
+    _ = fwrite(&b0 as *void, 1 as usize, 1 as usize, fp);
+    _ = fwrite(&b1 as *void, 1 as usize, 1 as usize, fp);
+}
+
+fn w32_file(fp: &FILE, val: u32) void {
+    var b0: byte = (val & 255u32) as byte;
+    var b1: byte = ((val >> 8) & 255u32) as byte;
+    var b2: byte = ((val >> 16) & 255u32) as byte;
+    var b3: byte = ((val >> 24) & 255u32) as byte;
+    _ = fwrite(&b0 as *void, 1 as usize, 1 as usize, fp);
+    _ = fwrite(&b1 as *void, 1 as usize, 1 as usize, fp);
+    _ = fwrite(&b2 as *void, 1 as usize, 1 as usize, fp);
+    _ = fwrite(&b3 as *void, 1 as usize, 1 as usize, fp);
+}
+
+fn resolve_microapp_target_arch_raw() u32 {
+    var arch_name: &byte = get_env_or_default("MICROAPP_TARGET_ARCH" as *byte, "" as *byte);
+    if arch_name == null || arch_name[0] == 0 as byte {
+        arch_name = get_env_or_default("TARGET_ARCH" as *byte, "x86_64" as *byte);
+    }
+    if strcmp(arch_name as *byte, "rv32" as *byte) == 0 {
+        return MICROAPP_TARGET_ARCH_RV32_RAW;
+    }
+    if strcmp(arch_name as *byte, "x86_64" as *byte) == 0 {
+        return MICROAPP_TARGET_ARCH_X86_64_RAW;
+    }
+    if strcmp(arch_name as *byte, "aarch64" as *byte) == 0 || strcmp(arch_name as *byte, "arm64" as *byte) == 0 {
+        return MICROAPP_TARGET_ARCH_AARCH64_RAW;
+    }
+    if strcmp(arch_name as *byte, "xtensa" as *byte) == 0 {
+        return MICROAPP_TARGET_ARCH_XTENSA_RAW;
+    }
+    return MICROAPP_TARGET_ARCH_X86_64_RAW;
+}
+
+fn microapp_target_arch_name(target_arch_raw: u32) &byte {
+    if target_arch_raw == MICROAPP_TARGET_ARCH_RV32_RAW {
+        return "rv32" as &byte;
+    }
+    if target_arch_raw == MICROAPP_TARGET_ARCH_X86_64_RAW {
+        return "x86_64" as &byte;
+    }
+    if target_arch_raw == MICROAPP_TARGET_ARCH_AARCH64_RAW {
+        return "aarch64" as &byte;
+    }
+    if target_arch_raw == MICROAPP_TARGET_ARCH_XTENSA_RAW {
+        return "xtensa" as &byte;
+    }
+    return "unknown" as &byte;
+}
+
+fn microapp_target_default_triple(target_arch_raw: u32) &byte {
+    if target_arch_raw == MICROAPP_TARGET_ARCH_RV32_RAW {
+        return "riscv32-unknown-elf" as &byte;
+    }
+    if target_arch_raw == MICROAPP_TARGET_ARCH_X86_64_RAW {
+        return "x86_64-linux-gnu" as &byte;
+    }
+    if target_arch_raw == MICROAPP_TARGET_ARCH_AARCH64_RAW {
+        return "aarch64-linux-gnu" as &byte;
+    }
+    if target_arch_raw == MICROAPP_TARGET_ARCH_XTENSA_RAW {
+        return "xtensa-unknown-elf" as &byte;
+    }
+    return "x86_64-linux-gnu" as &byte;
+}
+
+fn microapp_target_default_gcc(target_arch_raw: u32) &byte {
+    if target_arch_raw == MICROAPP_TARGET_ARCH_RV32_RAW {
+        return "riscv32-unknown-elf-gcc" as &byte;
+    }
+    if target_arch_raw == MICROAPP_TARGET_ARCH_X86_64_RAW {
+        return "x86_64-linux-gnu-gcc" as &byte;
+    }
+    if target_arch_raw == MICROAPP_TARGET_ARCH_AARCH64_RAW {
+        return "aarch64-linux-gnu-gcc" as &byte;
+    }
+    if target_arch_raw == MICROAPP_TARGET_ARCH_XTENSA_RAW {
+        return "xtensa-unknown-elf-gcc" as &byte;
+    }
+    return "x86_64-linux-gnu-gcc" as &byte;
+}
+
+fn resolve_microapp_target_gcc(target_arch_raw: u32, buffer: &byte, buffer_size: i32) &byte {
+    const explicit_microapp_target_gcc: *byte = getenv("MICROAPP_TARGET_GCC" as *byte);
+    if explicit_microapp_target_gcc != null && explicit_microapp_target_gcc[0] != 0 {
+        return explicit_microapp_target_gcc as &byte;
+    }
+    const explicit_target_gcc: *byte = getenv("TARGET_GCC" as *byte);
+    if explicit_target_gcc != null && explicit_target_gcc[0] != 0 {
+        return explicit_target_gcc as &byte;
+    }
+    const fallback_gcc: &byte = microapp_target_default_gcc(target_arch_raw);
+    const written: i32 = snprintf(buffer as *byte, buffer_size, "%s" as *byte, fallback_gcc);
+    if written > 0 && written < buffer_size {
+        return buffer;
+    }
+    return get_env_or_default("CC" as *byte, "cc" as *byte);
+}
+
+fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, target_arch_raw: u32) i32 {
+    var gcc_buf: [byte: PATH_MAX] = [];
+    const gcc: &byte = resolve_microapp_target_gcc(target_arch_raw, &gcc_buf[0] as &byte, PATH_MAX);
+    const target_triple: &byte = microapp_target_default_triple(target_arch_raw);
+    var obj_path: [byte: PATH_MAX] = [];
+    var cmd: [byte: 8192] = [];
+    const obj_len: i32 = snprintf(&obj_path[0] as *byte, PATH_MAX, "%s.obj" as *byte, text_bin_path as *byte);
+    if obj_len <= 0 || obj_len >= PATH_MAX {
+        fprintf(libc.stderr, "错误: 无法生成 microapp 中间目标文件路径\n" as *byte);
+        return 1;
+    }
+
+    const compile_flags: &byte = get_env_or_default("MICROAPP_TARGET_CFLAGS" as *byte, "-std=c99 -O0 -g -fno-builtin -fno-stack-protector -fno-pie" as *byte);
+    const compile_len: i32 = snprintf(&cmd[0] as *byte, 8192, "%s %s -c %s -o %s" as *byte, gcc as *byte, compile_flags as *byte, c_file as *byte, &obj_path[0] as *byte);
+    if compile_len <= 0 || compile_len >= 8192 {
+        fprintf(libc.stderr, "错误: 无法生成 microapp 目标 gcc 编译命令\n" as *byte);
+        return 1;
+    }
+    fprintf(libc.stderr, "信息：microapp 目标架构=%s, 默认三元组=%s\n" as *byte, microapp_target_arch_name(target_arch_raw), target_triple as *byte);
+    fprintf(libc.stderr, "信息：microapp 目标 gcc 编译：%s\n" as *byte, &cmd[0] as *byte);
+    var result: i32 = system(&cmd[0] as *byte);
+    if result != 0 {
+        fprintf(libc.stderr, "错误: microapp 目标 gcc 编译失败，返回码：%d\n" as *byte, result);
+        return 1;
+    }
+
+    const objcopy_env: &byte = get_env_or_default("OBJCOPY" as *byte, "objcopy" as *byte);
+    const dump_len: i32 = snprintf(&cmd[0] as *byte, 8192, "%s -O binary --only-section=.text %s %s" as *byte, objcopy_env as *byte, &obj_path[0] as *byte, text_bin_path as *byte);
+    if dump_len <= 0 || dump_len >= 8192 {
+        fprintf(libc.stderr, "错误: 无法生成 microapp 代码段导出命令\n" as *byte);
+        return 1;
+    }
+    fprintf(libc.stderr, "信息：microapp 目标 gcc 导出 .text：%s\n" as *byte, &cmd[0] as *byte);
+    result = system(&cmd[0] as *byte);
+    if result != 0 {
+        fprintf(libc.stderr, "错误: microapp 目标 gcc .text 导出失败，返回码：%d\n" as *byte, result);
+        return 1;
+    }
+    return 0;
+}
+
+fn write_microapp_payload_obj(
+    output_path: &byte,
+    source_path: &byte,
+    c_file: &byte
+) i32 {
+    const source_len: u32 = strlen(source_path as *byte) as u32;
+    const target_arch_raw: u32 = resolve_microapp_target_arch_raw();
+    var text_bin_path: [byte: PATH_MAX] = [];
+    const text_len_path: i32 = snprintf(&text_bin_path[0] as *byte, PATH_MAX, "%s.text.bin" as *byte, output_path as *byte);
+    if text_len_path <= 0 || text_len_path >= PATH_MAX {
+        fprintf(libc.stderr, "错误: 无法生成 microapp 代码段路径\n" as *byte);
+        return 1;
+    }
+    if build_microapp_text_from_c(c_file, &text_bin_path[0] as &byte, target_arch_raw) != 0 {
+        return 1;
+    }
+    const code_len_raw: i32 = read_file_content(&text_bin_path[0] as &byte, &file_buffer[0], FILE_BUFFER_SIZE as usize);
+    if code_len_raw < 0 {
+        fprintf(libc.stderr, "错误: 无法读取 microapp 目标 gcc 代码段 '%s'\n" as *byte, &text_bin_path[0] as *byte);
+        return 1;
+    }
+    const code_len: u32 = code_len_raw as u32;
+    const fp: &FILE = fopen(output_path as *byte, "wb" as *byte);
+    if fp == null {
+        fprintf(libc.stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, output_path as *byte);
+        return 1;
+    }
+
+    const magic: u32 = 0x4A424F50;  // "POBJ"
+    const version: u16 = POBJ_VERSION;
+    const flags: u16 = 0;
+    const rodata_len: u32 = 0u32;
+    const reloc_count: u32 = 0u32;
+    const required_caps: u32 = 0u32;
+    const entry_offset: u32 = 0u32;
+    const build_mode_raw: u32 = POBJ_BUILD_MODE_MICROAPP;
+
+    _ = fwrite(&magic as *void, 1 as usize, 4 as usize, fp);
+    w16_file(fp, version);
+    w16_file(fp, flags);
+    w32_file(fp, target_arch_raw);
+    w32_file(fp, build_mode_raw);
+    w32_file(fp, required_caps);
+    w32_file(fp, entry_offset);
+    w32_file(fp, source_len);
+    w32_file(fp, code_len);
+    w32_file(fp, rodata_len);
+    w32_file(fp, reloc_count);
+    _ = fwrite(source_path as *void, 1 as usize, source_len as usize, fp);
+    _ = fwrite(&file_buffer[0] as *void, 1 as usize, code_len as usize, fp);
+    fclose(fp);
+    return 0;
+}
+
+fn pack_microapp_pobj_to_uapp(pobj_path: &byte, out_path: &byte) i32 {
+    const pobj_len: i32 = read_file_content(pobj_path, &file_buffer[0], FILE_BUFFER_SIZE as usize);
+    if pobj_len < 0 {
+        fprintf(libc.stderr, "错误: 无法读取 microapp payload 对象 '%s'\n" as *byte, pobj_path as *byte);
+        return 1;
+    }
+    if pobj_len < POBJ_HEADER_SIZE as i32 {
+        fprintf(libc.stderr, "错误: microapp payload 对象太小: %s\n" as *byte, pobj_path as *byte);
+        return 1;
+    }
+    const magic: u32 = read_u32_le_at(&file_buffer[0] as &byte, 0usize);
+    if magic != POBJ_MAGIC {
+        fprintf(libc.stderr, "错误: 不是有效的 .pobj 文件: %s\n" as *byte, pobj_path as *byte);
+        return 1;
+    }
+    const version: u16 = read_u16_le_at(&file_buffer[0] as &byte, 4usize);
+    if version != POBJ_VERSION {
+        fprintf(libc.stderr, "错误: 不支持的 .pobj 版本 %u\n" as *byte, version as u32);
+        return 1;
+    }
+
+    const file_ptr: &byte = &file_buffer[0] as &byte;
+
+    const target_arch_raw: u32 = read_u32_le_at(file_ptr, 8usize);
+    const build_mode_raw: u32 = read_u32_le_at(file_ptr, 12usize);
+    const required_caps: u32 = read_u32_le_at(file_ptr, 16usize);
+    const entry_offset: u32 = read_u32_le_at(file_ptr, 20usize);
+    const source_path_len: u32 = read_u32_le_at(file_ptr, 24usize);
+    const code_len: u32 = read_u32_le_at(file_ptr, 28usize);
+    const rodata_len: u32 = read_u32_le_at(file_ptr, 32usize);
+    const reloc_count: u32 = read_u32_le_at(file_ptr, 36usize);
+
+    if build_mode_raw != POBJ_BUILD_MODE_MICROAPP {
+        fprintf(libc.stderr, "错误: 仅支持 microapp payload_obj\n" as *byte);
+        return 1;
+    }
+    if code_len == 0 {
+        fprintf(libc.stderr, "错误: payload_obj 缺少 code 段\n" as *byte);
+        return 1;
+    }
+
+    const source_path_off: usize = POBJ_HEADER_SIZE as usize;
+    const code_off: usize = source_path_off + source_path_len as usize;
+    const rodata_off: usize = code_off + code_len as usize;
+    if rodata_off + rodata_len as usize > pobj_len as usize {
+        fprintf(libc.stderr, "错误: .pobj 内容长度不一致\n" as *byte);
+        return 1;
+    }
+
+    if target_arch_raw < MICROAPP_TARGET_ARCH_RV32_RAW || target_arch_raw > MICROAPP_TARGET_ARCH_XTENSA_RAW {
+        fprintf(libc.stderr, "错误: 当前 packer 不支持未知目标架构\n" as *byte);
+        return 1;
+    }
+    if source_path_off + source_path_len as usize > pobj_len as usize {
+        fprintf(libc.stderr, "错误: .pobj 源路径长度不一致\n" as *byte);
+        return 1;
+    }
+    const source_path_ptr: &byte = &file_buffer[source_path_off] as &byte;
+    const code_ptr: &byte = &file_buffer[code_off] as &byte;
+    const rodata_ptr: &byte = &file_buffer[rodata_off] as &byte;
+    const source_path_bytes: &[byte] = source_path_ptr[0: source_path_len as usize];
+    const code_bytes: &[byte] = code_ptr[0: code_len as usize];
+    const rodata_bytes: &[byte] = rodata_ptr[0: rodata_len as usize];
+    const payload: PayloadObj = PayloadObj{
+        target_arch: image_target_arch_from_byte(target_arch_raw as byte),
+        build_mode: BUILD_MODE_CONTAINER,
+        required_caps: required_caps,
+        entry_offset: entry_offset,
+        code: code_bytes,
+        rodata: rodata_bytes,
+        reloc_count: reloc_count,
+    };
+    _ = source_path_bytes;
+    const out_ptr: &byte = &microapp_pack_output_buffer[0] as &byte;
+    const out_bytes: &[byte] = out_ptr[0: @len(microapp_pack_output_buffer)];
+    const image_len: u32 = payload_pack_to_uapp(
+        &payload,
+        out_bytes
+    ) catch {
+        fprintf(libc.stderr, "错误: payload_pack_to_uapp 失败\n" as *byte);
+        return 1;
+    };
+
+    const image_bytes: &[byte] = out_ptr[0: image_len as usize];
+    const validated_header: ImageHeader = image_validate(image_bytes) catch {
+        fprintf(libc.stderr, "错误: 生成的 .uapp 未通过自验证\n" as *byte);
+        return 1;
+    };
+    _ = validated_header;
+
+    const fp: &FILE = fopen(out_path as *byte, "wb" as *byte);
+    if fp == null {
+        fprintf(libc.stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, out_path as *byte);
+        return 1;
+    }
+    _ = fwrite(&microapp_pack_output_buffer[0] as *void, 1 as usize, image_len as usize, fp);
+    fclose(fp);
+    return 0;
+}
+
 // 全局缓冲区（替代 C 的 static 数组，零初始化）
 var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
 var file_buffer: [byte: FILE_BUFFER_SIZE] = [];
+var microapp_pack_output_buffer: [byte: FILE_BUFFER_SIZE + 512] = [];
 // 临时 Arena 缓冲区（用于依赖收集，全局变量避免栈溢出）
 // v2.0: 动态增长，初始 16MB
 var temp_arena_buffer: [byte: 16 * 1024 * 1024] = [];
@@ -95,7 +473,7 @@ var resolved_files_global: [&byte: MAX_INPUT_FILES] = [];
 // 成功返回读取字节数，失败返回 -1
 // 注意：filename 用 &byte，调用 fopen 时转为 *byte
 fn read_file_content(filename: &byte, buffer: &byte, buffer_size: usize) i32 {
-    const file: *void = fopen(filename as *byte, "rb" as *byte);
+    const file: &FILE = fopen(filename as *byte, "rb" as *byte);
     if file == null {
         return -1;
     }
@@ -379,16 +757,20 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "Uya 编译器 - 零GC系统编程语言\n" as *byte);
     fprintf(libc.stderr, "版本：v0.8.2\n" as *byte);
     fprintf(libc.stderr, "\n用法:\n" as *byte);
-    fprintf(libc.stderr, "  %s build <文件> [-o <输出>] [选项]  编译为可执行文件\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s build <文件> [-o <输出>] [选项]  编译为可执行文件或中间产物\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s build --app microapp <文件> -o <xxx.pobj|xxx.uapp>  输出 microapp 载荷对象或镜像\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s pack-image <xxx.pobj> -o <xxx.uapp>  将 microapp 载荷对象打包为 .uapp\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run <文件> [选项] [-- <参数>...]  编译并运行\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s test <文件> [选项]               编译测试并运行（子进程栈：--stack-size 或默认 65536 KB）\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s --outlibc <目录>                 生成独立 libc\n" as *byte, name as *byte);
     fprintf(libc.stderr, "\n示例:\n" as *byte);
     fprintf(libc.stderr, "  %s build main.uya -o myapp\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s pack-image hello.pobj -o hello.uapp\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s run main.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s test tests.uya\n" as *byte, name as *byte);
     fprintf(libc.stderr, "  %s build main.uya -o main.c --c99   # 生成 C99 代码\n" as *byte, name as *byte);
-    fprintf(libc.stderr, "  %s build --app microapp main.uya -o microapp.c  # 微应用模式\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  %s build --app microapp main.uya -o microapp.uapp  # 微应用模式\n" as *byte, name as *byte);
+    fprintf(libc.stderr, "  MICROAPP_TARGET_ARCH=x86_64 %s build --app microapp main.uya -o microapp.uapp\n" as *byte, name as *byte);
     fprintf(libc.stderr, "\n选项:\n" as *byte);
     fprintf(libc.stderr, "  --c99                使用 C99 后端生成 C 代码\n" as *byte);
     fprintf(libc.stderr, "  --app <app|microapp>  选择应用类型；app 为默认行为，microapp 会启用更严格检查\n" as *byte);
@@ -407,6 +789,11 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  C99 默认多文件输出到 .uyacache（显式 -o xxx.c 或 UYA_SPLIT_C=0|false|no|off 时为单文件）\n" as *byte);
     fprintf(libc.stderr, "  多文件布局：默认镜像分 TU（一源一 .c，便于 make -j）；UYA_SPLIT_C_MIRROR=0|false|no|off 时用 uya_part1+part2\n" as *byte);
     fprintf(libc.stderr, "  -h, --help           显示此帮助信息\n" as *byte);
+    fprintf(libc.stderr, "\n微应用环境变量:\n" as *byte);
+    fprintf(libc.stderr, "  MICROAPP_TARGET_ARCH  microapp 目标架构；默认 x86_64\n" as *byte);
+    fprintf(libc.stderr, "  MICROAPP_TARGET_GCC   microapp 专用 gcc；优先于 TARGET_GCC\n" as *byte);
+    fprintf(libc.stderr, "  TARGET_GCC            通用 gcc；仅在未设 MICROAPP_TARGET_GCC 时生效\n" as *byte);
+    fprintf(libc.stderr, "  默认三元组：rv32=riscv32-unknown-elf, x86_64=x86_64-linux-gnu, aarch64=aarch64-linux-gnu, xtensa=xtensa-unknown-elf\n" as *byte);
     fprintf(libc.stderr, "\n说明:\n" as *byte);
     fprintf(libc.stderr, "  - 可以指定单个文件或目录，编译器会自动解析模块依赖\n" as *byte);
     fprintf(libc.stderr, "  - 如果指定目录，目录中必须只有一个文件包含 main 函数\n" as *byte);
@@ -1473,6 +1860,9 @@ fn parse_args(
         } else if strcmp(first_arg, "test" as *byte) == 0 {
             command[0] = CommandType.COMMAND_TEST;
             start_idx = 2;
+        } else if strcmp(first_arg, "pack-image" as *byte) == 0 {
+            command[0] = CommandType.COMMAND_PACK_IMAGE;
+            start_idx = 2;
         }
         // 如果不是子命令，保持默认 COMMAND_BUILD，start_idx = 1
     }
@@ -2225,6 +2615,10 @@ fn compile_files(
         fprintf(libc.stderr, "项目根目录: %s\n" as *byte, project_root as *byte);
     }
     fprintf(libc.stderr, "UYA_ROOT: %s\n" as *byte, &uya_root_buffer[0]);
+    var module_name: *byte = "(unknown)" as *byte;
+    if all_file_count > 0 {
+        module_name = all_files[0] as *byte;
+    }
     fprintf(libc.stderr, "=== 词法/语法分析 ===\n" as *byte);
     var backend_str: *byte = "LLVM" as *byte;
     if backend == BackendType.BACKEND_C99 {
@@ -2387,10 +2781,6 @@ fn compile_files(
     }
 
     fprintf(libc.stderr, "\n=== 代码生成阶段 ===\n" as *byte);
-    var module_name: *byte = "(unknown)" as *byte;
-    if all_file_count > 0 {
-        module_name = all_files[0] as *byte;
-    }
     fprintf(libc.stderr, "模块名: %s\n" as *byte, module_name);
 
     // C99 后端：生成 C 源代码（与 C 版本保持一致，直接使用 C99 后端）
@@ -2517,6 +2907,29 @@ export fn main() i32 {
         return result;
     }
 
+    if command == CommandType.COMMAND_PACK_IMAGE {
+        if input_file_count != 1 {
+            fprintf(libc.stderr, "错误: pack-image 只接受一个 .pobj 输入文件\n" as *byte);
+            return 1;
+        }
+        if output_file_index < 0 {
+            fprintf(libc.stderr, "错误: pack-image 需要 -o 指定输出 .uapp 路径\n" as *byte);
+            return 1;
+        }
+        const pobj_path: *byte = get_argv(input_file_indices[0]);
+        const uapp_path: *byte = get_argv(output_file_index);
+        if pobj_path == null || uapp_path == null {
+            fprintf(libc.stderr, "错误: 无法获取 pack-image 输入或输出路径\n" as *byte);
+            return 1;
+        }
+        const pack_result: i32 = pack_microapp_pobj_to_uapp(pobj_path as &byte, uapp_path as &byte);
+        if pack_result != 0 {
+            return pack_result;
+        }
+        fprintf(libc.stderr, "pack-image 完成: %s -> %s\n" as *byte, pobj_path, uapp_path);
+        return 0;
+    }
+
     // build 命令：如果没有指定 -o，使用默认输出 a.out
     if command == CommandType.COMMAND_BUILD && output_file_index < 0 {
         if host_fill_temp_c_compile_path(&auto_output_path[0], PATH_MAX) != 0 {
@@ -2560,16 +2973,22 @@ export fn main() i32 {
         }
     }
 
-    // microapp 模式下，build 目前仍只负责生成宿主编译产物；
-    // 任何试图直接产出可执行文件 / .uapp 的路径都应当被拒绝。
+    // microapp 模式下，build 仍然先完成宿主编译检查，
+    // 但现在可以在后处理阶段直接产出 .pobj / .uapp。
     if command == CommandType.COMMAND_BUILD && g_app_mode_microapp != 0 {
         if user_output_path == null {
-            fprintf(libc.stderr, "错误: --app microapp 的 build 目前只支持显式输出 .c 宿主产物；如果你要生成 .uapp，请运行 examples/microapp/microcontainer_hello_build.uya，或等待微应用 pack 后端接入\n" as *byte);
+            fprintf(libc.stderr, "错误: --app microapp 的 build 需要显式输出 .c / .pobj / .uapp\n" as *byte);
             return 1;
         }
-        if is_c_output(user_output_path as &byte) == 0 {
-            fprintf(libc.stderr, "错误: --app microapp 的 build 目前只支持输出 .c 宿主产物；要生成 .uapp，请先使用 examples/microapp/microcontainer_hello_build.uya 或等待微应用 pack 后端接入\n" as *byte);
+        if is_c_output(user_output_path as &byte) == 0 &&
+           is_pobj_output(user_output_path as &byte) == 0 &&
+           is_uapp_output(user_output_path as &byte) == 0 {
+            fprintf(libc.stderr, "错误: --app microapp 的 build 目前只支持输出 .c / .pobj / .uapp\n" as *byte);
             return 1;
+        }
+        if is_pobj_output(user_output_path as &byte) != 0 || is_uapp_output(user_output_path as &byte) != 0 {
+            // 目标 gcc 需要单文件 C 输入；microapp 的后处理阶段不走 split-C。
+            g_split_c_disabled_cli = 1;
         }
     }
 
@@ -2600,6 +3019,47 @@ export fn main() i32 {
     const result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg);
     if result != 0 {
         return result;
+    }
+
+    if command == CommandType.COMMAND_BUILD && g_app_mode_microapp != 0 && user_output_path != null && is_pobj_output(user_output_path as &byte) != 0 {
+        const source_path: *byte = get_argv(input_file_indices[0]);
+        if source_path == null {
+            fprintf(libc.stderr, "错误: 无法获取 microapp 源文件路径\n" as *byte);
+            return 1;
+        }
+        const manifest_result: i32 = write_microapp_payload_obj(user_output_path as &byte, source_path as &byte, &auto_output_path[0] as &byte);
+        if manifest_result != 0 {
+            return manifest_result;
+        }
+        fprintf(libc.stderr, "\n=== microapp payload_obj 已输出 ===\n" as *byte);
+        fprintf(libc.stderr, "输出文件: %s\n" as *byte, user_output_path);
+        fprintf(libc.stderr, "注意: 代码段来自 target gcc 的 .text 输出\n" as *byte);
+        return 0;
+    }
+
+    if command == CommandType.COMMAND_BUILD && g_app_mode_microapp != 0 && user_output_path != null && is_uapp_output(user_output_path as &byte) != 0 {
+        const source_path: *byte = get_argv(input_file_indices[0]);
+        if source_path == null {
+            fprintf(libc.stderr, "错误: 无法获取 microapp 源文件路径\n" as *byte);
+            return 1;
+        }
+        var temp_pobj_path: [byte: PATH_MAX] = [];
+        const temp_pobj_len: i32 = snprintf(&temp_pobj_path[0] as *byte, PATH_MAX, "%s.pobj" as *byte, user_output_path as *byte);
+        if temp_pobj_len <= 0 || temp_pobj_len >= PATH_MAX {
+            fprintf(libc.stderr, "错误: 无法生成 microapp 临时 payload_obj 路径\n" as *byte);
+            return 1;
+        }
+        const manifest_result: i32 = write_microapp_payload_obj(&temp_pobj_path[0] as &byte, source_path as &byte, &auto_output_path[0] as &byte);
+        if manifest_result != 0 {
+            return manifest_result;
+        }
+        const pack_result: i32 = pack_microapp_pobj_to_uapp(&temp_pobj_path[0] as &byte, user_output_path as &byte);
+        if pack_result != 0 {
+            return pack_result;
+        }
+        fprintf(libc.stderr, "\n=== microapp .uapp 已输出 ===\n" as *byte);
+        fprintf(libc.stderr, "输出文件: %s\n" as *byte, user_output_path);
+        return 0;
     }
 
     // build 命令：检测输出类型（C 文件或可执行文件）

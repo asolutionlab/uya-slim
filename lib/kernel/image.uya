@@ -174,7 +174,7 @@ export fn image_verify_structure(hdr: &ImageHeader, total_len: u32) !void {
     if hdr.build_mode != BUILD_MODE_CONTAINER {
         return error.ImgLayoutInvalid;
     }
-    if hdr.target_arch != ImageTargetArch.ita_rv32 {
+    if hdr.target_arch == ImageTargetArch.ita_unknown {
         return error.ImgArchMismatch;
     }
     const code_end: u32 = IMAGE_HEADER_SIZE + hdr.code_size;
@@ -201,7 +201,9 @@ export fn image_verify_instructions(data: &[byte], hdr: &ImageHeader) !void {
     if code_len == 0 { return; }
     if code_start + code_len > data.len { return error.ImgLayoutInvalid; }
     const code_slice: &[byte] = data[code_start: code_len];
-    try rv32_scan_policy(code_slice);
+    if hdr.target_arch == ImageTargetArch.ita_rv32 {
+        try rv32_scan_policy(code_slice);
+    }
 }
 
 // ── Combined 3-stage validation ──

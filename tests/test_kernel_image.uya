@@ -123,7 +123,7 @@ test "image_verify_structure_bad_size" {
 test "image_verify_structure_bad_arch" {
     var buf: [byte: 100] = [];
     build_test_image(buf[0: 100]);
-    buf[65] = image_target_arch_to_byte(ImageTargetArch.ita_x86_64);
+    buf[65] = image_target_arch_to_byte(ImageTargetArch.ita_unknown);
     var digest: [byte: 32] = [];
     var i: usize = 0;
     while i < 32 {
@@ -140,6 +140,26 @@ test "image_verify_structure_bad_arch" {
     var failed: i32 = 0;
     image_verify_structure(&hdr, 100) catch |err| { failed = 1; };
     try assert_eq_i32(failed, 1);
+}
+
+test "image_verify_structure_x86_64_pass" {
+    var buf: [byte: 100] = [];
+    build_test_image(buf[0: 100]);
+    buf[65] = image_target_arch_to_byte(ImageTargetArch.ita_x86_64);
+    var digest: [byte: 32] = [];
+    var i: usize = 0;
+    while i < 32 {
+        buf[28 + i] = 0;
+        i = i + 1;
+    }
+    sha256_digest(buf[0: 100], digest[0: 32]);
+    i = 0;
+    while i < 32 {
+        buf[28 + i] = digest[i];
+        i = i + 1;
+    }
+    const hdr: ImageHeader = try image_parse_header(buf[0: 100]);
+    try image_verify_structure(&hdr, 100);
 }
 
 // ── Stage 3: RV32 Instruction Policy Tests ──

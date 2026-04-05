@@ -31,10 +31,20 @@
 - 已实现 `image_validate()` 对 `.uapp` 做完整性、结构、指令策略验证
 - 已具备模拟加载路径 `sim_load_image()`
 - 已有 `examples/microapp/microcontainer_hello.uapp` 可被加载执行
+- 现阶段 `microapp` 的 `code` 由目标 gcc 编译出的 `.text` 提供，目标架构由 `MICROAPP_TARGET_ARCH` 决定，默认是 `x86_64`，`MICROAPP_TARGET_GCC` 优先于 `TARGET_GCC`，可覆盖具体工具链
+- 默认目标三元组映射当前覆盖 `rv32 / x86_64 / aarch64 / xtensa`，对应的默认 gcc 分别是：
+  - `riscv32-unknown-elf-gcc`
+  - `x86_64-linux-gnu-gcc`
+  - `aarch64-linux-gnu-gcc`
+  - `xtensa-unknown-elf-gcc`
 
-但当前还**没有**打通真正的“微应用源码直接编译为 `.uapp`”链路。
+当前实现已经打通 `build --app microapp -> target gcc .text -> payload_obj -> .uapp` 这条链路。
+如果后续要继续演进，重点会转向：
 
-当前示例镜像 `examples/microapp/microcontainer_hello.uapp` 的真实来源是手工构造逻辑，而不是正式的源码级打包链。
+- 把 `code` 从 C 后端产物进一步收敛成更明确的目标载荷表示
+- 为更多 `target_arch` 梳理默认 gcc 与验证策略
+
+当前示例镜像 `examples/microapp/microcontainer_hello.uapp` 仍可作为对照，但正式的 `microapp` 路径已经能从源码一路生成到 `.uapp`。
 
 ### 2.1 当前实现进度
 
@@ -43,6 +53,8 @@
 - `lib/kernel/payload.uya`
 - `tests/test_kernel_payload.uya`
 - `tests/run_kernel_payload.sh`
+
+当前仓库里的 `.pobj` 版本已经开始携带源文件路径等 provenance 信息，便于后续追踪输入来源与调试中间产物。
 
 同时，示例 builder 已经从手工拼镜像改成调用 `payload_pack_to_uapp()`：
 
@@ -293,18 +305,12 @@ app.uya / microapp.uya
 uya build --app microapp examples/microapp/microcontainer_hello.uya -o examples/microapp/microcontainer_hello.uapp
 ```
 
-这条命令是**目标形态**，但当前编译器还没有把它真正接到 `build` 的微应用 pack 后端。
+这条命令现在已经可以直接走通，作为最短路径。
 
-当前可用的最短路径仍然是先运行宿主打包器示例：
-
-```bash
-uya run examples/microapp/microcontainer_hello_build.uya
-```
-
-然后再运行加载器示例：
+如果想把编译和打包拆开，仍然可以先生成 `.pobj`，再单独运行：
 
 ```bash
-uya run examples/microapp/microcontainer_hello_load.uya
+uya pack-image build/hello.pobj -o examples/microapp/microcontainer_hello.uapp
 ```
 
 这条目标命令未来可以拆成两步：
@@ -319,7 +325,7 @@ uya pack-image build/hello.pobj -o examples/microapp/microcontainer_hello.uapp
 - `compile` 负责前端、microapp 模式检查、目标代码生成、`payload_obj` 输出
 - `pack-image` 负责封装 `.uapp`
 
-在当前仓库里，`build --app microapp` 仍然只负责生成宿主侧 `.c` / native 产物；要产出 `.uapp`，目前仍需通过 `examples/microapp/microcontainer_hello_build.uya` 这类宿主打包器示例。
+当前仓库里，`build --app microapp` 已经可以直接产出 `.pobj` 或 `.uapp`；宿主打包器示例主要用于对照验证和格式调试。
 
 ### 6.2 调试型命令
 
