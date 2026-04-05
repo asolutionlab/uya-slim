@@ -11,6 +11,14 @@ export const IMAGE_MAGIC: u32 = 1431912704;     // 0x55594100 = "UYA\0"
 export const IMAGE_HEADER_SIZE: u32 = 96;
 export const BUILD_MODE_CONTAINER: byte = 1;
 
+export enum ImageTargetArch {
+    ita_unknown = 0,
+    ita_rv32 = 1,
+    ita_x86_64 = 2,
+    ita_aarch64 = 3,
+    ita_xtensa = 4,
+}
+
 export const OFF_MAGIC: u32 = 0;
 export const OFF_FORMAT_VER: u32 = 4;
 export const OFF_API_VER: u32 = 6;
@@ -22,6 +30,7 @@ export const OFF_RELOC_COUNT: u32 = 24;
 export const OFF_SHA256: u32 = 28;
 export const OFF_CAPS: u32 = 60;
 export const OFF_BUILD_MODE: u32 = 64;
+export const OFF_TARGET_ARCH: u32 = 65;
 
 export struct ImageHeader {
     magic: u32,
@@ -35,6 +44,7 @@ export struct ImageHeader {
     sha256: [byte: 32],
     required_caps: u32,
     build_mode: byte,
+    target_arch: ImageTargetArch,
 }
 
 // ── Helpers ──
@@ -58,6 +68,22 @@ fn write_u32_le_arr(buf: &[byte], off: usize, val: u32) void {
     buf.ptr[off + 1] = ((val >> 8) & 255u32) as byte;
     buf.ptr[off + 2] = ((val >> 16) & 255u32) as byte;
     buf.ptr[off + 3] = ((val >> 24) & 255u32) as byte;
+}
+
+export fn image_target_arch_to_byte(arch: ImageTargetArch) byte {
+    if arch == ImageTargetArch.ita_rv32 { return 1; }
+    if arch == ImageTargetArch.ita_x86_64 { return 2; }
+    if arch == ImageTargetArch.ita_aarch64 { return 3; }
+    if arch == ImageTargetArch.ita_xtensa { return 4; }
+    return 0;
+}
+
+export fn image_target_arch_from_byte(raw: byte) ImageTargetArch {
+    if raw == 1 { return ImageTargetArch.ita_rv32; }
+    if raw == 2 { return ImageTargetArch.ita_x86_64; }
+    if raw == 3 { return ImageTargetArch.ita_aarch64; }
+    if raw == 4 { return ImageTargetArch.ita_xtensa; }
+    return ImageTargetArch.ita_unknown;
 }
 
 // ── Parse header ──
@@ -84,6 +110,7 @@ export fn image_parse_header(data: &[byte]) !ImageHeader {
         sha256: [],
         required_caps: read_u32_le(data, OFF_CAPS as usize),
         build_mode: data.ptr[OFF_BUILD_MODE as usize],
+        target_arch: image_target_arch_from_byte(data.ptr[OFF_TARGET_ARCH as usize]),
     };
 
     var i: usize = 0;
@@ -146,6 +173,9 @@ export fn image_verify_structure(hdr: &ImageHeader, total_len: u32) !void {
     }
     if hdr.build_mode != BUILD_MODE_CONTAINER {
         return error.ImgLayoutInvalid;
+    }
+    if hdr.target_arch != ImageTargetArch.ita_rv32 {
+        return error.ImgArchMismatch;
     }
     const code_end: u32 = IMAGE_HEADER_SIZE + hdr.code_size;
     if code_end > total_len {

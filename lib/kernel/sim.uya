@@ -8,6 +8,7 @@
 use kernel.container;
 use kernel.dispatch;
 use kernel.errors;
+use kernel.image;
 use kernel.mem;
 use kernel.paging;
 use kernel.recovery;
@@ -37,6 +38,9 @@ export struct SimKernel {
     entry_fns: [i32: 8],      // 0 = no entry, >0 = registered function index
     container_ctxs: [SimContainerCtx: 8],
     total_ticks: u32,
+    loaded_image_headers: [ImageHeader: 8],
+    loaded_image_ppn: [u32: 8],
+    loaded_image_valid: [u32: 8],
     // Callback table: callers register fn pointers here
     // For simplicity in Uya (no fn pointer arrays), we use a dispatch pattern
 }
@@ -58,7 +62,93 @@ export fn sim_kernel_init(k: &SimKernel) void {
         k.container_ctxs[i].cid = i;
         k.container_ctxs[i].tick = 0;
         k.container_ctxs[i].kernel = k;
+        k.loaded_image_ppn[i] = 0u32;
+        k.loaded_image_valid[i] = 0u32;
         i = i + 1;
+    }
+}
+
+fn sim_pt_ref(k: &SimKernel, slot: u32) &PageTable {
+    if slot == 0u32 { return &k.host_ctx.pts[0]; }
+    if slot == 1u32 { return &k.host_ctx.pts[1]; }
+    if slot == 2u32 { return &k.host_ctx.pts[2]; }
+    if slot == 3u32 { return &k.host_ctx.pts[3]; }
+    if slot == 4u32 { return &k.host_ctx.pts[4]; }
+    if slot == 5u32 { return &k.host_ctx.pts[5]; }
+    if slot == 6u32 { return &k.host_ctx.pts[6]; }
+    return &k.host_ctx.pts[7];
+}
+
+fn sim_loaded_header_ref(k: &SimKernel, slot: u32) &ImageHeader {
+    if slot == 0u32 { return &k.loaded_image_headers[0]; }
+    if slot == 1u32 { return &k.loaded_image_headers[1]; }
+    if slot == 2u32 { return &k.loaded_image_headers[2]; }
+    if slot == 3u32 { return &k.loaded_image_headers[3]; }
+    if slot == 4u32 { return &k.loaded_image_headers[4]; }
+    if slot == 5u32 { return &k.loaded_image_headers[5]; }
+    if slot == 6u32 { return &k.loaded_image_headers[6]; }
+    return &k.loaded_image_headers[7];
+}
+
+fn sim_loaded_ppn_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_image_ppn[0]; }
+    if slot == 1u32 { return &k.loaded_image_ppn[1]; }
+    if slot == 2u32 { return &k.loaded_image_ppn[2]; }
+    if slot == 3u32 { return &k.loaded_image_ppn[3]; }
+    if slot == 4u32 { return &k.loaded_image_ppn[4]; }
+    if slot == 5u32 { return &k.loaded_image_ppn[5]; }
+    if slot == 6u32 { return &k.loaded_image_ppn[6]; }
+    return &k.loaded_image_ppn[7];
+}
+
+fn sim_loaded_valid_ref(k: &SimKernel, slot: u32) &u32 {
+    if slot == 0u32 { return &k.loaded_image_valid[0]; }
+    if slot == 1u32 { return &k.loaded_image_valid[1]; }
+    if slot == 2u32 { return &k.loaded_image_valid[2]; }
+    if slot == 3u32 { return &k.loaded_image_valid[3]; }
+    if slot == 4u32 { return &k.loaded_image_valid[4]; }
+    if slot == 5u32 { return &k.loaded_image_valid[5]; }
+    if slot == 6u32 { return &k.loaded_image_valid[6]; }
+    return &k.loaded_image_valid[7];
+}
+
+fn sim_entry_fn_ref(k: &SimKernel, slot: u32) &i32 {
+    if slot == 0u32 { return &k.entry_fns[0]; }
+    if slot == 1u32 { return &k.entry_fns[1]; }
+    if slot == 2u32 { return &k.entry_fns[2]; }
+    if slot == 3u32 { return &k.entry_fns[3]; }
+    if slot == 4u32 { return &k.entry_fns[4]; }
+    if slot == 5u32 { return &k.entry_fns[5]; }
+    if slot == 6u32 { return &k.entry_fns[6]; }
+    return &k.entry_fns[7];
+}
+
+fn sim_ctx_ref(k: &SimKernel, slot: u32) &SimContainerCtx {
+    if slot == 0u32 { return &k.container_ctxs[0]; }
+    if slot == 1u32 { return &k.container_ctxs[1]; }
+    if slot == 2u32 { return &k.container_ctxs[2]; }
+    if slot == 3u32 { return &k.container_ctxs[3]; }
+    if slot == 4u32 { return &k.container_ctxs[4]; }
+    if slot == 5u32 { return &k.container_ctxs[5]; }
+    if slot == 6u32 { return &k.container_ctxs[6]; }
+    return &k.container_ctxs[7];
+}
+
+fn sim_handle_result(k: &SimKernel, cid: u32, result: i32) !void {
+    if result == 0 {
+        try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
+    } else if result > 0 {
+        try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_empty);
+    } else {
+        const fault_code: u32 = try ((0 - result) as! u32);
+        try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_crashed);
+        recovery_record_crash(&k.recovery, cid, k.total_ticks as i64, fault_code);
+        if recovery_should_restart(&k.recovery, cid) != 0 {
+            recovery_mark_restarted(&k.recovery, cid);
+            try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
+        } else {
+            try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_zombie);
+        }
     }
 }
 
@@ -81,6 +171,71 @@ export fn sim_syscall(k: &SimKernel, cid: u32, num: u32, arg1: u32, arg2: u32) !
     return try syscall_dispatch(&k.host_ctx, cid, num, arg1, arg2);
 }
 
+export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[byte]) !void {
+    if cid >= 8u32 {
+        return error.InvalidState;
+    }
+    if k.host_ctx.pm.base == null {
+        return error.NoMemory;
+    }
+    const hdr: ImageHeader = try image_validate(image_bytes);
+    if hdr.image_size > PAGE_SIZE {
+        return error.TooLarge;
+    }
+    const ppn: u32 = try page_alloc(&k.host_ctx.pool);
+    const base: &byte = try physmem_ptr(&k.host_ctx.pm, ppn, 0u32);
+    var i: u32 = 0;
+    while i < hdr.image_size {
+        base[i] = image_bytes.ptr[i as usize];
+        i = i + 1u32;
+    }
+    const pt: &PageTable = sim_pt_ref(k, cid);
+    pt_init(pt);
+    try pt_map(pt, 0u32, ppn, PTE_R | PTE_U);
+    sim_loaded_header_ref(k, cid)[0] = hdr;
+    sim_loaded_ppn_ref(k, cid)[0] = ppn;
+    sim_loaded_valid_ref(k, cid)[0] = 1u32;
+    sim_entry_fn_ref(k, cid)[0] = -1;
+    try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
+    try scheduler_set_priority(&k.sched, cid, priority);
+}
+
+export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
+    if cid >= 8u32 {
+        return error.InvalidState;
+    }
+    if sim_loaded_valid_ref(k, cid)[0] == 0u32 {
+        return error.InvalidState;
+    }
+    const hdr: ImageHeader = sim_loaded_header_ref(k, cid)[0];
+    const code_off: u32 = IMAGE_HEADER_SIZE + hdr.entry_offset;
+    const loaded_ppn: u32 = sim_loaded_ppn_ref(k, cid)[0];
+    const insn_ptr: &byte = try physmem_ptr(&k.host_ctx.pm, loaded_ppn, code_off);
+    const insn: u32 = (insn_ptr[0] as u32) | ((insn_ptr[1] as u32) << 8) | ((insn_ptr[2] as u32) << 16) | ((insn_ptr[3] as u32) << 24);
+    if insn != 115u32 {
+        return error.ImgInsnDenied;
+    }
+    if hdr.rodata_size > 0u32 {
+        const rodata_vaddr: u32 = IMAGE_HEADER_SIZE + hdr.code_size;
+        _ = try sim_syscall(k, cid, SYS_PRINT, rodata_vaddr, hdr.rodata_size);
+    }
+    return 1;
+}
+
+export fn sim_tick_loaded(k: &SimKernel) !u32 {
+    const cid: u32 = try scheduler_pick_next_rr(&k.sched);
+    if cid >= 8u32 {
+        return error.InvalidState;
+    }
+    try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_running);
+    const ctx: &SimContainerCtx = sim_ctx_ref(k, cid);
+    ctx.tick = ctx.tick + 1u32;
+    k.total_ticks = k.total_ticks + 1u32;
+    const result: i32 = try sim_exec_loaded(k, cid);
+    try sim_handle_result(k, cid, result);
+    return cid;
+}
+
 // ── Run one tick: pick next container, call it, handle result ──
 // Returns: cid of container that ran, or error if none runnable
 
@@ -91,7 +246,8 @@ export fn sim_tick(k: &SimKernel, call_result: &i32) !u32 {
     if cid >= 0 && cid < 8 {
         // Mark as running
         try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_running);
-        k.container_ctxs[cid].tick = k.container_ctxs[cid].tick + 1;
+        const ctx: &SimContainerCtx = sim_ctx_ref(k, cid);
+        ctx.tick = ctx.tick + 1;
 
         // The actual "call" is done by the test harness reading entry_fns[cid]
         // and calling the appropriate function. Here we just return cid;
@@ -101,26 +257,7 @@ export fn sim_tick(k: &SimKernel, call_result: &i32) !u32 {
 
         const result: i32 = call_result[0];
 
-        if result == 0 {
-            // Yield: back to ready
-            try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
-        } else if result > 0 {
-            // Normal exit
-            try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_empty);
-        } else {
-            // Crash
-            const fault_code: u32 = (0 - result) as u32;
-            try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_crashed);
-            recovery_record_crash(&k.recovery, cid, k.total_ticks as i64, fault_code);
-
-            // Auto-restart if not fused
-            if recovery_should_restart(&k.recovery, cid) != 0 {
-                recovery_mark_restarted(&k.recovery, cid);
-                try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
-            } else {
-                try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_zombie);
-            }
-        }
+        try sim_handle_result(k, cid, result);
 
         return cid;
     }

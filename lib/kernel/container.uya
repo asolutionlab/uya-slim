@@ -21,11 +21,11 @@ export struct ContainerSlot {
 /// 功能说明：判断状态是否可被时间片调度（就绪或正在运行）。
 /// 参数：`st` — 容器状态。
 /// 返回：1 表示可调度，0 表示不可调度。
-export fn container_state_is_runnable(st: ContainerState) i32 {
-    if st == ContainerState.cs_ready {
+export fn container_state_is_runnable(st: i32) i32 {
+    if st == 2 {
         return 1;
     }
-    if st == ContainerState.cs_running {
+    if st == 3 {
         return 1;
     }
     return 0;

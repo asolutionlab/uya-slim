@@ -32,6 +32,7 @@
 - `sha256`
 - `required_caps_bitmap`
 - `build_mode`（必须为 `container`）
+- `target_arch`（如 `rv32` / `x86_64` / `aarch64` / `xtensa`）
 
 ---
 

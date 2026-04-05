@@ -7,6 +7,8 @@ use kernel.mem;
 use kernel.paging;
 use kernel.scheduler;
 use kernel.syscall;
+use libc.write;
+use libc.STDOUT_FILENO;
 
 /// 单次 SYS_PRINT 允许的最大长度（ABI 默认 256B）
 export const SYSCALL_PRINT_MAX: u32 = 256;
@@ -161,29 +163,6 @@ fn kernel_host_io_ops_ref(ctx: &KernelHostCtx, slot: u32) &u32 {
     return &ctx.io_allowed_ops[7];
 }
 
-/// 功能说明：按调用号分发；`SYS_YIELD` 更新调度状态；`PRINT`/`ALLOC` 在启用 MMU 时做翻译与页池映射。
-/// 参数：`ctx` — 宿主机上下文；`caller_slot` — 0..7；`num` / `arg1` / `arg2` — ABI 参数。
-/// 返回：成功时的返回值；失败为 `!` 各错误联合成员（含 `PageFault`/`PagePermission` 等）。
-export fn syscall_dispatch(ctx: &KernelHostCtx, caller_slot: u32, num: u32, arg1: u32, arg2: u32) !u32 {
-    var c: u32 = caller_slot;
-    if c >= 8u32 {
-        return error.InvalidState;
-    }
-    if num == SYS_YIELD {
-        return try syscall_handle_yield(ctx.sch, c, arg1, arg2);
-    }
-    if num == SYS_PRINT {
-        return try syscall_handle_print(ctx, c, arg1, arg2);
-    }
-    if num == SYS_ALLOC {
-        return try syscall_handle_alloc(ctx, c, arg1, arg2);
-    }
-    if num == SYS_IO {
-        return try syscall_handle_io(ctx, c, arg1, arg2);
-    }
-    return error.OpDenied;
-}
-
 fn syscall_handle_yield(sch: &Scheduler, caller_slot: u32, arg1: u32, arg2: u32) !u32 {
     if arg1 != 0u32 {
         return error.InvalidFlags;
@@ -209,7 +188,11 @@ fn syscall_handle_print(ctx: &KernelHostCtx, caller_slot: u32, vaddr: u32, len: 
         return 0u32;
     }
     const pt: &PageTable = kernel_host_pt_ref(ctx, caller_slot);
-    _ = try mmu_translate_ptr(pt, &ctx.pm, vaddr, len, ACCESS_R);
+    const ptr: &byte = try mmu_translate_ptr(pt, &ctx.pm, vaddr, len, ACCESS_R);
+    const written: i64 = write(STDOUT_FILENO, ptr, len as usize);
+    if written < 0 {
+        return error.DevUnavailable;
+    }
     return len;
 }
 
@@ -265,4 +248,27 @@ fn syscall_handle_io(ctx: &KernelHostCtx, caller_slot: u32, device_id: u32, oper
         return error.DevUnavailable;
     }
     return 0u32;
+}
+
+/// 功能说明：按调用号分发；`SYS_YIELD` 更新调度状态；`PRINT`/`ALLOC` 在启用 MMU 时做翻译与页池映射。
+/// 参数：`ctx` — 宿主机上下文；`caller_slot` — 0..7；`num` / `arg1` / `arg2` — ABI 参数。
+/// 返回：成功时的返回值；失败为 `!` 各错误联合成员（含 `PageFault`/`PagePermission` 等）。
+export fn syscall_dispatch(ctx: &KernelHostCtx, caller_slot: u32, num: u32, arg1: u32, arg2: u32) !u32 {
+    var c: u32 = caller_slot;
+    if c >= 8u32 {
+        return error.InvalidState;
+    }
+    if num == SYS_YIELD {
+        return try syscall_handle_yield(ctx.sch, c, arg1, arg2);
+    }
+    if num == SYS_PRINT {
+        return try syscall_handle_print(ctx, c, arg1, arg2);
+    }
+    if num == SYS_ALLOC {
+        return try syscall_handle_alloc(ctx, c, arg1, arg2);
+    }
+    if num == SYS_IO {
+        return try syscall_handle_io(ctx, c, arg1, arg2);
+    }
+    return error.OpDenied;
 }

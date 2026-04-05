@@ -38,6 +38,7 @@ fn build_test_image(buf: &[byte]) void {
     w32(buf, 20, 0);                // rodata_size
     w32(buf, 24, 0);                // reloc_count
     buf.ptr[64] = 1;                // build_mode = container
+    buf.ptr[65] = image_target_arch_to_byte(ImageTargetArch.ita_rv32);
     w32(buf, 60, 0);                // required_caps
 
     // Code: ecall = 0x00000073 (LE)
@@ -66,6 +67,7 @@ test "image_parse_header_valid" {
     try assert_eq_i32(hdr.code_size as i32, 4);
     try assert_eq_i32(hdr.entry_offset as i32, 0);
     try assert_eq_i32(hdr.build_mode as i32, 1);
+    try assert_eq_i32(hdr.target_arch as i32, ImageTargetArch.ita_rv32 as i32);
 }
 
 test "image_parse_header_bad_magic" {
@@ -77,7 +79,8 @@ test "image_parse_header_bad_magic" {
         failed = 1;
         ImageHeader{ magic: 0, format_version: 0, container_api_version: 0,
             image_size: 0, entry_offset: 0, code_size: 0, rodata_size: 0,
-            reloc_count: 0, sha256: [], required_caps: 0, build_mode: 0 };
+            reloc_count: 0, sha256: [], required_caps: 0, build_mode: 0,
+            target_arch: ImageTargetArch.ita_unknown };
     };
     try assert_eq_i32(failed, 1);
 }
@@ -114,6 +117,28 @@ test "image_verify_structure_bad_size" {
     const hdr: ImageHeader = try image_parse_header(buf[0: 100]);
     var failed: i32 = 0;
     image_verify_structure(&hdr, 200) catch |err| { failed = 1; };
+    try assert_eq_i32(failed, 1);
+}
+
+test "image_verify_structure_bad_arch" {
+    var buf: [byte: 100] = [];
+    build_test_image(buf[0: 100]);
+    buf[65] = image_target_arch_to_byte(ImageTargetArch.ita_x86_64);
+    var digest: [byte: 32] = [];
+    var i: usize = 0;
+    while i < 32 {
+        buf[28 + i] = 0;
+        i = i + 1;
+    }
+    sha256_digest(buf[0: 100], digest[0: 32]);
+    i = 0;
+    while i < 32 {
+        buf[28 + i] = digest[i];
+        i = i + 1;
+    }
+    const hdr: ImageHeader = try image_parse_header(buf[0: 100]);
+    var failed: i32 = 0;
+    image_verify_structure(&hdr, 100) catch |err| { failed = 1; };
     try assert_eq_i32(failed, 1);
 }
 

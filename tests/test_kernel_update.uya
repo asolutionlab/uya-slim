@@ -36,6 +36,7 @@ fn build_image(buf: &[byte], code_byte: byte) void {
     w32(buf, 20, 0);
     w32(buf, 24, 0);
     buf.ptr[64] = 1;  // build_mode=container
+    buf.ptr[65] = image_target_arch_to_byte(ImageTargetArch.ita_rv32);
     w32(buf, 60, 0);
     // Code: ecall with a distinguishing byte at offset 97
     w32(buf, 96, 115);  // ecall

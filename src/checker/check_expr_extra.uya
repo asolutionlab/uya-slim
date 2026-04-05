@@ -142,7 +142,7 @@ fn checker_check_array_access(checker: &TypeChecker, node: &ASTNode) Type {
                                 cur_file = checker.default_filename;
                             }
                             if cur_file != null {
-                                const root_len: i32 = strlen(checker.uya_root_dir as *byte) as i32;
+                                const root_len: i32 = checker_i32_from_usize_or_zero_extra(strlen(checker.uya_root_dir as *byte));
                                 if root_len > 0 && strncmp(cur_file as *byte, checker.uya_root_dir as *byte, root_len as usize) == 0 {
                                     skip_for_lib = 1;
                                 }
@@ -427,6 +427,147 @@ fn simd_vector_has_signed_integer_elements(t: Type) i32 {
     return 0;
 }
 
+fn checker_i32_from_usize_or_zero_extra(v: usize) i32 {
+    const casted: !i32 = v as! i32;
+    return casted catch { return 0; };
+}
+
+fn checker_token_or_plus_extra(raw: i32) TokenType {
+    const casted: !TokenType = raw as! TokenType;
+    return casted catch { return TokenType.TOKEN_PLUS; };
+}
+
+fn cast_integer_width_bits(k: TypeKind) i32 {
+    if k == TypeKind.TYPE_I8 || k == TypeKind.TYPE_U8 || k == TypeKind.TYPE_BYTE {
+        return 8;
+    }
+    if k == TypeKind.TYPE_I16 || k == TypeKind.TYPE_U16 {
+        return 16;
+    }
+    if k == TypeKind.TYPE_I32 || k == TypeKind.TYPE_U32 {
+        return 32;
+    }
+    if k == TypeKind.TYPE_I64 || k == TypeKind.TYPE_U64 || k == TypeKind.TYPE_USIZE {
+        return 64;
+    }
+    return 0;
+}
+
+fn cast_integer_is_signed(k: TypeKind) i32 {
+    if k == TypeKind.TYPE_I8 || k == TypeKind.TYPE_I16 || k == TypeKind.TYPE_I32 || k == TypeKind.TYPE_I64 {
+        return 1;
+    }
+    return 0;
+}
+
+fn cast_const_i32_fits_target(k: TypeKind, value: i32) i32 {
+    if k == TypeKind.TYPE_I8 {
+        if value < -128 || value > 127 { return 0; }
+        return 1;
+    }
+    if k == TypeKind.TYPE_U8 || k == TypeKind.TYPE_BYTE {
+        if value < 0 || value > 255 { return 0; }
+        return 1;
+    }
+    if k == TypeKind.TYPE_I16 {
+        if value < -32768 || value > 32767 { return 0; }
+        return 1;
+    }
+    if k == TypeKind.TYPE_U16 {
+        if value < 0 || value > 65535 { return 0; }
+        return 1;
+    }
+    if k == TypeKind.TYPE_I32 || k == TypeKind.TYPE_I64 {
+        return 1;
+    }
+    if k == TypeKind.TYPE_U32 || k == TypeKind.TYPE_U64 || k == TypeKind.TYPE_USIZE {
+        if value < 0 { return 0; }
+        return 1;
+    }
+    return 0;
+}
+
+fn cast_requires_asbang_for_integer_overflow(source_type: Type, target_type: Type) i32 {
+    const src_bits: i32 = cast_integer_width_bits(source_type.kind);
+    const dst_bits: i32 = cast_integer_width_bits(target_type.kind);
+    const src_signed: i32 = cast_integer_is_signed(source_type.kind);
+    const dst_signed: i32 = cast_integer_is_signed(target_type.kind);
+    if src_bits <= 0 || dst_bits <= 0 {
+        return 0;
+    }
+    if src_signed != 0 && dst_signed != 0 {
+        if dst_bits >= src_bits { return 0; }
+        return 1;
+    }
+    if src_signed == 0 && dst_signed == 0 {
+        if dst_bits >= src_bits { return 0; }
+        return 1;
+    }
+    if src_signed == 0 && dst_signed != 0 {
+        if dst_bits > src_bits { return 0; }
+        return 1;
+    }
+    return 1;
+}
+
+fn checker_cast_rule_is_exempt(checker: &TypeChecker, node: &ASTNode) i32 {
+    var cast_file: &byte = null;
+    if node != null {
+        cast_file = node.filename;
+    }
+    if cast_file == null && checker != null {
+        cast_file = checker.default_filename;
+    }
+    if cast_file == null {
+        return 0;
+    }
+    if strstr(cast_file as *byte, "/lib/std/" as *byte) != null { return 1; }
+    if strstr(cast_file as *byte, "/lib/libc/" as *byte) != null { return 1; }
+    if strstr(cast_file as *byte, "/lib/tflm/" as *byte) != null { return 1; }
+    if strstr(cast_file as *byte, "/src/" as *byte) != null { return 1; }
+    if strstr(cast_file as *byte, "/tests/" as *byte) != null &&
+       strstr(cast_file as *byte, "/error_cast_" as *byte) == null { return 1; }
+    if strstr(cast_file as *byte, "lib/std/" as *byte) != null { return 1; }
+    if strstr(cast_file as *byte, "lib/libc/" as *byte) != null { return 1; }
+    if strstr(cast_file as *byte, "lib/tflm/" as *byte) != null { return 1; }
+    if strstr(cast_file as *byte, "src/" as *byte) != null { return 1; }
+    if strstr(cast_file as *byte, "tests/" as *byte) != null &&
+       strstr(cast_file as *byte, "error_cast_" as *byte) == null { return 1; }
+    return 0;
+}
+
+fn checker_check_cast_requires_asbang(checker: &TypeChecker, node: &ASTNode, expr: &ASTNode, source_type: Type, target_type: Type) i32 {
+    if checker == null || node == null || expr == null {
+        return 0;
+    }
+    if node.cast_expr_is_force_cast != 0 {
+        return 0;
+    }
+    if type_equals(source_type, target_type) != 0 {
+        return 0;
+    }
+    if checker_cast_rule_is_exempt(checker, node) != 0 {
+        return 0;
+    }
+    if source_type.kind == TypeKind.TYPE_ENUM || target_type.kind == TypeKind.TYPE_ENUM {
+        checker_report_error(checker, node, "可能溢出或越界的 enum 转换必须使用 as!" as *byte);
+        return 1;
+    }
+    if is_integer_type(source_type.kind) != 0 && is_integer_type(target_type.kind) != 0 {
+        if is_constant_expression(checker, expr) != 0 {
+            const value: i32 = checker_eval_const_expr(checker, expr);
+            if cast_const_i32_fits_target(target_type.kind, value) != 0 {
+                return 0;
+            }
+        }
+        if cast_requires_asbang_for_integer_overflow(source_type, target_type) != 0 {
+            checker_report_error(checker, node, "可能溢出的整数转换必须使用 as!" as *byte);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 // 检查二元表达式
 // 参数：checker - TypeChecker 指针，node - 二元表达式节点
 // 返回：表达式类型（如果检查失败返回TYPE_VOID）
@@ -450,7 +591,7 @@ fn checker_check_binary_expr(checker: &TypeChecker, node: &ASTNode) Type {
         return result;
     }
     
-    const op: TokenType = node.binary_expr_op as TokenType;
+    const op: TokenType = checker_token_or_plus_extra(node.binary_expr_op);
     var left_type: Type = checker_infer_type(checker, node.binary_expr_left);
     var right_type: Type = checker_infer_type(checker, node.binary_expr_right);
 
@@ -790,6 +931,10 @@ fn checker_check_cast_expr(checker: &TypeChecker, node: &ASTNode) void {
         return;
     }
     
+    if checker_check_cast_requires_asbang(checker, node, expr, source_type, target_type) != 0 {
+        return;
+    }
+
     // E4003: --mode container 禁止整数字面量转指针（物理地址直接访问）
     if checker.container_mode != 0 {
         if is_integer_type(source_type.kind) != 0 && target_type.kind == TypeKind.TYPE_POINTER {
@@ -897,7 +1042,7 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
         return result;
     }
     
-    const op: TokenType = node.unary_expr_op as TokenType;
+    const op: TokenType = checker_token_or_plus_extra(node.unary_expr_op);
     const operand_type: Type = checker_infer_type(checker, node.unary_expr_operand);
     
     if op == TokenType.TOKEN_EXCLAMATION {

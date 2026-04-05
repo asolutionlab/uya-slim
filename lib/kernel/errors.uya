@@ -28,6 +28,7 @@ export error NoRunnable;
 // Image & loading errors (0x0400 - 0x04FF)
 export error ImgHashMismatch;
 export error ImgLayoutInvalid;
+export error ImgArchMismatch;
 export error ImgRelocInvalid;
 export error ImgSymbolDenied;
 export error ImgInsnDenied;

@@ -121,7 +121,10 @@ export fn recovery_reset_fuse(r: &RecoveryManager, cid: u32) void {
 
 export fn recovery_is_fused(r: &RecoveryManager, cid: u32) i32 {
     if cid >= 0 && cid < 8 {
-        return r.states[cid].fused as i32;
+        if r.states[cid].fused != 0u32 {
+            return 1;
+        }
+        return 0;
     }
     return 0;
 }

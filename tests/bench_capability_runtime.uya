@@ -37,6 +37,28 @@ fn make_valid_manifest(id0: byte, backend_kind: CapabilityBackendKind) Capabilit
     return manifest;
 }
 
+fn open_report_file(name: &const byte) &FILE {
+    const direct: &FILE = fopen(name as &byte, "w\0" as &byte);
+    if direct != null {
+        return direct;
+    }
+    var fallback: [byte: 128] = [];
+    var i: usize = 0;
+    const prefix: &const byte = "tests/";
+    while prefix[i] != 0 as byte {
+        fallback[i] = prefix[i];
+        i = i + 1;
+    }
+    var j: usize = 0;
+    while name[j] != 0 as byte && i + 1 < @len(fallback) {
+        fallback[i] = name[j];
+        i = i + 1;
+        j = j + 1;
+    }
+    fallback[i] = 0 as byte;
+    return fopen(&fallback[0], "w\0" as &byte);
+}
+
 fn print_result(result: &CapabilityBenchmarkResult) void {
     printf(
         "capability_bench: backend=%s case=%s payload=%zu iter=%d ok=%d install=%lu activate=%lu first=%lu avg=%lu p99=%lu failures=%u timeouts=%u\n" as *byte,
@@ -75,7 +97,7 @@ fn print_summary_row(
 }
 
 fn write_csv_report(results: &[CapabilityBenchmarkResult]) bool {
-    const fp: &FILE = fopen("build/capability_runtime_benchmark.csv\0" as &byte, "w\0" as &byte);
+    const fp: &FILE = open_report_file("build/capability_runtime_benchmark.csv\0" as &const byte);
     if fp == null {
         return false;
     }
@@ -110,7 +132,7 @@ fn write_csv_report(results: &[CapabilityBenchmarkResult]) bool {
 }
 
 fn write_json_report(results: &[CapabilityBenchmarkResult]) bool {
-    const fp: &FILE = fopen("build/capability_runtime_benchmark.json\0" as &byte, "w\0" as &byte);
+    const fp: &FILE = open_report_file("build/capability_runtime_benchmark.json\0" as &const byte);
     if fp == null {
         return false;
     }
