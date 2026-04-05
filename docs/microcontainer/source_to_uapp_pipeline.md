@@ -293,7 +293,21 @@ app.uya / microapp.uya
 uya build --app microapp examples/microapp/microcontainer_hello.uya -o examples/microapp/microcontainer_hello.uapp
 ```
 
-这条命令背后可以拆成两步：
+这条命令是**目标形态**，但当前编译器还没有把它真正接到 `build` 的微应用 pack 后端。
+
+当前可用的最短路径仍然是先运行宿主打包器示例：
+
+```bash
+uya run examples/microapp/microcontainer_hello_build.uya
+```
+
+然后再运行加载器示例：
+
+```bash
+uya run examples/microapp/microcontainer_hello_load.uya
+```
+
+这条目标命令未来可以拆成两步：
 
 ```bash
 uya compile --app microapp examples/microapp/microcontainer_hello.uya -o build/hello.pobj
@@ -304,6 +318,8 @@ uya pack-image build/hello.pobj -o examples/microapp/microcontainer_hello.uapp
 
 - `compile` 负责前端、microapp 模式检查、目标代码生成、`payload_obj` 输出
 - `pack-image` 负责封装 `.uapp`
+
+在当前仓库里，`build --app microapp` 仍然只负责生成宿主侧 `.c` / native 产物；要产出 `.uapp`，目前仍需通过 `examples/microapp/microcontainer_hello_build.uya` 这类宿主打包器示例。
 
 ### 6.2 调试型命令
 

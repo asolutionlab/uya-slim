@@ -23,6 +23,7 @@
 - `payload_obj`：编译器与打包器之间的中间产物
 - `payload code`：`target_arch` 指定的目标架构载荷码
 - `.uapp`：最终加载器消费的镜像文件
+- 当前 `.uapp` 主要由 `examples/microapp/microcontainer_hello_build.uya` 这类宿主打包器示例生成；`build --app microapp` 还没有直接接入 `.uapp` pack 后端
 
 ---
 

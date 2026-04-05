@@ -2560,6 +2560,19 @@ export fn main() i32 {
         }
     }
 
+    // microapp 模式下，build 目前仍只负责生成宿主编译产物；
+    // 任何试图直接产出可执行文件 / .uapp 的路径都应当被拒绝。
+    if command == CommandType.COMMAND_BUILD && g_app_mode_microapp != 0 {
+        if user_output_path == null {
+            fprintf(libc.stderr, "错误: --app microapp 的 build 目前只支持显式输出 .c 宿主产物；如果你要生成 .uapp，请运行 examples/microapp/microcontainer_hello_build.uya，或等待微应用 pack 后端接入\n" as *byte);
+            return 1;
+        }
+        if is_c_output(user_output_path as &byte) == 0 {
+            fprintf(libc.stderr, "错误: --app microapp 的 build 目前只支持输出 .c 宿主产物；要生成 .uapp，请先使用 examples/microapp/microcontainer_hello_build.uya 或等待微应用 pack 后端接入\n" as *byte);
+            return 1;
+        }
+    }
+
     // C99 且非显式 -o xxx.c 时默认多文件输出到 .uyacache（与省略路径的 --split-c-dir 一致；UYA_SPLIT_C=0 / --no-split-c 等可关闭）
     if g_split_c_dir_active == 0 && g_split_c_disabled_cli == 0 && backend == BackendType.BACKEND_C99 {
         var explicit_single_c: i32 = 0;
