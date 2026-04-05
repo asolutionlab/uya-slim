@@ -13,7 +13,7 @@ use libc.syscall;
 
 const MALLOC_ALIGN: usize = 16;
 const MIN_CHUNK_SIZE: usize = 64;
-const PAGE_SIZE: usize = 4096;
+const HEAP_PAGE_SIZE: usize = 4096;
 const CHUNK_MAGIC: u64 = 3735928559;  // 0xDEADBEEF
 
 struct ChunkHeader {
@@ -27,7 +27,14 @@ struct FreeChunk {
     next: &FreeChunk,
 }
 
+struct HeapRegion {
+    next: &HeapRegion,
+    base: &ChunkHeader,
+    size: usize,
+}
+
 var free_list_head: &FreeChunk = null;
+var heap_regions: &HeapRegion = null;
 
 // 勿命名 align_up：与 std/mem/arena 的两参数 align_up 合并后会解析错误
 fn heap_align_up(size: usize) usize {
@@ -48,6 +55,22 @@ fn to_header(ptr: &void) &ChunkHeader {
 
 fn to_user_ptr(hdr: &ChunkHeader) &void {
     return (((hdr as &byte) + @size_of(ChunkHeader)) as &void);
+}
+
+fn owns_ptr(ptr: &void) bool {
+    const addr: usize = (ptr as usize);
+    var region: &HeapRegion = heap_regions;
+    while !is_null(region as &void) {
+        const base: usize = region.base as usize;
+        const size: usize = region.size;
+        const start: usize = base + @size_of(ChunkHeader);
+        const end: usize = base + size;
+        if addr >= start && addr < end {
+            return true;
+        }
+        region = region.next;
+    }
+    return false;
 }
 
 fn is_free(hdr: &ChunkHeader) bool {
@@ -89,20 +112,27 @@ fn add_free(chunk: &FreeChunk) void {
 
 fn morecore(needed: usize) &ChunkHeader {
     var alloc_size: usize = needed + @size_of(ChunkHeader);
-    if alloc_size < PAGE_SIZE { alloc_size = PAGE_SIZE; }
+    if alloc_size < HEAP_PAGE_SIZE { alloc_size = HEAP_PAGE_SIZE; }
+    const map_size: usize = alloc_size + @size_of(HeapRegion);
 
-    const result: !i64 = @syscall(SYS_mmap, 0, alloc_size as i64,
+    const result: !i64 = @syscall(SYS_mmap, 0, map_size as i64,
                                   PROT_READ | PROT_WRITE,
                                   MAP_PRIVATE | MAP_ANONYMOUS, 0 - 1, 0);
     const ptr: i64 = result catch { return null; };
     if ptr < 0 { return null; }
 
-    var hdr: &ChunkHeader = (ptr as &ChunkHeader);
+    var region: &HeapRegion = (ptr as &HeapRegion);
+    var hdr: &ChunkHeader = (((ptr as &byte) + @size_of(HeapRegion)) as &ChunkHeader);
     hdr.magic = CHUNK_MAGIC;
     hdr.size = alloc_size;
     set_free(hdr, true);
 
-    var chunk: &FreeChunk = (ptr as &FreeChunk);
+    region.base = hdr;
+    region.size = alloc_size;
+    region.next = heap_regions;
+    heap_regions = region;
+
+    var chunk: &FreeChunk = (hdr as &FreeChunk);
     chunk.prev = null;
     chunk.next = null;
 
@@ -168,6 +198,7 @@ export extern "libc" fn malloc(size: usize) &void {
 
 export extern "libc" fn free(ptr: &void) void {
     if is_null(ptr) { return; }
+    if !owns_ptr(ptr) { return; }
 
     var hdr: &ChunkHeader = to_header(ptr);
     if hdr.magic != CHUNK_MAGIC { return; }
@@ -177,8 +208,15 @@ export extern "libc" fn free(ptr: &void) void {
 }
 
 export extern "libc" fn realloc(ptr: &void, size: usize) &void {
-    if is_null(ptr) { return malloc(size); }
-    if size == 0 { free(ptr); return null; }
+    if is_null(ptr) {
+        const result: &void = malloc(size);
+        return result;
+    }
+    if size == 0 { 
+        free(ptr); 
+        return null; 
+    }
+    if !owns_ptr(ptr) { return null; }
 
     var hdr: &ChunkHeader = to_header(ptr);
     if hdr.magic != CHUNK_MAGIC { return null; }

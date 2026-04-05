@@ -394,6 +394,10 @@ export extern "libc" fn print_i64(value: i64) usize {
 
 // 全局 FILE 存储（用于 fopen/fclose，最多 64 个文件）
 var fopen_fd_storage: [FILE: 64] = [];
+const _FOPEN_W_FLAGS: i64 = 577;   // O_WRONLY | O_CREAT | O_TRUNC
+const _FOPEN_A_FLAGS: i64 = 1089;  // O_WRONLY | O_CREAT | O_APPEND
+const _FOPEN_W_PLUS_FLAGS: i64 = 578;   // O_RDWR | O_CREAT | O_TRUNC
+const _FOPEN_A_PLUS_FLAGS: i64 = 1090;  // O_RDWR | O_CREAT | O_APPEND
 
 // fopen - 打开文件（C 标准库兼容）
 // 返回：FILE*，失败返回 null
@@ -413,17 +417,21 @@ export extern "libc" fn fopen(filename: &const byte, mode: &const byte) &FILE {
         if c == 114 {  // 'r'
             flags = O_RDONLY;
         } else if c == 119 {  // 'w'
-            flags = O_WRONLY | O_CREAT | O_TRUNC;
+            flags = _FOPEN_W_FLAGS;
             create_mode = S_IRWXU;
         } else if c == 97 {  // 'a'
-            flags = O_WRONLY | O_CREAT | O_APPEND;
+            flags = _FOPEN_A_FLAGS;
             create_mode = S_IRWXU;
         } else if c == 43 {  // '+'
             // 读写模式
             if flags == O_RDONLY {
                 flags = O_RDWR;
+            } else if flags == _FOPEN_W_FLAGS {
+                flags = _FOPEN_W_PLUS_FLAGS;
+            } else if flags == _FOPEN_A_FLAGS {
+                flags = _FOPEN_A_PLUS_FLAGS;
             } else {
-                flags = flags | O_RDWR;
+                flags = O_RDWR;
             }
         } else if c == 98 {  // 'b' (binary mode, ignored on Linux)
             // 忽略
@@ -706,6 +714,7 @@ fn _fmt_f64_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, precisi
 fn _fmt_f64_hex_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, precision: i32, uppercase: i32) usize {
     var pos: usize = buf_pos;
     var x: f64 = val;
+    var default_precision: bool = precision < 0;
     if x != x {
         if uppercase != 0 {
             if pos < buf_max { buf[pos] = 78; pos = pos + 1; }
@@ -746,9 +755,11 @@ fn _fmt_f64_hex_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, pre
             if pos < buf_max { buf[pos] = 120; pos = pos + 1; }
         }
         if pos < buf_max { buf[pos] = 48; pos = pos + 1; }
-        if pos < buf_max { buf[pos] = 46; pos = pos + 1; }
         var prec: i32 = precision;
         if prec < 0 { prec = 0; }
+        if prec > 0 {
+            if pos < buf_max { buf[pos] = 46; pos = pos + 1; }
+        }
         var i: i32 = 0;
         while i < prec && pos < buf_max {
             buf[pos] = 48;
@@ -782,23 +793,37 @@ fn _fmt_f64_hex_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, pre
         if pos < buf_max { buf[pos] = 120; pos = pos + 1; }
     }
     if pos < buf_max { buf[pos] = 49; pos = pos + 1; }
-    if pos < buf_max { buf[pos] = 46; pos = pos + 1; }
-    var frac: f64 = x - 0.5;
+    var frac: f64 = (x * 2.0) - 1.0;
     var prec: i32 = precision;
     if prec < 0 { prec = 13; }
-    var k: i32 = 0;
-    while k < prec && pos < buf_max {
-        frac = frac * 16.0;
-        var d: i32 = frac as i32;
-        if d >= 16 { d = 15; }
-        frac = frac - (d as f64);
-        if uppercase != 0 {
-            if d >= 10 { buf[pos] = (65 + d - 10) as byte; } else { buf[pos] = (48 + d) as byte; }
-        } else {
-            if d >= 10 { buf[pos] = (97 + d - 10) as byte; } else { buf[pos] = (48 + d) as byte; }
+    var frac_dot_pos: usize = pos;
+    var frac_start_pos: usize = pos;
+    if prec > 0 {
+        if pos < buf_max { buf[pos] = 46; pos = pos + 1; }
+        frac_start_pos = pos;
+        var k: i32 = 0;
+        while k < prec && pos < buf_max {
+            frac = frac * 16.0;
+            var d: i32 = frac as i32;
+            if d >= 16 { d = 15; }
+            frac = frac - (d as f64);
+            if uppercase != 0 {
+                if d >= 10 { buf[pos] = (65 + d - 10) as byte; } else { buf[pos] = (48 + d) as byte; }
+            } else {
+                if d >= 10 { buf[pos] = (97 + d - 10) as byte; } else { buf[pos] = (48 + d) as byte; }
+            }
+            pos = pos + 1;
+            k = k + 1;
         }
-        pos = pos + 1;
-        k = k + 1;
+    }
+    if default_precision {
+        while pos > frac_start_pos {
+            if buf[pos - 1] != 48 { break; }
+            pos = pos - 1;
+        }
+        if pos == frac_start_pos {
+            pos = frac_dot_pos;
+        }
     }
     if uppercase != 0 {
         if pos < buf_max { buf[pos] = 80; pos = pos + 1; }
@@ -818,8 +843,6 @@ fn _fmt_f64_hex_to_buf(buf: &byte, buf_pos: usize, buf_max: usize, val: f64, pre
     if exp >= 10 {
         if pos < buf_max { buf[pos] = (48 + exp / 10) as byte; pos = pos + 1; }
         exp = exp % 10;
-    } else if prec > 0 || pos > buf_pos + 1 {
-        if pos < buf_max { buf[pos] = 48; pos = pos + 1; }
     }
     if pos < buf_max { buf[pos] = (48 + exp) as byte; pos = pos + 1; }
     return pos;
@@ -1392,7 +1415,7 @@ fn _vfprintf_impl(stream: &FILE, format: &const byte, ap: va_list, use_buf: i32,
                     temp_ctx.buf[temp_ctx.buf_pos] = 120;
                     temp_ctx.buf_pos = temp_ctx.buf_pos + 1;
                     temp_ctx.total_len = temp_ctx.total_len + 1;
-                    _fmt_u64_to_buf(&temp_ctx, pval as u64);
+                    _fmt_u64_hex_to_buf(&temp_ctx, pval as u64, 0);
                     _fmt_apply_padding(&ctx, &temp_buf[0], temp_ctx.buf_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
                 // %c - 字符（支持 width）
                 } else if spec == 99 {
@@ -1575,17 +1598,13 @@ fn _vfprintf_impl(stream: &FILE, format: &const byte, ap: va_list, use_buf: i32,
                 } else if spec == 97 {
                     const fval: f64 = @va_arg(ap, f64);
                     var temp_buf: [byte: 256] = [];
-                    var prec: i32 = precision;
-                    if prec < 0 { prec = 13; }
-                    const end_pos: usize = _fmt_f64_hex_to_buf(&temp_buf[0], 0, 255, fval, prec, 0);
+                    const end_pos: usize = _fmt_f64_hex_to_buf(&temp_buf[0], 0, 255, fval, precision, 0);
                     _fmt_apply_padding(&ctx, &temp_buf[0], end_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
                 // %A - 十六进制浮点大写（C99）
                 } else if spec == 65 {
                     const fval: f64 = @va_arg(ap, f64);
                     var temp_buf: [byte: 256] = [];
-                    var prec: i32 = precision;
-                    if prec < 0 { prec = 13; }
-                    const end_pos: usize = _fmt_f64_hex_to_buf(&temp_buf[0], 0, 255, fval, prec, 1);
+                    const end_pos: usize = _fmt_f64_hex_to_buf(&temp_buf[0], 0, 255, fval, precision, 1);
                     _fmt_apply_padding(&ctx, &temp_buf[0], end_pos, width, flags & _FMT_MINUS, flags & _FMT_ZERO);
                 // %% - 百分号
                 } else if spec == 37 {
@@ -1815,7 +1834,7 @@ export extern "libc" fn fseek(stream: &FILE, offset: i64, whence: i32) i32 {
     const result: !i64 = @syscall(SYS_lseek, stream.fd, offset, whence as i64);
     const ret: i64 = result catch { return -1; };
     if ret < 0 { return -1; }
-    return 0;
+    return 1;
 }
 
 // ftell - 获取当前文件位置
@@ -2003,21 +2022,21 @@ export extern "libc" fn tmpfile() &FILE {
     name[4] = 47;
     name[5] = 117; name[6] = 121; name[7] = 97;  // "uya"
     name[8] = 95;  // '_'
-    
+
     // 使用计数器生成唯一ID
     _tmpfile_counter = _tmpfile_counter + 1;
-    var counter: i32 = _tmpfile_counter;
+    var tmpfile_counter: i32 = _tmpfile_counter;
     var idx: usize = 9;
-    
-    if counter == 0 {
+
+    if tmpfile_counter == 0 {
         name[idx] = 48;  // '0'
         idx = idx + 1;
     } else {
         var digits: [byte: 10] = [];
         var d: usize = 0;
-        while counter > 0 && d < 10 {
-            digits[d] = (48 + (counter % 10)) as byte;
-            counter = counter / 10;
+        while tmpfile_counter > 0 && d < 10 {
+            digits[d] = (48 + (tmpfile_counter % 10)) as byte;
+            tmpfile_counter = tmpfile_counter / 10;
             d = d + 1;
         }
         // 反转写入
@@ -2066,27 +2085,27 @@ fn _alloc_file_storage() &FILE {
 // 返回：临时文件名，失败返回 null
 export extern "libc" fn tmpnam(s: &byte) &byte {
     if s == null { return null; }
-    
+
     // 使用计数器生成唯一文件名
     _tmpfile_counter = _tmpfile_counter + 1;
-    
+
     s[0] = 47; s[1] = 116; s[2] = 109; s[3] = 112;  // "/tmp"
     s[4] = 47;
     s[5] = 117; s[6] = 121; s[7] = 97;  // "uya"
     s[8] = 95;  // '_'
-    
-    var counter: i32 = _tmpfile_counter;
+
+    var tmpnam_counter: i32 = _tmpfile_counter;
     var idx: usize = 9;
-    
-    if counter == 0 {
+
+    if tmpnam_counter == 0 {
         s[idx] = 48;  // '0'
         idx = idx + 1;
     } else {
         var digits: [byte: 10] = [];
         var d: usize = 0;
-        while counter > 0 && d < 10 {
-            digits[d] = (48 + (counter % 10)) as byte;
-            counter = counter / 10;
+        while tmpnam_counter > 0 && d < 10 {
+            digits[d] = (48 + (tmpnam_counter % 10)) as byte;
+            tmpnam_counter = tmpnam_counter / 10;
             d = d + 1;
         }
         // 反转写入
@@ -2186,7 +2205,7 @@ export extern "libc" fn puts(s: &const byte) i32 {
         return 0 - 1;
     };
     
-    return 0;
+    return 1;
 }
 
 // fgets - 从文件读取一行

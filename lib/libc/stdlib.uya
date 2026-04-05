@@ -32,20 +32,29 @@ export extern "libc" fn calloc(nmemb: usize, size: usize) &void {
 // exit - 正常退出进程
 export extern "libc" fn exit(status: i32) void {
     sys_exit(status as i64);
+    while true {}
 }
 
 // abort - 异常终止进程（发送 SIGABRT）
+fn _abort_pid_or_exit() i64 {
+    const pid_result: !i64 = sys_getpid();
+    return pid_result catch {
+        sys_exit(1);
+        return 0 - 1;
+    };
+}
+
 export extern "libc" fn abort() void {
     // 使用 sys_getpid 函数
-    const pid_result: !i64 = sys_getpid();
-    const pid: i64 = pid_result catch {
-        sys_exit(1);
-        return;
-    };
+    const pid: i64 = _abort_pid_or_exit();
+    if pid < 0 {
+        while true {}
+    }
     // 发送 SIGABRT (6) 给自己
     _ = @syscall(SYS_kill, pid, 6);
     // 如果 kill 失败，直接退出
     sys_exit(1);
+    while true {}
 }
 
 // ============================================================

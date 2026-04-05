@@ -2,7 +2,7 @@
 // 基于 Vec<byte> 封装，保持字节级 API 与字符串操作便利性。
 // 模块路径：use std.collections.string_buf;
 
-use mem.strlen;
+use mem.mem_strlen;
 use std.mem.allocator.IAllocator;
 use std.collections.vec.Vec;
 
@@ -59,7 +59,7 @@ export struct StringBuf {
     /// - ok: 追加成功，len 增加字符串可见长度。
     /// - error: 追加过程中来自分配器的错误。
     fn append_cstr(self: &Self, s: &const byte) !void {
-        const n: usize = strlen(s);
+        const n: usize = mem_strlen(s);
         try self.append_slice(s[0: n]);
     },
 
@@ -287,4 +287,3 @@ export fn string_buf_new(allocator: IAllocator) StringBuf {
         },
     };
 }
-

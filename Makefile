@@ -4,7 +4,7 @@
 # 若出现「没有规则可制作目标 install」：说明当前 Makefile 过旧，请用本仓库最新 Makefile
 # 替换，或从上游同步后再执行：make install PREFIX=$HOME/.local
 
-.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted bench-compile-stats tests tests-hosted tests-uya outlibc c e clean check check-hosted backup backup-seed backup-all restore release install help
+.PHONY: all from-c uya uya-hosted uya-std uya-nostdlib b b-hosted bench-compile-stats tests tests-hosted tests-uya outlibc c e clean check check-hosted backup backup-seed backup-all restore release release-build release-dirty release-preflight release-clean install help
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 HOST_OS ?= $(shell uname -s | tr '[:upper:]' '[:lower:]' | sed -e 's/darwin/macos/' -e 's/msys.*/windows/' -e 's/mingw.*/windows/' -e 's/cygwin.*/windows/')
@@ -528,9 +528,46 @@ backup-seed:
 # 验证 + 多文件备份 + 单文件种子（提交前完整备份）
 backup-all:backup backup-seed
 
+# 发布前检查：确保本地 release 结果可作为“一键最终验证”
+# 要求工作树干净；否则直接失败，避免把“本地脏状态”误当成可发布结果
+release-preflight:
+	@echo "=========================================="
+	@echo "发布前检查 (release-preflight)"
+	@echo "=========================================="
+	@if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+		STATUS=$$(git status --short --untracked-files=normal); \
+		if [ -n "$$STATUS" ]; then \
+			echo "错误: 当前工作树不是干净状态；拒绝执行 make release。"; \
+			echo "make release 旨在作为一键最终验证入口，请先提交/暂存/清理改动。"; \
+			echo "若要验证已提交的 HEAD，请使用 'make release-clean'。"; \
+			echo ""; \
+			echo "工作树摘要（前 20 行）:"; \
+			printf '%s\n' "$$STATUS" | sed -n '1,20p'; \
+			echo ""; \
+			exit 1; \
+		else \
+			echo "✓ Git 工作树干净"; \
+		fi; \
+	else \
+		echo "提示: 当前目录不是 Git 工作树，跳过工作树一致性检查"; \
+	fi
+	@if [ -f bin/uya.c ] && [ -f backup/uya.c ]; then \
+		if cmp -s bin/uya.c backup/uya.c; then \
+			echo "✓ bin/uya.c 与 backup/uya.c 一致"; \
+		else \
+			echo "错误: bin/uya.c 与 backup/uya.c 不一致；拒绝执行 make release。"; \
+			echo "请先运行 'make backup-seed' 同步种子，或改用 'make release-clean'。"; \
+			exit 1; \
+		fi; \
+	else \
+		echo "提示: bin/uya.c 或 backup/uya.c 缺失，release 过程中可能触发恢复/重生成"; \
+	fi
+
 # 发布版本：验证 + 多文件备份 + 单文件种子 + 构建优化版本
 # 与 from-c 一致：Linux x86_64 的 nostdlib 种子含裸 _start，不可直接 cc uya.c（会与 Scrt1 _start 冲突），须 crti + .o + crtn 链接
-release: clean from-c uya b check backup-seed
+release: release-preflight clean from-c uya b check backup-seed release-build
+
+release-build:
 	@echo "=========================================="
 	@echo "构建发布版本 (release)"
 	@echo "=========================================="
@@ -561,6 +598,32 @@ release: clean from-c uya b check backup-seed
 	@echo ""
 	@echo "优化选项: -O3 -fno-builtin -DNDEBUG"
 	@echo "已剥离调试符号 (strip)"
+
+# 在当前工作树直接执行完整 release 流程；跳过干净树检查
+# 适合本地调试，不适合作为“最终验证”结论
+release-dirty: clean from-c uya b check backup-seed release-build
+
+# 在干净快照里执行 release，尽量贴近 GitHub Actions 的 checkout 环境
+# 注意：只包含已提交到 HEAD 的内容；未提交修改不会进入快照
+release-clean:
+	@echo "=========================================="
+	@echo "构建干净快照发布版本 (release-clean)"
+	@echo "=========================================="
+	@if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+		echo "错误: release-clean 需要在 Git 工作树中运行"; \
+		exit 1; \
+	fi
+	@TMP_DIR=$$(mktemp -d /tmp/uya-release-clean.XXXXXX); \
+	trap 'rm -rf "$$TMP_DIR"' EXIT INT TERM; \
+	echo "导出 HEAD 快照到 $$TMP_DIR ..."; \
+	git archive --format=tar HEAD | tar -xf - -C "$$TMP_DIR"; \
+	echo "在干净快照中执行 make release ..."; \
+	$(MAKE) -C "$$TMP_DIR" release HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" UYA_TEST_JOBS="$(UYA_TEST_JOBS)"; \
+	echo ""; \
+	echo "✓ 干净快照 release 成功"; \
+	echo "产物位置: $$TMP_DIR/bin/uya"; \
+	cp "$$TMP_DIR/bin/uya" bin/uya.release-clean; \
+	echo "已复制到: bin/uya.release-clean"
 
 # 安装编译器、标准库源码树与 tests/（需系统 install(1)；标准库排除 lib/build）
 # tests 安装会排除常见中间目录与二进制产物（避免将本地测试构建垃圾安装到目标目录）
@@ -656,7 +719,9 @@ help:
 	@echo "  make backup        - 验证 + 备份多文件 C 目录 backup/uyacache（与 make uya 一致）"
 	@echo "  make backup-seed   - 单文件 C 重编译，更新 bin/uya.c 与 backup/uya.c（from-c / release 用）"
 	@echo "  make backup-all    - backup + backup-seed（提交前完整备份）"
-	@echo "  make release       - 发布：clean+自举验证+backup-seed 后 -O3 -DNDEBUG 重链（nostdlib 种子同 from-c 用 crti/crtn）+ strip"
+	@echo "  make release       - 一键最终验证：要求工作树干净，再 clean+自举验证+backup-seed 后 -O3 -DNDEBUG 重链 + strip"
+	@echo "  make release-dirty - 在当前工作树强行执行完整 release；用于本地调试，不作为最终验证结论"
+	@echo "  make release-clean - 用 Git HEAD 干净快照执行 make release，贴近 CI（忽略未提交修改）"
 	@echo "  make install       - 安装 uya、lib/、前缀/docs/、前缀/tests/；BINDIR/LIBDIR/DOCDIR/TESTSDIR/DESTDIR"
 	@echo "  make restore       - 从 backup/uya.c 恢复 bin/uya.c"
 	@echo "  make clean         - 清理所有构建产物"

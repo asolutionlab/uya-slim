@@ -126,7 +126,7 @@ export extern "libc" fn execve(pathname: &const byte, argv: & &byte, envp: & &by
 // _exit - 立即退出进程
 export extern "libc" fn _exit(status: i32) void {
     @syscall(SYS_exit, status as i64) catch {};
-    // 不会执行到这里
+    while true {}
 }
 
 // waitpid - 等待子进程状态（Linux x86_64：syscall 61 为 wait4，须传 rusage=NULL）

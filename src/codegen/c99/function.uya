@@ -1726,7 +1726,7 @@ fn emit_async_state0_pre_first_await_local_inits(codegen: &C99CodeGenerator, cut
                                 "        __builtin_memset((void *)&%s->_uya_loc_%s, 0, sizeof(%s->_uya_loc_%s));\n" as *byte,
                                 codegen.async_state_var as *byte, ls as *byte, codegen.async_state_var as *byte, ls as *byte);
                             if lit_len > 0 {
-                                fprintf(codegen.emit_stream as *void, "        memcpy(%s->_uya_loc_%s, (const " as *byte,
+                                fprintf(codegen.emit_stream as *void, "        __uya_memcpy((void *)%s->_uya_loc_%s, (const void *)(const " as *byte,
                                     codegen.async_state_var as *byte, ls as *byte);
                                 fputs(elem_c as *byte, codegen.emit_stream as *void);
                                 fputs("[]){" as *byte, codegen.emit_stream as *void);
@@ -1736,7 +1736,7 @@ fn emit_async_state0_pre_first_await_local_inits(codegen: &C99CodeGenerator, cut
                                     lit_len, codegen.async_state_var as *byte, ls as *byte);
                             }
                         } else {
-                            fprintf(codegen.emit_stream as *void, "        memcpy(%s->_uya_loc_%s, (const " as *byte,
+                            fprintf(codegen.emit_stream as *void, "        __uya_memcpy((void *)%s->_uya_loc_%s, (const void *)(const " as *byte,
                                 codegen.async_state_var as *byte, ls as *byte);
                             fputs(elem_c as *byte, codegen.emit_stream as *void);
                             fputs("[]){" as *byte, codegen.emit_stream as *void);
@@ -1787,7 +1787,7 @@ fn emit_async_pre_return_local_inits(codegen: &C99CodeGenerator) void {
                                 "        __builtin_memset((void *)&%s->_uya_loc_%s, 0, sizeof(%s->_uya_loc_%s));\n" as *byte,
                                 codegen.async_state_var as *byte, ls as *byte, codegen.async_state_var as *byte, ls as *byte);
                             if lit_len2 > 0 {
-                                fprintf(codegen.emit_stream as *void, "        memcpy(%s->_uya_loc_%s, (const " as *byte,
+                                fprintf(codegen.emit_stream as *void, "        __uya_memcpy((void *)%s->_uya_loc_%s, (const void *)(const " as *byte,
                                     codegen.async_state_var as *byte, ls as *byte);
                                 fputs(elem_c as *byte, codegen.emit_stream as *void);
                                 fputs("[]){" as *byte, codegen.emit_stream as *void);
@@ -1797,7 +1797,7 @@ fn emit_async_pre_return_local_inits(codegen: &C99CodeGenerator) void {
                                     lit_len2, codegen.async_state_var as *byte, ls as *byte);
                             }
                         } else {
-                            fprintf(codegen.emit_stream as *void, "        memcpy(%s->_uya_loc_%s, (const " as *byte,
+                            fprintf(codegen.emit_stream as *void, "        __uya_memcpy((void *)%s->_uya_loc_%s, (const void *)(const " as *byte,
                                 codegen.async_state_var as *byte, ls as *byte);
                             fputs(elem_c as *byte, codegen.emit_stream as *void);
                             fputs("[]){" as *byte, codegen.emit_stream as *void);
@@ -2624,7 +2624,7 @@ fn c99_emit_async_local_init_single(codegen: &C99CodeGenerator, stmt: &ASTNode) 
                             "        __builtin_memset((void *)&%s->_uya_loc_%s, 0, sizeof(%s->_uya_loc_%s));\n" as *byte,
                             codegen.async_state_var as *byte, ls as *byte, codegen.async_state_var as *byte, ls as *byte);
                         if lit_len > 0 {
-                            fprintf(codegen.emit_stream as *void, "        memcpy(%s->_uya_loc_%s, (const " as *byte,
+                            fprintf(codegen.emit_stream as *void, "        __uya_memcpy((void *)%s->_uya_loc_%s, (const void *)(const " as *byte,
                                 codegen.async_state_var as *byte, ls as *byte);
                             fputs(elem_c as *byte, codegen.emit_stream as *void);
                             fputs("[]){" as *byte, codegen.emit_stream as *void);
@@ -2634,7 +2634,7 @@ fn c99_emit_async_local_init_single(codegen: &C99CodeGenerator, stmt: &ASTNode) 
                                 lit_len, codegen.async_state_var as *byte, ls as *byte);
                         }
                     } else {
-                        fprintf(codegen.emit_stream as *void, "        memcpy(%s->_uya_loc_%s, (const " as *byte,
+                        fprintf(codegen.emit_stream as *void, "        __uya_memcpy((void *)%s->_uya_loc_%s, (const void *)(const " as *byte,
                             codegen.async_state_var as *byte, ls as *byte);
                         fputs(elem_c as *byte, codegen.emit_stream as *void);
                         fputs("[]){" as *byte, codegen.emit_stream as *void);
