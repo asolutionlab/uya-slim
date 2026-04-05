@@ -13,6 +13,7 @@ use std.runtime.capability.types.CAPABILITY_MAX_PUBLISHER_LEN;
 use std.runtime.capability.types.CAPABILITY_MAX_SIGNATURE_LEN;
 use std.runtime.capability.types.CAPABILITY_MAX_TRIGGERS;
 use std.runtime.capability.types.CAPABILITY_MAX_VERSION_LEN;
+use std.runtime.capability.types.CapabilityBackendKind;
 use std.runtime.capability.types.capability_default_limits;
 
 export error ManifestInvalid;
@@ -35,6 +36,7 @@ export struct CapabilityManifest {
     entry: [byte: CAPABILITY_MAX_ENTRY_LEN],
     entry_len: usize,
     abi_version: i32,
+    backend_kind: CapabilityBackendKind,
     limits: CapabilityResourceLimits,
     permissions: [CapabilityPermissionId: CAPABILITY_MAX_PERMISSIONS],
     permission_count: i32,
@@ -50,6 +52,7 @@ export struct CapabilityManifest {
 export fn capability_manifest_init() CapabilityManifest {
     return CapabilityManifest{
         abi_version: CAPABILITY_ABI_V1,
+        backend_kind: CapabilityBackendKind.NativeUya,
         limits: capability_default_limits(),
         signature_alg: CapabilitySignatureAlgorithm.None,
     };
@@ -65,6 +68,9 @@ export fn capability_manifest_validate(manifest: &CapabilityManifest) !void {
     if manifest.abi_version != CAPABILITY_ABI_V1 {
         return error.ManifestUnsupportedAbi;
     }
+    if manifest.backend_kind == CapabilityBackendKind.Invalid {
+        return error.ManifestInvalid;
+    }
     if manifest.permission_count < 0 || manifest.permission_count > CAPABILITY_MAX_PERMISSIONS {
         return error.ManifestTooManyPermissions;
     }
@@ -72,4 +78,3 @@ export fn capability_manifest_validate(manifest: &CapabilityManifest) !void {
         return error.ManifestTooManyTriggers;
     }
 }
-

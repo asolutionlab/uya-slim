@@ -20,7 +20,7 @@ export fn capability_loader_activate(registry: &CapabilityRegistry, index: i32) 
     if index < 0 || index >= registry.count {
         return error.CapabilityLoaderInvalidState;
     }
-    if !registry.entries[index].in_use {
+    if registry.entries[index].in_use == false {
         return error.CapabilityLoaderInvalidState;
     }
 
@@ -44,7 +44,7 @@ export fn capability_loader_rollback(registry: &CapabilityRegistry, index: i32) 
     if index < 0 || index >= registry.count {
         return error.CapabilityLoaderInvalidState;
     }
-    if !registry.entries[index].in_use {
+    if registry.entries[index].in_use == false {
         return error.CapabilityLoaderInvalidState;
     }
 
@@ -52,4 +52,3 @@ export fn capability_loader_rollback(registry: &CapabilityRegistry, index: i32) 
     registry.entries[index].state = CapabilityState.Disabled;
     registry.entries[index].last_status = CapabilityStatusCode.Disabled;
 }
-

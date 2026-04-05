@@ -1,0 +1,37 @@
+// std.runtime.capability.benchmark - 后端对比基准类型
+
+use std.runtime.capability.abi.CapabilityStatusCode;
+use std.runtime.capability.backend.CapabilityBackendKind;
+use std.runtime.capability.backend.CapabilityBackendMetrics;
+use std.runtime.capability.backend.CapabilityBackendSession;
+
+export enum CapabilityBenchmarkCaseKind {
+    Install,
+    Activate,
+    InvokeCold,
+    InvokeWarm,
+    InvokeLoop,
+    PermissionDenied,
+    Timeout,
+}
+
+export struct CapabilityBenchmarkCase {
+    backend: CapabilityBackendKind,
+    case_kind: CapabilityBenchmarkCaseKind,
+    iterations: i32,
+    payload_size: usize,
+}
+
+export struct CapabilityBenchmarkResult {
+    case_info: CapabilityBenchmarkCase,
+    status_ok: bool,
+    metrics: CapabilityBackendMetrics,
+}
+
+export fn capability_benchmark_result_from_session(case_info: CapabilityBenchmarkCase, session: &CapabilityBackendSession) CapabilityBenchmarkResult {
+    return CapabilityBenchmarkResult{
+        case_info: case_info,
+        status_ok: session.status == CapabilityStatusCode.Ok,
+        metrics: session.metrics,
+    };
+}

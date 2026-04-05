@@ -27,10 +27,10 @@ export struct CapabilityHostApi {
         try capability_permission_require(&ctx.permissions, CapabilityPermissionId.VibrateUse);
     }
 
-    fn kv_get(self: &Self, ctx: &CapabilityExecutionContext, key: &const byte) !&const byte {
+    fn kv_get(self: &Self, ctx: &CapabilityExecutionContext, key: &const byte) !i32 {
         _ = key;
         try capability_permission_require(&ctx.permissions, CapabilityPermissionId.StorageKvRead);
-        return null;
+        return 0;
     }
 
     fn kv_set(self: &Self, ctx: &CapabilityExecutionContext, key: &const byte, value: &const byte) !void {
@@ -43,4 +43,3 @@ export struct CapabilityHostApi {
 export fn capability_status_from_error() CapabilityStatusCode {
     return CapabilityStatusCode.Failed;
 }
-

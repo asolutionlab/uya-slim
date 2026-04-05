@@ -1,0 +1,183 @@
+// test_capability_runtime_compat.uya - capability 兼容层最小 TDD 基线
+
+use std.testing.assert_true;
+use std.testing.assert_eq_i32;
+use std.testing.run_test;
+use std.testing.test_suite_begin;
+use std.testing.test_suite_end;
+
+use std.runtime.capability.abi.CapabilityStatusCode;
+use std.runtime.capability.backend.CapabilityBackendConfig;
+use std.runtime.capability.backend.CapabilityBackendSession;
+use std.runtime.capability.fake_backend.CapabilityFakeBackend;
+use std.runtime.capability.fake_backend.capability_fake_backend_init;
+use std.runtime.capability.fake_backend.capability_fake_backend_invoke;
+use std.runtime.capability.fake_backend.capability_fake_backend_load_module;
+use std.runtime.capability.hostapi.CapabilityHostApi;
+use std.runtime.capability.loader.capability_loader_activate;
+use std.runtime.capability.loader.capability_loader_disable;
+use std.runtime.capability.loader.capability_loader_fail;
+use std.runtime.capability.loader.capability_loader_install;
+use std.runtime.capability.loader.capability_loader_rollback;
+use std.runtime.capability.manifest.CapabilityManifest;
+use std.runtime.capability.manifest.capability_manifest_init;
+use std.runtime.capability.manifest.capability_manifest_validate;
+use std.runtime.capability.policy.CapabilityPermissionSet;
+use std.runtime.capability.policy.capability_permission_is_granted;
+use std.runtime.capability.policy.capability_permission_require;
+use std.runtime.capability.policy.capability_permission_set_declare;
+use std.runtime.capability.policy.capability_permission_set_grant;
+use std.runtime.capability.registry.CapabilityRegistry;
+use std.runtime.capability.registry.capability_registry_init;
+use std.runtime.capability.types.CapabilityBackendKind;
+use std.runtime.capability.types.CapabilityPermissionId;
+use std.runtime.capability.types.CapabilityState;
+
+fn make_valid_manifest(id0: byte, backend_kind: CapabilityBackendKind) CapabilityManifest {
+    var manifest: CapabilityManifest = capability_manifest_init();
+    manifest.id_len = 1 as usize;
+    manifest.id[0] = id0;
+    manifest.entry_len = 4 as usize;
+    manifest.entry[0] = 'm' as byte;
+    manifest.entry[1] = 'a' as byte;
+    manifest.entry[2] = 'i' as byte;
+    manifest.entry[3] = 'n' as byte;
+    manifest.backend_kind = backend_kind;
+    return manifest;
+}
+
+fn test_capability_manifest_defaults_are_valid() !void {
+    var manifest: CapabilityManifest = make_valid_manifest('a' as byte, CapabilityBackendKind.NativeUya);
+    try capability_manifest_validate(&manifest);
+    try assert_true(manifest.backend_kind == CapabilityBackendKind.NativeUya);
+}
+
+fn test_capability_manifest_invalid_backend_rejected() !void {
+    var manifest: CapabilityManifest = make_valid_manifest('a' as byte, CapabilityBackendKind.Invalid);
+
+    var saw: bool = false;
+    _ = capability_manifest_validate(&manifest) catch {
+        saw = true;
+    };
+    try assert_true(saw);
+}
+
+fn test_capability_permission_declare_grant_require() !void {
+    var permissions: CapabilityPermissionSet = CapabilityPermissionSet{};
+    capability_permission_set_declare(&permissions, CapabilityPermissionId.TimeRead);
+    try capability_permission_set_grant(&permissions, CapabilityPermissionId.TimeRead);
+    try capability_permission_require(&permissions, CapabilityPermissionId.TimeRead);
+    try assert_true(capability_permission_is_granted(&permissions, CapabilityPermissionId.TimeRead));
+}
+
+fn test_capability_permission_grant_undeclared_is_error() !void {
+    var permissions: CapabilityPermissionSet = CapabilityPermissionSet{};
+    var saw: bool = false;
+    _ = capability_permission_set_grant(&permissions, CapabilityPermissionId.TimeRead) catch {
+        saw = true;
+    };
+    try assert_true(saw);
+}
+
+fn test_capability_fake_backend_load_and_invoke() !void {
+    var host: CapabilityHostApi = CapabilityHostApi{};
+    var backend: CapabilityFakeBackend = CapabilityFakeBackend{};
+
+    try capability_fake_backend_init(&backend, CapabilityBackendConfig{
+        kind: CapabilityBackendKind.Fake,
+        host_api: &host,
+    });
+
+    var manifest: CapabilityManifest = make_valid_manifest('f' as byte, CapabilityBackendKind.Fake);
+
+    var payload: [byte: 1] = [];
+    payload[0] = 'x' as byte;
+
+    var session: CapabilityBackendSession = try capability_fake_backend_load_module(&backend, &payload[0] as &const byte, 1 as usize, manifest);
+    const status: CapabilityStatusCode = try capability_fake_backend_invoke(&backend, &session, 0);
+
+    try assert_true(session.kind == CapabilityBackendKind.Fake);
+    try assert_true(status == CapabilityStatusCode.Ok);
+}
+
+fn test_capability_loader_install_records_installed_entry() !void {
+    var registry: CapabilityRegistry = capability_registry_init();
+    const manifest: CapabilityManifest = make_valid_manifest('i' as byte, CapabilityBackendKind.NativeUya);
+
+    const index: i32 = try capability_loader_install(&registry, manifest);
+
+    try assert_eq_i32(index, 0);
+    try assert_eq_i32(registry.count, 1);
+    try assert_true(registry.entries[index].in_use);
+    try assert_true(registry.entries[index].state == CapabilityState.Installed);
+    try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Ok);
+}
+
+fn test_capability_loader_install_rejects_invalid_manifest() !void {
+    var registry: CapabilityRegistry = capability_registry_init();
+    const manifest: CapabilityManifest = make_valid_manifest('x' as byte, CapabilityBackendKind.Invalid);
+
+    var saw: bool = false;
+    const index: i32 = capability_loader_install(&registry, manifest) catch {
+        saw = true;
+        -1;
+    };
+
+    try assert_true(saw);
+    try assert_eq_i32(index, -1);
+    try assert_eq_i32(registry.count, 0);
+}
+
+fn test_capability_loader_activate_transitions_to_active() !void {
+    var registry: CapabilityRegistry = capability_registry_init();
+    const manifest: CapabilityManifest = make_valid_manifest('a' as byte, CapabilityBackendKind.NativeUya);
+    const index: i32 = try capability_loader_install(&registry, manifest);
+
+    try capability_loader_activate(&registry, index);
+
+    try assert_true(registry.entries[index].state == CapabilityState.Active);
+    try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Ok);
+}
+
+fn test_capability_loader_disable_marks_disabled() !void {
+    var registry: CapabilityRegistry = capability_registry_init();
+    const manifest: CapabilityManifest = make_valid_manifest('d' as byte, CapabilityBackendKind.NativeUya);
+    const index: i32 = try capability_loader_install(&registry, manifest);
+
+    try capability_loader_activate(&registry, index);
+    try capability_loader_disable(&registry, index);
+
+    try assert_true(registry.entries[index].state == CapabilityState.Disabled);
+    try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Disabled);
+}
+
+fn test_capability_loader_rollback_disables_failed_entry() !void {
+    var registry: CapabilityRegistry = capability_registry_init();
+    const manifest: CapabilityManifest = make_valid_manifest('r' as byte, CapabilityBackendKind.NativeUya);
+    const index: i32 = try capability_loader_install(&registry, manifest);
+
+    try capability_loader_activate(&registry, index);
+    try capability_loader_fail(&registry, index, CapabilityStatusCode.PermissionDenied);
+    try assert_true(registry.entries[index].state == CapabilityState.Failed);
+    try assert_true(registry.entries[index].last_status == CapabilityStatusCode.PermissionDenied);
+
+    try capability_loader_rollback(&registry, index);
+
+    try assert_true(registry.entries[index].state == CapabilityState.Disabled);
+    try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Disabled);
+}
+
+export fn main() i32 {
+    test_suite_begin("Capability Runtime Compat Tests");
+    run_test("manifest defaults valid", test_capability_manifest_defaults_are_valid);
+    run_test("manifest invalid backend rejected", test_capability_manifest_invalid_backend_rejected);
+    run_test("permission declare grant require", test_capability_permission_declare_grant_require);
+    run_test("permission undeclared grant error", test_capability_permission_grant_undeclared_is_error);
+    run_test("fake backend load and invoke", test_capability_fake_backend_load_and_invoke);
+    run_test("loader install records installed entry", test_capability_loader_install_records_installed_entry);
+    run_test("loader install rejects invalid manifest", test_capability_loader_install_rejects_invalid_manifest);
+    run_test("loader activate transitions to active", test_capability_loader_activate_transitions_to_active);
+    run_test("loader disable marks disabled", test_capability_loader_disable_marks_disabled);
+    run_test("loader rollback disables failed entry", test_capability_loader_rollback_disables_failed_entry);
+    return test_suite_end();
+}

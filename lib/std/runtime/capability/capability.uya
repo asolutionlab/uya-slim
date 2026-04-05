@@ -9,3 +9,6 @@
 //   use std.runtime.capability.registry;
 //   use std.runtime.capability.loader;
 //   use std.runtime.capability.hostapi;
+//   use std.runtime.capability.backend;
+//   use std.runtime.capability.fake_backend;
+//   use std.runtime.capability.benchmark;

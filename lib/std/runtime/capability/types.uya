@@ -31,6 +31,13 @@ export enum CapabilitySignatureAlgorithm {
     Ed25519,
 }
 
+export enum CapabilityBackendKind {
+    Invalid,
+    Fake,
+    Wamr,
+    NativeUya,
+}
+
 export enum CapabilityPermissionId {
     Invalid,
     TimeRead,
@@ -89,4 +96,3 @@ export fn capability_permission_to_mask(permission: CapabilityPermissionId) u64 
     if permission == CapabilityPermissionId.NetRequest { return 1u64 << 13; }
     return 0;
 }
-
