@@ -64,8 +64,8 @@ var g_split_c_dir_active: i32 = 0;
 // 命令行 --no-split-c：强制单文件 C，忽略默认多文件、UYA_SPLIT_C_DIR 与 --split-c-dir
 var g_split_c_disabled_cli: i32 = 0;
 
-// 微应用模式：在 normal app 基础上额外收紧限制
-// 说明：当前默认行为就是 normal app；microapp 只是在此基础上启用更严格检查
+// 微应用模式：在 app 基础上额外收紧限制
+// 说明：当前默认行为就是 app；microapp 只是在此基础上启用更严格检查
 var g_container_mode: i32 = 0;
 // --app microapp: 微应用模式
 var g_app_mode_microapp: i32 = 0;
@@ -391,7 +391,7 @@ fn print_usage(program_name: &byte) void {
     fprintf(libc.stderr, "  %s build --app microapp main.uya -o microapp.c  # 微应用模式\n" as *byte, name as *byte);
     fprintf(libc.stderr, "\n选项:\n" as *byte);
     fprintf(libc.stderr, "  --c99                使用 C99 后端生成 C 代码\n" as *byte);
-    fprintf(libc.stderr, "  --app <normal|microapp>  选择应用类型；normal 为默认行为，microapp 会启用更严格检查\n" as *byte);
+    fprintf(libc.stderr, "  --app <app|microapp>  选择应用类型；app 为默认行为，microapp 会启用更严格检查\n" as *byte);
     fprintf(libc.stderr, "  --line-directives    启用 #line 指令生成（C99 后端）\n" as *byte);
     fprintf(libc.stderr, "  --no-line-directives 禁用 #line 指令生成\n" as *byte);
     fprintf(libc.stderr, "  --opt=<0-3>          优化级别（0=禁用, 1=默认, 2=+证明优化, 3=+内联）\n" as *byte);
@@ -1534,34 +1534,16 @@ fn parse_args(
                 if app_arg != null && strcmp(app_arg, "microapp" as *byte) == 0 {
                     g_app_mode_microapp = 1;
                     g_container_mode = 1;
-                } else if app_arg != null && strcmp(app_arg, "normal" as *byte) == 0 {
+                } else if app_arg != null && strcmp(app_arg, "app" as *byte) == 0 {
                     g_app_mode_microapp = 0;
                     g_container_mode = 0;
                 } else {
-                    fprintf(libc.stderr, "错误: --app 仅支持 normal 或 microapp\n" as *byte);
+                    fprintf(libc.stderr, "错误: --app 仅支持 app 或 microapp\n" as *byte);
                     return -1;
                 }
             } else {
-                fprintf(libc.stderr, "错误: --app 选项需要指定 normal 或 microapp\n" as *byte);
+                fprintf(libc.stderr, "错误: --app 选项需要指定 app 或 microapp\n" as *byte);
                 return -1;
-            }
-        } else if strcmp(arg, "--mode" as *byte) == 0 {
-            if i + 1 < argc {
-                i = i + 1;
-                const mode_arg: *byte = get_argv(i);
-                if mode_arg != null && strcmp(mode_arg, "microapp" as *byte) == 0 {
-                    g_app_mode_microapp = 1;
-                    g_container_mode = 1;
-                } else if mode_arg != null && strcmp(mode_arg, "normal" as *byte) == 0 {
-                    g_app_mode_microapp = 0;
-                    g_container_mode = 0;
-                } else if mode_arg != null && strcmp(mode_arg, "container" as *byte) == 0 {
-                    g_app_mode_microapp = 1;
-                    g_container_mode = 1;
-                } else if mode_arg != null && strcmp(mode_arg, "kernel" as *byte) == 0 {
-                    g_app_mode_microapp = 0;
-                    g_container_mode = 0;
-                }
             }
         } else if strcmp(arg, "--outlibc" as *byte) == 0 {
             if i + 1 < argc {

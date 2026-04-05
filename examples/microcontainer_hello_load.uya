@@ -27,7 +27,7 @@ export fn main() i32 {
     kernel.host_ctx.pm.size = 65536;
 
     var img: [byte: 128] = [];
-    const fp: &FILE = fopen("examples/microcontainer_hello.uimg\0" as &byte, "rb\0" as &byte);
+    const fp: &FILE = fopen("examples/microcontainer_hello.uapp\0" as &byte, "rb\0" as &byte);
     if fp == null {
         return 1;
     }

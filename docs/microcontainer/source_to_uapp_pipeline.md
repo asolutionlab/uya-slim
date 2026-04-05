@@ -1,4 +1,4 @@
-# Uya 微应用源码到 `.uimg` 编译链说明
+# Uya 微应用源码到 `.uapp` 编译链说明
 
 **版本**: v0.2  
 **日期**: 2026-04-05  
@@ -13,11 +13,11 @@
 
 ## 1. 文档目的
 
-本文档说明一条真正的“源码 -> `.uimg`”编译链应该如何设计、产出什么中间结果，以及它与当前仓库现状之间的差距。
+本文档说明一条真正的“源码 -> `.uapp`”编译链应该如何设计、产出什么中间结果，以及它与当前仓库现状之间的差距。
 
 目标不是立刻定义所有实现细节，而是先把下面三件事说清楚：
 
-- 当前 `.uimg` 产物是怎样得到的
+- 当前 `.uapp` 产物是怎样得到的
 - 真正的编译链应该经过哪些阶段
 - 后续应该由编译器、打包器、加载器各自负责什么
 
@@ -28,27 +28,27 @@
 当前仓库已经具备以下能力：
 
 - 已定义微容器镜像格式与加载期三重验证规范
-- 已实现 `image_validate()` 对 `.uimg` 做完整性、结构、指令策略验证
+- 已实现 `image_validate()` 对 `.uapp` 做完整性、结构、指令策略验证
 - 已具备模拟加载路径 `sim_load_image()`
-- 已有 `examples/microcontainer_hello.uimg` 可被加载执行
+- 已有 `examples/microcontainer_hello.uapp` 可被加载执行
 
-但当前还**没有**打通真正的“微应用源码直接编译为 `.uimg`”链路。
+但当前还**没有**打通真正的“微应用源码直接编译为 `.uapp`”链路。
 
-当前示例镜像 `examples/microcontainer_hello.uimg` 的真实来源是手工构造逻辑，而不是正式的源码级打包链。
+当前示例镜像 `examples/microcontainer_hello.uapp` 的真实来源是手工构造逻辑，而不是正式的源码级打包链。
 
 ### 2.1 当前实现进度
 
-目前已经补上了最小的 `payload_obj -> .uimg` 实现层：
+目前已经补上了最小的 `payload_obj -> .uapp` 实现层：
 
 - `lib/kernel/payload.uya`
 - `tests/test_kernel_payload.uya`
 - `tests/run_kernel_payload.sh`
 
-同时，示例 builder 已经从手工拼镜像改成调用 `payload_pack_to_uimg()`：
+同时，示例 builder 已经从手工拼镜像改成调用 `payload_pack_to_uapp()`：
 
 - `examples/microcontainer_hello_build.uya`
 
-示例 loader 也已经改为从 `.uimg` 读取并走加载验证链：
+示例 loader 也已经改为从 `.uapp` 读取并走加载验证链：
 
 - `examples/microcontainer_hello_load.uya`
 
@@ -61,12 +61,12 @@
 本文档中的“真正编译链”指的是：
 
 1. 开发者编写微应用源码
-2. 编译器以 `normal app` / `microapp` 语义分析源码
+2. 编译器以 `app` / `microapp` 语义分析源码
 3. 编译器直接生成 `target_arch` 指定架构的载荷码与元数据
-4. 打包器把代码段、只读数据段、重定位信息、权限位图等封装为 `.uimg`
-5. 生成的 `.uimg` 可直接通过 `image_validate()` 验证，并进入加载执行链
+4. 打包器把代码段、只读数据段、重定位信息、权限位图等封装为 `.uapp`
+5. 生成的 `.uapp` 可直接通过 `image_validate()` 验证，并进入加载执行链
 
-换句话说，目标不是“有一个能写出 `.uimg` 的脚本”，而是：
+换句话说，目标不是“有一个能写出 `.uapp` 的脚本”，而是：
 
 `源码级产物能够稳定进入镜像格式与加载验证闭环。`
 
@@ -77,8 +77,8 @@
 建议的标准编译链如下：
 
 1. 源码前端
-2. 容器模式语义检查
-3. 容器模式降级与约束注入
+2. microapp 模式语义检查
+3. microapp 模式降级与约束注入
 4. 目标代码生成
 5. 载荷对象产物生成
 6. 镜像打包
@@ -88,17 +88,17 @@
 可以抽象成：
 
 ```text
-app.uya
+app.uya / microapp.uya
   -> parse / typecheck
-  -> normal-app / microapp semantic check
+  -> app / microapp semantic check
   -> microapp-safe lowering
   -> codegen(target_arch)
   -> payload code + rodata + reloc + caps
   -> payload_obj
-  -> uimg pack
+  -> uapp pack
   -> sha256 fill
   -> image_validate
-  -> app.uimg
+  -> app.uapp
 ```
 
 这里有一个关键约束：
@@ -129,19 +129,15 @@ app.uya
 - 符号表
 - 类型信息
 
-这部分与普通编译流程一致，不需要因为 `.uimg` 单独设计一套前端。
+这部分与普通编译流程一致，不需要因为 `.uapp` 单独设计一套前端。
 
-### 5.2 容器模式语义检查
+### 5.2 app / microapp 语义检查
 
 这一阶段是“源码能否成为微应用”的第一道门槛。
 
 建议由编译器在显式模式下启用：
 
 - `--app microapp`
-
-或未来更面向产品的别名：
-
-- `--mode microapp`
 
 该阶段至少要拒绝：
 
@@ -158,9 +154,9 @@ app.uya
 
 保持一致。
 
-### 5.3 容器安全降级与约束注入
+### 5.3 microapp 安全降级与约束注入
 
-这是“普通程序”与“可打包微镜像程序”的关键分水岭。
+这是 `app` 与 `microapp` 的关键分水岭。
 
 该阶段负责：
 
@@ -169,7 +165,7 @@ app.uya
 - 限制不可接受的控制流或指令生成路径
 - 产生最终 capability 位图所需的静态信息
 
-这一阶段不直接生成 `.uimg`，但它决定最终镜像是否有资格通过加载验证。
+这一阶段不直接生成 `.uapp`，但它决定最终镜像是否有资格通过加载验证。
 
 编译器内部当然可以有自己的 IR，但对这条外部编译链来说，没有必要把 IR 单独定义成一个正式接口层。
 
@@ -179,7 +175,7 @@ app.uya
 
 输入：
 
-- 通过容器模式检查并完成安全降级的源码/内部表示
+- 通过 microapp 模式检查并完成安全降级的源码/内部表示
 
 输出：
 
@@ -195,13 +191,13 @@ app.uya
 例如：
 
 - `microcontainer_hello_build.uya` 编译出来的是宿主工具 native 码
-- 而 `.uimg` 内部的 `code` 段，才是面向 `target_arch` 的载荷码
+  - 而 `.uapp` 内部的 `code` 段，才是面向 `target_arch` 的载荷码
 
-当前仓库的加载与验证主要围绕 `rv32`，但长期设计不应把 `.uimg` 限死为 `rv32`；`target_arch` 应该决定载荷 ISA。
+当前仓库的加载与验证主要围绕 `rv32`，但长期设计不应把 `.uapp` 限死为 `rv32`；`target_arch` 应该决定载荷 ISA。
 
 ### 5.5 载荷对象产物生成
 
-建议在 `.uimg` 之前引入一个中间产物：
+建议在 `.uapp` 之前引入一个中间产物：
 
 - `payload_obj`
 
@@ -226,7 +222,7 @@ app.uya
 
 ### 5.6 镜像打包
 
-打包器负责把 `payload_obj` 转成最终 `.uimg`。
+打包器负责把 `payload_obj` 转成最终 `.uapp`。
 
 它应该完成：
 
@@ -243,12 +239,12 @@ app.uya
 - 写入 `build_mode`
 - 写入 `target_arch`
 
-这一步当前已经有了第一版实现：`payload_pack_to_uimg()`。
+这一步当前已经有了第一版实现：`payload_pack_to_uapp()`。
 
 长期目标应该是：
 
 - 示例构建脚本继续演化为更完整的 packer demo
-- 而不是唯一 `.uimg` 生成方式
+- 而不是唯一 `.uapp` 生成方式
 
 ### 5.7 哈希写入
 
@@ -294,28 +290,28 @@ app.uya
 ### 6.1 最小目标命令
 
 ```bash
-uya build --app microapp examples/microcontainer_hello.uya -o examples/microcontainer_hello.uimg
+uya build --app microapp examples/microcontainer_hello.uya -o examples/microcontainer_hello.uapp
 ```
 
 这条命令背后可以拆成两步：
 
 ```bash
 uya compile --app microapp examples/microcontainer_hello.uya -o build/hello.pobj
-uya pack-image build/hello.pobj -o examples/microcontainer_hello.uimg
+uya pack-image build/hello.pobj -o examples/microcontainer_hello.uapp
 ```
 
 其中：
 
-- `compile` 负责前端、容器模式检查、目标代码生成、`payload_obj` 输出
-- `pack-image` 负责封装 `.uimg`
+- `compile` 负责前端、microapp 模式检查、目标代码生成、`payload_obj` 输出
+- `pack-image` 负责封装 `.uapp`
 
 ### 6.2 调试型命令
 
 建议额外支持：
 
 ```bash
-uya inspect-image examples/microcontainer_hello.uimg
-uya verify-image examples/microcontainer_hello.uimg
+uya inspect-image examples/microcontainer_hello.uapp
+uya verify-image examples/microcontainer_hello.uapp
 ```
 
 这样可以降低镜像格式开发期的排错成本。
@@ -352,14 +348,14 @@ uya verify-image examples/microcontainer_hello.uimg
 
 ### 7.3 镜像层
 
-- `foo.uimg`
+- `foo.uapp`
 
 这是最终加载器消费的产物。
 
 加载器只需要知道：
 
-- `.uimg` 是合法的吗
-- `.uimg` 能否装入
+- `.uapp` 是合法的吗
+- `.uapp` 能否装入
 
 加载器不应该反过来承担前端编译职责。
 
@@ -384,11 +380,11 @@ uya verify-image examples/microcontainer_hello.uimg
 - 读取镜像
 - 调用验证器或加载器
 
-它们不是 `.uimg` 里的载荷。
+它们不是 `.uapp` 里的载荷。
 
 ### 8.2 载荷码
 
-`.uimg` 内部 `code` 段中的内容，才是微容器真正要运行的载荷码。
+`.uapp` 内部 `code` 段中的内容，才是微容器真正要运行的载荷码。
 
 它的架构必须由 `target_arch` 决定。
 
@@ -403,7 +399,7 @@ uya verify-image examples/microcontainer_hello.uimg
 
 - `target_arch = 当前开发机架构`
 
-这样生成的 `.uimg` 载荷码就是开发机 native 码，便于快速验证微应用逻辑，而不必依赖 ISA 模拟器。
+这样生成的 `.uapp` 载荷码就是开发机 native 码，便于快速验证微应用逻辑，而不必依赖 ISA 模拟器。
 
 部署阶段，再将：
 
@@ -422,7 +418,7 @@ uya verify-image examples/microcontainer_hello.uimg
 
 如果未来上层产品表达改为“手表微应用平台”，那么：
 
-- `.uimg` 是执行载荷
+- `.uapp` 是执行载荷
 - manifest / capability 权限声明是产品层描述
 - 微容器 runtime 是执行与隔离层
 
@@ -430,7 +426,7 @@ uya verify-image examples/microcontainer_hello.uimg
 
 ```text
 微应用源码
-  -> 编译为 .uimg
+  -> 编译为 .uapp
   -> 被 capability / 微应用管理层安装
   -> 由微容器 runtime 验证并执行
 ```
@@ -438,7 +434,7 @@ uya verify-image examples/microcontainer_hello.uimg
 这意味着未来很可能有两类文件：
 
 1. 微应用二进制载荷：
-   - `.uimg`
+   - `.uapp`
 
 2. 微应用描述文件：
    - manifest / package metadata
@@ -468,7 +464,7 @@ uya verify-image examples/microcontainer_hello.uimg
 
 ### 10.2 第二步：把示例源码编译为 `payload_obj`
 
-先不要直接打 `.uimg`。
+先不要直接打 `.uapp`。
 
 先证明：
 
@@ -480,11 +476,11 @@ uya verify-image examples/microcontainer_hello.uimg
 
 这一步完成后，应该变成：
 
-- `hello.uya -> hello.pobj -> hello.uimg`
+- `hello.uya -> hello.pobj -> hello.uapp`
 
 而不是：
 
-- `build script -> hardcoded hello.uimg`
+- `build script -> hardcoded hello.uapp`
 
 ### 10.4 第四步：接入自验证
 
@@ -513,12 +509,12 @@ uya verify-image examples/microcontainer_hello.uimg
 
 ## 11. 验收标准
 
-当满足下面条件时，可以认为“源码 -> `.uimg` 编译链”已经初步成立：
+当满足下面条件时，可以认为“源码 -> `.uapp` 编译链”已经初步成立：
 
 1. 开发者只需编写 `.uya` 源码，不需要手工拼镜像头
 2. 编译器能在 `--app microapp` 下产出 `payload_obj`
-3. packer 能把 `payload_obj` 打包为 `.uimg`
-4. 生成的 `.uimg` 默认通过 `image_validate()`
+3. packer 能把 `payload_obj` 打包为 `.uapp`
+4. 生成的 `.uapp` 默认通过 `image_validate()`
 5. 示例镜像能通过 `sim_load_image()` 正常运行
 6. 非法源码或非法指令路径会在编译期或打包期被拒绝
 
@@ -528,21 +524,21 @@ uya verify-image examples/microcontainer_hello.uimg
 
 当前已经有：
 
-- `.uimg` 规格
-- `.uimg` 校验器
-- `.uimg` 模拟加载路径
+- `.uapp` 规格
+- `.uapp` 校验器
+- `.uapp` 模拟加载路径
 - 手工构造镜像示例
 
 当前还缺：
 
 - 源码级 `microapp` 编译产物定义
 - `payload_obj` 中间层
-- 通用 `.uimg` packer
-- 从源码直接产出 `.uimg` 的正式命令入口
+- 通用 `.uapp` packer
+- 从源码直接产出 `.uapp` 的正式命令入口
 
 所以当前阶段最准确的表述应该是：
 
-> 仓库已经证明微容器镜像格式、校验与加载链路可行，但尚未完全打通“微应用源码直接编译为 `.uimg`”的正式编译链。
+> 仓库已经证明微容器镜像格式、校验与加载链路可行，但尚未完全打通“微应用源码直接编译为 `.uapp`”的正式编译链。
 
 ---
 
@@ -553,6 +549,6 @@ uya verify-image examples/microcontainer_hello.uimg
 1. 定义 `payload_obj`
 2. 抽出通用 `pack-image`
 3. 让示例源码成为真正的编译输入
-4. 把 `.uimg` 从“脚本构造产物”升级为“编译链产物”
+4. 把 `.uapp` 从“脚本构造产物”升级为“编译链产物”
 
 这样后续无论是微容器路线，还是手表微应用平台路线，都会更扎实。

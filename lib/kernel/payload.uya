@@ -1,5 +1,5 @@
 // Microcontainer payload object and packer
-// Spec: docs/microcontainer/source_to_uimg_pipeline.md
+// Spec: docs/microcontainer/source_to_uapp_pipeline.md
 
 use kernel.errors;
 use kernel.image;
@@ -65,7 +65,7 @@ export fn payload_validate_layout(p: &PayloadObj) !void {
     }
 }
 
-export fn payload_pack_to_uimg(p: &PayloadObj, out: &[byte]) !u32 {
+export fn payload_pack_to_uapp(p: &PayloadObj, out: &[byte]) !u32 {
     try payload_validate_layout(p);
 
     const total: u32 = payload_total_size(p);

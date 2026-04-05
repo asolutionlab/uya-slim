@@ -12,16 +12,17 @@
 - [update_recovery.md](/home/winger/uya-asm/docs/microcontainer/update_recovery.md)
 - [platform_impl.md](/home/winger/uya-asm/docs/microcontainer/platform_impl.md)
 - [benchmark_plan.md](/home/winger/uya-asm/docs/microcontainer/benchmark_plan.md)
-- [source_to_uimg_pipeline.md](/home/winger/uya-asm/docs/microcontainer/source_to_uimg_pipeline.md)
+- [source_to_uapp_pipeline.md](/home/winger/uya-asm/docs/microcontainer/source_to_uapp_pipeline.md)
 - [microapp_source_template.md](/home/winger/uya-asm/docs/microcontainer/microapp_source_template.md)
 
 ---
 
 ## 术语边界
 
+- `microapp.uya`：微应用源码文件（开发入口）
 - `payload_obj`：编译器与打包器之间的中间产物
 - `payload code`：`target_arch` 指定的目标架构载荷码
-- `.uimg`：最终加载器消费的镜像文件
+- `.uapp`：最终加载器消费的镜像文件
 
 ---
 
@@ -31,5 +32,4 @@
 
 1. [requirements_v1.3.md](/home/winger/uya-asm/docs/microcontainer/requirements_v1.3.md)
 2. [image_validation.md](/home/winger/uya-asm/docs/microcontainer/image_validation.md)
-3. [source_to_uimg_pipeline.md](/home/winger/uya-asm/docs/microcontainer/source_to_uimg_pipeline.md)
-
+3. [source_to_uapp_pipeline.md](/home/winger/uya-asm/docs/microcontainer/source_to_uapp_pipeline.md)

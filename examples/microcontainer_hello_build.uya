@@ -19,11 +19,11 @@ export fn main() i32 {
         reloc_count: 0u32,
     };
     var img: [byte: 128] = [];
-    const image_len: u32 = payload_pack_to_uimg(&obj, img[0: 128]) catch {
+    const image_len: u32 = payload_pack_to_uapp(&obj, img[0: 128]) catch {
         return 1;
     };
 
-    const fp: &FILE = fopen("examples/microcontainer_hello.uimg\0" as &byte, "wb\0" as &byte);
+    const fp: &FILE = fopen("examples/microcontainer_hello.uapp\0" as &byte, "wb\0" as &byte);
     if fp == null {
         return 1;
     }

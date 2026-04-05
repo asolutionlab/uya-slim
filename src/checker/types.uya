@@ -311,7 +311,7 @@ struct TypeChecker {
     pointer_nullable_names: [&byte: 32],
     pointer_nullable_count: i32,
     enable_safety_proof: i32,
-    container_mode: i32,        // 1 = --mode container: 禁止 @asm/extern
+    container_mode: i32,        // 1 = microapp 模式: 禁止 @asm/extern
     proof_step_limit: i32,
     proof_step_count: i32,
     // 作用域链表头数组：每个作用域的符号链表头

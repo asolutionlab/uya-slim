@@ -31,7 +31,7 @@
 - `reloc_count`
 - `sha256`
 - `required_caps_bitmap`
-- `build_mode`（当前内部仍使用容器镜像位；对外可理解为 normal app 的镜像模式）
+- `build_mode`（当前内部仍使用容器镜像位；对外可理解为 app 的镜像模式）
 - `target_arch`（如 `rv32` / `x86_64` / `aarch64` / `xtensa`）
 
 ---

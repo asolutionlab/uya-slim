@@ -935,7 +935,7 @@ fn checker_check_cast_expr(checker: &TypeChecker, node: &ASTNode) void {
         return;
     }
 
-    // E4003: --mode container 禁止整数字面量转指针（物理地址直接访问）
+    // E4003: microapp 模式禁止整数字面量转指针（物理地址直接访问）
     if checker.container_mode != 0 {
         if is_integer_type(source_type.kind) != 0 && target_type.kind == TypeKind.TYPE_POINTER {
             // 检查源是否为常量（字面量或 const 标识符）

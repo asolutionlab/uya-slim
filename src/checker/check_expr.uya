@@ -446,7 +446,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         if expr.va_copy_src != null { checker_infer_type(checker, expr.va_copy_src); }
         return make_void_type();
     } else if expr.type == ASTNodeType.AST_ASM {
-        // E4001: --mode container 禁止用户代码中的 @asm
+        // E4001: microapp 模式禁止用户代码中的 @asm
         if checker.container_mode != 0 {
             var is_stdlib_asm_e: i32 = 0;
             if expr.filename != null {
@@ -454,7 +454,7 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
                 if strstr(expr.filename as *byte, "lib/libc/" as *byte) != null { is_stdlib_asm_e = 1; }
             }
             if is_stdlib_asm_e == 0 {
-                checker_report_error(checker, expr, "E4001: 容器模式禁止使用 @asm（--mode container）" as *byte);
+                checker_report_error(checker, expr, "E4001: microapp 模式禁止使用 @asm" as *byte);
                 return make_void_type();
             }
         }
