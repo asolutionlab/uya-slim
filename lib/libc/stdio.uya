@@ -392,8 +392,8 @@ export extern "libc" fn print_i64(value: i64) usize {
 // C 标准库兼容函数（用于 --nostdlib 模式）
 // ============================================================
 
-// 全局 FILE 存储（用于 fopen/fclose，最多 64 个文件）
-var fopen_fd_storage: [FILE: 64] = [];
+// 全局 FILE 存储（用于 fopen/fclose，split mirror 自举时会并发打开大量输出文件）
+var fopen_fd_storage: [FILE: 128] = [];
 const _FOPEN_W_FLAGS: i64 = 577;   // O_WRONLY | O_CREAT | O_TRUNC
 const _FOPEN_A_FLAGS: i64 = 1089;  // O_WRONLY | O_CREAT | O_APPEND
 const _FOPEN_W_PLUS_FLAGS: i64 = 578;   // O_RDWR | O_CREAT | O_TRUNC

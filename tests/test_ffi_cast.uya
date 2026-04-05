@@ -23,7 +23,7 @@ export fn main() i32 {
     
     // 测试字符串字面量（本身就是 *byte 类型）
     const str_result: i32 = puts("FFI pointer cast test passed!");
-    if str_result != 1 {
+    if str_result < 0 {
         return 1;
     }
     return 0;  // 程序成功执行

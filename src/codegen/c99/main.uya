@@ -2305,48 +2305,48 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 使用 static 而非 static inline：在 -O2 下将该助手内联进部分调用点会触发错误优化（段错误）；
     // 保持为翻译单元内普通 static 函数可避免有问题的跨过程内联。
     fputs("// std.thread：宿主工具链间接调用（跨 -O0/-O2 稳定；见 lib/std/thread.uya）\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) int32_t uya_thread_call_i32(void *fn, int32_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("int32_t uya_thread_call_i32(void *fn, int32_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef int32_t (*uya_thrd_fn_i32)(int32_t);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return ((uya_thrd_fn_i32)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) uint32_t uya_thread_call_u32(void *fn, uint32_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("uint32_t uya_thread_call_u32(void *fn, uint32_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef uint32_t (*uya_thrd_fn_u32)(uint32_t);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return ((uya_thrd_fn_u32)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) size_t uya_thread_call_usize(void *fn, size_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("size_t uya_thread_call_usize(void *fn, size_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef size_t (*uya_thrd_fn_usz)(size_t);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return ((uya_thrd_fn_usz)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) int64_t uya_thread_call_i64(void *fn, int64_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("int64_t uya_thread_call_i64(void *fn, int64_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef int64_t (*uya_thrd_fn_i64)(int64_t);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return ((uya_thrd_fn_i64)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) uint64_t uya_thread_call_u64(void *fn, uint64_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("uint64_t uya_thread_call_u64(void *fn, uint64_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef uint64_t (*uya_thrd_fn_u64)(uint64_t);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return ((uya_thrd_fn_u64)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) int16_t uya_thread_call_i16(void *fn, int16_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("int16_t uya_thread_call_i16(void *fn, int16_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef int16_t (*uya_thrd_fn_i16)(int16_t);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return ((uya_thrd_fn_i16)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) uint16_t uya_thread_call_u16(void *fn, uint16_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("uint16_t uya_thread_call_u16(void *fn, uint16_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef uint16_t (*uya_thrd_fn_u16)(uint16_t);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return ((uya_thrd_fn_u16)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) int8_t uya_thread_call_i8(void *fn, int8_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("int8_t uya_thread_call_i8(void *fn, int8_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef int8_t (*uya_thrd_fn_i8)(int8_t);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return ((uya_thrd_fn_i8)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) uint8_t uya_thread_call_u8(void *fn, uint8_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("uint8_t uya_thread_call_u8(void *fn, uint8_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef uint8_t (*uya_thrd_fn_u8)(uint8_t);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return ((uya_thrd_fn_u8)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) int32_t uya_thread_call_bool(void *fn, int32_t arg) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("int32_t uya_thread_call_bool(void *fn, int32_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef int32_t (*uya_thrd_fn_bool)(int32_t);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return ((uya_thrd_fn_bool)fn)(arg);\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
     fputs("// f32/f64：槽位内仍为 u32/u64 位模式；间接调用须用真实 float/double 调用约定（不可伪装成整数函数指针）。\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) uint32_t uya_thread_call_f32(void *fn, uint32_t arg_bits) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("uint32_t uya_thread_call_f32(void *fn, uint32_t arg_bits) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef float (*uya_thrd_fn_f32)(float);\n" as *byte, codegen.emit_stream as *void);
     fputs("    union { uint32_t u; float f; } a;\n" as *byte, codegen.emit_stream as *void);
     fputs("    union { uint32_t u; float f; } out;\n" as *byte, codegen.emit_stream as *void);
@@ -2354,7 +2354,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     fputs("    out.f = ((uya_thrd_fn_f32)fn)(a.f);\n" as *byte, codegen.emit_stream as *void);
     fputs("    return out.u;\n" as *byte, codegen.emit_stream as *void);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
-    fputs("static __attribute__((__unused__)) uint64_t uya_thread_call_f64(void *fn, uint64_t arg_bits) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("uint64_t uya_thread_call_f64(void *fn, uint64_t arg_bits) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef double (*uya_thrd_fn_f64)(double);\n" as *byte, codegen.emit_stream as *void);
     fputs("    union { uint64_t u; double d; } a;\n" as *byte, codegen.emit_stream as *void);
     fputs("    union { uint64_t u; double d; } out;\n" as *byte, codegen.emit_stream as *void);
@@ -3471,4 +3471,3 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     c99_write_split_makefile(codegen);
     return 0;
 }
-

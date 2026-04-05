@@ -518,15 +518,15 @@ fn c99_mkdir_p_for_file(file_path: &byte) void {
     c99_mkdir_p_chain(&buf[0] as &byte);
 }
 
-fn c99_mirror_lcp_len(uniq: [[byte: 512]: 128], count: i32) i32 {
-    if count <= 0 {
+fn c99_mirror_lcp_len_flat(uniq: &byte, count: i32) i32 {
+    if uniq == null || count <= 0 {
         return 0;
     }
     var minlen: i32 = 511;
     var ui: i32 = 0;
     while ui < count {
         var len: i32 = 0;
-        while len < 511 && uniq[ui][len] != 0 as byte {
+        while len < 511 && uniq[ui * 512 + len] != 0 as byte {
             len = len + 1;
         }
         if len < minlen {
@@ -536,11 +536,11 @@ fn c99_mirror_lcp_len(uniq: [[byte: 512]: 128], count: i32) i32 {
     }
     var pos: i32 = 0;
     while pos < minlen {
-        const ch: byte = uniq[0][pos];
+        const ch: byte = uniq[pos];
         var same: i32 = 1;
         var u2: i32 = 1;
         while u2 < count {
-            if uniq[u2][pos] != ch {
+            if uniq[u2 * 512 + pos] != ch {
                 same = 0;
                 u2 = count;
             }
@@ -551,7 +551,7 @@ fn c99_mirror_lcp_len(uniq: [[byte: 512]: 128], count: i32) i32 {
         }
         pos = pos + 1;
     }
-    while pos > 0 && uniq[0][pos - 1] != 47 as byte {
+    while pos > 0 && uniq[pos - 1] != 47 as byte {
         pos = pos - 1;
     }
     return pos;
@@ -675,6 +675,10 @@ export fn c99_split_mirror_prepare(codegen: &C99CodeGenerator, program: &ASTNode
                     if strstr(&tmp_norm[0] as *byte, "runtime/runtime.uya" as *byte) != null {
                         skip_entry = 1;
                     }
+                    // std/thread.uya 生成 static 线程调用桥接函数；镜像拆分后会与原型头冲突，保留在 uya_common.c
+                    if strstr(&tmp_norm[0] as *byte, "std/thread.uya" as *byte) != null {
+                        skip_entry = 1;
+                    }
                 }
                 if skip_entry == 0 {
                     var z: i32 = 0;
@@ -703,7 +707,7 @@ export fn c99_split_mirror_prepare(codegen: &C99CodeGenerator, program: &ASTNode
         uniq[nui][nz] = 0 as byte;
         nui = nui + 1;
     }
-    const lcp: i32 = c99_mirror_lcp_len(uniq, uniq_count);
+    const lcp: i32 = c99_mirror_lcp_len_flat(&uniq[0][0] as &byte, uniq_count);
     codegen.split_mirror_lcp = lcp;
     var ci: i32 = 0;
     while ci < uniq_count {
@@ -779,6 +783,7 @@ export fn c99_split_mirror_prepare(codegen: &C99CodeGenerator, program: &ASTNode
     if cl <= 0 || cl >= 1024 {
         return -1;
     }
+    c99_mkdir_p_for_file(&comp[0] as &byte);
     const ch: *void = fopen(&comp[0] as *byte, "w" as *byte);
     if ch == null {
         return -1;
@@ -2035,4 +2040,3 @@ fn collect_string_constants_from_decl(codegen: &C99CodeGenerator, decl: &ASTNode
         // 其他声明类型
     }
 }
-
