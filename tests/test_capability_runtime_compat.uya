@@ -40,6 +40,7 @@ use std.runtime.capability.registry.capability_registry_init;
 use std.runtime.capability.types.CapabilityBackendKind;
 use std.runtime.capability.types.CapabilityPermissionId;
 use std.runtime.capability.types.CapabilityState;
+use std.runtime.capability.types.CAPABILITY_MAX_REGISTRY_ENTRIES;
 
 fn make_valid_manifest(id0: byte, backend_kind: CapabilityBackendKind) CapabilityManifest {
     var manifest: CapabilityManifest = capability_manifest_init();
@@ -184,6 +185,96 @@ fn test_capability_loader_rollback_disables_failed_entry() !void {
     try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Disabled);
 }
 
+fn test_capability_registry_add_rejects_when_full() !void {
+    var registry: CapabilityRegistry = capability_registry_init();
+    var i: i32 = 0;
+    while i < CAPABILITY_MAX_REGISTRY_ENTRIES {
+        const manifest: CapabilityManifest = make_valid_manifest((65 + i) as byte, CapabilityBackendKind.NativeUya);
+        try assert_eq_i32(try capability_loader_install(&registry, manifest), i);
+        i = i + 1;
+    }
+
+    var saw: bool = false;
+    const overflow_manifest: CapabilityManifest = make_valid_manifest('z' as byte, CapabilityBackendKind.NativeUya);
+    const overflow_index: i32 = capability_loader_install(&registry, overflow_manifest) catch {
+        saw = true;
+        -1;
+    };
+
+    try assert_true(saw);
+    try assert_eq_i32(overflow_index, -1);
+    try assert_eq_i32(registry.count, CAPABILITY_MAX_REGISTRY_ENTRIES);
+}
+
+fn test_capability_registry_disable_invalid_index_is_error() !void {
+    var registry: CapabilityRegistry = capability_registry_init();
+    const manifest: CapabilityManifest = make_valid_manifest('n' as byte, CapabilityBackendKind.NativeUya);
+    _ = try capability_loader_install(&registry, manifest);
+
+    var negative_failed: bool = false;
+    _ = capability_loader_disable(&registry, -1) catch {
+        negative_failed = true;
+    };
+    try assert_true(negative_failed);
+
+    var overflow_failed: bool = false;
+    _ = capability_loader_disable(&registry, registry.count) catch {
+        overflow_failed = true;
+    };
+    try assert_true(overflow_failed);
+}
+
+fn test_capability_loader_activate_invalid_or_unused_entry_is_error() !void {
+    var registry: CapabilityRegistry = capability_registry_init();
+
+    var empty_failed: bool = false;
+    _ = capability_loader_activate(&registry, 0) catch {
+        empty_failed = true;
+    };
+    try assert_true(empty_failed);
+
+    const manifest: CapabilityManifest = make_valid_manifest('u' as byte, CapabilityBackendKind.NativeUya);
+    const index: i32 = try capability_loader_install(&registry, manifest);
+    registry.entries[index].in_use = false;
+
+    var unused_failed: bool = false;
+    _ = capability_loader_activate(&registry, index) catch {
+        unused_failed = true;
+    };
+    try assert_true(unused_failed);
+    try assert_true(registry.entries[index].state == CapabilityState.Installed);
+}
+
+fn test_capability_loader_fail_invalid_index_is_error() !void {
+    var registry: CapabilityRegistry = capability_registry_init();
+
+    var failed: bool = false;
+    _ = capability_loader_fail(&registry, 0, CapabilityStatusCode.Failed) catch {
+        failed = true;
+    };
+    try assert_true(failed);
+}
+
+fn test_capability_loader_rollback_invalid_or_unused_entry_is_error() !void {
+    var registry: CapabilityRegistry = capability_registry_init();
+
+    var empty_failed: bool = false;
+    _ = capability_loader_rollback(&registry, 0) catch {
+        empty_failed = true;
+    };
+    try assert_true(empty_failed);
+
+    const manifest: CapabilityManifest = make_valid_manifest('q' as byte, CapabilityBackendKind.NativeUya);
+    const index: i32 = try capability_loader_install(&registry, manifest);
+    registry.entries[index].in_use = false;
+
+    var unused_failed: bool = false;
+    _ = capability_loader_rollback(&registry, index) catch {
+        unused_failed = true;
+    };
+    try assert_true(unused_failed);
+}
+
 fn test_capability_hostapi_time_now_requires_permission() !void {
     var host: CapabilityHostApi = CapabilityHostApi{};
     var denied_ctx: CapabilityExecutionContext = capability_execution_context_init(1u32, capability_manifest_init().limits);
@@ -306,6 +397,11 @@ export fn main() i32 {
     run_test("loader activate transitions to active", test_capability_loader_activate_transitions_to_active);
     run_test("loader disable marks disabled", test_capability_loader_disable_marks_disabled);
     run_test("loader rollback disables failed entry", test_capability_loader_rollback_disables_failed_entry);
+    run_test("registry add rejects when full", test_capability_registry_add_rejects_when_full);
+    run_test("registry disable invalid index error", test_capability_registry_disable_invalid_index_is_error);
+    run_test("loader activate invalid or unused entry error", test_capability_loader_activate_invalid_or_unused_entry_is_error);
+    run_test("loader fail invalid index error", test_capability_loader_fail_invalid_index_is_error);
+    run_test("loader rollback invalid or unused entry error", test_capability_loader_rollback_invalid_or_unused_entry_is_error);
     run_test("hostapi time_now requires permission", test_capability_hostapi_time_now_requires_permission);
     run_test("hostapi log and kv permissions", test_capability_hostapi_log_and_kv_permissions);
     run_test("benchmark result reflects session", test_capability_benchmark_result_reflects_session);
