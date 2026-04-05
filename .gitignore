@@ -32,6 +32,7 @@ test_std_io.txt
 musl-src/
 src/build/
 tests/build/
+examples/*.uimg
 # 可选 JSON 基准数据（tests/scripts/fetch_json_benchmark_data.sh）
 tests/data/json/*.json
 build/

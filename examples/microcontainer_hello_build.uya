@@ -1,59 +1,27 @@
 use std.runtime.entry;
 use kernel.image;
-use std.crypto.sha256;
+use kernel.payload;
 use libc.FILE;
 use libc.fopen;
 use libc.fwrite;
 use libc.fclose;
 
-fn w32(buf: &[byte], off: usize, val: u32) void {
-    buf.ptr[off] = (val & 255u32) as byte;
-    buf.ptr[off + 1] = ((val >> 8) & 255u32) as byte;
-    buf.ptr[off + 2] = ((val >> 16) & 255u32) as byte;
-    buf.ptr[off + 3] = ((val >> 24) & 255u32) as byte;
-}
-
-fn w16(buf: &[byte], off: usize, val: u16) void {
-    buf.ptr[off] = (val & 255u16) as byte;
-    buf.ptr[off + 1] = ((val >> 8) & 255u16) as byte;
-}
-
 export fn main() i32 {
-    const msg: &[const byte] = &"Hello, World!\n"[0: 14];
-    const image_len: u32 = IMAGE_HEADER_SIZE + 4u32 + msg.len as u32;
+    const code: [byte: 4] = [115, 0, 0, 0];
+    const rodata: [byte: 14] = [72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33, 10];
+    const obj: PayloadObj = PayloadObj{
+        target_arch: ImageTargetArch.ita_rv32,
+        build_mode: BUILD_MODE_CONTAINER,
+        required_caps: 0u32,
+        entry_offset: 0u32,
+        code: code[0: 4],
+        rodata: rodata[0: 14],
+        reloc_count: 0u32,
+    };
     var img: [byte: 128] = [];
-    var i: usize = 0;
-    while i < image_len as usize {
-        img[i] = 0 as byte;
-        i = i + 1;
-    }
-
-    w32(img[0: 128], 0, IMAGE_MAGIC);
-    w16(img[0: 128], 4, 1);
-    w16(img[0: 128], 6, 1);
-    w32(img[0: 128], 8, image_len);
-    w32(img[0: 128], 12, 0);
-    w32(img[0: 128], 16, 4);
-    w32(img[0: 128], 20, msg.len as u32);
-    w32(img[0: 128], 24, 0);
-    w32(img[0: 128], 60, 0);
-    img[64] = BUILD_MODE_CONTAINER;
-    img[65] = image_target_arch_to_byte(ImageTargetArch.ita_rv32);
-    w32(img[0: 128], IMAGE_HEADER_SIZE as usize, 115u32);
-
-    i = 0;
-    while i < msg.len {
-        img[(IMAGE_HEADER_SIZE + 4u32) as usize + i] = msg.ptr[i];
-        i = i + 1;
-    }
-
-    var digest: [byte: 32] = [];
-    sha256_digest(img[0: image_len as usize], digest[0: 32]);
-    i = 0;
-    while i < 32 {
-        img[28 + i] = digest[i];
-        i = i + 1;
-    }
+    const image_len: u32 = payload_pack_to_uimg(&obj, img[0: 128]) catch {
+        return 1;
+    };
 
     const fp: &FILE = fopen("examples/microcontainer_hello.uimg\0" as &byte, "wb\0" as &byte);
     if fp == null {

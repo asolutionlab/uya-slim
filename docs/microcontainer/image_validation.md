@@ -87,7 +87,7 @@
 
 加载器必须校验链接期产物标签：
 
-- 目标文件类型必须为 `container_obj`
+- 目标文件类型必须为 `payload_obj`
 - 拒绝链接到 `kernel_only` 符号域
 - 拒绝未声明 capability 的设备接口桩
 

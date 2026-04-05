@@ -1,0 +1,28 @@
+use kernel.errors;
+use kernel.image;
+use kernel.payload;
+use std.crypto.sha256;
+use std.testing.assert_eq_i32;
+
+test "payload_pack_to_uimg_roundtrip" {
+    var code: [byte: 4] = [115, 0, 0, 0];
+    var rodata: [byte: 4] = [65, 66, 67, 0];
+    var out: [byte: 128] = [];
+    const obj: PayloadObj = PayloadObj{
+        target_arch: ImageTargetArch.ita_rv32,
+        build_mode: BUILD_MODE_CONTAINER,
+        required_caps: 0u32,
+        entry_offset: 0u32,
+        code: code[0: 4],
+        rodata: rodata[0: 4],
+        reloc_count: 0u32,
+    };
+
+    const total: u32 = try payload_pack_to_uimg(&obj, out[0: 128]);
+    try assert_eq_i32(total as i32, 104);
+
+    const hdr: ImageHeader = try image_validate(out[0: total as usize]);
+    try assert_eq_i32(hdr.code_size as i32, 4);
+    try assert_eq_i32(hdr.rodata_size as i32, 4);
+    try assert_eq_i32(hdr.entry_offset as i32, 0);
+}

@@ -1,0 +1,102 @@
+// Microcontainer payload object and packer
+// Spec: docs/microcontainer/source_to_uimg_pipeline.md
+
+use kernel.errors;
+use kernel.image;
+use std.crypto.sha256;
+
+export struct PayloadObj {
+    target_arch: ImageTargetArch,
+    build_mode: byte,
+    required_caps: u32,
+    entry_offset: u32,
+    code: &[byte],
+    rodata: &[byte],
+    reloc_count: u32,
+}
+
+fn w32(buf: &[byte], off: usize, val: u32) void {
+    buf.ptr[off] = (val & 255u32) as byte;
+    buf.ptr[off + 1] = ((val >> 8) & 255u32) as byte;
+    buf.ptr[off + 2] = ((val >> 16) & 255u32) as byte;
+    buf.ptr[off + 3] = ((val >> 24) & 255u32) as byte;
+}
+
+fn w16(buf: &[byte], off: usize, val: u16) void {
+    buf.ptr[off] = (val & 255u16) as byte;
+    buf.ptr[off + 1] = ((val >> 8) & 255u16) as byte;
+}
+
+fn zero_bytes(buf: &[byte], len: u32) void {
+    var i: u32 = 0;
+    while i < len {
+        buf.ptr[i as usize] = 0;
+        i = i + 1;
+    }
+}
+
+fn copy_bytes(dst: &[byte], dst_off: u32, src: &[byte]) void {
+    var i: u32 = 0;
+    while i < src.len as u32 {
+        dst.ptr[(dst_off + i) as usize] = src.ptr[i as usize];
+        i = i + 1;
+    }
+}
+
+export fn payload_total_size(p: &PayloadObj) u32 {
+    return IMAGE_HEADER_SIZE + p.code.len as u32 + p.rodata.len as u32;
+}
+
+export fn payload_validate_layout(p: &PayloadObj) !void {
+    if p.build_mode != BUILD_MODE_CONTAINER {
+        return error.ImgLayoutInvalid;
+    }
+    if p.target_arch == ImageTargetArch.ita_unknown {
+        return error.ImgArchMismatch;
+    }
+    if p.code.len == 0 {
+        return error.ImgLayoutInvalid;
+    }
+    if p.entry_offset >= p.code.len as u32 {
+        return error.ImgLayoutInvalid;
+    }
+    if (p.entry_offset & 3u32) != 0 {
+        return error.ImgLayoutInvalid;
+    }
+}
+
+export fn payload_pack_to_uimg(p: &PayloadObj, out: &[byte]) !u32 {
+    try payload_validate_layout(p);
+
+    const total: u32 = payload_total_size(p);
+    if out.len < total as usize {
+        return error.InvalidSize;
+    }
+
+    zero_bytes(out, total);
+
+    w32(out, OFF_MAGIC as usize, IMAGE_MAGIC);
+    w16(out, OFF_FORMAT_VER as usize, 1);
+    w16(out, OFF_API_VER as usize, 1);
+    w32(out, OFF_IMAGE_SIZE as usize, total);
+    w32(out, OFF_ENTRY as usize, p.entry_offset);
+    w32(out, OFF_CODE_SIZE as usize, p.code.len as u32);
+    w32(out, OFF_RODATA_SIZE as usize, p.rodata.len as u32);
+    w32(out, OFF_RELOC_COUNT as usize, p.reloc_count);
+    w32(out, OFF_CAPS as usize, p.required_caps);
+    out.ptr[OFF_BUILD_MODE as usize] = p.build_mode;
+    out.ptr[OFF_TARGET_ARCH as usize] = image_target_arch_to_byte(p.target_arch);
+
+    copy_bytes(out, IMAGE_HEADER_SIZE, p.code);
+    copy_bytes(out, IMAGE_HEADER_SIZE + p.code.len as u32, p.rodata);
+
+    var digest: [byte: 32] = [];
+    sha256_digest(out[0: total as usize], digest[0: 32]);
+    var i: usize = 0;
+    while i < 32 {
+        out.ptr[OFF_SHA256 as usize + i] = digest[i];
+        i = i + 1;
+    }
+
+    return total;
+}
