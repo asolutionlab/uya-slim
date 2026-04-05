@@ -19,6 +19,22 @@
 
 本版本聚焦规格闭环，不包含完整实现代码。
 
+### 1.1 与 capability runtime 的关系
+
+本文档中的“微容器”是执行与隔离层，不是能力包协议本身。
+
+在当前仓库里，两者建议按如下方式配合：
+
+- `capability runtime` 负责定义能力包 manifest、权限模型、Host API、生命周期与后端兼容层
+- “微容器系统”负责提供容器镜像校验、地址空间隔离、系统调用边界、调度、崩溃恢复与更新回滚
+
+因此：
+
+- `capability` 是“要运行什么”的抽象
+- “微容器”是“如何安全运行它”的机制
+
+后续若以微容器承载 capability，则 capability manager 负责安装和状态管理，微容器 runtime 负责真正装载镜像、建立隔离上下文并执行。
+
 ---
 
 ## 2. 设计原则
@@ -161,6 +177,11 @@
 - `SYS_IO`
 - `SYS_YIELD`
 
+若上层承载对象为 capability，则这里的 syscall 不直接暴露给产品层，而是通常经由统一 Host API 间接访问。也就是说：
+
+- capability 侧看到的是 `host_time_now`、`host_kv_get`、`host_vibrate` 这类能力接口
+- 微容器侧负责把这些接口翻译为受控 syscall 或内核代理调用
+
 ---
 
 ## 7. 容器生命周期与调度
@@ -174,6 +195,15 @@
 - `BLOCKED`
 - `CRASHED`
 - `ZOMBIE`
+
+若容器承载的是 capability，则建议建立如下近似映射：
+
+- capability `Installed` -> 容器 `LOADING` / `READY`
+- capability `Active` -> 容器 `RUNNING` / 可调度
+- capability `Disabled` -> 容器停止调度或实例已回收
+- capability `Failed` -> 容器 `CRASHED` 或被策略熔断
+
+这样可以避免产品层状态机与底层容器状态机各说各话。
 
 ### 7.2 调度策略
 

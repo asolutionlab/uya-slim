@@ -20,6 +20,21 @@
 - 错误码
 - 性能指标
 
+### 1.1 与微容器的分工
+
+本兼容层文档讨论的是 `capability runtime` 如何对接不同执行后端，不等同于微容器需求本身。
+
+两者建议按以下边界理解：
+
+- `capability runtime` 是上层抽象，负责包协议、权限、生命周期、Host API 和 benchmark 口径
+- `backend adapter` 是桥接层，负责把某个执行引擎接成统一接口
+- “微容器”是某类执行引擎或隔离载体，负责地址空间、syscall 边界、调度、故障恢复等底层机制
+
+也就是说：
+
+- 不是“capability 对立于微容器”
+- 而是“capability 可以运行在微容器之上，也可以运行在其他后端之上”
+
 ---
 
 ## 2. 设计原则
@@ -63,6 +78,17 @@
 - `Capability Manager` 负责安装、激活、禁用、回滚、调度
 - `Execution Backend Adapter` 负责把具体后端接入统一接口
 - `Telemetry / Benchmark` 负责收集资源与性能指标
+
+若底层采用微容器实现，可进一步细化为：
+
+1. `Capability Package`
+2. `Capability Manager`
+3. `Compatibility Layer`
+4. `Microcontainer Adapter`
+5. `Microcontainer Runtime`
+6. `Kernel / Syscall / Isolation`
+
+其中 `Microcontainer Adapter` 仍对上暴露统一 backend interface，对下再去绑定微容器镜像格式、系统调用 ABI 和容器生命周期。
 
 ---
 
@@ -237,6 +263,13 @@ Native Uya 后端通过固定 ABI 或宿主调用表映射到同名能力。
 
 这些逻辑应由 capability manager 与兼容层统一管理。
 
+### 10.4 若引入微容器后端，Adapter 额外负责
+
+- 将 manifest 中的资源限制映射到容器配额
+- 将 capability 权限映射到 syscall / host capability 白名单
+- 将 capability 的 `install/load/activate/invoke/unload` 语义映射到容器的加载、启动、调用、销毁语义
+- 将容器 trap、越界、非法 syscall 等底层故障映射回统一能力状态与错误码
+
 ---
 
 ## 11. 建议实现顺序
@@ -290,3 +323,4 @@ Native Uya 后端通过固定 ABI 或宿主调用表映射到同名能力。
 - 同一 manifest 可切换 backend
 - 同一业务 case 可在两个 backend 上运行
 - 同一套 benchmark 可直接产出对比数据
+- 在引入微容器后端后，不需要重写 capability 层协议，只需要补齐对应 adapter
