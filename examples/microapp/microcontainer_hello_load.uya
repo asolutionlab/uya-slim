@@ -8,8 +8,26 @@ use libc.FILE;
 use libc.fopen;
 use libc.fread;
 use libc.fclose;
+use libc.snprintf;
+use libc.system;
 
 const MAX_LOADER_IMAGE_SIZE: usize = 2097152;  // 2 MiB
+
+fn exit_code_from_system_status(wstatus: i32) i32 {
+    if wstatus < 0 {
+        return 1;
+    }
+    const low: i32 = wstatus & 0x7f;
+    const code: i32 = (wstatus >> 8) & 0xff;
+    if low == 0 {
+        return code;
+    }
+    const sig: i32 = low & 0x7f;
+    if sig == 0 {
+        return 1;
+    }
+    return 128 + sig;
+}
 
 fn resolve_uapp_path() &byte {
     const default_path: &byte = "examples/microapp/microcontainer_hello.uapp\0" as &byte;
@@ -20,6 +38,29 @@ fn resolve_uapp_path() &byte {
         }
     }
     return default_path;
+}
+
+fn resolve_native_payload_exe_path() &byte {
+    if get_argc() > 2 {
+        const arg_path: *byte = get_argv(2);
+        if arg_path != null && arg_path[0] != 0 as byte {
+            return arg_path as &byte;
+        }
+    }
+    return null;
+}
+
+fn host_run_payload_exe(payload_exe_path: &byte) i32 {
+    if payload_exe_path == null || payload_exe_path[0] == 0 as byte {
+        return 1;
+    }
+    var cmd: [byte: 4096] = [];
+    const cmd_len: i32 = snprintf(&cmd[0] as *byte, 4096, "\"%s\"" as *byte, payload_exe_path as *byte);
+    if cmd_len <= 0 || cmd_len >= 4096 {
+        @println("[microapp loader] failed to build payload command");
+        return 1;
+    }
+    return system(&cmd[0] as *byte);
 }
 
 export fn main() i32 {
@@ -69,6 +110,16 @@ export fn main() i32 {
     if cid != 0u32 {
         @println("[microapp loader] unexpected cid");
         return 5;
+    }
+    const native_payload_exe_path: &byte = resolve_native_payload_exe_path();
+    if native_payload_exe_path != null {
+        @println("[microapp loader] launching native payload");
+        const payload_status: i32 = host_run_payload_exe(native_payload_exe_path);
+        const payload_exit: i32 = exit_code_from_system_status(payload_status);
+        if payload_exit != 0 {
+            @println("[microapp loader] payload exited non-zero");
+            return payload_exit;
+        }
     }
     @println("[microapp loader] done");
     return 0;

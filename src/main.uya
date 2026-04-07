@@ -1195,13 +1195,22 @@ fn host_fill_temp_microapp_loader_path(buf: &byte, cap: usize, exe_suffix: &byte
     return -1;
 }
 
-fn host_run_microapp_loader(loader_exe: &byte, uapp_path: &byte) i32 {
+fn host_run_microapp_loader(loader_exe: &byte, uapp_path: &byte, payload_exe_path: &byte) i32 {
     if loader_exe == null || uapp_path == null {
         return 1;
     }
     var cmd: [byte: 4096] = [];
     var cmd_len: i32 = 0;
-    cmd_len = snprintf(&cmd[0] as *byte, 4096, "\"%s\" \"%s\"" as *byte, loader_exe as *byte, uapp_path as *byte);
+    if payload_exe_path != null && payload_exe_path[0] != 0 as byte {
+        cmd_len = snprintf(&cmd[0] as *byte, 4096,
+            "\"%s\" \"%s\" \"%s\"" as *byte,
+            loader_exe as *byte,
+            uapp_path as *byte,
+            payload_exe_path as *byte,
+            );
+    } else {
+        cmd_len = snprintf(&cmd[0] as *byte, 4096, "\"%s\" \"%s\"" as *byte, loader_exe as *byte, uapp_path as *byte);
+    }
     if cmd_len <= 0 || cmd_len >= 4096 {
         fprintf(libc.stderr, "错误：无法生成微容器运行命令\n" as *byte);
         return 1;
@@ -3376,8 +3385,15 @@ export fn main() i32 {
             fprintf(libc.stderr, "错误：microapp loader 编译失败\n" as *byte);
             return 1;
         }
+        var microapp_exe_path: [byte: PATH_MAX] = [];
+        const microapp_exe_len: i32 = snprintf(&microapp_exe_path[0] as *byte, PATH_MAX, "%s.text.bin.elf" as *byte, &microapp_pobj_path[0] as *byte);
+        if microapp_exe_len <= 0 || microapp_exe_len >= PATH_MAX {
+            fprintf(libc.stderr, "错误：无法生成 microapp payload 可执行文件路径\n" as *byte);
+            return 1;
+        }
         fprintf(libc.stderr, "=== microapp run: 运行 loader ===\n" as *byte);
-        const run_result: i32 = host_run_microapp_loader(&loader_exe_path[0] as &byte, &microapp_uapp_path[0] as &byte);
+        // loader 会先验证 .uapp，再通过第三个参数按需启动同源码编出的 native payload。
+        const run_result: i32 = host_run_microapp_loader(&loader_exe_path[0] as &byte, &microapp_uapp_path[0] as &byte, &microapp_exe_path[0] as &byte);
         const child_exit: i32 = exit_code_from_system_status(run_result);
         if child_exit != 0 {
             fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, child_exit);
