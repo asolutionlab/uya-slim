@@ -7,6 +7,10 @@
 ## 核心文档
 
 - [requirements_v1.3.md](../../docs/microcontainer/requirements_v1.3.md)
+- [runtime-architecture.md](../../docs/microcontainer/runtime-architecture.md)
+- [capability_api_schema.md](../../docs/microcontainer/capability_api_schema.md)
+- [backend_adapter_contract.md](../../docs/microcontainer/backend_adapter_contract.md)
+- [native_mock_semantics.md](../../docs/microcontainer/native_mock_semantics.md)
 - [image_validation.md](../../docs/microcontainer/image_validation.md)
 - [syscall_abi.md](../../docs/microcontainer/syscall_abi.md)
 - [update_recovery.md](../../docs/microcontainer/update_recovery.md)
@@ -42,5 +46,9 @@
 建议先看：
 
 1. [requirements_v1.3.md](../../docs/microcontainer/requirements_v1.3.md)
-2. [image_validation.md](../../docs/microcontainer/image_validation.md)
-3. [source_to_uapp_pipeline.md](../../docs/microcontainer/source_to_uapp_pipeline.md)
+2. [runtime-architecture.md](../../docs/microcontainer/runtime-architecture.md)
+3. [capability_api_schema.md](../../docs/microcontainer/capability_api_schema.md)
+4. [backend_adapter_contract.md](../../docs/microcontainer/backend_adapter_contract.md)
+5. [native_mock_semantics.md](../../docs/microcontainer/native_mock_semantics.md)
+6. [image_validation.md](../../docs/microcontainer/image_validation.md)
+7. [source_to_uapp_pipeline.md](../../docs/microcontainer/source_to_uapp_pipeline.md)
