@@ -16,12 +16,26 @@
 
 use kernel.errors;
 use kernel.mem;
+use libc.getenv;
+use libc.fprintf;
+use libc.stderr;
 
 // 与 mem.PAGE_SHIFT / PAGE_MASK / PAGE_SIZE 数值一致。
 // 分包 C 编译时跨文件 const 符号名不一致，翻译路径使用本模块字面量避免链接错误。
 const MMU_PAGE_SHIFT: i32 = 16;
 const MMU_PAGE_MASK: u32 = 65535;
 const MMU_PAGE_SIZE: u32 = 65536;
+
+fn mmu_debug_enabled() i32 {
+    const flag: *byte = getenv("MICROAPP_DEBUG_MMU" as *byte);
+    if flag == null || flag[0] == 0 {
+        return 0;
+    }
+    if flag[0] == 48 as byte {
+        return 0;
+    }
+    return 1;
+}
 
 // ── PTE 标志位 ──
 
@@ -117,23 +131,43 @@ export fn mmu_translate(pt: &PageTable, vaddr: u32, size: u32, access: u32) !Tra
     if vpn < @len(pt.entries) {
         const pte: u32 = pt.entries[vpn];
 
+        if mmu_debug_enabled() != 0 {
+            fprintf(stderr, "[mmu] translate vaddr=0x%x size=%u access=0x%x vpn=%u offset=%u pte=0x%x\n" as *byte,
+                vaddr, size, access, vpn, offset, pte);
+        }
+
         if (pte & PTE_V) == 0 {
+            if mmu_debug_enabled() != 0 {
+                fprintf(stderr, "[mmu] fault: unmapped vpn=%u\n" as *byte, vpn);
+            }
             return error.PageFault;
         }
 
         // 权限检查
         if (access & ACCESS_R) != 0 && (pte & PTE_R) == 0 {
+            if mmu_debug_enabled() != 0 {
+                fprintf(stderr, "[mmu] permission denied: read vpn=%u\n" as *byte, vpn);
+            }
             return error.PagePermission;
         }
         if (access & ACCESS_W) != 0 && (pte & PTE_W) == 0 {
+            if mmu_debug_enabled() != 0 {
+                fprintf(stderr, "[mmu] permission denied: write vpn=%u\n" as *byte, vpn);
+            }
             return error.PagePermission;
         }
         if (access & ACCESS_X) != 0 && (pte & PTE_X) == 0 {
+            if mmu_debug_enabled() != 0 {
+                fprintf(stderr, "[mmu] permission denied: exec vpn=%u\n" as *byte, vpn);
+            }
             return error.PagePermission;
         }
 
         // 跨页检查
         if size > 0 && (offset + size) > MMU_PAGE_SIZE {
+            if mmu_debug_enabled() != 0 {
+                fprintf(stderr, "[mmu] boundary denied: vaddr=0x%x size=%u\n" as *byte, vaddr, size);
+            }
             return error.PageBoundary;
         }
 
@@ -144,7 +178,15 @@ export fn mmu_translate(pt: &PageTable, vaddr: u32, size: u32, access: u32) !Tra
         }
         pt.entries[vpn] = updated;
 
+        if mmu_debug_enabled() != 0 {
+            fprintf(stderr, "[mmu] ok: vpn=%u -> ppn=%u offset=%u updated=0x%x\n" as *byte,
+                vpn, pte_ppn(pte), offset, updated);
+        }
+
         return TranslateResult{ ppn: pte_ppn(pte), offset: offset };
+    }
+    if mmu_debug_enabled() != 0 {
+        fprintf(stderr, "[mmu] fault: vpn out of range=%u\n" as *byte, vpn);
     }
     return error.PageFault;
 }
@@ -153,5 +195,9 @@ export fn mmu_translate(pt: &PageTable, vaddr: u32, size: u32, access: u32) !Tra
 
 export fn mmu_translate_ptr(pt: &PageTable, pm: &PhysMem, vaddr: u32, size: u32, access: u32) !&byte {
     const result: TranslateResult = try mmu_translate(pt, vaddr, size, access);
+    if mmu_debug_enabled() != 0 {
+        fprintf(stderr, "[mmu] ptr: vaddr=0x%x -> ppn=%u offset=%u size=%u\n" as *byte,
+            vaddr, result.ppn, result.offset, size);
+    }
     return try physmem_ptr(pm, result.ppn, result.offset);
 }

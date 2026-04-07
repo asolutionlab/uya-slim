@@ -1146,6 +1146,47 @@ fn host_fill_temp_run_exe_path(buf: &byte, cap: usize, exe_suffix: &byte) i32 {
     return -1;
 }
 
+fn host_fill_temp_microapp_loader_path(buf: &byte, cap: usize, exe_suffix: &byte) i32 {
+    if buf == null || cap < 48 {
+        return -1;
+    }
+    var suf: &byte = exe_suffix;
+    if suf == null {
+        suf = "" as *byte;
+    }
+    const tmpdir: *byte = getenv("TMPDIR" as *byte);
+    if tmpdir != null && tmpdir[0] != 0 {
+        const w: i32 = snprintf(buf as *byte, cap, "%s/uya_microapp_loader%s" as *byte, tmpdir, suf as *byte);
+        if w > 0 && (w as usize) < cap {
+            return 0;
+        }
+        return -1;
+    }
+    const w2: i32 = snprintf(buf as *byte, cap, "/tmp/uya_microapp_loader%s" as *byte, suf as *byte);
+    if w2 > 0 && (w2 as usize) < cap {
+        return 0;
+    }
+    return -1;
+}
+
+fn host_run_microapp_loader(loader_exe: &byte, uapp_path: &byte, native_exe_path: &byte) i32 {
+    if loader_exe == null || uapp_path == null {
+        return 1;
+    }
+    var cmd: [byte: 4096] = [];
+    var cmd_len: i32 = 0;
+    if native_exe_path != null && native_exe_path[0] != 0 {
+        cmd_len = snprintf(&cmd[0] as *byte, 4096, "\"%s\" \"%s\" \"%s\"" as *byte, loader_exe as *byte, uapp_path as *byte, native_exe_path as *byte);
+    } else {
+        cmd_len = snprintf(&cmd[0] as *byte, 4096, "\"%s\" \"%s\"" as *byte, loader_exe as *byte, uapp_path as *byte);
+    }
+    if cmd_len <= 0 || cmd_len >= 4096 {
+        fprintf(libc.stderr, "错误：无法生成微容器运行命令\n" as *byte);
+        return 1;
+    }
+    return system(&cmd[0] as *byte);
+}
+
 // 在目录中查找包含 main 函数的文件
 fn find_main_files_in_dir(
     dir_path: &byte,
@@ -3257,6 +3298,62 @@ export fn main() i32 {
     const result: i32 = compile_files(&input_file_indices[0], input_file_count, output_file_index, backend, emit_line_directives, enable_safety_proof, opt_level, output_path_for_compile, is_nostdlib, stack_size, split_c_arg);
     if result != 0 {
         return result;
+    }
+
+    if command == CommandType.COMMAND_RUN && g_app_mode_microapp != 0 {
+        const source_path: *byte = get_argv(input_file_indices[0]);
+        if source_path == null {
+            fprintf(libc.stderr, "错误：无法获取 microapp 源文件路径\n" as *byte);
+            return 1;
+        }
+        fprintf(libc.stderr, "\n=== microapp run: 编译 payload ===\n" as *byte);
+        var microapp_uapp_path: [byte: PATH_MAX] = [];
+        if host_fill_temp_microapp_loader_path(&microapp_uapp_path[0], PATH_MAX, ".uapp" as *byte) != 0 {
+            fprintf(libc.stderr, "错误：无法生成 microapp 临时输出路径\n" as *byte);
+            return 1;
+        }
+        var microapp_pobj_path: [byte: PATH_MAX] = [];
+        if host_fill_temp_microapp_loader_path(&microapp_pobj_path[0], PATH_MAX, ".pobj" as *byte) != 0 {
+            fprintf(libc.stderr, "错误：无法生成 microapp 临时 payload_obj 路径\n" as *byte);
+            return 1;
+        }
+        const manifest_result: i32 = write_microapp_payload_obj(&microapp_pobj_path[0] as &byte, source_path as &byte, &auto_output_path[0] as &byte);
+        if manifest_result != 0 {
+            return manifest_result;
+        }
+        const pack_result: i32 = pack_microapp_pobj_to_uapp(&microapp_pobj_path[0] as &byte, &microapp_uapp_path[0] as &byte);
+        if pack_result != 0 {
+            return pack_result;
+        }
+
+        fprintf(libc.stderr, "=== microapp run: 编译 loader ===\n" as *byte);
+        var loader_exe_path: [byte: PATH_MAX] = [];
+        if host_fill_temp_microapp_loader_path(&loader_exe_path[0], PATH_MAX, get_target_exe_suffix()) != 0 {
+            fprintf(libc.stderr, "错误：无法生成 microapp loader 路径\n" as *byte);
+            return 1;
+        }
+        const loader_source_path: &byte = "examples/microapp/microcontainer_hello_load.uya" as *byte;
+        var loader_cmd: [byte: 4096] = [];
+        const loader_cmd_len: i32 = snprintf(&loader_cmd[0] as *byte, 4096,
+            "\"%s\" build \"%s\" -o \"%s\"" as *byte,
+            get_argv(0),
+            loader_source_path as *byte,
+            &loader_exe_path[0] as *byte);
+        if loader_cmd_len <= 0 || loader_cmd_len >= 4096 {
+            fprintf(libc.stderr, "错误：无法生成 microapp loader 编译命令\n" as *byte);
+            return 1;
+        }
+        if system(&loader_cmd[0] as *byte) != 0 {
+            fprintf(libc.stderr, "错误：microapp loader 编译失败\n" as *byte);
+            return 1;
+        }
+        fprintf(libc.stderr, "=== microapp run: 运行 loader ===\n" as *byte);
+        const run_result: i32 = host_run_microapp_loader(&loader_exe_path[0] as &byte, &microapp_uapp_path[0] as &byte, null);
+        const child_exit: i32 = exit_code_from_system_status(run_result);
+        if child_exit != 0 {
+            fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, child_exit);
+        }
+        return child_exit;
     }
 
     if command == CommandType.COMMAND_BUILD && g_app_mode_microapp != 0 && user_output_path != null && is_pobj_output(user_output_path as &byte) != 0 {

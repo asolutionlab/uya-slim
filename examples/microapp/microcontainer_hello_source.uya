@@ -10,5 +10,6 @@ use std.runtime.entry;
 export fn main() i32 {
     // A real microapp would keep its logic here and only use allowed
     // runtime APIs/capabilities in microapp mode.
+    @println("hello microapp");
     return 0;
 }

@@ -192,6 +192,10 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     const pt: &PageTable = sim_pt_ref(k, cid);
     pt_init(pt);
     try pt_map(pt, 0u32, ppn, PTE_R | PTE_U);
+    if mmu_debug_enabled() != 0 {
+        // 调试探针：显示入口地址在当前页表里的翻译结果，便于确认 MMU 路径是否接通。
+        _ = try mmu_translate_ptr(pt, &k.host_ctx.pm, IMAGE_HEADER_SIZE + hdr.entry_offset, 4u32, ACCESS_R);
+    }
     sim_loaded_header_ref(k, cid)[0] = hdr;
     sim_loaded_ppn_ref(k, cid)[0] = ppn;
     sim_loaded_valid_ref(k, cid)[0] = 1u32;
@@ -212,8 +216,10 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
     const loaded_ppn: u32 = sim_loaded_ppn_ref(k, cid)[0];
     const insn_ptr: &byte = try physmem_ptr(&k.host_ctx.pm, loaded_ppn, code_off);
     const insn: u32 = (insn_ptr[0] as u32) | ((insn_ptr[1] as u32) << 8) | ((insn_ptr[2] as u32) << 16) | ((insn_ptr[3] as u32) << 24);
-    if insn != 115u32 {
-        return error.ImgInsnDenied;
+    if hdr.target_arch == ImageTargetArch.ita_rv32 {
+        if insn != 115u32 {
+            return error.ImgInsnDenied;
+        }
     }
     if hdr.rodata_size > 0u32 {
         const rodata_vaddr: u32 = IMAGE_HEADER_SIZE + hdr.code_size;

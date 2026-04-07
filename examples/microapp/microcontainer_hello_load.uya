@@ -41,25 +41,35 @@ export fn main() i32 {
     kernel.host_ctx.pm.size = 65536;
 
     const uapp_path: &byte = resolve_uapp_path();
+    @println("[microapp loader] loading ${uapp_path}");
     var img: [byte: MAX_LOADER_IMAGE_SIZE] = [];
     const fp: &FILE = fopen(uapp_path as *byte, "rb\0" as &byte);
     if fp == null {
+        @println("[microapp loader] fopen failed");
         return 1;
     }
     const n: usize = fread(&img[0], 1 as usize, MAX_LOADER_IMAGE_SIZE as usize, fp);
     _ = fclose(fp);
     if n < IMAGE_HEADER_SIZE as usize {
+        @println("[microapp loader] image too small");
         return 2;
     }
 
     sim_load_image(&kernel, 0u32, 16u32, img[0: n]) catch {
+        @println("[microapp loader] sim_load_image failed");
         return 3;
     };
-    const cid: u32 = sim_tick_loaded(&kernel) catch {
+    @println("[microapp loader] image loaded, ticking");
+    const cid: u32 = sim_tick_loaded(&kernel) catch |err| {
+        @println("microapp loader sim_tick_loaded error_id=${@error_id(err)}");
+        @println("[microapp loader] sim_tick_loaded failed");
         return 4;
     };
+    @println("[microapp loader] tick completed");
     if cid != 0u32 {
+        @println("[microapp loader] unexpected cid");
         return 5;
     }
+    @println("[microapp loader] done");
     return 0;
 }
