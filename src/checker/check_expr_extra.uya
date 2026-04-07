@@ -1018,6 +1018,77 @@ fn checker_walk_reachability_expr(checker: &TypeChecker, expr: &ASTNode) void {
         }
         return;
     }
+    if expr.type == ASTNodeType.AST_TUPLE_LITERAL && expr.tuple_literal_elements != null {
+        var n: i32 = 0;
+        while n < expr.tuple_literal_element_count {
+            checker_walk_reachability_expr(checker, expr.tuple_literal_elements[n]);
+            n = n + 1;
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_STRING_INTERP && expr.string_interp_segments != null {
+        var si: i32 = 0;
+        while si < expr.string_interp_segment_count {
+            if expr.string_interp_segments[si].is_text == 0 {
+                checker_walk_reachability_expr(checker, expr.string_interp_segments[si].expr);
+            }
+            si = si + 1;
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_LEN {
+        checker_walk_reachability_expr(checker, expr.len_expr_array);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_SIZEOF && expr.sizeof_expr_is_type == 0 {
+        checker_walk_reachability_expr(checker, expr.sizeof_expr_target);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_ALIGNOF && expr.alignof_expr_is_type == 0 {
+        checker_walk_reachability_expr(checker, expr.alignof_expr_target);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_PTR_FROM_USIZE {
+        checker_walk_reachability_expr(checker, expr.ptr_from_usize_value);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_USIZE_FROM_PTR {
+        checker_walk_reachability_expr(checker, expr.usize_from_ptr_ptr);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_ERROR_ID {
+        checker_walk_reachability_expr(checker, expr.error_id_operand);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_SYSCALL {
+        checker_walk_reachability_expr(checker, expr.syscall_number);
+        if expr.syscall_args != null {
+            var sj: i32 = 0;
+            while sj < expr.syscall_arg_count {
+                checker_walk_reachability_expr(checker, expr.syscall_args[sj]);
+                sj = sj + 1;
+            }
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_VA_START {
+        checker_walk_reachability_expr(checker, expr.va_start_ap);
+        checker_walk_reachability_expr(checker, expr.va_start_last_param);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_VA_END {
+        checker_walk_reachability_expr(checker, expr.va_end_ap);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_VA_ARG {
+        checker_walk_reachability_expr(checker, expr.va_arg_ap);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_VA_COPY {
+        checker_walk_reachability_expr(checker, expr.va_copy_dest);
+        checker_walk_reachability_expr(checker, expr.va_copy_src);
+        return;
+    }
 }
 
 fn checker_walk_reachability_node(checker: &TypeChecker, node: &ASTNode) void {
