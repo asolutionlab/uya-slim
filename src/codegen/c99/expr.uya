@@ -99,7 +99,8 @@ fn gen_int_limit_literal(codegen: &C99CodeGenerator, is_max: i32, resolved_kind:
         fputs("0" as *byte, codegen.emit_stream as *void);
         return;
     }
-    const k: TypeKind = resolved_kind as TypeKind;
+    const k_tmp: !TypeKind = resolved_kind as! TypeKind;
+    const k: TypeKind = k_tmp.value;
     if k == TypeKind.TYPE_I8 {
         if is_max != 0 { fputs("127" as *byte, codegen.emit_stream as *void); } else { fputs("(-128)" as *byte, codegen.emit_stream as *void); }
     } else if k == TypeKind.TYPE_I16 {
@@ -848,7 +849,8 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                 const then_b: &ASTNode = last_stmt.if_stmt_then_branch;
                 const else_b: &ASTNode = last_stmt.if_stmt_else_branch;
                 const err_id: i32 = c99_get_or_add_error_id(codegen, then_b.error_value_name);
-                var err_id_u: u32 = err_id as u32;
+        const err_id_u_tmp: !u32 = err_id as! u32;
+        var err_id_u: u32 = err_id_u_tmp.value;
                 if err_id_u == 0 { err_id_u = 1; }
                 fprintf(codegen.emit_stream as *void, "%s _block_ret; if (" as *byte, union_c as *byte);
                 gen_expr(codegen, cond);
@@ -4744,7 +4746,8 @@ fn c99_resolve_simd_type_ast_from_expr(codegen: &C99CodeGenerator, expr: &ASTNod
         if left_type_ast == null || right_type_ast == null {
             return null;
         }
-        const op: TokenType = expr.binary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.binary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         if op == TokenType.TOKEN_EQUAL || op == TokenType.TOKEN_NOT_EQUAL || op == TokenType.TOKEN_LESS ||
             op == TokenType.TOKEN_GREATER || op == TokenType.TOKEN_LESS_EQUAL || op == TokenType.TOKEN_GREATER_EQUAL {
             if left_type_ast.type != ASTNodeType.AST_TYPE_VECTOR || left_type_ast.type_vector_size_expr == null {
@@ -5499,7 +5502,8 @@ fn c99_gen_simd_binary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
     fputs("; " as *byte, codegen.emit_stream as *void);
     fprintf(codegen.emit_stream as *void, "%s %s; " as *byte, result_c as *byte, result_name as *byte);
 
-    const simd_op: TokenType = expr.binary_expr_op as TokenType;
+    const simd_op_tmp: !TokenType = expr.binary_expr_op as! TokenType;
+    const simd_op: TokenType = simd_op_tmp.value;
     if result_type_ast.type == ASTNodeType.AST_TYPE_VECTOR && result_type_ast.type_vector_element_type != null &&
         (simd_op == TokenType.TOKEN_PLUS_PIPE || simd_op == TokenType.TOKEN_MINUS_PIPE || simd_op == TokenType.TOKEN_ASTERISK_PIPE ||
         simd_op == TokenType.TOKEN_PLUS_PERCENT || simd_op == TokenType.TOKEN_MINUS_PERCENT || simd_op == TokenType.TOKEN_ASTERISK_PERCENT) {
@@ -5543,9 +5547,11 @@ fn c99_gen_simd_unary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
         (result_type_ast.type != ASTNodeType.AST_TYPE_VECTOR && result_type_ast.type != ASTNodeType.AST_TYPE_MASK) {
         return 0;
     }
-    if (expr.unary_expr_op as TokenType) != TokenType.TOKEN_EXCLAMATION &&
-        (expr.unary_expr_op as TokenType) != TokenType.TOKEN_MINUS &&
-        (expr.unary_expr_op as TokenType) != TokenType.TOKEN_TILDE {
+    const unary_op_tmp: !TokenType = expr.unary_expr_op as! TokenType;
+    const unary_op: TokenType = unary_op_tmp.value;
+    if unary_op != TokenType.TOKEN_EXCLAMATION &&
+        unary_op != TokenType.TOKEN_MINUS &&
+        unary_op != TokenType.TOKEN_TILDE {
         return 0;
     }
     const operand_c: &byte = c99_type_to_c(codegen, operand_type_ast);
@@ -5568,7 +5574,7 @@ fn c99_gen_simd_unary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
     fputs("; " as *byte, codegen.emit_stream as *void);
     fprintf(codegen.emit_stream as *void, "%s %s; " as *byte, result_c as *byte, result_name as *byte);
 
-    if (expr.unary_expr_op as TokenType) == TokenType.TOKEN_MINUS {
+    if unary_op == TokenType.TOKEN_MINUS {
         if c99_simd_try_emit_x86_sse_unary_minus(codegen, result_type_ast, result_name, operand_name, lanes) != 0 {
             fprintf(codegen.emit_stream as *void, "%s; })" as *byte, result_name as *byte);
             return 1;
@@ -5578,11 +5584,11 @@ fn c99_gen_simd_unary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
     var i: i32 = 0;
     while i < lanes {
         fprintf(codegen.emit_stream as *void, "%s.lanes[%d] = (" as *byte, result_name as *byte, i);
-        if (expr.unary_expr_op as TokenType) == TokenType.TOKEN_EXCLAMATION {
+        if unary_op == TokenType.TOKEN_EXCLAMATION {
             fputs("!" as *byte, codegen.emit_stream as *void);
-        } else if (expr.unary_expr_op as TokenType) == TokenType.TOKEN_MINUS {
+        } else if unary_op == TokenType.TOKEN_MINUS {
             fputs("-" as *byte, codegen.emit_stream as *void);
-        } else if (expr.unary_expr_op as TokenType) == TokenType.TOKEN_TILDE {
+        } else if unary_op == TokenType.TOKEN_TILDE {
             fputs("~" as *byte, codegen.emit_stream as *void);
         }
         fprintf(codegen.emit_stream as *void, "%s.lanes[%d]); " as *byte, operand_name as *byte, i);
@@ -5596,7 +5602,8 @@ fn c99_gen_simd_unary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
 fn gen_binary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const left: &ASTNode = expr.binary_expr_left;
         const right: &ASTNode = expr.binary_expr_right;
-        const op: TokenType = expr.binary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.binary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         
         if left == null || right == null {
             fputs("0" as *byte, codegen.emit_stream as *void);
@@ -7729,7 +7736,8 @@ fn gen_slice_from_array_literal(codegen: &C99CodeGenerator, unary_expr: &ASTNode
 
 // 生成一元表达式
 fn gen_unary_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
-        const op: TokenType = expr.unary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.unary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         const operand: &ASTNode = expr.unary_expr_operand;
 
         if c99_gen_simd_unary_expr(codegen, expr) != 0 {

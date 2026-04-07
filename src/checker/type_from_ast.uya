@@ -392,7 +392,8 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
             result.kind = TypeKind.TYPE_VOID;
             return result;
         }
-        elem_type_ptr[0] = copy_type(&elem_type);
+        const stored_elem_type: Type = type_from_ast(checker, elem_type_node);
+        elem_type_ptr[0] = copy_type(&stored_elem_type);
 
         result.kind = TypeKind.TYPE_VECTOR;
         result.element_type = elem_type_ptr;

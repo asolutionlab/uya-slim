@@ -6674,7 +6674,8 @@ fn c99_array_index_result_type_c(codegen: &C99CodeGenerator, array_type_c: &byte
     }
 
     const suffix: &byte = &right_bracket[1] as &byte;
-    const suffix_len: i32 = strlen(suffix as *byte) as i32;
+    const suffix_len_tmp: !i32 = strlen(suffix as *byte) as! i32;
+    const suffix_len: i32 = suffix_len_tmp.value;
     const result_len: i32 = prefix_len + suffix_len + 1;
     const result: &byte = compiler_arena_alloc(codegen.arena, result_len as usize) as &byte;
     if result == null {
@@ -8105,4 +8106,3 @@ fn is_identifier_struct_type(codegen: &C99CodeGenerator, name: &byte) i32 {
 fn get_identifier_type_c(codegen: &C99CodeGenerator, name: &byte) &byte {
     return lookup_identifier_type_c_impl(codegen, name);
 }
-

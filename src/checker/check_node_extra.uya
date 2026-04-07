@@ -191,6 +191,7 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
         checker_infer_type(checker, node.assign_src);
         return 1;
     }
+    checker_walk_reachability_expr(checker, node.assign_src);
     if dest.type == ASTNodeType.AST_IDENTIFIER {
         // 标识符赋值：检查是否为 var（不能是 const）
         const symbol: &Symbol = symbol_table_lookup(checker, dest.identifier_name);
@@ -237,7 +238,8 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
     } else if dest.type == ASTNodeType.AST_UNARY_EXPR {
         // 解引用赋值（*p = value）：检查解引用表达式
         // 解引用表达式必须是 *expr 形式，其中 expr 是指针类型
-        const op: TokenType = dest.unary_expr_op as TokenType;
+        const op_tmp: !TokenType = dest.unary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         if op != TokenType.TOKEN_ASTERISK {
             // 不是解引用运算符，不能作为赋值目标
             checker_report_error(checker, dest, "无效的赋值目标（只有解引用表达式可以作为赋值目标）" as *byte);
@@ -265,11 +267,14 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
         return 0;
     }
     
+    const src: &ASTNode = node.assign_src;
     // 检查赋值类型匹配
+    if src != null {
+        checker_check_node(checker, src);
+    }
     if checker_check_expr_type(checker, node.assign_src, copy_type(&dest_type)) == 0 {
         return 0;
     }
-    const src: &ASTNode = node.assign_src;
 
     // 原子类型的复合赋值额外检查：
     // 1) atomic +=/-=/*=//=/= 的右侧不能是浮点或 bool
@@ -278,7 +283,8 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
         src != null && src.type == ASTNodeType.AST_BINARY_EXPR {
         const bin_left: &ASTNode = src.binary_expr_left;
         const bin_right: &ASTNode = src.binary_expr_right;
-        const bin_op: TokenType = src.binary_expr_op as TokenType;
+        const bin_op_tmp: !TokenType = src.binary_expr_op as! TokenType;
+        const bin_op: TokenType = bin_op_tmp.value;
 
         // 仅匹配编译器对复合赋值的降级模式：var = var op expr
         if dest.type == ASTNodeType.AST_IDENTIFIER && bin_left != null &&
@@ -310,8 +316,10 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
         }
     }
 
-    if dest.type == ASTNodeType.AST_IDENTIFIER && src != null && src.type == ASTNodeType.AST_UNARY_EXPR &&
-        (src.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND {
+    if dest.type == ASTNodeType.AST_IDENTIFIER && src != null && src.type == ASTNodeType.AST_UNARY_EXPR {
+        const src_unary_op_tmp: !TokenType = src.unary_expr_op as! TokenType;
+        const src_unary_op: TokenType = src_unary_op_tmp.value;
+        if src_unary_op == TokenType.TOKEN_AMPERSAND {
         const src_operand: &ASTNode = src.unary_expr_operand;
         if src_operand != null && src_operand.type == ASTNodeType.AST_IDENTIFIER {
         const sym: &Symbol = symbol_table_lookup(checker, dest.identifier_name);
@@ -321,6 +329,7 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
             if copy != null {
                 sym.pointee_of = copy;
             }
+        }
         }
         }
     }
@@ -338,7 +347,8 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
         if src != null && src.type == ASTNodeType.AST_BINARY_EXPR {
             const left: &ASTNode = src.binary_expr_left;
             const right: &ASTNode = src.binary_expr_right;
-            const op: TokenType = src.binary_expr_op as TokenType;
+            const op_tmp: !TokenType = src.binary_expr_op as! TokenType;
+            const op: TokenType = op_tmp.value;
             
             // 检查是否是 var = var op const 模式
             if left != null && left.type == ASTNodeType.AST_IDENTIFIER &&
@@ -407,9 +417,11 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
 // 返回：1 表示检查通过，0 表示检查失败
 fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
     if node.for_stmt_is_range != 0 {
+        checker_walk_reachability_expr(checker, node.for_stmt_range_start);
         var start_type: Type = checker_infer_type(checker, node.for_stmt_range_start);
         checker_check_node(checker, node.for_stmt_range_start);
         if node.for_stmt_range_end != null {
+            checker_walk_reachability_expr(checker, node.for_stmt_range_end);
             var end_type: Type = checker_infer_type(checker, node.for_stmt_range_end);
             checker_check_node(checker, node.for_stmt_range_end);
             if is_integer_type(start_type.kind) == 0 || is_integer_type(end_type.kind) == 0 {
@@ -471,6 +483,7 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
         return 1;
     }
     // 数组遍历或接口迭代形式：检查表达式类型
+    checker_walk_reachability_expr(checker, node.for_stmt_array);
     const expr_type: Type = checker_infer_type(checker, node.for_stmt_array);
     
     // 首先尝试作为数组类型处理
@@ -609,18 +622,6 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
         checker_enter_scope(checker);
         checker.loop_depth = checker.loop_depth + 1;  // 进入循环（增加循环深度）
         
-        // 创建循环变量类型
-        var var_type: Type = Type {
-            kind: TypeKind.TYPE_VOID,
-            enum_name: null,
-            struct_name: null,
-            pointer_to: null,
-            is_ffi_pointer: 0,
-            element_type: null,
-            array_size: 0,
-            slice_element_type: null,
-            slice_len: 0,
-        };
         if array_type.element_type == null {
             // 元素类型无效，报告错误
             checker_report_error(checker, node, "for 循环数组类型无效：无法确定元素类型" as *byte);
@@ -633,13 +634,14 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
             checker_exit_scope(checker);
             return 1;  // 继续检查，但已报告错误
         }
-        
+
+        var ref_element_type_ptr: &Type = null;
         if node.for_stmt_is_ref != 0 {
             // 引用迭代：变量类型为 &T（指向元素的指针）
             // 注意：Uya 不支持指针解引用，需要使用数组访问
             // 注意：Uya 不支持指针运算，需要使用数组访问
-            const element_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
-            if element_type_ptr == null {
+            ref_element_type_ptr = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
+            if ref_element_type_ptr == null {
                 checker_report_error(checker, node, "类型检查错误：内存分配失败" as *byte);
                 checker_enter_scope(checker);
                 checker.loop_depth = checker.loop_depth + 1;
@@ -650,12 +652,22 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
                 checker_exit_scope(checker);
                 return 1;
             } else {
-                element_type_ptr[0] = copy_type(&array_type.element_type[0]);
-                var_type = Type {
+                ref_element_type_ptr[0] = copy_type(&array_type.element_type[0]);
+            }
+        }
+
+        // 添加循环变量到符号表（var，可修改）
+        const loop_var: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
+        if loop_var == null {
+            // 内存分配失败：放宽检查，允许通过（不报错），继续检查循环体
+        } else {
+            loop_var.name = node.for_stmt_var_name;
+            if node.for_stmt_is_ref != 0 {
+                const ref_var_type: Type = Type {
                     kind: TypeKind.TYPE_POINTER,
                     enum_name: null,
                     struct_name: null,
-                    pointer_to: element_type_ptr,
+                    pointer_to: ref_element_type_ptr,
                     is_ffi_pointer: 0,
                     element_type: null,
                     array_size: 0,
@@ -666,20 +678,11 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
                     error_union_payload_type: null,
                     error_error_id: 0,
                 };
+                loop_var.type = ref_var_type;
+            } else {
+                const iter_var_type: Type = copy_type(&array_type.element_type[0]);
+                loop_var.type = iter_var_type;
             }
-        } else {
-            // 值迭代：变量类型为数组元素类型 T
-            // 注意：Uya 不支持指针解引用，需要使用数组访问
-            var_type = copy_type(&array_type.element_type[0]);
-        }
-        
-        // 添加循环变量到符号表（var，可修改）
-        const loop_var: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
-        if loop_var == null {
-            // 内存分配失败：放宽检查，允许通过（不报错），继续检查循环体
-        } else {
-            loop_var.name = node.for_stmt_var_name;
-            loop_var.type = copy_type(&var_type);
             loop_var.is_const = 0;  // for 循环变量是可修改的（即使是值迭代形式，在循环体内也可以使用）
             loop_var.is_initialized = 1;  // for 循环变量已初始化
             loop_var.scope_level = checker.scope_level;

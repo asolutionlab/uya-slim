@@ -353,7 +353,8 @@ struct AsyncFdWriteFuture : Future<!usize> {
         const n: isize = result catch |err| {
             if async_fd_error_id_is_would_block(@error_id(err)) {
                 waker.wait_writable(self.fd);
-                return Poll<!usize>.Pending({});
+                const p: Poll<!usize> = Poll<!usize>.Pending({});
+                return p;
             }
             const err_value: !usize = result as! usize;
             const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
@@ -388,7 +389,8 @@ struct AsyncFdReadFuture : Future<!usize> {
         const n: isize = result catch |err| {
             if async_fd_error_id_is_would_block(@error_id(err)) {
                 waker.wait_readable(self.fd);
-                return Poll<!usize>.Pending({});
+                const p: Poll<!usize> = Poll<!usize>.Pending({});
+                return p;
             }
             const err_value: !usize = result as! usize;
             const p: Poll<!usize> = Poll<!usize>.Ready(err_value);

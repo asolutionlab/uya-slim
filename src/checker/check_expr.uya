@@ -1228,7 +1228,8 @@ fn checker_simd_prep_expr_with_expected_vector(checker: &TypeChecker, expr: &AST
         return;
     }
     if expr.type == ASTNodeType.AST_BINARY_EXPR {
-        const op: TokenType = expr.binary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.binary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         if checker_simd_binary_op_supports_splat_context_bind(op) == 0 {
             return;
         }
@@ -2221,7 +2222,8 @@ fn infer_asm_block(checker: &TypeChecker, expr: &ASTNode) Type {
 
 // 推断一元表达式类型
 fn infer_unary_expr(checker: &TypeChecker, expr: &ASTNode) Type {
-    const op: TokenType = expr.unary_expr_op as TokenType;
+    const op_tmp: !TokenType = expr.unary_expr_op as! TokenType;
+    const op: TokenType = op_tmp.value;
     const operand_type: Type = checker_infer_type(checker, expr.unary_expr_operand);
     
     if op == TokenType.TOKEN_EXCLAMATION {

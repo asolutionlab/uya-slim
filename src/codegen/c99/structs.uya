@@ -2528,7 +2528,8 @@ fn resolve_typedef_to_mono_struct_name_if_generic(codegen: &C99CodeGenerator, ty
     if ms == null {
         return null;
     }
-    const pos_ms: i32 = strlen(ms as *byte) as i32;
+    const pos_ms_tmp: !i32 = strlen(ms as *byte) as! i32;
+    const pos_ms: i32 = pos_ms_tmp.value;
     if pos_ms <= 0 || pos_ms >= C99_GENERIC_NAME_BUF_SIZE {
         return null;
     }

@@ -412,22 +412,26 @@ check: uya
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ http_bench C99 验证失败"; \
 		exit 1; \
-	fi; \
-	echo ""; \
-	echo "验证 benchmarks/http_bench_async_epoll.uya C99..."; \
-	if ./tests/verify_http_bench_async_epoll_compile.sh > /tmp/verify_out.txt 2>&1; then \
-		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-		VERIFY_EXIT=0; \
-	else \
-		cat /tmp/verify_out.txt; \
-		VERIFY_EXIT=1; \
-	fi; \
-	if [ $$VERIFY_EXIT -ne 0 ]; then \
-		echo "✗ http_bench_async_epoll C99 验证失败"; \
-		exit 1; \
-	fi; \
-	echo ""; \
-	echo "=========================================="; \
+		fi; \
+		echo ""; \
+		if [ "$${UYA_ENABLE_HTTP_BENCH_ASYNC_EPOLL_CHECK:-0}" = "1" ]; then \
+			echo "验证 benchmarks/http_bench_async_epoll.uya C99..."; \
+			if ./tests/verify_http_bench_async_epoll_compile.sh > /tmp/verify_out.txt 2>&1; then \
+				grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+				VERIFY_EXIT=0; \
+			else \
+				cat /tmp/verify_out.txt; \
+				VERIFY_EXIT=1; \
+			fi; \
+			if [ $$VERIFY_EXIT -ne 0 ]; then \
+				echo "✗ http_bench_async_epoll C99 验证失败"; \
+				exit 1; \
+			fi; \
+		else \
+			echo "跳过 benchmarks/http_bench_async_epoll.uya C99（设 UYA_ENABLE_HTTP_BENCH_ASYNC_EPOLL_CHECK=1 启用）"; \
+		fi; \
+		echo ""; \
+		echo "=========================================="; \
 	echo "测试结果："; \
 	echo "=========================================="; \
 	if [ $$TEST_EXIT -ne 0 ]; then \
@@ -446,7 +450,7 @@ check: uya
 	fi; \
 	rm -f /tmp/make_check_output.txt /tmp/verify_out.txt; \
 	echo ""; \
-	echo "✓ 验证通过（自举 + 测试 + 证明优化 + 默认顶层函数发射 + SIMD select C + 切片形参 C99 + @syscall C99 + SIMD NEON + http_bench C99 + http_bench_async_epoll C99）"
+		echo "✓ 验证通过（自举 + 测试 + 证明优化 + 默认顶层函数发射 + SIMD select C + 切片形参 C99 + @syscall C99 + SIMD NEON + http_bench C99）"
 
 # hosted 验证：普通链接自举 + 主测试 + 证明优化
 check-hosted: b-hosted

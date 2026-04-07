@@ -472,7 +472,6 @@ fn parse_object(s: &ParseState) !YamlValue {
         if s.pos >= s.len || s.ptr[s.pos] != 58 { s.depth = s.depth - 1; return error.UnexpectedToken; }
         s.pos = s.pos + 1;
         skip_ws(s);
-        const val: YamlValue = try parse_flow_value(s);
         if n >= cap {
             cap = cap * 2;
             const new_pairs: &YamlKeyValue = arena_alloc(s.arena, YAML_KEY_VALUE_ALLOC_SIZE * cap) as &YamlKeyValue;
@@ -484,7 +483,7 @@ fn parse_object(s: &ParseState) !YamlValue {
             }
             pairs = new_pairs;
         }
-        pairs[n] = YamlKeyValue{ key: key_view, value: val };
+        pairs[n] = try parse_flow_object_pair(s, key_view.ptr, key_view.len);
         n = n + 1;
         skip_ws(s);
         if s.pos >= s.len { s.depth = s.depth - 1; return error.UnexpectedEof; }
@@ -498,6 +497,11 @@ fn parse_object(s: &ParseState) !YamlValue {
         s.pos = s.pos + 1;
         skip_ws(s);
     }
+}
+
+fn parse_flow_object_pair(s: &ParseState, key_ptr: &byte, key_len: usize) !YamlKeyValue {
+    const val: YamlValue = try parse_flow_value(s);
+    return YamlKeyValue{ key: YamlStrView{ ptr: key_ptr, len: key_len }, value: val };
 }
 
 fn parse_flow_value_prim(s: &ParseState) !YamlValue {
@@ -964,7 +968,6 @@ fn parse_block_mapping(s: &ParseState, min_indent: usize) !YamlValue {
             skip_ws(s);
             if s.pos >= s.len || s.ptr[s.pos] != 58 { return error.UnexpectedToken; }
             s.pos = s.pos + 1;
-            const val: YamlValue = try parse_block_value_after_colon(s, ind);
             if n >= cap {
                 cap = cap * 2;
                 const np: &YamlKeyValue = arena_alloc(s.arena, YAML_KEY_VALUE_ALLOC_SIZE * cap) as &YamlKeyValue;
@@ -976,7 +979,7 @@ fn parse_block_mapping(s: &ParseState, min_indent: usize) !YamlValue {
                 }
                 pairs = np;
             }
-            pairs[n] = YamlKeyValue{ key: kv, value: val };
+            pairs[n] = try parse_block_mapping_pair(s, kv.ptr, kv.len, ind);
             n = n + 1;
             continue;
         }
@@ -989,7 +992,6 @@ fn parse_block_mapping(s: &ParseState, min_indent: usize) !YamlValue {
         if s.pos >= s.len || s.ptr[s.pos] != 58 { return error.UnexpectedToken; }
         const key_view: YamlStrView = YamlStrView{ ptr: &s.ptr[key_start], len: s.pos - key_start };
         s.pos = s.pos + 1;
-        const val2: YamlValue = try parse_block_value_after_colon(s, ind);
         if n >= cap {
             cap = cap * 2;
             const np2: &YamlKeyValue = arena_alloc(s.arena, YAML_KEY_VALUE_ALLOC_SIZE * cap) as &YamlKeyValue;
@@ -1001,11 +1003,16 @@ fn parse_block_mapping(s: &ParseState, min_indent: usize) !YamlValue {
             }
             pairs = np2;
         }
-        pairs[n] = YamlKeyValue{ key: key_view, value: val2 };
+        pairs[n] = try parse_block_mapping_pair(s, key_view.ptr, key_view.len, ind);
         n = n + 1;
     }
     if n == 0 { return error.UnexpectedToken; }
     return YamlValue.y_obj(YamlObject{ pairs: pairs, len: n });
+}
+
+fn parse_block_mapping_pair(s: &ParseState, key_ptr: &byte, key_len: usize, ind: usize) !YamlKeyValue {
+    const val: YamlValue = try parse_block_value_after_colon(s, ind);
+    return YamlKeyValue{ key: YamlStrView{ ptr: key_ptr, len: key_len }, value: val };
 }
 
 fn parse_block_sequence(s: &ParseState, min_indent: usize) !YamlValue {

@@ -58,8 +58,8 @@ fn fill_sockaddr_ipv4(a: u8, b: u8, c: u8, d: u8, port_host: u16, out: &byte) vo
     out[0] = 2;
     out[1] = 0;
     const pnet: u16 = http1_htons_host_to_be(port_host);
-    out[2] = (pnet & 0xFF) as byte;
-    out[3] = ((pnet >> 8) & 0xFF) as byte;
+    out[2] = ((pnet & (255 as u16)) as! byte).value;
+    out[3] = (((pnet >> 8) & (255 as u16)) as! byte).value;
     out[4] = a;
     out[5] = b;
     out[6] = c;

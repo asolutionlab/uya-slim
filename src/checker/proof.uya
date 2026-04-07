@@ -233,7 +233,8 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
         if left_val == -1 || right_val == -1 {
             return -1;
         }
-        const op: TokenType = expr.binary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.binary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         if op == TokenType.TOKEN_PLUS {
             if check_i32_add_overflow(left_val, right_val) != 0 {
                 checker_report_error(checker, expr, "常量表达式溢出: 加法结果超出 i32 范围" as *byte);
@@ -288,7 +289,8 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
         if operand_val == -1 {
             return -1;
         }
-        const op: TokenType = expr.unary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.unary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         if op == TokenType.TOKEN_PLUS {
             return operand_val;
         } else if op == TokenType.TOKEN_MINUS {
@@ -468,7 +470,8 @@ export fn checker_eval_const_expr_in_block(checker: &TypeChecker, expr: &ASTNode
         if left_val == -1 || right_val == -1 {
             return -1;
         }
-        const op: TokenType = expr.binary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.binary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         if op == TokenType.TOKEN_PLUS {
             if check_i32_add_overflow(left_val, right_val) != 0 { return -1; }
             return left_val + right_val;
@@ -506,7 +509,8 @@ export fn checker_eval_const_expr_in_block(checker: &TypeChecker, expr: &ASTNode
     } else if expr.type == ASTNodeType.AST_UNARY_EXPR {
         const operand_val: i32 = checker_eval_const_expr_in_block(checker, expr.unary_expr_operand, block);
         if operand_val == -1 { return -1; }
-        const op: TokenType = expr.unary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.unary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         if op == TokenType.TOKEN_PLUS { return operand_val; }
         else if op == TokenType.TOKEN_MINUS {
             if check_i32_neg_overflow(operand_val) != 0 { return -1; }
@@ -792,7 +796,8 @@ export fn check_slice_bounds(checker: &TypeChecker, array_expr: &ASTNode, start_
     
     // 字符串字面量：与 [byte:strlen+1] 一致（含结尾 0），供编译期切片边界检查
     if array_expr.type == ASTNodeType.AST_STRING && array_expr.string_literal_value != null {
-        const sl: i32 = strlen(array_expr.string_literal_value as *byte) as i32;
+        const sl_tmp: !i32 = strlen(array_expr.string_literal_value as *byte) as! i32;
+        const sl: i32 = sl_tmp.value;
         result.array_size = sl + 1;
     } else {
         const array_type: Type = checker_infer_type(checker, array_expr);

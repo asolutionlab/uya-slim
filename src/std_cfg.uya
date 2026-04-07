@@ -1,7 +1,8 @@
 use libc;
 
 fn std_cfg_host_os_name() &byte {
-    const platform: i32 = @asm_target() as i32;
+    const platform_tmp: !i32 = @asm_target() as! i32;
+    const platform: i32 = platform_tmp.value;
     if platform == 0 || platform == 3 || platform == 6 {
         return ("hos_linux" as *byte) as &byte;
     }
@@ -15,7 +16,8 @@ fn std_cfg_host_os_name() &byte {
 }
 
 fn std_cfg_host_arch_name() &byte {
-    const platform: i32 = @asm_target() as i32;
+    const platform_tmp: !i32 = @asm_target() as! i32;
+    const platform: i32 = platform_tmp.value;
     if platform == 0 || platform == 1 || platform == 2 {
         return ("ha_x86_64" as *byte) as &byte;
     }

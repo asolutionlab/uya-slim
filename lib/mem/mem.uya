@@ -34,9 +34,10 @@ export fn mem_copy_backward(dest: &byte, src: &const byte, n: usize) void {
 // c: 要设置的值
 // n: 字节数
 export fn mem_set(s: &byte, c: i32, n: usize) void {
+    const fill: byte = ((c & (255 as i32)) as! byte).value;
     var i: usize = 0;
     while i < n {
-        s[i] = c as byte;
+        s[i] = fill;
         i = i + 1;
     }
 }
@@ -93,9 +94,10 @@ export fn mem_memset(s: &byte, c: i32, n: usize) &byte {
 // n: 搜索字节数
 // 返回：找到的地址，未找到返回 null
 export fn mem_memchr(s: &const byte, c: i32, n: usize) &const byte {
+    const needle: byte = ((c & (255 as i32)) as! byte).value;
     var i: usize = 0;
     while i < n {
-        if s[i] == (c as byte) {
+        if s[i] == needle {
             return &s[i];
         }
         i = i + 1;

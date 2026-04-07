@@ -6,6 +6,7 @@ use libc.FILE;
 use libc.fclose;
 use libc.fopen;
 use libc.fprintf;
+use libc.snprintf;
 
 use std.runtime.capability.backend.CapabilityBackendConfig;
 use std.runtime.capability.benchmark.CapabilityBenchmarkCase;
@@ -43,19 +44,10 @@ fn open_report_file(name: &const byte) &FILE {
         return direct;
     }
     var fallback: [byte: 128] = [];
-    var i: usize = 0;
-    const prefix: &const byte = "tests/";
-    while prefix[i] != 0 as byte {
-        fallback[i] = prefix[i];
-        i = i + 1;
+    const written: i32 = snprintf(&fallback[0], @len(fallback), "tests/%s\0" as &const byte, name);
+    if written < 0 {
+        return null;
     }
-    var j: usize = 0;
-    while name[j] != 0 as byte && i + 1 < @len(fallback) {
-        fallback[i] = name[j];
-        i = i + 1;
-        j = j + 1;
-    }
-    fallback[i] = 0 as byte;
     return fopen(&fallback[0], "w\0" as &byte);
 }
 

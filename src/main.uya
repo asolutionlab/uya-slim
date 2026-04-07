@@ -160,17 +160,23 @@ fn hex_nibble(c: byte) i32 {
 }
 
 fn w16_file(fp: &FILE, val: u16) void {
-    var b0: byte = (val & 255u16) as byte;
-    var b1: byte = ((val >> 8) & 255u16) as byte;
+    const b0_tmp: !byte = (val & 255u16) as! byte;
+    const b1_tmp: !byte = ((val >> 8) & 255u16) as! byte;
+    var b0: byte = b0_tmp.value;
+    var b1: byte = b1_tmp.value;
     _ = fwrite(&b0 as *void, 1 as usize, 1 as usize, fp);
     _ = fwrite(&b1 as *void, 1 as usize, 1 as usize, fp);
 }
 
 fn w32_file(fp: &FILE, val: u32) void {
-    var b0: byte = (val & 255u32) as byte;
-    var b1: byte = ((val >> 8) & 255u32) as byte;
-    var b2: byte = ((val >> 16) & 255u32) as byte;
-    var b3: byte = ((val >> 24) & 255u32) as byte;
+    const b0_tmp: !byte = (val & 255u32) as! byte;
+    const b1_tmp: !byte = ((val >> 8) & 255u32) as! byte;
+    const b2_tmp: !byte = ((val >> 16) & 255u32) as! byte;
+    const b3_tmp: !byte = ((val >> 24) & 255u32) as! byte;
+    var b0: byte = b0_tmp.value;
+    var b1: byte = b1_tmp.value;
+    var b2: byte = b2_tmp.value;
+    var b3: byte = b3_tmp.value;
     _ = fwrite(&b0 as *void, 1 as usize, 1 as usize, fp);
     _ = fwrite(&b1 as *void, 1 as usize, 1 as usize, fp);
     _ = fwrite(&b2 as *void, 1 as usize, 1 as usize, fp);
@@ -327,7 +333,8 @@ fn write_microapp_payload_obj(
     source_path: &byte,
     c_file: &byte
 ) i32 {
-    const source_len: u32 = strlen(source_path as *byte) as u32;
+    const source_len_tmp: !u32 = strlen(source_path as *byte) as! u32;
+    const source_len: u32 = source_len_tmp.value;
     const target_arch_raw: u32 = resolve_microapp_target_arch_raw();
     var text_bin_path: [byte: PATH_MAX] = [];
     const text_len_path: i32 = snprintf(&text_bin_path[0] as *byte, PATH_MAX, "%s.text.bin" as *byte, output_path as *byte);
@@ -343,7 +350,8 @@ fn write_microapp_payload_obj(
         fprintf(libc.stderr, "错误: 无法读取 microapp 目标 gcc 代码段 '%s'\n" as *byte, &text_bin_path[0] as *byte);
         return 1;
     }
-    const code_len: u32 = code_len_raw as u32;
+    const code_len_tmp: !u32 = code_len_raw as! u32;
+    const code_len: u32 = code_len_tmp.value;
     const fp: &FILE = fopen(output_path as *byte, "wb" as *byte);
     if fp == null {
         fprintf(libc.stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, output_path as *byte);
@@ -889,6 +897,171 @@ fn detect_main_function(filename: &byte) i32 {
     return 0;
 }
 
+fn node_has_tests(node: &ASTNode) i32 {
+    if node == null {
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_TEST_STMT {
+        return 1;
+    }
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            if node_has_tests(node.block_stmts[i]) != 0 {
+                return 1;
+            }
+            i = i + 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        if node_has_tests(node.if_stmt_then_branch) != 0 {
+            return 1;
+        }
+        if node.if_stmt_else_branch != null && node_has_tests(node.if_stmt_else_branch) != 0 {
+            return 1;
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        return node_has_tests(node.while_stmt_body);
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        return node_has_tests(node.for_stmt_body);
+    }
+    if node.type == ASTNodeType.AST_FN_DECL {
+        return node_has_tests(node.fn_decl_body);
+    }
+    if node.type == ASTNodeType.AST_VAR_DECL {
+        return node_has_tests(node.var_decl_init);
+    }
+    if node.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+        return node_has_tests(node.extern_var_decl_init_expr);
+    }
+    if node.type == ASTNodeType.AST_RETURN_STMT {
+        return node_has_tests(node.return_stmt_expr);
+    }
+    if node.type == ASTNodeType.AST_ASSIGN {
+        if node_has_tests(node.assign_dest) != 0 {
+            return 1;
+        }
+        return node_has_tests(node.assign_src);
+    }
+    if node.type == ASTNodeType.AST_CALL_EXPR {
+        if node_has_tests(node.call_expr_callee) != 0 {
+            return 1;
+        }
+        if node.call_expr_args != null {
+            var j: i32 = 0;
+            while j < node.call_expr_arg_count {
+                if node_has_tests(node.call_expr_args[j]) != 0 {
+                    return 1;
+                }
+                j = j + 1;
+            }
+        }
+        return 0;
+    }
+    if node.type == ASTNodeType.AST_MEMBER_ACCESS {
+        return node_has_tests(node.member_access_object);
+    }
+    if node.type == ASTNodeType.AST_BINARY_EXPR {
+        if node_has_tests(node.binary_expr_left) != 0 {
+            return 1;
+        }
+        return node_has_tests(node.binary_expr_right);
+    }
+    if node.type == ASTNodeType.AST_UNARY_EXPR {
+        return node_has_tests(node.unary_expr_operand);
+    }
+    if node.type == ASTNodeType.AST_CAST_EXPR {
+        if node_has_tests(node.cast_expr_expr) != 0 {
+            return 1;
+        }
+        return node_has_tests(node.cast_expr_target_type);
+    }
+    if node.type == ASTNodeType.AST_TRY_EXPR {
+        return node_has_tests(node.try_expr_operand);
+    }
+    if node.type == ASTNodeType.AST_MATCH_EXPR && node.match_expr_arms != null {
+        if node_has_tests(node.match_expr_expr) != 0 {
+            return 1;
+        }
+        var k: i32 = 0;
+        while k < node.match_expr_arm_count {
+            if node_has_tests(node.match_expr_arms[k].result_expr) != 0 {
+                return 1;
+            }
+            k = k + 1;
+        }
+        return 0;
+    }
+    return 0;
+}
+
+fn program_has_tests(program: &ASTNode) i32 {
+    if program == null || program.type != ASTNodeType.AST_PROGRAM {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < program.program_decl_count {
+        if node_has_tests(program.program_decls[i]) != 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn seed_function_reachability_from_owned_method(checker: &TypeChecker, method: &ASTNode) void {
+    if checker == null || method == null || method.type != ASTNodeType.AST_FN_DECL || method.fn_decl_body == null {
+        return;
+    }
+    const saved_owner: &ASTNode = checker.current_function_decl;
+    checker.current_function_decl = method;
+    checker_walk_reachability_node(checker, method.fn_decl_body);
+    checker.current_function_decl = saved_owner;
+}
+
+fn seed_function_reachability_roots(checker: &TypeChecker, program: &ASTNode) void {
+    if checker == null || program == null || program.type != ASTNodeType.AST_PROGRAM {
+        return;
+    }
+    var i: i32 = 0;
+    while i < program.program_decl_count {
+        const decl: &ASTNode = program.program_decls[i];
+        if decl != null {
+            if decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null {
+                if decl.fn_decl_is_export != 0 || str_equals(decl.fn_decl_name, "main" as *byte) != 0 {
+                    _ = checker_add_function_root_decl(checker, decl);
+                }
+            } else if decl.type == ASTNodeType.AST_STRUCT_DECL && decl.struct_decl_methods != null {
+                var mj: i32 = 0;
+                while mj < decl.struct_decl_method_count {
+                    const method: &ASTNode = decl.struct_decl_methods[mj];
+                    seed_function_reachability_from_owned_method(checker, method);
+                    mj = mj + 1;
+                }
+            } else if decl.type == ASTNodeType.AST_UNION_DECL && decl.union_decl_methods != null {
+                var uj: i32 = 0;
+                while uj < decl.union_decl_method_count {
+                    const method: &ASTNode = decl.union_decl_methods[uj];
+                    seed_function_reachability_from_owned_method(checker, method);
+                    uj = uj + 1;
+                }
+            } else if decl.type == ASTNodeType.AST_METHOD_BLOCK && decl.method_block_methods != null {
+                var mj2: i32 = 0;
+                while mj2 < decl.method_block_method_count {
+                    const method2: &ASTNode = decl.method_block_methods[mj2];
+                    seed_function_reachability_from_owned_method(checker, method2);
+                    mj2 = mj2 + 1;
+                }
+            }
+        }
+        i = i + 1;
+    }
+}
+
 std.cfg(std.host_os == .hos_linux, {
     const DIRENT_OFF_D_TYPE: usize = 18;
     const DIRENT_OFF_D_NAME: usize = 19;
@@ -1089,7 +1262,8 @@ fn find_module_file(
             const f: *void = fopen(&uya_path[0], "r" as *byte);
             if f != null {
                 fclose(f);
-                const ulen_sz: usize = ulen as usize;
+                const ulen_sz_tmp: !usize = ulen as! usize;
+                const ulen_sz: usize = ulen_sz_tmp.value;
                 if ulen_sz < buffer_size {
                     strcpy(buffer as *byte, &uya_path[0]);
                     return 0;
@@ -1613,7 +1787,8 @@ fn collect_module_dependencies(
                 const entry_file: &byte = processed_files[0];
                 const slash: *byte = strrchr(entry_file as *byte, 47);
                 if slash != null {
-                    const dlen: usize = (slash as i64 - entry_file as i64 + 1) as usize;
+                    const dlen_tmp: !usize = (slash as i64 - entry_file as i64 + 1) as! usize;
+                    const dlen: usize = dlen_tmp.value;
                     if dlen < PATH_MAX as usize {
                         memcpy(&main_dir[0] as *void, entry_file as *void, dlen);
                         main_dir[dlen] = 0 as byte;
@@ -2393,7 +2568,8 @@ fn compile_files(
         already_lib = 1;
     }
     if already_lib == 0 && last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {
-        var slash_idx: usize = (last_slash as i64 - &uya_root_base[0] as i64) as usize;
+        const slash_idx_tmp: !usize = (last_slash as i64 - &uya_root_base[0] as i64) as! usize;
+        var slash_idx: usize = slash_idx_tmp.value;
         uya_root_base[slash_idx] = 0;
     }
     var uya_root_buffer: [byte: PATH_MAX] = [];
@@ -2775,6 +2951,37 @@ fn compile_files(
     }
     check_end_time = clock();
     fprintf(libc.stderr, "类型检查通过\n" as *byte);
+    if checker.program_node != null && checker.program_node.type == ASTNodeType.AST_PROGRAM {
+        merged_ast = checker.program_node;
+    }
+    seed_function_reachability_roots(&checker, merged_ast);
+    checker_compute_function_reachability(&checker);
+    const debug_reach_env: *byte = getenv("UYA_DEBUG_REACHABILITY" as *byte);
+    if debug_reach_env != null && debug_reach_env[0] != 0 as byte {
+        fprintf(libc.stderr, "可达性调试: roots=%d, reachable=%d, edges=%d\n" as *byte,
+            checker.fn_root_count, checker.reachable_fn_decl_count, checker.fn_call_edge_count);
+        var dbg_i: i32 = 0;
+        while dbg_i < checker.reachable_fn_decl_count && dbg_i < 20 {
+            const dbg_decl: &ASTNode = checker.reachable_fn_decls[dbg_i];
+            if dbg_decl != null && dbg_decl.fn_decl_name != null {
+                fprintf(libc.stderr, "  reachable[%d]=%s (body=%d export=%d extern=%d)\n" as *byte,
+                    dbg_i, dbg_decl.fn_decl_name as *byte, dbg_decl.fn_decl_body != null, dbg_decl.fn_decl_is_export, dbg_decl.fn_decl_is_extern);
+            }
+            dbg_i = dbg_i + 1;
+        }
+        const dbg_parse_args: &ASTNode = checker_find_reachable_fn_decl_by_name(&checker, "parse_args" as *byte);
+        const dbg_generate_libc: &ASTNode = checker_find_reachable_fn_decl_by_name(&checker, "generate_libc" as *byte);
+        const dbg_align_size: &ASTNode = checker_find_reachable_fn_decl_by_name(&checker, "align_size" as *byte);
+        const dbg_next_macro_hygiene_expansion_id: &ASTNode = checker_find_reachable_fn_decl_by_name(&checker, "next_macro_hygiene_expansion_id" as *byte);
+        const dbg_c99_utils_cache_ensure: &ASTNode = checker_find_reachable_fn_decl_by_name(&checker, "c99_utils_cache_ensure" as *byte);
+        fprintf(libc.stderr, "  query parse_args reachable=%d\n" as *byte, checker_is_function_reachable(&checker, dbg_parse_args));
+        fprintf(libc.stderr, "  query generate_libc reachable=%d\n" as *byte, checker_is_function_reachable(&checker, dbg_generate_libc));
+        fprintf(libc.stderr, "  query align_size reachable=%d\n" as *byte, checker_is_function_reachable(&checker, dbg_align_size));
+        fprintf(libc.stderr, "  query next_macro_hygiene_expansion_id reachable=%d\n" as *byte,
+            checker_is_function_reachable(&checker, dbg_next_macro_hygiene_expansion_id));
+        fprintf(libc.stderr, "  query c99_utils_cache_ensure reachable=%d\n" as *byte,
+            checker_is_function_reachable(&checker, dbg_c99_utils_cache_ensure));
+    }
 
     // ===== 优化阶段（v0.7.3 新增）=====
     var opt_end_time: i64 = 0;
@@ -2836,6 +3043,7 @@ fn compile_files(
     }
     // 设置单态化实例（从 TypeChecker 传入）
     c99_codegen_set_mono_instances(&c99_codegen, &checker);
+    c99_codegen_set_reachable_functions(&c99_codegen, &checker);
     c99_codegen.container_mode = g_container_mode;
     if c99_codegen_generate(&c99_codegen, merged_ast, actual_output as &byte) != 0 {
         fprintf(libc.stderr, "错误: C99 代码生成失败\n" as *byte);
@@ -2982,15 +3190,21 @@ export fn main() i32 {
     var user_output_path: *byte = null;  // 用户指定的输出路径（用于宿主工具链链接）
     if command == CommandType.COMMAND_BUILD && output_file_index >= 0 {
         const out_path: *byte = get_argv(output_file_index);
-        if out_path != null && is_c_output(out_path as &byte) == 0 {
-            // 输出不是 .c 文件，保存用户指定的路径，生成临时 C 文件路径
-            user_output_path = out_path;
-            if host_fill_temp_c_compile_path(&auto_output_path[0], PATH_MAX) != 0 {
-                fprintf(libc.stderr, "错误: 无法生成临时输出路径\n" as *byte);
-                return 1;
+        if out_path != null {
+            // microapp 模式需要保留用户显式输出路径，哪怕是 .c
+            if g_app_mode_microapp != 0 {
+                user_output_path = out_path;
             }
-            output_file_index = -2;  // 标记为自动生成的路径
-            backend = BackendType.BACKEND_C99;
+            if is_c_output(out_path as &byte) == 0 {
+                // 输出不是 .c 文件，保存用户指定的路径，生成临时 C 文件路径
+                user_output_path = out_path;
+                if host_fill_temp_c_compile_path(&auto_output_path[0], PATH_MAX) != 0 {
+                    fprintf(libc.stderr, "错误: 无法生成临时输出路径\n" as *byte);
+                    return 1;
+                }
+                output_file_index = -2;  // 标记为自动生成的路径
+                backend = BackendType.BACKEND_C99;
+            }
         }
     }
 
@@ -3220,7 +3434,8 @@ fn generate_libc(output_dir: &byte) i32 {
     }
     const last_slash: *byte = strrchr(&uya_root_buffer[0], 47);
     if last_slash != null && strcmp(last_slash, "/bin" as *byte) == 0 {
-        var slash_idx: usize = (last_slash as i64 - &uya_root_buffer[0] as i64) as usize;
+        const slash_idx_tmp: !usize = (last_slash as i64 - &uya_root_buffer[0] as i64) as! usize;
+        var slash_idx: usize = slash_idx_tmp.value;
         uya_root_buffer[slash_idx] = 0;
     }
     var lib_dir: [byte: PATH_MAX] = [];

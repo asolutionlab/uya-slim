@@ -136,7 +136,7 @@ export extern "libc" fn gmtime(timer: &const time_t) &tm {
     _gmtime_result.tm_sec = (remaining - (_gmtime_result.tm_min as i64 * 60)) as i32;
     
     // 计算星期几（1970 年 1 月 1 日是星期四）
-    _gmtime_result.tm_wday = ((days + 4) % 7) as i32;
+    _gmtime_result.tm_wday = ((days + (4 as i64)) % (7 as i64)) as i32;
     if _gmtime_result.tm_wday < 0 {
         _gmtime_result.tm_wday = _gmtime_result.tm_wday + 7;
     }

@@ -12,7 +12,7 @@ struct Counter {
     step: i32,
 }
 
-fn increment(c: Counter) Counter {
+fn increment(c: &Counter) Counter {
     return Counter{ value: c.value + c.step, step: c.step };
 }
 
@@ -24,11 +24,11 @@ fn test_struct_in_nested_loop() !void {
         if i > 0 {
             var j: i32 = 0;
             while j < 2 {
-                counter = increment(counter);
+                counter = increment(&counter);
                 j = j + 1;
             }
         } else {
-            counter = increment(counter);
+            counter = increment(&counter);
         }
         i = i + 1;
     }

@@ -127,7 +127,7 @@ export struct LinuxEpoll : EventLoop {
             return wait_result as! i32;
         };
         var i: i32 = 0;
-        while i < n {
+        while i >= 0 && i < n && i < 1024 {
             const fd: i32 = events[i].data as i32;
             const slot: i32 = linux_epoll_find_slot(self, fd);
             if slot >= 0 && self.slot_wakers[slot] != 0 as usize {

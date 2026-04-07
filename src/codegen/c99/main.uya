@@ -1039,8 +1039,25 @@ fn is_top_level_function_reachable(codegen: &C99CodeGenerator, fn_decl: &ASTNode
     }
     var i: i32 = 0;
     while i < codegen.reachable_function_decl_count {
-        if codegen.reachable_function_decls[i] == fn_decl {
+        const reachable_decl: &ASTNode = codegen.reachable_function_decls[i];
+        if reachable_decl == fn_decl {
             return 1;
+        }
+        if reachable_decl != null {
+            if reachable_decl.type == ASTNodeType.AST_FN_DECL && fn_decl.type == ASTNodeType.AST_FN_DECL {
+                if reachable_decl.fn_decl_name != null && fn_decl.fn_decl_name != null {
+                    if str_equals(reachable_decl.fn_decl_name, fn_decl.fn_decl_name) != 0 &&
+                        reachable_decl.fn_decl_is_extern == fn_decl.fn_decl_is_extern {
+                        var reachable_has_body: i32 = 0;
+                        var fn_has_body: i32 = 0;
+                        if reachable_decl.fn_decl_body != null { reachable_has_body = 1; }
+                        if fn_decl.fn_decl_body != null { fn_has_body = 1; }
+                        if reachable_has_body == fn_has_body {
+                            return 1;
+                        }
+                    }
+                }
+            }
         }
         i = i + 1;
     }
@@ -1178,7 +1195,7 @@ fn build_decl_caches(codegen: &C99CodeGenerator) void {
     codegen.decl_cache_initialized = 1;
 }
 
-// 准备 codegen：收集测试、标记所有顶层函数为可发射，并启用 syscall 辅助与全部函数类单态。
+// 准备 codegen：收集测试，并启用 syscall 辅助与全部函数类单态。
 // 不再做调用图可达性遍历（原 collect_reachable_top_level_functions_from_node）。
 fn prepare_codegen_tests_and_emit_flags(codegen: &C99CodeGenerator, ast: &ASTNode, tests: & & ASTNode, test_count: &i32) void {
     if codegen == null || ast == null || ast.type != ASTNodeType.AST_PROGRAM || tests == null || test_count == null {
@@ -1192,7 +1209,6 @@ fn prepare_codegen_tests_and_emit_flags(codegen: &C99CodeGenerator, ast: &ASTNod
         seed_decl_cache_inline = 1;
     }
 
-    codegen.reachable_function_decl_count = 0;
     codegen.needs_syscall_helpers = 1;
     var i: i32 = 0;
     while i < codegen.mono_instance_count {
@@ -1215,7 +1231,6 @@ fn prepare_codegen_tests_and_emit_flags(codegen: &C99CodeGenerator, ast: &ASTNod
                 if decl.fn_decl_body != null {
                     collect_tests_from_node(codegen, decl.fn_decl_body, tests, test_count);
                 }
-                mark_top_level_function_reachable(codegen, decl);
             } else if decl.type == ASTNodeType.AST_TEST_STMT {
                 append_collected_test(tests, test_count, decl);
                 collect_tests_from_node(codegen, decl.test_stmt_body, tests, test_count);
@@ -1233,8 +1248,11 @@ fn should_emit_top_level_function_decl(codegen: &C99CodeGenerator, fn_decl: &AST
     if codegen == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
         return 0;
     }
-    // 默认发射所有顶层函数声明（与 prepare_codegen 标记全体一致；不再按可达性裁剪）
-    return 1;
+    // 顶层 extern/前向声明没有函数体，不参与可达性裁剪，但仍需保留 C 原型。
+    if fn_decl.fn_decl_body == null {
+        return 1;
+    }
+    return is_top_level_function_reachable(codegen, fn_decl);
 }
 
 // 从测试描述字符串生成安全的函数名（使用哈希避免中文问题）

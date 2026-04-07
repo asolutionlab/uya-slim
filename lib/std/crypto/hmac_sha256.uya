@@ -39,7 +39,7 @@ export fn hmac_sha256(key: &[byte], msg: &[byte], mac_out: &[byte]) void {
     var inner: [byte: 64 + HMAC_SHA256_MAX_MSG] = [];
     var ii: usize = 0;
     while ii < 64 {
-        inner[ii] = (kbuf[ii] ^ 0x36) as byte;
+        inner[ii] = kbuf[ii] ^ (54 as byte);
         ii = ii + 1;
     }
     var mj: usize = 0;
@@ -52,7 +52,7 @@ export fn hmac_sha256(key: &[byte], msg: &[byte], mac_out: &[byte]) void {
     var outer: [byte: 96] = [];
     var oi: usize = 0;
     while oi < 64 {
-        outer[oi] = (kbuf[oi] ^ 0x5c) as byte;
+        outer[oi] = kbuf[oi] ^ (92 as byte);
         oi = oi + 1;
     }
     var hi: usize = 0;

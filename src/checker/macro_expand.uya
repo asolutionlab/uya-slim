@@ -529,7 +529,8 @@ fn get_string_literal_from_ast(node: &ASTNode) &byte {
 
 // 二元操作符 TokenType 转源码字符串（用于 @mc_source 序列化）
 fn binary_op_to_source_string(op: i32) &byte {
-    const t: TokenType = op as TokenType;
+    const t_tmp: !TokenType = op as! TokenType;
+    const t: TokenType = t_tmp.value;
     if t == TokenType.TOKEN_PLUS { return (" + " as *byte) as &byte; }
     if t == TokenType.TOKEN_MINUS { return (" - " as *byte) as &byte; }
     if t == TokenType.TOKEN_ASTERISK { return (" * " as *byte) as &byte; }
@@ -553,7 +554,8 @@ fn binary_op_to_source_string(op: i32) &byte {
 
 // 一元操作符 TokenType 转源码字符串
 fn unary_op_to_source_string(op: i32) &byte {
-    const t: TokenType = op as TokenType;
+    const t_tmp: !TokenType = op as! TokenType;
+    const t: TokenType = t_tmp.value;
     if t == TokenType.TOKEN_MINUS { return ("-" as *byte) as &byte; }
     if t == TokenType.TOKEN_EXCLAMATION { return ("!" as *byte) as &byte; }
     if t == TokenType.TOKEN_TILDE { return ("~" as *byte) as &byte; }
@@ -1435,7 +1437,8 @@ fn macro_eval_expr(expr: &ASTNode, ctx: &MacroExpandContext, success: &i32) i64 
             return 0;
         }
         *success = 1;
-        const op: TokenType = expr.binary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.binary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         if op == TokenType.TOKEN_PLUS {
             return left + right;
         } else if op == TokenType.TOKEN_MINUS {
@@ -1481,7 +1484,8 @@ fn macro_eval_expr(expr: &ASTNode, ctx: &MacroExpandContext, success: &i32) i64 
             return 0;
         }
         *success = 1;
-        const op: TokenType = expr.unary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.unary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         if op == TokenType.TOKEN_MINUS {
             return 0 - operand;
         } else if op == TokenType.TOKEN_EXCLAMATION {
@@ -2334,7 +2338,8 @@ fn build_encode_to_to_json_block(checker: &TypeChecker, type_arg: &ASTNode, valu
     const id_w: &ASTNode = create_identifier_from_string(s_w, arena, line + line_off, column + col_off);
     if id_w == null { return null; }
 
-    const unary_addr: i32 = (TokenType.TOKEN_AMPERSAND) as i32;
+    const unary_addr_tmp: !i32 = (TokenType.TOKEN_AMPERSAND) as! i32;
+    const unary_addr: i32 = unary_addr_tmp.value;
     const addr_w: &ASTNode = ast_new_node(ASTNodeType.AST_UNARY_EXPR, line + line_off, column + col_off, arena, filename);
     if addr_w == null { return null; }
     addr_w.unary_expr_op = unary_addr;
@@ -2473,7 +2478,8 @@ fn build_decode_json_value_expr(checker: &TypeChecker, type_node: &ASTNode, valu
         return null;
     }
     const arena: &CompilerArena = checker.arena;
-    const unary_amp: i32 = (TokenType.TOKEN_AMPERSAND) as i32;
+    const unary_amp_tmp: !i32 = (TokenType.TOKEN_AMPERSAND) as! i32;
+    const unary_amp: i32 = unary_amp_tmp.value;
     var safe_name_hint: &byte = name_hint;
     if safe_name_hint == null {
         safe_name_hint = ("value" as *byte) as &byte;
@@ -2901,7 +2907,8 @@ fn build_decode_struct_expr(checker: &TypeChecker, struct_decl: &ASTNode, type_n
     const line_off: i32 = 0;
     const col_off: i32 = 0;
     const n_fields: i32 = struct_decl.struct_decl_field_count;
-    const unary_amp: i32 = (TokenType.TOKEN_AMPERSAND) as i32;
+    const unary_amp_tmp: !i32 = (TokenType.TOKEN_AMPERSAND) as! i32;
+    const unary_amp: i32 = unary_amp_tmp.value;
 
     const s_json_object_find_index: &byte = macro_arena_strdup(arena, ("json_object_find_index" as *byte) as &byte);
     const s_json_expect_i64: &byte = macro_arena_strdup(arena, ("json_expect_i64" as *byte) as &byte);

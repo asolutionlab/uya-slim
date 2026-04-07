@@ -263,7 +263,8 @@ fn constraint_extract_from_binary(checker: &TypeChecker, expr: &ASTNode, is_posi
         return;
     }
     
-    const op: TokenType = expr.binary_expr_op as TokenType;
+    const op_tmp: !TokenType = expr.binary_expr_op as! TokenType;
+    const op: TokenType = op_tmp.value;
     
     // 处理逻辑与（&&）：递归提取左右子表达式的约束
     if op == TokenType.TOKEN_LOGICAL_AND {
@@ -686,7 +687,8 @@ fn extract_linear_expr(checker: &TypeChecker, expr: &ASTNode) LinearExpr {
     }
     
     if expr.type == ASTNodeType.AST_BINARY_EXPR {
-        const op: TokenType = expr.binary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.binary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         const left: &ASTNode = expr.binary_expr_left;
         const right: &ASTNode = expr.binary_expr_right;
         
@@ -820,7 +822,8 @@ fn eval_expr_interval(checker: &TypeChecker, expr: &ASTNode) Interval {
     
     // 二元运算
     if expr.type == ASTNodeType.AST_BINARY_EXPR {
-        const op: TokenType = expr.binary_expr_op as TokenType;
+        const op_tmp: !TokenType = expr.binary_expr_op as! TokenType;
+        const op: TokenType = op_tmp.value;
         const left: &ASTNode = expr.binary_expr_left;
         const right: &ASTNode = expr.binary_expr_right;
         

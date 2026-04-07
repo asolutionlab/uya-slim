@@ -302,8 +302,8 @@ export extern "libc" fn i32_to_str(value: i32, buf: &byte) usize {
 
     // 逆序写入数字
     while v > 0 {
-        buf[len] = (v % 10 + 48) as byte;  // '0' = 48
-        v = v / 10;
+        buf[len] = (v % (10 as i32) + (48 as i32)) as byte;  // '0' = 48
+        v = v / (10 as i32);
         len = len + 1;
     }
 
@@ -346,8 +346,8 @@ export extern "libc" fn i64_to_str(value: i64, buf: &byte) usize {
 
     // 逆序写入数字
     while v > 0 {
-        buf[len] = (v % 10 + 48) as byte;  // '0' = 48
-        v = v / 10;
+        buf[len] = (v % (10 as i64) + (48 as i64)) as byte;  // '0' = 48
+        v = v / (10 as i64);
         len = len + 1;
     }
 

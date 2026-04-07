@@ -260,14 +260,14 @@ fn test_large_allocation() !void {
     var p: &byte = (ptr as &byte);
     var i: usize = 0;
     while i < 4096 {
-        p[i] = ((i % 256) as u8);
+        p[i] = ((i % (256 as usize)) as! u8).value;
         i = i + 1;
     }
     
     // 验证
     i = 0;
     while i < 4096 {
-        if p[i] != ((i % 256) as u8) {
+        if p[i] != ((i % (256 as usize)) as! u8).value {
             free(ptr);
             return error.TestFailed;
         }

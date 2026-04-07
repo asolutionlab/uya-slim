@@ -69,18 +69,18 @@ export fn crc32_compute(data: &[byte]) u32 {
 fn meta_compute_crc(meta: &SlotMeta) u32 {
     // CRC over generation + state + image_len (12 bytes)
     var buf: [byte: 12] = [];
-    buf[0] = (meta.generation & 255u32) as byte;
-    buf[1] = ((meta.generation >> 8) & 255u32) as byte;
-    buf[2] = ((meta.generation >> 16) & 255u32) as byte;
-    buf[3] = ((meta.generation >> 24) & 255u32) as byte;
-    buf[4] = (meta.state & 255u32) as byte;
-    buf[5] = ((meta.state >> 8) & 255u32) as byte;
-    buf[6] = ((meta.state >> 16) & 255u32) as byte;
-    buf[7] = ((meta.state >> 24) & 255u32) as byte;
-    buf[8] = (meta.image_len & 255u32) as byte;
-    buf[9] = ((meta.image_len >> 8) & 255u32) as byte;
-    buf[10] = ((meta.image_len >> 16) & 255u32) as byte;
-    buf[11] = ((meta.image_len >> 24) & 255u32) as byte;
+    buf[0] = ((meta.generation & 255u32) as! byte).value;
+    buf[1] = (((meta.generation >> 8) & 255u32) as! byte).value;
+    buf[2] = (((meta.generation >> 16) & 255u32) as! byte).value;
+    buf[3] = (((meta.generation >> 24) & 255u32) as! byte).value;
+    buf[4] = ((meta.state & 255u32) as! byte).value;
+    buf[5] = (((meta.state >> 8) & 255u32) as! byte).value;
+    buf[6] = (((meta.state >> 16) & 255u32) as! byte).value;
+    buf[7] = (((meta.state >> 24) & 255u32) as! byte).value;
+    buf[8] = ((meta.image_len & 255u32) as! byte).value;
+    buf[9] = (((meta.image_len >> 8) & 255u32) as! byte).value;
+    buf[10] = (((meta.image_len >> 16) & 255u32) as! byte).value;
+    buf[11] = (((meta.image_len >> 24) & 255u32) as! byte).value;
     return crc32_compute(buf[0: 12]);
 }
 

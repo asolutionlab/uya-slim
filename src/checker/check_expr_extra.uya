@@ -24,6 +24,8 @@ fn checker_check_array_access(checker: &TypeChecker, node: &ASTNode) Type {
     if checker == null || node == null || node.type != ASTNodeType.AST_ARRAY_ACCESS {
         return result;
     }
+    checker_walk_reachability_expr(checker, node.array_access_array);
+    checker_walk_reachability_expr(checker, node.array_access_index);
     
     // 获取数组表达式类型
     const array_type: Type = checker_infer_type(checker, node.array_access_array);
@@ -590,6 +592,8 @@ fn checker_check_binary_expr(checker: &TypeChecker, node: &ASTNode) Type {
     if checker == null || node == null || node.type != ASTNodeType.AST_BINARY_EXPR {
         return result;
     }
+    checker_walk_reachability_expr(checker, node.binary_expr_left);
+    checker_walk_reachability_expr(checker, node.binary_expr_right);
     
     const op: TokenType = checker_token_or_plus_extra(node.binary_expr_op);
     var left_type: Type = checker_infer_type(checker, node.binary_expr_left);
@@ -906,6 +910,276 @@ fn checker_check_binary_expr(checker: &TypeChecker, node: &ASTNode) Type {
 // 检查类型转换表达式
 // 参数：checker - TypeChecker 指针，node - 类型转换表达式节点
 // 返回：无（通过 checker_report_error 报告错误）
+fn checker_maybe_add_direct_address_root(checker: &TypeChecker, expr: &ASTNode) void {
+    if checker == null || expr == null {
+        return;
+    }
+    var target: &ASTNode = null;
+    if expr.type == ASTNodeType.AST_UNARY_EXPR && (expr.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND {
+        target = expr.unary_expr_operand;
+    }
+    if expr.type == ASTNodeType.AST_CAST_EXPR && expr.cast_expr_expr != null &&
+        expr.cast_expr_expr.type == ASTNodeType.AST_UNARY_EXPR &&
+        (expr.cast_expr_expr.unary_expr_op as TokenType) == TokenType.TOKEN_AMPERSAND {
+        target = expr.cast_expr_expr.unary_expr_operand;
+    }
+    if target == null {
+        return;
+    }
+    const fn_decl: &ASTNode = resolve_reachable_callee_fn_decl(checker, target);
+    if fn_decl != null {
+        _ = checker_add_function_root_decl(checker, fn_decl);
+    }
+}
+
+fn checker_walk_reachability_expr(checker: &TypeChecker, expr: &ASTNode) void {
+    if checker == null || expr == null {
+        return;
+    }
+    checker_maybe_add_direct_address_root(checker, expr);
+
+    if expr.type == ASTNodeType.AST_CALL_EXPR {
+        checker_record_reachable_call(checker, expr.call_expr_callee);
+        checker_walk_reachability_expr(checker, expr.call_expr_callee);
+        if expr.call_expr_args != null {
+            var i: i32 = 0;
+            while i < expr.call_expr_arg_count {
+                checker_walk_reachability_expr(checker, expr.call_expr_args[i]);
+                i = i + 1;
+            }
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
+        checker_walk_reachability_expr(checker, expr.member_access_object);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_ARRAY_ACCESS {
+        checker_walk_reachability_expr(checker, expr.array_access_array);
+        checker_walk_reachability_expr(checker, expr.array_access_index);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        checker_walk_reachability_expr(checker, expr.binary_expr_left);
+        checker_walk_reachability_expr(checker, expr.binary_expr_right);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_UNARY_EXPR {
+        checker_walk_reachability_expr(checker, expr.unary_expr_operand);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_CAST_EXPR {
+        checker_walk_reachability_expr(checker, expr.cast_expr_expr);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_SLICE_EXPR {
+        checker_walk_reachability_expr(checker, expr.slice_expr_base);
+        checker_walk_reachability_expr(checker, expr.slice_expr_start_expr);
+        checker_walk_reachability_expr(checker, expr.slice_expr_len_expr);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_AWAIT_EXPR {
+        checker_walk_reachability_expr(checker, expr.await_expr_operand);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_TRY_EXPR {
+        checker_walk_reachability_expr(checker, expr.try_expr_operand);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_CATCH_EXPR {
+        checker_walk_reachability_expr(checker, expr.catch_expr_operand);
+        checker_walk_reachability_expr(checker, expr.catch_expr_catch_block);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_MATCH_EXPR {
+        checker_walk_reachability_expr(checker, expr.match_expr_expr);
+        if expr.match_expr_arms != null {
+            var j: i32 = 0;
+            while j < expr.match_expr_arm_count {
+                checker_walk_reachability_expr(checker, expr.match_expr_arms[j].result_expr);
+                j = j + 1;
+            }
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_STRUCT_INIT && expr.struct_init_field_values != null {
+        var k: i32 = 0;
+        while k < expr.struct_init_field_count {
+            checker_walk_reachability_expr(checker, expr.struct_init_field_values[k]);
+            k = k + 1;
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_ARRAY_LITERAL && expr.array_literal_elements != null {
+        var m: i32 = 0;
+        while m < expr.array_literal_element_count {
+            checker_walk_reachability_expr(checker, expr.array_literal_elements[m]);
+            m = m + 1;
+        }
+        return;
+    }
+}
+
+fn checker_walk_reachability_node(checker: &TypeChecker, node: &ASTNode) void {
+    if checker == null || node == null {
+        return;
+    }
+    checker_walk_reachability_expr(checker, node);
+
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            checker_walk_reachability_node(checker, node.block_stmts[i]);
+            i = i + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        checker_walk_reachability_node(checker, node.if_stmt_condition);
+        checker_walk_reachability_node(checker, node.if_stmt_then_branch);
+        checker_walk_reachability_node(checker, node.if_stmt_else_branch);
+        return;
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        checker_walk_reachability_node(checker, node.while_stmt_condition);
+        checker_walk_reachability_node(checker, node.while_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        checker_walk_reachability_node(checker, node.for_stmt_range_start);
+        checker_walk_reachability_node(checker, node.for_stmt_range_end);
+        checker_walk_reachability_node(checker, node.for_stmt_array);
+        checker_walk_reachability_node(checker, node.for_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_VAR_DECL {
+        checker_walk_reachability_node(checker, node.var_decl_init);
+        return;
+    }
+    if node.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+        checker_walk_reachability_node(checker, node.extern_var_decl_init_expr);
+        return;
+    }
+    if node.type == ASTNodeType.AST_DESTRUCTURE_DECL {
+        checker_walk_reachability_node(checker, node.destructure_decl_init);
+        return;
+    }
+    if node.type == ASTNodeType.AST_RETURN_STMT {
+        checker_walk_reachability_node(checker, node.return_stmt_expr);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ASSIGN {
+        checker_walk_reachability_node(checker, node.assign_dest);
+        checker_walk_reachability_node(checker, node.assign_src);
+        return;
+    }
+    if node.type == ASTNodeType.AST_DEFER_STMT {
+        checker_walk_reachability_node(checker, node.defer_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ERRDEFER_STMT {
+        checker_walk_reachability_node(checker, node.errdefer_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_TEST_STMT {
+        checker_walk_reachability_node(checker, node.test_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_AWAIT_EXPR {
+        checker_walk_reachability_node(checker, node.await_expr_operand);
+        return;
+    }
+    if node.type == ASTNodeType.AST_CATCH_EXPR {
+        checker_walk_reachability_node(checker, node.catch_expr_operand);
+        checker_walk_reachability_node(checker, node.catch_expr_catch_block);
+        return;
+    }
+    if node.type == ASTNodeType.AST_MATCH_EXPR && node.match_expr_arms != null {
+        checker_walk_reachability_node(checker, node.match_expr_expr);
+        var j: i32 = 0;
+        while j < node.match_expr_arm_count {
+            checker_walk_reachability_node(checker, node.match_expr_arms[j].result_expr);
+            j = j + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_TUPLE_LITERAL && node.tuple_literal_elements != null {
+        var k: i32 = 0;
+        while k < node.tuple_literal_element_count {
+            checker_walk_reachability_node(checker, node.tuple_literal_elements[k]);
+            k = k + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_PRINT || node.type == ASTNodeType.AST_PRINTLN {
+        checker_walk_reachability_node(checker, node.print_expr);
+        return;
+    }
+    if node.type == ASTNodeType.AST_LEN {
+        checker_walk_reachability_node(checker, node.len_expr_array);
+        return;
+    }
+    if node.type == ASTNodeType.AST_SIZEOF && node.sizeof_expr_is_type == 0 {
+        checker_walk_reachability_node(checker, node.sizeof_expr_target);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ALIGNOF && node.alignof_expr_is_type == 0 {
+        checker_walk_reachability_node(checker, node.alignof_expr_target);
+        return;
+    }
+    if node.type == ASTNodeType.AST_PTR_FROM_USIZE {
+        checker_walk_reachability_node(checker, node.ptr_from_usize_value);
+        return;
+    }
+    if node.type == ASTNodeType.AST_USIZE_FROM_PTR {
+        checker_walk_reachability_node(checker, node.usize_from_ptr_ptr);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ERROR_ID {
+        checker_walk_reachability_node(checker, node.error_id_operand);
+        return;
+    }
+    if node.type == ASTNodeType.AST_SYSCALL {
+        checker_walk_reachability_node(checker, node.syscall_number);
+        if node.syscall_args != null {
+            var s: i32 = 0;
+            while s < node.syscall_arg_count {
+                checker_walk_reachability_node(checker, node.syscall_args[s]);
+                s = s + 1;
+            }
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_VA_START {
+        checker_walk_reachability_node(checker, node.va_start_ap);
+        checker_walk_reachability_node(checker, node.va_start_last_param);
+        return;
+    }
+    if node.type == ASTNodeType.AST_VA_END {
+        checker_walk_reachability_node(checker, node.va_end_ap);
+        return;
+    }
+    if node.type == ASTNodeType.AST_VA_ARG {
+        checker_walk_reachability_node(checker, node.va_arg_ap);
+        return;
+    }
+    if node.type == ASTNodeType.AST_VA_COPY {
+        checker_walk_reachability_node(checker, node.va_copy_dest);
+        checker_walk_reachability_node(checker, node.va_copy_src);
+        return;
+    }
+    if node.type == ASTNodeType.AST_STRING_INTERP && node.string_interp_segments != null {
+        var t: i32 = 0;
+        while t < node.string_interp_segment_count {
+            if node.string_interp_segments[t].is_text == 0 {
+                checker_walk_reachability_node(checker, node.string_interp_segments[t].expr);
+            }
+            t = t + 1;
+        }
+        return;
+    }
+}
+
 fn checker_check_cast_expr(checker: &TypeChecker, node: &ASTNode) void {
     if checker == null || node == null || node.type != ASTNodeType.AST_CAST_EXPR {
         return;
@@ -913,12 +1187,14 @@ fn checker_check_cast_expr(checker: &TypeChecker, node: &ASTNode) void {
     
     const expr: &ASTNode = node.cast_expr_expr;
     const target_type_node: &ASTNode = node.cast_expr_target_type;
+    checker_maybe_add_direct_address_root(checker, expr);
     
     if expr == null || target_type_node == null {
         // 放宽检查：expr 或 target_type_node 为 null 时，允许通过（不报错）
         // 这在编译器自举时可能发生
         return;
     }
+    checker_walk_reachability_expr(checker, expr);
     
     // 推断源表达式类型和目标类型
     const source_type: Type = checker_infer_type(checker, expr);
@@ -1041,6 +1317,7 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
     if checker == null || node == null || node.type != ASTNodeType.AST_UNARY_EXPR {
         return result;
     }
+    checker_walk_reachability_expr(checker, node.unary_expr_operand);
     
     const op: TokenType = checker_token_or_plus_extra(node.unary_expr_op);
     const operand_type: Type = checker_infer_type(checker, node.unary_expr_operand);
@@ -1106,6 +1383,7 @@ fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
         return result;
     } else if op == TokenType.TOKEN_AMPERSAND {
         // 取地址（&expr）：与 C 一致，操作数类型无效（TypeKind.TYPE_VOID）时放宽检查，返回 &void，不报错
+        checker_maybe_add_direct_address_root(checker, node);
         if is_void_type(operand_type) != 0 {
             // 设置新的 union data 字段
             var pd: PointerData = PointerData {

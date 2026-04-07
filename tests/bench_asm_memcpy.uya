@@ -37,7 +37,7 @@ test "bench memcpy small (32 bytes)" {
     // 初始化源数据
     var i: usize = 0;
     while i < size {
-        src[i] = (i % 256) as byte;
+        src[i] = ((i % (256 as usize)) as! byte).value;
         i = i + 1;
     }
     
@@ -65,7 +65,7 @@ test "bench memcpy medium (1KB)" {
     // 初始化源数据
     var i: usize = 0;
     while i < size {
-        src[i] = (i % 256) as byte;
+        src[i] = ((i % (256 as usize)) as! byte).value;
         i = i + 1;
     }
     
@@ -94,7 +94,7 @@ test "bench memcpy large (64KB)" {
     var i: usize = 0;
     while i < size {
         var p: &byte = src_ptr as &byte;
-        p[i] = (i % 256) as byte;
+        p[i] = ((i % (256 as usize)) as! byte).value;
         i = i + 1;
     }
     
@@ -156,7 +156,7 @@ test "bench memcpy repeated runs" {
     // 初始化源数据
     var i: usize = 0;
     while i < size {
-        src[i] = (i % 256) as byte;
+        src[i] = ((i % (256 as usize)) as! byte).value;
         i = i + 1;
     }
     

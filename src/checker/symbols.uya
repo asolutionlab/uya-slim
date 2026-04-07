@@ -80,6 +80,25 @@ fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: 
         i = i + 1;
     }
     checker.async_call_edge_count = 0;
+    i = 0;
+    while i < @len(checker.fn_call_edge_from) {
+        checker.fn_call_edge_from[i] = null;
+        checker.fn_call_edge_to[i] = null;
+        i = i + 1;
+    }
+    checker.fn_call_edge_count = 0;
+    i = 0;
+    while i < @len(checker.fn_root_decls) {
+        checker.fn_root_decls[i] = null;
+        i = i + 1;
+    }
+    checker.fn_root_count = 0;
+    i = 0;
+    while i < @len(checker.reachable_fn_decls) {
+        checker.reachable_fn_decls[i] = null;
+        i = i + 1;
+    }
+    checker.reachable_fn_decl_count = 0;
 
     checker.scope_level = 0;
     checker.loop_depth = 0;
@@ -135,6 +154,192 @@ fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: 
     checker.proof_step_count = 0;
     
     return 0;
+}
+
+fn checker_find_reachable_fn_decl_by_name(checker: &TypeChecker, name: &byte) &ASTNode {
+    if checker == null || name == null || checker.program_node == null ||
+        checker.program_node.type != ASTNodeType.AST_PROGRAM {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < checker.program_node.program_decl_count {
+        const decl: &ASTNode = checker.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null &&
+            str_equals(decl.fn_decl_name, name) != 0 && decl.fn_decl_body != null {
+            return decl;
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while i < checker.program_node.program_decl_count {
+        const decl: &ASTNode = checker.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null &&
+            str_equals(decl.fn_decl_name, name) != 0 {
+            return decl;
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+fn checker_canonicalize_fn_decl(checker: &TypeChecker, fn_decl: &ASTNode) &ASTNode {
+    if checker == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL ||
+        fn_decl.fn_decl_name == null || checker.program_node == null ||
+        checker.program_node.type != ASTNodeType.AST_PROGRAM {
+        return fn_decl;
+    }
+    var fn_has_body: i32 = 0;
+    if fn_decl.fn_decl_body != null {
+        fn_has_body = 1;
+    }
+    var i: i32 = 0;
+    while i < checker.program_node.program_decl_count {
+        const decl: &ASTNode = checker.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null &&
+            str_equals(decl.fn_decl_name, fn_decl.fn_decl_name) != 0 &&
+            decl.fn_decl_is_extern == fn_decl.fn_decl_is_extern {
+            var decl_has_body: i32 = 0;
+            if decl.fn_decl_body != null {
+                decl_has_body = 1;
+            }
+            if decl_has_body == fn_has_body {
+                return decl;
+            }
+        }
+        i = i + 1;
+    }
+    i = 0;
+    while i < checker.program_node.program_decl_count {
+        const decl: &ASTNode = checker.program_node.program_decls[i];
+        if decl != null && decl.type == ASTNodeType.AST_FN_DECL && decl.fn_decl_name != null &&
+            str_equals(decl.fn_decl_name, fn_decl.fn_decl_name) != 0 {
+            return decl;
+        }
+        i = i + 1;
+    }
+    return fn_decl;
+}
+
+fn checker_add_function_root_decl(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
+    const canonical_fn_decl: &ASTNode = checker_canonicalize_fn_decl(checker, fn_decl);
+    if checker == null || canonical_fn_decl == null || canonical_fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < checker.fn_root_count {
+        if checker.fn_root_decls[i] == canonical_fn_decl {
+            return 1;
+        }
+        i = i + 1;
+    }
+    if checker.fn_root_count >= MAX_FN_ROOTS {
+        checker_report_error(checker, canonical_fn_decl, "顶层函数 root 容量已满" as *byte);
+        return 0;
+    }
+    checker.fn_root_decls[checker.fn_root_count] = canonical_fn_decl;
+    checker.fn_root_count = checker.fn_root_count + 1;
+    return 1;
+}
+
+fn checker_add_function_root_by_name(checker: &TypeChecker, name: &byte) i32 {
+    const fn_decl: &ASTNode = checker_find_reachable_fn_decl_by_name(checker, name);
+    if fn_decl == null {
+        return 0;
+    }
+    return checker_add_function_root_decl(checker, fn_decl);
+}
+
+fn checker_add_function_edge(checker: &TypeChecker, from_decl: &ASTNode, to_decl: &ASTNode) i32 {
+    const canonical_from_decl: &ASTNode = checker_canonicalize_fn_decl(checker, from_decl);
+    const canonical_to_decl: &ASTNode = checker_canonicalize_fn_decl(checker, to_decl);
+    if checker == null || canonical_from_decl == null || canonical_to_decl == null ||
+        canonical_from_decl.type != ASTNodeType.AST_FN_DECL || canonical_to_decl.type != ASTNodeType.AST_FN_DECL {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < checker.fn_call_edge_count {
+        if checker.fn_call_edge_from[i] == canonical_from_decl && checker.fn_call_edge_to[i] == canonical_to_decl {
+            return 1;
+        }
+        i = i + 1;
+    }
+    if checker.fn_call_edge_count >= MAX_FN_CALL_EDGES {
+        checker_report_error(checker, canonical_from_decl, "顶层函数 call edge 容量已满" as *byte);
+        return 0;
+    }
+    checker.fn_call_edge_from[checker.fn_call_edge_count] = canonical_from_decl;
+    checker.fn_call_edge_to[checker.fn_call_edge_count] = canonical_to_decl;
+    checker.fn_call_edge_count = checker.fn_call_edge_count + 1;
+    return 1;
+}
+
+fn checker_is_function_reachable(checker: &TypeChecker, fn_decl: &ASTNode) i32 {
+    if checker == null || fn_decl == null || fn_decl.type != ASTNodeType.AST_FN_DECL {
+        return 0;
+    }
+    var i: i32 = 0;
+    while i < checker.reachable_fn_decl_count {
+        if checker.reachable_fn_decls[i] == fn_decl {
+            return 1;
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+fn checker_compute_function_reachability(checker: &TypeChecker) void {
+    if checker == null {
+        return;
+    }
+    checker.reachable_fn_decl_count = 0;
+    var queue: [&ASTNode: MAX_REACHABLE_FN_DECLS] = [];
+    var head: i32 = 0;
+    var tail: i32 = 0;
+    var i: i32 = 0;
+    while i < checker.fn_root_count {
+        const root_decl: &ASTNode = checker.fn_root_decls[i];
+        if root_decl != null && checker_is_function_reachable(checker, root_decl) == 0 {
+            if checker.reachable_fn_decl_count >= MAX_REACHABLE_FN_DECLS {
+                checker_report_error(checker, root_decl, "顶层函数 reachable 集合已满" as *byte);
+                return;
+            }
+            checker.reachable_fn_decls[checker.reachable_fn_decl_count] = root_decl;
+            checker.reachable_fn_decl_count = checker.reachable_fn_decl_count + 1;
+            if tail >= MAX_REACHABLE_FN_DECLS {
+                checker_report_error(checker, root_decl, "顶层函数 reachable 队列已满" as *byte);
+                return;
+            }
+            queue[tail] = root_decl;
+            tail = tail + 1;
+        }
+        i = i + 1;
+    }
+
+    while head < tail {
+        const from_decl: &ASTNode = queue[head];
+        head = head + 1;
+        i = 0;
+        while i < checker.fn_call_edge_count {
+            if checker.fn_call_edge_from[i] == from_decl {
+                const to_decl: &ASTNode = checker.fn_call_edge_to[i];
+                if to_decl != null && checker_is_function_reachable(checker, to_decl) == 0 {
+                    if checker.reachable_fn_decl_count >= MAX_REACHABLE_FN_DECLS {
+                        checker_report_error(checker, to_decl, "顶层函数 reachable 集合已满" as *byte);
+                        return;
+                    }
+                    checker.reachable_fn_decls[checker.reachable_fn_decl_count] = to_decl;
+                    checker.reachable_fn_decl_count = checker.reachable_fn_decl_count + 1;
+                    if tail >= MAX_REACHABLE_FN_DECLS {
+                        checker_report_error(checker, to_decl, "顶层函数 reachable 队列已满" as *byte);
+                        return;
+                    }
+                    queue[tail] = to_decl;
+                    tail = tail + 1;
+                }
+            }
+            i = i + 1;
+        }
+    }
 }
 
 // 获取错误计数

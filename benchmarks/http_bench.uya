@@ -283,9 +283,9 @@ fn bench_append_usize_dec_hdr(hdr: &byte, start: usize, n: usize) usize {
     var t: usize = 0;
     var x: usize = n;
     while x > 0 && t < 24 {
-        tmp[t] = ((x % 10) as u32 + 48) as byte;
+        tmp[t] = ((x % (10 as usize)) as! byte).value + ('0' as byte);
         t = t + 1;
-        x = x / 10;
+        x = x / (10 as usize);
     }
     while t > 0 {
         t = t - 1;

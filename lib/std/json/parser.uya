@@ -275,6 +275,11 @@ fn parse_array(s: &ParseState) !JsonValue {
     }
 }
 
+fn parse_object_pair(s: &ParseState, key_ptr: &byte, key_len: usize) !JsonKeyValue {
+    const val: JsonValue = try parse_value(s);
+    return JsonKeyValue{ key: JsonStrView{ ptr: key_ptr, len: key_len }, value: val };
+}
+
 fn parse_object(s: &ParseState) !JsonValue {
     if s.pos >= s.len || s.ptr[s.pos] != 123 { return error.UnexpectedToken; }
     s.pos = s.pos + 1;
@@ -309,7 +314,6 @@ fn parse_object(s: &ParseState) !JsonValue {
         if s.pos >= s.len || s.ptr[s.pos] != 58 { s.depth = s.depth - 1; return error.UnexpectedToken; }
         s.pos = s.pos + 1;
         skip_ws(s);
-        const val: JsonValue = try parse_value(s);
         if n >= cap {
             cap = cap * 2;
             const new_pairs: &JsonKeyValue = arena_alloc(s.arena, JSON_KEY_VALUE_ALLOC_SIZE * cap) as &JsonKeyValue;
@@ -321,7 +325,7 @@ fn parse_object(s: &ParseState) !JsonValue {
             }
             pairs = new_pairs;
         }
-        pairs[n] = JsonKeyValue{ key: key_view, value: val };
+        pairs[n] = try parse_object_pair(s, key_view.ptr, key_view.len);
         n = n + 1;
         skip_ws(s);
         if s.pos >= s.len { s.depth = s.depth - 1; return error.UnexpectedEof; }

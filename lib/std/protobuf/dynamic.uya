@@ -108,8 +108,7 @@ export fn decode_dynamic(arena: &Arena, ptr: &byte, buf_len: usize) !PbMessage {
         const fnum: u32 = pb_tag_field_number(key2);
         const wt2: u32 = pb_tag_wire_type(key2);
         try pb_validate_field_number(fnum);
-        const val: PbValue = try pb_value_from_wire(wt2, &c2);
-        fields[idx] = PbField{ field_num: fnum, value: val };
+        fields[idx] = PbField{ field_num: fnum, value: try pb_value_from_wire(wt2, &c2) };
         idx = idx + 1;
     }
     if idx != total {

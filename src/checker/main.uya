@@ -334,6 +334,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
     } else if node.type == ASTNodeType.AST_IF_STMT {
         // 先检查条件表达式（这会进行类型检查，包括类型不匹配的错误）
         if node.if_stmt_condition != null {
+            checker_walk_reachability_expr(checker, node.if_stmt_condition);
             checker_check_node(checker, node.if_stmt_condition);
         }
         // 检查条件类型（必须是bool）
@@ -393,6 +394,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
     } else if node.type == ASTNodeType.AST_WHILE_STMT {
         // 检查条件表达式
         if node.while_stmt_condition != null {
+            checker_walk_reachability_expr(checker, node.while_stmt_condition);
             checker_check_node(checker, node.while_stmt_condition);
         }
         // 检查条件类型（必须是bool）
@@ -493,6 +495,7 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
         }
         
         if node.return_stmt_expr != null {
+            checker_walk_reachability_expr(checker, node.return_stmt_expr);
             // 有返回值的 return 语句
             // SIMD：返回类型为 @vector 或 !@vector 时，先将 return 表达式中的 @vector.splat 按返回向量类型绑定（与变量初始化上下文一致）
             if checker.current_return_type.kind == TypeKind.TYPE_VECTOR {

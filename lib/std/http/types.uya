@@ -185,7 +185,7 @@ export struct Conn {
 
     fn drop(self: Conn) void {
         if self.fd >= 0 {
-            _ = try sys_close(self.fd);
+            _ = sys_close(self.fd) catch {};
         }
     }
 }
@@ -403,4 +403,3 @@ export fn get_bearer_token(req: &Request) !&[byte] {
     }
     return auth[7: auth.len - 7];
 }
-

@@ -230,7 +230,8 @@ fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) 
             }
         }
         if last_slash != null {
-            const slash_pos: usize = ptr_diff(last_slash as *byte, rel as *byte) as usize;
+            const slash_pos_tmp: !usize = ptr_diff(last_slash as *byte, rel as *byte) as! usize;
+            const slash_pos: usize = slash_pos_tmp.value;
             const total_len: usize = 4 + slash_pos + 2;
             const prefix: &byte = compiler_arena_alloc(codegen.arena, total_len) as &byte;
             if prefix != null {

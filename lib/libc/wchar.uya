@@ -143,25 +143,25 @@ export extern "libc" fn wctomb(s: &byte, wc: wchar_t) i32 {
     
     // 2字节 UTF-8
     if wc < 2048 {
-        s[0] = (192 | ((wc >> 6) as u8)) as byte;
-        s[1] = (128 | ((wc & 63) as u8)) as byte;
+        s[0] = ((192 as u8) | ((wc >> 6) as u8)) as byte;
+        s[1] = ((128 as u8) | ((wc & (63 as u32)) as u8)) as byte;
         return 2;
     }
     
     // 3字节 UTF-8
     if wc < 65536 {
-        s[0] = (224 | ((wc >> 12) as u8)) as byte;
-        s[1] = (128 | (((wc >> 6) & 63) as u8)) as byte;
-        s[2] = (128 | ((wc & 63) as u8)) as byte;
+        s[0] = ((224 as u8) | ((wc >> 12) as u8)) as byte;
+        s[1] = ((128 as u8) | (((wc >> 6) & (63 as u32)) as u8)) as byte;
+        s[2] = ((128 as u8) | ((wc & (63 as u32)) as u8)) as byte;
         return 3;
     }
     
     // 4字节 UTF-8
     if wc < 1114112 {
-        s[0] = (240 | ((wc >> 18) as u8)) as byte;
-        s[1] = (128 | (((wc >> 12) & 63) as u8)) as byte;
-        s[2] = (128 | (((wc >> 6) & 63) as u8)) as byte;
-        s[3] = (128 | ((wc & 63) as u8)) as byte;
+        s[0] = ((240 as u8) | ((wc >> 18) as u8)) as byte;
+        s[1] = ((128 as u8) | (((wc >> 12) & (63 as u32)) as u8)) as byte;
+        s[2] = ((128 as u8) | (((wc >> 6) & (63 as u32)) as u8)) as byte;
+        s[3] = ((128 as u8) | ((wc & (63 as u32)) as u8)) as byte;
         return 4;
     }
     

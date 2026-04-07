@@ -1503,7 +1503,8 @@ fn gen_assign_atomic(codegen: &C99CodeGenerator, dest: &ASTNode, src: &ASTNode) 
     var compound_right: &ASTNode = null;
     if src.type == ASTNodeType.AST_BINARY_EXPR {
         const bin_left: &ASTNode = src.binary_expr_left;
-        const bin_op: TokenType = src.binary_expr_op as TokenType;
+        const bin_op_tmp: !TokenType = src.binary_expr_op as! TokenType;
+        const bin_op: TokenType = bin_op_tmp.value;
         compound_right = src.binary_expr_right;
         if dest.type == ASTNodeType.AST_IDENTIFIER && bin_left.type == ASTNodeType.AST_IDENTIFIER &&
             strcmp(dest.identifier_name as *byte, bin_left.identifier_name as *byte) == 0 {
