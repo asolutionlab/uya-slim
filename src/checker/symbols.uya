@@ -99,6 +99,12 @@ fn checker_init(checker: &TypeChecker, arena: &CompilerArena, default_filename: 
         i = i + 1;
     }
     checker.reachable_fn_decl_count = 0;
+    i = 0;
+    while i < @len(checker.reachability_visit_cache) {
+        checker.reachability_visit_cache[i] = null;
+        i = i + 1;
+    }
+    checker.reachability_visit_count = 0;
 
     checker.scope_level = 0;
     checker.loop_depth = 0;
@@ -271,6 +277,44 @@ fn checker_add_function_edge(checker: &TypeChecker, from_decl: &ASTNode, to_decl
     checker.fn_call_edge_to[checker.fn_call_edge_count] = canonical_to_decl;
     checker.fn_call_edge_count = checker.fn_call_edge_count + 1;
     return 1;
+}
+
+fn checker_mark_reachability_node_visited(checker: &TypeChecker, node: &ASTNode) i32 {
+    if checker == null || node == null {
+        return 0;
+    }
+    if checker.reachability_visit_count >= MAX_REACHABILITY_VISIT_SLOTS {
+        return 1;
+    }
+    const node_hash: usize = (@usize_from_ptr(node as &void) / 8 as usize);
+    var slot: i32 = (node_hash & MAX_REACHABILITY_VISIT_MASK) as i32;
+    var probe: i32 = 0;
+    while probe < MAX_REACHABILITY_VISIT_SLOTS {
+        const entry: &ASTNode = checker.reachability_visit_cache[slot];
+        if entry == node {
+            return 0;
+        }
+        if entry == null {
+            checker.reachability_visit_cache[slot] = node;
+            checker.reachability_visit_count = checker.reachability_visit_count + 1;
+            return 1;
+        }
+        slot = (slot + 1) & (MAX_REACHABILITY_VISIT_SLOTS - 1);
+        probe = probe + 1;
+    }
+    return 1;
+}
+
+fn checker_reset_reachability_visit_cache(checker: &TypeChecker) void {
+    if checker == null {
+        return;
+    }
+    var i: i32 = 0;
+    while i < @len(checker.reachability_visit_cache) {
+        checker.reachability_visit_cache[i] = null;
+        i = i + 1;
+    }
+    checker.reachability_visit_count = 0;
 }
 
 fn checker_is_function_reachable(checker: &TypeChecker, fn_decl: &ASTNode) i32 {

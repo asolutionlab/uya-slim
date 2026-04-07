@@ -28,6 +28,8 @@ const MAX_ASYNC_CALL_EDGES: i32 = 512;
 const MAX_FN_CALL_EDGES: i32 = 16384;
 const MAX_FN_ROOTS: i32 = 1024;
 const MAX_REACHABLE_FN_DECLS: i32 = 2048;
+const MAX_REACHABILITY_VISIT_SLOTS: i32 = 262144;
+const MAX_REACHABILITY_VISIT_MASK: usize = 262143;
 
 const SYMBOL_TABLE_SIZE: i32 = 32768;
 const FUNCTION_TABLE_SIZE: i32 = 2048;
@@ -332,4 +334,6 @@ struct TypeChecker {
     fn_root_count: i32,
     reachable_fn_decls: [&ASTNode: MAX_REACHABLE_FN_DECLS],
     reachable_fn_decl_count: i32,
+    reachability_visit_count: i32,
+    reachability_visit_cache: [&ASTNode: MAX_REACHABILITY_VISIT_SLOTS],
 }

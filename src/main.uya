@@ -1019,7 +1019,9 @@ fn seed_function_reachability_from_owned_method(checker: &TypeChecker, method: &
     }
     const saved_owner: &ASTNode = checker.current_function_decl;
     checker.current_function_decl = method;
-    checker_walk_reachability_node(checker, method.fn_decl_body);
+    // Owned-method fallback runs after checking, so keep it independent from the
+    // per-pass visited cache used to speed up ordinary reachability walks.
+    checker_walk_reachability_node_uncached(checker, method.fn_decl_body);
     checker.current_function_decl = saved_owner;
 }
 
@@ -2954,6 +2956,7 @@ fn compile_files(
     if checker.program_node != null && checker.program_node.type == ASTNodeType.AST_PROGRAM {
         merged_ast = checker.program_node;
     }
+    checker_reset_reachability_visit_cache(&checker);
     seed_function_reachability_roots(&checker, merged_ast);
     checker_compute_function_reachability(&checker);
     const debug_reach_env: *byte = getenv("UYA_DEBUG_REACHABILITY" as *byte);

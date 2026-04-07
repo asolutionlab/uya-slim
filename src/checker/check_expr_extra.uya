@@ -932,7 +932,7 @@ fn checker_maybe_add_direct_address_root(checker: &TypeChecker, expr: &ASTNode) 
     }
 }
 
-fn checker_walk_reachability_expr(checker: &TypeChecker, expr: &ASTNode) void {
+fn checker_walk_reachability_expr_impl(checker: &TypeChecker, expr: &ASTNode) void {
     if checker == null || expr == null {
         return;
     }
@@ -988,7 +988,7 @@ fn checker_walk_reachability_expr(checker: &TypeChecker, expr: &ASTNode) void {
     }
     if expr.type == ASTNodeType.AST_CATCH_EXPR {
         checker_walk_reachability_expr(checker, expr.catch_expr_operand);
-        checker_walk_reachability_expr(checker, expr.catch_expr_catch_block);
+        checker_walk_reachability_node(checker, expr.catch_expr_catch_block);
         return;
     }
     if expr.type == ASTNodeType.AST_MATCH_EXPR {
@@ -1091,11 +1091,24 @@ fn checker_walk_reachability_expr(checker: &TypeChecker, expr: &ASTNode) void {
     }
 }
 
+fn checker_walk_reachability_expr(checker: &TypeChecker, expr: &ASTNode) void {
+    if checker == null || expr == null {
+        return;
+    }
+    if checker_mark_reachability_node_visited(checker, expr) == 0 {
+        return;
+    }
+    checker_walk_reachability_expr_impl(checker, expr);
+}
+
 fn checker_walk_reachability_node(checker: &TypeChecker, node: &ASTNode) void {
     if checker == null || node == null {
         return;
     }
-    checker_walk_reachability_expr(checker, node);
+    if checker_mark_reachability_node_visited(checker, node) == 0 {
+        return;
+    }
+    checker_walk_reachability_expr_impl(checker, node);
 
     if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
         var i: i32 = 0;
@@ -1244,6 +1257,325 @@ fn checker_walk_reachability_node(checker: &TypeChecker, node: &ASTNode) void {
         while t < node.string_interp_segment_count {
             if node.string_interp_segments[t].is_text == 0 {
                 checker_walk_reachability_node(checker, node.string_interp_segments[t].expr);
+            }
+            t = t + 1;
+        }
+        return;
+    }
+}
+
+fn checker_walk_reachability_expr_uncached(checker: &TypeChecker, expr: &ASTNode) void {
+    if checker == null || expr == null {
+        return;
+    }
+    checker_maybe_add_direct_address_root(checker, expr);
+
+    if expr.type == ASTNodeType.AST_CALL_EXPR {
+        checker_record_reachable_call(checker, expr.call_expr_callee);
+        checker_walk_reachability_expr_uncached(checker, expr.call_expr_callee);
+        if expr.call_expr_args != null {
+            var i: i32 = 0;
+            while i < expr.call_expr_arg_count {
+                checker_walk_reachability_expr_uncached(checker, expr.call_expr_args[i]);
+                i = i + 1;
+            }
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
+        checker_walk_reachability_expr_uncached(checker, expr.member_access_object);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_ARRAY_ACCESS {
+        checker_walk_reachability_expr_uncached(checker, expr.array_access_array);
+        checker_walk_reachability_expr_uncached(checker, expr.array_access_index);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        checker_walk_reachability_expr_uncached(checker, expr.binary_expr_left);
+        checker_walk_reachability_expr_uncached(checker, expr.binary_expr_right);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_UNARY_EXPR {
+        checker_walk_reachability_expr_uncached(checker, expr.unary_expr_operand);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_CAST_EXPR {
+        checker_walk_reachability_expr_uncached(checker, expr.cast_expr_expr);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_SLICE_EXPR {
+        checker_walk_reachability_expr_uncached(checker, expr.slice_expr_base);
+        checker_walk_reachability_expr_uncached(checker, expr.slice_expr_start_expr);
+        checker_walk_reachability_expr_uncached(checker, expr.slice_expr_len_expr);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_AWAIT_EXPR {
+        checker_walk_reachability_expr_uncached(checker, expr.await_expr_operand);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_TRY_EXPR {
+        checker_walk_reachability_expr_uncached(checker, expr.try_expr_operand);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_CATCH_EXPR {
+        checker_walk_reachability_expr_uncached(checker, expr.catch_expr_operand);
+        checker_walk_reachability_node_uncached(checker, expr.catch_expr_catch_block);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_MATCH_EXPR {
+        checker_walk_reachability_expr_uncached(checker, expr.match_expr_expr);
+        if expr.match_expr_arms != null {
+            var j: i32 = 0;
+            while j < expr.match_expr_arm_count {
+                checker_walk_reachability_expr_uncached(checker, expr.match_expr_arms[j].result_expr);
+                j = j + 1;
+            }
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_STRUCT_INIT && expr.struct_init_field_values != null {
+        var k: i32 = 0;
+        while k < expr.struct_init_field_count {
+            checker_walk_reachability_expr_uncached(checker, expr.struct_init_field_values[k]);
+            k = k + 1;
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_ARRAY_LITERAL && expr.array_literal_elements != null {
+        var m: i32 = 0;
+        while m < expr.array_literal_element_count {
+            checker_walk_reachability_expr_uncached(checker, expr.array_literal_elements[m]);
+            m = m + 1;
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_TUPLE_LITERAL && expr.tuple_literal_elements != null {
+        var n: i32 = 0;
+        while n < expr.tuple_literal_element_count {
+            checker_walk_reachability_expr_uncached(checker, expr.tuple_literal_elements[n]);
+            n = n + 1;
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_STRING_INTERP && expr.string_interp_segments != null {
+        var si: i32 = 0;
+        while si < expr.string_interp_segment_count {
+            if expr.string_interp_segments[si].is_text == 0 {
+                checker_walk_reachability_expr_uncached(checker, expr.string_interp_segments[si].expr);
+            }
+            si = si + 1;
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_LEN {
+        checker_walk_reachability_expr_uncached(checker, expr.len_expr_array);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_SIZEOF && expr.sizeof_expr_is_type == 0 {
+        checker_walk_reachability_expr_uncached(checker, expr.sizeof_expr_target);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_ALIGNOF && expr.alignof_expr_is_type == 0 {
+        checker_walk_reachability_expr_uncached(checker, expr.alignof_expr_target);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_PTR_FROM_USIZE {
+        checker_walk_reachability_expr_uncached(checker, expr.ptr_from_usize_value);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_USIZE_FROM_PTR {
+        checker_walk_reachability_expr_uncached(checker, expr.usize_from_ptr_ptr);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_ERROR_ID {
+        checker_walk_reachability_expr_uncached(checker, expr.error_id_operand);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_SYSCALL {
+        checker_walk_reachability_expr_uncached(checker, expr.syscall_number);
+        if expr.syscall_args != null {
+            var sj: i32 = 0;
+            while sj < expr.syscall_arg_count {
+                checker_walk_reachability_expr_uncached(checker, expr.syscall_args[sj]);
+                sj = sj + 1;
+            }
+        }
+        return;
+    }
+    if expr.type == ASTNodeType.AST_VA_START {
+        checker_walk_reachability_expr_uncached(checker, expr.va_start_ap);
+        checker_walk_reachability_expr_uncached(checker, expr.va_start_last_param);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_VA_END {
+        checker_walk_reachability_expr_uncached(checker, expr.va_end_ap);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_VA_ARG {
+        checker_walk_reachability_expr_uncached(checker, expr.va_arg_ap);
+        return;
+    }
+    if expr.type == ASTNodeType.AST_VA_COPY {
+        checker_walk_reachability_expr_uncached(checker, expr.va_copy_dest);
+        checker_walk_reachability_expr_uncached(checker, expr.va_copy_src);
+        return;
+    }
+}
+
+fn checker_walk_reachability_node_uncached(checker: &TypeChecker, node: &ASTNode) void {
+    if checker == null || node == null {
+        return;
+    }
+    checker_walk_reachability_expr_uncached(checker, node);
+
+    if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
+        var i: i32 = 0;
+        while i < node.block_stmt_count {
+            checker_walk_reachability_node_uncached(checker, node.block_stmts[i]);
+            i = i + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_IF_STMT {
+        checker_walk_reachability_node_uncached(checker, node.if_stmt_condition);
+        checker_walk_reachability_node_uncached(checker, node.if_stmt_then_branch);
+        checker_walk_reachability_node_uncached(checker, node.if_stmt_else_branch);
+        return;
+    }
+    if node.type == ASTNodeType.AST_WHILE_STMT {
+        checker_walk_reachability_node_uncached(checker, node.while_stmt_condition);
+        checker_walk_reachability_node_uncached(checker, node.while_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_FOR_STMT {
+        checker_walk_reachability_node_uncached(checker, node.for_stmt_range_start);
+        checker_walk_reachability_node_uncached(checker, node.for_stmt_range_end);
+        checker_walk_reachability_node_uncached(checker, node.for_stmt_array);
+        checker_walk_reachability_node_uncached(checker, node.for_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_VAR_DECL {
+        checker_walk_reachability_node_uncached(checker, node.var_decl_init);
+        return;
+    }
+    if node.type == ASTNodeType.AST_EXTERN_VAR_DECL {
+        checker_walk_reachability_node_uncached(checker, node.extern_var_decl_init_expr);
+        return;
+    }
+    if node.type == ASTNodeType.AST_DESTRUCTURE_DECL {
+        checker_walk_reachability_node_uncached(checker, node.destructure_decl_init);
+        return;
+    }
+    if node.type == ASTNodeType.AST_RETURN_STMT {
+        checker_walk_reachability_node_uncached(checker, node.return_stmt_expr);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ASSIGN {
+        checker_walk_reachability_node_uncached(checker, node.assign_dest);
+        checker_walk_reachability_node_uncached(checker, node.assign_src);
+        return;
+    }
+    if node.type == ASTNodeType.AST_DEFER_STMT {
+        checker_walk_reachability_node_uncached(checker, node.defer_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ERRDEFER_STMT {
+        checker_walk_reachability_node_uncached(checker, node.errdefer_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_TEST_STMT {
+        checker_walk_reachability_node_uncached(checker, node.test_stmt_body);
+        return;
+    }
+    if node.type == ASTNodeType.AST_AWAIT_EXPR {
+        checker_walk_reachability_node_uncached(checker, node.await_expr_operand);
+        return;
+    }
+    if node.type == ASTNodeType.AST_CATCH_EXPR {
+        checker_walk_reachability_node_uncached(checker, node.catch_expr_operand);
+        checker_walk_reachability_node_uncached(checker, node.catch_expr_catch_block);
+        return;
+    }
+    if node.type == ASTNodeType.AST_MATCH_EXPR && node.match_expr_arms != null {
+        checker_walk_reachability_node_uncached(checker, node.match_expr_expr);
+        var j: i32 = 0;
+        while j < node.match_expr_arm_count {
+            checker_walk_reachability_node_uncached(checker, node.match_expr_arms[j].result_expr);
+            j = j + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_TUPLE_LITERAL && node.tuple_literal_elements != null {
+        var k: i32 = 0;
+        while k < node.tuple_literal_element_count {
+            checker_walk_reachability_node_uncached(checker, node.tuple_literal_elements[k]);
+            k = k + 1;
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_PRINT || node.type == ASTNodeType.AST_PRINTLN {
+        checker_walk_reachability_node_uncached(checker, node.print_expr);
+        return;
+    }
+    if node.type == ASTNodeType.AST_LEN {
+        checker_walk_reachability_node_uncached(checker, node.len_expr_array);
+        return;
+    }
+    if node.type == ASTNodeType.AST_SIZEOF && node.sizeof_expr_is_type == 0 {
+        checker_walk_reachability_node_uncached(checker, node.sizeof_expr_target);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ALIGNOF && node.alignof_expr_is_type == 0 {
+        checker_walk_reachability_node_uncached(checker, node.alignof_expr_target);
+        return;
+    }
+    if node.type == ASTNodeType.AST_PTR_FROM_USIZE {
+        checker_walk_reachability_node_uncached(checker, node.ptr_from_usize_value);
+        return;
+    }
+    if node.type == ASTNodeType.AST_USIZE_FROM_PTR {
+        checker_walk_reachability_node_uncached(checker, node.usize_from_ptr_ptr);
+        return;
+    }
+    if node.type == ASTNodeType.AST_ERROR_ID {
+        checker_walk_reachability_node_uncached(checker, node.error_id_operand);
+        return;
+    }
+    if node.type == ASTNodeType.AST_SYSCALL {
+        checker_walk_reachability_node_uncached(checker, node.syscall_number);
+        if node.syscall_args != null {
+            var s: i32 = 0;
+            while s < node.syscall_arg_count {
+                checker_walk_reachability_node_uncached(checker, node.syscall_args[s]);
+                s = s + 1;
+            }
+        }
+        return;
+    }
+    if node.type == ASTNodeType.AST_VA_START {
+        checker_walk_reachability_node_uncached(checker, node.va_start_ap);
+        checker_walk_reachability_node_uncached(checker, node.va_start_last_param);
+        return;
+    }
+    if node.type == ASTNodeType.AST_VA_END {
+        checker_walk_reachability_node_uncached(checker, node.va_end_ap);
+        return;
+    }
+    if node.type == ASTNodeType.AST_VA_ARG {
+        checker_walk_reachability_node_uncached(checker, node.va_arg_ap);
+        return;
+    }
+    if node.type == ASTNodeType.AST_VA_COPY {
+        checker_walk_reachability_node_uncached(checker, node.va_copy_dest);
+        checker_walk_reachability_node_uncached(checker, node.va_copy_src);
+        return;
+    }
+    if node.type == ASTNodeType.AST_STRING_INTERP && node.string_interp_segments != null {
+        var t: i32 = 0;
+        while t < node.string_interp_segment_count {
+            if node.string_interp_segments[t].is_text == 0 {
+                checker_walk_reachability_node_uncached(checker, node.string_interp_segments[t].expr);
             }
             t = t + 1;
         }
