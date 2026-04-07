@@ -72,6 +72,27 @@ test "pt_map_and_translate" {
     try assert_eq_i32(result.offset as i32, 16);
 }
 
+test "pt_map_code_sets_executable_permissions" {
+    var pt: PageTable = PageTable{ entries: [] };
+    pt_init(&pt);
+
+    try pt_map_code(&pt, 0, 7);
+
+    const pte: u32 = pt.entries[0];
+    var has_r: i32 = 0;
+    var has_x: i32 = 0;
+    var has_u: i32 = 0;
+    var has_w: i32 = 0;
+    if (pte & PTE_R) != 0 { has_r = 1; }
+    if (pte & PTE_X) != 0 { has_x = 1; }
+    if (pte & PTE_U) != 0 { has_u = 1; }
+    if (pte & PTE_W) != 0 { has_w = 1; }
+    try assert_eq_i32(has_r, 1);
+    try assert_eq_i32(has_x, 1);
+    try assert_eq_i32(has_u, 1);
+    try assert_eq_i32(has_w, 0);
+}
+
 test "translate_unmapped_page_faults" {
     var pt: PageTable = PageTable{ entries: [] };
     pt_init(&pt);

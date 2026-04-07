@@ -92,6 +92,10 @@ export fn pt_map(pt: &PageTable, vpn: u32, ppn: u32, flags: u32) !void {
     pt.entries[vpn] = pte_make(ppn, flags | PTE_V);
 }
 
+export fn pt_map_code(pt: &PageTable, vpn: u32, ppn: u32) !void {
+    try pt_map(pt, vpn, ppn, PTE_R | PTE_X | PTE_U);
+}
+
 // 取消映射
 export fn pt_unmap(pt: &PageTable, vpn: u32) void {
     if vpn >= @len(pt.entries) { return; }

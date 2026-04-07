@@ -2040,8 +2040,23 @@ fn infer_syscall(checker: &TypeChecker, expr: &ASTNode) Type {
         return make_void_type();
     }
     
-    // 2. 检查参数（最多 6 个）
-    if expr.syscall_arg_count > 6 {
+    // 2. 检查参数
+    // microapp 态下，用户源码的 @syscall 只允许走微容器 host API（syscall(number, arg1, arg2)）
+    // 但标准库里仍有 Linux syscall 包装需要保留更长的参数列表，因此这里按源文件分流。
+    var is_library_source: i32 = 0;
+    if expr.filename != null {
+        if strstr(expr.filename as *byte, "/lib/" as *byte) != null {
+            is_library_source = 1;
+        }
+        if strncmp(expr.filename as *byte, "lib/" as *byte, 4) == 0 {
+            is_library_source = 1;
+        }
+    }
+    if checker.container_mode != 0 && is_library_source == 0 && expr.syscall_arg_count > 2 {
+        checker_report_error(checker, expr, "microapp 模式下用户代码 @syscall 最多支持 2 个参数" as &byte);
+        return make_void_type();
+    }
+    if checker.container_mode == 0 && expr.syscall_arg_count > 6 {
         checker_report_error(checker, expr, "@syscall 最多支持 6 个参数" as &byte);
         return make_void_type();
     }

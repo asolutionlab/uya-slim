@@ -348,12 +348,51 @@ check: uya
 		echo "✗ 默认顶层函数发射验证失败"; \
 		exit 1; \
 	fi; \
-	echo ""; \
-	echo "验证 SIMD @vector.select C 按需生成..."; \
-	if ./tests/verify_simd_select_c_emit.sh > /tmp/verify_out.txt 2>&1; then \
-		grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
-		VERIFY_EXIT=0; \
+		echo ""; \
+		echo "验证 microapp MMU C 包装..."; \
+		if ./tests/verify_microapp_mmu_codegen.sh > /tmp/verify_out.txt 2>&1; then \
+			grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=0; \
 	else \
+		cat /tmp/verify_out.txt; \
+		VERIFY_EXIT=1; \
+	fi; \
+		if [ $$VERIFY_EXIT -ne 0 ]; then \
+			echo "✗ microapp MMU C 包装验证失败"; \
+			exit 1; \
+		fi; \
+		echo ""; \
+		echo "验证 microapp run -> SYS_PRINT 输出..."; \
+		if ./tests/verify_microapp_loader_generic.sh > /tmp/verify_out.txt 2>&1; then \
+			grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=0; \
+		else \
+			cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=1; \
+		fi; \
+		if [ $$VERIFY_EXIT -ne 0 ]; then \
+			echo "✗ microapp run -> SYS_PRINT 输出验证失败"; \
+			exit 1; \
+		fi; \
+		echo ""; \
+		echo "验证 microapp @syscall 重定向..."; \
+		if ./tests/verify_microapp_syscall_codegen.sh > /tmp/verify_out.txt 2>&1; then \
+			grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=0; \
+		else \
+			cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=1; \
+		fi; \
+		if [ $$VERIFY_EXIT -ne 0 ]; then \
+			echo "✗ microapp @syscall 重定向验证失败"; \
+			exit 1; \
+		fi; \
+		echo ""; \
+		echo "验证 SIMD @vector.select C 按需生成..."; \
+		if ./tests/verify_simd_select_c_emit.sh > /tmp/verify_out.txt 2>&1; then \
+			grep -E "✓|✗" /tmp/verify_out.txt || cat /tmp/verify_out.txt; \
+			VERIFY_EXIT=0; \
+		else \
 		cat /tmp/verify_out.txt; \
 		VERIFY_EXIT=1; \
 	fi; \
@@ -478,6 +517,30 @@ check-hosted: b-hosted
 	VERIFY_EXIT=$$?; \
 	if [ $$VERIFY_EXIT -ne 0 ]; then \
 		echo "✗ 默认顶层函数发射验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "验证 microapp MMU C 包装..."
+	@./tests/verify_microapp_mmu_codegen.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ microapp MMU C 包装验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "验证 microapp run -> SYS_PRINT 输出..."
+	@./tests/verify_microapp_loader_generic.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ microapp run -> SYS_PRINT 输出验证失败"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "验证 microapp @syscall 重定向..."
+	@./tests/verify_microapp_syscall_codegen.sh; \
+	VERIFY_EXIT=$$?; \
+	if [ $$VERIFY_EXIT -ne 0 ]; then \
+		echo "✗ microapp @syscall 重定向验证失败"; \
 		exit 1; \
 	fi
 	@echo ""

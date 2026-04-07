@@ -25,6 +25,40 @@ fn c99_want_profile_codegen() i32 {
     return 1;
 }
 
+fn emit_microapp_syscall_helpers(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.emit_stream == null {
+        return;
+    }
+    fputs("// microapp syscall host shim（microcontainer ABI：SYS_PRINT/SYS_ALLOC/SYS_IO/SYS_YIELD）\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int64_t write_stdout_bytes(const char *buf, size_t n);\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int posix_memalign(void **memptr, size_t alignment, size_t size);\n" as *byte, codegen.emit_stream as *void);
+    fputs("extern int sched_yield(void);\n" as *byte, codegen.emit_stream as *void);
+    fputs("enum { UYA_MICROAPP_SYS_PRINT = 1U, UYA_MICROAPP_SYS_ALLOC = 2U, UYA_MICROAPP_SYS_IO = 3U, UYA_MICROAPP_SYS_YIELD = 4U };\n" as *byte, codegen.emit_stream as *void);
+    fputs("static inline long uya_microapp_syscall2(long nr, long a1, long a2) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    switch ((unsigned long)nr) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    case UYA_MICROAPP_SYS_PRINT:\n" as *byte, codegen.emit_stream as *void);
+    fputs("        if (a2 == 0) { return 0; }\n" as *byte, codegen.emit_stream as *void);
+    fputs("        return (long)write_stdout_bytes((const char *)((uintptr_t)a1), (size_t)a2);\n" as *byte, codegen.emit_stream as *void);
+    fputs("    case UYA_MICROAPP_SYS_ALLOC: {\n" as *byte, codegen.emit_stream as *void);
+    fputs("        if (a2 != 0) { return -1; }\n" as *byte, codegen.emit_stream as *void);
+    fputs("        if (a1 <= 0) { a1 = 1; }\n" as *byte, codegen.emit_stream as *void);
+    fputs("        const size_t _uya_microapp_alloc_size = (((size_t)a1 + 65535U) & ~((size_t)65535U));\n" as *byte, codegen.emit_stream as *void);
+    fputs("        void *_uya_microapp_alloc_ptr = (void *)0;\n" as *byte, codegen.emit_stream as *void);
+    fputs("        if (posix_memalign(&_uya_microapp_alloc_ptr, 65536U, _uya_microapp_alloc_size) != 0) { return -1; }\n" as *byte, codegen.emit_stream as *void);
+    fputs("        return (long)(uintptr_t)_uya_microapp_alloc_ptr;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    }\n" as *byte, codegen.emit_stream as *void);
+    fputs("    case UYA_MICROAPP_SYS_IO:\n" as *byte, codegen.emit_stream as *void);
+    fputs("        return -1;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    case UYA_MICROAPP_SYS_YIELD:\n" as *byte, codegen.emit_stream as *void);
+    fputs("        return sched_yield() == 0 ? 0 : -1;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    default:\n" as *byte, codegen.emit_stream as *void);
+    fputs("        return -1;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    }\n" as *byte, codegen.emit_stream as *void);
+    fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+    fputs("static inline long uya_microapp_syscall1(long nr, long a1) { return uya_microapp_syscall2(nr, a1, 0); }\n" as *byte, codegen.emit_stream as *void);
+    fputs("static inline long uya_microapp_syscall0(long nr) { return uya_microapp_syscall2(nr, 0, 0); }\n\n" as *byte, codegen.emit_stream as *void);
+}
+
 // 递归收集标准库函数调用，设置相应的标志
 fn collect_stdlib_functions_from_node(codegen: &C99CodeGenerator, node: &ASTNode) void {
     if codegen == null || node == null {
@@ -1759,6 +1793,15 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("    const unsigned char *a = (const unsigned char *)s1, *b = (const unsigned char *)s2;\n" as *byte, codegen.emit_stream as *void);
         fputs("    for (size_t i = 0; i < n; i++) { if (a[i] != b[i]) return a[i] - b[i]; } return 0;\n" as *byte, codegen.emit_stream as *void);
         fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+        if codegen.container_mode != 0 {
+            fputs("// microapp MMU translation hook（当前先保留为 no-op，后续接真实页表翻译）\n" as *byte, codegen.emit_stream as *void);
+            fputs("enum { UYA_MMU_ACCESS_R = 1U, UYA_MMU_ACCESS_W = 2U, UYA_MMU_ACCESS_X = 4U };\n" as *byte, codegen.emit_stream as *void);
+            fputs("static inline void *uya_mmu_translate(void *addr, size_t size, unsigned int access) {\n" as *byte, codegen.emit_stream as *void);
+            fputs("    (void)size;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    (void)access;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    return addr;\n" as *byte, codegen.emit_stream as *void);
+            fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+        }
     }
 
     // --nostdlib 模式：生成 _start 入口和辅助函数
@@ -1795,6 +1838,15 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         fputs("    for (unsigned long i = 0; i < len; i++) out[i] = digits[len - 1 - i];\n" as *byte, codegen.emit_stream as *void);
         fputs("    (void)uya_write(1, out, len);\n" as *byte, codegen.emit_stream as *void);
         fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+        if codegen.container_mode != 0 {
+            fputs("// microapp MMU translation hook（当前先保留为 no-op，后续接真实页表翻译）\n" as *byte, codegen.emit_stream as *void);
+            fputs("enum { UYA_MMU_ACCESS_R = 1U, UYA_MMU_ACCESS_W = 2U, UYA_MMU_ACCESS_X = 4U };\n" as *byte, codegen.emit_stream as *void);
+            fputs("static inline void *uya_mmu_translate(void *addr, size_t size, unsigned int access) {\n" as *byte, codegen.emit_stream as *void);
+            fputs("    (void)size;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    (void)access;\n" as *byte, codegen.emit_stream as *void);
+            fputs("    return addr;\n" as *byte, codegen.emit_stream as *void);
+            fputs("}\n\n" as *byte, codegen.emit_stream as *void);
+        }
 
         // 仅在未引入完整 libc 运行时时，补齐 --nostdlib 基础符号
         // 避免与 lib/libc/stdio.uya、lib/libc/heap.uya 的实现重复定义
@@ -2396,8 +2448,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                 }
             }
         }
-        fputs("// 系统调用辅助函数：Linux x86-64（syscall）；AArch64（svc 0，x8/x0-x5）；ARM32 EABI（svc 0，r7 + 临时保存，r0-r5 参数）\n" as *byte, codegen.emit_stream as *void);
-        fputs("#if defined(__x86_64__) || defined(_M_X64)\n" as *byte, codegen.emit_stream as *void);
+        if codegen.container_mode != 0 {
+            emit_microapp_syscall_helpers(codegen);
+        }
+            fputs("// 系统调用辅助函数：Linux x86-64（syscall）；AArch64（svc 0，x8/x0-x5）；ARM32 EABI（svc 0，r7 + 临时保存，r0-r5 参数）\n" as *byte, codegen.emit_stream as *void);
+            fputs("#if defined(__x86_64__) || defined(_M_X64)\n" as *byte, codegen.emit_stream as *void);
     
     // uya_syscall0 - 无参数
     fputs("static inline long uya_syscall0(long nr) {\n" as *byte, codegen.emit_stream as *void);

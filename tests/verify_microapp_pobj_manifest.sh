@@ -32,11 +32,13 @@ code_len = int.from_bytes(data[28:32], "little")
 rodata_len = int.from_bytes(data[32:36], "little")
 reloc_count = int.from_bytes(data[36:40], "little")
 assert code_len > 0, code_len
-assert rodata_len == 0, rodata_len
+assert rodata_len > 0, rodata_len
 assert reloc_count == 0, reloc_count
 assert data[40:40 + len(source_path)] == source_path, data[40:40 + len(source_path)]
 code_off = 40 + len(source_path)
-assert len(data) == code_off + code_len, (len(data), code_off, code_len)
+rodata_off = code_off + code_len
+assert len(data) == rodata_off + rodata_len, (len(data), rodata_off, rodata_len)
+assert b"hello microapp" in data[rodata_off:rodata_off + rodata_len], data[rodata_off:rodata_off + rodata_len]
 PY
 
 echo "microapp pobj manifest ok"

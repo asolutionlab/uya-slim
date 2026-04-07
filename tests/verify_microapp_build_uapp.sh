@@ -27,10 +27,11 @@ entry_offset = int.from_bytes(data[12:16], "little")
 build_mode = data[64]
 target_arch = data[65]
 assert code_size > 0, code_size
-assert rodata_size == 0, rodata_size
+assert rodata_size > 0, rodata_size
 assert entry_offset == 0, entry_offset
 assert build_mode == 1, build_mode
 assert target_arch == 2, target_arch
+assert b"hello microapp" in data[96 + code_size:96 + code_size + rodata_size]
 PY
 
 echo "microapp build-to-uapp ok"

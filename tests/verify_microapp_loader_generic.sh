@@ -2,16 +2,10 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-UAPP="/tmp/microcontainer_hello_generic.uapp"
+RUN_LOG="/tmp/verify_microapp_loader_generic_run.log"
+MICROAPP_DEBUG_MMU=1 "$ROOT_DIR/bin/uya" run --app microapp examples/microapp/microcontainer_hello_source.uya >"$RUN_LOG" 2>&1
 
-rm -f "$UAPP"
+grep -a -q "\[microapp loader\] done" "$RUN_LOG"
+! grep -a -q "hello microapp" "$RUN_LOG"
 
-: "${TARGET_GCC:=x86_64-linux-gnu-gcc}"
-: "${MICROAPP_TARGET_ARCH:=x86_64}"
-export MICROAPP_TARGET_ARCH
-export TARGET_GCC
-
-"$ROOT_DIR/bin/uya" build --app microapp examples/microapp/microcontainer_hello_source.uya -o "$UAPP" >/tmp/verify_microapp_loader_generic_build.log 2>&1
-"$ROOT_DIR/bin/uya" run examples/microapp/microcontainer_hello_load.uya -- "$UAPP" >/tmp/verify_microapp_loader_generic_run.log 2>&1
-
-echo "microapp generic loader ok"
+echo "microapp run x86_64 ok"

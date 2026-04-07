@@ -268,7 +268,7 @@ fn resolve_microapp_target_gcc(target_arch_raw: u32, buffer: &byte, buffer_size:
     return get_env_or_default("CC" as *byte, "cc" as *byte);
 }
 
-fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, target_arch_raw: u32) i32 {
+fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, rodata_bin_path: &byte, target_arch_raw: u32) i32 {
     var gcc_buf: [byte: PATH_MAX] = [];
     const gcc: &byte = resolve_microapp_target_gcc(target_arch_raw, &gcc_buf[0] as &byte, PATH_MAX);
     const target_triple: &byte = microapp_target_default_triple(target_arch_raw);
@@ -325,6 +325,18 @@ fn build_microapp_text_from_c(c_file: &byte, text_bin_path: &byte, target_arch_r
         fprintf(libc.stderr, "错误: microapp 目标 gcc .text 导出失败，返回码：%d\n" as *byte, result);
         return 1;
     }
+
+    const rodata_len: i32 = snprintf(&cmd[0] as *byte, 8192, "%s -O binary --only-section=.rodata %s %s" as *byte, objcopy_env as *byte, &exe_path[0] as *byte, rodata_bin_path as *byte);
+    if rodata_len <= 0 || rodata_len >= 8192 {
+        fprintf(libc.stderr, "错误: 无法生成 microapp 只读段导出命令\n" as *byte);
+        return 1;
+    }
+    fprintf(libc.stderr, "信息：microapp 目标 gcc 导出 .rodata：%s\n" as *byte, &cmd[0] as *byte);
+    result = system(&cmd[0] as *byte);
+    if result != 0 {
+        fprintf(libc.stderr, "错误: microapp 目标 gcc .rodata 导出失败，返回码：%d\n" as *byte, result);
+        return 1;
+    }
     return 0;
 }
 
@@ -337,12 +349,18 @@ fn write_microapp_payload_obj(
     const source_len: u32 = source_len_tmp.value;
     const target_arch_raw: u32 = resolve_microapp_target_arch_raw();
     var text_bin_path: [byte: PATH_MAX] = [];
+    var rodata_bin_path: [byte: PATH_MAX] = [];
     const text_len_path: i32 = snprintf(&text_bin_path[0] as *byte, PATH_MAX, "%s.text.bin" as *byte, output_path as *byte);
     if text_len_path <= 0 || text_len_path >= PATH_MAX {
         fprintf(libc.stderr, "错误: 无法生成 microapp 代码段路径\n" as *byte);
         return 1;
     }
-    if build_microapp_text_from_c(c_file, &text_bin_path[0] as &byte, target_arch_raw) != 0 {
+    const rodata_len_path: i32 = snprintf(&rodata_bin_path[0] as *byte, PATH_MAX, "%s.rodata.bin" as *byte, output_path as *byte);
+    if rodata_len_path <= 0 || rodata_len_path >= PATH_MAX {
+        fprintf(libc.stderr, "错误: 无法生成 microapp 只读段路径\n" as *byte);
+        return 1;
+    }
+    if build_microapp_text_from_c(c_file, &text_bin_path[0] as &byte, &rodata_bin_path[0] as &byte, target_arch_raw) != 0 {
         return 1;
     }
     const code_len_raw: i32 = read_file_content(&text_bin_path[0] as &byte, &file_buffer[0], FILE_BUFFER_SIZE as usize);
@@ -352,6 +370,13 @@ fn write_microapp_payload_obj(
     }
     const code_len_tmp: !u32 = code_len_raw as! u32;
     const code_len: u32 = code_len_tmp.value;
+    const rodata_len_raw: i32 = read_file_content(&rodata_bin_path[0] as &byte, &microapp_rodata_buffer[0], FILE_BUFFER_SIZE as usize);
+    if rodata_len_raw < 0 {
+        fprintf(libc.stderr, "错误: 无法读取 microapp 目标 gcc 只读段 '%s'\n" as *byte, &rodata_bin_path[0] as *byte);
+        return 1;
+    }
+    const rodata_len_tmp: !u32 = rodata_len_raw as! u32;
+    const rodata_len: u32 = rodata_len_tmp.value;
     const fp: &FILE = fopen(output_path as *byte, "wb" as *byte);
     if fp == null {
         fprintf(libc.stderr, "错误: 无法打开输出文件 '%s'\n" as *byte, output_path as *byte);
@@ -361,7 +386,6 @@ fn write_microapp_payload_obj(
     const magic: u32 = 0x4A424F50;  // "POBJ"
     const version: u16 = POBJ_VERSION;
     const flags: u16 = 0;
-    const rodata_len: u32 = 0u32;
     const reloc_count: u32 = 0u32;
     const required_caps: u32 = 0u32;
     const entry_offset: u32 = 0u32;
@@ -380,6 +404,7 @@ fn write_microapp_payload_obj(
     w32_file(fp, reloc_count);
     _ = fwrite(source_path as *void, 1 as usize, source_len as usize, fp);
     _ = fwrite(&file_buffer[0] as *void, 1 as usize, code_len as usize, fp);
+    _ = fwrite(&microapp_rodata_buffer[0] as *void, 1 as usize, rodata_len as usize, fp);
     fclose(fp);
     return 0;
 }
@@ -487,6 +512,7 @@ fn pack_microapp_pobj_to_uapp(pobj_path: &byte, out_path: &byte) i32 {
 // 全局缓冲区（替代 C 的 static 数组，零初始化）
 var arena_buffer: [byte: ARENA_BUFFER_SIZE] = [];
 var file_buffer: [byte: FILE_BUFFER_SIZE] = [];
+var microapp_rodata_buffer: [byte: FILE_BUFFER_SIZE] = [];
 var microapp_pack_output_buffer: [byte: FILE_BUFFER_SIZE + 512] = [];
 // 临时 Arena 缓冲区（用于依赖收集，全局变量避免栈溢出）
 // v2.0: 动态增长，初始 16MB
@@ -1169,17 +1195,13 @@ fn host_fill_temp_microapp_loader_path(buf: &byte, cap: usize, exe_suffix: &byte
     return -1;
 }
 
-fn host_run_microapp_loader(loader_exe: &byte, uapp_path: &byte, native_exe_path: &byte) i32 {
+fn host_run_microapp_loader(loader_exe: &byte, uapp_path: &byte) i32 {
     if loader_exe == null || uapp_path == null {
         return 1;
     }
     var cmd: [byte: 4096] = [];
     var cmd_len: i32 = 0;
-    if native_exe_path != null && native_exe_path[0] != 0 {
-        cmd_len = snprintf(&cmd[0] as *byte, 4096, "\"%s\" \"%s\" \"%s\"" as *byte, loader_exe as *byte, uapp_path as *byte, native_exe_path as *byte);
-    } else {
-        cmd_len = snprintf(&cmd[0] as *byte, 4096, "\"%s\" \"%s\"" as *byte, loader_exe as *byte, uapp_path as *byte);
-    }
+    cmd_len = snprintf(&cmd[0] as *byte, 4096, "\"%s\" \"%s\"" as *byte, loader_exe as *byte, uapp_path as *byte);
     if cmd_len <= 0 || cmd_len >= 4096 {
         fprintf(libc.stderr, "错误：无法生成微容器运行命令\n" as *byte);
         return 1;
@@ -3229,6 +3251,14 @@ export fn main() i32 {
         output_file_index = -2;  // 标记为自动生成的路径
         backend = BackendType.BACKEND_C99;  // run/test 模式默认使用 C99 后端
     }
+
+    // microapp run/test 需要单文件 C 产物，payload 后处理阶段要直接编译这个文件
+    // 不能落到默认 split-c，否则 auto_output_path 只是一个占位路径，后续打包会找不到 C 文件。
+    if (g_app_mode_microapp != 0 && (command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST)) {
+        g_split_c_dir_active = 0;
+        g_split_c_disabled_cli = 1;
+        g_split_c_dir[0] = 0 as byte;
+    }
     
     // build 命令：如果指定了非 .c 输出，需要生成临时 C 文件
     var user_output_path: *byte = null;  // 用户指定的输出路径（用于宿主工具链链接）
@@ -3325,7 +3355,6 @@ export fn main() i32 {
         if pack_result != 0 {
             return pack_result;
         }
-
         fprintf(libc.stderr, "=== microapp run: 编译 loader ===\n" as *byte);
         var loader_exe_path: [byte: PATH_MAX] = [];
         if host_fill_temp_microapp_loader_path(&loader_exe_path[0], PATH_MAX, get_target_exe_suffix()) != 0 {
@@ -3348,7 +3377,7 @@ export fn main() i32 {
             return 1;
         }
         fprintf(libc.stderr, "=== microapp run: 运行 loader ===\n" as *byte);
-        const run_result: i32 = host_run_microapp_loader(&loader_exe_path[0] as &byte, &microapp_uapp_path[0] as &byte, null);
+        const run_result: i32 = host_run_microapp_loader(&loader_exe_path[0] as &byte, &microapp_uapp_path[0] as &byte);
         const child_exit: i32 = exit_code_from_system_status(run_result);
         if child_exit != 0 {
             fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, child_exit);

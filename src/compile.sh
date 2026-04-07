@@ -464,6 +464,15 @@ if grep -q "^use " "$MAIN_FILE" 2>/dev/null; then
     fi
 fi
 
+# 自举编译器自身时，自动依赖可能漏掉 codegen/c99 子模块；
+# 通过环境变量强制走手动文件列表，保证按固定顺序编译完整源码树。
+if [ "${UYA_FORCE_MANUAL_DEPS:-0}" = "1" ] || [ "${UYA_FORCE_MANUAL_DEPS:-false}" = "true" ]; then
+    USE_AUTO_DEPS=false
+    if [ "$VERBOSE" = true ]; then
+        echo -e "${GREEN}检测到 UYA_FORCE_MANUAL_DEPS，使用手动文件列表模式${NC}"
+    fi
+fi
+
 if [ "$USE_AUTO_DEPS" = true ]; then
     # 使用自动依赖收集模式
     # 编译器会自动：
@@ -481,8 +490,30 @@ else
         "extern_decls.uya"
         "ast.uya"
         "lexer.uya"
-        "parser.uya"
-        "checker.uya"
+        "parser/declarations.uya"
+        "parser/expressions.uya"
+        "parser/primary.uya"
+        "parser/statements.uya"
+        "parser/types.uya"
+        "parser/main.uya"
+        "checker/types.uya"
+        "checker/symbols.uya"
+        "checker/lookup.uya"
+        "checker/interval.uya"
+        "checker/type_accessors.uya"
+        "checker/type_utils.uya"
+        "checker/type_from_ast.uya"
+        "checker/proof.uya"
+        "checker/generics.uya"
+        "checker/modules.uya"
+        "checker/macro_expand.uya"
+        "checker/optimizer.uya"
+        "checker/check_expr.uya"
+        "checker/check_expr_extra.uya"
+        "checker/check_call.uya"
+        "checker/check_node_extra.uya"
+        "checker/check_stmt.uya"
+        "checker/main.uya"
     )
 
     # 根据后端类型添加相应的 codegen 模块
@@ -1022,4 +1053,3 @@ else
     
     exit $EXIT_CODE
 fi
-

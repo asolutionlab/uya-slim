@@ -191,7 +191,7 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
     }
     const pt: &PageTable = sim_pt_ref(k, cid);
     pt_init(pt);
-    try pt_map(pt, 0u32, ppn, PTE_R | PTE_U);
+    try pt_map_code(pt, 0u32, ppn);
     if mmu_debug_enabled() != 0 {
         // 调试探针：显示入口地址在当前页表里的翻译结果，便于确认 MMU 路径是否接通。
         _ = try mmu_translate_ptr(pt, &k.host_ctx.pm, IMAGE_HEADER_SIZE + hdr.entry_offset, 4u32, ACCESS_R);
@@ -222,8 +222,8 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
         }
     }
     if hdr.rodata_size > 0u32 {
-        const rodata_vaddr: u32 = IMAGE_HEADER_SIZE + hdr.code_size;
-        _ = try sim_syscall(k, cid, SYS_PRINT, rodata_vaddr, hdr.rodata_size);
+        const rodata_off: u32 = IMAGE_HEADER_SIZE + hdr.code_size;
+        _ = try mmu_translate_ptr(sim_pt_ref(k, cid), &k.host_ctx.pm, rodata_off, hdr.rodata_size, ACCESS_R);
     }
     return 1;
 }

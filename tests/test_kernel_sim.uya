@@ -4,6 +4,7 @@ use kernel.container;
 use kernel.dispatch;
 use kernel.errors;
 use kernel.image;
+use kernel.paging;
 use kernel.recovery;
 use kernel.scheduler;
 use kernel.sim;
@@ -209,4 +210,23 @@ test "sim_load_image_then_exit" {
     var is_empty: i32 = 0;
     if st == ContainerState.cs_empty { is_empty = 1; }
     try assert_eq_i32(is_empty, 1);
+}
+
+test "sim_load_image_print_rodata_sets_accessed_bit" {
+    var k: SimKernel = make_kernel();
+    sim_kernel_init(&k);
+    var backing: [byte: 65536] = [];
+    k.host_ctx.pm.base = &backing[0];
+    k.host_ctx.pm.size = 65536;
+    var img: [byte: 128] = [];
+    const img_len: u32 = build_sim_image(img[0: 128], 4u32);
+    try sim_load_image(&k, 0u32, 16u32, img[0: img_len as usize]);
+    const cid: u32 = try sim_tick_loaded(&k);
+    try assert_eq_i32(cid as i32, 0);
+
+    var has_a: i32 = 0;
+    if (k.host_ctx.pts[0].entries[0] & PTE_A) != 0 {
+        has_a = 1;
+    }
+    try assert_eq_i32(has_a, 1);
 }
