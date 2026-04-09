@@ -84,6 +84,23 @@ fn ssl_select_server_identity(ctx: &SslContext) void {
     ssl_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
 }
 
+fn ssl_server_identity_is_ready(ctx: &const SslContext) bool {
+    if ctx.server_identity_count == 0 {
+        return true;
+    }
+    if ctx.selected_server_identity >= ctx.server_identity_count {
+        return false;
+    }
+    const chosen: &SslServerIdentity = &ctx.server_identities[ctx.selected_server_identity];
+    if chosen.cert == null as &const Cert {
+        return false;
+    }
+    if chosen.rsa_key == null as &const RsaPrivateKey {
+        return false;
+    }
+    return true;
+}
+
 fn ssl_verify_peer_chain(ctx: &SslContext) void {
     if ctx.peer_leaf == null as &const Cert {
         return;
@@ -228,6 +245,9 @@ export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: 
     } else {
         status = handshake_server_step(ctx.hs, recv_buf, recv_len, send_buf, send_max, send_len_out);
         ssl_select_server_identity(ctx);
+        if status != HS_STATUS_ERROR && !ssl_server_identity_is_ready(ctx) {
+            status = HS_STATUS_ERROR;
+        }
     }
     ssl_sync_state(ctx);
     return status;
@@ -312,6 +332,23 @@ fn ssl13_select_server_identity(ctx: &SslContext13) void {
     ctx.selected_server_identity = selected;
     const chosen: &SslServerIdentity = &ctx.server_identities[selected];
     ssl13_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
+}
+
+fn ssl13_server_identity_is_ready(ctx: &const SslContext13) bool {
+    if ctx.server_identity_count == 0 {
+        return true;
+    }
+    if ctx.selected_server_identity >= ctx.server_identity_count {
+        return false;
+    }
+    const chosen: &SslServerIdentity = &ctx.server_identities[ctx.selected_server_identity];
+    if chosen.cert == null as &const Cert {
+        return false;
+    }
+    if chosen.rsa_key == null as &const RsaPrivateKey {
+        return false;
+    }
+    return true;
 }
 
 fn ssl13_verify_peer_chain(ctx: &SslContext13) void {
@@ -465,6 +502,9 @@ export fn ssl13_handshake_step(ctx: &SslContext13, recv_buf: &const byte, recv_l
     } else {
         status = handshake13_server_step(ctx.hs13, recv_buf, recv_len, send_buf, send_max, send_len_out);
         ssl13_select_server_identity(ctx);
+        if status != HS13_STATUS_ERROR && !ssl13_server_identity_is_ready(ctx) {
+            status = HS13_STATUS_ERROR;
+        }
     }
     ssl13_sync_state(ctx);
     return status;

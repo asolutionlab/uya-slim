@@ -8,6 +8,7 @@ use tls.ssl.context;
 use tls.common;
 use tls.x509.cert;
 use tls.x509.verify;
+use tls.crypto.rsa;
 
 fn test_handshake_mock_roundtrip() i32 {
     var client: HandshakeCtx = HandshakeCtx{};
@@ -318,12 +319,22 @@ fn test_server_sni_selects_identity() i32 {
 
     var host_a: [byte: 13] = [97, 46, 101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
     var host_b: [byte: 13] = [98, 46, 101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
+    var leaf_a: Cert = Cert{};
+    var key_a: RsaPrivateKey = RsaPrivateKey{};
+    var leaf_b: Cert = Cert{};
+    var key_b: RsaPrivateKey = RsaPrivateKey{};
     ssl_set_hostname(&ctx_c, &host_b[0], 13);
     ssl_server_add_identity(&ctx_s, &host_a[0], 13, &host_a[0], 13, &host_a[0], 13) catch {
         return 1;
     };
     ssl_server_add_identity(&ctx_s, &host_b[0], 13, &host_b[0], 13, &host_b[0], 13) catch {
         return 2;
+    };
+    ssl_server_set_identity_credentials(&ctx_s, 0, &leaf_a, &key_a) catch {
+        return 7;
+    };
+    ssl_server_set_identity_credentials(&ctx_s, 1, &leaf_b, &key_b) catch {
+        return 8;
     };
 
     var buf: [byte: 256] = [0:256];
@@ -340,6 +351,48 @@ fn test_server_sni_selects_identity() i32 {
         return 5;
     }
     if ctx_s.peer_san_len != 13 || ctx_s.peer_san[0] != 98 {
+        return 6;
+    }
+    return 0;
+}
+
+fn test_server_identity_requires_rsa_credentials() i32 {
+    var hs_c: HandshakeCtx = HandshakeCtx{};
+    var rec_c: RecordCtx = RecordCtx{};
+    var ctx_c: SslContext = SslContext{ role: HS_ROLE_CLIENT, hs: &hs_c, rec: &rec_c };
+    var hs_s: HandshakeCtx = HandshakeCtx{};
+    var rec_s: RecordCtx = RecordCtx{};
+    var ctx_s: SslContext = SslContext{ role: HS_ROLE_SERVER, hs: &hs_s, rec: &rec_s };
+    ssl_init(&ctx_c);
+    ssl_init(&ctx_s);
+
+    var host: [byte: 11] = [101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
+    ssl_set_hostname(&ctx_c, &host[0], 11);
+    ssl_server_add_identity(&ctx_s, &host[0], 11, &host[0], 11, &host[0], 11) catch {
+        return 1;
+    };
+
+    var buf: [byte: 256] = [0:256];
+    var len: usize = 0;
+    if ssl_handshake_step(&ctx_c, &buf[0], 0, &buf[0], 256, &len) != HS_STATUS_NEED_SEND {
+        return 2;
+    }
+    var snd: [byte: 256] = [0:256];
+    var snd_len: usize = 0;
+    if ssl_handshake_step(&ctx_s, &buf[0], len, &snd[0], 256, &snd_len) != HS_STATUS_ERROR {
+        return 3;
+    }
+
+    ssl_init(&ctx_s);
+    ssl_server_add_identity(&ctx_s, &host[0], 11, &host[0], 11, &host[0], 11) catch {
+        return 4;
+    };
+    var leaf: Cert = Cert{};
+    var key: RsaPrivateKey = RsaPrivateKey{};
+    ssl_server_set_identity_credentials(&ctx_s, 0, &leaf, &key) catch {
+        return 5;
+    };
+    if ssl_handshake_step(&ctx_s, &buf[0], len, &snd[0], 256, &snd_len) != HS_STATUS_NEED_SEND {
         return 6;
     }
     return 0;
@@ -369,6 +422,10 @@ export fn main() i32 {
     const f: i32 = test_server_sni_selects_identity();
     if f != 0 {
         return 500 + f;
+    }
+    const g: i32 = test_server_identity_requires_rsa_credentials();
+    if g != 0 {
+        return 600 + g;
     }
     return 0;
 }
