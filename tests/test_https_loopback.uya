@@ -1,0 +1,68 @@
+// test_https_loopback.uya - 最小 HTTPS 回环测试
+
+use tls.https;
+use libc.unistd;
+use libc.syscall;
+
+fn response_has_subslice(hay: &const byte, hay_len: usize, needle: &[byte]) bool {
+    if needle.len == 0 || hay_len < needle.len {
+        return false;
+    }
+    var i: usize = 0;
+    while i + needle.len <= hay_len {
+        var ok: bool = true;
+        var j: usize = 0;
+        while j < needle.len {
+            if hay[i + j] != needle.ptr[j] {
+                ok = false;
+                break;
+            }
+            j = j + 1;
+        }
+        if ok {
+            return true;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
+export fn main() i32 {
+    var host: [byte: 9] = [108, 111, 99, 97, 108, 104, 111, 115, 116];
+    var srv: HttpsServer = https_server_listen(&host[0], 9, 0) catch {
+        return 1;
+    };
+
+    const pid: i32 = fork();
+    if pid == 0 {
+        var resp: HttpsResponse = https_get(&host[0], 9, srv.port, &"/"[0: 1]) catch {
+            _exit(2);
+            return 2;
+        };
+        if resp.status != 200 {
+            _exit(3);
+            return 3;
+        }
+        if !response_has_subslice(&resp.response[0], resp.response_len, &"hello https"[0: 11]) {
+            _exit(4);
+            return 4;
+        }
+        _exit(0);
+        return 0;
+    }
+
+    https_server_serve_once(&srv, &"hello https"[0: 11]) catch {
+        https_server_close(&srv);
+        return 5;
+    };
+    https_server_close(&srv);
+
+    var st: i32 = 0;
+    _ = sys_waitpid(pid, &st, 0) catch {
+        return 6;
+    };
+    if ((st >> 8) & 0xff) != 0 {
+        return 10 + ((st >> 8) & 0xff);
+    }
+    return 0;
+}

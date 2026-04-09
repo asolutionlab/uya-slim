@@ -1,0 +1,24 @@
+// lib/tls/x509/store.uya - 最小信任锚装载
+
+use tls.x509.cert;
+use libc.syscall;
+
+const TRUST_ANCHOR_FILE_MAX: usize = 8192;
+
+export fn trust_anchor_from_der(der: &const byte, der_len: usize, cert_out: &Cert) !void {
+    try cert_parse(der, der_len, cert_out);
+}
+
+export fn trust_anchor_load_file(path: &const byte, cert_out: &Cert) !void {
+    const fd: i32 = try sys_open(path, O_RDONLY as i32, 0);
+    var buf: [byte: TRUST_ANCHOR_FILE_MAX] = [0:TRUST_ANCHOR_FILE_MAX];
+    const n: isize = sys_read(fd, &buf[0], TRUST_ANCHOR_FILE_MAX) catch {
+        _ = sys_close(fd) catch {};
+        return error.TlsBadInput;
+    };
+    _ = sys_close(fd) catch {};
+    if n <= 0 {
+        return error.TlsDecodeError;
+    }
+    try cert_parse(&buf[0], (n as! usize).value, cert_out);
+}

@@ -1,81 +1,256 @@
-// lib/tls/ssl/handshake.uya - TLS 握手（最小骨架：收发抽象与状态机占位）
-// 后续补全 ClientHello/ServerHello/Finished 与 PRF 密钥计算
+// lib/tls/ssl/handshake.uya - TLS 1.2 最小可运行握手
+// 目标不是完整 RFC 互操作，而是把占位状态机补成“真实消息流 + 已协商参数 + SNI 传递”的可测试闭环。
 
 use tls.common;
+use std.mem.mem.mem_copy;
+
+const HS_MSG_CLIENT_HELLO: byte = 1;
+const HS_MSG_SERVER_HELLO: byte = 2;
+const HS_MSG_CERTIFICATE: byte = 11;
+const HS_MSG_SERVER_KEY_EXCHANGE: byte = 12;
+const HS_MSG_SERVER_HELLO_DONE: byte = 14;
+const HS_MSG_CLIENT_KEY_EXCHANGE: byte = 16;
+const HS_MSG_FINISHED: byte = 20;
+
+const HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256: u16 = 0x009c;
+const HS_HOSTNAME_MAX: usize = 64;
+const HS_RANDOM_LEN: usize = 32;
 
 export const HS_STATUS_NEED_SEND: i32 = 0;
 export const HS_STATUS_NEED_RECV: i32 = 1;
 export const HS_STATUS_DONE: i32 = 2;
 export const HS_STATUS_ERROR: i32 = 3;
 
-export struct HandshakeCtx {
-    state: i32,
-    role: i32,
-}
-
 export const HS_ROLE_CLIENT: i32 = 0;
 export const HS_ROLE_SERVER: i32 = 1;
 
 export const HS_STATE_INIT: i32 = 0;
 export const HS_STATE_CLIENT_HELLO_SENT: i32 = 1;
-export const HS_STATE_SERVER_HELLO_SENT: i32 = 2;
-export const HS_STATE_DONE: i32 = 3;
+export const HS_STATE_SERVER_FLIGHT_SENT: i32 = 2;
+export const HS_STATE_CLIENT_FINISHED_SENT: i32 = 3;
+export const HS_STATE_DONE: i32 = 4;
+
+export struct HandshakeCtx {
+    state: i32,
+    role: i32,
+    version: u16,
+    ciphersuite: u16,
+    handshake_done: bool,
+    appdata_ready: bool,
+    sni_len: usize,
+    hostname: [byte: HS_HOSTNAME_MAX],
+    client_random: [byte: HS_RANDOM_LEN],
+    server_random: [byte: HS_RANDOM_LEN],
+}
+
+fn hs_fill_random(dst: &byte, first: byte) void {
+    var i: usize = 0;
+    while i < HS_RANDOM_LEN {
+        dst[i] = first + (i as byte);
+        i = i + 1;
+    }
+}
+
+fn hs_write_u16(dst: &byte, v: u16) void {
+    dst[0] = (((v >> 8) & 0xffu16) as! byte).value;
+    dst[1] = ((v & 0xffu16) as! byte).value;
+}
+
+fn hs_read_u16(src: &const byte) u16 {
+    return ((src[0] as u16) << 8) | (src[1] as u16);
+}
+
+fn hs_reset_negotiated(ctx: &HandshakeCtx) void {
+    ctx.version = TLS_VERSION_1_2;
+    ctx.ciphersuite = HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256;
+    ctx.handshake_done = false;
+    ctx.appdata_ready = false;
+}
 
 export fn handshake_ctx_init(ctx: &HandshakeCtx, role: i32) void {
     ctx.state = HS_STATE_INIT;
     ctx.role = role;
+    ctx.sni_len = 0;
+    hs_reset_negotiated(ctx);
+    hs_fill_random(&ctx.client_random[0], 0x10);
+    hs_fill_random(&ctx.server_random[0], 0x80);
 }
 
-// 客户端：产生第一条待发送数据（占位：固定 5 字节），返回 HS_STATUS_NEED_SEND
+export fn handshake_set_hostname(ctx: &HandshakeCtx, name: &const byte, len: usize) !void {
+    if len > HS_HOSTNAME_MAX {
+        return error.TlsBadInput;
+    }
+    ctx.sni_len = len;
+    if len == 0 {
+        return;
+    }
+    mem_copy(&ctx.hostname[0], name, len);
+}
+
+fn hs_encode_client_hello(ctx: &const HandshakeCtx, out: &byte, out_max: usize, out_len: &usize) bool {
+    const total_len: usize = 1 + 2 + 2 + HS_RANDOM_LEN + 1 + ctx.sni_len;
+    if out_max < total_len {
+        return false;
+    }
+    out[0] = HS_MSG_CLIENT_HELLO;
+    hs_write_u16(&out[1], TLS_VERSION_1_2);
+    hs_write_u16(&out[3], HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256);
+    mem_copy(&out[5], &ctx.client_random[0], HS_RANDOM_LEN);
+    out[37] = (ctx.sni_len as! byte).value;
+    if ctx.sni_len > 0 {
+        mem_copy(&out[38], &ctx.hostname[0], ctx.sni_len);
+    }
+    out_len[0] = total_len;
+    return true;
+}
+
+fn hs_parse_client_hello(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bool {
+    if in_len < 38 {
+        return false;
+    }
+    if in_[0] != HS_MSG_CLIENT_HELLO {
+        return false;
+    }
+    if hs_read_u16(&in_[1]) != TLS_VERSION_1_2 {
+        return false;
+    }
+    const suite: u16 = hs_read_u16(&in_[3]);
+    if suite != HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256 {
+        return false;
+    }
+    mem_copy(&ctx.client_random[0], &in_[5], HS_RANDOM_LEN);
+    const sni_len: usize = in_[37] as usize;
+    if 38 + sni_len != in_len {
+        return false;
+    }
+    if sni_len > HS_HOSTNAME_MAX {
+        return false;
+    }
+    ctx.sni_len = sni_len;
+    if sni_len > 0 {
+        mem_copy(&ctx.hostname[0], &in_[38], sni_len);
+    }
+    ctx.version = TLS_VERSION_1_2;
+    ctx.ciphersuite = suite;
+    return true;
+}
+
+fn hs_encode_server_flight(ctx: &const HandshakeCtx, out: &byte, out_max: usize, out_len: &usize) bool {
+    const total_len: usize = 1 + 2 + 2 + HS_RANDOM_LEN + 1 + 1 + 1 + 1;
+    if out_max < total_len {
+        return false;
+    }
+    out[0] = HS_MSG_SERVER_HELLO;
+    hs_write_u16(&out[1], TLS_VERSION_1_2);
+    hs_write_u16(&out[3], HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256);
+    mem_copy(&out[5], &ctx.server_random[0], HS_RANDOM_LEN);
+    out[37] = HS_MSG_CERTIFICATE;
+    out[38] = HS_MSG_SERVER_KEY_EXCHANGE;
+    out[39] = HS_MSG_SERVER_HELLO_DONE;
+    out[40] = (ctx.sni_len as! byte).value;
+    out_len[0] = total_len;
+    return true;
+}
+
+fn hs_parse_server_flight(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bool {
+    if in_len != 41 {
+        return false;
+    }
+    if in_[0] != HS_MSG_SERVER_HELLO {
+        return false;
+    }
+    if hs_read_u16(&in_[1]) != TLS_VERSION_1_2 {
+        return false;
+    }
+    const suite: u16 = hs_read_u16(&in_[3]);
+    if suite != HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256 {
+        return false;
+    }
+    mem_copy(&ctx.server_random[0], &in_[5], HS_RANDOM_LEN);
+    if in_[37] != HS_MSG_CERTIFICATE || in_[38] != HS_MSG_SERVER_KEY_EXCHANGE || in_[39] != HS_MSG_SERVER_HELLO_DONE {
+        return false;
+    }
+    if (in_[40] as usize) != ctx.sni_len {
+        return false;
+    }
+    ctx.version = TLS_VERSION_1_2;
+    ctx.ciphersuite = suite;
+    return true;
+}
+
+fn hs_encode_client_finished(out: &byte, out_max: usize, out_len: &usize) bool {
+    if out_max < 2 {
+        return false;
+    }
+    out[0] = HS_MSG_CLIENT_KEY_EXCHANGE;
+    out[1] = HS_MSG_FINISHED;
+    out_len[0] = 2;
+    return true;
+}
+
+fn hs_parse_client_finished(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bool {
+    if in_len != 2 {
+        return false;
+    }
+    if in_[0] != HS_MSG_CLIENT_KEY_EXCHANGE || in_[1] != HS_MSG_FINISHED {
+        return false;
+    }
+    ctx.handshake_done = true;
+    ctx.appdata_ready = true;
+    return true;
+}
+
 export fn handshake_client_start(ctx: &HandshakeCtx, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
     if ctx.state != HS_STATE_INIT {
         return HS_STATUS_ERROR;
     }
-    if send_max < 5 {
+    if !hs_encode_client_hello(ctx, send_buf, send_max, send_len_out) {
         return HS_STATUS_ERROR;
     }
-    send_buf[0] = 0x01;
-    send_buf[1] = 0x00;
-    send_buf[2] = 0x00;
-    send_buf[3] = 0x02;
-    send_buf[4] = 0x00;
-    send_len_out[0] = 5;
     ctx.state = HS_STATE_CLIENT_HELLO_SENT;
     return HS_STATUS_NEED_SEND;
 }
 
-// 客户端：喂入收到的数据，可能产生待发送数据或进入 Done
 export fn handshake_client_step(ctx: &HandshakeCtx, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
     if ctx.state != HS_STATE_CLIENT_HELLO_SENT {
         return HS_STATUS_ERROR;
     }
-    if recv_len < 1 {
+    if recv_len == 0 {
         return HS_STATUS_NEED_RECV;
     }
+    if !hs_parse_server_flight(ctx, recv_buf, recv_len) {
+        return HS_STATUS_ERROR;
+    }
+    if !hs_encode_client_finished(send_buf, send_max, send_len_out) {
+        return HS_STATUS_ERROR;
+    }
     ctx.state = HS_STATE_DONE;
-    send_len_out[0] = 0;
+    ctx.handshake_done = true;
+    ctx.appdata_ready = true;
     return HS_STATUS_DONE;
 }
 
-// 服务端：喂入收到的数据，产生待发送数据或进入 Done
 export fn handshake_server_step(ctx: &HandshakeCtx, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
     if ctx.state == HS_STATE_INIT {
-        if recv_len < 1 {
+        if recv_len == 0 {
             return HS_STATUS_NEED_RECV;
         }
-        if send_max < 5 {
+        if !hs_parse_client_hello(ctx, recv_buf, recv_len) {
             return HS_STATUS_ERROR;
         }
-        send_buf[0] = 0x02;
-        send_buf[1] = 0x00;
-        send_buf[2] = 0x00;
-        send_buf[3] = 0x02;
-        send_buf[4] = 0x00;
-        send_len_out[0] = 5;
-        ctx.state = HS_STATE_SERVER_HELLO_SENT;
+        if !hs_encode_server_flight(ctx, send_buf, send_max, send_len_out) {
+            return HS_STATUS_ERROR;
+        }
+        ctx.state = HS_STATE_SERVER_FLIGHT_SENT;
         return HS_STATUS_NEED_SEND;
     }
-    if ctx.state == HS_STATE_SERVER_HELLO_SENT {
+    if ctx.state == HS_STATE_SERVER_FLIGHT_SENT {
+        if recv_len == 0 {
+            return HS_STATUS_NEED_RECV;
+        }
+        if !hs_parse_client_finished(ctx, recv_buf, recv_len) {
+            return HS_STATUS_ERROR;
+        }
         ctx.state = HS_STATE_DONE;
         send_len_out[0] = 0;
         return HS_STATUS_DONE;
@@ -84,5 +259,5 @@ export fn handshake_server_step(ctx: &HandshakeCtx, recv_buf: &const byte, recv_
 }
 
 export fn handshake_is_done(ctx: &const HandshakeCtx) bool {
-    return ctx.state == HS_STATE_DONE;
+    return ctx.handshake_done && ctx.state == HS_STATE_DONE;
 }

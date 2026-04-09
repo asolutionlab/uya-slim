@@ -1,51 +1,190 @@
-// lib/tls/ssl/context.uya - TLS 上下文：握手 + 记录层聚合，init/handshake/read/write
-// 支持 TLS 1.2（SslContext）与 TLS 1.3（SslContext13），应用在 init 时选择版本
+// lib/tls/ssl/context.uya - TLS 上下文：握手 + 记录层聚合
 
 use tls.common;
 use tls.ssl.handshake;
 use tls.ssl.handshake13;
 use tls.ssl.record;
+use tls.x509.verify.verify_hostname_bytes;
+use tls.x509.verify.verify_chain_rsa;
+use tls.x509.cert.Cert;
+use tls.x509.verify.KU_DIGITAL_SIGNATURE;
+
+const SSL_HOSTNAME_MAX: usize = 64;
 
 export struct SslContext {
     role: i32,
     hs: &HandshakeCtx,
     rec: &RecordCtx,
+    negotiated_version: u16,
+    negotiated_ciphersuite: u16,
+    handshake_done: bool,
+    appdata_ready: bool,
+    hostname_len: usize,
+    hostname: [byte: SSL_HOSTNAME_MAX],
+    peer_san_len: usize,
+    peer_san: [byte: SSL_HOSTNAME_MAX],
+    peer_cn_len: usize,
+    peer_cn: [byte: SSL_HOSTNAME_MAX],
+    peer_verified: bool,
+    peer_leaf: &const Cert,
+    peer_chain: &const Cert,
+    peer_chain_len: usize,
+    trust_anchors: &const Cert,
+    trust_anchor_len: usize,
+    required_leaf_ku: u16,
+}
+
+fn ssl_verify_peer_chain(ctx: &SslContext) void {
+    if ctx.peer_leaf == null as &const Cert {
+        return;
+    }
+    verify_chain_rsa(ctx.peer_leaf, ctx.peer_chain, ctx.peer_chain_len, ctx.trust_anchors, ctx.trust_anchor_len, ctx.required_leaf_ku) catch {
+        ctx.handshake_done = false;
+        ctx.appdata_ready = false;
+        ctx.peer_verified = false;
+        return;
+    };
+}
+
+fn ssl_verify_peer_hostname(ctx: &SslContext) void {
+    if ctx.role != HS_ROLE_CLIENT {
+        ctx.peer_verified = true;
+        return;
+    }
+    if ctx.hostname_len == 0 {
+        ctx.peer_verified = true;
+        return;
+    }
+    verify_hostname_bytes(&ctx.hostname[0], ctx.hostname_len, &ctx.peer_san[0], ctx.peer_san_len, &ctx.peer_cn[0], ctx.peer_cn_len) catch {
+        ctx.handshake_done = false;
+        ctx.appdata_ready = false;
+        ctx.peer_verified = false;
+        return;
+    };
+    ctx.peer_verified = true;
+}
+
+fn ssl_sync_state(ctx: &SslContext) void {
+    ctx.negotiated_version = ctx.hs.version;
+    ctx.negotiated_ciphersuite = ctx.hs.ciphersuite;
+    ctx.handshake_done = handshake_is_done(ctx.hs);
+    ctx.appdata_ready = ctx.hs.appdata_ready;
+    ctx.hostname_len = ctx.hs.sni_len;
+    var i: usize = 0;
+    while i < ctx.hostname_len {
+        ctx.hostname[i] = ctx.hs.hostname[i];
+        i = i + 1;
+    }
+    if ctx.handshake_done {
+        ssl_verify_peer_chain(ctx);
+        ssl_verify_peer_hostname(ctx);
+        ctx.rec.version = ctx.negotiated_version;
+        record_set_cipher_suite(ctx.rec, ctx.negotiated_ciphersuite);
+    }
 }
 
 export fn ssl_init(ctx: &SslContext) void {
     handshake_ctx_init(ctx.hs, ctx.role);
     record_ctx_init(ctx.rec, TLS_VERSION_1_2);
+    ctx.negotiated_version = TLS_VERSION_1_2;
+    ctx.negotiated_ciphersuite = 0;
+    ctx.handshake_done = false;
+    ctx.appdata_ready = false;
+    ctx.hostname_len = 0;
+    ctx.peer_san_len = 0;
+    ctx.peer_cn_len = 0;
+    ctx.peer_verified = false;
+    ctx.peer_leaf = null as &const Cert;
+    ctx.peer_chain = null as &const Cert;
+    ctx.peer_chain_len = 0;
+    ctx.trust_anchors = null as &const Cert;
+    ctx.trust_anchor_len = 0;
+    ctx.required_leaf_ku = KU_DIGITAL_SIGNATURE;
 }
 
 export fn ssl_set_hostname(ctx: &SslContext, name: &const byte, len: usize) void {
-}
-
-export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
-    if ctx.role == HS_ROLE_CLIENT {
-        if handshake_is_done(ctx.hs) {
-            return HS_STATUS_DONE;
-        }
-        if ctx.hs.state == HS_STATE_INIT {
-            return handshake_client_start(ctx.hs, send_buf, send_max, send_len_out);
-        }
-        return handshake_client_step(ctx.hs, recv_buf, recv_len, send_buf, send_max, send_len_out);
-    } else {
-        return handshake_server_step(ctx.hs, recv_buf, recv_len, send_buf, send_max, send_len_out);
+    handshake_set_hostname(ctx.hs, name, len) catch {
+        return;
+    };
+    ctx.hostname_len = ctx.hs.sni_len;
+    var i: usize = 0;
+    while i < ctx.hostname_len {
+        ctx.hostname[i] = ctx.hs.hostname[i];
+        i = i + 1;
     }
 }
 
+export fn ssl_set_peer_identity(ctx: &SslContext, san: &const byte, san_len: usize, cn: &const byte, cn_len: usize) void {
+    ctx.peer_san_len = san_len;
+    ctx.peer_cn_len = cn_len;
+    var i: usize = 0;
+    while i < san_len && i < SSL_HOSTNAME_MAX {
+        ctx.peer_san[i] = san[i];
+        i = i + 1;
+    }
+    i = 0;
+    while i < cn_len && i < SSL_HOSTNAME_MAX {
+        ctx.peer_cn[i] = cn[i];
+        i = i + 1;
+    }
+}
+
+export fn ssl_set_peer_chain(ctx: &SslContext, leaf: &const Cert, chain: &const Cert, chain_len: usize, trust_anchors: &const Cert, trust_anchor_len: usize, required_leaf_ku: u16) void {
+    ctx.peer_leaf = leaf;
+    ctx.peer_chain = chain;
+    ctx.peer_chain_len = chain_len;
+    ctx.trust_anchors = trust_anchors;
+    ctx.trust_anchor_len = trust_anchor_len;
+    ctx.required_leaf_ku = required_leaf_ku;
+}
+
+export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
+    var status: i32 = HS_STATUS_ERROR;
+    if ctx.role == HS_ROLE_CLIENT {
+        if handshake_is_done(ctx.hs) {
+            ssl_sync_state(ctx);
+            return HS_STATUS_DONE;
+        }
+        if ctx.hs.state == HS_STATE_INIT {
+            status = handshake_client_start(ctx.hs, send_buf, send_max, send_len_out);
+        } else {
+            status = handshake_client_step(ctx.hs, recv_buf, recv_len, send_buf, send_max, send_len_out);
+        }
+    } else {
+        status = handshake_server_step(ctx.hs, recv_buf, recv_len, send_buf, send_max, send_len_out);
+    }
+    ssl_sync_state(ctx);
+    return status;
+}
+
 export fn ssl_is_handshake_done(ctx: &const SslContext) bool {
-    return handshake_is_done(ctx.hs);
+    return ctx.handshake_done && ctx.appdata_ready && ctx.peer_verified;
 }
 
 export fn ssl_write(ctx: &SslContext, plain: &const byte, plain_len: usize, cipher_out: &byte, out_max: usize, out_len: &usize) !void {
+    if !ctx.appdata_ready {
+        return error.TlsHandshakeFailure;
+    }
+    const need: usize = RECORD_HEADER_LEN + 8 + plain_len + 16;
+    if need > out_max {
+        return error.TlsBadInput;
+    }
     record_encrypt(ctx.rec, TLS_RECORD_APPLICATION_DATA, plain, plain_len, cipher_out, out_len) catch {
         return error.TlsCryptoFailure;
     };
 }
 
 export fn ssl_read(ctx: &SslContext, cipher_in: &const byte, cipher_len: usize, plain_out: &byte, plain_max: usize, plain_len_out: &usize, consumed_out: &usize) !void {
-    record_decrypt(ctx.rec, cipher_in, cipher_len, plain_out, plain_max, plain_len_out, consumed_out) catch {
+    if !ctx.appdata_ready {
+        return error.TlsHandshakeFailure;
+    }
+    record_decrypt(ctx.rec, cipher_in, cipher_len, plain_out, plain_max, plain_len_out, consumed_out) catch |err| {
+        if err == error.TlsInvalidMac {
+            return error.TlsInvalidMac;
+        }
+        if err == error.TlsHandshakeFailure {
+            return error.TlsHandshakeFailure;
+        }
         return error.TlsDecodeError;
     };
 }
@@ -53,45 +192,180 @@ export fn ssl_read(ctx: &SslContext, cipher_in: &const byte, cipher_len: usize, 
 export fn ssl_close_notify(ctx: &SslContext) void {
 }
 
-// --- TLS 1.3 上下文（版本分支：使用 SslContext13 即走 1.3）---
-
 export struct SslContext13 {
     role: i32,
     hs13: &Handshake13Ctx,
     rec: &RecordCtx,
+    negotiated_version: u16,
+    negotiated_ciphersuite: u16,
+    handshake_done: bool,
+    appdata_ready: bool,
+    hostname_len: usize,
+    hostname: [byte: SSL_HOSTNAME_MAX],
+    peer_san_len: usize,
+    peer_san: [byte: SSL_HOSTNAME_MAX],
+    peer_cn_len: usize,
+    peer_cn: [byte: SSL_HOSTNAME_MAX],
+    peer_verified: bool,
+    peer_leaf: &const Cert,
+    peer_chain: &const Cert,
+    peer_chain_len: usize,
+    trust_anchors: &const Cert,
+    trust_anchor_len: usize,
+    required_leaf_ku: u16,
+}
+
+fn ssl13_verify_peer_chain(ctx: &SslContext13) void {
+    if ctx.peer_leaf == null as &const Cert {
+        return;
+    }
+    verify_chain_rsa(ctx.peer_leaf, ctx.peer_chain, ctx.peer_chain_len, ctx.trust_anchors, ctx.trust_anchor_len, ctx.required_leaf_ku) catch {
+        ctx.handshake_done = false;
+        ctx.appdata_ready = false;
+        ctx.peer_verified = false;
+        return;
+    };
+}
+
+fn ssl13_verify_peer_hostname(ctx: &SslContext13) void {
+    if ctx.role != HS13_ROLE_CLIENT {
+        ctx.peer_verified = true;
+        return;
+    }
+    if ctx.hostname_len == 0 {
+        ctx.peer_verified = true;
+        return;
+    }
+    verify_hostname_bytes(&ctx.hostname[0], ctx.hostname_len, &ctx.peer_san[0], ctx.peer_san_len, &ctx.peer_cn[0], ctx.peer_cn_len) catch {
+        ctx.handshake_done = false;
+        ctx.appdata_ready = false;
+        ctx.peer_verified = false;
+        return;
+    };
+    ctx.peer_verified = true;
+}
+
+fn ssl13_sync_state(ctx: &SslContext13) void {
+    ctx.negotiated_version = ctx.hs13.version;
+    ctx.negotiated_ciphersuite = ctx.hs13.ciphersuite;
+    ctx.handshake_done = handshake13_is_done(ctx.hs13);
+    ctx.appdata_ready = ctx.hs13.appdata_ready;
+    ctx.hostname_len = ctx.hs13.sni_len;
+    var i: usize = 0;
+    while i < ctx.hostname_len {
+        ctx.hostname[i] = ctx.hs13.hostname[i];
+        i = i + 1;
+    }
+    if ctx.handshake_done {
+        ssl13_verify_peer_chain(ctx);
+        ssl13_verify_peer_hostname(ctx);
+        ctx.rec.version = ctx.negotiated_version;
+        record_set_cipher_suite(ctx.rec, ctx.negotiated_ciphersuite);
+    }
 }
 
 export fn ssl13_init(ctx: &SslContext13) void {
     handshake13_ctx_init(ctx.hs13, ctx.role);
     record_ctx_init(ctx.rec, TLS_VERSION_1_3);
+    ctx.negotiated_version = TLS_VERSION_1_3;
+    ctx.negotiated_ciphersuite = 0;
+    ctx.handshake_done = false;
+    ctx.appdata_ready = false;
+    ctx.hostname_len = 0;
+    ctx.peer_san_len = 0;
+    ctx.peer_cn_len = 0;
+    ctx.peer_verified = false;
+    ctx.peer_leaf = null as &const Cert;
+    ctx.peer_chain = null as &const Cert;
+    ctx.peer_chain_len = 0;
+    ctx.trust_anchors = null as &const Cert;
+    ctx.trust_anchor_len = 0;
+    ctx.required_leaf_ku = KU_DIGITAL_SIGNATURE;
 }
 
-export fn ssl13_handshake_step(ctx: &SslContext13, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
-    if ctx.role == HS13_ROLE_CLIENT {
-        if handshake13_is_done(ctx.hs13) {
-            return HS13_STATUS_DONE;
-        }
-        if ctx.hs13.state == HS13_STATE_INIT {
-            return handshake13_client_start(ctx.hs13, send_buf, send_max, send_len_out);
-        }
-        return handshake13_client_step(ctx.hs13, recv_buf, recv_len, send_buf, send_max, send_len_out);
-    } else {
-        return handshake13_server_step(ctx.hs13, recv_buf, recv_len, send_buf, send_max, send_len_out);
+export fn ssl13_set_hostname(ctx: &SslContext13, name: &const byte, len: usize) void {
+    handshake13_set_hostname(ctx.hs13, name, len) catch {
+        return;
+    };
+    ctx.hostname_len = ctx.hs13.sni_len;
+    var i: usize = 0;
+    while i < ctx.hostname_len {
+        ctx.hostname[i] = ctx.hs13.hostname[i];
+        i = i + 1;
     }
 }
 
+export fn ssl13_set_peer_identity(ctx: &SslContext13, san: &const byte, san_len: usize, cn: &const byte, cn_len: usize) void {
+    ctx.peer_san_len = san_len;
+    ctx.peer_cn_len = cn_len;
+    var i: usize = 0;
+    while i < san_len && i < SSL_HOSTNAME_MAX {
+        ctx.peer_san[i] = san[i];
+        i = i + 1;
+    }
+    i = 0;
+    while i < cn_len && i < SSL_HOSTNAME_MAX {
+        ctx.peer_cn[i] = cn[i];
+        i = i + 1;
+    }
+}
+
+export fn ssl13_set_peer_chain(ctx: &SslContext13, leaf: &const Cert, chain: &const Cert, chain_len: usize, trust_anchors: &const Cert, trust_anchor_len: usize, required_leaf_ku: u16) void {
+    ctx.peer_leaf = leaf;
+    ctx.peer_chain = chain;
+    ctx.peer_chain_len = chain_len;
+    ctx.trust_anchors = trust_anchors;
+    ctx.trust_anchor_len = trust_anchor_len;
+    ctx.required_leaf_ku = required_leaf_ku;
+}
+
+export fn ssl13_handshake_step(ctx: &SslContext13, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
+    var status: i32 = HS13_STATUS_ERROR;
+    if ctx.role == HS13_ROLE_CLIENT {
+        if handshake13_is_done(ctx.hs13) {
+            ssl13_sync_state(ctx);
+            return HS13_STATUS_DONE;
+        }
+        if ctx.hs13.state == HS13_STATE_INIT {
+            status = handshake13_client_start(ctx.hs13, send_buf, send_max, send_len_out);
+        } else {
+            status = handshake13_client_step(ctx.hs13, recv_buf, recv_len, send_buf, send_max, send_len_out);
+        }
+    } else {
+        status = handshake13_server_step(ctx.hs13, recv_buf, recv_len, send_buf, send_max, send_len_out);
+    }
+    ssl13_sync_state(ctx);
+    return status;
+}
+
 export fn ssl13_is_handshake_done(ctx: &const SslContext13) bool {
-    return handshake13_is_done(ctx.hs13);
+    return ctx.handshake_done && ctx.appdata_ready && ctx.peer_verified;
 }
 
 export fn ssl13_write(ctx: &SslContext13, plain: &const byte, plain_len: usize, cipher_out: &byte, out_max: usize, out_len: &usize) !void {
+    if !ctx.appdata_ready {
+        return error.TlsHandshakeFailure;
+    }
+    const need: usize = RECORD_HEADER_LEN + 8 + plain_len + 16;
+    if need > out_max {
+        return error.TlsBadInput;
+    }
     record_encrypt(ctx.rec, TLS_RECORD_APPLICATION_DATA, plain, plain_len, cipher_out, out_len) catch {
         return error.TlsCryptoFailure;
     };
 }
 
 export fn ssl13_read(ctx: &SslContext13, cipher_in: &const byte, cipher_len: usize, plain_out: &byte, plain_max: usize, plain_len_out: &usize, consumed_out: &usize) !void {
-    record_decrypt(ctx.rec, cipher_in, cipher_len, plain_out, plain_max, plain_len_out, consumed_out) catch {
+    if !ctx.appdata_ready {
+        return error.TlsHandshakeFailure;
+    }
+    record_decrypt(ctx.rec, cipher_in, cipher_len, plain_out, plain_max, plain_len_out, consumed_out) catch |err| {
+        if err == error.TlsInvalidMac {
+            return error.TlsInvalidMac;
+        }
+        if err == error.TlsHandshakeFailure {
+            return error.TlsHandshakeFailure;
+        }
         return error.TlsDecodeError;
     };
 }

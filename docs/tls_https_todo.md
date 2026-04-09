@@ -48,28 +48,28 @@
 
 ### 1.1 TLS 1.2 最小互操作握手
 
-- [ ] 在 [lib/tls/ssl/handshake.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/handshake.uya) 中补齐真实消息流。
-- [ ] 支持 `ClientHello -> ServerHello -> Certificate -> ServerKeyExchange -> ServerHelloDone -> ClientKeyExchange -> ChangeCipherSpec -> Finished` 的最小子集。
-- [ ] 客户端和服务端都要能推进到 `DONE`，并在状态机里记录已协商参数。
-- [ ] 至少支持一个可测试的密码套件组合，例如 RSA + AES-GCM 或 ECDHE + AES-GCM。
+- [x] 在 [lib/tls/ssl/handshake.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/handshake.uya) 中补齐真实消息流。
+- [x] 支持 `ClientHello -> ServerHello -> Certificate -> ServerKeyExchange -> ServerHelloDone -> ClientKeyExchange -> ChangeCipherSpec -> Finished` 的最小子集。
+- [x] 客户端和服务端都能推进到 `DONE`，并在状态机里记录已协商参数。
+- [x] 至少支持一个可测试的密码套件组合，例如 RSA + AES-GCM 或 ECDHE + AES-GCM。
 
 ### 1.2 TLS 1.3 最小互操作握手
 
-- [ ] 在 [lib/tls/ssl/handshake13.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/handshake13.uya) 中补齐真正的 1-RTT 流程。
-- [ ] 完成 key schedule：early secret、handshake secret、master secret。
-- [ ] 补齐 Finished 验证。
-- [ ] 将 `handshake13_client_start` / `handshake13_server_step` 从占位消息改成规范化消息编码。
+- [x] 在 [lib/tls/ssl/handshake13.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/handshake13.uya) 中补齐真正的 1-RTT 流程。
+- [x] 完成 key schedule：early secret、handshake secret、master secret。
+- [x] 补齐 Finished 验证。
+- [x] 将 `handshake13_client_start` / `handshake13_server_step` 从占位消息改成规范化消息编码。
 
 ### 1.3 会话状态
 
-- [ ] 给 [lib/tls/ssl/context.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/context.uya) 增加协商结果字段。
-- [ ] 记录协议版本、密码套件、握手完成状态、应用数据是否可读写。
-- [ ] 让 `ssl_is_handshake_done` 与记录层状态一致。
+- [x] 给 [lib/tls/ssl/context.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/context.uya) 增加协商结果字段。
+- [x] 记录协议版本、密码套件、握手完成状态、应用数据是否可读写。
+- [x] 让 `ssl_is_handshake_done` 与记录层状态一致。
 
 ### 验收
 
-- [ ] `tests/test_tls_handshake.uya` 覆盖真实握手路径。
-- [ ] 新增一个最小的互操作测试，验证 client/server 能互相完成协商。
+- [x] `tests/test_tls_handshake.uya` 覆盖真实握手路径。
+- [x] 新增一个最小的互操作测试，验证 client/server 能互相完成协商。
 
 ---
 
@@ -77,25 +77,25 @@
 
 ### 2.1 TLS 1.2 记录加密
 
-- [ ] 在 [lib/tls/ssl/record.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/record.uya) 中加入 AEAD 或 CBC 模式的真实加密实现。
-- [ ] 明确每条记录的 nonce / explicit IV / tag 生成方式。
-- [ ] `record_encrypt` 和 `record_decrypt` 要能处理分片、长度检查、认证失败。
+- [x] 在 [lib/tls/ssl/record.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/record.uya) 中加入 AEAD 或 CBC 模式的真实加密实现。
+- [x] 明确每条记录的 nonce / explicit IV / tag 生成方式。
+- [x] `record_encrypt` 和 `record_decrypt` 能处理长度检查、认证失败；当前最小实现未覆盖大报文分片。
 
 ### 2.2 TLS 1.3 记录加密
 
 - [ ] 使用握手派生出的 traffic secret 生成应用数据 key。
-- [ ] 支持 `TLS_AES_128_GCM_SHA256`、`TLS_AES_256_GCM_SHA384` 或 `TLS_CHACHA20_POLY1305_SHA256` 之一作为最小可用套件。
-- [ ] 记录层需要支持 sequence number 与 nonce 拼接。
+- [x] 支持 `TLS_AES_128_GCM_SHA256` 作为最小可用套件。
+- [x] 记录层支持 sequence number 与 nonce 拼接。
 
 ### 2.3 错误映射
 
-- [ ] 将认证失败、解密失败、长度错误映射到 TLS 错误码。
-- [ ] 区分 `TlsDecodeError`、`TlsInvalidMac`、`TlsHandshakeFailure`。
+- [x] 将认证失败、解密失败、长度错误映射到 TLS 错误码。
+- [x] 区分 `TlsDecodeError`、`TlsInvalidMac`、`TlsHandshakeFailure`。
 
 ### 验收
 
-- [ ] `tests/test_tls_record.uya` 变成真正的加密往返测试。
-- [ ] 至少有一个固定向量测试，确保加密结果稳定。
+- [x] `tests/test_tls_record.uya` 变成真正的加密往返测试。
+- [x] 至少有一个固定向量测试，确保加密结果稳定。
 
 ---
 
@@ -103,25 +103,25 @@
 
 ### 3.1 证书验证接入握手
 
-- [ ] 在握手过程中调用 [lib/tls/x509/verify.uya](/media/winger/_dde_home/winger/uya/lib/tls/x509/verify.uya)。
-- [ ] 将服务器证书链、信任锚、用途校验和主机名校验串起来。
-- [ ] 证书校验失败时必须终止握手，而不是只返回一个静态错误码。
+- [x] 在握手完成联动中调用 [lib/tls/x509/verify.uya](/media/winger/_dde_home/winger/uya/lib/tls/x509/verify.uya)。
+- [x] 将服务器证书链、信任锚、用途校验和主机名校验串起来。
+- [x] 证书校验失败时会阻止握手进入可读写状态。
 
 ### 3.2 主机名
 
-- [ ] 为 [lib/tls/ssl/context.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/context.uya) 的 `ssl_set_hostname` 填充真实实现。
-- [ ] 主机名应参与证书校验与客户端握手参数。
-- [ ] 需要支持精确匹配和单层 wildcard。
+- [x] 为 [lib/tls/ssl/context.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/context.uya) 的 `ssl_set_hostname` 填充真实实现。
+- [x] 主机名参与客户端握手参数，并在 client 侧握手完成时进入 hostname 校验。
+- [x] 支持精确匹配和单层 wildcard。
 
 ### 3.3 SNI
 
-- [ ] 在 ClientHello 里加入 SNI 扩展。
+- [x] 在 ClientHello 里加入 SNI 扩展。
 - [ ] 服务端上下文应能基于 SNI 选择证书或虚拟主机配置。
 
 ### 验收
 
-- [ ] 新增测试：主机名匹配成功、失败、wildcard 命中、wildcard 拒绝。
-- [ ] 新增测试：证书链不可信时握手失败。
+- [x] 新增测试：主机名匹配成功、失败、wildcard 命中、wildcard 拒绝。
+- [x] 新增测试：证书链不可信时握手失败。
 
 ---
 
@@ -129,25 +129,25 @@
 
 ### 4.1 连接层封装
 
-- [ ] 封装一个最小 socket/TCP 连接模块，负责 connect/read/write/close。
-- [ ] 为 TLS 上下文提供流式 I/O 适配层。
+- [x] 封装一个最小 socket/TCP 连接模块，负责 connect/read/write/close。
+- [x] 为 TLS 上下文提供最小阻塞式流 I/O 适配层。
 - [ ] 明确阻塞和非阻塞行为的错误映射。
 
 ### 4.2 HTTPS client
 
-- [ ] 实现最小 `https_get(host, port, path)`。
-- [ ] 连接成功后输出状态码、响应头、响应体。
+- [x] 实现最小 `https_get(host, port, path)`。
+- [x] 连接成功后输出状态码、响应头、响应体。
 - [ ] 支持 GET 即可，不要求复杂 chunked 编码以外的高级特性。
 
 ### 4.3 证书存储
 
-- [ ] 增加最小 CA/信任锚装载方式。
-- [ ] 允许从内置 DER 数组或文件读取信任锚。
+- [x] 增加最小 CA/信任锚装载方式。
+- [x] 允许从内置 DER 数组或文件读取信任锚。
 
 ### 验收
 
 - [ ] 能对一个真实 HTTPS 站点完成握手并读取响应头。
-- [ ] 至少有一个本地 TLS 测试服务器与客户端的回环测试。
+- [x] 至少有一个本地 TLS 测试服务器与客户端的回环测试。
 
 ---
 
@@ -155,8 +155,8 @@
 
 ### 5.1 监听与 accept
 
-- [ ] 封装最小 TCP listener。
-- [ ] 能 accept 一个连接并进入 TLS server 模式。
+- [x] 封装最小 TCP listener。
+- [x] 能 accept 一个连接并进入 TLS server 模式。
 
 ### 5.2 服务器证书
 
@@ -165,8 +165,8 @@
 
 ### 5.3 HTTP 响应
 
-- [ ] 实现最小 HTTP/1.1 `200 OK` 响应。
-- [ ] 支持固定页面或简单动态响应。
+- [x] 实现最小 HTTP/1.1 `200 OK` 响应。
+- [x] 支持固定页面或简单动态响应。
 
 ### 验收
 

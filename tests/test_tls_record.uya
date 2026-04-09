@@ -1,48 +1,89 @@
 // test_tls_record.uya - TLS 记录层单元测试
-// 阶段 4.1：记录加解密（当前为明文分片）
 
 use std.runtime.entry;
 use tls.ssl.record;
 use tls.common;
 
 fn test_record_roundtrip() i32 {
-    var ctx: RecordCtx = RecordCtx{ write_seq: 0, read_seq: 0, version: 0 };
-    record_ctx_init(&ctx, TLS_VERSION_1_2);
+    var enc: RecordCtx = RecordCtx{};
+    var dec: RecordCtx = RecordCtx{};
+    record_ctx_init(&enc, TLS_VERSION_1_2);
+    record_ctx_init(&dec, TLS_VERSION_1_2);
+
     var plain: [byte: 16] = [0x48, 0x69, 0x20, 0x54, 0x4c, 0x53, 0x21, 0x0a, 0, 0, 0, 0, 0, 0, 0, 0];
     const plain_len: usize = 8;
     var cipher: [byte: 64] = [0:64];
     var out_len: usize = 0;
-    record_encrypt(&ctx, TLS_RECORD_APPLICATION_DATA, &plain[0], plain_len, &cipher[0], &out_len) catch {
+    record_encrypt(&enc, TLS_RECORD_APPLICATION_DATA, &plain[0], plain_len, &cipher[0], &out_len) catch {
         return 1;
     };
-    if out_len != RECORD_HEADER_LEN + plain_len {
+    if out_len != 37 {
         return 2;
     }
     if cipher[0] != TLS_RECORD_APPLICATION_DATA {
         return 3;
     }
+    if cipher[3] != 0 || cipher[4] != 32 {
+        return 4;
+    }
+
     var plain2: [byte: 16] = [0:16];
     var plain2_len: usize = 0;
     var consumed: usize = 0;
-    record_decrypt(&ctx, &cipher[0], out_len, &plain2[0], 16, &plain2_len, &consumed) catch {
-        return 4;
+    record_decrypt(&dec, &cipher[0], out_len, &plain2[0], 16, &plain2_len, &consumed) catch {
+        return 5;
     };
     if plain2_len != plain_len || consumed != out_len {
-        return 5;
+        return 6;
     }
     var i: usize = 0;
     while i < plain_len {
         if plain2[i] != plain[i] {
-            return 6;
+            return 7;
         }
         i = i + 1;
     }
     return 0;
 }
 
+fn test_record_fixed_vector_and_tag_failure() i32 {
+    var enc: RecordCtx = RecordCtx{};
+    var dec: RecordCtx = RecordCtx{};
+    record_ctx_init(&enc, TLS_VERSION_1_3);
+    record_ctx_init(&dec, TLS_VERSION_1_3);
+
+    var plain: [byte: 4] = [0x41, 0x42, 0x43, 0x44];
+    var cipher: [byte: 64] = [0:64];
+    var out_len: usize = 0;
+    record_encrypt(&enc, TLS_RECORD_APPLICATION_DATA, &plain[0], 4, &cipher[0], &out_len) catch {
+        return 1;
+    };
+    if out_len != 33 {
+        return 2;
+    }
+    if cipher[0] != 23 || cipher[1] != 0x03 || cipher[2] != 0x04 {
+        return 3;
+    }
+    if cipher[5] != 0 || cipher[12] != 0 {
+        return 4;
+    }
+
+    cipher[32] = cipher[32] ^ (0x01 as byte);
+    var plain2: [byte: 8] = [0:8];
+    var plain2_len: usize = 0;
+    var consumed: usize = 0;
+    record_decrypt(&dec, &cipher[0], out_len, &plain2[0], 8, &plain2_len, &consumed) catch {
+        return 0;
+    };
+    return 5;
+}
+
 export fn main() i32 {
     if test_record_roundtrip() != 0 {
         return 1;
+    }
+    if test_record_fixed_vector_and_tag_failure() != 0 {
+        return 2;
     }
     return 0;
 }

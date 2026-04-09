@@ -1,71 +1,91 @@
 // test_tls_handshake.uya - TLS 握手集成测试
-// 阶段 4.2/4.3/4.4：内存 mock 两端握手（1.2 + 1.3），经 context 聚合
 
 use std.runtime.entry;
 use tls.ssl.handshake;
 use tls.ssl.handshake13;
 use tls.ssl.record;
 use tls.ssl.context;
+use tls.common;
+use tls.x509.cert;
+use tls.x509.verify;
 
 fn test_handshake_mock_roundtrip() i32 {
-    var client: HandshakeCtx = HandshakeCtx{ state: 0, role: 0 };
-    var server: HandshakeCtx = HandshakeCtx{ state: 0, role: 0 };
+    var client: HandshakeCtx = HandshakeCtx{};
+    var server: HandshakeCtx = HandshakeCtx{};
     handshake_ctx_init(&client, HS_ROLE_CLIENT);
     handshake_ctx_init(&server, HS_ROLE_SERVER);
 
+    var host: [byte: 11] = [101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
+    handshake_set_hostname(&client, &host[0], 11) catch {
+        return 1;
+    };
+
     var buf: [byte: 256] = [0:256];
     var len: usize = 0;
-
     if handshake_client_start(&client, &buf[0], 256, &len) != HS_STATUS_NEED_SEND {
-        return 1;
-    }
-    if len != 5 {
         return 2;
+    }
+    if len != 49 {
+        return 3;
     }
 
     var snd: [byte: 256] = [0:256];
     var snd_len: usize = 0;
     if handshake_server_step(&server, &buf[0], len, &snd[0], 256, &snd_len) != HS_STATUS_NEED_SEND {
-        return 3;
-    }
-    if snd_len != 5 {
         return 4;
     }
-
-    if handshake_client_step(&client, &snd[0], snd_len, &buf[0], 256, &len) != HS_STATUS_DONE {
+    if snd_len != 41 {
         return 5;
     }
-    if !handshake_is_done(&client) {
+    if server.sni_len != 11 || server.hostname[0] != 101 {
         return 6;
     }
 
-    if handshake_server_step(&server, &buf[0], 1, &snd[0], 256, &snd_len) != HS_STATUS_DONE {
+    if handshake_client_step(&client, &snd[0], snd_len, &buf[0], 256, &len) != HS_STATUS_DONE {
         return 7;
     }
-    if !handshake_is_done(&server) {
+    if !handshake_is_done(&client) {
         return 8;
+    }
+    if len != 2 {
+        return 9;
+    }
+
+    if handshake_server_step(&server, &buf[0], len, &snd[0], 256, &snd_len) != HS_STATUS_DONE {
+        return 10;
+    }
+    if !handshake_is_done(&server) {
+        return 11;
+    }
+    if server.ciphersuite != 0x009c || server.version != TLS_VERSION_1_2 {
+        return 12;
     }
     return 0;
 }
 
 fn test_context_handshake_and_write_read() i32 {
-    var hs_c: HandshakeCtx = HandshakeCtx{ state: 0, role: 0 };
-    var rec_c: RecordCtx = RecordCtx{ write_seq: 0, read_seq: 0, version: 0 };
+    var hs_c: HandshakeCtx = HandshakeCtx{};
+    var rec_c: RecordCtx = RecordCtx{};
     var ctx_c: SslContext = SslContext{ role: HS_ROLE_CLIENT, hs: &hs_c, rec: &rec_c };
-    var hs_s: HandshakeCtx = HandshakeCtx{ state: 0, role: 0 };
-    var rec_s: RecordCtx = RecordCtx{ write_seq: 0, read_seq: 0, version: 0 };
+    var hs_s: HandshakeCtx = HandshakeCtx{};
+    var rec_s: RecordCtx = RecordCtx{};
     var ctx_s: SslContext = SslContext{ role: HS_ROLE_SERVER, hs: &hs_s, rec: &rec_s };
     ssl_init(&ctx_c);
     ssl_init(&ctx_s);
+
+    var host: [byte: 11] = [101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
+    ssl_set_hostname(&ctx_c, &host[0], 11);
+    ssl_set_peer_identity(&ctx_c, &host[0], 11, &host[0], 11);
 
     var buf: [byte: 256] = [0:256];
     var len: usize = 0;
     if ssl_handshake_step(&ctx_c, &buf[0], 0, &buf[0], 256, &len) != HS_STATUS_NEED_SEND {
         return 1;
     }
-    if len != 5 {
+    if len != 49 {
         return 2;
     }
+
     var snd: [byte: 256] = [0:256];
     var snd_len: usize = 0;
     if ssl_handshake_step(&ctx_s, &buf[0], len, &snd[0], 256, &snd_len) != HS_STATUS_NEED_SEND {
@@ -77,32 +97,39 @@ fn test_context_handshake_and_write_read() i32 {
     if !ssl_is_handshake_done(&ctx_c) {
         return 5;
     }
-    if ssl_handshake_step(&ctx_s, &buf[0], 1, &snd[0], 256, &snd_len) != HS_STATUS_DONE {
+    if ssl_handshake_step(&ctx_s, &buf[0], len, &snd[0], 256, &snd_len) != HS_STATUS_DONE {
         return 6;
     }
     if !ssl_is_handshake_done(&ctx_s) {
         return 7;
+    }
+    if ctx_c.negotiated_ciphersuite != 0x009c || ctx_s.hostname_len != 11 {
+        return 8;
     }
 
     var plain: [byte: 8] = [0x68, 0x69, 0x2c, 0x20, 0x54, 0x4c, 0x53, 0x21];
     var cipher: [byte: 64] = [0:64];
     var out_len: usize = 0;
     ssl_write(&ctx_c, &plain[0], 8, &cipher[0], 64, &out_len) catch {
-        return 8;
+        return 9;
     };
+    if out_len != 37 {
+        return 10;
+    }
+
     var plain2: [byte: 16] = [0:16];
     var plain2_len: usize = 0;
     var consumed: usize = 0;
     ssl_read(&ctx_s, &cipher[0], out_len, &plain2[0], 16, &plain2_len, &consumed) catch {
-        return 9;
+        return 11;
     };
     if plain2_len != 8 || consumed != out_len {
-        return 10;
+        return 12;
     }
     var i: usize = 0;
     while i < 8 {
         if plain2[i] != plain[i] {
-            return 11;
+            return 13;
         }
         i = i + 1;
     }
@@ -110,32 +137,37 @@ fn test_context_handshake_and_write_read() i32 {
 }
 
 fn test_context13_handshake_and_write_read() i32 {
-    var hs_c: Handshake13Ctx = Handshake13Ctx{ state: 0, role: 0 };
-    var rec_c: RecordCtx = RecordCtx{ write_seq: 0, read_seq: 0, version: 0 };
+    var hs_c: Handshake13Ctx = Handshake13Ctx{};
+    var rec_c: RecordCtx = RecordCtx{};
     var ctx_c: SslContext13 = SslContext13{ role: HS13_ROLE_CLIENT, hs13: &hs_c, rec: &rec_c };
-    var hs_s: Handshake13Ctx = Handshake13Ctx{ state: 0, role: 0 };
-    var rec_s: RecordCtx = RecordCtx{ write_seq: 0, read_seq: 0, version: 0 };
+    var hs_s: Handshake13Ctx = Handshake13Ctx{};
+    var rec_s: RecordCtx = RecordCtx{};
     var ctx_s: SslContext13 = SslContext13{ role: HS13_ROLE_SERVER, hs13: &hs_s, rec: &rec_s };
     ssl13_init(&ctx_c);
     ssl13_init(&ctx_s);
+
+    var host: [byte: 15] = [119, 119, 119, 46, 101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
+    ssl13_set_hostname(&ctx_c, &host[0], 15);
+    ssl13_set_peer_identity(&ctx_c, &host[0], 15, &host[0], 15);
 
     var buf: [byte: 256] = [0:256];
     var len: usize = 0;
     if ssl13_handshake_step(&ctx_c, &buf[0], 0, &buf[0], 256, &len) != HS13_STATUS_NEED_SEND {
         return 1;
     }
-    if len != 6 {
+    if len != 53 {
         return 2;
     }
     if buf[1] != 0x03 || buf[2] != 0x04 {
         return 3;
     }
+
     var snd: [byte: 256] = [0:256];
     var snd_len: usize = 0;
     if ssl13_handshake_step(&ctx_s, &buf[0], len, &snd[0], 256, &snd_len) != HS13_STATUS_NEED_SEND {
         return 4;
     }
-    if snd_len != 6 {
+    if snd_len != 73 {
         return 5;
     }
     if ssl13_handshake_step(&ctx_c, &snd[0], snd_len, &buf[0], 256, &len) != HS13_STATUS_DONE {
@@ -144,43 +176,153 @@ fn test_context13_handshake_and_write_read() i32 {
     if !ssl13_is_handshake_done(&ctx_c) {
         return 7;
     }
-    if ssl13_handshake_step(&ctx_s, &buf[0], 1, &snd[0], 256, &snd_len) != HS13_STATUS_DONE {
+    if ssl13_handshake_step(&ctx_s, &buf[0], len, &snd[0], 256, &snd_len) != HS13_STATUS_DONE {
         return 8;
     }
     if !ssl13_is_handshake_done(&ctx_s) {
         return 9;
+    }
+    if ctx_c.negotiated_ciphersuite != TLS_CIPHERSUITE_TLS_AES_128_GCM_SHA256 {
+        return 10;
     }
 
     var plain: [byte: 4] = [0x31, 0x2e, 0x33, 0x21];
     var cipher: [byte: 64] = [0:64];
     var out_len: usize = 0;
     ssl13_write(&ctx_c, &plain[0], 4, &cipher[0], 64, &out_len) catch {
-        return 10;
+        return 11;
     };
     var plain2: [byte: 16] = [0:16];
     var plain2_len: usize = 0;
     var consumed: usize = 0;
     ssl13_read(&ctx_s, &cipher[0], out_len, &plain2[0], 16, &plain2_len, &consumed) catch {
-        return 11;
+        return 12;
     };
     if plain2_len != 4 || consumed != out_len {
-        return 12;
+        return 13;
     }
     if plain2[0] != 0x31 || plain2[3] != 0x21 {
-        return 13;
+        return 14;
+    }
+    return 0;
+}
+
+fn test_hostname_mismatch_fails_handshake_completion() i32 {
+    var hs_c: HandshakeCtx = HandshakeCtx{};
+    var rec_c: RecordCtx = RecordCtx{};
+    var ctx_c: SslContext = SslContext{ role: HS_ROLE_CLIENT, hs: &hs_c, rec: &rec_c };
+    var hs_s: HandshakeCtx = HandshakeCtx{};
+    var rec_s: RecordCtx = RecordCtx{};
+    var ctx_s: SslContext = SslContext{ role: HS_ROLE_SERVER, hs: &hs_s, rec: &rec_s };
+    ssl_init(&ctx_c);
+    ssl_init(&ctx_s);
+
+    var want: [byte: 11] = [101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
+    var bad: [byte: 7] = [98, 97, 100, 46, 99, 111, 109];
+    ssl_set_hostname(&ctx_c, &want[0], 11);
+    ssl_set_peer_identity(&ctx_c, &bad[0], 7, &bad[0], 7);
+
+    var buf: [byte: 256] = [0:256];
+    var len: usize = 0;
+    if ssl_handshake_step(&ctx_c, &buf[0], 0, &buf[0], 256, &len) != HS_STATUS_NEED_SEND {
+        return 1;
+    }
+    var snd: [byte: 256] = [0:256];
+    var snd_len: usize = 0;
+    if ssl_handshake_step(&ctx_s, &buf[0], len, &snd[0], 256, &snd_len) != HS_STATUS_NEED_SEND {
+        return 2;
+    }
+    if ssl_handshake_step(&ctx_c, &snd[0], snd_len, &buf[0], 256, &len) != HS_STATUS_DONE {
+        return 3;
+    }
+    if ssl_is_handshake_done(&ctx_c) {
+        return 4;
+    }
+    return 0;
+}
+
+fn test_untrusted_peer_chain_fails_handshake_completion() i32 {
+    var root_ok: Cert = Cert{};
+    root_ok.rsa_n_len = 1;
+    root_ok.rsa_n[0] = 0xAA;
+    root_ok.rsa_e_len = 1;
+    root_ok.rsa_e[0] = 0x01;
+    root_ok.has_basic_constraints = true;
+    root_ok.is_ca = true;
+    root_ok.has_key_usage = true;
+    root_ok.key_usage_bits = KU_KEY_CERT_SIGN;
+
+    var root_bad: Cert = Cert{};
+    root_bad.rsa_n_len = 1;
+    root_bad.rsa_n[0] = 0xCC;
+    root_bad.rsa_e_len = 1;
+    root_bad.rsa_e[0] = 0x01;
+    root_bad.has_basic_constraints = true;
+    root_bad.is_ca = true;
+    root_bad.has_key_usage = true;
+    root_bad.key_usage_bits = KU_KEY_CERT_SIGN;
+
+    var leaf: Cert = Cert{};
+    leaf.rsa_n_len = 1;
+    leaf.rsa_n[0] = 0xBB;
+    leaf.rsa_e_len = 1;
+    leaf.rsa_e[0] = 0x01;
+    leaf.has_key_usage = true;
+    leaf.key_usage_bits = KU_DIGITAL_SIGNATURE;
+
+    var hs_c: HandshakeCtx = HandshakeCtx{};
+    var rec_c: RecordCtx = RecordCtx{};
+    var ctx_c: SslContext = SslContext{ role: HS_ROLE_CLIENT, hs: &hs_c, rec: &rec_c };
+    var hs_s: HandshakeCtx = HandshakeCtx{};
+    var rec_s: RecordCtx = RecordCtx{};
+    var ctx_s: SslContext = SslContext{ role: HS_ROLE_SERVER, hs: &hs_s, rec: &rec_s };
+    ssl_init(&ctx_c);
+    ssl_init(&ctx_s);
+
+    var host: [byte: 11] = [101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
+    ssl_set_hostname(&ctx_c, &host[0], 11);
+    ssl_set_peer_identity(&ctx_c, &host[0], 11, &host[0], 11);
+    ssl_set_peer_chain(&ctx_c, &leaf, &root_ok, 1, &root_bad, 1, KU_DIGITAL_SIGNATURE);
+
+    var buf: [byte: 256] = [0:256];
+    var len: usize = 0;
+    if ssl_handshake_step(&ctx_c, &buf[0], 0, &buf[0], 256, &len) != HS_STATUS_NEED_SEND {
+        return 1;
+    }
+    var snd: [byte: 256] = [0:256];
+    var snd_len: usize = 0;
+    if ssl_handshake_step(&ctx_s, &buf[0], len, &snd[0], 256, &snd_len) != HS_STATUS_NEED_SEND {
+        return 2;
+    }
+    if ssl_handshake_step(&ctx_c, &snd[0], snd_len, &buf[0], 256, &len) != HS_STATUS_DONE {
+        return 3;
+    }
+    if ssl_is_handshake_done(&ctx_c) {
+        return 4;
     }
     return 0;
 }
 
 export fn main() i32 {
-    if test_handshake_mock_roundtrip() != 0 {
-        return 1;
+    const a: i32 = test_handshake_mock_roundtrip();
+    if a != 0 {
+        return a;
     }
-    if test_context_handshake_and_write_read() != 0 {
-        return 2;
+    const b: i32 = test_context_handshake_and_write_read();
+    if b != 0 {
+        return 100 + b;
     }
-    if test_context13_handshake_and_write_read() != 0 {
-        return 3;
+    const c: i32 = test_context13_handshake_and_write_read();
+    if c != 0 {
+        return 200 + c;
+    }
+    const d: i32 = test_hostname_mismatch_fails_handshake_completion();
+    if d != 0 {
+        return 300 + d;
+    }
+    const e: i32 = test_untrusted_peer_chain_fails_handshake_completion();
+    if e != 0 {
+        return 400 + e;
     }
     return 0;
 }

@@ -1,0 +1,40 @@
+// test_tls_store.uya - 最小 trust anchor 装载测试
+
+use std.runtime.entry;
+use tls.x509.cert;
+use tls.x509.store;
+use libc.syscall;
+
+fn test_trust_anchor_from_empty_der_fails() i32 {
+    var empty: [byte: 1] = [0];
+    var c: Cert = Cert{};
+    trust_anchor_from_der(&empty[0], 0, &c) catch {
+        return 0;
+    };
+    return 1;
+}
+
+fn test_trust_anchor_load_empty_file_fails() i32 {
+    var path: [byte: 24] = [47, 116, 109, 112, 47, 117, 121, 97, 95, 116, 108, 115, 95, 101, 109, 112, 116, 121, 95, 99, 97, 0, 0, 0];
+    const fd: i32 = sys_open(&path[0], (O_CREAT | O_TRUNC | O_WRONLY) as i32, 0o600) catch {
+        return 2;
+    };
+    _ = sys_close(fd) catch {};
+    var c: Cert = Cert{};
+    trust_anchor_load_file(&path[0], &c) catch {
+        _ = sys_unlink(&path[0]) catch {};
+        return 0;
+    };
+    _ = sys_unlink(&path[0]) catch {};
+    return 3;
+}
+
+export fn main() i32 {
+    if test_trust_anchor_from_empty_der_fails() != 0 {
+        return 1;
+    }
+    if test_trust_anchor_load_empty_file_fails() != 0 {
+        return 2;
+    }
+    return 0;
+}
