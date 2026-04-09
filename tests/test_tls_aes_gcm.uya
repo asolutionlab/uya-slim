@@ -33,5 +33,30 @@ export fn main() i32 {
     if tag_empty[1] != 0x47 { return 12; }
     if tag_empty[15] != 0x18 { return 13; }
 
+    // NIST SP 800-38D 常用向量：zero key/nonce, 16-byte zero PT
+    // CT: 0388DACE60B6A392F328C2B971B2FE78
+    // Tag: AB6E47D42CEC13BDF53A67B21257BDDF
+    const key_zero: [byte: 16] = [0:16];
+    const nonce_zero: [byte: 12] = [0:12];
+    const pt_zero: [byte: 16] = [0:16];
+    var ct_zero: [byte: 16] = [];
+    var tag_zero: [byte: 16] = [];
+    if aes_gcm_encrypt(&key_zero[0], 16, &nonce_zero[0], 12, null, 0, &pt_zero[0], 16, &ct_zero[0], &tag_zero[0]) != 0 {
+        return 14;
+    }
+    if ct_zero[0] != 0x03 || ct_zero[1] != 0x88 || ct_zero[15] != 0x78 {
+        return 15;
+    }
+    if tag_zero[0] != 0xab || tag_zero[1] != 0x6e || tag_zero[15] != 0xdf {
+        return 16;
+    }
+    var roundtrip: [byte: 16] = [];
+    if aes_gcm_decrypt(&key_zero[0], 16, &nonce_zero[0], 12, null, 0, &ct_zero[0], 16, &tag_zero[0], &roundtrip[0]) != 0 {
+        return 17;
+    }
+    if roundtrip[0] != 0 || roundtrip[15] != 0 {
+        return 18;
+    }
+
     return 0;
 }

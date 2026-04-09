@@ -64,6 +64,221 @@ fn test_handshake_mock_roundtrip() i32 {
     return 0;
 }
 
+fn test_parse_realistic_tls_client_hello_record() i32 {
+    var server: HandshakeCtx = HandshakeCtx{};
+    handshake_ctx_init(&server, HS_ROLE_SERVER);
+    var ch: [byte: 72] = [
+        22, 3, 1, 0, 67,
+        1, 0, 0, 63,
+        3, 3,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+        0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
+        0,
+        0, 2,
+        0, 0x9c,
+        1,
+        0,
+        0, 20,
+        0, 0,
+        0, 16,
+        0, 14,
+        0,
+        0, 11,
+        101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109
+    ];
+    var out: [byte: 256] = [0:256];
+    var out_len: usize = 0;
+    if handshake_server_step(&server, &ch[0], 72, &out[0], 256, &out_len) != HS_STATUS_NEED_SEND {
+        return 20;
+    }
+    if server.sni_len != 11 || server.hostname[0] != 101 {
+        return 21;
+    }
+    if server.ciphersuite != 0x009c {
+        return 22;
+    }
+    if out_len != 68 {
+        return 23;
+    }
+    if out[0] != TLS_RECORD_HANDSHAKE || out[5] != HS_MSG_SERVER_HELLO || out[49] != 0xff || out[50] != 0x01 {
+        return 24;
+    }
+    return 0;
+}
+
+fn test_record_framed_handshake_roundtrip() i32 {
+    var client: HandshakeCtx = HandshakeCtx{};
+    var server: HandshakeCtx = HandshakeCtx{};
+    handshake_ctx_init(&client, HS_ROLE_CLIENT);
+    handshake_ctx_init(&server, HS_ROLE_SERVER);
+
+    var ch: [byte: 72] = [
+        22, 3, 1, 0, 67,
+        1, 0, 0, 63,
+        3, 3,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+        0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
+        0,
+        0, 2,
+        0, 0x9c,
+        1,
+        0,
+        0, 20,
+        0, 0,
+        0, 16,
+        0, 14,
+        0,
+        0, 11,
+        101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109
+    ];
+    var snd: [byte: 256] = [0:256];
+    var snd_len: usize = 0;
+    if handshake_server_step(&server, &ch[0], 72, &snd[0], 256, &snd_len) != HS_STATUS_NEED_SEND {
+        return 30;
+    }
+    if snd_len != 68 {
+        return 31;
+    }
+    client.state = HS_STATE_CLIENT_HELLO_SENT;
+    client.sni_len = 11;
+    client.hostname[0] = 101;
+    var cli: [byte: 64] = [0:64];
+    var cli_len: usize = 0;
+    if handshake_client_step(&client, &snd[0], snd_len, &cli[0], 64, &cli_len) != HS_STATUS_DONE {
+        return 32;
+    }
+    if cli_len != 13 || cli[0] != TLS_RECORD_HANDSHAKE || cli[5] != HS_MSG_CLIENT_KEY_EXCHANGE || cli[9] != HS_MSG_FINISHED {
+        return 33;
+    }
+    var sink: [byte: 32] = [0:32];
+    var sink_len: usize = 0;
+    if handshake_server_step(&server, &cli[0], cli_len, &sink[0], 32, &sink_len) != HS_STATUS_DONE {
+        return 34;
+    }
+    if sink_len != 51 || sink[0] != TLS_RECORD_CHANGE_CIPHER_SPEC || sink[6] != TLS_RECORD_HANDSHAKE {
+        return 36;
+    }
+    if sink[9] != 0 || sink[10] != 40 || sink[11] != 0xa0 || sink[50] != 0xc7 {
+        return 40;
+    }
+    if !handshake_is_done(&server) || !handshake_is_done(&client) {
+        return 35;
+    }
+    return 0;
+}
+
+fn test_record_framed_multi_record_second_flight() i32 {
+    var server: HandshakeCtx = HandshakeCtx{};
+    handshake_ctx_init(&server, HS_ROLE_SERVER);
+    server.record_framed = true;
+    server.state = HS_STATE_SERVER_FLIGHT_SENT;
+
+    var second: [byte: 24] = [0:24];
+    second[0] = TLS_RECORD_HANDSHAKE as byte;
+    hs_write_u16(&second[1], TLS_VERSION_1_2);
+    hs_write_u16(&second[3], 8);
+    second[5] = HS_MSG_CLIENT_KEY_EXCHANGE;
+    hs_write_u24(&second[6], 0);
+    second[9] = HS_MSG_FINISHED;
+    hs_write_u24(&second[10], 0);
+    second[13] = TLS_RECORD_CHANGE_CIPHER_SPEC as byte;
+    hs_write_u16(&second[14], TLS_VERSION_1_2);
+    hs_write_u16(&second[16], 1);
+    second[18] = 1;
+    second[19] = TLS_RECORD_HANDSHAKE as byte;
+    hs_write_u16(&second[20], TLS_VERSION_1_2);
+    hs_write_u16(&second[22], 0);
+
+    var sink: [byte: 32] = [0:32];
+    var sink_len: usize = 0;
+    if handshake_server_step(&server, &second[0], 24, &sink[0], 32, &sink_len) != HS_STATUS_DONE {
+        return 37;
+    }
+    if !handshake_is_done(&server) {
+        return 38;
+    }
+    if sink_len != 51 || sink[0] != TLS_RECORD_CHANGE_CIPHER_SPEC || sink[6] != TLS_RECORD_HANDSHAKE {
+        return 39;
+    }
+    if sink[9] != 0 || sink[10] != 40 || sink[11] != 0xa0 || sink[50] != 0xc7 {
+        return 41;
+    }
+    return 0;
+}
+
+fn test_server_flight_embeds_certificate_der() i32 {
+    var hs_s: HandshakeCtx = HandshakeCtx{};
+    var rec_s: RecordCtx = RecordCtx{};
+    var ctx_s: SslContext = SslContext{ role: HS_ROLE_SERVER, hs: &hs_s, rec: &rec_s };
+    ssl_init(&ctx_s);
+
+    var host: [byte: 11] = [101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109];
+    var leaf_der: [byte: 5] = [0x30, 0x03, 0x02, 0x01, 0x01];
+    var leaf: Cert = Cert{};
+    leaf.der = &leaf_der[0];
+    leaf.der_len = 5;
+    var key: RsaPrivateKey = RsaPrivateKey{};
+    ssl_server_add_identity(&ctx_s, &host[0], 11, &host[0], 11, &host[0], 11) catch {
+        return 40;
+    };
+    ssl_server_set_identity_credentials(&ctx_s, 0, &leaf, &key) catch {
+        return 41;
+    };
+
+    var ch: [byte: 72] = [
+        22, 3, 1, 0, 67,
+        1, 0, 0, 63,
+        3, 3,
+        0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
+        0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,
+        0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
+        0,
+        0, 2,
+        0, 0x9c,
+        1,
+        0,
+        0, 20,
+        0, 0,
+        0, 16,
+        0, 14,
+        0,
+        0, 11,
+        101, 120, 97, 109, 112, 108, 101, 46, 99, 111, 109
+    ];
+    var snd: [byte: 256] = [0:256];
+    var snd_len: usize = 0;
+    if ssl_handshake_step(&ctx_s, &ch[0], 72, &snd[0], 256, &snd_len) != HS_STATUS_NEED_SEND {
+        return 42;
+    }
+    if snd_len != 73 {
+        return 43;
+    }
+    if snd[49] != 0xff || snd[50] != 0x01 {
+        return 44;
+    }
+    if snd[54] != HS_MSG_CERTIFICATE {
+        return 44;
+    }
+    if snd[55] != 0 || snd[56] != 0 || snd[57] != 11 {
+        return 45;
+    }
+    if snd[58] != 0 || snd[59] != 0 || snd[60] != 8 {
+        return 46;
+    }
+    if snd[61] != 0 || snd[62] != 0 || snd[63] != 5 {
+        return 47;
+    }
+    if snd[64] != 0x30 || snd[68] != 0x01 {
+        return 47;
+    }
+    return 0;
+}
+
 fn test_context_handshake_and_write_read() i32 {
     var hs_c: HandshakeCtx = HandshakeCtx{};
     var rec_c: RecordCtx = RecordCtx{};
@@ -444,6 +659,22 @@ export fn main() i32 {
     const a: i32 = test_handshake_mock_roundtrip();
     if a != 0 {
         return a;
+    }
+    const ar: i32 = test_parse_realistic_tls_client_hello_record();
+    if ar != 0 {
+        return 50 + ar;
+    }
+    const arf: i32 = test_record_framed_handshake_roundtrip();
+    if arf != 0 {
+        return 80 + arf;
+    }
+    const arm: i32 = test_record_framed_multi_record_second_flight();
+    if arm != 0 {
+        return 90 + arm;
+    }
+    const arc: i32 = test_server_flight_embeds_certificate_der();
+    if arc != 0 {
+        return 120 + arc;
     }
     const b: i32 = test_context_handshake_and_write_read();
     if b != 0 {

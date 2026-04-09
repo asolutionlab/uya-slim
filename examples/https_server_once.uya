@@ -1,0 +1,59 @@
+// examples/https_server_once.uya - 最小 HTTPS server 演示（单连接、单响应）
+//
+// 构建运行（仓库根目录）:
+//   ./bin/uya --c99 examples/https_server_once.uya -o /tmp/https_server_once.c
+//   cc -std=c99 -O0 -g -fno-builtin -o /tmp/https_server_once /tmp/https_server_once.c -lm
+//   /tmp/https_server_once
+//
+// 当前实现会监听 127.0.0.1:8443，接受一个连接并返回固定正文后退出。
+
+use std.runtime.entry;
+use tls.https;
+use tls.x509.cert;
+use tls.x509.store;
+use tls.crypto.rsa;
+use libc.syscall;
+
+fn load_demo_cert(path: &const byte, path_len: usize, buf: &byte, buf_max: usize, cert_out: &Cert) !void {
+    const fd: i32 = try sys_open(path, O_RDONLY as i32, 0);
+    const n: isize = sys_read(fd, buf, buf_max) catch {
+        _ = sys_close(fd) catch {};
+        return error.TlsBadInput;
+    };
+    _ = sys_close(fd) catch {};
+    if n <= 0 {
+        return error.TlsDecodeError;
+    }
+    try cert_parse(buf, (n as! usize).value, cert_out);
+}
+
+fn https_demo_run() !i32 {
+    var host: [byte: 9] = [108, 111, 99, 97, 108, 104, 111, 115, 116];
+    var body: [byte: 16] = [104, 101, 108, 108, 111, 32, 104, 116, 116, 112, 115, 32, 100, 101, 109, 111];
+    var srv: HttpsServer = try https_server_listen(&host[0], 9, 8443);
+    var cert_path: [byte: 35] = [101, 120, 97, 109, 112, 108, 101, 115, 47, 104, 116, 116, 112, 115, 95, 115, 101, 114, 118, 101, 114, 95, 111, 110, 99, 101, 95, 99, 101, 114, 116, 46, 100, 101, 114];
+    var key_path: [byte: 34] = [101, 120, 97, 109, 112, 108, 101, 115, 47, 104, 116, 116, 112, 115, 95, 115, 101, 114, 118, 101, 114, 95, 111, 110, 99, 101, 95, 107, 101, 121, 46, 100, 101, 114];
+    var cert_buf: [byte: 1024] = [0:1024];
+    var leaf: Cert = Cert{};
+    try load_demo_cert(&cert_path[0], 35, &cert_buf[0], 1024, &leaf);
+    var key: RsaPrivateKey = RsaPrivateKey{};
+    try rsa_private_key_load_pkcs1_file(&key_path[0], &key);
+    https_server_set_rsa_identity(&srv, &host[0], 9, &host[0], 9, &host[0], 9, &leaf, &key);
+
+    @println("https demo listening on https://127.0.0.1:8443/");
+    @println("serving one connection...");
+
+    https_server_serve_once(&srv, body[0: 16]) catch {
+        https_server_close(&srv);
+        return 1;
+    };
+    https_server_close(&srv);
+    @println("done");
+    return 0;
+}
+
+export fn main() i32 {
+    return https_demo_run() catch {
+        return 2;
+    };
+}

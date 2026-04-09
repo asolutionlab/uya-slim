@@ -2,6 +2,7 @@
 
 use tls.ssl.handshake;
 use tls.ssl.context;
+use tls.base.entropy;
 use tls.x509.cert.Cert;
 use tls.crypto.rsa.RsaPrivateKey;
 use std.http.server;
@@ -10,7 +11,12 @@ use libc.syscall;
 use libc.errno;
 
 const HTTPS_IO_BUF: usize = 4096;
+const HTTPS_HS_BUF: usize = 2048;
 const HTTPS_HOST_MAX: usize = 64;
+const HTTPS_RESOLV_CONF_MAX: usize = 512;
+const HTTPS_DNS_QUERY_MAX: usize = 256;
+const HTTPS_DNS_RESPONSE_MAX: usize = 512;
+const HTTPS_DNS_ANS_MAX: usize = 16;
 
 export struct HttpsServer {
     listen_fd: i32,
@@ -64,7 +70,9 @@ fn https_append_u16_dec(out: &byte, start: usize, n: u16) usize {
     var t: usize = 0;
     var x: u16 = n;
     while x > 0 && t < 6 {
-        tmp[t] = ((((x % 10) as u32) + 48) as! byte).value;
+        if t < 6 {
+            tmp[t] = ((((x % 10) as u32) + 48) as! byte).value;
+        }
         x = x / 10;
         t = t + 1;
     }
@@ -128,6 +136,296 @@ fn https_parse_ipv4(host: &const byte, host_len: usize, a: &byte, b: &byte, c: &
     c[0] = (values[2] as! byte).value;
     d[0] = (values[3] as! byte).value;
     return true;
+}
+
+fn https_write_u16_ascii(dst: &byte, n: u16) usize {
+    if n == 0 {
+        dst[0] = 48 as byte;
+        return 1;
+    }
+    var tmp: [byte: 6] = [0:6];
+    var t: usize = 0;
+    var x: u16 = n;
+    while x > 0 && t < 6 {
+        const idx: usize = t;
+        if idx >= 0 && idx < @len(tmp) {
+            tmp[idx] = ((((x % 10) as u32) + 48) as! byte).value;
+        }
+        x = x / 10;
+        t = t + 1;
+    }
+    var out: usize = 0;
+    while t > 0 {
+        t = t - 1;
+        const idx: usize = t;
+        if idx >= 0 && idx < @len(dst) && idx < @len(tmp) {
+            dst[out] = tmp[idx];
+        }
+        out = out + 1;
+    }
+    return out;
+}
+
+fn https_resolve_ipv4(host: &const byte, host_len: usize, port: u16, out_addr: &byte, out_len: &u32) !void {
+    var dns_ip: [byte: 4] = [0:4];
+    if !https_dns_lookup_ipv4(host, host_len, &dns_ip[0]) {
+        return error.InvalidRequest;
+    }
+    https_fill_sockaddr_ipv4(dns_ip[0], dns_ip[1], dns_ip[2], dns_ip[3], port, out_addr);
+    out_len[0] = 16 as u32;
+}
+
+fn https_read_be_u16(src: &const byte) u16 {
+    return ((((src[0] as u16) << 8) | (src[1] as u16)) as! u16).value;
+}
+
+fn https_write_be_u16(dst: &byte, v: u16) void {
+    dst[0] = (((v >> 8) & (0xFF as u16)) as! byte).value;
+    dst[1] = ((v & (0xFF as u16)) as! byte).value;
+}
+
+fn https_write_be_u32(dst: &byte, v: u32) void {
+    dst[0] = (((v >> 24) & (0xFF as u32)) as! byte).value;
+    dst[1] = (((v >> 16) & (0xFF as u32)) as! byte).value;
+    dst[2] = (((v >> 8) & (0xFF as u32)) as! byte).value;
+    dst[3] = ((v & (0xFF as u32)) as! byte).value;
+}
+
+fn https_skip_dns_name(msg: &const byte, msg_len: usize, start: usize, next_out: &usize) bool {
+    var pos: usize = start;
+    while pos < msg_len {
+        const label_len: byte = msg[pos];
+        if label_len == 0 {
+            next_out[0] = pos + 1;
+            return true;
+        }
+        if (label_len & (0xC0 as byte)) == (0xC0 as byte) {
+            if pos + 1 >= msg_len {
+                return false;
+            }
+            next_out[0] = pos + 2;
+            return true;
+        }
+        const step: usize = (label_len as usize) + 1;
+        if pos + step > msg_len {
+            return false;
+        }
+        pos = pos + step;
+    }
+    return false;
+}
+
+fn https_parse_nameserver_ipv4(buf: &const byte, buf_len: usize, a: &byte, b: &byte, c: &byte, d: &byte) bool {
+    var line_start: usize = 0;
+    while line_start < buf_len {
+        var line_end: usize = line_start;
+        while line_end < buf_len && buf[line_end] != 10 as byte {
+            line_end = line_end + 1;
+        }
+        var p: usize = line_start;
+        while p < line_end && (buf[p] == 32 as byte || buf[p] == 9 as byte) {
+            p = p + 1;
+        }
+        const remain: usize = line_end - p;
+        if remain >= 10 &&
+            buf[p + 0] == 110 && buf[p + 1] == 97 && buf[p + 2] == 109 && buf[p + 3] == 101 &&
+            buf[p + 4] == 115 && buf[p + 5] == 101 && buf[p + 6] == 114 && buf[p + 7] == 118 &&
+            buf[p + 8] == 101 && buf[p + 9] == 114 {
+            p = p + 10;
+            while p < line_end && (buf[p] == 32 as byte || buf[p] == 9 as byte) {
+                p = p + 1;
+            }
+            if p < line_end && https_parse_ipv4(&buf[p], line_end - p, a, b, c, d) {
+                return true;
+            }
+        }
+        line_start = line_end + 1;
+    }
+    return false;
+}
+
+fn https_load_nameserver_ipv4(a: &byte, b: &byte, c: &byte, d: &byte) void {
+    var path: [byte: 17] = [47, 101, 116, 99, 47, 114, 101, 115, 111, 108, 118, 46, 99, 111, 110, 102, 0];
+    var buf: [byte: HTTPS_RESOLV_CONF_MAX] = [0:HTTPS_RESOLV_CONF_MAX];
+    const fd_res: !i32 = sys_open(&path[0], O_RDONLY as i32, 0);
+    const fd: i32 = fd_res catch {
+        a[0] = 8; b[0] = 8; c[0] = 8; d[0] = 8;
+        return;
+    };
+    const n_res: !isize = sys_read(fd, &buf[0], HTTPS_RESOLV_CONF_MAX - 1);
+    _ = sys_close(fd) catch {};
+    const n: isize = n_res catch {
+        a[0] = 8; b[0] = 8; c[0] = 8; d[0] = 8;
+        return;
+    };
+    if n <= 0 || !https_parse_nameserver_ipv4(&buf[0], n as usize, a, b, c, d) {
+        a[0] = 8; b[0] = 8; c[0] = 8; d[0] = 8;
+    }
+}
+
+fn https_build_dns_query(host: &const byte, host_len: usize, txid: u16, out: &byte, out_len: &usize) bool {
+    if host_len == 0 || host_len >= HTTPS_HOST_MAX {
+        return false;
+    }
+    if HTTPS_DNS_QUERY_MAX < 17 {
+        return false;
+    }
+    https_write_be_u16(&out[0], txid);
+    https_write_be_u16(&out[2], 0x0100 as u16);
+    https_write_be_u16(&out[4], 1 as u16);
+    https_write_be_u16(&out[6], 0 as u16);
+    https_write_be_u16(&out[8], 0 as u16);
+    https_write_be_u16(&out[10], 0 as u16);
+    var pos: usize = 12;
+    var label_start: usize = 0;
+    var i: usize = 0;
+    while i <= host_len {
+        const at_end: bool = i == host_len;
+        var ch: byte = 46 as byte;
+        if !at_end {
+            ch = host[i];
+        }
+        if ch == 46 {
+            const label_len: usize = i - label_start;
+            if label_len == 0 || label_len > 63 || pos + 1 + label_len + 4 > HTTPS_DNS_QUERY_MAX {
+                return false;
+            }
+            out[pos] = (label_len as! byte).value;
+            pos = pos + 1;
+            var j: usize = 0;
+            while j < label_len {
+                out[pos] = host[label_start + j];
+                pos = pos + 1;
+                j = j + 1;
+            }
+            label_start = i + 1;
+        }
+        i = i + 1;
+    }
+    out[pos] = 0;
+    pos = pos + 1;
+    https_write_be_u16(&out[pos], 1 as u16);
+    pos = pos + 2;
+    https_write_be_u16(&out[pos], 1 as u16);
+    pos = pos + 2;
+    out_len[0] = pos;
+    return true;
+}
+
+fn https_parse_dns_response(resp: &const byte, resp_len: usize, txid: u16, out_ip: &byte) bool {
+    if resp_len < 12 {
+        return false;
+    }
+    if https_read_be_u16(&resp[0]) != txid {
+        return false;
+    }
+    const flags: u16 = https_read_be_u16(&resp[2]);
+    if (flags & (0x8000 as u16)) == 0 || (flags & (0x000F as u16)) != 0 {
+        return false;
+    }
+    const qdcount: usize = https_read_be_u16(&resp[4]) as usize;
+    const ancount: usize = https_read_be_u16(&resp[6]) as usize;
+    var pos: usize = 12;
+    var qi: usize = 0;
+    while qi < qdcount {
+        var next_pos: usize = 0;
+        if !https_skip_dns_name(resp, resp_len, pos, &next_pos) || next_pos + 4 > resp_len {
+            return false;
+        }
+        pos = next_pos + 4;
+        qi = qi + 1;
+    }
+    var ai: usize = 0;
+    while ai < ancount && ai < HTTPS_DNS_ANS_MAX {
+        var rr_pos: usize = 0;
+        if !https_skip_dns_name(resp, resp_len, pos, &rr_pos) || rr_pos + 10 > resp_len {
+            return false;
+        }
+        const rr_type: u16 = https_read_be_u16(&resp[rr_pos]);
+        const rr_class: u16 = https_read_be_u16(&resp[rr_pos + 2]);
+        const rdlen: usize = https_read_be_u16(&resp[rr_pos + 8]) as usize;
+        pos = rr_pos + 10;
+        if pos + rdlen > resp_len {
+            return false;
+        }
+        if rr_type == 1 as u16 && rr_class == 1 as u16 && rdlen == 4 {
+            out_ip[0] = resp[pos];
+            out_ip[1] = resp[pos + 1];
+            out_ip[2] = resp[pos + 2];
+            out_ip[3] = resp[pos + 3];
+            return true;
+        }
+        pos = pos + rdlen;
+        ai = ai + 1;
+    }
+    return false;
+}
+
+fn https_try_dns_server(host: &const byte, host_len: usize, ns_a: byte, ns_b: byte, ns_c: byte, ns_d: byte, out_ip: &byte) bool {
+    const fd_res: !i32 = sys_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    const fd: i32 = fd_res catch {
+        return false;
+    };
+    var timeout: TimeVal = TimeVal{ tv_sec: 2, tv_usec: 0 };
+    _ = sys_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout as *void, @size_of(TimeVal) as u32) catch {};
+    _ = sys_setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout as *void, @size_of(TimeVal) as u32) catch {};
+
+    var addr: [byte: 16] = [0:16];
+    https_fill_sockaddr_ipv4(ns_a, ns_b, ns_c, ns_d, 53 as u16, &addr[0]);
+    const connect_res: !i32 = sys_connect(fd, &addr[0] as *void, 16 as u32);
+    _ = connect_res catch {
+        _ = sys_close(fd) catch {};
+        return false;
+    };
+
+    var txid_buf: [byte: 2] = [0:2];
+    var txid: u16 = 0x4455 as u16;
+    entropy.fill_entropy(&txid_buf[0], 2) catch {};
+    txid = https_read_be_u16(&txid_buf[0]);
+    var query: [byte: HTTPS_DNS_QUERY_MAX] = [0:HTTPS_DNS_QUERY_MAX];
+    var query_len: usize = 0;
+    if !https_build_dns_query(host, host_len, txid, &query[0], &query_len) {
+        _ = sys_close(fd) catch {};
+        return false;
+    }
+    const sent_res: !isize = sys_send(fd, &query[0], query_len, 0);
+    const sent: isize = sent_res catch {
+        _ = sys_close(fd) catch {};
+        return false;
+    };
+    if sent != (query_len as! isize).value {
+        _ = sys_close(fd) catch {};
+        return false;
+    }
+
+    var resp: [byte: HTTPS_DNS_RESPONSE_MAX] = [0:HTTPS_DNS_RESPONSE_MAX];
+    const recv_res: !isize = sys_recv(fd, &resp[0], HTTPS_DNS_RESPONSE_MAX, 0);
+    _ = sys_close(fd) catch {};
+    const recv_len: isize = recv_res catch {
+        return false;
+    };
+    if recv_len <= 0 {
+        return false;
+    }
+    return https_parse_dns_response(&resp[0], recv_len as usize, txid, out_ip);
+}
+
+fn https_dns_lookup_ipv4(host: &const byte, host_len: usize, out_ip: &byte) bool {
+    var ns_a: byte = 0;
+    var ns_b: byte = 0;
+    var ns_c: byte = 0;
+    var ns_d: byte = 0;
+    https_load_nameserver_ipv4(&ns_a, &ns_b, &ns_c, &ns_d);
+    if https_try_dns_server(host, host_len, ns_a, ns_b, ns_c, ns_d, out_ip) {
+        return true;
+    }
+    if !(ns_a == 1 && ns_b == 1 && ns_c == 1 && ns_d == 1) && https_try_dns_server(host, host_len, 1 as byte, 1 as byte, 1 as byte, 1 as byte, out_ip) {
+        return true;
+    }
+    if !(ns_a == 8 && ns_b == 8 && ns_c == 8 && ns_d == 8) {
+        return https_try_dns_server(host, host_len, 8 as byte, 8 as byte, 8 as byte, 8 as byte, out_ip);
+    }
+    return false;
 }
 
 fn https_is_localhost(host: &const byte, host_len: usize) bool {
@@ -232,6 +530,211 @@ export fn https_write_all(fd: i32, src: &const byte, src_len: usize) !void {
     }
 }
 
+fn https_read_exact(fd: i32, out: &byte, need: usize) !void {
+    var off: usize = 0;
+    while off < need {
+        const got: usize = try https_read_some(fd, &out[off], need - off);
+        off = off + got;
+    }
+}
+
+fn https_read_handshake_input(fd: i32, out: &byte, out_max: usize, out_len: &usize) !void {
+    if out_max < 5 {
+        return error.TlsBadInput;
+    }
+    const first_len: usize = try https_read_some(fd, out, out_max);
+    if first_len >= 5 && out[0] == TLS_RECORD_HANDSHAKE as byte {
+        const rec_len: usize = (((out[3] as usize) << 8) | (out[4] as usize));
+        if 5 + rec_len > out_max {
+            return error.TlsBadInput;
+        }
+        if first_len < 5 + rec_len {
+            try https_read_exact(fd, &out[first_len], (5 + rec_len) - first_len);
+        }
+        out_len[0] = 5 + rec_len;
+        return;
+    }
+    out_len[0] = first_len;
+}
+
+fn https_is_toy_client_second_flight(buf: &const byte, buf_len: usize) bool {
+    if buf_len != 13 {
+        return false;
+    }
+    if buf[0] != TLS_RECORD_HANDSHAKE as byte {
+        return false;
+    }
+    if hs_read_u16(&buf[1]) != TLS_VERSION_1_2 {
+        return false;
+    }
+    if hs_read_u16(&buf[3]) != 8 {
+        return false;
+    }
+    if buf[5] != HS_MSG_CLIENT_KEY_EXCHANGE || hs_read_u24(&buf[6]) != 0 {
+        return false;
+    }
+    if buf[9] != HS_MSG_FINISHED || hs_read_u24(&buf[10]) != 0 {
+        return false;
+    }
+    return true;
+}
+
+fn https_read_tls_record_exact(fd: i32, out: &byte, out_max: usize, out_len: &usize) !void {
+    if out_max < 5 {
+        return error.TlsBadInput;
+    }
+    try https_read_exact(fd, out, 5);
+    const rec_len: usize = hs_read_u16(&out[3]) as usize;
+    if 5 + rec_len > out_max {
+        return error.TlsBadInput;
+    }
+    try https_read_exact(fd, &out[5], rec_len);
+    out_len[0] = 5 + rec_len;
+}
+
+fn https_try_read_some(fd: i32, out: &byte, out_max: usize) usize {
+    return https_read_some(fd, out, out_max) catch {
+        return 0;
+    };
+}
+
+fn https_read_handshake_burst(fd: i32, out: &byte, out_max: usize, out_len: &usize) !void {
+    if out_max < 5 {
+        return error.TlsBadInput;
+    }
+    var total: usize = try https_read_some(fd, out, out_max);
+    if total < 5 || out[0] != TLS_RECORD_HANDSHAKE as byte {
+        out_len[0] = total;
+        return;
+    }
+    const first_total: usize = 5 + (hs_read_u16(&out[3]) as usize);
+    if first_total > out_max {
+        return error.TlsBadInput;
+    }
+    if total < first_total {
+        try https_read_exact(fd, &out[total], first_total - total);
+        total = first_total;
+    }
+    if https_is_toy_client_second_flight(out as &const byte, first_total) {
+        out_len[0] = first_total;
+        return;
+    }
+    if first_total <= 8 {
+        out_len[0] = first_total;
+        return;
+    }
+
+    var pos: usize = first_total;
+    if total < pos + 5 {
+        try https_read_exact(fd, &out[total], (pos + 5) - total);
+        total = pos + 5;
+    }
+    var typ: byte = out[pos];
+    if typ != TLS_RECORD_HANDSHAKE as byte && typ != TLS_RECORD_CHANGE_CIPHER_SPEC as byte {
+        out_len[0] = pos;
+        return;
+    }
+    var rec_total: usize = 5 + (hs_read_u16(&out[pos + 3]) as usize);
+    if pos + rec_total > out_max {
+        return error.TlsBadInput;
+    }
+    if total < pos + rec_total {
+        try https_read_exact(fd, &out[total], (pos + rec_total) - total);
+        total = pos + rec_total;
+    }
+    pos = pos + rec_total;
+    if typ == TLS_RECORD_HANDSHAKE as byte {
+        out_len[0] = pos;
+        return;
+    }
+
+    if total < pos + 5 {
+        try https_read_exact(fd, &out[total], (pos + 5) - total);
+        total = pos + 5;
+    }
+    typ = out[pos];
+    if typ != TLS_RECORD_HANDSHAKE as byte {
+        out_len[0] = pos;
+        return;
+    }
+    rec_total = 5 + (hs_read_u16(&out[pos + 3]) as usize);
+    if pos + rec_total > out_max {
+        return error.TlsBadInput;
+    }
+    if total < pos + rec_total {
+        try https_read_exact(fd, &out[total], (pos + rec_total) - total);
+        total = pos + rec_total;
+    }
+    pos = pos + rec_total;
+    out_len[0] = pos;
+}
+
+fn https_read_client_second_flight(fd: i32, out: &byte, out_max: usize, out_len: &usize) !void {
+    if out_max < 5 {
+        return error.TlsBadInput;
+    }
+    var total: usize = try https_read_some(fd, out, out_max);
+    if total < 5 || out[0] != TLS_RECORD_HANDSHAKE as byte {
+        out_len[0] = total;
+        return;
+    }
+
+    const first_total: usize = 5 + (hs_read_u16(&out[3]) as usize);
+    if first_total > out_max {
+        return error.TlsBadInput;
+    }
+    if total < first_total {
+        try https_read_exact(fd, &out[total], first_total - total);
+        total = first_total;
+    }
+    if https_is_toy_client_second_flight(out as &const byte, first_total) {
+        out_len[0] = first_total;
+        return;
+    }
+    if first_total <= 8 {
+        out_len[0] = first_total;
+        return;
+    }
+
+    var pos: usize = first_total;
+    if total < pos + 5 {
+        try https_read_exact(fd, &out[total], (pos + 5) - total);
+        total = pos + 5;
+    }
+    if out[pos] != TLS_RECORD_CHANGE_CIPHER_SPEC as byte {
+        out_len[0] = pos;
+        return;
+    }
+    const ccs_total: usize = 5 + (hs_read_u16(&out[pos + 3]) as usize);
+    if pos + ccs_total > out_max {
+        return error.TlsBadInput;
+    }
+    if total < pos + ccs_total {
+        try https_read_exact(fd, &out[total], (pos + ccs_total) - total);
+        total = pos + ccs_total;
+    }
+    pos = pos + ccs_total;
+
+    if total < pos + 5 {
+        try https_read_exact(fd, &out[total], (pos + 5) - total);
+        total = pos + 5;
+    }
+    if out[pos] != TLS_RECORD_HANDSHAKE as byte {
+        out_len[0] = pos;
+        return;
+    }
+    const fin_total: usize = 5 + (hs_read_u16(&out[pos + 3]) as usize);
+    if pos + fin_total > out_max {
+        return error.TlsBadInput;
+    }
+    if total < pos + fin_total {
+        try https_read_exact(fd, &out[total], (pos + fin_total) - total);
+        total = pos + fin_total;
+    }
+    pos = pos + fin_total;
+    out_len[0] = pos;
+}
+
 fn https_client_connect(host: &const byte, host_len: usize, port: u16) !i32 {
     const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     var addr: [byte: 16] = [0:16];
@@ -243,8 +746,13 @@ fn https_client_connect(host: &const byte, host_len: usize, port: u16) !i32 {
         var c: byte = 0;
         var d: byte = 0;
         if !https_parse_ipv4(host, host_len, &a, &b, &c, &d) {
-            _ = sys_close(fd) catch {};
-            return error.InvalidRequest;
+            var addr_len: u32 = 0;
+            https_resolve_ipv4(host, host_len, port, &addr[0], &addr_len) catch {
+                _ = sys_close(fd) catch {};
+                return error.InvalidRequest;
+            };
+            try https_connect_fd(fd, &addr[0], addr_len);
+            return fd;
         }
         https_fill_sockaddr_ipv4(a, b, c, d, port, &addr[0]);
     }
@@ -253,18 +761,19 @@ fn https_client_connect(host: &const byte, host_len: usize, port: u16) !i32 {
 }
 
 fn https_client_handshake(fd: i32, ctx: &SslContext) !void {
-    var send_buf: [byte: 256] = [0:256];
-    var recv_buf: [byte: 256] = [0:256];
+    var send_buf: [byte: HTTPS_HS_BUF] = [0:HTTPS_HS_BUF];
+    var recv_buf: [byte: HTTPS_HS_BUF] = [0:HTTPS_HS_BUF];
     var send_len: usize = 0;
     var recv_len: usize = 0;
 
-    var status: i32 = ssl_handshake_step(ctx, &recv_buf[0], 0, &send_buf[0], 256, &send_len);
+    var status: i32 = ssl_handshake_step(ctx, &recv_buf[0], 0, &send_buf[0], HTTPS_HS_BUF, &send_len);
     if status == HS_STATUS_ERROR {
         return error.TlsHandshakeFailure;
     }
     try https_write_all(fd, &send_buf[0], send_len);
-    recv_len = try https_read_some(fd, &recv_buf[0], 256);
-    status = ssl_handshake_step(ctx, &recv_buf[0], recv_len, &send_buf[0], 256, &send_len);
+    recv_len = 0;
+    try https_read_client_second_flight(fd, &recv_buf[0], HTTPS_HS_BUF, &recv_len);
+    status = ssl_handshake_step(ctx, &recv_buf[0], recv_len, &send_buf[0], HTTPS_HS_BUF, &send_len);
     if status == HS_STATUS_ERROR || !ssl_is_handshake_done(ctx) {
         return error.TlsHandshakeFailure;
     }
@@ -272,18 +781,24 @@ fn https_client_handshake(fd: i32, ctx: &SslContext) !void {
 }
 
 fn https_server_handshake(fd: i32, ctx: &SslContext) !void {
-    var send_buf: [byte: 256] = [0:256];
-    var recv_buf: [byte: 256] = [0:256];
+    var send_buf: [byte: HTTPS_HS_BUF] = [0:HTTPS_HS_BUF];
+    var recv_buf: [byte: HTTPS_HS_BUF] = [0:HTTPS_HS_BUF];
     var send_len: usize = 0;
+    var recv_len: usize = 0;
 
-    const recv_len: usize = try https_read_some(fd, &recv_buf[0], 256);
-    var status: i32 = ssl_handshake_step(ctx, &recv_buf[0], recv_len, &send_buf[0], 256, &send_len);
+    try https_read_handshake_input(fd, &recv_buf[0], HTTPS_HS_BUF, &recv_len);
+    var status: i32 = ssl_handshake_step(ctx, &recv_buf[0], recv_len, &send_buf[0], HTTPS_HS_BUF, &send_len);
     if status == HS_STATUS_ERROR {
         return error.TlsHandshakeFailure;
     }
     try https_write_all(fd, &send_buf[0], send_len);
-    const recv_len2: usize = try https_read_some(fd, &recv_buf[0], 256);
-    status = ssl_handshake_step(ctx, &recv_buf[0], recv_len2, &send_buf[0], 256, &send_len);
+    recv_len = 0;
+    try https_read_client_second_flight(fd, &recv_buf[0], HTTPS_HS_BUF, &recv_len);
+    send_len = 0;
+    status = ssl_handshake_step(ctx, &recv_buf[0], recv_len, &send_buf[0], HTTPS_HS_BUF, &send_len);
+    if status != HS_STATUS_ERROR && send_len > 0 {
+        try https_write_all(fd, &send_buf[0], send_len);
+    }
     if status == HS_STATUS_ERROR || !ssl_is_handshake_done(ctx) {
         return error.TlsHandshakeFailure;
     }
@@ -386,6 +901,13 @@ export fn https_get(host: &const byte, host_len: usize, port: u16, path: &[byte]
     var rec: RecordCtx = RecordCtx{};
     var ctx: SslContext = SslContext{ role: HS_ROLE_CLIENT, hs: &hs, rec: &rec };
     ssl_init(&ctx);
+    var ipv4_a: byte = 0;
+    var ipv4_b: byte = 0;
+    var ipv4_c: byte = 0;
+    var ipv4_d: byte = 0;
+    if !https_is_localhost(host, host_len) && !https_parse_ipv4(host, host_len, &ipv4_a, &ipv4_b, &ipv4_c, &ipv4_d) {
+        ctx.hs.record_framed = true;
+    }
     ssl_set_hostname(&ctx, host, host_len);
     ssl_set_peer_identity(&ctx, host, host_len, host, host_len);
     https_client_handshake(fd, &ctx) catch {

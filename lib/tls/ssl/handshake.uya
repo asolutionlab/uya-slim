@@ -2,6 +2,15 @@
 // 目标不是完整 RFC 互操作，而是把占位状态机补成“真实消息流 + 已协商参数 + SNI 传递”的可测试闭环。
 
 use tls.common;
+use tls.crypto.hmac.hmac_sha256;
+use tls.crypto.sha256.sha256;
+use tls.crypto.rsa.RsaPrivateKey;
+use tls.crypto.rsa.rsa_private_decrypt_pkcs1_v15;
+use tls.ssl.record.RecordCtx;
+use tls.ssl.record.record_ctx_init;
+use tls.ssl.record.record_set_tls12_key_material;
+use tls.ssl.record.record_encrypt;
+use tls.ssl.record.record_decrypt;
 use std.mem.mem.mem_copy;
 
 const HS_MSG_CLIENT_HELLO: byte = 1;
@@ -15,6 +24,12 @@ const HS_MSG_FINISHED: byte = 20;
 const HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256: u16 = 0x009c;
 const HS_HOSTNAME_MAX: usize = 64;
 const HS_RANDOM_LEN: usize = 32;
+const HS_SERVER_RENEG_EXT_LEN: usize = 5;
+const HS_MASTER_SECRET_LEN: usize = 48;
+const HS_VERIFY_DATA_LEN: usize = 12;
+const HS_TLS12_KEY_BLOCK_LEN: usize = 40;
+const HS_MAX_CLIENT_HELLO_MSG: usize = 512;
+const HS_MAX_SERVER_FLIGHT_MSG: usize = 1024;
 
 export const HS_STATUS_NEED_SEND: i32 = 0;
 export const HS_STATUS_NEED_RECV: i32 = 1;
@@ -35,12 +50,27 @@ export struct HandshakeCtx {
     role: i32,
     version: u16,
     ciphersuite: u16,
+    record_framed: bool,
     handshake_done: bool,
     appdata_ready: bool,
     sni_len: usize,
     hostname: [byte: HS_HOSTNAME_MAX],
+    cert_der: &const byte,
+    cert_der_len: usize,
+    server_rsa_key: &const RsaPrivateKey,
     client_random: [byte: HS_RANDOM_LEN],
     server_random: [byte: HS_RANDOM_LEN],
+    client_hello_msg_len: usize,
+    client_hello_msg: [byte: HS_MAX_CLIENT_HELLO_MSG],
+    server_flight_msg_len: usize,
+    server_flight_msg: [byte: HS_MAX_SERVER_FLIGHT_MSG],
+    master_secret: [byte: HS_MASTER_SECRET_LEN],
+    client_write_key: [byte: 16],
+    server_write_key: [byte: 16],
+    client_write_iv: [byte: 4],
+    server_write_iv: [byte: 4],
+    server_finished_verify_data: [byte: HS_VERIFY_DATA_LEN],
+    tls12_keys_ready: bool,
 }
 
 fn hs_fill_random(dst: &byte, first: byte) void {
@@ -63,6 +93,7 @@ fn hs_read_u16(src: &const byte) u16 {
 fn hs_reset_negotiated(ctx: &HandshakeCtx) void {
     ctx.version = TLS_VERSION_1_2;
     ctx.ciphersuite = HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256;
+    ctx.record_framed = false;
     ctx.handshake_done = false;
     ctx.appdata_ready = false;
 }
@@ -71,6 +102,12 @@ export fn handshake_ctx_init(ctx: &HandshakeCtx, role: i32) void {
     ctx.state = HS_STATE_INIT;
     ctx.role = role;
     ctx.sni_len = 0;
+    ctx.cert_der = null as &const byte;
+    ctx.cert_der_len = 0;
+    ctx.server_rsa_key = null as &const RsaPrivateKey;
+    ctx.client_hello_msg_len = 0;
+    ctx.server_flight_msg_len = 0;
+    ctx.tls12_keys_ready = false;
     hs_reset_negotiated(ctx);
     hs_fill_random(&ctx.client_random[0], 0x10);
     hs_fill_random(&ctx.server_random[0], 0x80);
@@ -87,7 +124,152 @@ export fn handshake_set_hostname(ctx: &HandshakeCtx, name: &const byte, len: usi
     mem_copy(&ctx.hostname[0], name, len);
 }
 
+export fn handshake_set_server_certificate(ctx: &HandshakeCtx, der: &const byte, der_len: usize) void {
+    ctx.cert_der = der;
+    ctx.cert_der_len = der_len;
+}
+
+export fn handshake_set_server_rsa_key(ctx: &HandshakeCtx, key: &const RsaPrivateKey) void {
+    ctx.server_rsa_key = key;
+}
+
+fn hs_remember_message(dst: &byte, dst_max: usize, dst_len: &usize, src: &const byte, src_len: usize) void {
+    var n: usize = src_len;
+    if n > dst_max {
+        n = dst_max;
+    }
+    dst_len[0] = n;
+    if n > 0 {
+        mem_copy(dst, src, n);
+    }
+}
+
+fn hs_p_hash_sha256(secret: &const byte, secret_len: usize, seed: &const byte, seed_len: usize, out: &byte, out_len: usize) void {
+    var a: [byte: 32] = [0:32];
+    var block: [byte: 128] = [0:128];
+    var hmac_out: [byte: 32] = [0:32];
+    if seed_len > 96 {
+        return;
+    }
+    if seed_len > 0 {
+        mem_copy(&block[0], seed, seed_len);
+    }
+    hmac_sha256(secret, secret_len, &block[0], seed_len, &a[0]);
+    var produced: usize = 0;
+    while produced < out_len {
+        mem_copy(&block[0], &a[0], 32);
+        if seed_len > 0 {
+            mem_copy(&block[32], seed, seed_len);
+        }
+        hmac_sha256(secret, secret_len, &block[0], 32 + seed_len, &hmac_out[0]);
+        var take: usize = 32;
+        if take > out_len - produced {
+            take = out_len - produced;
+        }
+        mem_copy(&out[produced], &hmac_out[0], take);
+        produced = produced + take;
+        hmac_sha256(secret, secret_len, &a[0], 32, &a[0]);
+    }
+}
+
+fn hs_tls12_prf_sha256(secret: &const byte, secret_len: usize, label: &const byte, label_len: usize, seed: &const byte, seed_len: usize, out: &byte, out_len: usize) void {
+    var buf: [byte: 96] = [0:96];
+    if label_len + seed_len > 96 {
+        return;
+    }
+    if label_len > 0 {
+        mem_copy(&buf[0], label, label_len);
+    }
+    if seed_len > 0 {
+        var i: usize = 0;
+        while i < seed_len {
+            if label_len + i >= 96 {
+                return;
+            }
+            buf[label_len + i] = seed[i];
+            i = i + 1;
+        }
+    }
+    hs_p_hash_sha256(secret, secret_len, &buf[0], label_len + seed_len, out, out_len);
+}
+
+fn hs_hash_messages(part0: &const byte, len0: usize, part1: &const byte, len1: usize, part2: &const byte, len2: usize, part3: &const byte, len3: usize, out: &byte) void {
+    var buf: [byte: 2048] = [0:2048];
+    var pos: usize = 0;
+    if len0 > 0 {
+        if pos + len0 > 2048 {
+            return;
+        }
+        var i: usize = 0;
+        while i < len0 {
+            buf[pos + i] = part0[i];
+            i = i + 1;
+        }
+        pos = pos + len0;
+    }
+    if len1 > 0 {
+        if pos + len1 > 2048 {
+            return;
+        }
+        var i: usize = 0;
+        while i < len1 {
+            buf[pos + i] = part1[i];
+            i = i + 1;
+        }
+        pos = pos + len1;
+    }
+    if len2 > 0 {
+        if pos + len2 > 2048 {
+            return;
+        }
+        var i: usize = 0;
+        while i < len2 {
+            buf[pos + i] = part2[i];
+            i = i + 1;
+        }
+        pos = pos + len2;
+    }
+    if len3 > 0 {
+        if pos + len3 > 2048 {
+            return;
+        }
+        var i: usize = 0;
+        while i < len3 {
+            buf[pos + i] = part3[i];
+            i = i + 1;
+        }
+        pos = pos + len3;
+    }
+    sha256(&buf[0], pos, out);
+}
+
+fn hs_tls12_compute_verify_data(master: &const byte, label: &const byte, label_len: usize, transcript_hash: &const byte, out: &byte) void {
+    hs_tls12_prf_sha256(master, HS_MASTER_SECRET_LEN, label, label_len, transcript_hash, 32, out, HS_VERIFY_DATA_LEN);
+}
+
+fn hs_tls12_derive_keys(ctx: &HandshakeCtx, premaster: &const byte, premaster_len: usize) void {
+    var label_master: [byte: 13] = [109, 97, 115, 116, 101, 114, 32, 115, 101, 99, 114, 101, 116];
+    var label_expand: [byte: 13] = [107, 101, 121, 32, 101, 120, 112, 97, 110, 115, 105, 111, 110];
+    var seed_master: [byte: 64] = [0:64];
+    var seed_expand: [byte: 64] = [0:64];
+    mem_copy(&seed_master[0], &ctx.client_random[0], HS_RANDOM_LEN);
+    mem_copy(&seed_master[HS_RANDOM_LEN], &ctx.server_random[0], HS_RANDOM_LEN);
+    mem_copy(&seed_expand[0], &ctx.server_random[0], HS_RANDOM_LEN);
+    mem_copy(&seed_expand[HS_RANDOM_LEN], &ctx.client_random[0], HS_RANDOM_LEN);
+    hs_tls12_prf_sha256(premaster, premaster_len, &label_master[0], 13, &seed_master[0], 64, &ctx.master_secret[0], HS_MASTER_SECRET_LEN);
+    var key_block: [byte: HS_TLS12_KEY_BLOCK_LEN] = [0:HS_TLS12_KEY_BLOCK_LEN];
+    hs_tls12_prf_sha256(&ctx.master_secret[0], HS_MASTER_SECRET_LEN, &label_expand[0], 13, &seed_expand[0], 64, &key_block[0], HS_TLS12_KEY_BLOCK_LEN);
+    mem_copy(&ctx.client_write_key[0], &key_block[0], 16);
+    mem_copy(&ctx.server_write_key[0], &key_block[16], 16);
+    mem_copy(&ctx.client_write_iv[0], &key_block[32], 4);
+    mem_copy(&ctx.server_write_iv[0], &key_block[36], 4);
+    ctx.tls12_keys_ready = true;
+}
+
 fn hs_encode_client_hello(ctx: &const HandshakeCtx, out: &byte, out_max: usize, out_len: &usize) bool {
+    if ctx.record_framed || ctx.sni_len > 0 {
+        return hs_encode_client_hello_tls_record(ctx, out, out_max, out_len);
+    }
     const total_len: usize = 1 + 2 + 2 + HS_RANDOM_LEN + 1 + ctx.sni_len;
     if out_max < total_len {
         return false;
@@ -104,7 +286,70 @@ fn hs_encode_client_hello(ctx: &const HandshakeCtx, out: &byte, out_max: usize, 
     return true;
 }
 
+fn hs_encode_client_hello_tls_record(ctx: &const HandshakeCtx, out: &byte, out_max: usize, out_len: &usize) bool {
+    const sigalgs_ext_body_len: usize = 4;
+    const sigalgs_ext_total_len: usize = 4 + sigalgs_ext_body_len;
+    var sni_ext_total_len: usize = 0;
+    if ctx.sni_len > 0 {
+        sni_ext_total_len = 4 + 5 + ctx.sni_len;
+    }
+    const ext_total_len: usize = sni_ext_total_len + sigalgs_ext_total_len;
+    const body_len: usize = 2 + HS_RANDOM_LEN + 1 + 2 + 2 + 1 + 1 + 2 + ext_total_len;
+    const total_len: usize = 5 + 4 + body_len;
+    if out_max < total_len {
+        return false;
+    }
+    out[0] = TLS_RECORD_HANDSHAKE as byte;
+    hs_write_u16(&out[1], 0x0301 as u16);
+    hs_write_u16(&out[3], (4 + body_len) as u16);
+    out[5] = HS_MSG_CLIENT_HELLO;
+    hs_write_u24(&out[6], body_len);
+    hs_write_u16(&out[9], TLS_VERSION_1_2);
+    mem_copy(&out[11], &ctx.client_random[0], HS_RANDOM_LEN);
+    var pos: usize = 43;
+    out[pos] = 0;
+    pos = pos + 1;
+    hs_write_u16(&out[pos], 2 as u16);
+    pos = pos + 2;
+    hs_write_u16(&out[pos], HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256);
+    pos = pos + 2;
+    out[pos] = 1;
+    pos = pos + 1;
+    out[pos] = 0;
+    pos = pos + 1;
+    hs_write_u16(&out[pos], ext_total_len as u16);
+    pos = pos + 2;
+    if ctx.sni_len > 0 {
+        hs_write_u16(&out[pos], 0 as u16);
+        pos = pos + 2;
+        hs_write_u16(&out[pos], (5 + ctx.sni_len) as u16);
+        pos = pos + 2;
+        hs_write_u16(&out[pos], (3 + ctx.sni_len) as u16);
+        pos = pos + 2;
+        out[pos] = 0;
+        pos = pos + 1;
+        hs_write_u16(&out[pos], ctx.sni_len as u16);
+        pos = pos + 2;
+        mem_copy(&out[pos], &ctx.hostname[0], ctx.sni_len);
+        pos = pos + ctx.sni_len;
+    }
+    hs_write_u16(&out[pos], 13 as u16);
+    pos = pos + 2;
+    hs_write_u16(&out[pos], sigalgs_ext_body_len as u16);
+    pos = pos + 2;
+    hs_write_u16(&out[pos], 2 as u16);
+    pos = pos + 2;
+    out[pos] = 4;
+    out[pos + 1] = 1;
+    pos = pos + 2;
+    out_len[0] = pos;
+    return pos == total_len;
+}
+
 fn hs_parse_client_hello(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bool {
+    if hs_parse_client_hello_tls_record(ctx, in_, in_len) {
+        return true;
+    }
     if in_len < 38 {
         return false;
     }
@@ -135,7 +380,146 @@ fn hs_parse_client_hello(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bo
     return true;
 }
 
+fn hs_read_u24(src: &const byte) usize {
+    return ((src[0] as usize) << 16) | ((src[1] as usize) << 8) | (src[2] as usize);
+}
+
+fn hs_write_u24(dst: &byte, v: usize) void {
+    dst[0] = ((((v >> 16) & 0xffusize) as u32) as! byte).value;
+    dst[1] = ((((v >> 8) & 0xffusize) as u32) as! byte).value;
+    dst[2] = (((v & 0xffusize) as u32) as! byte).value;
+}
+
+fn hs_parse_sni_extension(ctx: &HandshakeCtx, ext_ptr: &const byte, ext_len: usize) bool {
+    if ext_len < 5 {
+        return false;
+    }
+    const list_len: usize = hs_read_u16(ext_ptr) as usize;
+    if list_len + 2 > ext_len {
+        return false;
+    }
+    if ext_ptr[2] != 0 {
+        return false;
+    }
+    const host_len: usize = hs_read_u16(&ext_ptr[3]) as usize;
+    if 5 + host_len > ext_len || host_len > HS_HOSTNAME_MAX {
+        return false;
+    }
+    ctx.sni_len = host_len;
+    if host_len > 0 {
+        mem_copy(&ctx.hostname[0], &ext_ptr[5], host_len);
+    }
+    return true;
+}
+
+fn hs_parse_client_hello_extensions(ctx: &HandshakeCtx, ext_ptr: &const byte, ext_len: usize) bool {
+    var pos: usize = 0;
+    while pos + 4 <= ext_len {
+        const ext_type: u16 = hs_read_u16(&ext_ptr[pos]);
+        const item_len: usize = hs_read_u16(&ext_ptr[pos + 2]) as usize;
+        if pos + 4 + item_len > ext_len {
+            return false;
+        }
+        if ext_type == 0 {
+            if !hs_parse_sni_extension(ctx, &ext_ptr[pos + 4], item_len) {
+                return false;
+            }
+        }
+        pos = pos + 4 + item_len;
+    }
+    return pos == ext_len;
+}
+
+fn hs_parse_client_hello_tls_record(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bool {
+    if in_len < 5 {
+        return false;
+    }
+    if in_[0] != TLS_RECORD_HANDSHAKE {
+        return false;
+    }
+    const rec_version: u16 = hs_read_u16(&in_[1]);
+    if rec_version < 0x0301u16 || rec_version > TLS_VERSION_1_3 {
+        return false;
+    }
+    const rec_len: usize = hs_read_u16(&in_[3]) as usize;
+    if rec_len + 5 > in_len || rec_len < 4 {
+        return false;
+    }
+    const hs_ptr: &const byte = &in_[5];
+    if hs_ptr[0] != HS_MSG_CLIENT_HELLO {
+        return false;
+    }
+    const hs_len: usize = hs_read_u24(&hs_ptr[1]);
+    if hs_len + 4 > rec_len || hs_len < 34 {
+        return false;
+    }
+    const body: &const byte = &hs_ptr[4];
+    const legacy_version: u16 = hs_read_u16(body);
+    if legacy_version < TLS_VERSION_1_2 {
+        return false;
+    }
+    mem_copy(&ctx.client_random[0], &body[2], HS_RANDOM_LEN);
+    var pos: usize = 34;
+    const session_len: usize = body[pos] as usize;
+    pos = pos + 1;
+    if pos + session_len + 2 > hs_len {
+        return false;
+    }
+    pos = pos + session_len;
+    const cipher_len: usize = hs_read_u16(&body[pos]) as usize;
+    pos = pos + 2;
+    if cipher_len == 0 || (cipher_len & 1usize) != 0 || pos + cipher_len + 1 > hs_len {
+        return false;
+    }
+    var found_suite: bool = false;
+    var cpos: usize = 0;
+    while cpos + 2 <= cipher_len {
+        const suite: u16 = hs_read_u16(&body[pos + cpos]);
+        if suite == HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256 {
+            ctx.ciphersuite = suite;
+            found_suite = true;
+        }
+        cpos = cpos + 2;
+    }
+    if !found_suite {
+        ctx.ciphersuite = HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256;
+    }
+    pos = pos + cipher_len;
+    const comp_len: usize = body[pos] as usize;
+    pos = pos + 1;
+    if pos + comp_len > hs_len {
+        return false;
+    }
+    pos = pos + comp_len;
+    if pos == hs_len {
+        ctx.version = TLS_VERSION_1_2;
+        return true;
+    }
+    if pos + 2 > hs_len {
+        return false;
+    }
+    const ext_len: usize = hs_read_u16(&body[pos]) as usize;
+    pos = pos + 2;
+    if pos + ext_len > hs_len {
+        return false;
+    }
+    if ext_len > 0 && !hs_parse_client_hello_extensions(ctx, &body[pos], ext_len) {
+        return false;
+    }
+    ctx.record_framed = true;
+    ctx.version = TLS_VERSION_1_2;
+    hs_remember_message(&ctx.client_hello_msg[0], HS_MAX_CLIENT_HELLO_MSG, &ctx.client_hello_msg_len, hs_ptr, hs_len + 4);
+    return true;
+}
+
 fn hs_encode_server_flight(ctx: &const HandshakeCtx, out: &byte, out_max: usize, out_len: &usize) bool {
+    if ctx.record_framed {
+        return hs_encode_server_flight_tls_record(ctx, out, out_max, out_len);
+    }
+    var cert_marker: byte = 0;
+    if ctx.cert_der_len > 0 {
+        cert_marker = 1;
+    }
     const total_len: usize = 1 + 2 + 2 + HS_RANDOM_LEN + 1 + 1 + 1 + 1;
     if out_max < total_len {
         return false;
@@ -147,12 +531,15 @@ fn hs_encode_server_flight(ctx: &const HandshakeCtx, out: &byte, out_max: usize,
     out[37] = HS_MSG_CERTIFICATE;
     out[38] = HS_MSG_SERVER_KEY_EXCHANGE;
     out[39] = HS_MSG_SERVER_HELLO_DONE;
-    out[40] = (ctx.sni_len as! byte).value;
+    out[40] = cert_marker;
     out_len[0] = total_len;
     return true;
 }
 
 fn hs_parse_server_flight(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bool {
+    if hs_parse_server_flight_tls_record(ctx, in_, in_len) {
+        return true;
+    }
     if in_len != 41 {
         return false;
     }
@@ -170,7 +557,7 @@ fn hs_parse_server_flight(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) b
     if in_[37] != HS_MSG_CERTIFICATE || in_[38] != HS_MSG_SERVER_KEY_EXCHANGE || in_[39] != HS_MSG_SERVER_HELLO_DONE {
         return false;
     }
-    if (in_[40] as usize) != ctx.sni_len {
+    if in_[40] != 0 && in_[40] != 1 {
         return false;
     }
     ctx.version = TLS_VERSION_1_2;
@@ -178,7 +565,10 @@ fn hs_parse_server_flight(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) b
     return true;
 }
 
-fn hs_encode_client_finished(out: &byte, out_max: usize, out_len: &usize) bool {
+fn hs_encode_client_finished(ctx: &const HandshakeCtx, out: &byte, out_max: usize, out_len: &usize) bool {
+    if ctx.record_framed {
+        return hs_encode_client_finished_tls_record(out, out_max, out_len);
+    }
     if out_max < 2 {
         return false;
     }
@@ -189,6 +579,9 @@ fn hs_encode_client_finished(out: &byte, out_max: usize, out_len: &usize) bool {
 }
 
 fn hs_parse_client_finished(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bool {
+    if hs_parse_client_finished_tls_record(ctx, in_, in_len) {
+        return true;
+    }
     if in_len != 2 {
         return false;
     }
@@ -197,6 +590,347 @@ fn hs_parse_client_finished(ctx: &HandshakeCtx, in_: &const byte, in_len: usize)
     }
     ctx.handshake_done = true;
     ctx.appdata_ready = true;
+    return true;
+}
+
+fn hs_encode_client_finished_tls_record(out: &byte, out_max: usize, out_len: &usize) bool {
+    const rec_len: usize = 8;
+    const total_len: usize = 5 + rec_len;
+    if out_max < total_len {
+        return false;
+    }
+    out[0] = TLS_RECORD_HANDSHAKE as byte;
+    hs_write_u16(&out[1], TLS_VERSION_1_2);
+    hs_write_u16(&out[3], (rec_len as! u16).value);
+    out[5] = HS_MSG_CLIENT_KEY_EXCHANGE;
+    hs_write_u24(&out[6], 0);
+    out[9] = HS_MSG_FINISHED;
+    hs_write_u24(&out[10], 0);
+    out_len[0] = total_len;
+    return true;
+}
+
+fn hs_encode_server_finished_tls_record(ctx: &const HandshakeCtx, out: &byte, out_max: usize, out_len: &usize) bool {
+    const ccs_len: usize = 6;
+    const fin_plain_len: usize = 4 + HS_VERIFY_DATA_LEN;
+    const fin_len: usize = 5 + 8 + fin_plain_len + 16;
+    const total_len: usize = ccs_len + fin_len;
+    if out_max < total_len {
+        return false;
+    }
+    out[0] = TLS_RECORD_CHANGE_CIPHER_SPEC as byte;
+    hs_write_u16(&out[1], TLS_VERSION_1_2);
+    hs_write_u16(&out[3], 1);
+    out[5] = 1;
+    var plain: [byte: 16] = [0:16];
+    plain[0] = HS_MSG_FINISHED;
+    hs_write_u24(&plain[1], HS_VERIFY_DATA_LEN);
+    var i: usize = 0;
+    while i < HS_VERIFY_DATA_LEN {
+        plain[4 + i] = ctx.server_finished_verify_data[i];
+        i = i + 1;
+    }
+    var rec: RecordCtx = RecordCtx{};
+    record_ctx_init(&rec, TLS_VERSION_1_2);
+    if ctx.tls12_keys_ready {
+        record_set_tls12_key_material(&rec, &ctx.server_write_key[0], &ctx.client_write_key[0], &ctx.server_write_iv[0], &ctx.client_write_iv[0]) catch {
+            return false;
+        };
+    }
+    record_encrypt(&rec, TLS_RECORD_HANDSHAKE as byte, &plain[0], fin_plain_len, &out[6], out_len) catch {
+        return false;
+    };
+    out_len[0] = ccs_len + out_len[0];
+    out_len[0] = total_len;
+    return true;
+}
+
+fn hs_encode_server_flight_tls_record(ctx: &const HandshakeCtx, out: &byte, out_max: usize, out_len: &usize) bool {
+    const sh_body_len: usize = 2 + HS_RANDOM_LEN + 1 + 2 + 1 + 2 + HS_SERVER_RENEG_EXT_LEN;
+    const cert_body_len: usize = 6 + ctx.cert_der_len;
+    const sh_done_body_len: usize = 0;
+    const rec_payload_len: usize = 4 + sh_body_len + 4 + cert_body_len + 4 + sh_done_body_len;
+    const total_len: usize = 5 + rec_payload_len;
+    if out_max < total_len {
+        return false;
+    }
+    out[0] = TLS_RECORD_HANDSHAKE as byte;
+    hs_write_u16(&out[1], TLS_VERSION_1_2);
+    hs_write_u16(&out[3], (rec_payload_len as! u16).value);
+    out[5] = HS_MSG_SERVER_HELLO;
+    hs_write_u24(&out[6], sh_body_len);
+    hs_write_u16(&out[9], TLS_VERSION_1_2);
+    mem_copy(&out[11], &ctx.server_random[0], HS_RANDOM_LEN);
+    out[43] = 0;
+    hs_write_u16(&out[44], HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256);
+    out[46] = 0;
+    hs_write_u16(&out[47], HS_SERVER_RENEG_EXT_LEN as u16);
+    hs_write_u16(&out[49], 0xff01u16);
+    hs_write_u16(&out[51], 1);
+    out[53] = 0;
+    out[54] = HS_MSG_CERTIFICATE;
+    hs_write_u24(&out[55], cert_body_len);
+    hs_write_u24(&out[58], 3 + ctx.cert_der_len);
+    hs_write_u24(&out[61], ctx.cert_der_len);
+    if ctx.cert_der_len > 0 {
+        mem_copy(&out[64], ctx.cert_der, ctx.cert_der_len);
+    }
+    const shd_pos: usize = 64 + ctx.cert_der_len;
+    out[shd_pos] = HS_MSG_SERVER_HELLO_DONE;
+    hs_write_u24(&out[shd_pos + 1], sh_done_body_len);
+    out_len[0] = total_len;
+    return true;
+}
+
+fn hs_parse_server_flight_tls_record(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bool {
+    if in_len < 5 {
+        return false;
+    }
+    var pos: usize = 5;
+    var saw_server_hello: bool = false;
+    var saw_certificate: bool = false;
+    var saw_server_hello_done: bool = false;
+    var rec_pos: usize = 0;
+    while rec_pos + 5 <= in_len {
+        if in_[rec_pos] != TLS_RECORD_HANDSHAKE {
+            return false;
+        }
+        const rec_ver: u16 = hs_read_u16(&in_[rec_pos + 1]);
+        if rec_ver < 0x0301u16 || rec_ver > TLS_VERSION_1_2 {
+            return false;
+        }
+        const rec_len: usize = hs_read_u16(&in_[rec_pos + 3]) as usize;
+        if rec_pos + 5 + rec_len > in_len || rec_len < 4 {
+            return false;
+        }
+        pos = rec_pos + 5;
+        const rec_end: usize = pos + rec_len;
+        while pos + 4 <= rec_end {
+            const msg_type: byte = in_[pos];
+            const msg_len: usize = hs_read_u24(&in_[pos + 1]);
+            if pos + 4 + msg_len > rec_end {
+                return false;
+            }
+            if msg_type == HS_MSG_SERVER_HELLO {
+                if msg_len < 2 + HS_RANDOM_LEN + 1 + 2 + 1 {
+                    return false;
+                }
+                if hs_read_u16(&in_[pos + 4]) != TLS_VERSION_1_2 {
+                    return false;
+                }
+                mem_copy(&ctx.server_random[0], &in_[pos + 6], HS_RANDOM_LEN);
+                const sid_len: usize = in_[pos + 38] as usize;
+                const suite_pos: usize = pos + 39 + sid_len;
+                if suite_pos + 3 > pos + 4 + msg_len {
+                    return false;
+                }
+                const suite: u16 = hs_read_u16(&in_[suite_pos]);
+                if suite != HS_CIPHERSUITE_RSA_AES_128_GCM_SHA256 {
+                    return false;
+                }
+                if in_[suite_pos + 2] != 0 {
+                    return false;
+                }
+                ctx.version = TLS_VERSION_1_2;
+                ctx.ciphersuite = suite;
+                ctx.record_framed = true;
+                saw_server_hello = true;
+            } else if msg_type == HS_MSG_CERTIFICATE {
+                if msg_len < 6 {
+                    return false;
+                }
+                const chain_len: usize = hs_read_u24(&in_[pos + 4]);
+                if chain_len + 3 > msg_len {
+                    return false;
+                }
+                saw_certificate = true;
+            } else if msg_type == HS_MSG_SERVER_KEY_EXCHANGE {
+            } else if msg_type == HS_MSG_SERVER_HELLO_DONE {
+                if msg_len != 0 {
+                    return false;
+                }
+                saw_server_hello_done = true;
+            } else {
+                return false;
+            }
+            pos = pos + 4 + msg_len;
+        }
+        if pos != rec_end {
+            return false;
+        }
+        rec_pos = rec_end;
+    }
+    return rec_pos == in_len && saw_server_hello && saw_certificate && saw_server_hello_done;
+}
+
+fn hs_parse_client_second_flight_real_tls12(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bool {
+    if ctx.server_rsa_key == null as &const RsaPrivateKey || !ctx.record_framed {
+        return false;
+    }
+    if in_len < 5 || in_[0] != TLS_RECORD_HANDSHAKE {
+        return false;
+    }
+    const cke_rec_len: usize = hs_read_u16(&in_[3]) as usize;
+    if cke_rec_len < 6 || 5 + cke_rec_len + 6 + 5 > in_len {
+        return false;
+    }
+    if in_[5] != HS_MSG_CLIENT_KEY_EXCHANGE {
+        return false;
+    }
+    const cke_msg_len: usize = hs_read_u24(&in_[6]);
+    if cke_msg_len + 4 != cke_rec_len || cke_msg_len < 2 {
+        return false;
+    }
+    const enc_len: usize = hs_read_u16(&in_[9]) as usize;
+    if enc_len + 2 != cke_msg_len || 11 + enc_len > 5 + cke_rec_len {
+        return false;
+    }
+
+    var premaster: [byte: 256] = [0:256];
+    var premaster_len: usize = 0;
+    rsa_private_decrypt_pkcs1_v15(ctx.server_rsa_key, &in_[11], enc_len, &premaster[0], 256, &premaster_len) catch {
+        return false;
+    };
+    if premaster_len < 48 {
+        return false;
+    }
+    hs_tls12_derive_keys(ctx, &premaster[0], premaster_len);
+
+    var pos: usize = 5 + cke_rec_len;
+    if in_[pos] != TLS_RECORD_CHANGE_CIPHER_SPEC as byte || hs_read_u16(&in_[pos + 1]) != TLS_VERSION_1_2 || hs_read_u16(&in_[pos + 3]) != 1 || in_[pos + 5] != 1 {
+        return false;
+    }
+    pos = pos + 6;
+    if in_[pos] != TLS_RECORD_HANDSHAKE as byte {
+        return false;
+    }
+    const fin_total: usize = 5 + (hs_read_u16(&in_[pos + 3]) as usize);
+    if pos + fin_total != in_len {
+        return false;
+    }
+
+    var rec: RecordCtx = RecordCtx{};
+    record_ctx_init(&rec, TLS_VERSION_1_2);
+    record_set_tls12_key_material(&rec, &ctx.server_write_key[0], &ctx.client_write_key[0], &ctx.server_write_iv[0], &ctx.client_write_iv[0]) catch {
+        return false;
+    };
+    var plain: [byte: 64] = [0:64];
+    var plain_len: usize = 0;
+    var consumed: usize = 0;
+    record_decrypt(&rec, &in_[pos], fin_total, &plain[0], 64, &plain_len, &consumed) catch {
+        return false;
+    };
+    if consumed != fin_total || plain_len != 16 || plain[0] != HS_MSG_FINISHED || hs_read_u24(&plain[1]) != HS_VERIFY_DATA_LEN {
+        return false;
+    }
+
+    var transcript_hash: [byte: 32] = [0:32];
+    var expected_client: [byte: HS_VERIFY_DATA_LEN] = [0:HS_VERIFY_DATA_LEN];
+    var label_client: [byte: 15] = [99, 108, 105, 101, 110, 116, 32, 102, 105, 110, 105, 115, 104, 101, 100];
+    var label_server: [byte: 15] = [115, 101, 114, 118, 101, 114, 32, 102, 105, 110, 105, 115, 104, 101, 100];
+    hs_hash_messages(&ctx.client_hello_msg[0], ctx.client_hello_msg_len, &ctx.server_flight_msg[0], ctx.server_flight_msg_len, &in_[5], cke_rec_len, null as &const byte, 0, &transcript_hash[0]);
+    hs_tls12_compute_verify_data(&ctx.master_secret[0], &label_client[0], 15, &transcript_hash[0], &expected_client[0]);
+    var i: usize = 0;
+    while i < HS_VERIFY_DATA_LEN {
+        if plain[4 + i] != expected_client[i] {
+            return false;
+        }
+        i = i + 1;
+    }
+
+    hs_hash_messages(&ctx.client_hello_msg[0], ctx.client_hello_msg_len, &ctx.server_flight_msg[0], ctx.server_flight_msg_len, &in_[5], cke_rec_len, &plain[0], plain_len, &transcript_hash[0]);
+    hs_tls12_compute_verify_data(&ctx.master_secret[0], &label_server[0], 15, &transcript_hash[0], &ctx.server_finished_verify_data[0]);
+    ctx.handshake_done = true;
+    ctx.appdata_ready = true;
+    return true;
+}
+
+fn hs_parse_client_finished_tls_record(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bool {
+    if hs_parse_client_second_flight_real_tls12(ctx, in_, in_len) {
+        return true;
+    }
+    if in_len < 5 || in_[0] != TLS_RECORD_HANDSHAKE {
+        return hs_parse_client_second_flight_tls_records(ctx, in_, in_len);
+    }
+    if hs_read_u16(&in_[1]) != TLS_VERSION_1_2 {
+        return hs_parse_client_second_flight_tls_records(ctx, in_, in_len);
+    }
+    const rec_len: usize = hs_read_u16(&in_[3]) as usize;
+    if rec_len + 5 != in_len || rec_len != 8 {
+        return hs_parse_client_second_flight_tls_records(ctx, in_, in_len);
+    }
+    if in_[5] != HS_MSG_CLIENT_KEY_EXCHANGE || hs_read_u24(&in_[6]) != 0 {
+        return hs_parse_client_second_flight_tls_records(ctx, in_, in_len);
+    }
+    if in_[9] != HS_MSG_FINISHED || hs_read_u24(&in_[10]) != 0 {
+        return hs_parse_client_second_flight_tls_records(ctx, in_, in_len);
+    }
+    ctx.record_framed = true;
+    ctx.handshake_done = true;
+    ctx.appdata_ready = true;
+    return true;
+}
+
+fn hs_parse_client_second_flight_tls_records(ctx: &HandshakeCtx, in_: &const byte, in_len: usize) bool {
+    var pos: usize = 0;
+    var saw_cke: bool = false;
+    var saw_ccs: bool = false;
+    var saw_finished: bool = false;
+    while pos + 5 <= in_len {
+        const rec_type: byte = in_[pos];
+        const rec_ver: u16 = hs_read_u16(&in_[pos + 1]);
+        const rec_len: usize = hs_read_u16(&in_[pos + 3]) as usize;
+        if rec_ver != TLS_VERSION_1_2 {
+            return false;
+        }
+        if pos + 5 + rec_len > in_len {
+            return false;
+        }
+        if rec_type == TLS_RECORD_HANDSHAKE {
+            if rec_len < 4 {
+                if saw_ccs && saw_cke && rec_len > 0 {
+                    saw_finished = true;
+                    pos = pos + 5 + rec_len;
+                    continue;
+                }
+                return false;
+            }
+            const msg_type: byte = in_[pos + 5];
+            const msg_len: usize = hs_read_u24(&in_[pos + 6]);
+            if msg_len + 4 > rec_len {
+                if saw_ccs && saw_cke && rec_len > 0 {
+                    saw_finished = true;
+                    pos = pos + 5 + rec_len;
+                    continue;
+                }
+                return false;
+            }
+            if msg_type == HS_MSG_CLIENT_KEY_EXCHANGE {
+                saw_cke = true;
+            } else if msg_type == HS_MSG_FINISHED {
+                saw_finished = true;
+            } else if saw_ccs && saw_cke {
+                saw_finished = true;
+            } else {
+                return false;
+            }
+        } else if rec_type == TLS_RECORD_CHANGE_CIPHER_SPEC {
+            if rec_len != 1 || in_[pos + 5] != 1 {
+                return false;
+            }
+            saw_ccs = true;
+        } else {
+            return false;
+        }
+        pos = pos + 5 + rec_len;
+    }
+    if pos != in_len || !saw_cke || !saw_finished {
+        return false;
+    }
+    ctx.record_framed = true;
+    ctx.handshake_done = true;
+    ctx.appdata_ready = true;
+    _ = saw_ccs;
     return true;
 }
 
@@ -221,7 +955,7 @@ export fn handshake_client_step(ctx: &HandshakeCtx, recv_buf: &const byte, recv_
     if !hs_parse_server_flight(ctx, recv_buf, recv_len) {
         return HS_STATUS_ERROR;
     }
-    if !hs_encode_client_finished(send_buf, send_max, send_len_out) {
+    if !hs_encode_client_finished(ctx, send_buf, send_max, send_len_out) {
         return HS_STATUS_ERROR;
     }
     ctx.state = HS_STATE_DONE;
@@ -241,6 +975,9 @@ export fn handshake_server_step(ctx: &HandshakeCtx, recv_buf: &const byte, recv_
         if !hs_encode_server_flight(ctx, send_buf, send_max, send_len_out) {
             return HS_STATUS_ERROR;
         }
+        if ctx.record_framed && send_len_out[0] > 5 {
+            hs_remember_message(&ctx.server_flight_msg[0], HS_MAX_SERVER_FLIGHT_MSG, &ctx.server_flight_msg_len, &send_buf[5], send_len_out[0] - 5);
+        }
         ctx.state = HS_STATE_SERVER_FLIGHT_SENT;
         return HS_STATUS_NEED_SEND;
     }
@@ -252,10 +989,27 @@ export fn handshake_server_step(ctx: &HandshakeCtx, recv_buf: &const byte, recv_
             return HS_STATUS_ERROR;
         }
         ctx.state = HS_STATE_DONE;
-        send_len_out[0] = 0;
+        if ctx.record_framed {
+            if !hs_encode_server_finished_tls_record(ctx, send_buf, send_max, send_len_out) {
+                return HS_STATUS_ERROR;
+            }
+        } else {
+            send_len_out[0] = 0;
+        }
         return HS_STATUS_DONE;
     }
     return HS_STATUS_ERROR;
+}
+
+export fn handshake_server_reencode_flight(ctx: &HandshakeCtx, send_buf: &byte, send_max: usize, send_len_out: &usize) bool {
+    if ctx.state != HS_STATE_SERVER_FLIGHT_SENT {
+        return false;
+    }
+    const ok: bool = hs_encode_server_flight(ctx, send_buf, send_max, send_len_out);
+    if ok && ctx.record_framed && send_len_out[0] > 5 {
+        hs_remember_message(&ctx.server_flight_msg[0], HS_MAX_SERVER_FLIGHT_MSG, &ctx.server_flight_msg_len, &send_buf[5], send_len_out[0] - 5);
+    }
+    return ok;
 }
 
 export fn handshake_is_done(ctx: &const HandshakeCtx) bool {

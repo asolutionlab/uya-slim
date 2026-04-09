@@ -36,11 +36,11 @@
 |------|------|------|
 | 密码学基础 | 已有 | SHA/HMAC/HKDF/AES/GCM/RSA/X25519 等已具备 |
 | X.509 解析 | 已有 | 证书解析、链验证、hostname 匹配已实现 |
-| TLS 记录层 | 部分完成 | TLS 1.2/1.3 已走 AEAD 记录流，TLS 1.3 traffic secret 已接入，仍缺更完整互操作与分片覆盖 |
-| TLS 1.2 握手 | 骨架 | 还不是完整互操作握手 |
+| TLS 记录层 | 部分完成 | TLS 1.2/1.3 已走 AEAD 记录流，TLS 1.2 现已与 `openssl`/`curl` 完成最小本地互操作，仍缺更完整互操作与分片覆盖 |
+| TLS 1.2 握手 | 部分完成 | 已能和真实 `openssl s_client` / `curl` 完成本地 TLS 1.2 最小握手与应用数据往返；仍缺更完整消息覆盖与外站互操作 |
 | TLS 1.3 握手 | 部分完成 | 1-RTT、Finished、application traffic secret 已接通，仍缺更完整互操作 |
 | SNI / hostname 绑定 | 已完成 | `ssl_set_hostname`、hostname 校验与 ClientHello SNI 已接通 |
-| HTTP 层 | 部分完成 | 已有最小 `https_get` 和本地 HTTPS loopback server/client，仍缺真实站点互操作 |
+| HTTP 层 | 部分完成 | 已有最小 `https_get`、本地 HTTPS loopback，以及可被 `curl` 访问的本地 HTTPS server，仍缺真实站点互操作 |
 
 ---
 
@@ -137,7 +137,7 @@
 
 - [x] 实现最小 `https_get(host, port, path)`。
 - [x] 连接成功后输出状态码、响应头、响应体。
-- [ ] 支持 GET 即可，不要求复杂 chunked 编码以外的高级特性。
+- [x] 支持 GET 即可，不要求复杂 chunked 编码以外的高级特性。
 
 ### 4.3 证书存储
 
@@ -161,7 +161,7 @@
 ### 5.2 服务器证书
 
 - [x] 支持加载服务器证书和私钥。
-- [ ] 支持 RSA 或 ECDSA 至少一种服务端身份。
+- [x] 支持 RSA 或 ECDSA 至少一种服务端身份。
 
 ### 5.3 HTTP 响应
 
@@ -170,8 +170,8 @@
 
 ### 验收
 
-- [ ] `curl https://127.0.0.1:<port>/` 能返回预期内容。
-- [ ] 客户端和服务器都能跑在仓库的测试环境里。
+- [x] `curl https://127.0.0.1:<port>/` 能返回预期内容。
+- [x] 客户端和服务器都能跑在仓库的测试环境里。
 
 ---
 

@@ -146,7 +146,23 @@ fn ssl_sync_state(ctx: &SslContext) void {
         ssl_verify_peer_chain(ctx);
         ssl_verify_peer_hostname(ctx);
         ctx.rec.version = ctx.negotiated_version;
-        record_set_cipher_suite(ctx.rec, ctx.negotiated_ciphersuite);
+        if ctx.negotiated_version == TLS_VERSION_1_2 && ctx.hs.tls12_keys_ready {
+            if ctx.role == HS_ROLE_CLIENT {
+                record_set_tls12_key_material(ctx.rec, &ctx.hs.client_write_key[0], &ctx.hs.server_write_key[0], &ctx.hs.client_write_iv[0], &ctx.hs.server_write_iv[0]) catch {
+                    record_set_cipher_suite(ctx.rec, ctx.negotiated_ciphersuite);
+                };
+            } else {
+                record_set_tls12_key_material(ctx.rec, &ctx.hs.server_write_key[0], &ctx.hs.client_write_key[0], &ctx.hs.server_write_iv[0], &ctx.hs.client_write_iv[0]) catch {
+                    record_set_cipher_suite(ctx.rec, ctx.negotiated_ciphersuite);
+                };
+            }
+            if ctx.hs.record_framed {
+                ctx.rec.read_seq = 1;
+                ctx.rec.write_seq = 1;
+            }
+        } else {
+            record_set_cipher_suite(ctx.rec, ctx.negotiated_ciphersuite);
+        }
     }
 }
 
@@ -228,6 +244,10 @@ export fn ssl_server_set_identity_credentials(ctx: &SslContext, slot: usize, cer
     }
     ctx.server_identities[slot].cert = cert;
     ctx.server_identities[slot].rsa_key = rsa_key;
+    if slot == ctx.selected_server_identity && cert != null as &const Cert && cert.der != null as &const byte && cert.der_len > 0 {
+        handshake_set_server_certificate(ctx.hs, cert.der, cert.der_len);
+        handshake_set_server_rsa_key(ctx.hs, rsa_key);
+    }
 }
 
 export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
@@ -247,6 +267,19 @@ export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: 
         ssl_select_server_identity(ctx);
         if status != HS_STATUS_ERROR && !ssl_server_identity_is_ready(ctx) {
             status = HS_STATUS_ERROR;
+        } else {
+            if ctx.selected_server_identity < ctx.server_identity_count {
+                const chosen: &SslServerIdentity = &ctx.server_identities[ctx.selected_server_identity];
+                if chosen.cert != null as &const Cert && chosen.cert.der != null as &const byte && chosen.cert.der_len > 0 {
+                    handshake_set_server_certificate(ctx.hs, chosen.cert.der, chosen.cert.der_len);
+                    handshake_set_server_rsa_key(ctx.hs, chosen.rsa_key);
+                    if status == HS_STATUS_NEED_SEND {
+                        if !handshake_server_reencode_flight(ctx.hs, send_buf, send_max, send_len_out) {
+                            status = HS_STATUS_ERROR;
+                        }
+                    }
+                }
+            }
         }
     }
     ssl_sync_state(ctx);

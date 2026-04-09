@@ -21,6 +21,66 @@ export struct RsaPrivateKey {
     q_len: usize,
 }
 
+export fn rsa_private_decrypt_pkcs1_v15(key: &const RsaPrivateKey, cipher: &const byte, cipher_len: usize, out: &byte, out_max: usize, out_len: &usize) !void {
+    if key == null as &const RsaPrivateKey || cipher == null as &const byte || out == null as &byte {
+        return error.TlsBadInput;
+    }
+    if key.n_len == 0 || key.d_len == 0 || cipher_len != key.n_len {
+        return error.TlsBadInput;
+    }
+
+    var n: Mpi = Mpi{};
+    var d: Mpi = Mpi{};
+    var c: Mpi = Mpi{};
+    mpi_from_bytes_be(&n, &key.n[0], key.n_len) catch { return error.TlsCryptoFailure; };
+    mpi_from_bytes_be(&d, &key.d[0], key.d_len) catch { return error.TlsCryptoFailure; };
+    mpi_from_bytes_be(&c, cipher, cipher_len) catch { return error.TlsCryptoFailure; };
+    if mpi_compare(&c, &n) >= 0 {
+        return error.TlsInvalidMac;
+    }
+
+    var m: Mpi = Mpi{};
+    mpi_exp_mod(&m, &c, &d, &n) catch { return error.TlsCryptoFailure; };
+    if key.n_len > 512 {
+        return error.TlsBadInput;
+    }
+    var em: [byte: 512] = [0:512];
+    var i: usize = 0;
+    while i < key.n_len {
+        em[i] = 0;
+        i = i + 1;
+    }
+    const m_len: usize = mpi_byte_len(&m);
+    if m_len == 0 || m_len > key.n_len {
+        return error.TlsInvalidMac;
+    }
+    mpi_to_bytes_be(&m, &em[key.n_len - m_len], m_len) catch { return error.TlsCryptoFailure; };
+    if em[0] != 0 || em[1] != 2 {
+        return error.TlsInvalidMac;
+    }
+
+    var sep: usize = 2;
+    while sep < key.n_len && sep < 512 {
+        if em[sep] == 0 {
+            break;
+        }
+        sep = sep + 1;
+    }
+    if sep < 10 || sep >= key.n_len {
+        return error.TlsInvalidMac;
+    }
+    const msg_len: usize = key.n_len - sep - 1;
+    if msg_len > out_max {
+        return error.TlsBadInput;
+    }
+    i = 0;
+    while i < msg_len {
+        out[i] = em[sep + 1 + i];
+        i = i + 1;
+    }
+    out_len[0] = msg_len;
+}
+
 // PKCS#1 v1.5 验签（SHA-256）：检查 sig^e mod n 解出为 0x00 0x01 0xff.. 0x00 || DigestInfo_SHA256 || hash
 export fn rsa_verify_pkcs1_v15_sha256(n: &const Mpi, e: &const Mpi, hash: &const byte, hash_len: usize, sig: &const byte, sig_len: usize) !void {
     if n == null || e == null || hash == null || sig == null {

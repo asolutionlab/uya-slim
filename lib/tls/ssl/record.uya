@@ -75,6 +75,11 @@ fn record_build_nonce(iv: &const byte, seq: u64, nonce_out: &byte) void {
     record_copy_seq_be(seq, &nonce_out[4]);
 }
 
+fn record_build_nonce_from_explicit(iv: &const byte, explicit_nonce: &const byte, nonce_out: &byte) void {
+    mem_copy(nonce_out, iv, 4);
+    mem_copy(&nonce_out[4], explicit_nonce, RECORD_EXPLICIT_NONCE_LEN);
+}
+
 fn record_build_aad(seq: u64, typ: byte, version: u16, plain_len: usize, aad_out: &byte) void {
     record_copy_seq_be(seq, aad_out);
     aad_out[8] = typ;
@@ -162,6 +167,19 @@ export fn record_set_tls13_traffic_secret(ctx: &RecordCtx, secret: &const byte, 
     ctx.aead_ready = true;
 }
 
+export fn record_set_tls12_key_material(ctx: &RecordCtx, write_key: &const byte, read_key: &const byte, write_iv: &const byte, read_iv: &const byte) !void {
+    if ctx.version != TLS_VERSION_1_2 {
+        return error.TlsBadInput;
+    }
+    mem_copy(&ctx.write_key[0], write_key, 16);
+    mem_copy(&ctx.read_key[0], read_key, 16);
+    mem_copy(&ctx.write_iv[0], write_iv, 4);
+    mem_copy(&ctx.read_iv[0], read_iv, 4);
+    ctx.write_seq = 0;
+    ctx.read_seq = 0;
+    ctx.aead_ready = true;
+}
+
 export fn record_encrypt(ctx: &RecordCtx, typ: byte, plain: &const byte, plain_len: usize, cipher_out: &byte, out_len: &usize) !void {
     if !ctx.aead_ready {
         return error.TlsHandshakeFailure;
@@ -207,10 +225,6 @@ export fn record_decrypt(ctx: &RecordCtx, cipher_in: &const byte, cipher_len: us
     if RECORD_HEADER_LEN + payload_len > cipher_len {
         return error.TlsDecodeError;
     }
-    const explicit_seq: u64 = record_u64_from_be(&cipher_in[RECORD_HEADER_LEN]);
-    if explicit_seq != ctx.read_seq {
-        return error.TlsDecodeError;
-    }
     const plain_len: usize = payload_len - RECORD_EXPLICIT_NONCE_LEN - RECORD_TAG_LEN;
     if plain_len > plain_max || plain_len > RECORD_MAX_PLAIN {
         return error.TlsDecodeError;
@@ -218,8 +232,8 @@ export fn record_decrypt(ctx: &RecordCtx, cipher_in: &const byte, cipher_len: us
 
     var nonce: [byte: RECORD_NONCE_LEN] = [0:RECORD_NONCE_LEN];
     var aad: [byte: RECORD_AAD_LEN] = [0:RECORD_AAD_LEN];
-    record_build_nonce(&ctx.read_iv[0], explicit_seq, &nonce[0]);
-    record_build_aad(explicit_seq, typ, ver, plain_len, &aad[0]);
+    record_build_nonce_from_explicit(&ctx.read_iv[0], &cipher_in[RECORD_HEADER_LEN], &nonce[0]);
+    record_build_aad(ctx.read_seq, typ, ver, plain_len, &aad[0]);
 
     const cipher_ptr: &const byte = &cipher_in[RECORD_HEADER_LEN + RECORD_EXPLICIT_NONCE_LEN];
     const tag_ptr: &const byte = &cipher_in[RECORD_HEADER_LEN + RECORD_EXPLICIT_NONCE_LEN + plain_len];

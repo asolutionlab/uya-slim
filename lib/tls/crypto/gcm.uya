@@ -11,7 +11,7 @@ const GCM_TAG_LEN: usize = 16;
 const GCM_NONCE_LEN: usize = 12;
 const GCM_MAX_PT: usize = 65536;
 
-// 正确实现：Z = X * Y in GF(2^128)；Y 会被修改，调用方需传入副本
+// GHASH multiply over GF(2^128) using MSB-first bit order from SP 800-38D.
 fn _gf128_mul_inline(x: &const byte, y: &byte, z: &byte) void {
     var i: usize = 0;
     while i < 16 {
@@ -29,22 +29,22 @@ fn _gf128_mul_inline(x: &const byte, y: &byte, z: &byte) void {
                 j = j + 1;
             }
         }
-        _shift_left_1(y);
+        _shift_right_1(y);
         i = i + 1;
     }
 }
-fn _shift_left_1(block: &byte) byte {
-    const high: byte = block[0] >> 7;
-    var i: usize = 0;
-    while i < 15 {
-        block[i] = (block[i] << 1) | (block[i + 1] >> 7);
-        i = i + 1;
+fn _shift_right_1(block: &byte) byte {
+    const low: byte = block[15] & (1 as byte);
+    var i: usize = 15;
+    while i > 0 {
+        block[i] = (block[i] >> 1) | (block[i - 1] << 7);
+        i = i - 1;
     }
-    block[15] = block[15] << 1;
-    if high != 0 {
-        block[15] = block[15] ^ (0x87 as byte);
+    block[0] = block[0] >> 1;
+    if low != 0 {
+        block[0] = block[0] ^ (0xe1 as byte);
     }
-    return high;
+    return low;
 }
 
 fn _inc32(block: &byte) void {
