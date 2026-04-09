@@ -1,0 +1,319 @@
+// lib/tls/x509/cert.uya - X.509 证书解析（最小子集：RSA 公钥、序列号、签名用于验签）
+
+use tls.common;
+use tls.x509.asn1;
+
+// 证书解析结果：持有 TBSCertificate 区间、签名、RSA 公钥及部分扩展，用于链验证
+export struct Cert {
+    der: &const byte,
+    der_len: usize,
+    tbs_offset: usize,
+    tbs_len: usize,
+    tbs_tlv_len: usize,
+    serial: [byte: 32],
+    serial_len: usize,
+    sig_oid: [byte: 24],
+    sig_oid_len: usize,
+    sig: [byte: 512],
+    sig_len: usize,
+    rsa_n: [byte: 512],
+    rsa_n_len: usize,
+    rsa_e: [byte: 8],
+    rsa_e_len: usize,
+
+    // basicConstraints (CA/pathLen) 与 keyUsage 扩展信息（若存在）
+    has_basic_constraints: bool,
+    is_ca: bool,
+    has_path_len: bool,
+    max_path_len: usize,
+    has_key_usage: bool,
+    key_usage_bits: u16,
+}
+
+fn cert_reset_ext_fields(cert: &Cert) void {
+    cert.has_basic_constraints = false;
+    cert.is_ca = false;
+    cert.has_path_len = false;
+    cert.max_path_len = 0;
+    cert.has_key_usage = false;
+    cert.key_usage_bits = 0;
+}
+
+fn cert_parse_basic_constraints_from_ext_value(cert: &Cert, data: &const byte, data_len: usize) !void {
+    if data_len == 0 {
+        return error.TlsDecodeError;
+    }
+    var r2: Asn1Reader = Asn1Reader{ data: data, len: data_len, pos: 0 };
+    const seq_len: usize = asn1_enter_sequence(&r2) catch { return error.TlsDecodeError; };
+    if r2.pos + seq_len > r2.len {
+        return error.TlsDecodeError;
+    }
+    cert.has_basic_constraints = true;
+    cert.is_ca = false;
+    cert.has_path_len = false;
+    cert.max_path_len = 0;
+    if asn1_remaining(&r2) == 0 {
+        return;
+    }
+    const tag: byte = asn1_peek_tag(&r2) catch { return error.TlsDecodeError; };
+    if tag == (0x01 as byte) {
+        var bool_len: usize = 0;
+        if !asn1_get_tlv_to(&r2, 0x01 as byte, &bool_len) {
+            return error.TlsDecodeError;
+        }
+        if bool_len != 1 || r2.pos + bool_len > r2.len {
+            return error.TlsDecodeError;
+        }
+        const b: byte = r2.data[r2.pos];
+        r2.pos = r2.pos + 1;
+        cert.is_ca = (b != 0);
+    }
+    if asn1_remaining(&r2) == 0 {
+        return;
+    }
+    var int_buf: [byte: 4] = [0:4];
+    var int_len: usize = 0;
+    asn1_get_integer_to(&r2, &int_buf[0], 4, &int_len) catch { return error.TlsDecodeError; };
+    if int_len == 0 || int_len > 4 {
+        return error.TlsDecodeError;
+    }
+    var v: usize = 0;
+    var i: usize = 0;
+    while i < int_len {
+        v = (v << 8) | (int_buf[i] as usize);
+        i = i + 1;
+    }
+    cert.has_path_len = true;
+    cert.max_path_len = v;
+}
+
+fn cert_parse_key_usage_from_ext_value(cert: &Cert, data: &const byte, data_len: usize) !void {
+    if data_len == 0 {
+        return error.TlsDecodeError;
+    }
+    var r2: Asn1Reader = Asn1Reader{ data: data, len: data_len, pos: 0 };
+    var bits_buf: [byte: 2] = [0:2];
+    var bits_len: usize = 0;
+    asn1_get_bit_string_to(&r2, &bits_buf[0], 2, &bits_len) catch { return error.TlsDecodeError; };
+    if bits_len == 0 || bits_len > 2 {
+        return error.TlsDecodeError;
+    }
+    var v: u16 = 0;
+    v = (bits_buf[0] as u16);
+    if bits_len > 1 {
+        v = v | ((bits_buf[1] as u16) << 8);
+    }
+    cert.has_key_usage = true;
+    cert.key_usage_bits = v;
+}
+
+fn cert_parse_extensions_from_explicit_3(r: &Asn1Reader, cert: &Cert) !void {
+    var exts_len: usize = 0;
+    if !asn1_get_tlv_to(r, ASN1_TAG_EXPLICIT_3, &exts_len) {
+        return error.TlsDecodeError;
+    }
+    if r.pos + exts_len > r.len {
+        return error.TlsDecodeError;
+    }
+    const exts_end: usize = r.pos + exts_len;
+    var seq_len: usize = 0;
+    if !asn1_get_tlv_to(r, ASN1_TAG_SEQUENCE, &seq_len) {
+        return error.TlsDecodeError;
+    }
+    if r.pos + seq_len > exts_end {
+        return error.TlsDecodeError;
+    }
+    while r.pos < exts_end {
+        var ext_len: usize = 0;
+        if !asn1_get_tlv_to(r, ASN1_TAG_SEQUENCE, &ext_len) {
+            return error.TlsDecodeError;
+        }
+        if r.pos + ext_len > exts_end {
+            return error.TlsDecodeError;
+        }
+        const ext_end: usize = r.pos + ext_len;
+        var oid_buf: [byte: 16] = [0:16];
+        const oid_len: usize = asn1_get_oid(r, &oid_buf[0], 16) catch { return error.TlsDecodeError; };
+        var is_basic: bool = false;
+        var is_key_usage: bool = false;
+        if oid_len == 3 && oid_buf[0] == 0x55 && oid_buf[1] == 0x1D && oid_buf[2] == 0x13 {
+            is_basic = true;
+        }
+        if oid_len == 3 && oid_buf[0] == 0x55 && oid_buf[1] == 0x1D && oid_buf[2] == 0x0F {
+            is_key_usage = true;
+        }
+        if r.pos < ext_end {
+            const next_tag: byte = asn1_peek_tag(r) catch { return error.TlsDecodeError; };
+            if next_tag == (0x01 as byte) {
+                var bool_len: usize = 0;
+                if !asn1_get_tlv_to(r, 0x01 as byte, &bool_len) {
+                    return error.TlsDecodeError;
+                }
+                if bool_len != 1 || r.pos + bool_len > r.len {
+                    return error.TlsDecodeError;
+                }
+                const _b: byte = r.data[r.pos];
+                r.pos = r.pos + 1;
+            }
+        }
+        if r.pos >= ext_end {
+            return error.TlsDecodeError;
+        }
+        var val_len: usize = 0;
+        if !asn1_get_tlv_to(r, ASN1_TAG_OCTET_STRING, &val_len) {
+            return error.TlsDecodeError;
+        }
+        if val_len == 0 || r.pos + val_len > ext_end {
+            return error.TlsDecodeError;
+        }
+        if is_basic {
+            cert_parse_basic_constraints_from_ext_value(cert, &r.data[r.pos], val_len) catch {
+                return error.TlsDecodeError;
+            };
+        } else {
+            if is_key_usage {
+                cert_parse_key_usage_from_ext_value(cert, &r.data[r.pos], val_len) catch {
+                    return error.TlsDecodeError;
+                };
+            }
+        }
+        r.pos = r.pos + val_len;
+        if r.pos < ext_end {
+            if ext_end > r.pos {
+                const remain: usize = ext_end - r.pos;
+                if r.pos + remain > r.len {
+                    return error.TlsDecodeError;
+                }
+                r.pos = r.pos + remain;
+            }
+        } else {
+            if r.pos > ext_end {
+                return error.TlsDecodeError;
+            }
+        }
+    }
+    if r.pos < exts_end {
+        const remain2: usize = exts_end - r.pos;
+        if r.pos + remain2 > r.len {
+            return error.TlsDecodeError;
+        }
+        r.pos = r.pos + remain2;
+    } else {
+        if r.pos > exts_end {
+            return error.TlsDecodeError;
+        }
+    }
+}
+
+fn cert_parse_tbs(r: &Asn1Reader, cert: &Cert, tbs_content_len: usize) !void {
+    cert_reset_ext_fields(cert);
+    if asn1_remaining(r) < 1 {
+        return error.TlsDecodeError;
+    }
+    if asn1_peek_tag(r) catch { return error.TlsDecodeError; } == (0xA0 as byte) {
+        var len: usize = 0;
+        if !asn1_get_tlv_to(r, 0xA0 as byte, &len) {
+            return error.TlsDecodeError;
+        }
+        if r.pos + len > r.len {
+            return error.TlsDecodeError;
+        }
+        asn1_skip(r, len) catch { return error.TlsDecodeError; };
+    }
+
+    if asn1_remaining(r) < 2 {
+        return error.TlsDecodeError;
+    }
+    asn1_get_integer_to(r, &cert.serial[0], 32, &cert.serial_len) catch { return error.TlsDecodeError; };
+
+    asn1_skip_next_tlv(r) catch { return error.TlsDecodeError; };
+    asn1_skip_next_tlv(r) catch { return error.TlsDecodeError; };
+    asn1_skip_next_tlv(r) catch { return error.TlsDecodeError; };
+    asn1_skip_next_tlv(r) catch { return error.TlsDecodeError; };
+    if asn1_remaining(r) == 0 {
+        return error.TlsDecodeError;
+    }
+
+    var spki_len: usize = 0;
+    if !asn1_get_tlv_to(r, ASN1_TAG_SEQUENCE, &spki_len) {
+        return error.TlsDecodeError;
+    }
+    if r.pos + spki_len > r.len {
+        return error.TlsDecodeError;
+    }
+    asn1_skip_next_tlv(r) catch { return error.TlsDecodeError; };
+    var pk_buf: [byte: 528] = [0:528];
+    var pk_len: usize = 0;
+    asn1_get_bit_string_to(r, &pk_buf[0], 528, &pk_len) catch { return error.TlsDecodeError; };
+    if pk_len < 2 {
+        return error.TlsDecodeError;
+    }
+    var sub: Asn1Reader = Asn1Reader{ data: &pk_buf[0], len: pk_len, pos: 0 };
+    var seq_len2: usize = 0;
+    if !asn1_get_tlv_to(&sub, ASN1_TAG_SEQUENCE, &seq_len2) {
+        return error.TlsDecodeError;
+    }
+    if sub.pos + seq_len2 > sub.len {
+        return error.TlsDecodeError;
+    }
+    asn1_get_integer_to(&sub, &cert.rsa_n[0], 512, &cert.rsa_n_len) catch { return error.TlsDecodeError; };
+    asn1_get_integer_to(&sub, &cert.rsa_e[0], 8, &cert.rsa_e_len) catch { return error.TlsDecodeError; };
+
+    while asn1_remaining(r) > 0 {
+        const tag2: byte = asn1_peek_tag(r) catch { return error.TlsDecodeError; };
+        if tag2 == ASN1_TAG_EXPLICIT_1 || tag2 == ASN1_TAG_EXPLICIT_2 {
+            var len2: usize = 0;
+            if !asn1_get_tlv_to(r, tag2, &len2) {
+                return error.TlsDecodeError;
+            }
+            if r.pos + len2 > r.len {
+                return error.TlsDecodeError;
+            }
+            r.pos = r.pos + len2;
+            continue;
+        }
+        if tag2 == ASN1_TAG_EXPLICIT_3 {
+            cert_parse_extensions_from_explicit_3(r, cert) catch { return error.TlsDecodeError; };
+            continue;
+        }
+        break;
+    }
+}
+
+export fn cert_parse(der: &const byte, der_len: usize, cert_out: &Cert) !void {
+    var r: Asn1Reader = Asn1Reader{ data: der, len: der_len, pos: 0 };
+    var cert_len: usize = 0;
+    if !asn1_get_tlv_to(&r, ASN1_TAG_SEQUENCE, &cert_len) {
+        return error.TlsDecodeError;
+    }
+    if r.pos + cert_len > der_len {
+        return error.TlsDecodeError;
+    }
+    cert_out.tbs_offset = r.pos;
+    var tbs_len: usize = 0;
+    if !asn1_get_tlv_to(&r, ASN1_TAG_SEQUENCE, &tbs_len) {
+        return error.TlsDecodeError;
+    }
+    cert_out.tbs_len = tbs_len;
+    var tlv_len: usize = 1;
+    if tbs_len < 128 {
+        tlv_len = 2 + tbs_len;
+    } else {
+        if tbs_len < 256 {
+            tlv_len = 3 + tbs_len;
+        } else {
+            if tbs_len < 65536 {
+                tlv_len = 4 + tbs_len;
+            } else {
+                tlv_len = 5 + tbs_len;
+            }
+        }
+    }
+    cert_out.tbs_tlv_len = tlv_len;
+    cert_out.der = der;
+    cert_out.der_len = der_len;
+    cert_parse_tbs(&r, cert_out, tbs_len) catch { return error.TlsDecodeError; };
+
+    asn1_skip_next_tlv(&r) catch { return error.TlsDecodeError; };
+    asn1_get_bit_string_to(&r, &cert_out.sig[0], 512, &cert_out.sig_len) catch { return error.TlsDecodeError; };
+}

@@ -357,6 +357,45 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
         }
     }
 
+    // 特殊处理：lib/tls/（TLS 标准库，模块路径包含文件名）
+    // 例如：lib/tls/common.uya -> tls.common
+    //      lib/tls/base/mpi.uya -> tls.base.mpi
+    var lib_tls: *byte = strstr(filename as *byte, "/lib/tls/" as *byte);
+    if lib_tls == null {
+        lib_tls = strstr(filename as *byte, "lib/tls/" as *byte);
+    }
+    if lib_tls != null {
+        var relative_path_tls: &byte = lib_tls as &byte;
+        if relative_path_tls[0] == 47 {
+            relative_path_tls = &relative_path_tls[1];
+        }
+        if strncmp(relative_path_tls as *byte, "lib/tls/" as *byte, 8) == 0 {
+            relative_path_tls = &relative_path_tls[8];
+        }
+        const rel_len_tls: usize = strlen(relative_path_tls as *byte);
+        var base_len_tls: usize = rel_len_tls;
+        if rel_len_tls > 4 && strcmp((relative_path_tls as *byte + (rel_len_tls - 4)) as *byte, ".uya" as *byte) == 0 {
+            base_len_tls = rel_len_tls - 4;
+        }
+        if base_len_tls > 0 {
+            const total_len_tls: usize = 4 + base_len_tls;
+            const module_name_tls: &byte = compiler_arena_alloc(checker.arena, total_len_tls + 1) as &byte;
+            if module_name_tls != null {
+                strcpy(module_name_tls as *byte, "tls." as *byte);
+                memcpy((module_name_tls as *byte + 4) as *void, relative_path_tls as *void, base_len_tls);
+                module_name_tls[4 + base_len_tls] = 0;
+                var idx_tls: usize = 4;
+                while idx_tls < 4 + base_len_tls {
+                    if module_name_tls[idx_tls] == 47 || module_name_tls[idx_tls] == 92 {
+                        module_name_tls[idx_tls] = 46;
+                    }
+                    idx_tls = idx_tls + 1;
+                }
+                return module_name_tls;
+            }
+        }
+    }
+
     // 如果 UYA_ROOT 目录已设置，检查文件是否在 UYA_ROOT 下
     if checker.uya_root_dir != null {
         const uya_root_len: usize = strlen(checker.uya_root_dir as *byte);
@@ -1067,7 +1106,13 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                     i = i + 1;
                 }
                 
-                if full_mod != null && full_mod.export_count > 0 {
+                var full_path_is_tls: i32 = 0;
+                if full_path != null && strlen(full_path as *byte) >= 4
+                    && (full_path[0] as byte) == 116 && (full_path[1] as byte) == 108
+                    && (full_path[2] as byte) == 115 && (full_path[3] as byte) == 46 {
+                    full_path_is_tls = 1;
+                }
+                if full_mod != null && (full_mod.export_count > 0 || full_path_is_tls != 0) {
                     // 全路径是有效模块 → 整体导入
                     module_name = full_path;
                     is_whole_module_import = 1;
@@ -1161,8 +1206,21 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                 si = si + 1;
             }
             
+            var skip_dependency: i32 = 0;
+            if module_name != null {
+                const mlen: usize = strlen(module_name as *byte);
+                if mlen >= 7 {
+                    const p: usize = mlen - 7;
+                    if module_name[p] == 46
+                        && module_name[p + 1] == 109 && module_name[p + 2] == 97
+                        && module_name[p + 3] == 99 && module_name[p + 4] == 114
+                        && module_name[p + 5] == 111 && module_name[p + 6] == 115 {
+                        skip_dependency = 1;
+                    }
+                }
+            }
             // 如果找到当前模块，添加依赖关系
-            if current_module != null {
+            if current_module != null && skip_dependency == 0 {
                 // 检查依赖是否已存在
                 var dep_exists: i32 = 0;
                 si = 0;
@@ -1263,9 +1321,18 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
                 && (module_name[2] as byte) == 98 && (module_name[3] as byte) == 99 {
                 is_external = 1;  // libc
             }
+            if is_external == 0 && module_name != null && strlen(module_name as *byte) >= 4
+                && (module_name[0] as byte) == 116 && (module_name[1] as byte) == 108
+                && (module_name[2] as byte) == 115 && (module_name[3] as byte) == 46 {
+                is_external = 1;  // tls.*
+            }
             if is_external == 0 {
                 checker_report_error(checker, node, "模块中未找到导出项" as *byte);
                 return 0;
+            }
+            // 兜底：若函数已在函数表中，按函数导入（便于返回值类型检查）
+            if function_table_lookup(checker, item_name) != null {
+                item_type = 1;
             }
             // item_type 保持 0
         }
@@ -1309,7 +1376,6 @@ fn process_use_stmt(checker: &TypeChecker, node: &ASTNode) i32 {
     return 1;
 }
 }
-
 // DFS 辅助函数（用于循环依赖检测）
 // 参数：checker - TypeChecker 指针，module_name - 当前模块名，path - 当前路径数组，path_len - 路径长度
 //       visit_state - 访问状态数组，visit_count - 访问状态数量

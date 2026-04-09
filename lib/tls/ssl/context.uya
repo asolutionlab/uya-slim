@@ -1,0 +1,100 @@
+// lib/tls/ssl/context.uya - TLS 上下文：握手 + 记录层聚合，init/handshake/read/write
+// 支持 TLS 1.2（SslContext）与 TLS 1.3（SslContext13），应用在 init 时选择版本
+
+use tls.common;
+use tls.ssl.handshake;
+use tls.ssl.handshake13;
+use tls.ssl.record;
+
+export struct SslContext {
+    role: i32,
+    hs: &HandshakeCtx,
+    rec: &RecordCtx,
+}
+
+export fn ssl_init(ctx: &SslContext) void {
+    handshake_ctx_init(ctx.hs, ctx.role);
+    record_ctx_init(ctx.rec, TLS_VERSION_1_2);
+}
+
+export fn ssl_set_hostname(ctx: &SslContext, name: &const byte, len: usize) void {
+}
+
+export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
+    if ctx.role == HS_ROLE_CLIENT {
+        if handshake_is_done(ctx.hs) {
+            return HS_STATUS_DONE;
+        }
+        if ctx.hs.state == HS_STATE_INIT {
+            return handshake_client_start(ctx.hs, send_buf, send_max, send_len_out);
+        }
+        return handshake_client_step(ctx.hs, recv_buf, recv_len, send_buf, send_max, send_len_out);
+    } else {
+        return handshake_server_step(ctx.hs, recv_buf, recv_len, send_buf, send_max, send_len_out);
+    }
+}
+
+export fn ssl_is_handshake_done(ctx: &const SslContext) bool {
+    return handshake_is_done(ctx.hs);
+}
+
+export fn ssl_write(ctx: &SslContext, plain: &const byte, plain_len: usize, cipher_out: &byte, out_max: usize, out_len: &usize) !void {
+    record_encrypt(ctx.rec, TLS_RECORD_APPLICATION_DATA, plain, plain_len, cipher_out, out_len) catch {
+        return error.TlsCryptoFailure;
+    };
+}
+
+export fn ssl_read(ctx: &SslContext, cipher_in: &const byte, cipher_len: usize, plain_out: &byte, plain_max: usize, plain_len_out: &usize, consumed_out: &usize) !void {
+    record_decrypt(ctx.rec, cipher_in, cipher_len, plain_out, plain_max, plain_len_out, consumed_out) catch {
+        return error.TlsDecodeError;
+    };
+}
+
+export fn ssl_close_notify(ctx: &SslContext) void {
+}
+
+// --- TLS 1.3 上下文（版本分支：使用 SslContext13 即走 1.3）---
+
+export struct SslContext13 {
+    role: i32,
+    hs13: &Handshake13Ctx,
+    rec: &RecordCtx,
+}
+
+export fn ssl13_init(ctx: &SslContext13) void {
+    handshake13_ctx_init(ctx.hs13, ctx.role);
+    record_ctx_init(ctx.rec, TLS_VERSION_1_3);
+}
+
+export fn ssl13_handshake_step(ctx: &SslContext13, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
+    if ctx.role == HS13_ROLE_CLIENT {
+        if handshake13_is_done(ctx.hs13) {
+            return HS13_STATUS_DONE;
+        }
+        if ctx.hs13.state == HS13_STATE_INIT {
+            return handshake13_client_start(ctx.hs13, send_buf, send_max, send_len_out);
+        }
+        return handshake13_client_step(ctx.hs13, recv_buf, recv_len, send_buf, send_max, send_len_out);
+    } else {
+        return handshake13_server_step(ctx.hs13, recv_buf, recv_len, send_buf, send_max, send_len_out);
+    }
+}
+
+export fn ssl13_is_handshake_done(ctx: &const SslContext13) bool {
+    return handshake13_is_done(ctx.hs13);
+}
+
+export fn ssl13_write(ctx: &SslContext13, plain: &const byte, plain_len: usize, cipher_out: &byte, out_max: usize, out_len: &usize) !void {
+    record_encrypt(ctx.rec, TLS_RECORD_APPLICATION_DATA, plain, plain_len, cipher_out, out_len) catch {
+        return error.TlsCryptoFailure;
+    };
+}
+
+export fn ssl13_read(ctx: &SslContext13, cipher_in: &const byte, cipher_len: usize, plain_out: &byte, plain_max: usize, plain_len_out: &usize, consumed_out: &usize) !void {
+    record_decrypt(ctx.rec, cipher_in, cipher_len, plain_out, plain_max, plain_len_out, consumed_out) catch {
+        return error.TlsDecodeError;
+    };
+}
+
+export fn ssl13_close_notify(ctx: &SslContext13) void {
+}

@@ -1,0 +1,208 @@
+# TLS/HTTPS 落地 TODO
+
+本文档聚焦一个具体问题：**把当前 `lib/tls/` 这套纯 Uya TLS 零件，补成可以真正支撑 HTTPS 的实现**。
+
+当前仓库已经具备很多基础能力，包括：
+
+- 哈希、HMAC、HKDF、AES、GCM、RSA、X25519
+- X.509 证书解析、链验证、主机名匹配
+- TLS 记录层、握手骨架、SslContext 封装
+- 若干 TLS/DTLS 单元测试
+
+但要真正支持 HTTPS，仍然缺少：
+
+- 可互操作的 TLS 1.2/1.3 握手
+- 真正的 AEAD 记录层加密
+- 证书链验证与握手流程的联动
+- SNI / hostname 绑定
+- 最小 HTTP 客户端或服务器
+
+这个 TODO 以“能安全发起一次 HTTPS 连接并收发 HTTP 报文”为终点。
+
+---
+
+## 目标
+
+1. 支持最小可用的 HTTPS 客户端。
+2. 支持最小可用的 HTTPS 服务器。
+3. 保持纯 Uya 实现为主，必要时允许参考实现或临时桥接。
+4. 所有 TLS 相关新增测试都应通过 `make b`。
+
+---
+
+## 当前状态
+
+| 子系统 | 状态 | 备注 |
+|------|------|------|
+| 密码学基础 | 已有 | SHA/HMAC/HKDF/AES/GCM/RSA/X25519 等已具备 |
+| X.509 解析 | 已有 | 证书解析、链验证、hostname 匹配已实现 |
+| TLS 记录层 | 部分完成 | 目前仍偏明文/占位，尚未真正进入完整加密记录流 |
+| TLS 1.2 握手 | 骨架 | 还不是完整互操作握手 |
+| TLS 1.3 握手 | 骨架 | key schedule、Finished、密钥派生尚未打通 |
+| SNI / hostname 绑定 | 未完成 | `ssl_set_hostname` 目前仍需接入真实逻辑 |
+| HTTP 层 | 未开始 | 尚无最小 HTTP/1.1 client/server |
+
+---
+
+## 阶段 1: 把 TLS 1.2/1.3 握手补成“真的能用”
+
+### 1.1 TLS 1.2 最小互操作握手
+
+- [ ] 在 [lib/tls/ssl/handshake.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/handshake.uya) 中补齐真实消息流。
+- [ ] 支持 `ClientHello -> ServerHello -> Certificate -> ServerKeyExchange -> ServerHelloDone -> ClientKeyExchange -> ChangeCipherSpec -> Finished` 的最小子集。
+- [ ] 客户端和服务端都要能推进到 `DONE`，并在状态机里记录已协商参数。
+- [ ] 至少支持一个可测试的密码套件组合，例如 RSA + AES-GCM 或 ECDHE + AES-GCM。
+
+### 1.2 TLS 1.3 最小互操作握手
+
+- [ ] 在 [lib/tls/ssl/handshake13.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/handshake13.uya) 中补齐真正的 1-RTT 流程。
+- [ ] 完成 key schedule：early secret、handshake secret、master secret。
+- [ ] 补齐 Finished 验证。
+- [ ] 将 `handshake13_client_start` / `handshake13_server_step` 从占位消息改成规范化消息编码。
+
+### 1.3 会话状态
+
+- [ ] 给 [lib/tls/ssl/context.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/context.uya) 增加协商结果字段。
+- [ ] 记录协议版本、密码套件、握手完成状态、应用数据是否可读写。
+- [ ] 让 `ssl_is_handshake_done` 与记录层状态一致。
+
+### 验收
+
+- [ ] `tests/test_tls_handshake.uya` 覆盖真实握手路径。
+- [ ] 新增一个最小的互操作测试，验证 client/server 能互相完成协商。
+
+---
+
+## 阶段 2: 把记录层改成真正的加密记录层
+
+### 2.1 TLS 1.2 记录加密
+
+- [ ] 在 [lib/tls/ssl/record.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/record.uya) 中加入 AEAD 或 CBC 模式的真实加密实现。
+- [ ] 明确每条记录的 nonce / explicit IV / tag 生成方式。
+- [ ] `record_encrypt` 和 `record_decrypt` 要能处理分片、长度检查、认证失败。
+
+### 2.2 TLS 1.3 记录加密
+
+- [ ] 使用握手派生出的 traffic secret 生成应用数据 key。
+- [ ] 支持 `TLS_AES_128_GCM_SHA256`、`TLS_AES_256_GCM_SHA384` 或 `TLS_CHACHA20_POLY1305_SHA256` 之一作为最小可用套件。
+- [ ] 记录层需要支持 sequence number 与 nonce 拼接。
+
+### 2.3 错误映射
+
+- [ ] 将认证失败、解密失败、长度错误映射到 TLS 错误码。
+- [ ] 区分 `TlsDecodeError`、`TlsInvalidMac`、`TlsHandshakeFailure`。
+
+### 验收
+
+- [ ] `tests/test_tls_record.uya` 变成真正的加密往返测试。
+- [ ] 至少有一个固定向量测试，确保加密结果稳定。
+
+---
+
+## 阶段 3: 证书链、主机名和 SNI 打通
+
+### 3.1 证书验证接入握手
+
+- [ ] 在握手过程中调用 [lib/tls/x509/verify.uya](/media/winger/_dde_home/winger/uya/lib/tls/x509/verify.uya)。
+- [ ] 将服务器证书链、信任锚、用途校验和主机名校验串起来。
+- [ ] 证书校验失败时必须终止握手，而不是只返回一个静态错误码。
+
+### 3.2 主机名
+
+- [ ] 为 [lib/tls/ssl/context.uya](/media/winger/_dde_home/winger/uya/lib/tls/ssl/context.uya) 的 `ssl_set_hostname` 填充真实实现。
+- [ ] 主机名应参与证书校验与客户端握手参数。
+- [ ] 需要支持精确匹配和单层 wildcard。
+
+### 3.3 SNI
+
+- [ ] 在 ClientHello 里加入 SNI 扩展。
+- [ ] 服务端上下文应能基于 SNI 选择证书或虚拟主机配置。
+
+### 验收
+
+- [ ] 新增测试：主机名匹配成功、失败、wildcard 命中、wildcard 拒绝。
+- [ ] 新增测试：证书链不可信时握手失败。
+
+---
+
+## 阶段 4: 最小 HTTPS 客户端
+
+### 4.1 连接层封装
+
+- [ ] 封装一个最小 socket/TCP 连接模块，负责 connect/read/write/close。
+- [ ] 为 TLS 上下文提供流式 I/O 适配层。
+- [ ] 明确阻塞和非阻塞行为的错误映射。
+
+### 4.2 HTTPS client
+
+- [ ] 实现最小 `https_get(host, port, path)`。
+- [ ] 连接成功后输出状态码、响应头、响应体。
+- [ ] 支持 GET 即可，不要求复杂 chunked 编码以外的高级特性。
+
+### 4.3 证书存储
+
+- [ ] 增加最小 CA/信任锚装载方式。
+- [ ] 允许从内置 DER 数组或文件读取信任锚。
+
+### 验收
+
+- [ ] 能对一个真实 HTTPS 站点完成握手并读取响应头。
+- [ ] 至少有一个本地 TLS 测试服务器与客户端的回环测试。
+
+---
+
+## 阶段 5: 最小 HTTPS 服务器
+
+### 5.1 监听与 accept
+
+- [ ] 封装最小 TCP listener。
+- [ ] 能 accept 一个连接并进入 TLS server 模式。
+
+### 5.2 服务器证书
+
+- [ ] 支持加载服务器证书和私钥。
+- [ ] 支持 RSA 或 ECDSA 至少一种服务端身份。
+
+### 5.3 HTTP 响应
+
+- [ ] 实现最小 HTTP/1.1 `200 OK` 响应。
+- [ ] 支持固定页面或简单动态响应。
+
+### 验收
+
+- [ ] `curl https://127.0.0.1:<port>/` 能返回预期内容。
+- [ ] 客户端和服务器都能跑在仓库的测试环境里。
+
+---
+
+## 阶段 6: 稳定性与兼容性
+
+- [ ] 补全更多 RFC 向量测试。
+- [ ] 覆盖 TLS 1.2 和 TLS 1.3 的失败路径。
+- [ ] 检查大文件、长证书链、坏 tag、坏长度、坏序列号。
+- [ ] 检查 `make b`、`make release`、`--c99`、`--uya --c99` 全部通过。
+- [ ] 清理所有临时占位实现和只为测试引入的兼容分支。
+
+---
+
+## 推荐实现顺序
+
+1. 先把 TLS 1.2 或 TLS 1.3 其中一条握手链打通。
+2. 再把记录层从明文改成真实加密。
+3. 接上证书链、hostname 和 SNI。
+4. 最后再做 HTTP client / server。
+
+如果目标是“尽快跑出一个 HTTPS demo”，建议优先做：
+
+1. TLS 1.3 最小互操作握手
+2. AES-GCM 记录层
+3. SNI + 证书链验证
+4. 最小 HTTP client
+
+---
+
+## 参考文档
+
+- [docs/tls_uya_design.md](/media/winger/_dde_home/winger/uya/docs/tls_uya_design.md)
+- [docs/tls_todo.md](/media/winger/_dde_home/winger/uya/docs/tls_todo.md)
+- [docs/tls_uya_plan.md](/media/winger/_dde_home/winger/uya/docs/tls_uya_plan.md)

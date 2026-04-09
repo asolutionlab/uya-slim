@@ -302,6 +302,8 @@ link_generated_test_output() {
         extra_c_file="$SCRIPT_DIR/test_abi_helpers.c"
     elif [ "$base_name" = "test_tflm_cmsis" ]; then
         extra_c_file="$SCRIPT_DIR/tflm_cmsis_host_stub.c"
+    elif [ "$base_name" = "test_tls_rsa" ] || [ "$base_name" = "test_tls_x25519_pure" ]; then
+        extra_c_file="$REPO_ROOT/lib/tls/crypto/x25519_ref.c"
     fi
 
     link_cmd+=(-o "$exe_file" "$output_file")
@@ -316,6 +318,9 @@ link_generated_test_output() {
     fi
     if [ -n "$extra_c_file" ]; then
         link_cmd+=("$extra_c_file")
+    fi
+    if [ "$base_name" = "test_tls_rsa" ] || [ "$base_name" = "test_tls_x25519_pure" ]; then
+        link_cmd+=(-lcrypto)
     fi
     if [ "$TARGET_OS" != "windows" ]; then
         link_cmd+=(-lm)
@@ -482,7 +487,7 @@ run_multifile_test() {
 
 # 导出函数和变量供子进程使用
 export -f link_generated_test_output run_compiled_test_args run_compiled_test_input run_single_test run_multifile_test normalize_os normalize_arch
-export COMPILER USE_UYA SCRIPT_DIR BUILD_DIR USE_C99 CC CC_DRIVER CC_TARGET_FLAGS HOST_OS HOST_ARCH TARGET_OS TARGET_ARCH TARGET_TRIPLE TARGET_EXE_SUFFIX TEST_PROFILE
+export COMPILER USE_UYA SCRIPT_DIR BUILD_DIR USE_C99 CC CC_DRIVER CC_TARGET_FLAGS HOST_OS HOST_ARCH TARGET_OS TARGET_ARCH TARGET_TRIPLE TARGET_EXE_SUFFIX TEST_PROFILE REPO_ROOT
 
 SKIP_TESTS=()
 if [ -n "${SKIP_TESTS_EXTRA:-}" ]; then

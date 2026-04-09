@@ -1,0 +1,88 @@
+// lib/tls/ssl/handshake.uya - TLS 握手（最小骨架：收发抽象与状态机占位）
+// 后续补全 ClientHello/ServerHello/Finished 与 PRF 密钥计算
+
+use tls.common;
+
+export const HS_STATUS_NEED_SEND: i32 = 0;
+export const HS_STATUS_NEED_RECV: i32 = 1;
+export const HS_STATUS_DONE: i32 = 2;
+export const HS_STATUS_ERROR: i32 = 3;
+
+export struct HandshakeCtx {
+    state: i32,
+    role: i32,
+}
+
+export const HS_ROLE_CLIENT: i32 = 0;
+export const HS_ROLE_SERVER: i32 = 1;
+
+export const HS_STATE_INIT: i32 = 0;
+export const HS_STATE_CLIENT_HELLO_SENT: i32 = 1;
+export const HS_STATE_SERVER_HELLO_SENT: i32 = 2;
+export const HS_STATE_DONE: i32 = 3;
+
+export fn handshake_ctx_init(ctx: &HandshakeCtx, role: i32) void {
+    ctx.state = HS_STATE_INIT;
+    ctx.role = role;
+}
+
+// 客户端：产生第一条待发送数据（占位：固定 5 字节），返回 HS_STATUS_NEED_SEND
+export fn handshake_client_start(ctx: &HandshakeCtx, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
+    if ctx.state != HS_STATE_INIT {
+        return HS_STATUS_ERROR;
+    }
+    if send_max < 5 {
+        return HS_STATUS_ERROR;
+    }
+    send_buf[0] = 0x01;
+    send_buf[1] = 0x00;
+    send_buf[2] = 0x00;
+    send_buf[3] = 0x02;
+    send_buf[4] = 0x00;
+    send_len_out[0] = 5;
+    ctx.state = HS_STATE_CLIENT_HELLO_SENT;
+    return HS_STATUS_NEED_SEND;
+}
+
+// 客户端：喂入收到的数据，可能产生待发送数据或进入 Done
+export fn handshake_client_step(ctx: &HandshakeCtx, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
+    if ctx.state != HS_STATE_CLIENT_HELLO_SENT {
+        return HS_STATUS_ERROR;
+    }
+    if recv_len < 1 {
+        return HS_STATUS_NEED_RECV;
+    }
+    ctx.state = HS_STATE_DONE;
+    send_len_out[0] = 0;
+    return HS_STATUS_DONE;
+}
+
+// 服务端：喂入收到的数据，产生待发送数据或进入 Done
+export fn handshake_server_step(ctx: &HandshakeCtx, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
+    if ctx.state == HS_STATE_INIT {
+        if recv_len < 1 {
+            return HS_STATUS_NEED_RECV;
+        }
+        if send_max < 5 {
+            return HS_STATUS_ERROR;
+        }
+        send_buf[0] = 0x02;
+        send_buf[1] = 0x00;
+        send_buf[2] = 0x00;
+        send_buf[3] = 0x02;
+        send_buf[4] = 0x00;
+        send_len_out[0] = 5;
+        ctx.state = HS_STATE_SERVER_HELLO_SENT;
+        return HS_STATUS_NEED_SEND;
+    }
+    if ctx.state == HS_STATE_SERVER_HELLO_SENT {
+        ctx.state = HS_STATE_DONE;
+        send_len_out[0] = 0;
+        return HS_STATUS_DONE;
+    }
+    return HS_STATUS_ERROR;
+}
+
+export fn handshake_is_done(ctx: &const HandshakeCtx) bool {
+    return ctx.state == HS_STATE_DONE;
+}

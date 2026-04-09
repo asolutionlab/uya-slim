@@ -251,6 +251,38 @@ fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) 
         }
         return ("std_" as *byte) as &byte;
     }
+    var lib_tls: *byte = strstr(filename as *byte, "/lib/tls/" as *byte);
+    if lib_tls == null {
+        lib_tls = strstr(filename as *byte, "lib/tls/" as *byte);
+    }
+    if lib_tls != null {
+        var rel_tls: &byte = lib_tls as &byte;
+        if rel_tls[0] == 47 { rel_tls = &rel_tls[1]; }
+        if strncmp(rel_tls as *byte, "lib/tls/" as *byte, 8) == 0 {
+            rel_tls = &rel_tls[8];
+        }
+        const rel_tls_len: usize = strlen(rel_tls as *byte);
+        var base_tls_len: usize = rel_tls_len;
+        if rel_tls_len > 4 && strcmp((rel_tls as *byte + (rel_tls_len - 4)) as *byte, ".uya" as *byte) == 0 {
+            base_tls_len = rel_tls_len - 4;
+        }
+        const total_tls_len: usize = 4 + base_tls_len + 2;
+        const prefix_tls: &byte = compiler_arena_alloc(codegen.arena, total_tls_len) as &byte;
+        if prefix_tls != null {
+            strcpy(prefix_tls as *byte, "tls_" as *byte);
+            memcpy((prefix_tls as *byte + 4) as *void, rel_tls as *void, base_tls_len);
+            prefix_tls[4 + base_tls_len] = 95 as byte;
+            prefix_tls[4 + base_tls_len + 1] = 0 as byte;
+            var ti: usize = 4;
+            while ti < 4 + base_tls_len {
+                if prefix_tls[ti] == 47 || prefix_tls[ti] == 92 {
+                    prefix_tls[ti] = 95 as byte;
+                }
+                ti = ti + 1;
+            }
+            return prefix_tls;
+        }
+    }
     // 检查是否是 src/ 文件（应用程序主文件）
     var src_path: *byte = strstr(filename as *byte, "/src/" as *byte);
     if src_path == null {

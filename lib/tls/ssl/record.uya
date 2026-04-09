@@ -1,0 +1,88 @@
+// lib/tls/ssl/record.uya - TLS 记录层（RFC 5246）
+// 记录格式：类型(1) + 版本(2) + 长度(2) = 5 字节头；当前为明文传输（无 AEAD），供握手/应用数据分片与解析
+
+use tls.common;
+
+export const RECORD_HEADER_LEN: usize = 5;
+export const RECORD_MAX_PLAIN: usize = 16384;
+
+export struct RecordCtx {
+    write_seq: u64,
+    read_seq: u64,
+    version: u16,
+}
+
+export fn record_ctx_init(ctx: &RecordCtx, version: u16) void {
+    ctx.write_seq = 0;
+    ctx.read_seq = 0;
+    ctx.version = version;
+}
+
+fn record_write_header(out: &byte, typ: byte, version: u16, payload_len: usize) void {
+    out[0] = typ;
+    out[1] = (((version >> 8) & 0xffu16) as! byte).value;
+    out[2] = ((version & 0xffu16) as! byte).value;
+    out[3] = (((payload_len >> 8) & 0xffusize) as! byte).value;
+    out[4] = ((payload_len & 0xffusize) as! byte).value;
+}
+
+fn record_parse_header(in_: &const byte, typ_out: &byte, version_out: &u16, payload_len_out: &usize) bool {
+    typ_out[0] = in_[0];
+    version_out[0] = ((in_[1] as u16) << 8) | (in_[2] as u16);
+    const len: usize = ((in_[3] as usize) << 8) | (in_[4] as usize);
+    if len > RECORD_MAX_PLAIN {
+        return false;
+    }
+    payload_len_out[0] = len;
+    return true;
+}
+
+// 加密/写记录：当前为明文，仅加 5 字节头；若 plain_len > RECORD_MAX_PLAIN 则分片为多条记录
+export fn record_encrypt(ctx: &RecordCtx, typ: byte, plain: &const byte, plain_len: usize, cipher_out: &byte, out_len: &usize) !void {
+    var off: usize = 0;
+    var written: usize = 0;
+    while off < plain_len {
+        var chunk: usize = plain_len - off;
+        if chunk > RECORD_MAX_PLAIN {
+            chunk = RECORD_MAX_PLAIN;
+        }
+        record_write_header(&cipher_out[written], typ, ctx.version, chunk);
+        written = written + RECORD_HEADER_LEN;
+        var i: usize = 0;
+        while i < chunk {
+            cipher_out[written + i] = plain[off + i];
+            i = i + 1;
+        }
+        written = written + chunk;
+        off = off + chunk;
+        ctx.write_seq = ctx.write_seq + 1;
+    }
+    out_len[0] = written;
+}
+
+// 解密/读一条记录：从 cipher_in 解析 5 字节头，将 payload 复制到 plain_out，返回明文长度与消耗的密文字节数
+export fn record_decrypt(ctx: &RecordCtx, cipher_in: &const byte, cipher_len: usize, plain_out: &byte, plain_max: usize, plain_len_out: &usize, consumed_out: &usize) !void {
+    if cipher_len < RECORD_HEADER_LEN {
+        return error.TlsDecodeError;
+    }
+    var typ: byte = 0;
+    var ver: u16 = 0;
+    var payload_len: usize = 0;
+    if !record_parse_header(cipher_in, &typ, &ver, &payload_len) {
+        return error.TlsDecodeError;
+    }
+    if RECORD_HEADER_LEN + payload_len > cipher_len {
+        return error.TlsDecodeError;
+    }
+    if payload_len > plain_max {
+        return error.TlsDecodeError;
+    }
+    var i: usize = 0;
+    while i < payload_len {
+        plain_out[i] = cipher_in[RECORD_HEADER_LEN + i];
+        i = i + 1;
+    }
+    plain_len_out[0] = payload_len;
+    consumed_out[0] = RECORD_HEADER_LEN + payload_len;
+    ctx.read_seq = ctx.read_seq + 1;
+}

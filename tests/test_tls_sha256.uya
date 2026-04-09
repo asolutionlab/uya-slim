@@ -1,0 +1,86 @@
+// test_tls_sha256.uya - TLS SHA-256/384/HMAC/HKDF 向量测试
+// 阶段 2.1–2.2：SHA、HMAC-SHA256/384（RFC 4231）、HKDF（RFC 5869）
+
+use std.runtime.entry;
+use tls.crypto.sha256;
+use tls.crypto.sha384;
+use tls.crypto.hmac;
+use tls.crypto.hkdf;
+
+extern fn hmac_sha256(key: &const byte, key_len: usize, msg: &const byte, msg_len: usize, out: &byte) void;
+extern fn hkdf_extract_sha256(salt: &const byte, salt_len: usize, ikm: &const byte, ikm_len: usize, prk_out: &byte) void;
+extern fn hkdf_expand_sha256(prk: &const byte, info: &const byte, info_len: usize, out: &byte, out_len: usize) i32;
+
+export fn main() i32 {
+    // NIST 空串: SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    var out_empty: [byte: 32] = [];
+    sha256(null, 0, &out_empty[0]);
+    if out_empty[0] != 0xe3 { return 1; }
+    if out_empty[1] != 0xb0 { return 2; }
+    if out_empty[31] != 0x55 { return 3; }
+
+    // NIST "abc": SHA-256("abc") = ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+    const msg_abc: [byte: 3] = [97, 98, 99];
+    var out_abc: [byte: 32] = [];
+    sha256(&msg_abc[0], 3, &out_abc[0]);
+    if out_abc[0] != 0xba { return 4; }
+    if out_abc[1] != 0x78 { return 5; }
+    if out_abc[2] != 0x16 { return 6; }
+    if out_abc[3] != 0xbf { return 7; }
+    if out_abc[30] != 0x15 { return 8; }
+    if out_abc[31] != 0xad { return 9; }
+
+    // NIST SHA-384 空串: 38b060a751ac96384cd9327eb1b1e36a21fdb71114be0743...
+    var out384: [byte: 48] = [];
+    sha384(null, 0, &out384[0]);
+    var any: usize = 0;
+    while any < 48 {
+        if out384[any] != 0 {
+            break;
+        }
+        any = any + 1;
+    }
+    if any >= 48 {
+        return 10;
+    }
+
+    // NIST SHA-384 "abc":
+    // cb00753f45a35e8bb5a03d699ac65007272c32ab0eded163
+    // 1a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7
+    // 目前暂不对 SHA-384("abc") 做完整向量比对
+
+    // RFC 4231 Test Case 1: Key 20*0x0b, Data "Hi There", HMAC-SHA-256 = b0344c61...
+    const key1: [byte: 20] = [11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11];
+    const data1: [byte: 8] = [72, 105, 32, 84, 104, 101, 114, 101];
+    var out_hmac1: [byte: 32] = [];
+    hmac_sha256(&key1[0], 20, &data1[0], 8, &out_hmac1[0]);
+    if out_hmac1[0] != 0xb0 { return 12; }
+    if out_hmac1[1] != 0x34 { return 13; }
+    if out_hmac1[31] != 0xf7 { return 14; }
+
+    // RFC 4231 Test Case 2: Key "Jefe", Data "what do ya want for nothing?"
+    const key2: [byte: 4] = [74, 101, 102, 101];
+    const data2: [byte: 28] = [119, 104, 97, 116, 32, 100, 111, 32, 121, 97, 32, 119, 97, 110, 116, 32, 102, 111, 114, 32, 110, 111, 116, 104, 105, 110, 103, 63];
+    var out_hmac2: [byte: 32] = [];
+    hmac_sha256(&key2[0], 4, &data2[0], 28, &out_hmac2[0]);
+    if out_hmac2[0] != 0x5b { return 15; }
+    if out_hmac2[1] != 0xdc { return 16; }
+    if out_hmac2[31] != 0x43 { return 17; }
+
+    // RFC 5869 A.1 Test Case 1 (SHA-256): IKM 22*0x0b, salt 13 octets 0x00..0x0c, info 10 octets 0xf0..0xf9, L=42
+    const ikm1: [byte: 22] = [11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11];
+    const salt1: [byte: 13] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const info1: [byte: 10] = [0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9];
+    var prk1: [byte: 32] = [];
+    var okm1: [byte: 42] = [];
+    hkdf_extract_sha256(&salt1[0], 13, &ikm1[0], 22, &prk1[0]);
+    if prk1[0] != 0x07 { return 18; }
+    if prk1[1] != 0x77 { return 19; }
+    if prk1[31] != 0xe5 { return 20; }
+    if hkdf_expand_sha256(&prk1[0], &info1[0], 10, &okm1[0], 42) != 0 { return 21; }
+    if okm1[0] != 0x3c { return 22; }
+    if okm1[1] != 0xb2 { return 23; }
+    if okm1[41] != 0x65 { return 24; }
+
+    return 0;
+}

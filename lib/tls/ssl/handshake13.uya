@@ -1,0 +1,90 @@
+// lib/tls/ssl/handshake13.uya - TLS 1.3 握手骨架（1-RTT：ClientHello key_share → ServerHello + … + Finished）
+// 密钥 schedule 占位，后续用 HKDF 实现；当前为占位消息
+
+use tls.common;
+
+export const HS13_STATUS_NEED_SEND: i32 = 0;
+export const HS13_STATUS_NEED_RECV: i32 = 1;
+export const HS13_STATUS_DONE: i32 = 2;
+export const HS13_STATUS_ERROR: i32 = 3;
+
+export struct Handshake13Ctx {
+    state: i32,
+    role: i32,
+}
+
+export const HS13_ROLE_CLIENT: i32 = 0;
+export const HS13_ROLE_SERVER: i32 = 1;
+
+export const HS13_STATE_INIT: i32 = 0;
+export const HS13_STATE_CLIENT_HELLO_SENT: i32 = 1;
+export const HS13_STATE_SERVER_HELLO_SENT: i32 = 2;
+export const HS13_STATE_DONE: i32 = 3;
+
+export fn handshake13_ctx_init(ctx: &Handshake13Ctx, role: i32) void {
+    ctx.state = HS13_STATE_INIT;
+    ctx.role = role;
+}
+
+// 客户端：发送 ClientHello（占位 6 字节：0x01 0x03 0x04 + 长度/占位）
+export fn handshake13_client_start(ctx: &Handshake13Ctx, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
+    if ctx.state != HS13_STATE_INIT {
+        return HS13_STATUS_ERROR;
+    }
+    if send_max < 6 {
+        return HS13_STATUS_ERROR;
+    }
+    send_buf[0] = 0x01;
+    send_buf[1] = 0x03;
+    send_buf[2] = 0x04;
+    send_buf[3] = 0x00;
+    send_buf[4] = 0x00;
+    send_buf[5] = 0x03;
+    send_len_out[0] = 6;
+    ctx.state = HS13_STATE_CLIENT_HELLO_SENT;
+    return HS13_STATUS_NEED_SEND;
+}
+
+// 客户端：收 ServerHello + … + Finished，进入 Done
+export fn handshake13_client_step(ctx: &Handshake13Ctx, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
+    if ctx.state != HS13_STATE_CLIENT_HELLO_SENT {
+        return HS13_STATUS_ERROR;
+    }
+    if recv_len < 1 {
+        return HS13_STATUS_NEED_RECV;
+    }
+    ctx.state = HS13_STATE_DONE;
+    send_len_out[0] = 0;
+    return HS13_STATUS_DONE;
+}
+
+// 服务端：收 ClientHello，发 ServerHello（占位 6 字节）
+export fn handshake13_server_step(ctx: &Handshake13Ctx, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
+    if ctx.state == HS13_STATE_INIT {
+        if recv_len < 1 {
+            return HS13_STATUS_NEED_RECV;
+        }
+        if send_max < 6 {
+            return HS13_STATUS_ERROR;
+        }
+        send_buf[0] = 0x02;
+        send_buf[1] = 0x03;
+        send_buf[2] = 0x04;
+        send_buf[3] = 0x00;
+        send_buf[4] = 0x00;
+        send_buf[5] = 0x03;
+        send_len_out[0] = 6;
+        ctx.state = HS13_STATE_SERVER_HELLO_SENT;
+        return HS13_STATUS_NEED_SEND;
+    }
+    if ctx.state == HS13_STATE_SERVER_HELLO_SENT {
+        ctx.state = HS13_STATE_DONE;
+        send_len_out[0] = 0;
+        return HS13_STATUS_DONE;
+    }
+    return HS13_STATUS_ERROR;
+}
+
+export fn handshake13_is_done(ctx: &const Handshake13Ctx) bool {
+    return ctx.state == HS13_STATE_DONE;
+}
