@@ -4,12 +4,26 @@ use tls.common;
 use tls.ssl.handshake;
 use tls.ssl.handshake13;
 use tls.ssl.record;
+use tls.crypto.rsa.RsaPrivateKey;
+use tls.x509.verify.hostname_match;
 use tls.x509.verify.verify_hostname_bytes;
 use tls.x509.verify.verify_chain_rsa;
 use tls.x509.cert.Cert;
 use tls.x509.verify.KU_DIGITAL_SIGNATURE;
 
 const SSL_HOSTNAME_MAX: usize = 64;
+const SSL_SERVER_ID_MAX: usize = 4;
+
+export struct SslServerIdentity {
+    name_len: usize,
+    name: [byte: SSL_HOSTNAME_MAX],
+    san_len: usize,
+    san: [byte: SSL_HOSTNAME_MAX],
+    cn_len: usize,
+    cn: [byte: SSL_HOSTNAME_MAX],
+    cert: &const Cert,
+    rsa_key: &const RsaPrivateKey,
+}
 
 export struct SslContext {
     role: i32,
@@ -32,6 +46,42 @@ export struct SslContext {
     trust_anchors: &const Cert,
     trust_anchor_len: usize,
     required_leaf_ku: u16,
+    server_identity_count: usize,
+    selected_server_identity: usize,
+    server_identities: [SslServerIdentity: SSL_SERVER_ID_MAX],
+}
+
+fn ssl_copy_name(dst: &byte, src: &const byte, src_len: usize) usize {
+    var n: usize = src_len;
+    if n > SSL_HOSTNAME_MAX {
+        n = SSL_HOSTNAME_MAX;
+    }
+    var i: usize = 0;
+    while i < n {
+        dst[i] = src[i];
+        i = i + 1;
+    }
+    return n;
+}
+
+fn ssl_select_server_identity(ctx: &SslContext) void {
+    if ctx.role != HS_ROLE_SERVER || ctx.server_identity_count == 0 {
+        return;
+    }
+    var selected: usize = 0;
+    var i: usize = 0;
+    while i < ctx.server_identity_count {
+        const ident: &SslServerIdentity = &ctx.server_identities[i];
+        if ctx.hs.sni_len > 0 && ident.name_len > 0 && hostname_match(&ident.name[0], ident.name_len, &ctx.hs.hostname[0], ctx.hs.sni_len) {
+            selected = i;
+            i = ctx.server_identity_count;
+        } else {
+            i = i + 1;
+        }
+    }
+    ctx.selected_server_identity = selected;
+    const chosen: &SslServerIdentity = &ctx.server_identities[selected];
+    ssl_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
 }
 
 fn ssl_verify_peer_chain(ctx: &SslContext) void {
@@ -100,6 +150,8 @@ export fn ssl_init(ctx: &SslContext) void {
     ctx.trust_anchors = null as &const Cert;
     ctx.trust_anchor_len = 0;
     ctx.required_leaf_ku = KU_DIGITAL_SIGNATURE;
+    ctx.server_identity_count = 0;
+    ctx.selected_server_identity = 0;
 }
 
 export fn ssl_set_hostname(ctx: &SslContext, name: &const byte, len: usize) void {
@@ -138,6 +190,29 @@ export fn ssl_set_peer_chain(ctx: &SslContext, leaf: &const Cert, chain: &const 
     ctx.required_leaf_ku = required_leaf_ku;
 }
 
+export fn ssl_server_add_identity(ctx: &SslContext, name: &const byte, name_len: usize, san: &const byte, san_len: usize, cn: &const byte, cn_len: usize) !void {
+    if ctx.server_identity_count >= SSL_SERVER_ID_MAX {
+        return error.TlsBadInput;
+    }
+    const slot: usize = ctx.server_identity_count;
+    ctx.server_identities[slot].name_len = ssl_copy_name(&ctx.server_identities[slot].name[0], name, name_len);
+    ctx.server_identities[slot].san_len = ssl_copy_name(&ctx.server_identities[slot].san[0], san, san_len);
+    ctx.server_identities[slot].cn_len = ssl_copy_name(&ctx.server_identities[slot].cn[0], cn, cn_len);
+    ctx.server_identity_count = slot + 1;
+    if ctx.server_identity_count == 1 {
+        ctx.selected_server_identity = 0;
+        ssl_set_peer_identity(ctx, &ctx.server_identities[0].san[0], ctx.server_identities[0].san_len, &ctx.server_identities[0].cn[0], ctx.server_identities[0].cn_len);
+    }
+}
+
+export fn ssl_server_set_identity_credentials(ctx: &SslContext, slot: usize, cert: &const Cert, rsa_key: &const RsaPrivateKey) !void {
+    if slot >= ctx.server_identity_count {
+        return error.TlsBadInput;
+    }
+    ctx.server_identities[slot].cert = cert;
+    ctx.server_identities[slot].rsa_key = rsa_key;
+}
+
 export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
     var status: i32 = HS_STATUS_ERROR;
     if ctx.role == HS_ROLE_CLIENT {
@@ -152,6 +227,7 @@ export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: 
         }
     } else {
         status = handshake_server_step(ctx.hs, recv_buf, recv_len, send_buf, send_max, send_len_out);
+        ssl_select_server_identity(ctx);
     }
     ssl_sync_state(ctx);
     return status;
@@ -213,6 +289,29 @@ export struct SslContext13 {
     trust_anchors: &const Cert,
     trust_anchor_len: usize,
     required_leaf_ku: u16,
+    server_identity_count: usize,
+    selected_server_identity: usize,
+    server_identities: [SslServerIdentity: SSL_SERVER_ID_MAX],
+}
+
+fn ssl13_select_server_identity(ctx: &SslContext13) void {
+    if ctx.role != HS13_ROLE_SERVER || ctx.server_identity_count == 0 {
+        return;
+    }
+    var selected: usize = 0;
+    var i: usize = 0;
+    while i < ctx.server_identity_count {
+        const ident: &SslServerIdentity = &ctx.server_identities[i];
+        if ctx.hs13.sni_len > 0 && ident.name_len > 0 && hostname_match(&ident.name[0], ident.name_len, &ctx.hs13.hostname[0], ctx.hs13.sni_len) {
+            selected = i;
+            i = ctx.server_identity_count;
+        } else {
+            i = i + 1;
+        }
+    }
+    ctx.selected_server_identity = selected;
+    const chosen: &SslServerIdentity = &ctx.server_identities[selected];
+    ssl13_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
 }
 
 fn ssl13_verify_peer_chain(ctx: &SslContext13) void {
@@ -288,6 +387,8 @@ export fn ssl13_init(ctx: &SslContext13) void {
     ctx.trust_anchors = null as &const Cert;
     ctx.trust_anchor_len = 0;
     ctx.required_leaf_ku = KU_DIGITAL_SIGNATURE;
+    ctx.server_identity_count = 0;
+    ctx.selected_server_identity = 0;
 }
 
 export fn ssl13_set_hostname(ctx: &SslContext13, name: &const byte, len: usize) void {
@@ -326,6 +427,29 @@ export fn ssl13_set_peer_chain(ctx: &SslContext13, leaf: &const Cert, chain: &co
     ctx.required_leaf_ku = required_leaf_ku;
 }
 
+export fn ssl13_server_add_identity(ctx: &SslContext13, name: &const byte, name_len: usize, san: &const byte, san_len: usize, cn: &const byte, cn_len: usize) !void {
+    if ctx.server_identity_count >= SSL_SERVER_ID_MAX {
+        return error.TlsBadInput;
+    }
+    const slot: usize = ctx.server_identity_count;
+    ctx.server_identities[slot].name_len = ssl_copy_name(&ctx.server_identities[slot].name[0], name, name_len);
+    ctx.server_identities[slot].san_len = ssl_copy_name(&ctx.server_identities[slot].san[0], san, san_len);
+    ctx.server_identities[slot].cn_len = ssl_copy_name(&ctx.server_identities[slot].cn[0], cn, cn_len);
+    ctx.server_identity_count = slot + 1;
+    if ctx.server_identity_count == 1 {
+        ctx.selected_server_identity = 0;
+        ssl13_set_peer_identity(ctx, &ctx.server_identities[0].san[0], ctx.server_identities[0].san_len, &ctx.server_identities[0].cn[0], ctx.server_identities[0].cn_len);
+    }
+}
+
+export fn ssl13_server_set_identity_credentials(ctx: &SslContext13, slot: usize, cert: &const Cert, rsa_key: &const RsaPrivateKey) !void {
+    if slot >= ctx.server_identity_count {
+        return error.TlsBadInput;
+    }
+    ctx.server_identities[slot].cert = cert;
+    ctx.server_identities[slot].rsa_key = rsa_key;
+}
+
 export fn ssl13_handshake_step(ctx: &SslContext13, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
     var status: i32 = HS13_STATUS_ERROR;
     if ctx.role == HS13_ROLE_CLIENT {
@@ -340,6 +464,7 @@ export fn ssl13_handshake_step(ctx: &SslContext13, recv_buf: &const byte, recv_l
         }
     } else {
         status = handshake13_server_step(ctx.hs13, recv_buf, recv_len, send_buf, send_max, send_len_out);
+        ssl13_select_server_identity(ctx);
     }
     ssl13_sync_state(ctx);
     return status;

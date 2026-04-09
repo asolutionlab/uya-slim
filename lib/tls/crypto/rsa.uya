@@ -8,6 +8,19 @@ use tls.base.mpi;
 const DIGESTINFO_SHA256_LEN: usize = 19;
 const SHA256_HASH_LEN: usize = 32;
 
+export struct RsaPrivateKey {
+    n: [byte: 512],
+    n_len: usize,
+    e: [byte: 8],
+    e_len: usize,
+    d: [byte: 512],
+    d_len: usize,
+    p: [byte: 256],
+    p_len: usize,
+    q: [byte: 256],
+    q_len: usize,
+}
+
 // PKCS#1 v1.5 验签（SHA-256）：检查 sig^e mod n 解出为 0x00 0x01 0xff.. 0x00 || DigestInfo_SHA256 || hash
 export fn rsa_verify_pkcs1_v15_sha256(n: &const Mpi, e: &const Mpi, hash: &const byte, hash_len: usize, sig: &const byte, sig_len: usize) !void {
     if n == null || e == null || hash == null || sig == null {
