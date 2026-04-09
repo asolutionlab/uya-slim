@@ -1,4 +1,9 @@
 /* EC 参考实现：通过 OpenSSL 提供 P-256 / P-384 的公钥、ECDH、ECDSA 参考路径 */
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 #include <openssl/bn.h>
 #include <openssl/ec.h>
 #include <openssl/ecdsa.h>
@@ -276,3 +281,7 @@ int ec_ecdsa_verify_p256_ref(const uint8_t *pub, const uint8_t *hash, const uint
 int ec_ecdsa_verify_p384_ref(const uint8_t *pub, const uint8_t *hash, const uint8_t *r, const uint8_t *s) {
     return ec_verify_signature(NID_secp384r1, pub, 97, hash, 48, r, 48, s, 48);
 }
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
