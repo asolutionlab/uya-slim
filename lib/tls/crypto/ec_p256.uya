@@ -769,6 +769,16 @@ fn p256_base_point(gx: &Fe256, gy: &Fe256) void {
     fe256_from_bytes_be(gy, &P256_GY_BE[0]);
 }
 
+fn p256_jac_from_affine(r: &P256Jac, p: &const P256Affine) void {
+    if p.inf {
+        p256_jac_zero(r);
+        return;
+    }
+    fe256_cpy(&r.x, &p.x);
+    fe256_cpy(&r.y, &p.y);
+    fe256_one(&r.z);
+}
+
 struct P256Affine {
     x: Fe256,
     y: Fe256,
@@ -897,12 +907,13 @@ export fn ec_p256_public_from_private(pub_out: &byte, priv_key: &const byte) voi
     p256_base_point(&gx, &gy);
     var g_aff: P256Affine = P256Affine{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, inf: true };
     p256_affine_set(&g_aff, &gx, &gy);
-    var r_aff: P256Affine = P256Affine{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, inf: true };
-    p256_affine_scalar_mul(&r_aff, &d, &g_aff);
+    var g_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_from_affine(&g_jac, &g_aff);
+    var r_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_scalar_mul(&r_jac, &d, &g_jac);
     var rx: Fe256 = Fe256{ l: [0:4] };
     var ry: Fe256 = Fe256{ l: [0:4] };
-    fe256_cpy(&rx, &r_aff.x);
-    fe256_cpy(&ry, &r_aff.y);
+    p256_jac_to_affine(&rx, &ry, &r_jac);
     pub_out[0] = 0x04;
     fe256_to_bytes_be(&rx, &pub_out[1]);
     fe256_to_bytes_be(&ry, &pub_out[33]);
@@ -921,9 +932,14 @@ export fn ec_p256_ecdh(shared_out: &byte, priv_key: &const byte, pub_key: &const
     fe256_from_bytes_be(&qy, &pub_key[33]);
     var q_aff: P256Affine = P256Affine{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, inf: true };
     p256_affine_set(&q_aff, &qx, &qy);
-    var r_aff: P256Affine = P256Affine{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, inf: true };
-    p256_affine_scalar_mul(&r_aff, &d, &q_aff);
-    fe256_to_bytes_be(&r_aff.x, shared_out);
+    var q_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_from_affine(&q_jac, &q_aff);
+    var r_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_scalar_mul(&r_jac, &d, &q_jac);
+    var rx: Fe256 = Fe256{ l: [0:4] };
+    var ry: Fe256 = Fe256{ l: [0:4] };
+    p256_jac_to_affine(&rx, &ry, &r_jac);
+    fe256_to_bytes_be(&rx, shared_out);
     return 0;
 }
 
