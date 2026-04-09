@@ -131,7 +131,7 @@
 
 - [x] 封装一个最小 socket/TCP 连接模块，负责 connect/read/write/close。
 - [x] 为 TLS 上下文提供最小阻塞式流 I/O 适配层。
-- [ ] 明确阻塞和非阻塞行为的错误映射。
+- [x] 明确阻塞和非阻塞行为的错误映射。
 
 ### 4.2 HTTPS client
 
