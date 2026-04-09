@@ -657,9 +657,29 @@ else
     
     # 提取关键信息：阶段标题、进度、错误、警告
     # 显示编译阶段信息（=== 开头的行、解析/合并/类型检查/代码生成完成等进度）
-    grep -E "^===|  解析完成|AST 合并完成|类型检查通过|代码生成完成" "$TEMP_OUTPUT" | head -50
+    awk '
+        /^===|  解析完成|AST 合并完成|类型检查通过|代码生成完成/ {
+            print;
+            count++;
+            if (count >= 50) exit;
+        }
+    ' "$TEMP_OUTPUT"
     # 显示错误和警告（但不显示调试信息）
-    grep -E "错误:|警告:" "$TEMP_OUTPUT" | grep -v "调试:" | head -30
+    awk '
+        /错误:|警告:/ && $0 !~ /调试:/ {
+            print;
+            count++;
+            if (count >= 30) exit;
+        }
+    ' "$TEMP_OUTPUT"
+
+    if [ $COMPILER_EXIT -ne 0 ]; then
+        echo ""
+        echo "编译失败，显示最近 120 行详细输出："
+        tail -n 120 "$TEMP_OUTPUT"
+        echo ""
+        echo "提示: 可加 --verbose 查看完整编译日志"
+    fi
 fi
 
 # 提取所有错误信息到单独文件

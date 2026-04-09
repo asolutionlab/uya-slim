@@ -134,7 +134,7 @@ uya:
 	fi
 	@echo "使用 bin/uya 编译 src/ ..."
 	@echo "TARGET_OS=$(TARGET_OS) TARGET_ARCH=$(TARGET_ARCH) TARGET_TRIPLE=$(TARGET_TRIPLE)"
-	@bash -c 'ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static CFLAGS="$(CFLAGS) -fno-stack-protector" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --nostdlib --no-safety-proof'
+	@bash -c 'set -e; EXTRA_FLAGS=""; if [ -n "$$CI" ] || [ -n "$$GITHUB_ACTIONS" ]; then EXTRA_FLAGS="--verbose"; fi; ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=nostdlib LINK_MODE=static CFLAGS="$(CFLAGS) -fno-stack-protector" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --nostdlib --no-safety-proof $$EXTRA_FLAGS'
 	@echo ""
 	@echo "更新 bin/uya.c（若存在单文件 src/build/uya.c）…"
 	@if [ -f src/build/uya.c ]; then cp src/build/uya.c bin/uya.c && echo "✓ bin/uya.c 已更新"; else echo "（多文件 C：未生成 src/build/uya.c；单文件见 make backup-seed）"; fi
@@ -680,7 +680,7 @@ release-clean:
 		echo "错误: release-clean 需要在 Git 工作树中运行"; \
 		exit 1; \
 	fi
-	@TMP_DIR=$$(mktemp -d /tmp/uya-release-clean.XXXXXX); \
+	@set -e; TMP_DIR=$$(mktemp -d /tmp/uya-release-clean.XXXXXX); \
 	trap 'rm -rf "$$TMP_DIR"' EXIT INT TERM; \
 	echo "导出 HEAD 快照到 $$TMP_DIR ..."; \
 	git archive --format=tar HEAD | tar -xf - -C "$$TMP_DIR"; \
