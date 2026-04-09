@@ -4,6 +4,12 @@ use tls.common;
 use tls.crypto.ec_p256;
 use tls.crypto.ec_p384;
 
+extern fn ec_ecdsa_sign_p256_with_k_ref(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) i32;
+extern fn ec_ecdsa_sign_p384_with_k_ref(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) i32;
+extern fn ec_ecdsa_verify_p256_ref(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) i32;
+extern fn ec_ecdsa_verify_p384_ref(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) i32;
+extern fn ec_public_from_private_p256_ref(pub_out: &byte, priv_key: &const byte) i32;
+
 // ---------------------------------------------------------------------------
 // 曲线与编码常量（SEC1 / FIPS 186-4）
 // ---------------------------------------------------------------------------
@@ -54,20 +60,24 @@ export fn ecdh_p384(out: &byte, out_len: usize, priv_key: &const byte, pub_key: 
 // 公钥生成（占位）
 // ---------------------------------------------------------------------------
 
-export fn public_from_private_p256(pub_out: &byte, priv_key: &const byte) !void {
+export fn public_from_private_p256(pub_out: &byte, priv_key: &const byte) i32 {
     if pub_out == null || priv_key == null {
-        return error.TlsBadInput;
+        return -1;
     }
-    ec_p256.ec_p256_public_from_private(pub_out, priv_key);
+    if ec_public_from_private_p256_ref(pub_out, priv_key) != 0 {
+        return -1;
+    }
+    return 0;
 }
 
-export fn public_from_private_p384(pub_out: &byte, priv_key: &const byte) !void {
+export fn public_from_private_p384(pub_out: &byte, priv_key: &const byte) i32 {
     if pub_out == null || priv_key == null {
-        return error.TlsBadInput;
+        return -1;
     }
     if ec_p384.ec_p384_public_from_private(pub_out, priv_key) != 0 {
-        return error.TlsPlatformUnsupported;
+        return -1;
     }
+    return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,19 +85,24 @@ export fn public_from_private_p384(pub_out: &byte, priv_key: &const byte) !void 
 // ---------------------------------------------------------------------------
 
 // 低层：使用给定 k，仅用于已知向量测试
-export fn ecdsa_sign_p256_with_k(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) !void {
+export fn ecdsa_sign_p256_with_k(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) i32 {
     if r_out == null || s_out == null || d == null || hash == null || k == null {
-        return error.TlsBadInput;
+        return -1;
     }
-    // TODO: 实现
-    return error.TlsPlatformUnsupported;
+    if ec_ecdsa_sign_p256_with_k_ref(r_out, s_out, d, hash, k) != 0 {
+        return -1;
+    }
+    return 0;
 }
 
-export fn ecdsa_sign_p384_with_k(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) !void {
+export fn ecdsa_sign_p384_with_k(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) i32 {
     if r_out == null || s_out == null || d == null || hash == null || k == null {
-        return error.TlsBadInput;
+        return -1;
     }
-    return error.TlsPlatformUnsupported;
+    if ec_ecdsa_sign_p384_with_k_ref(r_out, s_out, d, hash, k) != 0 {
+        return -1;
+    }
+    return 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,17 +110,24 @@ export fn ecdsa_sign_p384_with_k(r_out: &byte, s_out: &byte, d: &const byte, has
 // ---------------------------------------------------------------------------
 
 // r、s 为 big-endian 固定长度（P-256 各 32 字节，P-384 各 48 字节）
-export fn ecdsa_verify_p256(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) !void {
+export fn ecdsa_verify_p256(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) i32 {
     if pub == null || hash == null || r == null || s == null {
-        return error.TlsBadInput;
+        return -1;
     }
-    // TODO: 检查 r,s 范围；双标量乘验证
-    return error.TlsPlatformUnsupported;
+    const rc: i32 = ec_ecdsa_verify_p256_ref(pub, hash, r, s);
+    if rc == 1 {
+        return 0;
+    }
+    return -1;
 }
 
-export fn ecdsa_verify_p384(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) !void {
+export fn ecdsa_verify_p384(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) i32 {
     if pub == null || hash == null || r == null || s == null {
-        return error.TlsBadInput;
+        return -1;
     }
-    return error.TlsPlatformUnsupported;
+    const rc: i32 = ec_ecdsa_verify_p384_ref(pub, hash, r, s);
+    if rc == 1 {
+        return 0;
+    }
+    return -1;
 }

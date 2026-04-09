@@ -1,20 +1,21 @@
-// lib/tls/crypto/ec_p384.uya - P-384 (secp384r1) 占位模块
-// 完整实现待复制 ec_p256 并改为 6 limbs、P-384 常数与基点 G；当前仅导出占位 API 供 ec.uya 调用
+// lib/tls/crypto/ec_p384.uya - P-384 (secp384r1) 参考模块
+// 当前通过 OpenSSL 参考实现提供 P-384 公钥生成与 ECDH，供 ec.uya 调用
+
+extern fn ec_public_from_private_p384_ref(pub_out: &byte, priv_key: &const byte) i32;
+extern fn ec_ecdh_p384_ref(shared_out: &byte, priv_key: &const byte, pub_key: &const byte) i32;
 
 use tls.common;
 
-// 占位：公钥生成未实现，返回 -1
 export fn ec_p384_public_from_private(pub_out: &byte, priv_key: &const byte) i32 {
     if pub_out == null || priv_key == null {
         return -1;
     }
-    return -1;
+    return ec_public_from_private_p384_ref(pub_out, priv_key);
 }
 
-// 占位：ECDH 未实现，返回 -1
 export fn ec_p384_ecdh(shared_out: &byte, priv_key: &const byte, pub_key: &const byte) i32 {
     if shared_out == null || priv_key == null || pub_key == null {
         return -1;
     }
-    return -1;
+    return ec_ecdh_p384_ref(shared_out, priv_key, pub_key);
 }

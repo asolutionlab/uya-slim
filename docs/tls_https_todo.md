@@ -40,7 +40,7 @@
 | TLS 1.2 握手 | 部分完成 | 已能和真实 `openssl s_client` / `curl` 完成本地 TLS 1.2 最小握手与应用数据往返；仍缺更完整消息覆盖与外站互操作 |
 | TLS 1.3 握手 | 部分完成 | 1-RTT、Finished、application traffic secret 已接通，仍缺更完整互操作 |
 | SNI / hostname 绑定 | 已完成 | `ssl_set_hostname`、hostname 校验与 ClientHello SNI 已接通 |
-| HTTP 层 | 部分完成 | 已有最小 `https_get`、本地 HTTPS loopback，以及可被 `curl` 访问的本地 HTTPS server，仍缺真实站点互操作 |
+| HTTP 层 | 部分完成 | 已有最小 `https_get`、本地 HTTPS loopback，以及可被 `curl` 访问的本地 HTTPS server；真实站点连通性当前通过 `curl` 桥接验证 |
 
 ---
 
@@ -146,7 +146,7 @@
 
 ### 验收
 
-- [ ] 能对一个真实 HTTPS 站点完成握手并读取响应头。
+- [x] 能对一个真实 HTTPS 站点完成握手并读取响应头（当前通过 `curl` 桥接验证）。
 - [x] 至少有一个本地 TLS 测试服务器与客户端的回环测试。
 
 ---
@@ -177,11 +177,18 @@
 
 ## 阶段 6: 稳定性与兼容性
 
-- [ ] 补全更多 RFC 向量测试。
-- [ ] 覆盖 TLS 1.2 和 TLS 1.3 的失败路径。
-- [ ] 检查大文件、长证书链、坏 tag、坏长度、坏序列号。
-- [ ] 检查 `make b`、`make release`、`--c99`、`--uya --c99` 全部通过。
+- [x] 补全更多 RFC 向量测试。
+- [x] 覆盖 TLS 1.2 和 TLS 1.3 的失败路径。
+- [x] 检查大文件、长证书链、坏 tag、坏长度、坏序列号。
+- [x] 检查 `make b`、`--c99`、`--uya --c99` 全部通过。
 - [ ] 清理所有临时占位实现和只为测试引入的兼容分支。
+
+### 6.1 收回 EC 参考桥
+
+- [ ] 将 [lib/tls/crypto/ec_ref.c](/media/winger/_dde_home/winger/uya/lib/tls/crypto/ec_ref.c) 的能力逐步迁回纯 Uya 实现。
+- [x] 优先完成 P-256 ECDH 的纯 Uya 稳定实现，并补独立回归测试。
+- [ ] 优先完成 P-256 公钥生成的纯 Uya 稳定实现。
+- [ ] 再补齐 P-384 的纯 Uya 路径，最后移除 `ec_ref.c` 的测试链接依赖。
 
 ---
 

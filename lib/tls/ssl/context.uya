@@ -80,7 +80,7 @@ fn ssl_select_server_identity(ctx: &SslContext) void {
         }
     }
     ctx.selected_server_identity = selected;
-    const chosen: &SslServerIdentity = &ctx.server_identities[selected];
+    const chosen: &const SslServerIdentity = &ctx.server_identities[selected];
     ssl_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
 }
 
@@ -91,11 +91,10 @@ fn ssl_server_identity_is_ready(ctx: &const SslContext) bool {
     if ctx.selected_server_identity >= ctx.server_identity_count {
         return false;
     }
-    const chosen: &SslServerIdentity = &ctx.server_identities[ctx.selected_server_identity];
-    if chosen.cert == null as &const Cert {
+    if ctx.server_identities[ctx.selected_server_identity].cert == null as &const Cert {
         return false;
     }
-    if chosen.rsa_key == null as &const RsaPrivateKey {
+    if ctx.server_identities[ctx.selected_server_identity].rsa_key == null as &const RsaPrivateKey {
         return false;
     }
     return true;
@@ -269,7 +268,7 @@ export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: 
             status = HS_STATUS_ERROR;
         } else {
             if ctx.selected_server_identity < ctx.server_identity_count {
-                const chosen: &SslServerIdentity = &ctx.server_identities[ctx.selected_server_identity];
+                const chosen: &const SslServerIdentity = &ctx.server_identities[ctx.selected_server_identity];
                 if chosen.cert != null as &const Cert && chosen.cert.der != null as &const byte && chosen.cert.der_len > 0 {
                     handshake_set_server_certificate(ctx.hs, chosen.cert.der, chosen.cert.der_len);
                     handshake_set_server_rsa_key(ctx.hs, chosen.rsa_key);
@@ -374,11 +373,10 @@ fn ssl13_server_identity_is_ready(ctx: &const SslContext13) bool {
     if ctx.selected_server_identity >= ctx.server_identity_count {
         return false;
     }
-    const chosen: &SslServerIdentity = &ctx.server_identities[ctx.selected_server_identity];
-    if chosen.cert == null as &const Cert {
+    if ctx.server_identities[ctx.selected_server_identity].cert == null as &const Cert {
         return false;
     }
-    if chosen.rsa_key == null as &const RsaPrivateKey {
+    if ctx.server_identities[ctx.selected_server_identity].rsa_key == null as &const RsaPrivateKey {
         return false;
     }
     return true;
