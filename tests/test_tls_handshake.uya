@@ -204,6 +204,9 @@ fn test_context13_handshake_and_write_read() i32 {
     if plain2[0] != 0x31 || plain2[3] != 0x21 {
         return 14;
     }
+    if rec_c.write_key[0] == rec_s.write_key[0] && rec_c.write_iv[0] == rec_s.write_iv[0] {
+        return 15;
+    }
     return 0;
 }
 

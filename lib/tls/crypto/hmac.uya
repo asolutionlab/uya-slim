@@ -3,11 +3,10 @@
 // 注意：与 sha256/sha384 同编时用 extern 避免 codegen 符号前缀不匹配
 
 use tls.common;
+use tls.crypto.sha256;
+use tls.crypto.sha384;
 use std.mem.mem.mem_copy;
 use std.mem.mem.mem_set;
-
-extern fn sha256(data: &const byte, len: usize, out: &byte) void;
-extern fn sha384(data: &const byte, len: usize, out: &byte) void;
 
 const SHA256_BLOCK: usize = 64;
 const SHA384_BLOCK: usize = 128;

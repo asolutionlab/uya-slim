@@ -2,6 +2,7 @@
 // SHA-256 版本：PRK 32 字节，L <= 255*32
 
 use tls.common;
+use tls.crypto.hmac;
 use std.mem.mem.mem_copy;
 use std.mem.mem.mem_set;
 

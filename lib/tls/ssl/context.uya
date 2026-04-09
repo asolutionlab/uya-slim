@@ -261,6 +261,13 @@ fn ssl13_sync_state(ctx: &SslContext13) void {
         ssl13_verify_peer_hostname(ctx);
         ctx.rec.version = ctx.negotiated_version;
         record_set_cipher_suite(ctx.rec, ctx.negotiated_ciphersuite);
+        if ctx.role == HS13_ROLE_CLIENT {
+            record_set_tls13_traffic_secret(ctx.rec, &ctx.hs13.client_app_secret[0], 32, true) catch {};
+            record_set_tls13_traffic_secret(ctx.rec, &ctx.hs13.server_app_secret[0], 32, false) catch {};
+        } else {
+            record_set_tls13_traffic_secret(ctx.rec, &ctx.hs13.server_app_secret[0], 32, true) catch {};
+            record_set_tls13_traffic_secret(ctx.rec, &ctx.hs13.client_app_secret[0], 32, false) catch {};
+        }
     }
 }
 

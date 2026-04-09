@@ -3,6 +3,7 @@
 
 use tls.common;
 use tls.crypto.sha256.sha256;
+use tls.crypto.hkdf.hkdf_expand_sha256;
 use std.mem.mem.mem_copy;
 
 const HS13_MSG_CLIENT_HELLO: byte = 1;
@@ -43,6 +44,8 @@ export struct Handshake13Ctx {
     early_secret: [byte: HS13_SECRET_LEN],
     handshake_secret: [byte: HS13_SECRET_LEN],
     master_secret: [byte: HS13_SECRET_LEN],
+    client_app_secret: [byte: HS13_SECRET_LEN],
+    server_app_secret: [byte: HS13_SECRET_LEN],
     client_finished: [byte: HS13_SECRET_LEN],
     server_finished: [byte: HS13_SECRET_LEN],
 }
@@ -73,9 +76,13 @@ fn hs13_seed_secret(dst: &byte, label: byte, a: &const byte, b: &const byte) voi
 }
 
 fn hs13_compute_schedule(ctx: &Handshake13Ctx) void {
+    var info_client: [byte: 17] = [116, 108, 115, 49, 51, 32, 99, 32, 97, 112, 112, 108, 105, 99, 97, 116, 105];
+    var info_server: [byte: 17] = [116, 108, 115, 49, 51, 32, 115, 32, 97, 112, 112, 108, 105, 99, 97, 116, 105];
     sha256(&ctx.client_random[0], HS13_RANDOM_LEN, &ctx.early_secret[0]);
     hs13_seed_secret(&ctx.handshake_secret[0], 0x48, &ctx.early_secret[0], &ctx.server_random[0]);
     hs13_seed_secret(&ctx.master_secret[0], 0x4d, &ctx.handshake_secret[0], &ctx.client_random[0]);
+    _ = hkdf_expand_sha256(&ctx.master_secret[0], &info_client[0], 17, &ctx.client_app_secret[0], HS13_SECRET_LEN);
+    _ = hkdf_expand_sha256(&ctx.master_secret[0], &info_server[0], 17, &ctx.server_app_secret[0], HS13_SECRET_LEN);
     hs13_seed_secret(&ctx.client_finished[0], 0x43, &ctx.handshake_secret[0], &ctx.master_secret[0]);
     hs13_seed_secret(&ctx.server_finished[0], 0x53, &ctx.master_secret[0], &ctx.handshake_secret[0]);
 }
@@ -273,4 +280,15 @@ export fn handshake13_server_step(ctx: &Handshake13Ctx, recv_buf: &const byte, r
 
 export fn handshake13_is_done(ctx: &const Handshake13Ctx) bool {
     return ctx.handshake_done && ctx.state == HS13_STATE_DONE;
+}
+
+export fn handshake13_get_app_traffic_secret(ctx: &const Handshake13Ctx, role: i32, out: &byte, out_len: usize) !void {
+    if out_len < HS13_SECRET_LEN {
+        return error.TlsBadInput;
+    }
+    if role == HS13_ROLE_CLIENT {
+        mem_copy(out, &ctx.client_app_secret[0], HS13_SECRET_LEN);
+    } else {
+        mem_copy(out, &ctx.server_app_secret[0], HS13_SECRET_LEN);
+    }
 }

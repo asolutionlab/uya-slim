@@ -36,9 +36,9 @@
 |------|------|------|
 | 密码学基础 | 已有 | SHA/HMAC/HKDF/AES/GCM/RSA/X25519 等已具备 |
 | X.509 解析 | 已有 | 证书解析、链验证、hostname 匹配已实现 |
-| TLS 记录层 | 部分完成 | 目前仍偏明文/占位，尚未真正进入完整加密记录流 |
+| TLS 记录层 | 部分完成 | TLS 1.2/1.3 已走 AEAD 记录流，TLS 1.3 traffic secret 已接入，仍缺更完整互操作与分片覆盖 |
 | TLS 1.2 握手 | 骨架 | 还不是完整互操作握手 |
-| TLS 1.3 握手 | 骨架 | key schedule、Finished、密钥派生尚未打通 |
+| TLS 1.3 握手 | 部分完成 | 1-RTT、Finished、application traffic secret 已接通，仍缺更完整互操作 |
 | SNI / hostname 绑定 | 未完成 | `ssl_set_hostname` 目前仍需接入真实逻辑 |
 | HTTP 层 | 未开始 | 尚无最小 HTTP/1.1 client/server |
 
@@ -83,7 +83,7 @@
 
 ### 2.2 TLS 1.3 记录加密
 
-- [ ] 使用握手派生出的 traffic secret 生成应用数据 key。
+- [x] 使用握手派生出的 traffic secret 生成应用数据 key。
 - [x] 支持 `TLS_AES_128_GCM_SHA256` 作为最小可用套件。
 - [x] 记录层支持 sequence number 与 nonce 拼接。
 

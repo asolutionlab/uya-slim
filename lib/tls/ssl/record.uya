@@ -5,6 +5,7 @@ use tls.common;
 use tls.crypto.aes;
 use tls.crypto.gcm.aes_gcm_encrypt;
 use tls.crypto.gcm.aes_gcm_decrypt;
+use tls.crypto.hkdf.hkdf_expand_sha256;
 use std.mem.mem.mem_copy;
 
 export const RECORD_HEADER_LEN: usize = 5;
@@ -83,6 +84,26 @@ fn record_build_aad(seq: u64, typ: byte, version: u16, plain_len: usize, aad_out
     aad_out[12] = ((plain_len & 0xffusize) as! byte).value;
 }
 
+fn record_fill_hkdf_info(label: &const byte, label_len: usize, out: &byte, out_len: usize) !void {
+    if out_len < 6 + label_len {
+        return error.TlsBadInput;
+    }
+    out[0] = 0;
+    out[1] = (out_len as! byte).value;
+    out[2] = ((4 + label_len) as! byte).value;
+    out[3] = 116;
+    out[4] = 108;
+    out[5] = 115;
+    out[6] = 49;
+    out[7] = 51;
+    out[8] = 32;
+    var i: usize = 0;
+    while i < label_len {
+        out[9 + i] = label[i];
+        i = i + 1;
+    }
+}
+
 export fn record_set_cipher_suite(ctx: &RecordCtx, ciphersuite: u16) void {
     ctx.ciphersuite = ciphersuite;
     ctx.aead_ready = true;
@@ -110,6 +131,35 @@ export fn record_ctx_init(ctx: &RecordCtx, version: u16) void {
     } else {
         record_set_cipher_suite(ctx, 0x009c);
     }
+}
+
+export fn record_set_tls13_traffic_secret(ctx: &RecordCtx, secret: &const byte, secret_len: usize, is_write_secret: bool) !void {
+    if ctx.version != TLS_VERSION_1_3 || secret_len < 32 {
+        return error.TlsBadInput;
+    }
+    var label_key: [byte: 3] = [107, 101, 121];
+    var label_iv: [byte: 2] = [105, 118];
+    var key_info: [byte: 12] = [0:12];
+    var iv_info: [byte: 11] = [0:11];
+    try record_fill_hkdf_info(&label_key[0], 3, &key_info[0], 12);
+    try record_fill_hkdf_info(&label_iv[0], 2, &iv_info[0], 11);
+
+    var key_out: [byte: 16] = [0:16];
+    var iv_out: [byte: 4] = [0:4];
+    if hkdf_expand_sha256(secret, &key_info[0], 12, &key_out[0], 16) != 0 {
+        return error.TlsCryptoFailure;
+    }
+    if hkdf_expand_sha256(secret, &iv_info[0], 11, &iv_out[0], 4) != 0 {
+        return error.TlsCryptoFailure;
+    }
+    if is_write_secret {
+        mem_copy(&ctx.write_key[0], &key_out[0], 16);
+        mem_copy(&ctx.write_iv[0], &iv_out[0], 4);
+    } else {
+        mem_copy(&ctx.read_key[0], &key_out[0], 16);
+        mem_copy(&ctx.read_iv[0], &iv_out[0], 4);
+    }
+    ctx.aead_ready = true;
 }
 
 export fn record_encrypt(ctx: &RecordCtx, typ: byte, plain: &const byte, plain_len: usize, cipher_out: &byte, out_len: &usize) !void {

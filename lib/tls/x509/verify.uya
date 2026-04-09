@@ -6,7 +6,7 @@ use tls.crypto.sha256;
 use tls.crypto.rsa;
 use tls.base.mpi;
 
-const SHA256_LEN: usize = 32;
+const VERIFY_SHA256_LEN: usize = 32;
 const TBS_MAX_COPY: usize = 4096;
 
 // keyUsage 位掩码（按 RFC 5280，比特从高位开始）
@@ -31,7 +31,7 @@ export fn cert_verify_signature(cert: &const Cert, signer: &const Cert) !void {
         tbs_buf[i] = cert.der[cert.tbs_offset + i];
         i = i + 1;
     }
-    var hash: [byte: SHA256_LEN] = [0:SHA256_LEN];
+    var hash: [byte: VERIFY_SHA256_LEN] = [0:VERIFY_SHA256_LEN];
     sha256(&tbs_buf[0], cert.tbs_tlv_len, &hash[0]);
     var n_mpi: Mpi = Mpi{};
     var e_mpi: Mpi = Mpi{};
@@ -41,7 +41,7 @@ export fn cert_verify_signature(cert: &const Cert, signer: &const Cert) !void {
     mpi_from_bytes_be(&e_mpi, &signer.rsa_e[0], signer.rsa_e_len) catch {
         return error.TlsBadInput;
     };
-    rsa_verify_pkcs1_v15_sha256(&n_mpi, &e_mpi, &hash[0], SHA256_LEN, &cert.sig[0], cert.sig_len) catch {
+    rsa_verify_pkcs1_v15_sha256(&n_mpi, &e_mpi, &hash[0], VERIFY_SHA256_LEN, &cert.sig[0], cert.sig_len) catch {
         return error.TlsInvalidMac;
     };
 }
