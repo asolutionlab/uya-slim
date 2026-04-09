@@ -99,14 +99,17 @@ fn remove_free(chunk: &FreeChunk) void {
     }
 }
 
+fn set_prev_link(target: &FreeChunk, prev: &FreeChunk) void {
+    if is_null(target as &void) { return; }
+    target.prev = prev;
+}
+
 fn add_free(chunk: &FreeChunk) void {
     if is_null(chunk as &void) { return; }
     set_free(&chunk.header, true);
     chunk.prev = null;
     chunk.next = free_list_head;
-    if !is_null(free_list_head as &void) {
-        free_list_head.prev = chunk;
-    }
+    set_prev_link(free_list_head, chunk);
     free_list_head = chunk;
 }
 
