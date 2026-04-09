@@ -685,7 +685,7 @@ release-clean:
 	echo "导出 HEAD 快照到 $$TMP_DIR ..."; \
 	git archive --format=tar HEAD | tar -xf - -C "$$TMP_DIR"; \
 	echo "在干净快照中执行 make release ..."; \
-	$(MAKE) -C "$$TMP_DIR" release HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" UYA_TEST_JOBS="$(UYA_TEST_JOBS)"; \
+	ALLOW_SKIP_NETWORK=1 $(MAKE) -C "$$TMP_DIR" release HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" UYA_TEST_JOBS="$(UYA_TEST_JOBS)"; \
 	echo ""; \
 	echo "✓ 干净快照 release 成功"; \
 	echo "产物位置: $$TMP_DIR/bin/uya"; \
