@@ -39,8 +39,8 @@
 | TLS 记录层 | 部分完成 | TLS 1.2/1.3 已走 AEAD 记录流，TLS 1.3 traffic secret 已接入，仍缺更完整互操作与分片覆盖 |
 | TLS 1.2 握手 | 骨架 | 还不是完整互操作握手 |
 | TLS 1.3 握手 | 部分完成 | 1-RTT、Finished、application traffic secret 已接通，仍缺更完整互操作 |
-| SNI / hostname 绑定 | 未完成 | `ssl_set_hostname` 目前仍需接入真实逻辑 |
-| HTTP 层 | 未开始 | 尚无最小 HTTP/1.1 client/server |
+| SNI / hostname 绑定 | 已完成 | `ssl_set_hostname`、hostname 校验与 ClientHello SNI 已接通 |
+| HTTP 层 | 部分完成 | 已有最小 `https_get` 和本地 HTTPS loopback server/client，仍缺真实站点互操作 |
 
 ---
 

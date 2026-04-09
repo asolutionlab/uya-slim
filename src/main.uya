@@ -3513,8 +3513,25 @@ export fn main() i32 {
         if command == CommandType.COMMAND_TEST {
             _ = system("/bin/sh -c 'rm -f /tmp/uya_allow_skip_network'" as *byte);
         }
-        if child_exit != 0 {
-            fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, child_exit);
+        if command == CommandType.COMMAND_TEST {
+            var passed: i32 = 0;
+            var failed: i32 = 1;
+            if child_exit == 0 {
+                passed = 1;
+                failed = 0;
+            }
+            fprintf(libc.stderr, "================================\n" as *byte);
+            fprintf(libc.stderr, "总计: 1 个测试\n" as *byte);
+            fprintf(libc.stderr, "通过: %d\n" as *byte, passed);
+            fprintf(libc.stderr, "失败: %d\n" as *byte, failed);
+            fprintf(libc.stderr, "================================\n" as *byte);
+            if child_exit != 0 {
+                fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, child_exit);
+            }
+        } else {
+            if child_exit != 0 {
+                fprintf(libc.stderr, "程序运行返回码：%d\n" as *byte, child_exit);
+            }
         }
         return child_exit;
     }

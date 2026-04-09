@@ -2,6 +2,8 @@
 
 use tls.ssl.handshake;
 use tls.ssl.context;
+use tls.x509.cert.Cert;
+use tls.crypto.rsa.RsaPrivateKey;
 use std.http.server;
 use std.http.types;
 use libc.syscall;
@@ -21,6 +23,16 @@ export struct HttpsResponse {
     response_len: usize,
     response: [byte: HTTPS_IO_BUF],
 }
+
+var https_server_identity_configured: bool = false;
+var https_server_identity_name_len: usize = 0;
+var https_server_identity_name: [byte: HTTPS_HOST_MAX] = [0:HTTPS_HOST_MAX];
+var https_server_identity_san_len: usize = 0;
+var https_server_identity_san: [byte: HTTPS_HOST_MAX] = [0:HTTPS_HOST_MAX];
+var https_server_identity_cn_len: usize = 0;
+var https_server_identity_cn: [byte: HTTPS_HOST_MAX] = [0:HTTPS_HOST_MAX];
+var https_server_identity_cert: &const Cert = null as &const Cert;
+var https_server_identity_rsa_key: &const RsaPrivateKey = null as &const RsaPrivateKey;
 
 fn https_copy_bytes(dst: &byte, src: &const byte, len: usize) void {
     var i: usize = 0;
@@ -204,7 +216,12 @@ fn https_parse_status(resp: &const byte, resp_len: usize) i32 {
 export fn https_server_listen(hostname: &const byte, hostname_len: usize, port: u16) !HttpsServer {
     var cfg: ServerConfig = ServerConfig{ mode: ServerMode.Blocking, max_connections: 8, port: port, host: [0:64] };
     const srv: HttpServer = try http_server_listen(&cfg);
-    var out: HttpsServer = HttpsServer{ listen_fd: srv.listen_fd, port: srv.port, hostname_len: hostname_len, hostname: [0:HTTPS_HOST_MAX] };
+    var out: HttpsServer = HttpsServer{
+        listen_fd: srv.listen_fd,
+        port: srv.port,
+        hostname_len: hostname_len,
+        hostname: [0:HTTPS_HOST_MAX]
+    };
     https_copy_bytes(&out.hostname[0], hostname, hostname_len);
     return out;
 }
@@ -215,6 +232,16 @@ export fn https_server_close(srv: &HttpsServer) void {
     }
 }
 
+export fn https_server_set_rsa_identity(srv: &HttpsServer, name: &const byte, name_len: usize, san: &const byte, san_len: usize, cn: &const byte, cn_len: usize, cert: &const Cert, rsa_key: &const RsaPrivateKey) void {
+    _ = srv;
+    https_server_identity_name_len = ssl_copy_name(&https_server_identity_name[0], name, name_len);
+    https_server_identity_san_len = ssl_copy_name(&https_server_identity_san[0], san, san_len);
+    https_server_identity_cn_len = ssl_copy_name(&https_server_identity_cn[0], cn, cn_len);
+    https_server_identity_cert = cert;
+    https_server_identity_rsa_key = rsa_key;
+    https_server_identity_configured = true;
+}
+
 export fn https_server_serve_once(srv: &HttpsServer, body: &[byte]) !void {
     var alen: u32 = 16;
     var peer: [byte: 16] = [0:16];
@@ -223,7 +250,19 @@ export fn https_server_serve_once(srv: &HttpsServer, body: &[byte]) !void {
     var rec: RecordCtx = RecordCtx{};
     var ctx: SslContext = SslContext{ role: HS_ROLE_SERVER, hs: &hs, rec: &rec };
     ssl_init(&ctx);
-    ssl_set_peer_identity(&ctx, &srv.hostname[0], srv.hostname_len, &srv.hostname[0], srv.hostname_len);
+    if https_server_identity_configured {
+        ssl_server_add_identity(&ctx, &https_server_identity_name[0], https_server_identity_name_len, &https_server_identity_san[0], https_server_identity_san_len, &https_server_identity_cn[0], https_server_identity_cn_len) catch {
+            _ = sys_close(cfd) catch {};
+            return error.TlsBadInput;
+        };
+        ssl_server_set_identity_credentials(&ctx, 0, https_server_identity_cert, https_server_identity_rsa_key) catch {
+            _ = sys_close(cfd) catch {};
+            return error.TlsBadInput;
+        };
+        ssl_set_peer_identity(&ctx, &https_server_identity_san[0], https_server_identity_san_len, &https_server_identity_cn[0], https_server_identity_cn_len);
+    } else {
+        ssl_set_peer_identity(&ctx, &srv.hostname[0], srv.hostname_len, &srv.hostname[0], srv.hostname_len);
+    }
     https_server_handshake(cfd, &ctx) catch {
         _ = sys_close(cfd) catch {};
         return error.TlsHandshakeFailure;
