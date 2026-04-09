@@ -735,6 +735,29 @@ fn https_read_client_second_flight(fd: i32, out: &byte, out_max: usize, out_len:
     out_len[0] = pos;
 }
 
+fn https_read_server_second_flight(fd: i32, out: &byte, out_max: usize, out_len: &usize) !void {
+    if out_max < 11 {
+        return error.TlsBadInput;
+    }
+    var first_len: usize = 0;
+    try https_read_tls_record_exact(fd, out, out_max, &first_len);
+    if out[0] != TLS_RECORD_CHANGE_CIPHER_SPEC as byte {
+        return error.TlsBadInput;
+    }
+    if first_len != 6 || out[5] != 1 {
+        return error.TlsBadInput;
+    }
+    if first_len + 5 > out_max {
+        return error.TlsBadInput;
+    }
+    var second_len: usize = 0;
+    try https_read_tls_record_exact(fd, &out[first_len], out_max - first_len, &second_len);
+    if out[first_len] != TLS_RECORD_HANDSHAKE as byte {
+        return error.TlsBadInput;
+    }
+    out_len[0] = first_len + second_len;
+}
+
 fn https_client_connect(host: &const byte, host_len: usize, port: u16) !i32 {
     const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     var addr: [byte: 16] = [0:16];
@@ -772,12 +795,20 @@ fn https_client_handshake(fd: i32, ctx: &SslContext) !void {
     }
     try https_write_all(fd, &send_buf[0], send_len);
     recv_len = 0;
-    try https_read_client_second_flight(fd, &recv_buf[0], HTTPS_HS_BUF, &recv_len);
+    if ctx.hs.record_framed {
+        try https_read_handshake_burst(fd, &recv_buf[0], HTTPS_HS_BUF, &recv_len);
+    } else {
+        try https_read_handshake_input(fd, &recv_buf[0], HTTPS_HS_BUF, &recv_len);
+    }
     status = ssl_handshake_step(ctx, &recv_buf[0], recv_len, &send_buf[0], HTTPS_HS_BUF, &send_len);
     if status == HS_STATUS_ERROR || !ssl_is_handshake_done(ctx) {
         return error.TlsHandshakeFailure;
     }
     try https_write_all(fd, &send_buf[0], send_len);
+    if ctx.hs.record_framed {
+        recv_len = 0;
+        try https_read_server_second_flight(fd, &recv_buf[0], HTTPS_HS_BUF, &recv_len);
+    }
 }
 
 fn https_server_handshake(fd: i32, ctx: &SslContext) !void {

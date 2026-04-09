@@ -888,7 +888,7 @@ fn hs_parse_client_second_flight_tls_records(ctx: &HandshakeCtx, in_: &const byt
         }
         if rec_type == TLS_RECORD_HANDSHAKE {
             if rec_len < 4 {
-                if saw_ccs && saw_cke && rec_len > 0 {
+                if saw_ccs && saw_cke {
                     saw_finished = true;
                     pos = pos + 5 + rec_len;
                     continue;
@@ -898,7 +898,7 @@ fn hs_parse_client_second_flight_tls_records(ctx: &HandshakeCtx, in_: &const byt
             const msg_type: byte = in_[pos + 5];
             const msg_len: usize = hs_read_u24(&in_[pos + 6]);
             if msg_len + 4 > rec_len {
-                if saw_ccs && saw_cke && rec_len > 0 {
+                if saw_ccs && saw_cke {
                     saw_finished = true;
                     pos = pos + 5 + rec_len;
                     continue;
