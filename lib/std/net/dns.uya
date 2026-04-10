@@ -65,6 +65,28 @@ struct DnsNameRef {
     buf: [byte: 256],
 }
 
+struct DnsUdpFuture : Future<!usize> {
+    mode: i32,
+    ctx: &DnsClient,
+    host: &const byte,
+    host_len: usize,
+    out: &byte,
+    out_max: usize,
+    out_len: &usize,
+    fd: i32,
+    stage: i32,
+    nonblocking_ready: i32,
+    nonblocking_set: i32,
+    query_packet: [byte: DNS_MAX_PACKET],
+    response_packet: [byte: DNS_MAX_PACKET],
+    query_len: usize,
+    response_len: usize,
+
+    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        return dns_udp_future_poll(self, waker);
+    }
+}
+
 fn dns_u16_be(b0: byte, b1: byte) u16 {
     return (((b0 as u16) << 8) | (b1 as u16));
 }
@@ -776,6 +798,156 @@ fn dns_socket_connect_tcp_nonblocking(ns: &DnsAddress, fd_out: &i32) !void {
     return;
 }
 
+fn dns_udp_future_poll(self: &DnsUdpFuture, waker: &Waker) Poll<!usize> {
+    // 最小状态机：
+    // stage 0: 组装查询
+    // stage 1: 发送 UDP query
+    // stage 2: 接收 response
+    // stage 3: 解析响应记录
+    if self.mode != DNS_RECORD_A as i32 && self.mode != DNS_RECORD_AAAA as i32 {
+        return async_poll_ready_ok_usize(0);
+    }
+    if self.host == null || self.out == null || self.out_len == null {
+        return async_poll_ready_ok_usize(0);
+    }
+    if self.host_len == 0 {
+        return async_poll_ready_ok_usize(0);
+    }
+    if dns_is_localhost(self.host[0: self.host_len]) {
+        var n_local_res: !usize = error.DnsUnsupported;
+        if self.mode == DNS_RECORD_A as i32 {
+            n_local_res = dns_client_query_a(self.ctx, self.host, self.host_len, self.out, self.out_max, self.out_len);
+        } else {
+            n_local_res = dns_client_query_aaaa(self.ctx, self.host, self.host_len, self.out, self.out_max, self.out_len);
+        }
+        const n_local: usize = n_local_res catch {
+            return async_poll_ready_ok_usize(0);
+        };
+        return async_poll_ready_ok_usize(n_local);
+    }
+    var v4_fast: [byte: 4] = [0:4];
+    if dns_parse_ipv4(self.host[0: self.host_len], &v4_fast[0]) {
+        var n_v4_res: !usize = error.DnsUnsupported;
+        if self.mode == DNS_RECORD_A as i32 {
+            n_v4_res = dns_client_query_a(self.ctx, self.host, self.host_len, self.out, self.out_max, self.out_len);
+        } else {
+            n_v4_res = dns_client_query_aaaa(self.ctx, self.host, self.host_len, self.out, self.out_max, self.out_len);
+        }
+        const n_v4: usize = n_v4_res catch {
+            return async_poll_ready_ok_usize(0);
+        };
+        return async_poll_ready_ok_usize(n_v4);
+    }
+    if self.stage == 0 {
+        const ns_res: !DnsAddress = dns_client_get_nameserver(self.ctx);
+        const ns: DnsAddress = ns_res catch {
+            return async_poll_ready_ok_usize(0);
+        };
+        if ns.family != AF_INET {
+            return async_poll_ready_ok_usize(0);
+        }
+        const qlen_res: !usize = dns_client_build_query(self.ctx, self.host[0: self.host_len], self.mode as u16, &self.query_packet[0], DNS_MAX_PACKET);
+        const qlen: usize = qlen_res catch {
+            return async_poll_ready_ok_usize(0);
+        };
+        self.query_len = qlen;
+        self.response_len = 0;
+        self.stage = 1;
+    }
+    if self.stage == 1 {
+        if self.nonblocking_ready == 0 {
+            const socket_res: !i32 = sys_socket(AF_INET, SOCK_DGRAM, 0);
+            const fd: i32 = socket_res catch {
+                return async_poll_ready_ok_usize(0);
+            };
+            self.fd = fd;
+            self.nonblocking_ready = 1;
+        }
+        if self.nonblocking_set == 0 {
+            _ = dns_udp_future_ensure_nonblocking(self.fd) catch {
+                _ = sys_close(self.fd) catch {};
+                return async_poll_ready_ok_usize(0);
+            };
+            self.nonblocking_set = 1;
+        }
+        const send_res: !isize = sys_send(self.fd, &self.query_packet[0], self.query_len, 0);
+        const sent: isize = send_res catch |err| {
+            const eid: i32 = (@error_id(err) as! i32).value;
+            if dns_is_would_block_errno(eid) {
+                waker.wait_writable(self.fd);
+                const p: Poll<!usize> = Poll<!usize>.Pending({});
+                return p;
+            }
+            return async_poll_ready_ok_usize(0);
+        };
+        if sent != self.query_len as isize {
+            return async_poll_ready_ok_usize(0);
+        }
+        self.stage = 2;
+    }
+    if self.stage == 2 {
+        const recv_res: !isize = sys_recv(self.fd, &self.response_packet[0], DNS_MAX_PACKET, 0);
+        const n: isize = recv_res catch |err| {
+            const eid: i32 = (@error_id(err) as! i32).value;
+            if dns_is_would_block_errno(eid) {
+                waker.wait_readable(self.fd);
+                const p: Poll<!usize> = Poll<!usize>.Pending({});
+                return p;
+            }
+            return async_poll_ready_ok_usize(0);
+        };
+        if n <= 0 {
+            return async_poll_ready_ok_usize(0);
+        }
+        self.response_len = n as usize;
+        self.stage = 3;
+    }
+    if self.stage == 3 {
+        var ttl_tmp: usize = 0;
+        const parsed_res: !usize = dns_parse_answers_with_ttl(&self.response_packet[0], self.response_len, self.mode as u16, self.out, self.out_max, self.out_len, &ttl_tmp);
+        const parsed: usize = parsed_res catch {
+            return async_poll_ready_ok_usize(0);
+        };
+        _ = ttl_tmp;
+        return async_poll_ready_ok_usize(parsed);
+    }
+    return async_poll_ready_ok_usize(0);
+}
+
+fn dns_udp_future_ensure_nonblocking(fd: i32) !void {
+    const flags_res: !i32 = sys_fcntl(fd, F_GETFL, 0);
+    const flags: i32 = flags_res catch {
+        return error.DnsNetworkUnreachable;
+    };
+    if (flags & O_NONBLOCK) == 0 {
+        const set_res: !i32 = sys_fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        _ = set_res catch {
+            return error.DnsNetworkUnreachable;
+        };
+    }
+    return;
+}
+
+fn dns_udp_future_new(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize, mode: i32) DnsUdpFuture {
+    return DnsUdpFuture{
+        mode: mode,
+        ctx: ctx,
+        host: host,
+        host_len: host_len,
+        out: out,
+        out_max: out_max,
+        out_len: out_len,
+        fd: 0,
+        stage: 0,
+        nonblocking_ready: 0,
+        nonblocking_set: 0,
+        query_packet: [0:DNS_MAX_PACKET],
+        response_packet: [0:DNS_MAX_PACKET],
+        query_len: 0,
+        response_len: 0,
+    };
+}
+
 fn dns_query_udp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte, response_max: usize, response_len: &usize) !usize {
     const ns: DnsAddress = try dns_client_get_nameserver(ctx);
     const fd: i32 = try dns_socket_connect_udp(&ns);
@@ -1263,6 +1435,11 @@ export fn dns_client_lookup_localhost(ctx: &DnsClient, out: &byte, out_max: usiz
     return dns_client_query_a(ctx, &host[0], 9, out, out_max, out_len);
 }
 
+export @async_fn fn dns_client_lookup_localhost_async(ctx: &DnsClient, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
+    const n: usize = try dns_client_lookup_localhost(ctx, out, out_max, out_len);
+    return n;
+}
+
 export fn dns_client_query_all(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) !usize {
     var total: usize = 0;
     var a_buf: [byte: 4] = [0:4];
@@ -1298,6 +1475,11 @@ export fn dns_client_query_all(ctx: &DnsClient, host: &const byte, host_len: usi
     return total;
 }
 
+export @async_fn fn dns_client_query_all_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
+    const n: usize = try dns_client_query_all(ctx, host, host_len, out, out_max, out_len);
+    return n;
+}
+
 export fn dns_client_query_a_with_tcp_fallback_packets(udp_packet: &const byte, udp_len: usize, tcp_packet: &const byte, tcp_len: usize, out: &byte, out_max: usize, out_len: &usize, ttl_out: &usize) !usize {
     var ttl_tmp: usize = 0;
     var parsed: usize = dns_parse_answers_with_ttl(udp_packet, udp_len, DNS_RECORD_A, out, out_max, out_len, &ttl_tmp) catch {
@@ -1310,22 +1492,22 @@ export fn dns_client_query_a_with_tcp_fallback_packets(udp_packet: &const byte, 
     return parsed;
 }
 
-export @async_fn fn dns_client_query_a_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
-    const n: usize = try dns_client_query_a(ctx, host, host_len, out, out_max, out_len);
-    return n;
+export fn dns_client_query_a_udp_future(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
+    return dns_udp_future_new(ctx, host, host_len, out, out_max, out_len, DNS_RECORD_A as i32);
 }
 
-export @async_fn fn dns_client_query_aaaa_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
-    const n: usize = try dns_client_query_aaaa(ctx, host, host_len, out, out_max, out_len);
-    return n;
+export fn dns_client_query_aaaa_udp_future(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
+    return dns_udp_future_new(ctx, host, host_len, out, out_max, out_len, DNS_RECORD_AAAA as i32);
 }
 
-export @async_fn fn dns_client_resolve_host_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
-    const n: usize = try dns_client_resolve_host(ctx, host, host_len, out, out_max, out_len);
-    return n;
+export fn dns_client_query_a_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
+    return dns_client_query_a_udp_future(ctx, host, host_len, out, out_max, out_len);
 }
 
-export @async_fn fn dns_client_resolve_first_ipv4_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
-    const n: usize = try dns_client_resolve_first_ipv4(ctx, host, host_len, out, out_max, out_len);
-    return n;
+export fn dns_client_query_aaaa_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
+    return dns_client_query_aaaa_udp_future(ctx, host, host_len, out, out_max, out_len);
+}
+
+export fn dns_client_resolve_first_ipv6_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
+    return dns_client_query_aaaa_udp_future(ctx, host, host_len, out, out_max, out_len);
 }

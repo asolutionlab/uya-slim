@@ -1,6 +1,7 @@
 // test_std_dns.uya - std.net.dns 最小回归
 
 use std.net.dns;
+use std.async;
 use std.testing.assert_eq_i32;
 
 fn bytes_eq(a: &const byte, b: &const byte, n: usize) bool {
@@ -104,7 +105,105 @@ test "dns_query_all_localhost" {
     if !bytes_eq(&out[0], &expect4[0], 4) {
         try assert_eq_i32(0, 1);
     }
-    try assert_eq_i32(out[4 + 15] as i32, 1);
+    try assert_eq_i32(out[3] as i32, 1);
+    var expect6: [byte: 16] = [0:16];
+    expect6[15] = 1;
+    if !bytes_eq(&out[4], &expect6[0], 16) {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32(out[4] as i32, 0);
+}
+
+test "dns_query_all_ipv4_literal" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    var host: [byte: 10] = "192.0.2.1";
+    var out: [byte: 20] = [0:20];
+    var out_len: usize = 0;
+    const n: usize = dns_client_query_all(&client, &host[0], 9, &out[0], 20, &out_len) catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+    try assert_eq_i32(n as i32, 20);
+    try assert_eq_i32(out_len as i32, 20);
+    var expect4: [byte: 4] = [192, 0, 2, 1];
+    if !bytes_eq(&out[0], &expect4[0], 4) {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32(out[3] as i32, 1);
+    var expect6: [byte: 16] = [0:16];
+    expect6[10] = 0xff as byte;
+    expect6[11] = 0xff as byte;
+    expect6[12] = 192;
+    expect6[13] = 0;
+    expect6[14] = 2;
+    expect6[15] = 1;
+    if !bytes_eq(&out[4], &expect6[0], 16) {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32(out[4] as i32, 0);
+}
+
+test "dns_query_all_async_localhost" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    var host: [byte: 10] = "localhost";
+    var out: [byte: 20] = [0:20];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_query_all_async(&client, &host[0], 9, &out[0], 20, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    const n: usize = bo catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+    try assert_eq_i32(n as i32, 20);
+    try assert_eq_i32(out_len as i32, 20);
+    var expect4: [byte: 4] = [127, 0, 0, 1];
+    if !bytes_eq(&out[0], &expect4[0], 4) {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32(out[3] as i32, 1);
+    var expect6: [byte: 16] = [0:16];
+    expect6[15] = 1;
+    if !bytes_eq(&out[4], &expect6[0], 16) {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32(out[4] as i32, 0);
+}
+
+test "dns_query_all_async_ipv4_literal" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    var host: [byte: 10] = "192.0.2.1";
+    var out: [byte: 20] = [0:20];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_query_all_async(&client, &host[0], 9, &out[0], 20, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    const n: usize = bo catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+    try assert_eq_i32(n as i32, 20);
+    try assert_eq_i32(out_len as i32, 20);
+    var expect4: [byte: 4] = [192, 0, 2, 1];
+    if !bytes_eq(&out[0], &expect4[0], 4) {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32(out[3] as i32, 1);
+    var expect6: [byte: 16] = [0:16];
+    expect6[10] = 0xff as byte;
+    expect6[11] = 0xff as byte;
+    expect6[12] = 192;
+    expect6[13] = 0;
+    expect6[14] = 2;
+    expect6[15] = 1;
+    if !bytes_eq(&out[4], &expect6[0], 16) {
+        try assert_eq_i32(0, 1);
+    }
+    try assert_eq_i32(out[4] as i32, 0);
 }
 
 test "dns_lookup_localhost" {
@@ -121,6 +220,156 @@ test "dns_lookup_localhost" {
     try assert_eq_i32(out_len as i32, 4);
     var expect: [byte: 4] = [127, 0, 0, 1];
     if !bytes_eq(&out[0], &expect[0], 4) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "dns_lookup_localhost_async" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    var out: [byte: 4] = [0:4];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_lookup_localhost_async(&client, &out[0], 4, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    const n: usize = bo catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+    try assert_eq_i32(n as i32, 4);
+    try assert_eq_i32(out_len as i32, 4);
+    var expect: [byte: 4] = [127, 0, 0, 1];
+    if !bytes_eq(&out[0], &expect[0], 4) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "dns_udp_future_localhost" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    var host: [byte: 10] = "localhost";
+    var out: [byte: 4] = [0:4];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_query_a_udp_future(&client, &host[0], 9, &out[0], 4, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    const n: usize = bo catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+    try assert_eq_i32(n as i32, 4);
+    try assert_eq_i32(out_len as i32, 4);
+    var expect: [byte: 4] = [127, 0, 0, 1];
+    if !bytes_eq(&out[0], &expect[0], 4) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "dns_query_a_async_localhost" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    var host: [byte: 10] = "localhost";
+    var out: [byte: 4] = [0:4];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_query_a_async(&client, &host[0], 9, &out[0], 4, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    const n: usize = bo catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+    try assert_eq_i32(n as i32, 4);
+    try assert_eq_i32(out_len as i32, 4);
+    var expect: [byte: 4] = [127, 0, 0, 1];
+    if !bytes_eq(&out[0], &expect[0], 4) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "dns_query_a_async_ipv4_literal" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    var host: [byte: 10] = "192.0.2.1";
+    var out: [byte: 4] = [0:4];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_query_a_async(&client, &host[0], 9, &out[0], 4, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    const n: usize = bo catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+    try assert_eq_i32(n as i32, 4);
+    try assert_eq_i32(out_len as i32, 4);
+    var expect: [byte: 4] = [192, 0, 2, 1];
+    if !bytes_eq(&out[0], &expect[0], 4) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "dns_query_aaaa_async_localhost" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    var host: [byte: 10] = "localhost";
+    var out: [byte: 16] = [0:16];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_query_aaaa_async(&client, &host[0], 9, &out[0], 16, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    const n: usize = bo catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+    try assert_eq_i32(n as i32, 16);
+    try assert_eq_i32(out_len as i32, 16);
+    var expect: [byte: 16] = [0:16];
+    expect[15] = 1;
+    if !bytes_eq(&out[0], &expect[0], 16) {
+        try assert_eq_i32(0, 1);
+    }
+}
+
+test "dns_resolve_first_ipv6_async_localhost" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    var host: [byte: 10] = "localhost";
+    var out: [byte: 16] = [0:16];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_resolve_first_ipv6_async(&client, &host[0], 9, &out[0], 16, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    const n: usize = bo catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+    try assert_eq_i32(n as i32, 16);
+    try assert_eq_i32(out_len as i32, 16);
+    try assert_eq_i32(out[15] as i32, 1);
+}
+
+test "dns_resolve_first_ipv6_async_ipv4_literal" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    var host: [byte: 10] = "192.0.2.1";
+    var out: [byte: 16] = [0:16];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_resolve_first_ipv6_async(&client, &host[0], 9, &out[0], 16, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    const n: usize = bo catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+    try assert_eq_i32(n as i32, 16);
+    try assert_eq_i32(out_len as i32, 16);
+    var expect: [byte: 16] = [0:16];
+    expect[10] = 0xff as byte;
+    expect[11] = 0xff as byte;
+    expect[12] = 192;
+    expect[13] = 0;
+    expect[14] = 2;
+    expect[15] = 1;
+    if !bytes_eq(&out[0], &expect[0], 16) {
         try assert_eq_i32(0, 1);
     }
 }

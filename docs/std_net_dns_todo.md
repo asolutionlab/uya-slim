@@ -139,8 +139,22 @@ use std.net.dns;
 
 - `export @async_fn fn dns_client_query_a_async(...) Future<!usize>`
 - `export @async_fn fn dns_client_query_aaaa_async(...) Future<!usize>`
-- `export @async_fn fn dns_client_resolve_host_async(...) Future<!usize>`
-- `export @async_fn fn dns_client_resolve_first_ipv4_async(...) Future<!usize>`
+- `export @async_fn fn dns_client_resolve_first_ipv6_async(...) Future<!usize>`
+- `export @async_fn fn dns_client_query_all_async(...) Future<!usize>`
+- `export @async_fn fn dns_client_lookup_localhost_async(...) Future<!usize>`
+- `dns_client_query_a_async` 已有 `localhost` 的最小回归覆盖。
+- `dns_client_query_aaaa_async` 已有 `localhost` 的最小回归覆盖。
+- `dns_client_resolve_first_ipv6_async` 已有 `localhost` 的最小回归覆盖。
+- `dns_client_resolve_first_ipv6_async` 也覆盖了字面量 IPv4 的 AAAA 映射结果。
+- `dns_client_query_all_async` 已有 `localhost` 的最小回归覆盖。
+- `dns_client_lookup_localhost_async` 已有 `localhost` 的最小回归覆盖。
+- `dns_client_query_all_async` 也覆盖了字面量 IPv4 的 `A + AAAA` 拼接结果。
+- `dns_client_query_all_async` 的顺序语义是先 `A` 再 `AAAA`，和同步 `dns_client_query_all` 保持一致。
+- `dns_client_lookup_localhost_async` 目前仍是同步包装入口，只是把 `dns_client_lookup_localhost` 包成 `Future<!usize>`。
+- 如果要继续推进真正的 nonblocking DNS transport，优先从 `dns_client_query_a_udp_future` 这条最小 future 入手，而不是重新把高层解析入口拆成复杂 future。
+- `dns_client_query_all` 也已有字面量 IPv4 的 `A + AAAA` 顺序覆盖。
+- `dns_client_query_all_async` 的结果布局是 `A` 段在前，`AAAA` 段紧随其后，整体长度由两段有效结果相加决定。
+- `dns_client_query_all` / `dns_client_query_all_async` 现在都补了拼接边界断言。
 
 异步接口约束：
 
@@ -207,6 +221,8 @@ use std.net.dns;
 - [x] TCP fallback 复用同一套 DNS message 编码，只替换 transport 和长度前缀处理。
 - [x] TCP 模式遵循 DNS over TCP 的两字节长度前缀收发格式。
 - [ ] 为异步 HTTPS 提供 nonblocking UDP/TCP transport：套接字置 `O_NONBLOCK`，在 `EAGAIN` 时返回 `Pending` 并注册 `Waker`。
+- [x] 已有最小 `DnsUdpFuture` 形状，`A` 查询的 async 入口已经统一到这条 future 上。
+- [x] `DnsUdpFuture` 已经在发送前设置 `O_NONBLOCK`，并在 `EAGAIN` / `EWOULDBLOCK` 时返回 `Pending`。
 
 ### 5. 本地优先顺序
 
@@ -228,6 +244,7 @@ use std.net.dns;
 - `dns_client_query_all` 先拼接 `A`，再拼接 `AAAA`
 - `dns_client_resolve_host` 现在会先查 `/etc/hosts` 的最小 IPv4 记录，再回落到 DNS
 - `TC=1` 的 fallback 回归现在用固定 DNS packet 数据构造，稳定覆盖 UDP 截断 + TCP 重查逻辑
+- `DnsUdpFuture` 目前先覆盖 `A` 查询，并保留 `localhost` / 字面量 IPv4 快路径
 
 ### 7. 错误模型
 
