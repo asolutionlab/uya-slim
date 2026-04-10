@@ -41,12 +41,18 @@ export struct DnsAddress {
     port: u16,
 }
 
+// IP 地址族偏好设置
+export const DNS_PREFER_ANY: u8 = 0;    // 任意（默认：先 IPv4 后 IPv6）
+export const DNS_PREFER_IPV4: u8 = 1;   // 只要 IPv4
+export const DNS_PREFER_IPV6: u8 = 2;   // 只要 IPv6
+
 export struct DnsClient {
     nameserver: [byte: 16],
     nameserver_len: usize,
     nameserver_port: u16,
     timeout_ms: u32,
     query_id: u16,
+    prefer_family: u8,  // DNS_PREFER_ANY / DNS_PREFER_IPV4 / DNS_PREFER_IPV6
 }
 
 struct DnsCursor {
@@ -654,6 +660,7 @@ export fn dns_client_init(ctx: &DnsClient, resolver: &[byte]) void {
     ctx.query_id = 1;
     ctx.nameserver_len = 0;
     ctx.nameserver_port = DNS_PORT;
+    ctx.prefer_family = DNS_PREFER_ANY;
     var i: usize = 0;
     while i < 16 {
         ctx.nameserver[i] = 0;
@@ -704,6 +711,20 @@ export fn dns_client_set_timeout_ms(ctx: &DnsClient, timeout_ms: u32) void {
 // 获取当前 DNS 查询超时时间（毫秒）
 export fn dns_client_get_timeout_ms(ctx: &DnsClient) u32 {
     return ctx.timeout_ms;
+}
+
+// 设置 IP 地址族偏好（DNS_PREFER_ANY / DNS_PREFER_IPV4 / DNS_PREFER_IPV6）
+export fn dns_client_set_prefer_family(ctx: &DnsClient, prefer: u8) void {
+    if prefer == DNS_PREFER_IPV4 || prefer == DNS_PREFER_IPV6 {
+        ctx.prefer_family = prefer;
+    } else {
+        ctx.prefer_family = DNS_PREFER_ANY;
+    }
+}
+
+// 获取当前 IP 地址族偏好
+export fn dns_client_get_prefer_family(ctx: &DnsClient) u8 {
+    return ctx.prefer_family;
 }
 
 fn dns_client_get_nameserver(ctx: &DnsClient) !DnsAddress {
@@ -1531,6 +1552,17 @@ export fn dns_client_resolve_host(ctx: &DnsClient, host: &const byte, host_len: 
     if host_len == 0 {
         return error.DnsInvalidName;
     }
+    
+    // 根据偏好设置决定解析顺序
+    if ctx.prefer_family == DNS_PREFER_IPV4 {
+        // 只要 IPv4
+        return dns_client_query_a(ctx, host, host_len, out, out_max, out_len);
+    } else if ctx.prefer_family == DNS_PREFER_IPV6 {
+        // 只要 IPv6
+        return dns_client_query_aaaa(ctx, host, host_len, out, out_max, out_len);
+    }
+    
+    // DNS_PREFER_ANY: 先查 /etc/hosts，再走 DNS（先 A 后 AAAA）
     const hosts_res: !DnsAddress = dns_parse_hosts_first_ipv4(host[0: host_len]);
     const hosts_addr: DnsAddress = hosts_res catch {
         var noop: DnsAddress = DnsAddress{ family: 0, addr_len: 0, addr: [0:16], port: 0 };
@@ -1580,6 +1612,16 @@ export @async_fn fn dns_client_lookup_localhost_async(ctx: &DnsClient, out: &byt
 }
 
 export fn dns_client_query_all(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) !usize {
+    // 根据偏好设置决定查询哪些记录类型
+    if ctx.prefer_family == DNS_PREFER_IPV4 {
+        // 只要 IPv4
+        return dns_client_query_a(ctx, host, host_len, out, out_max, out_len);
+    } else if ctx.prefer_family == DNS_PREFER_IPV6 {
+        // 只要 IPv6
+        return dns_client_query_aaaa(ctx, host, host_len, out, out_max, out_len);
+    }
+    
+    // DNS_PREFER_ANY: 先 A 后 AAAA，拼接结果
     var total: usize = 0;
     var a_buf: [byte: 4] = [0:4];
     var a_len: usize = 0;

@@ -237,7 +237,12 @@ use std.net.dns;
 - [x] 先识别字面量 IPv4 / IPv6。
 - [x] 再查 `/etc/hosts`。
 - [x] 再走 DNS 查询。
-- [ ] 允许调用方指定只要 IPv4 或只要 IPv6。
+- [x] 允许调用方指定只要 IPv4 或只要 IPv6：
+  - [x] 定义 `DNS_PREFER_ANY` / `DNS_PREFER_IPV4` / `DNS_PREFER_IPV6` 常量
+  - [x] `DnsClient` 添加 `prefer_family` 字段
+  - [x] 提供 `dns_client_set_prefer_family()` / `dns_client_get_prefer_family()` 接口
+  - [x] `dns_client_resolve_host()` 根据偏好选择解析策略
+  - [x] `dns_client_query_all()` 根据偏好返回结果
 
 ### 6. 高层解析策略
 
