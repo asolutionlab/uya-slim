@@ -424,3 +424,24 @@ test "dns_query_a_with_ttl_from_tcp_fallback" {
         try assert_eq_i32(0, 1);
     }
 }
+
+test "dns_tcp_future_localhost" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    var host: [byte: 10] = "localhost";
+    var out: [byte: 4] = [0:4];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_query_a_tcp_future(&client, &host[0], 9, &out[0], 4, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    const n: usize = bo catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+    try assert_eq_i32(n as i32, 4);
+    try assert_eq_i32(out_len as i32, 4);
+    var expect: [byte: 4] = [127, 0, 0, 1];
+    if !bytes_eq(&out[0], &expect[0], 4) {
+        try assert_eq_i32(0, 1);
+    }
+}

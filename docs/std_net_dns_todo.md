@@ -220,9 +220,11 @@ use std.net.dns;
 - [x] `TC=1` 不能直接映射为 `Unsupported`；应改走 TCP 或返回明确的可恢复错误。
 - [x] TCP fallback 复用同一套 DNS message 编码，只替换 transport 和长度前缀处理。
 - [x] TCP 模式遵循 DNS over TCP 的两字节长度前缀收发格式。
-- [ ] 为异步 HTTPS 提供 nonblocking UDP/TCP transport：套接字置 `O_NONBLOCK`，在 `EAGAIN` 时返回 `Pending` 并注册 `Waker`。
+- [x] 为异步 HTTPS 提供 nonblocking UDP/TCP transport：套接字置 `O_NONBLOCK`，在 `EAGAIN` 时返回 `Pending` 并注册 `Waker`。
 - [x] 已有最小 `DnsUdpFuture` 形状，`A` 查询的 async 入口已经统一到这条 future 上。
 - [x] `DnsUdpFuture` 已经在发送前设置 `O_NONBLOCK`，并在 `EAGAIN` / `EWOULDBLOCK` 时返回 `Pending`。
+- [x] `DnsTcpFuture` 已实现，支持完整的 nonblocking TCP DNS 查询流程。
+- [x] `dns_client_query_tcp_async` 接口已提供，支持 `A` 和 `AAAA` 查询。
 
 ### 5. 本地优先顺序
 
@@ -322,8 +324,8 @@ DNS 客户端完成后，HTTPS 侧应做这些改造：
 
 ### 2.1 异步集成测试
 
-- [ ] 新增 `tests/test_std_dns_async.uya`，验证 async UDP 查询能在事件循环中完成。
-- [ ] 覆盖 nonblocking socket 下的 `EAGAIN -> Pending -> Ready` 路径。
+- [x] 已有 `tests/test_std_dns.uya` 包含 async 测试用例，验证 async UDP/TCP 查询能在事件循环中完成。
+- [x] 覆盖 nonblocking socket 下的 `EAGAIN -> Pending -> Ready` 路径（UDP 和 TCP）。
 - [ ] 覆盖 async transport 的超时、取消前 close、以及 `TC=1` 后 TCP fallback。
 
 ### 3. HTTPS 联动测试
