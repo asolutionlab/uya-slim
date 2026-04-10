@@ -3,6 +3,8 @@
 use std.runtime.entry;
 use tls.crypto.x25519;
 
+extern fn x25519_ref_impl(out: &byte, scalar: &const byte, point: &const byte) i32;
+
 const RFC_BASE9: [byte: 32] = [
     0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -50,7 +52,9 @@ fn check_x25519_vector(scalar: &const byte, point: &const byte, expected: &const
     x25519_pure_mpi(&pure_out[0], scalar, point) catch { return base_code + 1; };
 
     var ref_out: [byte: 32] = [0:32];
-    x25519(&ref_out[0], scalar, point) catch { return base_code + 2; };
+    if x25519_ref_impl(&ref_out[0], scalar, point) != 0 {
+        return base_code + 2;
+    }
 
     var i: usize = 0;
     while i < 32 {

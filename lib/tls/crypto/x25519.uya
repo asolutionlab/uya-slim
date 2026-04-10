@@ -359,8 +359,7 @@ export fn x25519(out: &byte, scalar: &const byte, point: &const byte) !void {
     if out == null || scalar == null || point == null {
         return error.TlsBadInput;
     }
-    // Use pure Uya implementation
-    x25519_pure_uya(out, scalar, point);
+    try x25519_pure_mpi_impl(out, scalar, point);
 }
 
 // 测试接口：导出内部操作供单元测试
@@ -488,10 +487,10 @@ fn x25519_pure_uya(out: &byte, scalar: &const byte, point: &const byte) void {
         a24E.l[1] = 0;
         a24E.l[2] = 0;
         a24E.l[3] = 0;
-        fe_mul(&a24E, &a24E, &E);
+        fe_mul(&a24E, &a24E, &e_fe);
         var AApa24E: Fe = Fe{ l: [0:4] };
         fe_add(&AApa24E, &AA, &a24E);
-        fe_mul(&z2, &E, &AApa24E);
+        fe_mul(&z2, &e_fe, &AApa24E);
 
         t = t - 1;
     }
@@ -694,10 +693,10 @@ fn x25519_pure_mpi_impl(out: &byte, scalar: &const byte, point: &const byte) !vo
         a24.n = 1;
         a24.sign = 1;
         var a24E: Mpi = Mpi{};
-        fe_mpi_mul(&a24E, &a24, &E, &p) catch |err| { return err; };
+        fe_mpi_mul(&a24E, &a24, &e_mpi, &p) catch |err| { return err; };
         var AApa24E: Mpi = Mpi{};
         fe_mpi_add(&AApa24E, &AA, &a24E, &p) catch |err| { return err; };
-        fe_mpi_mul(&z2, &E, &AApa24E, &p) catch |err| { return err; };
+        fe_mpi_mul(&z2, &e_mpi, &AApa24E, &p) catch |err| { return err; };
 
         t = t - 1;
     }
@@ -717,8 +716,7 @@ export fn x25519_pure_mpi(out: &byte, scalar: &const byte, point: &const byte) !
     if out == null || scalar == null || point == null {
         return error.TlsBadInput;
     }
-    // Use pure Uya implementation
-    x25519_pure_uya(out, scalar, point);
+    try x25519_pure_mpi_impl(out, scalar, point);
 }
 
 // 纯 Uya X25519 实现（不依赖 OpenSSL）
@@ -726,5 +724,5 @@ export fn x25519_uya(out: &byte, scalar: &const byte, point: &const byte) !void 
     if out == null || scalar == null || point == null {
         return error.TlsBadInput;
     }
-    x25519_pure_uya(out, scalar, point);
+    try x25519_pure_mpi_impl(out, scalar, point);
 }

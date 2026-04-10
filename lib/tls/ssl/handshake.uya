@@ -35,7 +35,8 @@ const HS_MASTER_SECRET_LEN: usize = 48;
 const HS_VERIFY_DATA_LEN: usize = 12;
 const HS_TLS12_KEY_BLOCK_LEN: usize = 40;
 const HS_MAX_CLIENT_HELLO_MSG: usize = 512;
-const HS_MAX_SERVER_FLIGHT_MSG: usize = 2048;
+const HS_MAX_SERVER_FLIGHT_MSG: usize = 8192;
+const HS_MAX_TRANSCRIPT_MSG: usize = 12288;
 
 export const HS_STATUS_NEED_SEND: i32 = 0;
 export const HS_STATUS_NEED_RECV: i32 = 1;
@@ -218,10 +219,10 @@ fn hs_tls12_prf_sha256(secret: &const byte, secret_len: usize, label: &const byt
 }
 
 fn hs_hash_messages(part0: &const byte, len0: usize, part1: &const byte, len1: usize, part2: &const byte, len2: usize, part3: &const byte, len3: usize, out: &byte) void {
-    var buf: [byte: 2048] = [0:2048];
+    var buf: [byte: HS_MAX_TRANSCRIPT_MSG] = [0:HS_MAX_TRANSCRIPT_MSG];
     var pos: usize = 0;
     if len0 > 0 {
-        if pos + len0 > 2048 {
+        if pos + len0 > HS_MAX_TRANSCRIPT_MSG {
             return;
         }
         var i: usize = 0;
@@ -232,7 +233,7 @@ fn hs_hash_messages(part0: &const byte, len0: usize, part1: &const byte, len1: u
         pos = pos + len0;
     }
     if len1 > 0 {
-        if pos + len1 > 2048 {
+        if pos + len1 > HS_MAX_TRANSCRIPT_MSG {
             return;
         }
         var i: usize = 0;
@@ -243,7 +244,7 @@ fn hs_hash_messages(part0: &const byte, len0: usize, part1: &const byte, len1: u
         pos = pos + len1;
     }
     if len2 > 0 {
-        if pos + len2 > 2048 {
+        if pos + len2 > HS_MAX_TRANSCRIPT_MSG {
             return;
         }
         var i: usize = 0;
@@ -254,7 +255,7 @@ fn hs_hash_messages(part0: &const byte, len0: usize, part1: &const byte, len1: u
         pos = pos + len2;
     }
     if len3 > 0 {
-        if pos + len3 > 2048 {
+        if pos + len3 > HS_MAX_TRANSCRIPT_MSG {
             return;
         }
         var i: usize = 0;

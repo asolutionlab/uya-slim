@@ -11,7 +11,7 @@ use libc.stdio;
 use libc.unistd;
 use libc.syscall;
 const HTTPS_IO_BUF: usize = 4096;
-const HTTPS_HS_BUF: usize = 2048;
+const HTTPS_HS_BUF: usize = 8192;
 const HTTPS_HOST_MAX: usize = 64;
 
 export const AF_UNSPEC: i32 = 0;
@@ -313,6 +313,30 @@ fn https_is_toy_client_second_flight(buf: &const byte, buf_len: usize) bool {
     return true;
 }
 
+fn https_record_contains_handshake_type(record: &const byte, record_len: usize, msg_type: byte) bool {
+    if record_len < 5 || record[0] != TLS_RECORD_HANDSHAKE as byte {
+        return false;
+    }
+    const payload_len: usize = hs_read_u16(&record[3]) as usize;
+    if 5 + payload_len != record_len {
+        return false;
+    }
+    var pos: usize = 5;
+    const end: usize = 5 + payload_len;
+    while pos + 4 <= end {
+        const cur_type: byte = record[pos];
+        const cur_len: usize = hs_read_u24(&record[pos + 1]);
+        if pos + 4 + cur_len > end {
+            return false;
+        }
+        if cur_type == msg_type {
+            return true;
+        }
+        pos = pos + 4 + cur_len;
+    }
+    return false;
+}
+
 fn https_read_tls_record_exact(fd: i32, out: &byte, out_max: usize, out_len: &usize) !void {
     if out_max < 5 {
         return error.TlsBadInput;
@@ -336,38 +360,34 @@ fn https_read_handshake_burst(fd: i32, out: &byte, out_max: usize, out_len: &usi
     if out_max < 5 {
         return error.TlsBadInput;
     }
-    var total: usize = try https_read_some(fd, out, out_max);
-    if total < 5 || out[0] != TLS_RECORD_HANDSHAKE as byte {
-        out_len[0] = total;
+    try https_read_exact(fd, out, 5);
+    if out[0] != TLS_RECORD_HANDSHAKE as byte {
+        out_len[0] = 5;
         return;
     }
     const first_total: usize = 5 + (hs_read_u16(&out[3]) as usize);
     if first_total > out_max {
         return error.TlsBadInput;
     }
-    if total < first_total {
-        try https_read_exact(fd, &out[total], first_total - total);
-        total = first_total;
-    }
+    try https_read_exact(fd, &out[5], first_total - 5);
     if https_is_toy_client_second_flight(out as &const byte, first_total) {
         out_len[0] = first_total;
         return;
     }
-    if first_total <= 8 {
+    if first_total <= 8 || https_record_contains_handshake_type(out as &const byte, first_total, HS_MSG_SERVER_HELLO_DONE) {
         out_len[0] = first_total;
         return;
     }
 
-    // 继续读取所有握手记录直到 ServerHelloDone（类型 14）
+    // 继续按记录边界精确读取，直到遇到 ServerHelloDone（类型 14）
+    var total: usize = first_total;
     var pos: usize = first_total;
     while true {
-        if total < pos + 5 {
-            try https_read_exact(fd, &out[total], (pos + 5) - total);
-            total = pos + 5;
+        if pos + 5 > out_max {
+            return error.TlsBadInput;
         }
-        const typ: byte = out[pos];
-        // 如果不是握手记录则停止
-        if typ != TLS_RECORD_HANDSHAKE as byte {
+        try https_read_exact(fd, &out[pos], 5);
+        if out[pos] != TLS_RECORD_HANDSHAKE as byte {
             out_len[0] = pos;
             return;
         }
@@ -375,22 +395,9 @@ fn https_read_handshake_burst(fd: i32, out: &byte, out_max: usize, out_len: &usi
         if pos + rec_total > out_max {
             return error.TlsBadInput;
         }
-        if total < pos + rec_total {
-            try https_read_exact(fd, &out[total], (pos + rec_total) - total);
-            total = pos + rec_total;
-        }
-        // 检查此记录是否包含 ServerHelloDone（类型 14）
-        var found_done: bool = false;
-        var hpos: usize = pos + 5;
-        while hpos + 4 <= pos + rec_total {
-            const msg_type: u8 = out[hpos] as u8;
-            const msg_len: usize = hs_read_u24(&out[hpos + 1]);
-            if msg_type == 14 {  // ServerHelloDone
-                found_done = true;
-                break;
-            }
-            hpos = hpos + 4 + msg_len;
-        }
+        try https_read_exact(fd, &out[pos + 5], rec_total - 5);
+        total = pos + rec_total;
+        const found_done: bool = https_record_contains_handshake_type(&out[pos], rec_total, HS_MSG_SERVER_HELLO_DONE);
         pos = pos + rec_total;
         if found_done {
             out_len[0] = pos;
@@ -403,20 +410,16 @@ fn https_read_client_second_flight(fd: i32, out: &byte, out_max: usize, out_len:
     if out_max < 5 {
         return error.TlsBadInput;
     }
-    var total: usize = try https_read_some(fd, out, out_max);
-    if total < 5 || out[0] != TLS_RECORD_HANDSHAKE as byte {
-        out_len[0] = total;
+    try https_read_exact(fd, out, 5);
+    if out[0] != TLS_RECORD_HANDSHAKE as byte {
+        out_len[0] = 5;
         return;
     }
-
     const first_total: usize = 5 + (hs_read_u16(&out[3]) as usize);
     if first_total > out_max {
         return error.TlsBadInput;
     }
-    if total < first_total {
-        try https_read_exact(fd, &out[total], first_total - total);
-        total = first_total;
-    }
+    try https_read_exact(fd, &out[5], first_total - 5);
     if https_is_toy_client_second_flight(out as &const byte, first_total) {
         out_len[0] = first_total;
         return;
@@ -427,10 +430,7 @@ fn https_read_client_second_flight(fd: i32, out: &byte, out_max: usize, out_len:
     }
 
     var pos: usize = first_total;
-    if total < pos + 5 {
-        try https_read_exact(fd, &out[total], (pos + 5) - total);
-        total = pos + 5;
-    }
+    try https_read_exact(fd, &out[pos], 5);
     if out[pos] != TLS_RECORD_CHANGE_CIPHER_SPEC as byte {
         out_len[0] = pos;
         return;
@@ -439,16 +439,10 @@ fn https_read_client_second_flight(fd: i32, out: &byte, out_max: usize, out_len:
     if pos + ccs_total > out_max {
         return error.TlsBadInput;
     }
-    if total < pos + ccs_total {
-        try https_read_exact(fd, &out[total], (pos + ccs_total) - total);
-        total = pos + ccs_total;
-    }
+    try https_read_exact(fd, &out[pos + 5], ccs_total - 5);
     pos = pos + ccs_total;
 
-    if total < pos + 5 {
-        try https_read_exact(fd, &out[total], (pos + 5) - total);
-        total = pos + 5;
-    }
+    try https_read_exact(fd, &out[pos], 5);
     if out[pos] != TLS_RECORD_HANDSHAKE as byte {
         out_len[0] = pos;
         return;
@@ -457,10 +451,7 @@ fn https_read_client_second_flight(fd: i32, out: &byte, out_max: usize, out_len:
     if pos + fin_total > out_max {
         return error.TlsBadInput;
     }
-    if total < pos + fin_total {
-        try https_read_exact(fd, &out[total], (pos + fin_total) - total);
-        total = pos + fin_total;
-    }
+    try https_read_exact(fd, &out[pos + 5], fin_total - 5);
     pos = pos + fin_total;
     out_len[0] = pos;
 }

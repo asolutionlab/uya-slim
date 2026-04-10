@@ -5,7 +5,10 @@ use std.async;
 use std.async_scheduler.block_on_with_event_loop;
 use std.async_event.linux_epoll_create;
 use std.async_event.LinuxEpoll;
+use std.http.server.fill_sockaddr_loopback_16;
+use std.http.server.read_port_from_sockaddr_16;
 use std.testing.assert_eq_i32;
+use libc.syscall;
 
 fn bytes_eq(a: &const byte, b: &const byte, n: usize) bool {
     var i: usize = 0;
@@ -16,6 +19,51 @@ fn bytes_eq(a: &const byte, b: &const byte, n: usize) bool {
         i = i + 1;
     }
     return true;
+}
+
+fn dns_bind_loopback_udp_silent(port_out: &u16) !i32 {
+    const fd: i32 = try sys_socket(AF_INET, SOCK_DGRAM, 0);
+    var addr: [byte: 16] = [0:16];
+    fill_sockaddr_loopback_16(0, &addr[0] as &byte);
+    const bind_result: !i32 = sys_bind(fd, &addr[0] as &void, 16 as u32);
+    _ = bind_result catch {
+        _ = sys_close(fd) catch {};
+        return bind_result as! i32;
+    };
+    var out: [byte: 16] = [0:16];
+    var alen: u32 = 16;
+    const name_result: !i32 = sys_getsockname(fd, &out[0] as &void, &alen);
+    _ = name_result catch {
+        _ = sys_close(fd) catch {};
+        return name_result as! i32;
+    };
+    port_out[0] = read_port_from_sockaddr_16(&out[0] as &byte);
+    return fd;
+}
+
+fn dns_listen_loopback_tcp_silent(port_out: &u16) !i32 {
+    const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    var addr: [byte: 16] = [0:16];
+    fill_sockaddr_loopback_16(0, &addr[0] as &byte);
+    const bind_result: !i32 = sys_bind(fd, &addr[0] as &void, 16 as u32);
+    _ = bind_result catch {
+        _ = sys_close(fd) catch {};
+        return bind_result as! i32;
+    };
+    const listen_result: !i32 = sys_listen(fd, 4);
+    _ = listen_result catch {
+        _ = sys_close(fd) catch {};
+        return listen_result as! i32;
+    };
+    var out: [byte: 16] = [0:16];
+    var alen: u32 = 16;
+    const name_result: !i32 = sys_getsockname(fd, &out[0] as &void, &alen);
+    _ = name_result catch {
+        _ = sys_close(fd) catch {};
+        return name_result as! i32;
+    };
+    port_out[0] = read_port_from_sockaddr_16(&out[0] as &byte);
+    return fd;
 }
 
 test "dns_resolve_localhost_ipv4_literal" {
@@ -656,6 +704,75 @@ test "dns_query_a_rejects_empty_name" {
     var out_len: usize = 0;
     dns_client_query_a(&client, &host[0], 0, &out[0], 4, &out_len) catch |err| {
         try assert_eq_i32(@error_id(err) as i32, @error_id(error.DnsInvalidName) as i32);
+        return;
+    };
+    try assert_eq_i32(0, 1);
+}
+
+test "dns_query_a_async_rejects_empty_name" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0, prefer_family: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+
+    var host: [byte: 1] = [0:1];
+    var out: [byte: 4] = [0:4];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_query_a_async(&client, &host[0], 0, &out[0], 4, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    bo catch |err| {
+        try assert_eq_i32(@error_id(err) as i32, @error_id(error.DnsInvalidName) as i32);
+        return;
+    };
+    try assert_eq_i32(0, 1);
+}
+
+test "dns_query_a_udp_future_times_out_with_silent_nameserver" {
+    var port: u16 = 0;
+    const server_fd: i32 = dns_bind_loopback_udp_silent(&port) catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0, prefer_family: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    client.nameserver_port = port;
+    dns_client_set_timeout_ms(&client, 100);
+
+    var host: [byte: 12] = "example.com";
+    var out: [byte: 4] = [0:4];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_query_a_udp_future(&client, &host[0], 11, &out[0], 4, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    _ = sys_close(server_fd) catch {};
+    bo catch |err| {
+        try assert_eq_i32(@error_id(err) as i32, @error_id(error.DnsTimeout) as i32);
+        return;
+    };
+    try assert_eq_i32(0, 1);
+}
+
+test "dns_query_a_tcp_future_times_out_with_silent_nameserver" {
+    var port: u16 = 0;
+    const server_fd: i32 = dns_listen_loopback_tcp_silent(&port) catch {
+        try assert_eq_i32(0, 1);
+        return;
+    };
+
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0, prefer_family: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    client.nameserver_port = port;
+    dns_client_set_timeout_ms(&client, 100);
+
+    var host: [byte: 12] = "example.com";
+    var out: [byte: 4] = [0:4];
+    var out_len: usize = 0;
+    const fut: Future<!usize> = dns_client_query_a_tcp_future(&client, &host[0], 11, &out[0], 4, &out_len);
+    const bo: !usize = block_on<usize>(fut);
+    _ = sys_close(server_fd) catch {};
+    bo catch |err| {
+        try assert_eq_i32(@error_id(err) as i32, @error_id(error.DnsTimeout) as i32);
         return;
     };
     try assert_eq_i32(0, 1);

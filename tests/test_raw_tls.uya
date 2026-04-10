@@ -14,10 +14,11 @@ export fn main() i32 {
     // DNS resolution
     var client: DnsClient = DnsClient{};
     dns_client_init(&client, &""[0:0]);
+    var host: [byte: 12] = "example.com";
     var ip_buf: [byte: 4] = [0:4];
     var ip_len: usize = 0;
     
-    dns_client_resolve_host(&client, &"example.com"[0], 11, &ip_buf[0], 4, &ip_len) catch {
+    dns_client_resolve_host(&client, &host[0], 11, &ip_buf[0], 4, &ip_len) catch {
         debug(&"DNS failed\n"[0: 11]);
         return 1;
     };

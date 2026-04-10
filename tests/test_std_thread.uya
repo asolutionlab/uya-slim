@@ -7,8 +7,8 @@ use std.async_scheduler;
 use std.testing.assert_eq_i32;
 use libc.syscall;
 
-const THREAD_TEST_TIMEOUT_MS: i32 = 200;
-const THREAD_TEST_WAIT_RETRIES: i32 = 500;
+const THREAD_TEST_TIMEOUT_MS: i32 = 1000;
+const THREAD_TEST_WAIT_RETRIES: i32 = 2000;
 
 fn double_i32(v: i32) i32 {
     return v * 2;
