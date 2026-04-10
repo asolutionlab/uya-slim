@@ -1834,12 +1834,14 @@ export fn dns_client_query_all(ctx: &DnsClient, host: &const byte, host_len: usi
     }
     if total == 0 {
         if a_err_id != 0 && a_err_id != @error_id(error.DnsNoSuchName) {
-            return dns_error_from_error_id(a_err_id);
+            const err_n: usize = try dns_error_from_error_id(a_err_id);
+            return err_n;
         }
         if aaaa_err_id != 0 && aaaa_err_id != @error_id(error.DnsNoSuchName) {
-            return dns_error_from_error_id(aaaa_err_id);
+            const err_n2: usize = try dns_error_from_error_id(aaaa_err_id);
+            return err_n2;
         }
-        return error.DnsNoSuchName;
+        return try dns_error_from_error_id(@error_id(error.DnsNoSuchName));
     }
     out_len[0] = total;
     return total;
