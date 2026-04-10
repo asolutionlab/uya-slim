@@ -330,10 +330,12 @@ DNS 客户端完成后，HTTPS 侧应做这些改造：
 
 ### 2. 集成测试
 
-- [ ] 使用 `localhost` 或本机可控 nameserver 做 UDP 解析集成测试。
-- [ ] 增加至少一个触发 TCP fallback 的集成测试。
-- [ ] 如果环境允许网络，再增加一次真实域名 smoke test。
-- [ ] 若网络不可用，使用 skip marker 跳过真实外网测试。
+- [x] 使用 `localhost` 或本机可控 nameserver 做 UDP 解析集成测试。
+- [x] 增加至少一个触发 TCP fallback 的集成测试。
+- [x] 如果环境允许网络，再增加一次真实域名 smoke test。
+  - **结果**: DNS 解析成功 (example.com → 172.66.147.243)
+  - **限制**: TLS 握手失败（简化版 TLS 实现不支持真实服务器）
+- [x] 若网络不可用，使用 skip marker 跳过真实外网测试。
 
 ### 2.1 异步集成测试
 
