@@ -64,19 +64,22 @@ fn emit_microapp_mmu_helpers(codegen: &C99CodeGenerator) void {
         return;
     }
     fputs("// microapp MMU translation hook（native adapter：按当前进程内存映射做权限校验）\n" as *byte, codegen.emit_stream as *void);
-    fputs("struct FILE;\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern struct FILE *fopen(const char *filename, const char *mode);\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern int32_t fclose(struct FILE *stream);\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern char *fgets(char *buf, int32_t n, struct FILE *stream);\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern int32_t sscanf(const char *str, const char *format, ...);\n" as *byte, codegen.emit_stream as *void);
     fputs("extern char *getenv(const char *name);\n" as *byte, codegen.emit_stream as *void);
     fputs("extern int open(const char *pathname, int flags, ...);\n" as *byte, codegen.emit_stream as *void);
     fputs("extern int64_t read(int32_t fd, char *buf, size_t count);\n" as *byte, codegen.emit_stream as *void);
     fputs("extern int32_t close(int32_t fd);\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern int32_t fputs(const char *s, struct FILE *stream);\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern int32_t fputc(int32_t c, struct FILE *stream);\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern int32_t fprintf(struct FILE *stream, const char *format, ...);\n" as *byte, codegen.emit_stream as *void);
-    fputs("extern struct FILE *stderr;\n" as *byte, codegen.emit_stream as *void);
+    if codegen.has_stdio_conflicts != 0 {
+        // 只有在不能包含 <stdio.h> 时，才补这些 stdio 原型；否则会与系统头文件的 FILE 声明冲突。
+        fputs("struct FILE;\n" as *byte, codegen.emit_stream as *void);
+        fputs("extern struct FILE *fopen(const char *filename, const char *mode);\n" as *byte, codegen.emit_stream as *void);
+        fputs("extern int32_t fclose(struct FILE *stream);\n" as *byte, codegen.emit_stream as *void);
+        fputs("extern char *fgets(char *buf, int32_t n, struct FILE *stream);\n" as *byte, codegen.emit_stream as *void);
+        fputs("extern int32_t sscanf(const char *str, const char *format, ...);\n" as *byte, codegen.emit_stream as *void);
+        fputs("extern int32_t fputs(const char *s, struct FILE *stream);\n" as *byte, codegen.emit_stream as *void);
+        fputs("extern int32_t fputc(int32_t c, struct FILE *stream);\n" as *byte, codegen.emit_stream as *void);
+        fputs("extern int32_t fprintf(struct FILE *stream, const char *format, ...);\n" as *byte, codegen.emit_stream as *void);
+        fputs("extern struct FILE *stderr;\n" as *byte, codegen.emit_stream as *void);
+    }
     fputs("enum { UYA_MMU_ACCESS_R = 1U, UYA_MMU_ACCESS_W = 2U, UYA_MMU_ACCESS_X = 4U };\n" as *byte, codegen.emit_stream as *void);
     fputs("struct UyaMmuRegion { uintptr_t start; uintptr_t end; unsigned int perms; };\n" as *byte, codegen.emit_stream as *void);
     fputs("enum { UYA_MMU_REGION_MAX = 512U };\n" as *byte, codegen.emit_stream as *void);
