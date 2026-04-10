@@ -83,6 +83,29 @@ fn https_append_u16_dec(out: &byte, start: usize, n: u16) usize {
     return pos + 1;
 }
 
+fn https_append_u64_dec(out: &byte, start: usize, n: u64) usize {
+    var pos: usize = start;
+    if n == 0 {
+        out[pos] = 48 as byte;
+        return pos + 1;
+    }
+    var digits: [byte: 20] = [0:20];
+    var tmp: u64 = n;
+    var d: usize = 0;
+    while tmp > 0 && d < 20 {
+        digits[d] = (((tmp % 10) + 48) as! byte).value;
+        tmp = tmp / 10;
+        d = d + 1;
+    }
+    var i: usize = 0;
+    while i < d {
+        out[pos] = digits[d - 1 - i];
+        pos = pos + 1;
+        i = i + 1;
+    }
+    return pos;
+}
+
 fn https_fill_sockaddr_ipv4(a: byte, b: byte, c: byte, d: byte, port: u16, out: &byte) void {
     var i: usize = 0;
     while i < 16 {
@@ -617,13 +640,17 @@ fn https_get_via_curl(host: &const byte, host_len: usize, path: &[byte]) !HttpsR
     };
     var headers_path: [byte: 64] = [0:64];
     var body_path: [byte: 64] = [0:64];
-    const hlen: i32 = snprintf(&headers_path[0], 64, &"/tmp/uya_https_headers_%lld"[0: 27], pid);
-    const blen: i32 = snprintf(&body_path[0], 64, &"/tmp/uya_https_body_%lld"[0: 24], pid);
-    if hlen < 0 || blen < 0 || hlen >= 64 || blen >= 64 {
+    var hpos: usize = 0;
+    var bpos: usize = 0;
+    hpos = https_copy_slice(&headers_path[0], hpos, &"/tmp/uya_https_headers_"[0: 23]);
+    hpos = https_append_u64_dec(&headers_path[0], hpos, pid as u64);
+    bpos = https_copy_slice(&body_path[0], bpos, &"/tmp/uya_https_body_"[0: 20]);
+    bpos = https_append_u64_dec(&body_path[0], bpos, pid as u64);
+    if hpos + 1 >= 64 || bpos + 1 >= 64 {
         return error.ConnectionClosed;
     }
-    const hpos: usize = (hlen as! usize).value;
-    const bpos: usize = (blen as! usize).value;
+    headers_path[hpos] = 0;
+    body_path[bpos] = 0;
 
     var cmd: [byte: 512] = [0:512];
     var pos: usize = 0;
