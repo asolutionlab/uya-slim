@@ -1,5 +1,5 @@
 // lib/tls/crypto/ec_p384.uya - P-384 (secp384r1) 纯 Uya 实现
-// 当前先覆盖公钥生成与 ECDH；ECDSA sign/verify 仍由 ec_ref.c 兜底
+// 当前覆盖公钥生成、ECDH、ECDSA sign/verify
 
 use tls.base.mpi;
 
@@ -31,11 +31,20 @@ const P384_P_LE: [u64: 6] = [
 ];
 
 const P384_N_LE: [u64: 6] = [
-    0xBB6FB71E91386409,
-    0x3BB5C9B8899C47AE,
-    0x7FCC0148F709A5D0,
-    0x51868783BF2F966B,
-    0xFFFFFFFFFFFFFFFA,
+    0xECEC196ACCC52973,
+    0x581A0DB248B0A77A,
+    0xC7634D81F4372DDF,
+    0xFFFFFFFFFFFFFFFF,
+    0xFFFFFFFFFFFFFFFF,
+    0xFFFFFFFFFFFFFFFF,
+];
+
+const P384_N_MINUS_2_LE: [u64: 6] = [
+    0xECEC196ACCC52971,
+    0x581A0DB248B0A77A,
+    0xC7634D81F4372DDF,
+    0xFFFFFFFFFFFFFFFF,
+    0xFFFFFFFFFFFFFFFF,
     0xFFFFFFFFFFFFFFFF,
 ];
 
@@ -334,6 +343,235 @@ fn fe384_inv(r: &Fe384, a: &const Fe384) void {
     fe384_cpy(r, &x);
 }
 
+// ----- Sc384（模 n）-----
+fn sc384_zero(r: &Sc384) void {
+    var i: usize = 0;
+    while i < FE384_LIMBS {
+        r.l[i] = 0;
+        i = i + 1;
+    }
+}
+
+fn sc384_cpy(r: &Sc384, a: &const Sc384) void {
+    var i: usize = 0;
+    while i < FE384_LIMBS {
+        r.l[i] = a.l[i];
+        i = i + 1;
+    }
+}
+
+fn sc384_is_zero(a: &const Sc384) bool {
+    var i: usize = 0;
+    while i < FE384_LIMBS {
+        if a.l[i] != 0 {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn sc384_eq(a: &const Sc384, b: &const Sc384) bool {
+    var i: usize = 0;
+    while i < FE384_LIMBS {
+        if a.l[i] != b.l[i] {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn sc384_load_mpi(m: &Mpi, a: &const Sc384) void {
+    mpi_init(m);
+    var i: usize = 0;
+    while i < FE384_LIMBS {
+        m.limbs[i] = a.l[i];
+        i = i + 1;
+    }
+    m.n = FE384_LIMBS;
+    m.sign = 1;
+}
+
+fn sc384_store_mpi(r: &Sc384, m: &const Mpi) void {
+    var i: usize = 0;
+    while i < FE384_LIMBS {
+        r.l[i] = m.limbs[i];
+        i = i + 1;
+    }
+}
+
+fn sc384_lt_n(a: &const Sc384) bool {
+    var i: usize = 5;
+    while i < FE384_LIMBS {
+        const ai: u64 = a.l[i];
+        const ni: u64 = P384_N_LE[i];
+        if ai != ni {
+            return ai < ni;
+        }
+        if i == 0 {
+            break;
+        }
+        i = i - 1;
+    }
+    return false;
+}
+
+fn sc384_ge_n(a: &const Sc384) bool {
+    return !sc384_lt_n(a);
+}
+
+fn sc384_add(r: &Sc384, a: &const Sc384, b: &const Sc384) void {
+    var am: Mpi = Mpi{};
+    var bm: Mpi = Mpi{};
+    var nm: Mpi = Mpi{};
+    var tm: Mpi = Mpi{};
+    var rm: Mpi = Mpi{};
+    sc384_load_mpi(&am, a);
+    sc384_load_mpi(&bm, b);
+    mpi_init(&nm);
+    mpi_init(&tm);
+    mpi_init(&rm);
+    nm.limbs[0] = P384_N_LE[0];
+    nm.limbs[1] = P384_N_LE[1];
+    nm.limbs[2] = P384_N_LE[2];
+    nm.limbs[3] = P384_N_LE[3];
+    nm.limbs[4] = P384_N_LE[4];
+    nm.limbs[5] = P384_N_LE[5];
+    nm.n = FE384_LIMBS;
+    nm.sign = 1;
+    mpi_add(&tm, &am, &bm) catch {
+        sc384_zero(r);
+        return;
+    };
+    mpi_mod(&rm, &tm, &nm) catch {
+        sc384_zero(r);
+        return;
+    };
+    sc384_store_mpi(r, &rm);
+}
+
+fn sc384_sub_n(r: &Sc384) void {
+    var rm: Mpi = Mpi{};
+    var nm: Mpi = Mpi{};
+    var tm: Mpi = Mpi{};
+    mpi_init(&rm);
+    mpi_init(&nm);
+    mpi_init(&tm);
+    rm.limbs[0] = r.l[0];
+    rm.limbs[1] = r.l[1];
+    rm.limbs[2] = r.l[2];
+    rm.limbs[3] = r.l[3];
+    rm.limbs[4] = r.l[4];
+    rm.limbs[5] = r.l[5];
+    rm.n = FE384_LIMBS;
+    rm.sign = 1;
+    nm.limbs[0] = P384_N_LE[0];
+    nm.limbs[1] = P384_N_LE[1];
+    nm.limbs[2] = P384_N_LE[2];
+    nm.limbs[3] = P384_N_LE[3];
+    nm.limbs[4] = P384_N_LE[4];
+    nm.limbs[5] = P384_N_LE[5];
+    nm.n = FE384_LIMBS;
+    nm.sign = 1;
+    if mpi_compare(&rm, &nm) < 0 {
+        return;
+    }
+    mpi_sub(&tm, &rm, &nm) catch {
+        return;
+    };
+    r.l[0] = tm.limbs[0];
+    r.l[1] = tm.limbs[1];
+    r.l[2] = tm.limbs[2];
+    r.l[3] = tm.limbs[3];
+    r.l[4] = tm.limbs[4];
+    r.l[5] = tm.limbs[5];
+}
+
+fn sc384_cond_add(r: &Sc384, b: &const Sc384, cond: u64) void {
+    const mask: u64 = (0 as u64) - cond;
+    var t: Sc384 = Sc384{ l: [0:6] };
+    var i: usize = 0;
+    while i < FE384_LIMBS {
+        t.l[i] = b.l[i] & mask;
+        i = i + 1;
+    }
+    sc384_add(r, r, &t);
+}
+
+fn sc384_cond_sub_n(r: &Sc384, cond: u64) void {
+    var t: Sc384 = Sc384{ l: [0:6] };
+    sc384_cpy(&t, r);
+    sc384_sub_n(&t);
+    var i: usize = 0;
+    const mask: u64 = (0 as u64) - cond;
+    while i < FE384_LIMBS {
+        r.l[i] = (r.l[i] & ~mask) | (t.l[i] & mask);
+        i = i + 1;
+    }
+}
+
+fn sc384_bit_of_n_minus_2(bit_index: i32) u64 {
+    if bit_index < 0 || bit_index > 383 {
+        return 0;
+    }
+    const limb_idx: usize = ((bit_index / 64) as! usize).value;
+    const bit_in_limb: i32 = bit_index % 64;
+    if limb_idx < FE384_LIMBS {
+        const v: u64 = P384_N_MINUS_2_LE[limb_idx];
+        return (v >> bit_in_limb) & (1 as u64);
+    }
+    return 0;
+}
+
+fn sc384_inv_mod_n(r: &Sc384, a: &const Sc384) void {
+    var x: Sc384 = Sc384{ l: [0:6] };
+    sc384_cpy(&x, a);
+    var t: Sc384 = Sc384{ l: [0:6] };
+    var bit: i32 = 382;
+    while bit >= 0 {
+        sc384_mul_mod_n(&t, &x, &x);
+        sc384_cpy(&x, &t);
+        const b: u64 = sc384_bit_of_n_minus_2(bit);
+        if b != 0 {
+            sc384_mul_mod_n(&t, &x, a);
+            sc384_cpy(&x, &t);
+        }
+        bit = bit - 1;
+    }
+    sc384_cpy(r, &x);
+}
+
+fn sc384_mul_mod_n(r: &Sc384, a: &const Sc384, b: &const Sc384) void {
+    var am: Mpi = Mpi{};
+    var bm: Mpi = Mpi{};
+    var nm: Mpi = Mpi{};
+    var tm: Mpi = Mpi{};
+    var rm: Mpi = Mpi{};
+    sc384_load_mpi(&am, a);
+    sc384_load_mpi(&bm, b);
+    mpi_init(&nm);
+    mpi_init(&tm);
+    mpi_init(&rm);
+    nm.limbs[0] = P384_N_LE[0];
+    nm.limbs[1] = P384_N_LE[1];
+    nm.limbs[2] = P384_N_LE[2];
+    nm.limbs[3] = P384_N_LE[3];
+    nm.limbs[4] = P384_N_LE[4];
+    nm.limbs[5] = P384_N_LE[5];
+    nm.n = FE384_LIMBS;
+    nm.sign = 1;
+    mpi_mul(&tm, &am, &bm) catch {
+        sc384_zero(r);
+        return;
+    };
+    mpi_mod(&rm, &tm, &nm) catch {
+        sc384_zero(r);
+        return;
+    };
+    sc384_store_mpi(r, &rm);
+}
+
 fn p384_base_point(gx: &Fe384, gy: &Fe384) void {
     fe384_from_bytes_be(gx, &P384_GX_BE[0]);
     fe384_from_bytes_be(gy, &P384_GY_BE[0]);
@@ -506,5 +744,135 @@ export fn ec_p384_ecdh(shared_out: &byte, priv_key: &const byte, pub_key: &const
     var r_aff: P384Affine = P384Affine{ x: Fe384{ l: [0:6] }, y: Fe384{ l: [0:6] }, inf: true };
     p384_affine_scalar_mul(&r_aff, &d, &q_aff);
     fe384_to_bytes_be(&r_aff.x, shared_out);
+    return 0;
+}
+
+export fn ec_p384_ecdsa_sign_with_k(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) i32 {
+    if r_out == null || s_out == null || d == null || hash == null || k == null {
+        return -1;
+    }
+
+    var priv: Sc384 = Sc384{ l: [0:6] };
+    var nonce: Sc384 = Sc384{ l: [0:6] };
+    var z: Sc384 = Sc384{ l: [0:6] };
+    sc384_from_bytes_be(&priv, d);
+    sc384_from_bytes_be(&nonce, k);
+    sc384_from_bytes_be(&z, hash);
+    if sc384_is_zero(&priv) || sc384_is_zero(&nonce) || sc384_ge_n(&nonce) {
+        return -1;
+    }
+    if sc384_ge_n(&priv) {
+        return -1;
+    }
+    if sc384_ge_n(&z) {
+        sc384_cond_sub_n(&z, 1);
+    }
+
+    var gx: Fe384 = Fe384{ l: [0:6] };
+    var gy: Fe384 = Fe384{ l: [0:6] };
+    p384_base_point(&gx, &gy);
+    var g_aff: P384Affine = P384Affine{ x: Fe384{ l: [0:6] }, y: Fe384{ l: [0:6] }, inf: true };
+    p384_affine_set(&g_aff, &gx, &gy);
+    var r_aff: P384Affine = P384Affine{ x: Fe384{ l: [0:6] }, y: Fe384{ l: [0:6] }, inf: true };
+    p384_affine_scalar_mul(&r_aff, &nonce, &g_aff);
+    if r_aff.inf {
+        return -1;
+    }
+
+    var r_sc: Sc384 = Sc384{ l: [0:6] };
+    fe384_to_bytes_be(&r_aff.x, r_out);
+    sc384_from_bytes_be(&r_sc, r_out);
+    if sc384_ge_n(&r_sc) {
+        sc384_cond_sub_n(&r_sc, 1);
+    }
+    if sc384_is_zero(&r_sc) {
+        return -1;
+    }
+
+    var rd: Sc384 = Sc384{ l: [0:6] };
+    sc384_mul_mod_n(&rd, &r_sc, &priv);
+    var sum: Sc384 = Sc384{ l: [0:6] };
+    sc384_add(&sum, &z, &rd);
+    if sc384_ge_n(&sum) {
+        sc384_cond_sub_n(&sum, 1);
+    }
+
+    var kinv: Sc384 = Sc384{ l: [0:6] };
+    sc384_inv_mod_n(&kinv, &nonce);
+    var s_sc: Sc384 = Sc384{ l: [0:6] };
+    sc384_mul_mod_n(&s_sc, &kinv, &sum);
+    if sc384_is_zero(&s_sc) {
+        return -1;
+    }
+
+    sc384_to_bytes_be(&r_sc, r_out);
+    sc384_to_bytes_be(&s_sc, s_out);
+    return 0;
+}
+
+export fn ec_p384_ecdsa_verify(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) i32 {
+    if pub == null || hash == null || r == null || s == null {
+        return -1;
+    }
+    if pub[0] != 0x04 {
+        return -1;
+    }
+
+    var qx: Fe384 = Fe384{ l: [0:6] };
+    var qy: Fe384 = Fe384{ l: [0:6] };
+    fe384_from_bytes_be(&qx, &pub[1]);
+    fe384_from_bytes_be(&qy, &pub[49]);
+    var q_aff: P384Affine = P384Affine{ x: Fe384{ l: [0:6] }, y: Fe384{ l: [0:6] }, inf: true };
+    p384_affine_set(&q_aff, &qx, &qy);
+    if !p384_affine_is_on_curve(&q_aff) {
+        return -1;
+    }
+
+    var r_sc: Sc384 = Sc384{ l: [0:6] };
+    var s_sc: Sc384 = Sc384{ l: [0:6] };
+    var z: Sc384 = Sc384{ l: [0:6] };
+    sc384_from_bytes_be(&r_sc, r);
+    sc384_from_bytes_be(&s_sc, s);
+    sc384_from_bytes_be(&z, hash);
+    if sc384_is_zero(&r_sc) || sc384_is_zero(&s_sc) || sc384_ge_n(&r_sc) || sc384_ge_n(&s_sc) {
+        return -1;
+    }
+    if sc384_ge_n(&z) {
+        sc384_cond_sub_n(&z, 1);
+    }
+
+    var winv: Sc384 = Sc384{ l: [0:6] };
+    sc384_inv_mod_n(&winv, &s_sc);
+    var u1: Sc384 = Sc384{ l: [0:6] };
+    var u2: Sc384 = Sc384{ l: [0:6] };
+    sc384_mul_mod_n(&u1, &z, &winv);
+    sc384_mul_mod_n(&u2, &r_sc, &winv);
+
+    var gx: Fe384 = Fe384{ l: [0:6] };
+    var gy: Fe384 = Fe384{ l: [0:6] };
+    p384_base_point(&gx, &gy);
+    var g_aff: P384Affine = P384Affine{ x: Fe384{ l: [0:6] }, y: Fe384{ l: [0:6] }, inf: true };
+    p384_affine_set(&g_aff, &gx, &gy);
+
+    var u1_aff: P384Affine = P384Affine{ x: Fe384{ l: [0:6] }, y: Fe384{ l: [0:6] }, inf: true };
+    var u2_aff: P384Affine = P384Affine{ x: Fe384{ l: [0:6] }, y: Fe384{ l: [0:6] }, inf: true };
+    p384_affine_scalar_mul(&u1_aff, &u1, &g_aff);
+    p384_affine_scalar_mul(&u2_aff, &u2, &q_aff);
+    var sum_aff: P384Affine = P384Affine{ x: Fe384{ l: [0:6] }, y: Fe384{ l: [0:6] }, inf: true };
+    p384_affine_add(&sum_aff, &u1_aff, &u2_aff);
+    if sum_aff.inf {
+        return -1;
+    }
+
+    var v_bytes: [byte: 48] = [0:48];
+    fe384_to_bytes_be(&sum_aff.x, &v_bytes[0]);
+    var v_sc: Sc384 = Sc384{ l: [0:6] };
+    sc384_from_bytes_be(&v_sc, &v_bytes[0]);
+    if sc384_ge_n(&v_sc) {
+        sc384_cond_sub_n(&v_sc, 1);
+    }
+    if !sc384_eq(&v_sc, &r_sc) {
+        return -1;
+    }
     return 0;
 }

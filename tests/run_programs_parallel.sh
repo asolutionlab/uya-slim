@@ -286,7 +286,6 @@ link_generated_test_output() {
     local base_name="$2"
     local exe_file="$BUILD_DIR/${base_name}.bin${TARGET_EXE_SUFFIX}"
     local extra_c_file=""
-    local extra_c_file2=""
     local bridge_c_file=""
     local link_succeeded=false
     local -a link_cmd=("${CC_CMD[@]}" "${CFLAGS_ARR[@]}")
@@ -305,11 +304,6 @@ link_generated_test_output() {
         extra_c_file="$SCRIPT_DIR/tflm_cmsis_host_stub.c"
     elif [ "$base_name" = "test_tls_rsa" ] || [ "$base_name" = "test_tls_x25519_pure" ]; then
         extra_c_file="$REPO_ROOT/lib/tls/crypto/x25519_ref.c"
-    elif [ "$base_name" = "test_tls_ecdsa" ]; then
-        extra_c_file="$REPO_ROOT/lib/tls/crypto/ec_ref.c"
-    fi
-    if [ "$base_name" = "test_tls_rsa" ]; then
-        extra_c_file2="$REPO_ROOT/lib/tls/crypto/ec_ref.c"
     fi
 
     link_cmd+=(-o "$exe_file" "$output_file")
@@ -324,9 +318,6 @@ link_generated_test_output() {
     fi
     if [ -n "$extra_c_file" ]; then
         link_cmd+=("$extra_c_file")
-    fi
-    if [ -n "$extra_c_file2" ]; then
-        link_cmd+=("$extra_c_file2")
     fi
     if [ "$base_name" = "test_tls_rsa" ] || [ "$base_name" = "test_tls_x25519_pure" ] || [ "$base_name" = "test_tls_ecdsa" ]; then
         link_cmd+=(-lcrypto)
