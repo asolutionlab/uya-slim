@@ -464,8 +464,8 @@ fn x25519_pure_uya(out: &byte, scalar: &const byte, point: &const byte) void {
         fe_sub(&B, &x2, &z2);
         var BB: Fe = Fe{ l: [0:4] };
         fe_sq(&BB, &B);
-        var E: Fe = Fe{ l: [0:4] };
-        fe_sub(&E, &AA, &BB);
+        var e_fe: Fe = Fe{ l: [0:4] };
+        fe_sub(&e_fe, &AA, &BB);
         var C: Fe = Fe{ l: [0:4] };
         fe_add(&C, &x3, &z3);
         var D: Fe = Fe{ l: [0:4] };
@@ -669,8 +669,8 @@ fn x25519_pure_mpi_impl(out: &byte, scalar: &const byte, point: &const byte) !vo
         fe_mpi_sub(&B, &x2, &z2, &p) catch |err| { return err; };
         var BB: Mpi = Mpi{};
         fe_mpi_sq(&BB, &B, &p) catch |err| { return err; };
-        var E: Mpi = Mpi{};
-        fe_mpi_sub(&E, &AA, &BB, &p) catch |err| { return err; };
+        var e_mpi: Mpi = Mpi{};
+        fe_mpi_sub(&e_mpi, &AA, &BB, &p) catch |err| { return err; };
         var C: Mpi = Mpi{};
         fe_mpi_add(&C, &x3, &z3, &p) catch |err| { return err; };
         var D: Mpi = Mpi{};
