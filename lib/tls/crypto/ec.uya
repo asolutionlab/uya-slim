@@ -4,7 +4,6 @@ use tls.common;
 use tls.crypto.ec_p256;
 use tls.crypto.ec_p384;
 
-extern fn ec_public_from_private_p256_ref(pub_out: &byte, priv_key: &const byte) i32;
 extern fn ec_ecdsa_sign_p384_with_k_ref(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) i32;
 extern fn ec_ecdsa_verify_p384_ref(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) i32;
 
@@ -62,7 +61,8 @@ export fn public_from_private_p256(pub_out: &byte, priv_key: &const byte) i32 {
     if pub_out == null || priv_key == null {
         return -1;
     }
-    if ec_public_from_private_p256_ref(pub_out, priv_key) != 0 {
+    ec_p256.ec_p256_public_from_private(pub_out, priv_key);
+    if pub_out[0] != EC_POINT_UNCOMPRESSED {
         return -1;
     }
     return 0;
