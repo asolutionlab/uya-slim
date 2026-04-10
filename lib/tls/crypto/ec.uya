@@ -4,11 +4,9 @@ use tls.common;
 use tls.crypto.ec_p256;
 use tls.crypto.ec_p384;
 
-extern fn ec_ecdsa_sign_p256_with_k_ref(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) i32;
-extern fn ec_ecdsa_sign_p384_with_k_ref(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) i32;
-extern fn ec_ecdsa_verify_p256_ref(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) i32;
-extern fn ec_ecdsa_verify_p384_ref(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) i32;
 extern fn ec_public_from_private_p256_ref(pub_out: &byte, priv_key: &const byte) i32;
+extern fn ec_ecdsa_sign_p384_with_k_ref(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) i32;
+extern fn ec_ecdsa_verify_p384_ref(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) i32;
 
 // ---------------------------------------------------------------------------
 // 曲线与编码常量（SEC1 / FIPS 186-4）
@@ -89,7 +87,7 @@ export fn ecdsa_sign_p256_with_k(r_out: &byte, s_out: &byte, d: &const byte, has
     if r_out == null || s_out == null || d == null || hash == null || k == null {
         return -1;
     }
-    if ec_ecdsa_sign_p256_with_k_ref(r_out, s_out, d, hash, k) != 0 {
+    if ec_p256.ec_p256_ecdsa_sign_with_k(r_out, s_out, d, hash, k) != 0 {
         return -1;
     }
     return 0;
@@ -114,8 +112,8 @@ export fn ecdsa_verify_p256(pub: &const byte, hash: &const byte, r: &const byte,
     if pub == null || hash == null || r == null || s == null {
         return -1;
     }
-    const rc: i32 = ec_ecdsa_verify_p256_ref(pub, hash, r, s);
-    if rc == 1 {
+    const rc: i32 = ec_p256.ec_p256_ecdsa_verify(pub, hash, r, s);
+    if rc == 0 {
         return 0;
     }
     return -1;

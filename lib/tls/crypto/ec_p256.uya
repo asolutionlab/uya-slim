@@ -33,6 +33,14 @@ const P256_N_LE: [u64: 4] = [
     0xFFFFFFFF00000000,
 ];
 
+// n - 2，用于标量模逆
+const P256_N_MINUS_2_LE: [u64: 4] = [
+    0xF3B9CAC2FC63254F,
+    0xBCE6FAADA7179E84,
+    0xFFFFFFFFFFFFFFFF,
+    0xFFFFFFFF00000000,
+];
+
 // 2^256 mod p = 2^224 - 2^192 - 2^96 + 1（小端，用于约简）
 const P256_R_LE: [u64: 4] = [
     0x0000000000000001,
@@ -262,16 +270,46 @@ fn fe256_cond_sub_p(r: &Fe256, a: &const Fe256, cond: u64) void {
 
 // 域乘法：r = a * b mod p（固定两次 fold + 条件减 p）
 fn fe256_mul(r: &Fe256, a: &const Fe256, b: &const Fe256) void {
-    var w: Fe256Wide = Fe256Wide{ l: [0:8] };
-    fe256_mul_wide(&w, a, b);
-    fe256_reduce_fold(&w);
-    fe256_reduce_fold(&w);
-    var r_fe: Fe256 = Fe256{ l: [0:4] };
-    r_fe.l[0] = w.l[0];
-    r_fe.l[1] = w.l[1];
-    r_fe.l[2] = w.l[2];
-    r_fe.l[3] = w.l[3];
-    fe256_cond_sub_p(r, &r_fe, fe256_ge_p(&r_fe) as u64);
+    var am: Mpi = Mpi{};
+    var bm: Mpi = Mpi{};
+    var pm: Mpi = Mpi{};
+    var tm: Mpi = Mpi{};
+    var rm: Mpi = Mpi{};
+    mpi_init(&am);
+    mpi_init(&bm);
+    mpi_init(&pm);
+    mpi_init(&tm);
+    mpi_init(&rm);
+    am.limbs[0] = a.l[0];
+    am.limbs[1] = a.l[1];
+    am.limbs[2] = a.l[2];
+    am.limbs[3] = a.l[3];
+    am.n = 4;
+    am.sign = 1;
+    bm.limbs[0] = b.l[0];
+    bm.limbs[1] = b.l[1];
+    bm.limbs[2] = b.l[2];
+    bm.limbs[3] = b.l[3];
+    bm.n = 4;
+    bm.sign = 1;
+    pm.limbs[0] = P256_P_LE[0];
+    pm.limbs[1] = P256_P_LE[1];
+    pm.limbs[2] = P256_P_LE[2];
+    pm.limbs[3] = P256_P_LE[3];
+    pm.n = 4;
+    pm.sign = 1;
+    mpi_mul(&tm, &am, &bm) catch {
+        fe256_zero(r);
+        return;
+    };
+    mpi_mod(&rm, &tm, &pm) catch {
+        fe256_zero(r);
+        return;
+    };
+    r.l[0] = rm.limbs[0];
+    r.l[1] = rm.limbs[1];
+    r.l[2] = rm.limbs[2];
+    r.l[3] = rm.limbs[3];
 }
 
 fn fe256_sqr(r: &Fe256, a: &const Fe256) void {
@@ -379,7 +417,7 @@ fn p256_bit_of_p_minus_2(bit_index: i32) u64 {
 // 逆元：r = a^(p-2) mod p（固定 255 步平方乘，常量时间）
 fn fe256_inv(r: &Fe256, a: &const Fe256) void {
     var x: Fe256 = Fe256{ l: [0:4] };
-    fe256_one(&x);
+    fe256_cpy(&x, a);
     var t: Fe256 = Fe256{ l: [0:4] };
     var bit: i32 = 254;
     while bit >= 0 {
@@ -445,6 +483,28 @@ fn sc256_cpy(r: &Sc256, a: &const Sc256) void {
         r.l[i] = a.l[i];
         i = i + 1;
     }
+}
+
+fn sc256_is_zero(a: &const Sc256) bool {
+    var i: usize = 0;
+    while i < FE256_LIMBS {
+        if a.l[i] != 0 {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn sc256_eq(a: &const Sc256, b: &const Sc256) bool {
+    var i: usize = 0;
+    while i < FE256_LIMBS {
+        if a.l[i] != b.l[i] {
+            return false;
+        }
+        i = i + 1;
+    }
+    return true;
 }
 
 fn sc256_add(r: &Sc256, a: &const Sc256, b: &const Sc256) void {
@@ -561,6 +621,38 @@ fn sc256_to_bytes_be(r: &const Sc256, b: &byte) void {
         }
         i = i + 1;
     }
+}
+
+fn sc256_bit_of_n_minus_2(bit_index: i32) u64 {
+    if bit_index < 0 || bit_index > 255 {
+        return 0;
+    }
+    const limb_idx: usize = ((bit_index / 64) as! usize).value;
+    const bit_in_limb: i32 = bit_index % 64;
+    if limb_idx < FE256_LIMBS {
+        const v: u64 = P256_N_MINUS_2_LE[limb_idx];
+        return (v >> bit_in_limb) & (1 as u64);
+    }
+    return 0;
+}
+
+// 逆元：r = a^(n-2) mod n（固定 255 步平方乘）
+fn sc256_inv_mod_n(r: &Sc256, a: &const Sc256) void {
+    var x: Sc256 = Sc256{ l: [0:4] };
+    sc256_cpy(&x, a);
+    var t: Sc256 = Sc256{ l: [0:4] };
+    var bit: i32 = 254;
+    while bit >= 0 {
+        sc256_mul_mod_n(&t, &x, &x);
+        sc256_cpy(&x, &t);
+        const b: u64 = sc256_bit_of_n_minus_2(bit);
+        if b != 0 {
+            sc256_mul_mod_n(&t, &x, a);
+            sc256_cpy(&x, &t);
+        }
+        bit = bit - 1;
+    }
+    sc256_cpy(r, &x);
 }
 
 // 标量乘 mod n：r = a * b mod n（双加，常量时间，不分支于 a 的位）
@@ -808,6 +900,27 @@ fn p256_affine_set(r: &P256Affine, x: &const Fe256, y: &const Fe256) void {
     r.inf = false;
 }
 
+fn p256_affine_is_on_curve(p: &const P256Affine) bool {
+    if p.inf {
+        return false;
+    }
+    var y2: Fe256 = Fe256{ l: [0:4] };
+    fe256_sqr(&y2, &p.y);
+    var x2: Fe256 = Fe256{ l: [0:4] };
+    fe256_sqr(&x2, &p.x);
+    var x3: Fe256 = Fe256{ l: [0:4] };
+    fe256_mul(&x3, &x2, &p.x);
+    var three_x: Fe256 = Fe256{ l: [0:4] };
+    fe256_add(&three_x, &p.x, &p.x);
+    fe256_add(&three_x, &three_x, &p.x);
+    var rhs: Fe256 = Fe256{ l: [0:4] };
+    fe256_sub(&rhs, &x3, &three_x);
+    var b: Fe256 = Fe256{ l: [0:4] };
+    fe256_from_bytes_be(&b, &P256_B_BE[0]);
+    fe256_add(&rhs, &rhs, &b);
+    return fe256_eq(&y2, &rhs);
+}
+
 fn p256_affine_double(r: &P256Affine, p: &const P256Affine) void {
     if p.inf || fe256_eq(&p.y, &Fe256{ l: [0:4] }) {
         p256_affine_zero(r);
@@ -907,16 +1020,11 @@ export fn ec_p256_public_from_private(pub_out: &byte, priv_key: &const byte) voi
     p256_base_point(&gx, &gy);
     var g_aff: P256Affine = P256Affine{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, inf: true };
     p256_affine_set(&g_aff, &gx, &gy);
-    var g_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
-    p256_jac_from_affine(&g_jac, &g_aff);
-    var r_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
-    p256_jac_scalar_mul(&r_jac, &d, &g_jac);
-    var rx: Fe256 = Fe256{ l: [0:4] };
-    var ry: Fe256 = Fe256{ l: [0:4] };
-    p256_jac_to_affine(&rx, &ry, &r_jac);
+    var r_aff: P256Affine = P256Affine{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, inf: true };
+    p256_affine_scalar_mul(&r_aff, &d, &g_aff);
     pub_out[0] = 0x04;
-    fe256_to_bytes_be(&rx, &pub_out[1]);
-    fe256_to_bytes_be(&ry, &pub_out[33]);
+    fe256_to_bytes_be(&r_aff.x, &pub_out[1]);
+    fe256_to_bytes_be(&r_aff.y, &pub_out[33]);
 }
 
 // ECDH：共享秘密 = 私钥 * 对端公钥 的 x 坐标（大端 32 字节）；pub 为 65 字节 0x04||X||Y
@@ -940,6 +1048,141 @@ export fn ec_p256_ecdh(shared_out: &byte, priv_key: &const byte, pub_key: &const
     var ry: Fe256 = Fe256{ l: [0:4] };
     p256_jac_to_affine(&rx, &ry, &r_jac);
     fe256_to_bytes_be(&rx, shared_out);
+    return 0;
+}
+
+// ECDSA：低层签名（仅用于已知向量测试）
+export fn ec_p256_ecdsa_sign_with_k(r_out: &byte, s_out: &byte, d: &const byte, hash: &const byte, k: &const byte) i32 {
+    if r_out == null || s_out == null || d == null || hash == null || k == null {
+        return -1;
+    }
+
+    var priv: Sc256 = Sc256{ l: [0:4] };
+    var nonce: Sc256 = Sc256{ l: [0:4] };
+    var z: Sc256 = Sc256{ l: [0:4] };
+    sc256_from_bytes_be(&priv, d);
+    sc256_from_bytes_be(&nonce, k);
+    sc256_from_bytes_be(&z, hash);
+    if sc256_is_zero(&priv) || sc256_is_zero(&nonce) || sc256_ge_n(&nonce) {
+        return -1;
+    }
+
+    var gx: Fe256 = Fe256{ l: [0:4] };
+    var gy: Fe256 = Fe256{ l: [0:4] };
+    p256_base_point(&gx, &gy);
+    var g_aff: P256Affine = P256Affine{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, inf: true };
+    p256_affine_set(&g_aff, &gx, &gy);
+    var g_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_from_affine(&g_jac, &g_aff);
+    var k_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_scalar_mul(&k_jac, &nonce, &g_jac);
+    if p256_jac_is_zero(&k_jac) {
+        return -1;
+    }
+    var k_x: Fe256 = Fe256{ l: [0:4] };
+    var k_y: Fe256 = Fe256{ l: [0:4] };
+    p256_jac_to_affine(&k_x, &k_y, &k_jac);
+
+    var r_sc: Sc256 = Sc256{ l: [0:4] };
+    fe256_to_bytes_be(&k_x, r_out);
+    sc256_from_bytes_be(&r_sc, r_out);
+    if sc256_ge_n(&r_sc) {
+        sc256_cond_sub_n(&r_sc, 1);
+    }
+    if sc256_is_zero(&r_sc) {
+        return -1;
+    }
+
+    var rd: Sc256 = Sc256{ l: [0:4] };
+    sc256_mul_mod_n(&rd, &r_sc, &priv);
+    var sum: Sc256 = Sc256{ l: [0:4] };
+    sc256_add(&sum, &z, &rd);
+    if sc256_ge_n(&sum) {
+        sc256_sub_n(&sum);
+    }
+
+    var kinv: Sc256 = Sc256{ l: [0:4] };
+    sc256_inv_mod_n(&kinv, &nonce);
+    var s_sc: Sc256 = Sc256{ l: [0:4] };
+    sc256_mul_mod_n(&s_sc, &kinv, &sum);
+    if sc256_is_zero(&s_sc) {
+        return -1;
+    }
+
+    sc256_to_bytes_be(&r_sc, r_out);
+    sc256_to_bytes_be(&s_sc, s_out);
+    return 0;
+}
+
+// ECDSA：低层验签（仅用于已知向量测试）
+export fn ec_p256_ecdsa_verify(pub: &const byte, hash: &const byte, r: &const byte, s: &const byte) i32 {
+    if pub == null || hash == null || r == null || s == null {
+        return -1;
+    }
+    if pub[0] != 0x04 {
+        return -1;
+    }
+
+    var qx: Fe256 = Fe256{ l: [0:4] };
+    var qy: Fe256 = Fe256{ l: [0:4] };
+    fe256_from_bytes_be(&qx, &pub[1]);
+    fe256_from_bytes_be(&qy, &pub[33]);
+    var q_aff: P256Affine = P256Affine{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, inf: true };
+    p256_affine_set(&q_aff, &qx, &qy);
+    if !p256_affine_is_on_curve(&q_aff) {
+        return -1;
+    }
+
+    var r_sc: Sc256 = Sc256{ l: [0:4] };
+    var s_sc: Sc256 = Sc256{ l: [0:4] };
+    var z: Sc256 = Sc256{ l: [0:4] };
+    sc256_from_bytes_be(&r_sc, r);
+    sc256_from_bytes_be(&s_sc, s);
+    sc256_from_bytes_be(&z, hash);
+    if sc256_is_zero(&r_sc) || sc256_is_zero(&s_sc) || sc256_ge_n(&r_sc) || sc256_ge_n(&s_sc) {
+        return -1;
+    }
+
+    var winv: Sc256 = Sc256{ l: [0:4] };
+    sc256_inv_mod_n(&winv, &s_sc);
+    var u1: Sc256 = Sc256{ l: [0:4] };
+    var u2: Sc256 = Sc256{ l: [0:4] };
+    sc256_mul_mod_n(&u1, &z, &winv);
+    sc256_mul_mod_n(&u2, &r_sc, &winv);
+
+    var gx: Fe256 = Fe256{ l: [0:4] };
+    var gy: Fe256 = Fe256{ l: [0:4] };
+    p256_base_point(&gx, &gy);
+    var g_aff: P256Affine = P256Affine{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, inf: true };
+    p256_affine_set(&g_aff, &gx, &gy);
+    var g_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_from_affine(&g_jac, &g_aff);
+    var q_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_from_affine(&q_jac, &q_aff);
+
+    var u1_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    var u2_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_scalar_mul(&u1_jac, &u1, &g_jac);
+    p256_jac_scalar_mul(&u2_jac, &u2, &q_jac);
+    var sum_jac: P256Jac = P256Jac{ x: Fe256{ l: [0:4] }, y: Fe256{ l: [0:4] }, z: Fe256{ l: [0:4] } };
+    p256_jac_add(&sum_jac, &u1_jac, &u2_jac);
+    if p256_jac_is_zero(&sum_jac) {
+        return -1;
+    }
+
+    var rx: Fe256 = Fe256{ l: [0:4] };
+    var ry: Fe256 = Fe256{ l: [0:4] };
+    p256_jac_to_affine(&rx, &ry, &sum_jac);
+    var v_bytes: [byte: 32] = [0:32];
+    fe256_to_bytes_be(&rx, &v_bytes[0]);
+    var v_sc: Sc256 = Sc256{ l: [0:4] };
+    sc256_from_bytes_be(&v_sc, &v_bytes[0]);
+    if sc256_ge_n(&v_sc) {
+        sc256_cond_sub_n(&v_sc, 1);
+    }
+    if !sc256_eq(&v_sc, &r_sc) {
+        return -1;
+    }
     return 0;
 }
 
