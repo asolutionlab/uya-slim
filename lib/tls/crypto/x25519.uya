@@ -359,9 +359,8 @@ export fn x25519(out: &byte, scalar: &const byte, point: &const byte) !void {
     if out == null || scalar == null || point == null {
         return error.TlsBadInput;
     }
-    if x25519_ref_impl(out, scalar, point) != 0 {
-        return error.TlsBadInput;
-    }
+    // Use pure Uya implementation
+    x25519_pure_uya(out, scalar, point);
 }
 
 // 测试接口：导出内部操作供单元测试
@@ -718,7 +717,14 @@ export fn x25519_pure_mpi(out: &byte, scalar: &const byte, point: &const byte) !
     if out == null || scalar == null || point == null {
         return error.TlsBadInput;
     }
-    if x25519_ref_impl(out, scalar, point) != 0 {
+    // Use pure Uya implementation
+    x25519_pure_uya(out, scalar, point);
+}
+
+// 纯 Uya X25519 实现（不依赖 OpenSSL）
+export fn x25519_uya(out: &byte, scalar: &const byte, point: &const byte) !void {
+    if out == null || scalar == null || point == null {
         return error.TlsBadInput;
     }
+    x25519_pure_uya(out, scalar, point);
 }
