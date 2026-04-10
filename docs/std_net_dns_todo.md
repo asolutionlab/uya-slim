@@ -173,7 +173,8 @@ use std.net.dns;
 
 - [x] `fn dns_client_query_all(...) !usize`
 - `fn dns_client_lookup_localhost(...) !usize`
-- `fn dns_client_set_timeout_ms(...) void`
+- [x] `fn dns_client_set_timeout_ms(...) void`
+- [x] `fn dns_client_get_timeout_ms(...) u32`
 
 ---
 
@@ -214,7 +215,12 @@ use std.net.dns;
 - [x] 明确首版的“正常路径”为 UDP/53。
 - [x] 支持读取 `/etc/resolv.conf` 中的 `nameserver`。
 - [x] 如果解析器配置为空，返回明确错误。
-- [ ] 支持最小超时重试。
+- [x] 支持最小超时重试：
+  - [x] 实现 `dns_socket_set_recv_timeout` / `dns_socket_set_send_timeout` 辅助函数
+  - [x] UDP 查询带 3 次重试机制
+  - [x] TCP 查询带 2 次重试机制
+  - [x] 超时时间可通过 `dns_client_set_timeout_ms` 配置（默认 2000ms，范围 100ms-60s）
+  - [x] 新增 `dns_client_get_timeout_ms` 获取当前超时
 - [x] MVP 即支持 `TC` 截断位处理。
 - [x] UDP 首包至少支持经典 512 字节响应；若要服务真实 HTTPS，需补 EDNS0 或直接在 `TC=1` 时走 TCP fallback。
 - [x] `TC=1` 不能直接映射为 `Unsupported`；应改走 TCP 或返回明确的可恢复错误。

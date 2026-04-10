@@ -445,3 +445,25 @@ test "dns_tcp_future_localhost" {
         try assert_eq_i32(0, 1);
     }
 }
+
+test "dns_timeout_set_and_get" {
+    var client: DnsClient = DnsClient{ nameserver: [0:16], nameserver_len: 0, nameserver_port: 0, timeout_ms: 0, query_id: 0 };
+    var resolver: [byte: 10] = "127.0.0.1";
+    dns_client_init(&client, &resolver[0: 9]);
+    
+    // 检查默认值
+    const default_timeout: u32 = dns_client_get_timeout_ms(&client);
+    try assert_eq_i32(default_timeout as i32, 2000);
+    
+    // 设置新值
+    dns_client_set_timeout_ms(&client, 5000);
+    try assert_eq_i32(dns_client_get_timeout_ms(&client) as i32, 5000);
+    
+    // 测试最小边界
+    dns_client_set_timeout_ms(&client, 50);
+    try assert_eq_i32(dns_client_get_timeout_ms(&client) as i32, 100);
+    
+    // 测试最大边界
+    dns_client_set_timeout_ms(&client, 100000);
+    try assert_eq_i32(dns_client_get_timeout_ms(&client) as i32, 60000);
+}

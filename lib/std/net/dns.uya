@@ -260,6 +260,58 @@ fn dns_fill_sockaddr_ipv4(a: byte, b: byte, c: byte, d: byte, port: u16, out: &b
     out[7] = d;
 }
 
+// 设置 socket 接收超时（毫秒）
+fn dns_socket_set_recv_timeout(fd: i32, timeout_ms: u32) !void {
+    // Linux timeval: tv_sec (i64), tv_usec (i64)
+    // 使用 16 字节缓冲区存储 timeval 结构
+    var tv: [byte: 16] = [0:16];
+    const sec: i64 = ((timeout_ms as i64) / 1000 as i64);
+    const usec: i64 = ((timeout_ms as i64) % 1000 as i64) * 1000 as i64;
+    // 写入 tv_sec (小端序，8 字节)
+    var i: usize = 0;
+    while i < 8 {
+        const shift: i32 = (i * 8) as i32;
+        const mask: i64 = 0xFF;
+        tv[i] = ((sec >> shift) & mask) as byte;
+        i = i + 1;
+    }
+    // 写入 tv_usec (小端序，8 字节)
+    i = 0;
+    while i < 8 {
+        const shift: i32 = (i * 8) as i32;
+        const mask: i64 = 0xFF;
+        tv[8 + i] = ((usec >> shift) & mask) as byte;
+        i = i + 1;
+    }
+    _ = sys_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv[0] as &void, 16) catch {
+        return error.DnsNetworkUnreachable;
+    };
+}
+
+// 设置 socket 发送超时（毫秒）
+fn dns_socket_set_send_timeout(fd: i32, timeout_ms: u32) !void {
+    var tv: [byte: 16] = [0:16];
+    const sec: i64 = ((timeout_ms as i64) / 1000 as i64);
+    const usec: i64 = ((timeout_ms as i64) % 1000 as i64) * 1000 as i64;
+    var i: usize = 0;
+    while i < 8 {
+        const shift: i32 = (i * 8) as i32;
+        const mask: i64 = 0xFF;
+        tv[i] = ((sec >> shift) & mask) as byte;
+        i = i + 1;
+    }
+    i = 0;
+    while i < 8 {
+        const shift: i32 = (i * 8) as i32;
+        const mask: i64 = 0xFF;
+        tv[8 + i] = ((usec >> shift) & mask) as byte;
+        i = i + 1;
+    }
+    _ = sys_setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv[0] as &void, 16) catch {
+        return error.DnsNetworkUnreachable;
+    };
+}
+
 fn dns_zero_address(r: &DnsAddress) void {
     r.family = 0;
     r.addr_len = 0;
@@ -638,6 +690,22 @@ export fn dns_client_init(ctx: &DnsClient, resolver: &[byte]) void {
     }
 }
 
+// 设置 DNS 查询超时时间（毫秒）
+export fn dns_client_set_timeout_ms(ctx: &DnsClient, timeout_ms: u32) void {
+    if timeout_ms < 100 {
+        ctx.timeout_ms = 100;  // 最小 100ms
+    } else if timeout_ms > 60000 {
+        ctx.timeout_ms = 60000;  // 最大 60s
+    } else {
+        ctx.timeout_ms = timeout_ms;
+    }
+}
+
+// 获取当前 DNS 查询超时时间（毫秒）
+export fn dns_client_get_timeout_ms(ctx: &DnsClient) u32 {
+    return ctx.timeout_ms;
+}
+
 fn dns_client_get_nameserver(ctx: &DnsClient) !DnsAddress {
     if ctx.nameserver_len == 4 {
         var out: DnsAddress = DnsAddress{ family: 0, addr_len: 0, addr: [0:16], port: 0 };
@@ -948,18 +1016,25 @@ fn dns_udp_future_new(ctx: &DnsClient, host: &const byte, host_len: usize, out: 
     };
 }
 
-fn dns_query_udp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte, response_max: usize, response_len: &usize) !usize {
+// 带超时和重试的 UDP 查询（内部实现）
+fn dns_query_udp_raw_with_timeout(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte, response_max: usize, response_len: &usize, timeout_ms: u32) !usize {
     const ns: DnsAddress = try dns_client_get_nameserver(ctx);
     const fd: i32 = try dns_socket_connect_udp(&ns);
+    
+    // 设置发送和接收超时
+    try dns_socket_set_send_timeout(fd, timeout_ms);
+    try dns_socket_set_recv_timeout(fd, timeout_ms);
+    
     var packet: [byte: DNS_MAX_PACKET] = [0:DNS_MAX_PACKET];
     const qlen: usize = try dns_client_build_query(ctx, host, qtype, &packet[0], DNS_MAX_PACKET);
+    
     const sent: isize = sys_send(fd, &packet[0], qlen, 0) catch |err| {
         const eid: i32 = (@error_id(err) as! i32).value;
         _ = sys_close(fd) catch {};
         if dns_is_would_block_errno(eid) {
             return error.DnsWouldBlock;
         }
-        if eid == ETIMEDOUT {
+        if eid == ETIMEDOUT || eid == EAGAIN || eid == EWOULDBLOCK {
             return error.DnsTimeout;
         }
         if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
@@ -980,7 +1055,7 @@ fn dns_query_udp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte
         if dns_is_would_block_errno(eid) {
             return error.DnsWouldBlock;
         }
-        if eid == ETIMEDOUT {
+        if eid == ETIMEDOUT || eid == EAGAIN || eid == EWOULDBLOCK {
             return error.DnsTimeout;
         }
         if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
@@ -999,7 +1074,37 @@ fn dns_query_udp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte
     return n as usize;
 }
 
-fn dns_query_tcp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte, response_max: usize, response_len: &usize) !usize {
+// UDP 查询（带重试）
+fn dns_query_udp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte, response_max: usize, response_len: &usize) !usize {
+    // 重试策略：最多 3 次，每次超时时间从客户端配置获取
+    const max_retries: usize = 3;
+    var attempt: usize = 0;
+    
+    while attempt < max_retries {
+        // 尝试查询
+        const result: !usize = dns_query_udp_raw_with_timeout(ctx, host, qtype, response, response_max, response_len, ctx.timeout_ms);
+        // 尝试解包结果
+        const n: usize = try result;
+        if n > 0 {
+            return n;
+        }
+        // n == 0，视为失败，增加重试计数
+        attempt = attempt + 1;
+        if attempt < max_retries {
+            // 短暂延迟后重试
+            var delay: usize = 0;
+            while delay < 1000 {
+                delay = delay + 1;
+            }
+        }
+    }
+    
+    // 所有重试都失败
+    return error.DnsTimeout;
+}
+
+// 带超时的 TCP 查询（内部实现）
+fn dns_query_tcp_raw_with_timeout(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte, response_max: usize, response_len: &usize, timeout_ms: u32) !usize {
     const ns: DnsAddress = try dns_client_get_nameserver(ctx);
     const socket_res: !i32 = sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     const fd: i32 = socket_res catch |err| {
@@ -1018,6 +1123,11 @@ fn dns_query_tcp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte
         }
         return error.DnsNetworkUnreachable;
     };
+    
+    // 设置发送和接收超时
+    try dns_socket_set_send_timeout(fd, timeout_ms);
+    try dns_socket_set_recv_timeout(fd, timeout_ms);
+    
     var addr: [byte: 16] = [0:16];
     if ns.family != AF_INET {
         _ = sys_close(fd) catch {};
@@ -1030,7 +1140,7 @@ fn dns_query_tcp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte
         if dns_is_would_block_errno(eid) {
             return error.DnsWouldBlock;
         }
-        if eid == ETIMEDOUT {
+        if eid == ETIMEDOUT || eid == EAGAIN || eid == EWOULDBLOCK {
             return error.DnsTimeout;
         }
         if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
@@ -1057,7 +1167,7 @@ fn dns_query_tcp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte
         if dns_is_would_block_errno(eid) {
             return error.DnsWouldBlock;
         }
-        if eid == ETIMEDOUT {
+        if eid == ETIMEDOUT || eid == EAGAIN || eid == EWOULDBLOCK {
             return error.DnsTimeout;
         }
         if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
@@ -1079,7 +1189,7 @@ fn dns_query_tcp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte
         if dns_is_would_block_errno(eid) {
             return error.DnsWouldBlock;
         }
-        if eid == ETIMEDOUT {
+        if eid == ETIMEDOUT || eid == EAGAIN || eid == EWOULDBLOCK {
             return error.DnsTimeout;
         }
         if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
@@ -1105,7 +1215,7 @@ fn dns_query_tcp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte
         if dns_is_would_block_errno(eid) {
             return error.DnsWouldBlock;
         }
-        if eid == ETIMEDOUT {
+        if eid == ETIMEDOUT || eid == EAGAIN || eid == EWOULDBLOCK {
             return error.DnsTimeout;
         }
         if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
@@ -1122,6 +1232,35 @@ fn dns_query_tcp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte
     }
     response_len[0] = n as usize;
     return n as usize;
+}
+
+// TCP 查询（带重试）
+fn dns_query_tcp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte, response_max: usize, response_len: &usize) !usize {
+    // TCP 通常比 UDP 慢，重试次数可以少一些
+    const max_retries: usize = 2;
+    var attempt: usize = 0;
+    
+    while attempt < max_retries {
+        // 尝试查询
+        const result: !usize = dns_query_tcp_raw_with_timeout(ctx, host, qtype, response, response_max, response_len, ctx.timeout_ms);
+        // 尝试解包结果
+        const n: usize = try result;
+        if n > 0 {
+            return n;
+        }
+        // n == 0，视为失败，增加重试计数
+        attempt = attempt + 1;
+        if attempt < max_retries {
+            // 短暂延迟后重试
+            var delay: usize = 0;
+            while delay < 1000 {
+                delay = delay + 1;
+            }
+        }
+    }
+    
+    // 所有重试都失败
+    return error.DnsTimeout;
 }
 
 fn dns_parse_answers_with_ttl(packet: &const byte, packet_len: usize, qtype: u16, out: &byte, out_max: usize, out_len: &usize, ttl_out: &usize) !usize {
