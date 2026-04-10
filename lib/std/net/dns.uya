@@ -250,6 +250,46 @@ fn dns_transport_error_from_errno_usize(eid: i32) !usize {
     return error.DnsNetworkUnreachable;
 }
 
+fn dns_error_from_error_id(err_id: u32) !usize {
+    if err_id == @error_id(error.DnsInvalidName) {
+        return error.DnsInvalidName;
+    }
+    if err_id == @error_id(error.DnsInvalidPacket) {
+        return error.DnsInvalidPacket;
+    }
+    if err_id == @error_id(error.DnsTruncatedPacket) {
+        return error.DnsTruncatedPacket;
+    }
+    if err_id == @error_id(error.DnsNoSuchName) {
+        return error.DnsNoSuchName;
+    }
+    if err_id == @error_id(error.DnsTimeout) {
+        return error.DnsTimeout;
+    }
+    if err_id == @error_id(error.DnsRefused) {
+        return error.DnsRefused;
+    }
+    if err_id == @error_id(error.DnsServerFailure) {
+        return error.DnsServerFailure;
+    }
+    if err_id == @error_id(error.DnsNoNameserver) {
+        return error.DnsNoNameserver;
+    }
+    if err_id == @error_id(error.DnsNetworkUnreachable) {
+        return error.DnsNetworkUnreachable;
+    }
+    if err_id == @error_id(error.DnsWouldBlock) {
+        return error.DnsWouldBlock;
+    }
+    if err_id == @error_id(error.DnsPlatformUnsupported) {
+        return error.DnsPlatformUnsupported;
+    }
+    if err_id == @error_id(error.DnsUnsupported) {
+        return error.DnsUnsupported;
+    }
+    return error.DnsInvalidPacket;
+}
+
 fn dns_fill_sockaddr_ipv4(a: byte, b: byte, c: byte, d: byte, port: u16, out: &byte) void {
     var i: usize = 0;
     while i < 16 {
@@ -1105,7 +1145,13 @@ fn dns_query_udp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte
         // 尝试查询
         const result: !usize = dns_query_udp_raw_with_timeout(ctx, host, qtype, response, response_max, response_len, ctx.timeout_ms);
         // 尝试解包结果
-        const n: usize = try result;
+        const n: usize = result catch |err| {
+            const err_id: u32 = @error_id(err);
+            if err_id == @error_id(error.DnsTimeout) || err_id == @error_id(error.DnsWouldBlock) || err_id == @error_id(error.DnsNetworkUnreachable) {
+                0 as usize;
+            }
+            return dns_error_from_error_id(err_id);
+        };
         if n > 0 {
             return n;
         }
@@ -1265,7 +1311,13 @@ fn dns_query_tcp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte
         // 尝试查询
         const result: !usize = dns_query_tcp_raw_with_timeout(ctx, host, qtype, response, response_max, response_len, ctx.timeout_ms);
         // 尝试解包结果
-        const n: usize = try result;
+        const n: usize = result catch |err| {
+            const err_id: u32 = @error_id(err);
+            if err_id == @error_id(error.DnsTimeout) || err_id == @error_id(error.DnsWouldBlock) || err_id == @error_id(error.DnsNetworkUnreachable) {
+                0 as usize;
+            }
+            return dns_error_from_error_id(err_id);
+        };
         if n > 0 {
             return n;
         }
@@ -1650,15 +1702,37 @@ export fn dns_client_resolve_host(ctx: &DnsClient, host: &const byte, host_len: 
     
     // DNS_PREFER_ANY: 先查 /etc/hosts，再走 DNS（先 A 后 AAAA）
     const hosts_res: !DnsAddress = dns_parse_hosts_first_ipv4(host[0: host_len]);
-    const hosts_addr: DnsAddress = hosts_res catch {
+    const hosts_addr: DnsAddress = hosts_res catch |err| {
+        if @error_id(err) != @error_id(error.DnsNoSuchName) {
+            return dns_error_from_error_id(@error_id(err));
+        }
         var noop: DnsAddress = DnsAddress{ family: 0, addr_len: 0, addr: [0:16], port: 0 };
         _ = noop;
+        var a_err_id: u32 = 0;
         const a_res: !usize = dns_client_query_a(ctx, host, host_len, out, out_max, out_len);
-        const a_n: usize = a_res catch {
-            const aaaa_res: !usize = dns_client_query_aaaa(ctx, host, host_len, out, out_max, out_len);
-            return aaaa_res;
+        const a_n: usize = a_res catch |a_err| {
+            a_err_id = @error_id(a_err);
+            0 as usize;
         };
-        return a_n;
+        if a_n > 0 {
+            return a_n;
+        }
+        var aaaa_err_id: u32 = 0;
+        const aaaa_res: !usize = dns_client_query_aaaa(ctx, host, host_len, out, out_max, out_len);
+        const aaaa_n: usize = aaaa_res catch |aaaa_err| {
+            aaaa_err_id = @error_id(aaaa_err);
+            0 as usize;
+        };
+        if aaaa_n > 0 {
+            return aaaa_n;
+        }
+        if a_err_id != 0 && a_err_id != @error_id(error.DnsNoSuchName) {
+            return dns_error_from_error_id(a_err_id);
+        }
+        if aaaa_err_id != 0 && aaaa_err_id != @error_id(error.DnsNoSuchName) {
+            return dns_error_from_error_id(aaaa_err_id);
+        }
+        return error.DnsNoSuchName;
     };
     if hosts_addr.family == AF_INET {
         if out_max < 4 {
@@ -1672,11 +1746,30 @@ export fn dns_client_resolve_host(ctx: &DnsClient, host: &const byte, host_len: 
         return 4 as usize;
     }
     const a_res: !usize = dns_client_query_a(ctx, host, host_len, out, out_max, out_len);
-    const a_n: usize = a_res catch {
-        const aaaa_res: !usize = dns_client_query_aaaa(ctx, host, host_len, out, out_max, out_len);
-        return aaaa_res;
+    var a_err_id: u32 = 0;
+    const a_n: usize = a_res catch |a_err| {
+        a_err_id = @error_id(a_err);
+        0 as usize;
     };
-    return a_n;
+    if a_n > 0 {
+        return a_n;
+    }
+    var aaaa_err_id: u32 = 0;
+    const aaaa_res: !usize = dns_client_query_aaaa(ctx, host, host_len, out, out_max, out_len);
+    const aaaa_n: usize = aaaa_res catch |aaaa_err| {
+        aaaa_err_id = @error_id(aaaa_err);
+        0 as usize;
+    };
+    if aaaa_n > 0 {
+        return aaaa_n;
+    }
+    if a_err_id != 0 && a_err_id != @error_id(error.DnsNoSuchName) {
+        return dns_error_from_error_id(a_err_id);
+    }
+    if aaaa_err_id != 0 && aaaa_err_id != @error_id(error.DnsNoSuchName) {
+        return dns_error_from_error_id(aaaa_err_id);
+    }
+    return error.DnsNoSuchName;
 }
 
 export fn dns_client_resolve_first_ipv4(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) !usize {
@@ -1711,7 +1804,9 @@ export fn dns_client_query_all(ctx: &DnsClient, host: &const byte, host_len: usi
     var total: usize = 0;
     var a_buf: [byte: 4] = [0:4];
     var a_len: usize = 0;
-    const a_n: usize = dns_client_query_a(ctx, host, host_len, &a_buf[0], 4, &a_len) catch {
+    var a_err_id: u32 = 0;
+    const a_n: usize = dns_client_query_a(ctx, host, host_len, &a_buf[0], 4, &a_len) catch |err| {
+        a_err_id = @error_id(err);
         0 as usize;
     };
     if a_n > 0 && total + a_n <= out_max {
@@ -1724,7 +1819,9 @@ export fn dns_client_query_all(ctx: &DnsClient, host: &const byte, host_len: usi
     }
     var aaaa_buf: [byte: 16] = [0:16];
     var aaaa_len: usize = 0;
-    const aaaa_n: usize = dns_client_query_aaaa(ctx, host, host_len, &aaaa_buf[0], 16, &aaaa_len) catch {
+    var aaaa_err_id: u32 = 0;
+    const aaaa_n: usize = dns_client_query_aaaa(ctx, host, host_len, &aaaa_buf[0], 16, &aaaa_len) catch |err| {
+        aaaa_err_id = @error_id(err);
         0 as usize;
     };
     if aaaa_n > 0 && total + aaaa_n <= out_max {
@@ -1736,6 +1833,12 @@ export fn dns_client_query_all(ctx: &DnsClient, host: &const byte, host_len: usi
         total = total + aaaa_n;
     }
     if total == 0 {
+        if a_err_id != 0 && a_err_id != @error_id(error.DnsNoSuchName) {
+            return dns_error_from_error_id(a_err_id);
+        }
+        if aaaa_err_id != 0 && aaaa_err_id != @error_id(error.DnsNoSuchName) {
+            return dns_error_from_error_id(aaaa_err_id);
+        }
         return error.DnsNoSuchName;
     }
     out_len[0] = total;
