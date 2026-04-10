@@ -2184,6 +2184,36 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
                 gen_var_decl_struct_init_memcpy(codegen, var_name, init_expr);
             } else {
                 // 普通初始化（pragma 已在声明开头输出）
+                
+                // 检查是否是错误联合类型变量用 error.XXX 初始化
+                // 这种情况需要生成结构体初始化形式，而不是直接赋值错误ID数值
+                var is_err_union_with_error_init: i32 = 0;
+                if var_type != null && var_type.type == ASTNodeType.AST_TYPE_ERROR_UNION &&
+                    init_expr != null && init_expr.type == ASTNodeType.AST_ERROR_VALUE {
+                    is_err_union_with_error_init = 1;
+                }
+                
+                if is_err_union_with_error_init != 0 {
+                    // 生成: (struct err_union_T){ .error_id = XXX }
+                    var id: i32 = c99_get_or_add_error_id(codegen, init_expr.error_value_name);
+                    if id == 0 {
+                        id = 1;
+                    }
+                    const union_c: &byte = c99_type_to_c(codegen, var_type);
+                    fputs(" = " as *byte, codegen.emit_stream as *void);
+                    if union_c != null {
+                        fprintf(codegen.emit_stream as *void, "(%s){ .error_id = %dU }" as *byte, union_c as *byte, id);
+                    } else {
+                        fprintf(codegen.emit_stream as *void, "%dU" as *byte, id);
+                    }
+                    c99_emit_semi_newline(codegen);
+                    if need_pragma_missing_braces != 0 {
+                        fputs("#pragma GCC diagnostic pop\n" as *byte, codegen.emit_stream as *void);
+                    }
+                    codegen.expected_type = saved_expected_type;
+                    return;
+                }
+                
                 fputs(" = " as *byte, codegen.emit_stream as *void);
                 
                 // 检查是否是字符串常量（@func_name、@src_name、@src_path）赋值给指针类型
