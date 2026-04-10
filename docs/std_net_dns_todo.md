@@ -296,7 +296,7 @@ DNS 客户端完成后，HTTPS 侧应做这些改造：
 - [x] `https_get` 先解析 hostname，再使用解析结果建立 TCP 连接。
 - [x] TLS SNI 仍然使用原始 hostname，而不是解析后的 IP。
 - [x] 证书校验仍然基于 hostname，而不是 IP。
-- [ ] `tests/test_https_real_site.uya` 改为直接验证 `std.net.dns` + TLS 连接链路。
+- [x] `tests/test_https_real_site.uya` 改为直接验证 `std.net.dns` + TLS 连接链路。
 
 ### 异步 HTTPS 接入点
 
@@ -343,9 +343,9 @@ DNS 客户端完成后，HTTPS 侧应做这些改造：
 
 ### 3. HTTPS 联动测试
 
-- [ ] 让 `tests/test_https_real_site.uya` 直接走 `std.net.dns`。
-- [ ] 确认外站 HTTPS 不再依赖 curl 桥接。
-- [ ] 保留本地 loopback HTTPS 测试，避免外网不稳定影响回归。
+- [x] 让 `tests/test_https_real_site.uya` 直接走 `std.net.dns`。
+- [x] 确认外站 HTTPS 不再依赖 curl 桥接。
+- [x] 保留本地 loopback HTTPS 测试，避免外网不稳定影响回归。
 - [x] 为异步 HTTP/HTTPS 新增 hostname 解析用例，覆盖 DNS + nonblocking connect 联动。
 
 ---
