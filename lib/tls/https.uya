@@ -6,6 +6,7 @@ use tls.x509.cert.Cert;
 use tls.crypto.rsa.RsaPrivateKey;
 use std.http.server;
 use std.http.types;
+use std.net.dns;
 use libc.stdio;
 use libc.unistd;
 use libc.syscall;
@@ -166,54 +167,6 @@ fn https_is_localhost(host: &const byte, host_len: usize) bool {
         return host[0] == 108 && host[1] == 111 && host[2] == 99 && host[3] == 97 && host[4] == 108 && host[5] == 104 && host[6] == 111 && host[7] == 115 && host[8] == 116;
     }
     return false;
-}
-
-fn https_is_curl_bridge_safe_char(ch: byte, allow_slash: bool) bool {
-    if ch >= 48 && ch <= 57 {
-        return true;
-    }
-    if ch >= 65 && ch <= 90 {
-        return true;
-    }
-    if ch >= 97 && ch <= 122 {
-        return true;
-    }
-    if ch == 46 || ch == 45 {
-        return true;
-    }
-    if allow_slash && ch == 47 {
-        return true;
-    }
-    if allow_slash {
-        if ch == 95 || ch == 126 || ch == 63 || ch == 61 || ch == 38 || ch == 37 || ch == 58 || ch == 64 || ch == 43 || ch == 44 || ch == 59 {
-            return true;
-        }
-    }
-    return false;
-}
-
-fn https_is_curl_bridge_safe(host: &const byte, host_len: usize, path: &[byte]) bool {
-    if host_len == 0 || host_len > HTTPS_HOST_MAX {
-        return false;
-    }
-    var i: usize = 0;
-    while i < host_len {
-        if !https_is_curl_bridge_safe_char(host[i], false) {
-            return false;
-        }
-        i = i + 1;
-    }
-    if path.len == 0 {
-        return false;
-    }
-    i = 0;
-    while i < path.len {
-        if !https_is_curl_bridge_safe_char(path.ptr[i], true) {
-            return false;
-        }
-        i = i + 1;
-    }
-    return true;
 }
 
 fn https_is_would_block_errno(eid: i32) bool {
@@ -540,6 +493,7 @@ fn https_read_server_second_flight(fd: i32, out: &byte, out_max: usize, out_len:
 }
 
 fn https_client_connect(host: &const byte, host_len: usize, port: u16) !i32 {
+    // 1) localhost 特殊处理
     if https_is_localhost(host, host_len) {
         const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         var addr: [byte: 16] = [0:16];
@@ -547,17 +501,34 @@ fn https_client_connect(host: &const byte, host_len: usize, port: u16) !i32 {
         try https_connect_fd(fd, &addr[0], 16 as u32);
         return fd;
     }
+    
+    // 2) 字面量 IPv4 处理
     var a: byte = 0;
     var b: byte = 0;
     var c: byte = 0;
     var d: byte = 0;
-    if !https_parse_ipv4(host, host_len, &a, &b, &c, &d) {
-        return error.InvalidRequest;
+    if https_parse_ipv4(host, host_len, &a, &b, &c, &d) {
+        const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        var addr: [byte: 16] = [0:16];
+        https_fill_sockaddr_ipv4(a, b, c, d, port, &addr[0]);
+        try https_connect_fd(fd, &addr[0], 16 as u32);
+        return fd;
     }
+    
+    // 3) DNS 解析 hostname（使用空 resolver，从 /etc/resolv.conf 读取 nameserver）
+    var client: DnsClient = DnsClient{};
+    dns_client_init(&client, &""[0:0]);
+    
+    var addr_buf: [byte: 16] = [0:16];
+    var addr_len: usize = 0;
+    
+    dns_client_resolve_host(&client, host, host_len, &addr_buf[0], 16, &addr_len) catch |dns_err| {
+        return error.InvalidRequest;
+    };
+    
+    // 4) 使用解析结果建立 TCP 连接
     const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    var addr: [byte: 16] = [0:16];
-    https_fill_sockaddr_ipv4(a, b, c, d, port, &addr[0]);
-    try https_connect_fd(fd, &addr[0], 16 as u32);
+    try https_connect_fd(fd, &addr_buf[0], 16 as u32);
     return fd;
 }
 
@@ -628,104 +599,6 @@ fn https_parse_status(resp: &const byte, resp_len: usize) i32 {
         i = i + 1;
     }
     return v;
-}
-
-fn https_get_via_curl(host: &const byte, host_len: usize, path: &[byte]) !HttpsResponse {
-    // 真实站点路径先用 curl 桥接，保留本地 loopback 继续走纯 Uya TLS。
-    if !https_is_curl_bridge_safe(host, host_len, path) {
-        return error.InvalidRequest;
-    }
-    const pid: i64 = sys_getpid() catch {
-        return error.ConnectionClosed;
-    };
-    var headers_path: [byte: 64] = [0:64];
-    var body_path: [byte: 64] = [0:64];
-    var hpos: usize = 0;
-    var bpos: usize = 0;
-    hpos = https_copy_slice(&headers_path[0], hpos, &"/tmp/uya_https_headers_"[0: 23]);
-    hpos = https_append_u64_dec(&headers_path[0], hpos, pid as u64);
-    bpos = https_copy_slice(&body_path[0], bpos, &"/tmp/uya_https_body_"[0: 20]);
-    bpos = https_append_u64_dec(&body_path[0], bpos, pid as u64);
-    if hpos + 1 >= 64 || bpos + 1 >= 64 {
-        return error.ConnectionClosed;
-    }
-    headers_path[hpos] = 0;
-    body_path[bpos] = 0;
-
-    var cmd: [byte: 512] = [0:512];
-    var pos: usize = 0;
-    pos = https_copy_slice(&cmd[0], pos, &"curl -sS --http1.1 -D "[0: 22]);
-    pos = https_copy_slice(&cmd[0], pos, &headers_path[0: hpos]);
-    pos = https_copy_slice(&cmd[0], pos, &" -o "[0: 4]);
-    pos = https_copy_slice(&cmd[0], pos, &body_path[0: bpos]);
-    pos = https_copy_slice(&cmd[0], pos, &" https://"[0: 9]);
-    var i: usize = 0;
-    while i < host_len {
-        cmd[pos] = host[i];
-        pos = pos + 1;
-        i = i + 1;
-    }
-    pos = https_copy_slice(&cmd[0], pos, path);
-    if pos + 1 >= 512 {
-        return error.InvalidRequest;
-    }
-    cmd[pos] = 0;
-    const rc: i32 = system(&cmd[0]);
-    if rc != 0 {
-        return error.ConnectionClosed;
-    }
-
-    var out: HttpsResponse = HttpsResponse{ status: 0, response_len: 0, response: [0:HTTPS_IO_BUF] };
-    var hdr_fd: i32 = try sys_open(&headers_path[0], O_RDONLY as i32, 0);
-    var hdr_buf: [byte: HTTPS_IO_BUF] = [0:HTTPS_IO_BUF];
-    const hdr_n: isize = sys_read(hdr_fd, &hdr_buf[0], HTTPS_IO_BUF) catch {
-        _ = sys_close(hdr_fd) catch {};
-        _ = sys_unlink(&headers_path[0]) catch {};
-        _ = sys_unlink(&body_path[0]) catch {};
-        return error.ConnectionClosed;
-    };
-    _ = sys_close(hdr_fd) catch {};
-    if hdr_n <= 0 {
-        _ = sys_unlink(&headers_path[0]) catch {};
-        _ = sys_unlink(&body_path[0]) catch {};
-        return error.ConnectionClosed;
-    }
-    var hdr_len: usize = (hdr_n as! usize).value;
-    if hdr_len > HTTPS_IO_BUF {
-        hdr_len = HTTPS_IO_BUF;
-    }
-    var j: usize = 0;
-    while j < hdr_len {
-        out.response[j] = hdr_buf[j];
-        j = j + 1;
-    }
-    out.response_len = hdr_len;
-    out.status = https_parse_status(&out.response[0], out.response_len);
-
-    var body_fd: i32 = try sys_open(&body_path[0], O_RDONLY as i32, 0);
-    var body_buf: [byte: HTTPS_IO_BUF] = [0:HTTPS_IO_BUF];
-    const body_n: isize = sys_read(body_fd, &body_buf[0], HTTPS_IO_BUF) catch {
-        _ = sys_close(body_fd) catch {};
-        _ = sys_unlink(&headers_path[0]) catch {};
-        _ = sys_unlink(&body_path[0]) catch {};
-        return error.ConnectionClosed;
-    };
-    _ = sys_close(body_fd) catch {};
-    if body_n > 0 {
-        var body_len: usize = (body_n as! usize).value;
-        if body_len > HTTPS_IO_BUF - out.response_len {
-            body_len = HTTPS_IO_BUF - out.response_len;
-        }
-        var k: usize = 0;
-        while k < body_len {
-            out.response[out.response_len + k] = body_buf[k];
-            k = k + 1;
-        }
-        out.response_len = out.response_len + body_len;
-    }
-    _ = sys_unlink(&headers_path[0]) catch {};
-    _ = sys_unlink(&body_path[0]) catch {};
-    return out;
 }
 
 export fn https_server_listen(hostname: &const byte, hostname_len: usize, port: u16) !HttpsServer {
@@ -803,14 +676,14 @@ export fn https_server_serve_once(srv: &HttpsServer, body: &[byte]) !void {
 }
 
 export fn https_get(host: &const byte, host_len: usize, port: u16, path: &[byte]) !HttpsResponse {
-    if !https_is_localhost(host, host_len) {
-        return https_get_via_curl(host, host_len, path);
-    }
+    // 使用 DNS 解析 hostname，然后进行 TLS 连接
+    // TLS SNI 仍然使用原始 hostname
     const fd: i32 = try https_client_connect(host, host_len, port);
     var hs: HandshakeCtx = HandshakeCtx{};
     var rec: RecordCtx = RecordCtx{};
     var ctx: SslContext = SslContext{ role: HS_ROLE_CLIENT, hs: &hs, rec: &rec };
     ssl_init(&ctx);
+    // SNI 和证书校验仍然基于原始 hostname，而不是 IP
     ssl_set_hostname(&ctx, host, host_len);
     ssl_set_peer_identity(&ctx, host, host_len, host, host_len);
     https_client_handshake(fd, &ctx) catch {

@@ -292,10 +292,10 @@ use std.net.dns;
 
 DNS 客户端完成后，HTTPS 侧应做这些改造：
 
-- [ ] `https_client_connect` 不再依赖 `curl` 或 shell 命令。
-- [ ] `https_get` 先解析 hostname，再使用解析结果建立 TCP 连接。
-- [ ] TLS SNI 仍然使用原始 hostname，而不是解析后的 IP。
-- [ ] 证书校验仍然基于 hostname，而不是 IP。
+- [x] `https_client_connect` 不再依赖 `curl` 或 shell 命令。
+- [x] `https_get` 先解析 hostname，再使用解析结果建立 TCP 连接。
+- [x] TLS SNI 仍然使用原始 hostname，而不是解析后的 IP。
+- [x] 证书校验仍然基于 hostname，而不是 IP。
 - [ ] `tests/test_https_real_site.uya` 改为直接验证 `std.net.dns` + TLS 连接链路。
 
 ### 异步 HTTPS 接入点
