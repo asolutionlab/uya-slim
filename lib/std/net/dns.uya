@@ -5,6 +5,7 @@
 // 当前实现优先支持 UDP/53；若 nameserver 缺失则返回明确错误。
 
 use libc.syscall;
+use libc.errno;
 use std.async;
 
 export error DnsInvalidName;
@@ -43,6 +44,7 @@ export struct DnsAddress {
 export struct DnsClient {
     nameserver: [byte: 16],
     nameserver_len: usize,
+    nameserver_port: u16,
     timeout_ms: u32,
     query_id: u16,
 }
@@ -56,6 +58,11 @@ struct DnsCursor {
 struct DnsReadResult {
     code: i32,
     offset: usize,
+}
+
+struct DnsNameRef {
+    len: usize,
+    buf: [byte: 256],
 }
 
 fn dns_u16_be(b0: byte, b1: byte) u16 {
@@ -156,6 +163,63 @@ fn dns_parse_ipv4(host: &[byte], out: &byte) bool {
     out[2] = oct[2] as u8;
     out[3] = oct[3] as u8;
     return true;
+}
+
+fn dns_parse_u16_dec(s: &[byte], out: &usize) bool {
+    if s.len == 0 {
+        return false;
+    }
+    var v: usize = 0;
+    var i: usize = 0;
+    while i < s.len {
+        const c: byte = s.ptr[i];
+        if !dns_is_digit(c) {
+            return false;
+        }
+        v = v * 10 + (c as usize - (48 as usize));
+        if v > 65535 {
+            return false;
+        }
+        i = i + 1;
+    }
+    out[0] = v;
+    return true;
+}
+
+fn dns_is_would_block_errno(eid: i32) bool {
+    return eid == EAGAIN || eid == EWOULDBLOCK || eid == EINPROGRESS || eid == EALREADY;
+}
+
+fn dns_transport_error_from_errno_i32(eid: i32) !i32 {
+    if dns_is_would_block_errno(eid) {
+        return error.DnsWouldBlock;
+    }
+    if eid == ETIMEDOUT {
+        return error.DnsTimeout;
+    }
+    if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+        return error.DnsNetworkUnreachable;
+    }
+    if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+        return error.DnsPlatformUnsupported;
+    }
+    return error.DnsNetworkUnreachable;
+}
+
+fn dns_transport_error_from_errno_usize(eid: i32) !usize {
+    if dns_is_would_block_errno(eid) {
+        return error.DnsWouldBlock;
+    }
+    if eid == ETIMEDOUT {
+        return error.DnsTimeout;
+    }
+    if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+        return error.DnsNetworkUnreachable;
+    }
+    if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+        return error.DnsPlatformUnsupported;
+    }
+    return error.DnsNetworkUnreachable;
 }
 
 fn dns_fill_sockaddr_ipv4(a: byte, b: byte, c: byte, d: byte, port: u16, out: &byte) void {
@@ -419,18 +483,130 @@ fn dns_parse_resolv_conf_first_nameserver() !DnsAddress {
     return error.DnsNoNameserver;
 }
 
+fn dns_is_space(c: byte) bool {
+    return c == ' ' as byte || c == '\t' as byte || c == '\r' as byte || c == '\n' as byte;
+}
+
+fn dns_trim_slice(s: &[byte]) &[byte] {
+    var start: usize = 0;
+    var end: usize = s.len;
+    while start < end && dns_is_space(s.ptr[start]) {
+        start = start + 1;
+    }
+    while end > start && dns_is_space(s.ptr[end - 1]) {
+        end = end - 1;
+    }
+    return s[start: end - start];
+}
+
+fn dns_parse_hosts_first_ipv4(host: &[byte]) !DnsAddress {
+    const fd: i32 = sys_open("/etc/hosts", O_RDONLY as i32, 0) catch {
+        return error.DnsNoNameserver;
+    };
+    var buf: [byte: 1024] = [0:1024];
+    const n: isize = sys_read(fd, &buf[0], 1024) catch {
+        _ = sys_close(fd) catch {};
+        return error.DnsNoNameserver;
+    };
+    _ = sys_close(fd) catch {};
+    if n <= 0 {
+        return error.DnsNoNameserver;
+    }
+    const n_usize: usize = (n as! usize).value;
+    var line_start: usize = 0;
+    while line_start < n_usize {
+        var line_end: usize = line_start;
+        while line_end < n_usize && line_end < 1024 {
+            if buf[line_end] == '\n' as byte {
+                break;
+            }
+            line_end = line_end + 1;
+        }
+        var line: &[byte] = buf[line_start: line_end - line_start];
+        var hash_idx: usize = 0;
+        while hash_idx < line.len {
+            if line.ptr[hash_idx] == '#' as byte {
+                line = line[0: hash_idx];
+                break;
+            }
+            hash_idx = hash_idx + 1;
+        }
+        line = dns_trim_slice(line);
+        if line.len > 0 {
+            var i: usize = 0;
+            while i < line.len && !dns_is_space(line.ptr[i]) {
+                i = i + 1;
+            }
+            if i > 0 {
+                const ip_slice: &[byte] = line[0: i];
+                var rest: &[byte] = line[i: line.len - i];
+                while rest.len > 0 && dns_is_space(rest.ptr[0]) {
+                    rest = rest[1: rest.len - 1 + 1];
+                }
+                var ip: [byte: 4] = [0:4];
+                if dns_parse_ipv4(ip_slice, &ip[0]) {
+                    var j: usize = 0;
+                    while j < rest.len {
+                        var k: usize = j;
+                        while k < rest.len && !dns_is_space(rest.ptr[k]) {
+                            k = k + 1;
+                        }
+                        if k > j {
+                            const name_slice: &[byte] = rest[j: k - j];
+                            if dns_slice_eq(name_slice, host) {
+                                var out: DnsAddress = DnsAddress{ family: 0, addr_len: 0, addr: [0:16], port: 0 };
+                                dns_set_ipv4(&out, ip[0], ip[1], ip[2], ip[3], DNS_PORT);
+                                return out;
+                            }
+                        }
+                        j = k;
+                        while j < rest.len && dns_is_space(rest.ptr[j]) {
+                            j = j + 1;
+                        }
+                    }
+                }
+            }
+        }
+        if line_end == n_usize {
+            break;
+        }
+        line_start = line_end + 1;
+    }
+    return error.DnsNoSuchName;
+}
+
 export fn dns_client_init(ctx: &DnsClient, resolver: &[byte]) void {
     ctx.timeout_ms = 2000;
     ctx.query_id = 1;
     ctx.nameserver_len = 0;
+    ctx.nameserver_port = DNS_PORT;
     var i: usize = 0;
     while i < 16 {
         ctx.nameserver[i] = 0;
         i = i + 1;
     }
     if resolver.len >= 4 {
+        var port_val: usize = DNS_PORT as usize;
+        var addr_part: &[byte] = resolver;
+        var j: usize = 0;
+        while j < resolver.len {
+            if resolver.ptr[j] == ':' as byte {
+                addr_part = resolver[0: j];
+                if j + 1 < resolver.len {
+                    var port_end: usize = resolver.len;
+                    if resolver[port_end - 1] == 0 as byte {
+                        port_end = port_end - 1;
+                    }
+                    if port_end > j + 1 && dns_parse_u16_dec(resolver[j + 1: port_end - (j + 1)], &port_val) {
+                        ctx.nameserver_port = port_val as u16;
+                    }
+                }
+                break;
+            }
+            j = j + 1;
+        }
         var ip: [byte: 4] = [0:4];
-        if dns_parse_ipv4(resolver, &ip[0]) {
+        if dns_parse_ipv4(addr_part, &ip[0]) {
             ctx.nameserver[0] = ip[0];
             ctx.nameserver[1] = ip[1];
             ctx.nameserver[2] = ip[2];
@@ -443,7 +619,7 @@ export fn dns_client_init(ctx: &DnsClient, resolver: &[byte]) void {
 fn dns_client_get_nameserver(ctx: &DnsClient) !DnsAddress {
     if ctx.nameserver_len == 4 {
         var out: DnsAddress = DnsAddress{ family: 0, addr_len: 0, addr: [0:16], port: 0 };
-        dns_set_ipv4(&out, ctx.nameserver[0], ctx.nameserver[1], ctx.nameserver[2], ctx.nameserver[3], DNS_PORT);
+        dns_set_ipv4(&out, ctx.nameserver[0], ctx.nameserver[1], ctx.nameserver[2], ctx.nameserver[3], ctx.nameserver_port);
         return out;
     }
     return dns_parse_resolv_conf_first_nameserver();
@@ -467,12 +643,41 @@ fn dns_client_build_query(ctx: &DnsClient, host: &[byte], qtype: u16, out: &byte
 }
 
 fn dns_socket_connect_udp(ns: &DnsAddress) !i32 {
-    const fd: i32 = try sys_socket(AF_INET, SOCK_DGRAM, 0);
+    const socket_res: !i32 = sys_socket(AF_INET, SOCK_DGRAM, 0);
+    const fd: i32 = socket_res catch |err| {
+        const eid: i32 = (@error_id(err) as! i32).value;
+        if dns_is_would_block_errno(eid) {
+            return error.DnsWouldBlock;
+        }
+        if eid == ETIMEDOUT {
+            return error.DnsTimeout;
+        }
+        if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+            return error.DnsNetworkUnreachable;
+        }
+        if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+            return error.DnsPlatformUnsupported;
+        }
+        return error.DnsNetworkUnreachable;
+    };
     var addr: [byte: 16] = [0:16];
     if ns.family == AF_INET {
-        dns_fill_sockaddr_ipv4(ns.addr[0], ns.addr[1], ns.addr[2], ns.addr[3], DNS_PORT, &addr[0]);
-        _ = sys_connect(fd, &addr[0] as &void, 16 as u32) catch {
+        dns_fill_sockaddr_ipv4(ns.addr[0], ns.addr[1], ns.addr[2], ns.addr[3], ns.port, &addr[0]);
+        _ = sys_connect(fd, &addr[0] as &void, 16 as u32) catch |err| {
+            const eid: i32 = (@error_id(err) as! i32).value;
             _ = sys_close(fd) catch {};
+            if dns_is_would_block_errno(eid) {
+                return error.DnsWouldBlock;
+            }
+            if eid == ETIMEDOUT {
+                return error.DnsTimeout;
+            }
+            if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+                return error.DnsNetworkUnreachable;
+            }
+            if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+                return error.DnsPlatformUnsupported;
+            }
             return error.DnsNetworkUnreachable;
         };
         return fd;
@@ -481,21 +686,137 @@ fn dns_socket_connect_udp(ns: &DnsAddress) !i32 {
     return error.DnsUnsupported;
 }
 
+fn dns_socket_connect_udp_nonblocking(ns: &DnsAddress, fd_out: &i32) !void {
+    const socket_res: !i32 = sys_socket(AF_INET, SOCK_DGRAM, 0);
+    const fd: i32 = socket_res catch |err| {
+        const eid: i32 = (@error_id(err) as! i32).value;
+        if dns_is_would_block_errno(eid) {
+            return error.DnsWouldBlock;
+        }
+        if eid == ETIMEDOUT {
+            return error.DnsTimeout;
+        }
+        if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+            return error.DnsNetworkUnreachable;
+        }
+        if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+            return error.DnsPlatformUnsupported;
+        }
+        return error.DnsNetworkUnreachable;
+    };
+    var addr: [byte: 16] = [0:16];
+    if ns.family == AF_INET {
+        dns_fill_sockaddr_ipv4(ns.addr[0], ns.addr[1], ns.addr[2], ns.addr[3], ns.port, &addr[0]);
+        _ = sys_connect(fd, &addr[0] as &void, 16 as u32) catch |err| {
+            const eid: i32 = (@error_id(err) as! i32).value;
+            _ = sys_close(fd) catch {};
+            if dns_is_would_block_errno(eid) {
+                return error.DnsWouldBlock;
+            }
+            if eid == ETIMEDOUT {
+                return error.DnsTimeout;
+            }
+            if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+                return error.DnsNetworkUnreachable;
+            }
+            if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+                return error.DnsPlatformUnsupported;
+            }
+            return error.DnsNetworkUnreachable;
+        };
+        fd_out[0] = fd;
+        return;
+    }
+    _ = sys_close(fd) catch {};
+    return error.DnsUnsupported;
+}
+
+fn dns_socket_connect_tcp_nonblocking(ns: &DnsAddress, fd_out: &i32) !void {
+    const socket_res: !i32 = sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    const fd: i32 = socket_res catch |err| {
+        const eid: i32 = (@error_id(err) as! i32).value;
+        if dns_is_would_block_errno(eid) {
+            return error.DnsWouldBlock;
+        }
+        if eid == ETIMEDOUT {
+            return error.DnsTimeout;
+        }
+        if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+            return error.DnsNetworkUnreachable;
+        }
+        if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+            return error.DnsPlatformUnsupported;
+        }
+        return error.DnsNetworkUnreachable;
+    };
+    var addr: [byte: 16] = [0:16];
+    if ns.family != AF_INET {
+        _ = sys_close(fd) catch {};
+        return error.DnsUnsupported;
+    }
+    dns_fill_sockaddr_ipv4(ns.addr[0], ns.addr[1], ns.addr[2], ns.addr[3], ns.port, &addr[0]);
+    _ = sys_connect(fd, &addr[0] as &void, 16 as u32) catch |err| {
+        const eid: i32 = (@error_id(err) as! i32).value;
+        if !dns_is_would_block_errno(eid) && eid != EISCONN {
+            _ = sys_close(fd) catch {};
+            if eid == ETIMEDOUT {
+                return error.DnsTimeout;
+            }
+            if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+                return error.DnsNetworkUnreachable;
+            }
+            if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+                return error.DnsPlatformUnsupported;
+            }
+            return error.DnsNetworkUnreachable;
+        }
+        return;
+    };
+    fd_out[0] = fd;
+    return;
+}
+
 fn dns_query_udp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte, response_max: usize, response_len: &usize) !usize {
     const ns: DnsAddress = try dns_client_get_nameserver(ctx);
     const fd: i32 = try dns_socket_connect_udp(&ns);
     var packet: [byte: DNS_MAX_PACKET] = [0:DNS_MAX_PACKET];
     const qlen: usize = try dns_client_build_query(ctx, host, qtype, &packet[0], DNS_MAX_PACKET);
-    const sent: isize = sys_send(fd, &packet[0], qlen, 0) catch {
+    const sent: isize = sys_send(fd, &packet[0], qlen, 0) catch |err| {
+        const eid: i32 = (@error_id(err) as! i32).value;
         _ = sys_close(fd) catch {};
+        if dns_is_would_block_errno(eid) {
+            return error.DnsWouldBlock;
+        }
+        if eid == ETIMEDOUT {
+            return error.DnsTimeout;
+        }
+        if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+            return error.DnsNetworkUnreachable;
+        }
+        if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+            return error.DnsPlatformUnsupported;
+        }
         return error.DnsNetworkUnreachable;
     };
     if sent != qlen as isize {
         _ = sys_close(fd) catch {};
         return error.DnsNetworkUnreachable;
     }
-    const n: isize = sys_recv(fd, response, response_max, 0) catch {
+    const n: isize = sys_recv(fd, response, response_max, 0) catch |err| {
+        const eid: i32 = (@error_id(err) as! i32).value;
         _ = sys_close(fd) catch {};
+        if dns_is_would_block_errno(eid) {
+            return error.DnsWouldBlock;
+        }
+        if eid == ETIMEDOUT {
+            return error.DnsTimeout;
+        }
+        if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+            return error.DnsNetworkUnreachable;
+        }
+        if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+            return error.DnsPlatformUnsupported;
+        }
         return error.DnsNetworkUnreachable;
     };
     _ = sys_close(fd) catch {};
@@ -506,7 +827,132 @@ fn dns_query_udp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte
     return n as usize;
 }
 
-fn dns_parse_answers(packet: &const byte, packet_len: usize, qtype: u16, out: &byte, out_max: usize, out_len: &usize) !usize {
+fn dns_query_tcp_raw(ctx: &DnsClient, host: &[byte], qtype: u16, response: &byte, response_max: usize, response_len: &usize) !usize {
+    const ns: DnsAddress = try dns_client_get_nameserver(ctx);
+    const socket_res: !i32 = sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    const fd: i32 = socket_res catch |err| {
+        const eid: i32 = (@error_id(err) as! i32).value;
+        if dns_is_would_block_errno(eid) {
+            return error.DnsWouldBlock;
+        }
+        if eid == ETIMEDOUT {
+            return error.DnsTimeout;
+        }
+        if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+            return error.DnsNetworkUnreachable;
+        }
+        if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+            return error.DnsPlatformUnsupported;
+        }
+        return error.DnsNetworkUnreachable;
+    };
+    var addr: [byte: 16] = [0:16];
+    if ns.family != AF_INET {
+        _ = sys_close(fd) catch {};
+        return error.DnsUnsupported;
+    }
+    dns_fill_sockaddr_ipv4(ns.addr[0], ns.addr[1], ns.addr[2], ns.addr[3], ns.port, &addr[0]);
+    _ = sys_connect(fd, &addr[0] as &void, 16 as u32) catch |err| {
+        const eid: i32 = (@error_id(err) as! i32).value;
+        _ = sys_close(fd) catch {};
+        if dns_is_would_block_errno(eid) {
+            return error.DnsWouldBlock;
+        }
+        if eid == ETIMEDOUT {
+            return error.DnsTimeout;
+        }
+        if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+            return error.DnsNetworkUnreachable;
+        }
+        if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+            return error.DnsPlatformUnsupported;
+        }
+        return error.DnsNetworkUnreachable;
+    };
+    var packet: [byte: DNS_MAX_PACKET] = [0:DNS_MAX_PACKET];
+    const qlen: usize = try dns_client_build_query(ctx, host, qtype, &packet[0], DNS_MAX_PACKET);
+    var framed: [byte: DNS_MAX_PACKET + 2] = [0:DNS_MAX_PACKET + 2];
+    framed[0] = (((qlen >> 8) & 255) as byte);
+    framed[1] = ((qlen & 255) as byte);
+    var i: usize = 0;
+    while i < qlen {
+        framed[2 + i] = packet[i];
+        i = i + 1;
+    }
+    const sent: isize = sys_send(fd, &framed[0], qlen + 2, 0) catch |err| {
+        const eid: i32 = (@error_id(err) as! i32).value;
+        _ = sys_close(fd) catch {};
+        if dns_is_would_block_errno(eid) {
+            return error.DnsWouldBlock;
+        }
+        if eid == ETIMEDOUT {
+            return error.DnsTimeout;
+        }
+        if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+            return error.DnsNetworkUnreachable;
+        }
+        if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+            return error.DnsPlatformUnsupported;
+        }
+        return error.DnsNetworkUnreachable;
+    };
+    if sent != (qlen + 2) as isize {
+        _ = sys_close(fd) catch {};
+        return error.DnsNetworkUnreachable;
+    }
+    var lenbuf: [byte: 2] = [0:2];
+    const hdrn: isize = sys_recv(fd, &lenbuf[0], 2, 0) catch |err| {
+        const eid: i32 = (@error_id(err) as! i32).value;
+        _ = sys_close(fd) catch {};
+        if dns_is_would_block_errno(eid) {
+            return error.DnsWouldBlock;
+        }
+        if eid == ETIMEDOUT {
+            return error.DnsTimeout;
+        }
+        if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+            return error.DnsNetworkUnreachable;
+        }
+        if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+            return error.DnsPlatformUnsupported;
+        }
+        return error.DnsNetworkUnreachable;
+    };
+    if hdrn != 2 {
+        _ = sys_close(fd) catch {};
+        return error.DnsNetworkUnreachable;
+    }
+    const body_len: usize = (((lenbuf[0] as usize) << 8) | (lenbuf[1] as usize));
+    if body_len > response_max {
+        _ = sys_close(fd) catch {};
+        return error.DnsInvalidPacket;
+    }
+    const n: isize = sys_recv(fd, response, body_len, 0) catch |err| {
+        const eid: i32 = (@error_id(err) as! i32).value;
+        _ = sys_close(fd) catch {};
+        if dns_is_would_block_errno(eid) {
+            return error.DnsWouldBlock;
+        }
+        if eid == ETIMEDOUT {
+            return error.DnsTimeout;
+        }
+        if eid == ENETUNREACH || eid == EHOSTUNREACH || eid == ECONNREFUSED || eid == ECONNRESET || eid == EPIPE {
+            return error.DnsNetworkUnreachable;
+        }
+        if eid == EAFNOSUPPORT || eid == EPROTOTYPE || eid == EPROTONOSUPPORT || eid == EOPNOTSUPP || eid == ENOSYS {
+            return error.DnsPlatformUnsupported;
+        }
+        return error.DnsNetworkUnreachable;
+    };
+    _ = sys_close(fd) catch {};
+    if n <= 0 {
+        return error.DnsNoSuchName;
+    }
+    response_len[0] = n as usize;
+    return n as usize;
+}
+
+fn dns_parse_answers_with_ttl(packet: &const byte, packet_len: usize, qtype: u16, out: &byte, out_max: usize, out_len: &usize, ttl_out: &usize) !usize {
     if packet_len < DNS_HEADER_LEN {
         return error.DnsInvalidPacket;
     }
@@ -535,6 +981,7 @@ fn dns_parse_answers(packet: &const byte, packet_len: usize, qtype: u16, out: &b
         i = i + 1;
     }
     var out_n: usize = 0;
+    ttl_out[0] = 0;
     var a: usize = 0;
     while a < ancount {
         var name_buf: [byte: 256] = [0:256];
@@ -544,9 +991,10 @@ fn dns_parse_answers(packet: &const byte, packet_len: usize, qtype: u16, out: &b
         };
         const rtype: u16 = try dns_cursor_read_u16(&cur);
         const rclass: u16 = try dns_cursor_read_u16(&cur);
-        _ = dns_cursor_read_u32(&cur) catch {
-            return error.DnsInvalidPacket;
-        };
+        const ttl: u32 = try dns_cursor_read_u32(&cur);
+        if ttl_out[0] == 0 {
+            ttl_out[0] = ttl as usize;
+        }
         const rdlen_u16: u16 = try dns_cursor_read_u16(&cur);
         const rdlen: usize = rdlen_u16 as usize;
         if cur.pos + rdlen > packet_len {
@@ -581,6 +1029,96 @@ fn dns_parse_answers(packet: &const byte, packet_len: usize, qtype: u16, out: &b
     return out_len[0];
 }
 
+fn dns_parse_answers(packet: &const byte, packet_len: usize, qtype: u16, out: &byte, out_max: usize, out_len: &usize) !usize {
+    var ttl_out: usize = 0;
+    return dns_parse_answers_with_ttl(packet, packet_len, qtype, out, out_max, out_len, &ttl_out);
+}
+
+fn dns_extract_cname(packet: &const byte, packet_len: usize, out: &byte, out_max: usize, out_len: &usize) !bool {
+    if packet_len < DNS_HEADER_LEN {
+        return error.DnsInvalidPacket;
+    }
+    var cur: DnsCursor = dns_cursor_init(packet, packet_len);
+    cur.pos = DNS_HEADER_LEN;
+    const qdcount: usize = dns_u16_be(packet[4], packet[5]) as usize;
+    const ancount: usize = dns_u16_be(packet[6], packet[7]) as usize;
+    var i: usize = 0;
+    while i < qdcount {
+        try dns_read_name_skip(&cur);
+        try dns_cursor_skip(&cur, 4);
+        i = i + 1;
+    }
+    var a: usize = 0;
+    while a < ancount {
+        var name_buf: [byte: 256] = [0:256];
+        var name_len: usize = 0;
+        _ = dns_read_name(&cur, &name_buf[0], 256, &name_len) catch {
+            return error.DnsInvalidPacket;
+        };
+        const rtype: u16 = try dns_cursor_read_u16(&cur);
+        const rclass: u16 = try dns_cursor_read_u16(&cur);
+        _ = dns_cursor_read_u32(&cur) catch {
+            return error.DnsInvalidPacket;
+        };
+        const rdlen_u16: u16 = try dns_cursor_read_u16(&cur);
+        const rdlen: usize = rdlen_u16 as usize;
+        if cur.pos + rdlen > packet_len {
+            return error.DnsInvalidPacket;
+        }
+        if rclass == DNS_CLASS_IN && rtype == DNS_RECORD_CNAME {
+            var target_cur: DnsCursor = dns_cursor_init(packet, packet_len);
+            target_cur.pos = cur.pos;
+            _ = dns_read_name(&target_cur, out, out_max, out_len) catch {
+                return error.DnsInvalidPacket;
+            };
+            return true;
+        }
+        cur.pos = cur.pos + rdlen;
+        a = a + 1;
+    }
+    return false;
+}
+
+fn dns_query_follow_cname_with_ttl(ctx: &DnsClient, host: &[byte], depth: usize, qtype: u16, out: &byte, out_max: usize, out_len: &usize, ttl_out: &usize) !usize {
+    if depth > 4 {
+        return error.DnsInvalidPacket;
+    }
+    var resp: [byte: DNS_MAX_PACKET] = [0:DNS_MAX_PACKET];
+    var resp_len: usize = 0;
+    _ = try dns_query_udp_raw(ctx, host, qtype, &resp[0], DNS_MAX_PACKET, &resp_len);
+    var ttl_tmp: usize = 0;
+    var parsed: usize = dns_parse_answers_with_ttl(&resp[0], resp_len, qtype, out, out_max, out_len, &ttl_tmp) catch {
+        if resp_len >= DNS_HEADER_LEN && (dns_u16_be(resp[2], resp[3]) & 0x0200u16) != 0 {
+            const tcp_len: usize = try dns_query_tcp_raw(ctx, host, qtype, &resp[0], DNS_MAX_PACKET, &resp_len);
+            return dns_parse_answers_with_ttl(&resp[0], tcp_len, qtype, out, out_max, out_len, ttl_out);
+        }
+        0 as usize;
+    };
+    if parsed > 0 {
+        ttl_out[0] = ttl_tmp;
+        return parsed;
+    }
+    var cname_buf: [byte: 256] = [0:256];
+    var cname_len: usize = 0;
+    const found_cname: bool = dns_extract_cname(&resp[0], resp_len, &cname_buf[0], 256, &cname_len) catch {
+        false;
+    };
+    if !found_cname || cname_len == 0 {
+        return error.DnsNoSuchName;
+    }
+    return dns_query_follow_cname_with_ttl(ctx, cname_buf[0: cname_len], depth + 1, qtype, out, out_max, out_len, ttl_out);
+}
+
+fn dns_query_follow_cname_a(ctx: &DnsClient, host: &[byte], depth: usize, out: &byte, out_max: usize, out_len: &usize) !usize {
+    var ttl_out: usize = 0;
+    return dns_query_follow_cname_with_ttl(ctx, host, depth, DNS_RECORD_A, out, out_max, out_len, &ttl_out);
+}
+
+fn dns_query_follow_cname_aaaa(ctx: &DnsClient, host: &[byte], depth: usize, out: &byte, out_max: usize, out_len: &usize) !usize {
+    var ttl_out: usize = 0;
+    return dns_query_follow_cname_with_ttl(ctx, host, depth, DNS_RECORD_AAAA, out, out_max, out_len, &ttl_out);
+}
+
 fn dns_cursor_read_u32(cur: &DnsCursor) !u32 {
     if cur.pos + 3 >= cur.packet_len {
         return error.DnsInvalidPacket;
@@ -591,7 +1129,12 @@ fn dns_cursor_read_u32(cur: &DnsCursor) !u32 {
 }
 
 export fn dns_client_query_a(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) !usize {
-    if host == null || out == null || out_len == null {
+    var ttl_out: usize = 0;
+    return dns_client_query_a_with_ttl(ctx, host, host_len, out, out_max, out_len, &ttl_out);
+}
+
+export fn dns_client_query_a_with_ttl(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize, ttl_out: &usize) !usize {
+    if host == null || out == null || out_len == null || ttl_out == null {
         return error.DnsInvalidName;
     }
     if host_len == 0 {
@@ -606,6 +1149,7 @@ export fn dns_client_query_a(ctx: &DnsClient, host: &const byte, host_len: usize
         out[2] = 0;
         out[3] = 1;
         out_len[0] = 4;
+        ttl_out[0] = 0;
         return 4 as usize;
     }
     var v4: [byte: 4] = [0:4];
@@ -618,31 +1162,92 @@ export fn dns_client_query_a(ctx: &DnsClient, host: &const byte, host_len: usize
         out[2] = v4[2];
         out[3] = v4[3];
         out_len[0] = 4;
+        ttl_out[0] = 0;
         return 4 as usize;
     }
-    var packet: [byte: DNS_MAX_PACKET] = [0:DNS_MAX_PACKET];
-    const qlen: usize = try dns_client_build_query(ctx, host[0: host_len], DNS_RECORD_A, &packet[0], DNS_MAX_PACKET);
-    var resp: [byte: DNS_MAX_PACKET] = [0:DNS_MAX_PACKET];
-    var resp_len: usize = 0;
-    _ = qlen;
-    _ = try dns_query_udp_raw(ctx, host[0: host_len], DNS_RECORD_A, &resp[0], DNS_MAX_PACKET, &resp_len);
-    const parsed: usize = try dns_parse_answers(&resp[0], resp_len, DNS_RECORD_A, out, out_max, out_len);
-    return parsed;
+    return dns_query_follow_cname_with_ttl(ctx, host[0: host_len], 0, DNS_RECORD_A, out, out_max, out_len, ttl_out);
 }
 
 export fn dns_client_query_aaaa(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) !usize {
+    var ttl_out: usize = 0;
+    return dns_client_query_aaaa_with_ttl(ctx, host, host_len, out, out_max, out_len, &ttl_out);
+}
+
+export fn dns_client_query_aaaa_with_ttl(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize, ttl_out: &usize) !usize {
+    if host == null || out == null || out_len == null || ttl_out == null {
+        return error.DnsInvalidName;
+    }
     if out_max < 16 {
         return error.DnsInvalidPacket;
     }
-    var resp: [byte: DNS_MAX_PACKET] = [0:DNS_MAX_PACKET];
-    var resp_len: usize = 0;
-    _ = try dns_query_udp_raw(ctx, host[0: host_len], DNS_RECORD_AAAA, &resp[0], DNS_MAX_PACKET, &resp_len);
-    const parsed: usize = try dns_parse_answers(&resp[0], resp_len, DNS_RECORD_AAAA, out, out_max, out_len);
-    return parsed;
+    if dns_is_localhost(host[0: host_len]) {
+        var loopback6: [byte: 16] = [0:16];
+        loopback6[15] = 1;
+        var i: usize = 0;
+        while i < 16 {
+            out[i] = loopback6[i];
+            i = i + 1;
+        }
+        out_len[0] = 16;
+        ttl_out[0] = 0;
+        return 16 as usize;
+    }
+    var v4: [byte: 4] = [0:4];
+    if dns_parse_ipv4(host[0: host_len], &v4[0]) {
+        var mapped: [byte: 16] = [0:16];
+        mapped[10] = 0xff as byte;
+        mapped[11] = 0xff as byte;
+        mapped[12] = v4[0];
+        mapped[13] = v4[1];
+        mapped[14] = v4[2];
+        mapped[15] = v4[3];
+        var j: usize = 0;
+        while j < 16 {
+            out[j] = mapped[j];
+            j = j + 1;
+        }
+        out_len[0] = 16;
+        ttl_out[0] = 0;
+        return 16 as usize;
+    }
+    return dns_query_follow_cname_with_ttl(ctx, host[0: host_len], 0, DNS_RECORD_AAAA, out, out_max, out_len, ttl_out);
 }
 
 export fn dns_client_resolve_host(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) !usize {
-    return dns_client_query_a(ctx, host, host_len, out, out_max, out_len);
+    if host == null || out == null || out_len == null {
+        return error.DnsInvalidName;
+    }
+    if host_len == 0 {
+        return error.DnsInvalidName;
+    }
+    const hosts_res: !DnsAddress = dns_parse_hosts_first_ipv4(host[0: host_len]);
+    const hosts_addr: DnsAddress = hosts_res catch {
+        var noop: DnsAddress = DnsAddress{ family: 0, addr_len: 0, addr: [0:16], port: 0 };
+        _ = noop;
+        const a_res: !usize = dns_client_query_a(ctx, host, host_len, out, out_max, out_len);
+        const a_n: usize = a_res catch {
+            const aaaa_res: !usize = dns_client_query_aaaa(ctx, host, host_len, out, out_max, out_len);
+            return aaaa_res;
+        };
+        return a_n;
+    };
+    if hosts_addr.family == AF_INET {
+        if out_max < 4 {
+            return error.DnsInvalidPacket;
+        }
+        out[0] = hosts_addr.addr[0];
+        out[1] = hosts_addr.addr[1];
+        out[2] = hosts_addr.addr[2];
+        out[3] = hosts_addr.addr[3];
+        out_len[0] = 4;
+        return 4 as usize;
+    }
+    const a_res: !usize = dns_client_query_a(ctx, host, host_len, out, out_max, out_len);
+    const a_n: usize = a_res catch {
+        const aaaa_res: !usize = dns_client_query_aaaa(ctx, host, host_len, out, out_max, out_len);
+        return aaaa_res;
+    };
+    return a_n;
 }
 
 export fn dns_client_resolve_first_ipv4(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) !usize {
@@ -651,6 +1256,58 @@ export fn dns_client_resolve_first_ipv4(ctx: &DnsClient, host: &const byte, host
 
 export fn dns_client_resolve_first_ipv6(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) !usize {
     return dns_client_query_aaaa(ctx, host, host_len, out, out_max, out_len);
+}
+
+export fn dns_client_lookup_localhost(ctx: &DnsClient, out: &byte, out_max: usize, out_len: &usize) !usize {
+    var host: [byte: 10] = "localhost";
+    return dns_client_query_a(ctx, &host[0], 9, out, out_max, out_len);
+}
+
+export fn dns_client_query_all(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) !usize {
+    var total: usize = 0;
+    var a_buf: [byte: 4] = [0:4];
+    var a_len: usize = 0;
+    const a_n: usize = dns_client_query_a(ctx, host, host_len, &a_buf[0], 4, &a_len) catch {
+        0 as usize;
+    };
+    if a_n > 0 && total + a_n <= out_max {
+        var i: usize = 0;
+        while i < a_n && i < 4 && total + i < out_max {
+            out[total + i] = a_buf[i];
+            i = i + 1;
+        }
+        total = total + a_n;
+    }
+    var aaaa_buf: [byte: 16] = [0:16];
+    var aaaa_len: usize = 0;
+    const aaaa_n: usize = dns_client_query_aaaa(ctx, host, host_len, &aaaa_buf[0], 16, &aaaa_len) catch {
+        0 as usize;
+    };
+    if aaaa_n > 0 && total + aaaa_n <= out_max {
+        var j: usize = 0;
+        while j < aaaa_n && j < 16 && total + j < out_max {
+            out[total + j] = aaaa_buf[j];
+            j = j + 1;
+        }
+        total = total + aaaa_n;
+    }
+    if total == 0 {
+        return error.DnsNoSuchName;
+    }
+    out_len[0] = total;
+    return total;
+}
+
+export fn dns_client_query_a_with_tcp_fallback_packets(udp_packet: &const byte, udp_len: usize, tcp_packet: &const byte, tcp_len: usize, out: &byte, out_max: usize, out_len: &usize, ttl_out: &usize) !usize {
+    var ttl_tmp: usize = 0;
+    var parsed: usize = dns_parse_answers_with_ttl(udp_packet, udp_len, DNS_RECORD_A, out, out_max, out_len, &ttl_tmp) catch {
+        if udp_len >= DNS_HEADER_LEN && (dns_u16_be(udp_packet[2], udp_packet[3]) & 0x0200u16) != 0 {
+            return dns_parse_answers_with_ttl(tcp_packet, tcp_len, DNS_RECORD_A, out, out_max, out_len, ttl_out);
+        }
+        return error.DnsInvalidPacket;
+    };
+    ttl_out[0] = ttl_tmp;
+    return parsed;
 }
 
 export @async_fn fn dns_client_query_a_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {

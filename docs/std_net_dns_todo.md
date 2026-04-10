@@ -157,7 +157,7 @@ use std.net.dns;
 
 可选接口：
 
-- `fn dns_client_query_all(...) !usize`
+- [x] `fn dns_client_query_all(...) !usize`
 - `fn dns_client_lookup_localhost(...) !usize`
 - `fn dns_client_set_timeout_ms(...) void`
 
@@ -167,66 +167,73 @@ use std.net.dns;
 
 ### 1. 模块骨架
 
-- [ ] 新建 `lib/std/net/dns.uya`。
-- [ ] 定义错误码、记录类型、查询类型、结果结构体。
-- [ ] 统一公共常量，例如：
+- [x] 新建 `lib/std/net/dns.uya`。
+- [x] 定义错误码、记录类型、查询类型、结果结构体。
+- [x] 统一公共常量，例如：
   - `DNS_PORT = 53`
   - `DNS_MAX_NAME = 253`
   - `DNS_MAX_LABEL = 63`
   - `DNS_MAX_PACKET = 512`（先做最小 UDP 版）
-- [ ] 为后续解析器预留游标型读取函数。
+- [x] 为后续解析器预留游标型读取函数。
 
 ### 2. DNS 报文编码
 
-- [ ] 实现 DNS Header 编码与解析。
-- [ ] 实现 Question 区编码。
-- [ ] 实现域名 label 编码。
-- [ ] 实现基本的域名压缩指针解析。
-- [ ] 支持请求 ID、flags、QDCOUNT、ANCOUNT、NSCOUNT、ARCOUNT。
-- [ ] 先只支持 `IN` class。
+- [x] 实现 DNS Header 编码与解析。
+- [x] 实现 Question 区编码。
+- [x] 实现域名 label 编码。
+- [x] 实现基本的域名压缩指针解析。
+- [x] 支持请求 ID、flags、QDCOUNT、ANCOUNT、NSCOUNT、ARCOUNT。
+- [x] 先只支持 `IN` class。
 
 ### 3. DNS 报文解析
 
-- [ ] 解析 `A` 记录。
-- [ ] 解析 `AAAA` 记录。
-- [ ] 解析 `CNAME` 记录并支持最小链式展开。
-- [ ] 解析 TTL。
-- [ ] 忽略暂不支持的记录类型，但要正确跳过 RDATA 长度。
-- [ ] 对压缩指针循环做保护，避免死循环。
+- [x] 解析 `A` 记录。
+- [x] 解析 `AAAA` 记录。
+- [x] 解析 `CNAME` 记录并支持最小链式展开。
+- [x] 解析 TTL。
+- [x] 忽略暂不支持的记录类型，但要正确跳过 RDATA 长度。
+- [x] 对压缩指针循环做保护，避免死循环。
 
 ### 4. 传输层
 
-- [ ] 使用 UDP socket 向 nameserver 发包。
-- [ ] 明确首版的“正常路径”为 UDP/53。
-- [ ] 支持读取 `/etc/resolv.conf` 中的 `nameserver`。
-- [ ] 如果解析器配置为空，返回明确错误。
+- [x] 使用 UDP socket 向 nameserver 发包。
+- [x] 明确首版的“正常路径”为 UDP/53。
+- [x] 支持读取 `/etc/resolv.conf` 中的 `nameserver`。
+- [x] 如果解析器配置为空，返回明确错误。
 - [ ] 支持最小超时重试。
-- [ ] MVP 即支持 `TC` 截断位处理。
-- [ ] UDP 首包至少支持经典 512 字节响应；若要服务真实 HTTPS，需补 EDNS0 或直接在 `TC=1` 时走 TCP fallback。
-- [ ] `TC=1` 不能直接映射为 `Unsupported`；应改走 TCP 或返回明确的可恢复错误。
-- [ ] TCP fallback 复用同一套 DNS message 编码，只替换 transport 和长度前缀处理。
-- [ ] TCP 模式遵循 DNS over TCP 的两字节长度前缀收发格式。
+- [x] MVP 即支持 `TC` 截断位处理。
+- [x] UDP 首包至少支持经典 512 字节响应；若要服务真实 HTTPS，需补 EDNS0 或直接在 `TC=1` 时走 TCP fallback。
+- [x] `TC=1` 不能直接映射为 `Unsupported`；应改走 TCP 或返回明确的可恢复错误。
+- [x] TCP fallback 复用同一套 DNS message 编码，只替换 transport 和长度前缀处理。
+- [x] TCP 模式遵循 DNS over TCP 的两字节长度前缀收发格式。
 - [ ] 为异步 HTTPS 提供 nonblocking UDP/TCP transport：套接字置 `O_NONBLOCK`，在 `EAGAIN` 时返回 `Pending` 并注册 `Waker`。
 
 ### 5. 本地优先顺序
 
-- [ ] 先识别字面量 IPv4 / IPv6。
-- [ ] 再查 `/etc/hosts`。
-- [ ] 再走 DNS 查询。
+- [x] 先识别字面量 IPv4 / IPv6。
+- [x] 再查 `/etc/hosts`。
+- [x] 再走 DNS 查询。
 - [ ] 允许调用方指定只要 IPv4 或只要 IPv6。
 
 ### 6. 高层解析策略
 
-- [ ] 返回第一个可用地址。
-- [ ] 支持按优先级返回多个地址。
+- [x] 返回第一个可用地址。
+- [ ] 支持按优先级返回多个地址的更完整排序策略。
 - [ ] 对 `CNAME` 结果做最小展开后再找地址记录。
 - [ ] 保持结果顺序尽量与系统解析器一致。
 
+当前实现的优先级是：
+
+- `dns_client_resolve_host` 先尝试 `A`，再回退到 `AAAA`
+- `dns_client_query_all` 先拼接 `A`，再拼接 `AAAA`
+- `dns_client_resolve_host` 现在会先查 `/etc/hosts` 的最小 IPv4 记录，再回落到 DNS
+- `TC=1` 的 fallback 回归现在用固定 DNS packet 数据构造，稳定覆盖 UDP 截断 + TCP 重查逻辑
+
 ### 7. 错误模型
 
-- [ ] 把 DNS 状态码映射为 `std` 错误集合。
-- [ ] 区分“查询失败”和“解析失败”。
-- [ ] 区分“无记录”和“网络不可达”。
+- [x] 把 DNS 状态码映射为 `std` 错误集合。
+- [x] 区分“查询失败”和“解析失败”。
+- [x] 区分“无记录”和“网络不可达”。
 - [ ] 保留可诊断信息，便于 HTTPS / HTTP 上层打印。
 - [ ] 同步与异步接口返回同一套错误语义；异步接口额外允许 `WouldBlock` / `Pending` 路径。
 
@@ -261,7 +268,7 @@ DNS 客户端完成后，HTTPS 侧应做这些改造：
 
 ### 异步 HTTPS 接入点
 
-- [ ] `std.http.http1_async` 的 connect 路径改为先走 `std.net.dns`，不再只接受 `localhost` / 字面量 IPv4。
+- [x] `std.http.http1_async` 的 connect 路径改为先走 `std.net.dns`，同时保留 `localhost` / 字面量 IPv4 快路径。
 - [ ] 未来的 async HTTPS client 复用同一套 async DNS transport，避免在事件循环里阻塞等待解析。
 - [ ] async DNS 的 future 在 `epoll` 事件循环里可被 `block_on_with_event_loop` 驱动。
 - [ ] 若 DNS 需要 TCP fallback，异步 HTTPS 也必须沿用 nonblocking TCP DNS 路径，而不是退回同步阻塞实现。
@@ -307,7 +314,7 @@ DNS 客户端完成后，HTTPS 侧应做这些改造：
 - [ ] 让 `tests/test_https_real_site.uya` 直接走 `std.net.dns`。
 - [ ] 确认外站 HTTPS 不再依赖 curl 桥接。
 - [ ] 保留本地 loopback HTTPS 测试，避免外网不稳定影响回归。
-- [ ] 为异步 HTTP/HTTPS 新增 hostname 解析用例，覆盖 DNS + nonblocking connect 联动。
+- [x] 为异步 HTTP/HTTPS 新增 hostname 解析用例，覆盖 DNS + nonblocking connect 联动。
 
 ---
 

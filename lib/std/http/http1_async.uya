@@ -13,6 +13,7 @@ use libc;
 use std.http.types;
 use std.http.server;
 use std.http.router;
+use std.net.dns;
 use libc.errno;
 use libc.syscall;
 use libc.heap;
@@ -142,6 +143,18 @@ fn parse_ipv4(host: &[byte]) !Ipv4Addr {
     };
 }
 
+fn try_parse_ipv4(host: &[byte], out: &Ipv4Addr) bool {
+    const parsed: !Ipv4Addr = parse_ipv4(host);
+    const ip: Ipv4Addr = parsed catch {
+        return false;
+    };
+    out.a = ip.a;
+    out.b = ip.b;
+    out.c = ip.c;
+    out.d = ip.d;
+    return true;
+}
+
 fn parse_u16_dec(s: &[byte]) !u16 {
     if s.len == 0 {
         return error.InvalidRequest;
@@ -262,21 +275,49 @@ struct Http1ConnectFuture : Future<!i32> {
 }
 
 fn http1_connect_for_host_future(host: &[byte], port: u16) Future<!i32> {
+    if host_is_localhost(host) {
+        const socket_res: !i32 = sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        const fd: i32 = socket_res catch {
+            return Future<!i32>{ state: Poll<!i32>.Ready(socket_res as! i32) };
+        };
+        var addr: [byte: 16] = [];
+        fill_sockaddr_ipv4(127, 0, 0, 1, port, &addr[0] as &byte);
+        return Http1ConnectFuture{ fd: fd, addr: addr, nonblocking_ready: 0 };
+    }
+    var ip: Ipv4Addr = Ipv4Addr{ a: 0, b: 0, c: 0, d: 0 };
+    if try_parse_ipv4(host, &ip) {
+        const socket_res: !i32 = sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        const fd: i32 = socket_res catch {
+            return Future<!i32>{ state: Poll<!i32>.Ready(socket_res as! i32) };
+        };
+        var addr: [byte: 16] = [];
+        fill_sockaddr_ipv4(ip.a, ip.b, ip.c, ip.d, port, &addr[0] as &byte);
+        return Http1ConnectFuture{ fd: fd, addr: addr, nonblocking_ready: 0 };
+    }
+
+    var dns_ctx: DnsClient = DnsClient{
+        nameserver: [0:16],
+        nameserver_len: 0,
+        timeout_ms: 0,
+        query_id: 0,
+    };
+    var empty_resolver: [byte: 0] = [];
+    dns_client_init(&dns_ctx, &empty_resolver[0: 0]);
+    var ipv4: [byte: 4] = [0: 4];
+    var ipv4_len: usize = 0;
+    const resolve_result: !usize = dns_client_resolve_first_ipv4(&dns_ctx, &host[0], host.len, &ipv4[0] as &byte, 4, &ipv4_len);
+    const resolved_len: usize = resolve_result catch {
+        return Future<!i32>{ state: Poll<!i32>.Ready(error.InvalidRequest) };
+    };
+    if resolved_len != 4 || ipv4_len != 4 {
+        return Future<!i32>{ state: Poll<!i32>.Ready(error.InvalidRequest) };
+    }
     const socket_res: !i32 = sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     const fd: i32 = socket_res catch {
         return Future<!i32>{ state: Poll<!i32>.Ready(socket_res as! i32) };
     };
     var addr: [byte: 16] = [];
-    if host_is_localhost(host) {
-        fill_sockaddr_ipv4(127, 0, 0, 1, port, &addr[0] as &byte);
-    } else {
-        const ip_result: !Ipv4Addr = parse_ipv4(host);
-        const ip: Ipv4Addr = ip_result catch {
-            _ = sys_close(fd) catch {};
-            return Future<!i32>{ state: Poll<!i32>.Ready(error.InvalidRequest) };
-        };
-        fill_sockaddr_ipv4(ip.a, ip.b, ip.c, ip.d, port, &addr[0] as &byte);
-    }
+    fill_sockaddr_ipv4(ipv4[0], ipv4[1], ipv4[2], ipv4[3], port, &addr[0] as &byte);
     return Http1ConnectFuture{ fd: fd, addr: addr, nonblocking_ready: 0 };
 }
 

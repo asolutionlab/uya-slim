@@ -142,6 +142,31 @@ fn fill_loopback_url(out: &byte, out_len: usize, port: u16, path: &[byte]) usize
     return pos;
 }
 
+fn fill_localhost_url(out: &byte, out_len: usize, port: u16, path: &[byte]) usize {
+    var pos: usize = 0;
+    const head: &[byte] = &"http://localhost:"[0: 17];
+    var i: usize = 0;
+    while i < head.len {
+        if pos >= out_len {
+            return pos;
+        }
+        out[pos] = head.ptr[i];
+        pos = pos + 1;
+        i = i + 1;
+    }
+    pos = client_append_u16_dec_buf(out, pos, port);
+    i = 0;
+    while i < path.len {
+        if pos >= out_len {
+            return pos;
+        }
+        out[pos] = path.ptr[i];
+        pos = pos + 1;
+        i = i + 1;
+    }
+    return pos;
+}
+
 fn listen_loopback_server() !HttpServer {
     write_stderr_msg(&"listen:socket\n"[0: 14]);
     const fd: i32 = try sys_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -236,6 +261,41 @@ fn run_async_get_client(port: u16) void {
     sys_exit(0);
 }
 
+fn run_async_get_localhost_client(port: u16) void {
+    const url_buf_cap: usize = 64;
+    var url_buf: [byte: 64] = [];
+    const path: &[byte] = &"/hello"[0: 6];
+    const url_len: usize = fill_localhost_url(&url_buf[0] as &byte, url_buf_cap, port, path);
+    const url: &[byte] = url_buf[0: url_len];
+
+    const loop: LinuxEpoll = linux_epoll_create(0) catch {
+        write_stderr_msg(&"client:get:epoll\n"[0: 17]);
+        sys_exit(15);
+        return;
+    };
+    const fut: Future<!Http1AsyncResponse> = http1_async_get(url, null);
+    const out: !Http1AsyncResponse = block_on_with_event_loop<Http1AsyncResponse>(&loop, fut, 1000);
+    const resp: Http1AsyncResponse = out catch |err| {
+        write_stderr_msg(&"client:get:block_on\n"[0: 20]);
+        write_err_kind(&"client:get:block_on err="[0: 24], @error_id(err));
+        write_stderr_msg(&"\n"[0: 1]);
+        sys_exit(16);
+        return;
+    };
+    if resp.status != 200 {
+        write_stderr_msg(&"client:get:status\n"[0: 18]);
+        http1_async_response_free(&resp);
+        sys_exit(17);
+    }
+    if !response_has_subslice(resp.body, &"get-ok"[0: 6]) {
+        write_stderr_msg(&"client:get:body\n"[0: 16]);
+        http1_async_response_free(&resp);
+        sys_exit(18);
+    }
+    http1_async_response_free(&resp);
+    sys_exit(0);
+}
+
 fn run_async_post_client(port: u16) void {
     const url_buf_cap: usize = 64;
     var url_buf: [byte: 64] = [];
@@ -294,12 +354,6 @@ fn run_async_post_client(port: u16) void {
 }
 
 fn async_http1_get_server_roundtrip() !void {
-    var cfg: ServerConfig = ServerConfig{
-        mode: ServerMode.Blocking,
-        max_connections: 8,
-        port: 0,
-        host: [],
-    };
     const srv: HttpServer = try listen_loopback_server();
     const child_pid: i32 = fork();
     if child_pid == 0 {
@@ -317,6 +371,30 @@ fn async_http1_get_server_roundtrip() !void {
     try assert_eq_i32(pr.request.method as i32, Method.GET as i32);
     try assert_eq_i32(pr.request.path_len, 6);
     try assert_eq_i32(pr.request.body.len as i32, 0);
+    _ = http_send_response(sfd, Status.OK, &"get-ok"[0: 6]) catch {};
+    _ = sys_close(sfd);
+
+    wait_child_ok(child_pid);
+    http_server_close(&srv);
+}
+
+fn async_http1_get_localhost_roundtrip() !void {
+    const srv: HttpServer = try listen_loopback_server();
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        http_server_close(&srv);
+        run_async_get_localhost_client(srv.port);
+    }
+    if child_pid <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+
+    var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
+    const conn: Conn = try http_server_accept(&srv_tmp);
+    const sfd: i32 = conn.fd;
+    const pr: ParseResult = try http_recv_parse_request(sfd);
+    try assert_eq_i32(pr.request.method as i32, Method.GET as i32);
+    try assert_eq_i32(pr.request.path_len, 6);
     _ = http_send_response(sfd, Status.OK, &"get-ok"[0: 6]) catch {};
     _ = sys_close(sfd);
 
@@ -410,6 +488,14 @@ test "http1_async_get_loopback_roundtrip" {
         return;
     }
     try async_http1_get_server_roundtrip();
+}
+
+test "http1_async_get_localhost_roundtrip" {
+    if !http_loopback_tests_supported() {
+        write_stderr_msg(&"skip:http1_loopback\n"[0: 20]);
+        return;
+    }
+    try async_http1_get_localhost_roundtrip();
 }
 
 test "http1_async_post_loopback_roundtrip" {
