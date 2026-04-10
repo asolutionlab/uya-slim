@@ -1411,6 +1411,84 @@ fn dns_extract_cname(packet: &const byte, packet_len: usize, out: &byte, out_max
     return false;
 }
 
+// 在响应中查找 CNAME 目标对应的地址记录
+// 返回：true 表示找到并填充了地址，false 表示没找到
+fn dns_find_cname_target_address(packet: &const byte, packet_len: usize, cname_target: &[byte], qtype: u16, out: &byte, out_len: &usize) !bool {
+    if packet_len < DNS_HEADER_LEN {
+        return error.DnsInvalidPacket;
+    }
+    var cur: DnsCursor = dns_cursor_init(packet, packet_len);
+    cur.pos = DNS_HEADER_LEN;
+    const qdcount: usize = dns_u16_be(packet[4], packet[5]) as usize;
+    const ancount: usize = dns_u16_be(packet[6], packet[7]) as usize;
+    
+    // 跳过 Question 区
+    var i: usize = 0;
+    while i < qdcount {
+        try dns_read_name_skip(&cur);
+        try dns_cursor_skip(&cur, 4);
+        i = i + 1;
+    }
+    
+    // 在 Answer 区查找 CNAME 目标对应的地址记录
+    var a: usize = 0;
+    while a < ancount {
+        var name_buf: [byte: 256] = [0:256];
+        var name_len: usize = 0;
+        _ = dns_read_name(&cur, &name_buf[0], 256, &name_len) catch {
+            return error.DnsInvalidPacket;
+        };
+        const rtype: u16 = try dns_cursor_read_u16(&cur);
+        const rclass: u16 = try dns_cursor_read_u16(&cur);
+        _ = dns_cursor_read_u32(&cur) catch {
+            return error.DnsInvalidPacket;
+        };
+        const rdlen_u16: u16 = try dns_cursor_read_u16(&cur);
+        const rdlen: usize = rdlen_u16 as usize;
+        if cur.pos + rdlen > packet_len {
+            return error.DnsInvalidPacket;
+        }
+        
+        // 检查是否是 CNAME 目标的地址记录
+        if rclass == DNS_CLASS_IN && rtype == qtype {
+            // 比较记录名和 CNAME 目标
+            if name_len == cname_target.len && name_len < 256 {
+                var match_name: bool = true;
+                var j: usize = 0;
+                while j < name_len && j < 256 {
+                    if name_buf[j] != cname_target.ptr[j] {
+                        match_name = false;
+                        break;
+                    }
+                    j = j + 1;
+                }
+                if match_name {
+                    // 找到匹配的地址记录
+                    if qtype == DNS_RECORD_A && rdlen == 4 {
+                        out[0] = packet[cur.pos];
+                        out[1] = packet[cur.pos + 1];
+                        out[2] = packet[cur.pos + 2];
+                        out[3] = packet[cur.pos + 3];
+                        out_len[0] = 4;
+                        return true;
+                    } else if qtype == DNS_RECORD_AAAA && rdlen == 16 {
+                        var k: usize = 0;
+                        while k < 16 {
+                            out[k] = packet[cur.pos + k];
+                            k = k + 1;
+                        }
+                        out_len[0] = 16;
+                        return true;
+                    }
+                }
+            }
+        }
+        cur.pos = cur.pos + rdlen;
+        a = a + 1;
+    }
+    return false;
+}
+
 fn dns_query_follow_cname_with_ttl(ctx: &DnsClient, host: &[byte], depth: usize, qtype: u16, out: &byte, out_max: usize, out_len: &usize, ttl_out: &usize) !usize {
     if depth > 4 {
         return error.DnsInvalidPacket;
@@ -1438,6 +1516,14 @@ fn dns_query_follow_cname_with_ttl(ctx: &DnsClient, host: &[byte], depth: usize,
     if !found_cname || cname_len == 0 {
         return error.DnsNoSuchName;
     }
+    // 在同一个响应中查找 CNAME 目标对应的地址记录
+    var found_addr: bool = dns_find_cname_target_address(&resp[0], resp_len, cname_buf[0: cname_len], qtype, out, out_len) catch {
+        false;
+    };
+    if found_addr {
+        return out_len[0];
+    }
+    // 如果没找到，递归查询 CNAME 目标
     return dns_query_follow_cname_with_ttl(ctx, cname_buf[0: cname_len], depth + 1, qtype, out, out_max, out_len, ttl_out);
 }
 

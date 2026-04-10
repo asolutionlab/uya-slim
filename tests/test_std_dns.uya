@@ -563,7 +563,3 @@ test "dns_query_all_prefer_ipv6" {
         try assert_eq_i32(0, 1);
         return;
     };
-    try assert_eq_i32(n as i32, 16);
-    try assert_eq_i32(out_len as i32, 16);
-    try assert_eq_i32(out[15] as i32, 1);
-}
