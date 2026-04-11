@@ -124,6 +124,13 @@ var resp: HttpsResponse = https_get_insecure(&"example.com"[0], 11, 443, &"/"[0:
 - 证书有效期验证已添加框架，完整 ASN.1 时间解析待完善
 - 生产环境外网验证测试在 CI 中默认跳过，本地仍可直接验证 `example.com`
 
+### 客户端能力现状
+
+- 已完成：真实外站 HTTPS `GET` 已可直连，当前 `example.com` 生产测试不依赖 `curl` 桥接。
+- 部分完成：HTTP 方法枚举已包含 `POST` / `PUT` / `DELETE` / `HEAD`，但客户端侧公开 HTTPS API 当前主要仍是 `https_get()` / `https_get_insecure()`。
+- 未完成：响应 `Transfer-Encoding: chunked` 目前仍直接返回 `HttpChunkedNotSupported`。
+- 未完成：客户端连接池、持久连接复用、TLS 会话复用尚未实现；当前请求路径默认按单次连接处理。
+
 ## 相关文件
 
 - `lib/std/async_event.uya`
