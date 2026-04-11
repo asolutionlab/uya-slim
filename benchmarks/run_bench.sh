@@ -14,16 +14,16 @@ cd "$SCRIPT_DIR"
 
 UYA_BIN="${SCRIPT_DIR}/../bin/uya"
 GO_SRC="${SCRIPT_DIR}/http_bench.go"
-UYA_ASYNC_SRC="${SCRIPT_DIR}/http_bench_async.uya"
+UYA_FORK_SRC="${SCRIPT_DIR}/http_bench_fork.uya"
 UYA_ASYNC_EPOLL_SRC="${SCRIPT_DIR}/http_bench_async_epoll.uya"
-UYA_ASYNC_ENTRY="http_bench_async.uya"
+UYA_FORK_ENTRY="http_bench_fork.uya"
 UYA_ASYNC_EPOLL_ENTRY="http_bench_async_epoll.uya"
 C_SRC="${SCRIPT_DIR}/http_bench.c"
 export UYA_ROOT="${UYA_ROOT:-${SCRIPT_DIR}/../lib/}"
 
 # 编译输出
 GO_EXEC="/tmp/http_bench_go"
-UYA_ASYNC_EXEC="/tmp/http_bench_async"
+UYA_FORK_EXEC="/tmp/http_bench_fork"
 UYA_ASYNC_EPOLL_EXEC="/tmp/http_bench_async_epoll"
 C_EXEC="/tmp/http_bench_c"
 TOKIO_DIR="${SCRIPT_DIR}/http_bench_tokio"
@@ -87,28 +87,28 @@ parse_wrk() {
     echo "$req|$count|$dur|$p50|$p95|$p99|$rps"
 }
 
-# 编译 Uya async 版本
-build_uya_async() {
-    log_info "编译 Uya async HTTP 服务器..."
+# 编译 Uya fork 版本
+build_uya_fork() {
+    log_info "编译 Uya fork HTTP 服务器..."
     if [ ! -f "$UYA_BIN" ]; then
         log_err "找不到 Uya 编译器: $UYA_BIN"
         exit 1
     fi
-    if [ ! -f "$UYA_ASYNC_SRC" ]; then
-        log_err "找不到 Uya async 源文件: $UYA_ASYNC_SRC"
+    if [ ! -f "$UYA_FORK_SRC" ]; then
+        log_err "找不到 Uya fork 源文件: $UYA_FORK_SRC"
         exit 1
     fi
-    if ! "$UYA_BIN" build "$UYA_ASYNC_ENTRY" -o /tmp/http_bench_async.c --c99 >/tmp/uya_async_build.log 2>&1; then
-        log_err "Uya async 编译失败，日志:"
-        cat /tmp/uya_async_build.log >&2
+    if ! "$UYA_BIN" build "$UYA_FORK_ENTRY" -o /tmp/http_bench_fork.c --c99 >/tmp/uya_fork_build.log 2>&1; then
+        log_err "Uya fork 编译失败，日志:"
+        cat /tmp/uya_fork_build.log >&2
         exit 1
     fi
-    if ! cc -std=c99 -no-pie -O2 -fno-builtin -o "$UYA_ASYNC_EXEC" /tmp/http_bench_async.c -lm >/tmp/uya_async_cc.log 2>&1; then
-        log_err "Uya async C 编译失败，日志:"
-        cat /tmp/uya_async_cc.log >&2
+    if ! cc -std=c99 -no-pie -O2 -fno-builtin -o "$UYA_FORK_EXEC" /tmp/http_bench_fork.c -lm >/tmp/uya_fork_cc.log 2>&1; then
+        log_err "Uya fork C 编译失败，日志:"
+        cat /tmp/uya_fork_cc.log >&2
         exit 1
     fi
-    log_info "Uya async 版本编译完成: $UYA_ASYNC_EXEC"
+    log_info "Uya fork 版本编译完成: $UYA_FORK_EXEC"
 }
 
 # 编译 Uya async epoll 版本
@@ -213,8 +213,8 @@ run_benchmark() {
     parsed=$(parse_wrk "$output")
     IFS='|' read -r req count dur p50 p95 p99 rps <<< "$parsed"
 
-    # 清理服务器（Uya async 会 fork 子进程，需要用 pkill）
-    pkill -9 -f "http_bench_async" 2>/dev/null || true
+    # 清理服务器（Uya fork 会 fork 子进程，需要用 pkill）
+    pkill -9 -f "http_bench_fork" 2>/dev/null || true
     pkill -9 -f "http_bench_async_epoll" 2>/dev/null || true
     pkill -9 -f "http_bench_go" 2>/dev/null || true
     pkill -9 -f "http_bench_c" 2>/dev/null || true
@@ -288,7 +288,7 @@ run_keepalive_probe() {
     if [ -z "$failed" ]; then failed=0; fi
     if [ -z "$rps" ]; then rps=0; fi
 
-    pkill -9 -f "http_bench_async" 2>/dev/null || true
+    pkill -9 -f "http_bench_fork" 2>/dev/null || true
     pkill -9 -f "http_bench_async_epoll" 2>/dev/null || true
     pkill -9 -f "http_bench_go" 2>/dev/null || true
     pkill -9 -f "http_bench_c" 2>/dev/null || true
@@ -344,7 +344,7 @@ save_baseline() {
   },
   "results": {
     "root": {
-      "uya_async_qps": ${uya_root_rps:-0},
+      "uya_fork_qps": ${uya_root_rps:-0},
         "uya_async_epoll_qps": ${uya_epoll_root_rps:-0},
       "go_qps": ${go_root_rps:-0},
       "c_qps": ${c_root_rps:-0},
@@ -366,7 +366,7 @@ main() {
     check_dep go
 
     # 编译
-    build_uya_async
+    build_uya_fork
     build_uya_async_epoll
     build_go
     build_c
@@ -384,14 +384,14 @@ main() {
     echo "" | wrk -t1 -c1 -d2s "$URL" >/dev/null 2>&1 || true
 
     # 运行基准测试
-    local uya_result
+    local uya_fork_result
     local go_result
     local c_result
     local uya_epoll_result
     local tokio_result
     local tokio_rps=0
 
-    uya_result=$(run_benchmark_safe "Uya-async" "$UYA_ASYNC_EXEC" "$PORT" "$URL")
+    uya_fork_result=$(run_benchmark_safe "Uya-fork" "$UYA_FORK_EXEC" "$PORT" "$URL")
     sleep 1
     uya_epoll_result=$(run_benchmark_safe "Uya-async-epoll" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL")
     sleep 1
@@ -406,22 +406,22 @@ main() {
     fi
 
     # 提取 QPS
-    local uya_rps
+    local uya_fork_rps
     local go_rps
     local c_rps
     local uya_epoll_rps
-    uya_rps=$(echo "$uya_result" | awk -F'|' '{print $8}' | tr -d '\r\n ')
+    uya_fork_rps=$(echo "$uya_fork_result" | awk -F'|' '{print $8}' | tr -d '\r\n ')
     uya_epoll_rps=$(echo "$uya_epoll_result" | awk -F'|' '{print $8}' | tr -d '\r\n ')
     go_rps=$(echo "$go_result" | awk -F'|' '{print $8}' | tr -d '\r\n ')
     c_rps=$(echo "$c_result" | awk -F'|' '{print $8}' | tr -d '\r\n ')
-    if [ -z "$uya_rps" ]; then uya_rps=0; fi
+    if [ -z "$uya_fork_rps" ]; then uya_fork_rps=0; fi
     if [ -z "$uya_epoll_rps" ]; then uya_epoll_rps=0; fi
     if [ -z "$go_rps" ]; then go_rps=0; fi
     if [ -z "$c_rps" ]; then c_rps=0; fi
 
     echo ""
     log_info "Keep-Alive 对比（ab -k -n${AB_KEEPALIVE_REQUESTS} -c${AB_KEEPALIVE_CONCURRENCY}）"
-    local uya_ka_result
+    local uya_fork_ka_result
     local uya_epoll_ka_result
     local go_ka_result
     local c_ka_result
@@ -429,19 +429,19 @@ main() {
     local tokio_ka=0
     local tokio_ka_failed=0
     local tokio_ka_rps=0
-    local uya_ka
+    local uya_fork_ka
     local uya_epoll_ka
     local go_ka
     local c_ka
-    local uya_ka_failed
+    local uya_fork_ka_failed
     local uya_epoll_ka_failed
     local go_ka_failed
     local c_ka_failed
-    local uya_ka_rps
+    local uya_fork_ka_rps
     local uya_epoll_ka_rps
     local go_ka_rps
     local c_ka_rps
-    uya_ka_result=$(run_keepalive_probe_safe "Uya-async" "$UYA_ASYNC_EXEC" "$PORT" "$URL")
+    uya_fork_ka_result=$(run_keepalive_probe_safe "Uya-fork" "$UYA_FORK_EXEC" "$PORT" "$URL")
     uya_epoll_ka_result=$(run_keepalive_probe_safe "Uya-async-epoll" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL")
     go_ka_result=$(run_keepalive_probe_safe "Go" "$GO_EXEC" "$PORT" "$URL")
     c_ka_result=$(run_keepalive_probe_safe "C" "$C_EXEC" "$PORT" "$URL")
@@ -454,27 +454,27 @@ main() {
         if [ -z "$tokio_ka_failed" ]; then tokio_ka_failed=0; fi
         if [ -z "$tokio_ka_rps" ]; then tokio_ka_rps=0; fi
     fi
-    uya_ka=$(echo "$uya_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
+    uya_fork_ka=$(echo "$uya_fork_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
     uya_epoll_ka=$(echo "$uya_epoll_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
     go_ka=$(echo "$go_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
     c_ka=$(echo "$c_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
-    uya_ka_failed=$(echo "$uya_ka_result" | awk -F'|' '{print $3}' | tr -d '\r\n ')
+    uya_fork_ka_failed=$(echo "$uya_fork_ka_result" | awk -F'|' '{print $3}' | tr -d '\r\n ')
     uya_epoll_ka_failed=$(echo "$uya_epoll_ka_result" | awk -F'|' '{print $3}' | tr -d '\r\n ')
     go_ka_failed=$(echo "$go_ka_result" | awk -F'|' '{print $3}' | tr -d '\r\n ')
     c_ka_failed=$(echo "$c_ka_result" | awk -F'|' '{print $3}' | tr -d '\r\n ')
-    uya_ka_rps=$(echo "$uya_ka_result" | awk -F'|' '{print $4}' | tr -d '\r\n ')
+    uya_fork_ka_rps=$(echo "$uya_fork_ka_result" | awk -F'|' '{print $4}' | tr -d '\r\n ')
     uya_epoll_ka_rps=$(echo "$uya_epoll_ka_result" | awk -F'|' '{print $4}' | tr -d '\r\n ')
     go_ka_rps=$(echo "$go_ka_result" | awk -F'|' '{print $4}' | tr -d '\r\n ')
     c_ka_rps=$(echo "$c_ka_result" | awk -F'|' '{print $4}' | tr -d '\r\n ')
-    if [ -z "$uya_ka" ]; then uya_ka=0; fi
+    if [ -z "$uya_fork_ka" ]; then uya_fork_ka=0; fi
     if [ -z "$uya_epoll_ka" ]; then uya_epoll_ka=0; fi
     if [ -z "$go_ka" ]; then go_ka=0; fi
     if [ -z "$c_ka" ]; then c_ka=0; fi
-    if [ -z "$uya_ka_failed" ]; then uya_ka_failed=0; fi
+    if [ -z "$uya_fork_ka_failed" ]; then uya_fork_ka_failed=0; fi
     if [ -z "$uya_epoll_ka_failed" ]; then uya_epoll_ka_failed=0; fi
     if [ -z "$go_ka_failed" ]; then go_ka_failed=0; fi
     if [ -z "$c_ka_failed" ]; then c_ka_failed=0; fi
-    if [ -z "$uya_ka_rps" ]; then uya_ka_rps=0; fi
+    if [ -z "$uya_fork_ka_rps" ]; then uya_fork_ka_rps=0; fi
     if [ -z "$uya_epoll_ka_rps" ]; then uya_epoll_ka_rps=0; fi
     if [ -z "$go_ka_rps" ]; then go_ka_rps=0; fi
     if [ -z "$c_ka_rps" ]; then c_ka_rps=0; fi
@@ -482,29 +482,29 @@ main() {
     log_info "统一对比结果"
     echo "=========================================="
     if [ "$have_tokio" -eq 1 ]; then
-        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "指标" "Uya-async" "Uya-epoll" "Go" "C" "Tokio"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "指标" "Uya-fork" "Uya-epoll" "Go" "C" "Tokio"
         echo "|--------------------|--------------|--------------|--------------|--------------|--------------|"
-        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "QPS(wrk)" "${uya_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}" "${tokio_rps:-0}"
-        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-Req(ab -k)" "${uya_ka}" "${uya_epoll_ka}" "${go_ka}" "${c_ka}" "${tokio_ka}"
-        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-Failed" "${uya_ka_failed}" "${uya_epoll_ka_failed}" "${go_ka_failed}" "${c_ka_failed}" "${tokio_ka_failed}"
-        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-RPS(ab -k)" "${uya_ka_rps}" "${uya_epoll_ka_rps}" "${go_ka_rps}" "${c_ka_rps}" "${tokio_ka_rps}"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "QPS(wrk)" "${uya_fork_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}" "${tokio_rps:-0}"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-Req(ab -k)" "${uya_fork_ka}" "${uya_epoll_ka}" "${go_ka}" "${c_ka}" "${tokio_ka}"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-Failed" "${uya_fork_ka_failed}" "${uya_epoll_ka_failed}" "${go_ka_failed}" "${c_ka_failed}" "${tokio_ka_failed}"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-RPS(ab -k)" "${uya_fork_ka_rps}" "${uya_epoll_ka_rps}" "${go_ka_rps}" "${c_ka_rps}" "${tokio_ka_rps}"
     else
-        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "指标" "Uya-async" "Uya-epoll" "Go" "C"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "指标" "Uya-fork" "Uya-epoll" "Go" "C"
         echo "|--------------------|----------------|----------------|----------------|----------------|"
-        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "QPS(wrk)" "${uya_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}"
-        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "KA-Req(ab -k)" "${uya_ka}" "${uya_epoll_ka}" "${go_ka}" "${c_ka}"
-        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "KA-Failed" "${uya_ka_failed}" "${uya_epoll_ka_failed}" "${go_ka_failed}" "${c_ka_failed}"
-        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "KA-RPS(ab -k)" "${uya_ka_rps}" "${uya_epoll_ka_rps}" "${go_ka_rps}" "${c_ka_rps}"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "QPS(wrk)" "${uya_fork_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "KA-Req(ab -k)" "${uya_fork_ka}" "${uya_epoll_ka}" "${go_ka}" "${c_ka}"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "KA-Failed" "${uya_fork_ka_failed}" "${uya_epoll_ka_failed}" "${go_ka_failed}" "${c_ka_failed}"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "KA-RPS(ab -k)" "${uya_fork_ka_rps}" "${uya_epoll_ka_rps}" "${go_ka_rps}" "${c_ka_rps}"
     fi
     echo "=========================================="
 
     # 保存基线（如果指定）
     if [ "$1" = "--baseline" ]; then
-        save_baseline "$uya_rps" "$uya_epoll_rps" "$go_rps" "$c_rps" "${tokio_rps:-0}"
+        save_baseline "$uya_fork_rps" "$uya_epoll_rps" "$go_rps" "$c_rps" "${tokio_rps:-0}"
     fi
 
     # 清理
-    rm -f "$GO_EXEC" "$C_EXEC" "$UYA_ASYNC_EXEC" "$UYA_ASYNC_EPOLL_EXEC" "$TOKIO_EXEC"
+    rm -f "$GO_EXEC" "$C_EXEC" "$UYA_FORK_EXEC" "$UYA_ASYNC_EPOLL_EXEC" "$TOKIO_EXEC"
 
     log_info "基准测试完成"
 }

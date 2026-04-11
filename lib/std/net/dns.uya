@@ -1946,7 +1946,7 @@ export fn dns_client_query_all_async(ctx: &DnsClient, host: &const byte, host_le
     if ctx.prefer_family == DNS_PREFER_IPV6 {
         return dns_client_query_aaaa_async(ctx, host, host_len, out, out_max, out_len);
     }
-    return dns_query_all_future_new(ctx, host, host_len, out, out_max, out_len);
+    return dns_client_query_all_any_async(ctx, host, host_len, out, out_max, out_len);
 }
 
 export fn dns_client_query_a_with_tcp_fallback_packets(udp_packet: &const byte, udp_len: usize, tcp_packet: &const byte, tcp_len: usize, out: &byte, out_max: usize, out_len: &usize, ttl_out: &usize) !usize {
@@ -2274,6 +2274,8 @@ fn dns_tcp_future_new(ctx: &DnsClient, host: &const byte, host_len: usize, out: 
 
 struct DnsQueryTransportFuture : Future<!usize> {
     stage: i32,
+    soft_error: i32,
+    err_id_out: &u32,
     udp: DnsUdpFuture,
     tcp: DnsTcpFuture,
 
@@ -2290,12 +2292,20 @@ struct DnsQueryTransportFuture : Future<!usize> {
                         self.udp.truncated = 0;
                         self.stage = 1;
                     } else {
-                        const udp_n: usize = udp_result catch |err| {
-                            _ = err;
+                        if udp_result.error_id != 0 {
+                            if self.soft_error != 0 {
+                                self.err_id_out[0] = udp_result.error_id;
+                                return async_poll_ready_ok_usize(0);
+                            }
                             const p: Poll<!usize> = Poll<!usize>.Ready(udp_result);
                             return p;
-                        };
+                        }
+                        const udp_n: usize = udp_result.value;
                         if udp_n == 0 {
+                            if self.soft_error != 0 {
+                                self.err_id_out[0] = @error_id(error.DnsNoSuchName);
+                                return async_poll_ready_ok_usize(0);
+                            }
                             return dns_poll_ready_error(@error_id(error.DnsNoSuchName));
                         }
                         return async_poll_ready_ok_usize(udp_n);
@@ -2312,148 +2322,84 @@ struct DnsQueryTransportFuture : Future<!usize> {
                 },
                 .Ready(tcp_result) => {
                     if tcp_result.error_id != 0 {
+                        if self.soft_error != 0 {
+                            self.err_id_out[0] = tcp_result.error_id;
+                            return async_poll_ready_ok_usize(0);
+                        }
                         const p: Poll<!usize> = Poll<!usize>.Ready(tcp_result);
                         return p;
                     }
                     const tcp_n: usize = tcp_result.value;
                     if tcp_n == 0 {
+                        if self.soft_error != 0 {
+                            self.err_id_out[0] = @error_id(error.DnsNoSuchName);
+                            return async_poll_ready_ok_usize(0);
+                        }
                         return dns_poll_ready_error(@error_id(error.DnsNoSuchName));
                     }
                     return async_poll_ready_ok_usize(tcp_n);
                 },
             };
         }
+        if self.soft_error != 0 {
+            self.err_id_out[0] = @error_id(error.DnsUnsupported);
+            return async_poll_ready_ok_usize(0);
+        }
         return dns_poll_ready_error(@error_id(error.DnsUnsupported));
     }
 }
 
-fn dns_query_transport_future_new(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize, mode: i32) DnsQueryTransportFuture {
+fn dns_query_transport_future_new(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize, mode: i32, soft_error: i32, err_id_out: &u32) Future<!usize> {
     return DnsQueryTransportFuture{
         stage: 0,
+        soft_error: soft_error,
+        err_id_out: err_id_out,
         udp: dns_udp_future_new(ctx, host, host_len, out, out_max, out_len, mode),
         tcp: dns_tcp_future_new(ctx, host, host_len, out, out_max, out_len, mode),
     };
 }
 
-struct DnsQueryAllFuture : Future<!usize> {
-    ctx: &DnsClient,
-    host: &const byte,
-    host_len: usize,
-    out: &byte,
-    out_max: usize,
-    out_len: &usize,
-    stage: i32,
-    total: usize,
-    a_buf: [byte: 4],
-    a_len: usize,
-    a_err_id: u32,
-    a_started: i32,
-    a_fut: DnsQueryTransportFuture,
-    aaaa_buf: [byte: 16],
-    aaaa_len: usize,
-    aaaa_err_id: u32,
-    aaaa_started: i32,
-    aaaa_fut: DnsQueryTransportFuture,
-
-    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
-        if self.stage == 0 {
-            if self.a_started == 0 {
-                self.a_fut = dns_query_transport_future_new(self.ctx, self.host, self.host_len, &self.a_buf[0], 4, &self.a_len, DNS_RECORD_A as i32);
-                self.a_started = 1;
-            }
-            const a_poll: Poll<!usize> = self.a_fut.poll(waker);
-            match a_poll {
-                .Pending(_) => {
-                    const p: Poll<!usize> = Poll<!usize>.Pending({});
-                    return p;
-                },
-                .Ready(a_result) => {
-                    if a_result.error_id != 0 {
-                        self.a_err_id = a_result.error_id;
-                        self.stage = 1;
-                    } else {
-                        const a_n: usize = a_result.value;
-                        if a_n > 0 && self.total + a_n <= self.out_max {
-                            var i: usize = 0;
-                            while i < a_n && i < 4 && self.total + i < self.out_max {
-                                self.out[self.total + i] = self.a_buf[i];
-                                i = i + 1;
-                            }
-                            self.total = self.total + a_n;
-                        }
-                        self.stage = 1;
-                    }
-                },
-            };
+@async_fn fn dns_client_query_all_any_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
+    var total: usize = 0;
+    var a_buf: [byte: 4] = [0:4];
+    var a_len: usize = 0;
+    var a_err_id: u32 = 0;
+    const a_fut: Future<!usize> = dns_query_transport_future_new(ctx, host, host_len, &a_buf[0], 4, &a_len, DNS_RECORD_A as i32, 1, &a_err_id);
+    const a_n: usize = try @await a_fut;
+    if a_n > 0 && total + a_n <= out_max {
+        var i: usize = 0;
+        while i < a_n && i < 4 && total + i < out_max {
+            out[total + i] = a_buf[i];
+            i = i + 1;
         }
-        if self.stage == 1 {
-            if self.aaaa_started == 0 {
-                self.aaaa_fut = dns_query_transport_future_new(self.ctx, self.host, self.host_len, &self.aaaa_buf[0], 16, &self.aaaa_len, DNS_RECORD_AAAA as i32);
-                self.aaaa_started = 1;
-            }
-            const aaaa_poll: Poll<!usize> = self.aaaa_fut.poll(waker);
-            match aaaa_poll {
-                .Pending(_) => {
-                    const p: Poll<!usize> = Poll<!usize>.Pending({});
-                    return p;
-                },
-                .Ready(aaaa_result) => {
-                    if aaaa_result.error_id != 0 {
-                        self.aaaa_err_id = aaaa_result.error_id;
-                        self.stage = 2;
-                    } else {
-                        const aaaa_n: usize = aaaa_result.value;
-                        if aaaa_n > 0 && self.total + aaaa_n <= self.out_max {
-                            var j: usize = 0;
-                            while j < aaaa_n && j < 16 && self.total + j < self.out_max {
-                                self.out[self.total + j] = self.aaaa_buf[j];
-                                j = j + 1;
-                            }
-                            self.total = self.total + aaaa_n;
-                        }
-                        self.stage = 2;
-                    }
-                },
-            };
-        }
-        if self.stage == 2 {
-            if self.total == 0 {
-                if self.a_err_id != 0 && self.a_err_id != @error_id(error.DnsNoSuchName) {
-                    return dns_poll_ready_error(self.a_err_id);
-                }
-                if self.aaaa_err_id != 0 && self.aaaa_err_id != @error_id(error.DnsNoSuchName) {
-                    return dns_poll_ready_error(self.aaaa_err_id);
-                }
-                return dns_poll_ready_error(@error_id(error.DnsNoSuchName));
-            }
-            self.out_len[0] = self.total;
-            return async_poll_ready_ok_usize(self.total);
-        }
-        return dns_poll_ready_error(@error_id(error.DnsUnsupported));
+        total = total + a_n;
     }
-}
 
-fn dns_query_all_future_new(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) DnsQueryAllFuture {
-    return DnsQueryAllFuture{
-        ctx: ctx,
-        host: host,
-        host_len: host_len,
-        out: out,
-        out_max: out_max,
-        out_len: out_len,
-        stage: 0,
-        total: 0,
-        a_buf: [0:4],
-        a_len: 0,
-        a_err_id: 0,
-        a_started: 0,
-        a_fut: dns_query_transport_future_new(ctx, host, host_len, out, out_max, out_len, DNS_RECORD_A as i32),
-        aaaa_buf: [0:16],
-        aaaa_len: 0,
-        aaaa_err_id: 0,
-        aaaa_started: 0,
-        aaaa_fut: dns_query_transport_future_new(ctx, host, host_len, out, out_max, out_len, DNS_RECORD_AAAA as i32),
-    };
+    var aaaa_buf: [byte: 16] = [0:16];
+    var aaaa_len: usize = 0;
+    var aaaa_err_id: u32 = 0;
+    const aaaa_fut: Future<!usize> = dns_query_transport_future_new(ctx, host, host_len, &aaaa_buf[0], 16, &aaaa_len, DNS_RECORD_AAAA as i32, 1, &aaaa_err_id);
+    const aaaa_n: usize = try @await aaaa_fut;
+    if aaaa_n > 0 && total + aaaa_n <= out_max {
+        var j: usize = 0;
+        while j < aaaa_n && j < 16 && total + j < out_max {
+            out[total + j] = aaaa_buf[j];
+            j = j + 1;
+        }
+        total = total + aaaa_n;
+    }
+
+    if total == 0 {
+        if a_err_id != 0 && a_err_id != @error_id(error.DnsNoSuchName) {
+            return try dns_error_from_error_id(a_err_id);
+        }
+        if aaaa_err_id != 0 && aaaa_err_id != @error_id(error.DnsNoSuchName) {
+            return try dns_error_from_error_id(aaaa_err_id);
+        }
+        return error.DnsNoSuchName;
+    }
+    out_len[0] = total;
+    return total;
 }
 
 export fn dns_client_query_a_tcp_future(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
@@ -2477,11 +2423,13 @@ export fn dns_client_query_tcp_async(ctx: &DnsClient, host: &const byte, host_le
 }
 
 export fn dns_client_query_a_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
-    return dns_query_transport_future_new(ctx, host, host_len, out, out_max, out_len, DNS_RECORD_A as i32);
+    var dummy: u32 = 0;
+    return dns_query_transport_future_new(ctx, host, host_len, out, out_max, out_len, DNS_RECORD_A as i32, 0, &dummy);
 }
 
 export fn dns_client_query_aaaa_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {
-    return dns_query_transport_future_new(ctx, host, host_len, out, out_max, out_len, DNS_RECORD_AAAA as i32);
+    var dummy: u32 = 0;
+    return dns_query_transport_future_new(ctx, host, host_len, out, out_max, out_len, DNS_RECORD_AAAA as i32, 0, &dummy);
 }
 
 export fn dns_client_resolve_first_ipv6_async(ctx: &DnsClient, host: &const byte, host_len: usize, out: &byte, out_max: usize, out_len: &usize) Future<!usize> {

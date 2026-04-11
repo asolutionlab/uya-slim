@@ -300,6 +300,20 @@ else
     done < <(find "$TEST_DIR" -maxdepth 1 -name "*.uya" -type f -print0 2>/dev/null)
 fi
 
+# 优先级排序：把耗时/网络测试提到最前面，避免它们拖在最后才执行
+priority_names=("test_https_google" "test_std_thread")
+priority_items=()
+for name in "${priority_names[@]}"; do
+    for i in "${!TEST_FILES[@]}"; do
+        if [[ "${TEST_FILES[$i]}" == *"${name}.uya" ]]; then
+            priority_items+=("${TEST_FILES[$i]}")
+            unset 'TEST_FILES[i]'
+            break
+        fi
+    done
+done
+TEST_FILES=("${priority_items[@]}" "${TEST_FILES[@]}")
+
 link_generated_test_output() {
     local output_file="$1"
     local base_name="$2"
@@ -408,11 +422,19 @@ run_compiled_test_args() {
         return
     fi
 
-    "$exe_file" > /dev/null 2>&1 || exit_code=$?
-    if [ $exit_code -eq 0 ]; then
-        echo "PASS:$base_name:测试通过" > "$result_file"
+    local test_timeout="${UYA_TEST_TIMEOUT:-60}"
+    local run_exit=0
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "${test_timeout}s" "$exe_file" > /dev/null 2>&1 || run_exit=$?
     else
-        echo "FAIL:$base_name:测试失败（退出码: $exit_code）" > "$result_file"
+        "$exe_file" > /dev/null 2>&1 || run_exit=$?
+    fi
+    if [ $run_exit -eq 0 ]; then
+        echo "PASS:$base_name:测试通过" > "$result_file"
+    elif command -v timeout >/dev/null 2>&1 && [ $run_exit -eq 124 ]; then
+        echo "FAIL:$base_name:测试运行超时（>${test_timeout}s）" > "$result_file"
+    else
+        echo "FAIL:$base_name:测试失败（退出码: $run_exit）" > "$result_file"
     fi
 }
 
@@ -563,6 +585,21 @@ SKIP_TESTS=()
 if [ -n "${SKIP_TESTS_EXTRA:-}" ]; then
     read -r -a SKIP_TESTS_EXTRA_ARR <<< "$SKIP_TESTS_EXTRA"
     SKIP_TESTS+=("${SKIP_TESTS_EXTRA_ARR[@]}")
+fi
+
+# CI 或本地无外网时直接跳过访问外网的测试（比运行时检测更快，节省编译时间）
+if [ -n "${SKIP_NETWORK:-}" ] || [ "${ALLOW_SKIP_NETWORK:-}" = "1" ]; then
+    SKIP_TESTS+=(
+        test_https_google
+        test_https_real_site
+        test_https_debug
+        test_https_production
+        test_raw_tls
+    )
+    if [ "$ERRORS_ONLY" = false ]; then
+        echo "提示: 已跳过访问外网的测试（SKIP_NETWORK 或 ALLOW_SKIP_NETWORK 设置）"
+        echo ""
+    fi
 fi
 
 # macOS：在 syscall/osal/async Darwin 完成前默认跳过已知 Linux centric 用例（SKIP_DARWIN_DEFAULT=0 关闭）
@@ -779,16 +816,24 @@ if [ ${#single_tests[@]} -gt 0 ]; then
         sleep 0.1
         process_ready_single_results
         if [ ${#PENDING_RFS[@]} -gt 0 ]; then
-            local rf="${PENDING_RFS[0]}"
-            local bn="${PENDING_BNS[0]}"
-            if [ "$ERRORS_ONLY" = true ]; then
-                echo "测试: $bn"
+local first_idx=""
+            for i in "${!PENDING_RFS[@]}"; do
+                first_idx="$i"
+                break
+            done
+            if [ -n "$first_idx" ]; then
+                local rf="${PENDING_RFS[$first_idx]}"
+                local bn="${PENDING_BNS[$first_idx]}"
+                if [ "$ERRORS_ONLY" = true ]; then
+                    echo "测试: $bn"
+                fi
+                echo "  ❌ $bn:无测试结果或结果文件为空（子进程可能崩溃或未写入）"
+                FAILED=$((FAILED + 1))
+                rm -f "$rf"
+                unset 'PENDING_RFS[$first_idx]'
+                unset 'PENDING_BNS[$first_idx]'
             fi
-            echo "  ❌ $bn:无测试结果或结果文件为空（子进程可能崩溃或未写入）"
-            FAILED=$((FAILED + 1))
-            rm -f "$rf"
-            unset 'PENDING_RFS[0]'
-            unset 'PENDING_BNS[0]'
+
         fi
     done
     

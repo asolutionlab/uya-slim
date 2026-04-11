@@ -1,4 +1,4 @@
-// test_https_google.uya - 测试 Google HTTPS
+// test_https_google.uya - 测试 ping0.com HTTPS
 
 use tls.https;
 use libc.unistd;
@@ -18,18 +18,18 @@ fn allow_skip_network() bool {
 }
 
 export fn main() i32 {
-    debug(&"Testing Google HTTPS...\n"[0: 25]);
+    debug(&"Testing ping0.com HTTPS...\n"[0: 27]);
     if allow_skip_network() {
-        debug(&"skip:https_google\n"[0: 18]);
+        debug(&"skip:https_ping0\n"[0: 17]);
         return 0;
     }
-    
-    var host: [byte: 11] = "google.com";
-    var resp: HttpsResponse = https_get(&host[0], 10, 443, &"/"[0: 1]) catch {
-        debug(&"skip:https_google_unreachable\n"[0: 30]);
+
+    var host: [byte: 10] = "ping0.com";
+    var resp: HttpsResponse = https_get(&host[0], 9, 443, &"/"[0: 1]) catch {
+        debug(&"skip:https_ping0_unreachable\n"[0: 29]);
         return 0;
     };
-    
+
     debug(&"Success! Status="[0: 19]);
     // Print status
     if resp.status == 200 {

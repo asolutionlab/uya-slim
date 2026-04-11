@@ -328,22 +328,26 @@ struct AsyncFdWriteFuture : Future<!usize> {
     fd: i32,
     data: &const byte,
     count: usize,
+    nonblocking_ready: i32 = 0,
 
     fn poll(self: &Self, waker: &Waker) Poll<!usize> {
         _ = waker;
-        const flags_result: !i32 = sys_fcntl(self.fd, F_GETFL, 0);
-        const flags: i32 = flags_result catch {
-            const err_value: !usize = flags_result as! usize;
-            const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
-            return p;
-        };
-        if (flags & O_NONBLOCK) == 0 {
-            const set_result: !i32 = sys_fcntl(self.fd, F_SETFL, flags | O_NONBLOCK);
-            _ = set_result catch {
-                const err_value: !usize = set_result as! usize;
+        if self.nonblocking_ready == 0 {
+            const flags_result: !i32 = sys_fcntl(self.fd, F_GETFL, 0);
+            const flags: i32 = flags_result catch {
+                const err_value: !usize = flags_result as! usize;
                 const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
                 return p;
             };
+            if (flags & O_NONBLOCK) == 0 {
+                const set_result: !i32 = sys_fcntl(self.fd, F_SETFL, flags | O_NONBLOCK);
+                _ = set_result catch {
+                    const err_value: !usize = set_result as! usize;
+                    const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
+                    return p;
+                };
+            }
+            self.nonblocking_ready = 1;
         }
         const result: !isize = sys_write(self.fd, self.data as *const byte, self.count);
         const n: isize = result catch |err| {
@@ -365,22 +369,26 @@ struct AsyncFdReadFuture : Future<!usize> {
     fd: i32,
     buf: &byte,
     count: usize,
+    nonblocking_ready: i32 = 0,
 
     fn poll(self: &Self, waker: &Waker) Poll<!usize> {
         _ = waker;
-        const flags_result: !i32 = sys_fcntl(self.fd, F_GETFL, 0);
-        const flags: i32 = flags_result catch {
-            const err_value: !usize = flags_result as! usize;
-            const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
-            return p;
-        };
-        if (flags & O_NONBLOCK) == 0 {
-            const set_result: !i32 = sys_fcntl(self.fd, F_SETFL, flags | O_NONBLOCK);
-            _ = set_result catch {
-                const err_value: !usize = set_result as! usize;
+        if self.nonblocking_ready == 0 {
+            const flags_result: !i32 = sys_fcntl(self.fd, F_GETFL, 0);
+            const flags: i32 = flags_result catch {
+                const err_value: !usize = flags_result as! usize;
                 const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
                 return p;
             };
+            if (flags & O_NONBLOCK) == 0 {
+                const set_result: !i32 = sys_fcntl(self.fd, F_SETFL, flags | O_NONBLOCK);
+                _ = set_result catch {
+                    const err_value: !usize = set_result as! usize;
+                    const p: Poll<!usize> = Poll<!usize>.Ready(err_value);
+                    return p;
+                };
+            }
+            self.nonblocking_ready = 1;
         }
         const result: !isize = sys_read(self.fd, self.buf as *byte, self.count);
         const n: isize = result catch |err| {
