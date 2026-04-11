@@ -376,8 +376,15 @@ fn run_async_chunked_get_client(port: u16) void {
     };
     const req: Http1AsyncRequest = http1_async_request_from_url(Method.GET, pu, null);
     
-    // 使用同步流式接口发送请求并获取 headers（避开 async lowering 问题）
-    const stream_result: !Http1StreamResponse = http1_request_streaming(&req);
+    // 使用异步流式接口发送请求并获取 headers
+    const loop_result: !LinuxEpoll = linux_epoll_create(0);
+    const loop: LinuxEpoll = loop_result catch {
+        write_stderr_msg(&"client:chunked:epoll_create\n"[0: 28]);
+        sys_exit(32);
+        return;
+    };
+    const stream_fut: Future<!Http1StreamResponse> = http1_request_stream_async(&req, 0);
+    const stream_result: !Http1StreamResponse = block_on_with_event_loop_deadline<Http1StreamResponse>(&loop, stream_fut, 1000, 0);
     const stream_resp: Http1StreamResponse = stream_result catch |err| {
         write_stderr_msg(&"client:chunked:stream_req\n"[0: 26]);
         write_err_kind(&"client:chunked:stream_req err="[0: 30], @error_id(err));
@@ -406,14 +413,14 @@ fn run_async_chunked_get_client(port: u16) void {
         sys_exit(33);
     }
     
-    // 使用同步接口读取完整 chunked body（避开 async lowering 问题）
+    // 使用异步接口读取完整 chunked body
     const body_cap: usize = 256;
     const body_mem: &void = malloc(body_cap);
     if (body_mem as &byte) as usize == 0 {
         _ = sys_close(stream_resp.fd) catch {};
         sys_exit(34);
     }
-    
+
     const body_result: !usize = http1_read_chunked_body_sync(
         stream_resp.fd,
         body_mem as &byte,

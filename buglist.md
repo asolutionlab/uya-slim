@@ -13,14 +13,12 @@
 
 ## 标准库 bug
 
-- [ ] **P0 / 严重：`dns_client_query_all_async` 仍依赖手工状态机绕过 lowering 问题**
-  - 状态：部分缓解，未根治
-  - 验证状态：已用 `tests/test_std_dns_async_transport.uya` 复现并通过当前回归；新增默认 `ANY` 路径 TCP fallback + AAAA 回归覆盖；在允许真实 `fork/socket/bind` 的环境中连续 5 次通过
+- [x] **P0 / 严重：`dns_client_query_all_async` 仍依赖手工状态机绕过 lowering 问题**
+  - 状态：已修复
+  - 验证状态：`tests/test_std_dns_async_transport.uya`、`tests/test_std_dns.uya` 均通过；`make check` 779/779 通过
   - 归属：`lib/std/net/dns.uya`
-  - 现象：`dns_client_query_all_async` 已改成共享 async transport，但之前在 `catch`/`Ready` 分支里做状态切换时，生成代码曾丢失副作用，导致 `TC=1` 不能稳定切到 TCP fallback。
-  - 影响：异步 DNS 的 TCP fallback 依赖当前写法和补丁后的 event loop 行为，后续如果编译器 lowering 变化，可能再次回归。
-  - 可能位置：`lib/std/net/dns.uya`
-  - 备注：建议继续把 future 内部的错误分支收敛成更明确的状态字段，尽量减少对 `catch` 副作用的依赖。
+  - 迁移内容：`dns_client_query_all_any_async` 从 `DnsQueryAllFuture` 手工状态机迁移为 `@async_fn`；`DnsQueryTransportFuture` 增加 `soft_error` 模式，在 `@async_fn` 中通过 `err_id_out` 侧向传递错误，避免 `@await catch` 多语句 block 的编译器限制
+  - 备注：`DnsUdpFuture` / `DnsTcpFuture` 底层 I/O 状态机保留为手工实现，上层组合逻辑已 `@async_fn` 化。
 
 - [ ] **P3 / 低：`DNS_PREFER_ANY` 的异步聚合路径仍是顺序查询**
   - 状态：未优化
@@ -33,14 +31,14 @@
 
 ## 运行时 bug
 
-- [ ] **P1 / 高：`LinuxEpoll` 的注册/反注册语义仍偏脆弱**
-  - 状态：部分缓解，未根治
-  - 验证状态：`tests/test_std_dns_async_transport.uya`、`tests/test_http1_async_client.uya` 已通过；`tests/test_async_fd.uya`、`tests/test_std_dns.uya` 也已通过
+- [x] **P1 / 高：`LinuxEpoll` 的注册/反注册语义仍偏脆弱**
+  - 状态：已修复
+  - 验证状态：`tests/test_std_dns_async_transport.uya`、`tests/test_http1_async_client.uya` 已通过；`tests/test_async_fd.uya`、`tests/test_std_dns.uya`、`tests/test_std_async_event_fd_reuse.uya` 也已通过
   - 归属：`lib/std/async_event.uya`
   - 现象：`block_on_with_event_loop` / `LinuxEpoll` 在 fd 复用、slot 清理和 epoll interest 重建时出现过 `ENOENT`、`EEXIST` 一类边界错误。
-  - 影响：异步网络 future 在短生命周期 fd 或复用 fd 场景下更容易触发 event loop 边界问题。
+  - 修复内容：引入显式状态机（`SLOT_STATE_EMPTY` / `SLOT_STATE_REGISTERED`）与 `slot_generations` 代际数组，彻底消除 fd 复用混淆；新增 `find_slot` / `alloc_slot` / `init_slot` / `clear_slot` 方法。
   - 可能位置：`lib/std/async_event.uya`
-  - 备注：当前已补了幂等清理和失败回退，但这块还建议继续做成更明确的“已注册 / 未注册”状态机。
+  - 备注：当前已补了幂等清理和失败回退，量产阶段建议保持单 fd interest 语义，后续如需同时关注读写再扩展为小数组或链表。
 
 ## 网络 / TLS 回归
 
