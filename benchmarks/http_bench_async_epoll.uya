@@ -1,6 +1,6 @@
-// benchmarks/http_bench_async_epoll.uya — 多进程 epoll + @async_fn + AsyncFd 的 HTTP 压测服务端
+// benchmarks/http_bench_async_epoll.uya — 多线程 epoll + @async_fn + AsyncFd 的 HTTP 压测服务端
 //
-// 与 http_bench_fork.uya（多进程阻塞 accept）不同：本文件为多 reactor（进程数 = CPU 核心数）、
+// 与 http_bench_fork.uya（多进程阻塞 accept）不同：本文件为多 reactor（线程数 = CPU 核心数）、
 // 固定槽位复用，每个连接用 @async_fn 状态机 + try @await AsyncFd 读/写。
 //
 // 路由（首版）：GET / → plaintext "hello"；GET /json → {"ok":true}；Keep-Alive / Connection: close 与简易 bench 行为一致。
@@ -403,13 +403,16 @@ struct BenchContext {
     },
 }
 
-fn bench_worker_process() void {
+use libc.pthread;
+
+fn bench_worker_thread(_arg: &void) &void {
     const ptr: &BenchContext = malloc(@size_of(BenchContext)) as &BenchContext;
     if ptr == null as &BenchContext {
-        return;
+        return null as &void;
     }
     _ = memset(ptr as *byte, 0, @size_of(BenchContext));
     _ = ptr.run();
+    return null as &void;
 }
 
 fn bench_write_all(cfd: i32, data: &const byte, len: usize) bool {
@@ -942,28 +945,26 @@ export fn main() i32 {
     _ = signal(SIGPIPE, SIG_IGN as &void);
 
     const cpu_count: i64 = sysconf(_SC_NPROCESSORS_ONLN);
-    var n_workers: i32 = cpu_count as i32;
-    if n_workers <= 0 { n_workers = 1; }
-    if n_workers > 64 { n_workers = 64; }
+    var n_threads: i32 = cpu_count as i32;
+    if n_threads <= 0 { n_threads = 1; }
+    if n_threads > 64 { n_threads = 64; }
 
+    var threads: [pthread_t: 64] = [];
     var i: i32 = 1;
-    while i < n_workers && i < 64 {
-        const pid_r: !i64 = sys_fork();
-        if pid_r.error_id != 0 { i = i + 1; continue; }
-        const pid: i64 = pid_r.value;
-        if pid == 0 {
-            bench_worker_process();
-            return 0;
+    while i < n_threads && i < 64 {
+        const ret: i32 = pthread_create(&threads[i], null as &const pthread_attr_t, &bench_worker_thread as &void, null as &void);
+        if ret != 0 {
+            return 1;
         }
         i = i + 1;
     }
 
-    bench_worker_process();
+    _ = bench_worker_thread(null as &void);
 
-    var status: i32 = 0;
-    while true {
-        const wr: !i32 = sys_waitpid(-1, &status, 0);
-        if wr.error_id != 0 { break; }
+    i = 1;
+    while i < n_threads && i < 64 {
+        _ = pthread_join(&threads[i], null as &&void);
+        i = i + 1;
     }
     return 0;
 }

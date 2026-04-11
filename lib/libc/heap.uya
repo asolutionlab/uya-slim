@@ -116,7 +116,8 @@ fn add_free(chunk: &FreeChunk) void {
 fn morecore(needed: usize) &ChunkHeader {
     var alloc_size: usize = needed + @size_of(ChunkHeader);
     if alloc_size < HEAP_PAGE_SIZE { alloc_size = HEAP_PAGE_SIZE; }
-    const map_size: usize = alloc_size + @size_of(HeapRegion);
+    const region_size_aligned: usize = ((@size_of(HeapRegion) + MALLOC_ALIGN - 1) / MALLOC_ALIGN) * MALLOC_ALIGN;
+    const map_size: usize = alloc_size + region_size_aligned;
 
     const result: !i64 = @syscall(SYS_mmap, 0, map_size as i64,
                                   PROT_READ | PROT_WRITE,
@@ -125,7 +126,7 @@ fn morecore(needed: usize) &ChunkHeader {
     if ptr < 0 { return null; }
 
     var region: &HeapRegion = (ptr as &HeapRegion);
-    var hdr: &ChunkHeader = (((ptr as &byte) + @size_of(HeapRegion)) as &ChunkHeader);
+    var hdr: &ChunkHeader = (((ptr as &byte) + region_size_aligned) as &ChunkHeader);
     hdr.magic = CHUNK_MAGIC;
     hdr.size = alloc_size;
     set_free(hdr, true);
