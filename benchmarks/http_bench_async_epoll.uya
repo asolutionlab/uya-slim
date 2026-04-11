@@ -349,7 +349,10 @@ struct BenchContext {
         };
         self.listen_waker = Waker{};
         const loop: EventLoop = self.epoll;
-        _ = try loop.register(lfd, EventKind.Readable({}), &self.listen_waker);
+        const reg_result: !i32 = loop.register(lfd, EventKind.Readable({}), &self.listen_waker);
+        _ = reg_result catch {
+            return reg_result as! void;
+        };
     },
 
     fn run_once_single(self: &Self) i32 {
@@ -679,8 +682,8 @@ fn build_http_ok_response(
 }
 
 fn bench_poll_ready_ok(value: usize) Poll<!usize> {
-    const ok_value: !usize = ok<usize>(value);
-    return Poll<!usize>.Ready(ok_value);
+    const p: Poll<!usize> = poll_ready_ok<usize>(value);
+    return p;
 }
 
 struct BenchClientFuture : Future<!usize> {

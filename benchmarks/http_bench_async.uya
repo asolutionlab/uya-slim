@@ -186,7 +186,7 @@ fn fmt_usize(buf: &byte, n: usize) usize {
     var t: usize = 0;
     var x: usize = n;
     while x > 0 {
-        tmp[t] = ((x % 10) as u32 + 48) as byte;
+        tmp[t] = (((x % 10) as u32 + 48) as! byte).value;
         t = t + 1;
         x = x / 10;
     }
@@ -444,8 +444,8 @@ fn main_loop() void {
     var addr: [byte: 16] = [];
     addr[0] = 2;
     addr[1] = 0;
-    addr[2] = ((PORT >> 8) & 0xff) as byte;
-    addr[3] = (PORT & 0xff) as byte;
+    addr[2] = (((PORT >> 8) & (0xff as u16)) as! byte).value;
+    addr[3] = ((PORT & (0xff as u16)) as! byte).value;
     addr[4] = 127;
     addr[7] = 1;
     const br: !i32 = sys_bind(listen_fd, &addr[0] as &void, 16);
@@ -469,8 +469,8 @@ fn main_loop() void {
             _ = sys_setsockopt(listen_fd2, 1, 15, &reuse2 as &void, 4);
             var addr2: [byte: 16] = [];
             addr2[0] = 2; addr2[1] = 0;
-            addr2[2] = ((PORT >> 8) & 0xff) as byte;
-            addr2[3] = (PORT & 0xff) as byte;
+            addr2[2] = (((PORT >> 8) & (0xff as u16)) as! byte).value;
+            addr2[3] = ((PORT & (0xff as u16)) as! byte).value;
             addr2[4] = 127; addr2[7] = 1;
             const br2: !i32 = sys_bind(listen_fd2, &addr2[0] as &void, 16);
             if br2.error_id != 0 { close_fd(listen_fd2); return; }
@@ -515,8 +515,8 @@ fn run_once() void {
     var addr: [byte: 16] = [];
     addr[0] = 2;
     addr[1] = 0;
-    addr[2] = ((PORT >> 8) & 0xff) as byte;
-    addr[3] = (PORT & 0xff) as byte;
+    addr[2] = (((PORT >> 8) & (0xff as u16)) as! byte).value;
+    addr[3] = ((PORT & (0xff as u16)) as! byte).value;
     addr[4] = 127;
     addr[7] = 1;
     _ = sys_bind(listen_fd, &addr[0] as &void, 16);
