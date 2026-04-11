@@ -2,6 +2,8 @@
 
 use tls.common;
 use tls.x509.asn1;
+use libc.TimeVal;
+use libc.sys_gettimeofday;
 
 // 证书解析结果：持有 TBSCertificate 区间、签名、RSA 公钥及部分扩展，用于链验证
 export struct Cert {
@@ -429,18 +431,11 @@ fn cert_is_leap_year(year: i64) bool {
 
 // 获取当前 Unix 时间戳
 fn get_current_unix_time() i64 {
-    var tv: Timeval = Timeval{};
+    var tv: TimeVal = TimeVal{};
     const res: !i32 = sys_gettimeofday(&tv, null as &void);
     res catch { return 0; };
     return tv.tv_sec;
 }
-
-struct Timeval {
-    tv_sec: i64,
-    tv_usec: i64,
-}
-
-export extern "c" fn sys_gettimeofday(tv: &Timeval, tz: &void) i32;
 
 // 解析证书有效期（从 TBSCertificate 中）
 export fn cert_parse_validity(cert: &Cert) !void {
