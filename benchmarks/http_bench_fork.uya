@@ -1,7 +1,7 @@
-// benchmarks/http_bench_async.uya — 简化版 epoll HTTP 服务器
+// benchmarks/http_bench_fork.uya — 多进程阻塞 accept HTTP 服务器
 //
 // 构建：
-//   bin/uya build benchmarks/http_bench_async.uya -o /tmp/http_bench_async.c --c99 && cc -std=c99 -no-pie -O2 -o /tmp/http_bench_async /tmp/http_bench_async.c -lm
+//   bin/uya build benchmarks/http_bench_fork.uya -o /tmp/http_bench_fork.c --c99 && cc -std=c99 -no-pie -O2 -o /tmp/http_bench_fork /tmp/http_bench_fork.c -lm
 
 use libc.syscall;
 use libc.signal;

@@ -1,7 +1,7 @@
-// benchmarks/http_bench_async_epoll.uya — 单线程 epoll + @async_fn + AsyncFd 的 HTTP 压测服务端
+// benchmarks/http_bench_async_epoll.uya — 多线程 epoll + @async_fn + AsyncFd 的 HTTP 压测服务端
 //
-// 与 http_bench_async.uya（多进程阻塞 accept）不同：本文件为单 reactor、固定槽位复用，
-// 每个连接用 @async_fn 状态机 + try @await AsyncFd 读/写。
+// 与 http_bench_fork.uya（多进程阻塞 accept）不同：本文件为多 reactor（线程数 = CPU 核心数）、
+// 固定槽位复用，每个连接用 @async_fn 状态机 + try @await AsyncFd 读/写。
 //
 // 路由（首版）：GET / → plaintext "hello"；GET /json → {"ok":true}；Keep-Alive / Connection: close 与简易 bench 行为一致。
 //
@@ -17,6 +17,7 @@ use libc.mem;
 use libc.syscall;
 use libc.errno;
 use libc.signal;
+use libc.pthread;
 use std.runtime.get_argc;
 use std.runtime.get_argv;
 use std.runtime.entry.set_process_stack_limit_bytes;
@@ -31,6 +32,9 @@ const SLOT_READ_CAP: usize = 4096;
 const MAX_PATH_LEN: usize = 256;
 const SIGPIPE: i32 = 13;
 const SIG_IGN: usize = 1;
+const _SC_NPROCESSORS_ONLN: i32 = 84;
+
+extern "libc" fn sysconf(name: i32) i64;
 
 struct BenchSlot {
     /// 使用 `Future<!usize>` 以便与 `try @await async_fd_*`（`Future<!usize>`）在同一状态机内一致；完成时载荷为 0。
@@ -329,6 +333,7 @@ struct BenchContext {
         self.listen_fd = lfd;
         var one: i32 = 1;
         _ = try sys_setsockopt(lfd, SOL_SOCKET, SO_REUSEADDR, &one as &void, 4);
+        _ = try sys_setsockopt(lfd, SOL_SOCKET, SO_REUSEPORT, &one as &void, 4);
         var addr: [byte: 16] = [];
         addr[0] = 2;
         addr[1] = 0;
@@ -398,8 +403,15 @@ struct BenchContext {
     },
 }
 
-var g_ctx: BenchContext = BenchContext{};
-
+fn bench_worker_thread(_arg: &void) &void {
+    const ptr: &BenchContext = malloc(@size_of(BenchContext)) as &BenchContext;
+    if ptr == null as &BenchContext {
+        return null as &void;
+    }
+    _ = memset(ptr as *byte, 0, @size_of(BenchContext));
+    _ = ptr.run();
+    return null as &void;
+}
 
 fn bench_write_all(cfd: i32, data: &const byte, len: usize) bool {
     var off: usize = 0;
@@ -929,5 +941,28 @@ fn handle_bench_client(ctx: &BenchContext, cfd: i32, slot: usize) Future<!usize>
 export fn main() i32 {
     set_process_stack_limit_bytes(BENCH_MAIN_STACK_BYTES);
     _ = signal(SIGPIPE, SIG_IGN as &void);
-    return g_ctx.run();
+
+    const cpu_count: i64 = sysconf(_SC_NPROCESSORS_ONLN);
+    var n_threads: i32 = cpu_count as i32;
+    if n_threads <= 0 { n_threads = 1; }
+    if n_threads > 64 { n_threads = 64; }
+
+    var threads: [pthread_t: 64] = [];
+    var i: i32 = 1;
+    while i < n_threads && i < 64 {
+        const ret: i32 = pthread_create(&threads[i], null as &const pthread_attr_t, &bench_worker_thread as &void, null as &void);
+        if ret != 0 {
+            return 1;
+        }
+        i = i + 1;
+    }
+
+    _ = bench_worker_thread(null as &void);
+
+    i = 1;
+    while i < n_threads && i < 64 {
+        _ = pthread_join(&threads[i], null as &&void);
+        i = i + 1;
+    }
+    return 0;
 }
