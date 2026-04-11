@@ -98,9 +98,12 @@
    - `https_get()`：生产环境安全（默认启用证书验证）
    - `https_get_insecure()`：测试用途（跳过验证）
    - 自动加载系统根证书（支持 Debian/Ubuntu、RHEL/CentOS、macOS）
+   - PEM 证书链解析和 Base64 解码已可用
+   - 标准 Base64 / Base64URL 能力已提取到 `lib/std/encoding/base64.uya`
 
 3. **生产环境测试**
    - 新增 `tests/test_https_production.uya`：验证生产环境配置
+   - GitHub CI / 通用 CI 环境下自动跳过外网访问，仅保留本地信任存储检查
 
 ### 使用示例
 
@@ -118,13 +121,13 @@ var resp: HttpsResponse = https_get_insecure(&"example.com"[0], 11, 443, &"/"[0:
 
 ### 已知限制
 
-- 系统根证书 PEM 解析目前为占位实现，完整 Base64 解码待补充
 - 证书有效期验证已添加框架，完整 ASN.1 时间解析待完善
-- 生产环境使用前建议预加载根证书到 `TrustStore`
+- 生产环境外网验证测试在 CI 中默认跳过，本地仍可直接验证 `example.com`
 
 ## 相关文件
 
 - `lib/std/async_event.uya`
+- `lib/std/encoding/base64.uya` (新增)
 - `lib/std/net/dns.uya`
 - `lib/tls/x509/trust_store.uya` (新增)
 - `lib/tls/x509/cert.uya`
@@ -138,6 +141,7 @@ var resp: HttpsResponse = https_get_insecure(&"example.com"[0], 11, 443, &"/"[0:
 - `tests/test_https_loopback.uya`
 - `tests/test_https_real_site.uya`
 - `tests/test_https_production.uya` (新增)
+- `tests/test_std_base64.uya` (新增)
 - `tests/test_raw_tls.uya`
 - `tests/test_tcp_basic.uya`
 - `tests/test_async_transport_fallthrough.uya`
