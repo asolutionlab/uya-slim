@@ -48,10 +48,14 @@
   - 状态：已修复，测试通过
   - 验证状态：2026-04-11 已修复 `test_https_real_site` 与 `test_raw_tls` 的编译问题；两个测试现均已通过
   - 归属：整体验收
-  - 现象：`test_raw_tls.uya` 存在语法错误（catch 块内使用表达式语法不正确），清理缓存后两者均可正常编译运行
+  - 现象：
+    1. `test_raw_tls.uya` 存在语法错误（catch 块内使用表达式语法不正确）
+    2. GitHub CI 环境下无法连接外部网络，导致网络测试失败
   - 修复内容：
-    - `test_raw_tls.uya`：修正 catch 块语法，使用 `0 as isize;` 替代错误的表达式语法
-  - 影响：release 流程不再被这两个测试阻塞
+    - `test_raw_tls.uya`：修正 catch 块语法，使用 `0 as isize;` 替代错误的表达式语法；添加 allow_skip_network 检查
+    - `test_https_real_site.uya`：修复 O_RDONLY 导入（添加 fcntl），网络失败时返回 0 而非 1
+    - `test_https_debug.uya`：添加 allow_skip_network 检查，网络失败时返回 0 而非 1
+  - 影响：release 流程不再被这些测试阻塞，CI 环境下网络测试会优雅跳过
 
 ## 编译器 bug
 
