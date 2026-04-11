@@ -168,12 +168,11 @@ export struct LinuxEpoll : EventLoop {
     /// - 清理内部 slot 状态
     /// - 容错：ENOENT/EBADF 视为已注销，不报错
     fn deregister(self: &Self, fd: i32) !i32 {
-        var ev: EpollEvent = EpollEvent{ events: 0 as u32, _pad: 0, data: 0 as u64 };
-        const mod_result: !i32 = sys_epoll_ctl(self.epfd, EPOLL_CTL_MOD, fd, &ev);
-        if mod_result.error_id != 0 {
-            const eid: i32 = mod_result.error_id as i32;
+        const del_result: !i32 = sys_epoll_ctl(self.epfd, EPOLL_CTL_DEL, fd, null);
+        if del_result.error_id != 0 {
+            const eid: i32 = del_result.error_id as i32;
             if eid != ENOENT && eid != EBADF {
-                return mod_result as! i32;
+                return del_result as! i32;
             }
         }
         // 清理 slot
