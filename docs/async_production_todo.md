@@ -79,9 +79,10 @@
     - 同步读取 chunked body 接口 `http1_read_chunked_body_sync` 已可用（避开 async lowering 问题）。
   - 验收：chunked loopback、content-length、read-until-eof 三条路径均有测试。
 
-- [ ] 给 HTTP/DNS/TLS 主链路增加 timeout 策略。
+- [~] 给 HTTP/DNS/TLS 主链路增加 timeout 策略。
   - 优先级：connect timeout、read timeout、write timeout、DNS query timeout、TLS handshake timeout。
-  - 当前状态：DNS TCP 查询已有 `deadline_ms` 支持，其他路径待补齐。
+  - 采用 deadline-based 策略：`deadline_ms = now_ms() + timeout_ms`，在每个 I/O 边界检查是否过期。
+  - **已完成实现但被编译器 bug 阻塞**，详见下方"超时策略实现详情"。
   - 验收：连接拒绝、服务端不响应、服务端半关闭不导致无限等待或 busy-wait。
 
 - [x] 完善 HTTPS 生产限制。
@@ -137,8 +138,114 @@
 - ✅ 核心 async 运行时（`LinuxEpoll`、`Waker`、`AsyncFd`）
 
 **进行中/待完成**：
-- [ ] 完整 timeout 策略实现（HTTP/DNS/TLS）
+- [~] 完整 timeout 策略实现（HTTP/DNS/TLS）— 已实现但被 `@async_fn` 变量提升 bug 阻塞
 - [ ] DNS 从手工状态机迁移到 `@async_fn`
 - [ ] HTTP chunked 异步读取（当前为同步实现）
 - [ ] 长时稳定性测试（30 分钟压力测试）
 - [ ] 文档同步更新
+
+---
+
+## 超时策略实现详情（2026-04-11）
+
+### 设计
+
+采用 **deadline-based** 超时策略：请求开始时计算绝对截止时间 `deadline_ms = now_ms() + timeout_ms`，在每个 I/O 边界检查 `now >= deadline_ms`。`timeout_ms = 0` 表示不超时（无限等待）。
+
+### 已修改文件
+
+#### 1. `lib/std/http/http1_async.uya`（主要改动）
+
+- 新增 `export error HttpTimeout;`
+- 新增 7 个本地时间辅助函数（避免跨模块 `time.xxx` 在 `@async_fn` 中的编译器 bug）：
+  - `http_now_ms() !u64` — 基于 `sys_gettimeofday`
+  - `http_deadline_after_ms(timeout_ms) !u64`
+  - `http_deadline_expired(deadline_ms) !bool`
+  - `http_deadline_remaining_ms(deadline_ms) !i32`
+  - `http_deadline_expired_or_false(deadline_ms) bool` — 出错返回 false
+  - `http_deadline_remaining_or_neg1(deadline_ms) i32` — 出错返回 -1
+  - `http_check_deadline(deadline_ms) !void` — 过期返回 `error.HttpTimeout`
+- `Http1ConnectFuture` 增加 `deadline_ms: u64` 字段，`poll()` 中检查超时
+- 修改函数签名（增加 `timeout_ms: u32`）：
+  - `http1_request_async(req, timeout_ms)` — `@async_fn`
+  - `http1_request_blocking(req, timeout_ms)`
+  - `http1_async_get(url, req, timeout_ms)` — `@async_fn`
+  - `http1_async_post(url, req, timeout_ms)` — `@async_fn`
+- `http1_connect_for_host_future(host, port, deadline_ms)` — DNS 查询超时从剩余 deadline 派生
+- `http1_request_blocking` — 使用 `block_on_with_event_loop_deadline`
+- ⚠️ `http1_request_async` 中的 `try http_check_deadline(deadline_ms)` 调用全部被注释掉（行 846、856、912、931），因触发 `@async_fn` 变量提升 bug
+
+#### 2. `lib/std/async_scheduler.uya`
+
+- 新增本地时间辅助函数：`sched_now_ms()`, `sched_deadline_expired()`, `sched_deadline_remaining_ms()`
+- 新增 `block_on_with_event_loop_deadline<T>(loop, f, timeout_ms, deadline_ms)` — 带总超时保护的 block_on
+- `block_on_with_event_loop` 保持独立实现（不调用 deadline 版本），避免泛型实例化顺序 bug
+
+#### 3. `lib/tls/https.uya`
+
+- 新增本地时间辅助函数：`https_now_ms()`, `https_deadline_after_ms()`, `https_deadline_expired()`
+- 新增 socket 超时函数：`https_socket_set_recv_timeout(fd, ms)`, `https_socket_set_send_timeout(fd, ms)` — 使用 `setsockopt(SO_RCVTIMEO/SO_SNDTIMEO)`
+- 新增 `HttpsClientConfig` 结构体：含 `verify_server_cert`, `verify_hostname`, `trust_store`, `timeout_ms`
+- 新增 `https_client_config_default()`, `https_client_config_insecure()`, `https_get_with_config()`
+- `https_get_internal()` 改为接受 `&HttpsClientConfig`，设置 socket 超时，在 connect/handshake 后检查 deadline
+- `https_get()` 和 `https_get_insecure()` 改为使用配置对象
+
+#### 4. `lib/std/time.uya`（已创建但未使用）
+
+- 提供 `now_ms()`, `deadline_after_ms()`, `deadline_expired()`, `deadline_remaining_ms()` 通用时间工具
+- 因跨模块 `time.xxx` 在 `@async_fn` 中存在编译器 bug，各模块改为本地重复实现
+
+#### 5. `tests/test_http1_async_client.uya`
+
+- 所有 `http1_async_get`/`http1_async_post` 调用已更新为 3 参数版本（增加 `timeout_ms`）
+
+### 超时覆盖范围
+
+| 阶段 | HTTP (async) | HTTPS (sync) | 实现方式 |
+|------|-------------|-------------|---------|
+| DNS 查询 | ✅ | ✅ | 从 deadline 计算剩余时间作为 DNS timeout |
+| TCP 连接 | ✅ | ❌（阻塞 connect） | `Http1ConnectFuture.poll()` 中检查 deadline |
+| TLS 握手 | N/A | ✅ | handshake 前后检查 deadline |
+| Socket 读 | ❌（TODO） | ✅ | HTTPS: `SO_RCVTIMEO`；HTTP: `http_check_deadline` 被注释 |
+| Socket 写 | ❌（TODO） | ✅ | HTTPS: `SO_SNDTIMEO`；HTTP: 未添加 |
+| 读 body 循环 | ❌（TODO） | N/A | `http_check_deadline` 被注释 |
+| EventLoop 层 | ✅ | N/A | `block_on_with_event_loop_deadline` 检查 deadline |
+
+### 🔴 阻塞问题：`@async_fn` 变量提升 bug
+
+**现象**：在 `http1_request_async`（`@async_fn`）中，添加 `try http_check_deadline(deadline_ms)` 调用后，编译器生成的 C 代码中 `copied` 局部变量未被正确提升到状态机结构体，导致 C 编译报错 `'copied' undeclared`。
+
+**根因**：`@async_fn` 的状态机转换（lowering）在遇到更多 await 点或 error-union-returning 函数调用时，变量提升逻辑出错——跨 await 点使用的局部变量（如 `copied`）未被正确识别并提升为状态机字段。
+
+**临时绕过**：`http1_request_async` 中的 `http_check_deadline` 调用全部注释掉。HTTP async 路径在 I/O 等待期间无主动超时检查，只能依赖 `block_on_with_event_loop_deadline` 在 EventLoop 层的被动检查。
+
+**修复方向**：修改编译器 `src/` 中的 `@async_fn` lowering 代码，确保所有跨 await 点的局部变量都被正确提升。
+
+### 🟡 次要问题
+
+1. **跨模块 `time.xxx` 调用在 `@async_fn` 中的 bug**：`use std.time` 后在 `@async_fn` 中调用 `time.now_ms()` 触发编译器错误。各模块临时使用本地时间函数绕过。
+2. **`catch { value }` 语法解析问题**：`expr catch { 0 as u64 }` 在复杂上下文可能触发 "unexpected token '}'" 错误。使用中间变量绕过。
+
+### 验证状态
+
+- `make b`（自举）：✅ 通过
+- `make tests`：❌ HTTP 测试在 C 编译阶段失败（`@async_fn` 变量提升 bug 导致 `copied` undeclared）
+- 修改前的代码（无 timeout）：所有测试通过
+
+### git 状态
+
+```
+modified:   buglist.md
+modified:   lib/std/async_scheduler.uya
+modified:   lib/std/http/http1_async.uya
+modified:   lib/tls/https.uya
+modified:   tests/test_http1_async_client.uya
+Untracked:  lib/std/time.uya
+```
+
+### 下一步
+
+1. **修复 `@async_fn` 变量提升 bug**（编译器 `src/`）— 解锁 HTTP async 超时功能的关键
+2. 取消 `http1_request_async` 中 `http_check_deadline` 的注释
+3. `make check` 通过后提交
+4. 可选：修复跨模块 `time.xxx` bug 后统一使用 `lib/std/time.uya`，删除重复时间函数
