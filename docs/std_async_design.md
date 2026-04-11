@@ -180,11 +180,13 @@ fn fetch_and_write(reader: &AsyncReader, writer: &AsyncWriter) !Future<void> {
   }
   ```
 
-- [x] **Linux 实现**（同上文件，`struct LinuxEpoll : EventLoop`）：
+- [x] **Linux 实现**（`lib/std/async_event.uya`，`struct LinuxEpoll : EventLoop`）：
   - 基于 `libc.syscall` 的 `sys_epoll_create1` / `sys_epoll_ctl` / `sys_epoll_wait`（底层为 `@syscall`）
   - epoll 常量（含 `EPOLLET`）与 `EpollEvent` 已加入 `lib/libc/syscall.uya` 与 `lib/syscall/linux.uya`
   - `register()` / `deregister()` 当前成功返回 `0`；`poll()` 会在事件命中后按 fd 查找并 `wake()` 已注册 `Waker`
-  - 端到端测试 `test_std_async_event.uya`、`test_epoll_syscall.uya` 已通过 `--c99` 与 `--uya --c99`（codegen 已修复）
+  - **显式状态机与 fd 复用安全**：引入 `SLOT_STATE_EMPTY` / `SLOT_STATE_REGISTERED` 显式状态、`slot_generations` 代际数组与 `next_generation` 计数器，防止 fd 关闭复用后的 `ENOENT` / `EEXIST` 混乱
+  - **timeout/deadline 支持**：`block_on_with_event_loop_deadline<T>` 可在 EventLoop 层设置总超时；`lib/std/http/http1_async.uya` 与 `lib/tls/https.uya` 在各 I/O 边界（connect、read、write、handshake）采用 deadline-based 超时策略
+  - 端到端测试 `test_std_async_event.uya`、`test_epoll_syscall.uya`、`test_std_async_event_fd_reuse.uya` 已通过 `--c99` 与 `--uya --c99`（codegen 已修复）
 
 - [ ] **macOS 实现**（`std/async/event/macos.uya`）：
   - 基于 `kqueue` / `kevent` 系统调用

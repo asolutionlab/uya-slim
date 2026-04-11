@@ -1515,8 +1515,13 @@ fn c99_emit_await_fut_assign_from_expr(codegen: &C99CodeGenerator, operand: &AST
         }
     }
     if tc == null || strcmp(tc as *byte, "void" as *byte) == 0 {
-        fputs("        abort(); /* await_fut: missing C type for Future operand */\n" as *byte, codegen.emit_stream as *void);
-        return;
+        const fallback_tc: &byte = get_c_type_of_expr(codegen, operand);
+        if fallback_tc != null && strcmp(fallback_tc as *byte, "void" as *byte) != 0 {
+            tc = fallback_tc;
+        } else {
+            fputs("        abort(); /* await_fut: missing C type for Future operand */\n" as *byte, codegen.emit_stream as *void);
+            return;
+        }
     }
     fputs("        { " as *byte, codegen.emit_stream as *void);
     fprintf(codegen.emit_stream as *void, "%s _uya_await_slot_tmp = " as *byte, tc as *byte);

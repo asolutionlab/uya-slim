@@ -108,6 +108,16 @@
   - 切片表达式在分裂后生成错误类型
   - 覆盖：嵌套局部变量、`break` / `continue` resume、切片表达式、局部变量 `s` 与 poll state 指针命名冲突
 
+- [x] **Bug E：`@async_fn` 变量提升容量限制与嵌套块初始化**（2026-04-12 修复）
+  - 状态：已修复
+  - 现象：在复杂 `@async_fn`（如 `http1_request_async`）中添加跨 await 点的超时检查调用后，编译器 lowering 触发变量提升 bug，导致生成 C 代码中局部变量 `'copied' undeclared` 或运行时 SIGSEGV
+  - 根因：`async_local_*` / `async_param_names` 容量硬编码为 16，复杂函数超过后发生静默截断；嵌套块内被 hoist 的变量在 resume 路径上未重新初始化
+  - 修复位置：
+    - `src/codegen/c99/internal.uya`：将容量从 16 扩至 32 并移除所有硬编码限制
+    - `src/codegen/c99/stmt.uya`：`gen_var_decl_stmt` 中若变量已被 hoist，直接生成状态机字段初始化（含数组 `memset`/`memcpy`）
+    - `src/codegen/c99/stmt.uya` / `expr.uya`：`return error.X` 与 `as!` 泛型 payload 类型正确单态化
+  - 回归：`tests/test_http1_async_client.uya` 在 `http_check_deadline` 全部启用后通过
+
 **仍建议关注的方向**：
 1. collect/emit 覆盖更多 await 出现位置（assign、bare expr 等）若仍有缺口
 2. 迭代器 `for` / `for |&x|` 与 `@async_fn` 组合的 lowering 或明确诊断

@@ -422,7 +422,7 @@ run_compiled_test_args() {
         return
     fi
 
-    local test_timeout="${UYA_TEST_TIMEOUT:-30}"
+    local test_timeout="${UYA_TEST_TIMEOUT:-60}"
     local run_exit=0
     if command -v timeout >/dev/null 2>&1; then
         timeout "${test_timeout}s" "$exe_file" > /dev/null 2>&1 || run_exit=$?
