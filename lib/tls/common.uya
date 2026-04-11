@@ -16,6 +16,9 @@ error TlsWantWrite;
 error TlsConnectionEof;
 error TlsHandshakeFailure;
 error TlsCertificateRequired;
+error TlsCertificateVerificationFailed;
+error TlsCertificateExpired;
+error TlsCertificateNotYetValid;
 
 // ============================================================
 // TLS 版本（RFC 5246 / 8446）

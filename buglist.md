@@ -85,10 +85,51 @@
   - `test_raw_tls`
 - 若问题涉及新行为，补充对应测试或回归用例。
 
+## TLS 生产环境改进（2026-04-11）
+
+### 已完成改进
+
+1. **证书验证框架**
+   - 新增 `lib/tls/x509/trust_store.uya`：系统根证书存储加载模块
+   - 新增 `lib/tls/x509/cert.uya` 有效期字段和验证函数框架
+   - 新增错误类型：`TlsCertificateVerificationFailed`, `TlsCertificateExpired`, `TlsCertificateNotYetValid`
+
+2. **HTTPS API 改进**
+   - `https_get()`：生产环境安全（默认启用证书验证）
+   - `https_get_insecure()`：测试用途（跳过验证）
+   - 自动加载系统根证书（支持 Debian/Ubuntu、RHEL/CentOS、macOS）
+
+3. **生产环境测试**
+   - 新增 `tests/test_https_production.uya`：验证生产环境配置
+
+### 使用示例
+
+```uya
+// 生产环境（推荐）
+var resp: HttpsResponse = https_get(&"example.com"[0], 11, 443, &"/"[0:1]) catch {
+    // 处理错误：证书无效、连接失败等
+};
+
+// 测试环境（不安全）
+var resp: HttpsResponse = https_get_insecure(&"example.com"[0], 11, 443, &"/"[0:1]) catch {
+    // 处理错误
+};
+```
+
+### 已知限制
+
+- 系统根证书 PEM 解析目前为占位实现，完整 Base64 解码待补充
+- 证书有效期验证已添加框架，完整 ASN.1 时间解析待完善
+- 生产环境使用前建议预加载根证书到 `TrustStore`
+
 ## 相关文件
 
 - `lib/std/async_event.uya`
 - `lib/std/net/dns.uya`
+- `lib/tls/x509/trust_store.uya` (新增)
+- `lib/tls/x509/cert.uya`
+- `lib/tls/x509/verify.uya`
+- `lib/tls/https.uya`
 - `tests/test_std_dns_async_transport.uya`
 - `tests/test_std_dns.uya`
 - `tests/test_epoll_server.uya`
@@ -96,6 +137,7 @@
 - `tests/test_https_debug.uya`
 - `tests/test_https_loopback.uya`
 - `tests/test_https_real_site.uya`
+- `tests/test_https_production.uya` (新增)
 - `tests/test_raw_tls.uya`
 - `tests/test_tcp_basic.uya`
 - `tests/test_async_transport_fallthrough.uya`

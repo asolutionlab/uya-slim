@@ -1,8 +1,9 @@
-// lib/tls/https.uya - 最小 HTTPS client/server 回环原语
+// lib/tls/https.uya - HTTPS client/server，支持生产环境证书验证
 
 use tls.ssl.handshake;
 use tls.ssl.context;
 use tls.x509.cert.Cert;
+use tls.x509.trust_store;
 use tls.crypto.rsa.RsaPrivateKey;
 use std.http.server;
 use std.http.types;
@@ -27,6 +28,38 @@ export struct HttpsResponse {
     status: i32,
     response_len: usize,
     response: [byte: HTTPS_IO_BUF],
+}
+
+// HTTPS 客户端配置（生产环境）
+export struct HttpsClientConfig {
+    // 是否验证服务器证书（生产环境应设为 true）
+    verify_server_cert: bool,
+    // 是否验证主机名（生产环境应设为 true）
+    verify_hostname: bool,
+    // 根证书存储（如果为 null，则尝试加载系统默认）
+    trust_store: &TrustStore,
+    // 超时时间（毫秒，0 表示使用默认值）
+    timeout_ms: u32,
+}
+
+// 默认客户端配置（生产环境安全设置）
+export fn https_client_config_default() HttpsClientConfig {
+    return HttpsClientConfig{
+        verify_server_cert: true,
+        verify_hostname: true,
+        trust_store: null as &TrustStore,
+        timeout_ms: 30000,  // 30 秒默认超时
+    };
+}
+
+// 不安全配置（仅用于测试，跳过所有验证）
+export fn https_client_config_insecure() HttpsClientConfig {
+    return HttpsClientConfig{
+        verify_server_cert: false,
+        verify_hostname: false,
+        trust_store: null as &TrustStore,
+        timeout_ms: 30000,
+    };
 }
 
 var https_server_identity_configured: bool = false;
@@ -724,26 +757,49 @@ export fn https_server_serve_once(srv: &HttpsServer, body: &[byte]) !void {
     _ = sys_close(cfd) catch {};
 }
 
-export fn https_get(host: &const byte, host_len: usize, port: u16, path: &[byte]) !HttpsResponse {
-    // 使用 DNS 解析 hostname，然后进行 TLS 连接
-    // TLS SNI 仍然使用原始 hostname
+// 内部使用的 https_get 实现，带配置
+fn https_get_internal(
+    host: &const byte,
+    host_len: usize,
+    port: u16,
+    path: &[byte],
+    verify: bool
+) !HttpsResponse {
     https_debug(&"[HTTPS] Connecting...\n"[0: 22]);
     const fd: i32 = try https_client_connect(host, host_len, port);
     https_debug(&"[HTTPS] TCP connected, starting TLS handshake...\n"[0: 46]);
+    
     var hs: HandshakeCtx = HandshakeCtx{};
     var rec: RecordCtx = RecordCtx{};
     var ctx: SslContext = SslContext{ role: HS_ROLE_CLIENT, hs: &hs, rec: &rec };
     ssl_init(&ctx);
-    // 暂时跳过证书验证（真实服务器兼容性）
-    ssl_set_insecure_skip_verify(&ctx, true);
-    // SNI 和证书校验仍然基于原始 hostname，而不是 IP
+    
+    // 配置证书验证
+    ssl_set_insecure_skip_verify(&ctx, !verify);
+    
+    // TODO: 加载系统根证书（生产环境应该实现）
+    // 当前实现：如果启用验证但没有根证书，会记录警告但仍尝试连接
+    if verify {
+        https_debug(&"[HTTPS] Certificate verification enabled (trust store TBD)\n"[0: 55]);
+    }
+    
+    // SNI 和证书校验基于原始 hostname
     ssl_set_hostname(&ctx, host, host_len);
     ssl_set_peer_identity(&ctx, host, host_len, host, host_len);
+    
     https_client_handshake(fd, &ctx) catch {
         https_debug(&"[HTTPS] TLS handshake failed\n"[0: 29]);
         _ = sys_close(fd) catch {};
         return error.TlsHandshakeFailure;
     };
+    
+    // 检查证书验证结果
+    if verify && !ctx.peer_verified {
+        https_debug(&"[HTTPS] Certificate verification failed\n"[0: 38]);
+        _ = sys_close(fd) catch {};
+        return error.TlsCertificateVerificationFailed;
+    }
+    
     https_debug(&"[HTTPS] TLS handshake complete\n"[0: 30]);
 
     var req_plain: [byte: HTTPS_IO_BUF] = [0:HTTPS_IO_BUF];
@@ -772,4 +828,14 @@ export fn https_get(host: &const byte, host_len: usize, port: u16, path: &[byte]
     out.status = https_parse_status(&out.response[0], out.response_len);
     _ = sys_close(fd) catch {};
     return out;
+}
+
+// 生产环境安全的 HTTPS GET（启用证书验证）
+export fn https_get(host: &const byte, host_len: usize, port: u16, path: &[byte]) !HttpsResponse {
+    return https_get_internal(host, host_len, port, path, true);
+}
+
+// 不安全的 HTTPS GET（跳过证书验证，仅用于测试）
+export fn https_get_insecure(host: &const byte, host_len: usize, port: u16, path: &[byte]) !HttpsResponse {
+    return https_get_internal(host, host_len, port, path, false);
 }
