@@ -461,11 +461,9 @@ export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms
                     };
                     continue;
                 }
-                // 没有 I/O 兴趣，纯等待
-                const poll_result: !i32 = loop.poll(timeout_ms);
-                _ = poll_result catch {
-                    return poll_result as! T;
-                };
+                // 没有 I/O 兴趣，直接重试（避免 @async_fn 状态机 transition 时
+                // 未设置 I/O interest 导致的空等）
+                continue;
             },
         };
     }
@@ -532,11 +530,9 @@ export fn block_on_with_event_loop_deadline<T>(loop: EventLoop, f: Future<!T>, t
                     };
                     continue;
                 }
-                // 没有 I/O 兴趣，纯等待
-                const poll_result: !i32 = loop.poll(poll_timeout);
-                _ = poll_result catch {
-                    return poll_result as! T;
-                };
+                // 没有 I/O 兴趣，直接重试（避免 @async_fn 状态机 transition 时
+                // 未设置 I/O interest 导致的空等）
+                continue;
             },
         };
     }

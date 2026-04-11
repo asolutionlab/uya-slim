@@ -88,8 +88,8 @@ export const EPOLLERR: i32 = 0x008;
 export const EPOLLHUP: i32 = 0x010;
 export const EPOLLET: i32 = -2147483648;
 export const EPOLL_CTL_ADD: i32 = 1;
-export const EPOLL_CTL_MOD: i32 = 2;
-export const EPOLL_CTL_DEL: i32 = 3;
+export const EPOLL_CTL_DEL: i32 = 2;
+export const EPOLL_CTL_MOD: i32 = 3;
 export const EPOLL_CLOEXEC: i32 = 0x80000;
 
 export const S_IRWXU: i64 = 0o700;
