@@ -15,7 +15,7 @@
 
 - [ ] **P0 / 严重：`dns_client_query_all_async` 仍依赖手工状态机绕过 lowering 问题**
   - 状态：部分缓解，未根治
-  - 验证状态：已用 `tests/test_std_dns_async_transport.uya` 复现并通过当前回归
+  - 验证状态：已用 `tests/test_std_dns_async_transport.uya` 复现并通过当前回归；新增默认 `ANY` 路径 TCP fallback + AAAA 回归覆盖
   - 归属：`lib/std/net/dns.uya`
   - 现象：`dns_client_query_all_async` 已改成共享 async transport，但之前在 `catch`/`Ready` 分支里做状态切换时，生成代码曾丢失副作用，导致 `TC=1` 不能稳定切到 TCP fallback。
   - 影响：异步 DNS 的 TCP fallback 依赖当前写法和补丁后的 event loop 行为，后续如果编译器 lowering 变化，可能再次回归。
