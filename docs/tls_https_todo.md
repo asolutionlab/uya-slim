@@ -183,13 +183,14 @@
 - [x] 检查 `make b`、`--c99`、`--uya --c99` 全部通过。
 - [ ] 清理所有临时占位实现和只为测试引入的兼容分支。
 
-### 6.1 收回 EC 参考桥
+### 6.1 收回 EC/X25519 参考桥
 
 - [x] 将 [lib/tls/crypto/ec_ref.c](/media/winger/_dde_home/winger/uya/lib/tls/crypto/ec_ref.c) 的能力逐步迁回纯 Uya 实现。
 - [x] 优先完成 P-256 ECDH 的纯 Uya 稳定实现，并补独立回归测试。
 - [x] 优先完成 P-256 公钥生成的纯 Uya 稳定实现，并以 [tests/test_tls_ecdsa.uya](/media/winger/_dde_home/winger/uya/tests/test_tls_ecdsa.uya) / [tests/test_tls_rsa.uya](/media/winger/_dde_home/winger/uya/tests/test_tls_rsa.uya) 已知向量回归覆盖。
 - [x] 补齐 P-384 公钥生成与 ECDH 的纯 Uya 路径，并补独立回归测试。
 - [x] 再补齐 P-384 的签名/验签纯 Uya 路径，最后移除 `ec_ref.c` 的测试链接依赖。
+- [x] **移除 X25519 OpenSSL 参考实现** `lib/tls/crypto/x25519_ref.c`，纯 Uya 实现已通过 RFC 7748 全部向量。
 
 ---
 

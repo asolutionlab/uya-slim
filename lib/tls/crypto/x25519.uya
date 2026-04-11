@@ -354,7 +354,7 @@ fn fe_inv(r: &Fe, a: &const Fe) void {
 }
 
 // X25519 标量乘：out = scalar * point（标量已 clamp，point 为 32 字节 u 坐标）
-// 使用 OpenSSL 参考实现（需链接 x25519_ref.c + -lcrypto）；纯 Uya 实现尚未通过 RFC 7748 向量
+// 纯 Uya 实现，基于 Mpi 大数库
 export fn x25519(out: &byte, scalar: &const byte, point: &const byte) !void {
     if out == null || scalar == null || point == null {
         return error.TlsBadInput;
@@ -544,6 +544,8 @@ fn fe_mpi_from_bytes_le(r: &Mpi, b: &const byte, p: &const Mpi) !void {
         be[i] = b[31 - i];
         i = i + 1;
     }
+    // RFC 7748: 清零 u 坐标的 bit 255（最高字节最高位）
+    be[0] = be[0] & (0x7F as byte);
     mpi_from_bytes_be(r, &be[0], 32) catch |err| { return err; };
     if mpi_compare(r, p) >= 0 {
         var tmp: Mpi = Mpi{};

@@ -1,6 +1,6 @@
 # 编译器 / 标准库 Bug 待办清单
 
-**最后更新：** 2026-04-11
+**最后更新：** 2026-04-11（补充 lowering bug）
 
 本文档用于跟踪 release 验证中发现的问题，便于逐项修复、验证和关闭。
 
@@ -58,6 +58,56 @@
   - 影响：release 流程不再被这些测试阻塞，CI 环境下网络测试会优雅跳过
 
 ## 编译器 bug
+
+- [ ] **P0 / 严重：`@async_fn` 复杂状态机 lowering 后行为错位导致 SIGSEGV**
+  - 状态：未修复，已绕过
+  - 验证状态：`tests/test_http1_async_client.uya` 中 `http1_async_get_chunked_loopback_roundtrip` 测试用例编译通过但运行期 SIGSEGV
+  - 归属：编译器 lowering / async 状态机生成
+  - 现象：
+    1. `http1_request_async` 中 `else if meta.read_until_eof { ... if meta.transfer_encoding_chunked { ... } }` 分支的 lowering 生成代码错位
+    2. 状态机 state 6 (read_until_eof 分支) 完成后，chunked 解码逻辑未正确放置，直接进入 state 7 返回
+    3. 导致 `body_total` 保持为 `MAX_BODY_SIZE` 而非实际解码长度，socket 关闭后 epoll 空转，最终 child 进程 segfault
+  - 触发代码形态：
+    ```uya
+    if meta.has_content_length {
+        // ... 正常路径
+    } else if meta.read_until_eof {
+        // 读循环 ...
+        body_total = copied;  // 这一行 lowering 后未正确放入 state
+        if meta.transfer_encoding_chunked {
+            // 解码逻辑 lowering 后缺失或错位
+        }
+    }
+    ```
+  - 影响：任何使用 `else if` 分支并在其中修改变量后继续使用该变量的 `@async_fn` 都可能触发。
+  - 可能位置：`src/codegen/c99/async_lowering.uya`，状态机拆分时的变量生命周期/悬垂引用处理
+  - 绕过方案：将 chunked 解码完全拆出 `http1_request_async`，使用独立的 `http1_read_chunked_body_async` Future
+  - 相关文件：`lib/std/http/http1_async.uya`
+
+- [ ] **P1 / 高：`@async_fn` 中 `return error.X` 报"返回错误值只能在返回错误联合类型 !T 的函数中使用"**
+  - 状态：未修复，已用辅助函数绕过
+  - 验证状态：新增 `http1_read_chunked_body_async` 时，函数体内直接 `return error.InvalidRequest` 等报错
+  - 归属：编译器 lowering / 错误类型推断
+  - 现象：
+    1. `@async_fn fn foo() Future<!usize>` 函数体内直接 `return error.X` 类型检查失败
+    2. 错误信息："返回错误值只能在返回错误联合类型 !T 的函数中使用"
+    3. 即使函数签名明确返回 `!usize`，lowering 后的状态机 poll 函数可能丢失错误联合类型信息
+  - 触发代码：
+    ```uya
+    export @async_fn fn http1_read_chunked_body_async(...) Future<!usize> {
+        if rn == 0 {
+            return error.ConnectionClosed;  // 报错位置
+        }
+    }
+    ```
+  - 影响：所有需要在 `@async_fn` 中提前返回错误的场景
+  - 可能位置：`src/codegen/c99/async_lowering.uya`，状态机生成时对返回类型的转换
+  - 绕过方案：使用辅助函数包装错误返回：
+    ```uya
+    fn http1_err_conn_closed() !usize { return error.ConnectionClosed; }
+    // 在 async_fn 中：const e: !usize = try http1_err_conn_closed(); return e;
+    ```
+  - 备注：这是 lowering 阶段对 `!T` 类型在状态机中的处理 bug，需要检查生成的 C 代码中 poll 函数的返回类型是否正确映射
 
 - [x] **P0 / 严重：`@async_fn` 无 `@await` 与 `catch` 组合路径的 lowering 丢副作用**
   - 状态：已修复，待 release 验收确认
@@ -153,3 +203,4 @@ var resp: HttpsResponse = https_get_insecure(&"example.com"[0], 11, 443, &"/"[0:
 - `tests/test_tcp_basic.uya`
 - `tests/test_async_transport_fallthrough.uya`
 - `tests/test_async_codegen_edge_paths.uya`
+- `lib/std/http/http1_async.uya`（chunked 读取实现，涉及 lowering bug）

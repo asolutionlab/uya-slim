@@ -120,7 +120,7 @@
 
 - [x] RSA：PKCS#1 v1.5 验签（SHA-256）；`rsa_verify_pkcs1_v15_sha256(n, e, hash, hash_len, sig, sig_len)`；密钥由调用方以 Mpi (n, e) 传入；解析 (n,e) 从字节或 X.509 待阶段 3。
 - [x] EC：P-256 有限域 Fe256/标量 Sc256（lib/tls/crypto/ec_p256.uya）、点运算与标量乘、公钥生成、ECDH 已实现；ECDSA sign/verify API 已占位（验签/签名逻辑待补 NIST 向量与 sc256 模逆）。P-384 待实现（同结构）。
-- [x] X25519：32 字节标量乘接口（lib/tls/crypto/x25519.uya）；RFC 7748 算法；当前使用 OpenSSL 参考实现（x25519_ref.c）通过 RFC 7748 Section 6.1 向量；纯 Uya 实现（x25519_pure_uya）未通过向量，待排查 fe_mul/fe_inv/fe_add/fe_sub。
+- [x] X25519：32 字节标量乘接口（lib/tls/crypto/x25519.uya）；RFC 7748 算法；纯 Uya 实现（基于 Mpi 大数库）已通过 RFC 7748 Section 6.1 和 Section 5.2 向量。
 - [x] 测试：test_tls_rsa.uya 中 X25519 确定性+非零通过；RSA 已知向量（512-bit, e=65537, SHA256("abc")）验签通过 + 篡改失败；EC 模块加载与 public_from_private_p256/ecdh_p256 调用通过。
 - [x] 验收：X25519、RSA、EC（P-256 骨架+ECDH）测试通过 `--c99` 与 `--uya --c99`；EC 子群检查与 ECDSA 已知向量见后续迭代。
 

@@ -302,8 +302,6 @@ link_generated_test_output() {
         extra_c_file="$SCRIPT_DIR/test_abi_helpers.c"
     elif [ "$base_name" = "test_tflm_cmsis" ]; then
         extra_c_file="$SCRIPT_DIR/tflm_cmsis_host_stub.c"
-    elif [ "$base_name" = "test_tls_rsa" ] || [ "$base_name" = "test_tls_x25519_pure" ]; then
-        extra_c_file="$REPO_ROOT/lib/tls/crypto/x25519_ref.c"
     fi
 
     link_cmd+=(-o "$exe_file" "$output_file")
@@ -319,7 +317,7 @@ link_generated_test_output() {
     if [ -n "$extra_c_file" ]; then
         link_cmd+=("$extra_c_file")
     fi
-    if [ "$base_name" = "test_tls_rsa" ] || [ "$base_name" = "test_tls_x25519_pure" ] || [ "$base_name" = "test_tls_ecdsa" ]; then
+    if [ "$base_name" = "test_tls_ecdsa" ]; then
         link_cmd+=(-lcrypto)
     fi
     if [ "$TARGET_OS" != "windows" ]; then

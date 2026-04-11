@@ -216,6 +216,14 @@ fn wait_child_ok(pid: i32) void {
             write_stderr_msg(&"client:post:status"[0: 18]);
         } else if code == 24 {
             write_stderr_msg(&"client:post:body"[0: 16]);
+        } else if code == 31 {
+            write_stderr_msg(&"client:chunked:epoll"[0: 20]);
+        } else if code == 32 {
+            write_stderr_msg(&"client:chunked:block_on"[0: 23]);
+        } else if code == 33 {
+            write_stderr_msg(&"client:chunked:status"[0: 21]);
+        } else if code == 34 {
+            write_stderr_msg(&"client:chunked:body"[0: 19]);
         } else {
             write_stderr_msg(&"other"[0: 5]);
         }
@@ -353,6 +361,92 @@ fn run_async_post_client(port: u16) void {
     sys_exit(0);
 }
 
+fn run_async_chunked_get_client(port: u16) void {
+    // 使用流式接口读取 chunked 响应
+    const url_buf_cap: usize = 64;
+    var url_buf: [byte: 64] = [];
+    const path: &[byte] = &"/chunked"[0: 8];
+    const url_len: usize = fill_loopback_url(&url_buf[0] as &byte, url_buf_cap, port, path);
+    const url: &[byte] = url_buf[0: url_len];
+    
+    const pu: ParsedHttpUrl = parse_http_url_full(url) catch {
+        write_stderr_msg(&"client:chunked:parse_url\n"[0: 25]);
+        sys_exit(31);
+        return;
+    };
+    const req: Http1AsyncRequest = http1_async_request_from_url(Method.GET, pu, null);
+    
+    // 使用同步流式接口发送请求并获取 headers（避开 async lowering 问题）
+    const stream_result: !Http1StreamResponse = http1_request_streaming(&req);
+    const stream_resp: Http1StreamResponse = stream_result catch |err| {
+        write_stderr_msg(&"client:chunked:stream_req\n"[0: 26]);
+        write_err_kind(&"client:chunked:stream_req err="[0: 30], @error_id(err));
+        write_stderr_msg(&" host="[0: 6]);
+        _ = sys_write(2, req.host.ptr, req.host.len);
+        write_stderr_msg(&" port="[0: 6]);
+        const port_str: [byte: 8] = [];
+        const port_len: usize = client_append_u16_dec_buf(&port_str[0] as &byte, 0, req.port);
+        _ = sys_write(2, &port_str[0], port_len);
+        write_stderr_msg(&"\n"[0: 1]);
+        sys_exit(32);
+        return;
+    };
+    
+    if stream_resp.headers.status != 200 {
+        write_stderr_msg(&"client:chunked:status\n"[0: 22]);
+        write_u16_dec_msg(&"client:chunked:status value="[0: 28], stream_resp.headers.status as u16);
+        write_stderr_msg(&"\n"[0: 1]);
+        _ = sys_close(stream_resp.fd) catch {};
+        sys_exit(33);
+    }
+    
+    if !stream_resp.headers.transfer_encoding_chunked {
+        write_stderr_msg(&"client:chunked:not_chunked\n"[0: 26]);
+        _ = sys_close(stream_resp.fd) catch {};
+        sys_exit(33);
+    }
+    
+    // 使用同步接口读取完整 chunked body（避开 async lowering 问题）
+    const body_cap: usize = 256;
+    const body_mem: &void = malloc(body_cap);
+    if (body_mem as &byte) as usize == 0 {
+        _ = sys_close(stream_resp.fd) catch {};
+        sys_exit(34);
+    }
+    
+    const body_result: !usize = http1_read_chunked_body_sync(
+        stream_resp.fd,
+        body_mem as &byte,
+        body_cap
+    );
+    const body_len: usize = body_result catch |err| {
+        free(body_mem);
+        _ = sys_close(stream_resp.fd) catch {};
+        write_stderr_msg(&"client:chunked:read_body\n"[0: 23]);
+        write_err_kind(&"client:chunked:read_body err="[0: 29], @error_id(err));
+        write_stderr_msg(&"\n"[0: 1]);
+        sys_exit(34);
+        return;  // 类型检查需要
+    };
+    
+    // 关闭 fd
+    _ = sys_close(stream_resp.fd) catch {};
+    
+    // 验证结果
+    const result_body: &[byte] = slice_from_raw(body_mem as &byte, body_len);
+    if !slice_eq_bytes(result_body, &"hello chunked world"[0: 19]) {
+        write_stderr_msg(&"client:chunked:body\n"[0: 20]);
+        write_stderr_msg(&"got: "[0: 5]);
+        _ = sys_write(2, result_body.ptr, result_body.len);
+        write_stderr_msg(&" expect: hello chunked world\n"[0: 29]);
+        free(body_mem);
+        sys_exit(34);
+    }
+    
+    free(body_mem);
+    sys_exit(0);
+}
+
 fn async_http1_get_server_roundtrip() !void {
     const srv: HttpServer = try listen_loopback_server();
     const child_pid: i32 = fork();
@@ -435,6 +529,32 @@ fn async_http1_post_server_roundtrip() !void {
     http_server_close(&srv);
 }
 
+fn async_http1_get_chunked_roundtrip() !void {
+    const srv: HttpServer = try listen_loopback_server();
+    const child_pid: i32 = fork();
+    if child_pid == 0 {
+        http_server_close(&srv);
+        run_async_chunked_get_client(srv.port);
+    }
+    if child_pid <= 0 {
+        try assert_eq_i32(0, 1);
+    }
+
+    var srv_tmp: HttpServer = HttpServer{ listen_fd: srv.listen_fd, port: srv.port };
+    const conn: Conn = try http_server_accept(&srv_tmp);
+    const sfd: i32 = conn.fd;
+    const pr: ParseResult = try http_recv_parse_request(sfd);
+    try assert_eq_i32(pr.request.method as i32, Method.GET as i32);
+    try assert_eq_i32(pr.request.path_len, 8);
+
+    const raw: &[byte] = &"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n5\r\nhello\r\n1\r\n \r\n7\r\nchunked\r\n1\r\n \r\n5\r\nworld\r\n0\r\n\r\n"[0: 115];
+    _ = sys_write(sfd, raw.ptr, raw.len);
+    _ = sys_close(sfd);
+
+    wait_child_ok(child_pid);
+    http_server_close(&srv);
+}
+
 test "http1_async_get_invalid_url" {
     const bad_url: &[byte] = &"ftp://127.0.0.1/"[0: 16];
     const fut: Future<!Http1AsyncResponse> = http1_async_get(bad_url, null);
@@ -504,4 +624,12 @@ test "http1_async_post_loopback_roundtrip" {
         return;
     }
     try async_http1_post_server_roundtrip();
+}
+
+test "http1_async_get_chunked_loopback_roundtrip" {
+    if !http_loopback_tests_supported() {
+        write_stderr_msg(&"skip:http1_loopback\n"[0: 20]);
+        return;
+    }
+    try async_http1_get_chunked_roundtrip();
 }

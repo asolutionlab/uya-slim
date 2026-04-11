@@ -523,7 +523,7 @@ export fn cert_parse_validity(cert: &Cert) !void {
     tag1_res catch { return error.TlsDecodeError; };
     tag = r.data[r.pos];
     
-    if tag == ASN1_TAG_UTCTIME || tag == ASN1_TAG_GENERALIZEDTIME {
+    if tag == ASN1_TAG_UTCTIME || tag == ASN1_TAG_GENERALIZED_TIME {
         if !asn1_get_tlv_to(&r, tag, &time_len) {
             return error.TlsDecodeError;
         }
@@ -548,7 +548,7 @@ export fn cert_parse_validity(cert: &Cert) !void {
     tag2_res catch { return error.TlsDecodeError; };
     tag = r.data[r.pos];
     
-    if tag == ASN1_TAG_UTCTIME || tag == ASN1_TAG_GENERALIZEDTIME {
+    if tag == ASN1_TAG_UTCTIME || tag == ASN1_TAG_GENERALIZED_TIME {
         if !asn1_get_tlv_to(&r, tag, &time_len) {
             return error.TlsDecodeError;
         }
@@ -567,8 +567,7 @@ export fn cert_parse_validity(cert: &Cert) !void {
     cert.has_validity = true;
 }
 
-const ASN1_TAG_UTCTIME: byte = 0x17;
-const ASN1_TAG_GENERALIZEDTIME: byte = 0x18;
+// 使用 tls.x509.asn1 导出的 ASN1_TAG_UTCTIME 和 ASN1_TAG_GENERALIZED_TIME
 
 // 验证证书是否在有效期内
 export fn cert_check_validity(cert: &Cert) !void {
