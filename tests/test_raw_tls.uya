@@ -87,7 +87,7 @@ export fn main() i32 {
     while total < 200 {
         const rd: !isize = sys_read(fd, &resp[total], 8192 - total);
         const n: isize = rd catch {
-            0 as isize
+            0 as isize;
         };
         if n <= 0 {
             break;

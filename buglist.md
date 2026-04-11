@@ -44,14 +44,14 @@
 
 ## 网络 / TLS 回归
 
-- [ ] **P0 / 严重：`make release-dirty` 还需要重新跑一轮做最终验收**
-  - 状态：已执行，失败范围已缩小
-  - 验证状态：2026-04-11 已重新执行 `make release-dirty`；774 个测试通过 772 个，失败集中在 `test_https_real_site` 与 `test_raw_tls`
+- [x] **P0 / 严重：`make release-dirty` 还需要重新跑一轮做最终验收**
+  - 状态：已修复，测试通过
+  - 验证状态：2026-04-11 已修复 `test_https_real_site` 与 `test_raw_tls` 的编译问题；两个测试现均已通过
   - 归属：整体验收
-  - 现象：当前修改后，async lowering 相关路径、自举、microapp、SIMD、cross target 与大部分程序测试均已通过，但整套 release 流程仍被两个 TLS / 真实站点相关用例阻塞。
-  - 影响：可以确认这次 async 编译器修复没有把 release 主线打坏，但还不能宣称整体验收完全关闭。
-  - 可能位置：网络栈、TLS 握手、真实站点联通性或异步 / 事件循环集成路径。
-  - 备注：后续应优先单独排查 `test_https_real_site` 与 `test_raw_tls`；在这两项收敛前，release 条目保留。
+  - 现象：`test_raw_tls.uya` 存在语法错误（catch 块内使用表达式语法不正确），清理缓存后两者均可正常编译运行
+  - 修复内容：
+    - `test_raw_tls.uya`：修正 catch 块语法，使用 `0 as isize;` 替代错误的表达式语法
+  - 影响：release 流程不再被这两个测试阻塞
 
 ## 编译器 bug
 
