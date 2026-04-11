@@ -1,6 +1,6 @@
 # 编译器 / 标准库 Bug 待办清单
 
-**最后更新：** 2026-04-11（补充 `@async_fn` 变量提升 bug）
+**最后更新：** 2026-04-12（关闭 `@async_fn` 变量提升与嵌套块初始化 bug）
 
 本文档用于跟踪 release 验证中发现的问题，便于逐项修复、验证和关闭。
 
@@ -59,10 +59,11 @@
 
 ## 编译器 bug
 
-- [ ] **P1 / 高：`@async_fn` 中 `http_check_deadline` 触发变量提升 bug**
-  - 状态：待修复，已用 TODO 标记绕过
+- [x] **P1 / 高：`@async_fn` 中 `http_check_deadline` 触发变量提升 bug**
+  - 状态：已修复
+  - 验证状态：`tests/test_http1_async_client.uya` 与所有 HTTP/HTTPS 测试通过；`http1_async.uya` 中 TODO 绕过已移除，超时检查已重新启用
   - 归属：编译器 lowering / async 状态机生成
-  - 现象：在 `@async_fn` 函数中调用 `http_check_deadline()` 检查超时后，编译器 lowering 过程触发变量提升 bug，导致生成代码行为异常
+  - 现象：在 `@async_fn` 函数中调用 `http_check_deadline()` 检查超时后，编译器 lowering 过程触发变量提升 bug，导致生成代码行为异常；深层原因是 `while`/`if` 等嵌套块内的 `const` 指针变量被 hoist 到状态机字段后，在 resume 路径上未重新初始化，产生 SIGSEGV
   - 触发代码形态：
     ```uya
     // 读 header 前检查超时
@@ -71,8 +72,12 @@
     };
     ```
   - 影响：HTTP 异步客户端无法在读取 header 前进行超时检查
-  - 临时绕过：当前代码中已添加 TODO 注释，暂时跳过该检查
-  - 相关文件：`lib/std/http/http1_async.uya`
+  - 修复位置：
+    - `src/codegen/c99/internal.uya`：将 `async_local_*` 与 `async_param_names` 容量从 16 扩至 32
+    - `src/codegen/c99/function.uya`、`global.uya`、`types.uya`、`utils.uya`：移除所有硬编码 16 限制
+    - `src/codegen/c99/stmt.uya`：`gen_var_decl_stmt` 中若变量已被 hoist，直接生成状态机字段初始化（含数组 `memset`/`memcpy` 处理）
+    - `src/codegen/c99/stmt.uya` / `expr.uya`：`return error.X` 与 `as!` 泛型 payload 类型通过 `c99_mono_type_to_c` 正确单态化
+  - 相关文件：`lib/std/http/http1_async.uya`、`lib/tls/https.uya`
 
 - [x] **P0 / 严重：`@async_fn` 复杂状态机 lowering 后行为错位导致 SIGSEGV**
   - 状态：已修复

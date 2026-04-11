@@ -1,5 +1,37 @@
 # Uya 变更日志
 
+## v0.9.1 - 修复 `@async_fn` 变量提升与嵌套块初始化 bug
+
+> 发布日期：2026-04-12
+
+### 概要
+
+**v0.8.x** 补丁：修复编译器在 `@async_fn` 状态机 lowering 中的两类关键 bug：
+
+1. **变量提升容量不足**：`async_local_*` 数组硬编码为 16 条目，导致像 `http1_request_async` 这种拥有大量局部变量的函数在 lowering 时丢失后续局部，生成未定义局部引用的 C 代码。
+2. **嵌套块内 hoisted 变量未初始化**：`while`/`if` 等不含 `@await` 的嵌套控制流中的 `const` 指针被 hoist 到状态机字段后，`gen_var_decl_stmt` 仍将其生成为普通局部变量，而后续引用已映射为 `s->_uya_loc_xxx`，导致该字段在 resume 路径上为未初始化（null），运行时 SIGSEGV。
+
+同时修复了 `@async_fn` 中 `return error.X` 与 `as!` 强制类型转换在泛型上下文下的 payload 类型单态化问题。所有 HTTP/HTTPS 测试（14 项）全部通过，`make check` **779** 项测试通过。详见 [docs/releases/RELEASE_v0.9.1.md](./docs/releases/RELEASE_v0.9.1.md)。
+
+### 编译器
+
+- `src/codegen/c99/internal.uya`：`async_local_names` / `async_local_types` / `async_local_inits` / `async_local_root_stmt` / `async_param_names` 从 16 扩至 32。
+- `src/codegen/c99/function.uya`、`global.uya`、`types.uya`、`utils.uya`：将所有硬编码 `16` 改为 `@len(...)` 动态检查。
+- `src/codegen/c99/stmt.uya`：`gen_var_decl_stmt` 在 async poll 上下文中，若变量已被 hoist 到 `async_local_names`，直接生成状态机字段初始化（`s->_uya_loc_xxx = init`）；数组类型额外处理 `memset`/`memcpy`。
+- `src/codegen/c99/stmt.uya` / `expr.uya`：`return error.X` 与 `as!` 的 payload C 类型通过 `c99_mono_type_to_c` 正确单态化泛型参数。
+
+### 标准库
+
+- `lib/std/http/http1_async.uya`：移除 `catch` 块内多余分号；重新启用此前被 TODO 绕过的 `http_check_deadline(deadline_ms)` 超时检查。
+- `lib/tls/https.uya`：修复 `catch` 块语法与 `as!` 溢出使用方式（先提取 `.value` 再运算）。
+
+### 文档与版本字符串
+
+- 新增 `docs/releases/RELEASE_v0.9.1.md`
+- 编译器帮助中的版本字符串更新为 **v0.9.1**
+
+---
+
 ## v0.8.2 - 主线程栈上限改为应用显式设置
 
 > 发布日期：2026-03-31
