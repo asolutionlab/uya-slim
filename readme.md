@@ -284,6 +284,7 @@ fn increment(counter: *Counter) void {
 - **[docs/usage_guide.md](./docs/usage_guide.md)** - 编译器使用指南
 - **[docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md)** - 开发指导说明
 - **[docs/TESTING.md](./docs/TESTING.md)** - 回归测试说明
+- **[buglist.md](./buglist.md)** - 当前已知问题与优先级清单，便于后续自动收集
 - **[docs/uya.md](./docs/uya.md)** - 完整语言规范（Markdown）
 - **[docs/changelog.md](./docs/changelog.md)** - 语言规范变更历史
 - **[docs/comparison.md](./docs/comparison.md)** - 与其他语言的对比
@@ -309,5 +310,4 @@ fn increment(counter: *Counter) void {
 **注意**：语言规范为完整版（0.72）；当前 **补丁发行**为 **v0.8.2**（v0.8.0 里程碑线），说明见 [docs/releases/RELEASE_v0.8.2.md](./docs/releases/RELEASE_v0.8.2.md)；里程碑总览见 [docs/releases/RELEASE_v0.8.0.md](./docs/releases/RELEASE_v0.8.0.md) 与 [docs/uya.md](./docs/uya.md)。
 
 **许可证**：本项目采用 [MIT 许可证](./LICENSE)。Copyright (c) 2025-2026 Uya 语言项目
-
 
