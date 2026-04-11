@@ -1312,3 +1312,73 @@ export fn http1_request_streaming(
         fd: fd,
     };
 }
+
+/// 发送请求，返回 headers 和 fd（异步版本）
+export @async_fn fn http1_request_stream_async(
+    req: &Http1AsyncRequest,
+    timeout_ms: u32
+) Future<!Http1StreamResponse> {
+    const deadline_ms: u64 = try http_deadline_after_ms(timeout_ms);
+    const fd: i32 = try @await http1_connect_for_host_future(req.host, req.port, deadline_ms);
+    if fd < 0 {
+        return error.ConnectionClosed;
+    }
+
+    var hdr: [byte: 4096] = [];
+    const hdr_len: usize = try build_request_headers(req, &hdr[0] as &byte, 4096);
+
+    var woff: usize = 0;
+    while woff < hdr_len {
+        const wn: usize = try @await async_fd_write_future(fd, @ptr_from_usize(@usize_from_ptr(&hdr[0] as &void) + woff) as &const byte, hdr_len - woff);
+        if wn == 0 {
+            _ = sys_close(fd) catch {};
+            return error.ConnectionClosed;
+        }
+        woff = woff + wn;
+    }
+
+    if req.method == Method_POST && req.body.len > 0 {
+        var boff: usize = 0;
+        while boff < req.body.len {
+            const bn: usize = try @await async_fd_write_future(fd, @ptr_from_usize(@usize_from_ptr(req.body.ptr as &void) + boff) as &const byte, req.body.len - boff);
+            if bn == 0 {
+                _ = sys_close(fd) catch {};
+                return error.ConnectionClosed;
+            }
+            boff = boff + bn;
+        }
+    }
+
+    try http_check_deadline(deadline_ms);
+
+    // 为避免超额读取 body，header 使用逐字节读取（与同步流式接口行为一致）
+    var rb: [byte: 8192] = [];
+    var filled: usize = 0;
+    while !header_complete_raw(&rb[0] as &byte, filled) {
+        if filled >= 8192 {
+            _ = sys_close(fd) catch {};
+            return error.HeaderTooLarge;
+        }
+        try http_check_deadline(deadline_ms);
+        const rn: usize = try @await async_fd_read_future(fd, @ptr_from_usize(@usize_from_ptr(&rb[0] as &void) + filled) as &byte, 1);
+        if rn == 0 {
+            _ = sys_close(fd) catch {};
+            return error.ConnectionClosed;
+        }
+        filled = filled + rn;
+    }
+
+    const body_start: usize = try find_header_body_start_raw(&rb[0] as &byte, filled);
+    const meta: ParsedRespMeta = try parse_response_meta_allow_chunked_raw(&rb[0] as &byte, body_start - 4);
+
+    return Http1StreamResponse{
+        headers: Http1ResponseHeaders{
+            status: meta.status,
+            content_length: meta.content_length,
+            has_content_length: meta.has_content_length,
+            transfer_encoding_chunked: meta.transfer_encoding_chunked,
+            connection_close: true,
+        },
+        fd: fd,
+    };
+}

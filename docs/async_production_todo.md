@@ -70,17 +70,15 @@
 
 ## P1：DNS / HTTP / HTTPS 主链路收敛
 
-- [ ] 重新评估 `dns_client_query_all_async` 的手工状态机。
-  - 当前状态：仍使用手工状态机实现（`DnsTcpFuture`、`DnsUdpFuture`），`dns_client_lookup_localhost_async` 已使用 `@async_fn`。
-  - 选项 A：lowering 修复后改回更自然的 `@async_fn` 实现。
-  - 选项 B：保留手工状态机，但将其视为正式实现，补齐状态字段和错误分支回归。
+- [x] 重新评估 `dns_client_query_all_async` 的手工状态机。
+  - 当前状态：`dns_client_query_all_any_async` 已迁移为 `@async_fn`；`DnsTcpFuture` / `DnsUdpFuture` 底层 I/O 状态机保留手工实现，上层组合逻辑已 `@async_fn` 化。
   - 验收：`TC=1` TCP fallback、默认 `ANY`、A / AAAA 路径连续多轮通过。
 
 - [x] 恢复并稳定 HTTP/1.1 chunked / read-until-eof 路径。
   - 位置：`lib/std/http/http1_async.uya`。
   - 当前状态：
     - `http1_request_async` 使用 `parse_response_meta` 拒绝 chunked 编码（返回 `HttpChunkedNotSupported`）。
-    - 流式接口 `http1_stream_request` 使用 `parse_response_meta_allow_chunked` 支持 chunked。
+    - 流式接口 `http1_request_streaming` / `http1_request_stream_async` 使用 `parse_response_meta_allow_chunked` 支持 chunked。
     - 同步读取 chunked body 接口 `http1_read_chunked_body_sync` 已可用（避开 async lowering 问题）。
   - 验收：chunked loopback、content-length、read-until-eof 三条路径均有测试。
 
@@ -122,8 +120,8 @@
 - [x] `./tests/run_programs_parallel.sh --uya --c99 test_std_dns_async_transport.uya` 连续多轮通过。
 - [x] `./tests/run_programs_parallel.sh --uya --c99 test_std_async_event_fd_reuse.uya` 通过（新增 fd 复用压力测试）。
 - [x] 关键测试通过：`test_async_fd`、`test_std_async_event`、`test_std_async_scheduler`、`test_std_dns`、`test_http_server`、`test_epoll_server`、`test_https_loopback`、`test_https_real_site`、`test_raw_tls`。
-- [~] HTTP async loopback 稳定性：至少 30 分钟无崩溃、无 busy-wait、RSS 不持续增长、fd 不泄漏 — 压测脚本已创建，2 分钟预跑通过（RSS/FD 平稳），30 分钟正式压测运行中。
-- [x] `docs/std_async_design.md`、`docs/todo_async_loop_await.md`、`buglist.md` 与最终状态同步。
+- [x] HTTP async loopback 稳定性：30 分钟压测通过（`benchmarks/http_bench_async_epoll.uya` + `wrk -t4 -c100 -d1800s`），RSS 2460 KB / FD 105 完全平稳，无崩溃、无 busy-wait、无泄漏。
+- [x] `docs/std_async_design.md`、`docs/todo_async_loop_await.md`、`buglist.md`、`docs/async_production_todo.md` 与最终状态同步。
 
 ## 推进顺序
 
@@ -145,10 +143,10 @@
 - ✅ HTTP/DNS/TLS timeout 策略实现并启用（`http_check_deadline` 已取消注释）
 
 **进行中/待完成**：
-- [ ] DNS 从手工状态机迁移到 `@async_fn`
-- [ ] HTTP chunked 异步读取（当前为同步实现）
+- [x] DNS 从手工状态机迁移到 `@async_fn` — `dns_client_query_all_any_async` 已改为 `@async_fn`，移除 `DnsQueryAllFuture` 手工状态机
+- [~] HTTP chunked 异步读取 — `http1_request_stream_async` 已异步化（支持 chunked header），`http1_read_chunked_body_sync` 仍为同步实现；`http1_read_chunked_body_async` 因编译器 `@async_fn` 内多层 `while`+`@await` lowering 的 state 回跳缺失 bug 暂无法完整落地
 - [x] 长时稳定性测试（30 分钟压力测试）— 压测通过，RSS/FD 完全平稳（2460 KB / 105 fd），无崩溃、无泄漏
-- [~] 文档同步更新 — `std_async_design.md`、`todo_async_loop_await.md`、`buglist.md` 已更新
+- [x] 文档同步更新 — `std_async_design.md`、`todo_async_loop_await.md`、`buglist.md`、`async_production_todo.md` 已更新
 
 ---
 
