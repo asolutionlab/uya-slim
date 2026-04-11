@@ -1,6 +1,6 @@
 # 编译器 / 标准库 Bug 待办清单
 
-**最后更新：** 2026-04-11（补充 lowering bug）
+**最后更新：** 2026-04-11（补充 `@async_fn` 变量提升 bug）
 
 本文档用于跟踪 release 验证中发现的问题，便于逐项修复、验证和关闭。
 
@@ -58,6 +58,21 @@
   - 影响：release 流程不再被这些测试阻塞，CI 环境下网络测试会优雅跳过
 
 ## 编译器 bug
+
+- [ ] **P1 / 高：`@async_fn` 中 `http_check_deadline` 触发变量提升 bug**
+  - 状态：待修复，已用 TODO 标记绕过
+  - 归属：编译器 lowering / async 状态机生成
+  - 现象：在 `@async_fn` 函数中调用 `http_check_deadline()` 检查超时后，编译器 lowering 过程触发变量提升 bug，导致生成代码行为异常
+  - 触发代码形态：
+    ```uya
+    // 读 header 前检查超时
+    http_check_deadline(deadline) catch {
+        return error.Timeout;
+    };
+    ```
+  - 影响：HTTP 异步客户端无法在读取 header 前进行超时检查
+  - 临时绕过：当前代码中已添加 TODO 注释，暂时跳过该检查
+  - 相关文件：`lib/std/http/http1_async.uya`
 
 - [x] **P0 / 严重：`@async_fn` 复杂状态机 lowering 后行为错位导致 SIGSEGV**
   - 状态：已修复
