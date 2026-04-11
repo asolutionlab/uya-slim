@@ -343,7 +343,9 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
             const module_name_k: &byte = compiler_arena_alloc(checker.arena, base_len_k + 1) as &byte;
             if module_name_k != null {
                 memcpy(module_name_k as *void, relative_path_k as *void, base_len_k);
-                module_name_k[base_len_k] = 0;
+                if base_len_k >= 0 && base_len_k < 1000000 {
+                    module_name_k[base_len_k] = 0;
+                }
                 // 将 '/' 替换为 '.'  （kernel/errors → kernel.errors）
                 var idx_k: usize = 0;
                 while idx_k < base_len_k {
@@ -437,7 +439,9 @@ fn extract_module_path_allocated(checker: &TypeChecker, filename: &byte) &byte {
                 const module_name_uya: &byte = compiler_arena_alloc(checker.arena, module_len + 1) as &byte;
                 if module_name_uya != null {
                     memcpy(module_name_uya as *void, relative_path_uya as *void, module_len);
-                    module_name_uya[module_len] = 0;
+                    if module_len >= 0 && module_len < 1000000 {
+                        module_name_uya[module_len] = 0;
+                    }
                     // 将 '/' 替换为 '.'
                     var idx: usize = 0;
                     while idx < module_len {
@@ -700,9 +704,13 @@ fn build_project_file_module_alias(checker: &TypeChecker, filename: &byte, dir_m
     }
 
     memcpy(alias_name as *void, dir_module_name as *void, dir_module_len);
-    alias_name[dir_module_len] = 46;
+    if dir_module_len >= 0 && dir_module_len < 1000000 {
+        alias_name[dir_module_len] = 46;
+    }
     memcpy((alias_name as *byte + dir_module_len + 1) as *void, file_name as *void, file_base_len);
-    alias_name[total_len] = 0;
+    if total_len >= 0 && total_len < 1000000 {
+        alias_name[total_len] = 0;
+    }
     return alias_name;
 }
 

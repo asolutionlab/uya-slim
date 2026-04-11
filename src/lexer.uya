@@ -305,17 +305,17 @@ fn arena_copy_str(arena: &CompilerArena, start: &byte, n: usize) &byte {
     if arena == null || start == null {
         return null;
     }
-    const result: &byte = compiler_arena_alloc(arena, n + 1) as &byte;
+    const result: &u8 = compiler_arena_alloc(arena, n + 1) as &u8;
     if result == null {
         return null;
     }
     var i: usize = 0;
     while i < n {
-        result[i] = start[i];
+        result[i] = start[i] as u8;
         i = i + 1;
     }
     result[n] = 0;
-    return result;
+    return result as &byte;
 }
 
 // 创建 Token
@@ -754,17 +754,17 @@ fn read_string(lexer: &Lexer, arena: &CompilerArena) &Token {
         return null;
     }
     advance_char(lexer);
-    const value: &byte = compiler_arena_alloc(arena, lexer.string_text_len + 1) as &byte;
+    const value: &u8 = compiler_arena_alloc(arena, lexer.string_text_len + 1) as &u8;
     if value == null {
         return null;
     }
     var i: usize = 0;
     while i < lexer.string_text_len {
-        value[i] = lexer.string_text_buffer[i];
+        value[i] = lexer.string_text_buffer[i] as u8;
         i = i + 1;
     }
     value[lexer.string_text_len] = 0;
-    return make_token(arena, TokenType.TOKEN_STRING, value, line, column);
+    return make_token(arena, TokenType.TOKEN_STRING, value as &byte, line, column);
 }
 
 // 读取字符字面量 'x' 或 '\n' 等，返回 TOKEN_CHAR，token.value 为 ASCII 值的十进制字符串（如 "99"）
@@ -827,17 +827,17 @@ fn read_char_literal(lexer: &Lexer, arena: &CompilerArena, line: i32, column: i3
     if n < 0 || n >= 8 {
         return null;
     }
-    const value: &byte = compiler_arena_alloc(arena, (n + 1) as u64) as &byte;
+    const value: &u8 = compiler_arena_alloc(arena, (n + 1) as u64) as &u8;
     if value == null {
         return null;
     }
     var i: i32 = 0;
-    while i < n {
-        value[i] = buf[i];
+    while i < n && i < 8 {
+        value[i] = buf[i] as u8;
         i = i + 1;
     }
     value[n] = 0;
-    return make_token(arena, TokenType.TOKEN_CHAR, value, line, column);
+    return make_token(arena, TokenType.TOKEN_CHAR, value as &byte, line, column);
 }
 
 // 将字符串内一个字符（或转义序列）读入 string_text_buffer，成功返回 0，失败返回 -1

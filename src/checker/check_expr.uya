@@ -1694,7 +1694,9 @@ fn infer_call_expr(checker: &TypeChecker, expr: &ASTNode) Type {
                 base_buf[bi] = sn[bi];
                 bi = bi + 1;
             }
-            base_buf[bi] = 0;
+            if bi >= 0 && bi < @len(base_buf) {
+                base_buf[bi] = 0;
+            }
             const base_name: &byte = &base_buf[0];
             var m_fallback: &ASTNode = find_method_in_struct(checker.program_node, base_name, method_name);
             if m_fallback == null {

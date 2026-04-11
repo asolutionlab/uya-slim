@@ -134,11 +134,19 @@ fn c99_codegen_new(codegen: &C99CodeGenerator, arena: &CompilerArena, output: &v
                 return -1;
             }
             var pj: i32 = 0;
-            while pj < 1023 && path2[pj] != 0 as byte {
-                codegen.split_part2_path[pj] = path2[pj];
-                pj = pj + 1;
+            while pj < 1023 && pj < @len(path2) {
+                if pj >= 0 && pj < @len(path2) && path2[pj] != 0 as byte {
+                    if pj >= 0 && pj < @len(codegen.split_part2_path) {
+                        codegen.split_part2_path[pj] = path2[pj];
+                    }
+                    pj = pj + 1;
+                } else {
+                    break;
+                }
             }
-            codegen.split_part2_path[pj] = 0 as byte;
+            if pj >= 0 && pj < @len(codegen.split_part2_path) {
+                codegen.split_part2_path[pj] = 0 as byte;
+            }
         } else {
             codegen.split_part2_path[0] = 0 as byte;
         }
@@ -474,9 +482,11 @@ fn c99_codegen_free(codegen: &C99CodeGenerator) void {
             }
             var mci: i32 = 0;
             while mci < codegen.split_mirror_count {
-                if codegen.split_mirror_handles[mci] != null {
-                    _ = fclose(codegen.split_mirror_handles[mci] as *void);
-                    codegen.split_mirror_handles[mci] = null;
+                if mci >= 0 && mci < @len(codegen.split_mirror_handles) {
+                    if codegen.split_mirror_handles[mci] != null {
+                        _ = fclose(codegen.split_mirror_handles[mci] as *void);
+                        codegen.split_mirror_handles[mci] = null;
+                    }
                 }
                 mci = mci + 1;
             }
@@ -493,16 +503,22 @@ fn c99_mkdir_p_chain(path: &byte) void {
     var buf: [byte: 1024] = [];
     var j: i32 = 0;
     while j < 1023 && path[j] != 0 as byte {
-        buf[j] = path[j];
+        if j >= 0 && j < @len(buf) {
+            buf[j] = path[j];
+        }
         j = j + 1;
     }
-    buf[j] = 0 as byte;
+    if j >= 0 && j < @len(buf) {
+        buf[j] = 0 as byte;
+    }
     var i: i32 = 0;
     while i < j {
-        if buf[i] == 47 as byte && i > 0 {
-            buf[i] = 0 as byte;
-            _ = mkdir(&buf[0] as *byte, 493);
-            buf[i] = 47 as byte;
+        if i >= 0 && i < @len(buf) {
+            if buf[i] == 47 as byte && i > 0 {
+                buf[i] = 0 as byte;
+                _ = mkdir(&buf[0] as *byte, 493);
+                buf[i] = 47 as byte;
+            }
         }
         i = i + 1;
     }
@@ -520,15 +536,27 @@ fn c99_mkdir_p_for_file(file_path: &byte) void {
         buf[j] = file_path[j];
         j = j + 1;
     }
-    buf[j] = 0 as byte;
+    if j >= 0 && j < @len(buf) {
+        buf[j] = 0 as byte;
+    }
     var k: i32 = j - 1;
-    while k > 0 && buf[k] != 47 as byte {
-        k = k - 1;
+    while k > 0 {
+        if k >= 0 && k < @len(buf) {
+            if buf[k] != 47 as byte {
+                k = k - 1;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
     }
     if k <= 0 {
         return;
     }
-    buf[k] = 0 as byte;
+    if k >= 0 && k < @len(buf) {
+        buf[k] = 0 as byte;
+    }
     c99_mkdir_p_chain(&buf[0] as &byte);
 }
 
@@ -579,10 +607,14 @@ fn c99_mirror_rel_c_from_key(src: &byte, lcp: i32, out_rel: &byte, max_out: i32)
     var rel_uya: [byte: 512] = [];
     var ri: i32 = 0;
     while ri < 511 && src[lcp + ri] != 0 as byte {
-        rel_uya[ri] = src[lcp + ri];
+        if ri >= 0 && ri < @len(rel_uya) {
+            rel_uya[ri] = src[lcp + ri];
+        }
         ri = ri + 1;
     }
-    rel_uya[ri] = 0 as byte;
+    if ri >= 0 && ri < @len(rel_uya) {
+        rel_uya[ri] = 0 as byte;
+    }
     if ri == 0 {
         var bn: i32 = 0;
         var bi: i32 = 0;
@@ -595,10 +627,14 @@ fn c99_mirror_rel_c_from_key(src: &byte, lcp: i32, out_rel: &byte, max_out: i32)
         }
         var t: i32 = 0;
         while t < 511 && src[bn + 1 + t] != 0 as byte {
-            rel_uya[t] = src[bn + 1 + t];
+            if t >= 0 && t < @len(rel_uya) {
+                rel_uya[t] = src[bn + 1 + t];
+            }
             t = t + 1;
         }
-        rel_uya[t] = 0 as byte;
+        if t >= 0 && t < @len(rel_uya) {
+            rel_uya[t] = 0 as byte;
+        }
     }
     return c99_copy_uya_rel_to_c(&rel_uya[0] as &byte, out_rel, max_out);
 }
@@ -700,7 +736,9 @@ export fn c99_split_mirror_prepare(codegen: &C99CodeGenerator, program: &ASTNode
                         uniq[uniq_count][z] = fnm[z];
                         z = z + 1;
                     }
-                    uniq[uniq_count][z] = 0 as byte;
+                    if z >= 0 && z < @len(uniq[uniq_count]) {
+                        uniq[uniq_count][z] = 0 as byte;
+                    }
                     uniq_count = uniq_count + 1;
                 }
             }
@@ -713,82 +751,94 @@ export fn c99_split_mirror_prepare(codegen: &C99CodeGenerator, program: &ASTNode
         if c99_mirror_normalize_one_path(&uniq[nui][0] as &byte, &merged[0] as &byte, 512) != 0 {
             return -1;
         }
-        var nz: i32 = 0;
-        while nz < 511 && merged[nz] != 0 as byte {
-            uniq[nui][nz] = merged[nz];
-            nz = nz + 1;
+        if nui >= 0 && nui < @len(uniq) {
+            var nz: i32 = 0;
+            while nz < 511 {
+                if nz >= 0 && nz < @len(merged) && merged[nz] != 0 as byte {
+                    if nz >= 0 && nz < @len(uniq[nui]) {
+                        uniq[nui][nz] = merged[nz];
+                    }
+                    nz = nz + 1;
+                } else {
+                    break;
+                }
+            }
+            if nz >= 0 && nz < @len(uniq[nui]) {
+                uniq[nui][nz] = 0 as byte;
+            }
         }
-        uniq[nui][nz] = 0 as byte;
         nui = nui + 1;
     }
     const lcp: i32 = c99_mirror_lcp_len_flat(&uniq[0][0] as &byte, uniq_count);
     codegen.split_mirror_lcp = lcp;
     var ci: i32 = 0;
     while ci < uniq_count {
-        const src: &byte = &uniq[ci][0] as &byte;
-        var rel_c_buf: [byte: 512] = [];
-        if c99_mirror_rel_c_from_key(src, lcp, &rel_c_buf[0] as &byte, 512) != 0 {
-            return -1;
-        }
-        const key_copy: &byte = c99_arena_strdup(codegen.arena, src);
-        if key_copy == null {
-            return -1;
-        }
-        codegen.split_mirror_keys[ci] = key_copy;
-        var fullp: [byte: 1024] = [];
-        const fl: i32 = snprintf(&fullp[0] as *byte, 1024, "%s/%s" as *byte, codegen.split_dir as *byte, &rel_c_buf[0] as *byte);
-        if fl <= 0 || fl >= 1024 {
-            return -1;
-        }
-        c99_mkdir_p_for_file(&fullp[0] as &byte);
-        const fh: *void = fopen(&fullp[0] as *byte, "w" as *byte);
-        if fh == null {
-            return -1;
-        }
-        fputs("#include \"uya_split_protos.h\"\n#include \"uya_mirror_globals.h\"\n#include \"uya_vtable_externs.h\"\n#include \"uya_strings_extern.h\"\n\n" as *byte, fh as *void);
-        var is_libc_stdio_unit: i32 = 0;
-        var tmp_stdio: [byte: 512] = [];
-        if c99_mirror_normalize_one_path(src, &tmp_stdio[0] as &byte, 512) == 0 {
-            if strstr(&tmp_stdio[0] as *byte, "libc/stdio.uya" as *byte) != null {
-                is_libc_stdio_unit = 1;
+        if ci >= 0 && ci < @len(uniq) {
+            const src: &byte = &uniq[ci][0] as &byte;
+            var rel_c_buf: [byte: 512] = [];
+            if c99_mirror_rel_c_from_key(src, lcp, &rel_c_buf[0] as &byte, 512) != 0 {
+                return -1;
             }
-        }
-        if codegen.freestanding == 0 {
-            // fprintf(stderr,...) 等需 stdio；自举镜像 TU 与单文件一致。has_stdio_conflicts 时用 _stdin 宏路径，勿再含 <stdio.h>
-            if codegen.has_stdio_conflicts == 0 {
-                fputs("#include <stdio.h>\n" as *byte, fh as *void);
+            const key_copy: &byte = c99_arena_strdup(codegen.arena, src);
+            if key_copy == null {
+                return -1;
             }
-            // 与 lib/libc/time.uya / libc.stdlib 常量类型保持一致，避免 CLOCKS_PER_SEC 类型冲突。
-            fputs("typedef uint64_t clock_t;\n" as *byte, fh as *void);
-            fputs("int32_t std_runtime_get_argc(void);\n" as *byte, fh as *void);
-            fputs("uint8_t *std_runtime_get_argv(int32_t index);\n" as *byte, fh as *void);
-            fputs("extern char *getenv(const char *);\n" as *byte, fh as *void);
-            fputs("extern const uint32_t S_IFMT;\nextern const uint32_t S_IFDIR;\nextern const uint32_t S_IFREG;\n" as *byte, fh as *void);
-            fputs("extern const uint8_t DT_REG;\nextern const uint8_t DT_UNKNOWN;\nextern const uint8_t DT_DIR;\n" as *byte, fh as *void);
-            fputs("extern const int64_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, fh as *void);
-            if codegen.has_stdio_conflicts != 0 {
+            codegen.split_mirror_keys[ci] = key_copy;
+            var fullp: [byte: 1024] = [];
+            const fl: i32 = snprintf(&fullp[0] as *byte, 1024, "%s/%s" as *byte, codegen.split_dir as *byte, &rel_c_buf[0] as *byte);
+            if fl <= 0 || fl >= 1024 {
+                return -1;
+            }
+            c99_mkdir_p_for_file(&fullp[0] as &byte);
+            const fh: *void = fopen(&fullp[0] as *byte, "w" as *byte);
+            if fh == null {
+                return -1;
+            }
+            fputs("#include \"uya_split_protos.h\"\n#include \"uya_mirror_globals.h\"\n#include \"uya_vtable_externs.h\"\n#include \"uya_strings_extern.h\"\n\n" as *byte, fh as *void);
+            var is_libc_stdio_unit: i32 = 0;
+            var tmp_stdio: [byte: 512] = [];
+            if c99_mirror_normalize_one_path(src, &tmp_stdio[0] as &byte, 512) == 0 {
+                if strstr(&tmp_stdio[0] as *byte, "libc/stdio.uya" as *byte) != null {
+                    is_libc_stdio_unit = 1;
+                }
+            }
+            if codegen.freestanding == 0 {
+                // fprintf(stderr,...) 等需 stdio；自举镜像 TU 与单文件一致。has_stdio_conflicts 时用 _stdin 宏路径，勿再含 <stdio.h>
+                if codegen.has_stdio_conflicts == 0 {
+                    fputs("#include <stdio.h>\n" as *byte, fh as *void);
+                }
+                // 与 lib/libc/time.uya / libc.stdlib 常量类型保持一致，避免 CLOCKS_PER_SEC 类型冲突。
+                fputs("typedef uint64_t clock_t;\n" as *byte, fh as *void);
+                fputs("int32_t std_runtime_get_argc(void);\n" as *byte, fh as *void);
+                fputs("uint8_t *std_runtime_get_argv(int32_t index);\n" as *byte, fh as *void);
+                fputs("extern char *getenv(const char *);\n" as *byte, fh as *void);
+                fputs("extern const uint32_t S_IFMT;\nextern const uint32_t S_IFDIR;\nextern const uint32_t S_IFREG;\n" as *byte, fh as *void);
+                fputs("extern const uint8_t DT_REG;\nextern const uint8_t DT_UNKNOWN;\nextern const uint8_t DT_DIR;\n" as *byte, fh as *void);
+                fputs("extern const int64_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, fh as *void);
+                if codegen.has_stdio_conflicts != 0 {
+                    fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, fh as *void);
+                    // lib/libc/stdio.uya 镜像 .c 内定义 struct FILE * stdin = (&_stdin)，不能与 #define stdin 共存
+                    if is_libc_stdio_unit == 0 {
+                        fputs("#define stdin (&_stdin)\n#define stdout (&_stdout)\n#define stderr (&_stderr)\n" as *byte, fh as *void);
+                    }
+                }
+            } else {
+                // nostdlib：与单文件 main.uya 一致，不配 <stdio.h>；fprintf(stderr,...) 依赖 _stderr + 宏
                 fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, fh as *void);
-                // lib/libc/stdio.uya 镜像 .c 内定义 struct FILE * stdin = (&_stdin)，不能与 #define stdin 共存
                 if is_libc_stdio_unit == 0 {
                     fputs("#define stdin (&_stdin)\n#define stdout (&_stdout)\n#define stderr (&_stderr)\n" as *byte, fh as *void);
                 }
+                fputs("typedef uint64_t clock_t;\n" as *byte, fh as *void);
+                fputs("int32_t std_runtime_get_argc(void);\n" as *byte, fh as *void);
+                fputs("uint8_t *std_runtime_get_argv(int32_t index);\n" as *byte, fh as *void);
+                fputs("extern char *getenv(const char *);\n" as *byte, fh as *void);
+                fputs("extern const uint32_t S_IFMT;\nextern const uint32_t S_IFDIR;\nextern const uint32_t S_IFREG;\n" as *byte, fh as *void);
+                fputs("extern const uint8_t DT_REG;\nextern const uint8_t DT_UNKNOWN;\nextern const uint8_t DT_DIR;\n" as *byte, fh as *void);
+                fputs("extern const int64_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, fh as *void);
             }
-        } else {
-            // nostdlib：与单文件 main.uya 一致，不配 <stdio.h>；fprintf(stderr,...) 依赖 _stderr + 宏
-            fputs("extern struct FILE _stdin, _stdout, _stderr;\n" as *byte, fh as *void);
-            if is_libc_stdio_unit == 0 {
-                fputs("#define stdin (&_stdin)\n#define stdout (&_stdout)\n#define stderr (&_stderr)\n" as *byte, fh as *void);
-            }
-            fputs("typedef uint64_t clock_t;\n" as *byte, fh as *void);
-            fputs("int32_t std_runtime_get_argc(void);\n" as *byte, fh as *void);
-            fputs("uint8_t *std_runtime_get_argv(int32_t index);\n" as *byte, fh as *void);
-            fputs("extern char *getenv(const char *);\n" as *byte, fh as *void);
-            fputs("extern const uint32_t S_IFMT;\nextern const uint32_t S_IFDIR;\nextern const uint32_t S_IFREG;\n" as *byte, fh as *void);
-            fputs("extern const uint8_t DT_REG;\nextern const uint8_t DT_UNKNOWN;\nextern const uint8_t DT_DIR;\n" as *byte, fh as *void);
-            fputs("extern const int64_t CLOCKS_PER_SEC;\nextern clock_t clock(void);\n" as *byte, fh as *void);
+            fputs("\n" as *byte, fh as *void);
+            codegen.split_mirror_handles[ci] = fh as &void;
         }
-        fputs("\n" as *byte, fh as *void);
-        codegen.split_mirror_handles[ci] = fh as &void;
         ci = ci + 1;
     }
     codegen.split_mirror_count = uniq_count;
@@ -864,13 +914,15 @@ export fn c99_mirror_emit_for_node(codegen: &C99CodeGenerator, node: &ASTNode) v
     }
     var ix: i32 = 0;
     while ix < codegen.split_mirror_count {
-        if codegen.split_mirror_keys[ix] != null && strcmp(codegen.split_mirror_keys[ix] as *byte, &norm_fnm[0] as *byte) == 0 {
-            if codegen.split_mirror_handles[ix] != null {
-                codegen.emit_stream = codegen.split_mirror_handles[ix];
-            } else {
-                codegen.emit_stream = codegen.split_common_out;
+        if ix >= 0 && ix < @len(codegen.split_mirror_keys) {
+            if codegen.split_mirror_keys[ix] != null && strcmp(codegen.split_mirror_keys[ix] as *byte, &norm_fnm[0] as *byte) == 0 {
+                if codegen.split_mirror_handles[ix] != null {
+                    codegen.emit_stream = codegen.split_mirror_handles[ix];
+                } else {
+                    codegen.emit_stream = codegen.split_common_out;
+                }
+                return;
             }
-            return;
         }
         ix = ix + 1;
     }
@@ -914,8 +966,10 @@ export fn c99_split_finish_part2_externs(codegen: &C99CodeGenerator) void {
         }
         var mfi: i32 = 0;
         while mfi < codegen.split_mirror_count {
-            if codegen.split_mirror_handles[mfi] != null {
-                _ = fflush(codegen.split_mirror_handles[mfi] as *void);
+            if mfi >= 0 && mfi < @len(codegen.split_mirror_handles) {
+                if codegen.split_mirror_handles[mfi] != null {
+                    _ = fflush(codegen.split_mirror_handles[mfi] as *void);
+                }
             }
             mfi = mfi + 1;
         }
@@ -1016,12 +1070,18 @@ export fn c99_write_mirror_manifest(codegen: &C99CodeGenerator, program: &ASTNod
                 u = u + 1;
             }
             if found == 0 && uniq_count < 128 {
-                var z: i32 = 0;
-                while z < 511 && fnm[z] != 0 as byte {
-                    uniq[uniq_count][z] = fnm[z];
-                    z = z + 1;
+                if uniq_count >= 0 && uniq_count < @len(uniq) {
+                    var z: i32 = 0;
+                    while z < 511 && fnm[z] != 0 as byte {
+                        if z >= 0 && z < @len(uniq[uniq_count]) {
+                            uniq[uniq_count][z] = fnm[z];
+                        }
+                        z = z + 1;
+                    }
+                    if z >= 0 && z < @len(uniq[uniq_count]) {
+                        uniq[uniq_count][z] = 0 as byte;
+                    }
                 }
-                uniq[uniq_count][z] = 0 as byte;
                 fputs(&uniq[uniq_count][0] as *byte, mf as *void);
                 fputc(10, mf as *void);
                 uniq_count = uniq_count + 1;
@@ -1058,21 +1118,39 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
         const klcp: i32 = codegen.split_mirror_lcp;
         var oi: i32 = 0;
         while oi < codegen.split_mirror_count {
-            if codegen.split_mirror_keys[oi] != null {
-                var cpath: [byte: 512] = [];
-                var opath: [byte: 512] = [];
-                if c99_mirror_rel_c_from_key(codegen.split_mirror_keys[oi], klcp, &cpath[0] as &byte, 512) == 0 {
-                    var pi2: i32 = 0;
-                    while pi2 < 511 && cpath[pi2] != 0 as byte {
-                        opath[pi2] = cpath[pi2];
-                        pi2 = pi2 + 1;
+            if oi >= 0 && oi < @len(codegen.split_mirror_keys) {
+                if codegen.split_mirror_keys[oi] != null {
+                    var cpath: [byte: 512] = [];
+                    var opath: [byte: 512] = [];
+                    if c99_mirror_rel_c_from_key(codegen.split_mirror_keys[oi], klcp, &cpath[0] as &byte, 512) == 0 {
+                        var pi2: i32 = 0;
+                        while pi2 < 511 {
+                            if pi2 >= 0 && pi2 < @len(cpath) && cpath[pi2] != 0 as byte {
+                                if pi2 >= 0 && pi2 < @len(opath) {
+                                    opath[pi2] = cpath[pi2];
+                                }
+                                pi2 = pi2 + 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        if pi2 >= 3 {
+                            const p1: i32 = pi2 - 1;
+                            const p2: i32 = pi2 - 2;
+                            if p2 >= 0 && p2 < @len(opath) {
+                                if p1 >= 0 && p1 < @len(opath) {
+                                    if opath[p2] == 46 as byte && opath[p1] == 99 as byte {
+                                        opath[p1] = 111 as byte;
+                                        if pi2 >= 0 && pi2 < @len(opath) {
+                                            opath[pi2] = 0 as byte;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        fputc(32, mf as *void);
+                        fputs(&opath[0] as *byte, mf as *void);
                     }
-                    if pi2 >= 3 && opath[pi2 - 2] == 46 as byte && opath[pi2 - 1] == 99 as byte {
-                        opath[pi2 - 1] = 111 as byte;
-                        opath[pi2] = 0 as byte;
-                    }
-                    fputc(32, mf as *void);
-                    fputs(&opath[0] as *byte, mf as *void);
                 }
             }
             oi = oi + 1;
@@ -1085,20 +1163,38 @@ export fn c99_write_split_makefile(codegen: &C99CodeGenerator) void {
         fputs("uya_common.o: uya_common.c uya_split_protos.h uya_mirror_globals.h uya_part1_types.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. uya_common.c -o uya_common.o\n" as *byte, mf);
         var ri: i32 = 0;
         while ri < codegen.split_mirror_count {
-            if codegen.split_mirror_keys[ri] != null {
-                var cpr: [byte: 512] = [];
-                if c99_mirror_rel_c_from_key(codegen.split_mirror_keys[ri], klcp, &cpr[0] as &byte, 512) == 0 {
-                    var opr: [byte: 512] = [];
-                    var qi2: i32 = 0;
-                    while qi2 < 511 && cpr[qi2] != 0 as byte {
-                        opr[qi2] = cpr[qi2];
-                        qi2 = qi2 + 1;
+            if ri >= 0 && ri < @len(codegen.split_mirror_keys) {
+                if codegen.split_mirror_keys[ri] != null {
+                    var cpr: [byte: 512] = [];
+                    if c99_mirror_rel_c_from_key(codegen.split_mirror_keys[ri], klcp, &cpr[0] as &byte, 512) == 0 {
+                        var opr: [byte: 512] = [];
+                        var qi2: i32 = 0;
+                        while qi2 < 511 {
+                            if qi2 >= 0 && qi2 < @len(cpr) && cpr[qi2] != 0 as byte {
+                                if qi2 >= 0 && qi2 < @len(opr) {
+                                    opr[qi2] = cpr[qi2];
+                                }
+                                qi2 = qi2 + 1;
+                            } else {
+                                break;
+                            }
+                        }
+                        if qi2 >= 3 {
+                            const q1: i32 = qi2 - 1;
+                            const q2: i32 = qi2 - 2;
+                            if q2 >= 0 && q2 < @len(opr) {
+                                if q1 >= 0 && q1 < @len(opr) {
+                                    if opr[q2] == 46 as byte && opr[q1] == 99 as byte {
+                                        opr[q1] = 111 as byte;
+                                        if qi2 >= 0 && qi2 < @len(opr) {
+                                            opr[qi2] = 0 as byte;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        fprintf(mf as *void, "%s: %s uya_split_protos.h uya_mirror_globals.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. %s -o %s\n" as *byte, &opr[0] as *byte, &cpr[0] as *byte, &cpr[0] as *byte, &opr[0] as *byte);
                     }
-                    if qi2 >= 3 && opr[qi2 - 2] == 46 as byte && opr[qi2 - 1] == 99 as byte {
-                        opr[qi2 - 1] = 111 as byte;
-                        opr[qi2] = 0 as byte;
-                    }
-                    fprintf(mf as *void, "%s: %s uya_split_protos.h uya_mirror_globals.h uya_strings_extern.h\n\t$(CC) -c $(CFLAGS) -I. %s -o %s\n" as *byte, &opr[0] as *byte, &cpr[0] as *byte, &cpr[0] as *byte, &opr[0] as *byte);
                 }
             }
             ri = ri + 1;
@@ -1353,7 +1449,9 @@ fn sanitize_type_name_for_c(codegen: &C99CodeGenerator, name: &byte) &byte {
         }
         i = i + 1;
     }
-    out[j] = 0;
+    if j >= 0 && j < @len(out) {
+        out[j] = 0;
+    }
     return c99_arena_strdup(codegen.arena, &out[0] as &byte);
 }
 

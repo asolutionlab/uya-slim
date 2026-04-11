@@ -834,12 +834,14 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                 // 回退：单态化结构体名（如 Future_Future_i32）在 AST 中无独立声明，用基名（首段）按接口解析
                 var base_buf: [byte: 64] = [];
                 var bi: i32 = 0;
-                const sn: *byte = object_type.struct_name as *byte;
+                const sn: &u8 = object_type.struct_name as &u8;
                 while sn[bi] != 0 && sn[bi] != 95 && bi < 63 {
-                    base_buf[bi] = sn[bi];
+                    base_buf[bi] = sn[bi] as byte;
                     bi = bi + 1;
                 }
-                base_buf[bi] = 0;
+                if bi >= 0 && bi < @len(base_buf) {
+                    base_buf[bi] = 0;
+                }
                 const base_name: &byte = &base_buf[0];
                 var m_fallback: &ASTNode = find_method_in_struct(checker.program_node, base_name, method_name);
                 if m_fallback == null {

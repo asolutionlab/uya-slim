@@ -822,7 +822,7 @@ fn gen_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         if bracket != null {
             // 数组类型：提取元素类型（数组的对齐值等于元素类型的对齐值）
             const elem_len: i32 = ptr_diff(bracket, type_c as *byte);
-            const elem_type: &byte = compiler_arena_alloc(codegen.arena, elem_len + 1) as &byte;
+            const elem_type: &u8 = compiler_arena_alloc(codegen.arena, elem_len + 1) as &u8;
             if elem_type != null {
                 memcpy(elem_type as *void, type_c as *void, elem_len);
                 elem_type[elem_len] = 0;
@@ -7999,11 +7999,11 @@ fn gen_asm_block(codegen: &C99CodeGenerator, expr: &ASTNode) void {
     // 输出所有指令字符串
     var instr_idx: i32 = 0;
     while instr_idx < expr.asm_instruction_count {
-        const instr: &byte = expr.asm_instructions[instr_idx];
+        const instr: &u8 = expr.asm_instructions[instr_idx] as &u8;
         if instr != null {
             var i: i32 = 0;
             while instr[i] != 0 {
-                const c: byte = instr[i];
+                const c: byte = instr[i] as byte;
                 if c == 34 {  // "
                     fputs("\\\"" as *byte, codegen.emit_stream as *void);
                 } else if c == 10 {  // \n

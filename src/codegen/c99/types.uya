@@ -6821,7 +6821,9 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                 return ("int32_t" as *byte) as &byte;
             }
             memcpy(buf as *void, ptr_type as *void, len as usize);
-            buf[len] = 0 as byte;
+            if len >= 0 && len < 1000000 {
+                buf[len] = 0 as byte;
+            }
             return buf;
         }
         // 取地址 &operand：当操作数是数组字面量时，返回切片类型
@@ -6930,7 +6932,9 @@ fn get_c_type_of_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &byte {
                 const elem_type: &byte = compiler_arena_alloc(codegen.arena, (len + 1) as usize) as &byte;
                 if elem_type != null {
                     memcpy(elem_type as *void, base_c as *void, len as usize);
-                    elem_type[len] = 0 as byte;
+                    if len >= 0 && len < 1000000 {
+                        elem_type[len] = 0 as byte;
+                    }
                     return elem_type;
                 }
             }
@@ -7198,7 +7202,9 @@ fn is_member_access_pointer_type(codegen: &C99CodeGenerator, member_access: &AST
                     const name_buf: &byte = compiler_arena_alloc(codegen.arena, name_len + 1) as &byte;
                     if name_buf != null {
                         memcpy(name_buf as *void, start as *void, name_len);
-                        name_buf[name_len] = 0;
+                        if name_len >= 0 && name_len < 1000000 {
+                            name_buf[name_len] = 0;
+                        }
                         struct_name = name_buf;
                     }
                 }
@@ -7277,7 +7283,9 @@ fn is_member_access_pointer_type(codegen: &C99CodeGenerator, member_access: &AST
                     const name_buf2: &byte = compiler_arena_alloc(codegen.arena, len2 + 1) as &byte;
                     if name_buf2 != null {
                         memcpy(name_buf2 as *void, start2 as *void, len2);
-                        name_buf2[len2] = 0;
+                        if len2 >= 0 && len2 < 1000000 {
+                            name_buf2[len2] = 0;
+                        }
                         struct_name2 = name_buf2;
                     }
                 } else {
@@ -7749,7 +7757,9 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
                             return null;
                         }
                         memcpy(elem_type2 as *void, type_c as *void, base_len);
-                        elem_type2[base_len] = 0;
+                        if base_len >= 0 && base_len < 1000000 {
+                            elem_type2[base_len] = 0;
+                        }
                         return elem_type2;
                     }
                 }
@@ -7764,7 +7774,9 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
                         const elem_p: &byte = compiler_arena_alloc(codegen.arena, (base_len_p + 1) as usize) as &byte;
                         if elem_p != null {
                             memcpy(elem_p as *void, type_c as *void, base_len_p as usize);
-                            elem_p[base_len_p] = 0;
+                            if base_len_p >= 0 && base_len_p < 1000000 {
+                                elem_p[base_len_p] = 0;
+                            }
                             return elem_p;
                         }
                     }
@@ -7810,7 +7822,9 @@ fn get_array_element_type(codegen: &C99CodeGenerator, array_expr: &ASTNode) &byt
                             return null;
                         }
                         memcpy(elem_type4 as *void, type_c2 as *void, len2);
-                        elem_type4[len2] = 0;
+                        if len2 >= 0 && len2 < 1000000 {
+                            elem_type4[len2] = 0;
+                        }
                         return elem_type4;
                     }
                 }
@@ -8038,7 +8052,9 @@ fn is_array_access_pointer_type(codegen: &C99CodeGenerator, array_access: &ASTNo
                     const name_buf: &byte = compiler_arena_alloc(codegen.arena, name_len + 1) as &byte;
                     if name_buf != null {
                         memcpy(name_buf as *void, start as *void, name_len);
-                        name_buf[name_len] = 0;
+                        if name_len >= 0 && name_len < 1000000 {
+                            name_buf[name_len] = 0;
+                        }
                         struct_name = name_buf;
                     }
                 }

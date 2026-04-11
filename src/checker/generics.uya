@@ -34,16 +34,27 @@ fn mono_instance_index_slot(generic_name: &byte, is_function: i32) i32 {
 }
 
 fn mono_instance_index_link(checker: &TypeChecker, idx: i32) void {
-    if checker == null || idx < 0 || idx >= checker.mono_instance_count || idx >= MAX_MONO_INSTANCES {
+    if checker == null {
         return;
     }
-    const inst: &MonoInstance = &checker.mono_instances[idx];
-    if inst.generic_name == null {
+    if idx < 0 {
         return;
     }
-    const slot: i32 = mono_instance_index_slot(inst.generic_name, inst.is_function);
-    g_mono_index_next[idx] = g_mono_index_heads[slot];
-    g_mono_index_heads[slot] = idx + 1;
+    if idx >= checker.mono_instance_count {
+        return;
+    }
+    if idx < 0 || idx >= MAX_MONO_INSTANCES {
+        return;
+    }
+    if idx >= 0 && idx < @len(checker.mono_instances) {
+        const inst: &MonoInstance = &checker.mono_instances[idx];
+        if inst.generic_name == null {
+            return;
+        }
+        const slot: i32 = mono_instance_index_slot(inst.generic_name, inst.is_function);
+        g_mono_index_next[idx] = g_mono_index_heads[slot];
+        g_mono_index_heads[slot] = idx + 1;
+    }
 }
 
 fn mono_instance_index_ensure(checker: &TypeChecker) void {
