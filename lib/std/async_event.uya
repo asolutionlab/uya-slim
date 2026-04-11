@@ -56,6 +56,23 @@ fn linux_epoll_alloc_slot(self: &LinuxEpoll) i32 {
     return 0 - 1;
 }
 
+fn linux_epoll_clear_slot(self: &LinuxEpoll, slot: i32) void {
+    if slot < 0 || slot >= 1024 {
+        return;
+    }
+    const idx: usize = (slot as! usize).value;
+    self.slot_used[idx] = 0;
+    self.slot_fds[idx] = 0;
+    self.slot_wakers[idx] = 0 as usize;
+}
+
+fn linux_epoll_clear_fd(self: &LinuxEpoll, fd: i32) void {
+    const slot: i32 = linux_epoll_find_slot(self, fd);
+    if slot >= 0 {
+        linux_epoll_clear_slot(self, slot);
+    }
+}
+
 /// 事件循环统一接口：注册 fd、注销、轮询
 export interface EventLoop {
     fn register(self: &Self, fd: i32, interest: EventKind, waker: &Waker) !i32;
@@ -75,11 +92,18 @@ export struct LinuxEpoll : EventLoop {
         var slot: i32 = linux_epoll_find_slot(self, fd);
         if slot >= 0 {
             const mod_result: !i32 = sys_epoll_ctl(self.epfd, EPOLL_CTL_MOD, fd, &ev);
-            _ = mod_result catch |err| {
-                return mod_result as! i32;
-            };
-            self.slot_wakers[slot] = (waker as &void) as usize;
-            return 0;
+            if mod_result.error_id != 0 {
+                const eid: i32 = mod_result.error_id as i32;
+                if eid == ENOENT || eid == EBADF {
+                    linux_epoll_clear_slot(self, slot);
+                    slot = 0 - 1;
+                } else {
+                    return mod_result as! i32;
+                }
+            } else {
+                self.slot_wakers[slot] = (waker as &void) as usize;
+                return 0;
+            }
         }
 
         slot = linux_epoll_alloc_slot(self);
@@ -87,19 +111,28 @@ export struct LinuxEpoll : EventLoop {
             return error.EventLoopSlotsFull;
         }
         const add_result: !i32 = sys_epoll_ctl(self.epfd, EPOLL_CTL_ADD, fd, &ev);
-        _ = add_result catch |err| {
-            if (@error_id(err) as i32) == EEXIST {
+        if add_result.error_id != 0 {
+            const eid: i32 = add_result.error_id as i32;
+            if eid == EEXIST {
                 const mod_result: !i32 = sys_epoll_ctl(self.epfd, EPOLL_CTL_MOD, fd, &ev);
-                _ = mod_result catch |mod_err| {
-                    return mod_result as! i32;
-                };
+                if mod_result.error_id != 0 {
+                    const mod_eid: i32 = mod_result.error_id as i32;
+                    if mod_eid == ENOENT || mod_eid == EBADF {
+                        const add_retry: !i32 = sys_epoll_ctl(self.epfd, EPOLL_CTL_ADD, fd, &ev);
+                        if add_retry.error_id != 0 {
+                            return add_retry as! i32;
+                        }
+                    } else {
+                        return mod_result as! i32;
+                    }
+                }
                 self.slot_used[slot] = 1;
                 self.slot_fds[slot] = fd;
                 self.slot_wakers[slot] = (waker as &void) as usize;
                 return 0;
             }
             return add_result as! i32;
-        };
+        }
         self.slot_used[slot] = 1;
         self.slot_fds[slot] = fd;
         self.slot_wakers[slot] = (waker as &void) as usize;
@@ -107,16 +140,15 @@ export struct LinuxEpoll : EventLoop {
     }
 
     fn deregister(self: &Self, fd: i32) !i32 {
-        const del_result: !i32 = sys_epoll_ctl_del(self.epfd, fd);
-        _ = del_result catch |err| {
-            return del_result as! i32;
-        };
-        const slot: i32 = linux_epoll_find_slot(self, fd);
-        if slot >= 0 {
-            self.slot_used[slot] = 0;
-            self.slot_fds[slot] = 0;
-            self.slot_wakers[slot] = 0 as usize;
+        var ev: EpollEvent = EpollEvent{ events: 0 as u32, _pad: 0, data: 0 as u64 };
+        const mod_result: !i32 = sys_epoll_ctl(self.epfd, EPOLL_CTL_MOD, fd, &ev);
+        if mod_result.error_id != 0 {
+            const eid: i32 = mod_result.error_id as i32;
+            if eid != ENOENT && eid != EBADF {
+                return mod_result as! i32;
+            }
         }
+        linux_epoll_clear_fd(self, fd);
         return 0;
     }
 

@@ -90,6 +90,14 @@ make b
 2. 对比 `bin/uya.c` 与 `bin/uya_bootstrap.c`
 3. 一致则通过
 
+如果你是在调试发布链路，也可以临时跑：
+
+```bash
+make release-dirty
+```
+
+它会在当前工作树里强行执行完整 release 流程，但不会替代 `make release` 或 `make release-clean` 作为最终结论。
+
 ---
 
 ## 测试编写规范
@@ -152,3 +160,4 @@ test:
 - **开发指导**：[DEVELOPMENT.md](./DEVELOPMENT.md)
 - **测试框架源码**：`lib/std/testing/testing.uya`
 - **测试规范**：[testing_guide.md](./testing_guide.md)
+- **发布流程**：`make release` / `make release-clean` / `make release-dirty`

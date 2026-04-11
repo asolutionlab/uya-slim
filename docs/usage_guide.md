@@ -146,6 +146,8 @@ make release
 | `make from-c` | 从备份恢复并构建 |
 | `make backup` | 验证 + 备份 |
 | `make release` | 构建发布版本（-O3 优化） |
+| `make release-dirty` | 在当前工作树强行执行完整 release；会先 `clean`，再跑 `from-c` / `uya` / `b` / `check` / `backup-seed` / `release-build`，只适合本地调试 |
+| `make release-clean` | 在 Git HEAD 干净快照里执行 `make release`，会忽略未提交修改，更接近 CI |
 | `make clean` | 清理构建产物 |
 
 ---
