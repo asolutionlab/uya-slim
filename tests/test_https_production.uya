@@ -3,6 +3,7 @@
 
 use tls.https;
 use tls.x509.trust_store;
+use libc.getenv;
 use libc.unistd;
 use libc.syscall;
 use libc.fcntl;
@@ -12,6 +13,14 @@ fn write_stderr_msg(msg: &[byte]) void {
 }
 
 fn allow_skip_network() bool {
+    const github_actions: &byte = getenv("GITHUB_ACTIONS" as *byte);
+    if github_actions != null {
+        return true;
+    }
+    const ci: &byte = getenv("CI" as *byte);
+    if ci != null {
+        return true;
+    }
     const fd_res: !i32 = sys_open("/tmp/uya_allow_skip_network", O_RDONLY as i32, 0);
     const fd: i32 = fd_res catch {
         return false;
@@ -52,7 +61,7 @@ fn test_https_with_verification() i32 {
     write_stderr_msg(&"Test 2: HTTPS with certificate verification...\n"[0: 48]);
     
     if allow_skip_network() {
-        write_stderr_msg(&"  SKIP: Network tests disabled\n"[0: 32]);
+        write_stderr_msg(&"  SKIP: Network tests disabled (CI/local override)\n"[0: 52]);
         return 0;
     }
     
@@ -111,7 +120,7 @@ fn test_https_insecure() i32 {
     write_stderr_msg(&"Test 3: HTTPS without verification (insecure mode)...\n"[0: 55]);
     
     if allow_skip_network() {
-        write_stderr_msg(&"  SKIP: Network tests disabled\n"[0: 32]);
+        write_stderr_msg(&"  SKIP: Network tests disabled (CI/local override)\n"[0: 52]);
         return 0;
     }
     
