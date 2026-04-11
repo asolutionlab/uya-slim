@@ -372,6 +372,22 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
             bi = bi + 1;
         }
     }
+    // poll 体的状态指针固定使用 async_state_var（当前为 s）。用户在 await 之后声明局部变量 s 时，
+    // 需要给该局部变量换一个 C 名，避免初始化表达式里的 s->_uya_loc_* 被新局部变量遮蔽。
+    if codegen.async_state_var != null && codegen.local_variable_count > 0 {
+        const safe_name: &byte = get_safe_c_identifier(codegen, name);
+        if safe_name != null && strcmp(safe_name as *byte, codegen.async_state_var as *byte) == 0 {
+            var li: i32 = 0;
+            while li < codegen.local_variable_count && li < C99_MAX_LOCAL_VARS {
+                if codegen.local_variables[li].name != null &&
+                    (strcmp(codegen.local_variables[li].name as *byte, name as *byte) == 0 ||
+                     strcmp(codegen.local_variables[li].name as *byte, safe_name as *byte) == 0) {
+                    return "__uya_local_s" as &byte;
+                }
+                li = li + 1;
+            }
+        }
+    }
     c99_ident_ref_cache_ensure(codegen);
     const slot: i32 = c99_ident_ref_cache_slot(codegen, name);
     if g_c99_ident_ref_keys[slot] != null &&

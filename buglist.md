@@ -59,9 +59,9 @@
 
 ## 编译器 bug
 
-- [ ] **P0 / 严重：`@async_fn` 复杂状态机 lowering 后行为错位导致 SIGSEGV**
-  - 状态：未修复，已绕过
-  - 验证状态：`tests/test_http1_async_client.uya` 中 `http1_async_get_chunked_loopback_roundtrip` 测试用例编译通过但运行期 SIGSEGV
+- [x] **P0 / 严重：`@async_fn` 复杂状态机 lowering 后行为错位导致 SIGSEGV**
+  - 状态：已修复
+  - 验证状态：`tests/test_async_else_if_await.uya` 与 `tests/test_http1_async_client.uya` 已通过，`http1_async_get_chunked_loopback_roundtrip` 不再 SIGSEGV
   - 归属：编译器 lowering / async 状态机生成
   - 现象：
     1. `http1_request_async` 中 `else if meta.read_until_eof { ... if meta.transfer_encoding_chunked { ... } }` 分支的 lowering 生成代码错位
@@ -80,13 +80,13 @@
     }
     ```
   - 影响：任何使用 `else if` 分支并在其中修改变量后继续使用该变量的 `@async_fn` 都可能触发。
-  - 可能位置：`src/codegen/c99/async_lowering.uya`，状态机拆分时的变量生命周期/悬垂引用处理
-  - 绕过方案：将 chunked 解码完全拆出 `http1_request_async`，使用独立的 `http1_read_chunked_body_async` Future
+  - 修复位置：`src/codegen/c99/function.uya` / `src/codegen/c99/stmt.uya`，补齐 `else if` 分支续接、分支内同步语句发射与循环控制流 resume
+  - 备注：此前将 chunked 解码拆出独立 Future 的绕过路径不再是该 lowering 问题的必要条件
   - 相关文件：`lib/std/http/http1_async.uya`
 
-- [ ] **P1 / 高：`@async_fn` 中 `return error.X` 报"返回错误值只能在返回错误联合类型 !T 的函数中使用"**
-  - 状态：未修复，已用辅助函数绕过
-  - 验证状态：新增 `http1_read_chunked_body_async` 时，函数体内直接 `return error.InvalidRequest` 等报错
+- [x] **P1 / 高：`@async_fn` 中 `return error.X` 报"返回错误值只能在返回错误联合类型 !T 的函数中使用"**
+  - 状态：已修复
+  - 验证状态：新增 `tests/test_async_return_error_direct.uya`，覆盖 `Future<!i32>` no-await / after-await 直接 `return error.X` 并已通过
   - 归属：编译器 lowering / 错误类型推断
   - 现象：
     1. `@async_fn fn foo() Future<!usize>` 函数体内直接 `return error.X` 类型检查失败
@@ -101,13 +101,13 @@
     }
     ```
   - 影响：所有需要在 `@async_fn` 中提前返回错误的场景
-  - 可能位置：`src/codegen/c99/async_lowering.uya`，状态机生成时对返回类型的转换
-  - 绕过方案：使用辅助函数包装错误返回：
+  - 修复位置：`src/checker/main.uya` / `src/codegen/c99/stmt.uya`，类型检查允许 async `Future<!T>` 的直接错误返回，poll lowering 将其包装为 `Poll.Ready(error.X)`
+  - 历史绕过方案：使用辅助函数包装错误返回：
     ```uya
     fn http1_err_conn_closed() !usize { return error.ConnectionClosed; }
     // 在 async_fn 中：const e: !usize = try http1_err_conn_closed(); return e;
     ```
-  - 备注：这是 lowering 阶段对 `!T` 类型在状态机中的处理 bug，需要检查生成的 C 代码中 poll 函数的返回类型是否正确映射
+  - 备注：`Future<!void>` 直接错误返回仍依赖 `Poll_err_void` / `Future_err_void` / `block_on<void>` 等 void monomorph 支持，需后续单独补齐
 
 - [x] **P0 / 严重：`@async_fn` 无 `@await` 与 `catch` 组合路径的 lowering 丢副作用**
   - 状态：已修复，待 release 验收确认

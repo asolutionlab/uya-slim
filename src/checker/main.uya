@@ -51,6 +51,27 @@ fn checker_check_program_node(checker: &TypeChecker, node: &ASTNode) i32 {
     return 1;
 }
 
+fn checker_type_is_future_error_union(t: &Type) i32 {
+    if t == null {
+        return 0;
+    }
+    if t.kind == TypeKind.TYPE_INTERFACE && t.interface_name != null &&
+        str_equals(t.interface_name, "Future" as *byte) != 0 &&
+        t.interface_type_arg_count >= 1 && t.interface_type_args != null {
+        if t.interface_type_args[0].kind == TypeKind.TYPE_ERROR_UNION {
+            return 1;
+        }
+    }
+    if t.kind == TypeKind.TYPE_STRUCT && t.struct_name != null &&
+        str_equals(t.struct_name, "Future" as *byte) != 0 &&
+        t.struct_type_arg_count >= 1 && t.struct_type_args != null {
+        if t.struct_type_args[0].kind == TypeKind.TYPE_ERROR_UNION {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 // 返回：1 表示检查通过，0 表示检查失败
 // 注意：这是一个简化版本，包含所有主要节点类型的检查
 fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
@@ -511,6 +532,11 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             // 特殊处理：return error.X 仅当函数返回 !T 时合法
             if expr_type.kind == TypeKind.TYPE_ERROR {
                 if checker.current_return_type.kind != TypeKind.TYPE_ERROR_UNION {
+                    if checker.current_function_decl != null &&
+                        checker.current_function_decl.fn_decl_is_async != 0 &&
+                        checker_type_is_future_error_union(&checker.current_return_type) != 0 {
+                        return 1;
+                    }
                     checker_report_error(checker, node, "返回错误值只能在返回错误联合类型 !T 的函数中使用" as *byte);
                     return 0;
                 }

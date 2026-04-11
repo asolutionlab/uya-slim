@@ -467,7 +467,13 @@ fn gen_while_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     gen_expr(codegen, condition);
     fputs(") {\n" as *byte, codegen.emit_stream as *void);
     codegen.indent_level = codegen.indent_level + 1;
+    const saved_async_control_while: &ASTNode = codegen.async_control_while;
+    const saved_async_control_for: &ASTNode = codegen.async_control_for;
+    codegen.async_control_while = null;
+    codegen.async_control_for = null;
     gen_stmt(codegen, body);
+    codegen.async_control_while = saved_async_control_while;
+    codegen.async_control_for = saved_async_control_for;
     codegen.indent_level = codegen.indent_level - 1;
     c99_emit(codegen, "}\n" as *byte);
 }
@@ -476,6 +482,26 @@ fn gen_while_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
 fn gen_break_stmt(codegen: &C99CodeGenerator) void {
     emit_current_block_drops(codegen);
     emit_defer_cleanup(codegen, 0);
+    if codegen != null && codegen.async_state_var != null && codegen.async_poll_ret_c != null {
+        if codegen.async_control_while != null {
+            const br: i32 = emit_async_after_stmt(codegen, codegen.async_control_while);
+            if br != 0 {
+                fprintf(codegen.emit_stream as *void, "        %s->state = %d;\n" as *byte,
+                    codegen.async_state_var as *byte, codegen.async_collect_count + 1);
+            }
+            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
+            return;
+        }
+        if codegen.async_control_for != null {
+            const fr: i32 = emit_async_after_stmt(codegen, codegen.async_control_for);
+            if fr != 0 {
+                fprintf(codegen.emit_stream as *void, "        %s->state = %d;\n" as *byte,
+                    codegen.async_state_var as *byte, codegen.async_collect_count + 1);
+            }
+            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
+            return;
+        }
+    }
     c99_emit(codegen, "break;\n" as *byte);
 }
 
@@ -483,6 +509,18 @@ fn gen_break_stmt(codegen: &C99CodeGenerator) void {
 fn gen_continue_stmt(codegen: &C99CodeGenerator) void {
     emit_current_block_drops(codegen);
     emit_defer_cleanup(codegen, 0);
+    if codegen != null && codegen.async_state_var != null && codegen.async_poll_ret_c != null {
+        if codegen.async_control_while != null {
+            emit_async_while_loopback_or_exit(codegen, codegen.async_control_while);
+            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
+            return;
+        }
+        if codegen.async_control_for != null {
+            emit_async_for_loopback_or_exit(codegen, codegen.async_control_for);
+            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, codegen.async_poll_ret_c as *byte);
+            return;
+        }
+    }
     c99_emit(codegen, "continue;\n" as *byte);
 }
 
@@ -544,7 +582,13 @@ fn gen_for_range(codegen: &C99CodeGenerator, stmt: &ASTNode, body2: &ASTNode) vo
         fputs("while (1) {\n" as *byte, codegen.emit_stream as *void);
     }
     codegen.indent_level = codegen.indent_level + 1;
+    const saved_async_control_while: &ASTNode = codegen.async_control_while;
+    const saved_async_control_for: &ASTNode = codegen.async_control_for;
+    codegen.async_control_while = null;
+    codegen.async_control_for = null;
     gen_stmt(codegen, body2);
+    codegen.async_control_while = saved_async_control_while;
+    codegen.async_control_for = saved_async_control_for;
     codegen.indent_level = codegen.indent_level - 1;
     c99_emit(codegen, "}\n" as *byte);
     codegen.indent_level = codegen.indent_level - 1;
@@ -588,7 +632,13 @@ fn gen_for_array(codegen: &C99CodeGenerator, stmt: &ASTNode, body2: &ASTNode) vo
         gen_for_array_value(codegen, array, var_name2, elem_type_c);
     }
     
+    const saved_async_control_while: &ASTNode = codegen.async_control_while;
+    const saved_async_control_for: &ASTNode = codegen.async_control_for;
+    codegen.async_control_while = null;
+    codegen.async_control_for = null;
     gen_stmt(codegen, body2);
+    codegen.async_control_while = saved_async_control_while;
+    codegen.async_control_for = saved_async_control_for;
     codegen.indent_level = codegen.indent_level - 1;
     c99_emit(codegen, "}\n" as *byte);
     codegen.indent_level = codegen.indent_level - 1;
@@ -680,7 +730,13 @@ fn gen_for_iterator(codegen: &C99CodeGenerator, stmt: &ASTNode, body2: &ASTNode,
         fprintf(codegen.emit_stream as *void, "%s %s = %s(&_uya_iter);\n" as *byte, value_type_c as *byte, var_name2 as *byte, value_cname as *byte);
     }
     
+    const saved_async_control_while: &ASTNode = codegen.async_control_while;
+    const saved_async_control_for: &ASTNode = codegen.async_control_for;
+    codegen.async_control_while = null;
+    codegen.async_control_for = null;
     gen_stmt(codegen, body2);
+    codegen.async_control_while = saved_async_control_while;
+    codegen.async_control_for = saved_async_control_for;
     
     codegen.indent_level = codegen.indent_level - 1;
     c99_emit_indent(codegen);
@@ -746,6 +802,51 @@ fn gen_for_array_value(codegen: &C99CodeGenerator, array: &ASTNode, var_name2: &
 }
 
 // 生成 return 语句
+fn c99_async_emit_poll_error_return(codegen: &C99CodeGenerator, expr: &ASTNode) i32 {
+    if codegen == null || expr == null || expr.type != ASTNodeType.AST_ERROR_VALUE ||
+        codegen.async_emit_poll_return == 0 || codegen.async_poll_ret_c == null ||
+        codegen.async_poll_union_c == null || codegen.async_poll_ready_payload_c == null ||
+        codegen.async_poll_try_propagate_type == null {
+        return 0;
+    }
+    const inner: &ASTNode = codegen.async_poll_try_propagate_type;
+    if inner.type != ASTNodeType.AST_TYPE_ERROR_UNION {
+        return 0;
+    }
+    var id: i32 = c99_get_or_add_error_id(codegen, expr.error_value_name);
+    if id == 0 {
+        id = 1;
+    }
+    const payload_node: &ASTNode = inner.type_error_union_payload_type;
+    var payload_void: i32 = 0;
+    if payload_node == null ||
+        (payload_node.type == ASTNodeType.AST_TYPE_NAMED &&
+         payload_node.type_named_name != null &&
+         strcmp(payload_node.type_named_name as *byte, "void" as *byte) == 0) {
+        payload_void = 1;
+    }
+    c99_emit_indent(codegen);
+    fprintf(codegen.emit_stream as *void,
+        "return (%s){ ._tag = 1, .u = (%s){ .Ready = (%s){ .error_id = %dU" as *byte,
+        codegen.async_poll_ret_c as *byte,
+        codegen.async_poll_union_c as *byte,
+        codegen.async_poll_ready_payload_c as *byte,
+        id);
+    if payload_void == 0 {
+        const payload_c: &byte = c99_type_to_c(codegen, payload_node);
+        fputs(", .value = " as *byte, codegen.emit_stream as *void);
+        if payload_c != null &&
+            (strncmp(payload_c as *byte, "struct " as *byte, 7) == 0 ||
+             strncmp(payload_c as *byte, "union " as *byte, 6) == 0) {
+            fprintf(codegen.emit_stream as *void, "(%s){0}" as *byte, payload_c as *byte);
+        } else {
+            fputs("0" as *byte, codegen.emit_stream as *void);
+        }
+    }
+    fputs(" } } };\n" as *byte, codegen.emit_stream as *void);
+    return 1;
+}
+
 fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
     const expr: &ASTNode = stmt.return_stmt_expr;
     var is_error_return: i32 = 0;
@@ -753,6 +854,10 @@ fn gen_return_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
         is_error_return = 1;
     }
     const return_type: &ASTNode = codegen.current_function_return_type;
+
+    if is_error_return != 0 && c99_async_emit_poll_error_return(codegen, expr) != 0 {
+        return;
+    }
 
     // while 内多 await 间语句：return expr 需包装为 return Poll::Ready(...)
     if codegen.async_emit_poll_return != 0 && codegen.async_poll_ret_c != null &&
@@ -1732,7 +1837,11 @@ fn gen_destructure_decl(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
 
 // 生成变量声明语句
 fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
-        const var_name: &byte = get_safe_c_identifier(codegen, stmt.var_decl_name);
+        var var_name: &byte = get_safe_c_identifier(codegen, stmt.var_decl_name);
+        if codegen != null && codegen.async_state_var != null && var_name != null &&
+            strcmp(var_name as *byte, codegen.async_state_var as *byte) == 0 {
+            var_name = "__uya_local_s" as &byte;
+        }
         const var_type: &ASTNode = stmt.var_decl_type;
         const init_expr: &ASTNode = stmt.var_decl_init;
         const is_const: i32 = stmt.var_decl_is_const;

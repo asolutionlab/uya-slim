@@ -349,6 +349,8 @@ struct C99CodeGenerator {
     async_full_return_type: &ASTNode,        // 完整返回类型（如 !Future<T>）
     async_concrete_future_safe: &byte,       // 具体 Future struct 的 safe C 名
     async_state_slot_iface_c: &byte,         // await 槽位接口类型
+    async_control_while: &ASTNode,           // 当前 async continuation 所属 while，用于 break/continue lowering
+    async_control_for: &ASTNode,             // 当前 async continuation 所属 for，用于 break/continue lowering
 
     // microapp 模式：生成指针访问边界检查
     container_mode: i32,

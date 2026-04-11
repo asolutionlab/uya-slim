@@ -13,24 +13,26 @@
 
 ## P0：编译器 async lowering 稳定化
 
-- [ ] 修复复杂状态机 lowering 错位导致的运行期 SIGSEGV。
+- [x] 修复复杂状态机 lowering 错位导致的运行期 SIGSEGV。
   - 关联：`buglist.md` 中 `@async_fn` 复杂状态机 lowering 后行为错位导致 SIGSEGV。
   - 重点形态：`else if` 分支内 await、分支内修改变量、分支后继续使用变量。
   - 验收：`tests/test_http1_async_client.uya` 中 chunked loopback 路径不再 SIGSEGV。
+  - 验证：`tests/test_async_else_if_await.uya`、`tests/test_http1_async_client.uya` 通过。
 
-- [ ] 转正并修复 await 循环间同步语句丢失。
+- [x] 转正并修复 await 循环间同步语句丢失。
   - 关联：`docs/todo_async_loop_await.md` 的 Bug B。
   - 重点形态：读 header 循环后执行同步 parse/malloc/assign，再进入读 body 循环。
-  - 验收：`tests/test_async_bug_b_sync_between.uya.pending` 改为 `.uya` 并通过。
+  - 验收：`tests/test_async_bug_b_sync_between.uya` 通过。
 
-- [ ] 修复分裂点附近局部变量与表达式提升问题。
+- [x] 修复分裂点附近局部变量与表达式提升问题。
   - 关联：`docs/todo_async_loop_await.md` 的 Bug D。
   - 覆盖：if 内局部变量、切片表达式、嵌套循环、`break` / `continue` resume 后错位。
-  - 验收：新增最小回归，覆盖 `xxx undeclared`、`break not within loop`、切片类型错发射。
+  - 验收：`tests/test_async_bug_d_nested_block.uya` 通过，覆盖嵌套局部变量、`break` / `continue` resume、切片表达式与局部变量 `s` 的 poll state 指针命名冲突。
 
-- [ ] 修复 `@async_fn fn ... Future<!T>` 内直接 `return error.X` 的类型检查。
+- [x] 修复 `@async_fn fn ... Future<!T>` 内直接 `return error.X` 的类型检查。
   - 关联：`buglist.md` 中 `@async_fn` 中 `return error.X` 报错。
-  - 验收：新增 `Future<!usize>` / `Future<!void>` 提前返回错误测试，移除依赖辅助函数包装错误的绕过路径。
+  - 验收：新增 `tests/test_async_return_error_direct.uya`，覆盖 `Future<!i32>` no-await / after-await 直接 `return error.X`。
+  - 后续：`Future<!void>` 直接错误返回还依赖 `Poll_err_void` / `Future_err_void` / `block_on<void>` 等 void monomorph 支持，单独纳入后续泛型特化工作。
 
 ## P1：异步运行时硬化
 
@@ -100,4 +102,3 @@
 2. 再硬化 `LinuxEpoll` / `Waker` / 生命周期释放。
 3. 然后收敛 DNS / HTTP / HTTPS 主链路，移除或正式化绕过方案。
 4. 最后做压测、release 闸门、文档同步。
-

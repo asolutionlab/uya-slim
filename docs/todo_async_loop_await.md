@@ -80,9 +80,10 @@
   }
   ```
 
-- [ ] **Bug B：await 循环间的同步代码被吃掉**
+- [x] **Bug B：await 循环间的同步代码被吃掉**
+  - 状态：已修复
   - 现象：第一个 await 循环结束后的 parse/malloc 等同步语句不进入状态机 → 运行时挂死
-  - TDD：`tests/test_async_bug_b_sync_between.uya.pending`
+  - 回归：`tests/test_async_bug_b_sync_between.uya`
   - 典型场景：读 header → 同步解析 → 读 body
   ```uya
   while !header_done {
@@ -99,18 +100,20 @@
   - 现象：gcc 编译失败 — `inner_async` 被当作同步函数调用
   - 回归：`tests/test_async_bug_c_tail_await.uya`
 
-- [ ] **Bug D：分裂点附近局部变量与表达式**（与 A/B 叠加时更易触发）
+- [x] **Bug D：分裂点附近局部变量与表达式**（与 A/B 叠加时更易触发）
+  - 状态：已修复
+  - 回归：`tests/test_async_bug_d_nested_block.uya`
   - `xxx undeclared`：恢复点在 if 内声明的变量未提升到状态结构体
   - `break not within loop`：内层 while 在状态机展开后错位
   - 切片表达式在分裂后生成错误类型
-  - 建议：所有 resume 后仍可读的局部变量，提升到状态结构体
+  - 覆盖：嵌套局部变量、`break` / `continue` resume、切片表达式、局部变量 `s` 与 poll state 指针命名冲突
 
 **仍建议关注的方向**：
 1. collect/emit 覆盖更多 await 出现位置（assign、bare expr 等）若仍有缺口
-2. Bug B 场景全绿：`tests/test_async_bug_b_sync_between.uya.pending` → `.uya`
-3. 迭代器 `for` / `for |&x|` 与 `@async_fn` 组合的 lowering 或明确诊断
+2. 迭代器 `for` / `for |&x|` 与 `@async_fn` 组合的 lowering 或明确诊断
+3. `Future<!void>` 相关 void monomorph 特化补齐后，再扩展直接 `return error.X` 的覆盖
 
-**验收**：Bug B 测试转正后全量 `make check` 通过
+**验收**：Bug B / Bug D 已转正并通过；全量 `make check` 仍作为 release 闸门执行
 
 ### 低优先级
 
@@ -151,7 +154,8 @@ make backup
 | `test_async_for_await.uya` | 范围 `for` + 定长数组 `for` 内含 `try @await` |
 | `test_async_bug_a_two_while.uya` | 连续两个 `while` 内 await |
 | `test_async_bug_c_tail_await.uya` | `return try @await` |
-| `test_async_bug_b_sync_between.uya.pending` | await 循环间同步语句（待转正） |
+| `test_async_bug_b_sync_between.uya` | await 循环间同步语句 |
+| `test_async_bug_d_nested_block.uya` | 分裂点附近局部变量、break/continue、切片表达式 |
 | `test_async_io.uya` | AsyncReader/AsyncWriter 基础 |
 | `test_block_on.uya` | block_on 基础 |
 | `test_async_multiple_await.uya` | 多 await 线性 |
