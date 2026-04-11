@@ -613,16 +613,20 @@ fn https_socket_set_recv_timeout(fd: i32, timeout_ms: u32) void {
     const usec: i64 = ((timeout_ms as i64) % 1000 as i64) * 1000 as i64;
     var i: usize = 0;
     while i < 8 {
-        const shift: i32 = (i * 8) as! i32;
+        const shift_tmp: !i32 = (i * 8) as! i32;
+        const shift: i32 = shift_tmp.value;
         const mask: i64 = 0xFF;
-        tv[i] = ((sec >> shift) & mask) as! byte;
+        const tv_tmp: !byte = ((sec >> shift) & mask) as! byte;
+        tv[i] = tv_tmp.value;
         i = i + 1;
     }
     i = 0;
     while i < 8 {
-        const shift: i32 = (i * 8) as! i32;
-        const mask: i64 = 0xFF;
-        tv[8 + i] = ((usec >> shift) & mask) as! byte;
+        const shift_tmp2: !i32 = (i * 8) as! i32;
+        const shift2: i32 = shift_tmp2.value;
+        const mask2: i64 = 0xFF;
+        const tv_tmp2: !byte = ((usec >> shift2) & mask2) as! byte;
+        tv[8 + i] = tv_tmp2.value;
         i = i + 1;
     }
     _ = sys_setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv[0] as &void, 16) catch {};
@@ -635,16 +639,20 @@ fn https_socket_set_send_timeout(fd: i32, timeout_ms: u32) void {
     const usec: i64 = ((timeout_ms as i64) % 1000 as i64) * 1000 as i64;
     var i: usize = 0;
     while i < 8 {
-        const shift: i32 = (i * 8) as! i32;
-        const mask: i64 = 0xFF;
-        tv[i] = ((sec >> shift) & mask) as! byte;
+        const shift_tmp3: !i32 = (i * 8) as! i32;
+        const shift3: i32 = shift_tmp3.value;
+        const mask3: i64 = 0xFF;
+        const tv_tmp3: !byte = ((sec >> shift3) & mask3) as! byte;
+        tv[i] = tv_tmp3.value;
         i = i + 1;
     }
     i = 0;
     while i < 8 {
-        const shift: i32 = (i * 8) as! i32;
-        const mask: i64 = 0xFF;
-        tv[8 + i] = ((usec >> shift) & mask) as! byte;
+        const shift_tmp4: !i32 = (i * 8) as! i32;
+        const shift4: i32 = shift_tmp4.value;
+        const mask4: i64 = 0xFF;
+        const tv_tmp4: !byte = ((usec >> shift4) & mask4) as! byte;
+        tv[8 + i] = tv_tmp4.value;
         i = i + 1;
     }
     _ = sys_setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv[0] as &void, 16) catch {};
@@ -838,7 +846,7 @@ fn https_get_internal(
     const verify: bool = config.verify_server_cert;
     const timeout_ms: u32 = config.timeout_ms;
     // 计算 deadline（0 表示不设置超时）
-    const deadline_ms: u64 = https_deadline_after_ms(timeout_ms) catch { 0 as u64 };
+    const deadline_ms: u64 = https_deadline_after_ms(timeout_ms) catch { 0 as u64; };
 
     https_debug(&"[HTTPS] Connecting...\n"[0: 22]);
     const fd: i32 = try https_client_connect(host, host_len, port);
@@ -853,7 +861,7 @@ fn https_get_internal(
 
     // 检查连接后是否已超时
     if deadline_ms != 0 {
-        const expired_conn: bool = https_deadline_expired(deadline_ms) catch { false };
+        const expired_conn: bool = https_deadline_expired(deadline_ms) catch { false; };
         if expired_conn {
             _ = sys_close(fd) catch {};
             return error.TlsHandshakeFailure;
@@ -886,7 +894,7 @@ fn https_get_internal(
 
     // 检查握手后是否已超时
     if deadline_ms != 0 {
-        const expired_hs: bool = https_deadline_expired(deadline_ms) catch { false };
+        const expired_hs: bool = https_deadline_expired(deadline_ms) catch { false; };
         if expired_hs {
             _ = sys_close(fd) catch {};
             return error.TlsHandshakeFailure;

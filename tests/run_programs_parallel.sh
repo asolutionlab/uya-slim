@@ -589,17 +589,28 @@ for test_item in "${multifile_tests[@]}"; do
     rm -f "$result_file"
 done
 
-# 并行执行单文件测试
-# 注意：非交互式 bash 下 jobs(1) 通常不列出后台任务，用「jobs | wc -l」限流会恒为 0，等于一次性启动全部用例。
-# 必须用显式计数 + wait 限制并发（每满 PARALLEL_JOBS 个后台任务 wait 一轮）。
+# 并行执行单文件测试（流水线式）
+# 使用 wait -n 实现流水线：一个任务完成立即启动新任务，保持恒定并发度
 if [ ${#single_tests[@]} -gt 0 ]; then
     if [ "$ERRORS_ONLY" = false ]; then
         echo ""
-        echo "开始并行执行 ${#single_tests[@]} 个单文件测试（$PARALLEL_JOBS 线程）..."
+        echo "开始并行执行 ${#single_tests[@]} 个单文件测试（$PARALLEL_JOBS 线程，流水线式）..."
     fi
     
-    running_batch=0
-    for test_item in "${single_tests[@]}"; do
+    # 检查是否支持 wait -n（bash 4.3+）
+    if bash -c 'help wait' 2>/dev/null | grep -q '\-n'; then
+        USE_WAIT_N=true
+    else
+        USE_WAIT_N=false
+    fi
+    
+    running_count=0
+    test_index=0
+    total_single_tests=${#single_tests[@]}
+    
+    # 先启动第一批任务（最多 PARALLEL_JOBS 个）
+    while [ $test_index -lt $total_single_tests ] && [ $running_count -lt $PARALLEL_JOBS ]; do
+        test_item="${single_tests[$test_index]}"
         base_name=$(basename "$test_item" .uya)
         result_file="$BUILD_DIR/parallel_results/${base_name}.result"
         
@@ -609,13 +620,58 @@ if [ ${#single_tests[@]} -gt 0 ]; then
             run_single_test "$test_item" "$result_file"
         ) &
         
-        running_batch=$((running_batch + 1))
-        if [ "$running_batch" -ge "$PARALLEL_JOBS" ]; then
-            wait
-            running_batch=0
-        fi
+        running_count=$((running_count + 1))
+        test_index=$((test_index + 1))
     done
-    wait
+    
+    # 流水线模式：每当一个任务完成，立即启动下一个
+    if [ "$USE_WAIT_N" = true ]; then
+        while [ $test_index -lt $total_single_tests ]; do
+            wait -n  # 等待任意一个后台任务完成
+            running_count=$((running_count - 1))
+            
+            # 立即启动下一个任务
+            test_item="${single_tests[$test_index]}"
+            base_name=$(basename "$test_item" .uya)
+            result_file="$BUILD_DIR/parallel_results/${base_name}.result"
+            
+            > "$result_file"
+            
+            (
+                run_single_test "$test_item" "$result_file"
+            ) &
+            
+            running_count=$((running_count + 1))
+            test_index=$((test_index + 1))
+        done
+    else
+        # 回退到批量模式（旧 bash 不支持 wait -n）
+        if [ "$ERRORS_ONLY" = false ]; then
+            echo "  (当前 bash 不支持 wait -n，使用批量并行模式)"
+        fi
+        while [ $test_index -lt $total_single_tests ]; do
+            wait
+            running_count=0
+            batch_size=$PARALLEL_JOBS
+            remaining=$((total_single_tests - test_index))
+            [ $batch_size -gt $remaining ] && batch_size=$remaining
+            
+            for ((i=0; i<batch_size; i++)); do
+                test_item="${single_tests[$test_index]}"
+                base_name=$(basename "$test_item" .uya)
+                result_file="$BUILD_DIR/parallel_results/${base_name}.result"
+                
+                > "$result_file"
+                
+                (
+                    run_single_test "$test_item" "$result_file"
+                ) &
+                
+                test_index=$((test_index + 1))
+            done
+        done
+    fi
+    wait  # 等待所有剩余任务完成
     
     # 收集结果
     for test_item in "${single_tests[@]}"; do

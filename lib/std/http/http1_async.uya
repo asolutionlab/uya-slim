@@ -80,7 +80,7 @@ fn http_deadline_expired_or_false(deadline_ms: u64) bool {
         return false;
     }
     const now_result: !u64 = http_now_ms();
-    const current_ms: u64 = now_result catch { 0 as u64 };
+    const current_ms: u64 = now_result catch { 0 as u64; };
     return current_ms >= deadline_ms;
 }
 
@@ -90,7 +90,7 @@ fn http_deadline_remaining_or_neg1(deadline_ms: u64) i32 {
         return -1;
     }
     const now_result: !u64 = http_now_ms();
-    const current_ms: u64 = now_result catch { 0 as u64 };
+    const current_ms: u64 = now_result catch { 0 as u64; };
     if current_ms >= deadline_ms {
         return 0;
     }
@@ -949,7 +949,7 @@ export fn http1_request_blocking(req: &Http1AsyncRequest, timeout_ms: u32) !Http
     const loop: LinuxEpoll = try linux_epoll_create(0);
     const fut: Future<!Http1AsyncResponse> = http1_request_async(req, timeout_ms);
     const dl_result: !u64 = http_deadline_after_ms(timeout_ms);
-    const deadline_ms: u64 = dl_result catch { 0 as u64 };
+    const deadline_ms: u64 = dl_result catch { 0 as u64; };
     const out: !Http1AsyncResponse = block_on_with_event_loop_deadline<Http1AsyncResponse>(&loop, fut, 1000, deadline_ms);
     return out;
 }

@@ -329,7 +329,7 @@ fn get_c_name_for_identifier_ref(codegen: &C99CodeGenerator, name: &byte) &byte 
     // return 前顶层局部（状态机字段 _uya_loc_*）
     if codegen.async_state_var != null && codegen.async_local_count > 0 {
         var li: i32 = 0;
-        while li < codegen.async_local_count && li < 16 {
+        while li < codegen.async_local_count && li < @len(codegen.async_local_names) {
             if codegen.async_local_names[li] != null &&
                 strcmp(codegen.async_local_names[li] as *byte, name as *byte) == 0 {
                 const loc_safe: &byte = get_safe_c_identifier(codegen, codegen.async_local_names[li]);

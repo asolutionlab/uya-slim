@@ -7431,7 +7431,7 @@ fn lookup_identifier_type_c_impl(codegen: &C99CodeGenerator, name: &byte) &byte 
     // @async_fn poll 内：顶层 const/var 已提升为 s->_uya_loc_*，须从 async_local_types 取 C 类型（否则切片/mem_base 等退化为 int32 slice）
     if codegen.async_state_var != null && codegen.async_local_count > 0 {
         var ali: i32 = 0;
-        while ali < codegen.async_local_count && ali < 16 {
+        while ali < codegen.async_local_count && ali < @len(codegen.async_local_names) {
             if codegen.async_local_names[ali] != null &&
                 strcmp(codegen.async_local_names[ali] as *byte, name as *byte) == 0 {
                 if codegen.async_local_types[ali] != null {

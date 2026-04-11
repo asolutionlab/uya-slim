@@ -327,10 +327,10 @@ struct C99CodeGenerator {
     async_collect_has_loop: i32,
     async_state_size: i32,  // 编译期计算的状态机近似字节数；<=0 表示未知或需堆分配
     // return 之前、函数体顶层的 const/var（非 try @await 绑定），存入状态机供 poll 内 gen_expr(ret) 引用
-    async_local_names: [&byte: 16],
-    async_local_types: [&ASTNode: 16],
-    async_local_inits: [&ASTNode: 16],
-    async_local_root_stmt: [i32: 16],
+    async_local_names: [&byte: 32],
+    async_local_types: [&ASTNode: 32],
+    async_local_inits: [&ASTNode: 32],
+    async_local_root_stmt: [i32: 32],
     async_local_count: i32,
     // poll 内 try 传播：语义上为 Future 的 inner（如 !T），错误须 return Poll.Ready(err) 而非裸 err_union
     async_poll_try_propagate_type: &ASTNode,

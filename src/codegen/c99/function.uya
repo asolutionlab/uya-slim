@@ -1643,7 +1643,7 @@ fn c99_async_trim_locals_after_last_await_root(codegen: &C99CodeGenerator, body:
     }
     var w: i32 = 0;
     var r: i32 = 0;
-    while r < codegen.async_local_count && r < 16 {
+    while r < codegen.async_local_count && r < @len(codegen.async_local_names) {
         if codegen.async_local_root_stmt[r] <= last_ix {
             if w != r {
                 codegen.async_local_names[w] = codegen.async_local_names[r];
@@ -1660,7 +1660,7 @@ fn c99_async_trim_locals_after_last_await_root(codegen: &C99CodeGenerator, body:
 
 // 收集函数体顶层、第一个顶层 return 之前的 const/var（非 try @await 绑定），记入 async_local_* 并记录根语句下标。
 fn c99_async_collect_locals_recursive(codegen: &C99CodeGenerator, fn_body: &ASTNode, node: &ASTNode, parent_block: &ASTNode, parent_stmt_index: i32) void {
-    if codegen == null || node == null || codegen.async_local_count >= 16 {
+    if codegen == null || node == null || codegen.async_local_count >= @len(codegen.async_local_names) {
         return;
     }
     var nested_block_root_si: i32 = 2147483647;
@@ -1669,7 +1669,7 @@ fn c99_async_collect_locals_recursive(codegen: &C99CodeGenerator, fn_body: &ASTN
     }
     if node.type == ASTNodeType.AST_BLOCK && node.block_stmts != null {
         var bi: i32 = 0;
-        while bi < node.block_stmt_count && codegen.async_local_count < 16 {
+        while bi < node.block_stmt_count && codegen.async_local_count < @len(codegen.async_local_names) {
             c99_async_collect_locals_recursive(codegen, fn_body, node.block_stmts[bi], node, bi);
             bi = bi + 1;
         }
@@ -1710,7 +1710,7 @@ fn collect_async_pre_return_locals(codegen: &C99CodeGenerator, body: &ASTNode) v
         return;
     }
     var si: i32 = 0;
-    while si < body.block_stmt_count && codegen.async_local_count < 16 {
+    while si < body.block_stmt_count && codegen.async_local_count < @len(codegen.async_local_names) {
         const st: &ASTNode = body.block_stmts[si];
         if st == null {
             si = si + 1;
@@ -1731,7 +1731,7 @@ fn emit_async_state0_pre_first_await_local_inits(codegen: &C99CodeGenerator, cut
         return;
     }
     var li: i32 = 0;
-    while li < codegen.async_local_count && li < 16 {
+    while li < codegen.async_local_count && li < @len(codegen.async_local_names) {
         if codegen.async_local_root_stmt[li] >= cut_root {
             li = li + 1;
             continue;
@@ -1795,7 +1795,7 @@ fn emit_async_pre_return_local_inits(codegen: &C99CodeGenerator) void {
         return;
     }
     var li: i32 = 0;
-    while li < codegen.async_local_count && li < 16 {
+    while li < codegen.async_local_count && li < @len(codegen.async_local_names) {
         const orig: &byte = codegen.async_local_names[li];
         const ie: &ASTNode = codegen.async_local_inits[li];
         const ltype: &ASTNode = codegen.async_local_types[li];
@@ -1985,7 +1985,7 @@ fn c99_async_for_array_elem_type_c(codegen: &C99CodeGenerator, for_stmt: &ASTNod
 }
 
 fn c99_async_try_append_hoist_local(codegen: &C99CodeGenerator, name: &byte, typ: &ASTNode, root_si: i32) void {
-    if codegen == null || name == null || typ == null || codegen.async_local_count >= 16 {
+    if codegen == null || name == null || typ == null || codegen.async_local_count >= @len(codegen.async_local_names) {
         return;
     }
     var li: i32 = 0;
@@ -2692,7 +2692,7 @@ fn c99_emit_async_local_init_single(codegen: &C99CodeGenerator, stmt: &ASTNode) 
     if stmt.type != ASTNodeType.AST_VAR_DECL || stmt.var_decl_name == null { return 0; }
     // 检查是否在 async_local_names 中
     var li: i32 = 0;
-    while li < codegen.async_local_count && li < 16 {
+    while li < codegen.async_local_count && li < @len(codegen.async_local_names) {
         if codegen.async_local_names[li] != null &&
             strcmp(codegen.async_local_names[li] as *byte, stmt.var_decl_name as *byte) == 0 {
             const ls: &byte = get_safe_c_identifier(codegen, stmt.var_decl_name);
@@ -3459,7 +3459,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         bind_i = bind_i + 1;
     }
     var loc_i: i32 = 0;
-    while loc_i < codegen.async_local_count && loc_i < 16 {
+    while loc_i < codegen.async_local_count && loc_i < @len(codegen.async_local_names) {
         const lname_safe: &byte = get_safe_c_identifier(codegen, codegen.async_local_names[loc_i]);
         if codegen.async_local_types[loc_i] != null && lname_safe != null {
             c99_emit_struct_field_decl_fragment(codegen, codegen.async_local_types[loc_i], "_uya_loc_" as &byte, lname_safe);
