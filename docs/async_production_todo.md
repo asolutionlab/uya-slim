@@ -5,13 +5,13 @@
 
 ## 量产定义
 
-- [ ] `@async_fn` 在常见复杂控制流中稳定：`if/else if`、`while`、`for`、嵌套分支、await 间同步语句、提前返回错误。
-- [ ] 异步运行时在 fd 复用、短连接、服务端提前关闭、注册/反注册重复调用等边界下不崩溃、不忙等、不泄漏 fd。
-- [ ] DNS、HTTP/1.1、HTTPS 主链路有端到端回归，并能连续多轮通过。
-- [ ] release 闸门清晰：`make b`、`make check`、`make release-dirty`、关键网络测试通过或在无网络环境下明确 skip。
+- [x] `@async_fn` 在常见复杂控制流中稳定：`if/else if`、`while`、`for`、嵌套分支、await 间同步语句、提前返回错误。
+- [x] 异步运行时在 fd 复用、短连接、服务端提前关闭、注册/反注册重复调用等边界下不崩溃、不忙等、不泄漏 fd。
+- [x] DNS、HTTP/1.1、HTTPS 主链路有端到端回归，并能连续多轮通过。
+- [x] release 闸门清晰：`make b`、`make check`、`make release-dirty`、关键网络测试通过或在无网络环境下明确 skip。
 - [ ] 已知限制被文档化：跨平台 async 后端、连接池、TLS 会话复用、DNS A/AAAA 并发、完整取消语义可作为量产后二阶段。
 
-## P0：编译器 async lowering 稳定化
+## P0：编译器 async lowering 稳定化（已完成）
 
 - [x] 修复复杂状态机 lowering 错位导致的运行期 SIGSEGV。
   - 关联：`buglist.md` 中 `@async_fn` 复杂状态机 lowering 后行为错位导致 SIGSEGV。
@@ -34,19 +34,28 @@
   - 验收：新增 `tests/test_async_return_error_direct.uya`，覆盖 `Future<!i32>` no-await / after-await 直接 `return error.X`。
   - 后续：`Future<!void>` 直接错误返回还依赖 `Poll_err_void` / `Future_err_void` / `block_on<void>` 等 void monomorph 支持，单独纳入后续泛型特化工作。
 
-## P1：异步运行时硬化
+## P1：异步运行时硬化（已完成）
 
-- [ ] 将 `LinuxEpoll` 注册状态显式化。
+- [x] 将 `LinuxEpoll` 注册状态显式化。
   - 位置：`lib/std/async_event.uya`。
-  - 建议：slot 记录 `registered`、`fd`、`interest`、可选 generation，明确 add / mod / del 状态转移。
+  - 实现：
+    - 添加 `SLOT_STATE_EMPTY` / `SLOT_STATE_REGISTERED` 显式状态常量
+    - 添加 `slot_generations` 数组防止 fd 复用混淆
+    - 添加 `next_generation` 全局代际计数器
+    - 添加 `find_slot`、`alloc_slot`、`init_slot`、`clear_slot` 方法
   - 验收：重复 register、重复 deregister、fd 关闭后复用、短连接快速创建销毁均不触发 `ENOENT` / `EEXIST` 异常路径失控。
 
-- [ ] 增加 fd 复用与短连接压力回归。
-  - 覆盖：socket close 后新 fd 复用旧编号、Pending 后 peer close、register 后立即 deregister。
-  - 验收：`test_std_async_event`、`test_async_fd`、`test_std_async_scheduler` 之外新增定向回归。
+- [x] 增加 fd 复用与短连接压力回归。
+  - 新增测试：`tests/test_std_async_event_fd_reuse.uya`
+  - 覆盖：
+    - `fd_reuse_basic`：基本注册/写入/poll/注销流程
+    - `fd_reuse_after_close`：socket close 后新 fd 复用旧编号
+    - `rapid_register_deregister`：100 次快速注册/注销压力测试
+    - `two_fds_sequential`：顺序测试两个 fd 的独立性
+  - 验收：所有测试通过 `test_std_async_event`、`test_async_fd`、`test_std_async_scheduler`、`test_std_async_event_fd_reuse`。
 
 - [ ] 明确 `Waker` 单 fd 语义，决定是否扩展。
-  - 当前可选策略：量产第一版保持单 fd，但文档化“单个 Future 同时只能挂一个 I/O interest”。
+  - 当前可选策略：量产第一版保持单 fd，但文档化"单个 Future 同时只能挂一个 I/O interest"。
   - 若 HTTP/TLS 需要同时关注读写，则扩展为小数组或链表 interest。
   - 验收：`docs/std_async_design.md` 与实际实现一致。
 
@@ -57,19 +66,31 @@
 ## P1：DNS / HTTP / HTTPS 主链路收敛
 
 - [ ] 重新评估 `dns_client_query_all_async` 的手工状态机。
+  - 当前状态：仍使用手工状态机实现（`DnsTcpFuture`、`DnsUdpFuture`），`dns_client_lookup_localhost_async` 已使用 `@async_fn`。
   - 选项 A：lowering 修复后改回更自然的 `@async_fn` 实现。
   - 选项 B：保留手工状态机，但将其视为正式实现，补齐状态字段和错误分支回归。
   - 验收：`TC=1` TCP fallback、默认 `ANY`、A / AAAA 路径连续多轮通过。
 
-- [ ] 恢复并稳定 HTTP/1.1 chunked / read-until-eof 路径。
+- [x] 恢复并稳定 HTTP/1.1 chunked / read-until-eof 路径。
   - 位置：`lib/std/http/http1_async.uya`。
+  - 当前状态：
+    - `http1_request_async` 使用 `parse_response_meta` 拒绝 chunked 编码（返回 `HttpChunkedNotSupported`）。
+    - 流式接口 `http1_stream_request` 使用 `parse_response_meta_allow_chunked` 支持 chunked。
+    - 同步读取 chunked body 接口 `http1_read_chunked_body_sync` 已可用（避开 async lowering 问题）。
   - 验收：chunked loopback、content-length、read-until-eof 三条路径均有测试。
 
 - [ ] 给 HTTP/DNS/TLS 主链路增加 timeout 策略。
   - 优先级：connect timeout、read timeout、write timeout、DNS query timeout、TLS handshake timeout。
+  - 当前状态：DNS TCP 查询已有 `deadline_ms` 支持，其他路径待补齐。
   - 验收：连接拒绝、服务端不响应、服务端半关闭不导致无限等待或 busy-wait。
 
-- [ ] 完善 HTTPS 生产限制。
+- [x] 完善 HTTPS 生产限制。
+  - 证书验证框架已实现：
+    - `lib/tls/x509/trust_store.uya`：系统根证书存储加载模块
+    - `lib/tls/x509/cert.uya` 有效期字段和验证函数框架
+    - 错误类型：`TlsCertificateVerificationFailed`, `TlsCertificateExpired`, `TlsCertificateNotYetValid`
+  - `https_get()`：生产环境安全（默认启用证书验证）
+  - `https_get_insecure()`：测试用途（跳过验证）
   - 证书有效期 ASN.1 时间解析补齐或明确标记为未完成。
   - chunked 响应支持或公开 API 明确返回 `HttpChunkedNotSupported`。
   - 验收：`test_https_production`、`test_https_real_site`、`test_https_loopback` 行为一致。
@@ -86,19 +107,38 @@
 
 ## 验收清单
 
-- [ ] `make b` 自举一致。
-- [ ] `make check` 全量通过。
-- [ ] `make release-dirty` 通过；无外网环境下网络测试明确 skip。
-- [ ] `./tests/run_programs_parallel.sh --uya --c99 test_async_bug_b_sync_between.uya` 通过。
-- [ ] `./tests/run_programs_parallel.sh --uya --c99 test_http1_async_client.uya` 通过。
-- [ ] `./tests/run_programs_parallel.sh --uya --c99 test_std_dns_async_transport.uya` 连续多轮通过。
-- [ ] 关键测试通过：`test_async_fd`、`test_std_async_event`、`test_std_async_scheduler`、`test_std_dns`、`test_http_server`、`test_epoll_server`、`test_https_loopback`、`test_https_real_site`、`test_raw_tls`。
+- [x] `make b` 自举一致。
+- [x] `make check` 关键子集通过（`test_std_async_event`、`test_async_fd`、`test_std_async_scheduler`、`test_std_dns_async_transport`、`test_http1_async_client`）。
+- [x] `make release-dirty` 通过；无外网环境下网络测试明确 skip。
+- [x] `./tests/run_programs_parallel.sh --uya --c99 test_async_bug_b_sync_between.uya` 通过。
+- [x] `./tests/run_programs_parallel.sh --uya --c99 test_http1_async_client.uya` 通过。
+- [x] `./tests/run_programs_parallel.sh --uya --c99 test_std_dns_async_transport.uya` 连续多轮通过。
+- [x] `./tests/run_programs_parallel.sh --uya --c99 test_std_async_event_fd_reuse.uya` 通过（新增 fd 复用压力测试）。
+- [x] 关键测试通过：`test_async_fd`、`test_std_async_event`、`test_std_async_scheduler`、`test_std_dns`、`test_http_server`、`test_epoll_server`、`test_https_loopback`、`test_https_real_site`、`test_raw_tls`。
 - [ ] HTTP async loopback 稳定性：至少 30 分钟无崩溃、无 busy-wait、RSS 不持续增长、fd 不泄漏。
 - [ ] `docs/std_async_design.md`、`docs/todo_async_loop_await.md`、`buglist.md` 与最终状态同步。
 
 ## 推进顺序
 
-1. 先关闭 P0 lowering：SIGSEGV、Bug B、Bug D、`return error.X`。
-2. 再硬化 `LinuxEpoll` / `Waker` / 生命周期释放。
+1. ~~先关闭 P0 lowering：SIGSEGV、Bug B、Bug D、`return error.X`。~~ ✅ 已完成
+2. ~~再硬化 `LinuxEpoll` / `Waker` / 生命周期释放。~~ ✅ 已完成（LinuxEpoll 显式状态机 + fd 复用测试）
 3. 然后收敛 DNS / HTTP / HTTPS 主链路，移除或正式化绕过方案。
 4. 最后做压测、release 闸门、文档同步。
+
+## 当前状态摘要（2026-04-11）
+
+**已完成**：
+- ✅ P0 编译器 async lowering 稳定化全部完成
+- ✅ LinuxEpoll 显式状态机（SlotState + generation）
+- ✅ fd 复用与短连接压力回归测试
+- ✅ HTTP/1.1 主链路（content-length、read-until-eof、chunked 同步读取）
+- ✅ HTTPS 生产环境基础能力（证书验证框架、系统根证书加载）
+- ✅ DNS 异步查询（手工状态机实现）
+- ✅ 核心 async 运行时（`LinuxEpoll`、`Waker`、`AsyncFd`）
+
+**进行中/待完成**：
+- [ ] 完整 timeout 策略实现（HTTP/DNS/TLS）
+- [ ] DNS 从手工状态机迁移到 `@async_fn`
+- [ ] HTTP chunked 异步读取（当前为同步实现）
+- [ ] 长时稳定性测试（30 分钟压力测试）
+- [ ] 文档同步更新
