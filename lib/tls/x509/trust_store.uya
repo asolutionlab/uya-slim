@@ -4,6 +4,7 @@
 use tls.x509.cert;
 use tls.x509.cert.Cert;
 use tls.x509.asn1;
+use std.encoding.base64.decode_base64_mime;
 use libc.unistd;
 use libc.syscall;
 use libc.fcntl;
@@ -13,12 +14,13 @@ use libc.stdlib;
 
 const TRUST_STORE_MAX_CERTS: usize = 128;
 const TRUST_STORE_MAX_PATH: usize = 256;
-const TRUST_STORE_BUF_SIZE: usize = 8192;
-const PEM_BLOCK_SIZE: usize = 4096;
+const TRUST_STORE_READ_BUF_SIZE: usize = 65536;
+const TRUST_STORE_DER_MAX: usize = 4096;
 
 // 根证书存储
 export struct TrustStore {
     certs: [Cert: TRUST_STORE_MAX_CERTS],
+    der_storage: [byte: TRUST_STORE_MAX_CERTS * TRUST_STORE_DER_MAX],
     count: usize,
 }
 
@@ -76,11 +78,11 @@ fn load_pem_file(ts: &TrustStore, path: &const byte, path_len: usize) bool {
         return false;
     };
     
-    var buf: [byte: PEM_BLOCK_SIZE] = [0:PEM_BLOCK_SIZE];
+    var buf: [byte: TRUST_STORE_READ_BUF_SIZE] = [0:TRUST_STORE_READ_BUF_SIZE];
     var total: usize = 0;
     
-    while total < PEM_BLOCK_SIZE {
-        const n: isize = sys_read(fd, &buf[total], PEM_BLOCK_SIZE - total) catch {
+    while total < TRUST_STORE_READ_BUF_SIZE {
+        const n: isize = sys_read(fd, &buf[total], TRUST_STORE_READ_BUF_SIZE - total) catch {
             _ = sys_close(fd) catch {};
             return false;
         };
@@ -128,112 +130,6 @@ fn mem_eq(a: &const byte, a_len: usize, b: &const byte, b_len: usize) bool {
         i = i + 1;
     }
     return true;
-}
-
-// Base64 解码表
-const BASE64_PAD: byte = '=' as byte;
-
-// 获取 Base64 字符对应的值（6位）
-// 返回值 0-63 表示有效字符，64 表示填充符，255 表示非法字符
-fn base64_char_value(c: byte) u8 {
-    if c >= 'A' as byte && c <= 'Z' as byte {
-        return (c - 'A' as byte) as u8;
-    }
-    if c >= 'a' as byte && c <= 'z' as byte {
-        return ((c - 'a' as byte) + 26) as u8;
-    }
-    if c >= '0' as byte && c <= '9' as byte {
-        return ((c - '0' as byte) + 52) as u8;
-    }
-    if c == '+' as byte {
-        return 62;
-    }
-    if c == '/' as byte {
-        return 63;
-    }
-    if c == '=' as byte {
-        return 64;  // 填充符
-    }
-    return 255;  // 非法字符（如换行、空格等）
-}
-
-// Base64 解码
-// 返回解码后的字节数，0 表示失败
-fn base64_decode(out: &byte, out_max: usize, in_: &const byte, in_len: usize) usize {
-    var out_pos: usize = 0;
-    var in_pos: usize = 0;
-    
-    // 临时缓冲区，存储 4 个字符（3 字节输出）
-    var buf: [byte: 4] = [0:4];
-    var buf_pos: usize = 0;
-    
-    while in_pos < in_len {
-        const c: byte = in_[in_pos];
-        in_pos = in_pos + 1;
-        
-        const v: u8 = base64_char_value(c);
-        
-        // 跳过空白字符和其他分隔符
-        if v == 255 {
-            continue;
-        }
-        
-        if v == 64 {
-            // 填充符，结束解码
-            break;
-        }
-        
-        buf[buf_pos] = v;
-        buf_pos = buf_pos + 1;
-        
-        // 当缓冲区满时，解码输出
-        if buf_pos == 4 {
-            if out_pos + 3 > out_max {
-                return 0;  // 输出缓冲区不足
-            }
-            // 4 个 6-bit 值 -> 3 个字节
-            var b0: u16 = buf[0] as u16;
-            var b1: u16 = buf[1] as u16;
-            var b2: u16 = buf[2] as u16;
-            var b3: u16 = buf[3] as u16;
-            var v0: u16 = ((b0 << 2) | (b1 >> 4)) & (0xFF as u16);
-            var v1: u16 = (((b1 & (0x0F as u16)) << 4) | (b2 >> 2)) & (0xFF as u16);
-            var v2: u16 = (((b2 & (0x03 as u16)) << 6) | b3) & (0xFF as u16);
-            out[out_pos] = (v0 as! byte).value;
-            out[out_pos + 1] = (v1 as! byte).value;
-            out[out_pos + 2] = (v2 as! byte).value;
-            out_pos = out_pos + 3;
-            buf_pos = 0;
-        }
-    }
-    
-    // 处理剩余字符（可能不满 4 个）
-    if buf_pos == 2 {
-        // 2 个字符 -> 1 个字节
-        if out_pos + 1 > out_max {
-            return 0;
-        }
-        var b0: u16 = buf[0] as u16;
-        var b1: u16 = buf[1] as u16;
-        var v0: u16 = ((b0 << 2) | (b1 >> 4)) & (0xFF as u16);
-        out[out_pos] = (v0 as! byte).value;
-        out_pos = out_pos + 1;
-    } else if buf_pos == 3 {
-        // 3 个字符 -> 2 个字节
-        if out_pos + 2 > out_max {
-            return 0;
-        }
-        var b0: u16 = buf[0] as u16;
-        var b1: u16 = buf[1] as u16;
-        var b2: u16 = buf[2] as u16;
-        var v0: u16 = ((b0 << 2) | (b1 >> 4)) & (0xFF as u16);
-        var v1: u16 = (((b1 & (0x0F as u16)) << 4) | (b2 >> 2)) & (0xFF as u16);
-        out[out_pos] = (v0 as! byte).value;
-        out[out_pos + 1] = (v1 as! byte).value;
-        out_pos = out_pos + 2;
-    }
-    
-    return out_pos;
 }
 
 // 查找子串
@@ -348,7 +244,10 @@ fn parse_one_pem_cert(pem_data: &const byte, pem_len: usize,
     }
     
     // Base64 解码
-    return base64_decode(der_out, der_max, &pem_data[b64_start], b64_len);
+    const decoded_len: !usize = decode_base64_mime(pem_data[b64_start: b64_len], der_out[0: der_max]);
+    return decoded_len catch {
+        0 as usize;
+    };
 }
 
 // 解析 PEM 数据中的所有证书
@@ -357,7 +256,7 @@ fn parse_pem_certs(ts: &TrustStore, pem_data: &const byte, pem_len: usize) bool 
     var found_any: bool = false;
     
     // 为 DER 数据分配临时缓冲区（在栈上）
-    var der_buf: [byte: 4096] = [0:4096];
+    var der_buf: [byte: TRUST_STORE_DER_MAX] = [0:TRUST_STORE_DER_MAX];
     
     while pos < pem_len && ts.count < TRUST_STORE_MAX_CERTS {
         // 查找下一个 BEGIN 标记
@@ -372,12 +271,17 @@ fn parse_pem_certs(ts: &TrustStore, pem_data: &const byte, pem_len: usize) bool 
         
         // 解析这个证书块
         const der_len: usize = parse_one_pem_cert(&pem_data[pos], pem_len - pos,
-                                                   &der_buf[0], 4096);
-        if der_len > 0 && der_len <= 4096 {
+                                                   &der_buf[0], TRUST_STORE_DER_MAX);
+        if der_len > 0 && der_len <= TRUST_STORE_DER_MAX {
             // 使用 DER 数据加载证书
-            // 需要将数据复制到持久存储（证书存储的 der 缓冲区）
             const idx: usize = ts.count;
-            if load_cert_from_der(&ts.certs[idx], &der_buf[0], der_len) {
+            const der_off: usize = idx * TRUST_STORE_DER_MAX;
+            var i: usize = 0;
+            while i < der_len {
+                ts.der_storage[der_off + i] = der_buf[i];
+                i = i + 1;
+            }
+            if load_cert_from_der(&ts.certs[idx], &ts.der_storage[der_off], der_len) {
                 ts.count = ts.count + 1;
                 found_any = true;
             }
@@ -398,52 +302,7 @@ fn parse_pem_certs(ts: &TrustStore, pem_data: &const byte, pem_len: usize) bool 
 
 // 从 DER 数据加载证书（简化版，使用现有 cert.uya 的解析逻辑）
 fn load_cert_from_der(cert: &Cert, der: &const byte, der_len: usize) bool {
-    cert.der = der;
-    cert.der_len = der_len;
-    
-    // 使用 asn1 模块解析
-    var r: Asn1Reader = Asn1Reader{ data: der, len: der_len, pos: 0 };
-    
-    // 进入证书序列
-    const seq_len: usize = asn1_enter_sequence(&r) catch {
-        return false;
-    };
-    
-    if r.pos + seq_len > r.len {
-        return false;
-    }
-    
-    // 记录 TBSCertificate 位置
-    cert.tbs_offset = r.pos;
-    
-    // 解析 TBSCertificate
-    const tbs_len: usize = asn1_enter_sequence(&r) catch {
-        return false;
-    };
-    
-    cert.tbs_len = tbs_len;
-    cert.tbs_tlv_len = 0;  // 需要计算
-    
-    // 跳过 TBSCertificate
-    r.pos = r.pos + tbs_len;
-    
-    // 解析签名算法
-    const sig_oid_len: usize = asn1_enter_sequence(&r) catch {
-        return false;
-    };
-    cert.sig_oid_len = sig_oid_len;
-    r.pos = r.pos + sig_oid_len;
-    
-    // 解析签名值
-    var sig_len: usize = 0;
-    asn1_get_bit_string_to(&r, &cert.sig[0], 512, &sig_len) catch {
-        return false;
-    };
-    cert.sig_len = sig_len;
-    
-    // TODO: 解析 RSA 公钥信息
-    // 简化处理：假设后续解析会填充 RSA 字段
-    
+    cert_reset(cert);
     cert_parse(der, der_len, cert) catch {
         return false;
     };

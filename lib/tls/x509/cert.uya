@@ -49,6 +49,24 @@ fn cert_reset_ext_fields(cert: &Cert) void {
     cert.not_after = 0;
 }
 
+fn cert_copy_positive_integer(dst: &byte, dst_max: usize, dst_len: &usize, src: &byte, src_len: usize) !void {
+    var start: usize = 0;
+    var n: usize = src_len;
+    if src_len > 1 && src[0] == 0 {
+        start = 1;
+        n = src_len - 1;
+    }
+    if n == 0 || n > dst_max {
+        return error.TlsDecodeError;
+    }
+    var i: usize = 0;
+    while i < n {
+        dst[i] = src[start + i];
+        i = i + 1;
+    }
+    dst_len[0] = n;
+}
+
 fn cert_parse_basic_constraints_from_ext_value(cert: &Cert, data: &const byte, data_len: usize) !void {
     if data_len == 0 {
         return error.TlsDecodeError;
@@ -266,8 +284,14 @@ fn cert_parse_tbs(r: &Asn1Reader, cert: &Cert, tbs_content_len: usize) !void {
     if sub.pos + seq_len2 > sub.len {
         return error.TlsDecodeError;
     }
-    asn1_get_integer_to(&sub, &cert.rsa_n[0], 512, &cert.rsa_n_len) catch { return error.TlsDecodeError; };
-    asn1_get_integer_to(&sub, &cert.rsa_e[0], 8, &cert.rsa_e_len) catch { return error.TlsDecodeError; };
+    var tmp_n: [byte: 513] = [0:513];
+    var tmp_e: [byte: 9] = [0:9];
+    var tmp_n_len: usize = 0;
+    var tmp_e_len: usize = 0;
+    asn1_get_integer_to(&sub, &tmp_n[0], 513, &tmp_n_len) catch { return error.TlsDecodeError; };
+    cert_copy_positive_integer(&cert.rsa_n[0], 512, &cert.rsa_n_len, &tmp_n[0], tmp_n_len) catch { return error.TlsDecodeError; };
+    asn1_get_integer_to(&sub, &tmp_e[0], 9, &tmp_e_len) catch { return error.TlsDecodeError; };
+    cert_copy_positive_integer(&cert.rsa_e[0], 8, &cert.rsa_e_len, &tmp_e[0], tmp_e_len) catch { return error.TlsDecodeError; };
 
     while asn1_remaining(r) > 0 {
         const tag2: byte = asn1_peek_tag(r) catch { return error.TlsDecodeError; };
@@ -283,7 +307,18 @@ fn cert_parse_tbs(r: &Asn1Reader, cert: &Cert, tbs_content_len: usize) !void {
             continue;
         }
         if tag2 == ASN1_TAG_EXPLICIT_3 {
-            cert_parse_extensions_from_explicit_3(r, cert) catch { return error.TlsDecodeError; };
+            const saved_pos: usize = r.pos;
+            cert_parse_extensions_from_explicit_3(r, cert) catch {
+                r.pos = saved_pos;
+                var ext3_len: usize = 0;
+                if !asn1_get_tlv_to(r, ASN1_TAG_EXPLICIT_3, &ext3_len) {
+                    return error.TlsDecodeError;
+                }
+                if r.pos + ext3_len > r.len {
+                    return error.TlsDecodeError;
+                }
+                r.pos = r.pos + ext3_len;
+            };
             continue;
         }
         break;
