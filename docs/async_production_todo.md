@@ -153,7 +153,7 @@
 - ✅ LinuxEpoll 显式状态机（SlotState + generation）
 - ✅ **修复 epoll_ctl 常量错位**：`EPOLL_CTL_MOD` 与 `EPOLL_CTL_DEL` 在 `lib/libc/syscall.uya`、`lib/syscall/linux.uya` 中被错误互换，现已恢复为内核正确值
 - ✅ **修复 `deregister` 实现**：由 `sys_epoll_ctl(..., null)` 改为 `sys_epoll_ctl_del(...)`，避免 `EFAULT`/`EINVAL`
-- ✅ **增加 `block_on_with_event_loop` 空等 workaround**：当 `@async_fn` 状态机在 await transition 时返回 Pending 但未设置 I/O interest，`block_on` 直接 `continue` 重试，避免 1000ms 空等
+- ✅ **增加 `block_on_with_event_loop` 空等 workaround**：当 `@async_fn` 状态机在 await transition 时返回 Pending 但未设置 I/O interest，`block_on` 以 `loop.poll(1)` 重试，避免 1000ms 空等，同时防止并行测试时 CPU 忙等
 - ✅ fd 复用与短连接压力回归测试
 - ✅ HTTP/1.1 主链路（content-length、read-until-eof、chunked 同步读取 + chunked header 异步流式读取）
 - ✅ HTTPS 生产环境基础能力（证书验证框架、系统根证书加载）
@@ -250,7 +250,7 @@
 
 1. **跨模块 `time.xxx` 调用在 `@async_fn` 中的 bug**：`use std.time` 后在 `@async_fn` 中调用 `time.now_ms()` 触发编译器错误（符号名生成 mismatch）。各模块临时使用本地时间函数绕过。待修复后可统一使用 `lib/std/time.uya`，删除重复时间函数。
 2. **`catch { value }` 语法解析问题**：`expr catch { 0 as u64 }` 在复杂上下文可能触发 "unexpected token '}'" 错误。使用中间变量绕过。
-3. **`@async_fn` 内 await transition 的 compiler lowering 限制**：当 `@await` 位于 `while` / `if` 等控制流块内部时，状态机在某些 transition 点会返回 Pending 但未设置 I/O interest，导致 `block_on_with_event_loop` 若不做 workaround 会出现 1000ms 空等。当前已通过 `block_on_with_event_loop` 的 `continue` 重试 workaround 规避。长远应在 compiler lowering 层修复，使 transition 后直接 fallthrough 到新 future 的 poll。
+3. **`@async_fn` 内 await transition 的 compiler lowering 限制**：当 `@await` 位于 `while` / `if` 等控制流块内部时，状态机在某些 transition 点会返回 Pending 但未设置 I/O interest，导致 `block_on_with_event_loop` 若不做 workaround 会出现 1000ms 空等。当前已通过 `block_on_with_event_loop` 的 `loop.poll(1)` 重试 workaround 规避。长远应在 compiler lowering 层修复，使 transition 后直接 fallthrough 到新 future 的 poll。
 
 ### 验证状态
 

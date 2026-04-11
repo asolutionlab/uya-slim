@@ -462,7 +462,12 @@ export fn block_on_with_event_loop<T>(loop: EventLoop, f: Future<!T>, timeout_ms
                     continue;
                 }
                 // 没有 I/O 兴趣，直接重试（避免 @async_fn 状态机 transition 时
-                // 未设置 I/O interest 导致的空等）
+                // 未设置 I/O interest 导致的空等）。使用 1ms poll 而非纯 continue，
+                // 防止并行测试时 CPU 忙等导致其他测试被 starve 而超时。
+                const poll_result_ni: !i32 = loop.poll(1);
+                _ = poll_result_ni catch {
+                    return poll_result_ni as! T;
+                };
                 continue;
             },
         };
@@ -531,7 +536,12 @@ export fn block_on_with_event_loop_deadline<T>(loop: EventLoop, f: Future<!T>, t
                     continue;
                 }
                 // 没有 I/O 兴趣，直接重试（避免 @async_fn 状态机 transition 时
-                // 未设置 I/O interest 导致的空等）
+                // 未设置 I/O interest 导致的空等）。使用 1ms poll 而非纯 continue，
+                // 防止并行测试时 CPU 忙等导致其他测试被 starve 而超时。
+                const poll_result_ni: !i32 = loop.poll(1);
+                _ = poll_result_ni catch {
+                    return poll_result_ni as! T;
+                };
                 continue;
             },
         };
