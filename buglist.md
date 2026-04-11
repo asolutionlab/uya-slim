@@ -15,7 +15,7 @@
 
 - [ ] **P0 / 严重：`dns_client_query_all_async` 仍依赖手工状态机绕过 lowering 问题**
   - 状态：部分缓解，未根治
-  - 验证状态：已用 `tests/test_std_dns_async_transport.uya` 复现并通过当前回归；新增默认 `ANY` 路径 TCP fallback + AAAA 回归覆盖
+  - 验证状态：已用 `tests/test_std_dns_async_transport.uya` 复现并通过当前回归；新增默认 `ANY` 路径 TCP fallback + AAAA 回归覆盖；在允许真实 `fork/socket/bind` 的环境中连续 5 次通过
   - 归属：`lib/std/net/dns.uya`
   - 现象：`dns_client_query_all_async` 已改成共享 async transport，但之前在 `catch`/`Ready` 分支里做状态切换时，生成代码曾丢失副作用，导致 `TC=1` 不能稳定切到 TCP fallback。
   - 影响：异步 DNS 的 TCP fallback 依赖当前写法和补丁后的 event loop 行为，后续如果编译器 lowering 变化，可能再次回归。
@@ -35,7 +35,7 @@
 
 - [ ] **P1 / 高：`LinuxEpoll` 的注册/反注册语义仍偏脆弱**
   - 状态：部分缓解，未根治
-  - 验证状态：`tests/test_std_dns_async_transport.uya`、`tests/test_http1_async_client.uya` 已通过
+  - 验证状态：`tests/test_std_dns_async_transport.uya`、`tests/test_http1_async_client.uya` 已通过；`tests/test_async_fd.uya`、`tests/test_std_dns.uya` 也已通过
   - 归属：`lib/std/async_event.uya`
   - 现象：`block_on_with_event_loop` / `LinuxEpoll` 在 fd 复用、slot 清理和 epoll interest 重建时出现过 `ENOENT`、`EEXIST` 一类边界错误。
   - 影响：异步网络 future 在短生命周期 fd 或复用 fd 场景下更容易触发 event loop 边界问题。
@@ -45,24 +45,24 @@
 ## 网络 / TLS 回归
 
 - [ ] **P0 / 严重：`make release-dirty` 还需要重新跑一轮做最终验收**
-  - 状态：待验证
-  - 验证状态：局部回归已通过，release 级全量验证未重新执行
+  - 状态：已执行，失败范围已缩小
+  - 验证状态：2026-04-11 已重新执行 `make release-dirty`；774 个测试通过 772 个，失败集中在 `test_https_real_site` 与 `test_raw_tls`
   - 归属：整体验收
-  - 现象：这次已经把 async DNS transport 和 epoll 回归单测跑通，但还没有在当前修改后重新确认整套 `make release-dirty`。
-  - 影响：目前只能说局部回归已收敛，不能算 release 验证最终关闭。
-  - 可能位置：网络栈、TLS 握手、异步 / 事件循环集成
-  - 备注：建议在 release 级别再补一次全量验证，再决定是否从 buglist 中移除相关条目。
+  - 现象：当前修改后，async lowering 相关路径、自举、microapp、SIMD、cross target 与大部分程序测试均已通过，但整套 release 流程仍被两个 TLS / 真实站点相关用例阻塞。
+  - 影响：可以确认这次 async 编译器修复没有把 release 主线打坏，但还不能宣称整体验收完全关闭。
+  - 可能位置：网络栈、TLS 握手、真实站点联通性或异步 / 事件循环集成路径。
+  - 备注：后续应优先单独排查 `test_https_real_site` 与 `test_raw_tls`；在这两项收敛前，release 条目保留。
 
 ## 编译器 bug
 
-- [ ] **P0 / 严重：`catch` 在复杂 future lowering 场景下仍值得继续关注**
-  - 状态：已绕开，未确认根治
-  - 验证状态：已在 DNS async transport 中复现过 lowering 丢副作用问题
+- [x] **P0 / 严重：`@async_fn` 无 `@await` 与 `catch` 组合路径的 lowering 丢副作用**
+  - 状态：已修复，待 release 验收确认
+  - 验证状态：已在 DNS async transport 中复现过 lowering 丢副作用问题；现已补 `tests/test_async_transport_fallthrough.uya` 与 `tests/test_async_codegen_edge_paths.uya` 做无网络纯编译器回归，并已通过 `make uya`、`make b`
   - 归属：编译器 lowering / 代码生成
-  - 现象：在 `Future<!T>` 的 `poll` 实现里，`catch` 分支有过副作用丢失、状态转移不稳定的情况。
-  - 影响：这类问题容易在 async lowering 和生成 C 时表现为“看起来编译通过，运行时却进入错误分支”。
-  - 可能位置：代码生成 / lowering，尤其是 `Future<!T>`、`catch`、`Ready` 组合路径。
-  - 备注：目前靠重写状态机规避了问题，但这类模式后续仍建议单独做编译器回归。
+  - 现象：此前 `@async_fn` 在无 `@await` 的 codegen 分支里会直接生成 `Poll.Ready(...)`，导致函数体中的同步语句可能被跳过；在 `Future<!T>` 的 `poll` 实现里又会放大成 `catch` 分支副作用丢失、状态转移不稳定。
+  - 影响：这类问题会表现为“编译通过，但运行时没有执行本该在返回前执行的同步逻辑”，尤其会影响 `try !void` 传播和 future 状态切换。
+  - 可能位置：`src/codegen/c99/function.uya` 的 async lowering / 代码生成路径，尤其是 `Future<!T>`、`catch`、`Ready` 组合和无 `@await` 返回路径。
+  - 备注：当前回归已覆盖 `@async_fn` 无 `@await` 时的同步副作用 / `try !void` 路径，以及 `catch` 直接作用于函数调用的 payload 推断；涉及真实 socket/epoll 的集成路径仍继续由 release 验收观察。
 
 ## 修复验收
 
@@ -94,3 +94,5 @@
 - `tests/test_https_real_site.uya`
 - `tests/test_raw_tls.uya`
 - `tests/test_tcp_basic.uya`
+- `tests/test_async_transport_fallthrough.uya`
+- `tests/test_async_codegen_edge_paths.uya`

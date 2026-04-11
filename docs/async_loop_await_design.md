@@ -203,6 +203,7 @@ state 2 (poll writer)                                                  │
 | test_async_copy / block_on | ✅ 已修 | 历史 ASan 问题已处理；保持 `test_async_copy.uya` 回归 |
 | Poll / `Future<!T>` 类型链 | ✅ 主路径已对齐 | 详见 `test_async_state_machine.uya` 等 |
 | 循环变量持久化 | ✅ 通用提升 | 顶层 `var` → `_uya_loc_*`，不再依赖 `n`+`written` 特判 |
+| 无 `@await` 的 `@async_fn` 同步语句 / `try !void` | ✅ 已修 | `gen_async_function_stage_b` 现会先发出函数体再包装 `Poll.Ready`；回归见 `tests/test_async_codegen_edge_paths.uya` |
 | await 循环间同步语句 | ⚠️ 待办 | `tests/test_async_bug_b_sync_between.uya.pending` |
 | 迭代器 `for`、`for` 的 `&` 元素绑定 + `@async_fn` | ❌ 未支持 | 与同步 `for` 能力对齐后再做 |
 
@@ -217,4 +218,4 @@ state 2 (poll writer)                                                  │
 | `src/codegen/c99/async_transform.uya` | 与 async 变换相关的辅助（若存在） |
 | `src/codegen/c99/global.uya` | `get_c_name_for_identifier_ref` |
 | `lib/std/async.uya` | `async_copy` 等 |
-| `tests/test_async_copy.uya`、`tests/test_async_for_await.uya`、`tests/test_async_bug_*.uya` | 回归 |
+| `tests/test_async_copy.uya`、`tests/test_async_for_await.uya`、`tests/test_async_bug_*.uya`、`tests/test_async_transport_fallthrough.uya`、`tests/test_async_codegen_edge_paths.uya` | 回归 |
