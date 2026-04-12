@@ -240,15 +240,15 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 - [x] lock fast path CAS `0 -> 1`。
 - [x] lock slow path将状态转为 `2` 并 futex wait。
 - [x] unlock 在必要时 futex wake 1。
-- [ ] recursive mutex 增加 owner tid 与 recursion count。
-- [ ] errorcheck mutex：
-  - [ ] owner 重复 lock 返回 `EDEADLK`。
-  - [ ] 非 owner unlock 返回 `EPERM`。
-- [ ] `pthread_mutex_timedlock` 重写：
-  - [ ] 使用绝对时间。
+- [x] recursive mutex 增加 owner tid 与 recursion count。
+- [x] errorcheck mutex：
+  - [x] owner 重复 lock 返回 `EDEADLK`。
+  - [x] 非 owner unlock 返回 `EPERM`。
+- [x] `pthread_mutex_timedlock` 重写（基础版已落地，循环内重算剩余时间）：
+  - [ ] 使用 `FUTEX_CLOCK_REALTIME` 将绝对时间直接传入 futex（后续优化）。
   - [ ] 支持 clock attr 或先限定 realtime。
-  - [ ] 校验 `tv_nsec`。
-  - [ ] timeout 返回 `ETIMEDOUT`。
+  - [x] 校验 `tv_nsec`。
+  - [x] timeout 返回 `ETIMEDOUT`。
 - [ ] 增加竞争测试：
   - [ ] 2 线程计数。
   - [ ] 8/32 线程计数。

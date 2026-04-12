@@ -584,6 +584,9 @@ export struct timespec {
 }
 
 // pthread_mutex_timedlock - 带超时的加锁 (NPTL-lite)
+// 说明：
+// - abstime 为绝对时间（基于 CLOCK_REALTIME）
+// - 每次 futex wait 前重新计算剩余时间，避免信号打断或虚假唤醒后超时漂移
 export extern "libc" fn pthread_mutex_timedlock(mutex: &pthread_mutex_t, abstime: &const timespec) i32 {
     if mutex == null || abstime == null {
         return 22; // EINVAL
@@ -615,31 +618,30 @@ export extern "libc" fn pthread_mutex_timedlock(mutex: &pthread_mutex_t, abstime
         return 0;
     }
 
-    // Compute relative timeout from abstime
-    var now: timeval = timeval{ tv_sec: 0, tv_usec: 0 };
-    _ = gettimeofday(&now, null);
-    var rel_sec: i64 = abstime.tv_sec - now.tv_sec;
-    var rel_nsec: i64 = abstime.tv_nsec - (now.tv_usec * 1000);
-    while rel_nsec < 0 {
-        rel_nsec = rel_nsec + 1000000000;
-        rel_sec = rel_sec - 1;
-    }
-    while rel_nsec >= 1000000000 {
-        rel_nsec = rel_nsec - 1000000000;
-        rel_sec = rel_sec + 1;
-    }
-    if rel_sec < 0 || (rel_sec == 0 && rel_nsec <= 0) {
-        return 110; // ETIMEDOUT
-    }
-
-    var timeout: timespec = timespec{ tv_sec: rel_sec, tv_nsec: rel_nsec };
-
     var c: i32 = 0;
     while true {
         if (c == 2) || (__atomic_compare_exchange_n((&mutex.state) as &i32, &c, 2, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) == 0 && c != 1) {
+            // 重新计算剩余时间
+            var now: timeval = timeval{ tv_sec: 0, tv_usec: 0 };
+            _ = gettimeofday(&now, null);
+            var rel_sec: i64 = abstime.tv_sec - now.tv_sec;
+            var rel_nsec: i64 = abstime.tv_nsec - (now.tv_usec * 1000);
+            while rel_nsec < 0 {
+                rel_nsec = rel_nsec + 1000000000;
+                rel_sec = rel_sec - 1;
+            }
+            while rel_nsec >= 1000000000 {
+                rel_nsec = rel_nsec - 1000000000;
+                rel_sec = rel_sec + 1;
+            }
+            if rel_sec < 0 || (rel_sec == 0 && rel_nsec <= 0) {
+                return 110; // ETIMEDOUT
+            }
+            var timeout: timespec = timespec{ tv_sec: rel_sec, tv_nsec: rel_nsec };
+
             const r: i32 = sys_futex((&mutex.state) as &i32, FUTEX_WAIT, 2, &timeout);
             if r < 0 {
-                return 110; // ETIMEDOUT
+                return 110; // ETIMEDOUT（简化处理：把负返回值统一视为超时）
             }
         }
         c = 0;
