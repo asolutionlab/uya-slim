@@ -7,6 +7,23 @@
 
 use libc.syscall;
 
+// 多线程安全：CLONE_VM 下所有线程共享同一地址空间，malloc/free 必须串行化。
+// 为避免与 pthread_mutex 产生循环依赖/初始化问题，heap 使用最简单的原子自旋锁。
+extern "libc" fn __atomic_compare_exchange_n(ptr: &atomic i32, expected: &i32, desired: i32, weak: i32, success_mem: i32, failure_mem: i32) i32;
+const ATOMIC_SEQ_CST: i32 = 5;
+var _heap_lock: atomic i32 = 0;
+
+fn _heap_lock_acquire() void {
+    var expected: i32 = 0;
+    while __atomic_compare_exchange_n(&_heap_lock, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+        expected = 0;
+    }
+}
+
+fn _heap_lock_release() void {
+    _heap_lock = 0;
+}
+
 // ============================================================
 // 内存分配（与 stdlib 中原实现一致，仅迁移到此文件）
 // ============================================================
@@ -176,7 +193,7 @@ fn split_chunk(chunk: &FreeChunk, needed: usize) void {
     }
 }
 
-export extern "libc" fn malloc(size: usize) &void {
+fn _malloc_impl(size: usize) &void {
     if size == 0 { return null; }
 
     var aligned: usize = heap_align_up(size);
@@ -200,7 +217,14 @@ export extern "libc" fn malloc(size: usize) &void {
     return to_user_ptr(&chunk.header);
 }
 
-export extern "libc" fn free(ptr: &void) void {
+export extern "libc" fn malloc(size: usize) &void {
+    _heap_lock_acquire();
+    const result: &void = _malloc_impl(size);
+    _heap_lock_release();
+    return result;
+}
+
+fn _free_impl(ptr: &void) void {
     if is_null(ptr) { return; }
     if !owns_ptr(ptr) { return; }
 
@@ -211,14 +235,20 @@ export extern "libc" fn free(ptr: &void) void {
     add_free(chunk);
 }
 
-export extern "libc" fn realloc(ptr: &void, size: usize) &void {
+export extern "libc" fn free(ptr: &void) void {
+    _heap_lock_acquire();
+    _free_impl(ptr);
+    _heap_lock_release();
+}
+
+fn _realloc_impl(ptr: &void, size: usize) &void {
     if is_null(ptr) {
-        const result: &void = malloc(size);
+        const result: &void = _malloc_impl(size);
         return result;
     }
-    if size == 0 { 
-        free(ptr); 
-        return null; 
+    if size == 0 {
+        _free_impl(ptr);
+        return null;
     }
     if !owns_ptr(ptr) { return null; }
 
@@ -228,10 +258,17 @@ export extern "libc" fn realloc(ptr: &void, size: usize) &void {
     var old_sz: usize = get_size(hdr) - @size_of(ChunkHeader);
     if size <= old_sz { return ptr; }
 
-    var new_ptr: &void = malloc(size);
+    var new_ptr: &void = _malloc_impl(size);
     if is_null(new_ptr) { return null; }
 
     _ = memcpy(new_ptr as *byte, ptr as *const byte, old_sz);
-    free(ptr);
+    _free_impl(ptr);
     return new_ptr;
+}
+
+export extern "libc" fn realloc(ptr: &void, size: usize) &void {
+    _heap_lock_acquire();
+    const result: &void = _realloc_impl(ptr, size);
+    _heap_lock_release();
+    return result;
 }
