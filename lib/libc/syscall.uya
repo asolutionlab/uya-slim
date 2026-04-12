@@ -39,6 +39,7 @@ std.cfg(std.target_os == .tos_linux, {
         export const SYS_exit: i64 = 60;
         export const SYS_waitpid: i64 = 61;
         export const SYS_kill: i64 = 62;
+        export const SYS_tgkill: i64 = 234;
         export const SYS_getcwd: i64 = 79;
         export const SYS_chdir: i64 = 80;
         export const SYS_mkdir: i64 = 83;
@@ -117,6 +118,7 @@ std.cfg(std.target_os == .tos_linux, {
             export const SYS_exit: i64 = 1;
             export const SYS_waitpid: i64 = 114;
             export const SYS_kill: i64 = 37;
+            export const SYS_tgkill: i64 = 131;
             export const SYS_getcwd: i64 = 183;
             export const SYS_chdir: i64 = 12;
             export const SYS_mkdir: i64 = 39;
@@ -195,6 +197,7 @@ std.cfg(std.target_os == .tos_linux, {
                 export const SYS_exit: i64 = 93;
                 export const SYS_waitpid: i64 = 260;
                 export const SYS_kill: i64 = 129;
+                export const SYS_tgkill: i64 = 130;
                 export const SYS_getcwd: i64 = 17;
                 export const SYS_chdir: i64 = 49;
                 export const SYS_mkdir: i64 = 34;
@@ -273,6 +276,7 @@ std.cfg(std.target_os == .tos_linux, {
                     export const SYS_exit: i64 = 93;
                     export const SYS_waitpid: i64 = 260;
                     export const SYS_kill: i64 = 129;
+                    export const SYS_tgkill: i64 = 130;
                     export const SYS_getcwd: i64 = 17;
                     export const SYS_chdir: i64 = 49;
                     export const SYS_mkdir: i64 = 34;
@@ -350,6 +354,7 @@ std.cfg(std.target_os == .tos_linux, {
                     export const SYS_exit: i64 = 60;
                     export const SYS_waitpid: i64 = 61;
                     export const SYS_kill: i64 = 62;
+                    export const SYS_tgkill: i64 = 234;
                     export const SYS_getcwd: i64 = 79;
                     export const SYS_chdir: i64 = 80;
                     export const SYS_mkdir: i64 = 83;
@@ -431,6 +436,7 @@ std.cfg(std.target_os == .tos_linux, {
     export const SYS_exit: i64 = 60;
     export const SYS_waitpid: i64 = 61;
     export const SYS_kill: i64 = 62;
+    export const SYS_tgkill: i64 = 234;
     export const SYS_getcwd: i64 = 79;
     export const SYS_chdir: i64 = 80;
     export const SYS_mkdir: i64 = 83;
@@ -795,6 +801,18 @@ export extern "libc" fn sys_stat(pathname: *const byte, statbuf: &Stat) !i32 {
 // sys_kill - 发送信号
 export extern "libc" fn sys_kill(pid: i64, sig: i32) !i32 {
     return @syscall(SYS_kill, pid, sig as i64) as! i32;
+}
+
+// sys_tgkill - 向指定线程组中的线程发送信号
+// tgid: 线程组 ID（通常用 getpid()）, tid: 线程 ID, sig: 信号号
+export extern "libc" fn sys_tgkill(tgid: i32, tid: i32, sig: i32) !i32 {
+    return @syscall(SYS_tgkill, tgid as i64, tid as i64, sig as i64) as! i32;
+}
+
+// sys_set_tid_address - 设置 clear_child_tid 地址
+// 用于 CLONE_CHILD_CLEARTID，线程退出时内核会将 *tidptr 清零并执行 futex wake
+export extern "libc" fn sys_set_tid_address(tidptr: &i32) !i32 {
+    return @syscall(SYS_set_tid_address, tidptr as i64) as! i32;
 }
 
 // sys_waitpid - 等待子进程/线程退出（用于 pthread_join 等）

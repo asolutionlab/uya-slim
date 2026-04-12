@@ -130,8 +130,8 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
   - [ ] `FUTEX_WAIT_BITSET`
   - [ ] `FUTEX_WAKE_BITSET`
   - [ ] `FUTEX_CLOCK_REALTIME`
-- [ ] 新增 `sys_set_tid_address(clear_child_tid: &i32) !i64`。
-- [ ] 新增 `sys_tgkill(tgid: i32, tid: i32, sig: i32) !i32`，为 cancel/signal 预留。
+- [x] 新增 `sys_set_tid_address(clear_child_tid: &i32) !i64`。
+- [x] 新增 `sys_tgkill(tgid: i32, tid: i32, sig: i32) !i32`，为 cancel/signal 预留。
 - [ ] 扩展 `sys_futex` 返回值，尽量保留 `-errno`，不要只返回 `-1`。
 - [ ] 新增 `sys_futex_wait`、`sys_futex_wake`、`sys_futex_wait_bitset` helper，减少 pthread 里直接拼 syscall 参数。
 
