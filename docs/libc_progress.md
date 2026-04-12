@@ -65,7 +65,7 @@
 | setjmp | `lib/libc/setjmp.uya` | setjmp, longjmp |
 | stdarg | `lib/libc/stdarg.uya` | va_start, va_arg, va_end |
 | wchar | `lib/libc/wchar.uya` | mbtowc, wcslen, wcscpy... |
-| pthread | `lib/libc/pthread.uya` | pthread_create, pthread_mutex_* |
+| pthread | `lib/libc/pthread.uya` | pthread_create, pthread_join, pthread_exit, pthread_self, pthread_mutex_*, pthread_cond_*, pthread_once, pthread_key_*, pthread_cancel |
 
 ### 1.2 string 模块（已完成）
 
@@ -157,20 +157,24 @@
 - [x] **stdarg**: `va_start`, `va_arg`, `va_end`
 - [x] **wchar**: `mbtowc`, `wctomb`, `wcslen`, `wcscpy`, `wcscmp`, `mbstowcs`, `wcstombs`
 
-### 1.9 pthread 模块（部分完成）
+### 1.9 pthread 模块（已实现 NPTL-lite 基线）
 
 ```
-状态：零 libpthread 依赖，基于 Linux SYS_clone + futex + GCC 原子 CAS
+状态：零 libpthread 依赖，基于 Linux SYS_clone + futex + GCC 原子 CAS + 线程描述符 registry
 ```
 
-- [x] `pthread_create` - 创建线程
-- [x] `pthread_join` - 等待线程结束
-- [x] `pthread_mutex_init` / `pthread_mutex_destroy` - 互斥量
-- [x] `pthread_mutex_lock` / `pthread_mutex_unlock` / `pthread_mutex_trylock` - 互斥锁
-- [ ] `pthread_exit` - retval 未传递
-- [ ] join 返回 retval 未实现
-- [ ] 条件变量 `pthread_cond_*` 未实现
-- [ ] `pthread_self` / `pthread_equal` / `pthread_detach` 未实现
+- [x] `pthread_create` - 创建线程（descriptor registry；child 入口直接调用 start routine 并退出）
+- [x] `pthread_join` - 等待线程结束（当前仍通过 `waitpid`）
+- [x] `pthread_exit` - 退出当前线程（保存 retval 到 descriptor）
+- [x] `pthread_self` / `pthread_equal` / `pthread_detach`
+- [x] `pthread_mutex_init` / `pthread_mutex_destroy`
+- [x] `pthread_mutex_lock` / `pthread_mutex_unlock` / `pthread_mutex_trylock` / `pthread_mutex_timedlock`
+- [x] `pthread_cond_init` / `pthread_cond_wait` / `pthread_cond_timedwait` / `pthread_cond_signal` / `pthread_cond_broadcast`
+- [x] `pthread_once`
+- [x] `pthread_key_create` / `pthread_key_delete` / `pthread_getspecific` / `pthread_setspecific`
+- [x] `pthread_cancel` / `pthread_testcancel` / `pthread_setcancelstate` / `pthread_setcanceltype`
+- [ ] `CLONE_THREAD` / TLS / TCB / futex joinstate 迁移
+- [ ] TSD destructor、多轮 cancel 语义、condattr / clock 语义
 
 ---
 
@@ -182,7 +186,7 @@
 |------|------|--------|
 | string | `stpcpy`, `stpncpy`, `memmem`, `memrchr`, `mempcpy` | 低 |
 | stdio | `vdprintf`, `asprintf`, `fseek`, `ftell` | 低 |
-| pthread | 条件变量、exit retval、detach | 中 |
+| pthread | `joinstate`、TLS/TCB、TSD destructor、cancel state/type | 中 |
 
 ### 2.2 新架构：syscall 层（待创建）
 

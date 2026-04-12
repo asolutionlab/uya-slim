@@ -8,21 +8,24 @@
 - **Phase 0 稳定**：`tests/test_pthread.uya` 22/22 通过，`tests/test_pthread_cond.uya` 3/3 通过。
 - **已落地**：
   - `syscall.uya` 补齐了 `CLONE_*` 和 `FUTEX_*_PRIVATE` 常量。
-  - mutex owner 已全量改用 `sys_gettid()`，为真实线程组做准备。
-  - mutex 已引入 `0/1/2` futex 慢路径（fast path CAS `0->1`，slow path futex wait，unlock futex wake）。
+  - `pthread_desc` + `_pthread_registry` 已启用，`pthread_self` 通过稳定的 `pub_handle` 返回当前线程句柄。
+  - `pthread_create` 已改成“先建 descriptor、再 clone、child 入口直接调用 start routine 并 `sys_exit(0)`”。
+  - `pthread_exit` 已能把 `result` / `exited` 写回 descriptor；`pthread_join` 仍通过 `waitpid` 做回收，并从 descriptor 读取返回值。
+  - mutex owner 已全量改用 `sys_gettid()`，mutex 也已引入 `0/1/2` futex 慢路径（fast path CAS `0->1`，slow path futex wait，unlock futex wake）。
   - `pthread_once` 已从忙等改为 futex wait/wake 状态机（`0=never, 1=running, 2=done`）。
-- **已尝试但回退**：线程描述符注册表（`_pthread_registry`）、扩展 `pthread_t`（`tsd_values` 等字段）、per-thread TSD（`_tsd_table`）、增强版 `pthread_exit`（保存 result + 运行 destructor）。这些变更在 C99 后端下引发 segfault 和栈损坏，已 stash 回退，待更稳定的 TLS/TCB 或 trampoline 方案后再推进。
-- **当前模型**：`pthread_create` 仍使用 `CLONE_VM | SIGCHLD`（即 `0x00000100 | 17`），`pthread_join` 仍依赖 `sys_waitpid`。`CLONE_THREAD` 切换待 `joinstate` futex 状态机就绪后再执行。
+  - `pthread_cond_*`、`pthread_key_*`、`pthread_cancel` 这些 API 已有基础实现，但语义仍偏 NPTL-lite。
+- **仍待补齐**：真正的 `CLONE_THREAD` / `CLONE_SETTLS` / `joinstate` futex 迁移、TSD destructor、多线程 cancel state/type、以及 detached 线程的最终资源回收模型。
+- **当前模型**：`pthread_create` 仍使用 `CLONE_VM | SIGCHLD`（即 `0x00000100 | 17`），但已经有 descriptor registry 和稳定 `pthread_self`；`pthread_join` 仍依赖 `sys_waitpid`，`CLONE_THREAD` 切换待 `joinstate` / TLS / TCB 方案就绪后再执行。
 
 ## 背景
 
 Uya 当前 `lib/libc/pthread.uya` 已经覆盖了不少 pthread API，但实现模型仍然偏向“最小可跑”：
 
-- `pthread_create` 当前使用 `CLONE_VM | SIGCHLD`，并通过 `waitpid` 完成 `pthread_join`。
+- `pthread_create` 当前仍使用 `CLONE_VM | SIGCHLD`，并通过 `waitpid` 完成 `pthread_join`；但 child 路径已经直接调用 start routine，然后 `sys_exit(0)`，避免回到 C 级返回链。
 - 这不是 glibc NPTL 的线程组模型。NPTL 使用 Linux `clone` 创建 1:1 内核线程，并依赖 `CLONE_THREAD`、`CLONE_SETTLS`、`CLONE_PARENT_SETTID`、`CLONE_CHILD_CLEARTID`、futex、TLS/TCB 和信号机制。
-- 当前 `pthread_create` 依赖全局 `_pthread_start_fn` / `_pthread_start_arg` 传参。这个方式只能靠全局锁规避并发创建竞态，后续应改为“每线程 descriptor 自带启动参数”。
-- 当前递归 mutex owner 多处使用 `getpid()`，进入真正 `CLONE_THREAD` 模型后同进程内所有线程 `pid` 相同，必须改为 `gettid()` 或 thread descriptor 中的 tid。
-- 当前 TSD 使用 `tid % 64` 的全局数组模拟，不满足真实 per-thread storage 和 destructor 语义。
+- 当前 `pthread_create` 仍依赖全局 `_pthread_start_fn` / `_pthread_start_arg` 传参。这个方式能靠 `_pthread_create_mutex` 规避并发创建竞态，但长期应改为“每线程 descriptor 自带启动参数”。
+- 当前递归 mutex owner 已修复为 `sys_gettid()` / descriptor tid，不再依赖 `getpid()`。
+- 当前 TSD 已有基础实现，但仍是 `tid % 64` 的全局数组模拟，不满足真实 per-thread storage 和 destructor 语义。
 
 本计划目标不是复制 glibc 代码，而是参考 glibc NPTL 的结构与语义，做一版适合 Uya 当前 runtime 的 **NPTL-lite**。
 
@@ -88,16 +91,16 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 
 - [ ] `pthread_create` 使用 `CLONE_VM | SIGCHLD`，不是 `CLONE_THREAD` 线程组模型。
 - [ ] `pthread_join` 依赖 `waitpid`，切到 `CLONE_THREAD` 后不可用。
-- [ ] `pthread_exit` 不保存 retval，也没有 TSD destructor 处理。
+- [x] `pthread_exit` 已保存 retval 到 descriptor，但 TSD destructor 处理仍缺失。
 - [ ] `pthread_detach` 只有 detached 标记，没有 join/detach/exit 完整状态机。
-- [ ] `pthread_self` 返回临时 `pthread_t`，没有稳定 thread descriptor。
+- [x] `pthread_self` 已返回稳定 `pthread_t` handle，不再临时构造对象。
 - [ ] `pthread_create` 使用全局 `_pthread_start_fn` / `_pthread_start_arg`，不应作为长期架构。
 - [x] mutex owner 使用 `getpid()`，在真实线程组内会误判 owner。 → **已修复为 `sys_gettid()`**
 - [x] mutex 状态只有简化 `0/1`，缺少 “locked maybe waiter” futex 慢路径优化。 → **已实现 `0/1/2` futex 慢路径**
 - [ ] `pthread_mutex_timedlock` 当前是简化实现，语义与返回码需要重做。
-- [ ] condvar 只有 `waiters + seq` 简化模型，存在 lost wake 和 clock/timeout 语义风险。
+- [x] condvar 的 `waiters + seq` futex 基础版本已落地，但 `condattr` / clock 语义仍未补齐。
 - [ ] TSD 用全局哈希数组模拟，缺少 per-thread value array 和 destructor 多轮调用。
-- [ ] cancel 只记录 tid 槽位，缺少 per-thread cancel state/type/pending 和取消点唤醒。
+- [ ] cancel 只记录 tid 槽位，`pthread_setcancelstate` / `pthread_setcanceltype` 仍是占位语义。
 - [x] `pthread_once` 忙等，应该改成 futex wait/wake。 → **已实现 futex 状态机**
 - [ ] rwlock 主要用 yield 忙等，应该增加 futex 慢路径。
 - [ ] 测试直接构造 `pthread_t`、`pthread_mutex_t` 等内部结构，耦合实现细节。
@@ -106,8 +109,8 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 
 ### 1. 文档与测试边界
 
-- [ ] 更新 `docs/libc_todo.md` 中 pthread 状态，改为“API 覆盖较多，NPTL 语义待重构”。
-- [ ] 更新 `docs/libc_progress.md` 中 pthread 部分，列出 `waitpid join`、全局启动参数、简化 TSD 等限制。
+- [x] 更新 `docs/libc_todo.md` 中 pthread 状态，改为“NPTL-lite + 语义仍在收口”。
+- [x] 更新 `docs/libc_progress.md` 中 pthread 部分，列出 `waitpid join`、全局启动参数、简化 TSD 等限制。
 - [ ] 新增 `tests/test_pthread_api.uya`，只验证 public API，不直接构造内部字段。
 - [ ] 保留现有 `tests/test_pthread.uya` 为 Linux 实现细节测试，逐步迁移。
 - [ ] 扩展 `tests/stress_pthread.sh`，加入多轮 create/join、mutex 竞争、condvar、TSD 压测。
@@ -137,7 +140,8 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 
 ### 3. Thread descriptor 与主线程初始化
 
-- [ ] 新增内部 `pthread_desc` 结构，建议字段：
+- [x] 已落地内部 `pthread_desc` 结构与 registry；当前字段包含 `tid` / `stack` / `stack_size` / `detached` / `exited` / `result` / `pub_handle`。
+- [ ] 若后续切到真正 NPTL，可再补更完整的 `joinstate` / `cancel` / `TSD` 字段：
   - [ ] `tid: atomic i32`
   - [ ] `joinstate: atomic i32`
   - [ ] `detached: atomic i32`
@@ -158,46 +162,29 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
   - [ ] `PTHREAD_EXITED`
   - [ ] `PTHREAD_JOINED`
   - [ ] `PTHREAD_DETACHED`
-- [ ] 先将 `pthread_t` 改为 descriptor handle，短期保留兼容字段或提供转换层。
-- [ ] 增加主线程 descriptor 初始化：
-  - [ ] 在第一次 `pthread_self` 时懒初始化。
-  - [ ] 或在 runtime entry 初始化阶段显式初始化。
-- [ ] 保证 `pthread_self` 返回稳定 handle，不再构造临时对象。
+- [ ] 先将 `pthread_t` 收敛为更纯粹的 handle，短期保留兼容字段或提供转换层。
+- [x] 主线程 descriptor 已懒初始化（第一次 `pthread_self` 时自动建立）。
+- [x] `pthread_self` 已返回稳定 handle，不再构造临时对象。
 
 ### 4. clone trampoline
 
-- [ ] 移除 `_pthread_start_fn` / `_pthread_start_arg` 的长期依赖。
-- [ ] 为每个新线程在 descriptor 中保存启动函数和参数。
-- [ ] 设计架构相关 trampoline：
-  - [ ] x86_64 先实现。
-  - [ ] arm64/riscv64 后续补齐。
-- [ ] trampoline 在 child 分支中：
-  - [ ] 建立当前线程 descriptor 指针。
-  - [ ] 调用 `start_routine(arg)`。
-  - [ ] 将返回值传给 `pthread_exit` 路径。
-  - [ ] 调用 `sys_exit` 结束当前线程。
-- [ ] 避免 child 换栈后继续依赖父栈局部变量。
-- [ ] 确认 C99 codegen 是否需要注入 helper，例如 `uya_clone_thread`。
+- [x] child 分支现在直接调用 `start_routine(arg)`，然后 `sys_exit(0)`，不再回到 C 级返回链。
+- [ ] 未来若切到 `CLONE_THREAD`，再把这段收敛成架构相关 trampoline/helper，统一 x86_64 / arm64 / riscv64 的入口。
+- [ ] 仍要避免 child 换栈后继续依赖父栈局部变量。
+- [ ] 仍需确认 C99 codegen 是否要注入 helper，例如 `uya_clone_thread`。
 
 ### 5. pthread_create
 
-- [ ] 改为 mmap 分配线程栈，不再用 malloc 分配栈。
+- [x] descriptor 已在 clone 前分配，clone 成功后再写入 registry。
+- [ ] 栈仍用 malloc 分配，后续再换 mmap 分配线程栈。
 - [ ] 栈顶按 ABI 做 16-byte 对齐。
 - [ ] 支持 guard page：
   - [ ] `mmap` 多分配 guard。
   - [ ] `mprotect(PROT_NONE)` 设置 guard。
   - [ ] `pthread_attr_setguardsize` 可后续补。
 - [ ] 按 attr 处理 stack size，校验 `PTHREAD_STACK_MIN`。
-- [ ] 使用 NPTL-lite clone flags：
-  - [ ] `CLONE_VM`
-  - [ ] `CLONE_FS`
-  - [ ] `CLONE_FILES`
-  - [ ] `CLONE_SYSVSEM`
-  - [ ] `CLONE_SIGHAND`
-  - [ ] `CLONE_THREAD`
-  - [ ] `CLONE_PARENT_SETTID`
-  - [ ] `CLONE_CHILD_CLEARTID`
-  - [ ] `CLONE_SETTLS` 在 TLS/TCB 就绪后加入
+- [x] child 路径已从 `pthread_create` 里拆出，直接调用 start routine 后退出。
+- [ ] 仍使用 `CLONE_VM | SIGCHLD`；`CLONE_THREAD` / `CLONE_PARENT_SETTID` / `CLONE_CHILD_CLEARTID` / `CLONE_SETTLS` 还要后续迁移。
 - [ ] 父线程通过 `ptid` 获取 child tid。
 - [ ] child exit 通过 `ctid` 或 descriptor `tid` + futex 唤醒 joiner。
 - [ ] 失败路径释放 descriptor 和 stack。
@@ -205,16 +192,12 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 
 ### 6. pthread_join / pthread_exit / pthread_detach
 
-- [ ] `pthread_exit(retval)` 保存 `retval` 到 descriptor。
-- [ ] 执行 TSD destructor。
-- [ ] 将 `joinstate` 设置为 `EXITED`。
-- [ ] futex wake 等待 join 的线程。
-- [ ] `pthread_join` 不再调用 `waitpid`。
-- [ ] `pthread_join` 等待 `joinstate == EXITED`。
-- [ ] `pthread_join` 正确写回 `retval`。
-- [ ] `pthread_join` 防止重复 join。
-- [ ] `pthread_join` 对 detached 线程返回 `EINVAL`。
-- [ ] `pthread_detach` 用 CAS 状态机处理与 join/exit 的竞态。
+- [x] `pthread_exit(retval)` 已保存 `retval` 到 descriptor，并置 `exited`。
+- [ ] 仍缺 TSD destructor。
+- [x] `pthread_join` 当前通过 `waitpid` 等待线程结束，然后从 descriptor 读取 `retval` 并回收栈/descriptor。
+- [ ] `pthread_join` 尚未迁移到 futex joinstate，也还没有重复 join / detached 的完整状态机。
+- [x] `pthread_detach` 已有 detached 标记。
+- [ ] `pthread_detach` 仍需要 CAS 状态机来处理与 join/exit 的竞态。
 - [ ] detached 线程退出后的资源回收先做安全保守版：
   - [ ] 不在线程仍在用栈时 munmap 当前栈。
   - [ ] 可先保留资源到进程结束。
@@ -256,17 +239,13 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 
 ### 9. condition variable
 
-- [ ] 第一版保守修正当前 `waiters + seq` 模型：
-  - [ ] wait 注册和 mutex unlock 之间避免 lost wake。
-  - [ ] signal/broadcast 只在必要时 wake。
-  - [ ] wait 返回后必须重新加锁。
-  - [ ] timedwait timeout 后正确减少 waiter。
-- [ ] 增加 cond attr：
+- [x] 第一版 `waiters + seq + futex` 模型已落地，`pthread_cond_wait` / `pthread_cond_timedwait` / `pthread_cond_signal` / `pthread_cond_broadcast` 都已可用。
+- [ ] `pthread_condattr_*` 仍未补齐：
   - [ ] `pthread_condattr_init`
   - [ ] `pthread_condattr_destroy`
   - [ ] `pthread_condattr_getclock`
   - [ ] `pthread_condattr_setclock`
-- [ ] `pthread_cond_timedwait` 支持 `CLOCK_REALTIME` / `CLOCK_MONOTONIC`。
+- [ ] `pthread_cond_timedwait` 目前按 `gettimeofday` + 相对超时处理，后续再补 `CLOCK_REALTIME` / `CLOCK_MONOTONIC`。
 - [ ] 后续评估 glibc 类 64-bit waiter sequence + G1/G2 双组方案。
 - [ ] 增加真实多线程测试：
   - [ ] 1 waiter + 1 signaler。
@@ -277,21 +256,19 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 ### 10. pthread_once
 
 - [x] 将 busy wait 改为 futex wait/wake。
-- [ ] 状态定义：
-  - [ ] `0 = never`
-  - [ ] `1 = running`
-  - [ ] `2 = done`
-- [ ] 初始化成功后 wake 所有等待线程。
+- [x] 状态定义 `0 = never` / `1 = running` / `2 = done` 已在实现中落地。
+- [x] 初始化成功后 wake 所有等待线程。
 - [ ] 处理初始化函数异常退出或线程取消的后续策略。
 - [ ] 增加多线程并发 once 测试。
 
 ### 11. TSD / pthread_key
 
-- [ ] key registry 只管理 key 元数据。
-- [ ] 每个 descriptor 拥有自己的 TSD value array。
-- [ ] `pthread_setspecific` 写入当前线程 descriptor。
-- [ ] `pthread_getspecific` 从当前线程 descriptor 读取。
-- [ ] `pthread_key_delete` 标记 key generation，避免旧 key 误用。
+- [x] `pthread_key_create` / `pthread_key_delete` / `pthread_getspecific` / `pthread_setspecific` 已有基础实现。
+- [ ] key registry 只管理 key 元数据，当前还夹带了简化的 value storage。
+- [ ] 每个 descriptor 仍未真正拥有自己的 TSD value array。
+- [ ] `pthread_setspecific` 目前还不是严格的 descriptor-backed 存储。
+- [ ] `pthread_getspecific` 还需要从当前线程 descriptor 读取。
+- [ ] `pthread_key_delete` 仍需要更严格的 generation 语义，避免旧 key 误用。
 - [ ] 在线程退出时执行 destructor。
 - [ ] destructor 按 POSIX 做多轮扫描，第一版可设置轮数常量。
 - [ ] 增加测试：
@@ -301,11 +278,11 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 
 ### 12. cancel
 
-- [ ] descriptor 中保存 cancel state/type/pending。
-- [ ] `pthread_cancel` 设置 target pending。
-- [ ] deferred cancel 在 `pthread_testcancel` 和取消点检查。
-- [ ] `pthread_setcancelstate` 保存旧状态并更新当前线程状态。
-- [ ] `pthread_setcanceltype` 保存旧类型并更新当前线程类型。
+- [x] `pthread_cancel` / `pthread_testcancel` / `pthread_setcancelstate` / `pthread_setcanceltype` 已有基础实现。
+- [ ] descriptor 中仍未保存 cancel state/type/pending。
+- [ ] `pthread_cancel` 目前只是写入 tid 槽位。
+- [ ] deferred cancel 还要接到 `pthread_testcancel` 和取消点检查。
+- [ ] `pthread_setcancelstate` / `pthread_setcanceltype` 仍只是参数校验。
 - [ ] 第一版 async cancel 可返回 `ENOTSUP` 或只在安全点生效，需文档明确。
 - [ ] 后续用 `tgkill`/内部信号唤醒阻塞 syscall。
 - [ ] `pthread_join` 对 canceled 线程返回 `PTHREAD_CANCELED`。
