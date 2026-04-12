@@ -193,6 +193,8 @@ fn gen_global_var(codegen: &C99CodeGenerator, var_decl: &ASTNode) void {
         return;
     }
     
+    fputs("__attribute__((used)) " as *byte, codegen.emit_stream as *void);
+    
     var type_c: &byte = null;
     
     // 检查是否为数组类型

@@ -878,7 +878,7 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
             fprintf(codegen.emit_stream, "__attribute__((naked)) " as *byte);
         }
         if is_static != 0 {
-            fprintf(codegen.emit_stream, "static __attribute__((unused)) " as *byte);
+            fprintf(codegen.emit_stream, "static __attribute__((used)) " as *byte);
         }
         fprintf(codegen.emit_stream, "%s %s(" as *byte, return_c as *byte, func_name as *byte);
         
@@ -3830,7 +3830,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     } else {
         // 多文件 C（split）：与 gen_function_prototype / 普通函数定义一致，不加 static，避免 uya_split_protos.h 中非 static 声明与本定义冲突
         if codegen.split_enabled == 0 {
-            fprintf(codegen.emit_stream as *void, "static __attribute__((unused)) %s %s(" as *byte, wrapper_ret_c as *byte, func_c_name as *byte);
+            fprintf(codegen.emit_stream as *void, "static __attribute__((used)) %s %s(" as *byte, wrapper_ret_c as *byte, func_c_name as *byte);
         } else {
             fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, wrapper_ret_c as *byte, func_c_name as *byte);
         }
@@ -4427,7 +4427,7 @@ fn gen_mono_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, ty
     const return_c: &byte = c99_mono_type_to_c(codegen, return_type);
     
     if fn_decl.fn_decl_is_async != 0 && fn_decl.fn_decl_is_export == 0 && codegen.split_enabled == 0 {
-        fprintf(codegen.emit_stream as *void, "static __attribute__((unused)) %s %s(" as *byte, return_c as *byte, mono_name as *byte);
+        fprintf(codegen.emit_stream as *void, "static __attribute__((used)) %s %s(" as *byte, return_c as *byte, mono_name as *byte);
     } else {
         fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, mono_name as *byte);
     }
@@ -4586,7 +4586,7 @@ fn gen_mono_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode, type_args: &
                 fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c2 as *byte, mono_name as *byte);
             } else {
                 if codegen.split_enabled == 0 {
-                    fprintf(codegen.emit_stream as *void, "static __attribute__((unused)) %s %s(" as *byte, return_c2 as *byte, mono_name as *byte);
+                    fprintf(codegen.emit_stream as *void, "static __attribute__((used)) %s %s(" as *byte, return_c2 as *byte, mono_name as *byte);
                 } else {
                     fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c2 as *byte, mono_name as *byte);
                 }

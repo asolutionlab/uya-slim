@@ -722,7 +722,52 @@ fn enqueue(queue: &LockFreeQueue, node: &Node) void {
 
 ---
 
-## 8. 总结
+## 8. LTO / GC-sections 陷阱
+
+当项目开启 **`-flto -Wl,--gc-sections -ffunction-sections -fdata-sections`**（如 microapp 默认优化链路）时，需特别注意 `@asm` 中通过**硬编码字符串**引用的符号。
+
+### 问题描述
+
+链接器无法解析 `@asm` 字符串里的符号依赖。如果 `@asm` 通过 `call some_helper` 或 `mov some_global(%rip), %rdi` 引用了一个 `static` 函数或全局变量，而该符号在常规调用图中没有显式被调用，则 `--gc-sections` 会将其视为死代码并丢弃，导致：
+
+```
+undefined reference to `some_helper'
+undefined reference to `some_global'
+```
+
+### 实际案例
+
+`lib/libc/pthread.uya` 中的 `pthread_create` 使用 `@asm` 内联汇编直接调用 `_pthread_call_start` 和 `_pthread_thread_exit`：
+
+```uya
+@asm {
+    "...\n\tcall _pthread_call_start\n\t...\n\tcall _pthread_thread_exit\n\t..."
+} clobbers = ["rax", "rdi", "rsi", ... , "memory"];
+```
+
+在 LTO + `--gc-sections` 下，这些内部辅助符号会被回收，导致 microapp 链接失败。
+
+### 解决方案
+
+编译器后端已将所有内部 `static` 函数和全局变量统一标记为 `__attribute__((used))`，强制链接器保留。若你在手写 C 封装或自定义后端中遇到类似问题，可手动添加该属性：
+
+```c
+// 函数
+static __attribute__((used)) void helper(void) { ... }
+
+// 全局变量
+__attribute__((used)) static int global_state = 0;
+```
+
+### 最佳实践
+
+1. **优先通过输入/输出约束传递符号地址**：如果编译器支持，把函数指针或变量地址作为 `@asm` 的显式输入，而不是在汇编字符串里写死符号名。这样编译器会在输入约束中建立真实的数据依赖。
+2. **若必须硬编码符号名**：确保对应的后端会为这些符号生成 `__attribute__((used))` 或等价的保留指令。
+3. **microapp 开发者无需额外操作**：当前 Uya C99 后端已自动处理，但如果你在宿主 C 代码中手写 `__asm__` 并混合 `--gc-sections`，需自行留意此问题。
+
+---
+
+## 9. 总结
 
 ### 8.1 核心原则
 

@@ -1,6 +1,6 @@
 # 编译器 / 标准库 Bug 待办清单
 
-**最后更新：** 2026-04-12（关闭 `@async_fn` 变量提升与嵌套块初始化 bug）
+**最后更新：** 2026-04-12（关闭 microapp LTO + `--gc-sections` 链接失败 bug；关闭 `@async_fn` 变量提升与嵌套块初始化 bug）
 
 本文档用于跟踪 release 验证中发现的问题，便于逐项修复、验证和关闭。
 
@@ -56,6 +56,20 @@
   - 影响：release 流程不再被这些测试阻塞，CI 环境下网络测试会优雅跳过
 
 ## 编译器 bug
+
+- [x] **P1 / 高：microapp `run` / `build` 在 LTO + `--gc-sections` 下链接失败（`undefined reference`）**
+  - 状态：已修复
+  - 验证状态：`make check` 780/780 通过；`tests/verify_microapp_loader_generic.sh` 通过
+  - 归属：C99 代码生成 / 链接器交互
+  - 现象：
+    1. `microapp run --app microapp ...` 报 `undefined reference to '_pthread_call_start'`、`'_pthread_thread_exit'`、`'_pthread_child_desc'` 等
+    2. `microapp build --app microapp ...` 生成的 `.uapp` 同样在链接阶段失败
+  - 根因：microapp 默认启用 `-flto -Wl,--gc-sections -ffunction-sections -fdata-sections`。`lib/libc/pthread.uya` 中的 `@asm` 块通过**原始汇编字符串**引用若干内部 `static` 函数与全局变量（`_pthread_call_start`、`_pthread_thread_exit`、`_pthread_child_desc`、`_pthread_start_fn_tmp`、`_pthread_start_arg_tmp`）。LTO 和链接器 `--gc-sections` 无法识别汇编字符串中的符号依赖，将这些符号视为死代码/死数据回收，导致链接报错。
+  - 修复内容：
+    - `src/codegen/c99/function.uya`：所有 `static` 内部函数的 `__attribute__((unused))` 改为 `__attribute__((used))`
+    - `src/codegen/c99/global.uya`：全局变量定义前统一添加 `__attribute__((used))`
+  - 影响：任何在 `@asm` 字符串中引用内部 static 函数或全局变量的代码，在启用 LTO/GC-sections 时都可能触发此问题。
+  - 相关文件：`src/codegen/c99/function.uya`、`src/codegen/c99/global.uya`、`lib/libc/pthread.uya`
 
 - [x] **P1 / 高：`@async_fn` 中 `http_check_deadline` 触发变量提升 bug**
   - 状态：已修复

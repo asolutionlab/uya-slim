@@ -17,6 +17,7 @@
 - **仍待补齐**：真正的 `CLONE_THREAD` / `CLONE_SETTLS` / `joinstate` futex 迁移、以及 detached 线程的最终资源回收模型。
   - **修正（2026-04-12）**：此前记录的 "`_pthread_thread_exit` + futex wake 在 `CLONE_VM | SIGCHLD` 下 segfault" 已被重新定位。根本原因是 **child 路径中编译器生成的 `%rbp` 相对局部变量写入** 与 parent 并发竞争 parent 栈帧（`clone` 后 child 继承 parent 的 `%rbp`），而非 `_pthread_thread_exit` 或 futex 本身的问题。child 路径现已改为：先 `_pthread_call_start` 调用入口，再 `_pthread_thread_exit(desc, null)` 统一退出；该路径在 `CLONE_VM | SIGCHLD` 下 22/22 稳定通过。
 - **当前模型**：`pthread_create` 仍使用 `CLONE_VM | SIGCHLD`（即 `0x00000100 | 17`），但启动参数已迁入 descriptor，不再依赖长期全局 fn/arg；`pthread_join` 仍依赖 `sys_waitpid`，但在 descriptor 上已引入 `joinstate` 原子状态用于与 `detach/exit` 同步；`CLONE_THREAD` 切换待 TLS / TCB 方案就绪后再执行。
+- **编译器/链接器协同（2026-04-12）**：由于 child 路径通过 `@asm` 硬编码字符串调用 `_pthread_call_start` / `_pthread_thread_exit` 并引用 `_pthread_child_desc` / `_pthread_start_fn_tmp` / `_pthread_start_arg_tmp`，这些内部 `static` 函数与全局变量在 microapp 默认的 `-flto -Wl,--gc-sections` 优化链路中会被链接器误判为死代码而丢弃。C99 后端已将这些符号统一标记为 `__attribute__((used))`，强制保留。`make check` 与 microapp 回归测试均已通过。
 
 ## 背景
 
