@@ -184,6 +184,14 @@ run_benchmark() {
 
     echo "--- $name 基准测试 ---" >&2
 
+    # 启动服务器前强制清理同名旧进程并等待端口释放
+    pkill -9 -f "http_bench_fork" 2>/dev/null || true
+    pkill -9 -f "http_bench_async_epoll" 2>/dev/null || true
+    pkill -9 -f "http_bench_go" 2>/dev/null || true
+    pkill -9 -f "http_bench_c" 2>/dev/null || true
+    pkill -9 -f "http_bench_tokio" 2>/dev/null || true
+    sleep 2
+
     # 启动服务器
     local server_log="/tmp/http_bench_${name//[^a-zA-Z0-9_]/_}.server.log"
     rm -f "$server_log"
@@ -219,7 +227,7 @@ run_benchmark() {
     pkill -9 -f "http_bench_go" 2>/dev/null || true
     pkill -9 -f "http_bench_c" 2>/dev/null || true
     pkill -9 -f "http_bench_tokio" 2>/dev/null || true
-    sleep 1
+    sleep 2
 
     # 输出结果摘要
     echo "" >&2
@@ -258,6 +266,13 @@ run_keepalive_probe() {
 
     echo "--- $name Keep-Alive 验证（ab -k）---" >&2
 
+    pkill -9 -f "http_bench_fork" 2>/dev/null || true
+    pkill -9 -f "http_bench_async_epoll" 2>/dev/null || true
+    pkill -9 -f "http_bench_go" 2>/dev/null || true
+    pkill -9 -f "http_bench_c" 2>/dev/null || true
+    pkill -9 -f "http_bench_tokio" 2>/dev/null || true
+    sleep 2
+
     local server_log="/tmp/http_bench_${name//[^a-zA-Z0-9_]/_}.keepalive.log"
     rm -f "$server_log"
     "$exec" >"$server_log" 2>&1 &
@@ -293,7 +308,7 @@ run_keepalive_probe() {
     pkill -9 -f "http_bench_go" 2>/dev/null || true
     pkill -9 -f "http_bench_c" 2>/dev/null || true
     pkill -9 -f "http_bench_tokio" 2>/dev/null || true
-    sleep 1
+    sleep 2
 
     echo "$name Keep-Alive 结果: keep_alive=${ka}, failed=${failed}, rps=${rps}" >&2
     echo "$name|$ka|$failed|$rps"
