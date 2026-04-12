@@ -518,6 +518,22 @@ export struct TimeVal {
 // futex 操作（Linux futex(2)）
 export const FUTEX_WAIT: i32 = 0;
 export const FUTEX_WAKE: i32 = 1;
+export const FUTEX_WAIT_PRIVATE: i32 = 128;
+export const FUTEX_WAKE_PRIVATE: i32 = 129;
+export const FUTEX_WAIT_BITSET: i32 = 9;
+export const FUTEX_WAKE_BITSET: i32 = 10;
+export const FUTEX_CLOCK_REALTIME: i32 = 256;
+
+// Linux clone flags (for NPTL-lite)
+export const CLONE_VM: i64 = 0x00000100;
+export const CLONE_FS: i64 = 0x00000200;
+export const CLONE_FILES: i64 = 0x00000400;
+export const CLONE_SIGHAND: i64 = 0x00000800;
+export const CLONE_THREAD: i64 = 0x00010000;
+export const CLONE_SYSVSEM: i64 = 0x00040000;
+export const CLONE_SETTLS: i64 = 0x00080000;
+export const CLONE_PARENT_SETTID: i64 = 0x00100000;
+export const CLONE_CHILD_CLEARTID: i64 = 0x00200000;
 
 // ============================================================
 // 文件操作标志（open）
