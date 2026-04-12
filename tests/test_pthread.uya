@@ -424,12 +424,12 @@ fn test_pthread_affinity() !void {
         _ = pthread_join(&th, null as & &void);
     }
 
-    // 纯 yield 在部分调度下父线程易忙等占满 CPU；每次先短睡再 yield，让出时间片，便于子线程跑到入口并写入 _affinity_started。
+    // 这里用纯忙等，避免在子线程存活期间额外调用 nanosleep/yield 触发时序问题。
     while _affinity_started == 0 {
-        var nap: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 1_000_000 };
-        var rem: TimeSpec = TimeSpec{ tv_sec: 0, tv_nsec: 0 };
-        _ = sys_nanosleep(&nap, &rem) catch {};
-        _ = pthread_yield();
+        var spin: i32 = 0;
+        while spin < 1000 {
+            spin = spin + 1;
+        }
     }
 
     CPU_ZERO(&_affinity_cpuset_a);

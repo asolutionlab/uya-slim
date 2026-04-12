@@ -76,6 +76,66 @@ export struct pthread_t {
     arg: &void,
 }
 
+// 内部线程描述符（NPTL-lite）
+struct pthread_desc {
+    tid: i64,
+    stack: &void,
+    stack_size: usize,
+    detached: atomic i32,
+    exited: atomic i32,
+    result: &void,
+    pub_handle: &pthread_t,
+}
+
+const PTHREAD_MAX_THREADS: usize = 1024;
+struct pthread_registry_entry { tid: i64, desc: &pthread_desc }
+var _pthread_registry: [pthread_registry_entry: PTHREAD_MAX_THREADS] = [];
+var _pthread_main_desc: pthread_desc = pthread_desc{ tid: 0, stack: null, stack_size: 0, detached: 0, exited: 0, result: null, pub_handle: null };
+var _pthread_main_handle: pthread_t = pthread_t{ tid: 0, stack: null, stack_size: 0, detached: 0, exited: 0, result: null, start_routine: null, arg: null };
+var _pthread_main_initialized: atomic i32 = 0;
+
+fn _pthread_registry_insert(tid: i64, desc: &pthread_desc) void {
+    if tid == 0 { return; }
+    var i: usize = 0;
+    while i < PTHREAD_MAX_THREADS {
+        if _pthread_registry[i].tid == 0 {
+            // 先写 desc，再发布 tid，避免别的线程先看到 tid 但 desc 仍是空值。
+            _pthread_registry[i].desc = desc;
+            var expected: i64 = 0;
+            if __atomic_compare_exchange_n((&_pthread_registry[i].tid) as &i64, &expected, tid, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
+                return;
+            }
+            _pthread_registry[i].desc = null as &pthread_desc;
+        }
+        i = i + 1;
+    }
+}
+
+fn _pthread_registry_find(tid: i64) &pthread_desc {
+    if tid == 0 { return null as &pthread_desc; }
+    var i: usize = 0;
+    while i < PTHREAD_MAX_THREADS {
+        if _pthread_registry[i].tid == tid {
+            return _pthread_registry[i].desc;
+        }
+        i = i + 1;
+    }
+    return null as &pthread_desc;
+}
+
+fn _pthread_registry_remove(tid: i64) void {
+    if tid == 0 { return; }
+    var i: usize = 0;
+    while i < PTHREAD_MAX_THREADS {
+        if _pthread_registry[i].tid == tid {
+            _pthread_registry[i].tid = 0;
+            _pthread_registry[i].desc = null as &pthread_desc;
+            return;
+        }
+        i = i + 1;
+    }
+}
+
 // 互斥量类型常量
 export const PTHREAD_MUTEX_NORMAL: i32 = 0;     // 普通锁
 export const PTHREAD_MUTEX_RECURSIVE: i32 = 1;  // 递归锁
@@ -241,6 +301,14 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
         return 12; // ENOMEM
     }
 
+    // 先分配内部描述符，再进入 clone 窗口。
+    // 这样父线程在子线程存活期间就不需要再碰 malloc/free，避免和共享 VM 下的 libc 状态打架。
+    const desc: &pthread_desc = malloc(@size_of(pthread_desc)) as &pthread_desc;
+    if desc == null {
+        free(stack_mem);
+        return 12; // ENOMEM
+    }
+
     var base: &byte = stack_mem as &byte;
     var top: &void = (base + stack_size) as &void;
 
@@ -273,12 +341,28 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     }
 
     if tid == 0 {
-        // 子线程路径：通过 @asm 间接调用用户入口函数（子进程有独立内存副本，无需 unlock）
-        _ = _pthread_call_start(_pthread_start_fn, _pthread_start_arg);
+        // 子线程路径：直接调用入口函数，然后立即退出，避免再回到 C 级返回链。
+        std.cfg(std.target_arch == .ta_x86_64, {
+            @asm {
+                "mov %1, %%rdi\n\tmov %0, %%rax\n\tcall *%%rax"
+                (_pthread_start_fn, _pthread_start_arg);
+            } clobbers = ["rax", "rdi", "rcx", "r11", "memory"];
+        }, {
+            _ = uya_thread_call_usize(_pthread_start_fn, _pthread_start_arg as usize);
+        })
         sys_exit(0);
     }
 
-    // 父线程路径：先完整写入 *thread，再 unlock。避免临界区已结束而句柄尚未发布，导致其它核对 TID/sched_* 见到未初始化或撕裂的 pthread_t。
+    // 父线程路径：先完整写入 *thread 和内部 descriptor，再 unlock。
+    // desc 已在 clone 前分配，避免共享 VM 初期再触发 libc 分配。
+    desc.tid = tid;
+    desc.stack = stack_mem;
+    desc.stack_size = stack_size;
+    desc.detached = detached;
+    desc.exited = 0;
+    desc.result = null;
+    desc.pub_handle = thread;
+
     thread.tid = tid;
     thread.stack = stack_mem;
     thread.stack_size = stack_size;
@@ -287,41 +371,79 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     thread.result = null;
     thread.start_routine = start_routine;
     thread.arg = arg;
+
+    _pthread_registry_insert(tid, desc);
     _ = pthread_mutex_unlock(&_pthread_create_mutex);
     return 0;
 }
 
-// pthread_join - 等待线程结束（基于 waitpid）
+// pthread_join - 等待线程结束（基于 waitpid + descriptor result）
 // 说明：
-// - 当前忽略 retval，仅等待线程退出并回收其栈内存
-// - 分离线程不能 join
+// - 通过 waitpid 等待子进程/线程退出
+// - 从内部 descriptor 读取返回值并写入 retval
+// - 回收栈和 descriptor 内存
 export extern "libc" fn pthread_join(thread: &pthread_t, retval: & &void) i32 {
-    _ = retval;
+    if thread == null {
+        return 22; // EINVAL
+    }
 
-    // 分离线程：POSIX 规定 join 返回 EINVAL，但仍需 waitpid 回收子进程并释放栈，否则僵尸 + 泄漏会导致后续 create/测试偶发崩溃
-    if thread.detached != 0 {
+    // 先快照 join 需要的字段，避免后续 waitpid / 资源回收路径再次读到被并发写坏的公有句柄。
+    const tid: i64 = thread.tid;
+    const stack_mem: &void = thread.stack;
+    const detached: i32 = thread.detached;
+    const last_result: &void = thread.result;
+
+    if tid == 0 {
+        return 22; // EINVAL
+    }
+
+    // 分离线程：POSIX 规定 join 返回 EINVAL，但仍需 waitpid 回收子进程并释放栈
+    if detached != 0 {
         var status_d: i32 = 0;
-        const pid_d: i32 = thread.tid as i32;
+        const pid_d: i32 = tid as i32;
         _ = sys_waitpid(pid_d, &status_d, 0);
-        if thread.stack != null {
-            free(thread.stack);
+        const desc_d: &pthread_desc = _pthread_registry_find(tid);
+        if desc_d != null {
+            if stack_mem != null { free(stack_mem); }
+            _pthread_registry_remove(tid);
+            free(desc_d as &void);
+        } else if stack_mem != null {
+            free(stack_mem);
         }
         thread.stack = null as &void;
         thread.stack_size = 0;
+        thread.exited = 1;
+        thread.result = last_result;
         return 22; // EINVAL
     }
 
     var status: i32 = 0;
-    const pid: i32 = thread.tid as i32;
-    // 等待线程退出，忽略错误（线程可能已被回收或不存在）
-    const wait_ret: !i32 = sys_waitpid(pid, &status, 0);
-    // 即使 wait_ret 失败也继续清理
+    const pid: i32 = tid as i32;
+    _ = sys_waitpid(pid, &status, 0);
 
-    if thread.stack != null {
-        free(thread.stack);
+    const desc: &pthread_desc = _pthread_registry_find(tid);
+    if desc != null {
+        if retval != null {
+            retval[0] = desc.result;
+        }
+        if stack_mem != null { free(stack_mem); }
+        _pthread_registry_remove(tid);
+        free(desc as &void);
+    } else {
+        if retval != null {
+            retval[0] = last_result;
+        }
+        if stack_mem != null { free(stack_mem); }
     }
+
     thread.stack = null as &void;
     thread.stack_size = 0;
+    thread.exited = 1;
+    if desc != null {
+        thread.result = desc.result;
+    } else {
+        thread.result = last_result;
+    }
     return 0;
 }
 
@@ -373,25 +495,17 @@ export extern "libc" fn pthread_once(once_control: &pthread_once_t, init_routine
     }
 }
 
-// pthread_exit - 保存 retval，执行 TSD destructor，然后 sys_exit
+// pthread_exit - 保存 retval 到线程描述符，然后 sys_exit
 export extern "libc" fn pthread_exit(retval: &void) void {
-    // Save retval into current thread descriptor (accessible via pthread_join)
-    // Simplified: we cannot easily find our own pthread_t handle here without TLS/registry.
-    // For now, just record it in a global last-exit slot as a fallback.
-    // The real fix requires either thread pointer or registry lookup.
-    //
-    // Note: in the current create path, the child branch calls pthread_exit after
-    // _pthread_call_start. Since the parent stores &thread in the global mutex
-    // critical section, there is a race if the child reaches here before the parent
-    // finishes publishing. To avoid this, we skip TSD destructor in this path
-    // and rely on the parent for cleanup.
-    //
-    // For threads that explicitly call pthread_exit(), we do a best-effort
-    // destructor run using the tid-based lookup if available.
-    const tid32: i32 = sys_gettid() catch { sys_exit(0); return; };
-    const tid: i64 = tid32 as i64;
-    _ = tid;
-    _ = retval;
+    const tid: i64 = sys_gettid() catch { sys_exit(0); return; };
+    var desc: &pthread_desc = _pthread_registry_find(tid);
+    if desc == null && _pthread_main_desc.tid == tid {
+        desc = &_pthread_main_desc;
+    }
+    if desc != null {
+        desc.result = retval;
+        desc.exited = 1;
+    }
     sys_exit(0);
 }
 
@@ -656,12 +770,10 @@ export extern "libc" fn pthread_mutex_timedlock(mutex: &pthread_mutex_t, abstime
     return 0;
 }
 
-// pthread_self - 获取当前线程 ID（须与 SYS_gettid 一致，供 sched_* / cancel 与 clone 返回值对齐）
-export extern "libc" fn pthread_self() pthread_t {
-    const tid32: !i32 = sys_gettid();
-    const tid_val: i64 = (tid32 catch { return pthread_t{ tid: -1, stack: null, stack_size: 0, detached: 0, exited: 0, result: null, start_routine: null, arg: null }; }) as i64;
+// 合成 pthread_t（fallback，用于 gettid 失败或 registry 未就绪时）
+fn _synthetic_pthread_self(tid: i64) pthread_t {
     return pthread_t{
-        tid: tid_val,
+        tid: tid,
         stack: null,
         stack_size: 0,
         detached: 0,
@@ -670,6 +782,26 @@ export extern "libc" fn pthread_self() pthread_t {
         start_routine: null,
         arg: null,
     };
+}
+
+// pthread_self - 获取当前线程 ID（NPTL-lite：从 registry 返回稳定 pub_handle）
+export extern "libc" fn pthread_self() pthread_t {
+    const tid: i64 = sys_gettid() catch { return _synthetic_pthread_self(-1); };
+    const desc: &pthread_desc = _pthread_registry_find(tid);
+    if desc != null && desc.pub_handle != null {
+        return desc.pub_handle[0];
+    }
+    // 主线程懒初始化
+    if _pthread_main_initialized == 0 {
+        _pthread_main_desc.tid = tid;
+        _pthread_main_desc.pub_handle = &_pthread_main_handle;
+        _pthread_main_handle.tid = tid;
+        _pthread_main_initialized = 1;
+    }
+    if _pthread_main_desc.pub_handle == null {
+        return _synthetic_pthread_self(tid);
+    }
+    return _pthread_main_desc.pub_handle[0];
 }
 
 // pthread_equal - 比较两个线程 ID
