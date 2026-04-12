@@ -225,7 +225,6 @@ export struct pthread_attr_t {
     detached: i32,
 }
 
-export struct pthread_mutexattr_t { _unused: i32 }
 export struct pthread_condattr_t { clock: i32 }
 export const CLOCK_REALTIME: i32 = 0;
 export const CLOCK_MONOTONIC: i32 = 1;

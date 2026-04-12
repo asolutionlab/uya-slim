@@ -1,11 +1,11 @@
 # Uya libc pthread NPTL-lite 改造 TODO
 
 日期：2026-04-12
-最新更新：2026-04-12（稳定基线恢复）
+最新更新：2026-04-12（稳定基线恢复，public API smoke 补齐中）
 
 ## 状态摘要（2026-04-12）
 
-- **Phase 0 稳定**：`tests/test_pthread.uya` 22/22 通过，`tests/test_pthread_cond.uya` 3/3 通过。
+- **Phase 0 稳定**：`tests/test_pthread.uya` 22/22 通过，`tests/test_pthread_cond.uya` 3/3 通过，`tests/test_pthread_api.uya` 作为 public API smoke 已补入。
 - **已落地**：
   - `syscall.uya` 补齐了 `CLONE_*` 和 `FUTEX_*_PRIVATE` 常量。
   - `pthread_desc` + `_pthread_registry` 已启用，`pthread_self` 通过稳定的 `pub_handle` 返回当前线程句柄。
@@ -111,10 +111,10 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 
 - [x] 更新 `docs/libc_todo.md` 中 pthread 状态，改为“NPTL-lite + 语义仍在收口”。
 - [x] 更新 `docs/libc_progress.md` 中 pthread 部分，列出 `waitpid join`、全局启动参数、简化 TSD 等限制。
-- [ ] 新增 `tests/test_pthread_api.uya`，只验证 public API，不直接构造内部字段。
+- [x] 新增 `tests/test_pthread_api.uya`，只验证 public API，不直接构造内部字段。
 - [x] 保留现有 `tests/test_pthread.uya` 为 Linux 实现细节测试，目前 22/22 全部通过。
 - [ ] 保留现有 `tests/test_pthread.uya` 为 Linux 实现细节测试，逐步迁移。
-- [ ] 扩展 `tests/stress_pthread.sh`，加入多轮 create/join、mutex 竞争、condvar、TSD 压测。
+- [x] 扩展 `tests/stress_pthread.sh`，加入多轮 create/join、mutex 竞争、condvar、TSD 压测与 public API smoke。
 - [x] `./bin/uya test tests/test_pthread.uya`、`tests/test_pthread_cond.uya`、`tests/test_syscall_thread.uya` 验证通过。
 
 ### 2. syscall 基础
@@ -306,10 +306,11 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 
 ### 15. 验证命令
 
-- [ ] `./bin/uya test tests/test_syscall_thread.uya`
-- [ ] `./bin/uya test tests/test_pthread.uya`
-- [ ] `./bin/uya test tests/test_pthread_cond.uya`
-- [ ] `tests/stress_pthread.sh`
+- [x] `./bin/uya test tests/test_syscall_thread.uya`
+- [x] `./bin/uya test tests/test_pthread_api.uya`
+- [x] `./bin/uya test tests/test_pthread.uya`
+- [x] `./bin/uya test tests/test_pthread_cond.uya`
+- [x] `tests/stress_pthread.sh`
 - [ ] `make check`
 - [ ] 自举验证，确保 compiler 使用新 libc pthread 后不回归。
 
