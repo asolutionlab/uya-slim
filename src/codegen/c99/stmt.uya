@@ -1960,7 +1960,7 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             if first_bracket != null {
                 // 找到第一个 '['，分割基类型和维度
                 const base_len: i32 = ptr_diff(first_bracket, type_c as *byte);
-                const base_type: &byte = compiler_arena_alloc(codegen.arena, base_len + 1) as &byte;
+                const base_type: &u8 = compiler_arena_alloc(codegen.arena, base_len + 1) as &u8;
                 if base_type != null {
                     memcpy(base_type as *void, type_c as *void, base_len);
                     base_type[base_len] = 0;

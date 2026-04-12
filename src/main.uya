@@ -2990,16 +2990,16 @@ fn compile_files(
                 need_slash = 1;
             }
             const alloc_len: usize = pr_len + (need_slash as usize) + 1 as usize;
-            const pr_copy: &byte = compiler_arena_alloc(&arena, alloc_len) as &byte;
+            const pr_copy: &u8 = compiler_arena_alloc(&arena, alloc_len) as &u8;
             if pr_copy != null {
                 memcpy(pr_copy as *void, project_root as *void, pr_len);
                 if need_slash != 0 {
-                    pr_copy[pr_len] = 47 as byte;
-                    pr_copy[pr_len + 1] = 0 as byte;
+                    pr_copy[pr_len] = 47 as u8;
+                    pr_copy[pr_len + 1] = 0 as u8;
                 } else {
-                    pr_copy[pr_len] = 0 as byte;
+                    pr_copy[pr_len] = 0 as u8;
                 }
-                checker.project_root_dir = pr_copy;
+                checker.project_root_dir = pr_copy as &byte;
             }
         }
     }

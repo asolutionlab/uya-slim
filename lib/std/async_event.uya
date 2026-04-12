@@ -168,7 +168,7 @@ export struct LinuxEpoll : EventLoop {
     /// - 清理内部 slot 状态
     /// - 容错：ENOENT/EBADF 视为已注销，不报错
     fn deregister(self: &Self, fd: i32) !i32 {
-        const del_result: !i32 = sys_epoll_ctl(self.epfd, EPOLL_CTL_DEL, fd, null);
+        const del_result: !i32 = sys_epoll_ctl_del(self.epfd, fd);
         if del_result.error_id != 0 {
             const eid: i32 = del_result.error_id as i32;
             if eid != ENOENT && eid != EBADF {

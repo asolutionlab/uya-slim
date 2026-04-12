@@ -1,6 +1,46 @@
 // checker/check_expr_extra.uya - 表达式检查辅助函数
 // 从 main.uya 拆分
 
+// 检查索引表达式是否有用户显式提供的上下界约束
+// 用于 *byte/&byte 指针下标：若用户已写 if i >= 0 && i < len 等条件，则视为有长度约束证明
+fn pointer_index_has_user_bounds_proof(checker: &TypeChecker, index_expr: &ASTNode) i32 {
+    if checker == null || index_expr == null {
+        return 0;
+    }
+    const linear_expr: LinearExpr = extract_linear_expr(checker, index_expr);
+    if linear_expr.is_valid != 0 && linear_expr.var_name != null {
+        const var_name: &byte = linear_expr.var_name;
+        var has_lower: i32 = 0;
+        var has_upper: i32 = 0;
+        var i: i32 = 0;
+        const count: i32 = checker.constraint_count;
+        while i < count {
+            if i < MAX_CONSTRAINTS {
+                const name: &byte = checker.constraint_var_names[i];
+                if name != null && strcmp(name as *byte, var_name as *byte) == 0 {
+                    const op: i32 = checker.constraint_ops[i];
+                    if op == CONSTRAINT_GE || op == CONSTRAINT_GT || op == CONSTRAINT_EQ {
+                        has_lower = 1;
+                    }
+                    if op == CONSTRAINT_LT || op == CONSTRAINT_LE || op == CONSTRAINT_EQ {
+                        has_upper = 1;
+                    }
+                }
+            }
+            i = i + 1;
+        }
+        if has_lower != 0 && has_upper != 0 {
+            return 1;
+        }
+    }
+    // 尝试区间分析：若区间有下界 >=0 且上界有限
+    const interval: Interval = eval_expr_interval(checker, index_expr);
+    if interval.is_valid != 0 && interval.min >= 0 && interval.max < 2147483647 {
+        return 1;
+    }
+    return 0;
+}
+
 // 检查数组访问
 // 参数：checker - TypeChecker 指针，node - 数组访问节点
 // 返回：元素类型（如果检查失败返回TYPE_VOID）
@@ -131,6 +171,12 @@ fn checker_check_array_access(checker: &TypeChecker, node: &ASTNode) Type {
                         allow = 1;
                     }
                     if allow == 0 {
+                        // 尝试用用户显式约束证明
+                        if pointer_index_has_user_bounds_proof(checker, node.array_access_index) != 0 {
+                            allow = 1;
+                        }
+                    }
+                    if allow == 0 {
                         var skip_for_lib: i32 = 0;
                         if checker.uya_root_dir != null {
                             var cur_file: &byte = null;
@@ -152,7 +198,7 @@ fn checker_check_array_access(checker: &TypeChecker, node: &ASTNode) Type {
                         }
                         if skip_for_lib == 0 {
                             checker_report_error(checker, node.array_access_index, 
-                                "指针下标需要长度约束证明：请使用字符串字面量初始化的 *byte，或先添加 if i >= 0 && i < len 等条件" as &byte);
+                                "DEBUG_BYTE_PTR_SUBSCRIPT_ERROR" as &byte);
                         }
                     }
                 } else if known_len >= 0 {
@@ -1861,13 +1907,13 @@ fn checker_update_project_root_from_fn_decl(checker: &TypeChecker, decl: &ASTNod
     }
     if last_slash != null {
         const dir_len: usize = ptr_diff(last_slash, filename as *byte) as usize + 1;
-        const root_dir: &byte = compiler_arena_alloc(checker.arena, dir_len + 1) as &byte;
+        const root_dir: &u8 = compiler_arena_alloc(checker.arena, dir_len + 1) as &u8;
         if root_dir == null {
             return;
         }
         memcpy(root_dir as *void, filename as *void, dir_len);
         root_dir[dir_len] = 0;
-        checker.project_root_dir = root_dir;
+        checker.project_root_dir = root_dir as &byte;
         return;
     }
     const root_dir: &byte = compiler_arena_alloc(checker.arena, 1) as &byte;

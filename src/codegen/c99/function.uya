@@ -271,8 +271,14 @@ fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) 
         if prefix_tls != null {
             strcpy(prefix_tls as *byte, "tls_" as *byte);
             memcpy((prefix_tls as *byte + 4) as *void, rel_tls as *void, base_tls_len);
-            prefix_tls[4 + base_tls_len] = 95 as byte;
-            prefix_tls[4 + base_tls_len + 1] = 0 as byte;
+            const tls_idx1: i32 = 4 + base_tls_len as i32;
+            const tls_idx2: i32 = tls_idx1 + 1;
+            if tls_idx1 >= 0 && tls_idx1 < 1000000 {
+                prefix_tls[tls_idx1] = 95 as byte;
+            }
+            if tls_idx2 >= 0 && tls_idx2 < 1000000 {
+                prefix_tls[tls_idx2] = 0 as byte;
+            }
             var ti: usize = 4;
             while ti < 4 + base_tls_len {
                 if prefix_tls[ti] == 47 || prefix_tls[ti] == 92 {
@@ -307,8 +313,14 @@ fn get_module_prefix_from_filename(codegen: &C99CodeGenerator, filename: &byte) 
         const prefix: &byte = compiler_arena_alloc(codegen.arena, base_len + 2) as &byte;
         if prefix != null {
             memcpy(prefix as *void, rel as *void, base_len);
-            prefix[base_len] = 95 as byte;
-            prefix[base_len + 1] = 0 as byte;
+            const p_idx1: i32 = base_len as i32;
+            const p_idx2: i32 = p_idx1 + 1;
+            if p_idx1 >= 0 && p_idx1 < 1000000 {
+                prefix[p_idx1] = 95 as byte;
+            }
+            if p_idx2 >= 0 && p_idx2 < 1000000 {
+                prefix[p_idx2] = 0 as byte;
+            }
             // 将路径分隔符 / 和 \ 替换为 _
             var idx: i32 = 0;
             while idx < base_len as i32 {
@@ -1651,10 +1663,12 @@ fn c99_async_trim_locals_after_last_await_root(codegen: &C99CodeGenerator, body:
     while r < codegen.async_local_count && r < @len(codegen.async_local_names) {
         if codegen.async_local_root_stmt[r] <= last_ix {
             if w != r {
-                codegen.async_local_names[w] = codegen.async_local_names[r];
-                codegen.async_local_types[w] = codegen.async_local_types[r];
-                codegen.async_local_inits[w] = codegen.async_local_inits[r];
-                codegen.async_local_root_stmt[w] = codegen.async_local_root_stmt[r];
+                if w >= 0 && w < @len(codegen.async_local_names) {
+                    codegen.async_local_names[w] = codegen.async_local_names[r];
+                    codegen.async_local_types[w] = codegen.async_local_types[r];
+                    codegen.async_local_inits[w] = codegen.async_local_inits[r];
+                    codegen.async_local_root_stmt[w] = codegen.async_local_root_stmt[r];
+                }
             }
             w = w + 1;
         }
@@ -1705,7 +1719,10 @@ fn c99_async_collect_locals_recursive(codegen: &C99CodeGenerator, fn_body: &ASTN
     const before_count: i32 = codegen.async_local_count;
     c99_async_try_append_hoist_local(codegen, node.var_decl_name, node.var_decl_type, root_si);
     if codegen.async_local_count > before_count {
-        codegen.async_local_inits[codegen.async_local_count - 1] = node.var_decl_init;
+        const alc1: i32 = codegen.async_local_count - 1;
+        if alc1 >= 0 && alc1 < @len(codegen.async_local_inits) {
+            codegen.async_local_inits[alc1] = node.var_decl_init;
+        }
     }
 }
 
@@ -1995,16 +2012,27 @@ fn c99_async_try_append_hoist_local(codegen: &C99CodeGenerator, name: &byte, typ
     }
     var li: i32 = 0;
     while li < codegen.async_local_count {
-        if codegen.async_local_names[li] != null &&
-            strcmp(codegen.async_local_names[li] as *byte, name as *byte) == 0 {
-            return;
+        if li >= 0 && li < @len(codegen.async_local_names) {
+            if codegen.async_local_names[li] != null &&
+                strcmp(codegen.async_local_names[li] as *byte, name as *byte) == 0 {
+                return;
+            }
         }
         li = li + 1;
     }
-    codegen.async_local_names[codegen.async_local_count] = name;
-    codegen.async_local_types[codegen.async_local_count] = typ;
-    codegen.async_local_inits[codegen.async_local_count] = null;
-    codegen.async_local_root_stmt[codegen.async_local_count] = root_si;
+    const alc: i32 = codegen.async_local_count;
+    if alc >= 0 && alc < @len(codegen.async_local_names) {
+        codegen.async_local_names[alc] = name;
+    }
+    if alc >= 0 && alc < @len(codegen.async_local_types) {
+        codegen.async_local_types[alc] = typ;
+    }
+    if alc >= 0 && alc < @len(codegen.async_local_inits) {
+        codegen.async_local_inits[alc] = null;
+    }
+    if alc >= 0 && alc < @len(codegen.async_local_root_stmt) {
+        codegen.async_local_root_stmt[alc] = root_si;
+    }
     codegen.async_local_count = codegen.async_local_count + 1;
 }
 

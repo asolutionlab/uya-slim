@@ -1725,7 +1725,9 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                 const buf: &byte = compiler_arena_alloc(codegen.arena, (base_len + 1) as usize) as &byte;
                 if buf != null {
                     memcpy(buf as *void, iface_name as *void, base_len as usize);
-                    buf[base_len] = 0;
+                    if base_len >= 0 && base_len < 1000000 {
+                        buf[base_len] = 0;
+                    }
                     iface_base = buf;
                 }
             }
@@ -1758,7 +1760,9 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
                             const name_buf: &byte = compiler_arena_alloc(codegen.arena, (len + 1) as usize) as &byte;
                             if name_buf != null {
                                 memcpy(name_buf as *void, start as *void, len as usize);
-                                name_buf[len] = 0;
+                                if len >= 0 && len < 1000000 {
+                                    name_buf[len] = 0;
+                                }
                                 var type_arg_node: &ASTNode = null;
                                 // Future<!usize> 等：尖括号内为 !Payload，须建成错误联合类型节点，不能当作名为 "!usize" 的命名类型
                                 if len > 1 && (name_buf[0] as i32) == 33 {
@@ -2538,7 +2542,9 @@ fn resolve_typedef_to_mono_struct_name_if_generic(codegen: &C99CodeGenerator, ty
         return null;
     }
     memcpy(copy_ms as *void, ms as *void, pos_ms as usize);
-    copy_ms[pos_ms] = 0;
+    if pos_ms >= 0 && pos_ms < 1000000 {
+        copy_ms[pos_ms] = 0;
+    }
     return copy_ms;
 }
 

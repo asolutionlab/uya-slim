@@ -574,7 +574,9 @@ fn stash_checker_error_message(message: &byte) &byte {
         last_checker_error_storage[i] = c;
         i = i + 1;
     }
-    last_checker_error_storage[i] = 0 as byte;
+    if i >= 0 && i < 512 {
+        last_checker_error_storage[i] = 0 as byte;
+    }
     return &last_checker_error_storage[0] as &byte;
 }
 

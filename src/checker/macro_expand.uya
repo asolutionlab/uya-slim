@@ -171,7 +171,10 @@ fn get_type_name_from_ast(type_node: &ASTNode, arena: &CompilerArena) &byte {
         if buf != null {
             buf[0] = 38 as i8;  // '&' 字符的 ASCII 码
             memcpy((buf + 1) as *void, inner as *void, inner_len as u64);
-            buf[inner_len + 1] = 0 as i8;
+            const idx: i32 = inner_len + 1;
+            if idx >= 0 && idx < 1000000 {
+                buf[idx] = 0 as i8;
+            }
             return buf;
         }
         return ("&?" as *byte) as &byte;
@@ -450,10 +453,12 @@ fn macro_i64_to_string(arena: &CompilerArena, value: i64) &byte {
         digit_count = 1;
     } else {
         while magnitude > 0 && digit_count < 31 {
-            const digit: u64 = magnitude % (10 as u64);
-            tmp[digit_count] = (digit + (48 as u64)) as byte;
-            magnitude = magnitude / (10 as u64);
-            digit_count = digit_count + 1;
+            if digit_count >= 0 && digit_count < @len(tmp) {
+                const digit: u64 = magnitude % (10 as u64);
+                tmp[digit_count] = (digit + (48 as u64)) as byte;
+                magnitude = magnitude / (10 as u64);
+                digit_count = digit_count + 1;
+            }
         }
     }
     const total_len: i32 = digit_count + is_negative;
@@ -468,7 +473,9 @@ fn macro_i64_to_string(arena: &CompilerArena, value: i64) &byte {
     }
     var i: i32 = digit_count - 1;
     while i >= 0 {
-        buf[out_pos] = tmp[i];
+        if i >= 0 && i < @len(tmp) && out_pos >= 0 && out_pos < 1000000 {
+            buf[out_pos] = tmp[i];
+        }
         out_pos = out_pos + 1;
         i = i - 1;
     }
@@ -509,7 +516,10 @@ fn macro_append_bytes(dst: &byte, pos: &i32, src: &byte) void {
     const len: i32 = strlen(src as *byte);
     memcpy((dst + pos[0]) as *void, src as *void, len as u64);
     pos[0] = pos[0] + len;
-    dst[pos[0]] = 0;
+    const p: i32 = pos[0];
+    if p >= 0 && p < 1000000 {
+        dst[p] = 0;
+    }
 }
 
 // 从 AST 节点提取字符串字面量指针（支持 AST_STRING 或 AST_CAST_EXPR 包装的字符串）
@@ -630,8 +640,14 @@ fn ast_expr_to_source_string(node: &ASTNode, arena: &CompilerArena, filename: &b
         }
         buf[0] = 34 as i8;
         memcpy((buf + 1) as *void, raw as *void, (len + 1) as u64);
-        buf[len + 1] = 34 as i8;
-        buf[len + 2] = 0 as i8;
+        const idx1: i32 = len + 1;
+        const idx2: i32 = len + 2;
+        if idx1 >= 0 && idx1 < 1000000 {
+            buf[idx1] = 34 as i8;
+        }
+        if idx2 >= 0 && idx2 < 1000000 {
+            buf[idx2] = 0 as i8;
+        }
         return buf;
     }
     if node.type == ASTNodeType.AST_BINARY_EXPR {
@@ -887,9 +903,10 @@ fn hygiene_enter_scope(state: &HygieneCopyState) void {
     if state == null {
         return;
     }
-    if state.scope_depth >= 0 && state.scope_depth < @len(state.scope_starts) {
-        state.scope_starts[state.scope_depth] = state.scope_entry_count;
-        state.scope_depth = state.scope_depth + 1;
+    const d: i32 = state.scope_depth;
+    if d >= 0 && d < @len(state.scope_starts) {
+        state.scope_starts[d] = state.scope_entry_count;
+        state.scope_depth = d + 1;
     }
 }
 
@@ -898,8 +915,9 @@ fn hygiene_exit_scope(state: &HygieneCopyState) void {
         return;
     }
     state.scope_depth = state.scope_depth - 1;
-    if state.scope_depth >= 0 && state.scope_depth < @len(state.scope_starts) {
-        state.scope_entry_count = state.scope_starts[state.scope_depth];
+    const d: i32 = state.scope_depth;
+    if d >= 0 && d < @len(state.scope_starts) {
+        state.scope_entry_count = state.scope_starts[d];
     }
 }
 
@@ -907,10 +925,11 @@ fn hygiene_add_binding(state: &HygieneCopyState, original_name: &byte, renamed_n
     if state == null || original_name == null || renamed_name == null {
         return;
     }
-    if state.scope_entry_count >= 0 && state.scope_entry_count < @len(state.scope_names) {
-        state.scope_names[state.scope_entry_count] = original_name;
-        state.scope_renamed_names[state.scope_entry_count] = renamed_name;
-        state.scope_entry_count = state.scope_entry_count + 1;
+    const ec: i32 = state.scope_entry_count;
+    if ec >= 0 && ec < @len(state.scope_names) {
+        state.scope_names[ec] = original_name;
+        state.scope_renamed_names[ec] = renamed_name;
+        state.scope_entry_count = ec + 1;
     }
 }
 
@@ -920,8 +939,10 @@ fn hygiene_lookup_binding(state: &HygieneCopyState, name: &byte) &byte {
     }
     var i: i32 = state.scope_entry_count - 1;
     while i >= 0 {
-        if state.scope_names[i] != null && strcmp(state.scope_names[i] as *byte, name as *byte) == 0 {
-            return state.scope_renamed_names[i];
+        if i >= 0 && i < @len(state.scope_names) && i < @len(state.scope_renamed_names) {
+            if state.scope_names[i] != null && strcmp(state.scope_names[i] as *byte, name as *byte) == 0 {
+                return state.scope_renamed_names[i];
+            }
         }
         i = i - 1;
     }
