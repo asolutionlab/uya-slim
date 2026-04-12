@@ -449,16 +449,14 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     }
 
     if tid == 0 {
-        // 子线程路径：直接调用入口函数，然后立即退出，避免再回到 C 级返回链。
-        std.cfg(std.target_arch == .ta_x86_64, {
-            @asm {
-                "mov %1, %%rdi\n\tmov %0, %%rax\n\tcall *%%rax"
-                (_pthread_start_fn_tmp, _pthread_start_arg_tmp);
-            } clobbers = ["rax", "rdi", "rcx", "r11", "memory"];
-        }, {
-            _ = uya_thread_call_usize(_pthread_start_fn_tmp, _pthread_start_arg_tmp as usize);
-        })
-        sys_exit(0);
+        // 关键约束：在 CLONE_VM | SIGCHLD 模型下，child 继承 parent 的 %rbp。
+        // 因此 child 路径中不能出现任何由编译器生成的 %rbp 相对寻址的局部变量
+        // 写入，否则会与 parent 竞争 parent 栈帧，导致不可复现的 segfault。
+        // 安全操作：全局/堆读写、函数调用（使用 child 自己的 %rsp）、内联 asm。
+        // 我们先把返回值压到全局 trampoline 调用，再由 _pthread_thread_exit 统一
+        // 处理 descriptor 更新、TSD 析构、futex-wake 和 sys_exit。
+        _ = _pthread_call_start(_pthread_start_fn_tmp, _pthread_start_arg_tmp);
+        _pthread_thread_exit(desc, null);
     }
 
     // 父线程路径
