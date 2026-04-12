@@ -39,7 +39,7 @@ fn init_routine(arg: &void) &void {
 }
 
 fn test_pthread_once() !void {
-    var once: pthread_once_t = pthread_once_t{ state: 0 };
+    var once: pthread_once_t = pthread_once_t{};
     pthread_once(&once, &init_routine as &void);
     try expect(_once_init_called == 1);
 
@@ -49,7 +49,7 @@ fn test_pthread_once() !void {
 }
 
 fn test_pthread_mutex_init_destroy() !void {
-    var mutex: pthread_mutex_t = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
+    var mutex: pthread_mutex_t = pthread_mutex_t{};
     const init_ret: i32 = pthread_mutex_init(&mutex, null as &const pthread_mutexattr_t);
     try expect(init_ret == 0);
     const destroy_ret: i32 = pthread_mutex_destroy(&mutex);
@@ -57,7 +57,7 @@ fn test_pthread_mutex_init_destroy() !void {
 }
 
 fn test_pthread_create_join() !void {
-    var th: pthread_t = pthread_t{ tid: 0, stack: null, stack_size: 0, detached: 0, exited: 0 };
+    var th: pthread_t = pthread_t{};
     const create_ret: i32 = pthread_create(&th, null as &const pthread_attr_t, &thread_start as &void, null);
     try expect(create_ret == 0);
     const join_ret: i32 = pthread_join(&th, null as & &void);
@@ -65,7 +65,7 @@ fn test_pthread_create_join() !void {
 }
 
 fn test_pthread_mutex_lock_unlock() !void {
-    var mutex: pthread_mutex_t = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
+    var mutex: pthread_mutex_t = pthread_mutex_t{};
     try expect(pthread_mutex_init(&mutex, null as &const pthread_mutexattr_t) == 0);
     try expect(pthread_mutex_lock(&mutex) == 0);
     try expect(pthread_mutex_unlock(&mutex) == 0);
@@ -78,7 +78,7 @@ fn test_pthread_self_equal() !void {
 }
 
 fn test_pthread_detach() !void {
-    var th: pthread_t = pthread_t{ tid: 0, stack: null, stack_size: 0, detached: 0, exited: 0 };
+    var th: pthread_t = pthread_t{};
     try expect(pthread_create(&th, null as &const pthread_attr_t, &thread_start as &void, null) == 0);
 
     // 测试 detach
@@ -97,7 +97,7 @@ fn test_pthread_yield() !void {
 }
 
 fn test_pthread_mutex_timedlock() !void {
-    var mutex: pthread_mutex_t = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
+    var mutex: pthread_mutex_t = pthread_mutex_t{};
     try expect(pthread_mutex_init(&mutex, null as &const pthread_mutexattr_t) == 0);
 
     // 尝试带超时加锁（当前简化实现会立即返回 ETIMEDOUT）
@@ -110,8 +110,8 @@ fn test_pthread_mutex_timedlock() !void {
 }
 
 fn test_pthread_cond_timedwait() !void {
-    var cond: pthread_cond_t = pthread_cond_t{ waiters: 0, seq: 0 };
-    var mutex: pthread_mutex_t = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
+    var cond: pthread_cond_t = pthread_cond_t{};
+    var mutex: pthread_mutex_t = pthread_mutex_t{};
     try expect(pthread_cond_init(&cond, null as &const pthread_condattr_t) == 0);
     try expect(pthread_mutex_init(&mutex, null as &const pthread_mutexattr_t) == 0);
 
@@ -137,7 +137,7 @@ fn test_pthread_spinlock() !void {
 
 // 测试 pthread_mutexattr
 fn test_pthread_mutexattr() !void {
-    var attr: pthread_mutexattr_t = pthread_mutexattr_t{ type: 0 };
+    var attr: pthread_mutexattr_t = pthread_mutexattr_t{};
     try expect(pthread_mutexattr_init(&attr) == 0);
 
     // 设置普通锁类型
@@ -156,11 +156,11 @@ fn test_pthread_mutexattr() !void {
 
 // 测试递归锁
 fn test_pthread_recursive_mutex() !void {
-    var attr: pthread_mutexattr_t = pthread_mutexattr_t{ type: 0 };
+    var attr: pthread_mutexattr_t = pthread_mutexattr_t{};
     try expect(pthread_mutexattr_init(&attr) == 0);
     try expect(pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE) == 0);
 
-    var mutex: pthread_mutex_t = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
+    var mutex: pthread_mutex_t = pthread_mutex_t{};
     try expect(pthread_mutex_init(&mutex, &attr) == 0);
 
     // 递归加锁应该成功
@@ -179,7 +179,7 @@ fn test_pthread_recursive_mutex() !void {
 
 // 测试 pthread_attr
 fn test_pthread_attr() !void {
-    var attr: pthread_attr_t = pthread_attr_t{ stack_size: 0, detached: 0 };
+    var attr: pthread_attr_t = pthread_attr_t{};
     try expect(pthread_attr_init(&attr) == 0);
 
     // 测试默认栈大小
@@ -212,11 +212,11 @@ fn test_pthread_attr() !void {
 
 // 测试使用 attr 创建分离线程
 fn test_pthread_attr_detached() !void {
-    var attr: pthread_attr_t = pthread_attr_t{ stack_size: 0, detached: 0 };
+    var attr: pthread_attr_t = pthread_attr_t{};
     try expect(pthread_attr_init(&attr) == 0);
     try expect(pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) == 0);
 
-    var th: pthread_t = pthread_t{ tid: 0, stack: null, stack_size: 0, detached: 0, exited: 0 };
+    var th: pthread_t = pthread_t{};
     try expect(pthread_create(&th, &attr, &thread_start as &void, null) == 0);
 
     // 分离线程：join 须返回 EINVAL；实现侧仍会 waitpid+释放栈（见 pthread_join）
@@ -227,7 +227,7 @@ fn test_pthread_attr_detached() !void {
 
 // 测试读写锁
 fn test_pthread_rwlock() !void {
-    var rwlock: pthread_rwlock_t = pthread_rwlock_t{ readers: 0, writer: 0, writer_tid: 0 };
+    var rwlock: pthread_rwlock_t = pthread_rwlock_t{};
     try expect(pthread_rwlock_init(&rwlock, null) == 0);
 
     // 测试读锁
@@ -267,7 +267,7 @@ fn cancel_test_thread(arg: &void) &void {
 fn test_pthread_cancel() !void {
     _cancel_test_flag = 0;
     
-    var th: pthread_t = pthread_t{ tid: 0, stack: null, stack_size: 0, detached: 0, exited: 0 };
+    var th: pthread_t = pthread_t{};
     try expect(pthread_create(&th, null as &const pthread_attr_t, &cancel_test_thread as &void, null) == 0);
     
     // 发送取消请求
@@ -311,11 +311,13 @@ fn tls_test_thread(arg: &void) &void {
     _ = arg;
     
     // 设置线程特定值
-    var key1: pthread_key_t = pthread_key_t{ seq: _tls_key_seq, destructor: null };
+    var key1: pthread_key_t = pthread_key_t{};
+    key1.seq = _tls_key_seq;
     pthread_setspecific(key1, (&_tls_test_value) as &void);
     
     // 获取线程特定值（使用新的副本避免移动问题）
-    var key2: pthread_key_t = pthread_key_t{ seq: _tls_key_seq, destructor: null };
+    var key2: pthread_key_t = pthread_key_t{};
+    key2.seq = _tls_key_seq;
     const val: &void = pthread_getspecific(key2);
     const val_ptr: &i32 = val as &i32;
     _tls_thread_result = val_ptr[0] as i64;
@@ -332,17 +334,21 @@ var _barrier_test_value2: i32 = 0;
 // 测试线程特定数据（TLS）
 fn test_pthread_key() !void {
     // 测试创建键
-    var key: pthread_key_t = pthread_key_t{ seq: 0, destructor: null };
+    var key: pthread_key_t = pthread_key_t{};
     try expect(pthread_key_create(&key, null) == 0);
     try expect(key.seq > 0);  // 序列号应该被设置
     
     // 测试设置和获取特定于线程的数据
     const test_value: i32 = 123;
-    var key_copy: pthread_key_t = pthread_key_t{ seq: key.seq, destructor: key.destructor };
+    var key_copy: pthread_key_t = pthread_key_t{};
+    key_copy.seq = key.seq;
+    key_copy.destructor = key.destructor;
     const set_ret: i32 = pthread_setspecific(key_copy, (&test_value) as &void);
     try expect(set_ret == 0);
     
-    var key_copy2: pthread_key_t = pthread_key_t{ seq: key.seq, destructor: key.destructor };
+    var key_copy2: pthread_key_t = pthread_key_t{};
+    key_copy2.seq = key.seq;
+    key_copy2.destructor = key.destructor;
     const retrieved: &void = pthread_getspecific(key_copy2);
     try expect(retrieved != null);
     
@@ -357,14 +363,14 @@ fn test_pthread_key() !void {
     // 测试无效参数
     try expect(pthread_key_create(null as &pthread_key_t, null) == 22); // EINVAL
     try expect(pthread_key_delete(null as &pthread_key_t) == 22); // EINVAL
-    var invalid_key: pthread_key_t = pthread_key_t{ seq: 0, destructor: null };
+    var invalid_key: pthread_key_t = pthread_key_t{};
     try expect(pthread_setspecific(invalid_key, null) == 22); // EINVAL
 }
 
 // 测试屏障
 fn test_pthread_barrier() !void {
     // 测试屏障属性
-    var attr: pthread_barrierattr_t = pthread_barrierattr_t{ _unused: 0 };
+    var attr: pthread_barrierattr_t = pthread_barrierattr_t{};
     try expect(pthread_barrierattr_init(&attr) == 0);
     try expect(pthread_barrierattr_destroy(&attr) == 0);
     
@@ -417,7 +423,7 @@ fn test_pthread_cpuset() !void {
 fn test_pthread_affinity() !void {
     _affinity_release = 0;
     _affinity_started = 0;
-    var th: pthread_t = pthread_t{ tid: 0, stack: null, stack_size: 0, detached: 0, exited: 0 };
+    var th: pthread_t = pthread_t{};
     try expect(pthread_create(&th, null as &const pthread_attr_t, &thread_start_affinity_hold as &void, null) == 0);
     defer {
         _affinity_release = 1;
