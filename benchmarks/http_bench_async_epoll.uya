@@ -407,9 +407,11 @@ use libc.pthread;
 
 fn bench_worker_thread(_arg: &void) &void {
     const ptr: &BenchContext = malloc(@size_of(BenchContext)) as &BenchContext;
-    if ptr == null as &BenchContext {
+    if ptr == null {
         return null as &void;
     }
+    defer free(ptr as *void);
+
     _ = memset(ptr as *byte, 0, @size_of(BenchContext));
     _ = ptr.run();
     return null as &void;
