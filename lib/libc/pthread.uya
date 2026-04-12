@@ -1410,10 +1410,12 @@ export extern "libc" fn pthread_testcancel() void {
     }
     if desc.cancel_pending != 0 && desc.cancel_state == PTHREAD_CANCEL_ENABLE {
         if desc.cancel_type == PTHREAD_CANCEL_DEFERRED {
-            pthread_exit(PTHREAD_CANCELED);
+            const canceled: &void = (-1 as i64) as &void;
+            pthread_exit(canceled);
         }
         // ASYNCHRONOUS: 第一版同样退出（文档说明为安全点生效）
-        pthread_exit(PTHREAD_CANCELED);
+        const canceled: &void = (-1 as i64) as &void;
+        pthread_exit(canceled);
     }
 }
 
