@@ -18,10 +18,10 @@ use libc.SYS_clock_gettime;
 use libc.sched_setaffinity;
 use libc.sched_getaffinity;
 use libc.sys_exit;
-use libc.sys_waitpid;
 use libc.sys_getpid;
 use libc.sys_gettid;
 use libc.SYS_sched_yield;
+use libc.sys_set_tid_address;
 
 // 前向声明：使用 libc.stdlib 的 malloc/free（sys_* 由 use libc 导入）
 extern fn malloc(size: usize) &void;
@@ -35,9 +35,9 @@ extern "libc" fn __sync_fetch_and_sub(ptr: &i32, val: i32) i32;
 const PTHREAD_ATOMIC_SEQ_CST: i32 = 5;
 const PTHREAD_STACK_SIZE: usize = 8 * 1024 * 1024;
 
-// clone 标志：需要设置 CLONE_VM 共享内存空间，否则子进程有独立的内存副本
-// 参考：man 2 clone，低 7 位为子进程退出时发送给父进程的信号
-const CLONE_FLAGS: i64 = 0x00000100 | 17;  // CLONE_VM | SIGCHLD
+// clone 标志：NPTL-lite 线程组模型
+// 参考：man 2 clone
+const CLONE_FLAGS: i64 = 0x00150F00;  // CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SYSVSEM | CLONE_SIGHAND | CLONE_THREAD | CLONE_PARENT_SETTID
 
 // 用于从 clone 子线程到父线程传递 descriptor 的临时指针（仍受 _pthread_create_mutex 保护）
 var _pthread_child_desc: &pthread_desc = null;
@@ -287,8 +287,22 @@ fn _pthread_thread_exit(desc: &pthread_desc, retval: &void) void {
         desc.result = retval;
         _pthread_run_tsd_destructors(desc);
         desc.exited = 1;
-        desc.joinstate = PTHREAD_JOINSTATE_EXITED;
-        sys_futex((&desc.joinstate) as &i32, FUTEX_WAKE, 1, null);
+        while true {
+            const state: i32 = desc.joinstate;
+            if state == PTHREAD_JOINSTATE_DETACHED {
+                // detached 线程：保持 DETACHED 状态，资源由调用方或进程退出时回收
+                break;
+            }
+            if state == PTHREAD_JOINSTATE_JOINABLE {
+                var expected: i32 = PTHREAD_JOINSTATE_JOINABLE;
+                if __atomic_compare_exchange_n((&desc.joinstate) as &i32, &expected, PTHREAD_JOINSTATE_EXITED, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
+                    sys_futex((&desc.joinstate) as &i32, FUTEX_WAKE, 1, null);
+                    break;
+                }
+                continue;
+            }
+            break;
+        }
     }
     sys_exit(0);
 }
@@ -426,19 +440,24 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
 
     // x86_64：内联汇编直接 syscall；ARM 等：libc.sys_clone（@syscall 按架构生成正确约定）
     var tid: i64 = 0;
+    var child_ptid: i32 = 0;
     const flags: i64 = CLONE_FLAGS;
     std.cfg(std.target_arch == .ta_x86_64, {
-        const nr: i64 = SYS_clone;
         const stack_top: i64 = top as i64;
+        const ptid_ptr: i64 = (&child_ptid) as i64;
         @asm {
-            "mov %1, %%rax\n\tmov %2, %%rdi\n\tmov %3, %%rsi\n\txor %%rdx, %%rdx\n\txor %%r10, %%r10\n\txor %%r8, %%r8\n\tsyscall\n\tmov %%rax, %0"
-            (nr, flags, stack_top, 0 as i64, 0 as i64, 0 as i64, -> tid);
-        } clobbers = ["rdi", "rsi", "rdx", "r10", "r8", "rcx", "r11", "memory"];
+            "mov $56, %%rax\n\tmov $0x150f00, %%rdi\n\tmov %1, %%rsi\n\tmov %2, %%rdx\n\txor %%r10, %%r10\n\txor %%r8, %%r8\n\tsyscall\n\ttest %%rax, %%rax\n\tjnz 1f\n\tmov _pthread_start_fn_tmp(%%rip), %%rdi\n\tmov _pthread_start_arg_tmp(%%rip), %%rsi\n\tcall _pthread_call_start\n\tmov %%rax, %%rsi\n\tmov _pthread_child_desc(%%rip), %%rdi\n\tcall _pthread_thread_exit\n1:\n\tmov %%rax, %0"
+            (stack_top, ptid_ptr, -> tid);
+        } clobbers = ["rax", "rdi", "rsi", "rdx", "r10", "r8", "rcx", "r11", "memory"];
     }, {
-        const cl: !i64 = sys_clone(flags, top, null, null, null);
+        const cl: !i64 = sys_clone(flags, top, &child_ptid, null, null);
         tid = cl catch {
             (0 - 1) as i64;
         };
+        if tid == 0 {
+            _ = sys_set_tid_address(null);
+            _pthread_thread_exit(desc, _pthread_call_start(_pthread_start_fn_tmp, _pthread_start_arg_tmp));
+        }
     })
     
     if tid < 0 {
@@ -446,17 +465,6 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
         free(stack_mem);
         free(desc as &void);
         return 1;
-    }
-
-    if tid == 0 {
-        // 关键约束：在 CLONE_VM | SIGCHLD 模型下，child 继承 parent 的 %rbp。
-        // 因此 child 路径中不能出现任何由编译器生成的 %rbp 相对寻址的局部变量
-        // 写入，否则会与 parent 竞争 parent 栈帧，导致不可复现的 segfault。
-        // 安全操作：全局/堆读写、函数调用（使用 child 自己的 %rsp）、内联 asm。
-        // 我们先把返回值压到全局 trampoline 调用，再由 _pthread_thread_exit 统一
-        // 处理 descriptor 更新、TSD 析构、futex-wake 和 sys_exit。
-        _ = _pthread_call_start(_pthread_start_fn_tmp, _pthread_start_arg_tmp);
-        _pthread_thread_exit(desc, null);
     }
 
     // 父线程路径
@@ -476,7 +484,7 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     return 0;
 }
 
-// pthread_join - 等待线程结束（基于 waitpid + descriptor result）
+// pthread_join - 等待线程结束（基于 futex joinstate，不再使用 waitpid）
 export extern "libc" fn pthread_join(thread: &pthread_t, retval: & &void) i32 {
     if thread == null {
         return 22; // EINVAL
@@ -484,61 +492,38 @@ export extern "libc" fn pthread_join(thread: &pthread_t, retval: & &void) i32 {
 
     const tid: i64 = thread.tid;
     const stack_mem: &void = thread.stack;
-    const detached: i32 = thread.detached;
-    const last_result: &void = thread.result;
 
     if tid == 0 {
         return 22; // EINVAL
     }
 
-    // 分离线程：POSIX 规定 join 返回 EINVAL，但仍需 waitpid 回收子进程并释放栈
-    if detached != 0 {
-        var status_d: i32 = 0;
-        const pid_d: i32 = tid as i32;
-        _ = sys_waitpid(pid_d, &status_d, 0);
-        const desc_d: &pthread_desc = _pthread_registry_find(tid);
-        if desc_d != null {
-            if stack_mem != null { free(stack_mem); }
-            _pthread_registry_remove(tid);
-            free(desc_d as &void);
-        } else if stack_mem != null {
-            free(stack_mem);
-        }
-        thread.stack = null as &void;
-        thread.stack_size = 0;
-        thread.exited = 1;
-        thread.result = last_result;
+    const desc: &pthread_desc = _pthread_registry_find(tid);
+    if desc == null {
         return 22; // EINVAL
     }
 
-    var status: i32 = 0;
-    const pid: i32 = tid as i32;
-    _ = sys_waitpid(pid, &status, 0);
-
-    const desc: &pthread_desc = _pthread_registry_find(tid);
-    if desc != null {
-        if retval != null {
-            retval[0] = desc.result;
+    while true {
+        const state: i32 = desc.joinstate;
+        if state == PTHREAD_JOINSTATE_EXITED {
+            if retval != null {
+                retval[0] = desc.result;
+            }
+            if stack_mem != null { free(stack_mem); }
+            _pthread_registry_remove(tid);
+            free(desc as &void);
+            thread.stack = null as &void;
+            thread.stack_size = 0;
+            thread.exited = 1;
+            thread.result = desc.result;
+            var expected: i32 = PTHREAD_JOINSTATE_EXITED;
+            __atomic_compare_exchange_n((&desc.joinstate) as &i32, &expected, PTHREAD_JOINSTATE_JOINED, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST);
+            return 0;
         }
-        if stack_mem != null { free(stack_mem); }
-        _pthread_registry_remove(tid);
-        free(desc as &void);
-    } else {
-        if retval != null {
-            retval[0] = last_result;
+        if state == PTHREAD_JOINSTATE_DETACHED || state == PTHREAD_JOINSTATE_JOINED {
+            return 22; // EINVAL
         }
-        if stack_mem != null { free(stack_mem); }
+        sys_futex((&desc.joinstate) as &i32, FUTEX_WAIT, state, null);
     }
-
-    thread.stack = null as &void;
-    thread.stack_size = 0;
-    thread.exited = 1;
-    if desc != null {
-        thread.result = desc.result;
-    } else {
-        thread.result = last_result;
-    }
-    return 0;
 }
 
 // pthread_detach - 分离线程（joinstate CAS 版）
@@ -563,14 +548,12 @@ export extern "libc" fn pthread_detach(thread: &pthread_t) i32 {
             var expected: i32 = PTHREAD_JOINSTATE_JOINABLE;
             if __atomic_compare_exchange_n((&desc.joinstate) as &i32, &expected, PTHREAD_JOINSTATE_DETACHED, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) != 0 {
                 thread.detached = 1;
+                sys_futex((&desc.joinstate) as &i32, FUTEX_WAKE, 1, null);
                 return 0;
             }
             continue;
         }
         if state == PTHREAD_JOINSTATE_EXITED {
-            // 线程已退出，立即回收
-            var status: i32 = 0;
-            _ = sys_waitpid(tid as i32, &status, 0);
             if thread.stack != null { free(thread.stack); }
             _pthread_registry_remove(tid);
             free(desc as &void);
@@ -578,6 +561,8 @@ export extern "libc" fn pthread_detach(thread: &pthread_t) i32 {
             thread.stack_size = 0;
             thread.exited = 1;
             thread.detached = 1;
+            var expected: i32 = PTHREAD_JOINSTATE_EXITED;
+            __atomic_compare_exchange_n((&desc.joinstate) as &i32, &expected, PTHREAD_JOINSTATE_JOINED, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST);
             return 0;
         }
         if state == PTHREAD_JOINSTATE_DETACHED || state == PTHREAD_JOINSTATE_JOINED {
@@ -620,13 +605,7 @@ export extern "libc" fn pthread_exit(retval: &void) void {
     if desc == null && _pthread_main_desc.tid == tid {
         desc = &_pthread_main_desc;
     }
-    if desc != null {
-        desc.result = retval;
-        _pthread_run_tsd_destructors(desc);
-        desc.exited = 1;
-        desc.joinstate = PTHREAD_JOINSTATE_EXITED;
-    }
-    sys_exit(0);
+    _pthread_thread_exit(desc, retval);
 }
 
 // pthread_mutexattr_init - 初始化互斥量属性

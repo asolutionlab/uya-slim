@@ -98,10 +98,10 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 
 ## 当前差距清单
 
-- [ ] `pthread_create` 使用 `CLONE_VM | SIGCHLD`，不是 `CLONE_THREAD` 线程组模型。
-- [ ] `pthread_join` 依赖 `waitpid`，切到 `CLONE_THREAD` 后不可用。
+- [x] `pthread_create` 已迁移到 `CLONE_THREAD` 线程组模型。
+- [x] `pthread_join` 已移除 `waitpid`，改为 futex joinstate 等待。
 - [x] `pthread_exit` 已保存 retval 到 descriptor，但 TSD destructor 处理仍缺失。
-- [ ] `pthread_detach` 只有 detached 标记，没有 join/detach/exit 完整状态机。
+- [x] `pthread_detach` 已实现 joinstate CAS 状态机，并处理 EXITED 立即回收。
 - [x] `pthread_self` 已返回稳定 `pthread_t` handle，不再临时构造对象。
 - [x] `pthread_create` 使用全局 `_pthread_start_fn` / `_pthread_start_arg`，不应作为长期架构。 → **已迁移到 descriptor 字段，临时保留全局 handoff 指针规避 C 后端 asm 生成 bug。**
 - [x] mutex owner 使用 `getpid()`，在真实线程组内会误判 owner。 → **已修复为 `sys_gettid()`**
@@ -195,7 +195,8 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
   - [ ] `pthread_attr_setguardsize` 可后续补。
 - [ ] 按 attr 处理 stack size，校验 `PTHREAD_STACK_MIN`。
 - [x] child 路径已从 `pthread_create` 里拆出，直接调用 start routine 后退出。
-- [ ] 仍使用 `CLONE_VM | SIGCHLD`；`CLONE_THREAD` / `CLONE_PARENT_SETTID` / `CLONE_CHILD_CLEARTID` / `CLONE_SETTLS` 还要后续迁移。
+- [x] 已切换到 `CLONE_THREAD | CLONE_PARENT_SETTID`；x86_64 内联汇编直接 clone 并避免 child 写入 parent 栈帧。
+- [ ] `CLONE_CHILD_CLEARTID` / `CLONE_SETTLS` 待后续启用。
 - [ ] 父线程通过 `ptid` 获取 child tid。
 - [ ] child exit 通过 `ctid` 或 descriptor `tid` + futex 唤醒 joiner。
 - [ ] 失败路径释放 descriptor 和 stack。
@@ -206,13 +207,13 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 - [x] `pthread_exit(retval)` 已保存 `retval` 到 descriptor，并置 `exited`。
 - [ ] 仍缺 TSD destructor。
 - [x] `pthread_join` 当前通过 `waitpid` 等待线程结束，然后从 descriptor 读取 `retval` 并回收栈/descriptor。
-- [ ] `pthread_join` 尚未迁移到纯 futex joinstate（仍在 `waitpid` 之上做 joinstate 同步）。
+- [x] `pthread_join` 已完全迁移到纯 futex joinstate，`waitpid` 已移除。
 - [x] `pthread_join` / `pthread_detach` / `pthread_exit` 已引入 `joinstate` 原子状态，具备重复 join / detached / exited 的竞态处理基础。
 - [x] `pthread_detach` 已有 detached 标记。
 - [x] `pthread_detach` 仍需要 CAS 状态机来处理与 join/exit 的竞态。 → **已实现 JOINABLE↔DETACHED CAS，并兼容 EXITED 立即回收路径。**
-- [ ] detached 线程退出后的资源回收先做安全保守版：
-  - [ ] 不在线程仍在用栈时 munmap 当前栈。
-  - [ ] 可先保留资源到进程结束。
+- [x] detached 线程退出后的资源回收先做安全保守版：
+  - [x] 不在线程仍在用栈时 munmap 当前栈。
+  - [x] `CLONE_THREAD` 下 detached 线程先保留资源到进程结束（`_pthread_thread_exit` 对 DETACHED 不做 futex-wake 和栈回收）。
   - [ ] 后续再实现 reaper 或 stack cache。
 
 ### 7. TLS / TCB
