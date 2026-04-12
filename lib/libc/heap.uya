@@ -10,12 +10,12 @@ use libc.syscall;
 // 多线程安全：CLONE_VM 下所有线程共享同一地址空间，malloc/free 必须串行化。
 // 为避免与 pthread_mutex 产生循环依赖/初始化问题，heap 使用最简单的原子自旋锁。
 extern "libc" fn __atomic_compare_exchange_n(ptr: &atomic i32, expected: &i32, desired: i32, weak: i32, success_mem: i32, failure_mem: i32) i32;
-const ATOMIC_SEQ_CST: i32 = 5;
+const HEAP_ATOMIC_SEQ_CST: i32 = 5;
 var _heap_lock: atomic i32 = 0;
 
 fn _heap_lock_acquire() void {
     var expected: i32 = 0;
-    while __atomic_compare_exchange_n(&_heap_lock, &expected, 1, 0, ATOMIC_SEQ_CST, ATOMIC_SEQ_CST) == 0 {
+    while __atomic_compare_exchange_n(&_heap_lock, &expected, 1, 0, HEAP_ATOMIC_SEQ_CST, HEAP_ATOMIC_SEQ_CST) == 0 {
         expected = 0;
     }
 }
