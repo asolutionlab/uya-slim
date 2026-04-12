@@ -58,6 +58,7 @@ std.cfg(std.target_os == .tos_linux, {
         export const SYS_sched_getaffinity: i64 = 204;
         export const SYS_sched_yield: i64 = 24;
         export const SYS_nanosleep: i64 = 35;
+        export const SYS_clock_gettime: i64 = 228;
         export const SYS_gettimeofday: i64 = 96;
         export const SYS_fcntl: i64 = 72;
         export const SYS_pipe2: i64 = 293;
@@ -137,6 +138,7 @@ std.cfg(std.target_os == .tos_linux, {
             export const SYS_sched_getaffinity: i64 = 242;
             export const SYS_sched_yield: i64 = 158;
             export const SYS_nanosleep: i64 = 162;
+            export const SYS_clock_gettime: i64 = 263;
             export const SYS_gettimeofday: i64 = 78;
             export const SYS_fcntl: i64 = 55;
             export const SYS_pipe2: i64 = 359;
@@ -216,6 +218,7 @@ std.cfg(std.target_os == .tos_linux, {
                 export const SYS_sched_getaffinity: i64 = 123;
                 export const SYS_sched_yield: i64 = 124;
                 export const SYS_nanosleep: i64 = 101;
+                export const SYS_clock_gettime: i64 = 113;
                 export const SYS_gettimeofday: i64 = 169;
                 export const SYS_fcntl: i64 = 25;
                 export const SYS_pipe2: i64 = 59;
@@ -295,6 +298,7 @@ std.cfg(std.target_os == .tos_linux, {
                     export const SYS_sched_getaffinity: i64 = 123;
                     export const SYS_sched_yield: i64 = 124;
                     export const SYS_nanosleep: i64 = 101;
+                    export const SYS_clock_gettime: i64 = 113;
                     export const SYS_gettimeofday: i64 = 169;
                     export const SYS_fcntl: i64 = 25;
                     export const SYS_pipe2: i64 = 59;
@@ -455,6 +459,7 @@ std.cfg(std.target_os == .tos_linux, {
     export const SYS_sched_getaffinity: i64 = 204;
     export const SYS_sched_yield: i64 = 24;
     export const SYS_nanosleep: i64 = 35;
+    export const SYS_clock_gettime: i64 = 228;
     export const SYS_gettimeofday: i64 = 96;
     export const SYS_fcntl: i64 = 72;
     export const SYS_pipe2: i64 = 293;
@@ -1012,6 +1017,14 @@ export fn sys_nanosleep(req: &const TimeSpec, rem: &TimeSpec) !i32 {
 // 返回：0 成功，-1 失败
 export fn sys_gettimeofday(tv: &TimeVal, tz: &void) !i32 {
     return @syscall(SYS_gettimeofday, tv as i64, tz as i64) as! i32;
+}
+
+// sys_clock_gettime - 获取时钟时间
+// clock_id: 时钟类型（CLOCK_REALTIME, CLOCK_MONOTONIC 等）
+// tp: 存储时间的 TimeSpec 结构
+// 返回：0 成功，-1 失败
+export fn sys_clock_gettime(clock_id: i32, tp: &TimeSpec) !i32 {
+    return @syscall(SYS_clock_gettime, clock_id as i64, tp as i64) as! i32;
 }
 
 // ============================================================

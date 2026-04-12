@@ -14,6 +14,7 @@ use libc.sys_futex;
 use libc.FUTEX_WAIT;
 use libc.FUTEX_WAKE;
 use libc.gettimeofday;
+use libc.SYS_clock_gettime;
 use libc.sched_setaffinity;
 use libc.sched_getaffinity;
 use libc.sys_exit;
@@ -193,6 +194,7 @@ var _pthread_create_mutex: pthread_mutex_t = pthread_mutex_t{ state: 0, owner: 0
 export struct pthread_cond_t {
     waiters: atomic i32,
     seq: atomic i32,
+    clock: i32,
 }
 
 // 保护条件变量内部状态的全局 mutex
@@ -204,6 +206,12 @@ var _cond_mutex: pthread_mutex_t = pthread_mutex_t{ state: 0 };
 struct timeval {
     tv_sec: i64,
     tv_usec: i64,
+}
+
+fn _pthread_clock_gettime(clock_id: i32, tp: &timespec) i32 {
+    var result: !i64 = @syscall(SYS_clock_gettime, clock_id as i64, tp as i64);
+    var ret: i64 = result catch { return -1; };
+    return ret as i32;
 }
 
 // pthread_once_t - 一次性初始化控制结构体
@@ -928,12 +936,19 @@ export extern "libc" fn pthread_equal(t1: pthread_t, t2: pthread_t) i32 {
 
 // pthread_cond_init - 初始化条件变量
 export extern "libc" fn pthread_cond_init(cond: &pthread_cond_t, attr: &const pthread_condattr_t) i32 {
-    _ = attr;
     if cond == null {
         return 22;
     }
     cond.waiters = 0;
     cond.seq = 0;
+    if attr == null {
+        cond.clock = CLOCK_REALTIME;
+        return 0;
+    }
+    if attr.clock != CLOCK_REALTIME && attr.clock != CLOCK_MONOTONIC {
+        return 22;
+    }
+    cond.clock = attr.clock;
     return 0;
 }
 
@@ -1033,14 +1048,22 @@ export extern "libc" fn pthread_cond_timedwait(cond: &pthread_cond_t, mutex: &pt
     if cond == null || mutex == null || abstime == null {
         return 22;
     }
+    if abstime.tv_nsec < 0 || abstime.tv_nsec >= 1000000000 {
+        return 22;
+    }
+    if cond.clock != CLOCK_REALTIME && cond.clock != CLOCK_MONOTONIC {
+        return 22;
+    }
 
     // 获取当前时间
-    var now: timeval = timeval{ tv_sec: 0, tv_usec: 0 };
-    _ = gettimeofday(&now, null);
+    var now: timespec = timespec{ tv_sec: 0, tv_nsec: 0 };
+    if _pthread_clock_gettime(cond.clock, &now) != 0 {
+        return 22;
+    }
 
     // 将 abstime (绝对时间) 转换为相对时间
     var rel_sec: i64 = abstime.tv_sec - now.tv_sec;
-    var rel_nsec: i64 = abstime.tv_nsec - (now.tv_usec * 1000);
+    var rel_nsec: i64 = abstime.tv_nsec - now.tv_nsec;
 
     // 处理纳秒溢出
     while rel_nsec < 0 {

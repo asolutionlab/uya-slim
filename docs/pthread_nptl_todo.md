@@ -1,11 +1,11 @@
 # Uya libc pthread NPTL-lite 改造 TODO
 
 日期：2026-04-12
-最新更新：2026-04-12（稳定基线恢复，public API smoke 补齐中）
+最新更新：2026-04-12（稳定基线恢复，condvar clock 语义已落地）
 
 ## 状态摘要（2026-04-12）
 
-- **Phase 0 稳定**：`tests/test_pthread.uya` 22/22 通过，`tests/test_pthread_cond.uya` 3/3 通过，`tests/test_pthread_api.uya` 作为 public API smoke 已补入。
+- **Phase 0 稳定**：`tests/test_pthread.uya` 22/22 通过，`tests/test_pthread_cond.uya` 4/4 通过，`tests/test_pthread_api.uya` 作为 public API smoke 已补入。
 - **已落地**：
   - `syscall.uya` 补齐了 `CLONE_*` 和 `FUTEX_*_PRIVATE` 常量。
   - `pthread_desc` + `_pthread_registry` 已启用，`pthread_self` 通过稳定的 `pub_handle` 返回当前线程句柄。
@@ -13,7 +13,7 @@
   - `pthread_exit` 已能把 `result` / `exited` 写回 descriptor；`pthread_join` 仍通过 `waitpid` 做回收，并从 descriptor 读取返回值。
   - mutex owner 已全量改用 `sys_gettid()`，mutex 也已引入 `0/1/2` futex 慢路径（fast path CAS `0->1`，slow path futex wait，unlock futex wake）。
   - `pthread_once` 已从忙等改为 futex wait/wake 状态机（`0=never, 1=running, 2=done`）。
-  - `pthread_cond_*`、`pthread_key_*`、`pthread_cancel` 这些 API 已有基础实现，但语义仍偏 NPTL-lite。
+  - `pthread_cond_*`、`pthread_key_*`、`pthread_cancel` 这些 API 已有基础实现；其中 condattr clock 语义已补到 `CLOCK_REALTIME` / `CLOCK_MONOTONIC`。
 - **仍待补齐**：真正的 `CLONE_THREAD` / `CLONE_SETTLS` / `joinstate` futex 迁移（子线程直接 `_pthread_thread_exit` + futex wake 在纯 `CLONE_VM | SIGCHLD` 模式下出现 segfault，需结合 `CLONE_THREAD` 后再完整切换）、以及 detached 线程的最终资源回收模型。
 - **当前模型**：`pthread_create` 仍使用 `CLONE_VM | SIGCHLD`（即 `0x00000100 | 17`），但启动参数已迁入 descriptor，不再依赖长期全局 fn/arg；`pthread_join` 仍依赖 `sys_waitpid`，但在 descriptor 上已引入 `joinstate` 原子状态用于与 `detach/exit` 同步；`CLONE_THREAD` 切换待 TLS / TCB 方案就绪后再执行。
 
@@ -115,7 +115,7 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
 - [x] 保留现有 `tests/test_pthread.uya` 为 Linux 实现细节测试，目前 22/22 全部通过。
 - [ ] 保留现有 `tests/test_pthread.uya` 为 Linux 实现细节测试，逐步迁移。
 - [x] 扩展 `tests/stress_pthread.sh`，加入多轮 create/join、mutex 竞争、condvar、TSD 压测与 public API smoke。
-- [x] `./bin/uya test tests/test_pthread.uya`、`tests/test_pthread_cond.uya`、`tests/test_syscall_thread.uya` 验证通过。
+- [x] `./bin/uya test tests/test_pthread.uya`、`tests/test_pthread_cond.uya`、`tests/test_pthread_api.uya`、`tests/test_syscall_thread.uya`、`tests/stress_pthread.sh 1` 验证通过。
 
 ### 2. syscall 基础
 
@@ -248,7 +248,7 @@ Darwin 路线继续按 `docs/todo_macos_phase5.md` 独立推进，不混入本 L
   - [x] `pthread_condattr_destroy`
   - [x] `pthread_condattr_getclock`
   - [x] `pthread_condattr_setclock`
-- [ ] `pthread_cond_timedwait` 目前按 `gettimeofday` + 相对超时处理，后续再补 `CLOCK_REALTIME` / `CLOCK_MONOTONIC`。
+- [x] `pthread_cond_timedwait` 已按 condattr clock + `clock_gettime` 支持 `CLOCK_REALTIME` / `CLOCK_MONOTONIC`。
 - [ ] 后续评估 glibc 类 64-bit waiter sequence + G1/G2 双组方案。
 - [ ] 增加真实多线程测试：
   - [ ] 1 waiter + 1 signaler。
