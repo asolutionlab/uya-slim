@@ -128,7 +128,9 @@ build_uya_async_epoll() {
         cat /tmp/uya_async_epoll_build.log >&2
         exit 1
     fi
-    if ! cc -std=c99 -no-pie -O2 -fno-builtin -o "$UYA_ASYNC_EPOLL_EXEC" /tmp/http_bench_async_epoll.c -lm >/tmp/uya_async_epoll_cc.log 2>&1; then
+    # 注意：当前编译器生成的 C 代码在 -O2 下存在 UB，会导致启动时 SIGSEGV，
+    # 临时降级到 -O1 以保证 benchmark 能正常跑完。
+    if ! cc -std=c99 -no-pie -O1 -fno-builtin -o "$UYA_ASYNC_EPOLL_EXEC" /tmp/http_bench_async_epoll.c -lm >/tmp/uya_async_epoll_cc.log 2>&1; then
         log_err "Uya async epoll C 编译失败，日志:"
         cat /tmp/uya_async_epoll_cc.log >&2
         exit 1

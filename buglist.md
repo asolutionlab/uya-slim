@@ -57,6 +57,22 @@
 
 ## 编译器 bug
 
+- [ ] **P1 / 高：生成的 C 代码在 GCC `-O2` 下运行时 SIGSEGV，`-O1` 正常**
+  - 状态：待修复
+  - 验证状态：`benchmarks/http_bench_async_epoll.uya` 编译出的 C 程序在 `-O2` 启动即 Segfault，`-O0`/`-O1` 均正常；老版本（带子 Future 实现）同样复现，说明是编译器生成代码的 UB
+  - 归属：C99 代码生成 / 未定义行为
+  - 现象：
+    1. `cc -O2 ... /tmp/http_bench_async_epoll.c` 生成的二进制，启动后多线程 epoll 服务端立即 `Segmentation fault`
+    2. 同一 `.c` 文件用 `-O1` 或 `-O0` 编译，运行正常且能响应 HTTP 请求
+    3. GDB 显示崩溃发生在多线程初始化阶段，回溯难以定位（可能涉及状态机字段访问或指针别名优化）
+  - 根因（初步推测）：编译器 lowering（尤其是 `@async_fn`/`Future` 状态机生成）中存在某种未定义行为，例如：
+    - 通过 `uintptr_t` 转换后的指针别名被 `-O2` 的 strict aliasing 优化错误裁剪
+    - 状态机结构体中某些字段在 resume 路径上未正确初始化，`-O2` 内联/常量传播后暴露
+    - `Poll<!T>`/`Future<!T>` 的 tagged union 读写与 GCC `-O2` 的 value range propagation 冲突
+  - 临时绕过：`benchmarks/run_bench.sh` 暂时将 `http_bench_async_epoll` 的编译优化降级为 `-O1`
+  - 影响：所有依赖 `-O2` 做高性能压测的 `Future<!T>`/`@async_fn` 多线程程序
+  - 相关文件：`src/codegen/c99/**`、`benchmarks/http_bench_async_epoll.uya`
+
 - [x] **P1 / 高：microapp `run` / `build` 在 LTO + `--gc-sections` 下链接失败（`undefined reference`）**
   - 状态：已修复
   - 验证状态：`make check` 780/780 通过；`tests/verify_microapp_loader_generic.sh` 通过
