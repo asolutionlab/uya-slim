@@ -179,25 +179,39 @@ export fn sim_load_image(k: &SimKernel, cid: u32, priority: u32, image_bytes: &[
         return error.NoMemory;
     }
     const hdr: ImageHeader = try image_validate(image_bytes);
-    if hdr.image_size > PAGE_SIZE {
-        return error.TooLarge;
-    }
-    const ppn: u32 = try page_alloc(&k.host_ctx.pool);
-    const base: &byte = try physmem_ptr(&k.host_ctx.pm, ppn, 0u32);
-    var i: u32 = 0;
-    while i < hdr.image_size {
-        base[i] = image_bytes.ptr[i as usize];
-        i = i + 1u32;
+    const pages_needed: u32 = (hdr.image_size + PAGE_SIZE - 1u32) / PAGE_SIZE;
+    var first_ppn: u32 = 0u32;
+    var page_idx: u32 = 0u32;
+    while page_idx < pages_needed {
+        const ppn: u32 = try page_alloc(&k.host_ctx.pool);
+        if page_idx == 0u32 {
+            first_ppn = ppn;
+        }
+        const base: &byte = try physmem_ptr(&k.host_ctx.pm, ppn, 0u32);
+        var offset: u32 = 0u32;
+        while offset < PAGE_SIZE {
+            const byte_idx: u32 = page_idx * PAGE_SIZE + offset;
+            if byte_idx >= hdr.image_size {
+                break;
+            }
+            base[offset] = image_bytes.ptr[byte_idx as usize];
+            offset = offset + 1u32;
+        }
+        page_idx = page_idx + 1u32;
     }
     const pt: &PageTable = sim_pt_ref(k, cid);
     pt_init(pt);
-    try pt_map_code(pt, 0u32, ppn);
+    page_idx = 0u32;
+    while page_idx < pages_needed {
+        try pt_map_code(pt, page_idx, first_ppn + page_idx);
+        page_idx = page_idx + 1u32;
+    }
     if mmu_debug_enabled() != 0 {
         // 调试探针：显示入口地址在当前页表里的翻译结果，便于确认 MMU 路径是否接通。
         _ = try mmu_translate_ptr(pt, &k.host_ctx.pm, IMAGE_HEADER_SIZE + hdr.entry_offset, 4u32, ACCESS_R);
     }
     sim_loaded_header_ref(k, cid)[0] = hdr;
-    sim_loaded_ppn_ref(k, cid)[0] = ppn;
+    sim_loaded_ppn_ref(k, cid)[0] = first_ppn;
     sim_loaded_valid_ref(k, cid)[0] = 1u32;
     sim_entry_fn_ref(k, cid)[0] = -1;
     try scheduler_set_slot_state(&k.sched, cid, ContainerState.cs_ready);
@@ -223,7 +237,19 @@ export fn sim_exec_loaded(k: &SimKernel, cid: u32) !i32 {
     }
     if hdr.rodata_size > 0u32 {
         const rodata_off: u32 = IMAGE_HEADER_SIZE + hdr.code_size;
-        _ = try mmu_translate_ptr(sim_pt_ref(k, cid), &k.host_ctx.pm, rodata_off, hdr.rodata_size, ACCESS_R);
+        // rodata 可能跨页；逐页验证映射存在，而不是一次性翻译整个范围。
+        var rodata_rem: u32 = hdr.rodata_size;
+        var rodata_cur: u32 = rodata_off;
+        while rodata_rem > 0u32 {
+            const page_rem: u32 = PAGE_SIZE - (rodata_cur & (PAGE_SIZE - 1u32));
+            var check_size: u32 = page_rem;
+            if rodata_rem < page_rem {
+                check_size = rodata_rem;
+            }
+            _ = try mmu_translate_ptr(sim_pt_ref(k, cid), &k.host_ctx.pm, rodata_cur, check_size, ACCESS_R);
+            rodata_cur = rodata_cur + check_size;
+            rodata_rem = rodata_rem - check_size;
+        }
     }
     return 1;
 }

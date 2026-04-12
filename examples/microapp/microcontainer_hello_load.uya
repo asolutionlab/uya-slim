@@ -77,9 +77,9 @@ export fn main() i32 {
     };
     sim_kernel_init(&kernel);
 
-    var backing: [byte: 65536] = [];
+    var backing: [byte: 131072] = [];
     kernel.host_ctx.pm.base = &backing[0];
-    kernel.host_ctx.pm.size = 65536;
+    kernel.host_ctx.pm.size = 131072;
 
     const uapp_path: &byte = resolve_uapp_path();
     @println("[microapp loader] loading ${uapp_path}");
