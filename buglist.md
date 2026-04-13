@@ -57,19 +57,19 @@
 
 ## 编译器 bug
 
-- [ ] **P0 / 严重：真 `@async_fn/@await` lowering 仍对 async frame 做堆分配，热路径产生 `malloc/free`**
-  - 状态：待修复
-  - 验证状态：`benchmarks/http_bench_async_epoll_await_simple.uya` 编译出的 C 代码中，`@async_fn` 入口会生成 `malloc(sizeof(...))` 的 async frame；运行压测时 RSS 持续上涨，CPU 占用反而下降
+- [x] **P0 / 严重：真 `@async_fn/@await` lowering 仍对 async frame 做堆分配，热路径产生 `malloc/free`**
+  - 状态：已修复
+  - 验证状态：`make check` 780/780 通过；`benchmarks/http_bench_async_epoll_await_simple.uya` 编译出的 C 代码中，`@async_fn` 的 wrapper 函数不再直接生成 `malloc(sizeof(struct uya_async_...))`，改为调用 per-function free list allocator `_uya_alloc_...()`；热路径无 malloc，仅在 pool 空时 fallback 到 malloc。benchmark 可正常编译运行，`curl` 返回正常。
   - 归属：`src/codegen/c99/**` / async lowering
-  - 现象：`@async_fn` / `@await` 的 lowering 将每个 async 函数实例化为堆上状态机对象，而不是栈上 frame 或池化 frame；在 HTTP benchmark 这种高频短连接 / keep-alive 场景里，会造成明显的内存抖动和分配开销
-  - 影响：真 async 版 benchmark 无法作为性能对比基线，且会掩盖 `epoll` / 协程调度本身的真实性能
-  - 相关文件：`src/codegen/c99/function.uya`、`src/codegen/c99/stmt.uya`、`lib/std/async.uya`、`benchmarks/http_bench_async_epoll_await_simple.uya`
+  - 修复内容：
+    1. 为每个 `@async_fn` 生成 per-function free list allocator（`_alloc` / `_free`）
+    2. 为每个 `@async_fn` 生成 `release` 函数，并在 vtable 中填充 `release` 指针
+    3. wrapper 函数使用 `_alloc()` 替代 `malloc`
+    4. poll 函数中 await 完成后的 child future 清理改为通过 vtable 调用 `release`，替代直接 `free`
+    5. 修复了 `Future<T>` 接口新增 `release` 方法后，benchmark 和测试中手工 Future 结构体缺少 `release` 的编译错误
+  - 相关文件：`src/codegen/c99/function.uya`、`benchmarks/http_bench_async_epoll_await_simple.uya`、`benchmarks/http_bench_async_epoll.uya`、`tests/test_*.uya`
   - 设计文档：`docs/async_frame_allocation_design.md`
   - TODO 文档：`docs/todo_async_frame_allocation.md`
-  - 修复方向：
-    1. 让 async frame 支持栈上/对象池分配，避免默认 `malloc/free`
-    2. 或者为 benchmark/运行时提供可切换的 frame allocator
-    3. 最终目标是保留 `@async_fn/@await` 语义，同时去掉热路径堆分配
 
 - [ ] **P1 / 高：生成的 C 代码在 GCC `-O2` 下运行时 SIGSEGV，`-O1` 正常**
   - 状态：待修复

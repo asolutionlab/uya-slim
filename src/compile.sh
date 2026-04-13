@@ -513,6 +513,7 @@ else
         "checker/check_call.uya"
         "checker/check_node_extra.uya"
         "checker/check_stmt.uya"
+        "checker/async_frame_meta.uya"
         "checker/main.uya"
     )
 

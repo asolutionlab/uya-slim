@@ -373,6 +373,10 @@ struct Http1ConnectFuture : Future<!i32> {
         _ = sys_setsockopt(self.fd, IPPROTO_TCP, TCP_NODELAY, &nd2 as &void, 4 as u32) catch {};
         return Poll<!i32>.Ready(ok<i32>(self.fd));
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 fn http1_connect_for_host_future(host: &[byte], port: u16, deadline_ms: u64) Future<!i32> {

@@ -40,6 +40,10 @@ struct ImmediateReady : Future<!i32> {
         _ = waker;
         return Poll<!i32>.Ready(ok<i32>(7));
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 fn call_iface(counter: FallibleCounter) !i32 {

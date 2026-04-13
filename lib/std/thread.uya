@@ -1035,6 +1035,10 @@ export struct AsyncComputeFuture<T> : Future<!T> {
         const raw_poll: Poll<!usize> = self.core.poll_raw(waker);
         return self.finish_from_raw_poll(raw_poll, waker);
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 export type AsyncComputeI32Future = AsyncComputeFuture<i32>;

@@ -58,6 +58,10 @@ struct PollReadyOkI32Probe : Future<!i32> {
         _ = waker;
         return poll_ready_ok<i32>(55);
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 test "poll_ready_ok_i32_helper_in_poll" {

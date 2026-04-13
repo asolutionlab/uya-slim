@@ -1,6 +1,6 @@
 # 栈优先的异步状态机帧分配设计
 
-**状态**：设计草案  
+**状态**：设计草案 → 第一阶段已实现  
 **最后更新**：2026-04-13  
 **相关文档**：
 - [std_async_design.md](std_async_design.md) - `Future<T>` / `Poll<T>` / `Waker` / `Scheduler` 现状
@@ -59,6 +59,22 @@
 - 让不逃逸的 async frame 复用栈或调用方持有的内联存储
 - 让逃逸的 future 走固定池分配，而不是默认堆分配
 - 保留调试回退路径，便于定位生命周期问题
+
+## 3.5 实现状态（2026-04-13 更新）
+
+**第一阶段已完成**：
+- `src/codegen/c99/function.uya` 的核心 lowering 改造完成。
+- 每个 `@async_fn` 生成独立的 per-function free list allocator（`_uya_alloc_<fn>` / `_uya_free_<fn>`）。
+- wrapper 函数（`foo(args...)`）的热路径不再直接 `malloc`，改为调用 `_alloc()`；仅在 free list 空时 fallback 到 `malloc`。
+- 为每个 `@async_fn` 生成 `uya_<fn>_release` 函数，并在 vtable 中填充 `release` 指针。
+- poll 函数中 await 完成后的 child future 清理，改为通过 vtable 调用 `release`，避免直接 `free`。
+- `make check` 780/780 通过，`make b` 自举验证通过。
+- `benchmarks/http_bench_async_epoll_await_simple.uya` 编译运行正常，`curl` 测试通过。
+
+**待第二阶段实现**：
+- caller-owned stack 内联：直接 `@await foo()` 时把 child frame 放进 parent frame 字段，彻底消除接口值 boxing。
+- 统一运行时 `AsyncFramePool` 集成（当前 `lib/std/async_frame.uya` 已存在，尚未与 codegen 完全对接）。
+- `@frame(foo)` 类型构造器及 checker 侧的 pinned 语义、逃逸分析、诊断信息。
 
 ## 4. 总体方案
 

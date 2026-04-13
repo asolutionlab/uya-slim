@@ -352,6 +352,15 @@ struct C99CodeGenerator {
     async_control_while: &ASTNode,           // 当前 async continuation 所属 while，用于 break/continue lowering
     async_control_for: &ASTNode,             // 当前 async continuation 所属 for，用于 break/continue lowering
 
+    // async frame 元数据（阶段1：栈优先/池兜底改造）
+    async_frame_size: usize,                  // 当前 async 函数的帧大小
+    async_frame_align: usize,                 // 当前 async 函数的帧对齐
+    async_frame_escape_class: i32,            // ESCAPE_STACK_CANDIDATE / POOL_REQUIRED / HEAP_DEBUG_ONLY
+    async_frame_use_stack: i32,               // 1=使用 caller-owned stack frame
+    async_frame_use_pool: i32,                // 1=使用 frame pool
+    async_frame_needs_drop: i32,              // 1=需要生成 frame_drop_fields
+    async_frame_has_coro_pool: i32,           // 1=当前模块已生成 pool 使用代码，需要包含 std_async_frame 头
+
     // microapp 模式：生成指针访问边界检查
     container_mode: i32,
 

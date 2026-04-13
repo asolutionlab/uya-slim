@@ -26,6 +26,10 @@ struct ImmediateReadyFuture : Future<!i32> {
         _ = waker;
         return Poll<!i32>.Ready(ok<i32>(self.value));
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 fn immediate_ready_future(v: i32) Future<!i32> {
@@ -110,6 +114,10 @@ struct ReadyAfterEventLoopPoll : Future<!i32> {
         }
         return Poll<!i32>.Ready(ok<i32>(99));
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 struct WakeThenReadyWithoutEventLoopPoll : Future<!i32> {
@@ -122,6 +130,10 @@ struct WakeThenReadyWithoutEventLoopPoll : Future<!i32> {
         }
         scheduler_wake_poll_count = scheduler_wake_poll_count + 1;
         return Poll<!i32>.Ready(ok<i32>(123));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
     }
 }
 
@@ -188,6 +200,10 @@ struct PendingOnReadableThenReady : Future<!i32> {
         }
         return Poll<!i32>.Ready(ok<i32>(self.value));
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 fn pair_event_loop() EventLoop {
@@ -243,6 +259,10 @@ struct QueuePendingOnReadableThenReady : Future<!i32> {
             return Poll<!i32>.Pending({});
         }
         return Poll<!i32>.Ready(ok<i32>(self.value));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
     }
 }
 

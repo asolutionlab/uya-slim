@@ -879,6 +879,9 @@ fn gen_function(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         }
         if is_static != 0 {
             fprintf(codegen.emit_stream, "static __attribute__((used)) " as *byte);
+        } else if fn_decl.fn_decl_extern_lib_name != null {
+            // extern "libc" 等函数可能在 @asm 中被引用，LTO + --gc-sections 下需要 used 防止被回收
+            fprintf(codegen.emit_stream, "__attribute__((used)) " as *byte);
         }
         fprintf(codegen.emit_stream, "%s %s(" as *byte, return_c as *byte, func_name as *byte);
         
@@ -3360,12 +3363,18 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     const async_struct: &byte = compiler_arena_alloc(codegen.arena, 128) as &byte;
     const poll_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
     const vtable_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
-    if async_struct == null || poll_name == null || vtable_name == null {
+    const release_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+    const alloc_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+    const free_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+    if async_struct == null || poll_name == null || vtable_name == null || release_name == null || alloc_name == null || free_name == null {
         return;
     }
     snprintf(async_struct as *byte, 128, "uya_async_%s" as *byte, func_c_name as *byte);
     snprintf(poll_name as *byte, 256, "uya_%s_poll" as *byte, async_struct as *byte);
     snprintf(vtable_name as *byte, 256, "uya_vtable_%s_%s" as *byte, vtable_future_safe as *byte, async_struct as *byte);
+    snprintf(release_name as *byte, 256, "uya_%s_release" as *byte, async_struct as *byte);
+    snprintf(alloc_name as *byte, 256, "_uya_alloc_%s" as *byte, async_struct as *byte);
+    snprintf(free_name as *byte, 256, "_uya_free_%s" as *byte, async_struct as *byte);
 
     // 确保 stdlib（malloc）可用
     codegen.needs_stdlib_h = 1;
@@ -3656,9 +3665,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 fprintf(codegen.emit_stream as *void, "        s->_uya_bind_%s = r.value;\n" as *byte, bind_safe as *byte);
             }
             if concrete_future_safe != null && await_operand_is_err_future != 0 {
-                fputs("        if (s->await_fut.data != (void*)0 && s->await_fut.data != (void*)&s->_uya_await_storage) { free((void*)s->await_fut.data); }\n" as *byte, codegen.emit_stream as *void);
+                fputs("        if (s->await_fut.data != (void*)0 && s->await_fut.data != (void*)&s->_uya_await_storage) { if (s->await_fut.vtable != (void*)0) { void (*_uya_rel)(void*) = (void (*)(void*))((void**)s->await_fut.vtable)[1]; if (_uya_rel != (void*)0) _uya_rel(s->await_fut.data); } }\n" as *byte, codegen.emit_stream as *void);
             } else {
-                fputs("        if (s->await_fut.data != (void*)0) { free((void*)s->await_fut.data); }\n" as *byte, codegen.emit_stream as *void);
+                fputs("        if (s->await_fut.data != (void*)0) { if (s->await_fut.vtable != (void*)0) { void (*_uya_rel)(void*) = (void (*)(void*))((void**)s->await_fut.vtable)[1]; if (_uya_rel != (void*)0) _uya_rel(s->await_fut.data); } }\n" as *byte, codegen.emit_stream as *void);
             }
             fputs("        s->await_fut.data = (void*)0; s->await_fut.vtable = (void*)0;\n" as *byte, codegen.emit_stream as *void);
             // Bug C: "return try @await" — 无 bind name：直接 return Ready(r.value)
@@ -3688,9 +3697,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                 fprintf(codegen.emit_stream as *void, "        s->_uya_bind_%s = p.u.Ready;\n" as *byte, bind_safe2 as *byte);
             }
             if concrete_future_safe != null && await_operand_is_err_future != 0 {
-                fputs("        if (s->await_fut.data != (void*)0 && s->await_fut.data != (void*)&s->_uya_await_storage) { free((void*)s->await_fut.data); }\n" as *byte, codegen.emit_stream as *void);
+                fputs("        if (s->await_fut.data != (void*)0 && s->await_fut.data != (void*)&s->_uya_await_storage) { if (s->await_fut.vtable != (void*)0) { void (*_uya_rel)(void*) = (void (*)(void*))((void**)s->await_fut.vtable)[1]; if (_uya_rel != (void*)0) _uya_rel(s->await_fut.data); } }\n" as *byte, codegen.emit_stream as *void);
             } else {
-                fputs("        if (s->await_fut.data != (void*)0) { free((void*)s->await_fut.data); }\n" as *byte, codegen.emit_stream as *void);
+                fputs("        if (s->await_fut.data != (void*)0) { if (s->await_fut.vtable != (void*)0) { void (*_uya_rel)(void*) = (void (*)(void*))((void**)s->await_fut.vtable)[1]; if (_uya_rel != (void*)0) _uya_rel(s->await_fut.data); } }\n" as *byte, codegen.emit_stream as *void);
             }
             fputs("        s->await_fut.data = (void*)0; s->await_fut.vtable = (void*)0;\n" as *byte, codegen.emit_stream as *void);
             // 通用 continuation：递归段发射（emit_async_segment 遇 return 语句停止）
@@ -3794,6 +3803,33 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         pi = pi + 1;
     }
 
+    // 生成 per-function 帧池分配器与 release 函数
+    fprintf(codegen.emit_stream as *void, "static struct %s *%s_pool_head = (void*)0;\n" as *byte, async_struct as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "static int32_t %s_pool_count = 0;\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "static const int32_t %s_pool_cap = 4096;\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "static struct %s *%s(void) {\n" as *byte, async_struct as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    if (%s_pool_head != (void*)0) {\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "        struct %s *r = %s_pool_head;\n" as *byte, async_struct as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "        %s_pool_head = *(struct %s **)r;\n" as *byte, alloc_name as *byte, async_struct as *byte);
+    fprintf(codegen.emit_stream as *void, "        %s_pool_count = %s_pool_count - 1;\n" as *byte, alloc_name as *byte, alloc_name as *byte);
+    fputs("        return r;\n    }\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "    return (struct %s *)malloc(sizeof(struct %s));\n}\n" as *byte, async_struct as *byte, async_struct as *byte);
+    fprintf(codegen.emit_stream as *void, "static void %s(struct %s *p) {\n" as *byte, free_name as *byte, async_struct as *byte);
+    fputs("    if (p == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "    if (%s_pool_count < %s_pool_cap) {\n" as *byte, alloc_name as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "        *(struct %s **)p = %s_pool_head;\n" as *byte, async_struct as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "        %s_pool_head = p;\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "        %s_pool_count = %s_pool_count + 1;\n" as *byte, alloc_name as *byte, alloc_name as *byte);
+    fputs("    } else {\n        free(p);\n    }\n}\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "static void %s(void *self) {\n" as *byte, release_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    struct %s *s = (struct %s *)self;\n" as *byte, async_struct as *byte, async_struct as *byte);
+    fputs("    if (s == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    if (s->await_fut.data != (void*)0 && s->await_fut.vtable != (void*)0) {\n" as *byte, codegen.emit_stream as *void);
+    fputs("        void (*_uya_rel)(void*) = (void (*)(void*))((void**)s->await_fut.vtable)[1];\n" as *byte, codegen.emit_stream as *void);
+    fputs("        if (_uya_rel != (void*)0) _uya_rel(s->await_fut.data);\n" as *byte, codegen.emit_stream as *void);
+    fputs("        s->await_fut.data = (void*)0;\n    }\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "    %s(s);\n}\n" as *byte, free_name as *byte);
+
     // 返回 !Future<T> 时 vtable 类型为 Future<!Future<T>>，需先给出完整定义再定义常量（否则 C 报 incomplete type）。
     // 有 await 时由 1174 块输出；无 await 时此处输出。使用 arena 存储名称以保证 mark_struct_defined 的持久性。
     if return_future_err_union != 0 && vtable_future_safe != null && poll_ret_c != null {
@@ -3805,7 +3841,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             if iface_struct_name != null {
                 snprintf(iface_struct_name as *byte, 128, "uya_interface_%s" as *byte, vtable_future_safe as *byte);
                 fprintf(codegen.emit_stream as *void, "struct uya_interface_%s { void *vtable; void *data; };\n" as *byte, vtable_future_safe as *byte);
-                fprintf(codegen.emit_stream as *void, "struct uya_vtable_%s {\n  %s (*poll)(void *self, struct Waker *);\n};\n" as *byte, vtable_future_safe as *byte, poll_ret_c as *byte);
+                fprintf(codegen.emit_stream as *void, "struct uya_vtable_%s {\n  %s (*poll)(void *self, struct Waker *);\n  void (*release)(void *self);\n};\n" as *byte, vtable_future_safe as *byte, poll_ret_c as *byte);
                 mark_struct_defined(codegen, iface_struct_name);
                 mark_struct_defined(codegen, vtable_struct_name);
             }
@@ -3813,8 +3849,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     }
     }
     // vtable 常量
-    fprintf(codegen.emit_stream as *void, "static const struct uya_vtable_%s %s = { (%s (*)(void *self, struct Waker *))&%s };\n" as *byte,
-        vtable_future_safe as *byte, vtable_name as *byte, poll_ret_c as *byte, poll_name as *byte);
+    fprintf(codegen.emit_stream as *void, "static const struct uya_vtable_%s %s = { (%s (*)(void *self, struct Waker *))&%s, (void (*)(void *self))&%s };\n" as *byte,
+        vtable_future_safe as *byte, vtable_name as *byte, poll_ret_c as *byte, poll_name as *byte, release_name as *byte);
 
     // 输出原函数：分配状态机，复制参数，返回 Future
     var wrapper_ret_c: &byte = iface_c;
@@ -3856,9 +3892,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     if await_count == 0 && return_future_err_union != 0 && body != null {
         emit_async_err_future_wrapper_prelude(codegen, fn_decl, body, full_return_type);
     }
-    // 状态机分配：始终使用 malloc 堆分配，避免大状态机（>256B）栈溢出
-    // 栈分配路径（<=64B 估算）暂未启用
-    fprintf(codegen.emit_stream as *void, "    struct %s *s = (struct %s *)malloc(sizeof(struct %s));\n" as *byte, async_struct as *byte, async_struct as *byte, async_struct as *byte);
+    // 状态机分配：使用 per-function 帧池分配器，热路径避免 malloc
+    fprintf(codegen.emit_stream as *void, "    struct %s *s = %s();\n" as *byte, async_struct as *byte, alloc_name as *byte);
     fputs("    if (s != (void*)0) { s->state = 0; __builtin_memset((void *)&s->await_fut, 0, sizeof(s->await_fut)); " as *byte, codegen.emit_stream as *void);
     pi = 0;
     while pi < param_count && pi < 16 {
