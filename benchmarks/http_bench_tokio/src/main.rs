@@ -20,6 +20,38 @@ use tokio::net::TcpListener;
 const BENCH_PORT: u16 = 8876;
 const ADDR: &str = "127.0.0.1";
 
+fn parse_bench_args() -> (bool, usize) {
+    let mut once = false;
+    let mut worker_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1);
+    let mut args = std::env::args().skip(1).peekable();
+
+    while let Some(arg) = args.next() {
+        if arg == "--once" {
+            once = true;
+            continue;
+        }
+        if arg == "--threads" {
+            if let Some(n) = args.next().and_then(|s| s.parse::<usize>().ok()) {
+                if n > 0 {
+                    worker_threads = n.min(64);
+                }
+            }
+            continue;
+        }
+        if let Some(rest) = arg.strip_prefix("--threads=") {
+            if let Ok(n) = rest.parse::<usize>() {
+                if n > 0 {
+                    worker_threads = n.min(64);
+                }
+            }
+        }
+    }
+
+    (once, worker_threads)
+}
+
 fn payload_1k() -> &'static [u8] {
     static P: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
     P.get_or_init(|| vec![b'a'; 1024])
@@ -108,10 +140,13 @@ async fn run_server(once: bool) -> Result<(), Box<dyn std::error::Error + Send +
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let once = std::env::args().any(|a| a == "--once");
-    if let Err(e) = run_server(once).await {
+fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let (once, worker_threads) = parse_bench_args();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(worker_threads)
+        .enable_all()
+        .build()?;
+    if let Err(e) = runtime.block_on(run_server(once)) {
         eprintln!("{}", e);
         std::process::exit(1);
     }

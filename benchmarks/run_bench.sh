@@ -5,7 +5,7 @@
 #
 # --baseline: 保存结果到 baseline.json（用于回归对比）
 #
-# 依赖: wrk, cc, go, cargo（可选 Rust Tokio 对照）, bin/uya
+# 依赖: wrk, cc, bin/uya；go / cargo 作为可选对照项
 
 set -e
 
@@ -29,10 +29,16 @@ C_EXEC="/tmp/http_bench_c"
 TOKIO_DIR="${SCRIPT_DIR}/http_bench_tokio"
 TOKIO_EXEC="/tmp/http_bench_tokio"
 
-# wrk 参数（与文档一致）
-WRK_THREADS=4
-WRK_CONNECTIONS=64
-WRK_DURATION=10s
+# wrk / server 参数（默认对齐机器 CPU/2，可用环境变量覆盖）
+CPU_COUNT="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 1)"
+DEFAULT_BENCH_THREADS=$((CPU_COUNT / 2))
+if [ "$DEFAULT_BENCH_THREADS" -lt 1 ]; then
+    DEFAULT_BENCH_THREADS=1
+fi
+WRK_THREADS="${WRK_THREADS:-$DEFAULT_BENCH_THREADS}"
+WRK_CONNECTIONS="${WRK_CONNECTIONS:-64}"
+WRK_DURATION="${WRK_DURATION:-10s}"
+SERVER_THREADS="${SERVER_THREADS:-$DEFAULT_BENCH_THREADS}"
 AB_KEEPALIVE_REQUESTS=20000
 AB_KEEPALIVE_CONCURRENCY=100
 
@@ -140,6 +146,10 @@ build_uya_async_epoll() {
 # 编译 Go 版本
 build_go() {
     log_info "编译 Go HTTP 服务器..."
+    if ! command -v go &> /dev/null; then
+        log_warn "未找到 go，跳过 Go 版本编译与压测"
+        return 1
+    fi
     if [ ! -f "$GO_SRC" ]; then
         log_err "找不到 Go 源文件: $GO_SRC"
         exit 1
@@ -182,6 +192,8 @@ run_benchmark() {
     local exec="$2"
     local port="$3"
     local url="$4"
+    shift 4
+    local extra_args=("$@")
 
     echo "--- $name 基准测试 ---" >&2
 
@@ -196,7 +208,7 @@ run_benchmark() {
     # 启动服务器
     local server_log="/tmp/http_bench_${name//[^a-zA-Z0-9_]/_}.server.log"
     rm -f "$server_log"
-    "$exec" >"$server_log" 2>&1 &
+    "$exec" "${extra_args[@]}" >"$server_log" 2>&1 &
     local pid=$!
     sleep 2
 
@@ -249,8 +261,10 @@ run_benchmark_safe() {
     local exec="$2"
     local port="$3"
     local url="$4"
+    shift 4
+    local extra_args=("$@")
     local result
-    if result=$(run_benchmark "$name" "$exec" "$port" "$url"); then
+    if result=$(run_benchmark "$name" "$exec" "$port" "$url" "${extra_args[@]}"); then
         echo "$result"
         return 0
     fi
@@ -264,6 +278,8 @@ run_keepalive_probe() {
     local exec="$2"
     local port="$3"
     local url="$4"
+    shift 4
+    local extra_args=("$@")
 
     echo "--- $name Keep-Alive 验证（ab -k）---" >&2
 
@@ -276,7 +292,7 @@ run_keepalive_probe() {
 
     local server_log="/tmp/http_bench_${name//[^a-zA-Z0-9_]/_}.keepalive.log"
     rm -f "$server_log"
-    "$exec" >"$server_log" 2>&1 &
+    "$exec" "${extra_args[@]}" >"$server_log" 2>&1 &
     local pid=$!
     sleep 2
 
@@ -320,8 +336,10 @@ run_keepalive_probe_safe() {
     local exec="$2"
     local port="$3"
     local url="$4"
+    shift 4
+    local extra_args=("$@")
     local result
-    if result=$(run_keepalive_probe "$name" "$exec" "$port" "$url"); then
+    if result=$(run_keepalive_probe "$name" "$exec" "$port" "$url" "${extra_args[@]}"); then
         echo "$result"
         return 0
     fi
@@ -356,7 +374,8 @@ save_baseline() {
   "wrk_params": {
     "threads": ${WRK_THREADS},
     "connections": ${WRK_CONNECTIONS},
-    "duration": "${WRK_DURATION}"
+    "duration": "${WRK_DURATION}",
+    "server_threads": ${SERVER_THREADS}
   },
   "results": {
     "root": {
@@ -379,13 +398,15 @@ main() {
 
     check_dep wrk
     check_dep cc
-    check_dep go
 
     # 编译
     build_uya_fork
     build_uya_async_epoll
-    build_go
     build_c
+    local have_go=0
+    if build_go; then
+        have_go=1
+    fi
     local have_tokio=0
     if build_tokio; then
         have_tokio=1
@@ -409,14 +430,18 @@ main() {
 
     uya_fork_result=$(run_benchmark_safe "Uya-fork" "$UYA_FORK_EXEC" "$PORT" "$URL")
     sleep 1
-    uya_epoll_result=$(run_benchmark_safe "Uya-async-epoll" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL")
+    uya_epoll_result=$(run_benchmark_safe "Uya-async-epoll" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
     sleep 1
-    go_result=$(run_benchmark_safe "Go" "$GO_EXEC" "$PORT" "$URL")
+    if [ "$have_go" -eq 1 ]; then
+        go_result=$(run_benchmark_safe "Go" "$GO_EXEC" "$PORT" "$URL")
+    else
+        go_result="Go|0|0|0|0|0|0|0"
+    fi
     sleep 1
     c_result=$(run_benchmark_safe "C" "$C_EXEC" "$PORT" "$URL")
     sleep 1
     if [ "$have_tokio" -eq 1 ]; then
-        tokio_result=$(run_benchmark_safe "Tokio" "$TOKIO_EXEC" "$PORT" "$URL")
+        tokio_result=$(run_benchmark_safe "Tokio" "$TOKIO_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
         tokio_rps=$(echo "$tokio_result" | awk -F'|' '{print $8}')
         if [ -z "$tokio_rps" ]; then tokio_rps=0; fi
     fi
@@ -458,11 +483,15 @@ main() {
     local go_ka_rps
     local c_ka_rps
     uya_fork_ka_result=$(run_keepalive_probe_safe "Uya-fork" "$UYA_FORK_EXEC" "$PORT" "$URL")
-    uya_epoll_ka_result=$(run_keepalive_probe_safe "Uya-async-epoll" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL")
-    go_ka_result=$(run_keepalive_probe_safe "Go" "$GO_EXEC" "$PORT" "$URL")
+    uya_epoll_ka_result=$(run_keepalive_probe_safe "Uya-async-epoll" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
+    if [ "$have_go" -eq 1 ]; then
+        go_ka_result=$(run_keepalive_probe_safe "Go" "$GO_EXEC" "$PORT" "$URL")
+    else
+        go_ka_result="Go|0|0|0"
+    fi
     c_ka_result=$(run_keepalive_probe_safe "C" "$C_EXEC" "$PORT" "$URL")
     if [ "$have_tokio" -eq 1 ]; then
-        tokio_ka_result=$(run_keepalive_probe_safe "Tokio" "$TOKIO_EXEC" "$PORT" "$URL")
+        tokio_ka_result=$(run_keepalive_probe_safe "Tokio" "$TOKIO_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
         tokio_ka=$(echo "$tokio_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
         tokio_ka_failed=$(echo "$tokio_ka_result" | awk -F'|' '{print $3}' | tr -d '\r\n ')
         tokio_ka_rps=$(echo "$tokio_ka_result" | awk -F'|' '{print $4}' | tr -d '\r\n ')

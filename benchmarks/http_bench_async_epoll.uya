@@ -12,7 +12,6 @@
 
 use std.async;
 use std.async_event;
-use libc.heap;
 use libc.mem;
 use libc.syscall;
 use libc.errno;
@@ -21,19 +20,23 @@ use libc.signal;
 use std.runtime.get_argc;
 use std.runtime.get_argv;
 use std.runtime.entry.set_process_stack_limit_bytes;
+use libc.atoi;
 
 const BENCH_PORT: u16 = 8876;
 /// 主线程栈保持较大，避免启动阶段深调用链溢出；worker 栈单独缩小，先验证 28 线程可否稳定创建。
 const BENCH_MAIN_STACK_BYTES: u64 = 65536 as u64 * 1024;
 const BENCH_WORKER_STACK_BYTES: usize = 8 * 1024 * 1024;
 const BACKLOG: i32 = 1024;
-/// 槽位容量：高并发压测（如 ab -c 100）需要明显高于并发数，避免无槽位时直接丢连接。
-const SLOT_CAP: i32 = 1024;
-const SLOT_READ_CAP: usize = 4096;
+const SLOT_READ_CAP: usize = 100;
 const MAX_PATH_LEN: usize = 256;
 const SIGPIPE: i32 = 13;
 const SIG_IGN: usize = 1;
 const BENCH_THREAD_COUNT: i32 = 28;
+const BENCH_MAX_THREADS: i32 = 64;
+const BENCH_CONTEXT_STACK_BYTES: usize = 65536;
+
+const g_hello_body: [byte: 6] = "hello";
+const g_json_body: [byte: 12] = "{\"ok\":true}";
 
 struct BenchClientFuture : Future<!usize> {
     ctx: &BenchContext = null as &BenchContext,
@@ -65,6 +68,7 @@ struct BenchClientFuture : Future<!usize> {
 
     fn poll(self: &Self, waker: &Waker) Poll<!usize> {
         while true {
+            const slot: &BenchSlot = &self.ctx.slots[self.slot];
             if self.done != 0 {
                 return bench_poll_ready_ok(self.result);
             }
@@ -124,7 +128,7 @@ struct BenchClientFuture : Future<!usize> {
                 continue;
             }
             if self.io_state == 3 {
-                if self.ctx.cli_woff[self.slot] >= self.ctx.cli_hdr_len[self.slot] {
+                if slot.cli_woff >= slot.cli_hdr_len {
                     self.io_state = 5;
                     continue;
                 }
@@ -133,8 +137,8 @@ struct BenchClientFuture : Future<!usize> {
                     self.result = 0 as usize;
                     return bench_poll_ready_ok(self.result);
                 }
-                const wr_base: &const byte = @ptr_from_usize(@usize_from_ptr(self.ctx.cli_hdr_line_base(self.slot) as &void) + self.ctx.cli_woff[self.slot]) as &const byte;
-                const wr_len: usize = self.ctx.cli_hdr_len[self.slot] - self.ctx.cli_woff[self.slot];
+                const wr_base: &const byte = @ptr_from_usize(@usize_from_ptr(slot.cli_hdr_line_base() as &void) + slot.cli_woff) as &const byte;
+                const wr_len: usize = slot.cli_hdr_len - slot.cli_woff;
                 const wr_result: !isize = sys_write(self.cfd, wr_base as *const byte, wr_len);
                 const n2: isize = wr_result catch |err| {
                     if (@error_id(err) as i32) == EAGAIN {
@@ -150,20 +154,20 @@ struct BenchClientFuture : Future<!usize> {
                     self.result = 0 as usize;
                     return bench_poll_ready_ok(self.result);
                 }
-                self.ctx.cli_woff[self.slot] = self.ctx.cli_woff[self.slot] + (n2 as usize);
+                slot.cli_woff = slot.cli_woff + (n2 as usize);
                 continue;
             }
             if self.io_state == 5 {
-                if self.ctx.cli_body_woff[self.slot] >= self.ctx.cli_body_len[self.slot] {
-                    if self.ctx.cli_wants_close[self.slot] != 0 {
+                if slot.cli_body_woff >= slot.cli_body_len {
+                    if slot.cli_wants_close != 0 {
                         self.done = 1;
                         self.result = 0 as usize;
                         return bench_poll_ready_ok(self.result);
                     }
-                    const consumed: usize = self.ctx.cli_req_consumed[self.slot];
+                    const consumed: usize = slot.cli_req_consumed;
                     const remain: usize = self.ctx.cli_compact_unconsumed(self.slot, consumed, self.read_filled);
                     self.read_filled = remain;
-                    self.ctx.cli_filled[self.slot] = remain;
+                    slot.cli_filled = remain;
                     self.io_state = 1;
                     continue;
                 }
@@ -172,8 +176,8 @@ struct BenchClientFuture : Future<!usize> {
                     self.result = 0 as usize;
                     return bench_poll_ready_ok(self.result);
                 }
-                const body_base: &const byte = @ptr_from_usize(@usize_from_ptr(self.ctx.cli_body_const_base(self.ctx.cli_body_kind[self.slot]) as &void) + self.ctx.cli_body_woff[self.slot]) as &const byte;
-                const body_len: usize = self.ctx.cli_body_len[self.slot] - self.ctx.cli_body_woff[self.slot];
+                const body_base: &const byte = @ptr_from_usize(@usize_from_ptr(self.ctx.cli_body_const_base(slot.cli_body_kind) as &void) + slot.cli_body_woff) as &const byte;
+                const body_len: usize = slot.cli_body_len - slot.cli_body_woff;
                 const wr_result: !isize = sys_write(self.cfd, body_base as *const byte, body_len);
                 const n3: isize = wr_result catch |err| {
                     if (@error_id(err) as i32) == EAGAIN {
@@ -189,7 +193,7 @@ struct BenchClientFuture : Future<!usize> {
                     self.result = 0 as usize;
                     return bench_poll_ready_ok(self.result);
                 }
-                self.ctx.cli_body_woff[self.slot] = self.ctx.cli_body_woff[self.slot] + (n3 as usize);
+                slot.cli_body_woff = slot.cli_body_woff + (n3 as usize);
                 continue;
             }
             return bench_poll_ready_ok(0);
@@ -205,38 +209,39 @@ struct BenchSlot {
     epoll_fd: i32 = 0,
     epoll_interest: i32 = 0,
     cfd: i32 = 0 - 1,
+    cli_filled: usize = 0,
+    cli_hdr_len: usize = 0,
+    cli_woff: usize = 0,
+    cli_body_len: usize = 0,
+    cli_body_woff: usize = 0,
+    cli_body_kind: i32 = 0,
+    cli_discard_remain: usize = 0,
+    cli_hdr_line: [byte: 256] = [],
+    cli_header_end: usize = 0,
+    cli_content_len: usize = 0,
+    cli_wants_close: i32 = 0,
+    cli_req_consumed: usize = 0,
+
+    fn cli_hdr_line_base(self: &Self) &byte {
+        return @ptr_from_usize(@usize_from_ptr(&self.cli_hdr_line[0] as &void)) as &byte;
+    },
 }
 
 struct BenchContext {
     epoll: LinuxEpoll = LinuxEpoll{ epfd: 0 - 1 },
     listen_fd: i32 = 0 - 1,
     listen_waker: Waker = Waker{},
-    slots: [BenchSlot: SLOT_CAP] = [],
-    active_slots: [i32: SLOT_CAP] = [],
+    slot_cap: i32 = 0,
+    slots: [BenchSlot: BENCH_MAX_THREADS as usize] = [],
+    active_slots: [i32: BENCH_MAX_THREADS as usize] = [],
     active_count: i32 = 0,
-    /// 每槽读缓冲放在 BSS，避免状态机 + 多槽读缓冲撑爆栈
-    slot_read: [byte: SLOT_READ_CAP * SLOT_CAP as usize] = [],
-    hello_body: [byte: 5] = [],
-    json_body: [byte: 11] = [],
-    /// @async_fn 内 @await 的操作数不能依赖易失的局部变量；读写到这些按槽全局量再参与 await。
-    cli_filled: [usize: SLOT_CAP] = [],
-    cli_hdr_len: [usize: SLOT_CAP] = [],
-    cli_woff: [usize: SLOT_CAP] = [],
-    cli_body_len: [usize: SLOT_CAP] = [],
-    cli_body_woff: [usize: SLOT_CAP] = [],
-    cli_body_kind: [i32: SLOT_CAP] = [],
-    cli_discard_remain: [usize: SLOT_CAP] = [],
-    cli_hdr_line: [byte: 256 * SLOT_CAP as usize] = [],
-    cli_header_end: [usize: SLOT_CAP] = [],
-    cli_content_len: [usize: SLOT_CAP] = [],
-    cli_wants_close: [i32: SLOT_CAP] = [],
-    cli_req_consumed: [usize: SLOT_CAP] = [],
+    /// 每槽读缓冲在 worker 栈上固定分配，避免堆分配和共享 heap 锁。
+    slot_read: [byte: SLOT_READ_CAP * BENCH_MAX_THREADS as usize] = [],
 
     fn run(self: &Self) i32 {
-        self.init_static_bodies();
         self.active_count = 0;
         var z: i32 = 0;
-        while z < SLOT_CAP {
+        while z < self.slot_cap {
             self.slots[z as usize].active = 0;
             self.slots[z as usize].epoll_fd = 0;
             self.slots[z as usize].epoll_interest = 0;
@@ -258,20 +263,15 @@ struct BenchContext {
         return @ptr_from_usize(@usize_from_ptr(&self.slot_read[0] as &void) + off) as &byte;
     },
 
-    fn cli_hdr_line_base(self: &Self, slot: usize) &byte {
-        const off: usize = slot * 256;
-        return @ptr_from_usize(@usize_from_ptr(&self.cli_hdr_line[0] as &void) + off) as &byte;
-    },
-
     fn cli_body_const_base(self: &Self, kind: i32) &const byte {
         if kind == 1 {
-            return &self.json_body[0] as &const byte;
+            return &g_json_body[0] as &const byte;
         }
-        return &self.hello_body[0] as &const byte;
+        return &g_hello_body[0] as &const byte;
     },
 
     fn cli_compact_unconsumed(self: &Self, slot: usize, consumed: usize, filled: usize) usize {
-        if slot >= SLOT_CAP as usize || consumed >= filled {
+        if slot >= self.slot_cap as usize || consumed >= filled {
             return 0;
         }
         const tail: usize = filled - consumed;
@@ -280,36 +280,22 @@ struct BenchContext {
         return tail;
     },
 
-    fn init_static_bodies(self: &Self) void {
-        const h: &[byte] = &"hello"[0: 5];
-        var i: usize = 0;
-        while i < 5 {
-            self.hello_body[i] = h.ptr[i];
-            i = i + 1;
-        }
-        const j: &[byte] = &"{\"ok\":true}"[0: 11];
-        i = 0;
-        while i < 11 {
-            self.json_body[i] = j.ptr[i];
-            i = i + 1;
-        }
-    },
-
     fn prepare_bench_client_response(self: &Self, slot: usize, first_read_n: usize) bool {
-        if slot >= SLOT_CAP as usize {
+        if slot >= self.slot_cap as usize {
             return false;
         }
         if first_read_n == 0 || first_read_n > SLOT_READ_CAP {
             return false;
         }
-        self.cli_filled[slot] = first_read_n;
-        const he: usize = find_header_end(self.bench_slot_buf_base(slot), self.cli_filled[slot]);
+        const slot_ref: &BenchSlot = &self.slots[slot];
+        slot_ref.cli_filled = first_read_n;
+        const he: usize = find_header_end(self.bench_slot_buf_base(slot), slot_ref.cli_filled);
         if he == 0 {
             return false;
         }
-        self.cli_header_end[slot] = he;
-        self.cli_content_len[slot] = scan_content_length(self.bench_slot_buf_base(slot), he);
-        self.cli_req_consumed[slot] = he + self.cli_content_len[slot];
+        slot_ref.cli_header_end = he;
+        slot_ref.cli_content_len = scan_content_length(self.bench_slot_buf_base(slot), he);
+        slot_ref.cli_req_consumed = he + slot_ref.cli_content_len;
         var ps: usize = 0;
         var pl: usize = 0;
         if !parse_request_line_path(self.bench_slot_buf_base(slot), he, &ps, &pl) {
@@ -317,9 +303,9 @@ struct BenchContext {
         }
         const wants_close: bool = bench_wants_close(self.bench_slot_buf_base(slot), he);
         if wants_close {
-            self.cli_wants_close[slot] = 1;
+            slot_ref.cli_wants_close = 1;
         } else {
-            self.cli_wants_close[slot] = 0;
+            slot_ref.cli_wants_close = 0;
         }
         var body_len: usize = 5;
         var body_kind: i32 = 0;
@@ -330,19 +316,19 @@ struct BenchContext {
             return false;
         }
         var hl_out: usize = 0;
-        if !build_http_ok_response(self.cli_hdr_line_base(slot), 256, body_len, wants_close, &hl_out) {
+        if !build_http_ok_response(slot_ref.cli_hdr_line_base(), 256, body_len, wants_close, &hl_out) {
             return false;
         }
-        self.cli_hdr_len[slot] = hl_out;
-        self.cli_woff[slot] = 0;
-        self.cli_body_len[slot] = body_len;
-        self.cli_body_kind[slot] = body_kind;
-        self.cli_body_woff[slot] = 0;
+        slot_ref.cli_hdr_len = hl_out;
+        slot_ref.cli_woff = 0;
+        slot_ref.cli_body_len = body_len;
+        slot_ref.cli_body_kind = body_kind;
+        slot_ref.cli_body_woff = 0;
         return true;
     },
 
     fn slot_release(self: &Self, slot_idx: i32) void {
-        if slot_idx < 0 || slot_idx >= SLOT_CAP {
+        if slot_idx < 0 || slot_idx >= self.slot_cap {
             return;
         }
         const s: usize = (slot_idx as! usize).value;
@@ -373,7 +359,7 @@ struct BenchContext {
 
     fn find_free_slot(self: &Self) i32 {
         var i: i32 = 0;
-        while i < SLOT_CAP {
+        while i < self.slot_cap {
             if self.slots[i as usize].active == 0 {
                 return i;
             }
@@ -398,12 +384,12 @@ struct BenchContext {
                 _ = sys_close(cfd) catch {};
                 continue;
             }
-            if si >= SLOT_CAP {
+            if si >= self.slot_cap {
                 _ = sys_close(cfd) catch {};
                 continue;
             }
             const su: usize = (si as! usize).value;
-            if su >= SLOT_CAP as usize {
+            if su >= self.slot_cap as usize {
                 _ = sys_close(cfd) catch {};
                 continue;
             }
@@ -414,7 +400,7 @@ struct BenchContext {
             slot.epoll_interest = 0;
             slot.waker = Waker{};
             slot.future = handle_bench_client(self, cfd, si as usize);
-            if self.active_count < SLOT_CAP {
+            if self.active_count < self.slot_cap {
                 self.active_slots[self.active_count as usize] = si;
                 self.active_count = self.active_count + 1;
             }
@@ -567,14 +553,19 @@ struct BenchContext {
 
 use libc.pthread;
 
-fn bench_worker_thread(_arg: &void) &void {
-    const ptr: &BenchContext = malloc(@size_of(BenchContext)) as &BenchContext;
-    if ptr == null {
-        return null as &void;
+fn bench_thread_slot_cap(arg: &void) i32 {
+    if arg == null {
+        return BENCH_THREAD_COUNT;
     }
-    defer free(ptr as *void);
+    return *(arg as &i32);
+}
 
-    _ = memset(ptr as *byte, 0, @size_of(BenchContext));
+fn bench_worker_thread(_arg: &void) &void {
+    var ctx_storage: [usize: BENCH_CONTEXT_STACK_BYTES / @size_of(usize)] = [];
+    _ = memset(&ctx_storage[0] as *byte, 0, BENCH_CONTEXT_STACK_BYTES);
+    const ptr: &BenchContext = @ptr_from_usize(@usize_from_ptr(&ctx_storage[0] as &void)) as &BenchContext;
+    const slot_cap: i32 = bench_thread_slot_cap(_arg);
+    ptr.slot_cap = slot_cap;
     _ = ptr.run();
     return null as &void;
 }
@@ -624,6 +615,46 @@ fn argv_is_once() bool {
         return false;
     }
     return p[6] == 0 as byte;
+}
+
+fn argv_thread_count() i32 {
+    if get_argc() < 2 {
+        return BENCH_THREAD_COUNT;
+    }
+    const p: &byte = get_argv(1);
+    if p == null {
+        return BENCH_THREAD_COUNT;
+    }
+    if p[0] == '-' as byte && p[1] == '-' as byte &&
+       p[2] == 'o' as byte && p[3] == 'n' as byte &&
+       p[4] == 'c' as byte && p[5] == 'e' as byte && p[6] == 0 as byte {
+        return BENCH_THREAD_COUNT;
+    }
+    if p[0] == '-' as byte && p[1] == '-' as byte &&
+       p[2] == 't' as byte && p[3] == 'h' as byte &&
+       p[4] == 'r' as byte && p[5] == 'e' as byte &&
+       p[6] == 'a' as byte && p[7] == 'd' as byte &&
+       p[8] == 's' as byte && p[9] == 0 as byte {
+        if get_argc() < 3 {
+            return BENCH_THREAD_COUNT;
+        }
+        const n: i32 = atoi(get_argv(2));
+        if n > 0 {
+            if n > BENCH_MAX_THREADS {
+                return BENCH_MAX_THREADS;
+            }
+            return n;
+        }
+        return BENCH_THREAD_COUNT;
+    }
+    const n2: i32 = atoi(p as &const byte);
+    if n2 > 0 {
+        if n2 > BENCH_MAX_THREADS {
+            return BENCH_MAX_THREADS;
+        }
+        return n2;
+    }
+    return BENCH_THREAD_COUNT;
 }
 
 /// 若找到 \r\n\r\n，返回其结束位置（首个正文起点）；否则 0
@@ -881,13 +912,15 @@ export fn main() i32 {
     set_process_stack_limit_bytes(BENCH_MAIN_STACK_BYTES);
     _ = signal(SIGPIPE, SIG_IGN as &void);
 
-    var threads: [pthread_t: 64] = [];
+    var n_threads: i32 = argv_thread_count();
+    var threads: [pthread_t: BENCH_MAX_THREADS as usize] = [];
+    var thread_arg: i32 = n_threads;
     var i: i32 = 1;
-    while i < BENCH_THREAD_COUNT && i < 64 {
+    while i < n_threads && i < BENCH_MAX_THREADS {
         var attr: pthread_attr_t = pthread_attr_t{};
         _ = pthread_attr_init(&attr);
         _ = pthread_attr_setstacksize(&attr, BENCH_WORKER_STACK_BYTES);
-        const ret: i32 = pthread_create(&threads[i], &attr as &const pthread_attr_t, &bench_worker_thread as &void, null as &void);
+        const ret: i32 = pthread_create(&threads[i], &attr as &const pthread_attr_t, &bench_worker_thread as &void, &thread_arg as &void);
         _ = pthread_attr_destroy(&attr);
         if ret != 0 {
             return 1;
@@ -895,10 +928,10 @@ export fn main() i32 {
         i = i + 1;
     }
 
-    _ = bench_worker_thread(null as &void);
+    _ = bench_worker_thread(&thread_arg as &void);
 
     i = 1;
-    while i < BENCH_THREAD_COUNT && i < 64 {
+    while i < n_threads && i < BENCH_MAX_THREADS {
         _ = pthread_join(&threads[i], null as &&void);
         i = i + 1;
     }
