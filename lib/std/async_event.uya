@@ -60,7 +60,7 @@ export struct LinuxEpoll : EventLoop {
     slot_generations: [u32: 1024] = [], // 代际计数，防止 fd 复用混淆
     next_generation: u32,               // 全局代际计数器
 
-    /// 查找指定 fd 的 slot（线性扫描，O(n)，n=1024 可接受）
+    /// 查找指定 fd 的 slot（线性扫描，O(n)，但容量仅 1024）
     fn find_slot(self: &Self, fd: i32) i32 {
         var i: i32 = 0;
         while i < 1024 {

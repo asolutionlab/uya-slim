@@ -41,8 +41,6 @@ const CLONE_FLAGS: i64 = 0x00150F00;  // CLONE_VM | CLONE_FS | CLONE_FILES | CLO
 
 // 用于从 clone 子线程到父线程传递 descriptor 的临时指针（仍受 _pthread_create_mutex 保护）
 var _pthread_child_desc: &pthread_desc = null;
-
-// C 后端对 pointer->field 的代码生成在某些上下文中存在 bug，临时用全局变量保存启动参数以绕过
 var _pthread_start_fn_tmp: &void = null;
 var _pthread_start_arg_tmp: &void = null;
 
@@ -61,16 +59,9 @@ const PTHREAD_DESTRUCTOR_ITERATIONS: i32 = 4;
 // 通过 @asm 间接调用函数指针 start_fn(start_arg)，x86-64 调用约定：rdi=arg，返回值在 rax
 // 输出用 i64 存指针，再转回 &void（@asm 输出仅允许整数）
 fn _pthread_call_start(start_fn: &void, start_arg: &void) &void {
-    std.cfg(std.target_arch == .ta_x86_64, {
-        var ret: i64 = 0;
-        @asm {
-            "mov %2, %%rdi\n\tmov %1, %%rax\n\tcall *%%rax\n\tmov %%rax, %0" (start_fn, start_arg, -> ret);
-        } clobbers = ["rax", "rdi", "rcx", "r11", "memory"];
-        return (ret as usize) as &void;
-    }, {
-        const r: usize = uya_thread_call_usize(start_fn, start_arg as usize);
-        return r as &void;
-    })
+    // 使用生成器注入的 typed helper，避免手写 `call *%rax` 破坏 x86_64 栈对齐。
+    const r: usize = uya_thread_call_usize(start_fn, start_arg as usize);
+    return r as &void;
 }
 
 // pthread_t - 线程标识
@@ -96,6 +87,8 @@ struct pthread_desc {
     stack_size: usize,
     detached: atomic i32,
     exited: atomic i32,
+    resources_released: atomic i32,
+    started: atomic i32,
     result: &void,
     pub_handle: &pthread_t,
     start_routine: &void,
@@ -110,7 +103,7 @@ struct pthread_desc {
 const PTHREAD_MAX_THREADS: usize = 1024;
 struct pthread_registry_entry { tid: i64, desc: &pthread_desc }
 var _pthread_registry: [pthread_registry_entry: PTHREAD_MAX_THREADS] = [];
-var _pthread_main_desc: pthread_desc = pthread_desc{ tid: 0, stack: null, stack_size: 0, detached: 0, exited: 0, result: null, pub_handle: null, start_routine: null, arg: null, joinstate: PTHREAD_JOINSTATE_JOINABLE, cancel_state: PTHREAD_CANCEL_ENABLE, cancel_type: PTHREAD_CANCEL_DEFERRED, cancel_pending: 0, tsd_values: null };
+var _pthread_main_desc: pthread_desc = pthread_desc{ tid: 0, stack: null, stack_size: 0, detached: 0, exited: 0, resources_released: 0, started: 1, result: null, pub_handle: null, start_routine: null, arg: null, joinstate: PTHREAD_JOINSTATE_JOINABLE, cancel_state: PTHREAD_CANCEL_ENABLE, cancel_type: PTHREAD_CANCEL_DEFERRED, cancel_pending: 0, tsd_values: null };
 var _pthread_main_handle: pthread_t = pthread_t{ tid: 0, stack: null, stack_size: 0, detached: 0, exited: 0, result: null, start_routine: null, arg: null };
 var _pthread_main_initialized: atomic i32 = 0;
 
@@ -307,6 +300,42 @@ fn _pthread_thread_exit(desc: &pthread_desc, retval: &void) void {
     sys_exit(0);
 }
 
+export extern "libc" fn _pthread_child_bootstrap(desc: &pthread_desc) void {
+    if desc == null {
+        sys_exit(0);
+        return;
+    }
+    desc.started = 1;
+    _pthread_thread_exit(desc, _pthread_call_start(desc.start_routine, desc.arg));
+}
+
+fn _pthread_release_resources_once(desc: &pthread_desc) void {
+    if desc == null {
+        return;
+    }
+    var expected: i32 = 0;
+    if __atomic_compare_exchange_n((&desc.resources_released) as &i32, &expected, 1, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST) == 0 {
+        return;
+    }
+    const stack_mem: &void = desc.stack;
+    const pub_handle: &pthread_t = desc.pub_handle;
+    const tid: i64 = desc.tid;
+    if pub_handle != null {
+        pub_handle.stack = null as &void;
+        pub_handle.stack_size = 0;
+        pub_handle.exited = 1;
+        pub_handle.result = desc.result;
+        pub_handle.detached = desc.detached;
+    }
+    if tid != 0 {
+        _pthread_registry_remove(tid);
+    }
+    if stack_mem != null {
+        free(stack_mem);
+    }
+    free(desc as &void);
+}
+
 // ============================================================
 // 线程属性（pthread_attr）
 // ============================================================
@@ -385,6 +414,9 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     if thread == null {
         return 22; // EINVAL
     }
+    if start_routine == null {
+        return 22; // EINVAL
+    }
 
     // 获取栈大小（使用属性或默认值）
     var stack_size: usize = PTHREAD_STACK_SIZE;
@@ -418,6 +450,8 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     desc.stack_size = stack_size;
     desc.detached = detached;
     desc.exited = 0;
+    desc.resources_released = 0;
+    desc.started = 0;
     desc.result = null;
     desc.pub_handle = thread;
     desc.start_routine = start_routine;
@@ -435,18 +469,17 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
     // 多线程安全：同一时刻只有一个 pthread_create 能写 trampoline 全局并 clone
     _ = pthread_mutex_lock(&_pthread_create_mutex);
     _pthread_child_desc = desc;
-    _pthread_start_fn_tmp = start_routine;
-    _pthread_start_arg_tmp = arg;
 
-    // x86_64：内联汇编直接 syscall；ARM 等：libc.sys_clone（@syscall 按架构生成正确约定）
     var tid: i64 = 0;
     var child_ptid: i32 = 0;
     const flags: i64 = CLONE_FLAGS;
     std.cfg(std.target_arch == .ta_x86_64, {
+        _pthread_start_fn_tmp = start_routine;
+        _pthread_start_arg_tmp = arg;
         const stack_top: i64 = top as i64;
         const ptid_ptr: i64 = (&child_ptid) as i64;
         @asm {
-            "mov $56, %%rax\n\tmov $0x150f00, %%rdi\n\tmov %1, %%rsi\n\tmov %2, %%rdx\n\txor %%r10, %%r10\n\txor %%r8, %%r8\n\tsyscall\n\ttest %%rax, %%rax\n\tjnz 1f\n\tmov _pthread_start_fn_tmp(%%rip), %%rdi\n\tmov _pthread_start_arg_tmp(%%rip), %%rsi\n\tcall _pthread_call_start\n\tmov %%rax, %%rsi\n\tmov _pthread_child_desc(%%rip), %%rdi\n\tcall _pthread_thread_exit\n1:\n\tmov %%rax, %0"
+            "mov $56, %%rax\n\tmov $0x150f00, %%rdi\n\tmov %1, %%rsi\n\tmov %2, %%rdx\n\txor %%r10, %%r10\n\txor %%r8, %%r8\n\tsyscall\n\ttest %%rax, %%rax\n\tjnz 1f\n\tmov _pthread_child_desc(%%rip), %%rdi\n\tcall _pthread_child_bootstrap\n1:\n\tmov %%rax, %0"
             (stack_top, ptid_ptr, -> tid);
         } clobbers = ["rax", "rdi", "rsi", "rdx", "r10", "r8", "rcx", "r11", "memory"];
     }, {
@@ -456,10 +489,11 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
         };
         if tid == 0 {
             _ = sys_set_tid_address(null);
-            _pthread_thread_exit(desc, _pthread_call_start(_pthread_start_fn_tmp, _pthread_start_arg_tmp));
+            desc.started = 1;
+            _pthread_thread_exit(desc, _pthread_call_start(desc.start_routine, desc.arg));
         }
     })
-    
+
     if tid < 0 {
         _ = pthread_mutex_unlock(&_pthread_create_mutex);
         free(stack_mem);
@@ -467,8 +501,13 @@ export extern "libc" fn pthread_create(thread: &pthread_t, attr: &const pthread_
         return 1;
     }
 
+    while desc.started == 0 {
+        _ = pthread_yield();
+    }
+
     // 父线程路径
     desc.tid = tid;
+    _pthread_child_desc = null;
 
     thread.tid = tid;
     thread.stack = stack_mem;
@@ -508,15 +547,9 @@ export extern "libc" fn pthread_join(thread: &pthread_t, retval: & &void) i32 {
             if retval != null {
                 retval[0] = desc.result;
             }
-            if stack_mem != null { free(stack_mem); }
-            _pthread_registry_remove(tid);
-            free(desc as &void);
-            thread.stack = null as &void;
-            thread.stack_size = 0;
-            thread.exited = 1;
-            thread.result = desc.result;
             var expected: i32 = PTHREAD_JOINSTATE_EXITED;
             __atomic_compare_exchange_n((&desc.joinstate) as &i32, &expected, PTHREAD_JOINSTATE_JOINED, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST);
+            _pthread_release_resources_once(desc);
             return 0;
         }
         if state == PTHREAD_JOINSTATE_DETACHED || state == PTHREAD_JOINSTATE_JOINED {
@@ -554,15 +587,9 @@ export extern "libc" fn pthread_detach(thread: &pthread_t) i32 {
             continue;
         }
         if state == PTHREAD_JOINSTATE_EXITED {
-            if thread.stack != null { free(thread.stack); }
-            _pthread_registry_remove(tid);
-            free(desc as &void);
-            thread.stack = null as &void;
-            thread.stack_size = 0;
-            thread.exited = 1;
-            thread.detached = 1;
             var expected: i32 = PTHREAD_JOINSTATE_EXITED;
             __atomic_compare_exchange_n((&desc.joinstate) as &i32, &expected, PTHREAD_JOINSTATE_JOINED, 0, PTHREAD_ATOMIC_SEQ_CST, PTHREAD_ATOMIC_SEQ_CST);
+            _pthread_release_resources_once(desc);
             return 0;
         }
         if state == PTHREAD_JOINSTATE_DETACHED || state == PTHREAD_JOINSTATE_JOINED {
@@ -604,6 +631,9 @@ export extern "libc" fn pthread_exit(retval: &void) void {
     var desc: &pthread_desc = _pthread_registry_find(tid);
     if desc == null && _pthread_main_desc.tid == tid {
         desc = &_pthread_main_desc;
+    }
+    if desc == null && _pthread_child_desc != null {
+        desc = _pthread_child_desc;
     }
     _pthread_thread_exit(desc, retval);
 }

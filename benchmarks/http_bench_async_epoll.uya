@@ -23,8 +23,9 @@ use std.runtime.get_argv;
 use std.runtime.entry.set_process_stack_limit_bytes;
 
 const BENCH_PORT: u16 = 8876;
-/// 与仓库 `compile.sh` / 文档中的 `ulimit -s 65536`（65536 KiB）一致，降低默认栈下 @async_fn 状态机 SIGSEGV 风险
+/// 主线程栈保持较大，避免启动阶段深调用链溢出；worker 栈单独缩小，先验证 28 线程可否稳定创建。
 const BENCH_MAIN_STACK_BYTES: u64 = 65536 as u64 * 1024;
+const BENCH_WORKER_STACK_BYTES: usize = 8 * 1024 * 1024;
 const BACKLOG: i32 = 1024;
 /// 槽位容量：高并发压测（如 ab -c 100）需要明显高于并发数，避免无槽位时直接丢连接。
 const SLOT_CAP: i32 = 1024;
@@ -32,13 +33,173 @@ const SLOT_READ_CAP: usize = 4096;
 const MAX_PATH_LEN: usize = 256;
 const SIGPIPE: i32 = 13;
 const SIG_IGN: usize = 1;
-const _SC_NPROCESSORS_ONLN: i32 = 84;
+const BENCH_THREAD_COUNT: i32 = 28;
 
-extern "libc" fn sysconf(name: i32) i64;
+struct BenchClientFuture : Future<!usize> {
+    ctx: &BenchContext = null as &BenchContext,
+    cfd: i32 = 0 - 1,
+    slot: usize = 0,
+    io_state: i32 = 0,
+    io_nonblocking_ready: i32 = 0,
+    read_filled: usize = 0,
+    done: i32 = 0,
+    result: usize = 0,
+
+    fn ensure_nonblocking(self: &Self) bool {
+        if self.io_nonblocking_ready != 0 {
+            return true;
+        }
+        const flags_result: !i32 = sys_fcntl(self.cfd, F_GETFL, 0);
+        const flags: i32 = flags_result catch {
+            return false;
+        };
+        if (flags & O_NONBLOCK) == 0 {
+            const set_result: !i32 = sys_fcntl(self.cfd, F_SETFL, flags | O_NONBLOCK);
+            _ = set_result catch {
+                return false;
+            };
+        }
+        self.io_nonblocking_ready = 1;
+        return true;
+    },
+
+    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
+        while true {
+            if self.done != 0 {
+                return bench_poll_ready_ok(self.result);
+            }
+            if self.io_state == 0 {
+                self.read_filled = 0;
+                self.io_state = 1;
+            }
+            if self.io_state == 1 {
+                if self.read_filled >= SLOT_READ_CAP {
+                    self.done = 1;
+                    self.result = 0 as usize;
+                    return bench_poll_ready_ok(self.result);
+                }
+                if self.read_filled > 0 {
+                    const he0: usize = find_header_end(self.ctx.bench_slot_buf_base(self.slot), self.read_filled);
+                    if he0 != 0 {
+                        if !self.ctx.prepare_bench_client_response(self.slot, self.read_filled) {
+                            self.done = 1;
+                            self.result = 0 as usize;
+                            return bench_poll_ready_ok(self.result);
+                        }
+                        self.io_state = 3;
+                        continue;
+                    }
+                }
+                if !self.ensure_nonblocking() {
+                    self.done = 1;
+                    self.result = 0 as usize;
+                    return bench_poll_ready_ok(self.result);
+                }
+                const base: &byte = @ptr_from_usize(@usize_from_ptr(self.ctx.bench_slot_buf_base(self.slot) as &void) + self.read_filled) as &byte;
+                const result: !isize = sys_read(self.cfd, base as *byte, SLOT_READ_CAP - self.read_filled);
+                const n: isize = result catch |err| {
+                    if (@error_id(err) as i32) == EAGAIN {
+                        waker.wait_readable(self.cfd);
+                        return Poll<!usize>.Pending({});
+                    }
+                    self.done = 1;
+                    self.result = 0 as usize;
+                    return bench_poll_ready_ok(self.result);
+                };
+                if n <= 0 {
+                    self.done = 1;
+                    self.result = 0 as usize;
+                    return bench_poll_ready_ok(self.result);
+                }
+                self.read_filled = self.read_filled + (n as usize);
+                if find_header_end(self.ctx.bench_slot_buf_base(self.slot), self.read_filled) == 0 {
+                    continue;
+                }
+                if !self.ctx.prepare_bench_client_response(self.slot, self.read_filled) {
+                    self.done = 1;
+                    self.result = 0 as usize;
+                    return bench_poll_ready_ok(self.result);
+                }
+                self.io_state = 3;
+                continue;
+            }
+            if self.io_state == 3 {
+                if self.ctx.cli_woff[self.slot] >= self.ctx.cli_hdr_len[self.slot] {
+                    self.io_state = 5;
+                    continue;
+                }
+                if !self.ensure_nonblocking() {
+                    self.done = 1;
+                    self.result = 0 as usize;
+                    return bench_poll_ready_ok(self.result);
+                }
+                const wr_base: &const byte = @ptr_from_usize(@usize_from_ptr(self.ctx.cli_hdr_line_base(self.slot) as &void) + self.ctx.cli_woff[self.slot]) as &const byte;
+                const wr_len: usize = self.ctx.cli_hdr_len[self.slot] - self.ctx.cli_woff[self.slot];
+                const wr_result: !isize = sys_write(self.cfd, wr_base as *const byte, wr_len);
+                const n2: isize = wr_result catch |err| {
+                    if (@error_id(err) as i32) == EAGAIN {
+                        waker.wait_writable(self.cfd);
+                        return Poll<!usize>.Pending({});
+                    }
+                    self.done = 1;
+                    self.result = 0 as usize;
+                    return bench_poll_ready_ok(self.result);
+                };
+                if n2 <= 0 {
+                    self.done = 1;
+                    self.result = 0 as usize;
+                    return bench_poll_ready_ok(self.result);
+                }
+                self.ctx.cli_woff[self.slot] = self.ctx.cli_woff[self.slot] + (n2 as usize);
+                continue;
+            }
+            if self.io_state == 5 {
+                if self.ctx.cli_body_woff[self.slot] >= self.ctx.cli_body_len[self.slot] {
+                    if self.ctx.cli_wants_close[self.slot] != 0 {
+                        self.done = 1;
+                        self.result = 0 as usize;
+                        return bench_poll_ready_ok(self.result);
+                    }
+                    const consumed: usize = self.ctx.cli_req_consumed[self.slot];
+                    const remain: usize = self.ctx.cli_compact_unconsumed(self.slot, consumed, self.read_filled);
+                    self.read_filled = remain;
+                    self.ctx.cli_filled[self.slot] = remain;
+                    self.io_state = 1;
+                    continue;
+                }
+                if !self.ensure_nonblocking() {
+                    self.done = 1;
+                    self.result = 0 as usize;
+                    return bench_poll_ready_ok(self.result);
+                }
+                const body_base: &const byte = @ptr_from_usize(@usize_from_ptr(self.ctx.cli_body_const_base(self.ctx.cli_body_kind[self.slot]) as &void) + self.ctx.cli_body_woff[self.slot]) as &const byte;
+                const body_len: usize = self.ctx.cli_body_len[self.slot] - self.ctx.cli_body_woff[self.slot];
+                const wr_result: !isize = sys_write(self.cfd, body_base as *const byte, body_len);
+                const n3: isize = wr_result catch |err| {
+                    if (@error_id(err) as i32) == EAGAIN {
+                        waker.wait_writable(self.cfd);
+                        return Poll<!usize>.Pending({});
+                    }
+                    self.done = 1;
+                    self.result = 0 as usize;
+                    return bench_poll_ready_ok(self.result);
+                };
+                if n3 <= 0 {
+                    self.done = 1;
+                    self.result = 0 as usize;
+                    return bench_poll_ready_ok(self.result);
+                }
+                self.ctx.cli_body_woff[self.slot] = self.ctx.cli_body_woff[self.slot] + (n3 as usize);
+                continue;
+            }
+            return bench_poll_ready_ok(0);
+        }
+    }
+}
 
 struct BenchSlot {
-    /// 使用 `Future<!usize>` 以便与 `try @await async_fd_*`（`Future<!usize>`）在同一状态机内一致；完成时载荷为 0。
-    future: Future<!usize> = Future<!usize>{},
+    /// 直接内嵌 concrete future，避免每连接盒装分配和全局 heap 锁竞争。
+    future: BenchClientFuture = BenchClientFuture{},
     waker: Waker = Waker{},
     active: i32 = 0,
     epoll_fd: i32 = 0,
@@ -51,6 +212,8 @@ struct BenchContext {
     listen_fd: i32 = 0 - 1,
     listen_waker: Waker = Waker{},
     slots: [BenchSlot: SLOT_CAP] = [],
+    active_slots: [i32: SLOT_CAP] = [],
+    active_count: i32 = 0,
     /// 每槽读缓冲放在 BSS，避免状态机 + 多槽读缓冲撑爆栈
     slot_read: [byte: SLOT_READ_CAP * SLOT_CAP as usize] = [],
     hello_body: [byte: 5] = [],
@@ -71,6 +234,7 @@ struct BenchContext {
 
     fn run(self: &Self) i32 {
         self.init_static_bodies();
+        self.active_count = 0;
         var z: i32 = 0;
         while z < SLOT_CAP {
             self.slots[z as usize].active = 0;
@@ -188,16 +352,23 @@ struct BenchContext {
             const dereg_result: !i32 = loop.deregister(slot.cfd);
             _ = dereg_result catch {};
         }
-        if slot.future.data != null {
-            free(slot.future.data as &void);
-        }
         _ = sys_close(slot.cfd) catch {};
         slot.active = 0;
         slot.epoll_fd = 0;
         slot.epoll_interest = 0;
         slot.cfd = 0 - 1;
-        slot.future.data = null;
-        slot.future.vtable = null;
+        var i: i32 = 0;
+        while i < self.active_count {
+            if self.active_slots[i as usize] == slot_idx {
+                const last_idx: i32 = self.active_count - 1;
+                if i != last_idx {
+                    self.active_slots[i as usize] = self.active_slots[last_idx as usize];
+                }
+                self.active_count = last_idx;
+                break;
+            }
+            i = i + 1;
+        }
     },
 
     fn find_free_slot(self: &Self) i32 {
@@ -243,6 +414,10 @@ struct BenchContext {
             slot.epoll_interest = 0;
             slot.waker = Waker{};
             slot.future = handle_bench_client(self, cfd, si as usize);
+            if self.active_count < SLOT_CAP {
+                self.active_slots[self.active_count as usize] = si;
+                self.active_count = self.active_count + 1;
+            }
         }
     },
 
@@ -251,8 +426,9 @@ struct BenchContext {
             var made_progress: i32 = 0;
             var registered_new: i32 = 0;
             var i: i32 = 0;
-            while i < SLOT_CAP {
-                const slot: &BenchSlot = &self.slots[i as usize];
+            while i < self.active_count {
+                const slot_idx: i32 = self.active_slots[i as usize];
+                const slot: &BenchSlot = &self.slots[slot_idx as usize];
                 if slot.active == 0 {
                     i = i + 1;
                     continue;
@@ -263,7 +439,7 @@ struct BenchContext {
                 const p: Poll<!usize> = slot.future.poll(&slot.waker);
                 match p {
                     .Ready(_) => {
-                        self.slot_release(i);
+                        self.slot_release(slot_idx);
                         made_progress = 1;
                     },
                     .Pending(_) => {
@@ -293,14 +469,6 @@ struct BenchContext {
                 const loop: EventLoop = self.epoll;
                 const poll_result: !i32 = loop.poll(timeout_ms);
                 _ = poll_result catch {};
-                var ri: i32 = 0;
-                while ri < SLOT_CAP {
-                    const rs: &BenchSlot = &self.slots[ri as usize];
-                    if rs.active != 0 && rs.epoll_fd != 0 {
-                        rs.waker.reset();
-                    }
-                    ri = ri + 1;
-                }
                 if self.listen_waker.is_woken() {
                     self.listen_waker.reset();
                     self.accept_loop();
@@ -310,14 +478,6 @@ struct BenchContext {
             const loop: EventLoop = self.epoll;
             const poll_result: !i32 = loop.poll(timeout_ms);
             _ = poll_result catch {};
-            var rj: i32 = 0;
-            while rj < SLOT_CAP {
-                const rs2: &BenchSlot = &self.slots[rj as usize];
-                if rs2.active != 0 && rs2.epoll_fd != 0 {
-                    rs2.waker.reset();
-                }
-                rj = rj + 1;
-            }
             if self.listen_waker.is_woken() {
                 self.listen_waker.reset();
                 self.accept_loop();
@@ -398,6 +558,8 @@ struct BenchContext {
         self.slots[0].epoll_interest = 0;
         self.slots[0].waker = Waker{};
         self.slots[0].future = handle_bench_client(self, cfd, 0);
+        self.active_slots[0] = 0;
+        self.active_count = 1;
         self.bench_poll_slots(0 - 1);
         return 0;
     },
@@ -702,169 +864,7 @@ fn bench_poll_ready_ok(value: usize) Poll<!usize> {
     return p;
 }
 
-struct BenchClientFuture : Future<!usize> {
-    ctx: &BenchContext,
-    cfd: i32 = 0 - 1,
-    slot: usize = 0,
-    io_state: i32 = 0,
-    io_nonblocking_ready: i32 = 0,
-    read_filled: usize = 0,
-    done: i32 = 0,
-    result: usize = 0,
-
-    fn ensure_nonblocking(self: &Self) bool {
-        if self.io_nonblocking_ready != 0 {
-            return true;
-        }
-        const flags_result: !i32 = sys_fcntl(self.cfd, F_GETFL, 0);
-        const flags: i32 = flags_result catch {
-            return false;
-        };
-        if (flags & O_NONBLOCK) == 0 {
-            const set_result: !i32 = sys_fcntl(self.cfd, F_SETFL, flags | O_NONBLOCK);
-            _ = set_result catch {
-                return false;
-            };
-        }
-        self.io_nonblocking_ready = 1;
-        return true;
-    },
-
-    fn poll(self: &Self, waker: &Waker) Poll<!usize> {
-        while true {
-            if self.done != 0 {
-                return bench_poll_ready_ok(self.result);
-            }
-            if self.io_state == 0 {
-                self.read_filled = 0;
-                self.io_state = 1;
-            }
-            if self.io_state == 1 {
-                if self.read_filled >= SLOT_READ_CAP {
-                    self.done = 1;
-                    self.result = 0 as usize;
-                    return bench_poll_ready_ok(self.result);
-                }
-                if self.read_filled > 0 {
-                    const he0: usize = find_header_end(self.ctx.bench_slot_buf_base(self.slot), self.read_filled);
-                    if he0 != 0 {
-                        if !self.ctx.prepare_bench_client_response(self.slot, self.read_filled) {
-                            self.done = 1;
-                            self.result = 0 as usize;
-                            return bench_poll_ready_ok(self.result);
-                        }
-                        self.io_state = 3;
-                        continue;
-                    }
-                }
-                if !self.ensure_nonblocking() {
-                    self.done = 1;
-                    self.result = 0 as usize;
-                    return bench_poll_ready_ok(self.result);
-                }
-                const base: &byte = @ptr_from_usize(@usize_from_ptr(self.ctx.bench_slot_buf_base(self.slot) as &void) + self.read_filled) as &byte;
-                const result: !isize = sys_read(self.cfd, base as *byte, SLOT_READ_CAP - self.read_filled);
-                const n: isize = result catch |err| {
-                    if (@error_id(err) as i32) == EAGAIN {
-                        waker.wait_readable(self.cfd);
-                        return Poll<!usize>.Pending({});
-                    }
-                    self.done = 1;
-                    self.result = 0 as usize;
-                    return bench_poll_ready_ok(self.result);
-                };
-                if n <= 0 {
-                    self.done = 1;
-                    self.result = 0 as usize;
-                    return bench_poll_ready_ok(self.result);
-                }
-                self.read_filled = self.read_filled + (n as usize);
-                if find_header_end(self.ctx.bench_slot_buf_base(self.slot), self.read_filled) == 0 {
-                    continue;
-                }
-                if !self.ctx.prepare_bench_client_response(self.slot, self.read_filled) {
-                    self.done = 1;
-                    self.result = 0 as usize;
-                    return bench_poll_ready_ok(self.result);
-                }
-                self.io_state = 3;
-                continue;
-            }
-            if self.io_state == 3 {
-                if self.ctx.cli_woff[self.slot] >= self.ctx.cli_hdr_len[self.slot] {
-                    self.io_state = 5;
-                    continue;
-                }
-                if !self.ensure_nonblocking() {
-                    self.done = 1;
-                    self.result = 0 as usize;
-                    return bench_poll_ready_ok(self.result);
-                }
-                const wr_base: &const byte = @ptr_from_usize(@usize_from_ptr(self.ctx.cli_hdr_line_base(self.slot) as &void) + self.ctx.cli_woff[self.slot]) as &const byte;
-                const wr_len: usize = self.ctx.cli_hdr_len[self.slot] - self.ctx.cli_woff[self.slot];
-                const wr_result: !isize = sys_write(self.cfd, wr_base as *const byte, wr_len);
-                const n2: isize = wr_result catch |err| {
-                    if (@error_id(err) as i32) == EAGAIN {
-                        waker.wait_writable(self.cfd);
-                        return Poll<!usize>.Pending({});
-                    }
-                    self.done = 1;
-                    self.result = 0 as usize;
-                    return bench_poll_ready_ok(self.result);
-                };
-                if n2 <= 0 {
-                    self.done = 1;
-                    self.result = 0 as usize;
-                    return bench_poll_ready_ok(self.result);
-                }
-                self.ctx.cli_woff[self.slot] = self.ctx.cli_woff[self.slot] + (n2 as usize);
-                continue;
-            }
-            if self.io_state == 5 {
-                if self.ctx.cli_body_woff[self.slot] >= self.ctx.cli_body_len[self.slot] {
-                    if self.ctx.cli_wants_close[self.slot] != 0 {
-                        self.done = 1;
-                        self.result = 0 as usize;
-                        return bench_poll_ready_ok(self.result);
-                    }
-                    const consumed: usize = self.ctx.cli_req_consumed[self.slot];
-                    const remain: usize = self.ctx.cli_compact_unconsumed(self.slot, consumed, self.read_filled);
-                    self.read_filled = remain;
-                    self.ctx.cli_filled[self.slot] = remain;
-                    self.io_state = 1;
-                    continue;
-                }
-                if !self.ensure_nonblocking() {
-                    self.done = 1;
-                    self.result = 0 as usize;
-                    return bench_poll_ready_ok(self.result);
-                }
-                const body_base: &const byte = @ptr_from_usize(@usize_from_ptr(self.ctx.cli_body_const_base(self.ctx.cli_body_kind[self.slot]) as &void) + self.ctx.cli_body_woff[self.slot]) as &const byte;
-                const body_len: usize = self.ctx.cli_body_len[self.slot] - self.ctx.cli_body_woff[self.slot];
-                const wr_result: !isize = sys_write(self.cfd, body_base as *const byte, body_len);
-                const n3: isize = wr_result catch |err| {
-                    if (@error_id(err) as i32) == EAGAIN {
-                        waker.wait_writable(self.cfd);
-                        return Poll<!usize>.Pending({});
-                    }
-                    self.done = 1;
-                    self.result = 0 as usize;
-                    return bench_poll_ready_ok(self.result);
-                };
-                if n3 <= 0 {
-                    self.done = 1;
-                    self.result = 0 as usize;
-                    return bench_poll_ready_ok(self.result);
-                }
-                self.ctx.cli_body_woff[self.slot] = self.ctx.cli_body_woff[self.slot] + (n3 as usize);
-                continue;
-            }
-            return bench_poll_ready_ok(0);
-        }
-    }
-}
-
-fn handle_bench_client(ctx: &BenchContext, cfd: i32, slot: usize) Future<!usize> {
+fn handle_bench_client(ctx: &BenchContext, cfd: i32, slot: usize) BenchClientFuture {
     return BenchClientFuture{
         ctx: ctx,
         cfd: cfd,
@@ -881,15 +881,14 @@ export fn main() i32 {
     set_process_stack_limit_bytes(BENCH_MAIN_STACK_BYTES);
     _ = signal(SIGPIPE, SIG_IGN as &void);
 
-    const cpu_count: i64 = sysconf(_SC_NPROCESSORS_ONLN);
-    var n_threads: i32 = cpu_count as i32;
-    if n_threads <= 0 { n_threads = 1; }
-    if n_threads > 64 { n_threads = 64; }
-
     var threads: [pthread_t: 64] = [];
     var i: i32 = 1;
-    while i < n_threads && i < 64 {
-        const ret: i32 = pthread_create(&threads[i], null as &const pthread_attr_t, &bench_worker_thread as &void, null as &void);
+    while i < BENCH_THREAD_COUNT && i < 64 {
+        var attr: pthread_attr_t = pthread_attr_t{};
+        _ = pthread_attr_init(&attr);
+        _ = pthread_attr_setstacksize(&attr, BENCH_WORKER_STACK_BYTES);
+        const ret: i32 = pthread_create(&threads[i], &attr as &const pthread_attr_t, &bench_worker_thread as &void, null as &void);
+        _ = pthread_attr_destroy(&attr);
         if ret != 0 {
             return 1;
         }
@@ -899,7 +898,7 @@ export fn main() i32 {
     _ = bench_worker_thread(null as &void);
 
     i = 1;
-    while i < n_threads && i < 64 {
+    while i < BENCH_THREAD_COUNT && i < 64 {
         _ = pthread_join(&threads[i], null as &&void);
         i = i + 1;
     }

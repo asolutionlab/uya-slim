@@ -175,13 +175,14 @@ fn find_chunk(needed: usize) &FreeChunk {
 fn split_chunk(chunk: &FreeChunk, needed: usize) void {
     var hdr: &ChunkHeader = &chunk.header;
     var sz: usize = get_size(hdr);
-    var rem: usize = sz - needed;
+    var alloc_size: usize = needed + @size_of(ChunkHeader);
+    var rem: usize = sz - alloc_size;
 
     if rem >= MIN_CHUNK_SIZE + @size_of(ChunkHeader) {
-        hdr.size = needed;
-        if is_free(hdr) { hdr.size = needed + 1; }
+        hdr.size = alloc_size;
+        if is_free(hdr) { hdr.size = alloc_size + 1; }
 
-        var new_hdr: &ChunkHeader = (((hdr as &byte) + needed) as &ChunkHeader);
+        var new_hdr: &ChunkHeader = (((hdr as &byte) + alloc_size) as &ChunkHeader);
         new_hdr.magic = CHUNK_MAGIC;
         new_hdr.size = rem;
         set_free(new_hdr, true);

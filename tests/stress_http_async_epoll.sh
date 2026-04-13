@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 DURATION_SEC="${1:-1800}"   # 默认 30 分钟
-SAMPLE_INTERVAL="${2:-10}"  # 默认 10 秒采样
+SAMPLE_INTERVAL="${2:-1}"   # 默认 1 秒采样
 PORT=8876
 BIN="/tmp/uya_stress_http_async_epoll"
 REPORT="/tmp/uya_stress_http_async_epoll_report.txt"
@@ -30,6 +30,7 @@ echo "[1/5] 编译 benchmarks/http_bench_async_epoll.uya ..."
 
 echo "[2/5] 启动服务端 (port=$PORT) ..."
 rm -f "$REPORT" "$WRK_LOG"
+rm -f /tmp/uya_stress_server.log
 echo "timestamp,rss_kb,fd_count" > "$REPORT"
 
 "$BIN" > /tmp/uya_stress_server.log 2>&1 &
