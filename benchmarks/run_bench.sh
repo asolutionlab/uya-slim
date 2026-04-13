@@ -527,14 +527,14 @@ main() {
     log_info "统一对比结果"
     echo "=========================================="
     if [ "$have_tokio" -eq 1 ]; then
-        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "指标" "Uya-fork" "Uya-epoll" "Go" "C" "Tokio"
+        printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "指标" "Uya-fork" "Uya-epoll-async" "Go" "C" "Tokio"
         echo "|--------------------|--------------|--------------|--------------|--------------|--------------|"
         printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "QPS(wrk)" "${uya_fork_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}" "${tokio_rps:-0}"
         printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-Req(ab -k)" "${uya_fork_ka}" "${uya_epoll_ka}" "${go_ka}" "${c_ka}" "${tokio_ka}"
         printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-Failed" "${uya_fork_ka_failed}" "${uya_epoll_ka_failed}" "${go_ka_failed}" "${c_ka_failed}" "${tokio_ka_failed}"
         printf "| %-20s | %-12s | %-12s | %-12s | %-12s | %-12s |\n" "KA-RPS(ab -k)" "${uya_fork_ka_rps}" "${uya_epoll_ka_rps}" "${go_ka_rps}" "${c_ka_rps}" "${tokio_ka_rps}"
     else
-        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "指标" "Uya-fork" "Uya-epoll" "Go" "C"
+        printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "指标" "Uya-fork" "Uya-epoll-async" "Go" "C"
         echo "|--------------------|----------------|----------------|----------------|----------------|"
         printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "QPS(wrk)" "${uya_fork_rps:-0}" "${uya_epoll_rps:-0}" "${go_rps:-0}" "${c_rps:-0}"
         printf "| %-20s | %-14s | %-14s | %-14s | %-14s |\n" "KA-Req(ab -k)" "${uya_fork_ka}" "${uya_epoll_ka}" "${go_ka}" "${c_ka}"

@@ -1,6 +1,6 @@
 # 编译器 / 标准库 Bug 待办清单
 
-**最后更新：** 2026-04-12（关闭 microapp LTO + `--gc-sections` 链接失败 bug；关闭 `@async_fn` 变量提升与嵌套块初始化 bug）
+**最后更新：** 2026-04-13（新增真 `@async_fn/@await` async frame 堆分配 bug 记录）
 
 本文档用于跟踪 release 验证中发现的问题，便于逐项修复、验证和关闭。
 
@@ -56,6 +56,18 @@
   - 影响：release 流程不再被这些测试阻塞，CI 环境下网络测试会优雅跳过
 
 ## 编译器 bug
+
+- [ ] **P0 / 严重：真 `@async_fn/@await` lowering 仍对 async frame 做堆分配，热路径产生 `malloc/free`**
+  - 状态：待修复
+  - 验证状态：`benchmarks/http_bench_async_epoll_await_simple.uya` 编译出的 C 代码中，`@async_fn` 入口会生成 `malloc(sizeof(...))` 的 async frame；运行压测时 RSS 持续上涨，CPU 占用反而下降
+  - 归属：`src/codegen/c99/**` / async lowering
+  - 现象：`@async_fn` / `@await` 的 lowering 将每个 async 函数实例化为堆上状态机对象，而不是栈上 frame 或池化 frame；在 HTTP benchmark 这种高频短连接 / keep-alive 场景里，会造成明显的内存抖动和分配开销
+  - 影响：真 async 版 benchmark 无法作为性能对比基线，且会掩盖 `epoll` / 协程调度本身的真实性能
+  - 相关文件：`src/codegen/c99/function.uya`、`src/codegen/c99/stmt.uya`、`lib/std/async.uya`、`benchmarks/http_bench_async_epoll_await_simple.uya`
+  - 修复方向：
+    1. 让 async frame 支持栈上/对象池分配，避免默认 `malloc/free`
+    2. 或者为 benchmark/运行时提供可切换的 frame allocator
+    3. 最终目标是保留 `@async_fn/@await` 语义，同时去掉热路径堆分配
 
 - [ ] **P1 / 高：生成的 C 代码在 GCC `-O2` 下运行时 SIGSEGV，`-O1` 正常**
   - 状态：待修复

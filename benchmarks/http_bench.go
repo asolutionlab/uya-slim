@@ -1,5 +1,4 @@
-// benchmarks/http_bench.go — 与 http_bench.uya 对齐的 Go 参考服务端（同端口、同路由、同响应体长度）
-// Rust 对照：benchmarks/http_bench_tokio（Tokio + Hyper）
+// benchmarks/http_bench.go — 纯 Go 裸 socket HTTP 服务端（与 http_bench.uya 对齐）
 //
 // 路由与体大小（与 Uya 版一致）：
 //   GET /              → "hello"（5 字节）
@@ -9,7 +8,7 @@
 //   GET /payload10k    → 10240 字节 'a'
 //   GET /payload100k   → 102400 字节 'a'
 //
-// 默认 127.0.0.1:8876；`--once`：accept 一次连接，处理首个请求后退出（与 Uya `--once` 用途类似）。
+// 默认 127.0.0.1:8876；`--once`：accept 一次连接，处理首个请求后退出。
 //
 // 运行：
 //   cd benchmarks && go run .
@@ -23,175 +22,314 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"net/http"
 	"os"
-	"strings"
+	"runtime"
+	"strconv"
 )
 
 const benchPort = "8876"
 
 var (
+	helloBody   = []byte("hello")
+	jsonBody    = []byte(`{"ok":true}`)
 	payload1k   = bytes.Repeat([]byte{'a'}, 1024)
 	payload10k  = bytes.Repeat([]byte{'a'}, 10240)
 	payload100k = bytes.Repeat([]byte{'a'}, 102400)
+
+	rootPath      = []byte("/")
+	jsonPath      = []byte("/json")
+	itemPrefix    = []byte("/item/")
+	payload1kPath = []byte("/payload1k")
+	payload10kPath = []byte("/payload10k")
+	payload100kPath = []byte("/payload100k")
+	getMethod     = []byte("GET")
+	http11Version = []byte("HTTP/1.1")
 )
 
-func setPlain(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "text/plain")
-}
-
-func writeOK(w http.ResponseWriter, body []byte) {
-	setPlain(w)
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
-}
-
-func writeEmpty(w http.ResponseWriter, code int) {
-	setPlain(w)
-	w.WriteHeader(code)
-}
-
-func handlerItem(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeEmpty(w, http.StatusMethodNotAllowed)
-		return
+func statusText(code int) string {
+	switch code {
+	case 200:
+		return "OK"
+	case 400:
+		return "Bad Request"
+	case 404:
+		return "Not Found"
+	case 405:
+		return "Method Not Allowed"
+	default:
+		return "Unknown"
 	}
-	rest, ok := strings.CutPrefix(r.URL.Path, "/item/")
-	if !ok || rest == "" || strings.Contains(rest, "/") {
-		if rest == "" {
-			writeEmpty(w, http.StatusBadRequest)
+}
+
+func trimCRLF(b []byte) []byte {
+	if len(b) > 0 && b[len(b)-1] == '\n' {
+		b = b[:len(b)-1]
+	}
+	if len(b) > 0 && b[len(b)-1] == '\r' {
+		b = b[:len(b)-1]
+	}
+	return b
+}
+
+func equalFoldASCII(b []byte, s string) bool {
+	if len(b) != len(s) {
+		return false
+	}
+	for i := 0; i < len(b); i++ {
+		c := b[i]
+		d := s[i]
+		if c == d {
+			continue
+		}
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		if 'A' <= d && d <= 'Z' {
+			d += 'a' - 'A'
+		}
+		if c != d {
+			return false
+		}
+	}
+	return true
+}
+
+func containsTokenCI(b []byte, token string) bool {
+	if len(token) == 0 || len(b) < len(token) {
+		return false
+	}
+	for i := 0; i+len(token) <= len(b); i++ {
+		if equalFoldASCII(b[i:i+len(token)], token) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseRequestLine(line []byte) (method []byte, path []byte, version []byte, ok bool) {
+	line = trimCRLF(line)
+	sp1 := bytes.IndexByte(line, ' ')
+	if sp1 < 0 {
+		return nil, nil, nil, false
+	}
+	rest := line[sp1+1:]
+	sp2 := bytes.IndexByte(rest, ' ')
+	if sp2 < 0 {
+		return nil, nil, nil, false
+	}
+	method = line[:sp1]
+	path = rest[:sp2]
+	version = bytes.TrimSpace(rest[sp2+1:])
+	if len(method) == 0 || len(path) == 0 || len(version) == 0 {
+		return nil, nil, nil, false
+	}
+	if q := bytes.IndexByte(path, '?'); q >= 0 {
+		path = path[:q]
+	}
+	return method, path, version, true
+}
+
+func parseConnectionHeader(line []byte) (found bool, wantsClose bool, wantsKeepAlive bool) {
+	line = trimCRLF(line)
+	if len(line) < 11 {
+		return false, false, false
+	}
+	if !equalFoldASCII(line[:10], "Connection") || line[10] != ':' {
+		return false, false, false
+	}
+	val := bytes.TrimSpace(line[11:])
+	if containsTokenCI(val, "close") {
+		return true, true, false
+	}
+	if containsTokenCI(val, "keep-alive") {
+		return true, false, true
+	}
+	return true, false, false
+}
+
+func readRequest(br *bufio.Reader, http10SessionKeepAlive bool) (method []byte, path []byte, wantsClose bool, http11 bool, err error) {
+	line, err := br.ReadSlice('\n')
+	if err != nil {
+		return nil, nil, true, false, err
+	}
+
+	method, path, version, ok := parseRequestLine(line)
+	if !ok {
+		return nil, nil, true, false, fmt.Errorf("bad request line")
+	}
+	http11 = bytes.Equal(version, http11Version)
+
+	hasConnection := false
+	wantsClose = true
+	for {
+		line, err = br.ReadSlice('\n')
+		if err != nil {
+			return nil, nil, true, http11, err
+		}
+		line = trimCRLF(line)
+		if len(line) == 0 {
+			break
+		}
+		found, closeToken, keepAliveToken := parseConnectionHeader(line)
+		if !found {
+			continue
+		}
+		hasConnection = true
+		if closeToken {
+			wantsClose = true
+		}
+		if keepAliveToken {
+			wantsClose = false
+		}
+	}
+
+	if !hasConnection {
+		if http10SessionKeepAlive {
+			wantsClose = false
+		} else {
+			wantsClose = !http11
+		}
+	}
+	return method, path, wantsClose, http11, nil
+}
+
+func dispatch(method, path []byte) (int, []byte) {
+	if !bytes.Equal(method, getMethod) {
+		return 405, nil
+	}
+	switch {
+	case bytes.Equal(path, rootPath):
+		return 200, helloBody
+	case bytes.Equal(path, jsonPath):
+		return 200, jsonBody
+	case bytes.HasPrefix(path, itemPrefix):
+		id := path[len(itemPrefix):]
+		if len(id) == 0 {
+			return 400, nil
+		}
+		if bytes.IndexByte(id, '/') >= 0 {
+			return 404, nil
+		}
+		return 200, id
+	case bytes.Equal(path, payload1kPath):
+		return 200, payload1k
+	case bytes.Equal(path, payload10kPath):
+		return 200, payload10k
+	case bytes.Equal(path, payload100kPath):
+		return 200, payload100k
+	default:
+		return 404, nil
+	}
+}
+
+func writeResponse(conn *net.TCPConn, status int, body []byte, keepAlive bool) error {
+	var header [256]byte
+	h := header[:0]
+	h = append(h, "HTTP/1.1 "...)
+	h = strconv.AppendInt(h, int64(status), 10)
+	h = append(h, ' ')
+	h = append(h, statusText(status)...)
+	h = append(h, "\r\nContent-Length: "...)
+	h = strconv.AppendInt(h, int64(len(body)), 10)
+	h = append(h, "\r\nContent-Type: text/plain\r\nConnection: "...)
+	if keepAlive {
+		h = append(h, "keep-alive"...)
+	} else {
+		h = append(h, "close"...)
+	}
+	h = append(h, "\r\n\r\n"...)
+
+	bufs := net.Buffers{h, body}
+	_, err := (&bufs).WriteTo(conn)
+	return err
+}
+
+func handleConn(conn *net.TCPConn, once bool) {
+	defer conn.Close()
+	_ = conn.SetNoDelay(true)
+
+	reader := bufio.NewReaderSize(conn, 8192)
+	http10SessionKeepAlive := false
+
+	for {
+		method, path, wantsClose, http11, err := readRequest(reader, http10SessionKeepAlive)
+		if err != nil {
 			return
 		}
-		writeEmpty(w, http.StatusNotFound)
-		return
-	}
-	writeOK(w, []byte(rest))
-}
 
-func registerCompat(mux *http.ServeMux) {
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			writeEmpty(w, http.StatusMethodNotAllowed)
+		status, body := dispatch(method, path)
+		if err := writeResponse(conn, status, body, !wantsClose); err != nil {
 			return
 		}
-		p := r.URL.Path
-		switch {
-		case p == "/":
-			writeOK(w, []byte("hello"))
-		case p == "/json":
-			writeOK(w, []byte(`{"ok":true}`))
-		case strings.HasPrefix(p, "/item/"):
-			handlerItem(w, r)
-		case p == "/payload1k":
-			writeOK(w, payload1k)
-		case p == "/payload10k":
-			writeOK(w, payload10k)
-		case p == "/payload100k":
-			writeOK(w, payload100k)
-		default:
-			writeEmpty(w, http.StatusNotFound)
+
+		if once || wantsClose {
+			return
 		}
-	})
+		if !http11 {
+			http10SessionKeepAlive = true
+		}
+	}
 }
 
 func runOnce() error {
-	ln, err := net.Listen("tcp", "127.0.0.1:"+benchPort)
+	ln, err := net.Listen("tcp4", "127.0.0.1:"+benchPort)
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
-	conn, err := ln.Accept()
+
+	tcpLn, ok := ln.(*net.TCPListener)
+	if !ok {
+		return fmt.Errorf("unexpected listener type")
+	}
+	conn, err := tcpLn.AcceptTCP()
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-	br := bufio.NewReader(conn)
-	req, err := http.ReadRequest(br)
+	handleConn(conn, true)
+	return nil
+}
+
+func acceptLoop(tcpLn *net.TCPListener) {
+	for {
+		conn, err := tcpLn.AcceptTCP()
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+				continue
+			}
+			return
+		}
+		go handleConn(conn, false)
+	}
+}
+
+func runServer() error {
+	addr := "127.0.0.1:" + benchPort
+	ln, err := net.Listen("tcp4", addr)
 	if err != nil {
 		return err
 	}
-	mux := http.NewServeMux()
-	registerCompat(mux)
-	w := newOnceResponseWriter(conn)
-	mux.ServeHTTP(w, req)
-	return w.finish()
-}
 
-// 单次响应写回（无 Server，与 Uya run_once 接近）
-type onceResponseWriter struct {
-	conn          net.Conn
-	status        int
-	header        http.Header
-	wroteHeader   bool
-	headerFlushed bool
-}
+	tcpLn, ok := ln.(*net.TCPListener)
+	if !ok {
+		return fmt.Errorf("unexpected listener type")
+	}
 
-func newOnceResponseWriter(c net.Conn) *onceResponseWriter {
-	return &onceResponseWriter{conn: c, header: make(http.Header)}
-}
+	workerCount := runtime.NumCPU()
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	for i := 0; i < workerCount; i++ {
+		go acceptLoop(tcpLn)
+	}
 
-func (o *onceResponseWriter) Header() http.Header { return o.header }
-
-func (o *onceResponseWriter) WriteHeader(code int) {
-	if o.wroteHeader {
-		return
-	}
-	o.wroteHeader = true
-	o.status = code
-}
-
-func (o *onceResponseWriter) Write(b []byte) (int, error) {
-	if !o.wroteHeader {
-		o.WriteHeader(http.StatusOK)
-	}
-	if o.headerFlushed {
-		return 0, fmt.Errorf("response already sent")
-	}
-	o.headerFlushed = true
-	if o.status == 0 {
-		o.status = http.StatusOK
-	}
-	ct := o.header.Get("Content-Type")
-	if ct == "" {
-		ct = "text/plain"
-	}
-	cl := fmt.Sprintf("%d", len(b))
-	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", o.status, http.StatusText(o.status))
-	var buf bytes.Buffer
-	buf.WriteString(statusLine)
-	buf.WriteString("Content-Length: " + cl + "\r\n")
-	buf.WriteString("Content-Type: " + ct + "\r\n")
-	buf.WriteString("Connection: close\r\n\r\n")
-	buf.Write(b)
-	_, err := o.conn.Write(buf.Bytes())
-	return len(b), err
-}
-
-// 处理仅 WriteHeader、无 Write 的空体响应（如 404）
-func (o *onceResponseWriter) finish() error {
-	if o.headerFlushed {
-		return nil
-	}
-	if !o.wroteHeader {
-		o.status = http.StatusOK
-		o.wroteHeader = true
-	}
-	o.headerFlushed = true
-	ct := o.header.Get("Content-Type")
-	if ct == "" {
-		ct = "text/plain"
-	}
-	statusLine := fmt.Sprintf("HTTP/1.1 %d %s\r\n", o.status, http.StatusText(o.status))
-	var buf bytes.Buffer
-	buf.WriteString(statusLine)
-	buf.WriteString("Content-Length: 0\r\n")
-	buf.WriteString("Content-Type: " + ct + "\r\n")
-	buf.WriteString("Connection: close\r\n\r\n")
-	_, err := o.conn.Write(buf.Bytes())
-	return err
+	fmt.Fprintf(os.Stderr, "listening on http://%s/\n", addr)
+	select {}
 }
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
 	once := false
 	for _, a := range os.Args[1:] {
 		if a == "--once" {
@@ -199,6 +337,7 @@ func main() {
 			break
 		}
 	}
+
 	if once {
 		if err := runOnce(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -206,12 +345,8 @@ func main() {
 		}
 		return
 	}
-	addr := "127.0.0.1:" + benchPort
-	mux := http.NewServeMux()
-	registerCompat(mux)
-	srv := &http.Server{Addr: addr, Handler: mux}
-	fmt.Fprintf(os.Stderr, "listening on http://%s/\n", addr)
-	if err := srv.ListenAndServe(); err != nil {
+
+	if err := runServer(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
