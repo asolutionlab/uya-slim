@@ -1,6 +1,6 @@
 # 编译器 / 标准库 Bug 待办清单
 
-**最后更新：** 2026-04-13（新增真 `@async_fn/@await` async frame 堆分配 bug 记录）
+**最后更新：** 2026-04-13（新增真 `@async_fn/@await` async frame 堆分配 bug 记录，并补充帧分配设计/TODO 文档）
 
 本文档用于跟踪 release 验证中发现的问题，便于逐项修复、验证和关闭。
 
@@ -64,6 +64,8 @@
   - 现象：`@async_fn` / `@await` 的 lowering 将每个 async 函数实例化为堆上状态机对象，而不是栈上 frame 或池化 frame；在 HTTP benchmark 这种高频短连接 / keep-alive 场景里，会造成明显的内存抖动和分配开销
   - 影响：真 async 版 benchmark 无法作为性能对比基线，且会掩盖 `epoll` / 协程调度本身的真实性能
   - 相关文件：`src/codegen/c99/function.uya`、`src/codegen/c99/stmt.uya`、`lib/std/async.uya`、`benchmarks/http_bench_async_epoll_await_simple.uya`
+  - 设计文档：`docs/async_frame_allocation_design.md`
+  - TODO 文档：`docs/todo_async_frame_allocation.md`
   - 修复方向：
     1. 让 async frame 支持栈上/对象池分配，避免默认 `malloc/free`
     2. 或者为 benchmark/运行时提供可切换的 frame allocator
