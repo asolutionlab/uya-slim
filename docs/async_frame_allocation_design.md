@@ -7,6 +7,7 @@
 - [async_coroutine_transform_design.md](async_coroutine_transform_design.md) - 通用 async lowering / await 段发射
 - [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md) - 现有 lowering 计划
 - [todo_async_loop_await.md](todo_async_loop_await.md) - 循环内 await 的历史问题与回归
+- [todo_async_frame_allocation.md](todo_async_frame_allocation.md) - 实现 TODO
 - [buglist.md](../buglist.md) - 真 `@async_fn/@await` async frame 堆分配 bug
 
 ## 1. 背景
@@ -61,7 +62,20 @@
 
 ## 4. 总体方案
 
-### 4.1 帧类型与帧位置
+### 4.1 编译器自动路径与开发者显式路径的边界
+
+**自动路径**：开发者未使用 `@frame(foo)` 类型时，编译器通过逃逸分析自动选择 stack / pool / heap debug。开发者不感知 frame 的存在。
+
+**显式路径**：开发者使用 `@frame(foo)` 声明变量、字段或池槽位时，编译器只负责：
+- 校验 pinned 语义（禁止按值移动、禁止整体赋值父结构体）
+- 生成 `*_frame_init` / `*_poll` 的调用点
+- **不自动插入分配代码**。frame 的实际存储位置由变量声明位置（栈、全局、堆）或 pool API 调用决定。
+
+简言之：
+- 没写 `@frame` → 编译器自动分配
+- 写了 `@frame` → 开发者显式控制存储位置
+
+### 4.2 帧类型与帧位置
 
 把一个 async 函数拆成三件事：
 
@@ -69,14 +83,11 @@
 2. **poll 入口**：`fn <fn>_poll(self: &Self, waker: &Waker) Poll<T>`
 3. **帧构造入口**：`fn <fn>_frame_init(frame: &uya_async_<fn>, args...)`
 
-帧的存储位置分为四类：
+帧的存储位置分为三类：
 
 - `StackOwned`
-  - 存在当前函数的自动变量里
+  - 存在当前函数的自动变量里，或嵌在父 async 帧结构体字段中
   - 只用于能证明不逃逸的局部 async 片段
-- `InlineOwned`
-  - 嵌在父 async 帧结构体字段里
-  - 适合 `@await` 直接消费子 future 的路径
 - `PoolOwned`
   - 来自固定大小的 frame pool
   - 用于会跨调用边界但仍希望避免 heap 的 future
@@ -84,7 +95,7 @@
   - 仅在显式调试开关下启用
   - 用于保留老行为，方便排查生命周期 bug
 
-### 4.2 两条生成路径
+### 4.3 两条生成路径
 
 #### 路径 A：直接 await / 父子协程内联
 
@@ -100,11 +111,14 @@
 当 future 需要作为值返回、存入容器、传给接口字段或跨边界保存时：
 
 - 编译器生成 `foo_future_new(...)`
-- 该入口先走逃逸分析
+- `foo_future_new` 是外部 C 代码仍可链接的 ABI 兼容符号
+- `foo_future_new` 返回的 `Future.data` 不能指向函数内部栈帧；默认只能使用 pool，或在显式调试模式下使用 debug heap
+- 若调用方希望自己提供存储，应走 `foo_future_init_into(storage, args...)` 或直接 `@await foo()` 的 caller-owned lowering 路径
 - 逃逸但仍可池化时，用 frame pool 分配
 - 只有在显式调试模式下才 fallback 到 heap
+- 外部 C 代码若需要显式释放，应调用对应的 `foo_future_release`（由编译器生成），而不是直接 `free`
 
-### 4.3 帧的移动语义
+### 4.4 帧的移动语义
 
 `@frame(foo)` 不是一个可自由复制 / 自由移动的普通值。它是一个**受约束的 pinned 帧类型**：
 
@@ -131,7 +145,7 @@
 但**不能**把 frame 当成普通可移动 struct 随意赋值、返回或重新装箱。  
 如果某个父结构体含有 frame 字段，那么这个父结构体也必须被编译器视为 pinned aggregate，不能再走普通移动语义。
 
-### 4.4 诊断契约
+### 4.5 诊断契约
 
 这类约束必须报**明确、可操作**的编译错误，而不是只报“类型不匹配”或“内部错误”。
 
@@ -144,7 +158,7 @@
 - **错误信息必须包含可识别的对象名**
   - 例如：`@frame(http_handle)`、`Worker.req`、`foo<T>`、`align=16`
 - **必须带修改建议**
-  - 例如：改用引用、把 frame 放进 pinned 父结构体、改用 `async_frame_pool_alloc(pool, size, align)`、先单态化再取 frame
+  - 例如：改用引用、把 frame 放进 pinned 父结构体、改用 `async_frame_pool_alloc(pool, @frame_key(foo))`、先单态化再取 frame
 
 推荐的错误模板：
 
@@ -163,7 +177,7 @@
 2. 相关声明位置 note
 3. 修复建议 note
 
-### 4.5 checker 识别规则
+### 4.6 checker 识别规则
 
 `@frame(foo)` 相关约束不应该靠“约定”来维持，而应该被 checker 显式识别。建议把它们视为一组可判定的类型属性：
 
@@ -172,7 +186,8 @@
 - `is_copyable = false`
 - `is_movable_by_value = false`
 - `frame_align = N`
-- `frame_key = concrete_instance_key`
+- `frame_key_text = concrete_instance_key`
+- `frame_id = descriptor id`
 
 当 checker 遇到下列操作时，应直接报错：
 
@@ -195,7 +210,7 @@ checker 的报错策略建议保持一致：
 - 如果涉及父结构体，note 应指出**哪个字段导致 pinned 传播**
 - 如果涉及泛型，note 应指出**具体的 type args 实例**
 
-### 4.6 checker 落点
+### 4.7 checker 落点
 
 现有 checker 已经有移动追踪基础，因此这套规则应尽量挂在已有入口上，而不是另起一套特殊路径。建议按 AST 节点拆分：
 
@@ -217,11 +232,11 @@ checker 的报错策略建议保持一致：
 3. 再补 `AST_STRUCT_INIT` / `AST_ARRAY_LITERAL` 的嵌套保存检查
 4. 最后补 `AST_MEMBER_ACCESS` / `AST_ARRAY_ACCESS` 的递归传播，让父结构体 pinned 属性往外层扩散
 
-### 4.7 建议的 checker 元数据与 helper
+### 4.8 建议的 checker 元数据与 helper
 
 为了让上面的落点变成可实现的代码，建议在 checker 侧新增一层 async frame 元数据。结构风格可以直接参考现有的 `MonoInstance`：固定上限数组 + 线性查找 + 单态实例键。
 
-#### 4.7.1 建议新增的元数据结构
+#### 4.8.1 建议新增的元数据结构
 
 - `AsyncFrameFieldMeta`
   - `field_name: &byte`
@@ -231,7 +246,9 @@ checker 的报错策略建议保持一致：
   - `is_pinned: i32`
   - `is_movable_by_value: i32`
 - `AsyncFrameMeta`
-  - `frame_key: &byte`
+  - `frame_key_text: &byte`
+  - `frame_id: u32`
+  - `descriptor_index: u32`
   - `fn_name: &byte`
   - `generic_name: &byte`
   - `type_arg_count: i32`
@@ -250,15 +267,16 @@ checker 的报错策略建议保持一致：
 
 - `async_frame_metas: [AsyncFrameMeta: N]`
 - `async_frame_meta_count: i32`
-- `async_frame_key_index: ...`（可选，后续再做索引表）
+- `async_frame_key_text_index: ...`（可选，后续再做索引表）
 
 这些元数据的职责是：
 
-- 给 checker 提供 `frame_key -> meta` 的稳定查询入口
+- 给 checker 提供 `frame_key_text -> meta` 的稳定查询入口
+- 给 runtime 提供 `frame_id -> descriptor` 的 O(1) 查询入口
 - 给 note 输出提供定义点 / 实例化点 / 字段点
 - 给泛型 async 的单态实例区分提供依据
 
-#### 4.7.2 建议新增的查询 helper
+#### 4.8.2 建议新增的查询 helper
 
 建议把“是不是 frame / frame 是否 pinned / 是否拥有 frame / 是否引用 frame”拆成独立 helper，这样 AST 各入口都可以复用：
 
@@ -266,12 +284,14 @@ checker 的报错策略建议保持一致：
   - 在检查 async 函数声明时注册 frame 元数据
 - `checker_register_async_frame_field_meta(...)`
   - 记录 frame 字段、偏移、对齐、是否 pinned
-- `checker_find_async_frame_meta_by_key(checker, frame_key)`
+- `checker_find_async_frame_meta_by_key_text(checker, frame_key_text)`
   - 线性查找 frame 元数据
 - `checker_async_frame_meta_for_fn(checker, fn_decl)`
   - 从函数声明直接取 frame 元数据
-- `checker_frame_key_for_mono_instance(checker, generic_name, type_args, type_arg_count)`
+- `checker_frame_key_text_for_mono_instance(checker, generic_name, type_args, type_arg_count)`
   - 为 `foo<T>` 生成 concrete instance key
+- `checker_frame_id_for_mono_instance(checker, generic_name, type_args, type_arg_count)`
+  - 为 runtime descriptor 生成紧凑整数 ID
 - `checker_is_async_frame_type(checker, type)`
   - 判断某个 `Type` 是否为 async frame
 - `checker_type_owns_async_frame(checker, type)`
@@ -283,7 +303,7 @@ checker 的报错策略建议保持一致：
 - `checker_type_contains_pinned_field(checker, type)`
   - 判断父结构体是否因为 frame 字段而变成 pinned aggregate
 
-#### 4.7.3 建议新增的诊断 helper
+#### 4.8.3 建议新增的诊断 helper
 
 现有 `checker_report_error` 只打印主错误。为了满足“主错误 + note + 修改建议”的需求，建议补一组专用 helper，输出格式尽量稳定：
 
@@ -331,9 +351,11 @@ file.uya:(12:5): 错误: cannot move pinned async frame '@frame(http_handle)'
 - future 被转成接口值并传给未知边界
 - future 被保存在任务队列里，生命周期超过当前栈帧
 
+**例外**：若结构体字段或数组元素**显式声明为 `@frame(foo)` 类型**，则视为开发者已显式固定存储位置，不再由编译器替它自动选择 stack / pool。但该字段仍然必须参与 pinned、父容器逃逸和生命周期检查；例如返回局部 `Worker.req` 的引用仍然是悬挂指针，应被拒绝。
+
 ### 5.3 安全判定
 
-满足以下条件时，可走 `StackOwned` 或 `InlineOwned`：
+满足以下条件时，可走 `StackOwned`：
 
 - future 的生命周期被当前函数完整覆盖
 - 不会从当前函数返回后继续被 poll
@@ -371,21 +393,32 @@ Pool 不是“为了更快地 malloc”。
 - 可重复回收
 - 可按线程或按 scheduler 切分
 
-Pool 分配接口必须带对齐信息，不能只传 size。  
-frame 的布局由 `frame_size` 和 `frame_align` 共同决定。
+Pool 分配接口必须直接或间接携带对齐信息，不能只传 size。
+frame 的布局由 `frame_size` 和 `frame_align` 共同决定；当前建议通过 `FrameId` 查静态 descriptor 得到二者。
+
+**size class 分桶规则**：free list 按 `(size, align)` 组合分桶。两个 frame descriptor 即使 `size` 相同，只要 `align` 不同，就必须落入不同的桶。这保证了高对齐要求（如 `@align(64)`）的帧不会被低对齐槽位（如 `align=8`）满足，从而避免运行时未对齐访问。
 
 建议的最小接口形态：
 
 ```uya
-fn async_frame_pool_alloc(pool: &AsyncFramePool, size: usize, align: usize) !&byte;
-fn async_frame_pool_free(pool: &AsyncFramePool, ptr: &byte, size: usize, align: usize) void;
+fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: FrameId) !&byte;
+fn async_frame_pool_free(pool: &AsyncFramePool, ptr: &byte, frame_id: FrameId) void;
 ```
 
-若需要更方便的泛型封装，可再提供：
+`FrameId` 由编译器为每个 async 函数的单态实例生成。`@frame_key(foo)` 是面向源码的稳定入口，生成代码时会展开为 `FrameId`。具体实现上：
 
-```uya
-fn async_frame_pool_alloc_t<T>(pool: &AsyncFramePool) !&T;
-```
+- checker 内部保留 `frame_key_text`，例如 `<fully_qualified_fn_name>@<mangled_concrete_type_args>`
+- 编译期把 `frame_key_text` 映射为一个**紧凑的整数 ID**（`frame_id: u32`），而不是在热路径上传字符串
+- 链接时（或编译期）生成一张静态的 `AsyncFrameDescriptor` 表，每条记录包含 `size`、`align`、`drop_fn`
+- 运行时内部通过 `frame_id` 在这张表里 O(1) 查表得到 `size` 与 `align`
+
+这样既能避免动态 size/align 带来的 free list 碎片化，也能完全消除热路径上的字符串比较开销。
+
+Pool 满时，release 默认路径不能静默回退到 heap。建议行为是：
+
+- release / benchmark 默认返回 `PoolFull` 或交给 scheduler 做背压
+- 只有打开 `ASYNC_FRAME_DEBUG_HEAP=1` 或等价编译开关时，才允许回退到 debug heap
+- debug heap 回退必须累加统计计数器，方便压测时确认没有意外走堆
 
 ### 6.2 Stack 语义
 
@@ -403,6 +436,8 @@ Stack 路径只负责“当前作用域内可证明安全”的 frame：
 
 - 把当前 `malloc(sizeof(...))` 的 async frame 创建改成“帧初始化 + 位置选择”
 - 生成 `*_frame_init` 和 `*_poll`
+- 生成 `*_frame_drop_fields`，负责递归清理子 future 字段
+- 生成统一的 `future_release` / `frame_release` 包装，根据 ownership tag 决定是否归还 pool / debug heap
 - 保留 vtable / interface 包装
 - 在能内联的 await 路径上生成 caller-owned frame，而不是额外装箱
 
@@ -450,8 +485,10 @@ var f: @frame(http_handle) = @frame(http_handle){};
 因此，下面三种写法都可以持有同一帧类型：
 
 ```uya
+// 1. 局部变量（栈上）
 var a: @frame(http_handle) = @frame(http_handle){};
 
+// 2. 结构体字段（随父结构体所在位置而定）
 struct Worker {
     req: @frame(http_handle),
 }
@@ -459,12 +496,8 @@ struct Worker {
 var worker: Worker = Worker{};
 http_handle_frame_init(&worker.req, cfd);
 
-const p: &byte = try async_frame_pool_alloc(
-    pool,
-    @size_of(@frame(http_handle)),
-    @align_of(@frame(http_handle)),
-);
-const c: &@frame(http_handle) = p as &@frame(http_handle);
+// 3. 从 frame pool 分配
+const c: &@frame(http_handle) = try async_frame_pool_alloc(pool, @frame_key(http_handle));
 ```
 
 如果要取泛型 async 函数的帧类型，必须写成具体实例：
@@ -476,6 +509,30 @@ var f_i32: @frame(load_item<i32>) = @frame(load_item<i32>){};
 结构体字段可以拥有 frame，但字段应通过 in-place 初始化进入可用状态。`Worker{ req: other_frame }` 这种从另一个 frame 按值搬进字段的写法仍然非法。
 
 `@frame(foo)` 只是把“编译器生成的内部帧类型”变成可见、可声明、可存储的类型视图，便于 runtime 和高性能框架显式管理生命周期。
+
+### 7.6 `*_frame_drop_fields` 与释放包装
+
+每个 async 函数除了生成 `*_frame_init` 和 `*_poll`，还应生成字段清理函数。字段清理与帧本体释放必须拆开：
+
+```c
+void uya_async_foo_frame_drop_fields(struct uya_async_foo* frame) {
+    // 按字段声明的逆序，递归 drop 仍然 live 的子 future 字段。
+    if (frame->bar_field_live != 0) {
+        uya_async_bar_frame_drop_fields(&frame->bar_field);
+        frame->bar_field_live = 0;
+    }
+}
+
+void uya_async_foo_future_release(struct uya_future_handle* handle) {
+    uya_async_foo_frame_drop_fields(handle->frame);
+    // 根据 ownership tag 决定是否归还 pool / debug heap。
+    // StackOwned 只清理字段，不释放 frame 本体。
+}
+```
+
+释放顺序必须保证：**子 frame 先于父 frame 释放**。`*_frame_drop_fields` 只负责状态清理与递归字段清理，不释放当前 frame 本体。`future_release` / `frame_release` 才根据 ownership tag 归还 pool 或 debug heap；`StackOwned` 路径只调用字段清理，不释放内存。
+
+不能只用 `state >= STATE_AFTER_AWAIT_X` 判断是否释放子 frame。子 future 可能已经在 Ready / Error 路径中被清理过，因此每个需要显式 drop 的 child 字段都应有 `*_live` 或等价标志，并在释放后立刻清零，避免 double free / double drop。
 
 ## 8. 推荐的分层落地
 
@@ -505,6 +562,8 @@ var f_i32: @frame(load_item<i32>) = @frame(load_item<i32>){};
 - 逃逸分析过激进会引入悬挂指针
 - pool 大小过小会产生 `PoolFull`
 - pool 大小过大又会占用额外内存
+- **栈分配的 frame 如果过大，可能导致栈溢出；必须依靠 `ASYNC_FRAME_STACK_LIMIT` 将超过阈值的大 frame 强制降级到 pool**
+- **pool 默认容量不应简单按 `RLIMIT_NOFILE` 定死，而应采用 lazy commit（如 `mmap` 预留虚拟地址但不立即 commit 物理页），并按 size class 设置 per-bucket 上限，避免空转时占用过多 RSS**
 
 ## 10. 验收标准
 
