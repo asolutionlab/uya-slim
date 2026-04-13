@@ -1,16 +1,18 @@
-// benchmarks/http_bench_fork.uya — 多进程阻塞 accept HTTP 服务器
+// benchmarks/http_bench_fork.uya — 多进程阻塞 accept + 连接级 fork HTTP 服务器
 //
 // 构建：
 //   bin/uya build benchmarks/http_bench_fork.uya -o /tmp/http_bench_fork.c --c99 && cc -std=c99 -no-pie -O2 -o /tmp/http_bench_fork /tmp/http_bench_fork.c -lm
 
 use libc.syscall;
 use libc.signal;
+use std.runtime.entry.set_process_stack_limit_bytes;
 
 const PORT: u16 = 8876;
 const BACKLOG: i32 = 1024;
-const NUM_PROCESSES: usize = 14;
+const NUM_PROCESSES: usize = 28;
 const READ_BUF_SIZE: usize = 2048;
 const MAX_PATH_LEN: usize = 256;
+const BENCH_PROCESS_STACK_BYTES: u64 = 1024 * 1024;
 
 // BufferStream 结构体
 struct BufferStream {
@@ -119,6 +121,7 @@ fn stream_available(s: &BufferStream) usize {
 }
 
 const SIGPIPE: i32 = 13;
+const SIGCHLD: i32 = 17;
 const SIG_IGN: usize = 1;
 
 var g_hello_body: [byte: 6] = [];
@@ -180,6 +183,29 @@ fn find_crlf(buf: &byte, len: usize) bool {
     return false;
 }
 
+// 判断请求是否为 HTTP/1.1。
+// 这里保留与现有解析一致的扫描方式，避免把头部重新拷贝到临时结构里。
+fn request_is_http11(data: &byte, avail: usize) bool {
+    if avail <= 14 {
+        return false;
+    }
+    if data[avail - 2] != '\r' as byte || data[avail - 1] != '\n' as byte {
+        return false;
+    }
+    var j: usize = 0;
+    while j < avail - 14 {
+        if j + 8 < avail &&
+           data[j] == 'H' as byte && data[j+1] == 'T' as byte &&
+           data[j+2] == 'T' as byte && data[j+3] == 'P' as byte &&
+           data[j+4] == '/' as byte &&
+           data[j+5] == '1' as byte && data[j+6] == '.' as byte {
+            return data[j+7] == '1' as byte;
+        }
+        j = j + 1;
+    }
+    return false;
+}
+
 fn fmt_usize(buf: &byte, n: usize) usize {
     if n == 0 { buf[0] = '0' as byte; return 1; }
     var tmp: [byte: 24] = [];
@@ -199,13 +225,69 @@ fn close_fd(fd: i32) void {
     _ = sys_close(fd);
 }
 
+// 关闭客户端连接前尽量把内核里已到达但尚未读取的数据读掉，降低 Linux close 触发 RST 的概率。
+fn close_client_fd_quiet(fd: i32) void {
+    if fd < 0 {
+        return;
+    }
+    const flags_r: !i32 = sys_fcntl(fd, F_GETFL, 0);
+    if flags_r.error_id == 0 {
+        const flags: i32 = flags_r.value;
+        if (flags & O_NONBLOCK) == 0 {
+            _ = sys_fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        }
+    }
+    var junk: [byte: 512] = [];
+    while true {
+        const rr: !isize = sys_read(fd, &junk[0] as *byte, 512);
+        if rr.error_id != 0 {
+            break;
+        }
+        if rr.value <= 0 {
+            break;
+        }
+    }
+    _ = sys_close(fd);
+}
+
+// 接受连接后再 fork 出子进程处理该连接，避免 keep-alive 长连接占住 accept worker。
+fn serve_accept_loop(listen_fd: i32) void {
+    while true {
+        const ar: !i32 = sys_accept(listen_fd, null, 0);
+        if ar.error_id != 0 { continue; }
+        const cfd: i32 = ar.value;
+
+        const pid_r: !i64 = sys_fork();
+        if pid_r.error_id != 0 {
+            var nodelay_fallback: i32 = 1;
+            _ = sys_setsockopt(cfd, 6, 1, &nodelay_fallback as &void, 4);
+            handle_client(cfd);
+            continue;
+        }
+
+        const pid: i64 = pid_r.value;
+        if pid == 0 {
+            close_fd(listen_fd);
+            var nodelay_child: i32 = 1;
+            _ = sys_setsockopt(cfd, 6, 1, &nodelay_child as &void, 4);
+            handle_client(cfd);
+            sys_exit(0);
+        }
+
+        close_fd(cfd);
+    }
+}
+
 fn handle_client(cfd: i32) void {
-    // 设置读取超时 10 秒 (struct timeval 是 8 字节)
-    var tv: [byte: 8] = [];
-    tv[0] = 10; tv[1] = 0;  // tv_sec = 10 (little endian)
-    _ = sys_setsockopt(cfd, 1, 20, &tv[0] as &void, 8);  // SOL_SOCKET=1, SO_RCVTIMEO=20
+    // 设置读取超时 60 秒（x86_64 上 timeval 为 16 字节：tv_sec + tv_usec）
+    var tv: [byte: 16] = [];
+    tv[0] = 60; tv[1] = 0;  // tv_sec = 60 (little endian)
+    _ = sys_setsockopt(cfd, 1, 20, &tv[0] as &void, 16);  // SOL_SOCKET=1, SO_RCVTIMEO=20
 
     var s: BufferStream = stream_init(cfd);
+    // ab -k 这类客户端在同一 HTTP/1.0 keep-alive 连接上，后续请求可能不再重复发送 Connection 头。
+    // 一旦本连接已成功协商过 keep-alive，就继续把无 Connection 头的 HTTP/1.0 请求视为可保持。
+    var http10_session_keep_alive: bool = false;
     var crlf: [byte: 4] = [];
     crlf[0] = '\r' as byte; crlf[1] = '\n' as byte;
     crlf[2] = '\r' as byte; crlf[3] = '\n' as byte;
@@ -213,25 +295,25 @@ fn handle_client(cfd: i32) void {
     while true {
         // 1. 读取直到 \r\n\r\n
         const hdr_len: usize = read_until(&s, &crlf[0] as &byte, 4);
-        if hdr_len == 0 { close_fd(cfd); return; }
+        if hdr_len == 0 { close_client_fd_quiet(cfd); return; }
 
         // 2. 获取头部数据并解析
         const data: &byte = stream_data(&s);
         const avail: usize = stream_available(&s);
-        if avail < 14 { close_fd(cfd); return; }
+        if avail < 14 { close_client_fd_quiet(cfd); return; }
 
         // 解析请求行
         if data[0] != 'G' as byte || data[1] != 'E' as byte ||
            data[2] != 'T' as byte || data[3] != ' ' as byte {
-            close_fd(cfd); return;
+            close_client_fd_quiet(cfd); return;
         }
 
         // 找到路径结束
         var path_end: usize = 4;
         while path_end < avail && data[path_end] != ' ' as byte { path_end = path_end + 1; }
-        if path_end >= avail { close_fd(cfd); return; }
+        if path_end >= avail { close_client_fd_quiet(cfd); return; }
         const plen: usize = path_end - 4;
-        if plen == 0 || plen > MAX_PATH_LEN - 1 { close_fd(cfd); return; }
+        if plen == 0 || plen > MAX_PATH_LEN - 1 { close_client_fd_quiet(cfd); return; }
 
         // 3. 解析 Content-Length（不区分大小写）
         var content_length: usize = 0;
@@ -318,29 +400,18 @@ fn handle_client(cfd: i32) void {
             i = i + 1;
         }
 
+        // 请求行里的 HTTP 版本，后面决定默认连接语义与会话级 keep-alive 行为。
+        var http11: bool = request_is_http11(data, avail);
+
         // 如果没有 Connection 头，根据 HTTP 版本决定
         if !has_connection {
-            // HTTP/1.0 默认 close，HTTP/1.1 默认 keep-alive
-            // 检查请求行中的 HTTP 版本
-            var http11: bool = false;
-            if avail > 14 && data[avail-2] == '\r' as byte && data[avail-1] == '\n' as byte {
-                // 查找 HTTP/1.1 或 HTTP/1.0
-                var j: usize = 0;
-                while j < avail - 14 {
-                    if j + 8 < avail &&
-                       data[j] == 'H' as byte && data[j+1] == 'T' as byte &&
-                       data[j+2] == 'T' as byte && data[j+3] == 'P' as byte &&
-                       data[j+4] == '/' as byte &&
-                       data[j+5] == '1' as byte && data[j+6] == '.' as byte {
-                        if data[j+7] == '1' as byte {
-                            http11 = true;
-                        }
-                        break;
-                    }
-                    j = j + 1;
-                }
+            // HTTP/1.0 默认 close，HTTP/1.1 默认 keep-alive。
+            // 若本连接已经成功协商过 HTTP/1.0 keep-alive，则 ab -k 后续请求即使省略 Connection 头，也应继续保持。
+            if http10_session_keep_alive {
+                wants_close = false;
+            } else {
+                wants_close = !http11;
             }
-            wants_close = !http11;  // HTTP/1.0 默认 close，HTTP/1.1 默认 keep-alive
         }
 
         // 5. 跳过已处理的 header
@@ -352,7 +423,7 @@ fn handle_client(cfd: i32) void {
             if body_in_buf < content_length {
                 const need: usize = content_length - body_in_buf;
                 const got: usize = read_exact(&s, need);
-                if got != need { close_fd(cfd); return; }
+                if got != need { close_client_fd_quiet(cfd); return; }
                 // read_exact 已经移动了 buf_pos，不需要再 skip
             } else {
                 stream_skip(&s, content_length);
@@ -414,22 +485,25 @@ fn handle_client(cfd: i32) void {
         var sent: usize = 0;
         while sent < pos {
             const nw: !isize = sys_write(cfd, &hdr[sent] as *byte, pos - sent);
-            if nw.error_id != 0 { close_fd(cfd); return; }
+            if nw.error_id != 0 { close_client_fd_quiet(cfd); return; }
             const w: isize = nw.value;
-            if w <= 0 { close_fd(cfd); return; }
+            if w <= 0 { close_client_fd_quiet(cfd); return; }
             sent = sent + (w as usize);
         }
         sent = 0;
         while sent < body_len {
             const nw: !isize = sys_write(cfd, &body_ptr[sent] as *byte, body_len - sent);
-            if nw.error_id != 0 { close_fd(cfd); return; }
+            if nw.error_id != 0 { close_client_fd_quiet(cfd); return; }
             const w: isize = nw.value;
-            if w <= 0 { close_fd(cfd); return; }
+            if w <= 0 { close_client_fd_quiet(cfd); return; }
             sent = sent + (w as usize);
         }
 
-        // 9. 如果是 close，关闭连接
-        if wants_close { close_fd(cfd); return; }
+        // 9. 更新 HTTP/1.0 keep-alive 会话状态；若本轮需要 close，则关闭连接
+        if !wants_close && !http11 {
+            http10_session_keep_alive = true;
+        }
+        if wants_close { close_client_fd_quiet(cfd); return; }
     }
 }
 
@@ -459,41 +533,14 @@ fn main_loop() void {
         if pid_r.error_id != 0 { i = i + 1; continue; }
         const pid: i64 = pid_r.value;
         if pid == 0 {
-            // 子进程：关闭 listen_fd，创建自己的
-            close_fd(listen_fd);
-            const lfd2: !i32 = sys_socket(2, 1, 6);
-            if lfd2.error_id != 0 { return; }
-            const listen_fd2: i32 = lfd2.value;
-            var reuse2: i32 = 1;
-            _ = sys_setsockopt(listen_fd2, 1, 2, &reuse2 as &void, 4);
-            _ = sys_setsockopt(listen_fd2, 1, 15, &reuse2 as &void, 4);
-            var addr2: [byte: 16] = [];
-            addr2[0] = 2; addr2[1] = 0;
-            addr2[2] = (((PORT >> 8) & (0xff as u16)) as! byte).value;
-            addr2[3] = ((PORT & (0xff as u16)) as! byte).value;
-            addr2[4] = 127; addr2[7] = 1;
-            const br2: !i32 = sys_bind(listen_fd2, &addr2[0] as &void, 16);
-            if br2.error_id != 0 { close_fd(listen_fd2); return; }
-            _ = sys_listen(listen_fd2, BACKLOG);
-            while true {
-                const ar: !i32 = sys_accept(listen_fd2, null, 0);
-                if ar.error_id != 0 { continue; }
-                var nodelay: i32 = 1;
-                _ = sys_setsockopt(ar.value, 6, 1, &nodelay as &void, 4);
-                handle_client(ar.value);
-            }
+            // 子进程：直接继承同一个 listen_fd 做 accept，避免多套监听 socket 的竞争/分流差异。
+            serve_accept_loop(listen_fd);
         }
         i = i + 1;
     }
 
-    // 主进程自己也 accept 并处理连接
-    while true {
-        const ar: !i32 = sys_accept(listen_fd, null, 0);
-        if ar.error_id != 0 { continue; }
-        var nodelay: i32 = 1;
-        _ = sys_setsockopt(ar.value, 6, 1, &nodelay as &void, 4);
-        handle_client(ar.value);
-    }
+    // 主进程自己也 accept，并把每个连接再 fork 给独立子进程
+    serve_accept_loop(listen_fd);
 }
 
 fn argv_is_once() bool {
@@ -527,7 +574,9 @@ fn run_once() void {
 }
 
 export fn main() i32 {
+    set_process_stack_limit_bytes(BENCH_PROCESS_STACK_BYTES);
     _ = signal(SIGPIPE, SIG_IGN as &void);
+    _ = signal(SIGCHLD, SIG_IGN as &void);
     init_payloads();
     if argv_is_once() { run_once(); }
     else { main_loop(); }
