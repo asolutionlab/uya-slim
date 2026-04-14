@@ -4814,6 +4814,15 @@ fn gen_mono_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, ty
     
     // 返回类型（替换类型参数）
     c99_preregister_slices_mono_fn(codegen, fn_decl);
+    c99_emit_async_frame_forward_for_type(codegen, return_type);
+    var pi_fwd: i32 = 0;
+    while pi_fwd < param_count {
+        const param_fwd: &ASTNode = params[pi_fwd];
+        if param_fwd != null && param_fwd.type == ASTNodeType.AST_VAR_DECL && param_fwd.var_decl_type != null {
+            c99_emit_async_frame_forward_for_type(codegen, param_fwd.var_decl_type);
+        }
+        pi_fwd = pi_fwd + 1;
+    }
     const return_c: &byte = c99_mono_type_to_c(codegen, return_type);
     
     if fn_decl.fn_decl_is_async != 0 && fn_decl.fn_decl_is_export == 0 && codegen.split_enabled == 0 {

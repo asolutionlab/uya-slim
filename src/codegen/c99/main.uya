@@ -3076,6 +3076,8 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     
     // 第七步：生成所有函数的前向声明（解决相互递归调用）
     c99_mirror_emit_common(codegen);
+    // 统一扫描所有函数签名中的 @frame 类型并补前向声明，避免个别原型生成路径遗漏
+    c99_emit_all_async_frame_forwards(codegen, ast);
     i = 0;
     while i < decl_count {
         const decl: &ASTNode = ast.program_decls[i];

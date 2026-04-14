@@ -91,6 +91,81 @@ fn c99_emit_async_frame_forward_for_type(codegen: &C99CodeGenerator, type_node: 
     }
 }
 
+// 统一扫描 program 中所有函数签名的返回类型与参数类型，为其中出现的 @frame 类型生成 struct 前向声明。
+// 用于 split-C 的 uya_split_protos.h 等头文件统一发射阶段，避免某些原型生成路径遗漏前向声明。
+export fn c99_emit_all_async_frame_forwards(codegen: &C99CodeGenerator, program: &ASTNode) void {
+    if codegen == null || program == null || program.type != ASTNodeType.AST_PROGRAM {
+        return;
+    }
+    var di: i32 = 0;
+    while di < program.program_decl_count {
+        const decl: &ASTNode = program.program_decls[di];
+        if decl != null && decl.type == ASTNodeType.AST_FN_DECL {
+            c99_emit_async_frame_forward_for_type(codegen, decl.fn_decl_return_type);
+            var pi: i32 = 0;
+            while pi < decl.fn_decl_param_count {
+                const param: &ASTNode = decl.fn_decl_params[pi];
+                if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+                    c99_emit_async_frame_forward_for_type(codegen, param.var_decl_type);
+                }
+                pi = pi + 1;
+            }
+        } else if decl != null && decl.type == ASTNodeType.AST_METHOD_BLOCK {
+            var mi: i32 = 0;
+            while mi < decl.method_block_method_count {
+                const m: &ASTNode = decl.method_block_methods[mi];
+                if m != null && m.type == ASTNodeType.AST_FN_DECL {
+                    c99_emit_async_frame_forward_for_type(codegen, m.fn_decl_return_type);
+                    var pi: i32 = 0;
+                    while pi < m.fn_decl_param_count {
+                        const param: &ASTNode = m.fn_decl_params[pi];
+                        if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+                            c99_emit_async_frame_forward_for_type(codegen, param.var_decl_type);
+                        }
+                        pi = pi + 1;
+                    }
+                }
+                mi = mi + 1;
+            }
+        } else if decl != null && decl.type == ASTNodeType.AST_STRUCT_DECL {
+            var mi: i32 = 0;
+            while mi < decl.struct_decl_method_count {
+                const m: &ASTNode = decl.struct_decl_methods[mi];
+                if m != null && m.type == ASTNodeType.AST_FN_DECL {
+                    c99_emit_async_frame_forward_for_type(codegen, m.fn_decl_return_type);
+                    var pi: i32 = 0;
+                    while pi < m.fn_decl_param_count {
+                        const param: &ASTNode = m.fn_decl_params[pi];
+                        if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+                            c99_emit_async_frame_forward_for_type(codegen, param.var_decl_type);
+                        }
+                        pi = pi + 1;
+                    }
+                }
+                mi = mi + 1;
+            }
+        } else if decl != null && decl.type == ASTNodeType.AST_UNION_DECL {
+            var mi: i32 = 0;
+            while mi < decl.union_decl_method_count {
+                const m: &ASTNode = decl.union_decl_methods[mi];
+                if m != null && m.type == ASTNodeType.AST_FN_DECL {
+                    c99_emit_async_frame_forward_for_type(codegen, m.fn_decl_return_type);
+                    var pi: i32 = 0;
+                    while pi < m.fn_decl_param_count {
+                        const param: &ASTNode = m.fn_decl_params[pi];
+                        if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+                            c99_emit_async_frame_forward_for_type(codegen, param.var_decl_type);
+                        }
+                        pi = pi + 1;
+                    }
+                }
+                mi = mi + 1;
+            }
+        }
+        di = di + 1;
+    }
+}
+
 // 方法参数类型映射：将 Self 替换为 struct_name，用于生成结构体方法签名
 fn c99_type_to_c_with_self(codegen: &C99CodeGenerator, type_node: &ASTNode, self_struct_name: &byte) &byte {
     return c99_type_to_c_with_self_opt(codegen, type_node, self_struct_name, 0);

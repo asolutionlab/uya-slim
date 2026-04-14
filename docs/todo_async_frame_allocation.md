@@ -308,9 +308,7 @@
 
 ## 已知限制
 
-1. **非 async 函数签名中的 `@frame(foo)` 前向声明**：`@frame(foo)` 作为普通（非 `@async_fn`）函数的参数或返回类型时，生成的 C 头文件（如 `uya_split_protos.h`）中仍可能缺少 `struct uya_async_xxx;` 的前向声明，导致多 TU 编译报 `incomplete type`。当前已在 `gen_function_prototype` / `gen_method_prototype` / `gen_mono_method_prototype` 中补了大部分前向声明，但某些 split-C 头文件发射路径（如跨模块导出符号的前置声明聚合）尚未完全覆盖。在 async 函数内部或仅作为局部变量使用时不受影响。
-   - *workaround*：将 `@frame` 的跨函数引用限制在 async 函数内部，或通过 `&` 指针在普通函数间传递。
-   - *后续*：在 codegen 头文件统一发射阶段扫描所有函数原型中的 `@frame` 类型并补前向声明。
+1. ~~**非 async 函数签名中的 `@frame(foo)` 前向声明**~~（**已修复**）：`@frame(foo)` 作为普通（非 `@async_fn`）函数的参数或返回类型时，生成的 C 头文件（如 `uya_split_protos.h`）中仍可能缺少 `struct uya_async_xxx;` 的前向声明，导致多 TU 编译报 `incomplete type`。当前已在 `gen_function_prototype` / `gen_method_prototype` / `gen_mono_method_prototype` / `gen_mono_function_prototype` 中补齐前向声明，并在 `main.uya` 的 split-C 头文件统一发射阶段增加了 `c99_emit_all_async_frame_forwards`，遍历所有函数签名的返回类型与参数类型并统一补全 `struct uya_async_xxx;` 前向声明，彻底覆盖跨模块导出符号的前置声明聚合路径。在 async 函数内部或仅作为局部变量使用时不受影响。
 
 2. **caller-owned inline 暂不支持变量暂存场景**：`var f = foo(); @await f;` 中 `f` 仍会走 pool 分配，不会自动优化为栈内联。只有直接 `@await foo()` 才会触发 inline。
 
