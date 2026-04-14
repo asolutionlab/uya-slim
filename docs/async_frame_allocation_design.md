@@ -1,7 +1,7 @@
 # 栈优先的异步状态机帧分配设计
 
-**状态**：设计草案 → 第一阶段已实现  
-**最后更新**：2026-04-13  
+**状态**：设计草案 → `@frame(foo)` 类型构造器与 pinned 语义已实现  
+**最后更新**：2026-04-14  
 **相关文档**：
 - [std_async_design.md](std_async_design.md) - `Future<T>` / `Poll<T>` / `Waker` / `Scheduler` 现状
 - [async_coroutine_transform_design.md](async_coroutine_transform_design.md) - 通用 async lowering / await 段发射
@@ -71,10 +71,14 @@
 - `make check` 780/780 通过，`make b` 自举验证通过。
 - `benchmarks/http_bench_async_epoll_await_simple.uya` 编译运行正常，`curl` 测试通过。
 
-**待第二阶段实现**：
+**第二阶段已完成（v0.9.3）**：
+- `@frame(foo)` 类型构造器及 checker 侧的 pinned 语义、诊断信息。
+- C99 codegen 为函数原型中的 `@frame` 参数/返回类型自动生成前向声明。
+
+**待第三阶段实现**：
 - caller-owned stack 内联：直接 `@await foo()` 时把 child frame 放进 parent frame 字段，彻底消除接口值 boxing。
 - 统一运行时 `AsyncFramePool` 集成（当前 `lib/std/async_frame.uya` 已存在，尚未与 codegen 完全对接）。
-- `@frame(foo)` 类型构造器及 checker 侧的 pinned 语义、逃逸分析、诊断信息。
+- 完整逃逸分析（当前所有 `@async_fn` 统一走 per-function free list / AsyncFramePool）。
 
 ## 4. 总体方案
 

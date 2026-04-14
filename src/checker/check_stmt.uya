@@ -139,6 +139,12 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             checker_check_expr_type(checker, node.var_decl_init, copy_type(&var_type));
             // 然后推断类型并比较
             const init_type: Type = checker_infer_type(checker, node.var_decl_init);
+
+            // Pinned 类型检查：禁止按值初始化包含 async frame 的类型
+            if checker_type_contains_pinned_field(checker, &init_type) != 0 {
+                checker_report_error(checker, node.var_decl_init, "cannot initialize variable with pinned type by value" as &byte);
+                return 0;
+            }
             
             // 如果类型推断失败（TypeKind.TYPE_VOID），但变量类型是指针类型，可能是 null 赋值
             // 这种情况下允许通过，因为 null 可能被推断为 TypeKind.TYPE_VOID

@@ -703,6 +703,18 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                     }
                     j = j + 1;
                 }
+                var pi_pin: i32 = 0;
+                while pi_pin < node.call_expr_arg_count {
+                    const arg: &ASTNode = node.call_expr_args[pi_pin];
+                    if arg != null {
+                        const arg_type: Type = checker_infer_type(checker, arg);
+                        if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                            checker_report_error(checker, arg, "cannot pass pinned type by value in function argument" as &byte);
+                            return result;
+                        }
+                    }
+                    pi_pin = pi_pin + 1;
+                }
                 return type_from_ast(checker, m.fn_decl_return_type);
             }
             checker_report_error(checker, node, "联合体上不存在该方法" as *byte);
@@ -806,6 +818,19 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                         j = j + 1;
                     }
                     
+                    // Pinned 参数检查
+                    var pi_pin: i32 = 0;
+                    while pi_pin < node.call_expr_arg_count {
+                        const arg: &ASTNode = node.call_expr_args[pi_pin];
+                        if arg != null {
+                            const arg_type: Type = checker_infer_type(checker, arg);
+                            if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                                checker_report_error(checker, arg, "cannot pass pinned type by value in function argument" as &byte);
+                                return result;
+                            }
+                        }
+                        pi_pin = pi_pin + 1;
+                    }
                     // 返回替换后的返回类型
                     const return_type: Type = type_from_ast(checker, m.fn_decl_return_type);
                     return substitute_generic_type(checker, return_type,
@@ -828,6 +853,18 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                         return result;
                     }
                     j = j + 1;
+                }
+                var pi_pin: i32 = 0;
+                while pi_pin < node.call_expr_arg_count {
+                    const arg: &ASTNode = node.call_expr_args[pi_pin];
+                    if arg != null {
+                        const arg_type: Type = checker_infer_type(checker, arg);
+                        if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                            checker_report_error(checker, arg, "cannot pass pinned type by value in function argument" as &byte);
+                            return result;
+                        }
+                    }
+                    pi_pin = pi_pin + 1;
                 }
                 return type_from_ast(checker, m.fn_decl_return_type);
             } else {
@@ -864,6 +901,18 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                             return result;
                         }
                         j = j + 1;
+                    }
+                    var pi_pin: i32 = 0;
+                    while pi_pin < node.call_expr_arg_count {
+                        const arg: &ASTNode = node.call_expr_args[pi_pin];
+                        if arg != null {
+                            const arg_type: Type = checker_infer_type(checker, arg);
+                            if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                                checker_report_error(checker, arg, "cannot pass pinned type by value in function argument" as &byte);
+                                return result;
+                            }
+                        }
+                        pi_pin = pi_pin + 1;
                     }
                     return type_from_ast(checker, m_fallback.fn_decl_return_type);
                 }
@@ -1148,6 +1197,20 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
             return result;
         }
         i = i + 1;
+    }
+
+    // Pinned 类型检查：禁止按值传递包含 async frame 的参数
+    var pi: i32 = 0;
+    while pi < check_count {
+        const arg: &ASTNode = node.call_expr_args[pi];
+        if arg != null {
+            const arg_type: Type = checker_infer_type(checker, arg);
+            if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
+                checker_report_error(checker, arg, "cannot pass pinned type by value in function argument" as &byte);
+                return result;
+            }
+        }
+        pi = pi + 1;
     }
     
     return sig.return_type;

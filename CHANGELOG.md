@@ -1,5 +1,50 @@
 # Uya 变更日志
 
+## v0.9.3 - `@frame(foo)` 类型构造器与 pinned 语义
+
+> 发布日期：2026-04-14
+
+### 概要
+
+**v0.9.3** 在异步帧分配基础设施之上，引入 `@frame(foo)` 类型构造器及其完整的 checker 语义：
+
+1. **`@frame(foo)` 类型构造器**：解析器支持 `@frame(fn_name[<T>])` 语法，类型检查器将其解析为对应 async 函数的状态机结构体类型 `uya_async_<fn>`。
+2. **无初始化声明**：`@frame` 类型变量允许无显式初始化（`var f: @frame(foo);`），由声明点负责分配/零初始化。
+3. **Pinned 语义检查**：async frame 类型被视为 pinned，禁止按值移动、整体赋值、按值传参和按值返回。
+4. **C99 前向声明**：codegen 在函数原型中自动为 `@frame` 参数/返回类型生成 `struct uya_async_xxx;` 前向声明，避免跨 TU 编译失败。
+
+`make check` **785** 项测试通过（新增 5 项），`make b` 自举验证通过。评审后修复：补全方法调用路径的 pinned 参数检查，修复 export async 函数 frame struct 命名不一致。详见 [docs/releases/RELEASE_v0.9.3.md](./docs/releases/RELEASE_v0.9.3.md)。
+
+### 语言特性
+
+- `src/lexer.uya`：将 `@frame` 加入内置函数白名单。
+- `src/parser/types.uya`：解析 `@frame(fn_name[<T>])` 为 `AST_TYPE_FRAME`。
+- `src/parser/statements.uya`：`@frame(...)` 类型变量允许无初始化声明。
+- `src/checker/type_from_ast.uya`：`AST_TYPE_FRAME` 解析为 `TYPE_STRUCT("uya_async_<fn>")`；校验目标为 `@async_fn`、泛型实参数量匹配、实参 concrete。
+- `src/checker/check_node_extra.uya`：赋值语句中禁止对 pinned 类型整体赋值和按值移动。
+- `src/checker/check_stmt.uya`：变量声明禁止用 pinned 类型按值初始化。
+- `src/checker/check_call.uya`：函数调用禁止按值传递 pinned 类型参数。
+- `src/checker/main.uya`：return 语句禁止按值返回 pinned 类型。
+
+### 代码生成
+
+- `src/codegen/c99/types.uya`：新增 `c99_emit_async_frame_forward_for_type`，递归扫描类型中的 `@frame` 并生成 C 前向声明；`AST_TYPE_FRAME` 生成 `struct uya_async_<cname>`。
+- `src/codegen/c99/function.uya`：`gen_function_prototype`、`gen_method_prototype`、`gen_mono_method_prototype` 在原型发射前调用前向声明 helper；修复 `c99_async_collect_locals_recursive` 使无初始化的 `@frame` 局部变量也能被提升到状态机字段。
+
+### 测试
+
+- 新增 `tests/test_async_frame_type.uya`（3 项正向测试）
+- 新增 `tests/error_async_frame_pinned_move.uya`
+- 新增 `tests/error_async_frame_pinned_arg.uya`
+- 新增 `tests/error_async_frame_pinned_return.uya`
+
+### 文档
+
+- 更新 `docs/async_frame_allocation_design.md`、`docs/todo_async_frame_allocation.md`
+- 新增 `docs/releases/RELEASE_v0.9.3.md`
+
+---
+
 ## v0.9.2 - 测试基础设施：并行测试独立目录与实时输出
 
 > 发布日期：2026-04-12

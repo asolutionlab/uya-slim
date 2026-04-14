@@ -148,6 +148,7 @@ enum ASTNodeType {
     AST_TYPE_ATOMIC,   // 原子类型（atomic T）
     AST_TYPE_VECTOR,   // SIMD 向量类型（@vector(T, N)）
     AST_TYPE_MASK,     // SIMD 掩码类型（@mask(N)）
+    AST_TYPE_FRAME,    // 异步帧类型（@frame(foo)）
 }
 
 // 字符串插值段（用于 AST_STRING_INTERP）
@@ -448,6 +449,8 @@ struct ASTNode {
     type_vector_size_expr: &ASTNode,
     // type_mask（@mask(N)）
     type_mask_size_expr: &ASTNode,
+    // type_frame（@frame(foo)）
+    type_frame_operand: &ASTNode,
     // 优化相关字段（v0.7.3 新增）
     is_optimized: i32,          // 是否已被优化（1=是，0=否）
     optimized_value: i32,       // 优化后的值（常量折叠）
@@ -675,6 +678,7 @@ fn ast_new_node(type: ASTNodeType, line: i32, column: i32, arena: &CompilerArena
     node.asm_clobbers_memory = 0;
     node.print_expr = null;
     node.simd_splat_target_type = null;
+    node.type_frame_operand = null;
     node.type_atomic_inner_type = null;
     node.type_vector_element_type = null;
     node.type_vector_size_expr = null;

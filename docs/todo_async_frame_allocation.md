@@ -2,7 +2,7 @@
 
 **设计文档**：[async_frame_allocation_design.md](async_frame_allocation_design.md)  
 **相关问题**：[buglist.md](../buglist.md) 中“真 `@async_fn/@await` lowering 仍对 async frame 做堆分配”  
-**最后更新**：2026-04-13
+**最后更新**：2026-04-14
 
 ---
 
@@ -37,22 +37,22 @@
 - [ ] 明确 `Future<T>` 现有接口 ABI 不做破坏性改动（`future_new` 保留为 pool/debug heap 之上的包装符号，不能返回指向函数内部栈帧的 `Future.data`）
 - [ ] 明确 `HeapDebug` 只是调试开关，不作为默认路径
 - [ ] **明确 pool exhaustion 的行为：release 默认返回 `PoolFull` 或交给 scheduler 背压；只有 `ASYNC_FRAME_DEBUG_HEAP=1` / `--async-frame-heap=on` 时才允许回退到调试 heap，并累加计数器**
-- [ ] 定义 `@frame(foo)` 作为帧类型构造器：只暴露类型，不暴露所有权
-- [ ] 明确 `@frame(foo)` 不携带 `stack/pool/inline` 参数，归属交给普通存储位置和 pool API
-- [ ] 明确 `@frame(foo)` 默认不可拷贝、不可按值移动，只能通过引用访问
-- [ ] **明确 `@frame(foo)` 作为表达式只能出现在取地址 (`&`) 或 in-place 初始化的上下文中，禁止产生临时右值**
-- [ ] 明确含有 `@frame(foo)` 字段的父结构体也必须视为 pinned aggregate，不走普通移动语义
-- [ ] **明确对含 `@frame` 字段的结构体禁止整体赋值（`s = another_s`），field-by-field 赋值也需逐字段检查 pinned 规则**
-- [ ] 明确泛型 async 的 frame 以单态实例为单位命名与生成，不允许一个泛型名对应唯一 layout
-- [ ] **明确 frame key 分层：checker 使用 `frame_key_text = <fully_qualified_fn_name>@<mangled_concrete_type_args>`，包含模块路径哈希；runtime 使用编译期生成的 `frame_id: u32`，通过静态 descriptor 表 O(1) 查表**
-- [ ] 明确泛型 async 的合法写法：`@frame(foo<Concrete>)`；未解析的 `@frame(foo<T>)` 必须报错
-- [ ] 明确引用不拥有 frame：`&@frame(foo)` 不传播 pinned owner 语义，只用于引用传递和 API 校验
-- [ ] 明确父结构体字段只能 in-place 初始化 frame，禁止 `Worker{ req: other_frame }` 这种按值搬入字段的写法
-- [ ] 明确诊断契约：主错误指向违规用法，note 指向 frame 定义 / 字段定义 / 泛型实例化位置，并附带修改建议
-- [ ] 明确 checker 需要识别的 frame 属性：`is_async_frame`、`is_pinned`、`is_copyable=false`、`is_movable_by_value=false`、`frame_align`、`frame_key_text`、`frame_id`
-- [ ] 明确错误分层：主错误、声明位置 note、修复建议 note，三者都要稳定输出
-- [ ] 明确 checker 的 AST 落点：`AST_VAR_DECL`、`AST_ASSIGN`、`AST_RETURN_STMT`、`AST_CALL_EXPR`、`AST_STRUCT_INIT`、`AST_ARRAY_LITERAL`、`AST_MEMBER_ACCESS`、`AST_ARRAY_ACCESS`
-- [ ] 明确报错顺序：先主错误，再 declaration note，再 modification note；参数错误需包含参数序号
+- [x] 定义 `@frame(foo)` 作为帧类型构造器：只暴露类型，不暴露所有权
+- [x] 明确 `@frame(foo)` 不携带 `stack/pool/inline` 参数，归属交给普通存储位置和 pool API
+- [x] 明确 `@frame(foo)` 默认不可拷贝、不可按值移动，只能通过引用访问
+- [x] **明确 `@frame(foo)` 作为表达式只能出现在取地址 (`&`) 或 in-place 初始化的上下文中，禁止产生临时右值**
+- [x] 明确含有 `@frame(foo)` 字段的父结构体也必须视为 pinned aggregate，不走普通移动语义
+- [x] **明确对含 `@frame` 字段的结构体禁止整体赋值（`s = another_s`），field-by-field 赋值也需逐字段检查 pinned 规则**
+- [x] 明确泛型 async 的 frame 以单态实例为单位命名与生成，不允许一个泛型名对应唯一 layout
+- [x] **明确 frame key 分层：checker 使用 `frame_key_text = <fully_qualified_fn_name>@<mangled_concrete_type_args>`，包含模块路径哈希；runtime 使用编译期生成的 `frame_id: u32`，通过静态 descriptor 表 O(1) 查表**
+- [x] 明确泛型 async 的合法写法：`@frame(foo<Concrete>)`；未解析的 `@frame(foo<T>)` 必须报错
+- [x] 明确引用不拥有 frame：`&@frame(foo)` 不传播 pinned owner 语义，只用于引用传递和 API 校验
+- [x] 明确父结构体字段只能 in-place 初始化 frame，禁止 `Worker{ req: other_frame }` 这种按值搬入字段的写法
+- [ ] 明确诊断契约：主错误指向违规用法，note 指向 frame 定义 / 字段定义 / 泛型实例化位置，并附带修改建议（主错误已实现，note/suggestion 细化待后续）
+- [x] 明确 checker 需要识别的 frame 属性：`is_async_frame`、`is_pinned`、`is_copyable=false`、`is_movable_by_value=false`、`frame_align`、`frame_key_text`、`frame_id`
+- [ ] 明确错误分层：主错误、声明位置 note、修复建议 note，三者都要稳定输出（主错误已实现，note 细化待后续）
+- [x] 明确 checker 的 AST 落点：`AST_VAR_DECL`、`AST_ASSIGN`、`AST_RETURN_STMT`、`AST_CALL_EXPR`、`AST_STRUCT_INIT`、`AST_ARRAY_LITERAL`、`AST_MEMBER_ACCESS`、`AST_ARRAY_ACCESS`
+- [ ] 明确报错顺序：先主错误，再 declaration note，再 modification note；参数错误需包含参数序号（主错误已实现，note 细化待后续）
 - [ ] **明确 note 的 `kind` 字段区分 `NoteDecl` / `NoteSuggestion`，保证与主错误混排时不被排序打乱**
 
 依赖：
@@ -70,7 +70,7 @@
 - [x] **在 lowering 阶段计算并记录每个 async 函数的 `frame_size` / `frame_align`；若新增 lowering 模块可放在 `src/lower/async.uya`，否则先落在现有 `src/codegen/c99/async_transform.uya` / `src/codegen/c99/function.uya`**（`async_frame_meta.uya` 已定义基础结构）
 - [x] 把 `await` 绑定、跨 await locals、参数字段计入最终帧布局
 - [x] 让 `frame_size` 可在生成 C 前被查询（codegen 已计算并缓存到 `async_frame_size` / `async_frame_align`）
-- [ ] 为 `@frame(foo)` 生成稳定可解析的类型入口（避免外部依赖生成后的 C 符号名）
+- [x] 为 `@frame(foo)` 生成稳定可解析的类型入口（避免外部依赖生成后的 C 符号名）
 - [x] 为泛型 async 生成实例级 frame key / alias（按 concrete type args 区分；C 符号名 `func_c_name` 作为稳定 key）
 - [x] 把 `is_pinned` / `contains_pinned_field` / `frame_key_text` / `frame_id` 传给 checker 侧元信息
 - [x] 给 `frame_key_text` 和 `frame_id` 绑定定义点与实例化点，便于 note 精确定位（`decl_node` / `instance_node` 已填充）
@@ -151,7 +151,7 @@
 - [x] 为 async 函数生成 `*_poll`
 - [x] 让 `*_future_new` 只负责创建 first-class future（保留符号保证外部 C ABI 兼容，默认走 per-function free list，绝不返回内部栈帧）
 - [ ] 增加 `*_future_init_into(storage, args...)` 或等价内部入口，供 caller-owned storage 路径复用（待第二阶段）
-- [ ] 让 `@frame(foo)` 可用于普通变量、结构体字段与池中的显式声明（待 `@frame` 类型构造器实现）
+- [x] 让 `@frame(foo)` 可用于普通变量、结构体字段与池中的显式声明
 - [x] **生成 `*_frame_drop_fields` 函数，保证 parent frame 释放时先递归清理仍然 live 的 child future 字段**（`release` 函数中通过 vtable 调用 child `release` 实现）
 - [x] **生成统一 `future_release` / `frame_release` 包装，根据 ownership tag 归还 pool / debug heap；字段清理函数不释放当前 frame 本体**（`uya_<fn>_release` 已实现）
 
@@ -195,8 +195,8 @@
 - [ ] 检查 future 传入未知边界
 - [ ] 检查 future 被接口类型承接后的生命周期
 - [ ] 对显式 `@frame(foo)` 字段，跳过自动分配位置选择，但仍执行 pinned、父容器逃逸和生命周期检查
-- [ ] 检查 frame 按值赋值 / 按值传参 / return / 数组元素赋值 / 字段初始化时的 pinned 违规
-- [ ] 检查父结构体含 pinned frame 字段时的整体移动和按值传参
+- [x] 检查 frame 按值赋值 / 按值传参 / return / 数组元素赋值 / 字段初始化时的 pinned 违规
+- [x] 检查父结构体含 pinned frame 字段时的整体移动和按值传参
 - [ ] 检查 `@frame(foo<T>)` 未 concrete 时的实例化错误
 - [ ] 将以上检查分别接到 `src/checker/check_stmt.uya`、`src/checker/check_call.uya`、`src/checker/check_expr.uya`、`src/checker/check_expr_extra.uya`
 - [ ] 复用现有 `checker_mark_moved` / `checker_report_error_moved` 风格，但扩展为 pinned frame 专用诊断
@@ -303,6 +303,12 @@
 - [x] 更新 `docs/std_async_design.md`、`docs/async_production_todo.md`、`buglist.md`（`buglist.md` 与 `todo_async_frame_allocation.md` 已更新）
 
 ---
+
+## 已知限制
+
+- **非 async 函数签名中的 `@frame(foo)` 前向声明**：`@frame(foo)` 作为普通（非 `@async_fn`）函数的参数或返回类型时，生成的 C 头文件（如 `uya_split_protos.h`）中仍可能缺少 `struct uya_async_xxx;` 的前向声明，导致多 TU 编译报 `incomplete type`。当前已在 `gen_function_prototype` / `gen_method_prototype` / `gen_mono_method_prototype` 中补了大部分前向声明，但某些 split-C 头文件发射路径（如跨模块导出符号的前置声明聚合）尚未完全覆盖。在 async 函数内部或仅作为局部变量使用时不受影响。
+  - * workaround：将 `@frame` 的跨函数引用限制在 async 函数内部，或通过 `&` 指针在普通函数间传递。
+  - * 后续：在 codegen 头文件统一发射阶段扫描所有函数原型中的 `@frame` 类型并补前向声明。
 
 ## 风险提醒
 

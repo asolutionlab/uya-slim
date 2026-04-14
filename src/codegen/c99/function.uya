@@ -621,6 +621,15 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
         }
     }
     c99_preregister_slices_top_level_fn(codegen, fn_decl);
+    c99_emit_async_frame_forward_for_type(codegen, return_type);
+    var pi_fwd: i32 = 0;
+    while pi_fwd < param_count {
+        const param_fwd: &ASTNode = fn_decl.fn_decl_params[pi_fwd];
+        if param_fwd != null && param_fwd.type == ASTNodeType.AST_VAR_DECL && param_fwd.var_decl_type != null {
+            c99_emit_async_frame_forward_for_type(codegen, param_fwd.var_decl_type);
+        }
+        pi_fwd = pi_fwd + 1;
+    }
     if is_extern != 0 {
         fprintf(codegen.emit_stream, "extern %s %s(" as *byte, return_c as *byte, func_name as *byte);
     } else {
@@ -1840,7 +1849,15 @@ fn c99_async_collect_locals_recursive(codegen: &C99CodeGenerator, fn_body: &ASTN
         return;
     }
     if node.type != ASTNodeType.AST_VAR_DECL || node.var_decl_name == null || node.var_decl_type == null ||
-        node.var_decl_init == null || c99_var_decl_init_is_try_await_bind(node.var_decl_init) != 0 {
+        c99_var_decl_init_is_try_await_bind(node.var_decl_init) != 0 {
+        return;
+    }
+    // @frame(...) 类型允许无初始化，但仍需提升到状态机结构体中
+    var allow_no_init: i32 = 0;
+    if node.var_decl_init == null && node.var_decl_type.type == ASTNodeType.AST_TYPE_FRAME {
+        allow_no_init = 1;
+    }
+    if node.var_decl_init == null && allow_no_init == 0 {
         return;
     }
     var root_si: i32 = nested_block_root_si;
@@ -4265,8 +4282,17 @@ fn gen_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, struct_na
     var return_c: &byte = convert_array_return_type(codegen, fn_decl.fn_decl_return_type);
     return_c = normalize_poll_return_type(codegen, return_c);
     c99_preregister_slices_method(codegen, fn_decl, struct_name);
+    c99_emit_async_frame_forward_for_type(codegen, fn_decl.fn_decl_return_type);
     const params: & & ASTNode = fn_decl.fn_decl_params;
     const param_count: i32 = fn_decl.fn_decl_param_count;
+    var pi_fwd_m: i32 = 0;
+    while pi_fwd_m < param_count {
+        const param_fwd: &ASTNode = params[pi_fwd_m];
+        if param_fwd != null && param_fwd.type == ASTNodeType.AST_VAR_DECL && param_fwd.var_decl_type != null {
+            c99_emit_async_frame_forward_for_type(codegen, param_fwd.var_decl_type);
+        }
+        pi_fwd_m = pi_fwd_m + 1;
+    }
     fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, c_name as *byte);
     var i: i32 = 0;
     while i < param_count {
@@ -5239,9 +5265,18 @@ fn gen_mono_method_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode, stru
     
     // 使用 c99_type_to_c_with_self 来正确处理 Self 类型
     c99_preregister_slices_method(codegen, fn_decl, struct_name);
+    c99_emit_async_frame_forward_for_type(codegen, fn_decl.fn_decl_return_type);
     const return_c: &byte = c99_type_to_c_with_self(codegen, fn_decl.fn_decl_return_type, struct_name);
     const params: & & ASTNode = fn_decl.fn_decl_params;
     const param_count: i32 = fn_decl.fn_decl_param_count;
+    var pi_fwd_mm: i32 = 0;
+    while pi_fwd_mm < param_count {
+        const param_fwd: &ASTNode = params[pi_fwd_mm];
+        if param_fwd != null && param_fwd.type == ASTNodeType.AST_VAR_DECL && param_fwd.var_decl_type != null {
+            c99_emit_async_frame_forward_for_type(codegen, param_fwd.var_decl_type);
+        }
+        pi_fwd_mm = pi_fwd_mm + 1;
+    }
     
     fprintf(codegen.emit_stream as *void, "%s %s(" as *byte, return_c as *byte, mono_method_name as *byte);
     

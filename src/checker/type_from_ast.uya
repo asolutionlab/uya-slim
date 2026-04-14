@@ -3,6 +3,7 @@
 
 use std.string.strlen;
 use std.string.strcpy;
+use std.string.strcat;
 
 const TYPE_FROM_AST_CACHE_BITS: i32 = 12;
 const TYPE_FROM_AST_CACHE_SIZE: i32 = 4096;
@@ -429,6 +430,70 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
 
         result.kind = TypeKind.TYPE_MASK;
         result.array_size = lanes;
+        return result;
+    }
+
+    if type_node.type == ASTNodeType.AST_TYPE_FRAME {
+        const operand: &ASTNode = type_node.type_frame_operand;
+        if operand == null || operand.type != ASTNodeType.AST_IDENTIFIER || operand.identifier_name == null {
+            if checker != null {
+                checker_report_error(checker, type_node, "@frame operand must be an async function identifier" as &byte);
+            }
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        const fn_name: &byte = operand.identifier_name;
+        const fd: &ASTNode = find_fn_decl_from_program(checker.program_node, fn_name);
+        if fd == null || fd.fn_decl_is_async == 0 {
+            if checker != null {
+                checker_report_error(checker, type_node, "@frame operand must be an @async_fn" as &byte);
+            }
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        const type_arg_count: i32 = type_node.type_named_type_arg_count;
+        const type_args: & & ASTNode = type_node.type_named_type_args;
+        if fd.fn_decl_type_param_count > 0 {
+            if type_arg_count != fd.fn_decl_type_param_count {
+                if checker != null {
+                    checker_report_error(checker, type_node, "@frame generic argument count mismatch" as &byte);
+                }
+                result.kind = TypeKind.TYPE_VOID;
+                return result;
+            }
+        } else if type_arg_count > 0 {
+            if checker != null {
+                checker_report_error(checker, type_node, "@frame on non-generic async function should not have type arguments" as &byte);
+            }
+            result.kind = TypeKind.TYPE_VOID;
+            return result;
+        }
+        // 确保类型参数已 concrete（不能是未解析的泛型形参）
+        var tai: i32 = 0;
+        while tai < type_arg_count {
+            const ta_node: &ASTNode = type_args[tai];
+            if ta_node != null {
+                const ta_type: Type = type_from_ast(checker, ta_node);
+                if ta_type.kind == TypeKind.TYPE_GENERIC_PARAM {
+                    if checker != null {
+                        checker_report_error(checker, ta_node, "@frame type argument must be concrete" as &byte);
+                    }
+                    result.kind = TypeKind.TYPE_VOID;
+                    return result;
+                }
+            }
+            tai = tai + 1;
+        }
+        // 构造 frame struct 名称：uya_async_<fn_name>（codegen 会基于此查找/生成）
+        const prefix: &byte = "uya_async_";
+        const name_len: usize = strlen(prefix as *byte) + strlen(fn_name as *byte) + 1;
+        const struct_name: &byte = compiler_arena_alloc(checker.arena, name_len) as &byte;
+        if struct_name != null {
+            strcpy(struct_name as *byte, prefix as *byte);
+            strcat(struct_name as *byte, fn_name as *byte);
+            result.struct_name = struct_name;
+        }
+        result.kind = TypeKind.TYPE_STRUCT;
         return result;
     }
     

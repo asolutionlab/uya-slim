@@ -276,6 +276,19 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
         return 0;
     }
 
+    // Pinned 类型检查：禁止对包含 async frame 的类型进行整体赋值和按值移动
+    if checker_type_contains_pinned_field(checker, &dest_type) != 0 {
+        checker_report_error(checker, node, "cannot assign to pinned type: whole-assignment of a type containing @frame is prohibited" as &byte);
+        return 0;
+    }
+    if src != null {
+        const src_type: Type = checker_infer_type(checker, src);
+        if checker_type_contains_pinned_field(checker, &src_type) != 0 {
+            checker_report_error(checker, src, "cannot move pinned type by value" as &byte);
+            return 0;
+        }
+    }
+
     // 原子类型的复合赋值额外检查：
     // 1) atomic +=/-=/*=//=/= 的右侧不能是浮点或 bool
     // 2) atomic /=、%= 的右侧若是常量 0 则报错
