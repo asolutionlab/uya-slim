@@ -191,11 +191,11 @@
 
 > 注：当前实现做了轻量级的 caller-owned inline 判定：直接 `@await foo()` 内联为父 frame 字段；其余情况统一走 pool。显式逃逸分析是更激进栈优化的前提，作为后续实现。
 
-- [ ] **先实现函数内保守逃逸分析：future 只要被 `return`、写入非局部存储、传入非 await 的泛型/接口参数，即视为逃逸**
-- [ ] 检查 `return foo()`
-- [ ] 检查 future 写入结构体 / 数组 / 全局
-- [ ] 检查 future 传入未知边界
-- [ ] 检查 future 被接口类型承接后的生命周期
+- [x] **先实现函数内保守逃逸分析：future 只要被 `return`、写入非局部存储、传入非 await 的泛型/接口参数，即视为逃逸**（已实现：`c99_analyze_async_escape_class` 在 codegen 阶段遍历函数体 AST，对直接 `@await foo()` 标记 `ESCAPE_STACK_CANDIDATE`，其余场景保守标记 `ESCAPE_POOL_REQUIRED`）
+- [x] 检查 `return foo()`（`c99_analyze_async_escape_node` 在 `AST_RETURN_STMT` 分支递归检查 async 调用）
+- [x] 检查 future 写入结构体 / 数组 / 全局（`AST_STRUCT_INIT`、`AST_ARRAY_LITERAL`、`AST_ASSIGN` 分支均已覆盖）
+- [x] 检查 future 传入未知边界（`AST_CALL_EXPR` 的参数分支中，非 await 上下文的 async 调用视为逃逸）
+- [x] 检查 future 被接口类型承接后的生命周期（保守策略：任何不在 `@await` 直接操作数位置的 async 调用均视为可能逃逸）
 - [x] 对显式 `@frame(foo)` 字段，跳过自动分配位置选择，但仍执行 pinned、父容器逃逸和生命周期检查
 - [x] 检查 frame 按值赋值 / 按值传参 / return / 数组元素赋值 / 字段初始化时的 pinned 违规
 - [x] 检查父结构体含 pinned frame 字段时的整体移动和按值传参
