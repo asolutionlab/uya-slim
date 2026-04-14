@@ -20,6 +20,7 @@ export error EventLoopSlotsFull;
 export error TaskQueueFull;
 export error SchedulerStopped;
 export error FutureNotReady;
+export error AsyncFramePoolFull;
 
 /// 最小唤醒器。
 /// 当前仅维护“是否被唤醒”的可观察状态，供 Future 在 poll 内请求立即重试。

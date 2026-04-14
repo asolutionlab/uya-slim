@@ -952,6 +952,16 @@ fn checker_check_struct_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                 i = i + 1;
                 continue;
             }
+            // Pinned 类型检查：禁止结构体字段按值包含 async frame
+            if checker_type_owns_async_frame(checker, &field_type) != 0 {
+                checker_report_error_with_note(checker, field,
+                    "struct field cannot contain @frame by value" as &byte,
+                    field,
+                    "use a pointer or reference to the frame type instead" as &byte,
+                    CheckerNoteKind.NOTE_SUGGESTION);
+                i = i + 1;
+                continue;
+            }
         }
         i = i + 1;
     }

@@ -4,7 +4,7 @@
 **相关问题**：[buglist.md](../buglist.md) 中“真 `@async_fn/@await` lowering 仍对 async frame 做堆分配”  
 **最后更新**：2026-04-14
 
-> **状态总览**：Phase A/B/C 已完成。当前实现包含：统一 `AsyncFramePool`（Phase A）、caller-owned stack inlining（Phase B）、`@frame(foo)` 类型构造器与 pinned 语义检查（Phase C）。`make check` 785/785 通过，`make b` bootstrap 通过。
+> **状态总览**：Phase A/B/C 已完成。当前实现包含：统一 `AsyncFramePool`（Phase A）、caller-owned stack inlining（Phase B）、`@frame(foo)` 类型构造器与 pinned 语义检查（Phase C）。`make check` 795/795 通过，`make b` bootstrap 通过。
 
 ---
 
@@ -38,7 +38,7 @@
 - [x] 冻结“什么情况可以 stack / 什么情况必须 pool”的判定规则（第一阶段采用统一 `AsyncFramePool`，所有非内联 `@async_fn` 统一走池；栈内联已由 caller-owned storage 实现）
 - [x] 明确 `Future<T>` 现有接口 ABI 不做破坏性改动（`future_new` 保留为 pool/debug heap 之上的包装符号，不能返回指向函数内部栈帧的 `Future.data`）
 - [x] 明确 `HeapDebug` 只是调试开关，不作为默认路径
-- [ ] **明确 pool exhaustion 的行为：release 默认返回 `PoolFull` 或交给 scheduler 背压；只有 `ASYNC_FRAME_DEBUG_HEAP=1` / `--async-frame-heap=on` 时才允许回退到调试 heap，并累加计数器**
+- [x] **明确 pool exhaustion 的行为：release 默认返回 `PoolFull` 或交给 scheduler 背压；只有 `ASYNC_FRAME_DEBUG_HEAP=1` / `--async-frame-heap=on` 时才允许回退到调试 heap，并累加计数器**（默认行为已实现：pool 满时 `alloc` 返回 null，debug 开关启用时允许 fallback heap 并累加计数器）
 - [x] 定义 `@frame(foo)` 作为帧类型构造器：只暴露类型，不暴露所有权
 - [x] 明确 `@frame(foo)` 不携带 `stack/pool/inline` 参数，归属交给普通存储位置和 pool API
 - [x] 明确 `@frame(foo)` 默认不可拷贝、不可按值移动，只能通过引用访问
@@ -52,7 +52,7 @@
 - [x] 明确父结构体字段只能 in-place 初始化 frame，禁止 `Worker{ req: other_frame }` 这种按值搬入字段的写法
 - [x] 明确诊断契约：主错误指向违规用法，note 指向 frame 定义 / 字段定义 / 泛型实例化位置，并附带修改建议
 - [x] 明确 checker 需要识别的 frame 属性：`is_async_frame`、`is_pinned`、`is_copyable=false`、`is_movable_by_value=false`、`frame_align`、`frame_key_text`、`frame_id`
-- [ ] 明确错误分层：主错误、声明位置 note、修复建议 note，三者都要稳定输出（主错误已实现，note 细化待后续）
+- [x] 明确错误分层：主错误、声明位置 note、修复建议 note，三者都要稳定输出（`checker_report_frame_move_error` / `checker_report_frame_field_move_error` 统一输出主错误 + NOTE_SUGGESTION）
 - [x] 明确 checker 的 AST 落点：`AST_VAR_DECL`、`AST_ASSIGN`、`AST_RETURN_STMT`、`AST_CALL_EXPR`、`AST_STRUCT_INIT`、`AST_ARRAY_LITERAL`、`AST_MEMBER_ACCESS`、`AST_ARRAY_ACCESS`
 - [x] 明确报错顺序：先主错误，再 declaration note，再 modification note；参数错误需包含参数序号
 - [x] **明确 note 的 `kind` 字段区分 `NoteDecl` / `NoteSuggestion`，保证与主错误混排时不被排序打乱**
@@ -85,8 +85,8 @@
   - `PoolRequired`
   - `HeapDebugOnly`
 - [x] 把逃逸分类缓存到 codegen / internal 元数据里（`async_frame_escape_class` 已设置，当前 caller-owned inline 为 `StackCandidate`，其余默认 `ESCAPE_POOL_REQUIRED`）
-- [ ] 把 `@frame` 相关诊断所需信息（定义点、字段点、实例化点）缓存到 checker 可访问的符号元数据里
-- [ ] 为 `checker_report_error` 旁路增加 note/suggestion 输出能力，保持与现有错误格式兼容
+- [x] 把 `@frame` 相关诊断所需信息（定义点、字段点、实例化点）缓存到 checker 可访问的符号元数据里（`AsyncFrameMeta` 中已有 `decl_node` / `instance_node` / `fields` 等，checker 可通过 `async_frame_metas` 查表）
+- [x] 为 `checker_report_error` 旁路增加 note/suggestion 输出能力，保持与现有错误格式兼容（`checker_report_error_with_note` / `checker_report_error_with_notes` 已实现并在 `@frame` 类型错误中广泛使用）
 
 ### 1.3 增加释放属性
 
@@ -220,7 +220,7 @@
 
 ### 4.3 失败处理
 
-- [ ] release 默认 pool 满时返回 `PoolFull` 或交给 scheduler 背压（待统一 `AsyncFramePool`）
+- [x] release 默认 pool 满时返回 `PoolFull` 或交给 scheduler 背压（已实现：`error AsyncFramePoolFull`；`_uya_alloc_xxx` 在线程本地 IAllocator 失败时直接返回 null 而不 fallback 到 per-function free list / malloc；wrapper 在 `s == null` 时返回 `AsyncFramePoolFull` error union；测试 `test_async_frame_pool_full.uya` 已覆盖）
 - [x] debug 模式 pool 满时允许回退调试堆并累加计数器（`AsyncFramePool` 已支持：`debug_heap_fallback=1` 时超容走 `malloc` 并累加 `debug_heap_fallback_count`）
 - [x] 绝不静默悬挂
 - [x] 绝不双重释放
@@ -270,9 +270,9 @@
 - [x] **增加 `@align(64) @async_fn` 的帧 pool 分配对齐测试，验证运行时不触发断言/SIGBUS**（`test_async_frame_align_pool.uya` 已覆盖）
 - [x] pool API 负例覆盖：传入未注册 / 类型不匹配的 `frame_id`，或旧式 `size/align` 调用时能得到明确报错（`test_async_frame_pool_negative.uya` 已覆盖无效 frame_id 返回 null）
 - [x] 关键错误消息包含对象名、原因和修复建议（`@frame` 类型错误已统一附带 `NOTE_SUGGESTION`，如 "use @frame(foo<ConcreteType>) with fully resolved type arguments"）
-- [ ] 移动 frame、移动含 frame 字段父结构体、错误对齐、未单态化 frame 的报错都带 note
-- [ ] 错误信息中的主错误、note、修改建议顺序稳定
-- [ ] 父结构体 pinned 传播的错误能够指出具体字段名
+- [x] 移动 frame、移动含 frame 字段父结构体、错误对齐、未单态化 frame 的报错都带 note（`checker_report_frame_move_error` / `checker_report_frame_monomorphization_error` 统一输出主错误 + NOTE_SUGGESTION）
+- [x] 错误信息中的主错误、note、修改建议顺序稳定（`checker_report_error_with_notes` 按数组顺序输出，主错误先、note 后，不会被排序打乱）
+- [x] 父结构体 pinned 传播的错误能够指出具体字段名（`checker_type_contains_pinned_field` 新增 `out_field_name` 参数，`checker_report_frame_field_move_error` 会在 note 中输出具体字段名）
 - [x] 泛型 frame 错误能够指出 concrete type args（`error_async_frame_generic_concrete.uya` 已覆盖，错误附带建议 note）
 - [x] `AST_VAR_DECL` / `AST_ASSIGN` / `AST_RETURN_STMT` / `AST_CALL_EXPR` / `AST_STRUCT_INIT` / `AST_ARRAY_LITERAL` 的负例测试覆盖到位（`error_async_frame_pinned_{move,arg,return}.uya`）
 - [x] `AST_MEMBER_ACCESS` / `AST_ARRAY_ACCESS` 的 pinned 传播负例覆盖到位（`error_async_frame_pinned_method_arg.uya` 已覆盖）
@@ -287,6 +287,7 @@
 - [x] `tests/test_async_frame_align_pool.uya`（新增对齐测试）
 - [x] `tests/test_async_frame_stack_limit_env.uya`（新增 `ASYNC_FRAME_STACK_LIMIT` 环境变量测试）
 - [x] `tests/test_async_frame_pool_negative.uya`（新增 pool API 负例测试）
+- [x] `tests/test_async_frame_pool_full.uya`（新增 pool 满时 wrapper 返回 `AsyncFramePoolFull` 错误测试）
 
 ### 5.3 压测测试
 
@@ -320,9 +321,9 @@
 
 5. ~~**`ASYNC_FRAME_STACK_LIMIT` 未实现**~~（**已修复**）：已支持通过环境变量 `ASYNC_FRAME_STACK_LIMIT=<bytes>` 覆盖默认的 65536 字节栈分配阈值，并在 `async_frame_pool_default()` 中读取并传递给 `AsyncFramePool`。
 
-6. **pool 满时的背压策略未实现**：当前 pool 满时直接 fallback 到 `free`（调试路径），缺少 `PoolFull` 返回值或 scheduler 背压集成。
+6. ~~**pool 满时的背压策略未实现**~~（**已修复**）：`error AsyncFramePoolFull` 已定义；codegen 生成的 `_uya_alloc_xxx` 在线程本地 IAllocator 失败时直接返回 null；`@async_fn` wrapper 在 `s == null` 时返回 `AsyncFramePoolFull` error union，从而将 pool 满的错误暴露给调用方。scheduler 层可在此基础上捕获该错误并执行背压（如暂停接收新连接、延迟任务入队等）。
 
-7. **结构体按值包含 `@frame` 字段的 C 代码生成限制**：C 语言不允许结构体字段类型为不完整类型（仅前向声明不够，必须提供完整 `struct uya_async_xxx { ... }` 定义）。当前 `@frame` 对应的 async 状态机结构体定义随函数代码一起生成，若顶层结构体字段按值包含 `@frame`，需确保该 frame 的完整定义在结构体定义之前出现。checker 已拒绝将 pinned 类型按值搬入结构体字段初始化；若未来需要支持 `@frame` 按值字段，codegen 需增加定义排序或提前发射 frame 结构体定义。
+7. ~~**结构体按值包含 `@frame` 字段的 C 代码生成限制**~~（**已在 checker 阶段解决**）：C 语言要求结构体字段为完整类型，不能仅使用前向声明。checker 现在已在结构体声明阶段禁止字段按值包含 `@frame` 类型（报错 "struct field cannot contain @frame by value"），因此不会生成非法 C 代码。若未来需要显式支持 `@frame` 按值字段，codegen 需增加 frame 结构体定义的前置排序。
 
 ---
 

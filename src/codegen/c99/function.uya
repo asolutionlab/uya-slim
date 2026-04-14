@@ -4386,7 +4386,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     fprintf(codegen.emit_stream as *void, "static const int32_t %s_pool_cap = 4096;\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "static struct %s *%s(void) {\n" as *byte, async_struct as *byte, alloc_name as *byte);
     fputs("    struct uya_interface_IAllocator *a = _uya_thread_local_async_frame_allocator;\n" as *byte, codegen.emit_stream as *void);
-    fprintf(codegen.emit_stream as *void, "    if (a != (void*)0) { struct err_union_uint8_tptr r = ((struct uya_vtable_IAllocator *)a->vtable)->alloc(a->data, sizeof(struct %s)); if (r.error_id == 0) return (struct %s *)r.value; }\n" as *byte, async_struct as *byte, async_struct as *byte);
+    fprintf(codegen.emit_stream as *void, "    if (a != (void*)0) { struct err_union_uint8_tptr r = ((struct uya_vtable_IAllocator *)a->vtable)->alloc(a->data, sizeof(struct %s)); if (r.error_id == 0) return (struct %s *)r.value; return (struct %s *)0; }\n" as *byte, async_struct as *byte, async_struct as *byte, async_struct as *byte);
     fprintf(codegen.emit_stream as *void, "    void *head = __atomic_load_n(&%s_pool_head, __ATOMIC_ACQUIRE);\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "    while (head != (void*)0) {\n" as *byte);
     fprintf(codegen.emit_stream as *void, "        void *next = *(void**)head;\n" as *byte);
@@ -4486,7 +4486,14 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     }
     // 状态机分配：使用 per-function 帧池分配器，热路径避免 malloc
     fprintf(codegen.emit_stream as *void, "    struct %s *s = %s();\n" as *byte, async_struct as *byte, alloc_name as *byte);
-    fputs("    if (s != (void*)0) { s->state = 0; __builtin_memset((void *)&s->await_fut, 0, sizeof(s->await_fut)); " as *byte, codegen.emit_stream as *void);
+    var pool_full_id: i32 = c99_get_or_add_error_id(codegen, "AsyncFramePoolFull" as *byte);
+    if pool_full_id == 0 { pool_full_id = 1; }
+    if need_wrap != 0 {
+        fprintf(codegen.emit_stream as *void, "    if (s == (void*)0) { return (%s){ .error_id = %dU, .value = (%s){0} }; }\n" as *byte, wrapper_ret_c as *byte, pool_full_id, iface_c as *byte);
+    } else {
+        fputs("    if (s == (void*)0) { abort(); }\n" as *byte, codegen.emit_stream as *void);
+    }
+    fputs("    s->state = 0; __builtin_memset((void *)&s->await_fut, 0, sizeof(s->await_fut)); " as *byte, codegen.emit_stream as *void);
     pi = 0;
     while pi < param_count && pi < 16 {
         const param: &ASTNode = params[pi];
@@ -4498,7 +4505,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
         pi = pi + 1;
     }
-    fputs("}\n" as *byte, codegen.emit_stream as *void);
+    fputs("\n" as *byte, codegen.emit_stream as *void);
     if need_wrap != 0 {
         fprintf(codegen.emit_stream as *void, "    return (%s){ .error_id = 0, .value = (%s){ .vtable = (void*)&%s, .data = (void*)s } };\n" as *byte, wrapper_ret_c as *byte, iface_c as *byte, vtable_name as *byte);
     } else {

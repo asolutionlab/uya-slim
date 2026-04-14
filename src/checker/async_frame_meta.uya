@@ -217,6 +217,47 @@ fn checker_type_contains_pinned_field(checker: &TypeChecker, ty: &Type) i32 {
     return 0;
 }
 
+// 查找结构体类型中第一个包含 async frame 的字段声明节点（用于诊断）
+fn checker_find_first_pinned_field_decl(checker: &TypeChecker, ty: &Type) &ASTNode {
+    if checker == null || ty == null || ty.kind != TypeKind.TYPE_STRUCT || checker.program_node == null {
+        return null;
+    }
+    var struct_name: &byte = ty.struct_name;
+    if struct_name == null {
+        return null;
+    }
+    var decl: &ASTNode = find_struct_decl_from_program(checker.program_node, struct_name);
+    if decl == null {
+        // 尝试基名（单态化结构体名如 Box_i32 -> Box）
+        var base_buf: [byte: 64] = [];
+        var bi: i32 = 0;
+        const sn: &u8 = struct_name as &u8;
+        while sn[bi] != 0 && sn[bi] != 95 && bi < 63 {
+            base_buf[bi] = sn[bi] as byte;
+            bi = bi + 1;
+        }
+        if bi >= 0 && bi < 64 {
+            base_buf[bi] = 0;
+        }
+        decl = find_struct_decl_from_program(checker.program_node, &base_buf[0]);
+    }
+    if decl == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < decl.struct_decl_field_count {
+        const field: &ASTNode = decl.struct_decl_fields[i];
+        if field != null && field.type == ASTNodeType.AST_VAR_DECL && field.var_decl_type != null {
+            const field_type: Type = type_from_ast(checker, field.var_decl_type);
+            if checker_type_owns_async_frame(checker, &field_type) != 0 {
+                return field;
+            }
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
 // ===== 诊断 helper =====
 
 // 报告：按值移动 pinned frame（变量初始化、赋值、传参、返回等通用场景）
@@ -236,6 +277,20 @@ fn checker_report_frame_move_error(checker: &TypeChecker, node: &ASTNode, contex
             msg = "cannot initialize variable with pinned type by value" as &byte;
         }
     }
+    // 如果 node 是结构体类型，尝试找到第一个 pinned 字段并附加 declaration note
+    const node_type: Type = checker_infer_type(checker, node);
+    const field_decl: &ASTNode = checker_find_first_pinned_field_decl(checker, &node_type);
+    if field_decl != null {
+        var notes: [CheckerNote: 2] = [];
+        notes[0].node = field_decl;
+        notes[0].message = "the pinned @frame field is declared here" as &byte;
+        notes[0].kind = CheckerNoteKind.NOTE_DECLARATION;
+        notes[1].node = node;
+        notes[1].message = "use a pointer or reference instead of moving by value" as &byte;
+        notes[1].kind = CheckerNoteKind.NOTE_SUGGESTION;
+        checker_report_error_with_notes(checker, node, msg, &notes[0], 2);
+        return;
+    }
     checker_report_error_with_note(checker, node, msg, node,
         "use a pointer or reference instead of moving by value" as &byte,
         CheckerNoteKind.NOTE_SUGGESTION);
@@ -247,8 +302,6 @@ fn checker_report_frame_field_move_error(checker: &TypeChecker, node: &ASTNode, 
         return;
     }
     if field_name != null {
-        // 当前 Uya 暂不支持运行时字符串拼接，使用通用消息
-        // 后续若支持格式化诊断，可改为 "field '%s' contains @frame and makes the struct pinned"
         _ = field_name;
     }
     checker_report_error_with_note(checker, node,
