@@ -560,6 +560,75 @@ export fn checker_eval_const_expr_in_block(checker: &TypeChecker, expr: &ASTNode
 
 // ===== 错误报告函数 =====
 
+enum CheckerNoteKind {
+    NOTE_DECLARATION,
+    NOTE_SUGGESTION,
+}
+
+struct CheckerNote {
+    node: &ASTNode,
+    message: &byte,
+    kind: CheckerNoteKind,
+}
+
+// 辅助：输出单个 note
+fn checker_print_note(checker: &TypeChecker, note: &CheckerNote) void {
+    if checker == null || note == null || note.message == null || libc.stderr == null {
+        return;
+    }
+    var filename: &byte = "(unknown)" as *byte;
+    if note.node != null && note.node.filename != null {
+        filename = note.node.filename;
+    } else if checker.default_filename != null {
+        filename = checker.default_filename;
+    }
+    var kind_str: &byte = "附注" as *byte;
+    if note.kind == CheckerNoteKind.NOTE_SUGGESTION {
+        kind_str = "建议" as *byte;
+    }
+    if note.node != null {
+        fprintf(libc.stderr, "%s:(%d:%d): %s: %s\n" as *byte, filename, note.node.line, note.node.column, kind_str, note.message as *byte);
+    } else {
+        fprintf(libc.stderr, "%s: %s: %s\n" as *byte, filename, kind_str, note.message as *byte);
+    }
+}
+
+// 报告类型检查错误，附带 note 列表
+fn checker_report_error_with_notes(checker: &TypeChecker, node: &ASTNode, message: &byte, notes: &CheckerNote, note_count: i32) void {
+    if checker != null {
+        last_checker_error_message = stash_checker_error_message(message);
+        checker.error_count = checker.error_count + 1;
+        if libc.stderr != null && message != null {
+            var filename: &byte = "(unknown)" as *byte;
+            if node != null && node.filename != null {
+                filename = node.filename;
+            } else if checker.default_filename != null {
+                filename = checker.default_filename;
+            }
+            const out_msg: &byte = last_checker_error_message;
+            if node != null {
+                fprintf(libc.stderr, "%s:(%d:%d): 错误: %s\n" as *byte, filename, node.line, node.column, out_msg as *byte);
+            } else {
+                fprintf(libc.stderr, "%s: 错误: %s\n" as *byte, filename, out_msg as *byte);
+            }
+            var i: i32 = 0;
+            while i < note_count {
+                checker_print_note(checker, &notes[i]);
+                i = i + 1;
+            }
+        }
+    }
+}
+
+// 报告类型检查错误，附带单个 note
+fn checker_report_error_with_note(checker: &TypeChecker, node: &ASTNode, message: &byte, note_node: &ASTNode, note_message: &byte, note_kind: i32) void {
+    var note: CheckerNote = [];
+    note.node = note_node;
+    note.message = note_message;
+    note.kind = note_kind;
+    checker_report_error_with_notes(checker, node, message, &note, 1);
+}
+
 // 把 message 拷入 last_checker_error_storage，返回稳定指针（message 为 null 则返回 null）
 fn stash_checker_error_message(message: &byte) &byte {
     if message == null {

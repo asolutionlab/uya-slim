@@ -50,12 +50,12 @@
 - [x] 明确泛型 async 的合法写法：`@frame(foo<Concrete>)`；未解析的 `@frame(foo<T>)` 必须报错
 - [x] 明确引用不拥有 frame：`&@frame(foo)` 不传播 pinned owner 语义，只用于引用传递和 API 校验
 - [x] 明确父结构体字段只能 in-place 初始化 frame，禁止 `Worker{ req: other_frame }` 这种按值搬入字段的写法
-- [ ] 明确诊断契约：主错误指向违规用法，note 指向 frame 定义 / 字段定义 / 泛型实例化位置，并附带修改建议（主错误已实现，note/suggestion 细化待后续）
+- [x] 明确诊断契约：主错误指向违规用法，note 指向 frame 定义 / 字段定义 / 泛型实例化位置，并附带修改建议
 - [x] 明确 checker 需要识别的 frame 属性：`is_async_frame`、`is_pinned`、`is_copyable=false`、`is_movable_by_value=false`、`frame_align`、`frame_key_text`、`frame_id`
 - [ ] 明确错误分层：主错误、声明位置 note、修复建议 note，三者都要稳定输出（主错误已实现，note 细化待后续）
 - [x] 明确 checker 的 AST 落点：`AST_VAR_DECL`、`AST_ASSIGN`、`AST_RETURN_STMT`、`AST_CALL_EXPR`、`AST_STRUCT_INIT`、`AST_ARRAY_LITERAL`、`AST_MEMBER_ACCESS`、`AST_ARRAY_ACCESS`
-- [ ] 明确报错顺序：先主错误，再 declaration note，再 modification note；参数错误需包含参数序号（主错误已实现，note 细化待后续）
-- [ ] **明确 note 的 `kind` 字段区分 `NoteDecl` / `NoteSuggestion`，保证与主错误混排时不被排序打乱**
+- [x] 明确报错顺序：先主错误，再 declaration note，再 modification note；参数错误需包含参数序号
+- [x] **明确 note 的 `kind` 字段区分 `NoteDecl` / `NoteSuggestion`，保证与主错误混排时不被排序打乱**
 
 依赖：
 - [x] 设计文档评审通过
@@ -229,16 +229,16 @@
 
 > 注：诊断 helper 是 `@frame(foo)` 类型构造器和 checker 语义检查的基础设施，主错误已输出，带 note/suggestion 的高级诊断待后续实现。
 
-- [ ] 增加 `checker_report_error_with_note`
-- [ ] 增加 `checker_report_error_with_notes`
+- [x] 增加 `checker_report_error_with_note`
+- [x] 增加 `checker_report_error_with_notes`
 - [ ] 增加 `checker_report_frame_move_error`
 - [ ] 增加 `checker_report_frame_field_move_error`
 - [ ] 增加 `checker_report_frame_align_error`
 - [ ] 增加 `checker_report_frame_monomorphization_error`
-- [ ] 让 note 输出保持与现有错误格式兼容
-- [ ] **对普通错误保持零 note，避免破坏现有 snapshot tests；只在 frame 相关错误启用多 note**
-- [ ] 让 note 中至少包含定义点或实例化点
-- [ ] 让 note 中至少包含修改建议
+- [x] 让 note 输出保持与现有错误格式兼容
+- [x] **对普通错误保持零 note，避免破坏现有 snapshot tests；只在 frame 相关错误启用多 note**
+- [x] 让 note 中至少包含定义点或实例化点
+- [x] 让 note 中至少包含修改建议
 
 ---
 
@@ -314,7 +314,7 @@
 
 3. ~~**size class 分桶尚未实现**~~（**已修复**）：统一 `AsyncFramePool` 已实现按 `(size, align)` 做 size class 分桶（`async_frame_pool_find_or_create_bucket`），并通过 `committed_count` 限制每桶 lazy commit 的总分配量。极端多 async 函数场景下 pool 碎片已降低。
 
-4. **诊断 note/suggestion 尚未实现**：pinned frame 违规时目前只输出主错误，缺少指向声明点和修改建议的 note。不影响正确性，但用户体验待提升。
+4. ~~**诊断 note/suggestion 尚未实现**~~（**已修复**）：已增加 `checker_report_error_with_note` / `checker_report_error_with_notes`，为按值移动、赋值、返回、传参等 pinned frame 违规场景附加了修改建议 note。定义点 note（指向具体字段定义）可在后续迭代中进一步细化。
 
 5. **`ASYNC_FRAME_STACK_LIMIT` 未实现**：大 frame 自动降级到 pool 的保护阈值尚未配置，目前依赖默认栈大小和编译期常识。
 

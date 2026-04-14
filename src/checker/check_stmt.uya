@@ -142,7 +142,11 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
 
             // Pinned 类型检查：禁止按值初始化包含 async frame 的类型
             if checker_type_contains_pinned_field(checker, &init_type) != 0 {
-                checker_report_error(checker, node.var_decl_init, "cannot initialize variable with pinned type by value" as &byte);
+                checker_report_error_with_note(checker, node.var_decl_init,
+                    "cannot initialize variable with pinned type by value" as &byte,
+                    node.var_decl_init,
+                    "initialize the variable in-place or use a pointer/reference instead" as &byte,
+                    CheckerNoteKind.NOTE_SUGGESTION);
                 return 0;
             }
             

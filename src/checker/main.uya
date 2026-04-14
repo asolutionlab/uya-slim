@@ -531,7 +531,11 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
 
             // Pinned 类型检查：禁止按值返回包含 async frame 的类型
             if checker_type_contains_pinned_field(checker, &expr_type) != 0 {
-                checker_report_error(checker, node.return_stmt_expr, "cannot return pinned type by value" as &byte);
+                checker_report_error_with_note(checker, node.return_stmt_expr,
+                    "cannot return pinned type by value" as &byte,
+                    node.return_stmt_expr,
+                    "return a pointer or reference instead of the pinned value itself" as &byte,
+                    CheckerNoteKind.NOTE_SUGGESTION);
                 return 0;
             }
             
