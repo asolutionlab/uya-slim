@@ -162,7 +162,7 @@
 - [x] 对直接 `@await foo()` 的路径使用 caller-owned frame（直接内联为父 frame 的 `_uya_inline_await_N` 字段）
 - [x] 对 `block_on(foo())` 的路径使用局部 frame（`block_on` 内部已走 pool）
 - [x] 对父子 async 嵌套，优先把 child frame 放进 parent frame 字段（caller-owned inline 已实现）
-- [ ] **对 `var f = foo(); @await f;` 等“变量暂存后再 await”场景，若变量未逃逸且生命周期在单一会话内，仍走栈分配**（第二阶段优化）
+- [x] **对 `var f = foo(); @await f;` 等“变量暂存后再 await”场景，若变量未逃逸且生命周期在单一会话内，仍走栈分配**（caller-owned inline 已支持：扫描 temp var、替换 await operand、跳过原 var decl 生成）
 
 ### 3.3 池兜底路径
 
@@ -266,8 +266,8 @@
 - [x] `Worker{ req: other_frame }` 这种按值搬入 frame 字段的写法被正确拒绝（checker struct init 已拒绝按值搬入 pinned 字段）
 - [x] 泛型 async 的 frame 单态实例区分正确，不同 type args 不混 layout（`func_c_name` 作为稳定 key 区分）
 - [x] `@frame(foo<Concrete>)` 正例通过，未解析的 `@frame(foo<T>)` 负例报错（由 checker 在 `type_from_ast` 中实施；`test_async_frame_type.uya` 覆盖基础正例）
-- [ ] 对齐更高的 frame 在 pool 中分配后不出现未对齐访问
-- [ ] **增加 `@align(64) @async_fn` 的帧 pool 分配对齐测试，验证运行时不触发断言/SIGBUS**
+- [x] 对齐更高的 frame 在 pool 中分配后不出现未对齐访问（`@align(64)` 已生效，`posix_memalign` 按 descriptor.align 分配）
+- [x] **增加 `@align(64) @async_fn` 的帧 pool 分配对齐测试，验证运行时不触发断言/SIGBUS**（`test_async_frame_align_pool.uya` 已覆盖）
 - [ ] pool API 负例覆盖：传入未注册 / 类型不匹配的 `frame_id`，或旧式 `size/align` 调用时能得到明确报错
 - [ ] 关键错误消息包含对象名、原因和修复建议
 - [ ] 移动 frame、移动含 frame 字段父结构体、错误对齐、未单态化 frame 的报错都带 note
@@ -310,7 +310,7 @@
 
 1. ~~**非 async 函数签名中的 `@frame(foo)` 前向声明**~~（**已修复**）：`@frame(foo)` 作为普通（非 `@async_fn`）函数的参数或返回类型时，生成的 C 头文件（如 `uya_split_protos.h`）中仍可能缺少 `struct uya_async_xxx;` 的前向声明，导致多 TU 编译报 `incomplete type`。当前已在 `gen_function_prototype` / `gen_method_prototype` / `gen_mono_method_prototype` / `gen_mono_function_prototype` 中补齐前向声明，并在 `main.uya` 的 split-C 头文件统一发射阶段增加了 `c99_emit_all_async_frame_forwards`，遍历所有函数签名的返回类型与参数类型并统一补全 `struct uya_async_xxx;` 前向声明，彻底覆盖跨模块导出符号的前置声明聚合路径。在 async 函数内部或仅作为局部变量使用时不受影响。
 
-2. **caller-owned inline 暂不支持变量暂存场景**：`var f = foo(); @await f;` 中 `f` 仍会走 pool 分配，不会自动优化为栈内联。只有直接 `@await foo()` 才会触发 inline。
+2. ~~**caller-owned inline 暂不支持变量暂存场景**~~（**已修复**）：`var f = foo(); @await f;` 中若 `f` 的初始化是 `@async_fn` 直接调用且仅使用一次，现已自动内联为 `_uya_inline_await_N` 字段。只有直接 `@await foo()` 才会触发 inline。
 
 3. **size class 分桶尚未实现**：统一 `AsyncFramePool` 当前使用 per-function 独立 free list（最多 4096 个），尚未按 `(size, align)` 做全局 size class 合并。这会导致极端多 async 函数场景下 pool 内存碎片略高。
 
