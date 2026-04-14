@@ -3734,6 +3734,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 输出宏展开等阶段才加入的字符串常量（如 encode_to_to_json 中的 "id"/"name"）
     emit_pending_string_constants(codegen);
     
+    // 生成 async frame descriptor 静态表（供统一 AsyncFramePool 运行时查表）
+    emit_async_frame_descriptors(codegen);
+    
     if prof_codegen != 0 {
         const t1: clock_t = clock();
         const total_ms: i64 = ((t1 as i64) - (prof_t0 as i64)) * 1000 / (CLOCKS_PER_SEC as i64);
@@ -3749,4 +3752,36 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     c99_write_mirror_manifest(codegen, ast);
     c99_write_split_makefile(codegen);
     return 0;
+}
+
+// 生成 async frame descriptor 静态表，供统一 AsyncFramePool 运行时 O(1) 查表
+fn emit_async_frame_descriptors(codegen: &C99CodeGenerator) void {
+    if codegen == null || codegen.emit_stream == null || codegen.checker == null {
+        return;
+    }
+    const count: i32 = codegen.checker.async_frame_meta_count;
+    if count <= 0 {
+        return;
+    }
+    fputs("// Async frame descriptors (for unified AsyncFramePool)\n" as *byte, codegen.emit_stream as *void);
+    fputs("struct AsyncFrameDescriptorTable _uya_async_frame_descriptors = {\n" as *byte, codegen.emit_stream as *void);
+    fputs("    .entries = {\n" as *byte, codegen.emit_stream as *void);
+    var i: i32 = 0;
+    while i < count {
+        const meta: &AsyncFrameMeta = &codegen.checker.async_frame_metas[i];
+        if meta != null {
+            // drop_fn 暂置 NULL（避免 multi-TU 下跨编译单元引用未声明的 release 函数）
+            fprintf(codegen.emit_stream as *void, "        { %zu, %zu, (void*)0 }" as *byte,
+                meta.frame_size, meta.frame_align);
+        } else {
+            fputs("        { 0, 0, (void*)0 }" as *byte, codegen.emit_stream as *void);
+        }
+        if i < count - 1 {
+            fputs("," as *byte, codegen.emit_stream as *void);
+        }
+        fputs("\n" as *byte, codegen.emit_stream as *void);
+        i = i + 1;
+    }
+    fputs("    }\n};\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "int32_t _uya_async_frame_descriptor_count = %d;\n" as *byte, count);
 }

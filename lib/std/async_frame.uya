@@ -6,8 +6,6 @@
 use libc.stdlib;
 use libc.memset;
 
-export error PoolFull;
-
 // 帧描述符（编译期生成静态表，运行时只读）
 export struct AsyncFrameDescriptor {
     size: usize,
@@ -54,6 +52,20 @@ struct AsyncFrameDescriptorTable {
 // 在 Uya 中，我们通过弱符号/外部声明让链接器合并
 extern var _uya_async_frame_descriptors: AsyncFrameDescriptorTable;
 extern var _uya_async_frame_descriptor_count: i32;
+
+// 默认全局异步帧池（懒初始化）
+var _uya_default_async_frame_pool: AsyncFramePool = [];
+var _uya_default_async_frame_pool_initialized: i32 = 0;
+
+export fn async_frame_pool_default() &AsyncFramePool {
+    if _uya_default_async_frame_pool_initialized == 0 {
+        _uya_default_async_frame_pool_initialized = 1;
+        // 默认启用 debug heap fallback，保证 alloc 不会失败
+        // 后续可通过环境变量或编译选项关闭
+        async_frame_pool_init(&_uya_default_async_frame_pool, 1, 65536);
+    }
+    return &_uya_default_async_frame_pool;
+}
 
 // 获取某个 frame_id 对应的 descriptor
 fn async_frame_pool_descriptor(frame_id: u32) &AsyncFrameDescriptor {
@@ -122,14 +134,14 @@ export fn async_frame_pool_init(pool: &AsyncFramePool, debug_heap_fallback: i32,
 }
 
 // 从帧池分配
-// 返回的指针按 descriptor.align 对齐
-export fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: u32) !&byte {
+// 返回的指针按 descriptor.align 对齐；失败返回 null
+export fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: u32) &byte {
     if pool == null {
-        return PoolFull;
+        return null;
     }
     const desc: &AsyncFrameDescriptor = async_frame_pool_descriptor(frame_id);
     if desc == null || desc.size == 0 {
-        return PoolFull;
+        return null;
     }
     const bucket: &AsyncFramePoolBucket = async_frame_pool_find_or_create_bucket(pool, desc.size, desc.align);
     if bucket == null {
@@ -139,14 +151,10 @@ export fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: u32) !&byte {
             if ptr != null {
                 pool.debug_heap_fallback_count = pool.debug_heap_fallback_count + 1;
             }
-            if ptr == null {
-                pool.pool_full_count = pool.pool_full_count + 1;
-                return PoolFull;
-            }
             return ptr;
         }
         pool.pool_full_count = pool.pool_full_count + 1;
-        return PoolFull;
+        return null;
     }
     // 优先从 free list 复用
     if bucket.slot_count > 0 {
@@ -165,7 +173,7 @@ export fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: u32) !&byte {
                 pool.debug_heap_fallback_count = pool.debug_heap_fallback_count + 1;
             }
             pool.pool_full_count = pool.pool_full_count + 1;
-            return PoolFull;
+            return null;
         }
         bucket.alloc_count = bucket.alloc_count + 1;
         pool.total_alloc_count = pool.total_alloc_count + 1;
@@ -182,7 +190,7 @@ export fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: u32) !&byte {
         }
     }
     pool.pool_full_count = pool.pool_full_count + 1;
-    return PoolFull;
+    return null;
 }
 
 // 归还帧到池
