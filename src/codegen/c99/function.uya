@@ -4380,7 +4380,31 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         fputs("}\n" as *byte, codegen.emit_stream as *void);
     }
 
-    // 生成 release 函数：调用 release_fields 后统一归还 AsyncFramePool
+    // 生成 per-function 帧池分配器与 release 函数（无锁 CAS free list）
+    fprintf(codegen.emit_stream as *void, "static _Atomic(void*) %s_pool_head = (void*)0;\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "static _Atomic(int32_t) %s_pool_count = 0;\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "static const int32_t %s_pool_cap = 4096;\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "static struct %s *%s(void) {\n" as *byte, async_struct as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    void *head = __atomic_load_n(&%s_pool_head, __ATOMIC_ACQUIRE);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    while (head != (void*)0) {\n" as *byte);
+    fprintf(codegen.emit_stream as *void, "        void *next = *(void**)head;\n" as *byte);
+    fprintf(codegen.emit_stream as *void, "        if (__atomic_compare_exchange_n(&%s_pool_head, &head, next, 1, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "            __atomic_sub_fetch(&%s_pool_count, 1, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "            return (struct %s *)head;\n" as *byte, async_struct as *byte);
+    fputs("        }\n    }\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "    return (struct %s *)malloc(sizeof(struct %s));\n}\n" as *byte, async_struct as *byte, async_struct as *byte);
+    fprintf(codegen.emit_stream as *void, "static void %s(struct %s *p) {\n" as *byte, free_name as *byte, async_struct as *byte);
+    fputs("    if (p == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "    int32_t cnt = __atomic_load_n(&%s_pool_count, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    if (cnt >= %s_pool_cap) { free(p); return; }\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    void *head = __atomic_load_n(&%s_pool_head, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    do {\n" as *byte);
+    fprintf(codegen.emit_stream as *void, "        *(void**)p = head;\n" as *byte);
+    fprintf(codegen.emit_stream as *void, "        if (__atomic_compare_exchange_n(&%s_pool_head, &head, p, 1, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "            __atomic_add_fetch(&%s_pool_count, 1, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "            return;\n        }\n    } while (1);\n}\n" as *byte, alloc_name as *byte);
+
+    // 生成 release 函数：调用 release_fields 后归还 per-function free list
     fprintf(codegen.emit_stream as *void, "static void %s(void *self) {\n" as *byte, release_name as *byte);
     if release_fields_name != null {
         fprintf(codegen.emit_stream as *void, "    %s(self);\n" as *byte, release_fields_name as *byte);
@@ -4392,7 +4416,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         fputs("        if (_uya_rel != (void*)0) _uya_rel(s->await_fut.data);\n" as *byte, codegen.emit_stream as *void);
         fputs("        s->await_fut.data = (void*)0;\n    }\n" as *byte, codegen.emit_stream as *void);
     }
-    fprintf(codegen.emit_stream as *void, "    std_async_frame_pool_free(std_async_frame_pool_default(), (void*)self, %uu);\n}\n" as *byte, async_frame_id);
+    fprintf(codegen.emit_stream as *void, "    %s((struct %s*)self);\n}\n" as *byte, free_name as *byte, async_struct as *byte);
 
     // 返回 !Future<T> 时 vtable 类型为 Future<!Future<T>>，需先给出完整定义再定义常量（否则 C 报 incomplete type）。
     // 有 await 时由 1174 块输出；无 await 时此处输出。使用 arena 存储名称以保证 mark_struct_defined 的持久性。
@@ -4456,8 +4480,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     if await_count == 0 && return_future_err_union != 0 && body != null {
         emit_async_err_future_wrapper_prelude(codegen, fn_decl, body, full_return_type);
     }
-    // 状态机分配：使用统一 AsyncFramePool，热路径避免 malloc
-    fprintf(codegen.emit_stream as *void, "    struct %s *s = (struct %s *)std_async_frame_pool_alloc(std_async_frame_pool_default(), %uu);\n" as *byte, async_struct as *byte, async_struct as *byte, async_frame_id);
+    // 状态机分配：使用 per-function 帧池分配器，热路径避免 malloc
+    fprintf(codegen.emit_stream as *void, "    struct %s *s = %s();\n" as *byte, async_struct as *byte, alloc_name as *byte);
     fputs("    if (s != (void*)0) { s->state = 0; __builtin_memset((void *)&s->await_fut, 0, sizeof(s->await_fut)); " as *byte, codegen.emit_stream as *void);
     pi = 0;
     while pi < param_count && pi < 16 {
