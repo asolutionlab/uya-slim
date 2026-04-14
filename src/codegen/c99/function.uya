@@ -1391,6 +1391,36 @@ fn c99_emit_async_arm_await_index(
     if j < 0 || j >= C99_ASYNC_MAX_AWAITS {
         return;
     }
+    // caller-owned stack 内联：直接初始化 child frame 字段，不调用 wrapper
+    var inline_struct_name: &byte = null;
+    if c99_async_await_operand_is_inlineable(codegen, await_operands[j], &inline_struct_name) != 0 && inline_struct_name != null {
+        fprintf(codegen.emit_stream as *void, "        s->_uya_inline_await_%d.state = 0; __builtin_memset((void *)&s->_uya_inline_await_%d.await_fut, 0, sizeof(s->_uya_inline_await_%d.await_fut)); " as *byte, j, j, j);
+        const operand: &ASTNode = await_operands[j];
+        if operand != null && operand.type == ASTNodeType.AST_CALL_EXPR && operand.call_expr_args != null {
+            const callee: &ASTNode = operand.call_expr_callee;
+            const fd: &ASTNode = find_function_decl_c99(codegen, callee.identifier_name);
+            if fd != null && fd.fn_decl_params != null {
+                var arg_i: i32 = 0;
+                const arg_count: i32 = operand.call_expr_arg_count;
+                const param_count2: i32 = fd.fn_decl_param_count;
+                while arg_i < arg_count && arg_i < param_count2 && arg_i < 16 {
+                    const param: &ASTNode = fd.fn_decl_params[arg_i];
+                    const arg: &ASTNode = operand.call_expr_args[arg_i];
+                    if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_name != null && arg != null {
+                        const psafe: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
+                        if psafe != null {
+                            fprintf(codegen.emit_stream as *void, "s->_uya_inline_await_%d.%s = " as *byte, j, psafe);
+                            gen_expr(codegen, arg);
+                            fputs("; " as *byte, codegen.emit_stream as *void);
+                        }
+                    }
+                    arg_i = arg_i + 1;
+                }
+            }
+        }
+        fputs("\n" as *byte, codegen.emit_stream as *void);
+        return;
+    }
     var next_await_is_err_future: i32 = await_operand_is_err_future;
     if next_await_is_err_future == 0 && await_bind_types[j] != null && await_bind_types[j].type == ASTNodeType.AST_TYPE_NAMED &&
         await_bind_types[j].type_named_name != null &&
@@ -1508,6 +1538,45 @@ fn c99_async_operand_future_inner_ast(codegen: &C99CodeGenerator, operand: &ASTN
         }
     }
     return null;
+}
+
+// 判断 @await 操作数是否可直接内联为 caller-owned frame
+// 条件：直接调用一个 @async_fn 标识符（非成员方法、非变量间接调用）
+// 返回 1 并在 out_async_struct_cname 中填充 "uya_async_<cname>"
+fn c99_async_await_operand_is_inlineable(codegen: &C99CodeGenerator, operand: &ASTNode, out_async_struct_cname: &&byte) i32 {
+    if codegen == null || operand == null || out_async_struct_cname == null {
+        return 0;
+    }
+    if operand.type != ASTNodeType.AST_CALL_EXPR || operand.call_expr_callee == null {
+        return 0;
+    }
+    const callee: &ASTNode = operand.call_expr_callee;
+    if callee.type != ASTNodeType.AST_IDENTIFIER || callee.identifier_name == null {
+        return 0;
+    }
+    const fd: &ASTNode = find_function_decl_c99(codegen, callee.identifier_name);
+    if fd == null || fd.fn_decl_is_async == 0 {
+        return 0;
+    }
+    var func_c_name: &byte = null;
+    if fd.fn_decl_is_export != 0 && fd.filename != null {
+        func_c_name = get_export_function_c_name(codegen, callee.identifier_name, fd.filename);
+    } else {
+        func_c_name = get_safe_c_identifier(codegen, callee.identifier_name);
+    }
+    if func_c_name == null {
+        return 0;
+    }
+    const prefix: &byte = "uya_async_";
+    const total_len: usize = strlen(prefix as *byte) + strlen(func_c_name as *byte) + 1;
+    const result: &byte = compiler_arena_alloc(codegen.arena, total_len) as &byte;
+    if result == null {
+        return 0;
+    }
+    strcpy(result as *byte, prefix as *byte);
+    strcat(result as *byte, func_c_name as *byte);
+    out_async_struct_cname[0] = result;
+    return 1;
 }
 
 /// 将 Future 表达式赋给状态机的 await_fut（vtable+data），避免不同 Future 单态结构体之间不兼容。
@@ -3547,6 +3616,15 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     } else {
         fprintf(codegen.emit_stream as *void, "%s await_fut;" as *byte, state_slot_iface_c as *byte);
     }
+    // 为可内联的 await 操作数添加 caller-owned child frame 字段
+    var inline_i: i32 = 0;
+    while inline_i < await_count {
+        var inline_struct_name: &byte = null;
+        if c99_async_await_operand_is_inlineable(codegen, await_operands[inline_i], &inline_struct_name) != 0 && inline_struct_name != null {
+            fprintf(codegen.emit_stream as *void, "struct %s _uya_inline_await_%d; " as *byte, inline_struct_name as *byte, inline_i);
+        }
+        inline_i = inline_i + 1;
+    }
     // 输出所有 await 绑定变量到结构体（确保跨 poll 调用时值不丢失）
     var bind_i: i32 = 0;
     while bind_i < await_count {
@@ -3594,6 +3672,28 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         est_offset = ((est_offset + 7) / 8) * 8;
         est_offset = est_offset + 16;
         if 8 > est_align { est_align = 8; }
+        // 加上内联 child frame 的大小
+        var inline_sz_i: i32 = 0;
+        while inline_sz_i < await_count {
+            var inline_struct_name_sz: &byte = null;
+            if c99_async_await_operand_is_inlineable(codegen, await_operands[inline_sz_i], &inline_struct_name_sz) != 0 && inline_struct_name_sz != null {
+                const prefix_len: usize = strlen("uya_async_" as *byte);
+                const child_key: &byte = &inline_struct_name_sz[prefix_len];
+                const child_meta: &AsyncFrameMeta = checker_find_async_frame_meta_by_key_text(codegen.checker, child_key);
+                var child_sz: i32 = 64;
+                var child_al: i32 = 8;
+                if child_meta != null {
+                    child_sz = child_meta.frame_size as i32;
+                    child_al = child_meta.frame_align as i32;
+                }
+                if child_sz <= 0 { child_sz = 64; }
+                if child_al <= 0 { child_al = 8; }
+                est_offset = ((est_offset + child_al - 1) / child_al) * child_al;
+                est_offset = est_offset + child_sz;
+                if child_al > est_align { est_align = child_al; }
+            }
+            inline_sz_i = inline_sz_i + 1;
+        }
         bind_i = 0;
         while bind_i < await_count {
             if await_bind_types[bind_i] != null {
@@ -3808,8 +3908,21 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             poll_line_ret = seg_poll_ret_c;
             poll_line_vt = seg_vtable_safe;
         }
-        fprintf(codegen.emit_stream as *void, "        %s p = ((struct uya_vtable_%s *)s->await_fut.vtable)->poll(s->await_fut.data, waker);\n" as *byte,
-            poll_line_ret as *byte, poll_line_vt as *byte);
+        var inline_struct_name_poll: &byte = null;
+        if c99_async_await_operand_is_inlineable(codegen, seg_op, &inline_struct_name_poll) != 0 && inline_struct_name_poll != null {
+            const poll_fn_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+            if poll_fn_name != null {
+                snprintf(poll_fn_name as *byte, 256, "uya_%s_poll" as *byte, inline_struct_name_poll as *byte);
+                fprintf(codegen.emit_stream as *void, "        %s p = %s(&s->_uya_inline_await_%d, waker);\n" as *byte,
+                    poll_line_ret as *byte, poll_fn_name as *byte, state_k - 1);
+            } else {
+                fprintf(codegen.emit_stream as *void, "        %s p = ((struct uya_vtable_%s *)s->await_fut.vtable)->poll(s->await_fut.data, waker);\n" as *byte,
+                    poll_line_ret as *byte, poll_line_vt as *byte);
+            }
+        } else {
+            fprintf(codegen.emit_stream as *void, "        %s p = ((struct uya_vtable_%s *)s->await_fut.vtable)->poll(s->await_fut.data, waker);\n" as *byte,
+                poll_line_ret as *byte, poll_line_vt as *byte);
+        }
         fprintf(codegen.emit_stream as *void, "        if (p._tag == 0) { return (%s){ ._tag = 0 }; }\n" as *byte, poll_ret_c as *byte);
         if seg_inner_is_err != 0 {
             fprintf(codegen.emit_stream as *void, "        %s r = p.u.Ready;\n" as *byte, seg_ready_payload_c as *byte);
@@ -4002,15 +4115,49 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
     }
 
-    // 生成 release 函数：统一归还 AsyncFramePool
+    const release_fields_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+    if release_fields_name != null {
+        snprintf(release_fields_name as *byte, 256, "%s_fields" as *byte, release_name as *byte);
+    }
+
+    // 生成 release_fields 函数：只递归释放 child future，不释放自身 frame
+    // 供 caller-owned stack 内联时，由 parent release 调用
+    if release_fields_name != null {
+        fprintf(codegen.emit_stream as *void, "static void %s(void *self) {\n" as *byte, release_fields_name as *byte);
+        fprintf(codegen.emit_stream as *void, "    struct %s *s = (struct %s *)self;\n" as *byte, async_struct as *byte, async_struct as *byte);
+        fputs("    if (s == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    if (s->await_fut.data != (void*)0 && s->await_fut.vtable != (void*)0) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("        void (*_uya_rel)(void*) = (void (*)(void*))((void**)s->await_fut.vtable)[1];\n" as *byte, codegen.emit_stream as *void);
+        fputs("        if (_uya_rel != (void*)0) _uya_rel(s->await_fut.data);\n" as *byte, codegen.emit_stream as *void);
+        fputs("        s->await_fut.data = (void*)0;\n    }\n" as *byte, codegen.emit_stream as *void);
+        var rel_i: i32 = 0;
+        while rel_i < await_count {
+            var rel_inline_struct: &byte = null;
+            if c99_async_await_operand_is_inlineable(codegen, await_operands[rel_i], &rel_inline_struct) != 0 && rel_inline_struct != null {
+                const child_rel_fields: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+                if child_rel_fields != null {
+                    snprintf(child_rel_fields as *byte, 256, "uya_%s_release_fields" as *byte, rel_inline_struct as *byte);
+                    fprintf(codegen.emit_stream as *void, "    %s(&s->_uya_inline_await_%d);\n" as *byte, child_rel_fields as *byte, rel_i);
+                }
+            }
+            rel_i = rel_i + 1;
+        }
+        fputs("}\n" as *byte, codegen.emit_stream as *void);
+    }
+
+    // 生成 release 函数：调用 release_fields 后统一归还 AsyncFramePool
     fprintf(codegen.emit_stream as *void, "static void %s(void *self) {\n" as *byte, release_name as *byte);
-    fprintf(codegen.emit_stream as *void, "    struct %s *s = (struct %s *)self;\n" as *byte, async_struct as *byte, async_struct as *byte);
-    fputs("    if (s == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
-    fputs("    if (s->await_fut.data != (void*)0 && s->await_fut.vtable != (void*)0) {\n" as *byte, codegen.emit_stream as *void);
-    fputs("        void (*_uya_rel)(void*) = (void (*)(void*))((void**)s->await_fut.vtable)[1];\n" as *byte, codegen.emit_stream as *void);
-    fputs("        if (_uya_rel != (void*)0) _uya_rel(s->await_fut.data);\n" as *byte, codegen.emit_stream as *void);
-    fputs("        s->await_fut.data = (void*)0;\n    }\n" as *byte, codegen.emit_stream as *void);
-    fprintf(codegen.emit_stream as *void, "    std_async_frame_pool_free(std_async_frame_pool_default(), (void*)s, %uu);\n}\n" as *byte, async_frame_id);
+    if release_fields_name != null {
+        fprintf(codegen.emit_stream as *void, "    %s(self);\n" as *byte, release_fields_name as *byte);
+    } else {
+        fprintf(codegen.emit_stream as *void, "    struct %s *s = (struct %s *)self;\n" as *byte, async_struct as *byte, async_struct as *byte);
+        fputs("    if (s == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    if (s->await_fut.data != (void*)0 && s->await_fut.vtable != (void*)0) {\n" as *byte, codegen.emit_stream as *void);
+        fputs("        void (*_uya_rel)(void*) = (void (*)(void*))((void**)s->await_fut.vtable)[1];\n" as *byte, codegen.emit_stream as *void);
+        fputs("        if (_uya_rel != (void*)0) _uya_rel(s->await_fut.data);\n" as *byte, codegen.emit_stream as *void);
+        fputs("        s->await_fut.data = (void*)0;\n    }\n" as *byte, codegen.emit_stream as *void);
+    }
+    fprintf(codegen.emit_stream as *void, "    std_async_frame_pool_free(std_async_frame_pool_default(), (void*)self, %uu);\n}\n" as *byte, async_frame_id);
 
     // 返回 !Future<T> 时 vtable 类型为 Future<!Future<T>>，需先给出完整定义再定义常量（否则 C 报 incomplete type）。
     // 有 await 时由 1174 块输出；无 await 时此处输出。使用 arena 存储名称以保证 mark_struct_defined 的持久性。
