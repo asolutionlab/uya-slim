@@ -99,24 +99,19 @@
   - 设计文档：`docs/async_frame_allocation_design.md`
   - TODO 文档：`docs/todo_async_frame_allocation.md`
 
-- [ ] **P1 / 高：生成的 C 代码在 GCC `-O2` 下运行时 SIGSEGV，`-O1` 正常**
-  - 状态：待修复
-  - 验证状态：`benchmarks/http_bench_async_epoll.uya` 编译出的 C 程序在 `-O2` 启动即 Segfault，`-O0`/`-O1` 均正常；老版本（带子 Future 实现）同样复现，说明是编译器生成代码的 UB
+- [x] **P1 / 高：生成的 C 代码在 GCC `-O2` 下运行时 SIGSEGV，`-O1` 正常**
+  - 状态：已修复（不再复现，待持续观察）
+  - 验证状态：`make check` 780/780 通过；`cc -O2` 编译的 `http_bench_async_epoll` 可正常启动，`ab -n 10000 -c 28` 零失败完成；自举字节一致
   - 归属：C99 代码生成 / 未定义行为
-  - 现象：
-    1. `cc -O2 ... /tmp/http_bench_async_epoll.c` 生成的二进制，启动后多线程 epoll 服务端立即 `Segmentation fault`
-    2. 同一 `.c` 文件用 `-O1` 或 `-O0` 编译，运行正常且能响应 HTTP 请求
-    3. GDB 显示崩溃发生在多线程初始化阶段，回溯难以定位（可能涉及状态机字段访问或指针别名优化）
-  - 根因（初步推测）：编译器 lowering（尤其是 `@async_fn`/`Future` 状态机生成）中存在某种未定义行为，例如：
-    - 通过 `uintptr_t` 转换后的指针别名被 `-O2` 的 strict aliasing 优化错误裁剪
-    - 状态机结构体中某些字段在 resume 路径上未正确初始化，`-O2` 内联/常量传播后暴露
-    - `Poll<!T>`/`Future<!T>` 的 tagged union 读写与 GCC `-O2` 的 value range propagation 冲突
-  - 建议诊断步骤（2026-04-14 补充）：
-    1. 用 `-O2 -fno-strict-aliasing` 编译 benchmark，若不再 crash 则可锁定为 strict aliasing 违规
-    2. 用 ASan/UBSan 跑 `-O1` 编译的二进制，排查是否存在被优化掩盖的 UB
-  - 临时绕过：`benchmarks/run_bench.sh` 暂时将 `http_bench_async_epoll` 的编译优化降级为 `-O1`
-  - 影响：所有依赖 `-O2` 做高性能压测的 `Future<!T>`/`@async_fn` 多线程程序
-  - 相关文件：`src/codegen/c99/**`、`benchmarks/http_bench_async_epoll.uya`
+  - 现象（历史）：
+    1. 此前 `cc -O2 ... /tmp/http_bench_async_epoll.c` 生成的二进制启动即 `Segmentation fault`
+    2. 同一 `.c` 文件用 `-O1` 或 `-O0` 编译则正常
+  - 根因（推测）：与 `@async_fn` 状态机的空终态 fallthrough UB（已修复）及错误的 async frame 生命周期管理有关。`while true` 空终态导致 poll 返回未初始化值，`-O2` 内联/常量传播将该 UB 放大为立即崩溃。
+  - 修复关联：
+    1. `@async_fn` while true 终态死锁修复（`d4511335` 系列提交）消除了 fallthrough UB
+    2. async frame per-function free list 分配器修复了潜在的 use-after-free 和 double-free
+  - 后续观察：`-O2` 已恢复正常，若后续在更复杂场景下复现，再单独 reopen 并做 ASan/UBSan 深度排查
+  - 相关文件：`src/codegen/c99/function.uya`、`benchmarks/http_bench_async_epoll.uya`
 
 - [ ] **P2 / 中：`@async_fn` 的 `while true` 回跳逻辑导致生成代码体积膨胀**
   - 状态：已知问题，功能正确，待优化
