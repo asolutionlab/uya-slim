@@ -141,7 +141,16 @@ export fn async_frame_pool_default() &AsyncFramePool {
                 fallback = 1;
             }
         }
-        async_frame_pool_init(&_uya_default_async_frame_pool, fallback, 65536);
+        // 环境变量 ASYNC_FRAME_STACK_LIMIT 覆盖默认栈分配阈值（字节）
+        var stack_limit: usize = 65536;
+        const stack_env: &byte = getenv("ASYNC_FRAME_STACK_LIMIT" as &const byte);
+        if stack_env != null && stack_env[0] != 0 as byte {
+            const limit_i32: i32 = atoi(stack_env as &const byte);
+            if limit_i32 > 0 {
+                stack_limit = limit_i32 as usize;
+            }
+        }
+        async_frame_pool_init(&_uya_default_async_frame_pool, fallback, stack_limit);
     }
     return &_uya_default_async_frame_pool;
 }

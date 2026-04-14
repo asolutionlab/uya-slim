@@ -216,3 +216,73 @@ fn checker_type_contains_pinned_field(checker: &TypeChecker, ty: &Type) i32 {
     }
     return 0;
 }
+
+// ===== 诊断 helper =====
+
+// 报告：按值移动 pinned frame（变量初始化、赋值、传参、返回等通用场景）
+fn checker_report_frame_move_error(checker: &TypeChecker, node: &ASTNode, context: &byte) void {
+    if checker == null || node == null {
+        return;
+    }
+    var msg: &byte = "cannot move pinned type by value" as &byte;
+    if context != null {
+        if strcmp(context as *byte, "return" as *byte) == 0 {
+            msg = "cannot return pinned type by value" as &byte;
+        } else if strcmp(context as *byte, "arg" as *byte) == 0 {
+            msg = "cannot pass pinned type by value in function argument" as &byte;
+        } else if strcmp(context as *byte, "assign" as *byte) == 0 {
+            msg = "cannot assign to pinned type: whole-assignment of a type containing @frame is prohibited" as &byte;
+        } else if strcmp(context as *byte, "init" as *byte) == 0 {
+            msg = "cannot initialize variable with pinned type by value" as &byte;
+        }
+    }
+    checker_report_error_with_note(checker, node, msg, node,
+        "use a pointer or reference instead of moving by value" as &byte,
+        CheckerNoteKind.NOTE_SUGGESTION);
+}
+
+// 报告：移动含有 pinned frame 字段的父结构体，并指出具体字段名
+fn checker_report_frame_field_move_error(checker: &TypeChecker, node: &ASTNode, field_name: &byte) void {
+    if checker == null || node == null {
+        return;
+    }
+    if field_name != null {
+        // 当前 Uya 暂不支持运行时字符串拼接，使用通用消息
+        // 后续若支持格式化诊断，可改为 "field '%s' contains @frame and makes the struct pinned"
+        _ = field_name;
+    }
+    checker_report_error_with_note(checker, node,
+        "cannot move struct containing pinned @frame field by value" as &byte,
+        node,
+        "move or pass a pointer to the struct instead" as &byte,
+        CheckerNoteKind.NOTE_SUGGESTION);
+}
+
+// 报告：@frame 类型对齐不满足要求（通常因为 pool 分配对齐与类型声明不一致）
+fn checker_report_frame_align_error(checker: &TypeChecker, node: &ASTNode, required_align: usize, actual_align: usize) void {
+    if checker == null || node == null {
+        return;
+    }
+    _ = required_align;
+    _ = actual_align;
+    checker_report_error_with_note(checker, node,
+        "async frame alignment mismatch: the frame type requires stricter alignment than provided" as &byte,
+        node,
+        "ensure the storage or pool allocator respects the frame's alignment requirement" as &byte,
+        CheckerNoteKind.NOTE_SUGGESTION);
+}
+
+// 报告：泛型 @frame 未单态化（@frame(foo<T>) 中 T 仍为泛型形参）
+fn checker_report_frame_monomorphization_error(checker: &TypeChecker, node: &ASTNode, frame_name: &byte) void {
+    if checker == null || node == null {
+        return;
+    }
+    if frame_name != null {
+        _ = frame_name;
+    }
+    checker_report_error_with_note(checker, node,
+        "@frame type requires concrete generic arguments" as &byte,
+        node,
+        "use @frame(foo<ConcreteType>) with fully resolved type arguments" as &byte,
+        CheckerNoteKind.NOTE_SUGGESTION);
+}

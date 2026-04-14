@@ -709,11 +709,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                     if arg != null {
                         const arg_type: Type = checker_infer_type(checker, arg);
                         if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
-                            checker_report_error_with_note(checker, arg,
-                                "cannot pass pinned type by value in function argument" as &byte,
-                                arg,
-                                "pass a pointer or reference instead of the pinned value" as &byte,
-                                CheckerNoteKind.NOTE_SUGGESTION);
+                            checker_report_frame_move_error(checker, arg, "arg" as &byte);
                             return result;
                         }
                     }
@@ -829,11 +825,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                         if arg != null {
                             const arg_type: Type = checker_infer_type(checker, arg);
                             if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
-                                checker_report_error_with_note(checker, arg,
-                                "cannot pass pinned type by value in function argument" as &byte,
-                                arg,
-                                "pass a pointer or reference instead of the pinned value" as &byte,
-                                CheckerNoteKind.NOTE_SUGGESTION);
+                                checker_report_frame_move_error(checker, arg, "arg" as &byte);
                                 return result;
                             }
                         }
@@ -868,11 +860,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                     if arg != null {
                         const arg_type: Type = checker_infer_type(checker, arg);
                         if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
-                            checker_report_error_with_note(checker, arg,
-                                "cannot pass pinned type by value in function argument" as &byte,
-                                arg,
-                                "pass a pointer or reference instead of the pinned value" as &byte,
-                                CheckerNoteKind.NOTE_SUGGESTION);
+                            checker_report_frame_move_error(checker, arg, "arg" as &byte);
                             return result;
                         }
                     }
@@ -920,11 +908,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                         if arg != null {
                             const arg_type: Type = checker_infer_type(checker, arg);
                             if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
-                                checker_report_error_with_note(checker, arg,
-                                "cannot pass pinned type by value in function argument" as &byte,
-                                arg,
-                                "pass a pointer or reference instead of the pinned value" as &byte,
-                                CheckerNoteKind.NOTE_SUGGESTION);
+                                checker_report_frame_move_error(checker, arg, "arg" as &byte);
                                 return result;
                             }
                         }
@@ -1222,11 +1206,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
         if arg != null {
             const arg_type: Type = checker_infer_type(checker, arg);
             if checker_type_contains_pinned_field(checker, &arg_type) != 0 {
-                checker_report_error_with_note(checker, arg,
-                    "cannot pass pinned type by value in function argument" as &byte,
-                    arg,
-                    "pass a pointer or reference instead of the pinned value" as &byte,
-                    CheckerNoteKind.NOTE_SUGGESTION);
+                checker_report_frame_move_error(checker, arg, "arg" as &byte);
                 return result;
             }
         }
