@@ -43,6 +43,7 @@
 - [8. 异步编程函数](#8-异步编程函数)
   - [@async_fn](#async_fn)
   - [@await](#await)
+  - [@frame](#frame)
 - [9. 裸函数属性](#9-裸函数属性)
   - [@naked_fn](#naked_fn)
 - [10. 内联汇编函数](#10-内联汇编函数)
@@ -1303,6 +1304,46 @@ try @await future_expr
 - 必须配合 `try` 使用（处理错误）
 - 仅在 `@async_fn` 函数内有效
 - 每个 `@await` 是一个挂起点，状态机会在此处保存/恢复
+
+---
+
+### @frame
+
+**类型构造器签名**：
+```uya
+@frame(async_function_name)
+@frame(generic_async_function<ConcreteType>)
+```
+
+**功能描述**：
+暴露 `@async_fn` 的状态机帧类型。`@frame(foo)` 是一个**类型构造器**（不是值构造器），只暴露帧类型本身；分配仍由变量声明位置（栈、全局、池）决定。
+
+**使用示例**：
+```uya
+@async_fn
+fn worker() Future<!i32> {
+    return 42;
+}
+
+fn uses_frame_ref(f: &@frame(worker)) i32 {
+    _ = f;
+    return 1;
+}
+
+@async_fn
+fn caller() Future<!i32> {
+    var frame: @frame(worker);        // 允许无初始化
+    const r: i32 = uses_frame_ref(&frame);
+    return r;
+}
+```
+
+**注意事项**：
+- `@frame` 的操作数必须是 `@async_fn` 标识符
+- 对泛型 async 函数，类型参数必须是 **concrete**（如 `@frame(foo<i32>)`）；未解析的 `@frame(foo<T>)` 会报错
+- `@frame` 类型是 **pinned**：禁止按值移动、整体赋值、按值传参、按值返回
+- 允许通过 `&frame` 按引用传递
+- 父结构体若包含 `@frame` 字段，也会被视为 pinned aggregate
 
 ---
 

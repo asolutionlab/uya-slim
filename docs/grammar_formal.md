@@ -1,6 +1,6 @@
 # Uya 语言正式语法规范（Formal BNF）
 
-> **版本**：与 [uya.md](./uya.md) 0.49.44 同步（2026-04-02）
+> **版本**：与 [uya.md](./uya.md) 0.49.45 同步（2026-04-14）
 
 本文档包含 Uya 语言的完整、无歧义的 BNF 语法定义，用于：
 - 编译器/解析器实现
@@ -131,7 +131,7 @@ enum_variant   = ID [ '=' NUM ]  # 枚举变体，可选显式赋值
 type           = base_type | pointer_type | array_type | slice_type 
                | struct_type | union_type | interface_type | enum_type | tuple_type
                | atomic_type | error_union_type | function_pointer_type | extern_type
-               | vector_type | mask_type
+               | vector_type | mask_type | frame_type
 
 base_type      = 'i8' | 'i16' | 'i32' | 'i64' | 'u8' | 'u16' | 'u32' | 'u64'
                | 'f32' | 'f64' | 'bool' | 'byte' | 'void' | 'usize'
@@ -150,15 +150,18 @@ function_pointer_type = 'fn' '(' [ param_type_list ] ')' type  # 函数指针类
 param_type_list = type { ',' type }  # 函数指针类型的参数类型列表（无参数名）
 vector_type    = '@vector' '(' type ',' NUM ')'
 mask_type      = '@mask' '(' NUM ')'
+frame_type     = '@frame' '(' ID [ '<' type_arg_list '>' ] ')'
 ```
 
 **说明**：
 - **`&[const T]`**（**0.49.43**）：切片元素只读；字符串字面量赋给切片类型时须为 **`&[const byte]`**（或带长度形参的 **`&[const byte: N]`**），见 uya.md 规范变更 0.49.43
 - `@vector(T, N)` 表示元素类型为 `T`、通道数为 `N` 的向量类型
 - `@mask(N)` 表示 `N` 通道的掩码类型
+- `@frame(fn_name)` 或 `@frame(fn_name<T>)` 表示 async 函数 `fn_name` 的状态机帧类型
 - 第一阶段 `N` 仅允许字面量正整数
 - 第一阶段 `N` 必须为 2 的幂，建议限制为 `2`、`4`、`8`、`16`、`32`、`64`
 - `vector_type` 在语法层允许任意 `type` 作为第一个参数；语义层会进一步限制 `T` 必须为数值标量类型
+- `@frame` 的语义层要求 `fn_name` 必须是 `@async_fn`；若带泛型参数，则必须为 concrete 类型
 - 第一阶段不引入 `@vector<T>(N)`、`Vector(T, N)`、通用 const generics 或新的目标特性查询语法
 
 ### 变量声明

@@ -1,4 +1,4 @@
-# Uya 语言规范 0.49.44（完整版 · 2026-04-02）
+# Uya 语言规范 0.49.45（完整版 · 2026-04-14）
 
 > 零GC · 默认高级安全 · 单页纸可读完  
 > 无lifetime符号 · 无隐式控制 · 编译期证明（本函数内）
@@ -53,6 +53,12 @@
 ---
 
 ## 规范变更
+
+### 0.49.45（2026-04-14）
+
+- **`@frame(foo)` 异步帧类型构造器**：暴露 `@async_fn` 的状态机帧类型。语法为 `@frame(fn_name)` 或 `@frame(fn_name<ConcreteType>)`。`var f: @frame(foo);` 允许无初始化声明。
+- **Pinned 语义**：`@frame` 类型禁止按值移动、整体赋值、按值传参、按值返回。按引用传递 `&frame` 不受影响。包含 `@frame` 字段的父结构体也视为 pinned aggregate。
+- **内置函数白名单**：`@frame` 加入 `@` 内置函数词法白名单。
 
 ### 0.49.44（2026-04-02）
 
@@ -4601,6 +4607,7 @@ fn caller() void {
 | `@async_fn` | 函数属性 | 标记异步函数，触发 CPS 变换 |
 | `@naked_fn` | 函数属性 | 标记裸函数（无 prologue/epilogue），用于底层系统代码 |
 | `@await` | 表达式 | 等待异步操作完成（仅 `@async_fn` 内） |
+| `@frame` | `@frame(fn_name)` / `@frame(fn_name<T>)` | 异步帧类型构造器（v0.9.3）；暴露 `@async_fn` 的状态机帧类型；pinned 语义（禁止按值移动/赋值/传参/返回） |
 | `@asm` | `@asm { ... }` | 内联汇编块 |
 | `@vector` | `@vector(T, N)` / `@vector.splat(x)` / `@vector.load(ptr)` / `@vector.store(ptr,v)` / `@vector.select(m,a,b)` / `@vector.any(m)` / `@vector.all(m)` | SIMD 向量类型构造器与阶段 4 辅助内建 |
 | `@mask` | `@mask(N)` | SIMD 掩码类型构造器 |
