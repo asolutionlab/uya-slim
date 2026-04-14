@@ -10,6 +10,7 @@ use std.async;
 use std.async_event;
 use std.async_scheduler.block_on_with_event_loop;
 use libc.mem;
+use libc.heap;
 use libc.pthread;
 use libc.signal;
 use libc.atoi;
@@ -70,7 +71,7 @@ struct BenchAcceptFuture : Future<!i32> {
     }
 
     fn release(self: &Self) void {
-        _ = self;
+        free(self as &void);
     }
 }
 

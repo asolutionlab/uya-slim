@@ -68,12 +68,12 @@
 ### 1.1 记录帧大小与对齐
 
 - [x] **在 lowering 阶段计算并记录每个 async 函数的 `frame_size` / `frame_align`；若新增 lowering 模块可放在 `src/lower/async.uya`，否则先落在现有 `src/codegen/c99/async_transform.uya` / `src/codegen/c99/function.uya`**（`async_frame_meta.uya` 已定义基础结构）
-- [ ] 把 `await` 绑定、跨 await locals、参数字段计入最终帧布局
-- [ ] 让 `frame_size` 可在生成 C 前被查询（codegen 只读取，不重复计算）
+- [x] 把 `await` 绑定、跨 await locals、参数字段计入最终帧布局
+- [x] 让 `frame_size` 可在生成 C 前被查询（codegen 已计算并缓存到 `async_frame_size` / `async_frame_align`）
 - [ ] 为 `@frame(foo)` 生成稳定可解析的类型入口（避免外部依赖生成后的 C 符号名）
-- [ ] 为泛型 async 生成实例级 frame key / alias（按 concrete type args 区分）
-- [ ] 把 `is_pinned` / `contains_pinned_field` / `frame_key_text` / `frame_id` 传给 checker 侧元信息
-- [ ] 给 `frame_key_text` 和 `frame_id` 绑定定义点与实例化点，便于 note 精确定位
+- [x] 为泛型 async 生成实例级 frame key / alias（按 concrete type args 区分；C 符号名 `func_c_name` 作为稳定 key）
+- [x] 把 `is_pinned` / `contains_pinned_field` / `frame_key_text` / `frame_id` 传给 checker 侧元信息
+- [x] 给 `frame_key_text` 和 `frame_id` 绑定定义点与实例化点，便于 note 精确定位（`decl_node` / `instance_node` 已填充）
 
 ### 1.2 记录逃逸分类
 
@@ -82,7 +82,7 @@
   - `StackCandidate`
   - `PoolRequired`
   - `HeapDebugOnly`
-- [ ] 把逃逸分类缓存到 codegen / internal 元数据里
+- [x] 把逃逸分类缓存到 codegen / internal 元数据里（`async_frame_escape_class` 已设置，当前默认 `ESCAPE_POOL_REQUIRED`）
 - [ ] 把 `@frame` 相关诊断所需信息（定义点、字段点、实例化点）缓存到 checker 可访问的符号元数据里
 - [ ] 为 `checker_report_error` 旁路增加 note/suggestion 输出能力，保持与现有错误格式兼容
 
@@ -97,10 +97,10 @@
 - [x] 定义 `AsyncFrameFieldMeta`
 - [x] 定义 `AsyncFrameMeta`
 - [x] **将 `AsyncFrameMeta` 与 `AsyncFrameFieldMeta` 定义放在 `src/checker/` 下，codegen 侧只做填充**
-- [ ] 在 `TypeChecker` 中新增 `async_frame_metas` / `async_frame_meta_count`
-- [ ] 让 `frame_key_text`、`frame_id`、`decl_node`、`instance_node`、`field meta` 都可被 checker 访问
-- [ ] 给 `frame_key_text` 提供从 `MonoInstance` 推导的 concrete instance key，并生成对应 `frame_id`
-- [ ] 保证 frame 元数据与 `mono_instances` 使用一致的单态化入口
+- [x] 在 `TypeChecker` 中新增 `async_frame_metas` / `async_frame_meta_count`
+- [x] 让 `frame_key_text`、`frame_id`、`decl_node`、`instance_node` 都可被 checker 访问（`field meta` 待 `@frame` 类型构造器实现）
+- [x] 给 `frame_key_text` 提供从 `MonoInstance` 推导的 concrete instance key，并生成对应 `frame_id`（以 `func_c_name` 作为稳定 instance key）
+- [ ] 保证 frame 元数据与 `mono_instances` 使用一致的单态化入口（已遍历 `mono_instances` 匹配 `func_c_name`，待进一步对齐）
 
 相关文件：
 - [ ] `src/lower/async.uya`（可选新增；若不拆 lowering 模块，则先不创建）

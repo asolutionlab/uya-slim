@@ -13,6 +13,9 @@ extern fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type;
 extern fn type_to_ast(checker: &TypeChecker, t: &Type, line: i32, column: i32, filename: &byte) &ASTNode;
 // expr.uya 在 compile.sh 中晚于 function.uya，需前向声明
 extern fn gen_array_literal_contents(codegen: &C99CodeGenerator, expr: &ASTNode) void;
+// async frame meta 注册（来自 checker/async_frame_meta.uya）
+extern fn checker_register_async_frame_meta(checker: &TypeChecker, meta: &AsyncFrameMeta) i32;
+extern fn checker_find_async_frame_meta_by_key_text(checker: &TypeChecker, key_text: &byte) &AsyncFrameMeta;
 
 // 查找函数声明
 // 若存在多个同名顶层 fn（如前向 extern 与后续带函数体的实现），优先返回带 body 的定义，
@@ -1236,6 +1239,59 @@ fn get_type_node_size_bytes(codegen: &C99CodeGenerator, type_ast: &ASTNode) i32 
     }
     const resolved: Type = type_from_ast(codegen.checker, type_ast);
     return get_type_size_bytes_resolved(codegen, &resolved);
+}
+
+// 从已解析的 Type 计算字节对齐（用于 async frame 估算）
+fn get_type_align_bytes_resolved(codegen: &C99CodeGenerator, t: &Type) i32 {
+    if t == null || codegen == null || codegen.checker == null {
+        return -1;
+    }
+    const k: TypeKind = t.kind;
+    if k == TypeKind.TYPE_I8 || k == TypeKind.TYPE_BOOL || k == TypeKind.TYPE_BYTE { return 1; }
+    if k == TypeKind.TYPE_I16 || k == TypeKind.TYPE_U16 { return 2; }
+    if k == TypeKind.TYPE_I32 || k == TypeKind.TYPE_U32 || k == TypeKind.TYPE_F32 { return 4; }
+    if k == TypeKind.TYPE_I64 || k == TypeKind.TYPE_U64 || k == TypeKind.TYPE_F64 || k == TypeKind.TYPE_USIZE { return 8; }
+    if k == TypeKind.TYPE_POINTER { return 8; }
+    if k == TypeKind.TYPE_ATOMIC && t.atomic_inner_type != null {
+        return get_type_align_bytes_resolved(codegen, t.atomic_inner_type);
+    }
+    if k == TypeKind.TYPE_ARRAY && t.element_type != null {
+        return get_type_align_bytes_resolved(codegen, t.element_type);
+    }
+    if k == TypeKind.TYPE_SLICE { return 8; }
+    if k == TypeKind.TYPE_TUPLE && t.tuple_count > 0 && t.tuple_element_types != null {
+        var max_align: i32 = 1;
+        var ti: i32 = 0;
+        while ti < t.tuple_count {
+            const et: &Type = &t.tuple_element_types[ti];
+            if et != null {
+                const ea: i32 = get_type_align_bytes_resolved(codegen, et);
+                if ea > max_align { max_align = ea; }
+            }
+            ti = ti + 1;
+        }
+        return max_align;
+    }
+    if k == TypeKind.TYPE_ERROR_UNION {
+        if t.error_union_payload_type != null {
+            const pa: i32 = get_type_align_bytes_resolved(codegen, t.error_union_payload_type);
+            if pa > 4 { return pa; } else { return 4; }
+        }
+        return 4;
+    }
+    if k == TypeKind.TYPE_STRUCT || k == TypeKind.TYPE_UNION || k == TypeKind.TYPE_INTERFACE {
+        return 8;
+    }
+    return -1;
+}
+
+// 从 AST 类型节点计算字节对齐（用于状态机估算）
+fn get_type_node_align_bytes(codegen: &C99CodeGenerator, type_ast: &ASTNode) i32 {
+    if type_ast == null || codegen == null || codegen.checker == null {
+        return -1;
+    }
+    const resolved: Type = type_from_ast(codegen.checker, type_ast);
+    return get_type_align_bytes_resolved(codegen, &resolved);
 }
 
 // 递归收集 await 点（进入 while/if/for/block 内部），使用 codegen.async_collect_* 存储结果
@@ -3523,6 +3579,117 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     }
     fputs(" };\n" as *byte, codegen.emit_stream as *void);
 
+    // 计算 async frame size / align（保守估算，用于 checker 元信息注册）
+    {
+        var est_offset: i32 = 0;
+        var est_align: i32 = 4;
+        est_offset = 4;
+        if await_count > 0 && concrete_future_safe != null && await_operand_is_err_future != 0 {
+            var st_sz: i32 = get_type_node_size_bytes(codegen, effective_return_type);
+            if st_sz <= 0 { st_sz = 24; }
+            est_offset = ((est_offset + 7) / 8) * 8;
+            est_offset = est_offset + st_sz;
+            if 8 > est_align { est_align = 8; }
+        }
+        est_offset = ((est_offset + 7) / 8) * 8;
+        est_offset = est_offset + 16;
+        if 8 > est_align { est_align = 8; }
+        bind_i = 0;
+        while bind_i < await_count {
+            if await_bind_types[bind_i] != null {
+                const bsz: i32 = get_type_node_size_bytes(codegen, await_bind_types[bind_i]);
+                const bal: i32 = get_type_node_align_bytes(codegen, await_bind_types[bind_i]);
+                var use_sz: i32 = bsz;
+                if use_sz <= 0 { use_sz = 8; }
+                var use_al: i32 = bal;
+                if use_al <= 0 { use_al = 8; }
+                est_offset = ((est_offset + use_al - 1) / use_al) * use_al;
+                est_offset = est_offset + use_sz;
+                if use_al > est_align { est_align = use_al; }
+            }
+            bind_i = bind_i + 1;
+        }
+        loc_i = 0;
+        while loc_i < codegen.async_local_count && loc_i < @len(codegen.async_local_names) {
+            if codegen.async_local_types[loc_i] != null {
+                const lsz: i32 = get_type_node_size_bytes(codegen, codegen.async_local_types[loc_i]);
+                const lal: i32 = get_type_node_align_bytes(codegen, codegen.async_local_types[loc_i]);
+                var use_sz: i32 = lsz;
+                if use_sz <= 0 { use_sz = 8; }
+                var use_al: i32 = lal;
+                if use_al <= 0 { use_al = 8; }
+                est_offset = ((est_offset + use_al - 1) / use_al) * use_al;
+                est_offset = est_offset + use_sz;
+                if use_al > est_align { est_align = use_al; }
+            }
+            loc_i = loc_i + 1;
+        }
+        pi = 0;
+        while pi < param_count && pi < 16 {
+            const param2: &ASTNode = params[pi];
+            if param2 != null && param2.type == ASTNodeType.AST_VAR_DECL && param2.var_decl_type != null {
+                const psz: i32 = get_type_node_size_bytes(codegen, param2.var_decl_type);
+                const pal: i32 = get_type_node_align_bytes(codegen, param2.var_decl_type);
+                var use_sz: i32 = psz;
+                if use_sz <= 0 { use_sz = 8; }
+                var use_al: i32 = pal;
+                if use_al <= 0 { use_al = 8; }
+                est_offset = ((est_offset + use_al - 1) / use_al) * use_al;
+                est_offset = est_offset + use_sz;
+                if use_al > est_align { est_align = use_al; }
+            }
+            pi = pi + 1;
+        }
+        if est_align > 0 {
+            est_offset = ((est_offset + est_align - 1) / est_align) * est_align;
+        }
+        if est_offset < 0 { est_offset = 0; }
+        codegen.async_frame_size = est_offset as usize;
+        codegen.async_frame_align = est_align as usize;
+    }
+
+    // 注册 async frame 元信息到 checker
+    if codegen.checker != null {
+        var type_arg_count_for_meta: i32 = 0;
+        var generic_name_for_meta: &byte = fn_decl.fn_decl_name;
+        if fn_decl.fn_decl_type_param_count > 0 {
+            var mi: i32 = 0;
+            while mi < codegen.mono_instance_count {
+                if codegen.mono_instances[mi].generic_name != null &&
+                    strcmp(codegen.mono_instances[mi].generic_name as *byte, fn_decl.fn_decl_name as *byte) == 0 &&
+                    codegen.mono_instances[mi].is_function != 0 {
+                    const test_name: &byte = get_mono_function_name(codegen, fn_decl.fn_decl_name,
+                        codegen.mono_instances[mi].type_args, codegen.mono_instances[mi].type_arg_count, fn_decl);
+                    if test_name != null && strcmp(test_name as *byte, func_c_name as *byte) == 0 {
+                        type_arg_count_for_meta = codegen.mono_instances[mi].type_arg_count;
+                        break;
+                    }
+                }
+                mi = mi + 1;
+            }
+        }
+        const existing: &AsyncFrameMeta = checker_find_async_frame_meta_by_key_text(codegen.checker, func_c_name);
+        if existing == null {
+            var meta: AsyncFrameMeta = [];
+            meta.frame_key_text = func_c_name;
+            meta.frame_id = codegen.checker.async_frame_meta_count as u32;
+            meta.descriptor_index = meta.frame_id;
+            meta.fn_name = func_c_name;
+            meta.generic_name = generic_name_for_meta;
+            meta.type_arg_count = type_arg_count_for_meta;
+            meta.decl_node = fn_decl;
+            meta.instance_node = fn_decl;
+            meta.frame_size = codegen.async_frame_size;
+            meta.frame_align = codegen.async_frame_align;
+            meta.escape_class = AsyncFrameEscapeClass.ESCAPE_POOL_REQUIRED;
+            meta.is_pinned = 1;
+            meta.contains_pinned_field = 0;
+            meta.needs_drop = 0;
+            meta.field_count = 0;
+            checker_register_async_frame_meta(codegen.checker, &meta);
+        }
+    }
+
     // 设置 async 参数捕获（poll 内 gen_expr 将参数引用为 s->param）
     const async_s: &byte = "s" as *byte;
     codegen.async_state_var = async_s;
@@ -3762,6 +3929,29 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
                     inner, inner_is_err_union, inner_err_c, iface_c, concrete_future_safe,
                     inner_poll_ret_c, inner_poll_union_c, poll_ret_c, poll_union_c);
             }
+        } else {
+            // terminal_return_stmt == null: body does not end with a return.
+            // This happens for async functions whose last statement is an infinite loop (e.g. while true).
+            // The await_count+1 state may be reached incorrectly from inner loop fallthrough paths.
+            // Loop back to state 0 to avoid an empty block that falls through and causes UB.
+            var last_stmt_is_loop: i32 = 0;
+            if body != null && body.type == ASTNodeType.AST_BLOCK && body.block_stmts != null && body.block_stmt_count > 0 {
+                var last_si: i32 = body.block_stmt_count - 1;
+                while last_si >= 0 {
+                    const last_st: &ASTNode = body.block_stmts[last_si];
+                    if last_st != null {
+                        if last_st.type == ASTNodeType.AST_WHILE_STMT || last_st.type == ASTNodeType.AST_FOR_STMT {
+                            last_stmt_is_loop = 1;
+                        }
+                        break;
+                    }
+                    last_si = last_si - 1;
+                }
+            }
+            if last_stmt_is_loop != 0 {
+                fprintf(codegen.emit_stream as *void, "        s->state = 0;\n" as *byte);
+            }
+            fprintf(codegen.emit_stream as *void, "        return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
         }
         codegen.async_emit_poll_return = 0;
         fputs("    }\n" as *byte, codegen.emit_stream as *void);
@@ -3803,24 +3993,29 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         pi = pi + 1;
     }
 
-    // 生成 per-function 帧池分配器与 release 函数
-    fprintf(codegen.emit_stream as *void, "static struct %s *%s_pool_head = (void*)0;\n" as *byte, async_struct as *byte, alloc_name as *byte);
-    fprintf(codegen.emit_stream as *void, "static int32_t %s_pool_count = 0;\n" as *byte, alloc_name as *byte);
+    // 生成 per-function 帧池分配器与 release 函数（无锁 CAS free list）
+    fprintf(codegen.emit_stream as *void, "static _Atomic(void*) %s_pool_head = (void*)0;\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "static _Atomic(int32_t) %s_pool_count = 0;\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "static const int32_t %s_pool_cap = 4096;\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "static struct %s *%s(void) {\n" as *byte, async_struct as *byte, alloc_name as *byte);
-    fprintf(codegen.emit_stream as *void, "    if (%s_pool_head != (void*)0) {\n" as *byte, alloc_name as *byte);
-    fprintf(codegen.emit_stream as *void, "        struct %s *r = %s_pool_head;\n" as *byte, async_struct as *byte, alloc_name as *byte);
-    fprintf(codegen.emit_stream as *void, "        %s_pool_head = *(struct %s **)r;\n" as *byte, alloc_name as *byte, async_struct as *byte);
-    fprintf(codegen.emit_stream as *void, "        %s_pool_count = %s_pool_count - 1;\n" as *byte, alloc_name as *byte, alloc_name as *byte);
-    fputs("        return r;\n    }\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "    void *head = __atomic_load_n(&%s_pool_head, __ATOMIC_ACQUIRE);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    while (head != (void*)0) {\n" as *byte);
+    fprintf(codegen.emit_stream as *void, "        void *next = *(void**)head;\n" as *byte);
+    fprintf(codegen.emit_stream as *void, "        if (__atomic_compare_exchange_n(&%s_pool_head, &head, next, 1, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "            __atomic_sub_fetch(&%s_pool_count, 1, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "            return (struct %s *)head;\n" as *byte, async_struct as *byte);
+    fputs("        }\n    }\n" as *byte, codegen.emit_stream as *void);
     fprintf(codegen.emit_stream as *void, "    return (struct %s *)malloc(sizeof(struct %s));\n}\n" as *byte, async_struct as *byte, async_struct as *byte);
     fprintf(codegen.emit_stream as *void, "static void %s(struct %s *p) {\n" as *byte, free_name as *byte, async_struct as *byte);
     fputs("    if (p == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
-    fprintf(codegen.emit_stream as *void, "    if (%s_pool_count < %s_pool_cap) {\n" as *byte, alloc_name as *byte, alloc_name as *byte);
-    fprintf(codegen.emit_stream as *void, "        *(struct %s **)p = %s_pool_head;\n" as *byte, async_struct as *byte, alloc_name as *byte);
-    fprintf(codegen.emit_stream as *void, "        %s_pool_head = p;\n" as *byte, alloc_name as *byte);
-    fprintf(codegen.emit_stream as *void, "        %s_pool_count = %s_pool_count + 1;\n" as *byte, alloc_name as *byte, alloc_name as *byte);
-    fputs("    } else {\n        free(p);\n    }\n}\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "    int32_t cnt = __atomic_load_n(&%s_pool_count, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    if (cnt >= %s_pool_cap) { free(p); return; }\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    void *head = __atomic_load_n(&%s_pool_head, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    do {\n" as *byte);
+    fprintf(codegen.emit_stream as *void, "        *(void**)p = head;\n" as *byte);
+    fprintf(codegen.emit_stream as *void, "        if (__atomic_compare_exchange_n(&%s_pool_head, &head, p, 1, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "            __atomic_add_fetch(&%s_pool_count, 1, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "            return;\n        }\n    } while (1);\n}\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "static void %s(void *self) {\n" as *byte, release_name as *byte);
     fprintf(codegen.emit_stream as *void, "    struct %s *s = (struct %s *)self;\n" as *byte, async_struct as *byte, async_struct as *byte);
     fputs("    if (s == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
