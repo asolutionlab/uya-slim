@@ -1,6 +1,6 @@
 # Uya 异步量产 TODO
 
-**最后更新**：2026-04-12（epoll 常量修复 + block_on 空等 workaround，make check 779/779 全绿）  
+**最后更新**：2026-04-14（`@frame(foo)` 类型构造器与 pinned 语义实现，make check 785/785 全绿）  
 **目标范围**：Linux + C99 后端 + `@async_fn` / `@await` / `Future` / `Poll` / `Waker` + `AsyncFd` / `LinuxEpoll`，优先保障 DNS、HTTP/1.1、HTTPS 客户端主链路达到可量产状态。
 
 ## 量产定义
@@ -55,7 +55,7 @@
   - 位置：`lib/libc/syscall.uya`、`lib/syscall/linux.uya`。
   - 根因：`EPOLL_CTL_MOD` 被错误定义为 `2`（实际应为 `3`），`EPOLL_CTL_DEL` 被错误定义为 `3`（实际应为 `2`）。这导致 `LinuxEpoll.register` 在尝试 `MOD` 时实际执行了 `DEL`，`deregister` 在尝试 `DEL` 时实际执行了 `MOD`（events=0），造成 fd 在 epoll 中残留或事件丢失，引发 async 网络测试 timeout/失败。
   - 修复：交换两者定义，恢复为内核正确值（`ADD=1`、`DEL=2`、`MOD=3`）。
-  - 验收：`make check` 779/779 全绿，`test_http1_async_client`、`test_std_dns_async_transport`、`test_std_async_event_fd_reuse` 均通过。
+  - 验收：`make check` 785/785 全绿，`test_http1_async_client`、`test_std_dns_async_transport`、`test_std_async_event_fd_reuse` 均通过。
 
 - [x] 修复 `LinuxEpoll.deregister` 使用 `null` 作为 epoll_event 指针。
   - 位置：`lib/std/async_event.uya`。
@@ -129,7 +129,7 @@
 
 - [x] `make b` 自举一致。
 - [x] `make check` 关键子集通过（`test_std_async_event`、`test_async_fd`、`test_std_async_scheduler`、`test_std_dns_async_transport`、`test_http1_async_client`）。
-- [x] `make check` **779/779 全部通过**（2026-04-12 修复 epoll 常量错位 + block_on 空等 workaround 后）。
+- [x] `make check` **785/785 全部通过**（2026-04-14 `@frame(foo)` + pinned 语义实现后）。
 - [x] `make release-dirty` 核心 async 网络测试通过；无外网环境下网络测试明确 skip。
 - [x] `./tests/run_programs_parallel.sh --uya --c99 test_async_bug_b_sync_between.uya` 通过。
 - [x] `./tests/run_programs_parallel.sh --uya --c99 test_http1_async_client.uya` 通过。
@@ -160,7 +160,7 @@
 - ✅ DNS 异步查询（上层 `@async_fn` 化，底层保留手工 I/O 状态机）
 - ✅ 核心 async 运行时（`LinuxEpoll`、`Waker`、`AsyncFd`）
 - ✅ HTTP/DNS/TLS timeout 策略实现并启用（`http_check_deadline` 已取消注释）
-- ✅ `make check` **779/779 全部通过**
+- ✅ `make check` **785/785 全部通过**
 
 **已知限制（已文档化，纳入 P2）**：
 - 跨平台 async 后端（macOS kqueue / Windows IOCP）
@@ -256,7 +256,7 @@
 
 - `make b`（自举）：✅ 通过
 - `make tests`：✅ 核心 async 网络测试通过（`test_http1_async_client`、`test_std_dns_async_transport`、`test_https_loopback` 等）
-- `make check`：✅ **779/779 全部通过**（2026-04-12 修复 epoll 常量 + block_on workaround 后）
+- `make check`：✅ **785/785 全部通过**（2026-04-14 `@frame(foo)` + pinned 语义实现后）
 
 ### git 状态
 

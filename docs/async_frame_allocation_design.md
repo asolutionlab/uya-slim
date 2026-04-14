@@ -68,7 +68,7 @@
 - wrapper 函数（`foo(args...)`）的热路径不再直接 `malloc`，改为调用 `_alloc()`；仅在 free list 空时 fallback 到 `malloc`。
 - 为每个 `@async_fn` 生成 `uya_<fn>_release` 函数，并在 vtable 中填充 `release` 指针。
 - poll 函数中 await 完成后的 child future 清理，改为通过 vtable 调用 `release`，避免直接 `free`。
-- `make check` 780/780 通过，`make b` 自举验证通过。
+- `make check` 785/785 通过，`make b` 自举验证通过。
 - `benchmarks/http_bench_async_epoll_await_simple.uya` 编译运行正常，`curl` 测试通过。
 
 **第二阶段已完成（v0.9.3）**：
