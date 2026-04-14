@@ -383,7 +383,11 @@ struct C99CodeGenerator {
     // 镜像模式：第七步函数原型写入 uya_split_protos.h（含 #include uya_part1_types.h），各 .c 首行 #include 该头
     split_protos_out: &void,
     // 镜像模式：前导（头文件与类型）写入 uya_part1_types.h；uya_part1.c 仅 #include 与字符串池
-    split_part1_types_h: &void
+    split_part1_types_h: &void,
+
+    // async inline temp vars: caller-owned stack inline for var f = foo(); @await f;
+    async_inline_temp_var_names: [&byte: 32],
+    async_inline_temp_var_count: i32
 }
 
 // ===== 函数声明 =====

@@ -2138,6 +2138,17 @@ fn gen_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode) i32 
     // 先生成字段依赖的值类型结构体（保证完整类型在 C 中可用）
     emit_struct_deps_for_struct(codegen, struct_decl);
     
+    // 为含 @frame(...) 的字段生成 struct uya_async_xxx; 前向声明
+    const field_count_fwd: i32 = struct_decl.struct_decl_field_count;
+    var fi_fwd: i32 = 0;
+    while fi_fwd < field_count_fwd {
+        const field_fwd: &ASTNode = struct_decl.struct_decl_fields[fi_fwd];
+        if field_fwd != null && field_fwd.type == ASTNodeType.AST_VAR_DECL && field_fwd.var_decl_type != null {
+            c99_emit_async_frame_forward_for_type(codegen, field_fwd.var_decl_type);
+        }
+        fi_fwd = fi_fwd + 1;
+    }
+    
     // 添加结构体定义标记
     add_struct_definition(codegen, struct_name);
     
@@ -2683,6 +2694,16 @@ fn gen_mono_struct_definition(codegen: &C99CodeGenerator, struct_decl: &ASTNode,
         codegen.current_type_args = saved_type_args;
         codegen.current_type_arg_count = saved_type_arg_count;
         return 0;
+    }
+    
+    // 为含 @frame(...) 的字段生成 struct uya_async_xxx; 前向声明
+    var fi_mono_fwd: i32 = 0;
+    while fi_mono_fwd < field_count {
+        const field_mono_fwd: &ASTNode = struct_decl.struct_decl_fields[fi_mono_fwd];
+        if field_mono_fwd != null && field_mono_fwd.type == ASTNodeType.AST_VAR_DECL && field_mono_fwd.var_decl_type != null {
+            c99_emit_async_frame_forward_for_type(codegen, field_mono_fwd.var_decl_type);
+        }
+        fi_mono_fwd = fi_mono_fwd + 1;
     }
     
     // 添加结构体定义标记

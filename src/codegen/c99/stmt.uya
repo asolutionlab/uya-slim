@@ -1837,6 +1837,11 @@ fn gen_destructure_decl(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
 
 // 生成变量声明语句
 fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
+        if codegen != null && codegen.async_inline_temp_var_count > 0 && stmt.var_decl_name != null {
+            if c99_var_is_inline_temp(codegen, stmt.var_decl_name) != 0 {
+                return;
+            }
+        }
         var var_name: &byte = get_safe_c_identifier(codegen, stmt.var_decl_name);
         if codegen != null && codegen.async_state_var != null && var_name != null &&
             strcmp(var_name as *byte, codegen.async_state_var as *byte) == 0 {

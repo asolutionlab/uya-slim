@@ -297,6 +297,24 @@ fn checker_check_alignof(checker: &TypeChecker, node: &ASTNode) Type {
             checker_report_error(checker, node, "alignof 的类型参数无效（无法解析为具体类型）" as *byte);
             return result;
         }
+        // 对 @frame(...) 类型返回其帧对齐
+        if target.type == ASTNodeType.AST_TYPE_FRAME {
+            var frame_align_val: i32 = 8;
+            const frame_operand: &ASTNode = target.type_frame_operand;
+            if frame_operand != null && frame_operand.type == ASTNodeType.AST_IDENTIFIER && frame_operand.identifier_name != null {
+                const fd: &ASTNode = find_fn_decl_from_program(checker.program_node, frame_operand.identifier_name);
+                if fd != null {
+                    const meta: &AsyncFrameMeta = checker_async_frame_meta_for_fn(checker, fd);
+                    if meta != null {
+                        frame_align_val = meta.frame_align as i32;
+                    }
+                }
+            }
+            node.is_optimized = 1;
+            node.optimized_value = frame_align_val;
+            result.kind = TypeKind.TYPE_I32;
+            return result;
+        }
     } else {
         // target 是表达式节点，验证表达式类型是否有效
         // 特殊情况：如果 target 是标识符，可能是结构体类型名称（如 alignof(Point)）
