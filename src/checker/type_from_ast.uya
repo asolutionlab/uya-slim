@@ -437,7 +437,11 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
         const operand: &ASTNode = type_node.type_frame_operand;
         if operand == null || operand.type != ASTNodeType.AST_IDENTIFIER || operand.identifier_name == null {
             if checker != null {
-                checker_report_error(checker, type_node, "@frame operand must be an async function identifier" as &byte);
+                checker_report_error_with_note(checker, type_node,
+                    "@frame operand must be an async function identifier" as &byte,
+                    type_node,
+                    "use an identifier of an @async_fn, e.g. @frame(my_async_fn)" as &byte,
+                    CheckerNoteKind.NOTE_SUGGESTION);
             }
             result.kind = TypeKind.TYPE_VOID;
             return result;
@@ -446,7 +450,11 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
         const fd: &ASTNode = find_fn_decl_from_program(checker.program_node, fn_name);
         if fd == null || fd.fn_decl_is_async == 0 {
             if checker != null {
-                checker_report_error(checker, type_node, "@frame operand must be an @async_fn" as &byte);
+                checker_report_error_with_note(checker, type_node,
+                    "@frame operand must be an @async_fn" as &byte,
+                    type_node,
+                    "only functions annotated with @async_fn have an async frame type" as &byte,
+                    CheckerNoteKind.NOTE_SUGGESTION);
             }
             result.kind = TypeKind.TYPE_VOID;
             return result;
@@ -456,14 +464,22 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
         if fd.fn_decl_type_param_count > 0 {
             if type_arg_count != fd.fn_decl_type_param_count {
                 if checker != null {
-                    checker_report_error(checker, type_node, "@frame generic argument count mismatch" as &byte);
+                    checker_report_error_with_note(checker, type_node,
+                        "@frame generic argument count mismatch" as &byte,
+                        type_node,
+                        "ensure the number of type arguments matches the @async_fn declaration" as &byte,
+                        CheckerNoteKind.NOTE_SUGGESTION);
                 }
                 result.kind = TypeKind.TYPE_VOID;
                 return result;
             }
         } else if type_arg_count > 0 {
             if checker != null {
-                checker_report_error(checker, type_node, "@frame on non-generic async function should not have type arguments" as &byte);
+                checker_report_error_with_note(checker, type_node,
+                    "@frame on non-generic async function should not have type arguments" as &byte,
+                    type_node,
+                    "remove the type arguments from @frame(...)" as &byte,
+                    CheckerNoteKind.NOTE_SUGGESTION);
             }
             result.kind = TypeKind.TYPE_VOID;
             return result;
@@ -476,7 +492,7 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
                 const ta_type: Type = type_from_ast(checker, ta_node);
                 if ta_type.kind == TypeKind.TYPE_GENERIC_PARAM {
                     if checker != null {
-                        checker_report_error(checker, ta_node, "@frame type argument must be concrete" as &byte);
+                        checker_report_frame_monomorphization_error(checker, ta_node, fn_name);
                     }
                     result.kind = TypeKind.TYPE_VOID;
                     return result;

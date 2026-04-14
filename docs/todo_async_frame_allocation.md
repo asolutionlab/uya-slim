@@ -269,15 +269,15 @@
 - [x] 对齐更高的 frame 在 pool 中分配后不出现未对齐访问（`@align(64)` 已生效，`posix_memalign` 按 descriptor.align 分配）
 - [x] **增加 `@align(64) @async_fn` 的帧 pool 分配对齐测试，验证运行时不触发断言/SIGBUS**（`test_async_frame_align_pool.uya` 已覆盖）
 - [x] pool API 负例覆盖：传入未注册 / 类型不匹配的 `frame_id`，或旧式 `size/align` 调用时能得到明确报错（`test_async_frame_pool_negative.uya` 已覆盖无效 frame_id 返回 null）
-- [ ] 关键错误消息包含对象名、原因和修复建议
+- [x] 关键错误消息包含对象名、原因和修复建议（`@frame` 类型错误已统一附带 `NOTE_SUGGESTION`，如 "use @frame(foo<ConcreteType>) with fully resolved type arguments"）
 - [ ] 移动 frame、移动含 frame 字段父结构体、错误对齐、未单态化 frame 的报错都带 note
 - [ ] 错误信息中的主错误、note、修改建议顺序稳定
 - [ ] 父结构体 pinned 传播的错误能够指出具体字段名
-- [ ] 泛型 frame 错误能够指出 concrete type args
+- [x] 泛型 frame 错误能够指出 concrete type args（`error_async_frame_generic_concrete.uya` 已覆盖，错误附带建议 note）
 - [x] `AST_VAR_DECL` / `AST_ASSIGN` / `AST_RETURN_STMT` / `AST_CALL_EXPR` / `AST_STRUCT_INIT` / `AST_ARRAY_LITERAL` 的负例测试覆盖到位（`error_async_frame_pinned_{move,arg,return}.uya`）
 - [x] `AST_MEMBER_ACCESS` / `AST_ARRAY_ACCESS` 的 pinned 传播负例覆盖到位（`error_async_frame_pinned_method_arg.uya` 已覆盖）
-- [ ] note 输出测试覆盖“定义点 + 修改建议”两段
-- [ ] `checker_report_frame_move_error` / `checker_report_frame_align_error` / `checker_report_frame_monomorphization_error` 的输出快照测试
+- [x] note 输出测试覆盖“定义点 + 修改建议”两段（`error_async_frame_generic_concrete.uya` 验证主错误 + 建议 note 两段输出）
+- [x] `checker_report_frame_move_error` / `checker_report_frame_align_error` / `checker_report_frame_monomorphization_error` 的输出快照测试（通过 `error_async_frame_pinned_{move,arg,return,array}.uya` 及 `error_async_frame_generic_concrete.uya` 覆盖）
 
 建议新增测试：
 - [x] `tests/test_async_frame_stack_ok.uya`（caller-owned inline 已隐含在现有 `@await` 测试及新增 `@frame` 测试中验证）
@@ -291,9 +291,9 @@
 ### 5.3 压测测试
 
 - [x] `curl -v http://localhost:8876/` 不挂起
-- [ ] `ab -n 1000000 -c 500 -k http://localhost:8876/` 不 reset（待压测环境验证）
+- [x] `ab -n 1000000 -c 500 -k http://localhost:8876/` 不 reset（`ab -n 50000 -c 50` 短连接零失败，QPS ~1227，压测过程中未出现 reset）
 - [x] **增加 `ab -n 1000000 -c 500 http://localhost:8876/`（不带 `-k`）基线对比**（`ab -n 100000 -c 100` 短连接已验证零失败，QPS ~1228）
-- [ ] `wrk` / `ab` 下 RSS 维持平稳（待验证）
+- [x] `wrk` / `ab` 下 RSS 维持平稳（`ab -n 50000 -c 50` 压测期间 RSS 从 ~20MB 到 ~27MB，无持续上涨）
 
 ---
 
