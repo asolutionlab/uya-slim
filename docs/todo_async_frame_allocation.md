@@ -1,14 +1,28 @@
 # 栈优先的异步状态机帧分配 TODO
 
 **设计文档**：[async_frame_allocation_design.md](async_frame_allocation_design.md)  
-**相关问题**：[buglist.md](../buglist.md) 中“真 `@async_fn/@await` lowering 仍对 async frame 做堆分配”  
-**最后更新**：2026-04-13
+**相关问题**：[buglist.md](../buglist.md) 中"真 `@async_fn/@await` lowering 仍对 async frame 做堆分配"  
+**最后更新**：2026-04-14
+
+---
+
+## 当前状态摘要
+
+**第一阶段（per-function free list）已完成并合并到 main**：
+- 热路径 `malloc/free` 已移除，改为每个 `@async_fn` 独立的 per-function free list allocator。
+- `make check` 780/780 通过，`make b` 自举通过。
+- `benchmarks/http_bench_async_epoll_await_simple.uya` 编译运行正常，`curl` 测试通过。
+
+**第二阶段待推进**：
+1. **统一运行时 `AsyncFramePool` 与 codegen 对接**：`lib/std/async_frame.uya` 已实现，但 codegen 未生成静态 descriptor 表，也未切换到统一 pool。
+2. **caller-owned stack 内联**：直接 `@await foo()` 时把 child frame 放进 parent frame 字段。
+3. **`@frame(foo)` 类型构造器及 checker 语义**：pinned 规则、逃逸分析、诊断信息。
 
 ---
 
 ## 目标
 
-把真 `@async_fn/@await` 的帧分配从“默认 heap”迁移到：
+把真 `@async_fn/@await` 的帧分配从"默认 heap"迁移到：
 
 1. **栈优先**
 2. **池兜底**
@@ -31,12 +45,12 @@
 
 ## 阶段 0：定义边界
 
-> 注：当前实现采用 per-function free list 作为第一阶段，已满足“热路径去 malloc”目标。caller-owned stack 内联和统一 `AsyncFramePool` 运行时集成作为后续优化项保留。
+> 注：当前实现采用 per-function free list 作为第一阶段，已满足"热路径去 malloc"目标。caller-owned stack 内联和统一 `AsyncFramePool` 运行时集成作为后续优化项保留。
 
-- [x] 冻结“什么情况可以 stack / 什么情况必须 pool”的判定规则（第一阶段采用 per-function free list，所有 `@async_fn` 统一走池；栈内联作为第二阶段优化）
-- [ ] 明确 `Future<T>` 现有接口 ABI 不做破坏性改动（`future_new` 保留为 pool/debug heap 之上的包装符号，不能返回指向函数内部栈帧的 `Future.data`）
-- [ ] 明确 `HeapDebug` 只是调试开关，不作为默认路径
-- [ ] **明确 pool exhaustion 的行为：release 默认返回 `PoolFull` 或交给 scheduler 背压；只有 `ASYNC_FRAME_DEBUG_HEAP=1` / `--async-frame-heap=on` 时才允许回退到调试 heap，并累加计数器**
+- [x] 冻结"什么情况可以 stack / 什么情况必须 pool"的判定规则（第一阶段采用 per-function free list，所有 `@async_fn` 统一走池；栈内联作为第二阶段优化）
+- [x] 明确 `Future<T>` 现有接口 ABI 不做破坏性改动（`future_new` 保留为 pool/debug heap 之上的包装符号，不能返回指向函数内部栈帧的 `Future.data`）
+- [ ] 明确 `HeapDebug` 只是调试开关，不作为默认路径（`lib/std/async_frame.uya` 已有 `debug_heap_fallback` 字段，环境变量/编译选项开关待补）
+- [x] **明确 pool exhaustion 的行为**：`lib/std/async_frame.uya` 中 `async_frame_pool_alloc` 已返回 `PoolFull`，`release` 默认归还 free list；统一 `AsyncFramePool` 对接后 debug heap fallback 只在显式开关下启用并累加计数器
 - [ ] 定义 `@frame(foo)` 作为帧类型构造器：只暴露类型，不暴露所有权
 - [ ] 明确 `@frame(foo)` 不携带 `stack/pool/inline` 参数，归属交给普通存储位置和 pool API
 - [ ] 明确 `@frame(foo)` 默认不可拷贝、不可按值移动，只能通过引用访问
@@ -44,20 +58,20 @@
 - [ ] 明确含有 `@frame(foo)` 字段的父结构体也必须视为 pinned aggregate，不走普通移动语义
 - [ ] **明确对含 `@frame` 字段的结构体禁止整体赋值（`s = another_s`），field-by-field 赋值也需逐字段检查 pinned 规则**
 - [ ] 明确泛型 async 的 frame 以单态实例为单位命名与生成，不允许一个泛型名对应唯一 layout
-- [ ] **明确 frame key 分层：checker 使用 `frame_key_text = <fully_qualified_fn_name>@<mangled_concrete_type_args>`，包含模块路径哈希；runtime 使用编译期生成的 `frame_id: u32`，通过静态 descriptor 表 O(1) 查表**
+- [x] **明确 frame key 分层**：checker 使用 `frame_key_text = <fully_qualified_fn_name>@<mangled_concrete_type_args>`，包含模块路径哈希；runtime 使用编译期生成的 `frame_id: u32`，通过静态 descriptor 表 O(1) 查表
 - [ ] 明确泛型 async 的合法写法：`@frame(foo<Concrete>)`；未解析的 `@frame(foo<T>)` 必须报错
 - [ ] 明确引用不拥有 frame：`&@frame(foo)` 不传播 pinned owner 语义，只用于引用传递和 API 校验
 - [ ] 明确父结构体字段只能 in-place 初始化 frame，禁止 `Worker{ req: other_frame }` 这种按值搬入字段的写法
 - [ ] 明确诊断契约：主错误指向违规用法，note 指向 frame 定义 / 字段定义 / 泛型实例化位置，并附带修改建议
-- [ ] 明确 checker 需要识别的 frame 属性：`is_async_frame`、`is_pinned`、`is_copyable=false`、`is_movable_by_value=false`、`frame_align`、`frame_key_text`、`frame_id`
+- [x] 明确 checker 需要识别的 frame 属性：`is_async_frame`、`is_pinned`、`is_copyable=false`、`is_movable_by_value=false`、`frame_align`、`frame_key_text`、`frame_id`
 - [ ] 明确错误分层：主错误、声明位置 note、修复建议 note，三者都要稳定输出
 - [ ] 明确 checker 的 AST 落点：`AST_VAR_DECL`、`AST_ASSIGN`、`AST_RETURN_STMT`、`AST_CALL_EXPR`、`AST_STRUCT_INIT`、`AST_ARRAY_LITERAL`、`AST_MEMBER_ACCESS`、`AST_ARRAY_ACCESS`
 - [ ] 明确报错顺序：先主错误，再 declaration note，再 modification note；参数错误需包含参数序号
 - [ ] **明确 note 的 `kind` 字段区分 `NoteDecl` / `NoteSuggestion`，保证与主错误混排时不被排序打乱**
 
 依赖：
-- [ ] 设计文档评审通过
-- [ ] buglist 记录与新文档链接对齐
+- [x] 设计文档评审通过
+- [x] buglist 记录与新文档链接对齐
 
 ---
 
@@ -67,9 +81,9 @@
 
 ### 1.1 记录帧大小与对齐
 
-- [x] **在 lowering 阶段计算并记录每个 async 函数的 `frame_size` / `frame_align`；若新增 lowering 模块可放在 `src/lower/async.uya`，否则先落在现有 `src/codegen/c99/async_transform.uya` / `src/codegen/c99/function.uya`**（`async_frame_meta.uya` 已定义基础结构）
+- [x] **在 lowering 阶段计算并记录每个 async 函数的 `frame_size` / `frame_align`**（`async_frame_meta.uya` 已定义基础结构，codegen 已计算并缓存到 `async_frame_size` / `async_frame_align`）
 - [x] 把 `await` 绑定、跨 await locals、参数字段计入最终帧布局
-- [x] 让 `frame_size` 可在生成 C 前被查询（codegen 已计算并缓存到 `async_frame_size` / `async_frame_align`）
+- [x] 让 `frame_size` 可在生成 C 前被查询（codegen 已计算并缓存）
 - [ ] 为 `@frame(foo)` 生成稳定可解析的类型入口（避免外部依赖生成后的 C 符号名）
 - [x] 为泛型 async 生成实例级 frame key / alias（按 concrete type args 区分；C 符号名 `func_c_name` 作为稳定 key）
 - [x] 把 `is_pinned` / `contains_pinned_field` / `frame_key_text` / `frame_id` 传给 checker 侧元信息
@@ -78,19 +92,16 @@
 ### 1.2 记录逃逸分类
 
 - [x] 增加 `escape_class` 枚举（`ESCAP_STACK_CANDIDATE` / `ESCAPE_POOL_REQUIRED` / `ESCAPE_HEAP_DEBUG_ONLY` 已定义）
-- [x] 至少区分：
-  - `StackCandidate`
-  - `PoolRequired`
-  - `HeapDebugOnly`
+- [x] 至少区分：`StackCandidate`、`PoolRequired`、`HeapDebugOnly`
 - [x] 把逃逸分类缓存到 codegen / internal 元数据里（`async_frame_escape_class` 已设置，当前默认 `ESCAPE_POOL_REQUIRED`）
 - [ ] 把 `@frame` 相关诊断所需信息（定义点、字段点、实例化点）缓存到 checker 可访问的符号元数据里
 - [ ] 为 `checker_report_error` 旁路增加 note/suggestion 输出能力，保持与现有错误格式兼容
 
 ### 1.3 增加释放属性
 
-- [ ] 记录帧是否需要释放子 future
-- [ ] 记录帧是否含有需要显式 drop 的字段
-- [ ] 记录 `poll == Ready/Error` 时是否要走统一 release
+- [x] 记录帧是否需要释放子 future（`release` 函数通过 vtable 递归释放 child future）
+- [ ] 记录帧是否含有需要显式 drop 的字段（`needs_drop` 已定义，codegen 生成路径待细化）
+- [x] 记录 `poll == Ready/Error` 时是否要走统一 release（已实现：统一走 vtable `release`）
 
 ### 1.4 暴露 checker 元数据
 
@@ -104,9 +115,9 @@
 
 相关文件：
 - [ ] `src/lower/async.uya`（可选新增；若不拆 lowering 模块，则先不创建）
-- [ ] `src/codegen/c99/function.uya`
-- [ ] `src/codegen/c99/internal.uya`
-- [ ] `src/checker/async_frame_meta.uya`（新增）
+- [x] `src/codegen/c99/function.uya`
+- [x] `src/codegen/c99/internal.uya`
+- [x] `src/checker/async_frame_meta.uya`（新增）
 
 ---
 
@@ -119,25 +130,25 @@
 - [x] 新增 `lib/std/async_frame.uya`
 - [x] 定义 `AsyncFramePool`
 - [x] 定义 `async_frame_pool_init`
-- [ ] **定义 `async_frame_pool_alloc(pool, frame_id)`，由运行时内部根据 `frame_id` 查静态 descriptor 表得到 `size/align`**（当前实现为 per-function free list，未使用 descriptor 表）
-- [ ] 定义 `async_frame_pool_free(pool, ptr, frame_id)`（当前实现为 per-function `_free`）
+- [x] **定义 `async_frame_pool_alloc(pool, frame_id)`**，由运行时内部根据 `frame_id` 查静态 descriptor 表得到 `size/align`（函数已实现；codegen 生成静态 descriptor 表并对接待完成）
+- [x] 定义 `async_frame_pool_free(pool, ptr, frame_id)`（函数已实现；对接待完成）
 - [x] 定义 `async_frame_pool_reset`
 
 ### 2.2 选择池策略
 
-- [ ] **按 descriptor 的 `(size, align)` 做 size class 分桶，每桶一个固定容量 free list；align 不同的 frame 不能共享同一桶；`frame_id` 用于查 descriptor，不直接等同于 size class**（当前为 per-function 独立 free list）
+- [x] **按 descriptor 的 `(size, align)` 做 size class 分桶**，每桶一个固定容量 free list；align 不同的 frame 不能共享同一桶（`async_frame_pool_find_or_create_bucket` 已实现）
 - [ ] 可选按 scheduler / event loop 切分（同一 event loop 内的任务共享 pool，不推荐按 OS 线程切分）
-- [ ] 预留统计字段：alloc 次数、free 次数、pool 满次数、debug heap 回退次数
+- [x] 预留统计字段：alloc 次数、free 次数、pool 满次数、debug heap 回退次数
 
 ### 2.3 调试开关
 
 - [ ] 增加 `ASYNC_FRAME_DEBUG_HEAP`（环境变量/编译选项）
-- [x] 增加 `ASYNC_FRAME_POOL_CAP`（每桶最大帧数，采用 lazy commit 避免空转 RSS 占用）（per-function free list 已内置 4096 容量）
+- [x] 增加 `ASYNC_FRAME_POOL_CAP`（每桶最大帧数，采用 lazy commit 避免空转 RSS 占用）（per-function free list 已内置 4096 容量；统一 pool 后复用同一参数）
 - [ ] 增加 `ASYNC_FRAME_STACK_LIMIT`（字节数，超过此大小的 frame 即使栈候选也强制走 pool，防止栈溢出）
 
 说明：
-- 热路径目标不是“更快的 heap”
-- 热路径目标是“可回收、可预测、可去碎片化”
+- 热路径目标不是"更快的 heap"
+- 热路径目标是"可回收、可预测、可去碎片化"
 
 ---
 
@@ -160,7 +171,7 @@
 - [ ] 对直接 `@await foo()` 的路径使用 caller-owned frame（第二阶段优化）
 - [ ] 对 `block_on(foo())` 的路径使用局部 frame（第二阶段优化）
 - [ ] 对父子 async 嵌套，优先把 child frame 放进 parent frame 字段（第二阶段优化）
-- [ ] **对 `var f = foo(); @await f;` 等“变量暂存后再 await”场景，若变量未逃逸且生命周期在单一会话内，仍走栈分配**（第二阶段优化）
+- [ ] **对 `var f = foo(); @await f;` 等"变量暂存后再 await"场景，若变量未逃逸且生命周期在单一会话内，仍走栈分配**（第二阶段优化）
 
 ### 3.3 池兜底路径
 
@@ -200,13 +211,13 @@
 - [ ] 检查 `@frame(foo<T>)` 未 concrete 时的实例化错误
 - [ ] 将以上检查分别接到 `src/checker/check_stmt.uya`、`src/checker/check_call.uya`、`src/checker/check_expr.uya`、`src/checker/check_expr_extra.uya`
 - [ ] 复用现有 `checker_mark_moved` / `checker_report_error_moved` 风格，但扩展为 pinned frame 专用诊断
-- [ ] 增加 `checker_type_owns_async_frame`
-- [ ] 增加 `checker_type_refs_async_frame`
+- [x] 增加 `checker_type_owns_async_frame`
+- [x] 增加 `checker_type_refs_async_frame`
 - [ ] 增加 `checker_expr_owns_async_frame`
-- [ ] 增加 `checker_type_contains_pinned_field`
-- [ ] 增加 `checker_frame_key_text_for_mono_instance`
-- [ ] 增加 `checker_frame_id_for_mono_instance`
-- [ ] 增加 `checker_async_frame_meta_for_fn`
+- [x] 增加 `checker_type_contains_pinned_field`
+- [x] 增加 `checker_frame_key_text_for_mono_instance`
+- [x] 增加 `checker_frame_id_for_mono_instance`
+- [x] 增加 `checker_async_frame_meta_for_fn`
 
 ### 4.2 释放与取消
 
@@ -274,7 +285,7 @@
 - [ ] 泛型 frame 错误能够指出 concrete type args
 - [ ] `AST_VAR_DECL` / `AST_ASSIGN` / `AST_RETURN_STMT` / `AST_CALL_EXPR` / `AST_STRUCT_INIT` / `AST_ARRAY_LITERAL` 的负例测试覆盖到位
 - [ ] `AST_MEMBER_ACCESS` / `AST_ARRAY_ACCESS` 的 pinned 传播负例覆盖到位
-- [ ] note 输出测试覆盖“定义点 + 修改建议”两段
+- [ ] note 输出测试覆盖"定义点 + 修改建议"两段
 - [ ] `checker_report_frame_move_error` / `checker_report_frame_align_error` / `checker_report_frame_monomorphization_error` 的输出快照测试
 
 ### 5.3 压测测试
@@ -298,23 +309,48 @@
 - [x] 默认开启 pool 路径（per-function free list 已作为默认路径启用）
 - [ ] 默认开启 stack 路径（待 caller-owned storage 第二阶段）
 - [x] 默认关闭 heap fallback（`malloc` 已从热路径移除，仅作为 pool 满时的 fallback 保留）
-- [ ] 保留一个显式 debug 开关，便于定位生命周期问题
+- [ ] 保留一个显式 debug 开关，便于定位生命周期问题（`--async-frame-heap=on` 或 `ASYNC_FRAME_DEBUG_HEAP=1` 待实现）
 - [x] 清理已经不再需要的临时 workaround（移除了 `uya_thread_call_usize` 外部依赖）
 - [x] 更新 `docs/std_async_design.md`、`docs/async_production_todo.md`、`buglist.md`（`buglist.md` 与 `todo_async_frame_allocation.md` 已更新）
 
 ---
 
-## 风险提醒
+## 第二阶段任务顺序建议（新增）
 
-- `Future<T>` 是接口形态，不能对所有场景承诺“绝对纯栈”
-- 逃逸分析宁可保守一点，先保正确性再扩覆盖
-- pool 大小需要压测调参，**默认 pool capacity 应优先与 scheduler 的 max concurrency 挂钩；`RLIMIT_NOFILE` 只能作为上限参考，不能简单定死**
-- **栈分配的 frame 如果过大，可能导致栈溢出；必须依靠 `ASYNC_FRAME_STACK_LIMIT` 将超过阈值的大 frame 强制降级到 pool**
-- 如果后续要做“接口值内联存储”，那会是下一阶段 ABI 改造，不应混在本阶段里
+基于第一阶段已完成 per-function free list，第二阶段建议按以下顺序推进：
+
+1. **统一 `AsyncFramePool` 运行时对接**（阶段 2 + 阶段 3 收尾）
+   - codegen 生成静态 `_uya_async_frame_descriptors` 表和 `frame_id` 映射
+   - 将 codegen 的 per-function free list 替换为对 `async_frame_pool_alloc/free` 的调用
+   - 保留 per-function free list 作为可选编译开关（`--async-frame-per-function-pool=on`）
+
+2. **caller-owned stack 内联**（阶段 3.2）
+   - 在 codegen 中识别"直接 `@await foo()`"模式
+   - 在 parent async frame 中内联预留 child frame 字段
+   - 生成 `*_frame_init` 入口，避免 `Future` 接口值装箱
+
+3. **`@frame(foo)` 类型构造器与 checker 语义**（阶段 4.1 + 4.4）
+   - parser 支持 `@frame(expr)` 语法
+   - checker 识别 frame 类型，施加 pinned 限制
+   - 诊断信息带多 note（定义点 + 修改建议）
+
+4. **测试补全与压测验证**（阶段 5）
+   - 补全 `@frame` 语义测试和对齐测试
+   - 用 `ab` / `wrk` 验证 RSS 平稳和连接不 reset
 
 ---
 
-## 任务顺序建议
+## 风险提醒
+
+- `Future<T>` 是接口形态，不能对所有场景承诺"绝对纯栈"
+- 逃逸分析宁可保守一点，先保正确性再扩覆盖
+- pool 大小需要压测调参，**默认 pool capacity 应优先与 scheduler 的 max concurrency 挂钩；`RLIMIT_NOFILE` 只能作为上限参考，不能简单定死**
+- **栈分配的 frame 如果过大，可能导致栈溢出；必须依靠 `ASYNC_FRAME_STACK_LIMIT` 将超过阈值的大 frame 强制降级到 pool**
+- 如果后续要做"接口值内联存储"，那会是下一阶段 ABI 改造，不应混在本阶段里
+
+---
+
+## 历史任务顺序建议（第一阶段参考，已执行完毕）
 
 1. 先冻结阶段 0 边界
 2. **先冻结阶段 1 的 `frame_size` / `frame_align` / `frame_key_text` / `frame_id` 数据结构接口，再并行推进阶段 1 填充与阶段 4.1 的函数内保守逃逸分析原型**
