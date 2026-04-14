@@ -2058,13 +2058,24 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
             if need_address != 0 {
                 fputc(38, codegen.emit_stream as *void);  // '&'
             }
-            // 装箱：当形参是接口类型且实参是实现了该接口的结构体时，生成 vtable+data
+            // 装箱：当形参是接口类型（值或指针）且实参是实现了该接口的结构体时，生成 vtable+data
             var did_box: i32 = 0;
             if fn_decl != null && fn_decl.type == ASTNodeType.AST_FN_DECL && i < fn_decl.fn_decl_param_count {
                 const param: &ASTNode = fn_decl.fn_decl_params[i];
-                if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null &&
-                    param.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED {
-                    const param_type_name: &byte = param.var_decl_type.type_named_name;
+                if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null {
+                    var param_type_name: &byte = null;
+                    var param_is_iface_ptr: i32 = 0;
+                    var param_iface_type: &ASTNode = null;
+                    if param.var_decl_type.type == ASTNodeType.AST_TYPE_NAMED {
+                        param_type_name = param.var_decl_type.type_named_name;
+                        param_iface_type = param.var_decl_type;
+                    } else if param.var_decl_type.type == ASTNodeType.AST_TYPE_POINTER &&
+                               param.var_decl_type.type_pointer_pointed_type != null &&
+                               param.var_decl_type.type_pointer_pointed_type.type == ASTNodeType.AST_TYPE_NAMED {
+                        param_type_name = param.var_decl_type.type_pointer_pointed_type.type_named_name;
+                        param_is_iface_ptr = 1;
+                        param_iface_type = param.var_decl_type.type_pointer_pointed_type;
+                    }
                     const iface: &ASTNode = find_interface_decl_c99(codegen, param_type_name);
                     if iface != null && expr.call_expr_args[i] != null {
                         var struct_name_for_check: &byte = null;
@@ -2134,9 +2145,10 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                         }
                         if struct_name_for_check != null {
                             var iface_mono: &byte = param_type_name;
-                            if param.var_decl_type.type_named_type_arg_count > 0 && param.var_decl_type.type_named_type_args != null {
+                            if param_iface_type != null &&
+                                param_iface_type.type_named_type_arg_count > 0 && param_iface_type.type_named_type_args != null {
                                 iface_mono = get_mono_struct_name(codegen, param_type_name,
-                                    param.var_decl_type.type_named_type_args, param.var_decl_type.type_named_type_arg_count);
+                                    param_iface_type.type_named_type_args, param_iface_type.type_named_type_arg_count);
                             }
                             var struct_mono: &byte = struct_name_for_check;
                             if arg.type == ASTNodeType.AST_STRUCT_INIT &&
@@ -2146,7 +2158,12 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             }
                             const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono);
                             const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
-                            if arg_is_pointer_like != 0 {
+                            if param_is_iface_ptr != 0 {
+                                fprintf(codegen.emit_stream as *void, "&(struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)(" as *byte,
+                                        safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
+                                gen_expr(codegen, expr.call_expr_args[i]);
+                                fputs(") }" as *byte, codegen.emit_stream as *void);
+                            } else if arg_is_pointer_like != 0 {
                                 fprintf(codegen.emit_stream as *void, "(struct uya_interface_%s){ .vtable = (void*)&uya_vtable_%s_%s, .data = (void*)(" as *byte,
                                         safe_iface as *byte, safe_iface as *byte, safe_struct as *byte);
                                 gen_expr(codegen, expr.call_expr_args[i]);

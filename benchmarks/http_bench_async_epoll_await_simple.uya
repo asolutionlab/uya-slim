@@ -9,6 +9,8 @@
 use std.async;
 use std.async_event;
 use std.async_scheduler.block_on_with_event_loop;
+use std.async_frame.AsyncFramePool;
+use std.async_frame.async_frame_pool_init;
 use libc.mem;
 use libc.heap;
 use libc.pthread;
@@ -466,6 +468,12 @@ fn bench_worker_thread(_arg: &void) &void {
     _ = memset(&ctx_storage[0] as *byte, 0, BENCH_CONTEXT_STACK_BYTES);
     const slot_cap: i32 = bench_thread_slot_cap(_arg);
     _ = slot_cap;
+    
+    // 绑定线程本地 async frame 池（完全无锁）
+    var frame_pool: AsyncFramePool = [];
+    async_frame_pool_init(&frame_pool, 0, 65536);
+    set_async_frame_allocator(&frame_pool);
+    
     const loop: LinuxEpoll = linux_epoll_create(0) catch {
         return null as &void;
     };

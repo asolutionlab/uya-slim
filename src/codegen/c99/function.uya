@@ -4385,6 +4385,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     fprintf(codegen.emit_stream as *void, "static _Atomic(int32_t) %s_pool_count = 0;\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "static const int32_t %s_pool_cap = 4096;\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "static struct %s *%s(void) {\n" as *byte, async_struct as *byte, alloc_name as *byte);
+    fputs("    struct uya_interface_IAllocator *a = _uya_thread_local_async_frame_allocator;\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "    if (a != (void*)0) { struct err_union_uint8_tptr r = ((struct uya_vtable_IAllocator *)a->vtable)->alloc(a->data, sizeof(struct %s)); if (r.error_id == 0) return (struct %s *)r.value; }\n" as *byte, async_struct as *byte, async_struct as *byte);
     fprintf(codegen.emit_stream as *void, "    void *head = __atomic_load_n(&%s_pool_head, __ATOMIC_ACQUIRE);\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "    while (head != (void*)0) {\n" as *byte);
     fprintf(codegen.emit_stream as *void, "        void *next = *(void**)head;\n" as *byte);
@@ -4395,6 +4397,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     fprintf(codegen.emit_stream as *void, "    return (struct %s *)malloc(sizeof(struct %s));\n}\n" as *byte, async_struct as *byte, async_struct as *byte);
     fprintf(codegen.emit_stream as *void, "static void %s(struct %s *p) {\n" as *byte, free_name as *byte, async_struct as *byte);
     fputs("    if (p == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
+    fputs("    struct uya_interface_IAllocator *a = _uya_thread_local_async_frame_allocator;\n" as *byte, codegen.emit_stream as *void);
+    fprintf(codegen.emit_stream as *void, "    if (a != (void*)0) { ((struct uya_vtable_IAllocator *)a->vtable)->dealloc(a->data, (uint8_t *)p); return; }\n" as *byte);
     fprintf(codegen.emit_stream as *void, "    int32_t cnt = __atomic_load_n(&%s_pool_count, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "    if (cnt >= %s_pool_cap) { free(p); return; }\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "    void *head = __atomic_load_n(&%s_pool_head, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);

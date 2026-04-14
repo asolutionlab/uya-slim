@@ -5,6 +5,15 @@
 
 use libc.heap;
 use std.async_frame;
+use std.mem.allocator.IAllocator;
+
+/// 线程本地 async frame 分配器（由 codegen 读取）
+var _uya_thread_local_async_frame_allocator: &IAllocator = null;
+
+/// 设置当前线程的 async frame 分配器
+export fn set_async_frame_allocator(alloc: &IAllocator) void {
+    _uya_thread_local_async_frame_allocator = alloc;
+}
 
 /// 异步运行时统一错误类型
 export error EventLoopSlotsFull;
