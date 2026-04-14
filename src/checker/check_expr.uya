@@ -890,6 +890,11 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
             if is_void_type(element_type) != 0 {
                 return make_void_type();
             }
+            // Pinned 类型检查：禁止将 pinned 类型放入数组字面量
+            if checker_type_contains_pinned_field(checker, &element_type) != 0 {
+                checker_report_frame_move_error(checker, elements[0], null);
+                return make_void_type();
+            }
             const element_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
             if element_type_ptr == null {
                 return make_void_type();
@@ -907,6 +912,11 @@ export fn checker_infer_type(checker: &TypeChecker, expr: &ASTNode) Type {
         
         const element_type: Type = checker_infer_type(checker, elements[0]);
         if is_void_type(element_type) != 0 {
+            return make_void_type();
+        }
+        // Pinned 类型检查：禁止将 pinned 类型放入数组字面量
+        if checker_type_contains_pinned_field(checker, &element_type) != 0 {
+            checker_report_frame_move_error(checker, elements[0], null);
             return make_void_type();
         }
         

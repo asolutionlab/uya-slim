@@ -129,7 +129,7 @@
 
 - [x] **按 descriptor 的 `(size, align)` 做 size class 分桶，每桶一个固定容量 free list；align 不同的 frame 不能共享同一桶；`frame_id` 用于查 descriptor，不直接等同于 size class**
 - [ ] 可选按 scheduler / event loop 切分（同一 event loop 内的任务共享 pool，不推荐按 OS 线程切分）
-- [ ] 预留统计字段：alloc 次数、free 次数、pool 满次数、debug heap 回退次数
+- [x] 预留统计字段：alloc 次数、free 次数、pool 满次数、debug heap 回退次数（已定义在 `AsyncFramePool` 中，并通过 `async_frame_pool_stats` 暴露；`test_async_frame_pool_stats.uya` 已覆盖 fallback 计数）
 
 ### 2.3 调试开关
 
@@ -221,7 +221,7 @@
 ### 4.3 失败处理
 
 - [ ] release 默认 pool 满时返回 `PoolFull` 或交给 scheduler 背压（待统一 `AsyncFramePool`）
-- [ ] debug 模式 pool 满时允许回退调试堆并累加计数器（待统一 `AsyncFramePool`）
+- [x] debug 模式 pool 满时允许回退调试堆并累加计数器（`AsyncFramePool` 已支持：`debug_heap_fallback=1` 时超容走 `malloc` 并累加 `debug_heap_fallback_count`）
 - [x] 绝不静默悬挂
 - [x] 绝不双重释放
 
@@ -321,6 +321,8 @@
 5. ~~**`ASYNC_FRAME_STACK_LIMIT` 未实现**~~（**已修复**）：已支持通过环境变量 `ASYNC_FRAME_STACK_LIMIT=<bytes>` 覆盖默认的 65536 字节栈分配阈值，并在 `async_frame_pool_default()` 中读取并传递给 `AsyncFramePool`。
 
 6. **pool 满时的背压策略未实现**：当前 pool 满时直接 fallback 到 `free`（调试路径），缺少 `PoolFull` 返回值或 scheduler 背压集成。
+
+7. **结构体按值包含 `@frame` 字段的 C 代码生成限制**：C 语言不允许结构体字段类型为不完整类型（仅前向声明不够，必须提供完整 `struct uya_async_xxx { ... }` 定义）。当前 `@frame` 对应的 async 状态机结构体定义随函数代码一起生成，若顶层结构体字段按值包含 `@frame`，需确保该 frame 的完整定义在结构体定义之前出现。checker 已拒绝将 pinned 类型按值搬入结构体字段初始化；若未来需要支持 `@frame` 按值字段，codegen 需增加定义排序或提前发射 frame 结构体定义。
 
 ---
 

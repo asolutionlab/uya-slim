@@ -461,6 +461,13 @@ fn checker_check_struct_init(checker: &TypeChecker, node: &ASTNode) Type {
             i = i + 1;
             continue;
         }
+        // Pinned 类型检查：禁止将 pinned 类型按值传入结构体字段初始化
+        const field_value_type: Type = checker_infer_type(checker, field_value);
+        if checker_type_contains_pinned_field(checker, &field_value_type) != 0 {
+            checker_report_frame_move_error(checker, field_value, null);
+            i = i + 1;
+            continue;
+        }
         if field_value != null && field_value.type == ASTNodeType.AST_IDENTIFIER && field_type.kind == TypeKind.TYPE_STRUCT && field_type.struct_name != null {
             checker_mark_moved(checker, field_value, field_value.identifier_name, field_type.struct_name);
         }

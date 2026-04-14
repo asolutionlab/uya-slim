@@ -129,8 +129,11 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             // 数组字面量：放宽检查，允许类型推断失败的情况
             // 先递归检查初始化表达式本身
             checker_check_node(checker, node.var_decl_init);
-            // 推断类型，但不强制要求类型匹配（完全允许通过）
-            // 不进行类型比较，直接允许通过
+            // Pinned 类型检查：禁止用数组字面量按值初始化包含 async frame 的类型
+            const init_type: Type = checker_infer_type(checker, node.var_decl_init);
+            if checker_type_contains_pinned_field(checker, &init_type) != 0 {
+                checker_report_frame_move_error(checker, node.var_decl_init, "init" as &byte);
+            }
         } else {
             // 先递归检查初始化表达式本身（包括函数调用、运算符等的类型检查）
             // 注意：如果表达式包含赋值（如 node.field = null），可能会报告错误，但我们应该继续

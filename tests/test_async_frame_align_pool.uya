@@ -4,6 +4,7 @@
 
 use std.async;
 use std.testing.expect;
+use std.testing.run_test;
 
 @align(64)
 @async_fn
@@ -11,12 +12,12 @@ fn aligned_async() Future<!i32> {
     return 42;
 }
 
-test "align_of_frame_type" {
+fn test_align_of_frame_type() void {
     const a: i32 = @align_of(@frame(aligned_async));
     expect(a == 64);
 }
 
-test "aligned_async_pool_alloc" {
+fn test_aligned_async_pool_alloc() void {
     const f: Future<!i32> = aligned_async();
     const w: Waker = Waker{};
     const p: Poll<!i32> = f.poll(&w);
@@ -26,4 +27,12 @@ test "aligned_async_pool_alloc" {
         .Pending(_) => { result = 0 - 2; },
     }
     expect(result == 42);
+}
+
+test "align_of_frame_type" {
+    run_test("align_of_frame_type", test_align_of_frame_type);
+}
+
+test "aligned_async_pool_alloc" {
+    run_test("aligned_async_pool_alloc", test_aligned_async_pool_alloc);
 }
