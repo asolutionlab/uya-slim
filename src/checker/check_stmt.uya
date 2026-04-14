@@ -1069,7 +1069,9 @@ fn checker_check_struct_decl(checker: &TypeChecker, node: &ASTNode) i32 {
                         const method_name2: &byte = msig2.fn_decl_name;
                         const impl: &ASTNode = find_method_in_struct(checker.program_node, struct_name, method_name2);
                         if impl == null {
-                            checker_report_error(checker, node, "结构体缺少接口要求的方法" as *byte);
+                            var err_buf: [byte: 256] = [];
+                            snprintf(&err_buf[0] as *byte, 256 as usize, "结构体 '%s' 缺少接口要求的方法: '%s'" as *byte, struct_name as *byte, method_name2 as *byte);
+                            checker_report_error(checker, node, &err_buf[0] as &byte);
                             return 0;
                         }
                     }
