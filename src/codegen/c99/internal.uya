@@ -305,6 +305,9 @@ struct C99CodeGenerator {
     // 堆栈大小设置（KB）
     stack_size: i32,                      // 堆栈大小（KB），0 表示默认
 
+    // --async-frame-heap=on：async frame pool 满时回退到调试 heap
+    async_frame_heap_fallback: i32,       // 1 表示启用 debug heap fallback
+
     // async 状态机：在 poll 内生成表达式时，参数标识符应输出为 s->param
     async_state_var: &byte,               // 状态指针变量名（如 "s"），null 表示未在 async poll 中
     async_param_names: [&byte: 16],       // 捕获的参数名

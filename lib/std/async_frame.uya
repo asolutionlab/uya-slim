@@ -24,6 +24,8 @@ struct AsyncFramePoolBucket {
     slots: [&byte: ASYNC_FRAME_POOL_MAX_PER_BUCKET],
     slot_count: i32,
     capacity: i32,
+    // 已从系统 malloc 出来的总块数（含已外借和 free list 中的）
+    committed_count: i32,
     alloc_count: i32,
     free_count: i32,
 }
@@ -53,6 +55,9 @@ struct AsyncFrameDescriptorTable {
 extern var _uya_async_frame_descriptors: AsyncFrameDescriptorTable;
 extern var _uya_async_frame_descriptor_count: i32;
 
+// 编译期开关：--async-frame-heap=on 时由 codegen 生成为 1
+extern var _uya_async_frame_heap_fallback: i32;
+
 // 默认全局异步帧池（懒初始化）
 var _uya_default_async_frame_pool: AsyncFramePool = [];
 var _uya_default_async_frame_pool_initialized: i32 = 0;
@@ -60,9 +65,20 @@ var _uya_default_async_frame_pool_initialized: i32 = 0;
 export fn async_frame_pool_default() &AsyncFramePool {
     if _uya_default_async_frame_pool_initialized == 0 {
         _uya_default_async_frame_pool_initialized = 1;
-        // 默认启用 debug heap fallback，保证 alloc 不会失败
-        // 后续可通过环境变量或编译选项关闭
-        async_frame_pool_init(&_uya_default_async_frame_pool, 1, 65536);
+        // 默认关闭 debug heap fallback（栈优先 + 池兜底）
+        var fallback: i32 = 0;
+        if _uya_async_frame_heap_fallback != 0 {
+            fallback = 1;
+        }
+        // 环境变量 ASYNC_FRAME_DEBUG_HEAP=1 可显式开启回退
+        const env: &byte = getenv("ASYNC_FRAME_DEBUG_HEAP" as &const byte);
+        if env != null && env[0] != 0 as byte {
+            const c: byte = env[0];
+            if c == '1' as byte || c == 't' as byte || c == 'T' as byte || c == 'y' as byte || c == 'Y' as byte || c == 'o' as byte || c == 'O' as byte {
+                fallback = 1;
+            }
+        }
+        async_frame_pool_init(&_uya_default_async_frame_pool, fallback, 65536);
     }
     return &_uya_default_async_frame_pool;
 }
@@ -97,6 +113,7 @@ fn async_frame_pool_find_or_create_bucket(pool: &AsyncFramePool, size: usize, al
     b.align = align;
     b.slot_count = 0;
     b.capacity = ASYNC_FRAME_POOL_MAX_PER_BUCKET;
+    b.committed_count = 0;
     b.alloc_count = 0;
     b.free_count = 0;
     pool.bucket_count = pool.bucket_count + 1;
@@ -122,6 +139,7 @@ export fn async_frame_pool_init(pool: &AsyncFramePool, debug_heap_fallback: i32,
         b.align = 0;
         b.slot_count = 0;
         b.capacity = 0;
+        b.committed_count = 0;
         b.alloc_count = 0;
         b.free_count = 0;
         var j: i32 = 0;
@@ -166,15 +184,13 @@ export fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: u32) &byte {
         return ptr;
     }
     // free list 空：如果总容量未满，malloc 新页（lazy commit 语义）
-    if bucket.slot_count < bucket.capacity {
+    if bucket.committed_count < bucket.capacity {
         const ptr: &byte = malloc(desc.size) as &byte;
         if ptr == null {
-            if pool.debug_heap_fallback != 0 {
-                pool.debug_heap_fallback_count = pool.debug_heap_fallback_count + 1;
-            }
             pool.pool_full_count = pool.pool_full_count + 1;
             return null;
         }
+        bucket.committed_count = bucket.committed_count + 1;
         bucket.alloc_count = bucket.alloc_count + 1;
         pool.total_alloc_count = pool.total_alloc_count + 1;
         return ptr;
@@ -236,6 +252,8 @@ export fn async_frame_pool_reset(pool: &AsyncFramePool) void {
             j = j + 1;
         }
         b.slot_count = 0;
+        b.committed_count = 0;
+        b.capacity = 0;  // 标记为僵尸 bucket，防止 reset 后外部归还的帧被错误复用
         b.alloc_count = 0;
         b.free_count = 0;
         i = i + 1;

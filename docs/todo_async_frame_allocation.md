@@ -127,13 +127,13 @@
 
 ### 2.2 选择池策略
 
-- [ ] **按 descriptor 的 `(size, align)` 做 size class 分桶，每桶一个固定容量 free list；align 不同的 frame 不能共享同一桶；`frame_id` 用于查 descriptor，不直接等同于 size class**（当前为 per-function 独立 free list）
+- [x] **按 descriptor 的 `(size, align)` 做 size class 分桶，每桶一个固定容量 free list；align 不同的 frame 不能共享同一桶；`frame_id` 用于查 descriptor，不直接等同于 size class**
 - [ ] 可选按 scheduler / event loop 切分（同一 event loop 内的任务共享 pool，不推荐按 OS 线程切分）
 - [ ] 预留统计字段：alloc 次数、free 次数、pool 满次数、debug heap 回退次数
 
 ### 2.3 调试开关
 
-- [ ] 增加 `ASYNC_FRAME_DEBUG_HEAP`（环境变量/编译选项）
+- [x] 增加 `ASYNC_FRAME_DEBUG_HEAP`（环境变量/编译选项）
 - [x] 增加 `ASYNC_FRAME_POOL_CAP`（每桶最大帧数，采用 lazy commit 避免空转 RSS 占用）（统一 pool 已内置 4096 容量）
 - [ ] 增加 `ASYNC_FRAME_STACK_LIMIT`（字节数，超过此大小的 frame 即使栈候选也强制走 pool，防止栈溢出）
 
@@ -169,14 +169,14 @@
 - [x] 逃逸 future 走 pool 分配（统一 `AsyncFramePool` 已覆盖）
 - [x] `poll == Ready/Error` 时统一归还 pool（通过 vtable `release` 归还统一 pool）
 - [x] `close / cancel / early return` 都走同一条释放函数（统一走 `release`）
-- [ ] pool 满时 release 默认返回 `PoolFull` 或触发 scheduler 背压；debug heap fallback 只在显式调试开关下启用，并记录计数器（待统一 `AsyncFramePool` 运行时集成）
+- [x] pool 满时 release 默认返回 `PoolFull` 或触发 scheduler 背压；debug heap fallback 只在显式调试开关下启用，并记录计数器（统一 `AsyncFramePool` 已集成：默认返回 null， `--async-frame-heap=on` 或 `ASYNC_FRAME_DEBUG_HEAP=1` 时启用 fallback）
 
 ### 3.4 清掉热路径 heap
 
 - [x] 移除 `src/codegen/c99/function.uya` 中 async frame 的默认 `malloc`
 - [x] 移除 `free` 作为默认释放
 - [x] 保留仅调试可见的 heap fallback（pool 满时 fallback 到 `free`）
-- [ ] **增加编译期开关 `--async-frame-heap=on`，便于 CI 做 heap 路径回归对比**
+- [x] **增加编译期开关 `--async-frame-heap=on`，便于 CI 做 heap 路径回归对比**
 
 相关文件：
 - [x] `src/codegen/c99/function.uya`
@@ -284,7 +284,7 @@
 - [x] `tests/test_async_frame_escape_pool.uya`（`return foo()` 及容器保存 future 的现有测试已覆盖）
 - [x] `tests/test_async_frame_nested_await.uya`（`test_async_multi_fd_concurrent` 及新增 `@frame` 嵌套测试已覆盖）
 - [x] `tests/test_async_frame_release_path.uya`（poll/ready/error/cancel 路径由现有 async 测试覆盖）
-- [ ] `tests/test_async_frame_align_pool.uya`（新增对齐测试）
+- [x] `tests/test_async_frame_align_pool.uya`（新增对齐测试）
 
 ### 5.3 压测测试
 
@@ -312,7 +312,7 @@
 
 2. ~~**caller-owned inline 暂不支持变量暂存场景**~~（**已修复**）：`var f = foo(); @await f;` 中若 `f` 的初始化是 `@async_fn` 直接调用且仅使用一次，现已自动内联为 `_uya_inline_await_N` 字段。只有直接 `@await foo()` 才会触发 inline。
 
-3. **size class 分桶尚未实现**：统一 `AsyncFramePool` 当前使用 per-function 独立 free list（最多 4096 个），尚未按 `(size, align)` 做全局 size class 合并。这会导致极端多 async 函数场景下 pool 内存碎片略高。
+3. ~~**size class 分桶尚未实现**~~（**已修复**）：统一 `AsyncFramePool` 已实现按 `(size, align)` 做 size class 分桶（`async_frame_pool_find_or_create_bucket`），并通过 `committed_count` 限制每桶 lazy commit 的总分配量。极端多 async 函数场景下 pool 碎片已降低。
 
 4. **诊断 note/suggestion 尚未实现**：pinned frame 违规时目前只输出主错误，缺少指向声明点和修改建议的 note。不影响正确性，但用户体验待提升。
 
