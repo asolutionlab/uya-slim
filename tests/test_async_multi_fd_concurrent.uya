@@ -66,6 +66,10 @@ struct WokenReadyFuture : Future<!i32> {
         waker.wait_readable(self.fd);
         return Poll<!i32>.Pending({});
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 test "multi_fd_concurrent_two_tasks" {

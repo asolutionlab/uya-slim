@@ -19,6 +19,10 @@ struct FlipPending : Future<!i32> {
         // 第二次及以后：Ready(ok(7))
         return Poll<!i32>.Ready(ok<i32>(7));
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 fn flip_pending() Future<!i32> {

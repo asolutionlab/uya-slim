@@ -94,6 +94,10 @@ struct DnsUdpFuture : Future<!usize> {
     fn poll(self: &Self, waker: &Waker) Poll<!usize> {
         return dns_udp_future_poll(self, waker);
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 fn dns_u16_be(b0: byte, b1: byte) u16 {
@@ -1998,6 +2002,10 @@ struct DnsTcpFuture : Future<!usize> {
     fn poll(self: &Self, waker: &Waker) Poll<!usize> {
         return dns_tcp_future_poll(self, waker);
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 fn dns_tcp_future_poll(self: &DnsTcpFuture, waker: &Waker) Poll<!usize> {
@@ -2346,6 +2354,10 @@ struct DnsQueryTransportFuture : Future<!usize> {
             return async_poll_ready_ok_usize(0);
         }
         return dns_poll_ready_error(@error_id(error.DnsUnsupported));
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
     }
 }
 

@@ -3,6 +3,8 @@
 // 模块路径：use std.async
 // 提供：Waker、interface Future<T>、struct Future<T> 占位、Task<T>、Poll<T>。
 
+use libc.heap;
+
 /// 异步运行时统一错误类型
 export error EventLoopSlotsFull;
 export error TaskQueueFull;
@@ -71,6 +73,7 @@ export union Poll<T> {
 /// 异步计算抽象。实现此接口的类型可被 poll。
 export interface Future<T> {
     fn poll(self: &Self, waker: &Waker) Poll<T>;
+    fn release(self: &Self) void;
 }
 
 /// Future 占位。@async_fn 函数当前返回此类型；实现 interface Future<T> 以便类型兼容。
@@ -80,6 +83,10 @@ export struct Future<T> : Future<T> {
     fn poll(self: &Self, waker: &Waker) Poll<T> {
         return self.state;
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 /// 异步任务包装。实现 Future<T>，可持有 Poll 状态并供 poll。
@@ -88,6 +95,10 @@ export struct Task<T> : Future<T> {
 
     fn poll(self: &Self, waker: &Waker) Poll<T> {
         return self.state;
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
     }
 }
 
@@ -363,6 +374,10 @@ struct AsyncFdWriteFuture : Future<!usize> {
         };
         return async_poll_ready_ok_usize(n as usize);
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 struct AsyncFdReadFuture : Future<!usize> {
@@ -403,6 +418,10 @@ struct AsyncFdReadFuture : Future<!usize> {
             return p;
         };
         return async_poll_ready_ok_usize(n as usize);
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
     }
 }
 

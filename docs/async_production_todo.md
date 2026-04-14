@@ -80,7 +80,7 @@
 - [x] 检查状态机堆分配与 fd 生命周期释放。
   - 覆盖：Ready、Error、Pending 后关闭、socket EOF、TLS handshake 失败。
   - 验收：`make check` 全量通过；30 分钟长时压测（`benchmarks/http_bench_async_epoll.uya` + `wrk -t4 -c100 -d1800s`）RSS 2460 KB / FD 105 完全平稳，无泄漏、无 use-after-free。
-  - 备注：ASan 尚未在 CI 中常态化，但关键路径通过长时压测与 valgrind 风格观察验证。
+  - 备注：2026-04-13 已将 `@async_fn` 的默认 `malloc(sizeof(struct uya_async_...))` 迁移为 per-function free list allocator，热路径不再直接 `malloc`；`release` 通过 vtable 递归保证 child future 先释放。详见 `docs/todo_async_frame_allocation.md`。
 
 ## P1：DNS / HTTP / HTTPS 主链路收敛
 

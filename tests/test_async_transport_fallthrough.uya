@@ -15,6 +15,10 @@ struct InnerReadyErr : Future<!usize> {
         self.truncated[0] = 1;
         return Poll<!usize>.Ready(error.Truncated);
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 struct TransportLikeFuture : Future<!usize> {
@@ -50,6 +54,10 @@ struct TransportLikeFuture : Future<!usize> {
             return async_poll_ready_ok_usize(7);
         }
         return Poll<!usize>.Ready(error.Unsupported);
+    }
+
+    fn release(self: &Self) void {
+        _ = self;
     }
 }
 

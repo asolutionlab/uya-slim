@@ -1,0 +1,258 @@
+// lib/std/async_frame.uya - 异步帧池运行时支持
+//
+// 模块路径：use std.async_frame
+// 提供：AsyncFramePool、async_frame_pool_alloc、async_frame_pool_free
+
+use libc.stdlib;
+use libc.memset;
+
+export error PoolFull;
+
+// 帧描述符（编译期生成静态表，运行时只读）
+export struct AsyncFrameDescriptor {
+    size: usize,
+    align: usize,
+    drop_fn: &byte,  // 函数指针类型在 Uya 中暂用 &byte 表示
+}
+
+// size class 分桶：按 (size, align) 组合分桶
+const ASYNC_FRAME_POOL_MAX_BUCKETS: i32 = 128;
+const ASYNC_FRAME_POOL_MAX_PER_BUCKET: i32 = 4096;
+
+struct AsyncFramePoolBucket {
+    size: usize,
+    align: usize,
+    // free list 用简单数组模拟：存储指向已分配内存的指针
+    slots: [&byte: ASYNC_FRAME_POOL_MAX_PER_BUCKET],
+    slot_count: i32,
+    capacity: i32,
+    alloc_count: i32,
+    free_count: i32,
+}
+
+// 异步帧池
+export struct AsyncFramePool {
+    buckets: [AsyncFramePoolBucket: ASYNC_FRAME_POOL_MAX_BUCKETS],
+    bucket_count: i32,
+    // 统计
+    total_alloc_count: i32,
+    total_free_count: i32,
+    pool_full_count: i32,
+    debug_heap_fallback_count: i32,
+    // 调试开关（由初始化时传入，也可通过环境变量覆盖）
+    debug_heap_fallback: i32,
+    // 栈分配大小限制：超过此大小的 frame 即使候选也强制走 pool
+    stack_limit: usize,
+}
+
+// 包装结构体，使 extern 变量能被 checker 接受
+struct AsyncFrameDescriptorTable {
+    entries: [AsyncFrameDescriptor: 512],
+}
+
+// 全局静态 descriptor 表（由编译器填充）
+// 在 Uya 中，我们通过弱符号/外部声明让链接器合并
+extern var _uya_async_frame_descriptors: AsyncFrameDescriptorTable;
+extern var _uya_async_frame_descriptor_count: i32;
+
+// 获取某个 frame_id 对应的 descriptor
+fn async_frame_pool_descriptor(frame_id: u32) &AsyncFrameDescriptor {
+    if frame_id >= 0 && frame_id < 512 {
+        return &_uya_async_frame_descriptors.entries[frame_id];
+    }
+    return null;
+}
+
+// 查找或创建 bucket
+fn async_frame_pool_find_or_create_bucket(pool: &AsyncFramePool, size: usize, align: usize) &AsyncFramePoolBucket {
+    if pool == null {
+        return null;
+    }
+    var i: i32 = 0;
+    while i < pool.bucket_count {
+        const b: &AsyncFramePoolBucket = &pool.buckets[i];
+        if b.size == size && b.align == align {
+            return b;
+        }
+        i = i + 1;
+    }
+    if pool.bucket_count >= ASYNC_FRAME_POOL_MAX_BUCKETS {
+        return null;
+    }
+    const idx: i32 = pool.bucket_count;
+    const b: &AsyncFramePoolBucket = &pool.buckets[idx];
+    b.size = size;
+    b.align = align;
+    b.slot_count = 0;
+    b.capacity = ASYNC_FRAME_POOL_MAX_PER_BUCKET;
+    b.alloc_count = 0;
+    b.free_count = 0;
+    pool.bucket_count = pool.bucket_count + 1;
+    return b;
+}
+
+// 初始化帧池
+export fn async_frame_pool_init(pool: &AsyncFramePool, debug_heap_fallback: i32, stack_limit: usize) void {
+    if pool == null {
+        return;
+    }
+    pool.bucket_count = 0;
+    pool.total_alloc_count = 0;
+    pool.total_free_count = 0;
+    pool.pool_full_count = 0;
+    pool.debug_heap_fallback_count = 0;
+    pool.debug_heap_fallback = debug_heap_fallback;
+    pool.stack_limit = stack_limit;
+    var i: i32 = 0;
+    while i < ASYNC_FRAME_POOL_MAX_BUCKETS {
+        const b: &AsyncFramePoolBucket = &pool.buckets[i];
+        b.size = 0;
+        b.align = 0;
+        b.slot_count = 0;
+        b.capacity = 0;
+        b.alloc_count = 0;
+        b.free_count = 0;
+        var j: i32 = 0;
+        while j < ASYNC_FRAME_POOL_MAX_PER_BUCKET {
+            b.slots[j] = null;
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+// 从帧池分配
+// 返回的指针按 descriptor.align 对齐
+export fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: u32) !&byte {
+    if pool == null {
+        return PoolFull;
+    }
+    const desc: &AsyncFrameDescriptor = async_frame_pool_descriptor(frame_id);
+    if desc == null || desc.size == 0 {
+        return PoolFull;
+    }
+    const bucket: &AsyncFramePoolBucket = async_frame_pool_find_or_create_bucket(pool, desc.size, desc.align);
+    if bucket == null {
+        // bucket 满了或者无法创建新 bucket：尝试 debug heap fallback
+        if pool.debug_heap_fallback != 0 {
+            const ptr: &byte = malloc(desc.size) as &byte;
+            if ptr != null {
+                pool.debug_heap_fallback_count = pool.debug_heap_fallback_count + 1;
+            }
+            if ptr == null {
+                pool.pool_full_count = pool.pool_full_count + 1;
+                return PoolFull;
+            }
+            return ptr;
+        }
+        pool.pool_full_count = pool.pool_full_count + 1;
+        return PoolFull;
+    }
+    // 优先从 free list 复用
+    if bucket.slot_count > 0 {
+        bucket.slot_count = bucket.slot_count - 1;
+        const ptr: &byte = bucket.slots[bucket.slot_count];
+        bucket.slots[bucket.slot_count] = null;
+        bucket.alloc_count = bucket.alloc_count + 1;
+        pool.total_alloc_count = pool.total_alloc_count + 1;
+        return ptr;
+    }
+    // free list 空：如果总容量未满，malloc 新页（lazy commit 语义）
+    if bucket.slot_count < bucket.capacity {
+        const ptr: &byte = malloc(desc.size) as &byte;
+        if ptr == null {
+            if pool.debug_heap_fallback != 0 {
+                pool.debug_heap_fallback_count = pool.debug_heap_fallback_count + 1;
+            }
+            pool.pool_full_count = pool.pool_full_count + 1;
+            return PoolFull;
+        }
+        bucket.alloc_count = bucket.alloc_count + 1;
+        pool.total_alloc_count = pool.total_alloc_count + 1;
+        return ptr;
+    }
+    // bucket 容量满
+    if pool.debug_heap_fallback != 0 {
+        const ptr: &byte = malloc(desc.size) as &byte;
+        if ptr != null {
+            pool.debug_heap_fallback_count = pool.debug_heap_fallback_count + 1;
+            bucket.alloc_count = bucket.alloc_count + 1;
+            pool.total_alloc_count = pool.total_alloc_count + 1;
+            return ptr;
+        }
+    }
+    pool.pool_full_count = pool.pool_full_count + 1;
+    return PoolFull;
+}
+
+// 归还帧到池
+export fn async_frame_pool_free(pool: &AsyncFramePool, ptr: &byte, frame_id: u32) void {
+    if pool == null || ptr == null {
+        return;
+    }
+    const desc: &AsyncFrameDescriptor = async_frame_pool_descriptor(frame_id);
+    if desc == null || desc.size == 0 {
+        free(ptr as *void);
+        return;
+    }
+    const bucket: &AsyncFramePoolBucket = async_frame_pool_find_or_create_bucket(pool, desc.size, desc.align);
+    if bucket == null || bucket.slot_count >= bucket.capacity {
+        // bucket 不存在或满了：直接 free（这不应该发生在正常路径）
+        free(ptr as *void);
+        return;
+    }
+    bucket.slots[bucket.slot_count] = ptr;
+    bucket.slot_count = bucket.slot_count + 1;
+    bucket.free_count = bucket.free_count + 1;
+    pool.total_free_count = pool.total_free_count + 1;
+}
+
+// 重置帧池（释放所有 bucket 中的内存到系统）
+export fn async_frame_pool_reset(pool: &AsyncFramePool) void {
+    if pool == null {
+        return;
+    }
+    var i: i32 = 0;
+    while i < pool.bucket_count {
+        const b: &AsyncFramePoolBucket = &pool.buckets[i];
+        // 注意：这里无法区分哪些 slot 是 free list 中的，哪些是从来没被复用的
+        // 简化处理：遍历所有可能存过指针的 slot，逐个 free
+        // 对于频繁 alloc/free 的场景，这会有重复 free 风险。
+        // 更安全的方式是：只 free 真正从系统 malloc 出来且当前在 free list 中的指针。
+        // 由于我们的 alloc 路径没有单独记录“系统分配集合”，这里只 free free-list 中的。
+        var j: i32 = 0;
+        while j < b.slot_count {
+            if b.slots[j] != null {
+                free(b.slots[j] as *void);
+            }
+            j = j + 1;
+        }
+        b.slot_count = 0;
+        b.alloc_count = 0;
+        b.free_count = 0;
+        i = i + 1;
+    }
+    pool.total_alloc_count = 0;
+    pool.total_free_count = 0;
+    pool.pool_full_count = 0;
+    pool.debug_heap_fallback_count = 0;
+}
+
+// 调试辅助：获取统计摘要
+export fn async_frame_pool_stats(pool: &AsyncFramePool, alloc_out: &i32, free_out: &i32, full_out: &i32, heap_fallback_out: &i32) void {
+    if pool == null {
+        return;
+    }
+    if alloc_out != null {
+        *alloc_out = pool.total_alloc_count;
+    }
+    if free_out != null {
+        *free_out = pool.total_free_count;
+    }
+    if full_out != null {
+        *full_out = pool.pool_full_count;
+    }
+    if heap_fallback_out != null {
+        *heap_fallback_out = pool.debug_heap_fallback_count;
+    }
+}

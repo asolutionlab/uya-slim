@@ -336,4 +336,6 @@ struct TypeChecker {
     reachable_fn_decl_count: i32,
     reachability_visit_count: i32,
     reachability_visit_cache: [&ASTNode: MAX_REACHABILITY_VISIT_SLOTS],
+    async_frame_metas: [AsyncFrameMeta: MAX_ASYNC_FRAME_METAS],
+    async_frame_meta_count: i32,
 }

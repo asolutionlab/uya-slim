@@ -80,6 +80,10 @@ struct PollCatchCallFuture : Future<!usize> {
         }
         return async_poll_ready_ok_usize(7);
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 test "async_no_await_body_keeps_side_effects_and_locals" {

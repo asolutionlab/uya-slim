@@ -44,8 +44,6 @@ var _pthread_child_desc: &pthread_desc = null;
 var _pthread_start_fn_tmp: &void = null;
 var _pthread_start_arg_tmp: &void = null;
 
-// 由 C99 生成器注入 uya_thread_call_usize（与 std.thread 相同）；非 x86_64 用其按平台调用约定间接调用
-extern fn uya_thread_call_usize(fn_ptr: &void, arg: usize) usize;
 
 // joinstate 常量
 const PTHREAD_JOINSTATE_JOINABLE: i32 = 0;
@@ -57,10 +55,13 @@ const PTHREAD_JOINSTATE_DETACHED: i32 = 3;
 const PTHREAD_DESTRUCTOR_ITERATIONS: i32 = 4;
 
 // 通过 @asm 间接调用函数指针 start_fn(start_arg)，x86-64 调用约定：rdi=arg，返回值在 rax
-// 输出用 i64 存指针，再转回 &void（@asm 输出仅允许整数）
+// 输出用 usize 存指针，再转回 &void（@asm 输出仅允许整数）
 fn _pthread_call_start(start_fn: &void, start_arg: &void) &void {
-    // 使用生成器注入的 typed helper，避免手写 `call *%rax` 破坏 x86_64 栈对齐。
-    const r: usize = uya_thread_call_usize(start_fn, start_arg as usize);
+    var r: usize = 0;
+    @asm {
+        "movq %1, %%r11\n\tmovq %2, %%rdi\n\tcall *%%r11\n\tmovq %%rax, %0"
+        (start_fn, start_arg, -> r);
+    } clobbers = ["rax", "rcx", "rdx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory"];
     return r as &void;
 }
 

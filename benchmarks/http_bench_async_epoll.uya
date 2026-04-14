@@ -187,6 +187,10 @@ struct BenchClientFuture : Future<!usize> {
             return async_poll_ready_ok_usize(0);
         }
     }
+
+    fn release(self: &Self) void {
+        _ = self;
+    }
 }
 
 fn handle_bench_client(ctx: &BenchContext, cfd: i32, slot: usize) BenchClientFuture {

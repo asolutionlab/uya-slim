@@ -69,6 +69,10 @@ struct BenchAcceptFuture : Future<!i32> {
         };
         return async_poll_ready_ok_i32(cfd);
     }
+
+    fn release(self: &Self) void {
+        free(self as &void);
+    }
 }
 
 @async_fn fn bench_accept_async(listen_fd: i32) Future<!i32> {

@@ -2568,6 +2568,18 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // std.thread：宿主 C 间接调用单参函数指针（由 GCC/Clang 保证调用约定与栈对齐）。
     // 使用 static 而非 static inline：在 -O2 下将该助手内联进部分调用点会触发错误优化（段错误）；
     // 保持为翻译单元内普通 static 函数可避免有问题的跨过程内联。
+    // 同时把前向声明写入 split_protos.h，供跨 TU 调用（如 lib/libc/pthread.uya）
+    if codegen.split_protos_out != null {
+        fputs("int32_t uya_thread_call_i32(void *fn, int32_t arg);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("uint32_t uya_thread_call_u32(void *fn, uint32_t arg);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("size_t uya_thread_call_usize(void *fn, size_t arg);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("int64_t uya_thread_call_i64(void *fn, int64_t arg);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("uint64_t uya_thread_call_u64(void *fn, uint64_t arg);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("int16_t uya_thread_call_i16(void *fn, int16_t arg);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("uint16_t uya_thread_call_u16(void *fn, uint16_t arg);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("int8_t uya_thread_call_i8(void *fn, int8_t arg);\n" as *byte, codegen.split_protos_out as *void);
+        fputs("uint8_t uya_thread_call_u8(void *fn, uint8_t arg);\n" as *byte, codegen.split_protos_out as *void);
+    }
     fputs("// std.thread：宿主工具链间接调用（跨 -O0/-O2 稳定；见 lib/std/thread.uya）\n" as *byte, codegen.emit_stream as *void);
     fputs("int32_t uya_thread_call_i32(void *fn, int32_t arg) {\n" as *byte, codegen.emit_stream as *void);
     fputs("    typedef int32_t (*uya_thrd_fn_i32)(int32_t);\n" as *byte, codegen.emit_stream as *void);
