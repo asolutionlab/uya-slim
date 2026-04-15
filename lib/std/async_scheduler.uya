@@ -179,7 +179,7 @@ fn scheduler_pool_to_allocator(pool: AsyncFramePool) IAllocator {
 
 /// 创建调度器并初始化其 async frame pool。
 export fn scheduler_new() Scheduler {
-    var s: Scheduler = [];
+    var s: Scheduler = Scheduler{};
     async_frame_pool_init(&s._frame_pool, 0, 65536);
     return s;
 }
