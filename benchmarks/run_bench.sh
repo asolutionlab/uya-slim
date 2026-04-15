@@ -19,11 +19,13 @@ UYA_FORK_SRC="${SCRIPT_DIR}/http_bench_fork.uya"
 UYA_ASYNC_EPOLL_SRC="${SCRIPT_DIR}/http_bench_async_epoll.uya"
 UYA_ASYNC_AWAIT_SRC="${SCRIPT_DIR}/http_bench_async_epoll_await.uya"
 UYA_ASYNC_AWAIT_SIMPLE_SRC="${SCRIPT_DIR}/http_bench_async_epoll_await_simple.uya"
+UYA_ASYNC_AWAIT_STACK_SRC="${SCRIPT_DIR}/http_bench_async_epoll_await_stack.uya"
 UYA_HTTP_ENTRY="http_bench.uya"
 UYA_FORK_ENTRY="http_bench_fork.uya"
 UYA_ASYNC_EPOLL_ENTRY="http_bench_async_epoll.uya"
 UYA_ASYNC_AWAIT_ENTRY="http_bench_async_epoll_await.uya"
 UYA_ASYNC_AWAIT_SIMPLE_ENTRY="http_bench_async_epoll_await_simple.uya"
+UYA_ASYNC_AWAIT_STACK_ENTRY="http_bench_async_epoll_await_stack.uya"
 C_SRC="${SCRIPT_DIR}/http_bench.c"
 export UYA_ROOT="${UYA_ROOT:-${SCRIPT_DIR}/../lib/}"
 
@@ -34,6 +36,7 @@ UYA_FORK_EXEC="/tmp/http_bench_fork"
 UYA_ASYNC_EPOLL_EXEC="/tmp/http_bench_async_epoll"
 UYA_ASYNC_AWAIT_EXEC="/tmp/http_bench_async_epoll_await"
 UYA_ASYNC_AWAIT_SIMPLE_EXEC="/tmp/http_bench_async_epoll_await_simple"
+UYA_ASYNC_AWAIT_STACK_EXEC="/tmp/http_bench_async_epoll_await_stack"
 C_EXEC="/tmp/http_bench_c"
 TOKIO_DIR="${SCRIPT_DIR}/http_bench_tokio"
 TOKIO_EXEC="/tmp/http_bench_tokio"
@@ -65,6 +68,7 @@ cleanup_http_bench_processes() {
     pkill -9 -f "http_bench_uya" 2>/dev/null || true
     pkill -9 -f "http_bench_fork" 2>/dev/null || true
     pkill -9 -f "http_bench_async_epoll_await_simple" 2>/dev/null || true
+    pkill -9 -f "http_bench_async_epoll_await_stack" 2>/dev/null || true
     pkill -9 -f "http_bench_async_epoll_await" 2>/dev/null || true
     pkill -9 -f "http_bench_async_epoll" 2>/dev/null || true
     pkill -9 -f "http_bench_go" 2>/dev/null || true
@@ -195,6 +199,11 @@ build_uya_async_await() {
 # 编译 Uya async await simple 版本
 build_uya_async_await_simple() {
     build_uya_c99_variant "Uya async await simple" "$UYA_ASYNC_AWAIT_SIMPLE_SRC" "$UYA_ASYNC_AWAIT_SIMPLE_ENTRY" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" /tmp/http_bench_async_epoll_await_simple.c
+}
+
+# 编译 Uya async await stack 版本
+build_uya_async_await_stack() {
+    build_uya_c99_variant "Uya async await stack" "$UYA_ASYNC_AWAIT_STACK_SRC" "$UYA_ASYNC_AWAIT_STACK_ENTRY" "$UYA_ASYNC_AWAIT_STACK_EXEC" /tmp/http_bench_async_epoll_await_stack.c
 }
 
 # 编译 Go 版本
@@ -393,9 +402,10 @@ save_baseline() {
     local uya_async_epoll_root_rps="$3"
     local uya_async_await_root_rps="$4"
     local uya_async_await_simple_root_rps="$5"
-    local go_root_rps="$6"
-    local c_root_rps="$7"
-    local tokio_root_rps="$8"
+    local uya_async_await_stack_root_rps="$6"
+    local go_root_rps="$7"
+    local c_root_rps="$8"
+    local tokio_root_rps="$9"
     local timestamp
     timestamp=$(date -Iseconds)
 
@@ -425,6 +435,7 @@ save_baseline() {
       "uya_async_epoll_qps": ${uya_async_epoll_root_rps:-0},
       "uya_async_epoll_await_qps": ${uya_async_await_root_rps:-0},
       "uya_async_epoll_await_simple_qps": ${uya_async_await_simple_root_rps:-0},
+      "uya_async_epoll_await_stack_qps": ${uya_async_await_stack_root_rps:-0},
       "go_qps": ${go_root_rps:-0},
       "c_qps": ${c_root_rps:-0},
       "tokio_qps": ${tokio_root_rps:-0}
@@ -449,6 +460,7 @@ main() {
     build_uya_async_epoll
     build_uya_async_await
     build_uya_async_await_simple
+    build_uya_async_await_stack
     build_c
     local have_go=0
     if build_go; then
@@ -488,6 +500,8 @@ main() {
     sleep 1
     uya_async_await_simple_result=$(run_benchmark_safe "Uya-async-await-simple" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
     sleep 1
+    uya_async_await_stack_result=$(run_benchmark_safe "Uya-async-await-stack" "$UYA_ASYNC_AWAIT_STACK_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
+    sleep 1
     if [ "$have_go" -eq 1 ]; then
         go_result=$(run_benchmark_safe "Go" "$GO_EXEC" "$PORT" "$URL")
     else
@@ -515,6 +529,7 @@ main() {
     uya_epoll_rps=$(result_field "$uya_epoll_result" 8)
     uya_async_await_rps=$(result_field "$uya_async_await_result" 8)
     uya_async_await_simple_rps=$(result_field "$uya_async_await_simple_result" 8)
+    uya_async_await_stack_rps=$(result_field "$uya_async_await_stack_result" 8)
     go_rps=$(result_field "$go_result" 8)
     c_rps=$(result_field "$c_result" 8)
     tokio_rps=$(result_field "$tokio_result" 8)
