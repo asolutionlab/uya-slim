@@ -1767,6 +1767,21 @@ fn infer_member_access(checker: &TypeChecker, expr: &ASTNode) Type {
         }
         return object_type.tuple_element_types[idx];
     }
+    if checker_is_async_frame_type(checker, &object_type) != 0 {
+        const method_name: &byte = expr.member_access_field_name;
+        if method_name != null {
+            if str_equals(method_name, "start" as *byte) != 0 || str_equals(method_name, "stop" as *byte) != 0 {
+                return make_void_type();
+            }
+            if str_equals(method_name, "poll" as *byte) != 0 {
+                const fn_decl: &ASTNode = checker_async_frame_fn_decl_from_type(checker, &object_type);
+                if fn_decl != null {
+                    return checker_async_frame_poll_return_type(checker, fn_decl);
+                }
+                return make_void_type();
+            }
+        }
+    }
     
     // 接口类型方法调用
     if object_type.kind == TypeKind.TYPE_INTERFACE && object_type.interface_name != null &&

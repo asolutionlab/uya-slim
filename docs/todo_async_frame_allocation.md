@@ -1,6 +1,6 @@
 # 栈优先的异步状态机帧分配 TODO
 
-**设计文档**：[async_frame_allocation_design.md](async_frame_allocation_design.md)  
+**设计文档**：[async_frame_allocation_design.md](async_frame_allocation_design.md)、[async_frame_lifecycle_naming_design.md](async_frame_lifecycle_naming_design.md)  
 **相关问题**：[buglist.md](../buglist.md) 中“真 `@async_fn/@await` lowering 仍对 async frame 做堆分配”  
 **最后更新**：2026-04-14
 

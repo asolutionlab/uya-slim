@@ -2506,6 +2506,9 @@ fn gen_var_decl_stmt(codegen: &C99CodeGenerator, stmt: &ASTNode) void {
             }
             }
         } else {
+            if var_type != null && var_type.type == ASTNodeType.AST_TYPE_FRAME {
+                fputs(" = {0}" as *byte, codegen.emit_stream as *void);
+            }
             c99_emit_semi_newline(codegen);
             if codegen.current_drop_scope >= 0 && var_type != null && var_type.type == ASTNodeType.AST_TYPE_NAMED && var_type.type_named_name != null && type_has_drop_c99(codegen, var_type.type_named_name) != 0 && stmt.var_decl_was_moved == 0 {
                 const dd: i32 = codegen.current_drop_scope;

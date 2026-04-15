@@ -1,15 +1,15 @@
 // benchmarks/http_bench_async_epoll_await_stack.uya - stack-root @async_fn / raw-storage @await benchmark
 //
 // Based on http_bench_async_epoll_await.uya, but exercises the stack-root
-// allocation path enabled by frame_init / frame_drop_fields helpers and
+// allocation path enabled by frame_start / frame_stop helpers and
 // caller-owned inline await.
 //
 // Key characteristics:
 // 1) The root worker async frame is stack-owned in bench_worker_thread via
-//    @frame(bench_worker_async) + bench_worker_async_frame_init/poll.
+//    @frame(bench_worker_async) + root_frame.start()/poll().
 // 2) The hot client coroutine is also stack-owned: BenchClientHandle owns raw
 //    caller-owned storage for @frame(handle_bench_client) and drives the
-//    generated frame_init/poll/drop_fields helpers directly.
+//    generated frame.start()/poll()/stop() methods directly.
 // 3) Child async frames are inlined into parent frame fields via @await, while
 //    read/write futures come from a worker-local stack buffer.
 // 4) No heap-backed async frame wrapper is used in the hot path.
@@ -375,7 +375,7 @@ fn bench_client_handle_release(self: &BenchClientHandle) void {
     if self.live == 0 {
         return;
     }
-    handle_bench_client_frame_drop_fields(bench_client_handle_frame(self));
+    bench_client_handle_frame(self).stop();
     self.live = 0;
 }
 
@@ -383,7 +383,7 @@ fn bench_client_handle_init(self: &BenchClientHandle, ctx: &BenchContext, cfd: i
     if self.live != 0 {
         bench_client_handle_release(self);
     }
-    handle_bench_client_frame_init(bench_client_handle_frame(self), ctx, cfd, slot);
+    bench_client_handle_frame(self).start(ctx, cfd, slot);
     self.live = 1;
 }
 
@@ -391,7 +391,7 @@ fn bench_client_handle_poll(self: &BenchClientHandle, waker: &Waker) Poll<!usize
     if self.live == 0 {
         return async_poll_ready_ok_usize(0);
     }
-    return handle_bench_client_poll(bench_client_handle_frame(self), waker);
+    return bench_client_handle_frame(self).poll(waker);
 }
 
 fn bench_context_spawn_accepted_client(self: &BenchContext, cfd: i32) bool {
@@ -694,9 +694,9 @@ fn bench_worker_thread(_arg: &void) &void {
     );
     set_async_frame_allocator(&frame_pool);
     var root_frame: @frame(bench_worker_async);
-    bench_worker_async_frame_init(&root_frame, _arg);
+    root_frame.start(_arg);
     const w: Waker = Waker{};
-    const p: Poll<!i32> = bench_worker_async_poll(&root_frame, &w);
+    const p: Poll<!i32> = root_frame.poll(&w);
     match p {
         .Ready(_) => {},
         .Pending(_) => {},

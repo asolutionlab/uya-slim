@@ -587,6 +587,69 @@ if [ -n "${SKIP_TESTS_EXTRA:-}" ]; then
     SKIP_TESTS+=("${SKIP_TESTS_EXTRA_ARR[@]}")
 fi
 
+# 已知会在整套高并发测试下互相争用本地 socket/epoll/loopback 资源的集成用例。
+# 单独串行执行能保持语义不变，同时避免整套测试中的稳定波动。
+SERIAL_TESTS=(
+    test_tcp_basic
+    test_std_dns
+    test_https_loopback
+    test_epoll_server
+    test_std_dns_async_transport
+    test_http_server
+)
+if [ -n "${SERIAL_TESTS_EXTRA:-}" ]; then
+    read -r -a SERIAL_TESTS_EXTRA_ARR <<< "$SERIAL_TESTS_EXTRA"
+    SERIAL_TESTS+=("${SERIAL_TESTS_EXTRA_ARR[@]}")
+fi
+
+LOOPBACK_SKIP_TESTS=(
+    test_tcp_basic
+    test_std_dns
+    test_std_dns_async_transport
+    test_https_loopback
+    test_epoll_server
+    test_http_server
+    test_http1_async_client
+    test_https_local
+)
+
+loopback_socket_supported() {
+    local py_bin=""
+    if command -v python3 >/dev/null 2>&1; then
+        py_bin="python3"
+    elif command -v python >/dev/null 2>&1; then
+        py_bin="python"
+    else
+        return 0
+    fi
+
+    "$py_bin" - <<'PY' >/dev/null 2>&1
+import socket
+import sys
+
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        s.listen(1)
+    finally:
+        s.close()
+except OSError:
+    sys.exit(1)
+sys.exit(0)
+PY
+}
+
+is_loopback_skip_test() {
+    local name="$1"
+    for s in "${LOOPBACK_SKIP_TESTS[@]}"; do
+        if [ "$name" = "$s" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # CI 或本地无外网时直接跳过访问外网的测试（比运行时检测更快，节省编译时间）
 if [ -n "${SKIP_NETWORK:-}" ] || [ "${ALLOW_SKIP_NETWORK:-}" = "1" ]; then
     SKIP_TESTS+=(
@@ -598,6 +661,17 @@ if [ -n "${SKIP_NETWORK:-}" ] || [ "${ALLOW_SKIP_NETWORK:-}" = "1" ]; then
     )
     if [ "$ERRORS_ONLY" = false ]; then
         echo "提示: 已跳过访问外网的测试（SKIP_NETWORK 或 ALLOW_SKIP_NETWORK 设置）"
+        echo ""
+    fi
+fi
+
+# 某些 sandbox/CI 环境会直接拒绝创建 loopback socket（常见为 EPERM），这类环境下
+# 本地网络集成测试不具备可执行前提，应自动跳过而不是误报编译器回归。
+if ! loopback_socket_supported; then
+    SKIP_TESTS+=("${LOOPBACK_SKIP_TESTS[@]}")
+    : > "$NETWORK_SKIP_MARKER"
+    if [ "$ERRORS_ONLY" = false ]; then
+        echo "提示: 当前环境不支持 loopback socket，已跳过本地网络集成测试"
         echo ""
     fi
 fi
@@ -649,8 +723,9 @@ if [ "$ERRORS_ONLY" = false ]; then
     echo ""
 fi
 
-# 并行执行单文件测试
-single_tests=()
+# 执行单文件测试
+parallel_single_tests=()
+serial_single_tests=()
 multifile_tests=()
 
 # 分类测试
@@ -661,12 +736,22 @@ for test_item in "${TEST_FILES[@]}"; do
         bn=$(basename "$test_item" .uya)
         skip=0
         for s in "${SKIP_TESTS[@]}"; do [ "$bn" = "$s" ] && skip=1 && break; done
-        [ $skip -eq 0 ] && single_tests+=("$test_item")
+        if [ $skip -eq 0 ]; then
+            serialize=0
+            for s in "${SERIAL_TESTS[@]}"; do
+                [ "$bn" = "$s" ] && serialize=1 && break
+            done
+            if [ $serialize -eq 1 ]; then
+                serial_single_tests+=("$test_item")
+            else
+                parallel_single_tests+=("$test_item")
+            fi
+        fi
     fi
 done
 
 # 先执行多文件测试（顺序执行，因为数量少且复杂）
-multifile_index=${#single_tests[@]}
+multifile_index=$(( ${#parallel_single_tests[@]} + ${#serial_single_tests[@]} ))
 for test_item in "${multifile_tests[@]}"; do
     multifile_index=$((multifile_index + 1))
     
@@ -700,12 +785,60 @@ for test_item in "${multifile_tests[@]}"; do
     rm -f "$result_file"
 done
 
-# 并行执行单文件测试（流水线式）
-# 使用 wait -n 实现流水线：一个任务完成立即启动新任务，保持恒定并发度
-if [ ${#single_tests[@]} -gt 0 ]; then
+# 顺序执行对并发更敏感的单文件测试
+if [ ${#serial_single_tests[@]} -gt 0 ]; then
     if [ "$ERRORS_ONLY" = false ]; then
         echo ""
-        echo "开始并行执行 ${#single_tests[@]} 个单文件测试（$PARALLEL_JOBS 线程，流水线式）..."
+        echo "开始顺序执行 ${#serial_single_tests[@]} 个网络敏感单文件测试..."
+    fi
+
+    for test_item in "${serial_single_tests[@]}"; do
+        base_name=$(basename "$test_item" .uya)
+        test_id=$(generate_test_id "$test_item")
+        output_dir="$BUILD_DIR/tests/${test_id}"
+        mkdir -p "$output_dir"
+        result_file="${output_dir}/${base_name}.result"
+
+        if is_loopback_skip_test "$base_name" && ! loopback_socket_supported; then
+            : > "$NETWORK_SKIP_MARKER"
+            if [ "$ERRORS_ONLY" = false ] && [ "$HIDE_PASS_OUTPUT" = false ]; then
+                echo "  ✓ ${base_name}:skip:loopback_unavailable"
+            fi
+            PASSED=$((PASSED + 1))
+            continue
+        fi
+
+        > "$result_file"
+        run_single_test "$test_item" "$result_file"
+
+        result=$(tr -d '\0' < "$result_file" 2>/dev/null || true)
+        status="${result%%:*}"
+        if [ "$status" = "PASS" ]; then
+            if [ "$ERRORS_ONLY" = false ] && [ "$HIDE_PASS_OUTPUT" = false ]; then
+                echo "  ✓ ${result#*:}"
+            fi
+            PASSED=$((PASSED + 1))
+        else
+            if [ "$ERRORS_ONLY" = true ]; then
+                echo "测试: $base_name"
+            fi
+            echo "  ❌ ${result#*:}"
+            FAILED=$((FAILED + 1))
+        fi
+        rm -f "$result_file"
+    done
+
+    if [ "$ERRORS_ONLY" = false ]; then
+        echo "  顺序单文件测试完成"
+    fi
+fi
+
+# 并行执行剩余单文件测试（流水线式）
+# 使用 wait -n 实现流水线：一个任务完成立即启动新任务，保持恒定并发度
+if [ ${#parallel_single_tests[@]} -gt 0 ]; then
+    if [ "$ERRORS_ONLY" = false ]; then
+        echo ""
+        echo "开始并行执行 ${#parallel_single_tests[@]} 个单文件测试（$PARALLEL_JOBS 线程，流水线式）..."
     fi
     
     # 检查是否支持 wait -n（bash 4.3+）
@@ -717,13 +850,13 @@ if [ ${#single_tests[@]} -gt 0 ]; then
     
     running_count=0
     test_index=0
-    total_single_tests=${#single_tests[@]}
+    total_single_tests=${#parallel_single_tests[@]}
     declare -a PENDING_RFS=()
     declare -a PENDING_BNS=()
     
     # 先启动第一批任务（最多 PARALLEL_JOBS 个）
     while [ $test_index -lt $total_single_tests ] && [ $running_count -lt $PARALLEL_JOBS ]; do
-        test_item="${single_tests[$test_index]}"
+        test_item="${parallel_single_tests[$test_index]}"
         base_name=$(basename "$test_item" .uya)
         test_id=$(generate_test_id "$test_item")
         output_dir="$BUILD_DIR/tests/${test_id}"
@@ -750,7 +883,7 @@ if [ ${#single_tests[@]} -gt 0 ]; then
             process_ready_single_results
             
             # 立即启动下一个任务
-            test_item="${single_tests[$test_index]}"
+            test_item="${parallel_single_tests[$test_index]}"
             base_name=$(basename "$test_item" .uya)
             test_id=$(generate_test_id "$test_item")
             output_dir="$BUILD_DIR/tests/${test_id}"
@@ -789,7 +922,7 @@ if [ ${#single_tests[@]} -gt 0 ]; then
             [ $batch_size -gt $remaining ] && batch_size=$remaining
             
             for ((i=0; i<batch_size; i++)); do
-                test_item="${single_tests[$test_index]}"
+                test_item="${parallel_single_tests[$test_index]}"
                 base_name=$(basename "$test_item" .uya)
                 test_id=$(generate_test_id "$test_item")
                 output_dir="$BUILD_DIR/tests/${test_id}"

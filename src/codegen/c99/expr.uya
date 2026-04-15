@@ -1208,6 +1208,51 @@ fn c99_emit_call_arg_expr(codegen: &C99CodeGenerator, fn_decl: &ASTNode, param_i
     gen_expr(codegen, arg);
 }
 
+fn c99_async_frame_fn_decl_from_expr(codegen: &C99CodeGenerator, expr: &ASTNode) &ASTNode {
+    if codegen == null || expr == null || codegen.checker == null {
+        return null;
+    }
+    var object_type: Type = checker_infer_type(codegen.checker, expr);
+    if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
+        object_type = object_type.pointer_to[0];
+    }
+    if checker_is_async_frame_type(codegen.checker, &object_type) == 0 || object_type.struct_name == null {
+        return null;
+    }
+    if strncmp(object_type.struct_name as *byte, "uya_async_" as *byte, 10) != 0 {
+        return null;
+    }
+    return find_function_decl_c99(codegen, &object_type.struct_name[10] as &byte);
+}
+
+fn c99_async_frame_helper_name(codegen: &C99CodeGenerator, async_struct_name: &byte, method_name: &byte) &byte {
+    if codegen == null || async_struct_name == null || method_name == null {
+        return null;
+    }
+    if strncmp(async_struct_name as *byte, "uya_async_" as *byte, 10) != 0 {
+        return null;
+    }
+    const base_name: &byte = &async_struct_name[10] as &byte;
+    var suffix: &byte = null;
+    if strcmp(method_name as *byte, "start" as *byte) == 0 {
+        suffix = "_frame_start" as *byte;
+    } else if strcmp(method_name as *byte, "poll" as *byte) == 0 {
+        suffix = "_poll" as *byte;
+    } else if strcmp(method_name as *byte, "stop" as *byte) == 0 {
+        suffix = "_frame_stop" as *byte;
+    } else {
+        return null;
+    }
+    const total_len: usize = strlen(base_name as *byte) + strlen(suffix as *byte) + 1;
+    const result: &byte = compiler_arena_alloc(codegen.arena, total_len) as &byte;
+    if result == null {
+        return null;
+    }
+    strcpy(result as *byte, base_name as *byte);
+    strcat(result as *byte, suffix as *byte);
+    return result;
+}
+
 // 生成调用表达式
 fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
         const callee: &ASTNode = expr.call_expr_callee;
@@ -1732,6 +1777,36 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                     }
                 }
                 if slen > 0 && slen < STRUCT_NAME_BUF_SIZE {
+                            const frame_helper_name: &byte = c99_async_frame_helper_name(codegen, &struct_name_buf[0] as &byte, method_name);
+                            if frame_helper_name != null {
+                                const async_fn_decl: &ASTNode = c99_async_frame_fn_decl_from_expr(codegen, obj);
+                                var prefix: &byte = "&" as *byte;
+                                if strchr(obj_type_c as *byte, 42) != null { prefix = "" as *byte; }
+                                fprintf(codegen.emit_stream as *void, "%s(%s(" as *byte, frame_helper_name as *byte, prefix);
+                                gen_expr(codegen, obj);
+                                fputs(")" as *byte, codegen.emit_stream as *void);
+                                var frame_ai: i32 = 0;
+                                while frame_ai < arg_count {
+                                    c99_emit_comma_space(codegen);
+                                    if codegen.interp_arg_temp_names[frame_ai] != null {
+                                        fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                                        fputs(codegen.interp_arg_temp_names[frame_ai] as *byte, codegen.emit_stream as *void);
+                                    } else if async_fn_decl != null && strcmp(method_name as *byte, "start" as *byte) == 0 {
+                                        if expr.call_expr_args[frame_ai] != null && expr.call_expr_args[frame_ai].type == ASTNodeType.AST_STRING {
+                                            if c99_string_literal_passes_as_const_byte_slice_value(async_fn_decl, frame_ai, expr.call_expr_args[frame_ai]) == 0 {
+                                                fputs("(uint8_t *)" as *byte, codegen.emit_stream as *void);
+                                            }
+                                        }
+                                        c99_emit_call_arg_expr(codegen, async_fn_decl, frame_ai, expr.call_expr_args[frame_ai]);
+                                    } else {
+                                        gen_expr(codegen, expr.call_expr_args[frame_ai]);
+                                    }
+                                    frame_ai = frame_ai + 1;
+                                }
+                                fputc(41, codegen.emit_stream as *void);
+                                did_interface_call = 1;
+                            }
+                            if did_interface_call == 0 {
                             const union_decl: &ASTNode = find_union_decl_by_tagged_c99(codegen, &struct_name_buf[0]);
                             if union_decl != null {
                                 const method_fn: &ASTNode = find_method_in_union_c99(codegen, union_decl.union_decl_name, method_name);
@@ -1769,6 +1844,7 @@ fn gen_call_expr(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                                         did_interface_call = 1;
                                     }
                                 }
+                            }
                             }
                             if did_interface_call == 0 {
                                 const method_fn: &ASTNode = find_method_in_struct_c99(codegen, &struct_name_buf[0], method_name);

@@ -3,6 +3,7 @@
 **状态**：设计草案 → `@frame(foo)` 类型构造器与 pinned 语义已实现  
 **最后更新**：2026-04-14  
 **相关文档**：
+- [async_frame_lifecycle_naming_design.md](async_frame_lifecycle_naming_design.md) - `frame_start/frame_stop` 与 `@frame.start/poll/stop` 生命周期命名
 - [std_async_design.md](std_async_design.md) - `Future<T>` / `Poll<T>` / `Waker` / `Scheduler` 现状
 - [async_coroutine_transform_design.md](async_coroutine_transform_design.md) - 通用 async lowering / await 段发射
 - [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md) - 现有 lowering 计划
