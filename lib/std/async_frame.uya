@@ -122,7 +122,7 @@ extern var _uya_async_frame_descriptor_count: i32;
 extern var _uya_async_frame_heap_fallback: i32;
 
 // 默认全局异步帧池（懒初始化）
-var _uya_default_async_frame_pool: AsyncFramePool = [];
+var _uya_default_async_frame_pool: AsyncFramePool = AsyncFramePool{};
 var _uya_default_async_frame_pool_initialized: i32 = 0;
 
 export fn async_frame_pool_default() &AsyncFramePool {

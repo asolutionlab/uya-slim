@@ -1510,13 +1510,36 @@ fn collect_module_dependencies(
         return -1;
     }
 
-    var lexer: Lexer = Lexer { buffer: [], buffer_size: 0 as usize, position: 0 as usize, line: 1, column: 1, filename: null, string_mode: 0, interp_depth: 0, pending_interp_open: 0, reading_spec: 0, string_text_len: 0 };
+    var lexer: Lexer = Lexer {
+        buffer: [],
+        buffer_size: 0 as usize,
+        position: 0 as usize,
+        line: 1,
+        column: 1,
+        filename: null,
+        has_error: 0,
+        string_mode: 0,
+        raw_string_mode: 0,
+        interp_depth: 0,
+        pending_interp_open: 0,
+        reading_spec: 0,
+        has_seen_interp_in_string: 0,
+        string_text_buffer: [],
+        string_text_len: 0,
+    };
     if lexer_init(&lexer, &file_buffer[0], file_size as usize, filename, arena) != 0 {
         compiler_arena_restore(arena, arena_save_offset);
         return -1;
     }
 
-    var parser: Parser = Parser { lexer: null, current_token: null, arena: null, context: ParserContext.PARSER_CONTEXT_NORMAL };
+    var parser: Parser = Parser {
+        lexer: null,
+        current_token: null,
+        arena: null,
+        context: ParserContext.PARSER_CONTEXT_NORMAL,
+        pending_greater_token: null,
+        saw_use_std: 0,
+    };
     if parser_init(&parser, &lexer, arena) != 0 {
         compiler_arena_restore(arena, arena_save_offset);
         return -1;
@@ -2622,7 +2645,14 @@ fn compile_files(
 ) i32 {
     
     // 初始化临时 Arena（用于依赖收集，使用全局缓冲区避免栈溢出）
-    var temp_arena: CompilerArena = CompilerArena { buffer: null, size: 0 as usize, offset: 0 as usize };
+    var temp_arena: CompilerArena = CompilerArena {
+        buffer: null,
+        size: 0 as usize,
+        offset: 0 as usize,
+        first_chunk: null,
+        current_chunk: null,
+        total_allocated: 0 as usize,
+    };
     compiler_arena_init(&temp_arena, &temp_arena_buffer[0], 16 * 1024 * 1024);
     
     // 获取 UYA_ROOT 和编译器目录
@@ -2930,13 +2960,36 @@ fn compile_files(
             fprintf(libc.stderr, "错误: 无法读取文件 '%s' (可能文件太大或不存在)\n" as *byte, input_path);
             return 1;
         }
-        var lexer: Lexer = Lexer { buffer: [], buffer_size: 0 as usize, position: 0 as usize, line: 0, column: 0, filename: null, has_error: 0 };
+        var lexer: Lexer = Lexer {
+            buffer: [],
+            buffer_size: 0 as usize,
+            position: 0 as usize,
+            line: 0,
+            column: 0,
+            filename: null,
+            has_error: 0,
+            string_mode: 0,
+            raw_string_mode: 0,
+            interp_depth: 0,
+            pending_interp_open: 0,
+            reading_spec: 0,
+            has_seen_interp_in_string: 0,
+            string_text_buffer: [],
+            string_text_len: 0,
+        };
         const input_path_ref: &byte = input_path as &byte;
         if lexer_init(&lexer, &file_buffer[0], file_size as usize, input_path_ref, &arena) != 0 {
             fprintf(libc.stderr, "错误: Lexer 初始化失败: %s\n" as *byte, input_path);
             return 1;
         }
-        var parser: Parser = Parser { lexer: null, current_token: null, arena: null, context: ParserContext.PARSER_CONTEXT_NORMAL };
+        var parser: Parser = Parser {
+            lexer: null,
+            current_token: null,
+            arena: null,
+            context: ParserContext.PARSER_CONTEXT_NORMAL,
+            pending_greater_token: null,
+            saw_use_std: 0,
+        };
         if parser_init(&parser, &lexer, &arena) != 0 {
             fprintf(libc.stderr, "错误: Parser 初始化失败: %s\n" as *byte, input_path);
             return 1;
@@ -2977,8 +3030,88 @@ fn compile_files(
     fprintf(libc.stderr, "AST 合并完成，共 %d 个声明\n" as *byte, merged_ast.program_decl_count);
 
     fprintf(libc.stderr, "=== 类型检查阶段 ===\n" as *byte);
-    const void_type: Type = Type { kind: TypeKind.TYPE_VOID, enum_name: null, struct_name: null, pointer_to: null, is_ffi_pointer: 0, element_type: null, array_size: 0 };
-    var checker: TypeChecker = TypeChecker { arena: null, symbol_table: SymbolTable { slots: [], count: 0 }, function_table: FunctionTable { slots: [], count: 0 }, scope_level: 0, loop_depth: 0, program_node: null, error_count: 0, default_filename: null, current_return_type: void_type, in_function: 0, in_defer_or_errdefer: 0 };
+    const void_type: Type = Type {
+        kind: TypeKind.TYPE_VOID,
+        data: TypeData.named(null as &byte),
+        enum_name: null,
+        interface_name: null,
+        interface_type_args: null,
+        interface_type_arg_count: 0,
+        struct_name: null,
+        union_name: null,
+        pointer_to: null,
+        is_ffi_pointer: 0,
+        element_type: null,
+        array_size: 0,
+        slice_element_type: null,
+        slice_len: 0,
+        slice_element_is_const: 0,
+        tuple_element_types: null,
+        tuple_count: 0,
+        error_union_payload_type: null,
+        error_error_id: 0,
+        atomic_inner_type: null,
+        generic_param_name: null,
+        struct_type_args: null,
+        struct_type_arg_count: 0,
+        union_type_args: null,
+        union_type_arg_count: 0,
+    };
+    var checker: TypeChecker = TypeChecker {
+        arena: null,
+        symbol_table: SymbolTable { slots: [], count: 0 },
+        function_table: FunctionTable { slots: [], count: 0 },
+        module_table: ModuleTable { slots: [], count: 0 },
+        import_table: ImportTable { slots: [], count: 0 },
+        string_pool: StringPool { buckets: [], count: 0 },
+        scope_level: 0,
+        loop_depth: 0,
+        program_node: null,
+        error_count: 0,
+        default_filename: null,
+        current_return_type: void_type,
+        in_function: 0,
+        in_defer_or_errdefer: 0,
+        current_function_decl: null,
+        error_names: [],
+        error_hashes: [],
+        error_name_count: 0,
+        moved_names: [],
+        moved_count: 0,
+        project_root_dir: null,
+        uya_root_dir: null,
+        current_type_params: null,
+        current_type_param_count: 0,
+        mono_instances: [],
+        mono_instance_count: 0,
+        constraint_var_names: [],
+        constraint_ops: [],
+        constraint_values: [],
+        constraint_count: 0,
+        pointer_nonnull_names: [],
+        pointer_nonnull_count: 0,
+        pointer_nullable_names: [],
+        pointer_nullable_count: 0,
+        enable_safety_proof: 0,
+        container_mode: 0,
+        proof_step_limit: 0,
+        proof_step_count: 0,
+        scope_heads: [],
+        async_call_edge_from: [],
+        async_call_edge_to: [],
+        async_call_edge_count: 0,
+        fn_call_edge_from: [],
+        fn_call_edge_to: [],
+        fn_call_edge_count: 0,
+        fn_root_decls: [],
+        fn_root_count: 0,
+        reachable_fn_decls: [],
+        reachable_fn_decl_count: 0,
+        reachability_visit_count: 0,
+        reachability_visit_cache: [],
+        async_frame_metas: [],
+        async_frame_meta_count: 0,
+    };
     var default_filename: *byte = "(unknown)" as *byte;
     if all_file_count > 0 {
         default_filename = all_files[0] as *byte;

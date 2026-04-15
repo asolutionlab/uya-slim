@@ -470,7 +470,7 @@ fn bench_worker_thread(_arg: &void) &void {
     _ = slot_cap;
     
     // 绑定线程本地 async frame 池（完全无锁）
-    var frame_pool: AsyncFramePool = [];
+    var frame_pool: AsyncFramePool = AsyncFramePool{};
     async_frame_pool_init(&frame_pool, 0, 65536);
     set_async_frame_allocator(&frame_pool);
     

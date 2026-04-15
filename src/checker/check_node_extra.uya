@@ -55,7 +55,7 @@ fn check_match_expr_node(checker: &TypeChecker, node: &ASTNode) i32 {
             const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, expr_type.union_name);
             if union_decl != null {
                 var found: i32 = 0;
-                var variant_type: Type = Type { kind: TypeKind.TYPE_VOID, enum_name: null, struct_name: null, union_name: null, pointer_to: null, is_ffi_pointer: 0, element_type: null, array_size: 0, slice_element_type: null, slice_len: 0, tuple_element_types: null, tuple_count: 0, error_union_payload_type: null, error_error_id: 0 };
+                var variant_type: Type = make_void_type();
                 var k: i32 = 0;
                 while k < union_decl.union_decl_variant_count {
                     const v: &ASTNode = union_decl.union_decl_variants[k];
@@ -169,19 +169,7 @@ fn check_assign_node(checker: &TypeChecker, node: &ASTNode) i32 {
         return 0;
     }
     
-    var dest_type: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        struct_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-        error_union_payload_type: null,
-        error_error_id: 0,
-    };
+    var dest_type: Type = make_void_type();
     if dest.type == ASTNodeType.AST_UNDERSCORE {
         // _ = expr：仅检查右侧，显式忽略返回值
         if checker_check_node(checker, node.assign_src) == 0 {
@@ -676,21 +664,7 @@ fn check_for_stmt_node(checker: &TypeChecker, node: &ASTNode) i32 {
         } else {
             loop_var.name = node.for_stmt_var_name;
             if node.for_stmt_is_ref != 0 {
-                const ref_var_type: Type = Type {
-                    kind: TypeKind.TYPE_POINTER,
-                    enum_name: null,
-                    struct_name: null,
-                    pointer_to: ref_element_type_ptr,
-                    is_ffi_pointer: 0,
-                    element_type: null,
-                    array_size: 0,
-                    slice_element_type: null,
-                    slice_len: 0,
-                    tuple_element_types: null,
-                    tuple_count: 0,
-                    error_union_payload_type: null,
-                    error_error_id: 0,
-                };
+                const ref_var_type: Type = make_pointer_type(checker.arena, ref_element_type_ptr, 0);
                 loop_var.type = ref_var_type;
             } else {
                 const iter_var_type: Type = copy_type(&array_type.element_type[0]);

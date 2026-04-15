@@ -8,7 +8,7 @@ use std.async_frame.async_frame_pool_alloc;
 use std.testing.expect;
 
 fn check_invalid_frame_id_returns_null() i32 {
-    var pool: AsyncFramePool = [];
+    var pool: AsyncFramePool = AsyncFramePool{};
     async_frame_pool_init(&pool, 0, 65536);
     // frame_id 999 超出默认 descriptor 表范围（512），应返回 null
     const ptr: &byte = async_frame_pool_alloc(&pool, 999);

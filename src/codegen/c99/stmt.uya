@@ -2825,9 +2825,25 @@ fn gen_var_decl_empty_struct_init(codegen: &C99CodeGenerator, var_name: &byte, s
                             c99_emit_indent(codegen);
                             fprintf(codegen.emit_stream as *void, "__builtin_memset(%s.%s, 0, sizeof(%s.%s));\n" as *byte, var_name as *byte, field_name as *byte, var_name as *byte, field_name as *byte);
                         } else {
-                            // 其他类型（整数、浮点数等）：初始化为 0
+                            // 其他类型（整数、浮点数等）：初始化为 0；命名 struct/union 需要复合字面量
                             c99_emit_indent(codegen);
-                            fprintf(codegen.emit_stream as *void, "%s.%s = 0;\n" as *byte, var_name as *byte, field_name as *byte);
+                            if field_type.type == ASTNodeType.AST_TYPE_NAMED && field.var_decl_type != null && field.var_decl_type.type_named_name != null {
+                                const named_struct_decl: &ASTNode = find_struct_decl_c99(codegen, field.var_decl_type.type_named_name);
+                                if named_struct_decl != null {
+                                    fprintf(codegen.emit_stream as *void, "%s.%s = (struct %s){0};\n" as *byte,
+                                        var_name as *byte, field_name as *byte, field.var_decl_type.type_named_name as *byte);
+                                } else {
+                                    const named_union_decl: &ASTNode = find_union_decl_c99(codegen, field.var_decl_type.type_named_name);
+                                    if named_union_decl != null {
+                                        fprintf(codegen.emit_stream as *void, "%s.%s = (union %s){0};\n" as *byte,
+                                            var_name as *byte, field_name as *byte, field.var_decl_type.type_named_name as *byte);
+                                    } else {
+                                        fprintf(codegen.emit_stream as *void, "%s.%s = 0;\n" as *byte, var_name as *byte, field_name as *byte);
+                                    }
+                                }
+                            } else {
+                                fprintf(codegen.emit_stream as *void, "%s.%s = 0;\n" as *byte, var_name as *byte, field_name as *byte);
+                            }
                         }
                     }
                 }

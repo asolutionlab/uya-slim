@@ -32,7 +32,8 @@ fn array_element_is_aggregate_c99(codegen: &C99CodeGenerator, array_type: &ASTNo
         return 1;
     }
     if elem.type == ASTNodeType.AST_TYPE_NAMED && elem.type_named_name != null &&
-        find_struct_decl_c99(codegen, elem.type_named_name) != null {
+        (find_struct_decl_c99(codegen, elem.type_named_name) != null ||
+         find_union_decl_c99(codegen, elem.type_named_name) != null) {
         return 1;
     }
     return 0;
@@ -6509,6 +6510,20 @@ fn gen_struct_init(codegen: &C99CodeGenerator, expr: &ASTNode) void {
                             fputs("{{0}}" as *byte, codegen.emit_stream as *void);
                         } else {
                             fputs("{0}" as *byte, codegen.emit_stream as *void);
+                        }
+                    } else if ft != null && ft.type == ASTNodeType.AST_TYPE_NAMED && ft.type_named_name != null {
+                        const named_struct_decl: &ASTNode = find_struct_decl_c99(codegen, ft.type_named_name);
+                        if named_struct_decl != null {
+                            const safe_ft_name: &byte = get_safe_c_identifier(codegen, ft.type_named_name);
+                            fprintf(codegen.emit_stream as *void, "(struct %s){0}" as *byte, safe_ft_name as *byte);
+                        } else {
+                            const named_union_decl: &ASTNode = find_union_decl_c99(codegen, ft.type_named_name);
+                            if named_union_decl != null {
+                                const safe_ft_name2: &byte = get_safe_c_identifier(codegen, ft.type_named_name);
+                                fprintf(codegen.emit_stream as *void, "(union %s){0}" as *byte, safe_ft_name2 as *byte);
+                            } else {
+                                fputs("0" as *byte, codegen.emit_stream as *void);
+                            }
                         }
                     } else {
                         fputs("0" as *byte, codegen.emit_stream as *void);

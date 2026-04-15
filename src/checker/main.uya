@@ -479,11 +479,11 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             const prev_function_decl: &ASTNode = checker.current_function_decl;
             
             // 构造 !void 类型
-            var error_void_type: Type = Type{ kind: TypeKind.TYPE_ERROR_UNION };
+            var error_void_type: Type = make_void_type();
             const void_type: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
             if void_type != null {
-                void_type.kind = TypeKind.TYPE_VOID;
-                error_void_type.error_union_payload_type = void_type;
+                void_type[0] = make_void_type();
+                error_void_type = make_error_union_type(checker.arena, void_type);
             }
             
             checker.current_return_type = error_void_type;
@@ -810,12 +810,8 @@ fn checker_check_node(checker: &TypeChecker, node: &ASTNode) i32 {
             checker_check_node(checker, node.catch_expr_operand);
         }
         if node.catch_expr_err_name != null {
-            var err_type: Type = Type {
-                kind: TypeKind.TYPE_ERROR, enum_name: null, struct_name: null, pointer_to: null,
-                is_ffi_pointer: 0, element_type: null, array_size: 0, slice_element_type: null,
-                slice_len: 0, tuple_element_types: null, tuple_count: 0,
-                error_union_payload_type: null, error_error_id: 0
-            };
+            var err_type: Type = make_void_type();
+            err_type.kind = TypeKind.TYPE_ERROR;
             checker_enter_scope(checker);
             const sym: &Symbol = compiler_arena_alloc(checker.arena, @size_of(Symbol)) as &Symbol;
             if sym != null {

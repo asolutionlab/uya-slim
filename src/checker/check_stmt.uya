@@ -114,12 +114,22 @@ fn checker_check_var_decl(checker: &TypeChecker, node: &ASTNode) i32 {
             // 否则常量求值成功，值被忽略（仅用于错误检测）
         }
         
-        // 特殊处理空数组字面量：如果变量类型是数组类型，空数组字面量表示未初始化
+        // 特殊处理空数组字面量
         if node.var_decl_init.type == ASTNodeType.AST_ARRAY_LITERAL &&
-            node.var_decl_init.array_literal_element_count == 0 &&
-            var_type.kind == TypeKind.TYPE_ARRAY {
-            // 空数组字面量用于数组类型变量，允许（表示未初始化）
-            // 不需要进一步检查，直接跳过类型比较
+            node.var_decl_init.array_literal_element_count == 0 {
+            const is_array_or_slice: i32 = (var_type.kind == TypeKind.TYPE_ARRAY) ||
+                (var_type.kind == TypeKind.TYPE_SLICE) ||
+                (node.var_decl_type != null && (
+                    node.var_decl_type.type == ASTNodeType.AST_TYPE_ARRAY ||
+                    node.var_decl_type.type == ASTNodeType.AST_TYPE_SLICE));
+            if is_array_or_slice != 0 {
+                // 空数组字面量用于数组/切片类型变量，允许（表示零初始化）
+                // 不需要进一步检查，直接跳过类型比较
+            } else {
+                checker_report_error(checker, node.var_decl_init,
+                    "empty array literal '[]' can only initialize array or slice types" as *byte);
+                return 0;
+            }
         } else if node.var_decl_init.type == ASTNodeType.AST_BLOCK {
             // 代码块作为初始化表达式：完全跳过类型检查，允许通过（不报错）
             // 这在编译器自举时很常见，因为代码块可能用于初始化

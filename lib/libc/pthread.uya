@@ -192,7 +192,7 @@ export struct pthread_cond_t {
 }
 
 // 保护条件变量内部状态的全局 mutex
-var _cond_mutex: pthread_mutex_t = pthread_mutex_t{ state: 0 };
+var _cond_mutex: pthread_mutex_t = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
 
 // 取消状态已迁移到 descriptor（cancel_state / cancel_type / cancel_pending）
 
@@ -1529,7 +1529,7 @@ export extern "libc" fn pthread_barrier_init(barrier: &pthread_barrier_t, attr: 
     barrier.arrived = 0;
     barrier.generation = 0;
     barrier.mutex = pthread_mutex_t{ state: 0, owner: 0, type: 0 };
-    barrier.cond = pthread_cond_t{ waiters: 0, seq: 0 };
+    barrier.cond = pthread_cond_t{ waiters: 0, seq: 0, clock: 0 };
     
     return 0;
 }

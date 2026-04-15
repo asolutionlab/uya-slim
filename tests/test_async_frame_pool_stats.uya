@@ -20,7 +20,7 @@ fn test_pool_stats() void {
     const _f: Future<!i32> = dummy_async();
     _ = _f;
 
-    var pool: AsyncFramePool = [];
+    var pool: AsyncFramePool = AsyncFramePool{};
     // 开启 debug heap fallback，便于验证 fallback 计数
     async_frame_pool_init(&pool, 1, 65536);
 

@@ -129,30 +129,7 @@ fn type_from_ast(checker: &TypeChecker, type_node: &ASTNode) Type {
 }
 
 fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
-    var result: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        interface_name: null,
-        struct_name: null,
-        union_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        slice_element_type: null,
-        slice_len: 0,
-        slice_element_is_const: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-        error_union_payload_type: null,
-        error_error_id: 0,
-        atomic_inner_type: null,
-        generic_param_name: null,
-        struct_type_args: null,
-        struct_type_arg_count: 0,
-        union_type_args: null,
-        union_type_arg_count: 0,
-    };
+    var result: Type = make_void_type();
     
     if type_node == null {
         result.kind = TypeKind.TYPE_VOID;
@@ -320,6 +297,7 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
         payload_ptr[0] = payload;
         result.kind = TypeKind.TYPE_ERROR_UNION;
         result.error_union_payload_type = payload_ptr;
+        type_set_error_union(&result, payload_ptr, 0);
         return result;
     }
     
@@ -348,6 +326,7 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
         inner_type_ptr[0] = inner_type;
         result.kind = TypeKind.TYPE_ATOMIC;
         result.atomic_inner_type = inner_type_ptr;
+        type_set_atomic(&result, inner_type_ptr);
         return result;
     }
 
@@ -510,6 +489,9 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
             result.struct_name = struct_name;
         }
         result.kind = TypeKind.TYPE_STRUCT;
+        if result.struct_name != null {
+            type_set_name(&result, result.struct_name);
+        }
         return result;
     }
     
@@ -529,6 +511,7 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
                     str_equals(checker.current_type_params[i].name, type_name) != 0 {
                     result.kind = TypeKind.TYPE_GENERIC_PARAM;
                     result.generic_param_name = type_name;
+                    type_set_generic_param(&result, type_name);
                     return result;
                 }
                 i = i + 1;
@@ -609,6 +592,7 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
                 if iface_decl != null {
                     result.kind = TypeKind.TYPE_INTERFACE;
                     result.interface_name = type_name;
+                    type_set_name(&result, type_name);
                     if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
                         const count_i: i32 = type_node.type_named_type_arg_count;
                         const ta_i: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count_i as usize)) as &Type;
@@ -627,11 +611,13 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
                     if enum_decl != null {
                         result.kind = TypeKind.TYPE_ENUM;
                         result.enum_name = type_name;
+                        type_set_name(&result, type_name);
                     } else {
                         const union_decl: &ASTNode = find_union_decl_from_program(checker.program_node, type_name);
                         if union_decl != null {
                             result.kind = TypeKind.TYPE_UNION;
                             result.union_name = type_name;
+                            type_set_name(&result, type_name);
                             if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null &&
                                 union_decl.union_decl_type_param_count > 0 {
                                 const count: i32 = type_node.type_named_type_arg_count;
@@ -649,6 +635,7 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
                         } else {
                             result.kind = TypeKind.TYPE_STRUCT;
                             result.struct_name = type_name;
+                            type_set_name(&result, type_name);
                             if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
                                 const count: i32 = type_node.type_named_type_arg_count;
                                 const ta: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
@@ -660,7 +647,10 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
                                     }
                                     result.struct_type_args = ta;
                                     result.struct_type_arg_count = count;
+                                    type_set_struct_generic(&result, type_name, ta, count);
                                 }
+                            } else {
+                                type_set_name(&result, type_name);
                             }
                         }
                     }
@@ -668,6 +658,7 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
             } else {
                 result.kind = TypeKind.TYPE_STRUCT;
                 result.struct_name = type_name;
+                type_set_name(&result, type_name);
                 if type_node.type_named_type_arg_count > 0 && type_node.type_named_type_args != null {
                     const count2: i32 = type_node.type_named_type_arg_count;
                     const ta2: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count2 as usize)) as &Type;
@@ -679,7 +670,10 @@ fn type_from_ast_uncached(checker: &TypeChecker, type_node: &ASTNode) Type {
                         }
                         result.struct_type_args = ta2;
                         result.struct_type_arg_count = count2;
+                        type_set_struct_generic(&result, type_name, ta2, count2);
                     }
+                } else {
+                    type_set_name(&result, type_name);
                 }
             }
         }

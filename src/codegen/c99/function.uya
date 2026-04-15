@@ -4010,7 +4010,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         const escape_class: AsyncFrameEscapeClass = async_lower_analyze_escape_class(codegen.checker, fn_decl.fn_decl_body);
         const existing: &AsyncFrameMeta = checker_find_async_frame_meta_by_key_text(codegen.checker, func_c_name);
         if existing == null {
-            var meta: AsyncFrameMeta = [];
+            var meta: AsyncFrameMeta = AsyncFrameMeta{};
             meta.frame_key_text = func_c_name;
             meta.frame_id = codegen.checker.async_frame_meta_count as u32;
             meta.descriptor_index = meta.frame_id;

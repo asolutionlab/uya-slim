@@ -47,19 +47,7 @@ fn pointer_index_has_user_bounds_proof(checker: &TypeChecker, index_expr: &ASTNo
 // 注意：支持数组类型 [T: N] 和指针类型 &T（指针类型的数组访问如 &byte[offset]）
 fn checker_check_array_access(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
-    var result: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        struct_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        slice_element_type: null,
-        slice_len: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-    };
+    var result: Type = make_void_type();
     
     if checker == null || node == null || node.type != ASTNodeType.AST_ARRAY_ACCESS {
         return result;
@@ -263,19 +251,7 @@ fn checker_check_array_access(checker: &TypeChecker, node: &ASTNode) Type {
 // 返回：i32 类型（如果检查失败返回TYPE_VOID）
 fn checker_check_alignof(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
-    var result: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        struct_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        slice_element_type: null,
-        slice_len: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-    };
+    var result: Type = make_void_type();
     
     if checker == null || node == null || node.type != ASTNodeType.AST_ALIGNOF {
         return result;
@@ -357,19 +333,7 @@ fn checker_check_alignof(checker: &TypeChecker, node: &ASTNode) Type {
 // 返回：i32 类型（如果检查失败返回TYPE_VOID）
 fn checker_check_len(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
-    var result: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        struct_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        slice_element_type: null,
-        slice_len: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-    };
+    var result: Type = make_void_type();
     
     if checker == null || node == null || node.type != ASTNodeType.AST_LEN {
         return result;
@@ -399,19 +363,7 @@ fn checker_check_len(checker: &TypeChecker, node: &ASTNode) Type {
 // 返回：结构体类型（如果检查失败返回TYPE_VOID）
 fn checker_check_struct_init(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
-    var result: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        struct_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        slice_element_type: null,
-        slice_len: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-    };
+    var result: Type = make_void_type();
     
     if checker == null || node == null || node.type != ASTNodeType.AST_STRUCT_INIT {
         return result;
@@ -429,18 +381,14 @@ fn checker_check_struct_init(checker: &TypeChecker, node: &ASTNode) Type {
     if struct_decl == null {
         // 放宽检查：结构体声明未找到时，允许通过（不报错）
         // 这在编译器自举时很常见，因为结构体可能尚未定义或存在前向引用
-        result.kind = TypeKind.TYPE_STRUCT;
-        result.struct_name = struct_name;
-        return result;
+        return make_named_type(TypeKind.TYPE_STRUCT, struct_name);
     }
     
     // 检查字段数量和类型
     if node.struct_init_field_count != struct_decl.struct_decl_field_count {
         // 放宽检查：字段数量不匹配时，允许通过（不报错）
         // 这在编译器自举时可能发生
-        result.kind = TypeKind.TYPE_STRUCT;
-        result.struct_name = struct_name;
-        return result;
+        return make_named_type(TypeKind.TYPE_STRUCT, struct_name);
     }
     
     // 检查每个字段的类型
@@ -474,9 +422,22 @@ fn checker_check_struct_init(checker: &TypeChecker, node: &ASTNode) Type {
         i = i + 1;
     }
     
-    result.kind = TypeKind.TYPE_STRUCT;
-    result.struct_name = struct_name;
-    return result;
+    var init_result: Type = make_named_type(TypeKind.TYPE_STRUCT, struct_name);
+    if node.struct_init_type_arg_count > 0 && node.struct_init_type_args != null {
+        const count_ta: i32 = node.struct_init_type_arg_count;
+        const ta: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count_ta as usize)) as &Type;
+        if ta != null {
+            var ti: i32 = 0;
+            while ti < count_ta {
+                ta[ti] = type_from_ast(checker, node.struct_init_type_args[ti]);
+                ti = ti + 1;
+            }
+            init_result.struct_type_args = ta;
+            init_result.struct_type_arg_count = count_ta;
+            type_set_struct_generic(&init_result, struct_name, ta, count_ta);
+        }
+    }
+    return init_result;
 }
 
 fn simd_vector_has_integer_elements(t: Type) i32 {
@@ -646,19 +607,7 @@ fn checker_check_cast_requires_asbang(checker: &TypeChecker, node: &ASTNode, exp
 // 返回：表达式类型（如果检查失败返回TYPE_VOID）
 fn checker_check_binary_expr(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
-    var result: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        struct_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        slice_element_type: null,
-        slice_len: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-    };
+    var result: Type = make_void_type();
     
     if checker == null || node == null || node.type != ASTNodeType.AST_BINARY_EXPR {
         return result;
@@ -1774,19 +1723,7 @@ fn checker_check_cast_expr(checker: &TypeChecker, node: &ASTNode) void {
 // 返回：表达式类型（如果检查失败返回TYPE_VOID）
 fn checker_check_unary_expr(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
-    var result: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        struct_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        slice_element_type: null,
-        slice_len: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-    };
+    var result: Type = make_void_type();
     
     if checker == null || node == null || node.type != ASTNodeType.AST_UNARY_EXPR {
         return result;

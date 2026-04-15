@@ -8,7 +8,7 @@ use std.async_frame.async_frame_pool_stats;
 use std.testing.expect;
 
 fn check_pool_with_zero_stack_limit() i32 {
-    var pool: AsyncFramePool = [];
+    var pool: AsyncFramePool = AsyncFramePool{};
     async_frame_pool_init(&pool, 0, 0);
     var alloc_count: i32 = 0;
     var free_count: i32 = 0;

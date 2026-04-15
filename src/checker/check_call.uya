@@ -285,24 +285,7 @@ fn checker_record_reachable_call(checker: &TypeChecker, callee: &ASTNode) void {
 
 fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
-    var result: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        struct_name: null,
-        union_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        slice_element_type: null,
-        slice_len: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-        struct_type_args: null,
-        struct_type_arg_count: 0,
-        union_type_args: null,
-        union_type_arg_count: 0,
-    };
+    var result: Type = make_void_type();
     
     if checker == null || node == null || node.type != ASTNodeType.AST_CALL_EXPR {
         return result;
@@ -632,8 +615,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
                                 return result;
                             }
                         }
-                        result.kind = TypeKind.TYPE_UNION;
-                        result.union_name = union_decl.union_decl_name;
+                        result = make_named_type(TypeKind.TYPE_UNION, union_decl.union_decl_name);
                         if object != null && object.type == ASTNodeType.AST_TYPE_NAMED && object.type_named_type_arg_count > 0 && object.type_named_type_args != null {
                             const count: i32 = object.type_named_type_arg_count;
                             const ta: &Type = compiler_arena_alloc(checker.arena, (@size_of(Type)) * (count as usize)) as &Type;
@@ -1221,19 +1203,7 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
 // 返回：字段类型（如果检查失败返回TYPE_VOID）
 fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
     // 注意：Uya 要求所有变量必须初始化
-    var result: Type = Type {
-        kind: TypeKind.TYPE_VOID,
-        enum_name: null,
-        struct_name: null,
-        pointer_to: null,
-        is_ffi_pointer: 0,
-        element_type: null,
-        array_size: 0,
-        slice_element_type: null,
-        slice_len: 0,
-        tuple_element_types: null,
-        tuple_count: 0,
-    };
+    var result: Type = make_void_type();
     
     if checker == null || node == null || node.type != ASTNodeType.AST_MEMBER_ACCESS {
         return result;
@@ -1280,9 +1250,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
                     while i < enum_decl.enum_decl_variant_count {
                         if enum_decl.enum_decl_variants[i].name != null &&
                             str_equals(enum_decl.enum_decl_variants[i].name, field_name) != 0 {
-                            result.kind = TypeKind.TYPE_ENUM;
-                            result.enum_name = obj.identifier_name;
-                            return result;
+                            return make_named_type(TypeKind.TYPE_ENUM, obj.identifier_name);
                         }
                         i = i + 1;
                     }
@@ -1308,9 +1276,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
                     if imp.module_name != null && strcmp(imp.module_name as *byte, "std" as *byte) == 0 {
                         const builtin_enum_name: &byte = std_cfg_selector_enum_name(node.member_access_field_name);
                         if builtin_enum_name != null {
-                            result.kind = TypeKind.TYPE_ENUM;
-                            result.enum_name = builtin_enum_name;
-                            return result;
+                            return make_named_type(TypeKind.TYPE_ENUM, builtin_enum_name);
                         }
                     }
                     break;
@@ -1378,22 +1344,20 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
         // 常见字段：struct_decl_fields, fn_decl_params, program_decls 等
         if field_name != null {
             // 对于数组字段，返回指针类型（&ASTNode）
-            if str_equals(field_name, "struct_decl_fields" as *byte) != 0 ||
+                if str_equals(field_name, "struct_decl_fields" as *byte) != 0 ||
                 str_equals(field_name, "fn_decl_params" as *byte) != 0 ||
                 str_equals(field_name, "program_decls" as *byte) != 0 ||
                 str_equals(field_name, "call_expr_args" as *byte) != 0 ||
                 str_equals(field_name, "array_literal_elements" as *byte) != 0 ||
                 str_equals(field_name, "struct_init_field_values" as *byte) != 0 {
                 // 返回 &ASTNode 类型（数组元素类型）
-                result.kind = TypeKind.TYPE_POINTER;
                 // 注意：Uya 不支持指针运算，需要使用数组访问
                 const pointed_type_ptr: &Type = compiler_arena_alloc(checker.arena, @size_of(Type)) as &Type;
                 if pointed_type_ptr != null {
-                    pointed_type_ptr[0].kind = TypeKind.TYPE_STRUCT;
-                    pointed_type_ptr[0].struct_name = "ASTNode" as *byte;
-                    result.pointer_to = pointed_type_ptr;
+                    pointed_type_ptr[0] = make_named_type(TypeKind.TYPE_STRUCT, "ASTNode" as *byte);
+                    return make_pointer_type(checker.arena, pointed_type_ptr, 0);
                 }
-                return result;
+                return make_void_type();
             }
             // 对于其他字段，返回 void 类型（表示类型推断失败，但不报错）
             // 这样可以允许访问，但不会进行严格的类型检查
@@ -1413,7 +1377,7 @@ fn checker_check_member_access(checker: &TypeChecker, node: &ASTNode) Type {
     }
     
     // 查找字段类型（支持泛型类型参数替换）
-    var field_type: Type = Type { kind: TypeKind.TYPE_VOID };
+    var field_type: Type = make_void_type();
     if object_type.struct_type_args != null && object_type.struct_type_arg_count > 0 {
         // 泛型结构体实例：使用类型参数替换
         field_type = find_struct_field_type_with_substitution(checker, struct_decl,

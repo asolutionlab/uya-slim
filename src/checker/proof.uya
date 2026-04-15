@@ -622,7 +622,7 @@ fn checker_report_error_with_notes(checker: &TypeChecker, node: &ASTNode, messag
 
 // 报告类型检查错误，附带单个 note
 fn checker_report_error_with_note(checker: &TypeChecker, node: &ASTNode, message: &byte, note_node: &ASTNode, note_message: &byte, note_kind: i32) void {
-    var note: CheckerNote = [];
+    var note: CheckerNote = CheckerNote{};
     note.node = note_node;
     note.message = note_message;
     note.kind = note_kind;

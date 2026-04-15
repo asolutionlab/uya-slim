@@ -26,7 +26,7 @@ fn tiny_async() !Future<i32> {
 }
 
 fn test_pool_full_returns_error() !void {
-    var failing: FailingAlloc = [];
+    var failing: FailingAlloc = FailingAlloc{};
     set_async_frame_allocator(&failing as &IAllocator);
     const r: !Future<i32> = tiny_async();
     var got_pool_full: bool = false;
