@@ -317,6 +317,12 @@ fn checker_eval_const_expr(checker: &TypeChecker, expr: &ASTNode) i32 {
         if target == null { return -1; }
         var t: Type = checker_infer_type(checker, target);
         if expr.sizeof_expr_is_type != 0 {
+            if target.type == ASTNodeType.AST_TYPE_FRAME {
+                const frame_size: i32 = get_async_frame_size_bytes(checker, target);
+                if frame_size > 0 {
+                    return frame_size;
+                }
+            }
             t = type_from_ast(checker, target);
         }
         return get_type_size_bytes(&t);
@@ -363,6 +369,29 @@ fn get_type_size_bytes(t: &Type) i32 {
         }
     }
     return -1;
+}
+
+// 获取 @frame(async_fn) 的帧大小（字节），用于 @size_of(@frame(...)) 常量求值
+fn get_async_frame_size_bytes(checker: &TypeChecker, type_node: &ASTNode) i32 {
+    if checker == null || type_node == null || type_node.type != ASTNodeType.AST_TYPE_FRAME {
+        return -1;
+    }
+    const operand: &ASTNode = type_node.type_frame_operand;
+    if operand == null || operand.type != ASTNodeType.AST_IDENTIFIER || operand.identifier_name == null {
+        return -1;
+    }
+    const fd: &ASTNode = find_fn_decl_from_program(checker.program_node, operand.identifier_name);
+    if fd == null || fd.fn_decl_is_async == 0 {
+        return -1;
+    }
+    const meta: &AsyncFrameMeta = checker_async_frame_meta_for_fn(checker, fd);
+    if meta == null || meta.frame_size == 0 {
+        return -1;
+    }
+    if meta.frame_size > 2147483647 as usize {
+        return -1;
+    }
+    return meta.frame_size as i32;
 }
 
 // 根据 Type 计算对齐（字节），仅支持基础类型
@@ -538,6 +567,12 @@ export fn checker_eval_const_expr_in_block(checker: &TypeChecker, expr: &ASTNode
         if target == null { return -1; }
         var t: Type = checker_infer_type(checker, target);
         if expr.sizeof_expr_is_type != 0 {
+            if target.type == ASTNodeType.AST_TYPE_FRAME {
+                const frame_size: i32 = get_async_frame_size_bytes(checker, target);
+                if frame_size > 0 {
+                    return frame_size;
+                }
+            }
             t = type_from_ast(checker, target);
         }
         return get_type_size_bytes(&t);

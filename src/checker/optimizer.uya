@@ -292,6 +292,22 @@ export fn constant_folding_pass(checker: &TypeChecker, node: &ASTNode) &ASTNode 
         constant_fold_binary(checker, node);
     } else if node.type == ASTNodeType.AST_UNARY_EXPR {
         constant_folding_pass(checker, node.unary_expr_operand);
+    } else if node.type == ASTNodeType.AST_SIZEOF || node.type == ASTNodeType.AST_ALIGNOF {
+        if node.type == ASTNodeType.AST_SIZEOF && node.sizeof_expr_is_type == 0 && node.sizeof_expr_target != null {
+            constant_folding_pass(checker, node.sizeof_expr_target);
+        }
+        if node.type == ASTNodeType.AST_ALIGNOF && node.alignof_expr_is_type == 0 && node.alignof_expr_target != null {
+            constant_folding_pass(checker, node.alignof_expr_target);
+        }
+        const value: i32 = checker_eval_const_expr(checker, node);
+        if value != -1 {
+            node.is_optimized = 1;
+            node.optimized_value = value;
+            optimizer_stats.constant_folded = optimizer_stats.constant_folded + 1;
+            if optimizer_verbose != 0 {
+                printf("[optimize] constant folded: expression -> %d\n" as *byte, value);
+            }
+        }
     } else if node.type == ASTNodeType.AST_VAR_DECL && node.var_decl_init != null {
         constant_folding_pass(checker, node.var_decl_init);
     } else if node.type == ASTNodeType.AST_IF_STMT {

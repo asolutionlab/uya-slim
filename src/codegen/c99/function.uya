@@ -3727,7 +3727,7 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         return;
     }
     snprintf(async_struct as *byte, 128, "uya_async_%s" as *byte, func_c_name as *byte);
-    snprintf(poll_name as *byte, 256, "uya_%s_poll" as *byte, async_struct as *byte);
+    snprintf(poll_name as *byte, 256, "%s_poll" as *byte, func_c_name as *byte);
     snprintf(vtable_name as *byte, 256, "uya_vtable_%s_%s" as *byte, vtable_future_safe as *byte, async_struct as *byte);
     snprintf(release_name as *byte, 256, "uya_%s_release" as *byte, async_struct as *byte);
     snprintf(alloc_name as *byte, 256, "_uya_alloc_%s" as *byte, async_struct as *byte);
@@ -4156,7 +4156,9 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         if c99_async_await_operand_is_inlineable(codegen, seg_op, &inline_struct_name_poll) != 0 && inline_struct_name_poll != null {
             const poll_fn_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
             if poll_fn_name != null {
-                snprintf(poll_fn_name as *byte, 256, "uya_%s_poll" as *byte, inline_struct_name_poll as *byte);
+                const prefix_len_poll: usize = strlen("uya_async_" as *byte);
+                const child_poll_key: &byte = &inline_struct_name_poll[prefix_len_poll];
+                snprintf(poll_fn_name as *byte, 256, "%s_poll" as *byte, child_poll_key as *byte);
                 fprintf(codegen.emit_stream as *void, "        %s p = %s(&s->_uya_inline_await_%d, waker);\n" as *byte,
                     poll_line_ret as *byte, poll_fn_name as *byte, state_k - 1);
             } else {

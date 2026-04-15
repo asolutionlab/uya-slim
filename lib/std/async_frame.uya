@@ -48,6 +48,11 @@ export struct AsyncFramePool : IAllocator {
     debug_heap_fallback: i32,
     // 栈分配大小限制：超过此大小的 frame 即使候选也强制走 pool
     stack_limit: usize,
+    // 可选：由调用方提供的 backing buffer。设置后优先从该缓冲区分配，
+    // 用于 worker-local / stack-owned 零堆场景。
+    buffer: &byte = null,
+    buffer_size: usize = 0,
+    buffer_used: usize = 0,
 
     // IAllocator 实现：通过 header 记录 raw_ptr，dealloc 时无需外部传入 size
     fn alloc(self: &Self, size: usize) !&byte {
@@ -207,6 +212,9 @@ export fn async_frame_pool_init(pool: &AsyncFramePool, debug_heap_fallback: i32,
     pool.debug_heap_fallback_count = 0;
     pool.debug_heap_fallback = debug_heap_fallback;
     pool.stack_limit = stack_limit;
+    pool.buffer = null;
+    pool.buffer_size = 0;
+    pool.buffer_used = 0;
     var i: i32 = 0;
     while i < ASYNC_FRAME_POOL_MAX_BUCKETS {
         const b: &AsyncFramePoolBucket = &pool.buckets[i];
@@ -226,6 +234,48 @@ export fn async_frame_pool_init(pool: &AsyncFramePool, debug_heap_fallback: i32,
     }
 }
 
+// 使用调用方提供的 backing buffer 初始化帧池。
+// 适合 worker-local 栈缓冲：alloc / free 均通过 free list 复用，不会触发系统堆。
+export fn async_frame_pool_init_with_buffer(pool: &AsyncFramePool, buffer: &byte, size: usize, debug_heap_fallback: i32, stack_limit: usize) void {
+    async_frame_pool_init(pool, debug_heap_fallback, stack_limit);
+    if pool == null {
+        return;
+    }
+    pool.buffer = buffer;
+    pool.buffer_size = size;
+    pool.buffer_used = 0;
+}
+
+fn async_frame_pool_align_up(n: usize, align: usize) usize {
+    if align == 0 {
+        return n;
+    }
+    const m: usize = n + align - 1;
+    return m - (m % align);
+}
+
+fn async_frame_pool_ptr_in_buffer(pool: &AsyncFramePool, ptr: &byte) i32 {
+    if pool == null || pool.buffer == null || ptr == null || pool.buffer_size == 0 {
+        return 0;
+    }
+    const base: usize = @usize_from_ptr(pool.buffer as &void);
+    const p: usize = @usize_from_ptr(ptr as &void);
+    return (p >= base && p < base + pool.buffer_size) as i32;
+}
+
+fn async_frame_pool_alloc_from_buffer(pool: &AsyncFramePool, size: usize, align: usize) &byte {
+    if pool == null || pool.buffer == null || size == 0 {
+        return null;
+    }
+    var used: usize = async_frame_pool_align_up(pool.buffer_used, align);
+    if used + size > pool.buffer_size {
+        return null;
+    }
+    const ptr: &byte = &pool.buffer[used];
+    pool.buffer_used = used + size;
+    return ptr;
+}
+
 // 从帧池分配
 // 返回的指针按 descriptor.align 对齐；失败返回 null
 export fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: u32) &byte {
@@ -238,8 +288,8 @@ export fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: u32) &byte {
     }
     const bucket: &AsyncFramePoolBucket = async_frame_pool_find_or_create_bucket(pool, desc.size, desc.align);
     if bucket == null {
-        // bucket 满了或者无法创建新 bucket：尝试 debug heap fallback
-        if pool.debug_heap_fallback != 0 {
+        // bucket 满了或者无法创建新 bucket：尝试 debug heap fallback（仅限非 buffer-backed pool）
+        if pool.buffer == null && pool.debug_heap_fallback != 0 {
             const ptr: &byte = malloc(desc.size) as &byte;
             if ptr != null {
                 pool.debug_heap_fallback_count = pool.debug_heap_fallback_count + 1;
@@ -260,8 +310,19 @@ export fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: u32) &byte {
     }
     // free list 空：如果总容量未满，malloc 新页（lazy commit 语义）
     if bucket.committed_count < bucket.capacity {
-        const ptr: &byte = malloc(desc.size) as &byte;
+        const ptr: &byte = async_frame_pool_alloc_from_buffer(pool, desc.size, desc.align);
         if ptr == null {
+            if pool.buffer == null && pool.debug_heap_fallback != 0 {
+                const heap_ptr: &byte = malloc(desc.size) as &byte;
+                if heap_ptr == null {
+                    pool.pool_full_count = pool.pool_full_count + 1;
+                    return null;
+                }
+                bucket.committed_count = bucket.committed_count + 1;
+                bucket.alloc_count = bucket.alloc_count + 1;
+                pool.total_alloc_count = pool.total_alloc_count + 1;
+                return heap_ptr;
+            }
             pool.pool_full_count = pool.pool_full_count + 1;
             return null;
         }
@@ -271,7 +332,7 @@ export fn async_frame_pool_alloc(pool: &AsyncFramePool, frame_id: u32) &byte {
         return ptr;
     }
     // bucket 容量满
-    if pool.debug_heap_fallback != 0 {
+    if pool.buffer == null && pool.debug_heap_fallback != 0 {
         const ptr: &byte = malloc(desc.size) as &byte;
         if ptr != null {
             pool.debug_heap_fallback_count = pool.debug_heap_fallback_count + 1;
@@ -291,7 +352,7 @@ export fn async_frame_pool_alloc_aligned(pool: &AsyncFramePool, size: usize, ali
     }
     const bucket: &AsyncFramePoolBucket = async_frame_pool_find_or_create_bucket(pool, size, align);
     if bucket == null {
-        if pool.debug_heap_fallback != 0 {
+        if pool.buffer == null && pool.debug_heap_fallback != 0 {
             const ptr: &byte = malloc(size) as &byte;
             if ptr != null {
                 pool.debug_heap_fallback_count = pool.debug_heap_fallback_count + 1;
@@ -310,8 +371,19 @@ export fn async_frame_pool_alloc_aligned(pool: &AsyncFramePool, size: usize, ali
         return ptr;
     }
     if bucket.committed_count < bucket.capacity {
-        const ptr: &byte = malloc(size) as &byte;
+        const ptr: &byte = async_frame_pool_alloc_from_buffer(pool, size, align);
         if ptr == null {
+            if pool.buffer == null && pool.debug_heap_fallback != 0 {
+                const heap_ptr: &byte = malloc(size) as &byte;
+                if heap_ptr == null {
+                    pool.pool_full_count = pool.pool_full_count + 1;
+                    return null;
+                }
+                bucket.committed_count = bucket.committed_count + 1;
+                bucket.alloc_count = bucket.alloc_count + 1;
+                pool.total_alloc_count = pool.total_alloc_count + 1;
+                return heap_ptr;
+            }
             pool.pool_full_count = pool.pool_full_count + 1;
             return null;
         }
@@ -320,7 +392,7 @@ export fn async_frame_pool_alloc_aligned(pool: &AsyncFramePool, size: usize, ali
         pool.total_alloc_count = pool.total_alloc_count + 1;
         return ptr;
     }
-    if pool.debug_heap_fallback != 0 {
+    if pool.buffer == null && pool.debug_heap_fallback != 0 {
         const ptr: &byte = malloc(size) as &byte;
         if ptr != null {
             pool.debug_heap_fallback_count = pool.debug_heap_fallback_count + 1;
@@ -340,6 +412,9 @@ export fn async_frame_pool_free_aligned(pool: &AsyncFramePool, ptr: &byte, size:
     }
     const bucket: &AsyncFramePoolBucket = async_frame_pool_find_or_create_bucket(pool, size, align);
     if bucket == null || bucket.slot_count >= bucket.capacity {
+        if async_frame_pool_ptr_in_buffer(pool, ptr) != 0 {
+            return;
+        }
         free(ptr as *void);
         return;
     }
@@ -365,6 +440,32 @@ export fn async_frame_pool_free(pool: &AsyncFramePool, ptr: &byte, frame_id: u32
 // 重置帧池（释放所有 bucket 中的内存到系统）
 export fn async_frame_pool_reset(pool: &AsyncFramePool) void {
     if pool == null {
+        return;
+    }
+    if pool.buffer != null {
+        var bi: i32 = 0;
+        while bi < pool.bucket_count {
+            const b: &AsyncFramePoolBucket = &pool.buckets[bi];
+            var bj: i32 = 0;
+            while bj < b.slot_count {
+                const p: &byte = b.slots[bj];
+                if p != null && async_frame_pool_ptr_in_buffer(pool, p) == 0 {
+                    free(p as *void);
+                }
+                b.slots[bj] = null;
+                bj = bj + 1;
+            }
+            b.slot_count = 0;
+            b.committed_count = 0;
+            b.alloc_count = 0;
+            b.free_count = 0;
+            bi = bi + 1;
+        }
+        pool.buffer_used = 0;
+        pool.total_alloc_count = 0;
+        pool.total_free_count = 0;
+        pool.pool_full_count = 0;
+        pool.debug_heap_fallback_count = 0;
         return;
     }
     var i: i32 = 0;
