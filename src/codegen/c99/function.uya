@@ -4359,16 +4359,19 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
         }
     }
 
-    const release_fields_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
-    if release_fields_name != null {
-        snprintf(release_fields_name as *byte, 256, "%s_fields" as *byte, release_name as *byte);
+    const frame_init_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+    if frame_init_name != null {
+        snprintf(frame_init_name as *byte, 256, "%s_frame_init" as *byte, func_c_name as *byte);
+    }
+    const frame_drop_fields_name: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
+    if frame_drop_fields_name != null {
+        snprintf(frame_drop_fields_name as *byte, 256, "%s_frame_drop_fields" as *byte, func_c_name as *byte);
     }
 
-    // 生成 release_fields 函数：只递归释放 child future，不释放自身 frame
-    // 供 caller-owned stack 内联时，由 parent release 调用
-    if release_fields_name != null {
-        fprintf(codegen.emit_stream as *void, "static void %s(void *self) {\n" as *byte, release_fields_name as *byte);
-        fprintf(codegen.emit_stream as *void, "    struct %s *s = (struct %s *)self;\n" as *byte, async_struct as *byte, async_struct as *byte);
+    // 生成 frame_drop_fields 函数：只递归释放 child future，不释放自身 frame
+    // 供 caller-owned stack 内联或显式 frame 持有时，由 parent / caller 调用
+    if frame_drop_fields_name != null {
+        fprintf(codegen.emit_stream as *void, "static void %s(struct %s *s) {\n" as *byte, frame_drop_fields_name as *byte, async_struct as *byte);
         fputs("    if (s == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
         fputs("    if (s->await_fut.data != (void*)0 && s->await_fut.vtable != (void*)0) {\n" as *byte, codegen.emit_stream as *void);
         fputs("        void (*_uya_rel)(void*) = (void (*)(void*))((void**)s->await_fut.vtable)[1];\n" as *byte, codegen.emit_stream as *void);
@@ -4380,13 +4383,48 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             if c99_async_await_operand_is_inlineable(codegen, await_operands[rel_i], &rel_inline_struct) != 0 && rel_inline_struct != null {
                 const child_rel_fields: &byte = compiler_arena_alloc(codegen.arena, 256) as &byte;
                 if child_rel_fields != null {
-                    snprintf(child_rel_fields as *byte, 256, "uya_%s_release_fields" as *byte, rel_inline_struct as *byte);
+                    const child_prefix_len: usize = strlen("uya_async_" as *byte);
+                    const child_key: &byte = &rel_inline_struct[child_prefix_len];
+                    snprintf(child_rel_fields as *byte, 256, "%s_frame_drop_fields" as *byte, child_key as *byte);
                     fprintf(codegen.emit_stream as *void, "    %s(&s->_uya_inline_await_%d);\n" as *byte, child_rel_fields as *byte, rel_i);
                 }
             }
             rel_i = rel_i + 1;
         }
         fputs("}\n" as *byte, codegen.emit_stream as *void);
+    }
+
+    // 生成 frame_init 函数：caller-owned storage 初始化入口
+    if frame_init_name != null {
+        fprintf(codegen.emit_stream as *void, "static void %s(struct %s *s" as *byte, frame_init_name as *byte, async_struct as *byte);
+        pi = 0;
+        while pi < param_count && pi < 16 {
+            const param: &ASTNode = params[pi];
+            if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_type != null && param.var_decl_name != null {
+                const ptype_c: &byte = c99_type_to_c(codegen, param.var_decl_type);
+                const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
+                if ptype_c != null && pname != null {
+                    fputs(", " as *byte, codegen.emit_stream as *void);
+                    fprintf(codegen.emit_stream as *void, "%s %s" as *byte, ptype_c as *byte, pname as *byte);
+                }
+            }
+            pi = pi + 1;
+        }
+        fputs(") {\n" as *byte, codegen.emit_stream as *void);
+        fputs("    if (s == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
+        fputs("    s->state = 0; __builtin_memset((void *)&s->await_fut, 0, sizeof(s->await_fut)); " as *byte, codegen.emit_stream as *void);
+        pi = 0;
+        while pi < param_count && pi < 16 {
+            const param: &ASTNode = params[pi];
+            if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_name != null {
+                const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
+                if pname != null {
+                    fprintf(codegen.emit_stream as *void, "s->%s = %s; " as *byte, pname as *byte, pname as *byte);
+                }
+            }
+            pi = pi + 1;
+        }
+        fputs("\n}\n" as *byte, codegen.emit_stream as *void);
     }
 
     // 生成 per-function 帧池分配器与 release 函数（无锁 CAS free list）
@@ -4419,8 +4457,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
 
     // 生成 release 函数：调用 release_fields 后归还 per-function free list
     fprintf(codegen.emit_stream as *void, "static void %s(void *self) {\n" as *byte, release_name as *byte);
-    if release_fields_name != null {
-        fprintf(codegen.emit_stream as *void, "    %s(self);\n" as *byte, release_fields_name as *byte);
+    if frame_drop_fields_name != null {
+        fprintf(codegen.emit_stream as *void, "    %s((struct %s *)self);\n" as *byte, frame_drop_fields_name as *byte, async_struct as *byte);
     } else {
         fprintf(codegen.emit_stream as *void, "    struct %s *s = (struct %s *)self;\n" as *byte, async_struct as *byte, async_struct as *byte);
         fputs("    if (s == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
@@ -4502,19 +4540,34 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     } else {
         fputs("    if (s == (void*)0) { abort(); }\n" as *byte, codegen.emit_stream as *void);
     }
-    fputs("    s->state = 0; __builtin_memset((void *)&s->await_fut, 0, sizeof(s->await_fut)); " as *byte, codegen.emit_stream as *void);
-    pi = 0;
-    while pi < param_count && pi < 16 {
-        const param: &ASTNode = params[pi];
-        if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_name != null {
-            const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
-            if pname != null {
-                fprintf(codegen.emit_stream as *void, "s->%s = %s; " as *byte, pname as *byte, pname as *byte);
+    if frame_init_name != null {
+        fprintf(codegen.emit_stream as *void, "    %s(s" as *byte, frame_init_name as *byte);
+        pi = 0;
+        while pi < param_count && pi < 16 {
+            const param: &ASTNode = params[pi];
+            if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_name != null {
+                const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
+                if pname != null {
+                    fprintf(codegen.emit_stream as *void, ", %s" as *byte, pname as *byte);
+                }
             }
+            pi = pi + 1;
         }
-        pi = pi + 1;
+        fputs(");\n" as *byte, codegen.emit_stream as *void);
+    } else {
+        fputs("    s->state = 0; __builtin_memset((void *)&s->await_fut, 0, sizeof(s->await_fut));\n" as *byte, codegen.emit_stream as *void);
+        pi = 0;
+        while pi < param_count && pi < 16 {
+            const param: &ASTNode = params[pi];
+            if param != null && param.type == ASTNodeType.AST_VAR_DECL && param.var_decl_name != null {
+                const pname: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
+                if pname != null {
+                    fprintf(codegen.emit_stream as *void, "    s->%s = %s;\n" as *byte, pname as *byte, pname as *byte);
+                }
+            }
+            pi = pi + 1;
+        }
     }
-    fputs("\n" as *byte, codegen.emit_stream as *void);
     if need_wrap != 0 {
         fprintf(codegen.emit_stream as *void, "    return (%s){ .error_id = 0, .value = (%s){ .vtable = (void*)&%s, .data = (void*)s } };\n" as *byte, wrapper_ret_c as *byte, iface_c as *byte, vtable_name as *byte);
     } else {

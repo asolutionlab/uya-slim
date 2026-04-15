@@ -122,7 +122,7 @@ extern var _uya_async_frame_descriptor_count: i32;
 extern var _uya_async_frame_heap_fallback: i32;
 
 // 默认全局异步帧池（懒初始化）
-var _uya_default_async_frame_pool: AsyncFramePool = AsyncFramePool{};
+var _uya_default_async_frame_pool: &AsyncFramePool = null;
 var _uya_default_async_frame_pool_initialized: i32 = 0;
 
 export fn async_frame_pool_default() &AsyncFramePool {
@@ -150,9 +150,12 @@ export fn async_frame_pool_default() &AsyncFramePool {
                 stack_limit = limit_i32 as usize;
             }
         }
-        async_frame_pool_init(&_uya_default_async_frame_pool, fallback, stack_limit);
+        _uya_default_async_frame_pool = malloc(@size_of(AsyncFramePool) as usize) as &AsyncFramePool;
+        if _uya_default_async_frame_pool != null {
+            async_frame_pool_init(_uya_default_async_frame_pool, fallback, stack_limit);
+        }
     }
-    return &_uya_default_async_frame_pool;
+    return _uya_default_async_frame_pool;
 }
 
 // 获取某个 frame_id 对应的 descriptor
