@@ -31,7 +31,7 @@ ulimit -s unlimited 2>/dev/null || ulimit -s 524288 2>/dev/null || true
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-COMPILER="$REPO_ROOT/bin/uya"
+COMPILER="${UYA_COMPILER:-$REPO_ROOT/bin/uya}"
 TEST_DIR="$SCRIPT_DIR"
 BUILD_DIR="$TEST_DIR/build"
 NETWORK_SKIP_MARKER="${TMPDIR:-/tmp}/uya_allow_skip_network"
@@ -215,7 +215,7 @@ done
 # 根据 --uya 选项设置编译器路径
 if [ "$USE_UYA" = true ]; then
     USE_C99=true
-    COMPILER="$REPO_ROOT/bin/uya"
+    COMPILER="${UYA_COMPILER:-$REPO_ROOT/bin/uya}"
 fi
 
 # 检查编译器是否存在

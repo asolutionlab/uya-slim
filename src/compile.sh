@@ -155,8 +155,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # src 目录
 UYA_SRC_DIR="$SCRIPT_DIR"
-# 编译器路径
-COMPILER="$REPO_ROOT/bin/uya"
+# 编译器路径（默认 bin/uya；hosted 分线可用 UYA_COMPILER 覆盖）
+COMPILER="${UYA_COMPILER:-$REPO_ROOT/bin/uya}"
 # 默认输出目录（中间文件）
 BUILD_DIR="$REPO_ROOT/src/build"
 # 最终二进制输出目录

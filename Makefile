@@ -149,18 +149,20 @@ uya-hosted:
 	@echo "构建自举编译器 (uya-hosted)"
 	@echo "使用 hosted 链接路径"
 	@echo "=========================================="
-	@if [ ! -f bin/uya ]; then \
-		echo "bin/uya 不存在，从备份构建..."; \
-		$(MAKE) from-c; \
+	@if [ ! -f bin/uya ] && [ ! -f bin/uya-hosted ]; then \
+		echo "错误: bin/uya 与 bin/uya-hosted 均不存在。"; \
+		echo "hosted 主线无法使用 Linux nostdlib 的 backup/uya.c 在 macOS 上 from-c。"; \
+		echo "请先准备一个可运行的 hosted 编译器（例如从 Linux 拷贝 bin/uya-hosted），或参考 docs/macos_hosted_smoke.md"; \
+		exit 1; \
 	fi
-	@echo "使用 bin/uya 编译 src/ ..."
+	@echo "使用 hosted 编译器编译 src/ ..."
 	@echo "TARGET_OS=$(TARGET_OS) TARGET_ARCH=$(TARGET_ARCH) TARGET_TRIPLE=$(TARGET_TRIPLE)"
-	@bash -c 'ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --no-safety-proof'
+	@bash -c 'set -e; UYA_COMPILER_PATH=""; if [ -f "../bin/uya-hosted" ]; then UYA_COMPILER_PATH="../bin/uya-hosted"; else UYA_COMPILER_PATH="../bin/uya"; fi; ulimit -s 32768 && cd src && UYA_COMPILER="$$UYA_COMPILER_PATH" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e --name uya-hosted --no-safety-proof'
 	@echo ""
 	@echo "更新 bin/uya.c（若存在单文件 src/build/uya.c）…"
 	@if [ -f src/build/uya.c ]; then cp src/build/uya.c bin/uya.c && echo "✓ bin/uya.c 已更新"; else echo "（多文件 C：未生成 src/build/uya.c；单文件见 make backup-seed）"; fi
 	@echo ""
-	@echo "✓ 自举编译器构建完成: bin/uya（hosted）"
+	@echo "✓ 自举编译器构建完成: bin/uya-hosted（hosted）"
 	@echo ""
 	@echo "提示: 运行 'make b-hosted' 验证 hosted 自举"
 
@@ -198,7 +200,7 @@ b-hosted: uya-hosted
 	@echo "=========================================="
 	@echo "hosted 自举验证：编译器编译自身，验证输出一致性"
 	@echo "=========================================="
-	@bash -c 'ulimit -s 32768 && cd src && UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e -b --no-safety-proof'
+	@bash -c 'ulimit -s 32768 && cd src && UYA_COMPILER="../bin/uya-hosted" UYA_MULTI_FILE_C=1 UYA_SPLIT_C_DIR= UYA_SPLIT_C_MIRROR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" ./compile.sh --c99 -e -b --name uya-hosted --no-safety-proof'
 	@echo ""
 	@echo "✓ hosted 自举验证完成"
 
@@ -237,9 +239,9 @@ tests-hosted:
 	echo "=========================================="; \
 	$(MAKE) uya-hosted >/dev/null 2>&1; \
 	if [ "$$HAS_E" = "yes" ]; then \
-		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 -e $$OTHER_ARGS; \
+		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_COMPILER="$(PWD)/bin/uya-hosted" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 -e $$OTHER_ARGS; \
 	else \
-		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 $$OTHER_ARGS; \
+		PARALLEL_JOBS="$(UYA_TEST_JOBS)" UYA_COMPILER="$(PWD)/bin/uya-hosted" UYA_SPLIT_C=0 UYA_SPLIT_C_DIR= CC="$(CC)" CC_DRIVER="$(CC_DRIVER)" CC_TARGET_FLAGS="$(CC_TARGET_FLAGS)" HOST_OS="$(HOST_OS)" HOST_ARCH="$(HOST_ARCH)" TARGET_OS="$(TARGET_OS)" TARGET_ARCH="$(TARGET_ARCH)" TARGET_TRIPLE="$(TARGET_TRIPLE)" TOOLCHAIN="$(TOOLCHAIN)" ZIG="$(ZIG)" RUNTIME_MODE=hosted LINK_MODE="$(LINK_MODE)" TEST_PROFILE=hosted ./tests/run_programs_parallel.sh --uya --c99 $$OTHER_ARGS; \
 	fi; \
 	TS=$$?; \
 	echo ""; \
