@@ -105,7 +105,7 @@
 - [x] 保证 frame 元数据与 `mono_instances` 使用一致的单态化入口（已遍历 `mono_instances` 匹配 `func_c_name`）
 
 相关文件：
-- [ ] `src/lower/async.uya`（可选新增；当前未拆 lowering 模块，暂不创建）
+- [x] `src/lower/async.uya`（已新增：`src/lower/async.uya` 负责 async 状态机的 AST 级分析/决策；当前已将保守逃逸分析、`async_lower_expr_is_async_call` 等纯分析逻辑从 `src/codegen/c99/function.uya` 迁移至此，codegen 保留 C 代码发射）
 - [x] `src/codegen/c99/function.uya`
 - [x] `src/codegen/c99/internal.uya`
 - [x] `src/checker/async_frame_meta.uya`（新增）
@@ -128,7 +128,7 @@
 ### 2.2 选择池策略
 
 - [x] **按 descriptor 的 `(size, align)` 做 size class 分桶，每桶一个固定容量 free list；align 不同的 frame 不能共享同一桶；`frame_id` 用于查 descriptor，不直接等同于 size class**
-- [ ] 可选按 scheduler / event loop 切分（同一 event loop 内的任务共享 pool，不推荐按 OS 线程切分）
+- [x] 可选按 scheduler / event loop 切分（`Scheduler` 已持有 `_frame_pool: AsyncFramePool`；`scheduler_new` 初始化 pool；所有 `scheduler_run_*` 入口通过 `scheduler_pool_to_allocator` + `defer set_async_frame_allocator(...)` 将 scheduler-local pool 注入线程本地 allocator；同 scheduler/event loop 内任务共享 pool，跨 scheduler 隔离；`block_on_with_event_loop` 等无 Scheduler 参数的入口保持原行为）
 - [x] 预留统计字段：alloc 次数、free 次数、pool 满次数、debug heap 回退次数（已定义在 `AsyncFramePool` 中，并通过 `async_frame_pool_stats` 暴露；`test_async_frame_pool_stats.uya` 已覆盖 fallback 计数）
 
 ### 2.3 调试开关

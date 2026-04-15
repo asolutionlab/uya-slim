@@ -8,6 +8,8 @@
 
 use std.async;
 use std.async_event;
+use std.async_frame;
+use std.mem.allocator.IAllocator;
 use libc.syscall;
 
 error TaskQueueFull;
@@ -165,18 +167,36 @@ export fn task_queue_i32_new() TaskQueue_i32 {
     return TaskQueue_i32{ len: 0 };
 }
 
-/// 调度器。当前为单任务最小实现；后续可扩展为持有队列与 EventLoop 的完整运行时。
-export struct Scheduler {}
+/// 调度器。持有 async frame pool，同 scheduler 内的任务共享 pool 分配器。
+export struct Scheduler {
+    _frame_pool: AsyncFramePool,
+}
 
-/// 创建调度器。
+/// 辅助：将 AsyncFramePool 值装箱为 IAllocator（利用 return 隐式转换）。
+fn scheduler_pool_to_allocator(pool: AsyncFramePool) IAllocator {
+    return pool;
+}
+
+/// 创建调度器并初始化其 async frame pool。
 export fn scheduler_new() Scheduler {
-    return Scheduler{};
+    var s: Scheduler = [];
+    async_frame_pool_init(&s._frame_pool, 0, 65536);
+    return s;
+}
+
+/// 获取调度器绑定的 async frame pool。
+export fn scheduler_frame_pool(self: &Scheduler) &AsyncFramePool {
+    return &self._frame_pool;
 }
 
 /// 同步运行 Future<!T> 直到 Ready，返回 !T。
 /// 忙等待轮询（与 std.async.block_on<T> 同逻辑）；此处内联实现，避免单态 `scheduler_run_*` 依赖未单独发射的 `std_block_on_*` 符号。
+/// 运行期间将 scheduler 的 frame pool 注入线程本地 allocator，返回前恢复。
 export fn scheduler_run<T>(self: &Scheduler, f: Future<!T>) !T {
-    _ = self;
+    const alloc: IAllocator = scheduler_pool_to_allocator(self._frame_pool);
+    const old_alloc: &IAllocator = _uya_thread_local_async_frame_allocator;
+    set_async_frame_allocator(&alloc);
+    defer { set_async_frame_allocator(old_alloc); }
     var w: Waker = Waker{};
     while true {
         w.reset();
@@ -191,8 +211,12 @@ export fn scheduler_run<T>(self: &Scheduler, f: Future<!T>) !T {
 
 /// 运行 Future<!T>，当 poll 返回 Pending 时主动驱动 EventLoop 一次后再重试。
 /// 当前仍是单任务/顺序轮询模型，后续再扩展为真正的任务队列与 Waker 调度。
+/// 运行期间将 scheduler 的 frame pool 注入线程本地 allocator，返回前恢复。
 export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f: Future<!T>, timeout_ms: i32) !T {
-    _ = self;
+    const alloc: IAllocator = scheduler_pool_to_allocator(self._frame_pool);
+    const old_alloc: &IAllocator = _uya_thread_local_async_frame_allocator;
+    set_async_frame_allocator(&alloc);
+    defer { set_async_frame_allocator(old_alloc); }
     var w: Waker = Waker{};
     while true {
         w.reset();
@@ -240,8 +264,12 @@ export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f:
 
 /// 使用共享 EventLoop 运行两个 i32 任务，直到二者都完成。
 /// 这是迈向通用任务队列前的最小多任务入口，可验证单轮统一注册/轮询/唤醒。
+/// 运行期间将 scheduler 的 frame pool 注入线程本地 allocator，返回前恢复。
 export fn scheduler_run_pair_i32_with_event_loop(self: &Scheduler, loop: EventLoop, first: Future<!i32>, second: Future<!i32>, first_result: &i32, second_result: &i32, timeout_ms: i32) !i32 {
-    _ = self;
+    const alloc: IAllocator = scheduler_pool_to_allocator(self._frame_pool);
+    const old_alloc: &IAllocator = _uya_thread_local_async_frame_allocator;
+    set_async_frame_allocator(&alloc);
+    defer { set_async_frame_allocator(old_alloc); }
     var first_done: i32 = 0;
     var second_done: i32 = 0;
     var first_waker: Waker = Waker{};
@@ -326,8 +354,12 @@ export fn scheduler_run_pair_i32_with_event_loop(self: &Scheduler, loop: EventLo
 
 /// 使用共享 EventLoop 运行固定容量的 i32 任务队列，直到全部完成。
 /// 已注册 epoll 等待的 slot 持续保留注册状态，实现真正的多 fd 并发调度。
+/// 运行期间将 scheduler 的 frame pool 注入线程本地 allocator，返回前恢复。
 export fn scheduler_run_task_queue_i32_with_event_loop(self: &Scheduler, loop: EventLoop, queue: &TaskQueue_i32, timeout_ms: i32) !i32 {
-    _ = self;
+    const alloc: IAllocator = scheduler_pool_to_allocator(self._frame_pool);
+    const old_alloc: &IAllocator = _uya_thread_local_async_frame_allocator;
+    set_async_frame_allocator(&alloc);
+    defer { set_async_frame_allocator(old_alloc); }
     var completed: i32 = 0;
 
     while completed < queue.len {
