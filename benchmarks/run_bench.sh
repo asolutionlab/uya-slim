@@ -27,6 +27,7 @@ UYA_ASYNC_AWAIT_ENTRY="http_bench_async_epoll_await.uya"
 UYA_ASYNC_AWAIT_SIMPLE_ENTRY="http_bench_async_epoll_await_simple.uya"
 UYA_ASYNC_AWAIT_STACK_ENTRY="http_bench_async_epoll_await_stack.uya"
 C_SRC="${SCRIPT_DIR}/http_bench.c"
+C_ASYNC_EPOLL_SRC="${SCRIPT_DIR}/http_bench_async_epoll.c"
 export UYA_ROOT="${UYA_ROOT:-${SCRIPT_DIR}/../lib/}"
 
 # 编译输出
@@ -38,6 +39,7 @@ UYA_ASYNC_AWAIT_EXEC="/tmp/http_bench_async_epoll_await"
 UYA_ASYNC_AWAIT_SIMPLE_EXEC="/tmp/http_bench_async_epoll_await_simple"
 UYA_ASYNC_AWAIT_STACK_EXEC="/tmp/http_bench_async_epoll_await_stack"
 C_EXEC="/tmp/http_bench_c"
+C_ASYNC_EPOLL_EXEC="/tmp/http_bench_c_async_epoll"
 TOKIO_DIR="${SCRIPT_DIR}/http_bench_tokio"
 TOKIO_EXEC="/tmp/http_bench_tokio"
 
@@ -72,6 +74,7 @@ cleanup_http_bench_processes() {
     pkill -9 -f "http_bench_async_epoll_await" 2>/dev/null || true
     pkill -9 -f "http_bench_async_epoll" 2>/dev/null || true
     pkill -9 -f "http_bench_go" 2>/dev/null || true
+    pkill -9 -f "http_bench_c_async_epoll" 2>/dev/null || true
     pkill -9 -f "http_bench_c" 2>/dev/null || true
     pkill -9 -f "http_bench_tokio" 2>/dev/null || true
 }
@@ -249,6 +252,17 @@ build_c() {
     log_info "C 版本编译完成: $C_EXEC"
 }
 
+# 编译 C async epoll 版本
+build_c_async_epoll() {
+    log_info "编译 C async epoll HTTP 服务器..."
+    if [ ! -f "$C_ASYNC_EPOLL_SRC" ]; then
+        log_err "找不到 C async epoll 源文件: $C_ASYNC_EPOLL_SRC"
+        exit 1
+    fi
+    cc -O3 -Wall -Wextra -pthread -o "$C_ASYNC_EPOLL_EXEC" "$C_ASYNC_EPOLL_SRC"
+    log_info "C async epoll 版本编译完成: $C_ASYNC_EPOLL_EXEC"
+}
+
 # 运行服务器并执行基准测试
 run_benchmark() {
     local name="$1"
@@ -405,7 +419,8 @@ save_baseline() {
     local uya_async_await_stack_root_rps="$6"
     local go_root_rps="$7"
     local c_root_rps="$8"
-    local tokio_root_rps="$9"
+    local c_async_epoll_root_rps="$9"
+    local tokio_root_rps="${10}"
     local timestamp
     timestamp=$(date -Iseconds)
 
@@ -438,6 +453,7 @@ save_baseline() {
       "uya_async_epoll_await_stack_qps": ${uya_async_await_stack_root_rps:-0},
       "go_qps": ${go_root_rps:-0},
       "c_qps": ${c_root_rps:-0},
+      "c_async_epoll_qps": ${c_async_epoll_root_rps:-0},
       "tokio_qps": ${tokio_root_rps:-0}
     }
   }
@@ -462,6 +478,7 @@ main() {
     build_uya_async_await_simple
     build_uya_async_await_stack
     build_c
+    build_c_async_epoll
     local have_go=0
     if build_go; then
         have_go=1
@@ -484,6 +501,7 @@ main() {
     local uya_fork_result
     local go_result
     local c_result
+    local c_async_epoll_result
     local uya_epoll_result
     local uya_async_await_result
     local uya_async_await_simple_result
@@ -510,6 +528,8 @@ main() {
     sleep 1
     c_result=$(run_benchmark_safe "C" "$C_EXEC" "$PORT" "$URL")
     sleep 1
+    c_async_epoll_result=$(run_benchmark_safe "C-async-epoll" "$C_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
+    sleep 1
     if [ "$have_tokio" -eq 1 ]; then
         tokio_result=$(run_benchmark_safe "Tokio" "$TOKIO_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
         tokio_rps=$(echo "$tokio_result" | awk -F'|' '{print $8}')
@@ -532,6 +552,7 @@ main() {
     uya_async_await_stack_rps=$(result_field "$uya_async_await_stack_result" 8)
     go_rps=$(result_field "$go_result" 8)
     c_rps=$(result_field "$c_result" 8)
+    c_async_epoll_rps=$(result_field "$c_async_epoll_result" 8)
     tokio_rps=$(result_field "$tokio_result" 8)
     if [ -z "$uya_rps" ]; then uya_rps=0; fi
     if [ -z "$uya_fork_rps" ]; then uya_fork_rps=0; fi
@@ -551,6 +572,7 @@ main() {
     local uya_async_await_simple_ka_result
     local go_ka_result
     local c_ka_result
+    local c_async_epoll_ka_result
     local tokio_ka_result
     local uya_ka=0
     local tokio_ka=0
@@ -587,6 +609,7 @@ main() {
         go_ka_result="Go|0|0|0"
     fi
     c_ka_result=$(run_keepalive_probe_safe "C" "$C_EXEC" "$PORT" "$URL")
+    c_async_epoll_ka_result=$(run_keepalive_probe_safe "C-async-epoll" "$C_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
     if [ "$have_tokio" -eq 1 ]; then
         tokio_ka_result=$(run_keepalive_probe_safe "Tokio" "$TOKIO_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
         tokio_ka=$(echo "$tokio_ka_result" | awk -F'|' '{print $2}' | tr -d '\r\n ')
@@ -603,6 +626,7 @@ main() {
     uya_async_await_simple_ka=$(result_field "$uya_async_await_simple_ka_result" 2)
     go_ka=$(result_field "$go_ka_result" 2)
     c_ka=$(result_field "$c_ka_result" 2)
+    c_async_epoll_ka=$(result_field "$c_async_epoll_ka_result" 2)
     tokio_ka=$(result_field "$tokio_ka_result" 2)
     uya_ka_failed=$(result_field "$uya_ka_result" 3)
     uya_fork_ka_failed=$(result_field "$uya_fork_ka_result" 3)
@@ -611,6 +635,7 @@ main() {
     uya_async_await_simple_ka_failed=$(result_field "$uya_async_await_simple_ka_result" 3)
     go_ka_failed=$(result_field "$go_ka_result" 3)
     c_ka_failed=$(result_field "$c_ka_result" 3)
+    c_async_epoll_ka_failed=$(result_field "$c_async_epoll_ka_result" 3)
     tokio_ka_failed=$(result_field "$tokio_ka_result" 3)
     uya_ka_rps=$(result_field "$uya_ka_result" 4)
     uya_fork_ka_rps=$(result_field "$uya_fork_ka_result" 4)
@@ -619,6 +644,7 @@ main() {
     uya_async_await_simple_ka_rps=$(result_field "$uya_async_await_simple_ka_result" 4)
     go_ka_rps=$(result_field "$go_ka_result" 4)
     c_ka_rps=$(result_field "$c_ka_result" 4)
+    c_async_epoll_ka_rps=$(result_field "$c_async_epoll_ka_result" 4)
     tokio_ka_rps=$(result_field "$tokio_ka_result" 4)
     if [ -z "$uya_ka" ]; then uya_ka=0; fi
     if [ -z "$uya_fork_ka" ]; then uya_fork_ka=0; fi
@@ -656,16 +682,17 @@ main() {
     printf "| %-28s | %-12s | %-14s | %-12s | %-12s |\n" "Uya-async-await-simple" "${uya_async_await_simple_rps:-0}" "${uya_async_await_simple_ka:-0}" "${uya_async_await_simple_ka_failed:-0}" "${uya_async_await_simple_ka_rps:-0}"
     printf "| %-28s | %-12s | %-14s | %-12s | %-12s |\n" "Go" "${go_rps:-0}" "${go_ka:-0}" "${go_ka_failed:-0}" "${go_ka_rps:-0}"
     printf "| %-28s | %-12s | %-14s | %-12s | %-12s |\n" "C" "${c_rps:-0}" "${c_ka:-0}" "${c_ka_failed:-0}" "${c_ka_rps:-0}"
+    printf "| %-28s | %-12s | %-14s | %-12s | %-12s |\n" "C-async-epoll" "${c_async_epoll_rps:-0}" "${c_async_epoll_ka:-0}" "${c_async_epoll_ka_failed:-0}" "${c_async_epoll_ka_rps:-0}"
     printf "| %-28s | %-12s | %-14s | %-12s | %-12s |\n" "Tokio" "${tokio_rps:-0}" "${tokio_ka:-0}" "${tokio_ka_failed:-0}" "${tokio_ka_rps:-0}"
     echo "=========================================="
 
     # 保存基线（如果指定）
     if [ "$1" = "--baseline" ]; then
-        save_baseline "$uya_rps" "$uya_fork_rps" "$uya_epoll_rps" "$uya_async_await_rps" "$uya_async_await_simple_rps" "$go_rps" "$c_rps" "${tokio_rps:-0}"
+        save_baseline "$uya_rps" "$uya_fork_rps" "$uya_epoll_rps" "$uya_async_await_rps" "$uya_async_await_simple_rps" "$uya_async_await_stack_rps" "$go_rps" "$c_rps" "$c_async_epoll_rps" "${tokio_rps:-0}"
     fi
 
     # 清理
-    rm -f "$GO_EXEC" "$C_EXEC" "$UYA_HTTP_EXEC" "$UYA_FORK_EXEC" "$UYA_ASYNC_EPOLL_EXEC" "$UYA_ASYNC_AWAIT_EXEC" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" "$TOKIO_EXEC"
+    rm -f "$GO_EXEC" "$C_EXEC" "$C_ASYNC_EPOLL_EXEC" "$UYA_HTTP_EXEC" "$UYA_FORK_EXEC" "$UYA_ASYNC_EPOLL_EXEC" "$UYA_ASYNC_AWAIT_EXEC" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" "$UYA_ASYNC_AWAIT_STACK_EXEC" "$TOKIO_EXEC"
 
     log_info "基准测试完成"
 }
