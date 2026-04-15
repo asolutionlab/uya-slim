@@ -4,15 +4,76 @@
 // 提供：Waker、interface Future<T>、struct Future<T> 占位、Task<T>、Poll<T>。
 
 use libc.heap;
+use libc.pthread;
 use std.async_frame;
 use std.mem.allocator.IAllocator;
 
-/// 线程本地 async frame 分配器（由 codegen 读取）
-var _uya_thread_local_async_frame_allocator: &IAllocator = null;
+/// 线程本地 async frame 分配器（通过 pthread TSD 绑定）
+var _uya_async_frame_allocator_once: pthread_once_t = pthread_once_t{ state: 0 };
+var _uya_async_frame_allocator_key: pthread_key_t = pthread_key_t{ seq: 0, destructor: null };
+
+fn _uya_init_async_frame_allocator_key(_unused: &void) &void {
+    _ = _unused;
+    _ = pthread_key_create(&_uya_async_frame_allocator_key, null as &void);
+    return null as &void;
+}
 
 /// 设置当前线程的 async frame 分配器
 export fn set_async_frame_allocator(alloc: &IAllocator) void {
-    _uya_thread_local_async_frame_allocator = alloc;
+    pthread_once(&_uya_async_frame_allocator_once, &_uya_init_async_frame_allocator_key as &void);
+    if _uya_async_frame_allocator_key.seq <= 0 {
+        return;
+    }
+    _ = pthread_setspecific(_uya_async_frame_allocator_key, alloc as &void);
+}
+
+/// 获取当前线程的 async frame 分配器；未设置或初始化失败时返回 null。
+export fn get_async_frame_allocator() &IAllocator {
+    pthread_once(&_uya_async_frame_allocator_once, &_uya_init_async_frame_allocator_key as &void);
+    if _uya_async_frame_allocator_key.seq <= 0 {
+        return null;
+    }
+    return pthread_getspecific(_uya_async_frame_allocator_key) as &IAllocator;
+}
+
+/// 供接口 box / async helper 复用的分配入口：优先当前线程的 async frame allocator。
+export fn async_box_alloc_current(size: usize) &byte {
+    const header_size: usize = @size_of(usize) * 2;
+    const total_size: usize = header_size + size;
+    const alloc: &IAllocator = get_async_frame_allocator();
+    var raw_ptr: &byte = null;
+    if alloc != null {
+        const boxed: !&byte = alloc.alloc(total_size);
+        raw_ptr = boxed catch {
+            return null;
+        };
+    } else {
+        raw_ptr = malloc(total_size) as &byte;
+        if raw_ptr == null {
+            return null;
+        }
+    }
+    const header: &usize = raw_ptr as &usize;
+    *header = @usize_from_ptr(alloc as &void);
+    header[1] = size;
+    return (raw_ptr as usize + header_size) as &byte;
+}
+
+/// 与 `async_box_alloc_current` 配对的释放入口。
+export fn async_box_free_current(ptr: &byte) void {
+    if ptr == null {
+        return;
+    }
+    const header_size: usize = @size_of(usize) * 2;
+    const raw_ptr: &byte = (ptr as usize - header_size) as &byte;
+    const header: &usize = raw_ptr as &usize;
+    const alloc_ptr: usize = *header;
+    if alloc_ptr != 0 {
+        const alloc: &IAllocator = @ptr_from_usize(alloc_ptr) as &IAllocator;
+        alloc.dealloc(raw_ptr);
+        return;
+    }
+    free(raw_ptr as &void);
 }
 
 /// 异步运行时统一错误类型
@@ -96,7 +157,7 @@ export struct Future<T> : Future<T> {
     }
 
     fn release(self: &Self) void {
-        _ = self;
+        async_box_free_current(self as &byte);
     }
 }
 
@@ -109,7 +170,7 @@ export struct Task<T> : Future<T> {
     }
 
     fn release(self: &Self) void {
-        _ = self;
+        async_box_free_current(self as &byte);
     }
 }
 
@@ -387,7 +448,7 @@ struct AsyncFdWriteFuture : Future<!usize> {
     }
 
     fn release(self: &Self) void {
-        _ = self;
+        async_box_free_current(self as &byte);
     }
 }
 
@@ -432,7 +493,7 @@ struct AsyncFdReadFuture : Future<!usize> {
     }
 
     fn release(self: &Self) void {
-        _ = self;
+        async_box_free_current(self as &byte);
     }
 }
 
@@ -460,7 +521,7 @@ export fn async_fd_new(fd: i32) AsyncFd {
     return AsyncFd{ fd: fd };
 }
 
-/// 返回具体 `AsyncFdReadFuture`，供 `@await` 路径使用（对接口方法 `AsyncReader.read` 的直接 `@await` 在 C 代码生成阶段可能无法识别）。
+/// 返回具体 `AsyncFdReadFuture`，供 `@await` 路径使用（接口返回，由 compiler box）。
 export fn async_fd_read_future(fd: i32, buf: &byte, count: usize) Future<!usize> {
     return AsyncFdReadFuture{ fd: fd, buf: buf, count: count };
 }

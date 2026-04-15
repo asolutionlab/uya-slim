@@ -73,7 +73,7 @@ struct BenchAcceptFuture : Future<!i32> {
     }
 
     fn release(self: &Self) void {
-        free(self as &void);
+        async_box_free_current(self as &byte);
     }
 }
 

@@ -1094,7 +1094,7 @@ fn gen_return_normal(codegen: &C99CodeGenerator, expr: &ASTNode, return_type: &A
                 const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
                 codegen.needs_stdlib_h = 1;
                 c99_emit_indent(codegen);
-                fprintf(codegen.emit_stream as *void, "struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s));\n" as *byte,
+                fprintf(codegen.emit_stream as *void, "struct %s *_uya_box = (struct %s *)std_async_box_alloc_current(sizeof(struct %s));\n" as *byte,
                     safe_struct as *byte, safe_struct as *byte, safe_struct as *byte);
                 c99_emit_indent(codegen);
                 fprintf(codegen.emit_stream as *void, "if (_uya_box != (void*)0) { *_uya_box = " as *byte);
@@ -1268,7 +1268,7 @@ fn gen_return_error_union(codegen: &C99CodeGenerator, expr: &ASTNode, return_typ
                         const safe_iface: &byte = get_safe_c_identifier(codegen, iface_mono);
                         const safe_struct: &byte = get_safe_c_identifier(codegen, struct_mono);
                         codegen.needs_stdlib_h = 1;
-                        fprintf(codegen.emit_stream as *void, "struct %s *_uya_box = (struct %s *)malloc(sizeof(struct %s));\n" as *byte,
+                        fprintf(codegen.emit_stream as *void, "struct %s *_uya_box = (struct %s *)std_async_box_alloc_current(sizeof(struct %s));\n" as *byte,
                             safe_struct as *byte, safe_struct as *byte, safe_struct as *byte);
                         c99_emit_indent(codegen);
                         fprintf(codegen.emit_stream as *void, "if (_uya_box != (void*)0) { *_uya_box = " as *byte);

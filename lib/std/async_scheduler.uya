@@ -194,7 +194,7 @@ export fn scheduler_frame_pool(self: &Scheduler) &AsyncFramePool {
 /// 运行期间将 scheduler 的 frame pool 注入线程本地 allocator，返回前恢复。
 export fn scheduler_run<T>(self: &Scheduler, f: Future<!T>) !T {
     const alloc: IAllocator = scheduler_pool_to_allocator(self._frame_pool);
-    const old_alloc: &IAllocator = _uya_thread_local_async_frame_allocator;
+    const old_alloc: &IAllocator = get_async_frame_allocator();
     set_async_frame_allocator(&alloc);
     defer { set_async_frame_allocator(old_alloc); }
     var w: Waker = Waker{};
@@ -214,7 +214,7 @@ export fn scheduler_run<T>(self: &Scheduler, f: Future<!T>) !T {
 /// 运行期间将 scheduler 的 frame pool 注入线程本地 allocator，返回前恢复。
 export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f: Future<!T>, timeout_ms: i32) !T {
     const alloc: IAllocator = scheduler_pool_to_allocator(self._frame_pool);
-    const old_alloc: &IAllocator = _uya_thread_local_async_frame_allocator;
+    const old_alloc: &IAllocator = get_async_frame_allocator();
     set_async_frame_allocator(&alloc);
     defer { set_async_frame_allocator(old_alloc); }
     var w: Waker = Waker{};
@@ -267,7 +267,7 @@ export fn scheduler_run_with_event_loop<T>(self: &Scheduler, loop: EventLoop, f:
 /// 运行期间将 scheduler 的 frame pool 注入线程本地 allocator，返回前恢复。
 export fn scheduler_run_pair_i32_with_event_loop(self: &Scheduler, loop: EventLoop, first: Future<!i32>, second: Future<!i32>, first_result: &i32, second_result: &i32, timeout_ms: i32) !i32 {
     const alloc: IAllocator = scheduler_pool_to_allocator(self._frame_pool);
-    const old_alloc: &IAllocator = _uya_thread_local_async_frame_allocator;
+    const old_alloc: &IAllocator = get_async_frame_allocator();
     set_async_frame_allocator(&alloc);
     defer { set_async_frame_allocator(old_alloc); }
     var first_done: i32 = 0;
@@ -357,7 +357,7 @@ export fn scheduler_run_pair_i32_with_event_loop(self: &Scheduler, loop: EventLo
 /// 运行期间将 scheduler 的 frame pool 注入线程本地 allocator，返回前恢复。
 export fn scheduler_run_task_queue_i32_with_event_loop(self: &Scheduler, loop: EventLoop, queue: &TaskQueue_i32, timeout_ms: i32) !i32 {
     const alloc: IAllocator = scheduler_pool_to_allocator(self._frame_pool);
-    const old_alloc: &IAllocator = _uya_thread_local_async_frame_allocator;
+    const old_alloc: &IAllocator = get_async_frame_allocator();
     set_async_frame_allocator(&alloc);
     defer { set_async_frame_allocator(old_alloc); }
     var completed: i32 = 0;
