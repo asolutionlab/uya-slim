@@ -602,16 +602,16 @@ main() {
     local URL="http://127.0.0.1:$PORT/"
 
     # 初始化结果
-    local uya_http_result="Uya|0|0|0|0|0|0|0"
-    local uya_fork_result="Uya-fork|0|0|0|0|0|0|0"
-    local uya_epoll_result="Uya-async-epoll|0|0|0|0|0|0|0"
-    local uya_async_await_result="Uya-async-await|0|0|0|0|0|0|0"
-    local uya_async_await_simple_result="Uya-async-await-simple|0|0|0|0|0|0|0"
-    local uya_async_await_stack_result="Uya-async-await-stack|0|0|0|0|0|0|0"
-    local go_result="Go|0|0|0|0|0|0|0"
-    local c_result="C|0|0|0|0|0|0|0"
-    local c_async_epoll_result="C-async-epoll|0|0|0|0|0|0|0"
-    local tokio_result="Tokio|0|0|0|0|0|0|0"
+    local uya_http_result="http_bench.uya|0|0|0|0|0|0|0"
+    local uya_fork_result="http_bench_fork.uya|0|0|0|0|0|0|0"
+    local uya_epoll_result="http_bench_async_epoll.uya|0|0|0|0|0|0|0"
+    local uya_async_await_result="http_bench_async_epoll_await.uya|0|0|0|0|0|0|0"
+    local uya_async_await_simple_result="http_bench_async_epoll_await_simple.uya|0|0|0|0|0|0|0"
+    local uya_async_await_stack_result="http_bench_async_epoll_await_stack.uya|0|0|0|0|0|0|0"
+    local go_result="http_bench.go|0|0|0|0|0|0|0"
+    local c_result="http_bench.c|0|0|0|0|0|0|0"
+    local c_async_epoll_result="http_bench_async_epoll.c|0|0|0|0|0|0|0"
+    local tokio_result="http_bench_tokio|0|0|0|0|0|0|0"
     local tokio_rps=0
 
     # 预热
@@ -626,43 +626,43 @@ main() {
 
     # wrk 基准测试
     if bench_enabled "uya"; then
-        uya_http_result=$(run_benchmark_safe "Uya" "$UYA_HTTP_EXEC" "$PORT" "$URL")
+        uya_http_result=$(run_benchmark_safe "http_bench.uya" "$UYA_HTTP_EXEC" "$PORT" "$URL")
         sleep 1
     fi
     if bench_enabled "uya-fork"; then
-        uya_fork_result=$(run_benchmark_safe "Uya-fork" "$UYA_FORK_EXEC" "$PORT" "$URL")
+        uya_fork_result=$(run_benchmark_safe "http_bench_fork.uya" "$UYA_FORK_EXEC" "$PORT" "$URL")
         sleep 1
     fi
     if bench_enabled "uya-async-epoll"; then
-        uya_epoll_result=$(run_benchmark_safe "Uya-async-epoll" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
+        uya_epoll_result=$(run_benchmark_safe "http_bench_async_epoll.uya" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
         sleep 1
     fi
     if bench_enabled "uya-async-await"; then
-        uya_async_await_result=$(run_benchmark_safe "Uya-async-await" "$UYA_ASYNC_AWAIT_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
+        uya_async_await_result=$(run_benchmark_safe "http_bench_async_epoll_await.uya" "$UYA_ASYNC_AWAIT_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
         sleep 1
     fi
     if bench_enabled "uya-async-await-simple"; then
-        uya_async_await_simple_result=$(run_benchmark_safe "Uya-async-await-simple" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
+        uya_async_await_simple_result=$(run_benchmark_safe "http_bench_async_epoll_await_simple.uya" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
         sleep 1
     fi
     if bench_enabled "uya-async-await-stack"; then
-        uya_async_await_stack_result=$(run_benchmark_safe "Uya-async-await-stack" "$UYA_ASYNC_AWAIT_STACK_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
+        uya_async_await_stack_result=$(run_benchmark_safe "http_bench_async_epoll_await_stack.uya" "$UYA_ASYNC_AWAIT_STACK_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
         sleep 1
     fi
     if bench_enabled "go" && [ "$have_go" -eq 1 ]; then
-        go_result=$(run_benchmark_safe "Go" "$GO_EXEC" "$PORT" "$URL")
+        go_result=$(run_benchmark_safe "http_bench.go" "$GO_EXEC" "$PORT" "$URL")
         sleep 1
     fi
     if bench_enabled "c"; then
-        c_result=$(run_benchmark_safe "C" "$C_EXEC" "$PORT" "$URL")
+        c_result=$(run_benchmark_safe "http_bench.c" "$C_EXEC" "$PORT" "$URL")
         sleep 1
     fi
     if bench_enabled "c-async-epoll"; then
-        c_async_epoll_result=$(run_benchmark_safe "C-async-epoll" "$C_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
+        c_async_epoll_result=$(run_benchmark_safe "http_bench_async_epoll.c" "$C_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
         sleep 1
     fi
     if bench_enabled "tokio" && [ "$have_tokio" -eq 1 ]; then
-        tokio_result=$(run_benchmark_safe "Tokio" "$TOKIO_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
+        tokio_result=$(run_benchmark_safe "http_bench_tokio" "$TOKIO_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS")
         tokio_rps=$(echo "$tokio_result" | awk -F'|' '{print $8}')
         if [ -z "$tokio_rps" ]; then tokio_rps=0; fi
     fi
@@ -690,55 +690,55 @@ main() {
     if [ -z "$tokio_rps_val" ]; then tokio_rps_val=0; fi
 
     # AB / Keep-Alive 测试
-    local uya_ab_result="Uya|0|0|0"
-    local uya_fork_ab_result="Uya-fork|0|0|0"
-    local uya_epoll_ab_result="Uya-async-epoll|0|0|0"
-    local uya_async_await_ab_result="Uya-async-await|0|0|0"
-    local uya_async_await_simple_ab_result="Uya-async-await-simple|0|0|0"
-    local uya_async_await_stack_ab_result="Uya-async-await-stack|0|0|0"
-    local go_ab_result="Go|0|0|0"
-    local c_ab_result="C|0|0|0"
-    local c_async_epoll_ab_result="C-async-epoll|0|0|0"
-    local tokio_ab_result="Tokio|0|0|0"
+    local uya_ab_result="http_bench.uya|0|0|0"
+    local uya_fork_ab_result="http_bench_fork.uya|0|0|0"
+    local uya_epoll_ab_result="http_bench_async_epoll.uya|0|0|0"
+    local uya_async_await_ab_result="http_bench_async_epoll_await.uya|0|0|0"
+    local uya_async_await_simple_ab_result="http_bench_async_epoll_await_simple.uya|0|0|0"
+    local uya_async_await_stack_ab_result="http_bench_async_epoll_await_stack.uya|0|0|0"
+    local go_ab_result="http_bench.go|0|0|0"
+    local c_ab_result="http_bench.c|0|0|0"
+    local c_async_epoll_ab_result="http_bench_async_epoll.c|0|0|0"
+    local tokio_ab_result="http_bench_tokio|0|0|0"
 
-    local uya_ka_result="Uya|0|0|0"
-    local uya_fork_ka_result="Uya-fork|0|0|0"
-    local uya_epoll_ka_result="Uya-async-epoll|0|0|0"
-    local uya_async_await_ka_result="Uya-async-await|0|0|0"
-    local uya_async_await_simple_ka_result="Uya-async-await-simple|0|0|0"
-    local uya_async_await_stack_ka_result="Uya-async-await-stack|0|0|0"
-    local go_ka_result="Go|0|0|0"
-    local c_ka_result="C|0|0|0"
-    local c_async_epoll_ka_result="C-async-epoll|0|0|0"
-    local tokio_ka_result="Tokio|0|0|0"
+    local uya_ka_result="http_bench.uya|0|0|0"
+    local uya_fork_ka_result="http_bench_fork.uya|0|0|0"
+    local uya_epoll_ka_result="http_bench_async_epoll.uya|0|0|0"
+    local uya_async_await_ka_result="http_bench_async_epoll_await.uya|0|0|0"
+    local uya_async_await_simple_ka_result="http_bench_async_epoll_await_simple.uya|0|0|0"
+    local uya_async_await_stack_ka_result="http_bench_async_epoll_await_stack.uya|0|0|0"
+    local go_ka_result="http_bench.go|0|0|0"
+    local c_ka_result="http_bench.c|0|0|0"
+    local c_async_epoll_ka_result="http_bench_async_epoll.c|0|0|0"
+    local tokio_ka_result="http_bench_tokio|0|0|0"
 
     if [ "$do_ab" -eq 1 ] || [ "$do_abk" -eq 1 ]; then
         echo ""
         if [ "$do_ab" -eq 1 ]; then
             log_info "AB 对比（ab -n${AB_KEEPALIVE_REQUESTS} -c${AB_KEEPALIVE_CONCURRENCY}）"
-            if bench_enabled "uya"; then uya_ab_result=$(run_ab_probe_safe "Uya" "$UYA_HTTP_EXEC" "$PORT" "$URL"); fi
-            if bench_enabled "uya-fork"; then uya_fork_ab_result=$(run_ab_probe_safe "Uya-fork" "$UYA_FORK_EXEC" "$PORT" "$URL"); fi
-            if bench_enabled "uya-async-epoll"; then uya_epoll_ab_result=$(run_ab_probe_safe "Uya-async-epoll" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
-            if bench_enabled "uya-async-await"; then uya_async_await_ab_result=$(run_ab_probe_safe "Uya-async-await" "$UYA_ASYNC_AWAIT_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
-            if bench_enabled "uya-async-await-simple"; then uya_async_await_simple_ab_result=$(run_ab_probe_safe "Uya-async-await-simple" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
-            if bench_enabled "uya-async-await-stack"; then uya_async_await_stack_ab_result=$(run_ab_probe_safe "Uya-async-await-stack" "$UYA_ASYNC_AWAIT_STACK_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
-            if bench_enabled "go" && [ "$have_go" -eq 1 ]; then go_ab_result=$(run_ab_probe_safe "Go" "$GO_EXEC" "$PORT" "$URL"); fi
-            if bench_enabled "c"; then c_ab_result=$(run_ab_probe_safe "C" "$C_EXEC" "$PORT" "$URL"); fi
-            if bench_enabled "c-async-epoll"; then c_async_epoll_ab_result=$(run_ab_probe_safe "C-async-epoll" "$C_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
-            if bench_enabled "tokio" && [ "$have_tokio" -eq 1 ]; then tokio_ab_result=$(run_ab_probe_safe "Tokio" "$TOKIO_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "uya"; then uya_ab_result=$(run_ab_probe_safe "http_bench.uya" "$UYA_HTTP_EXEC" "$PORT" "$URL"); fi
+            if bench_enabled "uya-fork"; then uya_fork_ab_result=$(run_ab_probe_safe "http_bench_fork.uya" "$UYA_FORK_EXEC" "$PORT" "$URL"); fi
+            if bench_enabled "uya-async-epoll"; then uya_epoll_ab_result=$(run_ab_probe_safe "http_bench_async_epoll.uya" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "uya-async-await"; then uya_async_await_ab_result=$(run_ab_probe_safe "http_bench_async_epoll_await.uya" "$UYA_ASYNC_AWAIT_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "uya-async-await-simple"; then uya_async_await_simple_ab_result=$(run_ab_probe_safe "http_bench_async_epoll_await_simple.uya" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "uya-async-await-stack"; then uya_async_await_stack_ab_result=$(run_ab_probe_safe "http_bench_async_epoll_await_stack.uya" "$UYA_ASYNC_AWAIT_STACK_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "go" && [ "$have_go" -eq 1 ]; then go_ab_result=$(run_ab_probe_safe "http_bench.go" "$GO_EXEC" "$PORT" "$URL"); fi
+            if bench_enabled "c"; then c_ab_result=$(run_ab_probe_safe "http_bench.c" "$C_EXEC" "$PORT" "$URL"); fi
+            if bench_enabled "c-async-epoll"; then c_async_epoll_ab_result=$(run_ab_probe_safe "http_bench_async_epoll.c" "$C_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "tokio" && [ "$have_tokio" -eq 1 ]; then tokio_ab_result=$(run_ab_probe_safe "http_bench_tokio" "$TOKIO_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
         fi
         if [ "$do_abk" -eq 1 ]; then
             log_info "Keep-Alive 对比（ab -k -n${AB_KEEPALIVE_REQUESTS} -c${AB_KEEPALIVE_CONCURRENCY}）"
-            if bench_enabled "uya"; then uya_ka_result=$(run_keepalive_probe_safe "Uya" "$UYA_HTTP_EXEC" "$PORT" "$URL"); fi
-            if bench_enabled "uya-fork"; then uya_fork_ka_result=$(run_keepalive_probe_safe "Uya-fork" "$UYA_FORK_EXEC" "$PORT" "$URL"); fi
-            if bench_enabled "uya-async-epoll"; then uya_epoll_ka_result=$(run_keepalive_probe_safe "Uya-async-epoll" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
-            if bench_enabled "uya-async-await"; then uya_async_await_ka_result=$(run_keepalive_probe_safe "Uya-async-await" "$UYA_ASYNC_AWAIT_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
-            if bench_enabled "uya-async-await-simple"; then uya_async_await_simple_ka_result=$(run_keepalive_probe_safe "Uya-async-await-simple" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
-            if bench_enabled "uya-async-await-stack"; then uya_async_await_stack_ka_result=$(run_keepalive_probe_safe "Uya-async-await-stack" "$UYA_ASYNC_AWAIT_STACK_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
-            if bench_enabled "go" && [ "$have_go" -eq 1 ]; then go_ka_result=$(run_keepalive_probe_safe "Go" "$GO_EXEC" "$PORT" "$URL"); fi
-            if bench_enabled "c"; then c_ka_result=$(run_keepalive_probe_safe "C" "$C_EXEC" "$PORT" "$URL"); fi
-            if bench_enabled "c-async-epoll"; then c_async_epoll_ka_result=$(run_keepalive_probe_safe "C-async-epoll" "$C_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
-            if bench_enabled "tokio" && [ "$have_tokio" -eq 1 ]; then tokio_ka_result=$(run_keepalive_probe_safe "Tokio" "$TOKIO_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "uya"; then uya_ka_result=$(run_keepalive_probe_safe "http_bench.uya" "$UYA_HTTP_EXEC" "$PORT" "$URL"); fi
+            if bench_enabled "uya-fork"; then uya_fork_ka_result=$(run_keepalive_probe_safe "http_bench_fork.uya" "$UYA_FORK_EXEC" "$PORT" "$URL"); fi
+            if bench_enabled "uya-async-epoll"; then uya_epoll_ka_result=$(run_keepalive_probe_safe "http_bench_async_epoll.uya" "$UYA_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "uya-async-await"; then uya_async_await_ka_result=$(run_keepalive_probe_safe "http_bench_async_epoll_await.uya" "$UYA_ASYNC_AWAIT_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "uya-async-await-simple"; then uya_async_await_simple_ka_result=$(run_keepalive_probe_safe "http_bench_async_epoll_await_simple.uya" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "uya-async-await-stack"; then uya_async_await_stack_ka_result=$(run_keepalive_probe_safe "http_bench_async_epoll_await_stack.uya" "$UYA_ASYNC_AWAIT_STACK_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "go" && [ "$have_go" -eq 1 ]; then go_ka_result=$(run_keepalive_probe_safe "http_bench.go" "$GO_EXEC" "$PORT" "$URL"); fi
+            if bench_enabled "c"; then c_ka_result=$(run_keepalive_probe_safe "http_bench.c" "$C_EXEC" "$PORT" "$URL"); fi
+            if bench_enabled "c-async-epoll"; then c_async_epoll_ka_result=$(run_keepalive_probe_safe "http_bench_async_epoll.c" "$C_ASYNC_EPOLL_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
+            if bench_enabled "tokio" && [ "$have_tokio" -eq 1 ]; then tokio_ka_result=$(run_keepalive_probe_safe "http_bench_tokio" "$TOKIO_EXEC" "$PORT" "$URL" --threads "$SERVER_THREADS"); fi
         fi
     fi
 
@@ -861,16 +861,16 @@ main() {
     echo "=========================================="
     print_header
     print_sep
-    if bench_enabled "uya"; then print_row "Uya" "$uya_rps" "$uya_ab_req" "$uya_ab_failed" "$uya_ab_rps" "$uya_ka_req" "$uya_ka_failed" "$uya_ka_rps"; fi
-    if bench_enabled "uya-fork"; then print_row "Uya-fork" "$uya_fork_rps" "$uya_fork_ab_req" "$uya_fork_ab_failed" "$uya_fork_ab_rps" "$uya_fork_ka_req" "$uya_fork_ka_failed" "$uya_fork_ka_rps"; fi
-    if bench_enabled "uya-async-epoll"; then print_row "Uya-async-epoll" "$uya_epoll_rps" "$uya_epoll_ab_req" "$uya_epoll_ab_failed" "$uya_epoll_ab_rps" "$uya_epoll_ka_req" "$uya_epoll_ka_failed" "$uya_epoll_ka_rps"; fi
-    if bench_enabled "uya-async-await"; then print_row "Uya-async-await" "$uya_async_await_rps" "$uya_async_await_ab_req" "$uya_async_await_ab_failed" "$uya_async_await_ab_rps" "$uya_async_await_ka_req" "$uya_async_await_ka_failed" "$uya_async_await_ka_rps"; fi
-    if bench_enabled "uya-async-await-simple"; then print_row "Uya-async-await-simple" "$uya_async_await_simple_rps" "$uya_async_await_simple_ab_req" "$uya_async_await_simple_ab_failed" "$uya_async_await_simple_ab_rps" "$uya_async_await_simple_ka_req" "$uya_async_await_simple_ka_failed" "$uya_async_await_simple_ka_rps"; fi
-    if bench_enabled "uya-async-await-stack"; then print_row "Uya-async-await-stack" "$uya_async_await_stack_rps" "$uya_async_await_stack_ab_req" "$uya_async_await_stack_ab_failed" "$uya_async_await_stack_ab_rps" "$uya_async_await_stack_ka_req" "$uya_async_await_stack_ka_failed" "$uya_async_await_stack_ka_rps"; fi
-    if bench_enabled "go"; then print_row "Go" "$go_rps" "$go_ab_req" "$go_ab_failed" "$go_ab_rps" "$go_ka_req" "$go_ka_failed" "$go_ka_rps"; fi
-    if bench_enabled "c"; then print_row "C" "$c_rps" "$c_ab_req" "$c_ab_failed" "$c_ab_rps" "$c_ka_req" "$c_ka_failed" "$c_ka_rps"; fi
-    if bench_enabled "c-async-epoll"; then print_row "C-async-epoll" "$c_async_epoll_rps" "$c_async_epoll_ab_req" "$c_async_epoll_ab_failed" "$c_async_epoll_ab_rps" "$c_async_epoll_ka_req" "$c_async_epoll_ka_failed" "$c_async_epoll_ka_rps"; fi
-    if bench_enabled "tokio"; then print_row "Tokio" "$tokio_rps_val" "$tokio_ab_req" "$tokio_ab_failed" "$tokio_ab_rps" "$tokio_ka_req" "$tokio_ka_failed" "$tokio_ka_rps"; fi
+    if bench_enabled "uya"; then print_row "http_bench.uya" "$uya_rps" "$uya_ab_req" "$uya_ab_failed" "$uya_ab_rps" "$uya_ka_req" "$uya_ka_failed" "$uya_ka_rps"; fi
+    if bench_enabled "uya-fork"; then print_row "http_bench_fork.uya" "$uya_fork_rps" "$uya_fork_ab_req" "$uya_fork_ab_failed" "$uya_fork_ab_rps" "$uya_fork_ka_req" "$uya_fork_ka_failed" "$uya_fork_ka_rps"; fi
+    if bench_enabled "uya-async-epoll"; then print_row "http_bench_async_epoll.uya" "$uya_epoll_rps" "$uya_epoll_ab_req" "$uya_epoll_ab_failed" "$uya_epoll_ab_rps" "$uya_epoll_ka_req" "$uya_epoll_ka_failed" "$uya_epoll_ka_rps"; fi
+    if bench_enabled "uya-async-await"; then print_row "http_bench_async_epoll_await.uya" "$uya_async_await_rps" "$uya_async_await_ab_req" "$uya_async_await_ab_failed" "$uya_async_await_ab_rps" "$uya_async_await_ka_req" "$uya_async_await_ka_failed" "$uya_async_await_ka_rps"; fi
+    if bench_enabled "uya-async-await-simple"; then print_row "http_bench_async_epoll_await_simple.uya" "$uya_async_await_simple_rps" "$uya_async_await_simple_ab_req" "$uya_async_await_simple_ab_failed" "$uya_async_await_simple_ab_rps" "$uya_async_await_simple_ka_req" "$uya_async_await_simple_ka_failed" "$uya_async_await_simple_ka_rps"; fi
+    if bench_enabled "uya-async-await-stack"; then print_row "http_bench_async_epoll_await_stack.uya" "$uya_async_await_stack_rps" "$uya_async_await_stack_ab_req" "$uya_async_await_stack_ab_failed" "$uya_async_await_stack_ab_rps" "$uya_async_await_stack_ka_req" "$uya_async_await_stack_ka_failed" "$uya_async_await_stack_ka_rps"; fi
+    if bench_enabled "go"; then print_row "http_bench.go" "$go_rps" "$go_ab_req" "$go_ab_failed" "$go_ab_rps" "$go_ka_req" "$go_ka_failed" "$go_ka_rps"; fi
+    if bench_enabled "c"; then print_row "http_bench.c" "$c_rps" "$c_ab_req" "$c_ab_failed" "$c_ab_rps" "$c_ka_req" "$c_ka_failed" "$c_ka_rps"; fi
+    if bench_enabled "c-async-epoll"; then print_row "http_bench_async_epoll.c" "$c_async_epoll_rps" "$c_async_epoll_ab_req" "$c_async_epoll_ab_failed" "$c_async_epoll_ab_rps" "$c_async_epoll_ka_req" "$c_async_epoll_ka_failed" "$c_async_epoll_ka_rps"; fi
+    if bench_enabled "tokio"; then print_row "http_bench_tokio" "$tokio_rps_val" "$tokio_ab_req" "$tokio_ab_failed" "$tokio_ab_rps" "$tokio_ka_req" "$tokio_ka_failed" "$tokio_ka_rps"; fi
     print_sep
     echo "=========================================="
 
