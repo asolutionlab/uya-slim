@@ -3568,9 +3568,11 @@ export fn main() i32 {
         backend = BackendType.BACKEND_C99;  // run/test 模式默认使用 C99 后端
     }
 
-    // microapp run/test 需要单文件 C 产物，payload 后处理阶段要直接编译这个文件
-    // 不能落到默认 split-c，否则 auto_output_path 只是一个占位路径，后续打包会找不到 C 文件。
-    if (g_app_mode_microapp != 0 && (command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST)) {
+    // run/test 紧接着就要调用宿主工具链并执行产物，需要稳定的单文件 C 路径。
+    // 默认 split-C 会让 auto_output_path 只成为一个占位路径，并让后续 link/run 依赖额外的
+    // 子 make 环境；microapp loader 的递归 `run` 也会因此拿不到真正生成的可执行文件。
+    // split-C 仍可通过 build 路径使用，run/test 统一固定为单文件 C。
+    if command == CommandType.COMMAND_RUN || command == CommandType.COMMAND_TEST {
         g_split_c_dir_active = 0;
         g_split_c_disabled_cli = 1;
         g_split_c_dir[0] = 0 as byte;
