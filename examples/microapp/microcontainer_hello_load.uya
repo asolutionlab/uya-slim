@@ -80,7 +80,7 @@ export extern fn main(argc: i32, argv: & &byte) i32 {
     kernel.host_ctx.pm.size = 131072;
 
     const uapp_path: &byte = resolve_uapp_path(argc, argv);
-    @println("[microapp loader] loading ${uapp_path}");
+    @println("[microapp loader] loading");
     var img: [byte: MAX_LOADER_IMAGE_SIZE] = [];
     const fp: &FILE = fopen(uapp_path as *byte, "rb\0" as &byte);
     if fp == null {

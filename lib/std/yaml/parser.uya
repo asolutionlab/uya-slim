@@ -70,8 +70,9 @@ fn parse_anchor_token_name(s: &ParseState) !YamlStrView {
 }
 
 fn yaml_anchor_find(ctx: &YamlAnchorCtx, name: YamlStrView) !usize {
+    const anchor_cap: usize = @len(ctx.names);
     var i: usize = 0;
-    while i < ctx.n && i < MAX_ANCHORS {
+    while i < ctx.n && i < anchor_cap {
         const sn: YamlStrView = ctx.names[i];
         if yaml_str_view_eq_ptr(sn.ptr, sn.len, name.ptr, name.len) {
             return i;
@@ -82,18 +83,19 @@ fn yaml_anchor_find(ctx: &YamlAnchorCtx, name: YamlStrView) !usize {
 }
 
 fn yaml_anchor_register(ctx: &YamlAnchorCtx, name: YamlStrView, val_ptr: &YamlValue) !void {
-    if ctx.n >= MAX_ANCHORS {
+    const anchor_cap: usize = @len(ctx.names);
+    if ctx.n >= anchor_cap {
         return error.AnchorOverflow;
     }
     var j: usize = 0;
-    while j < ctx.n && j < MAX_ANCHORS {
+    while j < ctx.n && j < anchor_cap {
         const sj: YamlStrView = ctx.names[j];
         if yaml_str_view_eq_ptr(sj.ptr, sj.len, name.ptr, name.len) {
             return error.UnexpectedToken;
         }
         j = j + 1;
     }
-    if ctx.n < MAX_ANCHORS {
+    if ctx.n < anchor_cap {
         ctx.names[ctx.n] = name;
         ctx.vals[ctx.n] = val_ptr;
         ctx.n = ctx.n + 1;
@@ -550,11 +552,15 @@ fn parse_flow_value(s: &ParseState) !YamlValue {
             return error.AnchorOverflow;
         }
         const idx: usize = try yaml_anchor_find(ctx2, nm2);
-        if idx >= MAX_ANCHORS {
+        const anchor_cap: usize = @len(ctx2.vals);
+        if idx >= anchor_cap {
             return error.UnknownAlias;
         }
-        const vp: &YamlValue = ctx2.vals[idx];
-        return vp[0];
+        if idx >= 0 && idx < anchor_cap {
+            const vp: &YamlValue = ctx2.vals[idx];
+            return vp[0];
+        }
+        return error.UnknownAlias;
     }
     return parse_flow_value_prim(s);
 }

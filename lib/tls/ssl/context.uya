@@ -71,7 +71,7 @@ fn ssl_select_server_identity(ctx: &SslContext) void {
     }
     var selected: usize = 0;
     var i: usize = 0;
-    while i < ctx.server_identity_count {
+    while i < ctx.server_identity_count && i < @len(ctx.server_identities) {
         const ident: &SslServerIdentity = &ctx.server_identities[i];
         if ctx.hs.sni_len > 0 && ident.name_len > 0 && hostname_match(&ident.name[0], ident.name_len, &ctx.hs.hostname[0], ctx.hs.sni_len) {
             selected = i;
@@ -81,8 +81,11 @@ fn ssl_select_server_identity(ctx: &SslContext) void {
         }
     }
     ctx.selected_server_identity = selected;
-    const chosen: &const SslServerIdentity = &ctx.server_identities[selected];
-    ssl_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
+    const selected_slot: usize = selected;
+    if selected_slot >= 0 && selected_slot < @len(ctx.server_identities) {
+        const chosen: &const SslServerIdentity = &ctx.server_identities[selected_slot];
+        ssl_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
+    }
 }
 
 fn ssl_server_identity_is_ready(ctx: &const SslContext) bool {
@@ -90,6 +93,9 @@ fn ssl_server_identity_is_ready(ctx: &const SslContext) bool {
         return true;
     }
     if ctx.selected_server_identity >= ctx.server_identity_count {
+        return false;
+    }
+    if ctx.selected_server_identity >= @len(ctx.server_identities) {
         return false;
     }
     if ctx.server_identities[ctx.selected_server_identity].cert == null as &const Cert {
@@ -146,7 +152,7 @@ fn ssl_sync_state(ctx: &SslContext) void {
     ctx.appdata_ready = ctx.hs.appdata_ready;
     ctx.hostname_len = ctx.hs.sni_len;
     var i: usize = 0;
-    while i < ctx.hostname_len {
+    while i < ctx.hostname_len && i < @len(ctx.hostname) && i < @len(ctx.hs.hostname) {
         ctx.hostname[i] = ctx.hs.hostname[i];
         i = i + 1;
     }
@@ -206,7 +212,7 @@ export fn ssl_set_hostname(ctx: &SslContext, name: &const byte, len: usize) void
     };
     ctx.hostname_len = ctx.hs.sni_len;
     var i: usize = 0;
-    while i < ctx.hostname_len {
+    while i < ctx.hostname_len && i < @len(ctx.hostname) && i < @len(ctx.hs.hostname) {
         ctx.hostname[i] = ctx.hs.hostname[i];
         i = i + 1;
     }
@@ -241,26 +247,34 @@ export fn ssl_server_add_identity(ctx: &SslContext, name: &const byte, name_len:
         return error.TlsBadInput;
     }
     const slot: usize = ctx.server_identity_count;
-    ctx.server_identities[slot].name_len = ssl_copy_name(&ctx.server_identities[slot].name[0], name, name_len);
-    ctx.server_identities[slot].san_len = ssl_copy_name(&ctx.server_identities[slot].san[0], san, san_len);
-    ctx.server_identities[slot].cn_len = ssl_copy_name(&ctx.server_identities[slot].cn[0], cn, cn_len);
-    ctx.server_identity_count = slot + 1;
-    if ctx.server_identity_count == 1 {
-        ctx.selected_server_identity = 0;
-        ssl_set_peer_identity(ctx, &ctx.server_identities[0].san[0], ctx.server_identities[0].san_len, &ctx.server_identities[0].cn[0], ctx.server_identities[0].cn_len);
+    if slot < @len(ctx.server_identities) {
+        ctx.server_identities[slot].name_len = ssl_copy_name(&ctx.server_identities[slot].name[0], name, name_len);
+        ctx.server_identities[slot].san_len = ssl_copy_name(&ctx.server_identities[slot].san[0], san, san_len);
+        ctx.server_identities[slot].cn_len = ssl_copy_name(&ctx.server_identities[slot].cn[0], cn, cn_len);
+        ctx.server_identity_count = slot + 1;
+        if ctx.server_identity_count == 1 && 0 < @len(ctx.server_identities) {
+            ctx.selected_server_identity = 0;
+            ssl_set_peer_identity(ctx, &ctx.server_identities[0].san[0], ctx.server_identities[0].san_len, &ctx.server_identities[0].cn[0], ctx.server_identities[0].cn_len);
+        }
+        return;
     }
+    return error.TlsBadInput;
 }
 
 export fn ssl_server_set_identity_credentials(ctx: &SslContext, slot: usize, cert: &const Cert, rsa_key: &const RsaPrivateKey) !void {
-    if slot >= ctx.server_identity_count {
+    if slot >= ctx.server_identity_count || slot >= @len(ctx.server_identities) {
         return error.TlsBadInput;
     }
-    ctx.server_identities[slot].cert = cert;
-    ctx.server_identities[slot].rsa_key = rsa_key;
-    if slot == ctx.selected_server_identity && cert != null as &const Cert && cert.der != null as &const byte && cert.der_len > 0 {
-        handshake_set_server_certificate(ctx.hs, cert.der, cert.der_len);
-        handshake_set_server_rsa_key(ctx.hs, rsa_key);
+    if slot >= 0 && slot < @len(ctx.server_identities) {
+        ctx.server_identities[slot].cert = cert;
+        ctx.server_identities[slot].rsa_key = rsa_key;
+        if slot == ctx.selected_server_identity && cert != null as &const Cert && cert.der != null as &const byte && cert.der_len > 0 {
+            handshake_set_server_certificate(ctx.hs, cert.der, cert.der_len);
+            handshake_set_server_rsa_key(ctx.hs, rsa_key);
+        }
+        return;
     }
+    return error.TlsBadInput;
 }
 
 export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {
@@ -281,7 +295,8 @@ export fn ssl_handshake_step(ctx: &SslContext, recv_buf: &const byte, recv_len: 
         if status != HS_STATUS_ERROR && !ssl_server_identity_is_ready(ctx) {
             status = HS_STATUS_ERROR;
         } else {
-            if ctx.selected_server_identity < ctx.server_identity_count {
+            if ctx.selected_server_identity < ctx.server_identity_count &&
+               ctx.selected_server_identity < @len(ctx.server_identities) {
                 const chosen: &const SslServerIdentity = &ctx.server_identities[ctx.selected_server_identity];
                 if chosen.cert != null as &const Cert && chosen.cert.der != null as &const byte && chosen.cert.der_len > 0 {
                     handshake_set_server_certificate(ctx.hs, chosen.cert.der, chosen.cert.der_len);
@@ -366,7 +381,7 @@ fn ssl13_select_server_identity(ctx: &SslContext13) void {
     }
     var selected: usize = 0;
     var i: usize = 0;
-    while i < ctx.server_identity_count {
+    while i < ctx.server_identity_count && i < @len(ctx.server_identities) {
         const ident: &SslServerIdentity = &ctx.server_identities[i];
         if ctx.hs13.sni_len > 0 && ident.name_len > 0 && hostname_match(&ident.name[0], ident.name_len, &ctx.hs13.hostname[0], ctx.hs13.sni_len) {
             selected = i;
@@ -376,8 +391,11 @@ fn ssl13_select_server_identity(ctx: &SslContext13) void {
         }
     }
     ctx.selected_server_identity = selected;
-    const chosen: &SslServerIdentity = &ctx.server_identities[selected];
-    ssl13_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
+    const selected_slot13: usize = selected;
+    if selected_slot13 >= 0 && selected_slot13 < @len(ctx.server_identities) {
+        const chosen: &SslServerIdentity = &ctx.server_identities[selected_slot13];
+        ssl13_set_peer_identity(ctx, &chosen.san[0], chosen.san_len, &chosen.cn[0], chosen.cn_len);
+    }
 }
 
 fn ssl13_server_identity_is_ready(ctx: &const SslContext13) bool {
@@ -385,6 +403,9 @@ fn ssl13_server_identity_is_ready(ctx: &const SslContext13) bool {
         return true;
     }
     if ctx.selected_server_identity >= ctx.server_identity_count {
+        return false;
+    }
+    if ctx.selected_server_identity >= @len(ctx.server_identities) {
         return false;
     }
     if ctx.server_identities[ctx.selected_server_identity].cert == null as &const Cert {
@@ -433,7 +454,7 @@ fn ssl13_sync_state(ctx: &SslContext13) void {
     ctx.appdata_ready = ctx.hs13.appdata_ready;
     ctx.hostname_len = ctx.hs13.sni_len;
     var i: usize = 0;
-    while i < ctx.hostname_len {
+    while i < ctx.hostname_len && i < @len(ctx.hostname) && i < @len(ctx.hs13.hostname) {
         ctx.hostname[i] = ctx.hs13.hostname[i];
         i = i + 1;
     }
@@ -479,7 +500,7 @@ export fn ssl13_set_hostname(ctx: &SslContext13, name: &const byte, len: usize) 
     };
     ctx.hostname_len = ctx.hs13.sni_len;
     var i: usize = 0;
-    while i < ctx.hostname_len {
+    while i < ctx.hostname_len && i < @len(ctx.hostname) && i < @len(ctx.hs13.hostname) {
         ctx.hostname[i] = ctx.hs13.hostname[i];
         i = i + 1;
     }
@@ -514,22 +535,30 @@ export fn ssl13_server_add_identity(ctx: &SslContext13, name: &const byte, name_
         return error.TlsBadInput;
     }
     const slot: usize = ctx.server_identity_count;
-    ctx.server_identities[slot].name_len = ssl_copy_name(&ctx.server_identities[slot].name[0], name, name_len);
-    ctx.server_identities[slot].san_len = ssl_copy_name(&ctx.server_identities[slot].san[0], san, san_len);
-    ctx.server_identities[slot].cn_len = ssl_copy_name(&ctx.server_identities[slot].cn[0], cn, cn_len);
-    ctx.server_identity_count = slot + 1;
-    if ctx.server_identity_count == 1 {
-        ctx.selected_server_identity = 0;
-        ssl13_set_peer_identity(ctx, &ctx.server_identities[0].san[0], ctx.server_identities[0].san_len, &ctx.server_identities[0].cn[0], ctx.server_identities[0].cn_len);
+    if slot < @len(ctx.server_identities) {
+        ctx.server_identities[slot].name_len = ssl_copy_name(&ctx.server_identities[slot].name[0], name, name_len);
+        ctx.server_identities[slot].san_len = ssl_copy_name(&ctx.server_identities[slot].san[0], san, san_len);
+        ctx.server_identities[slot].cn_len = ssl_copy_name(&ctx.server_identities[slot].cn[0], cn, cn_len);
+        ctx.server_identity_count = slot + 1;
+        if ctx.server_identity_count == 1 && 0 < @len(ctx.server_identities) {
+            ctx.selected_server_identity = 0;
+            ssl13_set_peer_identity(ctx, &ctx.server_identities[0].san[0], ctx.server_identities[0].san_len, &ctx.server_identities[0].cn[0], ctx.server_identities[0].cn_len);
+        }
+        return;
     }
+    return error.TlsBadInput;
 }
 
 export fn ssl13_server_set_identity_credentials(ctx: &SslContext13, slot: usize, cert: &const Cert, rsa_key: &const RsaPrivateKey) !void {
-    if slot >= ctx.server_identity_count {
+    if slot >= ctx.server_identity_count || slot >= @len(ctx.server_identities) {
         return error.TlsBadInput;
     }
-    ctx.server_identities[slot].cert = cert;
-    ctx.server_identities[slot].rsa_key = rsa_key;
+    if slot >= 0 && slot < @len(ctx.server_identities) {
+        ctx.server_identities[slot].cert = cert;
+        ctx.server_identities[slot].rsa_key = rsa_key;
+        return;
+    }
+    return error.TlsBadInput;
 }
 
 export fn ssl13_handshake_step(ctx: &SslContext13, recv_buf: &const byte, recv_len: usize, send_buf: &byte, send_max: usize, send_len_out: &usize) i32 {

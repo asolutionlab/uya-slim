@@ -382,14 +382,20 @@ var _atexit_count: usize = 0;
 
 // 内部函数：调用所有注册的退出处理函数
 fn _call_atexit_handlers() void {
-    var i: i32 = (_atexit_count - 1) as i32;
-    while i >= 0 {
-        var handler: &void = _atexit_handlers[i as usize];
-        if handler != null {
-            // 调用处理函数
-            // 注意：这里需要类型转换来调用函数
+    const atexit_cap: i32 = @len(_atexit_handlers) as i32;
+    var remaining: i32 = _atexit_count as i32;
+    if remaining > atexit_cap {
+        remaining = atexit_cap;
+    }
+    while remaining > 0 {
+        remaining = remaining - 1;
+        if remaining >= 0 && remaining < atexit_cap {
+            var handler: &void = _atexit_handlers[remaining];
+            if handler != null {
+                // 调用处理函数
+                // 注意：这里需要类型转换来调用函数
+            }
         }
-        i = i - 1;
     }
 }
 

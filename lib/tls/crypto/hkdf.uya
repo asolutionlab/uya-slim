@@ -79,7 +79,7 @@ export fn hkdf_expand_sha256(
                 }
                 hmac_in_len = info_len;
             }
-            hmac_in[hmac_in_len] = (i % 256) as byte;
+            hmac_in[hmac_in_len] = (i as! byte).value;
             hmac_in_len = hmac_in_len + 1;
         } else {
             // T(i-1) | info | i
@@ -95,7 +95,7 @@ export fn hkdf_expand_sha256(
                 hmac_in_len = hmac_in_len + 1;
                 j = j + 1;
             }
-            hmac_in[hmac_in_len] = (i % 256) as byte;
+            hmac_in[hmac_in_len] = (i as! byte).value;
             hmac_in_len = hmac_in_len + 1;
         }
         var ti: [byte: SHA256_LEN] = [];

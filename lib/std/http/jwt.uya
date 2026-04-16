@@ -180,7 +180,8 @@ export fn jwt_sign_hs256(payload: &[byte], secret: &[byte], token_out: &[byte]) 
     }
     const hdr_b64: &[byte] = &"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"[0: 36];
     var pay_b64: [byte: 700] = [];
-    const plen: usize = try encode_base64url(payload, pay_b64[0: 700]);
+    const pay_b64_cap: usize = @len(pay_b64);
+    const plen: usize = try encode_base64url(payload, pay_b64[0: pay_b64_cap]);
     const signing_len: usize = hdr_b64.len + 1 + plen;
     if signing_len > JWT_MAX_SIGNING {
         return error.InvalidToken;
@@ -194,7 +195,7 @@ export fn jwt_sign_hs256(payload: &[byte], secret: &[byte], token_out: &[byte]) 
     signing[si] = '.' as byte;
     si = si + 1;
     var pj: usize = 0;
-    while pj < plen {
+    while pj < plen && pj < @len(pay_b64) {
         signing[si] = pay_b64[pj];
         si = si + 1;
         pj = pj + 1;

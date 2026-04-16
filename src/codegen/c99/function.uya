@@ -4939,6 +4939,8 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
             inner_poll_ret_c, inner_poll_union_c, poll_ret_c, poll_union_c);
         fputs("    }\n" as *byte, codegen.emit_stream as *void);
     }
+    fprintf(codegen.emit_stream as *void, "    abort();\n" as *byte);
+    fprintf(codegen.emit_stream as *void, "    return (%s){ ._tag = 0 };\n" as *byte, poll_ret_c as *byte);
     fputs("}\n" as *byte, codegen.emit_stream as *void);
 
     // 清除 async 参数捕获

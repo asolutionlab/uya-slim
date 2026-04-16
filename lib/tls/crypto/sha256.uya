@@ -176,14 +176,14 @@ export fn sha256(data: &const byte, len: usize, out: &byte) void {
         buf[buf_len] = 0;
         buf_len = buf_len + 1;
     }
-    buf[56] = (len_bits >> 56) as byte;
-    buf[57] = (len_bits >> 48) as byte;
-    buf[58] = (len_bits >> 40) as byte;
-    buf[59] = (len_bits >> 32) as byte;
-    buf[60] = (len_bits >> 24) as byte;
-    buf[61] = (len_bits >> 16) as byte;
-    buf[62] = (len_bits >> 8) as byte;
-    buf[63] = len_bits as byte;
+    buf[56] = ((len_bits >> 56) as! byte).value;
+    buf[57] = ((len_bits >> 48) as! byte).value;
+    buf[58] = ((len_bits >> 40) as! byte).value;
+    buf[59] = ((len_bits >> 32) as! byte).value;
+    buf[60] = ((len_bits >> 24) as! byte).value;
+    buf[61] = ((len_bits >> 16) as! byte).value;
+    buf[62] = ((len_bits >> 8) as! byte).value;
+    buf[63] = (len_bits as! byte).value;
     _block_compress(&state, &buf[0]);
     var o: usize = 0;
     while o < 8 {

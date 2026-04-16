@@ -134,6 +134,8 @@ fn parse_usize_decimal(s: &[byte]) !usize {
 }
 
 fn append_query_params(buf: &[byte], q_start: usize, q_end: usize, req: &Request) !void {
+    const query_cap: i32 = @len(req.query) as i32;
+    const text_cap: usize = @len(req.headers) as usize;
     var pos: usize = q_start;
     while pos < q_end {
         var amp: usize = pos;
@@ -151,17 +153,17 @@ fn append_query_params(buf: &[byte], q_start: usize, q_end: usize, req: &Request
         const val_len: usize = amp - eq - 1;
         const key: &[byte] = buf[pos: key_len];
         const val: &[byte] = buf[eq + 1: val_len];
-        if key.len > MAX_HEADER_SIZE as usize {
+        if key.len > text_cap {
             return error.ValueTooLong;
         }
-        if val.len > MAX_HEADER_VALUE_SIZE as usize {
+        if val.len > text_cap {
             return error.ValueTooLong;
         }
-        if req.query_count >= MAX_QUERY_PARAMS {
+        if req.query_count >= query_cap {
             return error.TooManyParams;
         }
         const qc: i32 = req.query_count;
-        if qc >= 0 && qc < 16 {
+        if qc >= 0 && qc < query_cap {
             req.query[qc] = HttpKvSlice{ key: key, value: val };
             req.query_count = req.query_count + 1;
         } else {
@@ -172,6 +174,7 @@ fn append_query_params(buf: &[byte], q_start: usize, q_end: usize, req: &Request
 }
 
 fn set_path_and_query(buf: &[byte], uri_start: usize, uri_len: usize, req: &Request) !void {
+    const path_cap: usize = @len(req.path);
     var path_len: usize = uri_len;
     var q_start: usize = 0;
     var q_end: usize = 0;
@@ -193,7 +196,7 @@ fn set_path_and_query(buf: &[byte], uri_start: usize, uri_len: usize, req: &Requ
     if buf.ptr[uri_start] != '/' as byte {
         return error.InvalidRequest;
     }
-    if path_len > MAX_URI_LENGTH as usize {
+    if path_len > path_cap {
         return error.URITooLong;
     }
     req.path_len = path_len as i32;
@@ -208,6 +211,7 @@ fn set_path_and_query(buf: &[byte], uri_start: usize, uri_len: usize, req: &Requ
 }
 
 fn parse_one_header_line(buf: &[byte], line_start: usize, line_end: usize, req: &Request) !void {
+    const header_cap: i32 = @len(req.headers) as i32;
     var colon: usize = line_start;
     while colon < line_end && buf.ptr[colon] != ':' as byte {
         colon = colon + 1;
@@ -216,7 +220,7 @@ fn parse_one_header_line(buf: &[byte], line_start: usize, line_end: usize, req: 
         return error.InvalidRequest;
     }
     const name_len: usize = colon - line_start;
-    if name_len > MAX_HEADER_SIZE as usize {
+    if name_len > @len(req.headers) as usize {
         return error.HeaderTooLarge;
     }
     var va: usize = colon + 1;
@@ -224,22 +228,22 @@ fn parse_one_header_line(buf: &[byte], line_start: usize, line_end: usize, req: 
         va = va + 1;
     }
     const value_len: usize = line_end - va;
-    if value_len > MAX_HEADER_VALUE_SIZE as usize {
+    if value_len > @len(req.headers) as usize {
         return error.HeaderTooLarge;
     }
-    if req.header_count >= MAX_HEADER_SIZE {
+    if req.header_count >= header_cap {
         return error.HeaderTooLarge;
     }
     const hi: i32 = req.header_count;
-    if hi >= 0 && hi < 256 {
+    if hi >= 0 && hi < header_cap {
         var ni: usize = 0;
-        while ni < name_len {
+        while ni < name_len && ni < @len(req.headers[hi].name) {
             req.headers[hi].name[ni] = buf.ptr[line_start + ni];
             ni = ni + 1;
         }
         req.headers[hi].name_len = name_len;
         var vi: usize = 0;
-        while vi < value_len {
+        while vi < value_len && vi < @len(req.headers[hi].value) {
             req.headers[hi].value[vi] = buf.ptr[va + vi];
             vi = vi + 1;
         }
@@ -266,12 +270,13 @@ fn header_name_is_content_length(h: &Header) bool {
 }
 
 fn parse_decimal_from_header_value(h: &Header) usize {
-    if h.value_len > MAX_HEADER_VALUE_SIZE as usize {
+    const value_cap: usize = @len(h.value);
+    if h.value_len > value_cap {
         return 0;
     }
     var n: usize = 0;
     var j: usize = 0;
-    while j < h.value_len && j < 256 as usize {
+    while j < h.value_len && j < value_cap {
         const c: byte = h.value[j];
         if c < 48 as byte || c > 57 as byte {
             return 0;
@@ -283,8 +288,9 @@ fn parse_decimal_from_header_value(h: &Header) usize {
 }
 
 fn find_content_length(req: &Request) usize {
+    const header_cap: i32 = @len(req.headers) as i32;
     var hi: i32 = 0;
-    while hi < req.header_count && hi >= 0 && hi < 256 {
+    while hi < req.header_count && hi >= 0 && hi < header_cap {
         const h: &Header = &req.headers[hi];
         if header_name_is_content_length(h) {
             return parse_decimal_from_header_value(h);

@@ -5,6 +5,7 @@
 
 use std.async;
 use std.macro_typeinfo.TypeInfo;
+use libc.stdlib;
 use libc.signal;
 use libc.syscall;
 
@@ -1163,6 +1164,8 @@ export struct AsyncComputeFuture<T> : Future<!T> {
                 return Poll<!T>.Pending({});
             },
         };
+        abort();
+        return Poll<!T>.Pending({});
     }
 
     fn poll(self: &Self, waker: &Waker) Poll<!T> {

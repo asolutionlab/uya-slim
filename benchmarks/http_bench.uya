@@ -182,11 +182,15 @@ fn bench_req_path_eq(req: &Request, lit: &[byte]) bool {
     if req.path_len < 0 {
         return false;
     }
+    if req.path_len > @len(req.path) as i32 {
+        return false;
+    }
     if (req.path_len as usize) != lit.len {
         return false;
     }
+    const path_cap: usize = @len(req.path);
     var i: usize = 0;
-    while i < lit.len {
+    while i < lit.len && i < path_cap {
         if req.path[i] != lit.ptr[i] {
             return false;
         }
@@ -362,21 +366,22 @@ fn bench_slot_reset_write_state(slot: usize) void {
 
 fn bench_slot_close(srv: &EpollServer, slot: usize) void {
     var cfd: i32 = -1;
-    if slot < EPOLL_SERVER_MAX_SLOTS {
+    if slot >= 0 && slot < @len(srv.connections) {
         cfd = srv.connections[slot].fd;
+        bench_slot_reset_write_state(slot);
+        g_slot_persist[slot] = false;
+        g_http10_sess[slot] = false;
+        if cfd >= 0 {
+            http_discard_socket_recv_nb(cfd);
+        }
+        epoll_server_release_slot(srv, slot);
+        return;
     }
-    bench_slot_reset_write_state(slot);
-    g_slot_persist[slot] = false;
-    g_http10_sess[slot] = false;
-    if cfd >= 0 {
-        http_discard_socket_recv_nb(cfd);
-    }
-    epoll_server_release_slot(srv, slot);
 }
 
 /// 新 TCP 进入槽位时重置压测侧每槽状态（`epoll_register_client_fd` 不碰这些全局量，不复位易导致复用槽时错 persist/写阶段）。
 fn bench_init_connection_slot(slot: usize) void {
-    if slot >= EPOLL_SERVER_MAX_SLOTS {
+    if slot >= @len(g_wphase) {
         return;
     }
     bench_slot_reset_write_state(slot);
@@ -399,8 +404,8 @@ fn bench_prepare_bad_close(slot: usize, sfd: i32, srv: &EpollServer) !void {
     var i: usize = 0;
     const ob0: usize = slot * BENCH_ONESHOT_CAP;
     const hb0: usize = slot * BENCH_HDR_CAP;
-    while i < hl {
-        if i < BENCH_HDR_CAP && ob0 + i < BENCH_ONESHOT_CAP * EPOLL_SERVER_MAX_SLOTS {
+    while i < hl && i < @len(g_whdr) && ob0 + i < @len(g_oneshot) {
+        if i < @len(g_whdr) && ob0 + i < @len(g_oneshot) {
             g_oneshot[ob0 + i] = g_whdr[hb0 + i];
         }
         i = i + 1;
@@ -414,123 +419,129 @@ fn bench_prepare_bad_close(slot: usize, sfd: i32, srv: &EpollServer) !void {
 
 /// 根据路由准备非阻塞写状态；`/item/:id` 的 body 在 `g_item_store` 槽内（须在 `http_connbuf_shift` 前复制完）。
 fn bench_prepare_dispatch(slot: usize, sfd: i32, srv: &EpollServer, pr: &ParseResult, persist: bool) !void {
-    const fast: bool = try bench_try_fast_get_slash_json(slot, sfd, srv, pr, persist);
-    if fast {
-        return;
-    }
-    var z: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
-    const empty_len: usize = 0;
-    const idx: i32 = router_find_route_request(&g_bench_router, pr.request.method, &pr.request);
-    var st: Status = Status.OK;
-    var blen: usize = 0;
-    var close_after: bool = false;
-    if persist == false {
-        close_after = true;
-    }
-    const emit_ka: bool = persist && !pr.request.http11;
-
-    if idx == -1 {
-        st = Status.NotFound;
-        blen = empty_len;
-        g_wbody_base[slot] = &z[0] as &byte;
-    } else if idx == -2 {
-        st = Status.MethodNotAllowed;
-        blen = empty_len;
-        g_wbody_base[slot] = &z[0] as &byte;
-    } else if idx == 0 {
-        blen = 5;
-        g_wbody_base[slot] = &g_bench_hello_body[0] as &byte;
-    } else if idx == 1 {
-        blen = 11;
-        g_wbody_base[slot] = &g_bench_json_body[0] as &byte;
-    } else if idx == 2 {
-        _ = router_apply_path_params_request(&pr.request, &"/item/:id"[0: 9]) catch {
-            try bench_prepare_bad_close(slot, sfd, srv);
-            return;
-        };
-        if pr.request.path_param_count < 1 {
-            try bench_prepare_bad_close(slot, sfd, srv);
+    if slot >= 0 && slot < @len(g_wphase) {
+        const fast: bool = try bench_try_fast_get_slash_json(slot, sfd, srv, pr, persist);
+        if fast {
             return;
         }
-        const pv: &[byte] = pr.request.path_params[0].value;
-        if pv.len > BENCH_ITEM_CAP {
-            try bench_prepare_bad_close(slot, sfd, srv);
-            return;
+        var z: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
+        const empty_len: usize = 0;
+        const idx: i32 = router_find_route_request(&g_bench_router, pr.request.method, &pr.request);
+        var st: Status = Status.OK;
+        var blen: usize = 0;
+        var close_after: bool = false;
+        if persist == false {
+            close_after = true;
         }
-        var j: usize = 0;
-        const it0: usize = slot * BENCH_ITEM_CAP;
-        while j < pv.len {
-            if j < BENCH_ITEM_CAP && it0 + j < BENCH_ITEM_CAP * EPOLL_SERVER_MAX_SLOTS {
-                g_item_store[it0 + j] = pv.ptr[j];
-            }
-            j = j + 1;
-        }
-        blen = pv.len;
-        g_wbody_base[slot] = @ptr_from_usize(@usize_from_ptr(&g_item_store[0] as &void) + it0) as &byte;
-    } else if idx == 3 {
-        blen = 1024;
-        g_wbody_base[slot] = &g_payload1k[0] as &byte;
-    } else if idx == 4 {
-        blen = 10240;
-        g_wbody_base[slot] = &g_payload10k[0] as &byte;
-    } else if idx == 5 {
-        blen = 102400;
-        g_wbody_base[slot] = &g_payload100k[0] as &byte;
-    } else {
-        st = Status.NotFound;
-        blen = empty_len;
-        g_wbody_base[slot] = &z[0] as &byte;
-    }
+        const emit_ka: bool = persist && !pr.request.http11;
 
-    const hl: usize = try bench_build_hdr(bench_hdr_base(slot), st, blen, close_after, emit_ka);
-    g_whlen[slot] = hl;
-    g_wblen[slot] = blen;
-    g_slot_persist[slot] = persist;
-    g_woff[slot] = 0;
+        if idx == -1 {
+            st = Status.NotFound;
+            blen = empty_len;
+            g_wbody_base[slot] = &z[0] as &byte;
+        } else if idx == -2 {
+            st = Status.MethodNotAllowed;
+            blen = empty_len;
+            g_wbody_base[slot] = &z[0] as &byte;
+        } else if idx == 0 {
+            blen = 5;
+            g_wbody_base[slot] = &g_bench_hello_body[0] as &byte;
+        } else if idx == 1 {
+            blen = 11;
+            g_wbody_base[slot] = &g_bench_json_body[0] as &byte;
+        } else if idx == 2 {
+            _ = router_apply_path_params_request(&pr.request, &"/item/:id"[0: 9]) catch {
+                try bench_prepare_bad_close(slot, sfd, srv);
+                return;
+            };
+            if pr.request.path_param_count < 1 {
+                try bench_prepare_bad_close(slot, sfd, srv);
+                return;
+            }
+            const pv: &[byte] = pr.request.path_params[0].value;
+            const item_cap: usize = BENCH_ITEM_CAP;
+            if pv.len > item_cap {
+                try bench_prepare_bad_close(slot, sfd, srv);
+                return;
+            }
+            var j: usize = 0;
+            const it0: usize = slot * BENCH_ITEM_CAP;
+            while j < pv.len && it0 + j < @len(g_item_store) {
+                if j < item_cap && it0 + j < @len(g_item_store) {
+                    g_item_store[it0 + j] = pv.ptr[j];
+                }
+                j = j + 1;
+            }
+            blen = pv.len;
+            g_wbody_base[slot] = @ptr_from_usize(@usize_from_ptr(&g_item_store[0] as &void) + it0) as &byte;
+        } else if idx == 3 {
+            blen = 1024;
+            g_wbody_base[slot] = &g_payload1k[0] as &byte;
+        } else if idx == 4 {
+            blen = 10240;
+            g_wbody_base[slot] = &g_payload10k[0] as &byte;
+        } else if idx == 5 {
+            blen = 102400;
+            g_wbody_base[slot] = &g_payload100k[0] as &byte;
+        } else {
+            st = Status.NotFound;
+            blen = empty_len;
+            g_wbody_base[slot] = &z[0] as &byte;
+        }
 
-    const combined: usize = hl + blen;
-    if combined <= BENCH_ONESHOT_CAP {
-        g_wphase[slot] = WPH_ONESHOT;
-        g_wtotal[slot] = combined;
-        var k: usize = 0;
-        const ob0: usize = slot * BENCH_ONESHOT_CAP;
-        const hb0: usize = slot * BENCH_HDR_CAP;
-        while k < hl {
-            if k < BENCH_HDR_CAP && ob0 + k < BENCH_ONESHOT_CAP * EPOLL_SERVER_MAX_SLOTS {
-                g_oneshot[ob0 + k] = g_whdr[hb0 + k];
+        const hl: usize = try bench_build_hdr(bench_hdr_base(slot), st, blen, close_after, emit_ka);
+        g_whlen[slot] = hl;
+        g_wblen[slot] = blen;
+        g_slot_persist[slot] = persist;
+        g_woff[slot] = 0;
+
+        const combined: usize = hl + blen;
+        if combined <= BENCH_ONESHOT_CAP {
+            g_wphase[slot] = WPH_ONESHOT;
+            g_wtotal[slot] = combined;
+            var k: usize = 0;
+            const ob0: usize = slot * BENCH_ONESHOT_CAP;
+            const hb0: usize = slot * BENCH_HDR_CAP;
+            while k < hl && k < @len(g_whdr) && ob0 + k < @len(g_oneshot) {
+                if k < @len(g_whdr) && ob0 + k < @len(g_oneshot) {
+                    g_oneshot[ob0 + k] = g_whdr[hb0 + k];
+                }
+                k = k + 1;
             }
-            k = k + 1;
-        }
-        var m: usize = 0;
-        while m < blen {
-            const di: usize = ob0 + hl + m;
-            if di < BENCH_ONESHOT_CAP * EPOLL_SERVER_MAX_SLOTS {
-                g_oneshot[di] = g_wbody_base[slot][m];
+            var m: usize = 0;
+            while m < blen && ob0 + hl + m < @len(g_oneshot) {
+                const di: usize = ob0 + hl + m;
+                if di < @len(g_oneshot) {
+                    g_oneshot[di] = g_wbody_base[slot][m];
+                }
+                m = m + 1;
             }
-            m = m + 1;
+        } else {
+            g_wphase[slot] = WPH_HDR;
+            g_wtotal[slot] = hl;
         }
-    } else {
-        g_wphase[slot] = WPH_HDR;
-        g_wtotal[slot] = hl;
+        try bench_start_write_mod(srv, sfd);
     }
-    try bench_start_write_mod(srv, sfd);
 }
 
 fn bench_response_fully_written(srv: &EpollServer, slot: usize, rt: &Router, cfd: i32) void {
-    if g_slot_persist[slot] == false {
-        bench_slot_close(srv, slot);
-        return;
+    if slot >= 0 && slot < @len(g_wphase) {
+        if g_slot_persist[slot] == false {
+            bench_slot_close(srv, slot);
+            return;
+        }
+        bench_slot_reset_write_state(slot);
+        _ = bench_read_only_mod(srv, cfd) catch {
+            bench_slot_close(srv, slot);
+            return;
+        };
+        // 下一请求可能已在上一次 read 中进入槽内缓冲；内核侧无新可读数据时不会再来 EPOLLIN，须在此续解析以免对端长期等响应而被断开。
+        bench_drain_buffered_requests(srv, slot, rt);
     }
-    bench_slot_reset_write_state(slot);
-    _ = bench_read_only_mod(srv, cfd) catch {
-        bench_slot_close(srv, slot);
-        return;
-    };
-    // 下一请求可能已在上一次 read 中进入槽内缓冲；内核侧无新可读数据时不会再来 EPOLLIN，须在此续解析以免对端长期等响应而被断开。
-    bench_drain_buffered_requests(srv, slot, rt);
 }
 
 fn bench_slot_continue_write(srv: &EpollServer, slot: usize, rt: &Router) void {
+    if slot >= 0 && slot < @len(g_wphase) {
     const ph0: i32 = g_wphase[slot];
     if ph0 == WPH_IDLE {
         return;
@@ -589,6 +600,7 @@ fn bench_slot_continue_write(srv: &EpollServer, slot: usize, rt: &Router) void {
         }
         bench_response_fully_written(srv, slot, rt, cfd);
     }
+    }
 }
 
 fn bench_slot_after_parse_success(
@@ -600,6 +612,7 @@ fn bench_slot_after_parse_success(
     filled: &usize,
     persist: bool,
 ) void {
+    if slot >= 0 && slot < @len(g_wphase) {
     const consumed: usize = pr.consumed;
     http_connbuf_shift(base, filled, consumed);
     if !pr.request.http11 && persist {
@@ -610,9 +623,11 @@ fn bench_slot_after_parse_success(
         return;
     };
     bench_slot_continue_write(srv, slot, rt);
+    }
 }
 
 fn bench_slot_try_read(srv: &EpollServer, slot: usize, rt: &Router) void {
+    if slot >= 0 && slot < @len(g_wphase) {
     if g_wphase[slot] != WPH_IDLE {
         return;
     }
@@ -702,19 +717,23 @@ fn bench_slot_try_read(srv: &EpollServer, slot: usize, rt: &Router) void {
             return;
         }
     }
+    }
 }
 
 fn bench_drain_buffered_requests(srv: &EpollServer, slot: usize, rt: &Router) void {
+    if slot >= 0 && slot < @len(g_wphase) {
     while g_wphase[slot] == WPH_IDLE && srv.connections[slot].buf_len > 0 {
         bench_slot_try_read(srv, slot, rt);
         if srv.connections[slot].fd < 0 {
             return;
         }
     }
+    }
 }
 
 /// 正在写响应时仍可能收到对端下一请求（流水线）；若不 `read`，内核接收缓冲塞满会堵死对端发送，易超时/RST。仅把字节收入槽缓冲，解析留到 `WPH_IDLE` 后。
 fn bench_recv_kernel_to_connbuf_nb(srv: &EpollServer, slot: usize) void {
+    if slot >= 0 && slot < @len(g_wphase) {
     const cfd: i32 = srv.connections[slot].fd;
     if cfd < 0 {
         return;
@@ -753,6 +772,7 @@ fn bench_recv_kernel_to_connbuf_nb(srv: &EpollServer, slot: usize) void {
             break;
         }
     }
+    }
 }
 
 fn bench_on_listen(srv: &EpollServer) void {
@@ -777,6 +797,7 @@ fn bench_on_listen(srv: &EpollServer) void {
 }
 
 fn bench_handle_client_event(srv: &EpollServer, slot: usize, rt: &Router, ev: &EpollEvent) void {
+    if slot >= 0 && slot < @len(g_wphase) {
     const evu: u32 = ev.events as u32;
     // 勿在 EPOLLHUP 时立即关连接：常与 EPOLLOUT 同现，先写完响应；或与未读数据同现，直接 close 易触发对端 RST。
     if (evu & EPOLLERR_U32) != 0 as u32 {
@@ -808,6 +829,7 @@ fn bench_handle_client_event(srv: &EpollServer, slot: usize, rt: &Router, ev: &E
     // 仅 HUP、无 IN 时可能仍欠一次 recv(EOF)；不补则槽位可能长期 IDLE 占满且无新事件。
     if (evu & EPOLLHUP_U32) != 0 as u32 && !want_in && g_wphase[slot] == WPH_IDLE && srv.connections[slot].fd >= 0 {
         bench_slot_try_read(srv, slot, rt);
+    }
     }
 }
 
@@ -970,7 +992,7 @@ fn run_once(rt: &Router) !void {
 
 fn bench_init_slots() void {
     var s: usize = 0;
-    while s < EPOLL_SERVER_MAX_SLOTS {
+    while s < @len(g_wphase) {
         bench_slot_reset_write_state(s);
         g_slot_persist[s] = false;
         g_http10_sess[s] = false;

@@ -24,7 +24,7 @@ fn _hmac_sha256_core(key_block: &KeyBlock64, msg: &const byte, msg_len: usize, o
     var inner: [byte: SHA256_BLOCK + HMAC_MAX_MSG] = [];
     var i: usize = 0;
     while i < SHA256_BLOCK {
-        inner[i] = key_block.b[i] ^ 0x36;
+        inner[i] = key_block.b[i] ^ (0x36 as byte);
         i = i + 1;
     }
     if msg_len <= HMAC_MAX_MSG {
@@ -37,7 +37,7 @@ fn _hmac_sha256_core(key_block: &KeyBlock64, msg: &const byte, msg_len: usize, o
         sha256(&inner[0], SHA256_BLOCK + msg_len, &inner_hash[0]);
         i = 0;
         while i < SHA256_BLOCK {
-            inner[i] = key_block.b[i] ^ 0x5c;
+            inner[i] = key_block.b[i] ^ (0x5c as byte);
             i = i + 1;
         }
         i = 0;
@@ -74,7 +74,7 @@ fn _hmac_sha384_core(key_block: &KeyBlock128, msg: &const byte, msg_len: usize, 
     var inner: [byte: SHA384_BLOCK + HMAC_MAX_MSG] = [];
     var i: usize = 0;
     while i < SHA384_BLOCK {
-        inner[i] = key_block.b[i] ^ 0x36;
+        inner[i] = key_block.b[i] ^ (0x36 as byte);
         i = i + 1;
     }
     if msg_len <= HMAC_MAX_MSG {
@@ -87,7 +87,7 @@ fn _hmac_sha384_core(key_block: &KeyBlock128, msg: &const byte, msg_len: usize, 
         sha384(&inner[0], SHA384_BLOCK + msg_len, &inner_hash[0]);
         i = 0;
         while i < SHA384_BLOCK {
-            inner[i] = key_block.b[i] ^ 0x5c;
+            inner[i] = key_block.b[i] ^ (0x5c as byte);
             i = i + 1;
         }
         i = 0;

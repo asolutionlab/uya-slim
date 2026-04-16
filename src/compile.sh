@@ -6,7 +6,7 @@
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 CFLAGS="${CFLAGS:--std=c99 -O0 -g -fno-builtin -Werror}"
-ZIG_CFLAGS_WARNINGS="${ZIG_CFLAGS_WARNINGS:--Wno-error=pointer-sign -Wno-error=parentheses-equality -Wno-error=unused-value -Wno-error=tautological-pointer-compare}"
+ZIG_CFLAGS_WARNINGS="${ZIG_CFLAGS_WARNINGS:--Wno-error=pointer-sign -Wno-error=parentheses-equality -Wno-error=unused-value -Wno-error=tautological-pointer-compare -Wno-error=tautological-compare -Wno-error=constant-conversion -Wno-error=deprecated-non-prototype}"
 LDFLAGS="${LDFLAGS:-}"
 TOOLCHAIN="${TOOLCHAIN:-system}"
 ZIG="${ZIG:-/home/winger/zig/zig}"
@@ -690,6 +690,26 @@ fi
 
 # 提取所有错误信息到单独文件
 grep -E "错误:" "$TEMP_OUTPUT" > "$TEMP_ERRORS" || true
+
+SPLIT_LINK_DIR=""
+if [ -n "${UYA_SPLIT_C_DIR:-}" ]; then
+    SPLIT_LINK_DIR="$UYA_SPLIT_C_DIR"
+elif [ "$MULTI_FILE_C" = "1" ]; then
+    SPLIT_LINK_DIR=".uyacache"
+fi
+
+# 兼容旧编译器的内部多文件链接缺陷：
+# 若 C 代码与 split Makefile 已成功生成，但编译器在最后一步调用其内部 make 链接失败，
+# 则交由本脚本后续的 run_uya_split_make_link 统一完成外部链接。
+if [ $COMPILER_EXIT -ne 0 ] && [ "$MULTI_FILE_C" = "1" ] && [ -n "$SPLIT_LINK_DIR" ]; then
+    if [ -f "$SPLIT_LINK_DIR/Makefile" ] && grep -q "代码生成完成" "$TEMP_OUTPUT"; then
+        if grep -q "错误：make 链接失败" "$TEMP_OUTPUT" || grep -q "错误：链接失败" "$TEMP_OUTPUT"; then
+            echo ""
+            echo -e "${YELLOW}检测到旧编译器内部多文件链接失败，改由脚本执行外部链接...${NC}"
+            COMPILER_EXIT=0
+        fi
+    fi
+fi
 
 # 检查编译结果
 if [ $COMPILER_EXIT -eq 0 ]; then

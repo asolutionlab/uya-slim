@@ -188,22 +188,22 @@ export fn sha384(data: &const byte, len: usize, out: &byte) void {
         buf[buf_len] = 0;
         buf_len = buf_len + 1;
     }
-    buf[112] = (len_bits_hi >> 56) as byte;
-    buf[113] = (len_bits_hi >> 48) as byte;
-    buf[114] = (len_bits_hi >> 40) as byte;
-    buf[115] = (len_bits_hi >> 32) as byte;
-    buf[116] = (len_bits_hi >> 24) as byte;
-    buf[117] = (len_bits_hi >> 16) as byte;
-    buf[118] = (len_bits_hi >> 8) as byte;
-    buf[119] = len_bits_hi as byte;
-    buf[120] = (len_bits_lo >> 56) as byte;
-    buf[121] = (len_bits_lo >> 48) as byte;
-    buf[122] = (len_bits_lo >> 40) as byte;
-    buf[123] = (len_bits_lo >> 32) as byte;
-    buf[124] = (len_bits_lo >> 24) as byte;
-    buf[125] = (len_bits_lo >> 16) as byte;
-    buf[126] = (len_bits_lo >> 8) as byte;
-    buf[127] = len_bits_lo as byte;
+    buf[112] = ((len_bits_hi >> 56) as! byte).value;
+    buf[113] = ((len_bits_hi >> 48) as! byte).value;
+    buf[114] = ((len_bits_hi >> 40) as! byte).value;
+    buf[115] = ((len_bits_hi >> 32) as! byte).value;
+    buf[116] = ((len_bits_hi >> 24) as! byte).value;
+    buf[117] = ((len_bits_hi >> 16) as! byte).value;
+    buf[118] = ((len_bits_hi >> 8) as! byte).value;
+    buf[119] = (len_bits_hi as! byte).value;
+    buf[120] = ((len_bits_lo >> 56) as! byte).value;
+    buf[121] = ((len_bits_lo >> 48) as! byte).value;
+    buf[122] = ((len_bits_lo >> 40) as! byte).value;
+    buf[123] = ((len_bits_lo >> 32) as! byte).value;
+    buf[124] = ((len_bits_lo >> 24) as! byte).value;
+    buf[125] = ((len_bits_lo >> 16) as! byte).value;
+    buf[126] = ((len_bits_lo >> 8) as! byte).value;
+    buf[127] = (len_bits_lo as! byte).value;
     _sha384_block_compress(&state, &buf[0]);
     var o: usize = 0;
     while o < 6 {

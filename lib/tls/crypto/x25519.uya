@@ -525,7 +525,7 @@ const P25519_MINUS2_BE: [byte: 32] = [
 
 fn mpi_copy(dst: &Mpi, src: &const Mpi) void {
     var i: usize = 0;
-    while i < src.n {
+    while i < src.n && i < @len(dst.limbs) && i < @len(src.limbs) {
         dst.limbs[i] = src.limbs[i];
         i = i + 1;
     }

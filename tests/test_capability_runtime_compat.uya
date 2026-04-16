@@ -364,8 +364,12 @@ fn test_capability_manager_install_load_activate_invoke_fake() !void {
     const status: CapabilityStatusCode = try capability_manager_invoke(&manager, index, 0);
 
     try assert_true(status == CapabilityStatusCode.Ok);
-    try assert_true(manager.registry.entries[index].state == CapabilityState.Active);
-    try assert_true(manager.registry.entries[index].last_status == CapabilityStatusCode.Ok);
+    if index >= 0 && index < @len(manager.registry.entries) {
+        try assert_true(manager.registry.entries[index].state == CapabilityState.Active);
+        try assert_true(manager.registry.entries[index].last_status == CapabilityStatusCode.Ok);
+        return;
+    }
+    return error.AssertionFailed;
 }
 
 fn test_capability_manager_invoke_requires_load_and_active() !void {
@@ -419,8 +423,12 @@ fn test_capability_manager_invoke_non_ok_marks_failed() !void {
 
     const status: CapabilityStatusCode = try capability_manager_invoke(&manager, index, -1);
     try assert_true(status == CapabilityStatusCode.InvalidArgument);
-    try assert_true(manager.registry.entries[index].state == CapabilityState.Failed);
-    try assert_true(manager.registry.entries[index].last_status == CapabilityStatusCode.InvalidArgument);
+    if index >= 0 && index < @len(manager.registry.entries) as i32 {
+        try assert_true(manager.registry.entries[index].state == CapabilityState.Failed);
+        try assert_true(manager.registry.entries[index].last_status == CapabilityStatusCode.InvalidArgument);
+        return;
+    }
+    return error.AssertionFailed;
 }
 
 fn test_capability_manager_disable_and_rollback_delegate_to_loader() !void {
@@ -442,11 +450,15 @@ fn test_capability_manager_disable_and_rollback_delegate_to_loader() !void {
     try capability_manager_load(&manager, index, &payload[0] as &const byte, 4 as usize);
     try capability_manager_activate(&manager, index);
     try capability_manager_disable(&manager, index);
-    try assert_true(manager.registry.entries[index].state == CapabilityState.Disabled);
+    if index >= 0 && index < @len(manager.registry.entries) as i32 {
+        try assert_true(manager.registry.entries[index].state == CapabilityState.Disabled);
 
-    try capability_loader_fail(&manager.registry, index, CapabilityStatusCode.InvalidArgument);
-    try capability_manager_rollback(&manager, index);
-    try assert_true(manager.registry.entries[index].state == CapabilityState.Disabled);
+        try capability_loader_fail(&manager.registry, index, CapabilityStatusCode.InvalidArgument);
+        try capability_manager_rollback(&manager, index);
+        try assert_true(manager.registry.entries[index].state == CapabilityState.Disabled);
+        return;
+    }
+    return error.AssertionFailed;
 }
 
 fn test_capability_manager_unload_clears_loaded_session() !void {
@@ -468,16 +480,19 @@ fn test_capability_manager_unload_clears_loaded_session() !void {
     try capability_manager_load(&manager, index, &payload[0] as &const byte, 4 as usize);
     try capability_manager_activate(&manager, index);
     try capability_manager_unload(&manager, index);
+    if index >= 0 && index < @len(manager.registry.entries) as i32 && index < @len(manager.session_loaded) as i32 {
+        try assert_true(manager.session_loaded[index] == false);
+        try assert_true(manager.registry.entries[index].state == CapabilityState.Disabled);
 
-    try assert_true(manager.session_loaded[index] == false);
-    try assert_true(manager.registry.entries[index].state == CapabilityState.Disabled);
-
-    var invoke_failed: bool = false;
-    _ = capability_manager_invoke(&manager, index, 0) catch {
-        invoke_failed = true;
+        var invoke_failed: bool = false;
+        _ = capability_manager_invoke(&manager, index, 0) catch {
+            invoke_failed = true;
+            return;
+        };
+        try assert_true(invoke_failed);
         return;
-    };
-    try assert_true(invoke_failed);
+    }
+    return error.AssertionFailed;
 }
 
 fn test_capability_manager_unload_requires_loaded_session() !void {
@@ -506,9 +521,13 @@ fn test_capability_loader_install_records_installed_entry() !void {
 
     try assert_eq_i32(index, 0);
     try assert_eq_i32(registry.count, 1);
-    try assert_true(registry.entries[index].in_use);
-    try assert_true(registry.entries[index].state == CapabilityState.Installed);
-    try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Ok);
+    if index >= 0 && index < @len(registry.entries) as i32 {
+        try assert_true(registry.entries[index].in_use);
+        try assert_true(registry.entries[index].state == CapabilityState.Installed);
+        try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Ok);
+        return;
+    }
+    return error.AssertionFailed;
 }
 
 fn test_capability_loader_install_rejects_invalid_manifest() !void {
@@ -532,9 +551,12 @@ fn test_capability_loader_activate_transitions_to_active() !void {
     const index: i32 = try capability_loader_install(&registry, manifest);
 
     try capability_loader_activate(&registry, index);
-
-    try assert_true(registry.entries[index].state == CapabilityState.Active);
-    try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Ok);
+    if index >= 0 && index < @len(registry.entries) as i32 {
+        try assert_true(registry.entries[index].state == CapabilityState.Active);
+        try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Ok);
+        return;
+    }
+    return error.AssertionFailed;
 }
 
 fn test_capability_loader_disable_marks_disabled() !void {
@@ -544,9 +566,12 @@ fn test_capability_loader_disable_marks_disabled() !void {
 
     try capability_loader_activate(&registry, index);
     try capability_loader_disable(&registry, index);
-
-    try assert_true(registry.entries[index].state == CapabilityState.Disabled);
-    try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Disabled);
+    if index >= 0 && index < @len(registry.entries) as i32 {
+        try assert_true(registry.entries[index].state == CapabilityState.Disabled);
+        try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Disabled);
+        return;
+    }
+    return error.AssertionFailed;
 }
 
 fn test_capability_loader_rollback_disables_failed_entry() !void {
@@ -556,13 +581,17 @@ fn test_capability_loader_rollback_disables_failed_entry() !void {
 
     try capability_loader_activate(&registry, index);
     try capability_loader_fail(&registry, index, CapabilityStatusCode.PermissionDenied);
-    try assert_true(registry.entries[index].state == CapabilityState.Failed);
-    try assert_true(registry.entries[index].last_status == CapabilityStatusCode.PermissionDenied);
+    if index >= 0 && index < @len(registry.entries) as i32 {
+        try assert_true(registry.entries[index].state == CapabilityState.Failed);
+        try assert_true(registry.entries[index].last_status == CapabilityStatusCode.PermissionDenied);
 
-    try capability_loader_rollback(&registry, index);
+        try capability_loader_rollback(&registry, index);
 
-    try assert_true(registry.entries[index].state == CapabilityState.Disabled);
-    try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Disabled);
+        try assert_true(registry.entries[index].state == CapabilityState.Disabled);
+        try assert_true(registry.entries[index].last_status == CapabilityStatusCode.Disabled);
+        return;
+    }
+    return error.AssertionFailed;
 }
 
 fn test_capability_registry_add_rejects_when_full() !void {
@@ -615,14 +644,18 @@ fn test_capability_loader_activate_invalid_or_unused_entry_is_error() !void {
 
     const manifest: CapabilityManifest = make_valid_manifest('u' as byte, CapabilityBackendKind.NativeUya);
     const index: i32 = try capability_loader_install(&registry, manifest);
-    registry.entries[index].in_use = false;
+    if index >= 0 && index < @len(registry.entries) as i32 {
+        registry.entries[index].in_use = false;
 
-    var unused_failed: bool = false;
-    _ = capability_loader_activate(&registry, index) catch {
-        unused_failed = true;
-    };
-    try assert_true(unused_failed);
-    try assert_true(registry.entries[index].state == CapabilityState.Installed);
+        var unused_failed: bool = false;
+        _ = capability_loader_activate(&registry, index) catch {
+            unused_failed = true;
+        };
+        try assert_true(unused_failed);
+        try assert_true(registry.entries[index].state == CapabilityState.Installed);
+        return;
+    }
+    return error.AssertionFailed;
 }
 
 fn test_capability_loader_fail_invalid_index_is_error() !void {
@@ -646,13 +679,17 @@ fn test_capability_loader_rollback_invalid_or_unused_entry_is_error() !void {
 
     const manifest: CapabilityManifest = make_valid_manifest('q' as byte, CapabilityBackendKind.NativeUya);
     const index: i32 = try capability_loader_install(&registry, manifest);
-    registry.entries[index].in_use = false;
+    if index >= 0 && index < @len(registry.entries) as i32 {
+        registry.entries[index].in_use = false;
 
-    var unused_failed: bool = false;
-    _ = capability_loader_rollback(&registry, index) catch {
-        unused_failed = true;
-    };
-    try assert_true(unused_failed);
+        var unused_failed: bool = false;
+        _ = capability_loader_rollback(&registry, index) catch {
+            unused_failed = true;
+        };
+        try assert_true(unused_failed);
+        return;
+    }
+    return error.AssertionFailed;
 }
 
 fn test_capability_hostapi_time_now_requires_permission() !void {

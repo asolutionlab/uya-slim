@@ -1877,6 +1877,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
             }
             if is_bootstrap == 0 {
                 fputs("#include <math.h>\n" as *byte, codegen.emit_stream as *void);
+                // Zig cc 会把 math.h 里的同名宏映射成 builtin；显式撤销，避免与后续原型冲突
+                fputs("#ifdef isnan\n#undef isnan\n#endif\n" as *byte, codegen.emit_stream as *void);
+                fputs("#ifdef isinf\n#undef isinf\n#endif\n" as *byte, codegen.emit_stream as *void);
+                fputs("#ifdef isfinite\n#undef isfinite\n#endif\n" as *byte, codegen.emit_stream as *void);
+                fputs("#ifdef signbit\n#undef signbit\n#endif\n" as *byte, codegen.emit_stream as *void);
                 // 避免与 lib/libc/math.uya 里同名常量冲突（INFINITY/NAN/HUGE_VAL*）
                 fputs("#ifdef INFINITY\n#undef INFINITY\n#endif\n" as *byte, codegen.emit_stream as *void);
                 fputs("#ifdef NAN\n#undef NAN\n#endif\n" as *byte, codegen.emit_stream as *void);

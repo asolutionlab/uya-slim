@@ -290,12 +290,20 @@ fn request_header_name_eq_ci(h: &Header, name: &[byte]) bool {
 /// 按 **HTTP 头名大小写不敏感** 查找；值切片指向 `req.headers` 内缓冲区（与 `Request` 同生命周期）。
 /// 未找到时返回 `error.InvalidRequest`。
 export fn request_get_header(req: &Request, name: &[byte]) !&[byte] {
+    const header_cap: i32 = @len(req.headers) as i32;
+    if req.header_count < 0 || req.header_count > header_cap {
+        return error.InvalidRequest;
+    }
     var hi: i32 = 0;
-    while hi < req.header_count {
-        const h: &Header = &req.headers[hi];
-        if request_header_name_eq_ci(h, name) {
-            const vb: &byte = &h.value[0] as &byte;
-            return vb[0: h.value_len];
+    while hi < req.header_count && hi < header_cap {
+        if hi >= 0 && hi < header_cap {
+            const h: &Header = &req.headers[hi];
+            if request_header_name_eq_ci(h, name) {
+                const vb: &byte = &h.value[0] as &byte;
+                return vb[0: h.value_len];
+            }
+        } else {
+            return error.InvalidRequest;
         }
         hi = hi + 1;
     }

@@ -74,7 +74,7 @@ export fn mpi_from_bytes_be(self: &Mpi, data: &const byte, len: usize) !void {
 }
 
 fn mpi_normalize(self: &Mpi) void {
-    while self.n > 0 && self.limbs[self.n - 1] == 0 {
+    while self.n > 0 && self.n <= @len(self.limbs) && self.limbs[self.n - 1] == 0 {
         self.n = self.n - 1;
     }
     if self.n == 0 {
@@ -104,19 +104,28 @@ export fn mpi_to_bytes_be(self: &const Mpi, out: &byte, out_len: usize) !usize {
     var li: usize = self.n;
     while li > 0 {
         li = li - 1;
-        var v: u64 = self.limbs[li];
-        var bj: i32 = 7;
-        while bj >= 0 {
-            const shift: i32 = (bj * 8) as! i32 catch { 0 as i32; };
-            const masked: u64 = (v >> shift) & (0xFF as u64);
-            tmp[p] = masked as! byte catch { 0 as byte; };
-            p = p + 1;
-            bj = bj - 1;
+        const safe_li: usize = li;
+        if safe_li >= 0 && safe_li < @len(self.limbs) {
+            var v: u64 = self.limbs[safe_li];
+            var bj: i32 = 7;
+            while bj >= 0 {
+                const shift: i32 = (bj * 8) as! i32 catch { 0 as i32; };
+                const masked: u64 = (v >> shift) & (0xFF as u64);
+                if p < @len(tmp) {
+                    tmp[p] = masked as! byte catch { 0 as byte; };
+                    p = p + 1;
+                } else {
+                    return error.TlsBadInput;
+                }
+                bj = bj - 1;
+            }
+        } else {
+            return error.TlsBadInput;
         }
     }
     const start2: usize = total - need;
     var k: usize = 0;
-    while k < need {
+    while k < need && k < out_len && start2 + k < @len(tmp) {
         out[k] = tmp[start2 + k];
         k = k + 1;
     }
@@ -136,6 +145,9 @@ fn mpi_bit_len(self: &const Mpi) usize {
     if self.n == 0 {
         return 0;
     }
+    if self.n > @len(self.limbs) {
+        return 0;
+    }
     var v: u64 = self.limbs[self.n - 1];
     var bits: usize = 0;
     while v != 0 {
@@ -147,6 +159,9 @@ fn mpi_bit_len(self: &const Mpi) usize {
 
 // 比较：返回 -1 / 0 / 1（目前用于非负大数；后续若需要常量时间路径再补）
 export fn mpi_compare(a: &const Mpi, b: &const Mpi) i32 {
+    if a.n > @len(a.limbs) || b.n > @len(b.limbs) {
+        return 0;
+    }
     if a.sign != b.sign {
         if a.sign < b.sign {
             return -1;
@@ -165,13 +180,16 @@ export fn mpi_compare(a: &const Mpi, b: &const Mpi) i32 {
     var idx: usize = a.n;
     while idx > 0 {
         idx = idx - 1;
-        const al: u64 = a.limbs[idx];
-        const bl: u64 = b.limbs[idx];
-        if al < bl {
-            return 0 - a.sign;
-        }
-        if al > bl {
-            return a.sign;
+        const safe_idx: usize = idx;
+        if safe_idx >= 0 && safe_idx < @len(a.limbs) && safe_idx < @len(b.limbs) {
+            const al: u64 = a.limbs[safe_idx];
+            const bl: u64 = b.limbs[safe_idx];
+            if al < bl {
+                return 0 - a.sign;
+            }
+            if al > bl {
+                return a.sign;
+            }
         }
     }
     return 0;
@@ -201,20 +219,23 @@ export fn mpi_add(result: &Mpi, a: &const Mpi, b: &const Mpi) !void {
     if max_n >= MPI_MAX_LIMBS {
         return error.TlsBadInput;
     }
+    if a.n > @len(a.limbs) || b.n > @len(b.limbs) || max_n > @len(result.limbs) {
+        return error.TlsBadInput;
+    }
     var carry: u64 = 0;
     var i: usize = 0;
-    while i < max_n {
+    while i < max_n && i < @len(result.limbs) {
         var av: u64 = 0;
-        if i < a.n {
+        if i < a.n && i < @len(a.limbs) {
             av = a.limbs[i];
         }
         var bv: u64 = 0;
-        if i < b.n {
+        if i < b.n && i < @len(b.limbs) {
             bv = b.limbs[i];
         }
         const s: u64 = av + bv;
         const s2: u64 = s + carry;
-        result.limbs[i] = s2 & 0xFFFFFFFFFFFFFFFF;
+        result.limbs[i] = s2 & (0xFFFFFFFFFFFFFFFF as u64);
         carry = 0;
         if (s < av) || (s2 < s) {
             carry = 1;
@@ -222,7 +243,7 @@ export fn mpi_add(result: &Mpi, a: &const Mpi, b: &const Mpi) !void {
         i = i + 1;
     }
     if carry != 0 {
-        if max_n >= MPI_MAX_LIMBS {
+        if max_n >= MPI_MAX_LIMBS || max_n >= @len(result.limbs) {
             return error.TlsBadInput;
         }
         result.limbs[max_n] = carry;
@@ -256,12 +277,15 @@ export fn mpi_sub(result: &Mpi, a: &const Mpi, b: &const Mpi) !void {
         mpi_init(result);
         return;
     }
+    if a.n > @len(a.limbs) || b.n > @len(b.limbs) || a.n > @len(result.limbs) {
+        return error.TlsBadInput;
+    }
     var borrow: u64 = 0;
     var i: usize = 0;
-    while i < a.n {
+    while i < a.n && i < @len(result.limbs) {
         const av: u64 = a.limbs[i];
         var bv: u64 = 0;
-        if i < b.n {
+        if i < b.n && i < @len(b.limbs) {
             bv = b.limbs[i];
         }
         const bi: u64 = bv + borrow;
@@ -341,51 +365,71 @@ export fn mpi_mul(result: &Mpi, a: &const Mpi, b: &const Mpi) !void {
     if a.n + b.n > MPI_MAX_LIMBS {
         return error.TlsBadInput;
     }
+    if a.n > @len(a.limbs) || b.n > @len(b.limbs) {
+        return error.TlsBadInput;
+    }
     mem_set(&result.limbs[0] as &byte, 0, MPI_MAX_LIMBS * LIMB_BYTES);
     var i: usize = 0;
-    while i < a.n {
+    while i < a.n && i < @len(a.limbs) {
         var j: usize = 0;
         var carry: u64 = 0;
-        while j < b.n {
+        while j < b.n && j < @len(b.limbs) {
             const idx: usize = i + j;
-            const prod: Mul64Result = mul_u64_hi_lo(a.limbs[i], b.limbs[j]);
-            const old_r: u64 = result.limbs[idx];
-            const sum: u64 = old_r + prod.lo;
-            const sum2: u64 = sum + carry;
-            result.limbs[idx] = sum2 & 0xFFFFFFFFFFFFFFFF;
-            carry = prod.hi;
-            if sum < old_r {
-                carry = carry + 1;
+            if idx >= @len(result.limbs) {
+                return error.TlsBadInput;
             }
-            if sum2 < sum {
-                carry = carry + 1;
+            const prod: Mul64Result = mul_u64_hi_lo(a.limbs[i], b.limbs[j]);
+            if idx >= 0 && idx < @len(result.limbs) {
+                const old_r: u64 = result.limbs[idx];
+                const sum: u64 = old_r + prod.lo;
+                const sum2: u64 = sum + carry;
+                result.limbs[idx] = sum2 & (0xFFFFFFFFFFFFFFFF as u64);
+                carry = prod.hi;
+                if sum < old_r {
+                    carry = carry + 1;
+                }
+                if sum2 < sum {
+                    carry = carry + 1;
+                }
+            } else {
+                return error.TlsBadInput;
             }
             j = j + 1;
         }
         if carry != 0 {
             var k: usize = i + b.n;
-            if k >= MPI_MAX_LIMBS {
+            if k >= MPI_MAX_LIMBS || k >= @len(result.limbs) {
                 return error.TlsBadInput;
             }
-            var s: u64 = result.limbs[k] + carry;
-            result.limbs[k] = s;
-            var c: u64 = 0;
-            if s < carry {
-                c = 1;
-            }
-            while c != 0 {
-                k = k + 1;
-                if k >= MPI_MAX_LIMBS {
-                    return error.TlsBadInput;
-                }
-                const old_k: u64 = result.limbs[k];
-                s = old_k + c;
-                result.limbs[k] = s;
-                if s < old_k {
+            const carry_idx: usize = k;
+            if carry_idx < @len(result.limbs) {
+                var s: u64 = result.limbs[carry_idx] + carry;
+                result.limbs[carry_idx] = s;
+                var c: u64 = 0;
+                if s < carry {
                     c = 1;
-                } else {
-                    c = 0;
                 }
+                while c != 0 {
+                    k = k + 1;
+                    if k >= MPI_MAX_LIMBS || k >= @len(result.limbs) {
+                        return error.TlsBadInput;
+                    }
+                    const carry_idx2: usize = k;
+                    if carry_idx2 < @len(result.limbs) {
+                        const old_k: u64 = result.limbs[carry_idx2];
+                        s = old_k + c;
+                        result.limbs[carry_idx2] = s;
+                        if s < old_k {
+                            c = 1;
+                        } else {
+                            c = 0;
+                        }
+                    } else {
+                        return error.TlsBadInput;
+                    }
+                }
+            } else {
+                return error.TlsBadInput;
             }
         }
         i = i + 1;
@@ -471,14 +515,14 @@ export fn mpi_mod(result: &Mpi, a: &const Mpi, b: &const Mpi) !void {
         // rem <<= 1
         var carry: u64 = 0;
         var i: usize = 0;
-        while i < rem.n {
+        while i < rem.n && i < @len(rem.limbs) {
             const v: u64 = rem.limbs[i];
             rem.limbs[i] = (v << 1) | carry;
             carry = v >> 63;
             i = i + 1;
         }
         if carry != 0 {
-            if rem.n >= MPI_MAX_LIMBS {
+            if rem.n >= MPI_MAX_LIMBS || rem.n >= @len(rem.limbs) {
                 return error.TlsBadInput;
             }
             rem.limbs[rem.n] = carry;
@@ -492,15 +536,16 @@ export fn mpi_mod(result: &Mpi, a: &const Mpi, b: &const Mpi) !void {
         const limb_idx: usize = (bit_idx / 64) as! usize catch { 0 as usize; };
         const j: usize = (bit_idx % 64) as! usize catch { 0 as usize; };
         var bit: u64 = 0;
-        if limb_idx < a.n {
-            bit = (a.limbs[limb_idx] >> j) % 2;
+        if limb_idx < a.n && limb_idx < @len(a.limbs) {
+            const bit_shift: i32 = (j as! i32).value;
+            bit = (a.limbs[limb_idx] >> bit_shift) & (1 as u64);
         }
         if bit != 0 {
             var carry_add: u64 = 1;
             var ai: usize = 0;
             while carry_add != 0 {
                 if ai >= rem.n {
-                    if rem.n >= MPI_MAX_LIMBS {
+                    if rem.n >= MPI_MAX_LIMBS || ai >= @len(rem.limbs) {
                         return error.TlsBadInput;
                     }
                     rem.limbs[ai] = carry_add;
@@ -508,13 +553,21 @@ export fn mpi_mod(result: &Mpi, a: &const Mpi, b: &const Mpi) !void {
                     rem.sign = 1;
                     carry_add = 0;
                 } else {
-                    const old_v: u64 = rem.limbs[ai];
-                    const sum_v: u64 = old_v + carry_add;
-                    rem.limbs[ai] = sum_v;
-                    if sum_v < old_v {
-                        carry_add = 1;
+                    if ai >= @len(rem.limbs) {
+                        return error.TlsBadInput;
+                    }
+                    const carry_idx3: usize = ai;
+                    if carry_idx3 < @len(rem.limbs) {
+                        const old_v: u64 = rem.limbs[carry_idx3];
+                        const sum_v: u64 = old_v + carry_add;
+                        rem.limbs[carry_idx3] = sum_v;
+                        if sum_v < old_v {
+                            carry_add = 1;
+                        } else {
+                            carry_add = 0;
+                        }
                     } else {
-                        carry_add = 0;
+                        return error.TlsBadInput;
                     }
                     ai = ai + 1;
                 }
@@ -562,8 +615,9 @@ export fn mpi_exp_mod(result: &Mpi, base: &const Mpi, exp: &const Mpi, m: &const
         mpi_mod(result, &t, m) catch |_| { return error.TlsCryptoFailure; };
         const limb_idx: usize = (bit_idx / 64) as! usize catch { 0 as usize; };
         const j: usize = (bit_idx % 64) as! usize catch { 0 as usize; };
-        if limb_idx < e.n {
-            const bit: u64 = (e.limbs[limb_idx] >> j) % 2;
+        if limb_idx < e.n && limb_idx < @len(e.limbs) {
+            const bit_shift: i32 = (j as! i32).value;
+            const bit: u64 = (e.limbs[limb_idx] >> bit_shift) & (1 as u64);
             if bit != 0 {
                 mpi_mul(&t, result, &b) catch |_| { return error.TlsCryptoFailure; };
                 mpi_mod(result, &t, m) catch |_| { return error.TlsCryptoFailure; };

@@ -8,7 +8,7 @@ use std.mem.allocator.IAllocator;
 use std.mem.allocator.g_allocator;
 
 // GCC 原子 CAS 内建；这里本地声明，避免引入整个 pthread 模块造成额外依赖。
-extern "libc" fn __atomic_compare_exchange_n(ptr: &atomic i32, expected: &i32, desired: i32, weak: i32, success_mem: i32, failure_mem: i32) i32;
+extern "libc" fn __atomic_compare_exchange_n(ptr: &i32, expected: &i32, desired: i32, weak: i32, success_mem: i32, failure_mem: i32) i32;
 const ASYNC_CH_ATOMIC_SEQ_CST: i32 = 5;
 
 // 与 ring_queue.uya 中逻辑一致；不调用 `ring_queue_new`，避免合并 C 输出时函数定义顺序导致隐式声明。
@@ -65,7 +65,7 @@ export struct MpscChannel<T> {
 
     fn _try_lock(self: &Self) bool {
         var expected: i32 = 0;
-        return __atomic_compare_exchange_n(&self._lock, &expected, 1, 0, ASYNC_CH_ATOMIC_SEQ_CST, ASYNC_CH_ATOMIC_SEQ_CST) != 0;
+        return __atomic_compare_exchange_n((&self._lock) as &i32, &expected, 1, 0, ASYNC_CH_ATOMIC_SEQ_CST, ASYNC_CH_ATOMIC_SEQ_CST) != 0;
     }
 
     fn _unlock(self: &Self) void {
@@ -153,4 +153,3 @@ export fn mpsc_channel_new<T>(allocator: IAllocator, capacity: i32) MpscChannel<
         },
     };
 }
-

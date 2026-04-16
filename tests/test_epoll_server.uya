@@ -165,18 +165,55 @@ fn run_epoll_client_sleep_then_get(port: u16) void {
 
 /// 遇 `ReadWouldBlock` 时 `epoll_wait` 再读，直至得到完整 `ParseResult`
 fn epoll_read_request_until_done(srv: &EpollServer, slot: usize, evs: &EpollEvent) !ParseResult {
-    const cfd: i32 = srv.connections[slot].fd;
-    while true {
-        const st: !ParseResult = http_conn_read_parse_nonblocking(cfd, &srv.connections[slot].buf[0] as &byte, EPOLL_SERVER_IO_CAP, &srv.connections[slot].buf_len);
-        match st {
-            error.ReadWouldBlock => {
-                _ = try epoll_server_wait_events(srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, evs, 8);
-            }
-            pr => {
-                return pr;
+    const slot_i32: i32 = slot as i32;
+    if slot_i32 >= 0 && slot_i32 < @len(srv.connections) {
+        const cfd: i32 = srv.connections[slot_i32].fd;
+        while true {
+            const st: !ParseResult = epoll_read_request_nonblocking_at_slot(srv, slot, cfd);
+            match st {
+                error.ReadWouldBlock => {
+                    _ = try epoll_server_wait_events(srv, EPOLL_TEST_EPOLL_TIMEOUT_MS, evs, 8);
+                }
+                pr => {
+                    return pr;
+                }
             }
         }
     }
+    return error.InvalidRequest;
+}
+
+fn epoll_connection_fd(srv: &EpollServer, slot: usize) !i32 {
+    const slot_i32: i32 = slot as i32;
+    if slot_i32 >= 0 && slot_i32 < @len(srv.connections) {
+        return srv.connections[slot_i32].fd;
+    }
+    return error.InvalidRequest;
+}
+
+fn epoll_read_request_nonblocking_at_slot(srv: &EpollServer, slot: usize, cfd: i32) !ParseResult {
+    const slot_i32: i32 = slot as i32;
+    if slot_i32 >= 0 && slot_i32 < @len(srv.connections) {
+        return http_conn_read_parse_nonblocking(cfd, &srv.connections[slot_i32].buf[0] as &byte, EPOLL_SERVER_IO_CAP, &srv.connections[slot_i32].buf_len);
+    }
+    return error.InvalidRequest;
+}
+
+fn epoll_read_request_at_slot(srv: &EpollServer, slot: usize, cfd: i32) !ParseResult {
+    const slot_i32: i32 = slot as i32;
+    if slot_i32 >= 0 && slot_i32 < @len(srv.connections) {
+        return http_conn_read_parse(cfd, &srv.connections[slot_i32].buf[0] as &byte, EPOLL_SERVER_IO_CAP, &srv.connections[slot_i32].buf_len);
+    }
+    return error.InvalidRequest;
+}
+
+fn epoll_shift_request_buffer_at_slot(srv: &EpollServer, slot: usize, consumed: usize) !void {
+    const slot_i32: i32 = slot as i32;
+    if slot_i32 >= 0 && slot_i32 < @len(srv.connections) {
+        http_connbuf_shift(&srv.connections[slot_i32].buf[0] as &byte, &srv.connections[slot_i32].buf_len, consumed);
+        return;
+    }
+    return error.InvalidRequest;
 }
 
 fn run_epoll_client_pipeline_two_gets(port: u16) void {
@@ -444,7 +481,7 @@ test "epoll_one_get_route_ok" {
         epoll_server_close(&srv);
         try assert_eq_i32(0, 1);
     }
-    const cfd: i32 = srv.connections[slot].fd;
+    const cfd: i32 = try epoll_connection_fd(&srv, slot);
     var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
     const empty_body: &[byte] = empty_raw[0: 0];
     const pr: ParseResult = try http_recv_parse_request(cfd);
@@ -552,16 +589,16 @@ test "epoll_pipeline_two_gets_slot_buffer" {
     }
     var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
     const empty_body: &[byte] = empty_raw[0: 0];
-    const cfd: i32 = srv.connections[slot].fd;
-    const pr1: ParseResult = try http_conn_read_parse(cfd, &srv.connections[slot].buf[0] as &byte, EPOLL_SERVER_IO_CAP, &srv.connections[slot].buf_len);
+    const cfd: i32 = try epoll_connection_fd(&srv, slot);
+    const pr1: ParseResult = try epoll_read_request_at_slot(&srv, slot, cfd);
     const idx1: i32 = router_find_route_request(&rt, Method.GET, &pr1.request);
     if idx1 == 0 {
         _ = http_send_response(cfd, Status.OK, &"one"[0: 3]) catch {};
     } else {
         _ = http_send_response(cfd, Status.NotFound, empty_body) catch {};
     }
-    http_connbuf_shift(&srv.connections[slot].buf[0] as &byte, &srv.connections[slot].buf_len, pr1.consumed);
-    const pr2: ParseResult = try http_conn_read_parse(cfd, &srv.connections[slot].buf[0] as &byte, EPOLL_SERVER_IO_CAP, &srv.connections[slot].buf_len);
+    try epoll_shift_request_buffer_at_slot(&srv, slot, pr1.consumed);
+    const pr2: ParseResult = try epoll_read_request_at_slot(&srv, slot, cfd);
     const idx2: i32 = router_find_route_request(&rt, Method.GET, &pr2.request);
     if idx2 == 1 {
         _ = http_send_response(cfd, Status.OK, &"two"[0: 3]) catch {};
@@ -643,7 +680,7 @@ test "epoll_nonblocking_read_would_block_then_get" {
     const pr: ParseResult = try epoll_read_request_until_done(&srv, slot, &evs[0]);
     var empty_raw: [byte: 4] = [0 as byte, 0 as byte, 0 as byte, 0 as byte];
     const empty_body: &[byte] = empty_raw[0: 0];
-    const cfd: i32 = srv.connections[slot].fd;
+    const cfd: i32 = try epoll_connection_fd(&srv, slot);
     const idx: i32 = router_find_route_request(&rt, Method.GET, &pr.request);
     if idx == 0 {
         _ = http_send_response(cfd, Status.OK, &"ok"[0: 2]) catch {};
@@ -821,7 +858,7 @@ test "epoll_nonblocking_write_epollout_then_finish" {
         try assert_eq_i32(0, 1);
     }
     _ = try epoll_read_request_until_done(&srv, slot, &evs[0]);
-    const cfd: i32 = srv.connections[slot].fd;
+    const cfd: i32 = try epoll_connection_fd(&srv, slot);
     var sndlow: i32 = 4096;
     _ = try sys_setsockopt(cfd, SOL_SOCKET, SO_SNDBUF, &sndlow as &void, 4 as u32);
     const HLEN: usize = 67;

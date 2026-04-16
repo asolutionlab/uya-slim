@@ -17,15 +17,21 @@ export fn capability_loader_install(registry: &CapabilityRegistry, manifest: Cap
 }
 
 export fn capability_loader_activate(registry: &CapabilityRegistry, index: i32) !void {
-    if index < 0 || index >= registry.count {
+    const entry_cap: i32 = @len(registry.entries) as i32;
+    if index < 0 || index >= registry.count || index >= entry_cap {
         return error.CapabilityLoaderInvalidState;
     }
-    if registry.entries[index].in_use == false {
-        return error.CapabilityLoaderInvalidState;
-    }
+    const entry_idx: usize = index as usize;
+    if entry_idx < @len(registry.entries) {
+        if registry.entries[entry_idx].in_use == false {
+            return error.CapabilityLoaderInvalidState;
+        }
 
-    registry.entries[index].state = CapabilityState.Active;
-    registry.entries[index].last_status = CapabilityStatusCode.Ok;
+        registry.entries[entry_idx].state = CapabilityState.Active;
+        registry.entries[entry_idx].last_status = CapabilityStatusCode.Ok;
+        return;
+    }
+    return error.CapabilityLoaderInvalidState;
 }
 
 export fn capability_loader_disable(registry: &CapabilityRegistry, index: i32) !void {
@@ -33,22 +39,34 @@ export fn capability_loader_disable(registry: &CapabilityRegistry, index: i32) !
 }
 
 export fn capability_loader_fail(registry: &CapabilityRegistry, index: i32, status: CapabilityStatusCode) !void {
-    if index < 0 || index >= registry.count {
+    const entry_cap: i32 = @len(registry.entries) as i32;
+    if index < 0 || index >= registry.count || index >= entry_cap {
         return error.CapabilityLoaderInvalidState;
     }
-    registry.entries[index].state = CapabilityState.Failed;
-    registry.entries[index].last_status = status;
+    const entry_idx: usize = index as usize;
+    if entry_idx < @len(registry.entries) {
+        registry.entries[entry_idx].state = CapabilityState.Failed;
+        registry.entries[entry_idx].last_status = status;
+        return;
+    }
+    return error.CapabilityLoaderInvalidState;
 }
 
 export fn capability_loader_rollback(registry: &CapabilityRegistry, index: i32) !void {
-    if index < 0 || index >= registry.count {
+    const entry_cap: i32 = @len(registry.entries) as i32;
+    if index < 0 || index >= registry.count || index >= entry_cap {
         return error.CapabilityLoaderInvalidState;
     }
-    if registry.entries[index].in_use == false {
-        return error.CapabilityLoaderInvalidState;
-    }
+    const entry_idx: usize = index as usize;
+    if entry_idx < @len(registry.entries) {
+        if registry.entries[entry_idx].in_use == false {
+            return error.CapabilityLoaderInvalidState;
+        }
 
-    // MVP 阶段先定义“回滚”最小语义：禁用当前失败版本，具体旧版本恢复逻辑后续补充。
-    registry.entries[index].state = CapabilityState.Disabled;
-    registry.entries[index].last_status = CapabilityStatusCode.Disabled;
+        // MVP 阶段先定义“回滚”最小语义：禁用当前失败版本，具体旧版本恢复逻辑后续补充。
+        registry.entries[entry_idx].state = CapabilityState.Disabled;
+        registry.entries[entry_idx].last_status = CapabilityStatusCode.Disabled;
+        return;
+    }
+    return error.CapabilityLoaderInvalidState;
 }

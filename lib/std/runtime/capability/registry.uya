@@ -25,26 +25,36 @@ export fn capability_registry_init() CapabilityRegistry {
 }
 
 export fn capability_registry_add(registry: &CapabilityRegistry, manifest: CapabilityManifest) !i32 {
-    if registry.count >= CAPABILITY_MAX_REGISTRY_ENTRIES {
+    const entry_cap: i32 = @len(registry.entries) as i32;
+    if registry.count >= CAPABILITY_MAX_REGISTRY_ENTRIES || registry.count >= entry_cap {
         return error.CapabilityRegistryFull;
     }
 
     const index: i32 = registry.count;
-    registry.entries[index] = CapabilityRegistryEntry{
-        in_use: true,
-        state: CapabilityState.Installed,
-        manifest: manifest,
-        last_status: CapabilityStatusCode.Ok,
-    };
-    registry.count = registry.count + 1;
-    return index;
+    const entry_idx: usize = index as usize;
+    if entry_idx < @len(registry.entries) {
+        registry.entries[entry_idx] = CapabilityRegistryEntry{
+            in_use: true,
+            state: CapabilityState.Installed,
+            manifest: manifest,
+            last_status: CapabilityStatusCode.Ok,
+        };
+        registry.count = registry.count + 1;
+        return index;
+    }
+    return error.CapabilityRegistryFull;
 }
 
 export fn capability_registry_disable(registry: &CapabilityRegistry, index: i32) !void {
-    if index < 0 || index >= registry.count {
+    const entry_cap: i32 = @len(registry.entries) as i32;
+    if index < 0 || index >= registry.count || index >= entry_cap {
         return error.CapabilityRegistryInvalidIndex;
     }
-    registry.entries[index].state = CapabilityState.Disabled;
-    registry.entries[index].last_status = CapabilityStatusCode.Disabled;
+    const entry_idx: usize = index as usize;
+    if entry_idx < @len(registry.entries) {
+        registry.entries[entry_idx].state = CapabilityState.Disabled;
+        registry.entries[entry_idx].last_status = CapabilityStatusCode.Disabled;
+        return;
+    }
+    return error.CapabilityRegistryInvalidIndex;
 }
-

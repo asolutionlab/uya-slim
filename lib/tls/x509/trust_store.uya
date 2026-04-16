@@ -276,14 +276,18 @@ fn parse_pem_certs(ts: &TrustStore, pem_data: &const byte, pem_len: usize) bool 
             // 使用 DER 数据加载证书
             const idx: usize = ts.count;
             const der_off: usize = idx * TRUST_STORE_DER_MAX;
-            var i: usize = 0;
-            while i < der_len {
-                ts.der_storage[der_off + i] = der_buf[i];
-                i = i + 1;
-            }
-            if load_cert_from_der(&ts.certs[idx], &ts.der_storage[der_off], der_len) {
-                ts.count = ts.count + 1;
-                found_any = true;
+            if idx < @len(ts.certs) &&
+               der_off < @len(ts.der_storage) &&
+               der_len <= @len(ts.der_storage) - der_off {
+                var i: usize = 0;
+                while i < der_len && i < @len(der_buf) && der_off + i < @len(ts.der_storage) {
+                    ts.der_storage[der_off + i] = der_buf[i];
+                    i = i + 1;
+                }
+                if load_cert_from_der(&ts.certs[idx], &ts.der_storage[der_off], der_len) {
+                    ts.count = ts.count + 1;
+                    found_any = true;
+                }
             }
         }
         

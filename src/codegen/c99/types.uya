@@ -6407,7 +6407,7 @@ fn emit_simd_x86_sse_runtime_helpers(codegen: &C99CodeGenerator) void {
     const simd_emit_all: i32 = 0;
     fputs("// SIMD lowering：x86_64 SSE 或 ARM NEON（GCC/Clang）；否则标量 static inline\n" as *byte, codegen.emit_stream as *void);
     fputs("#if (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(_M_X64)) && defined(__SSE2__)\n" as *byte, codegen.emit_stream as *void);
-    fputs("#include <emmintrin.h>\n#include <xmmintrin.h>\n" as *byte, codegen.emit_stream as *void);
+    fputs("#include <emmintrin.h>\n#include <xmmintrin.h>\n#include <smmintrin.h>\n" as *byte, codegen.emit_stream as *void);
     fputs("#define UYA_HAVE_SIMD_X86_SSE 1\n" as *byte, codegen.emit_stream as *void);
     fputs("#else\n#define UYA_HAVE_SIMD_X86_SSE 0\n#endif\n" as *byte, codegen.emit_stream as *void);
     fputs("#if (defined(__GNUC__) || defined(__clang__)) && defined(__ARM_NEON)\n" as *byte, codegen.emit_stream as *void);

@@ -209,7 +209,6 @@ export fn main() i32 {
     ) catch {
         return 1;
     };
-    results[0] = fake_loop;
     print_result(&fake_loop);
 
     const fake_warm: CapabilityBenchmarkResult = run_case(
@@ -224,7 +223,6 @@ export fn main() i32 {
     ) catch {
         return 2;
     };
-    results[1] = fake_warm;
     print_result(&fake_warm);
 
     var wamr_payload: [byte: 4] = [];
@@ -244,7 +242,6 @@ export fn main() i32 {
     ) catch {
         return 3;
     };
-    results[2] = wamr_loop;
     print_result(&wamr_loop);
 
     const wamr_denied: CapabilityBenchmarkResult = run_case(
@@ -259,7 +256,6 @@ export fn main() i32 {
     ) catch {
         return 4;
     };
-    results[3] = wamr_denied;
     print_result(&wamr_denied);
 
     var native_payload: [byte: 4] = [];
@@ -279,7 +275,6 @@ export fn main() i32 {
     ) catch {
         return 5;
     };
-    results[4] = native_loop;
     print_result(&native_loop);
 
     const native_cold: CapabilityBenchmarkResult = run_case(
@@ -294,7 +289,6 @@ export fn main() i32 {
     ) catch {
         return 6;
     };
-    results[5] = native_cold;
     print_result(&native_cold);
 
     printf("capability_summary: baseline backend=%s case=%s\n" as *byte,
@@ -314,6 +308,13 @@ export fn main() i32 {
            capability_benchmark_case_name(wamr_denied.case_info.case_kind),
            wamr_denied.status_ok as i32,
            wamr_denied.metrics.failure_count);
+
+    results[0] = fake_loop;
+    results[1] = fake_warm;
+    results[2] = wamr_loop;
+    results[3] = wamr_denied;
+    results[4] = native_loop;
+    results[5] = native_cold;
 
     if !write_csv_report(&results[0: RESULT_COUNT]) {
         return 7;
