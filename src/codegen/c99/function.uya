@@ -551,6 +551,8 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
     }
 
     // export extern fn main：生成裸名 main 的前向声明，不带模块前缀
+    // C 入口统一使用 char **argv，以兼容 Zig/Clang 对 main 签名的要求；
+    // saved_argv 仍由 gen_assign_non_array 负责显式转换成 uint8_t **。
     if is_c_main != 0 {
         var j: i32 = 0;
         c99_preregister_slices_top_level_fn(codegen, fn_decl);
@@ -560,11 +562,7 @@ fn gen_function_prototype(codegen: &C99CodeGenerator, fn_decl: &ASTNode) void {
             if param != null && param.type == ASTNodeType.AST_VAR_DECL {
                 const param_name: &byte = get_safe_c_identifier(codegen, param.var_decl_name);
                 if j == 1 {
-                    if codegen.is_nostdlib != 0 {
-                        fprintf(codegen.emit_stream, "uint8_t **%s" as *byte, param_name as *byte);
-                    } else {
-                        fprintf(codegen.emit_stream, "char **%s" as *byte, param_name as *byte);
-                    }
+                    fprintf(codegen.emit_stream, "char **%s" as *byte, param_name as *byte);
                 } else {
                     const param_type: &ASTNode = param.var_decl_type;
                     const param_type_c: &byte = c99_type_to_c(codegen, param_type);
@@ -5094,17 +5092,18 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     }
 
     // 生成 per-function 帧池分配器与 release 函数（无锁 CAS free list）
+    // Zig cc 对 _Atomic(T) 的 builtin 参数更严格，因此显式把地址转成普通指针。
     fprintf(codegen.emit_stream as *void, "static _Atomic(void*) %s_pool_head = (void*)0;\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "static _Atomic(int32_t) %s_pool_count = 0;\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "static const int32_t %s_pool_cap = 4096;\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "static struct %s *%s(void) {\n" as *byte, async_struct as *byte, alloc_name as *byte);
     fputs("    struct uya_interface_IAllocator *a = std_get_async_frame_allocator();\n" as *byte, codegen.emit_stream as *void);
     fprintf(codegen.emit_stream as *void, "    if (a != (void*)0) { struct err_union_uint8_tptr r = ((struct uya_vtable_IAllocator *)a->vtable)->alloc(a->data, sizeof(struct %s)); if (r.error_id == 0) return (struct %s *)r.value; return (struct %s *)0; }\n" as *byte, async_struct as *byte, async_struct as *byte, async_struct as *byte);
-    fprintf(codegen.emit_stream as *void, "    void *head = __atomic_load_n(&%s_pool_head, __ATOMIC_ACQUIRE);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    void *head = __atomic_load_n((void **)&%s_pool_head, __ATOMIC_ACQUIRE);\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "    while (head != (void*)0) {\n" as *byte);
     fprintf(codegen.emit_stream as *void, "        void *next = *(void**)head;\n" as *byte);
-    fprintf(codegen.emit_stream as *void, "        if (__atomic_compare_exchange_n(&%s_pool_head, &head, next, 1, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {\n" as *byte, alloc_name as *byte);
-    fprintf(codegen.emit_stream as *void, "            __atomic_sub_fetch(&%s_pool_count, 1, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "        if (__atomic_compare_exchange_n((void **)&%s_pool_head, &head, next, 1, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "            __atomic_sub_fetch((int32_t *)&%s_pool_count, 1, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "            return (struct %s *)head;\n" as *byte, async_struct as *byte);
     fputs("        }\n    }\n" as *byte, codegen.emit_stream as *void);
     fprintf(codegen.emit_stream as *void, "    return (struct %s *)malloc(sizeof(struct %s));\n}\n" as *byte, async_struct as *byte, async_struct as *byte);
@@ -5112,13 +5111,13 @@ fn gen_async_function_stage_b(codegen: &C99CodeGenerator, fn_decl: &ASTNode, fun
     fputs("    if (p == (void*)0) return;\n" as *byte, codegen.emit_stream as *void);
     fputs("    struct uya_interface_IAllocator *a = std_get_async_frame_allocator();\n" as *byte, codegen.emit_stream as *void);
     fprintf(codegen.emit_stream as *void, "    if (a != (void*)0) { ((struct uya_vtable_IAllocator *)a->vtable)->dealloc(a->data, (uint8_t *)p); return; }\n" as *byte);
-    fprintf(codegen.emit_stream as *void, "    int32_t cnt = __atomic_load_n(&%s_pool_count, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    int32_t cnt = __atomic_load_n((int32_t *)&%s_pool_count, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "    if (cnt >= %s_pool_cap) { free(p); return; }\n" as *byte, alloc_name as *byte);
-    fprintf(codegen.emit_stream as *void, "    void *head = __atomic_load_n(&%s_pool_head, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "    void *head = __atomic_load_n((void **)&%s_pool_head, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "    do {\n" as *byte);
     fprintf(codegen.emit_stream as *void, "        *(void**)p = head;\n" as *byte);
-    fprintf(codegen.emit_stream as *void, "        if (__atomic_compare_exchange_n(&%s_pool_head, &head, p, 1, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {\n" as *byte, alloc_name as *byte);
-    fprintf(codegen.emit_stream as *void, "            __atomic_add_fetch(&%s_pool_count, 1, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "        if (__atomic_compare_exchange_n((void **)&%s_pool_head, &head, p, 1, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {\n" as *byte, alloc_name as *byte);
+    fprintf(codegen.emit_stream as *void, "            __atomic_add_fetch((int32_t *)&%s_pool_count, 1, __ATOMIC_RELAXED);\n" as *byte, alloc_name as *byte);
     fprintf(codegen.emit_stream as *void, "            return;\n        }\n    } while (1);\n}\n" as *byte, alloc_name as *byte);
 
     // 生成 release 函数：先 stop，再归还 per-function free list

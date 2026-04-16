@@ -307,7 +307,7 @@ fn set_union_mono_context_from_tagged_type(codegen: &C99CodeGenerator, union_dec
 // 从 C 类型字符串（如 "struct Future_err_i32"）设置结构体单态上下文，用于方法返回类型中的类型参数解析
 // 返回 1 表示已设置，0 表示未设置（非泛型或未找到）
 fn set_struct_mono_context_from_type_c(codegen: &C99CodeGenerator, type_c: &byte) i32 {
-    if codegen == null || type_c == null || codegen.mono_instances == null {
+    if codegen == null || type_c == null {
         return 0;
     }
     const struct_pos: *byte = strstr(type_c as *byte, "struct " as *byte);
@@ -1543,11 +1543,11 @@ fn emit_interface_structs_and_vtables(codegen: &C99CodeGenerator) void {
 
     // 第三步：为已使用到的泛型接口实例生成接口值结构体与 vtable 结构体
     // 通过 mono_instances 收集（checker/type_from_ast 会为所有 T<Args> 注册 mono instance）
-    if codegen.mono_instances != null {
+    if codegen.mono_instance_count > 0 {
         var mi: i32 = 0;
         while mi < codegen.mono_instance_count {
             const inst: &MonoInstanceCodegen = &codegen.mono_instances[mi];
-            if inst == null || inst.is_function != 0 || inst.generic_name == null ||
+            if inst.is_function != 0 || inst.generic_name == null ||
                 inst.type_args == null || inst.type_arg_count <= 0 {
                 mi = mi + 1;
                 continue;
@@ -1906,11 +1906,11 @@ fn emit_vtable_constants(codegen: &C99CodeGenerator) void {
             }
 
             // 泛型接口：为已生成的结构体单态实例生成 vtable 常量（如 Future<i32>）
-            if is_generic_interface_c99(iface_decl) != 0 && codegen.mono_instances != null {
+            if is_generic_interface_c99(iface_decl) != 0 && codegen.mono_instance_count > 0 {
                 var mi: i32 = 0;
                 while mi < codegen.mono_instance_count {
                     const inst: &MonoInstanceCodegen = &codegen.mono_instances[mi];
-                    if inst == null || inst.is_function != 0 || inst.generic_name == null ||
+                    if inst.is_function != 0 || inst.generic_name == null ||
                         strcmp(inst.generic_name as *byte, struct_name as *byte) != 0 ||
                         inst.type_args == null || inst.type_arg_count <= 0 {
                         mi = mi + 1;

@@ -6,6 +6,7 @@
 
 # 共享平台/工具链模型（可通过环境变量覆盖）
 CFLAGS="${CFLAGS:--std=c99 -O0 -g -fno-builtin -Werror}"
+ZIG_CFLAGS_WARNINGS="${ZIG_CFLAGS_WARNINGS:--Wno-error=pointer-sign -Wno-error=parentheses-equality -Wno-error=unused-value -Wno-error=tautological-pointer-compare}"
 LDFLAGS="${LDFLAGS:-}"
 TOOLCHAIN="${TOOLCHAIN:-system}"
 ZIG="${ZIG:-/home/winger/zig/zig}"
@@ -75,6 +76,10 @@ fi
 if [ -n "$CC_TARGET_FLAGS" ]; then
     read -r -a CC_TARGET_FLAGS_ARR <<< "$CC_TARGET_FLAGS"
     CC_CMD+=("${CC_TARGET_FLAGS_ARR[@]}")
+fi
+
+if [ "$TOOLCHAIN" = "zig" ]; then
+    CFLAGS="$CFLAGS $ZIG_CFLAGS_WARNINGS"
 fi
 
 CFLAGS_ARR=()

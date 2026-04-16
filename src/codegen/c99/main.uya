@@ -2156,7 +2156,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
         // 生成 _start 入口
         fputs("// _start - 自定义程序入口（无 C 标准库，内联汇编实现）\n" as *byte, codegen.emit_stream as *void);
         if codegen.is_nostdlib != 0 {
-            fputs("extern int32_t main(int32_t argc, uint8_t **argv);\n" as *byte, codegen.emit_stream as *void);
+            fputs("extern int32_t main(int32_t argc, char **argv);\n" as *byte, codegen.emit_stream as *void);
         } else {
             fputs("extern int main(int argc, char **argv);\n" as *byte, codegen.emit_stream as *void);
         }
@@ -3682,11 +3682,7 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
                         if p != null && p.type == ASTNodeType.AST_VAR_DECL {
                             const pname: &byte = get_safe_c_identifier(codegen, p.var_decl_name);
                             if pj == 1 {
-                                if codegen.is_nostdlib != 0 {
-                                    fprintf(codegen.emit_stream as *void, "uint8_t **%s" as *byte, pname as *byte);
-                                } else {
-                                    fprintf(codegen.emit_stream as *void, "char **%s" as *byte, pname as *byte);
-                                }
+                                fprintf(codegen.emit_stream as *void, "char **%s" as *byte, pname as *byte);
                             } else {
                                 const ptype: &ASTNode = p.var_decl_type;
                                 const ptype_c: &byte = c99_type_to_c(codegen, ptype);
