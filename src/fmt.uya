@@ -1,0 +1,1071 @@
+// fmt.uya - 代码格式化工具
+// 使用编译器的 lexer 和 parser 验证语法，然后格式化输出
+
+const FMT_BUFFER_SIZE: i32 = 1024 * 1024;
+
+// 读取文件内容
+fn read_file(filename: &byte, buffer: &byte, buffer_size: usize) i32 {
+    const file: &FILE = fopen(filename as *byte, "r" as *byte);
+    if file == null {
+        return -1;
+    }
+    const bytes_read: usize = fread(buffer as *void, 1, buffer_size - 1, file);
+    fclose(file);
+    buffer[bytes_read] = 0 as byte;
+    return bytes_read as i32;
+}
+
+// 写入字节到输出
+fn write_output(buf: &byte, len: usize) void {
+    _ = write_stdout_bytes(buf as &const byte, len);
+}
+
+fn write_file(path: &byte, buf: &byte, len: usize) i32 {
+    const f: &FILE = fopen(path as *byte, "w" as *byte);
+    if f == null {
+        return 1;
+    }
+    const n: usize = fwrite(buf as *void, 1, len, f);
+    fclose(f);
+    if n != len {
+        return 2;
+    }
+    return 0;
+}
+
+// 主函数
+export fn fmt_main() i32 {
+    // `uya fmt ...` 子命令：argv[1] = "fmt"
+    return uyafmt_cli(2);
+}
+
+// 独立 CLI：uyafmt [-w] <file>
+export fn uyafmt_main() i32 {
+    // 独立工具：argv[1] = 第一个参数（可选 -w 或文件名）
+    return uyafmt_cli(1);
+}
+
+// 共享 CLI 入口：从 argv[start_index] 开始解析参数
+fn uyafmt_cli(start_index: i32) i32 {
+    const argc: i32 = get_argc();
+    if argc <= start_index {
+        fprintf(libc.stderr, "用法: uyaFmt [-w] <文件>\n" as *byte);
+        return 1;
+    }
+
+    var write_back: i32 = 0;
+    var filename_arg_index: i32 = start_index;
+    const arg0: &byte = get_argv(start_index);
+    if arg0 != null && strcmp(arg0 as *byte, "-w" as *byte) == 0 {
+        write_back = 1;
+        filename_arg_index = start_index + 1;
+    }
+    if argc <= filename_arg_index {
+        fprintf(libc.stderr, "用法: uyaFmt [-w] <文件>\n" as *byte);
+        return 1;
+    }
+
+    const filename: &byte = get_argv(filename_arg_index);
+    if filename == null {
+        fprintf(libc.stderr, "错误: 无法获取文件名\n" as *byte);
+        return 1;
+    }
+
+    // 读取文件
+    var buffer: [byte: FMT_BUFFER_SIZE] = [];
+    const file_size: i32 = read_file(filename, &buffer[0], FMT_BUFFER_SIZE as usize);
+    if file_size < 0 {
+        fprintf(libc.stderr, "错误: 无法读取文件 %s\n" as *byte, filename);
+        return 1;
+    }
+
+    // 初始化 Arena
+    var arena: CompilerArena = CompilerArena{
+        buffer: null,
+        size: 0 as usize,
+        offset: 0 as usize,
+        first_chunk: null,
+        current_chunk: null,
+        total_allocated: 0 as usize
+    };
+    compiler_arena_init(&arena, null, (64 * 1024 * 1024) as usize);
+
+    // 初始化 Lexer
+    var lexer: Lexer = Lexer{
+        source: &buffer[0],
+        source_len: file_size as usize,
+        pos: 0,
+        line: 1,
+        column: 1,
+        filename: filename,
+        tokens: null,
+        token_count: 0,
+        current_token: null,
+        arena: &arena
+    };
+    if lexer_init(&lexer, &buffer[0], file_size as usize, filename, &arena) != 0 {
+        fprintf(libc.stderr, "错误: 词法分析失败\n" as *byte);
+        return 1;
+    }
+
+    // 初始化 Parser
+    var parser: Parser = Parser{
+        lexer: &lexer,
+        current_token: null,
+        arena: &arena,
+        context: ParserContext.PARSER_CONTEXT_NORMAL,
+        pending_greater_token: null,
+        saw_use_std: 0
+    };
+    if parser_init(&parser, &lexer, &arena) != 0 {
+        fprintf(libc.stderr, "错误: 解析器初始化失败\n" as *byte);
+        return 1;
+    }
+
+    // 解析
+    const ast: &ASTNode = parser_parse(&parser);
+    if ast == null {
+        fprintf(libc.stderr, "错误: 语法分析失败\n" as *byte);
+        return 1;
+    }
+
+    // 格式化输出
+    var out_buffer: [byte: FMT_BUFFER_SIZE] = [];
+    var out_pos: usize = 0;
+
+    // 遍历 AST 并输出格式化代码
+    format_program(ast, &out_buffer[0], &out_pos, FMT_BUFFER_SIZE as usize);
+
+    if write_back != 0 {
+        const w: i32 = write_file(filename, &out_buffer[0], out_pos);
+        if w != 0 {
+            fprintf(libc.stderr, "错误: 写回失败: %s\n" as *byte, filename);
+            return 1;
+        }
+    } else {
+        // 输出
+        write_output(&out_buffer[0], out_pos);
+    }
+
+    return 0;
+}
+
+// 遍历程序节点
+fn format_program(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize) void {
+    if node == null {
+        return;
+    }
+
+    // 遍历所有声明
+    var i: i32 = 0;
+    while i < node.program_decl_count {
+        const decl: &ASTNode = node.program_decls[i];
+        if i > 0 {
+            write_byte(out, out_pos, out_cap, '\n' as byte);
+        }
+        format_decl(decl, out, out_pos, out_cap, 0);
+        i = i + 1;
+    }
+}
+
+// 格式化声明
+fn format_decl(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    if node == null {
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_FN_DECL {
+        format_fn_decl(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_STRUCT_DECL {
+        format_struct_decl(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_UNION_DECL {
+        format_union_decl(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_INTERFACE_DECL {
+        format_interface_decl(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_ENUM_DECL {
+        format_enum_decl(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_ERROR_DECL {
+        format_error_decl(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_METHOD_BLOCK {
+        format_method_block(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_VAR_DECL {
+        format_var_decl(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_USE_STMT {
+        format_use_stmt(node, out, out_pos, out_cap);
+    } else if node.type == ASTNodeType.AST_TYPE_ALIAS {
+        format_type_alias(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_TEST_STMT {
+        format_test_stmt(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_BLOCK {
+        format_block(node, out, out_pos, out_cap, indent);
+    } else {
+        // 其他类型暂时跳过
+    }
+}
+
+fn format_error_decl(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    write_indent(out, out_pos, out_cap, indent);
+    if node.error_decl_is_export != 0 {
+        write_str(out, out_pos, out_cap, "export " as &byte);
+    }
+    write_str(out, out_pos, out_cap, "error " as &byte);
+    if node.error_decl_name != null { write_str(out, out_pos, out_cap, node.error_decl_name); }
+    write_byte(out, out_pos, out_cap, ';' as byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+}
+
+fn format_enum_decl(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    write_indent(out, out_pos, out_cap, indent);
+    if node.enum_decl_is_export != 0 {
+        write_str(out, out_pos, out_cap, "export " as &byte);
+    }
+    write_str(out, out_pos, out_cap, "enum " as &byte);
+    if node.enum_decl_name != null { write_str(out, out_pos, out_cap, node.enum_decl_name); }
+    write_str(out, out_pos, out_cap, " {" as &byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+    var i: i32 = 0;
+    while i < node.enum_decl_variant_count {
+        write_indent(out, out_pos, out_cap, indent + 1);
+        const v: EnumVariant = node.enum_decl_variants[i];
+        if v.name != null { write_str(out, out_pos, out_cap, v.name); }
+        if v.value != null {
+            write_str(out, out_pos, out_cap, " = " as &byte);
+            write_str(out, out_pos, out_cap, v.value);
+        }
+        write_byte(out, out_pos, out_cap, ',' as byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+        i = i + 1;
+    }
+    write_indent(out, out_pos, out_cap, indent);
+    write_byte(out, out_pos, out_cap, '}' as byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+}
+
+fn format_interface_decl(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    write_indent(out, out_pos, out_cap, indent);
+    if node.interface_decl_is_export != 0 {
+        write_str(out, out_pos, out_cap, "export " as &byte);
+    }
+    write_str(out, out_pos, out_cap, "interface " as &byte);
+    if node.interface_decl_name != null { write_str(out, out_pos, out_cap, node.interface_decl_name); }
+    write_str(out, out_pos, out_cap, " {" as &byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+    var i: i32 = 0;
+    while i < node.interface_decl_method_sig_count {
+        const sig: &ASTNode = node.interface_decl_method_sigs[i];
+        if sig != null {
+            format_fn_decl(sig, out, out_pos, out_cap, indent + 1);
+        }
+        i = i + 1;
+    }
+    write_indent(out, out_pos, out_cap, indent);
+    write_byte(out, out_pos, out_cap, '}' as byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+}
+
+fn format_union_decl(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    write_indent(out, out_pos, out_cap, indent);
+    if node.union_decl_is_export != 0 {
+        write_str(out, out_pos, out_cap, "export " as &byte);
+    }
+    if node.union_decl_is_extern != 0 {
+        write_str(out, out_pos, out_cap, "extern " as &byte);
+    }
+    write_str(out, out_pos, out_cap, "union " as &byte);
+    if node.union_decl_name != null { write_str(out, out_pos, out_cap, node.union_decl_name); }
+    write_str(out, out_pos, out_cap, " {" as &byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+    var i: i32 = 0;
+    while i < node.union_decl_variant_count {
+        write_indent(out, out_pos, out_cap, indent + 1);
+        const v: &ASTNode = node.union_decl_variants[i];
+        if v != null && v.var_decl_name != null { write_str(out, out_pos, out_cap, v.var_decl_name); }
+        write_str(out, out_pos, out_cap, ": " as &byte);
+        if v != null && v.var_decl_type != null { format_type(v.var_decl_type, out, out_pos, out_cap); }
+        else { write_str(out, out_pos, out_cap, "?" as &byte); }
+        write_byte(out, out_pos, out_cap, ',' as byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+        i = i + 1;
+    }
+    // union 内部方法（若有）
+    i = 0;
+    while i < node.union_decl_method_count {
+        const m: &ASTNode = node.union_decl_methods[i];
+        if m != null { format_fn_decl(m, out, out_pos, out_cap, indent + 1); }
+        i = i + 1;
+    }
+    write_indent(out, out_pos, out_cap, indent);
+    write_byte(out, out_pos, out_cap, '}' as byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+}
+
+fn format_method_block(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    write_indent(out, out_pos, out_cap, indent);
+    if node.method_block_union_name != null {
+        write_str(out, out_pos, out_cap, node.method_block_union_name);
+    } else if node.method_block_struct_name != null {
+        write_str(out, out_pos, out_cap, node.method_block_struct_name);
+    } else {
+        write_str(out, out_pos, out_cap, "?" as &byte);
+    }
+    write_str(out, out_pos, out_cap, " {" as &byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+    var i: i32 = 0;
+    while i < node.method_block_method_count {
+        const m: &ASTNode = node.method_block_methods[i];
+        if m != null { format_fn_decl(m, out, out_pos, out_cap, indent + 1); }
+        i = i + 1;
+    }
+    write_indent(out, out_pos, out_cap, indent);
+    write_byte(out, out_pos, out_cap, '}' as byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+}
+
+// 写入字节
+fn write_byte(out: &byte, out_pos: &usize, out_cap: usize, b: byte) void {
+    if *out_pos < out_cap - 1 {
+        out[*out_pos] = b;
+        *out_pos = *out_pos + 1;
+    }
+}
+
+// 写入字符串
+fn write_str(out: &byte, out_pos: &usize, out_cap: usize, s: &byte) void {
+    var i: usize = 0;
+    while s[i] != 0 as byte && *out_pos < out_cap - 1 {
+        out[*out_pos] = s[i];
+        *out_pos = *out_pos + 1;
+        i = i + 1;
+    }
+}
+
+// 缩进
+fn write_indent(out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    var j: usize = 0;
+    while j < indent {
+        write_byte(out, out_pos, out_cap, '\t' as byte);
+        j = j + 1;
+    }
+}
+
+// 格式化函数声明
+fn format_fn_decl(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    write_indent(out, out_pos, out_cap, indent);
+    if node.fn_decl_is_extern != 0 {
+        write_str(out, out_pos, out_cap, "extern fn " as &byte);
+    } else {
+        write_str(out, out_pos, out_cap, "fn " as &byte);
+    }
+
+    if node.fn_decl_name != null {
+        write_str(out, out_pos, out_cap, node.fn_decl_name);
+    }
+
+    write_byte(out, out_pos, out_cap, '(' as byte);
+    var pi: i32 = 0;
+    while pi < node.fn_decl_param_count {
+        if pi > 0 {
+            write_str(out, out_pos, out_cap, ", " as &byte);
+        }
+        const param: &ASTNode = node.fn_decl_params[pi];
+        if param != null && param.var_decl_name != null {
+            write_str(out, out_pos, out_cap, param.var_decl_name);
+        } else {
+            write_str(out, out_pos, out_cap, "_" as &byte);
+        }
+        write_byte(out, out_pos, out_cap, ':' as byte);
+        write_byte(out, out_pos, out_cap, ' ' as byte);
+        if param != null && param.var_decl_type != null {
+            format_type(param.var_decl_type, out, out_pos, out_cap);
+        } else {
+            write_str(out, out_pos, out_cap, "?" as &byte);
+        }
+        pi = pi + 1;
+    }
+    write_byte(out, out_pos, out_cap, ')' as byte);
+
+    // 返回类型
+    if node.fn_decl_return_type != null {
+        write_byte(out, out_pos, out_cap, ' ' as byte);
+        format_type(node.fn_decl_return_type, out, out_pos, out_cap);
+    }
+
+    // 函数体
+    if node.fn_decl_body != null {
+        write_byte(out, out_pos, out_cap, ' ' as byte);
+        format_block(node.fn_decl_body, out, out_pos, out_cap, indent);
+    } else {
+        write_byte(out, out_pos, out_cap, ';' as byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+    }
+}
+
+// 格式化类型节点
+fn format_type(type_node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize) void {
+    if type_node == null {
+        write_str(out, out_pos, out_cap, "?" as &byte);
+        return;
+    }
+
+    if type_node.type == ASTNodeType.AST_TYPE_NAMED {
+        if type_node.type_named_name != null {
+            write_str(out, out_pos, out_cap, type_node.type_named_name);
+        }
+        if type_node.type_named_type_arg_count > 0 {
+            write_byte(out, out_pos, out_cap, '<' as byte);
+            var i: i32 = 0;
+            while i < type_node.type_named_type_arg_count {
+                if i > 0 {
+                    write_str(out, out_pos, out_cap, ", " as &byte);
+                }
+                format_type(type_node.type_named_type_args[i], out, out_pos, out_cap);
+                i = i + 1;
+            }
+            write_byte(out, out_pos, out_cap, '>' as byte);
+        }
+    } else if type_node.type == ASTNodeType.AST_TYPE_POINTER {
+        // NOTE: 目前只按 '*' 输出；& / &const 的区分由 parser/type 节点决定（这里不强行猜）
+        if type_node.type_pointer_is_const != 0 {
+            write_str(out, out_pos, out_cap, "*const " as &byte);
+        } else {
+        write_byte(out, out_pos, out_cap, '*' as byte);
+        }
+        format_type(type_node.type_pointer_pointed_type, out, out_pos, out_cap);
+    } else if type_node.type == ASTNodeType.AST_TYPE_ARRAY {
+        write_byte(out, out_pos, out_cap, '[' as byte);
+        if type_node.type_array_element_type != null {
+            format_type(type_node.type_array_element_type, out, out_pos, out_cap);
+        } else {
+            write_str(out, out_pos, out_cap, "?" as &byte);
+        }
+        if type_node.type_array_size_expr != null {
+            write_str(out, out_pos, out_cap, ": " as &byte);
+            format_expr(type_node.type_array_size_expr, out, out_pos, out_cap);
+        }
+        write_byte(out, out_pos, out_cap, ']' as byte);
+    } else if type_node.type == ASTNodeType.AST_TYPE_SLICE {
+        // &[T] 或 &[T: N]
+        write_str(out, out_pos, out_cap, "&[" as &byte);
+        if type_node.type_slice_element_const != 0 {
+            write_str(out, out_pos, out_cap, "const " as &byte);
+        }
+        if type_node.type_slice_element_type != null {
+            format_type(type_node.type_slice_element_type, out, out_pos, out_cap);
+        } else {
+            write_str(out, out_pos, out_cap, "?" as &byte);
+        }
+        if type_node.type_slice_size_expr != null {
+            write_str(out, out_pos, out_cap, ": " as &byte);
+            format_expr(type_node.type_slice_size_expr, out, out_pos, out_cap);
+        }
+        write_byte(out, out_pos, out_cap, ']' as byte);
+    } else if type_node.type == ASTNodeType.AST_TYPE_TUPLE {
+        write_byte(out, out_pos, out_cap, '(' as byte);
+        var i: i32 = 0;
+        while i < type_node.type_tuple_element_count {
+            if i > 0 {
+                write_str(out, out_pos, out_cap, ", " as &byte);
+            }
+            format_type(type_node.type_tuple_element_types[i], out, out_pos, out_cap);
+            i = i + 1;
+        }
+        write_byte(out, out_pos, out_cap, ')' as byte);
+    } else if type_node.type == ASTNodeType.AST_TYPE_ERROR_UNION {
+        write_byte(out, out_pos, out_cap, '!' as byte);
+        format_type(type_node.type_error_union_payload_type, out, out_pos, out_cap);
+    } else if type_node.type == ASTNodeType.AST_TYPE_ATOMIC {
+        write_str(out, out_pos, out_cap, "atomic " as &byte);
+        format_type(type_node.type_atomic_inner_type, out, out_pos, out_cap);
+    } else if type_node.type == ASTNodeType.AST_TYPE_VECTOR {
+        write_str(out, out_pos, out_cap, "@vector(" as &byte);
+        format_type(type_node.type_vector_element_type, out, out_pos, out_cap);
+        write_str(out, out_pos, out_cap, ", " as &byte);
+        format_expr(type_node.type_vector_size_expr, out, out_pos, out_cap);
+        write_byte(out, out_pos, out_cap, ')' as byte);
+    } else if type_node.type == ASTNodeType.AST_TYPE_MASK {
+        write_str(out, out_pos, out_cap, "@mask(" as &byte);
+        format_expr(type_node.type_mask_size_expr, out, out_pos, out_cap);
+        write_byte(out, out_pos, out_cap, ')' as byte);
+    } else if type_node.type == ASTNodeType.AST_IDENTIFIER {
+        if type_node.identifier_name != null {
+            write_str(out, out_pos, out_cap, type_node.identifier_name);
+        }
+    } else {
+        write_str(out, out_pos, out_cap, "?" as &byte);
+    }
+}
+
+// 格式化结构体声明
+fn format_struct_decl(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    write_indent(out, out_pos, out_cap, indent);
+    write_str(out, out_pos, out_cap, "struct " as &byte);
+    if node.struct_decl_name != null {
+        write_str(out, out_pos, out_cap, node.struct_decl_name);
+    }
+    write_byte(out, out_pos, out_cap, ' ' as byte);
+
+    if node.struct_decl_field_count > 0 {
+        write_byte(out, out_pos, out_cap, '{' as byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+        var fi: i32 = 0;
+        while fi < node.struct_decl_field_count {
+            write_indent(out, out_pos, out_cap, indent + 1);
+            const field: &ASTNode = node.struct_decl_fields[fi];
+            if field != null && field.var_decl_name != null {
+                write_str(out, out_pos, out_cap, field.var_decl_name);
+            }
+            write_byte(out, out_pos, out_cap, ':' as byte);
+            write_byte(out, out_pos, out_cap, ' ' as byte);
+            if field != null && field.var_decl_type != null {
+                format_type(field.var_decl_type, out, out_pos, out_cap);
+            } else {
+                write_str(out, out_pos, out_cap, "?" as &byte);
+            }
+            write_byte(out, out_pos, out_cap, ',' as byte);
+            write_byte(out, out_pos, out_cap, '\n' as byte);
+            fi = fi + 1;
+        }
+        write_indent(out, out_pos, out_cap, indent);
+        write_byte(out, out_pos, out_cap, '}' as byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+    } else {
+        write_byte(out, out_pos, out_cap, '{' as byte);
+        write_byte(out, out_pos, out_cap, '}' as byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+    }
+}
+
+// 格式化变量声明
+fn format_var_decl(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    write_indent(out, out_pos, out_cap, indent);
+    if node.var_decl_is_const != 0 {
+        write_str(out, out_pos, out_cap, "const " as &byte);
+    } else {
+        write_str(out, out_pos, out_cap, "var " as &byte);
+    }
+    if node.var_decl_name != null {
+        write_str(out, out_pos, out_cap, node.var_decl_name);
+    }
+    write_byte(out, out_pos, out_cap, ':' as byte);
+    write_byte(out, out_pos, out_cap, ' ' as byte);
+    if node.var_decl_type != null {
+        format_type(node.var_decl_type, out, out_pos, out_cap);
+    } else {
+        write_str(out, out_pos, out_cap, "?" as &byte);
+    }
+    if node.var_decl_init != null {
+        write_str(out, out_pos, out_cap, " = " as &byte);
+        format_expr(node.var_decl_init, out, out_pos, out_cap);
+    }
+    write_byte(out, out_pos, out_cap, ';' as byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+}
+
+// 格式化 use 语句
+fn format_use_stmt(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize) void {
+    write_str(out, out_pos, out_cap, "use " as &byte);
+
+    if node.use_stmt_path_segment_count > 0 {
+        var si: i32 = 0;
+        while si < node.use_stmt_path_segment_count {
+            if si > 0 {
+                write_byte(out, out_pos, out_cap, '.' as byte);
+            }
+            const seg: &byte = node.use_stmt_path_segments[si];
+            if seg != null {
+                write_str(out, out_pos, out_cap, seg);
+            }
+            si = si + 1;
+        }
+    }
+
+    write_byte(out, out_pos, out_cap, ';' as byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+}
+
+// 格式化类型别名
+fn format_type_alias(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    write_indent(out, out_pos, out_cap, indent);
+    write_str(out, out_pos, out_cap, "type " as &byte);
+    if node.type_alias_name != null {
+        write_str(out, out_pos, out_cap, node.type_alias_name);
+    }
+    write_str(out, out_pos, out_cap, " = " as &byte);
+    if node.type_alias_target_type != null {
+        format_type(node.type_alias_target_type, out, out_pos, out_cap);
+    } else {
+        write_str(out, out_pos, out_cap, "?" as &byte);
+    }
+    write_byte(out, out_pos, out_cap, ';' as byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+}
+
+// 格式化测试语句
+fn format_test_stmt(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    write_indent(out, out_pos, out_cap, indent);
+    write_str(out, out_pos, out_cap, "test " as &byte);
+    if node.test_stmt_description != null {
+        write_byte(out, out_pos, out_cap, '"' as byte);
+        write_str(out, out_pos, out_cap, node.test_stmt_description);
+        write_byte(out, out_pos, out_cap, '"' as byte);
+    }
+    write_byte(out, out_pos, out_cap, ' ' as byte);
+    if node.test_stmt_body != null {
+        format_block(node.test_stmt_body, out, out_pos, out_cap, indent);
+    }
+}
+
+// 格式化块
+fn format_block(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    write_byte(out, out_pos, out_cap, '{' as byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+
+    var si: i32 = 0;
+    while si < node.block_stmt_count {
+        const stmt: &ASTNode = node.block_stmts[si];
+        format_stmt(stmt, out, out_pos, out_cap, indent + 1);
+        si = si + 1;
+    }
+
+    write_indent(out, out_pos, out_cap, indent);
+    write_byte(out, out_pos, out_cap, '}' as byte);
+    write_byte(out, out_pos, out_cap, '\n' as byte);
+}
+
+// 格式化语句
+fn format_stmt(node: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, indent: usize) void {
+    if node == null {
+        return;
+    }
+
+    if node.type == ASTNodeType.AST_RETURN_STMT {
+        write_indent(out, out_pos, out_cap, indent);
+        write_str(out, out_pos, out_cap, "return" as &byte);
+        if node.return_stmt_expr != null {
+            write_byte(out, out_pos, out_cap, ' ' as byte);
+            format_expr(node.return_stmt_expr, out, out_pos, out_cap);
+        }
+        write_byte(out, out_pos, out_cap, ';' as byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+    } else if node.type == ASTNodeType.AST_IF_STMT {
+        write_indent(out, out_pos, out_cap, indent);
+        write_str(out, out_pos, out_cap, "if " as &byte);
+        format_expr(node.if_stmt_condition, out, out_pos, out_cap);
+        write_byte(out, out_pos, out_cap, ' ' as byte);
+        if node.if_stmt_then_branch != null {
+            format_block(node.if_stmt_then_branch, out, out_pos, out_cap, indent);
+        }
+        if node.if_stmt_else_branch != null {
+            write_indent(out, out_pos, out_cap, indent);
+            write_str(out, out_pos, out_cap, "else " as &byte);
+            if node.if_stmt_else_branch.type == ASTNodeType.AST_BLOCK {
+                format_block(node.if_stmt_else_branch, out, out_pos, out_cap, indent);
+            } else {
+                format_stmt(node.if_stmt_else_branch, out, out_pos, out_cap, indent);
+            }
+        }
+    } else if node.type == ASTNodeType.AST_WHILE_STMT {
+        write_indent(out, out_pos, out_cap, indent);
+        write_str(out, out_pos, out_cap, "while " as &byte);
+        format_expr(node.while_stmt_condition, out, out_pos, out_cap);
+        write_byte(out, out_pos, out_cap, ' ' as byte);
+        format_block(node.while_stmt_body, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_FOR_STMT {
+        write_indent(out, out_pos, out_cap, indent);
+        write_str(out, out_pos, out_cap, "for " as &byte);
+        if node.for_stmt_is_range != 0 {
+            format_expr(node.for_stmt_range_start, out, out_pos, out_cap);
+            write_str(out, out_pos, out_cap, ".." as &byte);
+            format_expr(node.for_stmt_range_end, out, out_pos, out_cap);
+        } else {
+            format_expr(node.for_stmt_array, out, out_pos, out_cap);
+        }
+        // for range 可以省略 |i|
+        if node.for_stmt_var_name != null {
+            write_str(out, out_pos, out_cap, " |" as &byte);
+            if node.for_stmt_is_ref != 0 { write_byte(out, out_pos, out_cap, '&' as byte); }
+            write_str(out, out_pos, out_cap, node.for_stmt_var_name);
+            write_byte(out, out_pos, out_cap, '|' as byte);
+        }
+        write_byte(out, out_pos, out_cap, ' ' as byte);
+        format_block(node.for_stmt_body, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_VAR_DECL {
+        format_var_decl(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_BLOCK {
+        format_block(node, out, out_pos, out_cap, indent);
+    } else if node.type == ASTNodeType.AST_ASSIGN {
+        write_indent(out, out_pos, out_cap, indent);
+        format_expr(node.assign_dest, out, out_pos, out_cap);
+        write_str(out, out_pos, out_cap, " = " as &byte);
+        format_expr(node.assign_src, out, out_pos, out_cap);
+        write_byte(out, out_pos, out_cap, ';' as byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+    } else if node.type == ASTNodeType.AST_BREAK_STMT {
+        write_indent(out, out_pos, out_cap, indent);
+        write_str(out, out_pos, out_cap, "break;" as &byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+    } else if node.type == ASTNodeType.AST_CONTINUE_STMT {
+        write_indent(out, out_pos, out_cap, indent);
+        write_str(out, out_pos, out_cap, "continue;" as &byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+    } else {
+        // 表达式语句：parser 不会构造 AST_EXPR_STMT，而是直接返回表达式节点
+        write_indent(out, out_pos, out_cap, indent);
+        format_expr(node, out, out_pos, out_cap);
+        write_byte(out, out_pos, out_cap, ';' as byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+    }
+}
+
+fn unary_op_to_str(op: i32) &byte {
+    const t_tmp: !TokenType = op as! TokenType;
+    const t: TokenType = t_tmp.value;
+    if t == TokenType.TOKEN_MINUS { return ("-" as *byte) as &byte; }
+    if t == TokenType.TOKEN_EXCLAMATION { return ("!" as *byte) as &byte; }
+    if t == TokenType.TOKEN_TILDE { return ("~" as *byte) as &byte; }
+    if t == TokenType.TOKEN_AMPERSAND { return ("&" as *byte) as &byte; }
+    if t == TokenType.TOKEN_ASTERISK { return ("*" as *byte) as &byte; }
+    return ("" as *byte) as &byte;
+}
+
+fn binary_op_to_str(op: i32) &byte {
+    const t_tmp: !TokenType = op as! TokenType;
+    const t: TokenType = t_tmp.value;
+    if t == TokenType.TOKEN_PLUS { return (" + " as *byte) as &byte; }
+    if t == TokenType.TOKEN_MINUS { return (" - " as *byte) as &byte; }
+    if t == TokenType.TOKEN_ASTERISK { return (" * " as *byte) as &byte; }
+    if t == TokenType.TOKEN_SLASH { return (" / " as *byte) as &byte; }
+    if t == TokenType.TOKEN_PERCENT { return (" % " as *byte) as &byte; }
+    if t == TokenType.TOKEN_EQUAL { return (" == " as *byte) as &byte; }
+    if t == TokenType.TOKEN_NOT_EQUAL { return (" != " as *byte) as &byte; }
+    if t == TokenType.TOKEN_LESS { return (" < " as *byte) as &byte; }
+    if t == TokenType.TOKEN_GREATER { return (" > " as *byte) as &byte; }
+    if t == TokenType.TOKEN_LESS_EQUAL { return (" <= " as *byte) as &byte; }
+    if t == TokenType.TOKEN_GREATER_EQUAL { return (" >= " as *byte) as &byte; }
+    if t == TokenType.TOKEN_LOGICAL_AND { return (" && " as *byte) as &byte; }
+    if t == TokenType.TOKEN_LOGICAL_OR { return (" || " as *byte) as &byte; }
+    if t == TokenType.TOKEN_AMPERSAND { return (" & " as *byte) as &byte; }
+    if t == TokenType.TOKEN_PIPE { return (" | " as *byte) as &byte; }
+    if t == TokenType.TOKEN_CARET { return (" ^ " as *byte) as &byte; }
+    if t == TokenType.TOKEN_LSHIFT { return (" << " as *byte) as &byte; }
+    if t == TokenType.TOKEN_RSHIFT { return (" >> " as *byte) as &byte; }
+    return (" + " as *byte) as &byte;
+}
+
+fn write_escaped_string(out: &byte, out_pos: &usize, out_cap: usize, s: &byte) void {
+    if s == null {
+        return;
+    }
+    var i: usize = 0;
+    while s[i] != 0 as byte {
+        const c: byte = s[i];
+        if c == '\\' as byte {
+            write_byte(out, out_pos, out_cap, '\\' as byte);
+            write_byte(out, out_pos, out_cap, '\\' as byte);
+        } else if c == '\n' as byte {
+            write_byte(out, out_pos, out_cap, '\\' as byte);
+            write_byte(out, out_pos, out_cap, 'n' as byte);
+        } else if c == '\r' as byte {
+            write_byte(out, out_pos, out_cap, '\\' as byte);
+            write_byte(out, out_pos, out_cap, 'r' as byte);
+        } else if c == '\t' as byte {
+            write_byte(out, out_pos, out_cap, '\\' as byte);
+            write_byte(out, out_pos, out_cap, 't' as byte);
+        } else if c == '"' as byte {
+            write_byte(out, out_pos, out_cap, '\\' as byte);
+            write_byte(out, out_pos, out_cap, '"' as byte);
+        } else {
+            write_byte(out, out_pos, out_cap, c);
+        }
+        i = i + 1;
+    }
+}
+
+fn binary_op_prec(op: i32) i32 {
+    const t_tmp: !TokenType = op as! TokenType;
+    const t: TokenType = t_tmp.value;
+    // 值越大优先级越高
+    if t == TokenType.TOKEN_LOGICAL_OR { return 1; }
+    if t == TokenType.TOKEN_LOGICAL_AND { return 2; }
+    if t == TokenType.TOKEN_PIPE { return 3; }
+    if t == TokenType.TOKEN_CARET { return 4; }
+    if t == TokenType.TOKEN_AMPERSAND { return 5; }
+    if t == TokenType.TOKEN_EQUAL || t == TokenType.TOKEN_NOT_EQUAL { return 6; }
+    if t == TokenType.TOKEN_LESS || t == TokenType.TOKEN_GREATER || t == TokenType.TOKEN_LESS_EQUAL || t == TokenType.TOKEN_GREATER_EQUAL { return 7; }
+    if t == TokenType.TOKEN_LSHIFT || t == TokenType.TOKEN_RSHIFT { return 8; }
+    if t == TokenType.TOKEN_PLUS || t == TokenType.TOKEN_MINUS || t == TokenType.TOKEN_PLUS_PIPE || t == TokenType.TOKEN_MINUS_PIPE || t == TokenType.TOKEN_PLUS_PERCENT || t == TokenType.TOKEN_MINUS_PERCENT { return 9; }
+    if t == TokenType.TOKEN_ASTERISK || t == TokenType.TOKEN_SLASH || t == TokenType.TOKEN_PERCENT || t == TokenType.TOKEN_ASTERISK_PIPE || t == TokenType.TOKEN_ASTERISK_PERCENT { return 10; }
+    return 0;
+}
+
+fn expr_prec(node: &ASTNode) i32 {
+    if node == null { return 0; }
+    if node.type == ASTNodeType.AST_BINARY_EXPR { return binary_op_prec(node.binary_expr_op); }
+    if node.type == ASTNodeType.AST_UNARY_EXPR { return 20; }
+    // call/member/index/slice 最高
+    if node.type == ASTNodeType.AST_CALL_EXPR || node.type == ASTNodeType.AST_MEMBER_ACCESS || node.type == ASTNodeType.AST_ARRAY_ACCESS || node.type == ASTNodeType.AST_SLICE_EXPR { return 30; }
+    // primary
+    return 40;
+}
+
+fn format_expr_prec(expr: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize, parent_prec: i32) void {
+    if expr == null {
+        write_str(out, out_pos, out_cap, "?" as &byte);
+        return;
+    }
+    const my_prec: i32 = expr_prec(expr);
+    const need_parens: i32 = (my_prec != 0 && my_prec < parent_prec) as i32;
+    if need_parens != 0 { write_byte(out, out_pos, out_cap, '(' as byte); }
+
+    if expr.type == ASTNodeType.AST_IDENTIFIER {
+        if expr.identifier_name != null { write_str(out, out_pos, out_cap, expr.identifier_name); return; }
+        write_str(out, out_pos, out_cap, "?" as &byte);
+    } else if expr.type == ASTNodeType.AST_NUMBER {
+        // parser 有时只填充 number_value（i32）；优先用它保证 match 等场景输出正确
+        var tmp: [byte: 32] = [];
+        sprintf(&tmp[0] as *byte, "%d" as *byte, expr.number_value);
+        write_str(out, out_pos, out_cap, &tmp[0]);
+    } else if expr.type == ASTNodeType.AST_BOOL {
+        if expr.bool_literal_value != 0 { write_str(out, out_pos, out_cap, "true" as &byte); }
+        else { write_str(out, out_pos, out_cap, "false" as &byte); }
+    } else if expr.type == ASTNodeType.AST_STRING {
+        write_byte(out, out_pos, out_cap, '"' as byte);
+        if expr.string_literal_value != null {
+            write_escaped_string(out, out_pos, out_cap, expr.string_literal_value);
+        }
+        write_byte(out, out_pos, out_cap, '"' as byte);
+    } else if expr.type == ASTNodeType.AST_CHAR {
+        // 简化：仅对常见字符转义
+        write_byte(out, out_pos, out_cap, '\'' as byte);
+        const c: byte = expr.char_literal_value as byte;
+        if c == '\\' as byte { write_byte(out, out_pos, out_cap, '\\' as byte); write_byte(out, out_pos, out_cap, '\\' as byte); }
+        else if c == '\n' as byte { write_byte(out, out_pos, out_cap, '\\' as byte); write_byte(out, out_pos, out_cap, 'n' as byte); }
+        else if c == '\t' as byte { write_byte(out, out_pos, out_cap, '\\' as byte); write_byte(out, out_pos, out_cap, 't' as byte); }
+        else if c == '\'' as byte { write_byte(out, out_pos, out_cap, '\\' as byte); write_byte(out, out_pos, out_cap, '\'' as byte); }
+        else { write_byte(out, out_pos, out_cap, c); }
+        write_byte(out, out_pos, out_cap, '\'' as byte);
+    } else if expr.type == ASTNodeType.AST_UNARY_EXPR {
+        write_str(out, out_pos, out_cap, unary_op_to_str(expr.unary_expr_op));
+        format_expr_prec(expr.unary_expr_operand, out, out_pos, out_cap, my_prec);
+    } else if expr.type == ASTNodeType.AST_BINARY_EXPR {
+        format_expr_prec(expr.binary_expr_left, out, out_pos, out_cap, my_prec);
+        write_str(out, out_pos, out_cap, binary_op_to_str(expr.binary_expr_op));
+        // 左结合：右侧用 my_prec+1 以减少不必要括号（避免 a - (b - c) 之类改变语义）
+        format_expr_prec(expr.binary_expr_right, out, out_pos, out_cap, my_prec + 1);
+    } else if expr.type == ASTNodeType.AST_CALL_EXPR {
+        format_expr_prec(expr.call_expr_callee, out, out_pos, out_cap, my_prec);
+        write_byte(out, out_pos, out_cap, '(' as byte);
+        var ai: i32 = 0;
+        while ai < expr.call_expr_arg_count {
+            if ai > 0 { write_str(out, out_pos, out_cap, ", " as &byte); }
+            format_expr_prec(expr.call_expr_args[ai], out, out_pos, out_cap, 0);
+            ai = ai + 1;
+        }
+        if expr.call_expr_has_ellipsis_forward != 0 {
+            if expr.call_expr_arg_count > 0 { write_str(out, out_pos, out_cap, ", " as &byte); }
+            write_str(out, out_pos, out_cap, "..." as &byte);
+        }
+        write_byte(out, out_pos, out_cap, ')' as byte);
+    } else if expr.type == ASTNodeType.AST_MEMBER_ACCESS {
+        format_expr_prec(expr.member_access_object, out, out_pos, out_cap, my_prec);
+        write_byte(out, out_pos, out_cap, '.' as byte);
+        if expr.member_access_field_name != null { write_str(out, out_pos, out_cap, expr.member_access_field_name); }
+        else { write_str(out, out_pos, out_cap, "?" as &byte); }
+    } else if expr.type == ASTNodeType.AST_ARRAY_ACCESS {
+        format_expr_prec(expr.array_access_array, out, out_pos, out_cap, my_prec);
+        write_byte(out, out_pos, out_cap, '[' as byte);
+        format_expr_prec(expr.array_access_index, out, out_pos, out_cap, 0);
+        write_byte(out, out_pos, out_cap, ']' as byte);
+    } else if expr.type == ASTNodeType.AST_SLICE_EXPR {
+        format_expr_prec(expr.slice_expr_base, out, out_pos, out_cap, my_prec);
+        write_byte(out, out_pos, out_cap, '[' as byte);
+        if expr.slice_expr_start_expr != null { format_expr_prec(expr.slice_expr_start_expr, out, out_pos, out_cap, 0); }
+        write_byte(out, out_pos, out_cap, ':' as byte);
+        if expr.slice_expr_len_expr != null { format_expr_prec(expr.slice_expr_len_expr, out, out_pos, out_cap, 0); }
+        write_byte(out, out_pos, out_cap, ']' as byte);
+    } else if expr.type == ASTNodeType.AST_STRUCT_INIT {
+        if expr.struct_init_struct_name != null { write_str(out, out_pos, out_cap, expr.struct_init_struct_name); }
+        else { write_str(out, out_pos, out_cap, "?" as &byte); }
+        write_str(out, out_pos, out_cap, "{ " as &byte);
+        var fi: i32 = 0;
+        while fi < expr.struct_init_field_count {
+            if fi > 0 { write_str(out, out_pos, out_cap, ", " as &byte); }
+            const fname: &byte = expr.struct_init_field_names[fi];
+            if fname != null { write_str(out, out_pos, out_cap, fname); } else { write_str(out, out_pos, out_cap, "?" as &byte); }
+            write_str(out, out_pos, out_cap, ": " as &byte);
+            format_expr_prec(expr.struct_init_field_values[fi], out, out_pos, out_cap, 0);
+            fi = fi + 1;
+        }
+        write_str(out, out_pos, out_cap, " }" as &byte);
+    } else if expr.type == ASTNodeType.AST_ARRAY_LITERAL {
+        write_byte(out, out_pos, out_cap, '[' as byte);
+        var ei: i32 = 0;
+        while ei < expr.array_literal_element_count {
+            if ei > 0 { write_str(out, out_pos, out_cap, ", " as &byte); }
+            format_expr_prec(expr.array_literal_elements[ei], out, out_pos, out_cap, 0);
+            ei = ei + 1;
+        }
+        if expr.array_literal_repeat_count_expr != null {
+            write_str(out, out_pos, out_cap, ": " as &byte);
+            format_expr_prec(expr.array_literal_repeat_count_expr, out, out_pos, out_cap, 0);
+        }
+        write_byte(out, out_pos, out_cap, ']' as byte);
+    } else if expr.type == ASTNodeType.AST_TUPLE_LITERAL {
+        write_byte(out, out_pos, out_cap, '(' as byte);
+        var ei: i32 = 0;
+        while ei < expr.tuple_literal_element_count {
+            if ei > 0 { write_str(out, out_pos, out_cap, ", " as &byte); }
+            format_expr_prec(expr.tuple_literal_elements[ei], out, out_pos, out_cap, 0);
+            ei = ei + 1;
+        }
+        write_byte(out, out_pos, out_cap, ')' as byte);
+    } else if expr.type == ASTNodeType.AST_CAST_EXPR {
+        format_expr_prec(expr.cast_expr_expr, out, out_pos, out_cap, 0);
+        if expr.cast_expr_is_force_cast != 0 { write_str(out, out_pos, out_cap, " as! " as &byte); }
+        else { write_str(out, out_pos, out_cap, " as " as &byte); }
+        format_type(expr.cast_expr_target_type, out, out_pos, out_cap);
+    } else if expr.type == ASTNodeType.AST_TRY_EXPR {
+        write_str(out, out_pos, out_cap, "try " as &byte);
+        format_expr_prec(expr.try_expr_operand, out, out_pos, out_cap, 0);
+    } else if expr.type == ASTNodeType.AST_AWAIT_EXPR {
+        write_str(out, out_pos, out_cap, "@await " as &byte);
+        format_expr_prec(expr.await_expr_operand, out, out_pos, out_cap, 0);
+    } else if expr.type == ASTNodeType.AST_CATCH_EXPR {
+        format_expr_prec(expr.catch_expr_operand, out, out_pos, out_cap, 0);
+        write_str(out, out_pos, out_cap, " catch" as &byte);
+        if expr.catch_expr_err_name != null {
+            write_str(out, out_pos, out_cap, " |" as &byte);
+            write_str(out, out_pos, out_cap, expr.catch_expr_err_name);
+            write_str(out, out_pos, out_cap, "| " as &byte);
+        } else {
+            write_byte(out, out_pos, out_cap, ' ' as byte);
+        }
+        format_block(expr.catch_expr_catch_block, out, out_pos, out_cap, 0);
+    } else if expr.type == ASTNodeType.AST_ERROR_VALUE {
+        write_str(out, out_pos, out_cap, "error." as &byte);
+        if expr.error_value_name != null { write_str(out, out_pos, out_cap, expr.error_value_name); }
+        else { write_str(out, out_pos, out_cap, "?" as &byte); }
+    } else if expr.type == ASTNodeType.AST_MATCH_EXPR {
+        write_str(out, out_pos, out_cap, "match " as &byte);
+        format_expr_prec(expr.match_expr_expr, out, out_pos, out_cap, 0);
+        write_str(out, out_pos, out_cap, " {" as &byte);
+        write_byte(out, out_pos, out_cap, '\n' as byte);
+        var i: i32 = 0;
+        while i < expr.match_expr_arm_count {
+            const arm: ASTMatchArm = expr.match_expr_arms[i];
+            // 统一缩进一层
+            write_indent(out, out_pos, out_cap, 1);
+            format_match_pattern(&arm, out, out_pos, out_cap);
+            write_str(out, out_pos, out_cap, " => " as &byte);
+            if arm.result_is_block != 0 {
+                format_block(arm.result_expr, out, out_pos, out_cap, 1);
+            } else {
+                format_expr_prec(arm.result_expr, out, out_pos, out_cap, 0);
+                write_byte(out, out_pos, out_cap, ',' as byte);
+                write_byte(out, out_pos, out_cap, '\n' as byte);
+            }
+            i = i + 1;
+        }
+        write_byte(out, out_pos, out_cap, '}' as byte);
+    } else if expr.type == ASTNodeType.AST_STRING_INTERP {
+        // 简化：尽量还原为 "text${expr}text"
+        write_byte(out, out_pos, out_cap, '"' as byte);
+        var i: i32 = 0;
+        while i < expr.string_interp_segment_count {
+            const seg: ASTStringInterpSegment = expr.string_interp_segments[i];
+            if seg.is_text != 0 {
+                if seg.text != null {
+                    write_escaped_string(out, out_pos, out_cap, seg.text);
+                }
+            } else {
+                // 避免在 fmt 源码中出现 "${" 触发自身的字符串插值解析
+                write_byte(out, out_pos, out_cap, '$' as byte);
+                write_byte(out, out_pos, out_cap, '{' as byte);
+                format_expr_prec(seg.expr, out, out_pos, out_cap, 0);
+                if seg.format_spec != null {
+                    write_byte(out, out_pos, out_cap, ':' as byte);
+                    write_str(out, out_pos, out_cap, seg.format_spec);
+                }
+                write_byte(out, out_pos, out_cap, '}' as byte);
+            }
+            i = i + 1;
+        }
+        write_byte(out, out_pos, out_cap, '"' as byte);
+    } else if expr.type == ASTNodeType.AST_SIZEOF {
+        write_str(out, out_pos, out_cap, "@size_of(" as &byte);
+        if expr.sizeof_expr_is_type != 0 { format_type(expr.sizeof_expr_target, out, out_pos, out_cap); }
+        else { format_expr_prec(expr.sizeof_expr_target, out, out_pos, out_cap, 0); }
+        write_byte(out, out_pos, out_cap, ')' as byte);
+    } else if expr.type == ASTNodeType.AST_LEN {
+        write_str(out, out_pos, out_cap, "@len(" as &byte);
+        format_expr_prec(expr.len_expr_array, out, out_pos, out_cap, 0);
+        write_byte(out, out_pos, out_cap, ')' as byte);
+    } else if expr.type == ASTNodeType.AST_ALIGNOF {
+        write_str(out, out_pos, out_cap, "@align_of(" as &byte);
+        if expr.alignof_expr_is_type != 0 { format_type(expr.alignof_expr_target, out, out_pos, out_cap); }
+        else { format_expr_prec(expr.alignof_expr_target, out, out_pos, out_cap, 0); }
+        write_byte(out, out_pos, out_cap, ')' as byte);
+    }
+    else {
+        write_str(out, out_pos, out_cap, "?" as &byte);
+    }
+
+    if need_parens != 0 { write_byte(out, out_pos, out_cap, ')' as byte); }
+}
+
+fn format_expr(expr: &ASTNode, out: &byte, out_pos: &usize, out_cap: usize) void {
+    format_expr_prec(expr, out, out_pos, out_cap, 0);
+}
+
+fn format_match_pattern(arm: &ASTMatchArm, out: &byte, out_pos: &usize, out_cap: usize) void {
+    if arm == null {
+        write_str(out, out_pos, out_cap, "else" as &byte);
+        return;
+    }
+    if arm.kind == MatchPatternKind.MATCH_PAT_ELSE {
+        write_str(out, out_pos, out_cap, "else" as &byte);
+        return;
+    }
+    if arm.kind == MatchPatternKind.MATCH_PAT_WILDCARD {
+        write_str(out, out_pos, out_cap, "_" as &byte);
+        return;
+    }
+    if arm.kind == MatchPatternKind.MATCH_PAT_BIND {
+        if arm.var_name != null { write_str(out, out_pos, out_cap, arm.var_name); }
+        else { write_str(out, out_pos, out_cap, "_" as &byte); }
+        return;
+    }
+    if arm.kind == MatchPatternKind.MATCH_PAT_ERROR {
+        write_str(out, out_pos, out_cap, "error." as &byte);
+        if arm.error_name != null { write_str(out, out_pos, out_cap, arm.error_name); }
+        else { write_str(out, out_pos, out_cap, "?" as &byte); }
+        return;
+    }
+    if arm.kind == MatchPatternKind.MATCH_PAT_ENUM {
+        if arm.enum_name != null {
+            write_str(out, out_pos, out_cap, arm.enum_name);
+            write_byte(out, out_pos, out_cap, '.' as byte);
+        }
+        if arm.variant_name != null { write_str(out, out_pos, out_cap, arm.variant_name); }
+        else { write_str(out, out_pos, out_cap, "?" as &byte); }
+        return;
+    }
+    if arm.kind == MatchPatternKind.MATCH_PAT_LITERAL {
+        if arm.literal_is_bool != 0 {
+            if arm.literal_int_value != 0 { write_str(out, out_pos, out_cap, "true" as &byte); }
+            else { write_str(out, out_pos, out_cap, "false" as &byte); }
+            return;
+        }
+        // 优先使用 literal_expr 以保留更多字面量形态
+        if arm.literal_expr != null {
+            format_expr_prec(arm.literal_expr, out, out_pos, out_cap, 0);
+            return;
+        }
+        var tmp: [byte: 32] = [];
+        sprintf(&tmp[0] as *byte, "%d" as *byte, arm.literal_int_value);
+        write_str(out, out_pos, out_cap, &tmp[0]);
+        return;
+    }
+    // fallback
+    write_str(out, out_pos, out_cap, "_" as &byte);
+}
