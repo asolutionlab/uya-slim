@@ -1,6 +1,6 @@
 # 栈优先的异步状态机帧分配设计
 
-**状态**：设计草案 → `@frame(foo)` 类型构造器与 pinned 语义已实现  
+**状态**：设计草案 → `@frame(foo)` 类型构造器、pinned 语义与 `start/poll/stop` 生命周期方法已实现
 **最后更新**：2026-04-16  
 **相关文档**：
 - [async_frame_lifecycle_naming_design.md](async_frame_lifecycle_naming_design.md) - `frame_start/frame_stop` 与 `@frame.start/poll/stop` 生命周期命名
@@ -89,7 +89,7 @@
 
 **显式路径**：开发者使用 `@frame(foo)` 声明变量、字段或池槽位时，编译器只负责：
 - 校验 pinned 语义（禁止按值移动、禁止整体赋值父结构体）
-- 生成 `*_frame_init` / `*_poll` 的调用点
+- 生成 `*_frame_start` / `*_poll` / `*_frame_stop` 的调用点
 - **不自动插入分配代码**。frame 的实际存储位置由变量声明位置（栈、全局、堆）或 pool API 调用决定。
 
 简言之：
@@ -102,7 +102,7 @@
 
 1. **帧结构体**：`struct uya_async_<fn>`
 2. **poll 入口**：`fn <fn>_poll(self: &Self, waker: &Waker) Poll<T>`
-3. **帧构造入口**：`fn <fn>_frame_init(frame: &uya_async_<fn>, args...)`
+3. **帧启动入口**：`fn <fn>_frame_start(frame: &uya_async_<fn>, args...)`
 
 帧的存储位置分为三类：
 
@@ -122,7 +122,7 @@
 
 当 `@await foo()` 出现在另一个 async 函数内部，且 `foo()` 的结果不会逃逸时：
 
-- 编译器生成 `foo_frame_init(...)`
+- 编译器生成 `foo_frame_start(...)`
 - 帧直接写入父帧字段或调用方自动变量
 - `poll` 时直接访问该内联帧
 - 不经过堆分配
@@ -531,27 +531,27 @@ var f_i32: @frame(load_item<i32>) = @frame(load_item<i32>){};
 
 `@frame(foo)` 只是把“编译器生成的内部帧类型”变成可见、可声明、可存储的类型视图，便于 runtime 和高性能框架显式管理生命周期。
 
-### 7.6 `*_frame_drop_fields` 与释放包装
+### 7.6 `*_frame_stop` 与释放包装
 
-每个 async 函数除了生成 `*_frame_init` 和 `*_poll`，还应生成字段清理函数。字段清理与帧本体释放必须拆开：
+每个 async 函数除了生成 `*_frame_start` 和 `*_poll`，还应生成 caller-owned 的停止/清理入口。字段清理与帧本体释放必须拆开：
 
 ```c
-void uya_async_foo_frame_drop_fields(struct uya_async_foo* frame) {
+void uya_async_foo_frame_stop(struct uya_async_foo* frame) {
     // 按字段声明的逆序，递归 drop 仍然 live 的子 future 字段。
     if (frame->bar_field_live != 0) {
-        uya_async_bar_frame_drop_fields(&frame->bar_field);
+        uya_async_bar_frame_stop(&frame->bar_field);
         frame->bar_field_live = 0;
     }
 }
 
 void uya_async_foo_future_release(struct uya_future_handle* handle) {
-    uya_async_foo_frame_drop_fields(handle->frame);
+    uya_async_foo_frame_stop(handle->frame);
     // 根据 ownership tag 决定是否归还 pool / debug heap。
     // StackOwned 只清理字段，不释放 frame 本体。
 }
 ```
 
-释放顺序必须保证：**子 frame 先于父 frame 释放**。`*_frame_drop_fields` 只负责状态清理与递归字段清理，不释放当前 frame 本体。`future_release` / `frame_release` 才根据 ownership tag 归还 pool 或 debug heap；`StackOwned` 路径只调用字段清理，不释放内存。
+释放顺序必须保证：**子 frame 先于父 frame 释放**。`*_frame_stop` 只负责状态清理与递归字段清理，不释放当前 frame 本体。`future_release` / `frame_release` 才根据 ownership tag 归还 pool 或 debug heap；`StackOwned` 路径只调用字段清理，不释放内存。当前实现仍保留 `*_frame_init` / `*_frame_drop_fields` 兼容别名，但对外推荐统一使用 `*_frame_start` / `*_frame_stop`。
 
 不能只用 `state >= STATE_AFTER_AWAIT_X` 判断是否释放子 frame。子 future 可能已经在 Ready / Error 路径中被清理过，因此每个需要显式 drop 的 child 字段都应有 `*_live` 或等价标志，并在释放后立刻清零，避免 double free / double drop。
 

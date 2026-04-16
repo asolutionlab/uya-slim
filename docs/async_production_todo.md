@@ -1,6 +1,6 @@
 # Uya 异步量产 TODO
 
-**最后更新**：2026-04-16（`@frame(foo)` 类型构造器与 pinned 语义实现，async 状态同步已复核）  
+**最后更新**：2026-04-16（跨线程 wake/eventfd、泛型 `TaskQueue<T>`、协作式取消语义、结构体/接口方法 `@async_fn` 主链路已收口；复合表达式 `try @await` lowering 已转正；`@frame(foo)` 类型构造器与 pinned 语义实现，async 状态同步已复核）
 **目标范围**：Linux + C99 后端 + `@async_fn` / `@await` / `Future` / `Poll` / `Waker` + `AsyncFd` / `LinuxEpoll`，优先保障 DNS、HTTP/1.1、HTTPS 客户端主链路达到可量产状态。
 
 ## 量产定义
@@ -9,7 +9,7 @@
 - [x] 异步运行时在 fd 复用、短连接、服务端提前关闭、注册/反注册重复调用等边界下不崩溃、不忙等、不泄漏 fd。
 - [x] DNS、HTTP/1.1、HTTPS 主链路有端到端回归，并能连续多轮通过。
 - [x] release 闸门清晰：`make b`、`make check`、`make release-dirty`、关键网络测试通过或在无网络环境下明确 skip。
-- [x] 已知限制被文档化：跨平台 async 后端、连接池、TLS 会话复用、DNS A/AAAA 并发、完整取消语义可作为量产后二阶段。
+- [x] 已知限制被文档化：跨平台 async 后端、连接池、TLS 会话复用、DNS A/AAAA 并发可作为量产后二阶段。
   - 见 [P2：量产后二阶段能力](#p2量产后二阶段能力)。
 
 ## P0：编译器 async lowering 稳定化（已完成）
@@ -39,6 +39,11 @@
   - 关联：`docs/async_production_todo.md` 2026-04-11 记录的阻塞问题。
   - 修复提交：`06e2b206 fix(codegen): async local hoisting limit and nested block init`
   - 验收：`lib/std/http/http1_async.uya` 中 `http_check_deadline(deadline_ms)` 调用全部启用，`test_http1_async_client.uya` 通过。
+
+- [x] 修复复合表达式中的 `try @await` lowering/codegen。
+  - 典型形态：`total = total + (try @await foo())`、`return 1 + (try @await foo())`。
+  - 修复：将复合表达式内的 `try @await` 纳入 async transform 的回放/替换路径，并补齐 `@await` 结果类型预注册与重复诊断去重。
+  - 验收：`tests/test_async_compound_try_await.uya` 通过。
 
 ## P1：异步运行时硬化（已完成）
 
@@ -118,8 +123,6 @@
 
 - [ ] DNS A / AAAA 并发聚合，减少高 RTT 下延迟。
   - 当前状态：`dns_client_query_all_any_async` 采用顺序 `A -> AAAA` 查询，功能正确但延迟未优化。
-- [ ] 通用泛型 TaskQueue，减少 `i32` 专用入口。
-- [ ] 完整取消语义：任务取消、I/O deregister、资源释放。
 - [ ] HTTP 连接池与 keep-alive 复用。
 - [ ] TLS 会话复用。
 - [ ] macOS kqueue / Windows IOCP 后端。
@@ -159,6 +162,11 @@
 - ✅ HTTPS 生产环境基础能力（证书验证框架、系统根证书加载）
 - ✅ DNS 异步查询（上层 `@async_fn` 化，底层保留手工 I/O 状态机）
 - ✅ 核心 async 运行时（`LinuxEpoll`、`Waker`、`AsyncFd`、`AsyncFramePool`）
+- ✅ **跨线程 wake/eventfd 已打通**：`Waker` 可绑定/关闭 `eventfd`，`Scheduler` 在 `Pending` 时同步注册 `eventfd + io fd`；`async_compute` worker 与外部 wake 现可直接唤醒主 `EventLoop`
+- ✅ **复合表达式 `try @await` 已转正**：赋值 RHS 与 return 表达式已纳入通用 lowering，回归 `tests/test_async_compound_try_await.uya` 通过
+- ✅ **结构体/接口 async 方法已打通**：结构体内部方法、外部方法块与 interface 方法签名均可写 `@async_fn`；direct call 与 vtable 分派主链路回归见 `tests/test_async_method_interface.uya`
+- ✅ **通用泛型 `TaskQueue<T>` 已完成**：`TaskQueue<T>`、`TaskQueue_i32`、`TaskQueue_u32` 与 `scheduler_run_task_queue_with_event_loop<T>` / typed wrappers 已落地，`test_std_async_scheduler.uya` 与 `test_async_multi_fd_concurrent.uya` 已覆盖
+- ✅ **协作式完整取消语义已完成**：`Waker.cancel()/is_cancelled()`、`TaskQueue.cancel()`、slot/eventfd/I/O deregister 统一清理；`async_compute` 对未启动/排队/one-shot 路径立即取消，对已运行共享槽任务在结果回收时稳定返回 `error.Cancelled`
 - ✅ HTTP/DNS/TLS timeout 策略实现并启用（`http_check_deadline` 已取消注释）
 - ✅ `make check` 全量通过
 
@@ -167,8 +175,6 @@
 - HTTP 连接池与 keep-alive 复用
 - TLS 会话复用
 - DNS A/AAAA 并发聚合（当前为顺序查询）
-- 完整取消语义（任务取消、I/O deregister、资源释放）
-- 通用泛型 TaskQueue（当前有 `i32` / `usize` 专用入口）
 
 ---
 
@@ -273,7 +279,6 @@ modified:   lib/syscall/linux.uya
 1. DNS A/AAAA 并发聚合查询
 2. 修复 `@async_fn` 内多层 `while`+`@await` 的 state 回跳缺失 bug（完整落地 `http1_read_chunked_body_async`）
 3. 修复跨模块 `time.xxx` bug 后统一使用 `lib/std/time.uya`，删除重复时间函数
-4. 通用泛型 TaskQueue
-5. HTTP 连接池与 keep-alive
-6. TLS 会话复用
-7. macOS kqueue / Windows IOCP 后端
+4. HTTP 连接池与 keep-alive
+5. TLS 会话复用
+6. macOS kqueue / Windows IOCP 后端

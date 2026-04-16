@@ -811,6 +811,20 @@ fn collect_err_union_from_ast(codegen: &C99CodeGenerator, node: &ASTNode) void {
                             }
                         }
                     }
+                    if registered == 0 && node.try_expr_operand != null &&
+                        node.try_expr_operand.type == ASTNodeType.AST_AWAIT_EXPR &&
+                        node.try_expr_operand.await_expr_operand != null &&
+                        codegen.current_function_decl != null {
+                        const await_try_ast2: &ASTNode = c99_async_await_result_ast(codegen, node.try_expr_operand, codegen.current_function_decl);
+                        if await_try_ast2 != null {
+                            const eu_node2: &ASTNode = ast_new_node(ASTNodeType.AST_TYPE_ERROR_UNION, node.line, node.column, codegen.arena, node.filename);
+                            if eu_node2 != null {
+                                eu_node2.type_error_union_payload_type = await_try_ast2;
+                                c99_type_to_c(codegen, eu_node2);
+                                registered = 1;
+                            }
+                        }
+                    }
                 }
             }
             if registered == 0 {
@@ -1617,6 +1631,11 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     
     // 保存程序节点引用
     codegen.program_node = ast;
+    var saved_checker_codegen_diag: i32 = 0;
+    if codegen.checker != null {
+        saved_checker_codegen_diag = codegen.checker.suppress_codegen_diagnostics;
+        codegen.checker.suppress_codegen_diagnostics = 1;
+    }
     
     var prof_codegen: i32 = c99_want_profile_codegen();
     var prof_t0: clock_t = 0;
@@ -1701,6 +1720,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     // 镜像多 TU：须在 precollect 之后打开各 .c，以便根据 has_stdio_conflicts 写入 stdin/stdout/stderr 前向声明
     if codegen.split_enabled != 0 && codegen.split_mirror != 0 {
         if c99_split_mirror_prepare(codegen, ast) != 0 {
+            if codegen.checker != null {
+                codegen.checker.suppress_codegen_diagnostics = saved_checker_codegen_diag;
+            }
             return -1;
         }
     }
@@ -3755,6 +3777,9 @@ fn c99_codegen_generate(codegen: &C99CodeGenerator, ast: &ASTNode, output_file: 
     c99_split_finish_part2_externs(codegen);
     c99_write_mirror_manifest(codegen, ast);
     c99_write_split_makefile(codegen);
+    if codegen.checker != null {
+        codegen.checker.suppress_codegen_diagnostics = saved_checker_codegen_diag;
+    }
     return 0;
 }
 

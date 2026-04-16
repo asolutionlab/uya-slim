@@ -8,6 +8,7 @@ use std.testing.assert_eq_i32;
 // 追踪调度行为
 var sched_loop_polls: i32 = 0;
 var sched_registrations: i32 = 0;
+var sched_task_poll_counts: [i32: 3] = [];
 
 // 固定容量 waker 追踪数组（不动态删除，用 active 标记）
 var sched_wakers: [usize: 8] = [];
@@ -56,11 +57,11 @@ struct MockEventLoop : EventLoop {
 struct WokenReadyFuture : Future<!i32> {
     fd: i32,
     value: i32,
-    poll_count: &i32,
+    task_id: i32,
 
     fn poll(self: &Self, waker: &Waker) Poll<!i32> {
-        *self.poll_count = *self.poll_count + 1;
-        if waker.is_woken() {
+        sched_task_poll_counts[self.task_id as usize] = sched_task_poll_counts[self.task_id as usize] + 1;
+        if sched_loop_polls != 0 {
             return Poll<!i32>.Ready(ok<i32>(self.value));
         }
         waker.wait_readable(self.fd);
@@ -76,15 +77,14 @@ test "multi_fd_concurrent_two_tasks" {
     sched_loop_polls = 0;
     sched_registrations = 0;
     sched_waker_count = 0;
-
-    var poll_a: i32 = 0;
-    var poll_b: i32 = 0;
+    sched_task_poll_counts[0] = 0;
+    sched_task_poll_counts[1] = 0;
 
     var s: Scheduler = scheduler_new();
     var queue: TaskQueue_i32 = task_queue_i32_new();
 
-    var task_a: WokenReadyFuture = WokenReadyFuture{ fd: 201, value: 100, poll_count: &poll_a };
-    var task_b: WokenReadyFuture = WokenReadyFuture{ fd: 202, value: 200, poll_count: &poll_b };
+    var task_a: WokenReadyFuture = WokenReadyFuture{ fd: 201, value: 100, task_id: 0 };
+    var task_b: WokenReadyFuture = WokenReadyFuture{ fd: 202, value: 200, task_id: 1 };
 
     const boxed_a: Future<!i32> = task_a;
     const boxed_b: Future<!i32> = task_b;
@@ -97,23 +97,26 @@ test "multi_fd_concurrent_two_tasks" {
     try assert_eq_i32(completed, 2);
     try assert_eq_i32(queue.result(0), 100);
     try assert_eq_i32(queue.result(1), 200);
+    try assert_eq_i32(sched_loop_polls, 1);
+    try assert_eq_i32(sched_registrations, 4);
+    try assert_eq_i32(sched_task_poll_counts[0], 2);
+    try assert_eq_i32(sched_task_poll_counts[1], 2);
 }
 
 test "multi_fd_concurrent_three_tasks" {
     sched_loop_polls = 0;
     sched_registrations = 0;
     sched_waker_count = 0;
-
-    var poll_a: i32 = 0;
-    var poll_b: i32 = 0;
-    var poll_c: i32 = 0;
+    sched_task_poll_counts[0] = 0;
+    sched_task_poll_counts[1] = 0;
+    sched_task_poll_counts[2] = 0;
 
     var s: Scheduler = scheduler_new();
     var queue: TaskQueue_i32 = task_queue_i32_new();
 
-    var task_a: WokenReadyFuture = WokenReadyFuture{ fd: 301, value: 10, poll_count: &poll_a };
-    var task_b: WokenReadyFuture = WokenReadyFuture{ fd: 302, value: 20, poll_count: &poll_b };
-    var task_c: WokenReadyFuture = WokenReadyFuture{ fd: 303, value: 30, poll_count: &poll_c };
+    var task_a: WokenReadyFuture = WokenReadyFuture{ fd: 301, value: 10, task_id: 0 };
+    var task_b: WokenReadyFuture = WokenReadyFuture{ fd: 302, value: 20, task_id: 1 };
+    var task_c: WokenReadyFuture = WokenReadyFuture{ fd: 303, value: 30, task_id: 2 };
 
     const boxed_a: Future<!i32> = task_a;
     const boxed_b: Future<!i32> = task_b;
@@ -129,4 +132,9 @@ test "multi_fd_concurrent_three_tasks" {
     try assert_eq_i32(queue.result(0), 10);
     try assert_eq_i32(queue.result(1), 20);
     try assert_eq_i32(queue.result(2), 30);
+    try assert_eq_i32(sched_loop_polls, 1);
+    try assert_eq_i32(sched_registrations, 6);
+    try assert_eq_i32(sched_task_poll_counts[0], 2);
+    try assert_eq_i32(sched_task_poll_counts[1], 2);
+    try assert_eq_i32(sched_task_poll_counts[2], 2);
 }

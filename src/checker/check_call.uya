@@ -258,9 +258,38 @@ fn resolve_reachable_callee_fn_decl(checker: &TypeChecker, callee: &ASTNode) &AS
 }
 
 fn resolve_async_callee_fn_decl(checker: &TypeChecker, callee: &ASTNode) &ASTNode {
+    if checker == null || callee == null {
+        return null;
+    }
     const fn_decl: &ASTNode = resolve_reachable_callee_fn_decl(checker, callee);
     if fn_decl != null && fn_decl.fn_decl_is_async != 0 {
         return fn_decl;
+    }
+    if callee.type == ASTNodeType.AST_MEMBER_ACCESS &&
+        callee.member_access_object != null &&
+        callee.member_access_field_name != null {
+        var object_type: Type = checker_infer_type(checker, callee.member_access_object);
+        if object_type.kind == TypeKind.TYPE_POINTER && object_type.pointer_to != null {
+            object_type = object_type.pointer_to[0];
+        }
+        if object_type.kind == TypeKind.TYPE_STRUCT && object_type.struct_name != null {
+            const method_decl: &ASTNode = find_method_in_struct(checker.program_node, object_type.struct_name, callee.member_access_field_name);
+            if method_decl != null && method_decl.fn_decl_is_async != 0 {
+                return method_decl;
+            }
+        }
+        if object_type.kind == TypeKind.TYPE_UNION && object_type.union_name != null {
+            const method_decl2: &ASTNode = find_method_in_union(checker.program_node, object_type.union_name, callee.member_access_field_name);
+            if method_decl2 != null && method_decl2.fn_decl_is_async != 0 {
+                return method_decl2;
+            }
+        }
+        if object_type.kind == TypeKind.TYPE_INTERFACE && object_type.interface_name != null {
+            const method_sig: &ASTNode = find_interface_method_sig(checker.program_node, object_type.interface_name, callee.member_access_field_name);
+            if method_sig != null && method_sig.fn_decl_is_async != 0 {
+                return method_sig;
+            }
+        }
     }
     return null;
 }
@@ -420,18 +449,6 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
     }
     
     const callee: &ASTNode = node.call_expr_callee;
-
-    // @async_fn 直接递归检测：禁止在异步函数体内直接调用自身（含 try @await self(...)）
-    // 目的：在 CPS/状态机生成与大小计算完成前，先阻止会导致状态机大小不确定的模式。
-    if checker != null && checker.current_function_decl != null &&
-        checker.current_function_decl.fn_decl_is_async != 0 &&
-        callee != null && callee.type == ASTNodeType.AST_IDENTIFIER &&
-        callee.identifier_name != null &&
-        checker.current_function_decl.fn_decl_name != null &&
-        str_equals(callee.identifier_name, checker.current_function_decl.fn_decl_name) != 0 {
-        checker_report_error(checker, node, "@async_fn 函数不允许直接递归调用（待 CPS/状态机大小计算实现）" as *byte);
-        return result;
-    }
 
     checker_record_reachable_call(checker, callee);
     checker_walk_reachability_expr(checker, callee);
@@ -679,19 +696,22 @@ fn checker_check_call_expr(checker: &TypeChecker, node: &ASTNode) Type {
     if checker != null && checker.current_function_decl != null &&
         checker.current_function_decl.fn_decl_is_async != 0 &&
         checker.current_function_decl.fn_decl_name != null {
-        const current_async_name: &byte = checker.current_function_decl.fn_decl_name;
+        const current_async_name: &byte = checker_async_fn_graph_key(checker, checker.current_function_decl);
         const async_callee_fn: &ASTNode = resolve_async_callee_fn_decl(checker, callee);
-        if async_callee_fn != null && async_callee_fn.fn_decl_name != null {
-            if str_equals(async_callee_fn.fn_decl_name, current_async_name) != 0 {
+        if async_callee_fn != null && async_callee_fn.fn_decl_name != null && current_async_name != null {
+            const callee_async_name: &byte = checker_async_fn_graph_key(checker, async_callee_fn);
+            if callee_async_name != null {
+            if str_equals(callee_async_name, current_async_name) != 0 {
                 checker_report_error(checker, node, "@async_fn 函数不允许直接递归调用（待 CPS/状态机大小计算实现）" as *byte);
                 return result;
             }
-            if async_call_add_edge(checker, current_async_name, async_callee_fn.fn_decl_name) != 0 {
+            if async_call_add_edge(checker, current_async_name, callee_async_name) != 0 {
                 var visited: [&byte: 64] = [];
-                if async_call_path_exists(checker, async_callee_fn.fn_decl_name, current_async_name, &visited[0], 0) != 0 {
+                if async_call_path_exists(checker, callee_async_name, current_async_name, &visited[0], 0) != 0 {
                     checker_report_error(checker, node, "@async_fn 函数不允许形成递归调用环（待 CPS/状态机大小计算实现）" as *byte);
                     return result;
                 }
+            }
             }
         }
     }

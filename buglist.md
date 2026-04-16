@@ -1,6 +1,6 @@
 # 编译器 / 标准库 Bug 待办清单
 
-**最后更新：** 2026-04-14（新增 `@async_fn` while true 空终态死锁 bug 修复记录；补充 benchmark 架构限制说明）
+**最后更新：** 2026-04-16（补充复合表达式 `try @await` lowering 修复记录；此前 2026-04-14 新增 `@async_fn` while true 空终态死锁 bug 修复记录与 benchmark 架构限制说明）
 
 本文档用于跟踪 release 验证中发现的问题，便于逐项修复、验证和关闭。
 
@@ -174,6 +174,20 @@
     - `src/codegen/c99/stmt.uya`：`gen_var_decl_stmt` 中若变量已被 hoist，直接生成状态机字段初始化（含数组 `memset`/`memcpy` 处理）
     - `src/codegen/c99/stmt.uya` / `expr.uya`：`return error.X` 与 `as!` 泛型 payload 类型通过 `c99_mono_type_to_c` 正确单态化
   - 相关文件：`lib/std/http/http1_async.uya`、`lib/tls/https.uya`
+
+- [x] **P1 / 高：复合表达式中的 `try @await` lowering 未走统一回放路径**
+  - 状态：已修复
+  - 验证状态：新增 `tests/test_async_compound_try_await.uya`，覆盖赋值 RHS 与 return 表达式内的 `try @await`，并已通过 `./bin/uya test tests/test_async_compound_try_await.uya --c99`
+  - 归属：`src/codegen/c99/async_transform.uya` / `src/codegen/c99/function.uya` / `src/checker/check_expr.uya`
+  - 现象：
+    1. `total = total + (try @await foo())` 这类赋值 RHS 内的 `try @await` 会落回旧的形状识别路径
+    2. `return 1 + (try @await foo())` 这类 return 表达式内的 `try @await` 也无法稳定重放
+    3. codegen 阶段还可能重复触发同一 checker 诊断，导致同一问题报两遍
+  - 影响：async helper / I/O 包装代码需要被迫拆成“先单独 bind await 结果，再参与外层表达式”的写法
+  - 修复内容：
+    - `src/codegen/c99/async_transform.uya` / `function.uya`：将嵌套 `try @await` 纳入 replay/substitution，允许 continuation 回放外层复合表达式
+    - `src/checker/check_expr.uya`、`proof.uya`、`symbols.uya`、`types.uya`：补齐 `@await` 结果类型预注册，并避免 codegen 阶段重复 checker 诊断
+  - 相关文件：`tests/test_async_compound_try_await.uya`
 
 - [x] **P0 / 严重：`@async_fn` 复杂状态机 lowering 后行为错位导致 SIGSEGV**
   - 状态：已修复

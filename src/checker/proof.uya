@@ -630,7 +630,7 @@ fn checker_print_note(checker: &TypeChecker, note: &CheckerNote) void {
 
 // 报告类型检查错误，附带 note 列表
 fn checker_report_error_with_notes(checker: &TypeChecker, node: &ASTNode, message: &byte, notes: &CheckerNote, note_count: i32) void {
-    if checker != null {
+    if checker != null && checker.suppress_codegen_diagnostics == 0 {
         last_checker_error_message = stash_checker_error_message(message);
         checker.error_count = checker.error_count + 1;
         if libc.stderr != null && message != null {
@@ -686,7 +686,7 @@ fn stash_checker_error_message(message: &byte) &byte {
 
 // 报告类型检查错误
 fn checker_report_error(checker: &TypeChecker, node: &ASTNode, message: &byte) void {
-    if checker != null {
+    if checker != null && checker.suppress_codegen_diagnostics == 0 {
         last_checker_error_message = stash_checker_error_message(message);
         checker.error_count = checker.error_count + 1;
         if libc.stderr != null && message != null {
@@ -708,7 +708,7 @@ fn checker_report_error(checker: &TypeChecker, node: &ASTNode, message: &byte) v
 
 // 报告「变量已被移动」错误，并指出具体变量名
 fn checker_report_error_moved(checker: &TypeChecker, node: &ASTNode, var_name: &byte) void {
-    if checker != null {
+    if checker != null && checker.suppress_codegen_diagnostics == 0 {
         last_checker_error_message = "变量已被移动，不能再次使用" as *byte;
         checker.error_count = checker.error_count + 1;
         if libc.stderr != null {
@@ -737,7 +737,7 @@ fn checker_report_error_moved(checker: &TypeChecker, node: &ASTNode, var_name: &
 
 // 报告证明失败错误（扩展版本）
 fn checker_report_error_ex(checker: &TypeChecker, node: &ASTNode, error_type: &byte, var_name: &byte, size: i32) void {
-    if checker != null {
+    if checker != null && checker.suppress_codegen_diagnostics == 0 {
         if was_error_reported(var_name, size) != 0 {
             return;
         }

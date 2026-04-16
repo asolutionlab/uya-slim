@@ -1258,7 +1258,7 @@ fn main() i32 {
 ```
 
 **功能描述**：
-标记函数为异步函数，触发编译器进行 CPS 变换，生成显式状态机。
+标记异步入口，触发编译器进行 CPS 变换，生成显式状态机。当前可用于顶层函数、结构体/联合体的方法实现，以及接口方法签名。
 
 **使用示例**：
 ```uya
@@ -1267,12 +1267,26 @@ fn main() i32 {
     const data: i32 = try @await read_data(conn);
     return data;
 }
+
+interface Reader {
+    @async_fn
+    fn read(self: &Self, n: usize) Future<!usize>;
+}
+
+Socket {
+    @async_fn
+    fn read(self: &Self, n: usize) Future<!usize> {
+        _ = n;
+        return 0;
+    }
+}
 ```
 
 **注意事项**：
-- 必须返回 `!Future<T>` 类型
+- 必须返回 `Future<!T>` 或 `!Future<T>` 类型
 - 函数体内可以使用 `@await`
 - 编译器会自动生成状态机代码
+- 接口方法签名上的 `@async_fn` 只声明异步契约；真正的状态机生成发生在对应实现上
 
 ---
 
@@ -1318,11 +1332,16 @@ try @await future_expr
 **功能描述**：
 暴露 `@async_fn` 的状态机帧类型。`@frame(foo)` 是一个**类型构造器**（不是值构造器），只暴露帧类型本身；分配仍由变量声明位置（栈、全局、池）决定。
 
+**当前公开的高层方法**：
+- `frame.start(args...)`：启动或重启一次 caller-owned frame 运行
+- `frame.poll(&waker)`：推进当前运行，返回 `Poll<T>` / `Poll<!T>`
+- `frame.stop()`：停止当前运行并清理内部子 future / 子 frame，但不释放 frame 自身 storage
+
 **使用示例**：
 ```uya
 @async_fn
-fn worker() Future<!i32> {
-    return 42;
+fn worker(n: i32) Future<!i32> {
+    return n + 1;
 }
 
 fn uses_frame_ref(f: &@frame(worker)) i32 {
@@ -1330,11 +1349,19 @@ fn uses_frame_ref(f: &@frame(worker)) i32 {
     return 1;
 }
 
-@async_fn
-fn caller() Future<!i32> {
-    var frame: @frame(worker);        // 允许无初始化
-    const r: i32 = uses_frame_ref(&frame);
-    return r;
+fn drive_frame() i32 {
+    var frame: @frame(worker);   // 允许无初始化
+    const w: Waker = Waker{};
+
+    frame.start(41);
+    const p: Poll<!i32> = frame.poll(&w);
+    frame.stop();
+
+    _ = uses_frame_ref(&frame);
+    match p {
+        .Ready(v) => { return v catch { return -1; }; },
+        .Pending(_) => { return -2; },
+    }
 }
 ```
 
@@ -1343,6 +1370,7 @@ fn caller() Future<!i32> {
 - 对泛型 async 函数，类型参数必须是 **concrete**（如 `@frame(foo<i32>)`）；未解析的 `@frame(foo<T>)` 会报错
 - `@frame` 类型是 **pinned**：禁止按值移动、整体赋值、按值传参、按值返回
 - 允许通过 `&frame` 按引用传递
+- 当前公开的高层方法只有 `start` / `poll` / `stop`；不要把 `drop` / `release` / `reset` 当成 `@frame` API
 - 父结构体若包含 `@frame` 字段，也会被视为 pinned aggregate
 
 ---
@@ -1949,4 +1977,3 @@ fn buffer_info<T>() void {
 ---
 
 **本文档由 Uya 编译器团队维护，最后更新：2026-04-02（0.49.44）**
-

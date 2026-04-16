@@ -525,7 +525,10 @@ fn c99_emit_struct_field_decl_fragment(codegen: &C99CodeGenerator, type_node: &A
     if t == null {
         return;
     }
-    const base_c: &byte = c99_type_to_c(codegen, t);
+    var base_c: &byte = c99_type_to_c(codegen, t);
+    if codegen.current_method_struct_name != null {
+        base_c = c99_type_to_c_with_self(codegen, t, codegen.current_method_struct_name);
+    }
     if base_c == null {
         return;
     }

@@ -1,7 +1,7 @@
 # 循环内 await 代码生成设计文档
 
 **版本**：v0.2  
-**状态**：通用 lowering 主路径已落地，Bug B 已转正（维护/补洞）  
+**状态**：通用 lowering 主路径已落地，Bug B 与复合表达式 `try @await` 已转正（维护/补洞）
 **相关**：[std_async_design.md](std_async_design.md)、[todo_mini_to_full.md](todo_mini_to_full.md) §16 异步编程、[plan_async_coroutine_transform.md](plan_async_coroutine_transform.md)
 
 ---
@@ -171,6 +171,12 @@ fn collect_awaits_recursive(...) void {
 
 - `get_c_name_for_identifier_ref`：将 `async_local_names` 中的名字映射为 `s->_uya_loc_*`；await 绑定映射为 `s->_uya_bind_*`。
 
+### 4.8 复合表达式中的 `try @await`
+
+- 赋值 RHS、return 表达式等复合场景（例如 `total = total + (try @await foo())`、`return 1 + (try @await foo())`）现已纳入 async transform 的 replay/substitution 路径。
+- 相关实现会先为嵌套 `try @await` 建立绑定与 continuation，再回放外层表达式，避免继续退回旧的“只识别单一 var_decl 形状”的路径。
+- 固定回归：`tests/test_async_compound_try_await.uya`。
+
 ---
 
 ## 5. 状态转换示意
@@ -205,6 +211,7 @@ state 2 (poll writer)                                                  │
 | 循环变量持久化 | ✅ 通用提升 | 顶层 `var` → `_uya_loc_*`，不再依赖 `n`+`written` 特判 |
 | 无 `@await` 的 `@async_fn` 同步语句 / `try !void` | ✅ 已修 | `gen_async_function_stage_b` 现会先发出函数体再包装 `Poll.Ready`；回归见 `tests/test_async_codegen_edge_paths.uya` |
 | await 循环间同步语句 | ✅ 已修复 | `tests/test_async_bug_b_sync_between.uya` |
+| 复合表达式中的 `try @await` | ✅ 已修复 | 覆盖赋值 RHS 与 return 表达式；回归见 `tests/test_async_compound_try_await.uya` |
 | 迭代器 `for`、`for` 的 `&` 元素绑定 + `@async_fn` | ❌ 未支持 | 与同步 `for` 能力对齐后再做 |
 
 ---
@@ -218,4 +225,4 @@ state 2 (poll writer)                                                  │
 | `src/codegen/c99/async_transform.uya` | 与 async 变换相关的辅助（若存在） |
 | `src/codegen/c99/global.uya` | `get_c_name_for_identifier_ref` |
 | `lib/std/async.uya` | `async_copy` 等 |
-| `tests/test_async_copy.uya`、`tests/test_async_for_await.uya`、`tests/test_async_bug_*.uya`、`tests/test_async_transport_fallthrough.uya`、`tests/test_async_codegen_edge_paths.uya` | 回归 |
+| `tests/test_async_copy.uya`、`tests/test_async_for_await.uya`、`tests/test_async_bug_*.uya`、`tests/test_async_compound_try_await.uya`、`tests/test_async_transport_fallthrough.uya`、`tests/test_async_codegen_edge_paths.uya` | 回归 |

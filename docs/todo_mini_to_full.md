@@ -338,10 +338,11 @@
 - [x] **interface 定义**：`interface I { fn method(self: &Self,...) Ret; ... }`，规范 uya.md §6
 - [x] **实现**：`struct S : I { }`，方法块 `S { fn method(...) { ... } }`，Checker 校验实现
 - [x] **装箱与调用**：接口值 8/16B（vtable+data）、装箱点、接口方法调用；Codegen 已实现（vtable 生成、装箱、call 通过 vtable）
+- [x] **接口 async 方法签名**：`interface I { @async_fn fn method(...) Future<!T>; }` 与对应结构体/联合体 async 方法实现主链路已打通；固定回归 `test_async_method_interface.uya`
 
 **涉及**：AST、Parser、Checker、Codegen（vtable、装箱点、逃逸检查），uya-src。
 
-**当前进度**：Lexer、AST、Parser、Checker 已完成。**C 实现 Codegen 已完成**：types.c 接口类型→struct uya_interface_I；structs.c 生成 interface/vtable 结构体与 vtable 常量（修复：预先生成接口方法签名中使用的错误联合类型结构体定义，避免 err_union_void 等结构体定义出现在 vtable 内部）；function.c 方法块生成 uya_S_m 函数；expr.c 接口方法调用（vtable 派发）、装箱（struct→interface 传参）；main.c 处理 AST_METHOD_BLOCK、emit_vtable_constants。test_interface.uya 通过 `--c99`。**uya-src 已同步**：lexer.uya（TOKEN_INTERFACE、interface 关键字）；ast.uya（AST_INTERFACE_DECL、AST_METHOD_BLOCK、struct_decl_interface_*、method_block_*）；parser.uya（parse_interface、parse_method_block、struct : I、顶层 IDENTIFIER+{）；checker.uya（TYPE_INTERFACE、find_interface_decl_from_program、find_method_block_for_struct、struct_implements_interface、type_equals/type_from_ast/check_expr_type、member_access 接口方法）；codegen types/structs/function/expr/main（接口类型、emit_interface_structs_and_vtables 修复：预先生成错误联合类型结构体定义、emit_vtable_constants、方法前向声明与定义、接口方法调用与装箱、c99_type_to_c_with_self）。自举编译 `./compile.sh --c99 -e` 成功；test_interface.uya 通过 `--uya --c99`。**修复**：parser.uya 在「字段访问和数组访问链」循环中补全了 `TOKEN_LEFT_PAREN` 分支，以解析 `obj.method(args)` 形式的方法调用（如 `a.add(10)`）；structs.c/structs.uya 修复 err_union_void 结构体定义在 vtable 内部的问题：添加 pregenerate_error_union_structs_for_interface 函数，在生成 vtable 之前预先生成所有接口方法签名中使用的错误联合类型结构体定义。自举对比 `--c99 -b` 仅有单行空行差异。
+**当前进度**：Lexer、AST、Parser、Checker 已完成。**C 实现 Codegen 已完成**：types.c 接口类型→struct uya_interface_I；structs.c 生成 interface/vtable 结构体与 vtable 常量（修复：预先生成接口方法签名中使用的错误联合类型结构体定义，避免 err_union_void 等结构体定义出现在 vtable 内部）；function.c 方法块生成 uya_S_m 函数；expr.c 接口方法调用（vtable 派发）、装箱（struct→interface 传参）；main.c 处理 AST_METHOD_BLOCK、emit_vtable_constants。test_interface.uya 通过 `--c99`。**uya-src 已同步**：lexer.uya（TOKEN_INTERFACE、interface 关键字）；ast.uya（AST_INTERFACE_DECL、AST_METHOD_BLOCK、struct_decl_interface_*、method_block_*）；parser.uya（parse_interface、parse_method_block、struct : I、顶层 IDENTIFIER+{）；checker.uya（TYPE_INTERFACE、find_interface_decl_from_program、find_method_block_for_struct、struct_implements_interface、type_equals/type_from_ast/check_expr_type、member_access 接口方法）；codegen types/structs/function/expr/main（接口类型、emit_interface_structs_and_vtables 修复：预先生成错误联合类型结构体定义、emit_vtable_constants、方法前向声明与定义、接口方法调用与装箱、c99_type_to_c_with_self）。在此基础上，`@async_fn` 现也可用于接口方法签名，以及结构体内部/外部方法实现；method async wrapper、`Self` 解析与 vtable 分派主链路已由 `test_async_method_interface.uya` 覆盖。自举编译 `./compile.sh --c99 -e` 成功；test_interface.uya 通过 `--uya --c99`。**修复**：parser.uya 在「字段访问和数组访问链」循环中补全了 `TOKEN_LEFT_PAREN` 分支，以解析 `obj.method(args)` 形式的方法调用（如 `a.add(10)`）；structs.c/structs.uya 修复 err_union_void 结构体定义在 vtable 内部的问题：添加 pregenerate_error_union_structs_for_interface 函数，在生成 vtable 之前预先生成所有接口方法签名中使用的错误联合类型结构体定义。自举对比 `--c99 -b` 仅有单行空行差异。
 
 ---
 
@@ -843,12 +844,14 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
 **当前实现状态（2026-03，2026-04 增补）**：
 - 已完成最小闭环：`@async_fn` / `try @await`、`Future<!T>` 的 `poll` 状态机、单/多 `@await`、基础错误传播、`block_on`
 - **循环**：`while` / `if` 内含 await 的通用 lowering；**范围 `for` 与定长数组 `for` 内含 await**（`tests/test_async_for_await.uya`）
+- **方法与接口**：结构体内部方法、外部方法块与接口方法签名现已支持 `@async_fn`；接口 async 调用经 vtable 分派 future 的主链路已打通（`tests/test_async_method_interface.uya`）
 - 标准库已有最小模块：`std.async`、`std.async_event`、`std.async_channel`、`std.async_scheduler`
-- 与最终目标仍有差距：泛型 `TaskQueue`、完整取消语义、跨线程唤醒与跨平台后端仍待完善
+- 与最终目标仍有差距：跨平台后端、更完整 async I/O 原语、多-interest `Waker` 与更严格唤醒安全性验证仍待完善
 
 **已知语义缺口（更新至 2026-04）**：
 - **已缓解**：连续 `while` 内多 await（Bug A）、`return try @await`（Bug C）、**范围/定长数组 `for` 内 await** 等已由通用段发射路径覆盖；见 `tests/test_async_bug_a_two_while.uya`、`tests/test_async_bug_c_tail_await.uya`、`tests/test_async_for_await.uya` 与 [plan_async_coroutine_transform.md](plan_async_coroutine_transform.md)。
 - **已转正**：多个 `try @await` **循环之间**的同步语句已由 `tests/test_async_bug_b_sync_between.uya` 复核通过，不再是当前阻塞项；相关历史背景见 [todo_async_loop_await.md](todo_async_loop_await.md)。
+- **已转正**：复合表达式中的 `try @await`（赋值 RHS、return 表达式）已接入通用回放/替换路径；固定回归见 `tests/test_async_compound_try_await.uya`。
 - `benchmarks/http_bench_async_epoll.uya`：`make check` 中的 verify 脚本多仅保证 **C99 可编译**；**端到端 `curl` 成功**依赖 await 间及循环间语句完整发射。
 - 服务只监听 **IPv4 `127.0.0.1`** 时，`curl http://localhost:…` 先试 **IPv6 `::1`** 出现「拒绝连接」属预期，与 Empty reply 不是同一类问题。
 
@@ -864,7 +867,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 支持 `union Poll<T>` 类型定义和使用（基于联合体泛型单态化）
 
 - [x] **Parser**：异步编程语法解析（C 实现与 uya-src 已同步）
-  - [x] 解析 `@async_fn` 函数属性（函数声明前的属性）
+  - [x] 解析 `@async_fn` 函数属性（顶层函数、结构体/联合体方法实现、接口方法签名前的属性）
   - [x] 解析 `@await expression` 表达式
   - [x] 解析 `!Future<T>` 与 `Future<!T>` 返回类型（兼容双轨语义）
   - [x] 解析 `union Poll<T>` 类型定义（基于联合体泛型语法）
@@ -877,6 +880,7 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `@await` 返回类型推断为 `!T`（当前已接入 `Poll<!T>` 最小状态机闭环）
   - [x] `union Poll<T>` 类型检查（`test_poll_std_async.uya` 覆盖）
   - [x] `interface Future<T>` 接口定义和实现检查（`test_async_future_interface_box.uya` 覆盖）
+  - [x] 结构体/联合体 async 方法与接口 async 方法签名主链路（`Self` 解析、方法 async 上下文、vtable 派发 future）已接通；固定回归 `test_async_method_interface.uya`
   - [x] 接口方法 / 受约束泛型方法返回 `!T` 的推断（`test_interface_error_union_method.uya` 覆盖 `EventLoop.poll()` / `counter.next()`）
   - [x] 状态机大小编译期计算（已实现 `get_type_node_size_bytes()` 递归计算实际类型大小（基本类型、指针、数组、切片、元组、错误联合、具名 struct）；`@await` 上限 32 / 参数上限 16 已在 checker 阶段报错；估算 > 1024 字节时输出警告；栈分配优化暂未启用（待调度器存储期配合））
 
@@ -910,14 +914,14 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] 结构体含泛型 union 字段时 codegen 先输出 union 单态（如 `Poll_i32`），并用 arena 持久化 tagged 名避免重定义
   - [x] 测试：`test_async_await_parse.uya`、`test_task_std_async.uya`、`test_async_return_value.uya`、`test_async_await_ready.uya`、`test_async_nested.uya` 通过 `--c99` 与 `--uya --c99`
   - [~] `std.async.task` 模块：`Task<T>` / `task_ready` 已在 `async.uya` 落地，后续再拆分/扩展
-  - [~] `std.async.io` 模块：`AsyncWriter`, `AsyncReader` 接口 + `MemAsyncWriter`、`MemAsyncReader`、`AsyncFd`（已收敛到 `Future<!usize>` 最小主路径；`AsyncFd` 在 `poll()` 时确保 `O_NONBLOCK`，并将 `EAGAIN` / `EWOULDBLOCK` 映射为 `Pending`；Pending 时会把 `fd + interest` 记录到 `Waker`，由 `Scheduler` 通过 `EventLoop.register()/poll()/deregister()` 驱动下一轮唤醒；`test_async_io.uya`、`test_async_fd.uya`、`test_async_copy.uya` 已覆盖，完整多任务调度仍待扩展）
+  - [~] `std.async.io` 模块：`AsyncWriter`, `AsyncReader` 接口 + `MemAsyncWriter`、`MemAsyncReader`、`AsyncFd`（已收敛到 `Future<!usize>` 主路径；`AsyncWriter` / `AsyncReader` 现已具备 `write_all` / `read_exact`，helper 层已补上 `async_write_bytes` / `async_write_cstr` / `async_print_to` / `async_println_to`，`AsyncFd` 在 `poll()` 时确保 `O_NONBLOCK`，并将 `EAGAIN` / `EWOULDBLOCK` 映射为 `Pending`；Pending 时会把 `fd + interest` 记录到 `Waker`，由 `Scheduler` 通过 `EventLoop.register()/poll()/deregister()` 驱动下一轮唤醒；`test_async_io.uya`、`test_async_fd.uya`、`test_async_copy.uya` 已覆盖，且 `test_async_fd.uya` 已新增“两个真实 pipe 共享一个 LinuxEpoll”的队列回归；更丰富格式化/helper 仍待扩展）
   - [x] `std.async.event` 模块：`EventLoop`（epoll/kqueue/IOCP）
     - [x] epoll 系统调用层：`lib/syscall/linux.uya` 与 `lib/libc/syscall.uya` 已添加 `SYS_epoll_*`、`EpollEvent`、`EPOLLET`、`sys_epoll_create1`/`sys_epoll_ctl`/`sys_epoll_wait`；`test_epoll_syscall.uya` 通过 `--c99` 与 `--uya --c99`
     - [x] `lib/std/async_event.uya`：`EventKind`、`interface EventLoop`、`struct LinuxEpoll : EventLoop`（`use libc.syscall`；`register`/`deregister` 当前返回 `!i32`，成功值为 `0`）
     - [x] `test_std_async_event.uya` 端到端通过（当前已覆盖 `LinuxEpoll.register()` + `poll()` 命中后 `Waker.wake()` 最小链路；codegen 已修复：err_union 先输出 payload 结构体、catch 推断 struct payload、union 前向声明、INT_MIN 用 @min）
   - [x] `std.async.channel` 模块：泛型 `Channel<T>` 与运行时容量版 `MpscChannel<T>` 已落地（旧兼容别名入口已移除）；新增 `std.collections.ring_queue.RingQueue<T>` 作为可复用环形队列容器。`test_async_channel.uya` 已覆盖 generic send/recv、单槽容量下的 CAS 抢占/满槽 Pending、以及多槽容量下的 FIFO/环回；`test_std_ring_queue.uya` 已独立覆盖运行时容量、满队列与环回行为。为支撑该能力，C99 后端补齐了泛型 `@size_of(T)` 在单态化代码中的替换。当前释放路径先通过显式 `deinit()` 收口；根因是“泛型 drop / 泛型类型跨模块调用泛型清理方法”的 codegen 仍有缺口，已单列到前面的泛型 RAII 待办
-  - [x] `std.async.scheduler` 模块：`Scheduler` 最小闭环已完成（`scheduler_new`、`scheduler_run`/`scheduler_run_i32`/`scheduler_run_u32`、`scheduler_run_i32_with_event_loop`/`scheduler_run_u32_with_event_loop`/`scheduler_run_usize_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue_i32`、`scheduler_run_task_queue_i32_with_event_loop`；`Pending` 时可驱动 `EventLoop.poll()`，若 `poll()` 内调用 `waker.wake()` 则当前轮直接重试；当 `Waker` 携带 I/O interest 时会代为 `register/poll/deregister`；固定容量任务队列已验证“共享一个 EventLoop 单轮统一注册/轮询/唤醒”；同时 codegen 已修复“数组元素上的接口字段方法调用”和“结构体依赖收集误展开接口模板”这两个队列前置缺口；`test_std_async_scheduler.uya` 通过），通用泛型任务队列 / 更完整 `Waker` 调度待实现
-  - [x] `test_async_multi_fd_concurrent.uya` - 多 fd 并发调度：`MockEventLoop` + `WokenReadyFuture` 模拟 epoll 唤醒；验证多任务并发完成；`TaskQueueSlot_i32.epoll_fd` 持久化注册状态，`Waker.reset()` 仅在未注册时调用，完成任务不 deregister
+  - [x] `std.async.scheduler` 模块：`Scheduler` 主闭环已完成（`scheduler_new`、`scheduler_run`/`scheduler_run_i32`/`scheduler_run_u32`、`scheduler_run_i32_with_event_loop`/`scheduler_run_u32_with_event_loop`/`scheduler_run_usize_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue<T>` / `TaskQueue_i32` / `TaskQueue_u32`、`scheduler_run_task_queue_with_event_loop<T>`；`Pending` 时会同步注册 `eventfd + io fd`，`poll()` 内同步 `wake()` 时当前轮直接重试；`Waker.cancel()` / `TaskQueue.cancel()` 与 `error.Cancelled` 写回已接通；同时 codegen 已修复“数组元素上的接口字段方法调用”和“结构体依赖收集误展开接口模板”这两个队列前置缺口；`test_std_async_scheduler.uya` 通过）
+  - [x] `test_async_multi_fd_concurrent.uya` - 多 fd 并发调度：`MockEventLoop` + `WokenReadyFuture` 模拟共享 `EventLoop` 单轮推进；验证 2/3 任务并发完成、4/6 次注册以及每任务 2 次 poll，与当前“poll 前 reset、event loop 推进一步后 Ready”的调度契约一致
   - [x] `test_async_compute_types.uya` - 验证 `async_compute<T>` 新增类型（`i64`/`u64`/`i16`/`u16`/`i8`/`u8`/`bool`）通过 `scheduler_run_*_with_event_loop` 正确运行
   - [x] `std.thread` 模块：`ThreadPool` 最小实现稳定；**泛型 `export struct AsyncComputeFuture<T> : Future<!T>`** 覆盖整数/bool/**f32/f64**（typedef 别名保留）；共享 `thread_async_compute_future_new<T>`；worker/one-shot 路径对 `THREAD_TASK_KIND_F32`/`F64` 使用 `uya_thread_call_f32`/`f64`；**仅**导出 **`async_compute<T>`**（已移除 12 个 **`async_compute_*`**）。`test_std_thread.uya`、`test_async_compute_types.uya` 等在 `--c99` 与 `--uya --c99` 通过。C99：`Future<!T>` 单态 vtable、typedef **interface 装箱**与 **成员调用**；**`async_compute<T>`** 单态发射 **`std_thread_async_compute_future_new_<T>`** + 装箱（避免仅展开 Uya 体时 `thread_type_is_*` 全假）；泛型方法体内 `thread_type_is_*(T)` 在 C 端仍可折叠为 `0`/`1`；前导注入 `uya_thread_call_f32`/`f64`；`ok<bool>`/`ok<f32>`/`ok<f64>` 分别由 `thread_ok_*` 锚定。**待**：Send/Sync/跨线程验证。
 
@@ -954,14 +958,15 @@ gcc -Wall -Wextra -pedantic compiler.c bridge.c -o compiler 2>&1 | grep -i warni
   - [x] `error_async_too_many_params.uya` - `@async_fn` 参数超过当前状态机捕获上限（16）应报错
   - [x] `error_async_await_in_return.uya` - `@await` 在 `return` 之后（unreachable code）应报错
   - [x] `error_async_await_in_while_cond.uya` - `@await` 在 `while`/`for` 循环条件表达式中应报错
-  - [x] `test_async_io.uya` - AsyncWriter/AsyncReader 接口与 MemAsyncWriter、MemAsyncReader
-  - [x] `test_async_fd.uya` - AsyncFd 基于 fd 的 AsyncWriter/AsyncReader（含非阻塞 pipe 上 `EAGAIN -> Pending -> Ready`，以及通过 `Scheduler + EventLoop` 的最小唤醒链路）
+  - [x] `test_async_io.uya` - AsyncWriter/AsyncReader 接口与 MemAsyncWriter、MemAsyncReader（含 `write_all` / `read_exact` / `async_print*` helper 与 `UnexpectedEof`）
+  - [x] `test_async_fd.uya` - AsyncFd 基于 fd 的 AsyncWriter/AsyncReader（含非阻塞 pipe 上 `EAGAIN -> Pending -> Ready`、`write_all` / `read_exact` / `async_println_to` / `UnexpectedEof`，以及两个真实 pipe 共享一个 `LinuxEpoll` 的队列调度）
   - [x] `test_async_copy.uya` - `async_copy` 覆盖循环内 `@await` 与 `MemAsyncReader`/`MemAsyncWriter`（当前走 `Future<!usize>` 主路径）
   - [x] `test_async_channel.uya` - `Channel<T>` / `MpscChannel<T>` generic send/recv、单槽容量下的 CAS 抢占/满槽 Pending、以及多槽容量下的 FIFO/环回
   - [x] `test_std_ring_queue.uya` - `RingQueue<T>` 运行时容量、满队列拒绝与出队后再入队的环回顺序
   - [x] `test_block_on.uya` - block_on 同步运行 Future<!T> 直到 Ready
   - [x] `test_std_async_waker.uya` - `Waker` 的 `wake/reset/is_woken` 最小状态语义
-  - [x] `test_std_async_scheduler.uya` - `Scheduler`、`scheduler_run_i32`、`scheduler_run_i32_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue_i32`、`scheduler_run_task_queue_i32_with_event_loop`（Pending 时驱动 `EventLoop.poll()`；同步 `wake()` 时直接重试；双任务与固定容量任务队列共享 EventLoop 单轮唤醒）
+  - [x] `test_std_async_scheduler.uya` - `Scheduler`、`scheduler_run_i32`、`scheduler_run_i32_with_event_loop`、`scheduler_run_pair_i32_with_event_loop`、`TaskQueue<T>` / `TaskQueue_i32` / `TaskQueue_u32`、`scheduler_run_task_queue_with_event_loop<T>`（Pending 时驱动 `EventLoop.poll()`；同步 `wake()` 时直接重试；共享 EventLoop 单轮唤醒、泛型 `u32` 队列、取消语义、外部 `eventfd` wake 全覆盖）
+  - [x] `test_async_method_interface.uya` - 结构体内部 async 方法、方法块 async 实现与接口 async 方法签名的 direct call / vtable dispatch 回归
   - [x] `test_interface_error_union_method.uya` - 接口方法与受约束泛型方法返回 `!T` 时，`try`/`catch` 类型推断正确
 
 **涉及**：Lexer、AST、Parser、Checker、Codegen（CPS 变换、状态机生成），uya-src。
@@ -2584,7 +2589,7 @@ interface IReadWriter {
 
 ### 部分完成的特性（1 项）
 
-- ✅ **异步编程**（`Future<!T>` 主路径 + `!Future<T>` 兼容路径、单/多 `@await` 状态机与 `std.async` 核心闭环已完成；后续 P2 仅剩泛型 TaskQueue / 取消 / 跨平台扩展）
+- ✅ **异步编程**（`Future<!T>` 主路径 + `!Future<T>` 兼容路径、单/多 `@await` 状态机与 `std.async` 核心闭环已完成；跨线程 wake/eventfd、泛型 `TaskQueue<T>`、协作式取消语义已收口；后续 P2 主要剩跨平台后端与更完整 async I/O 扩展）
 
 ### 待实现的核心特性（3 项）
 

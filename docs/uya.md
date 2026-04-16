@@ -57,6 +57,7 @@
 ### 0.49.45（2026-04-14）
 
 - **`@frame(foo)` 异步帧类型构造器**：暴露 `@async_fn` 的状态机帧类型。语法为 `@frame(fn_name)` 或 `@frame(fn_name<ConcreteType>)`。`var f: @frame(foo);` 允许无初始化声明。
+- **`@frame(foo)` 生命周期方法**：当前公开高层方法为 `frame.start(...)`、`frame.poll(&waker)`、`frame.stop()`；分别对应 caller-owned frame 的启动、推进和停止/清理。
 - **Pinned 语义**：`@frame` 类型禁止按值移动、整体赋值、按值传参、按值返回。按引用传递 `&frame` 不受影响。包含 `@frame` 字段的父结构体也视为 pinned aggregate。
 - **内置函数白名单**：`@frame` 加入 `@` 内置函数词法白名单。
 
@@ -465,11 +466,11 @@
 
 - **异步编程基础设施**（新增第 18 章）：
   - **语言核心**（编译器实现）：
-    - `@async_fn`：函数属性，触发 CPS 变换生成显式状态机
+    - `@async_fn`：异步属性，可用于顶层函数、结构体/联合体方法实现和接口方法签名，触发 CPS 变换生成显式状态机
     - `@await`：唯一显式挂起点
     - `union Poll<T>`：异步计算结果类型
     - `interface Future<T>`：异步计算抽象
-  - **函数签名约束**：必须返回 `!Future<T>`（显式异步，无隐式包装）
+  - **函数签名约束**：必须返回 `Future<!T>` 或 `!Future<T>`（显式异步，无隐式包装）
   - **标准库实现**（基于核心类型）：
     - `std.async`：`Task<T>`, `Waker`
     - `std.channel`：`Channel<T>`, `MpscChannel<T>`
@@ -3423,6 +3424,7 @@ fn log_printf(fmt: *byte, ...) i32 {
 - `interface InterfaceName { method_sig ... }`
 - 结构体在定义时声明接口：`struct StructName : InterfaceName { ... }`
 - 接口方法作为结构体方法定义，可以在结构体内部或外部方法块中定义
+- `@async_fn` 现在也可用于接口方法签名，以及结构体/联合体的方法实现；对接口而言，异步 ABI 仍由返回 `Future<!T>` 或 `!Future<T>` 表达
 
 ### 6.3 语义总览
 
@@ -4607,7 +4609,7 @@ fn caller() void {
 | `@async_fn` | 函数属性 | 标记异步函数，触发 CPS 变换 |
 | `@naked_fn` | 函数属性 | 标记裸函数（无 prologue/epilogue），用于底层系统代码 |
 | `@await` | 表达式 | 等待异步操作完成（仅 `@async_fn` 内） |
-| `@frame` | `@frame(fn_name)` / `@frame(fn_name<T>)` | 异步帧类型构造器（v0.9.3）；暴露 `@async_fn` 的状态机帧类型；pinned 语义（禁止按值移动/赋值/传参/返回） |
+| `@frame` | `@frame(fn_name)` / `@frame(fn_name<T>)` | 异步帧类型构造器（v0.9.3）；暴露 `@async_fn` 的状态机帧类型；高层方法 `start/poll/stop`；pinned 语义（禁止按值移动/赋值/传参/返回） |
 | `@asm` | `@asm { ... }` | 内联汇编块 |
 | `@vector` | `@vector(T, N)` / `@vector.splat(x)` / `@vector.load(ptr)` / `@vector.store(ptr,v)` / `@vector.select(m,a,b)` / `@vector.any(m)` / `@vector.all(m)` | SIMD 向量类型构造器与阶段 4 辅助内建 |
 | `@mask` | `@mask(N)` | SIMD 掩码类型构造器 |
@@ -5041,7 +5043,11 @@ for hello |byte| {
 
 #### 18.3.1 `@async_fn` 函数属性
 
-**语法**：`@async_fn fn function_name(...) !Future<T> { ... }`
+**语法**：
+
+- 顶层函数：`@async_fn fn function_name(...) !Future<T> { ... }`
+- 结构体/联合体方法实现：`@async_fn fn method(self: &Self, ...) !Future<T> { ... }`
+- 接口方法签名：`@async_fn fn method(self: &Self, ...) Future<!T>;`
 
 **功能**：
 - 函数属性，触发 CPS（Continuation-Passing Style）变换生成显式状态机
@@ -5050,6 +5056,7 @@ for hello |byte| {
 **约束**：
 - **必须**返回 `Future<!T>` 或 `!Future<T>`（显式异步，无隐式包装）；两种形式均支持，`!Future<T>` 为兼容写法
 - 状态机大小编译期确定，递归调用编译错误
+- 接口方法签名上的 `@async_fn` 用于声明异步契约；真正生成状态机的是对应的结构体/联合体方法实现
 
 **示例**：
 ```uya
@@ -5062,6 +5069,23 @@ fn fetch() !Future<&[i8]> {
 
 @async_fn
 fn bad() !void { ... }  // 错误：必须返回 Future
+
+interface Reader {
+    @async_fn
+    fn read(self: &Self, n: usize) Future<!i32>;
+}
+
+struct Socket : Reader {
+    fd: i32,
+}
+
+Socket {
+    @async_fn
+    fn read(self: &Self, n: usize) Future<!i32> {
+        _ = n;
+        return self.fd;
+    }
+}
 ```
 
 #### 18.3.2 `@await` 挂起点
@@ -5076,7 +5100,7 @@ fn bad() !void { ... }  // 错误：必须返回 Future
 
 **约束**：
 - 只能在 `@async_fn` 函数内使用
-- 表达式必须返回 `!Future<T>` 类型
+- 表达式必须返回 `Future<!T>` 或 `!Future<T>` 类型
 - 必须使用 `try` 关键字处理错误传播
 
 **示例**：
@@ -5154,12 +5178,11 @@ MyFuture {
 - 状态机大小编译期确定，递归调用编译错误
 
 **返回值语义**：
-- `!Future<T>` 是错误联合类型，表示：
-  - **成功分支**：返回 `Future<T>`（异步计算结果）
-  - **错误分支**：返回 `error`（同步错误）
+- `Future<!T>` 是当前主路径：future 的 `poll()` 返回 `Poll<!T>`，`Pending` 走 `Poll.Pending`，业务错误走 `!T`
+- `!Future<T>` 是兼容路径：同步错误仍可在返回 future 之前直接抛出，成功分支返回 `Future<T>`
 - **返回值自动包装**：
-  - `return value;` → 自动包装为 `Future<T>`，作为 `!Future<T>` 的成功分支
-  - `return error.ErrorName;` → 直接返回错误，作为 `!Future<T>` 的错误分支
+  - 对 `Future<!T>`：`return value;` → 自动包装为 `Future<!T>` 的 Ready(ok(value))；`return error.ErrorName;` → 自动包装为 Ready(error.ErrorName)
+  - 对 `!Future<T>`：`return value;` → 自动包装为 `Future<T>`，作为 `!Future<T>` 的成功分支；`return error.ErrorName;` → 直接返回错误，作为 `!Future<T>` 的错误分支
 
 **自动包装机制**：
 - 当 `@async_fn` 函数返回任何类型的值（基本类型、结构体、切片等）时，编译器通过 CPS 变换生成一个立即就绪的 Future
@@ -5401,7 +5424,7 @@ fn main() !Future<i32> {
 
 ### 18.9 一句话总结
 
-> **异步编程基础设施**：`@async_fn`/`@await` + `union Poll<T>` + `interface Future<T>`；返回必须 `!Future<T>`；状态机零分配，挂起显式，并发安全编译期证明。
+> **异步编程基础设施**：`@async_fn`/`@await` + `union Poll<T>` + `interface Future<T>`；返回必须是 `Future<!T>` 或 `!Future<T>`；状态机零分配，挂起显式，并发安全编译期证明。
 
 ---
 
@@ -7224,4 +7247,3 @@ bin/uya build main.uya -o main.c --c99 -e
 - **编译期证明**：编译器在当前函数内验证安全性，证明失败则报编译错误并给出修改建议。常量错误仍然直接报错。
 
 ---
-

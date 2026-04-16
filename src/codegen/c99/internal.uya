@@ -345,6 +345,9 @@ struct C99CodeGenerator {
     async_poll_ready_payload_c: &byte,
     // Ready 载荷是否为 error union（1=是：return expr 需包装为 { .error_id=0, .value=expr }）
     async_poll_inner_is_err_union: i32,
+    // 重新发射包含 try @await 的语句时，用于把当前 await 节点替换成已绑定的结果字段
+    async_expr_subst_try_expr: &ASTNode,
+    async_expr_subst_name: &byte,
     // 通用协程变换上下文（emit_async_segment 递归使用）
     async_fn_decl: &ASTNode,                // 当前 async 函数声明
     async_fn_body: &ASTNode,                // 当前 async 函数体
