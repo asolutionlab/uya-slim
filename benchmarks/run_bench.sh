@@ -18,9 +18,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$SCRIPT_DIR"
 
-UYA_BIN="${SCRIPT_DIR}/../bin/uya"
+UYA_BIN="${REPO_ROOT}/bin/uya"
 GO_SRC="${SCRIPT_DIR}/http_bench.go"
 UYA_HTTP_SRC="${SCRIPT_DIR}/http_bench.uya"
 UYA_FORK_SRC="${SCRIPT_DIR}/http_bench_fork.uya"
@@ -50,6 +51,8 @@ C_EXEC="/tmp/http_bench_c"
 C_ASYNC_EPOLL_EXEC="/tmp/http_bench_c_async_epoll"
 TOKIO_DIR="${SCRIPT_DIR}/http_bench_tokio"
 TOKIO_EXEC="/tmp/http_bench_tokio"
+# async epoll 系列默认沿用已验证可启动的宿主编译旗标
+ASYNC_BENCH_CFLAGS="-std=c99 -O3 -g -fno-builtin -fno-inline-small-functions -I${REPO_ROOT}"
 
 # wrk / server 参数（默认对齐机器 CPU/2，可用环境变量覆盖）
 CPU_COUNT="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 1)"
@@ -165,8 +168,10 @@ build_uya_c99_variant() {
     local entry="$3"
     local exec="$4"
     local cfile="$5"
+    local cflags_override="${6:-}"
     local stem
     stem="$(basename "$cfile" .c)"
+    local -a cflags_argv=()
 
     log_info "编译 ${label} HTTP 服务器..."
     if [ ! -f "$UYA_BIN" ]; then
@@ -177,14 +182,19 @@ build_uya_c99_variant() {
         log_err "找不到 ${label} 源文件: $src"
         exit 1
     fi
+    if [ -n "$cflags_override" ]; then
+        read -r -a cflags_argv <<< "$cflags_override"
+    else
+        cflags_argv=(-std=c99 -O2 -fno-builtin)
+    fi
     # 这里使用 --c99 直出路径，和 verify_http_bench_async_epoll_runtime.sh 保持一致，避免 build 子命令路径差异
     if ! "$UYA_BIN" --c99 "$entry" -o "$cfile" >/tmp/"${stem}"_build.log 2>&1; then
         log_err "${label} 编译失败，日志:"
         cat "/tmp/${stem}_build.log" >&2
         exit 1
     fi
-    # 现在 pthread 启动链路已稳定，先恢复到 -O2 对齐 fork 版本。
-    if ! cc -std=c99 -no-pie -O2 -fno-builtin -o "$exec" "$cfile" -lm >/tmp/"${stem}"_cc.log 2>&1; then
+    # async 系列使用单独的已验证旗标，避免与 fork / 基础版共用较弱的默认组合。
+    if ! cc "${cflags_argv[@]}" -no-pie -o "$exec" "$cfile" -lm >/tmp/"${stem}"_cc.log 2>&1; then
         log_err "${label} C 编译失败，日志:"
         cat "/tmp/${stem}_cc.log" >&2
         exit 1
@@ -199,22 +209,22 @@ build_uya_http() {
 
 # 编译 Uya async epoll 版本
 build_uya_async_epoll() {
-    build_uya_c99_variant "Uya async epoll" "$UYA_ASYNC_EPOLL_SRC" "$UYA_ASYNC_EPOLL_ENTRY" "$UYA_ASYNC_EPOLL_EXEC" /tmp/http_bench_async_epoll.c
+    build_uya_c99_variant "Uya async epoll" "$UYA_ASYNC_EPOLL_SRC" "$UYA_ASYNC_EPOLL_ENTRY" "$UYA_ASYNC_EPOLL_EXEC" /tmp/http_bench_async_epoll.c "$ASYNC_BENCH_CFLAGS"
 }
 
 # 编译 Uya async await 版本
 build_uya_async_await() {
-    build_uya_c99_variant "Uya async await" "$UYA_ASYNC_AWAIT_SRC" "$UYA_ASYNC_AWAIT_ENTRY" "$UYA_ASYNC_AWAIT_EXEC" /tmp/http_bench_async_epoll_await.c
+    build_uya_c99_variant "Uya async await" "$UYA_ASYNC_AWAIT_SRC" "$UYA_ASYNC_AWAIT_ENTRY" "$UYA_ASYNC_AWAIT_EXEC" /tmp/http_bench_async_epoll_await.c "$ASYNC_BENCH_CFLAGS"
 }
 
 # 编译 Uya async await simple 版本
 build_uya_async_await_simple() {
-    build_uya_c99_variant "Uya async await simple" "$UYA_ASYNC_AWAIT_SIMPLE_SRC" "$UYA_ASYNC_AWAIT_SIMPLE_ENTRY" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" /tmp/http_bench_async_epoll_await_simple.c
+    build_uya_c99_variant "Uya async await simple" "$UYA_ASYNC_AWAIT_SIMPLE_SRC" "$UYA_ASYNC_AWAIT_SIMPLE_ENTRY" "$UYA_ASYNC_AWAIT_SIMPLE_EXEC" /tmp/http_bench_async_epoll_await_simple.c "$ASYNC_BENCH_CFLAGS"
 }
 
 # 编译 Uya async await stack 版本
 build_uya_async_await_stack() {
-    build_uya_c99_variant "Uya async await stack" "$UYA_ASYNC_AWAIT_STACK_SRC" "$UYA_ASYNC_AWAIT_STACK_ENTRY" "$UYA_ASYNC_AWAIT_STACK_EXEC" /tmp/http_bench_async_epoll_await_stack.c
+    build_uya_c99_variant "Uya async await stack" "$UYA_ASYNC_AWAIT_STACK_SRC" "$UYA_ASYNC_AWAIT_STACK_ENTRY" "$UYA_ASYNC_AWAIT_STACK_EXEC" /tmp/http_bench_async_epoll_await_stack.c "$ASYNC_BENCH_CFLAGS"
 }
 
 # 编译 Go 版本

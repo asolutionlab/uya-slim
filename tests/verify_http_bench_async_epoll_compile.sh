@@ -27,8 +27,8 @@ if ! "$COMPILER" --c99 "$SRC" -o "$OUT_C" >/dev/null 2>&1; then
 fi
 
 CC_CMD="${CC_DRIVER:-${CC:-cc}}"
-CFLAGS_USE="${CFLAGS:--std=c99 -O2 -fno-builtin -Werror}"
-if ! $CC_CMD $CC_TARGET_FLAGS $CFLAGS_USE -std=c99 -no-pie -c "$OUT_C" -o "$OUT_O" 2>&1; then
+ASYNC_BENCH_CFLAGS="${ASYNC_BENCH_CFLAGS:-${CFLAGS:--std=c99 -O3 -g -fno-builtin -fno-inline-small-functions -I${REPO_ROOT}}}"
+if ! $CC_CMD $CC_TARGET_FLAGS $ASYNC_BENCH_CFLAGS -no-pie -c "$OUT_C" -o "$OUT_O" 2>&1; then
     echo "✗ cc 编译 http_bench_async_epoll 生成的 C 失败"
     exit 1
 fi

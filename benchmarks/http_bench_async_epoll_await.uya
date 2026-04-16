@@ -9,6 +9,7 @@
 use std.async;
 use std.async_event;
 use libc.mem;
+use libc.heap;
 use libc.syscall;
 use libc.errno;
 use libc.signal;
@@ -634,17 +635,23 @@ struct BenchContext {
     }
 }
 
+var g_bench_slot_cap: i32 = BENCH_THREAD_COUNT;
+var g_worker_contexts: [BenchContext: BENCH_MAX_THREADS as usize] = [];
+
 fn bench_thread_slot_cap(arg: &void) i32 {
-    if arg == null {
-        return BENCH_THREAD_COUNT;
-    }
-    return *(arg as &i32);
+    _ = arg;
+    return g_bench_slot_cap;
 }
 
 fn bench_worker_thread(_arg: &void) &void {
-    var ctx_storage: [usize: BENCH_CONTEXT_STACK_BYTES / @size_of(usize)] = [];
-    _ = memset(&ctx_storage[0] as *byte, 0, BENCH_CONTEXT_STACK_BYTES);
-    const ptr: &BenchContext = @ptr_from_usize(@usize_from_ptr(&ctx_storage[0] as &void)) as &BenchContext;
+    if _arg == null {
+        return null as &void;
+    }
+    const worker_id: i32 = *(_arg as &i32);
+    if worker_id < 0 || worker_id >= BENCH_MAX_THREADS {
+        return null as &void;
+    }
+    const ptr: &BenchContext = &g_worker_contexts[worker_id as usize];
     const slot_cap: i32 = bench_thread_slot_cap(_arg);
     ptr.slot_cap = slot_cap;
     _ = ptr.run();
@@ -958,14 +965,16 @@ export fn main() i32 {
     _ = signal(SIGPIPE, SIG_IGN as &void);
 
     var n_threads: i32 = argv_thread_count();
+    g_bench_slot_cap = n_threads;
     var threads: [pthread_t: BENCH_MAX_THREADS as usize] = [];
-    var thread_arg: i32 = n_threads;
+    var thread_ids: [i32: BENCH_MAX_THREADS as usize] = [];
     var i: i32 = 1;
     while i < n_threads && i < BENCH_MAX_THREADS {
         var attr: pthread_attr_t = pthread_attr_t{};
         _ = pthread_attr_init(&attr);
         _ = pthread_attr_setstacksize(&attr, BENCH_WORKER_STACK_BYTES);
-        const ret: i32 = pthread_create(&threads[i], &attr as &const pthread_attr_t, &bench_worker_thread as &void, &thread_arg as &void);
+        thread_ids[i as usize] = i;
+        const ret: i32 = pthread_create(&threads[i], &attr as &const pthread_attr_t, &bench_worker_thread as &void, &thread_ids[i as usize] as &void);
         _ = pthread_attr_destroy(&attr);
         if ret != 0 {
             return 1;
@@ -973,7 +982,8 @@ export fn main() i32 {
         i = i + 1;
     }
 
-    _ = bench_worker_thread(&thread_arg as &void);
+    thread_ids[0] = 0;
+    _ = bench_worker_thread(&thread_ids[0] as &void);
 
     i = 1;
     while i < n_threads && i < BENCH_MAX_THREADS {
